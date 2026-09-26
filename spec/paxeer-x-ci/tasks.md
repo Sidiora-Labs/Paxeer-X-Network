@@ -23,6 +23,11 @@
     - Add .github/workflows/runner-canary.yml as [design.routing] describes, with its checkout pinned to the same forty-hex commit the other workflows use, and add it to the routing check as a routed job.
     - Run the verify_cmd once; if actionlint reports a failure class that predates this task and is unrelated to runs-on or labels, record it as one observation and do not fix it.
     - _Requirements: 3.1, 3.2, 3.3, 3.4_
+  - [ ] 1.4 Clear the routing gate: remove the expression injection actionlint stops on and keep publishing jobs on GitHub-hosted runners
+    - Observation 1.3.1: actionlint stops on .github/workflows/paxeer-pr-to-slack-codex.yml where github.event.pull_request.title is interpolated directly into an inline script, an expression injection that predates this feature; pass that value and any other event field interpolated into a run script in that file through an env entry of the step and read the variable in the script instead, changing nothing else in the workflow.
+    - Task 1.3 routed the jobs docs-site deploy, paxeer-release-publish, the paxeer-proto-registry push job and paxeer-ghcr-integration-test-cleanup because they matched none of the listed exclusion classes, yet each carries a publishing credential, which [meta] intro keeps on GitHub-hosted runners; restore each job's original runs-on line and add each to the exclusion list in tools/ci/runner-routing-check.sh with the reason class publishing credential and its original runs-on beside it.
+    - Run task 1.3's verify_cmd once; at the passing revision record task 1.3 done with the same evidence, close observation 1.3.1 naming the revision, and record this task done.
+    - _Requirements: 3.1, 3.3_
   - [ ] 2.1 Deploy the runner image and the controller, turn the variable on and prove the canary ran on Fly
     - From the operator shell: build tools/flyci/runner with the local Docker daemon, tag it registry.fly.io/paxeer-ci-runners:<commit>, run fly auth docker and push it; create an app-scoped deploy token for paxeer-ci-runners with fly tokens create deploy; set the secrets GITHUB_TOKEN (from the private token file the operator names), FLY_API_TOKEN and RUNNER_IMAGE on paxeer-ci-controller; deploy the controller from tools/flyci/controller/fly.toml; confirm one controller machine is started and its log shows a completed poll.
     - Set the repository variable CI_LINUX_RUNNER to fly-linux with the GitHub CLI, dispatch runner-canary.yml on the default branch, wait for its completion, and read the job back through the API requiring a runner_name starting with fly- and conclusion success; then confirm through the Machines API that the job's machine no longer exists.
@@ -34,7 +39,7 @@
 ```json
 {
   "waves": [
-    { "id": 1,  "tasks": ["1.1", "1.2", "1.3"] },
+    { "id": 1,  "tasks": ["1.1", "1.2", "1.3", "1.4"] },
     { "id": 2,  "tasks": ["2.1"] }
   ]
 }
