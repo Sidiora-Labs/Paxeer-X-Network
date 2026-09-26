@@ -1692,6 +1692,7 @@ fn assert_unavailable_public_routes(core: &Http, admin: &Http) {
         503,
         "capability_unavailable",
     );
+    assert_program_events_shapes(core);
     assert_refusal(&core.get("/nope"), 404, "not_found");
     assert_refusal(
         &core.request("DELETE", "/v1/activities", &[], &[]),
@@ -2187,6 +2188,92 @@ fn assert_public_reads(boundary: &Boundary, cluster: &Cluster) {
         404,
         "not_found",
     );
+    for limit in [1, 256] {
+        let page = core.get(&format!(
+            "/v1/programs/events/{WEB_REQUEST_TOPIC_HEX}/0/{limit}"
+        ));
+        assert_eq!(page.status, 200, "{}", page.body);
+        let page = json(&page);
+        assert_eq!(page["ok"], serde_json::Value::Bool(true));
+        assert_eq!(page["result"]["events"], serde_json::json!([]), "{page}");
+        let next = page["result"]["next_sequence"]
+            .as_u64()
+            .unwrap_or_else(|| panic!("next_sequence: {page}"));
+        let past = core.get(&format!(
+            "/v1/programs/events/{WEB_REQUEST_TOPIC_HEX}/{}/{limit}",
+            next + 7
+        ));
+        assert_eq!(past.status, 200, "{}", past.body);
+        assert_eq!(
+            json(&past)["result"],
+            serde_json::json!({"events": [], "next_sequence": next})
+        );
+    }
+}
+
+const WEB_REQUEST_TOPIC_HEX: &str = "504158454552585f5745425f524551554553545f5631";
+
+fn assert_program_events_shapes(core: &Http) {
+    let topic_bound = "ab".repeat(64);
+    for path in [
+        format!("/v1/programs/events/{WEB_REQUEST_TOPIC_HEX}/0/1"),
+        format!("/v1/programs/events/{WEB_REQUEST_TOPIC_HEX}/0/256"),
+        format!("/v1/programs/events/{WEB_REQUEST_TOPIC_HEX}/18446744073709551615/17"),
+        format!("/v1/programs/events/{topic_bound}/42/1"),
+        "/v1/programs/events/00/0/1".to_owned(),
+    ] {
+        assert_refusal(&core.get(&path), 503, "node_unavailable");
+        assert_refusal(
+            &core.request(
+                "POST",
+                &path,
+                &[("Content-Type", "application/json")],
+                b"{}",
+            ),
+            405,
+            "method_not_allowed",
+        );
+        assert_refusal(
+            &core.get(&format!("{path}?cursor=1")),
+            400,
+            "invalid_request",
+        );
+    }
+    let topic_over = "ab".repeat(65);
+    for path in [
+        "/v1/programs/events/".to_owned(),
+        format!("/v1/programs/events/{WEB_REQUEST_TOPIC_HEX}"),
+        format!("/v1/programs/events/{WEB_REQUEST_TOPIC_HEX}/0"),
+        format!("/v1/programs/events/{WEB_REQUEST_TOPIC_HEX}/0/1/"),
+        format!("/v1/programs/events/{WEB_REQUEST_TOPIC_HEX}/0/1/2"),
+        "/v1/programs/events//0/1".to_owned(),
+        "/v1/programs/events/504/0/1".to_owned(),
+        "/v1/programs/events/504158454552585F5745425F524551554553545F5631/0/1".to_owned(),
+        "/v1/programs/events/zz/0/1".to_owned(),
+        format!("/v1/programs/events/{topic_over}/0/1"),
+        format!("/v1/programs/events/{WEB_REQUEST_TOPIC_HEX}/x/1"),
+        format!("/v1/programs/events/{WEB_REQUEST_TOPIC_HEX}/-1/1"),
+        format!("/v1/programs/events/{WEB_REQUEST_TOPIC_HEX}/+1/1"),
+        format!("/v1/programs/events/{WEB_REQUEST_TOPIC_HEX}/01/1"),
+        format!("/v1/programs/events/{WEB_REQUEST_TOPIC_HEX}/18446744073709551616/1"),
+        format!("/v1/programs/events/{WEB_REQUEST_TOPIC_HEX}/0/0"),
+        format!("/v1/programs/events/{WEB_REQUEST_TOPIC_HEX}/0/257"),
+        format!("/v1/programs/events/{WEB_REQUEST_TOPIC_HEX}/0/01"),
+        format!("/v1/programs/events/{WEB_REQUEST_TOPIC_HEX}/0/"),
+    ] {
+        assert_refusal(&core.get(&path), 400, "invalid_argument");
+        assert_refusal(
+            &core.request(
+                "POST",
+                &path,
+                &[("Content-Type", "application/json")],
+                b"{}",
+            ),
+            400,
+            "invalid_argument",
+        );
+    }
+    assert_refusal(&core.get("/v1/programs/events"), 404, "not_found");
 }
 
 fn assert_funding_refusals(boundary: &Boundary, valid: &str, did: &str, public_key: &str) {

@@ -1077,7 +1077,11 @@ reqs = ["11.2"]
 
 [task.2.28]
 title = "Relay program events through core and list the gateway method so the sidecar's watcher reads real request bytes"
-status = "pending"
+status = "implemented"
+implemented_revision = "1dc250fd9dae44a73e7bb2c9157cb1089ede1fc9"
+implemented_command = "timeout 20m sh -c 'cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core && cargo test --locked --manifest-path platform/hosted/gateway/tests/local/Cargo.toml --test events'"
+implemented_exit_code = 101
+implemented_log_path = ".logs/verify.log"
 wave = 2
 requires = ["2.21","2.27"]
 do_1 = "Add the v1 programs events path with hex topic and unsigned integer sequence and limit validation to the core boundary's relay allowlist in platform/hosted/core/src/main.rs, and cover the allowed and the refused shapes in platform/hosted/core/tests/boundary.rs."

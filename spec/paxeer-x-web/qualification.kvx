@@ -476,3 +476,11 @@ symbol = "ModuleId::from_u16"
 observed = "make agent-test exits 2 (.logs/verify.log): the route now reports the finalized receipt read as Preparation(MalformedResponse); the daemon's preparation snapshot truthfully lists nine active modules including spot (module 10, enabled by bootstrap by default), which ModuleId::from_u16 and MAX_MODULES = 9 in agent/crates/layerx-client/src/lni/preparation.rs refuse, and neither file is in this task's touches."
 assumption = "The owner of layerx-types and layerx-client teaches ModuleId the spot and web modules and raises the preparation module bound to the kernel's reserved count, after which the verify_cmd reruns unchanged; nothing is relaxed."
 severity = "blocker"
+
+[observation.2.28.1]
+revision = "1dc250fd9dae44a73e7bb2c9157cb1089ede1fc9"
+command = "timeout 20m sh -c 'cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core && cargo test --locked --manifest-path platform/hosted/gateway/tests/local/Cargo.toml --test events'"
+exit_code = 101
+log_path = ".logs/verify.log"
+observed = "The core boundary's daemon-down events shapes pass, but every real-cluster boundary test stops at start because layerxd exits with bootstrap finality authority -3 (the anchor address rule of observation 2.16.1) and one needs LAYERX_TEST_SOCAT_BIN, and the second command cannot run as written because the local workspace manifest declares only the lifecycle test target, which includes events.rs as a module, and the gateway's schema_lists_every_public_method count omits lx_getProgramEvents."
+assumption = "Once the boundary cluster harness serves its settlement and registry at the anchor address, the manifest declares an events target (or the verify_cmd selects --test lifecycle events::) and the gateway's published list names the method, the verify_cmd reruns unchanged; nothing is relaxed."

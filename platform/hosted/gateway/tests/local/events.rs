@@ -387,3 +387,279 @@ fn start_webhooks(
         &environment,
     )
 }
+
+const WEB_REQUEST_TOPIC: &[u8] = b"PAXEERX_WEB_REQUEST_V1";
+const WEB_REQUEST_ID: u64 = 0x0102_0304_0506_0708;
+const WEB_REQUEST_KIND_FETCH: u8 = 1;
+const WEB_REQUEST_OPERATION: u8 = 1;
+const WEB_REQUEST_PAYLOAD: &[u8] = b"https://paxeer.app/status";
+const WEB_REQUEST_FEE: u8 = 100;
+const WEB_READER_GUEST_ABI: u16 = 4;
+const PROGRAM_FEE_LIMIT: u128 = 67_108_864;
+
+fn web_fee_account(asset: &[u8; 32]) -> [u8; 32] {
+    sha256(&[b"PAXEERX_WEB_FEES_V1", asset])
+}
+
+fn web_request_capabilities(asset: &[u8; 32], fee_account: &[u8; 32]) -> Vec<u8> {
+    let mut capabilities = vec![0, 2, 3, 5];
+    capabilities.extend_from_slice(asset);
+    capabilities.extend_from_slice(fee_account);
+    capabilities.extend_from_slice(&u128::from(WEB_REQUEST_FEE).to_be_bytes());
+    capabilities
+}
+
+fn web_request_calldata(asset: &[u8; 32], fee_account: &[u8; 32]) -> Vec<u8> {
+    let mut calldata = vec![1, WEB_REQUEST_OPERATION];
+    calldata.extend_from_slice(&WEB_REQUEST_ID.to_be_bytes());
+    calldata.push(WEB_REQUEST_KIND_FETCH);
+    calldata.extend_from_slice(asset);
+    calldata.extend_from_slice(fee_account);
+    calldata.extend_from_slice(&u128::from(WEB_REQUEST_FEE).to_be_bytes());
+    calldata.extend_from_slice(WEB_REQUEST_PAYLOAD);
+    calldata
+}
+
+fn web_request_record() -> Vec<u8> {
+    let mut record = WEB_REQUEST_ID.to_be_bytes().to_vec();
+    record.push(WEB_REQUEST_KIND_FETCH);
+    record.extend_from_slice(
+        &u32::try_from(WEB_REQUEST_PAYLOAD.len())
+            .required("request payload length")
+            .to_be_bytes(),
+    );
+    record.extend_from_slice(WEB_REQUEST_PAYLOAD);
+    record
+}
+
+fn submit_program_activity(
+    cluster: &Cluster,
+    boundary: &Boundary,
+    ordinal: u16,
+    path: &str,
+    payload: &[u8],
+    fee_limit: u128,
+) -> serde_json::Value {
+    let sequence = account_sequence(&cluster.lni_socket, &cluster.treasury_did);
+    let signed = signed_program_activity_with_fee(
+        &cluster.treasury_seed,
+        &cluster.treasury_did,
+        sequence,
+        ordinal,
+        payload,
+        fee_limit,
+    );
+    let kind = must(ActivityType::new(ModuleId::Programs, ordinal), "kind");
+    let registry = must(
+        ModuleRegistry::new(&[must(
+            ModuleRegistration::new(ModuleId::Programs, &[kind]),
+            "registration",
+        )]),
+        "registry",
+    );
+    let activity = must(
+        layerx_wire::activity::decode_signed(&signed, &registry),
+        "signed activity",
+    );
+    let key = hex_encode(&activity.idempotency_key());
+    let answer = boundary.core.request(
+        "POST",
+        path,
+        &[
+            ("Content-Type", "application/octet-stream"),
+            ("Idempotency-Key", key.as_str()),
+        ],
+        &signed,
+    );
+    assert_eq!(answer.status, 200, "{path}: {}", answer.body);
+    let result = json(&answer);
+    let receipt = layerx_platform_core::hex_decode(
+        result["result"]["receipt"]
+            .as_str()
+            .required("program receipt"),
+    )
+    .required("program receipt bytes");
+    let receipt =
+        layerx_proof::receipt::verify_sequencer_signature(&receipt, cluster.sequencer_key)
+            .required("program receipt signature");
+    let protocol = receipt.protocol().required("program receipt protocol");
+    assert_eq!(protocol.result_code(), 0, "{path}: {result}");
+    assert_eq!(
+        (protocol.module_id(), u16::from(protocol.operation())),
+        (9, ordinal),
+        "{path}: {result}"
+    );
+    result
+}
+
+fn deploy_web_reader(cluster: &Cluster, boundary: &Boundary) -> [u8; 32] {
+    use layerx_types::program_lifecycle::{NativeProgramDeploy, ProgramUpgradePolicy};
+    let wasm =
+        fs::read(std::env::var_os("LAYERX_TEST_WEB_READER_WASM").required("built web-reader WASM"))
+            .required("web-reader WASM bytes");
+    let program_id = random32();
+    let owner = must(
+        layerx_types::account::AccountId::parse(&format!("agent:{}:main", cluster.treasury_did)),
+        "treasury account",
+    );
+    let deploy = NativeProgramDeploy {
+        program_id: ProgramId::new(program_id),
+        guest_abi: WEB_READER_GUEST_ABI,
+        policy: ProgramUpgradePolicy::Authority(must(
+            layerx_wire::hash::account_id_for_protocol(&owner, PROTOCOL_VERSION),
+            "principal",
+        )),
+        new_hash: Sha256::digest(wasm.as_slice()).into(),
+        interface: None,
+        wasm: &wasm,
+    };
+    submit_program_activity(
+        cluster,
+        boundary,
+        1,
+        "/v1/programs/deploy",
+        &must(deploy.encode(), "web-reader deploy"),
+        PROGRAM_FEE_LIMIT,
+    );
+    program_id
+}
+
+fn call_web_request(cluster: &Cluster, boundary: &Boundary, program_id: [u8; 32]) {
+    let fee_account = web_fee_account(&cluster.asset);
+    let capabilities = web_request_capabilities(&cluster.asset, &fee_account);
+    let calldata = web_request_calldata(&cluster.asset, &fee_account);
+    let call = NativeProgramCall {
+        program_id: ProgramId::new(program_id),
+        guest_abi: WEB_READER_GUEST_ABI,
+        entrypoint: b"layerx_call",
+        calldata: &calldata,
+        capabilities: &capabilities,
+        access_declaration: b"LayerX/programs/access-declaration/v1\0\0",
+        response_capacity: 16,
+        resources: Resources([
+            1_000_000, 16_777_216, 1_048_576, 1_048_576, 64, 1_048_576, 4096,
+        ]),
+    };
+    submit_program_activity(
+        cluster,
+        boundary,
+        3,
+        "/v1/programs/call",
+        &must(call.encode(), "web request call"),
+        PROGRAM_FEE_LIMIT,
+    );
+}
+
+fn program_events_page(
+    call: &impl Fn(&str, serde_json::Value, bool) -> serde_json::Value,
+    topic: &str,
+    from_sequence: u64,
+    limit: u64,
+) -> serde_json::Value {
+    let answer = call(
+        "lx_getProgramEvents",
+        serde_json::json!([{"topic": topic, "from_sequence": from_sequence, "limit": limit}]),
+        false,
+    );
+    assert!(answer.get("error").is_none(), "{answer}");
+    answer["result"].clone()
+}
+
+fn next_sequence(page: &serde_json::Value) -> u64 {
+    page["next_sequence"].as_u64().required("next_sequence")
+}
+
+#[test]
+fn local_gateway_program_events_read_the_web_request() {
+    let (cluster, _funding) = funding::start();
+    let certificates = certificates(&cluster.root);
+    let boundary = start_boundary(&cluster, &certificates);
+    let identity = start_local_identity(&cluster, &certificates);
+    let authority = start_local_authority(&cluster, &certificates);
+    let redis = start_local_redis(&cluster, &certificates);
+    let gateway = start_gateway_runtime(
+        &cluster,
+        &certificates,
+        &boundary,
+        &identity,
+        &authority,
+        &redis,
+        false,
+    );
+    let http = Http {
+        port: gateway.port,
+        ca: Certificate::from_der(&certificates.ca_der).required("CA"),
+        identity: None,
+    };
+    let call = |method: &str, params: serde_json::Value, authenticated: bool| {
+        local_rpc(&http, "", method, &params, authenticated)
+    };
+    let topic = hex_encode(WEB_REQUEST_TOPIC);
+    let before = program_events_page(&call, &topic, 0, 256);
+    assert_eq!(before["events"], serde_json::json!([]), "{before}");
+    let head = next_sequence(&before);
+
+    let program_id = deploy_web_reader(&cluster, &boundary);
+    call_web_request(&cluster, &boundary, program_id);
+
+    let deadline = Instant::now() + Duration::from_secs(60);
+    let page = loop {
+        let page = program_events_page(&call, &topic, head, 256);
+        if page["events"]
+            .as_array()
+            .is_some_and(|events| !events.is_empty())
+        {
+            break page;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "no committed web request: {page}"
+        );
+        thread::sleep(Duration::from_millis(250));
+    };
+    let events = page["events"].as_array().required("events");
+    assert_eq!(events.len(), 1, "{page}");
+    let event = &events[0];
+    let sequence = event["sequence"].as_u64().required("event sequence");
+    assert!(
+        sequence >= head && sequence < next_sequence(&page),
+        "{page}"
+    );
+    assert_eq!(
+        event,
+        &serde_json::json!({
+            "sequence": sequence,
+            "program_id": hex_encode(&program_id),
+            "topic": topic,
+            "data": hex_encode(&web_request_record()),
+        })
+    );
+    let request = layerx_platform_core::hex_decode(event["data"].as_str().required("event data"))
+        .required("event data bytes");
+    assert_eq!(&request[13..], WEB_REQUEST_PAYLOAD);
+
+    let exact = program_events_page(&call, &topic, sequence, 1);
+    assert_eq!(exact["events"], page["events"], "{exact}");
+    assert_eq!(next_sequence(&exact), sequence + 1, "{exact}");
+    let after = program_events_page(&call, &topic, sequence + 1, 256);
+    assert_eq!(after["events"], serde_json::json!([]), "{after}");
+    assert!(next_sequence(&after) > sequence, "{after}");
+    let other = program_events_page(&call, &hex_encode(b"PAXEERX_OTHER_TOPIC_V1"), 0, 256);
+    assert_eq!(other["events"], serde_json::json!([]), "{other}");
+
+    let relayed = boundary
+        .core
+        .get(&format!("/v1/programs/events/{topic}/{sequence}/1"));
+    assert_eq!(relayed.status, 200, "{}", relayed.body);
+    assert_eq!(json(&relayed)["result"], exact);
+    for params in [
+        serde_json::json!([{"topic": topic.to_ascii_uppercase(), "from_sequence": 0, "limit": 1}]),
+        serde_json::json!([{"topic": topic, "from_sequence": 0, "limit": 257}]),
+        serde_json::json!([{"topic": topic, "from_sequence": 0}]),
+    ] {
+        assert_eq!(
+            call("lx_getProgramEvents", params, false)["error"]["code"],
+            -32602
+        );
+    }
+}
