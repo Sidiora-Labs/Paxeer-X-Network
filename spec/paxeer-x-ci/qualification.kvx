@@ -6,3 +6,10 @@
 # symbol, observed, assumption, severity (blocker | suspect | assumption | note),
 # at most six lines, never re-run. [gate.<task>.<n>] records one executed gate:
 # revision, command, exit_code, log_path.
+
+[observation.1.3.1]
+task = "1.3"
+file = ".github/workflows/paxeer-pr-to-slack-codex.yml"
+symbol = "codex_review"
+observed = "actionlint exits 1 on a pre-existing expression finding at line 224 (github.event.pull_request.title used directly in an inline script), a class unrelated to runs-on or labels, so the routing check after it did not run."
+assumption = "Moving the title through an environment variable is outside this task's touches; severity blocker for the task gate until another task fixes it."

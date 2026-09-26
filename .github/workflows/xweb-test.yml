@@ -98,7 +98,7 @@ defaults:
 jobs:
   sidecar-crate:
     name: cargo test for the x-websearch crate
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 30
     steps:
       - name: Check out source
@@ -117,7 +117,7 @@ jobs:
 
   module-precompile:
     name: go test for modules/xweb and precompiles/xweb
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 30
     steps:
       - name: Check out source
@@ -135,7 +135,7 @@ jobs:
 
   consumer-contract:
     name: forge test for contracts/test/XWebConsumer.t.sol
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 30
     steps:
       - name: Check out source
@@ -156,7 +156,7 @@ jobs:
 
   kernel-web:
     name: make for the kernel web targets and cargo test for the runtime web_read test
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 45
     steps:
       - name: Check out source
@@ -180,7 +180,7 @@ jobs:
 
   agent-clients:
     name: cargo test, npm and pytest for the MCP, TypeScript and Python web clients
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 30
     steps:
       - name: Check out source

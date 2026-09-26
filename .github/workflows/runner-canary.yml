@@ -1,0 +1,40 @@
+name: Runner canary
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Print the runner identity
+        run: |
+          printf 'runner name: %s\n' "$RUNNER_NAME"
+          env | grep -E '^(RUNNER_|ImageOS=|ImageVersion=)' | sort
+      - name: Compile and run with clang and gcc, link with lld
+        run: |
+          set -eu
+          work=$(mktemp -d)
+          printf 'int main(void) { return 0; }\n' > "$work/canary.c"
+          clang --version
+          clang -o "$work/canary-clang" "$work/canary.c"
+          "$work/canary-clang"
+          gcc --version
+          gcc -o "$work/canary-gcc" "$work/canary.c"
+          "$work/canary-gcc"
+          ld.lld --version
+          clang -fuse-ld=lld -o "$work/canary-lld" "$work/canary.c"
+          "$work/canary-lld"
+          rm -rf "$work"
+      - name: Print the Rust toolchain versions
+        run: |
+          cargo --version
+          rustup --version

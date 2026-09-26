@@ -133,7 +133,11 @@ reqs = ["2.1","2.2","2.3","2.4","2.5"]
 
 [task.1.3]
 title = "Route every Linux job through the CI_LINUX_RUNNER expression with an auditable policy check and a canary"
-status = "pending"
+status = "implemented"
+implemented_revision = "8de2efcb4aa7045675499f2d62b73e6f8c9fec8f"
+implemented_command = "timeout 10m sh -c 'actionlint -no-color -shellcheck= -pyflakes= && sh tools/ci/runner-routing-check.sh'"
+implemented_exit_code = 1
+implemented_log_path = ".logs/verify.log"
 wave = 1
 requires = []
 do_1 = "Write tools/ci/runner-routing-check.sh with the exclusion list [decision] scope defines, written as workflow file, job name and reason class one per line, built by reading every workflow: jobs with container or services keys, docker/* actions, the docker command, ECR, ko, cosign or provenance steps, CodeQL, Scorecard, macOS, Windows, matrix-chosen runners, the layerx-testnet label, and the publish-* and release-pipeline jobs of platform.yml; the script loads each workflow with python3 and yaml and fails naming file and job for a routed job with a fixed runner, an excluded job whose runs-on differs from the original recorded beside it, or an expression that differs from the required form."
