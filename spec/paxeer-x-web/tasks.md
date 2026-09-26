@@ -288,6 +288,12 @@
     - Cover the new variants in the tests of both crates: from_u16 and back for 10 and 11, an unknown number still refused, and a preparation snapshot carrying eleven modules accepted while one carrying twelve is refused; never relax, ignore, skip or delete a test.
     - Run the verify_cmd once; at the passing revision record tasks 2.33, 2.32 and 2.16 done with the same evidence and close observations 2.16.1, 2.32.1 and 2.33.1 naming it.
     - _Requirements: 9.1_
+  - [ ] 2.35 Qualify the program events relay: anchor addresses in the boundary and local clusters, an events test target and the gateway's published method list
+    - Observation 2.28.1: the daemon and platform/hosted/node/bootstrap.sh accept only the layerxAnchor precompile address for the settlement contract and the checkpoint registry, while finality_environment in platform/hosted/core/tests/boundary.rs and the local qualification's node environment in platform/hosted/gateway/tests/local/funding.rs still name placeholder addresses, so every real-cluster test stops at bootstrap finality authority -3; name the anchor address for both in those two harnesses and nowhere else, keeping the daemon's rule and every placeholder that has nothing to do with these two variables, and record the other harnesses that still name placeholders (platform/hosted/agent-boundary, platform/hosted/registry and platform/hosted/authority real-node tests and platform/hosted/tests/beta-cluster.sh) as one observation without fixing them.
+    - Make --test events selectable: declare an events target in platform/hosted/gateway/tests/local/Cargo.toml if events.rs can stand on its own with the support modules it needs, or, if the shared support makes that unreasonable, keep it a module of lifecycle and change this task's verify_cmd to select --test lifecycle events:: before the run, recording the selector actually run in the evidence; either way the test local_gateway_program_events_read_the_web_request runs against a real node and core.
+    - Add lx_getProgramEvents to the published list in schema_lists_every_public_method in platform/hosted/gateway/src/rpc.rs so the schema test passes with the method task 2.28 listed, and build the web-reader wasm with the Makefile target that produces programs/sdk/rust/examples/web-reader/target/wasm32-unknown-unknown/release/layerx_reference_web_reader.wasm before the run.
+    - Run the verify_cmd once; at the passing revision record task 2.28 done with the same evidence and close observations 2.21.2 and 2.28.1 naming it.
+    - _Requirements: 11.2_
 
 ## Wave 3 - One Run, Recorded
 
@@ -305,7 +311,7 @@
 {
   "waves": [
     { "id": 1,  "tasks": ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "1.10", "1.11", "1.12", "1.13", "1.14", "1.15", "1.16", "1.17", "1.18"] },
-    { "id": 2,  "tasks": ["2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7", "2.8", "2.9", "2.10", "2.11", "2.12", "2.13", "2.14", "2.15", "2.16", "2.17", "2.18", "2.19", "2.20", "2.21", "2.22", "2.23", "2.24", "2.25", "2.26", "2.27", "2.28", "2.29", "2.30", "2.31", "2.32", "2.33", "2.34"] },
+    { "id": 2,  "tasks": ["2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7", "2.8", "2.9", "2.10", "2.11", "2.12", "2.13", "2.14", "2.15", "2.16", "2.17", "2.18", "2.19", "2.20", "2.21", "2.22", "2.23", "2.24", "2.25", "2.26", "2.27", "2.28", "2.29", "2.30", "2.31", "2.32", "2.33", "2.34", "2.35"] },
     { "id": 3,  "tasks": ["3.1"] }
   ]
 }
