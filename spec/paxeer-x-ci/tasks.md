@@ -4,7 +4,7 @@
 
 ## Tasks
 
-  - [ ] 1.1 Build the ephemeral runner image and its entrypoint with a self-check
+  - [x] 1.1 Build the ephemeral runner image and its entrypoint with a self-check
     - Write tools/flyci/runner/Dockerfile from ubuntu:24.04 pinned by digest: install the package set [design.runner] names plus whatever else the routed workflows invoke directly (derive it by reading every workflow that the routing task will route, which is every Linux job outside the [decision] scope exclusions), create the user runner with passwordless sudo, install the latest actions/runner release pinned by version with its published sha256 verified, run its installdependencies script, install rustup for runner with stable and wasm32-unknown-unknown, create /opt/hostedtoolcache owned by runner and export RUNNER_TOOL_CACHE, and set entrypoint.sh as the entrypoint.
     - Write tools/flyci/runner/entrypoint.sh as POSIX shell that passes shellcheck: as root it refuses to start without RUNNER_JITCONFIG, drops to runner, runs run.sh --jitconfig with the value, watches the runner's own output for the line that marks a job starting and kills the runner when that line has not appeared within RUNNER_IDLE_TIMEOUT seconds (default 900), and exits with the runner's exit code when the job ends; with --selfcheck it prints the runner version, asserts each promised tool on the runner user's PATH and the passwordless sudo, and exits non-zero on the first missing one.
     - Write tools/flyci/runner/fly.toml declaring the app paxeer-ci-runners in region iad with no services and no processes, and a comment-free build section that names the Dockerfile.

@@ -1,0 +1,5 @@
+app = "paxeer-ci-runners"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"

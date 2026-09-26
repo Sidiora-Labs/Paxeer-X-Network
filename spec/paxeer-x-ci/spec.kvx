@@ -104,7 +104,11 @@ ac_2 = "THE canary SHALL be dispatched and read back through the API with a runn
 
 [task.1.1]
 title = "Build the ephemeral runner image and its entrypoint with a self-check"
-status = "pending"
+status = "done"
+revision = "8de2efcb4aa7045675499f2d62b73e6f8c9fec8f"
+command = "timeout 25m sh -c 'shellcheck tools/flyci/runner/entrypoint.sh && docker build -t paxeer-ci-runner:verify tools/flyci/runner && docker run --rm paxeer-ci-runner:verify --selfcheck && if docker run --rm paxeer-ci-runner:verify; then exit 1; fi'"
+exit_code = 0
+log_path = ".logs/verify.log"
 wave = 1
 requires = []
 do_1 = "Write tools/flyci/runner/Dockerfile from ubuntu:24.04 pinned by digest: install the package set [design.runner] names plus whatever else the routed workflows invoke directly (derive it by reading every workflow that the routing task will route, which is every Linux job outside the [decision] scope exclusions), create the user runner with passwordless sudo, install the latest actions/runner release pinned by version with its published sha256 verified, run its installdependencies script, install rustup for runner with stable and wasm32-unknown-unknown, create /opt/hostedtoolcache owned by runner and export RUNNER_TOOL_CACHE, and set entrypoint.sh as the entrypoint."
