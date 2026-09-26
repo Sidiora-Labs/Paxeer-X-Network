@@ -1160,7 +1160,11 @@ reqs = ["9.1"]
 
 [task.2.33]
 title = "Find why the finalized receipt read is unavailable after finality registration and qualify the agent workspace tests"
-status = "pending"
+status = "implemented"
+implemented_revision = "5de5e55f60ab4f7185993ded1277aab5825756f0"
+implemented_command = "timeout 45m sh -c 'make agent-test'"
+implemented_exit_code = 2
+implemented_log_path = ".logs/verify.log"
 wave = 2
 requires = ["2.32"]
 do_1 = "Diagnose observation 2.32.1: with the harness's contracts served at the anchor address, the daemon registers batch 1's finality, but the route's read of the finalized receipt in agent/crates/layerx-agentd/tests/native_reads_daemon.rs returns NativeReadError::Unavailable; surface the underlying error the route folds into Unavailable in agent/crates/layerx-agentd/src/read/native.rs (its reconnect or preparation_state path) in the test's panic message or a log the harness keeps, then fix the cause where it lives - in the route, in the harness's sequence of registrations and waits, or in the daemon's answer - keeping every daemon refusal and every assertion exactly as strong."

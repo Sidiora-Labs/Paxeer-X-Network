@@ -468,3 +468,11 @@ symbol = "real_daemon_availability_refusals"
 observed = "With the harness's bond and registry served at the anchor address, bootstrap, the anvil registration and the daemon's finality registration of batch 1 now succeed, but make agent-test still exits 2 (.logs/verify.log) because the finalized-stage receipt read at native_reads_daemon.rs:137 returns NativeReadError::Unavailable from the route's reconnect or preparation_state, a native read path the settlement address does not reach."
 assumption = "The owner of the native read route or the daemon's preparation state finds why the receipt read is unavailable after finality registration, after which the verify_cmd reruns unchanged; nothing is relaxed."
 severity = "blocker"
+
+[observation.2.33.1]
+task = "2.33"
+file = "agent/crates/layerx-types/src/payload.rs"
+symbol = "ModuleId::from_u16"
+observed = "make agent-test exits 2 (.logs/verify.log): the route now reports the finalized receipt read as Preparation(MalformedResponse); the daemon's preparation snapshot truthfully lists nine active modules including spot (module 10, enabled by bootstrap by default), which ModuleId::from_u16 and MAX_MODULES = 9 in agent/crates/layerx-client/src/lni/preparation.rs refuse, and neither file is in this task's touches."
+assumption = "The owner of layerx-types and layerx-client teaches ModuleId the spot and web modules and raises the preparation module bound to the kernel's reserved count, after which the verify_cmd reruns unchanged; nothing is relaxed."
+severity = "blocker"

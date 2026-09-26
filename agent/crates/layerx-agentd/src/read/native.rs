@@ -35,6 +35,8 @@ pub enum NativeReadError {
     ResultTooLarge,
     Unavailable,
     Verification,
+    Connection(layerx_client::client::ConnectionError),
+    Preparation(layerx_client::lni::preparation::PreparationStateError),
     AccountEvidence(layerx_client::read::ReadError),
     HistoryEvidence(layerx_client::read::ReadError),
 }
@@ -154,7 +156,7 @@ impl NativeReadRoute {
             .map_err(|_| NativeReadError::Unavailable)?;
         self.client
             .reconnect()
-            .map_err(|_| NativeReadError::Unavailable)?;
+            .map_err(NativeReadError::Connection)?;
         self.refresh_history()?;
         Ok(self
             .sequencer_history
@@ -182,7 +184,7 @@ impl NativeReadRoute {
             let correlation = self.next_id()?;
             self.client
                 .reconnect()
-                .map_err(|_| NativeReadError::Unavailable)?;
+                .map_err(NativeReadError::Connection)?;
             let remaining = self.remaining()?;
             self.client
                 .advance_sequencer_history_with_finality(
@@ -267,18 +269,18 @@ impl NativeReadRoute {
             .map_err(|_| NativeReadError::Unavailable)?;
         self.client
             .reconnect()
-            .map_err(|_| NativeReadError::Unavailable)?;
+            .map_err(NativeReadError::Connection)?;
         self.refresh_history()?;
         if self.sequencer_history.is_some() {
             self.client
                 .reconnect()
-                .map_err(|_| NativeReadError::Unavailable)?;
+                .map_err(NativeReadError::Connection)?;
         }
         let correlation = self.next_id()?;
         let registry = self
             .client
             .preparation_state(&self.actor, correlation)
-            .map_err(|_| NativeReadError::Unavailable)?
+            .map_err(NativeReadError::Preparation)?
             .module_registry;
         let value = match kind {
             "receipt" => self.proof(digest(selector)?, true, &registry)?,

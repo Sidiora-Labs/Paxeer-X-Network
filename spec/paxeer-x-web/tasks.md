@@ -279,7 +279,7 @@
     - Keep the layerx-agentd native daemon tests reading the harness's ready file as they do, adjusting only what the address change requires inside agent/crates/layerx-agentd; never relax, ignore, skip or delete a test.
     - Run the verify_cmd once; at the passing revision record task 2.16 done with the same evidence and close observation 2.16.1 naming it.
     - _Requirements: 9.1_
-  - [ ] 2.33 Find why the finalized receipt read is unavailable after finality registration and qualify the agent workspace tests
+  - [ ] 2.33 Find why the finalized receipt read is unavailable after finality registration and qualify the agent workspace tests — **Implemented - qualification pending**
     - Diagnose observation 2.32.1: with the harness's contracts served at the anchor address, the daemon registers batch 1's finality, but the route's read of the finalized receipt in agent/crates/layerx-agentd/tests/native_reads_daemon.rs returns NativeReadError::Unavailable; surface the underlying error the route folds into Unavailable in agent/crates/layerx-agentd/src/read/native.rs (its reconnect or preparation_state path) in the test's panic message or a log the harness keeps, then fix the cause where it lives - in the route, in the harness's sequence of registrations and waits, or in the daemon's answer - keeping every daemon refusal and every assertion exactly as strong.
     - Run the verify_cmd once; at the passing revision record tasks 2.32 and 2.16 done with the same evidence and close observations 2.16.1 and 2.32.1 naming it.
     - _Requirements: 9.1_
