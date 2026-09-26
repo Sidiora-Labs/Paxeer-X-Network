@@ -122,7 +122,7 @@ reqs = ["1.1","1.2","1.3","1.4"]
 
 [task.1.2]
 title = "Write the controller that turns queued jobs into single-use Fly Machines"
-status = "pending"
+status = "done"
 wave = 1
 requires = []
 do_1 = "Write package main under tools/flyci/controller with the standard library only: config.go reads GITHUB_REPOSITORY, GITHUB_TOKEN, FLY_API_TOKEN, FLY_RUNNER_APP (default paxeer-ci-runners), RUNNER_IMAGE, RUNNER_LABELS (default fly-linux), FLY_REGION (default iad), MACHINE_CPU_KIND (default performance), MACHINE_CPUS (default 4), MACHINE_MEMORY_MB (default 16384), MAX_MACHINES (default 24), POLL_INTERVAL (default 20s), RUNNER_IDLE_TIMEOUT (default 900), ORPHAN_TTL (default 3h), GITHUB_API_URL and FLY_API_URL (their public defaults) and refuses to start with a named error for each missing required value."
@@ -130,10 +130,14 @@ do_2 = "Write github.go with a client that lists queued and in-progress workflow
 do_3 = "Write fly.go with a client for the Machines API that lists the runner app's machines, creates a machine from the configured image with env RUNNER_JITCONFIG and RUNNER_IDLE_TIMEOUT, guest cpu_kind, cpus and memory_mb, region, auto_destroy true, restart policy no and metadata keys flyci_job_id and flyci_run_id, and destroys a machine by id with force."
 do_4 = "Write reconcile.go with the selection and reconciliation [design.controller] describes: select queued jobs whose labels are all in the accepted set, skip jobs with a live machine in metadata, respect the ceiling, mint then create per job, log and continue on any failure; destroy machines whose job is complete for over five minutes, older than ORPHAN_TTL, or stopped; never touch a machine without flyci_job_id. main.go wires config, the two clients, a ticker at POLL_INTERVAL, structured log lines and a clean stop on SIGTERM."
 do_5 = "Write the tests [req.2] ac_5 lists as Go tests in the same package driving the real clients and reconciler against net/http/httptest servers serving the documented response shapes, and write tools/flyci/controller/Dockerfile (a multi-stage build on the repository's Go version producing a static binary in a minimal runtime image, both stages pinned by digest) and tools/flyci/controller/fly.toml for the app paxeer-ci-controller in region iad with one shared-cpu-1x 512 MB machine, no services, and the process running the binary."
-verify_cmd = "timeout 20m sh -c 'gofmt -l tools/flyci/controller | tee /dev/stderr | test ! -s /dev/stdin && go vet ./tools/flyci/controller/... && go test -count=1 ./tools/flyci/controller/...'"
+verify_cmd = "timeout 20m sh -c 'test -z \"$(gofmt -l tools/flyci/controller)\" && go vet ./tools/flyci/controller/... && go test -count=1 ./tools/flyci/controller/...'"
 symbols = ["loadConfig","githubClient","flyClient","reconcile","selectJobs"]
 touches = ["tools/flyci/controller/main.go","tools/flyci/controller/config.go","tools/flyci/controller/github.go","tools/flyci/controller/fly.go","tools/flyci/controller/reconcile.go","tools/flyci/controller/config_test.go","tools/flyci/controller/github_test.go","tools/flyci/controller/fly_test.go","tools/flyci/controller/reconcile_test.go","tools/flyci/controller/Dockerfile","tools/flyci/controller/fly.toml"]
 reqs = ["2.1","2.2","2.3","2.4","2.5"]
+revision = "8de2efcb4aa7045675499f2d62b73e6f8c9fec8f"
+command = "timeout 20m sh -c 'test -z \"$(gofmt -l tools/flyci/controller)\" && go vet ./tools/flyci/controller/... && go test -count=1 ./tools/flyci/controller/...'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.1.3]
 title = "Route every Linux job through the CI_LINUX_RUNNER expression with an auditable policy check and a canary"
