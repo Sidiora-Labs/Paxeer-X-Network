@@ -1,4 +1,5 @@
 use std::env;
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -144,6 +145,108 @@ fn guest_abi_maximum(source: &str) -> Result<u16, String> {
     Ok(maximum)
 }
 
+struct ProgramsActivityTable {
+    module: u16,
+    types: Vec<(String, u16)>,
+    deploy: u16,
+    upgrade: u16,
+    call: u16,
+    call_operation: u8,
+}
+
+fn programs_activity_ordinal(table: &[(String, u16)], name: &str) -> Result<u16, String> {
+    table
+        .iter()
+        .find(|(declared, _)| declared == name)
+        .map(|(_, ordinal)| *ordinal)
+        .ok_or_else(|| format!("no {name} enumerator is declared"))
+}
+
+fn programs_activity_table(source: &str) -> Result<ProgramsActivityTable, String> {
+    let mut module = 0u16;
+    let mut types: Vec<(String, u16)> = Vec::new();
+    for raw in source.lines() {
+        let line = raw.trim();
+        let Some(rest) = line.strip_prefix("LX_PROGRAMS_") else {
+            continue;
+        };
+        let Some((suffix, value)) = rest.split_once(" = ") else {
+            continue;
+        };
+        let Some(digits) = value.trim_end_matches(',').trim().strip_prefix("0x") else {
+            continue;
+        };
+        let value = u32::from_str_radix(digits, 16)
+            .map_err(|error| format!("invalid activity type number in {line}: {error}"))?;
+        let declared_module = u16::try_from(value >> 16)
+            .map_err(|error| format!("activity type {line} names no module: {error}"))?;
+        let ordinal = u16::try_from(value & 0xffff)
+            .map_err(|error| format!("activity type {line} names no ordinal: {error}"))?;
+        if declared_module == 0 || ordinal == 0 {
+            return Err(format!(
+                "activity type {line} declares a zero module or a zero ordinal"
+            ));
+        }
+        if module == 0 {
+            module = declared_module;
+        } else if module != declared_module {
+            return Err(format!(
+                "activity type {line} declares module {declared_module} while the table declares {module}"
+            ));
+        }
+        if types.iter().any(|(_, declared)| *declared == ordinal) {
+            return Err(format!("activity type {line} repeats ordinal {ordinal}"));
+        }
+        types.push((format!("LX_PROGRAMS_{suffix}"), ordinal));
+    }
+    if types.is_empty() {
+        return Err("no LX_PROGRAMS_* activity type enumerator is declared".to_owned());
+    }
+    let deploy = programs_activity_ordinal(&types, "LX_PROGRAMS_DEPLOY")?;
+    let upgrade = programs_activity_ordinal(&types, "LX_PROGRAMS_UPGRADE")?;
+    let call = programs_activity_ordinal(&types, "LX_PROGRAMS_CALL")?;
+    let call_operation = u8::try_from(call).map_err(|error| {
+        format!("LX_PROGRAMS_CALL ordinal {call} does not fit the receipt operation tag: {error}")
+    })?;
+    Ok(ProgramsActivityTable {
+        module,
+        types,
+        deploy,
+        upgrade,
+        call,
+        call_operation,
+    })
+}
+
+fn programs_activity_body(table: &ProgramsActivityTable) -> String {
+    let mut entries = String::new();
+    for (name, ordinal) in &table.types {
+        writeln!(entries, "    (\"{name}\", {ordinal}),")
+            .unwrap_or_else(|error| panic!("failed to format the activity table: {error}"));
+    }
+    let count = table.types.len();
+    let module = table.module;
+    let deploy = table.deploy;
+    let upgrade = table.upgrade;
+    let call = table.call;
+    let call_operation = table.call_operation;
+    format!(
+        "// Generated from include/layerx/programs.h by build.rs. Do not edit.\n\n\
+/// The protocol module every Programs activity type of the kernel header carries.\n\
+pub const MODULE_ID: u16 = {module};\n\n\
+/// Every Programs activity type the kernel header allocates, in header order.\n\
+pub const ORDINALS: [(&str, u16); {count}] = [\n{entries}];\n\n\
+/// The ordinal the kernel header allocates to `LX_PROGRAMS_DEPLOY`.\n\
+pub const DEPLOY_ORDINAL: u16 = {deploy};\n\n\
+/// The ordinal the kernel header allocates to `LX_PROGRAMS_UPGRADE`.\n\
+pub const UPGRADE_ORDINAL: u16 = {upgrade};\n\n\
+/// The ordinal the kernel header allocates to `LX_PROGRAMS_CALL`.\n\
+pub const CALL_ORDINAL: u16 = {call};\n\n\
+/// The one-byte ledger operation tag the kernel binds into a call receipt.\n\
+pub const CALL_OPERATION: u8 = {call_operation};\n"
+    )
+}
+
 fn parity(header: &[Code], mirror: &[Code]) -> Result<(), String> {
     for (index, expected) in header.iter().enumerate() {
         match mirror.get(index) {
@@ -190,16 +293,22 @@ fn main() {
     });
     let programs = crate_dir.join("../../../include/layerx/programs.h");
     println!("cargo:rerun-if-changed={}", programs.display());
-    let maximum = guest_abi_maximum(&read_file(&programs))
+    let programs_header = read_file(&programs);
+    let maximum = guest_abi_maximum(&programs_header)
         .unwrap_or_else(|error| panic!("invalid {}: {error}", programs.display()));
-    let generated =
-        PathBuf::from(env::var_os("OUT_DIR").unwrap_or_else(|| panic!("OUT_DIR is unavailable")))
-            .join("guest_abi.rs");
+    let out_dir =
+        PathBuf::from(env::var_os("OUT_DIR").unwrap_or_else(|| panic!("OUT_DIR is unavailable")));
+    let generated = out_dir.join("guest_abi.rs");
     let body = format!(
         "// Generated from include/layerx/programs.h by build.rs. Do not edit.\n\n\
 /// The highest guest ABI version the kernel's Programs module admits.\n\
 pub const MAX_VERSION: u16 = {maximum};\n"
     );
     fs::write(&generated, body)
+        .unwrap_or_else(|error| panic!("failed to write {}: {error}", generated.display()));
+    let activity = programs_activity_table(&programs_header)
+        .unwrap_or_else(|error| panic!("invalid {}: {error}", programs.display()));
+    let generated = out_dir.join("programs_activity.rs");
+    fs::write(&generated, programs_activity_body(&activity))
         .unwrap_or_else(|error| panic!("failed to write {}: {error}", generated.display()));
 }

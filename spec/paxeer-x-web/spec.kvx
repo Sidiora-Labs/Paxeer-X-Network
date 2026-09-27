@@ -1327,7 +1327,11 @@ reqs = ["9.1","11.2"]
 
 [task.2.42]
 title = "Align the local gateway's program receipt expectation with the operation the kernel binds"
-status = "pending"
+status = "implemented"
+implemented_revision = "681fa8f24758e0239fdf8b2fcca2484f9ccb0e19"
+implemented_command = "timeout 30m sh -c 'export LAYERX_TEST_SOCAT_BIN=$(command -v socat) LAYERX_TEST_WEB_READER_WASM=$PWD/programs/sdk/rust/examples/web-reader/target/wasm32-unknown-unknown/release/layerx_reference_web_reader.wasm; cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway schema_lists_every_public_method && cargo test --locked --manifest-path platform/hosted/gateway/tests/local/Cargo.toml --test lifecycle events::'"
+implemented_exit_code = 101
+implemented_log_path = ".logs/verify.log"
 wave = 2
 requires = ["2.40"]
 do_1 = "Observation 2.40.1: the local gateway qualification now deploys the reference web reader at guest ABI 4 and stops one step later in submit_program_activity of platform/hosted/gateway/tests/local/events.rs, which expects a Programs receipt to report the ordinal its route submitted, while the kernel binds a receipt operation for a call alone - include/layerx/programs.h allocates LX_PROGRAMS_DEPLOY, LX_PROGRAMS_UPGRADE and LX_PROGRAMS_CALL as module 9 ordinals 1, 2 and 3, receipt_bind_program_operation in src/protocol/lxp_kernel.c writes lxp_activity_type_ordinal(LX_PROGRAMS_CALL) into a state-commitment receipt for LX_PROGRAMS_CALL alone and leaves the tag at zero for every other Programs activity, lxp_programs_project_receipt_events in src/modules/programs/event.c and the fixture harness in tests/programs/test_call_activity.c read operation zero with no program outcome as the lifecycle receipt shape, verify_receipt in platform/hosted/core/src/program_lifecycle.rs refuses a lifecycle receipt whose operation is not zero and the deploy this run made answered 200 through it, and platform/hosted/agent-boundary/tests/real_node/lifecycle.rs already asserts operation zero for a deploy and an upgrade and three for a call; every kernel rule stays exactly as it is, the native-program-deploy-v3 conformance fixture is right because it declares the activity module 9 and ordinal 1 and no receipt operation, and the stale expectation in the one test is the side corrected."

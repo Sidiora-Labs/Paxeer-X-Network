@@ -440,6 +440,7 @@ fn submit_program_activity(
     payload: &[u8],
     fee_limit: u128,
 ) -> serde_json::Value {
+    use layerx_types::programs_activity;
     let sequence = account_sequence(&cluster.lni_socket, &cluster.treasury_did);
     let signed = signed_program_activity_with_fee(
         &cluster.treasury_seed,
@@ -485,8 +486,11 @@ fn submit_program_activity(
     let protocol = receipt.protocol().required("program receipt protocol");
     assert_eq!(protocol.result_code(), 0, "{path}: {result}");
     assert_eq!(
-        (protocol.module_id(), u16::from(protocol.operation())),
-        (9, ordinal),
+        (protocol.module_id(), protocol.operation()),
+        (
+            programs_activity::MODULE_ID,
+            programs_activity::receipt_operation(ordinal)
+        ),
         "{path}: {result}"
     );
     result
@@ -494,6 +498,7 @@ fn submit_program_activity(
 
 fn deploy_web_reader(cluster: &Cluster, boundary: &Boundary) -> [u8; 32] {
     use layerx_types::program_lifecycle::{NativeProgramDeploy, ProgramUpgradePolicy};
+    use layerx_types::programs_activity::DEPLOY_ORDINAL;
     let wasm =
         fs::read(std::env::var_os("LAYERX_TEST_WEB_READER_WASM").required("built web-reader WASM"))
             .required("web-reader WASM bytes");
@@ -516,7 +521,7 @@ fn deploy_web_reader(cluster: &Cluster, boundary: &Boundary) -> [u8; 32] {
     submit_program_activity(
         cluster,
         boundary,
-        1,
+        DEPLOY_ORDINAL,
         "/v1/programs/deploy",
         &must(deploy.encode(), "web-reader deploy"),
         PROGRAM_FEE_LIMIT,
@@ -543,7 +548,7 @@ fn call_web_request(cluster: &Cluster, boundary: &Boundary, program_id: [u8; 32]
     submit_program_activity(
         cluster,
         boundary,
-        3,
+        layerx_types::programs_activity::CALL_ORDINAL,
         "/v1/programs/call",
         &must(call.encode(), "web request call"),
         PROGRAM_FEE_LIMIT,
