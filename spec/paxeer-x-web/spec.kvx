@@ -630,7 +630,7 @@ reqs = ["14.1","14.2","14.3"]
 title = "Dry-run the sidecar loop against anvil and local sidecars and record it"
 status = "pending"
 wave = 2
-requires = ["1.6","2.1","2.3","2.10","2.14","2.17","2.24","2.25","2.26","2.27","2.28","2.29","2.30","2.31","2.32","2.33","2.34","2.35","2.37","2.38"]
+requires = ["1.6","2.1","2.3","2.10","2.14","2.17","2.24","2.25","2.26","2.27","2.28","2.29","2.30","2.31","2.32","2.33","2.34","2.35","2.37","2.38","2.39"]
 do_1 = "Write interop/deploy/x-websearch/tests/dry-run-check.sh starting anvil, a real loopback web server serving committed pages and three x-websearch processes with run-local attestor keys and allow_loopback set, and deploying contracts/src/xweb/XWebConsumer.sol to anvil."
 do_2 = "Fetch the same page through the three sidecars, assert the digests are identical and the signatures are valid and ascending over the origin-1 preimage, assert the submitter's fulfil calldata decodes against precompiles/xweb/abi.json, and deliver the consumer's callback on anvil from the impersonated precompile address with the attested response and the bounded gas, asserting the consumer's stored result."
 do_3 = "Record the exchange as interop/deploy/x-websearch/tests/fixtures/dry-run.json, replayable without the nodes, carrying no key material, no endpoint but the loopback ones the run started and no date or hostname; stop with a message naming a missing tool rather than skipping a step."
@@ -769,7 +769,7 @@ reqs = ["4.1","4.2"]
 title = "Clear the pre-existing agent workspace clippy findings so agent-lint passes"
 status = "pending"
 wave = 2
-requires = ["1.18","2.9","2.16","2.38"]
+requires = ["1.18","2.9","2.16","2.38","2.39"]
 do_1 = "Run make agent-lint on this revision, and fix every clippy finding it reports in crates this feature did not write - starting with too_many_arguments in agent/crates/layerx-proof/src/program.rs verify_program_execution_receipt (observation 1.18.1) - by restructuring the code, never by an allow attribute, a lint-level change or a clippy configuration change, keeping every public signature the agent SDKs and services call unchanged unless a caller in the workspace is updated in the same task."
 do_2 = "Keep every test of each touched crate passing, and add or extend a test where a restructuring changes a function's shape."
 verify_cmd = "timeout 45m sh -c 'make agent-lint && make agent-test'"
@@ -1266,6 +1266,20 @@ verify_cmd = "timeout 45m sh -c 'make agent-test'"
 symbols = ["build_finality","vector_signatures","check_checkpoint_bytes"]
 touches = ["tests/storage/lxp_test_finality_evidence.c","tests/vectors/finality_evidence_v1.vec"]
 tests = ["tests/storage/lxp_test_finality_evidence.c","agent/crates/layerx-client/tests/finality_evidence.rs"]
+reqs = ["9.1"]
+
+[task.2.39]
+title = "Give every agent test harness under the agent-test recipe its build output directory from one place"
+status = "pending"
+wave = 2
+requires = ["2.38"]
+do_1 = "Observation 2.38.1: tests/daemon/withdraw-custody.py reads os.environ['CARGO_TARGET_DIR'] unconditionally, while the Makefile's agent-test recipe never exports it and only agent/tools/run-real-node-tests.sh derives it, so the confined session fee harness raises KeyError before any daemon starts; derive that build output directory once in the Makefile with the derivation the script already uses, the inherited value first and the lane directory otherwise, export it from the agent-test and agent-test-sanitize targets and pass it to the native prerequisites recipe, so every harness the recipe starts - the agent workspace tests, the daemon scripts they spawn and the prepared native prerequisites - reads one directory whether the gate is entered through make or through the script."
+do_2 = "Leave the strict read in tests/daemon/withdraw-custody.py exactly as written, with no os.environ.get, no default and no fallback, and take the second derivation out of agent/tools/run-real-node-tests.sh so the Makefile holds the only one: its test and sanitizers paths inherit the directory from the target they exec, and its prepare path requires it from its caller, failing closed and naming the variable rather than deriving a default of its own."
+do_3 = "Run the verify_cmd once; at the passing revision record tasks 2.38, 2.34, 2.33, 2.32 and 2.16 done with that revision, command, exit code and log path and close observations 2.38.1, 2.34.1, 2.33.1, 2.32.1 and 2.16.1 naming it, as task 2.38's do_3 requires; if it does not pass, leave those tasks as they are and record the exact failing step as one observation."
+verify_cmd = "timeout 45m sh -c 'make agent-test'"
+symbols = ["AGENT_TEST_TARGET_DIR","agent-test-native-prerequisites"]
+touches = ["Makefile","agent/tools/run-real-node-tests.sh"]
+tests = ["agent/crates/layerx-client/tests/session_fee_state_daemon.rs","tests/daemon/withdraw-custody.py"]
 reqs = ["9.1"]
 
 [task.3.1]

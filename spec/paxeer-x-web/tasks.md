@@ -311,6 +311,11 @@
     - Point that generator's guarantor paxeer_settlement_contract and its settlement registration evidence at lxp_paxeer_anchor_address, regenerate tests/vectors/finality_evidence_v1.vec through the generator's own finality evidence encode path so the committed checkpoint payload and finality proof are exactly the bytes it produces, and re-pin vector_signatures and vector_signature_v to the guarantor attestations signed over the anchor settlement domain so the generator reproduces the committed vector byte for byte; never relax, ignore, skip or delete a test, never special-case the verifier and never widen what it accepts.
     - Run the verify_cmd once; at the passing revision record tasks 2.34, 2.33, 2.32 and 2.16 done with that revision, command, exit code and log path and close observations 2.16.1, 2.32.1, 2.33.1 and 2.34.1 naming it, as task 2.34's do_3 requires; if it does not pass, leave those tasks as they are and record the exact failing step as one observation.
     - _Requirements: 9.1_
+  - [ ] 2.39 Give every agent test harness under the agent-test recipe its build output directory from one place
+    - Observation 2.38.1: tests/daemon/withdraw-custody.py reads os.environ['CARGO_TARGET_DIR'] unconditionally, while the Makefile's agent-test recipe never exports it and only agent/tools/run-real-node-tests.sh derives it, so the confined session fee harness raises KeyError before any daemon starts; derive that build output directory once in the Makefile with the derivation the script already uses, the inherited value first and the lane directory otherwise, export it from the agent-test and agent-test-sanitize targets and pass it to the native prerequisites recipe, so every harness the recipe starts - the agent workspace tests, the daemon scripts they spawn and the prepared native prerequisites - reads one directory whether the gate is entered through make or through the script.
+    - Leave the strict read in tests/daemon/withdraw-custody.py exactly as written, with no os.environ.get, no default and no fallback, and take the second derivation out of agent/tools/run-real-node-tests.sh so the Makefile holds the only one: its test and sanitizers paths inherit the directory from the target they exec, and its prepare path requires it from its caller, failing closed and naming the variable rather than deriving a default of its own.
+    - Run the verify_cmd once; at the passing revision record tasks 2.38, 2.34, 2.33, 2.32 and 2.16 done with that revision, command, exit code and log path and close observations 2.38.1, 2.34.1, 2.33.1, 2.32.1 and 2.16.1 naming it, as task 2.38's do_3 requires; if it does not pass, leave those tasks as they are and record the exact failing step as one observation.
+    - _Requirements: 9.1_
 
 ## Wave 3 - One Run, Recorded
 
@@ -328,7 +333,7 @@
 {
   "waves": [
     { "id": 1,  "tasks": ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "1.10", "1.11", "1.12", "1.13", "1.14", "1.15", "1.16", "1.17", "1.18"] },
-    { "id": 2,  "tasks": ["2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7", "2.8", "2.9", "2.10", "2.11", "2.12", "2.13", "2.14", "2.15", "2.16", "2.17", "2.18", "2.19", "2.20", "2.21", "2.22", "2.23", "2.24", "2.25", "2.26", "2.27", "2.28", "2.29", "2.30", "2.31", "2.32", "2.33", "2.34", "2.35", "2.36", "2.37", "2.38"] },
+    { "id": 2,  "tasks": ["2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7", "2.8", "2.9", "2.10", "2.11", "2.12", "2.13", "2.14", "2.15", "2.16", "2.17", "2.18", "2.19", "2.20", "2.21", "2.22", "2.23", "2.24", "2.25", "2.26", "2.27", "2.28", "2.29", "2.30", "2.31", "2.32", "2.33", "2.34", "2.35", "2.36", "2.37", "2.38", "2.39"] },
     { "id": 3,  "tasks": ["3.1"] }
   ]
 }
