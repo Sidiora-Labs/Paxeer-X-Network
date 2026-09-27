@@ -508,3 +508,20 @@ exit_code = 2
 log_path = ".logs/verify.log"
 observed = "With ModuleId carrying spot and web the preparation snapshot decodes and layerx-agentd --test native_reads_daemon passes, and with the availability genesis pin following the six configured genesis modules layerx-client --test availability_daemon passes, but make agent-test still exits 2 because layerx-client --test finality_evidence refuses the committed tests/vectors/finality_evidence_v1.vec with EvidenceError::Registration in accepts_the_exact_c_typed_cp1_cx1_fixture, a checkpoint identity path this task does not touch."
 assumption = "The owner of the finality evidence vector and layerx-client evidence.rs decides which side drifted from the unified checkpoint identity and corrects that side, after which the verify_cmd reruns unchanged and records tasks 2.34, 2.33, 2.32 and 2.16 done; nothing is relaxed."
+
+[observation.2.38.1]
+revision = "c27314941acb5500c93cfd04873e41e0ebca9fd9"
+command = "timeout 45m sh -c 'make agent-test'"
+exit_code = 2
+log_path = ".logs/verify.log"
+observed = "With the finality evidence vector regenerated against the anchor precompile settlement contract layerx-client --test finality_evidence passes both cases including accepts_the_exact_c_typed_cp1_cx1_fixture, and make agent-test now stops further on at layerx-client --test session_fee_state_daemon real_daemon_session_fee_state, where tests/daemon/withdraw-custody.py line 155 reads os.environ['CARGO_TARGET_DIR'] unconditionally while the agent-test recipe never exports it - only agent/tools/run-real-node-tests.sh does, inside the subshell that runs its prepare argument - so the harness raises KeyError before any daemon starts."
+assumption = "The owner of tests/daemon/withdraw-custody.py or of the agent-test recipe gives that harness the target directory it reads, after which the verify_cmd reruns unchanged and records tasks 2.38, 2.34, 2.33, 2.32 and 2.16 done; nothing is relaxed and neither the anchor rule nor the regenerated vector changes."
+severity = "blocker"
+
+[observation.2.38.2]
+task = "2.38"
+file = "agent/crates/layerx-agentd/tests/webhook.rs"
+symbol = "slow_endpoint_receives_byte_identical_retry_and_bound_event_evidence"
+observed = "An earlier run of the same verify_cmd at the same revision (.logs/verify-run1.log) failed instead in layerx-agentd --test webhook, where that test panics with outbound retry scheduled after Timeout because it gives a loopback retry a 300 ms budget after two 90 ms sleeps; it passed in the rerun on an otherwise idle machine, so the budget is decided by host load rather than by the delivery engine."
+assumption = "The owner of the outbound delivery tests decides whether that budget should be derived from the endpoint timeout instead of a fixed 300 ms; nothing here is relaxed and no assertion is touched."
+severity = "suspect"

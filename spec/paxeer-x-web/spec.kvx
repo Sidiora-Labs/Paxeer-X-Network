@@ -1248,7 +1248,11 @@ reqs = ["11.2"]
 
 [task.2.38]
 title = "Bring the finality evidence vector in line with the anchor precompile settlement contract"
-status = "pending"
+status = "implemented"
+implemented_revision = "c27314941acb5500c93cfd04873e41e0ebca9fd9"
+implemented_command = "timeout 45m sh -c 'make agent-test'"
+implemented_exit_code = 2
+implemented_log_path = ".logs/verify.log"
 wave = 2
 requires = ["2.34"]
 do_1 = "Observation 2.34.1: tests/vectors/finality_evidence_v1.vec is a golden fixture produced by build_finality of tests/storage/lxp_test_finality_evidence.c, whose guarantor contexts and settlement registration evidence still name a settlement contract of 0xc1 followed by nineteen zero bytes, while the client evidence verifier admits only the layerxAnchor precompile as the settlement contract of a registration, of a settlement reference and of a guarantor attestation, so check_checkpoint_bytes refuses the committed vector with EvidenceError::Registration; the anchor-only rule in agent/crates/layerx-client/src/evidence.rs and every assertion of agent/crates/layerx-client/tests/finality_evidence.rs stay exactly as written and the stale fixture is the side corrected."
