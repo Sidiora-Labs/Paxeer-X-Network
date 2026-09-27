@@ -630,7 +630,7 @@ reqs = ["14.1","14.2","14.3"]
 title = "Dry-run the sidecar loop against anvil and local sidecars and record it"
 status = "pending"
 wave = 2
-requires = ["1.6","2.1","2.3","2.10","2.14","2.17","2.24","2.25","2.26","2.27","2.28","2.29","2.30","2.31","2.32","2.33","2.34","2.35","2.37"]
+requires = ["1.6","2.1","2.3","2.10","2.14","2.17","2.24","2.25","2.26","2.27","2.28","2.29","2.30","2.31","2.32","2.33","2.34","2.35","2.37","2.38"]
 do_1 = "Write interop/deploy/x-websearch/tests/dry-run-check.sh starting anvil, a real loopback web server serving committed pages and three x-websearch processes with run-local attestor keys and allow_loopback set, and deploying contracts/src/xweb/XWebConsumer.sol to anvil."
 do_2 = "Fetch the same page through the three sidecars, assert the digests are identical and the signatures are valid and ascending over the origin-1 preimage, assert the submitter's fulfil calldata decodes against precompiles/xweb/abi.json, and deliver the consumer's callback on anvil from the impersonated precompile address with the attested response and the bounded gas, asserting the consumer's stored result."
 do_3 = "Record the exchange as interop/deploy/x-websearch/tests/fixtures/dry-run.json, replayable without the nodes, carrying no key material, no endpoint but the loopback ones the run started and no date or hostname; stop with a message naming a missing tool rather than skipping a step."
@@ -769,7 +769,7 @@ reqs = ["4.1","4.2"]
 title = "Clear the pre-existing agent workspace clippy findings so agent-lint passes"
 status = "pending"
 wave = 2
-requires = ["1.18","2.9","2.16"]
+requires = ["1.18","2.9","2.16","2.38"]
 do_1 = "Run make agent-lint on this revision, and fix every clippy finding it reports in crates this feature did not write - starting with too_many_arguments in agent/crates/layerx-proof/src/program.rs verify_program_execution_receipt (observation 1.18.1) - by restructuring the code, never by an allow attribute, a lint-level change or a clippy configuration change, keeping every public signature the agent SDKs and services call unchanged unless a caller in the workspace is updated in the same task."
 do_2 = "Keep every test of each touched crate passing, and add or extend a test where a restructuring changes a function's shape."
 verify_cmd = "timeout 45m sh -c 'make agent-lint && make agent-test'"
@@ -1245,6 +1245,20 @@ symbols = ["funding::start","custody_profile","attest_credit"]
 touches = ["platform/hosted/gateway/tests/local/custody_chain.py","platform/hosted/gateway/tests/local/funding.rs","platform/hosted/gateway/tests/local/deposit_recipient.py"]
 tests = ["platform/hosted/gateway/tests/local/funding.rs","platform/hosted/gateway/tests/local/events.rs"]
 reqs = ["11.2"]
+
+[task.2.38]
+title = "Bring the finality evidence vector in line with the anchor precompile settlement contract"
+status = "pending"
+wave = 2
+requires = ["2.34"]
+do_1 = "Observation 2.34.1: tests/vectors/finality_evidence_v1.vec is a golden fixture produced by build_finality of tests/storage/lxp_test_finality_evidence.c, whose guarantor contexts and settlement registration evidence still name a settlement contract of 0xc1 followed by nineteen zero bytes, while the client evidence verifier admits only the layerxAnchor precompile as the settlement contract of a registration, of a settlement reference and of a guarantor attestation, so check_checkpoint_bytes refuses the committed vector with EvidenceError::Registration; the anchor-only rule in agent/crates/layerx-client/src/evidence.rs and every assertion of agent/crates/layerx-client/tests/finality_evidence.rs stay exactly as written and the stale fixture is the side corrected."
+do_2 = "Point that generator's guarantor paxeer_settlement_contract and its settlement registration evidence at lxp_paxeer_anchor_address, regenerate tests/vectors/finality_evidence_v1.vec through the generator's own finality evidence encode path so the committed checkpoint payload and finality proof are exactly the bytes it produces, and re-pin vector_signatures and vector_signature_v to the guarantor attestations signed over the anchor settlement domain so the generator reproduces the committed vector byte for byte; never relax, ignore, skip or delete a test, never special-case the verifier and never widen what it accepts."
+do_3 = "Run the verify_cmd once; at the passing revision record tasks 2.34, 2.33, 2.32 and 2.16 done with that revision, command, exit code and log path and close observations 2.16.1, 2.32.1, 2.33.1 and 2.34.1 naming it, as task 2.34's do_3 requires; if it does not pass, leave those tasks as they are and record the exact failing step as one observation."
+verify_cmd = "timeout 45m sh -c 'make agent-test'"
+symbols = ["build_finality","vector_signatures","check_checkpoint_bytes"]
+touches = ["tests/storage/lxp_test_finality_evidence.c","tests/vectors/finality_evidence_v1.vec"]
+tests = ["tests/storage/lxp_test_finality_evidence.c","agent/crates/layerx-client/tests/finality_evidence.rs"]
+reqs = ["9.1"]
 
 [task.3.1]
 title = "Run the xweb workflow's legs once on the merged revision and record the evidence"
