@@ -1133,7 +1133,7 @@ done_log = ".logs/verify-6.10.log"
 
 [task.6.11]
 title = "Carry the list pages' pagination in the table card only and put the direction badge on the counterparty column"
-status = "in_progress"
+status = "done"
 wave = 6
 requires = ["6.2","6.5"]
 do_1 = "Leave the transactions and the blocks list one pagination by taking it out of the tab strips - explorer/frontend/ui/txs/TxsTabs.tsx keeps only the advanced-filter entry in its right slot and explorer/frontend/ui/blocks/BlocksTabSlot.tsx keeps only the network utilisation and the block countdown, dropping the pagination explorer/frontend/ui/pages/Blocks.tsx hands it - so the shared scan table card header and footer carry it alone while the mobile action bars of TxsContent and BlocksContent keep theirs."
@@ -1146,14 +1146,14 @@ symbols = ["TxsTabs","BlocksTabSlot","Blocks","AddressFromTo","AddressTxs","Addr
 touches = ["explorer/frontend/ui/txs/TxsTabs.tsx","explorer/frontend/ui/txs/TxsTabs.spec.tsx","explorer/frontend/ui/txs/TxsTableItem.spec.tsx","explorer/frontend/ui/txs/TxsListItem.spec.tsx","explorer/frontend/ui/blocks/BlocksTabSlot.tsx","explorer/frontend/ui/blocks/BlocksTabSlot.spec.tsx","explorer/frontend/ui/pages/Blocks.tsx","explorer/frontend/ui/pages/Blocks.spec.tsx","explorer/frontend/ui/shared/address/AddressFromTo.tsx","explorer/frontend/ui/shared/address/AddressFromTo.spec.tsx","explorer/frontend/ui/address/AddressTxs.tsx","explorer/frontend/ui/address/AddressTxs.spec.tsx","explorer/frontend/ui/address/AddressInternalTxs.tsx","explorer/frontend/ui/address/AddressInternalTxs.spec.tsx","explorer/frontend/ui/address/AddressTokenTransfers.tsx","explorer/frontend/ui/address/AddressTokenTransfers.spec.tsx"]
 tests = ["explorer/frontend/ui/txs/TxsTabs.spec.tsx","explorer/frontend/ui/txs/TxsTableItem.spec.tsx","explorer/frontend/ui/txs/TxsListItem.spec.tsx","explorer/frontend/ui/blocks/BlocksTabSlot.spec.tsx","explorer/frontend/ui/pages/Blocks.spec.tsx","explorer/frontend/ui/shared/address/AddressFromTo.spec.tsx","explorer/frontend/ui/address/AddressTxs.spec.tsx","explorer/frontend/ui/address/AddressInternalTxs.spec.tsx","explorer/frontend/ui/address/AddressTokenTransfers.spec.tsx"]
 reqs = ["19.2","19.3","19.6","19.7","19.8","19.9","21.3","21.6","21.7","21.8","21.9"]
-revision = "0c61642f6955c53cf68c963c5361583dc40502ab"
-command = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/txs ui/blocks ui/shared/address ui/address'"
-exit_code = 1
-log = ".logs/verify-6.11-run3.log"
+done_revision = "89bf4db6d8292d00b26287d20cc743e7fdccd428"
+done_command = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/txs ui/blocks ui/shared/address ui/address'"
+done_exit_code = 0
+done_log = ".logs/verify-6.12.log"
 
 [task.6.12]
 title = "Let the embedded list content render inside the page's table card instead of opening a second one"
-status = "pending"
+status = "done"
 wave = 6
 requires = ["6.2","6.5","6.11"]
 do_1 = "Give explorer/frontend/ui/txs/TxsContent.tsx an explicit isInsideTableCard property that tells it the caller already opens the shared scan table card, and when it is set render only the list and the table rows, handing the count line, the download action and the desktop pagination back to the caller, while the mobile action bar keeps the sorting, the filter, the download and the pagination it already carries."
@@ -1169,6 +1169,10 @@ symbols = ["TxsContent","TxsWithAPISorting","BlocksContent","AddressTxs"]
 touches = ["explorer/frontend/ui/txs/TxsContent.tsx","explorer/frontend/ui/txs/TxsContent.spec.tsx","explorer/frontend/ui/txs/TxsWithAPISorting.tsx","explorer/frontend/ui/txs/TxsWithAPISorting.spec.tsx","explorer/frontend/ui/blocks/BlocksContent.tsx","explorer/frontend/ui/blocks/BlocksContent.spec.tsx","explorer/frontend/ui/address/AddressTxs.tsx","explorer/frontend/ui/address/AddressTxs.spec.tsx"]
 tests = ["explorer/frontend/ui/txs/TxsContent.spec.tsx","explorer/frontend/ui/txs/TxsWithAPISorting.spec.tsx","explorer/frontend/ui/blocks/BlocksContent.spec.tsx","explorer/frontend/ui/address/AddressTxs.spec.tsx"]
 reqs = ["19.2","19.3","19.6","19.7","19.8","19.9","21.3","21.6","21.7","21.8","21.9"]
+done_revision = "89bf4db6d8292d00b26287d20cc743e7fdccd428"
+done_command = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/txs ui/blocks ui/shared/address ui/address'"
+done_exit_code = 0
+done_log = ".logs/verify-6.12.log"
 
 [task.7]
 section = "Wave 7 - One Aggregate Run, Recorded"

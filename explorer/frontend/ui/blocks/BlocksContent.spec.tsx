@@ -13,13 +13,13 @@ vi.mock('next/router', async() => (await import('ui/shared/layout/testWrapper'))
 
 import BlocksContent from './BlocksContent';
 
-const Harness = ({ type }: { type: 'block' | 'reorg' }) => {
+const Harness = ({ type, isInsideTableCard }: { type: 'block' | 'reorg'; isInsideTableCard?: boolean }) => {
   const query = useQueryWithPages({
     resourceName: 'general:blocks',
     filters: { type },
   });
 
-  return <BlocksContent type={ type } query={ query } top={ 0 }/>;
+  return <BlocksContent type={ type } query={ query } top={ 0 } isInsideTableCard={ isInsideTableCard }/>;
 };
 
 describe('BlocksContent', () => {
@@ -66,6 +66,21 @@ describe('BlocksContent', () => {
 
     expect(container.querySelector('[data-scan-table-card] [data-note]')?.textContent)
       .toBe('Blocks replaced by a competing block at the same height');
+  });
+
+  it('renders the block rows alone when the caller already opens the table card', async() => {
+    const { container } = render(<Harness type="block" isInsideTableCard/>);
+
+    await waitFor(() => {
+      const heights = Array.from(container.querySelectorAll('table tbody a[href^="/block/"]'))
+        .map((link) => link.getAttribute('href'))
+        .filter((href) => !href?.includes('?'));
+
+      expect(heights).toEqual([ `/block/${ blockMock.base.height }`, `/block/${ blockMock.base2.height }` ]);
+    });
+
+    expect(container.querySelector('[data-scan-table-card]')).toBeNull();
+    expect(container.querySelector('[data-pagination]')).toBeNull();
   });
 
   it('puts the block table inside the card body', async() => {

@@ -133,6 +133,7 @@ const AddressTxs = ({ shouldRender = true, isQueryEnabled = true, txsCount }: Pr
               setSort={ localQuery.setSort }
               showBlockInfo
               showTableViewButton
+              isInsideTableCard
             />
             { viewAllRow }
           </ScanTableCard>

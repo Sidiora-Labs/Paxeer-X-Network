@@ -33,9 +33,10 @@ export interface Props {
   query: QueryWithPagesResult<'general:blocks'> | QueryWithPagesResult<'general:optimistic_l2_txn_batch_blocks'>;
   enableSocket?: boolean;
   top?: number;
+  isInsideTableCard?: boolean;
 }
 
-const BlocksContent = ({ type, query, enableSocket = true, top }: Props) => {
+const BlocksContent = ({ type, query, enableSocket = true, top, isInsideTableCard = false }: Props) => {
   const queryClient = useQueryClient();
   const isMobile = useIsMobile();
   const multichainContext = useMultichainContext();
@@ -143,7 +144,7 @@ const BlocksContent = ({ type, query, enableSocket = true, top }: Props) => {
     </ActionBar>
   ) : null;
 
-  const paginationNode = !isMobile && query.pagination.isVisible ? <Pagination { ...query.pagination }/> : null;
+  const paginationNode = !isInsideTableCard && !isMobile && query.pagination.isVisible ? <Pagination { ...query.pagination }/> : null;
 
   const items = query.data?.items;
   const totalBlocks = Number(statsQuery.data?.total_blocks);
@@ -182,7 +183,7 @@ const BlocksContent = ({ type, query, enableSocket = true, top }: Props) => {
       emptyText="There are no blocks."
       actionBar={ actionBar }
     >
-      { content && (
+      { content && (isInsideTableCard ? content : (
         <ScanTableCard
           title={ countLine }
           note={ note }
@@ -190,7 +191,7 @@ const BlocksContent = ({ type, query, enableSocket = true, top }: Props) => {
         >
           { content }
         </ScanTableCard>
-      ) }
+      )) }
     </DataListDisplay>
   );
 };

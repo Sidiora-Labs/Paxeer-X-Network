@@ -116,6 +116,30 @@ describe('TxsContent', () => {
       .toBe('More than 3 transactions found');
   });
 
+  it('renders the rows alone and leaves the count, the download and the pagination to a caller that owns the card', () => {
+    const { container } = render(
+      <TxsContent
+        pagination={ paginationParams({ hasPages: true }) }
+        items={ items }
+        isPlaceholderData={ false }
+        isError={ false }
+        sort="default"
+        currentAddress={ addressMock.hash }
+        stickyHeader={ false }
+        isInsideTableCard
+      />,
+    );
+
+    const hashes = Array.from(container.querySelectorAll('tbody tr'))
+      .map((row) => row.querySelector('a[href^="/tx/"]')?.getAttribute('href'))
+      .filter(Boolean);
+
+    expect(container.querySelector('[data-scan-table-card]')).toBeNull();
+    expect(container.querySelector('[data-csv-export-label]')).toBeNull();
+    expect(container.querySelector('[data-pagination]')).toBeNull();
+    expect(hashes).toEqual(items.map((item) => `/tx/${ item.hash }`));
+  });
+
   it('says there are no transactions when the list is empty', () => {
     const { container } = render(
       <TxsContent

@@ -63,6 +63,14 @@ describe('AddressTxs', () => {
       .toContain('Download Page Data');
   });
 
+  it('keeps the embedded transactions list inside the single card the tab opens', () => {
+    const { container } = render(<AddressTxs txsCount={ 741895 }/>);
+
+    expect(container.querySelectorAll('[data-scan-table-card]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-scan-table-card] [data-title]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-scan-table-card] [data-body] table').length).toBeGreaterThan(0);
+  });
+
   it('closes the card with a centred view-all row and the CSV export beneath it', () => {
     const { container } = render(<AddressTxs txsCount={ 741895 }/>);
 

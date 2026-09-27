@@ -47,6 +47,7 @@ type Props = {
   sort: TransactionsSortingValue;
   stickyHeader?: boolean;
   showTableViewButton?: boolean;
+  isInsideTableCard?: boolean;
 };
 
 const TxsContent = ({
@@ -65,6 +66,7 @@ const TxsContent = ({
   sort,
   stickyHeader = true,
   showTableViewButton,
+  isInsideTableCard = false,
 }: Props) => {
   const isMobile = useIsMobile();
 
@@ -149,7 +151,7 @@ const TxsContent = ({
     />
   ) : null;
 
-  const paginationNode = !isMobile && pagination.isVisible ? <Pagination { ...pagination }/> : null;
+  const paginationNode = !isInsideTableCard && !isMobile && pagination.isVisible ? <Pagination { ...pagination }/> : null;
 
   const totalTxs = Number(statsQuery.data?.total_transactions);
 
@@ -192,7 +194,7 @@ const TxsContent = ({
         term: 'transaction',
       }}
     >
-      { content && (
+      { content && (isInsideTableCard ? content : (
         <ScanTableCard
           title={ countLine }
           note={ note }
@@ -201,7 +203,7 @@ const TxsContent = ({
         >
           { content }
         </ScanTableCard>
-      ) }
+      )) }
     </DataListDisplay>
   );
 };
