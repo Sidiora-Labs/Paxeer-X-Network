@@ -259,6 +259,60 @@ fn offset(bytes: &[u8], at: usize) -> Option<usize> {
     value.is_multiple_of(32).then_some(value)
 }
 
+/// The static words `getRequest(uint64)` answers with: the eleven fields
+/// `precompiles/xweb/abi.json` declares, `id`, `requester`, `kind`,
+/// `payloadHash`, `callbackGas`, `fee`, `height`, `timeoutHeight`, `status`,
+/// `level` and `attestor`.
+pub const REQUEST_VIEW_WORDS: usize = 11;
+
+const REQUEST_ID_WORD: usize = 0;
+const REQUEST_STATUS_WORD: usize = 8;
+const REQUEST_LEVEL_WORD: usize = 9;
+const REQUEST_ATTESTOR_WORD: usize = 10;
+
+/// What the submitter reads out of a request view: the request's own id, the
+/// state the precompile records, the level the request was made at and the
+/// attestor a single-level request names.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RequestView {
+    pub request_id: u64,
+    pub status: u8,
+    pub level: u8,
+    pub attestor: [u8; 20],
+}
+
+fn address(word: &[u8]) -> Option<[u8; 20]> {
+    let word: &[u8; 32] = word.try_into().ok()?;
+    if word[..12].iter().any(|byte| *byte != 0) {
+        return None;
+    }
+    let mut out = [0; 20];
+    out.copy_from_slice(&word[12..]);
+    Some(out)
+}
+
+fn byte_at(bytes: &[u8], index: usize) -> Option<u8> {
+    u8::try_from(small(read_word(bytes, index)?)?).ok()
+}
+
+/// A `getRequest` answer for `request_id` decoded against the tuple the
+/// precompile publishes: `None` for an answer that is not the eleven-word
+/// view, that names another request or that holds a field out of shape.
+#[must_use]
+pub fn decode_request_view(answer: &[u8], request_id: u64) -> Option<RequestView> {
+    if answer.len() != REQUEST_VIEW_WORDS * 32
+        || small(read_word(answer, REQUEST_ID_WORD)?)? != request_id
+    {
+        return None;
+    }
+    Some(RequestView {
+        request_id,
+        status: byte_at(answer, REQUEST_STATUS_WORD)?,
+        level: byte_at(answer, REQUEST_LEVEL_WORD)?,
+        attestor: address(read_word(answer, REQUEST_ATTESTOR_WORD)?)?,
+    })
+}
+
 /// The state of a request as `getRequest` reports it.
 ///
 /// # Errors
@@ -267,12 +321,8 @@ pub fn request_status(rpc: &EvmRpc, request_id: u64) -> Result<u8, EvmError> {
     let mut data = selector(GET_REQUEST_SIGNATURE).to_vec();
     data.extend(word(request_id));
     let answer = rpc.eth_call(XWEB_PRECOMPILE, &data)?;
-    if answer.len() != 9 * 32 || read_word(&answer, 0).and_then(small) != Some(request_id) {
-        return Err(EvmError::Malformed);
-    }
-    read_word(&answer, 8)
-        .and_then(small)
-        .and_then(|status| u8::try_from(status).ok())
+    decode_request_view(&answer, request_id)
+        .map(|view| view.status)
         .ok_or(EvmError::Malformed)
 }
 
@@ -738,5 +788,143 @@ impl Submitter {
             }
             _ => Err(SubmitError::Evm(EvmError::Malformed)),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::error::Error;
+    use std::path::PathBuf;
+
+    use serde_json::Value;
+
+    use crate::api::{LEVEL_MAJORITY, LEVEL_SINGLE};
+
+    use super::{
+        decode_request_view, RequestView, REQUEST_ATTESTOR_WORD, REQUEST_ID_WORD,
+        REQUEST_LEVEL_WORD, REQUEST_STATUS_WORD, REQUEST_VIEW_WORDS, STATUS_FULFILLED,
+        STATUS_PENDING,
+    };
+
+    type Checked<T = ()> = Result<T, Box<dyn Error>>;
+
+    const REQUEST_ID: u64 = 7;
+    const REQUESTER: [u8; 20] = [0x0a; 20];
+    const ATTESTOR: [u8; 20] = [0xa7; 20];
+
+    fn fail(message: impl Into<String>) -> Box<dyn Error> {
+        message.into().into()
+    }
+
+    /// The types of the `getRequest` tuple `precompiles/xweb/abi.json`
+    /// publishes, in the order the precompile packs them.
+    fn published_fields() -> Checked<Vec<String>> {
+        let path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../precompiles/xweb/abi.json");
+        let abi: Value = serde_json::from_slice(&std::fs::read(&path)?)?;
+        let entry = abi
+            .as_array()
+            .ok_or_else(|| fail("the published abi is not an array"))?
+            .iter()
+            .find(|entry| entry.get("name").and_then(Value::as_str) == Some("getRequest"))
+            .ok_or_else(|| fail("the published abi declares no getRequest"))?;
+        let components = entry
+            .pointer("/outputs/0/components")
+            .and_then(Value::as_array)
+            .ok_or_else(|| fail("getRequest does not return a tuple"))?;
+        Ok(components
+            .iter()
+            .map(|field| {
+                field
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned()
+            })
+            .collect())
+    }
+
+    /// One word per published field, in the abi's order.
+    fn encoded_view(fields: &[String], status: u8, level: u8) -> Checked<Vec<u8>> {
+        let mut out = Vec::with_capacity(fields.len() * 32);
+        for (index, field) in fields.iter().enumerate() {
+            let mut slot = [0_u8; 32];
+            if field == "address" {
+                let value = if index == REQUEST_ATTESTOR_WORD {
+                    &ATTESTOR
+                } else {
+                    &REQUESTER
+                };
+                slot[12..].copy_from_slice(value);
+            } else if index == REQUEST_STATUS_WORD {
+                slot[31] = status;
+            } else if index == REQUEST_LEVEL_WORD {
+                slot[31] = level;
+            } else if index == REQUEST_ID_WORD {
+                slot[24..].copy_from_slice(&REQUEST_ID.to_be_bytes());
+            } else {
+                slot[24..].copy_from_slice(&u64::try_from(index)?.to_be_bytes());
+            }
+            out.extend_from_slice(&slot);
+        }
+        Ok(out)
+    }
+
+    #[test]
+    fn request_status_reads_the_eleven_field_request_view() -> Checked {
+        let fields = published_fields()?;
+        assert_eq!(
+            fields,
+            [
+                "uint64", "address", "uint8", "bytes32", "uint64", "uint256", "uint64", "uint64",
+                "uint8", "uint8", "address"
+            ]
+        );
+        assert_eq!(fields.len(), REQUEST_VIEW_WORDS);
+        let answer = encoded_view(&fields, STATUS_FULFILLED, LEVEL_SINGLE)?;
+        assert_eq!(answer.len(), 352);
+        assert_eq!(
+            decode_request_view(&answer, REQUEST_ID),
+            Some(RequestView {
+                request_id: REQUEST_ID,
+                status: STATUS_FULFILLED,
+                level: LEVEL_SINGLE,
+                attestor: ATTESTOR,
+            })
+        );
+        assert_eq!(
+            decode_request_view(
+                &encoded_view(&fields, STATUS_PENDING, LEVEL_MAJORITY)?,
+                REQUEST_ID
+            ),
+            Some(RequestView {
+                request_id: REQUEST_ID,
+                status: STATUS_PENDING,
+                level: LEVEL_MAJORITY,
+                attestor: ATTESTOR,
+            })
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn request_status_refuses_an_answer_that_is_not_the_published_view() -> Checked {
+        let fields = published_fields()?;
+        let answer = encoded_view(&fields, STATUS_FULFILLED, LEVEL_SINGLE)?;
+        for words in [0_usize, 9, 10] {
+            assert_eq!(decode_request_view(&answer[..words * 32], REQUEST_ID), None);
+        }
+        assert_eq!(
+            decode_request_view(&answer[..answer.len() - 1], REQUEST_ID),
+            None
+        );
+        let mut longer = answer.clone();
+        longer.extend_from_slice(&[0; 32]);
+        assert_eq!(decode_request_view(&longer, REQUEST_ID), None);
+        assert_eq!(decode_request_view(&answer, REQUEST_ID + 1), None);
+        let mut dirty = answer;
+        dirty[REQUEST_ATTESTOR_WORD * 32] = 1;
+        assert_eq!(decode_request_view(&dirty, REQUEST_ID), None);
+        Ok(())
     }
 }
