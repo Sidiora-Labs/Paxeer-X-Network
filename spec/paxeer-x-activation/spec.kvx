@@ -92,7 +92,7 @@ status = "pending"
 
 [task.1.1]
 title = "Add the activation plan, its fork-height scheduling and the precompile reachability it turns on"
-status = "pending"
+status = "done"
 wave = 1
 requires = []
 do_1 = "In node/upgrades.go add an exported plan-name constant following the repository's semantic-version naming for upgrade names and an exported ForkHeight constant of type int64 with the initial value 26000000, register the plan's handler explicitly after the loop that registers a handler per embedded tag so the tag list, the latest upgrade name and every precompile version map stay unchanged, and leave every existing handler and store-upgrade entry byte for byte."
@@ -107,6 +107,10 @@ verify_cmd = "timeout 25m go test -count=1 -run 'Activation|Upgrade|CustomPrecom
 symbols = ["ActivationUpgrade","ForkHeight","activationStoreUpgrades","runActivationUpgrade","scheduleActivationUpgrade","haltForActivationStoreUpgrade","CustomPrecompileActivation","SetCustomPrecompileActivation","customPrecompileReached"]
 touches = ["node/upgrades.go","node/app.go","node/abci.go","modules/evm/keeper/keeper.go","node/upgrades_activation_test.go","modules/evm/keeper/keeper_activation_test.go"]
 reqs = ["1.1","1.2","1.3","1.4","1.5","1.6","1.7","1.8","1.9","1.10"]
+done_revision = "d42cb96abf031a986fa5de58aa76e81c2289f2aa"
+done_command = "timeout 25m go test -count=1 -run 'Activation|Upgrade|CustomPrecompile' ./node/... ./modules/evm/keeper/..."
+done_exit_code = 0
+done_log = ".logs/xa-1.1-verify.log"
 
 [task.1.2]
 title = "Replay the activation on a copied chain state"

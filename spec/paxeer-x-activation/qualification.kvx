@@ -6,3 +6,41 @@
 # symbol, observed, assumption, severity (blocker | suspect | assumption | note),
 # at most six lines, never re-run. [gate.<task>.<n>] records one executed gate:
 # revision, command, exit_code, log_path.
+
+[observation.1.1.1]
+task = "1.1"
+file = "node/upgrades.go"
+symbol = "runActivationUpgrade"
+observed = "The upgrade keeper writes the new module version map only after a handler returns, so refreshing the web-search precompile from state inside the handler, as do_3 words it, leaves it withheld at the applying block."
+assumption = "The handler asserts the migration wrote the module's parameters and serves the precompile from that, exactly as the module's own earlier handler does."
+severity = "note"
+
+[observation.1.1.2]
+task = "1.1"
+file = "node/upgrades_activation_test.go"
+symbol = "TestActivationUpgradeInitialisesEveryForkModuleOnce"
+observed = "do_8 asks for non-zero parameters on the five modules beside the web-search one, but the exchange module's default parameters are empty by design."
+assumption = "Each module's stored parameters are compared against its own default genesis parameters through the encoding that module stores, which is stronger than a non-zero check and true for all six."
+severity = "note"
+
+[observation.1.1.3]
+task = "1.1"
+file = "modules/evm/keeper/keeper.go"
+symbol = "customPrecompileReached"
+observed = "While this binary rolls out below the fork height a restarted node withholds the eight fork addresses whereas a node still on the old binary lists them, so the two disagree on the listing until the plan is applied."
+assumption = "Neither binary executes those addresses on this chain today, so only the listing differs and no state does."
+severity = "assumption"
+
+[observation.1.1.4]
+task = "1.1"
+file = "node/upgrades.go"
+symbol = "runActivationUpgrade"
+observed = "The plan's handler also runs any pending migration of the modules the chain's version map already carries, because the module manager walks the whole map."
+assumption = "The replay of task 1.2 over real chain state is what proves those migrations; this task records only that the handler does not exclude them."
+severity = "assumption"
+
+[gate.1.1.1]
+revision = "d42cb96abf031a986fa5de58aa76e81c2289f2aa"
+command = "timeout 25m go test -count=1 -run 'Activation|Upgrade|CustomPrecompile' ./node/... ./modules/evm/keeper/..."
+exit_code = 0
+log_path = ".logs/xa-1.1-verify.log"
