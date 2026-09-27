@@ -1209,11 +1209,24 @@ symbols = ["finality_environment","schema_lists_every_public_method","local_gate
 touches = ["platform/hosted/core/tests/boundary.rs","platform/hosted/gateway/tests/local/funding.rs","platform/hosted/gateway/tests/local/Cargo.toml","platform/hosted/gateway/tests/local/events.rs","platform/hosted/gateway/tests/local/lifecycle.rs","platform/hosted/gateway/src/rpc.rs"]
 reqs = ["11.2"]
 
+[task.2.36]
+title = "Clear the two continuous-integration legs this feature turned red: the consensus no-float scan and the beta contract's surface table"
+status = "pending"
+wave = 2
+requires = ["1.1","1.8"]
+do_1 = "tools/ci/no-float-scan.sh, which the c17 legs of .github/workflows/ci.yml reach through make test-arith-nofloat and make scan-consensus, greps include/layerx and src for floating-point syntax and matches the digit-dot-digit substring inside the comment 'parts 1..4' at include/layerx/lx_web.h:108, so a comment fails the consensus float ban; reword that one comment to carry no digit-dot-digit sequence, for example 'parts 1 to 4', changing no declaration, no macro, no code and not one byte of the scanner, whose ban stays exactly as strict as it is."
+do_2 = "tools/ci/beta-contract-check.sh, which the Platform workspace workflow reaches through make beta-contract-check, derives one functional surface per directory under interop/crates - layerx-gas-station as interop-gas-station and x-websearch as interop-x-websearch - and refuses a derived surface that has no row in the 'Surfaces and journeys' table of platform/docs/content/beta.md, whose interop rows end at interop-mirror-signer; add exactly one row for each of the two in the column shape the neighbouring interop rows use - the surface name, the journey the crate really serves, class functional, required rung runtime_proven, reached rung source_present and the crate directory as the source - leaving every other row, every other table, the readiness claim and the evidence rules untouched and claiming no rung the evidence ledger does not support."
+do_3 = "Run the verify_cmd once and record the revision, the command, the exit code and the log path; run one build of the c17 job's build target first so the scan reads the same objects the leg reads. The same c17 job fails later, at test-projection, on a forbidden operating-system symbol in the consensus object that predates this feature and belongs to no task in it: record it as one observation if the run reaches it and do not chase it."
+verify_cmd = "timeout 20m sh -c 'tools/ci/no-float-scan.sh build && make beta-contract-check'"
+touches = ["include/layerx/lx_web.h","platform/docs/content/beta.md"]
+tests = ["tools/ci/no-float-scan.sh","tools/ci/beta-contract-check.sh"]
+reqs = ["16.3","16.4"]
+
 [task.3.1]
 title = "Run the xweb workflow's legs once on the merged revision and record the evidence"
 status = "pending"
 wave = 3
-requires = ["1.1","1.2","1.3","1.4","1.5","1.6","1.7","1.8","1.9","1.10","1.11","1.12","1.13","1.14","1.15","1.16","1.17","1.18","2.1","2.2","2.3","2.4","2.5","2.6","2.7","2.8","2.9","2.10","2.11","2.12","2.13","2.14","2.15","2.16","2.17","2.18","2.19","2.20","2.21","2.22","2.23","2.24","2.25","2.26","2.27","2.28","2.29","2.30","2.31","2.32","2.33","2.34","2.35"]
+requires = ["1.1","1.2","1.3","1.4","1.5","1.6","1.7","1.8","1.9","1.10","1.11","1.12","1.13","1.14","1.15","1.16","1.17","1.18","2.1","2.2","2.3","2.4","2.5","2.6","2.7","2.8","2.9","2.10","2.11","2.12","2.13","2.14","2.15","2.16","2.17","2.18","2.19","2.20","2.21","2.22","2.23","2.24","2.25","2.26","2.27","2.28","2.29","2.30","2.31","2.32","2.33","2.34","2.35","2.36"]
 do_1 = "On the revision that merges waves 1 and 2, run the workflow's legs once, in order - the x-websearch crate, modules/xweb with precompiles/xweb, the Foundry consumer tests, the kernel web make targets with the runtime web_read test, and the SDK and MCP tests - writing each leg's output to its own log under build/xweb-gates/."
 do_2 = "Append one gate record per leg to spec/paxeer-x-web/qualification.kvx carrying the task, the requirements the leg qualifies, the revision, the exact command, the exit code and the log path, written only from a command that actually ran."
 do_3 = "Append one observation per failure the run exposes that belongs to no task in this feature; do not investigate it further and do not rerun it. Rerun nothing that already passed at this revision and write no gate record for a command that did not run."

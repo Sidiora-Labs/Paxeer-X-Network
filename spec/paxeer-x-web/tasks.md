@@ -294,6 +294,11 @@
     - Add lx_getProgramEvents to the published list in schema_lists_every_public_method in platform/hosted/gateway/src/rpc.rs so the schema test passes with the method task 2.28 listed, and build the web-reader wasm with the Makefile target that produces programs/sdk/rust/examples/web-reader/target/wasm32-unknown-unknown/release/layerx_reference_web_reader.wasm before the run.
     - Run the verify_cmd once; at the passing revision record task 2.28 done with the same evidence and close observations 2.21.2 and 2.28.1 naming it.
     - _Requirements: 11.2_
+  - [ ] 2.36 Clear the two continuous-integration legs this feature turned red: the consensus no-float scan and the beta contract's surface table
+    - tools/ci/no-float-scan.sh, which the c17 legs of .github/workflows/ci.yml reach through make test-arith-nofloat and make scan-consensus, greps include/layerx and src for floating-point syntax and matches the digit-dot-digit substring inside the comment 'parts 1..4' at include/layerx/lx_web.h:108, so a comment fails the consensus float ban; reword that one comment to carry no digit-dot-digit sequence, for example 'parts 1 to 4', changing no declaration, no macro, no code and not one byte of the scanner, whose ban stays exactly as strict as it is.
+    - tools/ci/beta-contract-check.sh, which the Platform workspace workflow reaches through make beta-contract-check, derives one functional surface per directory under interop/crates - layerx-gas-station as interop-gas-station and x-websearch as interop-x-websearch - and refuses a derived surface that has no row in the 'Surfaces and journeys' table of platform/docs/content/beta.md, whose interop rows end at interop-mirror-signer; add exactly one row for each of the two in the column shape the neighbouring interop rows use - the surface name, the journey the crate really serves, class functional, required rung runtime_proven, reached rung source_present and the crate directory as the source - leaving every other row, every other table, the readiness claim and the evidence rules untouched and claiming no rung the evidence ledger does not support.
+    - Run the verify_cmd once and record the revision, the command, the exit code and the log path; run one build of the c17 job's build target first so the scan reads the same objects the leg reads. The same c17 job fails later, at test-projection, on a forbidden operating-system symbol in the consensus object that predates this feature and belongs to no task in it: record it as one observation if the run reaches it and do not chase it.
+    - _Requirements: 16.3, 16.4_
 
 ## Wave 3 - One Run, Recorded
 
@@ -311,7 +316,7 @@
 {
   "waves": [
     { "id": 1,  "tasks": ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "1.10", "1.11", "1.12", "1.13", "1.14", "1.15", "1.16", "1.17", "1.18"] },
-    { "id": 2,  "tasks": ["2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7", "2.8", "2.9", "2.10", "2.11", "2.12", "2.13", "2.14", "2.15", "2.16", "2.17", "2.18", "2.19", "2.20", "2.21", "2.22", "2.23", "2.24", "2.25", "2.26", "2.27", "2.28", "2.29", "2.30", "2.31", "2.32", "2.33", "2.34", "2.35"] },
+    { "id": 2,  "tasks": ["2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7", "2.8", "2.9", "2.10", "2.11", "2.12", "2.13", "2.14", "2.15", "2.16", "2.17", "2.18", "2.19", "2.20", "2.21", "2.22", "2.23", "2.24", "2.25", "2.26", "2.27", "2.28", "2.29", "2.30", "2.31", "2.32", "2.33", "2.34", "2.35", "2.36"] },
     { "id": 3,  "tasks": ["3.1"] }
   ]
 }
