@@ -1323,6 +1323,28 @@ done_command = "timeout 10m sh -c 'cd explorer/frontend && yarn vitest run vites
 done_exit_code = 0
 done_log = ".logs/verify-8.6.log"
 
+[task.8.7]
+title = "Keep the home Latest blocks rows inside their card at 375 px"
+status = "done"
+wave = 8
+requires = ["8.1","8.3"]
+do_1 = "Lay the row of explorer/frontend/ui/home/LatestBlocksItem.tsx out as one flex row that wraps under md: the block icon, the height with the age stacked beneath it and the reward chip hold the first line, and the hash with the transaction count takes a line of its own, so nothing in the row reaches past the body of the card that holds it at 375px."
+do_2 = "Give no part of the row a fixed pixel width: the height and age column sizes itself from the text it carries, the hash slot takes the width the row leaves it and may shrink to nothing, and the reward chip keeps the width its own text asks for and is never overlapped."
+do_3 = "Cut the hash with the frontend's existing dynamic shortener instead of the constant-length one, so it takes the width the slot actually has at every viewport, and keep the slot clipping anything that has not been measured yet."
+do_4 = "Leave the flush cadence, the memoisation comparison and the keyed rendering of the row exactly as task 8.1 wrote them, leave the fields the row renders and their order as they are, and change no file that task 8.2 owns - the tag and badge recipes, the method chip, the direction badge and the section tabs."
+do_5 = "Write no literal colour, font family, radius or shadow, keep both appearances resolving through the same tokens, add no dependency, and change no file ending in .pw.tsx and no __screenshots__ directory."
+do_6 = "Extend explorer/frontend/ui/home/LatestBlocksItem.spec.tsx with the cases jsdom can see - the row marked as a wrapping row, the height, hash and reward slots present in that order, the height column carrying no fixed width, and the hash cut by the dynamic shortener - and check the rendered page in a headless browser at 375px and at 1280px, where every row sits inside the card and the chip reads in full."
+verify_cmd = "timeout 15m sh -c 'cd explorer/frontend && yarn vitest run ui/home --reporter=dot'"
+symbols = ["LatestBlocksItem"]
+touches = ["explorer/frontend/ui/home/LatestBlocksItem.tsx"]
+tests = ["explorer/frontend/ui/home/LatestBlocksItem.spec.tsx"]
+reqs = ["17.6","17.8","17.9"]
+done_revision = "5622afb28693296f416b9a1c64b451eefcb337f0"
+done_command = "timeout 15m sh -c 'cd explorer/frontend && yarn vitest run ui/home --reporter=dot'"
+done_exit_code = 0
+done_log = "explorer/frontend/.logs/verify-8.7.log"
+done_evidence = "13 spec files, 49 tests, 0 failures"
+
 [task.8.8]
 title = "Cover the wave-8 page and heading changes with referencing specs"
 status = "done"

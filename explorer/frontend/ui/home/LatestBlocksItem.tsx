@@ -11,7 +11,7 @@ import { Tag } from 'toolkit/chakra/tag';
 import { Tooltip } from 'toolkit/chakra/tooltip';
 import { thinsp } from 'toolkit/utils/htmlEntities';
 import BlockEntity, { Link as BlockEntityLink } from 'ui/shared/entities/block/BlockEntity';
-import HashStringShorten from 'ui/shared/HashStringShorten';
+import HashStringShortenDynamic from 'ui/shared/HashStringShortenDynamic';
 import IconSvg from 'ui/shared/IconSvg';
 import TimeWithTooltip from 'ui/shared/time/TimeWithTooltip';
 import SimpleValue from 'ui/shared/value/SimpleValue';
@@ -29,8 +29,11 @@ const LatestBlocksItem = ({ block, isLoading }: Props) => {
   return (
     <Flex
       data-latest-block={ block.height }
+      data-wrap-row
       alignItems="center"
+      flexWrap={{ base: 'wrap', md: 'nowrap' }}
       columnGap={ 3 }
+      rowGap={ 2 }
       px={{ base: 3, lg: 4 }}
       py={ 3 }
       borderBottomWidth="1px"
@@ -47,7 +50,7 @@ const LatestBlocksItem = ({ block, isLoading }: Props) => {
       >
         <IconSvg name="block" boxSize={ 5 } color="icon.secondary" isLoading={ isLoading }/>
       </Center>
-      <Box minW={ 0 } flexShrink={ 0 } w={{ base: '96px', lg: '116px' }}>
+      <Box data-label="block-height" minW={ 0 } flexShrink={ 0 }>
         <BlockEntity
           isLoading={ isLoading }
           number={ block.height }
@@ -67,11 +70,17 @@ const LatestBlocksItem = ({ block, isLoading }: Props) => {
           mt="2px"
         />
       </Box>
-      <Box minW={ 0 } flexGrow={ 1 }>
-        <Flex alignItems="center" columnGap={ 1 } minW={ 0 }>
+      <Box
+        data-label="block-hash"
+        minW={ 0 }
+        flexGrow={ 1 }
+        flexBasis={{ base: '100%', md: 'auto' }}
+        order={{ base: 1, md: 0 }}
+      >
+        <Flex alignItems="center" columnGap={ 1 } minW={ 0 } overflow="hidden">
           <Skeleton loading={ isLoading } textStyle="sm" fontWeight="500" flexShrink={ 0 }>Hash</Skeleton>
-          <BlockEntityLink hash={ block.hash } isLoading={ isLoading } textStyle="sm" overflow="hidden">
-            <HashStringShorten hash={ block.hash } type="long"/>
+          <BlockEntityLink hash={ block.hash } isLoading={ isLoading }>
+            <HashStringShortenDynamic hash={ block.hash } fontWeight="500" textStyle="sm"/>
           </BlockEntityLink>
         </Flex>
         <Skeleton loading={ isLoading } textStyle="xs" color="text.secondary" w="fit-content" mt="2px">
@@ -84,7 +93,14 @@ const LatestBlocksItem = ({ block, isLoading }: Props) => {
         </Tooltip>
       ) }
       { hasReward && (
-        <Tag variant="outlined" loading={ isLoading } flexShrink={ 0 } data-label="block-reward">
+        <Tag
+          variant="outlined"
+          loading={ isLoading }
+          flexShrink={ 0 }
+          maxW="100%"
+          ml={{ base: 'auto', md: 0 }}
+          data-label="block-reward"
+        >
           <SimpleValue
             value={ totalReward }
             loading={ isLoading }

@@ -761,6 +761,7 @@ symbol = "LatestBlocksItem"
 observed = "At 375 the home Latest blocks rows lay their columns out at fixed widths, so the block hash runs under the value chip and past the right border of the card body while the transactions rows beside it stay inside it."
 assumption = "The file belongs to task 8.1, which owns the home real-time feed, so this task records the finding and leaves the row exactly as written."
 severity = "note"
+note = "Closed by task 8.7: the row now wraps under md, carries no fixed column width and cuts its hash with the dynamic shortener, and the browser measurement at 375 finds every row and its value chip inside the card body."
 
 [observation.8.3.6]
 task = "8.3"
@@ -906,3 +907,12 @@ symbol = "yarn dev"
 observed = "The lane's dev server answered the home page at 200 only after 108 missing files of node_modules/lodash-es were restored from a sibling lane, and the page then threw Element type is invalid, expected a string or a class/function but got: object, check the render method of chakra(svg), so no row of the live list ever rendered and the browser measurement of the after case could not be taken, log /root/lx-ops/explorer-ui-2026-09-27/wave8/8.1/dev-server.log."
 assumption = "The lane install is short of files and the turbopack dev bundle also reports a browser import of the node-only multichain config, both outside this task's files, so the after figures of observation 8.1.1 come from the specs and a browser measurement waits for a lane whose install is whole."
 severity = "note"
+
+[observation.8.7.1]
+task = "8.7"
+file = "explorer/frontend/tools/scripts/dev.sh"
+symbol = "dev"
+observed = "The development server the dev script starts renders every page as the error boundary with Element type is invalid, got object, check the render method of chakra(svg), and it did so twice in this lane after the short install observation 8.1.3 names was made whole from the published package, while the same script with the older bundler serves the same tree and renders the home page and its lists normally."
+assumption = "The fault is in the newer bundler's handling of the icon sprite component and reaches every page rather than any file of this task, so the browser check of this task was taken against the older bundler and the dev script is left exactly as it stands."
+severity = "note"
+

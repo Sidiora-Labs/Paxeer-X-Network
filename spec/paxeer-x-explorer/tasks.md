@@ -445,6 +445,14 @@
     - Render the real font observer hook the dynamic hash shortener uses, with the same body and heading typefaces and weight that component passes, under fake timers, and assert that it reports the fonts loaded and that no timer is left pending once it has settled, which is what keeps a poll from firing after the environment of a spec file is torn down.
     - Mock nothing: the spec drives the real package through its real hook and reads the real document, and it changes no line of explorer/frontend/vitest/setup.ts and no other file.
     - _Requirements: 3.3, 16.1_
+  - [x] 8.7 Keep the home Latest blocks rows inside their card at 375 px
+    - Lay the row of explorer/frontend/ui/home/LatestBlocksItem.tsx out as one flex row that wraps under md: the block icon, the height with the age stacked beneath it and the reward chip hold the first line, and the hash with the transaction count takes a line of its own, so nothing in the row reaches past the body of the card that holds it at 375px.
+    - Give no part of the row a fixed pixel width: the height and age column sizes itself from the text it carries, the hash slot takes the width the row leaves it and may shrink to nothing, and the reward chip keeps the width its own text asks for and is never overlapped.
+    - Cut the hash with the frontend's existing dynamic shortener instead of the constant-length one, so it takes the width the slot actually has at every viewport, and keep the slot clipping anything that has not been measured yet.
+    - Leave the flush cadence, the memoisation comparison and the keyed rendering of the row exactly as task 8.1 wrote them, leave the fields the row renders and their order as they are, and change no file that task 8.2 owns - the tag and badge recipes, the method chip, the direction badge and the section tabs.
+    - Write no literal colour, font family, radius or shadow, keep both appearances resolving through the same tokens, add no dependency, and change no file ending in .pw.tsx and no __screenshots__ directory.
+    - Extend explorer/frontend/ui/home/LatestBlocksItem.spec.tsx with the cases jsdom can see - the row marked as a wrapping row, the height, hash and reward slots present in that order, the height column carrying no fixed width, and the hash cut by the dynamic shortener - and check the rendered page in a headless browser at 375px and at 1280px, where every row sits inside the card and the chip reads in full.
+    - _Requirements: 17.6, 17.8, 17.9_
   - [x] 8.8 Cover the wave-8 page and heading changes with referencing specs
     - Extend the spec that already sits at the mirror position of each source file the wave-8 test-ratio run names without a changed test beside it - explorer/frontend/ui/pages/Address.spec.tsx, ui/pages/PaxeerXAccount.spec.tsx, ui/pages/PaxeerXReceipt.spec.tsx and ui/tx/TxSubHeading.spec.tsx - because the gate counts only the test files the range changes, so a spec that sits in the right place but is untouched by the range leaves its source file uncovered.
     - Extend explorer/frontend/ui/txs/TxsStats.spec.tsx as well, the mirror spec of the fifth source file the same wave changed, so the range carries at least as many referencing test files as source files.
@@ -466,7 +474,7 @@
     { "id": 5,  "tasks": ["5.1", "5.2"] },
     { "id": 6,  "tasks": ["6.1", "6.2", "6.3", "6.4", "6.5", "6.6", "6.7", "6.8", "6.9", "6.10", "6.11", "6.12"] },
     { "id": 7,  "tasks": ["7.1"] },
-    { "id": 8,  "tasks": ["8.1", "8.3", "8.4", "8.5", "8.6", "8.8"] }
+    { "id": 8,  "tasks": ["8.1", "8.3", "8.4", "8.5", "8.6", "8.7", "8.8"] }
   ]
 }
 ```
