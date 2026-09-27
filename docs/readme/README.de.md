@@ -1,4 +1,4 @@
-<p align="center"><img src="../../layerx-network.png" alt="LayerX Network" width="720"></p>
+<p align="center"><img src="https://supabase.paxeer.app/storage/v1/object/public/json/Tiny%20worker%20on%20a%20floating%20moss%20island.png" alt="Paxeer X Network" width="1540"></p>
 
 <h1 align="center">Paxeer X Network</h1>
 
