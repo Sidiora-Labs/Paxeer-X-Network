@@ -1,0 +1,8 @@
+# qualification.kvx - Paxeer X Network fork activation executed-evidence ledger.
+#
+# Append-only. [observation.<task>.<n>] records an assumption, an unrelated or
+# pre-existing failure, a cross-task contradiction, a missing external
+# interface, or a repair that would require weakening a check: keys task, file,
+# symbol, observed, assumption, severity (blocker | suspect | assumption | note),
+# at most six lines, never re-run. [gate.<task>.<n>] records one executed gate:
+# revision, command, exit_code, log_path.

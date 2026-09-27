@@ -1,0 +1,141 @@
+# spec.kvx - Paxeer X Network fork activation. SINGLE SOURCE OF TRUTH for this
+# feature.
+#
+# requirements.md / design.md / tasks.md next to this file are GENERATED from it
+# by spec/specgen. Never hand-edit those; edit this file and regenerate.
+#
+# Drive the work with:  cg spec next -> cg spec start <id> -> cg spec done <id>
+#
+# The chain runs a module set that its own binary has outgrown. Six modules the
+# fork adds are in the application's module manager and their stores are in the
+# canonical mount list, yet the running chain's module version map carries none
+# of them and no upgrade plan has ever been applied, so eight precompile
+# addresses answer nothing. The binary that carries those modules cannot simply
+# be rolled out, because the precompile gate serves an address whose upgrades
+# were never applied, which would split the application hash the moment one
+# node restarts. This feature brings the whole fork online at a single height
+# through the standard named-plan path, and makes the precompile gate depend on
+# that plan instead of on the absence of history.
+
+[meta]
+feature   = "paxeer-x-activation"
+title     = "Paxeer X activation: bring the fork precompiles online at one height"
+kind      = "product-feature-specification"
+version   = "0.1.0"
+status    = "active"
+language  = "Go (the application under node/, the EVM module under modules/evm, the Cosmos SDK fork under sdk/), Go tests beside each changed file, POSIX shell for the replay harness"
+repo_root = "node/upgrades.go (the activation plan, its handler, its store list and the fork-height scheduling); node/app.go (the store loader that mounts the added stores and the precompile activation registration); node/abci.go (the one call that runs the scheduling after the module begin blockers); modules/evm/keeper/keeper.go (the custom-precompile reachability predicate); tools/chain/upgrade-replay/ (the replay harness of task 1.2); spec/paxeer-x-activation/ (this feature and its qualification log)"
+upstream  = "The Cosmos SDK fork's x/upgrade module is the fixed mechanism: a named plan is scheduled at a height, the module's begin blocker applies it when the height arrives, UpgradeStoreLoader mounts a plan's added stores when upgrade-info.json names the plan and the last commit is one below the plan height, and RunMigrations initialises every module the on-chain version map lacks. None of that is changed. The plan handlers already registered for the earlier names stay exactly as written, including the one that requires a registered remote asset before it will run."
+intro     = "One plan, one height, one restart. An exported fork height and an exported plan name are the whole interface. At the block before the fork height every node schedules the plan for the fork height through the upgrade keeper, from its own begin blocker, with no governance proposal and no operator action; a chain whose module version map already carries the fork modules, which is every chain started from a full genesis, rejects the scheduling and is unaffected. At the fork height the node writes upgrade-info.json and stops, exactly as the SDK stops a node that lacks a handler, because the added stores must be mounted through the upgrade store loader before the block that initialises them runs; operators restart the same binary, the store loader mounts the six added stores with their initial version equal to the fork height, and the upgrade module's begin blocker applies the plan on the standard path: the handler runs the module migrations once, every module the version map lacks initialises from its own default genesis, and the done height is recorded. From that height the eight fork precompiles answer, and below it they do not, because the reachability predicate asks whether the activation plan has been applied at or before the height, or whether the chain's version map carried the modules from genesis, instead of asking whether any upgrade was ever applied."
+
+# Decisions locked before implementation begins. They bind every task in this
+# feature and are not reopened by a task.
+[decision]
+code_quality        = "A+ on every changed path: real code paths, real types, real state. The handler test runs the real plan through the real upgrade keeper on a real application whose version map has had the fork modules removed; the reachability tests read the real EVM keeper's precompile set through the real predicate. No stub, mock or fake double on a production path, no placeholder implementation, no TODO, FIXME or 'for now' comment, no dead branch."
+no_weakening        = "No assertion is relaxed, no bound loosened, no type widened, no silent fallback added, no test skipped or deleted, no check disabled. Where the code and a check disagree, both stay exactly as written and the conflict is recorded in spec/paxeer-x-activation/qualification.kvx."
+existing_plans      = "The plan handlers and store-upgrade entries already registered for the earlier names are left in place byte for byte, including the two whose store list and handler disagree on this chain's state and the one that errors without a registered remote asset. The activation is a new plan beside them; nothing reuses or repairs an old name."
+no_tag_bump         = "The activation plan's name is registered as its own handler beside the handlers the embedded tag list registers. The tag list is not extended, so the latest upgrade name, every precompile's version map key and every comparison against it stay exactly as they are and no legacy precompile changes behaviour."
+one_height          = "Activation happens at one height on every node. The height is an exported constant compiled into the binary, not a configuration value, not a governance parameter and not a flag, so two nodes built from the same source cannot disagree about it. The leader sets its final value before the release build."
+legacy_untouched    = "Nothing in this feature changes a legacy precompile, a consensus parameter, a gas schedule, a fee path or a module's genesis defaults. The legacy precompile addresses keep the behaviour they have today, which is to be served although none of the upgrades they carry a version for was ever applied on this chain."
+owner_actions       = "A module that comes up paused or unconfigured stays that way until its own admin path is used. The activation initialises the web-search module paused with an empty attestor set and registers no remote asset, because the asset's registration needs a chain record whose parameters this repository does not define as constants. Those are recorded as post-activation owner actions, never guessed at inside a handler."
+evidence            = "Evidence is a revision, a command, an exit code and a log path. A task records the gate it actually ran and nothing else; a gate that did not run is never claimed."
+
+[design]
+overview = "Two waves. Wave 1 is the activation itself in one task, plus a replay of that activation against a copy of a real chain state in a second task that depends on it. Wave 2 runs the chain gates once on the merged wave revision and records what ran."
+
+[design.plan]
+title = "The activation plan"
+name = "The plan name is an exported constant in node/, following the repository's semantic-version naming for upgrade names, and its handler is registered explicitly beside the handlers the embedded tag list registers, so the tag list, the latest upgrade name and every precompile version map stay unchanged."
+stores = "The plan's store upgrades add exactly the stores the running chain lacks: the custody, anchor, exchange, bridge, launchpad and web-search module stores. The list is static because the store loader runs before any state is readable, and a table test derives the same list from the application's canonical store-key list minus the stores the pre-fork chain carries, so a store added to the application without being added to the plan fails the test."
+handler = "The handler runs the module manager's migrations once against the version map read from state. Every module the map lacks initialises from its own default genesis exactly once, which brings the web-search module up paused with an empty attestor set and every other module up with its documented default parameters, and then the handler refreshes the web-search precompile entry from state so the block that applies the plan already serves it. It registers no remote asset and creates no denomination."
+
+[design.activation]
+title = "Reaching the height"
+schedule = "The application's begin blocker calls the scheduling step after the module begin blockers have run, so the upgrade module's own begin blocker has already seen the block with no plan in it and cannot mistake a plan scheduled for the next height for a binary updated before its trigger. At the height one below the fork height, when no plan is scheduled, the plan has no done height and the version map does not already carry every module the plan adds, it schedules the plan for the fork height through the upgrade keeper. Any other height, any already scheduled plan, an already applied plan or a full-genesis chain leaves the store untouched."
+stop = "At the fork height the application's begin blocker runs before the module begin blockers and, when the scheduled activation plan is due and this process did not start with the plan's upgrade-info.json, writes upgrade-info.json for the plan at that height and stops the node with the SDK's own upgrade-needed message. That is the standard stop: the block is not committed, the last commit is one below the fork height, and the operator restarts the same binary. The restarted process reads the file, mounts the plan's added stores through UpgradeStoreLoader with their initial version equal to the fork height, replays the fork height and lets the upgrade module's begin blocker apply the plan. A height the operator has explicitly marked skipped is left to the upgrade module's own skip path."
+loader = "The store-loader wiring records, at construction time, that this process started with the activation plan's upgrade-info.json at the fork height and therefore mounted the added stores through the upgrade store loader. That record is the only thing the stop step consults, so the stop happens exactly once per node and the restarted process proceeds."
+
+[design.reachability]
+title = "Serving the eight"
+predicate = "The EVM keeper carries an activation record: one plan name, the module names the plan adds and the precompile addresses the plan brings online. An address named by that record is served when the plan's done height is above zero and the block height is at or above it, or when the chain's module version map already carries every module the plan adds, which is true of every chain started from a full genesis and of no chain that must still apply the plan. An address the record does not name keeps today's rule exactly: served when one of the upgrades it carries a version for was applied at or below the height, or when none of them was ever applied."
+addresses = "The record names all eight addresses the fork brings: the stateless verification precompile, the custody, anchor, exchange, bridge and launchpad module precompiles, the fee-token precompile and the web-search precompile. The record is registered once, when the application builds its custom precompile set, and is not rebuilt when the web-search entry is added to or removed from that set."
+
+[tasks]
+heading = "Implementation Plan: Paxeer X Network Fork Activation"
+
+# --------------------------------------------------------------------------
+# REQUIREMENTS
+# --------------------------------------------------------------------------
+
+[req.1]
+title = "One Plan That Brings The Fork Online At One Height"
+story = "As the owner of a chain whose binary carries modules its state has never had, I want a single plan at a single height that mounts every missing store, initialises every missing module exactly once and turns the eight fork precompiles on together, so that the fork is a fact of the chain's history rather than a property of which binary a node happens to run."
+ac_1 = "THE feature SHALL define one new upgrade plan with an exported name constant, registered with a handler of its own, and SHALL leave every plan name, handler and store-upgrade entry that already exists unchanged."
+ac_2 = "THE plan's store upgrades SHALL add exactly the module stores the pre-fork chain lacks - custody, anchor, exchange, bridge, launchpad and web search - SHALL add nothing else and SHALL delete and rename nothing, proven by a table test that derives the same set from the application's canonical store-key list and fails when a store is added to the application without being added to the plan."
+ac_3 = "THE plan's handler SHALL run the module migrations once against the version map read from state so that every module absent from that map initialises from its own default genesis exactly once, SHALL leave the web-search module paused with an empty attestor set, SHALL leave every other new module with its documented default parameters, and SHALL bring the module version map afterwards to the application's full version map."
+ac_4 = "THE plan's handler SHALL NOT register a remote asset, create a denomination or write a parameter no module's default genesis writes, and the registration of the fee token's remote asset SHALL be reported as a post-activation owner action through the bridge module's existing governance path because the chain record it needs is not defined in this repository as constants."
+ac_5 = "AN exported fork-height constant in the application package SHALL be the single place the activation height is written, and no configuration value, flag or governance parameter SHALL be able to change it for a built binary."
+ac_6 = "AT the height one below the fork height the application's begin blocker SHALL schedule the plan for the fork height through the upgrade keeper when no plan is scheduled and the plan has no done height, SHALL run after the module begin blockers so that no node panics for a binary updated before its trigger, and SHALL reject the scheduling on a chain whose module version map already carries every module the plan adds."
+ac_7 = "AT the fork height a node that did not start with the plan's upgrade-info.json SHALL write that file for the plan at that height and stop before the module begin blockers run, so that the block is not committed and the restarted binary mounts the plan's added stores through the upgrade store loader with their initial version equal to the fork height; a node that did start with that file SHALL proceed and let the upgrade module apply the plan on its standard path."
+ac_8 = "THE custom-precompile reachability predicate SHALL serve an address the activation record names only when the plan's done height is above zero and the block height is at or above it, or when the chain's module version map already carries every module the plan adds; it SHALL keep today's rule for every address the record does not name, and it SHALL NOT decide anything from the absence of every upgrade record."
+ac_9 = "ALL eight fork precompile addresses SHALL be named by the activation record, and tests SHALL prove that a state without the fork modules below the fork height serves none of the eight, that every legacy precompile is served in that same state, and that after the plan runs all eight are served."
+ac_10 = "TESTS SHALL prove that the begin blocker at one below the fork height schedules the plan on a chain whose version map lacks the fork modules and schedules nothing on a chain whose version map carries them, and no test in the repository SHALL be relaxed, skipped or deleted to make any of this pass."
+
+# --------------------------------------------------------------------------
+# TASKS
+# --------------------------------------------------------------------------
+
+[task.1]
+section = "Wave 1 - The Activation And Its Replay"
+title = "Bring the fork online at one height and prove it against a real state"
+status = "pending"
+
+[task.1.1]
+title = "Add the activation plan, its fork-height scheduling and the precompile reachability it turns on"
+status = "pending"
+wave = 1
+requires = []
+do_1 = "In node/upgrades.go add an exported plan-name constant following the repository's semantic-version naming for upgrade names and an exported ForkHeight constant of type int64 with the initial value 26000000, register the plan's handler explicitly after the loop that registers a handler per embedded tag so the tag list, the latest upgrade name and every precompile version map stay unchanged, and leave every existing handler and store-upgrade entry byte for byte."
+do_2 = "Add the plan's store upgrades as a static list adding the custody, anchor, exchange, bridge, launchpad and web-search store keys, taken from each module's types package rather than written as string literals, add nothing to Deleted or Renamed, and add the plan to the switch that maps a plan name to its store upgrades."
+do_3 = "Write the plan's handler: run the module manager's migrations once against the version map read from state so every absent module initialises from its own default genesis exactly once, then refresh the web-search precompile entry from state so the applying block already serves it; register no remote asset, create no denomination and write no parameter a default genesis does not write."
+do_4 = "Add the scheduling step in node/upgrades.go and call it from the application's begin blocker in node/abci.go after the module begin blockers: it returns on a tracing context, at any height other than one below ForkHeight, when a plan is already scheduled, when the plan already has a done height, or when the module version map already carries every module the plan adds; otherwise it schedules the plan for ForkHeight through the upgrade keeper and panics on the keeper's error."
+do_5 = "Add the stop step in node/upgrades.go and call it from the application's begin blocker before the module begin blockers: it returns on a tracing context, when this process started with the plan's upgrade-info.json, when the scheduled plan is not the activation plan or is not yet due, or when the height is one the operator marked skipped; otherwise it writes upgrade-info.json for the plan at the current height through the upgrade keeper and stops the node with the SDK's own upgrade-needed message."
+do_6 = "In node/app.go record, in the store-loader wiring that already reads upgrade-info.json, that this process started with the activation plan's file at ForkHeight and therefore mounted the plan's added stores through the upgrade store loader, and register the activation record on the EVM keeper where the application builds its custom precompile set, naming the plan, the six module names it adds and the eight precompile addresses it brings online."
+do_7 = "In modules/evm/keeper/keeper.go add the activation record type and its setter, and change the reachability predicate so an address the record names is served only when the plan's done height is above zero and the height is at or above it, or when the module version map already carries every module the plan adds, while an address the record does not name keeps today's rule unchanged; reject a record with no module or no address at registration rather than letting it serve everything."
+do_8 = "Write the tests beside each file: a table test of the plan's store list against the application's canonical store-key list; a handler test on the test-application harness that removes the six modules from the version map and their state, runs the plan and asserts the web-search module paused with an empty attestor set, non-zero parameters on the other five, the done height and the full version map afterwards; reachability tests that assert none of the eight is served below the fork height in that state while every legacy address is, and all eight after the plan runs; and begin-blocker tests that assert the plan is scheduled at one below ForkHeight on that state and is not scheduled on a full-genesis chain."
+verify_cmd = "timeout 25m go test -count=1 -run 'Activation|Upgrade|CustomPrecompile' ./node/... ./modules/evm/keeper/..."
+symbols = ["ActivationUpgrade","ForkHeight","activationStoreUpgrades","runActivationUpgrade","scheduleActivationUpgrade","haltForActivationStoreUpgrade","CustomPrecompileActivation","SetCustomPrecompileActivation","customPrecompileReached"]
+touches = ["node/upgrades.go","node/app.go","node/abci.go","modules/evm/keeper/keeper.go","node/upgrades_activation_test.go","modules/evm/keeper/keeper_activation_test.go"]
+reqs = ["1.1","1.2","1.3","1.4","1.5","1.6","1.7","1.8","1.9","1.10"]
+
+[task.1.2]
+title = "Replay the activation on a copied chain state"
+status = "pending"
+wave = 1
+requires = ["1.1"]
+do_1 = "Write tools/chain/upgrade-replay/run.sh, a POSIX shell harness that takes a copy of a chain data directory whose module version map lacks the fork modules, runs the binary built from the working tree against it up to the fork height, and records the stop, the written upgrade-info.json, the restart, the mounted stores and the applied plan with the application hash at each of the three heights around the fork."
+do_2 = "Assert in the harness that the added stores' initial version equals the fork height, that a pruning run at the configured retention does not fail on them, and that the eight precompile addresses answer at the fork height and do not answer one block below it."
+do_3 = "Record the harness's revision, command, exit code and log path, and record as one observation each any failure the replay exposes that belongs to no task in this feature, including the application-hash question of a node that synced the pre-fork history with a binary that already mounts the fork stores."
+verify_cmd = "tools/chain/upgrade-replay/run.sh"
+symbols = ["upgrade-replay"]
+touches = ["tools/chain/upgrade-replay/run.sh","spec/paxeer-x-activation/qualification.kvx"]
+reqs = ["1.2","1.7","1.9"]
+
+[task.2]
+section = "Wave 2 - One Aggregate Run, Recorded"
+title = "Qualify the merged wave once and write down what ran"
+status = "pending"
+
+[task.2.1]
+title = "Run the chain gates once on the merged revision and record the evidence"
+status = "pending"
+wave = 2
+requires = ["1.1","1.2"]
+do_1 = "On the revision that merges wave 1, build the chain once and run the node and EVM keeper package suites once, writing the logs under build/activation-gates/."
+do_2 = "Append one gate record per run to spec/paxeer-x-activation/qualification.kvx carrying the task, the requirements the run qualifies, the revision, the exact command, the exit code and the log path, written only from a command that actually ran."
+do_3 = "Append one observation per failure the run exposes that belongs to no task in this feature: revision, command, exit code, log path, one sentence of what was observed and one sentence of what is assumed; do not investigate it further and do not rerun it."
+do_4 = "Rerun nothing that already passed at this revision, spawn no review of a task whose verify_cmd passed, and write no gate record for a command that did not run."
+verify_cmd = "timeout 40m sh -c 'go build ./node/... ./modules/evm/... ./daemon/... && go test -count=1 ./node/... ./modules/evm/keeper/...'"
+symbols = ["activation-gates"]
+touches = ["spec/paxeer-x-activation/qualification.kvx"]
+reqs = ["1.1","1.2","1.3","1.5","1.6","1.7","1.8","1.9","1.10"]
