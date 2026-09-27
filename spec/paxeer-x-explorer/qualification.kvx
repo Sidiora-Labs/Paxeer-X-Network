@@ -778,3 +778,107 @@ observed = "At tree db03290c60c8eece2868feb27f82f13239117a82 over lane head 50ad
 assumption = "These are the same teardown errors observation.7.1.2 already records at this revision, none of them failing a test and none of them raised by a spec this task owns, so the task leaves the specs and the runner exactly as written rather than silencing the runner to reach exit 0."
 severity = "blocker"
 note = "Closed by task 8.5: the vitest setup now fills the font-face set jsdom leaves out, so the observer settles on its first attempt and starts no timer, and at base revision d83276386c479a0acbfd9ec2d4b3804afbaabd4b the same command exits 0 with 80 spec files and 395 tests passing and no unhandled error, log explorer/frontend/.logs/verify-8.3-run3.log."
+
+[observation.8.4.1]
+task = "8.4"
+file = "explorer/frontend/lib/api/useQueryClientConfig.tsx"
+symbol = "page-load-cost"
+observed = "Measured over the nine scan pages before the change against the development deployment and after it against a production build of this lane carrying the deployment's own runtime environment and the same backend: the address page's counters request moves from 12109 ms to 2549 ms, 9.56 s earlier and 4 ms behind the three requests it belongs with; /api/v2/stats is asked for once per load instead of two or three times, so the transactions list drops from seven requests to five and its first page of transactions arrives at 7041 ms instead of 11405 ms; and the transaction and address pages transfer 1221 KB and 1298 KB of JavaScript instead of 1705 KB and 1838 KB, the 486 KB verified-fetch bundle now arriving only when an ipfs:// image needs it. Reports MEASURE-BEFORE.md and MEASURE-AFTER.md with metrics-before.json and metrics-after.json under /root/lx-ops/explorer-ui-2026-09-27/wave8/8.4."
+assumption = "Only the request count, the request timing and the bytes are read as the change's own effect; the time to first byte, which falls to 19-86 ms because the after pass serves the document from the measuring box, and the long-task totals, which both passes take under a host load average of 6 to 13, are not attributed to it, and the after pass's blocks page carries one contention spike that no code path explains."
+severity = "note"
+
+[observation.8.4.2]
+task = "8.4"
+file = "explorer/backend"
+symbol = "read-path-latency"
+observed = "Timed directly with curl, five samples each, the slowest read endpoints of the development backend are /api/v2/blocks/{number}/transactions at a p50 of 378 ms, /api/v2/addresses at 354 ms, /api/v2/blocks/{number} at 338 ms and /api/v2/stats at 327 ms, against 195-280 ms for the rest, of which roughly 100-180 ms is server time and the remainder the hop to the Railway edge."
+assumption = "The read path is not what makes a page slow - no page waits on one of these - so the figures are left for whoever tunes the backend and nothing in the frontend is changed for them."
+severity = "note"
+
+[observation.8.4.3]
+task = "8.4"
+file = "explorer/backend"
+symbol = "read-path-tail"
+observed = "Endpoints that answer in 200-300 ms at the median carry a repeated tail of about five seconds - /api/v2/stats max 5182 ms, /api/v2/addresses/{hash}/tabs-counters max 5268 ms, /api/v2/addresses/{hash}/tokens max 5360 ms, /api/v2/stats/charts/secondary-coin-price max 5379 ms - in one of five samples on several of them."
+assumption = "A p99 of five seconds on the read path is a backend or database finding, most likely a lock or a cold query plan, and belongs to whoever owns the indexer rather than to this task."
+severity = "note"
+
+[observation.8.4.4]
+task = "8.4"
+file = "explorer/backend"
+symbol = "cache-control"
+observed = "Every backend response carries cache-control: max-age=0, private, must-revalidate, including records that can never change once written, such as /api/v2/transactions/{hash} and /api/v2/blocks/{number}."
+assumption = "Neither the browser nor the Railway edge may reuse an immutable record, so the frontend holds it in memory with a stale time instead, and a public, immutable cache-control on the by-hash paths stays a backend decision."
+severity = "note"
+
+[observation.8.4.5]
+task = "8.4"
+file = "explorer/backend"
+symbol = "stats_charts_secondary_coin_price"
+observed = "/api/v2/stats/charts/secondary-coin-price answers 400 on every call, in 215 ms at the median and 5379 ms at worst, and the frontend asks for it on the pages that show the market chart."
+assumption = "The endpoint needs a secondary coin configured or the feature turned off; the request is made by configuration rather than by code, so no page stops asking for it in this task."
+severity = "note"
+
+[observation.8.4.6]
+task = "8.4"
+file = "explorer/frontend/lib/api/isNeedProxy.ts"
+symbol = "isNeedProxy"
+observed = "The development deployment runs with NEXT_PUBLIC_APP_ENV=development, so isNeedProxy() is true and every browser request takes the /node-api/proxy detour through the Next.js container - two hops per request, and nothing cacheable at the edge; the ten slowest in-page calls of the pass are all proxied, from 236 ms to 760 ms."
+assumption = "The variable is a deployment setting, not code, so it is recorded for the leader rather than changed here; NEXT_PUBLIC_APP_ENV=production on the development service would remove the hop without touching the frontend."
+severity = "note"
+
+[observation.8.4.7]
+task = "8.4"
+file = "explorer/frontend/ui/shared/nft/useLoadImageViaIpfs.tsx"
+symbol = "HELIA_VERIFIED_FETCH_ENABLED"
+observed = "The deployment runs with NEXT_PUBLIC_HELIA_VERIFIED_FETCH_ENABLED=true while the chain carries no ipfs:// media, and the verified-fetch client is a 486 KB gzipped chunk that the transaction, token and address pages loaded eagerly."
+assumption = "This task makes the client arrive only when a gateway fallback is taken; turning the variable off on the deployment would also stop the fallback from ever being reachable, which is the leader's call."
+severity = "note"
+
+[observation.8.4.8]
+task = "8.4"
+file = "explorer/frontend/ui/pages/Stats.tsx"
+symbol = "stats-microservice"
+observed = "/stats answers 404 on the development deployment because no statistics microservice host is configured, and the route still ships 1058 KB of JavaScript over 17 files before it renders the not-found page."
+assumption = "The missing host is a deployment setting; the page is built and shipped by the router either way, so nothing in this task changes what the route sends."
+severity = "note"
+
+[observation.8.4.9]
+task = "8.4"
+file = "explorer/deploy"
+symbol = "remote-configuration"
+observed = "The shell fetches four configuration files from raw.githubusercontent.com while it boots - the featured networks, the footer links, the homepage highlights and the third-party widgets - plus a promo banner and the network logo from further third-party hosts, each a cross-origin request on the critical path."
+assumption = "Serving those files from the explorer's own origin is a deployment change, so the paths are recorded rather than moved, and no request is removed from the code."
+severity = "note"
+
+[observation.8.4.10]
+task = "8.4"
+file = "explorer/deploy"
+symbol = "cold-route"
+observed = "The first request to a route that has not been visited recently costs about 1.25 s of time to first byte, against 160-342 ms once the route is warm."
+assumption = "A cold route compile or a container spin-up on the development service, which a warm-up or a larger instance addresses; it is measured here only so it is not mistaken for page cost."
+severity = "note"
+
+[observation.8.4.11]
+task = "8.4"
+file = "explorer/deploy"
+symbol = "NAVIGATION_LAYOUT"
+observed = "The development service still runs NEXT_PUBLIC_NAVIGATION_LAYOUT=vertical while the wave-5 shell is built around the horizontal navigation, and the page description and social preview text still carry the pre-fork product wording."
+assumption = "Both are deployment variables rather than code, so they are recorded for the leader; the shell itself is not changed to match a stale setting."
+severity = "note"
+
+[observation.8.4.12]
+task = "8.4"
+file = "explorer/frontend/ui/pages/Block.spec.tsx"
+symbol = "testTimeout"
+observed = "The second run of this task's verify command exits 1 on three page specs this task does not touch - ui/pages/Block.spec.tsx, ui/pages/PaxeerXAccount.spec.tsx and ui/pages/Stats.spec.tsx - each stopping at vitest's default five-second per-test budget while the host carried a load average of 13, and the same three files pass on their own at the same revision in 40 s with their slowest test at 3.6 s, having also passed in the first run of the same command at a load average of 10; log build/explorer-gates/8.4-verify-run2.log, diagnosis log build/explorer-gates/8.4-diag-three-specs.log."
+assumption = "A pre-existing, load-bound timeout in specs that do not declare the sixty-second budget their sibling page specs use - the block page spec is the one the wave-7 aggregate already recorded at the merged tip - so it is recorded for their owners rather than repaired or chased from here."
+severity = "note"
+
+[observation.8.4.13]
+task = "8.4"
+file = "explorer/frontend/yarn.lock"
+symbol = "lodash-es"
+observed = "The first production build of this lane failed with dozens of 'Module not found' errors inside node_modules/lodash-es - './_arrayMap.js', './_baseIsNative.js', './_assocIndexOf.js' and more, reached through formik and @dynamic-labs/sdk-react-core from pages/_app - because the installed lodash-es 4.17.22 held 542 of its 650 files; two lanes installed at the same time carry the truncated copy and two others carry the complete one; log build/explorer-gates/8.4-build-after.log."
+assumption = "A concurrent yarn install against the shared yarn cache extracted the package partially, not a repository or lockfile defect, since the same lockfile yields a complete package in the lanes that installed alone; the copy was restored from a complete lane and the build repeated, and any lane whose image build fails on the same message needs its package reinstalled."
+severity = "note"

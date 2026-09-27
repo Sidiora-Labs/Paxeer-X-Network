@@ -37,6 +37,21 @@ export interface Params<Resource extends PaginatedResourceName> {
 
 const INITIAL_PAGE_PARAMS = { '1': {} };
 
+type QueryOptions<Resource extends PaginatedResourceName> = NonNullable<UseApiQueryParams<Resource>['queryOptions']>;
+
+// A page turn asks for a new query key, so without a placeholder the rows vanish while the next page
+// loads. The answer of the page being left is the placeholder of the page being opened, and the stub a
+// caller passes stays the placeholder of the first page, where there is nothing to keep.
+function keepPreviousPage<Resource extends PaginatedResourceName>(
+  stub: QueryOptions<Resource>['placeholderData'],
+): QueryOptions<Resource>['placeholderData'] {
+  if (typeof stub === 'function') {
+    return stub;
+  }
+
+  return (previousPageData) => previousPageData ?? stub;
+}
+
 function getPageFromQuery(query: Route['query']) {
   return query?.page && !Array.isArray(query.page) ? Number(query.page) : 1;
 }
@@ -128,6 +143,7 @@ export default function useQueryWithPages<Resource extends PaginatedResourceName
     queryOptions: {
       staleTime: page === 1 ? 0 : Infinity,
       ...options,
+      placeholderData: keepPreviousPage<Resource>(options?.placeholderData),
     },
     chain: selectedChain,
   });

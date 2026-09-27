@@ -5,6 +5,7 @@ import React from 'react';
 import * as addressMock from 'mocks/address/address';
 import { render, routerState } from 'ui/shared/layout/testWrapper';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { waitFor } from 'vitest/lib';
 
 vi.mock('next/router', async() => (await import('ui/shared/layout/testWrapper')).nextRouterModule());
 
@@ -26,6 +27,21 @@ describe('AddressCoinBalance', () => {
     const { container } = render(<AddressCoinBalance/>);
 
     expect(container.querySelector('[data-coin-balance-chart-card]')).toBeTruthy();
+  });
+
+  it('holds the height of the chart with a placeholder until the chart itself arrives', async() => {
+    const { container } = render(<AddressCoinBalance/>);
+
+    const card = container.querySelector('[data-coin-balance-chart-card]') as HTMLElement;
+
+    expect(card.querySelector('[data-coin-balance-chart-skeleton]')).toBeTruthy();
+    expect(card.textContent).not.toContain('Balances');
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-coin-balance-chart-card]')?.textContent).toContain('Balances');
+    // The chart is fetched as its own module, and the first fetch of it in this environment is a transform
+    // of the chart and its d3 dependencies rather than a cached chunk.
+    }, { timeout: 30_000 });
   });
 
   it('heads the history card with the number of balance changes', () => {

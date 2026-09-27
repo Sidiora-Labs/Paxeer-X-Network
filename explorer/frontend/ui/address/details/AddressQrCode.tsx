@@ -1,6 +1,5 @@
 import { chakra, Box } from '@chakra-ui/react';
 import { useRouter } from 'next/router';
-import QRCode from 'qrcode';
 import React from 'react';
 
 import getPageType from 'lib/mixpanel/getPageType';
@@ -37,8 +36,24 @@ const AddressQrCode = ({ hash, className, isLoading }: Props) => {
   const pageType = getPageType(router.pathname);
 
   React.useEffect(() => {
-    if (open) {
+    if (!open) {
+      return;
+    }
+
+    let isCurrent = true;
+
+    // The generator is only ever used by the dialog, so it is fetched when the dialog opens rather
+    // than with every page that carries an address.
+    import('qrcode').then((QRCode) => {
+      if (!isCurrent) {
+        return;
+      }
+
       QRCode.toString(hash, SVG_OPTIONS, (error: Error | null | undefined, svg: string) => {
+        if (!isCurrent) {
+          return;
+        }
+
         if (error) {
           setError('We were unable to generate QR code.');
           rollbar?.warn('QR code generation failed');
@@ -49,7 +64,18 @@ const AddressQrCode = ({ hash, className, isLoading }: Props) => {
         setQr(svg);
         mixpanel.logEvent(mixpanel.EventTypes.QR_CODE, { 'Page type': pageType });
       });
-    }
+    }).catch(() => {
+      if (!isCurrent) {
+        return;
+      }
+
+      setError('We were unable to generate QR code.');
+      rollbar?.warn('QR code generation failed');
+    });
+
+    return () => {
+      isCurrent = false;
+    };
   }, [ hash, open, pageType, rollbar ]);
 
   if (isLoading) {
