@@ -46,7 +46,7 @@
     - For the confirmed-creation case in agent/crates/layerx-agentd/tests/budget_create.rs, establish why the core-keyed budget is not returned or is cached on trust, and repair the creation path in the daemon so the confirmed creation returns the core-keyed budget without caching on trust.
     - Keep both tests asserting exactly what they assert now; if the code and a test genuinely contradict each other, leave both intact and record the contradiction in spec/paxeer-x-explorer/qualification.kvx.
     - _Requirements: 1.5, 1.9_
-  - [ ] 1.7 Repair the human workspace lint gate and its web image
+  - [x] 1.7 Repair the human workspace lint gate and its web image
     - Diagnose from the job log: `gh run view --job 36149017895 --log` and read both the step that enforces component-library integrity, copy, policies and strict lints and the browser-performance job's image build; the recorded findings are four eslint errors in the web application and a failed image build for the human web image.
     - Fix the four eslint errors at their source in human/apps/web/src/api/abi-read.ts, human/apps/web/src/app/launchpad/actions.ts and human/apps/web/src/app/launchpad/launchpad-client.tsx, changing behaviour only where the rule proves the behaviour wrong; add no eslint-disable comment and lower no rule.
     - Add the workspace dependency installation the lint step depends on to .github/workflows/human.yml so the job installs what it lints before it lints it, keeping the existing install of the web dependencies.
