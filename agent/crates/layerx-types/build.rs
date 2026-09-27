@@ -117,6 +117,33 @@ fn mirror_codes(source: &str) -> Result<Vec<Code>, String> {
     Ok(codes)
 }
 
+fn guest_abi_maximum(source: &str) -> Result<u16, String> {
+    let mut maximum = 0;
+    for raw in source.lines() {
+        let Some(rest) = raw.trim().strip_prefix("LX_PROGRAMS_GUEST_ABI_V") else {
+            continue;
+        };
+        let (declared, value) = rest
+            .split_once("_VERSION = ")
+            .ok_or_else(|| format!("unexpected guest ABI enumerator: {rest}"))?;
+        let value = value
+            .trim_end_matches(',')
+            .trim()
+            .parse::<u16>()
+            .map_err(|error| format!("invalid guest ABI number in {rest}: {error}"))?;
+        if declared.parse::<u16>().ok() != Some(value) {
+            return Err(format!(
+                "guest ABI enumerator {rest} names a version it does not equal"
+            ));
+        }
+        maximum = maximum.max(value);
+    }
+    if maximum == 0 {
+        return Err("no LX_PROGRAMS_GUEST_ABI_V*_VERSION enumerator is declared".to_owned());
+    }
+    Ok(maximum)
+}
+
 fn parity(header: &[Code], mirror: &[Code]) -> Result<(), String> {
     for (index, expected) in header.iter().enumerate() {
         match mirror.get(index) {
@@ -161,4 +188,18 @@ fn main() {
     parity(&declared, &mirrored).unwrap_or_else(|error| {
         panic!("protocol result-code parity failure: {error}");
     });
+    let programs = crate_dir.join("../../../include/layerx/programs.h");
+    println!("cargo:rerun-if-changed={}", programs.display());
+    let maximum = guest_abi_maximum(&read_file(&programs))
+        .unwrap_or_else(|error| panic!("invalid {}: {error}", programs.display()));
+    let generated =
+        PathBuf::from(env::var_os("OUT_DIR").unwrap_or_else(|| panic!("OUT_DIR is unavailable")))
+            .join("guest_abi.rs");
+    let body = format!(
+        "// Generated from include/layerx/programs.h by build.rs. Do not edit.\n\n\
+/// The highest guest ABI version the kernel's Programs module admits.\n\
+pub const MAX_VERSION: u16 = {maximum};\n"
+    );
+    fs::write(&generated, body)
+        .unwrap_or_else(|error| panic!("failed to write {}: {error}", generated.display()));
 }

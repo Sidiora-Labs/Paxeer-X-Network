@@ -1288,7 +1288,11 @@ reqs = ["9.1"]
 
 [task.2.40]
 title = "Align the native program lifecycle and call encoders with the kernel's guest ABI range"
-status = "pending"
+status = "implemented"
+implemented_revision = "b719d112aba886e8350c6faf6da215fd0c2b18f2"
+implemented_command = "timeout 30m sh -c 'export LAYERX_TEST_SOCAT_BIN=$(command -v socat) LAYERX_TEST_WEB_READER_WASM=$PWD/programs/sdk/rust/examples/web-reader/target/wasm32-unknown-unknown/release/layerx_reference_web_reader.wasm; cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway schema_lists_every_public_method && cargo test --locked --manifest-path platform/hosted/gateway/tests/local/Cargo.toml --test lifecycle events::'"
+implemented_exit_code = 101
+implemented_log_path = ".logs/verify.log"
 wave = 2
 requires = ["2.37"]
 do_1 = "Observation 2.37.2: the local gateway qualification now funds itself through the native custody module and starts its cluster, then stops in deploy_web_reader because NativeProgramDeploy::encode refuses guest ABI 4, and the same run would stop again in call_web_request because NativeProgramCall::validate admits only 1 and 2; the kernel is the authority and it admits 1 to 4 - include/layerx/programs.h allocates LX_PROGRAMS_GUEST_ABI_V2_VERSION through LX_PROGRAMS_GUEST_ABI_V4_VERSION, lxp_programs_abi_transition_validate in src/modules/programs/deploy.c admits a requested version of 1, 2, 3 or 4, the call decoder in src/modules/programs/call.c refuses a zero version and every version above LX_PROGRAMS_GUEST_ABI_V4_VERSION, the programs module registers at that same version in src/modules/programs/registration.c, and the reference web reader declares abi 4 in its layerx-program.json, its LayerX.toml and its interface.kvx with ABI 4 frozen in programs/abi-frozen.sha256; every kernel rule and the program's declared ABI therefore stay exactly as they are and the stale Rust bound, written when 3 was the highest guest ABI and never raised when 4 was allocated, is the side corrected."

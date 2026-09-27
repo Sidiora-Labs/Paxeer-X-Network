@@ -8,6 +8,7 @@ pub mod checkpoint;
 pub mod clock;
 pub mod clock_protocol;
 pub mod error;
+pub mod guest_abi;
 pub mod ids;
 pub mod intent;
 pub mod json;
