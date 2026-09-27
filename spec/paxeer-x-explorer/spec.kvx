@@ -1089,7 +1089,7 @@ reqs = ["22.1","22.2","22.3","22.4","22.5","22.6","22.7","22.8"]
 
 [task.6.9]
 title = "Rebuild the kernel pages on the chain pages' cards"
-status = "pending"
+status = "done"
 wave = 6
 requires = ["5.1","5.2"]
 do_1 = "Rebuild the unified account summary in explorer/frontend/ui/pages/PaxeerXAccount.tsx on the same three cards the address page uses, with the title row carrying the identicon, the account label, the account identifier and the copy control."
@@ -1105,6 +1105,10 @@ verify_cmd = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --
 symbols = ["PaxeerXAccount","PaxeerXAnchorsTable","PaxeerXReceiptsTable","PaxeerXReceiptDetails","AssetList","ActivityList","IdentityList"]
 touches = ["explorer/frontend/ui/paxeerX/account/IdentityList.tsx","explorer/frontend/ui/paxeerX/account/AssetList.tsx","explorer/frontend/ui/paxeerX/account/AssetListItem.tsx","explorer/frontend/ui/paxeerX/account/ActivityList.tsx","explorer/frontend/ui/paxeerX/account/ActivityListItem.tsx","explorer/frontend/ui/paxeerX/account/AssetList.spec.tsx","explorer/frontend/ui/paxeerX/account/ActivityList.spec.tsx","explorer/frontend/ui/paxeerX/account/IdentityList.spec.tsx","explorer/frontend/ui/paxeerX/anchors/PaxeerXAnchorsTable.tsx","explorer/frontend/ui/paxeerX/anchors/PaxeerXAnchorsTable.spec.tsx","explorer/frontend/ui/paxeerX/anchors/PaxeerXAnchorsTableItem.tsx","explorer/frontend/ui/paxeerX/anchors/PaxeerXAnchorsListItem.tsx","explorer/frontend/ui/paxeerX/receipts/PaxeerXReceiptDetails.tsx","explorer/frontend/ui/paxeerX/receipts/PaxeerXReceiptDetails.spec.tsx","explorer/frontend/ui/paxeerX/receipts/PaxeerXReceiptsTable.tsx","explorer/frontend/ui/paxeerX/receipts/PaxeerXReceiptsTable.spec.tsx","explorer/frontend/ui/paxeerX/receipts/PaxeerXReceiptsTableItem.tsx","explorer/frontend/ui/paxeerX/receipts/PaxeerXReceiptsListItem.tsx","explorer/frontend/ui/pages/PaxeerXAccount.tsx","explorer/frontend/ui/pages/PaxeerXAccount.spec.tsx","explorer/frontend/ui/pages/PaxeerXAnchors.tsx","explorer/frontend/ui/pages/PaxeerXAnchors.spec.tsx","explorer/frontend/ui/pages/PaxeerXReceipts.tsx","explorer/frontend/ui/pages/PaxeerXReceipts.spec.tsx","explorer/frontend/ui/pages/PaxeerXReceipt.tsx","explorer/frontend/ui/pages/PaxeerXReceipt.spec.tsx"]
 reqs = ["23.1","23.2","23.3","23.4","23.5","23.6","23.7","23.8"]
+done_revision = "59b2211153c314234939e1a9c1304ff883e9a9e9"
+done_command = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/paxeerX ui/pages/PaxeerX'"
+done_exit_code = 0
+done_log = ".logs/verify-6.9.log"
 
 [task.6.10]
 title = "Add the specs the transaction page rebuild left without coverage"

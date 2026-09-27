@@ -3,11 +3,11 @@ import React from 'react';
 
 import type { PaxeerXActivityItem } from 'types/api/paxeerX';
 
-import { route } from 'nextjs/routes';
-
-import { Link } from 'toolkit/chakra/link';
 import { Skeleton } from 'toolkit/chakra/skeleton';
 import { TableCell, TableRow } from 'toolkit/chakra/table';
+import BlockEntity from 'ui/shared/entities/block/BlockEntity';
+import TxEntity from 'ui/shared/entities/tx/TxEntity';
+import { ScanMethodChip } from 'ui/shared/scan';
 import StatusLadderBadge from 'ui/shared/statusLadder/StatusLadderBadge';
 import TimeWithTooltip from 'ui/shared/time/TimeWithTooltip';
 
@@ -31,23 +31,29 @@ const ActivityListItem = ({ item, isLoading }: Props) => {
   return (
     <TableRow data-activity={ item.hash }>
       <TableCell verticalAlign="middle">
-        <Flex flexDirection="column" rowGap={ 1 }>
-          <Skeleton loading={ isLoading } fontWeight={ 600 }>{ activityKindLabel(item.kind) }</Skeleton>
-          <Skeleton loading={ isLoading } color="text.secondary" textStyle="sm">{ SIDE_LABELS[item.side] }</Skeleton>
+        <Flex flexDirection="column" rowGap={ 1 } alignItems="flex-start">
+          <ScanMethodChip method={ activityKindLabel(item.kind) } isLoading={ isLoading }/>
+          <Skeleton loading={ isLoading } color="text.secondary" textStyle="xs">{ SIDE_LABELS[item.side] }</Skeleton>
         </Flex>
       </TableCell>
       <TableCell verticalAlign="middle">
-        <Skeleton loading={ isLoading } overflow="hidden" textOverflow="ellipsis">
-          <Link href={ route({ pathname: '/tx/[hash]', query: { hash: item.hash } }) }>{ item.hash }</Link>
-        </Skeleton>
+        <TxEntity
+          hash={ item.hash }
+          isLoading={ isLoading }
+          truncation="constant_long"
+          fontWeight={ 600 }
+          noIcon
+        />
       </TableCell>
       <TableCell verticalAlign="middle">
-        <Skeleton loading={ isLoading }>
-          <Link href={ route({ pathname: '/block/[height_or_hash]', query: { height_or_hash: String(item.block_number) } }) }>
-            { item.block_number }
-          </Link>
-        </Skeleton>
-        <TimeWithTooltip timestamp={ item.timestamp } isLoading={ isLoading } color="text.secondary" textStyle="sm" display="block"/>
+        <BlockEntity
+          number={ item.block_number }
+          isLoading={ isLoading }
+          truncation="none"
+          fontWeight={ 500 }
+          noIcon
+        />
+        <TimeWithTooltip timestamp={ item.timestamp } isLoading={ isLoading } color="text.secondary" textStyle="xs" display="block"/>
       </TableCell>
       <TableCell verticalAlign="middle" isNumeric>
         <Skeleton loading={ isLoading } display="inline-block">
@@ -55,7 +61,7 @@ const ActivityListItem = ({ item, isLoading }: Props) => {
         </Skeleton>
       </TableCell>
       <TableCell verticalAlign="middle">
-        <StatusLadderBadge rung={ item.status } loading={ isLoading }/>
+        <StatusLadderBadge rung={ item.status } isLoading={ isLoading }/>
       </TableCell>
     </TableRow>
   );

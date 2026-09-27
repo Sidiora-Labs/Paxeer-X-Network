@@ -58,4 +58,22 @@ describe('ActivityList', () => {
 
     expect(screen.getByText(`1,200 ${ paxeerXMock.custodyAsset.denom }`)).toBeTruthy();
   });
+  it('heads the scan table card with the entry count and its note', () => {
+    const { container } = render(<ActivityList items={ paxeerXMock.unifiedAccount.activity }/>);
+
+    const card = container.querySelector('[data-scan-table-card]');
+
+    expect(card?.querySelector('[data-title]')?.textContent).toBe('A total of 3 activity entries found');
+    expect(card?.querySelector('[data-note]')?.textContent).toBe('Chain-side and kernel-side entries in one feed, newest first');
+  });
+
+  it('names the action of every row on a method chip', () => {
+    const { container } = render(<ActivityList items={ paxeerXMock.unifiedAccount.activity }/>);
+
+    const methods = Array.from(container.querySelectorAll('[data-activity] [data-scan-method]'))
+      .map((chip) => chip.getAttribute('data-scan-method'));
+
+    expect(methods).toEqual([ 'Custody deposit', 'Token transfer', 'Transaction' ]);
+  });
+
 });

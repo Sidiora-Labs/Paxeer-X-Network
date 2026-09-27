@@ -100,4 +100,32 @@ describe('PaxeerXReceiptDetails', () => {
     expect(screen.queryByText(String(receipt.account))).toBeNull();
     expect(screen.queryByText(String(receipt.payload_hash))).toBeNull();
   });
+  it('renders the fields as key-value rows of one surface card', () => {
+    const { container } = render(<PaxeerXReceiptDetails data={ receipt }/>);
+
+    const card = container.querySelector('[data-receipt-details] [data-receipt-details-card]') as HTMLElement;
+
+    expect(card).toBeTruthy();
+
+    const keys = Array.from(card.querySelectorAll('[data-scan-key]')).map((key) => key.textContent);
+
+    expect(keys).toEqual([
+      'Receipt ID',
+      'Kernel account',
+      'Settlement status',
+      'Verification status',
+      'Payload hash',
+      'Transaction',
+      'Block',
+      'Timestamp',
+    ]);
+    expect(card.querySelectorAll('[data-scan-value]')).toHaveLength(keys.length);
+  });
+
+  it('groups the rows with dividers after the account and the payload hash', () => {
+    const { container } = render(<PaxeerXReceiptDetails data={ receipt }/>);
+
+    expect(container.querySelectorAll('[data-receipt-details-card] [data-scan-divider]')).toHaveLength(2);
+  });
+
 });

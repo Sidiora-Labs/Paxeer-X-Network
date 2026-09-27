@@ -47,4 +47,20 @@ describe('IdentityList', () => {
 
     expect(link).toBeTruthy();
   });
+  it('heads the scan table card with the identity count and its note', () => {
+    const { container } = render(<IdentityList identities={ paxeerXMock.unifiedAccount.identities }/>);
+
+    const card = container.querySelector('[data-scan-table-card]');
+
+    expect(card?.querySelector('[data-title]')?.textContent).toBe('A total of 4 identities found');
+    expect(card?.querySelector('[data-note]')?.textContent).toBe('Every spelling of this account the node answers for');
+  });
+
+  it('renders the rows in the shared table and closes the card with a show-rows footer', () => {
+    const { container } = render(<IdentityList identities={ paxeerXMock.unifiedAccount.identities }/>);
+
+    expect(container.querySelector('[data-scan-table-card] [data-label="paxeer-x-identities"]')).toBeTruthy();
+    expect(container.querySelector('[data-scan-table-card] [data-footer] [data-scan-show-rows]')).toBeTruthy();
+  });
+
 });

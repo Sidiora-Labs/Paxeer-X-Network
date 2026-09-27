@@ -640,3 +640,11 @@ symbol = "test-ratio"
 observed = "The task ships ten source files but its touches list names only six specs, while tools/explorer/test-ratio.sh fails a range whose changed source files outnumber the changed tests that reference them."
 assumption = "The gate governs, so four further specs - TokensTableItem, Tokens, TokensActionBar and AddressesTableItem - are added beside their own sources, which no other wave-6 task touches."
 severity = "note"
+
+[observation.6.9.1]
+task = "6.9"
+file = "spec/paxeer-x-explorer/spec.kvx"
+symbol = "task.6.9"
+observed = "The touches of this task name ten spec files while sixteen of its source files change, and the explorer test-ratio gate refuses a range that carries fewer changed test files than changed source files."
+assumption = "Six further specs - AssetListItem, ActivityListItem, PaxeerXAnchorsTableItem, PaxeerXAnchorsListItem, PaxeerXReceiptsTableItem and PaxeerXReceiptsListItem - are written beside the ten the task names, each covering a source file the task already owns, rather than leaving source files without a test."
+severity = "note"
