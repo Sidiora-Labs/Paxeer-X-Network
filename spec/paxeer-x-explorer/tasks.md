@@ -395,6 +395,17 @@
     - Rerun nothing that already passed at this revision, spawn no review of a task whose verify_cmd passed, and write no gate record for a command that did not run.
     - _Requirements: 16.1, 16.2, 16.3, 16.4_
 
+## Wave 8 - Usable Under Load and On Mobile
+
+- [ ] 8. Make the redesigned explorer usable while the chain runs fast and while the screen is small
+  - [x] 8.5 Fill the jsdom document.fonts gap once in the vitest setup so fontfaceobserver timers never outlive teardown
+    - In explorer/frontend/vitest/setup.ts, when the environment the setup file runs in carries a document whose fonts property is undefined, define that property once as a minimal font-face-set object, so every spec file that renders a component reading the font loading API finds the interface a browser provides instead of nothing.
+    - Give that object a load method that resolves with one loaded font face, a check method that returns true, a ready promise that is already resolved, a status of loaded, a size of zero, add, delete, has and clear members that change nothing, and a forEach and an iterator that yield nothing, so the font observer behind the dynamic hash shortener and the truncating tooltip settles on its first attempt instead of falling back to its measuring path and its polling timers.
+    - Define the property as configurable and guard the definition on the property being absent, so a spec file that installs its own font-face-set keeps overriding it and a real browser environment and a node environment are both left exactly as they are.
+    - Change nothing else in the setup file: the environment file loading, the fetch mock and the environment variable definition stay as they are, no font loading library is mocked, no reporting option and no unhandled-error setting is touched, and no test is weakened, skipped or removed.
+    - Prove it by running the transaction, transactions, token tracker and shared transaction suites - the ones whose components render the dynamic hash shortener and the truncating tooltip - and requiring the run to finish with no unhandled error, where before it finished with reference errors raised from a font polling timer that fired after the jsdom environment of a spec file had been torn down.
+    - _Requirements: 16.1_
+
 ## Task Dependency Graph
 
 ```json
@@ -406,7 +417,8 @@
     { "id": 4,  "tasks": ["4.1", "4.2"] },
     { "id": 5,  "tasks": ["5.1", "5.2"] },
     { "id": 6,  "tasks": ["6.1", "6.2", "6.3", "6.4", "6.5", "6.6", "6.7", "6.8", "6.9", "6.10", "6.11", "6.12"] },
-    { "id": 7,  "tasks": ["7.1"] }
+    { "id": 7,  "tasks": ["7.1"] },
+    { "id": 8,  "tasks": ["8.5"] }
   ]
 }
 ```

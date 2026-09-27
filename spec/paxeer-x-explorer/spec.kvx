@@ -1201,3 +1201,27 @@ implemented_command = "timeout 20m sh -c 'EXPLORER_GATE_BUDGET_SECONDS=1080 tool
 implemented_exit_code = 1
 implemented_log = "build/explorer-gates/wave-gate-7.1.log"
 implemented_evidence = "The lint gate passed at exit 0 over its backend, frontend and services legs, recorded as gate.7.1.1, and the test-ratio gate passed at exit 0 over the range that spans waves 5 and 6 with 144 changed source files and 146 changed tests referencing them, recorded as gate.7.1.3; the test gate, recorded as gate.7.1.2, passed its four backend legs at 47, 25, 113 and 46 tests with 0 failures and passed the frontend dependency and type-check legs, then exited 1 in the frontend vitest leg with 998 of 999 tests passing, the one failure being the five-second per-test timeout of observation.7.1.1. The frontend image build of do_4 finished at exit 0 after that bound, building every stage the Dockerfile declares and tagging the image locally without pushing it, recorded as gate.7.1.4."
+
+[task.8]
+section = "Wave 8 - Usable Under Load and On Mobile"
+title = "Make the redesigned explorer usable while the chain runs fast and while the screen is small"
+status = "pending"
+
+[task.8.5]
+title = "Fill the jsdom document.fonts gap once in the vitest setup so fontfaceobserver timers never outlive teardown"
+status = "done"
+wave = 8
+requires = []
+do_1 = "In explorer/frontend/vitest/setup.ts, when the environment the setup file runs in carries a document whose fonts property is undefined, define that property once as a minimal font-face-set object, so every spec file that renders a component reading the font loading API finds the interface a browser provides instead of nothing."
+do_2 = "Give that object a load method that resolves with one loaded font face, a check method that returns true, a ready promise that is already resolved, a status of loaded, a size of zero, add, delete, has and clear members that change nothing, and a forEach and an iterator that yield nothing, so the font observer behind the dynamic hash shortener and the truncating tooltip settles on its first attempt instead of falling back to its measuring path and its polling timers."
+do_3 = "Define the property as configurable and guard the definition on the property being absent, so a spec file that installs its own font-face-set keeps overriding it and a real browser environment and a node environment are both left exactly as they are."
+do_4 = "Change nothing else in the setup file: the environment file loading, the fetch mock and the environment variable definition stay as they are, no font loading library is mocked, no reporting option and no unhandled-error setting is touched, and no test is weakened, skipped or removed."
+do_5 = "Prove it by running the transaction, transactions, token tracker and shared transaction suites - the ones whose components render the dynamic hash shortener and the truncating tooltip - and requiring the run to finish with no unhandled error, where before it finished with reference errors raised from a font polling timer that fired after the jsdom environment of a spec file had been torn down."
+verify_cmd = "timeout 20m sh -c 'cd explorer/frontend && yarn vitest run ui/txs ui/tx ui/tokens ui/shared/tx --reporter=dot'"
+symbols = ["document.fonts"]
+touches = ["explorer/frontend/vitest/setup.ts"]
+reqs = ["16.1"]
+done_revision = "94a2b6b09ef8036ff1e3f18d4391ba523f4c3482"
+done_command = "timeout 20m sh -c 'cd explorer/frontend && yarn vitest run ui/txs ui/tx ui/tokens ui/shared/tx --reporter=dot'"
+done_exit_code = 0
+done_log = ".logs/verify-8.5.log"
