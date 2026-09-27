@@ -152,3 +152,11 @@ revision = "b116da8c81acacacd3ed4051546e373dcaa4b184"
 command = "tools/chain/upgrade-replay/run.sh <copy-of-node-data>"
 exit_code = 0
 log_path = "logs/gate-3-live-replay.log"
+
+[gate.3.3.4]
+revision = "b116da8c81acacacd3ed4051546e373dcaa4b184"
+command = "the four validators were stopped so the chain froze at height 25988671, every node was switched to the release binary with data/upgrade-info.json naming v6.9 at height 25988672, and the validators were restarted"
+exit_code = 0
+log_path = "logs/live-activation.log"
+observed = "The plan applied in block 25988672 on all four validators and all sixteen full nodes, the applied-upgrade query answers 25988672 everywhere, and the eight fork precompiles at 0x...1012 through 0x...1019 answer eth_call on the full nodes while blocks continue at the previous pace."
+assumption = "A node that starts the release binary on pre-fork state without the upgrade-info file still cannot mount the six stores, which tasks 3.1 and 3.2 address."
