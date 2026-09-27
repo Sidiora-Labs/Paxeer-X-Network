@@ -2,6 +2,15 @@
 const nextConfig = {
   output: "standalone",
   reactStrictMode: true,
+  // src/api/sdk.ts imports the agent SDK's TypeScript sources, and those modules
+  // name each other with the .js specifier their own NodeNext compiler requires.
+  // The bundler has to try the TypeScript file behind such a specifier, which is
+  // why the build runs on webpack: Turbopack exposes no extension alias.
+  experimental: {
+    extensionAlias: {
+      ".js": [".js", ".ts", ".tsx"],
+    },
+  },
   async rewrites() {
     const service = process.env.LAYERX_HUMAN_SERVICE_URL;
     if (service === undefined) {

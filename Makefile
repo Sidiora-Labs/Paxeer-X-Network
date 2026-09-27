@@ -2252,6 +2252,7 @@ agent-build:
 
 .PHONY: human-js-install
 human-js-install:
+	npm --prefix agent/sdk/typescript ci --ignore-scripts --no-audit --no-fund
 	$(HUMAN_NPM) ci --ignore-scripts --no-audit --no-fund
 
 human-gen-api:
@@ -3617,6 +3618,10 @@ programs-reference-escrow:
 .PHONY: programs-reference-web-reader
 programs-reference-web-reader:
 	sh programs/sdk/rust/examples/web-reader/build.sh
+
+.PHONY: programs-reference-fixtures
+programs-reference-fixtures:
+	sh programs/tools/program-fixtures.sh
 
 programs-sdk-rust:
 	npm --prefix programs/sdk/rust ci --ignore-scripts --no-audit --no-fund

@@ -36,4 +36,8 @@ sh programs/sdk/rust/examples/nft-lxt721/build.sh
 all nine exports and declares nothing but the storage capabilities each export
 actually reaches. The registry example `lxt721_interface` writes the canonical
 interface and the registry state value for a supplied program id and prints its
-digest. The committed fixtures use program id `55` repeated 32 times.
+digest. The committed fixtures use program id `55` repeated 32 times, and
+`make programs-reference-fixtures` is the only build path that writes them: the
+script behind it remaps the source paths, so no checkout path reaches the
+committed artifact, and it regenerates the interface and the registry state value
+from the artifact it just built.

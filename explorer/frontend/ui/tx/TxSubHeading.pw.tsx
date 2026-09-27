@@ -110,7 +110,7 @@ test.describe('blockscout provider', () => {
       { pathParams: { hash } },
     );
     const component = await render(<TxSubHeading hash={ hash } hasTag={ false } txQuery={ txQuery }/>);
-    await expect(component).toHaveScreenshot();
+    await expect(component).toHaveScreenshot('blockscout-provider-with-view-all-link-and-external-link-action.png');
   });
 
   test('no interpretation, has method called', async({ render, mockApiResponse, mockAssetResponse }) => {

@@ -53,4 +53,7 @@ cargo build --manifest-path programs/sdk/rust/examples/swap-cpmm/Cargo.toml --ta
 all five exports and their exact capability masks. The registry example
 `swap_interface` writes the canonical interface and the registry state value for
 a supplied program id and prints its digest. The committed fixtures use program
-id `55` repeated 32 times.
+id `55` repeated 32 times, and `make programs-reference-fixtures` is the only
+build path that writes them: the script behind it remaps the source paths, so no
+checkout path reaches the committed artifact, and it regenerates the interface
+and the registry state value from the artifact it just built.

@@ -68,7 +68,7 @@ export async function sendWalletPrecompileCall(from: string, build: () => Precom
       const review = sidioraQuotePresentation(quoted.value);
       if (review === undefined) return { outcome: "rejected" };
       const consent = typeof window !== "undefined" && window.confirm(review.consent);
-      return sendWalletSponsoredBatch(quoted.value, consent ? review.identity : undefined);
+      return await sendWalletSponsoredBatch(quoted.value, consent ? review.identity : undefined);
     }
     const transactionHash = await sendPrecompileCall(wallet, from, build());
     return { outcome: "sent", transactionHash };
@@ -106,7 +106,7 @@ export function chooseWalletFee(currency: WalletFeePreference["currency"], maxim
 
 export function sidioraAmount(amount: bigint): string {
   const scale = 10n ** BigInt(SIDIORA_DECIMALS);
-  return `${amount / scale}.${(amount % scale).toString().padStart(SIDIORA_DECIMALS, "0")}`;
+  return `${(amount / scale).toString()}.${(amount % scale).toString().padStart(SIDIORA_DECIMALS, "0")}`;
 }
 
 export function sidioraQuotePresentation(quoted: SidioraGasQuote, now = BigInt(Math.floor(Date.now() / 1000))) {

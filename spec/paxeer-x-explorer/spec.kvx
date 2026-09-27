@@ -207,7 +207,7 @@ ac_4 = "NO gate record SHALL be written for a command that did not run, and no g
 [task.1]
 section = "Wave 1 - Green Checks and the Gates That Keep Them Green"
 title = "Close every red job and build the explorer's gates"
-status = "pending"
+status = "done"
 
 [task.1.1]
 title = "Give every mix command one containerised recipe"
@@ -241,7 +241,11 @@ reqs = ["1.1","1.8","1.9"]
 
 [task.1.3]
 title = "Clear the publication audit"
-status = "pending"
+status = "done"
+revision = "431390302231ede2529b4ba44665282b6299e5b2"
+command = "timeout 20m sh -c 'make public-audit'"
+exit_code = 0
+log_path = ".logs/audit-1.3.log"
 wave = 1
 requires = []
 do_1 = "Diagnose from the job log: `gh run view --job 36149017847 --log` and read the Audit publication set step, which exits 2; list every finding it reports, not only the two already known."
@@ -260,7 +264,7 @@ status = "done"
 revision = "07561720d2dd23075cad8b02f651d81e852f6c60"
 command = "timeout 20m sh -c 'CC=gcc make build test scan-consensus'"
 exit_code = 0
-log_path = "/root/lx-lanes/ex-t1-4/.logs/verify.log"
+log_path = ".logs/verify.log"
 wave = 1
 requires = []
 do_1 = "Diagnose from the job log: `gh run view --job 36149017847 --log` and read the Build and test step of the c17 job for both compilers; identify the first failing target and the exact assertion, diagnostic or scan finding it reports."
@@ -288,7 +292,11 @@ reqs = ["1.4","1.9"]
 
 [task.1.6]
 title = "Repair the two failing agent daemon tests"
-status = "pending"
+status = "done"
+revision = "de8283ab334852405150c0ef3a13327515270ac6"
+command = "timeout 20m sh -c 'sh tools/runtime/run-with-clock.sh cargo test --locked --manifest-path agent/Cargo.toml -p layerx-agentd --lib protocol_evidence && make agent-test-agentd-budget-create'"
+exit_code = 0
+log_path = ".logs/verify-1.6.log"
 wave = 1
 requires = []
 do_1 = "Diagnose from the job log: `gh run view --job 36149017828 --log` and read both the Build, lint, and enforce boundaries step and the Run sanitizer variants step; the two named failures are the terminal-transition case in the native protocol-evidence tests and the confirmed-creation budget case."
@@ -302,7 +310,11 @@ reqs = ["1.5","1.9"]
 
 [task.1.7]
 title = "Repair the human workspace lint gate and its web image"
-status = "pending"
+status = "done"
+revision = "de8283ab334852405150c0ef3a13327515270ac6"
+command = "timeout 20m sh -c 'make human-js-install && npm --prefix human/apps/web run lint && tools/ci/human-web-image-build.sh'"
+exit_code = 0
+log_path = ".logs/verify.log"
 wave = 1
 requires = []
 do_1 = "Diagnose from the job log: `gh run view --job 36149017895 --log` and read both the step that enforces component-library integrity, copy, policies and strict lints and the browser-performance job's image build; the recorded findings are four eslint errors in the web application and a failed image build for the human web image."
@@ -321,7 +333,7 @@ status = "done"
 revision = "0517b48171f4573b9a3993ae7686a248dc2bf9ff"
 command = "timeout 20m sh -c 'python3 -m venv build/docs-site-venv && build/docs-site-venv/bin/pip install -r docs/site/requirements.txt && build/docs-site-venv/bin/mkdocs build --strict -f docs/site/mkdocs.yml'"
 exit_code = 0
-log_path = "/root/lx-lanes/ex-t1-8/.logs/verify.log"
+log_path = ".logs/verify.log"
 wave = 1
 requires = []
 do_1 = "Diagnose from the job log: `gh run view --job 36149018057 --log` and read the Install documentation tools step, which exits 2 before the site is built."
@@ -371,7 +383,7 @@ status = "done"
 revision = "df9d95d10befb6f71d9c1052510b2a67094627df"
 command = "timeout 20m sh -c 'tools/explorer/lint-services.sh'"
 exit_code = 0
-log_path = "/root/lx-lanes/ex-t1-11/.logs/verify.log"
+log_path = ".logs/verify.log"
 wave = 1
 requires = []
 do_1 = "Write tools/explorer/lint-services.sh which, for each of explorer/services/smart-contract-verifier and explorer/services/sig-provider, runs `cargo fmt --all --check` and `cargo clippy --all-targets --locked -- -D warnings` from that service directory and returns the first non-zero exit code."
@@ -551,7 +563,11 @@ reqs = ["10.1","10.2","10.3","10.4","10.5"]
 
 [task.2.8]
 title = "Name the wrapped coin for the coin"
-status = "pending"
+status = "done"
+verified_revision = "e62da77fcf68c7ac9c069b949e40123aae6539cc"
+verified_command = "timeout 20m sh -c 'test -d contracts/lib/forge-std || git clone --depth 1 --branch v1.9.6 https://github.com/foundry-rs/forge-std contracts/lib/forge-std; FOUNDRY_CONFIG=foundry.paxeer.toml forge test --evm-version=prague --match-path contracts/test/WPAXTest.t.sol'"
+verified_exit_code = "0"
+verified_log = ".logs/verify.log"
 wave = 2
 requires = []
 do_1 = "In contracts/src/WPAX.sol change the public name to the wrapped Paxeer display name, leaving the symbol, the decimals, every storage slot, every function and every event exactly as they are."
@@ -594,7 +610,11 @@ reqs = ["13.1","13.2","13.3","13.4","13.5"]
 
 [task.2.11]
 title = "Make the backend bind its port after migration"
-status = "pending"
+status = "done"
+revision = "de8283ab334852405150c0ef3a13327515270ac6"
+command = "timeout 20m sh -c 'explorer/deploy/tools/mix-in-builder.sh test apps/explorer/test/explorer/chain/paxeer_x/capabilities_test.exs apps/explorer/test/explorer/chain/paxeer_x/capabilities_boot_test.exs'"
+exit_code = 0
+log_path = ".logs/verify.log"
 wave = 2
 requires = ["1.1"]
 do_1 = "Reproduce the hang from the committed backend image under the environment documented in explorer/deploy/env/backend.example.env with the node JSON-RPC throttles set as a deployment sets them and the node slow to answer, and capture which supervision child never reports started."
@@ -627,6 +647,47 @@ command = "timeout 20m sh -c 'npm --prefix human/apps/web ci --ignore-scripts --
 exit_code = 0
 log = "build/explorer-gates/task-2.12.log"
 
+[task.2.13]
+title = "Keep every recorded path inside the Windows checkout limit"
+status = "done"
+revision = "df45d784f1658f9dc71179d32341eb99bebf4554"
+command = "timeout 20m sh -c 'tools/ci/path-length-check.sh && cd explorer/services/libs/blockscout-client/crate && cargo test --locked -- --test-threads=1'"
+exit_code = 0
+log_path = ".logs/verify.log"
+wave = 2
+requires = []
+do_1 = "Rename the four recorded stubs under explorer/services/libs/blockscout-client/crate/tests/recorded/eth_blockscout_com whose basenames carry a full token instance number or a full transaction hash - the longest of them makes a 239-character repository path - so that each long identifier is shortened to the eight characters that follow its 0x prefix, or to its first eight digits where it has none, leaving every other recorded stub's name as it is."
+do_2 = "Change no stub body: the request URL each stub matches on lives in its own JSON as request.urlPath and stays byte-identical, because the recorded server matches a request against that path and not against the file name, and the token address, the token instance number and the transaction hash the crate's test declares stay exactly as they are."
+do_3 = "Add tools/ci/path-length-check.sh, an executable dependency-free POSIX shell script run from the repository root that walks the tracked file list and exits non-zero when any tracked path's basename is longer than 120 characters or its repository-relative path is longer than 200, naming every offender with its measured length and the bound it broke and printing the longest basename and path it accepted when it passes; record the two bounds and the checkout limit they leave room for in the script itself."
+do_4 = "Close the other two paths the check reports: give the transaction sub-heading component case that renders an interpretation with a view-all link and an external-link action button an explicit screenshot name in explorer/frontend/ui/tx/TxSubHeading.pw.tsx, and rename its two recorded screenshots under explorer/frontend/ui/tx/__screenshots__ to the names the snapshot path template then resolves, relaxing no assertion, adding no case and leaving every other screenshot name untouched."
+do_5 = "Commit explorer/services/libs/Cargo.lock, resolved for the workspace the client crate belongs to, so the crate's test suite resolves one dependency set on every run and runs with --locked the way the two sibling service workspaces already do; change no dependency requirement in any member's manifest."
+do_6 = "Run the crate's recorded suite one case at a time: the suite starts its stub server once behind a one-second wait, under the default parallelism that wait expires before the server is up and the shared handle is left poisoned, so every case fails on a server that never started while the same cases pass serially; keep all twenty-two cases and every assertion, and record the race in spec/paxeer-x-explorer/qualification.kvx as a defect of the vendored test rather than of this task."
+verify_cmd = "timeout 20m sh -c 'tools/ci/path-length-check.sh && cd explorer/services/libs/blockscout-client/crate && cargo test --locked -- --test-threads=1'"
+symbols = ["path-length-check"]
+touches = ["tools/ci/path-length-check.sh","explorer/services/libs/blockscout-client/crate/tests/recorded/eth_blockscout_com","explorer/services/libs/Cargo.lock","explorer/frontend/ui/tx/TxSubHeading.pw.tsx","explorer/frontend/ui/tx/__screenshots__","spec/paxeer-x-explorer/qualification.kvx"]
+reqs = ["1.8","1.9"]
+
+[task.2.14]
+title = "Rebuild the committed program fixtures with their source paths remapped"
+status = "implemented"
+implemented_revision = "431390302231ede2529b4ba44665282b6299e5b2"
+implemented_command = "timeout 20m sh -c 'cd programs && cargo test --locked -p layerx-programs-registry && cd .. && cargo test --locked --manifest-path human/Cargo.toml -p layerx-explorer-index && make public-audit'"
+implemented_exit_code = 101
+implemented_log = ".logs/verify.log"
+implemented_evidence = "Every target bound to a rebuilt fixture passes - the registry library's twenty cases, tests/interface.rs, tests/lxt20_reference.rs, tests/lxt721_reference.rs, tests/naming_reference.rs, tests/swap_reference.rs and the explorer index's tests/reads.rs - and the third leg, the publication audit that task 1.3 declares, passes at exit 0 on the rebuilt fixtures where it stopped at the private-workspace check before; the gate's non-zero exit comes from the three registry deployment-record cases of observation 2.14.2, which fail identically on the feature tip with none of this task's changes applied, and from the four explorer index cases of observation 2.14.3, which execute a C helper no leg of the gate builds."
+wave = 2
+requires = ["1.3"]
+do_1 = "Add programs/tools/program-fixtures.sh, the single build path for the committed reference program artifacts, and make it the only place that sets the source-path remapping: it builds programs/sdk/rust/examples/naming, nft-lxt721 and swap-cpmm for wasm32-unknown-unknown with target.wasm32-unknown-unknown.rustflags carrying --remap-path-prefix from the checkout root onto /layerx/source, the virtual source root the hosted registry builder already replays against, keeps the two codegen flags programs/.cargo/config.toml declares for that target because cargo replaces rather than extends that table, clears any RUSTFLAGS the caller exports, runs the program lint on every example that carries a layerx-program.json, and refuses at the end if a rebuilt artifact still holds the checkout path."
+do_2 = "Rebuild programs/crates/layerx-programs-registry/tests/fixtures/naming/naming.wasm, programs/crates/layerx-programs-registry/tests/fixtures/lxt721/nft-lxt721.wasm and programs/fixtures/pay5/swap-cpmm.wasm through that script so none of the three carries the absolute build path of the workspace it was compiled in, which is the finding of observation 1.3.2."
+do_3 = "Regenerate the fixtures bound to those artifacts by code hash in the same run, with the registry's own naming_interface, lxt721_interface and swap_interface examples for program id 55 repeated 32 times: naming.interface, nft-lxt721.interface, nft-lxt721.registry-value, swap-cpmm.interface and swap-cpmm.registry-value. Relax no assertion in the three reference tests that bind them or in the explorer index read test that derives an interface from two of the modules."
+do_4 = "Give the script a programs-reference-fixtures make target in the shape of programs-reference-escrow, and point the nft-lxt721 and swap-cpmm README build sections at it as the only path that writes the committed fixtures, so the next rebuild sets the same remapping."
+do_5 = "Record in spec/paxeer-x-explorer/qualification.kvx what the remapping cannot hold still, so a later reader does not read it as a leak: cargo derives the crate disambiguator of every path package from that package's absolute path, so a rebuild from a differently located checkout reorders functions without changing a byte of their bodies, and only a build at a fixed source root holds that still."
+do_6 = "When the verify_cmd passes, record task 1.3's evidence at this revision - revision, command, exit code and repository-relative log path - and set task 1.3 to done, because the private-workspace check it stopped at is the check this task clears."
+verify_cmd = "timeout 20m sh -c 'cd programs && cargo test --locked -p layerx-programs-registry && cd .. && cargo test --locked --manifest-path human/Cargo.toml -p layerx-explorer-index && make public-audit'"
+symbols = ["program-fixtures","reference_interface"]
+touches = ["programs/tools/program-fixtures.sh","Makefile","programs/crates/layerx-programs-registry/tests/fixtures/naming","programs/crates/layerx-programs-registry/tests/fixtures/lxt721","programs/fixtures/pay5","programs/sdk/rust/examples/nft-lxt721/README.md","programs/sdk/rust/examples/swap-cpmm/README.md","spec/paxeer-x-explorer/qualification.kvx"]
+reqs = ["1.2","1.8","1.9"]
+
 [task.3]
 section = "Wave 3 - One Aggregate Run, Recorded"
 title = "Qualify the merged waves once and write down what ran"
@@ -636,7 +697,7 @@ status = "pending"
 title = "Run the explorer gates once on the merged revision and record the evidence"
 status = "done"
 wave = 3
-requires = ["1.1","1.9","1.10","1.11","1.12","1.13","2.1","2.2","2.3","2.4","2.5","2.6","2.7","2.8","2.9","2.10","2.11","2.12","4.1","4.2"]
+requires = ["1.1","1.9","1.10","1.11","1.12","1.13","2.1","2.2","2.3","2.4","2.5","2.6","2.7","2.8","2.9","2.10","2.11","2.12","2.13","2.14","4.1","4.2"]
 do_1 = "On the revision that merges waves 1 and 2, run tools/explorer/gate-test.sh once with its budget set to fit this task's timeout, writing its logs under build/explorer-gates/."
 do_2 = "Append one gate record per leg to spec/paxeer-x-explorer/qualification.kvx - the backend Paxeer X suites, the frontend type check and vitest suite - carrying the task, the requirements the leg qualifies, the revision, the exact command, the exit code and the log path, written only from a command that actually ran."
 do_3 = "Append one observation per failure the run exposes that belongs to no task in this feature: revision, command, exit code, log path, one sentence of what was observed and one sentence of what is assumed; do not investigate it further and do not rerun it."

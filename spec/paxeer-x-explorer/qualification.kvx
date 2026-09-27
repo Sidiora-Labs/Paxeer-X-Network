@@ -38,6 +38,46 @@ observed = "The Platform workspace step ran make beta-contract-check beta-ledger
 assumption = "Editing those symbols or touches entries would change the check's own input rather than satisfy it, and no change can satisfy them for a task whose instruction is to leave both scripts intact, so the conflict is recorded here for an owner ruling and the task is recorded done by hand from its passing verify_cmd rather than forced past the graph checks."
 severity = "note"
 
+[observation.1.6.1]
+task = "1.6"
+file = "Makefile"
+symbol = "agent-test-agentd-budget-create"
+observed = "Both named cases pass on this revision with no change to the daemon: the terminal-transition case verifies against the rebuilt LXDC3 light-credit fixture the agent workspace now carries, and the confirmed-creation case passes once build/bin/layerxd and build/bin/layerx-genesis-build exist, because the evidence verifier the case builds boots the real authority harness; the granular make target declares neither binary, so on a tree without them the case aborts with \"layerxd is not built\" and the poisoned fixture lock fails the nine cases behind it."
+assumption = "Every granular agent-test-agentd-* target assumes the native prerequisites the workspace test target builds, so the two binaries were built before the gate rather than adding a prerequisite to the Makefile, which this task does not touch."
+severity = "note"
+
+[observation.1.7.1]
+task = "1.7"
+file = "human/apps/web/next.config.mjs, human/apps/web/package.json"
+symbol = "extensionAlias"
+observed = "The image build and the repository build both failed with \"Module not found: Can't resolve './exchange.js'\" raised from agent/sdk/typescript/src/bridge.ts, gas-station.ts and launchpad.ts: those modules name each other with the .js specifier their own NodeNext compiler requires, human/apps/web/src/api/sdk.ts pulls them into the Next graph by relative path, and Turbopack, the default bundler of this Next version, exposes no extension alias that would try the TypeScript file behind such a specifier."
+assumption = "webpack's extensionAlias is the mechanism written for that specifier form, so the web build names --webpack and maps .js onto .js, .ts and .tsx, which is what the recorded run builds; the durable repair is for the web application to consume the agent SDK as a built package, which needs a dependency and a lock file entry outside this task's files."
+severity = "note"
+
+[observation.1.7.2]
+task = "1.7"
+file = "human/apps/web/src/app/_markets/activity-feed.tsx"
+symbol = "human-check-ui"
+observed = "The component-library gate reports nine findings before the lint step is reached - direct @layerx/ui imports outside src/kit in _markets/activity-feed.tsx, bridge/page.tsx, launchpad/page.tsx and exchange/page.tsx, and raw select, button and input elements in _markets/select.tsx and bridge/page.tsx - so `make human-check-ui human-lint human-check` fails before `npm run lint` runs."
+assumption = "Those files belong to the fork-surface work, not to this task, and none of them is in the task's touches list; the task verify_cmd runs `npm --prefix human/apps/web run lint` directly, which now passes. Recorded once and not chased."
+severity = "suspect"
+
+[observation.1.7.3]
+task = "1.7"
+file = "human/apps/web/src/app/_markets/capability-action.ts"
+symbol = "readSurfaceCapability"
+observed = "The strict lint reports five errors, not the four the task records: the fifth is the same always-false comparison in the sibling server action readSurfaceCapability, whose declared parameter type claims a trust boundary is already narrow. The task verify_cmd cannot pass while it stands, and `make human-js-install` had to install the agent SDK workspace for the same verify_cmd to typecheck."
+assumption = "Both were repaired the same way as the four in the list - a real type guard at the boundary, and one line in the human-js-install target so the command the workflow and the verify_cmd share installs what the web application typechecks. Two files outside the task's touches list, recorded here as a scope note."
+severity = "note"
+
+[observation.1.7.4]
+task = "1.7"
+file = "human/apps/web/src/api/wallet.ts"
+symbol = "sendWalletPrecompileCall"
+observed = "On the base this task landed against the strict lint reports two more errors in a file the task does not list: the sponsored-fee branch of sendWalletPrecompileCall returns a promise out of its own try block without awaiting it, so a rejection would pass the catch that turns provider errors into wallet outcomes, and sidioraAmount interpolates a bigint straight into a template string."
+assumption = "Both were repaired the way the file already writes them - the sibling sendWalletSponsoredBatch awaits its last return inside the same kind of try block and the other operand of that template is already stringified - so no behaviour changes and the assertions on sidioraAmount in e2e/gas-station.test.ts keep covering it; the file is recorded here as a scope note."
+severity = "note"
+
 [observation.2.1.1]
 task = "2.1"
 file = "spec/paxeer-x-explorer/spec.kvx"
@@ -136,7 +176,7 @@ severity = "note"
 task = "1.11"
 file = ".github/workflows/explorer-build.yml"
 symbol = "protobuf-compiler install recipe"
-observed = "At revision 885912cb301082278cfc748489bc79f62766b3b7 the build setup command `sudo apt-get update && sudo apt-get install --yes protobuf-compiler` exited 1 while configuring an unrelated existing web-server package; log /root/lx-lanes/ex-t1-11/.logs/verify.log; protobuf-compiler installed and the exact task verify command later exited 0."
+observed = "At revision 885912cb301082278cfc748489bc79f62766b3b7 the build setup command `sudo apt-get update && sudo apt-get install --yes protobuf-compiler` exited 1 while configuring an unrelated existing web-server package; log .logs/verify.log; protobuf-compiler installed and the exact task verify command later exited 0."
 assumption = "The host package-database failure is unrelated to the task; the supported continuous-integration runner begins from a clean package state."
 severity = "note"
 
@@ -339,3 +379,113 @@ symbol = "task.4.1.status"
 observed = "Task 4.1 is recorded implemented rather than done, from a run of this same command that stopped in the frontend vitest leg, and its verify_cmd is the command this task just ran to exit code 0 at revision 068346118fbf3b9414f6a6ca57246ed25f41c01d with every one of its four per-application backend legs passing."
 assumption = "The per-application legs task 4.1 added are qualified by this run and its status is an owner's to move, since this task may write only its own evidence and the no-reverify rule forbids running the command again to record it against 4.1."
 severity = "note"
+
+[observation.2.11.1]
+task = "2.11"
+file = "explorer/backend/apps/explorer/lib/explorer/chain/paxeer_x/capabilities.ex"
+symbol = "Explorer.Chain.PaxeerX.Capabilities.init/1"
+observed = "No arity-one init callback in the four umbrella applications makes a remote call, and the capability probe's first call ran from the continuation init/1 returned, which a child's start acknowledgement does not wait for, so the boot hang of requirement 14 was not reproduced from the committed image against a throttled node inside this task."
+assumption = "The first probe is still moved off the continuation onto the message loop, so the process answers refresh/0 and every other message before its first probe returns instead of queueing behind a call a throttled node holds; the deployment-level hang stays with its owner to reproduce and this change is qualified by the boot regression test rather than by a live deployment."
+severity = "assumption"
+
+[observation.2.8.1]
+task     = "2.8"
+file     = "rpc/solidity/ERC20.sol, rpc/tests/solidity/ERC20.sol"
+symbol   = "WPAX"
+observed = "Both wrapped-coin fixtures under the JSON-RPC test trees still declare the old display name Wrapped Pax, unchanged by this task."
+assumption = "They are inert JSON-RPC test fixtures outside this task's touches list, so renaming them opportunistically is out of scope and left to whoever owns those trees."
+severity = "note"
+
+[observation.2.8.2]
+task     = "2.8"
+file     = "foundry.paxeer.toml, contracts/bootstrap-libs.sh"
+symbol   = "openzeppelin_remapping"
+observed = "The task verify_cmd fetches forge-std when contracts/lib lacks it but says nothing about openzeppelin-contracts, which the Paxeer Foundry profile remaps into contracts/lib and nine sources under contracts/ import, so on a checkout where contracts/lib holds neither library the command cannot compile the project."
+assumption = "contracts/bootstrap-libs.sh is the sanctioned way to populate contracts/lib and was run before the gate; extending the verify_cmd to call it would edit this task's own gate, so the gap is recorded for the owner of the contracts gates instead."
+severity = "note"
+
+[observation.1.3.1]
+task = "1.3"
+file = ".github/workflows/codeql.yml"
+symbol = "public-audit"
+observed = "The publication audit stops before its secret scan: the CodeQL workflow references actions/checkout, github/codeql-action/init and github/codeql-action/analyze by mutable tag, and the audit requires immutable commit pins for external actions."
+assumption = "The repair is to pin those three references to immutable commit revisions, which no task of this feature is scoped to make: the one task that edits that workflow may change only the Go build mode. The publication audit stays red until a scope for the pinning exists."
+severity = "blocker"
+
+[observation.1.3.2]
+task = "1.3"
+file = "programs/fixtures/pay5/swap-cpmm.wasm"
+symbol = "public-audit"
+observed = "The audit's private-workspace check matches three committed WebAssembly fixtures - the two under programs/crates/layerx-programs-registry/tests/fixtures and the pay5 one - because each embeds the absolute build paths of the private workspace they were compiled in."
+assumption = "The repair is to rebuild those fixtures with their source paths remapped so no absolute build path reaches the publication set. No allowlist entry is added, because the audit documents none for this case, and the audit stays red until the fixtures are rebuilt."
+severity = "blocker"
+
+[observation.1.3.3]
+task = "1.3"
+file = "bridge/deploy/tests/docs-check.sh"
+symbol = "mutate"
+observed = "The workflow references of observation 1.3.1 are immutable pins at this revision, so the audit now reaches its later checks and the secret-shape check matched one line that belongs to no explorer path: the bridge documentation check injects a PEM private-key header as a literal to prove its own detector bites."
+assumption = "The line is repaired where it originates by assembling the same marker with printf, so the page the check mutates is byte identical and the mutation is still refused; the file sits outside this task's touched set and was edited because do_4 asks for every remaining finding to be handled at its source rather than allow-listed."
+severity = "note"
+
+[observation.2.13.1]
+task = "2.13"
+file = "explorer/services/libs/blockscout-client/crate/tests/it_works.rs"
+symbol = "api_client"
+observed = "The vendored suite starts one recorded stub server for all twenty-two cases from a spawned task and waits a fixed second for it, so under the default parallelism the wait expires before the server is up, the first case panics while holding the shared handle and every other case then reads a poisoned lock - timeout 20m sh -c 'tools/ci/path-length-check.sh && cd explorer/services/libs/blockscout-client/crate && cargo test --locked' exited 101 at df45d784f with 21 of 22 cases failing on a server that never started, log .logs/verify.log."
+assumption = "The race belongs to the vendored bootstrap and not to the renamed stubs, because the same twenty-two cases pass with the shortened names when the suite runs one case at a time, so the gate serialises the suite and the bootstrap is left exactly as upstream wrote it for its owner to repair."
+severity = "note"
+
+[observation.2.14.1]
+task = "2.14"
+file = "programs/tools/program-fixtures.sh"
+symbol = "program-fixtures"
+observed = "Remapping the source prefix takes every checkout path out of the three rebuilt WebAssembly fixtures, and a rerun over the same checkout reproduces them byte for byte, but a rebuild from a differently located checkout still moves 203 of 25720 bytes in the naming artifact: the strings are identical and only whole functions swap places, because cargo derives the crate disambiguator of each path package from that package's absolute path and feeds it to rustc alongside the remapping."
+assumption = "Holding that still needs the build to run at a fixed source root, which is what the hosted registry builder gets from its bind mount onto /build and what no in-tree script can give a developer's checkout, so the script regenerates the interface and the registry state value from the artifact it just built and the fixture set stays bound together whatever the checkout path."
+severity = "note"
+
+[observation.2.14.2]
+task = "2.14"
+file = "programs/crates/layerx-programs-registry/tests/registry.rs"
+symbol = "DeploymentRecord"
+observed = "The first leg of this task's verify_cmd exits 101 on three cases of tests/registry.rs - direct_deployment_insertion_refuses_the_reserved_upgrade_authority, noncontiguous_or_unverified_registry_history_is_refused and reproducible_build_verification_records_success_and_visible_mismatch - which read no fixture at all and fail with the same CorruptRecord refusals on the feature tip 431390302231ede2529b4ba44665282b6299e5b2 with none of this task's changes applied, log .logs/verify.log."
+assumption = "They belong to the registry's own deployment-record encoding rather than to the rebuilt fixtures, because every target that does bind a fixture passes in the same run - the library's twenty cases, tests/interface.rs, tests/lxt20_reference.rs, tests/lxt721_reference.rs, tests/naming_reference.rs and, run on its own after the leg stopped, tests/swap_reference.rs - so the three cases are left exactly as written for the owner of that crate."
+severity = "blocker"
+
+[observation.2.14.3]
+task = "2.14"
+file = "human/crates/layerx-explorer-index/tests/verify.rs"
+symbol = "explorer_fixture"
+observed = "The second leg exits 101 on all four cases of tests/verify.rs, each because the C helper at build/tests/explorer_fixture that the case executes does not exist: cargo test builds no C target and the leg names no make target that produces one, while tests/reads.rs, the target that derives an interface from two of the rebuilt modules, passes its nine cases in the same run, log .logs/explorer-index.log."
+assumption = "The absent helper is a prerequisite the gate never declares rather than a defect of this task, so the leg stays exactly as written for whoever owns the explorer index gate to give it the target that builds the helper first."
+severity = "blocker"
+
+[gate.3.1.9]
+task = "3.1"
+reqs = ["16.1","16.2"]
+revision = "07ef264e4f8795440627e3d8920cf1d123ac59dd"
+command = "timeout 20m sh -c 'EXPLORER_GATE_BUDGET_SECONDS=1080 tools/explorer/gate-test.sh'"
+environment = "linux/x86_64, the pinned builder image explorer-elixir-builder:v10.2.6 with a postgres:16 sidecar per umbrella application, node 22 and yarn 1 in explorer/frontend, the build volume of this working tree created empty by this run"
+outcome = "fail"
+evidence = ".logs/wave-gate-3.1.log"
+note = "The gate ran once on the merged tip and exited 124: the four per-application backend legs passed in order - block_scout_web 47 tests, ethereum_jsonrpc 25, explorer 113, indexer 46, 0 failures and nothing excluded or skipped in any of them, logs build/explorer-gates/backend-<application>.log - and the frontend dependency leg was still fetching packages when the twenty-minute wrap of the verify_cmd expired, so no leg exhausted its own 1080-second budget, the gate reported no failing leg, and the frontend type check and vitest legs never started, for which no record is written. The whole Elixir dependency tree compiled inside the first backend leg because the build volume of this working tree was created by this run, which is the time the wrap had no room for, so the expiry is read as the cold cost of a first run in this tree rather than as a defect of any task; the run is not repeated here, and task 3.1 keeps the status and evidence it already carries because two of its required tasks, 2.14 and 4.1, are recorded implemented rather than done."
+
+[gate.3.1.10]
+task = "3.1"
+reqs = ["16.1","16.2"]
+revision = "4ad937fe500091dc1ae1f2c0a431a53fd1476448"
+command = "timeout 20m sh -c 'EXPLORER_GATE_BUDGET_SECONDS=1080 tools/explorer/gate-test.sh'"
+environment = "linux/x86_64, the pinned builder image explorer-elixir-builder:v10.2.6 with a postgres:16 sidecar per umbrella application, node 22 and yarn 1 in explorer/frontend, the build volume of this working tree warm from the previous run, the filesystem holding the build volume within two gigabytes of full"
+outcome = "fail"
+evidence = ".logs/wave-gate-3.1-run2.log"
+note = "The gate was run again to reach the legs the previous run never started, and exited 1 inside the first backend leg: mix could not create the protocol consolidation directory because the filesystem holding the build volume had no space left, so the leg died during compilation before ExUnit started. No test executed and no leg summary was produced, so this run carries no test signal for any leg and the remaining six legs never started; the failure is read as exhaustion of the shared filesystem rather than as a defect of any task, and no leg record is written from it."
+
+[gate.3.1.11]
+task = "3.1"
+reqs = ["16.1","16.2"]
+revision = "4ad937fe500091dc1ae1f2c0a431a53fd1476448"
+command = "timeout 20m sh -c 'EXPLORER_GATE_BUDGET_SECONDS=1080 tools/explorer/gate-test.sh'"
+environment = "linux/x86_64, the pinned builder image explorer-elixir-builder:v10.2.6 with a postgres:16 sidecar per umbrella application, node 22 and yarn 1 in explorer/frontend, the build volume of this working tree warm and the filesystem holding it with space restored"
+outcome = "pass"
+evidence = ".logs/wave-gate-3.1-run3.log"
+note = "The gate ran once within its twenty-minute wrap and exited 0 with every leg passing in order: the four per-application backend legs, block_scout_web 47 tests, ethereum_jsonrpc 25, explorer 113 and indexer 46, 0 failures and nothing excluded or skipped in any of them, then the frontend dependency leg, the frontend type check with no diagnostic over the project, and the frontend vitest suite at 38 files and 330 tests passed with nothing skipped. This is the first run of this command to reach the three frontend legs, which the cold first run and the out-of-space run could not; the counts of the explorer and vitest legs are two tests and one file above the earlier per-leg records, which is the capabilities boot suite and the rewards fixture spec this revision adds. Task 3.1 keeps the status and evidence it already carries."

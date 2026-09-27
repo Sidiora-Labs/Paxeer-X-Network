@@ -6,7 +6,7 @@
 
 ## Wave 1 - Green Checks and the Gates That Keep Them Green
 
-- [ ] 1. Close every red job and build the explorer's gates
+- [x] 1. Close every red job and build the explorer's gates
   - [x] 1.1 Give every mix command one containerised recipe
     - Write explorer/deploy/tools/mix-in-builder.sh, an executable POSIX shell script run from the repository root as `explorer/deploy/tools/mix-in-builder.sh <mix args>`, that runs the given mix invocation inside the pinned Elixir builder image against explorer/backend.
     - Mount apps, config, rel, mix.exs, mix.lock and .formatter.exs from explorer/backend into the container work directory, keep the build artefacts in a named volume so a rerun does not recompile dependencies, and set MIX_ENV=test, MIX_BUILD_PATH to the volume, CHAIN_TYPE=paxeer_x and ETHEREUM_JSONRPC_VARIANT=paxeer_x unless the caller already set them.
@@ -21,7 +21,7 @@
     - Write tools/ci/codeql-build-mode-check.sh, which parses the workflow's matrix and fails when a language appears twice, when go is not on a build mode Go supports, or when any other language has left the none build mode; make it executable and dependency-free beyond the tooling the repository already installs.
     - Run actionlint over the workflow as part of the same check script so a syntax error in the edit is caught without the CodeQL service.
     - _Requirements: 1.1, 1.8, 1.9_
-  - [ ] 1.3 Clear the publication audit
+  - [x] 1.3 Clear the publication audit
     - Diagnose from the job log: `gh run view --job 36149017847 --log` and read the Audit publication set step, which exits 2; list every finding it reports, not only the two already known.
     - Replace the credential-shaped strings in explorer/frontend/playwright/fixtures/rewards.ts and in explorer/backend/apps/block_scout_web/test/block_scout_web/controllers/account/api/v2/authenticate_controller_test.exs with values that are obviously synthetic and cannot be read as credentials, keeping each fixture exercising exactly the code path and the assertions it exercises now.
     - Update the tests that consume those fixtures so they assert the same behaviour against the new values, changing no assertion's strength.
@@ -40,13 +40,13 @@
     - Leave every rule the two check scripts enforce exactly as it is: no relaxed pattern, no skipped record class, no early exit added to reach a zero status.
     - Where the failure is a missing evidence file rather than a wrong statement, record it in spec/paxeer-x-explorer/qualification.kvx with the revision, the command, the exit code and the path, and leave the record intact.
     - _Requirements: 1.4, 1.9_
-  - [ ] 1.6 Repair the two failing agent daemon tests
+  - [x] 1.6 Repair the two failing agent daemon tests
     - Diagnose from the job log: `gh run view --job 36149017828 --log` and read both the Build, lint, and enforce boundaries step and the Run sanitizer variants step; the two named failures are the terminal-transition case in the native protocol-evidence tests and the confirmed-creation budget case.
     - For the terminal-transition case in agent/crates/layerx-agentd/src/protocol_evidence_native_tests.rs, establish from the assertion which transition the daemon actually produces and repair agent/crates/layerx-agentd/src/protocol_evidence.rs so the complete maintained transition is required and produced; do not relax the assertion.
     - For the confirmed-creation case in agent/crates/layerx-agentd/tests/budget_create.rs, establish why the core-keyed budget is not returned or is cached on trust, and repair the creation path in the daemon so the confirmed creation returns the core-keyed budget without caching on trust.
     - Keep both tests asserting exactly what they assert now; if the code and a test genuinely contradict each other, leave both intact and record the contradiction in spec/paxeer-x-explorer/qualification.kvx.
     - _Requirements: 1.5, 1.9_
-  - [ ] 1.7 Repair the human workspace lint gate and its web image
+  - [x] 1.7 Repair the human workspace lint gate and its web image
     - Diagnose from the job log: `gh run view --job 36149017895 --log` and read both the step that enforces component-library integrity, copy, policies and strict lints and the browser-performance job's image build; the recorded findings are four eslint errors in the web application and a failed image build for the human web image.
     - Fix the four eslint errors at their source in human/apps/web/src/api/abi-read.ts, human/apps/web/src/app/launchpad/actions.ts and human/apps/web/src/app/launchpad/launchpad-client.tsx, changing behaviour only where the rule proves the behaviour wrong; add no eslint-disable comment and lower no rule.
     - Add the workspace dependency installation the lint step depends on to .github/workflows/human.yml so the job installs what it lints before it lints it, keeping the existing install of the web dependencies.
@@ -146,7 +146,7 @@
     - Add explorer/backend/apps/explorer/test/explorer/migrator/heavy_db_index_operation/update_internal_transactions_primary_key_test.exs asserting that after the operation completes the migration status records it and that running it again is a no-op.
     - Leave every assertion in the internal-transaction fetcher suite unchanged; if the suite and the fetcher genuinely disagree, record the contradiction in spec/paxeer-x-explorer/qualification.kvx with both intact.
     - _Requirements: 10.1, 10.2, 10.3, 10.4, 10.5_
-  - [ ] 2.8 Name the wrapped coin for the coin
+  - [x] 2.8 Name the wrapped coin for the coin
     - In contracts/src/WPAX.sol change the public name to the wrapped Paxeer display name, leaving the symbol, the decimals, every storage slot, every function and every event exactly as they are.
     - Add contracts/test/WPAXTest.t.sol asserting the display name, the symbol and the decimals, a deposit crediting the sender's balance and emitting its event, a withdrawal debiting the sender and paying out, a transfer between accounts and an approved transfer, so the rename is proven to have moved nothing else.
     - Record in spec/paxeer-x-explorer/qualification.kvx that the wrapped-coin fixtures under the JSON-RPC test trees carry the same old display name and are deliberately out of scope for this task.
@@ -165,7 +165,7 @@
     - Add explorer/deploy/tools/rpc-fixture-server.py, a dependency-free JSON-RPC server that answers the calls the backend makes during boot and the capability probe from recorded responses in explorer/deploy/tools/fixtures/, and add it to the compose stack behind a profile so the ordinary stack is unaffected.
     - Add explorer/deploy/tools/tests/compose-smoke-test.sh that brings the database, the fixture server and the backend up from the compose file under that profile, waits for the liveness path, asserts the capability endpoint answers with the documented body, prints the compose logs on failure and tears the stack down on every exit path.
     - _Requirements: 13.1, 13.2, 13.3, 13.4, 13.5_
-  - [ ] 2.11 Make the backend bind its port after migration
+  - [x] 2.11 Make the backend bind its port after migration
     - Reproduce the hang from the committed backend image under the environment documented in explorer/deploy/env/backend.example.env with the node JSON-RPC throttles set as a deployment sets them and the node slow to answer, and capture which supervision child never reports started.
     - Move the first remote call of Explorer.Chain.PaxeerX.Capabilities out of its initialisation callback into a continuation or an immediate scheduled refresh, so the process reports started at once, keeps its documented refresh interval, stays disabled by default and answers its state as unavailable until a probe succeeds.
     - Fix any other start-up path the reproduction implicates in the same way - a supervision child that performs a blocking remote call before reporting started - without raising a timeout, without wrapping a failure in a retry that hides it and without changing the application's child order for anything else.
@@ -180,6 +180,22 @@
     - Change human/apps/web/e2e/explorer.spec.ts and e2e/explorer-admission.test.ts to assert the link surface that replaces the retired pages, keeping every assertion in e2e/explorer-verifier.test.ts and e2e/explorer-account.test.ts as it is; delete no test.
     - If the beta contract, its consistency check or a documentation journey names a retired route, record the contradiction in spec/paxeer-x-explorer/qualification.kvx and leave the contract intact.
     - _Requirements: 15.1, 15.2, 15.3, 15.4, 15.5_
+  - [x] 2.13 Keep every recorded path inside the Windows checkout limit
+    - Rename the four recorded stubs under explorer/services/libs/blockscout-client/crate/tests/recorded/eth_blockscout_com whose basenames carry a full token instance number or a full transaction hash - the longest of them makes a 239-character repository path - so that each long identifier is shortened to the eight characters that follow its 0x prefix, or to its first eight digits where it has none, leaving every other recorded stub's name as it is.
+    - Change no stub body: the request URL each stub matches on lives in its own JSON as request.urlPath and stays byte-identical, because the recorded server matches a request against that path and not against the file name, and the token address, the token instance number and the transaction hash the crate's test declares stay exactly as they are.
+    - Add tools/ci/path-length-check.sh, an executable dependency-free POSIX shell script run from the repository root that walks the tracked file list and exits non-zero when any tracked path's basename is longer than 120 characters or its repository-relative path is longer than 200, naming every offender with its measured length and the bound it broke and printing the longest basename and path it accepted when it passes; record the two bounds and the checkout limit they leave room for in the script itself.
+    - Close the other two paths the check reports: give the transaction sub-heading component case that renders an interpretation with a view-all link and an external-link action button an explicit screenshot name in explorer/frontend/ui/tx/TxSubHeading.pw.tsx, and rename its two recorded screenshots under explorer/frontend/ui/tx/__screenshots__ to the names the snapshot path template then resolves, relaxing no assertion, adding no case and leaving every other screenshot name untouched.
+    - Commit explorer/services/libs/Cargo.lock, resolved for the workspace the client crate belongs to, so the crate's test suite resolves one dependency set on every run and runs with --locked the way the two sibling service workspaces already do; change no dependency requirement in any member's manifest.
+    - Run the crate's recorded suite one case at a time: the suite starts its stub server once behind a one-second wait, under the default parallelism that wait expires before the server is up and the shared handle is left poisoned, so every case fails on a server that never started while the same cases pass serially; keep all twenty-two cases and every assertion, and record the race in spec/paxeer-x-explorer/qualification.kvx as a defect of the vendored test rather than of this task.
+    - _Requirements: 1.8, 1.9_
+  - [ ] 2.14 Rebuild the committed program fixtures with their source paths remapped — **Implemented - qualification pending**
+    - Add programs/tools/program-fixtures.sh, the single build path for the committed reference program artifacts, and make it the only place that sets the source-path remapping: it builds programs/sdk/rust/examples/naming, nft-lxt721 and swap-cpmm for wasm32-unknown-unknown with target.wasm32-unknown-unknown.rustflags carrying --remap-path-prefix from the checkout root onto /layerx/source, the virtual source root the hosted registry builder already replays against, keeps the two codegen flags programs/.cargo/config.toml declares for that target because cargo replaces rather than extends that table, clears any RUSTFLAGS the caller exports, runs the program lint on every example that carries a layerx-program.json, and refuses at the end if a rebuilt artifact still holds the checkout path.
+    - Rebuild programs/crates/layerx-programs-registry/tests/fixtures/naming/naming.wasm, programs/crates/layerx-programs-registry/tests/fixtures/lxt721/nft-lxt721.wasm and programs/fixtures/pay5/swap-cpmm.wasm through that script so none of the three carries the absolute build path of the workspace it was compiled in, which is the finding of observation 1.3.2.
+    - Regenerate the fixtures bound to those artifacts by code hash in the same run, with the registry's own naming_interface, lxt721_interface and swap_interface examples for program id 55 repeated 32 times: naming.interface, nft-lxt721.interface, nft-lxt721.registry-value, swap-cpmm.interface and swap-cpmm.registry-value. Relax no assertion in the three reference tests that bind them or in the explorer index read test that derives an interface from two of the modules.
+    - Give the script a programs-reference-fixtures make target in the shape of programs-reference-escrow, and point the nft-lxt721 and swap-cpmm README build sections at it as the only path that writes the committed fixtures, so the next rebuild sets the same remapping.
+    - Record in spec/paxeer-x-explorer/qualification.kvx what the remapping cannot hold still, so a later reader does not read it as a leak: cargo derives the crate disambiguator of every path package from that package's absolute path, so a rebuild from a differently located checkout reorders functions without changing a byte of their bodies, and only a build at a fixed source root holds that still.
+    - When the verify_cmd passes, record task 1.3's evidence at this revision - revision, command, exit code and repository-relative log path - and set task 1.3 to done, because the private-workspace check it stopped at is the check this task clears.
+    - _Requirements: 1.2, 1.8, 1.9_
 
 ## Wave 3 - One Aggregate Run, Recorded
 
@@ -218,7 +234,7 @@
 {
   "waves": [
     { "id": 1,  "tasks": ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "1.10", "1.11", "1.12", "1.13"] },
-    { "id": 2,  "tasks": ["2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7", "2.8", "2.9", "2.10", "2.11", "2.12"] },
+    { "id": 2,  "tasks": ["2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7", "2.8", "2.9", "2.10", "2.11", "2.12", "2.13", "2.14"] },
     { "id": 3,  "tasks": ["3.1"] },
     { "id": 4,  "tasks": ["4.1", "4.2"] }
   ]
