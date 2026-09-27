@@ -1211,7 +1211,11 @@ reqs = ["11.2"]
 
 [task.2.36]
 title = "Clear the two continuous-integration legs this feature turned red: the consensus no-float scan and the beta contract's surface table"
-status = "pending"
+status = "done"
+revision = "57c002294afadd689701369d6505711ae06813da"
+command = "timeout 20m sh -c 'tools/ci/no-float-scan.sh build && make beta-contract-check'"
+exit_code = 0
+log_path = ".logs/verify.log"
 wave = 2
 requires = ["1.1","1.8"]
 do_1 = "tools/ci/no-float-scan.sh, which the c17 legs of .github/workflows/ci.yml reach through make test-arith-nofloat and make scan-consensus, greps include/layerx and src for floating-point syntax and matches the digit-dot-digit substring inside the comment 'parts 1..4' at include/layerx/lx_web.h:108, so a comment fails the consensus float ban; reword that one comment to carry no digit-dot-digit sequence, for example 'parts 1 to 4', changing no declaration, no macro, no code and not one byte of the scanner, whose ban stays exactly as strict as it is."

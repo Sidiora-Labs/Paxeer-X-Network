@@ -117,6 +117,8 @@ The reached rung of a surface is raised only by a `[gate.*]` record in the evide
 | interop-service | interop service | functional | runtime_proven | source_present | interop/crates/layerx-interop-service |
 | interop-bridge-relayer | bridge relayer: vault deposits into the Paxeer bridge precompile and bridge-out burns back into the vault, journalled and nullifier-checked | functional | runtime_proven | source_present | interop/crates/layerx-bridge-relayer |
 | interop-mirror-signer | reference remote signer for the mirror publisher: one handle per algorithm and policy domain over a local socket | functional | runtime_proven | source_present | interop/crates/layerx-mirror-signer |
+| interop-gas-station | sponsored submission: governed-rate quoting, policy limits and a journalled relayer | functional | runtime_proven | source_present | interop/crates/layerx-gas-station |
+| interop-x-websearch | web search sidecar: crawl and local index, page fetch with a canonical content digest, paid per request over 402LXP | functional | runtime_proven | source_present | interop/crates/x-websearch |
 | ramps-toolkit | market-maker ramp toolkit | functional | runtime_proven | source_present | platform/ramps/toolkit |
 | reference-ramp | reference ramp service | hosted | deployment_proven | source_present | platform/ramps/deployment.yaml |
 | multichain-paxeer-boundary | Paxeer custody and guaranteed-withdrawal boundary | hosted | deployment_proven | source_present | human/crates/layerx-paxeer-client, go.mod, node/, modules/ |

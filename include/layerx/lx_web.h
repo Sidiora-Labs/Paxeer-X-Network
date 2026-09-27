@@ -105,7 +105,7 @@ typedef struct lx_web_store {
 
 /* One answer as committed in module storage for the program that owns the
  * request. The record is keyed by program id and request id; part 0 carries
- * the content digest and both lengths, parts 1..4 the response in order. */
+ * the content digest and both lengths, parts 1 to 4 the response in order. */
 typedef struct lx_web_answer {
     uint8_t program_id[32];
     uint64_t request_id;
