@@ -668,6 +668,22 @@ symbols = ["path-length-check"]
 touches = ["tools/ci/path-length-check.sh","explorer/services/libs/blockscout-client/crate/tests/recorded/eth_blockscout_com","explorer/services/libs/Cargo.lock","explorer/frontend/ui/tx/TxSubHeading.pw.tsx","explorer/frontend/ui/tx/__screenshots__","spec/paxeer-x-explorer/qualification.kvx"]
 reqs = ["1.8","1.9"]
 
+[task.2.14]
+title = "Rebuild the committed program fixtures with their source paths remapped"
+status = "pending"
+wave = 2
+requires = ["1.3"]
+do_1 = "Add programs/tools/program-fixtures.sh, the single build path for the committed reference program artifacts, and make it the only place that sets the source-path remapping: it builds programs/sdk/rust/examples/naming, nft-lxt721 and swap-cpmm for wasm32-unknown-unknown with target.wasm32-unknown-unknown.rustflags carrying --remap-path-prefix from the checkout root onto /layerx/source, the virtual source root the hosted registry builder already replays against, keeps the two codegen flags programs/.cargo/config.toml declares for that target because cargo replaces rather than extends that table, clears any RUSTFLAGS the caller exports, runs the program lint on every example that carries a layerx-program.json, and refuses at the end if a rebuilt artifact still holds the checkout path."
+do_2 = "Rebuild programs/crates/layerx-programs-registry/tests/fixtures/naming/naming.wasm, programs/crates/layerx-programs-registry/tests/fixtures/lxt721/nft-lxt721.wasm and programs/fixtures/pay5/swap-cpmm.wasm through that script so none of the three carries the absolute build path of the workspace it was compiled in, which is the finding of observation 1.3.2."
+do_3 = "Regenerate the fixtures bound to those artifacts by code hash in the same run, with the registry's own naming_interface, lxt721_interface and swap_interface examples for program id 55 repeated 32 times: naming.interface, nft-lxt721.interface, nft-lxt721.registry-value, swap-cpmm.interface and swap-cpmm.registry-value. Relax no assertion in the three reference tests that bind them or in the explorer index read test that derives an interface from two of the modules."
+do_4 = "Give the script a programs-reference-fixtures make target in the shape of programs-reference-escrow, and point the nft-lxt721 and swap-cpmm README build sections at it as the only path that writes the committed fixtures, so the next rebuild sets the same remapping."
+do_5 = "Record in spec/paxeer-x-explorer/qualification.kvx what the remapping cannot hold still, so a later reader does not read it as a leak: cargo derives the crate disambiguator of every path package from that package's absolute path, so a rebuild from a differently located checkout reorders functions without changing a byte of their bodies, and only a build at a fixed source root holds that still."
+do_6 = "When the verify_cmd passes, record task 1.3's evidence at this revision - revision, command, exit code and repository-relative log path - and set task 1.3 to done, because the private-workspace check it stopped at is the check this task clears."
+verify_cmd = "timeout 20m sh -c 'cd programs && cargo test --locked -p layerx-programs-registry && cd .. && cargo test --locked --manifest-path human/Cargo.toml -p layerx-explorer-index && make public-audit'"
+symbols = ["program-fixtures","reference_interface"]
+touches = ["programs/tools/program-fixtures.sh","Makefile","programs/crates/layerx-programs-registry/tests/fixtures/naming","programs/crates/layerx-programs-registry/tests/fixtures/lxt721","programs/fixtures/pay5","programs/sdk/rust/examples/nft-lxt721/README.md","programs/sdk/rust/examples/swap-cpmm/README.md","spec/paxeer-x-explorer/qualification.kvx"]
+reqs = ["1.2","1.8","1.9"]
+
 [task.3]
 section = "Wave 3 - One Aggregate Run, Recorded"
 title = "Qualify the merged waves once and write down what ran"
@@ -677,7 +693,7 @@ status = "pending"
 title = "Run the explorer gates once on the merged revision and record the evidence"
 status = "done"
 wave = 3
-requires = ["1.1","1.9","1.10","1.11","1.12","1.13","2.1","2.2","2.3","2.4","2.5","2.6","2.7","2.8","2.9","2.10","2.11","2.12","2.13","4.1","4.2"]
+requires = ["1.1","1.9","1.10","1.11","1.12","1.13","2.1","2.2","2.3","2.4","2.5","2.6","2.7","2.8","2.9","2.10","2.11","2.12","2.13","2.14","4.1","4.2"]
 do_1 = "On the revision that merges waves 1 and 2, run tools/explorer/gate-test.sh once with its budget set to fit this task's timeout, writing its logs under build/explorer-gates/."
 do_2 = "Append one gate record per leg to spec/paxeer-x-explorer/qualification.kvx - the backend Paxeer X suites, the frontend type check and vitest suite - carrying the task, the requirements the leg qualifies, the revision, the exact command, the exit code and the log path, written only from a command that actually ran."
 do_3 = "Append one observation per failure the run exposes that belongs to no task in this feature: revision, command, exit code, log path, one sentence of what was observed and one sentence of what is assumed; do not investigate it further and do not rerun it."

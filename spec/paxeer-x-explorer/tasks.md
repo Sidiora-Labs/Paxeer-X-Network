@@ -188,6 +188,14 @@
     - Commit explorer/services/libs/Cargo.lock, resolved for the workspace the client crate belongs to, so the crate's test suite resolves one dependency set on every run and runs with --locked the way the two sibling service workspaces already do; change no dependency requirement in any member's manifest.
     - Run the crate's recorded suite one case at a time: the suite starts its stub server once behind a one-second wait, under the default parallelism that wait expires before the server is up and the shared handle is left poisoned, so every case fails on a server that never started while the same cases pass serially; keep all twenty-two cases and every assertion, and record the race in spec/paxeer-x-explorer/qualification.kvx as a defect of the vendored test rather than of this task.
     - _Requirements: 1.8, 1.9_
+  - [ ] 2.14 Rebuild the committed program fixtures with their source paths remapped
+    - Add programs/tools/program-fixtures.sh, the single build path for the committed reference program artifacts, and make it the only place that sets the source-path remapping: it builds programs/sdk/rust/examples/naming, nft-lxt721 and swap-cpmm for wasm32-unknown-unknown with target.wasm32-unknown-unknown.rustflags carrying --remap-path-prefix from the checkout root onto /layerx/source, the virtual source root the hosted registry builder already replays against, keeps the two codegen flags programs/.cargo/config.toml declares for that target because cargo replaces rather than extends that table, clears any RUSTFLAGS the caller exports, runs the program lint on every example that carries a layerx-program.json, and refuses at the end if a rebuilt artifact still holds the checkout path.
+    - Rebuild programs/crates/layerx-programs-registry/tests/fixtures/naming/naming.wasm, programs/crates/layerx-programs-registry/tests/fixtures/lxt721/nft-lxt721.wasm and programs/fixtures/pay5/swap-cpmm.wasm through that script so none of the three carries the absolute build path of the workspace it was compiled in, which is the finding of observation 1.3.2.
+    - Regenerate the fixtures bound to those artifacts by code hash in the same run, with the registry's own naming_interface, lxt721_interface and swap_interface examples for program id 55 repeated 32 times: naming.interface, nft-lxt721.interface, nft-lxt721.registry-value, swap-cpmm.interface and swap-cpmm.registry-value. Relax no assertion in the three reference tests that bind them or in the explorer index read test that derives an interface from two of the modules.
+    - Give the script a programs-reference-fixtures make target in the shape of programs-reference-escrow, and point the nft-lxt721 and swap-cpmm README build sections at it as the only path that writes the committed fixtures, so the next rebuild sets the same remapping.
+    - Record in spec/paxeer-x-explorer/qualification.kvx what the remapping cannot hold still, so a later reader does not read it as a leak: cargo derives the crate disambiguator of every path package from that package's absolute path, so a rebuild from a differently located checkout reorders functions without changing a byte of their bodies, and only a build at a fixed source root holds that still.
+    - When the verify_cmd passes, record task 1.3's evidence at this revision - revision, command, exit code and repository-relative log path - and set task 1.3 to done, because the private-workspace check it stopped at is the check this task clears.
+    - _Requirements: 1.2, 1.8, 1.9_
 
 ## Wave 3 - One Aggregate Run, Recorded
 
@@ -226,7 +234,7 @@
 {
   "waves": [
     { "id": 1,  "tasks": ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "1.10", "1.11", "1.12", "1.13"] },
-    { "id": 2,  "tasks": ["2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7", "2.8", "2.9", "2.10", "2.11", "2.12", "2.13"] },
+    { "id": 2,  "tasks": ["2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7", "2.8", "2.9", "2.10", "2.11", "2.12", "2.13", "2.14"] },
     { "id": 3,  "tasks": ["3.1"] },
     { "id": 4,  "tasks": ["4.1", "4.2"] }
   ]
