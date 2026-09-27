@@ -639,6 +639,21 @@ command = "timeout 20m sh -c 'npm --prefix human/apps/web ci --ignore-scripts --
 exit_code = 0
 log = "build/explorer-gates/task-2.12.log"
 
+[task.2.13]
+title = "Keep every recorded path inside the Windows checkout limit"
+status = "pending"
+wave = 2
+requires = []
+do_1 = "Rename the four recorded stubs under explorer/services/libs/blockscout-client/crate/tests/recorded/eth_blockscout_com whose basenames carry a full token instance number or a full transaction hash - the longest of them makes a 239-character repository path - so that each long identifier is shortened to the eight characters that follow its 0x prefix, or to its first eight digits where it has none, leaving every other recorded stub's name as it is."
+do_2 = "Change no stub body: the request URL each stub matches on lives in its own JSON as request.urlPath and stays byte-identical, because the recorded server matches a request against that path and not against the file name, and the token address, the token instance number and the transaction hash the crate's test declares stay exactly as they are."
+do_3 = "Add tools/ci/path-length-check.sh, an executable dependency-free POSIX shell script run from the repository root that walks the tracked file list and exits non-zero when any tracked path's basename is longer than 120 characters or its repository-relative path is longer than 200, naming every offender with its measured length and the bound it broke and printing the longest basename and path it accepted when it passes; record the two bounds and the checkout limit they leave room for in the script itself."
+do_4 = "Close the other two paths the check reports: give the transaction sub-heading component case that renders an interpretation with a view-all link and an external-link action button an explicit screenshot name in explorer/frontend/ui/tx/TxSubHeading.pw.tsx, and rename its two recorded screenshots under explorer/frontend/ui/tx/__screenshots__ to the names the snapshot path template then resolves, relaxing no assertion, adding no case and leaving every other screenshot name untouched."
+do_5 = "Commit explorer/services/libs/Cargo.lock, resolved for the workspace the client crate belongs to, so the crate's test suite resolves one dependency set on every run and runs with --locked the way the two sibling service workspaces already do; change no dependency requirement in any member's manifest."
+verify_cmd = "timeout 20m sh -c 'tools/ci/path-length-check.sh && cd explorer/services/libs/blockscout-client/crate && cargo test --locked'"
+symbols = ["path-length-check"]
+touches = ["tools/ci/path-length-check.sh","explorer/services/libs/blockscout-client/crate/tests/recorded/eth_blockscout_com","explorer/services/libs/Cargo.lock","explorer/frontend/ui/tx/TxSubHeading.pw.tsx","explorer/frontend/ui/tx/__screenshots__"]
+reqs = ["1.8","1.9"]
+
 [task.3]
 section = "Wave 3 - One Aggregate Run, Recorded"
 title = "Qualify the merged waves once and write down what ran"
@@ -648,7 +663,7 @@ status = "pending"
 title = "Run the explorer gates once on the merged revision and record the evidence"
 status = "done"
 wave = 3
-requires = ["1.1","1.9","1.10","1.11","1.12","1.13","2.1","2.2","2.3","2.4","2.5","2.6","2.7","2.8","2.9","2.10","2.11","2.12","4.1","4.2"]
+requires = ["1.1","1.9","1.10","1.11","1.12","1.13","2.1","2.2","2.3","2.4","2.5","2.6","2.7","2.8","2.9","2.10","2.11","2.12","2.13","4.1","4.2"]
 do_1 = "On the revision that merges waves 1 and 2, run tools/explorer/gate-test.sh once with its budget set to fit this task's timeout, writing its logs under build/explorer-gates/."
 do_2 = "Append one gate record per leg to spec/paxeer-x-explorer/qualification.kvx - the backend Paxeer X suites, the frontend type check and vitest suite - carrying the task, the requirements the leg qualifies, the revision, the exact command, the exit code and the log path, written only from a command that actually ran."
 do_3 = "Append one observation per failure the run exposes that belongs to no task in this feature: revision, command, exit code, log path, one sentence of what was observed and one sentence of what is assumed; do not investigate it further and do not rerun it."
