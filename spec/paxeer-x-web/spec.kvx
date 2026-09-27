@@ -630,7 +630,7 @@ reqs = ["14.1","14.2","14.3"]
 title = "Dry-run the sidecar loop against anvil and local sidecars and record it"
 status = "pending"
 wave = 2
-requires = ["1.6","2.1","2.3","2.10","2.14","2.17","2.24","2.25","2.26","2.27","2.28","2.29","2.30","2.31","2.32","2.33","2.34","2.35"]
+requires = ["1.6","2.1","2.3","2.10","2.14","2.17","2.24","2.25","2.26","2.27","2.28","2.29","2.30","2.31","2.32","2.33","2.34","2.35","2.37"]
 do_1 = "Write interop/deploy/x-websearch/tests/dry-run-check.sh starting anvil, a real loopback web server serving committed pages and three x-websearch processes with run-local attestor keys and allow_loopback set, and deploying contracts/src/xweb/XWebConsumer.sol to anvil."
 do_2 = "Fetch the same page through the three sidecars, assert the digests are identical and the signatures are valid and ascending over the origin-1 preimage, assert the submitter's fulfil calldata decodes against precompiles/xweb/abi.json, and deliver the consumer's callback on anvil from the impersonated precompile address with the attested response and the bounded gas, asserting the consumer's stored result."
 do_3 = "Record the exchange as interop/deploy/x-websearch/tests/fixtures/dry-run.json, replayable without the nodes, carrying no key material, no endpoint but the loopback ones the run started and no date or hostname; stop with a message naming a missing tool rather than skipping a step."
@@ -1229,6 +1229,22 @@ verify_cmd = "timeout 20m sh -c 'tools/ci/no-float-scan.sh build && make beta-co
 touches = ["include/layerx/lx_web.h","platform/docs/content/beta.md"]
 tests = ["tools/ci/no-float-scan.sh","tools/ci/beta-contract-check.sh"]
 reqs = ["16.3","16.4"]
+
+[task.2.37]
+title = "Fund the local gateway harness through the native custody module on a real local chain"
+status = "pending"
+wave = 2
+requires = ["2.35"]
+do_1 = "Add platform/hosted/gateway/tests/local/custody_chain.py, a support process in the shape of human/crates/layerx-human-service/tests/support/withdraw-paxd.py speaking one JSON object per line: start builds the BetaUsdl artifact the chain loader needs, writes the layerxcustody genesis section with platform/hosted/paxeer/custody-genesis.py for the cluster's own sequencer id and public key, a freshly generated deposit-root authority and the cluster asset mapped to the chain's own denomination, brings the real local chain up through owned_chain of tests/daemon/custody_chain.py and its two independent TLS origins through that module's boundaries, and answers the EVM origin, the Comet RPC origin its identity document names, the two boundary origins, the CA bundle, the disposable identity path, the native custody precompile address and the module identity; deposit sends deposit(bytes32) to that precompile for one beneficiary account through the signer and send of tests/bridge/deploy_local_custody.py and answers the deposit transaction hash and the credited base units; stop tears the boundaries and the chain down. Require the boundary and custody-proof executables the neighbouring harnesses take from their environment, failing closed and naming the missing one, and change nothing in tests/daemon/custody_chain.py, platform/hosted/paxeer/custody-genesis.py or tests/bridge."
+do_2 = "In platform/hosted/gateway/tests/local/funding.rs replace both chain-31337 anvil instances and the deploy_local_custody.py deployment with that process: generate the cluster's sequencer seed in start_configured and pass it into start_node so the custody genesis authorizes the sequencer the node really runs, start the custody chain once per Funding and stop it with the nodes in Drop, and take the treasury credit and the recipient credit from two native deposits instead of the deployed vault deposit and its forked recipient deposit, dropping platform/hosted/gateway/tests/local/deposit_recipient.py, which nothing else calls."
+do_3 = "Give custody_profile and attest_credit the identity and light-client arguments tests/bridge/custody_credit.py requires: the two boundary origins as --rpc with --ca-bundle and --disposable-identity, --comet-rpc for the Comet origin, --chain-id 125, --vault the native custody precompile and --runtime-sha256 the module identity the support process reports; keep that script and every assertion in it exactly as written, and keep the LXBC3 layout and length assertions funded_genesis already makes over the profile."
+do_4 = "Leave every other harness alone: record as one observation any harness still funding itself from a locally deployed chain-31337 vault, without repairing it."
+do_5 = "Run the verify_cmd once; at the revision where it exits 0 record tasks 2.35 and 2.28 done with that revision, command, exit code and log path and close observations 2.21.2 and 2.28.1 naming it, as task 2.35's do_4 requires; if it does not pass, leave both tasks as they are and record the exact failing step as one observation."
+verify_cmd = "timeout 30m sh -c 'export LAYERX_TEST_SOCAT_BIN=$(command -v socat) LAYERX_TEST_WEB_READER_WASM=$PWD/programs/sdk/rust/examples/web-reader/target/wasm32-unknown-unknown/release/layerx_reference_web_reader.wasm; cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway schema_lists_every_public_method && cargo test --locked --manifest-path platform/hosted/gateway/tests/local/Cargo.toml --test lifecycle events::'"
+symbols = ["funding::start","custody_profile","attest_credit"]
+touches = ["platform/hosted/gateway/tests/local/custody_chain.py","platform/hosted/gateway/tests/local/funding.rs","platform/hosted/gateway/tests/local/deposit_recipient.py"]
+tests = ["platform/hosted/gateway/tests/local/funding.rs","platform/hosted/gateway/tests/local/events.rs"]
+reqs = ["11.2"]
 
 [task.3.1]
 title = "Run the xweb workflow's legs once on the merged revision and record the evidence"
