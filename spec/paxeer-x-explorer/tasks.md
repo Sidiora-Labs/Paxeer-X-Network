@@ -359,6 +359,10 @@
     - Keep the pages working at 375px through the existing list-item variants with no horizontal page scroll and no clipped table, and change no file ending in .pw.tsx and no __screenshots__ directory.
     - Add the vitest specs explorer/frontend/ui/paxeerX/anchors/PaxeerXAnchorsTable.spec.tsx, explorer/frontend/ui/paxeerX/receipts/PaxeerXReceiptsTable.spec.tsx and explorer/frontend/ui/pages/PaxeerXAccount.spec.tsx, PaxeerXAnchors.spec.tsx, PaxeerXReceipts.spec.tsx and PaxeerXReceipt.spec.tsx, each rendering the real component through explorer/frontend/vitest/lib.tsx with kernel payload mocks from explorer/frontend/mocks/paxeerX and asserting the cards, the tabs and the rows.
     - _Requirements: 23.1, 23.2, 23.3, 23.4, 23.5, 23.6, 23.7, 23.8_
+  - [ ] 6.10 Add the specs the transaction page rebuild left without coverage
+    - List the source files the transaction page rebuild changed that carry no spec beside them, by diffing that rebuild's commit against its parent over explorer/ and applying the rule tools/explorer/test-ratio.sh states - a changed test counts for a changed source only when it sits in the same directory under the same stem, names one of that source's exported names, or names a fragment of its path.
+    - Add one vitest spec beside each source that list names - explorer/frontend/ui/tx/TxDetailsDegraded.spec.tsx, TxLogs.spec.tsx, TxInternals.spec.tsx, TxRawTrace.spec.tsx, TxState.spec.tsx and explorer/frontend/ui/tx/details/txDetailsActions/TxDetailsActionsInterpretation.spec.tsx and TxDetailsActionsRaw.spec.tsx - each rendering the real component through explorer/frontend/vitest/lib.tsx with payload mocks from explorer/frontend/mocks/ and asserting the structure the rebuild gave it, changing no source file and adding no file ending in .pw.tsx and no __screenshots__ directory.
+    - _Requirements: 20.1, 20.2, 20.3, 20.6, 20.7, 20.8, 20.9_
 
 ## Wave 7 - One Aggregate Run, Recorded
 
@@ -384,7 +388,7 @@
     { "id": 3,  "tasks": ["3.1"] },
     { "id": 4,  "tasks": ["4.1", "4.2"] },
     { "id": 5,  "tasks": ["5.1", "5.2"] },
-    { "id": 6,  "tasks": ["6.1", "6.2", "6.3", "6.4", "6.5", "6.6", "6.7", "6.8", "6.9"] },
+    { "id": 6,  "tasks": ["6.1", "6.2", "6.3", "6.4", "6.5", "6.6", "6.7", "6.8", "6.9", "6.10"] },
     { "id": 7,  "tasks": ["7.1"] }
   ]
 }

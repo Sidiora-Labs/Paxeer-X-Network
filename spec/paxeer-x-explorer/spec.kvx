@@ -1094,6 +1094,19 @@ symbols = ["PaxeerXAccount","PaxeerXAnchorsTable","PaxeerXReceiptsTable","Paxeer
 touches = ["explorer/frontend/ui/paxeerX/account/IdentityList.tsx","explorer/frontend/ui/paxeerX/account/AssetList.tsx","explorer/frontend/ui/paxeerX/account/AssetListItem.tsx","explorer/frontend/ui/paxeerX/account/ActivityList.tsx","explorer/frontend/ui/paxeerX/account/ActivityListItem.tsx","explorer/frontend/ui/paxeerX/account/AssetList.spec.tsx","explorer/frontend/ui/paxeerX/account/ActivityList.spec.tsx","explorer/frontend/ui/paxeerX/account/IdentityList.spec.tsx","explorer/frontend/ui/paxeerX/anchors/PaxeerXAnchorsTable.tsx","explorer/frontend/ui/paxeerX/anchors/PaxeerXAnchorsTable.spec.tsx","explorer/frontend/ui/paxeerX/anchors/PaxeerXAnchorsTableItem.tsx","explorer/frontend/ui/paxeerX/anchors/PaxeerXAnchorsListItem.tsx","explorer/frontend/ui/paxeerX/receipts/PaxeerXReceiptDetails.tsx","explorer/frontend/ui/paxeerX/receipts/PaxeerXReceiptDetails.spec.tsx","explorer/frontend/ui/paxeerX/receipts/PaxeerXReceiptsTable.tsx","explorer/frontend/ui/paxeerX/receipts/PaxeerXReceiptsTable.spec.tsx","explorer/frontend/ui/paxeerX/receipts/PaxeerXReceiptsTableItem.tsx","explorer/frontend/ui/paxeerX/receipts/PaxeerXReceiptsListItem.tsx","explorer/frontend/ui/pages/PaxeerXAccount.tsx","explorer/frontend/ui/pages/PaxeerXAccount.spec.tsx","explorer/frontend/ui/pages/PaxeerXAnchors.tsx","explorer/frontend/ui/pages/PaxeerXAnchors.spec.tsx","explorer/frontend/ui/pages/PaxeerXReceipts.tsx","explorer/frontend/ui/pages/PaxeerXReceipts.spec.tsx","explorer/frontend/ui/pages/PaxeerXReceipt.tsx","explorer/frontend/ui/pages/PaxeerXReceipt.spec.tsx"]
 reqs = ["23.1","23.2","23.3","23.4","23.5","23.6","23.7","23.8"]
 
+[task.6.10]
+title = "Add the specs the transaction page rebuild left without coverage"
+status = "pending"
+wave = 6
+requires = ["6.3"]
+do_1 = "List the source files the transaction page rebuild changed that carry no spec beside them, by diffing that rebuild's commit against its parent over explorer/ and applying the rule tools/explorer/test-ratio.sh states - a changed test counts for a changed source only when it sits in the same directory under the same stem, names one of that source's exported names, or names a fragment of its path."
+do_2 = "Add one vitest spec beside each source that list names - explorer/frontend/ui/tx/TxDetailsDegraded.spec.tsx, TxLogs.spec.tsx, TxInternals.spec.tsx, TxRawTrace.spec.tsx, TxState.spec.tsx and explorer/frontend/ui/tx/details/txDetailsActions/TxDetailsActionsInterpretation.spec.tsx and TxDetailsActionsRaw.spec.tsx - each rendering the real component through explorer/frontend/vitest/lib.tsx with payload mocks from explorer/frontend/mocks/ and asserting the structure the rebuild gave it, changing no source file and adding no file ending in .pw.tsx and no __screenshots__ directory."
+verify_cmd = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/tx'"
+symbols = ["TxDetailsDegraded","TxLogs","TxInternals","TxRawTrace","TxState","TxDetailsActionsInterpretation","TxDetailsActionsRaw"]
+touches = ["explorer/frontend/ui/tx/TxDetailsDegraded.spec.tsx","explorer/frontend/ui/tx/TxLogs.spec.tsx","explorer/frontend/ui/tx/TxInternals.spec.tsx","explorer/frontend/ui/tx/TxRawTrace.spec.tsx","explorer/frontend/ui/tx/TxState.spec.tsx","explorer/frontend/ui/tx/details/txDetailsActions/TxDetailsActionsInterpretation.spec.tsx","explorer/frontend/ui/tx/details/txDetailsActions/TxDetailsActionsRaw.spec.tsx"]
+tests = ["explorer/frontend/ui/tx/TxDetailsDegraded.spec.tsx","explorer/frontend/ui/tx/TxLogs.spec.tsx","explorer/frontend/ui/tx/TxInternals.spec.tsx","explorer/frontend/ui/tx/TxRawTrace.spec.tsx","explorer/frontend/ui/tx/TxState.spec.tsx","explorer/frontend/ui/tx/details/txDetailsActions/TxDetailsActionsInterpretation.spec.tsx","explorer/frontend/ui/tx/details/txDetailsActions/TxDetailsActionsRaw.spec.tsx"]
+reqs = ["20.1","20.2","20.3","20.6","20.7","20.8","20.9"]
+
 [task.7]
 section = "Wave 7 - One Aggregate Run, Recorded"
 title = "Qualify the redesigned frontend once on the merged tip and write down what ran"
@@ -1103,7 +1116,7 @@ status = "pending"
 title = "Run the explorer gates once over the scan waves and record the evidence"
 status = "pending"
 wave = 7
-requires = ["6.1","6.2","6.3","6.4","6.5","6.6","6.7","6.8","6.9"]
+requires = ["6.1","6.2","6.3","6.4","6.5","6.6","6.7","6.8","6.9","6.10"]
 do_1 = "On the revision that merges waves 5 and 6, run tools/explorer/gate-lint.sh once, writing its log under build/explorer-gates/."
 do_2 = "At that same revision run tools/explorer/gate-test.sh once with its budget set to fit this task's timeout, writing its logs under build/explorer-gates/."
 do_3 = "At that same revision run tools/explorer/test-ratio.sh once over the range that spans waves 5 and 6, so that every source file those waves changed is proven to have a changed test referencing it."
