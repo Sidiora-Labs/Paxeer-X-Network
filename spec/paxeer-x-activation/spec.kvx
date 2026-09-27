@@ -137,7 +137,7 @@ status = "pending"
 
 [task.2.1]
 title = "Run the chain gates once on the merged revision and record the evidence"
-status = "pending"
+status = "in_progress"
 wave = 2
 requires = ["1.1","1.2"]
 do_1 = "On the revision that merges wave 1, build the chain once and run the node and EVM keeper package suites once, writing the logs under build/activation-gates/."

@@ -26,7 +26,7 @@
 ## Wave 2 - One Aggregate Run, Recorded
 
 - [ ] 2. Qualify the merged wave once and write down what ran
-  - [ ] 2.1 Run the chain gates once on the merged revision and record the evidence
+  - [-] 2.1 Run the chain gates once on the merged revision and record the evidence
     - On the revision that merges wave 1, build the chain once and run the node and EVM keeper package suites once, writing the logs under build/activation-gates/.
     - Append one gate record per run to spec/paxeer-x-activation/qualification.kvx carrying the task, the requirements the run qualifies, the revision, the exact command, the exit code and the log path, written only from a command that actually ran.
     - Append one observation per failure the run exposes that belongs to no task in this feature: revision, command, exit code, log path, one sentence of what was observed and one sentence of what is assumed; do not investigate it further and do not rerun it.
