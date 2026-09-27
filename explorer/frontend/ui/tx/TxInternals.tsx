@@ -7,11 +7,11 @@ import compareBns from 'lib/bigint/compareBns';
 // import { apos } from 'toolkit/utils/htmlEntities';
 import { INTERNAL_TX } from 'stubs/internalTx';
 import { generateListStub } from 'stubs/utils';
-import ActionBar, { ACTION_BAR_HEIGHT_DESKTOP } from 'ui/shared/ActionBar';
 import DataListDisplay from 'ui/shared/DataListDisplay';
 // import { FilterInput } from 'toolkit/components/filters/FilterInput';
 import Pagination from 'ui/shared/pagination/Pagination';
 import useQueryWithPages from 'ui/shared/pagination/useQueryWithPages';
+import { formatScanTableCount, ScanTableCard } from 'ui/shared/scan';
 import { default as getNextSortValueShared } from 'ui/shared/sort/getNextSortValue';
 import TxInternalsList from 'ui/tx/internals/TxInternalsList';
 import TxInternalsTable from 'ui/tx/internals/TxInternalsTable';
@@ -107,33 +107,37 @@ const TxInternals = ({ txQuery }: Props) => {
           data={ filteredData }
           sort={ sort }
           onSortToggle={ handleSortToggle }
-          top={ pagination.isVisible ? ACTION_BAR_HEIGHT_DESKTOP : 0 }
+          top={ 0 }
           isLoading={ isPlaceholderData }
         />
       </Box>
     </>
   ) : null;
 
-  const actionBar = pagination.isVisible ? (
-    <ActionBar mt={ -6 }>
-      { /* <FilterInput onChange={ setSearchTerm } maxW="360px" ml={ 3 } size="xs" placeholder="Search by addresses, hash, method..."/> */ }
-      <Pagination ml="auto" { ...pagination }/>
-    </ActionBar>
-  ) : null;
+  const itemsNum = data?.items.length ?? 0;
 
   return (
-    <DataListDisplay
-      isError={ isError || txQuery.isError }
-      itemsNum={ data?.items.length }
-      emptyText="There are no internal transactions for this transaction."
-      // filterProps={{
-      // emptyFilteredText: `Couldn${ apos }t find any transaction that matches your query.`.
-      // hasActiveFilters: Boolean(filters.length || searchTerm),
-      // }}
-      actionBar={ actionBar }
+    <ScanTableCard
+      title="Internal transactions"
+      note={ formatScanTableCount({
+        kind: pagination.isVisible ? 'more_than' : 'total',
+        value: itemsNum,
+        itemsName: itemsNum === 1 ? 'internal transaction' : 'internal transactions',
+      }) }
+      pagination={ pagination.isVisible ? <Pagination { ...pagination }/> : null }
     >
-      { content }
-    </DataListDisplay>
+      <DataListDisplay
+        isError={ isError || txQuery.isError }
+        itemsNum={ data?.items.length }
+        emptyText="There are no internal transactions for this transaction."
+        // filterProps={{
+        // emptyFilteredText: `Couldn${ apos }t find any transaction that matches your query.`.
+        // hasActiveFilters: Boolean(filters.length || searchTerm),
+        // }}
+      >
+        { content }
+      </DataListDisplay>
+    </ScanTableCard>
   );
 };
 

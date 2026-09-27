@@ -51,9 +51,15 @@ export default function useNavItems(): ReturnType {
       icon: 'navigation/transactions',
       isActive:
         // sorry, but this is how it was designed
-        (pathname === '/txs' && (!config.features.zetachain.isEnabled || !tab || !tab.includes('cctx'))) ||
+        (pathname === '/txs' && tab !== 'pending' && (!config.features.zetachain.isEnabled || !tab || !tab.includes('cctx'))) ||
         pathname === '/tx/[hash]' ||
         pathname === '/chain/[chain_slug]/tx/[hash]',
+    };
+    const pendingTxs: NavItem | null = {
+      text: 'Pending transactions',
+      nextRoute: { pathname: '/txs' as const, query: { tab: 'pending' } },
+      icon: 'navigation/hourglass',
+      isActive: pathname === '/txs' && tab === 'pending',
     };
     const cctxs: NavItem | null = config.features.zetachain.isEnabled ? {
       text: 'Cross-chain transactions',
@@ -160,6 +166,7 @@ export default function useNavItems(): ReturnType {
       blockchainNavItems = [
         [
           txs,
+          pendingTxs,
           internalTxs,
           rollupDeposits,
           rollupWithdrawals,
@@ -186,6 +193,7 @@ export default function useNavItems(): ReturnType {
       blockchainNavItems = [
         [
           txs,
+          pendingTxs,
           internalTxs,
           rollupDeposits,
           rollupWithdrawals,
@@ -202,6 +210,7 @@ export default function useNavItems(): ReturnType {
       blockchainNavItems = [
         [
           txs,
+          pendingTxs,
           internalTxs,
           userOps,
           blocks,
@@ -217,6 +226,7 @@ export default function useNavItems(): ReturnType {
     } else {
       blockchainNavItems = [
         txs,
+        pendingTxs,
         operations,
         internalTxs,
         cctxs,
@@ -304,7 +314,7 @@ export default function useNavItems(): ReturnType {
       }
 
       return {
-        text: 'Charts & stats',
+        text: 'Resources',
         nextRoute: { pathname: '/stats' as const },
         icon: 'navigation/stats',
         isActive: items.some(item => isInternalItem(item) && item.isActive),
@@ -319,7 +329,12 @@ export default function useNavItems(): ReturnType {
       isActive: pathname.startsWith('/api-docs'),
     } : null;
 
-    const otherNavItems: Array<NavItem> | Array<Array<NavItem>> = [
+    const otherNavItems: Array<NavItem> = [
+      config.features.advancedFilter.isEnabled && {
+        text: 'Advanced filter',
+        nextRoute: { pathname: '/advanced-filter' as const },
+        isActive: pathname.startsWith('/advanced-filter'),
+      },
       config.features.multichain.isEnabled ? {
         text: 'Verify contract',
         url: 'https://vera.blockscout.com',
@@ -356,41 +371,6 @@ export default function useNavItems(): ReturnType {
       },
     ] : [];
 
-    const mainNavItems: ReturnType['mainNavItems'] = [
-      {
-        text: 'Blockchain',
-        icon: 'navigation/blockchain',
-        isActive: blockchainNavItems.flat().some(item => isInternalItem(item) && item.isActive),
-        subItems: blockchainNavItems,
-      },
-      paxeerXNavItems.length > 0 ? {
-        text: 'Paxeer X',
-        icon: 'navigation/blockchain',
-        isActive: paxeerXNavItems.some(item => isInternalItem(item) && item.isActive),
-        subItems: paxeerXNavItems,
-      } : null,
-      {
-        text: 'Tokens',
-        icon: 'navigation/tokens',
-        isActive: tokensNavItems.flat().some(item => isInternalItem(item) && item.isActive),
-        subItems: tokensNavItems,
-      },
-      marketplaceFeature.isEnabled ? {
-        text: marketplaceFeature.titles.menu_item,
-        nextRoute: { pathname: '/apps' as const },
-        icon: 'navigation/apps',
-        isActive: pathname.startsWith('/app') || pathname.startsWith('/essential-dapps'),
-      } : null,
-      statsNavItem,
-      apiNavItem,
-      {
-        text: 'Other',
-        icon: 'navigation/other',
-        isActive: otherNavItems.flat().some(item => isInternalItem(item) && item.isActive),
-        subItems: otherNavItems,
-      },
-    ].filter(Boolean);
-
     const accountNavItems: ReturnType['accountNavItems'] = [
       {
         text: 'Watch list',
@@ -421,6 +401,50 @@ export default function useNavItems(): ReturnType {
         nextRoute: { pathname: '/account/verified-addresses' as const },
         icon: 'navigation/verified_contracts',
         isActive: pathname === '/account/verified-addresses',
+      },
+    ].filter(Boolean);
+
+    const moreNavItems: Array<NavItem> | Array<Array<NavItem>> = config.features.account.isEnabled ?
+      [ otherNavItems, accountNavItems ] :
+      otherNavItems;
+
+    const mainNavItems: ReturnType['mainNavItems'] = [
+      {
+        text: 'Home',
+        nextRoute: { pathname: '/' as const },
+        isActive: pathname === '/',
+      },
+      {
+        text: 'Blockchain',
+        icon: 'navigation/blockchain',
+        isActive: blockchainNavItems.flat().some(item => isInternalItem(item) && item.isActive),
+        subItems: blockchainNavItems,
+      },
+      {
+        text: 'Tokens',
+        icon: 'navigation/tokens',
+        isActive: tokensNavItems.flat().some(item => isInternalItem(item) && item.isActive),
+        subItems: tokensNavItems,
+      },
+      paxeerXNavItems.length > 0 ? {
+        text: 'Kernel',
+        icon: 'navigation/blockchain',
+        isActive: paxeerXNavItems.some(item => isInternalItem(item) && item.isActive),
+        subItems: paxeerXNavItems,
+      } : null,
+      marketplaceFeature.isEnabled ? {
+        text: marketplaceFeature.titles.menu_item,
+        nextRoute: { pathname: '/apps' as const },
+        icon: 'navigation/apps',
+        isActive: pathname.startsWith('/app') || pathname.startsWith('/essential-dapps'),
+      } : null,
+      statsNavItem,
+      apiNavItem,
+      {
+        text: 'More',
+        icon: 'navigation/other',
+        isActive: moreNavItems.flat().some(item => isInternalItem(item) && item.isActive),
+        subItems: moreNavItems,
       },
     ].filter(Boolean);
 

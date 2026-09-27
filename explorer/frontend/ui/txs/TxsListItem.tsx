@@ -15,6 +15,7 @@ import BlockEntity from 'ui/shared/entities/block/BlockEntity';
 import TxEntity from 'ui/shared/entities/tx/TxEntity';
 import EntityTag from 'ui/shared/EntityTags/EntityTag';
 import ListItemMobile from 'ui/shared/ListItemMobile/ListItemMobile';
+import { ScanMethodChip } from 'ui/shared/scan';
 import TxStatus from 'ui/shared/statusTag/TxStatus';
 import TimeWithTooltip from 'ui/shared/time/TimeWithTooltip';
 import TxFee from 'ui/shared/tx/TxFee';
@@ -24,6 +25,8 @@ import TxAdditionalInfo from 'ui/txs/TxAdditionalInfo';
 import TxType from 'ui/txs/TxType';
 
 import TxTranslationType from './TxTranslationType';
+
+const SELECTOR_LENGTH = 10;
 
 type Props = {
   tx: Transaction;
@@ -51,6 +54,8 @@ const TxsListItem = ({
   const dataTo = tx.to ? tx.to : tx.created_contract;
 
   const protocolTag = tx.to?.hash !== currentAddress && tx.to?.metadata?.tags?.find(tag => tag.tagType === 'protocol');
+
+  const method = tx.method ?? (tx.raw_input && tx.raw_input.length >= SELECTOR_LENGTH ? tx.raw_input.slice(0, SELECTOR_LENGTH) : undefined);
 
   return (
     <ListItemMobile display="block" width="100%" animation={ animation } key={ tx.hash }>
@@ -90,18 +95,10 @@ const TxsListItem = ({
           fontSize="sm"
         />
       </Flex>
-      { tx.method && (
-        <Flex mt={ 3 }>
-          <Skeleton loading={ isLoading } display="inline-block" whiteSpace="pre">Method </Skeleton>
-          <Skeleton
-            loading={ isLoading }
-            color="text.secondary"
-            overflow="hidden"
-            whiteSpace="nowrap"
-            textOverflow="ellipsis"
-          >
-            <span>{ tx.method }</span>
-          </Skeleton>
+      { method && (
+        <Flex mt={ 3 } columnGap={ 2 } alignItems="center" minW={ 0 }>
+          <Skeleton loading={ isLoading } display="inline-block" whiteSpace="pre">Method</Skeleton>
+          <ScanMethodChip method={ method } isLoading={ isLoading }/>
         </Flex>
       ) }
       { showBlockInfo && tx.block_number !== null && (

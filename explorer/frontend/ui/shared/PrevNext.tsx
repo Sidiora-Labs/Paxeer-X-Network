@@ -35,15 +35,16 @@ const PrevNext = ({ className, onClick, prevLabel, nextLabel, isPrevDisabled, is
   }
 
   return (
-    <Box className={ className } display="flex">
+    <Box className={ className } display="flex" data-prev-next>
       <Tooltip content={ prevLabel }>
         <IconButton
           aria-label="prev"
           borderRadius="sm"
-          variant="icon_background"
+          variant="scan_control"
           boxSize={ 6 }
           onClick={ handelPrevClick }
           disabled={ isPrevDisabled }
+          data-control="prev"
         >
           <IconSvg name="arrows/east-mini"/>
         </IconButton>
@@ -52,11 +53,12 @@ const PrevNext = ({ className, onClick, prevLabel, nextLabel, isPrevDisabled, is
         <IconButton
           aria-label="next"
           borderRadius="sm"
-          variant="icon_background"
+          variant="scan_control"
           boxSize={ 6 }
-          ml="10px"
+          ml={ 1 }
           onClick={ handelNextClick }
           disabled={ isNextDisabled }
+          data-control="next"
         >
           <IconSvg name="arrows/east-mini" transform="rotate(180deg)"/>
         </IconButton>

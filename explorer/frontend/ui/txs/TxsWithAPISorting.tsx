@@ -22,6 +22,7 @@ type Props = {
   sorting: TransactionsSortingValue;
   setSort: (value: TransactionsSortingValue) => void;
   showTableViewButton?: boolean;
+  isInsideTableCard?: boolean;
 };
 
 const TxsWithAPISorting = ({
@@ -36,6 +37,7 @@ const TxsWithAPISorting = ({
   sorting,
   setSort,
   showTableViewButton,
+  isInsideTableCard,
 }: Props) => {
 
   const handleSortChange = React.useCallback((value: TransactionsSortingValue) => {
@@ -59,6 +61,7 @@ const TxsWithAPISorting = ({
       sort={ sorting }
       pagination={ query.pagination }
       showTableViewButton={ showTableViewButton }
+      isInsideTableCard={ isInsideTableCard }
     />
   );
 };

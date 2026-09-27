@@ -12,11 +12,18 @@ type Props = {
 
 const HeaderDesktop = ({ renderSearchBar }: Props) => {
 
+  // with the horizontal navigation the search box sits in the utility bar, so the content column
+  // only carries a search box when the page brings its own
+  if (config.UI.navigation.layout === 'horizontal' && !renderSearchBar) {
+    return null;
+  }
+
   const searchBar = renderSearchBar ? renderSearchBar() : <SearchBar/>;
 
   return (
     <HStack
       as="header"
+      data-label="content-search"
       display={{ base: 'none', lg: 'flex' }}
       width="100%"
       alignItems="center"

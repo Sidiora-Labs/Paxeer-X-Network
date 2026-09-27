@@ -51,4 +51,22 @@ describe('AssetList', () => {
 
     expect(container.querySelectorAll('[data-parts-of]')).toHaveLength(0);
   });
+  it('heads the scan table card with the asset count and its note', () => {
+    const { container } = render(<AssetList items={ paxeerXMock.unifiedAccount.balances }/>);
+
+    const card = container.querySelector('[data-scan-table-card]');
+
+    expect(card?.querySelector('[data-title]')?.textContent).toBe('A total of 3 assets found');
+    expect(card?.querySelector('[data-note]')?.textContent).toBe('Chain, custody and kernel balances of one asset add up to its total');
+  });
+
+  it('keeps the empty message inside the card', () => {
+    const { container } = render(<AssetList items={ [] }/>);
+
+    const card = container.querySelector('[data-scan-table-card]') as HTMLElement;
+
+    expect(card.querySelector('[data-title]')?.textContent).toBe('A total of 0 assets found');
+    expect(card.querySelector('[data-body]')?.textContent).toBe('No assets are held by this account.');
+  });
+
 });

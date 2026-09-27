@@ -92,6 +92,51 @@ export const recipe = defineSlotRecipe({
         },
       },
     },
+    variant: {
+      scan: {
+        root: {
+          flexDirection: 'column',
+          alignItems: 'flex-start',
+          gap: '1',
+          bg: 'bg.surface',
+          borderWidth: '1px',
+          borderStyle: 'solid',
+          borderColor: 'border.divider',
+          borderRadius: 'md',
+          boxShadow: 'card',
+          px: '4',
+          py: '3',
+        },
+        label: {
+          color: 'text.muted',
+          textStyle: 'xs',
+          fontWeight: '600',
+          letterSpacing: 'wide',
+          textTransform: 'uppercase',
+        },
+        valueText: {
+          color: 'text.primary',
+          textStyle: 'heading.sm',
+          alignItems: 'baseline',
+          flexWrap: 'wrap',
+          '& [data-secondary]': {
+            color: 'text.muted',
+            textStyle: 'sm',
+            fontWeight: '500',
+          },
+          '& [data-delta=up]': {
+            color: 'stat.indicator.up',
+            textStyle: 'sm',
+            fontWeight: '600',
+          },
+          '& [data-delta=down]': {
+            color: 'stat.indicator.down',
+            textStyle: 'sm',
+            fontWeight: '600',
+          },
+        },
+      },
+    },
   },
 
   defaultVariants: {

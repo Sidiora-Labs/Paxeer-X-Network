@@ -1,3 +1,4 @@
+import { Box } from '@chakra-ui/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/router';
 import React from 'react';
@@ -13,6 +14,7 @@ import useSocketMessage from 'lib/socket/useSocketMessage';
 import { ADDRESS_COIN_BALANCE } from 'stubs/address';
 import { generateListStub } from 'stubs/utils';
 import useQueryWithPages from 'ui/shared/pagination/useQueryWithPages';
+import { formatScanTableCount, ScanTableCard } from 'ui/shared/scan';
 import SocketAlert from 'ui/shared/SocketAlert';
 
 import AddressCoinBalanceChart from './coinBalance/AddressCoinBalanceChart';
@@ -91,12 +93,29 @@ const AddressCoinBalance = ({ shouldRender = true, isQueryEnabled = true }: Prop
     return null;
   }
 
+  const itemsNum = coinBalanceQuery.data?.items.length ?? 0;
+
   return (
     <>
       { socketAlert && <SocketAlert mb={ 6 }/> }
-      <AddressCoinBalanceChart addressHash={ addressHash }/>
+      <Box
+        data-coin-balance-chart-card
+        bg="bg.surface"
+        borderWidth="1px"
+        borderStyle="solid"
+        borderColor="border.divider"
+        borderRadius="md"
+        boxShadow="card"
+        px={ 4 }
+        py={ 4 }
+        mb={ 6 }
+      >
+        <AddressCoinBalanceChart addressHash={ addressHash }/>
+      </Box>
       <div ref={ scrollRef }></div>
-      <AddressCoinBalanceHistory query={ coinBalanceQuery }/>
+      <ScanTableCard title={ formatScanTableCount({ kind: 'total', value: itemsNum, itemsName: 'balance changes' }) }>
+        <AddressCoinBalanceHistory query={ coinBalanceQuery }/>
+      </ScanTableCard>
     </>
   );
 };

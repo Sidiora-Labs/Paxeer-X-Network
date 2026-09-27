@@ -45,25 +45,35 @@ const StatsFilters = ({
 
   return (
     <Grid
-      gap={{ base: 2, lg: 6 }}
+      data-stats-filters
+      gap={{ base: 2, lg: 3 }}
       templateAreas={{
         base: `"section interval"
                 "input input"`,
-        lg: `"section interval input"`,
+        lg: `"input section interval"`,
       }}
-      gridTemplateColumns={{ base: 'repeat(2, minmax(0, 1fr))', lg: 'auto auto 1fr' }}
+      gridTemplateColumns={{ base: 'repeat(2, minmax(0, 1fr))', lg: '1fr auto auto' }}
       alignItems="center"
+      bg="bg.surface"
+      borderWidth="1px"
+      borderStyle="solid"
+      borderColor="border.divider"
+      borderRadius="md"
+      boxShadow="card"
+      px={{ base: 3, lg: 4 }}
+      py={{ base: 3, lg: 3 }}
     >
       <GridItem
         w={{ base: '100%', lg: 'auto' }}
         area="section"
+        data-stats-filter-section
       >
         <Select
           collection={ collection }
           placeholder="Select section"
           defaultValue={ [ currentSection ] }
           onValueChange={ handleItemSelect }
-          w={{ base: '100%', lg: '136px' }}
+          w={{ base: '100%', lg: '160px' }}
           loading={ isLoading }
         />
       </GridItem>
@@ -71,6 +81,7 @@ const StatsFilters = ({
       <GridItem
         w={{ base: '100%', lg: 'auto' }}
         area="interval"
+        data-stats-filter-interval
       >
         <ChartIntervalSelect interval={ interval } onIntervalChange={ onIntervalChange } isLoading={ isLoading } selectTagSize="md"/>
       </GridItem>
@@ -78,6 +89,7 @@ const StatsFilters = ({
       <GridItem
         w="100%"
         area="input"
+        data-stats-filter-input
       >
         <FilterInput
           key={ initialFilterValue }

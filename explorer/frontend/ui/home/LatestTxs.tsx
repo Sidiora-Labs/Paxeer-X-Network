@@ -1,4 +1,4 @@
-import { Box, Flex, Text } from '@chakra-ui/react';
+import { Box, Flex } from '@chakra-ui/react';
 import React from 'react';
 
 import { route } from 'nextjs-routes';
@@ -9,6 +9,7 @@ import { AddressHighlightProvider } from 'lib/contexts/addressHighlight';
 import useIsMobile from 'lib/hooks/useIsMobile';
 import { TX } from 'stubs/tx';
 import { Link } from 'toolkit/chakra/link';
+import IconSvg from 'ui/shared/IconSvg';
 import SocketNewItemsNotice from 'ui/shared/SocketNewItemsNotice';
 import useNewTxsSocket from 'ui/txs/socket/useTxsSocketTypeAll';
 
@@ -20,7 +21,7 @@ const zetachainFeature = config.features.zetachain;
 
 const LatestTxs = () => {
   const isMobile = useIsMobile();
-  const txsCount = isMobile ? 2 : 5;
+  const txsCount = isMobile ? 4 : 6;
   const { data, isPlaceholderData, isError } = useApiQuery('general:homepage_txs', {
     queryOptions: {
       placeholderData: Array(txsCount).fill(TX),
@@ -30,15 +31,15 @@ const LatestTxs = () => {
   const { num, showErrorAlert } = useNewTxsSocket({ type: 'txs_home', isLoading: isPlaceholderData });
 
   if (isError) {
-    return <LatestTxsDegraded maxNum={ txsCount }/>;
+    return <Box px={{ base: 3, lg: 4 }} py={ 3 }><LatestTxsDegraded maxNum={ txsCount }/></Box>;
   }
 
   if (data) {
     const txsUrl = route({ pathname: `/txs`, query: zetachainFeature.isEnabled ? { tab: 'evm' } : undefined });
     return (
       <>
-        <SocketNewItemsNotice borderBottomRadius={ 0 } url={ txsUrl } num={ num } showErrorAlert={ showErrorAlert } isLoading={ isPlaceholderData }/>
-        <Box mb={ 3 } display={{ base: 'block', lg: 'none' }} textStyle="sm">
+        <SocketNewItemsNotice borderRadius={ 0 } url={ txsUrl } num={ num } showErrorAlert={ showErrorAlert } isLoading={ isPlaceholderData }/>
+        <Box display={{ base: 'block', lg: 'none' }}>
           { data.slice(0, txsCount).map(((tx, index) => (
             <LatestTxsItemMobile
               key={ tx.hash + (isPlaceholderData ? index : '') }
@@ -48,7 +49,7 @@ const LatestTxs = () => {
           ))) }
         </Box>
         <AddressHighlightProvider>
-          <Box mb={ 3 } display={{ base: 'none', lg: 'block' }} textStyle="sm">
+          <Box display={{ base: 'none', lg: 'block' }} minW="720px">
             { data.slice(0, txsCount).map(((tx, index) => (
               <LatestTxsItem
                 key={ tx.hash + (isPlaceholderData ? index : '') }
@@ -58,14 +59,23 @@ const LatestTxs = () => {
             ))) }
           </Box>
         </AddressHighlightProvider>
-        <Flex justifyContent="center">
-          <Link textStyle="sm" loading={ isPlaceholderData } href={ txsUrl }>View all transactions</Link>
+        <Flex data-label="view-all-txs" justifyContent="center" px={ 4 } py={ 3 } borderTopWidth="1px" borderStyle="solid" borderColor="border.divider">
+          <Link
+            textStyle="xs"
+            fontWeight="600"
+            textTransform="uppercase"
+            letterSpacing="wide"
+            loading={ isPlaceholderData }
+            href={ txsUrl }
+          >
+            View all transactions<IconSvg name="arrows/east-mini" boxSize={ 4 } ml={ 1 }/>
+          </Link>
         </Flex>
       </>
     );
   }
 
-  return <Text>No latest transactions found.</Text>;
+  return <Box px={{ base: 3, lg: 4 }} py={ 3 } textStyle="sm">No latest transactions found.</Box>;
 };
 
 export default LatestTxs;

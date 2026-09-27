@@ -855,7 +855,7 @@ status = "pending"
 
 [task.5.1]
 title = "Build the scan shell"
-status = "pending"
+status = "done"
 wave = 5
 requires = ["2.9","4.2"]
 do_1 = "Rebuild explorer/frontend/ui/snippets/topBar/TopBar.tsx as the scan utility bar - a thin row above the brand row holding explorer/frontend/ui/snippets/topBar/TopBarStats.tsx on the left and, on the right, the desktop search entry on every route except the home route followed by the settings menu of explorer/frontend/ui/snippets/topBar/settings/Settings.tsx, the colour-theme control and explorer/frontend/ui/snippets/topBar/NetworkMenu.tsx."
@@ -874,10 +874,14 @@ verify_cmd = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --
 symbols = ["TopBar","TopBarStats","HeaderDesktop","NavigationDesktop","NavLinkGroup","Footer","Layout","LayoutHome","useNavItems"]
 touches = ["explorer/frontend/ui/snippets/topBar/TopBar.tsx","explorer/frontend/ui/snippets/topBar/TopBar.spec.tsx","explorer/frontend/ui/snippets/topBar/TopBarStats.tsx","explorer/frontend/ui/snippets/topBar/TopBarStats.spec.tsx","explorer/frontend/ui/snippets/topBar/NetworkMenu.tsx","explorer/frontend/ui/snippets/topBar/settings/Settings.tsx","explorer/frontend/ui/snippets/header/HeaderDesktop.tsx","explorer/frontend/ui/snippets/header/HeaderMobile.tsx","explorer/frontend/ui/snippets/navigation/horizontal/NavigationDesktop.tsx","explorer/frontend/ui/snippets/navigation/horizontal/NavigationDesktop.spec.tsx","explorer/frontend/ui/snippets/navigation/horizontal/NavLink.tsx","explorer/frontend/ui/snippets/navigation/horizontal/NavLinkGroup.tsx","explorer/frontend/ui/snippets/navigation/horizontal/NavLinkGroup.spec.tsx","explorer/frontend/ui/snippets/navigation/useNavLinkStyleProps.tsx","explorer/frontend/ui/snippets/footer/Footer.tsx","explorer/frontend/ui/snippets/footer/Footer.spec.tsx","explorer/frontend/ui/snippets/footer/FooterLinkItem.tsx","explorer/frontend/ui/snippets/searchBar/SearchBarDesktop.tsx","explorer/frontend/ui/snippets/searchBar/SearchBarInput.tsx","explorer/frontend/ui/shared/layout/Layout.tsx","explorer/frontend/ui/shared/layout/Layout.spec.tsx","explorer/frontend/ui/shared/layout/LayoutApp.tsx","explorer/frontend/ui/shared/layout/LayoutHome.tsx","explorer/frontend/ui/shared/layout/LayoutHome.spec.tsx","explorer/frontend/ui/shared/layout/LayoutError.tsx","explorer/frontend/ui/shared/layout/LayoutSearchResults.tsx","explorer/frontend/ui/shared/layout/components/Container.tsx","explorer/frontend/ui/shared/layout/components/Content.tsx","explorer/frontend/ui/shared/layout/components/MainArea.tsx","explorer/frontend/ui/shared/layout/components/MainColumn.tsx","explorer/frontend/ui/shared/layout/components/NavBar.tsx","explorer/frontend/lib/hooks/useNavItems.tsx","explorer/frontend/lib/hooks/useNavItems.spec.tsx","explorer/frontend/toolkit/theme/globalCss.ts","explorer/frontend/configs/envs/paxeer-x.env","explorer/frontend/configs/envs/paxeer-x-dev.env","explorer/frontend/public/static/paxeer-x"]
 reqs = ["17.1","17.2","17.3","17.4","17.5","17.6","17.7","17.8","17.9"]
+revision = "4832ff8e907060b3394f9fff1c02ded34465ec13"
+command = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/snippets ui/shared/layout lib/hooks'"
+exit_code = 0
+log = ".logs/verify.log"
 
 [task.5.2]
 title = "Build the scan primitives"
-status = "pending"
+status = "done"
 wave = 5
 requires = ["2.9","4.2"]
 do_1 = "Add explorer/frontend/ui/shared/scan/ScanStatCard.tsx rendering an uppercase label, a value and an optional delta whose sign selects the success or destructive text token, and explorer/frontend/ui/shared/scan/ScanTableCard.tsx rendering a header count line with an actions slot beside it, the table body, and a footer holding a show-rows slot and a pagination slot."
@@ -896,6 +900,10 @@ verify_cmd = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --
 symbols = ["ScanStatCard","ScanTableCard","ScanSectionTabs","ScanExpander","ScanPreviewButton","ScanMethodChip","ScanDirectionBadge","ScanKeyValue","Pagination","DetailedInfo"]
 touches = ["explorer/frontend/ui/shared/scan/ScanStatCard.tsx","explorer/frontend/ui/shared/scan/ScanStatCard.spec.tsx","explorer/frontend/ui/shared/scan/ScanTableCard.tsx","explorer/frontend/ui/shared/scan/ScanTableCard.spec.tsx","explorer/frontend/ui/shared/scan/ScanSectionTabs.tsx","explorer/frontend/ui/shared/scan/ScanSectionTabs.spec.tsx","explorer/frontend/ui/shared/scan/ScanExpander.tsx","explorer/frontend/ui/shared/scan/ScanExpander.spec.tsx","explorer/frontend/ui/shared/scan/ScanPreviewButton.tsx","explorer/frontend/ui/shared/scan/ScanPreviewButton.spec.tsx","explorer/frontend/ui/shared/scan/ScanMethodChip.tsx","explorer/frontend/ui/shared/scan/ScanMethodChip.spec.tsx","explorer/frontend/ui/shared/scan/ScanDirectionBadge.tsx","explorer/frontend/ui/shared/scan/ScanDirectionBadge.spec.tsx","explorer/frontend/ui/shared/scan/ScanKeyValue.tsx","explorer/frontend/ui/shared/scan/ScanKeyValue.spec.tsx","explorer/frontend/ui/shared/pagination/Pagination.tsx","explorer/frontend/ui/shared/pagination/Pagination.spec.tsx","explorer/frontend/ui/shared/DetailedInfo/DetailedInfo.tsx","explorer/frontend/ui/shared/DetailedInfo/DetailedInfo.spec.tsx","explorer/frontend/ui/shared/entities/address/AddressEntity.tsx","explorer/frontend/ui/shared/entities/address/AddressEntity.spec.tsx","explorer/frontend/ui/shared/entities/tx/TxEntity.tsx","explorer/frontend/ui/shared/entities/tx/TxEntity.spec.tsx","explorer/frontend/ui/shared/entities/block/BlockEntity.tsx","explorer/frontend/ui/shared/entities/block/BlockEntity.spec.tsx","explorer/frontend/ui/shared/entities/token/TokenEntity.tsx","explorer/frontend/ui/shared/entities/token/TokenEntity.spec.tsx","explorer/frontend/ui/shared/PrevNext.tsx","explorer/frontend/ui/shared/PrevNext.spec.tsx","explorer/frontend/ui/shared/ActionBar.tsx","explorer/frontend/ui/shared/ActionBar.spec.tsx","explorer/frontend/ui/shared/CopyToClipboard.tsx","explorer/frontend/ui/shared/CopyToClipboard.spec.tsx","explorer/frontend/ui/shared/statusTag/StatusTag.tsx","explorer/frontend/ui/shared/statusTag/StatusTag.spec.tsx","explorer/frontend/toolkit/theme/recipes/table.recipe.ts","explorer/frontend/toolkit/theme/recipes/tabs.recipe.ts","explorer/frontend/toolkit/theme/recipes/badge.recipe.ts","explorer/frontend/toolkit/theme/recipes/tag.recipe.ts","explorer/frontend/toolkit/theme/recipes/stat.recipe.ts","explorer/frontend/toolkit/theme/recipes/button.recipe.ts","explorer/frontend/toolkit/theme/recipes/recipes.spec.ts"]
 reqs = ["18.1","18.2","18.3","18.4","18.5","18.6","18.7","18.8","18.9","18.10"]
+revision = "4832ff8e907060b3394f9fff1c02ded34465ec13"
+command = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/shared toolkit/theme'"
+exit_code = 0
+log = ".logs/verify.log"
 
 [task.6]
 section = "Wave 6 - Scan Pages"
@@ -904,7 +912,7 @@ status = "pending"
 
 [task.6.1]
 title = "Rebuild the home page"
-status = "pending"
+status = "done"
 wave = 6
 requires = ["5.1","5.2"]
 do_1 = "Rebuild explorer/frontend/ui/home/HeroBanner.tsx as the hero band the home layout carries - the page title over the wide search field - taking its frame from the shell and setting no colour, font, radius or shadow of its own."
@@ -919,10 +927,14 @@ verify_cmd = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --
 symbols = ["HeroBanner","Stats","LatestBlocks","LatestTxs","Home"]
 touches = ["explorer/frontend/ui/home/HeroBanner.tsx","explorer/frontend/ui/home/HeroBanner.spec.tsx","explorer/frontend/ui/home/Stats.tsx","explorer/frontend/ui/home/Stats.spec.tsx","explorer/frontend/ui/home/Highlights.tsx","explorer/frontend/ui/home/highlights/HighlightsItem.tsx","explorer/frontend/ui/home/indicators/ChainIndicatorsChart.tsx","explorer/frontend/ui/home/indicators/ChainIndicatorChartContent.tsx","explorer/frontend/ui/home/LatestBlocks.tsx","explorer/frontend/ui/home/LatestBlocks.spec.tsx","explorer/frontend/ui/home/LatestBlocksItem.tsx","explorer/frontend/ui/home/LatestTxs.tsx","explorer/frontend/ui/home/LatestTxs.spec.tsx","explorer/frontend/ui/home/LatestTxsItem.tsx","explorer/frontend/ui/home/LatestTxsItemMobile.tsx","explorer/frontend/ui/home/Transactions.tsx","explorer/frontend/ui/pages/Home.tsx","explorer/frontend/ui/pages/Home.spec.tsx"]
 reqs = ["17.5","17.6","17.7","17.8","17.9"]
+done_revision = "1736b1cb002a1b4431a1c62fb52fca2806d29e57"
+done_command = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/home ui/pages/Home.'"
+done_exit_code = 0
+done_log = ".logs/task-6.1-verify.log"
 
 [task.6.2]
 title = "Rebuild the transactions and blocks lists"
-status = "pending"
+status = "done"
 wave = 6
 requires = ["5.1","5.2"]
 do_1 = "Rebuild explorer/frontend/ui/txs/TxsStats.tsx as a row of four shared scan stat cards - transactions in the last day, pending transactions in the last hour, total transaction fee in the last day and average transaction fee in the last day - each with its delta, reading the statistics the component already queries."
@@ -938,10 +950,14 @@ verify_cmd = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --
 symbols = ["TxsStats","TxsTable","TxsTableItem","TxsListItem","BlocksTable","BlocksTableItem","Transactions","Blocks"]
 touches = ["explorer/frontend/ui/txs/TxsStats.tsx","explorer/frontend/ui/txs/TxsStats.spec.tsx","explorer/frontend/ui/txs/TxsContent.tsx","explorer/frontend/ui/txs/TxsTable.tsx","explorer/frontend/ui/txs/TxsTable.spec.tsx","explorer/frontend/ui/txs/TxsTableItem.tsx","explorer/frontend/ui/txs/TxsList.tsx","explorer/frontend/ui/txs/TxsListItem.tsx","explorer/frontend/ui/txs/TxsListItem.spec.tsx","explorer/frontend/ui/txs/TxsHeaderMobile.tsx","explorer/frontend/ui/txs/TxsWithFrontendSorting.tsx","explorer/frontend/ui/txs/TxsWithAPISorting.tsx","explorer/frontend/ui/txs/TxType.tsx","explorer/frontend/ui/blocks/BlocksContent.tsx","explorer/frontend/ui/blocks/BlocksTable.tsx","explorer/frontend/ui/blocks/BlocksTable.spec.tsx","explorer/frontend/ui/blocks/BlocksTableItem.tsx","explorer/frontend/ui/blocks/BlocksList.tsx","explorer/frontend/ui/blocks/BlocksListItem.tsx","explorer/frontend/ui/blocks/BlocksListItem.spec.tsx","explorer/frontend/ui/pages/Transactions.tsx","explorer/frontend/ui/pages/Transactions.spec.tsx","explorer/frontend/ui/pages/Blocks.tsx","explorer/frontend/ui/pages/Blocks.spec.tsx"]
 reqs = ["19.1","19.2","19.3","19.6","19.7","19.8","19.9"]
+done_revision = "1736b1cb002a1b4431a1c62fb52fca2806d29e57"
+done_command = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/txs ui/blocks ui/pages/Transactions. ui/pages/Blocks.'"
+done_exit_code = 0
+done_log = ".logs/verify-6.2-run2.log"
 
 [task.6.3]
 title = "Rebuild the transaction details page"
-status = "pending"
+status = "done"
 wave = 6
 requires = ["5.1","5.2"]
 do_1 = "Rebuild explorer/frontend/ui/tx/TxSubHeading.tsx as the page title carrying the previous and next controls through the shared previous-next component, with the API entry beside the shared pill section tabs for the overview and the logs with their count."
@@ -957,10 +973,14 @@ verify_cmd = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --
 symbols = ["TxSubHeading","TxDetails","TxInfo","TxDetailsActions","Transaction"]
 touches = ["explorer/frontend/ui/tx/TxSubHeading.tsx","explorer/frontend/ui/tx/TxSubHeading.spec.tsx","explorer/frontend/ui/tx/TxDetails.tsx","explorer/frontend/ui/tx/TxDetails.spec.tsx","explorer/frontend/ui/tx/TxDetailsDegraded.tsx","explorer/frontend/ui/tx/TxLogs.tsx","explorer/frontend/ui/tx/TxInternals.tsx","explorer/frontend/ui/tx/TxRawTrace.tsx","explorer/frontend/ui/tx/TxState.tsx","explorer/frontend/ui/tx/details/TxInfo.tsx","explorer/frontend/ui/tx/details/TxInfo.spec.tsx","explorer/frontend/ui/tx/details/TxDetailsOther.tsx","explorer/frontend/ui/tx/details/TxDetailsGasPrice.tsx","explorer/frontend/ui/tx/details/TxDetailsGasUsage.tsx","explorer/frontend/ui/tx/details/TxDetailsFeePerGas.tsx","explorer/frontend/ui/tx/details/TxDetailsBurntFees.tsx","explorer/frontend/ui/tx/details/txDetailsActions/TxDetailsActions.tsx","explorer/frontend/ui/tx/details/txDetailsActions/TxDetailsActions.spec.tsx","explorer/frontend/ui/tx/details/txDetailsActions/TxDetailsAction.tsx","explorer/frontend/ui/tx/details/txDetailsActions/TxDetailsActionsInterpretation.tsx","explorer/frontend/ui/tx/details/txDetailsActions/TxDetailsActionsRaw.tsx","explorer/frontend/ui/pages/Transaction.tsx","explorer/frontend/ui/pages/Transaction.spec.tsx"]
 reqs = ["20.1","20.2","20.3","20.6","20.7","20.8","20.9"]
+done_revision = "1736b1cb002a1b4431a1c62fb52fca2806d29e57"
+done_command = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/tx/ ui/pages/Transaction.'"
+done_exit_code = 0
+done_log = ".logs/verify-6.3.log"
 
 [task.6.4]
 title = "Rebuild the block details page"
-status = "pending"
+status = "done"
 wave = 6
 requires = ["5.1","5.2"]
 do_1 = "Rebuild explorer/frontend/ui/block/BlockDetails.tsx on the shared key-value rows in the reference order - height with its previous and next controls, timestamp with its zone control, the transactions sentence, hash, block reward, difficulty, total difficulty, size, a divider, gas used with its percentage, burnt fees and the extra data field - with the tooltip on each label."
@@ -976,10 +996,14 @@ verify_cmd = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --
 symbols = ["BlockDetails","BlockWithdrawals","Block"]
 touches = ["explorer/frontend/ui/block/BlockDetails.tsx","explorer/frontend/ui/block/BlockDetails.spec.tsx","explorer/frontend/ui/block/BlockWithdrawals.tsx","explorer/frontend/ui/block/BlockWithdrawals.spec.tsx","explorer/frontend/ui/block/BlockInternalTxs.tsx","explorer/frontend/ui/block/BlockDeposits.tsx","explorer/frontend/ui/block/details/BlockDetailsBlobInfo.tsx","explorer/frontend/ui/pages/Block.tsx","explorer/frontend/ui/pages/Block.spec.tsx"]
 reqs = ["20.4","20.5","20.6","20.7","20.8","20.9"]
+revision = "1736b1cb002a1b4431a1c62fb52fca2806d29e57"
+command = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/block/ ui/pages/Block.'"
+exit_code = 0
+log = ".logs/verify-6.4.log"
 
 [task.6.5]
 title = "Rebuild the address page"
-status = "pending"
+status = "done"
 wave = 6
 requires = ["5.1","5.2"]
 do_1 = "Rebuild the address title row in explorer/frontend/ui/pages/Address.tsx and explorer/frontend/ui/address/details/AddressQrCode.tsx as the identicon, the label Address, the full address, the copy control and the QR control, with the watchlist, API and menu entries in an icon action row beneath it through explorer/frontend/ui/address/details/AddressFavoriteButton.tsx."
@@ -995,10 +1019,14 @@ verify_cmd = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --
 symbols = ["AddressDetails","AddressTxs","AddressTokenTransfers","AddressCsvExportLink","Address"]
 touches = ["explorer/frontend/ui/address/AddressDetails.tsx","explorer/frontend/ui/address/AddressDetails.spec.tsx","explorer/frontend/ui/address/AddressTxs.tsx","explorer/frontend/ui/address/AddressTxs.spec.tsx","explorer/frontend/ui/address/AddressInternalTxs.tsx","explorer/frontend/ui/address/AddressTokenTransfers.tsx","explorer/frontend/ui/address/AddressTokenTransfers.spec.tsx","explorer/frontend/ui/address/AddressTokens.tsx","explorer/frontend/ui/address/AddressContract.tsx","explorer/frontend/ui/address/AddressCoinBalance.tsx","explorer/frontend/ui/address/AddressCsvExportLink.tsx","explorer/frontend/ui/address/AddressAdvancedFilterLink.tsx","explorer/frontend/ui/address/details/AddressBalance.tsx","explorer/frontend/ui/address/details/AddressNetWorth.tsx","explorer/frontend/ui/address/details/AddressNameInfo.tsx","explorer/frontend/ui/address/details/AddressCounterItem.tsx","explorer/frontend/ui/address/details/AddressImplementations.tsx","explorer/frontend/ui/address/details/AddressQrCode.tsx","explorer/frontend/ui/address/details/AddressFavoriteButton.tsx","explorer/frontend/ui/pages/Address.tsx","explorer/frontend/ui/pages/Address.spec.tsx"]
 reqs = ["21.1","21.2","21.3","21.6","21.7","21.8","21.9"]
+done_revision = "1736b1cb002a1b4431a1c62fb52fca2806d29e57"
+done_command = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/address/ ui/pages/Address.'"
+done_exit_code = 0
+done_log = "logs/6.5-verify.log"
 
 [task.6.6]
 title = "Rebuild the token and token instance pages"
-status = "pending"
+status = "done"
 wave = 6
 requires = ["5.1","5.2"]
 do_1 = "Rebuild explorer/frontend/ui/token/TokenPageTitle.tsx as the title row - the token logo, the label Token, the name with its symbol and the verified mark - with the project link, the API entry and the menu on the right."
@@ -1012,12 +1040,16 @@ do_8 = "Keep both pages working at 375px with the three cards stacking and the e
 do_9 = "Add the vitest specs explorer/frontend/ui/token/TokenDetails.spec.tsx, TokenPageTitle.spec.tsx, explorer/frontend/ui/token/TokenTransfer/TokenTransferTable.spec.tsx, explorer/frontend/ui/tokenInstance/TokenInstanceDetails.spec.tsx and explorer/frontend/ui/pages/Token.spec.tsx and TokenInstance.spec.tsx, each rendering the real component through explorer/frontend/vitest/lib.tsx with payload mocks from explorer/frontend/mocks/ and asserting the title row, the chip row, the cards, the tabs and the table columns."
 verify_cmd = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/token/ ui/tokenInstance ui/pages/Token. ui/pages/TokenInstance.'"
 symbols = ["TokenDetails","TokenPageTitle","TokenTransfer","TokenHolders","TokenInstanceDetails","Token","TokenInstance"]
-touches = ["explorer/frontend/ui/token/TokenPageTitle.tsx","explorer/frontend/ui/token/TokenPageTitle.spec.tsx","explorer/frontend/ui/token/TokenDetails.tsx","explorer/frontend/ui/token/TokenDetails.spec.tsx","explorer/frontend/ui/token/TokenVerifiedInfo.tsx","explorer/frontend/ui/token/TokenProjectInfo.tsx","explorer/frontend/ui/token/TokenInventory.tsx","explorer/frontend/ui/token/TokenInventoryItem.tsx","explorer/frontend/ui/token/TokenAdvancedFilterLink.tsx","explorer/frontend/ui/token/TokenTransfer/TokenTransfer.tsx","explorer/frontend/ui/token/TokenTransfer/TokenTransferTable.tsx","explorer/frontend/ui/token/TokenTransfer/TokenTransferTable.spec.tsx","explorer/frontend/ui/token/TokenTransfer/TokenTransferTableItem.tsx","explorer/frontend/ui/token/TokenTransfer/TokenTransferList.tsx","explorer/frontend/ui/token/TokenTransfer/TokenTransferListItem.tsx","explorer/frontend/ui/token/TokenHolders/TokenHolders.tsx","explorer/frontend/ui/token/TokenHolders/TokenHoldersTable.tsx","explorer/frontend/ui/token/TokenHolders/TokenHoldersTableItem.tsx","explorer/frontend/ui/token/TokenHolders/TokenHoldersList.tsx","explorer/frontend/ui/token/TokenHolders/TokenHoldersListItem.tsx","explorer/frontend/ui/tokenInstance/TokenInstanceDetails.tsx","explorer/frontend/ui/tokenInstance/TokenInstanceDetails.spec.tsx","explorer/frontend/ui/tokenInstance/TokenInstancePageTitle.tsx","explorer/frontend/ui/pages/Token.tsx","explorer/frontend/ui/pages/Token.spec.tsx","explorer/frontend/ui/pages/TokenInstance.tsx","explorer/frontend/ui/pages/TokenInstance.spec.tsx"]
+touches = ["explorer/frontend/ui/token/TokenPageTitle.tsx","explorer/frontend/ui/token/TokenPageTitle.spec.tsx","explorer/frontend/ui/token/TokenDetails.tsx","explorer/frontend/ui/token/TokenDetails.spec.tsx","explorer/frontend/ui/token/TokenVerifiedInfo.tsx","explorer/frontend/ui/token/TokenProjectInfo.tsx","explorer/frontend/ui/token/TokenInventory.tsx","explorer/frontend/ui/token/TokenInventoryItem.tsx","explorer/frontend/ui/token/TokenAdvancedFilterLink.tsx","explorer/frontend/ui/token/TokenTransfer/TokenTransfer.tsx","explorer/frontend/ui/token/TokenTransfer/TokenTransferTable.tsx","explorer/frontend/ui/token/TokenTransfer/TokenTransferTable.spec.tsx","explorer/frontend/ui/token/TokenTransfer/TokenTransferTableItem.tsx","explorer/frontend/ui/token/TokenTransfer/TokenTransferList.tsx","explorer/frontend/ui/token/TokenTransfer/TokenTransferListItem.tsx","explorer/frontend/ui/token/TokenHolders/TokenHolders.tsx","explorer/frontend/ui/token/TokenHolders/TokenHoldersTable.tsx","explorer/frontend/ui/token/TokenHolders/TokenHoldersTableItem.tsx","explorer/frontend/ui/token/TokenHolders/TokenHoldersList.tsx","explorer/frontend/ui/token/TokenHolders/TokenHoldersListItem.tsx","explorer/frontend/ui/tokenInstance/TokenInstanceDetails.tsx","explorer/frontend/ui/tokenInstance/TokenInstanceDetails.spec.tsx","explorer/frontend/ui/tokenInstance/TokenInstancePageTitle.tsx","explorer/frontend/ui/pages/Token.tsx","explorer/frontend/ui/pages/Token.spec.tsx","explorer/frontend/ui/pages/TokenInstance.tsx","explorer/frontend/ui/pages/TokenInstance.spec.tsx","explorer/frontend/ui/token/TokenVerifiedInfo.spec.tsx","explorer/frontend/ui/token/TokenTransfer/TokenTransfer.spec.tsx","explorer/frontend/ui/token/TokenTransfer/TokenTransferTableItem.spec.tsx","explorer/frontend/ui/token/TokenHolders/TokenHolders.spec.tsx","explorer/frontend/ui/token/TokenHolders/TokenHoldersTable.spec.tsx","explorer/frontend/ui/token/TokenHolders/TokenHoldersTableItem.spec.tsx","explorer/frontend/ui/token/TokenInventory.spec.tsx","explorer/frontend/ui/token/TokenInventoryItem.spec.tsx","explorer/frontend/ui/tokenInstance/TokenInstancePageTitle.spec.tsx"]
 reqs = ["21.4","21.5","21.6","21.7","21.8","21.9"]
+done_revision = "23b2bc6ef4f42a77357b3df529fef730c85ba562"
+done_command = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/token/ ui/tokenInstance ui/pages/Token. ui/pages/TokenInstance.'"
+done_exit_code = 0
+done_log = ".logs/verify-6.6.log"
 
 [task.6.7]
 title = "Rebuild the token tracker and top accounts lists"
-status = "pending"
+status = "done"
 wave = 6
 requires = ["5.1","5.2"]
 do_1 = "Rebuild explorer/frontend/ui/tokens/TokensTable.tsx, TokensTableItem.tsx and TokensListItem.tsx in the shared scan table card with the columns index, token with its logo name and symbol, price with the coin-denominated price beneath it in the muted tone, change percent in the success or destructive tone, volume over the last day, circulating market capitalisation, onchain market capitalisation and holders."
@@ -1032,10 +1064,14 @@ verify_cmd = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --
 symbols = ["TokensTable","TokensTableItem","TokensListItem","AddressesTable","AddressesTableItem","AddressesListItem","Tokens","Accounts"]
 touches = ["explorer/frontend/ui/tokens/Tokens.tsx","explorer/frontend/ui/tokens/TokensTable.tsx","explorer/frontend/ui/tokens/TokensTable.spec.tsx","explorer/frontend/ui/tokens/TokensTableItem.tsx","explorer/frontend/ui/tokens/TokensListItem.tsx","explorer/frontend/ui/tokens/TokensListItem.spec.tsx","explorer/frontend/ui/tokens/TokensActionBar.tsx","explorer/frontend/ui/tokens/TokensBridgedChainsFilter.tsx","explorer/frontend/ui/addresses/AddressesTable.tsx","explorer/frontend/ui/addresses/AddressesTable.spec.tsx","explorer/frontend/ui/addresses/AddressesTableItem.tsx","explorer/frontend/ui/addresses/AddressesListItem.tsx","explorer/frontend/ui/addresses/AddressesListItem.spec.tsx","explorer/frontend/ui/pages/Tokens.tsx","explorer/frontend/ui/pages/Tokens.spec.tsx","explorer/frontend/ui/pages/Accounts.tsx","explorer/frontend/ui/pages/Accounts.spec.tsx"]
 reqs = ["19.4","19.5","19.6","19.7","19.8","19.9"]
+done_revision = "23b2bc6ef4f42a77357b3df529fef730c85ba562"
+done_command = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/tokens ui/addresses ui/pages/Tokens. ui/pages/Accounts.'"
+done_exit_code = 0
+done_log = "logs/6.7-verify.log"
 
 [task.6.8]
 title = "Rebuild the charts and statistics page"
-status = "pending"
+status = "done"
 wave = 6
 requires = ["5.1","5.2"]
 do_1 = "Add the sticky section navigation on the left of explorer/frontend/ui/pages/Stats.tsx listing the overview statistics, market data, blockchain data, network data and contract sections, marking the section in view and scrolling to a section when its entry is chosen."
@@ -1050,10 +1086,14 @@ verify_cmd = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --
 symbols = ["NumberWidgetsList","ChartsWidgetsList","ChartWidgetContainer","ChartIntervalSelect","Stats"]
 touches = ["explorer/frontend/ui/stats/NumberWidgetsList.tsx","explorer/frontend/ui/stats/NumberWidgetsList.spec.tsx","explorer/frontend/ui/stats/ChartsWidgetsList.tsx","explorer/frontend/ui/stats/ChartsWidgetsList.spec.tsx","explorer/frontend/ui/stats/ChartWidgetContainer.tsx","explorer/frontend/ui/stats/ChartWidgetContainer.spec.tsx","explorer/frontend/ui/stats/StatsFilters.tsx","explorer/frontend/ui/stats/ChartsLoadingErrorAlert.tsx","explorer/frontend/ui/stats/constants/index.ts","explorer/frontend/ui/shared/chart/ChartIntervalSelect.tsx","explorer/frontend/ui/shared/chart/ChartIntervalSelect.spec.tsx","explorer/frontend/ui/shared/chart/config.ts","explorer/frontend/ui/shared/chart/utils.ts","explorer/frontend/ui/shared/chart/utils.spec.ts","explorer/frontend/ui/pages/Stats.tsx","explorer/frontend/ui/pages/Stats.spec.tsx"]
 reqs = ["22.1","22.2","22.3","22.4","22.5","22.6","22.7","22.8"]
+done_revision = "f62118583e8bd68b86e090b0d19888a79da03d61"
+done_command = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/stats ui/shared/chart ui/pages/Stats.'"
+done_exit_code = 0
+done_log = ".logs/verify-6.8.log"
 
 [task.6.9]
 title = "Rebuild the kernel pages on the chain pages' cards"
-status = "pending"
+status = "done"
 wave = 6
 requires = ["5.1","5.2"]
 do_1 = "Rebuild the unified account summary in explorer/frontend/ui/pages/PaxeerXAccount.tsx on the same three cards the address page uses, with the title row carrying the identicon, the account label, the account identifier and the copy control."
@@ -1069,6 +1109,70 @@ verify_cmd = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --
 symbols = ["PaxeerXAccount","PaxeerXAnchorsTable","PaxeerXReceiptsTable","PaxeerXReceiptDetails","AssetList","ActivityList","IdentityList"]
 touches = ["explorer/frontend/ui/paxeerX/account/IdentityList.tsx","explorer/frontend/ui/paxeerX/account/AssetList.tsx","explorer/frontend/ui/paxeerX/account/AssetListItem.tsx","explorer/frontend/ui/paxeerX/account/ActivityList.tsx","explorer/frontend/ui/paxeerX/account/ActivityListItem.tsx","explorer/frontend/ui/paxeerX/account/AssetList.spec.tsx","explorer/frontend/ui/paxeerX/account/ActivityList.spec.tsx","explorer/frontend/ui/paxeerX/account/IdentityList.spec.tsx","explorer/frontend/ui/paxeerX/anchors/PaxeerXAnchorsTable.tsx","explorer/frontend/ui/paxeerX/anchors/PaxeerXAnchorsTable.spec.tsx","explorer/frontend/ui/paxeerX/anchors/PaxeerXAnchorsTableItem.tsx","explorer/frontend/ui/paxeerX/anchors/PaxeerXAnchorsListItem.tsx","explorer/frontend/ui/paxeerX/receipts/PaxeerXReceiptDetails.tsx","explorer/frontend/ui/paxeerX/receipts/PaxeerXReceiptDetails.spec.tsx","explorer/frontend/ui/paxeerX/receipts/PaxeerXReceiptsTable.tsx","explorer/frontend/ui/paxeerX/receipts/PaxeerXReceiptsTable.spec.tsx","explorer/frontend/ui/paxeerX/receipts/PaxeerXReceiptsTableItem.tsx","explorer/frontend/ui/paxeerX/receipts/PaxeerXReceiptsListItem.tsx","explorer/frontend/ui/pages/PaxeerXAccount.tsx","explorer/frontend/ui/pages/PaxeerXAccount.spec.tsx","explorer/frontend/ui/pages/PaxeerXAnchors.tsx","explorer/frontend/ui/pages/PaxeerXAnchors.spec.tsx","explorer/frontend/ui/pages/PaxeerXReceipts.tsx","explorer/frontend/ui/pages/PaxeerXReceipts.spec.tsx","explorer/frontend/ui/pages/PaxeerXReceipt.tsx","explorer/frontend/ui/pages/PaxeerXReceipt.spec.tsx"]
 reqs = ["23.1","23.2","23.3","23.4","23.5","23.6","23.7","23.8"]
+done_revision = "59b2211153c314234939e1a9c1304ff883e9a9e9"
+done_command = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/paxeerX ui/pages/PaxeerX'"
+done_exit_code = 0
+done_log = ".logs/verify-6.9.log"
+
+[task.6.10]
+title = "Add the specs the transaction page rebuild left without coverage"
+status = "done"
+wave = 6
+requires = ["6.3"]
+do_1 = "List the source files the transaction page rebuild changed that carry no spec beside them, by diffing that rebuild's commit against its parent over explorer/ and applying the rule tools/explorer/test-ratio.sh states - a changed test counts for a changed source only when it sits in the same directory under the same stem, names one of that source's exported names, or names a fragment of its path."
+do_2 = "Add one vitest spec beside each source that list names - explorer/frontend/ui/tx/TxDetailsDegraded.spec.tsx, TxLogs.spec.tsx, TxInternals.spec.tsx, TxRawTrace.spec.tsx, TxState.spec.tsx and explorer/frontend/ui/tx/details/txDetailsActions/TxDetailsActionsInterpretation.spec.tsx and TxDetailsActionsRaw.spec.tsx - each rendering the real component through explorer/frontend/vitest/lib.tsx with payload mocks from explorer/frontend/mocks/ and asserting the structure the rebuild gave it, changing no source file and adding no file ending in .pw.tsx and no __screenshots__ directory."
+verify_cmd = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/tx'"
+symbols = ["TxDetailsDegraded","TxLogs","TxInternals","TxRawTrace","TxState","TxDetailsActionsInterpretation","TxDetailsActionsRaw"]
+touches = ["explorer/frontend/ui/tx/TxDetailsDegraded.spec.tsx","explorer/frontend/ui/tx/TxLogs.spec.tsx","explorer/frontend/ui/tx/TxInternals.spec.tsx","explorer/frontend/ui/tx/TxRawTrace.spec.tsx","explorer/frontend/ui/tx/TxState.spec.tsx","explorer/frontend/ui/tx/details/txDetailsActions/TxDetailsActionsInterpretation.spec.tsx","explorer/frontend/ui/tx/details/txDetailsActions/TxDetailsActionsRaw.spec.tsx"]
+tests = ["explorer/frontend/ui/tx/TxDetailsDegraded.spec.tsx","explorer/frontend/ui/tx/TxLogs.spec.tsx","explorer/frontend/ui/tx/TxInternals.spec.tsx","explorer/frontend/ui/tx/TxRawTrace.spec.tsx","explorer/frontend/ui/tx/TxState.spec.tsx","explorer/frontend/ui/tx/details/txDetailsActions/TxDetailsActionsInterpretation.spec.tsx","explorer/frontend/ui/tx/details/txDetailsActions/TxDetailsActionsRaw.spec.tsx"]
+reqs = ["20.1","20.2","20.3","20.6","20.7","20.8","20.9"]
+done_revision = "ad814bde31bb391e317d463fcfee8bad5e4ae5bd"
+done_command = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/tx'"
+done_exit_code = 0
+done_log = ".logs/verify-6.10.log"
+
+[task.6.11]
+title = "Carry the list pages' pagination in the table card only and put the direction badge on the counterparty column"
+status = "done"
+wave = 6
+requires = ["6.2","6.5"]
+do_1 = "Leave the transactions and the blocks list one pagination by taking it out of the tab strips - explorer/frontend/ui/txs/TxsTabs.tsx keeps only the advanced-filter entry in its right slot and explorer/frontend/ui/blocks/BlocksTabSlot.tsx keeps only the network utilisation and the block countdown, dropping the pagination explorer/frontend/ui/pages/Blocks.tsx hands it - so the shared scan table card header and footer carry it alone while the mobile action bars of TxsContent and BlocksContent keep theirs."
+do_2 = "Put the shared direction badge on the counterparty column of the address-scoped rows in explorer/frontend/ui/shared/address/AddressFromTo.tsx, rendering it in both the long and the compact layout in place of the course arrow of explorer/frontend/ui/shared/address/AddressFromToIcon.tsx whenever a current address is in scope and the course is incoming or outgoing, so that the rows of explorer/frontend/ui/txs/TxsTableItem.tsx and TxsListItem.tsx and every other transaction and transfer row that names a current address carry it, and keeping the arrow for a self-directed or unscoped row."
+do_3 = "Drop the interim filter badge the address page kept in its table-card header in explorer/frontend/ui/address/AddressTxs.tsx, AddressInternalTxs.tsx and AddressTokenTransfers.tsx now that every row carries its own direction, leaving the filter control, the count line, the note and the download action exactly as they are."
+do_4 = "Consume the shared scan components from explorer/frontend/ui/shared/scan, write no literal colour, font family, radius or shadow, keep both appearances resolving through the same tokens, add no dependency, and change no file ending in .pw.tsx and no __screenshots__ directory."
+do_5 = "Add the vitest specs explorer/frontend/ui/txs/TxsTabs.spec.tsx, explorer/frontend/ui/blocks/BlocksTabSlot.spec.tsx and explorer/frontend/ui/shared/address/AddressFromTo.spec.tsx and extend explorer/frontend/ui/pages/Blocks.spec.tsx, explorer/frontend/ui/txs/TxsTableItem.spec.tsx, TxsListItem.spec.tsx and explorer/frontend/ui/address/AddressTxs.spec.tsx, AddressInternalTxs.spec.tsx and AddressTokenTransfers.spec.tsx, each rendering the real component through explorer/frontend/vitest/lib.tsx with payload mocks from explorer/frontend/mocks/ and asserting that every pagination sits inside the table card and that the direction badge sits on the counterparty column of a scoped row and no longer in the card header."
+verify_cmd = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/txs ui/blocks ui/shared/address ui/address'"
+symbols = ["TxsTabs","BlocksTabSlot","Blocks","AddressFromTo","AddressTxs","AddressInternalTxs","AddressTokenTransfers"]
+touches = ["explorer/frontend/ui/txs/TxsTabs.tsx","explorer/frontend/ui/txs/TxsTabs.spec.tsx","explorer/frontend/ui/txs/TxsTableItem.spec.tsx","explorer/frontend/ui/txs/TxsListItem.spec.tsx","explorer/frontend/ui/blocks/BlocksTabSlot.tsx","explorer/frontend/ui/blocks/BlocksTabSlot.spec.tsx","explorer/frontend/ui/pages/Blocks.tsx","explorer/frontend/ui/pages/Blocks.spec.tsx","explorer/frontend/ui/shared/address/AddressFromTo.tsx","explorer/frontend/ui/shared/address/AddressFromTo.spec.tsx","explorer/frontend/ui/address/AddressTxs.tsx","explorer/frontend/ui/address/AddressTxs.spec.tsx","explorer/frontend/ui/address/AddressInternalTxs.tsx","explorer/frontend/ui/address/AddressInternalTxs.spec.tsx","explorer/frontend/ui/address/AddressTokenTransfers.tsx","explorer/frontend/ui/address/AddressTokenTransfers.spec.tsx"]
+tests = ["explorer/frontend/ui/txs/TxsTabs.spec.tsx","explorer/frontend/ui/txs/TxsTableItem.spec.tsx","explorer/frontend/ui/txs/TxsListItem.spec.tsx","explorer/frontend/ui/blocks/BlocksTabSlot.spec.tsx","explorer/frontend/ui/pages/Blocks.spec.tsx","explorer/frontend/ui/shared/address/AddressFromTo.spec.tsx","explorer/frontend/ui/address/AddressTxs.spec.tsx","explorer/frontend/ui/address/AddressInternalTxs.spec.tsx","explorer/frontend/ui/address/AddressTokenTransfers.spec.tsx"]
+reqs = ["19.2","19.3","19.6","19.7","19.8","19.9","21.3","21.6","21.7","21.8","21.9"]
+done_revision = "89bf4db6d8292d00b26287d20cc743e7fdccd428"
+done_command = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/txs ui/blocks ui/shared/address ui/address'"
+done_exit_code = 0
+done_log = ".logs/verify-6.12.log"
+
+[task.6.12]
+title = "Let the embedded list content render inside the page's table card instead of opening a second one"
+status = "done"
+wave = 6
+requires = ["6.2","6.5","6.11"]
+do_1 = "Give explorer/frontend/ui/txs/TxsContent.tsx an explicit isInsideTableCard property that tells it the caller already opens the shared scan table card, and when it is set render only the list and the table rows, handing the count line, the download action and the desktop pagination back to the caller, while the mobile action bar keeps the sorting, the filter, the download and the pagination it already carries."
+do_2 = "Pass that property through explorer/frontend/ui/txs/TxsWithAPISorting.tsx so a caller that owns the card reaches the list content the wrapper renders, leaving the sorting hooks and the query it holds exactly as they are."
+do_3 = "Give explorer/frontend/ui/blocks/BlocksContent.tsx the same property with the same meaning, since it carries the same card, count line and pagination shape as the transactions list, and leave its socket channel, its statistics query and its mobile action bar untouched."
+do_4 = "Set that property where explorer/frontend/ui/address/AddressTxs.tsx embeds the transactions list inside the card the address page already opens, so the transactions tab renders one table card carrying exactly one Download Page Data link in its header, the view-all row at its foot and one CSV Export link beneath it."
+do_5 = "Leave the standalone transactions and blocks pages opening their own table card with their own count line, download action and pagination, so nothing changes for a caller that does not set the property."
+do_6 = "Consume the shared scan components from explorer/frontend/ui/shared/scan and touch nothing else under explorer/frontend/ui/shared or explorer/frontend/ui/snippets; write no literal colour, font family, radius or shadow, keep both appearances resolving through the same tokens, add no dependency, and change no file ending in .pw.tsx and no __screenshots__ directory."
+do_7 = "Extend explorer/frontend/ui/txs/TxsContent.spec.tsx, explorer/frontend/ui/blocks/BlocksContent.spec.tsx and explorer/frontend/ui/address/AddressTxs.spec.tsx and add explorer/frontend/ui/txs/TxsWithAPISorting.spec.tsx, each rendering the real component through explorer/frontend/vitest/lib.tsx with payload mocks from explorer/frontend/mocks/ and asserting that the embedded list opens no card of its own while the standalone list still does and that the address transactions tab carries one page-data download and one CSV export, so that every source file this task changes has a changed spec that references it."
+do_8 = "Change no assertion of any existing spec of this feature other than by adding coverage for the new property, and keep every route, hook, resource and feature flag the two lists and the address page already resolve."
+verify_cmd = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/txs ui/blocks ui/shared/address ui/address'"
+symbols = ["TxsContent","TxsWithAPISorting","BlocksContent","AddressTxs"]
+touches = ["explorer/frontend/ui/txs/TxsContent.tsx","explorer/frontend/ui/txs/TxsContent.spec.tsx","explorer/frontend/ui/txs/TxsWithAPISorting.tsx","explorer/frontend/ui/txs/TxsWithAPISorting.spec.tsx","explorer/frontend/ui/blocks/BlocksContent.tsx","explorer/frontend/ui/blocks/BlocksContent.spec.tsx","explorer/frontend/ui/address/AddressTxs.tsx","explorer/frontend/ui/address/AddressTxs.spec.tsx"]
+tests = ["explorer/frontend/ui/txs/TxsContent.spec.tsx","explorer/frontend/ui/txs/TxsWithAPISorting.spec.tsx","explorer/frontend/ui/blocks/BlocksContent.spec.tsx","explorer/frontend/ui/address/AddressTxs.spec.tsx"]
+reqs = ["19.2","19.3","19.6","19.7","19.8","19.9","21.3","21.6","21.7","21.8","21.9"]
+done_revision = "89bf4db6d8292d00b26287d20cc743e7fdccd428"
+done_command = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/txs ui/blocks ui/shared/address ui/address'"
+done_exit_code = 0
+done_log = ".logs/verify-6.12.log"
 
 [task.7]
 section = "Wave 7 - One Aggregate Run, Recorded"
@@ -1077,9 +1181,9 @@ status = "pending"
 
 [task.7.1]
 title = "Run the explorer gates once over the scan waves and record the evidence"
-status = "pending"
+status = "in_progress"
 wave = 7
-requires = ["6.1","6.2","6.3","6.4","6.5","6.6","6.7","6.8","6.9"]
+requires = ["6.1","6.2","6.3","6.4","6.5","6.6","6.7","6.8","6.9","6.10","6.11","6.12"]
 do_1 = "On the revision that merges waves 5 and 6, run tools/explorer/gate-lint.sh once, writing its log under build/explorer-gates/."
 do_2 = "At that same revision run tools/explorer/gate-test.sh once with its budget set to fit this task's timeout, writing its logs under build/explorer-gates/."
 do_3 = "At that same revision run tools/explorer/test-ratio.sh once over the range that spans waves 5 and 6, so that every source file those waves changed is proven to have a changed test referencing it."
@@ -1092,3 +1196,8 @@ verify_cmd = "timeout 20m sh -c 'EXPLORER_GATE_BUDGET_SECONDS=1080 tools/explore
 symbols = ["gate-lint","gate-test","test-ratio"]
 touches = ["spec/paxeer-x-explorer/qualification.kvx"]
 reqs = ["16.1","16.2","16.3","16.4"]
+implemented_revision = "50ad0f4afcd1ec6974fe09f6db272ace49b186dd"
+implemented_command = "timeout 20m sh -c 'EXPLORER_GATE_BUDGET_SECONDS=1080 tools/explorer/gate-test.sh'"
+implemented_exit_code = 1
+implemented_log = "build/explorer-gates/wave-gate-7.1.log"
+implemented_evidence = "The lint gate passed at exit 0 over its backend, frontend and services legs, recorded as gate.7.1.1, and the test-ratio gate passed at exit 0 over the range that spans waves 5 and 6 with 144 changed source files and 146 changed tests referencing them, recorded as gate.7.1.3; the test gate, recorded as gate.7.1.2, passed its four backend legs at 47, 25, 113 and 46 tests with 0 failures and passed the frontend dependency and type-check legs, then exited 1 in the frontend vitest leg with 998 of 999 tests passing, the one failure being the five-second per-test timeout of observation.7.1.1. The frontend image build of do_4 was still inside its Next production build when this task stopped, so no gate record is written for it."

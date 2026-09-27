@@ -6,6 +6,15 @@ import type { ChartConfig } from 'toolkit/components/charts/types';
 import useIsMobile from 'lib/hooks/useIsMobile';
 import { useColorModeValue } from 'toolkit/chakra/color-mode';
 
+import type { ChartColorRole } from './utils';
+import { getChartColorToken } from './utils';
+
+function useChartColor(role: ChartColorRole) {
+  const token = useColorModeValue(getChartColorToken(role, 'light'), getChartColorToken(role, 'dark'));
+  const [ color ] = useToken('colors', token);
+  return color;
+}
+
 export function useChartsConfig(): Array<ChartConfig> {
   const lineColor = useDefaultLineColor();
   const gradient = useDefaultGradient();
@@ -25,12 +34,23 @@ export function useChartsConfig(): Array<ChartConfig> {
 }
 
 export function useDefaultLineColor() {
-  const [ lineColor ] = useToken('colors', useColorModeValue('theme.graph.line._light', 'theme.graph.line._dark'));
+  const lineColor = useChartColor('line');
   return React.useMemo(() => lineColor, [ lineColor ]);
 }
 
 export function useDefaultGradient() {
-  const [ startColor ] = useToken('colors', useColorModeValue('theme.graph.gradient.start._light', 'theme.graph.gradient.start._dark'));
-  const [ stopColor ] = useToken('colors', useColorModeValue('theme.graph.gradient.stop._light', 'theme.graph.gradient.stop._dark'));
+  const startColor = useChartColor('areaStart');
+  const stopColor = useChartColor('areaStop');
   return React.useMemo(() => ({ startColor, stopColor }), [ startColor, stopColor ]);
+}
+
+export function useDefaultBarColor() {
+  const barColor = useChartColor('bar');
+  return React.useMemo(() => barColor, [ barColor ]);
+}
+
+export function useChartAxisColors() {
+  const axisColor = useChartColor('axis');
+  const gridColor = useChartColor('grid');
+  return React.useMemo(() => ({ axisColor, gridColor }), [ axisColor, gridColor ]);
 }

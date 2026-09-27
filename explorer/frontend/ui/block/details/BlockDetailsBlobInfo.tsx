@@ -9,6 +9,7 @@ import { Tooltip } from 'toolkit/chakra/tooltip';
 import { ZERO } from 'toolkit/utils/consts';
 import * as DetailedInfo from 'ui/shared/DetailedInfo/DetailedInfo';
 import IconSvg from 'ui/shared/IconSvg';
+import { ScanKeyValue } from 'ui/shared/scan';
 import Utilization from 'ui/shared/Utilization/Utilization';
 import GasPriceValue from 'ui/shared/value/GasPriceValue';
 import NativeCoinValue from 'ui/shared/value/NativeCoinValue';
@@ -32,67 +33,52 @@ const BlockDetailsBlobInfo = ({ data }: Props) => {
 
   return (
     <>
-
       { data.blob_gas_price && (
-        <>
-          <DetailedInfo.ItemLabel
-            // eslint-disable-next-line max-len
-            hint="Price per unit of gas used for for blob deployment. Blob gas is independent of normal gas. Both gas prices can affect the priority of transaction execution."
-          >
-            Blob gas price
-          </DetailedInfo.ItemLabel>
-          <DetailedInfo.ItemValue multiRow>
-            <GasPriceValue amount={ data.blob_gas_price }/>
-          </DetailedInfo.ItemValue>
-        </>
+        <ScanKeyValue
+          label="Blob gas price"
+          // eslint-disable-next-line max-len
+          hint="Price per unit of gas used for for blob deployment. Blob gas is independent of normal gas. Both gas prices can affect the priority of transaction execution."
+          multiRow
+        >
+          <GasPriceValue amount={ data.blob_gas_price }/>
+        </ScanKeyValue>
       ) }
       { data.blob_gas_used && (
-        <>
-          <DetailedInfo.ItemLabel
-            hint="Actual amount of gas used by the blobs in this block"
-          >
-            Blob gas used
-          </DetailedInfo.ItemLabel>
-          <DetailedInfo.ItemValue>
-            <Text>{ BigNumber(data.blob_gas_used).toFormat() }</Text>
-          </DetailedInfo.ItemValue>
-        </>
+        <ScanKeyValue
+          label="Blob gas used"
+          hint="Actual amount of gas used by the blobs in this block"
+        >
+          <Text>{ BigNumber(data.blob_gas_used).toFormat() }</Text>
+        </ScanKeyValue>
       ) }
       { !burntBlobFees.isEqualTo(ZERO) && (
-        <>
-          <DetailedInfo.ItemLabel
-            hint={ `Amount of ${ currencyUnits.ether } used for blobs in this block` }
-          >
-            Blob burnt fees
-          </DetailedInfo.ItemLabel>
-          <DetailedInfo.ItemValue multiRow>
-            <NativeCoinValue
-              amount={ burntBlobFees.toString() }
-              accuracy={ 0 }
-              startElement={ <IconSvg name="flame" boxSize={ 5 } color="icon.primary" mr={{ base: 1, lg: 2 }}/> }
-              mr={ 4 }
-            />
-            { !blobFees.isEqualTo(ZERO) && (
-              <Tooltip content="Blob burnt fees / Txn fees * 100%">
-                <Utilization value={ burntBlobFees.dividedBy(blobFees).toNumber() }/>
-              </Tooltip>
-            ) }
-          </DetailedInfo.ItemValue>
-        </>
+        <ScanKeyValue
+          label="Blob burnt fees"
+          hint={ `Amount of ${ currencyUnits.ether } used for blobs in this block` }
+          multiRow
+        >
+          <NativeCoinValue
+            amount={ burntBlobFees.toString() }
+            accuracy={ 0 }
+            startElement={ <IconSvg name="flame" boxSize={ 5 } color="icon.primary" mr={{ base: 1, lg: 2 }}/> }
+            mr={ 4 }
+          />
+          { !blobFees.isEqualTo(ZERO) && (
+            <Tooltip content="Blob burnt fees / Txn fees * 100%">
+              <Utilization value={ burntBlobFees.dividedBy(blobFees).toNumber() }/>
+            </Tooltip>
+          ) }
+        </ScanKeyValue>
       ) }
       { data.excess_blob_gas && (
-        <>
-          <DetailedInfo.ItemLabel
-            hint="A running total of blob gas consumed in excess of the target, prior to the block."
-          >
-            Excess blob gas
-          </DetailedInfo.ItemLabel>
-          <DetailedInfo.ItemValue>
-            <GasPriceValue amount={ data.excess_blob_gas }/>
-          </DetailedInfo.ItemValue>
-        </>
+        <ScanKeyValue
+          label="Excess blob gas"
+          hint="A running total of blob gas consumed in excess of the target, prior to the block."
+        >
+          <GasPriceValue amount={ data.excess_blob_gas }/>
+        </ScanKeyValue>
       ) }
-      <DetailedInfo.ItemDivider/>
+      <DetailedInfo.ItemDivider data-scan-divider/>
     </>
   );
 };

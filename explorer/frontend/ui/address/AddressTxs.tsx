@@ -1,6 +1,8 @@
-import { HStack } from '@chakra-ui/react';
+import { Flex } from '@chakra-ui/react';
 import { useRouter } from 'next/router';
 import React from 'react';
+
+import { route } from 'nextjs/routes';
 
 import config from 'configs/app';
 import useIsMobile from 'lib/hooks/useIsMobile';
@@ -8,11 +10,12 @@ import useIsMounted from 'lib/hooks/useIsMounted';
 import getQueryParamString from 'lib/router/getQueryParamString';
 import { INTERCHAIN_MESSAGE } from 'stubs/interchainIndexer';
 import { generateListStub } from 'stubs/utils';
+import { Link } from 'toolkit/chakra/link';
 import RoutedTabs from 'toolkit/components/RoutedTabs/RoutedTabs';
 import AddressTxsCrossChain from 'ui/crossChain/address/AddressTxsCrossChain';
-import { ACTION_BAR_HEIGHT_DESKTOP } from 'ui/shared/ActionBar';
 import Pagination from 'ui/shared/pagination/Pagination';
 import useQueryWithPages from 'ui/shared/pagination/useQueryWithPages';
+import { formatScanTableCount, ScanTableCard } from 'ui/shared/scan';
 import TxsWithAPISorting from 'ui/txs/TxsWithAPISorting';
 
 import AddressCsvExportLink from './AddressCsvExportLink';
@@ -20,19 +23,14 @@ import AddressTxsFilter from './AddressTxsFilter';
 import useAddressTxsQuery from './useAddressTxsQuery';
 
 export const ADDRESS_TXS_TAB_IDS = [ 'txs_local' as const, 'txs_cross_chain' as const ];
-const TAB_LIST_PROPS = {
-  marginBottom: 0,
-  pt: 6,
-  pb: 3,
-  marginTop: -6,
-};
 
 interface Props {
   shouldRender?: boolean;
   isQueryEnabled?: boolean;
+  txsCount?: number;
 }
 
-const AddressTxs = ({ shouldRender = true, isQueryEnabled = true }: Props) => {
+const AddressTxs = ({ shouldRender = true, isQueryEnabled = true, txsCount }: Props) => {
   const router = useRouter();
   const isMounted = useIsMounted();
   const isMobile = useIsMobile();
@@ -74,94 +72,109 @@ const AddressTxs = ({ shouldRender = true, isQueryEnabled = true }: Props) => {
     return null;
   }
 
+  const localItemsNum = localQuery.query.data?.items.length;
+  const localTitle = formatScanTableCount(
+    txsCount !== undefined && localItemsNum !== undefined && localItemsNum < txsCount ?
+      { kind: 'latest', value: txsCount, itemsName: 'transactions', shownValue: localItemsNum } :
+      { kind: 'total', value: txsCount ?? localItemsNum ?? 0, itemsName: 'transactions' },
+  );
+
+  const crossChainItemsNum = crossChainQuery.data?.items.length;
+  const crossChainTitle = formatScanTableCount({ kind: 'total', value: crossChainItemsNum ?? 0, itemsName: 'cross-chain messages' });
+
+  const viewAllRow = (
+    <Flex
+      data-view-all
+      justifyContent="center"
+      alignItems="center"
+      px={ 4 }
+      py={ 3 }
+      borderTopWidth="1px"
+      borderStyle="solid"
+      borderColor="border.divider"
+    >
+      <Link href={ route({ pathname: '/txs' }) } textStyle="xs" fontWeight="500" textTransform="uppercase">
+        View all transactions →
+      </Link>
+    </Flex>
+  );
+
+  const localActions = !isMobile ? (
+    <>
+      { txsLocalFilter }
+      <AddressCsvExportLink
+        address={ hash }
+        label="Download Page Data"
+        params={{ type: 'transactions', filterType: 'address', filterValue: localQuery.filterValue }}
+        isLoading={ localQuery.query.pagination.isLoading }
+      />
+    </>
+  ) : null;
+
   const tabs = [
     {
       id: [ 'txs_local', 'txs' ],
       title: 'Txns',
       component: (
-        <TxsWithAPISorting
-          filter={ txsLocalFilter }
-          filterValue={ localQuery.filterValue }
-          query={ localQuery.query }
-          currentAddress={ hash }
-          enableTimeIncrement
-          socketType="address_txs"
-          top={ ACTION_BAR_HEIGHT_DESKTOP }
-          sorting={ localQuery.sort }
-          setSort={ localQuery.setSort }
-          showBlockInfo
-          showTableViewButton
-        />
+        <>
+          <ScanTableCard
+            title={ localTitle }
+            actions={ localActions }
+            pagination={ !isMobile ? <Pagination { ...localQuery.query.pagination }/> : null }
+          >
+            <TxsWithAPISorting
+              filter={ txsLocalFilter }
+              filterValue={ localQuery.filterValue }
+              query={ localQuery.query }
+              currentAddress={ hash }
+              enableTimeIncrement
+              socketType="address_txs"
+              sorting={ localQuery.sort }
+              setSort={ localQuery.setSort }
+              showBlockInfo
+              showTableViewButton
+              isInsideTableCard
+            />
+            { viewAllRow }
+          </ScanTableCard>
+          <Flex justifyContent="flex-end" mt={ 3 }>
+            <AddressCsvExportLink
+              address={ hash }
+              label="CSV Export"
+              params={{ type: 'transactions', filterType: 'address', filterValue: localQuery.filterValue }}
+              isLoading={ localQuery.query.pagination.isLoading }
+            />
+          </Flex>
+        </>
       ),
     },
     config.features.crossChainTxs.isEnabled && {
       id: 'txs_cross_chain',
       title: 'Cross-chain txns',
       component: (
-        <AddressTxsCrossChain
-          pagination={ crossChainQuery.pagination }
-          items={ crossChainQuery.data?.items }
-          isLoading={ crossChainQuery.isPlaceholderData }
-          isError={ crossChainQuery.isError }
-          currentAddress={ hash }
-        />
+        <ScanTableCard
+          title={ crossChainTitle }
+          pagination={ !isMobile ? <Pagination { ...crossChainQuery.pagination }/> : null }
+        >
+          <AddressTxsCrossChain
+            pagination={ crossChainQuery.pagination }
+            items={ crossChainQuery.data?.items }
+            isLoading={ crossChainQuery.isPlaceholderData }
+            isError={ crossChainQuery.isError }
+            currentAddress={ hash }
+          />
+        </ScanTableCard>
       ),
     },
   ].filter(Boolean);
 
-  const rightSlot = (() => {
-    if (isLocalTab) {
-      if (isMobile) {
-        return null;
-      }
-
-      return (
-        <>
-          <HStack gap={ 2 }>
-            { txsLocalFilter }
-          </HStack>
-          <HStack gap={ 6 }>
-            <AddressCsvExportLink
-              address={ hash }
-              params={{ type: 'transactions', filterType: 'address', filterValue: localQuery.filterValue }}
-              isLoading={ localQuery.query.pagination.isLoading }
-            />
-            <Pagination { ...localQuery.query.pagination }/>
-          </HStack>
-        </>
-      );
-    }
-
-    if (config.features.crossChainTxs.isEnabled) {
-      if (isMobile) {
-        return null;
-      }
-      return <Pagination { ...crossChainQuery.pagination } ml="auto"/>;
-    }
-
-    return null;
-  })();
-
-  const rightSlotProps = (() => {
-    return {
-      display: 'flex',
-      justifyContent: { base: 'flex-end', lg: 'space-between' },
-      ml: tabs.length > 1 ? { base: 0, lg: 4 } : 0,
-      widthAllocation: 'available' as const,
-    };
-  })();
-
   return (
     <RoutedTabs
-      variant="secondary"
+      variant="pill"
       size="sm"
       tabs={ tabs }
       onValueChange={ handleTabValueChange }
       defaultTabId="txs_local"
-      rightSlot={ rightSlot }
-      rightSlotProps={ rightSlotProps }
-      listProps={ isMobile ? undefined : TAB_LIST_PROPS }
-      stickyEnabled={ !isMobile }
     />
   );
 };

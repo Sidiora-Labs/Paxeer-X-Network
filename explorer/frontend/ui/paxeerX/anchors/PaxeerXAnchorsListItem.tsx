@@ -8,7 +8,10 @@ import CopyToClipboard from 'ui/shared/CopyToClipboard';
 import BlockEntity from 'ui/shared/entities/block/BlockEntity';
 import HashStringShorten from 'ui/shared/HashStringShorten';
 import ListItemMobileGrid from 'ui/shared/ListItemMobile/ListItemMobileGrid';
+import StatusLadderBadge from 'ui/shared/statusLadder/StatusLadderBadge';
 import TimeWithTooltip from 'ui/shared/time/TimeWithTooltip';
+
+import { ANCHOR_SETTLEMENT_RUNG } from './PaxeerXAnchorsTableItem';
 
 interface Props {
   item: PaxeerXAnchorsItem;
@@ -21,14 +24,14 @@ const PaxeerXAnchorsListItem = ({ item, isLoading }: Props) => {
 
       <ListItemMobileGrid.Label isLoading={ isLoading }>Checkpoint height</ListItemMobileGrid.Label>
       <ListItemMobileGrid.Value fontWeight={ 600 } color="text.primary">
-        <Skeleton loading={ isLoading } display="inline-block">
+        <Skeleton loading={ isLoading } display="inline-block" data-label="checkpoint-height">
           { item.checkpoint_height ?? <Text as="span" color="text.secondary">—</Text> }
         </Skeleton>
       </ListItemMobileGrid.Value>
 
       <ListItemMobileGrid.Label isLoading={ isLoading }>Sealed height</ListItemMobileGrid.Label>
       <ListItemMobileGrid.Value>
-        <Skeleton loading={ isLoading } display="inline-block">
+        <Skeleton loading={ isLoading } display="inline-block" data-label="sealed-height">
           { item.sealed_height ?? <Text as="span" color="text.secondary">—</Text> }
         </Skeleton>
       </ListItemMobileGrid.Value>
@@ -52,6 +55,7 @@ const PaxeerXAnchorsListItem = ({ item, isLoading }: Props) => {
         <BlockEntity
           isLoading={ isLoading }
           number={ item.block_number }
+          truncation="none"
           noIcon
         />
       </ListItemMobileGrid.Value>
@@ -63,6 +67,11 @@ const PaxeerXAnchorsListItem = ({ item, isLoading }: Props) => {
           isLoading={ isLoading }
           display="inline-block"
         />
+      </ListItemMobileGrid.Value>
+
+      <ListItemMobileGrid.Label isLoading={ isLoading }>Settlement</ListItemMobileGrid.Label>
+      <ListItemMobileGrid.Value>
+        <StatusLadderBadge rung={ ANCHOR_SETTLEMENT_RUNG } isLoading={ isLoading }/>
       </ListItemMobileGrid.Value>
 
     </ListItemMobileGrid.Container>

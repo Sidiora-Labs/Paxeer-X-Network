@@ -72,6 +72,7 @@ const Content = chakra((props: ContentProps) => {
     <EntityBase.Content
       { ...props }
       text={ String(props.number) }
+      truncation={ props.truncation ?? 'none' }
       tailLength={ props.tailLength ?? 2 }
     />
   );
@@ -92,7 +93,7 @@ const BlockEntity = (props: EntityProps) => {
   const content = <Content { ...partsProps.content }/>;
 
   return (
-    <Container { ...partsProps.container }>
+    <Container { ...partsProps.container } data-entity-kind="block">
       <Icon { ...partsProps.icon } isPendingUpdate={ props.isPendingUpdate }/>
       { props.noLink ? content : <Link { ...partsProps.link }>{ content }</Link> }
     </Container>

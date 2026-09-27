@@ -1,3 +1,4 @@
+import { Box } from '@chakra-ui/react';
 import { useRouter } from 'next/router';
 import React from 'react';
 
@@ -11,6 +12,7 @@ import useSocketMessage from 'lib/socket/useSocketMessage';
 import { TX_RAW_TRACE } from 'stubs/tx';
 import DataFetchAlert from 'ui/shared/DataFetchAlert';
 import RawDataSnippet from 'ui/shared/RawDataSnippet';
+import { ScanTableCard } from 'ui/shared/scan';
 import TxPendingAlert from 'ui/tx/TxPendingAlert';
 import TxSocketAlert from 'ui/tx/TxSocketAlert';
 
@@ -68,7 +70,13 @@ const TxRawTrace = ({ txQuery }: Props) => {
 
   const text = JSON.stringify(dataToDisplay, undefined, 4);
 
-  return <RawDataSnippet data={ text } isLoading={ isPlaceholderData } textareaMaxHeight={{ base: '400px', lg: '600px' }}/>;
+  return (
+    <ScanTableCard title="Raw trace">
+      <Box p={ 4 }>
+        <RawDataSnippet data={ text } isLoading={ isPlaceholderData } textareaMaxHeight={{ base: '400px', lg: '600px' }}/>
+      </Box>
+    </ScanTableCard>
+  );
 };
 
 export default TxRawTrace;

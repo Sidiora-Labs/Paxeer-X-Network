@@ -60,31 +60,25 @@ const TxsTable = ({
 
   const TableHeaderComponent = stickyHeader ? TableHeaderSticky : TableHeader;
 
-  const columnNum = [
-    showBlockInfo,
-    true,
-    !config.UI.views.tx.hiddenFields?.value,
-    !config.UI.views.tx.hiddenFields?.tx_fee,
-  ].filter(Boolean).length;
+  const showValue = !config.UI.views.tx.hiddenFields?.value;
+  const showFee = !config.UI.views.tx.hiddenFields?.tx_fee;
+
+  const columnNum = [ showBlockInfo, true, showValue, showFee ].filter(Boolean).length;
   const baseWidth = `${ 100 / columnNum }%`;
 
   return (
     <AddressHighlightProvider>
-      <TableRoot minWidth={{ base: '1200px', lg: '1000px' }}>
+      <TableRoot variant="scan" minWidth={{ base: '1200px', lg: '1080px' }}>
         <TableHeaderComponent top={ stickyHeader ? top : undefined }>
           <TableRow>
             <TableColumnHeader width="48px"></TableColumnHeader>
             { chainData && <TableColumnHeader width="32px"></TableColumnHeader> }
-            <TableColumnHeader width="180px">
-              Txn hash
-              <TimeFormatToggle/>
-            </TableColumnHeader>
-            <TableColumnHeader width="160px">Type</TableColumnHeader>
-            <TableColumnHeader width={ baseWidth }>Method</TableColumnHeader>
+            <TableColumnHeader width="200px">Transaction hash</TableColumnHeader>
+            <TableColumnHeader width="150px">Action</TableColumnHeader>
             { showBlockInfo && (
               onSortToggle ? (
                 <TableColumnHeaderSortable
-                  width={ baseWidth }
+                  width="110px"
                   sortField="block_number"
                   sortValue={ sort }
                   onSortToggle={ onSortToggle }
@@ -92,11 +86,15 @@ const TxsTable = ({
                   Block
                 </TableColumnHeaderSortable>
               ) : (
-                <TableColumnHeader width={ baseWidth }>Block</TableColumnHeader>
+                <TableColumnHeader width="110px">Block</TableColumnHeader>
               )
             ) }
-            <TableColumnHeader width={ columnNum <= 2 ? baseWidth : '224px' }>From/To</TableColumnHeader>
-            { !config.UI.views.tx.hiddenFields?.value && (
+            <TableColumnHeader width="130px">
+              Age
+              <TimeFormatToggle/>
+            </TableColumnHeader>
+            <TableColumnHeader width={ columnNum <= 2 ? baseWidth : '300px' }>From / To</TableColumnHeader>
+            { showValue && (
               onSortToggle ? (
                 <TableColumnHeaderSortable
                   width={ baseWidth }
@@ -105,13 +103,13 @@ const TxsTable = ({
                   sortValue={ sort }
                   onSortToggle={ onSortToggle }
                 >
-                  { `Value ${ currencyUnits.ether }` }
+                  { `Amount ${ currencyUnits.ether }` }
                 </TableColumnHeaderSortable>
               ) : (
-                <TableColumnHeader width={ baseWidth } isNumeric>Value</TableColumnHeader>
+                <TableColumnHeader width={ baseWidth } isNumeric>Amount</TableColumnHeader>
               )
             ) }
-            { !config.UI.views.tx.hiddenFields?.tx_fee && (
+            { showFee && (
               onSortToggle ? (
                 <TableColumnHeaderSortable
                   width={ baseWidth }
@@ -121,10 +119,10 @@ const TxsTable = ({
                   sortValue={ sort }
                   onSortToggle={ onSortToggle }
                 >
-                  { `Fee${ feeCurrency }` }
+                  { `Txn fee${ feeCurrency }` }
                 </TableColumnHeaderSortable>
               ) : (
-                <TableColumnHeader width={ baseWidth } isNumeric pr={ 5 }>Fee</TableColumnHeader>
+                <TableColumnHeader width={ baseWidth } isNumeric pr={ 5 }>Txn fee</TableColumnHeader>
               )
             ) }
           </TableRow>

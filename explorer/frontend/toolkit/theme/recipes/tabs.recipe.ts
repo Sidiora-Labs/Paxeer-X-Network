@@ -178,6 +178,42 @@ export const recipe = defineSlotRecipe({
           },
         },
       },
+      pill: {
+        list: {
+          border: 'none',
+          columnGap: '2',
+          rowGap: '2',
+          flexWrap: 'wrap',
+          _horizontal: {
+            _before: {
+              display: 'none',
+            },
+          },
+        },
+        trigger: {
+          fontWeight: '600',
+          gap: '1',
+          borderRadius: 'full',
+          borderWidth: '1px',
+          borderStyle: 'solid',
+          borderColor: 'border.divider',
+          bg: 'bg.surface',
+          color: 'text.secondary',
+          _selected: {
+            bg: 'selected.control.bg',
+            color: 'selected.control.text',
+            borderColor: 'transparent',
+            _hover: {
+              color: 'selected.control.text',
+              borderColor: 'transparent',
+            },
+          },
+          _hover: {
+            color: 'hover',
+            borderColor: 'border.strong',
+          },
+        },
+      },
       segmented: {
         trigger: {
           color: 'tabs.segmented.fg',

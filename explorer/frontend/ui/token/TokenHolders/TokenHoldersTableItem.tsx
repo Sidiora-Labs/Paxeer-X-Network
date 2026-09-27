@@ -19,7 +19,7 @@ type Props = {
 
 const TokenTransferTableItem = ({ holder, token, isLoading }: Props) => {
   return (
-    <TableRow>
+    <TableRow data-token-holders-row>
       <TableCell verticalAlign="middle">
         <AddressEntity
           address={ holder.address }

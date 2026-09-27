@@ -1,4 +1,4 @@
-import { GridItem, Text, Box } from '@chakra-ui/react';
+import { Box, chakra, Flex, GridItem, Text } from '@chakra-ui/react';
 import BigNumber from 'bignumber.js';
 import { capitalize } from 'es-toolkit';
 import { useRouter } from 'next/router';
@@ -15,7 +15,6 @@ import getNetworkValidatorTitle from 'lib/networks/getNetworkValidatorTitle';
 import * as arbitrum from 'lib/rollups/arbitrum';
 import { formatZkSyncL2TxnBatchStatus, layerLabels } from 'lib/rollups/utils';
 import getQueryParamString from 'lib/router/getQueryParamString';
-import { CollapsibleDetails } from 'toolkit/chakra/collapsible';
 import { Link } from 'toolkit/chakra/link';
 import { Skeleton } from 'toolkit/chakra/skeleton';
 import { Tooltip } from 'toolkit/chakra/tooltip';
@@ -34,6 +33,7 @@ import HashStringShortenDynamic from 'ui/shared/HashStringShortenDynamic';
 import IconSvg from 'ui/shared/IconSvg';
 import PrevNext from 'ui/shared/PrevNext';
 import RawDataSnippet from 'ui/shared/RawDataSnippet';
+import { ScanExpander, ScanKeyValue } from 'ui/shared/scan';
 import StatusTag from 'ui/shared/statusTag/StatusTag';
 import Utilization from 'ui/shared/Utilization/Utilization';
 import GasPriceValue from 'ui/shared/value/GasPriceValue';
@@ -54,6 +54,8 @@ interface Props {
 }
 
 const rollupFeature = config.features.rollup;
+
+const GRID_TEMPLATE_COLUMNS = { base: 'minmax(0, 1fr)', lg: 'minmax(min-content, 200px) minmax(0, 1fr)' };
 
 const BlockDetails = ({ query }: Props) => {
   const router = useRouter();
@@ -151,606 +153,534 @@ const BlockDetails = ({ query }: Props) => {
     }
   })();
 
+  const hasMoreDetails = Boolean(
+    (rollupFeature.isEnabled && rollupFeature.type === 'zkSync' && data.zksync) ||
+    data.blob_gas_price ||
+    data.bitcoin_merged_mining_header ||
+    data.bitcoin_merged_mining_coinbase_transaction ||
+    data.bitcoin_merged_mining_merkle_proof ||
+    data.hash_for_merged_mining ||
+    data.height > 0 ||
+    (rollupFeature.isEnabled && rollupFeature.type === 'arbitrum' && data.arbitrum?.send_count) ||
+    !config.UI.views.block.hiddenFields?.nonce ||
+    data.zilliqa,
+  );
+
   return (
-    <DetailedInfo.Container templateColumns={{ base: 'minmax(0, 1fr)', lg: 'minmax(min-content, 200px) minmax(0, 1fr)' }} >
-      <DetailedInfo.ItemLabel
-        hint="The block height of a particular block is defined as the number of blocks preceding it in the blockchain"
-        isLoading={ isPlaceholderData }
+    <Flex flexDir="column" rowGap={{ base: 3, lg: 4 }} data-block-details>
+      <Box
+        data-block-details-card
+        bg="bg.surface"
+        borderWidth="1px"
+        borderStyle="solid"
+        borderColor="border.divider"
+        borderRadius="md"
+        boxShadow="card"
+        px={{ base: 4, lg: 6 }}
+        py={{ base: 4, lg: 5 }}
       >
-        { blockTypeLabel } height
-      </DetailedInfo.ItemLabel>
-      <DetailedInfo.ItemValue>
-        <Skeleton loading={ isPlaceholderData }>
-          { data.height }
-        </Skeleton>
-        { data.height === 0 && <Text whiteSpace="pre"> - Genesis Block</Text> }
-        <PrevNext
-          ml={ 6 }
-          onClick={ handlePrevNextClick }
-          prevLabel="View previous block"
-          nextLabel="View next block"
-          isPrevDisabled={ data.height === 0 }
-          isLoading={ isPlaceholderData }
-        />
-      </DetailedInfo.ItemValue>
-
-      { rollupFeature.isEnabled && rollupFeature.type === 'arbitrum' && data.arbitrum && (
-        <>
-          <DetailedInfo.ItemLabel
-            hint={ `The most recent ${ layerLabels.parent } block height as of this ${ layerLabels.current } block` }
+        <DetailedInfo.Container templateColumns={ GRID_TEMPLATE_COLUMNS }>
+          <ScanKeyValue
+            label={ `${ blockTypeLabel } height` }
+            hint="The block height of a particular block is defined as the number of blocks preceding it in the blockchain"
             isLoading={ isPlaceholderData }
           >
-            { layerLabels.parent } block height
-          </DetailedInfo.ItemLabel>
-          <DetailedInfo.ItemValue>
-            <BlockEntityL1 isLoading={ isPlaceholderData } number={ data.arbitrum.l1_block_number }/>
-          </DetailedInfo.ItemValue>
-        </>
-      ) }
-
-      { rollupFeature.isEnabled && rollupFeature.type === 'arbitrum' && data.arbitrum && !config.UI.views.block.hiddenFields?.batch && (
-        <>
-          <DetailedInfo.ItemLabel
-            hint="Batch number"
-            isLoading={ isPlaceholderData }
-          >
-            Batch
-          </DetailedInfo.ItemLabel>
-          <DetailedInfo.ItemValue>
-            { data.arbitrum.batch_number ?
-              <BatchEntityL2 isLoading={ isPlaceholderData } number={ data.arbitrum.batch_number }/> :
-              <Skeleton loading={ isPlaceholderData }>Pending</Skeleton> }
-          </DetailedInfo.ItemValue>
-        </>
-      ) }
-
-      { rollupFeature.isEnabled && rollupFeature.type === 'optimistic' && data.optimism && !config.UI.views.block.hiddenFields?.batch && (
-        <>
-          <DetailedInfo.ItemLabel
-            hint="Batch number"
-            isLoading={ isPlaceholderData }
-          >
-            Batch
-          </DetailedInfo.ItemLabel>
-          <DetailedInfo.ItemValue columnGap={ 3 }>
-            { data.optimism.number ?
-              <BatchEntityL2 isLoading={ isPlaceholderData } number={ data.optimism.number }/> :
-              <Skeleton loading={ isPlaceholderData }>Pending</Skeleton> }
-            { data.optimism.batch_data_container && (
-              <OptimisticL2TxnBatchDA
-                container={ data.optimism.batch_data_container }
-                isLoading={ isPlaceholderData }
-              />
-            ) }
-          </DetailedInfo.ItemValue>
-        </>
-      ) }
-
-      { typeof data.size === 'number' && (
-        <>
-          <DetailedInfo.ItemLabel
-            hint="Size of the block in bytes"
-            isLoading={ isPlaceholderData }
-          >
-            Size
-          </DetailedInfo.ItemLabel>
-          <DetailedInfo.ItemValue>
             <Skeleton loading={ isPlaceholderData }>
-              { data.size.toLocaleString() }
+              { data.height }
             </Skeleton>
-          </DetailedInfo.ItemValue>
-        </>
-      ) }
-
-      <DetailedInfo.ItemLabel
-        hint="Date & time at which block was produced."
-        isLoading={ isPlaceholderData }
-      >
-        Timestamp
-      </DetailedInfo.ItemLabel>
-      <DetailedInfo.ItemValue>
-        <DetailedInfoTimestamp timestamp={ data.timestamp } isLoading={ isPlaceholderData }/>
-      </DetailedInfo.ItemValue>
-
-      <DetailedInfo.ItemLabel
-        hint="The number of transactions in the block"
-        isLoading={ isPlaceholderData }
-      >
-        Transactions
-      </DetailedInfo.ItemLabel>
-      <DetailedInfo.ItemValue>
-        <Skeleton loading={ isPlaceholderData }>
-          { txsNum }
-        </Skeleton>
-      </DetailedInfo.ItemValue>
-
-      { config.features.beaconChain.isEnabled && Boolean(data.withdrawals_count) && (
-        <>
-          <DetailedInfo.ItemLabel
-            hint="The number of beacon withdrawals in the block"
-            isLoading={ isPlaceholderData }
-          >
-            Withdrawals
-          </DetailedInfo.ItemLabel>
-          <DetailedInfo.ItemValue>
-            <Skeleton loading={ isPlaceholderData }>
-              <Link href={ route({ pathname: '/block/[height_or_hash]', query: { height_or_hash: heightOrHash, tab: 'withdrawals' } }, multichainContext) }>
-                { data.withdrawals_count } withdrawal{ data.withdrawals_count === 1 ? '' : 's' }
-              </Link>
-            </Skeleton>
-          </DetailedInfo.ItemValue>
-        </>
-      ) }
-
-      { rollupFeature.isEnabled && rollupFeature.type === 'zkSync' && data.zksync && !config.UI.views.block.hiddenFields?.batch && (
-        <>
-          <DetailedInfo.ItemLabel
-            hint="Batch number"
-            isLoading={ isPlaceholderData }
-          >
-            Batch
-          </DetailedInfo.ItemLabel>
-          <DetailedInfo.ItemValue>
-            { data.zksync.batch_number ?
-              <BatchEntityL2 isLoading={ isPlaceholderData } number={ data.zksync.batch_number }/> :
-              <Skeleton loading={ isPlaceholderData }>Pending</Skeleton> }
-          </DetailedInfo.ItemValue>
-        </>
-      ) }
-      { !config.UI.views.block.hiddenFields?.L1_status && rollupFeature.isEnabled &&
-        ((rollupFeature.type === 'zkSync' && data.zksync) || (rollupFeature.type === 'arbitrum' && data.arbitrum)) &&
-      (
-        <>
-          <DetailedInfo.ItemLabel
-            hint="Status is the short interpretation of the batch lifecycle"
-            isLoading={ isPlaceholderData }
-          >
-            Status
-          </DetailedInfo.ItemLabel>
-          <DetailedInfo.ItemValue>
-            { rollupFeature.type === 'zkSync' && data.zksync && (
-              <VerificationSteps
-                steps={ zkSyncVerificationSteps }
-                currentStep={ formatZkSyncL2TxnBatchStatus(data.zksync.status) }
-                isLoading={ isPlaceholderData }
-              />
-            ) }
-            { rollupFeature.type === 'arbitrum' && data.arbitrum && (
-              <VerificationSteps
-                steps={ arbitrum.verificationSteps }
-                currentStep={ arbitrum.VERIFICATION_STEPS_MAP[data.arbitrum.status] }
-                currentStepPending={ arbitrum.getVerificationStepStatus(data.arbitrum) === 'pending' }
-                isLoading={ isPlaceholderData }
-              />
-            ) }
-          </DetailedInfo.ItemValue>
-        </>
-      ) }
-
-      { !config.UI.views.block.hiddenFields?.miner && (
-        <>
-          <DetailedInfo.ItemLabel
-            hint="A block producer who successfully included the block onto the blockchain"
-            isLoading={ isPlaceholderData }
-          >
-            { capitalize(validatorTitle) }
-          </DetailedInfo.ItemLabel>
-          <DetailedInfo.ItemValue>
-            <AddressEntity
-              address={ data.miner }
+            { data.height === 0 && <Text whiteSpace="pre"> - Genesis Block</Text> }
+            <PrevNext
+              ml={ 6 }
+              onClick={ handlePrevNextClick }
+              prevLabel="View previous block"
+              nextLabel="View next block"
+              isPrevDisabled={ data.height === 0 }
               isLoading={ isPlaceholderData }
             />
-          </DetailedInfo.ItemValue>
-        </>
-      ) }
+          </ScanKeyValue>
 
-      { rollupFeature.isEnabled && rollupFeature.type === 'arbitrum' &&
-        (data.arbitrum?.commitment_transaction.hash || data.arbitrum?.confirmation_transaction.hash) &&
-      (
-        <>
-          <DetailedInfo.ItemDivider/>
-          { data.arbitrum?.commitment_transaction.hash && (
-            <>
-              <DetailedInfo.ItemLabel
-                hint={ `${ layerLabels.parent } transaction containing this batch commitment` }
-                isLoading={ isPlaceholderData }
-              >
-                Commitment tx
-              </DetailedInfo.ItemLabel>
-              <DetailedInfo.ItemValue>
-                <TxEntityL1 hash={ data.arbitrum?.commitment_transaction.hash } isLoading={ isPlaceholderData }/>
-                { data.arbitrum?.commitment_transaction.status === 'finalized' && <StatusTag type="ok" text="Finalized" ml={ 2 }/> }
-              </DetailedInfo.ItemValue>
-            </>
-          ) }
-          { data.arbitrum?.confirmation_transaction.hash && (
-            <>
-              <DetailedInfo.ItemLabel
-                hint={ `${ layerLabels.parent } transaction containing confirmation of this batch` }
-                isLoading={ isPlaceholderData }
-              >
-                Confirmation tx
-              </DetailedInfo.ItemLabel>
-              <DetailedInfo.ItemValue>
-                <TxEntityL1 hash={ data.arbitrum?.confirmation_transaction.hash } isLoading={ isPlaceholderData }/>
-                { data.arbitrum?.commitment_transaction.status === 'finalized' && <StatusTag type="ok" text="Finalized" ml={ 2 }/> }
-              </DetailedInfo.ItemValue>
-            </>
-          ) }
-        </>
-      ) }
-
-      { !rollupFeature.isEnabled && !totalReward.isEqualTo(ZERO) && !config.UI.views.block.hiddenFields?.total_reward && (
-        <>
-          <DetailedInfo.ItemLabel
-            hint={
-              `For each block, the ${ validatorTitle } is rewarded with a finite amount of ${ config.chain.currency.symbol || 'native token' } 
-          on top of the fees paid for all transactions in the block`
-            }
-            isLoading={ isPlaceholderData }
-          >
-            Block reward
-          </DetailedInfo.ItemLabel>
-          <DetailedInfo.ItemValue columnGap={ 1 } multiRow>
-            <NativeCoinValue amount={ totalReward.toString() } accuracy={ 0 } loading={ isPlaceholderData }/>
-            { rewardBreakDown }
-          </DetailedInfo.ItemValue>
-        </>
-      ) }
-
-      { data.rewards
-        ?.filter(({ type }) => type !== 'Validator Reward' && type !== 'Miner Reward')
-        .map(({ type, reward }) => (
-          <React.Fragment key={ type }>
-            <DetailedInfo.ItemLabel
-              hint={ `Amount of distributed reward. ${ capitalize(validatorTitle) }s receive a static block reward + Tx fees + uncle fees` }
+          { rollupFeature.isEnabled && rollupFeature.type === 'arbitrum' && data.arbitrum && (
+            <ScanKeyValue
+              label={ `${ layerLabels.parent } block height` }
+              hint={ `The most recent ${ layerLabels.parent } block height as of this ${ layerLabels.current } block` }
+              isLoading={ isPlaceholderData }
             >
-              { type }
-            </DetailedInfo.ItemLabel>
-            <DetailedInfo.ItemValue>
-              <NativeCoinValue amount={ reward.toString() } accuracy={ 0 }/>
-            </DetailedInfo.ItemValue>
-          </React.Fragment>
-        ))
-      }
+              <BlockEntityL1 isLoading={ isPlaceholderData } number={ data.arbitrum.l1_block_number }/>
+            </ScanKeyValue>
+          ) }
 
-      { typeof data.zilliqa?.view === 'number' && (
-        <>
-          <DetailedInfo.ItemLabel
-            hint="The iteration of the consensus round in which the block was proposed"
-            isLoading={ isPlaceholderData }
-          >
-            View
-          </DetailedInfo.ItemLabel>
-          <DetailedInfo.ItemValue>
-            <Skeleton loading={ isPlaceholderData }>
-              { data.zilliqa.view }
-            </Skeleton>
-          </DetailedInfo.ItemValue>
-        </>
-      ) }
+          { rollupFeature.isEnabled && rollupFeature.type === 'arbitrum' && data.arbitrum && !config.UI.views.block.hiddenFields?.batch && (
+            <ScanKeyValue label="Batch" hint="Batch number" isLoading={ isPlaceholderData }>
+              { data.arbitrum.batch_number ?
+                <BatchEntityL2 isLoading={ isPlaceholderData } number={ data.arbitrum.batch_number }/> :
+                <Skeleton loading={ isPlaceholderData }>Pending</Skeleton> }
+            </ScanKeyValue>
+          ) }
 
-      <DetailedInfo.ItemDivider/>
+          { rollupFeature.isEnabled && rollupFeature.type === 'optimistic' && data.optimism && !config.UI.views.block.hiddenFields?.batch && (
+            <ScanKeyValue label="Batch" hint="Batch number" isLoading={ isPlaceholderData }>
+              <Flex alignItems="center" columnGap={ 3 }>
+                { data.optimism.number ?
+                  <BatchEntityL2 isLoading={ isPlaceholderData } number={ data.optimism.number }/> :
+                  <Skeleton loading={ isPlaceholderData }>Pending</Skeleton> }
+                { data.optimism.batch_data_container && (
+                  <OptimisticL2TxnBatchDA
+                    container={ data.optimism.batch_data_container }
+                    isLoading={ isPlaceholderData }
+                  />
+                ) }
+              </Flex>
+            </ScanKeyValue>
+          ) }
 
-      { data.celo?.base_fee && <BlockDetailsBaseFeeCelo data={ data.celo.base_fee }/> }
+          { rollupFeature.isEnabled && rollupFeature.type === 'zkSync' && data.zksync && !config.UI.views.block.hiddenFields?.batch && (
+            <ScanKeyValue label="Batch" hint="Batch number" isLoading={ isPlaceholderData }>
+              { data.zksync.batch_number ?
+                <BatchEntityL2 isLoading={ isPlaceholderData } number={ data.zksync.batch_number }/> :
+                <Skeleton loading={ isPlaceholderData }>Pending</Skeleton> }
+            </ScanKeyValue>
+          ) }
 
-      <DetailedInfo.ItemLabel
-        hint="The total gas amount used in the block and its percentage of gas filled in the block"
-        isLoading={ isPlaceholderData }
-      >
-        Gas used
-      </DetailedInfo.ItemLabel>
-      <DetailedInfo.ItemValue>
-        <Skeleton loading={ isPlaceholderData }>
-          { BigNumber(data.gas_used || 0).toFormat() }
-        </Skeleton>
-        <BlockGasUsed
-          gasUsed={ data.gas_used || undefined }
-          gasLimit={ data.gas_limit }
-          isLoading={ isPlaceholderData }
-          ml={ 4 }
-          gasTarget={ data.gas_target_percentage || undefined }
-        />
-      </DetailedInfo.ItemValue>
-
-      <DetailedInfo.ItemLabel
-        hint="Total gas limit provided by all transactions in the block"
-        isLoading={ isPlaceholderData }
-      >
-        Gas limit
-      </DetailedInfo.ItemLabel>
-      <DetailedInfo.ItemValue>
-        <Skeleton loading={ isPlaceholderData }>
-          { BigNumber(data.gas_limit).toFormat() }
-        </Skeleton>
-      </DetailedInfo.ItemValue>
-
-      { data.minimum_gas_price && (
-        <>
-          <DetailedInfo.ItemLabel
-            hint="The minimum gas price a transaction should have in order to be included in this block"
-            isLoading={ isPlaceholderData }
-          >
-            Minimum gas price
-          </DetailedInfo.ItemLabel>
-          <DetailedInfo.ItemValue>
-            <NativeCoinValue amount={ data.minimum_gas_price } units="gwei" loading={ isPlaceholderData }/>
-          </DetailedInfo.ItemValue>
-        </>
-      ) }
-
-      { data.base_fee_per_gas && (
-        <>
-          <DetailedInfo.ItemLabel
-            hint="Minimum fee required per unit of gas. Fee adjusts based on network congestion"
-            isLoading={ isPlaceholderData }
-          >
-            Base fee per gas
-          </DetailedInfo.ItemLabel>
-          <DetailedInfo.ItemValue multiRow>
-            <GasPriceValue
-              amount={ data.base_fee_per_gas }
-              loading={ isPlaceholderData }
-            />
-          </DetailedInfo.ItemValue>
-        </>
-      ) }
-
-      { !config.UI.views.block.hiddenFields?.burnt_fees && !burntFees.isEqualTo(ZERO) && (
-        <>
-          <DetailedInfo.ItemLabel
-            hint={
-              `Amount of ${ config.chain.currency.symbol || 'native token' } burned from transactions included in the block. 
-              Equals Block Base Fee per Gas * Gas Used`
-            }
-            isLoading={ isPlaceholderData }
-          >
-            Burnt fees
-          </DetailedInfo.ItemLabel>
-          <DetailedInfo.ItemValue multiRow>
-            <NativeCoinValue
-              amount={ burntFees.toString() }
-              accuracy={ 0 }
-              loading={ isPlaceholderData }
-              startElement={ <IconSvg name="flame" boxSize={ 5 } mr={{ base: 1, lg: 2 }} color="icon.primary" isLoading={ isPlaceholderData }/> }
-              mr={ 4 }
-            />
-            { !txFees.isEqualTo(ZERO) && (
-              <Tooltip content="Burnt fees / Txn fees * 100%">
-                <Utilization
-                  value={ burntFees.dividedBy(txFees).toNumber() }
+          { !config.UI.views.block.hiddenFields?.L1_status && rollupFeature.isEnabled &&
+            ((rollupFeature.type === 'zkSync' && data.zksync) || (rollupFeature.type === 'arbitrum' && data.arbitrum)) && (
+            <ScanKeyValue
+              label="Status"
+              hint="Status is the short interpretation of the batch lifecycle"
+              isLoading={ isPlaceholderData }
+            >
+              { rollupFeature.type === 'zkSync' && data.zksync && (
+                <VerificationSteps
+                  steps={ zkSyncVerificationSteps }
+                  currentStep={ formatZkSyncL2TxnBatchStatus(data.zksync.status) }
                   isLoading={ isPlaceholderData }
                 />
-              </Tooltip>
-            ) }
-          </DetailedInfo.ItemValue>
-        </>
-      ) }
+              ) }
+              { rollupFeature.type === 'arbitrum' && data.arbitrum && (
+                <VerificationSteps
+                  steps={ arbitrum.verificationSteps }
+                  currentStep={ arbitrum.VERIFICATION_STEPS_MAP[data.arbitrum.status] }
+                  currentStepPending={ arbitrum.getVerificationStepStatus(data.arbitrum) === 'pending' }
+                  isLoading={ isPlaceholderData }
+                />
+              ) }
+            </ScanKeyValue>
+          ) }
 
-      { data.priority_fee !== null && BigNumber(data.priority_fee).gt(ZERO) && (
-        <>
-          <DetailedInfo.ItemLabel
-            hint="User-defined tips sent to validator for transaction priority/inclusion"
+          <ScanKeyValue
+            label="Timestamp"
+            hint="Date & time at which block was produced."
             isLoading={ isPlaceholderData }
           >
-            Priority fee / Tip
-          </DetailedInfo.ItemLabel>
-          <DetailedInfo.ItemValue>
-            <NativeCoinValue amount={ data.priority_fee.toString() } accuracy={ 0 } loading={ isPlaceholderData }/>
-          </DetailedInfo.ItemValue>
-        </>
-      ) }
+            <DetailedInfoTimestamp timestamp={ data.timestamp } isLoading={ isPlaceholderData }/>
+          </ScanKeyValue>
 
-      { /* ADDITIONAL INFO */ }
-      <CollapsibleDetails loading={ isPlaceholderData } mt={ 6 } gridColumn={{ base: undefined, lg: '1 / 3' }}>
-        <GridItem colSpan={{ base: undefined, lg: 2 }} mt={{ base: 1, lg: 4 }}/>
+          <ScanKeyValue
+            label="Transactions"
+            hint="The number of transactions in the block"
+            isLoading={ isPlaceholderData }
+          >
+            <Skeleton loading={ isPlaceholderData }>
+              { txsNum }
+            </Skeleton>
+          </ScanKeyValue>
 
-        { rollupFeature.isEnabled && rollupFeature.type === 'zkSync' && data.zksync &&
-              <ZkSyncL2TxnBatchHashesInfo data={ data.zksync } isLoading={ isPlaceholderData }/> }
-
-        { !isPlaceholderData && <BlockDetailsBlobInfo data={ data }/> }
-
-        { data.bitcoin_merged_mining_header && (
-          <>
-            <DetailedInfo.ItemLabel
-              hint="Merged-mining field: Bitcoin header"
+          { config.features.beaconChain.isEnabled && Boolean(data.withdrawals_count) && (
+            <ScanKeyValue
+              label="Withdrawals"
+              hint="The number of beacon withdrawals in the block"
+              isLoading={ isPlaceholderData }
             >
-              Bitcoin merged mining header
-            </DetailedInfo.ItemLabel>
-            <DetailedInfo.ItemValue
-              flexWrap="nowrap"
-              alignSelf="flex-start"
-            >
-              <Box whiteSpace="nowrap" overflow="hidden">
-                <HashStringShortenDynamic hash={ data.bitcoin_merged_mining_header }/>
-              </Box>
-              <CopyToClipboard text={ data.bitcoin_merged_mining_header }/>
-            </DetailedInfo.ItemValue>
-          </>
-        ) }
+              <Skeleton loading={ isPlaceholderData }>
+                <Link
+                  href={ route({ pathname: '/block/[height_or_hash]', query: { height_or_hash: heightOrHash, tab: 'withdrawals' } }, multichainContext) }
+                >
+                  { data.withdrawals_count } withdrawal{ data.withdrawals_count === 1 ? '' : 's' }
+                </Link>
+              </Skeleton>
+            </ScanKeyValue>
+          ) }
 
-        { data.bitcoin_merged_mining_coinbase_transaction && (
-          <>
-            <DetailedInfo.ItemLabel
-              hint="Merged-mining field: Coinbase transaction"
+          { !config.UI.views.block.hiddenFields?.miner && (
+            <ScanKeyValue
+              label={ capitalize(validatorTitle) }
+              hint="A block producer who successfully included the block onto the blockchain"
+              isLoading={ isPlaceholderData }
             >
-              Bitcoin merged mining coinbase transaction
-            </DetailedInfo.ItemLabel>
-            <DetailedInfo.ItemValue>
-              <RawDataSnippet
-                data={ data.bitcoin_merged_mining_coinbase_transaction }
+              <AddressEntity
+                address={ data.miner }
                 isLoading={ isPlaceholderData }
-                showCopy={ false }
-                textareaMaxHeight="100px"
               />
-            </DetailedInfo.ItemValue>
-          </>
-        ) }
+            </ScanKeyValue>
+          ) }
 
-        { data.bitcoin_merged_mining_merkle_proof && (
-          <>
-            <DetailedInfo.ItemLabel
-              hint="Merged-mining field: Merkle proof"
-            >
-              Bitcoin merged mining Merkle proof
-            </DetailedInfo.ItemLabel>
-            <DetailedInfo.ItemValue>
-              <RawDataSnippet
-                data={ data.bitcoin_merged_mining_merkle_proof }
-                isLoading={ isPlaceholderData }
-                showCopy={ false }
-                textareaMaxHeight="100px"
-              />
-            </DetailedInfo.ItemValue>
-          </>
-        ) }
+          { rollupFeature.isEnabled && rollupFeature.type === 'arbitrum' &&
+            (data.arbitrum?.commitment_transaction.hash || data.arbitrum?.confirmation_transaction.hash) && (
+            <>
+              <DetailedInfo.ItemDivider/>
+              { data.arbitrum?.commitment_transaction.hash && (
+                <ScanKeyValue
+                  label="Commitment tx"
+                  hint={ `${ layerLabels.parent } transaction containing this batch commitment` }
+                  isLoading={ isPlaceholderData }
+                >
+                  <TxEntityL1 hash={ data.arbitrum?.commitment_transaction.hash } isLoading={ isPlaceholderData }/>
+                  { data.arbitrum?.commitment_transaction.status === 'finalized' && <StatusTag type="ok" text="Finalized" ml={ 2 }/> }
+                </ScanKeyValue>
+              ) }
+              { data.arbitrum?.confirmation_transaction.hash && (
+                <ScanKeyValue
+                  label="Confirmation tx"
+                  hint={ `${ layerLabels.parent } transaction containing confirmation of this batch` }
+                  isLoading={ isPlaceholderData }
+                >
+                  <TxEntityL1 hash={ data.arbitrum?.confirmation_transaction.hash } isLoading={ isPlaceholderData }/>
+                  { data.arbitrum?.commitment_transaction.status === 'finalized' && <StatusTag type="ok" text="Finalized" ml={ 2 }/> }
+                </ScanKeyValue>
+              ) }
+            </>
+          ) }
 
-        { data.hash_for_merged_mining && (
-          <>
-            <DetailedInfo.ItemLabel
-              hint="Merged-mining field: Rootstock block header hash"
-            >
-              Hash for merged mining
-            </DetailedInfo.ItemLabel>
-            <DetailedInfo.ItemValue
-              flexWrap="nowrap"
-              alignSelf="flex-start"
-            >
-              <Box whiteSpace="nowrap" overflow="hidden">
-                <HashStringShortenDynamic hash={ data.hash_for_merged_mining }/>
+          <DetailedInfo.ItemDivider data-scan-divider/>
+
+          <ScanKeyValue
+            label="Hash"
+            hint="The SHA256 hash of the block"
+            isLoading={ isPlaceholderData }
+          >
+            <Flex alignItems="center" flexWrap="nowrap" minW={ 0 } w="100%">
+              <Box overflow="hidden" data-hash>
+                <HashStringShortenDynamic hash={ data.hash }/>
               </Box>
-              <CopyToClipboard text={ data.hash_for_merged_mining }/>
-            </DetailedInfo.ItemValue>
-          </>
-        ) }
+              <CopyToClipboard text={ data.hash } isLoading={ isPlaceholderData }/>
+            </Flex>
+          </ScanKeyValue>
 
-        { data.difficulty && (
-          <>
-            <DetailedInfo.ItemLabel
+          { !rollupFeature.isEnabled && !totalReward.isEqualTo(ZERO) && !config.UI.views.block.hiddenFields?.total_reward && (
+            <ScanKeyValue
+              label="Block reward"
+              hint={
+                `For each block, the ${ validatorTitle } is rewarded with a finite amount of ${ config.chain.currency.symbol || 'native token' } 
+          on top of the fees paid for all transactions in the block`
+              }
+              isLoading={ isPlaceholderData }
+              multiRow
+            >
+              <NativeCoinValue amount={ totalReward.toString() } accuracy={ 0 } loading={ isPlaceholderData } mr={ 1 }/>
+              { rewardBreakDown }
+            </ScanKeyValue>
+          ) }
+
+          { data.rewards
+            ?.filter(({ type }) => type !== 'Validator Reward' && type !== 'Miner Reward')
+            .map(({ type, reward }) => (
+              <ScanKeyValue
+                key={ type }
+                label={ type }
+                hint={ `Amount of distributed reward. ${ capitalize(validatorTitle) }s receive a static block reward + Tx fees + uncle fees` }
+              >
+                <NativeCoinValue amount={ reward.toString() } accuracy={ 0 }/>
+              </ScanKeyValue>
+            ))
+          }
+
+          { typeof data.zilliqa?.view === 'number' && (
+            <ScanKeyValue
+              label="View"
+              hint="The iteration of the consensus round in which the block was proposed"
+              isLoading={ isPlaceholderData }
+            >
+              <Skeleton loading={ isPlaceholderData }>
+                { data.zilliqa.view }
+              </Skeleton>
+            </ScanKeyValue>
+          ) }
+
+          { data.difficulty && (
+            <ScanKeyValue
+              label="Difficulty"
               hint={ `Block difficulty for ${ validatorTitle }, used to calibrate block generation time` }
+              isLoading={ isPlaceholderData }
             >
-              Difficulty
-            </DetailedInfo.ItemLabel>
-            <DetailedInfo.ItemValue>
-              <Box overflow="hidden">
+              <Box overflow="hidden" data-difficulty>
                 <HashStringShortenDynamic hash={ BigNumber(data.difficulty).toFormat() }/>
               </Box>
-            </DetailedInfo.ItemValue>
-          </>
-        ) }
-        { data.total_difficulty && (
-          <>
-            <DetailedInfo.ItemLabel
+            </ScanKeyValue>
+          ) }
+
+          { data.total_difficulty && (
+            <ScanKeyValue
+              label="Total difficulty"
               hint="Total difficulty of the chain until this block"
+              isLoading={ isPlaceholderData }
             >
-              Total difficulty
-            </DetailedInfo.ItemLabel>
-            <DetailedInfo.ItemValue>
-              <Box overflow="hidden">
+              <Box overflow="hidden" data-total-difficulty>
                 <HashStringShortenDynamic hash={ BigNumber(data.total_difficulty).toFormat() }/>
               </Box>
-            </DetailedInfo.ItemValue>
-          </>
-        ) }
+            </ScanKeyValue>
+          ) }
 
-        <DetailedInfo.ItemDivider/>
-
-        <DetailedInfo.ItemLabel
-          hint="The SHA256 hash of the block"
-        >
-          Hash
-        </DetailedInfo.ItemLabel>
-        <DetailedInfo.ItemValue flexWrap="nowrap">
-          <Box overflow="hidden" >
-            <HashStringShortenDynamic hash={ data.hash }/>
-          </Box>
-          <CopyToClipboard text={ data.hash }/>
-        </DetailedInfo.ItemValue>
-
-        { data.height > 0 && (
-          <>
-            <DetailedInfo.ItemLabel
-              hint="The hash of the block from which this block was generated"
+          { typeof data.size === 'number' && (
+            <ScanKeyValue
+              label="Size"
+              hint="Size of the block in bytes"
+              isLoading={ isPlaceholderData }
             >
-              Parent hash
-            </DetailedInfo.ItemLabel>
-            <DetailedInfo.ItemValue flexWrap="nowrap">
-              <Link
-                href={ route({ pathname: '/block/[height_or_hash]', query: { height_or_hash: String(data.height - 1) } }, multichainContext) }
-                overflow="hidden"
-                whiteSpace="nowrap"
-              >
-                <HashStringShortenDynamic
-                  hash={ data.parent_hash }
+              <Skeleton loading={ isPlaceholderData } data-size>
+                { data.size.toLocaleString() } bytes
+              </Skeleton>
+            </ScanKeyValue>
+          ) }
+
+          <DetailedInfo.ItemDivider data-scan-divider/>
+
+          { data.celo?.base_fee && <BlockDetailsBaseFeeCelo data={ data.celo.base_fee }/> }
+
+          <ScanKeyValue
+            label="Gas used"
+            hint="The total gas amount used in the block and its percentage of gas filled in the block"
+            isLoading={ isPlaceholderData }
+          >
+            <Skeleton loading={ isPlaceholderData } data-gas-used>
+              { BigNumber(data.gas_used || 0).toFormat() }
+            </Skeleton>
+            <BlockGasUsed
+              gasUsed={ data.gas_used || undefined }
+              gasLimit={ data.gas_limit }
+              isLoading={ isPlaceholderData }
+              ml={ 4 }
+              gasTarget={ data.gas_target_percentage || undefined }
+            />
+          </ScanKeyValue>
+
+          <ScanKeyValue
+            label="Gas limit"
+            hint="Total gas limit provided by all transactions in the block"
+            isLoading={ isPlaceholderData }
+          >
+            <Skeleton loading={ isPlaceholderData }>
+              { BigNumber(data.gas_limit).toFormat() }
+            </Skeleton>
+          </ScanKeyValue>
+
+          { data.minimum_gas_price && (
+            <ScanKeyValue
+              label="Minimum gas price"
+              hint="The minimum gas price a transaction should have in order to be included in this block"
+              isLoading={ isPlaceholderData }
+            >
+              <NativeCoinValue amount={ data.minimum_gas_price } units="gwei" loading={ isPlaceholderData }/>
+            </ScanKeyValue>
+          ) }
+
+          { data.base_fee_per_gas && (
+            <ScanKeyValue
+              label="Base fee per gas"
+              hint="Minimum fee required per unit of gas. Fee adjusts based on network congestion"
+              isLoading={ isPlaceholderData }
+              multiRow
+            >
+              <GasPriceValue
+                amount={ data.base_fee_per_gas }
+                loading={ isPlaceholderData }
+              />
+            </ScanKeyValue>
+          ) }
+
+          { !config.UI.views.block.hiddenFields?.burnt_fees && !burntFees.isEqualTo(ZERO) && (
+            <ScanKeyValue
+              label="Burnt fees"
+              hint={
+                `Amount of ${ config.chain.currency.symbol || 'native token' } burned from transactions included in the block. 
+              Equals Block Base Fee per Gas * Gas Used`
+              }
+              isLoading={ isPlaceholderData }
+              multiRow
+            >
+              <NativeCoinValue
+                amount={ burntFees.toString() }
+                accuracy={ 0 }
+                loading={ isPlaceholderData }
+                startElement={ <IconSvg name="flame" boxSize={ 5 } mr={{ base: 1, lg: 2 }} color="icon.primary" isLoading={ isPlaceholderData }/> }
+                mr={ 4 }
+              />
+              { !txFees.isEqualTo(ZERO) && (
+                <Tooltip content="Burnt fees / Txn fees * 100%">
+                  <Utilization
+                    value={ burntFees.dividedBy(txFees).toNumber() }
+                    isLoading={ isPlaceholderData }
+                  />
+                </Tooltip>
+              ) }
+            </ScanKeyValue>
+          ) }
+
+          { data.priority_fee !== null && BigNumber(data.priority_fee).gt(ZERO) && (
+            <ScanKeyValue
+              label="Priority fee / Tip"
+              hint="User-defined tips sent to validator for transaction priority/inclusion"
+              isLoading={ isPlaceholderData }
+            >
+              <NativeCoinValue amount={ data.priority_fee.toString() } accuracy={ 0 } loading={ isPlaceholderData }/>
+            </ScanKeyValue>
+          ) }
+
+          { typeof data.extra_data === 'string' && (
+            <ScanKeyValue
+              label="Extra data"
+              hint="Any data the block producer chose to include in the block, as the chain stores it"
+              isLoading={ isPlaceholderData }
+              multiRow
+            >
+              <Skeleton loading={ isPlaceholderData } w="100%">
+                <chakra.textarea
+                  data-extra-data
+                  aria-label="Extra data"
+                  readOnly
+                  value={ data.extra_data }
+                  w="100%"
+                  minH="120px"
+                  px={ 4 }
+                  py={ 3 }
+                  textStyle="sm"
+                  fontFamily="body"
+                  whiteSpace="pre-wrap"
+                  wordBreak="break-all"
+                  bg="bg.sunken"
+                  color="text.primary"
+                  borderWidth="1px"
+                  borderStyle="solid"
+                  borderColor="border.divider"
+                  borderRadius="md"
                 />
-              </Link>
-              <CopyToClipboard text={ data.parent_hash }/>
-            </DetailedInfo.ItemValue>
-          </>
-        ) }
+              </Skeleton>
+            </ScanKeyValue>
+          ) }
+        </DetailedInfo.Container>
+      </Box>
 
-        { rollupFeature.isEnabled && rollupFeature.type === 'arbitrum' && data.arbitrum && data.arbitrum.send_count && (
-          <>
-            <DetailedInfo.ItemLabel
-              hint={ `The cumulative number of ${ layerLabels.current } to ${ layerLabels.parent } transactions as of this block` }
-              isLoading={ isPlaceholderData }
-            >
-              Send count
-            </DetailedInfo.ItemLabel>
-            <DetailedInfo.ItemValue>
-              { data.arbitrum.send_count.toLocaleString() }
-            </DetailedInfo.ItemValue>
+      { hasMoreDetails && (
+        <ScanExpander hint="The fields this block carries beyond the ones the overview shows">
+          <DetailedInfo.Container templateColumns={ GRID_TEMPLATE_COLUMNS }>
+            { rollupFeature.isEnabled && rollupFeature.type === 'zkSync' && data.zksync &&
+              <ZkSyncL2TxnBatchHashesInfo data={ data.zksync } isLoading={ isPlaceholderData }/> }
 
-            <DetailedInfo.ItemLabel
-              hint={ `The root of the Merkle accumulator representing all ${ layerLabels.current } to ${ layerLabels.parent } transactions as of this block` }
-              isLoading={ isPlaceholderData }
-            >
-              Send root
-            </DetailedInfo.ItemLabel>
-            <DetailedInfo.ItemValue>
-              { data.arbitrum.send_root }
-            </DetailedInfo.ItemValue>
+            { !isPlaceholderData && <BlockDetailsBlobInfo data={ data }/> }
 
-            <DetailedInfo.ItemLabel
-              hint={ `The number of delayed ${ layerLabels.parent } to ${ layerLabels.current } messages read as of this block` }
-              isLoading={ isPlaceholderData }
-            >
-              Delayed messages
-            </DetailedInfo.ItemLabel>
-            <DetailedInfo.ItemValue>
-              { data.arbitrum.delayed_messages.toLocaleString() }
-            </DetailedInfo.ItemValue>
-          </>
-        ) }
+            { data.bitcoin_merged_mining_header && (
+              <ScanKeyValue label="Bitcoin merged mining header" hint="Merged-mining field: Bitcoin header">
+                <Flex alignItems="center" flexWrap="nowrap" minW={ 0 } w="100%">
+                  <Box whiteSpace="nowrap" overflow="hidden">
+                    <HashStringShortenDynamic hash={ data.bitcoin_merged_mining_header }/>
+                  </Box>
+                  <CopyToClipboard text={ data.bitcoin_merged_mining_header }/>
+                </Flex>
+              </ScanKeyValue>
+            ) }
 
-        { !config.UI.views.block.hiddenFields?.nonce && (
-          <>
-            <DetailedInfo.ItemLabel
-              hint="Block nonce is a value used during mining to demonstrate proof of work for a block"
-            >
-              Nonce
-            </DetailedInfo.ItemLabel>
-            <DetailedInfo.ItemValue>
-              { data.nonce }
-            </DetailedInfo.ItemValue>
-          </>
-        ) }
+            { data.bitcoin_merged_mining_coinbase_transaction && (
+              <ScanKeyValue label="Bitcoin merged mining coinbase transaction" hint="Merged-mining field: Coinbase transaction" multiRow>
+                <RawDataSnippet
+                  data={ data.bitcoin_merged_mining_coinbase_transaction }
+                  isLoading={ isPlaceholderData }
+                  showCopy={ false }
+                  textareaMaxHeight="100px"
+                  w="100%"
+                />
+              </ScanKeyValue>
+            ) }
 
-        { data.zilliqa && (
-          <>
-            <DetailedInfo.ItemDivider/>
-            <BlockDetailsZilliqaQuorumCertificate data={ data.zilliqa?.quorum_certificate }/>
-            { data.zilliqa?.aggregate_quorum_certificate && (
+            { data.bitcoin_merged_mining_merkle_proof && (
+              <ScanKeyValue label="Bitcoin merged mining Merkle proof" hint="Merged-mining field: Merkle proof" multiRow>
+                <RawDataSnippet
+                  data={ data.bitcoin_merged_mining_merkle_proof }
+                  isLoading={ isPlaceholderData }
+                  showCopy={ false }
+                  textareaMaxHeight="100px"
+                  w="100%"
+                />
+              </ScanKeyValue>
+            ) }
+
+            { data.hash_for_merged_mining && (
+              <ScanKeyValue label="Hash for merged mining" hint="Merged-mining field: Rootstock block header hash">
+                <Flex alignItems="center" flexWrap="nowrap" minW={ 0 } w="100%">
+                  <Box whiteSpace="nowrap" overflow="hidden">
+                    <HashStringShortenDynamic hash={ data.hash_for_merged_mining }/>
+                  </Box>
+                  <CopyToClipboard text={ data.hash_for_merged_mining }/>
+                </Flex>
+              </ScanKeyValue>
+            ) }
+
+            { data.height > 0 && (
+              <ScanKeyValue label="Parent hash" hint="The hash of the block from which this block was generated">
+                <Flex alignItems="center" flexWrap="nowrap" minW={ 0 } w="100%">
+                  <Link
+                    href={ route({ pathname: '/block/[height_or_hash]', query: { height_or_hash: String(data.height - 1) } }, multichainContext) }
+                    overflow="hidden"
+                    whiteSpace="nowrap"
+                  >
+                    <HashStringShortenDynamic
+                      hash={ data.parent_hash }
+                    />
+                  </Link>
+                  <CopyToClipboard text={ data.parent_hash }/>
+                </Flex>
+              </ScanKeyValue>
+            ) }
+
+            { rollupFeature.isEnabled && rollupFeature.type === 'arbitrum' && data.arbitrum && data.arbitrum.send_count && (
               <>
-                <GridItem colSpan={{ base: undefined, lg: 2 }} mt={{ base: 1, lg: 2 }}/>
-                <BlockDetailsZilliqaQuorumCertificate data={ data.zilliqa?.aggregate_quorum_certificate }/>
+                <ScanKeyValue
+                  label="Send count"
+                  hint={ `The cumulative number of ${ layerLabels.current } to ${ layerLabels.parent } transactions as of this block` }
+                  isLoading={ isPlaceholderData }
+                >
+                  { data.arbitrum.send_count.toLocaleString() }
+                </ScanKeyValue>
+
+                <ScanKeyValue
+                  label="Send root"
+                  hint={
+                    `The root of the Merkle accumulator representing all ${ layerLabels.current } to ${ layerLabels.parent } transactions as of this block`
+                  }
+                  isLoading={ isPlaceholderData }
+                >
+                  { data.arbitrum.send_root }
+                </ScanKeyValue>
+
+                <ScanKeyValue
+                  label="Delayed messages"
+                  hint={ `The number of delayed ${ layerLabels.parent } to ${ layerLabels.current } messages read as of this block` }
+                  isLoading={ isPlaceholderData }
+                >
+                  { data.arbitrum.delayed_messages.toLocaleString() }
+                </ScanKeyValue>
               </>
             ) }
-          </>
-        ) }
-      </CollapsibleDetails>
 
-    </DetailedInfo.Container>
+            { !config.UI.views.block.hiddenFields?.nonce && (
+              <ScanKeyValue label="Nonce" hint="Block nonce is a value used during mining to demonstrate proof of work for a block">
+                { data.nonce }
+              </ScanKeyValue>
+            ) }
+
+            { data.zilliqa && (
+              <>
+                <DetailedInfo.ItemDivider/>
+                <BlockDetailsZilliqaQuorumCertificate data={ data.zilliqa?.quorum_certificate }/>
+                { data.zilliqa?.aggregate_quorum_certificate && (
+                  <>
+                    <GridItem colSpan={{ base: undefined, lg: 2 }} mt={{ base: 1, lg: 2 }}/>
+                    <BlockDetailsZilliqaQuorumCertificate data={ data.zilliqa?.aggregate_quorum_certificate }/>
+                  </>
+                ) }
+              </>
+            ) }
+          </DetailedInfo.Container>
+        </ScanExpander>
+      ) }
+    </Flex>
   );
 };
 

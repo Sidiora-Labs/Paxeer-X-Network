@@ -1,29 +1,26 @@
-import { Grid } from '@chakra-ui/react';
-import BigNumber from 'bignumber.js';
+import { Box, Grid, GridItem } from '@chakra-ui/react';
 import React from 'react';
 
 import config from 'configs/app';
 import useApiQuery from 'lib/api/useApiQuery';
-import { layerLabels } from 'lib/rollups/utils';
+import { BLOCK } from 'stubs/block';
 import { HOMEPAGE_STATS, HOMEPAGE_STATS_MICROSERVICE } from 'stubs/stats';
-import GasInfoTooltip from 'ui/shared/gas/GasInfoTooltip';
-import GasPrice from 'ui/shared/gas/GasPrice';
 import IconSvg from 'ui/shared/IconSvg';
-import StatsWidget from 'ui/shared/stats/StatsWidget';
-import { WEI } from 'ui/shared/value/utils';
+import NativeTokenIcon from 'ui/shared/NativeTokenIcon';
 
 import StatsDegraded from './fallbacks/StatsDegraded';
-import type { HomeStatsItem } from './utils';
-import { isHomeStatsItemEnabled, sortHomeStatsItems } from './utils';
+import Highlights from './Highlights';
+import type { HighlightsItemProps } from './highlights/HighlightsItem';
+import ChainIndicatorsChart from './indicators/ChainIndicatorsChart';
+import useChartDataQuery from './indicators/useChartDataQuery';
+import { isHomeStatsItemEnabled } from './utils';
 
-const rollupFeature = config.features.rollup;
-const isOptimisticRollup = rollupFeature.isEnabled && rollupFeature.type === 'optimistic';
-const isArbitrumRollup = rollupFeature.isEnabled && rollupFeature.type === 'arbitrum';
 const isStatsFeatureEnabled = config.features.stats.isEnabled;
 
-const Stats = () => {
-  const [ hasGasTracker, setHasGasTracker ] = React.useState(config.features.gasTracker.isEnabled);
+const HISTORY_DAYS = 14;
+const SECONDS_PER_DAY = 24 * 60 * 60;
 
+const Stats = () => {
   // data from stats microservice is prioritized over data from stats api
   const statsQuery = useApiQuery('stats:pages_main', {
     queryOptions: {
@@ -40,197 +37,156 @@ const Stats = () => {
     },
   });
 
-  const isPlaceholderData = statsQuery.isPlaceholderData || apiQuery.isPlaceholderData;
-
-  React.useEffect(() => {
-    if (!isPlaceholderData && !apiQuery.data?.gas_prices?.average) {
-      setHasGasTracker(false);
-    }
-  // should run only after initial fetch
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ isPlaceholderData ]);
-
-  const zkEvmLatestBatchQuery = useApiQuery('general:homepage_zkevm_latest_batch', {
+  const blocksQuery = useApiQuery('general:homepage_blocks', {
     queryOptions: {
-      placeholderData: 12345,
-      enabled: rollupFeature.isEnabled && rollupFeature.type === 'zkEvm' && config.UI.homepage.stats.includes('latest_batch'),
+      placeholderData: [ BLOCK ],
     },
   });
 
-  const zkSyncLatestBatchQuery = useApiQuery('general:homepage_zksync_latest_batch', {
-    queryOptions: {
-      placeholderData: 12345,
-      enabled: rollupFeature.isEnabled && rollupFeature.type === 'zkSync' && config.UI.homepage.stats.includes('latest_batch'),
-    },
-  });
+  const chartQuery = useChartDataQuery('daily_txs');
 
-  const arbitrumLatestBatchQuery = useApiQuery('general:homepage_arbitrum_latest_batch', {
-    queryOptions: {
-      placeholderData: 12345,
-      enabled: rollupFeature.isEnabled && rollupFeature.type === 'arbitrum' && config.UI.homepage.stats.includes('latest_batch'),
-    },
-  });
+  const isLoading = statsQuery.isPlaceholderData || apiQuery.isPlaceholderData || blocksQuery.isPlaceholderData;
 
-  const latestBatchQuery = (() => {
-    if (!rollupFeature.isEnabled || !config.UI.homepage.stats.includes('latest_batch')) {
-      return;
-    }
-
-    switch (rollupFeature.type) {
-      case 'zkEvm':
-        return zkEvmLatestBatchQuery;
-      case 'zkSync':
-        return zkSyncLatestBatchQuery;
-      case 'arbitrum':
-        return arbitrumLatestBatchQuery;
-    }
-  })();
-
-  if (apiQuery.isError || statsQuery.isError || latestBatchQuery?.isError) {
+  if (apiQuery.isError || statsQuery.isError) {
     return <StatsDegraded/>;
   }
-
-  const isLoading = isPlaceholderData || latestBatchQuery?.isPlaceholderData;
 
   const apiData = apiQuery.data;
   const statsData = statsQuery.data;
 
-  const items: Array<HomeStatsItem> = (() => {
-    if (!statsData && !apiData) {
-      return [];
+  const coinItems: Array<HighlightsItemProps> = (() => {
+    const items: Array<HighlightsItemProps> = [];
+
+    if (typeof apiData?.coin_price === 'string') {
+      items.push({
+        id: 'coin_price',
+        label: `${ config.chain.currency.symbol } price`,
+        value: '$' + Number(apiData.coin_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 }),
+        delta: typeof apiData.coin_price_change_percentage === 'number' ? {
+          value: `${ apiData.coin_price_change_percentage > 0 ? '+' : '' }${ apiData.coin_price_change_percentage }%`,
+          direction: apiData.coin_price_change_percentage >= 0 ? 'up' : 'down',
+        } : undefined,
+        icon: <NativeTokenIcon boxSize={ 5 }/>,
+        isLoading,
+      });
     }
 
-    const gasInfoTooltip = hasGasTracker && apiData?.gas_prices && apiData.gas_prices.average ? (
-      <GasInfoTooltip data={ apiData } dataUpdatedAt={ apiQuery.dataUpdatedAt }>
-        <IconSvg
-          isLoading={ isLoading }
-          name="info"
-          boxSize={ 5 }
-          flexShrink={ 0 }
-          cursor="pointer"
-          color="icon.secondary"
-          _hover={{ color: 'hover' }}
-        />
-      </GasInfoTooltip>
-    ) : null;
+    if (typeof apiData?.market_cap === 'string') {
+      items.push({
+        id: 'market_cap',
+        label: `${ config.chain.currency.symbol } market cap`,
+        value: '$' + Number(apiData.market_cap).toLocaleString(undefined, { maximumFractionDigits: 2 }),
+        icon: <IconSvg name="globe" boxSize={ 5 } color="icon.secondary"/>,
+        isLoading,
+      });
+    }
 
-    return [
-      latestBatchQuery?.data !== undefined && {
-        id: 'latest_batch' as const,
-        icon: 'txn_batches' as const,
-        label: 'Latest batch',
-        value: latestBatchQuery.data.toLocaleString(),
-        href: { pathname: '/batches' as const },
-        isLoading,
-      },
-      (statsData?.total_blocks?.value || apiData?.total_blocks) && {
-        id: 'total_blocks' as const,
-        icon: 'block' as const,
-        label: statsData?.total_blocks?.title || 'Total blocks',
-        value: Number(statsData?.total_blocks?.value || apiData?.total_blocks).toLocaleString(),
-        href: { pathname: '/blocks' as const },
-        isLoading,
-      },
-      (statsData?.average_block_time?.value || apiData?.average_block_time) && {
-        id: 'average_block_time' as const,
-        icon: 'clock-light' as const,
-        label: statsData?.average_block_time?.title || 'Average block time',
-        value: `${
-          statsData?.average_block_time?.value ?
-            Number(statsData.average_block_time.value).toFixed(1) :
-            (apiData!.average_block_time / 1000).toFixed(1)
-        }s`,
-        isLoading,
-      },
-      (statsData?.total_transactions?.value || apiData?.total_transactions) && {
-        id: 'total_txs' as const,
-        icon: 'transactions' as const,
-        label: statsData?.total_transactions?.title || 'Total transactions',
-        value: Number(statsData?.total_transactions?.value || apiData?.total_transactions).toLocaleString(),
-        href: { pathname: '/txs' as const },
-        isLoading,
-      },
-      (isArbitrumRollup && statsData?.total_operational_transactions?.value) && {
-        id: 'total_operational_txs' as const,
-        icon: 'transactions' as const,
-        label: statsData?.total_operational_transactions?.title || 'Total operational transactions',
-        value: Number(statsData?.total_operational_transactions?.value).toLocaleString(),
-        href: { pathname: '/txs' as const },
-        isLoading,
-      },
-      (isOptimisticRollup && statsData?.op_stack_total_operational_transactions?.value) && {
-        id: 'total_operational_txs' as const,
-        icon: 'transactions' as const,
-        label: statsData?.op_stack_total_operational_transactions?.title || 'Total operational transactions',
-        value: Number(statsData?.op_stack_total_operational_transactions?.value).toLocaleString(),
-        href: { pathname: '/txs' as const },
-        isLoading,
-      },
-      apiData?.last_output_root_size && {
-        id: 'latest_l1_state_batch' as const,
-        icon: 'txn_batches' as const,
-        label: `Latest ${ layerLabels.parent } state batch`,
-        value: apiData?.last_output_root_size,
-        href: { pathname: '/batches' as const },
-        isLoading,
-      },
-      (statsData?.total_addresses?.value || apiData?.total_addresses) && {
-        id: 'wallet_addresses' as const,
-        icon: 'wallet' as const,
-        label: statsData?.total_addresses?.title || 'Wallet addresses',
-        value: Number(statsData?.total_addresses?.value || apiData?.total_addresses).toLocaleString(),
-        isLoading,
-      },
-      hasGasTracker && apiData?.gas_prices && {
-        id: 'gas_tracker' as const,
-        icon: 'gas' as const,
-        label: 'Gas tracker',
-        value: apiData.gas_prices.average ? <GasPrice data={ apiData.gas_prices.average }/> : 'N/A',
-        hint: gasInfoTooltip,
-        isLoading,
-      },
-      apiData?.rootstock_locked_btc && {
-        id: 'btc_locked' as const,
-        icon: 'coins/bitcoin' as const,
-        label: 'BTC Locked in 2WP',
-        value: `${ BigNumber(apiData.rootstock_locked_btc).div(WEI).dp(0).toFormat() } RBTC`,
-        isLoading,
-      },
-      apiData?.celo && {
-        id: 'current_epoch' as const,
-        icon: 'hourglass' as const,
-        label: 'Current epoch',
-        value: `#${ apiData.celo.epoch_number }`,
-        href: { pathname: '/epochs/[number]' as const, query: { number: String(apiData.celo.epoch_number) } },
-        isLoading,
-      },
-    ]
-      .filter(Boolean)
-      .filter(isHomeStatsItemEnabled)
-      .sort(sortHomeStatsItems);
+    return items;
   })();
 
-  if (items.length === 0) {
+  const chainItems: Array<HighlightsItemProps> = (() => {
+    const items: Array<HighlightsItemProps> = [];
+
+    const totalTxs = statsData?.total_transactions?.value || apiData?.total_transactions;
+    const txsPerDay = statsData?.yesterday_transactions?.value || apiData?.transactions_today;
+
+    if (totalTxs) {
+      const item: HighlightsItemProps = {
+        id: 'total_txs',
+        label: 'Transactions',
+        value: Number(totalTxs).toLocaleString(undefined, { maximumFractionDigits: 2, notation: 'compact' }),
+        secondary: txsPerDay ?
+          `${ (Number(txsPerDay) / SECONDS_PER_DAY).toLocaleString(undefined, { maximumFractionDigits: 1 }) } TPS` :
+          undefined,
+        icon: <IconSvg name="transactions" boxSize={ 5 } color="icon.secondary"/>,
+        href: { pathname: '/txs' as const },
+        isLoading,
+      };
+      if (isHomeStatsItemEnabled({ id: 'total_txs', label: item.label, value: item.value })) {
+        items.push(item);
+      }
+    }
+
+    const latestBlock = blocksQuery.data?.[0];
+
+    if (latestBlock) {
+      const blockTime = (() => {
+        if (statsData?.average_block_time?.value) {
+          return Number(statsData.average_block_time.value);
+        }
+
+        if (apiData?.average_block_time !== undefined) {
+          return apiData.average_block_time / 1000;
+        }
+
+        return undefined;
+      })();
+
+      const item: HighlightsItemProps = {
+        id: 'total_blocks',
+        label: 'Latest block',
+        value: latestBlock.height.toLocaleString(),
+        secondary: blockTime !== undefined ? `${ blockTime.toFixed(1) }s` : undefined,
+        icon: <IconSvg name="block" boxSize={ 5 } color="icon.secondary"/>,
+        href: { pathname: '/blocks' as const },
+        isLoading,
+      };
+      if (isHomeStatsItemEnabled({ id: 'total_blocks', label: item.label, value: item.value })) {
+        items.push(item);
+      }
+    }
+
+    return items;
+  })();
+
+  const hasChart = config.UI.homepage.charts.includes('daily_txs');
+
+  if (coinItems.length === 0 && chainItems.length === 0 && !hasChart) {
     return null;
   }
 
   return (
-    <Grid
-      gridTemplateColumns="1fr 1fr"
-      gridGap={{ base: 1, lg: 2 }}
-      flexBasis="50%"
-      flexGrow={ 1 }
+    <Box
+      data-label="home-stats"
+      bgColor="bg.surface"
+      borderWidth="1px"
+      borderStyle="solid"
+      borderColor="border.divider"
+      borderRadius="md"
+      boxShadow="card"
+      overflow="hidden"
     >
-      { items.map((item, index) => (
-        <StatsWidget
-          key={ item.id }
-          { ...item }
-          isLoading={ isLoading }
-          _last={ items.length % 2 === 1 && index === items.length - 1 ? { gridColumn: 'span 2' } : undefined }/>
-      ),
-      ) }
-    </Grid>
-
+      <Grid templateColumns={{ base: '1fr', lg: 'repeat(3, minmax(0, 1fr))' }}>
+        <GridItem
+          data-label="home-stats-coin"
+          borderBottomWidth={{ base: '1px', lg: '0' }}
+          borderRightWidth={{ base: '0', lg: '1px' }}
+          borderStyle="solid"
+          borderColor="border.divider"
+        >
+          <Highlights items={ coinItems }/>
+        </GridItem>
+        <GridItem
+          data-label="home-stats-chain"
+          borderBottomWidth={{ base: '1px', lg: '0' }}
+          borderRightWidth={{ base: '0', lg: '1px' }}
+          borderStyle="solid"
+          borderColor="border.divider"
+        >
+          <Highlights items={ chainItems }/>
+        </GridItem>
+        <GridItem data-label="home-stats-history" px={{ base: 4, lg: 5 }} py={{ base: 3, lg: 4 }}>
+          { hasChart && (
+            <ChainIndicatorsChart
+              isLoading={ isLoading }
+              title={ `${ config.chain.name } transaction history in ${ HISTORY_DAYS } days` }
+              chartQuery={ chartQuery }
+              days={ HISTORY_DAYS }
+            />
+          ) }
+        </GridItem>
+      </Grid>
+    </Box>
   );
 };
 

@@ -9,23 +9,24 @@ import PaxeerXAnchorsTableItem from './PaxeerXAnchorsTableItem';
 
 interface Props {
   items: Array<PaxeerXAnchorsItem>;
-  top: number;
+  top?: number;
   isLoading?: boolean;
 }
 
-const PaxeerXAnchorsTable = ({ items, top, isLoading }: Props) => {
+const PaxeerXAnchorsTable = ({ items, top = 0, isLoading }: Props) => {
   return (
-    <TableRoot minW="900px">
+    <TableRoot variant="scan" minW="1000px" data-label="paxeer-x-anchors">
       <TableHeaderSticky top={ top }>
         <TableRow>
-          <TableColumnHeader width="160px">Checkpoint height</TableColumnHeader>
-          <TableColumnHeader width="160px">Sealed height</TableColumnHeader>
+          <TableColumnHeader width="150px">Checkpoint height</TableColumnHeader>
+          <TableColumnHeader width="150px">Sealed height</TableColumnHeader>
           <TableColumnHeader width="30%">State root</TableColumnHeader>
-          <TableColumnHeader width="20%">Block</TableColumnHeader>
-          <TableColumnHeader width="20%">
+          <TableColumnHeader width="15%">Block</TableColumnHeader>
+          <TableColumnHeader width="15%">
             Age
             <TimeFormatToggle/>
           </TableColumnHeader>
+          <TableColumnHeader width="130px">Settlement</TableColumnHeader>
         </TableRow>
       </TableHeaderSticky>
       <TableBody>

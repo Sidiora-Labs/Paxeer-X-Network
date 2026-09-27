@@ -11,10 +11,11 @@ export const ITEM_VALUE_LINE_HEIGHT = { base: '30px', lg: '32px' };
 export const Container = (props: GridProps) => {
   return (
     <Grid
-      columnGap={ 8 }
-      rowGap={{ base: 0, lg: 3 }}
-      templateColumns={{ base: 'minmax(0, 1fr)', lg: 'max-content minmax(728px, auto)' }}
+      columnGap={{ base: 4, lg: 6 }}
+      rowGap={{ base: 0, lg: 2 }}
+      templateColumns={{ base: 'minmax(0, 1fr)', lg: 'minmax(180px, max-content) minmax(0, 1fr)' }}
       textStyle={{ base: 'sm', lg: 'md' }}
+      data-detailed-info
       { ...props }
     />
   );
@@ -40,9 +41,10 @@ export const ItemLabel = ({ hint, children, isLoading, id, hasScroll, ...rest }:
       id={ id }
       minH={ ITEM_VALUE_LINE_HEIGHT }
       _notFirst={{ mt: { base: 3, lg: 0 } }}
+      data-detailed-info-label
       { ...rest }
     >
-      <Flex columnGap={{ base: 1, lg: 2 }} alignItems="flex-start" w="100%">
+      <Flex columnGap={{ base: 1, lg: 2 }} alignItems="flex-start" w="100%" color="text.secondary">
         { hint && <Hint label={ hint } isLoading={ isLoading } my={{ base: '5px', lg: '6px' }}/> }
         <Skeleton loading={ isLoading } fontWeight={{ base: 700, lg: 500 }} py={{ base: '5px', lg: '4px' }} flexGrow={ 1 }>
           { children }
@@ -65,7 +67,9 @@ export const ItemValue = ({ children, multiRow = false, ...rest }: ItemValueProp
       alignItems="center"
       pl={{ base: 6, lg: 0 }}
       minH={ ITEM_VALUE_LINE_HEIGHT }
+      color="text.primary"
       whiteSpace="nowrap"
+      data-detailed-info-value
       { ...(multiRow ? {
         flexWrap: 'wrap',
         lineHeight: ITEM_VALUE_LINE_HEIGHT,

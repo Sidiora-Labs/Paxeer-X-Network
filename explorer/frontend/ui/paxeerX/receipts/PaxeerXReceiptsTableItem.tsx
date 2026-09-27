@@ -20,7 +20,7 @@ interface Props {
 
 const PaxeerXReceiptsTableItem = ({ item, isLoading }: Props) => {
   return (
-    <TableRow>
+    <TableRow data-receipt={ item.id }>
       <TableCell verticalAlign="middle">
         <Flex overflow="hidden" w="100%" alignItems="center">
           <Skeleton loading={ isLoading } fontWeight={ 600 }>
@@ -36,7 +36,7 @@ const PaxeerXReceiptsTableItem = ({ item, isLoading }: Props) => {
           <Text color="text.secondary">—</Text>
         ) : (
           <Flex overflow="hidden" w="100%" alignItems="center">
-            <Skeleton loading={ isLoading }>
+            <Skeleton loading={ isLoading } color="text.secondary">
               <HashStringShorten hash={ item.account } type="long"/>
             </Skeleton>
             <CopyToClipboard text={ item.account } ml={ 2 } isLoading={ isLoading }/>
@@ -44,15 +44,16 @@ const PaxeerXReceiptsTableItem = ({ item, isLoading }: Props) => {
         ) }
       </TableCell>
       <TableCell verticalAlign="middle">
-        <StatusLadderBadge rung={ item.status } isLoading={ isLoading }/>
-      </TableCell>
-      <TableCell verticalAlign="middle">
         <BlockEntity
           isLoading={ isLoading }
           number={ item.block_number }
+          truncation="none"
           fontWeight={ 600 }
           noIcon
         />
+      </TableCell>
+      <TableCell verticalAlign="middle">
+        <StatusLadderBadge rung={ item.status } isLoading={ isLoading }/>
       </TableCell>
     </TableRow>
   );

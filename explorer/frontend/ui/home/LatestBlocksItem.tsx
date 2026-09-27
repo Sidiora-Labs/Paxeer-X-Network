@@ -1,18 +1,17 @@
-import { Box, Flex, Grid } from '@chakra-ui/react';
-import { capitalize } from 'es-toolkit';
+import { Box, Center, chakra, Flex } from '@chakra-ui/react';
 import React from 'react';
 
 import type { Block } from 'types/api/block';
 
 import config from 'configs/app';
 import getBlockTotalReward from 'lib/block/getBlockTotalReward';
-import getNetworkValidatorTitle from 'lib/networks/getNetworkValidatorTitle';
 import { currencyUnits } from 'lib/units';
 import { Skeleton } from 'toolkit/chakra/skeleton';
+import { Tag } from 'toolkit/chakra/tag';
 import { Tooltip } from 'toolkit/chakra/tooltip';
 import { thinsp } from 'toolkit/utils/htmlEntities';
-import AddressEntity from 'ui/shared/entities/address/AddressEntity';
-import BlockEntity from 'ui/shared/entities/block/BlockEntity';
+import BlockEntity, { Link as BlockEntityLink } from 'ui/shared/entities/block/BlockEntity';
+import HashStringShorten from 'ui/shared/HashStringShorten';
 import IconSvg from 'ui/shared/IconSvg';
 import TimeWithTooltip from 'ui/shared/time/TimeWithTooltip';
 import SimpleValue from 'ui/shared/value/SimpleValue';
@@ -23,73 +22,80 @@ type Props = {
   animation?: string;
 };
 
+const hasReward = !config.features.rollup.isEnabled && !config.UI.views.block.hiddenFields?.total_reward;
+
 const LatestBlocksItem = ({ block, isLoading, animation }: Props) => {
   const totalReward = getBlockTotalReward(block);
+
   return (
-    <Box
+    <Flex
+      data-latest-block={ block.height }
       animation={ animation }
-      borderRadius="md"
-      border="1px solid"
+      alignItems="center"
+      columnGap={ 3 }
+      px={{ base: 3, lg: 4 }}
+      py={ 3 }
+      borderBottomWidth="1px"
+      borderStyle="solid"
       borderColor="border.divider"
-      p={ 3 }
     >
-      <Flex alignItems="center" overflow="hidden" w="100%" mb={ 3 }>
+      <Center
+        boxSize={ 9 }
+        flexShrink={ 0 }
+        borderRadius="md"
+        borderWidth="1px"
+        borderStyle="solid"
+        borderColor="border.divider"
+      >
+        <IconSvg name="block" boxSize={ 5 } color="icon.secondary" isLoading={ isLoading }/>
+      </Center>
+      <Box minW={ 0 } flexShrink={ 0 } w={{ base: '96px', lg: '116px' }}>
         <BlockEntity
           isLoading={ isLoading }
           number={ block.height }
+          noIcon
           tailLength={ 2 }
-          textStyle="md"
-          fontWeight={ 500 }
-          mr="auto"
+          textStyle="sm"
+          fontWeight="500"
         />
-        { block.celo?.l1_era_finalized_epoch_number && (
-          <Tooltip content={ `Finalized epoch #${ block.celo.l1_era_finalized_epoch_number }` }>
-            <IconSvg name="checkered_flag" boxSize={ 5 } p="1px" ml={ 2 } isLoading={ isLoading } flexShrink={ 0 }/>
-          </Tooltip>
-        ) }
         <TimeWithTooltip
           timestamp={ block.timestamp }
           enableIncrement={ !isLoading }
           timeFormat="relative"
           isLoading={ isLoading }
           color="text.secondary"
-          display="inline-block"
-          textStyle="sm"
-          flexShrink={ 0 }
-          ml={ 2 }
+          textStyle="xs"
+          display="block"
+          mt="2px"
         />
-      </Flex>
-      <Grid gridGap={ 2 } templateColumns="auto minmax(0, 1fr)" textStyle="sm">
-        <Skeleton loading={ isLoading }>Txn</Skeleton>
-        <Skeleton loading={ isLoading } color="text.secondary"><span>{ block.transactions_count }</span></Skeleton>
-
-        { !config.features.rollup.isEnabled && !config.UI.views.block.hiddenFields?.total_reward && (
-          <>
-            <Skeleton loading={ isLoading }>Reward</Skeleton>
-            <SimpleValue
-              value={ totalReward }
-              loading={ isLoading }
-              color="text.secondary"
-              endElement={ `${ thinsp }${ currencyUnits.ether }` }
-            />
-          </>
-        ) }
-
-        { !config.features.rollup.isEnabled && !config.UI.views.block.hiddenFields?.miner && (
-          <>
-            <Skeleton loading={ isLoading }>{ capitalize(getNetworkValidatorTitle()) }</Skeleton>
-            <AddressEntity
-              address={ block.miner }
-              isLoading={ isLoading }
-              noIcon
-              noCopy
-              truncation="constant"
-            />
-          </>
-        ) }
-      </Grid>
-    </Box>
+      </Box>
+      <Box minW={ 0 } flexGrow={ 1 }>
+        <Flex alignItems="center" columnGap={ 1 } minW={ 0 }>
+          <Skeleton loading={ isLoading } textStyle="sm" fontWeight="500" flexShrink={ 0 }>Hash</Skeleton>
+          <BlockEntityLink hash={ block.hash } isLoading={ isLoading } textStyle="sm" overflow="hidden">
+            <HashStringShorten hash={ block.hash } type="long"/>
+          </BlockEntityLink>
+        </Flex>
+        <Skeleton loading={ isLoading } textStyle="xs" color="text.secondary" w="fit-content" mt="2px">
+          <chakra.span>{ block.transactions_count } { block.transactions_count === 1 ? 'txn' : 'txns' }</chakra.span>
+        </Skeleton>
+      </Box>
+      { block.celo?.l1_era_finalized_epoch_number && (
+        <Tooltip content={ `Finalized epoch #${ block.celo.l1_era_finalized_epoch_number }` }>
+          <IconSvg name="checkered_flag" boxSize={ 5 } p="1px" isLoading={ isLoading } flexShrink={ 0 }/>
+        </Tooltip>
+      ) }
+      { hasReward && (
+        <Tag variant="outlined" loading={ isLoading } flexShrink={ 0 } data-label="block-reward">
+          <SimpleValue
+            value={ totalReward }
+            loading={ isLoading }
+            endElement={ `${ thinsp }${ currencyUnits.ether }` }
+          />
+        </Tag>
+      ) }
+    </Flex>
   );
 };
 
-export default LatestBlocksItem;
+export default React.memo(LatestBlocksItem);

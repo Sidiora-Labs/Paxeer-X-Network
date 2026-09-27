@@ -171,7 +171,7 @@ const Content = chakra((props: ContentProps) => {
         interactive={ props.tooltipInteractive }
         disabled={ props.noTooltip }
       >
-        <Skeleton loading={ props.isLoading } overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap" { ...styles }>
+        <Skeleton loading={ props.isLoading } overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap" data-entity-content { ...styles }>
           { nameText }
         </Skeleton>
       </Tooltip>
@@ -234,6 +234,7 @@ const AddressEntity = (props: EntityProps) => {
       zIndex={ 0 }
       w="fit-content"
       maxW="100%"
+      data-entity-kind="address"
     >
       <Icon { ...partsProps.icon } tooltipInteractive={ Boolean(highlightContext) }/>
       { props.noLink ? content : <Link { ...partsProps.link }>{ content }</Link> }

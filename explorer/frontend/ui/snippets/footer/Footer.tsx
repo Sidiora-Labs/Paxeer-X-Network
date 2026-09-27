@@ -5,25 +5,42 @@ import React from 'react';
 
 import type { CustomLinksGroup } from 'types/footerLinks';
 
+import { route } from 'nextjs-routes';
+
 import config from 'configs/app';
 import type { ResourceError } from 'lib/api/resources';
 import useApiQuery from 'lib/api/useApiQuery';
 import useFetch from 'lib/hooks/useFetch';
+import { Button } from 'toolkit/chakra/button';
 import { Link } from 'toolkit/chakra/link';
 import { Skeleton } from 'toolkit/chakra/skeleton';
 import { copy } from 'toolkit/utils/htmlEntities';
+import type { IconName } from 'ui/shared/IconSvg';
 import IconSvg from 'ui/shared/IconSvg';
 import { CONTENT_MAX_WIDTH } from 'ui/shared/layout/utils';
 import NetworkAddToWallet from 'ui/shared/NetworkAddToWallet';
 
 import FooterLinkItem from './FooterLinkItem';
 import IntTxsIndexingStatus from './IntTxsIndexingStatus';
-import getApiVersionUrl from './utils/getApiVersionUrl';
 
-const MAX_LINKS_COLUMNS = 4;
+const MAX_LINKS_COLUMNS = 3;
 
-const FRONT_VERSION_URL = `https://github.com/blockscout/frontend/tree/${ config.UI.footer.frontendVersion }`;
-const FRONT_COMMIT_URL = `https://github.com/blockscout/frontend/commit/${ config.UI.footer.frontendCommit }`;
+const SOCIAL_ICONS: Array<{ hosts: Array<string>; icon: IconName }> = [
+  { hosts: [ 'x.com', 'twitter.com' ], icon: 'social/twitter' },
+  { hosts: [ 'github.com' ], icon: 'social/git' },
+  { hosts: [ 'discord.gg', 'discord.com' ], icon: 'social/discord' },
+  { hosts: [ 't.me', 'telegram.me' ], icon: 'social/telega' },
+];
+
+const getSocialIcon = (url: string): IconName | undefined => {
+  const host = url.match(/^https?:\/\/([^/?#]+)/i)?.[1]?.toLowerCase().replace(/^www\./, '');
+
+  if (!host) {
+    return undefined;
+  }
+
+  return SOCIAL_ICONS.find((item) => item.hosts.includes(host))?.icon;
+};
 
 const Footer = () => {
 
@@ -34,64 +51,6 @@ const Footer = () => {
       refetchOnMount: false,
     },
   });
-  const apiVersionUrl = getApiVersionUrl(backendVersionData?.backend_version);
-
-  const BLOCKSCOUT_LINKS = [
-    {
-      icon: 'social/git' as const,
-      iconSize: '20px',
-      text: 'Contribute',
-      url: 'https://github.com/blockscout/blockscout',
-    },
-    {
-      icon: 'brands/pro_api' as const,
-      iconSize: '20px',
-      text: 'PRO API',
-      url: 'https://dev.blockscout.com',
-    },
-    {
-      icon: 'brands/autoscout' as const,
-      iconSize: '20px',
-      text: 'Autoscout',
-      url: 'https://autoscout.blockscout.com',
-    },
-    {
-      icon: 'docs' as const,
-      iconSize: '20px',
-      text: 'Docs',
-      url: 'https://docs.blockscout.com',
-    },
-    {
-      icon: 'social/twitter' as const,
-      iconSize: '24px',
-      text: 'X',
-      url: 'https://x.com/blockscout',
-    },
-    {
-      icon: 'social/discord' as const,
-      iconSize: '24px',
-      text: 'Discord',
-      url: 'https://discord.gg/blockscout',
-    },
-    {
-      icon: 'brands/blockscout' as const,
-      iconSize: '20px',
-      text: 'All chains',
-      url: 'https://chains.blockscout.com',
-    },
-  ].filter(Boolean);
-
-  const frontendLink = (() => {
-    if (config.UI.footer.frontendVersion) {
-      return <Link href={ FRONT_VERSION_URL } external noIcon>{ config.UI.footer.frontendVersion }</Link>;
-    }
-
-    if (config.UI.footer.frontendCommit) {
-      return <Link href={ FRONT_COMMIT_URL } external noIcon>{ config.UI.footer.frontendCommit }</Link>;
-    }
-
-    return null;
-  })();
 
   const fetch = useFetch();
 
@@ -103,85 +62,77 @@ const Footer = () => {
     placeholderData: [],
   });
 
-  const colNum = isPlaceholderData ? 1 : Math.min(linksData?.length || Infinity, MAX_LINKS_COLUMNS) + 1;
+  const isLinksLoading = Boolean(config.UI.footer.links) && isPlaceholderData;
 
-  const renderNetworkInfo = React.useCallback((gridArea?: GridProps['gridArea']) => {
-    return (
-      <Flex
-        alignItems="center"
-        gridArea={ gridArea }
-        flexWrap="wrap"
-        justifyContent="flex-start"
-        columnGap={ 3 }
-        rowGap={ 2 }
-        mb={{ base: 5, lg: 10 }}
-        _empty={{ display: 'none' }}
-      >
-        { !config.UI.indexingAlert.intTxs.isHidden && <IntTxsIndexingStatus/> }
-        { !config.features.multichain.isEnabled && <NetworkAddToWallet source="Footer"/> }
-      </Flex>
-    );
+  const fixedLinkGroups: Array<CustomLinksGroup> = React.useMemo(() => {
+    return [
+      {
+        title: 'Explore',
+        links: [
+          { text: 'Blocks', url: route({ pathname: '/blocks' }) },
+          { text: 'Transactions', url: route({ pathname: '/txs' }) },
+          { text: 'Tokens', url: route({ pathname: '/tokens' }) },
+          !config.UI.views.address.hiddenViews?.top_accounts && { text: 'Top accounts', url: route({ pathname: '/accounts' }) },
+        ].filter(Boolean),
+      },
+      {
+        title: 'Network',
+        links: [
+          config.features.stats.isEnabled && { text: 'Chain stats', url: route({ pathname: '/stats' }) },
+          config.features.gasTracker.isEnabled && { text: 'Gas tracker', url: route({ pathname: '/gas-tracker' }) },
+          config.features.validators.isEnabled && { text: 'Validators', url: route({ pathname: '/validators' }) },
+          { text: 'Verified contracts', url: route({ pathname: '/verified-contracts' }) },
+        ].filter(Boolean),
+      },
+      {
+        title: 'Developers',
+        links: [
+          config.features.apiDocs.isEnabled && { text: 'API docs', url: route({ pathname: '/api-docs' }) },
+          { text: 'Verify contract', url: route({ pathname: '/contract-verification' }) },
+          config.features.advancedFilter.isEnabled && { text: 'Advanced filter', url: route({ pathname: '/advanced-filter' }) },
+        ].filter(Boolean),
+      },
+    ];
   }, []);
 
-  const renderProjectInfo = React.useCallback((gridArea?: GridProps['gridArea']) => {
-    const logoColor = { base: 'blue.600', _dark: 'white' };
+  const linkColumns = React.useMemo(() => {
+    const configGroups = (linksData || []).map((group) => ({ group, isExternal: true }));
+    const fixedGroups = fixedLinkGroups.map((group) => ({ group, isExternal: false }));
 
-    return (
-      <Box gridArea={ gridArea }>
-        <Flex columnGap={ 2 } textStyle="xs" alignItems="center">
-          <span>Made with</span>
-          <Link href="https://www.blockscout.com" external noIcon display="inline-flex" color={ logoColor } _hover={{ color: logoColor }}>
-            <IconSvg
-              name="networks/logo-placeholder"
-              width="80px"
-              height={ 4 }
-            />
-          </Link>
-        </Flex>
-        <Text mt={ 3 } fontSize="xs">
-          Blockscout is a tool for inspecting and analyzing EVM based blockchains. Blockchain explorer for Ethereum Networks.
-        </Text>
-        <Box mt={ 6 } alignItems="start" textStyle="xs">
-          { apiVersionUrl && (
-            <Text>
-              Backend: <Link href={ apiVersionUrl } external noIcon>{ backendVersionData?.backend_version }</Link>
-            </Text>
-          ) }
-          { frontendLink && (
-            <Text>
-              Frontend: { frontendLink }
-            </Text>
-          ) }
-          <Text>
-            Copyright { copy } Blockscout Limited 2023-{ (new Date()).getFullYear() }
-          </Text>
-        </Box>
-      </Box>
-    );
-  }, [ apiVersionUrl, backendVersionData?.backend_version, frontendLink ]);
+    return [ ...configGroups, ...fixedGroups ].slice(0, MAX_LINKS_COLUMNS);
+  }, [ linksData, fixedLinkGroups ]);
+
+  const handleBackToTop = React.useCallback(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
 
   const containerProps: HTMLChakraProps<'div'> = {
     as: 'footer',
     borderTopWidth: '1px',
     borderTopColor: 'border.divider',
+    bgColor: 'bg.primary',
   };
 
-  const contentProps: GridProps = {
+  const contentProps: HTMLChakraProps<'div'> = {
     px: { base: 4, lg: config.UI.navigation.layout === 'horizontal' ? 6 : 12, '2xl': 6 },
-    py: { base: 4, lg: 8 },
-    gridTemplateColumns: { base: '1fr', lg: 'minmax(auto, 470px) 1fr' },
-    columnGap: { lg: '32px', xl: '100px' },
+    py: { base: 6, lg: 8 },
     maxW: `${ CONTENT_MAX_WIDTH }px`,
     m: '0 auto',
   };
 
-  const renderRecaptcha = (gridArea?: GridProps['gridArea']) => {
+  const columnsProps: GridProps = {
+    gridTemplateColumns: { base: '1fr', lg: 'minmax(auto, 360px) repeat(3, 1fr)' },
+    columnGap: { lg: 8, xl: 12 },
+    rowGap: 8,
+  };
+
+  const renderRecaptcha = () => {
     if (!config.services.reCaptchaV2.siteKey) {
-      return <Box gridArea={ gridArea }/>;
+      return null;
     }
 
     return (
-      <Box gridArea={ gridArea } textStyle="xs" mt={ 6 }>
+      <Box textStyle="xs" color="text.secondary">
         <span>This site is protected by reCAPTCHA and the Google </span>
         <Link href="https://policies.google.com/privacy" external noIcon>Privacy Policy</Link>
         <span> and </span>
@@ -191,85 +142,88 @@ const Footer = () => {
     );
   };
 
-  if (config.UI.footer.links) {
-    return (
-      <Box { ...containerProps }>
-        <Grid { ...contentProps }>
-          <div>
-            { renderNetworkInfo() }
-            { renderProjectInfo() }
-            { renderRecaptcha() }
-          </div>
-
-          <Grid
-            gap={{ base: 6, lg: colNum === MAX_LINKS_COLUMNS + 1 ? 2 : 8, xl: 12 }}
-            gridTemplateColumns={{
-              base: 'repeat(auto-fill, 160px)',
-              lg: `repeat(${ colNum }, 135px)`,
-              xl: `repeat(${ colNum }, 160px)`,
-            }}
-            justifyContent={{ lg: 'flex-end' }}
-            mt={{ base: 8, lg: 0 }}
-          >
-            {
-              ([
-                { title: 'Blockscout', links: BLOCKSCOUT_LINKS },
-                ...(linksData || []),
-              ])
-                .slice(0, colNum)
-                .map(linkGroup => (
-                  <Box key={ linkGroup.title }>
-                    <Skeleton fontWeight={ 500 } mb={ 3 } display="inline-block" loading={ isPlaceholderData }>{ linkGroup.title }</Skeleton>
-                    <VStack gap={ 1 } alignItems="start">
-                      { linkGroup.links.map(link => <FooterLinkItem { ...link } key={ link.text } isLoading={ isPlaceholderData }/>) }
-                    </VStack>
-                  </Box>
-                ))
-            }
-          </Grid>
-        </Grid>
-      </Box>
-    );
-  }
-
   return (
     <Box { ...containerProps }>
-      <Grid
-        { ...contentProps }
-        gridTemplateAreas={{
-          lg: `
-          "network links-top"
-          "info links-bottom"
-          "recaptcha links-bottom"
-        `,
-        }}
-      >
-
-        { renderNetworkInfo({ lg: 'network' }) }
-        { renderProjectInfo({ lg: 'info' }) }
-        { renderRecaptcha({ lg: 'recaptcha' }) }
-
-        <Grid
-          gridArea={{ lg: 'links-bottom' }}
-          gap={ 1 }
-          gridTemplateColumns={{
-            base: 'repeat(auto-fill, 160px)',
-            lg: 'repeat(2, 160px)',
-            xl: 'repeat(3, 160px)',
-          }}
-          gridTemplateRows={{
-            base: 'auto',
-            lg: 'repeat(3, auto)',
-            xl: 'repeat(2, auto)',
-          }}
-          gridAutoFlow={{ base: 'row', lg: 'column' }}
-          alignContent="start"
-          justifyContent={{ lg: 'flex-end' }}
-          mt={{ base: 8, lg: 0 }}
+      <Box { ...contentProps }>
+        <Flex
+          data-label="footer-top"
+          alignItems="center"
+          justifyContent="space-between"
+          columnGap={ 4 }
+          rowGap={ 3 }
+          flexWrap="wrap"
+          mb={{ base: 6, lg: 8 }}
         >
-          { BLOCKSCOUT_LINKS.map(link => <FooterLinkItem { ...link } key={ link.text }/>) }
+          <Flex data-label="footer-social" alignItems="center" columnGap={ 4 } rowGap={ 2 } flexWrap="wrap" _empty={{ display: 'none' }}>
+            { config.UI.navigation.otherLinks.map((link) => (
+              <FooterLinkItem key={ link.text } text={ link.text } url={ link.url } icon={ getSocialIcon(link.url) }/>
+            )) }
+          </Flex>
+          <Button data-label="back-to-top" variant="link" size="sm" onClick={ handleBackToTop } textStyle="xs">
+            Back to Top
+            <IconSvg name="arrows/east-mini" boxSize={ 5 } transform="rotate(90deg)"/>
+          </Button>
+        </Flex>
+
+        <Grid { ...columnsProps }>
+          <Box data-label="footer-brand">
+            <Text textStyle="sm" fontWeight={ 600 } color="heading">{ config.chain.name }</Text>
+            <Text mt={ 3 } textStyle="xs" color="text.secondary">
+              The block explorer for { config.chain.name }: search blocks, transactions, addresses, tokens
+              and kernel activity across the network.
+            </Text>
+            <Flex mt={ 5 } alignItems="center" flexWrap="wrap" columnGap={ 3 } rowGap={ 2 } _empty={{ display: 'none' }}>
+              { !config.UI.indexingAlert.intTxs.isHidden && <IntTxsIndexingStatus/> }
+              { !config.features.multichain.isEnabled && <NetworkAddToWallet source="Footer"/> }
+            </Flex>
+            <Box mt={ 6 } textStyle="xs" color="text.secondary" _empty={{ display: 'none' }}>
+              { backendVersionData?.backend_version && <Text>Backend { backendVersionData.backend_version }</Text> }
+              { config.UI.footer.frontendVersion && <Text>Frontend { config.UI.footer.frontendVersion }</Text> }
+            </Box>
+          </Box>
+
+          { linkColumns.map(({ group, isExternal }) => (
+            <Box key={ group.title } data-label="footer-column">
+              <Skeleton fontWeight={ 500 } mb={ 3 } display="inline-block" loading={ isLinksLoading }>{ group.title }</Skeleton>
+              <VStack gap={ 1 } alignItems="start">
+                { group.links.map((link) => isExternal ? (
+                  <FooterLinkItem { ...link } key={ link.text } isLoading={ isLinksLoading }/>
+                ) : (
+                  <Link
+                    key={ link.text }
+                    href={ link.url }
+                    display="flex"
+                    alignItems="center"
+                    h="30px"
+                    variant="subtle"
+                    textStyle="xs"
+                  >
+                    { link.text }
+                  </Link>
+                )) }
+              </VStack>
+            </Box>
+          )) }
         </Grid>
-      </Grid>
+
+        <Flex
+          data-label="footer-bottom"
+          mt={{ base: 8, lg: 10 }}
+          pt={ 4 }
+          borderTopWidth="1px"
+          borderTopColor="border.divider"
+          alignItems="center"
+          justifyContent="space-between"
+          columnGap={ 4 }
+          rowGap={ 2 }
+          flexWrap="wrap"
+        >
+          <Text textStyle="xs" color="text.secondary">
+            { config.chain.name } Block Explorer { copy } { (new Date()).getFullYear() }
+          </Text>
+          { renderRecaptcha() }
+        </Flex>
+      </Box>
     </Box>
   );
 };

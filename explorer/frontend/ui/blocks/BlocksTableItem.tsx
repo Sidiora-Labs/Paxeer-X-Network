@@ -122,7 +122,7 @@ const BlocksTableItem = ({ data, isLoading, enableTimeIncrement, animation, chai
           <NativeCoinValue
             amount={ data.burnt_fees }
             noSymbol
-            startElement={ <IconSvg name="flame" mr={ 2 } boxSize={ 5 } color={{ _light: 'gray.500', _dark: 'inherit' }} isLoading={ isLoading }/> }
+            startElement={ <IconSvg name="flame" mr={ 2 } boxSize={ 5 } color="text.secondary" isLoading={ isLoading }/> }
             loading={ isLoading }
             display="flex"
           />

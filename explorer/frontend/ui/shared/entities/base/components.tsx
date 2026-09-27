@@ -55,6 +55,7 @@ const Container = chakra(({ className, children, ...props }: ContainerBaseProps)
       className={ className }
       alignItems="center"
       minWidth={ 0 } // for content truncation - https://css-tricks.com/flexbox-truncated-text/
+      data-entity
       { ...props }
     >
       { children }
@@ -74,6 +75,7 @@ const Link = chakra(({ isLoading, children, external, onClick, href, noLink, var
     display: 'inline-flex',
     alignItems: 'center',
     minWidth: 0, // for content truncation - https://css-tricks.com/flexbox-truncated-text/
+    fontWeight: 500,
   };
 
   if (noLink) {
@@ -87,8 +89,9 @@ const Link = chakra(({ isLoading, children, external, onClick, href, noLink, var
       loading={ isLoading }
       external={ external }
       onClick={ onClick }
-      variant={ variant }
+      variant={ variant ?? 'primary' }
       noIcon={ noIcon }
+      data-entity-link
     >
       { children }
     </LinkToolkit>
@@ -224,6 +227,7 @@ const Content = chakra(({
         loading={ isLoading }
         className={ className }
         tooltipInteractive={ tooltipInteractive }
+        data-entity-content
         { ...styles }
       />
     );
@@ -272,8 +276,10 @@ const Content = chakra(({
       className={ className }
       loading={ isLoading }
       overflow="hidden"
+      textOverflow="ellipsis"
       whiteSpace="nowrap"
       w={ !noLink ? '100%' : undefined }
+      data-entity-content
       { ...styles }
     >
       { children }
@@ -291,7 +297,7 @@ const Copy = ({ noCopy, ...props }: CopyBaseProps) => {
     return null;
   }
 
-  return <CopyToClipboard { ...props }/>;
+  return <CopyToClipboard alignSelf="center" flexShrink={ 0 } { ...props }/>;
 };
 
 export {

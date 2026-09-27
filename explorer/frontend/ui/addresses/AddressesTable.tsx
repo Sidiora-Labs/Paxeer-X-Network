@@ -4,7 +4,7 @@ import React from 'react';
 import type { AddressesItem } from 'types/api/addresses';
 
 import { currencyUnits } from 'lib/units';
-import { TableBody, TableColumnHeader, TableHeaderSticky, TableRoot, TableRow } from 'toolkit/chakra/table';
+import { TableBody, TableColumnHeader, TableHeader, TableRoot, TableRow } from 'toolkit/chakra/table';
 import { ZERO } from 'toolkit/utils/consts';
 
 import AddressesTableItem from './AddressesTableItem';
@@ -13,23 +13,25 @@ interface Props {
   items: Array<AddressesItem>;
   totalSupply: BigNumber;
   pageStartIndex: number;
-  top: number;
+  top?: number;
   isLoading?: boolean;
 }
 
-const AddressesTable = ({ items, totalSupply, pageStartIndex, top, isLoading }: Props) => {
+const AddressesTable = ({ items, totalSupply, pageStartIndex, isLoading }: Props) => {
   const hasPercentage = !totalSupply.eq(ZERO);
+
   return (
-    <TableRoot>
-      <TableHeaderSticky top={ top }>
+    <TableRoot variant="scan" data-addresses-table>
+      <TableHeader>
         <TableRow>
-          <TableColumnHeader width="64px">Rank</TableColumnHeader>
-          <TableColumnHeader width={ hasPercentage ? '50%' : '60%' }>Address</TableColumnHeader>
-          <TableColumnHeader width={ hasPercentage ? '20%' : '25%' } isNumeric>{ `Balance ${ currencyUnits.ether }` }</TableColumnHeader>
-          { hasPercentage && <TableColumnHeader width="15%" isNumeric>Percentage</TableColumnHeader> }
-          <TableColumnHeader width="15%" isNumeric>Txn count</TableColumnHeader>
+          <TableColumnHeader w="56px">#</TableColumnHeader>
+          <TableColumnHeader w={ hasPercentage ? '32%' : '40%' }>Address</TableColumnHeader>
+          <TableColumnHeader w={ hasPercentage ? '20%' : '22%' }>Name tag</TableColumnHeader>
+          <TableColumnHeader w={ hasPercentage ? '22%' : '26%' } isNumeric>{ `Balance ${ currencyUnits.ether }` }</TableColumnHeader>
+          { hasPercentage && <TableColumnHeader w="14%" isNumeric>Percentage</TableColumnHeader> }
+          <TableColumnHeader w="12%" isNumeric>Txn count</TableColumnHeader>
         </TableRow>
-      </TableHeaderSticky>
+      </TableHeader>
       <TableBody>
         { items.map((item, index) => (
           <AddressesTableItem

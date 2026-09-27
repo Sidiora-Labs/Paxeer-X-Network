@@ -8,19 +8,19 @@ import PaxeerXReceiptsTableItem from './PaxeerXReceiptsTableItem';
 
 interface Props {
   items: Array<PaxeerXReceiptsItem>;
-  top: number;
+  top?: number;
   isLoading?: boolean;
 }
 
-const PaxeerXReceiptsTable = ({ items, top, isLoading }: Props) => {
+const PaxeerXReceiptsTable = ({ items, top = 0, isLoading }: Props) => {
   return (
-    <TableRoot minW="900px">
+    <TableRoot variant="scan" minW="900px" data-label="paxeer-x-receipts">
       <TableHeaderSticky top={ top }>
         <TableRow>
-          <TableColumnHeader width="30%">Receipt ID</TableColumnHeader>
-          <TableColumnHeader width="30%">Account</TableColumnHeader>
-          <TableColumnHeader width="20%">Status</TableColumnHeader>
-          <TableColumnHeader width="20%">Block</TableColumnHeader>
+          <TableColumnHeader width="35%">Receipt ID</TableColumnHeader>
+          <TableColumnHeader width="35%">Account</TableColumnHeader>
+          <TableColumnHeader width="15%">Block</TableColumnHeader>
+          <TableColumnHeader width="15%">Settlement</TableColumnHeader>
         </TableRow>
       </TableHeaderSticky>
       <TableBody>

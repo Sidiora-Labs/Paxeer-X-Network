@@ -15,7 +15,6 @@ import RoutedTabs from 'toolkit/components/RoutedTabs/RoutedTabs';
 import TextAd from 'ui/shared/ad/TextAd';
 import isCustomAppError from 'ui/shared/AppError/isCustomAppError';
 import EntityTags from 'ui/shared/EntityTags/EntityTags';
-import PageTitle from 'ui/shared/Page/PageTitle';
 import TxAssetFlows from 'ui/tx/TxAssetFlows';
 import TxAuthorizations from 'ui/tx/TxAuthorizations';
 import TxBlobs from 'ui/tx/TxBlobs';
@@ -27,7 +26,7 @@ import TxInternals from 'ui/tx/TxInternals';
 import TxLogs from 'ui/tx/TxLogs';
 import TxRawTrace from 'ui/tx/TxRawTrace';
 import TxState from 'ui/tx/TxState';
-import TxSubHeading from 'ui/tx/TxSubHeading';
+import TxSubHeading, { TxApiEntry } from 'ui/tx/TxSubHeading';
 import TxTokenTransfer from 'ui/tx/TxTokenTransfer';
 import TxUserOps from 'ui/tx/TxUserOps';
 import useTxQuery from 'ui/tx/useTxQuery';
@@ -64,7 +63,7 @@ const TransactionPageContent = () => {
     return [
       {
         id: 'index',
-        title: config.features.suave.isEnabled && data?.wrapped ? 'Confidential compute tx details' : 'Details',
+        title: config.features.suave.isEnabled && data?.wrapped ? 'Confidential compute tx details' : 'Overview',
         component: detailsComponent,
       },
       txInterpretation.isEnabled && txInterpretation.provider === 'noves' ?
@@ -122,8 +121,6 @@ const TransactionPageContent = () => {
     />
   );
 
-  const titleSecondRow = <TxSubHeading hash={ hash } hasTag={ Boolean(data?.transaction_tag) } txQuery={ txQuery }/>;
-
   if (isError && !showDegradedView) {
     if (isCustomAppError(error)) {
       throwOnResourceLoadError({ resource: 'general:tx', error, isError: true });
@@ -133,12 +130,18 @@ const TransactionPageContent = () => {
   return (
     <AddressHighlightProvider>
       <TextAd mb={ 6 }/>
-      <PageTitle
-        title="Transaction details"
-        contentAfter={ tags }
-        secondRow={ titleSecondRow }
+      <TxSubHeading
+        hash={ hash }
+        hasTag={ Boolean(data?.transaction_tag) }
+        txQuery={ txQuery }
+        titleContentAfter={ tags }
       />
-      <RoutedTabs tabs={ tabs } isLoading={ !txQuery.isFetchedAfterMount }/>
+      <RoutedTabs
+        tabs={ tabs }
+        isLoading={ !txQuery.isFetchedAfterMount }
+        variant="pill"
+        rightSlot={ <TxApiEntry/> }
+      />
     </AddressHighlightProvider>
   );
 };

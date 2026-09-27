@@ -1,22 +1,18 @@
 import { chakra, Flex } from '@chakra-ui/react';
-import { capitalize } from 'es-toolkit';
+import { capitalize, pickBy } from 'es-toolkit';
 import { useRouter } from 'next/router';
 import React from 'react';
 
-import type { TabItemRegular } from 'toolkit/components/AdaptiveTabs/types';
-import type { PaginationParams } from 'ui/shared/pagination/types';
-
-import { routeParams } from 'nextjs/routes';
+import { route, routeParams } from 'nextjs/routes';
 
 import config from 'configs/app';
 import { useMultichainContext } from 'lib/contexts/multichain';
 import throwOnAbsentParamError from 'lib/errors/throwOnAbsentParamError';
 import throwOnResourceLoadError from 'lib/errors/throwOnResourceLoadError';
-import useIsMobile from 'lib/hooks/useIsMobile';
 import getNetworkValidatorTitle from 'lib/networks/getNetworkValidatorTitle';
 import getQueryParamString from 'lib/router/getQueryParamString';
+import { Link } from 'toolkit/chakra/link';
 import { Skeleton } from 'toolkit/chakra/skeleton';
-import RoutedTabs from 'toolkit/components/RoutedTabs/RoutedTabs';
 import BlockCeloEpochTag from 'ui/block/BlockCeloEpochTag';
 import BlockDeposits from 'ui/block/BlockDeposits';
 import BlockDetails from 'ui/block/BlockDetails';
@@ -33,24 +29,22 @@ import ServiceDegradationWarning from 'ui/shared/alerts/ServiceDegradationWarnin
 import BlockPendingUpdateAlert from 'ui/shared/block/BlockPendingUpdateAlert';
 import AddressEntity from 'ui/shared/entities/address/AddressEntity';
 import * as BlockEntity from 'ui/shared/entities/block/BlockEntity';
+import IconSvg from 'ui/shared/IconSvg';
 import NetworkExplorers from 'ui/shared/NetworkExplorers';
 import PageTitle from 'ui/shared/Page/PageTitle';
-import Pagination from 'ui/shared/pagination/Pagination';
+import type { ScanSectionTabItem } from 'ui/shared/scan';
+import { ScanSectionTabs } from 'ui/shared/scan';
 import TxsWithFrontendSorting from 'ui/txs/TxsWithFrontendSorting';
 
-const TAB_LIST_PROPS = {
-  marginBottom: 0,
-  pt: 6,
-  pb: 6,
-  marginTop: -5,
-};
-const TABS_HEIGHT = 88;
+interface BlockTab extends ScanSectionTabItem {
+  component: React.ReactNode;
+}
 
 const beaconChainFeature = config.features.beaconChain;
+const apiDocsFeature = config.features.apiDocs;
 
 const BlockPageContent = () => {
   const router = useRouter();
-  const isMobile = useIsMobile();
   const heightOrHash = getQueryParamString(router.query.height_or_hash);
   const tab = getQueryParamString(router.query.tab);
   const multichainContext = useMultichainContext();
@@ -62,17 +56,10 @@ const BlockPageContent = () => {
   const blockBlobTxsQuery = useBlockBlobTxsQuery({ heightOrHash, blockQuery, tab });
   const blockInternalTxsQuery = useBlockInternalTxsQuery({ heightOrHash, blockQuery, tab });
 
-  const hasPagination = !isMobile && (
-    (tab === 'txs' && blockTxsQuery.pagination.isVisible) ||
-    (tab === 'withdrawals' && blockWithdrawalsQuery.pagination.isVisible) ||
-    (tab === 'deposits' && blockDepositsQuery.pagination.isVisible) ||
-    (tab === 'internal_txs' && blockInternalTxsQuery.pagination.isVisible)
-  );
-
-  const tabs: Array<TabItemRegular> = React.useMemo(() => ([
+  const tabs: Array<BlockTab> = React.useMemo(() => ([
     {
       id: 'index',
-      title: 'Details',
+      title: 'Overview',
       component: (
         <>
           <Flex rowGap={{ base: 1, lg: 2 }} mb={{ base: 3, lg: 6 }} flexDir="column">
@@ -89,7 +76,7 @@ const BlockPageContent = () => {
       component: (
         <>
           { blockTxsQuery.isDegradedData && <ServiceDegradationWarning isLoading={ blockTxsQuery.isPlaceholderData } mb={{ base: 3, lg: 6 }}/> }
-          <TxsWithFrontendSorting query={ blockTxsQuery } showBlockInfo={ false } top={ hasPagination ? TABS_HEIGHT : 0 }/>
+          <TxsWithFrontendSorting query={ blockTxsQuery } showBlockInfo={ false }/>
         </>
       ),
     },
@@ -99,7 +86,7 @@ const BlockPageContent = () => {
       component: (
         <>
           { blockTxsQuery.isDegradedData && <ServiceDegradationWarning isLoading={ blockTxsQuery.isPlaceholderData } mb={{ base: 3, lg: 6 }}/> }
-          <BlockInternalTxs query={ blockInternalTxsQuery } top={ hasPagination ? TABS_HEIGHT : 0 }/>
+          <BlockInternalTxs query={ blockInternalTxsQuery } itemsCount={ blockQuery.data?.internal_transactions_count }/>
         </>
       ),
     },
@@ -118,7 +105,7 @@ const BlockPageContent = () => {
         component: (
           <>
             { blockDepositsQuery.isDegradedData && <ServiceDegradationWarning isLoading={ blockDepositsQuery.isPlaceholderData } mb={{ base: 3, lg: 6 }}/> }
-            <BlockDeposits blockDepositsQuery={ blockDepositsQuery }/>
+            <BlockDeposits blockDepositsQuery={ blockDepositsQuery } itemsCount={ blockQuery.data?.beacon_deposits_count }/>
           </>
         ),
       } : null,
@@ -130,22 +117,25 @@ const BlockPageContent = () => {
           <>
             { blockWithdrawalsQuery.isDegradedData &&
               <ServiceDegradationWarning isLoading={ blockWithdrawalsQuery.isPlaceholderData } mb={{ base: 3, lg: 6 }}/> }
-            <BlockWithdrawals blockWithdrawalsQuery={ blockWithdrawalsQuery }/>
+            <BlockWithdrawals blockWithdrawalsQuery={ blockWithdrawalsQuery } itemsCount={ blockQuery.data?.withdrawals_count }/>
           </>
         ),
       } : null,
-  ].filter(Boolean)), [ blockBlobTxsQuery, blockDepositsQuery, blockInternalTxsQuery, blockQuery, blockTxsQuery, blockWithdrawalsQuery, hasPagination ]);
+  ].filter(Boolean) as Array<BlockTab>), [
+    blockBlobTxsQuery, blockDepositsQuery, blockInternalTxsQuery, blockQuery, blockTxsQuery, blockWithdrawalsQuery,
+  ]);
 
-  let pagination;
-  if (tab === 'txs') {
-    pagination = blockTxsQuery.pagination;
-  } else if (tab === 'withdrawals') {
-    pagination = blockWithdrawalsQuery.pagination;
-  } else if (tab === 'deposits') {
-    pagination = blockDepositsQuery.pagination;
-  } else if (tab === 'internal_txs') {
-    pagination = blockInternalTxsQuery.pagination;
-  }
+  const activeTab = tabs.find(({ id }) => id === tab) ?? tabs[0];
+
+  const handleTabChange = React.useCallback((value: string) => {
+    const queryForPathname = pickBy(router.query, (_, key) => router.pathname.includes(`[${ String(key) }]`));
+
+    router.push(
+      { pathname: router.pathname, query: { ...queryForPathname, tab: value } },
+      undefined,
+      { shallow: true },
+    );
+  }, [ router ]);
 
   throwOnAbsentParamError(heightOrHash);
 
@@ -159,22 +149,33 @@ const BlockPageContent = () => {
     }
   }
 
-  const title = (() => {
+  const titleText = (() => {
     switch (blockQuery.data?.type) {
       case 'reorg':
-        return `Reorged block #${ blockQuery.data?.height }`;
+        return 'Reorged block';
 
       case 'uncle':
-        return `Uncle block #${ blockQuery.data?.height }`;
+        return 'Uncle block';
 
       default:
-        return `Block #${ blockQuery.data?.height }`;
+        return 'Block';
     }
   })();
 
   const beforeTitleElement = multichainContext?.chain ? (
     <BlockEntity.Icon variant="heading" chain={ multichainContext.chain } isLoading={ blockQuery.isPlaceholderData }/>
   ) : null;
+
+  const titleContentAfter = (
+    <>
+      <Skeleton loading={ blockQuery.isPlaceholderData }>
+        <chakra.span textStyle="lg" color="text.secondary" data-block-number>
+          #{ blockQuery.data?.height }
+        </chakra.span>
+      </Skeleton>
+      <BlockCeloEpochTag blockQuery={ blockQuery }/>
+    </>
+  );
 
   const titleSecondRow = (
     <>
@@ -201,23 +202,32 @@ const BlockPageContent = () => {
     </>
   );
 
+  const apiEntry = apiDocsFeature.isEnabled ? (
+    <Link href={ route({ pathname: '/api-docs' }, multichainContext) } textStyle="sm" display="inline-flex" alignItems="center" data-api-entry>
+      <IconSvg name="API" boxSize={ 4 } mr={ 1 }/>
+      API
+    </Link>
+  ) : null;
+
   return (
     <>
       <TextAd mb={ 6 }/>
       <PageTitle
-        title={ title }
+        title={ titleText }
         beforeTitle={ beforeTitleElement }
-        contentAfter={ <BlockCeloEpochTag blockQuery={ blockQuery }/> }
+        contentAfter={ titleContentAfter }
         secondRow={ titleSecondRow }
         isLoading={ blockQuery.isPlaceholderData }
       />
-      <RoutedTabs
-        tabs={ tabs }
-        isLoading={ blockQuery.isPlaceholderData }
-        listProps={ isMobile ? undefined : TAB_LIST_PROPS }
-        rightSlot={ hasPagination ? <Pagination { ...(pagination as PaginationParams) }/> : null }
-        stickyEnabled={ hasPagination }
-      />
+      <Flex flexDir="column" rowGap={{ base: 3, lg: 4 }}>
+        <ScanSectionTabs
+          items={ tabs.map(({ id, title }) => ({ id, title })) }
+          value={ activeTab?.id ?? 'index' }
+          onValueChange={ handleTabChange }
+          rightSlot={ apiEntry }
+        />
+        { activeTab?.component }
+      </Flex>
     </>
   );
 };

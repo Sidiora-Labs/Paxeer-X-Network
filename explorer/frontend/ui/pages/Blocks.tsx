@@ -67,19 +67,6 @@ const BlocksPageContent = () => {
   const flashblocksTabId = flashblocksFeature.isEnabled ? flashblocksFeature.name + 's' : undefined;
   const isFlashblocksTab = tab === flashblocksTabId && flashblocksTabId !== undefined;
 
-  const pagination = (() => {
-    if (tab === 'reorgs') {
-      return reorgsQuery.pagination;
-    }
-    if (tab === 'uncles') {
-      return unclesQuery.pagination;
-    }
-    if (isFlashblocksTab) {
-      return null;;
-    }
-    return blocksQuery.pagination;
-  })();
-
   const tabs: Array<TabItemRegular> = [
     { id: 'blocks', title: 'All', component: <BlocksContent type="block" query={ blocksQuery }/> },
     flashblocksFeature.isEnabled && flashblocksTabId && { id: flashblocksTabId, title: upperFirst(flashblocksFeature.name) + 's', component: <Flashblocks/> },
@@ -93,7 +80,7 @@ const BlocksPageContent = () => {
       <RoutedTabs
         tabs={ tabs }
         listProps={ isMobile ? undefined : TAB_LIST_PROPS }
-        rightSlot={ <BlocksTabSlot pagination={ pagination }/> }
+        rightSlot={ <BlocksTabSlot/> }
         stickyEnabled={ !isMobile && !isFlashblocksTab }
       />
     </>

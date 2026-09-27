@@ -1,11 +1,10 @@
-import { Box, chakra, Flex, Separator } from '@chakra-ui/react';
+import { Box, chakra, Flex } from '@chakra-ui/react';
 import React from 'react';
 
 import config from 'configs/app';
 import useNavItems, { isGroupItem } from 'lib/hooks/useNavItems';
 import RewardsButton from 'ui/rewards/RewardsButton';
 import { CONTENT_MAX_WIDTH } from 'ui/shared/layout/utils';
-import useIsAuth from 'ui/snippets/auth/useIsAuth';
 import NetworkLogo from 'ui/snippets/networkLogo/NetworkLogo';
 import UserProfileDesktop from 'ui/snippets/user/UserProfileDesktop';
 
@@ -15,23 +14,11 @@ import TestnetBadge from '../TestnetBadge';
 import NavLink from './NavLink';
 import NavLinkGroup from './NavLinkGroup';
 
-const accountFeature = config.features.account;
-
 const NavigationDesktop = () => {
-  const { mainNavItems, accountNavItems } = useNavItems();
-  const isAuth = useIsAuth();
-
-  const accountNavGroup = React.useMemo(() => {
-    if (accountFeature.isEnabled && accountFeature.authProvider === 'dynamic' && isAuth) {
-      return {
-        text: 'Account',
-        subItems: accountNavItems,
-      };
-    }
-  }, [ accountNavItems, isAuth ]);
+  const { mainNavItems } = useNavItems();
 
   return (
-    <Box borderColor="border.divider" borderBottomWidth="1px">
+    <Box data-label="brand-row" bgColor="bg.primary" borderColor="border.divider" borderBottomWidth="1px">
       <Flex
         display={{ base: 'none', lg: 'flex' }}
         alignItems="center"
@@ -43,7 +30,7 @@ const NavigationDesktop = () => {
         <NetworkLogo/>
         <TestnetBadge ml={ 3 }/>
         <RollupStageBadge ml={ 3 }/>
-        <chakra.nav ml="auto">
+        <chakra.nav ml="auto" aria-label="Main navigation">
           <Flex as="ul" columnGap={ 2 } alignItems="center">
             { mainNavItems.map((item) => {
               if (isGroupItem(item)) {
@@ -52,12 +39,6 @@ const NavigationDesktop = () => {
                 return <NavLink key={ item.text } item={ item } noIcon py={ 1.5 } w="fit-content"/>;
               }
             }) }
-            { accountNavGroup && (
-              <>
-                <Separator orientation="vertical" mx={ 0 } h={ 4 }/>
-                <NavLinkGroup key={ accountNavGroup.text } item={ accountNavGroup }/>
-              </>
-            ) }
           </Flex>
         </chakra.nav>
         <Flex gap={ 2 } ml={ 8 } _empty={{ display: 'none' }}>

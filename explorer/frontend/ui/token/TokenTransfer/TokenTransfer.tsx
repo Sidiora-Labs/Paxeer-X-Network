@@ -12,16 +12,16 @@ import useIsMobile from 'lib/hooks/useIsMobile';
 import useIsMounted from 'lib/hooks/useIsMounted';
 import useSocketChannel from 'lib/socket/useSocketChannel';
 import useSocketMessage from 'lib/socket/useSocketMessage';
-import ActionBar from 'ui/shared/ActionBar';
 import DataListDisplay from 'ui/shared/DataListDisplay';
 import Pagination from 'ui/shared/pagination/Pagination';
 import type { QueryWithPagesResult } from 'ui/shared/pagination/useQueryWithPages';
+import { formatScanTableCount, ScanShowRows, ScanTableCard, SCAN_ROWS_PER_PAGE } from 'ui/shared/scan';
 import * as SocketNewItemsNotice from 'ui/shared/SocketNewItemsNotice';
 import TokenAdvancedFilterLink from 'ui/token/TokenAdvancedFilterLink';
 import TokenTransferList from 'ui/token/TokenTransfer/TokenTransferList';
 import TokenTransferTable from 'ui/token/TokenTransfer/TokenTransferTable';
 
-const TABS_HEIGHT = 88;
+const DEFAULT_ROWS_TO_SHOW = 50;
 
 type Props = {
   transfersQuery: QueryWithPagesResult<'general:token_transfers'> | QueryWithPagesResult<'general:token_instance_transfers'>;
@@ -29,10 +29,10 @@ type Props = {
   tokenInstance?: TokenInstance;
   tokenQuery: UseQueryResult<TokenInfo, ResourceError<unknown>>;
   shouldRender?: boolean;
-  tabsHeight?: number;
+  transfersCount?: number;
 };
 
-const TokenTransfer = ({ transfersQuery, tokenId, tokenQuery, tabsHeight = TABS_HEIGHT, tokenInstance, shouldRender = true }: Props) => {
+const TokenTransfer = ({ transfersQuery, tokenId, tokenQuery, tokenInstance, shouldRender = true, transfersCount }: Props) => {
   const isMobile = useIsMobile();
   const isMounted = useIsMounted();
   const router = useRouter();
@@ -41,6 +41,7 @@ const TokenTransfer = ({ transfersQuery, tokenId, tokenQuery, tabsHeight = TABS_
 
   const [ newItemsCount, setNewItemsCount ] = useGradualIncrement(0);
   const [ showSocketErrorAlert, setShowSocketErrorAlert ] = React.useState(false);
+  const [ rowsToShow, setRowsToShow ] = React.useState(DEFAULT_ROWS_TO_SHOW);
 
   const handleNewTransfersMessage: SocketMessage.TokenTransfers['handler'] = (payload) => {
     setNewItemsCount(payload.token_transfer);
@@ -71,13 +72,14 @@ const TokenTransfer = ({ transfersQuery, tokenId, tokenQuery, tabsHeight = TABS_
   }
 
   const isLoading = isPlaceholderData || isTokenPlaceholderData;
+  const items = data?.items.slice(0, rowsToShow);
 
-  const content = data?.items && token ? (
+  const content = items && token ? (
     <>
       <Box display={{ base: 'none', lg: 'block' }}>
         <TokenTransferTable
-          data={ data?.items }
-          top={ tabsHeight }
+          data={ items }
+          top={ 0 }
           showSocketInfo={ pagination.page === 1 }
           showSocketErrorAlert={ showSocketErrorAlert }
           socketInfoNum={ newItemsCount }
@@ -96,27 +98,48 @@ const TokenTransfer = ({ transfersQuery, tokenId, tokenQuery, tabsHeight = TABS_
             isLoading={ isLoading }
           />
         ) }
-        <TokenTransferList data={ data?.items } tokenId={ tokenId } instance={ tokenInstance } isLoading={ isLoading }/>
+        <TokenTransferList data={ items } tokenId={ tokenId } instance={ tokenInstance } isLoading={ isLoading }/>
       </Box>
     </>
   ) : null;
 
-  const actionBar = isMobile && pagination.isVisible ? (
-    <ActionBar mt={ -6 }>
-      <TokenAdvancedFilterLink token={ token }/>
-      <Pagination ml="auto" { ...pagination }/>
-    </ActionBar>
-  ) : null;
+  const itemsNum = items?.length ?? 0;
+  const title = formatScanTableCount((() => {
+    if (transfersCount !== undefined) {
+      return itemsNum < transfersCount ?
+        { kind: 'latest' as const, value: transfersCount, itemsName: 'token transfers', shownValue: itemsNum } :
+        { kind: 'total' as const, value: transfersCount, itemsName: 'token transfers' };
+    }
+
+    return pagination.hasNextPage ?
+      { kind: 'more_than' as const, value: itemsNum, itemsName: 'token transfers' } :
+      { kind: 'total' as const, value: itemsNum, itemsName: 'token transfers' };
+  })());
 
   return (
-    <DataListDisplay
-      isError={ isError || isTokenError }
-      itemsNum={ data?.items.length }
-      emptyText="There are no token transfers."
-      actionBar={ actionBar }
+    <ScanTableCard
+      title={ title }
+      actions={ !isMobile ? <TokenAdvancedFilterLink token={ token } isLoading={ isLoading }/> : null }
+      pagination={ pagination.isVisible ? <Pagination { ...pagination }/> : null }
+      showRows={ (
+        <ScanShowRows
+          value={ rowsToShow }
+          onValueChange={ setRowsToShow }
+          options={ SCAN_ROWS_PER_PAGE }
+          label="Show"
+          suffix="Records"
+          isLoading={ isLoading }
+        />
+      ) }
     >
-      { content }
-    </DataListDisplay>
+      <DataListDisplay
+        isError={ isError || isTokenError }
+        itemsNum={ itemsNum }
+        emptyText="There are no token transfers."
+      >
+        { content }
+      </DataListDisplay>
+    </ScanTableCard>
   );
 };
 

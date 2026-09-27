@@ -107,6 +107,19 @@ export const recipe = defineSlotRecipe({
           color: 'tag.root.subtle.fg',
         },
       },
+      outlined: {
+        root: {
+          bgColor: 'transparent',
+          color: 'text.secondary',
+          borderWidth: '1px',
+          borderStyle: 'solid',
+          borderColor: 'border.divider',
+          borderRadius: 'sm',
+          _hover: {
+            borderColor: 'border.strong',
+          },
+        },
+      },
       clickable: {
         root: {
           cursor: 'pointer',

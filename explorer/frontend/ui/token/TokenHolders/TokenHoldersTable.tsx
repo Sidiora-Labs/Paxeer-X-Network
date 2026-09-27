@@ -15,7 +15,7 @@ interface Props {
 
 const TokenHoldersTable = ({ data, token, top, isLoading }: Props) => {
   return (
-    <TableRoot>
+    <TableRoot variant="scan" data-token-holders-table>
       <TableHeaderSticky top={ top }>
         <TableRow>
           <TableColumnHeader w="70%">Holder</TableColumnHeader>

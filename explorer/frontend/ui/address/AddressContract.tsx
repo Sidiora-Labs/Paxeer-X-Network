@@ -89,7 +89,7 @@ const AddressContract = ({ addressData, isLoading = false, hasMudTab, ...rest }:
   return (
     <RoutedTabs
       tabs={ contractTabs.tabs }
-      variant="secondary"
+      variant="pill"
       size="sm"
       isLoading={ contractTabs.isLoading }
       rightSlot={ rightSlot }

@@ -1,4 +1,4 @@
-import { Flex, HStack, Grid, GridItem } from '@chakra-ui/react';
+import { chakra, Flex, HStack } from '@chakra-ui/react';
 import BigNumber from 'bignumber.js';
 import React from 'react';
 
@@ -9,21 +9,31 @@ import config from 'configs/app';
 import multichainConfig from 'configs/multichain';
 import getItemIndex from 'lib/getItemIndex';
 import { getTokenTypeName } from 'lib/token/tokenTypes';
+import { currencyUnits } from 'lib/units';
 import { Skeleton } from 'toolkit/chakra/skeleton';
 import { Tag } from 'toolkit/chakra/tag';
 import AddressAddToWallet from 'ui/shared/address/AddressAddToWallet';
-import AddressEntity from 'ui/shared/entities/address/AddressEntity';
 import TokenEntity from 'ui/shared/entities/token/TokenEntity';
 import ListItemMobile from 'ui/shared/ListItemMobile/ListItemMobile';
-import SimpleValue from 'ui/shared/value/SimpleValue';
-import { DEFAULT_ACCURACY_USD } from 'ui/shared/value/utils';
+
+import {
+  getNativePrice,
+  getOnchainMarketCap,
+  TokenChangePercent,
+  TokenFiatValue,
+  TokenValuePlaceholder,
+} from './TokensTableItem';
 
 type Props = {
   token: TokenInfo | AggregatedTokenInfo;
   index: number;
   page: number;
   isLoading?: boolean;
+  coinPrice?: string | null;
 };
+
+const PRICE_ACCURACY = 4;
+const NATIVE_PRICE_ACCURACY = 6;
 
 const bridgedTokensFeature = config.features.bridgedTokens;
 
@@ -32,10 +42,10 @@ const TokensListItem = ({
   page,
   index,
   isLoading,
+  coinPrice,
 }: Props) => {
 
   const {
-    address_hash: addressHash,
     exchange_rate: exchangeRate,
     type,
     holders_count: holdersCount,
@@ -49,8 +59,6 @@ const TokensListItem = ({
     bridgedTokensFeature.chains.find(({ id }) => id === originalChainId)?.short_title :
     undefined;
 
-  const filecoinRobustAddress = 'filecoin_robust_address' in token ? token.filecoin_robust_address : undefined;
-
   const chainInfo = React.useMemo(() => {
     if (!chainInfos) {
       return;
@@ -61,77 +69,66 @@ const TokensListItem = ({
     return chain;
   }, [ chainInfos ]);
 
+  const nativePrice = getNativePrice(exchangeRate, coinPrice);
+  const onchainMarketCap = getOnchainMarketCap(token);
+
+  const renderRow = (label: string, value: React.ReactNode) => (
+    <HStack gap={ 3 } justifyContent="space-between" w="100%" alignItems="flex-start" data-token-field={ label }>
+      <Skeleton loading={ isLoading } textStyle="sm" fontWeight={ 500 } flexShrink={ 0 }>{ label }</Skeleton>
+      { value }
+    </HStack>
+  );
+
+  const price = (
+    <Flex flexDir="column" alignItems="flex-end" rowGap={ 1 } data-token-price>
+      <TokenFiatValue
+        value={ exchangeRate ? BigNumber(exchangeRate) : undefined }
+        accuracy={ PRICE_ACCURACY }
+        isLoading={ isLoading }
+      />
+      { nativePrice && (
+        <Skeleton loading={ isLoading } textStyle="xs" color="text.secondary" data-token-native-price>
+          <chakra.span>{ `${ nativePrice.dp(NATIVE_PRICE_ACCURACY).toFormat() } ${ currencyUnits.ether }` }</chakra.span>
+        </Skeleton>
+      ) }
+    </Flex>
+  );
+
+  const holders = (
+    <Skeleton loading={ isLoading } textStyle="sm" color="text.secondary" data-token-holders>
+      <span>{ Number(holdersCount ?? 0).toLocaleString() }</span>
+    </Skeleton>
+  );
+
   return (
     <ListItemMobile rowGap={ 3 }>
-      <Grid
-        width="100%"
-        gridTemplateColumns="minmax(0, 1fr)"
-      >
-        <GridItem display="flex">
-          <TokenEntity
-            token={ token }
-            chain={ chainInfo }
-            isLoading={ isLoading }
-            jointSymbol
-            noCopy
-            w="auto"
-            textStyle="sm"
-            fontWeight="700"
-            noLink={ type === 'NATIVE' }
-          />
-          <Flex ml={ 3 } flexShrink={ 0 } columnGap={ 1 }>
-            <Tag loading={ isLoading }>{ getTokenTypeName(type, chainInfo?.app_config) }</Tag>
-            { bridgedChainTag && <Tag loading={ isLoading }>{ bridgedChainTag }</Tag> }
-          </Flex>
-          <Skeleton loading={ isLoading } textStyle="sm" ml="auto" color="text.secondary" minW="24px" textAlign="right">
-            <span>{ getItemIndex(index, page) }</span>
-          </Skeleton>
-        </GridItem>
-      </Grid>
-      { type !== 'NATIVE' && (
-        <Flex justifyContent="space-between" alignItems="center" width="150px" ml={ 7 } mt={ -2 }>
-          <AddressEntity
-            address={{ hash: addressHash, filecoin: { robust: filecoinRobustAddress } }}
-            isLoading={ isLoading }
-            truncation="constant"
-            link={{ variant: 'secondary' }}
-            noIcon
-          />
-          <AddressAddToWallet token={ token } isLoading={ isLoading }/>
+      <Flex w="100%" alignItems="center" columnGap={ 2 }>
+        <Skeleton loading={ isLoading } textStyle="sm" color="text.secondary" minW={ 5 } data-token-rank>
+          <span>{ getItemIndex(index, page) }</span>
+        </Skeleton>
+        <TokenEntity
+          token={ token }
+          chain={ chainInfo }
+          isLoading={ isLoading }
+          jointSymbol
+          noCopy
+          w="auto"
+          textStyle="sm"
+          fontWeight="600"
+          noLink={ type === 'NATIVE' }
+        />
+        <Flex ml="auto" flexShrink={ 0 } columnGap={ 1 } alignItems="center">
+          <Tag loading={ isLoading } variant="outlined">{ getTokenTypeName(type, chainInfo?.app_config) }</Tag>
+          { bridgedChainTag && <Tag loading={ isLoading } variant="outlined">{ bridgedChainTag }</Tag> }
+          { type !== 'NATIVE' && <AddressAddToWallet token={ token } isLoading={ isLoading } chainConfig={ chainInfo?.app_config }/> }
         </Flex>
-      ) }
-      { exchangeRate && (
-        <HStack gap={ 3 }>
-          <Skeleton loading={ isLoading } textStyle="sm" fontWeight={ 500 }>Price</Skeleton>
-          <SimpleValue
-            value={ BigNumber(exchangeRate) }
-            loading={ isLoading }
-            accuracy={ 4 }
-            prefix="$"
-            textStyle="sm"
-            color="text.secondary"
-          />
-        </HStack>
-      ) }
-      { marketCap && (
-        <HStack gap={ 3 }>
-          <Skeleton loading={ isLoading } textStyle="sm" fontWeight={ 500 }>On-chain market cap</Skeleton>
-          <SimpleValue
-            value={ BigNumber(marketCap) }
-            loading={ isLoading }
-            prefix="$"
-            accuracy={ DEFAULT_ACCURACY_USD }
-            textStyle="sm"
-            color="text.secondary"
-          />
-        </HStack>
-      ) }
-      { holdersCount && (
-        <HStack gap={ 3 }>
-          <Skeleton loading={ isLoading } textStyle="sm" fontWeight={ 500 }>Holders</Skeleton>
-          <Skeleton loading={ isLoading } textStyle="sm" color="text.secondary"><span>{ Number(holdersCount).toLocaleString() }</span></Skeleton>
-        </HStack>
-      ) }
+      </Flex>
+      { renderRow('Price', price) }
+      { renderRow('Change (%)', <TokenChangePercent isLoading={ isLoading }/>) }
+      { renderRow('Volume (24H)', <TokenValuePlaceholder isLoading={ isLoading }/>) }
+      { renderRow('Circulating market cap', <TokenFiatValue value={ marketCap ? BigNumber(marketCap) : undefined } isLoading={ isLoading }/>) }
+      { renderRow('Onchain market cap', <TokenFiatValue value={ onchainMarketCap } isLoading={ isLoading }/>) }
+      { renderRow('Holders', holders) }
     </ListItemMobile>
   );
 };

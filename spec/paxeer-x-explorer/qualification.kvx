@@ -489,3 +489,225 @@ environment = "linux/x86_64, the pinned builder image explorer-elixir-builder:v1
 outcome = "pass"
 evidence = ".logs/wave-gate-3.1-run3.log"
 note = "The gate ran once within its twenty-minute wrap and exited 0 with every leg passing in order: the four per-application backend legs, block_scout_web 47 tests, ethereum_jsonrpc 25, explorer 113 and indexer 46, 0 failures and nothing excluded or skipped in any of them, then the frontend dependency leg, the frontend type check with no diagnostic over the project, and the frontend vitest suite at 38 files and 330 tests passed with nothing skipped. This is the first run of this command to reach the three frontend legs, which the cold first run and the out-of-space run could not; the counts of the explorer and vitest legs are two tests and one file above the earlier per-leg records, which is the capabilities boot suite and the rewards fixture spec this revision adds. Task 3.1 keeps the status and evidence it already carries."
+
+[observation.6.5.1]
+task = "6.5"
+file = "explorer/frontend/ui/address/AddressTxs.tsx"
+symbol = "ScanDirectionBadge"
+observed = "do_4 asks for the shared direction badge on the counterparty column, but that column is rendered by ui/shared/address/AddressFromTo.tsx, ui/shared/address/AddressFromToIcon.tsx, ui/txs/TxsTableItem.tsx and ui/txs/TxsListItem.tsx, none of which task 6.5 may touch, so the badge is rendered once in the table-card header for the direction the list is filtered by instead."
+assumption = "The per-row marker belongs to the txs list rebuild that owns those files, and putting it there from this task would collide with that work, so the column is left exactly as it is."
+severity = "note"
+
+[observation.6.5.2]
+task = "6.5"
+file = "explorer/frontend/ui/address/AddressDetails.tsx"
+symbol = "AddressDetails"
+observed = "do_2 asks the more-information card to carry the latest and the first transaction sent, but neither general:address nor general:address_counters returns a timestamp for either, and no other path the frontend already calls exposes one."
+assumption = "The two rows need a backend field that does not exist yet, so the card carries the counters, the last balance update and the funding source it can source honestly and nothing is invented for the two timestamps."
+severity = "blocker"
+
+[observation.6.5.3]
+task = "6.5"
+file = "explorer/frontend/ui/address/AddressCoinBalance.spec.tsx"
+symbol = "test-ratio"
+observed = "The task ships nine source files but its touches list names only four specs, while tools/explorer/test-ratio.sh fails a range whose changed source files outnumber the changed tests that reference them."
+assumption = "The gate governs, so five further specs - AddressInternalTxs, AddressTokens, AddressContract, AddressCoinBalance and AddressCsvExportLink - are added beside their own sources, which no other wave-6 task touches."
+severity = "note"
+
+[observation.6.3.1]
+task = "6.3"
+file = "spec/paxeer-x-explorer/spec.kvx"
+symbol = "task.6.3.do_4"
+observed = "do_4 names explorer/frontend/ui/tx/details/TxDetailsGasPrice.tsx among the rows that move behind the More Details expander, while req 20.2 lists the gas price as the last row of the overview detail card and reference/7.png shows it there; the two cannot both hold for one row."
+assumption = "The acceptance criterion and the reference screenshot are the authority over the task step, so the gas price stays in the overview and TxDetailsOther, TxDetailsGasUsage, TxDetailsFeePerGas and TxDetailsBurntFees move into the expander; the step's wording is left for an owner ruling."
+severity = "note"
+
+[observation.6.3.2]
+task = "6.3"
+file = "explorer/frontend/types/api/transaction.ts"
+symbol = "Transaction"
+observed = "req 20.1 asks the logs section tab to carry its count, but the transaction resource carries no logs count: the type has no logs_count field, only the address and user-operation resources declare one, and the logs list resource pages without a total."
+assumption = "Counting the logs would need a second request per page or a new backend field, which is outside this task, so the logs tab is rendered without a count and the missing field is recorded for the backend to supply."
+severity = "suspect"
+
+[observation.6.3.3]
+task = "6.3"
+file = "explorer/frontend/ui/tx/details/TxDetailsTxFee.spec.tsx"
+symbol = "TxDetailsTxFee"
+observed = "One run of the task verify_cmd exited 1 on this untouched spec: its first grouped-fees case exceeded the 5000 ms per-test timeout while the run reported 78 to 89 seconds of module import time; the same command passed the case on the runs before and after it."
+assumption = "The timeout is read as contention on a shared machine rather than a defect of this spec or of the components this task changed, so it is recorded once and not chased."
+severity = "note"
+
+[observation.6.3.4]
+task = "6.3"
+file = "tools/explorer/test-ratio.sh"
+symbol = "test-ratio"
+observed = "This task changes eleven frontend source files but task.6.3.touches and do_9 name exactly five vitest specs, so the ratio rule that every changed source needs a changed test and counted_tests must reach source_count cannot be met from inside the task."
+assumption = "Widening the file set would take the task outside its declared touches, so the five specs named by do_9 are written and the ratio is left to the wave-level gate on the merged wave revision."
+severity = "suspect"
+
+[observation.6.2.1]
+task = "6.2"
+file = "explorer/frontend/ui/shared/pagination/useQueryWithPages.ts"
+symbol = "useQueryWithPages"
+observed = "Requirement 19.3 and do_3 of this task ask for a show-rows selector in the table card footer, but the paginated resources these lists read carry no page-size parameter: useQueryWithPages sends only the cursor of next_page_params together with the filters and the sorting, and the node answers a page of a fixed size, so a selector could only hide rows the page already holds and make them unreachable."
+assumption = "The selector is left out of the transactions and blocks cards rather than wired to a control that cannot change what the node returns, so the footer carries the pagination alone until the resource accepts a page size."
+severity = "note"
+
+[observation.6.2.2]
+task = "6.2"
+file = "explorer/frontend/ui/txs/TxsTabs.tsx"
+symbol = "TxsTabs"
+observed = "The desktop transactions and blocks pages now carry their pagination twice: once in the scan table card, where requirements 19.2 and 19.3 put it, and once in the tab row, which TxsTabs renders through its rightSlot and which BlocksTabSlot renders beside the network utilisation and the block countdown."
+assumption = "Both files sit outside the touches of this task, so the tab-row copy is left exactly as written for the owner of the tab slots to retire once every wave-6 page carries the card."
+severity = "note"
+
+[observation.6.2.3]
+task = "6.2"
+file = "spec/paxeer-x-explorer/spec.kvx"
+symbol = "task.6.2"
+observed = "The touches of this task name seven spec files while ten of its source files change, and the explorer test-ratio gate refuses a range that carries fewer changed test files than changed source files."
+assumption = "Four further specs - TxsContent.spec.tsx, TxsTableItem.spec.tsx, BlocksContent.spec.tsx and BlocksTableItem.spec.tsx - are written beside the seven the task names, each covering a source file the task already owns, rather than leaving source files without a test."
+
+[observation.6.1.1]
+task = "6.1"
+file = "explorer/frontend/ui/home/HeroBanner.tsx"
+symbol = "HeroBanner"
+observed = "Requirement 17 ac_5 asks the hero band to hold the page title and the wide search field with its filter selector and its accent submit button; the title, the field and the accent submit button that submits the field's own form are in place, but no filter selector was built, because every control of the search entry lives under ui/snippets/searchBar, which task 6.1's touches does not name, and no search resource the frontend calls accepts a scope or category parameter, so a selector rendered in the hero could only be a control that narrows nothing."
+assumption = "A visible filter control that never reaches the search request would be a fake, and reworking ui/snippets/searchBar from this task would change the search behaviour, suggestion list and redirect path the same acceptance criterion requires to stay exactly as they are, so the hero ships the title, the field and the accent submit button, and the selector is left to the task that owns the search snippets."
+severity = "note"
+
+[observation.6.1.2]
+task = "6.1"
+file = "spec/paxeer-x-explorer/spec.kvx"
+symbol = "task.6.1.touches"
+observed = "The touches of this task name five spec files while thirteen of its source files change, and tools/explorer/test-ratio.sh refuses a range that carries fewer changed test files than changed source files or a changed source with no changed test referencing it."
+assumption = "The gate governs, so eight further specs - Highlights, highlights/HighlightsItem, indicators/ChainIndicatorsChart, indicators/ChainIndicatorChartContent, LatestBlocksItem, LatestTxsItem, LatestTxsItemMobile and Transactions - are written beside the five the task names, each rendering its real component, and the touches list is left exactly as the feature spec writes it."
+severity = "note"
+
+[observation.6.1.3]
+task = "6.1"
+file = "explorer/frontend/ui/home/Stats.spec.tsx"
+symbol = "SVGElement.prototype.getTotalLength"
+observed = "Every spec that renders the fourteen-day history chart crashed the whole React tree: jsdom implements a path element as SVGElement and carries none of the SVGGeometryElement geometry methods, so the line animation of toolkit/components/charts/parts/ChartLine.tsx threw on getTotalLength inside its mount effect and the home page rendered as an empty container."
+assumption = "This is a gap of the test environment rather than of the component, in the same class as the ResizeObserver and matchMedia shims the shell test helper already carries, so the four chart-rendering specs define a zero-length getTotalLength on SVGElement.prototype and the chart code is left exactly as written."
+severity = "note"
+
+[observation.6.6.1]
+task = "6.6"
+file = "explorer/frontend/ui/token/TokenDetails.tsx"
+symbol = "TokenCounters"
+observed = "do_3 asks the overview card for the transfers with their total and daily selector, but general:token_counters answers only token_holders_count and transfers_count and no path the frontend already calls returns a daily figure."
+assumption = "The daily selector needs a backend field that does not exist yet, so the card carries the running total the API does return and no daily number is invented."
+severity = "blocker"
+
+[observation.6.6.2]
+task = "6.6"
+file = "explorer/frontend/ui/token/TokenTransfer/TokenTransfer.tsx"
+symbol = "useQueryWithPages"
+observed = "do_4 asks the table cards for a show-records footer, but useQueryWithPages carries no page-size parameter and the token list endpoints page by cursor, so the selector cannot change what the server returns."
+assumption = "The selector limits the rows the card renders from the page it already holds, and widening the page size waits for a paging change that is not this task's."
+severity = "note"
+
+[observation.6.6.3]
+task = "6.6"
+file = "explorer/frontend/ui/token/TokenTransfer/TokenTransferListItem.tsx"
+symbol = "test-ratio"
+observed = "do_4 also names the mobile list items of both tables, but tools/explorer/test-ratio.sh requires a changed test per changed source and the task's verify_cmd budget covers fifteen sources with fifteen specs already."
+assumption = "The mobile lists keep their existing item variants inside the new cards, which do_8 asks for, and their restyle belongs to a task that can carry their specs."
+severity = "note"
+
+[observation.6.7.1]
+task = "6.7"
+file = "explorer/frontend/ui/tokens/TokensTableItem.tsx"
+symbol = "TokenValuePlaceholder"
+observed = "ac_4 asks the token row to carry the change percent and the volume over the last day, but neither general:tokens nor general:tokens_bridged returns either figure and no other path the frontend already calls exposes them for a token list."
+assumption = "The two columns render a muted dash rather than a number the payload never sent; they need a backend field that does not exist yet, and the row keeps the space the figures will occupy."
+severity = "blocker"
+
+[observation.6.7.2]
+task = "6.7"
+file = "explorer/frontend/ui/pages/Tokens.tsx"
+symbol = "ScanShowRows"
+observed = "The two list endpoints answer a page whose size the backend paging helper fixes at fifty, so the show-rows selector the scan layout puts in the card footer cannot ask the API for another page size."
+assumption = "The selector limits how much of the fetched page the card shows and defaults to the full page, so nothing is hidden unless the reader asks for fewer rows."
+severity = "note"
+
+[observation.6.7.3]
+task = "6.7"
+file = "explorer/frontend/ui/tokens/TokensTableItem.spec.tsx"
+symbol = "test-ratio"
+observed = "The task ships ten source files but its touches list names only six specs, while tools/explorer/test-ratio.sh fails a range whose changed source files outnumber the changed tests that reference them."
+assumption = "The gate governs, so four further specs - TokensTableItem, Tokens, TokensActionBar and AddressesTableItem - are added beside their own sources, which no other wave-6 task touches."
+severity = "note"
+
+[observation.6.9.1]
+task = "6.9"
+file = "spec/paxeer-x-explorer/spec.kvx"
+symbol = "task.6.9"
+observed = "The touches of this task name ten spec files while sixteen of its source files change, and the explorer test-ratio gate refuses a range that carries fewer changed test files than changed source files."
+assumption = "Six further specs - AssetListItem, ActivityListItem, PaxeerXAnchorsTableItem, PaxeerXAnchorsListItem, PaxeerXReceiptsTableItem and PaxeerXReceiptsListItem - are written beside the ten the task names, each covering a source file the task already owns, rather than leaving source files without a test."
+severity = "note"
+
+[observation.6.11.1]
+task = "6.11"
+file = "explorer/frontend/ui/address/AddressTxs.spec.tsx"
+symbol = "AddressTxs"
+observed = "At revision 0c61642f6955c53cf68c963c5361583dc40502ab the command timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/txs ui/blocks ui/shared/address ui/address' exits 1 with one failure, .logs/verify-6.11-run3.log: the address transactions tab renders three export controls - Download Page Data, Download and CSV Export - because the tab wraps a component that carries its own scan table card with its own download action, and the same run reproduces the failure with this task's changes reverted."
+assumption = "The third control is the nested table card the transactions-list rebuild put inside the card the address page already opens, which belongs to neither of this task's two fix-ups, so the assertion and the code are both left exactly as written for the task that owns the nesting."
+severity = "note"
+note = "Closed by task 6.12: the transactions-list content now takes an explicit isInsideTableCard property and renders only its rows inside the card the address page opens, so at revision 89bf4db6d8292d00b26287d20cc743e7fdccd428 the same command exits 0 over ui/txs, ui/blocks, ui/shared/address and ui/address, log .logs/verify-6.12.log, with the assertion left exactly as written."
+
+[gate.7.1.1]
+task = "7.1"
+reqs = ["16.1","16.2","16.4"]
+revision = "50ad0f4afcd1ec6974fe09f6db272ace49b186dd"
+command = "timeout 20m sh -c 'EXPLORER_GATE_BUDGET_SECONDS=1080 tools/explorer/gate-lint.sh'"
+environment = "linux/x86_64, the pinned builder image explorer-elixir-builder:v10.2.6 with the build volume of this working tree warm, node 22 and yarn 1 in explorer/frontend, the workspace cargo toolchain for the services leg"
+outcome = "pass"
+evidence = "build/explorer-gates/wave-lint-7.1.log"
+note = "exit code 0. The lint gate ran once on the merged tip of waves 5 and 6 and every leg passed in order: the backend leg with mix format --check-formatted and mix credo --strict, the frontend leg with eslint and the project type check, and the services leg with the Rust formatting and clippy checks, per-leg logs build/explorer-gates/lint-backend.log, lint-frontend.log and lint-services.log. This is the lint check of ac_1 for these two waves and it is not rerun at this revision."
+
+[gate.7.1.2]
+task = "7.1"
+reqs = ["16.1","16.2","16.4"]
+revision = "50ad0f4afcd1ec6974fe09f6db272ace49b186dd"
+command = "timeout 20m sh -c 'EXPLORER_GATE_BUDGET_SECONDS=1080 tools/explorer/gate-test.sh'"
+environment = "linux/x86_64, the pinned builder image explorer-elixir-builder:v10.2.6 with a postgres:16 sidecar per umbrella application, node 22 and yarn 1 in explorer/frontend, the build volume of this working tree warm, the frontend image build of do_4 running beside it on the same twelve cores"
+outcome = "fail"
+evidence = "build/explorer-gates/wave-gate-7.1.log"
+note = "exit code 1, raised by the last of the gate's seven legs. The four per-application backend legs passed in order - block_scout_web 47 tests, ethereum_jsonrpc 25, explorer 113 and indexer 46, 0 failures and nothing excluded or skipped in any of them - then the frontend dependency leg passed and the frontend type check passed with no diagnostic over the project. The frontend vitest leg ran 180 spec files and 999 tests and stopped with one file and one test failing, log build/explorer-gates/frontend-vitest.log: the failure is the five-second per-test timeout of observation.7.1.1, and the same leg reported 62 unhandled teardown errors, recorded as observation.7.1.2. The counts stand 142 spec files and 669 tests above gate.3.1.11, which is what waves 5 and 6 added."
+
+[gate.7.1.3]
+task = "7.1"
+reqs = ["16.1","16.2","16.4"]
+revision = "50ad0f4afcd1ec6974fe09f6db272ace49b186dd"
+command = "tools/explorer/test-ratio.sh 10eb3cb1e..50ad0f4afcd1ec6974fe09f6db272ace49b186dd"
+environment = "linux/x86_64, git and a POSIX shell, every blob classified from the head revision rather than from the working tree"
+outcome = "pass"
+evidence = "build/explorer-gates/test-ratio-7.1.log"
+note = "exit code 0 over the range that spans waves 5 and 6: its base is the commit main carried when this feature branched and its head is the merged feature tip, and main changed no file under explorer/ between the merge base and that base, so the range holds these two waves and nothing else. It changes 144 source files and 146 test files, all 146 of which reference a changed source file, and it leaves no changed source file without one."
+
+[observation.7.1.1]
+task = "7.1"
+file = "explorer/frontend/ui/pages/Block.spec.tsx"
+symbol = "BlockPageContent"
+observed = "At revision 50ad0f4afcd1ec6974fe09f6db272ace49b186dd the command timeout 20m sh -c 'EXPLORER_GATE_BUDGET_SECONDS=1080 tools/explorer/gate-test.sh' exits 1, log build/explorer-gates/frontend-vitest.log: the one failure of 999 tests is the case heading the page with the block title and its number, reporting Test timed out in 5000ms, while a neighbouring case of the same run completed in 11166 ms."
+assumption = "The five-second per-test bound is exhausted by the weight of the aggregate run itself - 180 spec files, with the frontend image build of do_4 holding the same twelve cores - rather than by anything task 6.4 wrote, whose own verify_cmd passed at its recorded revision, so the assertion and the bound are both left exactly as written and the case is not rerun here."
+severity = "note"
+
+[observation.7.1.2]
+task = "7.1"
+file = "explorer/frontend/vitest/setup.ts"
+symbol = "fontfaceobserver"
+observed = "The same vitest leg reported 62 unhandled errors, every one of them ReferenceError: document is not defined raised from node_modules/fontfaceobserver/fontfaceobserver.standalone.js on a timer that fires after the jsdom environment of a spec file is torn down, spread across many spec files rather than concentrated in one, and none of them failed a test."
+assumption = "The font loader schedules a poll that outlives the environment the setup file installs, which belongs to the vitest environment rather than to any task of this feature, so it is recorded once and left for a release-time change to the setup file."
+severity = "note"
+
+[observation.7.1.3]
+task = "7.1"
+file = "explorer/frontend/playwright-ct.config.ts"
+symbol = "__screenshots__"
+observed = "The range 10eb3cb1e..50ad0f4afcd1ec6974fe09f6db272ace49b186dd changes none of the 235 files ending in .pw.tsx and none of the 1100 files under a __screenshots__ directory, while waves 5 and 6 restyled the components those baselines picture, so the component screenshot suite was neither run nor refreshed by this gate."
+assumption = "The visual baselines of the redesigned components are a release-time refresh item, taken once on the release candidate with the browser matrix rather than per task or per wave, so nothing is regenerated here and no baseline is deleted to make a suite pass."
+severity = "note"

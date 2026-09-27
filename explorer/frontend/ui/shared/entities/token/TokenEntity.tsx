@@ -105,8 +105,9 @@ const Symbol = (props: SymbolProps) => {
       display="inline-flex"
       alignItems="center"
       maxW="20%"
-      ml={ 2 }
+      ml={ 1 }
       color="text.secondary"
+      data-token-symbol
     >
       <div>(</div>
       <TruncatedTextTooltip label={ symbol }>
@@ -168,7 +169,7 @@ const TokenEntity = (props: EntityProps) => {
   const content = <Content { ...partsProps.content }/>;
 
   return (
-    <Container w="100%" { ...partsProps.container }>
+    <Container w="100%" { ...partsProps.container } data-entity-kind="token">
       <Icon { ...partsProps.icon }/>
       { props.noLink ? content : <Link { ...partsProps.link }>{ content }</Link> }
       <Symbol { ...partsProps.symbol }/>

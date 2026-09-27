@@ -6,11 +6,15 @@ import type { AddressFromToFilter } from 'types/api/address';
 import type { Transaction, TransactionsSortingField, TransactionsSortingValue } from 'types/api/transaction';
 import type { PaginationParams } from 'ui/shared/pagination/types';
 
+import useApiQuery from 'lib/api/useApiQuery';
 import useIsMobile from 'lib/hooks/useIsMobile';
 import useTableViewValue from 'lib/hooks/useTableViewValue';
+import { HOMEPAGE_STATS } from 'stubs/stats';
 import AddressCsvExportLink from 'ui/address/AddressCsvExportLink';
 import { ACTION_BAR_HEIGHT_DESKTOP } from 'ui/shared/ActionBar';
 import DataListDisplay from 'ui/shared/DataListDisplay';
+import Pagination from 'ui/shared/pagination/Pagination';
+import { formatScanTableCount, ScanTableCard } from 'ui/shared/scan';
 import getNextSortValue from 'ui/shared/sort/getNextSortValue';
 import TableViewToggleButton from 'ui/shared/TableViewToggleButton';
 
@@ -24,6 +28,8 @@ const SORT_SEQUENCE: Record<TransactionsSortingField, Array<TransactionsSortingV
   fee: [ 'fee-desc', 'fee-asc', 'default' ],
   block_number: [ 'block_number-asc', 'default' ],
 };
+
+const ITEMS_NAME = 'transactions';
 
 type Props = {
   pagination: PaginationParams;
@@ -41,6 +47,7 @@ type Props = {
   sort: TransactionsSortingValue;
   stickyHeader?: boolean;
   showTableViewButton?: boolean;
+  isInsideTableCard?: boolean;
 };
 
 const TxsContent = ({
@@ -59,6 +66,7 @@ const TxsContent = ({
   sort,
   stickyHeader = true,
   showTableViewButton,
+  isInsideTableCard = false,
 }: Props) => {
   const isMobile = useIsMobile();
 
@@ -66,6 +74,15 @@ const TxsContent = ({
 
   const isTableView = isMobile ? showTableViewButton && !tableViewFlag.isLoading && tableViewFlag.value : true;
   const isLoading = isPlaceholderData || tableViewFlag.isLoading;
+
+  const isChainWideList = socketType === 'txs_validated' || socketType === 'txs_pending';
+
+  const statsQuery = useApiQuery('general:stats', {
+    queryOptions: {
+      enabled: isChainWideList,
+      placeholderData: isChainWideList ? HOMEPAGE_STATS : undefined,
+    },
+  });
 
   const onSortToggle = React.useCallback((field: TransactionsSortingField) => {
     const value = getNextSortValue<TransactionsSortingField, TransactionsSortingValue>(SORT_SEQUENCE, field)(sort);
@@ -87,12 +104,7 @@ const TxsContent = ({
           translationQuery={ translationQuery }
         />
       </Box>
-      <Box
-        display={ isTableView ? 'block' : 'none' }
-        overflowX={ isMobile ? 'scroll' : undefined }
-        mx={ isMobile ? -3 : 0 }
-        px={ isMobile ? 3 : 0 }
-      >
+      <Box display={ isTableView ? 'block' : 'none' }>
         <TxsTable
           txs={ items }
           sort={ sort }
@@ -118,6 +130,14 @@ const TxsContent = ({
     />
   ) : null;
 
+  const csvExportLink = currentAddress ? (
+    <AddressCsvExportLink
+      address={ currentAddress }
+      params={{ type: 'transactions', filterType: 'address', filterValue }}
+      isLoading={ pagination.isLoading }
+    />
+  ) : null;
+
   const actionBar = isMobile ? (
     <TxsHeaderMobile
       mt={ -6 }
@@ -126,16 +146,42 @@ const TxsContent = ({
       paginationProps={ pagination }
       showPagination={ pagination.isVisible }
       filterComponent={ filter }
-      linkSlot={ currentAddress ? (
-        <AddressCsvExportLink
-          address={ currentAddress }
-          params={{ type: 'transactions', filterType: 'address', filterValue }}
-          isLoading={ pagination.isLoading }
-        />
-      ) : null }
+      linkSlot={ csvExportLink }
       tableViewButton={ tableViewButton }
     />
   ) : null;
+
+  const paginationNode = !isInsideTableCard && !isMobile && pagination.isVisible ? <Pagination { ...pagination }/> : null;
+
+  const totalTxs = Number(statsQuery.data?.total_transactions);
+
+  const countLine = (() => {
+    if (!items || items.length === 0) {
+      return 'Transactions';
+    }
+
+    if (isChainWideList && Number.isFinite(totalTxs) && totalTxs >= items.length) {
+      return formatScanTableCount({ kind: 'latest', value: totalTxs, shownValue: items.length, itemsName: ITEMS_NAME });
+    }
+
+    if (pagination.hasNextPage || pagination.page > 1) {
+      return formatScanTableCount({ kind: 'more_than', value: pagination.page * items.length, itemsName: ITEMS_NAME });
+    }
+
+    return formatScanTableCount({ kind: 'total', value: items.length, itemsName: ITEMS_NAME });
+  })();
+
+  const note = (() => {
+    if (filterValue) {
+      return `Showing only the ${ filterValue === 'from' ? 'outgoing' : 'incoming' } transactions of this address`;
+    }
+
+    if (socketType === 'txs_pending') {
+      return 'Transactions waiting to be included in a block';
+    }
+
+    return `Showing page ${ pagination.page } of the records the node returns, newest first`;
+  })();
 
   return (
     <DataListDisplay
@@ -148,7 +194,16 @@ const TxsContent = ({
         term: 'transaction',
       }}
     >
-      { content }
+      { content && (isInsideTableCard ? content : (
+        <ScanTableCard
+          title={ countLine }
+          note={ note }
+          actions={ isMobile ? null : csvExportLink }
+          pagination={ paginationNode }
+        >
+          { content }
+        </ScanTableCard>
+      )) }
     </DataListDisplay>
   );
 };

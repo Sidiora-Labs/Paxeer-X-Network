@@ -231,7 +231,7 @@
 ## Wave 5 - Scan Foundation
 
 - [ ] 5. Build the shell and the primitives every scan page consumes
-  - [ ] 5.1 Build the scan shell
+  - [x] 5.1 Build the scan shell
     - Rebuild explorer/frontend/ui/snippets/topBar/TopBar.tsx as the scan utility bar - a thin row above the brand row holding explorer/frontend/ui/snippets/topBar/TopBarStats.tsx on the left and, on the right, the desktop search entry on every route except the home route followed by the settings menu of explorer/frontend/ui/snippets/topBar/settings/Settings.tsx, the colour-theme control and explorer/frontend/ui/snippets/topBar/NetworkMenu.tsx.
     - Rebuild explorer/frontend/ui/snippets/topBar/TopBarStats.tsx to read the Paxeer coin price with its percentage change and the current gas price from the statistics it already queries and render them as small labels with accent values, keeping every query, feature condition and loading state it has now.
     - Make explorer/frontend/ui/snippets/header/HeaderDesktop.tsx the brand row - the network mark and wordmark on the left, explorer/frontend/ui/snippets/navigation/horizontal/NavigationDesktop.tsx on the right - and keep explorer/frontend/ui/snippets/header/HeaderMobile.tsx on its burger and mobile search path restyled by the same tokens.
@@ -245,7 +245,7 @@
     - Keep the shell working at 375px through the existing mobile header, mobile navigation and mobile search paths with no horizontal page scroll, add no dependency, and change no file ending in .pw.tsx and no __screenshots__ directory.
     - Add the vitest specs explorer/frontend/ui/snippets/topBar/TopBar.spec.tsx, TopBarStats.spec.tsx, explorer/frontend/ui/snippets/navigation/horizontal/NavigationDesktop.spec.tsx and NavLinkGroup.spec.tsx, explorer/frontend/ui/snippets/footer/Footer.spec.tsx and explorer/frontend/ui/shared/layout/Layout.spec.tsx and LayoutHome.spec.tsx, and explorer/frontend/lib/hooks/useNavItems.spec.tsx covering the seven groups and their feature conditions, each rendering the real component or hook through explorer/frontend/vitest/lib.tsx with payload mocks from explorer/frontend/mocks/ and asserting the elements the scan layout demands, their order and their text.
     - _Requirements: 17.1, 17.2, 17.3, 17.4, 17.5, 17.6, 17.7, 17.8, 17.9_
-  - [ ] 5.2 Build the scan primitives
+  - [x] 5.2 Build the scan primitives
     - Add explorer/frontend/ui/shared/scan/ScanStatCard.tsx rendering an uppercase label, a value and an optional delta whose sign selects the success or destructive text token, and explorer/frontend/ui/shared/scan/ScanTableCard.tsx rendering a header count line with an actions slot beside it, the table body, and a footer holding a show-rows slot and a pagination slot.
     - Add explorer/frontend/ui/shared/scan/ScanSectionTabs.tsx as pill tabs whose selected pill sits on the accent surface, explorer/frontend/ui/shared/scan/ScanExpander.tsx as a More Details row with a click-to-show-more control that reveals its children, and explorer/frontend/ui/shared/scan/ScanPreviewButton.tsx as the eye control that opens a row's preview.
     - Add explorer/frontend/ui/shared/scan/ScanMethodChip.tsx carrying a decoded method name or a raw selector in a bordered chip, and explorer/frontend/ui/shared/scan/ScanDirectionBadge.tsx carrying IN or OUT for a transfer's counterparty.
@@ -263,7 +263,7 @@
 ## Wave 6 - Scan Pages
 
 - [ ] 6. Rebuild every explorer page on the scan shell and the scan primitives
-  - [ ] 6.1 Rebuild the home page
+  - [x] 6.1 Rebuild the home page
     - Rebuild explorer/frontend/ui/home/HeroBanner.tsx as the hero band the home layout carries - the page title over the wide search field - taking its frame from the shell and setting no colour, font, radius or shadow of its own.
     - Rebuild explorer/frontend/ui/home/Stats.tsx and explorer/frontend/ui/home/highlights/HighlightsItem.tsx as one card divided into three columns - the coin price with its market capitalisation, the transaction count with its rate beside the latest block with its block time, and the transaction history of the last fourteen days - built from the shared scan stat card.
     - Render the fourteen-day history column through explorer/frontend/ui/home/indicators/ChainIndicatorsChart.tsx and ChainIndicatorChartContent.tsx as a sparkline with its two axis labels and its dated ends, keeping the query hooks and the indicator configuration exactly as they are.
@@ -273,7 +273,7 @@
     - Keep the page working at 375px with the two cards stacking and the mobile transaction rows in use, with no horizontal page scroll, and change no file ending in .pw.tsx and no __screenshots__ directory.
     - Add the vitest specs explorer/frontend/ui/home/HeroBanner.spec.tsx, Stats.spec.tsx, LatestBlocks.spec.tsx, LatestTxs.spec.tsx and explorer/frontend/ui/pages/Home.spec.tsx, each rendering the real component through explorer/frontend/vitest/lib.tsx with payload mocks from explorer/frontend/mocks/ and asserting the columns, the rows, their order and their text.
     - _Requirements: 17.5, 17.6, 17.7, 17.8, 17.9_
-  - [ ] 6.2 Rebuild the transactions and blocks lists
+  - [x] 6.2 Rebuild the transactions and blocks lists
     - Rebuild explorer/frontend/ui/txs/TxsStats.tsx as a row of four shared scan stat cards - transactions in the last day, pending transactions in the last hour, total transaction fee in the last day and average transaction fee in the last day - each with its delta, reading the statistics the component already queries.
     - Rebuild explorer/frontend/ui/txs/TxsTable.tsx and explorer/frontend/ui/txs/TxsTableItem.tsx inside the shared scan table card with the columns preview, transaction hash, action chip, block, age, sender and recipient with the direction arrow between them, amount and transaction fee, using the shared preview button and method chip and keeping the failed-transaction marker on the hash.
     - Move the count line with its record note, the download action and the pagination into the table card header in explorer/frontend/ui/txs/TxsContent.tsx and explorer/frontend/ui/txs/TxsWithFrontendSorting.tsx and TxsWithAPISorting.tsx, and put the show-rows selector with the pagination in the card footer, leaving the sorting hooks and the socket path exactly as they are.
@@ -284,7 +284,7 @@
     - Keep both pages working at 375px through the existing list-item variants with no horizontal page scroll and no clipped table, and change no file ending in .pw.tsx and no __screenshots__ directory.
     - Add the vitest specs explorer/frontend/ui/txs/TxsStats.spec.tsx, TxsTable.spec.tsx, TxsListItem.spec.tsx, explorer/frontend/ui/blocks/BlocksTable.spec.tsx, BlocksListItem.spec.tsx and explorer/frontend/ui/pages/Transactions.spec.tsx and Blocks.spec.tsx, each rendering the real component through explorer/frontend/vitest/lib.tsx with payload mocks from explorer/frontend/mocks/ and asserting the stat cards, the columns, their order and their text.
     - _Requirements: 19.1, 19.2, 19.3, 19.6, 19.7, 19.8, 19.9_
-  - [ ] 6.3 Rebuild the transaction details page
+  - [x] 6.3 Rebuild the transaction details page
     - Rebuild explorer/frontend/ui/tx/TxSubHeading.tsx as the page title carrying the previous and next controls through the shared previous-next component, with the API entry beside the shared pill section tabs for the overview and the logs with their count.
     - Render the decoded action of explorer/frontend/ui/tx/details/txDetailsActions/TxDetailsActions.tsx, TxDetailsAction.tsx, TxDetailsActionsInterpretation.tsx and TxDetailsActionsRaw.tsx as its own card above the detail card, keeping every interpretation branch it already resolves.
     - Rebuild explorer/frontend/ui/tx/TxDetails.tsx and explorer/frontend/ui/tx/details/TxInfo.tsx on the shared key-value rows in the reference order - hash with its copy control, status badge, block with its confirmation chip, timestamp with its zone control, a divider, sender and recipient with the verified mark where the recipient carries one, a divider, then value with its coin icon and fiat figure, transaction fee and gas price - with the tooltip on each label.
@@ -295,7 +295,7 @@
     - Keep the page working at 375px with the detail rows stacking, no horizontal page scroll and no clipped value, and change no file ending in .pw.tsx and no __screenshots__ directory.
     - Add the vitest specs explorer/frontend/ui/tx/TxSubHeading.spec.tsx, TxDetails.spec.tsx, explorer/frontend/ui/tx/details/TxInfo.spec.tsx, explorer/frontend/ui/tx/details/txDetailsActions/TxDetailsActions.spec.tsx and explorer/frontend/ui/pages/Transaction.spec.tsx, each rendering the real component through explorer/frontend/vitest/lib.tsx with payload mocks from explorer/frontend/mocks/ and asserting the rows, their order, their labels and their values.
     - _Requirements: 20.1, 20.2, 20.3, 20.6, 20.7, 20.8, 20.9_
-  - [ ] 6.4 Rebuild the block details page
+  - [x] 6.4 Rebuild the block details page
     - Rebuild explorer/frontend/ui/block/BlockDetails.tsx on the shared key-value rows in the reference order - height with its previous and next controls, timestamp with its zone control, the transactions sentence, hash, block reward, difficulty, total difficulty, size, a divider, gas used with its percentage, burnt fees and the extra data field - with the tooltip on each label.
     - Close the detail card with the shared expander holding the fields the overview does not show, and render the extra data as the read-only field the reference shows rather than a bare value.
     - Render the page title as the block number with the shared pill section tabs for the overview and the participants beside the API entry.
@@ -306,7 +306,7 @@
     - Keep the page working at 375px with the detail rows stacking, no horizontal page scroll and no clipped value, and change no file ending in .pw.tsx and no __screenshots__ directory.
     - Add the vitest specs explorer/frontend/ui/block/BlockDetails.spec.tsx, explorer/frontend/ui/block/BlockWithdrawals.spec.tsx and explorer/frontend/ui/pages/Block.spec.tsx, each rendering the real component through explorer/frontend/vitest/lib.tsx with payload mocks from explorer/frontend/mocks/ and asserting the rows, their order, their labels and their values.
     - _Requirements: 20.4, 20.5, 20.6, 20.7, 20.8, 20.9_
-  - [ ] 6.5 Rebuild the address page
+  - [x] 6.5 Rebuild the address page
     - Rebuild the address title row in explorer/frontend/ui/pages/Address.tsx and explorer/frontend/ui/address/details/AddressQrCode.tsx as the identicon, the label Address, the full address, the copy control and the QR control, with the watchlist, API and menu entries in an icon action row beneath it through explorer/frontend/ui/address/details/AddressFavoriteButton.tsx.
     - Rebuild explorer/frontend/ui/address/AddressDetails.tsx as three cards - an overview card built from explorer/frontend/ui/address/details/AddressBalance.tsx, AddressNetWorth.tsx and explorer/frontend/ui/address/tokenSelect with the coin balance, its fiat value and the token-holdings selector; a more-information card built from explorer/frontend/ui/address/details/AddressNameInfo.tsx and AddressCounterItem.tsx with the name tags, the latest and first transactions sent and the funding source; and a third card that renders the linked Paxeer X account when the address has one and explorer/frontend/ui/address/details/AddressImplementations.tsx with the contract information otherwise.
     - Put the page's tabs on the shared pill section tabs with explorer/frontend/ui/address/AddressAdvancedFilterLink.tsx on the right, keeping every tab the page already resolves.
@@ -317,7 +317,7 @@
     - Keep the page working at 375px with the three cards stacking and the existing list-item variants in use, with no horizontal page scroll, and change no file ending in .pw.tsx and no __screenshots__ directory.
     - Add the vitest specs explorer/frontend/ui/address/AddressDetails.spec.tsx, AddressTxs.spec.tsx, AddressTokenTransfers.spec.tsx and explorer/frontend/ui/pages/Address.spec.tsx, each rendering the real component through explorer/frontend/vitest/lib.tsx with payload mocks from explorer/frontend/mocks/ and asserting the cards, the tabs, the direction badges and the footer entries.
     - _Requirements: 21.1, 21.2, 21.3, 21.6, 21.7, 21.8, 21.9_
-  - [ ] 6.6 Rebuild the token and token instance pages
+  - [x] 6.6 Rebuild the token and token instance pages
     - Rebuild explorer/frontend/ui/token/TokenPageTitle.tsx as the title row - the token logo, the label Token, the name with its symbol and the verified mark - with the project link, the API entry and the menu on the right.
     - Add the chip row beneath the title from explorer/frontend/ui/token/TokenVerifiedInfo.tsx and explorer/frontend/ui/token/TokenProjectInfo.tsx carrying the token standard, the source-code chip, the implementation chip and the hashtag tags, each rendered through the shared method chip's tokens.
     - Rebuild explorer/frontend/ui/token/TokenDetails.tsx as three cards - an overview card with the maximum total supply, the holders and the transfers with their total and daily selector; a market card with the price, the onchain market capitalisation and the circulating supply market capitalisation; and an other-information card with the token contract and its decimals - keeping every query and every nullable field the component already handles.
@@ -328,7 +328,7 @@
     - Keep both pages working at 375px with the three cards stacking and the existing list-item variants in use, with no horizontal page scroll, and change no file ending in .pw.tsx and no __screenshots__ directory.
     - Add the vitest specs explorer/frontend/ui/token/TokenDetails.spec.tsx, TokenPageTitle.spec.tsx, explorer/frontend/ui/token/TokenTransfer/TokenTransferTable.spec.tsx, explorer/frontend/ui/tokenInstance/TokenInstanceDetails.spec.tsx and explorer/frontend/ui/pages/Token.spec.tsx and TokenInstance.spec.tsx, each rendering the real component through explorer/frontend/vitest/lib.tsx with payload mocks from explorer/frontend/mocks/ and asserting the title row, the chip row, the cards, the tabs and the table columns.
     - _Requirements: 21.4, 21.5, 21.6, 21.7, 21.8, 21.9_
-  - [ ] 6.7 Rebuild the token tracker and top accounts lists
+  - [x] 6.7 Rebuild the token tracker and top accounts lists
     - Rebuild explorer/frontend/ui/tokens/TokensTable.tsx, TokensTableItem.tsx and TokensListItem.tsx in the shared scan table card with the columns index, token with its logo name and symbol, price with the coin-denominated price beneath it in the muted tone, change percent in the success or destructive tone, volume over the last day, circulating market capitalisation, onchain market capitalisation and holders.
     - Put the count line naming the token contracts found with its reputation note into the table card header in explorer/frontend/ui/tokens/Tokens.tsx and move the search and filter controls of explorer/frontend/ui/tokens/TokensActionBar.tsx and TokensBridgedChainsFilter.tsx into the header's actions slot, with the show-rows selector and the pagination in the card footer.
     - Rebuild explorer/frontend/ui/addresses/AddressesTable.tsx, AddressesTableItem.tsx and AddressesListItem.tsx in the same table card with the columns index, address, name tag, balance, percentage and transaction count.
@@ -338,7 +338,7 @@
     - Keep both pages working at 375px through the existing list-item variants with no horizontal page scroll and no clipped table, and change no file ending in .pw.tsx and no __screenshots__ directory.
     - Add the vitest specs explorer/frontend/ui/tokens/TokensTable.spec.tsx, TokensListItem.spec.tsx, explorer/frontend/ui/addresses/AddressesTable.spec.tsx, AddressesListItem.spec.tsx and explorer/frontend/ui/pages/Tokens.spec.tsx and Accounts.spec.tsx, each rendering the real component through explorer/frontend/vitest/lib.tsx with payload mocks from explorer/frontend/mocks/ and asserting the count line, the columns, their order and their text.
     - _Requirements: 19.4, 19.5, 19.6, 19.7, 19.8, 19.9_
-  - [ ] 6.8 Rebuild the charts and statistics page
+  - [x] 6.8 Rebuild the charts and statistics page
     - Add the sticky section navigation on the left of explorer/frontend/ui/pages/Stats.tsx listing the overview statistics, market data, blockchain data, network data and contract sections, marking the section in view and scrolling to a section when its entry is chosen.
     - Rebuild explorer/frontend/ui/stats/NumberWidgetsList.tsx on the shared scan stat card as a grid four to a row on the desktop, each card carrying its label, its information icon, its value and its delta in the success or destructive tone.
     - Rebuild explorer/frontend/ui/stats/ChartsWidgetsList.tsx and explorer/frontend/ui/stats/ChartWidgetContainer.tsx as a two-column grid of chart cards per section, each card carrying its title with the interval and an information icon, a view link on the right, the current value beneath the title, and the chart with its dated horizontal axis.
@@ -348,7 +348,7 @@
     - Keep the page working at 375px with the section navigation collapsing and both grids falling to one column, with no horizontal page scroll, and change no file ending in .pw.tsx and no __screenshots__ directory.
     - Add the vitest specs explorer/frontend/ui/stats/NumberWidgetsList.spec.tsx, ChartsWidgetsList.spec.tsx, ChartWidgetContainer.spec.tsx, explorer/frontend/ui/shared/chart/ChartIntervalSelect.spec.tsx, explorer/frontend/ui/shared/chart/utils.spec.ts covering the token-backed chart colours of config.ts and utils.ts, and explorer/frontend/ui/pages/Stats.spec.tsx, each rendering the real component through explorer/frontend/vitest/lib.tsx with statistics mocks from explorer/frontend/mocks/stats and asserting the sections, the stat cards and the chart card structure.
     - _Requirements: 22.1, 22.2, 22.3, 22.4, 22.5, 22.6, 22.7, 22.8_
-  - [ ] 6.9 Rebuild the kernel pages on the chain pages' cards
+  - [x] 6.9 Rebuild the kernel pages on the chain pages' cards
     - Rebuild the unified account summary in explorer/frontend/ui/pages/PaxeerXAccount.tsx on the same three cards the address page uses, with the title row carrying the identicon, the account label, the account identifier and the copy control.
     - Put the identities, assets and activity sections of explorer/frontend/ui/paxeerX/account/IdentityList.tsx, AssetList.tsx and ActivityList.tsx on the shared pill section tabs and render their rows in the shared scan table card with its count line, header actions, pagination and show-rows footer, restyling explorer/frontend/ui/paxeerX/account/AssetListItem.tsx and ActivityListItem.tsx onto the same tokens.
     - Rebuild explorer/frontend/ui/paxeerX/anchors/PaxeerXAnchorsTable.tsx, PaxeerXAnchorsTableItem.tsx and PaxeerXAnchorsListItem.tsx in the shared scan table card with the columns the anchors list already carries, and render the settlement rung through the existing status ladder badge restyled on the shared badge.
@@ -359,11 +359,32 @@
     - Keep the pages working at 375px through the existing list-item variants with no horizontal page scroll and no clipped table, and change no file ending in .pw.tsx and no __screenshots__ directory.
     - Add the vitest specs explorer/frontend/ui/paxeerX/anchors/PaxeerXAnchorsTable.spec.tsx, explorer/frontend/ui/paxeerX/receipts/PaxeerXReceiptsTable.spec.tsx and explorer/frontend/ui/pages/PaxeerXAccount.spec.tsx, PaxeerXAnchors.spec.tsx, PaxeerXReceipts.spec.tsx and PaxeerXReceipt.spec.tsx, each rendering the real component through explorer/frontend/vitest/lib.tsx with kernel payload mocks from explorer/frontend/mocks/paxeerX and asserting the cards, the tabs and the rows.
     - _Requirements: 23.1, 23.2, 23.3, 23.4, 23.5, 23.6, 23.7, 23.8_
+  - [x] 6.10 Add the specs the transaction page rebuild left without coverage
+    - List the source files the transaction page rebuild changed that carry no spec beside them, by diffing that rebuild's commit against its parent over explorer/ and applying the rule tools/explorer/test-ratio.sh states - a changed test counts for a changed source only when it sits in the same directory under the same stem, names one of that source's exported names, or names a fragment of its path.
+    - Add one vitest spec beside each source that list names - explorer/frontend/ui/tx/TxDetailsDegraded.spec.tsx, TxLogs.spec.tsx, TxInternals.spec.tsx, TxRawTrace.spec.tsx, TxState.spec.tsx and explorer/frontend/ui/tx/details/txDetailsActions/TxDetailsActionsInterpretation.spec.tsx and TxDetailsActionsRaw.spec.tsx - each rendering the real component through explorer/frontend/vitest/lib.tsx with payload mocks from explorer/frontend/mocks/ and asserting the structure the rebuild gave it, changing no source file and adding no file ending in .pw.tsx and no __screenshots__ directory.
+    - _Requirements: 20.1, 20.2, 20.3, 20.6, 20.7, 20.8, 20.9_
+  - [x] 6.11 Carry the list pages' pagination in the table card only and put the direction badge on the counterparty column
+    - Leave the transactions and the blocks list one pagination by taking it out of the tab strips - explorer/frontend/ui/txs/TxsTabs.tsx keeps only the advanced-filter entry in its right slot and explorer/frontend/ui/blocks/BlocksTabSlot.tsx keeps only the network utilisation and the block countdown, dropping the pagination explorer/frontend/ui/pages/Blocks.tsx hands it - so the shared scan table card header and footer carry it alone while the mobile action bars of TxsContent and BlocksContent keep theirs.
+    - Put the shared direction badge on the counterparty column of the address-scoped rows in explorer/frontend/ui/shared/address/AddressFromTo.tsx, rendering it in both the long and the compact layout in place of the course arrow of explorer/frontend/ui/shared/address/AddressFromToIcon.tsx whenever a current address is in scope and the course is incoming or outgoing, so that the rows of explorer/frontend/ui/txs/TxsTableItem.tsx and TxsListItem.tsx and every other transaction and transfer row that names a current address carry it, and keeping the arrow for a self-directed or unscoped row.
+    - Drop the interim filter badge the address page kept in its table-card header in explorer/frontend/ui/address/AddressTxs.tsx, AddressInternalTxs.tsx and AddressTokenTransfers.tsx now that every row carries its own direction, leaving the filter control, the count line, the note and the download action exactly as they are.
+    - Consume the shared scan components from explorer/frontend/ui/shared/scan, write no literal colour, font family, radius or shadow, keep both appearances resolving through the same tokens, add no dependency, and change no file ending in .pw.tsx and no __screenshots__ directory.
+    - Add the vitest specs explorer/frontend/ui/txs/TxsTabs.spec.tsx, explorer/frontend/ui/blocks/BlocksTabSlot.spec.tsx and explorer/frontend/ui/shared/address/AddressFromTo.spec.tsx and extend explorer/frontend/ui/pages/Blocks.spec.tsx, explorer/frontend/ui/txs/TxsTableItem.spec.tsx, TxsListItem.spec.tsx and explorer/frontend/ui/address/AddressTxs.spec.tsx, AddressInternalTxs.spec.tsx and AddressTokenTransfers.spec.tsx, each rendering the real component through explorer/frontend/vitest/lib.tsx with payload mocks from explorer/frontend/mocks/ and asserting that every pagination sits inside the table card and that the direction badge sits on the counterparty column of a scoped row and no longer in the card header.
+    - _Requirements: 19.2, 19.3, 19.6, 19.7, 19.8, 19.9, 21.3, 21.6, 21.7, 21.8, 21.9_
+  - [x] 6.12 Let the embedded list content render inside the page's table card instead of opening a second one
+    - Give explorer/frontend/ui/txs/TxsContent.tsx an explicit isInsideTableCard property that tells it the caller already opens the shared scan table card, and when it is set render only the list and the table rows, handing the count line, the download action and the desktop pagination back to the caller, while the mobile action bar keeps the sorting, the filter, the download and the pagination it already carries.
+    - Pass that property through explorer/frontend/ui/txs/TxsWithAPISorting.tsx so a caller that owns the card reaches the list content the wrapper renders, leaving the sorting hooks and the query it holds exactly as they are.
+    - Give explorer/frontend/ui/blocks/BlocksContent.tsx the same property with the same meaning, since it carries the same card, count line and pagination shape as the transactions list, and leave its socket channel, its statistics query and its mobile action bar untouched.
+    - Set that property where explorer/frontend/ui/address/AddressTxs.tsx embeds the transactions list inside the card the address page already opens, so the transactions tab renders one table card carrying exactly one Download Page Data link in its header, the view-all row at its foot and one CSV Export link beneath it.
+    - Leave the standalone transactions and blocks pages opening their own table card with their own count line, download action and pagination, so nothing changes for a caller that does not set the property.
+    - Consume the shared scan components from explorer/frontend/ui/shared/scan and touch nothing else under explorer/frontend/ui/shared or explorer/frontend/ui/snippets; write no literal colour, font family, radius or shadow, keep both appearances resolving through the same tokens, add no dependency, and change no file ending in .pw.tsx and no __screenshots__ directory.
+    - Extend explorer/frontend/ui/txs/TxsContent.spec.tsx, explorer/frontend/ui/blocks/BlocksContent.spec.tsx and explorer/frontend/ui/address/AddressTxs.spec.tsx and add explorer/frontend/ui/txs/TxsWithAPISorting.spec.tsx, each rendering the real component through explorer/frontend/vitest/lib.tsx with payload mocks from explorer/frontend/mocks/ and asserting that the embedded list opens no card of its own while the standalone list still does and that the address transactions tab carries one page-data download and one CSV export, so that every source file this task changes has a changed spec that references it.
+    - Change no assertion of any existing spec of this feature other than by adding coverage for the new property, and keep every route, hook, resource and feature flag the two lists and the address page already resolve.
+    - _Requirements: 19.2, 19.3, 19.6, 19.7, 19.8, 19.9, 21.3, 21.6, 21.7, 21.8, 21.9_
 
 ## Wave 7 - One Aggregate Run, Recorded
 
 - [ ] 7. Qualify the redesigned frontend once on the merged tip and write down what ran
-  - [ ] 7.1 Run the explorer gates once over the scan waves and record the evidence
+  - [-] 7.1 Run the explorer gates once over the scan waves and record the evidence
     - On the revision that merges waves 5 and 6, run tools/explorer/gate-lint.sh once, writing its log under build/explorer-gates/.
     - At that same revision run tools/explorer/gate-test.sh once with its budget set to fit this task's timeout, writing its logs under build/explorer-gates/.
     - At that same revision run tools/explorer/test-ratio.sh once over the range that spans waves 5 and 6, so that every source file those waves changed is proven to have a changed test referencing it.
@@ -384,7 +405,7 @@
     { "id": 3,  "tasks": ["3.1"] },
     { "id": 4,  "tasks": ["4.1", "4.2"] },
     { "id": 5,  "tasks": ["5.1", "5.2"] },
-    { "id": 6,  "tasks": ["6.1", "6.2", "6.3", "6.4", "6.5", "6.6", "6.7", "6.8", "6.9"] },
+    { "id": 6,  "tasks": ["6.1", "6.2", "6.3", "6.4", "6.5", "6.6", "6.7", "6.8", "6.9", "6.10", "6.11", "6.12"] },
     { "id": 7,  "tasks": ["7.1"] }
   ]
 }

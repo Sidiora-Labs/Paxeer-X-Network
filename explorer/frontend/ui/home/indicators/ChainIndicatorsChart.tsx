@@ -1,4 +1,4 @@
-import { Flex, Text } from '@chakra-ui/react';
+import { chakra, Flex, Text } from '@chakra-ui/react';
 import React from 'react';
 
 import { Skeleton } from 'toolkit/chakra/skeleton';
@@ -12,43 +12,52 @@ import type { UseFetchChartDataResult } from './useChartDataQuery';
 
 interface Props {
   isLoading: boolean;
-  value: string;
+  value?: string;
   valueDiff?: number;
   chartQuery: UseFetchChartDataResult;
   title: string;
   hint?: string;
+  days?: number;
 }
 
-const ChainIndicatorsChart = ({ isLoading: isLoadingProp, value, valueDiff, chartQuery, title, hint }: Props) => {
+const ChainIndicatorsChart = ({ isLoading: isLoadingProp, value, valueDiff, chartQuery, title, hint, days }: Props) => {
   const isLoading = isLoadingProp || chartQuery.isPending;
 
+  const data = React.useMemo(() => {
+    if (!days) {
+      return chartQuery.data;
+    }
+
+    return chartQuery.data.map((item) => ({ ...item, items: item.items.slice(-days) }));
+  }, [ chartQuery.data, days ]);
+
   const valueTitleElement = (() => {
-    if (isLoading) {
-      return <Skeleton loading h="36px" w="200px"/>;
-    }
-
-    if (value.includes('N/A')) {
-      return <Text fontWeight={ 700 } fontSize="30px" lineHeight="36px" opacity="control.disabled">{ mdash }</Text>;
-    }
-
-    return (
-      <Text fontWeight={ 700 } fontSize="30px" lineHeight="36px">
-        { value }
-      </Text>
-    );
-  })();
-
-  const valueDiffElement = (() => {
-    if (valueDiff === undefined || (!isLoading && value.includes('N/A'))) {
+    if (value === undefined) {
       return null;
     }
 
-    const diffColor = valueDiff >= 0 ? 'green.500' : 'red.500';
+    if (isLoading) {
+      return <Skeleton loading h="28px" w="160px"/>;
+    }
+
+    if (value.includes('N/A')) {
+      return <Text textStyle="heading.sm" opacity="control.disabled">{ mdash }</Text>;
+    }
+
+    return <Text textStyle="heading.sm">{ value }</Text>;
+  })();
+
+  const valueDiffElement = (() => {
+    if (valueDiff === undefined || (!isLoading && value?.includes('N/A'))) {
+      return null;
+    }
+
+    const diffColor = valueDiff >= 0 ? 'stat.indicator.up' : 'stat.indicator.down';
 
     return (
       <Skeleton loading={ isLoading } display="flex" alignItems="center" color={ diffColor } ml={ 2 }>
         <IconSvg name="arrows/up-head" boxSize={ 5 } mr={ 1 } transform={ valueDiff < 0 ? 'rotate(180deg)' : 'rotate(0)' }/>
-        <Text color={ diffColor } fontWeight={ 600 }>{ valueDiff }%</Text>
+        <Text color={ diffColor } fontWeight="600">{ valueDiff }%</Text>
       </Skeleton>
     );
   })();
@@ -58,17 +67,28 @@ const ChainIndicatorsChart = ({ isLoading: isLoadingProp, value, valueDiff, char
   }
 
   return (
-    <Flex flexGrow={ 1 } flexDir="column">
+    <Flex flexGrow={ 1 } flexDir="column" h="100%" data-label="chain-indicator-chart" data-points={ data[0]?.items.length ?? 0 }>
       <Skeleton loading={ isLoading } display="flex" alignItems="center" w="fit-content" columnGap={ 1 }>
-        <Text fontWeight={ 500 }>{ title }</Text>
-        { hint && <Hint label={ hint }/> }
+        <chakra.span
+          data-title
+          textStyle="xs"
+          fontWeight="600"
+          letterSpacing="wide"
+          textTransform="uppercase"
+          color="text.muted"
+        >
+          { title }
+        </chakra.span>
+        { hint && <Hint label={ hint } boxSize={ 4 }/> }
       </Skeleton>
-      <Flex mb={{ base: 0, lg: 2 }} mt={ 1 } alignItems="end">
-        { valueTitleElement }
-        { valueDiffElement }
-      </Flex>
-      <Flex h={{ base: '80px', lg: '110px' }} alignItems="flex-start" flexGrow={ 1 }>
-        <ChainIndicatorChartContainer { ...chartQuery } isPending={ isLoading }/>
+      { valueTitleElement && (
+        <Flex mt={ 1 } alignItems="flex-end">
+          { valueTitleElement }
+          { valueDiffElement }
+        </Flex>
+      ) }
+      <Flex mt={ 2 } h={{ base: '96px', lg: '110px' }} alignItems="flex-start" flexGrow={ 1 }>
+        <ChainIndicatorChartContainer data={ data } isError={ chartQuery.isError } isPending={ isLoading }/>
       </Flex>
     </Flex>
   );
