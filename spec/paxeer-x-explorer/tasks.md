@@ -370,6 +370,16 @@
     - Consume the shared scan components from explorer/frontend/ui/shared/scan, write no literal colour, font family, radius or shadow, keep both appearances resolving through the same tokens, add no dependency, and change no file ending in .pw.tsx and no __screenshots__ directory.
     - Add the vitest specs explorer/frontend/ui/txs/TxsTabs.spec.tsx, explorer/frontend/ui/blocks/BlocksTabSlot.spec.tsx and explorer/frontend/ui/shared/address/AddressFromTo.spec.tsx and extend explorer/frontend/ui/pages/Blocks.spec.tsx, explorer/frontend/ui/txs/TxsTableItem.spec.tsx, TxsListItem.spec.tsx and explorer/frontend/ui/address/AddressTxs.spec.tsx, AddressInternalTxs.spec.tsx and AddressTokenTransfers.spec.tsx, each rendering the real component through explorer/frontend/vitest/lib.tsx with payload mocks from explorer/frontend/mocks/ and asserting that every pagination sits inside the table card and that the direction badge sits on the counterparty column of a scoped row and no longer in the card header.
     - _Requirements: 19.2, 19.3, 19.6, 19.7, 19.8, 19.9, 21.3, 21.6, 21.7, 21.8, 21.9_
+  - [ ] 6.12 Let the embedded list content render inside the page's table card instead of opening a second one
+    - Give explorer/frontend/ui/txs/TxsContent.tsx an explicit isInsideTableCard property that tells it the caller already opens the shared scan table card, and when it is set render only the list and the table rows, handing the count line, the download action and the desktop pagination back to the caller, while the mobile action bar keeps the sorting, the filter, the download and the pagination it already carries.
+    - Pass that property through explorer/frontend/ui/txs/TxsWithAPISorting.tsx so a caller that owns the card reaches the list content the wrapper renders, leaving the sorting hooks and the query it holds exactly as they are.
+    - Give explorer/frontend/ui/blocks/BlocksContent.tsx the same property with the same meaning, since it carries the same card, count line and pagination shape as the transactions list, and leave its socket channel, its statistics query and its mobile action bar untouched.
+    - Set that property where explorer/frontend/ui/address/AddressTxs.tsx embeds the transactions list inside the card the address page already opens, so the transactions tab renders one table card carrying exactly one Download Page Data link in its header, the view-all row at its foot and one CSV Export link beneath it.
+    - Leave the standalone transactions and blocks pages opening their own table card with their own count line, download action and pagination, so nothing changes for a caller that does not set the property.
+    - Consume the shared scan components from explorer/frontend/ui/shared/scan and touch nothing else under explorer/frontend/ui/shared or explorer/frontend/ui/snippets; write no literal colour, font family, radius or shadow, keep both appearances resolving through the same tokens, add no dependency, and change no file ending in .pw.tsx and no __screenshots__ directory.
+    - Extend explorer/frontend/ui/txs/TxsContent.spec.tsx, explorer/frontend/ui/blocks/BlocksContent.spec.tsx and explorer/frontend/ui/address/AddressTxs.spec.tsx and add explorer/frontend/ui/txs/TxsWithAPISorting.spec.tsx, each rendering the real component through explorer/frontend/vitest/lib.tsx with payload mocks from explorer/frontend/mocks/ and asserting that the embedded list opens no card of its own while the standalone list still does and that the address transactions tab carries one page-data download and one CSV export, so that every source file this task changes has a changed spec that references it.
+    - Change no assertion of any existing spec of this feature other than by adding coverage for the new property, and keep every route, hook, resource and feature flag the two lists and the address page already resolve.
+    - _Requirements: 19.2, 19.3, 19.6, 19.7, 19.8, 19.9, 21.3, 21.6, 21.7, 21.8, 21.9_
 
 ## Wave 7 - One Aggregate Run, Recorded
 
@@ -395,7 +405,7 @@
     { "id": 3,  "tasks": ["3.1"] },
     { "id": 4,  "tasks": ["4.1", "4.2"] },
     { "id": 5,  "tasks": ["5.1", "5.2"] },
-    { "id": 6,  "tasks": ["6.1", "6.2", "6.3", "6.4", "6.5", "6.6", "6.7", "6.8", "6.9", "6.10", "6.11"] },
+    { "id": 6,  "tasks": ["6.1", "6.2", "6.3", "6.4", "6.5", "6.6", "6.7", "6.8", "6.9", "6.10", "6.11", "6.12"] },
     { "id": 7,  "tasks": ["7.1"] }
   ]
 }
