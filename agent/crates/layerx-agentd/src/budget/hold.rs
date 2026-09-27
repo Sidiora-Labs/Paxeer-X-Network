@@ -110,10 +110,10 @@ pub(crate) fn rebuild_accounting(
                 .ok_or(RestartError::Arithmetic)?;
         }
     }
-    let verified = verifier
+    let verified_state = verifier
         .verify_state(&protocol.evidence)
         .map_err(|_| RestartError::UnverifiedProtocol)?;
-    let protocol_consumed = ProtocolBudgetRecord::decode(verified.canonical_state())
+    let protocol_consumed = ProtocolBudgetRecord::decode(verified_state.canonical_state())
         .ok()
         .map(|record| record.spent_this_period);
     let mut held_unresolved = 0_u128;

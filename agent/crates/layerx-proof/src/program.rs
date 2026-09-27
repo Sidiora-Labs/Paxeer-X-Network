@@ -59,6 +59,38 @@ pub struct AuthorizedProgramExecutionExpectation {
     pub guest_abi_version: u16,
 }
 
+/// The four commitments both expectations bind a Programs receipt to, carried
+/// as one value so the shared receipt check takes a single expectation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ProgramExecutionBinding {
+    activity_id: [u8; 32],
+    payload_hash: [u8; 32],
+    program_id: [u8; 32],
+    guest_abi_version: u16,
+}
+
+impl ProgramExecutionExpectation {
+    const fn binding(&self) -> ProgramExecutionBinding {
+        ProgramExecutionBinding {
+            activity_id: self.activity_id,
+            payload_hash: self.payload_hash,
+            program_id: self.program_id,
+            guest_abi_version: self.guest_abi_version,
+        }
+    }
+}
+
+impl AuthorizedProgramExecutionExpectation {
+    const fn binding(&self) -> ProgramExecutionBinding {
+        ProgramExecutionBinding {
+            activity_id: self.activity_id,
+            payload_hash: self.payload_hash,
+            program_id: self.program_id,
+            guest_abi_version: self.guest_abi_version,
+        }
+    }
+}
+
 /// A DID offered as an occupancy payer of a state-commitment receipt.
 ///
 /// The DID and the optional account identifier are untrusted input. The
@@ -261,10 +293,7 @@ pub fn verify_program_execution_with_payers(
         verified,
         terminal_payload,
         call_graph,
-        expected.activity_id,
-        expected.payload_hash,
-        expected.program_id,
-        expected.guest_abi_version,
+        expected.binding(),
         occupancy_payers,
     )
 }
@@ -310,10 +339,7 @@ pub fn verify_authorized_program_execution_with_payers(
         verified,
         terminal_payload,
         call_graph,
-        expected.activity_id,
-        expected.payload_hash,
-        expected.program_id,
-        expected.guest_abi_version,
+        expected.binding(),
         occupancy_payers,
     )
 }
@@ -322,17 +348,14 @@ fn verify_program_execution_receipt(
     verified: VerifiedReceipt,
     terminal_payload: &[u8],
     call_graph: &[u8],
-    expected_activity_id: [u8; 32],
-    expected_payload_hash: [u8; 32],
-    expected_program_id: [u8; 32],
-    expected_guest_abi_version: u16,
+    expected: ProgramExecutionBinding,
     occupancy_payers: &[OccupancyPayer<'_>],
 ) -> Result<VerifiedProgramExecution, ProgramExecutionVerificationFailure> {
     let protocol = verified
         .receipt()
         .protocol()
         .ok_or_else(|| ProgramExecutionVerificationFailure::at(ProgramExecutionCheck::Receipt))?;
-    if protocol.activity_id() != expected_activity_id {
+    if protocol.activity_id() != expected.activity_id {
         return Err(ProgramExecutionVerificationFailure::at(
             ProgramExecutionCheck::Activity,
         ));
@@ -340,7 +363,7 @@ fn verify_program_execution_receipt(
     let outcome = protocol
         .program_outcome()
         .ok_or_else(|| ProgramExecutionVerificationFailure::at(ProgramExecutionCheck::Receipt))?;
-    if outcome.abi_version() != expected_guest_abi_version {
+    if outcome.abi_version() != expected.guest_abi_version {
         return Err(ProgramExecutionVerificationFailure::at(
             ProgramExecutionCheck::GuestAbi,
         ));
@@ -383,7 +406,7 @@ fn verify_program_execution_receipt(
         if !pre_runtime {
             return terminal_failure();
         }
-        verify_pre_runtime(failure, protocol, expected_payload_hash, call_graph)?;
+        verify_pre_runtime(failure, protocol, expected.payload_hash, call_graph)?;
     }
     let occupancy_payment_accounts = verify_terminal_commitments(
         &terminal,
@@ -393,7 +416,7 @@ fn verify_program_execution_receipt(
         occupancy_payers,
     )?;
     let (typed_outcome, authenticated_failure, authenticated_resource) =
-        verified_terminal_outcome(&terminal, terminal_payload, expected_program_id, outcome)?;
+        verified_terminal_outcome(&terminal, terminal_payload, expected.program_id, outcome)?;
     Ok(VerifiedProgramExecution {
         occupancy_payment_accounts,
         result_code: outcome.result_code(),
@@ -879,7 +902,12 @@ mod occupancy_payer_tests {
     }
 
     fn hex(bytes: &[u8]) -> String {
-        bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+        use std::fmt::Write as _;
+        let mut text = String::with_capacity(bytes.len() * 2);
+        for byte in bytes {
+            let _ = write!(text, "{byte:02x}");
+        }
+        text
     }
 
     #[test]

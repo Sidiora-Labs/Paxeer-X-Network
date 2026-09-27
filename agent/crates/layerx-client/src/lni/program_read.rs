@@ -13,7 +13,7 @@ use super::simulate::{
 };
 use super::transport::{FrameTransport, TransportError};
 
-/// Tag carrying a snapshot constraint and one exact signed ProgramCall.
+/// Tag carrying a snapshot constraint and one exact signed `ProgramCall`.
 pub const PROGRAM_READ_REQUEST_TAG: u16 = 38;
 /// Tag carrying the existing signed simulation result shape.
 pub const PROGRAM_READ_RESPONSE_TAG: u16 = 39;
@@ -76,7 +76,7 @@ impl From<SchemaError> for ProgramReadError {
     }
 }
 
-/// Executes one exact signed ProgramCall against a server-captured immutable
+/// Executes one exact signed `ProgramCall` against a server-captured immutable
 /// snapshot and verifies the existing sequencer-signed simulation evidence.
 ///
 /// This operation sends once and receives once. It never polls, retries, or
@@ -93,6 +93,19 @@ pub fn read_program(
     signed_activity: &[u8],
     context: ProgramReadContext,
 ) -> Result<ProgramReadResult, ProgramReadError> {
+    let (request, expected_activity_id) = encode_program_read(registry, signed_activity, context)?;
+    transport.send(&request)?;
+    let response_bytes = transport.receive()?;
+    decode_program_read(&response_bytes, expected_activity_id, context)
+}
+
+/// Validates the snapshot constraints and the exact signed `ProgramCall`, and
+/// encodes the request frame with the activity id its evidence must carry.
+fn encode_program_read(
+    registry: &ModuleRegistry,
+    signed_activity: &[u8],
+    context: ProgramReadContext,
+) -> Result<(Vec<u8>, [u8; 32]), ProgramReadError> {
     if context.correlation_id == 0 {
         return Err(ProgramReadError::InvalidCorrelation);
     }
@@ -120,15 +133,12 @@ pub fn read_program(
     let mut payload = Vec::with_capacity(2 + 8 + 1 + 32 + 4 + signed_activity.len());
     payload.extend_from_slice(&PROGRAM_READ_REQUEST_VERSION.to_be_bytes());
     payload.extend_from_slice(&context.minimum_sequence.to_be_bytes());
-    match context.expected_state_root {
-        Some(root) => {
-            payload.push(1);
-            payload.extend_from_slice(&root);
-        }
-        None => {
-            payload.push(0);
-            payload.extend_from_slice(&[0; 32]);
-        }
+    if let Some(root) = context.expected_state_root {
+        payload.push(1);
+        payload.extend_from_slice(&root);
+    } else {
+        payload.push(0);
+        payload.extend_from_slice(&[0; 32]);
     }
     payload.extend_from_slice(&activity_length.to_be_bytes());
     payload.extend_from_slice(signed_activity);
@@ -140,9 +150,17 @@ pub fn read_program(
         canonical_payload: &payload,
         proof_material: &[],
     })?;
-    transport.send(&request)?;
-    let response_bytes = transport.receive()?;
-    let response = decode_envelope(&response_bytes)?;
+    Ok((request, expected_activity_id))
+}
+
+/// Verifies the response envelope, a typed core refusal, and the
+/// sequencer-signed simulation evidence against the requested snapshot.
+fn decode_program_read(
+    response_bytes: &[u8],
+    expected_activity_id: [u8; 32],
+    context: ProgramReadContext,
+) -> Result<ProgramReadResult, ProgramReadError> {
+    let response = decode_envelope(response_bytes)?;
     if response.version != context.interface_version
         || response.correlation_id != context.correlation_id
     {

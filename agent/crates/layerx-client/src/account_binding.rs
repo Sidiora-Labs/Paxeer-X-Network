@@ -102,7 +102,7 @@ pub fn decode_bind_nonce(answer: &[u8]) -> Result<u64, BindError> {
 /// Refuses an answer shorter than the four head words of
 /// `getUnifiedAccount`.
 pub fn decode_bound_did(answer: &[u8]) -> Result<Option<[u8; 32]>, BindError> {
-    if answer.len() < 4 * WORD || answer.len() % WORD != 0 {
+    if answer.len() < 4 * WORD || !answer.len().is_multiple_of(WORD) {
         return Err(BindError::MalformedAnswer);
     }
     let mut key = [0_u8; 32];
@@ -115,13 +115,14 @@ pub fn decode_bound_did(answer: &[u8]) -> Result<Option<[u8; 32]>, BindError> {
 pub struct BindCall {
     signed: SignedBinding,
     data: Vec<u8>,
+    to: [u8; 20],
 }
 
 impl BindCall {
     /// The contract to call: the `addr` precompile.
     #[must_use]
     pub const fn to(&self) -> [u8; 20] {
-        ADDR_PRECOMPILE
+        self.to
     }
 
     /// The ABI-encoded `bindLayerX(didPublicKey, signature)` call data.
@@ -143,7 +144,7 @@ pub enum BindPlan {
     /// The address is already bound to this identity; send nothing.
     AlreadyBound,
     /// Send this call from the EVM address.
-    Bind(BindCall),
+    Bind(Box<BindCall>),
 }
 
 /// Plans the binding of `account` on chain `chain_id`, given the identity the
@@ -173,7 +174,11 @@ pub fn plan_bind(
     data.extend_from_slice(&word);
     data.extend_from_slice(&word);
     data.extend_from_slice(&signed.signature());
-    Ok(BindPlan::Bind(BindCall { signed, data }))
+    Ok(BindPlan::Bind(Box::new(BindCall {
+        signed,
+        data,
+        to: ADDR_PRECOMPILE,
+    })))
 }
 
 /// Fee and ordering fields of the transaction that carries a [`BindCall`].
@@ -229,7 +234,12 @@ mod tests {
         include_str!("../../../../platform/sdk/conformance/fixtures/account-derivation-v1.json");
 
     fn hex(bytes: &[u8]) -> String {
-        bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+        use std::fmt::Write as _;
+        let mut text = String::with_capacity(bytes.len() * 2);
+        for byte in bytes {
+            let _ = write!(text, "{byte:02x}");
+        }
+        text
     }
 
     #[test]

@@ -419,25 +419,24 @@ pub fn serve_evidence(
 /// decode, and the store failure otherwise.
 pub fn evidence_inventory(
     durable: &Store,
-    tenant: TenantId,
+    tenant: &TenantId,
 ) -> Result<ReceiptEvidenceInventory, ReceiptStoreError> {
     let mut inventory = ReceiptEvidenceInventory::default();
-    for object_id in durable.list_object_ids(&tenant, ObjectKind::Receipt) {
+    for object_id in durable.list_object_ids(tenant, ObjectKind::Receipt) {
         let Some(suffix) = object_id.strip_prefix(IDEMPOTENCY_INDEX_PREFIX) else {
             continue;
         };
         let idempotency_key: [u8; 32] =
             suffix.try_into().map_err(|_| ReceiptStoreError::Corrupt)?;
-        match serve_evidence(durable, tenant.clone(), idempotency_key)? {
-            Some(record) => inventory.with_evidence.push(record),
-            None => {
-                let served = serve(
-                    durable,
-                    tenant.clone(),
-                    ReceiptLookupKey::Idempotency(idempotency_key),
-                )?;
-                inventory.without_evidence.push(served.metadata);
-            }
+        if let Some(record) = serve_evidence(durable, tenant.clone(), idempotency_key)? {
+            inventory.with_evidence.push(record);
+        } else {
+            let served = serve(
+                durable,
+                tenant.clone(),
+                ReceiptLookupKey::Idempotency(idempotency_key),
+            )?;
+            inventory.without_evidence.push(served.metadata);
         }
     }
     inventory

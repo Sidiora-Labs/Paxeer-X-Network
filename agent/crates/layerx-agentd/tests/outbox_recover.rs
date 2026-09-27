@@ -9,7 +9,8 @@ use layerx_agentd::protocol_evidence::{
     VerifierPolicyError,
 };
 use layerx_agentd::receipt::{
-    evidence_inventory, persist_evidence, serve_evidence, store as store_receipt, ReceiptStoreError,
+    evidence_inventory, persist_evidence, serve_evidence, store as store_receipt,
+    ReceiptEvidenceInventory, ReceiptStoreError,
 };
 use layerx_agentd::store::{Store, TenantId};
 use layerx_client::evidence::RootSelector;
@@ -217,7 +218,7 @@ fn receipt_evidence_round_trips_through_a_real_store() {
             .unwrap_or_else(|error| panic!("serve older after reopen: {error:?}")),
         None
     );
-    let inventory = evidence_inventory(&reopened, tenant.clone())
+    let inventory = evidence_inventory(&reopened, &tenant)
         .unwrap_or_else(|error| panic!("inventory: {error:?}"));
     assert_eq!(inventory.with_evidence, vec![record]);
     assert_eq!(inventory.without_evidence.len(), 1);
@@ -227,18 +228,14 @@ fn receipt_evidence_round_trips_through_a_real_store() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
-#[test]
-fn startup_recovery_reconciles_evidenced_tenant_and_holds_tenant_without_evidence() {
-    let root = directory("startup-recovery");
-    let tenant_a = tenant();
-    let tenant_b = TenantId::new("tenant-b").unwrap_or_else(|error| panic!("tenant: {error}"));
-    let mut durable = Store::open(&root).unwrap_or_else(|error| panic!("store: {error}"));
+fn seed_startup_recovery(root: &std::path::Path, tenant_a: &TenantId, tenant_b: &TenantId) {
+    let mut durable = Store::open(root).unwrap_or_else(|error| panic!("store: {error}"));
     let evidenced = support::raw_receipt_at([0x11; 32], 0, 25, 100);
-    store_served_receipt(&mut durable, &tenant_a, [0x44; 32], &evidenced, 100);
+    store_served_receipt(&mut durable, tenant_a, [0x44; 32], &evidenced, 100);
     persist_evidence(&mut durable, tenant_a.clone(), [0x44; 32], &evidenced)
         .unwrap_or_else(|error| panic!("persist evidence: {error:?}"));
     let unevidenced = support::raw_receipt_at([0x12; 32], 0, 10, 101);
-    store_served_receipt(&mut durable, &tenant_b, [0x45; 32], &unevidenced, 101);
+    store_served_receipt(&mut durable, tenant_b, [0x45; 32], &unevidenced, 101);
     hold_unknown(
         &mut durable,
         &UnknownReservation {
@@ -250,104 +247,106 @@ fn startup_recovery_reconciles_evidenced_tenant_and_holds_tenant_without_evidenc
         },
     )
     .unwrap_or_else(|error| panic!("hold unknown: {error:?}"));
-    drop(durable);
+}
 
-    let mut reopened = Store::open(&root).unwrap_or_else(|error| panic!("reopen: {error}"));
-    let verifier = support::evidence_verifier();
-    let protocol = ProtocolBudgetState {
-        evidence: support::raw_state_leaf(core_budget_record(500, 25), 99),
-    };
-    let inventory_a = evidence_inventory(&reopened, tenant_a.clone())
-        .unwrap_or_else(|error| panic!("inventory a: {error:?}"));
-    assert_eq!(inventory_a.with_evidence.len(), 1);
-    assert!(inventory_a.without_evidence.is_empty());
-    let recovery_a = recover_tenant_budget(
-        &mut reopened,
-        &tenant_a,
-        &BudgetRecoveryRequest {
-            budget_id: BUDGET_ID,
-            protocol_budget: protocol.clone(),
-            verifier: verifier.clone(),
-            receipts_with_evidence: &inventory_a.with_evidence,
-            receipts_without_evidence: &inventory_a.without_evidence,
-            ceiling_maximum: 1_000,
-            current_sequence: 1,
-        },
+fn recovery_request<'a>(
+    budget_id: [u8; 32],
+    protocol: &ProtocolBudgetState,
+    verifier: &EvidenceAuthority,
+    inventory: &'a ReceiptEvidenceInventory,
+) -> BudgetRecoveryRequest<'a> {
+    BudgetRecoveryRequest {
+        budget_id,
+        protocol_budget: protocol.clone(),
+        verifier: verifier.clone(),
+        receipts_with_evidence: &inventory.with_evidence,
+        receipts_without_evidence: &inventory.without_evidence,
+        ceiling_maximum: 1_000,
+        current_sequence: 1,
+    }
+}
+
+fn assert_evidenced_tenant_admits_writes(
+    reopened: &mut Store,
+    tenant: &TenantId,
+    protocol: &ProtocolBudgetState,
+    verifier: &EvidenceAuthority,
+    inventory: &ReceiptEvidenceInventory,
+) {
+    let recovery = recover_tenant_budget(
+        reopened,
+        tenant,
+        &recovery_request(BUDGET_ID, protocol, verifier, inventory),
     )
     .unwrap_or_else(|error| panic!("recover tenant a: {error:?}"));
-    let accounting_a = recovery_a.recovered.budget_accounting;
-    assert_eq!(accounting_a.protocol_consumed, Some(25));
-    assert_eq!(accounting_a.receipt_consumed, 25);
-    assert_eq!(accounting_a.held_unresolved, 0);
-    assert_eq!(accounting_a.unresolved_count, 0);
-    assert!(accounting_a.reconciled);
-    assert!(recovery_a.recovered.queued_for_transmission.is_empty());
-    assert!(recovery_a.recovered.awaiting_receipt_resolution.is_empty());
-    assert!(recovery_a
+    let accounting = recovery.recovered.budget_accounting;
+    assert_eq!(accounting.protocol_consumed, Some(25));
+    assert_eq!(accounting.receipt_consumed, 25);
+    assert_eq!(accounting.held_unresolved, 0);
+    assert_eq!(accounting.unresolved_count, 0);
+    assert!(accounting.reconciled);
+    assert!(recovery.recovered.queued_for_transmission.is_empty());
+    assert!(recovery.recovered.awaiting_receipt_resolution.is_empty());
+    assert!(recovery
         .recovered
         .ceiling
         .snapshot()
         .is_ok_and(|snapshot| snapshot.reconciled));
-    assert!(recovery_a.recovered.require_write_ready().is_ok());
-    assert!(recovery_a.admission.is_ok());
+    assert!(recovery.recovered.require_write_ready().is_ok());
+    assert!(recovery.admission.is_ok());
+}
 
-    let inventory_b = evidence_inventory(&reopened, tenant_b.clone())
-        .unwrap_or_else(|error| panic!("inventory b: {error:?}"));
-    assert!(inventory_b.with_evidence.is_empty());
-    assert_eq!(inventory_b.without_evidence.len(), 1);
-    let recovery_b = recover_tenant_budget(
-        &mut reopened,
-        &tenant_b,
-        &BudgetRecoveryRequest {
-            budget_id: BUDGET_ID,
-            protocol_budget: protocol.clone(),
-            verifier: verifier.clone(),
-            receipts_with_evidence: &inventory_b.with_evidence,
-            receipts_without_evidence: &inventory_b.without_evidence,
-            ceiling_maximum: 1_000,
-            current_sequence: 1,
-        },
+fn assert_unevidenced_tenant_holds_its_reservation(
+    reopened: &mut Store,
+    tenant: &TenantId,
+    protocol: &ProtocolBudgetState,
+    verifier: &EvidenceAuthority,
+    inventory: &ReceiptEvidenceInventory,
+) {
+    let recovery = recover_tenant_budget(
+        reopened,
+        tenant,
+        &recovery_request(BUDGET_ID, protocol, verifier, inventory),
     )
     .unwrap_or_else(|error| panic!("recover tenant b: {error:?}"));
-    let accounting_b = recovery_b.recovered.budget_accounting;
-    assert_eq!(accounting_b.protocol_consumed, Some(25));
-    assert_eq!(accounting_b.receipt_consumed, 0);
-    assert_eq!(accounting_b.held_unresolved, 300);
-    assert_eq!(accounting_b.unresolved_count, 1);
-    assert!(accounting_b.reconciled);
-    assert!(recovery_b
+    let accounting = recovery.recovered.budget_accounting;
+    assert_eq!(accounting.protocol_consumed, Some(25));
+    assert_eq!(accounting.receipt_consumed, 0);
+    assert_eq!(accounting.held_unresolved, 300);
+    assert_eq!(accounting.unresolved_count, 1);
+    assert!(accounting.reconciled);
+    assert!(recovery
         .recovered
         .ceiling
         .snapshot()
         .is_ok_and(|snapshot| snapshot.reconciled));
     assert!(matches!(
-        recovery_b.admission,
+        recovery.admission,
         Err(RecoveryRefusal::EvidenceMissing { budget_id, count })
             if budget_id == BUDGET_ID && count == 1
     ));
+}
 
+fn assert_tenant_without_receipts_blocks_writes(
+    reopened: &mut Store,
+    protocol: &ProtocolBudgetState,
+    verifier: &EvidenceAuthority,
+) {
     let tenant_d = TenantId::new("tenant-d").unwrap_or_else(|error| panic!("tenant: {error}"));
-    let recovery_d = recover_tenant_budget(
-        &mut reopened,
+    let empty = ReceiptEvidenceInventory::default();
+    let recovery = recover_tenant_budget(
+        reopened,
         &tenant_d,
-        &BudgetRecoveryRequest {
-            budget_id: BUDGET_ID,
-            protocol_budget: protocol.clone(),
-            verifier: verifier.clone(),
-            receipts_with_evidence: &[],
-            receipts_without_evidence: &[],
-            ceiling_maximum: 1_000,
-            current_sequence: 1,
-        },
+        &recovery_request(BUDGET_ID, protocol, verifier, &empty),
     )
     .unwrap_or_else(|error| panic!("recover tenant d: {error:?}"));
-    let accounting_d = recovery_d.recovered.budget_accounting;
-    assert_eq!(accounting_d.protocol_consumed, Some(25));
-    assert_eq!(accounting_d.receipt_consumed, 0);
-    assert_eq!(accounting_d.held_unresolved, 0);
-    assert!(!accounting_d.reconciled);
+    let accounting = recovery.recovered.budget_accounting;
+    assert_eq!(accounting.protocol_consumed, Some(25));
+    assert_eq!(accounting.receipt_consumed, 0);
+    assert_eq!(accounting.held_unresolved, 0);
+    assert!(!accounting.reconciled);
     assert_eq!(
-        recovery_d
+        recovery
             .recovered
             .ceiling
             .snapshot()
@@ -355,49 +354,82 @@ fn startup_recovery_reconciles_evidenced_tenant_and_holds_tenant_without_evidenc
         Ok(false)
     );
     assert!(matches!(
-        recovery_d.recovered.require_write_ready(),
+        recovery.recovered.require_write_ready(),
         Err(RecoveryError::WritesBlocked)
     ));
     assert!(matches!(
-        recovery_d.admission,
-        Err(RecoveryRefusal::WritesBlocked { budget_id, accounting })
-            if budget_id == BUDGET_ID && accounting == accounting_d
+        recovery.admission,
+        Err(RecoveryRefusal::WritesBlocked { budget_id, accounting: reported })
+            if budget_id == BUDGET_ID && reported == accounting
     ));
+}
 
+fn assert_budget_state_refusals(
+    reopened: &mut Store,
+    tenant: &TenantId,
+    protocol: &ProtocolBudgetState,
+    verifier: &EvidenceAuthority,
+    inventory: &ReceiptEvidenceInventory,
+) {
     assert!(matches!(
         recover_tenant_budget(
-            &mut reopened,
-            &tenant_a,
-            &BudgetRecoveryRequest {
-                budget_id: [0x52; 32],
-                protocol_budget: protocol.clone(),
-                verifier: verifier.clone(),
-                receipts_with_evidence: &inventory_a.with_evidence,
-                receipts_without_evidence: &inventory_a.without_evidence,
-                ceiling_maximum: 1_000,
-                current_sequence: 1,
-            },
+            reopened,
+            tenant,
+            &recovery_request([0x52; 32], protocol, verifier, inventory),
         ),
         Err(RecoveryRefusal::BudgetState { budget_id, .. }) if budget_id == [0x52; 32]
     ));
+    let corrupted = ProtocolBudgetState {
+        evidence: support::corrupt_raw_state(&protocol.evidence, vec![1, 2, 3]),
+    };
     assert!(matches!(
         recover_tenant_budget(
-            &mut reopened,
-            &tenant_a,
-            &BudgetRecoveryRequest {
-                budget_id: BUDGET_ID,
-                protocol_budget: ProtocolBudgetState {
-                    evidence: support::corrupt_raw_state(&protocol.evidence, vec![1, 2, 3]),
-                },
-                verifier,
-                receipts_with_evidence: &inventory_a.with_evidence,
-                receipts_without_evidence: &inventory_a.without_evidence,
-                ceiling_maximum: 1_000,
-                current_sequence: 1,
-            },
+            reopened,
+            tenant,
+            &recovery_request(BUDGET_ID, &corrupted, verifier, inventory),
         ),
         Err(RecoveryRefusal::BudgetState { budget_id, .. }) if budget_id == BUDGET_ID
     ));
+}
+
+#[test]
+fn startup_recovery_reconciles_evidenced_tenant_and_holds_tenant_without_evidence() {
+    let root = directory("startup-recovery");
+    let tenant_a = tenant();
+    let tenant_b = TenantId::new("tenant-b").unwrap_or_else(|error| panic!("tenant: {error}"));
+    seed_startup_recovery(&root, &tenant_a, &tenant_b);
+
+    let mut reopened = Store::open(&root).unwrap_or_else(|error| panic!("reopen: {error}"));
+    let verifier = support::evidence_verifier();
+    let protocol = ProtocolBudgetState {
+        evidence: support::raw_state_leaf(core_budget_record(500, 25), 99),
+    };
+    let inventory_a = evidence_inventory(&reopened, &tenant_a)
+        .unwrap_or_else(|error| panic!("inventory a: {error:?}"));
+    assert_eq!(inventory_a.with_evidence.len(), 1);
+    assert!(inventory_a.without_evidence.is_empty());
+    assert_evidenced_tenant_admits_writes(
+        &mut reopened,
+        &tenant_a,
+        &protocol,
+        &verifier,
+        &inventory_a,
+    );
+
+    let inventory_b = evidence_inventory(&reopened, &tenant_b)
+        .unwrap_or_else(|error| panic!("inventory b: {error:?}"));
+    assert!(inventory_b.with_evidence.is_empty());
+    assert_eq!(inventory_b.without_evidence.len(), 1);
+    assert_unevidenced_tenant_holds_its_reservation(
+        &mut reopened,
+        &tenant_b,
+        &protocol,
+        &verifier,
+        &inventory_b,
+    );
+
+    assert_tenant_without_receipts_blocks_writes(&mut reopened, &protocol, &verifier);
+    assert_budget_state_refusals(&mut reopened, &tenant_a, &protocol, &verifier, &inventory_a);
     let _ = std::fs::remove_dir_all(&root);
 }
 

@@ -170,7 +170,7 @@
     - In interop/crates/x-websearch/src/config.rs add the fields observation 1.4.3 names - the payer account the sidecar draws as, the per-draw fee limit and the path of the adapter conformance suite - each with a documented default that reproduces today's behaviour when absent and a refusal that names the field on a malformed value, and make src/payment.rs read them instead of its constants.
     - Extend tests/config.rs for the three fields and their refusals and tests/payment.rs so a draw above the configured limit is refused and the configured payer appears in the draw, replaying the recording task 1.15 made without re-recording it.
     - _Requirements: 4.1, 4.2_
-  - [ ] 2.11 Clear the pre-existing agent workspace clippy findings so agent-lint passes
+  - [x] 2.11 Clear the pre-existing agent workspace clippy findings so agent-lint passes
     - Run make agent-lint on this revision, and fix every clippy finding it reports in crates this feature did not write - starting with too_many_arguments in agent/crates/layerx-proof/src/program.rs verify_program_execution_receipt (observation 1.18.1) - by restructuring the code, never by an allow attribute, a lint-level change or a clippy configuration change, keeping every public signature the agent SDKs and services call unchanged unless a caller in the workspace is updated in the same task.
     - Keep every test of each touched crate passing, and add or extend a test where a restructuring changes a function's shape.
     - _Requirements: 9.1_

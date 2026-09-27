@@ -1,6 +1,6 @@
 use layerx_proof::program::{
-    verify_authorized_program_execution, AuthorizedProgramExecutionExpectation,
-    ProgramExecutionCheck,
+    verify_authorized_program_execution, verify_program_execution,
+    AuthorizedProgramExecutionExpectation, ProgramExecutionCheck, ProgramExecutionExpectation,
 };
 use layerx_proof::receipt::{verify_program_outcome, AuthorizedBatch};
 use layerx_wire::receipt::{decode, decode_applied_terminal};
@@ -232,5 +232,90 @@ fn stored_historical_v3_receipt_replays_without_v4_fields() {
     assert_eq!(
         <[u8; 32]>::from(Sha256::digest(bytes(&document, "call_graph_hex"))),
         outcome.call_graph_root()
+    );
+}
+
+#[test]
+fn both_expectations_bind_the_same_activity_program_and_guest_abi() {
+    let document = load("receipt-programs-executed-v4.json");
+    let canonical = bytes(&document, "canonical_receipt_hex");
+    let terminal = bytes(&document, "terminal_payload_hex");
+    let graph = bytes(&document, "call_graph_hex");
+    let receipt = decode(&canonical).unwrap_or_else(|error| panic!("{error:?}"));
+    let protocol = receipt
+        .protocol()
+        .unwrap_or_else(|| panic!("protocol receipt"));
+    let payload_hash = fixture_payload_hash(&document);
+    let sequencer_public_key = array(&document, "sequencer_public_key_hex");
+    let previous_state_root = array(&document, "previous_state_root_hex");
+    let authority = AuthorizedBatch::new(
+        array(&document, "batch_id_hex"),
+        array(&document, "asset_hex"),
+        previous_state_root,
+        array(&document, "resulting_state_root_hex"),
+        sequencer_public_key,
+    );
+    let truth = (
+        protocol.activity_id(),
+        array(&document, "program_id_hex"),
+        2_u16,
+    );
+    let bound = |(activity_id, program_id, guest_abi_version): ([u8; 32], [u8; 32], u16)| {
+        let at_root = verify_program_execution(
+            &canonical,
+            &terminal,
+            &graph,
+            ProgramExecutionExpectation {
+                sequencer_public_key,
+                previous_state_root,
+                activity_id,
+                payload_hash,
+                program_id,
+                guest_abi_version,
+            },
+        );
+        let authorized = verify_authorized_program_execution(
+            &canonical,
+            &terminal,
+            &graph,
+            &AuthorizedProgramExecutionExpectation {
+                authority,
+                activity_id,
+                payload_hash,
+                program_id,
+                guest_abi_version,
+            },
+        );
+        (
+            at_root.err().map(|error| error.check),
+            authorized.err().map(|error| error.check),
+        )
+    };
+    assert_eq!(bound(truth), (None, None));
+    let mut wrong_activity = truth;
+    wrong_activity.0[0] ^= 1;
+    assert_eq!(
+        bound(wrong_activity),
+        (
+            Some(ProgramExecutionCheck::Activity),
+            Some(ProgramExecutionCheck::Activity)
+        )
+    );
+    let mut wrong_program = truth;
+    wrong_program.1[0] ^= 1;
+    assert_eq!(
+        bound(wrong_program),
+        (
+            Some(ProgramExecutionCheck::Terminal),
+            Some(ProgramExecutionCheck::Terminal)
+        )
+    );
+    let wrong_abi = (truth.0, truth.1, truth.2.wrapping_add(1));
+    assert_eq!(
+        bound(wrong_abi),
+        (
+            Some(ProgramExecutionCheck::GuestAbi),
+            Some(ProgramExecutionCheck::GuestAbi)
+        )
     );
 }

@@ -767,7 +767,11 @@ reqs = ["4.1","4.2"]
 
 [task.2.11]
 title = "Clear the pre-existing agent workspace clippy findings so agent-lint passes"
-status = "pending"
+status = "done"
+revision = "c3c4a387eea0bfb1d252531361eee0f91ced8380"
+command = "timeout 45m sh -c 'make agent-lint && make agent-test'"
+exit_code = 0
+log_path = ".logs/verify.log"
 wave = 2
 requires = ["1.18","2.9","2.16","2.38","2.39","2.41","2.43"]
 do_1 = "Run make agent-lint on this revision, and fix every clippy finding it reports in crates this feature did not write - starting with too_many_arguments in agent/crates/layerx-proof/src/program.rs verify_program_execution_receipt (observation 1.18.1) - by restructuring the code, never by an allow attribute, a lint-level change or a clippy configuration change, keeping every public signature the agent SDKs and services call unchanged unless a caller in the workspace is updated in the same task."
