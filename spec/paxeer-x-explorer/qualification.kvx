@@ -427,3 +427,11 @@ symbol = "mutate"
 observed = "The workflow references of observation 1.3.1 are immutable pins at this revision, so the audit now reaches its later checks and the secret-shape check matched one line that belongs to no explorer path: the bridge documentation check injects a PEM private-key header as a literal to prove its own detector bites."
 assumption = "The line is repaired where it originates by assembling the same marker with printf, so the page the check mutates is byte identical and the mutation is still refused; the file sits outside this task's touched set and was edited because do_4 asks for every remaining finding to be handled at its source rather than allow-listed."
 severity = "note"
+
+[observation.2.13.1]
+task = "2.13"
+file = "explorer/services/libs/blockscout-client/crate/tests/it_works.rs"
+symbol = "api_client"
+observed = "The vendored suite starts one recorded stub server for all twenty-two cases from a spawned task and waits a fixed second for it, so under the default parallelism the wait expires before the server is up, the first case panics while holding the shared handle and every other case then reads a poisoned lock - timeout 20m sh -c 'tools/ci/path-length-check.sh && cd explorer/services/libs/blockscout-client/crate && cargo test --locked' exited 101 at df45d784f with 21 of 22 cases failing on a server that never started, log .logs/verify.log."
+assumption = "The race belongs to the vendored bootstrap and not to the renamed stubs, because the same twenty-two cases pass with the shortened names when the suite runs one case at a time, so the gate serialises the suite and the bootstrap is left exactly as upstream wrote it for its owner to repair."
+severity = "note"
