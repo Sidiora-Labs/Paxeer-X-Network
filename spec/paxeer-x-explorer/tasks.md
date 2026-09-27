@@ -165,7 +165,7 @@
     - Add explorer/deploy/tools/rpc-fixture-server.py, a dependency-free JSON-RPC server that answers the calls the backend makes during boot and the capability probe from recorded responses in explorer/deploy/tools/fixtures/, and add it to the compose stack behind a profile so the ordinary stack is unaffected.
     - Add explorer/deploy/tools/tests/compose-smoke-test.sh that brings the database, the fixture server and the backend up from the compose file under that profile, waits for the liveness path, asserts the capability endpoint answers with the documented body, prints the compose logs on failure and tears the stack down on every exit path.
     - _Requirements: 13.1, 13.2, 13.3, 13.4, 13.5_
-  - [ ] 2.11 Make the backend bind its port after migration
+  - [x] 2.11 Make the backend bind its port after migration
     - Reproduce the hang from the committed backend image under the environment documented in explorer/deploy/env/backend.example.env with the node JSON-RPC throttles set as a deployment sets them and the node slow to answer, and capture which supervision child never reports started.
     - Move the first remote call of Explorer.Chain.PaxeerX.Capabilities out of its initialisation callback into a continuation or an immediate scheduled refresh, so the process reports started at once, keeps its documented refresh interval, stays disabled by default and answers its state as unavailable until a probe succeeds.
     - Fix any other start-up path the reproduction implicates in the same way - a supervision child that performs a blocking remote call before reporting started - without raising a timeout, without wrapping a failure in a retry that hides it and without changing the application's child order for anything else.

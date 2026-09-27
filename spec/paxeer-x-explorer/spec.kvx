@@ -598,7 +598,11 @@ reqs = ["13.1","13.2","13.3","13.4","13.5"]
 
 [task.2.11]
 title = "Make the backend bind its port after migration"
-status = "pending"
+status = "done"
+revision = "de8283ab334852405150c0ef3a13327515270ac6"
+command = "timeout 20m sh -c 'explorer/deploy/tools/mix-in-builder.sh test apps/explorer/test/explorer/chain/paxeer_x/capabilities_test.exs apps/explorer/test/explorer/chain/paxeer_x/capabilities_boot_test.exs'"
+exit_code = 0
+log_path = ".logs/verify.log"
 wave = 2
 requires = ["1.1"]
 do_1 = "Reproduce the hang from the committed backend image under the environment documented in explorer/deploy/env/backend.example.env with the node JSON-RPC throttles set as a deployment sets them and the node slow to answer, and capture which supervision child never reports started."

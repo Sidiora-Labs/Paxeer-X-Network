@@ -19,8 +19,14 @@ defmodule Explorer.Chain.PaxeerX.Capabilities do
       answers that method after it — the capability is live when the call
       returns the declared four-word head instead of reverting.
 
-  The first probe runs at startup, every following one after
-  `PAXEER_X_CAPABILITIES_REFRESH_SECONDS` (30 by default). A probe that the node
+  The first probe runs from the process's own message loop, scheduled by
+  `init/1` for immediately, and every following one after
+  `PAXEER_X_CAPABILITIES_REFRESH_SECONDS` (30 by default). No remote call is
+  made from `init/1` itself: the process reports started before it speaks to the
+  node, so a node that is unreachable, slow or throttled delays this probe alone
+  and never the supervisor that has the rest of the application behind it. Until
+  the first probe succeeds the published snapshot is the all-absent one, which
+  is what the chain answers before the upgrade anyway. A probe that the node
   refuses leaves the previous answer in place and is retried on the next tick;
   it never replaces a known answer with a guess.
 
@@ -84,6 +90,10 @@ defmodule Explorer.Chain.PaxeerX.Capabilities do
   @head_request_id 0
 
   @default_refresh_interval_seconds 30
+
+  # The first probe is scheduled rather than run inline, so `init/1` returns —
+  # and the process reports started — before the node is asked anything.
+  @first_probe_delay_milliseconds 0
 
   @type surface :: :custody | :anchor | :exchange | :bridge | :launchpad | :unified_account
 
@@ -169,17 +179,13 @@ defmodule Explorer.Chain.PaxeerX.Capabilities do
 
   @impl GenServer
   def init(_) do
-    :ets.new(@table, [:named_table, :set, :protected, read_concurrency: true])
+    table = :ets.new(@table, [:named_table, :set, :protected, read_concurrency: true])
 
-    {:ok, %{}, {:continue, :probe}}
-  end
+    :ets.insert(table, {@snapshot_key, absent()})
 
-  @impl GenServer
-  def handle_continue(:probe, state) do
-    probe_and_store()
-    schedule_refresh()
+    schedule_refresh(@first_probe_delay_milliseconds)
 
-    {:noreply, state}
+    {:ok, %{}}
   end
 
   @impl GenServer
@@ -215,7 +221,11 @@ defmodule Explorer.Chain.PaxeerX.Capabilities do
   end
 
   defp schedule_refresh do
-    Process.send_after(self(), :refresh, :timer.seconds(refresh_interval_seconds()))
+    schedule_refresh(:timer.seconds(refresh_interval_seconds()))
+  end
+
+  defp schedule_refresh(delay_milliseconds) do
+    Process.send_after(self(), :refresh, delay_milliseconds)
   end
 
   defp refresh_interval_seconds do

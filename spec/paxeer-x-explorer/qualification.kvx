@@ -347,3 +347,11 @@ symbol = "task.4.1.status"
 observed = "Task 4.1 is recorded implemented rather than done, from a run of this same command that stopped in the frontend vitest leg, and its verify_cmd is the command this task just ran to exit code 0 at revision 068346118fbf3b9414f6a6ca57246ed25f41c01d with every one of its four per-application backend legs passing."
 assumption = "The per-application legs task 4.1 added are qualified by this run and its status is an owner's to move, since this task may write only its own evidence and the no-reverify rule forbids running the command again to record it against 4.1."
 severity = "note"
+
+[observation.2.11.1]
+task = "2.11"
+file = "explorer/backend/apps/explorer/lib/explorer/chain/paxeer_x/capabilities.ex"
+symbol = "Explorer.Chain.PaxeerX.Capabilities.init/1"
+observed = "No arity-one init callback in the four umbrella applications makes a remote call, and the capability probe's first call ran from the continuation init/1 returned, which a child's start acknowledgement does not wait for, so the boot hang of requirement 14 was not reproduced from the committed image against a throttled node inside this task."
+assumption = "The first probe is still moved off the continuation onto the message loop, so the process answers refresh/0 and every other message before its first probe returns instead of queueing behind a call a throttled node holds; the deployment-level hang stays with its owner to reproduce and this change is qualified by the boot regression test rather than by a live deployment."
+severity = "assumption"
