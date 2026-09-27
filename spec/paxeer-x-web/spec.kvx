@@ -628,7 +628,11 @@ reqs = ["14.1","14.2","14.3"]
 
 [task.2.6]
 title = "Dry-run the sidecar loop against anvil and local sidecars and record it"
-status = "pending"
+status = "implemented"
+implemented_revision = "325e418896c4428ff64a145c90a94e613d0952b6"
+implemented_command = "timeout 20m sh -c 'bash interop/deploy/x-websearch/tests/dry-run-check.sh'"
+implemented_exit_code = 1
+implemented_log_path = ".logs/verify.log"
 wave = 2
 requires = ["1.6","2.1","2.3","2.10","2.14","2.17","2.24","2.25","2.26","2.27","2.28","2.29","2.30","2.31","2.32","2.33","2.34","2.35","2.37","2.38","2.39","2.40","2.41","2.42","2.43","2.44","2.45"]
 do_1 = "Write interop/deploy/x-websearch/tests/dry-run-check.sh starting anvil, a real loopback web server serving committed pages and three x-websearch processes with run-local attestor keys and allow_loopback set, and deploying contracts/src/xweb/XWebConsumer.sol to anvil."

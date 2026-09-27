@@ -1,0 +1,2 @@
+The notes page is served as plain text and passes through extraction unchanged.
+Attested fetch, attested search and attested api calls share one canonical form.
