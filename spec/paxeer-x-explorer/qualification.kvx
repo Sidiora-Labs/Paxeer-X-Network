@@ -916,3 +916,34 @@ observed = "The development server the dev script starts renders every page as t
 assumption = "The fault is in the newer bundler's handling of the icon sprite component and reaches every page rather than any file of this task, so the browser check of this task was taken against the older bundler and the dev script is left exactly as it stands."
 severity = "note"
 
+[observation.8.2.1]
+task = "8.2"
+file = "explorer/frontend/tools/scripts/dev.sh"
+symbol = "next dev --turbopack"
+observed = "yarn dev starts next dev --turbopack against a next.config that only declares a webpack configuration, so the browser bundle follows configs/multichain/config.nodejs.ts into node built-ins, the compiler reports Module not found: Can't resolve 'fs' and every page of the local server renders the error boundary with Element type is invalid, log explorer/frontend/.logs/dev-8.2b.log."
+assumption = "The turbopack flag predates the webpack-only configuration this repository carries and is reproduced with all five runtime files of this task reverted, so it belongs to the dev script rather than to the pills, and the visual check of this task ran the same server through next dev without that flag, log explorer/frontend/.logs/dev-8.2c.log, leaving the script exactly as written."
+severity = "note"
+
+[observation.8.2.2]
+task = "8.2"
+file = "explorer/frontend/ui/shared/scan/ScanMethodChip.tsx"
+symbol = "ScanMethodChip"
+observed = "The development chain behind the local server returns an empty list from /api/v2/tokens and carries no decoded method on any recent transaction, so the token detail page and the method chip of the table rows have no live instance on the nine scan pages the visual check walks."
+assumption = "The absence is in the data of that chain rather than in the recipes, so the check adds the /chakra showcase, whose badge and tag sections render every size and variant of both recipes, and reads those pills instead of waiting for a token or a decoded call the chain does not hold."
+severity = "note"
+
+[observation.8.2.3]
+task = "8.2"
+file = "explorer/frontend/vitest/setup.ts"
+symbol = "fontfaceobserver"
+observed = "At revision 2c7cc3cfa5c7ff30141a39c04e10d9f8b0d042e3 the task verify_cmd passes its type check and all 20 spec files with all 149 tests, the five this task writes among them, and exits 1 because vitest caught one unhandled ReferenceError: document is not defined raised from node_modules/fontfaceobserver/fontfaceobserver.standalone.js on a timer that fires after the jsdom environment of ui/shared/scan/ScanMethodChip.spec.tsx is torn down, log .logs/verify-8.2-run2.log."
+assumption = "It is the teardown race already recorded as observation 7.1.2, where 62 of the same error appeared across many spec files of the wave gate, and the earlier run of this same command over these same specs raised none, so it is the timing of the font poll rather than anything this task wrote; the setup file that installs the environment lies outside this task's paths, so nothing is changed, no test is skipped and the suite is not rerun unchanged."
+severity = "note"
+
+[observation.8.2.4]
+task = "8.2"
+file = "spec/paxeer-x-explorer/spec.kvx"
+symbol = "cg spec done"
+observed = "The task verify_cmd passes at exit 0 over the merged feature tip, log explorer/frontend/.logs/verify-8.2-run3.log, with all 20 spec files and 153 tests green and no unhandled error, but three consecutive runs of cg spec done 8.2 refused to apply because the graph database write lock was held for the whole wait by other concurrent processes, so the task keeps the in_progress status and its done record is still unwritten."
+assumption = "The lock belongs to the editor and indexing processes running beside this work rather than to anything this task changed, since the command reports that nothing was applied and is safe to retry, so the four evidence lines are left for the same command to write once the lock frees instead of being entered by hand."
+severity = "blocker"

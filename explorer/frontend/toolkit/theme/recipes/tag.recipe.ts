@@ -1,5 +1,15 @@
 import { defineSlotRecipe } from '@chakra-ui/react';
 
+import type { PillMetrics } from './pillSizing';
+import { pillMinHeight, pillPaddingY } from './pillSizing';
+
+// Every chip reserves room for a one pixel border on each edge, so the outlined
+// chips keep the same height as the filled ones and no label outgrows its surface.
+export const TAG_PILL_METRICS: Record<'md' | 'lg', PillMetrics> = {
+  md: { textStyle: 'sm', paddingY: '0.5', borderWidth: 1 },
+  lg: { textStyle: 'sm', paddingY: '1.5', borderWidth: 1 },
+};
+
 export const recipe = defineSlotRecipe({
   slots: [ 'root', 'label', 'startElement', 'endElement', 'closeTrigger' ],
   base: {
@@ -8,6 +18,9 @@ export const recipe = defineSlotRecipe({
       alignItems: 'center',
       verticalAlign: 'top',
       maxWidth: '100%',
+      minWidth: 'auto',
+      height: 'auto',
+      overflow: 'hidden',
       userSelect: 'text',
       borderRadius: 'sm',
       focusVisibleRing: 'outside',
@@ -21,11 +34,12 @@ export const recipe = defineSlotRecipe({
       },
     },
     label: {
-      lineClamp: '1',
+      display: 'block',
+      minWidth: 0,
+      overflow: 'hidden',
       whiteSpace: 'nowrap',
       textOverflow: 'ellipsis',
       fontWeight: 'medium',
-      display: 'inline',
     },
     closeTrigger: {
       display: 'flex',
@@ -71,9 +85,9 @@ export const recipe = defineSlotRecipe({
     size: {
       md: {
         root: {
-          px: '1',
-          py: '0.5',
-          minH: '6',
+          px: '1.5',
+          py: pillPaddingY(TAG_PILL_METRICS.md),
+          minH: pillMinHeight(TAG_PILL_METRICS.md),
           gap: '1',
           '--tag-avatar-size': 'spacing.4',
           '--tag-element-size': 'spacing.3',
@@ -85,9 +99,9 @@ export const recipe = defineSlotRecipe({
       },
       lg: {
         root: {
-          px: '6px',
-          py: '6px',
-          minH: '8',
+          px: '2',
+          py: pillPaddingY(TAG_PILL_METRICS.lg),
+          minH: pillMinHeight(TAG_PILL_METRICS.lg),
           minW: '8',
           gap: '1',
           '--tag-avatar-size': 'spacing.4',

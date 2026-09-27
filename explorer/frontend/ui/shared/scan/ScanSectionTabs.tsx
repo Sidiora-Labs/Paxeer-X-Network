@@ -34,13 +34,15 @@ const ScanSectionTabs = ({ items, value, onValueChange, rightSlot, className }: 
       flexWrap="wrap"
       w="100%"
     >
-      <TabsRoot variant="pill" size="sm" value={ value } onValueChange={ handleValueChange } w="auto">
+      <TabsRoot variant="pill" size="sm" value={ value } onValueChange={ handleValueChange } w="auto" maxW="100%" minW={ 0 }>
         <TabsList>
           { items.map((item) => (
             <TabsTrigger key={ item.id } value={ item.id } disabled={ item.disabled } data-tab={ item.id }>
-              { item.title }
+              <chakra.span data-tab-title overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap" minW={ 0 }>
+                { item.title }
+              </chakra.span>
               { item.count !== undefined && item.count !== null && (
-                <chakra.span data-count>({ item.count.toLocaleString() })</chakra.span>
+                <chakra.span data-count flexShrink={ 0 }>({ item.count.toLocaleString() })</chakra.span>
               ) }
             </TabsTrigger>
           )) }
