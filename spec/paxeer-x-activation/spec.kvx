@@ -81,6 +81,15 @@ ac_8 = "THE custom-precompile reachability predicate SHALL serve an address the 
 ac_9 = "ALL eight fork precompile addresses SHALL be named by the activation record, and tests SHALL prove that a state without the fork modules below the fork height serves none of the eight, that every legacy precompile is served in that same state, and that after the plan runs all eight are served."
 ac_10 = "TESTS SHALL prove that the begin blocker at one below the fork height schedules the plan on a chain whose version map lacks the fork modules and schedules nothing on a chain whose version map carries them, and no test in the repository SHALL be relaxed, skipped or deleted to make any of this pass."
 
+[req.2]
+title = "The Activation Runs In The Block The Operator's Upgrade Info Names"
+story = "As the operator of a chain whose binary carries modules its state has never had, I want the activation to happen in the block my own upgrade-info.json names, the same file that already decides when the added stores are mounted, so that one file decides the height, no binary carries a height of its own, and the standard upgrade path I use for every other plan is the path that brings the fork online."
+ac_1 = "THE application SHALL carry no compiled activation height: no exported fork-height constant, no scheduling of the plan at a height derived from one and no halt at one, while the plan name, its store-upgrade list, its handler, that handler's genesis behaviour and the store-loader path that maps the plan name to its added stores SHALL stay exactly as they are."
+ac_2 = "THE application's begin blocker SHALL, before the module begin blockers, read the upgrade info file through the upgrade keeper and apply the activation plan at the current height through the upgrade keeper's apply path when that file names the activation plan, its height equals the current block height, the plan has no done height and the module version map lacks the modules the plan initialises, so that the handler runs, the module version map and the done height are written and any plan the store carries is cleared."
+ac_3 = "THE application's begin blocker SHALL stop the block with a message that names the activation stores the commit multistore does not carry and states that the upgrade info height must equal the last committed height plus one when the process starts, when the file names the plan at the current block height and any of those stores is unmounted, and SHALL write no state in that block."
+ac_4 = "THE application's begin blocker SHALL leave the state untouched in every other case - no file, a file naming another plan, a file naming another height, a plan already recorded done, a version map that already carries the modules - and SHALL do nothing on a tracing context."
+ac_5 = "TESTS in the application package SHALL prove, on the real application through its own begin blocker and the real upgrade keeper, that the block the file names carries the six modules into the version map, records the done height, leaves no plan, comes up with the web-search module paused on an empty attestor set and serves the eight fork precompiles at that height and none of them one below it; that a file naming a later height changes nothing; that an unmounted activation store stops the block with that message and writes nothing; that a block after the applied one applies nothing a second time while the file is still on disk; and that the handler tests of the plans that predate the activation keep passing untouched."
+
 # --------------------------------------------------------------------------
 # TASKS
 # --------------------------------------------------------------------------
@@ -148,3 +157,28 @@ verify_cmd = "timeout 40m sh -c 'go build ./node/... ./modules/evm/... ./daemon/
 symbols = ["activation-gates"]
 touches = ["spec/paxeer-x-activation/qualification.kvx"]
 reqs = ["1.1","1.2","1.3","1.5","1.6","1.7","1.8","1.9","1.10"]
+
+[task.3]
+section = "Wave 3 - The Operator's File Names The Block"
+title = "Take the compiled height out of the activation"
+status = "pending"
+
+[task.3.3]
+title = "Apply the activation plan in the block the on-disk upgrade info names"
+status = "in_progress"
+wave = 3
+requires = []
+do_1 = "In node/upgrades.go delete the fork-height constant, the step that scheduled the plan one block below it and the step that halted the node at it, and leave the plan name, the store-upgrade list, the handler, its genesis behaviour and the module-presence helper exactly as they are."
+do_2 = "Add the step that applies the plan in node/upgrades.go and call it from the application's begin blocker in node/abci.go before the module begin blockers: it returns on a tracing context, when the plan already has a done height and when the module version map already carries every module the plan initialises; otherwise it reads the upgrade info file through the upgrade keeper and returns unless the file names the activation plan at the current block height."
+do_3 = "When the file names the plan at the current block height, panic with a message naming the activation stores the commit multistore does not carry and stating that the upgrade info height must equal the last committed height plus one when the process starts; otherwise apply the plan at the current height through the upgrade keeper's apply path, which runs the handler, writes the module version map, records the done height and clears any plan the store carries."
+do_4 = "In node/app.go drop the recorded upgrade-info height the halt consulted, now that nothing reads it, and leave the store-loader wiring that maps the plan name to its added stores untouched."
+do_5 = "Replace the fork-height tests in node/upgrades_activation_test.go with begin-blocker tests on the real application: the block the file names carries the six modules into the version map, records the done height, leaves no plan, comes up with the web-search module paused on an empty attestor set and serves the eight fork precompiles at that height and none of them one below it; a file naming a later height changes nothing; an unmounted activation store stops the block with that message and writes nothing; and a later block with the file still on disk applies nothing a second time."
+do_6 = "Leave tools/chain/upgrade-replay compiling and its assertions intact: it already writes the plan's upgrade info at one above the copied state's committed height and applies the plan there, which is what the begin blocker now does."
+verify_cmd = "go test ./node/ -run 'Activation|Upgrade' -count=1"
+symbols = ["ActivationUpgrade","applyActivationUpgrade","unmountedActivationStores","activationModulesPresent","activationStoreUpgrades","layerxStoreUpgrades"]
+touches = ["node/upgrades.go","node/abci.go","node/app.go","node/upgrades_activation_test.go"]
+reqs = ["2.1","2.2","2.3","2.4","2.5"]
+done_revision = "1cfe5b9c5e619957bfbd6279bc05a547d01aefda"
+done_command = "go test ./node/ -run 'Activation|Upgrade' -count=1"
+done_exit_code = 0
+done_log = ".logs/xa-3.3-verify.log"

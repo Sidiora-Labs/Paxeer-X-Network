@@ -138,3 +138,47 @@ revision = "e6ca4545245d81d73c556a0bb377986e397b0c8a"
 command = "tools/chain/upgrade-replay/run.sh"
 exit_code = 0
 log_path = "build/activation-gates/replay.log"
+
+[observation.3.3.1]
+task = "3.3"
+file = "spec/paxeer-x-activation/spec.kvx"
+symbol = "req.1"
+observed = "Requirement 1 still asks for an exported fork-height constant, the scheduling one block below it and the halt at it, which this task removes, so its ac_5, ac_6 and ac_7 and the design's schedule, stop and loader entries describe a path the code no longer carries."
+assumption = "Requirement 2 states the path the code now carries and neither requirement is edited to agree with the other, so which of the two the release is certified against is the feature owner's call."
+severity = "suspect"
+
+[observation.3.3.2]
+task = "3.3"
+file = "node/upgrades.go"
+symbol = "applyActivationUpgrade"
+observed = "Nothing writes the plan's upgrade info file any more, so a file naming a height the chain has already committed past leaves every later block untouched and silent and the node reports nothing about it."
+assumption = "The file is the operator's to write at one above the last committed height, which is the condition the store loader already imposes, and the block that file names stops the node when the plan's stores are unmounted."
+severity = "note"
+
+[observation.3.3.3]
+task = "3.3"
+file = "node/app.go"
+symbol = "SetStoreUpgradeHandlers"
+observed = "The store-loader wiring installs the upgrade store loader only for a height the operator has not marked skipped, so a node started with the activation height skipped mounts none of the plan's stores and the block that the upgrade info file names now stops it instead of skipping the plan."
+assumption = "Skipping the activation is not a state a chain can run in, since the modules the plan initialises would stay absent while the binary carries them, and the stop names the missing stores."
+severity = "note"
+
+[observation.3.3.4]
+task = "3.3"
+file = "spec/paxeer-x-activation/spec.kvx"
+symbol = "task.3.3"
+observed = "The spec tool's done command re-runs the task's verify command, which passed both times it ran it, and then stalls past its busy timeout without writing the status, on this task and on a sibling task of the same wave."
+assumption = "The stall is in the tool rather than in the task, so the task's status line stays in progress while its four evidence lines and its gate records carry the run that passed."
+severity = "note"
+
+[gate.3.3.1]
+revision = "1cfe5b9c5e619957bfbd6279bc05a547d01aefda"
+command = "go test ./node/ -run 'Activation|Upgrade' -count=1"
+exit_code = 0
+log_path = ".logs/xa-3.3-verify.log"
+
+[gate.3.3.2]
+revision = "1cfe5b9c5e619957bfbd6279bc05a547d01aefda"
+command = "tools/chain/upgrade-replay/run.sh"
+exit_code = 0
+log_path = ".logs/xa-3.3-replay.log"
