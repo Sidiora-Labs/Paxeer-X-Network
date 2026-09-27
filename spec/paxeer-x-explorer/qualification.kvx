@@ -38,6 +38,14 @@ observed = "The Platform workspace step ran make beta-contract-check beta-ledger
 assumption = "Editing those symbols or touches entries would change the check's own input rather than satisfy it, and no change can satisfy them for a task whose instruction is to leave both scripts intact, so the conflict is recorded here for an owner ruling and the task is recorded done by hand from its passing verify_cmd rather than forced past the graph checks."
 severity = "note"
 
+[observation.1.6.1]
+task = "1.6"
+file = "Makefile"
+symbol = "agent-test-agentd-budget-create"
+observed = "Both named cases pass on this revision with no change to the daemon: the terminal-transition case verifies against the rebuilt LXDC3 light-credit fixture the agent workspace now carries, and the confirmed-creation case passes once build/bin/layerxd and build/bin/layerx-genesis-build exist, because the evidence verifier the case builds boots the real authority harness; the granular make target declares neither binary, so on a tree without them the case aborts with \"layerxd is not built\" and the poisoned fixture lock fails the nine cases behind it."
+assumption = "Every granular agent-test-agentd-* target assumes the native prerequisites the workspace test target builds, so the two binaries were built before the gate rather than adding a prerequisite to the Makefile, which this task does not touch."
+severity = "note"
+
 [observation.2.1.1]
 task = "2.1"
 file = "spec/paxeer-x-explorer/spec.kvx"

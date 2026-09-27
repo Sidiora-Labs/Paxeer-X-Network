@@ -40,7 +40,7 @@
     - Leave every rule the two check scripts enforce exactly as it is: no relaxed pattern, no skipped record class, no early exit added to reach a zero status.
     - Where the failure is a missing evidence file rather than a wrong statement, record it in spec/paxeer-x-explorer/qualification.kvx with the revision, the command, the exit code and the path, and leave the record intact.
     - _Requirements: 1.4, 1.9_
-  - [ ] 1.6 Repair the two failing agent daemon tests
+  - [x] 1.6 Repair the two failing agent daemon tests
     - Diagnose from the job log: `gh run view --job 36149017828 --log` and read both the Build, lint, and enforce boundaries step and the Run sanitizer variants step; the two named failures are the terminal-transition case in the native protocol-evidence tests and the confirmed-creation budget case.
     - For the terminal-transition case in agent/crates/layerx-agentd/src/protocol_evidence_native_tests.rs, establish from the assertion which transition the daemon actually produces and repair agent/crates/layerx-agentd/src/protocol_evidence.rs so the complete maintained transition is required and produced; do not relax the assertion.
     - For the confirmed-creation case in agent/crates/layerx-agentd/tests/budget_create.rs, establish why the core-keyed budget is not returned or is cached on trust, and repair the creation path in the daemon so the confirmed creation returns the core-keyed budget without caching on trust.
