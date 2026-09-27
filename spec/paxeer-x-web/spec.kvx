@@ -1307,7 +1307,11 @@ reqs = ["11.2"]
 
 [task.2.41]
 title = "Fund the daemon custody harness through the native custody module so the confined session fee run reaches its assertions"
-status = "pending"
+status = "implemented"
+implemented_revision = "681fa8f24758e0239fdf8b2fcca2484f9ccb0e19"
+implemented_command = "timeout 45m sh -c 'make agent-test'"
+implemented_exit_code = 2
+implemented_log_path = ".logs/verify.log"
 wave = 2
 requires = ["2.39"]
 do_1 = "Observation 2.39.1: the daemon custody harness deploys a LayerXVault stack on the chain it owns and hands that deployed address to tests/bridge/custody_credit.py as the vault, while create_profile in tests/bridge/comet_credit.py and the kernel profile check it mirrors admit only the native custody module at 0x0000000000000000000000000000000000001013 with a runtime hash equal to module_identity(), so the confined session fee run stops before its first assertion; move the funding onto that module exactly as task 2.37 moved the local gateway harness - write the layerxcustody genesis section with platform/hosted/paxeer/custody-genesis.py for the network id, the sequencer the harness itself starts and a freshly generated deposit-root authority whose private half stays in the work directory, pass it to owned_chain in tests/daemon/custody_chain.py so init-chain.sh merges it before validate-genesis, and deposit by calling deposit(bytes32) on the precompile with the base-unit amount scaled by the chain denomination, requiring the native asset id to be the harness asset, exactly one CustodyDeposit log with its four topics, the asset topic, the beneficiary and the amount in its data, and one recorded deposit."

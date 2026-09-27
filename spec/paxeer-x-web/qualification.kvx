@@ -557,3 +557,28 @@ exit_code = 101
 log_path = ".logs/verify.log"
 observed = "With the guest ABI range taken from the kernel's own maximum the reference web reader now deploys at guest ABI 4 - POST /v1/programs/deploy answers 200 with state completed and a sequencer-signed receipt whose result_code is 0 - and the run reaches the next step instead, where submit_program_activity asserts (module_id, operation) and the receipt reports (9, 0) while the deploy is submitted at Programs ordinal 1, the ordinal the native-program-deploy-v3 conformance fixture also declares."
 assumption = "The operation the kernel writes into a Programs lifecycle receipt protocol belongs to the owner of that receipt encoding, not to this encoder task; nothing is relaxed and the assertion stays exactly as strong, and this run additionally needed build/tests/lxp_test_daemon_finality_authority and build/tests/bridge/sign-credit, which the harness takes from the repository root with no environment override."
+
+[observation.2.41.1]
+revision = "681fa8f24758e0239fdf8b2fcca2484f9ccb0e19"
+command = "timeout 45m sh -c 'make agent-test'"
+exit_code = 2
+log_path = ".logs/verify.log"
+observed = "The confined session fee harness now funds itself through the native custody module and gets far past observation 2.39.1 - a real local chain 125 initialised from a layerxcustody genesis section, one deposit through the precompile at 0x0000000000000000000000000000000000001013 with its CustodyDeposit log checked, a 223-byte LXBC3 profile and an LXDC3 credit built with that module as the vault and its module identity as the runtime hash, the anchor precompile accepted by bootstrap.sh --check-settlement, the node cluster started and two metered ProgramCall activities queued at account sequences 6 and 7 - and then layerxd stops with execution failed at sequence 13 with result -1001, LXP_FATAL_INVARIANT, so the next LNI read returns end of file at test_daemon_lni_admission:271, metered_submit fails at :948, metered_initial at :1066, program-admission.sh --metered-allowance exits 1 and real_daemon_session_fee_state panics at agent/crates/layerx-client/tests/session_fee_state_daemon.rs:121; 106 of the workspace's 107 test targets pass."
+assumption = "The kernel invariant that fails while executing the metered allowance scenario is beyond the custody funding this task moves and belongs to the owner of that scenario; nothing is relaxed here, the require in tests/bridge/comet_credit.py and every assertion of the Rust test stay exactly as written, and tasks 2.16, 2.32, 2.33, 2.34, 2.38 and 2.39 stay implemented because this gate did not pass."
+
+[observation.2.41.2]
+task = "2.41"
+file = "tests/daemon/handover-peers.py"
+symbol = "setup"
+observed = "Two harness modes outside this gate still read the custody record this task narrows and still govern a deployed vault through a timelock: the handover peers path and the publication setup path in tests/daemon/guarantor-publication-chain.py each expect a deployed vault, asset registry and timelock triple in it, and the publication path also expects a deployed guarantor bond where the settlement environment now names the anchor precompile."
+assumption = "Moving those two modes onto the native custody and anchor modules belongs to the tasks that own the handover and guarantor settlement gates, which this feature's agent-test gate does not run; neither script is touched here and nothing is relaxed."
+severity = "suspect"
+
+[observation.2.41.3]
+task = "2.41"
+file = "agent/crates/layerx-agentd/tests/recovery.rs"
+symbol = "agent-test"
+observed = "An earlier run of the same verify_cmd at the same revision, kept as .logs/verify-run1-disk.log, stopped while compiling that test with No space left on device, os error 28, because the build filesystem ran out of room while other builds shared it, so it reached no test target at all."
+assumption = "That abort is a capacity failure of the machine the gate ran on rather than a result of the harness change, so the gate was rerun once with room freed and only the rerun is recorded as evidence."
+severity = "suspect"
+

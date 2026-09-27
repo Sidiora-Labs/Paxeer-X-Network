@@ -11,14 +11,32 @@ import tempfile
 import time
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat, PublicFormat
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'tests/bridge'))
-from custody_chain import artifact, boundaries, from_environment, govern, owned_chain, retain_custody_proofs
+from comet_credit import CUSTODY_ADDRESS, module_identity
+from custody_credit import DEPOSIT_TOPIC, unhex, write_new
+from custody_chain import boundaries, from_environment, owned_chain, retain_custody_proofs
 
 COMMON = runpy.run_path(str(ROOT / 'tests/daemon/finality-authority-chain.py'))
 ASSET = 'b5a32b12029f8ddfb905f90f280f664b46390de0fc62770fc197dd87b18cd898'
+NETWORK_ID = 77
+# Custody is the native layerxcustody module behind the precompile at 0x...1013 and nothing
+# custodial is deployed for it: the asset map, the sequencer authorization and the deposit-root
+# authority are chain genesis state written by platform/hosted/paxeer/custody-genesis.py. One
+# base unit of the chain's own denomination is 1e12 wei, so deposit(bytes32) carries the LayerX
+# u128 amount scaled by that factor.
+CUSTODY_DENOM = 'uhpx'
+WEI_PER_BASE_UNIT = 10 ** 12
+# Checkpoint settlement and the guarantor bond are the native layerxanchor module behind the
+# precompile at 0x...1014; platform/hosted/node/bootstrap.sh accepts no other settlement contract
+# or checkpoint registry, which is the address tests/daemon/program-admission.sh already publishes
+# for its own non-custody bring-up.
+ANCHOR_ADDRESS = '0x0000000000000000000000000000000000001014'
+# tests/daemon/program-admission.sh writes exactly this sequencer seed, so the custody genesis
+# authorizes the sequencer the node started by this harness really runs.
+SEQUENCER_SEED = bytes([0x22]) * 32
 
 
 def run(*args, **kwargs):
@@ -44,24 +62,12 @@ def register(work, url):
         return
     request = (work / 'data/genesis/paxeer-registration-request.lxrr').read_bytes()
     assert len(request) == 73
-    manifest = hashlib.sha256((work / 'data/genesis/genesis.manifest').read_bytes()).hexdigest()
-    artifacts = Path(os.environ['LAYERX_TEST_CUSTODY_ARTIFACTS'])
-    rpc = from_environment(url)
-    token = COMMON['USDL']
-    admin = rpc.account.address
-    custody = json.loads(Path(os.environ['LAYERX_TEST_CUSTODY_FILE']).read_text())
-    bond = rpc.deploy(artifact(artifacts, 'GuarantorBond'),
-        'constructor(address,address,address,address,bytes32,uint16,uint32,uint32,uint64,bytes32,uint192)',
-        [admin, admin, token, custody['vault'], COMMON['run']('cast', 'keccak', 'USDL'), '3', '77', '1000', '86400', COMMON['word']('a1'), str(1 << 128)])
-    registry = rpc.deploy(artifact(artifacts, 'CheckpointRegistry'),
-        'constructor(address,uint16,uint32,uint16,uint16,uint64,uint64,bytes32,bytes32,bytes32,bytes32,uint192)',
-        [bond, '3', '77', '2', '32', '3600', '60', '0x' + manifest,
-         '0x' + request[9:41].hex(), '0x' + request[41:73].hex(), COMMON['word']('a2'), str(1 << 128)])
-    observed = rpc.rpc('eth_call', [{'to': registry, 'data': COMMON['run']('cast', 'calldata', 'latestFinalisedStateRoot()')}, 'latest'])
-    assert bytes.fromhex(observed[2:]) == request[41:73]
-    (work / 'data/genesis/genesis.registration').write_bytes(
-        b'LXGR\x01' + (77).to_bytes(4, 'big') + bytes(8) + request[41:73] * 2 + b'\x01')
-    write_settlement(work, rpc, bond, registry)
+    # Settlement is the native layerxanchor module, so no guarantor bond and no checkpoint
+    # registry is deployed for it and the genesis registration this harness used to overwrite is
+    # already the bytes platform/hosted/node/bootstrap.sh derived from the same request.
+    assert (work / 'data/genesis/genesis.registration').read_bytes() == (
+        b'LXGR\x01' + NETWORK_ID.to_bytes(4, 'big') + bytes(8) + request[41:73] * 2 + b'\x01')
+    write_settlement(work, from_environment(url), ANCHOR_ADDRESS, ANCHOR_ADDRESS)
 
 
 def write_settlement(work, chain, bond, registry):
@@ -73,33 +79,51 @@ def write_settlement(work, chain, bond, registry):
         f'LAYERX_NODE_PAXEER_RPC_PORT={chain.port}\n')
 
 
-def deposit(chain, artifacts, beneficiary, amount):
-    admin = chain.account.address
-    config = '0x' + hashlib.sha256(b'LayerX/local-custody/real-weth/v1').hexdigest()
-    timelock = chain.deploy(artifact(artifacts, 'LayerXBetaTimelock'),
-        'constructor(uint64,uint64,address,address,address,uint256,bytes32,uint192)',
-        ['0', '172800', admin, admin, admin, '0', config, '1'])
-    registry = chain.deploy(artifact(artifacts, 'AssetRegistry'),
-        'constructor(address,address,bytes32,uint192)', [timelock, admin, config, '1'])
-    token = chain.deploy(artifact(artifacts, 'WETH'), 'constructor()', [])
-    vault = chain.deploy(artifact(artifacts, 'LayerXVault'),
-        'constructor(address,address,address,bytes32,uint192)', [registry, timelock, admin, config, '1'])
-    govern(chain, timelock, registry, 'registerAsset(bytes32,address,uint8,uint128,uint128)',
-           '0x' + ASSET, token, '18', '1', str(2 ** 128 - 1))
-    chain.transaction(COMMON['run']('cast', 'calldata', 'deposit()'), token, value=amount)
-    chain.send(token, 'approve(address,uint256)', vault, str(amount))
-    deposited = chain.send(vault, 'deposit(bytes32,uint256,bytes32)', '0x' + ASSET, str(amount), '0x' + beneficiary)
-    assert int(chain.view(token, 'balanceOf(address)', vault), 16) == amount
-    assert int(chain.rpc('eth_getBalance', [token, 'latest']), 16) == amount
+def custody_genesis(work):
+    """The layerxcustody genesis section the native custody module is initialised from.
+
+    The module maps no asset and admits no deposit without it, and it refuses every deposit-root
+    registration while the authority parameter is empty, so the Ed25519 key that would have to
+    sign one exists before the chain does and its private half stays in the work directory.
+    """
+    sequencer = Ed25519PrivateKey.from_private_bytes(SEQUENCER_SEED).public_key().public_bytes(
+        Encoding.Raw, PublicFormat.Raw)
+    identifier = hashlib.sha256(b'layerx-sequencer:' + sequencer.hex().encode()).hexdigest()
+    authority = Ed25519PrivateKey.generate()
+    write_new(work / 'deposit-root-authority.key',
+              authority.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()))
+    genesis = work / 'custody-genesis.json'
+    run(sys.executable, 'platform/hosted/paxeer/custody-genesis.py',
+        '--network-id', str(NETWORK_ID), '--sequencer-id', '0x' + identifier,
+        '--sequencer-public-key', '0x' + sequencer.hex(),
+        '--deposit-root-authority',
+        '0x' + authority.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex(),
+        '--asset', '0x' + ASSET + ':' + CUSTODY_DENOM, '--output', genesis)
+    return genesis
+
+
+def deposit(chain, beneficiary, amount):
+    assert unhex(chain.view(CUSTODY_ADDRESS, 'nativeAssetId()'), 32) == bytes.fromhex(ASSET), \
+        'custody genesis maps another native asset'
+    deposited = chain.transaction(COMMON['run']('cast', 'calldata', 'deposit(bytes32)', '0x' + beneficiary),
+                                  CUSTODY_ADDRESS, value=amount * WEI_PER_BASE_UNIT)
+    logs = [entry for entry in deposited['logs']
+            if unhex(entry['address'], 20) == unhex(CUSTODY_ADDRESS, 20)
+            and entry['topics'][0].lower() == DEPOSIT_TOPIC]
+    assert len(logs) == 1 and len(logs[0]['topics']) == 4, 'exactly one custody deposit'
+    assert unhex(logs[0]['topics'][2], 32) == bytes.fromhex(ASSET), 'custody deposit asset'
+    data = unhex(logs[0]['data'], 96)
+    assert data[:32] == bytes.fromhex(beneficiary), 'custody deposit beneficiary'
+    assert int.from_bytes(data[32:64], 'big') == amount, 'custody deposit amount'
+    assert int(chain.view(CUSTODY_ADDRESS, 'depositCount()'), 16) == 1
     deadline = time.monotonic() + 30
     while int(chain.rpc('eth_blockNumber', []), 16) < int(deposited['blockNumber'], 16) + 2:
         assert time.monotonic() < deadline, 'custody confirmations deadline'
         time.sleep(.1)
-    code = bytes.fromhex(chain.rpc('eth_getCode', [vault, 'latest'])[2:])
-    return {'chain_id': 125, 'vault': vault, 'registry': registry, 'timelock': timelock,
-            'token': token, 'asset': '0x' + ASSET, 'amount': str(amount), 'beneficiary': '0x' + beneficiary,
-            'transaction': deposited['transactionHash'], 'runtime_sha256': '0x' + hashlib.sha256(code).hexdigest(),
-            'fork_block': int(chain.rpc('eth_blockNumber', []), 16)}
+    return {'chain_id': 125, 'vault': CUSTODY_ADDRESS, 'runtime_sha256': '0x' + module_identity().hex(),
+            'asset': '0x' + ASSET, 'amount': str(amount), 'beneficiary': '0x' + beneficiary,
+            'transaction': deposited['transactionHash'], 'deposit_id': logs[0]['topics'][1],
+            'deposit_block': int(deposited['blockNumber'], 16)}
 
 
 def main():
@@ -164,8 +188,8 @@ def main():
                 run('make', 'custody-proof-build', 'BUILD_DIR='+str(build), 'PAXEER_GO_JOBS='+str(threads), env=proof_env)
             assert proof_binary.is_file(), 'explicit custody proof executable unavailable'
             os.environ['LAYERX_CUSTODY_PROOF_BIN'] = str(proof_binary)
-            with owned_chain(work, artifacts) as first:
-                custody = deposit(first, artifacts, beneficiary, amount)
+            with owned_chain(work, artifacts, custody_genesis(work)) as first:
+                custody = deposit(first, beneficiary, amount)
                 (work / 'custody.json').write_text(json.dumps(custody, sort_keys=True) + '\n')
                 with boundaries(work, first, boundary_binary) as (origins, ca, identity):
                     retain_custody_proofs(work, origins, ca, identity, custody['vault'])
