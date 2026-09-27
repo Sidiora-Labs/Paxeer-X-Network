@@ -97,3 +97,44 @@ command = "tools/chain/upgrade-replay/run.sh <copy of a pruned full node's data 
 exit_code = 0
 log_path = "build/upgrade-replay/state-activation.log"
 
+[observation.2.1.1]
+task = "2.1"
+file = "node/upgrades_test.go"
+symbol = "TestOverrideList"
+observed = "The whole node package fails because TestOverrideList resets the package-level upgrade list before each subtest but not after the last, leaving it overridden to 2.0.0,2.1.0,2.2.0, so every later test that calls RegisterUpgradeHandlers registers no real plan and the six fee-token and xweb upgrade tests fail on HasHandler before panicking in ApplyUpgrade."
+assumption = "The leak predates this feature, which touched neither that file nor those tests, and it is invisible to a filtered run because TestOverrideList matches no name the task verify commands select; the activation tests pass because their file sorts before it and they run first."
+severity = "blocker"
+
+[observation.2.1.2]
+task = "2.1"
+file = "node/genesis/genesis_test.go"
+symbol = "TestEmbeddedGenesisDigests"
+observed = "The node/genesis package fails because the embedded arctic-1, atlantic-2 and pacific-1 genesis files no longer hash to the digests the test pins, each reported as the file having been modified without its expected digest being updated."
+assumption = "The three chains are unrelated to this fork and the files last changed before this feature branched, so the drift is pre-existing and belongs to whoever edited those genesis files."
+severity = "blocker"
+
+[observation.2.1.3]
+task = "2.1"
+file = "version.json"
+symbol = "paxd_version"
+observed = "A release staged from this revision advertises paxd_version v6.1.12 while the binary carries the v6.9 activation plan, because the publisher reads version.json and no tag of this fork is reachable from the built revision."
+assumption = "Nothing in the plan or its scheduling reads that string, so the mismatch is a release-metadata question for whoever cuts the version rather than a property of the fork."
+severity = "note"
+
+[gate.2.1.1]
+revision = "e6ca4545245d81d73c556a0bb377986e397b0c8a"
+command = "make paxeer-build"
+exit_code = 0
+log_path = "build/activation-gates/build.log"
+
+[gate.2.1.2]
+revision = "e6ca4545245d81d73c556a0bb377986e397b0c8a"
+command = "timeout 25m go test -count=1 ./node/... ./modules/evm/... ./sdk/x/upgrade/..."
+exit_code = 1
+log_path = "build/activation-gates/go-test.log"
+
+[gate.2.1.3]
+revision = "e6ca4545245d81d73c556a0bb377986e397b0c8a"
+command = "tools/chain/upgrade-replay/run.sh"
+exit_code = 0
+log_path = "build/activation-gates/replay.log"
