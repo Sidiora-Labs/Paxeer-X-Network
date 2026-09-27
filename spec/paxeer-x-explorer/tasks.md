@@ -6,7 +6,7 @@
 
 ## Wave 1 - Green Checks and the Gates That Keep Them Green
 
-- [ ] 1. Close every red job and build the explorer's gates
+- [x] 1. Close every red job and build the explorer's gates
   - [x] 1.1 Give every mix command one containerised recipe
     - Write explorer/deploy/tools/mix-in-builder.sh, an executable POSIX shell script run from the repository root as `explorer/deploy/tools/mix-in-builder.sh <mix args>`, that runs the given mix invocation inside the pinned Elixir builder image against explorer/backend.
     - Mount apps, config, rel, mix.exs, mix.lock and .formatter.exs from explorer/backend into the container work directory, keep the build artefacts in a named volume so a rerun does not recompile dependencies, and set MIX_ENV=test, MIX_BUILD_PATH to the volume, CHAIN_TYPE=paxeer_x and ETHEREUM_JSONRPC_VARIANT=paxeer_x unless the caller already set them.
