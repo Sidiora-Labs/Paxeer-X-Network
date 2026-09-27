@@ -2,10 +2,284 @@
 
 All notable changes to Paxeer X Network are documented in this file.
 
+## 2026-09-26
+
+### Added
+
+- Add the Paxeer X bridge contracts and deployment spec (#545)
+- Add durable Sidiora sponsored transaction submission (#540)
+
+### Documentation
+
+- Document Sidiora and its two gas paths on the protocol site (#544)
+
+### Other
+
+- px26-leader px26-fm00 2026-09-26 main fa1dc8496ae9c97a4f011f4f6bdbce2310f108cd Merge the web feature's program event persistence: the node keeps each call's event list in its receipt authority log and serves program events by topic and sequence, the availability harness serves its contracts at the anchor address, and the task that diagnoses the finalized receipt read is laid out
+- px26-w104 px26-fm01 2026-09-26 wave/paxeer-x-web/2.27 55b17991f04442ea1c443d1b0331138d1e3d4390 Persist the event list in the node's receipt authority log and serve program events by topic and sequence
+- px26-fm01 px26-fm01 2026-09-26 feature/paxeer-x-web 778492d4aeb5e532cb5257964f421a9099bb1061 Add the task that finds why the finalized receipt read is unavailable after finality registration, so the agent workspace tests can be qualified
+- px26-w102 px26-fm01 2026-09-26 wave/paxeer-x-web/2.32 9f09f71d95ac5d49993288b104680297a6658ac7 Serve the availability harness's bond and registry at the anchor address so finality registration verifies, leaving the agent workspace tests implemented pending the native receipt read
+- px26-leader px26-fm00 2026-09-26 main ffa437090b1c183f927f6a98939ef8b57f8c8200 Record the fee token feature's wave 4 gate: the Go packages, the gas station crate and the Paxeer Foundry project each pass once on the merged wave revision
+- px26-fm03 px26-fm03 2026-09-26 feature/sidiora-fee-token 03f4fdc2728524ac631a92ae60ae27cf191a1008 Record the wave 4 gate for the fee token feature
+- px26-leader px26-fm00 2026-09-26 main cbeb9da797402d8186397fe8fa9d935cc2506b80 Merge the fee token feature's station service: the binary serves the quote and sponsored submission endpoints over a real socket with the status split both adapters read
+- px26-w101 px26-fm03 2026-09-26 wave/sidiora-fee-token/4.3 d035ce2b73f3f8c7732ccf08fa2909b93775b674 Serve the quote and sponsored submission endpoints from the station binary
+- px26-leader px26-fm00 2026-09-26 main a7c8cf9bee2e2994e590d9cfaafdfe9e2ad512a0 Merge the web feature's event list ownership fix: prepared outcomes and batches now hold their own copy of a call's event list, so the list bound to a receipt hashes to the outcome's envelope digest and the web program path, prepare pass staging and module context tests qualify
+- px26-w103 px26-fm01 2026-09-26 wave/paxeer-x-web/2.31 3540d255a0a07ac84023a34cb7734a390980d0f9 Reconcile the bound event list with the call outcome's event envelope digest and qualify the web program path
+- px26-leader px26-fm00 2026-09-26 main b9ca99b7852085a0e1304510581401c1512fae48 Merge the web feature's module context test repair, whose transfer fixture now applies its set through the real ledger path, and the tasks that reconcile the bound event list digest and serve the availability harness's contracts at the anchor address
+- px26-w100 px26-fm01 2026-09-26 wave/paxeer-x-web/2.29 73e594e223d28c5a5838cb28227539d89e49b21d Restore the module context test's transfer fixture after the ledger balance check, with the prepare pass staging recorded as implemented pending the event list digest
+- px26-fm01 px26-fm01 2026-09-26 feature/paxeer-x-web f20010eeeb63f8701d8c211234a650879cf59bfe Add the tasks that reconcile the bound event list with the outcome digest and serve the availability harness's contracts at the anchor address, so the web program path and the agent workspace tests can be qualified
+- px26-leader px26-fm00 2026-09-26 main 50702c678724b3a1cbc9451f22a9e1d6027bb6a9 Merge the fee token feature's parameter regeneration reconciliation: the rate is read as a field since the pipeline emits no getter, and the generated file is committed exactly as produced
+- px26-w98 px26-fm03 2026-09-26 wave/sidiora-fee-token/4.14 14bdf630cc19c6a6c2cfc3ec5669ff1bbe5a02e5 Reconcile the fee-token rate accessor with the pipeline-generated parameters
+- px26-leader px26-fm00 2026-09-26 main 79bb1b1ffb92691d0266e2a455a34b59f3bb3fff Merge the web feature's kernel relay wiring into the sidecar binary, with the agent workspace test repairs recorded as implemented pending the availability harness contradiction
+- px26-w99 px26-fm01 2026-09-26 wave/paxeer-x-web/2.30 0a446bd096d8a675af01148e10e3747cc4d12129 Pin the api preimage vector in the attestation test and qualify the api request path
+- px26-w64 px26-fm01 2026-09-26 wave/paxeer-x-web/2.16 5d8c544bb1ce712ab584b0799825197900678647 Run the agent workspace tests with the boundary and native binaries they need and repair the native terminal evidence they decode
+- px26-w94 px26-fm01 2026-09-26 wave/paxeer-x-web/2.20 deaaa6447a99402716df38bcb9dedcd94f0e0fdc Restore the module context and api vector tasks to the web spec after the kernel relay commit dropped them
+- px26-leader px26-fm00 2026-09-26 main d844606d7159a893832b6b7e16e063c1aadba523 Merge the fee token feature's sponsor nonce lifecycle, spread-bounded rate updates and proxy upgrade initialize call, restoring the pointer binding and nonce lifecycle files that two stale-base landings had dropped
+- px26-fm03 px26-fm03 2026-09-26 feature/sidiora-fee-token f6d37ae3f0b5502c57ef78fa056eb602d29316c9 Restore the gas station nonce lifecycle work and its evidence, which the spread bound landing had reverted
+- px26-w88 px26-fm03 2026-09-26 wave/sidiora-fee-token/4.7 a1f2ee820d3e5365d68c43655f4cc6421acfb0f2 Encode the implementation's initialize call in the scheduled proxy upgrade
+- px26-w93 px26-fm03 2026-09-26 wave/sidiora-fee-token/4.11 53a0aa7336d154d4db45ccc00284383b311cd795 Bound every governed rate update by the maximum spread
+- px26-w97 px26-fm03 2026-09-26 wave/sidiora-fee-token/4.2 6c487799e315ac16b391e6c27b2fd68f5c46e246 Release a refused sponsor nonce and journal replacement and cancellation
+- px26-fm03 px26-fm03 2026-09-26 feature/sidiora-fee-token 0482a1e32ec32b6d742a0f5cfe7617d8d8ae5ad3 Restore the pointer binding governance message, its proposal, message server, CLI, generated files and tests, which a commit based on a stale tip had removed
+- px26-leader px26-fm00 2026-09-26 main b837b1ba39e19d8e1cb476b53d7a686845774717 Merge the web feature's select vector correction: the shared number vector expects ECMAScript's shortest digits and the attestation test's stale vector count is recorded, with the tasks that restore the module context test and pin the api preimage vector laid out
+- px26-w94 px26-fm01 2026-09-26 wave/paxeer-x-web/2.20 aa0c556af304b4fc13cd1444e109e1d730469646 Wire the kernel relay into the sidecar binary and scope the signature exchange by program
+- px26-fm01 px26-fm01 2026-09-26 feature/paxeer-x-web e220d40c450b1081bcbc5f023c556b9861ee2ac0 Add the tasks that restore the module context test after the web module registration and pin the api preimage vector in the attestation test, so the prepare pass staging and the api request path can be qualified
+- px26-w91 px26-fm01 2026-09-26 wave/paxeer-x-web/2.26 4958ac94d920e75b2b1c877f2c58b6bc009490e5 Carry a call's full program event list as receipt side data bound by the outcome's event envelope digest; the web program path check of that binding still fails
+- px26-w95 px26-fm01 2026-09-26 wave/paxeer-x-web/2.25 55f5f2a3ee4863d0d232aa7c67213b72a86c6ff5 Correct the select vector's number digits to ECMAScript's shortest closest form and pin the long literal's double and digits in the api tests; the api tests pass, the attest preimage test still expects two vectors
+- px26-leader px26-fm00 2026-09-26 main 8192ef0a7fb6318a7abb62eb7a1e4794a17d671e Merge the fee token feature's chain id signature test and protobuf regeneration record: a sponsored batch signed for one chain id is refused after the chain id changes, and the pipeline's missing rate getter is recorded with the task that reconciles it
+- px26-fm03 px26-fm03 2026-09-26 feature/sidiora-fee-token 4d4b94b6b2d09b58920a7ec4db8348e0ff76d6ac Add the task that reconciles the fee-token rate accessor with the pipeline-generated parameters, since the pinned pipeline emits no getter the parameter tests call
+- px26-w92 px26-fm03 2026-09-26 wave/sidiora-fee-token/4.8 3ceee44069f4d7986182bac3b435bfef204ec0c6 Assert the account signature fails after a chain id change
+- px26-w87 px26-fm03 2026-09-26 wave/sidiora-fee-token/4.6 3abe4881d52f8a9beaabe3e8d28ab75ca780a296 Bind the existing Sidiora address as the native pointer through a governance message
+- px26-w96 px26-fm03 2026-09-26 wave/sidiora-fee-token/4.12 ac52863bf9c90b269cf56e949f810bf72e073f6f Record that the pinned protobuf pipeline drops the fee-token rate getter the parameter tests call
+- px26-leader px26-fm00 2026-09-26 main 26dbacfddbd85a206138159a46b7da1a4ce41790 Merge the web feature's prepare pass staging: a program's first paying call creates the web fee account at its own sequence over a private journal, with the module context test's pre-existing opening failure recorded
+- px26-w83 px26-fm01 2026-09-26 wave/paxeer-x-web/2.23 4824a9fe7079a4e1d77500a793a8a99b57a789d9 Let the prepare pass stage module values under a journal on its snapshot so a program's first paying call creates the web fee account, and record that the module-ctx target stops in its unchanged transfer check first
+- px26-leader px26-fm00 2026-09-26 main 45bf38a54326a2e75bbd371ea6e3b0e44eeae13e Merge the fee token feature's gas station pricing: quotes are priced only from the paymaster's governed rate, a missing, stale or too-old rate is refused before anything is signed, and the oracle path is removed
+- px26-w84 px26-fm03 2026-09-26 wave/sidiora-fee-token/4.1 c2daa1df7562466fa9f8881c80e41b0e4e22a9c0 Price the gas station from the paymaster's governed rate
+- px26-leader px26-fm00 2026-09-26 main 1a9f30a7a0699306a72986e6f36a1e3966b49be0 Merge the fee token feature's withdrawn preference rule: a preference naming a denom that is no longer allowed is charged as no preference in the network coin, the call that clears it is accepted, and the missing-rate refusal is kept for an allowed denom without a rate
+- px26-w90 px26-fm03 2026-09-26 wave/sidiora-fee-token/4.10 5325129f7b8a5dcc2b6fef338c994d54fc7d0728 Charge a withdrawn preference as no preference
+- px26-leader px26-fm00 2026-09-26 main ce207896e54a90635cc88fe2bedef5be3388ed4b Merge the fee token feature's coinbase sweep: end-of-block moves every allowed fee token from each transaction's coinbase to the fee collector, leaves locked coins in place, and fails the block when a sweep is refused
+- px26-w89 px26-fm03 2026-09-26 wave/sidiora-fee-token/4.9 6f979b5a43f4488321d5df04181f805d247a0939 Sweep fee-token fees from the coinbase to the collector
+- px26-leader px26-fm00 2026-09-26 main 24bd784e544fad6273b3726532b8644d69ae6940 Merge the web feature's program request path qualification: the observation activity fixture is signed by keys the tests derive, the intake and adapter vectors follow, the sidecar's kernel test compares against a fixture it can reproduce, and the program request path passes end to end
+- px26-w82 px26-fm01 2026-09-26 wave/paxeer-x-web/2.19 8aaaeed90f46adf8965af97008d3335dc748cdd9 Re-sign the observation activity fixture with the attestor keys the tests derive, pin the new signer vectors in the intake and adapter tests, and qualify the program request path
+- px26-leader px26-fm00 2026-09-26 main d54c6ebc70675dacfb3a477c59d572e6e332a8d9 Merge the fee token feature's Foundry bootstrap: the Paxeer contract libraries resolve at pinned versions without a manual clone and the build no longer needs an environment override
+- px26-w86 px26-fm03 2026-09-26 wave/sidiora-fee-token/4.5 0b02aaab984019263bd5fbb5c09a3875100978aa Accept the registered Sidiora denom in bridge genesis
+- px26-w85 px26-fm03 2026-09-26 wave/sidiora-fee-token/4.4 f95281331a87cc1542ff7ecd7fe4b7a1b55e9588 Resolve the Paxeer Foundry libraries without a manual clone
+- px26-leader px26-fm00 2026-09-26 main 53b126199f6e4a8358d6d298e600e0d93262c36c Merge the web feature's gateway program events: the gateway serves lx_getProgramEvents for the sidecar's kernel watcher, the platform lock file resolves again, and the tasks that keep, persist and relay a call's full event list are laid out
+- px26-fm01 px26-fm01 2026-09-26 feature/paxeer-x-web ffec79b90cf65fe24eb6a2c9bfbb46054549216c Lay out the program event tasks: the kernel keeps a call's full event list beside the receipt artifacts bound to the outcome digest, the node persists and serves it by topic and sequence, and core and the gateway relay it to the sidecar's watcher
+- px26-w78 px26-fm01 2026-09-26 wave/paxeer-x-web/2.21 11026230f36e0593c786101fdf315c2dcf5e11d0 Serve program events through the gateway for the sidecar's kernel watcher and bring the platform lock file up to date
+- px26-leader px26-fm00 2026-09-26 main 2a3a533764c50d7901bd2ed64a9ae1bd551da04a Merge the fee token feature's fourth wave plan: the gas station prices from the governed paymaster rate, sponsor nonces have a lifecycle, the station serves its endpoints, the Foundry libraries bootstrap without a manual clone, bridge genesis accepts the registered denom, and the governance binding, upgrade initialisation, coinbase sweep, withdrawn preference and rate bound rules are laid out
+- px26-fm03 px26-fm03 2026-09-26 feature/sidiora-fee-token ed2550fb0b9ed2400af8df55a7f0ae410347683f Write the retired oracle and the governed rate into the Sidiora decisions, revise the requirements that still priced through it, and add the fourth wave that closes the ledger: the gas station's rate source, lifecycle and service, the library bootstrap, the bridge genesis check, the pointer binding message, the proxy initialize call, the fee sweep, the withdrawn preference rule, the rate bound, the generated parameters and the gate rerun
+- px26-leader px26-fm00 2026-09-26 main 7fe91d2aded571baf5a6cf9dd1a257acd28f4b71 Merge the web feature's number canonicalisation: JSON numbers parse correctly rounded and print ECMAScript's shortest digits, the sidecar's kernel relay carries its attestation level, the select vector's stale digits are recorded, and the tasks correcting that vector, re-signing the kernel fixture and updating the platform lock file are laid out
+- px26-w76 px26-fm01 2026-09-26 wave/paxeer-x-web/2.18 2676ac97f63e1bc25bca5d8547279aa94b5a5a34 Register the web module with the kernel so its observation and attestor-set activities route through dispatch, raising the module bound to eleven
+- px26-fm01 px26-fm01 2026-09-26 feature/paxeer-x-web edc81d80d00fbea0f0720d5a6eae4c134267af95 Add the task that corrects the select vector's number digits and qualifies the api request path, extend the kernel test key task to clear the clippy line-count warning, and have the gateway events task bring the platform lock file up to date
+- px26-w81 px26-fm01 2026-09-26 wave/paxeer-x-web/2.24 7eb7a44b6f18bceb4ce14b13749ffb8f527f01ec Record that the pinned number vector's digits disagree with ECMAScript's for the correctly rounded double while the canonicaliser already matches ECMAScript, and set the majority level on the kernel attestor's answers so the sidecar library compiles
+- px26-leader px26-fm00 2026-09-26 main a6edb955f0caad83ce70cc59f73b8199aa001f1d Merge the web feature's program lint update: the lint accepts the v3 and v4 ABI host function sets and the web-reader reference build is linted, with the observation activity fixture's unreproducible signatures recorded and its re-signing task rewritten
+- px26-fm01 px26-fm01 2026-09-26 feature/paxeer-x-web 79c585e2b717635d10d0db26dd7b5c94752e11a1 Rewrite the kernel test key task: the observation activity fixture is re-signed with keys the tests hold and the intake and adapter vectors follow, since its current signatures come from keys no test can reproduce
+- px26-w79 px26-fm01 2026-09-26 wave/paxeer-x-web/2.22 c9adbef1ab112bab325e6484cecf02bf8e8a7d4d Teach the program lint the v3 and v4 ABI host function sets and lint the web-reader reference build
+- px26-w77 px26-fm01 2026-09-26 wave/paxeer-x-web/2.19 39a6d8ac7a0a19c49e27f6db6a8b507a4d1303c6 Record that the adapter fixture's signatures recover to the intake test's signer vectors, not to any key the program path test holds, and that the kernel attestor's answer lacks its level field
+- px26-fm01 px26-fm01 2026-09-26 feature/paxeer-x-web 68a9b95edf6b07715865fbd1612c88176299147a Add the task that canonicalises JSON numbers as ECMAScript does so the api vectors agree across the four languages
+- px26-leader px26-fm00 2026-09-26 main ecb8816f00c9dad314224d4ac0830b39524fe6c3 Merge the Sidiora qualification ledger triage: twenty observations that later revisions resolved are closed naming the revision or decision that closed each
+- px26-fm03 px26-fm03 2026-09-26 wave/sidiora-fee-token/triage ac33b1c00d88ac50c615fbd52e856e2b358126d7 Close the Sidiora qualification observations that later revisions resolved, naming the revision or decision that closed each
+- px26-leader px26-fm00 2026-09-26 main e0d9c2a08dfea34a12406c66598565febb8faf88 Merge the web feature's api answer serving: api answers carry their own content kind and are served by the content endpoint, the loopback API refuses a call without its credential, the api test crate passes lint, and the one canonical number vector still disagreeing is recorded, alongside the tasks that close the program request path
+- px26-w73 px26-fm01 2026-09-26 wave/paxeer-x-web/2.17 e48c089f7d776b168a45b0b4e8e73854a75fff7f Serve api answers from the sidecar's content store under their own kind, refuse the loopback call without its credential, and clear the api test crate's lint findings
+- px26-fm01 px26-fm01 2026-09-26 feature/paxeer-x-web c29370541d9cc0fa9478937f409377b14596f9e2 Add the tasks that close the program request path: the web module registers with the kernel and routes through dispatch, the kernel test's attestor keys match the intake fixture, the relay is wired into the sidecar with a program-scoped exchange, the gateway serves program events, the lint learns ABI v4, and the prepare pass stages module values
+- px26-leader px26-fm00 2026-09-26 main 1f29396b9395c64613cb735c71866131371ef30c Merge the Sidiora feature's aggregate gate rerun: the fee-path Go packages, the gas-station crate and the Paxeer Foundry project all ran once on the merged revision and passed
+- px26-w75 px26-fm03 2026-09-26 wave/sidiora-fee-token/3.1b 87e138c17b0aa09f84a32723763974c3c93dbf47 Record the Sidiora gate rerun on the merged revision: the fee-path Go packages, the gas-station crate and the Paxeer Foundry project
+- px26-leader px26-fm00 2026-09-26 main 6ab42617f1084d3e655a9e5f51eecf2567b64131 Merge the bridge feature's aggregate gate record: the Foundry suite, the Solana program tests and build, the relayer crate and the deploy and vector packages with their check scripts all ran once on the merged revision and passed
+- px26-w70 px26-fm02 2026-09-26 wave/paxeer-x-bridge/3.1 7409775b3daa12202de4f3058243d238c383ec0b Record the bridge gate run on the merged revision: the Foundry suite, the Solana program tests and build, the relayer crate and the deploy and vector packages with their check scripts
+- px26-leader px26-fm00 2026-09-26 main 355f471828028caed779502b198334b1e785bd05 Merge the evm module test alignment: the exported genesis expectation carries the fee-token parameters at their defaults and the consensus version expectation matches the raised module version
+- px26-w74 px26-fm03 2026-09-26 wave/sidiora-fee-token/2.17 8a026f0e94516558b197a01f5dbcca3890c10052 Expect the fee-token parameters in the evm module's exported genesis and its raised consensus version
+- px26-leader px26-fm00 2026-09-26 main 2ad8bfb4b3427e315b55eef96a45e7385bd57510 Merge the web feature's program request path: a program's web request is recorded only when its 402 transfer lands, intake splits the fee to the signing attestors, the web-reader reference program pays and reads through web_read, the sidecar watches program requests and posts the observation activity, and the kernel test's signer mismatch, the dispatch bound and the remaining wiring are recorded for follow-up tasks
+- px26-w62 px26-fm01 2026-09-26 wave/paxeer-x-web/2.2 34545dc9540a3ac77d24c9e78f4dd3b144cd8b35 Close the program web request path from the request record through payment, attestation intake and web_read, with the sidecar's kernel watcher and a reference web-reader program
+- px26-fm01 px26-fm01 2026-09-26 feature/paxeer-x-web 07de0ef6b08a76fbf0551bcdbb246a481b03b33f Add the task that qualifies the sidecar api request path: the test crate's lint findings are cleared, the loopback server refuses a call without its credential, and api answers gain a content kind so the content endpoint serves them
+- px26-leader px26-fm00 2026-09-26 main ea8fa395301aca1a8d7e35ff8b7e6d0a22865e10 Merge the Sidiora feature's first aggregate gate record: the fee-path Go leg ran on the merged revision and stopped on the evm module's genesis export and consensus version tests, and the task that brings those tests to the fee-token state is added ahead of the rerun
+- px26-fm03 px26-fm03 2026-09-26 feature/sidiora-fee-token 0f683f5b43e98a50d4139f2dc19227d6722b8d91 Add the task that brings the evm module's genesis export and consensus version tests to the fee-token state before the aggregate gate reruns
+- px26-w71 px26-fm03 2026-09-26 wave/sidiora-fee-token/3.1 4a37904787fe235d703c67ce5e8d021c79309059 Record the Sidiora gate run on the merged revision: the fee-path Go leg failed in the evm module tests and stopped the run before the gas-station crate and the Paxeer Foundry project
+- px26-leader px26-fm00 2026-09-26 main b843dcddd1fbc544185fe7b3fa09b54fd5e15cf7 Merge the web feature's sidecar api requests: the sidecar decrypts its attestor's credential envelope in memory, calls the API with it, selects and canonicalises the answer and signs under the majority or the single level, with the test crate's lint and loopback findings recorded for the follow-up
+- px26-w65 px26-fm01 2026-09-26 wave/paxeer-x-web/2.14 1ff7a795e00e12b9ad28689f120469ab74709282 Perform api requests in the sidecar: decrypt the attestor's credential envelope in memory, call with it, select and canonicalise the answer, and sign under the majority or the single level
+- px26-leader px26-fm00 2026-09-26 main 4e0e1ad1831d0079d7e664dcc4e7c0d0137431e5 Merge the bridge feature's Solana Sidiora pair registration: the pair is registered through a governance message emitted ahead of the cap in the same proposal, so the bridge no longer depends on an upgrade handler for it
+- px26-w67 px26-fm02 2026-09-26 wave/paxeer-x-bridge/2.18 c328d0156b03482a82160af84a7bce3ae969ca74 Register the Solana Sidiora pair through a governance message emitted ahead of the cap in the same proposal, so the bridge no longer depends on an upgrade handler for it
+- px26-leader px26-fm00 2026-09-26 main ff5914fec64cb338a0efd48f5f5be68dad5ff372 Merge the fee-token precompile gating: the fee-token entry registers only from its upgrade with the precompile set chosen by block height, and the registration test asserts it at that upgrade and absent below
+- px26-w69 px26-fm03 2026-09-26 wave/sidiora-fee-token/2.16 95054f1740672cf520e51d8c3810a02f1eef6f17 Assert the fee-token precompile is registered at its upgrade and absent below it
+- px26-fm03 px26-fm03 2026-09-26 feature/sidiora-fee-token 25464ead167109d37b9980b0e5bbed04bcf0e293 Add the task that asserts the fee-token precompile registration at its upgrade rather than below it
+- px26-w68 px26-fm03 2026-09-26 wave/sidiora-fee-token/2.14 bc4ffb738ff05303ecf0cfe32572d3a9b91d4af1 Serve the fee-token precompile only from its upgrade on and select the custom precompile set by the block's upgrade height for ordinary execution
+- px26-leader px26-fm00 2026-09-26 main 28b2473b702db983881e20ed3fe9ba9ae67068d8 Merge the web feature's api call helpers: TypeScript and Python builders for api payloads and credential envelopes, and the page section showing a contract calling an API through XWebApi
+- px26-w66 px26-fm01 2026-09-26 wave/paxeer-x-web/2.15 0f88925412546b129a67d6df6463ea577ac68307 Give developers the api call helpers: TypeScript and Python builders for api payloads and credential envelopes, and the page section that shows a contract calling an API through XWebApi
+- px26-leader px26-fm00 2026-09-26 main 78e341e255a6cb9278f6132526b2e6a97dac2cee Merge the relayer journal fix: a completed transaction is marked landed so a finished release no longer reads as pending, and the relayer lint task is recorded passing
+- px26-w60 px26-fm02 2026-09-26 wave/paxeer-x-bridge/2.19 feff7d3004d0d4bde3471710a51641c89ef007eb Mark a completed transaction as landed in the relayer journal so a finished release no longer reads as pending, and record the relayer lint task passing
+- px26-leader px26-fm00 2026-09-26 main 21ea9d10a464b27863464a0fa8a9ece181ad97bf Merge the web feature's api request kind: contracts call an API through xweb with encrypted credential envelopes, field selectors, the single attestation level and the XWebApi library, and the sidecar's crawl interval is configurable with a clean stop on SIGTERM and SIGINT
+- px26-w57 px26-fm01 2026-09-26 wave/paxeer-x-web/2.13 bf26a24b4f542a69683bab95b1bfddaef0427b71 Let a contract call an API through xweb: the api request kind, encrypted credential envelopes, field selectors, the single attestation level and the XWebApi library
+- px26-w63 px26-fm01 2026-09-26 wave/paxeer-x-web/2.8 a76155a2e02f4444db32f49824bf68cba71a4507 Let the sidecar's crawl interval be configured and stop it cleanly on SIGTERM and SIGINT with the index committed
+- px26-leader px26-fm00 2026-09-26 main 691de554feb7e1f572b8b2e9e6d444b518e67fac Merge the bridge feature's second wave tail: the EVM dry run reads governance bodies through the proposal decoder, the Solana deploy waits for the executable and keeps the program keypair beside its record, the EVM deploy resolves its script from its own location, the deploy scripts check, the recorded Solana dry run, and the relayer restructured to pass clippy
+- px26-w51 px26-fm02 2026-09-26 wave/paxeer-x-bridge/2.16 4bdc199a567c9832c2dc30c2df62adc42a333fcb Wait for the deployed Solana program to become executable before initialising it, keep its keypair from the first deployment, deploy the vaults from any directory and record the Solana dry run
+- px26-fm02 px26-fm02 2026-09-26 feature/paxeer-x-bridge edb75a3813d90ff5e2d27e66c3876a5ea34cd2ed Add the task that replays a completion out of the relayer journal's pending set and re-qualifies the lint task
+- px26-w56 px26-fm02 2026-09-26 wave/paxeer-x-bridge/2.17b 888dbf33d0445d819db09201c88bb07c153a6c98 Restructure the relayer's tests so the whole crate passes clippy, and close the observations the earlier bridge tasks resolved
+- px26-w50 px26-fm02 2026-09-26 wave/paxeer-x-bridge/2.15 057c7ea3f7439be8c3684f80826628c9902c645f Read the generated governance bodies through the proposal decoder in the EVM dry run and re-record it
+- px26-fm02 px26-fm02 2026-09-26 feature/paxeer-x-bridge 534ac6cc7ef12a4175040c8bdf5231b5ac1d86b4 Let the relayer lint task restructure its tests as well as its sources
+- px26-w52 px26-fm02 2026-09-26 wave/paxeer-x-bridge/2.17 4d5c8542a08785f440d8ec9a7019ffbde13a58c4 Clear the relayer's source clippy findings by restructuring its code, point the attestation references at the contract's home under bridge/evm, and record the integration-test lints still outside the task
+- px26-fm02 px26-fm02 2026-09-26 feature/paxeer-x-bridge 74d0c752f87946b6662d4edccf6460da9c9922c3 Add the tasks that decode bodies in the EVM dry run, harden the deploy scripts, clear the relayer lints and register the Solana Sidiora pair through governance
+- px26-leader px26-fm00 2026-09-26 main c164087a1994220b4a8e823e5897bf0e1abc382d Merge the Sidiora fee token's second wave tail: gas is charged in the account's fee denom on the block execution path and on the transaction delivery path alike, and the fee path is proven over real blocks
+- px26-w61 px26-fm03 2026-09-26 wave/sidiora-fee-token/2.15 2acf4819541a3474418f30522e5dc28cec4dd9e3 Charge gas in the account's fee denom on the transaction delivery path as the block execution path does, and prove the Sidiora fee path over real blocks
+- px26-fm03 px26-fm03 2026-09-26 feature/sidiora-fee-token 37d58bd9beb942937d54d37a9ef1fd4a2912618c Add the task that charges the fee token on the transaction delivery path and re-qualifies the block proof
+- px26-w53 px26-fm03 2026-09-26 wave/sidiora-fee-token/2.13 42d74448607e915c56b213bac662669c04780cea Charge gas in the account's fee denom on the block execution path and prove the Sidiora fee path over real blocks
+- px26-fm03 px26-fm03 2026-09-26 feature/sidiora-fee-token 052bd4549728ad2ee0e3d5c91e2fc382bffe6b18 Add the tasks that charge the fee-token path on the block execution path and serve the fee-token precompile only after the upgrade
+- px26-fm03 px26-fm03 2026-09-26 feature/sidiora-fee-token 45ab8e0ad62d24b94a1ab3ab5f638bba8f48c1a8 Bring the Sidiora feature up to date with the bridge and web work on main
+- px26-w13 px26-fm03 2026-09-26 wave/sidiora-fee-token/1.5r f1be3c0f09449db9d9d36fd923869b40c143d30f Record the passing Sidiora fee selection test run and close its loader finding
+- px26-w07 px26-fm03 2026-09-26 wave/sidiora-fee-token/2.10 3edf19a4bb240e444b9a3394da3de66a444bb294 Prove the Sidiora fee path in real blocks and record the harness ante gap
+- px26-w07 px26-fm03 2026-09-26 wave/sidiora-fee-token/1.5 c91ef8a0cb206ec34dd0dc0129784be7e25d462d Add Sidiora fee selection and sponsored wallet consent
+- px26-leader px26-fm00 2026-09-26 main dccefbe06e5ceb40d850200dafe22a6cc9316ffb Merge the web feature's second wave so far: the sidecar signs, exchanges and submits attestations, the v6.8 upgrade plan wires xweb into the application and serves its precompile only from the upgrade on, daemon-bound sessions carry the web route, the metered draw signer and the sidecar's payment configuration are settled, the sidecar ships as an image and a service unit, the documentation page, the Python receipt verification by protocol version, the widened workflow filters, and the api request kind with credential envelopes now specified
+- px26-w58 px26-fm01 2026-09-26 wave/paxeer-x-web/2.4b dccefbe06e5ceb40d850200dafe22a6cc9316ffb Name the xweb store, make v6.8 the latest upgrade in the upgrade tests and archive the precompile versions the bump produces
+- px26-w59 px26-fm01 2026-09-26 wave/paxeer-x-web/2.9r 6adc36bae860bc9527ec562e9c6cfac685944e58 Record the daemon-bound web session task passing with its agent daemon tests scoped to the tenant module
+- px26-fm01 px26-fm01 2026-09-26 feature/paxeer-x-web b24558ee384fb8c325df32de1b856bff8bf773a1 Scope the daemon-bound session task to its own tests, run the agent workspace tests with the binaries the workflow builds, finish the upgrade plan's cross-cutting edits and re-gate the lint task on the real workflow steps
+- px26-w46 px26-fm01 2026-09-26 wave/paxeer-x-web/2.4 296a079ec127ecdcaf5c35855d0d5f9a7d0f502e Add the upgrade plan that wires the xweb module into the application and serves its precompile only from the upgrade on
+- px26-w44 px26-fm01 2026-09-26 wave/paxeer-x-web/2.1 a5c7ad395bd6d8a5895a1c99164cfb451e7e88d0 Sign web requests as an attestor, exchange signatures with peers and submit fulfil from the sidecar
+- px26-w49 px26-fm01 2026-09-26 wave/paxeer-x-web/2.10 db6137d042337b3b2f14a216179640db75cd5543 Settle the metered draw signer in the payment protocol and let the sidecar configure its payer, per-draw fee limit and conformance suite
+- px26-w48 px26-fm01 2026-09-26 wave/paxeer-x-web/2.9 4134863df98bcb56bfb74fd665e19c2e5685af63 Serve the web tools to daemon-bound sessions opened with the web scopes and report a held spend in its own words
+- px26-w54 px26-fm01 2026-09-26 wave/paxeer-x-web/2.5 15f746b7ae21f7f7e152a90dad92585ef001e3f1 Document the web search sidecar, the xweb precompile and the program web_read path
+- px26-w45 px26-fm01 2026-09-26 wave/paxeer-x-web/2.3 0cd9edac51d2a1f23ac3aacbaf555a5c70a09047 Package the web search sidecar as an image and a service unit and build it into the node image
+- px26-fm01 px26-fm01 2026-09-26 feature/paxeer-x-web 19cbe4be71589339551a6114695a845290ae894c Let contracts call APIs beyond the network: add the api request kind with credential envelopes, selectors and a single attestation level, its sidecar path and its developer helpers
+- px26-w55 px26-fm01 2026-09-26 wave/paxeer-x-web/2.12 0b928b48a4d610d8f1ce4151a1aca2bd250bc44a Verify a payment receipt by the protocol version it carries in the Python client
+- px26-w47 px26-fm01 2026-09-26 wave/paxeer-x-web/2.7 9d259fe4135c1e959ece4a550863a03ee69ea6fa Run the xweb workflow for every tree its legs exercise
+- px26-fm01 px26-fm01 2026-09-26 feature/paxeer-x-web a49df20e72da4ff5e0a18688b35aea9cac4ac76f Add the task that verifies a receipt by the protocol version it carries in the Python client
+- px26-w43 px26-fm01 2026-09-26 wave/paxeer-x-web/1.18r 33b034c3110f3df60646951ed67b3c5d91f470c5 Record the buyer and payload tasks passing with their lint scoped to their own crates, and close the observations earlier tasks resolved
+- px26-fm01 px26-fm01 2026-09-26 feature/paxeer-x-web f6e0faf4f27ac330af9dc78a9000fa9600911ff2 Scope the buyer and payload tasks' lint to their crates, and add the tasks that settle the metered draw signer and clear the agent workspace clippy findings
+- px26-leader px26-fm00 2026-09-26 main d56d05eb07dee670efe346632008b423a09b8d44 Merge the bridge feature wave two: Solana secp256k1 releases, the relayer's Solana observer and submitter, the post-deploy checklist, the runbook, the Solana admin client, the module's governance messages, proposal content, application route and submit command, the pinned platform tools, and the recorded EVM dry run
+- px26-w38 px26-fm02 2026-09-26 wave/paxeer-x-bridge/2.12 dbcfebf687cd0fe04616b4274ef5c76c5b643909 Fund the Solana dry run's wrapped SOL account exactly by opening it first and syncing the transferred SOL, read the generated governance bodies through the generator's own decoder on the Paxeer side, and record that the dry run now builds and deploys with the pinned platform tools but an initialise can be refused right after the deploy
+- px26-w40 px26-fm02 2026-09-26 wave/paxeer-x-bridge/2.14 339c988939419390d3cacd9ce7ec317de54e2b26 Mount the bridge proposal on paxd tx gov submit-proposal as layerxbridge-proposal: the subcommand decodes a generated proposal file through the application codec into the bridge proposal, refuses unknown or missing fields and a missing deposit, and builds MsgSubmitProposal from the standard flags; the node mounts it beside the other proposal handlers, the runbook shows the command with each generated file and docs-check asserts it, and the module, node and docs tests pass
+- px26-w38 px26-fm02 2026-09-26 wave/paxeer-x-bridge/2.12 10984d802bb38c80dae6ec32b2ff184e65bdf70c Restore the governance submit command task and its place in the final gate's requirements, which the platform tools commit dropped from the bridge spec
+- px26-w38 px26-fm02 2026-09-26 wave/paxeer-x-bridge/2.12 a6796aa0c49fa413cd73ad897c2479669ebe5306 Build the Solana custody program with platform tools v1.56 in the deploy script and the bridge workflow, whose cargo accepts the edition 2024 dependency manifests, and make the deploy-scripts check refuse a workflow step that names another release or none, a declared release older than v1.52, and a build not handed the declared release
+- px26-fm02 px26-fm02 2026-09-26 feature/paxeer-x-bridge ed52e889f4dbfb33f8539b5f2905b45d2b8fc345 Add the task that mounts the bridge proposal on the node's governance submit command
+- px26-w39 px26-fm02 2026-09-26 wave/paxeer-x-bridge/2.13 783af00ad09475c752afd20c6e7ab90599cf9ea4 Make the runbook submit the generated proposals through governance: sections 5 and 6 name the -proposals output, the open-chain and Sidiora cap proposals and the proposal route that executes them, state that the node's submit-proposal command carries only Text content, and docs-check.sh asserts both proposal files, the submit command and the absence of the stale no-message-service claims
+- px26-w33 px26-fm02 2026-09-26 wave/paxeer-x-bridge/2.3 83386d951dc94c93b5f4f484e5bb5833bdcef82e Release burns to Solana from the relayer: build the custody program's release behind a native secp256k1 instruction carrying the attestor signatures, sign it with an ed25519 fee payer held by the remote signer under its own policy domain, journal the signed bytes before broadcast so a restart rebroadcasts them, complete on an existing nullifier, resubmit the journalled attestation after blockhash expiry, and hold burns whose recipient PDA does not exist yet; the solana_release test replays recorded Solana and Paxeer exchanges and passes
+- px26-fm02 px26-fm02 2026-09-26 feature/paxeer-x-bridge 71ad8dca6e3ca96c6bb582714e6162bd75a35574 Add the task that makes the runbook submit the generated proposals through governance
+- px26-w37 px26-fm02 2026-09-26 wave/paxeer-x-bridge/2.11 3fdecaee3400dabdb181b1b1af2fc45d2c5efea0 Route bridge governance proposals through the application: a BridgeProposal content generated from api/layerxbridge/proposal.proto, a proposal handler that executes every carried message through the Msg service for the governance module account and refuses any other authority or a malformed proposal, the layerxbridge route in the governance router, and a -proposals output in the generator that sets Sidiora's cap in a proposal of its own, with handler, application-route and field-for-field decode tests
+- px26-fm02 px26-fm02 2026-09-26 feature/paxeer-x-bridge b750599e59a147862b23018e3bb0e230421b5854 Add the task that pins platform tools whose cargo accepts edition 2024 for every cargo build-sbf
+- px26-w36 px26-fm02 2026-09-26 wave/paxeer-x-bridge/2.7 2d4ee46bf3520f48d53539ad30e2eaf3afa40c1c Add the Solana deployment dry run against a loopback solana-test-validator: deploy, initialise and register through the real deploy script and admin client, deposit and release wrapped SOL and Sidiora against native secp256k1 attestations, read back with the checklist against the real keeper, and record a replayable fixture; it stops naming cargo-build-sbf when the platform tools cannot build the program
+- px26-w34 px26-fm02 2026-09-26 wave/paxeer-x-bridge/2.6 b75e20ed06a105ef9c807da46088a678bded93d5 Dry-run the EVM vault deployment against a loopback anvil node through the real deploy script and checklist, with deposits, attested releases and a replayable recorded fixture
+- px26-fm02 px26-fm02 2026-09-26 feature/paxeer-x-bridge 2e1e6eae044d8f90e8d3bda788357cde1d4e283a Add the task that routes bridge governance proposals through the application
+- px26-w31 px26-fm02 2026-09-26 wave/paxeer-x-bridge/2.9 e5a0abccb9b5f914eac243020d6c0f71e9893b53 Generate the bridge module's governance messages from api/layerxbridge/tx.proto, serve them through a Msg service that refuses any authority but the module's, and write every proposal body under its type URL, with router-to-keeper and field-for-field decode tests
+- px26-w32 px26-fm02 2026-09-26 wave/paxeer-x-bridge/2.10 c97dbd50c6e084452825c021497c928c63ffef0b Derive the Solana vault authority from the program's vault-authority seed, record a first deployment and stop it before initialise while solana.program_id is a placeholder, and check both offline against the pinned vault vector with a replayed Solana toolchain
+- px26-w26 px26-fm02 2026-09-26 wave/paxeer-x-bridge/2.4 56de736da168a56e14bff8b862fee874d09d1bea Add the post-deploy checklist that reads each chain and the Paxeer precompile back against the configuration and generated bodies, with a replayed-fixture check, and derive chainconfig handles from bridge/vectors
+- px26-w24 px26-fm02 2026-09-26 wave/paxeer-x-bridge/2.1 83b5eb898829f8617e12331be525c6796aab96c6 Release Solana custody against attestations the native secp256k1 program verified, with a nullifier per Paxeer burn and program tests of every refusal
+- px26-w25 px26-fm02 2026-09-26 wave/paxeer-x-bridge/2.2 2184fdb52dfae342e5a8654c54c14f49188ca8e0 Observe Solana custody deposits in the relayer and submit them as bridgeIn, with a Solana RPC seam, an optional solana configuration entry, record-and-receipt refusal and recorded-fixture tests of a full cycle against the pinned vector
+- px26-fm02 px26-fm02 2026-09-26 feature/paxeer-x-bridge f75e461e724edb9f3804739d8bae10822d7012c5 Add the governance message service and Solana vault seed tasks to the bridge wave two gate
+- px26-w28 px26-fm02 2026-09-26 wave/paxeer-x-bridge/2.8 cd5e4fc2572e6e32b04534eca2c661c8d9861f57 Add the Solana admin client that initialises the custody program, registers its assets in configuration order, sets caps, pauses and registers recipients from the chain configuration, with program-test runs of the real binary
+- px26-w27 px26-fm02 2026-09-26 wave/paxeer-x-bridge/2.5 38006a2c564848de05be81471d43c8edb766042e Add the bridge operator runbook, a page for each of the nine chains, and a documentation check that proves its link, path and public-text rules bite
+- px26-fm02 px26-fm02 2026-09-26 feature/paxeer-x-bridge 3939a7cc4ba7ced6eff3e9e9c1d2c967daa0a180 Let the Solana release tests sign with libsecp256k1 and keep recipient registration in identity.rs
+- px26-leader px26-fm00 2026-09-26 main 7864043397dc826d0117b8c4b071d34ab194a97c Merge the web search feature wave one: the x-websearch sidecar with its crawler, index, payment gateway and content service, the xweb precompile and the program web_read call, the TypeScript and Python clients, the MCP web tools and daemon route, the workflow, and the follow-up tasks that align the buyer, the sidecar and the web tool with the payment protocol
+- px26-w42 px26-fm01 2026-09-26 wave/paxeer-x-web/1.18 bcb8993721231dab64ac500e4655d794de4f7707 Box the perps market payload so layerx-types clears large_enum_variant with its vectors unchanged, and record the layerx-proof argument-count lint that still stops the agent clippy step
+- px26-fm01 px26-fm01 2026-09-26 feature/paxeer-x-web fedb1955ec6f4fa5cc73dce8274e071f9d47003f Add the task that boxes the perps market payload variant so the agent workspace passes clippy
+- px26-w41 px26-fm01 2026-09-26 wave/paxeer-x-web/1.17 3bbca968251aec0f0dc40895a7d2f508a1737ec1 Record the paid-success recording task as qualified: its seller, sidecar, TypeScript, Python and MCP web tests pass on the revision that settles main-account offers and grant evidence, and close its three observations
+- px26-w41 px26-fm01 2026-09-26 wave/paxeer-x-web/1.17 a234eff7dd73547afbd94bc1d3133d64c5d2bdc9 Have the buyer check the repeated purposeHash of a grant settlement and refuse one on an exact settlement, pay PAX from and into the main accounts in the web tool and read content by digest unpaid; the buyer, seller and MCP web tests pass, and the MCP clippy step stops on the recorded layerx-types lint
+- px26-fm01 px26-fm01 2026-09-26 feature/paxeer-x-web 66c44c322ec1d820119c4c5cdaee218b7df3f7fe Add the task that settles main-account offers and grant evidence in the buyer and the web tool
+- px26-w35 px26-fm01 2026-09-26 wave/paxeer-x-web/1.15 5181049b6d8de682da1ca83aa5076fece0ef920e Pay PAX into the main accounts, have the Seller repeat purposeHash for grant settlements, and re-record the gateway fixtures and client exchange with a paid success in every asset; the seller, sidecar, TypeScript and Python tests pass, and the MCP metered search is refused because the buyer evidence type does not accept purposeHash, recorded as an observation
+- px26-fm01 px26-fm01 2026-09-26 feature/paxeer-x-web 8284206d29f7422c8f63afd74d7d071b55d9b947 Add the task that opens daemon-bound sessions with the web route and the web scopes
+- px26-w30 px26-fm01 2026-09-26 wave/paxeer-x-web/1.16 64e62abda06cb30b2d72a0bdcd9820ef3a117165 Route the paid web tools through the bound MCP server: list them for web-scoped sessions and pay tools/call over the web tool behind the approval registry, marking every result untrusted output
+- px26-w29 px26-fm01 2026-09-26 wave/paxeer-x-web/1.14 51343fcd74439dbfcbb8526bf616631672f1317c Probe the guest ABI 4 transitions in the programs registration test and write the SDK naming prefix check as a byte string
+- px26-fm01 px26-fm01 2026-09-26 feature/paxeer-x-web cb09f4109e8b5e6805bd5c4a6eebbb64eccdcb3e Add the guest ABI 4 registration probe, PAX main-account payment, MCP routing, workflow filter and sidecar shutdown tasks, and gate the xweb precompile on the upgrade
+- px26-w22 px26-fm01 2026-09-26 wave/paxeer-x-web/1.10 c5859d6d6765ba9f41f085e467e4b8617940bda1 Add the paid web search, fetch and content tool to the MCP server, settling over 402LXP through the approval boundary, verifying the sequencer-signed receipt and refusing content whose digest does not match
+- px26-w21 px26-fm01 2026-09-26 wave/paxeer-x-web/1.9 b6a4d7aff6739269a6abcb474b9e97f6511926c0 Add the TypeScript and Python web search clients that pay the sidecar over 402LXP, verify the settlement receipt and refuse content whose digest does not match
+- px26-w18 px26-fm01 2026-09-26 wave/paxeer-x-web/1.8 f3c42bc32ab74007e80de07b93eda65bca3ad507 Allocate guest ABI 4 with a web_read host import that returns a program's own committed web answer, backed by committed module storage and the call bridge views, with the SDK reader and its tests
+- px26-w23 px26-fm01 2026-09-26 wave/paxeer-x-web/1.13 f7c2f03545bf941b9a27e82eef81daa539f0bd31 Wire the x-websearch binary: search and fetch behind the payment gate, content unpaid, a crawl cycle thread and pages fetched once
+- px26-fm01 px26-fm01 2026-09-26 feature/paxeer-x-web b8db3a50b8e84a048a3c15cc43542872d2281d63 Add the sidecar binary wiring task that puts the payment gate on every paid route
+- px26-w19 px26-fm01 2026-09-26 wave/paxeer-x-web/1.3 3ad721e187571c334f864eb6125e549a187fa846 Crawl the seed list into a local tantivy index and serve ranked search with its canonical bytes
+- px26-w14 px26-fm01 2026-09-26 wave/paxeer-x-web/1.4 1e1f0ef25b02a80bac0370290a8c1ce40a18b2fc Sell web search over 402LXP in SID, PAX, USDC and USDL with receiver-signed draws, exact receipts and per-asset payee accounts
+- px26-w20 px26-fm01 2026-09-26 wave/paxeer-x-web/1.12 151902d4ee1ee0ffc0e4799e67d601aa868147b1 Bring the pointer tests' addr precompile doubles up to the full binding interface and qualify the xweb precompile
+- px26-fm01 px26-fm01 2026-09-26 feature/paxeer-x-web 3d01a199700244ddc5db93ac12341add064b09bc Add the pointer test double repair that unblocks the xweb precompile gate
+- px26-w16 px26-fm01 2026-09-26 wave/paxeer-x-web/1.6 e7a84e4d495868e04aaa8d6e4b71d23b0df8230b Add the xweb precompile with its metered callback, Solidity interface and reference consumer
+- px26-w15 px26-fm01 2026-09-26 wave/paxeer-x-web/1.2 982cd108cbb56a77cb88723241ea2a4fffe010af Fetch pages under robots.txt and destination limits, canonicalise their text, digest it and serve the content store
+- px26-fm01 px26-fm01 2026-09-26 feature/paxeer-x-web 33cb119920899481da9568b9791a70c497eeaaac Allocate guest ABI 4 for web_read and split the kernel binding between the runtime and the request path tasks
+- px26-w12 px26-fm01 2026-09-26 wave/paxeer-x-web/1.7 c25c6d81ee81184024a4d7b8e9059420d6dc51f6 Add the kernel web observation activity with its intake, attestor set, root and adapter
+- px26-fm01 px26-fm01 2026-09-26 feature/paxeer-x-web c946298ecfe0c9477dad4cefc4c39e1478baa7be Let 402LXP offers name a per-asset payee account and widen the web payment task's touch list
+- px26-w10 px26-fm01 2026-09-26 wave/paxeer-x-web/1.5 a510957b7510734b4af1ea9395946d62ee708806 Add the xweb module with its request store, attested fulfilment, fee split, timeout refunds and governance messages
+- px26-w09 px26-fm01 2026-09-26 wave/paxeer-x-web/1.1 ab18fd0d42759670339b5b141c7e941303b6e304 Add the x-websearch sidecar crate with its configuration loader, key files and std-library HTTP server
+- px26-w11 px26-fm01 2026-09-26 wave/paxeer-x-web/1.11 51c84614781c72dd7d776c7e6b2380ae4bc53d3c Add the xweb workflow and a check that proves its filters and legs are true
+- px26-w01 px26-fm01 2026-09-26 wave/paxeer-x-web/0 19c3d0a4d394a8da71b6e81112709f1aaaad199e Add the Paxeer X Network web search sidecar and xweb precompile specification
+- px26-leader px26-fm00 2026-09-26 main 788ebde1da03aa2865b4d8a0d037b4a5c8e9523b Merge the bridge feature wave one: the EVM vault under bridge/evm, the Solana custody program, the attestation vectors, the chain configurations and deploy scripts, the governance proposal bundles and the deploy workflow
+- px26-fm02 px26-fm02 2026-09-26 feature/paxeer-x-bridge c3faf5e6d6b75c958d9e47f7b5aa71bd091090b1 Reword the bridge spec's process notes in product terms
+- px26-fm02 px26-fm02 2026-09-26 feature/paxeer-x-bridge 172275350eebcb693c79e52f7bbb78bbee79c089 Record the bridge wave one gate on the merged feature revision
+- px26-w05 px26-fm02 2026-09-26 wave/paxeer-x-bridge/1.6 8af2658ce3f331c7907d4aa0e6ced811c15d80a8 Add the one bridge CI workflow and a check that proves its filters and jobs are true
+- px26-w05 px26-fm02 2026-09-26 wave/paxeer-x-bridge/1.3 fabcee4266a0febc3f14f54227ba1d383bb42517 Document the Solana identity mapping and pin it as digest vectors
+- px26-w02 px26-fm02 2026-09-26 wave/paxeer-x-bridge/1.2 8761e3abc040c586bae33be20e727276ddef4d11 Add the Solana custody program core for the Paxeer X bridge
+- px26-w06 px26-fm02 2026-09-26 wave/paxeer-x-bridge/1.5 0e379da1ca6ebb030e61c9b2c0263b925734ce9d Generate the bridge governance proposals from one chain configuration
+- px26-w05 px26-fm02 2026-09-26 wave/paxeer-x-bridge/1.1 f23384883e4b61647dace074887ed363d84f32c9 Move the EVM bridge vault to bridge/evm and harden it for production
+- px26-w03 px26-fm02 2026-09-26 wave/paxeer-x-bridge/1.4 eae099db01929c6379fe125206c2445d24261f0f Add the nine bridge chain configurations with their validator and deployment scripts
+- px26-w04 px26-fm02 2026-09-26 wave/paxeer-x-bridge/0 c899a532119a501e531460e58de1314a34de6e7e Amend the bridge specification for the review findings and the Solana admin client
+- px26-leader px26-fm00 2026-09-26 main 9d076cdeb9db22c0fa0b118e3f63b13d3b6959da Merge the continuous integration feature: cancel superseded workflow runs per ref across every workflow
+- px26-w08 px26-fm05 2026-09-26 wave/paxeer-x-ci/1 9d076cdeb9db22c0fa0b118e3f63b13d3b6959da Cancel superseded workflow runs per ref across every workflow
+- Gate the Sidiora fee token behind one upgrade handler (#546)
+- Accept governed fee tokens for Cosmos transaction fees (#543)
+- Charge and refund EVM gas in the selected fee token (#541)
+
+## 2026-09-25
+
+### Added
+
+- Add the Sidiora bank-backed proxy implementation (#532)
+- Add Sidiora sponsored transaction builders to the TypeScript SDK (#529)
+- Add account fee-token preferences and precompile (#527)
+- Add governed EVM fee-token parameters and keeper readers (#524)
+- Add Sidiora gas station quoting and policy core (#526)
+- Add signed Sidiora sponsorship to account batches (#523)
+- Add the two bounded explorer fleet gates (#520)
+- Add the backend lint gate and make the explorer umbrella pass it (#516)
+- Add strict Rust linting for explorer services (#502)
+- Add the kernel receipt detail page to the explorer (#509)
+- Add the Sidiora fee-token spec
+- Add the paxeer-x-explorer spec and enable the Codify fleet hierarchy
+
+### Fixed
+
+- Resolve kernel identities through the explorer search path (#508)
+- Repair the documentation site build (#499)
+
+### Changed
+
+- Replace fee-token oracle pairs with governed rates (#537)
+- Enforce the explorer test ratio and run both gates in continuous integration (#521)
+- Make the Blockscout database copy resumable and verifiable (#512)
+- Make the explorer frontend lint gate green (#511)
+- Make the beta contract and the evidence ledger agree with their sources (#500)
+
+### Removed
+
+- Remove process-environment access from kernel preparation (#504)
+
+### Documentation
+
+- Document the public RPC and WebSocket endpoints for Paxeer X Network
+
+### Housekeeping
+
+- Record the wave 3 explorer gate passing on the merged revision (#542)
+- Update README.md
+
+### Other
+
+- Price sponsored gas with an owner-set Sidiora rate (#536)
+- Track the vitest environment preset and complete the Paxeer X resource enumeration (#538)
+- Run the explorer test gate one umbrella application at a time (#535)
+- Render token-denominated fees in the explorer (#531)
+- Route allowed fee tokens to holding or distribution (#530)
+- Govern Sidiora proxy upgrades through a timelock (#522)
+- Register Sidiora under the bridge tokenfactory account (#528)
+- Run the explorer deployment definitions on the published fork images (#514)
+- Leave one explorer surface and link the control plane to it (#515)
+- Decode the remaining kernel precompile events into their own tables (#518)
+- Stop the test factory from minting the genesis block (#519)
+- Persist the guarantor and deposit-root events of the kernel precompiles (#513)
+- Dress the explorer in the Paxeer X product design tokens (#507)
+- Declare the six Paxeer X API paths in the OpenAPI specification (#517)
+- Render the generated pointers for the Sidiora fee-token spec
+- Analyse Go in CodeQL with a build mode Go supports (#498)
+- Give every mix command against the explorer backend one containerised recipe (#505)
+- Follow the Paxeer X API shapes in the explorer frontend types and mocks (#496)
+
 ## 2026-09-24
 
 ### Added
 
+- Add CodeQL scanning and CodeRabbit review configuration
+- Add the feature-flagged Paxeer X unified account page to the explorer frontend
 - Add the Paxeer X Network branding preset to the explorer frontend
 - Add the Paxeer X one-account view to the explorer API
 - Add the Paxeer X settlement ladder as one pure status function
@@ -18,6 +292,7 @@ All notable changes to Paxeer X Network are documented in this file.
 
 ### Changed
 
+- Make the Paxeer X kernel-event write path reach the lx_* tables
 - Reconcile docs/wiki against code: modules count, precompiles, duplicate page (#473)
 - Reconcile stale documentation across the monorepo (#472)
 - Replace the README system-flow image with a Mermaid architecture diagram
@@ -25,6 +300,7 @@ All notable changes to Paxeer X Network are documented in this file.
 
 ### Documentation
 
+- Document the explorer environment variables wave 1 added or changed
 - Docs: state that the beta and gateway are not yet open and that there is no public faucet (#474)
 
 ### Housekeeping
@@ -33,6 +309,8 @@ All notable changes to Paxeer X Network are documented in this file.
 
 ### Other
 
+- Read the Paxeer X tables through Ecto and serve the six API paths the frontend calls
+- Generate the changelog from git history with git-cliff
 - Generate the changelog from git history with git-cliff
 - Set the explorer native coin name to Paxeer in both Paxeer X presets
 - Explorer frontend: settlement status badge, anchors and receipts pages, Paxeer X search

@@ -1,6 +1,6 @@
 {
-  "name": "layerx-protocol",
-  "private": true,
+  "name": "paxeer-x-protocol",
+  "private": false,
   "license": "Apache-2.0",
   "scripts": {
     "build": "node tools/build/npm-workspace-build.mjs"

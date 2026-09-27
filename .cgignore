@@ -1,10 +1,16 @@
-tmp/*
 # Native and Solidity build outputs
 /build/
 /build-*/
 /out/
 /cache/
 /broadcast/
+# The bridge Foundry project: lib is populated by bridge/evm/bootstrap-libs.sh
+# and build holds its artifacts and cache. Neither is committed.
+/bridge/evm/lib/
+/bridge/evm/build/
+# The bridge Solana program's cargo build directory. The /target/ rule below is
+# anchored to the repository root and does not reach it.
+/bridge/solana/target/
 *.o
 *.a
 *.so
@@ -14,6 +20,20 @@ tmp/*
 *.exe
 *.gcda
 *.gcno
+# Vendored wasmvm shared libraries ship with the module sources
+!/wasm-runtime/internal/api/libwasmvm.*.so
+!/wasm-runtime/internal/api/libwasmvm.dylib
+!/wasm/x/wasm/artifacts/v152/api/libwasmvm152.*.so
+!/wasm/x/wasm/artifacts/v152/api/libwasmvm152.dylib
+!/wasm/x/wasm/artifacts/v155/api/libwasmvm155.*.so
+!/wasm/x/wasm/artifacts/v155/api/libwasmvm155.dylib
+# Vendored wasmvm static archives back the muslc and darwin-static link directives
+!/wasm-runtime/internal/api/libwasmvm_muslc*.a
+!/wasm-runtime/internal/api/libwasmvmstatic_darwin.a
+!/wasm/x/wasm/artifacts/v152/api/libwasmvm152_muslc*.a
+!/wasm/x/wasm/artifacts/v152/api/libwasmvm152static_darwin.a
+!/wasm/x/wasm/artifacts/v155/api/libwasmvm155_muslc*.a
+!/wasm/x/wasm/artifacts/v155/api/libwasmvm155static_darwin.a
 *.profraw
 *.profdata
 /lcov.info
@@ -22,11 +42,12 @@ tmp/*
 # Qualification corpora, replay ledgers, and crash artifacts
 *.lxq
 *.roots
-core
-core.*
-crash-*
+/core
+/core.*
+/crash-*
 !programs/vendor/**
 node_modules/
+/target/
 # Runtime state and logs
 /.logs/
 *.log
@@ -43,6 +64,7 @@ node_modules/
 # Credentials and local configuration
 .env
 .env.*
+!explorer/frontend/configs/envs/.env.vitest
 !.env.example
 .envrc
 /secrets/
@@ -67,12 +89,65 @@ node_modules/
 Thumbs.db
 tmp/*
 .claude/worktrees/
+/.worktrees/
 agent/target/
-.opencode/
-.logs/
-.pytest_cache/
-.worktrees/
+agent/tools/*/target/
+platform/sdk/dotnet/bin/
+platform/sdk/dotnet/obj/
+platform/sdk/dotnet/tests/*/bin/
+platform/sdk/dotnet/tests/*/obj/
+platform/docs/samples/*/first-payment-go
+spec/specgen/specgen
 
+__pycache__/
+*.pyc
 
-# Imported upstream explorer fork (GPL-3.0/MIT), not indexed with the kernel sources
-/explorer/
+/spec/layerx-beta/handoff/
+/spec/layerx-beta/report.md
+/spec/layerx-beta/docs/
+
+# Paxeer chain outputs. These rules came from the chain's own ignore file;
+# bare directory names are anchored to chain paths so they cannot shadow
+# tracked LayerX trees such as docs/build/, tools/build/ or .cursor/.
+/vue/node_modules
+/vue/dist
+/release/
+/.idea/
+*.iml
+/consensus/build/
+/sdk/build/
+/wasm/build/
+/interchain/build/
+/evm_stress
+**/.terraform
+*terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+/yarn.lock
+/contracts/yarn.lock
+/integration_test/**/yarn.lock
+/loadtest/**/yarn.lock
+/c.out
+**/testdata/fuzz/**
+/loadtest/contracts/**/artifacts/
+/loadtest/contracts/**/target/
+/loadtest/contracts/**.json
+/loadtest_results.txt
+/parallelization/**/artifacts/
+/parallelization/**/target/
+!/parallelization/**/Cargo.lock
+/integration_test/**/*.txt
+coverage.html
+coverage.out
+/example/cosmwasm/echo/target
+/example/cosmwasm/cw20/target
+/example/cosmwasm/cw721/target
+/example/cosmwasm/cw1155/target
+/example/cosmwasm/iter/target
+/contracts/artifacts
+/integration_test/dapp_tests/artifacts
+/storage/state_db/bench/cryptosim/data/**
+/storage/state_db/bench/cryptosim/bin/
+/storage/state_db/bench/cryptosim/logs/
+/storage/ledger_db/block/blocksim/bin/
+/storage/db_engine/litt/bin/

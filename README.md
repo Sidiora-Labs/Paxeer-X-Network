@@ -9,12 +9,11 @@ English · [Español](docs/readme/README.es.md) · [日本語](docs/readme/READM
 </h1>
 <p align="center">
   <!-- ═══ Network Identity ═══ -->
+  <a href="https://mcpvault.io/servers/layerx-network/health?utm_source=external_badge&utm_medium=referral&utm_campaign=mcp_health_report"><img src="https://mcpvault.io/badge/layerx-network.svg?theme=dark" alt="MCPVault: claimed" height="32"></a>
   <img src="https://img.shields.io/badge/Paxeer%20X-Network-6C3BFF?style=for-the-badge" alt="Paxeer X Network" />
   <img src="https://img.shields.io/badge/Chain%20ID-125%20(0x7D)-1F6FEB?style=for-the-badge&logo=chainlink&logoColor=white" alt="Chain ID 125" />
   <img src="https://img.shields.io/badge/EVM-Compatible-3C3C3D?style=for-the-badge&logo=ethereum&logoColor=white" alt="EVM Compatible" />
-  <a href="https://github.com/Sidiora-Labs/LayerX-Protocol">
-    <img src="https://img.shields.io/badge/LayerX-Settlement%20Layer-FF6B00?style=for-the-badge&logo=databricks&logoColor=white" alt="LayerX" />
-  </a>
+  <img src="https://img.shields.io/badge/LayerX-Settlement%20Layer-FF6B00?style=for-the-badge&logo=databricks&logoColor=white" alt="LayerX" />
   <img src="https://img.shields.io/badge/Solidity-Smart%20Contracts-363636?style=for-the-badge&logo=solidity&logoColor=white" alt="Solidity" />
 </p>
 
