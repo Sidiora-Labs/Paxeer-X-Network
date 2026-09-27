@@ -18,6 +18,7 @@ pub mod policy;
 pub mod program_call;
 pub mod program_lifecycle;
 pub mod programs_activity;
+pub mod programs_module_abi;
 pub mod receipt;
 pub mod result;
 pub mod settlement;

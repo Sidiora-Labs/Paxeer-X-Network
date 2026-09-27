@@ -1081,11 +1081,11 @@ reqs = ["11.2"]
 
 [task.2.28]
 title = "Relay program events through core and list the gateway method so the sidecar's watcher reads real request bytes"
-status = "implemented"
-implemented_revision = "1dc250fd9dae44a73e7bb2c9157cb1089ede1fc9"
-implemented_command = "timeout 20m sh -c 'cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core && cargo test --locked --manifest-path platform/hosted/gateway/tests/local/Cargo.toml --test events'"
-implemented_exit_code = 101
-implemented_log_path = ".logs/verify.log"
+status = "done"
+revision = "5a72298527318be2ca34b6bdc934c99780b9dc0f"
+command = "timeout 30m sh -c 'export LAYERX_TEST_SOCAT_BIN=$(command -v socat) LAYERX_TEST_WEB_READER_WASM=$PWD/programs/sdk/rust/examples/web-reader/target/wasm32-unknown-unknown/release/layerx_reference_web_reader.wasm; cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway schema_lists_every_public_method && cargo test --locked --manifest-path platform/hosted/gateway/tests/local/Cargo.toml --test lifecycle events::'"
+exit_code = 0
+log_path = ".logs/verify.log"
 wave = 2
 requires = ["2.21","2.27"]
 do_1 = "Add the v1 programs events path with hex topic and unsigned integer sequence and limit validation to the core boundary's relay allowlist in platform/hosted/core/src/main.rs, and cover the allowed and the refused shapes in platform/hosted/core/tests/boundary.rs."
@@ -1201,11 +1201,11 @@ reqs = ["9.1"]
 
 [task.2.35]
 title = "Qualify the program events relay: anchor addresses in the boundary and local clusters, an events test target and the gateway's published method list"
-status = "implemented"
-implemented_revision = "23a3fcd470d2db9d5375c0953aa3d93b5c1ad492"
-implemented_command = "timeout 30m sh -c 'export LAYERX_TEST_SOCAT_BIN=$(command -v socat) LAYERX_TEST_WEB_READER_WASM=$PWD/programs/sdk/rust/examples/web-reader/target/wasm32-unknown-unknown/release/layerx_reference_web_reader.wasm; cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway schema_lists_every_public_method && cargo test --locked --manifest-path platform/hosted/gateway/tests/local/Cargo.toml --test lifecycle events::'"
-implemented_exit_code = 101
-implemented_log_path = ".logs/verify.log"
+status = "done"
+revision = "5a72298527318be2ca34b6bdc934c99780b9dc0f"
+command = "timeout 30m sh -c 'export LAYERX_TEST_SOCAT_BIN=$(command -v socat) LAYERX_TEST_WEB_READER_WASM=$PWD/programs/sdk/rust/examples/web-reader/target/wasm32-unknown-unknown/release/layerx_reference_web_reader.wasm; cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway schema_lists_every_public_method && cargo test --locked --manifest-path platform/hosted/gateway/tests/local/Cargo.toml --test lifecycle events::'"
+exit_code = 0
+log_path = ".logs/verify.log"
 wave = 2
 requires = ["2.28"]
 do_1 = "Observation 2.28.1: the daemon and platform/hosted/node/bootstrap.sh accept only the layerxAnchor precompile address for the settlement contract and the checkpoint registry, while finality_environment in platform/hosted/core/tests/boundary.rs and the local qualification's node environment in platform/hosted/gateway/tests/local/funding.rs still name placeholder addresses, so every real-cluster test stops at bootstrap finality authority -3; name the anchor address for both in those two harnesses and nowhere else, keeping the daemon's rule and every placeholder that has nothing to do with these two variables, and record the other harnesses that still name placeholders (platform/hosted/agent-boundary, platform/hosted/registry and platform/hosted/authority real-node tests and platform/hosted/tests/beta-cluster.sh) as one observation without fixing them."
@@ -1236,11 +1236,11 @@ reqs = ["16.3","16.4"]
 
 [task.2.37]
 title = "Fund the local gateway harness through the native custody module on a real local chain"
-status = "implemented"
-implemented_revision = "36dad88174312ee4e497198e6ae35029a6d09ec8"
-implemented_command = "timeout 30m sh -c 'export LAYERX_TEST_SOCAT_BIN=$(command -v socat) LAYERX_TEST_WEB_READER_WASM=$PWD/programs/sdk/rust/examples/web-reader/target/wasm32-unknown-unknown/release/layerx_reference_web_reader.wasm; cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway schema_lists_every_public_method && cargo test --locked --manifest-path platform/hosted/gateway/tests/local/Cargo.toml --test lifecycle events::'"
-implemented_exit_code = 101
-implemented_log_path = ".logs/verify.log"
+status = "done"
+revision = "5a72298527318be2ca34b6bdc934c99780b9dc0f"
+command = "timeout 30m sh -c 'export LAYERX_TEST_SOCAT_BIN=$(command -v socat) LAYERX_TEST_WEB_READER_WASM=$PWD/programs/sdk/rust/examples/web-reader/target/wasm32-unknown-unknown/release/layerx_reference_web_reader.wasm; cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway schema_lists_every_public_method && cargo test --locked --manifest-path platform/hosted/gateway/tests/local/Cargo.toml --test lifecycle events::'"
+exit_code = 0
+log_path = ".logs/verify.log"
 wave = 2
 requires = ["2.35"]
 do_1 = "Add platform/hosted/gateway/tests/local/custody_chain.py, a support process in the shape of human/crates/layerx-human-service/tests/support/withdraw-paxd.py speaking one JSON object per line: start builds the BetaUsdl artifact the chain loader needs, writes the layerxcustody genesis section with platform/hosted/paxeer/custody-genesis.py for the cluster's own sequencer id and public key, a freshly generated deposit-root authority and the cluster asset mapped to the chain's own denomination, brings the real local chain up through owned_chain of tests/daemon/custody_chain.py and its two independent TLS origins through that module's boundaries, and answers the EVM origin, the Comet RPC origin its identity document names, the two boundary origins, the CA bundle, the disposable identity path, the native custody precompile address and the module identity; deposit sends deposit(bytes32) to that precompile for one beneficiary account through the signer and send of tests/bridge/deploy_local_custody.py and answers the deposit transaction hash and the credited base units; stop tears the boundaries and the chain down. Require the boundary and custody-proof executables the neighbouring harnesses take from their environment, failing closed and naming the missing one, and change nothing in tests/daemon/custody_chain.py, platform/hosted/paxeer/custody-genesis.py or tests/bridge."
@@ -1292,11 +1292,11 @@ reqs = ["9.1"]
 
 [task.2.40]
 title = "Align the native program lifecycle and call encoders with the kernel's guest ABI range"
-status = "implemented"
-implemented_revision = "b719d112aba886e8350c6faf6da215fd0c2b18f2"
-implemented_command = "timeout 30m sh -c 'export LAYERX_TEST_SOCAT_BIN=$(command -v socat) LAYERX_TEST_WEB_READER_WASM=$PWD/programs/sdk/rust/examples/web-reader/target/wasm32-unknown-unknown/release/layerx_reference_web_reader.wasm; cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway schema_lists_every_public_method && cargo test --locked --manifest-path platform/hosted/gateway/tests/local/Cargo.toml --test lifecycle events::'"
-implemented_exit_code = 101
-implemented_log_path = ".logs/verify.log"
+status = "done"
+revision = "5a72298527318be2ca34b6bdc934c99780b9dc0f"
+command = "timeout 30m sh -c 'export LAYERX_TEST_SOCAT_BIN=$(command -v socat) LAYERX_TEST_WEB_READER_WASM=$PWD/programs/sdk/rust/examples/web-reader/target/wasm32-unknown-unknown/release/layerx_reference_web_reader.wasm; cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway schema_lists_every_public_method && cargo test --locked --manifest-path platform/hosted/gateway/tests/local/Cargo.toml --test lifecycle events::'"
+exit_code = 0
+log_path = ".logs/verify.log"
 wave = 2
 requires = ["2.37"]
 do_1 = "Observation 2.37.2: the local gateway qualification now funds itself through the native custody module and starts its cluster, then stops in deploy_web_reader because NativeProgramDeploy::encode refuses guest ABI 4, and the same run would stop again in call_web_request because NativeProgramCall::validate admits only 1 and 2; the kernel is the authority and it admits 1 to 4 - include/layerx/programs.h allocates LX_PROGRAMS_GUEST_ABI_V2_VERSION through LX_PROGRAMS_GUEST_ABI_V4_VERSION, lxp_programs_abi_transition_validate in src/modules/programs/deploy.c admits a requested version of 1, 2, 3 or 4, the call decoder in src/modules/programs/call.c refuses a zero version and every version above LX_PROGRAMS_GUEST_ABI_V4_VERSION, the programs module registers at that same version in src/modules/programs/registration.c, and the reference web reader declares abi 4 in its layerx-program.json, its LayerX.toml and its interface.kvx with ABI 4 frozen in programs/abi-frozen.sha256; every kernel rule and the program's declared ABI therefore stay exactly as they are and the stale Rust bound, written when 3 was the highest guest ABI and never raised when 4 was allocated, is the side corrected."
@@ -1331,11 +1331,11 @@ reqs = ["9.1","11.2"]
 
 [task.2.42]
 title = "Align the local gateway's program receipt expectation with the operation the kernel binds"
-status = "implemented"
-implemented_revision = "681fa8f24758e0239fdf8b2fcca2484f9ccb0e19"
-implemented_command = "timeout 30m sh -c 'export LAYERX_TEST_SOCAT_BIN=$(command -v socat) LAYERX_TEST_WEB_READER_WASM=$PWD/programs/sdk/rust/examples/web-reader/target/wasm32-unknown-unknown/release/layerx_reference_web_reader.wasm; cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway schema_lists_every_public_method && cargo test --locked --manifest-path platform/hosted/gateway/tests/local/Cargo.toml --test lifecycle events::'"
-implemented_exit_code = 101
-implemented_log_path = ".logs/verify.log"
+status = "done"
+revision = "5a72298527318be2ca34b6bdc934c99780b9dc0f"
+command = "timeout 30m sh -c 'export LAYERX_TEST_SOCAT_BIN=$(command -v socat) LAYERX_TEST_WEB_READER_WASM=$PWD/programs/sdk/rust/examples/web-reader/target/wasm32-unknown-unknown/release/layerx_reference_web_reader.wasm; cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway schema_lists_every_public_method && cargo test --locked --manifest-path platform/hosted/gateway/tests/local/Cargo.toml --test lifecycle events::'"
+exit_code = 0
+log_path = ".logs/verify.log"
 wave = 2
 requires = ["2.40"]
 do_1 = "Observation 2.40.1: the local gateway qualification now deploys the reference web reader at guest ABI 4 and stops one step later in submit_program_activity of platform/hosted/gateway/tests/local/events.rs, which expects a Programs receipt to report the ordinal its route submitted, while the kernel binds a receipt operation for a call alone - include/layerx/programs.h allocates LX_PROGRAMS_DEPLOY, LX_PROGRAMS_UPGRADE and LX_PROGRAMS_CALL as module 9 ordinals 1, 2 and 3, receipt_bind_program_operation in src/protocol/lxp_kernel.c writes lxp_activity_type_ordinal(LX_PROGRAMS_CALL) into a state-commitment receipt for LX_PROGRAMS_CALL alone and leaves the tag at zero for every other Programs activity, lxp_programs_project_receipt_events in src/modules/programs/event.c and the fixture harness in tests/programs/test_call_activity.c read operation zero with no program outcome as the lifecycle receipt shape, verify_receipt in platform/hosted/core/src/program_lifecycle.rs refuses a lifecycle receipt whose operation is not zero and the deploy this run made answered 200 through it, and platform/hosted/agent-boundary/tests/real_node/lifecycle.rs already asserts operation zero for a deploy and an upgrade and three for a call; every kernel rule stays exactly as it is, the native-program-deploy-v3 conformance fixture is right because it declares the activity module 9 and ordinal 1 and no receipt operation, and the stale expectation in the one test is the side corrected."
@@ -1369,7 +1369,11 @@ reqs = ["9.1","11.2"]
 
 [task.2.44]
 title = "Bind a program call's capability encoding to its ABI version in one place so the web reader's call settles a receipt inside the core deadline"
-status = "implemented"
+status = "done"
+revision = "5a72298527318be2ca34b6bdc934c99780b9dc0f"
+command = "timeout 30m sh -c 'export LAYERX_TEST_SOCAT_BIN=$(command -v socat) LAYERX_TEST_WEB_READER_WASM=$PWD/programs/sdk/rust/examples/web-reader/target/wasm32-unknown-unknown/release/layerx_reference_web_reader.wasm; cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway schema_lists_every_public_method && cargo test --locked --manifest-path platform/hosted/gateway/tests/local/Cargo.toml --test lifecycle events::'"
+exit_code = 0
+log_path = ".logs/verify.log"
 wave = 2
 requires = ["2.42"]
 do_1 = "Observation 2.42.1: the web reader's call reaches the kernel and produces no receipt the core can wait on because the batch planner refuses the schedule item the same batch just minted - with the scheduling identity of task 2.43 in place, lxp_kernel_batch_schedule_item in src/protocol/lxp_kernel.c mints that item with its admission, decode, validate, schedule decode, payer lookup and item preparation all answering LXP_OK, and layerx_programs_schedule_plan answers LXP_ERR_NON_CANONICAL for that one item, because prepare_schedule_item in programs/crates/layerx-programs-runtime/src/ffi_call.rs reads the call's grants through CapabilitySet::admitted_schedule_accesses, whose ABI match in programs/crates/layerx-programs-runtime/src/abi/capability.rs admits the version 1 and version 2 canonical grant encodings alone and refuses every other version, while the reference web reader declares guest ABI 4 in programs/sdk/rust/examples/web-reader/LayerX.toml and WEB_READER_GUEST_ABI of platform/hosted/gateway/tests/local/events.rs, and the execution that follows the plan decodes the very same grants of the very same call through the ABI-two encoding for ABI 2, 3 and 4 in layerx_programs_call_begin; the batch therefore settles the call as a terminal rejection carrying result code -3, which the core cannot surface because verify_program_outcome of agent/crates/layerx-proof/src/receipt.rs requires a program outcome on a refusal receipt, so POST /v1/programs/call answers 503 receipt_unavailable. The deadline is not the defect - the kernel published that rejection inside a quarter of a second of the submission, and the status assertion of events.rs:475 and LAYERX_CORE_RECEIPT_DEADLINE_MS both stay exactly as they are written."
@@ -1385,7 +1389,11 @@ reqs = ["11.2"]
 
 [task.2.45]
 title = "Verify a program call receipt at the protocol, module and guest ABI versions the kernel publishes it with"
-status = "pending"
+status = "done"
+revision = "5a72298527318be2ca34b6bdc934c99780b9dc0f"
+command = "timeout 30m sh -c 'export LAYERX_TEST_SOCAT_BIN=$(command -v socat) LAYERX_TEST_WEB_READER_WASM=$PWD/programs/sdk/rust/examples/web-reader/target/wasm32-unknown-unknown/release/layerx_reference_web_reader.wasm; cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway schema_lists_every_public_method && cargo test --locked --manifest-path platform/hosted/gateway/tests/local/Cargo.toml --test lifecycle events::'"
+exit_code = 0
+log_path = ".logs/verify.log"
 wave = 2
 requires = ["2.44"]
 do_1 = "Observation 2.44.1: the web reader's call now settles a committed receipt well inside the core deadline and POST /v1/programs/call still answers 503 receipt_unavailable, because receipt_facts in platform/hosted/core/src/main.rs verifies it through verify_outcome of agent/crates/layerx-proof/src/receipt.rs, which dispatches a module 9 operation 3 receipt to verify_program_outcome and therefore reaches the guest ABI line of verify_program_outcome_selected, where supported_program_guest_abi admits guest ABI 1 and 2 alone - a bound written when 2 was the highest guest ABI and never raised - while the reference web reader declares guest ABI 4 and the kernel admits 1 to 4, the maximum task 2.40 already generates into agent/crates/layerx-types/src/guest_abi.rs from the LX_PROGRAMS_GUEST_ABI_V*_VERSION enumerators of include/layerx/programs.h; every other version a current call receipt carries is already admitted and stays exactly as it is - receipt_bind_program_operation in src/protocol/lxp_kernel.c writes the call ordinal into the operation tag at LXP_PROTOCOL_VERSION_STATE_COMMITMENT alone, lxp_kernel_prepare_activity copies the module ABI version out of the matching registration, src/modules/programs/registration.c registers the Programs module at LX_PROGRAMS_SANDBOX_DESTROY_ABI_VERSION, the runtime that produces the outcome reports RUNTIME_VERSION of programs/crates/layerx-programs-runtime, and the receipt-programs-positive-v1, receipt-programs-positive-v2 and receipt-programs-positive-v3 vectors under platform/sdk/conformance/fixtures record exactly those version sets; the kernel, the receipt encoder, the conformance fixtures, the status assertion at platform/hosted/gateway/tests/local/events.rs:475 and LAYERX_CORE_RECEIPT_DEADLINE_MS therefore all stay exactly as they are and the stale proof-crate bound is the side corrected."
@@ -1393,7 +1401,7 @@ do_2 = "Generate the Programs module ABI table in agent/crates/layerx-types/buil
 do_3 = "Take all three version sets of a Programs call receipt in agent/crates/layerx-proof/src/receipt.rs from the one authority each already has: supported_program_guest_abi from guest_abi::supported of agent/crates/layerx-types, the state-commitment module ABI and the ranges of supported_programs_module_version and supports_program_account_state from the generated SANDBOX_DESTROY and ACCOUNT, the historical protocol and module versions from LEGACY_PROTOCOL_VERSION of layerx-wire and the generated INITIAL, and the outcome's runtime version from RUNTIME_VERSION of programs/crates/layerx-programs-runtime; widen no module ABI range beyond the versions it admits today, keep the historical v1 path admitting a protocol 1 module 1 receipt exactly as it does, keep every VerificationFailure check and its exact ReceiptCheck, and change nothing in the kernel, the receipt encoder or the conformance fixtures."
 do_4 = "Pin the accepted versions against the authority in the proof crate's own version contract tests and in the new module's unit tests, keeping every existing assertion exactly as strong: the generated table equals the header's enumerators in header order and ascends from one to the version the module registers at; supported_program_guest_abi admits the whole range from one to the generated guest ABI maximum, including the ABI version the programs runtime is built at, and refuses zero, the maximum plus one and u16::MAX; supported_programs_module_version and supports_program_account_state answer for every header-allocated version exactly what they answer today, with the state-commitment module ABI still refused below that protocol; and every recorded Programs call receipt vector under platform/sdk/conformance/fixtures carries a module, an operation, a protocol version, a module version, a guest ABI and a runtime version this crate accepts. The real path stays the task's own gate, whose program call is a guest ABI 4 call into the reference web reader."
 do_5 = "Run the verify_cmd once; at the revision where it exits 0 record tasks 2.44, 2.42, 2.40, 2.37, 2.35 and 2.28 done with that revision, command, exit code and log path and close observations 2.21.2, 2.28.1, 2.35.2, 2.37.2, 2.40.1, 2.42.1 and 2.44.1 naming it, as task 2.44's do_5, task 2.42's do_5, task 2.40's do_4, task 2.37's do_5 and task 2.35's do_4 require; if it does not pass, leave those six tasks as they are and record the exact failing step as one observation."
-verify_cmd = timeout 30m sh -c 'export LAYERX_TEST_SOCAT_BIN=$(command -v socat) LAYERX_TEST_WEB_READER_WASM=$PWD/programs/sdk/rust/examples/web-reader/target/wasm32-unknown-unknown/release/layerx_reference_web_reader.wasm; cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway schema_lists_every_public_method && cargo test --locked --manifest-path platform/hosted/gateway/tests/local/Cargo.toml --test lifecycle events::'
+verify_cmd = "timeout 30m sh -c 'export LAYERX_TEST_SOCAT_BIN=$(command -v socat) LAYERX_TEST_WEB_READER_WASM=$PWD/programs/sdk/rust/examples/web-reader/target/wasm32-unknown-unknown/release/layerx_reference_web_reader.wasm; cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway schema_lists_every_public_method && cargo test --locked --manifest-path platform/hosted/gateway/tests/local/Cargo.toml --test lifecycle events::'"
 symbols = ["supported_program_guest_abi","programs_version_for_protocol","verify_program_outcome_selected"]
 touches = ["agent/crates/layerx-types/build.rs","agent/crates/layerx-types/src/programs_module_abi.rs","agent/crates/layerx-types/src/lib.rs","agent/crates/layerx-proof/src/receipt.rs"]
 tests = ["agent/crates/layerx-types/src/programs_module_abi.rs","agent/crates/layerx-proof/src/receipt.rs"]
