@@ -21,7 +21,7 @@ env:
 
 jobs:
   build-lint-test:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 45
     steps:
       - name: Check out source
@@ -75,7 +75,7 @@ jobs:
         run: make platform-test-docs
 
   android-application-artifact:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 45
     steps:
       - name: Check out source
@@ -129,7 +129,7 @@ jobs:
 
   real-agent-framework-journeys:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -222,7 +222,7 @@ jobs:
 
   real-android-journey:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 20
     steps:
       - name: Check out source
@@ -263,7 +263,7 @@ jobs:
 
   programs-acceptance:
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/sdk-v')
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 120
     steps:
       - name: Check out source
@@ -296,7 +296,7 @@ jobs:
 
   agent-sanitizers:
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/sdk-v')
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 90
     env:
       CARGO_PROFILE_DEV_DEBUG: "1"
@@ -345,7 +345,7 @@ jobs:
 
   agent-fuzz-corpus:
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/sdk-v')
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 120
     steps:
       - name: Check out source
@@ -1388,7 +1388,7 @@ jobs:
   release-verification:
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/sdk-v')
     needs: [release-pipeline, publish-crates-io, publish-npm, publish-pypi, publish-go-modules, publish-maven-central, publish-swiftpm, publish-nuget]
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 45
     permissions:
       contents: read
@@ -1438,7 +1438,7 @@ jobs:
   release-promotion:
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/sdk-v')
     needs: [release-pipeline, publish-crates-io, publish-npm, publish-pypi, publish-go-modules, publish-maven-central, publish-swiftpm, publish-nuget, release-verification]
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 15
     env:
       LAYERX_RELEASE_VERSION: ${{ needs.release-pipeline.outputs.version }}
@@ -1479,7 +1479,7 @@ jobs:
 
   hosted-testnet-journey:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 15
     steps:
       - name: Check out source

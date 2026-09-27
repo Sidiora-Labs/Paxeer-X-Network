@@ -1,0 +1,192 @@
+# spec.kvx - Paxeer X Network continuous integration on Fly.io Machines.
+# SINGLE SOURCE OF TRUTH for this feature.
+#
+# requirements.md / design.md / tasks.md next to this file are GENERATED from it
+# by spec/specgen. Never hand-edit those; edit this file and regenerate.
+#
+# Drive the work with:  cg spec next -> cg spec start <id> -> cg spec done <id>
+#
+# The repository's Linux jobs run on GitHub-hosted runners and queue behind the
+# concurrency ceiling of a public repository: on a busy day several hundred runs
+# wait for hours. This feature moves the Linux x64 jobs to ephemeral runners on
+# Fly.io Machines that exist only while a job runs, keeps every job that needs
+# Docker, macOS, Windows, CodeQL, Scorecard, a publishing credential or the
+# existing testnet runner exactly where it is, and makes the whole move
+# reversible by deleting one repository variable.
+
+[meta]
+feature   = "paxeer-x-ci"
+title     = "Paxeer X Network CI on Fly.io Machines"
+kind      = "product-feature-specification"
+version   = "0.1.0"
+status    = "in_progress"
+language  = "Dockerfile and POSIX shell (the runner image and its entrypoint under tools/flyci/runner), Go with the standard library only (the controller under tools/flyci/controller, inside the repository's root module), TOML (the two Fly app configurations), YAML (the workflow routing expression, the canary workflow and the actionlint configuration), POSIX shell with python3 (the routing check under tools/ci)"
+repo_root = "tools/flyci/runner (Dockerfile, entrypoint.sh, fly.toml for the app paxeer-ci-runners); tools/flyci/controller (main.go and its package files, their tests, Dockerfile, fly.toml for the app paxeer-ci-controller); tools/ci/runner-routing-check.sh (the routing policy check); .github/actionlint.yaml (the declared self-hosted labels); .github/workflows/*.yml (the runs-on expression on every routed Linux job); .github/workflows/runner-canary.yml (the canary); spec/paxeer-x-ci/ (this feature and its qualification log)"
+upstream  = "The forty-seven workflows under .github/workflows are the fixed input: their jobs, steps, pinned actions and secrets do not change beyond the runs-on line this feature edits. tools/ci/public-repo-audit.sh is the publication audit every committed file must satisfy: external actions pinned to a forty-hex commit, Docker actions pinned to a sha256 digest, no hosts, identities or credentials in any file. The GitHub REST API for repository self-hosted runners (generate-jitconfig, the jobs of a run) and the Fly.io Machines API (create, get, list, destroy a machine of an app) are read as documented and wrapped by no third-party library. The two Fly apps paxeer-ci-runners and paxeer-ci-controller already exist in the company organization; every credential lives in Fly secrets and in the repository's Actions settings, never in a file."
+intro     = "One label, fly-linux, is the whole interface. A routed job asks for the runner named by the repository variable CI_LINUX_RUNNER, falling back to the GitHub-hosted image it used before when the variable is unset or when the job belongs to a pull request from a fork. A small controller on Fly polls the repository for queued jobs that ask for that label and, for each one, mints a single-use just-in-time runner configuration from GitHub and creates one Fly Machine from the runner image with that configuration as its only credential. The machine registers, runs exactly one job, exits, and is destroyed by Fly. The runner image is a plain Ubuntu 24.04 with the compilers, linkers and system libraries the routed jobs invoke; language toolchains keep arriving through the setup actions the workflows already use. Nothing on a job machine can reach the controller's tokens, no runner outlives its job, and no job from outside the repository ever reaches one of these machines."
+
+# Decisions locked before implementation begins. They bind every task in this
+# feature and are not reopened by a task.
+[decision]
+code_quality      = "A+ on every changed path: real code paths, real types, real fixtures. The controller is tested against in-process HTTP servers that serve the documented GitHub and Fly response shapes through the controller's real client and reconciler; no interface is replaced by a stub on a production path. The runner image is tested by building it and running its own self-check inside the built image. No TODO, FIXME or 'for now' comment, no dead branch."
+public_repository = "The repository is public, so a job machine is treated as hostile the moment a job starts on it. The only credential a job machine ever holds is the single-use just-in-time runner configuration GitHub minted for that one job; the controller's GitHub token and Fly token never leave the controller's own machine, which runs no job. Every machine is created with auto_destroy and a restart policy of never, so a finished, failed or idle runner disappears rather than waits. A pull request whose head repository is not this repository is routed to the GitHub-hosted image by the runs-on expression itself, before any label is evaluated."
+scope             = "Linux x64 jobs only. A job that needs Docker (a container or services key, a docker/* action, the docker command, an ECR, ko, cosign or provenance publishing step), CodeQL, OpenSSF Scorecard, macOS, Windows, a matrix-chosen runner, the existing self-hosted layerx-testnet label, or one of the publish-* and release-pipeline jobs of platform.yml keeps its runs-on line byte for byte. The routing check names these exclusions explicitly so the policy is auditable in the repository."
+reversible        = "Deleting the repository variable CI_LINUX_RUNNER returns every routed job to the GitHub-hosted image it used before, without a commit. Setting it to fly-linux routes them to Fly. The fallback in every expression is the image the job had before this feature, so an unset variable changes nothing."
+one_interface     = "The runner label is fly-linux, the runner image is registry.fly.io/paxeer-ci-runners at a tag equal to the commit it was built from, the runner app is paxeer-ci-runners and the controller app is paxeer-ci-controller. A runner is named fly-<job id>. The controller reads its whole configuration from environment variables with documented defaults: repository, tokens, runner app, image, labels, region iad, performance-4x with 16384 MB of memory, at most 24 machines, a 20-second poll, a 15-minute idle timeout for a runner that never receives its job, and a 3-hour orphan ceiling."
+no_secrets_in_git = "No file names a host, an operator, an identity, a token or a private endpoint. App names and the label are public by design. Tokens reach the controller only through Fly secrets set from the operator's shell; the repository variable is set through the GitHub CLI or the settings page."
+chain_untouched   = "No task edits anything outside the paths listed in repo_root. The chain freeze is unaffected because nothing here touches chain code."
+
+[design]
+overview = "Two waves. Wave 1 builds three foundations that share no file, so all three proceed in parallel: the runner image with its self-check, the controller with its tests, and the workflow routing with its policy check and canary. Wave 2 deploys both apps once from an operator shell, turns the variable on and proves the canary ran on a Fly runner; it is the only task that touches anything outside the repository."
+
+[design.runner]
+title = "The runner image"
+image = "ubuntu:24.04 pinned by digest, the actions/runner release pinned by version and verified by its published sha256, installed under /home/runner/actions-runner for an unprivileged user runner who has passwordless sudo because eleven workflows install packages with it. The image carries the compilers and system libraries the routed jobs call directly: build-essential, clang, llvm, lld, cmake, ninja, pkg-config, libssl-dev, libclang-dev, git, git-lfs, curl, jq, unzip, zip, xz-utils, zstd, python3 with pip and venv, socat, ca-certificates, gnupg, locales, tzdata, rsync, file, bc and rustup for the runner user with the stable toolchain and the wasm32-unknown-unknown target. Go, Node, Java, Swift, Foundry and Rust versions keep arriving through the setup actions the workflows already use; the tool cache directory /opt/hostedtoolcache exists, is owned by runner and is exported as RUNNER_TOOL_CACHE so those actions cache into it."
+entrypoint = "entrypoint.sh runs as root, refuses to start without RUNNER_JITCONFIG, drops to the runner user and executes run.sh --jitconfig with that value, watches the runner's output and terminates it when no job has started within RUNNER_IDLE_TIMEOUT seconds (default 900), and exits when the single job ends. It also implements --selfcheck, which prints the runner version, asserts every tool the image promises is on PATH for the runner user and that sudo works without a password, and exits non-zero on the first missing tool. The image's fly.toml declares the app paxeer-ci-runners with no services and no processes, because machines of this app are created only by the controller."
+
+[design.controller]
+title = "The controller"
+loop = "Every poll interval the controller lists the repository's workflow runs with status queued and in_progress using conditional requests so unchanged pages cost no rate limit, lists the jobs of each run, and selects jobs whose status is queued and whose requested labels are all within the set self-hosted, linux, x64 and the configured labels, case-insensitively. For every selected job without a live machine carrying its id in machine metadata, while the count of live machines is below the ceiling, it requests a just-in-time configuration from GitHub named fly-<job id> with the configured labels in the default runner group and work folder _work, then creates a machine in the runner app from the configured image with the configuration in RUNNER_JITCONFIG, the configured guest size and region, auto_destroy true, restart policy no, and metadata naming the job id and the run id. A failure of either call is logged with the job id and retried on the next poll; a rate-limit response sleeps until the reset the response names."
+reconcile = "Every poll the controller also lists the runner app's machines and destroys any machine whose job is no longer queued or in progress five minutes after the job's completion, any machine older than the orphan ceiling, and any machine in the stopped state that auto_destroy did not remove. Machines without the controller's metadata key are never touched."
+packaging = "Standard library only, a single package main under tools/flyci/controller inside the root module, built with the repository's Go version into a distroless-style image from its own Dockerfile, deployed to the app paxeer-ci-controller as one shared-cpu-1x machine with 512 MB, no public service, and the secrets GITHUB_TOKEN and FLY_API_TOKEN. The Fly token is an app-scoped deploy token for paxeer-ci-runners, never an organization token."
+
+[design.routing]
+title = "Routing the jobs"
+expression = "Every routed Linux job's runs-on becomes exactly ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && '<previous>' || vars.CI_LINUX_RUNNER || '<previous>' }} where <previous> is the string the job had before: ubuntu-24.04 or ubuntu-latest. Nothing else in the job changes. .github/actionlint.yaml declares the self-hosted labels layerx-testnet and fly-linux so actionlint knows them."
+check = "tools/ci/runner-routing-check.sh loads every workflow with python3 and yaml, and fails naming the file and job when a Linux job outside the explicit exclusion list still has a fixed GitHub-hosted runs-on, when a job inside the exclusion list has anything but its original runs-on, or when an expression differs from the required form. The exclusion list is written in the script as workflow names and job names, one per line, with the reason class beside each."
+canary = ".github/workflows/runner-canary.yml has one workflow_dispatch job on the routed expression that prints the runner name and labels from the runner environment, compiles and runs a one-line C program with clang and with gcc, prints cargo's and rustup's versions, links with lld, and fails if any of those is missing. Its checkout action is pinned to the same commit the other workflows use."
+
+[design.deploy]
+title = "Deploying once"
+steps = "From an operator shell already logged in to Fly and GitHub: build the runner image locally, tag it registry.fly.io/paxeer-ci-runners:<commit>, push it after fly auth docker; create the app-scoped deploy token for paxeer-ci-runners; set the controller's secrets GITHUB_TOKEN, FLY_API_TOKEN and RUNNER_IMAGE; deploy the controller from its fly.toml; set the repository variable CI_LINUX_RUNNER to fly-linux; dispatch the canary and read its job back through the API, requiring a runner name that starts with fly- and a successful conclusion. Each step's command, exit code and log path are the task's evidence; nothing in the steps is recorded in a file the repository publishes."
+
+[tasks]
+heading = "Implementation Plan: Paxeer X Network CI on Fly.io Machines"
+
+# --------------------------------------------------------------------------
+# REQUIREMENTS
+# --------------------------------------------------------------------------
+
+[req.1]
+title = "An Ephemeral Runner Image"
+story = "As the operator, I want a runner image that can run any routed Linux job once and vanish, so that no build ever inherits another build's state or credentials."
+ac_1 = "THE image SHALL be built from ubuntu:24.04 pinned by digest and SHALL install the actions/runner release pinned by version with its published sha256 verified, under an unprivileged user runner with passwordless sudo."
+ac_2 = "THE image SHALL carry every compiler, linker, build tool and system library the routed workflows invoke directly, SHALL provide rustup with the stable toolchain and the wasm32-unknown-unknown target for the runner user, and SHALL export RUNNER_TOOL_CACHE as a directory the runner user owns."
+ac_3 = "THE entrypoint SHALL refuse to start without RUNNER_JITCONFIG, SHALL run exactly one job through the runner's just-in-time mode as the runner user, SHALL terminate a runner that receives no job within the idle timeout, and SHALL exit when the job ends so the machine is destroyed."
+ac_4 = "THE entrypoint SHALL implement a self-check that runs inside the built image, asserts each promised tool and the passwordless sudo, prints the runner version and exits non-zero on the first failure, and the task's gate SHALL build the image and run that self-check."
+
+[req.2]
+title = "A Controller That Creates One Machine Per Job"
+story = "As the operator, I want queued jobs to become machines automatically and machines to disappear on their own, so that CI capacity follows the queue and costs nothing while it is empty."
+ac_1 = "THE controller SHALL select only jobs that are queued and whose requested labels are all within self-hosted, linux, x64 and the configured labels, SHALL create at most one machine per job id, and SHALL never exceed the configured machine ceiling."
+ac_2 = "THE controller SHALL mint a just-in-time configuration per job through the documented GitHub endpoint and SHALL create the machine with that configuration as its only credential, auto_destroy set, restart policy no, and metadata naming the job and run."
+ac_3 = "THE controller SHALL destroy machines whose job has finished, machines older than the orphan ceiling and stopped machines that were not removed, and SHALL never touch a machine without its metadata key."
+ac_4 = "THE controller SHALL use conditional requests for polling, SHALL honour rate-limit reset headers, SHALL log every failure with the job id and continue, and SHALL read its whole configuration from environment variables with the documented defaults."
+ac_5 = "TESTS SHALL drive the real client and reconciler against in-process HTTP servers serving the documented response shapes for label matching, the per-job dedupe, the ceiling, a failed mint, a failed create, a rate-limited response, a conditional 304 and each of the three destroy rules."
+
+[req.3]
+title = "Routing That Is Reversible and Auditable"
+story = "As a maintainer, I want every routed job to follow one expression and every excluded job to be listed with its reason, so that turning Fly on or off is one variable and the policy is readable in the repository."
+ac_1 = "EVERY Linux job outside the exclusion list SHALL carry the routing expression with its previous image as the fallback, and EVERY job in the exclusion list SHALL keep its original runs-on line unchanged."
+ac_2 = "A pull request whose head repository is not this repository SHALL be routed to the previous GitHub-hosted image by the expression itself."
+ac_3 = "THE routing check SHALL fail naming the file and job for a routed job with a fixed runner, an excluded job that changed, or an expression that differs from the required form, and actionlint SHALL know the self-hosted labels through .github/actionlint.yaml."
+ac_4 = "A CANARY workflow SHALL run one routed job on demand that proves the runner identity and the presence of clang, gcc, lld, cargo and rustup, with every action pinned to a forty-hex commit."
+
+[req.4]
+title = "Deployed Once and Proven"
+story = "As the owner, I want the switch flipped from an operator shell with evidence, so that the first routed job on Fly is a fact and not a plan."
+ac_1 = "THE runner image SHALL be pushed to the Fly registry at a tag equal to the commit it was built from, the controller SHALL be deployed with its secrets set from the operator's shell, and the repository variable CI_LINUX_RUNNER SHALL be set to fly-linux."
+ac_2 = "THE canary SHALL be dispatched and read back through the API with a runner name starting with fly- and a successful conclusion, and the commands, exit codes and log paths SHALL be recorded as the task's evidence without any of them entering a published file."
+
+# --------------------------------------------------------------------------
+# TASKS
+# --------------------------------------------------------------------------
+
+[task.1.1]
+title = "Build the ephemeral runner image and its entrypoint with a self-check"
+status = "done"
+revision = "8de2efcb4aa7045675499f2d62b73e6f8c9fec8f"
+command = "timeout 25m sh -c 'shellcheck tools/flyci/runner/entrypoint.sh && docker build -t paxeer-ci-runner:verify tools/flyci/runner && docker run --rm paxeer-ci-runner:verify --selfcheck && if docker run --rm paxeer-ci-runner:verify; then exit 1; fi'"
+exit_code = 0
+log_path = ".logs/verify.log"
+wave = 1
+requires = []
+do_1 = "Write tools/flyci/runner/Dockerfile from ubuntu:24.04 pinned by digest: install the package set [design.runner] names plus whatever else the routed workflows invoke directly (derive it by reading every workflow that the routing task will route, which is every Linux job outside the [decision] scope exclusions), create the user runner with passwordless sudo, install the latest actions/runner release pinned by version with its published sha256 verified, run its installdependencies script, install rustup for runner with stable and wasm32-unknown-unknown, create /opt/hostedtoolcache owned by runner and export RUNNER_TOOL_CACHE, and set entrypoint.sh as the entrypoint."
+do_2 = "Write tools/flyci/runner/entrypoint.sh as POSIX shell that passes shellcheck: as root it refuses to start without RUNNER_JITCONFIG, drops to runner, runs run.sh --jitconfig with the value, watches the runner's own output for the line that marks a job starting and kills the runner when that line has not appeared within RUNNER_IDLE_TIMEOUT seconds (default 900), and exits with the runner's exit code when the job ends; with --selfcheck it prints the runner version, asserts each promised tool on the runner user's PATH and the passwordless sudo, and exits non-zero on the first missing one."
+do_3 = "Write tools/flyci/runner/fly.toml declaring the app paxeer-ci-runners in region iad with no services and no processes, and a comment-free build section that names the Dockerfile."
+do_4 = "Run the verify_cmd once: it builds the image with the local Docker daemon and runs the self-check inside it as the entrypoint's --selfcheck mode, and also asserts that starting the image without RUNNER_JITCONFIG exits non-zero."
+verify_cmd = "timeout 25m sh -c 'shellcheck tools/flyci/runner/entrypoint.sh && docker build -t paxeer-ci-runner:verify tools/flyci/runner && docker run --rm paxeer-ci-runner:verify --selfcheck && if docker run --rm paxeer-ci-runner:verify; then exit 1; fi'"
+symbols = ["entrypoint.sh","--selfcheck","RUNNER_JITCONFIG","RUNNER_IDLE_TIMEOUT","RUNNER_TOOL_CACHE"]
+touches = ["tools/flyci/runner/Dockerfile","tools/flyci/runner/entrypoint.sh","tools/flyci/runner/fly.toml"]
+reqs = ["1.1","1.2","1.3","1.4"]
+
+[task.1.2]
+title = "Write the controller that turns queued jobs into single-use Fly Machines"
+status = "done"
+wave = 1
+requires = []
+do_1 = "Write package main under tools/flyci/controller with the standard library only: config.go reads GITHUB_REPOSITORY, GITHUB_TOKEN, FLY_API_TOKEN, FLY_RUNNER_APP (default paxeer-ci-runners), RUNNER_IMAGE, RUNNER_LABELS (default fly-linux), FLY_REGION (default iad), MACHINE_CPU_KIND (default performance), MACHINE_CPUS (default 4), MACHINE_MEMORY_MB (default 16384), MAX_MACHINES (default 24), POLL_INTERVAL (default 20s), RUNNER_IDLE_TIMEOUT (default 900), ORPHAN_TTL (default 3h), GITHUB_API_URL and FLY_API_URL (their public defaults) and refuses to start with a named error for each missing required value."
+do_2 = "Write github.go with a client that lists queued and in-progress workflow runs and the jobs of a run using ETag conditional requests and page following, honours X-RateLimit-Remaining and X-RateLimit-Reset by sleeping until reset when remaining reaches zero or a 403 or 429 names a reset, and mints a just-in-time configuration through POST actions/runners/generate-jitconfig with name fly-<job id>, the configured labels, runner_group_id 1 and work_folder _work."
+do_3 = "Write fly.go with a client for the Machines API that lists the runner app's machines, creates a machine from the configured image with env RUNNER_JITCONFIG and RUNNER_IDLE_TIMEOUT, guest cpu_kind, cpus and memory_mb, region, auto_destroy true, restart policy no and metadata keys flyci_job_id and flyci_run_id, and destroys a machine by id with force."
+do_4 = "Write reconcile.go with the selection and reconciliation [design.controller] describes: select queued jobs whose labels are all in the accepted set, skip jobs with a live machine in metadata, respect the ceiling, mint then create per job, log and continue on any failure; destroy machines whose job is complete for over five minutes, older than ORPHAN_TTL, or stopped; never touch a machine without flyci_job_id. main.go wires config, the two clients, a ticker at POLL_INTERVAL, structured log lines and a clean stop on SIGTERM."
+do_5 = "Write the tests [req.2] ac_5 lists as Go tests in the same package driving the real clients and reconciler against net/http/httptest servers serving the documented response shapes, and write tools/flyci/controller/Dockerfile (a multi-stage build on the repository's Go version producing a static binary in a minimal runtime image, both stages pinned by digest) and tools/flyci/controller/fly.toml for the app paxeer-ci-controller in region iad with one shared-cpu-1x 512 MB machine, no services, and the process running the binary."
+verify_cmd = "timeout 20m sh -c 'test -z \"$(gofmt -l tools/flyci/controller)\" && go vet ./tools/flyci/controller/... && go test -count=1 ./tools/flyci/controller/...'"
+symbols = ["loadConfig","githubClient","flyClient","reconcile","selectJobs"]
+touches = ["tools/flyci/controller/main.go","tools/flyci/controller/config.go","tools/flyci/controller/github.go","tools/flyci/controller/fly.go","tools/flyci/controller/reconcile.go","tools/flyci/controller/config_test.go","tools/flyci/controller/github_test.go","tools/flyci/controller/fly_test.go","tools/flyci/controller/reconcile_test.go","tools/flyci/controller/Dockerfile","tools/flyci/controller/fly.toml"]
+reqs = ["2.1","2.2","2.3","2.4","2.5"]
+revision = "8de2efcb4aa7045675499f2d62b73e6f8c9fec8f"
+command = "timeout 20m sh -c 'test -z \"$(gofmt -l tools/flyci/controller)\" && go vet ./tools/flyci/controller/... && go test -count=1 ./tools/flyci/controller/...'"
+exit_code = 0
+log_path = ".logs/verify.log"
+
+[task.1.3]
+title = "Route every Linux job through the CI_LINUX_RUNNER expression with an auditable policy check and a canary"
+status = "done"
+revision = "0c2a054f9507e865e9dffa6d68ba10a54a810d8a"
+command = "timeout 10m sh -c 'actionlint -no-color -shellcheck= -pyflakes= && sh tools/ci/runner-routing-check.sh'"
+exit_code = 0
+log_path = ".logs/verify-1.4.log"
+implemented_revision = "8de2efcb4aa7045675499f2d62b73e6f8c9fec8f"
+implemented_command = "timeout 10m sh -c 'actionlint -no-color -shellcheck= -pyflakes= && sh tools/ci/runner-routing-check.sh'"
+implemented_exit_code = 1
+implemented_log_path = ".logs/verify.log"
+wave = 1
+requires = []
+do_1 = "Write tools/ci/runner-routing-check.sh with the exclusion list [decision] scope defines, written as workflow file, job name and reason class one per line, built by reading every workflow: jobs with container or services keys, docker/* actions, the docker command, ECR, ko, cosign or provenance steps, CodeQL, Scorecard, macOS, Windows, matrix-chosen runners, the layerx-testnet label, and the publish-* and release-pipeline jobs of platform.yml; the script loads each workflow with python3 and yaml and fails naming file and job for a routed job with a fixed runner, an excluded job whose runs-on differs from the original recorded beside it, or an expression that differs from the required form."
+do_2 = "Change the runs-on line of every Linux job outside that list to the exact expression [design.routing] gives with the job's previous image as both fallbacks, changing nothing else in any job, and add .github/actionlint.yaml declaring the self-hosted labels layerx-testnet and fly-linux."
+do_3 = "Add .github/workflows/runner-canary.yml as [design.routing] describes, with its checkout pinned to the same forty-hex commit the other workflows use, and add it to the routing check as a routed job."
+do_4 = "Run the verify_cmd once; if actionlint reports a failure class that predates this task and is unrelated to runs-on or labels, record it as one observation and do not fix it."
+verify_cmd = "timeout 10m sh -c 'actionlint -no-color -shellcheck= -pyflakes= && sh tools/ci/runner-routing-check.sh'"
+symbols = ["CI_LINUX_RUNNER","runner-routing-check.sh","runner-canary.yml"]
+touches = [".github/workflows/*.yml",".github/workflows/runner-canary.yml",".github/actionlint.yaml","tools/ci/runner-routing-check.sh"]
+reqs = ["3.1","3.2","3.3","3.4"]
+
+[task.1.4]
+title = "Clear the routing gate: remove the expression injection actionlint stops on and keep publishing jobs on GitHub-hosted runners"
+status = "done"
+revision = "0c2a054f9507e865e9dffa6d68ba10a54a810d8a"
+command = "timeout 10m sh -c 'actionlint -no-color -shellcheck= -pyflakes= && sh tools/ci/runner-routing-check.sh'"
+exit_code = 0
+log_path = ".logs/verify-1.4.log"
+wave = 1
+requires = ["1.3"]
+do_1 = "Observation 1.3.1: actionlint stops on .github/workflows/paxeer-pr-to-slack-codex.yml where github.event.pull_request.title is interpolated directly into an inline script, an expression injection that predates this feature; pass that value and any other event field interpolated into a run script in that file through an env entry of the step and read the variable in the script instead, changing nothing else in the workflow."
+do_2 = "Task 1.3 routed the jobs docs-site deploy, paxeer-release-publish, the paxeer-proto-registry push job and paxeer-ghcr-integration-test-cleanup because they matched none of the listed exclusion classes, yet each carries a publishing credential, which [meta] intro keeps on GitHub-hosted runners; restore each job's original runs-on line and add each to the exclusion list in tools/ci/runner-routing-check.sh with the reason class publishing credential and its original runs-on beside it."
+do_3 = "Run task 1.3's verify_cmd once; at the passing revision record task 1.3 done with the same evidence, close observation 1.3.1 naming the revision, and record this task done."
+verify_cmd = "timeout 10m sh -c 'actionlint -no-color -shellcheck= -pyflakes= && sh tools/ci/runner-routing-check.sh'"
+symbols = ["runner-routing-check.sh","paxeer-pr-to-slack-codex.yml"]
+touches = [".github/workflows/paxeer-pr-to-slack-codex.yml",".github/workflows/docs-site.yml",".github/workflows/paxeer-release-publish.yml",".github/workflows/paxeer-proto-registry.yml",".github/workflows/paxeer-ghcr-integration-test-cleanup.yml","tools/ci/runner-routing-check.sh"]
+reqs = ["3.1","3.3"]
+
+[task.2.1]
+title = "Deploy the runner image and the controller, turn the variable on and prove the canary ran on Fly"
+status = "pending"
+wave = 2
+requires = ["1.1","1.2","1.3","1.4"]
+do_1 = "From the operator shell: build tools/flyci/runner with the local Docker daemon, tag it registry.fly.io/paxeer-ci-runners:<commit>, run fly auth docker and push it; create an app-scoped deploy token for paxeer-ci-runners with fly tokens create deploy; set the secrets GITHUB_TOKEN (from the private token file the operator names), FLY_API_TOKEN and RUNNER_IMAGE on paxeer-ci-controller; deploy the controller from tools/flyci/controller/fly.toml; confirm one controller machine is started and its log shows a completed poll."
+do_2 = "Set the repository variable CI_LINUX_RUNNER to fly-linux with the GitHub CLI, dispatch runner-canary.yml on the default branch, wait for its completion, and read the job back through the API requiring a runner_name starting with fly- and conclusion success; then confirm through the Machines API that the job's machine no longer exists."
+do_3 = "Record each command, exit code and log path under .logs in the working tree as the task's evidence and as one gate record in spec/paxeer-x-ci/qualification.kvx; if any step fails, leave the variable unset, record the failure and stop."
+verify_cmd = "timeout 30m sh -c 'gh workflow run runner-canary.yml --ref main && sleep 20 && run=$(gh run list --workflow runner-canary.yml --limit 1 --json databaseId --jq .[0].databaseId) && gh run watch \"$run\" --exit-status && gh run view \"$run\" --json jobs --jq \".jobs[] | select(.runnerName | startswith(\\\"fly-\\\")) | .conclusion\" | grep -qx success'"
+symbols = ["CI_LINUX_RUNNER","paxeer-ci-controller","paxeer-ci-runners"]
+touches = ["spec/paxeer-x-ci/qualification.kvx"]
+reqs = ["4.1","4.2"]

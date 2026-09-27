@@ -42,7 +42,7 @@ jobs:
 
   explorer-frontend:
     name: Explorer frontend build
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 60
     env:
       HUSKY: 0
@@ -64,7 +64,7 @@ jobs:
 
   explorer-services:
     name: Explorer service build (${{ matrix.service }})
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -94,7 +94,7 @@ jobs:
 
   explorer-lint:
     name: Explorer lint (${{ matrix.leg }})
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -132,7 +132,7 @@ jobs:
 
   explorer-test-ratio:
     name: Explorer test ratio
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 10
     steps:
       - name: Check out source

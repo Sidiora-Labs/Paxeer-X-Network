@@ -1,0 +1,19 @@
+app = "paxeer-ci-controller"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  GITHUB_REPOSITORY = "Sidiora-Labs/Paxeer-X-Network"
+  FLY_RUNNER_APP = "paxeer-ci-runners"
+  RUNNER_LABELS = "fly-linux"
+  FLY_REGION = "iad"
+
+[processes]
+  app = "/usr/local/bin/flyci-controller"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  processes = ["app"]

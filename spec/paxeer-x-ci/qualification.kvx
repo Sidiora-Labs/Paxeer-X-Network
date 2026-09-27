@@ -1,0 +1,64 @@
+# qualification.kvx - Paxeer X CI on Fly.io executed-evidence ledger.
+#
+# Append-only. [observation.<task>.<n>] records an assumption, an unrelated or
+# pre-existing failure, a cross-task contradiction, a missing external
+# interface, or a repair that would require weakening a check: keys task, file,
+# symbol, observed, assumption, severity (blocker | suspect | assumption | note),
+# at most six lines, never re-run. [gate.<task>.<n>] records one executed gate:
+# revision, command, exit_code, log_path.
+
+[observation.1.3.1]
+task = "1.3"
+file = ".github/workflows/paxeer-pr-to-slack-codex.yml"
+symbol = "codex_review"
+observed = "actionlint exits 1 on a pre-existing expression finding at line 224 (github.event.pull_request.title used directly in an inline script), a class unrelated to runs-on or labels, so the routing check after it did not run."
+assumption = "Moving the title through an environment variable is outside this task's touches; severity blocker for the task gate until another task fixes it."
+closed = "Task 1.4 passed the pull request title and the other event fields through step env entries and kept the publishing jobs on GitHub-hosted runners; the gate exits 0 at revision 0c2a054f9507e865e9dffa6d68ba10a54a810d8a, the feature tip task 1.4 was qualified on, log .logs/verify-1.4.log."
+
+[gate.1.1.1]
+revision = "94689d94f620b57d3dd36e0b88c5722f3b1cbf19"
+command = "timeout 25m sh -c 'shellcheck tools/flyci/runner/entrypoint.sh && docker build -t paxeer-ci-runner:verify tools/flyci/runner && docker run --rm paxeer-ci-runner:verify --selfcheck && if docker run --rm paxeer-ci-runner:verify; then exit 1; fi'"
+exit_code = 0
+log_path = ".logs/wave-1-1.1.log"
+observed = "The entrypoint passes shellcheck, the image builds from ubuntu:24.04 with actions/runner 2.337.0 whose published sha256 verifies, the self-check inside the built image reports every promised tool on the runner user's PATH plus passwordless sudo, the wasm32-unknown-unknown target and RUNNER_TOOL_CACHE at /opt/hostedtoolcache, and a start without RUNNER_JITCONFIG refuses with a named error."
+assumption = "The build reaches the Ubuntu archive and the actions/runner release from this box, so the pinned digest and checksum are the only inputs a later build needs."
+
+[gate.1.2.1]
+revision = "94689d94f620b57d3dd36e0b88c5722f3b1cbf19"
+command = "timeout 20m sh -c 'test -z \"$(gofmt -l tools/flyci/controller)\" && go vet ./tools/flyci/controller/... && go test -count=1 ./tools/flyci/controller/...'"
+exit_code = 0
+log_path = ".logs/wave-1-1.2.log"
+observed = "gofmt names no file, go vet is silent, and the controller package's tests pass in 0.096s driving the real config loader, GitHub client, Fly client and reconciler against in-process servers."
+assumption = "The documented GitHub and Fly response shapes the test servers return stand for the live APIs until the wave-two deploy task exercises them."
+
+[gate.1.3.1]
+revision = "94689d94f620b57d3dd36e0b88c5722f3b1cbf19"
+command = "timeout 10m sh -c 'actionlint -no-color -shellcheck= -pyflakes= && sh tools/ci/runner-routing-check.sh'"
+exit_code = 0
+log_path = ".logs/wave-1-1.3.log"
+observed = "actionlint over every workflow and the routing policy check both exit 0 with no output, so each routed Linux job carries the required CI_LINUX_RUNNER expression with matching fallbacks and each excluded job still holds the runs-on recorded beside it."
+assumption = "Both checks are silent on success, so an empty log is the pass; the expression finding recorded as observation 1.3.1 stays closed at this revision."
+
+[gate.1.4.1]
+revision = "94689d94f620b57d3dd36e0b88c5722f3b1cbf19"
+command = "timeout 10m sh -c 'actionlint -no-color -shellcheck= -pyflakes= && sh tools/ci/runner-routing-check.sh'"
+exit_code = 0
+log_path = ".logs/wave-1-1.4.log"
+observed = "This task's verify_cmd is byte-identical to task 1.3's and exits 0 on the merged tip, so the event fields moved into step env entries and the four publishing jobs restored to GitHub-hosted runners with the publishing-credential reason hold together."
+assumption = "Each wave-one task's declared verify_cmd is run once, so the repeat of the shared command is this task's own evidence and nothing further is read from it."
+
+[gate.wave-1.lint]
+revision = "94689d94f620b57d3dd36e0b88c5722f3b1cbf19"
+command = "sh -c 'cd <feature worktree> && cg spec lint -f paxeer-x-ci'"
+exit_code = 0
+log_path = ".logs/wave-1-lint.log"
+observed = "The feature lints clean with no errors and no warnings, over the spec after the one wording fix the public-text scan asked for."
+assumption = "The lint covers the kvx source and its generated documents only, so the wave-two deploy task's absent evidence fields are not a lint finding."
+
+[gate.wave-1.scan]
+revision = "94689d94f620b57d3dd36e0b88c5722f3b1cbf19"
+command = "git diff --name-only $(git merge-base HEAD main) HEAD | xargs grep -nEI over nine public-text patterns: IPv4 literals, private and known-host ranges, non-allowlisted URLs, dead link domains, calendar dates, role and lane names, model names, operator strings, credential prefixes"
+exit_code = 123
+log_path = ".logs/wave-1-scan.log"
+observed = "The scan exits 123 only because xargs propagates grep's no-match status, and reports forty hits across the fifty-four changed files: thirty-three predate this feature (a hexpm image tag, a 127.0.0.1 hosts line, fifteen public registry and paxeer.network URLs in platform.yml and bridge-test.yml, five rustup nightly toolchain pins, eleven Jev and Codex workflow step names) and seven arrived with it, five of them loopback endpoints in the controller's own tests."
+assumption = "The two prose hits this feature introduced are scrubbed in spec.kvx task 2.1 and its rendered line; the loopback test endpoints are deliberate unreachable sentinels and every pre-existing hit sits outside this gate's remit."
