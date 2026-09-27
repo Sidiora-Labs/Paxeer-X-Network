@@ -16,10 +16,12 @@ interface Props {
 }
 
 const NavLinkGroup = ({ item }: Props) => {
-  const { open, onOpenChange } = useDisclosure();
+  const { open, onOpenChange, onToggle } = useDisclosure();
 
   const isHighlighted = checkRouteHighlight(item.subItems);
   const hasGroups = item.subItems.some((subItem) => Array.isArray(subItem));
+
+  const triggerProps = React.useMemo(() => ({ onClick: onToggle }), [ onToggle ]);
 
   const content = hasGroups ? (
     <HStack separator={ <Separator/> } alignItems="stretch">
@@ -50,8 +52,11 @@ const NavLinkGroup = ({ item }: Props) => {
     <Tooltip
       variant="popover"
       content={ content }
+      open={ open }
       onOpenChange={ onOpenChange }
+      triggerProps={ triggerProps }
       lazyMount={ false }
+      unmountOnExit={ false }
       positioning={{
         placement: 'bottom',
         offset: { mainAxis: 8 },
@@ -60,6 +65,7 @@ const NavLinkGroup = ({ item }: Props) => {
     >
       <Link
         as="li"
+        data-label="nav-group"
         listStyleType="none"
         display="flex"
         alignItems="center"
@@ -68,6 +74,8 @@ const NavLinkGroup = ({ item }: Props) => {
         textStyle="sm"
         fontWeight={ 500 }
         variant="navigation"
+        // the scan layout marks the current group with the accent color alone, without a filled pill
+        _selected={{ bg: 'transparent' }}
         { ...(item.isActive ? { 'data-selected': true } : {}) }
         { ...(open ? { 'data-active': true } : {}) }
         borderRadius="base"
@@ -80,7 +88,7 @@ const NavLinkGroup = ({ item }: Props) => {
             ml={{ lg: '2px' }}
           />
         ) }
-        <IconSvg name="arrows/east-mini" boxSize={ 5 } transform="rotate(-90deg)" ml={ 1 }/>
+        <IconSvg name="arrows/east-mini" boxSize={ 5 } transform={ open ? 'rotate(90deg)' : 'rotate(-90deg)' } ml={ 1 }/>
       </Link>
     </Tooltip>
   );

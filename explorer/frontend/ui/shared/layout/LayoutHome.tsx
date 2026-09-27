@@ -1,3 +1,4 @@
+import { Box } from '@chakra-ui/react';
 import React from 'react';
 
 import type { Props } from './types';
@@ -18,12 +19,28 @@ const LayoutHome = ({ children }: Props) => {
         <Layout.MainArea>
           <Layout.SideBar/>
           <Layout.MainColumn
+            position="relative"
             paddingTop={{ base: 3, lg: 6 }}
           >
-            <HeaderAlert mb={ 3 }/>
-            <AppErrorBoundary>
-              { children }
-            </AppErrorBoundary>
+            <Box
+              data-label="hero-band"
+              position="absolute"
+              top={ 0 }
+              left={ 0 }
+              right={ 0 }
+              height={{ base: '180px', lg: '260px' }}
+              bgColor="bg.surface"
+              borderBottomWidth="1px"
+              borderColor="border.divider"
+              pointerEvents="none"
+              zIndex={ 0 }
+            />
+            <Box position="relative" zIndex={ 1 }>
+              <HeaderAlert mb={ 3 }/>
+              <AppErrorBoundary>
+                { children }
+              </AppErrorBoundary>
+            </Box>
           </Layout.MainColumn>
         </Layout.MainArea>
         <Layout.Footer/>

@@ -855,7 +855,7 @@ status = "pending"
 
 [task.5.1]
 title = "Build the scan shell"
-status = "pending"
+status = "done"
 wave = 5
 requires = ["2.9","4.2"]
 do_1 = "Rebuild explorer/frontend/ui/snippets/topBar/TopBar.tsx as the scan utility bar - a thin row above the brand row holding explorer/frontend/ui/snippets/topBar/TopBarStats.tsx on the left and, on the right, the desktop search entry on every route except the home route followed by the settings menu of explorer/frontend/ui/snippets/topBar/settings/Settings.tsx, the colour-theme control and explorer/frontend/ui/snippets/topBar/NetworkMenu.tsx."
@@ -874,6 +874,10 @@ verify_cmd = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --
 symbols = ["TopBar","TopBarStats","HeaderDesktop","NavigationDesktop","NavLinkGroup","Footer","Layout","LayoutHome","useNavItems"]
 touches = ["explorer/frontend/ui/snippets/topBar/TopBar.tsx","explorer/frontend/ui/snippets/topBar/TopBar.spec.tsx","explorer/frontend/ui/snippets/topBar/TopBarStats.tsx","explorer/frontend/ui/snippets/topBar/TopBarStats.spec.tsx","explorer/frontend/ui/snippets/topBar/NetworkMenu.tsx","explorer/frontend/ui/snippets/topBar/settings/Settings.tsx","explorer/frontend/ui/snippets/header/HeaderDesktop.tsx","explorer/frontend/ui/snippets/header/HeaderMobile.tsx","explorer/frontend/ui/snippets/navigation/horizontal/NavigationDesktop.tsx","explorer/frontend/ui/snippets/navigation/horizontal/NavigationDesktop.spec.tsx","explorer/frontend/ui/snippets/navigation/horizontal/NavLink.tsx","explorer/frontend/ui/snippets/navigation/horizontal/NavLinkGroup.tsx","explorer/frontend/ui/snippets/navigation/horizontal/NavLinkGroup.spec.tsx","explorer/frontend/ui/snippets/navigation/useNavLinkStyleProps.tsx","explorer/frontend/ui/snippets/footer/Footer.tsx","explorer/frontend/ui/snippets/footer/Footer.spec.tsx","explorer/frontend/ui/snippets/footer/FooterLinkItem.tsx","explorer/frontend/ui/snippets/searchBar/SearchBarDesktop.tsx","explorer/frontend/ui/snippets/searchBar/SearchBarInput.tsx","explorer/frontend/ui/shared/layout/Layout.tsx","explorer/frontend/ui/shared/layout/Layout.spec.tsx","explorer/frontend/ui/shared/layout/LayoutApp.tsx","explorer/frontend/ui/shared/layout/LayoutHome.tsx","explorer/frontend/ui/shared/layout/LayoutHome.spec.tsx","explorer/frontend/ui/shared/layout/LayoutError.tsx","explorer/frontend/ui/shared/layout/LayoutSearchResults.tsx","explorer/frontend/ui/shared/layout/components/Container.tsx","explorer/frontend/ui/shared/layout/components/Content.tsx","explorer/frontend/ui/shared/layout/components/MainArea.tsx","explorer/frontend/ui/shared/layout/components/MainColumn.tsx","explorer/frontend/ui/shared/layout/components/NavBar.tsx","explorer/frontend/lib/hooks/useNavItems.tsx","explorer/frontend/lib/hooks/useNavItems.spec.tsx","explorer/frontend/toolkit/theme/globalCss.ts","explorer/frontend/configs/envs/paxeer-x.env","explorer/frontend/configs/envs/paxeer-x-dev.env","explorer/frontend/public/static/paxeer-x"]
 reqs = ["17.1","17.2","17.3","17.4","17.5","17.6","17.7","17.8","17.9"]
+revision = "4832ff8e907060b3394f9fff1c02ded34465ec13"
+command = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/snippets ui/shared/layout lib/hooks'"
+exit_code = 0
+log = ".logs/verify.log"
 
 [task.5.2]
 title = "Build the scan primitives"

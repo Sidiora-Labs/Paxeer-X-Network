@@ -231,7 +231,7 @@
 ## Wave 5 - Scan Foundation
 
 - [ ] 5. Build the shell and the primitives every scan page consumes
-  - [ ] 5.1 Build the scan shell
+  - [x] 5.1 Build the scan shell
     - Rebuild explorer/frontend/ui/snippets/topBar/TopBar.tsx as the scan utility bar - a thin row above the brand row holding explorer/frontend/ui/snippets/topBar/TopBarStats.tsx on the left and, on the right, the desktop search entry on every route except the home route followed by the settings menu of explorer/frontend/ui/snippets/topBar/settings/Settings.tsx, the colour-theme control and explorer/frontend/ui/snippets/topBar/NetworkMenu.tsx.
     - Rebuild explorer/frontend/ui/snippets/topBar/TopBarStats.tsx to read the Paxeer coin price with its percentage change and the current gas price from the statistics it already queries and render them as small labels with accent values, keeping every query, feature condition and loading state it has now.
     - Make explorer/frontend/ui/snippets/header/HeaderDesktop.tsx the brand row - the network mark and wordmark on the left, explorer/frontend/ui/snippets/navigation/horizontal/NavigationDesktop.tsx on the right - and keep explorer/frontend/ui/snippets/header/HeaderMobile.tsx on its burger and mobile search path restyled by the same tokens.
