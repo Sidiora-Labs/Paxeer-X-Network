@@ -610,3 +610,10 @@ environment = "linux/amd64, forge 1.7.1, the third leg of the task 4.13 verify_c
 outcome = "pass"
 evidence = "build/sidiora-gates/foundry.log"
 note = "Exit code 0: the bootstrap cloned forge-std v1.9.6 and openzeppelin-contracts v5.3.0, then 9 test suites ran, 116 tests passed, 0 failed, 0 skipped; the whole verify_cmd exited 0 with its combined output in .logs/wave-4.log."
+
+[observation.5.2.1]
+task = "5.2"; file = "human/apps/web/src/app/bridge/page.tsx"; symbol = "raw-screen-pattern"; severity = "note"
+revision = "301feb74cb179a0d9cea605b803d08d3e068340b"
+command = "cargo run --manifest-path human/tools/ui-gate/Cargo.toml --locked -- human/apps/web"; exit_code = 1; log_path = "build/sidiora-gates/human-ui-gate.log"
+observed = "With the wallet screen composed through the kit the gate reports nine remaining rows, all outside this feature: three raw inputs and one raw button in app/bridge/page.tsx, one raw select in app/_markets/select.tsx, and one direct @layerx/ui import each in app/bridge/page.tsx, app/exchange/page.tsx, app/launchpad/page.tsx and app/_markets/activity-feed.tsx."
+assumption = "Those nine belong to the market, bridge, exchange and launchpad screens and to no task in this feature, so they are recorded once and left exactly as written; the task's verify_cmd asserts only that no row names the wallet screen."

@@ -974,7 +974,11 @@ reqs = ["7.3","7.5"]
 
 [task.5.2]
 title = "Compose the wallet screen's Sidiora fee choice through the component kit"
-status = "pending"
+status = "done"
+revision = "301feb74cb179a0d9cea605b803d08d3e068340b"
+command = "timeout 20m sh -c 'mkdir -p build/sidiora-gates && cargo run --manifest-path human/tools/ui-gate/Cargo.toml --locked -- human/apps/web >build/sidiora-gates/human-ui-gate.log 2>&1; ! grep -q settings/wallet/wallet-screen.tsx build/sidiora-gates/human-ui-gate.log && cd human/apps/web && node_modules/.bin/eslint --max-warnings=0 src/settings/wallet/wallet-screen.tsx'"
+exit_code = 0
+log_path = ".logs/verify.log"
 wave = 5
 requires = []
 do_1 = "In human/apps/web/src/settings/wallet/wallet-screen.tsx replace the two raw fee-currency radio inputs of WalletFeeChoice with KitOptionList, the radio group src/kit/display.tsx exposes, carrying the paxeer and the sidiora option with their catalogue labels, the snapshot's currency as its value and the existing onChange as its onValueChange, narrowing the value it reports to the snapshot's currency union rather than casting it."
