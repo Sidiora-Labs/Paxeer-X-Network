@@ -851,11 +851,11 @@ reqs = ["17.5","17.6"]
 
 [task.2.16]
 title = "Run the agent workspace tests with the binaries the workflow builds for them"
-status = "implemented"
-implemented_revision = "ac37ec69819137094154ea94d70c57104018cb8f"
-implemented_command = "timeout 45m sh -c 'make agent-test'"
-implemented_exit_code = 2
-implemented_log_path = ".logs/verify.log"
+status = "done"
+revision = "64890ebcec32d6382182ca001d726390676cdafd"
+command = "timeout 45m sh -c 'make agent-test'"
+exit_code = 0
+log_path = ".logs/verify.log"
 wave = 2
 requires = ["2.9"]
 do_1 = "Build the prerequisites the Makefile declares for agent-test (public-tls-test-prerequisites for the boundary and clock binaries, agent-test-native-prerequisites for the native daemon binaries) and run make agent-test once, exactly as the workflow's test step does."
@@ -1147,11 +1147,11 @@ reqs = ["11.2"]
 
 [task.2.32]
 title = "Serve the availability harness's bond and registry at the anchor address and qualify the agent workspace tests"
-status = "implemented"
-implemented_revision = "1d1f52709744fa67fe8a6afa05febbaa43223b14"
-implemented_command = "timeout 45m sh -c 'make agent-test'"
-implemented_exit_code = 2
-implemented_log_path = ".logs/verify.log"
+status = "done"
+revision = "64890ebcec32d6382182ca001d726390676cdafd"
+command = "timeout 45m sh -c 'make agent-test'"
+exit_code = 0
+log_path = ".logs/verify.log"
 wave = 2
 requires = ["2.16"]
 do_1 = "The daemon accepts a settlement contract and a checkpoint registry only at the layerxAnchor precompile address, and that refusal stays exactly as it is (observation 2.16.1); change tests/daemon/availability-settlement.py so the bond and registry calls the daemon makes at the anchor address reach the GuarantorBond and CheckpointRegistry it deploys on its anvil chain - installing the code of one contract that serves both interfaces at the anchor address through anvil's code-setting method, or whichever placement the anchor's ABI in the repository supports - and have tests/daemon/program-admission.sh export the anchor address for both variables under --availability-batches, keeping every other harness step unchanged."
@@ -1164,11 +1164,11 @@ reqs = ["9.1"]
 
 [task.2.33]
 title = "Find why the finalized receipt read is unavailable after finality registration and qualify the agent workspace tests"
-status = "implemented"
-implemented_revision = "5de5e55f60ab4f7185993ded1277aab5825756f0"
-implemented_command = "timeout 45m sh -c 'make agent-test'"
-implemented_exit_code = 2
-implemented_log_path = ".logs/verify.log"
+status = "done"
+revision = "64890ebcec32d6382182ca001d726390676cdafd"
+command = "timeout 45m sh -c 'make agent-test'"
+exit_code = 0
+log_path = ".logs/verify.log"
 wave = 2
 requires = ["2.32"]
 do_1 = "Diagnose observation 2.32.1: with the harness's contracts served at the anchor address, the daemon registers batch 1's finality, but the route's read of the finalized receipt in agent/crates/layerx-agentd/tests/native_reads_daemon.rs returns NativeReadError::Unavailable; surface the underlying error the route folds into Unavailable in agent/crates/layerx-agentd/src/read/native.rs (its reconnect or preparation_state path) in the test's panic message or a log the harness keeps, then fix the cause where it lives - in the route, in the harness's sequence of registrations and waits, or in the daemon's answer - keeping every daemon refusal and every assertion exactly as strong."
@@ -1180,11 +1180,11 @@ reqs = ["9.1"]
 
 [task.2.34]
 title = "Teach the agent client the spot and web modules so a node's preparation snapshot decodes, and qualify the agent workspace tests"
-status = "implemented"
-implemented_revision = "44d2b8d523e0b05c3554fa6aa619b1196678a7d3"
-implemented_command = "timeout 45m sh -c 'make agent-test'"
-implemented_exit_code = 2
-implemented_log_path = ".logs/verify.log"
+status = "done"
+revision = "64890ebcec32d6382182ca001d726390676cdafd"
+command = "timeout 45m sh -c 'make agent-test'"
+exit_code = 0
+log_path = ".logs/verify.log"
 wave = 2
 requires = ["2.33"]
 do_1 = "Observation 2.33.1: the daemon's preparation snapshot lists the kernel's active modules, which include spot (10) by default and web (11) once enabled, but ModuleId::from_u16 in agent/crates/layerx-types/src/payload.rs knows only modules 1 to 9 and MAX_MODULES in agent/crates/layerx-client/src/lni/preparation.rs is 9, so the whole snapshot is refused as malformed; add the spot and web variants with their kernel numbers and names, raise the bound to the kernel's module count, and update every table in agent/crates that enumerates module identifiers so both decode, display and round-trip like the others, keeping every public signature the agent SDKs call unchanged."
@@ -1252,11 +1252,11 @@ reqs = ["11.2"]
 
 [task.2.38]
 title = "Bring the finality evidence vector in line with the anchor precompile settlement contract"
-status = "implemented"
-implemented_revision = "c27314941acb5500c93cfd04873e41e0ebca9fd9"
-implemented_command = "timeout 45m sh -c 'make agent-test'"
-implemented_exit_code = 2
-implemented_log_path = ".logs/verify.log"
+status = "done"
+revision = "64890ebcec32d6382182ca001d726390676cdafd"
+command = "timeout 45m sh -c 'make agent-test'"
+exit_code = 0
+log_path = ".logs/verify.log"
 wave = 2
 requires = ["2.34"]
 do_1 = "Observation 2.34.1: tests/vectors/finality_evidence_v1.vec is a golden fixture produced by build_finality of tests/storage/lxp_test_finality_evidence.c, whose guarantor contexts and settlement registration evidence still name a settlement contract of 0xc1 followed by nineteen zero bytes, while the client evidence verifier admits only the layerxAnchor precompile as the settlement contract of a registration, of a settlement reference and of a guarantor attestation, so check_checkpoint_bytes refuses the committed vector with EvidenceError::Registration; the anchor-only rule in agent/crates/layerx-client/src/evidence.rs and every assertion of agent/crates/layerx-client/tests/finality_evidence.rs stay exactly as written and the stale fixture is the side corrected."
@@ -1270,11 +1270,11 @@ reqs = ["9.1"]
 
 [task.2.39]
 title = "Give every agent test harness under the agent-test recipe its build output directory from one place"
-status = "implemented"
-implemented_revision = "eaa373744ede501afae05373a78c70b28554fa01"
-implemented_command = "timeout 45m sh -c 'make agent-test'"
-implemented_exit_code = 2
-implemented_log_path = ".logs/verify-run2.log"
+status = "done"
+revision = "64890ebcec32d6382182ca001d726390676cdafd"
+command = "timeout 45m sh -c 'make agent-test'"
+exit_code = 0
+log_path = ".logs/verify.log"
 wave = 2
 requires = ["2.38"]
 do_1 = "Observation 2.38.1: tests/daemon/withdraw-custody.py reads os.environ['CARGO_TARGET_DIR'] unconditionally, while the Makefile's agent-test recipe never exports it and only agent/tools/run-real-node-tests.sh derives it, so the confined session fee harness raises KeyError before any daemon starts; derive that build output directory once in the Makefile with the derivation the script already uses, the inherited value first and the lane directory otherwise, export it from the agent-test and agent-test-sanitize targets and pass it to the native prerequisites recipe, so every harness the recipe starts - the agent workspace tests, the daemon scripts they spawn and the prepared native prerequisites - reads one directory whether the gate is entered through make or through the script."
@@ -1307,11 +1307,11 @@ reqs = ["11.2"]
 
 [task.2.41]
 title = "Fund the daemon custody harness through the native custody module so the confined session fee run reaches its assertions"
-status = "implemented"
-implemented_revision = "681fa8f24758e0239fdf8b2fcca2484f9ccb0e19"
-implemented_command = "timeout 45m sh -c 'make agent-test'"
-implemented_exit_code = 2
-implemented_log_path = ".logs/verify.log"
+status = "done"
+revision = "64890ebcec32d6382182ca001d726390676cdafd"
+command = "timeout 45m sh -c 'make agent-test'"
+exit_code = 0
+log_path = ".logs/verify.log"
 wave = 2
 requires = ["2.39"]
 do_1 = "Observation 2.39.1: the daemon custody harness deploys a LayerXVault stack on the chain it owns and hands that deployed address to tests/bridge/custody_credit.py as the vault, while create_profile in tests/bridge/comet_credit.py and the kernel profile check it mirrors admit only the native custody module at 0x0000000000000000000000000000000000001013 with a runtime hash equal to module_identity(), so the confined session fee run stops before its first assertion; move the funding onto that module exactly as task 2.37 moved the local gateway harness - write the layerxcustody genesis section with platform/hosted/paxeer/custody-genesis.py for the network id, the sequencer the harness itself starts and a freshly generated deposit-root authority whose private half stays in the work directory, pass it to owned_chain in tests/daemon/custody_chain.py so init-chain.sh merges it before validate-genesis, and deposit by calling deposit(bytes32) on the precompile with the base-unit amount scaled by the chain denomination, requiring the native asset id to be the harness asset, exactly one CustodyDeposit log with its four topics, the asset topic, the beneficiary and the amount in its data, and one recorded deposit."
@@ -1347,7 +1347,11 @@ reqs = ["11.2"]
 
 [task.2.43]
 title = "Derive the scheduling identity actor of a program call from its actor DID so the metered allowance batch stops failing a kernel invariant"
-status = "pending"
+status = "done"
+revision = "64890ebcec32d6382182ca001d726390676cdafd"
+command = "timeout 45m sh -c 'make agent-test'"
+exit_code = 0
+log_path = ".logs/verify.log"
 wave = 2
 requires = ["2.41"]
 do_1 = "Observation 2.41.1: layerxd stops the metered allowance run with execution failed at sequence 13 with result -1001 because lxp_kernel_batch_schedule_item in src/protocol/lxp_kernel.c admits only an activity whose actor_did span is exactly 32 bytes and then hands those raw DID bytes to lxp_programs_call_schedule_item_prepare as the 32-byte identity actor, while a real LX_PROGRAMS_CALL carries the textual did:layerx: identifier of 75 bytes, so planning refuses the single offered activity with LXP_ERR_NON_CANONICAL, program_planning_refusal classes that as a planning refusal, the count-of-one settled path re-prepares the same activity serially, that preparation succeeds with result code 0 and one effect, and the invariant that a planning-refused single activity must settle as a refusal carrying no effect fires LXP_FATAL_INVARIANT; the kernel is the side to correct, because the identity actor of a call is the identity the rest of the kernel derives with lxp_did_id_derive - kernel_program_signer_binding requires the resolved authority actor and principal to equal the did_id of the activity DID, and the conflict graph in programs/crates/layerx-programs-runtime/src/schedule.rs reads identity_actor and identity_principal as one identity domain. Bound that guard by the protocol's own limits instead, an actor DID span that is present and at most LXP_MAX_DID_LENGTH, derive the 32-byte identity with lxp_did_id_derive before the snapshot is cloned, and pass the derived identity as the identity actor; keep the 32-byte contract of lxp_programs_call_schedule_item_prepare, the planning refusal classes and the count-of-one invariant exactly as written."

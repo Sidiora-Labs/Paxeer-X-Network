@@ -1079,15 +1079,21 @@ lxp_result lxp_kernel_batch_schedule_item(
     lx_account *payer = NULL;
     lxp_byte_span encoded;
     uint8_t activity_id[32];
+    uint8_t identity_actor[32];
     void *decoded = NULL;
     size_t index;
     lxp_result status;
     if (snapshot == NULL || activity == NULL || execution == NULL ||
         execution->authority == NULL || arena == NULL || item == NULL ||
         activity->activity_type != LX_PROGRAMS_CALL ||
-        activity->actor_did.bytes == NULL || activity->actor_did.length != 32U)
+        activity->actor_did.bytes == NULL ||
+        activity->actor_did.length == 0U ||
+        activity->actor_did.length > LXP_MAX_DID_LENGTH)
         return LXP_ERR_NON_CANONICAL;
-    status = lxp_kernel_batch_snapshot_clone(snapshot, &view);
+    status = lxp_did_id_derive(activity->actor_did.bytes,
+                               activity->actor_did.length, identity_actor);
+    if (status == LXP_OK)
+        status = lxp_kernel_batch_snapshot_clone(snapshot, &view);
     if (status == LXP_OK)
         status = lxp_module_version_for_epoch(
             &view->kernel, LXP_MODULE_PROGRAMS, execution->epoch,
@@ -1132,7 +1138,7 @@ lxp_result lxp_kernel_batch_schedule_item(
     if (status == LXP_OK)
         status = lxp_programs_call_schedule_item_prepare(
             &descriptor,
-            activity->actor_did.bytes,
+            identity_actor,
             payer != NULL && payer->has_asset ? payer->asset_id :
                 (const uint8_t[32]){0},
             view->occupancy_asset_id,
