@@ -7,14 +7,23 @@ import (
 	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
+	evmkeeper "github.com/sidiora-labs/paxeer-network/modules/evm/keeper"
+	launchpadtypes "github.com/sidiora-labs/paxeer-network/modules/launchpad/types"
+	layerxanchortypes "github.com/sidiora-labs/paxeer-network/modules/layerxanchor/types"
 	layerxbridgetypes "github.com/sidiora-labs/paxeer-network/modules/layerxbridge/types"
+	layerxcustodytypes "github.com/sidiora-labs/paxeer-network/modules/layerxcustody/types"
+	layerxexchangetypes "github.com/sidiora-labs/paxeer-network/modules/layerxexchange/types"
 	"github.com/sidiora-labs/paxeer-network/modules/xweb"
 	xwebtypes "github.com/sidiora-labs/paxeer-network/modules/xweb/types"
 	"github.com/sidiora-labs/paxeer-network/precompiles"
+	feetokenprecompile "github.com/sidiora-labs/paxeer-network/precompiles/feetoken"
+	anchorprecompile "github.com/sidiora-labs/paxeer-network/precompiles/layerxanchor"
+	verifyprecompile "github.com/sidiora-labs/paxeer-network/precompiles/layerxverify"
 	putils "github.com/sidiora-labs/paxeer-network/precompiles/utils"
 	storetypes "github.com/sidiora-labs/paxeer-network/sdk/store/types"
 	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 	"github.com/sidiora-labs/paxeer-network/sdk/types/module"
+	"github.com/sidiora-labs/paxeer-network/sdk/x/upgrade"
 	upgradetypes "github.com/sidiora-labs/paxeer-network/sdk/x/upgrade/types"
 	"golang.org/x/mod/semver"
 )
@@ -66,6 +75,20 @@ const sidioraFeeTokenUpgrade = "v6.7"
 // documented default parameters and no attestor, and from its height on serves
 // the xweb precompile.
 const xwebUpgrade = precompiles.XWebUpgrade
+
+// ActivationUpgrade is the plan that brings the Paxeer X fork online on a chain
+// whose state predates it: it mounts the store of every fork module the chain
+// never mounted, initialises those modules from their own default genesis, and
+// from its height on serves the eight fork precompiles. It carries no entry in
+// the embedded tag list, so the latest upgrade and every custom precompile
+// version map stay exactly as they are.
+const ActivationUpgrade = "v6.9"
+
+// ForkHeight is the height the activation plan runs at. Every node schedules the
+// plan for this height from the block before it, so the fork needs no proposal
+// and no operator action to be agreed on and every node applies it at the same
+// height.
+const ForkHeight int64 = 26000000
 
 func (app *App) RegisterUpgradeHandlers() {
 	// if there is an override list, use that instead, for integration tests
@@ -134,6 +157,10 @@ func (app *App) RegisterUpgradeHandlers() {
 			return app.mm.RunMigrations(ctx, app.configurator, fromVM)
 		})
 	}
+
+	// The activation plan is registered under its own name rather than a tag, so
+	// that the tag list, the latest upgrade and the existing plans are untouched.
+	app.UpgradeKeeper.SetUpgradeHandler(ActivationUpgrade, app.runActivationUpgrade)
 }
 
 // runXWebUpgrade runs the module migrations with xweb taken as present, so the
@@ -219,3 +246,128 @@ func xwebPrecompileSet(all map[common.Address]putils.VersionedPrecompiles, live 
 }
 
 const v606UpgradeHeight = 151573570
+
+// runActivationUpgrade initialises every module the chain's version map lacks
+// from that module's own default genesis, exactly once, and serves the xweb
+// precompile from this block on when the module's state says it is live. The
+// stores those modules write to are mounted by the activation store loader
+// before the block that runs this handler.
+func (app *App) runActivationUpgrade(ctx sdk.Context, _ upgradetypes.Plan, fromVM module.VersionMap) (module.VersionMap, error) {
+	newVM, err := app.mm.RunMigrations(ctx, app.configurator, fromVM)
+	if err != nil {
+		return newVM, err
+	}
+	// The module version map the handler reads predates the upgrade, so the xweb
+	// precompile is served on the state the migration just wrote instead.
+	if !app.xwebInitialised(ctx) {
+		return newVM, fmt.Errorf("upgrade %s: the xweb module holds no parameters", ActivationUpgrade)
+	}
+	app.setXWebPrecompile(true)
+	return newVM, nil
+}
+
+// activationStoreUpgrades mounts the store of every module the activation plan
+// initialises: the five stores the v6.6 plan mounts and the xweb store the v6.8
+// plan mounts, none of which a chain that applied neither plan ever mounted.
+func activationStoreUpgrades() storetypes.StoreUpgrades {
+	return storetypes.StoreUpgrades{
+		Added: append(v66StoreUpgrades().Added, v68StoreUpgrades().Added...),
+	}
+}
+
+// activationModules lists the modules the activation plan initialises, in the
+// order their stores are mounted.
+func activationModules() []string {
+	return []string{
+		layerxcustodytypes.ModuleName, layerxanchortypes.ModuleName,
+		layerxexchangetypes.ModuleName, layerxbridgetypes.ModuleName,
+		launchpadtypes.ModuleName, xwebtypes.ModuleName,
+	}
+}
+
+// activationPrecompileGate declares the custom precompiles the activation plan
+// brings online and, for each, the fork module whose state it serves: the
+// stateless evidence precompile is gated with the anchor module whose batch
+// headers and receipts it verifies, and the fee-token precompile with the bridge
+// module that holds the Sidiora asset it prices.
+func activationPrecompileGate() evmkeeper.CustomPrecompileActivation {
+	return evmkeeper.CustomPrecompileActivation{
+		Upgrade: ActivationUpgrade,
+		Modules: map[common.Address][]string{
+			common.HexToAddress(verifyprecompile.LayerXVerifyAddress): {layerxanchortypes.ModuleName},
+			common.HexToAddress(layerxcustodytypes.CustodyAddress):    {layerxcustodytypes.ModuleName},
+			common.HexToAddress(anchorprecompile.LayerXAnchorAddress): {layerxanchortypes.ModuleName},
+			common.HexToAddress(layerxexchangetypes.ExchangeAddress):  {layerxexchangetypes.ModuleName},
+			common.HexToAddress(layerxbridgetypes.BridgeAddress):      {layerxbridgetypes.ModuleName},
+			common.HexToAddress(launchpadtypes.LaunchpadAddress):      {launchpadtypes.ModuleName},
+			common.HexToAddress(feetokenprecompile.FeeTokenAddress):   {layerxbridgetypes.ModuleName},
+			common.HexToAddress(xwebtypes.PrecompileAddress):          {xwebtypes.ModuleName},
+		},
+	}
+}
+
+// scheduleActivationUpgrade schedules the activation plan for the fork height at
+// the block before it. It runs after the module begin blockers of its own block,
+// so the upgrade module reads the plan for the first time at the fork height and
+// applies it there. A chain whose module version map already carries every
+// module the plan initialises carries the fork already and is left alone, as is
+// a chain that has applied the plan or that has a plan of its own scheduled.
+func (app *App) scheduleActivationUpgrade(ctx sdk.Context) {
+	if ctx.IsTracing() || ctx.BlockHeight() != ForkHeight-1 {
+		return
+	}
+	if app.UpgradeKeeper.GetDoneHeight(ctx, ActivationUpgrade) != 0 {
+		return
+	}
+	if _, found := app.UpgradeKeeper.GetUpgradePlan(ctx); found {
+		return
+	}
+	if app.activationModulesPresent(ctx) {
+		return
+	}
+	plan := upgradetypes.Plan{Name: ActivationUpgrade, Height: ForkHeight}
+	if err := app.UpgradeKeeper.ScheduleUpgrade(ctx, plan); err != nil {
+		panic(fmt.Errorf("unable to schedule the %s upgrade at height %d: %w", plan.Name, plan.Height, err))
+	}
+	logger.Info(upgrade.BuildUpgradeScheduledMsg(plan))
+}
+
+// activationModulesPresent reports whether the module version map of ctx already
+// carries every module the activation plan initialises.
+func (app *App) activationModulesPresent(ctx sdk.Context) bool {
+	versions := app.UpgradeKeeper.GetModuleVersionMap(ctx)
+	for _, name := range activationModules() {
+		if _, known := versions[name]; !known {
+			return false
+		}
+	}
+	return true
+}
+
+// haltForActivationStoreUpgrade stops the node at the height the activation plan
+// is due unless this process started with that plan's upgrade-info.json, the
+// file the upgrade store loader reads to mount the plan's added stores at that
+// height. It writes the file and panics exactly as the upgrade module stops a
+// node whose binary has no handler, so operators restart the same binary and the
+// restarted process mounts the stores and applies the plan. A height the
+// operator marked skipped is left to the upgrade module's own skip path.
+func (app *App) haltForActivationStoreUpgrade(ctx sdk.Context) {
+	if ctx.IsTracing() {
+		return
+	}
+	plan, found := app.UpgradeKeeper.GetUpgradePlan(ctx)
+	if !found || plan.Name != ActivationUpgrade || !plan.ShouldExecute(ctx) {
+		return
+	}
+	if app.UpgradeKeeper.IsSkipHeight(ctx.BlockHeight()) || app.activationUpgradeInfoHeight == plan.Height {
+		return
+	}
+	//nolint:staticcheck // SA1019: the upgrade store loader reads this file
+	if err := app.UpgradeKeeper.DumpUpgradeInfoWithInfoToDisk(plan.Height, plan.Name, plan.Info); err != nil {
+		panic(fmt.Errorf("unable to write upgrade info to filesystem: %w", err))
+	}
+	message := upgrade.BuildUpgradeNeededMsg(plan)
+	logger.Error(message)
+	fmt.Fprintln(os.Stderr, message)
+	panic(message)
+}

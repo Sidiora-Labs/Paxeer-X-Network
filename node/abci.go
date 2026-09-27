@@ -53,7 +53,13 @@ func (app *App) BeginBlock(
 	if app.HardForkManager.TargetHeightReached(ctx) {
 		app.HardForkManager.ExecuteForTargetHeight(ctx)
 	}
+	// stop the node before the upgrade module would apply the activation plan
+	// without the stores that plan adds
+	app.haltForActivationStoreUpgrade(ctx)
 	legacyabci.BeginBlock(ctx, height, votes, byzantineValidators, app.BeginBlockKeepers)
+	// schedule the activation plan for the fork height, one block ahead of it, so
+	// that the upgrade module applies it at that height on its own path
+	app.scheduleActivationUpgrade(ctx)
 	return abci.ResponseBeginBlock{
 		Events: sdk.MarkEventsToIndex(ctx.EventManager().ABCIEvents(), app.IndexEvents),
 	}
