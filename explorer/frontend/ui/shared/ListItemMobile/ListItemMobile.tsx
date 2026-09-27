@@ -15,6 +15,9 @@ const ListItemMobile = ({ children, className, animation }: Props) => {
       alignItems="flex-start"
       flexDirection="column"
       paddingY={ 6 }
+      w="100%"
+      minW={ 0 }
+      data-list-item-mobile
       borderColor="border.divider"
       borderTopWidth="1px"
       _last={{

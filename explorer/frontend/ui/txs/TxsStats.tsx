@@ -182,7 +182,11 @@ const TxsStats = (props: Props) => {
   return (
     <Box
       display="grid"
-      gridTemplateColumns={{ base: '1fr', md: 'repeat(2, 1fr)', lg: `repeat(${ items.length }, 1fr)` }}
+      gridTemplateColumns={{
+        base: 'minmax(0, 1fr)',
+        md: 'repeat(2, minmax(0, 1fr))',
+        lg: `repeat(${ items.length }, minmax(0, 1fr))`,
+      }}
       rowGap={ 3 }
       columnGap={ 3 }
       mb={ 6 }

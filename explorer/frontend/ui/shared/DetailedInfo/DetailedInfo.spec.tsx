@@ -28,6 +28,22 @@ beforeAll(() => {
 afterEach(cleanup);
 
 describe('DetailedInfo', () => {
+  it('marks a value as the one that stacks under its label and wraps on a narrow screen', () => {
+    const { container } = render(
+      <Provider>
+        <DetailedInfo.Container>
+          <DetailedInfo.ItemLabel>Timestamp</DetailedInfo.ItemLabel>
+          <DetailedInfo.ItemValue>Sep 27 2026 19:16:19 (+02:00 UTC)</DetailedInfo.ItemValue>
+        </DetailedInfo.Container>
+      </Provider>,
+    );
+
+    const value = container.querySelector('[data-detailed-info-value]');
+
+    expect(value?.getAttribute('data-stack-below')).toBe('lg');
+    expect(value?.textContent).toBe('Sep 27 2026 19:16:19 (+02:00 UTC)');
+  });
+
   it('marks the grid so a page can style the detail block as a whole', () => {
     const { container } = render(
       <Provider>

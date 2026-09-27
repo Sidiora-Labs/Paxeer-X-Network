@@ -96,6 +96,37 @@ describe('ScanTableCard', () => {
     expect(container.querySelector('[data-footer-pagination]')?.textContent).toBe('Page 1 of 9');
   });
 
+  it('holds the header pagination in a slot of its own so a narrow screen can leave the footer copy alone', () => {
+    const { container } = render(
+      <Provider>
+        <ScanTableCard
+          title="A total of 4,321 blocks found"
+          pagination={ <span>Page 1 of 9</span> }
+          showRows={ <span>Show rows: 25</span> }
+        >
+          <div>rows</div>
+        </ScanTableCard>
+      </Provider>,
+    );
+
+    const headerPagination = container.querySelector('[data-actions] [data-header-pagination]');
+
+    expect(headerPagination?.textContent).toBe('Page 1 of 9');
+    expect(container.querySelector('[data-footer-pagination]')?.textContent).toBe('Page 1 of 9');
+  });
+
+  it('leaves the header pagination slot out when the list is not paginated', () => {
+    const { container } = render(
+      <Provider>
+        <ScanTableCard title="A total of 4,321 blocks found" showRows={ <span>Show rows: 25</span> }>
+          <div>rows</div>
+        </ScanTableCard>
+      </Provider>,
+    );
+
+    expect(container.querySelector('[data-header-pagination]')).toBeNull();
+  });
+
   it('leaves the footer out when there is nothing to put in it', () => {
     const { container } = render(
       <Provider>

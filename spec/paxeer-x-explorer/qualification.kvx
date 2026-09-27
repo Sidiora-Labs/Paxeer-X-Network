@@ -721,3 +721,60 @@ environment = "linux/x86_64, docker 28.2.2 over the node:22.14.0-alpine base of 
 outcome = "pass"
 evidence = "build/explorer-gates/frontend-image.log"
 note = "exit code 0. The frontend image built once from the merged tip of waves 5 and 6 through every stage the Dockerfile declares: the dependency stage for the application and its seven deploy tools, the builder stage whose sprite build, env collection and yarn build carried the Next production build and its own type check, and the runner stage, producing sha256:9bb89f7f7f4e35a6b0a9989276c67a90828b3f5d886f944c88ec39277811fecc at 788 MB tagged explorer-frontend-gate:50ad0f4af, kept local and never pushed. The build also printed two LegacyKeyValueFormat advisories for the ENV lines 81 and 213 of the Dockerfile, which the builder does not fail on and which no task of these two waves touches. The run finished after task 7.1 reached its time bound, so this record was appended in a second commit beside the three the first one carried."
+
+[observation.8.3.1]
+task = "8.3"
+file = "explorer/frontend/ui/shared/Page/PageTitle.tsx"
+symbol = "mobile-layout"
+observed = "At 375 the before pass found no page whose document scroll width passed the viewport, so the damage sat inside the pages: the title rows cut the identifier of the address and the two token pages and let the identicon sit over the heading, the block timestamp value ended in a clipped time zone, and the mobile rows of the transactions, blocks, tokens, top accounts and kernel lists ran flush into the right border of the card body."
+assumption = "The after pass over the same pages leaves every document scroll width at 375 and nothing wider than its box but loading skeletons, the deliberately full-bleed action bar and the dev-only query devtools button, and the detail timestamp still ends in an ellipsis because it is the repo truncation primitive doing its own job."
+severity = "note"
+
+[observation.8.3.2]
+task = "8.3"
+file = "explorer/frontend/yarn.lock"
+symbol = "lodash-es"
+observed = "The lock resolves lodash-es@^4.17.21 to 4.17.22, whose published tarball carries 542 files against the 650 of 4.17.21 and leaves roughly a hundred internal modules such as _baseGet.js out, so any bundler pass over the frontend fails to resolve them; the cache entry for that version is short the same files and the failure reproduces with every change of this task reverted."
+assumption = "The lane restores the missing files inside node_modules from the 4.17.21 cache entry to let the gate run, and the lock stays exactly as written because pinning it back is a dependency decision no layout task owns."
+severity = "blocker"
+
+[observation.8.3.3]
+task = "8.3"
+file = "explorer/frontend/ui/tx/TxSubHeading.tsx"
+symbol = "PrevNext"
+observed = "The before measurement pass addressed the transaction page with a hash the dev backend had already dropped, so that page and the two beside it answered blank in the light leg, and the dark leg of that pass rendered light because the appearance was seeded through localStorage, which next-themes had already overwritten by the time the page settled."
+assumption = "The after pass picks a hash the backend still serves and sets the dark class on the document element once the page has settled, so the before evidence for those pages is the dark leg alone and the after evidence carries both appearances."
+severity = "note"
+
+[observation.8.3.4]
+task = "8.3"
+file = "explorer/frontend/playwright"
+symbol = "__screenshots__"
+observed = "Detail values, title rows and card footers now wrap instead of clipping under md, which moves every pixel below them in the mobile Playwright baselines the repo keeps under __screenshots__, and this task may not touch those files."
+assumption = "The stale baselines are a release-time refresh for whoever runs the Playwright matrix on the merged wave, not a task-level gate, so the lane leaves them exactly as recorded."
+severity = "note"
+
+[observation.8.3.5]
+task = "8.3"
+file = "explorer/frontend/ui/home/LatestBlocksItem.tsx"
+symbol = "LatestBlocksItem"
+observed = "At 375 the home Latest blocks rows lay their columns out at fixed widths, so the block hash runs under the value chip and past the right border of the card body while the transactions rows beside it stay inside it."
+assumption = "The file belongs to task 8.1, which owns the home real-time feed, so this task records the finding and leaves the row exactly as written."
+severity = "note"
+
+[observation.8.3.6]
+task = "8.3"
+file = "explorer/frontend/ui/shared/scan/ScanSectionTabs.tsx"
+symbol = "ScanSectionTabs"
+observed = "The address page tab strip is wider than 375 and its last tabs sit past the viewport, and the strip scrolls sideways inside itself rather than widening the page, so the document scroll width still matches the viewport."
+assumption = "The tab strip belongs to task 8.2, which owns the pill and chip sizing, so this task records the finding and leaves the strip exactly as written."
+severity = "note"
+
+[observation.8.3.7]
+task = "8.3"
+file = "explorer/frontend/ui/txs/TxsTable.spec.tsx"
+symbol = "fontfaceobserver"
+observed = "At tree db03290c60c8eece2868feb27f82f13239117a82 over lane head 50ad0f4afcd1ec6974fe09f6db272ace49b186dd the task verify_cmd exits 1, log explorer/frontend/.logs/verify-8.3-run2.log: the type check passes over the project and the vitest leg passes 80 of 80 spec files and 395 of 395 tests, and the exit comes from 29 unhandled ReferenceError: document is not defined raised on a fontfaceobserver timer after the jsdom environment of TxsTable, TxSubHeading, TxsTableItem and TokensTableItem is torn down."
+assumption = "These are the same teardown errors observation.7.1.2 already records at this revision, none of them failing a test and none of them raised by a spec this task owns, so the task leaves the specs and the runner exactly as written rather than silencing the runner to reach exit 0."
+severity = "blocker"
+note = "Closed by task 8.5: the vitest setup now fills the font-face set jsdom leaves out, so the observer settles on its first attempt and starts no timer, and at base revision d83276386c479a0acbfd9ec2d4b3804afbaabd4b the same command exits 0 with 80 spec files and 395 tests passing and no unhandled error, log explorer/frontend/.logs/verify-8.3-run3.log."

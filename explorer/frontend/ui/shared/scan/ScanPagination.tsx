@@ -36,7 +36,17 @@ const ScanPagination = (props: ScanPaginationProps) => {
   const isFirstPage = page === 1;
 
   return (
-    <Flex as="nav" alignItems="center" columnGap={ 1 } data-scan-pagination { ...rest }>
+    <Flex
+      as="nav"
+      alignItems="center"
+      flexWrap="wrap"
+      columnGap={ 1 }
+      rowGap={ 1 }
+      minW={ 0 }
+      data-scan-pagination
+      data-wrap-row
+      { ...rest }
+    >
       <Button
         variant="scan_control"
         size="sm"

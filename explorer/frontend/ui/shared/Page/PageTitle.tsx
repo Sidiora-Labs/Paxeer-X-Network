@@ -1,4 +1,4 @@
-import { Flex, chakra } from '@chakra-ui/react';
+import { Box, Flex, chakra } from '@chakra-ui/react';
 import { debounce } from 'es-toolkit';
 import React from 'react';
 
@@ -76,7 +76,16 @@ const PageTitle = ({ title, contentAfter, withTextAd, className, isLoading = fal
         columnGap={ 3 }
         alignItems="center"
       >
-        <Flex h={{ base: 'auto', lg: isLoading ? 10 : 'auto' }} maxW="100%" alignItems="center">
+        <Flex
+          h={{ base: 'auto', lg: isLoading ? 10 : 'auto' }}
+          maxW="100%"
+          minW={ 0 }
+          alignItems="center"
+          flexWrap="wrap"
+          columnGap={ 2 }
+          rowGap={ 2 }
+          data-title-row
+        >
           { beforeTitle }
           <Skeleton
             loading={ isLoading }
@@ -112,13 +121,29 @@ const PageTitle = ({ title, contentAfter, withTextAd, className, isLoading = fal
               </Heading>
             </Tooltip>
           </Skeleton>
-          { afterTitle }
+          { afterTitle && (
+            <Box minW={ 0 } maxW="100%" flexBasis={{ base: '100%', lg: 'auto' }} data-title-after>
+              { afterTitle }
+            </Box>
+          ) }
         </Flex>
         { contentAfter }
         { withTextAd && <TextAd order={{ base: -1, lg: 100 }} mb={{ base: 6, lg: 0 }} ml="auto" w={{ base: '100%', lg: 'auto' }}/> }
       </Flex>
       { secondRow && (
-        <Skeleton loading={ isLoading } alignItems="center" minH={ 10 } overflow="hidden" display="flex" _empty={{ display: 'none' }}>
+        <Skeleton
+          loading={ isLoading }
+          alignItems="center"
+          minH={ 10 }
+          overflow="hidden"
+          display="flex"
+          flexWrap={{ base: 'wrap', lg: 'nowrap' }}
+          rowGap={ 2 }
+          minW={ 0 }
+          maxW="100%"
+          data-title-second-row
+          _empty={{ display: 'none' }}
+        >
           { secondRow }
         </Skeleton>
       ) }
