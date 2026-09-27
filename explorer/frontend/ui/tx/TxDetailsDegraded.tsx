@@ -104,7 +104,7 @@ const TxDetailsDegraded = ({ hash, txQuery }: Props) => {
         <TestnetWarning isLoading={ query.isPlaceholderData }/>
         { originalError?.status !== 404 && <ServiceDegradationWarning isLoading={ query.isPlaceholderData }/> }
       </Flex>
-      <TxInfo data={ query.data } isLoading={ query.isPlaceholderData } noTxActions/>
+      <TxInfo data={ query.data } isLoading={ query.isPlaceholderData }/>
     </>
   );
 };

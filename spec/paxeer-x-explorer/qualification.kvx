@@ -513,3 +513,35 @@ symbol = "test-ratio"
 observed = "The task ships nine source files but its touches list names only four specs, while tools/explorer/test-ratio.sh fails a range whose changed source files outnumber the changed tests that reference them."
 assumption = "The gate governs, so five further specs - AddressInternalTxs, AddressTokens, AddressContract, AddressCoinBalance and AddressCsvExportLink - are added beside their own sources, which no other wave-6 task touches."
 severity = "note"
+
+[observation.6.3.1]
+task = "6.3"
+file = "spec/paxeer-x-explorer/spec.kvx"
+symbol = "task.6.3.do_4"
+observed = "do_4 names explorer/frontend/ui/tx/details/TxDetailsGasPrice.tsx among the rows that move behind the More Details expander, while req 20.2 lists the gas price as the last row of the overview detail card and reference/7.png shows it there; the two cannot both hold for one row."
+assumption = "The acceptance criterion and the reference screenshot are the authority over the task step, so the gas price stays in the overview and TxDetailsOther, TxDetailsGasUsage, TxDetailsFeePerGas and TxDetailsBurntFees move into the expander; the step's wording is left for an owner ruling."
+severity = "note"
+
+[observation.6.3.2]
+task = "6.3"
+file = "explorer/frontend/types/api/transaction.ts"
+symbol = "Transaction"
+observed = "req 20.1 asks the logs section tab to carry its count, but the transaction resource carries no logs count: the type has no logs_count field, only the address and user-operation resources declare one, and the logs list resource pages without a total."
+assumption = "Counting the logs would need a second request per page or a new backend field, which is outside this task, so the logs tab is rendered without a count and the missing field is recorded for the backend to supply."
+severity = "suspect"
+
+[observation.6.3.3]
+task = "6.3"
+file = "explorer/frontend/ui/tx/details/TxDetailsTxFee.spec.tsx"
+symbol = "TxDetailsTxFee"
+observed = "One run of the task verify_cmd exited 1 on this untouched spec: its first grouped-fees case exceeded the 5000 ms per-test timeout while the run reported 78 to 89 seconds of module import time; the same command passed the case on the runs before and after it."
+assumption = "The timeout is read as contention on a shared machine rather than a defect of this spec or of the components this task changed, so it is recorded once and not chased."
+severity = "note"
+
+[observation.6.3.4]
+task = "6.3"
+file = "tools/explorer/test-ratio.sh"
+symbol = "test-ratio"
+observed = "This task changes eleven frontend source files but task.6.3.touches and do_9 name exactly five vitest specs, so the ratio rule that every changed source needs a changed test and counted_tests must reach source_count cannot be met from inside the task."
+assumption = "Widening the file set would take the task outside its declared touches, so the five specs named by do_9 are written and the ratio is left to the wave-level gate on the merged wave revision."
+severity = "suspect"

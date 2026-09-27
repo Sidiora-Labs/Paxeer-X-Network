@@ -5,11 +5,11 @@ import type { Log } from 'types/api/log';
 
 import { LOG } from 'stubs/log';
 import { generateListStub } from 'stubs/utils';
-import ActionBar from 'ui/shared/ActionBar';
 import DataFetchAlert from 'ui/shared/DataFetchAlert';
 import LogItem from 'ui/shared/logs/LogItem';
 import Pagination from 'ui/shared/pagination/Pagination';
 import useQueryWithPages from 'ui/shared/pagination/useQueryWithPages';
+import { formatScanTableCount, ScanTableCard } from 'ui/shared/scan';
 import TxPendingAlert from 'ui/tx/TxPendingAlert';
 import TxSocketAlert from 'ui/tx/TxSocketAlert';
 
@@ -53,22 +53,27 @@ const TxLogs = ({ txQuery, logsFilter }: Props) => {
   }
 
   return (
-    <Box>
-      { pagination.isVisible && (
-        <ActionBar mt={ -6 }>
-          <Pagination ml="auto" { ...pagination }/>
-        </ActionBar>
-      ) }
-      { items.map((item, index) => (
-        <LogItem
-          key={ index }
-          { ...item }
-          type="transaction"
-          isLoading={ isPlaceholderData }
-          defaultDataType={ txQuery.data?.zilliqa?.is_scilla ? 'UTF-8' : undefined }
-        />
-      )) }
-    </Box>
+    <ScanTableCard
+      title="Transaction receipt event logs"
+      note={ formatScanTableCount({
+        kind: pagination.isVisible ? 'more_than' : 'total',
+        value: items.length,
+        itemsName: items.length === 1 ? 'log' : 'logs',
+      }) }
+      pagination={ pagination.isVisible ? <Pagination { ...pagination }/> : null }
+    >
+      <Box px={ 4 } pb={ 2 }>
+        { items.map((item, index) => (
+          <LogItem
+            key={ index }
+            { ...item }
+            type="transaction"
+            isLoading={ isPlaceholderData }
+            defaultDataType={ txQuery.data?.zilliqa?.is_scilla ? 'UTF-8' : undefined }
+          />
+        )) }
+      </Box>
+    </ScanTableCard>
   );
 };
 

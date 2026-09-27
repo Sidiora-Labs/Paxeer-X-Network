@@ -1,11 +1,15 @@
-import { Box, Flex } from '@chakra-ui/react';
+import { Flex } from '@chakra-ui/react';
+import { useRouter } from 'next/router';
 import React from 'react';
 
 import type { AddressParam } from 'types/api/addressParams';
 
+import { route, routeParams } from 'nextjs/routes';
+
 import config from 'configs/app';
 import useApiQuery from 'lib/api/useApiQuery';
 import { useMultichainContext } from 'lib/contexts/multichain';
+import { publicClient } from 'lib/web3/client';
 import { NOVES_TRANSLATE } from 'stubs/noves/NovesTranslate';
 import { TX_INTERPRETATION } from 'stubs/txInterpretation';
 import { Link } from 'toolkit/chakra/link';
@@ -14,19 +18,47 @@ import AppActionButton from 'ui/shared/AppActionButton/AppActionButton';
 import useAppActionData from 'ui/shared/AppActionButton/useAppActionData';
 import { TX_ACTIONS_BLOCK_ID } from 'ui/shared/DetailedInfo/DetailedInfoActionsWrapper';
 import TxEntity from 'ui/shared/entities/tx/TxEntity';
+import IconSvg from 'ui/shared/IconSvg';
 import NetworkExplorers from 'ui/shared/NetworkExplorers';
+import PageTitle from 'ui/shared/Page/PageTitle';
+import PrevNext from 'ui/shared/PrevNext';
 import TxInterpretation from 'ui/shared/tx/interpretation/TxInterpretation';
 
 import { createNovesSummaryObject } from './assetFlows/utils/createNovesSummaryObject';
 import type { TxQuery } from './useTxQuery';
 
+const apiDocsFeature = config.features.apiDocs;
+
+export const TxApiEntry = () => {
+  if (!apiDocsFeature.isEnabled) {
+    return null;
+  }
+
+  return (
+    <Link
+      href={ route({ pathname: '/api-docs' }) }
+      display="inline-flex"
+      alignItems="center"
+      columnGap={ 1 }
+      textStyle="sm"
+      fontWeight="500"
+      data-tx-api-entry
+    >
+      <IconSvg name="API" boxSize={ 4 }/>
+      <span>API</span>
+    </Link>
+  );
+};
+
 type Props = {
   hash: string;
   hasTag: boolean;
   txQuery: TxQuery;
+  titleContentAfter?: React.ReactNode;
 };
 
-const TxSubHeading = ({ hash, hasTag, txQuery }: Props) => {
+const TxSubHeading = ({ hash, hasTag, txQuery, titleContentAfter }: Props) => {
+  const router = useRouter();
   const multichainContext = useMultichainContext();
   const feature = multichainContext?.chain?.app_config.features.txInterpretation || config.features.txInterpretation;
 
@@ -66,6 +98,32 @@ const TxSubHeading = ({ hash, hasTag, txQuery }: Props) => {
     .forEach(data => {
       addressDataMap[data.hash] = data;
     });
+
+  // A transaction's neighbours are the transactions beside it in its own block, so the previous and
+  // the next control resolve the hash at the neighbouring index through the node the frontend
+  // already reads for the degraded view, then open that transaction's page.
+  const blockNumber = txQuery.data?.block_number ?? null;
+  const position = txQuery.data?.position ?? null;
+  const hasNeighbours = Boolean(publicClient) && blockNumber !== null && position !== null && !txQuery.isPlaceholderData;
+
+  const handlePrevNextClick = React.useCallback((direction: 'prev' | 'next') => {
+    if (!publicClient || blockNumber === null || position === null) {
+      return;
+    }
+
+    const index = direction === 'next' ? position + 1 : position - 1;
+
+    if (index < 0) {
+      return;
+    }
+
+    publicClient
+      .getTransaction({ blockNumber: BigInt(blockNumber), index })
+      .then((neighbour) => router.push(
+        routeParams({ pathname: '/tx/[hash]', query: { hash: neighbour.hash } }, { chain: multichainContext?.chain }),
+      ))
+      .catch(() => undefined);
+  }, [ blockNumber, position, router, multichainContext ]);
 
   const content = (() => {
     if (hasNovesInterpretation && novesInterpretationQuery.data) {
@@ -131,8 +189,8 @@ const TxSubHeading = ({ hash, hasTag, txQuery }: Props) => {
     (hasNovesInterpretation && novesInterpretationQuery.isPlaceholderData) ||
     (hasInternalInterpretation && txInterpretationQuery.isPlaceholderData);
 
-  return (
-    <Box display={{ base: 'block', lg: 'flex' }} alignItems="center" w="100%">
+  const secondRow = (
+    <Flex display={{ base: 'block', lg: 'flex' }} alignItems="center" w="100%" data-tx-sub-heading>
       { content }
       <Flex
         alignItems="center"
@@ -147,7 +205,26 @@ const TxSubHeading = ({ hash, hasTag, txQuery }: Props) => {
         ) }
         <NetworkExplorers type="tx" pathParam={ hash } ml="auto"/>
       </Flex>
-    </Box>
+    </Flex>
+  );
+
+  return (
+    <PageTitle
+      title="Transaction details"
+      afterTitle={ (
+        <PrevNext
+          ml={ 3 }
+          onClick={ handlePrevNextClick }
+          prevLabel="View previous transaction of this block"
+          nextLabel="View next transaction of this block"
+          isPrevDisabled={ !hasNeighbours || position === 0 }
+          isNextDisabled={ !hasNeighbours }
+          isLoading={ txQuery.isPlaceholderData }
+        />
+      ) }
+      contentAfter={ titleContentAfter }
+      secondRow={ secondRow }
+    />
   );
 };
 

@@ -949,7 +949,7 @@ reqs = ["19.1","19.2","19.3","19.6","19.7","19.8","19.9"]
 
 [task.6.3]
 title = "Rebuild the transaction details page"
-status = "pending"
+status = "done"
 wave = 6
 requires = ["5.1","5.2"]
 do_1 = "Rebuild explorer/frontend/ui/tx/TxSubHeading.tsx as the page title carrying the previous and next controls through the shared previous-next component, with the API entry beside the shared pill section tabs for the overview and the logs with their count."
@@ -965,6 +965,10 @@ verify_cmd = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --
 symbols = ["TxSubHeading","TxDetails","TxInfo","TxDetailsActions","Transaction"]
 touches = ["explorer/frontend/ui/tx/TxSubHeading.tsx","explorer/frontend/ui/tx/TxSubHeading.spec.tsx","explorer/frontend/ui/tx/TxDetails.tsx","explorer/frontend/ui/tx/TxDetails.spec.tsx","explorer/frontend/ui/tx/TxDetailsDegraded.tsx","explorer/frontend/ui/tx/TxLogs.tsx","explorer/frontend/ui/tx/TxInternals.tsx","explorer/frontend/ui/tx/TxRawTrace.tsx","explorer/frontend/ui/tx/TxState.tsx","explorer/frontend/ui/tx/details/TxInfo.tsx","explorer/frontend/ui/tx/details/TxInfo.spec.tsx","explorer/frontend/ui/tx/details/TxDetailsOther.tsx","explorer/frontend/ui/tx/details/TxDetailsGasPrice.tsx","explorer/frontend/ui/tx/details/TxDetailsGasUsage.tsx","explorer/frontend/ui/tx/details/TxDetailsFeePerGas.tsx","explorer/frontend/ui/tx/details/TxDetailsBurntFees.tsx","explorer/frontend/ui/tx/details/txDetailsActions/TxDetailsActions.tsx","explorer/frontend/ui/tx/details/txDetailsActions/TxDetailsActions.spec.tsx","explorer/frontend/ui/tx/details/txDetailsActions/TxDetailsAction.tsx","explorer/frontend/ui/tx/details/txDetailsActions/TxDetailsActionsInterpretation.tsx","explorer/frontend/ui/tx/details/txDetailsActions/TxDetailsActionsRaw.tsx","explorer/frontend/ui/pages/Transaction.tsx","explorer/frontend/ui/pages/Transaction.spec.tsx"]
 reqs = ["20.1","20.2","20.3","20.6","20.7","20.8","20.9"]
+done_revision = "1736b1cb002a1b4431a1c62fb52fca2806d29e57"
+done_command = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/tx/ ui/pages/Transaction.'"
+done_exit_code = 0
+done_log = ".logs/verify-6.3.log"
 
 [task.6.4]
 title = "Rebuild the block details page"
