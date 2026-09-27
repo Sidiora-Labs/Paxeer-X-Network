@@ -1,12 +1,16 @@
-import { Box } from '@chakra-ui/react';
+import { Box, Flex } from '@chakra-ui/react';
 import React from 'react';
 
+import { route } from 'nextjs/routes';
+
+import useIsMobile from 'lib/hooks/useIsMobile';
 import useIsMounted from 'lib/hooks/useIsMounted';
+import { Link } from 'toolkit/chakra/link';
 import InternalTxsList from 'ui/internalTxs/InternalTxsList';
 import InternalTxsTable from 'ui/internalTxs/InternalTxsTable';
-import ActionBar from 'ui/shared/ActionBar';
 import DataListDisplay from 'ui/shared/DataListDisplay';
 import Pagination from 'ui/shared/pagination/Pagination';
+import { formatScanTableCount, ScanDirectionBadge, ScanTableCard } from 'ui/shared/scan';
 
 import AddressCsvExportLink from './AddressCsvExportLink';
 import AddressTxsFilter from './AddressTxsFilter';
@@ -15,9 +19,12 @@ import useAddressInternalTxsQuery from './useAddressInternalTxsQuery';
 type Props = {
   shouldRender?: boolean;
   isQueryEnabled?: boolean;
+  internalTxsCount?: number;
 };
-const AddressInternalTxs = ({ shouldRender = true, isQueryEnabled = true }: Props) => {
+
+const AddressInternalTxs = ({ shouldRender = true, isQueryEnabled = true, internalTxsCount }: Props) => {
   const isMounted = useIsMounted();
+  const isMobile = useIsMobile();
 
   const { hash, query, filterValue, onFilterChange } = useAddressInternalTxsQuery({ enabled: isQueryEnabled });
   const { data, isPlaceholderData, isError, pagination } = query;
@@ -37,37 +44,79 @@ const AddressInternalTxs = ({ shouldRender = true, isQueryEnabled = true }: Prop
     </>
   ) : null ;
 
-  const actionBar = (
-    <ActionBar mt={ -6 } justifyContent="left">
+  const itemsNum = data?.items.length;
+  const title = formatScanTableCount(
+    internalTxsCount !== undefined && itemsNum !== undefined && itemsNum < internalTxsCount ?
+      { kind: 'latest', value: internalTxsCount, itemsName: 'internal transactions', shownValue: itemsNum } :
+      { kind: 'total', value: internalTxsCount ?? itemsNum ?? 0, itemsName: 'internal transactions' },
+  );
+
+  const actions = (
+    <>
       <AddressTxsFilter
         initialValue={ filterValue }
         onFilterChange={ onFilterChange }
         hasActiveFilter={ Boolean(filterValue) }
         isLoading={ pagination.isLoading }
       />
-      <AddressCsvExportLink
-        address={ hash }
-        isLoading={ pagination.isLoading }
-        params={{ type: 'internal-transactions', filterType: 'address', filterValue }}
-        ml={{ base: 2, lg: 'auto' }}
-      />
-      <Pagination ml={{ base: 'auto', lg: 8 }} { ...pagination }/>
-    </ActionBar>
+      { filterValue && <ScanDirectionBadge direction={ filterValue === 'from' ? 'out' : 'in' }/> }
+      { !isMobile && (
+        <AddressCsvExportLink
+          address={ hash }
+          label="Download Page Data"
+          isLoading={ pagination.isLoading }
+          params={{ type: 'internal-transactions', filterType: 'address', filterValue }}
+        />
+      ) }
+    </>
+  );
+
+  const viewAllRow = (
+    <Flex
+      data-view-all
+      justifyContent="center"
+      alignItems="center"
+      px={ 4 }
+      py={ 3 }
+      borderTopWidth="1px"
+      borderStyle="solid"
+      borderColor="border.divider"
+    >
+      <Link href={ route({ pathname: '/internal-txs' }) } textStyle="xs" fontWeight="500" textTransform="uppercase">
+        View all internal transactions →
+      </Link>
+    </Flex>
   );
 
   return (
-    <DataListDisplay
-      isError={ isError }
-      itemsNum={ data?.items.length }
-      hasActiveFilters={ Boolean(filterValue) }
-      emptyStateProps={{
-        term: 'transaction',
-      }}
-      emptyText="There are no internal transactions for this address."
-      actionBar={ actionBar }
-    >
-      { content }
-    </DataListDisplay>
+    <>
+      <ScanTableCard
+        title={ title }
+        actions={ actions }
+        pagination={ <Pagination { ...pagination }/> }
+      >
+        <DataListDisplay
+          isError={ isError }
+          itemsNum={ itemsNum }
+          hasActiveFilters={ Boolean(filterValue) }
+          emptyStateProps={{
+            term: 'transaction',
+          }}
+          emptyText="There are no internal transactions for this address."
+        >
+          { content }
+        </DataListDisplay>
+        { viewAllRow }
+      </ScanTableCard>
+      <Flex justifyContent="flex-end" mt={ 3 }>
+        <AddressCsvExportLink
+          address={ hash }
+          label="CSV Export"
+          isLoading={ pagination.isLoading }
+          params={{ type: 'internal-transactions', filterType: 'address', filterValue }}
+        />
+      </Flex>
+    </>
   );
 };
 

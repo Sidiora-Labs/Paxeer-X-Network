@@ -991,7 +991,7 @@ log = ".logs/verify-6.4.log"
 
 [task.6.5]
 title = "Rebuild the address page"
-status = "pending"
+status = "done"
 wave = 6
 requires = ["5.1","5.2"]
 do_1 = "Rebuild the address title row in explorer/frontend/ui/pages/Address.tsx and explorer/frontend/ui/address/details/AddressQrCode.tsx as the identicon, the label Address, the full address, the copy control and the QR control, with the watchlist, API and menu entries in an icon action row beneath it through explorer/frontend/ui/address/details/AddressFavoriteButton.tsx."
@@ -1007,6 +1007,10 @@ verify_cmd = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --
 symbols = ["AddressDetails","AddressTxs","AddressTokenTransfers","AddressCsvExportLink","Address"]
 touches = ["explorer/frontend/ui/address/AddressDetails.tsx","explorer/frontend/ui/address/AddressDetails.spec.tsx","explorer/frontend/ui/address/AddressTxs.tsx","explorer/frontend/ui/address/AddressTxs.spec.tsx","explorer/frontend/ui/address/AddressInternalTxs.tsx","explorer/frontend/ui/address/AddressTokenTransfers.tsx","explorer/frontend/ui/address/AddressTokenTransfers.spec.tsx","explorer/frontend/ui/address/AddressTokens.tsx","explorer/frontend/ui/address/AddressContract.tsx","explorer/frontend/ui/address/AddressCoinBalance.tsx","explorer/frontend/ui/address/AddressCsvExportLink.tsx","explorer/frontend/ui/address/AddressAdvancedFilterLink.tsx","explorer/frontend/ui/address/details/AddressBalance.tsx","explorer/frontend/ui/address/details/AddressNetWorth.tsx","explorer/frontend/ui/address/details/AddressNameInfo.tsx","explorer/frontend/ui/address/details/AddressCounterItem.tsx","explorer/frontend/ui/address/details/AddressImplementations.tsx","explorer/frontend/ui/address/details/AddressQrCode.tsx","explorer/frontend/ui/address/details/AddressFavoriteButton.tsx","explorer/frontend/ui/pages/Address.tsx","explorer/frontend/ui/pages/Address.spec.tsx"]
 reqs = ["21.1","21.2","21.3","21.6","21.7","21.8","21.9"]
+done_revision = "1736b1cb002a1b4431a1c62fb52fca2806d29e57"
+done_command = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/address/ ui/pages/Address.'"
+done_exit_code = 0
+done_log = "logs/6.5-verify.log"
 
 [task.6.6]
 title = "Rebuild the token and token instance pages"

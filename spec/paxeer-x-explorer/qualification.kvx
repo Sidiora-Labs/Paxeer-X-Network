@@ -489,3 +489,27 @@ environment = "linux/x86_64, the pinned builder image explorer-elixir-builder:v1
 outcome = "pass"
 evidence = ".logs/wave-gate-3.1-run3.log"
 note = "The gate ran once within its twenty-minute wrap and exited 0 with every leg passing in order: the four per-application backend legs, block_scout_web 47 tests, ethereum_jsonrpc 25, explorer 113 and indexer 46, 0 failures and nothing excluded or skipped in any of them, then the frontend dependency leg, the frontend type check with no diagnostic over the project, and the frontend vitest suite at 38 files and 330 tests passed with nothing skipped. This is the first run of this command to reach the three frontend legs, which the cold first run and the out-of-space run could not; the counts of the explorer and vitest legs are two tests and one file above the earlier per-leg records, which is the capabilities boot suite and the rewards fixture spec this revision adds. Task 3.1 keeps the status and evidence it already carries."
+
+[observation.6.5.1]
+task = "6.5"
+file = "explorer/frontend/ui/address/AddressTxs.tsx"
+symbol = "ScanDirectionBadge"
+observed = "do_4 asks for the shared direction badge on the counterparty column, but that column is rendered by ui/shared/address/AddressFromTo.tsx, ui/shared/address/AddressFromToIcon.tsx, ui/txs/TxsTableItem.tsx and ui/txs/TxsListItem.tsx, none of which task 6.5 may touch, so the badge is rendered once in the table-card header for the direction the list is filtered by instead."
+assumption = "The per-row marker belongs to the txs list rebuild that owns those files, and putting it there from this task would collide with that work, so the column is left exactly as it is."
+severity = "note"
+
+[observation.6.5.2]
+task = "6.5"
+file = "explorer/frontend/ui/address/AddressDetails.tsx"
+symbol = "AddressDetails"
+observed = "do_2 asks the more-information card to carry the latest and the first transaction sent, but neither general:address nor general:address_counters returns a timestamp for either, and no other path the frontend already calls exposes one."
+assumption = "The two rows need a backend field that does not exist yet, so the card carries the counters, the last balance update and the funding source it can source honestly and nothing is invented for the two timestamps."
+severity = "blocker"
+
+[observation.6.5.3]
+task = "6.5"
+file = "explorer/frontend/ui/address/AddressCoinBalance.spec.tsx"
+symbol = "test-ratio"
+observed = "The task ships nine source files but its touches list names only four specs, while tools/explorer/test-ratio.sh fails a range whose changed source files outnumber the changed tests that reference them."
+assumption = "The gate governs, so five further specs - AddressInternalTxs, AddressTokens, AddressContract, AddressCoinBalance and AddressCsvExportLink - are added beside their own sources, which no other wave-6 task touches."
+severity = "note"

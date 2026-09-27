@@ -20,9 +20,10 @@ interface Props {
   className?: string;
   isLoading?: boolean;
   chainData?: ClusterChainConfig;
+  label?: string;
 }
 
-const AddressCsvExportLink = ({ className, address, params, isLoading, chainData }: Props) => {
+const AddressCsvExportLink = ({ className, address, params, isLoading, chainData, label = 'Download' }: Props) => {
   const isMobile = useIsMobile();
   const isInitialLoading = useIsInitialLoading(isLoading);
   const multichainContext = useMultichainContext();
@@ -46,7 +47,7 @@ const AddressCsvExportLink = ({ className, address, params, isLoading, chainData
         textStyle="sm"
       >
         <IconSvg name="files/csv" boxSize={ 5 }/>
-        <chakra.span ml={ 1 } hideBelow="lg">Download</chakra.span>
+        <chakra.span ml={ 1 } hideBelow="lg" data-csv-export-label>{ label }</chakra.span>
       </Link>
     </Tooltip>
   );
