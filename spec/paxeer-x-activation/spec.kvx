@@ -148,3 +148,29 @@ verify_cmd = "timeout 40m sh -c 'go build ./node/... ./modules/evm/... ./daemon/
 symbols = ["activation-gates"]
 touches = ["spec/paxeer-x-activation/qualification.kvx"]
 reqs = ["1.1","1.2","1.3","1.5","1.6","1.7","1.8","1.9","1.10"]
+
+[task.3]
+section = "Wave 3 - Running The New Binary Before The Fork"
+title = "Let the activation binary run on a state that predates the fork"
+status = "pending"
+
+[task.3.1]
+title = "Serve a mounted store the state-commitment database does not carry yet"
+status = "done"
+wave = 3
+requires = []
+do_1 = "In storage/state_db/sc/composite record the mount list Initialize is given and resolve, after every load and every applied set of tree upgrades, which mounted names the memiavl database carries no tree for: a name is pending only when the caller mounted it, it is a member of keys.MemIAVLStoreKeys and memiavl holds no tree for it, and only while memiavl is the single backend, because once flatkv participates a missing memiavl tree no longer proves the store is absent."
+do_2 = "Serve a pending name from GetChildStoreByName instead of panicking, through a view that reads exactly as the absent store reads through the router - nothing found, an empty range, a root hash that fails closed - and whose writes are held on the composite store for the block that made them rather than routed to a backend."
+do_3 = "Hold every change set aimed at a pending store out of the batch ApplyChangeSets routes, return the batch unchanged when nothing is pending, and discard the held writes in Commit once both backends have committed, so a pending store contributes nothing to the commit info, the root hash or the working hash and the persisted state is byte for byte what a binary without the store mounted leaves."
+do_4 = "Propagate the mount list and the resolved pending set to the read-only handle LoadVersion returns and to the in-memory snapshot Copy returns, so a historical query and a snapshot-backed cache multistore serve a pending store rather than panicking on it."
+do_5 = "In sdk/storev2/rootmulti keep the change sets aimed at a pending store out of the batch handed to the versioned state store, asking the state-commitment store which names are pending through an interface it may or may not implement, returning the batch unchanged when nothing is pending and still advancing the state store's watermark when the whole batch was pending."
+do_6 = "Write the tests in the composite package against the real store: a state committed with the legacy mount list loads under a mount list carrying one extra canonical key and reports it pending and empty; a canonical key nobody mounted and a name outside the canonical list still panic; the same block written twice over the same state, once without the extra store and once with a write aimed at it, produces the same working commit info, the same version, the same commit info and the same state on disk; and a load whose tree upgrades add the key creates the tree, ends the pending state, persists a write across a commit and a reload and adds the store's entry to the commit info."
+verify_cmd = "go test ./storage/state_db/sc/... -run 'Pending' -count=1"
+symbols = ["pendingStore","refreshPendingStores","IsPendingStore","PendingStores","holdPendingChangeSets","holdPendingWrite","discardPendingWrites","HeldPendingWrites","withoutPendingStores"]
+touches = ["storage/state_db/sc/composite/pending_store.go","storage/state_db/sc/composite/store.go","storage/state_db/sc/composite/pending_store_test.go","sdk/storev2/rootmulti/store.go"]
+tests = ["storage/state_db/sc/composite/pending_store_test.go"]
+reqs = ["1.5","1.6","1.7","1.8"]
+done_revision = "1cfe5b9c5e619957bfbd6279bc05a547d01aefda"
+done_command = "go test ./storage/state_db/sc/... -run 'Pending' -count=1"
+done_exit_code = 0
+done_log = ".logs/xa-3.1-verify.log"

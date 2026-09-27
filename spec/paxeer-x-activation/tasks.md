@@ -33,13 +33,26 @@
     - Rerun nothing that already passed at this revision, spawn no review of a task whose verify_cmd passed, and write no gate record for a command that did not run.
     - _Requirements: 1.1, 1.2, 1.3, 1.5, 1.6, 1.7, 1.8, 1.9, 1.10_
 
+## Wave 3 - Running The New Binary Before The Fork
+
+- [ ] 3. Let the activation binary run on a state that predates the fork
+  - [x] 3.1 Serve a mounted store the state-commitment database does not carry yet
+    - In storage/state_db/sc/composite record the mount list Initialize is given and resolve, after every load and every applied set of tree upgrades, which mounted names the memiavl database carries no tree for: a name is pending only when the caller mounted it, it is a member of keys.MemIAVLStoreKeys and memiavl holds no tree for it, and only while memiavl is the single backend, because once flatkv participates a missing memiavl tree no longer proves the store is absent.
+    - Serve a pending name from GetChildStoreByName instead of panicking, through a view that reads exactly as the absent store reads through the router - nothing found, an empty range, a root hash that fails closed - and whose writes are held on the composite store for the block that made them rather than routed to a backend.
+    - Hold every change set aimed at a pending store out of the batch ApplyChangeSets routes, return the batch unchanged when nothing is pending, and discard the held writes in Commit once both backends have committed, so a pending store contributes nothing to the commit info, the root hash or the working hash and the persisted state is byte for byte what a binary without the store mounted leaves.
+    - Propagate the mount list and the resolved pending set to the read-only handle LoadVersion returns and to the in-memory snapshot Copy returns, so a historical query and a snapshot-backed cache multistore serve a pending store rather than panicking on it.
+    - In sdk/storev2/rootmulti keep the change sets aimed at a pending store out of the batch handed to the versioned state store, asking the state-commitment store which names are pending through an interface it may or may not implement, returning the batch unchanged when nothing is pending and still advancing the state store's watermark when the whole batch was pending.
+    - Write the tests in the composite package against the real store: a state committed with the legacy mount list loads under a mount list carrying one extra canonical key and reports it pending and empty; a canonical key nobody mounted and a name outside the canonical list still panic; the same block written twice over the same state, once without the extra store and once with a write aimed at it, produces the same working commit info, the same version, the same commit info and the same state on disk; and a load whose tree upgrades add the key creates the tree, ends the pending state, persists a write across a commit and a reload and adds the store's entry to the commit info.
+    - _Requirements: 1.5, 1.6, 1.7, 1.8_
+
 ## Task Dependency Graph
 
 ```json
 {
   "waves": [
     { "id": 1,  "tasks": ["1.1", "1.2"] },
-    { "id": 2,  "tasks": ["2.1"] }
+    { "id": 2,  "tasks": ["2.1"] },
+    { "id": 3,  "tasks": ["3.1"] }
   ]
 }
 ```

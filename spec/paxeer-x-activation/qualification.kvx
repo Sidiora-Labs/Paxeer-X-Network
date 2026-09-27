@@ -138,3 +138,11 @@ revision = "e6ca4545245d81d73c556a0bb377986e397b0c8a"
 command = "tools/chain/upgrade-replay/run.sh"
 exit_code = 0
 log_path = "build/activation-gates/replay.log"
+
+[observation.2.1.4]
+task = "2.1"
+file = "storage/state_db/sc/composite/store.go"
+symbol = "CompositeCommitStore.GetChildStoreByName"
+observed = "revision e6ca45452, command \"paxd start on a pre-fork full node\", exit 2 (panic), log \"operator log, off-repo\": the activation binary panics at store load on pre-fork state because a mounted store the state-commitment database carries no tree for is rejected in MemiavlOnly mode."
+assumption = "Fixed by task 3.1, proven by task 3.2."
+severity = "blocker"

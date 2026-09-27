@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sync"
 	"sync/atomic"
 
 	ics23 "github.com/confio/ics23/go"
@@ -75,6 +76,21 @@ type CompositeCommitStore struct {
 	// and subsequent calls skip the flatkv read. See shouldAppendLatticeHash.
 	latticeAppendLatched atomic.Bool
 
+	// initialStores is the set of child store names the caller mounted,
+	// recorded by Initialize. It is the authority on which names may
+	// become pending: a canonical name nobody mounted is a
+	// misconfiguration and still panics in GetChildStoreByName.
+	initialStores []string
+
+	// pending is the set of mounted store names the state-commitment
+	// database carries no tree for yet, and pendingWrites holds the
+	// current block's writes aimed at them. Both are rebuilt by
+	// refreshPendingStores and guarded by pendingMtx; see pending_store.go
+	// for what a pending store is and why its writes never become state.
+	pending       map[string]struct{}
+	pendingWrites map[string][]*proto.KVPair
+	pendingMtx    sync.RWMutex
+
 	// migrationAdvancedThisCommit gates per-block migration progress
 	// against rootmulti.Store's double-flush pattern. rootmulti calls
 	// flush() once inside GetWorkingHash (whose result is the AppHash
@@ -138,6 +154,7 @@ func (cs *CompositeCommitStore) Initialize(initialStores []string) error {
 	if err := validateInitialStores(cs.config.WriteMode, initialStores); err != nil {
 		return err
 	}
+	cs.initialStores = append([]string(nil), initialStores...)
 	if cs.memIAVL == nil {
 		return nil
 	}
@@ -263,9 +280,11 @@ func (cs *CompositeCommitStore) LoadVersion(targetVersion int64, readOnly bool) 
 			config:  cs.config,
 			ctx:     cs.ctx,
 		}
+		ro.initialStores = cs.initialStores
 		if err := ro.buildRouter(); err != nil {
 			return nil, fmt.Errorf("failed to build router for read-only handle: %w", err)
 		}
+		ro.refreshPendingStores()
 		return ro, nil
 	}
 
@@ -312,6 +331,7 @@ func (cs *CompositeCommitStore) LoadVersion(targetVersion int64, readOnly bool) 
 	if err := cs.buildRouter(); err != nil {
 		return nil, err
 	}
+	cs.refreshPendingStores()
 
 	return cs, nil
 }
@@ -345,6 +365,11 @@ func (cs *CompositeCommitStore) buildRouter() error {
 //     call may advance the boundary; second and later flushes in the same
 //     commit cycle forward writes only.
 func (cs *CompositeCommitStore) ApplyChangeSets(changesets []*proto.NamedChangeSet) error {
+	// A change set aimed at a store the database carries no tree for is held
+	// for this block and never reaches a backend; the rest of the batch is
+	// routed exactly as before.
+	changesets = cs.holdPendingChangeSets(changesets)
+
 	if cs.config.WriteMode.IsMigrationMode() {
 		firstBatchInBlock := !cs.migrationAdvancedThisCommit
 		if err := cs.router.ApplyChangeSets(changesets, firstBatchInBlock); err != nil {
@@ -371,7 +396,14 @@ func (cs *CompositeCommitStore) ApplyUpgrades(upgrades []*proto.TreeNameUpgrade)
 		return nil
 	}
 
-	return cs.memIAVL.ApplyUpgrades(upgrades)
+	if err := cs.memIAVL.ApplyUpgrades(upgrades); err != nil {
+		return err
+	}
+	// An upgrade that adds a tree ends that store's pending state at the
+	// version the tree was created with, and one that deletes a tree begins
+	// it for a name the caller still mounts.
+	cs.refreshPendingStores()
+	return nil
 }
 
 // Commit commits the current state to all active backends
@@ -400,6 +432,10 @@ func (cs *CompositeCommitStore) Commit() (int64, error) {
 	// migrationAdvancedThisCommit for the AppHash continuity invariant
 	// this preserves.
 	cs.migrationAdvancedThisCommit = false
+
+	// The block that held them has landed, so the writes aimed at a store
+	// the database carries no tree for stop existing here.
+	cs.discardPendingWrites()
 
 	if cosmosVersion >= 0 && flatkvVersion >= 0 {
 		if cosmosVersion != flatkvVersion {
@@ -626,7 +662,15 @@ func (cs *CompositeCommitStore) GetChildStoreByName(name string) types.CommitKVS
 			"CompositeCommitStore.GetChildStoreByName: store %q is reserved",
 			name,
 		))
-	} else if cs.config.WriteMode == config.MemiavlOnly {
+	}
+
+	// A store the caller mounted that the database carries no tree for is
+	// served empty until an upgrade adds the tree. See pending_store.go.
+	if cs.IsPendingStore(name) {
+		return cs.newPendingStore(name)
+	}
+
+	if cs.config.WriteMode == config.MemiavlOnly {
 		// In MemiavlOnly mode, check to see if the tree exists. Required to support legacy test apps
 		// that use non-standard store names.
 		if cs.memIAVL.GetChildStoreByName(name) == nil {
@@ -666,10 +710,11 @@ func (cs *CompositeCommitStore) Copy() types.Committer {
 		return nil
 	}
 	snap := &CompositeCommitStore{
-		memIAVL: cosmosCopy,
-		homeDir: cs.homeDir,
-		config:  cs.config,
-		ctx:     cs.ctx,
+		memIAVL:       cosmosCopy,
+		homeDir:       cs.homeDir,
+		config:        cs.config,
+		ctx:           cs.ctx,
+		initialStores: cs.initialStores,
 	}
 	if err := snap.buildRouter(); err != nil {
 		if releaseErr := cosmosCopy.ReleaseSnapshotRefs(); releaseErr != nil {
@@ -679,6 +724,7 @@ func (cs *CompositeCommitStore) Copy() types.Committer {
 		logger.Warn("failed to build router for SC snapshot", "err", err)
 		return nil
 	}
+	snap.refreshPendingStores()
 	return snap
 }
 
@@ -824,6 +870,13 @@ func (cs *CompositeCommitStore) Get(store string, key []byte) (value []byte, ok 
 	}
 	if key == nil {
 		return nil, false, fmt.Errorf("key cannot be nil")
+	}
+
+	// A store the database carries no tree for holds no committed value; the
+	// memiavl reader the router wraps reports the missing tree as a
+	// configuration error, which this is not. See pending_store.go.
+	if cs.IsPendingStore(store) {
+		return nil, false, nil
 	}
 
 	value, ok, err = cs.router.Read(store, key)
