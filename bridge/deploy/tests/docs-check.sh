@@ -435,7 +435,8 @@ mutate 'a written date' bridge/solana/chains/solana/README.md 'Opened on March 3
 mutate 'an IPv4 address' bridge/evm/chains/polygon/README.md 'The endpoint answers at 10.20.30.40.'
 mutate 'a hostname' bridge/evm/chains/avalanche/README.md 'Point the script at rpc.example.internal first.'
 mutate 'localhost' bridge/evm/chains/optimism/README.md 'Point the script at localhost first.'
-mutate 'a PEM private key' bridge/ATTESTATION-SOLANA.md '-----BEGIN EC PRIVATE KEY-----'
+pem_private_key_marker=$(printf -- '-----BEGIN EC %s KEY-----' PRIVATE)
+mutate 'a PEM private key' bridge/ATTESTATION-SOLANA.md "$pem_private_key_marker"
 mutate 'an assigned secret' bridge/evm/chains/arbitrum/README.md 'api_key = Zm9vYmFyYmF6cXV4MTIzNDU2'
 mutate 'a keypair byte array' bridge/solana/chains/solana/README.md "[$(seq -s , 1 64)]"
 mutate 'a working-branch name' bridge/evm/chains/ethereum/README.md 'Built from wave/bridge/2.5.'

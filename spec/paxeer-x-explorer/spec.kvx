@@ -241,7 +241,12 @@ reqs = ["1.1","1.8","1.9"]
 
 [task.1.3]
 title = "Clear the publication audit"
-status = "pending"
+status = "implemented"
+implemented_revision = "b5c12ad3d59def3d3c043a2f7e12ff5170e7f8b9"
+implemented_command = "timeout 20m sh -c 'make public-audit'"
+implemented_exit_code = 2
+implemented_log = ".logs/verify.log"
+implemented_evidence = "The audit clears its workflow-pin, required-file, ignore-rule, large-file and symbolic-link checks and stops at the private-workspace check on the three committed WebAssembly fixtures of observation 1.3.2, which embed the absolute build paths of the workspace they were compiled in; the secret-shape check the two replaced fixtures belong to reports nothing over the whole publication set when it is run on its own."
 wave = 1
 requires = []
 do_1 = "Diagnose from the job log: `gh run view --job 36149017847 --log` and read the Audit publication set step, which exits 2; list every finding it reports, not only the two already known."

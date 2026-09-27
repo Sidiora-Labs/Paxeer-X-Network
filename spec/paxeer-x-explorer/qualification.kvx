@@ -371,3 +371,27 @@ symbol   = "openzeppelin_remapping"
 observed = "The task verify_cmd fetches forge-std when contracts/lib lacks it but says nothing about openzeppelin-contracts, which the Paxeer Foundry profile remaps into contracts/lib and nine sources under contracts/ import, so on a checkout where contracts/lib holds neither library the command cannot compile the project."
 assumption = "contracts/bootstrap-libs.sh is the sanctioned way to populate contracts/lib and was run before the gate; extending the verify_cmd to call it would edit this task's own gate, so the gap is recorded for the owner of the contracts gates instead."
 severity = "note"
+
+[observation.1.3.1]
+task = "1.3"
+file = ".github/workflows/codeql.yml"
+symbol = "public-audit"
+observed = "The publication audit stops before its secret scan: the CodeQL workflow references actions/checkout, github/codeql-action/init and github/codeql-action/analyze by mutable tag, and the audit requires immutable commit pins for external actions."
+assumption = "The repair is to pin those three references to immutable commit revisions, which no task of this feature is scoped to make: the one task that edits that workflow may change only the Go build mode. The publication audit stays red until a scope for the pinning exists."
+severity = "blocker"
+
+[observation.1.3.2]
+task = "1.3"
+file = "programs/fixtures/pay5/swap-cpmm.wasm"
+symbol = "public-audit"
+observed = "The audit's private-workspace check matches three committed WebAssembly fixtures - the two under programs/crates/layerx-programs-registry/tests/fixtures and the pay5 one - because each embeds the absolute build paths of the private workspace they were compiled in."
+assumption = "The repair is to rebuild those fixtures with their source paths remapped so no absolute build path reaches the publication set. No allowlist entry is added, because the audit documents none for this case, and the audit stays red until the fixtures are rebuilt."
+severity = "blocker"
+
+[observation.1.3.3]
+task = "1.3"
+file = "bridge/deploy/tests/docs-check.sh"
+symbol = "mutate"
+observed = "The workflow references of observation 1.3.1 are immutable pins at this revision, so the audit now reaches its later checks and the secret-shape check matched one line that belongs to no explorer path: the bridge documentation check injects a PEM private-key header as a literal to prove its own detector bites."
+assumption = "The line is repaired where it originates by assembling the same marker with printf, so the page the check mutates is byte identical and the mutation is still refused; the file sits outside this task's touched set and was edited because do_4 asks for every remaining finding to be handled at its source rather than allow-listed."
+severity = "note"
