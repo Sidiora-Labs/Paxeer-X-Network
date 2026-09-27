@@ -28,6 +28,8 @@ fn registry() -> ModuleRegistry {
         ModuleId::Governance,
         ModuleId::Bridge,
         ModuleId::Programs,
+        ModuleId::Spot,
+        ModuleId::Web,
     ];
     let registrations: Vec<_> = modules
         .into_iter()
@@ -140,6 +142,8 @@ fn every_module_payload_requires_an_exact_registration() {
         ModuleId::Governance,
         ModuleId::Bridge,
         ModuleId::Programs,
+        ModuleId::Spot,
+        ModuleId::Web,
     ] {
         let declared = activity_type(module, 1);
         let Ok(payload) = Payload::new(&registry, declared, &[module as u8]) else {
@@ -158,11 +162,55 @@ fn every_module_payload_requires_an_exact_registration() {
 fn unsigned_and_signed_envelopes_are_distinct_types() {
     assert_ne!(TypeId::of::<UnsignedEnvelope>(), TypeId::of::<Envelope>());
     assert_eq!(
-        ActivityType::from_u32(0x000a_0001),
-        Err(PayloadError::UnknownModule(10))
+        ActivityType::from_u32(0x000c_0001),
+        Err(PayloadError::UnknownModule(12))
     );
     assert_eq!(
         TimestampBound::new(20, 10),
         Err(ActivityBuildError::InvalidTimestampBound)
     );
+}
+
+#[test]
+fn spot_and_web_modules_decode_and_round_trip_like_the_others() {
+    assert_eq!(ModuleId::from_u16(10), Ok(ModuleId::Spot));
+    assert_eq!(ModuleId::from_u16(11), Ok(ModuleId::Web));
+    assert_eq!(ModuleId::Spot as u16, 10);
+    assert_eq!(ModuleId::Web as u16, 11);
+    assert_eq!(ModuleId::ALL.len(), 11);
+    for (index, module) in ModuleId::ALL.into_iter().enumerate() {
+        let value =
+            u16::try_from(index + 1).unwrap_or_else(|error| panic!("module index failed: {error}"));
+        assert_eq!(module as u16, value);
+        assert_eq!(ModuleId::from_u16(value), Ok(module));
+    }
+    assert_eq!(ModuleId::from_u16(0), Err(PayloadError::UnknownModule(0)));
+    assert_eq!(ModuleId::from_u16(12), Err(PayloadError::UnknownModule(12)));
+    assert_eq!(
+        ModuleId::from_u16(u16::MAX),
+        Err(PayloadError::UnknownModule(u16::MAX))
+    );
+
+    let spot = activity_type(ModuleId::Spot, 2);
+    assert_eq!(spot.value(), 0x000a_0002);
+    assert_eq!(ActivityType::from_u32(0x000a_0002), Ok(spot));
+    assert_eq!(spot.module(), ModuleId::Spot);
+    let web = activity_type(ModuleId::Web, 1);
+    assert_eq!(web.value(), 0x000b_0001);
+    assert_eq!(ActivityType::from_u32(0x000b_0001), Ok(web));
+    assert_eq!(web.module(), ModuleId::Web);
+    assert_eq!(format!("{:?}", ModuleId::Spot), "Spot");
+    assert_eq!(format!("{:?}", ModuleId::Web), "Web");
+
+    let registry = registry();
+    let Ok(spot_payload) = Payload::new(&registry, activity_type(ModuleId::Spot, 1), &[10]) else {
+        panic!("spot payload rejected");
+    };
+    assert!(matches!(spot_payload, Payload::Spot(..)));
+    assert_eq!(spot_payload.as_bytes(), &[10]);
+    let Ok(web_payload) = Payload::new(&registry, activity_type(ModuleId::Web, 1), &[11]) else {
+        panic!("web payload rejected");
+    };
+    assert!(matches!(web_payload, Payload::Web(..)));
+    assert_eq!(web_payload.as_bytes(), &[11]);
 }

@@ -500,3 +500,11 @@ symbol = "custody_profile"
 observed = "With the anchor precompile named in both harnesses the nineteen core boundary tests and rpc::tests::schema_lists_every_public_method pass and --test lifecycle events:: selects exactly local_gateway_program_events_read_the_web_request, but that test stops inside funding::start before any node starts: tests/bridge/custody_credit.py profile now requires --comet-rpc and refuses any chain id but 125 with the native custody module as the vault, while this harness funds itself from a locally deployed chain-31337 vault and offers no Comet light-client endpoint."
 assumption = "Moving the local gateway qualification's custody funding onto the native Paxeer custody module with a local Comet light-client endpoint belongs to the owner of that funding path; nothing here is relaxed and no live chain is contacted."
 severity = "blocker"
+
+[observation.2.34.1]
+revision = "44d2b8d523e0b05c3554fa6aa619b1196678a7d3"
+command = "timeout 45m sh -c 'make agent-test'"
+exit_code = 2
+log_path = ".logs/verify.log"
+observed = "With ModuleId carrying spot and web the preparation snapshot decodes and layerx-agentd --test native_reads_daemon passes, and with the availability genesis pin following the six configured genesis modules layerx-client --test availability_daemon passes, but make agent-test still exits 2 because layerx-client --test finality_evidence refuses the committed tests/vectors/finality_evidence_v1.vec with EvidenceError::Registration in accepts_the_exact_c_typed_cp1_cx1_fixture, a checkpoint identity path this task does not touch."
+assumption = "The owner of the finality evidence vector and layerx-client evidence.rs decides which side drifted from the unified checkpoint identity and corrects that side, after which the verify_cmd reruns unchanged and records tasks 2.34, 2.33, 2.32 and 2.16 done; nothing is relaxed."

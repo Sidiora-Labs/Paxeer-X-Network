@@ -1180,7 +1180,11 @@ reqs = ["9.1"]
 
 [task.2.34]
 title = "Teach the agent client the spot and web modules so a node's preparation snapshot decodes, and qualify the agent workspace tests"
-status = "pending"
+status = "implemented"
+implemented_revision = "44d2b8d523e0b05c3554fa6aa619b1196678a7d3"
+implemented_command = "timeout 45m sh -c 'make agent-test'"
+implemented_exit_code = 2
+implemented_log_path = ".logs/verify.log"
 wave = 2
 requires = ["2.33"]
 do_1 = "Observation 2.33.1: the daemon's preparation snapshot lists the kernel's active modules, which include spot (10) by default and web (11) once enabled, but ModuleId::from_u16 in agent/crates/layerx-types/src/payload.rs knows only modules 1 to 9 and MAX_MODULES in agent/crates/layerx-client/src/lni/preparation.rs is 9, so the whole snapshot is refused as malformed; add the spot and web variants with their kernel numbers and names, raise the bound to the kernel's module count, and update every table in agent/crates that enumerates module identifiers so both decode, display and round-trip like the others, keeping every public signature the agent SDKs call unchanged."
