@@ -445,6 +445,14 @@
     - Render the real font observer hook the dynamic hash shortener uses, with the same body and heading typefaces and weight that component passes, under fake timers, and assert that it reports the fonts loaded and that no timer is left pending once it has settled, which is what keeps a poll from firing after the environment of a spec file is torn down.
     - Mock nothing: the spec drives the real package through its real hook and reads the real document, and it changes no line of explorer/frontend/vitest/setup.ts and no other file.
     - _Requirements: 3.3, 16.1_
+  - [x] 8.8 Cover the wave-8 page and heading changes with referencing specs
+    - Extend the spec that already sits at the mirror position of each source file the wave-8 test-ratio run names without a changed test beside it - explorer/frontend/ui/pages/Address.spec.tsx, ui/pages/PaxeerXAccount.spec.tsx, ui/pages/PaxeerXReceipt.spec.tsx and ui/tx/TxSubHeading.spec.tsx - because the gate counts only the test files the range changes, so a spec that sits in the right place but is untouched by the range leaves its source file uncovered.
+    - Extend explorer/frontend/ui/txs/TxsStats.spec.tsx as well, the mirror spec of the fifth source file the same wave changed, so the range carries at least as many referencing test files as source files.
+    - Assert in each of them the behaviour the wave changed in the source file beside it: that the address page keeps the address identifier entity in the title's own slot and carries the inset before that slot's row only for the wide layout; that the kernel account and receipt identifiers wrap at every width and carry that inset only for the wide layout; that the transaction heading's previous and next controls do the same; and that the transaction stat row lays its cards in tracks that cannot be widened by their content while the wide layout still holds them in one row.
+    - Read those style contracts off the rules the real provider inserts for the element's own class, since the components declare them as responsive style props and jsdom performs no layout, and render every component through the frontend test harness with the real providers, the repository's own payload mocks and the fetch mock the vitest setup enables.
+    - Raise the per-test budget in each of the five spec files, because the pages mount real entities and the host runs the whole suite at once.
+    - Change no source file, no mock, no Playwright file and no screenshot baseline: the task adds assertions only.
+    - _Requirements: 3.3, 19.9, 20.9, 21.9, 23.8_
 
 ## Task Dependency Graph
 
@@ -458,7 +466,7 @@
     { "id": 5,  "tasks": ["5.1", "5.2"] },
     { "id": 6,  "tasks": ["6.1", "6.2", "6.3", "6.4", "6.5", "6.6", "6.7", "6.8", "6.9", "6.10", "6.11", "6.12"] },
     { "id": 7,  "tasks": ["7.1"] },
-    { "id": 8,  "tasks": ["8.1", "8.3", "8.4", "8.5", "8.6"] }
+    { "id": 8,  "tasks": ["8.1", "8.3", "8.4", "8.5", "8.6", "8.8"] }
   ]
 }
 ```

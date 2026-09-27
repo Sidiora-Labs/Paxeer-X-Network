@@ -1322,3 +1322,24 @@ done_revision = "d83276386c479a0acbfd9ec2d4b3804afbaabd4b"
 done_command = "timeout 10m sh -c 'cd explorer/frontend && yarn vitest run vitest/setup.spec.ts --reporter=dot'"
 done_exit_code = 0
 done_log = ".logs/verify-8.6.log"
+
+[task.8.8]
+title = "Cover the wave-8 page and heading changes with referencing specs"
+status = "done"
+wave = 8
+requires = ["8.3","8.4"]
+do_1 = "Extend the spec that already sits at the mirror position of each source file the wave-8 test-ratio run names without a changed test beside it - explorer/frontend/ui/pages/Address.spec.tsx, ui/pages/PaxeerXAccount.spec.tsx, ui/pages/PaxeerXReceipt.spec.tsx and ui/tx/TxSubHeading.spec.tsx - because the gate counts only the test files the range changes, so a spec that sits in the right place but is untouched by the range leaves its source file uncovered."
+do_2 = "Extend explorer/frontend/ui/txs/TxsStats.spec.tsx as well, the mirror spec of the fifth source file the same wave changed, so the range carries at least as many referencing test files as source files."
+do_3 = "Assert in each of them the behaviour the wave changed in the source file beside it: that the address page keeps the address identifier entity in the title's own slot and carries the inset before that slot's row only for the wide layout; that the kernel account and receipt identifiers wrap at every width and carry that inset only for the wide layout; that the transaction heading's previous and next controls do the same; and that the transaction stat row lays its cards in tracks that cannot be widened by their content while the wide layout still holds them in one row."
+do_4 = "Read those style contracts off the rules the real provider inserts for the element's own class, since the components declare them as responsive style props and jsdom performs no layout, and render every component through the frontend test harness with the real providers, the repository's own payload mocks and the fetch mock the vitest setup enables."
+do_5 = "Raise the per-test budget in each of the five spec files, because the pages mount real entities and the host runs the whole suite at once."
+do_6 = "Change no source file, no mock, no Playwright file and no screenshot baseline: the task adds assertions only."
+verify_cmd = "timeout 15m sh -c 'cd explorer/frontend && yarn vitest run ui/pages/Address.spec.tsx ui/pages/PaxeerXAccount.spec.tsx ui/pages/PaxeerXReceipt.spec.tsx ui/tx/TxSubHeading.spec.tsx ui/txs/TxsStats.spec.tsx --reporter=dot && bash ../../tools/explorer/test-ratio.sh 94a2b6b09..HEAD'"
+symbols = ["AddressPageContent","PaxeerXAccountPageContent","PaxeerXReceiptPageContent","TxSubHeading","TxsStats"]
+touches = ["explorer/frontend/ui/pages/Address.spec.tsx","explorer/frontend/ui/pages/PaxeerXAccount.spec.tsx","explorer/frontend/ui/pages/PaxeerXReceipt.spec.tsx","explorer/frontend/ui/tx/TxSubHeading.spec.tsx","explorer/frontend/ui/txs/TxsStats.spec.tsx"]
+tests = ["explorer/frontend/ui/pages/Address.spec.tsx","explorer/frontend/ui/pages/PaxeerXAccount.spec.tsx","explorer/frontend/ui/pages/PaxeerXReceipt.spec.tsx","explorer/frontend/ui/tx/TxSubHeading.spec.tsx","explorer/frontend/ui/txs/TxsStats.spec.tsx"]
+reqs = ["3.3","19.9","20.9","21.9","23.8"]
+done_revision = "a41f72de017bd3b003399a20c3d46d37f65fef0a"
+done_command = "timeout 15m sh -c 'cd explorer/frontend && yarn vitest run ui/pages/Address.spec.tsx ui/pages/PaxeerXAccount.spec.tsx ui/pages/PaxeerXReceipt.spec.tsx ui/tx/TxSubHeading.spec.tsx ui/txs/TxsStats.spec.tsx --reporter=dot && bash ../../tools/explorer/test-ratio.sh 94a2b6b09..HEAD'"
+done_exit_code = 0
+done_log = ".logs/verify-8.8-run2.log"
