@@ -1070,6 +1070,7 @@ mod tests {
             "lx_getBalances",
             "lx_getSequence",
             "lx_estimateFee",
+            "lx_getProgramEvents",
             "lx_sendActivity",
             "lx_getReceipt",
             "lx_getActivityStatus",

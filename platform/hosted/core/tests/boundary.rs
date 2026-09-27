@@ -2548,16 +2548,12 @@ fn node_environment(
     node_env
 }
 
+const ANCHOR_ADDRESS: &str = "0x0000000000000000000000000000000000001014";
+
 fn finality_environment(node_env: &mut BTreeMap<&'static str, String>) {
     node_env.insert("LAYERX_NODE_PAXEER_CHAIN_ID", "31337".to_owned());
-    node_env.insert(
-        "LAYERX_NODE_SETTLEMENT_CONTRACT",
-        format!("0x{}", "11".repeat(20)),
-    );
-    node_env.insert(
-        "LAYERX_NODE_CHECKPOINT_REGISTRY",
-        format!("0x{}", "22".repeat(20)),
-    );
+    node_env.insert("LAYERX_NODE_SETTLEMENT_CONTRACT", ANCHOR_ADDRESS.to_owned());
+    node_env.insert("LAYERX_NODE_CHECKPOINT_REGISTRY", ANCHOR_ADDRESS.to_owned());
     node_env.insert("LAYERX_NODE_PAXEER_RPC_ADDRESS", "127.0.0.1".to_owned());
     node_env.insert("LAYERX_NODE_PAXEER_RPC_PORT", "1".to_owned());
     for name in [

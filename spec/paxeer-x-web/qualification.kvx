@@ -484,3 +484,19 @@ exit_code = 101
 log_path = ".logs/verify.log"
 observed = "The core boundary's daemon-down events shapes pass, but every real-cluster boundary test stops at start because layerxd exits with bootstrap finality authority -3 (the anchor address rule of observation 2.16.1) and one needs LAYERX_TEST_SOCAT_BIN, and the second command cannot run as written because the local workspace manifest declares only the lifecycle test target, which includes events.rs as a module, and the gateway's schema_lists_every_public_method count omits lx_getProgramEvents."
 assumption = "Once the boundary cluster harness serves its settlement and registry at the anchor address, the manifest declares an events target (or the verify_cmd selects --test lifecycle events::) and the gateway's published list names the method, the verify_cmd reruns unchanged; nothing is relaxed."
+
+[observation.2.35.1]
+task = "2.35"
+file = "platform/hosted/agent-boundary/tests/real_node.rs"
+symbol = "node_environment"
+observed = "Outside the two harnesses this task names, LAYERX_NODE_SETTLEMENT_CONTRACT and LAYERX_NODE_CHECKPOINT_REGISTRY still carry placeholder addresses in platform/hosted/agent-boundary/tests/real_node.rs, platform/hosted/registry/tests/native_deployment.rs and platform/hosted/authority/tests/real_node.rs, and platform/hosted/tests/beta-cluster.sh still feeds its own deployed guarantor bond and checkpoint registry to bootstrap.sh --check-settlement, so each of those real-node harnesses still stops at bootstrap finality authority -3."
+assumption = "Each of those harnesses is repaired by the task that owns it, the way this task repairs its two; this task changes neither them nor the daemon's anchor-only rule."
+severity = "suspect"
+
+[observation.2.35.2]
+task = "2.35"
+file = "platform/hosted/gateway/tests/local/funding.rs"
+symbol = "custody_profile"
+observed = "With the anchor precompile named in both harnesses the nineteen core boundary tests and rpc::tests::schema_lists_every_public_method pass and --test lifecycle events:: selects exactly local_gateway_program_events_read_the_web_request, but that test stops inside funding::start before any node starts: tests/bridge/custody_credit.py profile now requires --comet-rpc and refuses any chain id but 125 with the native custody module as the vault, while this harness funds itself from a locally deployed chain-31337 vault and offers no Comet light-client endpoint."
+assumption = "Moving the local gateway qualification's custody funding onto the native Paxeer custody module with a local Comet light-client endpoint belongs to the owner of that funding path; nothing here is relaxed and no live chain is contacted."
+severity = "blocker"

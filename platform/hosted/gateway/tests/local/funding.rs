@@ -712,8 +712,8 @@ fn start_node(
         [&replica_token, &program_token],
     );
     node_env.insert("LAYERX_NODE_PAXEER_CHAIN_ID", "31337".to_owned());
-    node_env.insert("LAYERX_NODE_SETTLEMENT_CONTRACT", settlement.bond);
-    node_env.insert("LAYERX_NODE_CHECKPOINT_REGISTRY", settlement.registry);
+    node_env.insert("LAYERX_NODE_SETTLEMENT_CONTRACT", ANCHOR_ADDRESS.to_owned());
+    node_env.insert("LAYERX_NODE_CHECKPOINT_REGISTRY", ANCHOR_ADDRESS.to_owned());
     node_env.insert("LAYERX_NODE_PAXEER_RPC_ADDRESS", "127.0.0.1".to_owned());
     node_env.insert("LAYERX_NODE_PAXEER_RPC_PORT", settlement.port.to_string());
     let sequencer = Some({
@@ -745,9 +745,9 @@ fn start_node(
     }
 }
 
+const ANCHOR_ADDRESS: &str = "0x0000000000000000000000000000000000001014";
+
 struct Settlement {
-    bond: String,
-    registry: String,
     port: u16,
 }
 
@@ -829,11 +829,7 @@ fn start_checkpoint_settlement(
     );
     funding.checkpoint_output = Some(root.join("checkpoint-output"));
     funding.nodes.push(daemon);
-    Settlement {
-        bond,
-        registry,
-        port,
-    }
+    Settlement { port }
 }
 
 pub(super) fn send(
