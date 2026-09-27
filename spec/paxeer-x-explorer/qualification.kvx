@@ -469,3 +469,23 @@ environment = "linux/x86_64, the pinned builder image explorer-elixir-builder:v1
 outcome = "fail"
 evidence = ".logs/wave-gate-3.1.log"
 note = "The gate ran once on the merged tip and exited 124: the four per-application backend legs passed in order - block_scout_web 47 tests, ethereum_jsonrpc 25, explorer 113, indexer 46, 0 failures and nothing excluded or skipped in any of them, logs build/explorer-gates/backend-<application>.log - and the frontend dependency leg was still fetching packages when the twenty-minute wrap of the verify_cmd expired, so no leg exhausted its own 1080-second budget, the gate reported no failing leg, and the frontend type check and vitest legs never started, for which no record is written. The whole Elixir dependency tree compiled inside the first backend leg because the build volume of this working tree was created by this run, which is the time the wrap had no room for, so the expiry is read as the cold cost of a first run in this tree rather than as a defect of any task; the run is not repeated here, and task 3.1 keeps the status and evidence it already carries because two of its required tasks, 2.14 and 4.1, are recorded implemented rather than done."
+
+[gate.3.1.10]
+task = "3.1"
+reqs = ["16.1","16.2"]
+revision = "4ad937fe500091dc1ae1f2c0a431a53fd1476448"
+command = "timeout 20m sh -c 'EXPLORER_GATE_BUDGET_SECONDS=1080 tools/explorer/gate-test.sh'"
+environment = "linux/x86_64, the pinned builder image explorer-elixir-builder:v10.2.6 with a postgres:16 sidecar per umbrella application, node 22 and yarn 1 in explorer/frontend, the build volume of this working tree warm from the previous run, the filesystem holding the build volume within two gigabytes of full"
+outcome = "fail"
+evidence = ".logs/wave-gate-3.1-run2.log"
+note = "The gate was run again to reach the legs the previous run never started, and exited 1 inside the first backend leg: mix could not create the protocol consolidation directory because the filesystem holding the build volume had no space left, so the leg died during compilation before ExUnit started. No test executed and no leg summary was produced, so this run carries no test signal for any leg and the remaining six legs never started; the failure is read as exhaustion of the shared filesystem rather than as a defect of any task, and no leg record is written from it."
+
+[gate.3.1.11]
+task = "3.1"
+reqs = ["16.1","16.2"]
+revision = "4ad937fe500091dc1ae1f2c0a431a53fd1476448"
+command = "timeout 20m sh -c 'EXPLORER_GATE_BUDGET_SECONDS=1080 tools/explorer/gate-test.sh'"
+environment = "linux/x86_64, the pinned builder image explorer-elixir-builder:v10.2.6 with a postgres:16 sidecar per umbrella application, node 22 and yarn 1 in explorer/frontend, the build volume of this working tree warm and the filesystem holding it with space restored"
+outcome = "pass"
+evidence = ".logs/wave-gate-3.1-run3.log"
+note = "The gate ran once within its twenty-minute wrap and exited 0 with every leg passing in order: the four per-application backend legs, block_scout_web 47 tests, ethereum_jsonrpc 25, explorer 113 and indexer 46, 0 failures and nothing excluded or skipped in any of them, then the frontend dependency leg, the frontend type check with no diagnostic over the project, and the frontend vitest suite at 38 files and 330 tests passed with nothing skipped. This is the first run of this command to reach the three frontend legs, which the cold first run and the out-of-space run could not; the counts of the explorer and vitest legs are two tests and one file above the earlier per-leg records, which is the capabilities boot suite and the rewards fixture spec this revision adds. Task 3.1 keeps the status and evidence it already carries."
