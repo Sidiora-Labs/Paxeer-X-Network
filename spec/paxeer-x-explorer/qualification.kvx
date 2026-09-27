@@ -881,4 +881,28 @@ file = "explorer/frontend/yarn.lock"
 symbol = "lodash-es"
 observed = "The first production build of this lane failed with dozens of 'Module not found' errors inside node_modules/lodash-es - './_arrayMap.js', './_baseIsNative.js', './_assocIndexOf.js' and more, reached through formik and @dynamic-labs/sdk-react-core from pages/_app - because the installed lodash-es 4.17.22 held 542 of its 650 files; two lanes installed at the same time carry the truncated copy and two others carry the complete one; log build/explorer-gates/8.4-build-after.log."
 assumption = "A concurrent yarn install against the shared yarn cache extracted the package partially, not a repository or lockfile defect, since the same lockfile yields a complete package in the lanes that installed alone; the copy was restored from a complete lane and the build repeated, and any lane whose image build fails on the same message needs its package reinstalled."
+
+[observation.8.1.1]
+task = "8.1"
+file = "explorer/frontend/ui/home/LatestBlocks.tsx"
+symbol = "SOCKET_FLUSH_INTERVAL_MS"
+observed = "Measured over one minute on the running dev explorer, which serves the home page as it stood before this task, the live block list applied 420 row-set updates per minute and touched 2.09 row subtrees per update, a pointer resting on the list held nothing - 41 updates inside a six-second hover - and a click on the first row opened /block/25878773 while that row's link read /block/25878771, log /root/lx-ops/explorer-ui-2026-09-27/wave8/8.1/flushes-before.json; after the change, twenty messages that arrive inside five hundred milliseconds over the real socket reach the list as one flush and one row-set update, which is at most 30 updates per minute at the two-second cadence, one row renders per flush and the rows the flush leaves alone render zero times, and a pointer resting on the list holds the flush until it leaves."
+assumption = "The after figures are the ones the specs of this task measure over the real socket endpoint, the real channel and the real row render path, because the lane's own dev server could not render the home page for a browser measurement, which observation 8.1.3 records."
+severity = "note"
+
+[observation.8.1.2]
+task = "8.1"
+file = "explorer/frontend/ui/home/LatestTxsItem.spec.tsx"
+symbol = "use-font-face-observer"
+observed = "At revision 50ad0f4afcd1ec6974fe09f6db272ace49b186dd with this task's changes applied the command timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/home lib/socket' exits 1 with fifteen spec files and fifty-three cases passing and three unhandled ReferenceError: document is not defined thrown by fontfaceobserver timers after a spec environment is torn down, log .logs/task-8.1-verify-run3.log, while the same spec file run alone passes at exit 0."
+assumption = "The observer comes from use-font-face-observer inside the shared truncation components this task does not touch, the merged-tip gate of task 7.1 already records the vitest teardown errors of this suite, and the leak is left exactly as it is rather than silenced in a config, so task 8.1 stays in progress as implemented and not qualified."
+severity = "note"
+note = "Closed by task 8.5: with the font-face set the vitest setup now fills in, the same command over ui/home and lib/socket exits 0 at revision d83276386c479a0acbfd9ec2d4b3804afbaabd4b with the fifteen spec files and fifty-three cases passing and no unhandled error, log .logs/task-8.1-verify-run4.log."
+
+[observation.8.1.3]
+task = "8.1"
+file = "explorer/frontend/configs/multichain/config.nodejs.ts"
+symbol = "yarn dev"
+observed = "The lane's dev server answered the home page at 200 only after 108 missing files of node_modules/lodash-es were restored from a sibling lane, and the page then threw Element type is invalid, expected a string or a class/function but got: object, check the render method of chakra(svg), so no row of the live list ever rendered and the browser measurement of the after case could not be taken, log /root/lx-ops/explorer-ui-2026-09-27/wave8/8.1/dev-server.log."
+assumption = "The lane install is short of files and the turbopack dev bundle also reports a browser import of the node-only multichain config, both outside this task's files, so the after figures of observation 8.1.1 come from the specs and a browser measurement waits for a lane whose install is whole."
 severity = "note"

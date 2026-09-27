@@ -19,18 +19,16 @@ import SimpleValue from 'ui/shared/value/SimpleValue';
 type Props = {
   block: Block;
   isLoading?: boolean;
-  animation?: string;
 };
 
 const hasReward = !config.features.rollup.isEnabled && !config.UI.views.block.hiddenFields?.total_reward;
 
-const LatestBlocksItem = ({ block, isLoading, animation }: Props) => {
+const LatestBlocksItem = ({ block, isLoading }: Props) => {
   const totalReward = getBlockTotalReward(block);
 
   return (
     <Flex
       data-latest-block={ block.height }
-      animation={ animation }
       alignItems="center"
       columnGap={ 3 }
       px={{ base: 3, lg: 4 }}
@@ -98,4 +96,19 @@ const LatestBlocksItem = ({ block, isLoading, animation }: Props) => {
   );
 };
 
-export default React.memo(LatestBlocksItem);
+// The list hands its rows back through the React Query cache, which rebuilds the array positionally, so a
+// block that only moved one place down arrives as an equal object under a new identity. The row compares the
+// fields it renders instead of the object, so a flush that adds one block renders that one row.
+const rewardsKey = (block: Block) => block.rewards?.map(({ type, reward }) => `${ type }:${ reward }`).join(',') ?? '';
+
+const areRowPropsEqual = (prev: Props, next: Props) => (
+  prev.isLoading === next.isLoading &&
+  prev.block.height === next.block.height &&
+  prev.block.hash === next.block.hash &&
+  prev.block.timestamp === next.block.timestamp &&
+  prev.block.transactions_count === next.block.transactions_count &&
+  prev.block.celo?.l1_era_finalized_epoch_number === next.block.celo?.l1_era_finalized_epoch_number &&
+  rewardsKey(prev.block) === rewardsKey(next.block)
+);
+
+export default React.memo(LatestBlocksItem, areRowPropsEqual);

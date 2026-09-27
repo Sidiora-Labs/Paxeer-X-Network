@@ -43,4 +43,17 @@ describe('LatestBlocksItem', () => {
 
     expect(container.querySelector(`a[href="/block/${ blockMock.base.height }"]`)).not.toBeNull();
   });
+
+  it('enters without the fade that moved the rows below it', () => {
+    const { container } = render(<LatestBlocksItem block={ blockMock.base }/>);
+
+    const row = container.querySelector(`[data-latest-block="${ blockMock.base.height }"]`) as HTMLElement;
+    const styles = Array.from(document.querySelectorAll('style'))
+      .map((element) => element.textContent ?? '')
+      .join('\n')
+      .replace(/\s+/g, '');
+
+    expect(row.getAttribute('style') ?? '').not.toContain('animation');
+    expect(styles).not.toContain('animation:fade-in');
+  });
 });
