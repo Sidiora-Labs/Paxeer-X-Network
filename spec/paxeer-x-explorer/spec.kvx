@@ -241,12 +241,11 @@ reqs = ["1.1","1.8","1.9"]
 
 [task.1.3]
 title = "Clear the publication audit"
-status = "implemented"
-implemented_revision = "b5c12ad3d59def3d3c043a2f7e12ff5170e7f8b9"
-implemented_command = "timeout 20m sh -c 'make public-audit'"
-implemented_exit_code = 2
-implemented_log = ".logs/verify.log"
-implemented_evidence = "The audit clears its workflow-pin, required-file, ignore-rule, large-file and symbolic-link checks and stops at the private-workspace check on the three committed WebAssembly fixtures of observation 1.3.2, which embed the absolute build paths of the workspace they were compiled in; the secret-shape check the two replaced fixtures belong to reports nothing over the whole publication set when it is run on its own."
+status = "done"
+revision = "431390302231ede2529b4ba44665282b6299e5b2"
+command = "timeout 20m sh -c 'make public-audit'"
+exit_code = 0
+log_path = ".logs/audit-1.3.log"
 wave = 1
 requires = []
 do_1 = "Diagnose from the job log: `gh run view --job 36149017847 --log` and read the Audit publication set step, which exits 2; list every finding it reports, not only the two already known."
@@ -670,7 +669,12 @@ reqs = ["1.8","1.9"]
 
 [task.2.14]
 title = "Rebuild the committed program fixtures with their source paths remapped"
-status = "pending"
+status = "implemented"
+implemented_revision = "431390302231ede2529b4ba44665282b6299e5b2"
+implemented_command = "timeout 20m sh -c 'cd programs && cargo test --locked -p layerx-programs-registry && cd .. && cargo test --locked --manifest-path human/Cargo.toml -p layerx-explorer-index && make public-audit'"
+implemented_exit_code = 101
+implemented_log = ".logs/verify.log"
+implemented_evidence = "Every target bound to a rebuilt fixture passes - the registry library's twenty cases, tests/interface.rs, tests/lxt20_reference.rs, tests/lxt721_reference.rs, tests/naming_reference.rs, tests/swap_reference.rs and the explorer index's tests/reads.rs - and the third leg, the publication audit that task 1.3 declares, passes at exit 0 on the rebuilt fixtures where it stopped at the private-workspace check before; the gate's non-zero exit comes from the three registry deployment-record cases of observation 2.14.2, which fail identically on the feature tip with none of this task's changes applied, and from the four explorer index cases of observation 2.14.3, which execute a C helper no leg of the gate builds."
 wave = 2
 requires = ["1.3"]
 do_1 = "Add programs/tools/program-fixtures.sh, the single build path for the committed reference program artifacts, and make it the only place that sets the source-path remapping: it builds programs/sdk/rust/examples/naming, nft-lxt721 and swap-cpmm for wasm32-unknown-unknown with target.wasm32-unknown-unknown.rustflags carrying --remap-path-prefix from the checkout root onto /layerx/source, the virtual source root the hosted registry builder already replays against, keeps the two codegen flags programs/.cargo/config.toml declares for that target because cargo replaces rather than extends that table, clears any RUSTFLAGS the caller exports, runs the program lint on every example that carries a layerx-program.json, and refuses at the end if a rebuilt artifact still holds the checkout path."

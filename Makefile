@@ -3619,6 +3619,10 @@ programs-reference-escrow:
 programs-reference-web-reader:
 	sh programs/sdk/rust/examples/web-reader/build.sh
 
+.PHONY: programs-reference-fixtures
+programs-reference-fixtures:
+	sh programs/tools/program-fixtures.sh
+
 programs-sdk-rust:
 	npm --prefix programs/sdk/rust ci --ignore-scripts --no-audit --no-fund
 	sh programs/sdk/rust/quickstart/build.sh all
