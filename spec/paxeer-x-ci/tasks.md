@@ -31,7 +31,7 @@
   - [ ] 2.1 Deploy the runner image and the controller, turn the variable on and prove the canary ran on Fly
     - From the operator shell: build tools/flyci/runner with the local Docker daemon, tag it registry.fly.io/paxeer-ci-runners:<commit>, run fly auth docker and push it; create an app-scoped deploy token for paxeer-ci-runners with fly tokens create deploy; set the secrets GITHUB_TOKEN (from the private token file the operator names), FLY_API_TOKEN and RUNNER_IMAGE on paxeer-ci-controller; deploy the controller from tools/flyci/controller/fly.toml; confirm one controller machine is started and its log shows a completed poll.
     - Set the repository variable CI_LINUX_RUNNER to fly-linux with the GitHub CLI, dispatch runner-canary.yml on the default branch, wait for its completion, and read the job back through the API requiring a runner_name starting with fly- and conclusion success; then confirm through the Machines API that the job's machine no longer exists.
-    - Record each command, exit code and log path under .logs in the feature manager worktree as the task's evidence and as one gate record in spec/paxeer-x-ci/qualification.kvx; if any step fails, leave the variable unset, record the failure and stop.
+    - Record each command, exit code and log path under .logs in the working tree as the task's evidence and as one gate record in spec/paxeer-x-ci/qualification.kvx; if any step fails, leave the variable unset, record the failure and stop.
     - _Requirements: 4.1, 4.2_
 
 ## Task Dependency Graph
