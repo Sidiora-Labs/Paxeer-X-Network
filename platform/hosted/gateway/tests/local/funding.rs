@@ -13,11 +13,18 @@ use layerx_types::intent::{
 };
 use layerx_wire::encode::Encoder;
 use layerx_wire::hash::Domain;
+use std::io::{BufRead as _, BufReader};
+use std::process::{ChildStdin, ChildStdout};
 
+const TREASURY_FUNDING: &str = "100000000000000";
 const RECIPIENT_FUNDING: &str = "100000000000000";
+const CUSTODY_CHAIN_ID: u64 = 125;
+const CUSTODY_PRECOMPILE: &str = "0x0000000000000000000000000000000000001013";
 
 pub(super) struct Funding {
     nodes: Vec<Daemon>,
+    custody: Option<CustodyChain>,
+    custody_document: Option<serde_json::Value>,
     root: PathBuf,
     checkpoint_output: Option<PathBuf>,
     withdrawal: bool,
@@ -48,50 +55,143 @@ impl Drop for Funding {
         for node in &mut self.nodes {
             node.stop();
         }
+        if let Some(custody) = &mut self.custody {
+            custody.stop();
+        }
         if !thread::panicking() && std::env::var_os("LAYERX_TEST_RETAIN_STATE").is_none() {
             let _ = fs::remove_dir_all(&self.root);
         }
     }
 }
 
-impl Funding {
-    fn anvil(&mut self, fork: Option<(&str, u64)>) -> String {
-        let port = loop {
-            let port = free_port();
-            if port != 18545 {
-                break port;
-            }
-        };
-        let stderr = self.root.join(format!("anvil-{port}.log"));
-        let mut command = Command::new("anvil");
-        command.args([
-            "--host",
-            "127.0.0.1",
-            "--port",
-            &port.to_string(),
-            "--chain-id",
-            "31337",
-            "--silent",
-        ]);
-        if let Some((url, block)) = fork {
-            command.args(["--fork-url", url, "--fork-block-number", &block.to_string()]);
-        }
-        let child = must(
-            command
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::from(must(fs::File::create(&stderr), "Anvil log")))
-                .spawn(),
-            "Anvil",
+/// The real local custody chain: a `paxd` whose custody is the native
+/// `layerxcustody` module behind the precompile, brought up and driven by
+/// `custody_chain.py` beside this harness.
+struct CustodyChain {
+    child: Child,
+    input: ChildStdin,
+    output: BufReader<ChildStdout>,
+    stderr: PathBuf,
+}
+
+impl CustodyChain {
+    fn request(&mut self, request: &serde_json::Value) -> serde_json::Value {
+        must(
+            self.input.write_all(format!("{request}\n").as_bytes()),
+            "custody chain request",
         );
-        let mut daemon = Daemon {
+        must(self.input.flush(), "custody chain request flush");
+        let mut answer = String::new();
+        let read = must(self.output.read_line(&mut answer), "custody chain answer");
+        assert!(
+            read > 0,
+            "custody chain closed without an answer: {}",
+            fs::read_to_string(&self.stderr).unwrap_or_default()
+        );
+        must(serde_json::from_str(&answer), "custody chain answer JSON")
+    }
+
+    fn stop(&mut self) {
+        if matches!(self.child.try_wait(), Ok(None)) {
+            let _ = self.input.write_all(b"{\"command\":\"stop\"}\n");
+            let _ = self.input.flush();
+            let deadline = Instant::now() + Duration::from_secs(120);
+            while matches!(self.child.try_wait(), Ok(None)) && Instant::now() < deadline {
+                thread::sleep(Duration::from_millis(50));
+            }
+        }
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+fn chain_field(chain: &serde_json::Value, name: &str) -> String {
+    chain[name].as_str().required(name).to_owned()
+}
+
+fn chain_origins(chain: &serde_json::Value) -> [String; 2] {
+    let origins = chain["origins"]
+        .as_array()
+        .required("custody boundary origins");
+    assert_eq!(
+        origins.len(),
+        2,
+        "two independent custody boundary origins required"
+    );
+    let primary = origins[0].as_str().required("primary origin").to_owned();
+    let secondary = origins[1].as_str().required("secondary origin").to_owned();
+    assert_ne!(primary, secondary, "distinct custody origins required");
+    [primary, secondary]
+}
+
+impl Funding {
+    fn start_custody_chain(
+        &mut self,
+        asset: &str,
+        sequencer_id: &[u8; 32],
+        sequencer_key: &[u8; 32],
+    ) -> serde_json::Value {
+        assert!(
+            self.custody.is_none(),
+            "one custody chain per funded cluster"
+        );
+        let stderr = self.root.join("custody-chain.log");
+        let script = repository_root().join("platform/hosted/gateway/tests/local/custody_chain.py");
+        let mut child = must(
+            Command::new("python3")
+                .arg(&script)
+                .current_dir(repository_root())
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::from(must(
+                    fs::File::create(&stderr),
+                    "custody chain log",
+                )))
+                .spawn(),
+            "custody chain",
+        );
+        let input = child.stdin.take().required("custody chain input");
+        let output = BufReader::new(child.stdout.take().required("custody chain output"));
+        let mut custody = CustodyChain {
             child,
-            supervised: false,
+            input,
+            output,
             stderr,
         };
-        wait_for_port(port, &mut daemon, "disposable custody chain");
-        self.nodes.push(daemon);
-        format!("http://127.0.0.1:{port}")
+        let chain = custody.request(&serde_json::json!({
+            "command": "start",
+            "work": text(&self.root),
+            "asset": asset,
+            "network_id": NETWORK_ID,
+            "sequencer_id": format!("0x{}", hex_encode(sequencer_id)),
+            "sequencer_public_key": format!("0x{}", hex_encode(sequencer_key)),
+        }));
+        self.custody = Some(custody);
+        assert_eq!(chain["chain_id"], CUSTODY_CHAIN_ID);
+        assert_eq!(chain_field(&chain, "vault"), CUSTODY_PRECOMPILE);
+        assert_eq!(chain_field(&chain, "asset"), asset);
+        self.custody_document = Some(chain.clone());
+        chain
+    }
+
+    /// The document the custody chain reported: the native precompile it
+    /// custodies through, its module identity and its Comet light-client origin.
+    pub(super) fn custody_chain(&self) -> &serde_json::Value {
+        self.custody_document
+            .as_ref()
+            .required("started custody chain document")
+    }
+
+    fn custody_deposit(&mut self, beneficiary: &str, amount: &str) -> String {
+        let custody = self.custody.as_mut().required("started custody chain");
+        let deposit = custody.request(&serde_json::json!({
+            "command": "deposit",
+            "beneficiary": beneficiary,
+            "amount": amount,
+        }));
+        assert_eq!(chain_field(&deposit, "beneficiary"), beneficiary);
+        assert_eq!(chain_field(&deposit, "amount"), amount);
+        chain_field(&deposit, "transaction")
     }
 
     pub(super) fn finalise_first_batch(&self, cluster: &Cluster) -> [u8; 32] {
@@ -229,6 +329,8 @@ fn start_configured(withdrawal: bool) -> (Cluster, Funding) {
     let recipient_did = treasury_did(&recipient_seed);
     let mut funding = Funding {
         nodes: Vec::new(),
+        custody: None,
+        custody_document: None,
         root,
         checkpoint_output: None,
         withdrawal,
@@ -238,51 +340,32 @@ fn start_configured(withdrawal: bool) -> (Cluster, Funding) {
     let seed = random32();
     let did = treasury_did(&seed);
     let account = must(main_account(&did), "funding account");
-    let primary = funding.anvil(None);
     let asset = format!("0x{}", hex_encode(&random32()));
     let beneficiary = format!("0x{}", hex_encode(&account));
-    let deployment = funding.root.join("deployment.json");
     let actor_key = funding.root.join("actor.key");
     write(&actor_key, &seed, 0o600);
-    producer(
-        "deploy_local_custody.py",
-        &[
-            "--rpc",
-            &primary,
-            "--asset",
-            &asset,
-            "--beneficiary",
-            &beneficiary,
-            "--amount",
-            "100000000000000",
-            "--output",
-            &text(&deployment),
-            "--allow-local-chain",
-        ],
+    let sequencer_seed = random32();
+    let sequencer_key = SigningKey::from_bytes(&sequencer_seed)
+        .verifying_key()
+        .to_bytes();
+    let sequencer_id = sha256(&[b"layerx-sequencer:", hex_encode(&sequencer_key).as_bytes()]);
+    let chain = funding.start_custody_chain(&asset, &sequencer_id, &sequencer_key);
+    let transaction = funding.custody_deposit(&beneficiary, TREASURY_FUNDING);
+    let recipient_account = must(main_account(&recipient_did), "recipient funding account");
+    let recipient_transaction = funding.custody_deposit(
+        &format!("0x{}", hex_encode(&recipient_account)),
+        RECIPIENT_FUNDING,
     );
-    let deployment: serde_json::Value = must(
-        serde_json::from_slice(&must(fs::read(&deployment), "deployment")),
-        "deployment JSON",
-    );
-    assert_eq!(deployment["chain_id"], 31337);
-    let recipient_deployment =
-        deposit_recipient(&funding, &primary, &recipient_did, RECIPIENT_FUNDING);
-    let secondary = funding.anvil(Some((
-        &primary,
-        recipient_deployment["fork_block"]
-            .as_u64()
-            .required("fork block"),
-    )));
     let profile = funding.root.join("profile.bin");
-    custody_profile([&primary, &secondary], &profile, &deployment, &asset);
+    custody_profile(&chain, &profile, &asset);
     let credit = funding.root.join("credit.bin");
     attest_credit(
-        [&primary, &secondary],
+        &chain,
         [&profile, &credit],
         &seed,
         &did,
-        deployment["transaction"].as_str().required("transaction"),
-        "100000000000000",
+        &transaction,
+        TREASURY_FUNDING,
     );
     let cluster = credit_node(
         &mut funding,
@@ -292,16 +375,15 @@ fn start_configured(withdrawal: bool) -> (Cluster, Funding) {
         seed,
         &did,
         &recipient_seed,
+        &sequencer_seed,
     );
     let recipient_credit = funding.root.join("recipient-credit.bin");
     attest_credit(
-        [&primary, &secondary],
+        &chain,
         [&profile, &recipient_credit],
         &recipient_seed,
         &recipient_did,
-        recipient_deployment["transaction"]
-            .as_str()
-            .required("recipient transaction"),
+        &recipient_transaction,
         RECIPIENT_FUNDING,
     );
     credit_recipient(
@@ -315,24 +397,35 @@ fn start_configured(withdrawal: bool) -> (Cluster, Funding) {
     (cluster, funding)
 }
 
-fn custody_profile(rpcs: [&str; 2], profile: &Path, deployment: &serde_json::Value, asset: &str) {
-    let [primary, secondary] = rpcs;
+fn custody_profile(chain: &serde_json::Value, profile: &Path, asset: &str) {
+    let [primary, secondary] = chain_origins(chain);
+    let ca = chain_field(chain, "ca_bundle");
+    let identity = chain_field(chain, "disposable_identity");
+    let comet = chain_field(chain, "comet_rpc");
+    let vault = chain_field(chain, "vault");
+    let runtime = chain_field(chain, "runtime_sha256");
     producer(
         "custody_credit.py",
         &[
             "profile",
             "--rpc",
-            primary,
+            &primary,
             "--rpc",
-            secondary,
+            &secondary,
+            "--ca-bundle",
+            &ca,
+            "--disposable-identity",
+            &identity,
+            "--comet-rpc",
+            &comet,
             "--network-id",
             &NETWORK_ID.to_string(),
             "--chain-id",
-            "31337",
+            &CUSTODY_CHAIN_ID.to_string(),
             "--vault",
-            deployment["vault"].as_str().required("vault"),
+            &vault,
             "--runtime-sha256",
-            deployment["runtime_sha256"].as_str().required("runtime"),
+            &runtime,
             "--asset",
             asset,
             "--trusted-height",
@@ -343,58 +436,67 @@ fn custody_profile(rpcs: [&str; 2], profile: &Path, deployment: &serde_json::Val
             &text(profile),
         ],
     );
-}
-
-fn deposit_recipient(
-    funding: &Funding,
-    primary: &str,
-    recipient_did: &str,
-    amount: &str,
-) -> serde_json::Value {
-    let recipient_deployment = funding.root.join("recipient-deployment.json");
-    let output = Command::new("python3")
-        .arg(repository_root().join("platform/hosted/gateway/tests/local/deposit_recipient.py"))
-        .args([
-            primary,
-            &text(&funding.root.join("deployment.json")),
-            &format!(
-                "0x{}",
-                hex_encode(&main_account(recipient_did).required("recipient account"))
-            ),
-            amount,
-            &text(&recipient_deployment),
-        ])
-        .output()
-        .required("recipient custody deposit");
-    assert!(
-        output.status.success(),
-        "recipient deposit: {}",
-        String::from_utf8_lossy(&output.stderr)
+    let bytes = must(fs::read(profile), "custody profile");
+    assert_eq!(bytes.len(), 223, "custody profile length");
+    assert_eq!(
+        &bytes[..5],
+        b"LXBC3",
+        "light-client custody profile required"
     );
-    let recipient_deployment: serde_json::Value =
-        serde_json::from_slice(&fs::read(&recipient_deployment).required("recipient deployment"))
-            .required("recipient JSON");
-    recipient_deployment
+    assert_eq!(
+        u64::from_be_bytes(must(bytes[5..13].try_into(), "profile chain identity")),
+        CUSTODY_CHAIN_ID
+    );
+    assert_eq!(
+        bytes[13..33],
+        must(
+            layerx_platform_core::hex_decode(vault.trim_start_matches("0x")),
+            "custody precompile address"
+        )[..],
+        "the profile must name the native custody precompile"
+    );
+    let comet_chain = chain_field(chain, "comet_chain_id");
+    let label = comet_chain.as_bytes();
+    assert!(
+        !label.is_empty() && label.len() <= 32,
+        "Comet chain identity bound"
+    );
+    let mut padded = [0_u8; 32];
+    padded[..label.len()].copy_from_slice(label);
+    assert_eq!(
+        bytes[169..201],
+        padded[..],
+        "the profile must pin the chain's own Comet identity"
+    );
 }
 
 fn attest_credit(
-    rpcs: [&str; 2],
+    chain: &serde_json::Value,
     paths: [&Path; 2],
     seed: &[u8; 32],
     did: &str,
     transaction: &str,
     amount: &str,
 ) {
-    let [primary, secondary] = rpcs;
+    let [primary, secondary] = chain_origins(chain);
+    let ca = chain_field(chain, "ca_bundle");
+    let identity = chain_field(chain, "disposable_identity");
+    let comet = chain_field(chain, "comet_rpc");
     let [profile, output] = paths;
     producer(
         "custody_credit.py",
         &[
             "attest",
             "--rpc",
-            primary,
+            &primary,
             "--rpc",
-            secondary,
+            &secondary,
+            "--ca-bundle",
+            &ca,
+            "--disposable-identity",
+            &identity,
+            "--comet-rpc",
+            &comet,
             "--profile",
             &text(profile),
             "--network-id",
@@ -457,8 +559,9 @@ fn credit_node(
     seed: [u8; 32],
     did: &str,
     recipient_seed: &[u8; 32],
+    sequencer_seed: &[u8; 32],
 ) -> Cluster {
-    let cluster = start_node(funding, profile, seed, recipient_seed);
+    let cluster = start_node(funding, profile, seed, recipient_seed, sequencer_seed);
     let signed = funding.root.join("signed-credit.bin");
     command(
         &text(&repository_root().join("build/tests/bridge/sign-credit")),
@@ -644,6 +747,7 @@ fn start_node(
     profile: &Path,
     treasury_seed: [u8; 32],
     recipient_seed: &[u8; 32],
+    sequencer_seed: &[u8; 32],
 ) -> Cluster {
     assert_eq!(
         effective_uid(),
@@ -652,8 +756,7 @@ fn start_node(
     );
     let (state, layerxd, builder, migrations) = cluster_artifacts();
     let root = state.root.clone();
-    let sequencer_seed = random32();
-    let sequencer_key = SigningKey::from_bytes(&sequencer_seed)
+    let sequencer_key = SigningKey::from_bytes(sequencer_seed)
         .verifying_key()
         .to_bytes();
     let sequencer_id = sha256(&[b"layerx-sequencer:", hex_encode(&sequencer_key).as_bytes()]);
@@ -665,13 +768,7 @@ fn start_node(
     let treasury_key = SigningKey::from_bytes(&treasury_seed)
         .verifying_key()
         .to_bytes();
-    let genesis = funded_genesis(
-        &root,
-        &builder,
-        &sequencer_seed,
-        profile,
-        funding.withdrawal,
-    );
+    let genesis = funded_genesis(&root, &builder, sequencer_seed, profile, funding.withdrawal);
     let settlement = start_checkpoint_settlement(funding, &root, &genesis);
     let replica_token = token();
     let program_token = token();
@@ -707,7 +804,7 @@ fn start_node(
     let mut node_env = node_environment(
         [&node_dir, &checkpoints, &logs, &migrations, &lni_socket],
         &genesis,
-        [&sequencer_id, &sequencer_key, &sequencer_seed, &replica_id],
+        [&sequencer_id, &sequencer_key, sequencer_seed, &replica_id],
         [replica_port, program_port],
         [&replica_token, &program_token],
     );

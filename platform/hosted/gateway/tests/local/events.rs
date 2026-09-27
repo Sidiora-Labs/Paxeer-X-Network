@@ -571,7 +571,35 @@ fn next_sequence(page: &serde_json::Value) -> u64 {
 
 #[test]
 fn local_gateway_program_events_read_the_web_request() {
-    let (cluster, _funding) = funding::start();
+    let (cluster, funding) = funding::start();
+    let custody = funding.custody_chain();
+    assert_eq!(custody["chain_id"], 125, "{custody}");
+    let vault = custody["vault"].as_str().required("custody precompile");
+    let address = must(
+        layerx_platform_core::hex_decode(vault.trim_start_matches("0x")),
+        "custody precompile address",
+    );
+    assert_eq!(
+        custody["runtime_sha256"]
+            .as_str()
+            .required("module identity"),
+        format!(
+            "0x{}",
+            hex_encode(&sha256(&[
+                b"LX:CUSTODY:MODULE:v1",
+                b"layerxcustody",
+                &address
+            ]))
+        ),
+        "the harness must fund itself through the native custody module"
+    );
+    assert!(
+        custody["comet_rpc"]
+            .as_str()
+            .required("Comet light-client origin")
+            .starts_with("http://127.0.0.1:"),
+        "{custody}"
+    );
     let certificates = certificates(&cluster.root);
     let boundary = start_boundary(&cluster, &certificates);
     let identity = start_local_identity(&cluster, &certificates);

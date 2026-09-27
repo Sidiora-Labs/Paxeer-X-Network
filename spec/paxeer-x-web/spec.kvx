@@ -1232,7 +1232,11 @@ reqs = ["16.3","16.4"]
 
 [task.2.37]
 title = "Fund the local gateway harness through the native custody module on a real local chain"
-status = "pending"
+status = "implemented"
+implemented_revision = "36dad88174312ee4e497198e6ae35029a6d09ec8"
+implemented_command = "timeout 30m sh -c 'export LAYERX_TEST_SOCAT_BIN=$(command -v socat) LAYERX_TEST_WEB_READER_WASM=$PWD/programs/sdk/rust/examples/web-reader/target/wasm32-unknown-unknown/release/layerx_reference_web_reader.wasm; cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway schema_lists_every_public_method && cargo test --locked --manifest-path platform/hosted/gateway/tests/local/Cargo.toml --test lifecycle events::'"
+implemented_exit_code = 101
+implemented_log_path = ".logs/verify.log"
 wave = 2
 requires = ["2.35"]
 do_1 = "Add platform/hosted/gateway/tests/local/custody_chain.py, a support process in the shape of human/crates/layerx-human-service/tests/support/withdraw-paxd.py speaking one JSON object per line: start builds the BetaUsdl artifact the chain loader needs, writes the layerxcustody genesis section with platform/hosted/paxeer/custody-genesis.py for the cluster's own sequencer id and public key, a freshly generated deposit-root authority and the cluster asset mapped to the chain's own denomination, brings the real local chain up through owned_chain of tests/daemon/custody_chain.py and its two independent TLS origins through that module's boundaries, and answers the EVM origin, the Comet RPC origin its identity document names, the two boundary origins, the CA bundle, the disposable identity path, the native custody precompile address and the module identity; deposit sends deposit(bytes32) to that precompile for one beneficiary account through the signer and send of tests/bridge/deploy_local_custody.py and answers the deposit transaction hash and the credited base units; stop tears the boundaries and the chain down. Require the boundary and custody-proof executables the neighbouring harnesses take from their environment, failing closed and naming the missing one, and change nothing in tests/daemon/custody_chain.py, platform/hosted/paxeer/custody-genesis.py or tests/bridge."
