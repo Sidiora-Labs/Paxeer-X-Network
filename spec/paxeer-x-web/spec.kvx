@@ -1271,10 +1271,10 @@ reqs = ["9.1"]
 [task.2.39]
 title = "Give every agent test harness under the agent-test recipe its build output directory from one place"
 status = "implemented"
-implemented_revision = "b719d112aba886e8350c6faf6da215fd0c2b18f2"
+implemented_revision = "eaa373744ede501afae05373a78c70b28554fa01"
 implemented_command = "timeout 45m sh -c 'make agent-test'"
 implemented_exit_code = 2
-implemented_log_path = ".logs/verify.log"
+implemented_log_path = ".logs/verify-run2.log"
 wave = 2
 requires = ["2.38"]
 do_1 = "Observation 2.38.1: tests/daemon/withdraw-custody.py reads os.environ['CARGO_TARGET_DIR'] unconditionally, while the Makefile's agent-test recipe never exports it and only agent/tools/run-real-node-tests.sh derives it, so the confined session fee harness raises KeyError before any daemon starts; derive that build output directory once in the Makefile with the derivation the script already uses, the inherited value first and the lane directory otherwise, export it from the agent-test and agent-test-sanitize targets and pass it to the native prerequisites recipe, so every harness the recipe starts - the agent workspace tests, the daemon scripts they spawn and the prepared native prerequisites - reads one directory whether the gate is entered through make or through the script."
