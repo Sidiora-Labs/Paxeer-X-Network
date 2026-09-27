@@ -139,6 +139,11 @@ test("the settings controller drives the real fee selection and renders catalogu
   const native = renderToStaticMarkup(createElement(WalletFeeChoice, { snapshot: initial, onChange }));
   assert.ok(native.includes(copyEntry("gas.sidiora.paxeer").message));
   assert.ok(native.includes(copyEntry("gas.sidiora.choose").message));
+  assert.ok(native.includes('role="radiogroup"'));
+  assert.equal(native.split('role="radio"').length - 1, 2);
+  assert.ok(native.includes('aria-checked="true"'));
+  for (const rendered of native.split("<input").slice(1)) assert.match(rendered, /aria-hidden="true"/u);
+  assert.doesNotMatch(native, /<select/u);
   try {
     const selected = controller.choose("sidiora", "2.100001");
     assert.equal(selected.valid, true);
@@ -147,6 +152,8 @@ test("the settings controller drives the real fee selection and renders catalogu
     assert.ok(html.includes(copyEntry("gas.sidiora.maximum").message));
     assert.ok(html.includes(copyEntry("gas.sidiora.review").message));
     assert.ok(html.includes('value="2.100001"'));
+    assert.match(html, /<label for="[^"]+"/u);
+    assert.doesNotMatch(html, /aria-invalid="true"/u);
     for (const maximum of ["", "0", "-1", "1e3", "0.0000001"]) {
       const invalid = controller.choose("sidiora", maximum);
       assert.equal(invalid.valid, false);
@@ -154,6 +161,8 @@ test("the settings controller drives the real fee selection and renders catalogu
       const error = renderToStaticMarkup(createElement(WalletFeeChoice, { snapshot: invalid, onChange }));
       assert.ok(error.includes('role="alert"'));
       assert.ok(error.includes(copyEntry("gas.sidiora.invalid").message));
+      assert.ok(error.includes('aria-invalid="true"'));
+      assert.match(error, /aria-describedby="[^"]+"/u);
     }
   } finally {
     controller.choose("paxeer", "");

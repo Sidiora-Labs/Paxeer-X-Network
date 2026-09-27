@@ -168,7 +168,7 @@ closed = "The spec amendment that added wave 4 rewrote every absolute log_path i
 [observation.1.4.1]
 revision = "d718ed9a3d5b67fc2545c14f02207acd1e9c2e7b"
 command = "timeout 20m sh -c 'npm --prefix agent/sdk/typescript run build && node agent/sdk/typescript/dist/test/gas-station.test.js'"; exit_code = 2
-log_path = "/root/lx-lanes/sid-t1-4/.logs/verify.log"
+log_path = ".logs/verify.log"
 observed = "The SDK build reports pre-existing TS2352 at test/trading-payload.test.ts:118 when converting Record<string, unknown> to the market_create activity and PerpsMarket intersection."
 assumption = "The unrelated test is outside this task scope; its owner must resolve the type conflict before the full gate can qualify this task."
 closed = "At 797af3dd3d852c6139c06d927c633b5f932eb95c trading-payload.test.ts decodes the market fixture through decodePerpsActivity and narrows its activity, so the SDK build no longer reports TS2352 there."
@@ -262,9 +262,9 @@ closed = "The guard is the workflow's codify guard tool, run by the orchestrator
 
 [observation.1.6.2]
 revision = "17c8ed319f18cbe5a003614c4ee082c2c3c0b122"
-command = "HUSKY=0 yarn install --frozen-lockfile --cache-folder /root/lx-lanes/sid-t1-6/.yarn-cache"
+command = "HUSKY=0 yarn install --frozen-lockfile --cache-folder .yarn-cache"
 exit_code = 130
-log_path = "/root/lx-lanes/sid-t1-6/.logs/install.log"
+log_path = ".logs/install.log"
 observed = "The dependency install remained in linking until interrupted at the qualification limit; lint, compilation and verify_cmd did not run."
 assumption = "Qualification requires a completed dependency install in a fresh qualification window."
 closed = "The task 1.6 done record landed at c45c5cab36109eac1330890d3a7a4ba2ac761c0f carries the verify command, frozen-lockfile install included, at exit 0."
@@ -282,7 +282,7 @@ closed = "Task 1.6 was published and merged at c45c5cab36109eac1330890d3a7a4ba2a
 revision = "pending"
 command = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/shared/tx ui/tx/details'"
 exit_code = 134
-log_path = "/root/lx-lanes/sid-t1-6/.logs/verify-attempt-1.log"
+log_path = ".logs/verify-attempt-1.log"
 observed = "TypeScript compilation exhausted the default 2 GB Node heap before the focused tests ran."
 assumption = "The repair cycle supplies a 4 GB Node heap without changing the command or checks."
 closed = "The task 1.6 done record landed at c45c5cab36109eac1330890d3a7a4ba2ac761c0f carries the same command, TypeScript compilation included, at exit 0."
@@ -291,7 +291,7 @@ closed = "The task 1.6 done record landed at c45c5cab36109eac1330890d3a7a4ba2ac7
 revision = "pending"
 command = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/shared/tx ui/tx/details'"
 exit_code = 1
-log_path = "/root/lx-lanes/sid-t1-6/.logs/verify.log"
+log_path = ".logs/verify.log"
 observed = "Compilation passed with a 4 GB Node heap; 16 focused tests failed because jsdom lacks window.matchMedia, while five tests passed."
 assumption = "Qualification requires a real media-query implementation or browser test environment; no stub or weakened assertion was added."
 closed = "At c45c5cab36109eac1330890d3a7a4ba2ac761c0f both fee specs render through the explorer's existing test wrapper instead of static markup, and the task 1.6 done record carries the focused tests at exit 0."
@@ -300,7 +300,7 @@ closed = "At c45c5cab36109eac1330890d3a7a4ba2ac761c0f both fee specs render thro
 revision = "pending"
 command = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/shared/tx ui/tx/details'"
 exit_code = 1
-log_path = "/root/lx-lanes/sid-t1-6/.logs/verify.log"
+log_path = ".logs/verify.log"
 observed = "Compilation and 15 tests passed; six detail tests fail because Vitest imports icons/info.svg as a URL rather than a React component. Qualification assumes authorization to configure the existing SVG transformer outside the task file list; no production code or assertions were changed."
 closed = "At c45c5cab36109eac1330890d3a7a4ba2ac761c0f explorer/frontend/vitest.config.ts loads the svgr plugin, so SVG imports resolve to components, and the task 1.6 done record carries the focused tests at exit 0."
 
@@ -610,3 +610,30 @@ environment = "linux/amd64, forge 1.7.1, the third leg of the task 4.13 verify_c
 outcome = "pass"
 evidence = "build/sidiora-gates/foundry.log"
 note = "Exit code 0: the bootstrap cloned forge-std v1.9.6 and openzeppelin-contracts v5.3.0, then 9 test suites ran, 116 tests passed, 0 failed, 0 skipped; the whole verify_cmd exited 0 with its combined output in .logs/wave-4.log."
+
+[observation.5.2.1]
+task = "5.2"; file = "human/apps/web/src/app/bridge/page.tsx"; symbol = "raw-screen-pattern"; severity = "note"
+revision = "301feb74cb179a0d9cea605b803d08d3e068340b"
+command = "cargo run --manifest-path human/tools/ui-gate/Cargo.toml --locked -- human/apps/web"; exit_code = 1; log_path = "build/sidiora-gates/human-ui-gate.log"
+observed = "With the wallet screen composed through the kit the gate reports nine remaining rows, all outside this feature: three raw inputs and one raw button in app/bridge/page.tsx, one raw select in app/_markets/select.tsx, and one direct @layerx/ui import each in app/bridge/page.tsx, app/exchange/page.tsx, app/launchpad/page.tsx and app/_markets/activity-feed.tsx."
+assumption = "Those nine belong to the market, bridge, exchange and launchpad screens and to no task in this feature, so they are recorded once and left exactly as written; the task's verify_cmd asserts only that no row names the wallet screen."
+
+[gate.5.1.1]
+task = "5.1"
+reqs = ["7.3","7.5"]
+revision = "83dc42e61261533e6f49259ecf0cb31792a14477"
+command = "timeout 25m sh -c 'forge fmt --check && tools/ci/solidity-state-surface.sh && bash contracts/bootstrap-libs.sh && forge build --sizes && forge test -vvv'"
+environment = "linux/amd64, forge 1.7.1, solc 0.8.27, the whole task 5.1 verify_cmd as the first leg of the wave 5 gate"
+outcome = "pass"
+evidence = ".logs/wave-5-5.1.log"
+note = "Exit code 0: the formatting check passed, the state surface reported 74 selectors carrying test evidence, the bootstrap found forge-std v1.9.6 and openzeppelin-contracts v5.3.0 already at their pins, 79 files compiled with warnings only, and 18 test suites ran 203 tests with 0 failed and 0 skipped."
+
+[gate.5.2.1]
+task = "5.2"
+reqs = ["3.3","3.4","3.5"]
+revision = "83dc42e61261533e6f49259ecf0cb31792a14477"
+command = "timeout 20m sh -c 'mkdir -p build/sidiora-gates && cargo run --manifest-path human/tools/ui-gate/Cargo.toml --locked -- human/apps/web >build/sidiora-gates/human-ui-gate.log 2>&1; ! grep -q settings/wallet/wallet-screen.tsx build/sidiora-gates/human-ui-gate.log && cd human/apps/web && node_modules/.bin/eslint --max-warnings=0 src/settings/wallet/wallet-screen.tsx'"
+environment = "linux/amd64, cargo 1.91.1, node v22.23.2, eslint v10.8.1, the whole task 5.2 verify_cmd as the second leg of the wave 5 gate"
+outcome = "pass"
+evidence = ".logs/wave-5-5.2.log"
+note = "Exit code 0: the component gate reports the nine rows of observation 5.2.1 in build/sidiora-gates/human-ui-gate.log and none of them names the wallet screen, and eslint reports no problem for it at zero warnings, so the tee'd wave log carries no output; the feature spec lint ran once on the same revision at exit 0 with 0 errors and the 2 standing warnings for the retired oracle interface path."

@@ -9,6 +9,8 @@ import { AddressQrCode } from "../../kit/qr-code";
 import { CopyableIdentifier, LabelValue, StatusPill } from "../../kit/money";
 import { InlineNotice, ScreenCard } from "../../kit/surface";
 import { KitButton } from "../../kit/control";
+import { KitOptionList } from "../../kit/display";
+import { TextField } from "../../kit/field";
 import { SettingsSection } from "../../kit/settings";
 import {
   JourneyTechnicalDetails,
@@ -267,26 +269,25 @@ export function WalletFeeChoice({ snapshot, onChange }: Readonly<{
     <fieldset className="flex flex-col gap-3 border border-border p-4">
       <legend>{copyEntry("gas.sidiora.title").message}</legend>
       <p>{copyEntry("gas.sidiora.scope").message}</p>
-      <label className="flex items-center gap-2">
-        <input type="radio" name="fee-currency" checked={snapshot.currency === "paxeer"}
-          onChange={() => { onChange("paxeer", snapshot.maximum); }} />
-        {copyEntry("gas.sidiora.paxeer").message}
-      </label>
-      <label className="flex items-center gap-2">
-        <input type="radio" name="fee-currency" checked={snapshot.currency === "sidiora"}
-          onChange={() => { onChange("sidiora", snapshot.maximum); }} />
-        {copyEntry("gas.sidiora.choose").message}
-      </label>
+      <KitOptionList
+        aria-label={copyEntry("gas.sidiora.title").message}
+        value={snapshot.currency}
+        items={[
+          { value: "paxeer", label: copyEntry("gas.sidiora.paxeer").message },
+          { value: "sidiora", label: copyEntry("gas.sidiora.choose").message },
+        ]}
+        onValueChange={(value) => { onChange(value === "sidiora" ? "sidiora" : "paxeer", snapshot.maximum); }}
+      />
       {snapshot.currency === "sidiora" ? (
         <>
-          <label className="flex flex-col gap-2">
-            {copyEntry("gas.sidiora.maximum").message}
-            <input inputMode="decimal" value={snapshot.maximum} aria-invalid={!snapshot.valid}
-              className="border border-border bg-transparent p-2"
-              onChange={(event) => { onChange("sidiora", event.target.value); }} />
-          </label>
+          <TextField
+            label={copyEntry("gas.sidiora.maximum").message}
+            inputMode="decimal"
+            value={snapshot.maximum}
+            errorMessage={snapshot.valid ? undefined : copyEntry("gas.sidiora.invalid").message}
+            onChange={(event) => { onChange("sidiora", event.target.value); }}
+          />
           <p>{copyEntry("gas.sidiora.review").message}</p>
-          {snapshot.valid ? null : <p role="alert">{copyEntry("gas.sidiora.invalid").message}</p>}
         </>
       ) : null}
     </fieldset>
