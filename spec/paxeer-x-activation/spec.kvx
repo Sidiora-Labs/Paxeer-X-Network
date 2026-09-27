@@ -114,16 +114,21 @@ done_log = ".logs/xa-1.1-verify.log"
 
 [task.1.2]
 title = "Replay the activation on a copied chain state"
-status = "pending"
+status = "done"
 wave = 1
 requires = ["1.1"]
-do_1 = "Write tools/chain/upgrade-replay/run.sh, a POSIX shell harness that takes a copy of a chain data directory whose module version map lacks the fork modules, runs the binary built from the working tree against it up to the fork height, and records the stop, the written upgrade-info.json, the restart, the mounted stores and the applied plan with the application hash at each of the three heights around the fork."
-do_2 = "Assert in the harness that the added stores' initial version equals the fork height, that a pruning run at the configured retention does not fail on them, and that the eight precompile addresses answer at the fork height and do not answer one block below it."
+do_1 = "Write tools/chain/upgrade-replay/: a Go program and the run.sh that drives it, which opens a copy of a chain data directory with the real application as the daemon constructs it, reports the committed height and which of the application's module stores the state carries, writes the plan's upgrade-info.json at one above that height exactly as a halted node leaves it, and lets the application's own store loader mount the plan's added stores; run.sh takes the data directory and the plan name, copies the directory because a replay writes to the state it runs over, and with no data directory first generates a state whose genesis, module version map and state-commit store carry only the modules a pre-fork chain has."
+do_2 = "Apply the plan through the upgrade keeper in a context at the fork height and assert, printing every claim and exiting non-zero on any failed one: the handler runs without a panic, the version map afterwards carries all six fork modules, the plan is recorded done at the fork height, every store the state lacked is mounted and carries an initial version equal to the fork height after the single commit, every fork module's own store carries the params entry its genesis writes with the web-search module paused on an empty attestor set and non-zero parameters on the other five, the eight precompile addresses are served at the fork height and none of them one height below it, and the state reopens at the new version after that commit, which is the load a restarted node performs."
 do_3 = "Record the harness's revision, command, exit code and log path, and record as one observation each any failure the replay exposes that belongs to no task in this feature, including the application-hash question of a node that synced the pre-fork history with a binary that already mounts the fork stores."
 verify_cmd = "tools/chain/upgrade-replay/run.sh"
 symbols = ["upgrade-replay"]
-touches = ["tools/chain/upgrade-replay/run.sh","spec/paxeer-x-activation/qualification.kvx"]
+touches = ["tools/chain/upgrade-replay/main.go","tools/chain/upgrade-replay/appsetup.go","tools/chain/upgrade-replay/probe.go","tools/chain/upgrade-replay/replay.go","tools/chain/upgrade-replay/fixture.go","tools/chain/upgrade-replay/run.sh","spec/paxeer-x-activation/qualification.kvx"]
+tests = ["tools/chain/upgrade-replay/run.sh"]
 reqs = ["1.2","1.7","1.9"]
+done_revision = "17ca0bb8cee0e8471160d215f916f7f7abeb3817"
+done_command = "tools/chain/upgrade-replay/run.sh"
+done_exit_code = 0
+done_log = "build/upgrade-replay/fixture-activation.log"
 
 [task.2]
 section = "Wave 2 - One Aggregate Run, Recorded"

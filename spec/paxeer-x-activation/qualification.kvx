@@ -44,3 +44,56 @@ revision = "d42cb96abf031a986fa5de58aa76e81c2289f2aa"
 command = "timeout 25m go test -count=1 -run 'Activation|Upgrade|CustomPrecompile' ./node/... ./modules/evm/keeper/..."
 exit_code = 0
 log_path = ".logs/xa-1.1-verify.log"
+
+[observation.1.2.1]
+task = "1.2"
+file = "storage/state_db/sc/composite/store.go"
+symbol = "CompositeCommitStore.GetChildStoreByName"
+observed = "A plan that does not declare a store the state lacks does not reach the root multistore's \"new store is not added in upgrades\" error: the composite commit store panics first and says the store is not in the canonical key list, which names the store but not the plan's omission."
+assumption = "The harness reads the store's name out of either message, and an operator who sees that panic at the fork height is looking at a plan whose added-store list is short."
+severity = "note"
+
+[observation.1.2.2]
+task = "1.2"
+file = "storage/state_db/sc/migration/router_kvstore.go"
+symbol = "RouterCommitKVStore.RootHash"
+observed = "The commit store hands every child store out through an adapter whose version is the whole store's version and whose root hash fails closed, so the per-store initial version do_2 asks for cannot be read through the application at all."
+assumption = "Each added store is read at the committed version instead, through the same store the modules read: it carries the parameters the plan's genesis wrote, which a store created at another version could not."
+severity = "note"
+
+[observation.1.2.3]
+task = "1.2"
+file = "sdk/storev2/commitment/store.go"
+symbol = "Store.Set"
+observed = "On the committed store itself a write is only visible after the commit, so a plan applied on an uncached context fails its own handler's check that the web-search module holds parameters, while the same plan on a node's cache-wrapped block state passes it."
+assumption = "The replay applies the plan on a cache-wrapped block context and writes the block through before committing, which is the order a node's block keeps; the handler's check is correct for a node and only an uncached replay would see it fail."
+severity = "note"
+
+[observation.1.2.4]
+task = "1.2"
+file = "node/app.go"
+symbol = "layerxStoreUpgrades"
+observed = "Neither plan that predates the activation declares all six stores: over a state carrying only the twenty legacy stores the v6.8 plan ends the process at the launchpad store and the v6.6 plan at the web-search store, each before any handler runs."
+assumption = "Only the activation plan's own store-upgrade list can carry a live chain through the fork, which both replays of this task confirm."
+severity = "note"
+
+[observation.1.2.5]
+task = "1.2"
+file = "storage/state_db/sc/memiavl/multitree.go"
+symbol = "MultiTree.ApplyUpgrades"
+observed = "Reading the code, a plan whose added store already exists appends a second tree of that name and the index rebuild then fails with a name conflict, which is the shape of a node that synced the pre-fork history with a binary already mounting the fork stores; the harness can generate that shape but this task did not run it."
+assumption = "Such a chain carries the six modules in its version map, so the plan is never scheduled for it and the conflict is reachable only if the plan is named in upgrade-info.json by hand."
+severity = "assumption"
+
+[gate.1.2.1]
+revision = "17ca0bb8cee0e8471160d215f916f7f7abeb3817"
+command = "tools/chain/upgrade-replay/run.sh"
+exit_code = 0
+log_path = "build/upgrade-replay/fixture-activation.log"
+
+[gate.1.2.2]
+revision = "17ca0bb8cee0e8471160d215f916f7f7abeb3817"
+command = "tools/chain/upgrade-replay/run.sh <copy of a pruned full node's data directory>"
+exit_code = 0
+log_path = "build/upgrade-replay/state-activation.log"
+
