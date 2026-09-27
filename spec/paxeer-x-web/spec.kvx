@@ -630,7 +630,7 @@ reqs = ["14.1","14.2","14.3"]
 title = "Dry-run the sidecar loop against anvil and local sidecars and record it"
 status = "pending"
 wave = 2
-requires = ["1.6","2.1","2.3","2.10","2.14","2.17","2.24","2.25","2.26","2.27","2.28","2.29","2.30","2.31","2.32","2.33","2.34","2.35","2.37","2.38","2.39","2.40","2.42"]
+requires = ["1.6","2.1","2.3","2.10","2.14","2.17","2.24","2.25","2.26","2.27","2.28","2.29","2.30","2.31","2.32","2.33","2.34","2.35","2.37","2.38","2.39","2.40","2.41","2.42"]
 do_1 = "Write interop/deploy/x-websearch/tests/dry-run-check.sh starting anvil, a real loopback web server serving committed pages and three x-websearch processes with run-local attestor keys and allow_loopback set, and deploying contracts/src/xweb/XWebConsumer.sol to anvil."
 do_2 = "Fetch the same page through the three sidecars, assert the digests are identical and the signatures are valid and ascending over the origin-1 preimage, assert the submitter's fulfil calldata decodes against precompiles/xweb/abi.json, and deliver the consumer's callback on anvil from the impersonated precompile address with the attested response and the bounded gas, asserting the consumer's stored result."
 do_3 = "Record the exchange as interop/deploy/x-websearch/tests/fixtures/dry-run.json, replayable without the nodes, carrying no key material, no endpoint but the loopback ones the run started and no date or hostname; stop with a message naming a missing tool rather than skipping a step."
@@ -769,7 +769,7 @@ reqs = ["4.1","4.2"]
 title = "Clear the pre-existing agent workspace clippy findings so agent-lint passes"
 status = "pending"
 wave = 2
-requires = ["1.18","2.9","2.16","2.38","2.39"]
+requires = ["1.18","2.9","2.16","2.38","2.39","2.41"]
 do_1 = "Run make agent-lint on this revision, and fix every clippy finding it reports in crates this feature did not write - starting with too_many_arguments in agent/crates/layerx-proof/src/program.rs verify_program_execution_receipt (observation 1.18.1) - by restructuring the code, never by an allow attribute, a lint-level change or a clippy configuration change, keeping every public signature the agent SDKs and services call unchanged unless a caller in the workspace is updated in the same task."
 do_2 = "Keep every test of each touched crate passing, and add or extend a test where a restructuring changes a function's shape."
 verify_cmd = "timeout 45m sh -c 'make agent-lint && make agent-test'"
@@ -1304,6 +1304,22 @@ symbols = ["validate_code","NativeProgramCall::validate","MAX_VERSION"]
 touches = ["agent/crates/layerx-types/build.rs","agent/crates/layerx-types/src/guest_abi.rs","agent/crates/layerx-types/src/lib.rs","agent/crates/layerx-types/src/program_lifecycle.rs","agent/crates/layerx-types/src/program_call.rs"]
 tests = ["agent/crates/layerx-types/src/guest_abi.rs","agent/crates/layerx-types/src/program_lifecycle.rs","agent/crates/layerx-types/src/program_call.rs"]
 reqs = ["11.2"]
+
+[task.2.41]
+title = "Fund the daemon custody harness through the native custody module so the confined session fee run reaches its assertions"
+status = "pending"
+wave = 2
+requires = ["2.39"]
+do_1 = "Observation 2.39.1: the daemon custody harness deploys a LayerXVault stack on the chain it owns and hands that deployed address to tests/bridge/custody_credit.py as the vault, while create_profile in tests/bridge/comet_credit.py and the kernel profile check it mirrors admit only the native custody module at 0x0000000000000000000000000000000000001013 with a runtime hash equal to module_identity(), so the confined session fee run stops before its first assertion; move the funding onto that module exactly as task 2.37 moved the local gateway harness - write the layerxcustody genesis section with platform/hosted/paxeer/custody-genesis.py for the network id, the sequencer the harness itself starts and a freshly generated deposit-root authority whose private half stays in the work directory, pass it to owned_chain in tests/daemon/custody_chain.py so init-chain.sh merges it before validate-genesis, and deposit by calling deposit(bytes32) on the precompile with the base-unit amount scaled by the chain denomination, requiring the native asset id to be the harness asset, exactly one CustodyDeposit log with its four topics, the asset topic, the beneficiary and the amount in its data, and one recorded deposit."
+do_2 = "Report the native module as the vault and its module_identity() as the runtime hash in the custody record the harness writes, so the profile and credit it then produces through the Comet endpoint the owned chain already publishes are the native ones, and leave tests/bridge/custody_credit.py, tests/bridge/comet_credit.py, the strict build output directory read task 2.39 fixed and every assertion of agent/crates/layerx-client/tests/session_fee_state_daemon.rs exactly as written."
+do_3 = "Take the settlement environment the same harness publishes for the node onto the native anchor module: platform/hosted/node/bootstrap.sh admits no settlement contract and no checkpoint registry but the anchor precompile at 0x0000000000000000000000000000000000001014, which is the address tests/daemon/program-admission.sh already publishes on its non-custody path, so stop deploying a guarantor bond and a checkpoint registry for the custody path, assert instead that the genesis registration bootstrap.sh derived from the registration request is the byte string the harness used to overwrite, and keep write_settlement callable with the signature tests/daemon/guarantor-publication-chain.py uses."
+do_4 = "Record as one observation, without repairing them, that the harness modes which still govern a deployed vault through a timelock read the custody record this task narrows - the handover peers path and the publication setup path each expect a deployed vault, asset registry and timelock triple - and that moving them belongs to the tasks that own those gates."
+do_5 = "Run the verify_cmd once; at the passing revision record tasks 2.39, 2.38, 2.34, 2.33, 2.32 and 2.16 done with that revision, command, exit code and log path and close observations 2.39.1, 2.38.1, 2.34.1, 2.33.1, 2.32.1 and 2.16.1 naming it, as task 2.39's do_3 requires; if it does not pass, leave those tasks as they are and record the exact failing step as one observation."
+verify_cmd = "timeout 45m sh -c 'make agent-test'"
+symbols = ["custody_genesis","deposit","register"]
+touches = ["tests/daemon/withdraw-custody.py"]
+tests = ["agent/crates/layerx-client/tests/session_fee_state_daemon.rs","tests/daemon/withdraw-custody.py"]
+reqs = ["9.1","11.2"]
 
 [task.2.42]
 title = "Align the local gateway's program receipt expectation with the operation the kernel binds"
