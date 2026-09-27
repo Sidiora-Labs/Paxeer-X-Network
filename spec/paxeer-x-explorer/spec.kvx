@@ -968,7 +968,7 @@ reqs = ["20.1","20.2","20.3","20.6","20.7","20.8","20.9"]
 
 [task.6.4]
 title = "Rebuild the block details page"
-status = "pending"
+status = "done"
 wave = 6
 requires = ["5.1","5.2"]
 do_1 = "Rebuild explorer/frontend/ui/block/BlockDetails.tsx on the shared key-value rows in the reference order - height with its previous and next controls, timestamp with its zone control, the transactions sentence, hash, block reward, difficulty, total difficulty, size, a divider, gas used with its percentage, burnt fees and the extra data field - with the tooltip on each label."
@@ -984,6 +984,10 @@ verify_cmd = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --
 symbols = ["BlockDetails","BlockWithdrawals","Block"]
 touches = ["explorer/frontend/ui/block/BlockDetails.tsx","explorer/frontend/ui/block/BlockDetails.spec.tsx","explorer/frontend/ui/block/BlockWithdrawals.tsx","explorer/frontend/ui/block/BlockWithdrawals.spec.tsx","explorer/frontend/ui/block/BlockInternalTxs.tsx","explorer/frontend/ui/block/BlockDeposits.tsx","explorer/frontend/ui/block/details/BlockDetailsBlobInfo.tsx","explorer/frontend/ui/pages/Block.tsx","explorer/frontend/ui/pages/Block.spec.tsx"]
 reqs = ["20.4","20.5","20.6","20.7","20.8","20.9"]
+revision = "1736b1cb002a1b4431a1c62fb52fca2806d29e57"
+command = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/block/ ui/pages/Block.'"
+exit_code = 0
+log = ".logs/verify-6.4.log"
 
 [task.6.5]
 title = "Rebuild the address page"

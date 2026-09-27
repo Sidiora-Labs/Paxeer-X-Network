@@ -295,7 +295,7 @@
     - Keep the page working at 375px with the detail rows stacking, no horizontal page scroll and no clipped value, and change no file ending in .pw.tsx and no __screenshots__ directory.
     - Add the vitest specs explorer/frontend/ui/tx/TxSubHeading.spec.tsx, TxDetails.spec.tsx, explorer/frontend/ui/tx/details/TxInfo.spec.tsx, explorer/frontend/ui/tx/details/txDetailsActions/TxDetailsActions.spec.tsx and explorer/frontend/ui/pages/Transaction.spec.tsx, each rendering the real component through explorer/frontend/vitest/lib.tsx with payload mocks from explorer/frontend/mocks/ and asserting the rows, their order, their labels and their values.
     - _Requirements: 20.1, 20.2, 20.3, 20.6, 20.7, 20.8, 20.9_
-  - [ ] 6.4 Rebuild the block details page
+  - [x] 6.4 Rebuild the block details page
     - Rebuild explorer/frontend/ui/block/BlockDetails.tsx on the shared key-value rows in the reference order - height with its previous and next controls, timestamp with its zone control, the transactions sentence, hash, block reward, difficulty, total difficulty, size, a divider, gas used with its percentage, burnt fees and the extra data field - with the tooltip on each label.
     - Close the detail card with the shared expander holding the fields the overview does not show, and render the extra data as the read-only field the reference shows rather than a bare value.
     - Render the page title as the block number with the shared pill section tabs for the overview and the participants beside the API entry.
