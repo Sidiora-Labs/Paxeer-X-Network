@@ -711,3 +711,13 @@ symbol = "__screenshots__"
 observed = "The range 10eb3cb1e..50ad0f4afcd1ec6974fe09f6db272ace49b186dd changes none of the 235 files ending in .pw.tsx and none of the 1100 files under a __screenshots__ directory, while waves 5 and 6 restyled the components those baselines picture, so the component screenshot suite was neither run nor refreshed by this gate."
 assumption = "The visual baselines of the redesigned components are a release-time refresh item, taken once on the release candidate with the browser matrix rather than per task or per wave, so nothing is regenerated here and no baseline is deleted to make a suite pass."
 severity = "note"
+
+[gate.7.1.4]
+task = "7.1"
+reqs = ["16.1","16.2","16.4"]
+revision = "50ad0f4afcd1ec6974fe09f6db272ace49b186dd"
+command = "docker build -f explorer/frontend/Dockerfile -t explorer-frontend-gate:50ad0f4af explorer/frontend"
+environment = "linux/x86_64, docker 28.2.2 over the node:22.14.0-alpine base of the three stages the Dockerfile declares, the build context excluding node_modules and .next through explorer/frontend/.dockerignore"
+outcome = "pass"
+evidence = "build/explorer-gates/frontend-image.log"
+note = "exit code 0. The frontend image built once from the merged tip of waves 5 and 6 through every stage the Dockerfile declares: the dependency stage for the application and its seven deploy tools, the builder stage whose sprite build, env collection and yarn build carried the Next production build and its own type check, and the runner stage, producing sha256:9bb89f7f7f4e35a6b0a9989276c67a90828b3f5d886f944c88ec39277811fecc at 788 MB tagged explorer-frontend-gate:50ad0f4af, kept local and never pushed. The build also printed two LegacyKeyValueFormat advisories for the ENV lines 81 and 213 of the Dockerfile, which the builder does not fail on and which no task of these two waves touches. The run finished after task 7.1 reached its time bound, so this record was appended in a second commit beside the three the first one carried."
