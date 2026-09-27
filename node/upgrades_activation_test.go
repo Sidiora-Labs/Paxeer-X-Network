@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	anchorprecompile "github.com/sidiora-labs/paxeer-network/precompiles/layerxanchor"
 	verifyprecompile "github.com/sidiora-labs/paxeer-network/precompiles/layerxverify"
 	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/secp256k1"
+	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
 	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 	upgradetypes "github.com/sidiora-labs/paxeer-network/sdk/x/upgrade/types"
 	"github.com/sidiora-labs/paxeer-network/storage/common/keys"
@@ -93,7 +95,6 @@ func TestActivationUpgradeIsRegisteredBesideTheTagList(t *testing.T) {
 	require.Equal(t, xwebUpgrade, LatestUpgrade)
 	require.Equal(t, xwebUpgrade, names[len(names)-1])
 	require.Equal(t, 1, semver.Compare(ActivationUpgrade, LatestUpgrade))
-	require.Positive(t, ForkHeight)
 
 	a := NewTestWrapper(t, time.Now().UTC(), secp256k1.GenPrivKey().PubKey(), false).App
 	require.True(t, a.UpgradeKeeper.HasHandler(ActivationUpgrade))
@@ -233,78 +234,159 @@ func TestActivationServesTheForkPrecompilesOnlyFromItsHeight(t *testing.T) {
 	}
 }
 
-func TestActivationSchedulesThePlanOneBlockBeforeTheForkHeight(t *testing.T) {
-	testWrapper := NewTestWrapper(t, time.Now().UTC(), secp256k1.GenPrivKey().PubKey(), true)
+// writeActivationUpgradeInfo writes the upgrade info file an operator leaves for
+// the activation plan, through the keeper that writes it and into the home the
+// application reads, so the begin blocker reads exactly what a node reads.
+func writeActivationUpgradeInfo(t *testing.T, a *App, height int64) {
+	t.Helper()
+	require.NoError(t, a.UpgradeKeeper.DumpUpgradeInfoToDisk(height, ActivationUpgrade))
+	info, err := a.UpgradeKeeper.ReadUpgradeInfoFromDisk()
+	require.NoError(t, err)
+	require.Equal(t, ActivationUpgrade, info.Name)
+	require.Equal(t, height, info.Height)
+}
+
+// recordPreviousProposer records the proposer of the block before the one the
+// test runs, which the distribution module's begin blocker reads in every block
+// after the first.
+func recordPreviousProposer(a *App, ctx sdk.Context, valPub cryptotypes.PubKey) {
+	a.DistrKeeper.SetPreviousProposerConsAddr(ctx, sdk.ConsAddress(valPub.Address()))
+}
+
+func TestActivationAppliesThePlanInTheBlockTheUpgradeInfoNames(t *testing.T) {
+	valPub := secp256k1.GenPrivKey().PubKey()
+	testWrapper := NewTestWrapper(t, time.Now().UTC(), valPub, true)
 	a, ctx := testWrapper.App, testWrapper.Ctx
-	before := ctx.WithBlockHeight(ForkHeight - 1)
-
-	// A chain whose version map already carries the fork modules never schedules.
-	require.True(t, a.activationModulesPresent(ctx))
-	a.scheduleActivationUpgrade(before)
-	_, found := a.UpgradeKeeper.GetUpgradePlan(ctx)
-	require.False(t, found)
-
 	rewindBeforeActivation(t, a, ctx)
+	require.Empty(t, a.unmountedActivationStores())
 
-	// Only the block before the fork height schedules the plan, and never a trace.
-	for _, height := range []int64{1, ForkHeight - 2, ForkHeight, ForkHeight + 1} {
-		a.scheduleActivationUpgrade(ctx.WithBlockHeight(height))
-		_, found = a.UpgradeKeeper.GetUpgradePlan(ctx)
-		require.False(t, found, height)
+	const height = int64(42)
+	writeActivationUpgradeInfo(t, a, height)
+	at := ctx.WithBlockHeight(height)
+	recordPreviousProposer(a, at, valPub)
+
+	gate := activationPrecompileGate()
+	for addr := range gate.Modules {
+		require.NotContains(t, a.EvmKeeper.CustomPrecompiles(at), addr, addr.Hex())
 	}
-	a.scheduleActivationUpgrade(before.WithIsTracing(true))
-	_, found = a.UpgradeKeeper.GetUpgradePlan(ctx)
+
+	a.BeginBlock(at, height, nil, nil, false)
+
+	// The plan ran on the standard path: the handler initialised every module the
+	// version map lacked, the done height is the block's own and no plan is left.
+	require.Equal(t, height, a.UpgradeKeeper.GetDoneHeight(at, ActivationUpgrade))
+	versions := a.UpgradeKeeper.GetModuleVersionMap(at)
+	require.Equal(t, a.mm.GetVersionMap(), versions)
+	for _, name := range activationModules() {
+		require.Contains(t, versions, name)
+	}
+	require.True(t, a.activationModulesPresent(at))
+	_, found := a.UpgradeKeeper.GetUpgradePlan(at)
 	require.False(t, found)
 
-	a.scheduleActivationUpgrade(before)
-	plan, found := a.UpgradeKeeper.GetUpgradePlan(ctx)
-	require.True(t, found)
-	require.Equal(t, ActivationUpgrade, plan.Name)
-	require.Equal(t, ForkHeight, plan.Height)
-	require.False(t, plan.ShouldExecute(before))
-	require.True(t, plan.ShouldExecute(ctx.WithBlockHeight(ForkHeight)))
+	// The web module comes up paused on an empty attestor set, as its own genesis
+	// leaves it.
+	require.True(t, a.xwebInitialised(at))
+	require.True(t, a.XWebKeeper.IsPaused(at))
+	require.Empty(t, a.XWebKeeper.GetAttestorSet(at).Attestors)
 
-	// The scheduled plan is never rewritten by the blocks that follow.
-	a.scheduleActivationUpgrade(before)
-	again, found := a.UpgradeKeeper.GetUpgradePlan(ctx)
-	require.True(t, found)
-	require.Equal(t, plan, again)
+	served := a.EvmKeeper.CustomPrecompiles(at)
+	for addr := range gate.Modules {
+		require.Contains(t, served, addr, addr.Hex())
+	}
+	below := a.EvmKeeper.CustomPrecompiles(at.WithBlockHeight(height - 1))
+	require.Len(t, below, len(served)-len(gate.Modules))
+	for addr := range gate.Modules {
+		require.NotContains(t, below, addr, addr.Hex())
+	}
 
-	// A chain that has applied the plan never schedules it again.
-	a.UpgradeKeeper.ClearUpgradePlan(ctx)
-	a.UpgradeKeeper.SetDone(ctx.WithBlockHeight(ForkHeight), ActivationUpgrade)
-	a.scheduleActivationUpgrade(before)
-	_, found = a.UpgradeKeeper.GetUpgradePlan(ctx)
+	// The file is still on disk in the blocks that follow, and none of them applies
+	// the plan a second time.
+	next := ctx.WithBlockHeight(height + 1)
+	recordPreviousProposer(a, next, valPub)
+	a.BeginBlock(next, height+1, nil, nil, false)
+	require.Equal(t, height, a.UpgradeKeeper.GetDoneHeight(next, ActivationUpgrade))
+	require.Equal(t, versions, a.UpgradeKeeper.GetModuleVersionMap(next))
+	_, found = a.UpgradeKeeper.GetUpgradePlan(next)
 	require.False(t, found)
 }
 
-func TestActivationHaltsTheNodeUntilItsStoreUpgradeInfoIsWritten(t *testing.T) {
-	testWrapper := NewTestWrapper(t, time.Now().UTC(), secp256k1.GenPrivKey().PubKey(), true)
+func TestActivationIgnoresAnUpgradeInfoThatNamesAnotherHeight(t *testing.T) {
+	valPub := secp256k1.GenPrivKey().PubKey()
+	testWrapper := NewTestWrapper(t, time.Now().UTC(), valPub, true)
 	a, ctx := testWrapper.App, testWrapper.Ctx
-	require.Zero(t, a.activationUpgradeInfoHeight)
+	rewindBeforeActivation(t, a, ctx)
 
-	// With no plan due, the block runs.
-	require.NotPanics(t, func() { a.haltForActivationStoreUpgrade(ctx) })
+	const height = int64(42)
+	writeActivationUpgradeInfo(t, a, height+5)
+	at := ctx.WithBlockHeight(height)
+	recordPreviousProposer(a, at, valPub)
+	before := a.UpgradeKeeper.GetModuleVersionMap(at)
 
-	plan := upgradetypes.Plan{Name: ActivationUpgrade, Height: ctx.BlockHeight()}
-	require.NoError(t, a.UpgradeKeeper.ScheduleUpgrade(ctx, plan))
-	require.True(t, plan.ShouldExecute(ctx))
-	require.Panics(t, func() { a.haltForActivationStoreUpgrade(ctx) })
+	a.BeginBlock(at, height, nil, nil, false)
 
-	info, err := a.UpgradeKeeper.ReadUpgradeInfoFromDisk()
-	require.NoError(t, err)
-	require.Equal(t, plan.Name, info.Name)
-	require.Equal(t, plan.Height, info.Height)
-	upgrades, ok := layerxStoreUpgrades(info.Name)
-	require.True(t, ok)
-	require.Equal(t, activationStoreUpgrades(), upgrades)
+	require.Zero(t, a.UpgradeKeeper.GetDoneHeight(at, ActivationUpgrade))
+	require.Equal(t, before, a.UpgradeKeeper.GetModuleVersionMap(at))
+	require.False(t, a.activationModulesPresent(at))
+	_, found := a.UpgradeKeeper.GetUpgradePlan(at)
+	require.False(t, found)
+	for addr := range activationPrecompileGate().Modules {
+		require.NotContains(t, a.EvmKeeper.CustomPrecompiles(at), addr, addr.Hex())
+	}
+	for _, name := range activationStoreUpgrades().Added {
+		iter := at.KVStore(a.GetKey(name)).Iterator(nil, nil)
+		require.False(t, iter.Valid(), name)
+		require.NoError(t, iter.Close())
+	}
+}
 
-	// A process that started with that file mounts the plan's stores through the
-	// upgrade store loader, which SetStoreUpgradeHandlers records as this height.
-	a.activationUpgradeInfoHeight = info.Height
-	require.NotPanics(t, func() { a.haltForActivationStoreUpgrade(ctx) })
+func TestActivationStopsTheBlockTheStoreLoaderMountedNoActivationStoresFor(t *testing.T) {
+	valPub := secp256k1.GenPrivKey().PubKey()
+	testWrapper := NewTestWrapper(t, time.Now().UTC(), valPub, true)
+	a, ctx := testWrapper.App, testWrapper.Ctx
+	rewindBeforeActivation(t, a, ctx)
 
-	// A trace of the height never stops the node.
-	a.activationUpgradeInfoHeight = 0
-	require.NotPanics(t, func() { a.haltForActivationStoreUpgrade(ctx.WithIsTracing(true)) })
+	const height = int64(42)
+	writeActivationUpgradeInfo(t, a, height)
+	at := ctx.WithBlockHeight(height)
+	recordPreviousProposer(a, at, valPub)
+	before := a.UpgradeKeeper.GetModuleVersionMap(at)
+
+	// A process the upgrade store loader never ran in carries the plan's store keys
+	// without the commit multistore holding a store for any of them.
+	mounted := make(map[string]*sdk.KVStoreKey, len(activationStoreUpgrades().Added))
+	for _, name := range activationStoreUpgrades().Added {
+		mounted[name] = a.keys[name]
+		a.keys[name] = sdk.NewKVStoreKey(name)
+	}
+	require.Equal(t, activationStoreUpgrades().Added, a.unmountedActivationStores())
+
+	recovered := func() (value any) {
+		defer func() { value = recover() }()
+		a.BeginBlock(at, height, nil, nil, false)
+		return nil
+	}()
+	for name, key := range mounted {
+		a.keys[name] = key
+	}
+
+	require.NotNil(t, recovered)
+	message := fmt.Sprint(recovered)
+	require.Contains(t, message, "the store loader did not add the activation stores")
+	require.Contains(t, message, "the upgrade info height must equal the last committed height plus one when the process starts")
+	for _, name := range activationStoreUpgrades().Added {
+		require.Contains(t, message, name)
+	}
+
+	// The block wrote nothing: no plan, no done height, no module and no store entry.
+	require.Zero(t, a.UpgradeKeeper.GetDoneHeight(at, ActivationUpgrade))
+	require.Equal(t, before, a.UpgradeKeeper.GetModuleVersionMap(at))
+	require.False(t, a.activationModulesPresent(at))
+	_, found := a.UpgradeKeeper.GetUpgradePlan(at)
+	require.False(t, found)
+	for _, name := range activationStoreUpgrades().Added {
+		iter := at.KVStore(a.GetKey(name)).Iterator(nil, nil)
+		require.False(t, iter.Valid(), name)
+		require.NoError(t, iter.Close())
+	}
 }

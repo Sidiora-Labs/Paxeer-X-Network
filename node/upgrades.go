@@ -23,7 +23,6 @@ import (
 	storetypes "github.com/sidiora-labs/paxeer-network/sdk/store/types"
 	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 	"github.com/sidiora-labs/paxeer-network/sdk/types/module"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/upgrade"
 	upgradetypes "github.com/sidiora-labs/paxeer-network/sdk/x/upgrade/types"
 	"golang.org/x/mod/semver"
 )
@@ -83,12 +82,6 @@ const xwebUpgrade = precompiles.XWebUpgrade
 // the embedded tag list, so the latest upgrade and every custom precompile
 // version map stay exactly as they are.
 const ActivationUpgrade = "v6.9"
-
-// ForkHeight is the height the activation plan runs at. Every node schedules the
-// plan for this height from the block before it, so the fork needs no proposal
-// and no operator action to be agreed on and every node applies it at the same
-// height.
-const ForkHeight int64 = 26000000
 
 func (app *App) RegisterUpgradeHandlers() {
 	// if there is an override list, use that instead, for integration tests
@@ -306,30 +299,44 @@ func activationPrecompileGate() evmkeeper.CustomPrecompileActivation {
 	}
 }
 
-// scheduleActivationUpgrade schedules the activation plan for the fork height at
-// the block before it. It runs after the module begin blockers of its own block,
-// so the upgrade module reads the plan for the first time at the fork height and
-// applies it there. A chain whose module version map already carries every
-// module the plan initialises carries the fork already and is left alone, as is
-// a chain that has applied the plan or that has a plan of its own scheduled.
-func (app *App) scheduleActivationUpgrade(ctx sdk.Context) {
-	if ctx.IsTracing() || ctx.BlockHeight() != ForkHeight-1 {
+// applyActivationUpgrade applies the activation plan in the block whose height
+// the upgrade info file on disk names, which is the same file the store loader
+// reads to mount the stores the plan adds. That file is an operator's, not a
+// chain record, so the upgrade module's own begin blocker never sees the plan and
+// the application applies it here, before the module begin blockers, so that
+// every module the plan initialises is live for the rest of its own block. The
+// keeper's apply path runs the handler, writes the module version map, records
+// the done height and clears any plan the store carries, and the done height and
+// the version map it writes are what refuse a second application while the file
+// stays on disk. A file that names another plan or another height, a chain that
+// has applied the plan, and a chain whose version map already carries every
+// module the plan initialises are all left untouched.
+func (app *App) applyActivationUpgrade(ctx sdk.Context) {
+	if ctx.IsTracing() {
 		return
 	}
+	// The two state reads come before the file, so a chain that carries the fork
+	// reads no file in any of its blocks.
 	if app.UpgradeKeeper.GetDoneHeight(ctx, ActivationUpgrade) != 0 {
-		return
-	}
-	if _, found := app.UpgradeKeeper.GetUpgradePlan(ctx); found {
 		return
 	}
 	if app.activationModulesPresent(ctx) {
 		return
 	}
-	plan := upgradetypes.Plan{Name: ActivationUpgrade, Height: ForkHeight}
-	if err := app.UpgradeKeeper.ScheduleUpgrade(ctx, plan); err != nil {
-		panic(fmt.Errorf("unable to schedule the %s upgrade at height %d: %w", plan.Name, plan.Height, err))
+	info, err := app.UpgradeKeeper.ReadUpgradeInfoFromDisk()
+	if err != nil {
+		panic(fmt.Errorf("unable to read the upgrade info of the %s upgrade from filesystem: %w", ActivationUpgrade, err))
 	}
-	logger.Info(upgrade.BuildUpgradeScheduledMsg(plan))
+	if info.Name != ActivationUpgrade || info.Height != ctx.BlockHeight() {
+		return
+	}
+	if missing := app.unmountedActivationStores(); len(missing) > 0 {
+		panic(fmt.Errorf("upgrade %s is due at height %d but the store loader did not add the activation stores %s: the upgrade info height must equal the last committed height plus one when the process starts",
+			ActivationUpgrade, info.Height, strings.Join(missing, ", ")))
+	}
+	plan := upgradetypes.Plan{Name: ActivationUpgrade, Height: ctx.BlockHeight()}
+	logger.Info("applying upgrade", "name", plan.Name, "at", plan.DueAt())
+	app.UpgradeKeeper.ApplyUpgrade(ctx, plan)
 }
 
 // activationModulesPresent reports whether the module version map of ctx already
@@ -344,30 +351,18 @@ func (app *App) activationModulesPresent(ctx sdk.Context) bool {
 	return true
 }
 
-// haltForActivationStoreUpgrade stops the node at the height the activation plan
-// is due unless this process started with that plan's upgrade-info.json, the
-// file the upgrade store loader reads to mount the plan's added stores at that
-// height. It writes the file and panics exactly as the upgrade module stops a
-// node whose binary has no handler, so operators restart the same binary and the
-// restarted process mounts the stores and applies the plan. A height the
-// operator marked skipped is left to the upgrade module's own skip path.
-func (app *App) haltForActivationStoreUpgrade(ctx sdk.Context) {
-	if ctx.IsTracing() {
-		return
+// unmountedActivationStores names the stores the activation plan adds that the
+// commit multistore does not carry. Only a process that read the plan's upgrade
+// info file at one above its last committed height mounts them, through the
+// upgrade store loader the store-loader wiring installs for the plan's name.
+func (app *App) unmountedActivationStores() []string {
+	cms := app.CommitMultiStore()
+	var missing []string
+	for _, name := range activationStoreUpgrades().Added {
+		key := app.GetKey(name)
+		if key == nil || cms.GetCommitKVStore(key) == nil {
+			missing = append(missing, name)
+		}
 	}
-	plan, found := app.UpgradeKeeper.GetUpgradePlan(ctx)
-	if !found || plan.Name != ActivationUpgrade || !plan.ShouldExecute(ctx) {
-		return
-	}
-	if app.UpgradeKeeper.IsSkipHeight(ctx.BlockHeight()) || app.activationUpgradeInfoHeight == plan.Height {
-		return
-	}
-	//nolint:staticcheck // SA1019: the upgrade store loader reads this file
-	if err := app.UpgradeKeeper.DumpUpgradeInfoWithInfoToDisk(plan.Height, plan.Name, plan.Info); err != nil {
-		panic(fmt.Errorf("unable to write upgrade info to filesystem: %w", err))
-	}
-	message := upgrade.BuildUpgradeNeededMsg(plan)
-	logger.Error(message)
-	fmt.Fprintln(os.Stderr, message)
-	panic(message)
+	return missing
 }

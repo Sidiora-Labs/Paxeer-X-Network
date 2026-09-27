@@ -525,13 +525,6 @@ type App struct {
 
 	forkInitializer func(sdk.Context)
 
-	// activationUpgradeInfoHeight is the height of the activation plan's
-	// upgrade-info.json this process started with, or zero when it started with
-	// none. The plan's added stores are mounted by the upgrade store loader only
-	// in a process that read that file, so the activation stops a node that
-	// reaches the plan's height without it.
-	activationUpgradeInfoHeight int64
-
 	httpServerStartSignal     chan struct{}
 	wsServerStartSignal       chan struct{}
 	httpServerStartSignalSent bool
@@ -1306,12 +1299,6 @@ func (app *App) SetStoreUpgradeHandlers() {
 	if storeUpgrades, ok := layerxStoreUpgrades(upgradeInfo.Name); ok && !app.UpgradeKeeper.IsSkipHeight(upgradeInfo.Height) {
 		// configure store loader that checks if version == upgradeHeight and applies store upgrades
 		app.SetStoreLoader(upgradetypes.UpgradeStoreLoader(upgradeInfo.Height, &storeUpgrades))
-	}
-
-	// Record that this process read the activation plan's upgrade info, so that
-	// the block the plan is due at runs here instead of stopping the node again.
-	if upgradeInfo.Name == ActivationUpgrade {
-		app.activationUpgradeInfoHeight = upgradeInfo.Height
 	}
 }
 
