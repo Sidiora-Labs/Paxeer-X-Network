@@ -630,7 +630,7 @@ reqs = ["14.1","14.2","14.3"]
 title = "Dry-run the sidecar loop against anvil and local sidecars and record it"
 status = "pending"
 wave = 2
-requires = ["1.6","2.1","2.3","2.10","2.14","2.17","2.24","2.25","2.26","2.27","2.28","2.29","2.30","2.31","2.32","2.33","2.34","2.35","2.37","2.38","2.39"]
+requires = ["1.6","2.1","2.3","2.10","2.14","2.17","2.24","2.25","2.26","2.27","2.28","2.29","2.30","2.31","2.32","2.33","2.34","2.35","2.37","2.38","2.39","2.40"]
 do_1 = "Write interop/deploy/x-websearch/tests/dry-run-check.sh starting anvil, a real loopback web server serving committed pages and three x-websearch processes with run-local attestor keys and allow_loopback set, and deploying contracts/src/xweb/XWebConsumer.sol to anvil."
 do_2 = "Fetch the same page through the three sidecars, assert the digests are identical and the signatures are valid and ascending over the origin-1 preimage, assert the submitter's fulfil calldata decodes against precompiles/xweb/abi.json, and deliver the consumer's callback on anvil from the impersonated precompile address with the attested response and the bounded gas, asserting the consumer's stored result."
 do_3 = "Record the exchange as interop/deploy/x-websearch/tests/fixtures/dry-run.json, replayable without the nodes, carrying no key material, no endpoint but the loopback ones the run started and no date or hostname; stop with a message naming a missing tool rather than skipping a step."
@@ -1281,6 +1281,21 @@ symbols = ["AGENT_TEST_TARGET_DIR","agent-test-native-prerequisites"]
 touches = ["Makefile","agent/tools/run-real-node-tests.sh"]
 tests = ["agent/crates/layerx-client/tests/session_fee_state_daemon.rs","tests/daemon/withdraw-custody.py"]
 reqs = ["9.1"]
+
+[task.2.40]
+title = "Align the native program lifecycle and call encoders with the kernel's guest ABI range"
+status = "pending"
+wave = 2
+requires = ["2.37"]
+do_1 = "Observation 2.37.2: the local gateway qualification now funds itself through the native custody module and starts its cluster, then stops in deploy_web_reader because NativeProgramDeploy::encode refuses guest ABI 4, and the same run would stop again in call_web_request because NativeProgramCall::validate admits only 1 and 2; the kernel is the authority and it admits 1 to 4 - include/layerx/programs.h allocates LX_PROGRAMS_GUEST_ABI_V2_VERSION through LX_PROGRAMS_GUEST_ABI_V4_VERSION, lxp_programs_abi_transition_validate in src/modules/programs/deploy.c admits a requested version of 1, 2, 3 or 4, the call decoder in src/modules/programs/call.c refuses a zero version and every version above LX_PROGRAMS_GUEST_ABI_V4_VERSION, the programs module registers at that same version in src/modules/programs/registration.c, and the reference web reader declares abi 4 in its layerx-program.json, its LayerX.toml and its interface.kvx with ABI 4 frozen in programs/abi-frozen.sha256; every kernel rule and the program's declared ABI therefore stay exactly as they are and the stale Rust bound, written when 3 was the highest guest ABI and never raised when 4 was allocated, is the side corrected."
+do_2 = "Derive the kernel's maximum in agent/crates/layerx-types/build.rs from the LX_PROGRAMS_GUEST_ABI_V*_VERSION enumerators of include/layerx/programs.h, in the shape of the result-code parity that script already enforces against include/layerx/lxp_result.h, failing closed when the header declares no enumerator or declares one that names a version it does not equal, and expose it through a new agent/crates/layerx-types/src/guest_abi.rs whose supported() admits a nonzero version at or below that maximum - exactly the two conditions the kernel applies - so no second literal holds the range."
+do_3 = "Take the bound in validate_code of agent/crates/layerx-types/src/program_lifecycle.rs and in NativeProgramCall::validate of agent/crates/layerx-types/src/program_call.rs from that one function and widen neither beyond the kernel's maximum, and pin the range in the unit tests of all three files against the generated constant instead of a literal: the header's highest enumerator equals the constant, a deploy, an upgrade and a call round-trip at every version in the range, and zero, the maximum plus one and u16::MAX are refused by all three encoders, with every existing assertion left exactly as strong."
+do_4 = "Run the verify_cmd once; at the revision where it exits 0 record tasks 2.37, 2.35 and 2.28 done with that revision, command, exit code and log path and close observations 2.21.2, 2.28.1, 2.35.2 and 2.37.2 naming it, as task 2.37's do_5 and task 2.35's do_4 require; if it does not pass, leave those three tasks as they are and record the exact failing step as one observation."
+verify_cmd = "timeout 30m sh -c 'export LAYERX_TEST_SOCAT_BIN=$(command -v socat) LAYERX_TEST_WEB_READER_WASM=$PWD/programs/sdk/rust/examples/web-reader/target/wasm32-unknown-unknown/release/layerx_reference_web_reader.wasm; cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway schema_lists_every_public_method && cargo test --locked --manifest-path platform/hosted/gateway/tests/local/Cargo.toml --test lifecycle events::'"
+symbols = ["validate_code","NativeProgramCall::validate","MAX_VERSION"]
+touches = ["agent/crates/layerx-types/build.rs","agent/crates/layerx-types/src/guest_abi.rs","agent/crates/layerx-types/src/lib.rs","agent/crates/layerx-types/src/program_lifecycle.rs","agent/crates/layerx-types/src/program_call.rs"]
+tests = ["agent/crates/layerx-types/src/guest_abi.rs","agent/crates/layerx-types/src/program_lifecycle.rs","agent/crates/layerx-types/src/program_call.rs"]
+reqs = ["11.2"]
 
 [task.3.1]
 title = "Run the xweb workflow's legs once on the merged revision and record the evidence"
