@@ -199,3 +199,114 @@ The explorer of Paxeer X Network is a GPL fork of Blockscout carried in explorer
 3. ANY failure the run exposes that belongs to no task in this feature SHALL be recorded once as an observation with its revision, command, exit code, log path, one sentence of what was observed and one sentence of what is assumed, and SHALL NOT be chased.
 4. NO gate record SHALL be written for a command that did not run, and no gate that passed at the recorded revision SHALL be rerun to confirm it.
 
+## Requirement 17: The Scan Shell
+
+**User Story:** As someone moving between the explorer's pages, I want one frame around every page - a utility bar, a brand row, a centred container and a footer - so that the explorer reads as one product instead of a set of screens.
+
+### Acceptance Criteria
+
+1. THE utility bar SHALL sit above the brand row and SHALL carry, on the left, the Paxeer coin price with its percentage change and the current gas price in small text with the accent value tone, and on the right the desktop search entry on every page except the home page, followed by the settings control, the appearance control and the network control.
+2. THE brand row SHALL carry the network mark and wordmark on the left and, on the right, a horizontal menu of dropdown groups - Home; Blockchain with transactions, pending transactions, blocks, top accounts and verified contracts; Tokens with tokens, token transfers and the NFT items where they are enabled; Kernel with the Paxeer X account, anchors and receipts items only while the Paxeer X lists feature is enabled; Resources with charts and statistics and the gas tracker; API with the documentation items; and More with contract verification, CSV export and the account items only while the account feature is enabled - with the group holding the current route rendered in the accent text tone.
+3. EVERY page layout - the application layout, the home layout, the error layout and the search-results layout - SHALL place its content in one centred container of a single maximum width over the page background the theme declares, so no page sets its own frame.
+4. THE footer SHALL carry a thin top border, the social links on the left and a back-to-top control on the right, then four columns - a brand blurb with the add-network-to-wallet button and three columns of links read from the footer configuration - and a bottom line naming Paxeer X Network and the year.
+5. THE home page SHALL open with a hero container above the content holding the page title and the wide search field with its filter selector and its accent submit button, and the search behaviour, the suggestion list and the redirect path SHALL be exactly what they are now.
+6. EVERY component of the shell SHALL take its colour, typeface, radius and shadow from a theme semantic token or a recipe, and SHALL carry no literal colour, font family, radius or shadow value.
+7. BOTH the light and the dark appearance SHALL render the shell with every token it uses resolving in each, and neither appearance SHALL be reached by a hardcoded value.
+8. THE desktop structure at 1280px and above SHALL match the scan layout the reference defines, and at 375px the existing mobile header, mobile navigation and mobile search paths SHALL stay in use with no horizontal page scroll and nothing clipped.
+9. EACH changed shell component SHALL have a vitest spec that renders the real component through the real theme provider of the frontend test harness with the repository's own API payload mocks and asserts the elements the structure demands, their order and their text.
+
+## Requirement 18: The Scan Primitives
+
+**User Story:** As a developer building any explorer page, I want the repeated pieces of the scan layout to exist once as shared components, so that nine pages cannot drift into nine different cards.
+
+### Acceptance Criteria
+
+1. THE shared scan components SHALL include a stat card carrying an uppercase label, a value and an optional delta whose sign selects the success or destructive text tone.
+2. THE shared scan components SHALL include a table card carrying a header count line, an actions slot beside it, the table body, and a footer holding a show-rows selector and a pagination control; the pagination SHALL read First, a previous control, Page x of N, a next control and Last, and the query hook that drives paging and its existing test SHALL be left exactly as they are.
+3. THE shared scan components SHALL include pill section tabs whose selected pill sits on the accent surface, an expander row that reads as a More Details label with a click-to-show-more control revealing its children, a preview button rendered as an eye, a method chip carrying a decoded method name or a raw selector, and a direction badge carrying IN or OUT.
+4. THE key-value detail row SHALL be built on the existing detailed-information component and SHALL render a label column whose question-mark icon carries the row's tooltip, a value column, and a divider variant that separates groups of rows.
+5. THE entity links for addresses, transactions, blocks and tokens SHALL take the scan link tone, truncation and copy-icon placement, and SHALL keep every route, parameter and feature condition they resolve today.
+6. THE table, tabs, badge, tag, stat and button recipes SHALL gain the variants these primitives consume while the theme's token values and the existing token test SHALL remain unchanged and passing.
+7. EVERY primitive SHALL take its colour, typeface, radius and shadow from a theme semantic token or a recipe, and SHALL carry no literal colour, font family, radius or shadow value.
+8. BOTH the light and the dark appearance SHALL render every primitive with each token it uses resolving in both.
+9. THE desktop structure at 1280px and above SHALL match the scan layout the reference defines, and at 375px the list-item variants SHALL stay in use so no table is clipped and no page scrolls horizontally.
+10. EACH primitive SHALL have a vitest spec that renders the real component through the real theme provider of the frontend test harness with the repository's own API payload mocks and asserts its structure, its order and its text.
+
+## Requirement 19: The Scan List Pages
+
+**User Story:** As someone scanning what the chain is doing, I want the transaction, block, token and account lists to read as the same card with the same controls, so that learning one list teaches me all of them.
+
+### Acceptance Criteria
+
+1. THE transactions page SHALL open with a row of four stat cards - transactions in the last day, pending transactions in the last hour, total transaction fee in the last day and average transaction fee in the last day - each carrying its delta, fed by the statistics the frontend already reads.
+2. THE transactions table card SHALL carry the count line with the record note beneath it, the download action and the pagination in its header, and the columns preview, transaction hash, action chip, block, age, from and to with the direction arrow between them, amount and transaction fee, with the failed-transaction marker kept on the hash.
+3. THE blocks page SHALL use the same table card, count line, header actions, show-rows footer and pagination as the transactions page, with the columns the block list already renders.
+4. THE token tracker page SHALL render a table card counting the token contracts found, with the columns index, token with its logo name and symbol, price with the coin-denominated price beneath it in the muted tone, change percent in the success or destructive tone, volume over the last day, circulating market capitalisation, onchain market capitalisation and holders.
+5. THE top accounts page SHALL render a table card whose count line names the accounts found with the total balance beside it, with the columns index, address, name tag, balance, percentage and transaction count.
+6. EVERY changed component of these pages SHALL take its colour, typeface, radius and shadow from a theme semantic token or a recipe, and SHALL carry no literal colour, font family, radius or shadow value.
+7. BOTH the light and the dark appearance SHALL render these pages with every token they use resolving in each.
+8. THE desktop structure at 1280px and above SHALL match the scan layout the reference defines, and at 375px the existing list-item variants SHALL stay in use with no horizontal page scroll and no clipped table.
+9. EACH changed component SHALL have a vitest spec that renders the real component through the real theme provider of the frontend test harness with the repository's own API payload mocks and asserts the columns, their order and their text.
+
+## Requirement 20: The Scan Detail Pages
+
+**User Story:** As someone opening a transaction or a block, I want its facts in one labelled card with the rare ones folded away, so that I can read the common case without scrolling past everything else.
+
+### Acceptance Criteria
+
+1. THE transaction page SHALL open with a title carrying the previous and next controls, pill section tabs for the overview and the logs with their count, and the API entry beside them.
+2. THE transaction overview SHALL render the decoded action in its own card above the detail card, and the detail card SHALL carry the hash with its copy control, the status badge, the block with its confirmation chip, the timestamp with its zone control, a divider, the sender and the recipient with the verified mark where the recipient carries one, a divider, and the value with its coin icon and fiat figure, the fee and the gas price.
+3. THE transaction page SHALL close its detail card with an expander that reads as More Details with a click-to-show-more control, holding the fields the overview does not show, and the logs, internal transactions, raw trace and state tabs SHALL render inside the same card as the overview.
+4. THE block page SHALL carry the title with the block number, pill section tabs, and one detail card holding height with its previous and next controls, timestamp, the transactions sentence, hash, reward, difficulty, total difficulty, size, a divider, gas used with its percentage, burnt fees and the extra data field, closed by the same More Details expander.
+5. THE block page's transactions and withdrawals tabs SHALL render in the shared table card with the same header, footer and pagination as the list pages.
+6. EVERY changed component of these pages SHALL take its colour, typeface, radius and shadow from a theme semantic token or a recipe, and SHALL carry no literal colour, font family, radius or shadow value.
+7. BOTH the light and the dark appearance SHALL render these pages with every token they use resolving in each.
+8. THE desktop structure at 1280px and above SHALL match the scan layout the reference defines, and at 375px the detail rows SHALL stack without a horizontal page scroll and without a clipped value.
+9. EACH changed component SHALL have a vitest spec that renders the real component through the real theme provider of the frontend test harness with the repository's own API payload mocks and asserts the rows, their order, their labels and their values.
+
+## Requirement 21: The Scan Entity Pages
+
+**User Story:** As someone looking at an address or a token, I want its summary in three cards above tabs that hold everything else, so that the page tells me what this thing is before it tells me what it did.
+
+### Acceptance Criteria
+
+1. THE address page SHALL carry a title row with the identicon, the label Address, the full address, the copy control and the QR control, and an icon action row with the watchlist, API and menu entries.
+2. THE address page SHALL render three cards - an overview card with the coin balance, its fiat value and the token-holdings selector; a more-information card with the name tags, the latest and first transactions sent and the funding source; and a third card that shows the linked Paxeer X account when the address has one and the contract information otherwise.
+3. THE address page SHALL carry pill section tabs for transactions, internal transactions, token transfers and the remaining tabs it already has, with the advanced-filter entry on the right, and its transaction table card SHALL carry the latest-of-total count line, the download action, an OUT or IN direction badge on the counterparty column, a view-all footer row and the CSV export link beneath the card.
+4. THE token page SHALL carry a title row with the token logo, the label Token, the name with its symbol and the verified mark, and beneath it a chip row with the token standard, the source-code chip, the implementation chip and the hashtag tags, with the project link, the API entry and the menu on the right.
+5. THE token page SHALL render three cards - an overview card with the maximum total supply, the holders and the transfers with their total and daily selector; a market card with the price, the onchain market capitalisation and the circulating supply market capitalisation; and an other-information card with the token contract and its decimals - above pill section tabs for transfers, holders, information, contract and analytics, whose transfers tab is the shared table card with its count line, its download and advanced-filter actions, its pagination and its show-records footer.
+6. EVERY changed component of these pages SHALL take its colour, typeface, radius and shadow from a theme semantic token or a recipe, and SHALL carry no literal colour, font family, radius or shadow value.
+7. BOTH the light and the dark appearance SHALL render these pages with every token they use resolving in each.
+8. THE desktop structure at 1280px and above SHALL match the scan layout the reference defines, and at 375px the three cards SHALL stack and the existing list-item variants SHALL stay in use with no horizontal page scroll.
+9. EACH changed component SHALL have a vitest spec that renders the real component through the real theme provider of the frontend test harness with the repository's own API payload mocks and asserts the cards, the tabs, the direction badges and the footer entries.
+
+## Requirement 22: The Statistics Page
+
+**User Story:** As someone studying the network rather than a single transaction, I want the numbers and the charts on one page grouped by subject with a navigation that follows me down it, so that I can move between sections without losing my place.
+
+### Acceptance Criteria
+
+1. THE statistics page SHALL carry a sticky section navigation on the left listing the overview statistics, market data, blockchain data, network data and contract sections, with the section in view marked.
+2. THE overview statistics SHALL render as a grid of small stat cards, four to a row on the desktop, each with its label, its information icon, its value and its delta in the success or destructive tone.
+3. EACH section SHALL render its charts as a two-column grid of chart cards, each carrying its title with the interval and an information icon, a view link on the right, the current value beneath the title, and the chart itself with its dated horizontal axis.
+4. THE chart data, the interval selector, the resolution and the query hooks SHALL be exactly what they are now; only the frame, the grid and the chart's own colours change, and the chart colours SHALL come from theme tokens.
+5. EVERY changed component of this page SHALL take its colour, typeface, radius and shadow from a theme semantic token or a recipe, and SHALL carry no literal colour, font family, radius or shadow value.
+6. BOTH the light and the dark appearance SHALL render the page and its charts with every token they use resolving in each.
+7. THE desktop structure at 1280px and above SHALL match the scan layout the reference defines, and at 375px the section navigation SHALL collapse and the grids SHALL fall to one column with no horizontal page scroll.
+8. EACH changed component SHALL have a vitest spec that renders the real component through the real theme provider of the frontend test harness with the repository's own statistics mocks and asserts the sections, the stat cards and the chart card structure.
+
+## Requirement 23: The Kernel Pages Match the Chain Pages
+
+**User Story:** As someone following a kernel account through the explorer, I want its pages built from the same cards and tables as the chain pages, so that the kernel is part of the explorer rather than a second surface inside it.
+
+### Acceptance Criteria
+
+1. THE unified account page SHALL render its summary in the same cards the address page uses and its identities, assets and activity in the shared pill section tabs and the shared table card, with the same count line, header actions, pagination and show-rows footer.
+2. THE anchors list SHALL render in the shared table card with the columns it already carries, and its settlement rung SHALL render through the existing status ladder component restyled on the shared badge.
+3. THE receipt detail page SHALL render its fields in the shared key-value detail rows with their tooltip labels and divider groups, keeping every field, link and not-found state the page already has.
+4. NO API resource, route, feature flag, query hook or payload type of the kernel pages SHALL change, and the existing kernel specs SHALL keep asserting what they assert now.
+5. EVERY changed component of these pages SHALL take its colour, typeface, radius and shadow from a theme semantic token or a recipe, and SHALL carry no literal colour, font family, radius or shadow value.
+6. BOTH the light and the dark appearance SHALL render these pages with every token they use resolving in each.
+7. THE desktop structure at 1280px and above SHALL match the scan layout the reference defines, and at 375px the list-item variants SHALL stay in use with no horizontal page scroll and no clipped table.
+8. EACH changed component SHALL have a vitest spec that renders the real component through the real theme provider of the frontend test harness with the repository's own kernel payload mocks and asserts the cards, the tabs and the rows.
+
