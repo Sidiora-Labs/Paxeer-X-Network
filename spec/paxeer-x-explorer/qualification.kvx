@@ -648,3 +648,11 @@ symbol = "task.6.9"
 observed = "The touches of this task name ten spec files while sixteen of its source files change, and the explorer test-ratio gate refuses a range that carries fewer changed test files than changed source files."
 assumption = "Six further specs - AssetListItem, ActivityListItem, PaxeerXAnchorsTableItem, PaxeerXAnchorsListItem, PaxeerXReceiptsTableItem and PaxeerXReceiptsListItem - are written beside the ten the task names, each covering a source file the task already owns, rather than leaving source files without a test."
 severity = "note"
+
+[observation.6.11.1]
+task = "6.11"
+file = "explorer/frontend/ui/address/AddressTxs.spec.tsx"
+symbol = "AddressTxs"
+observed = "At revision 0c61642f6955c53cf68c963c5361583dc40502ab the command timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/txs ui/blocks ui/shared/address ui/address' exits 1 with one failure, .logs/verify-6.11-run3.log: the address transactions tab renders three export controls - Download Page Data, Download and CSV Export - because the tab wraps a component that carries its own scan table card with its own download action, and the same run reproduces the failure with this task's changes reverted."
+assumption = "The third control is the nested table card the transactions-list rebuild put inside the card the address page already opens, which belongs to neither of this task's two fix-ups, so the assertion and the code are both left exactly as written for the task that owns the nesting."
+severity = "note"

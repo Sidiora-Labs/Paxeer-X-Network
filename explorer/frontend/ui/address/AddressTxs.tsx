@@ -15,7 +15,7 @@ import RoutedTabs from 'toolkit/components/RoutedTabs/RoutedTabs';
 import AddressTxsCrossChain from 'ui/crossChain/address/AddressTxsCrossChain';
 import Pagination from 'ui/shared/pagination/Pagination';
 import useQueryWithPages from 'ui/shared/pagination/useQueryWithPages';
-import { formatScanTableCount, ScanDirectionBadge, ScanTableCard } from 'ui/shared/scan';
+import { formatScanTableCount, ScanTableCard } from 'ui/shared/scan';
 import TxsWithAPISorting from 'ui/txs/TxsWithAPISorting';
 
 import AddressCsvExportLink from './AddressCsvExportLink';
@@ -102,7 +102,6 @@ const AddressTxs = ({ shouldRender = true, isQueryEnabled = true, txsCount }: Pr
   const localActions = !isMobile ? (
     <>
       { txsLocalFilter }
-      { localQuery.filterValue && <ScanDirectionBadge direction={ localQuery.filterValue === 'from' ? 'out' : 'in' }/> }
       <AddressCsvExportLink
         address={ hash }
         label="Download Page Data"

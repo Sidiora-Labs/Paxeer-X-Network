@@ -10,7 +10,7 @@ import InternalTxsList from 'ui/internalTxs/InternalTxsList';
 import InternalTxsTable from 'ui/internalTxs/InternalTxsTable';
 import DataListDisplay from 'ui/shared/DataListDisplay';
 import Pagination from 'ui/shared/pagination/Pagination';
-import { formatScanTableCount, ScanDirectionBadge, ScanTableCard } from 'ui/shared/scan';
+import { formatScanTableCount, ScanTableCard } from 'ui/shared/scan';
 
 import AddressCsvExportLink from './AddressCsvExportLink';
 import AddressTxsFilter from './AddressTxsFilter';
@@ -59,7 +59,6 @@ const AddressInternalTxs = ({ shouldRender = true, isQueryEnabled = true, intern
         hasActiveFilter={ Boolean(filterValue) }
         isLoading={ pagination.isLoading }
       />
-      { filterValue && <ScanDirectionBadge direction={ filterValue === 'from' ? 'out' : 'in' }/> }
       { !isMobile && (
         <AddressCsvExportLink
           address={ hash }

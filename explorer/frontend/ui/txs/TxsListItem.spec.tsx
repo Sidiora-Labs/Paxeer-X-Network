@@ -2,6 +2,7 @@
 
 import React from 'react';
 
+import * as addressMock from 'mocks/address/address';
 import * as txMock from 'mocks/txs/tx';
 import { render } from 'ui/shared/layout/testWrapper';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -39,6 +40,18 @@ describe('TxsListItem', () => {
     const { container } = renderItem(txMock.pending);
 
     expect(container.querySelector('[data-scan-method]')?.getAttribute('data-scan-method')).toBe(txMock.base.raw_input.slice(0, 10));
+  });
+
+  it('marks the direction of a record the current address received', () => {
+    const { container } = render(<TxsListItem tx={ txMock.base } showBlockInfo currentAddress={ addressMock.hash }/>);
+
+    expect(container.querySelector('[data-direction]')?.getAttribute('data-direction')).toBe('in');
+  });
+
+  it('carries no direction on a record of the chain-wide list', () => {
+    const { container } = renderItem();
+
+    expect(container.querySelector('[data-direction]')).toBeNull();
   });
 
   it('links the transaction, its block and both of its addresses', () => {

@@ -15,7 +15,7 @@ import RoutedTabs from 'toolkit/components/RoutedTabs/RoutedTabs';
 import TokenTransfersCrossChainContent from 'ui/crossChain/transfers/TokenTransfersCrossChainContent';
 import Pagination from 'ui/shared/pagination/Pagination';
 import useQueryWithPages from 'ui/shared/pagination/useQueryWithPages';
-import { formatScanTableCount, ScanDirectionBadge, ScanTableCard } from 'ui/shared/scan';
+import { formatScanTableCount, ScanTableCard } from 'ui/shared/scan';
 import TokenTransferFilter from 'ui/shared/TokenTransfer/TokenTransferFilter';
 
 import AddressAdvancedFilterLink from './AddressAdvancedFilterLink';
@@ -106,7 +106,6 @@ const AddressTokenTransfers = ({ shouldRender = true, overloadCount, isQueryEnab
         defaultAddressFilter={ localQuery.filters.filter }
         isLoading={ localQuery.query.isPlaceholderData }
       />
-      { localQuery.filters.filter && <ScanDirectionBadge direction={ localQuery.filters.filter === 'from' ? 'out' : 'in' }/> }
       <AddressAdvancedFilterLink
         isLoading={ localQuery.query.isPlaceholderData }
         address={ hash }

@@ -2,6 +2,7 @@
 
 import React from 'react';
 
+import * as addressMock from 'mocks/address/address';
 import * as txMock from 'mocks/txs/tx';
 import { TableBody, TableRoot } from 'toolkit/chakra/table';
 import { render } from 'ui/shared/layout/testWrapper';
@@ -61,6 +62,40 @@ describe('TxsTableItem', () => {
 
     expect(cells[1].querySelector('[data-status]')?.getAttribute('data-status')).toBe('error');
     expect(cells[2].querySelector('[data-scan-method]')?.getAttribute('data-scan-method')).toBe(txMock.base.method);
+  });
+
+  it('marks the counterparty cell outgoing when the row belongs to the sender', () => {
+    const { container } = render(
+      <TableRoot variant="scan">
+        <TableBody>
+          <TxsTableItem tx={ txMock.base } showBlockInfo currentAddress={ txMock.base.from.hash }/>
+        </TableBody>
+      </TableRoot>,
+    );
+
+    const cells = Array.from(container.querySelectorAll('td'));
+
+    expect(cells[5].querySelector('[data-direction]')?.getAttribute('data-direction')).toBe('out');
+  });
+
+  it('marks the counterparty cell incoming when the row belongs to the recipient', () => {
+    const { container } = render(
+      <TableRoot variant="scan">
+        <TableBody>
+          <TxsTableItem tx={ txMock.base } showBlockInfo currentAddress={ addressMock.hash }/>
+        </TableBody>
+      </TableRoot>,
+    );
+
+    const cells = Array.from(container.querySelectorAll('td'));
+
+    expect(cells[5].querySelector('[data-direction]')?.getAttribute('data-direction')).toBe('in');
+  });
+
+  it('carries no direction on a row of the chain-wide list', () => {
+    const { container } = renderItem();
+
+    expect(container.querySelector('[data-direction]')).toBeNull();
   });
 
   it('reads the raw selector as the action of a transaction the indexer has not decoded', () => {

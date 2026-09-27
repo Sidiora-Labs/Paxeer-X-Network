@@ -16,7 +16,6 @@ import { generateListStub } from 'stubs/utils';
 import type { RoutedTabsProps } from 'toolkit/components/RoutedTabs/RoutedTabs';
 import RoutedTabs from 'toolkit/components/RoutedTabs/RoutedTabs';
 import AdvancedFilterLink from 'ui/shared/links/AdvancedFilterLink';
-import Pagination from 'ui/shared/pagination/Pagination';
 import useQueryWithPages from 'ui/shared/pagination/useQueryWithPages';
 import useIsAuth from 'ui/snippets/auth/useIsAuth';
 import TxsWithFrontendSorting from 'ui/txs/TxsWithFrontendSorting';
@@ -158,20 +157,13 @@ const TxsTabs = ({ parentTab, tabsHeight, ...rest }: Props) => {
   const isTabsLoading = useIsInitialLoading(currentQuery.isPlaceholderData);
 
   const rightSlot = (() => {
-    if (isMobile) {
-      return null;
-    }
-
-    const isAdvancedFilterEnabled = chainConfig?.features.advancedFilter.isEnabled;
-
-    if (!isAdvancedFilterEnabled && !currentQuery.pagination.isVisible) {
+    if (isMobile || !chainConfig?.features.advancedFilter.isEnabled) {
       return null;
     }
 
     return (
       <Flex alignItems="center" gap={ 6 }>
-        { isAdvancedFilterEnabled && <AdvancedFilterLink routeParams={{ chain: multichainContext?.chain }}/> }
-        { currentQuery.pagination.isVisible && <Pagination { ...currentQuery.pagination }/> }
+        <AdvancedFilterLink routeParams={{ chain: multichainContext?.chain }}/>
       </Flex>
     );
   })();

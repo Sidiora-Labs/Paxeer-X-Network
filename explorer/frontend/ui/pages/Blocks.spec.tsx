@@ -48,6 +48,19 @@ describe('Blocks', () => {
     }, { timeout: WAIT_TIMEOUT });
   }, PAGE_TIMEOUT);
 
+  it('leaves every pagination inside the table card', async() => {
+    const { container } = render(<Blocks/>);
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-scan-table-card]')).not.toBeNull();
+    }, { timeout: WAIT_TIMEOUT });
+
+    const outside = Array.from(container.querySelectorAll('[data-scan-pagination]'))
+      .filter((node) => !node.closest('[data-scan-table-card]'));
+
+    expect(outside).toHaveLength(0);
+  }, PAGE_TIMEOUT);
+
   it('lists the blocks the node returns inside the card', async() => {
     const { container } = render(<Blocks/>);
 

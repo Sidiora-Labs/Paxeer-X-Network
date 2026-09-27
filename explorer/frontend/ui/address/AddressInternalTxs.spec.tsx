@@ -45,12 +45,14 @@ describe('AddressInternalTxs', () => {
       .toContain('Download Page Data');
   });
 
-  it('marks the filtered direction in the card header', () => {
+  it('leaves the direction to the rows instead of the card header', () => {
     routerState.query = { hash: HASH, tab: 'internal_txns', filter: 'to' };
 
     const { container } = render(<AddressInternalTxs internalTxsCount={ 13120 }/>);
 
-    expect(container.querySelector('[data-direction]')?.getAttribute('data-direction')).toBe('in');
+    expect(container.querySelector('[data-scan-table-card] [data-actions] [data-direction]')).toBeNull();
+    expect((container.querySelector('[data-scan-table-card] [data-actions]') as HTMLElement).textContent)
+      .toContain('Download Page Data');
   });
 
   it('closes the card with the view-all row and keeps the CSV export beneath it', () => {

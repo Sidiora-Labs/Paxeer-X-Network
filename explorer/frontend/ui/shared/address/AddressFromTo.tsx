@@ -5,6 +5,7 @@ import React from 'react';
 import type { EntityProps } from 'ui/shared/entities/address/AddressEntity';
 import AddressEntity from 'ui/shared/entities/address/AddressEntity';
 import AddressEntityWithTokenFilter from 'ui/shared/entities/address/AddressEntityWithTokenFilter';
+import { ScanDirectionBadge } from 'ui/shared/scan';
 
 import AddressEntityZetaChain from '../entities/address/AddressEntityZetaChain';
 import AddressFromToIcon from './AddressFromToIcon';
@@ -62,6 +63,9 @@ const AddressFromTo = ({
   const isOutgoing = current ? current.toLowerCase() === from.hash.toLowerCase() : false;
   const isIncoming = current ? current.toLowerCase() === to?.hash?.toLowerCase() : false;
 
+  const courseType = getTxCourseType(from.hash, to?.hash, current);
+  const direction = courseType === 'in' || courseType === 'out' ? courseType : null;
+
   const fromChainId = 'chainType' in from && from.chainType === 'zeta' ? from.chainId : undefined;
   const toChainId = to && 'chainType' in to && to.chainType === 'zeta' ? to.chainId : undefined;
 
@@ -69,11 +73,15 @@ const AddressFromTo = ({
     return (
       <Flex className={ className } flexDir="column" rowGap={ 3 }>
         <Flex alignItems="center" columnGap={ 2 }>
-          <AddressFromToIcon
-            isLoading={ isLoading }
-            type={ getTxCourseType(from.hash, to?.hash, current) }
-            transform="rotate(90deg)"
-          />
+          { direction ? (
+            <ScanDirectionBadge direction={ direction } isLoading={ isLoading }/>
+          ) : (
+            <AddressFromToIcon
+              isLoading={ isLoading }
+              type={ courseType }
+              transform="rotate(90deg)"
+            />
+          ) }
           <EntityFrom
             address={ from }
             isLoading={ isLoading }
@@ -111,7 +119,11 @@ const AddressFromTo = ({
   const iconSize = 20;
 
   return (
-    <Grid className={ className } alignItems="center" gridTemplateColumns={ `minmax(auto, min-content) ${ iconSize }px minmax(auto, min-content)` }>
+    <Grid
+      className={ className }
+      alignItems="center"
+      gridTemplateColumns={ `minmax(auto, min-content) ${ direction ? 'max-content' : `${ iconSize }px` } minmax(auto, min-content)` }
+    >
       <EntityFrom
         address={ from }
         isLoading={ isLoading }
@@ -125,10 +137,14 @@ const AddressFromTo = ({
         chainId={ fromChainId }
         w="auto"
       />
-      <AddressFromToIcon
-        isLoading={ isLoading }
-        type={ getTxCourseType(from.hash, to?.hash, current) }
-      />
+      { direction ? (
+        <ScanDirectionBadge direction={ direction } isLoading={ isLoading }/>
+      ) : (
+        <AddressFromToIcon
+          isLoading={ isLoading }
+          type={ courseType }
+        />
+      ) }
       { to && (
         <EntityTo
           address={ to }

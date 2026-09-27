@@ -2,8 +2,6 @@ import { Flex, Box, Text } from '@chakra-ui/react';
 import { upperFirst } from 'es-toolkit';
 import React from 'react';
 
-import type { PaginationParams } from 'ui/shared/pagination/types';
-
 import { route } from 'nextjs-routes';
 
 import useApiQuery from 'lib/api/useApiQuery';
@@ -14,13 +12,8 @@ import { Skeleton } from 'toolkit/chakra/skeleton';
 import { Tooltip } from 'toolkit/chakra/tooltip';
 import { nbsp } from 'toolkit/utils/htmlEntities';
 import IconSvg from 'ui/shared/IconSvg';
-import Pagination from 'ui/shared/pagination/Pagination';
 
-interface Props {
-  pagination: PaginationParams | null;
-}
-
-const BlocksTabSlot = ({ pagination }: Props) => {
+const BlocksTabSlot = () => {
   const statsQuery = useApiQuery('general:stats', {
     queryOptions: {
       placeholderData: HOMEPAGE_STATS,
@@ -47,7 +40,6 @@ const BlocksTabSlot = ({ pagination }: Props) => {
         <IconSvg name="hourglass" boxSize={ 5 } mr={ 2 }/>
         <span>Block countdown</span>
       </Link>
-      { pagination && <Pagination my={ 1 } { ...pagination }/> }
     </Flex>
   );
 };

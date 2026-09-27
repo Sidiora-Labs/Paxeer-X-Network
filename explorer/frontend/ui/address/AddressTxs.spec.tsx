@@ -53,16 +53,14 @@ describe('AddressTxs', () => {
     expect(actions.textContent).toContain('Download Page Data');
   });
 
-  it('shows the direction badge for the filtered direction only', () => {
-    routerState.query = { hash: HASH, tab: 'txs_local' };
-    const { container: unfiltered } = render(<AddressTxs txsCount={ 10 }/>);
-
-    expect(unfiltered.querySelector('[data-direction]')).toBeNull();
-
+  it('leaves the direction to the rows instead of the card header', () => {
     routerState.query = { hash: HASH, tab: 'txs_local', filter: 'from' };
-    const { container: filtered } = render(<AddressTxs txsCount={ 10 }/>);
 
-    expect(filtered.querySelector('[data-direction]')?.getAttribute('data-direction')).toBe('out');
+    const { container } = render(<AddressTxs txsCount={ 10 }/>);
+
+    expect(container.querySelector('[data-scan-table-card] [data-actions] [data-direction]')).toBeNull();
+    expect((container.querySelector('[data-scan-table-card] [data-actions]') as HTMLElement).textContent)
+      .toContain('Download Page Data');
   });
 
   it('closes the card with a centred view-all row and the CSV export beneath it', () => {
