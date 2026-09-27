@@ -218,7 +218,7 @@ const PaxeerXAccountPageContent = () => {
   ) : null;
 
   const titleAfter = (
-    <Flex alignItems="center" columnGap={ 2 } ml={ 3 } minW={ 0 } data-account-identifier>
+    <Flex alignItems="center" columnGap={ 2 } rowGap={ 2 } flexWrap="wrap" ml={{ base: 0, lg: 3 }} minW={ 0 } data-account-identifier>
       <Skeleton loading={ isLoading } overflow="hidden" minW={ 0 }>
         <chakra.span textStyle="lg" color="text.secondary" wordBreak="break-all">{ hash }</chakra.span>
       </Skeleton>

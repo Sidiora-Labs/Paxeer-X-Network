@@ -105,6 +105,15 @@ describe('TokenPageContent', () => {
     expect(tabList.querySelector('[data-scan-pagination]')).toBeNull();
   });
 
+  it('asks for the address in the same round as the token instead of waiting for the socket', () => {
+    render(<TokenPageContent/>);
+
+    const paths = fetchMock.mock.calls.map((call) => new URL(String(call[0]), 'http://localhost').pathname);
+
+    expect(paths).toContain(`/api/v2/tokens/${ HASH }`);
+    expect(paths).toContain(`/api/v2/addresses/${ HASH }`);
+  });
+
   it('keeps the chip row of the title above the cards', () => {
     const { container } = render(<TokenPageContent/>);
 

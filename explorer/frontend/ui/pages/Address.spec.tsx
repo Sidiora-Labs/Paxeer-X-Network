@@ -27,6 +27,36 @@ const HASH = addressMock.hash;
 const tabTitles = (container: HTMLElement) =>
   Array.from(container.querySelectorAll('[role="tab"]')).map((item) => item.textContent ?? '');
 
+// A responsive style prop reaches the document as one rule per breakpoint, each of them inserted
+// into a style element of its own, and jsdom performs no layout, so the widths a declaration belongs
+// to are read from the rules that name the element's own class.
+const ruleTexts = () => {
+  const inline = Array.from(document.querySelectorAll('style')).map((node) => node.textContent ?? '');
+  const parsed = Array.from(document.styleSheets).flatMap((sheet) => {
+    try {
+      return Array.from(sheet.cssRules).map((rule) => rule.cssText);
+    } catch {
+      return [];
+    }
+  });
+
+  return [ ...inline, ...parsed ].filter(Boolean);
+};
+
+const declarationsOf = (element: Element, property: string) => ruleTexts()
+  .filter((text) => Array.from(element.classList).some((name) => new RegExp(`\\.${ name }(?![\\w-])`).test(text)))
+  .map((text) => ({ text, value: new RegExp(`(?:^|[;{\\s])${ property }\\s*:\\s*([^;}]+)`).exec(text)?.[1]?.trim() }))
+  .filter((rule): rule is { text: string; value: string } => rule.value !== undefined);
+
+// Each rule is inserted on its own, so a declaration belongs to the wide layout when the rule that
+// carries it is a breakpoint rule and not the base rule, which declares its own minimum width.
+const isWide = (text: string) => /^\s*@media[^{]*\(min-width/.test(text);
+
+const LEFT_INSET = 'margin-(?:left|inline-start)';
+
+// The scale resolves a zero inset either to the plain length or to the token of the same name.
+const isSpace = (value: string) => !/^0[a-z%]*$/.test(value) && !/spacing-0\b/.test(value);
+
 describe('AddressPageContent', () => {
   beforeEach(() => {
     routerState.pathname = '/address/[hash]';
@@ -79,5 +109,20 @@ describe('AddressPageContent', () => {
 
     expect(tabTitles(container).some((title) => title.startsWith('Coin balance history'))).toBe(true);
     expect(container.querySelector('a[href^="/advanced-filter"]')).toBeTruthy();
+  });
+
+  it('lets the identifier share the title row and keeps its inset for the wide layout only', () => {
+    const { container } = render(<AddressPageContent/>);
+
+    const row = container.querySelector('[data-title-after]')?.firstElementChild as HTMLElement;
+
+    expect(row.querySelector('[data-entity-kind="address"]')).toBeTruthy();
+
+    const insets = declarationsOf(row, LEFT_INSET);
+    const spaced = insets.filter((rule) => isSpace(rule.value));
+
+    expect(insets.length).toBeGreaterThan(0);
+    expect(spaced.length).toBeGreaterThan(0);
+    expect(spaced.every((rule) => isWide(rule.text))).toBe(true);
   });
 });

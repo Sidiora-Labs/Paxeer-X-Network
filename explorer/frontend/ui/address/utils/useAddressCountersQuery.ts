@@ -27,7 +27,10 @@ interface Params {
 }
 
 export default function useAddressCountersQuery({ hash, isLoading, isDegradedData, isEnabled = true, chain }: Params): AddressCountersQuery {
-  const enabled = isEnabled && Boolean(hash) && !isLoading;
+  // The counters of an address do not depend on the address itself, so the request leaves with it
+  // instead of waiting for its answer. Only the RPC fallback waits, because whether it is needed is
+  // read from that answer.
+  const enabled = isEnabled && Boolean(hash);
 
   const apiQuery = useApiQuery<'general:address_counters', { status: number }>('general:address_counters', {
     pathParams: { hash },
@@ -62,7 +65,7 @@ export default function useAddressCountersQuery({ hash, isLoading, isDegradedDat
       };
     },
     placeholderData: [ GET_TRANSACTIONS_COUNT ],
-    enabled: enabled && (isDegradedData || apiQuery.isError),
+    enabled: enabled && !isLoading && (isDegradedData || apiQuery.isError),
     retry: false,
     refetchOnMount: false,
   });

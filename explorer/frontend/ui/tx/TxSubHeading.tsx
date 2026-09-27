@@ -213,7 +213,7 @@ const TxSubHeading = ({ hash, hasTag, txQuery, titleContentAfter }: Props) => {
       title="Transaction details"
       afterTitle={ (
         <PrevNext
-          ml={ 3 }
+          ml={{ base: 0, lg: 3 }}
           onClick={ handlePrevNextClick }
           prevLabel="View previous transaction of this block"
           nextLabel="View next transaction of this block"

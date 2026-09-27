@@ -8,6 +8,7 @@ import type { Params as FetchParams } from 'lib/hooks/useFetch';
 
 import type { ResourceError, ResourceName, ResourcePathParams, ResourcePayload } from './resources';
 import useApiFetch from './useApiFetch';
+import { getResourceStaleTime } from './useQueryClientConfig';
 
 export interface Params<R extends ResourceName, E = unknown, D = ResourcePayload<R>> {
   pathParams?: ResourcePathParams<R>;
@@ -47,6 +48,8 @@ export default function useApiQuery<R extends ResourceName, E = unknown, D = Res
       // that's why we are safe here to do type conversion "as Promise<ResourcePayload<R>>"
       return apiFetch(resource, { pathParams, queryParams, chain, logError, fetchParams: { ...fetchParams, signal } }) as Promise<ResourcePayload<R>>;
     },
+    // the stale time of the resource's class, which a caller's own queryOptions still overrides
+    staleTime: getResourceStaleTime(resource),
     ...queryOptions,
   });
 }

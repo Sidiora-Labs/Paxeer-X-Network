@@ -65,13 +65,17 @@ export const ItemValue = ({ children, multiRow = false, ...rest }: ItemValueProp
     <GridItem
       display="flex"
       alignItems="center"
+      flexWrap={ multiRow ? 'wrap' : { base: 'wrap', lg: 'nowrap' } }
+      rowGap={{ base: 1, lg: 0 }}
       pl={{ base: 6, lg: 0 }}
+      pr={{ base: 1, lg: 0 }}
+      minW={ 0 }
       minH={ ITEM_VALUE_LINE_HEIGHT }
       color="text.primary"
-      whiteSpace="nowrap"
+      whiteSpace={{ base: 'normal', lg: 'nowrap' }}
       data-detailed-info-value
+      data-stack-below="lg"
       { ...(multiRow ? {
-        flexWrap: 'wrap',
         lineHeight: ITEM_VALUE_LINE_HEIGHT,
       } : {}) }
       { ...rest }

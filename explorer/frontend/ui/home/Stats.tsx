@@ -20,6 +20,22 @@ const isStatsFeatureEnabled = config.features.stats.isEnabled;
 const HISTORY_DAYS = 14;
 const SECONDS_PER_DAY = 24 * 60 * 60;
 
+// The latest-block counter follows the cadence the live block list flushes on, so the history column
+// carries its own query behind a memo boundary and the chart is left alone by every flush that only
+// moves the counters beside it.
+const StatsHistory = React.memo(function StatsHistory({ isLoading }: { isLoading: boolean }) {
+  const chartQuery = useChartDataQuery('daily_txs');
+
+  return (
+    <ChainIndicatorsChart
+      isLoading={ isLoading }
+      title={ `${ config.chain.name } transaction history in ${ HISTORY_DAYS } days` }
+      chartQuery={ chartQuery }
+      days={ HISTORY_DAYS }
+    />
+  );
+});
+
 const Stats = () => {
   // data from stats microservice is prioritized over data from stats api
   const statsQuery = useApiQuery('stats:pages_main', {
@@ -43,18 +59,13 @@ const Stats = () => {
     },
   });
 
-  const chartQuery = useChartDataQuery('daily_txs');
-
   const isLoading = statsQuery.isPlaceholderData || apiQuery.isPlaceholderData || blocksQuery.isPlaceholderData;
-
-  if (apiQuery.isError || statsQuery.isError) {
-    return <StatsDegraded/>;
-  }
 
   const apiData = apiQuery.data;
   const statsData = statsQuery.data;
+  const latestBlock = blocksQuery.data?.[0];
 
-  const coinItems: Array<HighlightsItemProps> = (() => {
+  const coinItems: Array<HighlightsItemProps> = React.useMemo(() => {
     const items: Array<HighlightsItemProps> = [];
 
     if (typeof apiData?.coin_price === 'string') {
@@ -82,62 +93,71 @@ const Stats = () => {
     }
 
     return items;
-  })();
+  }, [ apiData, isLoading ]);
 
-  const chainItems: Array<HighlightsItemProps> = (() => {
-    const items: Array<HighlightsItemProps> = [];
-
+  // Each counter carries its own memo, so the flush that moves the latest block leaves the transaction
+  // counter beside it with the very same props and nothing of it re-renders.
+  const totalTxsItem: HighlightsItemProps | undefined = React.useMemo(() => {
     const totalTxs = statsData?.total_transactions?.value || apiData?.total_transactions;
     const txsPerDay = statsData?.yesterday_transactions?.value || apiData?.transactions_today;
 
-    if (totalTxs) {
-      const item: HighlightsItemProps = {
-        id: 'total_txs',
-        label: 'Transactions',
-        value: Number(totalTxs).toLocaleString(undefined, { maximumFractionDigits: 2, notation: 'compact' }),
-        secondary: txsPerDay ?
-          `${ (Number(txsPerDay) / SECONDS_PER_DAY).toLocaleString(undefined, { maximumFractionDigits: 1 }) } TPS` :
-          undefined,
-        icon: <IconSvg name="transactions" boxSize={ 5 } color="icon.secondary"/>,
-        href: { pathname: '/txs' as const },
-        isLoading,
-      };
-      if (isHomeStatsItemEnabled({ id: 'total_txs', label: item.label, value: item.value })) {
-        items.push(item);
-      }
+    if (!totalTxs) {
+      return undefined;
     }
 
-    const latestBlock = blocksQuery.data?.[0];
+    const item: HighlightsItemProps = {
+      id: 'total_txs',
+      label: 'Transactions',
+      value: Number(totalTxs).toLocaleString(undefined, { maximumFractionDigits: 2, notation: 'compact' }),
+      secondary: txsPerDay ?
+        `${ (Number(txsPerDay) / SECONDS_PER_DAY).toLocaleString(undefined, { maximumFractionDigits: 1 }) } TPS` :
+        undefined,
+      icon: <IconSvg name="transactions" boxSize={ 5 } color="icon.secondary"/>,
+      href: { pathname: '/txs' as const },
+      isLoading,
+    };
 
-    if (latestBlock) {
-      const blockTime = (() => {
-        if (statsData?.average_block_time?.value) {
-          return Number(statsData.average_block_time.value);
-        }
+    return isHomeStatsItemEnabled({ id: 'total_txs', label: item.label, value: item.value }) ? item : undefined;
+  }, [ statsData, apiData, isLoading ]);
 
-        if (apiData?.average_block_time !== undefined) {
-          return apiData.average_block_time / 1000;
-        }
-
-        return undefined;
-      })();
-
-      const item: HighlightsItemProps = {
-        id: 'total_blocks',
-        label: 'Latest block',
-        value: latestBlock.height.toLocaleString(),
-        secondary: blockTime !== undefined ? `${ blockTime.toFixed(1) }s` : undefined,
-        icon: <IconSvg name="block" boxSize={ 5 } color="icon.secondary"/>,
-        href: { pathname: '/blocks' as const },
-        isLoading,
-      };
-      if (isHomeStatsItemEnabled({ id: 'total_blocks', label: item.label, value: item.value })) {
-        items.push(item);
-      }
+  const latestBlockItem: HighlightsItemProps | undefined = React.useMemo(() => {
+    if (!latestBlock) {
+      return undefined;
     }
 
-    return items;
-  })();
+    const blockTime = (() => {
+      if (statsData?.average_block_time?.value) {
+        return Number(statsData.average_block_time.value);
+      }
+
+      if (apiData?.average_block_time !== undefined) {
+        return apiData.average_block_time / 1000;
+      }
+
+      return undefined;
+    })();
+
+    const item: HighlightsItemProps = {
+      id: 'total_blocks',
+      label: 'Latest block',
+      value: latestBlock.height.toLocaleString(),
+      secondary: blockTime !== undefined ? `${ blockTime.toFixed(1) }s` : undefined,
+      icon: <IconSvg name="block" boxSize={ 5 } color="icon.secondary"/>,
+      href: { pathname: '/blocks' as const },
+      isLoading,
+    };
+
+    return isHomeStatsItemEnabled({ id: 'total_blocks', label: item.label, value: item.value }) ? item : undefined;
+  }, [ statsData, apiData, latestBlock, isLoading ]);
+
+  const chainItems: Array<HighlightsItemProps> = React.useMemo(
+    () => [ totalTxsItem, latestBlockItem ].filter((item): item is HighlightsItemProps => Boolean(item)),
+    [ totalTxsItem, latestBlockItem ],
+  );
+
+  if (apiQuery.isError || statsQuery.isError) {
+    return <StatsDegraded/>;
+  }
 
   const hasChart = config.UI.homepage.charts.includes('daily_txs');
 
@@ -176,14 +196,7 @@ const Stats = () => {
           <Highlights items={ chainItems }/>
         </GridItem>
         <GridItem data-label="home-stats-history" px={{ base: 4, lg: 5 }} py={{ base: 3, lg: 4 }}>
-          { hasChart && (
-            <ChainIndicatorsChart
-              isLoading={ isLoading }
-              title={ `${ config.chain.name } transaction history in ${ HISTORY_DAYS } days` }
-              chartQuery={ chartQuery }
-              days={ HISTORY_DAYS }
-            />
-          ) }
+          { hasChart && <StatsHistory isLoading={ isLoading }/> }
         </GridItem>
       </Grid>
     </Box>

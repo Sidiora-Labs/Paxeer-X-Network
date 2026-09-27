@@ -1,5 +1,16 @@
 import { defineRecipe } from '@chakra-ui/react';
 
+import type { PillMetrics } from './pillSizing';
+import { pillMinHeight, pillPaddingY } from './pillSizing';
+
+// A pill is as tall as the line box of its own text plus its vertical padding, so
+// a label can never be taller than the surface it sits on.
+export const BADGE_PILL_METRICS: Record<'sm' | 'md' | 'lg', PillMetrics> = {
+  sm: { textStyle: 'xs', paddingY: '0.5' },
+  md: { textStyle: 'sm', paddingY: '0.5' },
+  lg: { textStyle: 'sm', paddingY: '1' },
+};
+
 export const recipe = defineRecipe({
   base: {
     display: 'inline-flex',
@@ -9,9 +20,21 @@ export const recipe = defineRecipe({
     fontWeight: '600',
     width: 'fit-content',
     maxWidth: '100%',
+    minWidth: 'auto',
+    height: 'auto',
     whiteSpace: 'nowrap',
+    overflow: 'hidden',
     fontVariantNumeric: 'normal',
     userSelect: 'text',
+    '& > span': {
+      minWidth: 0,
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap',
+    },
+    '& > svg': {
+      flexShrink: 0,
+    },
     _loading: {
       borderRadius: 'full',
     },
@@ -124,21 +147,21 @@ export const recipe = defineRecipe({
     size: {
       sm: {
         textStyle: 'xs',
-        p: '1',
-        h: '4.5',
-        minH: '4.5',
+        px: '1.5',
+        py: pillPaddingY(BADGE_PILL_METRICS.sm),
+        minH: pillMinHeight(BADGE_PILL_METRICS.sm),
       },
       md: {
         textStyle: 'sm',
-        px: '1',
-        py: '0.5',
-        minH: '6',
+        px: '1.5',
+        py: pillPaddingY(BADGE_PILL_METRICS.md),
+        minH: pillMinHeight(BADGE_PILL_METRICS.md),
       },
       lg: {
         textStyle: 'sm',
         px: '2',
-        py: '1',
-        minH: '7',
+        py: pillPaddingY(BADGE_PILL_METRICS.lg),
+        minH: pillMinHeight(BADGE_PILL_METRICS.lg),
         fontWeight: '600',
       },
     },
