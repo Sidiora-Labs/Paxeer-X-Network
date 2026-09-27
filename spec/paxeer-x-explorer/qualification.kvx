@@ -616,3 +616,27 @@ symbol = "test-ratio"
 observed = "do_4 also names the mobile list items of both tables, but tools/explorer/test-ratio.sh requires a changed test per changed source and the task's verify_cmd budget covers fifteen sources with fifteen specs already."
 assumption = "The mobile lists keep their existing item variants inside the new cards, which do_8 asks for, and their restyle belongs to a task that can carry their specs."
 severity = "note"
+
+[observation.6.7.1]
+task = "6.7"
+file = "explorer/frontend/ui/tokens/TokensTableItem.tsx"
+symbol = "TokenValuePlaceholder"
+observed = "ac_4 asks the token row to carry the change percent and the volume over the last day, but neither general:tokens nor general:tokens_bridged returns either figure and no other path the frontend already calls exposes them for a token list."
+assumption = "The two columns render a muted dash rather than a number the payload never sent; they need a backend field that does not exist yet, and the row keeps the space the figures will occupy."
+severity = "blocker"
+
+[observation.6.7.2]
+task = "6.7"
+file = "explorer/frontend/ui/pages/Tokens.tsx"
+symbol = "ScanShowRows"
+observed = "The two list endpoints answer a page whose size the backend paging helper fixes at fifty, so the show-rows selector the scan layout puts in the card footer cannot ask the API for another page size."
+assumption = "The selector limits how much of the fetched page the card shows and defaults to the full page, so nothing is hidden unless the reader asks for fewer rows."
+severity = "note"
+
+[observation.6.7.3]
+task = "6.7"
+file = "explorer/frontend/ui/tokens/TokensTableItem.spec.tsx"
+symbol = "test-ratio"
+observed = "The task ships ten source files but its touches list names only six specs, while tools/explorer/test-ratio.sh fails a range whose changed source files outnumber the changed tests that reference them."
+assumption = "The gate governs, so four further specs - TokensTableItem, Tokens, TokensActionBar and AddressesTableItem - are added beside their own sources, which no other wave-6 task touches."
+severity = "note"

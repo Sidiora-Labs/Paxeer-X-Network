@@ -1049,7 +1049,7 @@ done_log = ".logs/verify-6.6.log"
 
 [task.6.7]
 title = "Rebuild the token tracker and top accounts lists"
-status = "pending"
+status = "done"
 wave = 6
 requires = ["5.1","5.2"]
 do_1 = "Rebuild explorer/frontend/ui/tokens/TokensTable.tsx, TokensTableItem.tsx and TokensListItem.tsx in the shared scan table card with the columns index, token with its logo name and symbol, price with the coin-denominated price beneath it in the muted tone, change percent in the success or destructive tone, volume over the last day, circulating market capitalisation, onchain market capitalisation and holders."
@@ -1064,6 +1064,10 @@ verify_cmd = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --
 symbols = ["TokensTable","TokensTableItem","TokensListItem","AddressesTable","AddressesTableItem","AddressesListItem","Tokens","Accounts"]
 touches = ["explorer/frontend/ui/tokens/Tokens.tsx","explorer/frontend/ui/tokens/TokensTable.tsx","explorer/frontend/ui/tokens/TokensTable.spec.tsx","explorer/frontend/ui/tokens/TokensTableItem.tsx","explorer/frontend/ui/tokens/TokensListItem.tsx","explorer/frontend/ui/tokens/TokensListItem.spec.tsx","explorer/frontend/ui/tokens/TokensActionBar.tsx","explorer/frontend/ui/tokens/TokensBridgedChainsFilter.tsx","explorer/frontend/ui/addresses/AddressesTable.tsx","explorer/frontend/ui/addresses/AddressesTable.spec.tsx","explorer/frontend/ui/addresses/AddressesTableItem.tsx","explorer/frontend/ui/addresses/AddressesListItem.tsx","explorer/frontend/ui/addresses/AddressesListItem.spec.tsx","explorer/frontend/ui/pages/Tokens.tsx","explorer/frontend/ui/pages/Tokens.spec.tsx","explorer/frontend/ui/pages/Accounts.tsx","explorer/frontend/ui/pages/Accounts.spec.tsx"]
 reqs = ["19.4","19.5","19.6","19.7","19.8","19.9"]
+done_revision = "23b2bc6ef4f42a77357b3df529fef730c85ba562"
+done_command = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/tokens ui/addresses ui/pages/Tokens. ui/pages/Accounts.'"
+done_exit_code = 0
+done_log = "logs/6.7-verify.log"
 
 [task.6.8]
 title = "Rebuild the charts and statistics page"
