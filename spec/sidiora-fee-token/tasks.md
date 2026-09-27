@@ -274,6 +274,23 @@
     - Run task 4.12's verify_cmd once; on exit 0 record task 4.12 done with that revision, command, exit code and log, and close observations 2.8.1 and 4.12.1 naming the revision.
     - _Requirements: 8.1, 8.5_
 
+## Wave 5 - Clear the continuous integration legs this feature reddened
+
+- [ ] 5. Make the solidity job and the Human component gate pass with this feature's files present
+  - [ ] 5.1 Build the Sidiora governance test in the solidity job from the pinned libraries
+    - The solidity job of .github/workflows/ci.yml builds the kernel Foundry project, whose test directory now carries test/SidioraProxyGovernance.t.sol, and that test resolves ERC1967Proxy, ERC1967Utils, UUPSUpgradeable, Initializable and Ownable through contracts/lib/openzeppelin-contracts, which no step of that job populates; add one step running bash contracts/bootstrap-libs.sh immediately before the build step, so the job resolves them from the same pinned checkout the Paxeer project uses while the formatting and state-surface steps keep running against the tracked tree alone.
+    - Keep contracts/bootstrap-libs.sh the one place the two library tags are written: replace the two literal git clone lines in the Run Forge build step of .github/workflows/paxeer-forge-test.yml with a call to that script, and correct the script's header comment so it states it is the only source of the pins.
+    - Add no remapping to foundry.toml and move no test: the governance test imports the libraries by a relative path the checkout already resolves, and moving it under contracts/test would take it away from contracts/governance and scripts, which the Paxeer project does not compile.
+    - Commit nothing under contracts/lib, change no contract, script or test, and leave every other step, every other key and the order of the steps exactly as written; the two workflow files and the shell script are not production files for the test ratio, and the build and the suites the verify_cmd runs are their test.
+    - _Requirements: 7.3, 7.5_
+  - [ ] 5.2 Compose the wallet screen's Sidiora fee choice through the component kit
+    - In human/apps/web/src/settings/wallet/wallet-screen.tsx replace the two raw fee-currency radio inputs of WalletFeeChoice with KitOptionList, the radio group src/kit/display.tsx exposes, carrying the paxeer and the sidiora option with their catalogue labels, the snapshot's currency as its value and the existing onChange as its onValueChange, narrowing the value it reports to the snapshot's currency union rather than casting it.
+    - Replace the raw maximum-amount input with TextField from src/kit/field.tsx, passing the catalogue label, inputMode decimal, the snapshot's maximum as the value, the invalid copy as its errorMessage while the snapshot is invalid so the field carries the aria-invalid and the alert the screen shows today, and the same onChange; drop the hand-written label and alert paragraph the field now renders and keep the fieldset, the legend and the scope and review paragraphs.
+    - Import only from ../../kit, never from @layerx/ui, so the direct-library-import rule stays satisfied, and add no file under src/components/ui or src/primitives.
+    - Extend human/apps/web/e2e/gas-station.test.ts so its settings test asserts the kit composition - the option list's radio group with both catalogue labels and the chosen option marked, and the maximum rendered through the kit field with its value, its aria-invalid and its alert for each invalid maximum - keeping every existing assertion; the task's build stage runs npm run build:ui, npm run typecheck and that test file once.
+    - Leave the nine raw-pattern and direct-import violations the gate reports for src/app/_markets/activity-feed.tsx, src/app/_markets/select.tsx, src/app/bridge/page.tsx, src/app/launchpad/page.tsx and src/app/exchange/page.tsx exactly as they are and record them once as an observation in spec/sidiora-fee-token/qualification.kvx from the gate's own output; they belong to no task in this feature and are not chased.
+    - _Requirements: 3.3, 3.4, 3.5_
+
 ## Task Dependency Graph
 
 ```json
@@ -282,7 +299,8 @@
     { "id": 1,  "tasks": ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7"] },
     { "id": 2,  "tasks": ["2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7", "2.8", "2.9", "2.10", "2.11", "2.12", "2.13", "2.14", "2.15", "2.16", "2.17"] },
     { "id": 3,  "tasks": ["3.1"] },
-    { "id": 4,  "tasks": ["4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7", "4.8", "4.9", "4.10", "4.11", "4.12", "4.13", "4.14"] }
+    { "id": 4,  "tasks": ["4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7", "4.8", "4.9", "4.10", "4.11", "4.12", "4.13", "4.14"] },
+    { "id": 5,  "tasks": ["5.1", "5.2"] }
   ]
 }
 ```
