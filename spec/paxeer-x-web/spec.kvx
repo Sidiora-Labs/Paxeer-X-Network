@@ -630,7 +630,7 @@ reqs = ["14.1","14.2","14.3"]
 title = "Dry-run the sidecar loop against anvil and local sidecars and record it"
 status = "pending"
 wave = 2
-requires = ["1.6","2.1","2.3","2.10","2.14","2.17","2.24","2.25","2.26","2.27","2.28","2.29","2.30","2.31","2.32","2.33","2.34","2.35","2.37","2.38","2.39","2.40","2.41","2.42"]
+requires = ["1.6","2.1","2.3","2.10","2.14","2.17","2.24","2.25","2.26","2.27","2.28","2.29","2.30","2.31","2.32","2.33","2.34","2.35","2.37","2.38","2.39","2.40","2.41","2.42","2.43"]
 do_1 = "Write interop/deploy/x-websearch/tests/dry-run-check.sh starting anvil, a real loopback web server serving committed pages and three x-websearch processes with run-local attestor keys and allow_loopback set, and deploying contracts/src/xweb/XWebConsumer.sol to anvil."
 do_2 = "Fetch the same page through the three sidecars, assert the digests are identical and the signatures are valid and ascending over the origin-1 preimage, assert the submitter's fulfil calldata decodes against precompiles/xweb/abi.json, and deliver the consumer's callback on anvil from the impersonated precompile address with the attested response and the bounded gas, asserting the consumer's stored result."
 do_3 = "Record the exchange as interop/deploy/x-websearch/tests/fixtures/dry-run.json, replayable without the nodes, carrying no key material, no endpoint but the loopback ones the run started and no date or hostname; stop with a message naming a missing tool rather than skipping a step."
@@ -769,7 +769,7 @@ reqs = ["4.1","4.2"]
 title = "Clear the pre-existing agent workspace clippy findings so agent-lint passes"
 status = "pending"
 wave = 2
-requires = ["1.18","2.9","2.16","2.38","2.39","2.41"]
+requires = ["1.18","2.9","2.16","2.38","2.39","2.41","2.43"]
 do_1 = "Run make agent-lint on this revision, and fix every clippy finding it reports in crates this feature did not write - starting with too_many_arguments in agent/crates/layerx-proof/src/program.rs verify_program_execution_receipt (observation 1.18.1) - by restructuring the code, never by an allow attribute, a lint-level change or a clippy configuration change, keeping every public signature the agent SDKs and services call unchanged unless a caller in the workspace is updated in the same task."
 do_2 = "Keep every test of each touched crate passing, and add or extend a test where a restructuring changes a function's shape."
 verify_cmd = "timeout 45m sh -c 'make agent-lint && make agent-test'"
@@ -1344,6 +1344,20 @@ symbols = ["receipt_operation","MODULE_ID","submit_program_activity"]
 touches = ["agent/crates/layerx-types/build.rs","agent/crates/layerx-types/src/programs_activity.rs","agent/crates/layerx-types/src/lib.rs","platform/hosted/gateway/tests/local/events.rs"]
 tests = ["agent/crates/layerx-types/src/programs_activity.rs","platform/hosted/gateway/tests/local/events.rs"]
 reqs = ["11.2"]
+
+[task.2.43]
+title = "Derive the scheduling identity actor of a program call from its actor DID so the metered allowance batch stops failing a kernel invariant"
+status = "pending"
+wave = 2
+requires = ["2.41"]
+do_1 = "Observation 2.41.1: layerxd stops the metered allowance run with execution failed at sequence 13 with result -1001 because lxp_kernel_batch_schedule_item in src/protocol/lxp_kernel.c admits only an activity whose actor_did span is exactly 32 bytes and then hands those raw DID bytes to lxp_programs_call_schedule_item_prepare as the 32-byte identity actor, while a real LX_PROGRAMS_CALL carries the textual did:layerx: identifier of 75 bytes, so planning refuses the single offered activity with LXP_ERR_NON_CANONICAL, program_planning_refusal classes that as a planning refusal, the count-of-one settled path re-prepares the same activity serially, that preparation succeeds with result code 0 and one effect, and the invariant that a planning-refused single activity must settle as a refusal carrying no effect fires LXP_FATAL_INVARIANT; the kernel is the side to correct, because the identity actor of a call is the identity the rest of the kernel derives with lxp_did_id_derive - kernel_program_signer_binding requires the resolved authority actor and principal to equal the did_id of the activity DID, and the conflict graph in programs/crates/layerx-programs-runtime/src/schedule.rs reads identity_actor and identity_principal as one identity domain. Bound that guard by the protocol's own limits instead, an actor DID span that is present and at most LXP_MAX_DID_LENGTH, derive the 32-byte identity with lxp_did_id_derive before the snapshot is cloned, and pass the derived identity as the identity actor; keep the 32-byte contract of lxp_programs_call_schedule_item_prepare, the planning refusal classes and the count-of-one invariant exactly as written."
+do_2 = "Pin the invariant's precondition against the real code path in tests/programs/test_metered_call.c, whose fixture already signs a real LX_PROGRAMS_CALL under the textual DID did:lxp:metered-call and resolves a real delegated authority for it: create the batch snapshot the batch preparation creates, call lxp_kernel_batch_schedule_item on that activity, and assert that the actor DID span is not 32 bytes, that the call is admitted, that the item identity actor equals lxp_did_id_derive of the activity DID, the registered identity did_id and the resolved authority actor, and that the item identity principal equals the resolved authority principal and the descriptor principal; relax, skip or delete no assertion of that file, whose lxp_kernel_prepare_activity_batch checks in metered_fee_capacity already fail on this defect."
+do_3 = "Run the verify_cmd once; at the revision where it exits 0 record tasks 2.41, 2.39, 2.38, 2.34, 2.33, 2.32 and 2.16 done with that revision, command, exit code and log path and close observations 2.16.1, 2.32.1, 2.33.1, 2.34.1, 2.38.1, 2.39.1 and 2.41.1 naming it, as task 2.41's do_5 and task 2.34's do_3 require; if it does not pass, leave those tasks as they are and record the exact failing step as one observation."
+verify_cmd = "timeout 45m sh -c 'make agent-test'"
+symbols = ["lxp_kernel_batch_schedule_item","lxp_programs_call_schedule_item_prepare","lxp_did_id_derive"]
+touches = ["src/protocol/lxp_kernel.c","tests/programs/test_metered_call.c"]
+tests = ["tests/programs/test_metered_call.c","agent/crates/layerx-client/tests/session_fee_state_daemon.rs"]
+reqs = ["9.1","11.2"]
 
 [task.3.1]
 title = "Run the xweb workflow's legs once on the merged revision and record the evidence"
