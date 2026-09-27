@@ -355,3 +355,19 @@ symbol = "Explorer.Chain.PaxeerX.Capabilities.init/1"
 observed = "No arity-one init callback in the four umbrella applications makes a remote call, and the capability probe's first call ran from the continuation init/1 returned, which a child's start acknowledgement does not wait for, so the boot hang of requirement 14 was not reproduced from the committed image against a throttled node inside this task."
 assumption = "The first probe is still moved off the continuation onto the message loop, so the process answers refresh/0 and every other message before its first probe returns instead of queueing behind a call a throttled node holds; the deployment-level hang stays with its owner to reproduce and this change is qualified by the boot regression test rather than by a live deployment."
 severity = "assumption"
+
+[observation.2.8.1]
+task     = "2.8"
+file     = "rpc/solidity/ERC20.sol, rpc/tests/solidity/ERC20.sol"
+symbol   = "WPAX"
+observed = "Both wrapped-coin fixtures under the JSON-RPC test trees still declare the old display name Wrapped Pax, unchanged by this task."
+assumption = "They are inert JSON-RPC test fixtures outside this task's touches list, so renaming them opportunistically is out of scope and left to whoever owns those trees."
+severity = "note"
+
+[observation.2.8.2]
+task     = "2.8"
+file     = "foundry.paxeer.toml, contracts/bootstrap-libs.sh"
+symbol   = "openzeppelin_remapping"
+observed = "The task verify_cmd fetches forge-std when contracts/lib lacks it but says nothing about openzeppelin-contracts, which the Paxeer Foundry profile remaps into contracts/lib and nine sources under contracts/ import, so on a checkout where contracts/lib holds neither library the command cannot compile the project."
+assumption = "contracts/bootstrap-libs.sh is the sanctioned way to populate contracts/lib and was run before the gate; extending the verify_cmd to call it would edit this task's own gate, so the gap is recorded for the owner of the contracts gates instead."
+severity = "note"

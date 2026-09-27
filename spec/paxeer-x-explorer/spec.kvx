@@ -555,7 +555,11 @@ reqs = ["10.1","10.2","10.3","10.4","10.5"]
 
 [task.2.8]
 title = "Name the wrapped coin for the coin"
-status = "pending"
+status = "done"
+verified_revision = "e62da77fcf68c7ac9c069b949e40123aae6539cc"
+verified_command = "timeout 20m sh -c 'test -d contracts/lib/forge-std || git clone --depth 1 --branch v1.9.6 https://github.com/foundry-rs/forge-std contracts/lib/forge-std; FOUNDRY_CONFIG=foundry.paxeer.toml forge test --evm-version=prague --match-path contracts/test/WPAXTest.t.sol'"
+verified_exit_code = "0"
+verified_log = ".logs/verify.log"
 wave = 2
 requires = []
 do_1 = "In contracts/src/WPAX.sol change the public name to the wrapped Paxeer display name, leaving the symbol, the decimals, every storage slot, every function and every event exactly as they are."
