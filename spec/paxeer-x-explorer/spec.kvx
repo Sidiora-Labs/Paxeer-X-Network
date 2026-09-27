@@ -1303,3 +1303,22 @@ done_log = "explorer/frontend/.logs/verify-8.3-run3.log"
 
 implemented_evidence = "The tree named above sits on lane head 50ad0f4afcd1ec6974fe09f6db272ace49b186dd. The first run, log explorer/frontend/.logs/verify-8.3.log, exited 2 on one type error of this task - flexWrap given twice on the detail value - which the one repair cycle fixed by folding the multi-row case into the single prop. The rerun passes the type check over the project and passes 80 of 80 spec files and 395 of 395 tests, including the six specs this task ships, and exits 1 only on the fontfaceobserver teardown errors of observation.8.3.7 and observation.7.1.2. The visual pass measured all fourteen pages at 375 in the headless browser, three of them again at 1280, and no page has a document scroll width past its viewport; the before and after evidence sits under /root/lx-ops/explorer-ui-2026-09-27/wave8/8.3."
 
+[task.8.6]
+title = "Cover the vitest document.fonts fill with a spec that proves the font observer leaves no timer behind"
+status = "done"
+wave = 8
+requires = ["8.5"]
+do_1 = "Add explorer/frontend/vitest/setup.spec.ts, the mirror position the test-ratio gate matches for explorer/frontend/vitest/setup.ts, so the setup file the previous task changed is a changed source file with a changed test beside it."
+do_2 = "Assert the real jsdom environment the setup file leaves behind: the document carries a font face set, its status reads loaded, its size is zero, it holds no font face and it yields nothing when it is iterated or walked."
+do_3 = "Assert that its load resolves with at least one font face and that its check answers true and its ready resolves with the set itself, because a font observer only settles on its first attempt when load hands back a non-empty list."
+do_4 = "Render the real font observer hook the dynamic hash shortener uses, with the same body and heading typefaces and weight that component passes, under fake timers, and assert that it reports the fonts loaded and that no timer is left pending once it has settled, which is what keeps a poll from firing after the environment of a spec file is torn down."
+do_5 = "Mock nothing: the spec drives the real package through its real hook and reads the real document, and it changes no line of explorer/frontend/vitest/setup.ts and no other file."
+verify_cmd = "timeout 10m sh -c 'cd explorer/frontend && yarn vitest run vitest/setup.spec.ts --reporter=dot'"
+symbols = ["document.fonts"]
+touches = ["explorer/frontend/vitest/setup.spec.ts"]
+tests = ["explorer/frontend/vitest/setup.spec.ts"]
+reqs = ["3.3","16.1"]
+done_revision = "d83276386c479a0acbfd9ec2d4b3804afbaabd4b"
+done_command = "timeout 10m sh -c 'cd explorer/frontend && yarn vitest run vitest/setup.spec.ts --reporter=dot'"
+done_exit_code = 0
+done_log = ".logs/verify-8.6.log"

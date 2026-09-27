@@ -398,6 +398,17 @@
 ## Wave 8 - Usable Under Load and On Mobile
 
 - [ ] 8. Make the redesigned explorer usable while the chain runs fast and while the screen is small
+  - [x] 8.1 Buffer the home page live feeds onto one flush cadence
+    - Add explorer/frontend/lib/socket/useSocketBuffer.tsx beside the existing socket hooks: a hook that collects what a live list receives in a ref and hands it to a flush callback on one exported cadence constant of two thousand milliseconds, keeps only the newest entries when it is given a limit, and runs no cadence while the list is paused or the document is hidden, leaving the contracts of useSocketChannel and useSocketMessage exactly as they are.
+    - Collect the new-block messages of explorer/frontend/ui/home/LatestBlocks.tsx in that buffer so one flush per cadence writes the merged, deduplicated and capped block list into the homepage blocks cache instead of one write per message, key the rows by the block height it dedupes on, and hold the cadence while the pointer rests on the list and while the document is hidden.
+    - Drop the entry animation of explorer/frontend/ui/home/LatestBlocksItem.tsx and the initial-list hook that feeds it, in the live list and in the degraded list of explorer/frontend/ui/home/fallbacks/LatestBlocksDegraded.tsx that shares the row, so an arriving block moves the rows without animating them, leave every field the row renders as it is, and hold the removal in explorer/frontend/ui/home/LatestBlocksItem.spec.tsx with a case that finds no fade rule on the row and in explorer/frontend/ui/home/fallbacks/LatestBlocksDegraded.spec.tsx with the rows the degraded list holds.
+    - Count the new-transaction messages of explorer/frontend/ui/home/LatestTxs.tsx through the same buffer so the new-items notice rises once per cadence instead of once per message, holding the cadence while the pointer rests on the list, and keep the topic, the event, the socket error alert and the view-all footer exactly as they are.
+    - Hold the three columns of explorer/frontend/ui/home/Stats.tsx apart so a flush re-renders only what it changes: the coin column and the fourteen-day history keep their identity across a flush and the transaction and latest-block counters follow the same cadence as the list, with no literal colour, font family, radius or shadow written anywhere.
+    - Add explorer/frontend/vitest/utils/socketServer.ts, a socket endpoint the specs run on a free port that answers the real channel join and pushes real channel messages, so the home specs drive the real socket hooks over a real connection instead of a double.
+    - Prove the cadence in explorer/frontend/lib/socket/useSocketBuffer.spec.tsx, explorer/frontend/lib/socket/socketFlush.spec.tsx, which drives the real socket context, channel and message hooks over that endpoint, and explorer/frontend/ui/home/LatestBlocks.spec.tsx: twenty messages inside five hundred milliseconds reach the list as one state flush and one row-set update once the cadence elapses, a pointer resting on the list holds the flush and leaving it releases it, and the rows a flush leaves alone do not render again while a sibling row arrives, counted through the React profiler and the rows' own render path.
+    - Extend explorer/frontend/ui/home/LatestTxs.spec.tsx and explorer/frontend/ui/home/Stats.spec.tsx so the notice counts one rise per cadence for twenty messages and the coin column of the stats card does not render again when the latest-block counter follows a flush, each rendering the real component through explorer/frontend/vitest/lib.tsx with payload mocks from explorer/frontend/mocks/.
+    - Add no dependency, change no file ending in .pw.tsx and no __screenshots__ directory, and record the measured flushes per minute and re-renders per flush before and after as one observation in spec/paxeer-x-explorer/qualification.kvx.
+    - _Requirements: 17.5, 17.6, 17.7, 17.8, 17.9_
   - [x] 8.3 Lay out the scan pages and the scan primitives for a 375px screen
     - Measure the nine scan pages - home, the transactions and blocks lists, the transaction, block and address pages, the token and token instance pages, the token tracker and top accounts lists, the charts and statistics page and the kernel pages - in a headless browser at 375px in both appearances and at 1280px as the desktop check, before changing anything, recording which pages scroll horizontally and which elements sit past their container.
     - Give explorer/frontend/ui/shared/scan/ScanTableCard.tsx a body that scrolls inside the card rather than widening the page - the card itself never wider than its column, its body the only horizontal scroller - and let its header and footer rows wrap so the count line, the actions, the show-rows selector and the pagination stack on a narrow screen instead of overlapping.
@@ -427,6 +438,13 @@
     - Change nothing else in the setup file: the environment file loading, the fetch mock and the environment variable definition stay as they are, no font loading library is mocked, no reporting option and no unhandled-error setting is touched, and no test is weakened, skipped or removed.
     - Prove it by running the transaction, transactions, token tracker and shared transaction suites - the ones whose components render the dynamic hash shortener and the truncating tooltip - and requiring the run to finish with no unhandled error, where before it finished with reference errors raised from a font polling timer that fired after the jsdom environment of a spec file had been torn down.
     - _Requirements: 16.1_
+  - [x] 8.6 Cover the vitest document.fonts fill with a spec that proves the font observer leaves no timer behind
+    - Add explorer/frontend/vitest/setup.spec.ts, the mirror position the test-ratio gate matches for explorer/frontend/vitest/setup.ts, so the setup file the previous task changed is a changed source file with a changed test beside it.
+    - Assert the real jsdom environment the setup file leaves behind: the document carries a font face set, its status reads loaded, its size is zero, it holds no font face and it yields nothing when it is iterated or walked.
+    - Assert that its load resolves with at least one font face and that its check answers true and its ready resolves with the set itself, because a font observer only settles on its first attempt when load hands back a non-empty list.
+    - Render the real font observer hook the dynamic hash shortener uses, with the same body and heading typefaces and weight that component passes, under fake timers, and assert that it reports the fonts loaded and that no timer is left pending once it has settled, which is what keeps a poll from firing after the environment of a spec file is torn down.
+    - Mock nothing: the spec drives the real package through its real hook and reads the real document, and it changes no line of explorer/frontend/vitest/setup.ts and no other file.
+    - _Requirements: 3.3, 16.1_
 
 ## Task Dependency Graph
 
@@ -440,7 +458,7 @@
     { "id": 5,  "tasks": ["5.1", "5.2"] },
     { "id": 6,  "tasks": ["6.1", "6.2", "6.3", "6.4", "6.5", "6.6", "6.7", "6.8", "6.9", "6.10", "6.11", "6.12"] },
     { "id": 7,  "tasks": ["7.1"] },
-    { "id": 8,  "tasks": ["8.3", "8.4", "8.5"] }
+    { "id": 8,  "tasks": ["8.1", "8.3", "8.4", "8.5", "8.6"] }
   ]
 }
 ```
