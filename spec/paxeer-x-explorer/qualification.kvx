@@ -657,3 +657,57 @@ observed = "At revision 0c61642f6955c53cf68c963c5361583dc40502ab the command tim
 assumption = "The third control is the nested table card the transactions-list rebuild put inside the card the address page already opens, which belongs to neither of this task's two fix-ups, so the assertion and the code are both left exactly as written for the task that owns the nesting."
 severity = "note"
 note = "Closed by task 6.12: the transactions-list content now takes an explicit isInsideTableCard property and renders only its rows inside the card the address page opens, so at revision 89bf4db6d8292d00b26287d20cc743e7fdccd428 the same command exits 0 over ui/txs, ui/blocks, ui/shared/address and ui/address, log .logs/verify-6.12.log, with the assertion left exactly as written."
+
+[gate.7.1.1]
+task = "7.1"
+reqs = ["16.1","16.2","16.4"]
+revision = "50ad0f4afcd1ec6974fe09f6db272ace49b186dd"
+command = "timeout 20m sh -c 'EXPLORER_GATE_BUDGET_SECONDS=1080 tools/explorer/gate-lint.sh'"
+environment = "linux/x86_64, the pinned builder image explorer-elixir-builder:v10.2.6 with the build volume of this working tree warm, node 22 and yarn 1 in explorer/frontend, the workspace cargo toolchain for the services leg"
+outcome = "pass"
+evidence = "build/explorer-gates/wave-lint-7.1.log"
+note = "exit code 0. The lint gate ran once on the merged tip of waves 5 and 6 and every leg passed in order: the backend leg with mix format --check-formatted and mix credo --strict, the frontend leg with eslint and the project type check, and the services leg with the Rust formatting and clippy checks, per-leg logs build/explorer-gates/lint-backend.log, lint-frontend.log and lint-services.log. This is the lint check of ac_1 for these two waves and it is not rerun at this revision."
+
+[gate.7.1.2]
+task = "7.1"
+reqs = ["16.1","16.2","16.4"]
+revision = "50ad0f4afcd1ec6974fe09f6db272ace49b186dd"
+command = "timeout 20m sh -c 'EXPLORER_GATE_BUDGET_SECONDS=1080 tools/explorer/gate-test.sh'"
+environment = "linux/x86_64, the pinned builder image explorer-elixir-builder:v10.2.6 with a postgres:16 sidecar per umbrella application, node 22 and yarn 1 in explorer/frontend, the build volume of this working tree warm, the frontend image build of do_4 running beside it on the same twelve cores"
+outcome = "fail"
+evidence = "build/explorer-gates/wave-gate-7.1.log"
+note = "exit code 1, raised by the last of the gate's seven legs. The four per-application backend legs passed in order - block_scout_web 47 tests, ethereum_jsonrpc 25, explorer 113 and indexer 46, 0 failures and nothing excluded or skipped in any of them - then the frontend dependency leg passed and the frontend type check passed with no diagnostic over the project. The frontend vitest leg ran 180 spec files and 999 tests and stopped with one file and one test failing, log build/explorer-gates/frontend-vitest.log: the failure is the five-second per-test timeout of observation.7.1.1, and the same leg reported 62 unhandled teardown errors, recorded as observation.7.1.2. The counts stand 142 spec files and 669 tests above gate.3.1.11, which is what waves 5 and 6 added."
+
+[gate.7.1.3]
+task = "7.1"
+reqs = ["16.1","16.2","16.4"]
+revision = "50ad0f4afcd1ec6974fe09f6db272ace49b186dd"
+command = "tools/explorer/test-ratio.sh 10eb3cb1e..50ad0f4afcd1ec6974fe09f6db272ace49b186dd"
+environment = "linux/x86_64, git and a POSIX shell, every blob classified from the head revision rather than from the working tree"
+outcome = "pass"
+evidence = "build/explorer-gates/test-ratio-7.1.log"
+note = "exit code 0 over the range that spans waves 5 and 6: its base is the commit main carried when this feature branched and its head is the merged feature tip, and main changed no file under explorer/ between the merge base and that base, so the range holds these two waves and nothing else. It changes 144 source files and 146 test files, all 146 of which reference a changed source file, and it leaves no changed source file without one."
+
+[observation.7.1.1]
+task = "7.1"
+file = "explorer/frontend/ui/pages/Block.spec.tsx"
+symbol = "BlockPageContent"
+observed = "At revision 50ad0f4afcd1ec6974fe09f6db272ace49b186dd the command timeout 20m sh -c 'EXPLORER_GATE_BUDGET_SECONDS=1080 tools/explorer/gate-test.sh' exits 1, log build/explorer-gates/frontend-vitest.log: the one failure of 999 tests is the case heading the page with the block title and its number, reporting Test timed out in 5000ms, while a neighbouring case of the same run completed in 11166 ms."
+assumption = "The five-second per-test bound is exhausted by the weight of the aggregate run itself - 180 spec files, with the frontend image build of do_4 holding the same twelve cores - rather than by anything task 6.4 wrote, whose own verify_cmd passed at its recorded revision, so the assertion and the bound are both left exactly as written and the case is not rerun here."
+severity = "note"
+
+[observation.7.1.2]
+task = "7.1"
+file = "explorer/frontend/vitest/setup.ts"
+symbol = "fontfaceobserver"
+observed = "The same vitest leg reported 62 unhandled errors, every one of them ReferenceError: document is not defined raised from node_modules/fontfaceobserver/fontfaceobserver.standalone.js on a timer that fires after the jsdom environment of a spec file is torn down, spread across many spec files rather than concentrated in one, and none of them failed a test."
+assumption = "The font loader schedules a poll that outlives the environment the setup file installs, which belongs to the vitest environment rather than to any task of this feature, so it is recorded once and left for a release-time change to the setup file."
+severity = "note"
+
+[observation.7.1.3]
+task = "7.1"
+file = "explorer/frontend/playwright-ct.config.ts"
+symbol = "__screenshots__"
+observed = "The range 10eb3cb1e..50ad0f4afcd1ec6974fe09f6db272ace49b186dd changes none of the 235 files ending in .pw.tsx and none of the 1100 files under a __screenshots__ directory, while waves 5 and 6 restyled the components those baselines picture, so the component screenshot suite was neither run nor refreshed by this gate."
+assumption = "The visual baselines of the redesigned components are a release-time refresh item, taken once on the release candidate with the browser matrix rather than per task or per wave, so nothing is regenerated here and no baseline is deleted to make a suite pass."
+severity = "note"

@@ -384,7 +384,7 @@
 ## Wave 7 - One Aggregate Run, Recorded
 
 - [ ] 7. Qualify the redesigned frontend once on the merged tip and write down what ran
-  - [ ] 7.1 Run the explorer gates once over the scan waves and record the evidence
+  - [-] 7.1 Run the explorer gates once over the scan waves and record the evidence
     - On the revision that merges waves 5 and 6, run tools/explorer/gate-lint.sh once, writing its log under build/explorer-gates/.
     - At that same revision run tools/explorer/gate-test.sh once with its budget set to fit this task's timeout, writing its logs under build/explorer-gates/.
     - At that same revision run tools/explorer/test-ratio.sh once over the range that spans waves 5 and 6, so that every source file those waves changed is proven to have a changed test referencing it.
