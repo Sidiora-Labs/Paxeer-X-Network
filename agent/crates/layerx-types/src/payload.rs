@@ -24,11 +24,15 @@ pub enum ModuleId {
     Bridge = 8,
     /// Deterministic programs module.
     Programs = 9,
+    /// Spot market module.
+    Spot = 10,
+    /// Web read module.
+    Web = 11,
 }
 
 impl ModuleId {
     /// The complete, closed protocol module set in canonical identifier order.
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 11] = [
         Self::Asset,
         Self::Escrow,
         Self::Budget,
@@ -38,6 +42,8 @@ impl ModuleId {
         Self::Governance,
         Self::Bridge,
         Self::Programs,
+        Self::Spot,
+        Self::Web,
     ];
 
     /// Decodes a protocol module identifier without accepting extensions.
@@ -56,6 +62,8 @@ impl ModuleId {
             7 => Ok(Self::Governance),
             8 => Ok(Self::Bridge),
             9 => Ok(Self::Programs),
+            10 => Ok(Self::Spot),
+            11 => Ok(Self::Web),
             _ => Err(PayloadError::UnknownModule(value)),
         }
     }
@@ -224,6 +232,10 @@ pub enum Payload {
     Bridge(ActivityType, Box<[u8]>),
     /// Programs module payload.
     Programs(ActivityType, Box<[u8]>),
+    /// Spot module payload.
+    Spot(ActivityType, Box<[u8]>),
+    /// Web module payload.
+    Web(ActivityType, Box<[u8]>),
 }
 
 impl Payload {
@@ -256,6 +268,8 @@ impl Payload {
             ModuleId::Governance => Self::Governance(activity_type, bytes),
             ModuleId::Bridge => Self::Bridge(activity_type, bytes),
             ModuleId::Programs => Self::Programs(activity_type, bytes),
+            ModuleId::Spot => Self::Spot(activity_type, bytes),
+            ModuleId::Web => Self::Web(activity_type, bytes),
         })
     }
 
@@ -271,7 +285,9 @@ impl Payload {
             | Self::Perps(activity_type, _)
             | Self::Governance(activity_type, _)
             | Self::Bridge(activity_type, _)
-            | Self::Programs(activity_type, _) => *activity_type,
+            | Self::Programs(activity_type, _)
+            | Self::Spot(activity_type, _)
+            | Self::Web(activity_type, _) => *activity_type,
         }
     }
 
@@ -287,7 +303,9 @@ impl Payload {
             | Self::Perps(_, bytes)
             | Self::Governance(_, bytes)
             | Self::Bridge(_, bytes)
-            | Self::Programs(_, bytes) => bytes,
+            | Self::Programs(_, bytes)
+            | Self::Spot(_, bytes)
+            | Self::Web(_, bytes) => bytes,
         }
     }
 }
@@ -313,8 +331,8 @@ pub enum PayloadError {
     PayloadLength(usize),
 }
 
-/// The kernel spot module identifier, outside the negotiated agent module set.
-pub const SPOT_MODULE_ID: u16 = 10;
+/// The kernel spot module identifier.
+pub const SPOT_MODULE_ID: u16 = ModuleId::Spot as u16;
 
 const PERPS_MAX_ORACLE_KEYS: usize = 8;
 const PERPS_ADL_CAPACITY: usize = 128;

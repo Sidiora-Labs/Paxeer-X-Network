@@ -512,7 +512,7 @@ impl Client {
         simulate(transport, registry, signed_bytes, context)
     }
 
-    /// Executes one signed ProgramCall against an immutable, optionally
+    /// Executes one signed `ProgramCall` against an immutable, optionally
     /// caller-pinned snapshot without committing or submitting it.
     ///
     /// # Errors

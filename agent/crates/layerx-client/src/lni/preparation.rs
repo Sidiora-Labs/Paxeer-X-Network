@@ -14,7 +14,7 @@ const PREPARATION_STATE_RESPONSE_TAG: u16 = 27;
 const ERROR_RESPONSE_TAG: u16 = 25;
 const PREPARATION_PAYLOAD_VERSION: u16 = 1;
 const MAX_PREPARATION_PAYLOAD_BYTES: usize = 4096;
-const MAX_MODULES: usize = 9;
+const MAX_MODULES: usize = ModuleId::ALL.len();
 
 /// Immutable protocol facts captured under the node process-owner mutex.
 ///

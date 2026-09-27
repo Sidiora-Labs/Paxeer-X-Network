@@ -253,6 +253,12 @@ fn evidence_proof(bytes: &[u8]) -> Result<Proof, Failure> {
 }
 
 fn ed25519_vectors(key: &SigningKey) -> Result<Vec<Object>, Failure> {
+    let mut out = ed25519_domain_vectors(key)?;
+    out.extend(ed25519_raw_vectors(key)?);
+    Ok(out)
+}
+
+fn ed25519_domain_vectors(key: &SigningKey) -> Result<Vec<Object>, Failure> {
     let public = key.verifying_key().to_bytes();
     let mut out = Vec::new();
     let domains = [
@@ -281,9 +287,16 @@ fn ed25519_vectors(key: &SigningKey) -> Result<Vec<Object>, Failure> {
         )?);
         out.push(object);
     }
+    Ok(out)
+}
+
+type RawEd25519Case = (&'static str, [u8; 32], Vec<u8>, [u8; 64], bool);
+
+fn ed25519_raw_vectors(key: &SigningKey) -> Result<Vec<Object>, Failure> {
+    let public = key.verifying_key().to_bytes();
     let message = b"raw native message".to_vec();
     let signature = key.sign(&message).to_bytes();
-    let mut cases: Vec<(&str, [u8; 32], Vec<u8>, [u8; 64], bool)> =
+    let mut cases: Vec<RawEd25519Case> =
         vec![("raw-valid", public, message.clone(), signature, true)];
     let mut flipped = signature;
     flipped[5] ^= 0x01;
@@ -321,13 +334,7 @@ fn ed25519_vectors(key: &SigningKey) -> Result<Vec<Object>, Failure> {
         false,
     ));
     let mut zero_key = [0_u8; 32];
-    cases.push((
-        "raw-zero-key",
-        zero_key,
-        message.clone(),
-        signature,
-        false,
-    ));
+    cases.push(("raw-zero-key", zero_key, message.clone(), signature, false));
     zero_key[0] = 1;
     cases.push((
         "raw-identity-key",
@@ -345,6 +352,7 @@ fn ed25519_vectors(key: &SigningKey) -> Result<Vec<Object>, Failure> {
         signature,
         false,
     ));
+    let mut out = Vec::new();
     for (name, public_key, message, signature, expected) in cases {
         let mut object = Object::new(name);
         object.bytes("public_key", &public_key);
@@ -360,7 +368,12 @@ fn ed25519_vectors(key: &SigningKey) -> Result<Vec<Object>, Failure> {
     Ok(out)
 }
 
-fn receipt_object(name: &str, receipt: &[u8], public: &[u8; 32], expected: bool) -> Result<Object, Failure> {
+fn receipt_object(
+    name: &str,
+    receipt: &[u8],
+    public: &[u8; 32],
+    expected: bool,
+) -> Result<Object, Failure> {
     let mut object = Object::new(name);
     object.bytes("receipt", receipt);
     object.bytes("public_key", public);
@@ -401,22 +414,44 @@ fn receipt_vectors(
     oversize_body: &[u8],
 ) -> Result<Vec<Object>, Failure> {
     let public = key.verifying_key().to_bytes();
-    let other = SigningKey::from_bytes(&[0x52; 32]).verifying_key().to_bytes();
+    let other = SigningKey::from_bytes(&[0x52; 32])
+        .verifying_key()
+        .to_bytes();
     let base = &receipts[0];
     let mut out = Vec::new();
     for (index, receipt) in receipts.iter().enumerate() {
-        out.push(receipt_object(&format!("valid-{index}"), receipt, &public, true)?);
+        out.push(receipt_object(
+            &format!("valid-{index}"),
+            receipt,
+            &public,
+            true,
+        )?);
     }
     let mut flipped = base.clone();
     let last = flipped.len() - 1;
     flipped[last] ^= 0x01;
-    out.push(receipt_object("bit-flipped-signature", &flipped, &public, false)?);
+    out.push(receipt_object(
+        "bit-flipped-signature",
+        &flipped,
+        &public,
+        false,
+    )?);
     let mut body = base.clone();
     body[60] ^= 0x01;
     out.push(receipt_object("bit-flipped-body", &body, &public, false)?);
     out.push(receipt_object("wrong-sequencer-key", base, &other, false)?);
-    out.push(receipt_object("truncated", &base[..base.len() - 1], &public, false)?);
-    out.push(receipt_object("truncated-half", &base[..base.len() / 2], &public, false)?);
+    out.push(receipt_object(
+        "truncated",
+        &base[..base.len() - 1],
+        &public,
+        false,
+    )?);
+    out.push(receipt_object(
+        "truncated-half",
+        &base[..base.len() / 2],
+        &public,
+        false,
+    )?);
     let mut trailing = base.clone();
     trailing.push(0);
     out.push(receipt_object("trailing-byte", &trailing, &public, false)?);
@@ -424,7 +459,12 @@ fn receipt_vectors(
         &layerx_wire::receipt::decode(base).map_err(fail("decode base"))?,
     )
     .map_err(fail("unsigned base"))?;
-    out.push(receipt_object("missing-signature", &unsigned, &public, false)?);
+    out.push(receipt_object(
+        "missing-signature",
+        &unsigned,
+        &public,
+        false,
+    )?);
     // Offset 6 is the activity-identifier length prefix; 162 the effect count.
     out.push(receipt_object(
         "oversize-digest-length",
@@ -438,14 +478,29 @@ fn receipt_vectors(
         &public,
         false,
     )?);
-    out.push(receipt_object("oversize-effect-body", oversize_body, &public, false)?);
+    out.push(receipt_object(
+        "oversize-effect-body",
+        oversize_body,
+        &public,
+        false,
+    )?);
     let mut legacy = base.clone();
     legacy[1] = 1;
     legacy[5] = 1;
-    out.push(receipt_object("legacy-protocol-version", &legacy, &public, false)?);
+    out.push(receipt_object(
+        "legacy-protocol-version",
+        &legacy,
+        &public,
+        false,
+    )?);
     let mut unknown_tag = base.clone();
     unknown_tag[3] = 3;
-    out.push(receipt_object("unknown-structure-tag", &unknown_tag, &public, false)?);
+    out.push(receipt_object(
+        "unknown-structure-tag",
+        &unknown_tag,
+        &public,
+        false,
+    )?);
     Ok(out)
 }
 
@@ -472,7 +527,10 @@ fn inclusion_object(
     object.bytes("header_signature", header_signature);
     object.bytes("sequencer_id", &authorization.sequencer_id());
     object.bytes("public_key", &authorization.public_key());
-    object.number("first_batch", u128::from(authorization.first_batch_number()));
+    object.number(
+        "first_batch",
+        u128::from(authorization.first_batch_number()),
+    );
     object.number("last_batch", u128::from(authorization.last_batch_number()));
     let outcome: Result<_, String> = evidence_proof(proof)
         .map_err(|error| format!("Proof({error})"))
@@ -509,10 +567,32 @@ fn inclusion_vectors(key: &SigningKey, batch: &Batch) -> Result<Vec<Object>, Fai
     let public = key.verifying_key().to_bytes();
     let authorization = SequencerAuthorization::new(public, public, 1, 100);
     let leaves: Vec<&[u8]> = batch.receipts.iter().map(Vec::as_slice).collect();
+    let (mut out, proofs) = inclusion_leaf_vectors(batch, &leaves, &authorization)?;
+    out.extend(inclusion_proof_vectors(
+        batch,
+        &leaves,
+        &proofs,
+        &authorization,
+    )?);
+    out.extend(inclusion_header_vectors(
+        batch,
+        leaves[0],
+        &proofs[0],
+        &authorization,
+        public,
+    )?);
+    Ok(out)
+}
+
+fn inclusion_leaf_vectors(
+    batch: &Batch,
+    leaves: &[&[u8]],
+    authorization: &SequencerAuthorization,
+) -> Result<(Vec<Object>, Vec<Vec<u8>>), Failure> {
     let mut out = Vec::new();
     let mut proofs = Vec::new();
     for index in 0..leaves.len() {
-        let (proof, root) = build_proof(&leaves, index).map_err(fail("build proof"))?;
+        let (proof, root) = build_proof(leaves, index).map_err(fail("build proof"))?;
         if root != batch.receipt_root {
             return Err("receipt root drifted".into());
         }
@@ -523,46 +603,179 @@ fn inclusion_vectors(key: &SigningKey, batch: &Batch) -> Result<Vec<Object>, Fai
             &bytes,
             &batch.header,
             &batch.header_signature,
-            &authorization,
+            authorization,
             true,
         )?);
         proofs.push(bytes);
     }
+    Ok((out, proofs))
+}
+
+fn inclusion_proof_vectors(
+    batch: &Batch,
+    leaves: &[&[u8]],
+    proofs: &[Vec<u8>],
+    authorization: &SequencerAuthorization,
+) -> Result<Vec<Object>, Failure> {
     let receipt = leaves[0];
     let proof = &proofs[0];
+    let mut out = Vec::new();
     let mut wrong_sibling = proof.clone();
     let last = wrong_sibling.len() - 1;
     wrong_sibling[last] ^= 0x01;
-    out.push(inclusion_object("wrong-root-sibling", receipt, &wrong_sibling, &batch.header, &batch.header_signature, &authorization, false)?);
-    out.push(inclusion_object("proof-of-other-leaf", receipt, &proofs[1], &batch.header, &batch.header_signature, &authorization, false)?);
-    out.push(inclusion_object("truncated-proof", receipt, &proof[..proof.len() - 1], &batch.header, &batch.header_signature, &authorization, false)?);
+    out.push(inclusion_object(
+        "wrong-root-sibling",
+        receipt,
+        &wrong_sibling,
+        &batch.header,
+        &batch.header_signature,
+        authorization,
+        false,
+    )?);
+    out.push(inclusion_object(
+        "proof-of-other-leaf",
+        receipt,
+        &proofs[1],
+        &batch.header,
+        &batch.header_signature,
+        authorization,
+        false,
+    )?);
+    out.push(inclusion_object(
+        "truncated-proof",
+        receipt,
+        &proof[..proof.len() - 1],
+        &batch.header,
+        &batch.header_signature,
+        authorization,
+        false,
+    )?);
     let mut trailing = proof.clone();
     trailing.push(0);
-    out.push(inclusion_object("trailing-proof-byte", receipt, &trailing, &batch.header, &batch.header_signature, &authorization, false)?);
+    out.push(inclusion_object(
+        "trailing-proof-byte",
+        receipt,
+        &trailing,
+        &batch.header,
+        &batch.header_signature,
+        authorization,
+        false,
+    )?);
     let mut deep = proof.clone();
     deep[12] = 33;
-    out.push(inclusion_object("oversize-proof-depth", receipt, &deep, &batch.header, &batch.header_signature, &authorization, false)?);
-    out.push(inclusion_object("index-outside-tree", receipt, &mutate_u32(proof, 4, 3), &batch.header, &batch.header_signature, &authorization, false)?);
+    out.push(inclusion_object(
+        "oversize-proof-depth",
+        receipt,
+        &deep,
+        &batch.header,
+        &batch.header_signature,
+        authorization,
+        false,
+    )?);
+    out.push(inclusion_object(
+        "index-outside-tree",
+        receipt,
+        &mutate_u32(proof, 4, 3),
+        &batch.header,
+        &batch.header_signature,
+        authorization,
+        false,
+    )?);
     let mut promotion = proofs[2].clone();
     promotion[17] ^= 0x01;
-    out.push(inclusion_object("forged-promotion-sibling", leaves[2], &promotion, &batch.header, &batch.header_signature, &authorization, false)?);
+    out.push(inclusion_object(
+        "forged-promotion-sibling",
+        leaves[2],
+        &promotion,
+        &batch.header,
+        &batch.header_signature,
+        authorization,
+        false,
+    )?);
+    Ok(out)
+}
+
+fn inclusion_header_vectors(
+    batch: &Batch,
+    receipt: &[u8],
+    proof: &[u8],
+    authorization: &SequencerAuthorization,
+    public: [u8; 32],
+) -> Result<Vec<Object>, Failure> {
+    let mut out = Vec::new();
     let mut header_signature = batch.header_signature;
     header_signature[0] ^= 0x01;
-    out.push(inclusion_object("bit-flipped-header-signature", receipt, proof, &batch.header, &header_signature, &authorization, false)?);
+    out.push(inclusion_object(
+        "bit-flipped-header-signature",
+        receipt,
+        proof,
+        &batch.header,
+        &header_signature,
+        authorization,
+        false,
+    )?);
     let mut header = batch.header.clone();
     header[200] ^= 0x01;
-    out.push(inclusion_object("mutated-header-root", receipt, proof, &header, &batch.header_signature, &authorization, false)?);
-    out.push(inclusion_object("truncated-header", receipt, proof, &batch.header[..353], &batch.header_signature, &authorization, false)?);
+    out.push(inclusion_object(
+        "mutated-header-root",
+        receipt,
+        proof,
+        &header,
+        &batch.header_signature,
+        authorization,
+        false,
+    )?);
+    out.push(inclusion_object(
+        "truncated-header",
+        receipt,
+        proof,
+        &batch.header[..353],
+        &batch.header_signature,
+        authorization,
+        false,
+    )?);
     let mut long_header = batch.header.clone();
     long_header.push(0);
-    out.push(inclusion_object("trailing-header-byte", receipt, proof, &long_header, &batch.header_signature, &authorization, false)?);
+    out.push(inclusion_object(
+        "trailing-header-byte",
+        receipt,
+        proof,
+        &long_header,
+        &batch.header_signature,
+        authorization,
+        false,
+    )?);
     let outside = SequencerAuthorization::new(public, public, 8, 100);
-    out.push(inclusion_object("batch-outside-authorisation", receipt, proof, &batch.header, &batch.header_signature, &outside, false)?);
+    out.push(inclusion_object(
+        "batch-outside-authorisation",
+        receipt,
+        proof,
+        &batch.header,
+        &batch.header_signature,
+        &outside,
+        false,
+    )?);
     let stranger = SequencerAuthorization::new([0x77; 32], public, 1, 100);
-    out.push(inclusion_object("wrong-sequencer-identity", receipt, proof, &batch.header, &batch.header_signature, &stranger, false)?);
+    out.push(inclusion_object(
+        "wrong-sequencer-identity",
+        receipt,
+        proof,
+        &batch.header,
+        &batch.header_signature,
+        &stranger,
+        false,
+    )?);
     let mut tampered = receipt.to_vec();
     tampered[60] ^= 0x01;
-    out.push(inclusion_object("tampered-receipt", &tampered, proof, &batch.header, &batch.header_signature, &authorization, false)?);
+    out.push(inclusion_object(
+        "tampered-receipt",
+        &tampered,
+        proof,
+        &batch.header,
+        &batch.header_signature,
+        authorization,
+        false,
+    )?);
     Ok(out)
 }
 
@@ -576,7 +789,12 @@ fn state_leaf(key: &[u8], value: &[u8]) -> Result<[u8; 32], Failure> {
     Ok(hasher.finalize().into())
 }
 
-fn account_value(name: &[u8], kind: u8, asset: [u8; 32], balance: u128) -> Result<([u8; 32], Vec<u8>), Failure> {
+fn account_value(
+    name: &[u8],
+    kind: u8,
+    asset: [u8; 32],
+    balance: u128,
+) -> Result<([u8; 32], Vec<u8>), Failure> {
     let mut hasher = Sha256::new();
     hasher.update(b"LX:ACCOUNT:v1");
     hasher.update(u32::try_from(name.len())?.to_be_bytes());
@@ -597,7 +815,12 @@ fn account_value(name: &[u8], kind: u8, asset: [u8; 32], balance: u128) -> Resul
     Ok((account_id, value))
 }
 
-fn state_object(name: &str, witness: &[u8], root: &[u8; 32], expected: bool) -> Result<Object, Failure> {
+fn state_object(
+    name: &str,
+    witness: &[u8],
+    root: &[u8; 32],
+    expected: bool,
+) -> Result<Object, Failure> {
     let mut object = Object::new(name);
     object.bytes("witness", witness);
     object.bytes("state_root", root);
@@ -662,71 +885,59 @@ fn state_vectors() -> Result<StateFixture, Failure> {
     let module_root = module.root().map_err(fail("module root"))?;
     let module_bytes = module.encode().map_err(fail("module encode"))?;
 
+    let objects = state_witness_objects(StateWitnessBytes {
+        account: account_bytes,
+        account_root,
+        account_value_length: value.len(),
+        module: module_bytes,
+        module_root,
+        module_key_length: module_key.len(),
+        module_value_length: module_value.len(),
+    })?;
+    let accounts = account_value_objects(account_id, asset, &value)?;
+    Ok(StateFixture { objects, accounts })
+}
+
+struct StateWitnessBytes {
+    account: Vec<u8>,
+    account_root: [u8; 32],
+    account_value_length: usize,
+    module: Vec<u8>,
+    module_root: [u8; 32],
+    module_key_length: usize,
+    module_value_length: usize,
+}
+
+fn state_witness_objects(witness: StateWitnessBytes) -> Result<Vec<Object>, Failure> {
+    let StateWitnessBytes {
+        account: account_bytes,
+        account_root,
+        account_value_length,
+        module: module_bytes,
+        module_root,
+        module_key_length,
+        module_value_length,
+    } = witness;
+    // Path A of the module witness starts after both prefixed fields.
+    let path_a = 4 + 4 + module_key_length + 4 + module_value_length;
     let mut objects = vec![
         state_object("valid-account", &account_bytes, &account_root, true)?,
         state_object("valid-module-promoted", &module_bytes, &module_root, true)?,
     ];
-    let mut wrong_root = account_root;
-    wrong_root[0] ^= 0x01;
-    objects.push(state_object("wrong-root", &account_bytes, &wrong_root, false)?);
-    objects.push(state_object("root-of-other-witness", &account_bytes, &module_root, false)?);
-    objects.push(state_object(
-        "truncated",
-        &account_bytes[..account_bytes.len() - 1],
+    objects.extend(account_witness_objects(
+        &account_bytes,
         &account_root,
-        false,
-    )?);
-    let mut trailing = account_bytes.clone();
-    trailing.push(0);
-    objects.push(state_object("trailing-byte", &trailing, &account_root, false)?);
-    let mut value_flip = account_bytes.clone();
-    value_flip[50] ^= 0x01;
-    objects.push(state_object("mutated-value", &value_flip, &account_root, false)?);
-    let mut version = module_bytes.clone();
-    version[1] = 1;
-    objects.push(state_object("unsupported-version", &version, &module_root, false)?);
-    let mut module_ten = module_bytes.clone();
-    module_ten[3] = 10;
-    objects.push(state_object("module-out-of-range", &module_ten, &module_root, false)?);
-    objects.push(state_object(
-        "oversize-key-length",
-        &mutate_u32(&module_bytes, 4, 130),
         &module_root,
-        false,
     )?);
-    objects.push(state_object(
-        "oversize-value-length",
-        &mutate_u32(&module_bytes, 8 + module_key.len(), 1_048_577),
+    objects.extend(module_witness_objects(
+        &module_bytes,
         &module_root,
-        false,
-    )?);
-    // Path A of the module witness starts after both prefixed fields.
-    let path_a = 4 + 4 + module_key.len() + 4 + module_value.len();
-    let mut deep = module_bytes[..path_a + 8].to_vec();
-    deep.push(33);
-    for _ in 0..33 {
-        deep.extend_from_slice(&[0xd1; 32]);
-    }
-    deep.extend_from_slice(&module_bytes[path_a + 9 + 64..]);
-    objects.push(state_object("oversize-path-depth", &deep, &module_root, false)?);
-    let mut promotion = module_bytes.clone();
-    promotion[path_a + 9] ^= 0x01;
-    objects.push(state_object("forged-promotion-sibling", &promotion, &module_root, false)?);
-    objects.push(state_object(
-        "index-outside-subtree",
-        &mutate_u32(&module_bytes, path_a, 3),
-        &module_root,
-        false,
-    )?);
-    let count_b = path_a + 9 + 64;
-    objects.push(state_object(
-        "module-tree-width",
-        &mutate_u32(&module_bytes, count_b, 11),
-        &module_root,
-        false,
+        module_key_length,
+        path_a,
     )?);
     let mut missing_account_path = 2_u16.to_be_bytes().to_vec();
-    missing_account_path.extend_from_slice(&account_bytes[2..4 + 4 + 33 + 4 + value.len()]);
+    missing_account_path
+        .extend_from_slice(&account_bytes[2..4 + 4 + 33 + 4 + account_value_length]);
     missing_account_path.extend_from_slice(&module_bytes[path_a..]);
     objects.push(state_object(
         "account-key-without-account-path",
@@ -734,37 +945,176 @@ fn state_vectors() -> Result<StateFixture, Failure> {
         &account_root,
         false,
     )?);
+    Ok(objects)
+}
 
+fn account_witness_objects(
+    account_bytes: &[u8],
+    account_root: &[u8; 32],
+    module_root: &[u8; 32],
+) -> Result<Vec<Object>, Failure> {
+    let mut objects = Vec::new();
+    let mut wrong_root = *account_root;
+    wrong_root[0] ^= 0x01;
+    objects.push(state_object(
+        "wrong-root",
+        account_bytes,
+        &wrong_root,
+        false,
+    )?);
+    objects.push(state_object(
+        "root-of-other-witness",
+        account_bytes,
+        module_root,
+        false,
+    )?);
+    objects.push(state_object(
+        "truncated",
+        &account_bytes[..account_bytes.len() - 1],
+        account_root,
+        false,
+    )?);
+    let mut trailing = account_bytes.to_vec();
+    trailing.push(0);
+    objects.push(state_object(
+        "trailing-byte",
+        &trailing,
+        account_root,
+        false,
+    )?);
+    let mut value_flip = account_bytes.to_vec();
+    value_flip[50] ^= 0x01;
+    objects.push(state_object(
+        "mutated-value",
+        &value_flip,
+        account_root,
+        false,
+    )?);
+    Ok(objects)
+}
+
+fn module_witness_objects(
+    module_bytes: &[u8],
+    module_root: &[u8; 32],
+    module_key_length: usize,
+    path_a: usize,
+) -> Result<Vec<Object>, Failure> {
+    let mut objects = Vec::new();
+    let mut version = module_bytes.to_vec();
+    version[1] = 1;
+    objects.push(state_object(
+        "unsupported-version",
+        &version,
+        module_root,
+        false,
+    )?);
+    let mut module_ten = module_bytes.to_vec();
+    module_ten[3] = 10;
+    objects.push(state_object(
+        "module-out-of-range",
+        &module_ten,
+        module_root,
+        false,
+    )?);
+    objects.push(state_object(
+        "oversize-key-length",
+        &mutate_u32(module_bytes, 4, 130),
+        module_root,
+        false,
+    )?);
+    objects.push(state_object(
+        "oversize-value-length",
+        &mutate_u32(module_bytes, 8 + module_key_length, 1_048_577),
+        module_root,
+        false,
+    )?);
+    let mut deep = module_bytes[..path_a + 8].to_vec();
+    deep.push(33);
+    for _ in 0..33 {
+        deep.extend_from_slice(&[0xd1; 32]);
+    }
+    deep.extend_from_slice(&module_bytes[path_a + 9 + 64..]);
+    objects.push(state_object(
+        "oversize-path-depth",
+        &deep,
+        module_root,
+        false,
+    )?);
+    let mut promotion = module_bytes.to_vec();
+    promotion[path_a + 9] ^= 0x01;
+    objects.push(state_object(
+        "forged-promotion-sibling",
+        &promotion,
+        module_root,
+        false,
+    )?);
+    objects.push(state_object(
+        "index-outside-subtree",
+        &mutate_u32(module_bytes, path_a, 3),
+        module_root,
+        false,
+    )?);
+    let count_b = path_a + 9 + 64;
+    objects.push(state_object(
+        "module-tree-width",
+        &mutate_u32(module_bytes, count_b, 11),
+        module_root,
+        false,
+    )?);
+    Ok(objects)
+}
+
+fn account_value_objects(
+    account_id: [u8; 32],
+    asset: [u8; 32],
+    value: &[u8],
+) -> Result<Vec<Object>, Failure> {
     let mut accounts = Vec::new();
     let mut good = Object::new("valid-account-value");
     good.bytes("account_id", &account_id);
     good.bytes("asset_id", &asset);
-    good.bytes("value", &value);
+    good.bytes("value", value);
     good.number("balance", 123_456_789);
-    good.verdict(&require(decode_account_value(account_id, &value), true, "account")?);
+    good.verdict(&require(
+        decode_account_value(account_id, value),
+        true,
+        "account",
+    )?);
     accounts.push(good);
     let mut stranger = Object::new("account-identity-mismatch");
     stranger.bytes("account_id", &[0x44; 32]);
     stranger.bytes("asset_id", &asset);
-    stranger.bytes("value", &value);
-    stranger.verdict(&require(decode_account_value([0x44; 32], &value), false, "identity")?);
+    stranger.bytes("value", value);
+    stranger.verdict(&require(
+        decode_account_value([0x44; 32], value),
+        false,
+        "identity",
+    )?);
     accounts.push(stranger);
-    let mut long = value.clone();
+    let mut long = value.to_vec();
     long.push(0);
     let mut trailing_value = Object::new("account-trailing-byte");
     trailing_value.bytes("account_id", &account_id);
     trailing_value.bytes("asset_id", &asset);
     trailing_value.bytes("value", &long);
-    trailing_value.verdict(&require(decode_account_value(account_id, &long), false, "trailing")?);
+    trailing_value.verdict(&require(
+        decode_account_value(account_id, &long),
+        false,
+        "trailing",
+    )?);
     accounts.push(trailing_value);
     let short = &value[..value.len() - 1];
     let mut truncated_value = Object::new("account-truncated");
     truncated_value.bytes("account_id", &account_id);
     truncated_value.bytes("asset_id", &asset);
     truncated_value.bytes("value", short);
-    truncated_value.verdict(&require(decode_account_value(account_id, short), false, "short")?);
+    truncated_value.verdict(&require(
+        decode_account_value(account_id, short),
+        false,
+        "short",
+    )?);
     accounts.push(truncated_value);
-    Ok(StateFixture { objects, accounts })
+    Ok(accounts)
 }
 
 fn discovery_object(
@@ -829,30 +1179,154 @@ fn discovery_vectors(key: &SigningKey) -> Result<Vec<Object>, Failure> {
     };
     let (payload, proof) = encode_program_head_attestation(&attestation);
     let mut out = vec![discovery_object(
-        "valid", &payload, &proof, &program_id, staleness, &public, true,
+        "valid",
+        &payload,
+        &proof,
+        &program_id,
+        staleness,
+        &public,
+        true,
     )?];
-    let mut flipped = proof;
+    out.extend(discovery_encoding_vectors(
+        &payload,
+        &proof,
+        &program_id,
+        staleness,
+        &public,
+    )?);
+    out.extend(discovery_binding_vectors(
+        &payload,
+        &proof,
+        &program_id,
+        staleness,
+        &public,
+    )?);
+    Ok(out)
+}
+
+fn discovery_encoding_vectors(
+    payload: &[u8],
+    proof: &[u8],
+    program_id: &[u8; 32],
+    staleness: u64,
+    public: &[u8; 32],
+) -> Result<Vec<Object>, Failure> {
+    let mut out = Vec::new();
+    let mut flipped = proof.to_vec();
     flipped[95] ^= 0x01;
-    out.push(discovery_object("bit-flipped-signature", &payload, &flipped, &program_id, staleness, &public, false)?);
-    let mut root = payload;
+    out.push(discovery_object(
+        "bit-flipped-signature",
+        payload,
+        &flipped,
+        program_id,
+        staleness,
+        public,
+        false,
+    )?);
+    let mut root = payload.to_vec();
     root[100] ^= 0x01;
-    out.push(discovery_object("wrong-state-root", &root, &proof, &program_id, staleness, &public, false)?);
-    out.push(discovery_object("truncated-payload", &payload[..159], &proof, &program_id, staleness, &public, false)?);
+    out.push(discovery_object(
+        "wrong-state-root",
+        &root,
+        proof,
+        program_id,
+        staleness,
+        public,
+        false,
+    )?);
+    out.push(discovery_object(
+        "truncated-payload",
+        &payload[..159],
+        proof,
+        program_id,
+        staleness,
+        public,
+        false,
+    )?);
     let mut long = payload.to_vec();
     long.push(0);
-    out.push(discovery_object("trailing-payload-byte", &long, &proof, &program_id, staleness, &public, false)?);
-    out.push(discovery_object("truncated-proof-material", &payload, &proof[..95], &program_id, staleness, &public, false)?);
+    out.push(discovery_object(
+        "trailing-payload-byte",
+        &long,
+        proof,
+        program_id,
+        staleness,
+        public,
+        false,
+    )?);
+    out.push(discovery_object(
+        "truncated-proof-material",
+        payload,
+        &proof[..95],
+        program_id,
+        staleness,
+        public,
+        false,
+    )?);
     let mut long_proof = proof.to_vec();
     long_proof.push(0);
-    out.push(discovery_object("oversize-proof-material", &payload, &long_proof, &program_id, staleness, &public, false)?);
-    out.push(discovery_object("other-program", &payload, &proof, &[0x71; 32], staleness, &public, false)?);
-    out.push(discovery_object("other-staleness-window", &payload, &proof, &program_id, staleness + 1, &public, false)?);
-    let other = SigningKey::from_bytes(&[0x52; 32]).verifying_key().to_bytes();
-    out.push(discovery_object("untrusted-sequencer-key", &payload, &proof, &program_id, staleness, &other, false)?);
-    let mut layout = payload;
+    out.push(discovery_object(
+        "oversize-proof-material",
+        payload,
+        &long_proof,
+        program_id,
+        staleness,
+        public,
+        false,
+    )?);
+    let mut layout = payload.to_vec();
     layout[0] ^= 0x02;
-    out.push(discovery_object("unknown-layout-version", &layout, &proof, &program_id, staleness, &public, false)?);
+    out.push(discovery_object(
+        "unknown-layout-version",
+        &layout,
+        proof,
+        program_id,
+        staleness,
+        public,
+        false,
+    )?);
     Ok(out)
+}
+
+fn discovery_binding_vectors(
+    payload: &[u8],
+    proof: &[u8],
+    program_id: &[u8; 32],
+    staleness: u64,
+    public: &[u8; 32],
+) -> Result<Vec<Object>, Failure> {
+    let other = SigningKey::from_bytes(&[0x52; 32])
+        .verifying_key()
+        .to_bytes();
+    Ok(vec![
+        discovery_object(
+            "other-program",
+            payload,
+            proof,
+            &[0x71; 32],
+            staleness,
+            public,
+            false,
+        )?,
+        discovery_object(
+            "other-staleness-window",
+            payload,
+            proof,
+            program_id,
+            staleness + 1,
+            public,
+            false,
+        )?,
+        discovery_object(
+            "untrusted-sequencer-key",
+            payload,
+            proof,
+            program_id,
+            staleness,
+            &other,
+            false,
+        )?,
+    ])
 }
 
 const WITHDRAWAL_RECEIPT: &[u8] =
@@ -940,11 +1414,9 @@ fn mutated_withdrawal(offset: usize, key: &SigningKey) -> Result<Vec<u8>, Failur
         payload[48..68].copy_from_slice(&unsigned[start + 130..start + 150]);
         payload[68..100].copy_from_slice(&body[150..182]);
         payload[100..].copy_from_slice(&body[246..]);
-        let kind = layerx_types::payload::ActivityType::new(
-            layerx_types::payload::ModuleId::Asset,
-            9,
-        )
-        .map_err(fail("withdrawal kind"))?;
+        let kind =
+            layerx_types::payload::ActivityType::new(layerx_types::payload::ModuleId::Asset, 9)
+                .map_err(fail("withdrawal kind"))?;
         let registry =
             layerx_proof::receipt::withdrawal::registry().map_err(fail("withdrawal registry"))?;
         let value = layerx_types::payload::Payload::new(&registry, kind, &payload)
@@ -989,7 +1461,11 @@ fn withdrawal_vectors() -> Result<Vec<Object>, Failure> {
         WITHDRAWAL_RECEIPT,
         WITHDRAWAL_SEQUENCER,
     )?;
-    if real.0.iter().any(|(key, value)| key == "valid" && value != "true") {
+    if real
+        .0
+        .iter()
+        .any(|(key, value)| key == "valid" && value != "true")
+    {
         return Err("the real native withdrawal was refused".into());
     }
     real.bytes("proof", WITHDRAWAL_PROOF);
@@ -1141,7 +1617,10 @@ fn main() -> Result<(), Failure> {
     let state = state_vectors()?;
     let sections = [
         section("ed25519", &ed25519_vectors(&key)?),
-        section("receipts", &receipt_vectors(&key, &receipts, &oversize_body)?),
+        section(
+            "receipts",
+            &receipt_vectors(&key, &receipts, &oversize_body)?,
+        ),
         section("inclusion", &inclusion_vectors(&key, &batch)?),
         section("state", &state.objects),
         section("accounts", &state.accounts),

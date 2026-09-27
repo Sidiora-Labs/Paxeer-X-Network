@@ -169,11 +169,12 @@ impl CapabilitySet {
         let abi = canonical_payload
             .get(32..34)
             .ok_or(AbiError::InvalidEncoding)?;
-        let decoded = match u16::from_be_bytes([abi[0], abi[1]]) {
-            1 => Self::decode_canonical(encoded),
-            2 => Self::decode_v2_canonical(encoded),
-            _ => return Err(AbiError::InvalidEncoding),
-        };
+        let decoded =
+            match crate::abi_policy::capability_encoding(u16::from_be_bytes([abi[0], abi[1]])) {
+                Ok(crate::abi_policy::CapabilityEncoding::V1) => Self::decode_canonical(encoded),
+                Ok(crate::abi_policy::CapabilityEncoding::V2) => Self::decode_v2_canonical(encoded),
+                Err(_) => return Err(AbiError::InvalidEncoding),
+            };
         decoded.and_then(Self::new).and_then(|capabilities| {
             capabilities
                 .reachable_accesses(program, principal)

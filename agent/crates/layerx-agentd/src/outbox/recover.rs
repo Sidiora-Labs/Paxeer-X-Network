@@ -150,6 +150,27 @@ pub fn recover(
             .map_err(RecoveryError::Ceiling)?;
     }
 
+    let restored = restore_submissions(store, tenant)?;
+    Ok(RecoveredOutbox {
+        outbox: restored.outbox,
+        queued_for_transmission: restored.queued_for_transmission,
+        awaiting_receipt_resolution: restored.awaiting_receipt_resolution,
+        budget_accounting,
+        ceiling,
+        recovery_complete: true,
+    })
+}
+
+struct RestoredSubmissions {
+    outbox: Outbox,
+    queued_for_transmission: Vec<[u8; 32]>,
+    awaiting_receipt_resolution: Vec<[u8; 32]>,
+}
+
+fn restore_submissions(
+    store: &mut Store,
+    tenant: &TenantId,
+) -> Result<RestoredSubmissions, RecoveryError> {
     let mut outbox = Outbox::default();
     let mut queued_for_transmission = Vec::new();
     let mut awaiting_receipt_resolution = Vec::new();
@@ -191,13 +212,10 @@ pub fn recover(
     }
     queued_for_transmission.sort_unstable();
     awaiting_receipt_resolution.sort_unstable();
-    Ok(RecoveredOutbox {
+    Ok(RestoredSubmissions {
         outbox,
         queued_for_transmission,
         awaiting_receipt_resolution,
-        budget_accounting,
-        ceiling,
-        recovery_complete: true,
     })
 }
 

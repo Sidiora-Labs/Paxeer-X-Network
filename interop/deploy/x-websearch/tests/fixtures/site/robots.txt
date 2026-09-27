@@ -1,0 +1,6 @@
+User-agent: x-websearch
+Allow: /
+Disallow: /private/
+
+User-agent: *
+Disallow: /

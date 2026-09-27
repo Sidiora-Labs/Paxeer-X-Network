@@ -228,3 +228,34 @@ fn program_read_preserves_typed_snapshot_refusals_without_retrying() {
         assert_eq!(transport.receives, 1);
     }
 }
+
+#[test]
+fn an_unpinned_program_read_encodes_the_absent_state_root_as_a_zero_word() {
+    let (signed_activity, execution, evidence) = signed_execution();
+    let correlation_id = 94;
+    let mut transport = Scripted::new(response(&execution, &evidence, correlation_id));
+    let result = read_program(
+        &mut transport,
+        &registry(),
+        &signed_activity,
+        ProgramReadContext {
+            interface_version: Version::V1_6,
+            sequencer_public_key: evidence.public_key,
+            correlation_id,
+            minimum_sequence: 0,
+            expected_state_root: None,
+        },
+    )
+    .unwrap_or_else(|error| panic!("program read failed: {error:?}"));
+    assert_eq!(result.snapshot.minimum_sequence, 0);
+    assert_eq!(result.snapshot.state_root, evidence.previous_state_root);
+    assert_eq!(transport.sent.len(), 1);
+    assert_eq!(transport.receives, 1);
+    let request = decode_envelope(&transport.sent[0])
+        .unwrap_or_else(|error| panic!("request envelope failed: {error:?}"));
+    assert_eq!(request.message_tag, PROGRAM_READ_REQUEST_TAG);
+    assert_eq!(&request.canonical_payload[2..10], &0_u64.to_be_bytes());
+    assert_eq!(request.canonical_payload[10], 0);
+    assert_eq!(&request.canonical_payload[11..43], &[0_u8; 32]);
+    assert_eq!(&request.canonical_payload[47..], signed_activity);
+}

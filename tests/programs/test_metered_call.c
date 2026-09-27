@@ -775,6 +775,44 @@ static int metered_treasury_binding(bool sequence_overflow)
     return 0;
 }
 
+static int metered_schedule_identity(void)
+{
+    metered_fixture *f = calloc(1U, sizeof(*f));
+    lxp_programs_schedule_item *item = calloc(1U, sizeof(*item));
+    lxp_kernel_batch_snapshot *snapshot = NULL;
+    uint8_t expected_actor[32];
+    METERED_CHECK(f != NULL && item != NULL);
+    METERED_CHECK(metered_fixture_init(f, 4U, true) == 0);
+    METERED_CHECK(metered_activity(f, LX_PROGRAMS_CALL, f->call,
+                                   f->call_length, 0x60U, true) == 0);
+    METERED_CHECK(f->activity.actor_did.length == sizeof(metered_did) - 1U &&
+                  f->activity.actor_did.length != 32U);
+    METERED_CHECK(lxp_did_id_derive(f->activity.actor_did.bytes,
+                                    f->activity.actor_did.length,
+                                    expected_actor) == LXP_OK);
+    METERED_CHECK(memcmp(f->identity->did_id, expected_actor, 32U) == 0);
+    METERED_CHECK(memcmp(f->authority.actor, expected_actor, 32U) == 0 &&
+                  memcmp(f->authority.principal, expected_actor, 32U) == 0);
+    METERED_CHECK(lxp_kernel_batch_snapshot_create(
+        &f->kernel, f->execution.identities, f->execution.verified_receipts,
+        &f->execution, &snapshot) == LXP_OK);
+    METERED_CHECK(lxp_kernel_batch_schedule_item(
+        snapshot, &f->activity, &f->execution, &f->arena, item) == LXP_OK);
+    METERED_CHECK(item->version == LXP_PROGRAMS_SCHEDULE_ITEM_VERSION);
+    METERED_CHECK(memcmp(item->identity_actor, expected_actor, 32U) == 0);
+    METERED_CHECK(memcmp(item->identity_principal, f->authority.principal,
+                         32U) == 0);
+    METERED_CHECK(memcmp(item->call.principal, f->authority.principal,
+                         32U) == 0);
+    lxp_kernel_batch_snapshot_destroy(snapshot);
+    while (f->kernel.blob_count != 0U)
+        free(f->kernel.blobs[--f->kernel.blob_count].bytes);
+    METERED_CHECK(lxp_state_store_destroy(&f->state) == LXP_OK);
+    free(item);
+    free(f);
+    return 0;
+}
+
 static int metered_fee_capacity(void)
 {
     metered_fixture *f = calloc(1U, sizeof(*f));
@@ -845,6 +883,7 @@ int main(void)
     METERED_CHECK(metered_signed_replay(true, false) == 0);
     METERED_CHECK(metered_signed_replay(false, false) == 0);
     METERED_CHECK(metered_signed_replay(false, true) == 0);
+    METERED_CHECK(metered_schedule_identity() == 0);
     METERED_CHECK(metered_fee_capacity() == 0);
     METERED_CHECK(metered_fee_first(0U, false, false, false) == 0);
     METERED_CHECK(metered_fee_first(0U, false, true, false) == 0);

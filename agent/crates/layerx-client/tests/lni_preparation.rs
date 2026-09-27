@@ -136,3 +136,65 @@ fn response_codec_rejects_unrepresentable_module_registrations() {
         Err(PreparationStateError::MalformedResponse)
     );
 }
+
+fn snapshot_with_modules(actor: &Did, modules: &[u16]) -> Vec<u8> {
+    let mut bytes = payload(actor);
+    let module_offset = 74 + actor.as_bytes().len();
+    bytes.truncate(module_offset - 2);
+    let count =
+        u16::try_from(modules.len()).unwrap_or_else(|error| panic!("module count failed: {error}"));
+    bytes.extend_from_slice(&count.to_be_bytes());
+    for module in modules {
+        bytes.extend_from_slice(&module.to_be_bytes());
+        bytes.extend_from_slice(&1_u16.to_be_bytes());
+        bytes.extend_from_slice(&((u32::from(*module) << 16) | 1).to_be_bytes());
+    }
+    bytes
+}
+
+#[test]
+fn response_codec_accepts_every_kernel_module_including_spot_and_web() {
+    let actor = actor();
+    let modules: Vec<u16> = ModuleId::ALL.iter().map(|module| *module as u16).collect();
+    assert_eq!(modules, (1..=11).collect::<Vec<u16>>());
+    let state =
+        decode_preparation_response(&snapshot_with_modules(&actor, &modules), &actor, 77, 10)
+            .unwrap_or_else(|error| panic!("eleven-module snapshot failed: {error:?}"));
+    assert_eq!(state.module_registry.registrations().len(), 11);
+    for module in ModuleId::ALL {
+        let declared = ActivityType::new(module, 1)
+            .unwrap_or_else(|error| panic!("module activity failed: {error:?}"));
+        assert!(state.module_registry.declares(declared));
+    }
+    let spot = ActivityType::new(ModuleId::Spot, 1)
+        .unwrap_or_else(|error| panic!("spot activity failed: {error:?}"));
+    let web = ActivityType::new(ModuleId::Web, 1)
+        .unwrap_or_else(|error| panic!("web activity failed: {error:?}"));
+    assert!(state.module_registry.declares(spot));
+    assert!(state.module_registry.declares(web));
+
+    let daemon_default = [1, 2, 3, 4, 5, 6, 7, 9, 10];
+    let state = decode_preparation_response(
+        &snapshot_with_modules(&actor, &daemon_default),
+        &actor,
+        77,
+        10,
+    )
+    .unwrap_or_else(|error| panic!("default daemon snapshot failed: {error:?}"));
+    assert_eq!(state.module_registry.registrations().len(), 9);
+    assert!(state.module_registry.declares(spot));
+}
+
+#[test]
+fn response_codec_refuses_more_modules_than_the_kernel_declares_and_unknown_modules() {
+    let actor = actor();
+    let twelve: Vec<u16> = (1..=12).collect();
+    assert_eq!(
+        decode_preparation_response(&snapshot_with_modules(&actor, &twelve), &actor, 77, 10),
+        Err(PreparationStateError::MalformedResponse)
+    );
+    assert_eq!(
+        decode_preparation_response(&snapshot_with_modules(&actor, &[1, 12]), &actor, 77, 10),
+        Err(PreparationStateError::MalformedResponse)
+    );
+}

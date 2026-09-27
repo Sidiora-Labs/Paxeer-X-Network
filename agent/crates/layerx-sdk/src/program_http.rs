@@ -1227,9 +1227,11 @@ fn execution_call_binding(
     ))
 }
 
+type OccupancyPayerHint = (Vec<u8>, [u8; 32]);
+
 fn occupancy_payer_hints(
     value: &Map<String, Value>,
-) -> Result<Vec<(Vec<u8>, [u8; 32])>, ProgramOperationError> {
+) -> Result<Vec<OccupancyPayerHint>, ProgramOperationError> {
     let Some(hints) = value.get("occupancy_payers") else {
         return Ok(Vec::new());
     };
@@ -1247,6 +1249,49 @@ fn occupancy_payer_hints(
             ))
         })
         .collect()
+}
+
+fn occupancy_payers<'a>(
+    actor_did: &'a [u8],
+    hints: &'a [OccupancyPayerHint],
+) -> Vec<OccupancyPayer<'a>> {
+    let mut payers = vec![OccupancyPayer {
+        did: actor_did,
+        account: None,
+    }];
+    payers.extend(hints.iter().map(|(did, account)| OccupancyPayer {
+        did,
+        account: Some(*account),
+    }));
+    payers
+}
+
+struct ExecutionUsage {
+    cpu_fuel: u64,
+    memory_bytes: u64,
+    storage_read_bytes: u64,
+    storage_write_bytes: u64,
+    output_values: u32,
+    output_bytes: u64,
+    fee_units: u128,
+}
+
+fn decode_execution_usage(
+    value: &Map<String, Value>,
+) -> Result<ExecutionUsage, ProgramOperationError> {
+    let usage = value
+        .get("usage")
+        .and_then(Value::as_object)
+        .ok_or(ProgramOperationError::Decode)?;
+    Ok(ExecutionUsage {
+        cpu_fuel: decimal_u64(usage, "cpu_fuel")?,
+        memory_bytes: decimal_u64(usage, "memory_bytes")?,
+        storage_read_bytes: decimal_u64(usage, "storage_read_bytes")?,
+        storage_write_bytes: decimal_u64(usage, "storage_write_bytes")?,
+        output_values: bounded_u32(usage, "output_values", 0, u32::MAX)?,
+        output_bytes: decimal_u64(usage, "output_bytes")?,
+        fee_units: decimal_u128(usage, "fee_units")?,
+    })
 }
 
 fn decode_execution(
@@ -1286,29 +1331,12 @@ fn decode_execution(
     {
         return Err(ProgramOperationError::IdentityMismatch);
     }
-    let usage = value
-        .get("usage")
-        .and_then(Value::as_object)
-        .ok_or(ProgramOperationError::Decode)?;
-    let cpu_fuel = decimal_u64(usage, "cpu_fuel")?;
-    let memory_bytes = decimal_u64(usage, "memory_bytes")?;
-    let storage_read_bytes = decimal_u64(usage, "storage_read_bytes")?;
-    let storage_write_bytes = decimal_u64(usage, "storage_write_bytes")?;
-    let output_values = bounded_u32(usage, "output_values", 0, u32::MAX)?;
-    let output_bytes = decimal_u64(usage, "output_bytes")?;
-    let fee_units = decimal_u128(usage, "fee_units")?;
+    let usage = decode_execution_usage(value)?;
     let outcome = value.get("outcome").ok_or(ProgramOperationError::Decode)?;
     let (payload_hash, protocol_version, actor_did) =
         execution_call_binding(signed_activity, activity_id, program_id, guest_abi_version)?;
     let payer_hints = occupancy_payer_hints(value)?;
-    let mut occupancy_payers = vec![OccupancyPayer {
-        did: &actor_did,
-        account: None,
-    }];
-    occupancy_payers.extend(payer_hints.iter().map(|(did, account)| OccupancyPayer {
-        did,
-        account: Some(*account),
-    }));
+    let occupancy_payers = occupancy_payers(&actor_did, &payer_hints);
     let evidence = ProgramExecutionEvidence {
         payload_hash,
         receipt,
@@ -1338,13 +1366,13 @@ fn decode_execution(
         || protocol.resulting_state_root() != state_root
         || verified_digest != receipt_digest
         || verified.result_code() != result_code
-        || verified.cpu_fuel() != cpu_fuel
-        || verified.memory_bytes() != memory_bytes
-        || verified.storage_read_bytes() != storage_read_bytes
-        || verified.storage_write_bytes() != storage_write_bytes
-        || verified.output_values() != output_values
-        || verified.output_bytes() != output_bytes
-        || verified.fee_units() != fee_units
+        || verified.cpu_fuel() != usage.cpu_fuel
+        || verified.memory_bytes() != usage.memory_bytes
+        || verified.storage_read_bytes() != usage.storage_read_bytes
+        || verified.storage_write_bytes() != usage.storage_write_bytes
+        || verified.output_values() != usage.output_values
+        || verified.output_bytes() != usage.output_bytes
+        || verified.fee_units() != usage.fee_units
         || expected_outcome(verified.outcome()) != *outcome
         || (state == ExecutionState::Refused && verified.outcome().is_completed())
         || (state == ExecutionState::Executed && !verified.outcome().is_completed())
@@ -1632,7 +1660,10 @@ fn require_native_execution(
 mod source_contract {
     use serde_json::json;
 
-    use super::{accepted_program_verification, decode_service_error, exact_fields, object};
+    use super::{
+        accepted_program_verification, decode_execution_usage, decode_service_error, exact_fields,
+        object, ProgramOperationError,
+    };
 
     #[test]
     fn corrupt_lifecycle_boundary_responses_retain_c_signed_request() -> Result<(), String> {
@@ -1858,6 +1889,53 @@ mod source_contract {
                 "reason",
                 "request_id"
             ],
+        ));
+    }
+    #[test]
+    fn execution_usage_decodes_every_meter_and_refuses_an_absent_or_uncanonical_one() {
+        let document = json!({
+            "usage": {
+                "cpu_fuel":"1200",
+                "memory_bytes":"65536",
+                "storage_read_bytes":"48",
+                "storage_write_bytes":"96",
+                "output_values":2,
+                "output_bytes":"128",
+                "fee_units":"7",
+            }
+        });
+        let fields = object(&document).unwrap_or_else(|_| panic!("usage document"));
+        let usage = decode_execution_usage(fields).unwrap_or_else(|_| panic!("usage"));
+        assert_eq!(usage.cpu_fuel, 1_200);
+        assert_eq!(usage.memory_bytes, 65_536);
+        assert_eq!(usage.storage_read_bytes, 48);
+        assert_eq!(usage.storage_write_bytes, 96);
+        assert_eq!(usage.output_values, 2);
+        assert_eq!(usage.output_bytes, 128);
+        assert_eq!(usage.fee_units, 7);
+
+        let absent = json!({"state":"executed"});
+        let absent = object(&absent).unwrap_or_else(|_| panic!("absent document"));
+        assert!(matches!(
+            decode_execution_usage(absent),
+            Err(ProgramOperationError::Decode)
+        ));
+
+        let uncanonical = json!({
+            "usage": {
+                "cpu_fuel":"0012",
+                "memory_bytes":"65536",
+                "storage_read_bytes":"48",
+                "storage_write_bytes":"96",
+                "output_values":2,
+                "output_bytes":"128",
+                "fee_units":"7",
+            }
+        });
+        let uncanonical = object(&uncanonical).unwrap_or_else(|_| panic!("uncanonical document"));
+        assert!(matches!(
+            decode_execution_usage(uncanonical),
+            Err(ProgramOperationError::Decode)
         ));
     }
 }

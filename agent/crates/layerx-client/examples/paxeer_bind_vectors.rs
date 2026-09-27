@@ -1,10 +1,10 @@
 //! Emits the JSON fixture consumed by the Paxeer account-binding tests
-//! (`modules/evm/keeper` and `precompiles/addr`). A LayerX DID key consents to
+//! (`modules/evm/keeper` and `precompiles/addr`). A `LayerX` DID key consents to
 //! a binding with an EVM address by signing
 //! `"LX:PAXEER-BIND:v1" || chain id (u256 BE) || EVM address || nonce (u64 BE)`.
 //! Every message is assembled and signed by the crate's own `paxeer_binding`
 //! helper — the same code path a client calling `bindLayerX` takes — and judged
-//! by the strict LayerX verifier; the recorded `valid` flag is that verifier's
+//! by the strict `LayerX` verifier; the recorded `valid` flag is that verifier's
 //! own answer. The main account identifier is derived by the real wire crate.
 //!
 //! Usage: `cargo run -p layerx-client --example paxeer_bind_vectors > paxeer_bind_vectors.json`

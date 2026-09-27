@@ -94,7 +94,7 @@ fn validate_code(
     wasm: &[u8],
 ) -> Result<(), InvalidNativeLifecycle> {
     if program_id.is_zero()
-        || !matches!(guest_abi, 1..=3)
+        || !crate::guest_abi::supported(guest_abi)
         || !wasm.starts_with(b"\0asm\x01\0\0\0")
         || wasm.len() > MAX_WASM_BYTES
     {
@@ -413,6 +413,72 @@ mod tests {
             }
             .map_err(|error| format!("{name}: {error:?}"))?;
             assert_eq!(encoded, payload);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn lifecycle_admits_exactly_the_kernels_guest_abi_range() -> Result<(), InvalidNativeLifecycle>
+    {
+        let deploy = NativeProgramDeploy {
+            program_id: ProgramId::new([1; 32]),
+            guest_abi: 1,
+            policy: ProgramUpgradePolicy::Immutable,
+            new_hash: [3; 32],
+            interface: None,
+            wasm: b"\0asm\x01\0\0\0",
+        };
+        let upgrade = NativeProgramUpgrade {
+            program_id: ProgramId::new([1; 32]),
+            guest_abi: 1,
+            old_hash: [2; 32],
+            new_hash: [3; 32],
+            migration_hook: &[],
+            clear_interface: false,
+            interface: None,
+            wasm: b"\0asm\x01\0\0\0",
+        };
+        for guest_abi in 1..=crate::guest_abi::MAX_VERSION {
+            let admitted = NativeProgramDeploy {
+                guest_abi,
+                ..deploy
+            };
+            let bytes = admitted.encode()?;
+            assert_eq!(
+                NativeProgramDeploy::decode(&bytes)?,
+                admitted,
+                "{guest_abi}"
+            );
+            let admitted = NativeProgramUpgrade {
+                guest_abi,
+                ..upgrade
+            };
+            let bytes = admitted.encode()?;
+            assert_eq!(
+                NativeProgramUpgrade::decode(&bytes)?,
+                admitted,
+                "{guest_abi}"
+            );
+        }
+        for refused in [0, crate::guest_abi::MAX_VERSION + 1, u16::MAX] {
+            assert!(
+                NativeProgramDeploy {
+                    guest_abi: refused,
+                    ..deploy
+                }
+                .encode()
+                .is_err(),
+                "{refused}"
+            );
+            assert!(
+                NativeProgramUpgrade {
+                    guest_abi: refused,
+                    ..upgrade
+                }
+                .encode()
+                .is_err(),
+                "{refused}"
+            );
         }
         Ok(())
     }

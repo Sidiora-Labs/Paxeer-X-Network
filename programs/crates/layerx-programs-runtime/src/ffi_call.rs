@@ -2915,11 +2915,16 @@ pub extern "C" fn layerx_programs_call_begin(
             return Err(MODULE_DISABLED);
         }
         let root_module = root_module.ok_or(FATAL_INVARIANT)?;
-        let grants = match root_module.validated().abi_revision() {
-            AbiRevision::V1 => CapabilitySet::decode_canonical(&encoded_capabilities),
-            AbiRevision::V2 | AbiRevision::V3 | AbiRevision::V4 => {
+        let grants = match crate::abi_policy::capability_encoding(crate::abi_policy::abi_version(
+            root_module.validated().abi_revision(),
+        )) {
+            Ok(crate::abi_policy::CapabilityEncoding::V1) => {
+                CapabilitySet::decode_canonical(&encoded_capabilities)
+            }
+            Ok(crate::abi_policy::CapabilityEncoding::V2) => {
                 CapabilitySet::decode_v2_canonical(&encoded_capabilities)
             }
+            Err(_) => return Err(NON_CANONICAL),
         }
         .map_err(|_| NON_CANONICAL)?;
         let capabilities = CapabilitySet::new(grants).map_err(|_| NON_CANONICAL)?;

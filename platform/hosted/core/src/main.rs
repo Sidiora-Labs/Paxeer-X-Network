@@ -165,8 +165,8 @@ fn read_input(variable: &str, path: &str) -> Result<Vec<u8>, String> {
 
 fn read_secret(path_variable: &str) -> Result<Zeroizing<String>, String> {
     let path = env::var(path_variable).map_err(|_| format!("{path_variable} is required"))?;
-    let mut value = fs::read_to_string(&path)
-        .map_err(|error| format!("{path_variable} ({path}): {error}"))?;
+    let mut value =
+        fs::read_to_string(&path).map_err(|error| format!("{path_variable} ({path}): {error}"))?;
     while matches!(value.as_bytes().last(), Some(b'\n' | b'\r')) {
         value.pop();
     }
@@ -1492,6 +1492,38 @@ fn relay_target(path: &str) -> bool {
     }
 }
 
+const PROGRAM_EVENTS_PREFIX: &str = "/v1/programs/events/";
+const PROGRAM_EVENT_MAX_TOPIC_BYTES: usize = 64;
+const PROGRAM_EVENTS_MAX_PAGE: u64 = 256;
+
+fn canonical_u64(value: &str) -> Option<u64> {
+    if value.is_empty()
+        || (value.len() > 1 && value.starts_with('0'))
+        || !value.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return None;
+    }
+    value.parse().ok()
+}
+
+fn program_events_target(path: &str) -> bool {
+    let Some(suffix) = path.strip_prefix(PROGRAM_EVENTS_PREFIX) else {
+        return false;
+    };
+    let segments: Vec<&str> = suffix.split('/').collect();
+    let [topic, from_sequence, limit] = segments.as_slice() else {
+        return false;
+    };
+    !topic.is_empty()
+        && topic.len() % 2 == 0
+        && topic.len() <= 2 * PROGRAM_EVENT_MAX_TOPIC_BYTES
+        && topic
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        && canonical_u64(from_sequence).is_some()
+        && canonical_u64(limit).is_some_and(|limit| (1..=PROGRAM_EVENTS_MAX_PAGE).contains(&limit))
+}
+
 fn unavailable_capability(path: &str) -> bool {
     path == "/v1/accounts"
         || path == "/v1/programs/registry"
@@ -1518,6 +1550,17 @@ fn protocol_route(config: &Config, request: &Request) -> Response {
     }
     if unavailable_capability(path) {
         return refusal(503, "capability_unavailable", Some(3600));
+    }
+    if path.starts_with(PROGRAM_EVENTS_PREFIX) {
+        return if !program_events_target(path) {
+            refusal(400, "invalid_argument", None)
+        } else if method != "GET" {
+            refusal(405, "method_not_allowed", None)
+        } else if request.query.is_some() {
+            refusal(400, "invalid_request", None)
+        } else {
+            wrapped_relay_route(config, request)
+        };
     }
     if relay_target(path) {
         return if method == "GET" {

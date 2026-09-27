@@ -35,7 +35,7 @@ impl<'a> NativeProgramCall<'a> {
 
     fn validate(&self) -> Result<(), InvalidNativeCall> {
         if self.program_id.is_zero()
-            || !matches!(self.guest_abi, 1 | 2)
+            || !crate::guest_abi::supported(self.guest_abi)
             || self.entrypoint.is_empty()
             || self.entrypoint.len() > 128
             || !self
@@ -186,9 +186,20 @@ mod tests {
         let mut trailing = encoded.clone();
         trailing.push(0);
         assert_eq!(NativeProgramCall::decode(&trailing), Err(InvalidNativeCall));
-        let mut bad_abi = encoded.clone();
-        bad_abi[33] = 4;
-        assert_eq!(NativeProgramCall::decode(&bad_abi), Err(InvalidNativeCall));
+        for refused in [0, crate::guest_abi::MAX_VERSION + 1, u16::MAX] {
+            let mut bad_abi = encoded.clone();
+            bad_abi[32..34].copy_from_slice(&refused.to_be_bytes());
+            assert_eq!(
+                NativeProgramCall::decode(&bad_abi),
+                Err(InvalidNativeCall),
+                "{refused}"
+            );
+        }
+        for guest_abi in 1..=crate::guest_abi::MAX_VERSION {
+            let admitted = NativeProgramCall { guest_abi, ..call };
+            let bytes = admitted.encode()?;
+            assert_eq!(NativeProgramCall::decode(&bytes)?, admitted, "{guest_abi}");
+        }
         let mut oversized = encoded;
         oversized[36..40].copy_from_slice(&u32::MAX.to_be_bytes());
         assert_eq!(

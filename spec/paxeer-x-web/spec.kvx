@@ -628,9 +628,13 @@ reqs = ["14.1","14.2","14.3"]
 
 [task.2.6]
 title = "Dry-run the sidecar loop against anvil and local sidecars and record it"
-status = "pending"
+status = "implemented"
+implemented_revision = "325e418896c4428ff64a145c90a94e613d0952b6"
+implemented_command = "timeout 20m sh -c 'bash interop/deploy/x-websearch/tests/dry-run-check.sh'"
+implemented_exit_code = 1
+implemented_log_path = ".logs/verify.log"
 wave = 2
-requires = ["1.6","2.1","2.3","2.10","2.14","2.17","2.24","2.25","2.26","2.27","2.28","2.29","2.30","2.31","2.32","2.33"]
+requires = ["1.6","2.1","2.3","2.10","2.14","2.17","2.24","2.25","2.26","2.27","2.28","2.29","2.30","2.31","2.32","2.33","2.34","2.35","2.37","2.38","2.39","2.40","2.41","2.42","2.43","2.44","2.45"]
 do_1 = "Write interop/deploy/x-websearch/tests/dry-run-check.sh starting anvil, a real loopback web server serving committed pages and three x-websearch processes with run-local attestor keys and allow_loopback set, and deploying contracts/src/xweb/XWebConsumer.sol to anvil."
 do_2 = "Fetch the same page through the three sidecars, assert the digests are identical and the signatures are valid and ascending over the origin-1 preimage, assert the submitter's fulfil calldata decodes against precompiles/xweb/abi.json, and deliver the consumer's callback on anvil from the impersonated precompile address with the attested response and the bounded gas, asserting the consumer's stored result."
 do_3 = "Record the exchange as interop/deploy/x-websearch/tests/fixtures/dry-run.json, replayable without the nodes, carrying no key material, no endpoint but the loopback ones the run started and no date or hostname; stop with a message naming a missing tool rather than skipping a step."
@@ -767,9 +771,13 @@ reqs = ["4.1","4.2"]
 
 [task.2.11]
 title = "Clear the pre-existing agent workspace clippy findings so agent-lint passes"
-status = "pending"
+status = "done"
+revision = "c3c4a387eea0bfb1d252531361eee0f91ced8380"
+command = "timeout 45m sh -c 'make agent-lint && make agent-test'"
+exit_code = 0
+log_path = ".logs/verify.log"
 wave = 2
-requires = ["1.18","2.9","2.16"]
+requires = ["1.18","2.9","2.16","2.38","2.39","2.41","2.43"]
 do_1 = "Run make agent-lint on this revision, and fix every clippy finding it reports in crates this feature did not write - starting with too_many_arguments in agent/crates/layerx-proof/src/program.rs verify_program_execution_receipt (observation 1.18.1) - by restructuring the code, never by an allow attribute, a lint-level change or a clippy configuration change, keeping every public signature the agent SDKs and services call unchanged unless a caller in the workspace is updated in the same task."
 do_2 = "Keep every test of each touched crate passing, and add or extend a test where a restructuring changes a function's shape."
 verify_cmd = "timeout 45m sh -c 'make agent-lint && make agent-test'"
@@ -851,11 +859,11 @@ reqs = ["17.5","17.6"]
 
 [task.2.16]
 title = "Run the agent workspace tests with the binaries the workflow builds for them"
-status = "implemented"
-implemented_revision = "ac37ec69819137094154ea94d70c57104018cb8f"
-implemented_command = "timeout 45m sh -c 'make agent-test'"
-implemented_exit_code = 2
-implemented_log_path = ".logs/verify.log"
+status = "done"
+revision = "64890ebcec32d6382182ca001d726390676cdafd"
+command = "timeout 45m sh -c 'make agent-test'"
+exit_code = 0
+log_path = ".logs/verify.log"
 wave = 2
 requires = ["2.9"]
 do_1 = "Build the prerequisites the Makefile declares for agent-test (public-tls-test-prerequisites for the boundary and clock binaries, agent-test-native-prerequisites for the native daemon binaries) and run make agent-test once, exactly as the workflow's test step does."
@@ -1077,7 +1085,11 @@ reqs = ["11.2"]
 
 [task.2.28]
 title = "Relay program events through core and list the gateway method so the sidecar's watcher reads real request bytes"
-status = "pending"
+status = "done"
+revision = "5a72298527318be2ca34b6bdc934c99780b9dc0f"
+command = "timeout 30m sh -c 'export LAYERX_TEST_SOCAT_BIN=$(command -v socat) LAYERX_TEST_WEB_READER_WASM=$PWD/programs/sdk/rust/examples/web-reader/target/wasm32-unknown-unknown/release/layerx_reference_web_reader.wasm; cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway schema_lists_every_public_method && cargo test --locked --manifest-path platform/hosted/gateway/tests/local/Cargo.toml --test lifecycle events::'"
+exit_code = 0
+log_path = ".logs/verify.log"
 wave = 2
 requires = ["2.21","2.27"]
 do_1 = "Add the v1 programs events path with hex topic and unsigned integer sequence and limit validation to the core boundary's relay allowlist in platform/hosted/core/src/main.rs, and cover the allowed and the refused shapes in platform/hosted/core/tests/boundary.rs."
@@ -1143,11 +1155,11 @@ reqs = ["11.2"]
 
 [task.2.32]
 title = "Serve the availability harness's bond and registry at the anchor address and qualify the agent workspace tests"
-status = "implemented"
-implemented_revision = "1d1f52709744fa67fe8a6afa05febbaa43223b14"
-implemented_command = "timeout 45m sh -c 'make agent-test'"
-implemented_exit_code = 2
-implemented_log_path = ".logs/verify.log"
+status = "done"
+revision = "64890ebcec32d6382182ca001d726390676cdafd"
+command = "timeout 45m sh -c 'make agent-test'"
+exit_code = 0
+log_path = ".logs/verify.log"
 wave = 2
 requires = ["2.16"]
 do_1 = "The daemon accepts a settlement contract and a checkpoint registry only at the layerxAnchor precompile address, and that refusal stays exactly as it is (observation 2.16.1); change tests/daemon/availability-settlement.py so the bond and registry calls the daemon makes at the anchor address reach the GuarantorBond and CheckpointRegistry it deploys on its anvil chain - installing the code of one contract that serves both interfaces at the anchor address through anvil's code-setting method, or whichever placement the anchor's ABI in the repository supports - and have tests/daemon/program-admission.sh export the anchor address for both variables under --availability-batches, keeping every other harness step unchanged."
@@ -1160,7 +1172,11 @@ reqs = ["9.1"]
 
 [task.2.33]
 title = "Find why the finalized receipt read is unavailable after finality registration and qualify the agent workspace tests"
-status = "pending"
+status = "done"
+revision = "64890ebcec32d6382182ca001d726390676cdafd"
+command = "timeout 45m sh -c 'make agent-test'"
+exit_code = 0
+log_path = ".logs/verify.log"
 wave = 2
 requires = ["2.32"]
 do_1 = "Diagnose observation 2.32.1: with the harness's contracts served at the anchor address, the daemon registers batch 1's finality, but the route's read of the finalized receipt in agent/crates/layerx-agentd/tests/native_reads_daemon.rs returns NativeReadError::Unavailable; surface the underlying error the route folds into Unavailable in agent/crates/layerx-agentd/src/read/native.rs (its reconnect or preparation_state path) in the test's panic message or a log the harness keeps, then fix the cause where it lives - in the route, in the harness's sequence of registrations and waits, or in the daemon's answer - keeping every daemon refusal and every assertion exactly as strong."
@@ -1170,11 +1186,236 @@ symbols = ["NativeReadRoute","real_daemon_availability_refusals"]
 touches = ["agent/crates/layerx-agentd/src/read/native.rs","agent/crates/layerx-agentd/tests/native_reads_daemon.rs","tests/daemon/program-admission.sh","tests/daemon/availability-settlement.py","cmd/layerxd/lxp_daemon_lni.c","cmd/layerxd/lxp_daemon_protocol.c"]
 reqs = ["9.1"]
 
+[task.2.34]
+title = "Teach the agent client the spot and web modules so a node's preparation snapshot decodes, and qualify the agent workspace tests"
+status = "done"
+revision = "64890ebcec32d6382182ca001d726390676cdafd"
+command = "timeout 45m sh -c 'make agent-test'"
+exit_code = 0
+log_path = ".logs/verify.log"
+wave = 2
+requires = ["2.33"]
+do_1 = "Observation 2.33.1: the daemon's preparation snapshot lists the kernel's active modules, which include spot (10) by default and web (11) once enabled, but ModuleId::from_u16 in agent/crates/layerx-types/src/payload.rs knows only modules 1 to 9 and MAX_MODULES in agent/crates/layerx-client/src/lni/preparation.rs is 9, so the whole snapshot is refused as malformed; add the spot and web variants with their kernel numbers and names, raise the bound to the kernel's module count, and update every table in agent/crates that enumerates module identifiers so both decode, display and round-trip like the others, keeping every public signature the agent SDKs call unchanged."
+do_2 = "Cover the new variants in the tests of both crates: from_u16 and back for 10 and 11, an unknown number still refused, and a preparation snapshot carrying eleven modules accepted while one carrying twelve is refused; never relax, ignore, skip or delete a test."
+do_3 = "Run the verify_cmd once; at the passing revision record tasks 2.33, 2.32 and 2.16 done with the same evidence and close observations 2.16.1, 2.32.1 and 2.33.1 naming it."
+verify_cmd = "timeout 45m sh -c 'make agent-test'"
+symbols = ["ModuleId","MAX_MODULES"]
+touches = ["agent/crates/layerx-types","agent/crates/layerx-client"]
+reqs = ["9.1"]
+
+[task.2.35]
+title = "Qualify the program events relay: anchor addresses in the boundary and local clusters, an events test target and the gateway's published method list"
+status = "done"
+revision = "5a72298527318be2ca34b6bdc934c99780b9dc0f"
+command = "timeout 30m sh -c 'export LAYERX_TEST_SOCAT_BIN=$(command -v socat) LAYERX_TEST_WEB_READER_WASM=$PWD/programs/sdk/rust/examples/web-reader/target/wasm32-unknown-unknown/release/layerx_reference_web_reader.wasm; cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway schema_lists_every_public_method && cargo test --locked --manifest-path platform/hosted/gateway/tests/local/Cargo.toml --test lifecycle events::'"
+exit_code = 0
+log_path = ".logs/verify.log"
+wave = 2
+requires = ["2.28"]
+do_1 = "Observation 2.28.1: the daemon and platform/hosted/node/bootstrap.sh accept only the layerxAnchor precompile address for the settlement contract and the checkpoint registry, while finality_environment in platform/hosted/core/tests/boundary.rs and the local qualification's node environment in platform/hosted/gateway/tests/local/funding.rs still name placeholder addresses, so every real-cluster test stops at bootstrap finality authority -3; name the anchor address for both in those two harnesses and nowhere else, keeping the daemon's rule and every placeholder that has nothing to do with these two variables, and record the other harnesses that still name placeholders (platform/hosted/agent-boundary, platform/hosted/registry and platform/hosted/authority real-node tests and platform/hosted/tests/beta-cluster.sh) as one observation without fixing them."
+do_2 = "Make --test events selectable: declare an events target in platform/hosted/gateway/tests/local/Cargo.toml if events.rs can stand on its own with the support modules it needs, or, if the shared support makes that unreasonable, keep it a module of lifecycle and change this task's verify_cmd to select --test lifecycle events:: before the run, recording the selector actually run in the evidence; either way the test local_gateway_program_events_read_the_web_request runs against a real node and core."
+do_3 = "Add lx_getProgramEvents to the published list in schema_lists_every_public_method in platform/hosted/gateway/src/rpc.rs so the schema test passes with the method task 2.28 listed, and build the web-reader wasm with the Makefile target that produces programs/sdk/rust/examples/web-reader/target/wasm32-unknown-unknown/release/layerx_reference_web_reader.wasm before the run."
+do_4 = "Run the verify_cmd once; at the passing revision record task 2.28 done with the same evidence and close observations 2.21.2 and 2.28.1 naming it."
+verify_cmd = "timeout 30m sh -c 'export LAYERX_TEST_SOCAT_BIN=$(command -v socat) LAYERX_TEST_WEB_READER_WASM=$PWD/programs/sdk/rust/examples/web-reader/target/wasm32-unknown-unknown/release/layerx_reference_web_reader.wasm; cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway schema_lists_every_public_method && cargo test --locked --manifest-path platform/hosted/gateway/tests/local/Cargo.toml --test lifecycle events::'"
+symbols = ["finality_environment","schema_lists_every_public_method","local_gateway_program_events_read_the_web_request"]
+touches = ["platform/hosted/core/tests/boundary.rs","platform/hosted/gateway/tests/local/funding.rs","platform/hosted/gateway/tests/local/Cargo.toml","platform/hosted/gateway/tests/local/events.rs","platform/hosted/gateway/tests/local/lifecycle.rs","platform/hosted/gateway/src/rpc.rs"]
+reqs = ["11.2"]
+
+[task.2.36]
+title = "Clear the two continuous-integration legs this feature turned red: the consensus no-float scan and the beta contract's surface table"
+status = "done"
+revision = "57c002294afadd689701369d6505711ae06813da"
+command = "timeout 20m sh -c 'tools/ci/no-float-scan.sh build && make beta-contract-check'"
+exit_code = 0
+log_path = ".logs/verify.log"
+wave = 2
+requires = ["1.1","1.8"]
+do_1 = "tools/ci/no-float-scan.sh, which the c17 legs of .github/workflows/ci.yml reach through make test-arith-nofloat and make scan-consensus, greps include/layerx and src for floating-point syntax and matches the digit-dot-digit substring inside the comment 'parts 1..4' at include/layerx/lx_web.h:108, so a comment fails the consensus float ban; reword that one comment to carry no digit-dot-digit sequence, for example 'parts 1 to 4', changing no declaration, no macro, no code and not one byte of the scanner, whose ban stays exactly as strict as it is."
+do_2 = "tools/ci/beta-contract-check.sh, which the Platform workspace workflow reaches through make beta-contract-check, derives one functional surface per directory under interop/crates - layerx-gas-station as interop-gas-station and x-websearch as interop-x-websearch - and refuses a derived surface that has no row in the 'Surfaces and journeys' table of platform/docs/content/beta.md, whose interop rows end at interop-mirror-signer; add exactly one row for each of the two in the column shape the neighbouring interop rows use - the surface name, the journey the crate really serves, class functional, required rung runtime_proven, reached rung source_present and the crate directory as the source - leaving every other row, every other table, the readiness claim and the evidence rules untouched and claiming no rung the evidence ledger does not support."
+do_3 = "Run the verify_cmd once and record the revision, the command, the exit code and the log path; run one build of the c17 job's build target first so the scan reads the same objects the leg reads. The same c17 job fails later, at test-projection, on a forbidden operating-system symbol in the consensus object that predates this feature and belongs to no task in it: record it as one observation if the run reaches it and do not chase it."
+verify_cmd = "timeout 20m sh -c 'tools/ci/no-float-scan.sh build && make beta-contract-check'"
+touches = ["include/layerx/lx_web.h","platform/docs/content/beta.md"]
+tests = ["tools/ci/no-float-scan.sh","tools/ci/beta-contract-check.sh"]
+reqs = ["16.3","16.4"]
+
+[task.2.37]
+title = "Fund the local gateway harness through the native custody module on a real local chain"
+status = "done"
+revision = "5a72298527318be2ca34b6bdc934c99780b9dc0f"
+command = "timeout 30m sh -c 'export LAYERX_TEST_SOCAT_BIN=$(command -v socat) LAYERX_TEST_WEB_READER_WASM=$PWD/programs/sdk/rust/examples/web-reader/target/wasm32-unknown-unknown/release/layerx_reference_web_reader.wasm; cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway schema_lists_every_public_method && cargo test --locked --manifest-path platform/hosted/gateway/tests/local/Cargo.toml --test lifecycle events::'"
+exit_code = 0
+log_path = ".logs/verify.log"
+wave = 2
+requires = ["2.35"]
+do_1 = "Add platform/hosted/gateway/tests/local/custody_chain.py, a support process in the shape of human/crates/layerx-human-service/tests/support/withdraw-paxd.py speaking one JSON object per line: start builds the BetaUsdl artifact the chain loader needs, writes the layerxcustody genesis section with platform/hosted/paxeer/custody-genesis.py for the cluster's own sequencer id and public key, a freshly generated deposit-root authority and the cluster asset mapped to the chain's own denomination, brings the real local chain up through owned_chain of tests/daemon/custody_chain.py and its two independent TLS origins through that module's boundaries, and answers the EVM origin, the Comet RPC origin its identity document names, the two boundary origins, the CA bundle, the disposable identity path, the native custody precompile address and the module identity; deposit sends deposit(bytes32) to that precompile for one beneficiary account through the signer and send of tests/bridge/deploy_local_custody.py and answers the deposit transaction hash and the credited base units; stop tears the boundaries and the chain down. Require the boundary and custody-proof executables the neighbouring harnesses take from their environment, failing closed and naming the missing one, and change nothing in tests/daemon/custody_chain.py, platform/hosted/paxeer/custody-genesis.py or tests/bridge."
+do_2 = "In platform/hosted/gateway/tests/local/funding.rs replace both chain-31337 anvil instances and the deploy_local_custody.py deployment with that process: generate the cluster's sequencer seed in start_configured and pass it into start_node so the custody genesis authorizes the sequencer the node really runs, start the custody chain once per Funding and stop it with the nodes in Drop, and take the treasury credit and the recipient credit from two native deposits instead of the deployed vault deposit and its forked recipient deposit, dropping platform/hosted/gateway/tests/local/deposit_recipient.py, which nothing else calls."
+do_3 = "Give custody_profile and attest_credit the identity and light-client arguments tests/bridge/custody_credit.py requires: the two boundary origins as --rpc with --ca-bundle and --disposable-identity, --comet-rpc for the Comet origin, --chain-id 125, --vault the native custody precompile and --runtime-sha256 the module identity the support process reports; keep that script and every assertion in it exactly as written, and keep the LXBC3 layout and length assertions funded_genesis already makes over the profile."
+do_4 = "Leave every other harness alone: record as one observation any harness still funding itself from a locally deployed chain-31337 vault, without repairing it."
+do_5 = "Run the verify_cmd once; at the revision where it exits 0 record tasks 2.35 and 2.28 done with that revision, command, exit code and log path and close observations 2.21.2 and 2.28.1 naming it, as task 2.35's do_4 requires; if it does not pass, leave both tasks as they are and record the exact failing step as one observation."
+verify_cmd = "timeout 30m sh -c 'export LAYERX_TEST_SOCAT_BIN=$(command -v socat) LAYERX_TEST_WEB_READER_WASM=$PWD/programs/sdk/rust/examples/web-reader/target/wasm32-unknown-unknown/release/layerx_reference_web_reader.wasm; cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway schema_lists_every_public_method && cargo test --locked --manifest-path platform/hosted/gateway/tests/local/Cargo.toml --test lifecycle events::'"
+symbols = ["funding::start","custody_profile","attest_credit"]
+touches = ["platform/hosted/gateway/tests/local/custody_chain.py","platform/hosted/gateway/tests/local/funding.rs","platform/hosted/gateway/tests/local/deposit_recipient.py"]
+tests = ["platform/hosted/gateway/tests/local/funding.rs","platform/hosted/gateway/tests/local/events.rs"]
+reqs = ["11.2"]
+
+[task.2.38]
+title = "Bring the finality evidence vector in line with the anchor precompile settlement contract"
+status = "done"
+revision = "64890ebcec32d6382182ca001d726390676cdafd"
+command = "timeout 45m sh -c 'make agent-test'"
+exit_code = 0
+log_path = ".logs/verify.log"
+wave = 2
+requires = ["2.34"]
+do_1 = "Observation 2.34.1: tests/vectors/finality_evidence_v1.vec is a golden fixture produced by build_finality of tests/storage/lxp_test_finality_evidence.c, whose guarantor contexts and settlement registration evidence still name a settlement contract of 0xc1 followed by nineteen zero bytes, while the client evidence verifier admits only the layerxAnchor precompile as the settlement contract of a registration, of a settlement reference and of a guarantor attestation, so check_checkpoint_bytes refuses the committed vector with EvidenceError::Registration; the anchor-only rule in agent/crates/layerx-client/src/evidence.rs and every assertion of agent/crates/layerx-client/tests/finality_evidence.rs stay exactly as written and the stale fixture is the side corrected."
+do_2 = "Point that generator's guarantor paxeer_settlement_contract and its settlement registration evidence at lxp_paxeer_anchor_address, regenerate tests/vectors/finality_evidence_v1.vec through the generator's own finality evidence encode path so the committed checkpoint payload and finality proof are exactly the bytes it produces, and re-pin vector_signatures and vector_signature_v to the guarantor attestations signed over the anchor settlement domain so the generator reproduces the committed vector byte for byte; never relax, ignore, skip or delete a test, never special-case the verifier and never widen what it accepts."
+do_3 = "Run the verify_cmd once; at the passing revision record tasks 2.34, 2.33, 2.32 and 2.16 done with that revision, command, exit code and log path and close observations 2.16.1, 2.32.1, 2.33.1 and 2.34.1 naming it, as task 2.34's do_3 requires; if it does not pass, leave those tasks as they are and record the exact failing step as one observation."
+verify_cmd = "timeout 45m sh -c 'make agent-test'"
+symbols = ["build_finality","vector_signatures","check_checkpoint_bytes"]
+touches = ["tests/storage/lxp_test_finality_evidence.c","tests/vectors/finality_evidence_v1.vec"]
+tests = ["tests/storage/lxp_test_finality_evidence.c","agent/crates/layerx-client/tests/finality_evidence.rs"]
+reqs = ["9.1"]
+
+[task.2.39]
+title = "Give every agent test harness under the agent-test recipe its build output directory from one place"
+status = "done"
+revision = "64890ebcec32d6382182ca001d726390676cdafd"
+command = "timeout 45m sh -c 'make agent-test'"
+exit_code = 0
+log_path = ".logs/verify.log"
+wave = 2
+requires = ["2.38"]
+do_1 = "Observation 2.38.1: tests/daemon/withdraw-custody.py reads os.environ['CARGO_TARGET_DIR'] unconditionally, while the Makefile's agent-test recipe never exports it and only agent/tools/run-real-node-tests.sh derives it, so the confined session fee harness raises KeyError before any daemon starts; derive that build output directory once in the Makefile with the derivation the script already uses, the inherited value first and the lane directory otherwise, export it from the agent-test and agent-test-sanitize targets and pass it to the native prerequisites recipe, so every harness the recipe starts - the agent workspace tests, the daemon scripts they spawn and the prepared native prerequisites - reads one directory whether the gate is entered through make or through the script."
+do_2 = "Leave the strict read in tests/daemon/withdraw-custody.py exactly as written, with no os.environ.get, no default and no fallback, and take the second derivation out of agent/tools/run-real-node-tests.sh so the Makefile holds the only one: its test and sanitizers paths inherit the directory from the target they exec, and its prepare path requires it from its caller, failing closed and naming the variable rather than deriving a default of its own."
+do_3 = "Run the verify_cmd once; at the passing revision record tasks 2.38, 2.34, 2.33, 2.32 and 2.16 done with that revision, command, exit code and log path and close observations 2.38.1, 2.34.1, 2.33.1, 2.32.1 and 2.16.1 naming it, as task 2.38's do_3 requires; if it does not pass, leave those tasks as they are and record the exact failing step as one observation."
+verify_cmd = "timeout 45m sh -c 'make agent-test'"
+symbols = ["AGENT_TEST_TARGET_DIR","agent-test-native-prerequisites"]
+touches = ["Makefile","agent/tools/run-real-node-tests.sh"]
+tests = ["agent/crates/layerx-client/tests/session_fee_state_daemon.rs","tests/daemon/withdraw-custody.py"]
+reqs = ["9.1"]
+
+[task.2.40]
+title = "Align the native program lifecycle and call encoders with the kernel's guest ABI range"
+status = "done"
+revision = "5a72298527318be2ca34b6bdc934c99780b9dc0f"
+command = "timeout 30m sh -c 'export LAYERX_TEST_SOCAT_BIN=$(command -v socat) LAYERX_TEST_WEB_READER_WASM=$PWD/programs/sdk/rust/examples/web-reader/target/wasm32-unknown-unknown/release/layerx_reference_web_reader.wasm; cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway schema_lists_every_public_method && cargo test --locked --manifest-path platform/hosted/gateway/tests/local/Cargo.toml --test lifecycle events::'"
+exit_code = 0
+log_path = ".logs/verify.log"
+wave = 2
+requires = ["2.37"]
+do_1 = "Observation 2.37.2: the local gateway qualification now funds itself through the native custody module and starts its cluster, then stops in deploy_web_reader because NativeProgramDeploy::encode refuses guest ABI 4, and the same run would stop again in call_web_request because NativeProgramCall::validate admits only 1 and 2; the kernel is the authority and it admits 1 to 4 - include/layerx/programs.h allocates LX_PROGRAMS_GUEST_ABI_V2_VERSION through LX_PROGRAMS_GUEST_ABI_V4_VERSION, lxp_programs_abi_transition_validate in src/modules/programs/deploy.c admits a requested version of 1, 2, 3 or 4, the call decoder in src/modules/programs/call.c refuses a zero version and every version above LX_PROGRAMS_GUEST_ABI_V4_VERSION, the programs module registers at that same version in src/modules/programs/registration.c, and the reference web reader declares abi 4 in its layerx-program.json, its LayerX.toml and its interface.kvx with ABI 4 frozen in programs/abi-frozen.sha256; every kernel rule and the program's declared ABI therefore stay exactly as they are and the stale Rust bound, written when 3 was the highest guest ABI and never raised when 4 was allocated, is the side corrected."
+do_2 = "Derive the kernel's maximum in agent/crates/layerx-types/build.rs from the LX_PROGRAMS_GUEST_ABI_V*_VERSION enumerators of include/layerx/programs.h, in the shape of the result-code parity that script already enforces against include/layerx/lxp_result.h, failing closed when the header declares no enumerator or declares one that names a version it does not equal, and expose it through a new agent/crates/layerx-types/src/guest_abi.rs whose supported() admits a nonzero version at or below that maximum - exactly the two conditions the kernel applies - so no second literal holds the range."
+do_3 = "Take the bound in validate_code of agent/crates/layerx-types/src/program_lifecycle.rs and in NativeProgramCall::validate of agent/crates/layerx-types/src/program_call.rs from that one function and widen neither beyond the kernel's maximum, and pin the range in the unit tests of all three files against the generated constant instead of a literal: the header's highest enumerator equals the constant, a deploy, an upgrade and a call round-trip at every version in the range, and zero, the maximum plus one and u16::MAX are refused by all three encoders, with every existing assertion left exactly as strong."
+do_4 = "Run the verify_cmd once; at the revision where it exits 0 record tasks 2.37, 2.35 and 2.28 done with that revision, command, exit code and log path and close observations 2.21.2, 2.28.1, 2.35.2 and 2.37.2 naming it, as task 2.37's do_5 and task 2.35's do_4 require; if it does not pass, leave those three tasks as they are and record the exact failing step as one observation."
+verify_cmd = "timeout 30m sh -c 'export LAYERX_TEST_SOCAT_BIN=$(command -v socat) LAYERX_TEST_WEB_READER_WASM=$PWD/programs/sdk/rust/examples/web-reader/target/wasm32-unknown-unknown/release/layerx_reference_web_reader.wasm; cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway schema_lists_every_public_method && cargo test --locked --manifest-path platform/hosted/gateway/tests/local/Cargo.toml --test lifecycle events::'"
+symbols = ["validate_code","NativeProgramCall::validate","MAX_VERSION"]
+touches = ["agent/crates/layerx-types/build.rs","agent/crates/layerx-types/src/guest_abi.rs","agent/crates/layerx-types/src/lib.rs","agent/crates/layerx-types/src/program_lifecycle.rs","agent/crates/layerx-types/src/program_call.rs"]
+tests = ["agent/crates/layerx-types/src/guest_abi.rs","agent/crates/layerx-types/src/program_lifecycle.rs","agent/crates/layerx-types/src/program_call.rs"]
+reqs = ["11.2"]
+
+[task.2.41]
+title = "Fund the daemon custody harness through the native custody module so the confined session fee run reaches its assertions"
+status = "done"
+revision = "64890ebcec32d6382182ca001d726390676cdafd"
+command = "timeout 45m sh -c 'make agent-test'"
+exit_code = 0
+log_path = ".logs/verify.log"
+wave = 2
+requires = ["2.39"]
+do_1 = "Observation 2.39.1: the daemon custody harness deploys a LayerXVault stack on the chain it owns and hands that deployed address to tests/bridge/custody_credit.py as the vault, while create_profile in tests/bridge/comet_credit.py and the kernel profile check it mirrors admit only the native custody module at 0x0000000000000000000000000000000000001013 with a runtime hash equal to module_identity(), so the confined session fee run stops before its first assertion; move the funding onto that module exactly as task 2.37 moved the local gateway harness - write the layerxcustody genesis section with platform/hosted/paxeer/custody-genesis.py for the network id, the sequencer the harness itself starts and a freshly generated deposit-root authority whose private half stays in the work directory, pass it to owned_chain in tests/daemon/custody_chain.py so init-chain.sh merges it before validate-genesis, and deposit by calling deposit(bytes32) on the precompile with the base-unit amount scaled by the chain denomination, requiring the native asset id to be the harness asset, exactly one CustodyDeposit log with its four topics, the asset topic, the beneficiary and the amount in its data, and one recorded deposit."
+do_2 = "Report the native module as the vault and its module_identity() as the runtime hash in the custody record the harness writes, so the profile and credit it then produces through the Comet endpoint the owned chain already publishes are the native ones, and leave tests/bridge/custody_credit.py, tests/bridge/comet_credit.py, the strict build output directory read task 2.39 fixed and every assertion of agent/crates/layerx-client/tests/session_fee_state_daemon.rs exactly as written."
+do_3 = "Take the settlement environment the same harness publishes for the node onto the native anchor module: platform/hosted/node/bootstrap.sh admits no settlement contract and no checkpoint registry but the anchor precompile at 0x0000000000000000000000000000000000001014, which is the address tests/daemon/program-admission.sh already publishes on its non-custody path, so stop deploying a guarantor bond and a checkpoint registry for the custody path, assert instead that the genesis registration bootstrap.sh derived from the registration request is the byte string the harness used to overwrite, and keep write_settlement callable with the signature tests/daemon/guarantor-publication-chain.py uses."
+do_4 = "Record as one observation, without repairing them, that the harness modes which still govern a deployed vault through a timelock read the custody record this task narrows - the handover peers path and the publication setup path each expect a deployed vault, asset registry and timelock triple - and that moving them belongs to the tasks that own those gates."
+do_5 = "Run the verify_cmd once; at the passing revision record tasks 2.39, 2.38, 2.34, 2.33, 2.32 and 2.16 done with that revision, command, exit code and log path and close observations 2.39.1, 2.38.1, 2.34.1, 2.33.1, 2.32.1 and 2.16.1 naming it, as task 2.39's do_3 requires; if it does not pass, leave those tasks as they are and record the exact failing step as one observation."
+verify_cmd = "timeout 45m sh -c 'make agent-test'"
+symbols = ["custody_genesis","deposit","register"]
+touches = ["tests/daemon/withdraw-custody.py"]
+tests = ["agent/crates/layerx-client/tests/session_fee_state_daemon.rs","tests/daemon/withdraw-custody.py"]
+reqs = ["9.1","11.2"]
+
+[task.2.42]
+title = "Align the local gateway's program receipt expectation with the operation the kernel binds"
+status = "done"
+revision = "5a72298527318be2ca34b6bdc934c99780b9dc0f"
+command = "timeout 30m sh -c 'export LAYERX_TEST_SOCAT_BIN=$(command -v socat) LAYERX_TEST_WEB_READER_WASM=$PWD/programs/sdk/rust/examples/web-reader/target/wasm32-unknown-unknown/release/layerx_reference_web_reader.wasm; cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway schema_lists_every_public_method && cargo test --locked --manifest-path platform/hosted/gateway/tests/local/Cargo.toml --test lifecycle events::'"
+exit_code = 0
+log_path = ".logs/verify.log"
+wave = 2
+requires = ["2.40"]
+do_1 = "Observation 2.40.1: the local gateway qualification now deploys the reference web reader at guest ABI 4 and stops one step later in submit_program_activity of platform/hosted/gateway/tests/local/events.rs, which expects a Programs receipt to report the ordinal its route submitted, while the kernel binds a receipt operation for a call alone - include/layerx/programs.h allocates LX_PROGRAMS_DEPLOY, LX_PROGRAMS_UPGRADE and LX_PROGRAMS_CALL as module 9 ordinals 1, 2 and 3, receipt_bind_program_operation in src/protocol/lxp_kernel.c writes lxp_activity_type_ordinal(LX_PROGRAMS_CALL) into a state-commitment receipt for LX_PROGRAMS_CALL alone and leaves the tag at zero for every other Programs activity, lxp_programs_project_receipt_events in src/modules/programs/event.c and the fixture harness in tests/programs/test_call_activity.c read operation zero with no program outcome as the lifecycle receipt shape, verify_receipt in platform/hosted/core/src/program_lifecycle.rs refuses a lifecycle receipt whose operation is not zero and the deploy this run made answered 200 through it, and platform/hosted/agent-boundary/tests/real_node/lifecycle.rs already asserts operation zero for a deploy and an upgrade and three for a call; every kernel rule stays exactly as it is, the native-program-deploy-v3 conformance fixture is right because it declares the activity module 9 and ordinal 1 and no receipt operation, and the stale expectation in the one test is the side corrected."
+do_2 = "Generate the Programs activity table in agent/crates/layerx-types/build.rs from the hexadecimal LX_PROGRAMS_* enumerators of include/layerx/programs.h, in the shape of the guest ABI maximum that script already derives, failing closed when the header declares no such enumerator, when one names a zero module or a zero ordinal, when two of them repeat an ordinal, when they do not all name one module, when LX_PROGRAMS_DEPLOY, LX_PROGRAMS_UPGRADE or LX_PROGRAMS_CALL is absent or when the call ordinal does not fit the receipt's one-byte operation tag, and expose it through a new agent/crates/layerx-types/src/programs_activity.rs as MODULE_ID, the whole ORDINALS table in header order, DEPLOY_ORDINAL, UPGRADE_ORDINAL, CALL_ORDINAL and CALL_OPERATION, so no second literal holds the module identifier or an ordinal."
+do_3 = "Give that module receipt_operation, answering the kernel's call operation for the call ordinal and zero for every other Programs activity exactly as receipt_bind_program_operation does, and activity_type, packing an ordinal onto ModuleId::Programs; pin all of it in the module's unit tests against the header text - the generated table equals the header's enumerators in header order, each named ordinal packs through ActivityType to the activity type value the header itself declares so the closed protocol module set and the header agree, and receipt_operation answers the call operation for the call ordinal and zero for every other header ordinal, for zero and for u16::MAX."
+do_4 = "Take the expectation in submit_program_activity of platform/hosted/gateway/tests/local/events.rs from that one function instead of the literal pair, keeping it an exact equality over both receipt fields and over the result code, and submit the deploy and the call at DEPLOY_ORDINAL and CALL_ORDINAL; change no other assertion in events.rs, nothing in platform/sdk/conformance/fixtures/native-program-deploy-v3.json and nothing in the kernel."
+do_5 = "Run the verify_cmd once; at the revision where it exits 0 record tasks 2.40, 2.37, 2.35 and 2.28 done with that revision, command, exit code and log path and close observations 2.21.2, 2.28.1, 2.35.2, 2.37.2 and 2.40.1 naming it, as task 2.40's do_4, task 2.37's do_5 and task 2.35's do_4 require; if it does not pass, leave those four tasks as they are and record the exact failing step as one observation."
+verify_cmd = "timeout 30m sh -c 'export LAYERX_TEST_SOCAT_BIN=$(command -v socat) LAYERX_TEST_WEB_READER_WASM=$PWD/programs/sdk/rust/examples/web-reader/target/wasm32-unknown-unknown/release/layerx_reference_web_reader.wasm; cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway schema_lists_every_public_method && cargo test --locked --manifest-path platform/hosted/gateway/tests/local/Cargo.toml --test lifecycle events::'"
+symbols = ["receipt_operation","MODULE_ID","submit_program_activity"]
+touches = ["agent/crates/layerx-types/build.rs","agent/crates/layerx-types/src/programs_activity.rs","agent/crates/layerx-types/src/lib.rs","platform/hosted/gateway/tests/local/events.rs"]
+tests = ["agent/crates/layerx-types/src/programs_activity.rs","platform/hosted/gateway/tests/local/events.rs"]
+reqs = ["11.2"]
+
+[task.2.43]
+title = "Derive the scheduling identity actor of a program call from its actor DID so the metered allowance batch stops failing a kernel invariant"
+status = "done"
+revision = "64890ebcec32d6382182ca001d726390676cdafd"
+command = "timeout 45m sh -c 'make agent-test'"
+exit_code = 0
+log_path = ".logs/verify.log"
+wave = 2
+requires = ["2.41"]
+do_1 = "Observation 2.41.1: layerxd stops the metered allowance run with execution failed at sequence 13 with result -1001 because lxp_kernel_batch_schedule_item in src/protocol/lxp_kernel.c admits only an activity whose actor_did span is exactly 32 bytes and then hands those raw DID bytes to lxp_programs_call_schedule_item_prepare as the 32-byte identity actor, while a real LX_PROGRAMS_CALL carries the textual did:layerx: identifier of 75 bytes, so planning refuses the single offered activity with LXP_ERR_NON_CANONICAL, program_planning_refusal classes that as a planning refusal, the count-of-one settled path re-prepares the same activity serially, that preparation succeeds with result code 0 and one effect, and the invariant that a planning-refused single activity must settle as a refusal carrying no effect fires LXP_FATAL_INVARIANT; the kernel is the side to correct, because the identity actor of a call is the identity the rest of the kernel derives with lxp_did_id_derive - kernel_program_signer_binding requires the resolved authority actor and principal to equal the did_id of the activity DID, and the conflict graph in programs/crates/layerx-programs-runtime/src/schedule.rs reads identity_actor and identity_principal as one identity domain. Bound that guard by the protocol's own limits instead, an actor DID span that is present and at most LXP_MAX_DID_LENGTH, derive the 32-byte identity with lxp_did_id_derive before the snapshot is cloned, and pass the derived identity as the identity actor; keep the 32-byte contract of lxp_programs_call_schedule_item_prepare, the planning refusal classes and the count-of-one invariant exactly as written."
+do_2 = "Pin the invariant's precondition against the real code path in tests/programs/test_metered_call.c, whose fixture already signs a real LX_PROGRAMS_CALL under the textual DID did:lxp:metered-call and resolves a real delegated authority for it: create the batch snapshot the batch preparation creates, call lxp_kernel_batch_schedule_item on that activity, and assert that the actor DID span is not 32 bytes, that the call is admitted, that the item identity actor equals lxp_did_id_derive of the activity DID, the registered identity did_id and the resolved authority actor, and that the item identity principal equals the resolved authority principal and the descriptor principal; relax, skip or delete no assertion of that file, whose lxp_kernel_prepare_activity_batch checks in metered_fee_capacity already fail on this defect."
+do_3 = "Run the verify_cmd once; at the revision where it exits 0 record tasks 2.41, 2.39, 2.38, 2.34, 2.33, 2.32 and 2.16 done with that revision, command, exit code and log path and close observations 2.16.1, 2.32.1, 2.33.1, 2.34.1, 2.38.1, 2.39.1 and 2.41.1 naming it, as task 2.41's do_5 and task 2.34's do_3 require; if it does not pass, leave those tasks as they are and record the exact failing step as one observation."
+verify_cmd = "timeout 45m sh -c 'make agent-test'"
+symbols = ["lxp_kernel_batch_schedule_item","lxp_programs_call_schedule_item_prepare","lxp_did_id_derive"]
+touches = ["src/protocol/lxp_kernel.c","tests/programs/test_metered_call.c"]
+tests = ["tests/programs/test_metered_call.c","agent/crates/layerx-client/tests/session_fee_state_daemon.rs"]
+reqs = ["9.1","11.2"]
+
+[task.2.44]
+title = "Bind a program call's capability encoding to its ABI version in one place so the web reader's call settles a receipt inside the core deadline"
+status = "done"
+revision = "5a72298527318be2ca34b6bdc934c99780b9dc0f"
+command = "timeout 30m sh -c 'export LAYERX_TEST_SOCAT_BIN=$(command -v socat) LAYERX_TEST_WEB_READER_WASM=$PWD/programs/sdk/rust/examples/web-reader/target/wasm32-unknown-unknown/release/layerx_reference_web_reader.wasm; cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway schema_lists_every_public_method && cargo test --locked --manifest-path platform/hosted/gateway/tests/local/Cargo.toml --test lifecycle events::'"
+exit_code = 0
+log_path = ".logs/verify.log"
+wave = 2
+requires = ["2.42"]
+do_1 = "Observation 2.42.1: the web reader's call reaches the kernel and produces no receipt the core can wait on because the batch planner refuses the schedule item the same batch just minted - with the scheduling identity of task 2.43 in place, lxp_kernel_batch_schedule_item in src/protocol/lxp_kernel.c mints that item with its admission, decode, validate, schedule decode, payer lookup and item preparation all answering LXP_OK, and layerx_programs_schedule_plan answers LXP_ERR_NON_CANONICAL for that one item, because prepare_schedule_item in programs/crates/layerx-programs-runtime/src/ffi_call.rs reads the call's grants through CapabilitySet::admitted_schedule_accesses, whose ABI match in programs/crates/layerx-programs-runtime/src/abi/capability.rs admits the version 1 and version 2 canonical grant encodings alone and refuses every other version, while the reference web reader declares guest ABI 4 in programs/sdk/rust/examples/web-reader/LayerX.toml and WEB_READER_GUEST_ABI of platform/hosted/gateway/tests/local/events.rs, and the execution that follows the plan decodes the very same grants of the very same call through the ABI-two encoding for ABI 2, 3 and 4 in layerx_programs_call_begin; the batch therefore settles the call as a terminal rejection carrying result code -3, which the core cannot surface because verify_program_outcome of agent/crates/layerx-proof/src/receipt.rs requires a program outcome on a refusal receipt, so POST /v1/programs/call answers 503 receipt_unavailable. The deadline is not the defect - the kernel published that rejection inside a quarter of a second of the submission, and the status assertion of events.rs:475 and LAYERX_CORE_RECEIPT_DEADLINE_MS both stay exactly as they are written."
+do_2 = "Add the binding to programs/crates/layerx-programs-runtime/src/abi_policy.rs, the module that already holds the frozen ABI transition policy: a CapabilityEncoding naming the ABI-one and ABI-two canonical grant encodings, a capability_encoding answering the encoding an admitted ABI version carries - version 1 the first and versions 2, 3 and 4 the second - refusing any other version with that module's own AbiVersionRefusal::Unsupported, and an abi_version answering the version a validated AbiRevision records; admit no version admit_abi_version refuses and refuse none it admits."
+do_3 = "Read that one binding at both projections of the same call - CapabilitySet::admitted_schedule_accesses in programs/crates/layerx-programs-runtime/src/abi/capability.rs, which the CALL scheduling projection reaches through prepare_schedule_item, and the grant decode of layerx_programs_call_begin in programs/crates/layerx-programs-runtime/src/ffi_call.rs, which executes the call the plan placed - keeping both refusals exactly as strict as they are, an unadmitted ABI version staying AbiError::InvalidEncoding at the projection and LXP_ERR_NON_CANONICAL at the execution; change no decoder, no capability tag, nothing in the kernel and nothing in the proof crate."
+do_4 = "Pin the binding in abi_policy's own unit tests, which the programs workspace test runs: admit_abi_version and capability_encoding accept exactly the same versions across the whole one-byte range, so no ABI can be admitted without a capability encoding; versions 1, 2, 3 and 4 select the v1, v2, v2 and v2 encodings and version 5 is refused as unsupported; and every AbiRevision's recorded version selects the encoding that revision itself carries. The real path stays the task's own gate, whose program call is a guest ABI 4 call into the reference web reader."
+do_5 = "Run the verify_cmd once; at the revision where it exits 0 record tasks 2.42, 2.40, 2.37, 2.35 and 2.28 done with that revision, command, exit code and log path and close observations 2.21.2, 2.28.1, 2.35.2, 2.37.2, 2.40.1 and 2.42.1 naming it, as task 2.42's do_5, task 2.40's do_4, task 2.37's do_5 and task 2.35's do_4 require; if it does not pass, leave those five tasks as they are and record the exact failing step as one observation."
+verify_cmd = "timeout 30m sh -c 'export LAYERX_TEST_SOCAT_BIN=$(command -v socat) LAYERX_TEST_WEB_READER_WASM=$PWD/programs/sdk/rust/examples/web-reader/target/wasm32-unknown-unknown/release/layerx_reference_web_reader.wasm; cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway schema_lists_every_public_method && cargo test --locked --manifest-path platform/hosted/gateway/tests/local/Cargo.toml --test lifecycle events::'"
+symbols = ["capability_encoding","admitted_schedule_accesses","layerx_programs_schedule_plan"]
+touches = ["programs/crates/layerx-programs-runtime/src/abi_policy.rs","programs/crates/layerx-programs-runtime/src/abi/capability.rs","programs/crates/layerx-programs-runtime/src/ffi_call.rs"]
+tests = ["programs/crates/layerx-programs-runtime/src/abi_policy.rs","platform/hosted/gateway/tests/local/events.rs"]
+reqs = ["11.2"]
+
+[task.2.45]
+title = "Verify a program call receipt at the protocol, module and guest ABI versions the kernel publishes it with"
+status = "done"
+revision = "5a72298527318be2ca34b6bdc934c99780b9dc0f"
+command = "timeout 30m sh -c 'export LAYERX_TEST_SOCAT_BIN=$(command -v socat) LAYERX_TEST_WEB_READER_WASM=$PWD/programs/sdk/rust/examples/web-reader/target/wasm32-unknown-unknown/release/layerx_reference_web_reader.wasm; cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway schema_lists_every_public_method && cargo test --locked --manifest-path platform/hosted/gateway/tests/local/Cargo.toml --test lifecycle events::'"
+exit_code = 0
+log_path = ".logs/verify.log"
+wave = 2
+requires = ["2.44"]
+do_1 = "Observation 2.44.1: the web reader's call now settles a committed receipt well inside the core deadline and POST /v1/programs/call still answers 503 receipt_unavailable, because receipt_facts in platform/hosted/core/src/main.rs verifies it through verify_outcome of agent/crates/layerx-proof/src/receipt.rs, which dispatches a module 9 operation 3 receipt to verify_program_outcome and therefore reaches the guest ABI line of verify_program_outcome_selected, where supported_program_guest_abi admits guest ABI 1 and 2 alone - a bound written when 2 was the highest guest ABI and never raised - while the reference web reader declares guest ABI 4 and the kernel admits 1 to 4, the maximum task 2.40 already generates into agent/crates/layerx-types/src/guest_abi.rs from the LX_PROGRAMS_GUEST_ABI_V*_VERSION enumerators of include/layerx/programs.h; every other version a current call receipt carries is already admitted and stays exactly as it is - receipt_bind_program_operation in src/protocol/lxp_kernel.c writes the call ordinal into the operation tag at LXP_PROTOCOL_VERSION_STATE_COMMITMENT alone, lxp_kernel_prepare_activity copies the module ABI version out of the matching registration, src/modules/programs/registration.c registers the Programs module at LX_PROGRAMS_SANDBOX_DESTROY_ABI_VERSION, the runtime that produces the outcome reports RUNTIME_VERSION of programs/crates/layerx-programs-runtime, and the receipt-programs-positive-v1, receipt-programs-positive-v2 and receipt-programs-positive-v3 vectors under platform/sdk/conformance/fixtures record exactly those version sets; the kernel, the receipt encoder, the conformance fixtures, the status assertion at platform/hosted/gateway/tests/local/events.rs:475 and LAYERX_CORE_RECEIPT_DEADLINE_MS therefore all stay exactly as they are and the stale proof-crate bound is the side corrected."
+do_2 = "Generate the Programs module ABI table in agent/crates/layerx-types/build.rs from the decimal LX_PROGRAMS_*ABI_VERSION enumerators of include/layerx/programs.h, in the shape of the guest ABI maximum and the activity table that script already derives, failing closed when the header declares no such enumerator, when one declares version zero, when two repeat a version, when they do not ascend from one without a gap, when LX_PROGRAMS_ABI_VERSION, LX_PROGRAMS_ACCOUNT_ABI_VERSION, LX_PROGRAMS_SANDBOX_ABI_VERSION or LX_PROGRAMS_SANDBOX_DESTROY_ABI_VERSION is absent, when the four named versions do not ascend or when the highest allocated version is not LX_PROGRAMS_SANDBOX_DESTROY_ABI_VERSION, the version src/modules/programs/registration.c registers the module at, and expose it through a new agent/crates/layerx-types/src/programs_module_abi.rs as the whole VERSIONS table in header order, INITIAL, ACCOUNT, SANDBOX, SANDBOX_DESTROY, CURRENT and a supported predicate, so no second literal holds a Programs module ABI number."
+do_3 = "Take all three version sets of a Programs call receipt in agent/crates/layerx-proof/src/receipt.rs from the one authority each already has: supported_program_guest_abi from guest_abi::supported of agent/crates/layerx-types, the state-commitment module ABI and the ranges of supported_programs_module_version and supports_program_account_state from the generated SANDBOX_DESTROY and ACCOUNT, the historical protocol and module versions from LEGACY_PROTOCOL_VERSION of layerx-wire and the generated INITIAL, and the outcome's runtime version from RUNTIME_VERSION of programs/crates/layerx-programs-runtime; widen no module ABI range beyond the versions it admits today, keep the historical v1 path admitting a protocol 1 module 1 receipt exactly as it does, keep every VerificationFailure check and its exact ReceiptCheck, and change nothing in the kernel, the receipt encoder or the conformance fixtures."
+do_4 = "Pin the accepted versions against the authority in the proof crate's own version contract tests and in the new module's unit tests, keeping every existing assertion exactly as strong: the generated table equals the header's enumerators in header order and ascends from one to the version the module registers at; supported_program_guest_abi admits the whole range from one to the generated guest ABI maximum, including the ABI version the programs runtime is built at, and refuses zero, the maximum plus one and u16::MAX; supported_programs_module_version and supports_program_account_state answer for every header-allocated version exactly what they answer today, with the state-commitment module ABI still refused below that protocol; and every recorded Programs call receipt vector under platform/sdk/conformance/fixtures carries a module, an operation, a protocol version, a module version, a guest ABI and a runtime version this crate accepts. The real path stays the task's own gate, whose program call is a guest ABI 4 call into the reference web reader."
+do_5 = "Run the verify_cmd once; at the revision where it exits 0 record tasks 2.44, 2.42, 2.40, 2.37, 2.35 and 2.28 done with that revision, command, exit code and log path and close observations 2.21.2, 2.28.1, 2.35.2, 2.37.2, 2.40.1, 2.42.1 and 2.44.1 naming it, as task 2.44's do_5, task 2.42's do_5, task 2.40's do_4, task 2.37's do_5 and task 2.35's do_4 require; if it does not pass, leave those six tasks as they are and record the exact failing step as one observation."
+verify_cmd = "timeout 30m sh -c 'export LAYERX_TEST_SOCAT_BIN=$(command -v socat) LAYERX_TEST_WEB_READER_WASM=$PWD/programs/sdk/rust/examples/web-reader/target/wasm32-unknown-unknown/release/layerx_reference_web_reader.wasm; cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway schema_lists_every_public_method && cargo test --locked --manifest-path platform/hosted/gateway/tests/local/Cargo.toml --test lifecycle events::'"
+symbols = ["supported_program_guest_abi","programs_version_for_protocol","verify_program_outcome_selected"]
+touches = ["agent/crates/layerx-types/build.rs","agent/crates/layerx-types/src/programs_module_abi.rs","agent/crates/layerx-types/src/lib.rs","agent/crates/layerx-proof/src/receipt.rs"]
+tests = ["agent/crates/layerx-types/src/programs_module_abi.rs","agent/crates/layerx-proof/src/receipt.rs"]
+reqs = ["11.2"]
+
 [task.3.1]
 title = "Run the xweb workflow's legs once on the merged revision and record the evidence"
 status = "pending"
 wave = 3
-requires = ["1.1","1.2","1.3","1.4","1.5","1.6","1.7","1.8","1.9","1.10","1.11","1.12","1.13","1.14","1.15","1.16","1.17","1.18","2.1","2.2","2.3","2.4","2.5","2.6","2.7","2.8","2.9","2.10","2.11","2.12","2.13","2.14","2.15","2.16","2.17","2.18","2.19","2.20","2.21","2.22","2.23","2.24","2.25","2.26","2.27","2.28","2.29","2.30","2.31","2.32","2.33"]
+requires = ["1.1","1.2","1.3","1.4","1.5","1.6","1.7","1.8","1.9","1.10","1.11","1.12","1.13","1.14","1.15","1.16","1.17","1.18","2.1","2.2","2.3","2.4","2.5","2.6","2.7","2.8","2.9","2.10","2.11","2.12","2.13","2.14","2.15","2.16","2.17","2.18","2.19","2.20","2.21","2.22","2.23","2.24","2.25","2.26","2.27","2.28","2.29","2.30","2.31","2.32","2.33","2.34","2.35","2.36"]
 do_1 = "On the revision that merges waves 1 and 2, run the workflow's legs once, in order - the x-websearch crate, modules/xweb with precompiles/xweb, the Foundry consumer tests, the kernel web make targets with the runtime web_read test, and the SDK and MCP tests - writing each leg's output to its own log under build/xweb-gates/."
 do_2 = "Append one gate record per leg to spec/paxeer-x-web/qualification.kvx carrying the task, the requirements the leg qualifies, the revision, the exact command, the exit code and the log path, written only from a command that actually ran."
 do_3 = "Append one observation per failure the run exposes that belongs to no task in this feature; do not investigate it further and do not rerun it. Rerun nothing that already passed at this revision and write no gate record for a command that did not run."

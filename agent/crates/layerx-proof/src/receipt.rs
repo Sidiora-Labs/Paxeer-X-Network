@@ -1,6 +1,8 @@
 //! Offline verification of sequencer-signed canonical receipts.
 
 use layerx_crypto::ed25519;
+use layerx_programs_runtime::RUNTIME_VERSION;
+use layerx_types::{guest_abi, programs_module_abi};
 use layerx_wire::hash::receipt_digest;
 use layerx_wire::limits::protocol_version_uses_occupancy;
 use layerx_wire::receipt::{decode, encode, encode_unsigned, Receipt};
@@ -24,17 +26,20 @@ const fn supported_protocol_version(version: u16) -> bool {
     protocol_version_uses_occupancy(version)
 }
 
+/// The Programs module ABI versions a receipt below the state-commitment
+/// protocol carries: every version `include/layerx/programs.h` allocates before
+/// the one the module registers at now.
 const fn supported_programs_module_version(version: u32) -> bool {
-    matches!(version, 1..=3)
+    version != 0 && version < programs_module_abi::SANDBOX_DESTROY
 }
 
 const fn supports_program_account_state(version: u32) -> bool {
-    matches!(version, 2 | 3)
+    version >= programs_module_abi::ACCOUNT && version < programs_module_abi::SANDBOX_DESTROY
 }
 
 const fn programs_version_for_protocol(protocol: u16, module: u32, account_state: bool) -> bool {
     if protocol == layerx_wire::limits::STATE_COMMITMENT_PROTOCOL_VERSION {
-        module == 4
+        module == programs_module_abi::SANDBOX_DESTROY
     } else if account_state {
         supports_program_account_state(module)
     } else {
@@ -42,8 +47,11 @@ const fn programs_version_for_protocol(protocol: u16, module: u32, account_state
     }
 }
 
+/// The guest ABI versions a Programs receipt's outcome carries: exactly the
+/// range the kernel's Programs module admits, taken from the generated
+/// `include/layerx/programs.h` maximum and never a second bound of its own.
 const fn supported_program_guest_abi(version: u16) -> bool {
-    matches!(version, 1 | 2)
+    guest_abi::supported(version)
 }
 
 /// Core-published batch facts needed to establish sequencer authority and the
@@ -774,13 +782,13 @@ fn verify_program_outcome_selected(
         .protocol()
         .ok_or_else(|| VerificationFailure::at(ReceiptCheck::ReceiptShape))?;
     if if historical_v1 {
-        protocol.protocol_version() != 1
+        protocol.protocol_version() != layerx_wire::limits::LEGACY_PROTOCOL_VERSION
     } else {
         !supported_protocol_version(protocol.protocol_version())
     } {
         return Err(VerificationFailure::at(ReceiptCheck::ProtocolVersion));
     }
-    if historical_v1 && protocol.module_version() != 1 {
+    if historical_v1 && protocol.module_version() != programs_module_abi::INITIAL {
         return Err(VerificationFailure::at(ReceiptCheck::Module));
     }
     if u32::from(protocol.module_id()) != PROGRAMS_MODULE_ID
@@ -796,7 +804,9 @@ fn verify_program_outcome_selected(
     let outcome = protocol
         .program_outcome()
         .ok_or_else(|| VerificationFailure::at(ReceiptCheck::ReceiptShape))?;
-    if !supported_program_guest_abi(outcome.abi_version()) || outcome.runtime_version() != 1 {
+    if !supported_program_guest_abi(outcome.abi_version())
+        || outcome.runtime_version() != RUNTIME_VERSION
+    {
         return Err(VerificationFailure::at(ReceiptCheck::ProtocolVersion));
     }
     if protocol.activity_id() == [0; 32] {
@@ -890,10 +900,41 @@ pub fn canonical_protocol_facts(
 #[cfg(test)]
 mod programs_version_contract {
     use super::{
-        programs_version_for_protocol, supported_program_guest_abi,
+        guest_abi, programs_module_abi, programs_version_for_protocol, supported_program_guest_abi,
         supported_programs_module_version, supported_protocol_version,
-        supports_program_account_state,
+        supports_program_account_state, PROGRAMS_CALL_OPERATION, PROGRAMS_MODULE_ID,
+        RUNTIME_VERSION,
     };
+    use layerx_wire::limits::{LEGACY_PROTOCOL_VERSION, STATE_COMMITMENT_PROTOCOL_VERSION};
+
+    const POSITIVE_V1: &str = include_str!(
+        "../../../../platform/sdk/conformance/fixtures/receipt-programs-positive-v1.json"
+    );
+    const POSITIVE_V2: &str = include_str!(
+        "../../../../platform/sdk/conformance/fixtures/receipt-programs-positive-v2.json"
+    );
+    const POSITIVE_V3: &str = include_str!(
+        "../../../../platform/sdk/conformance/fixtures/receipt-programs-positive-v3.json"
+    );
+
+    fn expected_block<'a>(document: &'a str, name: &str) -> &'a str {
+        document
+            .split_once("\"expected\": {")
+            .unwrap_or_else(|| panic!("{name} records no expected block"))
+            .1
+    }
+
+    fn number(block: &str, field: &str, name: &str) -> u64 {
+        let marker = format!("\"{field}\": ");
+        let tail = block
+            .split_once(marker.as_str())
+            .unwrap_or_else(|| panic!("{name} records no {field}"))
+            .1;
+        let digits: String = tail.chars().take_while(char::is_ascii_digit).collect();
+        digits
+            .parse()
+            .unwrap_or_else(|error| panic!("{name} {field}: {error}"))
+    }
 
     #[test]
     fn module_and_guest_versions_are_independent() {
@@ -905,9 +946,106 @@ mod programs_version_contract {
         assert!(supported_programs_module_version(3));
         assert!(supports_program_account_state(3));
         assert!(supported_program_guest_abi(2));
-        assert!(!supported_program_guest_abi(3));
-        assert!(!supported_programs_module_version(4));
+        assert!(supported_program_guest_abi(guest_abi::MAX_VERSION));
+        assert!(!supported_programs_module_version(
+            programs_module_abi::SANDBOX_DESTROY
+        ));
         assert!(!supports_program_account_state(1));
+    }
+
+    #[test]
+    fn the_guest_abi_range_is_the_kernel_headers_own() {
+        assert!(!supported_program_guest_abi(0));
+        for version in 1..=guest_abi::MAX_VERSION {
+            assert!(supported_program_guest_abi(version), "{version}");
+        }
+        assert!(!supported_program_guest_abi(guest_abi::MAX_VERSION + 1));
+        assert!(!supported_program_guest_abi(u16::MAX));
+        assert!(supported_program_guest_abi(
+            layerx_programs_runtime::ABI_VERSION
+        ));
+    }
+
+    #[test]
+    fn the_module_version_ranges_are_the_kernel_headers_allocations() {
+        assert_eq!(
+            programs_module_abi::CURRENT,
+            programs_module_abi::SANDBOX_DESTROY
+        );
+        assert!(!supported_programs_module_version(0));
+        assert!(!supports_program_account_state(0));
+        for (name, version) in programs_module_abi::VERSIONS {
+            assert_eq!(
+                supported_programs_module_version(version),
+                version < programs_module_abi::SANDBOX_DESTROY,
+                "{name}"
+            );
+            assert_eq!(
+                supports_program_account_state(version),
+                version >= programs_module_abi::ACCOUNT
+                    && version < programs_module_abi::SANDBOX_DESTROY,
+                "{name}"
+            );
+        }
+        assert!(supported_programs_module_version(
+            programs_module_abi::INITIAL
+        ));
+        assert!(!supported_programs_module_version(
+            programs_module_abi::CURRENT
+        ));
+        assert!(!supported_programs_module_version(
+            programs_module_abi::CURRENT + 1
+        ));
+        assert!(programs_version_for_protocol(
+            STATE_COMMITMENT_PROTOCOL_VERSION,
+            programs_module_abi::SANDBOX_DESTROY,
+            false
+        ));
+        assert!(programs_version_for_protocol(
+            STATE_COMMITMENT_PROTOCOL_VERSION,
+            programs_module_abi::SANDBOX_DESTROY,
+            true
+        ));
+    }
+
+    #[test]
+    fn every_recorded_programs_call_receipt_carries_an_accepted_version_set() {
+        for (name, document) in [
+            ("receipt-programs-positive-v1", POSITIVE_V1),
+            ("receipt-programs-positive-v2", POSITIVE_V2),
+            ("receipt-programs-positive-v3", POSITIVE_V3),
+        ] {
+            let expected = expected_block(document, name);
+            assert_eq!(
+                number(expected, "module_id", name),
+                u64::from(PROGRAMS_MODULE_ID),
+                "{name}"
+            );
+            assert_eq!(
+                number(expected, "operation", name),
+                u64::from(PROGRAMS_CALL_OPERATION),
+                "{name}"
+            );
+            let protocol = u16::try_from(number(expected, "protocol_version", name))
+                .unwrap_or_else(|error| panic!("{name} protocol version: {error}"));
+            let module = u32::try_from(number(expected, "module_version", name))
+                .unwrap_or_else(|error| panic!("{name} module version: {error}"));
+            let abi = u16::try_from(number(expected, "program_outcome_abi_version", name))
+                .unwrap_or_else(|error| panic!("{name} guest ABI: {error}"));
+            let runtime = u16::try_from(number(expected, "program_outcome_runtime_version", name))
+                .unwrap_or_else(|error| panic!("{name} runtime version: {error}"));
+            assert!(supported_program_guest_abi(abi), "{name}");
+            assert_eq!(runtime, RUNTIME_VERSION, "{name}");
+            assert!(
+                programs_version_for_protocol(protocol, module, false),
+                "{name}"
+            );
+            assert_eq!(
+                supported_protocol_version(protocol),
+                protocol != LEGACY_PROTOCOL_VERSION,
+                "{name}"
+            );
+        }
     }
 
     #[test]

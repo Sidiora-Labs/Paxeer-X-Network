@@ -32,7 +32,7 @@ use crate::approval::{
 use crate::budget::{
     budget_create_identity, budget_state_key, create_protocol_budget, BudgetCreationError,
     BudgetKind, BudgetLimiter, BudgetPipeline, BudgetRequest, CoreBudgetReceipt, LimitConfig,
-    PersistedReceipt, ProtocolBudgetRecord, ProtocolBudgetState, RestartAccounting,
+    PersistedReceipt, ProtocolBudget, ProtocolBudgetRecord, ProtocolBudgetState, RestartAccounting,
     BUDGET_MODULE_ID,
 };
 use crate::capability::{
@@ -60,7 +60,8 @@ use crate::session::{self, OpenRequest, SessionId, SessionRegistry};
 use crate::session_control::SessionControl;
 use crate::session_keys::SessionKeyRegistry;
 use crate::sign::{
-    attach_external_signature, validate_issued_session, verify_before_submit, ProvisionedSessionKey,
+    attach_external_signature, validate_issued_session, verify_before_submit,
+    ProvisionedSessionKey, VerifiedSubmission,
 };
 use crate::store::{key, ObjectKind, StorageClass, Store, TenantId, TenantKey};
 mod native_receipt;
@@ -889,6 +890,102 @@ pub struct UnifiedAgentOwner<A> {
     pub degraded: Controller,
 }
 
+fn require_held_reservations(
+    approvals: &ApprovalRegistry,
+    budgets: &BudgetLimiter,
+) -> Result<(), HumanOperationError> {
+    for id in approvals
+        .hold_ids()
+        .map_err(|_| HumanOperationError::Refused)?
+    {
+        if !budgets
+            .has_reservation(id)
+            .map_err(|_| HumanOperationError::Refused)?
+        {
+            return Err(HumanOperationError::Refused);
+        }
+    }
+    Ok(())
+}
+
+fn restored_sessions(
+    shared_store: &Arc<Mutex<Store>>,
+    replayed: &std::collections::BTreeSet<String>,
+) -> Result<SessionRegistry, HumanOperationError> {
+    let mut sessions = SessionRegistry::default();
+    let store = shared_store
+        .lock()
+        .map_err(|_| HumanOperationError::Unavailable)?;
+    for tenant in replayed {
+        let tenant_id = TenantId::new(tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
+        sessions
+            .restore_tenant(&store, &tenant_id)
+            .map_err(|_| HumanOperationError::Refused)?;
+        managed_agent::validate_session_coordinates(&store, &sessions, &tenant_id)?;
+    }
+    Ok(sessions)
+}
+
+struct TenantRecoveryContext<'a> {
+    peer: &'a HumanPeer,
+    tenant_id: &'a TenantId,
+    registry: &'a ModuleRegistry,
+    inventory: &'a crate::receipt::ReceiptEvidenceInventory,
+    verifier: &'a EvidenceAuthority,
+    authorization: SequencerAuthorization,
+    sequencer_key: [u8; 32],
+    ceiling_maximum: u128,
+    current_sequence: u64,
+}
+
+fn settle_terminal_submission(
+    outbox: &mut Outbox,
+    store: &mut Store,
+    idempotency_key: [u8; 32],
+    terminal_state: SubmissionState,
+    terminal: crate::protocol_evidence::VerifiedReceiptEvidence,
+) -> Result<(), HumanOperationError> {
+    let status = outbox
+        .status(idempotency_key)
+        .ok_or(HumanOperationError::Refused)?;
+    if status.state.terminal() {
+        if status.state != terminal_state
+            || status
+                .evidence
+                .is_none_or(|evidence| evidence.receipt_ref() != terminal.receipt_ref())
+        {
+            return Err(HumanOperationError::Refused);
+        }
+    } else {
+        outbox
+            .transition(
+                store,
+                idempotency_key,
+                terminal_state,
+                "canonical receipt and signed inclusion verified",
+                Some(terminal),
+            )
+            .map_err(|_| HumanOperationError::Unavailable)?;
+    }
+    Ok(())
+}
+
+fn budget_creation_response(
+    plan: ActionPlan,
+    budget: &ProtocolBudget,
+    audit_entries: u64,
+) -> Result<HumanResponse, HumanOperationError> {
+    let mut out = Encoder::new();
+    out.u8(plan_code(plan));
+    out.fixed(&budget.object_id());
+    out.u64(budget.observed_head_sequence());
+    out.u128(budget.record().per_period_limit);
+    out.u64(budget.record().expiry);
+    out.text(budget.enforcement())?;
+    out.u64(audit_entries);
+    out.finish()
+}
+
 impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
     /// # Errors
     /// Returns an error when the request is invalid, authority is refused, or required state is unavailable.
@@ -945,18 +1042,8 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
                 }
             }
         }
-        for id in approvals
-            .hold_ids()
-            .map_err(|_| HumanOperationError::Refused)?
-        {
-            if !budgets
-                .has_reservation(id)
-                .map_err(|_| HumanOperationError::Refused)?
-            {
-                return Err(HumanOperationError::Refused);
-            }
-        }
-        operations.recover_tenants(&restore_peers, ceiling_maximum)?;
+        require_held_reservations(&approvals, &budgets)?;
+        operations.recover_tenants(&restore_peers, ceiling_maximum);
         operations.unified_owner_active = true;
         {
             let store = shared_store
@@ -966,20 +1053,7 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
                 replayed.insert(tenant.as_str().to_owned());
             }
         }
-        let mut sessions = SessionRegistry::default();
-        {
-            let store = shared_store
-                .lock()
-                .map_err(|_| HumanOperationError::Unavailable)?;
-            for tenant in &replayed {
-                let tenant_id =
-                    TenantId::new(tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
-                sessions
-                    .restore_tenant(&store, &tenant_id)
-                    .map_err(|_| HumanOperationError::Refused)?;
-                managed_agent::validate_session_coordinates(&store, &sessions, &tenant_id)?;
-            }
-        }
+        let sessions = restored_sessions(&shared_store, &replayed)?;
         session_keys
             .probe()
             .map_err(|_| HumanOperationError::Unavailable)?;
@@ -2650,44 +2724,15 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
         }
         let tenant =
             TenantId::new(peer.tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
-        let root = self
-            .store
-            .lock()
-            .map_err(|_| HumanOperationError::Unavailable)?
-            .root()
-            .to_path_buf();
-        let context = OperatorContext::new(operator_id, request_id).map_err(map_admin_error)?;
-        let mut surface = Surface::open(&root, &tenant).map_err(map_admin_error)?;
-        let plan = surface
-            .dispatch(&context, command)
-            .map_err(map_admin_error)?;
-        if plan != ActionPlan::OrdinaryClientWrite(ORDINARY_CLIENT_WRITE) {
-            return Err(HumanOperationError::Refused);
-        }
+        let (surface, plan) =
+            self.admitted_client_write(&tenant, operator_id, request_id, command)?;
         let prepared_key = (
             peer.tenant.clone(),
             peer.principal.clone(),
             hex(&preparation),
         );
-        let cached = self
-            .prepared
-            .get(&prepared_key)
-            .cloned()
-            .ok_or(HumanOperationError::Refused)?;
-        let signed = attach_external_signature(&cached.prepared, signature)
-            .map_err(|_| HumanOperationError::Refused)?;
-        let verified = verify_before_submit(
-            &signed,
-            &cached.prepared,
-            &signer_public_key,
-            &cached.registry,
-        )
-        .map_err(|_| HumanOperationError::Refused)?;
-        let identity = budget_create_identity(verified.exact_bytes(), &cached.registry)
-            .map_err(|_| HumanOperationError::Refused)?;
-        if identity.budget_id != agent {
-            return Err(HumanOperationError::Refused);
-        }
+        let (cached, submission) =
+            self.verified_budget_preparation(&prepared_key, signature, &signer_public_key, agent)?;
         let candidate = {
             let store = self
                 .store
@@ -2724,13 +2769,13 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
         }
         let request = BudgetRequest {
             tenant: tenant.clone(),
-            request_id: verified.idempotency_key(),
+            request_id: submission.idempotency_key(),
             kind: BudgetKind::ProtocolBudget,
             asset,
             ceiling,
             expiry_sequence,
-            canonical_activity: verified.exact_bytes().to_vec(),
-            verified_submission: Some(verified),
+            canonical_activity: submission.exact_bytes().to_vec(),
+            verified_submission: Some(submission),
         };
         let mut store = self
             .store
@@ -2750,15 +2795,61 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
         managed_agent::assign_budget(&mut store, &tenant, &candidate.agent_id, budget.object_id())?;
         drop(store);
         self.prepared.remove(&prepared_key);
-        let mut out = Encoder::new();
-        out.u8(plan_code(plan));
-        out.fixed(&budget.object_id());
-        out.u64(budget.observed_head_sequence());
-        out.u128(budget.record().per_period_limit);
-        out.u64(budget.record().expiry);
-        out.text(budget.enforcement())?;
-        out.u64(surface.audit_entries());
-        out.finish()
+        budget_creation_response(plan, &budget, surface.audit_entries())
+    }
+
+    fn admitted_client_write(
+        &self,
+        tenant: &TenantId,
+        operator_id: &str,
+        request_id: [u8; 32],
+        command: OperatorCommand,
+    ) -> Result<(Surface, ActionPlan), HumanOperationError> {
+        let root = self
+            .store
+            .lock()
+            .map_err(|_| HumanOperationError::Unavailable)?
+            .root()
+            .to_path_buf();
+        let context =
+            OperatorContext::new(operator_id, request_id).map_err(HumanOperationError::from)?;
+        let mut surface = Surface::open(&root, tenant).map_err(HumanOperationError::from)?;
+        let plan = surface
+            .dispatch(&context, command)
+            .map_err(HumanOperationError::from)?;
+        if plan != ActionPlan::OrdinaryClientWrite(ORDINARY_CLIENT_WRITE) {
+            return Err(HumanOperationError::Refused);
+        }
+        Ok((surface, plan))
+    }
+
+    fn verified_budget_preparation(
+        &self,
+        prepared_key: &(String, String, String),
+        signature: [u8; 64],
+        signer_public_key: &[u8; 32],
+        agent: [u8; 32],
+    ) -> Result<(CachedPreparation, VerifiedSubmission), HumanOperationError> {
+        let cached = self
+            .prepared
+            .get(prepared_key)
+            .cloned()
+            .ok_or(HumanOperationError::Refused)?;
+        let signed = attach_external_signature(&cached.prepared, signature)
+            .map_err(|_| HumanOperationError::Refused)?;
+        let verified_submission = verify_before_submit(
+            &signed,
+            &cached.prepared,
+            signer_public_key,
+            &cached.registry,
+        )
+        .map_err(|_| HumanOperationError::Refused)?;
+        let identity = budget_create_identity(verified_submission.exact_bytes(), &cached.registry)
+            .map_err(|_| HumanOperationError::Refused)?;
+        if identity.budget_id != agent {
+            return Err(HumanOperationError::Refused);
+        }
+        Ok((cached, verified_submission))
     }
 
     fn dispatch_queued(
@@ -3146,33 +3237,13 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
                         crate::receipt::ReceiptLookupKey::Idempotency(idempotency_key),
                     )
                     .map_err(|_| HumanOperationError::Unavailable)?;
-                    let status = self
-                        .outboxes
-                        .entry(peer.tenant.clone())
-                        .or_default()
-                        .status(idempotency_key)
-                        .ok_or(HumanOperationError::Refused)?;
-                    if status.state.terminal() {
-                        if status.state != terminal_state
-                            || status.evidence.is_none_or(|evidence| {
-                                evidence.receipt_ref() != terminal.receipt_ref()
-                            })
-                        {
-                            return Err(HumanOperationError::Refused);
-                        }
-                    } else {
-                        self.outboxes
-                            .entry(peer.tenant.clone())
-                            .or_default()
-                            .transition(
-                                &mut store,
-                                idempotency_key,
-                                terminal_state,
-                                "canonical receipt and signed inclusion verified",
-                                Some(terminal),
-                            )
-                            .map_err(|_| HumanOperationError::Unavailable)?;
-                    }
+                    settle_terminal_submission(
+                        self.outboxes.entry(peer.tenant.clone()).or_default(),
+                        &mut store,
+                        idempotency_key,
+                        terminal_state,
+                        terminal,
+                    )?;
                 }
             }
             (Err(error), _) | (_, Err(error)) if evidence_unavailable(&error) => {}
@@ -3260,15 +3331,7 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
     /// Runs startup recovery once per tenant budget and records write admission
     /// per tenant. A tenant whose recovery fails stays read-only with the reason
     /// logged; other tenants proceed independently.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Unavailable` only when the shared store lock is poisoned.
-    pub fn recover_tenants(
-        &mut self,
-        peers: &[HumanPeer],
-        ceiling_maximum: u128,
-    ) -> Result<(), HumanOperationError> {
+    pub fn recover_tenants(&mut self, peers: &[HumanPeer], ceiling_maximum: u128) {
         let mut first_peer_by_tenant = BTreeMap::<String, HumanPeer>::new();
         for peer in peers {
             first_peer_by_tenant
@@ -3285,7 +3348,6 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
             }
             self.write_admission.insert(tenant, admission);
         }
-        Ok(())
     }
 
     fn recover_tenant(
@@ -3314,7 +3376,7 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
                 .store
                 .lock()
                 .map_err(|_| RecoveryRefusal::Store(HumanOperationError::Unavailable))?;
-            crate::receipt::evidence_inventory(&store, tenant_id.clone()).map_err(|error| {
+            crate::receipt::evidence_inventory(&store, &tenant_id).map_err(|error| {
                 RecoveryRefusal::Store(match error {
                     crate::receipt::ReceiptStoreError::Store(_) => HumanOperationError::Unavailable,
                     _ => HumanOperationError::Refused,
@@ -3339,98 +3401,116 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
             eprintln!("layerx-agentd: recovery handshake pin refused: {error:?}");
             RecoveryRefusal::Store(HumanOperationError::Refused)
         })?;
-        let current_sequence = self.node.head().chain_sequence;
+        let context = TenantRecoveryContext {
+            peer,
+            tenant_id: &tenant_id,
+            registry: &registry,
+            inventory: &inventory,
+            verifier: &verifier,
+            authorization,
+            sequencer_key: node.authorised_sequencer_key,
+            ceiling_maximum,
+            current_sequence: self.node.head().chain_sequence,
+        };
         let mut admission = Ok(());
         for owner in owners {
-            let budget_id = owner.active_budget_id;
-            let (with_evidence, without_evidence) = self.attribute_receipts(
-                &peer.tenant,
-                &registry,
-                owner.agent_did.as_bytes(),
-                &inventory,
-            );
-            let correlation = boundary_correlation(peer, &budget_id, b"budget-recovery");
-            let key = budget_state_key(budget_id);
-            let outcome = match self.node.module_state(
-                BUDGET_MODULE_ID,
-                &key,
-                VerificationLevel::STATE_PROVEN,
-                correlation,
-                authorization,
-            ) {
-                Ok(value) => {
-                    let evidence = RawStateEvidence::module_witness(
-                        value.canonical_bytes().to_vec(),
-                        BUDGET_MODULE_ID,
-                        key,
-                        value.proof_material().to_vec(),
-                        RootSelector::Latest,
-                        node.authorised_sequencer_key,
-                    );
-                    let request = BudgetRecoveryRequest {
-                        budget_id,
-                        protocol_budget: ProtocolBudgetState { evidence },
-                        verifier: verifier.clone(),
-                        receipts_with_evidence: &with_evidence,
-                        receipts_without_evidence: &without_evidence,
-                        ceiling_maximum,
-                        current_sequence,
-                    };
-                    let mut store = self
-                        .store
-                        .lock()
-                        .map_err(|_| RecoveryRefusal::Store(HumanOperationError::Unavailable))?;
-                    recover_tenant_budget(&mut store, &tenant_id, &request)
-                }
-                Err(error) => Err(RecoveryRefusal::BudgetState {
-                    budget_id,
-                    reason: format!("{error:?}"),
-                }),
-            };
-            match outcome {
-                Ok(recovery) => {
-                    let accounting = recovery.recovered.budget_accounting;
-                    let ceiling_reconciled = recovery
-                        .recovered
-                        .ceiling
-                        .snapshot()
-                        .is_ok_and(|snapshot| snapshot.reconciled);
-                    eprintln!(
-                        "layerx-agentd: recovery tenant={} agent={} budget={} queued={} awaiting={} receipts_with_evidence={} receipts_without_evidence={} protocol_consumed={:?} receipt_consumed={} held_unresolved={} unresolved_count={} reconciled={} ceiling_reconciled={ceiling_reconciled} admitted={}",
-                        peer.tenant,
-                        owner.agent_id,
-                        hex(&budget_id),
-                        recovery.recovered.queued_for_transmission.len(),
-                        recovery.recovered.awaiting_receipt_resolution.len(),
-                        with_evidence.len(),
-                        without_evidence.len(),
-                        accounting.protocol_consumed,
-                        accounting.receipt_consumed,
-                        accounting.held_unresolved,
-                        accounting.unresolved_count,
-                        accounting.reconciled,
-                        recovery.admission.is_ok(),
-                    );
-                    self.outboxes
-                        .insert(peer.tenant.clone(), recovery.recovered.outbox);
-                    if admission.is_ok() {
-                        admission = recovery.admission;
-                    }
-                }
-                Err(refusal) => {
-                    eprintln!(
-                        "layerx-agentd: recovery tenant={} agent={} budget={} failed: {refusal:?}",
-                        peer.tenant,
-                        owner.agent_id,
-                        hex(&budget_id),
-                    );
-                    if admission.is_ok() {
-                        admission = Err(refusal);
-                    }
-                }
+            let outcome = self.recover_owner_budget(&context, &owner);
+            if admission.is_ok() {
+                admission = outcome;
             }
         }
         admission
+    }
+
+    fn recover_owner_budget(
+        &mut self,
+        context: &TenantRecoveryContext<'_>,
+        owner: &managed_agent::BudgetOwner,
+    ) -> Result<(), RecoveryRefusal> {
+        let peer = context.peer;
+        let budget_id = owner.active_budget_id;
+        let (with_evidence, without_evidence) = self.attribute_receipts(
+            &peer.tenant,
+            context.registry,
+            owner.agent_did.as_bytes(),
+            context.inventory,
+        );
+        let correlation = boundary_correlation(peer, &budget_id, b"budget-recovery");
+        let key = budget_state_key(budget_id);
+        let outcome = match self.node.module_state(
+            BUDGET_MODULE_ID,
+            &key,
+            VerificationLevel::STATE_PROVEN,
+            correlation,
+            context.authorization,
+        ) {
+            Ok(value) => {
+                let evidence = RawStateEvidence::module_witness(
+                    value.canonical_bytes().to_vec(),
+                    BUDGET_MODULE_ID,
+                    key,
+                    value.proof_material().to_vec(),
+                    RootSelector::Latest,
+                    context.sequencer_key,
+                );
+                let request = BudgetRecoveryRequest {
+                    budget_id,
+                    protocol_budget: ProtocolBudgetState { evidence },
+                    verifier: context.verifier.clone(),
+                    receipts_with_evidence: &with_evidence,
+                    receipts_without_evidence: &without_evidence,
+                    ceiling_maximum: context.ceiling_maximum,
+                    current_sequence: context.current_sequence,
+                };
+                let mut store = self
+                    .store
+                    .lock()
+                    .map_err(|_| RecoveryRefusal::Store(HumanOperationError::Unavailable))?;
+                recover_tenant_budget(&mut store, context.tenant_id, &request)
+            }
+            Err(error) => Err(RecoveryRefusal::BudgetState {
+                budget_id,
+                reason: format!("{error:?}"),
+            }),
+        };
+        match outcome {
+            Ok(recovery) => {
+                let accounting = recovery.recovered.budget_accounting;
+                let ceiling_reconciled = recovery
+                    .recovered
+                    .ceiling
+                    .snapshot()
+                    .is_ok_and(|snapshot| snapshot.reconciled);
+                eprintln!(
+                    "layerx-agentd: recovery tenant={} agent={} budget={} queued={} awaiting={} receipts_with_evidence={} receipts_without_evidence={} protocol_consumed={:?} receipt_consumed={} held_unresolved={} unresolved_count={} reconciled={} ceiling_reconciled={ceiling_reconciled} admitted={}",
+                    peer.tenant,
+                    owner.agent_id,
+                    hex(&budget_id),
+                    recovery.recovered.queued_for_transmission.len(),
+                    recovery.recovered.awaiting_receipt_resolution.len(),
+                    with_evidence.len(),
+                    without_evidence.len(),
+                    accounting.protocol_consumed,
+                    accounting.receipt_consumed,
+                    accounting.held_unresolved,
+                    accounting.unresolved_count,
+                    accounting.reconciled,
+                    recovery.admission.is_ok(),
+                );
+                self.outboxes
+                    .insert(peer.tenant.clone(), recovery.recovered.outbox);
+                recovery.admission
+            }
+            Err(refusal) => {
+                eprintln!(
+                    "layerx-agentd: recovery tenant={} agent={} budget={} failed: {refusal:?}",
+                    peer.tenant,
+                    owner.agent_id,
+                    hex(&budget_id),
+                );
+                Err(refusal)
+            }
+        }
     }
 
     /// Splits a tenant's receipt inventory into the receipts whose signed
@@ -4370,10 +4450,10 @@ fn live_protocol_budget(
     let Ok(state) = pipeline.budget_state(budget_id) else {
         return false;
     };
-    let Ok(verified) = verifier.verify_state(&state.evidence) else {
+    let Ok(proven) = verifier.verify_state(&state.evidence) else {
         return false;
     };
-    let Ok(record) = ProtocolBudgetRecord::decode(verified.canonical_state()) else {
+    let Ok(record) = ProtocolBudgetRecord::decode(proven.canonical_state()) else {
         return false;
     };
     record.budget_id == budget_id && !record.closed && !record.revoked
@@ -4694,21 +4774,24 @@ pub fn route_operator_command(
     request_id: [u8; 32],
     command: OperatorCommand,
 ) -> Result<HumanResponse, HumanOperationError> {
-    let context = OperatorContext::new(operator_id, request_id).map_err(map_admin_error)?;
-    let mut surface = Surface::open(store_root, tenant).map_err(map_admin_error)?;
+    let context =
+        OperatorContext::new(operator_id, request_id).map_err(HumanOperationError::from)?;
+    let mut surface = Surface::open(store_root, tenant).map_err(HumanOperationError::from)?;
     let mut out = Encoder::new();
     match command {
         OperatorCommand::InspectUnknown(submission_id) => {
             let status = surface
                 .inspect_unknown(&context, outbox, submission_id)
-                .map_err(map_admin_error)?;
+                .map_err(HumanOperationError::from)?;
             out.u8(plan_code(ActionPlan::InspectOnly));
             out.fixed(&status.activity_id);
             out.text(&hex(&status.submission_id))?;
             out.u8(state_code(status.state));
         }
         other => {
-            let plan = surface.dispatch(&context, other).map_err(map_admin_error)?;
+            let plan = surface
+                .dispatch(&context, other)
+                .map_err(HumanOperationError::from)?;
             out.u8(plan_code(plan));
         }
     }
@@ -4727,20 +4810,22 @@ const fn plan_code(plan: ActionPlan) -> u8 {
     }
 }
 
-fn map_admin_error(error: AdminError) -> HumanOperationError {
-    match error {
-        AdminError::Audit(_) => HumanOperationError::Unavailable,
-        AdminError::InvalidOperator
-        | AdminError::ProtectedMutation(_)
-        | AdminError::NotUnknown
-        | AdminError::NotStalled
-        | AdminError::NotBacklogged
-        | AdminError::UnknownResolution(_)
-        | AdminError::Subscription(_)
-        | AdminError::BudgetReconciliation(_)
-        | AdminError::Verification(_)
-        | AdminError::RouteInvariant
-        | AdminError::Arithmetic => HumanOperationError::Refused,
+impl From<AdminError> for HumanOperationError {
+    fn from(error: AdminError) -> Self {
+        match error {
+            AdminError::Audit(_) => Self::Unavailable,
+            AdminError::InvalidOperator
+            | AdminError::ProtectedMutation(_)
+            | AdminError::NotUnknown
+            | AdminError::NotStalled
+            | AdminError::NotBacklogged
+            | AdminError::UnknownResolution(_)
+            | AdminError::Subscription(_)
+            | AdminError::BudgetReconciliation(_)
+            | AdminError::Verification(_)
+            | AdminError::RouteInvariant
+            | AdminError::Arithmetic => Self::Refused,
+        }
     }
 }
 

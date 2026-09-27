@@ -1,5 +1,7 @@
 //! Receipt- and protocol-state-authoritative budget reconciliation.
 
+use std::cmp::Ordering;
+
 use crate::protocol_evidence::{
     EvidenceAuthority, RawReceiptEvidence, RawStateEvidence, ReceiptReplayError,
 };
@@ -253,21 +255,21 @@ pub(crate) fn reconcile_state(
         replay.admit(&verified_receipt).map_err(map_replay_error)?;
         last_verified_receipt = Some(verified_receipt.activity_id());
     }
-    let verified = verifier
+    let verified_state = verifier
         .verify_state(&protocol.evidence)
         .map_err(|_| ReconcileError::UnverifiedProtocolState)?;
-    let record = ProtocolBudgetRecord::decode(verified.canonical_state())?;
+    let record = ProtocolBudgetRecord::decode(verified_state.canonical_state())?;
     let protocol_consumed = record.spent_this_period;
     let local_before = local.consumed;
-    let divergence = if local_before == protocol_consumed {
-        None
-    } else if local_before > protocol_consumed {
-        Some(i128::try_from(local_before - protocol_consumed).unwrap_or(i128::MAX))
-    } else {
-        Some(
+    let divergence = match local_before.cmp(&protocol_consumed) {
+        Ordering::Equal => None,
+        Ordering::Greater => {
+            Some(i128::try_from(local_before - protocol_consumed).unwrap_or(i128::MAX))
+        }
+        Ordering::Less => Some(
             i128::try_from(protocol_consumed - local_before)
                 .map_or(i128::MIN, |difference| -difference),
-        )
+        ),
     };
     let state = ReconciliationState {
         last_verified_receipt,
@@ -278,7 +280,7 @@ pub(crate) fn reconcile_state(
         window_start_sequence: record.period_start,
         window_end_sequence: record.window_end_sequence(),
         remaining: record.remaining(),
-        observed_head_sequence: verified.observed_head_sequence(),
+        observed_head_sequence: verified_state.observed_head_sequence(),
     };
     local.consumed = protocol_consumed;
     local.window_start_sequence = record.period_start;

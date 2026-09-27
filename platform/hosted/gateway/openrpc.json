@@ -715,6 +715,110 @@
       ]
     },
     {
+      "name": "lx_getProgramEvents",
+      "paramStructure": "by-position",
+      "params": [
+        {
+          "name": "query",
+          "required": true,
+          "schema": {
+            "type": "object",
+            "properties": {
+              "topic": {
+                "type": "string",
+                "pattern": "^([0-9a-f]{2}){1,64}$"
+              },
+              "from_sequence": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 18446744073709551615
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 256
+              }
+            },
+            "required": [
+              "topic",
+              "from_sequence",
+              "limit"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ],
+      "result": {
+        "name": "page",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "events": {
+              "type": "array",
+              "maxItems": 256,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "sequence": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "program_id": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "topic": {
+                    "type": "string",
+                    "pattern": "^([0-9a-f]{2}){1,64}$"
+                  },
+                  "data": {
+                    "type": "string",
+                    "pattern": "^([0-9a-f]{2})*$",
+                    "maxLength": 131072
+                  }
+                },
+                "required": [
+                  "sequence",
+                  "program_id",
+                  "topic",
+                  "data"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "next_sequence": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "events",
+            "next_sequence"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "description": "Pages committed program events whose topic equals the lowercase hexadecimal topic, starting at the global activity sequence from_sequence and returning at most limit events (1 to 256) in ascending sequence order. Each event carries its global sequence, the emitting program_id, the topic and the raw event data as lowercase hexadecimal; only successful program outcomes contribute. next_sequence is where the following page starts and never passes the node's durable head, so a page past the head is empty with next_sequence equal to the head. The read forwards to the core service's GET /v1/programs/events/<topic>/<from_sequence>/<limit> and every returned event is checked against the query before it is answered. Malformed or extra params return -32602; an unavailable node or core returns -32001; a response that does not match the query returns -32603.",
+      "errors": [
+        {
+          "code": -32602,
+          "message": "Invalid params"
+        },
+        {
+          "code": -32001,
+          "message": "Read unavailable"
+        },
+        {
+          "code": -32005,
+          "message": "Read unavailable"
+        },
+        {
+          "code": -32603,
+          "message": "Invalid upstream response"
+        }
+      ]
+    },
+    {
       "name": "px_resolveAccount",
       "paramStructure": "by-position",
       "params": [

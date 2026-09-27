@@ -1,7 +1,8 @@
 mod support;
 
 use layerx_agentd::budget::{
-    reconcile, LocalAccounting, ProtocolBudgetState, ReconcileError, SpendReceiptEvidence,
+    divergence_alert, reconcile, LocalAccounting, ProtocolBudgetState, ReconcileError,
+    SpendReceiptEvidence,
 };
 
 fn protocol(consumed: u128, start: u64) -> ProtocolBudgetState {
@@ -146,4 +147,62 @@ fn unverified_inputs_never_correct_the_cache() {
     )
     .is_err());
     assert_eq!(local.consumed, 200);
+}
+
+fn canonical_protocol(spent_this_period: u128, head: u64) -> ProtocolBudgetState {
+    let mut record = support::core_budget_record_for([0x51; 32], [0x24; 32], 1_000, 5_000);
+    record[210..226].copy_from_slice(&spent_this_period.to_be_bytes());
+    ProtocolBudgetState {
+        evidence: support::raw_state_leaf(record, head),
+    }
+}
+
+#[test]
+fn only_a_local_cache_that_differs_from_the_verified_record_raises_a_divergence_alert() {
+    let verifier = support::evidence_verifier();
+    let mut agreed = LocalAccounting {
+        consumed: 25,
+        window_start_sequence: 80,
+        last_receipt: None,
+    };
+    let agreed_state = reconcile(&mut agreed, &canonical_protocol(25, 99), &[], &verifier)
+        .unwrap_or_else(|error| panic!("reconcile agreed: {error:?}"));
+    assert_eq!(agreed_state.local_after(), 25);
+    assert_eq!(agreed.consumed, 25);
+    assert_eq!(divergence_alert(&agreed_state, 1_000), None);
+
+    let mut ahead = LocalAccounting {
+        consumed: 900,
+        window_start_sequence: 80,
+        last_receipt: None,
+    };
+    let ahead_state = reconcile(&mut ahead, &canonical_protocol(25, 99), &[], &verifier)
+        .unwrap_or_else(|error| panic!("reconcile ahead: {error:?}"));
+    let ahead_alert = divergence_alert(&ahead_state, 1_000)
+        .unwrap_or_else(|| panic!("a local cache ahead of the record must alert"));
+    assert_eq!(ahead_alert.audit.local_consumed, 900);
+    assert_eq!(ahead_alert.audit.protocol_consumed, 25);
+    assert_eq!(ahead_alert.audit.observed_head_sequence, 99);
+    assert_eq!(ahead_alert.enforced_consumed, 900);
+    assert_eq!(ahead_alert.enforced_remaining, 100);
+    assert!(!ahead_alert.health.ready_for_writes);
+    assert!(ahead_alert.health.divergence_open);
+    assert_eq!(ahead.consumed, 25);
+
+    let mut behind = LocalAccounting {
+        consumed: 5,
+        window_start_sequence: 80,
+        last_receipt: None,
+    };
+    let behind_state = reconcile(&mut behind, &canonical_protocol(25, 99), &[], &verifier)
+        .unwrap_or_else(|error| panic!("reconcile behind: {error:?}"));
+    let behind_alert = divergence_alert(&behind_state, 1_000)
+        .unwrap_or_else(|| panic!("a local cache behind the record must alert"));
+    assert_eq!(behind_alert.audit.local_consumed, 5);
+    assert_eq!(behind_alert.audit.protocol_consumed, 25);
+    assert_eq!(behind_alert.enforced_consumed, 25);
+    assert_eq!(behind_alert.enforced_remaining, 975);
+    assert!(!behind_alert.health.ready_for_writes);
+    assert!(behind_alert.health.divergence_open);
+    assert_eq!(behind.consumed, 25);
 }

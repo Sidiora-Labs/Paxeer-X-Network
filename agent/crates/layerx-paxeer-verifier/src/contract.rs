@@ -99,7 +99,7 @@ pub(crate) fn verify(
     let mut attested = certificate
         .attestations()
         .iter()
-        .map(|attestation| attestation.guarantor_id())
+        .map(layerx_proof::checkpoint::Attestation::guarantor_id)
         .collect::<Vec<_>>();
     attested.sort_unstable();
     let mut recorded = word(32).to_vec();
