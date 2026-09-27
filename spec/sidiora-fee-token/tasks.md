@@ -277,7 +277,7 @@
 ## Wave 5 - Clear the continuous integration legs this feature reddened
 
 - [ ] 5. Make the solidity job and the Human component gate pass with this feature's files present
-  - [ ] 5.1 Build the Sidiora governance test in the solidity job from the pinned libraries
+  - [x] 5.1 Build the Sidiora governance test in the solidity job from the pinned libraries
     - The solidity job of .github/workflows/ci.yml builds the kernel Foundry project, whose test directory now carries test/SidioraProxyGovernance.t.sol, and that test resolves ERC1967Proxy, ERC1967Utils, UUPSUpgradeable, Initializable and Ownable through contracts/lib/openzeppelin-contracts, which no step of that job populates; add one step running bash contracts/bootstrap-libs.sh immediately before the build step, so the job resolves them from the same pinned checkout the Paxeer project uses while the formatting and state-surface steps keep running against the tracked tree alone.
     - Keep contracts/bootstrap-libs.sh the one place the two library tags are written: replace the two literal git clone lines in the Run Forge build step of .github/workflows/paxeer-forge-test.yml with a call to that script, and correct the script's header comment so it states it is the only source of the pins.
     - Add no remapping to foundry.toml and move no test: the governance test imports the libraries by a relative path the checkout already resolves, and moving it under contracts/test would take it away from contracts/governance and scripts, which the Paxeer project does not compile.

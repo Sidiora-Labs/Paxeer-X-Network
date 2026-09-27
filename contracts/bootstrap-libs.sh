@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Fetches the two pinned Solidity libraries the Paxeer Foundry build needs into
-# contracts/lib. Neither library is committed: this script and the Paxeer forge
-# workflow are the only ways lib is populated, and both clone the same tags.
+# Fetches the two pinned Solidity libraries the Foundry builds need into
+# contracts/lib. Neither library is committed, and this script is the only place
+# their tags are written: the Paxeer forge workflow and the continuous
+# integration solidity job both populate lib by calling it.
 # Running it again with both libraries already at their pinned tag and unmodified
 # does nothing; a checkout whose contents were edited is replaced.
 set -euo pipefail

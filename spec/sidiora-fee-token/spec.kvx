@@ -956,7 +956,11 @@ status = "pending"
 
 [task.5.1]
 title = "Build the Sidiora governance test in the solidity job from the pinned libraries"
-status = "pending"
+status = "done"
+revision = "0f00d8c483860a2f7d2e9606be10c82def55b5cf"
+command = "timeout 25m sh -c 'forge fmt --check && tools/ci/solidity-state-surface.sh && bash contracts/bootstrap-libs.sh && forge build --sizes && forge test -vvv'"
+exit_code = 0
+log_path = ".logs/verify.log"
 wave = 5
 requires = []
 do_1 = "The solidity job of .github/workflows/ci.yml builds the kernel Foundry project, whose test directory now carries test/SidioraProxyGovernance.t.sol, and that test resolves ERC1967Proxy, ERC1967Utils, UUPSUpgradeable, Initializable and Ownable through contracts/lib/openzeppelin-contracts, which no step of that job populates; add one step running bash contracts/bootstrap-libs.sh immediately before the build step, so the job resolves them from the same pinned checkout the Paxeer project uses while the formatting and state-surface steps keep running against the tracked tree alone."
