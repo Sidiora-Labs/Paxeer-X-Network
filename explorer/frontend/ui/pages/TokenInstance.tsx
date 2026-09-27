@@ -3,11 +3,9 @@ import { useRouter } from 'next/router';
 import React from 'react';
 
 import type { TabItemRegular } from 'toolkit/components/AdaptiveTabs/types';
-import type { PaginationParams } from 'ui/shared/pagination/types';
 
 import useApiQuery from 'lib/api/useApiQuery';
 import throwOnResourceLoadError from 'lib/errors/throwOnResourceLoadError';
-import useIsMobile from 'lib/hooks/useIsMobile';
 import * as metadata from 'lib/metadata';
 import getQueryParamString from 'lib/router/getQueryParamString';
 import {
@@ -18,7 +16,6 @@ import {
 } from 'stubs/token';
 import RoutedTabs from 'toolkit/components/RoutedTabs/RoutedTabs';
 import TextAd from 'ui/shared/ad/TextAd';
-import Pagination from 'ui/shared/pagination/Pagination';
 import useQueryWithPages from 'ui/shared/pagination/useQueryWithPages';
 import TokenHolders from 'ui/token/TokenHolders/TokenHolders';
 import TokenTransfer from 'ui/token/TokenTransfer/TokenTransfer';
@@ -32,7 +29,6 @@ export type TokenTabs = 'token_transfers' | 'holders';
 
 const TokenInstanceContent = () => {
   const router = useRouter();
-  const isMobile = useIsMobile();
 
   const hash = getQueryParamString(router.query.hash);
   const id = getQueryParamString(router.query.id);
@@ -53,6 +49,13 @@ const TokenInstanceContent = () => {
     queryOptions: {
       enabled: Boolean(hash && id),
       placeholderData: TOKEN_INSTANCE,
+    },
+  });
+
+  const transfersCountQuery = useApiQuery('general:token_instance_transfers_count', {
+    pathParams: { hash, id },
+    queryOptions: {
+      enabled: Boolean(hash && id),
     },
   });
 
@@ -104,7 +107,7 @@ const TokenInstanceContent = () => {
           tokenQuery={ tokenQuery }
           tokenInstance={ tokenInstanceQuery.data }
           shouldRender={ !isLoading }
-          tabsHeight={ 80 }
+          transfersCount={ transfersCountQuery.data?.transfers_count }
         />
       ),
     },
@@ -112,7 +115,7 @@ const TokenInstanceContent = () => {
       {
         id: 'holders',
         title: 'Holders',
-        component: <TokenHolders holdersQuery={ holdersQuery } token={ tokenQuery.data } shouldRender={ !isLoading } tabsHeight={ 80 }/>,
+        component: <TokenHolders holdersQuery={ holdersQuery } token={ tokenQuery.data } shouldRender={ !isLoading }/>,
       } :
       undefined,
     { id: 'metadata', title: 'Metadata', component: (
@@ -124,14 +127,6 @@ const TokenInstanceContent = () => {
   ].filter(Boolean);
 
   throwOnResourceLoadError(tokenInstanceQuery);
-
-  let pagination: PaginationParams | undefined;
-
-  if (tab === 'token_transfers' || !tab) {
-    pagination = transfersQuery.pagination;
-  } else if (tab === 'holders') {
-    pagination = holdersQuery.pagination;
-  }
 
   return (
     <MetadataUpdateProvider>
@@ -151,10 +146,9 @@ const TokenInstanceContent = () => {
 
       <RoutedTabs
         tabs={ tabs }
-        listProps={ isMobile ? { mt: 8 } : { mt: 3, py: 5, marginBottom: 0 } }
+        variant="pill"
+        size="sm"
         isLoading={ isLoading }
-        rightSlot={ !isMobile && pagination?.isVisible ? <Pagination { ...pagination }/> : null }
-        stickyEnabled={ !isMobile }
       />
 
       <TokenInstanceMetadataFetcher hash={ hash } id={ id }/>

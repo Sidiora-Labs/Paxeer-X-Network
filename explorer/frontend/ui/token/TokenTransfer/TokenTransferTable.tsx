@@ -31,7 +31,7 @@ const TokenTransferTable = ({ data, top, showSocketInfo, showSocketErrorAlert, s
 
   return (
     <AddressHighlightProvider>
-      <TableRoot minW="950px">
+      <TableRoot variant="scan" minW="950px" data-token-transfer-table>
         <TableHeaderSticky top={ top }>
           <TableRow>
             { chainData && <TableColumnHeader width="38px"/> }

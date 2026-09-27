@@ -34,10 +34,14 @@ const TokenInventoryItem = ({ item, token, isLoading }: Props) => {
 
   return (
     <Box
+      data-inventory-item={ item.id }
       w={{ base: '100%', lg: '210px' }}
-      border="1px solid"
-      borderColor={{ _light: 'blackAlpha.100', _dark: 'whiteAlpha.200' }}
-      borderRadius="12px"
+      bg="bg.surface"
+      borderWidth="1px"
+      borderStyle="solid"
+      borderColor="border.divider"
+      borderRadius="md"
+      boxShadow="card"
       p="10px"
       textStyle="sm"
       fontWeight={ 500 }

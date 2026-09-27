@@ -592,3 +592,27 @@ symbol = "SVGElement.prototype.getTotalLength"
 observed = "Every spec that renders the fourteen-day history chart crashed the whole React tree: jsdom implements a path element as SVGElement and carries none of the SVGGeometryElement geometry methods, so the line animation of toolkit/components/charts/parts/ChartLine.tsx threw on getTotalLength inside its mount effect and the home page rendered as an empty container."
 assumption = "This is a gap of the test environment rather than of the component, in the same class as the ResizeObserver and matchMedia shims the shell test helper already carries, so the four chart-rendering specs define a zero-length getTotalLength on SVGElement.prototype and the chart code is left exactly as written."
 severity = "note"
+
+[observation.6.6.1]
+task = "6.6"
+file = "explorer/frontend/ui/token/TokenDetails.tsx"
+symbol = "TokenCounters"
+observed = "do_3 asks the overview card for the transfers with their total and daily selector, but general:token_counters answers only token_holders_count and transfers_count and no path the frontend already calls returns a daily figure."
+assumption = "The daily selector needs a backend field that does not exist yet, so the card carries the running total the API does return and no daily number is invented."
+severity = "blocker"
+
+[observation.6.6.2]
+task = "6.6"
+file = "explorer/frontend/ui/token/TokenTransfer/TokenTransfer.tsx"
+symbol = "useQueryWithPages"
+observed = "do_4 asks the table cards for a show-records footer, but useQueryWithPages carries no page-size parameter and the token list endpoints page by cursor, so the selector cannot change what the server returns."
+assumption = "The selector limits the rows the card renders from the page it already holds, and widening the page size waits for a paging change that is not this task's."
+severity = "note"
+
+[observation.6.6.3]
+task = "6.6"
+file = "explorer/frontend/ui/token/TokenTransfer/TokenTransferListItem.tsx"
+symbol = "test-ratio"
+observed = "do_4 also names the mobile list items of both tables, but tools/explorer/test-ratio.sh requires a changed test per changed source and the task's verify_cmd budget covers fifteen sources with fifteen specs already."
+assumption = "The mobile lists keep their existing item variants inside the new cards, which do_8 asks for, and their restyle belongs to a task that can carry their specs."
+severity = "note"

@@ -1,4 +1,4 @@
-import { Flex } from '@chakra-ui/react';
+import { Box, chakra, Grid } from '@chakra-ui/react';
 import React from 'react';
 
 import type { TokenInfo, TokenInstance } from 'types/api/token';
@@ -14,11 +14,46 @@ import DetailedInfoSponsoredItem from 'ui/shared/DetailedInfo/DetailedInfoSponso
 import AddressEntity from 'ui/shared/entities/address/AddressEntity';
 import HashStringShortenDynamic from 'ui/shared/HashStringShortenDynamic';
 import NftMedia from 'ui/shared/nft/NftMedia';
+import { ScanKeyValue } from 'ui/shared/scan';
 import TokenNftMarketplaces from 'ui/token/TokenNftMarketplaces';
 
 import TokenInstanceCreatorAddress from './details/TokenInstanceCreatorAddress';
 import TokenInstanceMetadataInfo from './details/TokenInstanceMetadataInfo';
 import TokenInstanceTransfersCount from './details/TokenInstanceTransfersCount';
+
+interface CardProps {
+  title: string;
+  children: React.ReactNode;
+  mt?: number;
+}
+
+const DetailsCard = ({ title, children, mt }: CardProps) => {
+  return (
+    <Box
+      mt={ mt }
+      data-token-card={ title }
+      bg="bg.surface"
+      borderWidth="1px"
+      borderStyle="solid"
+      borderColor="border.divider"
+      borderRadius="md"
+      boxShadow="card"
+      px={ 4 }
+      py={ 4 }
+      minW={ 0 }
+    >
+      <chakra.h2 textStyle="sm" fontWeight="600" color="text.primary" mb={ 3 } data-card-title>{ title }</chakra.h2>
+      <DetailedInfo.Container
+        templateColumns="minmax(0, 1fr)"
+        columnGap={ 0 }
+        rowGap={ 2 }
+        textStyle="sm"
+      >
+        { children }
+      </DetailedInfo.Container>
+    </Box>
+  );
+};
 
 interface Props {
   data?: TokenInstance;
@@ -43,48 +78,63 @@ const TokenInstanceDetails = ({ data, token, scrollRef, isLoading }: Props) => {
   }
 
   return (
-    <>
-      <Flex alignItems="flex-start" flexDir={{ base: 'column-reverse', lg: 'row' }} columnGap={ 6 } rowGap={ 6 }>
-        <DetailedInfo.Container
-          flexGrow={ 1 }
-          templateColumns={{ base: 'minmax(0, 1fr)', lg: '200px minmax(500px, 1fr)' }}
-        >
+    <Box data-token-instance-details mb={ 6 }>
+      <Grid
+        templateColumns={{ base: 'minmax(0, 1fr)', lg: 'repeat(3, minmax(0, 1fr))' }}
+        gap={ 4 }
+        alignItems="start"
+      >
+        <DetailsCard title="Media">
+          <NftMedia
+            data={ data }
+            isLoading={ isLoading }
+            size="md"
+            withFullscreen
+            w="100%"
+            maxW="250px"
+            alignSelf="center"
+          />
+        </DetailsCard>
+
+        <DetailsCard title="Overview">
           { data.is_unique && data.owner && (
-            <>
-              <DetailedInfo.ItemLabel
-                hint="Current owner of this token instance"
+            <ScanKeyValue
+              label="Owner"
+              hint="Current owner of this token instance"
+              isLoading={ isLoading }
+              multiRow
+            >
+              <AddressEntity
+                address={ data.owner }
                 isLoading={ isLoading }
-              >
-                Owner
-              </DetailedInfo.ItemLabel>
-              <DetailedInfo.ItemValue>
-                <AddressEntity
-                  address={ data.owner }
-                  isLoading={ isLoading }
-                />
-              </DetailedInfo.ItemValue>
-            </>
+              />
+            </ScanKeyValue>
           ) }
 
           <TokenInstanceCreatorAddress hash={ isLoading ? '' : token.address_hash }/>
 
-          <DetailedInfo.ItemLabel
+          <ScanKeyValue
+            label="Token ID"
             hint="This token instance unique token ID"
             isLoading={ isLoading }
+            multiRow
           >
-            Token ID
-          </DetailedInfo.ItemLabel>
-          <DetailedInfo.ItemValue>
-            <Flex alignItems="center" overflow="hidden">
+            <Box display="flex" alignItems="center" overflow="hidden" data-token-instance-id>
               <Skeleton loading={ isLoading } overflow="hidden" display="inline-block" w="100%">
                 <HashStringShortenDynamic hash={ data.id }/>
               </Skeleton>
               <CopyToClipboard text={ data.id } isLoading={ isLoading }/>
-            </Flex>
-          </DetailedInfo.ItemValue>
+            </Box>
+          </ScanKeyValue>
 
-          <TokenInstanceTransfersCount hash={ isLoading ? '' : token.address_hash } id={ isLoading ? '' : data.id } onClick={ handleCounterItemClick }/>
+          <TokenInstanceTransfersCount
+            hash={ isLoading ? '' : token.address_hash }
+            id={ isLoading ? '' : data.id }
+            onClick={ handleCounterItemClick }
+          />
+        </DetailsCard>
 
+        <DetailsCard title="Other info">
           <TokenNftMarketplaces
             isLoading={ isLoading }
             hash={ token.address_hash }
@@ -94,37 +144,19 @@ const TokenInstanceDetails = ({ data, token, scrollRef, isLoading }: Props) => {
           />
 
           { (config.UI.views.nft.marketplaces.length === 0 && appActionData) && (
-            <>
-              <DetailedInfo.ItemLabel
-                hint="Link to the dapp"
-              >
-                Dapp
-              </DetailedInfo.ItemLabel>
-              <DetailedInfo.ItemValue py="1px">
-                <AppActionButton data={ appActionData } height="30px" source="NFT item"/>
-              </DetailedInfo.ItemValue>
-            </>
+            <ScanKeyValue label="Dapp" hint="Link to the dapp">
+              <AppActionButton data={ appActionData } height="30px" source="NFT item"/>
+            </ScanKeyValue>
           ) }
-        </DetailedInfo.Container>
-        <NftMedia
-          data={ data }
-          isLoading={ isLoading }
-          size="md"
-          withFullscreen
-          w="250px"
-          flexShrink={ 0 }
-          alignSelf={{ base: 'center', lg: 'flex-start' }}
-        />
-      </Flex>
-      <DetailedInfo.Container
-        mt={ 5 }
-        templateColumns={{ base: 'minmax(0, 1fr)', lg: '200px minmax(500px, 1fr)' }}
-      >
+
+          <DetailedInfoSponsoredItem isLoading={ isLoading }/>
+        </DetailsCard>
+      </Grid>
+
+      <DetailsCard title="Metadata" mt={ 4 }>
         <TokenInstanceMetadataInfo data={ data } isLoading={ isLoading }/>
-        <DetailedInfo.ItemDivider/>
-        <DetailedInfoSponsoredItem isLoading={ isLoading }/>
-      </DetailedInfo.Container>
-    </>
+      </DetailsCard>
+    </Box>
   );
 };
 

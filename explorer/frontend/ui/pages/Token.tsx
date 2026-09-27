@@ -6,11 +6,9 @@ import React, { useEffect } from 'react';
 import type { SocketMessage } from 'lib/socket/types';
 import type { TabItemRegular } from 'toolkit/components/AdaptiveTabs/types';
 import type { TokenInfo } from 'types/api/token';
-import type { PaginationParams } from 'ui/shared/pagination/types';
 
 import config from 'configs/app';
 import useApiQuery, { getResourceKey } from 'lib/api/useApiQuery';
-import useIsMobile from 'lib/hooks/useIsMobile';
 import * as metadata from 'lib/metadata';
 import getQueryParamString from 'lib/router/getQueryParamString';
 import useEtherscanRedirects from 'lib/router/useEtherscanRedirects';
@@ -25,13 +23,10 @@ import RoutedTabs from 'toolkit/components/RoutedTabs/RoutedTabs';
 import Address3rdPartyWidgets from 'ui/address/Address3rdPartyWidgets';
 import useAddress3rdPartyWidgets from 'ui/address/address3rdPartyWidgets/useAddress3rdPartyWidgets';
 import AddressContract from 'ui/address/AddressContract';
-import AddressCsvExportLink from 'ui/address/AddressCsvExportLink';
 import { CONTRACT_TAB_IDS } from 'ui/address/contract/utils';
 import TextAd from 'ui/shared/ad/TextAd';
 import IconSvg from 'ui/shared/IconSvg';
-import Pagination from 'ui/shared/pagination/Pagination';
 import useQueryWithPages from 'ui/shared/pagination/useQueryWithPages';
-import TokenAdvancedFilterLink from 'ui/token/TokenAdvancedFilterLink';
 import TokenDetails from 'ui/token/TokenDetails';
 import TokenHolders from 'ui/token/TokenHolders/TokenHolders';
 import TokenInventory from 'ui/token/TokenInventory';
@@ -41,17 +36,10 @@ import useTokenQuery from 'ui/token/useTokenQuery';
 
 export type TokenTabs = 'token_transfers' | 'holders' | 'inventory';
 
-const TABS_RIGHT_SLOT_PROPS = {
-  display: 'flex',
-  alignItems: 'center',
-  columnGap: 4,
-};
-
 const TokenPageContent = () => {
   const [ isQueryEnabled, setIsQueryEnabled ] = React.useState(false);
   const [ totalSupplySocket, setTotalSupplySocket ] = React.useState<number>();
   const router = useRouter();
-  const isMobile = useIsMobile();
 
   const scrollRef = React.useRef<HTMLDivElement>(null);
 
@@ -69,6 +57,14 @@ const TokenPageContent = () => {
     queryOptions: {
       enabled: isQueryEnabled && Boolean(router.query.hash),
       placeholderData: addressStubs.ADDRESS_INFO,
+    },
+  });
+
+  const tokenCountersQuery = useApiQuery('general:token_counters', {
+    pathParams: { hash: hashString },
+    queryOptions: {
+      enabled: Boolean(router.query.hash),
+      placeholderData: tokenStubs.TOKEN_COUNTERS,
     },
   });
 
@@ -129,7 +125,6 @@ const TokenPageContent = () => {
 
   const hasData = (tokenQuery.data && !tokenQuery.isPlaceholderData) && (addressQuery.data && !addressQuery.isPlaceholderData);
   const hasInventoryTab = tokenQuery.data?.type && NFT_TOKEN_TYPE_IDS.includes(tokenQuery.data.type);
-  const isFirstTabTokenTransfer = !hasInventoryTab && !tab;
 
   const transfersQuery = useQueryWithPages({
     resourceName: 'general:token_transfers',
@@ -183,21 +178,46 @@ const TokenPageContent = () => {
     addressQuery.isPlaceholderData ||
     (address3rdPartyWidgets.isEnabled && address3rdPartyWidgets.configQuery.isPlaceholderData);
 
+  const counters = tokenCountersQuery.isPlaceholderData ? undefined : tokenCountersQuery.data;
+  const transfersCount = counters?.transfers_count !== undefined ? Number(counters.transfers_count) : undefined;
+  const holdersCount = counters?.token_holders_count !== undefined ? Number(counters.token_holders_count) : undefined;
+
   const tabs: Array<TabItemRegular> = [
     hasInventoryTab ? {
       id: 'inventory',
       title: 'Inventory',
-      component: <TokenInventory inventoryQuery={ inventoryQuery } tokenQuery={ tokenQuery } ownerFilter={ ownerFilter } shouldRender={ !isLoading }/>,
+      component: (
+        <TokenInventory
+          inventoryQuery={ inventoryQuery }
+          tokenQuery={ tokenQuery }
+          ownerFilter={ ownerFilter }
+          shouldRender={ !isLoading }
+        />
+      ),
     } : undefined,
     {
       id: 'token_transfers',
       title: 'Token transfers',
-      component: <TokenTransfer transfersQuery={ transfersQuery } tokenQuery={ tokenQuery } shouldRender={ !isLoading }/>,
+      component: (
+        <TokenTransfer
+          transfersQuery={ transfersQuery }
+          tokenQuery={ tokenQuery }
+          shouldRender={ !isLoading }
+          transfersCount={ transfersCount }
+        />
+      ),
     },
     {
       id: 'holders',
       title: 'Holders',
-      component: <TokenHolders token={ tokenQuery.data } holdersQuery={ holdersQuery } shouldRender={ !isLoading }/>,
+      component: (
+        <TokenHolders
+          token={ tokenQuery.data }
+          holdersQuery={ holdersQuery }
+          shouldRender={ !isLoading }
+          holdersCount={ holdersCount }
+        />
+      ),
     },
     addressQuery.data?.is_contract ? {
       id: 'contract',
@@ -224,56 +244,6 @@ const TokenPageContent = () => {
     } : undefined,
   ].filter(Boolean);
 
-  let pagination: PaginationParams | undefined;
-
-  if (isFirstTabTokenTransfer || tab === 'token_transfers') {
-    pagination = transfersQuery.pagination;
-  }
-
-  if (router.query.tab === 'holders') {
-    pagination = holdersQuery.pagination;
-  }
-
-  // default tab for nfts is token inventory
-  if ((hasInventoryTab && !tab) || tab === 'inventory') {
-    pagination = inventoryQuery.pagination;
-  }
-
-  const tabListProps = React.useCallback(() => {
-    if (isMobile) {
-      return { mt: 8 };
-    }
-
-    return {
-      pt: 6,
-      pb: 6,
-      marginBottom: 0,
-    };
-  }, [ isMobile ]);
-
-  const tabsRightSlot = React.useMemo(() => {
-    if (isMobile) {
-      return null;
-    }
-
-    return (
-      <>
-        { (tab === 'token_transfers' || tab === '') && (
-          <TokenAdvancedFilterLink token={ tokenQuery.data } ml={ 6 }/>
-        ) }
-        { tab === 'holders' && (
-          <AddressCsvExportLink
-            address={ hashString }
-            params={{ type: 'holders' }}
-            isLoading={ pagination?.isLoading }
-            ml={ 6 }
-          />
-        ) }
-        { pagination?.isVisible && <Pagination { ...pagination }/> }
-      </>
-    );
-  }, [ hashString, isMobile, pagination, tab, tokenQuery.data ]);
-
   return (
     <>
       <TextAd mb={ 6 }/>
@@ -292,10 +262,8 @@ const TokenPageContent = () => {
 
       <RoutedTabs
         tabs={ tabs }
-        listProps={ tabListProps }
-        rightSlot={ tabsRightSlot }
-        rightSlotProps={ TABS_RIGHT_SLOT_PROPS }
-        stickyEnabled={ !isMobile }
+        variant="pill"
+        size="sm"
         isLoading={ isLoading }
       />
     </>

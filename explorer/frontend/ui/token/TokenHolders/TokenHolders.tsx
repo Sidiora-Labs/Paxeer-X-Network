@@ -6,27 +6,28 @@ import type { TokenInfo } from 'types/api/token';
 import useIsMobile from 'lib/hooks/useIsMobile';
 import useIsMounted from 'lib/hooks/useIsMounted';
 import AddressCsvExportLink from 'ui/address/AddressCsvExportLink';
-import ActionBar from 'ui/shared/ActionBar';
 import DataFetchAlert from 'ui/shared/DataFetchAlert';
 import DataListDisplay from 'ui/shared/DataListDisplay';
 import Pagination from 'ui/shared/pagination/Pagination';
 import type { QueryWithPagesResult } from 'ui/shared/pagination/useQueryWithPages';
+import { formatScanTableCount, ScanShowRows, ScanTableCard, SCAN_ROWS_PER_PAGE } from 'ui/shared/scan';
 
 import TokenHoldersList from './TokenHoldersList';
 import TokenHoldersTable from './TokenHoldersTable';
 
-const TABS_HEIGHT = 88;
+const DEFAULT_ROWS_TO_SHOW = 50;
 
 type Props = {
   token?: TokenInfo;
   holdersQuery: QueryWithPagesResult<'general:token_holders'>;
   shouldRender?: boolean;
-  tabsHeight?: number;
+  holdersCount?: number;
 };
 
-const TokenHolders = ({ holdersQuery, token, shouldRender = true, tabsHeight = TABS_HEIGHT }: Props) => {
+const TokenHolders = ({ holdersQuery, token, shouldRender = true, holdersCount }: Props) => {
   const isMobile = useIsMobile();
   const isMounted = useIsMounted();
+  const [ rowsToShow, setRowsToShow ] = React.useState(DEFAULT_ROWS_TO_SHOW);
 
   if (!isMounted || !shouldRender) {
     return null;
@@ -36,20 +37,7 @@ const TokenHolders = ({ holdersQuery, token, shouldRender = true, tabsHeight = T
     return <DataFetchAlert/>;
   }
 
-  const actionBar = isMobile && holdersQuery.pagination.isVisible && (
-    <ActionBar mt={ -6 }>
-      { token && (
-        <AddressCsvExportLink
-          address={ token.address_hash }
-          params={{ type: 'holders' }}
-          isLoading={ holdersQuery.pagination.isLoading }
-        />
-      ) }
-      <Pagination ml="auto" { ...holdersQuery.pagination }/>
-    </ActionBar>
-  );
-
-  const items = holdersQuery.data?.items;
+  const items = holdersQuery.data?.items.slice(0, rowsToShow);
 
   const content = items && token ? (
     <>
@@ -57,7 +45,7 @@ const TokenHolders = ({ holdersQuery, token, shouldRender = true, tabsHeight = T
         <TokenHoldersTable
           data={ items }
           token={ token }
-          top={ tabsHeight }
+          top={ 0 }
           isLoading={ holdersQuery.isPlaceholderData }
         />
       </Box>
@@ -71,15 +59,52 @@ const TokenHolders = ({ holdersQuery, token, shouldRender = true, tabsHeight = T
     </>
   ) : null;
 
+  const itemsNum = items?.length ?? 0;
+  const title = formatScanTableCount((() => {
+    if (holdersCount !== undefined) {
+      return itemsNum < holdersCount ?
+        { kind: 'latest' as const, value: holdersCount, itemsName: 'holders', shownValue: itemsNum } :
+        { kind: 'total' as const, value: holdersCount, itemsName: 'holders' };
+    }
+
+    return holdersQuery.pagination.hasNextPage ?
+      { kind: 'more_than' as const, value: itemsNum, itemsName: 'holders' } :
+      { kind: 'total' as const, value: itemsNum, itemsName: 'holders' };
+  })());
+
+  const actions = !isMobile && token ? (
+    <AddressCsvExportLink
+      address={ token.address_hash }
+      label="Download Page Data"
+      params={{ type: 'holders' }}
+      isLoading={ holdersQuery.pagination.isLoading }
+    />
+  ) : null;
+
   return (
-    <DataListDisplay
-      isError={ holdersQuery.isError }
-      itemsNum={ holdersQuery.data?.items.length }
-      emptyText="There are no holders for this token."
-      actionBar={ actionBar }
+    <ScanTableCard
+      title={ title }
+      actions={ actions }
+      pagination={ holdersQuery.pagination.isVisible ? <Pagination { ...holdersQuery.pagination }/> : null }
+      showRows={ (
+        <ScanShowRows
+          value={ rowsToShow }
+          onValueChange={ setRowsToShow }
+          options={ SCAN_ROWS_PER_PAGE }
+          label="Show"
+          suffix="Records"
+          isLoading={ holdersQuery.pagination.isLoading }
+        />
+      ) }
     >
-      { content }
-    </DataListDisplay>
+      <DataListDisplay
+        isError={ holdersQuery.isError }
+        itemsNum={ itemsNum }
+        emptyText="There are no holders for this token."
+      >
+        { content }
+      </DataListDisplay>
+    </ScanTableCard>
   );
 };
 

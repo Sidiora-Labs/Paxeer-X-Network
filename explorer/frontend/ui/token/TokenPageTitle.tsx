@@ -1,4 +1,4 @@
-import { Flex, useToken } from '@chakra-ui/react';
+import { chakra, Flex, useToken } from '@chakra-ui/react';
 import type { UseQueryResult } from '@tanstack/react-query';
 import React from 'react';
 
@@ -6,11 +6,16 @@ import type { Address } from 'types/api/address';
 import type { TokenInfo, TokenVerifiedInfo as TTokenVerifiedInfo } from 'types/api/token';
 import type { EntityTag } from 'ui/shared/EntityTags/types';
 
+import { route } from 'nextjs/routes';
+
 import config from 'configs/app';
 import useAddressMetadataInfoQuery from 'lib/address/useAddressMetadataInfoQuery';
 import type { ResourceError } from 'lib/api/resources';
 import { useMultichainContext } from 'lib/contexts/multichain';
 import { getTokenTypeName } from 'lib/token/tokenTypes';
+import { Link } from 'toolkit/chakra/link';
+import { Skeleton } from 'toolkit/chakra/skeleton';
+import { Tag } from 'toolkit/chakra/tag';
 import { Tooltip } from 'toolkit/chakra/tooltip';
 import AddressAlerts from 'ui/address/details/AddressAlerts';
 import AddressQrCode from 'ui/address/details/AddressQrCode';
@@ -24,10 +29,13 @@ import sortEntityTags from 'ui/shared/EntityTags/sortEntityTags';
 import IconSvg from 'ui/shared/IconSvg';
 import NetworkExplorers from 'ui/shared/NetworkExplorers';
 import PageTitle from 'ui/shared/Page/PageTitle';
+import { ScanMethodChip } from 'ui/shared/scan';
 
 import TokenVerifiedInfo from './TokenVerifiedInfo';
 
 const PREDEFINED_TAG_PRIORITY = 100;
+
+const apiDocsFeature = config.features.apiDocs;
 
 interface Props {
   tokenQuery: UseQueryResult<TokenInfo, ResourceError<unknown>>;
@@ -54,12 +62,6 @@ const TokenPageTitle = ({ tokenQuery, addressQuery, verifiedInfoQuery, hash }: P
 
   const tags: Array<EntityTag> = React.useMemo(() => {
     return [
-      tokenQuery.data ? {
-        slug: tokenQuery.data?.type,
-        name: getTokenTypeName(tokenQuery.data.type, multichainContext?.chain?.app_config),
-        tagType: 'custom' as const,
-        ordinal: PREDEFINED_TAG_PRIORITY,
-      } : undefined,
       config.features.bridgedTokens.isEnabled && tokenQuery.data?.is_bridged ?
         {
           slug: 'bridged',
@@ -80,47 +82,88 @@ const TokenPageTitle = ({ tokenQuery, addressQuery, verifiedInfoQuery, hash }: P
     addressQuery.data,
     bridgedTokenTagBgColor,
     bridgedTokenTagTextColor,
-    tokenQuery.data,
+    tokenQuery.data?.is_bridged,
     verifiedInfoQuery.data?.projectSector,
     hash,
-    multichainContext?.chain?.app_config,
   ]);
+
+  const standard = tokenQuery.data ? getTokenTypeName(tokenQuery.data.type, multichainContext?.chain?.app_config) : undefined;
+  const implementation = addressQuery.data?.implementations?.[0];
 
   const contentAfter = (
     <>
+      <Skeleton loading={ tokenQuery.isPlaceholderData }>
+        <chakra.span textStyle="lg" color="text.secondary" data-token-name>
+          { `${ tokenQuery.data?.name || 'Unnamed token' }${ tokenSymbolText }` }
+        </chakra.span>
+      </Skeleton>
       { tokenQuery.data && <TokenEntity.Reputation value={ tokenQuery.data.reputation } ml={ 0 }/> }
       { verifiedInfoQuery.data?.tokenAddress && (
         <Tooltip content={ `Information on this token has been verified by ${ config.chain.name }` }>
-          <IconSvg name="certified" color="green.500" boxSize={ 6 } cursor="pointer"/>
+          <IconSvg name="certified" color="green.500" boxSize={ 6 } cursor="pointer" data-token-verified/>
         </Tooltip>
       ) }
-      <EntityTags
-        isLoading={ isLoading || (config.features.addressMetadata.isEnabled && addressMetadataQuery.isPending) }
-        tags={ tags }
-        addressHash={ addressQuery.data?.hash }
-        flexGrow={ 1 }
-      />
     </>
   );
 
-  const secondRow = (
-    <Flex alignItems="center" w="100%" minW={ 0 } columnGap={ 2 } rowGap={ 2 } flexWrap={{ base: 'wrap', lg: 'nowrap' }}>
-      { addressQuery.data && (
-        <AddressEntity
-          address={{ ...addressQuery.data, name: '' }}
-          isLoading={ isLoading }
-          variant="subheading"
-          icon={ multichainContext?.chain ? {
-            shield: { name: 'pie_chart', isLoading },
-          } : undefined }
+  const apiEntry = apiDocsFeature.isEnabled ? (
+    <Link
+      href={ route({ pathname: '/api-docs' }, multichainContext) }
+      data-token-api-link
+      display="inline-flex"
+      alignItems="center"
+      columnGap={ 1 }
+      textStyle="sm"
+      fontWeight="500"
+    >
+      <IconSvg name="API" boxSize={ 5 }/>
+      API
+    </Link>
+  ) : null;
+
+  const chipRow = (
+    <Flex
+      data-token-chip-row
+      alignItems="center"
+      justifyContent="space-between"
+      w="100%"
+      minW={ 0 }
+      columnGap={ 3 }
+      rowGap={ 3 }
+      flexWrap="wrap"
+    >
+      <Flex alignItems="center" minW={ 0 } columnGap={ 2 } rowGap={ 2 } flexWrap="wrap" data-token-chips>
+        { standard && <ScanMethodChip method={ standard } isLoading={ tokenQuery.isPlaceholderData }/> }
+        { addressQuery.data?.is_verified && (
+          <ScanMethodChip
+            method={ implementation ? 'Source Code (Proxy)' : 'Source Code' }
+            isLoading={ addressQuery.isPlaceholderData }
+          />
+        ) }
+        { implementation && (
+          <Tag variant="outlined" label="Implementation" loading={ addressQuery.isPlaceholderData } data-token-implementation>
+            <AddressEntity
+              address={{ hash: implementation.address_hash, name: implementation.name ?? null }}
+              isLoading={ addressQuery.isPlaceholderData }
+              noIcon
+              noCopy
+              truncation="constant"
+            />
+          </Tag>
+        ) }
+        <EntityTags
+          isLoading={ isLoading || (config.features.addressMetadata.isEnabled && addressMetadataQuery.isPending) }
+          tags={ tags }
+          addressHash={ addressQuery.data?.hash }
         />
-      ) }
-      { !isLoading && tokenQuery.data && <AddressAddToWallet token={ tokenQuery.data } variant="button"/> }
-      { addressQuery.data && <AddressQrCode hash={ addressQuery.data.hash } isLoading={ isLoading }/> }
-      <AccountActionsMenu isLoading={ isLoading }/>
-      <Flex ml={{ base: 0, lg: 'auto' }} columnGap={ 2 } flexGrow={{ base: 1, lg: 0 }}>
+      </Flex>
+      <Flex alignItems="center" columnGap={ 2 } rowGap={ 2 } flexWrap="wrap" data-token-actions>
         <TokenVerifiedInfo verifiedInfoQuery={ verifiedInfoQuery }/>
-        <NetworkExplorers type="token" pathParam={ addressHash } ml={{ base: 'auto', lg: 0 }}/>
+        { apiEntry }
+        { !isLoading && tokenQuery.data && <AddressAddToWallet token={ tokenQuery.data } variant="button"/> }
+        { addressQuery.data && <AddressQrCode hash={ addressQuery.data.hash } isLoading={ isLoading }/> }
+        <NetworkExplorers type="token" pathParam={ addressHash }/>
+        <AccountActionsMenu isLoading={ isLoading }/>
       </Flex>
     </Flex>
   );
@@ -128,7 +171,7 @@ const TokenPageTitle = ({ tokenQuery, addressQuery, verifiedInfoQuery, hash }: P
   return (
     <>
       <PageTitle
-        title={ `${ tokenQuery.data?.name || 'Unnamed token' }${ tokenSymbolText }` }
+        title="Token"
         isLoading={ tokenQuery.isPlaceholderData }
         beforeTitle={ tokenQuery.data ? (
           <TokenEntity.Icon
@@ -139,7 +182,7 @@ const TokenPageTitle = ({ tokenQuery, addressQuery, verifiedInfoQuery, hash }: P
           />
         ) : null }
         contentAfter={ contentAfter }
-        secondRow={ secondRow }
+        secondRow={ chipRow }
       />
       { !addressMetadataQuery.isPending && (
         <AddressAlerts

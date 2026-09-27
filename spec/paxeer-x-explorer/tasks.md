@@ -263,7 +263,7 @@
 ## Wave 6 - Scan Pages
 
 - [ ] 6. Rebuild every explorer page on the scan shell and the scan primitives
-  - [ ] 6.1 Rebuild the home page
+  - [x] 6.1 Rebuild the home page
     - Rebuild explorer/frontend/ui/home/HeroBanner.tsx as the hero band the home layout carries - the page title over the wide search field - taking its frame from the shell and setting no colour, font, radius or shadow of its own.
     - Rebuild explorer/frontend/ui/home/Stats.tsx and explorer/frontend/ui/home/highlights/HighlightsItem.tsx as one card divided into three columns - the coin price with its market capitalisation, the transaction count with its rate beside the latest block with its block time, and the transaction history of the last fourteen days - built from the shared scan stat card.
     - Render the fourteen-day history column through explorer/frontend/ui/home/indicators/ChainIndicatorsChart.tsx and ChainIndicatorChartContent.tsx as a sparkline with its two axis labels and its dated ends, keeping the query hooks and the indicator configuration exactly as they are.
@@ -317,7 +317,7 @@
     - Keep the page working at 375px with the three cards stacking and the existing list-item variants in use, with no horizontal page scroll, and change no file ending in .pw.tsx and no __screenshots__ directory.
     - Add the vitest specs explorer/frontend/ui/address/AddressDetails.spec.tsx, AddressTxs.spec.tsx, AddressTokenTransfers.spec.tsx and explorer/frontend/ui/pages/Address.spec.tsx, each rendering the real component through explorer/frontend/vitest/lib.tsx with payload mocks from explorer/frontend/mocks/ and asserting the cards, the tabs, the direction badges and the footer entries.
     - _Requirements: 21.1, 21.2, 21.3, 21.6, 21.7, 21.8, 21.9_
-  - [ ] 6.6 Rebuild the token and token instance pages
+  - [x] 6.6 Rebuild the token and token instance pages
     - Rebuild explorer/frontend/ui/token/TokenPageTitle.tsx as the title row - the token logo, the label Token, the name with its symbol and the verified mark - with the project link, the API entry and the menu on the right.
     - Add the chip row beneath the title from explorer/frontend/ui/token/TokenVerifiedInfo.tsx and explorer/frontend/ui/token/TokenProjectInfo.tsx carrying the token standard, the source-code chip, the implementation chip and the hashtag tags, each rendered through the shared method chip's tokens.
     - Rebuild explorer/frontend/ui/token/TokenDetails.tsx as three cards - an overview card with the maximum total supply, the holders and the transfers with their total and daily selector; a market card with the price, the onchain market capitalisation and the circulating supply market capitalisation; and an other-information card with the token contract and its decimals - keeping every query and every nullable field the component already handles.
