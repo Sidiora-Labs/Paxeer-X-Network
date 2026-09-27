@@ -568,4 +568,27 @@ file = "spec/paxeer-x-explorer/spec.kvx"
 symbol = "task.6.2"
 observed = "The touches of this task name seven spec files while ten of its source files change, and the explorer test-ratio gate refuses a range that carries fewer changed test files than changed source files."
 assumption = "Four further specs - TxsContent.spec.tsx, TxsTableItem.spec.tsx, BlocksContent.spec.tsx and BlocksTableItem.spec.tsx - are written beside the seven the task names, each covering a source file the task already owns, rather than leaving source files without a test."
+
+[observation.6.1.1]
+task = "6.1"
+file = "explorer/frontend/ui/home/HeroBanner.tsx"
+symbol = "HeroBanner"
+observed = "Requirement 17 ac_5 asks the hero band to hold the page title and the wide search field with its filter selector and its accent submit button; the title, the field and the accent submit button that submits the field's own form are in place, but no filter selector was built, because every control of the search entry lives under ui/snippets/searchBar, which task 6.1's touches does not name, and no search resource the frontend calls accepts a scope or category parameter, so a selector rendered in the hero could only be a control that narrows nothing."
+assumption = "A visible filter control that never reaches the search request would be a fake, and reworking ui/snippets/searchBar from this task would change the search behaviour, suggestion list and redirect path the same acceptance criterion requires to stay exactly as they are, so the hero ships the title, the field and the accent submit button, and the selector is left to the task that owns the search snippets."
+severity = "note"
+
+[observation.6.1.2]
+task = "6.1"
+file = "spec/paxeer-x-explorer/spec.kvx"
+symbol = "task.6.1.touches"
+observed = "The touches of this task name five spec files while thirteen of its source files change, and tools/explorer/test-ratio.sh refuses a range that carries fewer changed test files than changed source files or a changed source with no changed test referencing it."
+assumption = "The gate governs, so eight further specs - Highlights, highlights/HighlightsItem, indicators/ChainIndicatorsChart, indicators/ChainIndicatorChartContent, LatestBlocksItem, LatestTxsItem, LatestTxsItemMobile and Transactions - are written beside the five the task names, each rendering its real component, and the touches list is left exactly as the feature spec writes it."
+severity = "note"
+
+[observation.6.1.3]
+task = "6.1"
+file = "explorer/frontend/ui/home/Stats.spec.tsx"
+symbol = "SVGElement.prototype.getTotalLength"
+observed = "Every spec that renders the fourteen-day history chart crashed the whole React tree: jsdom implements a path element as SVGElement and carries none of the SVGGeometryElement geometry methods, so the line animation of toolkit/components/charts/parts/ChartLine.tsx threw on getTotalLength inside its mount effect and the home page rendered as an empty container."
+assumption = "This is a gap of the test environment rather than of the component, in the same class as the ResizeObserver and matchMedia shims the shell test helper already carries, so the four chart-rendering specs define a zero-length getTotalLength on SVGElement.prototype and the chart code is left exactly as written."
 severity = "note"

@@ -912,7 +912,7 @@ status = "pending"
 
 [task.6.1]
 title = "Rebuild the home page"
-status = "pending"
+status = "done"
 wave = 6
 requires = ["5.1","5.2"]
 do_1 = "Rebuild explorer/frontend/ui/home/HeroBanner.tsx as the hero band the home layout carries - the page title over the wide search field - taking its frame from the shell and setting no colour, font, radius or shadow of its own."
@@ -927,6 +927,10 @@ verify_cmd = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --
 symbols = ["HeroBanner","Stats","LatestBlocks","LatestTxs","Home"]
 touches = ["explorer/frontend/ui/home/HeroBanner.tsx","explorer/frontend/ui/home/HeroBanner.spec.tsx","explorer/frontend/ui/home/Stats.tsx","explorer/frontend/ui/home/Stats.spec.tsx","explorer/frontend/ui/home/Highlights.tsx","explorer/frontend/ui/home/highlights/HighlightsItem.tsx","explorer/frontend/ui/home/indicators/ChainIndicatorsChart.tsx","explorer/frontend/ui/home/indicators/ChainIndicatorChartContent.tsx","explorer/frontend/ui/home/LatestBlocks.tsx","explorer/frontend/ui/home/LatestBlocks.spec.tsx","explorer/frontend/ui/home/LatestBlocksItem.tsx","explorer/frontend/ui/home/LatestTxs.tsx","explorer/frontend/ui/home/LatestTxs.spec.tsx","explorer/frontend/ui/home/LatestTxsItem.tsx","explorer/frontend/ui/home/LatestTxsItemMobile.tsx","explorer/frontend/ui/home/Transactions.tsx","explorer/frontend/ui/pages/Home.tsx","explorer/frontend/ui/pages/Home.spec.tsx"]
 reqs = ["17.5","17.6","17.7","17.8","17.9"]
+done_revision = "1736b1cb002a1b4431a1c62fb52fca2806d29e57"
+done_command = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/home ui/pages/Home.'"
+done_exit_code = 0
+done_log = ".logs/task-6.1-verify.log"
 
 [task.6.2]
 title = "Rebuild the transactions and blocks lists"

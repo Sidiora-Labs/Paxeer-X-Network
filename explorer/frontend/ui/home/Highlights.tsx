@@ -1,45 +1,33 @@
 import type { StackProps } from '@chakra-ui/react';
-import { HStack } from '@chakra-ui/react';
-import { useQuery } from '@tanstack/react-query';
-import { shuffle } from 'es-toolkit';
+import { Box, VStack } from '@chakra-ui/react';
 import React from 'react';
 
-import type { HighlightsBannerConfig } from 'types/homepage';
-
-import config from 'configs/app';
-import useFetch from 'lib/hooks/useFetch';
-import { HOMEPAGE_HIGHLIGHTS_BANNER } from 'stubs/homepage';
-
+import type { HighlightsItemProps } from './highlights/HighlightsItem';
 import HighlightsItem from './highlights/HighlightsItem';
 
-const HIGHLIGHTS_BANNER_COUNT = 3;
+export interface HighlightsProps extends StackProps {
+  items?: Array<HighlightsItemProps>;
+}
 
-const Highlights = (props: StackProps) => {
-  const fetch = useFetch();
-
-  const { isPlaceholderData, data } = useQuery({
-    queryKey: [ 'homepage-highlights' ],
-    queryFn: async() => fetch(config.UI.homepage.highlights || '', undefined, { resource: 'homepage-highlights' }) as Promise<Array<HighlightsBannerConfig>>,
-    select: (data) => {
-      const pinnedBanners = data.filter((banner) => banner.is_pinned);
-      const otherBanners = data.filter((banner) => !banner.is_pinned);
-
-      return [
-        ...pinnedBanners,
-        ...shuffle(otherBanners),
-      ].slice(0, HIGHLIGHTS_BANNER_COUNT);
-    },
-    enabled: Boolean(config.UI.homepage.highlights),
-    staleTime: Infinity,
-    placeholderData: Array(HIGHLIGHTS_BANNER_COUNT).fill(HOMEPAGE_HIGHLIGHTS_BANNER),
-  });
+const Highlights = ({ items, ...rest }: HighlightsProps) => {
+  if (!items || items.length === 0) {
+    return null;
+  }
 
   return (
-    <HStack gap={ 3 } { ...props }>
-      { data?.map((banner, index) => (
-        <HighlightsItem key={ index } data={ banner } isLoading={ isPlaceholderData } totalNum={ data.length }/>
+    <VStack data-label="home-highlights" alignItems="stretch" justifyContent="center" gap={ 0 } h="100%" { ...rest }>
+      { items.map((item, index) => (
+        <Box
+          key={ item.id }
+          data-divided={ index > 0 ? true : undefined }
+          borderTopWidth={ index > 0 ? '1px' : '0' }
+          borderStyle="solid"
+          borderColor="border.divider"
+        >
+          <HighlightsItem { ...item }/>
+        </Box>
       )) }
-    </HStack>
+    </VStack>
   );
 };
 
