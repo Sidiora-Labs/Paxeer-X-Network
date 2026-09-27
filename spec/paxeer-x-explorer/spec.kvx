@@ -1116,7 +1116,7 @@ done_log = ".logs/verify-6.9.log"
 
 [task.6.10]
 title = "Add the specs the transaction page rebuild left without coverage"
-status = "pending"
+status = "done"
 wave = 6
 requires = ["6.3"]
 do_1 = "List the source files the transaction page rebuild changed that carry no spec beside them, by diffing that rebuild's commit against its parent over explorer/ and applying the rule tools/explorer/test-ratio.sh states - a changed test counts for a changed source only when it sits in the same directory under the same stem, names one of that source's exported names, or names a fragment of its path."
@@ -1126,6 +1126,10 @@ symbols = ["TxDetailsDegraded","TxLogs","TxInternals","TxRawTrace","TxState","Tx
 touches = ["explorer/frontend/ui/tx/TxDetailsDegraded.spec.tsx","explorer/frontend/ui/tx/TxLogs.spec.tsx","explorer/frontend/ui/tx/TxInternals.spec.tsx","explorer/frontend/ui/tx/TxRawTrace.spec.tsx","explorer/frontend/ui/tx/TxState.spec.tsx","explorer/frontend/ui/tx/details/txDetailsActions/TxDetailsActionsInterpretation.spec.tsx","explorer/frontend/ui/tx/details/txDetailsActions/TxDetailsActionsRaw.spec.tsx"]
 tests = ["explorer/frontend/ui/tx/TxDetailsDegraded.spec.tsx","explorer/frontend/ui/tx/TxLogs.spec.tsx","explorer/frontend/ui/tx/TxInternals.spec.tsx","explorer/frontend/ui/tx/TxRawTrace.spec.tsx","explorer/frontend/ui/tx/TxState.spec.tsx","explorer/frontend/ui/tx/details/txDetailsActions/TxDetailsActionsInterpretation.spec.tsx","explorer/frontend/ui/tx/details/txDetailsActions/TxDetailsActionsRaw.spec.tsx"]
 reqs = ["20.1","20.2","20.3","20.6","20.7","20.8","20.9"]
+done_revision = "ad814bde31bb391e317d463fcfee8bad5e4ae5bd"
+done_command = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/tx'"
+done_exit_code = 0
+done_log = ".logs/verify-6.10.log"
 
 [task.6.11]
 title = "Carry the list pages' pagination in the table card only and put the direction badge on the counterparty column"
