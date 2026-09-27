@@ -1071,7 +1071,7 @@ done_log = "logs/6.7-verify.log"
 
 [task.6.8]
 title = "Rebuild the charts and statistics page"
-status = "pending"
+status = "done"
 wave = 6
 requires = ["5.1","5.2"]
 do_1 = "Add the sticky section navigation on the left of explorer/frontend/ui/pages/Stats.tsx listing the overview statistics, market data, blockchain data, network data and contract sections, marking the section in view and scrolling to a section when its entry is chosen."
@@ -1086,6 +1086,10 @@ verify_cmd = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --
 symbols = ["NumberWidgetsList","ChartsWidgetsList","ChartWidgetContainer","ChartIntervalSelect","Stats"]
 touches = ["explorer/frontend/ui/stats/NumberWidgetsList.tsx","explorer/frontend/ui/stats/NumberWidgetsList.spec.tsx","explorer/frontend/ui/stats/ChartsWidgetsList.tsx","explorer/frontend/ui/stats/ChartsWidgetsList.spec.tsx","explorer/frontend/ui/stats/ChartWidgetContainer.tsx","explorer/frontend/ui/stats/ChartWidgetContainer.spec.tsx","explorer/frontend/ui/stats/StatsFilters.tsx","explorer/frontend/ui/stats/ChartsLoadingErrorAlert.tsx","explorer/frontend/ui/stats/constants/index.ts","explorer/frontend/ui/shared/chart/ChartIntervalSelect.tsx","explorer/frontend/ui/shared/chart/ChartIntervalSelect.spec.tsx","explorer/frontend/ui/shared/chart/config.ts","explorer/frontend/ui/shared/chart/utils.ts","explorer/frontend/ui/shared/chart/utils.spec.ts","explorer/frontend/ui/pages/Stats.tsx","explorer/frontend/ui/pages/Stats.spec.tsx"]
 reqs = ["22.1","22.2","22.3","22.4","22.5","22.6","22.7","22.8"]
+done_revision = "f62118583e8bd68b86e090b0d19888a79da03d61"
+done_command = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/stats ui/shared/chart ui/pages/Stats.'"
+done_exit_code = 0
+done_log = ".logs/verify-6.8.log"
 
 [task.6.9]
 title = "Rebuild the kernel pages on the chain pages' cards"
