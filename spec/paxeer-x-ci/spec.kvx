@@ -141,7 +141,11 @@ log_path = ".logs/verify.log"
 
 [task.1.3]
 title = "Route every Linux job through the CI_LINUX_RUNNER expression with an auditable policy check and a canary"
-status = "implemented"
+status = "done"
+revision = "0c2a054f9507e865e9dffa6d68ba10a54a810d8a"
+command = "timeout 10m sh -c 'actionlint -no-color -shellcheck= -pyflakes= && sh tools/ci/runner-routing-check.sh'"
+exit_code = 0
+log_path = ".logs/verify-1.4.log"
 implemented_revision = "8de2efcb4aa7045675499f2d62b73e6f8c9fec8f"
 implemented_command = "timeout 10m sh -c 'actionlint -no-color -shellcheck= -pyflakes= && sh tools/ci/runner-routing-check.sh'"
 implemented_exit_code = 1
@@ -159,7 +163,11 @@ reqs = ["3.1","3.2","3.3","3.4"]
 
 [task.1.4]
 title = "Clear the routing gate: remove the expression injection actionlint stops on and keep publishing jobs on GitHub-hosted runners"
-status = "pending"
+status = "done"
+revision = "0c2a054f9507e865e9dffa6d68ba10a54a810d8a"
+command = "timeout 10m sh -c 'actionlint -no-color -shellcheck= -pyflakes= && sh tools/ci/runner-routing-check.sh'"
+exit_code = 0
+log_path = ".logs/verify-1.4.log"
 wave = 1
 requires = ["1.3"]
 do_1 = "Observation 1.3.1: actionlint stops on .github/workflows/paxeer-pr-to-slack-codex.yml where github.event.pull_request.title is interpolated directly into an inline script, an expression injection that predates this feature; pass that value and any other event field interpolated into a run script in that file through an env entry of the step and read the variable in the script instead, changing nothing else in the workflow."

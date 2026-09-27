@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
 cd "$root"
 
 exec python3 - "$@" <<'PY'
@@ -15,6 +15,7 @@ import yaml
 # Jobs that keep their runs-on line byte for byte: workflow file, job, reason class, original runs-on.
 EXCLUDED = """
 codeql.yml                      analyze                          codeql            ubuntu-24.04
+docs-site.yml                   deploy                           publishing-credential ubuntu-24.04
 scorecard.yml                   analysis                         scorecard         ubuntu-24.04
 explorer-build.yml              explorer-backend                 container         ubuntu-24.04
 explorer-images.yml             publish                          docker-action     ubuntu-24.04
@@ -34,6 +35,9 @@ paxeer-integration-test.yml     prepare-cluster                  docker-action  
 paxeer-integration-test.yml     integration-tests                docker-action     ubuntu-latest
 paxeer-libwasmvm.yml            build                            docker-command    ubuntu-latest
 paxeer-nightly-ecr.yml          publish                          ecr               ubuntu-latest
+paxeer-ghcr-integration-test-cleanup.yml cleanup                   publishing-credential ubuntu-latest
+paxeer-proto-registry.yml       push                             publishing-credential ubuntu-latest
+paxeer-release-publish.yml      releaser                         publishing-credential ubuntu-latest
 platform.yml                    ios-application-artifact         macos             macos-15
 platform.yml                    real-ios-journey                 macos             macos-15
 platform.yml                    replay-matrix                    matrix-runner     ${{ matrix.runner }}
@@ -59,7 +63,7 @@ runner-canary.yml               canary
 REASONS = {
     "codeql", "scorecard", "container", "services", "docker-action", "docker-command",
     "ecr", "ko", "cosign", "provenance", "macos", "windows", "matrix-runner",
-    "layerx-testnet", "publish", "release-pipeline",
+    "layerx-testnet", "publish", "release-pipeline", "publishing-credential",
 }
 
 ROUTED = re.compile(
