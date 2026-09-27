@@ -930,7 +930,7 @@ reqs = ["17.5","17.6","17.7","17.8","17.9"]
 
 [task.6.2]
 title = "Rebuild the transactions and blocks lists"
-status = "pending"
+status = "done"
 wave = 6
 requires = ["5.1","5.2"]
 do_1 = "Rebuild explorer/frontend/ui/txs/TxsStats.tsx as a row of four shared scan stat cards - transactions in the last day, pending transactions in the last hour, total transaction fee in the last day and average transaction fee in the last day - each with its delta, reading the statistics the component already queries."
@@ -946,6 +946,10 @@ verify_cmd = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --
 symbols = ["TxsStats","TxsTable","TxsTableItem","TxsListItem","BlocksTable","BlocksTableItem","Transactions","Blocks"]
 touches = ["explorer/frontend/ui/txs/TxsStats.tsx","explorer/frontend/ui/txs/TxsStats.spec.tsx","explorer/frontend/ui/txs/TxsContent.tsx","explorer/frontend/ui/txs/TxsTable.tsx","explorer/frontend/ui/txs/TxsTable.spec.tsx","explorer/frontend/ui/txs/TxsTableItem.tsx","explorer/frontend/ui/txs/TxsList.tsx","explorer/frontend/ui/txs/TxsListItem.tsx","explorer/frontend/ui/txs/TxsListItem.spec.tsx","explorer/frontend/ui/txs/TxsHeaderMobile.tsx","explorer/frontend/ui/txs/TxsWithFrontendSorting.tsx","explorer/frontend/ui/txs/TxsWithAPISorting.tsx","explorer/frontend/ui/txs/TxType.tsx","explorer/frontend/ui/blocks/BlocksContent.tsx","explorer/frontend/ui/blocks/BlocksTable.tsx","explorer/frontend/ui/blocks/BlocksTable.spec.tsx","explorer/frontend/ui/blocks/BlocksTableItem.tsx","explorer/frontend/ui/blocks/BlocksList.tsx","explorer/frontend/ui/blocks/BlocksListItem.tsx","explorer/frontend/ui/blocks/BlocksListItem.spec.tsx","explorer/frontend/ui/pages/Transactions.tsx","explorer/frontend/ui/pages/Transactions.spec.tsx","explorer/frontend/ui/pages/Blocks.tsx","explorer/frontend/ui/pages/Blocks.spec.tsx"]
 reqs = ["19.1","19.2","19.3","19.6","19.7","19.8","19.9"]
+done_revision = "1736b1cb002a1b4431a1c62fb52fca2806d29e57"
+done_command = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/txs ui/blocks ui/pages/Transactions. ui/pages/Blocks.'"
+done_exit_code = 0
+done_log = ".logs/verify-6.2-run2.log"
 
 [task.6.3]
 title = "Rebuild the transaction details page"

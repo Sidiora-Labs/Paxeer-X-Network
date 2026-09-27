@@ -6,7 +6,6 @@ import type { Transaction } from 'types/api/transaction';
 import type { ClusterChainConfig } from 'types/multichain';
 
 import config from 'configs/app';
-import { Badge } from 'toolkit/chakra/badge';
 import { TableCell, TableRow } from 'toolkit/chakra/table';
 import AddressFromTo from 'ui/shared/address/AddressFromTo';
 import BlockPendingUpdateHint from 'ui/shared/block/BlockPendingUpdateHint';
@@ -14,15 +13,19 @@ import BlockEntity from 'ui/shared/entities/block/BlockEntity';
 import TxEntity from 'ui/shared/entities/tx/TxEntity';
 import EntityTag from 'ui/shared/EntityTags/EntityTag';
 import ChainIcon from 'ui/shared/externalChains/ChainIcon';
-import TxStatus from 'ui/shared/statusTag/TxStatus';
+import { ScanMethodChip, ScanPreviewButton } from 'ui/shared/scan';
+import StatusTag from 'ui/shared/statusTag/StatusTag';
 import TimeWithTooltip from 'ui/shared/time/TimeWithTooltip';
 import TxFee from 'ui/shared/tx/TxFee';
 import TxWatchListTags from 'ui/shared/tx/TxWatchListTags';
 import NativeCoinValue from 'ui/shared/value/NativeCoinValue';
 import TxAdditionalInfo from 'ui/txs/TxAdditionalInfo';
 
+import TxAdditionalInfoContent from './TxAdditionalInfoContent';
 import TxTranslationType from './TxTranslationType';
 import TxType from './TxType';
+
+const SELECTOR_LENGTH = 10;
 
 type Props = {
   tx: Transaction;
@@ -53,10 +56,17 @@ const TxsTableItem = ({
 
   const protocolTag = tx.to?.hash !== currentAddress && tx.to?.metadata?.tags?.find(tag => tag.tagType === 'protocol');
 
+  const method = tx.method ?? (tx.raw_input && tx.raw_input.length >= SELECTOR_LENGTH ? tx.raw_input.slice(0, SELECTOR_LENGTH) : undefined);
+
   return (
     <TableRow key={ tx.hash } animation={ animation }>
-      <TableCell textAlign="center">
-        <TxAdditionalInfo tx={ tx } isMobile={ isMobile } isLoading={ isLoading }/>
+      <TableCell textAlign="center" px={ 2 }>
+        { isMobile ?
+          <TxAdditionalInfo tx={ tx } isMobile isLoading={ isLoading }/> : (
+            <ScanPreviewButton label="Transaction preview" isLoading={ isLoading }>
+              <TxAdditionalInfoContent tx={ tx }/>
+            </ScanPreviewButton>
+          ) }
       </TableCell>
       { chainData && (
         <TableCell>
@@ -64,46 +74,48 @@ const TxsTableItem = ({
         </TableCell>
       ) }
       <TableCell pr={ 4 }>
-        <VStack alignItems="start" lineHeight="24px">
+        <Flex alignItems="center" columnGap={ 2 } lineHeight="24px">
+          { tx.status !== undefined && tx.status !== 'ok' && (
+            <StatusTag
+              type={ tx.status === 'error' ? 'error' : 'pending' }
+              text={ tx.status === 'error' ? 'Failed' : 'Pending' }
+              errorText={ tx.status === 'error' ? tx.result : undefined }
+              mode="compact"
+              loading={ isLoading }
+              flexShrink={ 0 }
+            />
+          ) }
           <TxEntity
             hash={ tx.hash }
             isLoading={ isLoading }
-            fontWeight="bold"
+            fontWeight="medium"
             noIcon
             maxW="100%"
             truncation="constant"
           />
-          <TimeWithTooltip
-            timestamp={ tx.timestamp }
-            enableIncrement={ enableTimeIncrement }
-            isLoading={ isLoading }
-            color="text.secondary"
-          />
-        </VStack>
+        </Flex>
       </TableCell>
       <TableCell>
-        <VStack alignItems="stretch">
-          { translationIsLoading || translationData ? (
-            <TxTranslationType
-              txTypes={ tx.transaction_types }
-              isLoading={ isLoading || translationIsLoading }
-              type={ translationData?.type }
-            />
-          ) :
-            <TxType types={ tx.transaction_types } isLoading={ isLoading }/>
-          }
-          { tx.status !== 'ok' && <TxStatus status={ tx.status } errorText={ tx.status === 'error' ? tx.result : undefined } isLoading={ isLoading }/> }
-          <TxWatchListTags tx={ tx } isLoading={ isLoading }/>
-        </VStack>
-      </TableCell>
-      <TableCell whiteSpace="nowrap">
         <VStack alignItems="flex-start">
-          { tx.method && (
-            <Badge colorPalette={ tx.method === 'Multicall' ? 'teal' : 'gray' } loading={ isLoading } truncated>
-              <span>{ tx.method }</span>
-            </Badge>
-          ) }
+          { (() => {
+            if (translationIsLoading || translationData) {
+              return (
+                <TxTranslationType
+                  txTypes={ tx.transaction_types }
+                  isLoading={ isLoading || translationIsLoading }
+                  type={ translationData?.type }
+                />
+              );
+            }
+
+            if (method) {
+              return <ScanMethodChip method={ method } isLoading={ isLoading }/>;
+            }
+
+            return <TxType types={ tx.transaction_types } isLoading={ isLoading }/>;
+          })() }
           { protocolTag && <EntityTag data={ protocolTag } isLoading={ isLoading } maxW="100%" noColors/> }
+          <TxWatchListTags tx={ tx } isLoading={ isLoading }/>
         </VStack>
       </TableCell>
       { showBlockInfo && (
@@ -123,13 +135,21 @@ const TxsTableItem = ({
         </TableCell>
       ) }
       <TableCell>
+        <TimeWithTooltip
+          timestamp={ tx.timestamp }
+          enableIncrement={ enableTimeIncrement }
+          isLoading={ isLoading }
+          color="text.secondary"
+        />
+      </TableCell>
+      <TableCell>
         <AddressFromTo
           from={ tx.from }
           to={ dataTo }
           current={ currentAddress }
           isLoading={ isLoading }
           mt="2px"
-          mode="compact"
+          mode="long"
         />
       </TableCell>
       { !config.UI.views.tx.hiddenFields?.value && (
@@ -146,7 +166,7 @@ const TxsTableItem = ({
         </TableCell>
       ) }
       { !config.UI.views.tx.hiddenFields?.tx_fee && (
-        <TableCell isNumeric maxW="220px">
+        <TableCell isNumeric maxW="220px" pr={ 5 }>
           <TxFee
             tx={ tx }
             accuracy={ 8 }

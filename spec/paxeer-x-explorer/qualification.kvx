@@ -545,3 +545,27 @@ symbol = "test-ratio"
 observed = "This task changes eleven frontend source files but task.6.3.touches and do_9 name exactly five vitest specs, so the ratio rule that every changed source needs a changed test and counted_tests must reach source_count cannot be met from inside the task."
 assumption = "Widening the file set would take the task outside its declared touches, so the five specs named by do_9 are written and the ratio is left to the wave-level gate on the merged wave revision."
 severity = "suspect"
+
+[observation.6.2.1]
+task = "6.2"
+file = "explorer/frontend/ui/shared/pagination/useQueryWithPages.ts"
+symbol = "useQueryWithPages"
+observed = "Requirement 19.3 and do_3 of this task ask for a show-rows selector in the table card footer, but the paginated resources these lists read carry no page-size parameter: useQueryWithPages sends only the cursor of next_page_params together with the filters and the sorting, and the node answers a page of a fixed size, so a selector could only hide rows the page already holds and make them unreachable."
+assumption = "The selector is left out of the transactions and blocks cards rather than wired to a control that cannot change what the node returns, so the footer carries the pagination alone until the resource accepts a page size."
+severity = "note"
+
+[observation.6.2.2]
+task = "6.2"
+file = "explorer/frontend/ui/txs/TxsTabs.tsx"
+symbol = "TxsTabs"
+observed = "The desktop transactions and blocks pages now carry their pagination twice: once in the scan table card, where requirements 19.2 and 19.3 put it, and once in the tab row, which TxsTabs renders through its rightSlot and which BlocksTabSlot renders beside the network utilisation and the block countdown."
+assumption = "Both files sit outside the touches of this task, so the tab-row copy is left exactly as written for the owner of the tab slots to retire once every wave-6 page carries the card."
+severity = "note"
+
+[observation.6.2.3]
+task = "6.2"
+file = "spec/paxeer-x-explorer/spec.kvx"
+symbol = "task.6.2"
+observed = "The touches of this task name seven spec files while ten of its source files change, and the explorer test-ratio gate refuses a range that carries fewer changed test files than changed source files."
+assumption = "Four further specs - TxsContent.spec.tsx, TxsTableItem.spec.tsx, BlocksContent.spec.tsx and BlocksTableItem.spec.tsx - are written beside the seven the task names, each covering a source file the task already owns, rather than leaving source files without a test."
+severity = "note"

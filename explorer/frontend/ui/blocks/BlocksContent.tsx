@@ -7,11 +7,12 @@ import type { BlockType, BlocksResponse } from 'types/api/block';
 
 import { route } from 'nextjs/routes';
 
-import { getResourceKey } from 'lib/api/useApiQuery';
+import useApiQuery, { getResourceKey } from 'lib/api/useApiQuery';
 import { useMultichainContext } from 'lib/contexts/multichain';
 import useIsMobile from 'lib/hooks/useIsMobile';
 import useSocketChannel from 'lib/socket/useSocketChannel';
 import useSocketMessage from 'lib/socket/useSocketMessage';
+import { HOMEPAGE_STATS } from 'stubs/stats';
 import { Link } from 'toolkit/chakra/link';
 import BlocksList from 'ui/blocks/BlocksList';
 import BlocksTable from 'ui/blocks/BlocksTable';
@@ -20,10 +21,12 @@ import DataListDisplay from 'ui/shared/DataListDisplay';
 import IconSvg from 'ui/shared/IconSvg';
 import Pagination from 'ui/shared/pagination/Pagination';
 import type { QueryWithPagesResult } from 'ui/shared/pagination/useQueryWithPages';
+import { formatScanTableCount, ScanTableCard } from 'ui/shared/scan';
 import * as SocketNewItemsNotice from 'ui/shared/SocketNewItemsNotice';
 
 const OVERLOAD_COUNT = 75;
 const TABS_HEIGHT = 88;
+const ITEMS_NAME = 'blocks';
 
 export interface Props {
   type?: BlockType;
@@ -93,6 +96,15 @@ const BlocksContent = ({ type, query, enableSocket = true, top }: Props) => {
 
   const chainData = multichainContext?.chain;
 
+  const isMainList = (!type || type === 'block') && enableSocket;
+
+  const statsQuery = useApiQuery('general:stats', {
+    queryOptions: {
+      enabled: isMainList,
+      placeholderData: isMainList ? HOMEPAGE_STATS : undefined,
+    },
+  });
+
   const content = query.data?.items ? (
     <>
       <Box hideFrom="lg">
@@ -131,6 +143,38 @@ const BlocksContent = ({ type, query, enableSocket = true, top }: Props) => {
     </ActionBar>
   ) : null;
 
+  const paginationNode = !isMobile && query.pagination.isVisible ? <Pagination { ...query.pagination }/> : null;
+
+  const items = query.data?.items;
+  const totalBlocks = Number(statsQuery.data?.total_blocks);
+
+  const countLine = (() => {
+    if (!items || items.length === 0) {
+      return 'Blocks';
+    }
+
+    if (isMainList && Number.isFinite(totalBlocks) && totalBlocks >= items.length) {
+      return formatScanTableCount({ kind: 'latest', value: totalBlocks, shownValue: items.length, itemsName: ITEMS_NAME });
+    }
+
+    if (query.pagination.hasNextPage || query.pagination.page > 1) {
+      return formatScanTableCount({ kind: 'more_than', value: query.pagination.page * items.length, itemsName: ITEMS_NAME });
+    }
+
+    return formatScanTableCount({ kind: 'total', value: items.length, itemsName: ITEMS_NAME });
+  })();
+
+  const note = (() => {
+    switch (type) {
+      case 'reorg':
+        return 'Blocks replaced by a competing block at the same height';
+      case 'uncle':
+        return 'Blocks that were produced but left out of the canonical chain';
+      default:
+        return `Showing page ${ query.pagination.page } of the records the node returns, newest first`;
+    }
+  })();
+
   return (
     <DataListDisplay
       isError={ query.isError }
@@ -138,7 +182,15 @@ const BlocksContent = ({ type, query, enableSocket = true, top }: Props) => {
       emptyText="There are no blocks."
       actionBar={ actionBar }
     >
-      { content }
+      { content && (
+        <ScanTableCard
+          title={ countLine }
+          note={ note }
+          pagination={ paginationNode }
+        >
+          { content }
+        </ScanTableCard>
+      ) }
     </DataListDisplay>
   );
 };
