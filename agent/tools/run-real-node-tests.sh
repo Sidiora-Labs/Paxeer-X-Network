@@ -14,7 +14,6 @@ fi
 
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 cd "$repo_root"
-export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$repo_root/.lane-target}
 export CARGO_BUILD_JOBS=4
 export TMPDIR=/tmp
 for executable in forge cast anvil go; do
@@ -25,6 +24,7 @@ if [ -n "$test_target" ]; then
     exec make "$test_target"
 fi
 
+: "${CARGO_TARGET_DIR:?the build output directory of the agent-test path, exported by the Makefile variable AGENT_TEST_TARGET_DIR}"
 export LAYERX_TEST_NATIVE_BUILD_DIR=${LAYERX_TEST_NATIVE_BUILD_DIR:-$repo_root/build}
 make -j4 CC=gcc BUILD_DIR="$LAYERX_TEST_NATIVE_BUILD_DIR" \
     LXP_REVISION="$(git rev-parse HEAD)" \

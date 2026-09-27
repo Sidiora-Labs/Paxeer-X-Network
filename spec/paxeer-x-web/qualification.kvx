@@ -541,3 +541,11 @@ exit_code = 101
 log_path = ".logs/verify.log"
 observed = "The core boundary suite and rpc::tests::schema_lists_every_public_method pass and funding::start now completes through the native custody module - a real local chain 125 with two TLS boundaries, a verified disposable identity, two deposits through the precompile, a 223-byte LXBC3 profile and LXDC3 credits for the treasury and the recipient, with the node cluster started - but the test then stops in deploy_web_reader because NativeProgramDeploy::encode refuses guest ABI 4: validate_code in agent/crates/layerx-types/src/program_lifecycle.rs accepts only 1..=3 while events.rs deploys the reference web reader with WEB_READER_GUEST_ABI = 4."
 assumption = "Admitting the layerx_v4 guest ABI in the native lifecycle encoder belongs to the owner of the programs ABI, not to this funding task; nothing is relaxed here and the harness prerequisites this run needed are build/paxd, build/bin/layerx-custody-proof, the paxeer boundary binary and the platform service binaries."
+
+[observation.2.39.1]
+task = "2.39"
+file = "agent/crates/layerx-agentd/tests/support/real_authority.rs"
+symbol = "wait_for_lni"
+observed = "The Makefile now exports one build output directory for the whole agent-test path, and the run's log shows the boundary and clock binaries and the native prerequisites taking it, but make agent-test exits 2 before any daemon harness runs: in layerx-agentd --test budget_create the test proven_state_that_does_not_match_the_signed_creation_fails_closed panics at tests/support/real_authority.rs:484 with sequencer exited early with exit status 1 and empty diagnostics, while the host filesystem stood at 100 percent with 13 MB left, held by the agent workspace's build output and by abandoned harness scratch directories under the system temporary directory."
+assumption = "The gate reruns unchanged on a host with room for the agent workspace's build output and the confined daemon harnesses, where layerx-client --test session_fee_state_daemon first reaches the strict CARGO_TARGET_DIR read of observation 2.38.1; nothing is relaxed, no assertion is touched and the strict read stays as written."
+severity = "blocker"
