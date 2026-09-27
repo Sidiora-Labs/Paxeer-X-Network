@@ -240,6 +240,37 @@ export const recipe = defineRecipe({
           borderBottomRightRadius: 'full',
         },
       },
+      scan_control: {
+        borderWidth: '1px',
+        borderStyle: 'solid',
+        bg: 'bg.surface',
+        color: 'text.secondary',
+        borderColor: 'border.divider',
+        fontWeight: '500',
+        _hover: {
+          bg: 'bg.surface',
+          color: 'hover',
+          borderColor: 'border.strong',
+        },
+        _selected: {
+          bg: 'selected.control.bg',
+          color: 'selected.control.text',
+          borderColor: 'transparent',
+          _hover: {
+            bg: 'selected.control.bg',
+            color: 'selected.control.text',
+            borderColor: 'transparent',
+          },
+        },
+        _disabled: {
+          bg: 'bg.surface',
+          color: 'text.muted',
+          borderColor: 'border.divider',
+        },
+        _loading: {
+          opacity: 1,
+        },
+      },
       plain: {
         bg: 'transparent',
         color: 'inherit',

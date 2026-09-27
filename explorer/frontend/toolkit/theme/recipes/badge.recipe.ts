@@ -19,6 +19,16 @@ export const recipe = defineRecipe({
   variants: {
     variant: {
       subtle: {},
+      direction: {
+        borderRadius: 'sm',
+        textStyle: 'xs',
+        fontWeight: '600',
+        letterSpacing: 'wide',
+        textTransform: 'uppercase',
+        justifyContent: 'center',
+        px: '1.5',
+        minW: '9',
+      },
     },
     colorPalette: {
       gray: {

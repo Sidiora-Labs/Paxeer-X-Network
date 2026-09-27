@@ -46,6 +46,42 @@ export const recipe = defineSlotRecipe({
           bg: 'bg.surface',
         },
       },
+      scan: {
+        root: {
+          bg: 'bg.surface',
+        },
+        columnHeader: {
+          color: 'table.header.fg',
+          backgroundColor: 'bg.sunken',
+          textStyle: 'xs',
+          fontWeight: '600',
+          letterSpacing: 'wide',
+          borderBottomWidth: '1px',
+          borderColor: 'border.divider',
+          _first: {
+            borderTopLeftRadius: 'sm',
+          },
+          _last: {
+            borderTopRightRadius: 'sm',
+          },
+        },
+        cell: {
+          color: 'text.primary',
+          borderBottomWidth: '1px',
+          borderColor: 'border.divider',
+        },
+        row: {
+          bg: 'bg.surface',
+          _hover: {
+            bg: 'bg.sunken',
+          },
+          _last: {
+            '& td': {
+              borderBottomWidth: '0',
+            },
+          },
+        },
+      },
     },
 
     size: {

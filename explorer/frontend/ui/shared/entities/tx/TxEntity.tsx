@@ -82,6 +82,7 @@ const Content = chakra((props: ContentProps) => {
     <EntityBase.Content
       { ...props }
       text={ props.text ?? props.hash }
+      tailLength={ props.tailLength ?? 4 }
     />
   );
 });
@@ -113,7 +114,7 @@ const TxEntity = (props: EntityProps) => {
   const content = <Content { ...partsProps.content }/>;
 
   return (
-    <Container { ...partsProps.container }>
+    <Container { ...partsProps.container } data-entity-kind="tx">
       <Icon { ...partsProps.icon } isPendingUpdate={ props.isPendingUpdate }/>
       { props.noLink ? content : <Link { ...partsProps.link }>{ content }</Link> }
       <Copy { ...partsProps.copy }/>

@@ -877,7 +877,7 @@ reqs = ["17.1","17.2","17.3","17.4","17.5","17.6","17.7","17.8","17.9"]
 
 [task.5.2]
 title = "Build the scan primitives"
-status = "pending"
+status = "done"
 wave = 5
 requires = ["2.9","4.2"]
 do_1 = "Add explorer/frontend/ui/shared/scan/ScanStatCard.tsx rendering an uppercase label, a value and an optional delta whose sign selects the success or destructive text token, and explorer/frontend/ui/shared/scan/ScanTableCard.tsx rendering a header count line with an actions slot beside it, the table body, and a footer holding a show-rows slot and a pagination slot."
@@ -896,6 +896,10 @@ verify_cmd = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --
 symbols = ["ScanStatCard","ScanTableCard","ScanSectionTabs","ScanExpander","ScanPreviewButton","ScanMethodChip","ScanDirectionBadge","ScanKeyValue","Pagination","DetailedInfo"]
 touches = ["explorer/frontend/ui/shared/scan/ScanStatCard.tsx","explorer/frontend/ui/shared/scan/ScanStatCard.spec.tsx","explorer/frontend/ui/shared/scan/ScanTableCard.tsx","explorer/frontend/ui/shared/scan/ScanTableCard.spec.tsx","explorer/frontend/ui/shared/scan/ScanSectionTabs.tsx","explorer/frontend/ui/shared/scan/ScanSectionTabs.spec.tsx","explorer/frontend/ui/shared/scan/ScanExpander.tsx","explorer/frontend/ui/shared/scan/ScanExpander.spec.tsx","explorer/frontend/ui/shared/scan/ScanPreviewButton.tsx","explorer/frontend/ui/shared/scan/ScanPreviewButton.spec.tsx","explorer/frontend/ui/shared/scan/ScanMethodChip.tsx","explorer/frontend/ui/shared/scan/ScanMethodChip.spec.tsx","explorer/frontend/ui/shared/scan/ScanDirectionBadge.tsx","explorer/frontend/ui/shared/scan/ScanDirectionBadge.spec.tsx","explorer/frontend/ui/shared/scan/ScanKeyValue.tsx","explorer/frontend/ui/shared/scan/ScanKeyValue.spec.tsx","explorer/frontend/ui/shared/pagination/Pagination.tsx","explorer/frontend/ui/shared/pagination/Pagination.spec.tsx","explorer/frontend/ui/shared/DetailedInfo/DetailedInfo.tsx","explorer/frontend/ui/shared/DetailedInfo/DetailedInfo.spec.tsx","explorer/frontend/ui/shared/entities/address/AddressEntity.tsx","explorer/frontend/ui/shared/entities/address/AddressEntity.spec.tsx","explorer/frontend/ui/shared/entities/tx/TxEntity.tsx","explorer/frontend/ui/shared/entities/tx/TxEntity.spec.tsx","explorer/frontend/ui/shared/entities/block/BlockEntity.tsx","explorer/frontend/ui/shared/entities/block/BlockEntity.spec.tsx","explorer/frontend/ui/shared/entities/token/TokenEntity.tsx","explorer/frontend/ui/shared/entities/token/TokenEntity.spec.tsx","explorer/frontend/ui/shared/PrevNext.tsx","explorer/frontend/ui/shared/PrevNext.spec.tsx","explorer/frontend/ui/shared/ActionBar.tsx","explorer/frontend/ui/shared/ActionBar.spec.tsx","explorer/frontend/ui/shared/CopyToClipboard.tsx","explorer/frontend/ui/shared/CopyToClipboard.spec.tsx","explorer/frontend/ui/shared/statusTag/StatusTag.tsx","explorer/frontend/ui/shared/statusTag/StatusTag.spec.tsx","explorer/frontend/toolkit/theme/recipes/table.recipe.ts","explorer/frontend/toolkit/theme/recipes/tabs.recipe.ts","explorer/frontend/toolkit/theme/recipes/badge.recipe.ts","explorer/frontend/toolkit/theme/recipes/tag.recipe.ts","explorer/frontend/toolkit/theme/recipes/stat.recipe.ts","explorer/frontend/toolkit/theme/recipes/button.recipe.ts","explorer/frontend/toolkit/theme/recipes/recipes.spec.ts"]
 reqs = ["18.1","18.2","18.3","18.4","18.5","18.6","18.7","18.8","18.9","18.10"]
+revision = "4832ff8e907060b3394f9fff1c02ded34465ec13"
+command = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/shared toolkit/theme'"
+exit_code = 0
+log = ".logs/verify.log"
 
 [task.6]
 section = "Wave 6 - Scan Pages"

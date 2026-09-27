@@ -30,6 +30,10 @@ const ActionBar = ({ children, className, showShadow }: Props) => {
       mx={{ base: -3, lg: 0 }}
       px={{ base: 3, lg: 0 }}
       justifyContent="space-between"
+      alignItems="center"
+      flexWrap="wrap"
+      columnGap={ 3 }
+      rowGap={ 2 }
       width={{ base: '100vw', lg: 'unset' }}
       position="sticky"
       top={ 0 }
@@ -41,6 +45,7 @@ const ActionBar = ({ children, className, showShadow }: Props) => {
         lg: isSticky && showShadow ? 'action_bar' : 'none',
       }}
       ref={ ref }
+      data-action-bar
     >
       { children }
     </Flex>

@@ -42,14 +42,14 @@ const StatusTag = ({ type, text, errorText, mode = 'full', ...rest }: Props) => 
     const tooltipContent = errorText || capitalizedText;
     return (
       <Tooltip content={ tooltipContent } disabled={ !tooltipContent }>
-        <Badge colorPalette={ colorPalette } startElement={ iconElement } px="7px" { ...rest }/>
+        <Badge colorPalette={ colorPalette } startElement={ iconElement } borderRadius="sm" px={ 1.5 } data-status={ type } { ...rest }/>
       </Tooltip>
     );
   }
 
   if (!text) {
     return (
-      <Badge colorPalette={ colorPalette } { ...rest }>
+      <Badge colorPalette={ colorPalette } borderRadius="sm" data-status={ type } { ...rest }>
         { iconElement }
       </Badge>
     );
@@ -57,7 +57,7 @@ const StatusTag = ({ type, text, errorText, mode = 'full', ...rest }: Props) => 
 
   return (
     <Tooltip content={ errorText } disabled={ !errorText }>
-      <Badge colorPalette={ colorPalette } startElement={ iconElement } { ...rest }>
+      <Badge colorPalette={ colorPalette } startElement={ iconElement } borderRadius="sm" data-status={ type } { ...rest }>
         { capitalizedText }
       </Badge>
     </Tooltip>

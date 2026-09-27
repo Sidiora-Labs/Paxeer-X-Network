@@ -43,7 +43,8 @@ const CopyToClipboard = (props: Props) => {
       aria-label="copy"
       boxSize={ boxSize }
       onClick={ handleClick }
-      ml={ 2 }
+      ml={ 1 }
+      flexShrink={ 0 }
       borderRadius="sm"
       loadingSkeleton={ isLoading }
       variant="icon_secondary"
