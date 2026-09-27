@@ -1107,6 +1107,22 @@ touches = ["explorer/frontend/ui/tx/TxDetailsDegraded.spec.tsx","explorer/fronte
 tests = ["explorer/frontend/ui/tx/TxDetailsDegraded.spec.tsx","explorer/frontend/ui/tx/TxLogs.spec.tsx","explorer/frontend/ui/tx/TxInternals.spec.tsx","explorer/frontend/ui/tx/TxRawTrace.spec.tsx","explorer/frontend/ui/tx/TxState.spec.tsx","explorer/frontend/ui/tx/details/txDetailsActions/TxDetailsActionsInterpretation.spec.tsx","explorer/frontend/ui/tx/details/txDetailsActions/TxDetailsActionsRaw.spec.tsx"]
 reqs = ["20.1","20.2","20.3","20.6","20.7","20.8","20.9"]
 
+[task.6.11]
+title = "Carry the list pages' pagination in the table card only and put the direction badge on the counterparty column"
+status = "pending"
+wave = 6
+requires = ["6.2","6.5"]
+do_1 = "Leave the transactions and the blocks list one pagination by taking it out of the tab strips - explorer/frontend/ui/txs/TxsTabs.tsx keeps only the advanced-filter entry in its right slot and explorer/frontend/ui/blocks/BlocksTabSlot.tsx keeps only the network utilisation and the block countdown, dropping the pagination explorer/frontend/ui/pages/Blocks.tsx hands it - so the shared scan table card header and footer carry it alone while the mobile action bars of TxsContent and BlocksContent keep theirs."
+do_2 = "Put the shared direction badge on the counterparty column of the address-scoped rows in explorer/frontend/ui/shared/address/AddressFromTo.tsx, rendering it in both the long and the compact layout in place of the course arrow of explorer/frontend/ui/shared/address/AddressFromToIcon.tsx whenever a current address is in scope and the course is incoming or outgoing, so that the rows of explorer/frontend/ui/txs/TxsTableItem.tsx and TxsListItem.tsx and every other transaction and transfer row that names a current address carry it, and keeping the arrow for a self-directed or unscoped row."
+do_3 = "Drop the interim filter badge the address page kept in its table-card header in explorer/frontend/ui/address/AddressTxs.tsx, AddressInternalTxs.tsx and AddressTokenTransfers.tsx now that every row carries its own direction, leaving the filter control, the count line, the note and the download action exactly as they are."
+do_4 = "Consume the shared scan components from explorer/frontend/ui/shared/scan, write no literal colour, font family, radius or shadow, keep both appearances resolving through the same tokens, add no dependency, and change no file ending in .pw.tsx and no __screenshots__ directory."
+do_5 = "Add the vitest specs explorer/frontend/ui/txs/TxsTabs.spec.tsx, explorer/frontend/ui/blocks/BlocksTabSlot.spec.tsx and explorer/frontend/ui/shared/address/AddressFromTo.spec.tsx and extend explorer/frontend/ui/pages/Blocks.spec.tsx, explorer/frontend/ui/txs/TxsTableItem.spec.tsx, TxsListItem.spec.tsx and explorer/frontend/ui/address/AddressTxs.spec.tsx, AddressInternalTxs.spec.tsx and AddressTokenTransfers.spec.tsx, each rendering the real component through explorer/frontend/vitest/lib.tsx with payload mocks from explorer/frontend/mocks/ and asserting that every pagination sits inside the table card and that the direction badge sits on the counterparty column of a scoped row and no longer in the card header."
+verify_cmd = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/txs ui/blocks ui/shared/address ui/address'"
+symbols = ["TxsTabs","BlocksTabSlot","Blocks","AddressFromTo","AddressTxs","AddressInternalTxs","AddressTokenTransfers"]
+touches = ["explorer/frontend/ui/txs/TxsTabs.tsx","explorer/frontend/ui/txs/TxsTabs.spec.tsx","explorer/frontend/ui/txs/TxsTableItem.spec.tsx","explorer/frontend/ui/txs/TxsListItem.spec.tsx","explorer/frontend/ui/blocks/BlocksTabSlot.tsx","explorer/frontend/ui/blocks/BlocksTabSlot.spec.tsx","explorer/frontend/ui/pages/Blocks.tsx","explorer/frontend/ui/pages/Blocks.spec.tsx","explorer/frontend/ui/shared/address/AddressFromTo.tsx","explorer/frontend/ui/shared/address/AddressFromTo.spec.tsx","explorer/frontend/ui/address/AddressTxs.tsx","explorer/frontend/ui/address/AddressTxs.spec.tsx","explorer/frontend/ui/address/AddressInternalTxs.tsx","explorer/frontend/ui/address/AddressInternalTxs.spec.tsx","explorer/frontend/ui/address/AddressTokenTransfers.tsx","explorer/frontend/ui/address/AddressTokenTransfers.spec.tsx"]
+tests = ["explorer/frontend/ui/txs/TxsTabs.spec.tsx","explorer/frontend/ui/txs/TxsTableItem.spec.tsx","explorer/frontend/ui/txs/TxsListItem.spec.tsx","explorer/frontend/ui/blocks/BlocksTabSlot.spec.tsx","explorer/frontend/ui/pages/Blocks.spec.tsx","explorer/frontend/ui/shared/address/AddressFromTo.spec.tsx","explorer/frontend/ui/address/AddressTxs.spec.tsx","explorer/frontend/ui/address/AddressInternalTxs.spec.tsx","explorer/frontend/ui/address/AddressTokenTransfers.spec.tsx"]
+reqs = ["19.2","19.3","19.6","19.7","19.8","19.9","21.3","21.6","21.7","21.8","21.9"]
+
 [task.7]
 section = "Wave 7 - One Aggregate Run, Recorded"
 title = "Qualify the redesigned frontend once on the merged tip and write down what ran"
@@ -1116,7 +1132,7 @@ status = "pending"
 title = "Run the explorer gates once over the scan waves and record the evidence"
 status = "pending"
 wave = 7
-requires = ["6.1","6.2","6.3","6.4","6.5","6.6","6.7","6.8","6.9","6.10"]
+requires = ["6.1","6.2","6.3","6.4","6.5","6.6","6.7","6.8","6.9","6.10","6.11"]
 do_1 = "On the revision that merges waves 5 and 6, run tools/explorer/gate-lint.sh once, writing its log under build/explorer-gates/."
 do_2 = "At that same revision run tools/explorer/gate-test.sh once with its budget set to fit this task's timeout, writing its logs under build/explorer-gates/."
 do_3 = "At that same revision run tools/explorer/test-ratio.sh once over the range that spans waves 5 and 6, so that every source file those waves changed is proven to have a changed test referencing it."

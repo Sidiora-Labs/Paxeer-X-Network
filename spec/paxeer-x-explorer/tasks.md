@@ -363,6 +363,13 @@
     - List the source files the transaction page rebuild changed that carry no spec beside them, by diffing that rebuild's commit against its parent over explorer/ and applying the rule tools/explorer/test-ratio.sh states - a changed test counts for a changed source only when it sits in the same directory under the same stem, names one of that source's exported names, or names a fragment of its path.
     - Add one vitest spec beside each source that list names - explorer/frontend/ui/tx/TxDetailsDegraded.spec.tsx, TxLogs.spec.tsx, TxInternals.spec.tsx, TxRawTrace.spec.tsx, TxState.spec.tsx and explorer/frontend/ui/tx/details/txDetailsActions/TxDetailsActionsInterpretation.spec.tsx and TxDetailsActionsRaw.spec.tsx - each rendering the real component through explorer/frontend/vitest/lib.tsx with payload mocks from explorer/frontend/mocks/ and asserting the structure the rebuild gave it, changing no source file and adding no file ending in .pw.tsx and no __screenshots__ directory.
     - _Requirements: 20.1, 20.2, 20.3, 20.6, 20.7, 20.8, 20.9_
+  - [ ] 6.11 Carry the list pages' pagination in the table card only and put the direction badge on the counterparty column
+    - Leave the transactions and the blocks list one pagination by taking it out of the tab strips - explorer/frontend/ui/txs/TxsTabs.tsx keeps only the advanced-filter entry in its right slot and explorer/frontend/ui/blocks/BlocksTabSlot.tsx keeps only the network utilisation and the block countdown, dropping the pagination explorer/frontend/ui/pages/Blocks.tsx hands it - so the shared scan table card header and footer carry it alone while the mobile action bars of TxsContent and BlocksContent keep theirs.
+    - Put the shared direction badge on the counterparty column of the address-scoped rows in explorer/frontend/ui/shared/address/AddressFromTo.tsx, rendering it in both the long and the compact layout in place of the course arrow of explorer/frontend/ui/shared/address/AddressFromToIcon.tsx whenever a current address is in scope and the course is incoming or outgoing, so that the rows of explorer/frontend/ui/txs/TxsTableItem.tsx and TxsListItem.tsx and every other transaction and transfer row that names a current address carry it, and keeping the arrow for a self-directed or unscoped row.
+    - Drop the interim filter badge the address page kept in its table-card header in explorer/frontend/ui/address/AddressTxs.tsx, AddressInternalTxs.tsx and AddressTokenTransfers.tsx now that every row carries its own direction, leaving the filter control, the count line, the note and the download action exactly as they are.
+    - Consume the shared scan components from explorer/frontend/ui/shared/scan, write no literal colour, font family, radius or shadow, keep both appearances resolving through the same tokens, add no dependency, and change no file ending in .pw.tsx and no __screenshots__ directory.
+    - Add the vitest specs explorer/frontend/ui/txs/TxsTabs.spec.tsx, explorer/frontend/ui/blocks/BlocksTabSlot.spec.tsx and explorer/frontend/ui/shared/address/AddressFromTo.spec.tsx and extend explorer/frontend/ui/pages/Blocks.spec.tsx, explorer/frontend/ui/txs/TxsTableItem.spec.tsx, TxsListItem.spec.tsx and explorer/frontend/ui/address/AddressTxs.spec.tsx, AddressInternalTxs.spec.tsx and AddressTokenTransfers.spec.tsx, each rendering the real component through explorer/frontend/vitest/lib.tsx with payload mocks from explorer/frontend/mocks/ and asserting that every pagination sits inside the table card and that the direction badge sits on the counterparty column of a scoped row and no longer in the card header.
+    - _Requirements: 19.2, 19.3, 19.6, 19.7, 19.8, 19.9, 21.3, 21.6, 21.7, 21.8, 21.9_
 
 ## Wave 7 - One Aggregate Run, Recorded
 
@@ -388,7 +395,7 @@
     { "id": 3,  "tasks": ["3.1"] },
     { "id": 4,  "tasks": ["4.1", "4.2"] },
     { "id": 5,  "tasks": ["5.1", "5.2"] },
-    { "id": 6,  "tasks": ["6.1", "6.2", "6.3", "6.4", "6.5", "6.6", "6.7", "6.8", "6.9", "6.10"] },
+    { "id": 6,  "tasks": ["6.1", "6.2", "6.3", "6.4", "6.5", "6.6", "6.7", "6.8", "6.9", "6.10", "6.11"] },
     { "id": 7,  "tasks": ["7.1"] }
   ]
 }
