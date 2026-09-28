@@ -947,3 +947,16 @@ symbol = "cg spec done"
 observed = "The task verify_cmd passes at exit 0 over the merged feature tip, log explorer/frontend/.logs/verify-8.2-run3.log, with all 20 spec files and 153 tests green and no unhandled error, but three consecutive runs of cg spec done 8.2 refused to apply because the graph database write lock was held for the whole wait by other concurrent processes, so the task keeps the in_progress status and its done record is still unwritten."
 assumption = "The lock belongs to the editor and indexing processes running beside this work rather than to anything this task changed, since the command reports that nothing was applied and is safe to retry, so the four evidence lines are left for the same command to write once the lock frees instead of being entered by hand."
 severity = "blocker"
+
+[gate.8.wave]
+task = "8"
+reqs = ["16.1","16.2","16.3","16.4"]
+revision = "b4f3d6019f537c547b0753af0f63148f23dc348c"
+command = "timeout 25m sh -c 'cd explorer/frontend && yarn lint:eslint && yarn lint:tsc && yarn test:vitest run'"
+environment = "linux/x86_64, node 22 and yarn 1 in explorer/frontend, the dependency tree installed into this working tree from the lockfile as the gate's one build with HUSKY=0 yarn install --frozen-lockfile at exit 0"
+exit_code = 2
+outcome = "fail"
+log_path = "explorer/frontend/.logs/gate-8-wave.log"
+note = "Wave 8 declares no gate task of its own, so its waves were qualified once on the merged revision with the frontend legs of ac_1 chained as one command. The eslint leg passed over the project with 0 errors and 7 warnings, the type check leg then exited 2 and the chain stopped there, so the vitest leg never ran and wave 8 carries no test-leg record; the backend suites and the cspell and services lint checks are outside this run. The gate is not rerun at this revision."
+observed = "The type check leg, yarn lint:tsc, exits 2 with 31097 diagnostics over 1461 files - nearly every Chakra style prop in the tree, including files no wave-8 task touches, reported from pages/_app.tsx onwards as TS2322 Type string is not assignable to type Nested<SystemStyleObject> - while the eslint leg of the same command passed and the vitest leg was never reached."
+assumption = "The collapse is read as the generated Chakra typings of this fresh install rather than as anything the wave wrote, because the postinstall typegen left node_modules/@chakra-ui/react/dist/types/styled-system/generated/conditions.gen.d.ts zero length beside the four typings the package ships, which is what strips every style prop of its type, and every wave-8 task ran this same type check at its own revision and recorded it passing; nothing is changed, no diagnostic is silenced and neither the install nor the gate is rerun here."
