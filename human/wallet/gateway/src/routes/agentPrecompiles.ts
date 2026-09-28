@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { createHash } from 'node:crypto';
 import type { Hex } from 'viem';
 import { requireAgent } from '../middleware/principal.js';
+import { requireSignedAgentRequest } from '../agent/verify.js';
 import { env } from '../env.js';
 import {
   PRECOMPILE_ADDRESSES,
@@ -65,7 +66,7 @@ function resolveFamily(f: string | number): number {
 export async function agentPrecompileRoutes(app: FastifyInstance): Promise<void> {
   // ── Scheduler (0x0905) ─────────────────────────────────────────────────────
 
-  app.post('/v1/agent/precompiles/scheduler/schedule', { preHandler: requireAgent }, async (req, reply) => {
+  app.post('/v1/agent/precompiles/scheduler/schedule', { preHandler: requireSignedAgentRequest }, async (req, reply) => {
     const parsed = ScheduleBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_body', issues: parsed.error.issues });
     const { target, call_data, execute_at_block, gas_limit, deposit_wei } = parsed.data;
@@ -103,7 +104,7 @@ export async function agentPrecompileRoutes(app: FastifyInstance): Promise<void>
     return reply.code(res.status).send(res.body);
   });
 
-  app.post('/v1/agent/precompiles/scheduler/cancel', { preHandler: requireAgent }, async (req, reply) => {
+  app.post('/v1/agent/precompiles/scheduler/cancel', { preHandler: requireSignedAgentRequest }, async (req, reply) => {
     const parsed = SchedulerJobIdBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_body', issues: parsed.error.issues });
     const call = scheduler.cancel(BigInt(parsed.data.job_id));
@@ -118,7 +119,7 @@ export async function agentPrecompileRoutes(app: FastifyInstance): Promise<void>
     return reply.code(res.status).send(res.body);
   });
 
-  app.post('/v1/agent/precompiles/scheduler/reschedule', { preHandler: requireAgent }, async (req, reply) => {
+  app.post('/v1/agent/precompiles/scheduler/reschedule', { preHandler: requireSignedAgentRequest }, async (req, reply) => {
     const parsed = RescheduleBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_body', issues: parsed.error.issues });
     const call = scheduler.reschedule(BigInt(parsed.data.job_id), BigInt(parsed.data.new_block));
@@ -153,7 +154,7 @@ export async function agentPrecompileRoutes(app: FastifyInstance): Promise<void>
 
   // ── PaymentStreams (0x0906) ─────────────────────────────────────────────────
 
-  app.post('/v1/agent/precompiles/streams/open', { preHandler: requireAgent }, async (req, reply) => {
+  app.post('/v1/agent/precompiles/streams/open', { preHandler: requireSignedAgentRequest }, async (req, reply) => {
     const parsed = StreamOpenBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_body', issues: parsed.error.issues });
     const { payee, token, rate_per_second, start_time, stop_time, cap } = parsed.data;
@@ -190,7 +191,7 @@ export async function agentPrecompileRoutes(app: FastifyInstance): Promise<void>
     ['settle', (id: bigint) => streams.settle(id)],
     ['close', (id: bigint) => streams.close(id)],
   ] as const) {
-    app.post(`/v1/agent/precompiles/streams/${path}`, { preHandler: requireAgent }, async (req, reply) => {
+    app.post(`/v1/agent/precompiles/streams/${path}`, { preHandler: requireSignedAgentRequest }, async (req, reply) => {
       const parsed = StreamIdBody.safeParse(req.body);
       if (!parsed.success) return reply.code(400).send({ error: 'invalid_body', issues: parsed.error.issues });
       const call = op(BigInt(parsed.data.stream_id));
@@ -206,7 +207,7 @@ export async function agentPrecompileRoutes(app: FastifyInstance): Promise<void>
     });
   }
 
-  app.post('/v1/agent/precompiles/streams/update-rate', { preHandler: requireAgent }, async (req, reply) => {
+  app.post('/v1/agent/precompiles/streams/update-rate', { preHandler: requireSignedAgentRequest }, async (req, reply) => {
     const parsed = StreamUpdateRateBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_body', issues: parsed.error.issues });
     const call = streams.updateRate(BigInt(parsed.data.stream_id), BigInt(parsed.data.new_rate));

@@ -147,3 +147,21 @@ RPC_HEALTH_INTERVAL_MS - interval between RPC pool health checks in milliseconds
 RPC_TIMEOUT_MS - timeout of one RPC request in milliseconds, defaulting to 8000
 RATE_LIMIT_CLIENT_PER_MINUTE - signing requests one bearer subject may make per minute, defaulting to 120
 RATE_LIMIT_ACCOUNT_PER_MINUTE - signing requests one wallet account may receive per minute, defaulting to 60
+AGENT_JWT_SECRET - platform secret signing the read-scoped agent token; unset disables the agent lane
+AGENT_TOKEN_TTL_SECONDS - lifetime of the read-scoped agent token in seconds
+AGENT_CHALLENGE_TTL_SECONDS - lifetime of an agent authentication challenge in seconds
+AGENT_REQUEST_MAX_TTL_SECONDS - furthest expiry in seconds an agent request signature or claim counter-signature may carry, default 300
+LAYERX_USDL_ADDRESS - USDL token address used by the kernel deposit action
+LAYERX_USDL_DECIMALS - USDL token decimals used when the token does not report them
+FUNDED_TREASURY_PRIVATE_KEY - removed with the funded lane; must not be set anywhere
+FUNDED_USDL_ADDRESS - removed; replaced by LAYERX_USDL_ADDRESS
+FUNDED_USDL_DECIMALS - removed; replaced by LAYERX_USDL_DECIMALS
+FUNDED_GAS_REFILL_THRESHOLD_WEI - removed with the funded lane
+FUNDED_GAS_REFILL_AMOUNT_WEI - removed with the funded lane
+FUNDED_EVALUATOR_INTERVAL_MS - removed with the funded lane
+FUNDED_BALANCE_READ_QUORUM - removed with the funded lane
+FUNDED_DAILY_RESET_UTC_HOUR - removed with the funded lane
+PAXSCAN_API_URL - removed with the funded lane
+PAXSCAN_TIMEOUT_MS - removed with the funded lane
+PAXSCAN_CACHE_TTL_MS - removed with the funded lane
+AGENT_BIND_OWNER_FROM_DID - removed; an owner is recorded only through the authenticated claim route

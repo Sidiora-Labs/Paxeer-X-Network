@@ -7,12 +7,19 @@ import {
   type AgentPolicyRuleRow,
   type AgentPrincipalRow,
 } from '../db/agents.js';
-import {
-  ERC20_APPROVE_SELECTOR,
-  ERC20_TRANSFER_SELECTOR,
-  ERC20_TRANSFER_FROM_SELECTOR,
-  decodeAddressArg,
-} from './funded.js';
+
+export const ERC20_APPROVE_SELECTOR = '0x095ea7b3';
+export const ERC20_TRANSFER_SELECTOR = '0xa9059cbb';
+export const ERC20_TRANSFER_FROM_SELECTOR = '0x23b872dd';
+
+export function decodeAddressArg(data: string, argIndex: number): string | null {
+  const start = 2 + 8 + 64 * argIndex;
+  const end = start + 64;
+  if (data.length < end) return null;
+  const slot = data.slice(start, end);
+  if (!/^0{24}[0-9a-fA-F]{40}$/.test(slot)) return null;
+  return `0x${slot.slice(24).toLowerCase()}`;
+}
 
 /**
  * Agent policy engine (v2).

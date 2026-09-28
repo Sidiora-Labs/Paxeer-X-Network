@@ -2,6 +2,8 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { createHash } from 'node:crypto';
 import type { Hex } from 'viem';
 import { requireAgent } from '../middleware/principal.js';
+import { requireSignedAgentRequest } from '../agent/verify.js';
+import { WalletArchivedError, archivedWalletGuard } from '../db/wallets.js';
 import { env } from '../env.js';
 import { query } from '../db/pool.js';
 import { getPolicy } from '../db/agents.js';
@@ -80,13 +82,14 @@ function toAgentTxInput(tx: {
 export async function agentRoutes(app: FastifyInstance): Promise<void> {
   // ── Wallet lifecycle ──────────────────────────────────────────────────────
 
-  app.post('/v1/agent/provision', { preHandler: requireAgent }, async (req, reply) => {
+  app.post('/v1/agent/provision', { preHandler: requireSignedAgentRequest }, async (req, reply) => {
     try {
       const wallet = await ensureAgentWallet(req.agent!);
       return reply.send({
         wallet: { id: wallet.id, address: wallet.address, chain_id: wallet.chain_id, kind: wallet.kind },
       });
     } catch (err) {
+      if (err instanceof WalletArchivedError) return reply.code(err.refusal.status).send(err.refusal.body);
       req.log.error({ err, did: req.agent!.did }, 'agent provision failed');
       return reply.code(500).send({ error: 'provision_failed', detail: (err as Error).message });
     }
@@ -220,9 +223,13 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
 
   // ── Signing (policy-gated) ──────────────────────────────────────────────────
 
-  app.post('/v1/agent/sign', { preHandler: requireAgent }, async (req, reply) => {
+  app.post('/v1/agent/sign', { preHandler: requireSignedAgentRequest }, async (req, reply) => {
     const parsed = AgentSignTxBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_body', issues: parsed.error.issues });
+    if (parsed.data.tx.to) {
+      const refusal = await archivedWalletGuard({ address: parsed.data.tx.to });
+      if (refusal) return reply.code(refusal.status).send(refusal.body);
+    }
     const tx = toAgentTxInput(parsed.data.tx);
     const intent: AgentTxIntent = { kind: 'transaction', to: tx.to, value: tx.value, data: tx.data };
     const res = await executeAgentTransaction({
@@ -235,9 +242,13 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
     return reply.code(res.status).send(res.body);
   });
 
-  app.post('/v1/agent/send', { preHandler: requireAgent }, async (req, reply) => {
+  app.post('/v1/agent/send', { preHandler: requireSignedAgentRequest }, async (req, reply) => {
     const parsed = AgentSendTxBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_body', issues: parsed.error.issues });
+    if (parsed.data.tx.to) {
+      const refusal = await archivedWalletGuard({ address: parsed.data.tx.to });
+      if (refusal) return reply.code(refusal.status).send(refusal.body);
+    }
     const tx = toAgentTxInput(parsed.data.tx);
     const intent: AgentTxIntent = { kind: 'transaction', to: tx.to, value: tx.value, data: tx.data };
     const res = await executeAgentTransaction({
@@ -250,7 +261,7 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
     return reply.code(res.status).send(res.body);
   });
 
-  app.post('/v1/agent/sign-message', { preHandler: requireAgent }, async (req, reply) => {
+  app.post('/v1/agent/sign-message', { preHandler: requireSignedAgentRequest }, async (req, reply) => {
     const parsed = AgentSignMessageBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_body', issues: parsed.error.issues });
     const res = await executeAgentMessage({
@@ -261,7 +272,7 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
     return reply.code(res.status).send(res.body);
   });
 
-  app.post('/v1/agent/sign-typed-data', { preHandler: requireAgent }, async (req, reply) => {
+  app.post('/v1/agent/sign-typed-data', { preHandler: requireSignedAgentRequest }, async (req, reply) => {
     const parsed = AgentSignTypedDataBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_body', issues: parsed.error.issues });
     const res = await executeAgentTypedData({
@@ -274,10 +285,12 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
 
   // ── High-level token ops (structured policy intent) ─────────────────────────
 
-  app.post('/v1/agent/transfer', { preHandler: requireAgent }, async (req, reply) => {
+  app.post('/v1/agent/transfer', { preHandler: requireSignedAgentRequest }, async (req, reply) => {
     const parsed = AgentTransferBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_body', issues: parsed.error.issues });
     const { token, to, amount } = parsed.data;
+    const transferRefusal = await archivedWalletGuard({ address: to });
+    if (transferRefusal) return reply.code(transferRefusal.status).send(transferRefusal.body);
     const amountWei = BigInt(amount);
 
     let tx: AgentTxInput;
@@ -312,10 +325,12 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
     return reply.code(res.status).send(res.body);
   });
 
-  app.post('/v1/agent/approve', { preHandler: requireAgent }, async (req, reply) => {
+  app.post('/v1/agent/approve', { preHandler: requireSignedAgentRequest }, async (req, reply) => {
     const parsed = AgentApproveBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_body', issues: parsed.error.issues });
     const { token, spender, amount } = parsed.data;
+    const approveRefusal = await archivedWalletGuard({ address: spender });
+    if (approveRefusal) return reply.code(approveRefusal.status).send(approveRefusal.body);
     const amountWei = BigInt(amount);
     const data = encodeErc20Approve(spender as `0x${string}`, amountWei);
     const tx: AgentTxInput = { to: token as `0x${string}`, value: 0n, data };

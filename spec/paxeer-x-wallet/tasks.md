@@ -104,7 +104,7 @@
     - Replace the per-process nonce lock with a shared store using a per-address row lock that holds across workers and instances, add an RPC pool with health checks and failover for reads, gas estimation, simulation and broadcast, and add per-client and per-account HTTP rate limits and the audit table of req.5.ac_6.
     - Extend the gateway tests to cover quorum selection with one unhealthy node, session posting to three participants against an in-test HTTPS server that speaks the attestor schema goldens, nonce allocation under concurrent requests across two processes, pool failover, rate limiting and audit rows, and the migrated flag switching the path.
     - _Requirements: 5.2, 5.3, 5.6_
-  - [ ] 2.3 Remove the funded lane and repair agent consent and request signing in the gateway
+  - [x] 2.3 Remove the funded lane and repair agent consent and request signing in the gateway
     - Remove the funded routes, the treasury evaluator, the tier tables, the fund and sweep paths and every configuration variable of the treasury from human/wallet/gateway, add a migration that marks funded wallets archived and excludes them from every query, and refuse any request naming one.
     - Replace the automatic owner binding from the agent label with an authenticated claim route, add end-to-end agent request signing verification (canonical digest, nonce, expiry, registered key, frozen principal) for every value-moving agent route, and scope the gateway-minted agent token to read routes.
     - Add tests covering removed routes answering not found, an archived wallet refused, the claim route, signed and unsigned agent requests, replay and expiry, and the token refused on a write route.

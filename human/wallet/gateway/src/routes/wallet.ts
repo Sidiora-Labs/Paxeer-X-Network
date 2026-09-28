@@ -1,6 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import { requireAuth } from '../middleware/auth.js';
-import { findWalletByUserId, provisionWalletForUser } from '../db/wallets.js';
+import {
+  WalletArchivedError,
+  archivedWalletGuard,
+  findWalletByUserId,
+  provisionWalletForUser,
+} from '../db/wallets.js';
 import { env } from '../env.js';
 
 export async function walletRoutes(app: FastifyInstance): Promise<void> {
@@ -15,6 +20,7 @@ export async function walletRoutes(app: FastifyInstance): Promise<void> {
       const { wallet } = await provisionWalletForUser(userId, 'standard');
       return reply.send({ wallet });
     } catch (err) {
+      if (err instanceof WalletArchivedError) return reply.code(err.refusal.status).send(err.refusal.body);
       req.log.error({ err, userId }, 'wallet provision failed');
       return reply
         .code(500)
@@ -30,6 +36,8 @@ export async function walletRoutes(app: FastifyInstance): Promise<void> {
     const userId = req.user!.id;
     const wallet = await findWalletByUserId(userId);
     if (!wallet) {
+      const refusal = await archivedWalletGuard({ userId, kind: 'standard' });
+      if (refusal) return reply.code(refusal.status).send(refusal.body);
       return reply.code(404).send({ error: 'no_wallet', message: 'wallet not provisioned' });
     }
     return reply.send({

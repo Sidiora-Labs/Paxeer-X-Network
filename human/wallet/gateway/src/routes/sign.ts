@@ -5,6 +5,7 @@ import { z } from 'zod';
 import type { Hex, TransactionSerializableEIP1559, TypedDataDefinition } from 'viem';
 import { requireAuth } from '../middleware/auth.js';
 import {
+  archivedWalletGuard,
   getSigningAccountForRow,
   loadWalletForSigning,
   logSignature,
@@ -167,6 +168,7 @@ interface SigningContext {
   route: string;
   kind: AuditKind;
   requestHash: string;
+  to?: string;
 }
 
 interface WalletStage {
@@ -238,6 +240,11 @@ export async function signRoutes(app: FastifyInstance, opts: SignRoutesOptions =
       return reply.code(status).send({ ...body, request_id: ctx.requestId });
     };
 
+    if (ctx.to) {
+      const archived = await archivedWalletGuard({ address: ctx.to });
+      if (archived) return refuse(archived.status, 'wallet_archived', archived.body);
+    }
+
     try {
       await limiter.consume('client', ctx.subject);
     } catch (err) {
@@ -259,7 +266,11 @@ export async function signRoutes(app: FastifyInstance, opts: SignRoutesOptions =
     try {
       await client.query('BEGIN');
       const sw = await loadWalletForSigning(client, ctx.subject);
-      if (!sw) throw new RouteRefusal(404, 'no_wallet', { error: 'no_wallet', message: 'wallet not provisioned' });
+      if (!sw) {
+        const archived = await archivedWalletGuard({ userId: ctx.subject, kind: 'standard' });
+        if (archived) throw new RouteRefusal(archived.status, 'wallet_archived', archived.body);
+        throw new RouteRefusal(404, 'no_wallet', { error: 'no_wallet', message: 'wallet not provisioned' });
+      }
       account = sw.row.address;
       walletId = sw.row.id;
       path = sw.migratedAt !== null ? 'attestor' : 'envelope';
@@ -374,7 +385,7 @@ export async function signRoutes(app: FastifyInstance, opts: SignRoutesOptions =
     return run(
       req,
       reply,
-      { requestId: randomUUID(), subject: userId, route: '/v1/wallet/sign', kind: 'transaction', requestHash },
+      { requestId: randomUUID(), subject: userId, route: '/v1/wallet/sign', kind: 'transaction', requestHash, to: tx.to },
       valueWei,
       async ({ sw, signer }) => {
         const prepared = await prepareTx(signer, tx);
@@ -422,7 +433,7 @@ export async function signRoutes(app: FastifyInstance, opts: SignRoutesOptions =
     return run(
       req,
       reply,
-      { requestId: randomUUID(), subject: userId, route: '/v1/wallet/send', kind: 'transaction', requestHash },
+      { requestId: randomUUID(), subject: userId, route: '/v1/wallet/send', kind: 'transaction', requestHash, to: tx.to },
       valueWei,
       async ({ sw, signer }) => {
         const prepared = await prepareTx(signer, tx);

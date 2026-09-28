@@ -14,6 +14,7 @@ import { env } from '../env.js';
 
 const ISSUER = 'paxeer-wallet-api';
 const AUDIENCE = 'paxeer-agent';
+export const AGENT_TOKEN_SCOPE = 'read';
 
 /** True when the agent lane is configured (secret present). */
 export function agentLaneEnabled(): boolean {
@@ -34,6 +35,7 @@ export interface AgentTokenClaims {
   did: string;
   /** Owner Supabase user id, when the DID is bound to one; else null. */
   owner: string | null;
+  scope: typeof AGENT_TOKEN_SCOPE;
 }
 
 export interface MintedAgentToken {
@@ -41,15 +43,16 @@ export interface MintedAgentToken {
   token_type: 'Bearer';
   expires_in: number;
   did: string;
+  scope: typeof AGENT_TOKEN_SCOPE;
 }
 
-/** Mint a short-lived agent_token. Throws if the lane is disabled. */
+/** Mint a short-lived read-scoped agent_token. Throws if the lane is disabled. */
 export async function mintAgentToken(args: {
   did: string;
   ownerUserId: string | null;
 }): Promise<MintedAgentToken> {
   const ttl = env.AGENT_TOKEN_TTL_SECONDS;
-  const token = await new SignJWT({ did: args.did, owner: args.ownerUserId })
+  const token = await new SignJWT({ did: args.did, owner: args.ownerUserId, scope: AGENT_TOKEN_SCOPE })
     .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
     .setSubject(`matrix://user/${args.did}`)
     .setIssuer(ISSUER)
@@ -57,7 +60,7 @@ export async function mintAgentToken(args: {
     .setIssuedAt()
     .setExpirationTime(`${ttl}s`)
     .sign(secret());
-  return { token, token_type: 'Bearer', expires_in: ttl, did: args.did };
+  return { token, token_type: 'Bearer', expires_in: ttl, did: args.did, scope: AGENT_TOKEN_SCOPE };
 }
 
 export class InvalidAgentTokenError extends Error {
@@ -76,8 +79,9 @@ export async function verifyAgentToken(token: string): Promise<AgentTokenClaims>
     });
     const did = typeof payload.did === 'string' ? payload.did : '';
     if (!did) throw new InvalidAgentTokenError('token missing did claim');
+    if (payload.scope !== AGENT_TOKEN_SCOPE) throw new InvalidAgentTokenError('token scope is not read');
     const owner = typeof payload.owner === 'string' ? payload.owner : null;
-    return { sub: String(payload.sub ?? ''), did, owner };
+    return { sub: String(payload.sub ?? ''), did, owner, scope: AGENT_TOKEN_SCOPE };
   } catch (err) {
     if (err instanceof InvalidAgentTokenError) throw err;
     throw new InvalidAgentTokenError(err instanceof Error ? err.message : 'invalid agent token');

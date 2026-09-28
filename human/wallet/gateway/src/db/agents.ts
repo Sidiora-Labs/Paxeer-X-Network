@@ -138,7 +138,7 @@ export async function listPrincipalsByOwner(ownerUserId: string): Promise<AgentP
 /**
  * Upsert a principal on a successful DID verify. Creates the row (with the
  * safe-by-default frozen posture + a default policy) on first sight, otherwise
- * bumps last_seen_at and back-fills owner_user_id if it was unowned.
+ * bumps last_seen_at. It never records an owner.
  *
  * Principal + default policy are written in one transaction so a principal can
  * never exist without a policy row.
@@ -148,18 +148,16 @@ export async function upsertPrincipalOnVerify(args: {
   label: string;
   keyFingerprint: string;
   publicKey: string;
-  ownerUserId: string | null;
 }): Promise<AgentPrincipalRow> {
   return withTransaction(async (client) => {
     const { rows } = await client.query<AgentPrincipalRow>(
-      `insert into agent_principals (did, owner_user_id, label, key_fingerprint, public_key, is_frozen)
-       values ($1, $2, $3, $4, $5, $6)
+      `insert into agent_principals (did, label, key_fingerprint, public_key, is_frozen)
+       values ($1, $2, $3, $4, $5)
        on conflict (did) do update
-         set last_seen_at = now(),
-             owner_user_id = coalesce(agent_principals.owner_user_id, excluded.owner_user_id)
+         set last_seen_at = now()
        returning did, owner_user_id, label, key_fingerprint, public_key, wallet_id,
                  is_frozen, created_at, last_seen_at`,
-      [args.did, args.ownerUserId, args.label, args.keyFingerprint, args.publicKey, env.AGENT_DEFAULT_FROZEN],
+      [args.did, args.label, args.keyFingerprint, args.publicKey, env.AGENT_DEFAULT_FROZEN],
     );
     // Ensure a default policy row exists for this principal.
     await client.query(
@@ -181,11 +179,11 @@ export async function setPrincipalFrozen(did: string, frozen: boolean): Promise<
   await query(`update agent_principals set is_frozen = $2 where did = $1`, [did, frozen]);
 }
 
-/** Claim an UNOWNED principal for an owner. Returns false if already owned by someone else. */
+/** Record the owner of an UNOWNED principal. Returns false if it already has an owner. */
 export async function claimPrincipal(did: string, ownerUserId: string): Promise<boolean> {
   const { rowCount } = await query(
     `update agent_principals set owner_user_id = $2
-      where did = $1 and (owner_user_id is null or owner_user_id = $2)`,
+      where did = $1 and owner_user_id is null`,
     [did, ownerUserId],
   );
   return (rowCount ?? 0) > 0;

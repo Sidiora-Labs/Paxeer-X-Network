@@ -197,3 +197,19 @@ symbol = "Client::from_environment"
 observed = "With the kernel-side inputs absent the endpoint still refuses startup with producer requires mTLS and bearer credentials unless LAYERX_EVENTS_PAYMENT_ and LAYERX_EVENTS_WEBHOOKS_ upstream URL, CA, token file and client identity with its password are set."
 assumption = "The chain-only deployment supplies the event producer inputs, or a later task makes the producer optional; this task left the producer unchanged because it lives outside the gateway crate."
 severity = "medium"
+
+[observation.2.3.1]
+task = "2.3"
+file = "human/wallet/gateway/src/schemas/tx.ts"
+symbol = "ProvisionFundedBody"
+observed = "The funded provision body schema outlives the removed lane because test/schemas.injection.test.ts exercises it and that test belongs to a kept module."
+assumption = "The schema and its injection test are removed together by whichever task retires the schema module's funded shapes."
+severity = "note"
+
+[observation.2.3.2]
+task = "2.3"
+file = "human/wallet/sdk/src/index.ts"
+symbol = "funded"
+observed = "The SDK client, its types and client test, the demo's funded account panel and the workspace README still call or describe the removed /v1/funded routes, which now answer 404."
+assumption = "The SDK tasks of this wave own those files and drop the funded surface there."
+severity = "suspect"

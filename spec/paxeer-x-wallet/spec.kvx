@@ -505,7 +505,7 @@ log_path = ".logs/verify.log"
 
 [task.2.3]
 title = "Remove the funded lane and repair agent consent and request signing in the gateway"
-status = "pending"
+status = "done"
 wave = 2
 requires = ["1.10"]
 do_1 = "Remove the funded routes, the treasury evaluator, the tier tables, the fund and sweep paths and every configuration variable of the treasury from human/wallet/gateway, add a migration that marks funded wallets archived and excludes them from every query, and refuse any request naming one."
@@ -515,6 +515,10 @@ verify_cmd = "timeout 20m sh -c 'pnpm --dir human/wallet/gateway test'"
 symbols = ["claimAgent","verifyAgentRequest","archivedWalletGuard"]
 touches = ["human/wallet/gateway/src/routes/agent.ts","human/wallet/gateway/src/routes/agents.ts","human/wallet/gateway/src/agent/verify.ts","human/wallet/gateway/src/db/migrations/","human/wallet/gateway/test/agent.test.ts","human/wallet/gateway/test/funded-removed.test.ts"]
 reqs = ["5.4","5.5"]
+revision = "40965a18b9a8f67dfba6d6aff23e16980f36b88b"
+command = "timeout 20m sh -c 'pnpm --dir human/wallet/gateway test'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.2.4]
 title = "Build the SDK provider with EIP-1193, EIP-6963 and the custody hand-off"

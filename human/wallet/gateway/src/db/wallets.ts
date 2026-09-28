@@ -78,8 +78,7 @@ function toPublic(row: WalletRow): PublicWallet {
 /**
  * Look up the wallet for a user. Returns null if none exists yet.
  *
- * `kind` defaults to 'standard' for backwards compat with the pre-funded-accounts
- * API. Funded-accounts paths pass kind='funded' to get the separate EOA.
+ * `kind` defaults to 'standard'. Archived rows are never returned.
  */
 export async function findWalletByUserId(
   userId: string,
@@ -89,7 +88,7 @@ export async function findWalletByUserId(
     `select id, user_id, address, encrypted_private_key, key_version, chain_id, kind,
             created_at, last_used_at, is_disabled, disabled_reason
        from wallets
-      where user_id = $1 and kind = $2
+      where user_id = $1 and kind = $2 and archived_at is null
       limit 1`,
     [userId, kind],
   );
@@ -111,7 +110,7 @@ export async function loadWalletForSigning(
     `select id, user_id, address, encrypted_private_key, key_version, chain_id, kind,
             created_at, last_used_at, is_disabled, disabled_reason, migrated_at, attestor_key_id
        from wallets
-      where user_id = $1 and kind = $2
+      where user_id = $1 and kind = $2 and archived_at is null
       limit 1
       for share`,
     [userId, kind],
@@ -122,24 +121,100 @@ export async function loadWalletForSigning(
   return { row, migratedAt: migrated_at, attestorKeyId: attestor_key_id };
 }
 
-/** Look up a wallet by its on-chain address. Used by treasury / evaluator paths. */
 export async function findWalletByAddress(address: string): Promise<WalletRow | null> {
   const { rows } = await query<WalletRow>(
     `select id, user_id, address, encrypted_private_key, key_version, chain_id, kind,
             created_at, last_used_at, is_disabled, disabled_reason
        from wallets
-      where lower(address) = lower($1)
+      where lower(address) = lower($1) and archived_at is null
       limit 1`,
     [address],
   );
   return rows[0] ?? null;
 }
 
+export type ArchivedWalletLookup =
+  | { id: string }
+  | { address: string }
+  | { userId: string; kind: WalletKind };
+
+export interface ArchivedWalletRefusal {
+  status: 410;
+  body: {
+    error: 'wallet_archived';
+    message: string;
+    wallet_id: string;
+    address: `0x${string}`;
+  };
+}
+
+const UUID_TEXT_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ADDRESS_TEXT_RE = /^0x[0-9a-fA-F]{40}$/;
+
+export async function findArchivedWallet(
+  lookup: ArchivedWalletLookup,
+): Promise<{ id: string; address: `0x${string}`; archived_at: string } | null> {
+  let id: string | null = null;
+  let address: string | null = null;
+  let userId: string | null = null;
+  let kind: WalletKind | null = null;
+  if ('id' in lookup) {
+    if (!UUID_TEXT_RE.test(lookup.id)) return null;
+    id = lookup.id;
+  } else if ('address' in lookup) {
+    if (!ADDRESS_TEXT_RE.test(lookup.address)) return null;
+    address = lookup.address;
+  } else {
+    if (!UUID_TEXT_RE.test(lookup.userId)) return null;
+    userId = lookup.userId;
+    kind = lookup.kind;
+  }
+  const { rows } = await query<{ id: string; address: `0x${string}`; archived_at: string }>(
+    `select id, address, archived_at
+       from wallets
+      where archived_at is not null
+        and (id = $1::uuid
+             or lower(address) = lower($2::text)
+             or (user_id = $3::uuid and kind = $4::text))
+      limit 1`,
+    [id, address, userId, kind],
+  );
+  return rows[0] ?? null;
+}
+
+export async function archivedWalletGuard(
+  ...lookups: ArchivedWalletLookup[]
+): Promise<ArchivedWalletRefusal | null> {
+  for (const lookup of lookups) {
+    const archived = await findArchivedWallet(lookup);
+    if (archived) {
+      return new WalletArchivedError(archived.id, archived.address).refusal;
+    }
+  }
+  return null;
+}
+
+export class WalletArchivedError extends Error {
+  readonly refusal: ArchivedWalletRefusal;
+  constructor(walletId: string, address: `0x${string}`) {
+    super(`wallet ${walletId} is archived`);
+    this.name = 'WalletArchivedError';
+    this.refusal = {
+      status: 410,
+      body: {
+        error: 'wallet_archived',
+        message: 'this wallet is archived and no longer served',
+        wallet_id: walletId,
+        address,
+      },
+    };
+  }
+}
+
 /**
  * Idempotent: return the existing wallet of the given kind for the user, or
- * create a fresh one. Returns BOTH the public wallet and the raw row — the
- * funded-provision path needs `wallet_id` to insert into `funded_accounts`
- * inside the same transaction.
+ * create a fresh one. Returns BOTH the public wallet and the raw row. Refuses
+ * with WalletArchivedError when the user's wallet of that kind is archived.
  */
 export async function provisionWalletForUser(
   userId: string,
@@ -154,6 +229,8 @@ export async function provisionWalletForUser(
     }
     return { wallet: toPublic(existing), row: existing };
   }
+  const archived = await findArchivedWallet({ userId, kind });
+  if (archived) throw new WalletArchivedError(archived.id, archived.address);
 
   // Generate a fresh EOA. `viem.generatePrivateKey` uses crypto.randomBytes(32).
   const privateKey = generatePrivateKey();
@@ -219,8 +296,8 @@ export async function getSigningAccountForUser(
 }
 
 /**
- * Variant that takes an already-loaded WalletRow. Used by the funded-account
- * flows that have the row in hand and want to skip a second lookup.
+ * Variant that takes an already-loaded WalletRow, for callers that have the
+ * row in hand and want to skip a second lookup.
  */
 export async function getSigningAccountForRow(wallet: WalletRow): Promise<SigningAccount> {
   const masterKey = loadMasterKey(env.WALLET_MASTER_KEY);
