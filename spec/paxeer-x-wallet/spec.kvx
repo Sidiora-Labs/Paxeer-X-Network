@@ -1041,6 +1041,23 @@ symbols = ["buildManifest","registerServiceWorker","InstallPrompt","OfflineFallb
 touches = ["human/apps/wallet/public/manifest.json","human/apps/wallet/public/icons/","human/apps/wallet/src/pwa/","human/apps/wallet/src/app/layout.tsx","human/apps/wallet/src/proxy.ts","human/apps/wallet/src/lib/security/","human/apps/wallet/scripts/release-check.sh","human/apps/wallet/package.json","human/apps/wallet/capacitor.config.ts","human/apps/wallet/ios/","human/apps/wallet/android/"]
 reqs = ["10.8"]
 
+[task.4.11]
+title = "Harden the attestor's authority boundaries from the security review"
+status = "done"
+wave = 4
+requires = ["4.8","2.1"]
+do_1 = "Operator operations (keys.import, keys.refresh, keys.addshare) are accepted only from a client certificate chaining to the operator CA and keys.generate and sign only from one chaining to the gateway CA, both pools loaded from the configured files, proven by tests where each identity is refused on the other's operations."
+do_2 = "The daemon wires the kernel policy evaluator for every lx_ kind and the agent verifier into cmd/attestor so the binary enforces what the server package tests enforce, with configuration variables documented in deploy/env; user tokens are checked for issuer, audience, expiry and a maximum age, and a token's identifier is recorded in the store so the same token cannot authorise a second signing session; agent expiry is bounded to a configured maximum and agent nonces persist in the store across restarts."
+do_3 = "Every denial writes its audit record before the response is sent and the audit head is fsynced; the schema and goldens for eth_sign_digest describe the reconstructed construction the daemon now requires (observation 4.8.1); the review document marks the fixed findings as fixed and states the remaining owner decisions."
+verify_cmd = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./internal/server/... ./internal/auth/... ./internal/audit/... ./cmd/...'"
+symbols = ["ClientAuthorities","operatorOnly","gatewayOnly","TokenReplayStore","AgentNonceStore","LoadPrincipals"]
+touches = ["human/wallet/attestor/internal/server/","human/wallet/attestor/internal/auth/","human/wallet/attestor/internal/store/replay.go","human/wallet/attestor/internal/config/","human/wallet/attestor/cmd/attestor/","human/wallet/schema/attestor-api/v1.kvx","human/wallet/schema/attestor-api/golden/","human/wallet/deploy/env","human/wallet/docs/security-review.md"]
+reqs = ["1.7","2.1","2.2","2.5","2.6","13.3"]
+revision = "c2d5680b8d5c4edf5027830c5d9f79f9bfa18a8d"
+command = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./internal/server/... ./internal/auth/... ./internal/audit/... ./cmd/...'"
+exit_code = 0
+log_path = ".logs/verify.log"
+
 [task.4.12]
 title = "Make refresh atomic and the spend ledger durable across the attestor network"
 status = "done"

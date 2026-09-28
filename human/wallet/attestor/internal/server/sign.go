@@ -16,6 +16,7 @@ import (
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/lxwire"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy/evm"
+	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy/lx"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/tss/dealer"
 	tssecdsa "github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/tss/ecdsa"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/tss/eddsa"
@@ -113,38 +114,6 @@ type SignResponse struct {
 	Signature     string `json:"signature"`
 	RecoveryID    *uint8 `json:"recovery_id,omitempty"`
 	AuditSequence uint64 `json:"audit_sequence"`
-}
-
-func emptyInspector(want func(any) bool) policy.Inspector {
-	return func(_ policy.Context, view any) (policy.Inspection, error) {
-		if !want(view) {
-			return policy.Inspection{}, &policy.Refusal{Code: policy.CodeDecodeError, Reason: "unexpected view for kind"}
-		}
-		return policy.Inspection{}, nil
-	}
-}
-
-func registerKernelKinds(p *policy.Policy) error {
-	kinds := map[string]policy.Inspector{
-		KindLXActivity: emptyInspector(func(v any) bool { _, ok := v.(*lxwire.Activity); return ok }),
-		KindLXBind: func(ctx policy.Context, view any) (policy.Inspection, error) {
-			b, ok := view.(*lxwire.Binding)
-			if !ok {
-				return policy.Inspection{}, &policy.Refusal{Code: policy.CodeDecodeError, Reason: "unexpected view for kind"}
-			}
-			if ctx.ChainID == nil || new(big.Int).SetUint64(b.ChainID).Cmp(ctx.ChainID) != 0 {
-				return policy.Inspection{}, &policy.Refusal{Code: policy.CodeChainMismatch, Reason: "binding names another chain"}
-			}
-			return policy.Inspection{}, nil
-		},
-		KindLXGrant: emptyInspector(func(v any) bool { _, ok := v.(*lxwire.Grant); return ok }),
-	}
-	for _, kind := range []string{KindLXActivity, KindLXBind, KindLXGrant} {
-		if err := p.Register(kind, kinds[kind]); err != nil && !strings.Contains(err.Error(), "already") {
-			return err
-		}
-	}
-	return nil
 }
 
 func decodeHex(field, s string) ([]byte, *Error) {
@@ -311,7 +280,7 @@ func (s *Server) HandleSign(w http.ResponseWriter, r *http.Request) {
 	if e == nil {
 		resp, e = s.doSign(r, body)
 	}
-	respond(w, resp, e)
+	s.finish(w, "sign", body, resp, e)
 }
 
 func (s *Server) authenticate(r *http.Request, keyID string, body []byte, owner string) (string, *Error) {
@@ -379,18 +348,20 @@ func (s *Server) doSign(r *http.Request, body []byte) (SignResponse, *Error) {
 	}
 	subject, e := s.authenticate(r, req.KeyID, body, payload.Owner)
 	if e != nil {
-		_, _ = s.audit("sign."+req.Kind, req.KeyID, "", "denied", e.Code, req.SessionID)
-		return SignResponse{}, e
+		return SignResponse{}, s.deny("sign."+req.Kind, req.KeyID, "", "denied", req.SessionID, e)
+	}
+	refuse := func(e *Error) (SignResponse, *Error) {
+		return SignResponse{}, s.deny("sign."+req.Kind, req.KeyID, subject, "denied", req.SessionID, e)
 	}
 	if c, _ := parseCurve(rec.Curve); c != curve {
-		return SignResponse{}, newError(CodeKeyCurve, "kind %q needs a %s key", req.Kind, curveName(curve))
+		return refuse(newError(CodeKeyCurve, "kind %q needs a %s key", req.Kind, curveName(curve)))
 	}
 	signers, ok := sortedUnique(req.Signers)
 	if !ok {
-		return SignResponse{}, newError(CodeSessionBadRequest, "signers must be distinct non-empty ids")
+		return refuse(newError(CodeSessionBadRequest, "signers must be distinct non-empty ids"))
 	}
 	if len(signers) < int(dealer.Threshold) {
-		return SignResponse{}, newError(CodeQuorumTooFew, "at least %d signers are required", dealer.Threshold)
+		return refuse(newError(CodeQuorumTooFew, "at least %d signers are required", dealer.Threshold))
 	}
 	members := make(map[string]bool, len(rec.Participants))
 	for _, p := range rec.Participants {
@@ -399,29 +370,31 @@ func (s *Server) doSign(r *http.Request, body []byte) (SignResponse, *Error) {
 	self := false
 	for _, id := range signers {
 		if !members[id] {
-			return SignResponse{}, newError(CodeQuorumNotMember, "signer %q does not hold a share of the key", id)
+			return refuse(newError(CodeQuorumNotMember, "signer %q does not hold a share of the key", id))
 		}
 		self = self || id == s.opts.NodeID
 	}
 	if !self {
-		return SignResponse{}, newError(CodeQuorumSelfMissing, "this node is not among the signers")
+		return refuse(newError(CodeQuorumSelfMissing, "this node is not among the signers"))
 	}
 
 	signed, view, policyKind, e := s.prepare(req, rec.PublicKey)
 	if e != nil {
-		_, _ = s.audit("sign."+req.Kind, req.KeyID, subject, "denied", e.Code, req.SessionID)
-		return SignResponse{}, e
+		return refuse(e)
 	}
 	unlockAccount := s.lockKey("ledger\x00" + policy.AccountKey(payload.Account))
-	decision := s.opts.Policy.Evaluate(payload.Account, policy.Request{Kind: policyKind, View: view}, s.spends.ForRequest(requestID(req.KeyID, req.SessionID)))
+	decision := s.evaluate(payload.Account, policyKind, view, s.spends.ForRequest(requestID(req.KeyID, req.SessionID)))
 	unlockAccount()
 	if !decision.Allowed {
-		_, _ = s.audit("sign."+req.Kind, req.KeyID, subject, "denied", decision.Code, req.SessionID)
-		return SignResponse{}, policyError(decision.Code, decision.Reason)
+		return refuse(policyError(decision.Code, decision.Reason))
 	}
 	if acked, silent := s.Announce(r.Context(), req.KeyID, req.SessionID, payload.Account, rec.Participants, decision.Spends); acked < int(dealer.Threshold) {
-		_, _ = s.audit("sign."+req.Kind, req.KeyID, subject, "denied", "announcement not acknowledged by a quorum", req.SessionID)
-		return SignResponse{}, newError(CodeQuorumTooFew, "%d of %d participants recorded the request; %d are required; silent: %s", acked, len(rec.Participants), dealer.Threshold, strings.Join(silent, ","))
+		if _, ae := s.audit("sign."+req.Kind, req.KeyID, subject, "denied", "announcement not acknowledged by a quorum", req.SessionID); ae != nil {
+			return SignResponse{}, ae
+		}
+		e := newError(CodeQuorumTooFew, "%d of %d participants recorded the request; %d are required; silent: %s", acked, len(rec.Participants), dealer.Threshold, strings.Join(silent, ","))
+		e.audited = true
+		return SignResponse{}, e
 	}
 	seq, e := s.audit("sign."+req.Kind, req.KeyID, subject, "allowed", decision.Code, req.SessionID)
 	if e != nil {
@@ -466,6 +439,43 @@ func (s *Server) doSign(r *http.Request, body []byte) (SignResponse, *Error) {
 		resp.Signature = hex.EncodeToString(sig[:])
 	}
 	return resp, nil
+}
+
+func (s *Server) evaluate(account, policyKind string, view any, ledger policy.Ledger) policy.Decision {
+	switch v := view.(type) {
+	case *lx.ActivityRequest:
+		return s.opts.Kernel.EvaluateActivity(common.HexToAddress(account), v)
+	case *lx.BindRequest:
+		return s.opts.Kernel.EvaluateBind(common.HexToAddress(account), v)
+	case *lx.GrantRequest:
+		return s.opts.Kernel.EvaluateGrant(common.HexToAddress(account), v)
+	}
+	switch policyKind {
+	case policy.KindLXActivity, policy.KindLXBind, policy.KindLXGrant:
+		return policy.Decision{Allowed: false, Code: policy.CodeDecodeError, Reason: "kernel request has no kernel view"}
+	}
+	return s.opts.Policy.Evaluate(account, policy.Request{Kind: policyKind, View: view}, ledger)
+}
+
+func activityDisclosure(a *lxwire.Activity) (lx.Disclosure, *Error) {
+	effect, err := lx.DecodeEffect(a)
+	if err != nil {
+		return lx.Disclosure{}, policyError(policy.CodeDecodeError, err.Error())
+	}
+	module, ok := lx.ModuleName(a.Type.Module())
+	if !ok {
+		return lx.Disclosure{}, policyError(lx.CodeUnknownModule, "activity names an unknown module")
+	}
+	return lx.Disclosure{
+		Account:      effect.Account,
+		Module:       module,
+		Operation:    a.Type.Ordinal(),
+		Amounts:      effect.Amounts,
+		Destinations: effect.Destinations,
+		Sequence:     a.AccountSequence,
+		NotBefore:    a.NotBefore,
+		NotAfter:     a.NotAfter,
+	}, nil
 }
 
 func (s *Server) prepare(req SignRequest, pubBytes []byte) ([]byte, any, string, *Error) {
@@ -522,17 +532,22 @@ func (s *Server) prepare(req SignRequest, pubBytes []byte) ([]byte, any, string,
 		if err != nil {
 			return nil, nil, "", policyError(policy.CodeDecodeError, err.Error())
 		}
-		return pre[:], a, KindLXActivity, nil
+		disclosure, e := activityDisclosure(a)
+		if e != nil {
+			return nil, nil, "", e
+		}
+		var pub [32]byte
+		copy(pub[:], pubBytes)
+		return pre[:], &lx.ActivityRequest{Envelope: raw, Digest: pre, PublicKey: pub, Disclosure: disclosure}, policy.KindLXActivity, nil
 	case KindLXBind:
 		raw, e := decodeHex("message", req.Message)
 		if e != nil {
 			return nil, nil, "", e
 		}
-		b, err := lxwire.ParseBindMessage(raw)
-		if err != nil {
+		if _, err := lxwire.ParseBindMessage(raw); err != nil {
 			return nil, nil, "", policyError(policy.CodeDecodeError, err.Error())
 		}
-		return raw, &b, KindLXBind, nil
+		return raw, &lx.BindRequest{Message: raw}, policy.KindLXBind, nil
 	case KindLXGrant:
 		if req.Grant == nil {
 			return nil, nil, "", newError(CodeSessionBadRequest, "grant is required")
@@ -547,7 +562,7 @@ func (s *Server) prepare(req SignRequest, pubBytes []byte) ([]byte, any, string,
 		if err != nil {
 			return nil, nil, "", policyError(policy.CodeDecodeError, err.Error())
 		}
-		return pre[:], &g, KindLXGrant, nil
+		return pre[:], &lx.GrantRequest{PublicKey: pub, Grant: &g, Digest: pre}, policy.KindLXGrant, nil
 	}
 	return nil, nil, "", newError(CodeSessionKind, "kind %q is not supported", req.Kind)
 }

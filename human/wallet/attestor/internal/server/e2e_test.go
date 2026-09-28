@@ -24,6 +24,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -41,6 +42,7 @@ import (
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/lxwire"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy/evm"
+	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy/lx"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/store"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/transport"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/tss/dealer"
@@ -176,7 +178,11 @@ func (p *identityProvider) mint(t *testing.T, signer *rsa.PrivateKey, subject st
 	t.Helper()
 	header, _ := json.Marshal(map[string]string{"alg": "RS256", "kid": "test-key", "typ": "JWT"})
 	now := time.Now().Unix()
-	claims, _ := json.Marshal(map[string]any{"sub": subject, "iss": p.issuer, "aud": "authenticated", "iat": now, "exp": now + 600})
+	jti := make([]byte, 16)
+	if _, err := rand.Read(jti); err != nil {
+		t.Fatal(err)
+	}
+	claims, _ := json.Marshal(map[string]any{"sub": subject, "iss": p.issuer, "aud": "authenticated", "iat": now, "exp": now + 600, "jti": hex.EncodeToString(jti)})
 	signing := b64(header) + "." + b64(claims)
 	digest := sha256.Sum256([]byte(signing))
 	sig, err := rsa.SignPKCS1v15(rand.Reader, signer, crypto.SHA256, digest[:])
@@ -217,6 +223,55 @@ type testCluster struct {
 	ceremony bool
 	doc      *policy.Document
 	tune     func(*Options)
+	operator *testCA
+	opClient *http.Client
+	clients  *ClientAuthorities
+	kernel   *lx.Document
+	nonceURL string
+	nonceRPC *http.Client
+}
+
+const kernelTestPolicy = `{"version":1,"defaults":{"modules":{"asset":[5]},"caps":{"native":{"per_operation":"6000000","daily":"8000000"}}}}`
+
+func newBindNonceServer(t *testing.T, nonce uint64) *httptest.Server {
+	t.Helper()
+	parsed, err := evm.PrecompileABI("addr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	method, ok := parsed.Methods["layerXBindNonce"]
+	if !ok {
+		t.Fatal("addr precompile ABI has no layerXBindNonce")
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Method != "eth_call" {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		out, err := method.Outputs.Pack(nonce)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": "0x" + hex.EncodeToString(out)})
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func mtlsClient(cert testCert, roots *x509.CertPool) *http.Client {
+	return &http.Client{Timeout: 10 * time.Minute, Transport: &http.Transport{TLSClientConfig: &tls.Config{
+		MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{cert.pair}, RootCAs: roots,
+	}}}
+}
+
+func operatorPath(path string) bool {
+	return path == PathImport || path == PathRefresh || path == PathAddShare
 }
 
 func testPolicy() *policy.Document {
@@ -241,13 +296,27 @@ func newTestCluster(t *testing.T, n int, ceremony bool) *testCluster {
 func newTestClusterWith(t *testing.T, n int, ceremony bool, doc *policy.Document, tune func(*Options)) *testCluster {
 	t.Helper()
 	dir := t.TempDir()
-	c := &testCluster{ca: newTestCA(t, dir), idp: newIdentityProvider(t), ceremony: ceremony, doc: doc, tune: tune}
-	clientCert := c.ca.issue(t, dir, "api-client", x509.ExtKeyUsageClientAuth)
+	gatewayDir, operatorDir := filepath.Join(dir, "gateway-ca"), filepath.Join(dir, "operator-ca")
+	for _, d := range []string{gatewayDir, operatorDir} {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c := &testCluster{ca: newTestCA(t, gatewayDir), operator: newTestCA(t, operatorDir), idp: newIdentityProvider(t), ceremony: ceremony, doc: doc, tune: tune}
 	roots := x509.NewCertPool()
 	roots.AddCert(c.ca.cert)
-	c.client = &http.Client{Timeout: 10 * time.Minute, Transport: &http.Transport{TLSClientConfig: &tls.Config{
-		MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{clientCert.pair}, RootCAs: roots,
-	}}}
+	c.client = mtlsClient(c.ca.issue(t, dir, "gateway-client", x509.ExtKeyUsageClientAuth), roots)
+	c.opClient = mtlsClient(c.operator.issue(t, dir, "operator-client", x509.ExtKeyUsageClientAuth), roots)
+	clients, err := LoadClientAuthorities(c.ca.pemPath, c.operator.pemPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kernelDoc, err := lx.Parse([]byte(kernelTestPolicy))
+	if err != nil {
+		t.Fatal(err)
+	}
+	nonces := newBindNonceServer(t, 1)
+	c.clients, c.kernel, c.nonceURL, c.nonceRPC = clients, kernelDoc, nonces.URL, nonces.Client()
 
 	peerListeners := make([]net.Listener, n)
 	apiListeners := make([]net.Listener, n)
@@ -299,13 +368,13 @@ func (c *testCluster) startNode(t *testing.T, i int, peerListener, apiListener n
 	}
 	tr, err := transport.New(transport.Config{
 		SelfID: cfg.id, CertFile: cfg.cert.certPath, KeyFile: cfg.cert.keyPath,
-		CAFile: c.ca.pemPath, Peers: c.peers, OperatorCAFile: c.ca.pemPath,
+		CAFile: c.ca.pemPath, Peers: c.peers, OperatorCAFile: c.operator.pemPath,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	go func() { _ = tr.Serve(peerListener) }()
-	tokens, err := jwt.NewTokenVerifier(jwt.Config{JWKSURL: c.idp.srv.URL, Issuer: c.idp.issuer, Audience: "authenticated", HTTPClient: c.idp.srv.Client()})
+	tokens, err := jwt.NewTokenVerifier(jwt.Config{JWKSURL: c.idp.srv.URL, Issuer: c.idp.issuer, Audience: "authenticated", HTTPClient: c.idp.srv.Client(), MaxAge: time.Hour, Replay: st})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -315,10 +384,20 @@ func (c *testCluster) startNode(t *testing.T, i int, peerListener, apiListener n
 			probe[p.ID] = p.Address
 		}
 	}
+	engine := policy.New(c.doc)
+	ledger := policy.NewMemoryLedger(time.Now)
+	chain, err := lx.NewChain(c.nonceURL, c.nonceRPC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kernel, err := lx.New(engine, c.kernel, ledger, chain)
+	if err != nil {
+		t.Fatal(err)
+	}
 	opts := Options{
 		NodeID: cfg.id, Region: "test", ChainID: testChainID, Ceremony: c.ceremony, Participants: c.ids,
-		Store: st, Audit: lg, Transport: tr, Policy: policy.New(c.doc),
-		Ledger: policy.NewMemoryLedger(time.Now), Tokens: tokens, Activities: c.registry,
+		Store: st, Audit: lg, Transport: tr, Policy: engine, Kernel: kernel, Clients: c.clients,
+		Ledger: ledger, Tokens: tokens, Activities: c.registry,
 		PeerProbe: TCPPeerProbe(probe), ProtocolTimeout: 8 * time.Minute,
 	}
 	if c.tune != nil {
@@ -328,7 +407,7 @@ func (c *testCluster) startNode(t *testing.T, i int, peerListener, apiListener n
 	if err != nil {
 		t.Fatal(err)
 	}
-	tlsCfg, err := APITLSConfig(cfg.cert.certPath, cfg.cert.keyPath, c.ca.pemPath)
+	tlsCfg, err := APITLSConfig(cfg.cert.certPath, cfg.cert.keyPath, c.clients)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -382,6 +461,14 @@ type apiResult struct {
 }
 
 func (c *testCluster) post(apiAddr, path string, body any, token string) (apiResult, error) {
+	client := c.client
+	if operatorPath(path) {
+		client = c.opClient
+	}
+	return c.postAs(client, apiAddr, path, body, token)
+}
+
+func (c *testCluster) postAs(client *http.Client, apiAddr, path string, body any, token string) (apiResult, error) {
 	raw, err := json.Marshal(body)
 	if err != nil {
 		return apiResult{}, err
@@ -394,7 +481,7 @@ func (c *testCluster) post(apiAddr, path string, body any, token string) (apiRes
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	resp, err := c.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return apiResult{}, err
 	}
@@ -406,6 +493,15 @@ func (c *testCluster) post(apiAddr, path string, body any, token string) (apiRes
 func (c *testCluster) call(t *testing.T, node *testNode, path string, body any, token string) apiResult {
 	t.Helper()
 	r, err := c.post(node.apiAddr, path, body, token)
+	if err != nil {
+		t.Errorf("%s %s: %v", node.id, path, err)
+	}
+	return r
+}
+
+func (c *testCluster) callAs(t *testing.T, client *http.Client, node *testNode, path string, body any, token string) apiResult {
+	t.Helper()
+	r, err := c.postAs(client, node.apiAddr, path, body, token)
 	if err != nil {
 		t.Errorf("%s %s: %v", node.id, path, err)
 	}
@@ -481,44 +577,55 @@ func importKey(t *testing.T, c *testCluster, keyID string, curve dealer.Curve, s
 	return decodeOK[KeyResponse](t, "import "+keyID, results)
 }
 
-type fixtureActivity struct {
-	Name              string `json:"name"`
-	Unsigned          any    `json:"unsigned"`
-	SignaturePreimage string `json:"signature_preimage"`
-}
-
-func loadActivity(t *testing.T, name string) ([]byte, []byte) {
+func kernelActivityFor(t *testing.T, key [32]byte, sequence uint64) ([]byte, []byte) {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("..", "lxwire", "testdata", "activities.json"))
+	did := lxwire.DIDFromKey(key)
+	from, err := lxwire.AccountID([]byte(lxwire.MainAccountName(did)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	var doc struct {
-		Activities []fixtureActivity `json:"activities"`
+	var peer [32]byte
+	for i := range peer {
+		peer[i] = 0x52
 	}
-	if err := json.Unmarshal(raw, &doc); err != nil {
+	to, err := lxwire.AccountID([]byte(lxwire.MainAccountName(lxwire.DIDFromKey(peer))))
+	if err != nil {
 		t.Fatal(err)
 	}
-	for _, a := range doc.Activities {
-		if a.Name != name {
-			continue
-		}
-		field, ok := a.Unsigned.(map[string]any)
-		if !ok {
-			t.Fatalf("%s: unsigned is not inline", name)
-		}
-		unsigned, err := hex.DecodeString(field["hex"].(string))
-		if err != nil {
-			t.Fatal(err)
-		}
-		pre, err := hex.DecodeString(a.SignaturePreimage)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return unsigned, pre
+	amount := make([]byte, 16)
+	big.NewInt(5_000_000).FillBytes(amount)
+	payload := append(append(append(append([]byte{}, from[:]...), to[:]...), make([]byte, 32)...), amount...)
+	now := uint64(time.Now().Unix())
+	a := &lxwire.Activity{
+		ProtocolVersion: lxwire.MaxProtocolVersion,
+		NetworkID:       testChainID,
+		Type:            lx.OpAssetTransfer,
+		ActorDID:        []byte(did),
+		Authority:       key[:],
+		AccountSequence: sequence,
+		NotBefore:       now - 60,
+		NotAfter:        now + 600,
+		IdempotencyKey:  sha256.Sum256([]byte(fmt.Sprintf("attestor end-to-end activity %d", sequence))),
+		FeeLimit:        lxwire.Uint128{Lo: 1000},
+		PayloadHash:     lxwire.PayloadHash(payload),
+		Payload:         payload,
 	}
-	t.Fatalf("activity %s missing from fixture", name)
-	return nil, nil
+	unsigned, err := lxwire.EncodeUnsignedActivity(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pre, err := lxwire.SignaturePreimage(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return unsigned, pre[:]
+}
+
+func kernelActivity(t *testing.T, key ed25519.PublicKey, sequence uint64) ([]byte, []byte) {
+	t.Helper()
+	var k [32]byte
+	copy(k[:], key)
+	return kernelActivityFor(t, k, sequence)
 }
 
 const mailTypedData = `{"types":{"EIP712Domain":[{"name":"name","type":"string"},{"name":"version","type":"string"},{"name":"chainId","type":"uint256"},{"name":"verifyingContract","type":"address"}],"Person":[{"name":"name","type":"string"},{"name":"wallet","type":"address"}],"Mail":[{"name":"from","type":"Person"},{"name":"to","type":"Person"},{"name":"contents","type":"string"}]},"primaryType":"Mail","domain":{"name":"Ether Mail","version":"1","chainId":125,"verifyingContract":"0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC"},"message":{"from":{"name":"Cow","wallet":"0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826"},"to":{"name":"Bob","wallet":"0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB"},"contents":"Hello, Bob!"}}`
@@ -526,6 +633,7 @@ const mailTypedData = `{"types":{"EIP712Domain":[{"name":"name","type":"string"}
 func TestFiveNodeEndToEnd(t *testing.T) {
 	c := newTestCluster(t, 5, true)
 	token := c.idp.mint(t, c.idp.key, testOwner)
+	fresh := func() string { return c.idp.mint(t, c.idp.key, testOwner) }
 
 	secpSeed := sha256.Sum256([]byte("attestor end-to-end secp256k1 key"))
 	secpKey, err := gethcrypto.ToECDSA(secpSeed[:])
@@ -642,7 +750,7 @@ func TestFiveNodeEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tdResults := decodeOK[SignResponse](t, "typed data", sign("sign-typed-data", SignRequest{KeyID: "evm-key", Kind: KindTypedData, TypedData: mailTypedData}, token))
+	tdResults := decodeOK[SignResponse](t, "typed data", sign("sign-typed-data", SignRequest{KeyID: "evm-key", Kind: KindTypedData, TypedData: mailTypedData}, fresh()))
 	for _, r := range tdResults {
 		if r.SignedBytes != hex.EncodeToString(mailDigest) {
 			t.Fatalf("%s: typed data digest %s", r.NodeID, r.SignedBytes)
@@ -656,7 +764,7 @@ func TestFiveNodeEndToEnd(t *testing.T) {
 	}
 
 	bind := lxwire.BindMessage(testChainID, address, 1)
-	bindResults := decodeOK[SignResponse](t, "bind", sign("sign-bind", SignRequest{KeyID: "lx-key", Kind: KindLXBind, Message: hex.EncodeToString(bind)}, token))
+	bindResults := decodeOK[SignResponse](t, "bind", sign("sign-bind", SignRequest{KeyID: "lx-key", Kind: KindLXBind, Message: hex.EncodeToString(bind)}, fresh()))
 	for _, r := range bindResults {
 		sig, _ := hex.DecodeString(r.Signature)
 		if r.RecoveryID != nil || !ed25519.Verify(edPub, bind, sig) {
@@ -664,8 +772,8 @@ func TestFiveNodeEndToEnd(t *testing.T) {
 		}
 	}
 
-	unsigned, preimage := loadActivity(t, "native-send")
-	actResults := decodeOK[SignResponse](t, "activity", sign("sign-activity", SignRequest{KeyID: "lx-key", Kind: KindLXActivity, Activity: hex.EncodeToString(unsigned)}, token))
+	unsigned, preimage := kernelActivity(t, edPub, 1)
+	actResults := decodeOK[SignResponse](t, "activity", sign("sign-activity", SignRequest{KeyID: "lx-key", Kind: KindLXActivity, Activity: hex.EncodeToString(unsigned)}, fresh()))
 	for _, r := range actResults {
 		sig, _ := hex.DecodeString(r.Signature)
 		if r.SignedBytes != hex.EncodeToString(preimage) || !ed25519.Verify(edPub, preimage, sig) {
@@ -679,7 +787,7 @@ func TestFiveNodeEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	authConstruction := &ConstructionJSON{Kind: policy.KindAuthorization, ChainID: "125", Address: delegate.Hex(), Nonce: "3"}
-	authResults := decodeOK[SignResponse](t, "authorization digest", sign("sign-authorization", SignRequest{KeyID: "evm-key", Kind: KindEthSignDigest, Digest: authDigest.Hex(), Construction: authConstruction}, token))
+	authResults := decodeOK[SignResponse](t, "authorization digest", sign("sign-authorization", SignRequest{KeyID: "evm-key", Kind: KindEthSignDigest, Digest: authDigest.Hex(), Construction: authConstruction}, fresh()))
 	for _, r := range authResults {
 		sig, _ := hex.DecodeString(r.Signature)
 		pub, err := gethcrypto.SigToPub(authDigest.Bytes(), sig)
@@ -687,11 +795,11 @@ func TestFiveNodeEndToEnd(t *testing.T) {
 			t.Fatalf("%s: authorization signature does not recover the key over the recomputed digest (%v)", r.NodeID, err)
 		}
 	}
-	for _, r := range sign("sign-bare-digest", SignRequest{KeyID: "evm-key", Kind: KindEthSignDigest, Digest: authDigest.Hex()}, token) {
+	for _, r := range sign("sign-bare-digest", SignRequest{KeyID: "evm-key", Kind: KindEthSignDigest, Digest: authDigest.Hex()}, fresh()) {
 		expectError(t, "bare digest", r, CodeSessionBadRequest)
 	}
 	txDigest := txSigner.Hash(tx)
-	for _, r := range sign("sign-foreign-digest", SignRequest{KeyID: "evm-key", Kind: KindEthSignDigest, Digest: txDigest.Hex(), Construction: authConstruction}, token) {
+	for _, r := range sign("sign-foreign-digest", SignRequest{KeyID: "evm-key", Kind: KindEthSignDigest, Digest: txDigest.Hex(), Construction: authConstruction}, fresh()) {
 		e := expectError(t, "authorization over a foreign digest", r, CodePolicyDenied)
 		if e.PolicyCode != policy.CodeDigestMismatch {
 			t.Fatalf("authorization over a foreign digest: policy code %s", e.PolicyCode)
@@ -702,12 +810,50 @@ func TestFiveNodeEndToEnd(t *testing.T) {
 		Calls: []BatchCallJSON{{To: to.Hex(), Value: "0", Data: "0x"}},
 		Quote: &QuoteJSON{Sponsor: delegate.Hex(), Token: to.Hex(), MaxTokenAmount: "10", TokenAmount: "5", Deadline: "4102444800", QuoteNonce: "1", GasCost: "21000"},
 	}
-	for _, r := range sign("sign-batch-foreign-digest", SignRequest{KeyID: "evm-key", Kind: KindEthSignDigest, Digest: txDigest.Hex(), Construction: batchConstruction}, token) {
+	for _, r := range sign("sign-batch-foreign-digest", SignRequest{KeyID: "evm-key", Kind: KindEthSignDigest, Digest: txDigest.Hex(), Construction: batchConstruction}, fresh()) {
 		e := expectError(t, "sponsored batch over a foreign digest", r, CodePolicyDenied)
 		if e.PolicyCode != policy.CodeDigestMismatch {
 			t.Fatalf("sponsored batch over a foreign digest: policy code %s", e.PolicyCode)
 		}
 	}
+
+	for _, r := range sign("sign-replayed-token", SignRequest{KeyID: "evm-key", Kind: KindEVMTransaction, Transaction: hex.EncodeToString(rawTx)}, token) {
+		e := expectError(t, "replayed token", r, CodeTokenInvalid)
+		if !strings.Contains(e.Message, "already authorised") {
+			t.Fatalf("replayed token: %s", e.Message)
+		}
+	}
+	var peer [32]byte
+	for i := range peer {
+		peer[i] = 0x51
+	}
+	foreign, _ := kernelActivityFor(t, peer, 3)
+	for _, r := range sign("sign-foreign-activity", SignRequest{KeyID: "lx-key", Kind: KindLXActivity, Activity: hex.EncodeToString(foreign)}, fresh()) {
+		e := expectError(t, "activity for another identity", r, CodePolicyDenied)
+		if e.PolicyCode != lx.CodeAuthorityMismatch {
+			t.Fatalf("activity for another identity: policy code %s", e.PolicyCode)
+		}
+	}
+	for _, r := range sign("sign-stale-bind", SignRequest{KeyID: "lx-key", Kind: KindLXBind, Message: hex.EncodeToString(lxwire.BindMessage(testChainID, address, 2))}, fresh()) {
+		e := expectError(t, "stale bind nonce", r, CodePolicyDenied)
+		if e.PolicyCode != lx.CodeStaleBindNonce {
+			t.Fatalf("stale bind nonce: policy code %s", e.PolicyCode)
+		}
+	}
+	gatewayOnRefresh := c.callAs(t, c.client, c.nodes[0], PathRefresh, RefreshRequest{SessionID: "refresh-by-gateway", KeyID: "evm-key"}, "")
+	if gatewayOnRefresh.status != http.StatusForbidden {
+		t.Fatalf("gateway identity on refresh: status %d", gatewayOnRefresh.status)
+	}
+	expectError(t, "gateway identity on refresh", gatewayOnRefresh, CodeOperatorRequired)
+	for _, path := range []string{PathImport, PathAddShare} {
+		expectError(t, "gateway identity on "+path, c.callAs(t, c.client, c.nodes[0], path, map[string]string{}, ""), CodeOperatorRequired)
+	}
+	operatorOnSign := c.callAs(t, c.opClient, c.nodes[0], PathSign, SignRequest{SessionID: "sign-by-operator", KeyID: "evm-key", Kind: KindEVMTransaction, Signers: signers, Transaction: hex.EncodeToString(rawTx)}, fresh())
+	if operatorOnSign.status != http.StatusForbidden {
+		t.Fatalf("operator identity on sign: status %d", operatorOnSign.status)
+	}
+	expectError(t, "operator identity on sign", operatorOnSign, CodeOperatorRequired)
+	expectError(t, "operator identity on generate", c.callAs(t, c.opClient, c.nodes[0], PathGenerate, GenerateRequest{SessionID: "generate-by-operator", KeyID: "op-key", Curve: "secp256k1", Owner: testOwner}, ""), CodeOperatorRequired)
 
 	otherKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -727,7 +873,7 @@ func TestFiveNodeEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, r := range sign("sign-over-cap", SignRequest{KeyID: "evm-key", Kind: KindEVMTransaction, Transaction: hex.EncodeToString(rawBig)}, token) {
+	for _, r := range sign("sign-over-cap", SignRequest{KeyID: "evm-key", Kind: KindEVMTransaction, Transaction: hex.EncodeToString(rawBig)}, fresh()) {
 		e := expectError(t, "over cap", r, CodePolicyDenied)
 		if e.PolicyCode != policy.CodeValueCap {
 			t.Fatalf("over cap: policy code %s", e.PolicyCode)

@@ -424,7 +424,7 @@ func (s *Server) HandleImport(w http.ResponseWriter, r *http.Request) {
 	if e == nil {
 		resp, e = s.doImport(body)
 	}
-	respond(w, resp, e)
+	s.finish(w, "keys.import", body, resp, e)
 }
 
 func (s *Server) doImport(body []byte) (KeyResponse, *Error) {
@@ -510,7 +510,7 @@ func (s *Server) HandleRefresh(w http.ResponseWriter, r *http.Request) {
 	if e == nil {
 		resp, e = s.doRefresh(r, body)
 	}
-	respond(w, resp, e)
+	s.finish(w, "keys.refresh", body, resp, e)
 }
 
 func respond(w http.ResponseWriter, v any, e *Error) {
@@ -589,8 +589,7 @@ func (s *Server) doRefresh(r *http.Request, body []byte) (KeyResponse, *Error) {
 		e = newError(CodeKeyCurve, "unknown curve")
 	}
 	if e != nil {
-		_, _ = s.audit("keys.refresh", req.KeyID, payload.Owner, "failed", e.Code, req.SessionID)
-		return KeyResponse{}, e
+		return KeyResponse{}, s.deny("keys.refresh", req.KeyID, payload.Owner, "failed", req.SessionID, e)
 	}
 	epoch := rec.Epoch + 1
 	if e := s.stageShare(req.KeyID, b.Curve, b.PublicKey, epoch, participants, next); e != nil {
@@ -626,7 +625,7 @@ func (s *Server) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 	if e == nil {
 		resp, e = s.doGenerate(r, body)
 	}
-	respond(w, resp, e)
+	s.finish(w, "keys.generate", body, resp, e)
 }
 
 func (s *Server) doGenerate(r *http.Request, body []byte) (KeyResponse, *Error) {
@@ -695,8 +694,7 @@ func (s *Server) doGenerate(r *http.Request, body []byte) (KeyResponse, *Error) 
 		payload = storedShare{Owner: req.Owner, Bundle: &enc}
 	}
 	if e != nil {
-		_, _ = s.audit("keys.generate", req.KeyID, req.Owner, "failed", e.Code, req.SessionID)
-		return KeyResponse{}, e
+		return KeyResponse{}, s.deny("keys.generate", req.KeyID, req.Owner, "failed", req.SessionID, e)
 	}
 	account, e := s.accountFor(c, pub, req.Account)
 	if e != nil {
@@ -719,7 +717,7 @@ func (s *Server) HandleAddShare(w http.ResponseWriter, r *http.Request) {
 	if e == nil {
 		resp, e = s.doAddShare(r, body)
 	}
-	respond(w, resp, e)
+	s.finish(w, "keys.addshare", body, resp, e)
 }
 
 func (s *Server) doAddShare(r *http.Request, body []byte) (KeyResponse, *Error) {
@@ -813,8 +811,7 @@ func (s *Server) doAddShare(r *http.Request, body []byte) (KeyResponse, *Error) 
 		return err
 	})
 	if e != nil {
-		_, _ = s.audit("keys.addshare", req.KeyID, payload.Owner, "failed", e.Code, req.SessionID)
-		return KeyResponse{}, e
+		return KeyResponse{}, s.deny("keys.addshare", req.KeyID, payload.Owner, "failed", req.SessionID, e)
 	}
 	enc := EncodeBundle(out)
 	dealer.Wipe(out.Share)

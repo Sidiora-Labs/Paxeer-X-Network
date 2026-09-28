@@ -64,12 +64,14 @@ The daemon keeps the pinned commit `d8fd6861d3b2`, and `go.mod` is unchanged.
 
 - **How it connects:** over mutual TLS to the API listener.
 - **What it can cause:**
-  - It can submit any signing request with a user's live identity token, and every node signs anything the policy allows for that user (finding F-6).
-  - It can call the import, refresh and add-share routes, because its client certificate is accepted on the same terms as the operator's (finding F-4).
+  - It can submit one signing request per node with each live identity token it holds, and every node signs what the policy allows for that user (finding F-6, partially fixed).
   - It can withhold or delay requests.
   - It can start refresh sessions with a subset of nodes. A refresh commits only when every participant has staged the new share, so a partial start leaves every node at the old epoch (finding F-5, fixed).
 - **What it cannot cause:**
-  - It cannot sign without a token that verifies against the configured JWKS.
+  - It cannot call import, refresh or add-share. Those routes accept only a client certificate chaining to the operator CA (finding F-4, fixed).
+  - It cannot sign without a token that verifies against the configured JWKS, names the configured issuer and audience, is unexpired and younger than the maximum age.
+  - It cannot reuse a token: each node records the token's hash in its share store and refuses a second request with it, across restarts (finding F-6, partially fixed).
+  - It cannot sign a kernel kind outside the kernel policy. `lx_activity`, `lx_bind` and `lx_grant` pass through the kernel evaluator, and without a kernel policy they are refused (finding F-7, fixed).
   - It cannot sign outside the per-kind policy. `eth_sign_digest` now recomputes its digest from the construction (finding F-1, fixed).
   - It cannot record a foreign owner or account on a new participant (finding F-2, fixed).
   - It cannot import shares that fall outside the custody scheme (finding F-3, fixed).
@@ -103,12 +105,14 @@ The daemon keeps the pinned commit `d8fd6861d3b2`, and `go.mod` is unchanged.
 
 ### Operator
 
+- **How it connects:** over mutual TLS to the API listener, with a client certificate chaining to the operator CA.
 - **What it can cause:**
   - It can import dealer bundles, when the ceremony flag is enabled.
   - It can run refresh and add-share.
   - It can read health.
   - It can replace the policy file and the JWKS on disk.
 - **What it cannot cause:**
+  - It cannot call keys.generate or sign. Those routes accept only a client certificate chaining to the gateway CA (finding F-4, fixed).
   - It cannot extract a share through the API; no route returns share material.
   - It cannot import a bundle whose threshold, ranks, participants or interpolation scheme break the custody scheme (finding F-3, fixed).
 
@@ -127,18 +131,20 @@ Each path below refuses the request, and no signature is produced. The order is 
 ### `internal/server`
 
 1. Client certificate chain does not verify: refused at the TLS layer.
-2. Malformed JSON or unknown fields: `session_bad_request`.
-3. Unknown kind: `session_bad_request`.
-4. Missing or invalid token, or no JWKS loaded: `token_unavailable` or `token_invalid`.
-5. Agent credential presented: no agent verifier is wired in `cmd/attestor/main.go`, so the answer is `token_unavailable`.
-6. No policy file loaded: `no_policy`.
-7. Unknown key id, or owner differs from the stored share: refused before any session.
-8. `eth_sign_digest` without a construction, or with an unknown construction kind: `session_bad_request` (finding F-1, fixed).
-9. Transaction bytes that do not decode, a foreign chain id, or an unprotected legacy transaction: refused by `evm.DecodeTransaction`.
-10. Policy decision deny: `policy_denied`, carrying the policy code.
-11. Allowed-sign audit append fails: refused before the session starts.
-12. Fewer than three participants record the announced request in their spend ledgers: `quorum_too_few_signers`, before any session.
-13. Session failure, timeout, round deadline or protocol mismatch, including an epoch mismatch between signers: a session error, and nothing is returned.
+2. Chain root is not the CA the route needs (gateway CA for keys.generate and sign, operator CA for keys.import, keys.refresh and keys.addshare): `operator_required`.
+3. Malformed JSON or unknown fields: `session_bad_request`.
+4. Unknown kind: `session_bad_request`.
+5. Missing or invalid token, a token older than `ATTESTOR_JWT_MAX_AGE`, a token already used on this node, or no JWKS loaded: `token_unavailable` or `token_invalid`.
+6. Agent credential presented without `ATTESTOR_AGENTS_FILE`: `token_unavailable`. With it, an unregistered or frozen principal, a bad signature, an expired request, an expiry beyond `ATTESTOR_AGENT_MAX_EXPIRY` or a nonce already recorded in the store: `agent_invalid`.
+7. No policy file loaded: `no_policy`. No kernel policy loaded, for a kernel kind: `no_policy`.
+8. Unknown key id, or owner differs from the stored share: refused before any session.
+9. `eth_sign_digest` without a construction, or with an unknown construction kind: `session_bad_request` (finding F-1, fixed).
+10. Transaction bytes that do not decode, a foreign chain id, or an unprotected legacy transaction: refused by `evm.DecodeTransaction`.
+11. Policy or kernel policy decision deny: `policy_denied`, carrying the policy code.
+12. Any denial or failure whose audit append fails: `store_audit_failed`. Every refusal is written to the fsynced audit log before the response is sent (finding F-10, fixed).
+13. Allowed-sign audit append fails: refused before the session starts.
+14. Fewer than three participants record the announced request in their spend ledgers: `quorum_too_few_signers`, before any session.
+15. Session failure, timeout, round deadline or protocol mismatch, including an epoch mismatch between signers: a session error, and nothing is returned.
 
 ### `internal/policy`
 
@@ -155,8 +161,7 @@ Each path below refuses the request, and no signature is produced. The order is 
 
 ### Paths that do not fully fail closed
 
-- `lx_activity` and `lx_grant` are registered with an inspector that performs no cap or destination checks. The kernel evaluator in `internal/policy/lx` exists but is not wired in `cmd/attestor/main.go` (finding F-7).
-- Denial audit writes discard their error (`internal/server/sign.go`). The request is still refused, but the denial record can be lost (finding F-10).
+- The kernel activity disclosure is derived by the node from the envelope, because the sign request carries no disclosure field. The match against the human service's disclosure therefore happens at the human service, not at the node.
 - Destinations are not limited when a document has no allow list.
 - Calls to unknown contracts count only their native value (`evm.DecodeCalldata` returns an unknown call).
 - `personal_message` has no content policy.
@@ -209,14 +214,15 @@ Each path below refuses the request, and no signature is produced. The order is 
 
 ### F-4: gateway and operator share one client CA
 
-- **Severity:** high. **Status:** open.
-- **Evidence:**
-  - `cmd/attestor/main.go` builds the API listener with the operator CA as its only client CA.
-  - `post` in `internal/server/server.go` checks only that the chain verified.
-  - The gateway certificate can therefore call import (behind the ceremony flag), refresh and add-share.
+- **Severity:** high. **Status:** fixed.
+- **Evidence:** before this change, `cmd/attestor/main.go` built the API listener with the operator CA as its only client CA, and `post` in `internal/server/server.go` checked only that the chain verified.
+- **Fix:**
+  - `LoadClientAuthorities` in `internal/server/server.go` loads the gateway CA from `ATTESTOR_TLS_CA_FILE` and the operator CA from `ATTESTOR_OPERATOR_CA_FILE`.
+  - `operatorOnly` admits keys.import, keys.refresh and keys.addshare only when the verified chain ends at the operator CA. `gatewayOnly` admits keys.generate and sign only when it ends at the gateway CA.
+  - A refusal answers `operator_required` with status 403 and is audited.
+- **Test:** `TestHandlerRefusals` and `TestFiveNodeEndToEnd` in `internal/server`, and `TestRunSeparatesOperatorAndGatewayAuthority` in `cmd/attestor`, refuse each identity on the other's routes.
 - **Owner action:**
-  - Issue gateway and operator certificates from separate CAs.
-  - Gate the operator routes on the operator identity.
+  - Issue gateway and operator certificates from separate CAs. A bundle placed in both variables grants both authorities.
   - Keep the ceremony flag off outside ceremonies.
 
 ### F-5: refresh is not atomic across nodes
@@ -234,20 +240,29 @@ Each path below refuses the request, and no signature is produced. The order is 
 
 ### F-6: identity tokens are bearer tokens
 
-- **Severity:** high. **Status:** open.
+- **Severity:** high. **Status:** partially fixed.
 - **Evidence:**
-  - `internal/auth/jwt.go` verifies the token but does not bind it to the request.
-  - The gateway relays the token, so a compromised gateway holding a live token can sign anything within policy for that user.
+  - `internal/auth/jwt` verifies the token but does not bind it to the request.
+  - The gateway relays the token, so a compromised gateway holding a live token can sign one request per node within policy for that user.
   - This conflicts with the decision that the gateway cannot sign.
-- **Owner action:** require a request-bound proof from the user device, or a step-up for signing kinds above a threshold.
+- **Fix:**
+  - Tokens older than `ATTESTOR_JWT_MAX_AGE` (default one hour) are refused.
+  - Each node records the SHA-256 of every token that authorised a request in its share store (`TokenReplayStore`, `internal/store/replay.go`) and refuses the same token again, across restarts.
+- **Test:** `TestTokenReplayRefusedAcrossRestart` and `TestTokenOlderThanMaximumAgeRefused` in `internal/auth/jwt`, and the replayed token in `TestFiveNodeEndToEnd`.
+- **Owner decisions:**
+  - Binding a token to a device key with a request-bound proof is not implemented. Until it is, a gateway holding a fresh token can still spend it on a request of its choosing.
+  - Each node counts a token once, so one token authorises one signing session across the quorum. The gateway client and the human service must obtain a fresh token for each signing request.
+  - Whether to require a step-up for signing kinds above a threshold.
 
 ### F-7: kernel kinds are not inspected
 
-- **Severity:** high before kernel activation. **Status:** open.
-- **Evidence:**
-  - `lx_activity`, `lx_bind` and `lx_grant` use an empty inspector in `internal/server/sign.go`.
-  - `lx.New` in `internal/policy/lx` is not wired in `cmd/attestor/main.go`.
-- **Owner action:** wire the kernel evaluator before the kernel kinds are allowed in any policy document.
+- **Severity:** high before kernel activation. **Status:** fixed.
+- **Evidence:** before this change, `lx_activity`, `lx_bind` and `lx_grant` used an empty inspector in `internal/server/sign.go`, and `lx.New` was not wired in `cmd/attestor/main.go`.
+- **Fix:**
+  - The empty inspectors are removed. Every kernel kind is evaluated by the `internal/policy/lx` evaluator: modules, operations, caps, destinations, actor and authority, validity window, bind address and the chain's current bind nonce, and grant caps.
+  - `cmd/attestor/main.go` builds the evaluator from `ATTESTOR_KERNEL_POLICY_FILE` and `ATTESTOR_RPC_URL` on the same engine and ledger. Without a kernel policy, every kernel kind is refused with `no_policy`.
+- **Test:** `TestFiveNodeEndToEnd` signs a kernel activity and a binding under the evaluator, and refuses an activity for another identity and a stale bind nonce.
+- **Owner action:** write the kernel policy before the kernel kinds are allowed in any policy document.
 
 ### F-8: policy ledger is in memory and per node
 
@@ -261,20 +276,27 @@ Each path below refuses the request, and no signature is produced. The order is 
 
 ### F-9: permits and replay windows
 
-- **Severity:** medium. **Status:** open; the permit part is fixed.
+- **Severity:** medium. **Status:** fixed; one owner decision remains.
 - **Evidence:**
   - EIP-712 permits counted no token spend, only the verifying contract as destination. They now count their value, or the maximum amount for an allowed-style permit, against the cap of the token they permit, and the spender is checked as a destination (`TestPermitCountsAgainstTheTokenCap`).
-  - Agent credential expiry in `internal/auth/agent.go` has no upper bound.
-  - The agent nonce cache is in memory, so a request can be replayed after a restart. The agent path is not wired, so this is latent.
+  - Agent expiry had no upper bound and agent nonces lived only in memory.
+- **Fix:**
+  - Agent expiry beyond `ATTESTOR_AGENT_MAX_EXPIRY` (default five minutes) is refused.
+  - Agent nonces are recorded in the share store (`AgentNonceStore`) and survive restarts.
+  - `cmd/attestor/main.go` wires the agent verifier from `ATTESTOR_AGENTS_FILE`.
+- **Test:** `TestAgentNonceRefusedAcrossRestart` and `TestAgentExpiryBeyondMaximumRefused` in `internal/auth/agent`.
 - **Owner action:**
-  - Bound agent expiry.
-  - Persist nonces before wiring agents.
+  - Decide how the agent principal file is replicated to each node.
 
 ### F-10: denial audit records can be lost
 
-- **Severity:** low. **Status:** open.
-- **Evidence:** denial paths in `internal/server/sign.go` discard the audit append error. The request is still refused.
-- **Owner action:** surface audit failures in health and alert on them.
+- **Severity:** low. **Status:** fixed.
+- **Evidence:** before this change, denial paths in `internal/server/sign.go` and failure paths in `internal/server/keys.go` discarded the audit append error.
+- **Fix:**
+  - Every refusal on every route, including authority refusals, is appended to the audit log before the response is sent. The log fsyncs each record.
+  - When the append fails, the response is `store_audit_failed` instead of the original refusal.
+- **Test:** `TestHandlerRefusals` checks that refusals advance the audit head and that a closed log turns refusals into `store_audit_failed`.
+- **Owner action:** alert on `store_audit_failed` answers and on readiness failures.
 
 ### F-11: peer-driven stalls
 

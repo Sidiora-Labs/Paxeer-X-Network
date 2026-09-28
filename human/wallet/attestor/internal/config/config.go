@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -36,6 +37,12 @@ const (
 	EnvRPCURL          = "ATTESTOR_RPC_URL"
 	EnvPeerPins        = "ATTESTOR_PEER_PINS"
 	EnvActivityTypes   = "ATTESTOR_ACTIVITY_TYPES"
+	EnvJWTMaxAge       = "ATTESTOR_JWT_MAX_AGE"
+	EnvAgentsFile      = "ATTESTOR_AGENTS_FILE"
+	EnvAgentMaxExpiry  = "ATTESTOR_AGENT_MAX_EXPIRY"
+	EnvKernelPolicy    = "ATTESTOR_KERNEL_POLICY_FILE"
+	DefaultJWTMaxAge   = time.Hour
+	DefaultAgentExpiry = 5 * time.Minute
 	KeySize            = 32
 	maxKeyFileSize     = 4096
 	peerEntrySeparator = ","
@@ -73,6 +80,10 @@ type Config struct {
 	RPCURL         string
 	PeerPins       map[string]string
 	ActivityTypes  []uint32
+	JWTMaxAge      time.Duration
+	AgentsFile     string
+	AgentMaxExpiry time.Duration
+	KernelPolicy   string
 }
 
 func Load(getenv func(string) string) (*Config, error) {
@@ -98,6 +109,8 @@ func Load(getenv func(string) string) (*Config, error) {
 		BackupKeyFile:  get(EnvBackupKeyFile),
 		BackupDir:      get(EnvBackupDir),
 		RPCURL:         get(EnvRPCURL),
+		AgentsFile:     get(EnvAgentsFile),
+		KernelPolicy:   get(EnvKernelPolicy),
 	}
 
 	var err error
@@ -151,6 +164,16 @@ func Load(getenv func(string) string) (*Config, error) {
 		return nil, err
 	}
 
+	if c.JWTMaxAge, err = positiveDuration(get(EnvJWTMaxAge), EnvJWTMaxAge, DefaultJWTMaxAge); err != nil {
+		return nil, err
+	}
+	if c.AgentMaxExpiry, err = positiveDuration(get(EnvAgentMaxExpiry), EnvAgentMaxExpiry, DefaultAgentExpiry); err != nil {
+		return nil, err
+	}
+	if c.KernelPolicy != "" && c.RPCURL == "" {
+		return nil, fmt.Errorf("%w: %s is needed to read bind nonces when %s is set", ErrMissing, EnvRPCURL, EnvKernelPolicy)
+	}
+
 	if c.BackupKeyFile != "" {
 		if c.BackupKey, err = ReadKeyFile(c.BackupKeyFile); err != nil {
 			return nil, fmt.Errorf("config: %s: %w", EnvBackupKeyFile, err)
@@ -158,6 +181,17 @@ func Load(getenv func(string) string) (*Config, error) {
 	}
 
 	return c, nil
+}
+
+func positiveDuration(v, name string, def time.Duration) (time.Duration, error) {
+	if v == "" {
+		return def, nil
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d <= 0 {
+		return 0, fmt.Errorf("config: %s: invalid positive duration %q", name, v)
+	}
+	return d, nil
 }
 
 func ParsePeerPins(v string, peers []Peer) (map[string]string, error) {

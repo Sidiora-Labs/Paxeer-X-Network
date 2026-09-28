@@ -89,6 +89,7 @@ type Error struct {
 	Code       string `json:"code"`
 	Message    string `json:"message"`
 	PolicyCode string `json:"policy_code,omitempty"`
+	audited    bool
 }
 
 func (e *Error) Error() string {

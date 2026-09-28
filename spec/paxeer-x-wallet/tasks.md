@@ -252,6 +252,11 @@
     - Remove the native projects, the native runtime configuration and its dependencies, and re-point scripts/release-check.sh at the progressive web application: manifest validity, icon files present, service worker built and registered, and the Playwright suite in check mode.
     - Add tests under src/pwa/ proving manifest completeness and icon presence, the caching rule per origin, the update flow, the install prompt, and that no policy references the third-party PWA service's origin.
     - _Requirements: 10.8_
+  - [x] 4.11 Harden the attestor's authority boundaries from the security review
+    - Operator operations (keys.import, keys.refresh, keys.addshare) are accepted only from a client certificate chaining to the operator CA and keys.generate and sign only from one chaining to the gateway CA, both pools loaded from the configured files, proven by tests where each identity is refused on the other's operations.
+    - The daemon wires the kernel policy evaluator for every lx_ kind and the agent verifier into cmd/attestor so the binary enforces what the server package tests enforce, with configuration variables documented in deploy/env; user tokens are checked for issuer, audience, expiry and a maximum age, and a token's identifier is recorded in the store so the same token cannot authorise a second signing session; agent expiry is bounded to a configured maximum and agent nonces persist in the store across restarts.
+    - Every denial writes its audit record before the response is sent and the audit head is fsynced; the schema and goldens for eth_sign_digest describe the reconstructed construction the daemon now requires (observation 4.8.1); the review document marks the fixed findings as fixed and states the remaining owner decisions.
+    - _Requirements: 1.7, 2.1, 2.2, 2.5, 2.6, 13.3_
   - [x] 4.12 Make refresh atomic and the spend ledger durable across the attestor network
     - keys.refresh runs as a two-phase commit: every participant stages the new share under the next epoch beside the committed one, the first participant in sorted order commits only after every participant acknowledges its stage over the peer refresh route and otherwise aborts, participants swap epochs in one store transaction on commit and discard the stage on abort, on a missing decision or on restart with an uncommitted stage, and refresh and signing sessions bind the committed epoch into the protocol name so signers at different epochs fail closed; proven by a test that stops one node between stage and commit and shows the key still signs at the old epoch after that node returns.
     - The spend ledger persists sealed in the store per account with its rolling windows; every allowed sign request is announced to every participant of the key, the non-signing peers record the policy view and answer, a signing session proceeds only when at least the quorum has acknowledged the announcement, entries carry the request id so a request announced by several signers counts once, and permits count against the caps of the token they permit; proven by tests that restart a node and show the caps hold, and that spreading requests over different signer sets cannot exceed a cap.
@@ -298,7 +303,7 @@
     { "id": 1,  "tasks": ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "1.10", "1.11", "1.12", "1.13", "1.14", "1.15", "1.16"] },
     { "id": 2,  "tasks": ["2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7", "2.8", "2.9"] },
     { "id": 3,  "tasks": ["3.1", "3.2", "3.3", "3.4", "3.5", "3.6", "3.7", "3.8", "3.9", "3.10", "3.11", "3.12", "3.13", "3.14", "3.15"] },
-    { "id": 4,  "tasks": ["4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7", "4.8", "4.9", "4.10", "4.12", "4.13", "4.14"] },
+    { "id": 4,  "tasks": ["4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7", "4.8", "4.9", "4.10", "4.11", "4.12", "4.13", "4.14"] },
     { "id": 5,  "tasks": ["5.1", "5.2", "5.3", "5.4"] }
   ]
 }

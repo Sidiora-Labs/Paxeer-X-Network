@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -197,5 +198,153 @@ func TestRunRefusesPeerWithoutPin(t *testing.T) {
 	}
 	if err := run(context.Background(), func(k string) string { return env[k] }, nil); err == nil {
 		t.Fatal("run accepted a peer without a pin")
+	}
+}
+
+func postStatus(t *testing.T, client *http.Client, url string) (int, string) {
+	t.Helper()
+	resp, err := client.Post(url, "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var body struct {
+		Error *struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	raw, _ := io.ReadAll(resp.Body)
+	if err := json.Unmarshal(raw, &body); err != nil || body.Error == nil {
+		t.Fatalf("%s: status %d body %s", url, resp.StatusCode, raw)
+	}
+	return resp.StatusCode, body.Error.Code
+}
+
+func TestRunSeparatesOperatorAndGatewayAuthority(t *testing.T) {
+	dir := t.TempDir()
+	gatewayDir, operatorDir := filepath.Join(dir, "gateway"), filepath.Join(dir, "operator")
+	for _, d := range []string{gatewayDir, operatorDir} {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	gateway, gatewayCA, _ := makeCert(t, gatewayDir, "ca", nil, true)
+	operator, operatorCA, _ := makeCert(t, operatorDir, "ca", nil, true)
+	_, nodeCert, nodeKey := makeCert(t, gatewayDir, "node-1", gateway, false)
+	peer, _, _ := makeCert(t, gatewayDir, "node-2", gateway, false)
+	_, gatewayCert, gatewayKey := makeCert(t, gatewayDir, "gateway-client", gateway, false)
+	_, operatorCert, operatorKey := makeCert(t, operatorDir, "operator-client", operator, false)
+	keyFile := filepath.Join(dir, "store.key")
+	if err := os.WriteFile(keyFile, []byte(hex.EncodeToString(make([]byte, 31))+"03"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	kernelFile := filepath.Join(dir, "kernel.json")
+	if err := os.WriteFile(kernelFile, []byte(`{"version":1,"defaults":{"modules":{"asset":[5]}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	agentKey := make([]byte, 32)
+	agentKey[0] = 1
+	agentsFile := filepath.Join(dir, "agents.json")
+	if err := os.WriteFile(agentsFile, []byte(`[{"public_key":"`+hex.EncodeToString(agentKey)+`","key_ids":["key-1"]}]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pin := transport.SPKIHash(peer.cert)
+	env := map[string]string{
+		config.EnvNodeID:         "node-1",
+		config.EnvListenAddr:     "127.0.0.1:0",
+		config.EnvPeerListenAddr: freeAddr(t),
+		config.EnvPeers:          "node-2=" + freeAddr(t),
+		config.EnvPeerPins:       "node-2=" + hex.EncodeToString(pin[:]),
+		config.EnvNodeKeyFile:    keyFile,
+		config.EnvDataDir:        filepath.Join(dir, "data"),
+		config.EnvChainID:        "125",
+		config.EnvTLSCertFile:    nodeCert,
+		config.EnvTLSKeyFile:     nodeKey,
+		config.EnvTLSCAFile:      gatewayCA,
+		config.EnvOperatorCAFile: operatorCA,
+		config.EnvActivityTypes:  "0x10005",
+		config.EnvKernelPolicy:   kernelFile,
+		config.EnvRPCURL:         "http://" + freeAddr(t),
+		config.EnvAgentsFile:     agentsFile,
+		config.EnvAgentMaxExpiry: "2m",
+		config.EnvJWTMaxAge:      "30m",
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	readyCh := make(chan listening, 1)
+	done := make(chan error, 1)
+	go func() { done <- run(ctx, func(k string) string { return env[k] }, func(l listening) { readyCh <- l }) }()
+	var addrs listening
+	select {
+	case addrs = <-readyCh:
+	case err := <-done:
+		t.Fatalf("run exited early: %v", err)
+	case <-time.After(30 * time.Second):
+		t.Fatal("daemon did not start")
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(gateway.cert)
+	clientFor := func(certPath, keyPath string) *http.Client {
+		pair, err := tls.LoadX509KeyPair(certPath, keyPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{
+			MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{pair}, RootCAs: roots,
+		}}}
+	}
+	gatewayClient, operatorClient := clientFor(gatewayCert, gatewayKey), clientFor(operatorCert, operatorKey)
+	base := "https://" + addrs.API
+	for _, path := range []string{"/v1/sign", "/v1/keys/generate"} {
+		if status, code := postStatus(t, operatorClient, base+path); status != http.StatusForbidden || code != "operator_required" {
+			t.Fatalf("operator identity on %s: %d %s", path, status, code)
+		}
+		if status, code := postStatus(t, gatewayClient, base+path); status == http.StatusForbidden || code == "operator_required" {
+			t.Fatalf("gateway identity refused on %s: %d %s", path, status, code)
+		}
+	}
+	for _, path := range []string{"/v1/keys/import", "/v1/keys/refresh", "/v1/keys/addshare"} {
+		if status, code := postStatus(t, gatewayClient, base+path); status != http.StatusForbidden || code != "operator_required" {
+			t.Fatalf("gateway identity on %s: %d %s", path, status, code)
+		}
+		if status, code := postStatus(t, operatorClient, base+path); status == http.StatusForbidden || code == "operator_required" {
+			t.Fatalf("operator identity refused on %s: %d %s", path, status, code)
+		}
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("run returned %v after termination", err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("daemon did not stop")
+	}
+}
+
+func TestRunRefusesKernelPolicyWithoutChainReader(t *testing.T) {
+	dir := t.TempDir()
+	ca, caPath, _ := makeCert(t, dir, "ca", nil, true)
+	_, nodeCert, nodeKey := makeCert(t, dir, "node-1", ca, false)
+	keyFile := filepath.Join(dir, "store.key")
+	if err := os.WriteFile(keyFile, []byte(hex.EncodeToString(make([]byte, 31))+"04"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	kernelFile := filepath.Join(dir, "kernel.json")
+	if err := os.WriteFile(kernelFile, []byte(`{"version":1,"defaults":{"modules":{"asset":[5]}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{
+		config.EnvNodeID: "node-1", config.EnvListenAddr: "127.0.0.1:0", config.EnvPeerListenAddr: freeAddr(t),
+		config.EnvNodeKeyFile: keyFile, config.EnvDataDir: filepath.Join(dir, "data"),
+		config.EnvChainID: "125", config.EnvTLSCertFile: nodeCert, config.EnvTLSKeyFile: nodeKey,
+		config.EnvTLSCAFile: caPath, config.EnvOperatorCAFile: caPath, config.EnvKernelPolicy: kernelFile,
+	}
+	if err := run(context.Background(), func(k string) string { return env[k] }, nil); err == nil {
+		t.Fatal("run accepted a kernel policy without a chain reader")
+	}
+	env[config.EnvRPCURL] = "http://" + freeAddr(t)
+	env[config.EnvAgentsFile] = filepath.Join(dir, "absent.json")
+	if err := run(context.Background(), func(k string) string { return env[k] }, nil); err == nil {
+		t.Fatal("run accepted a missing agent principal file")
 	}
 }

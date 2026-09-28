@@ -17,11 +17,13 @@ import (
 	"time"
 
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/audit"
+	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/auth/agent"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/auth/jwt"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/config"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/health"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/lxwire"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy"
+	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy/lx"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/replica"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/server"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/store"
@@ -107,10 +109,42 @@ func run(ctx context.Context, getenv func(string) string, ready func(listening))
 			Issuer:     cfg.JWTIssuer,
 			Audience:   cfg.JWTAudience,
 			HTTPClient: &http.Client{Timeout: 10 * time.Second},
+			MaxAge:     cfg.JWTMaxAge,
+			Replay:     st,
 		})
 		if err != nil {
 			return err
 		}
+	}
+	var agents *agent.AgentVerifier
+	if cfg.AgentsFile != "" {
+		principals, err := agent.LoadPrincipals(cfg.AgentsFile)
+		if err != nil {
+			return fmt.Errorf("attestor: %s: %w", config.EnvAgentsFile, err)
+		}
+		if agents, err = agent.NewAgentVerifier(agent.Config{Principals: principals, Nonces: st, MaxExpiry: cfg.AgentMaxExpiry}); err != nil {
+			return err
+		}
+	}
+	engine := policy.New(doc)
+	ledger := policy.NewMemoryLedger(time.Now)
+	var kernel *lx.Evaluator
+	if cfg.KernelPolicy != "" {
+		kdoc, err := lx.LoadFile(cfg.KernelPolicy)
+		if err != nil {
+			return fmt.Errorf("attestor: %s: %w", config.EnvKernelPolicy, err)
+		}
+		chain, err := lx.NewChain(cfg.RPCURL, &http.Client{Timeout: lx.DefaultRPCWait})
+		if err != nil {
+			return fmt.Errorf("attestor: %s: %w", config.EnvRPCURL, err)
+		}
+		if kernel, err = lx.New(engine, kdoc, ledger, chain); err != nil {
+			return err
+		}
+	}
+	clients, err := server.LoadClientAuthorities(cfg.TLSCAFile, cfg.OperatorCAFile)
+	if err != nil {
+		return err
 	}
 	activityTypes := make([]lxwire.ActivityType, 0, len(cfg.ActivityTypes))
 	for _, t := range cfg.ActivityTypes {
@@ -167,9 +201,12 @@ func run(ctx context.Context, getenv func(string) string, ready func(listening))
 		Store:        st,
 		Audit:        auditLog,
 		Transport:    tr,
-		Policy:       policy.New(doc),
-		Ledger:       policy.NewMemoryLedger(time.Now),
+		Policy:       engine,
+		Kernel:       kernel,
+		Ledger:       ledger,
+		Clients:      clients,
 		Tokens:       tokens,
+		Agents:       agents,
 		Activities:   registry,
 		PeerProbe:    server.TCPPeerProbe(probe),
 		Replica:      replicaState,
@@ -177,7 +214,7 @@ func run(ctx context.Context, getenv func(string) string, ready func(listening))
 	if err != nil {
 		return err
 	}
-	tlsCfg, err := server.APITLSConfig(cfg.TLSCertFile, cfg.TLSKeyFile, cfg.OperatorCAFile)
+	tlsCfg, err := server.APITLSConfig(cfg.TLSCertFile, cfg.TLSKeyFile, clients)
 	if err != nil {
 		return err
 	}

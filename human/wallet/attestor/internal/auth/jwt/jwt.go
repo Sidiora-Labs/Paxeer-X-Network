@@ -2,6 +2,8 @@ package jwt
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -26,7 +28,21 @@ var (
 	ErrInvalidConfig    = errors.New("jwt: invalid configuration")
 	ErrMissingSubject   = errors.New("jwt: subject missing")
 	ErrMissingKeyIDName = errors.New("jwt: key id being signed for is empty")
+	ErrTooOld           = errors.New("jwt: token is older than the maximum age")
+	ErrReplayed         = errors.New("jwt: token has already authorised a request")
+	ErrReplayStore      = errors.New("jwt: replay store failed")
 )
+
+const DefaultMaxAge = time.Hour
+
+type TokenReplayStore interface {
+	UseToken(id string, expiresAt time.Time) (bool, error)
+}
+
+func TokenID(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
 
 type Config struct {
 	JWKSURL            string
@@ -36,6 +52,8 @@ type Config struct {
 	ClockSkew          time.Duration
 	HTTPClient         *http.Client
 	Now                func() time.Time
+	MaxAge             time.Duration
+	Replay             TokenReplayStore
 }
 
 type TokenVerifier struct {
@@ -46,6 +64,8 @@ type TokenVerifier struct {
 	skew       time.Duration
 	client     *http.Client
 	now        func() time.Time
+	maxAge     time.Duration
+	replay     TokenReplayStore
 
 	mu          sync.Mutex
 	keys        jwk.Set
@@ -60,14 +80,20 @@ func NewTokenVerifier(cfg Config) (*TokenVerifier, error) {
 	if cfg.HTTPClient == nil {
 		return nil, fmt.Errorf("%w: http client is required", ErrInvalidConfig)
 	}
-	if cfg.MinRefreshInterval < 0 || cfg.ClockSkew < 0 {
+	if cfg.MinRefreshInterval < 0 || cfg.ClockSkew < 0 || cfg.MaxAge < 0 {
 		return nil, fmt.Errorf("%w: negative interval", ErrInvalidConfig)
 	}
 	now := cfg.Now
 	if now == nil {
 		now = time.Now
 	}
+	maxAge := cfg.MaxAge
+	if maxAge == 0 {
+		maxAge = DefaultMaxAge
+	}
 	return &TokenVerifier{
+		maxAge:     maxAge,
+		replay:     cfg.Replay,
 		jwksURL:    cfg.JWKSURL,
 		issuer:     cfg.Issuer,
 		audience:   cfg.Audience,
@@ -126,6 +152,9 @@ func (v *TokenVerifier) Verify(ctx context.Context, token string, keyID string, 
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", ErrClaims, err)
 	}
+	if age := v.now().Sub(tok.IssuedAt()); age > v.maxAge+v.skew {
+		return "", fmt.Errorf("%w: issued %s ago, maximum %s", ErrTooOld, age.Truncate(time.Second), v.maxAge)
+	}
 	subject := tok.Subject()
 	if subject == "" {
 		return "", ErrMissingSubject
@@ -136,6 +165,15 @@ func (v *TokenVerifier) Verify(ctx context.Context, token string, keyID string, 
 	}
 	if !ok {
 		return "", ErrNotOwner
+	}
+	if v.replay != nil {
+		fresh, err := v.replay.UseToken(TokenID(token), tok.Expiration().Add(v.skew))
+		if err != nil {
+			return "", fmt.Errorf("%w: %v", ErrReplayStore, err)
+		}
+		if !fresh {
+			return "", ErrReplayed
+		}
 	}
 	return subject, nil
 }

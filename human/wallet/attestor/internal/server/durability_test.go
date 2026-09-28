@@ -62,7 +62,6 @@ func TestRefreshKeepsTheOldEpochWhenAParticipantStopsBeforeCommit(t *testing.T) 
 		o.PeerTimeout = 3 * time.Second
 		o.RoundTimeout = 20 * time.Second
 	})
-	token := c.idp.mint(t, c.idp.key, testOwner)
 	pub, account := importEd25519(t, c, "lx-key", "attestor two-phase refresh ed25519 key")
 
 	stopped := c.byID("node-3")[0]
@@ -121,7 +120,7 @@ func TestRefreshKeepsTheOldEpochWhenAParticipantStopsBeforeCommit(t *testing.T) 
 		t.Fatalf("the returned node did not audit the discarded stage: %v", err)
 	}
 
-	verifyBind(t, "sign at the old epoch after the node returned", pub, account, signBind(t, c, "lx-key", "sign-after-return", []string{"node-1", "node-3", "node-5"}, account, token))
+	verifyBind(t, "sign at the old epoch after the node returned", pub, account, signBind(t, c, "lx-key", "sign-after-return", []string{"node-1", "node-3", "node-5"}, account, c.idp.mint(t, c.idp.key, testOwner)))
 
 	refreshed := decodeOK[KeyResponse](t, "refresh with every participant", c.callAll(t, c.nodes, PathRefresh, func(*testNode) any {
 		return RefreshRequest{SessionID: "refresh-all", KeyID: "lx-key"}
@@ -136,7 +135,7 @@ func TestRefreshKeepsTheOldEpochWhenAParticipantStopsBeforeCommit(t *testing.T) 
 			t.Fatalf("%s: committed epoch after a full refresh: %+v %v", n.id, rec, err)
 		}
 	}
-	verifyBind(t, "sign at the new epoch", pub, account, signBind(t, c, "lx-key", "sign-new-epoch", []string{"node-2", "node-4", "node-5"}, account, token))
+	verifyBind(t, "sign at the new epoch", pub, account, signBind(t, c, "lx-key", "sign-new-epoch", []string{"node-2", "node-4", "node-5"}, account, c.idp.mint(t, c.idp.key, testOwner)))
 
 	_, account2 := importEd25519(t, c, "skew-key", "attestor epoch skew ed25519 key")
 	skewed := c.byID("node-5")[0]
@@ -155,7 +154,7 @@ func TestRefreshKeepsTheOldEpochWhenAParticipantStopsBeforeCommit(t *testing.T) 
 	if err := skewed.store.CommitStaged("skew-key", 1); err != nil {
 		t.Fatal(err)
 	}
-	for i, r := range signBind(t, c, "skew-key", "sign-epoch-skew", []string{"node-1", "node-2", "node-5"}, account2, token) {
+	for i, r := range signBind(t, c, "skew-key", "sign-epoch-skew", []string{"node-1", "node-2", "node-5"}, account2, c.idp.mint(t, c.idp.key, testOwner)) {
 		if r.status == http.StatusOK {
 			t.Fatalf("signers at different epochs produced a signature on result %d: %s", i, r.body)
 		}
@@ -166,7 +165,6 @@ func TestSpendLedgerHoldsAcrossSignerSetsAndRestarts(t *testing.T) {
 	doc := testPolicy()
 	doc.Defaults.Caps = map[string]policy.Cap{policy.AssetNative: {PerTransaction: "1000000000000000000", Daily: "3000000000000000000"}}
 	c := newTestClusterWith(t, 5, true, doc, nil)
-	token := c.idp.mint(t, c.idp.key, testOwner)
 
 	seed := sha256.Sum256([]byte("attestor shared ledger secp256k1 key"))
 	key, err := gethcrypto.ToECDSA(seed[:])
@@ -197,7 +195,7 @@ func TestSpendLedgerHoldsAcrossSignerSetsAndRestarts(t *testing.T) {
 		}
 		return c.callAll(t, c.byID(signers...), PathSign, func(*testNode) any {
 			return SignRequest{SessionID: session, KeyID: "evm-key", Kind: KindEVMTransaction, Signers: signers, Transaction: hex.EncodeToString(raw)}
-		}, token), tx
+		}, c.idp.mint(t, c.idp.key, testOwner)), tx
 	}
 	for i, signers := range [][]string{{"node-1", "node-2", "node-3"}, {"node-3", "node-4", "node-5"}, {"node-1", "node-4", "node-5"}} {
 		results, tx := sign("spread-"+signers[0]+signers[2], uint64(i), signers)
@@ -233,7 +231,6 @@ func TestStalledPeerAbortsTheSessionWithAnAuditEntry(t *testing.T) {
 	c := newTestClusterWith(t, 5, true, testPolicy(), func(o *Options) {
 		o.RoundTimeout = 2 * time.Second
 	})
-	token := c.idp.mint(t, c.idp.key, testOwner)
 	pub, account := importEd25519(t, c, "lx-key", "attestor stalled peer ed25519 key")
 
 	signers := []string{"node-1", "node-2", "node-3"}
@@ -241,7 +238,7 @@ func TestStalledPeerAbortsTheSessionWithAnAuditEntry(t *testing.T) {
 	start := time.Now()
 	results := c.callAll(t, c.byID("node-1", "node-2"), PathSign, func(*testNode) any {
 		return SignRequest{SessionID: "sign-stalled", KeyID: "lx-key", Kind: KindLXBind, Signers: signers, Message: hex.EncodeToString(bind)}
-	}, token)
+	}, c.idp.mint(t, c.idp.key, testOwner))
 	if elapsed := time.Since(start); elapsed > time.Minute {
 		t.Fatalf("a stalled session took %s to abort", elapsed)
 	}
@@ -257,5 +254,5 @@ func TestStalledPeerAbortsTheSessionWithAnAuditEntry(t *testing.T) {
 			t.Fatalf("%s: audit chain: %v", n.id, err)
 		}
 	}
-	verifyBind(t, "sign after a stalled session", pub, account, signBind(t, c, "lx-key", "sign-after-stall", signers, account, token))
+	verifyBind(t, "sign after a stalled session", pub, account, signBind(t, c, "lx-key", "sign-after-stall", signers, account, c.idp.mint(t, c.idp.key, testOwner)))
 }

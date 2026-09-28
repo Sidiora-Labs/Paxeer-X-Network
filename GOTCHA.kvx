@@ -185,3 +185,15 @@ area    = "attestor"
 symptom = "A test that greps the audit log for a peer id or subject found nothing although the entry was written."
 cause   = "audit.Log stores only the SHA-256 of Entry.Subject; kind, key id, decision, reason and session id are the only plaintext fields."
 do      = "Put anything a test or operator must read back, such as silent peer ids, in Reason, and keep secrets out of it."
+
+[gotcha.28]
+area    = "attestor"
+symptom = "Adding an agent expiry upper bound failed the existing tampered-expiry test, which expects a signature error for an expiry pushed an hour ahead."
+cause   = "The new bound ran before signature verification, so a tampered expiry was reported as too far instead of as a bad signature."
+do      = "Place new request bounds after the signature check and before the nonce is consumed, so tamper tests keep their error and a refused request never burns a nonce."
+
+[gotcha.29]
+area    = "attestor"
+symptom = "Test identity tokens minted twice within one second are byte-identical, so a per-token replay record refuses the second signing request."
+cause   = "The test minter sets only sub, iss, aud, iat and exp, and the replay record keys on the token hash."
+do      = "Give every test token a random jti and mint a fresh token for each signing request."

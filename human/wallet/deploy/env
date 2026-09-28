@@ -85,8 +85,8 @@ ATTESTOR_JWT_AUDIENCE - expected audience of user tokens
 ATTESTOR_POLICY_FILE - path to the default signing policy
 ATTESTOR_TLS_CERT_FILE - path to this node's TLS certificate
 ATTESTOR_TLS_KEY_FILE - path to this node's TLS private key
-ATTESTOR_TLS_CA_FILE - path to the CA bundle that authenticates peers and the gateway
-ATTESTOR_OPERATOR_CA_FILE - path to the CA bundle that authenticates the operator identity
+ATTESTOR_TLS_CA_FILE - path to the CA bundle that authenticates peers and the gateway; API clients chaining to it may call keys.generate and sign only
+ATTESTOR_OPERATOR_CA_FILE - path to the CA bundle that authenticates the operator identity; API clients chaining to it may call keys.import, keys.refresh and keys.addshare only; must be a different CA from ATTESTOR_TLS_CA_FILE
 ATTESTOR_BACKUP_KEY_FILE - path to the key file (32 raw bytes or 64 hex characters) that encrypts store snapshots
 ATTESTOR_BACKUP_DIR - directory where encrypted store snapshots are written
 ATTESTOR_REPLICA_KEY_FILE - path to this attestor's OpenSSH private key for the replica; setting any ATTESTOR_REPLICA_ variable requires all six
@@ -94,6 +94,10 @@ ATTESTOR_REPLICA_HOST_KEY_FILE - path to the replica's expected SSH host public 
 ATTESTOR_REPLICA_REMOTE_DIR - absolute per-node directory inside the replica user's chroot, /attestor-<node id>, created by the operator on the replica and writable by that user
 ATTESTOR_REPLICA_INTERVAL - duration between shipping passes over ATTESTOR_BACKUP_DIR, at least 1s; each snapshot is uploaded once, verified by size and digest and recorded in replica-ledger.json under ATTESTOR_DATA_DIR
 ATTESTOR_RPC_URL - chain RPC endpoint used to read nonces and binding state
+ATTESTOR_JWT_MAX_AGE - Go duration a user token stays usable after its issue time (default 1h); each token authorises one signing request per node and is recorded in the share store
+ATTESTOR_AGENTS_FILE - path to the JSON list of registered agent principals (public_key hex, frozen, key_ids); unset refuses agent requests with token_unavailable
+ATTESTOR_AGENT_MAX_EXPIRY - Go duration an agent request's expiry may lie ahead of the node clock (default 5m); agent nonces are recorded in the share store
+ATTESTOR_KERNEL_POLICY_FILE - path to the kernel policy for lx_activity, lx_bind and lx_grant; needs ATTESTOR_RPC_URL; unset refuses every kernel kind with no_policy
 
 # gateway
 NODE_ENV - runtime mode of the gateway: development, test or production

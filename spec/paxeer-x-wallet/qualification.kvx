@@ -718,7 +718,6 @@ file = "human/wallet/attestor/cmd/attestor/main.go"
 symbol = "main"
 observed = "The daemon still passes an in-memory ledger and sets neither PeerTimeout nor RoundTimeout, so the server builds the store-backed spend ledger on that ledger's clock and uses the thirty-second peer and two-minute round defaults."
 assumption = "The daemon wiring task passes policy.NewSpendLedger over the node store and exposes both timeouts in configuration; the server's replacement keeps the ledger durable until then."
-severity = "note"
 
 [observation.4.10.1]
 task = "4.10"
@@ -791,3 +790,59 @@ symbol = "Open"
 observed = "The deliver mode marks migrated_at in the database named by CEREMONY_DATABASE_URL, which the gateway must read for the flag flip to take effect, but no task moves the production wallet rows from the current host into the new gateway's database, and backfillAccounts in the gateway has no command entry."
 assumption = "The owner decides whether the new gateway reads the production database itself or a copied one, and a gateway task adds the backfill command; the cutover checklist states both as preconditions."
 severity = "suspect"
+
+[observation.4.11.1]
+task = "4.11"
+file = "human/wallet/schema/attestor-api/v1.kvx"
+symbol = "op.sign.request.construction"
+observed = "The eth_sign_digest entry now documents the required construction object and the golden sign.request.eth_sign_digest.json, closing observation 4.8.1; gateway and ceremony clients that send a bare digest are refused."
+assumption = "The gateway client already sends the construction the daemon recomputes, as the sign request type has carried it since the bare digest fix."
+severity = "note"
+
+[observation.4.11.2]
+task = "4.11"
+file = "human/wallet/schema/attestor-api/v1.kvx"
+symbol = "error.operator_required"
+observed = "operator_required now also answers a verified certificate from the wrong CA for the route, while the schema meaning still says only that no verified client certificate was presented, and the op auth lines do not name the CA each route needs."
+assumption = "Changing entries other than eth_sign_digest was outside this task's schema scope, so the code reuses the existing code instead of adding a new one."
+severity = "medium"
+
+[observation.4.11.3]
+task = "4.11"
+file = "human/crates/layerx-human-kms/tests/attestor.rs"
+symbol = "attestor"
+observed = "The KMS crate test calls keys.generate and sign with the operator identity, sets no kernel policy and may reuse one identity token, so against this daemon it gets operator_required, no_policy or token_invalid."
+assumption = "Its harness must issue a gateway-CA client certificate for generate and sign, load a kernel policy with a chain reader, and mint one token per signing request."
+severity = "high"
+
+[observation.4.11.4]
+task = "4.11"
+file = "human/wallet/gateway/test/e2e/attestors.ts"
+symbol = "attestors"
+observed = "The gateway end-to-end harness points ATTESTOR_TLS_CA_FILE and ATTESTOR_OPERATOR_CA_FILE at one CA, which grants the gateway both authorities, and may relay one token to several signing requests, which each node now refuses after the first."
+assumption = "The harness should use two CAs and a fresh token per signing request; the daemon does not refuse a shared bundle at start so the harness keeps starting."
+severity = "medium"
+
+[observation.4.11.5]
+task = "4.11"
+file = "human/wallet/attestor/internal/server/sign.go"
+symbol = "activityDisclosure"
+observed = "The sign request has no disclosure field (observation 3.4.1), so the node derives the kernel disclosure from the envelope and the evaluator's disclosure match is always satisfied at the node."
+assumption = "The human service matches its disclosure against the canonical bytes before it asks for a signature, and adding a disclosure field to the API is an owner decision."
+severity = "medium"
+
+[observation.4.11.6]
+task = "4.11"
+file = "human/wallet/attestor/internal/store/replay.go"
+symbol = "Store.UseToken"
+observed = "Token and agent nonce records live in a replay bucket of the share store, a file outside the brief's listed scope, because the task requires the identifier to be recorded in the store."
+assumption = "The record bucket is additive and leaves share records and their encryption unchanged."
+severity = "note"
+
+[observation.4.11.7]
+task = "4.11"
+file = "human/wallet/attestor/internal/server/sign.go"
+symbol = "evaluate"
+observed = "Kernel kinds are evaluated by the lx evaluator, whose caps read and record spends in the ledger it was built with, so they bypass the store-backed spend ledger and its announcement that other kinds now use."
+assumption = "The daemon wiring that moves the node onto the durable spend ledger also builds the kernel evaluator over it; kernel decisions still reach the announcement with the spends they return."
+severity = "medium"

@@ -1,0 +1,17 @@
+{
+  "session_id": "session-authorization",
+  "key_id": "key-evm",
+  "kind": "eth_sign_digest",
+  "signers": [
+    "node-1",
+    "node-3",
+    "node-5"
+  ],
+  "digest": "0x6666666666666666666666666666666666666666666666666666666666666666",
+  "construction": {
+    "kind": "eip7702_authorization",
+    "chainId": "125",
+    "address": "0x2222222222222222222222222222222222222222",
+    "nonce": "3"
+  }
+}

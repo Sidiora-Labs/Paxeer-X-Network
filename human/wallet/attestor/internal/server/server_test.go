@@ -43,6 +43,9 @@ func goldenValues(t *testing.T) map[string]any {
 			From: strings.Repeat("81", 32), Recipient: strings.Repeat("1e", 32), Asset: strings.Repeat("0a", 32), PerDrawMaximum: "1000", Allowance: "50000",
 			Expiration: 1900000000, PurposeHash: strings.Repeat("64", 32),
 		}},
+		"sign.request.eth_sign_digest": SignRequest{SessionID: "session-authorization", KeyID: "key-evm", Kind: KindEthSignDigest, Signers: []string{"node-1", "node-3", "node-5"}, Digest: "0x" + strings.Repeat("66", 32), Construction: &ConstructionJSON{
+			Kind: "eip7702_authorization", ChainID: "125", Address: "0x2222222222222222222222222222222222222222", Nonce: "3",
+		}},
 		"sign.response":   SignResponse{NodeID: "node-1", KeyID: "key-evm", Kind: KindEVMTransaction, SignedBytes: strings.Repeat("33", 32), Signature: strings.Repeat("44", 64) + "01", RecoveryID: &recovery, AuditSequence: 9},
 		"error.policy":    errorBody{Error: policyError("value_cap", "amount exceeds the per-transaction cap")},
 		"error.token":     errorBody{Error: newError(CodeTokenMissing, "a bearer token or agent signature is required")},
@@ -187,9 +190,9 @@ func TestSchemaListsEveryErrorCodeAndOperation(t *testing.T) {
 	}
 }
 
-func verifiedRequest(method, path string, body []byte) *http.Request {
+func verifiedRequest(root *x509.Certificate, method, path string, body []byte) *http.Request {
 	r := httptest.NewRequest(method, path, bytes.NewReader(body))
-	r.TLS = &tls.ConnectionState{VerifiedChains: [][]*x509.Certificate{{{}}}}
+	r.TLS = &tls.ConnectionState{VerifiedChains: [][]*x509.Certificate{{root}}}
 	return r
 }
 
@@ -202,27 +205,88 @@ func TestHandlerRefusals(t *testing.T) {
 		h.ServeHTTP(w, r)
 		return apiResult{status: w.Code, body: w.Body.Bytes()}
 	}
+	op := func(method, path string, body []byte) *http.Request {
+		return verifiedRequest(c.operator.cert, method, path, body)
+	}
+	gw := func(method, path string, body []byte) *http.Request {
+		return verifiedRequest(c.ca.cert, method, path, body)
+	}
 
 	plain := httptest.NewRequest(http.MethodPost, PathSign, strings.NewReader("{}"))
 	expectError(t, "no client certificate", do(plain), CodeOperatorRequired)
-	expectError(t, "wrong method", do(verifiedRequest(http.MethodGet, PathSign, nil)), CodeSessionBadRequest)
-	expectError(t, "import without ceremony", do(verifiedRequest(http.MethodPost, PathImport, []byte(`{}`))), CodeKeyImportDisabled)
-	expectError(t, "unknown field", do(verifiedRequest(http.MethodPost, PathRefresh, []byte(`{"session_id":"s","key_id":"k","extra":1}`))), CodeSessionBadRequest)
-	expectError(t, "slash in session", do(verifiedRequest(http.MethodPost, PathRefresh, []byte(`{"session_id":"a/b","key_id":"k"}`))), CodeSessionBadRequest)
-	expectError(t, "missing key", do(verifiedRequest(http.MethodPost, PathRefresh, []byte(`{"session_id":"s","key_id":"absent"}`))), CodeKeyNotFound)
-	expectError(t, "unknown kind", do(verifiedRequest(http.MethodPost, PathSign, []byte(`{"session_id":"s","key_id":"absent","kind":"raw"}`))), CodeSessionKind)
-	expectError(t, "sign missing key", do(verifiedRequest(http.MethodPost, PathSign, []byte(`{"session_id":"s","key_id":"absent","kind":"evm_tx"}`))), CodeKeyNotFound)
-	expectError(t, "unknown curve", do(verifiedRequest(http.MethodPost, PathGenerate, []byte(`{"session_id":"s","key_id":"k","curve":"p256","owner":"o"}`))), CodeKeyCurve)
-	expectError(t, "ed25519 without account", do(verifiedRequest(http.MethodPost, PathGenerate, []byte(`{"session_id":"s","key_id":"k","curve":"ed25519","owner":"o"}`))), CodeSessionBadRequest)
-	expectError(t, "addshare small quorum", do(verifiedRequest(http.MethodPost, PathAddShare, []byte(`{"session_id":"s","key_id":"k","curve":"secp256k1","public_key":"02`+strings.Repeat("79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798", 1)+`","owner":"o","new_participant_id":"node-9","quorum":["node-1","node-2"]}`))), CodeQuorumTooFew)
+	expectError(t, "wrong method", do(gw(http.MethodGet, PathSign, nil)), CodeSessionBadRequest)
+	expectError(t, "import without ceremony", do(op(http.MethodPost, PathImport, []byte(`{}`))), CodeKeyImportDisabled)
+	expectError(t, "unknown field", do(op(http.MethodPost, PathRefresh, []byte(`{"session_id":"s","key_id":"k","extra":1}`))), CodeSessionBadRequest)
+	expectError(t, "slash in session", do(op(http.MethodPost, PathRefresh, []byte(`{"session_id":"a/b","key_id":"k"}`))), CodeSessionBadRequest)
+	expectError(t, "missing key", do(op(http.MethodPost, PathRefresh, []byte(`{"session_id":"s","key_id":"absent"}`))), CodeKeyNotFound)
+	expectError(t, "unknown kind", do(gw(http.MethodPost, PathSign, []byte(`{"session_id":"s","key_id":"absent","kind":"raw"}`))), CodeSessionKind)
+	expectError(t, "sign missing key", do(gw(http.MethodPost, PathSign, []byte(`{"session_id":"s","key_id":"absent","kind":"evm_tx"}`))), CodeKeyNotFound)
+	expectError(t, "unknown curve", do(gw(http.MethodPost, PathGenerate, []byte(`{"session_id":"s","key_id":"k","curve":"p256","owner":"o"}`))), CodeKeyCurve)
+	expectError(t, "ed25519 without account", do(gw(http.MethodPost, PathGenerate, []byte(`{"session_id":"s","key_id":"k","curve":"ed25519","owner":"o"}`))), CodeSessionBadRequest)
+	expectError(t, "addshare small quorum", do(op(http.MethodPost, PathAddShare, []byte(`{"session_id":"s","key_id":"k","curve":"secp256k1","public_key":"02`+strings.Repeat("79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798", 1)+`","owner":"o","new_participant_id":"node-9","quorum":["node-1","node-2"]}`))), CodeQuorumTooFew)
 
-	r := do(verifiedRequest(http.MethodGet, PathHealth, nil))
+	for _, path := range []string{PathImport, PathRefresh, PathAddShare} {
+		before, _ := c.nodes[0].audit.Head()
+		r := do(gw(http.MethodPost, path, []byte(`{"session_id":"s","key_id":"k"}`)))
+		if r.status != http.StatusForbidden {
+			t.Fatalf("gateway identity on %s: status %d", path, r.status)
+		}
+		expectError(t, "gateway identity on "+path, r, CodeOperatorRequired)
+		if after, _ := c.nodes[0].audit.Head(); after != before+1 {
+			t.Fatalf("refusal on %s was not audited: head %d then %d", path, before, after)
+		}
+	}
+	for _, path := range []string{PathGenerate, PathSign} {
+		expectError(t, "operator identity on "+path, do(op(http.MethodPost, path, []byte(`{"session_id":"s","key_id":"k","kind":"evm_tx","curve":"secp256k1","owner":"o"}`))), CodeOperatorRequired)
+	}
+	stranger := newTestCA(t, t.TempDir())
+	expectError(t, "unknown root on sign", do(verifiedRequest(stranger.cert, http.MethodPost, PathSign, []byte(`{}`))), CodeOperatorRequired)
+	expectError(t, "unknown root on refresh", do(verifiedRequest(stranger.cert, http.MethodPost, PathRefresh, []byte(`{}`))), CodeOperatorRequired)
+
+	before, _ := c.nodes[0].audit.Head()
+	expectError(t, "audited sign refusal", do(gw(http.MethodPost, PathSign, []byte(`{"session_id":"s","key_id":"absent","kind":"evm_tx"}`))), CodeKeyNotFound)
+	if after, _ := c.nodes[0].audit.Head(); after != before+1 {
+		t.Fatalf("sign refusal was not audited: head %d then %d", before, after)
+	}
+
+	r := do(gw(http.MethodGet, PathHealth, nil))
 	var report health.Report
 	if err := json.Unmarshal(r.body, &report); err != nil || report.NodeID != "node-1" {
 		t.Fatalf("health: %d %s", r.status, r.body)
 	}
 	if report.Ready || r.status != http.StatusServiceUnavailable {
 		t.Fatalf("health of a two-node cluster reported ready: %d %s", r.status, r.body)
+	}
+
+	if err := c.nodes[0].audit.Close(); err != nil {
+		t.Fatal(err)
+	}
+	expectError(t, "refusal with a closed audit log", do(gw(http.MethodPost, PathSign, []byte(`{"session_id":"s","key_id":"absent","kind":"evm_tx"}`))), CodeStoreAuditFailed)
+	expectError(t, "authority refusal with a closed audit log", do(gw(http.MethodPost, PathRefresh, []byte(`{}`))), CodeStoreAuditFailed)
+}
+
+func TestClientAuthoritiesRefuseMissingFiles(t *testing.T) {
+	dir := t.TempDir()
+	ca := newTestCA(t, dir)
+	if _, err := LoadClientAuthorities(ca.pemPath, filepath.Join(dir, "absent.pem")); err == nil {
+		t.Fatal("missing operator CA file accepted")
+	}
+	empty := filepath.Join(dir, "empty.pem")
+	if err := os.WriteFile(empty, []byte("no certificate here"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadClientAuthorities(empty, ca.pemPath); err == nil {
+		t.Fatal("gateway CA file without a certificate accepted")
+	}
+	clients, err := LoadClientAuthorities(ca.pemPath, ca.pemPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := clients.Of(&tls.ConnectionState{VerifiedChains: [][]*x509.Certificate{{ca.cert}}}); got != AuthorityGateway|AuthorityOperator {
+		t.Fatalf("one CA in both files grants %d", got)
+	}
+	if got := clients.Of(nil); got != 0 {
+		t.Fatalf("no connection state grants %d", got)
 	}
 }
 
