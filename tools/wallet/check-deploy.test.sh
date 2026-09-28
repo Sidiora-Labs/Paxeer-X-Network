@@ -67,6 +67,23 @@ dir="$(fresh undocumented-name)"
 sed -i 's/^\[env\]$/[env]\n  WALLET_UNDOCUMENTED_SETTING = "on"/' "$dir/gateway.toml"
 expect_fail "env name missing from env" "$dir" env-documented gateway.toml
 
+dir="$(fresh no-api-tcp-check)"
+python3 - "$dir/attestor-4.toml" <<'PY'
+import re
+import sys
+
+path = sys.argv[1]
+text = open(path).read()
+text, count = re.subn(r"(internal_port = 8443\n(?:.*\n)*?)\n  \[\[services\.tcp_checks\]\]\n(?:    .*\n)+", r"\1", text, count=1)
+assert count == 1
+open(path, "w").write(text)
+PY
+expect_fail "attestor without a tcp check on its API port" "$dir" health-check attestor-4.toml
+
+dir="$(fresh tcp-check-without-mutual-tls)"
+sed -i '/^  ATTESTOR_TLS_CA_FILE = /d' "$dir/attestor-5.toml"
+expect_fail "tcp check accepted only for a mutual TLS API" "$dir" health-check attestor-5.toml
+
 dir="$(fresh four-attestors)"
 rm "$dir/attestor-5.toml"
 expect_fail "fourth attestor only" "$dir" attestor-count "attestor-\*.toml"

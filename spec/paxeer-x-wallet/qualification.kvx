@@ -658,6 +658,14 @@ observed = "The first deployment of an application with [[services]] blocks made
 assumption = "Every later attestor deployment passes --no-public-ips so the network stays private-only."
 severity = "suspect"
 
+[observation.3.5.9]
+task = "3.5"
+file = "human/wallet/deploy/attestor-1.toml"
+symbol = "[[files]]"
+observed = "The gateway CA and a gateway client identity under it now exist beside the unchanged node and operator CAs and the gateway's new client identity is staged; the definitions gain the kernel policy mapping, ATTESTOR_ACTIVITY_TYPES, the JWT age and the snapshot schedule, and check-deploy accepts a tcp check on a mutual TLS API port, but importing the per-node CA bundle, replica key, replica host key, replica address, replica user and RPC secrets was refused by the session's permission control, so no image was pushed, no node was redeployed, verify_cmd was not run and no signature was produced."
+assumption = "An operator with permission imports those six secrets on each attestor application and runs the deploy, the verify command and the two-curve signing proof; deploying before the import would destroy every machine because the replica file mappings name unset secrets."
+severity = "blocker"
+
 [gate.3.3]
 revision = "0b95c556344faefaf726eb9f00527b116ad79f66"
 command = "docker build -f human/wallet/attestor/Dockerfile -t paxeer-attestor:deploy . && cd human/wallet/deploy && flyctl deploy --config attestor-N.toml --image paxeer-attestor:deploy --app paxeer-attestor-N --local-only --ha=false --no-public-ips -y for N in 1 to 5, secrets imported out of band"

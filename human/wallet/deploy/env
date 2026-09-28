@@ -100,6 +100,7 @@ ATTESTOR_JWT_MAX_AGE - Go duration a user token stays usable after its issue tim
 ATTESTOR_AGENTS_FILE - path to the JSON list of registered agent principals (public_key hex, frozen, key_ids); unset refuses agent requests with token_unavailable
 ATTESTOR_AGENT_MAX_EXPIRY - Go duration an agent request's expiry may lie ahead of the node clock (default 5m); agent nonces are recorded in the share store
 ATTESTOR_KERNEL_POLICY_FILE - path to the kernel policy for lx_activity, lx_bind and lx_grant; needs ATTESTOR_RPC_URL; unset refuses every kernel kind with no_policy
+ATTESTOR_ACTIVITY_TYPES - comma-separated kernel activity types (module << 16 | operation, decimal or 0x hex) the daemon decodes for lx_activity; a type left out is refused as a decode error before any policy runs
 
 # gateway
 NODE_ENV - runtime mode of the gateway: development, test or production
