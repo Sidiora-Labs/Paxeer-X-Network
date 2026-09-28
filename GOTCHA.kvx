@@ -94,6 +94,7 @@ area    = "chain"
 symptom = "The public mainnet RPC hostname answers 400 plain HTTP request was sent to HTTPS port on /evm and 502 on /."
 cause   = "The edge in front of it is misconfigured for its upstream scheme."
 do      = "Do not point tests, tools or defaults at it until the edge is fixed; use a node RPC you control and keep the hostname behind a configuration variable."
+resolved = "That hostname is not the public RPC. The documented endpoints are the sixteen numbered hosts in docs/site/docs/reference/public-rpc.md; all answer chain id 125, individual nodes can trail the head by thousands of blocks, so pool several and compare eth_blockNumber."
 
 [gotcha.13]
 area    = "chain"
