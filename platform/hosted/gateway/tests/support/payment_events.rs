@@ -17,13 +17,13 @@ use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use rustls::{RootCertStore, ServerConfig, ServerConnection, StreamOwned};
 use zeroize::Zeroizing;
 
-struct Listener {
-    port: u16,
+pub(super) struct Listener {
+    pub(super) port: u16,
     stop: Arc<AtomicBool>,
     join: Option<JoinHandle<()>>,
 }
 impl Listener {
-    fn start(
+    pub(super) fn start(
         tls: Arc<ServerConfig>,
         handler: impl Fn(&http::Request) -> http::Response + Send + 'static,
     ) -> Self {
@@ -87,7 +87,7 @@ impl Drop for Listener {
     }
 }
 
-fn tls(redis: &RedisProcess) -> (Arc<ServerConfig>, Identity) {
+pub(super) fn tls(redis: &RedisProcess) -> (Arc<ServerConfig>, Identity) {
     let directory = &redis.directory;
     command(
         "openssl",

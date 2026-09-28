@@ -1,4 +1,7 @@
-use super::{json_response, now, parse_hex32, response, upstream_json, Config, OutgoingResponse};
+use super::{
+    json_response, now, parse_hex32, response, upstream_json, Config, KernelBackend,
+    KernelUnavailable, OutgoingResponse,
+};
 use std::sync::Mutex;
 
 static READ_WINDOW: Mutex<(u64, u32)> = Mutex::new((0, 0));
@@ -48,20 +51,12 @@ pub(super) fn request(config: &Config, method: &str, path: &str, body: &[u8]) ->
     if !consume_read() {
         return response(429, "public_read_rate_limit", Some(1));
     }
-    let Some(endpoint) = &config.public_core else {
-        return response(503, "public_core_not_configured", Some(30));
+    let (endpoint, token) = match config.backend(KernelBackend::PublicCore) {
+        Ok(target) => target,
+        Err(unavailable) => return unavailable.into(),
     };
-    let upstream = match upstream_json(
-        config,
-        endpoint,
-        config.component_token.as_str(),
-        method,
-        path,
-        None,
-        body,
-    ) {
-        Ok(upstream) => upstream,
-        Err(error) => return error,
+    let Ok(upstream) = upstream_json(config, endpoint, token, method, path, None, body) else {
+        return KernelUnavailable::unreachable(KernelBackend::PublicCore).into();
     };
     if upstream.content_type != "application/json" {
         return response(502, "invalid_core_response", None);

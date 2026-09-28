@@ -1,6 +1,6 @@
 use super::{
     json_response, media_type_is, parse_hex32, public_reads, response, Config, IncomingRequest,
-    OutgoingResponse,
+    KernelBackend, KernelUnavailable, OutgoingResponse,
 };
 use serde_json::{json, Value};
 
@@ -335,12 +335,41 @@ pub(super) fn invalid_request(value: &Value) -> Option<Value> {
     }
 }
 
+fn kernel_backend(method: &str) -> Option<KernelBackend> {
+    match method {
+        "lx_register" | "lx_requestFunds" => Some(KernelBackend::Identity),
+        "lx_sendActivity" => Some(KernelBackend::Component),
+        "lx_getAccount"
+        | "lx_getBalance"
+        | "lx_getBalances"
+        | "lx_getSequence"
+        | "lx_estimateFee"
+        | "lx_getProgramEvents"
+        | "lx_getReceipt"
+        | "lx_getActivityStatus"
+        | "lx_getBatchHeader"
+        | "lx_getCheckpoint"
+        | "lx_getProof"
+        | "lx_listAssets"
+        | "lx_getAsset"
+        | "lx_getNodeInfo"
+        | "px_getBalances"
+        | "px_listAssets" => Some(KernelBackend::PublicCore),
+        _ => None,
+    }
+}
+
 pub(super) fn dispatch(config: &Config, request: &IncomingRequest, value: &Value) -> Option<Value> {
     if let Some(refusal) = invalid_request(value) {
         return Some(refusal);
     }
     let id = value.get("id").cloned().unwrap_or(Value::Null);
     let method = value["method"].as_str()?;
+    if let Some(unavailable) =
+        kernel_backend(method).and_then(|backend| config.backend(backend).err())
+    {
+        return value.get("id").map(|_| unavailable.rpc(&id));
+    }
     if let Some(result) = crate::rpc_register::dispatch(config, method, &id, value.get("params")) {
         return value.get("id").map(|_| result);
     }
@@ -406,6 +435,9 @@ fn read_response(id: &Value, upstream: &OutgoingResponse) -> Value {
             json!({"jsonrpc":"2.0","id":id,"result":body["result"]})
         }
         Ok(body) => {
+            if let Some(unavailable) = KernelUnavailable::from_body(&body) {
+                return unavailable.rpc(id);
+            }
             let (code, message) = match upstream.status {
                 400 | 415 => (-32602, "Invalid params"),
                 401 | 403 => (-32002, "Insufficient scope"),

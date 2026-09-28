@@ -165,12 +165,16 @@ fn register(config: &Config, id: &Value, params: Option<&Value>) -> Value {
             "registration_rate_limit",
         );
     }
+    let identity = match config.backend(super::KernelBackend::Identity) {
+        Ok((identity, _)) => identity,
+        Err(unavailable) => return unavailable.rpc(id),
+    };
     let sub = subject(TENANT, &signer_public_key);
     let signer = super::hex(&signer_public_key);
     let request = principal_request(&sub, &signer);
     match super::upstream_json(
         config,
-        &config.identity,
+        identity,
         token.as_str(),
         "POST",
         "/v1/principals",

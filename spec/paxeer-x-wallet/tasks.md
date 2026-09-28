@@ -80,7 +80,7 @@
     - Return the intent submission shape the contract in human/schema/human-api/intent.kvx declares (journey id, plan digest, state, state copy key), and add the journey state transitions the plan-driven path needs to the existing journey machinery without changing any existing journey's behaviour.
     - Add tests that plan a kernel send and a custody deposit, submit each with valid bindings and observe a journey created and progressed, and submit with a stale digest, a wrong sequence and an expired window and observe typed refusals; assert the response decodes with the TypeScript SDK's submission decoder shape.
     - _Requirements: 8.3_
-  - [ ] 1.15 Let the hosted endpoint degrade honestly without the kernel
+  - [x] 1.15 Let the hosted endpoint degrade honestly without the kernel
     - In platform/hosted/gateway make start-up succeed when the kernel backends are unconfigured or unreachable: eth_ relay and the px_ joins that depend on chain state alone keep serving, kernel-dependent lx_ and px_ methods answer a typed unavailable error naming the backend, and readiness reports each backend separately.
     - Add a px_getNetwork field carrying kernel availability and the reason, keep every existing response shape otherwise unchanged, and keep openrpc.json in step.
     - Add tests that start the endpoint with no kernel configured against an in-test chain RPC server built from the crate's own test support, assert eth_chainId and px_resolveAccount answer, assert lx_getAccount and px_getBalances return the typed unavailable error, and assert readiness.

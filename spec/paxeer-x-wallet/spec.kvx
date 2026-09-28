@@ -424,7 +424,7 @@ log_path = ".logs/verify.log"
 
 [task.1.15]
 title = "Let the hosted endpoint degrade honestly without the kernel"
-status = "pending"
+status = "done"
 wave = 1
 requires = []
 do_1 = "In platform/hosted/gateway make start-up succeed when the kernel backends are unconfigured or unreachable: eth_ relay and the px_ joins that depend on chain state alone keep serving, kernel-dependent lx_ and px_ methods answer a typed unavailable error naming the backend, and readiness reports each backend separately."
@@ -434,6 +434,10 @@ verify_cmd = "timeout 20m sh -c 'cd platform && cargo test -p layerx-platform-ga
 symbols = ["BackendAvailability","KernelUnavailable","readiness"]
 touches = ["platform/hosted/gateway/src/rpc.rs","platform/hosted/gateway/src/paxeer.rs","platform/hosted/gateway/src/main.rs","platform/hosted/gateway/openrpc.json","platform/hosted/gateway/tests/degraded.rs"]
 reqs = ["12.1","7.5"]
+revision = "6ba1aca4e70230555260cead7bf4e372dab0a52f"
+command = "timeout 20m sh -c 'cd platform && cargo test -p layerx-platform-gateway degraded'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.1.16]
 title = "Commit the wallet app with every secret scrubbed"
