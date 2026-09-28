@@ -666,6 +666,21 @@ observed = "The gateway CA and a gateway client identity under it now exist besi
 assumption = "An operator with permission imports those six secrets on each attestor application and runs the deploy, the verify command and the two-curve signing proof; deploying before the import would destroy every machine because the replica file mappings name unset secrets."
 severity = "blocker"
 
+[observation.3.5.10]
+task = "3.5"
+file = "human/wallet/deploy/attestor-1.toml"
+symbol = "signing proof"
+observed = "The identity provider's public sign-up answered 200 without a session and the password sign-in for the fresh identity answered email_not_confirmed, so no user token existed, no key was generated for the proof and no signature was produced across regions (.logs/sign-proof-3.5.log)."
+assumption = "The shadow provisioning run of the gateway deployment task produces the two-curve signature through the deployed network with a confirmed identity; this deployment's own proof stops at health, peers, snapshots and replica shipping."
+severity = "suspect"
+
+[gate.3.5]
+revision = "c206084c87b60ce33b071f819b5aef84abb92803"
+command = "docker build -f human/wallet/attestor/Dockerfile . && docker push to the platform registry && cd human/wallet/deploy && flyctl deploy --config attestor-N.toml --app paxeer-attestor-N --image <pushed digest> --ha=false --no-public-ips -y for N in 1 to 5 one after another, then timeout 20m sh -c 'tools/wallet/check-live.sh attestors'"
+exit_code = 0
+log_path = ".logs/verify.log"
+observed = "Closes 3.5.9: image sha256:d6601cc5c0dbf137ecf0630b563c8829132ead2930d48f9548be2c3576e16f38 runs on the five machines in iad, sjc, ams, fra and sin with no public address, each node wrote all ten mapped files, answered ready with four of four peers and its two stored shares after its redeploy, and the verify command passed five of five nodes and quorum 5/5; every node wrote a scheduled snapshot with zero failures and shipped it to the replica with no error class; no signature was produced because the identity provider issued no token to a fresh sign-up (observation 3.5.10)."
+
 [gate.3.3]
 revision = "0b95c556344faefaf726eb9f00527b116ad79f66"
 command = "docker build -f human/wallet/attestor/Dockerfile -t paxeer-attestor:deploy . && cd human/wallet/deploy && flyctl deploy --config attestor-N.toml --image paxeer-attestor:deploy --app paxeer-attestor-N --local-only --ha=false --no-public-ips -y for N in 1 to 5, secrets imported out of band"
