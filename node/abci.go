@@ -53,10 +53,10 @@ func (app *App) BeginBlock(
 	if app.HardForkManager.TargetHeightReached(ctx) {
 		app.HardForkManager.ExecuteForTargetHeight(ctx)
 	}
-	// apply the activation plan in the block its own upgrade info file names, before
-	// the module begin blockers, so the modules the plan initialises are live for
-	// the rest of the block
-	app.applyActivationUpgrade(ctx)
+	// apply the plan the node's own upgrade info file names, in the block it names
+	// and before the module begin blockers, so the modules that plan initialises and
+	// the values it writes are live for the rest of the block
+	app.applyNamedUpgrade(ctx)
 	legacyabci.BeginBlock(ctx, height, votes, byzantineValidators, app.BeginBlockKeepers)
 	return abci.ResponseBeginBlock{
 		Events: sdk.MarkEventsToIndex(ctx.EventManager().ABCIEvents(), app.IndexEvents),
