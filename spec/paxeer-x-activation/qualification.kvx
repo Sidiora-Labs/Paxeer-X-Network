@@ -159,4 +159,4 @@ command = "the four validators were stopped so the chain froze at height 2598867
 exit_code = 0
 log_path = "logs/live-activation.log"
 observed = "The plan applied in block 25988672 on all four validators and all sixteen full nodes, the applied-upgrade query answers 25988672 everywhere, and the eight fork precompiles at 0x...1012 through 0x...1019 answer eth_call on the full nodes while blocks continue at the previous pace."
-assumption = "A node that starts the release binary on pre-fork state without the upgrade-info file still cannot mount the six stores, which tasks 3.1 and 3.2 address."
+assumption = "A node that starts the release binary on pre-fork state before its upgrade info is written relies on the pending-store handling of tasks 3.1 and 3.2."
