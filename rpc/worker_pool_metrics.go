@@ -103,9 +103,8 @@ type WorkerPoolMetrics struct {
 }
 
 var (
-	metricsPrinterOnce sync.Once
-	metricsStopOnce    sync.Once
-	metricsStopChan    chan struct{}
+	metricsPrinterMu sync.Mutex
+	metricsStopChan  chan struct{}
 )
 
 var (
@@ -307,42 +306,44 @@ func GetGlobalMetrics() *WorkerPoolMetrics {
 // Note: Printing to stdout is controlled by the EVM_DEBUG_METRICS environment variable
 // Set EVM_DEBUG_METRICS=true to enable debug output
 func StartMetricsPrinter(interval time.Duration) {
-	metricsPrinterOnce.Do(func() {
-		metricsStopChan = make(chan struct{})
-		debugEnabled := IsDebugMetricsEnabled()
-		go func() {
-			ticker := time.NewTicker(interval)
-			defer func() {
-				ticker.Stop()
-				metricsStopChan = nil
-			}()
+	metricsPrinterMu.Lock()
+	defer metricsPrinterMu.Unlock()
+	if metricsStopChan != nil {
+		return
+	}
+	stop := make(chan struct{})
+	metricsStopChan = stop
+	debugEnabled := IsDebugMetricsEnabled()
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
 
-			for {
-				select {
-				case <-ticker.C:
-					m := GetGlobalMetrics()
-					// Export to Prometheus (gauges need periodic update)
-					m.ExportPrometheusMetrics()
-					// Print to stdout only if debug is enabled
-					if debugEnabled {
-						m.PrintMetrics()
-					}
-				case <-metricsStopChan:
-					return
+		for {
+			select {
+			case <-ticker.C:
+				m := GetGlobalMetrics()
+				// Export to Prometheus (gauges need periodic update)
+				m.ExportPrometheusMetrics()
+				// Print to stdout only if debug is enabled
+				if debugEnabled {
+					m.PrintMetrics()
 				}
+			case <-stop:
+				return
 			}
+		}
 
-		}()
-	})
+	}()
 }
 
 // StopMetricsPrinter stops the metrics printer, idempotent.
 func StopMetricsPrinter() {
-	metricsStopOnce.Do(func() {
-		if metricsStopChan != nil {
-			close(metricsStopChan)
-		}
-	})
+	metricsPrinterMu.Lock()
+	defer metricsPrinterMu.Unlock()
+	if metricsStopChan != nil {
+		close(metricsStopChan)
+		metricsStopChan = nil
+	}
 }
 
 // RecordTaskSubmitted records a task submission

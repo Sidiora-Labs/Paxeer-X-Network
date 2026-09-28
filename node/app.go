@@ -529,6 +529,11 @@ type App struct {
 	wsServerStartSignal       chan struct{}
 	httpServerStartSignalSent bool
 	wsServerStartSignalSent   bool
+	evmServersMu              sync.Mutex
+	evmServersClosed          bool
+	evmServersDone            chan struct{}
+	evmHTTPServer             evmrpc.EVMServer
+	evmWSServer               evmrpc.EVMServer
 
 	txPrioritizer sdk.TxPrioritizer
 
@@ -595,6 +600,7 @@ func New(
 		stateStore:            stateStore,
 		httpServerStartSignal: make(chan struct{}, 1),
 		wsServerStartSignal:   make(chan struct{}, 1),
+		evmServersDone:        make(chan struct{}),
 	}
 
 	for _, option := range appOptions {
@@ -1172,6 +1178,70 @@ func New(
 	app.SetTxPrioritizer(app.txPrioritizer)
 
 	return app
+}
+
+func (app *App) sendEVMServerStartSignals() {
+	if !app.httpServerStartSignalSent {
+		app.httpServerStartSignalSent = true
+		app.httpServerStartSignal <- struct{}{}
+	}
+	if !app.wsServerStartSignalSent {
+		app.wsServerStartSignalSent = true
+		app.wsServerStartSignal <- struct{}{}
+	}
+}
+
+func (app *App) serveEVMServers(httpServer, wsServer evmrpc.EVMServer) {
+	app.evmServersMu.Lock()
+	app.evmHTTPServer = httpServer
+	app.evmWSServer = wsServer
+	done := app.evmServersDone
+	app.evmServersMu.Unlock()
+	if httpServer != nil {
+		go app.startEVMServerOnSignal(app.httpServerStartSignal, done, httpServer)
+	}
+	if wsServer != nil {
+		go app.startEVMServerOnSignal(app.wsServerStartSignal, done, wsServer)
+	}
+}
+
+func (app *App) startEVMServerOnSignal(signal <-chan struct{}, done <-chan struct{}, server evmrpc.EVMServer) {
+	select {
+	case <-signal:
+	case <-done:
+		return
+	}
+	app.evmServersMu.Lock()
+	defer app.evmServersMu.Unlock()
+	if app.evmServersClosed {
+		return
+	}
+	if err := server.Start(); err != nil {
+		panic(err)
+	}
+}
+
+func (app *App) stopEVMServers() {
+	app.evmServersMu.Lock()
+	defer app.evmServersMu.Unlock()
+	if app.evmServersClosed {
+		return
+	}
+	app.evmServersClosed = true
+	if app.evmServersDone != nil {
+		close(app.evmServersDone)
+	}
+	if app.evmHTTPServer != nil {
+		app.evmHTTPServer.Stop()
+	}
+	if app.evmWSServer != nil {
+		app.evmWSServer.Stop()
+	}
+}
+
+func (app *App) Close() error {
+	app.stopEVMServers()
+	return app.BaseApp.Close()
 }
 
 // HandlePreCommit happens right before the block is committed
@@ -2029,16 +2099,7 @@ func (app *App) ProcessBlock(ctx sdk.Context, txs [][]byte, req *BlockProcessReq
 		}
 	}()
 
-	defer func() {
-		if !app.httpServerStartSignalSent {
-			app.httpServerStartSignalSent = true
-			app.httpServerStartSignal <- struct{}{}
-		}
-		if !app.wsServerStartSignalSent {
-			app.wsServerStartSignalSent = true
-			app.wsServerStartSignal <- struct{}{}
-		}
-	}()
+	defer app.sendEVMServerStartSignals()
 
 	ctx = ctx.WithIsOCCEnabled(app.OccEnabled())
 
@@ -2907,32 +2968,24 @@ func (app *App) RegisterLocalServices(node client.LocalClient, txConfig client.T
 
 	rpcCtxProvider := app.RPCContextProvider
 	traceCtxProvider := app.SnapshotAwareRPCContextProvider()
+	var evmHTTPServer, evmWSServer evmrpc.EVMServer
 	if app.evmRPCConfig.HTTPEnabled {
-		evmHTTPServer, err := evmrpc.NewEVMHTTPServer(app.evmRPCConfig, node, &app.EvmKeeper, app.BeginBlockKeepers, app.BaseApp, app.TracerAnteHandler, app.RPCContextProvider, txConfigProvider, DefaultNodeHome, app.GetStateStore(), traceCtxProvider)
+		httpServer, err := evmrpc.NewEVMHTTPServer(app.evmRPCConfig, node, &app.EvmKeeper, app.BeginBlockKeepers, app.BaseApp, app.TracerAnteHandler, app.RPCContextProvider, txConfigProvider, DefaultNodeHome, app.GetStateStore(), traceCtxProvider)
 		if err != nil {
 			panic(err)
 		}
-		go func() {
-			<-app.httpServerStartSignal
-			if err := evmHTTPServer.Start(); err != nil {
-				panic(err)
-			}
-		}()
+		evmHTTPServer = httpServer
 	}
 
 	if app.evmRPCConfig.WSEnabled {
 		headNotifier, _ := app.blockHeaderNotifier.Get()
-		evmWSServer, err := evmrpc.NewEVMWebSocketServer(app.evmRPCConfig, node, &app.EvmKeeper, app.BeginBlockKeepers, app.BaseApp, app.TracerAnteHandler, rpcCtxProvider, txConfigProvider, DefaultNodeHome, app.GetStateStore(), headNotifier)
+		wsServer, err := evmrpc.NewEVMWebSocketServer(app.evmRPCConfig, node, &app.EvmKeeper, app.BeginBlockKeepers, app.BaseApp, app.TracerAnteHandler, rpcCtxProvider, txConfigProvider, DefaultNodeHome, app.GetStateStore(), headNotifier)
 		if err != nil {
 			panic(err)
 		}
-		go func() {
-			<-app.wsServerStartSignal
-			if err := evmWSServer.Start(); err != nil {
-				panic(err)
-			}
-		}()
+		evmWSServer = wsServer
 	}
+	app.serveEVMServers(evmHTTPServer, evmWSServer)
 
 	if app.adminConfig.Enabled {
 		srv, err := admin.StartServer(app.adminConfig.Address)
