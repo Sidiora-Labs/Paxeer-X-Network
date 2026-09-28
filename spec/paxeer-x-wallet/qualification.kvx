@@ -854,3 +854,19 @@ symbol = "TestDeliverExitsNonZeroOnMismatch"
 observed = "Without a signing credential the command's deliver stops at the test signature with the daemon's 401 token_missing, so the command tests now assert that refusal, the counts reached and no wallet marked, and the recovered-address mismatch through the command is unreachable."
 assumption = "The operator verification signature restores the full deliver and its mismatch path through the command; the migrate tests keep both with an owner token source."
 severity = "blocker"
+
+[observation.4.15.1]
+task = "4.15"
+file = "human/wallet/gateway/src/provision/state.ts"
+symbol = "provisionAccount"
+observed = "One POST /v1/wallet/provision spends its single bearer token on the lx_bind signature and again on the bindLayerX transaction signature, and the daemon now records each token once, so the second sign answers token_invalid, the route answers 401 after the top-up and the end-to-end beforeAll fails."
+assumption = "Either the daemon lets one token authorise the binding pair of one provisioning or provisioning spans two owner requests with the provisioning test updated with it; both sides are left as written."
+severity = "blocker"
+
+[observation.4.15.2]
+task = "4.15"
+file = "human/wallet/gateway/test/provisioning.test.ts"
+symbol = "beforeAll"
+observed = "The provisioning test starts its daemons without ATTESTOR_KERNEL_POLICY_FILE and ATTESTOR_RPC_URL, so every lx_bind is refused with no kernel evaluator and three of its cases fail on the merged daemon."
+assumption = "Its daemon setup gains the kernel policy and chain URL the end-to-end harness now passes, after which it meets observation 4.15.1."
+severity = "blocker"

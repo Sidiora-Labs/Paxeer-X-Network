@@ -8,12 +8,14 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SignJWT, exportJWK, generateKeyPair, type KeyLike } from 'jose';
+import { ADDR, BIND_SELECTOR } from '../support/chain.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const attestorModuleDir = resolve(here, '..', '..', '..', 'attestor');
 
 export const CHAIN_ID = 125;
 export const NATIVE_PER_TX_CAP_WEI = 1_000_000_000_000_000_000n;
+const KERNEL_POLICY = { version: 1, defaults: { modules: { asset: [5] }, caps: { native: { per_operation: '6000000', daily: '8000000' } } } };
 
 export interface Pki {
   dir: string;
@@ -21,6 +23,9 @@ export interface Pki {
   node(id: string): { cert: string; key: string; pin: string };
   clientCert: string;
   clientKey: string;
+  operatorCaFile: string;
+  operatorCert: string;
+  operatorKey: string;
 }
 
 export interface Identity {
@@ -72,15 +77,17 @@ export function makePki(nodeIds: string[]): Pki {
     p('leaf.ext'),
     'subjectAltName=IP:127.0.0.1\nkeyUsage=digitalSignature\nextendedKeyUsage=serverAuth,clientAuth\n',
   );
-  const issue = (name: string): void => {
+  openssl(['req', '-x509', ...ec, '-keyout', p('operator-ca.key'), '-out', p('operator-ca.crt'), '-days', '1', '-subj', '/CN=attestor-e2e-operator-ca']);
+  const issue = (name: string, ca = 'ca'): void => {
     openssl(['req', ...ec, '-keyout', p(`${name}.key`), '-out', p(`${name}.csr`), '-subj', `/CN=${name}`]);
     openssl([
-      'x509', '-req', '-in', p(`${name}.csr`), '-CA', p('ca.crt'), '-CAkey', p('ca.key'), '-CAcreateserial',
+      'x509', '-req', '-in', p(`${name}.csr`), '-CA', p(`${ca}.crt`), '-CAkey', p(`${ca}.key`), '-CAcreateserial',
       '-out', p(`${name}.crt`), '-days', '1', '-extfile', p('leaf.ext'),
     ]);
   };
   for (const id of nodeIds) issue(id);
   issue('wallet-gateway');
+  issue('wallet-operator', 'operator-ca');
   const pins = new Map(nodeIds.map((id) => [id, spkiPin(readFileSync(p(`${id}.crt`), 'utf8'))]));
   return {
     dir,
@@ -92,6 +99,9 @@ export function makePki(nodeIds: string[]): Pki {
     },
     clientCert: p('wallet-gateway.crt'),
     clientKey: p('wallet-gateway.key'),
+    operatorCaFile: p('operator-ca.crt'),
+    operatorCert: p('wallet-operator.crt'),
+    operatorKey: p('wallet-operator.key'),
   };
 }
 
@@ -152,10 +162,10 @@ export function buildAttestor(outDir: string): string {
   return bin;
 }
 
-function mtlsAgent(pki: Pki): Agent {
+function mtlsAgent(pki: Pki, cert = pki.clientCert, key = pki.clientKey): Agent {
   return new Agent({
-    cert: readFileSync(pki.clientCert),
-    key: readFileSync(pki.clientKey),
+    cert: readFileSync(cert),
+    key: readFileSync(key),
     ca: readFileSync(pki.caFile),
     rejectUnauthorized: true,
     minVersion: 'TLSv1.3',
@@ -204,6 +214,7 @@ function call(
 
 export async function startAttestorNetwork(opts: {
   identity: Identity;
+  rpcUrl: string;
   size?: number;
   readyTimeoutMs?: number;
 }): Promise<AttestorNetwork> {
@@ -219,12 +230,15 @@ export async function startAttestorNetwork(opts: {
       version: 1,
       defaults: {
         chain_id: CHAIN_ID,
-        kinds: ['evm_tx', 'eip712', 'personal_message'],
+        kinds: ['evm_tx', 'eip712', 'personal_message', 'lx_bind'],
         caps: { native: { per_transaction: NATIVE_PER_TX_CAP_WEI.toString(), daily: (NATIVE_PER_TX_CAP_WEI * 10n).toString() } },
+        selectors: { [ADDR]: [BIND_SELECTOR] },
         rate_per_minute: 600,
       },
     }),
   );
+  const kernelPolicyFile = join(work, 'kernel-policy.json');
+  writeFileSync(kernelPolicyFile, JSON.stringify(KERNEL_POLICY));
   const ports = await Promise.all(ids.map(async () => ({ api: await freePort(), peer: await freePort() })));
   const nodes: AttestorProcess[] = [];
   for (const [i, id] of ids.entries()) {
@@ -253,7 +267,9 @@ export async function startAttestorNetwork(opts: {
       ATTESTOR_TLS_CERT_FILE: own.cert,
       ATTESTOR_TLS_KEY_FILE: own.key,
       ATTESTOR_TLS_CA_FILE: pki.caFile,
-      ATTESTOR_OPERATOR_CA_FILE: pki.caFile,
+      ATTESTOR_OPERATOR_CA_FILE: pki.operatorCaFile,
+      ATTESTOR_KERNEL_POLICY_FILE: kernelPolicyFile,
+      ATTESTOR_RPC_URL: opts.rpcUrl,
       ATTESTOR_ACTIVITY_TYPES: '0x10005',
     };
     const child = spawn(bin, [], { env, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -264,6 +280,7 @@ export async function startAttestorNetwork(opts: {
   }
 
   const agent = mtlsAgent(pki);
+  const operator = mtlsAgent(pki, pki.operatorCert, pki.operatorKey);
   const health = (node: AttestorProcess) => call(agent, 'GET', `${node.apiUrl}/health`, null, 5_000);
 
   const deadline = Date.now() + (opts.readyTimeoutMs ?? 60_000);
@@ -312,7 +329,7 @@ export async function startAttestorNetwork(opts: {
       if (answers.some((a) => a.body.refreshed !== true)) {
         const refresh = { session_id: randomUUID(), key_id: keyId };
         const refreshed = await Promise.all(
-          nodes.map((n) => call(agent, 'POST', `${n.apiUrl}/v1/keys/refresh`, refresh, 600_000)),
+          nodes.map((n) => call(operator, 'POST', `${n.apiUrl}/v1/keys/refresh`, refresh, 600_000)),
         );
         for (const [i, a] of refreshed.entries()) {
           if (a.status !== 200 || a.body.refreshed !== true) {
@@ -331,6 +348,7 @@ export async function startAttestorNetwork(opts: {
     async stop() {
       await Promise.all(nodes.map(stopNode));
       agent.destroy();
+      operator.destroy();
       rmSync(work, { recursive: true, force: true });
       rmSync(pki.dir, { recursive: true, force: true });
     },

@@ -1137,6 +1137,22 @@ command = "timeout 20m sh -c 'cd human/apps/wallet && pnpm exec vitest run src/c
 exit_code = 0
 log_path = ".logs/verify.log"
 
+[task.4.15]
+title = "Model the chain the provisioning route reads and writes in the gateway end-to-end harness"
+status = "implemented"
+revision = "7a58bc9e48f4d5d60752f5cca6fe1cea5d60df09"
+command = "timeout 20m sh -c 'pnpm --dir human/wallet/gateway test -- e2e'"
+exit_code = 1
+log_path = ".logs/verify.log"
+wave = 4
+requires = ["3.1","3.15"]
+do_1 = "Move the stateful chain model the provisioning test serves into human/wallet/gateway/test/support/chain.ts and run it as the end-to-end harness's JSON-RPC responder: getUnifiedAccount answers the ABI-encoded empty account for an unbound address as the addr precompile packs it and the binding once bindLayerX is mined, the sponsor top-up and the binding transaction are recovered, nonce-checked, mined and served as receipts, balances and nonces move with every transaction, eth_call to an account without code returns empty data and refuses a value above the caller's balance, and every unserved method answers JSON-RPC method-not-found."
+do_2 = "Let the harness policy admit lx_bind and the bindLayerX selector on the addr precompile, configure a funded sponsor key, drive POST /v1/wallet/provision to active with the binding confirmed on the model, and sign with the provisioned attestor key in place of an operator-generated one; start the daemons with a separate operator CA, a kernel policy and the chain URL, refresh with the operator identity and mint a fresh token for every signing request."
+verify_cmd = "timeout 20m sh -c 'pnpm --dir human/wallet/gateway test -- e2e'"
+symbols = ["TestChain","ChainRpcError","chainMainAccountId","ADDR","ANCHOR","BIND_SELECTOR","addrAbiJson","anchorAbiJson","repoRoot"]
+touches = ["human/wallet/gateway/test/support/chain.ts","human/wallet/gateway/test/e2e/attestors.ts","human/wallet/gateway/test/e2e/gateway.e2e.test.ts","human/wallet/gateway/test/provisioning.test.ts"]
+reqs = ["6.1","6.2","6.3","6.4","6.5","6.6","5.7","5.6"]
+
 # --------------------------------------------------------------------------
 # WAVE 5 - RELEASE
 # --------------------------------------------------------------------------

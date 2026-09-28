@@ -274,6 +274,10 @@
     - Add a restore subcommand to cmd/attestor that loads one named snapshot into an empty data directory given its expected digest, refusing a snapshot whose digest differs, whose node id is not this node's, whose data directory is not empty, or that fails authentication, and add the age of the last written snapshot and the last write error to the health report; document ATTESTOR_SNAPSHOT_INTERVAL and ATTESTOR_SNAPSHOT_RETAIN in human/wallet/deploy/env.
     - Add backup_test.go covering the atomic name sequence, the audit event and its digest, retention with and without a shipper ledger, restore into an empty directory followed by a signature with the quorum, and refusal of a wrong digest, a foreign node id and a non-empty directory; extend store_test.go for the new snapshot version, health_test.go for the snapshot age, and server tests proving a snapshot follows each key-changing operation.
     - _Requirements: 3.2, 3.3_
+  - [ ] 4.15 Model the chain the provisioning route reads and writes in the gateway end-to-end harness — **Implemented - qualification pending**
+    - Move the stateful chain model the provisioning test serves into human/wallet/gateway/test/support/chain.ts and run it as the end-to-end harness's JSON-RPC responder: getUnifiedAccount answers the ABI-encoded empty account for an unbound address as the addr precompile packs it and the binding once bindLayerX is mined, the sponsor top-up and the binding transaction are recovered, nonce-checked, mined and served as receipts, balances and nonces move with every transaction, eth_call to an account without code returns empty data and refuses a value above the caller's balance, and every unserved method answers JSON-RPC method-not-found.
+    - Let the harness policy admit lx_bind and the bindLayerX selector on the addr precompile, configure a funded sponsor key, drive POST /v1/wallet/provision to active with the binding confirmed on the model, and sign with the provisioned attestor key in place of an operator-generated one; start the daemons with a separate operator CA, a kernel policy and the chain URL, refresh with the operator identity and mint a fresh token for every signing request.
+    - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 5.7, 5.6_
   - [x] 4.16 Render the account list separators from a theme token
     - In human/apps/wallet add a separator line token to the theme schema, give it a value in every colour theme of the catalogue and in the root block of globals.css, and add a list-separated utility in globals.css that draws a one-pixel separator above every list row after the first from that token, keeping the row spacing of the divide utilities it replaces.
     - Replace the divide utilities with fixed white separators on the joined balances list in AssetList.tsx and the history list in HistoryView.tsx with the list-separated utility, so the visual-system acceptance scan finds no border or divide utility in application sources.
@@ -313,7 +317,7 @@
     { "id": 1,  "tasks": ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "1.10", "1.11", "1.12", "1.13", "1.14", "1.15", "1.16"] },
     { "id": 2,  "tasks": ["2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7", "2.8", "2.9"] },
     { "id": 3,  "tasks": ["3.1", "3.2", "3.3", "3.4", "3.5", "3.6", "3.7", "3.8", "3.9", "3.10", "3.11", "3.12", "3.13", "3.14", "3.15"] },
-    { "id": 4,  "tasks": ["4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7", "4.8", "4.9", "4.10", "4.11", "4.12", "4.13", "4.14", "4.16", "4.17"] },
+    { "id": 4,  "tasks": ["4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7", "4.8", "4.9", "4.10", "4.11", "4.12", "4.13", "4.14", "4.15", "4.16", "4.17"] },
     { "id": 5,  "tasks": ["5.1", "5.2", "5.3", "5.4"] }
   ]
 }

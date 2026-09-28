@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { createServer as createHttpServer, type Server as HttpServer } from 'node:http';
-import type { AddressInfo } from 'node:net';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import {
-  keccak256,
   parseTransaction,
   recoverMessageAddress,
   recoverTransactionAddress,
@@ -12,14 +12,15 @@ import {
   type Hex,
   type TypedDataDefinition,
 } from 'viem';
+import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import { startPostgres, type EphemeralPostgres } from '../support/postgres.js';
+import { ADDR, TestChain, chainMainAccountId } from '../support/chain.js';
 import {
   CHAIN_ID,
   NATIVE_PER_TX_CAP_WEI,
   startAttestorNetwork,
   startIdentity,
   type AttestorNetwork,
-  type GeneratedKey,
   type Identity,
 } from './attestors.js';
 
@@ -50,47 +51,12 @@ let identity: Identity;
 let network: AttestorNetwork;
 let pg: EphemeralPostgres;
 let app: FastifyInstance;
-let rpcServer: HttpServer;
-let rpcUrl: string;
+let chain: TestChain;
+let workDir: string;
+let sponsorAddress: string;
 const userId = randomUUID();
 let token: string;
-let key: GeneratedKey;
-
-function startChainRpc(): Promise<void> {
-  rpcServer = createHttpServer((req, res) => {
-    const chunks: Buffer[] = [];
-    req.on('data', (c: Buffer) => chunks.push(c));
-    req.on('end', () => {
-      const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { id: number; method: string; params: unknown[] };
-      const reply = (payload: Record<string, unknown>): void => {
-        res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(JSON.stringify({ jsonrpc: '2.0', id: body.id, ...payload }));
-      };
-      switch (body.method) {
-        case 'eth_chainId':
-          return reply({ result: `0x${CHAIN_ID.toString(16)}` });
-        case 'eth_blockNumber':
-          return reply({ result: '0x3e8' });
-        case 'eth_call':
-          return reply({ result: '0x' });
-        case 'eth_estimateGas':
-          return reply({ result: '0x5208' });
-        case 'eth_getTransactionCount':
-          return reply({ result: '0x0' });
-        case 'eth_sendRawTransaction':
-          return reply({ result: keccak256(body.params[0] as Hex) });
-        default:
-          return reply({ error: { code: -32601, message: 'method not found' } });
-      }
-    });
-  });
-  return new Promise((r) =>
-    rpcServer.listen(0, '127.0.0.1', () => {
-      rpcUrl = `http://127.0.0.1:${(rpcServer.address() as AddressInfo).port}`;
-      r();
-    }),
-  );
-}
+let key: { keyId: string; address: `0x${string}` };
 
 const auth = (t: string) => ({ authorization: `Bearer ${t}` });
 
@@ -107,13 +73,22 @@ const txBody = (value: bigint) => ({
 
 beforeAll(async () => {
   identity = await startIdentity();
-  network = await startAttestorNetwork({ identity });
-  await startChainRpc();
+  chain = new TestChain(CHAIN_ID);
+  await chain.start();
+  network = await startAttestorNetwork({ identity, rpcUrl: chain.url });
+
+  workDir = mkdtempSync(join(tmpdir(), 'gateway-e2e-sponsor-'));
+  const sponsorKey = generatePrivateKey();
+  sponsorAddress = privateKeyToAccount(sponsorKey).address.toLowerCase();
+  chain.balances.set(sponsorAddress, 10n ** 21n);
+  const sponsorFile = join(workDir, 'sponsor.key');
+  writeFileSync(sponsorFile, sponsorKey.slice(2), { mode: 0o600 });
 
   process.env.SUPABASE_URL = identity.url;
-  process.env.HYPERPAXEER_RPC_URL = rpcUrl;
+  process.env.HYPERPAXEER_RPC_URL = chain.url;
   process.env.HYPERPAXEER_CHAIN_ID = String(CHAIN_ID);
-  process.env.RPC_URLS = rpcUrl;
+  process.env.RPC_URLS = chain.url;
+  process.env.SPONSOR_PRIVATE_KEY_FILE = sponsorFile;
   process.env.ATTESTOR_ENDPOINTS = network.nodes.map((n) => n.apiUrl).join(',');
   process.env.ATTESTOR_CLIENT_CERT_FILE = network.pki.clientCert;
   process.env.ATTESTOR_CLIENT_KEY_FILE = network.pki.clientKey;
@@ -133,26 +108,46 @@ beforeAll(async () => {
 
   token = await identity.mint(userId);
   const provisioned = await app.inject({ method: 'POST', url: '/v1/wallet/provision', headers: auth(token) });
-  expect(provisioned.statusCode).toBe(200);
+  expect(provisioned.statusCode, provisioned.body).toBe(200);
+  const body = provisioned.json() as { wallet: { address: `0x${string}`; did: string; main_account_id: string; binding_state: string }; provisioning: { state: string } };
+  expect(body.provisioning.state).toBe('active');
+  expect(body.wallet.binding_state).toBe('bound');
+  expect(body.wallet.address).toMatch(/^0x[0-9a-fA-F]{40}$/);
+  const address = body.wallet.address.toLowerCase();
+  const pub = chain.bindings.get(address)!;
+  expect(pub).toMatch(/^[0-9a-f]{64}$/);
+  expect(body.wallet.did).toBe(`did:layerx:${pub}`);
+  expect(body.wallet.main_account_id).toBe(chainMainAccountId(pub));
+  expect(chain.bindNonces.get(address)).toBe(1n);
+  expect(chain.sent.filter((t) => t.to === address).map((t) => t.from)).toEqual([sponsorAddress]);
+  const binds = chain.sent.filter((t) => t.from === address);
+  expect(binds.map((t) => t.to)).toEqual([ADDR]);
+  expect(chain.receipts.get(binds[0]!.hash)!.status).toBe('0x1');
 
-  key = await network.generate(`wallet:${userId}:secp256k1`, userId);
-  expect(key.address).toMatch(/^0x[0-9a-fA-F]{40}$/);
   const { getPool } = await import('../../src/db/pool.js');
-  const marked = await getPool().query(
-    `update wallets set address = $1, attestor_key_id = $2, migrated_at = now() where user_id = $3 and kind = 'standard'`,
-    [key.address, key.keyId, userId],
+  const { rows } = await getPool().query<{ attestor_key_id: string; migrated_at: Date | null; encrypted_private_key: string | null }>(
+    `select attestor_key_id, migrated_at, encrypted_private_key from wallets where user_id = $1 and kind = 'standard'`,
+    [userId],
   );
-  expect(marked.rowCount).toBe(1);
+  expect(rows).toHaveLength(1);
+  expect(rows[0]!.attestor_key_id).toBe(`wallet:${userId}:standard:secp256k1:0`);
+  expect(rows[0]!.migrated_at).not.toBeNull();
+  expect(rows[0]!.encrypted_private_key).toBeNull();
+  key = { keyId: rows[0]!.attestor_key_id, address: body.wallet.address };
+  chain.balances.set(address, (chain.balances.get(address) ?? 0n) + NATIVE_PER_TX_CAP_WEI * 2n);
 }, 900_000);
 
 afterAll(async () => {
   await app?.close();
+  const { provisionDepsFromEnv } = await import('../../src/routes/wallet.js');
+  if (app) provisionDepsFromEnv()?.attestors?.close();
   const { closePool } = await import('../../src/db/pool.js');
   await closePool();
   await pg?.stop();
   await network?.stop();
   await identity?.close();
-  await new Promise<void>((r) => (rpcServer ? rpcServer.close(() => r()) : r()));
+  await chain?.stop();
+  if (workDir) rmSync(workDir, { recursive: true, force: true });
 }, 120_000);
 
 describe('gateway against five real attestor daemons', () => {
@@ -164,7 +159,7 @@ describe('gateway against five real attestor daemons', () => {
     expect(body.components.attestors).toMatchObject({ state: 'up', required: 3, healthy: 5 });
     expect(body.components.nonce_store.state).toBe('up');
     expect(body.components.rpc_pool).toMatchObject({ state: 'up', healthy: 1 });
-    expect(body.components.rpc_pool.endpoints).toEqual([expect.objectContaining({ url: rpcUrl, state: 'healthy' })]);
+    expect(body.components.rpc_pool.endpoints).toEqual([expect.objectContaining({ url: chain.url, state: 'healthy' })]);
     expect(body.components.identity_provider).toMatchObject({ state: 'up', keys: 1 });
   });
 
@@ -175,7 +170,7 @@ describe('gateway against five real attestor daemons', () => {
   });
 
   it('signs a transaction through the quorum and the signature recovers the wallet', async () => {
-    const res = await app.inject({ method: 'POST', url: '/v1/wallet/sign', headers: auth(token), payload: txBody(1000n) });
+    const res = await app.inject({ method: 'POST', url: '/v1/wallet/sign', headers: auth(await identity.mint(userId)), payload: txBody(1000n) });
     const body = res.json();
     expect(res.statusCode, JSON.stringify(body)).toBe(200);
     const signed = body.signed_tx as Hex;
@@ -201,7 +196,7 @@ describe('gateway against five real attestor daemons', () => {
 
   it('signs a personal message and the signature recovers the wallet', async () => {
     const message = `sign in to the wallet ${randomUUID()}`;
-    const res = await app.inject({ method: 'POST', url: '/v1/wallet/sign-message', headers: auth(token), payload: { message } });
+    const res = await app.inject({ method: 'POST', url: '/v1/wallet/sign-message', headers: auth(await identity.mint(userId)), payload: { message } });
     const body = res.json();
     expect(res.statusCode, JSON.stringify(body)).toBe(200);
     const recovered = await recoverMessageAddress({ message, signature: body.signature as Hex });
@@ -212,7 +207,7 @@ describe('gateway against five real attestor daemons', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/v1/wallet/sign-typed-data',
-      headers: auth(token),
+      headers: auth(await identity.mint(userId)),
       payload: { typed_data: typedData },
     });
     const body = res.json();
@@ -235,7 +230,7 @@ describe('gateway against five real attestor daemons', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/v1/wallet/sign',
-      headers: auth(token),
+      headers: auth(await identity.mint(userId)),
       payload: txBody(NATIVE_PER_TX_CAP_WEI + 1n),
     });
     const body = res.json();
