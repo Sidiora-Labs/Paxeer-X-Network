@@ -188,6 +188,13 @@ file = "human/wallet/sdk/src/modules/gas-station.ts"
 symbol = "gasStation.sign"
 observed = "The gas station module calls eth_sign with params [from, construction] and no digest, while PaxeerProvider requires [address, digest, construction] and refuses a missing or mismatched digest, so the module's sign path is refused by the embedded provider."
 assumption = "One side aligns on a single eth_sign parameter order; the provider keeps recomputing the digest from the fields and forwarding only the fields."
+
+[observation.2.7.1]
+task = "2.7"
+file = "human/wallet/ceremony/internal/attestor/client.go"
+symbol = "ImportRequest"
+observed = "The attestor API schema human/wallet/schema/attestor-api/v1.kvx and the daemon are written by task 2.1 in the same wave, so the ceremony client's paths (/v1/keys.import, /v1/keys.refresh, /v1/sign), field names and key ids (wallet:<id>:secp256k1, wallet:<id>:ed25519) are coded from [decision] attestor_api alone."
+assumption = "Task 2.1 or wave 3 aligns the daemon and the client to the schema file and its golden vectors; the ceremony tests decode those vectors once they exist."
 severity = "suspect"
 
 [observation.3.9.1]

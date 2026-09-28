@@ -124,7 +124,7 @@
     - Add the human service client for intent plan, intent submit and journey read, and the status ladder mapping the explorer status, journey states and anchor states to instant, sealed and final with source, plus the kernel availability state every kernel operation checks first.
     - Add tests with responses decoded from the schema goldens under human/schema and recorded endpoint responses, covering batching, completion of unmapped assets, cursor paging, every ladder mapping and the unavailable state.
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 9.4_
-  - [ ] 2.7 Write the ceremony tool: read, verify, split, deliver, archive
+  - [x] 2.7 Write the ceremony tool: read, verify, split, deliver, archive
     - Create the Go module human/wallet/ceremony reading wallet rows from a database connection string named by environment variable, decrypting the version-one key envelope exactly as the imported gateway encrypts it, deriving the address and refusing on mismatch, holding keys only in memory with zeroing after use, and never writing key material anywhere.
     - Split each key for both curves with the dealer of the attestor module, deliver shares over mutual TLS to keys.import, trigger keys.refresh, request a test signature, recover the address, and mark the row migrated in the same database only on a match; write the funded wallets' rows into an archive file encrypted under a passphrase named by environment variable and verify the archive decrypts before excluding them.
     - Add tests that generate envelopes with the imported gateway's own encryption routine through a node script invoked from the test, verify decryption and address derivation, cover a tampered envelope, the archive round trip, and a mismatch stopping the run.

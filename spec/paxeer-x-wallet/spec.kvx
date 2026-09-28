@@ -573,7 +573,7 @@ log_path = ".logs/verify.log"
 
 [task.2.7]
 title = "Write the ceremony tool: read, verify, split, deliver, archive"
-status = "pending"
+status = "done"
 wave = 2
 requires = ["1.4","1.10"]
 do_1 = "Create the Go module human/wallet/ceremony reading wallet rows from a database connection string named by environment variable, decrypting the version-one key envelope exactly as the imported gateway encrypts it, deriving the address and refusing on mismatch, holding keys only in memory with zeroing after use, and never writing key material anywhere."
@@ -583,6 +583,10 @@ verify_cmd = "timeout 20m sh -c 'cd human/wallet/ceremony && go test -count=1 ./
 symbols = ["ReadWallets","OpenEnvelope","PlanMigration","Deliver","Archive"]
 touches = ["human/wallet/ceremony/go.mod","human/wallet/ceremony/cmd/ceremony/main.go","human/wallet/ceremony/internal/envelope/envelope.go","human/wallet/ceremony/internal/envelope/envelope_test.go","human/wallet/ceremony/internal/migrate/migrate.go","human/wallet/ceremony/internal/migrate/migrate_test.go","human/wallet/ceremony/internal/archive/archive.go","human/wallet/ceremony/internal/archive/archive_test.go"]
 reqs = ["4.1","4.2","4.4"]
+revision = "d168ddf225c4fa1ea4a5d6952d9e8b7375008e5d"
+command = "timeout 20m sh -c 'cd human/wallet/ceremony && go test -count=1 ./...'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.2.8]
 title = "Strip the app to embedded custody and injected wallets"
