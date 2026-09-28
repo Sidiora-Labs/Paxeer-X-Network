@@ -360,6 +360,10 @@
     - Add a unit test in interop/crates/x-websearch/src/submit.rs that decodes an answer built field by field from the field list precompiles/xweb/abi.json declares, asserting the id, the status, the level and the attestor it carries, and that refuses a nine-word answer, an answer naming another request and a tuple cut short of the eleventh word.
     - Run interop/deploy/x-websearch/tests/dry-run-check.sh with its --record switch once to write interop/deploy/x-websearch/tests/fixtures/dry-run.json from the run, carrying no key material, no date, no time of day, no host name, no local path and no endpoint but the loopback ones the run started.
     - _Requirements: 15.1, 15.2, 15.3_
+  - [x] 2.47 Read chunked JSON-RPC answers in the sidecar's HTTP client
+    - Observation 2.46.1: decode_http in interop/crates/x-websearch/src/payment.rs refuses every HTTP answer that carries a Transfer-Encoding header, while a JSON-RPC node's HTTP server sends any answer beyond a few kilobytes, such as the getAttestors tuple array the submitter reads, with Transfer-Encoding: chunked and no Content-Length; accept a single chunked transfer encoding, join the chunk bodies in order, tolerate chunk extensions and trailers, refuse an answer that carries both a Content-Length and a chunked encoding, an unknown or repeated transfer encoding, a chunk cut short or bytes after the terminating chunk, and keep the Content-Length path exactly as it is.
+    - Add unit tests in interop/crates/x-websearch/src/payment.rs that join a chunked answer with a chunk extension and a trailer into its JSON value, that refuse a chunked answer cut short and one followed by more bytes, and that read a two-chunk answer larger than a socket read from a loopback TcpListener through GatewayRpc::call.
+    - _Requirements: 15.1, 15.2, 15.3_
 
 ## Wave 3 - One Run, Recorded
 
@@ -377,7 +381,7 @@
 {
   "waves": [
     { "id": 1,  "tasks": ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "1.10", "1.11", "1.12", "1.13", "1.14", "1.15", "1.16", "1.17", "1.18"] },
-    { "id": 2,  "tasks": ["2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7", "2.8", "2.9", "2.10", "2.11", "2.12", "2.13", "2.14", "2.15", "2.16", "2.17", "2.18", "2.19", "2.20", "2.21", "2.22", "2.23", "2.24", "2.25", "2.26", "2.27", "2.28", "2.29", "2.30", "2.31", "2.32", "2.33", "2.34", "2.35", "2.36", "2.37", "2.38", "2.39", "2.40", "2.41", "2.42", "2.43", "2.44", "2.45", "2.46"] },
+    { "id": 2,  "tasks": ["2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7", "2.8", "2.9", "2.10", "2.11", "2.12", "2.13", "2.14", "2.15", "2.16", "2.17", "2.18", "2.19", "2.20", "2.21", "2.22", "2.23", "2.24", "2.25", "2.26", "2.27", "2.28", "2.29", "2.30", "2.31", "2.32", "2.33", "2.34", "2.35", "2.36", "2.37", "2.38", "2.39", "2.40", "2.41", "2.42", "2.43", "2.44", "2.45", "2.46", "2.47"] },
     { "id": 3,  "tasks": ["3.1"] }
   ]
 }
