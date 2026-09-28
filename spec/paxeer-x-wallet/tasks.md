@@ -233,6 +233,11 @@
     - Add human/wallet/docs/security-review.md recording the review of every change to the vendored threshold library's CGGMP, FROST, refresh and Birkhoff code since its published audit, the daemon's trust boundaries (gateway, attestor, identity provider, operator, dealer), the policy fail-closed paths, and every open finding with severity and owner action.
     - Where the review finds a defect in the daemon, fix it in this task with a test; where it finds one in the library, record it and pin the dependency version in go.mod with the reason.
     - _Requirements: 13.3_
+  - [x] 4.9 Add the theme selection system to the app
+    - In human/apps/wallet add src/theme/: a typed token schema covering colour (surface, text, action, status, border, overlay), typography (font family per role, a modular size scale, line heights, weights), spacing, radius, shadow and density; a catalogue of named colour themes (the current dark, a light theme, a high-contrast dark and a high-contrast light) each complete for every colour token, an accent palette choice applied to the action tokens with contrast-checked on-accent text, font choices (the bundled Paxeer Sans Rounded, a system stack, and a monospace stack for addresses and amounts), size presets (compact, regular, large) that scale the type scale, spacing and control heights together, and a density toggle; a resolver that turns a selection plus the system colour scheme and reduced-motion preferences into one flat set of CSS custom properties, keeping the existing --color-*, --pax-* and --radius-* names so tailwind.config.ts and every surface keep working.
+    - Add a ThemeProvider mounted in src/app/layout.tsx that applies the resolved properties on the root element, follows the system scheme when the selection says system, persists the selection on the device keyed by the signed-in account when one is present, and emits an inline bootstrap script that applies the stored selection before first paint so no theme flash occurs; add an Appearance section to the settings widget with pickers for colour theme, accent, font, size and density and a live preview card; migrate the remaining hard-coded colour literals under src/ (outside src/theme/ and globals.css) to tokens.
+    - Add tests under src/theme/ for the schema (every theme complete, every on-accent pair meets WCAG AA contrast), the resolver (system scheme, size presets scale together, reduced motion), persistence and account keying, the provider applying properties on the root, the bootstrap script output, the appearance pickers changing the applied properties, and a scan that fails on any hard-coded colour literal under src/ outside src/theme/ and src/app/globals.css.
+    - _Requirements: 10.7_
 
 ## Wave 5 - Release
 
@@ -253,7 +258,7 @@
     { "id": 1,  "tasks": ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "1.10", "1.11", "1.12", "1.13", "1.14", "1.15", "1.16"] },
     { "id": 2,  "tasks": ["2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7", "2.8", "2.9"] },
     { "id": 3,  "tasks": ["3.1", "3.2", "3.3", "3.4", "3.5", "3.6", "3.7", "3.8", "3.9", "3.10", "3.11", "3.12", "3.13"] },
-    { "id": 4,  "tasks": ["4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7", "4.8"] },
+    { "id": 4,  "tasks": ["4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7", "4.8", "4.9"] },
     { "id": 5,  "tasks": ["5.1", "5.2"] }
   ]
 }

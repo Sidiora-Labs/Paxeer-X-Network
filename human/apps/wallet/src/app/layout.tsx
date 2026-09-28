@@ -4,6 +4,9 @@ import './globals.css';
 import { Toaster } from '@/components/ui/toaster';
 import { QueryProvider } from '@/providers/QueryProvider';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
+import { ThemeBootstrap } from '@/theme/bootstrap';
+import { DEFAULT_THEME_COLOR } from '@/theme/catalogue';
+import { ThemeProvider } from '@/theme/ThemeProvider';
 
 const PROGRESSIER_APP_URL =
   'https://progressier.app/d5yxEsi2PnDew795sxaK';
@@ -23,15 +26,16 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
-  themeColor: '#141413',
+  themeColor: DEFAULT_THEME_COLOR,
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const requestHeaders = await headers();
   const nonce = requestHeaders.get('x-nonce') ?? undefined;
   return (
-    <html lang="en" className="dark">
+    <html lang="en" className="dark" suppressHydrationWarning>
       <head>
+        <ThemeBootstrap nonce={nonce} />
         <script
           defer
           nonce={nonce}
@@ -47,7 +51,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="msapplication-TileImage" content="/icons/windows/Square150x150Logo.scale-100.png" />
-        <meta name="msapplication-TileColor" content="#141413" />
+        <meta name="msapplication-TileColor" content={DEFAULT_THEME_COLOR} />
 
         {/* iOS Splash Screens — Landscape */}
         <link rel="apple-touch-startup-image" media="screen and (device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)" href="/splash_screens/iPhone_17_Pro_Max__iPhone_16_Pro_Max_landscape.png" />
@@ -98,12 +102,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <link rel="apple-touch-startup-image" media="screen and (device-width: 744px) and (device-height: 1133px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="/splash_screens/8.3__iPad_Mini_portrait.png" />
       </head>
       <body className="bg-pax-bg text-white antialiased">
-        <QueryProvider>
-          <ErrorBoundary>
-            {children}
-          </ErrorBoundary>
-          <Toaster />
-        </QueryProvider>
+        <ThemeProvider>
+          <QueryProvider>
+            <ErrorBoundary>
+              {children}
+            </ErrorBoundary>
+            <Toaster />
+          </QueryProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

@@ -395,3 +395,19 @@ command = "docker build -f platform/hosted/gateway/Dockerfile -t paxeer-shared-e
 exit_code = 1
 log_path = ".logs/deploy.log"
 observed = "The image built and the private TLS Redis machine started ready on its TLS port, but the platform destroyed the endpoint machine before the binary ran, so no call was made."
+
+[observation.4.9.1]
+task = "4.9"
+file = "human/apps/wallet/e2e/sign-in.spec.ts"
+symbol = "type-check"
+observed = "The app type check exits 2 on one pre-existing error, TS2367 at e2e/sign-in.spec.ts line 21 comparing the literal types 424242 and 000000; no error comes from src/theme or the files this task changed."
+assumption = "The task that owns the Playwright suite widens that comparison; the theme verify command does not depend on it."
+severity = "note"
+
+[observation.4.9.2]
+task = "4.9"
+file = "human/apps/wallet/src/theme/catalogue.ts"
+symbol = "accent.onPrimary"
+observed = "The previous --color-action-on-primary #111410 on the default accent #2262d1 measures 3.30:1, below the 4.5 text threshold every on-accent pair must meet, so the contrast-checked ink makes the default #fffdf8 (5.53:1); every other default property keeps its previous value."
+assumption = "The WCAG requirement governs that one property; buttons that still carry text-black on bg-pax-accent (3.74:1) are outside this task's files and move to the on-accent token when their owners next touch them."
+severity = "suspect"

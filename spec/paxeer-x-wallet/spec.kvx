@@ -158,6 +158,7 @@ ac_3 = "THE app SHALL sign in through the gateway's identity flow, provision thr
 ac_4 = "THE app SHALL show the unified account: address, DID, binding state, one asset list with joined balances, one history, the status ladder per transaction, a custody deposit flow, and kernel-side plans with the kernel availability state."
 ac_5 = "THE app SHALL expose the exchange, bridge, launchpad, fee token choice and web data surfaces through the SDK modules, and the fee choice SHALL label every fee's denomination."
 ac_6 = "THE app SHALL carry its native projects, environment configuration and release tests in the repository, and its tests SHALL run under vitest and its end-to-end configuration under Playwright."
+ac_7 = "THE app SHALL offer a theme selection system - colour theme, accent, font family, size preset and density - resolved into design tokens applied before first paint, persisted on the device, with every surface rendered from those tokens and no hard-coded colour outside the theme module."
 
 [req.11]
 title = "Fees and Payments Across Both Networks"
@@ -933,6 +934,23 @@ verify_cmd = "timeout 20m sh -c 'tools/wallet/scan-secrets.sh human/wallet/docs 
 symbols = ["security-review"]
 touches = ["human/wallet/docs/security-review.md","human/wallet/attestor/go.mod"]
 reqs = ["13.3"]
+
+[task.4.9]
+title = "Add the theme selection system to the app"
+status = "done"
+wave = 4
+requires = ["3.6"]
+do_1 = "In human/apps/wallet add src/theme/: a typed token schema covering colour (surface, text, action, status, border, overlay), typography (font family per role, a modular size scale, line heights, weights), spacing, radius, shadow and density; a catalogue of named colour themes (the current dark, a light theme, a high-contrast dark and a high-contrast light) each complete for every colour token, an accent palette choice applied to the action tokens with contrast-checked on-accent text, font choices (the bundled Paxeer Sans Rounded, a system stack, and a monospace stack for addresses and amounts), size presets (compact, regular, large) that scale the type scale, spacing and control heights together, and a density toggle; a resolver that turns a selection plus the system colour scheme and reduced-motion preferences into one flat set of CSS custom properties, keeping the existing --color-*, --pax-* and --radius-* names so tailwind.config.ts and every surface keep working."
+do_2 = "Add a ThemeProvider mounted in src/app/layout.tsx that applies the resolved properties on the root element, follows the system scheme when the selection says system, persists the selection on the device keyed by the signed-in account when one is present, and emits an inline bootstrap script that applies the stored selection before first paint so no theme flash occurs; add an Appearance section to the settings widget with pickers for colour theme, accent, font, size and density and a live preview card; migrate the remaining hard-coded colour literals under src/ (outside src/theme/ and globals.css) to tokens."
+do_3 = "Add tests under src/theme/ for the schema (every theme complete, every on-accent pair meets WCAG AA contrast), the resolver (system scheme, size presets scale together, reduced motion), persistence and account keying, the provider applying properties on the root, the bootstrap script output, the appearance pickers changing the applied properties, and a scan that fails on any hard-coded colour literal under src/ outside src/theme/ and src/app/globals.css."
+verify_cmd = "timeout 20m sh -c 'pnpm --dir human/apps/wallet exec vitest run src/theme'"
+symbols = ["ThemeProvider","useTheme","resolveTheme","themeCatalogue","AppearanceSettings"]
+touches = ["human/apps/wallet/src/theme/","human/apps/wallet/src/app/globals.css","human/apps/wallet/src/app/layout.tsx","human/apps/wallet/tailwind.config.ts","human/apps/wallet/src/widgets/settings/"]
+reqs = ["10.7"]
+revision = "94f3281695cb745b0fb7419411851811a96bcbfc"
+command = "timeout 20m sh -c 'pnpm --dir human/apps/wallet exec vitest run src/theme'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 # --------------------------------------------------------------------------
 # WAVE 5 - RELEASE

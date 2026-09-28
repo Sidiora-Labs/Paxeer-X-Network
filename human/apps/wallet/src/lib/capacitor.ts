@@ -9,6 +9,7 @@ import { SplashScreen } from '@capacitor/splash-screen';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { parseRouteUrl, serializeRoute } from '@/domains/shell';
 import { reportBackgroundFailure } from '@/platform/status/background-failures';
+import { currentThemeColor, currentThemeScheme } from '@/theme/dom';
 
 // ── Platform Detection ──────────────────────────────────────────────────────
 
@@ -41,8 +42,8 @@ export async function initCapacitor(): Promise<void> {
   }
 
   try {
-    await StatusBar.setStyle({ style: Style.Dark });
-    await StatusBar.setBackgroundColor({ color: '#141413' });
+    await StatusBar.setStyle({ style: currentThemeScheme() === 'light' ? Style.Light : Style.Dark });
+    await StatusBar.setBackgroundColor({ color: currentThemeColor() });
   } catch {
     reportBackgroundFailure({
       domain: 'platform',

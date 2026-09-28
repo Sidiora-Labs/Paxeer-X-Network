@@ -45,7 +45,7 @@ export function SplashScreen({ children }: SplashScreenProps) {
                         {/* Progress bar */}
                         <motion.div
                             className="absolute bottom-14 left-1/2 -translate-x-1/2 h-[2px] rounded-full overflow-hidden"
-                            style={{ width: 80, background: 'rgba(255,255,255,0.12)' }}
+                            style={{ width: 80, background: 'var(--color-border-subtle)' }}
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             transition={{ delay: 0.6, duration: 0.4 }}

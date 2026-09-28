@@ -132,6 +132,7 @@ The most used service of Paxeer X Network is its hosted embedded wallet: a perso
 4. THE app SHALL show the unified account: address, DID, binding state, one asset list with joined balances, one history, the status ladder per transaction, a custody deposit flow, and kernel-side plans with the kernel availability state.
 5. THE app SHALL expose the exchange, bridge, launchpad, fee token choice and web data surfaces through the SDK modules, and the fee choice SHALL label every fee's denomination.
 6. THE app SHALL carry its native projects, environment configuration and release tests in the repository, and its tests SHALL run under vitest and its end-to-end configuration under Playwright.
+7. THE app SHALL offer a theme selection system - colour theme, accent, font family, size preset and density - resolved into design tokens applied before first paint, persisted on the device, with every surface rendered from those tokens and no hard-coded colour outside the theme module.
 
 ## Requirement 11: Fees and Payments Across Both Networks
 

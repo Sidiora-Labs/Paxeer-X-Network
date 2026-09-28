@@ -9,7 +9,7 @@ import {
     PAXEER_CONFIG,
     validateRpcEndpoint,
 } from '@/lib/constants';
-import { Check, LogOut, TriangleAlert } from 'lucide-react';
+import { Check, LogOut, Palette, TriangleAlert } from 'lucide-react';
 import { SvgIcon } from '@/components/ui/SvgIcon';
 import { getAvatarPath } from '@/lib/avatar';
 import { NotificationToggle, InstallButton } from '@/components/pwa/PWAComponents';
@@ -26,8 +26,10 @@ import {
     FIAT_CURRENCIES,
     getRatesFreshness,
 } from '@/lib/currency';
+import { AppearanceSettings } from '@/theme/AppearanceSettings';
+import { useThemeAccount } from '@/theme/ThemeProvider';
 
-type SettingsView = 'main' | 'preferences' | 'network' | 'advanced' | 'notifications';
+type SettingsView = 'main' | 'preferences' | 'appearance' | 'network' | 'advanced' | 'notifications';
 
 interface SettingsWidgetProps {
     onNavigate?: (route: ShellRouteName) => void;
@@ -35,12 +37,13 @@ interface SettingsWidgetProps {
 }
 
 export function SettingsWidget({ onNavigate, onPaxscan }: SettingsWidgetProps) {
-    const { activeAccount } = useWalletState();
+    const { ready, activeAccount } = useWalletState();
     const { t } = useLocale();
     const wallet = useWallet();
     const isEmbedded = wallet.mode === 'embedded';
 
     const [view, setView] = useState<SettingsView>('main');
+    useThemeAccount(ready ? (activeAccount?.address ?? null) : undefined);
 
     const handleSignOut = async () => {
         await wallet.signOut();
@@ -48,6 +51,7 @@ export function SettingsWidget({ onNavigate, onPaxscan }: SettingsWidgetProps) {
     };
 
     if (view === 'preferences') return <PreferencesView onBack={() => setView('main')} />;
+    if (view === 'appearance') return <AppearanceView onBack={() => setView('main')} />;
     if (view === 'network') return <NetworkView onBack={() => setView('main')} />;
     if (view === 'advanced') return <AdvancedView onBack={() => setView('main')} />;
     if (view === 'notifications') return <NotificationsView onBack={() => setView('main')} />;
@@ -103,6 +107,7 @@ export function SettingsWidget({ onNavigate, onPaxscan }: SettingsWidgetProps) {
             <div className="col-span-2 px-1 pt-1"><p className="text-[13px] font-bold text-pax-muted uppercase tracking-[0.06em]">{t.settings.general}</p></div>
             <div className="col-span-2 bg-pax-surface rounded-[20px]  divide-white/[0.04] overflow-hidden">
                 <SettingsRow icon={<SvgIcon name="settings" className="w-4.5 h-4.5" style={{ filter: 'brightness(0) invert(0.6)' }} />} label={t.settings.displayPreferences} subtitle={`${t.settings.currency}, ${t.settings.language}`} onClick={() => setView('preferences')} />
+                <SettingsRow icon={<Palette className="w-[18px] h-[18px]" />} label="Appearance" subtitle="Theme, accent, font, size and density" onClick={() => setView('appearance')} />
                 <SettingsRow icon={<SvgIcon name="wifi" className="w-4.5 h-4.5" style={{ filter: 'brightness(0) invert(0.6)' }} />} label={t.settings.networkRpc} subtitle={`${t.settings.network}, ${t.settings.customRpc}`} onClick={() => setView('network')} />
                 <SettingsRow icon={<SvgIcon name="sliders" className="w-4.5 h-4.5" style={{ filter: 'brightness(0) invert(0.6)' }} />} label={t.settings.advanced} subtitle={t.settings.advancedSubtitle} onClick={() => setView('advanced')} />
                 <SettingsRow icon={<SvgIcon name="bell" className="w-4.5 h-4.5" style={{ filter: 'brightness(0) invert(0.6)' }} />} label={t.settings.notifications} subtitle={t.settings.notificationsSubtitle} onClick={() => setView('notifications')} />
@@ -189,6 +194,14 @@ function PreferencesView({ onBack }: { onBack: () => void }) {
                     </div>
                 </div>
             </div>
+        </SettingsSubPage>
+    );
+}
+
+function AppearanceView({ onBack }: { onBack: () => void }) {
+    return (
+        <SettingsSubPage title="Appearance" onBack={onBack}>
+            <AppearanceSettings />
         </SettingsSubPage>
     );
 }

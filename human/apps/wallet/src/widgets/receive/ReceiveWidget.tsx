@@ -6,6 +6,7 @@ import { Copy } from 'lucide-react';
 import { useWalletState } from '@/providers/WalletProvider';
 import { SvgIcon } from '@/components/ui/SvgIcon';
 import { QRCodeSVG } from 'qrcode.react';
+import { qrColors } from '@/theme/catalogue';
 import { useLocale } from '@/providers/LocaleProvider';
 
 interface ReceiveWidgetProps {
@@ -66,8 +67,8 @@ export function ReceiveWidget({ onBack }: ReceiveWidgetProps) {
               value={address}
               size={200}
               level="H"
-              bgColor="var(--color-white, #ffffff)"
-              fgColor="var(--color-gray-900, #000000)"
+              bgColor={qrColors.background}
+              fgColor={qrColors.foreground}
             />
           </div>
         </div>

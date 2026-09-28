@@ -83,7 +83,7 @@ export function PriceChart({
               <YAxis domain={['dataMin', 'dataMax']} hide />
               <Tooltip
                 content={() => null}
-                cursor={{ stroke: 'rgba(255,255,255,0.15)', strokeWidth: 1 }}
+                cursor={{ stroke: 'var(--color-border-strong)', strokeWidth: 1 }}
               />
               <Area
                 type="monotone"
