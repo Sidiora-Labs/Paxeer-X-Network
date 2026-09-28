@@ -475,3 +475,18 @@ symbol = "KernelGate"
 observed = "The loading kernel state rendered with data-kernel unavailable, so the tests' wait settled before the endpoint answered; loading now renders as data-kernel checking and the verify command exits 0 with 33 tests across 6 files."
 assumption = "Every surface that shows the kernel notice treats the checking state as closed, as the gate already did."
 severity = "note"
+
+[observation.3.7.7]
+task = "3.7"
+file = "human/wallet/deploy/endpoint.toml"
+symbol = "[[files]]"
+observed = "The fourteen [[files]] mappings whose secrets chain-only mode leaves unset (client identity and its password, component, authority, identity, identity provisioning, registry and faucet tokens, four sequencer files, provisioning key, module registry) were removed, keeping the outbound CA and the two Redis credential files; the platform then wrote the three files and the binary started."
+assumption = "The kernel task restores those fourteen mappings together with their [env] path lines and LAYERX_GATEWAY_COMPONENT_URL; the blocker of observation 3.7.5 is met by the removal."
+severity = "note"
+
+[gate.3.2]
+revision = "49ef95c29d11e14f83a5a91d33456bb81bec09ca"
+command = "docker build -f platform/hosted/gateway/Dockerfile -t paxeer-shared-endpoint:deploy . && flyctl deploy --config human/wallet/deploy/endpoint.toml --image paxeer-shared-endpoint:deploy --app paxeer-shared-endpoint --local-only --ha=false && flyctl scale count 2 --app paxeer-shared-endpoint --region ams"
+exit_code = 0
+log_path = ".logs/deploy.log"
+observed = "The image built, two performance-4x 8 GB machines started and passed the readiness check, and eth_chainId, px_resolveAccount, px_getNetwork and a kernel lx_ call answered as expected with the kernel reported not configured."

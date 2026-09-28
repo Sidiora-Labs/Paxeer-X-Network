@@ -19,68 +19,12 @@ kill_timeout = "30s"
   secret_name = "ENDPOINT_OUTBOUND_CA"
 
 [[files]]
-  guest_path = "/run/secrets/client.p12"
-  secret_name = "ENDPOINT_CLIENT_IDENTITY_PKCS12"
-
-[[files]]
-  guest_path = "/run/secrets/client-password"
-  secret_name = "ENDPOINT_CLIENT_IDENTITY_PASSWORD"
-
-[[files]]
-  guest_path = "/run/secrets/component-token"
-  secret_name = "ENDPOINT_COMPONENT_TOKEN"
-
-[[files]]
-  guest_path = "/run/secrets/authority-token"
-  secret_name = "ENDPOINT_AUTHORITY_TOKEN"
-
-[[files]]
-  guest_path = "/run/secrets/identity-token"
-  secret_name = "ENDPOINT_IDENTITY_TOKEN"
-
-[[files]]
-  guest_path = "/run/secrets/identity-provisioning-token"
-  secret_name = "ENDPOINT_IDENTITY_PROVISIONING_TOKEN"
-
-[[files]]
-  guest_path = "/run/secrets/registry-token"
-  secret_name = "ENDPOINT_PROGRAM_REGISTRY_TOKEN"
-
-[[files]]
-  guest_path = "/run/secrets/faucet-token"
-  secret_name = "ENDPOINT_FAUCET_SERVICE_TOKEN"
-
-[[files]]
   guest_path = "/run/secrets/redis-username"
   secret_name = "ENDPOINT_REDIS_USERNAME"
 
 [[files]]
   guest_path = "/run/secrets/redis-password"
   secret_name = "ENDPOINT_REDIS_PASSWORD"
-
-[[files]]
-  guest_path = "/run/secrets/sequencer-public-key"
-  secret_name = "ENDPOINT_SEQUENCER_PUBLIC_KEY"
-
-[[files]]
-  guest_path = "/run/secrets/sequencer-id"
-  secret_name = "ENDPOINT_SEQUENCER_ID"
-
-[[files]]
-  guest_path = "/run/secrets/sequencer-first-batch"
-  secret_name = "ENDPOINT_SEQUENCER_FIRST_BATCH"
-
-[[files]]
-  guest_path = "/run/secrets/sequencer-last-batch"
-  secret_name = "ENDPOINT_SEQUENCER_LAST_BATCH"
-
-[[files]]
-  guest_path = "/run/secrets/provisioning.key"
-  secret_name = "ENDPOINT_KEY_PROVISIONING_KEY"
-
-[[files]]
-  guest_path = "/run/secrets/modules.json"
-  secret_name = "ENDPOINT_MODULE_REGISTRY"
 
 [http_service]
   internal_port = 9443

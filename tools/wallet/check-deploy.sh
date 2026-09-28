@@ -21,7 +21,8 @@ Rules, each printed as "pass <rule> <file>" or "fail <rule> <file>: <reason>":
   auto-stop           each attestor sets auto_stop_machines = false
   no-public-ports     no attestor service declares ports
   health-check        each attestor checks /health; gateway and endpoint check a route
-  dockerfile          the build dockerfile exists in the repository
+  dockerfile          the build dockerfile exists in the repository, or the
+                      build names a public image and no dockerfile
   env-no-secrets      no [env] value looks like a secret
   env-documented      every [env] name appears in the env documentation file
   public-http-service gateway and endpoint expose a public http service
@@ -212,10 +213,18 @@ for name in ("gateway.toml", "endpoint.toml"):
            "no http health check with a path")
 
 for name, definition in sorted(definitions.items()):
-    dockerfile = (definition.get("build") or {}).get("dockerfile")
-    exists = bool(dockerfile) and not os.path.isabs(dockerfile) \
-        and os.path.isfile(os.path.join(repo_root, dockerfile))
-    report(exists, "dockerfile", name, f"build dockerfile {dockerfile!r} is not a file in the repository")
+    build = definition.get("build") or {}
+    dockerfile = build.get("dockerfile")
+    image = build.get("image")
+    if dockerfile is None and image is not None:
+        report(isinstance(image, str) and bool(image.strip()), "dockerfile", name,
+               f"build image {image!r} is not an image reference")
+    elif dockerfile is None:
+        report(False, "dockerfile", name, "build names neither a dockerfile nor an image")
+    else:
+        exists = isinstance(dockerfile, str) and not os.path.isabs(dockerfile) \
+            and os.path.isfile(os.path.join(repo_root, dockerfile))
+        report(exists, "dockerfile", name, f"build dockerfile {dockerfile!r} is not a file in the repository")
 
     env = definition.get("env") or {}
     shaped = []

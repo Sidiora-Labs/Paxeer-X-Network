@@ -715,7 +715,7 @@ log_path = ".logs/verify.log"
 
 [task.3.7]
 title = "Deploy the shared endpoint in chain-only mode"
-status = "implemented"
+status = "done"
 wave = 3
 requires = ["1.15","1.12","3.9","3.11","3.12"]
 do_1 = "Build the endpoint image from the repository, deploy it from human/wallet/deploy/endpoint.toml with the chain RPC configured and the kernel backends unconfigured, verify eth_chainId, px_resolveAccount and px_getNetwork answer and that kernel methods return the typed unavailable error, and record the run in the qualification log without hosts."
@@ -724,6 +724,10 @@ verify_cmd = "timeout 20m sh -c 'tools/wallet/check-live.sh endpoint'"
 symbols = ["check-live"]
 touches = ["tools/wallet/check-live.sh","tools/wallet/check-live.test.sh","spec/paxeer-x-wallet/qualification.kvx","human/wallet/deploy/redis.toml","human/wallet/deploy/env","human/wallet/deploy/endpoint.toml"]
 reqs = ["12.2"]
+revision = "49ef95c29d11e14f83a5a91d33456bb81bec09ca"
+command = "timeout 20m sh -c 'tools/wallet/check-live.sh endpoint'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.3.8]
 title = "Add the agent lane helpers to the SDK"
