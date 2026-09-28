@@ -540,7 +540,7 @@ reqs = ["9.3","11.1"]
 
 [task.2.6]
 title = "Add the shared endpoint, kernel and human service clients and the status ladder to the SDK"
-status = "pending"
+status = "done"
 wave = 2
 requires = ["1.10"]
 do_1 = "In human/wallet/sdk add the shared endpoint client (px_resolveAccount, px_getAccount, px_getBalances with completion by eth_getBalance and ERC-20 calls, px_listAssets, px_getCapabilities, px_getUnifiedHistory by cursor, px_getNetwork with kernel availability) and the kernel read client (lx_getAccount, lx_getBalances, lx_getSequence, lx_getReceipt, lx_getActivityStatus) over one JSON-RPC base with batching."
@@ -550,6 +550,10 @@ verify_cmd = "timeout 20m sh -c 'pnpm --dir human/wallet/sdk test'"
 symbols = ["EndpointClient","KernelClient","HumanClient","statusLadder","KernelAvailability"]
 touches = ["human/wallet/sdk/src/endpoint.ts","human/wallet/sdk/src/kernel.ts","human/wallet/sdk/src/human.ts","human/wallet/sdk/src/ladder.ts","human/wallet/sdk/test/endpoint.test.ts","human/wallet/sdk/test/ladder.test.ts"]
 reqs = ["7.1","7.2","7.3","7.4","7.5","9.4"]
+revision = "9c6b0e58da8d6a27238705e37ef10677c457532f"
+command = "timeout 20m sh -c 'pnpm --dir human/wallet/sdk test'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.2.7]
 title = "Write the ceremony tool: read, verify, split, deliver, archive"

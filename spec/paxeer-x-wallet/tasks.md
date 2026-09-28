@@ -119,7 +119,7 @@
     - Add the gas station module: quote, sponsored batch construction with the fields the attestor recomputes, and submit, and the fee-choice helper that labels PAX gas, SID sponsored and SID native with their denominations.
     - Add module tests with calldata vectors checked against the agent SDK's own builders and event decoding against recorded logs.
     - _Requirements: 9.3, 11.1_
-  - [ ] 2.6 Add the shared endpoint, kernel and human service clients and the status ladder to the SDK
+  - [x] 2.6 Add the shared endpoint, kernel and human service clients and the status ladder to the SDK
     - In human/wallet/sdk add the shared endpoint client (px_resolveAccount, px_getAccount, px_getBalances with completion by eth_getBalance and ERC-20 calls, px_listAssets, px_getCapabilities, px_getUnifiedHistory by cursor, px_getNetwork with kernel availability) and the kernel read client (lx_getAccount, lx_getBalances, lx_getSequence, lx_getReceipt, lx_getActivityStatus) over one JSON-RPC base with batching.
     - Add the human service client for intent plan, intent submit and journey read, and the status ladder mapping the explorer status, journey states and anchor states to instant, sealed and final with source, plus the kernel availability state every kernel operation checks first.
     - Add tests with responses decoded from the schema goldens under human/schema and recorded endpoint responses, covering batching, completion of unmapped assets, cursor paging, every ladder mapping and the unavailable state.

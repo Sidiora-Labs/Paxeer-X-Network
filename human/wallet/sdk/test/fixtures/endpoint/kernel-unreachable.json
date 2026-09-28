@@ -1,0 +1,53 @@
+[
+  {
+    "request": {
+      "method": "px_getNetwork",
+      "params": []
+    },
+    "response": {
+      "result": {
+        "network_id": "paxeer-x",
+        "paxeer": {
+          "chain_id": "0x7d",
+          "latest_block": "0x1a2b3c"
+        },
+        "layerx": {
+          "node_info": null
+        },
+        "anchor": {
+          "latest_finalized_batch": 19,
+          "status": 2,
+          "status_name": "final",
+          "status_ladder": {
+            "0": "unknown",
+            "1": "submitted",
+            "2": "final"
+          }
+        },
+        "kernel": {
+          "available": false,
+          "reason": "unreachable"
+        }
+      }
+    }
+  },
+  {
+    "request": {
+      "method": "px_getBalances",
+      "params": [
+        "0x1111111111111111111111111111111111111111"
+      ]
+    },
+    "response": {
+      "error": {
+        "code": -32010,
+        "message": "Kernel unavailable",
+        "data": {
+          "code": "kernel_unavailable",
+          "backend": "public_core",
+          "reason": "unreachable"
+        }
+      }
+    }
+  }
+]

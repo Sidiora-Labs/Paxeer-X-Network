@@ -1,0 +1,606 @@
+[
+  {
+    "request": {
+      "method": "px_getNetwork",
+      "params": []
+    },
+    "response": {
+      "result": {
+        "network_id": "paxeer-x",
+        "paxeer": {
+          "chain_id": "0x7d",
+          "latest_block": "0x1a2b3c"
+        },
+        "layerx": {
+          "node_info": {
+            "network": "layerx",
+            "head_sequence": "4096",
+            "verification": "authenticated_node_snapshot"
+          }
+        },
+        "anchor": {
+          "latest_finalized_batch": 19,
+          "status": 2,
+          "status_name": "final",
+          "status_ladder": {
+            "0": "unknown",
+            "1": "submitted",
+            "2": "final"
+          }
+        },
+        "kernel": {
+          "available": true,
+          "reason": "available"
+        }
+      }
+    }
+  },
+  {
+    "request": {
+      "method": "px_resolveAccount",
+      "params": [
+        "0x1111111111111111111111111111111111111111"
+      ]
+    },
+    "response": {
+      "result": {
+        "evm_address": "0x1111111111111111111111111111111111111111",
+        "pax_address": "pax1zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3a8h3w5",
+        "layerx_did": "did:layerx:6161616161616161616161616161616161616161616161616161616161616161",
+        "layerx_account": "7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c",
+        "bound": true
+      }
+    }
+  },
+  {
+    "request": {
+      "method": "px_getAccount",
+      "params": [
+        "0x1111111111111111111111111111111111111111"
+      ]
+    },
+    "response": {
+      "result": {
+        "account": {
+          "evm_address": "0x1111111111111111111111111111111111111111",
+          "pax_address": "pax1zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3a8h3w5",
+          "layerx_did": "did:layerx:6161616161616161616161616161616161616161616161616161616161616161",
+          "layerx_account": "7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c",
+          "bound": true
+        },
+        "paxeer": {
+          "address": "0x1111111111111111111111111111111111111111",
+          "balance": "0xde0b6b3a7640000",
+          "nonce": "0x3"
+        },
+        "layerx": {
+          "account_id": "7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c",
+          "name": "agent:did:layerx:6161616161616161616161616161616161616161616161616161616161616161:main",
+          "asset_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "balance": "750000",
+          "next_sequence": "8",
+          "frozen": false,
+          "verification": "authenticated_node_snapshot"
+        }
+      }
+    }
+  },
+  {
+    "request": {
+      "method": "px_listAssets",
+      "params": []
+    },
+    "response": {
+      "result": {
+        "assets": [
+          {
+            "asset_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "layerx": {
+              "asset_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "symbol": "LXP",
+              "name": "LayerX Points",
+              "decimals": 6,
+              "denom": "ulxp"
+            },
+            "paxeer": {
+              "asset_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "denom": "ulxp",
+              "pointer": "0x2222222222222222222222222222222222222222",
+              "enabled": true,
+              "paused": false,
+              "minimum_deposit": "1000",
+              "custody_cap": "1000000000000",
+              "custodied": "250000000",
+              "released": "50000000",
+              "pending": "0"
+            }
+          },
+          {
+            "asset_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "layerx": {
+              "asset_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "symbol": "SID",
+              "name": "Sidiora",
+              "decimals": 6,
+              "denom": "usid"
+            },
+            "paxeer": null
+          }
+        ],
+        "joined_limit": 16
+      }
+    }
+  },
+  {
+    "request": {
+      "method": "px_getBalances",
+      "params": [
+        "0x1111111111111111111111111111111111111111"
+      ]
+    },
+    "response": {
+      "result": {
+        "account": {
+          "evm_address": "0x1111111111111111111111111111111111111111",
+          "pax_address": "pax1zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3a8h3w5",
+          "layerx_did": "did:layerx:6161616161616161616161616161616161616161616161616161616161616161",
+          "layerx_account": "7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c",
+          "bound": true
+        },
+        "balances": [
+          {
+            "asset_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "denom": "ulxp",
+            "custody": {
+              "asset_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "denom": "ulxp",
+              "pointer": "0x2222222222222222222222222222222222222222",
+              "enabled": true,
+              "paused": false,
+              "minimum_deposit": "1000",
+              "custody_cap": "1000000000000",
+              "custodied": "250000000",
+              "released": "50000000",
+              "pending": "0"
+            },
+            "paxeer": {
+              "denom": "ulxp",
+              "amount": "125000"
+            },
+            "layerx": {
+              "account_id": "7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c",
+              "name": "agent:did:layerx:6161616161616161616161616161616161616161616161616161616161616161:main",
+              "asset_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "balance": "750000",
+              "next_sequence": "8",
+              "frozen": false,
+              "verification": "authenticated_node_snapshot"
+            }
+          },
+          {
+            "asset_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "denom": "usid",
+            "custody": null,
+            "paxeer": null,
+            "layerx": null
+          }
+        ],
+        "joined_limit": 16
+      }
+    }
+  },
+  {
+    "request": {
+      "method": "px_getCapabilities",
+      "params": []
+    },
+    "response": {
+      "result": {
+        "exchange": true,
+        "bridge": false,
+        "launchpad": true,
+        "probed_at": 86400,
+        "rpc_height": "1715004"
+      }
+    }
+  },
+  {
+    "request": {
+      "method": "eth_getBalance",
+      "params": [
+        "0x1111111111111111111111111111111111111111",
+        "latest"
+      ]
+    },
+    "response": {
+      "result": "0xde0b6b3a7640000"
+    }
+  },
+  {
+    "request": {
+      "method": "eth_call",
+      "params": [
+        {
+          "to": "0x3333333333333333333333333333333333333333",
+          "data": "0x70a082310000000000000000000000001111111111111111111111111111111111111111"
+        },
+        "latest"
+      ]
+    },
+    "response": {
+      "result": "0x00000000000000000000000000000000000000000000000000000000000f4240"
+    }
+  },
+  {
+    "request": {
+      "method": "eth_call",
+      "params": [
+        {
+          "to": "0x4444444444444444444444444444444444444444",
+          "data": "0x70a082310000000000000000000000001111111111111111111111111111111111111111"
+        },
+        "latest"
+      ]
+    },
+    "response": {
+      "error": {
+        "code": -32000,
+        "message": "execution reverted"
+      }
+    }
+  },
+  {
+    "request": {
+      "method": "eth_blockNumber",
+      "params": []
+    },
+    "response": {
+      "result": "0x1a2b3c"
+    }
+  },
+  {
+    "request": {
+      "method": "px_getUnifiedHistory",
+      "params": [
+        "0x1111111111111111111111111111111111111111",
+        null,
+        2,
+        null
+      ]
+    },
+    "response": {
+      "result": {
+        "account": {
+          "evm_address": "0x1111111111111111111111111111111111111111",
+          "pax_address": "pax1zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3a8h3w5",
+          "layerx_did": "did:layerx:6161616161616161616161616161616161616161616161616161616161616161",
+          "layerx_account": "7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c",
+          "bound": true
+        },
+        "accounts": [
+          {
+            "side": "paxeer",
+            "account": "0x1111111111111111111111111111111111111111"
+          },
+          {
+            "side": "layerx",
+            "account": "7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c"
+          }
+        ],
+        "items": [
+          {
+            "id": "5",
+            "height_or_seq": "1005",
+            "chain": "paxeer",
+            "kind": "erc20_transfer",
+            "direction": "in",
+            "account": "0x1111111111111111111111111111111111111111",
+            "counterparty": "0x5555555555555555555555555555555555555555",
+            "asset": "evm:0x3333333333333333333333333333333333333333",
+            "amount": "5000",
+            "tx_id": "0x0505050505050505050505050505050505050505050505050505050505050505",
+            "ordinal": "0",
+            "final": false,
+            "decoded": {
+              "method": "transfer"
+            },
+            "asset_metadata": null,
+            "side": "paxeer"
+          },
+          {
+            "id": "4",
+            "height_or_seq": "1004",
+            "chain": "layerx",
+            "kind": "lxp_transfer",
+            "direction": "out",
+            "account": "7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c",
+            "counterparty": null,
+            "asset": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "amount": "4000",
+            "tx_id": "0x0404040404040404040404040404040404040404040404040404040404040404",
+            "ordinal": "0",
+            "final": true,
+            "decoded": {
+              "method": "transfer"
+            },
+            "asset_metadata": {
+              "asset": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "chain": "layerx",
+              "kind": "layerx",
+              "address": null,
+              "denom": "ulxp",
+              "symbol": "LXP",
+              "decimals": 6,
+              "native_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "pointer": "0x2222222222222222222222222222222222222222",
+              "metadata": {
+                "source": "registry"
+              }
+            },
+            "side": "layerx"
+          }
+        ],
+        "next_cursor": "4"
+      }
+    }
+  },
+  {
+    "request": {
+      "method": "px_getUnifiedHistory",
+      "params": [
+        "0x1111111111111111111111111111111111111111",
+        "4",
+        2,
+        null
+      ]
+    },
+    "response": {
+      "result": {
+        "account": {
+          "evm_address": "0x1111111111111111111111111111111111111111",
+          "pax_address": "pax1zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3a8h3w5",
+          "layerx_did": "did:layerx:6161616161616161616161616161616161616161616161616161616161616161",
+          "layerx_account": "7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c",
+          "bound": true
+        },
+        "accounts": [
+          {
+            "side": "paxeer",
+            "account": "0x1111111111111111111111111111111111111111"
+          },
+          {
+            "side": "layerx",
+            "account": "7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c"
+          }
+        ],
+        "items": [
+          {
+            "id": "3",
+            "height_or_seq": "1003",
+            "chain": "paxeer",
+            "kind": "erc20_transfer",
+            "direction": "in",
+            "account": "0x1111111111111111111111111111111111111111",
+            "counterparty": "0x5555555555555555555555555555555555555555",
+            "asset": "evm:0x3333333333333333333333333333333333333333",
+            "amount": "3000",
+            "tx_id": "0x0303030303030303030303030303030303030303030303030303030303030303",
+            "ordinal": "0",
+            "final": true,
+            "decoded": {
+              "method": "transfer"
+            },
+            "asset_metadata": null,
+            "side": "paxeer"
+          },
+          {
+            "id": "2",
+            "height_or_seq": "1002",
+            "chain": "layerx",
+            "kind": "lxp_transfer",
+            "direction": "out",
+            "account": "7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c",
+            "counterparty": null,
+            "asset": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "amount": "2000",
+            "tx_id": "0x0202020202020202020202020202020202020202020202020202020202020202",
+            "ordinal": "0",
+            "final": true,
+            "decoded": {
+              "method": "transfer"
+            },
+            "asset_metadata": {
+              "asset": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "chain": "layerx",
+              "kind": "layerx",
+              "address": null,
+              "denom": "ulxp",
+              "symbol": "LXP",
+              "decimals": 6,
+              "native_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "pointer": "0x2222222222222222222222222222222222222222",
+              "metadata": {
+                "source": "registry"
+              }
+            },
+            "side": "layerx"
+          }
+        ],
+        "next_cursor": "2"
+      }
+    }
+  },
+  {
+    "request": {
+      "method": "px_getUnifiedHistory",
+      "params": [
+        "0x1111111111111111111111111111111111111111",
+        "2",
+        2,
+        null
+      ]
+    },
+    "response": {
+      "result": {
+        "account": {
+          "evm_address": "0x1111111111111111111111111111111111111111",
+          "pax_address": "pax1zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3a8h3w5",
+          "layerx_did": "did:layerx:6161616161616161616161616161616161616161616161616161616161616161",
+          "layerx_account": "7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c",
+          "bound": true
+        },
+        "accounts": [
+          {
+            "side": "paxeer",
+            "account": "0x1111111111111111111111111111111111111111"
+          },
+          {
+            "side": "layerx",
+            "account": "7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c"
+          }
+        ],
+        "items": [
+          {
+            "id": "1",
+            "height_or_seq": "1001",
+            "chain": "paxeer",
+            "kind": "erc20_transfer",
+            "direction": "in",
+            "account": "0x1111111111111111111111111111111111111111",
+            "counterparty": "0x5555555555555555555555555555555555555555",
+            "asset": "evm:0x3333333333333333333333333333333333333333",
+            "amount": "1000",
+            "tx_id": "0x0101010101010101010101010101010101010101010101010101010101010101",
+            "ordinal": "0",
+            "final": true,
+            "decoded": {
+              "method": "transfer"
+            },
+            "asset_metadata": null,
+            "side": "paxeer"
+          }
+        ],
+        "next_cursor": null
+      }
+    }
+  },
+  {
+    "request": {
+      "method": "lx_getAccount",
+      "params": [
+        "7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c"
+      ]
+    },
+    "response": {
+      "result": {
+        "account_id": "7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c",
+        "name": "agent:did:layerx:6161616161616161616161616161616161616161616161616161616161616161:main",
+        "asset_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "balance": "750000",
+        "next_sequence": "8",
+        "frozen": false,
+        "verification": "authenticated_node_snapshot"
+      }
+    }
+  },
+  {
+    "request": {
+      "method": "lx_getBalances",
+      "params": [
+        "did:layerx:6161616161616161616161616161616161616161616161616161616161616161"
+      ]
+    },
+    "response": {
+      "result": {
+        "did": "did:layerx:6161616161616161616161616161616161616161616161616161616161616161",
+        "accounts": [
+          {
+            "account_id": "7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c",
+            "asset_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "balance": "750000",
+            "verification": "state_proven"
+          }
+        ],
+        "verification": "state_proven"
+      }
+    }
+  },
+  {
+    "request": {
+      "method": "lx_getSequence",
+      "params": [
+        "7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c"
+      ]
+    },
+    "response": {
+      "result": {
+        "account_id": "7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c",
+        "next_sequence": "8",
+        "verification": "authenticated_node_snapshot"
+      }
+    }
+  },
+  {
+    "request": {
+      "method": "lx_getReceipt",
+      "params": [
+        "abababababababababababababababababababababababababababababababab"
+      ]
+    },
+    "response": {
+      "result": {
+        "activity_id": "abababababababababababababababababababababababababababababababab",
+        "receipt": "0a0b0c",
+        "result_code": 0
+      }
+    }
+  },
+  {
+    "request": {
+      "method": "lx_getActivityStatus",
+      "params": [
+        "abababababababababababababababababababababababababababababababab"
+      ]
+    },
+    "response": {
+      "result": {
+        "activity_id": "abababababababababababababababababababababababababababababababab",
+        "receipt": "0a0b0c",
+        "result_code": 0
+      }
+    }
+  },
+  {
+    "request": {
+      "method": "lx_getReceipt",
+      "params": [
+        "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      ]
+    },
+    "response": {
+      "error": {
+        "code": -32001,
+        "message": "Read unavailable"
+      }
+    }
+  },
+  {
+    "request": {
+      "method": "lx_getAccount",
+      "params": [
+        "7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d"
+      ]
+    },
+    "response": {
+      "error": {
+        "code": -32010,
+        "message": "Kernel unavailable",
+        "data": {
+          "code": "kernel_unavailable",
+          "backend": "public_core",
+          "reason": "unreachable"
+        }
+      }
+    }
+  }
+]
