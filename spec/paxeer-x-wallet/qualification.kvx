@@ -976,11 +976,11 @@ assumption = "Either DATABASE_URL names the cluster's direct connection or the p
 severity = "blocker"
 
 [gate.4.1]
-revision = "74879759ed57c9107916264da19e79c1ce4dd657"
-command = "docker build -f human/wallet/gateway/Dockerfile -t paxeer-wallet-gateway:deploy . && flyctl deploy --config human/wallet/deploy/gateway.toml --image paxeer-wallet-gateway:deploy --app paxeer-wallet-gateway --local-only --wait-timeout 10m -y, database attached and secrets staged out of band"
+revision = "c206084c87b60ce33b071f819b5aef84abb92803"
+command = "docker build -f human/wallet/gateway/Dockerfile . && flyctl deploy --config human/wallet/deploy/gateway.toml --image <pushed image> --app paxeer-wallet-gateway --wait-timeout 6m -y && flyctl scale count 2 -y, then GET /readyz on each machine"
 exit_code = 1
-log_path = ".logs/deploy.log"
-observed = "Image sha256:c0fac1e7d3b775ff4a81bfde81cf5f325f6548c0150e2087c5686c418504c78a was pushed after one registry timeout and one performance-2x 4 GB machine of the planned two was created, wrote its four secret files and exited at database connect on the pooler's statement_timeout refusal, so readiness never passed and no provisioning or transaction was made."
+log_path = ".logs/readiness.log"
+observed = "Image sha256:5619819ea3d71094e6069cee563f201f6cd43431957e20f47784322bc02f683e built from 1a9cd6ea1 runs on two performance-2x 4 GB machines that connect to the database, apply every migration and listen, and both answer /readyz 503 with nonce_store, rpc_pool and identity_provider up and attestors down at 0 of 5, every node refusing the reissued gateway client certificate with unknown ca, so no provisioning, binding, transaction or message signature was made and there are no hashes to record; check-deploy passed every rule."
 
 [observation.4.13.1]
 task = "4.13"
@@ -1179,4 +1179,36 @@ file = "human/wallet/gateway/src/jobs/backfillAccounts.ts"
 symbol = "backfillAccounts"
 observed = "The gateway and SDK part of 5.4's verify_cmd, pnpm --dir human/wallet/gateway test -- backfill-command && pnpm --dir human/wallet/sdk test -- provider, exited 0 on the lane rebased onto 102ea0677 (log .logs/verify.log); the -- reaches vitest literally, so the gateway half ran all 13 files and 143 tests, not only backfill-command, and the command resets its cursor after a completed run so a rerun after move --delta rescans unbound rows."
 assumption = "The ceremony half of 5.4's verify_cmd and its full run belong to the live move, and [task.5.4] stays with the ceremony lane."
+severity = "note"
+
+[observation.4.1.4]
+task = "4.1"
+file = "human/wallet/gateway/src/db/pool.ts"
+symbol = "statement_timeout"
+observed = "The managed cluster offers a pooled URL through its connection pooler and a direct address on the private network; the direct connection accepts statement_timeout as a startup parameter without TLS, so DATABASE_URL now names the direct connection, both machines apply every migration and pool.ts is unchanged, closing observation 4.1.3; the pooler's pool mode was not readable with the cluster's schema_admin user."
+assumption = "The gateway keeps the direct connection while it runs two machines of at most DATABASE_POOL_MAX connections each; a move back to the pooler needs the SET-after-connect change and a session pool mode."
+severity = "note"
+
+[observation.4.1.5]
+task = "4.1"
+file = "human/wallet/deploy/attestor-1.toml"
+symbol = "ATTESTOR_TLS_CA"
+observed = "The gateway now presents the client certificate reissued under the gateway CA, and all five attestors still run their earlier deployment and answer its handshake with unknown ca because their CA bundle does not yet hold the gateway CA (gotcha 55), so the gateway's attestor readiness is down on both machines and the platform proxy routes no public request to a machine whose check fails."
+assumption = "The attestor redeploy with the node and gateway CAs bundled, which task 3.5 recorded as blocked on the refused per-node secret import, lets readiness pass; the gateway needs no change for it."
+severity = "blocker"
+
+[observation.4.1.6]
+task = "4.1"
+file = "tools/wallet/check-live.sh"
+symbol = "CHECK_LIVE_GATEWAY_TOKEN"
+observed = "The identity provider's public sign-up returns a user without a session and a password sign-in for it is refused with email_not_confirmed, so no fresh test identity has an access token, the shadow proof could not start and the verify command was not run; two unconfirmed test users were left in the identity provider."
+assumption = "The owner confirms a test identity or enables confirmation-free sign-up for a test domain, and the shadow proof and verify command then run once attestor readiness passes."
+severity = "blocker"
+
+[observation.4.1.7]
+task = "4.1"
+file = "tools/wallet/check-live.sh"
+symbol = "attestors"
+observed = "The attestors mode could not be run from the operator host because the attestor APIs are reachable only on the private network; each gateway machine's own attestor readiness, which calls every node's health over mutual TLS, stands as the attestor-side evidence."
+assumption = "The attestors mode runs from a machine on the private network holding a client identity the redeployed nodes accept."
 severity = "note"
