@@ -55,7 +55,9 @@ use crate::approvals::{
 use crate::auth::{AccountIdentity, AuthConfig, Passkeys, RateLimit};
 use crate::binding::BindingJourney;
 use crate::custody::{
-    CustodyError, CustodySigner, KeyClass, KeyId, Keystore, RemoteKmsProvider, SigningLimits,
+    CustodyError, CustodySigner, KeyClass, KeyId, Keystore, KmsError, PrincipalKeyBinding,
+    ProviderDeployment, ProviderKeyDescription, ProviderKeyReference, ProviderSignRequest,
+    RemoteKmsProvider, RotationState, SigningLimits,
 };
 use crate::notify::{
     ActivityEntryId, Channel, DeepLinks, Dispatcher, NotificationId, NotificationSummary,
@@ -214,6 +216,7 @@ pub struct ProductionComponentsConfig {
     kms_client_certificate: PathBuf,
     kms_client_private_key: PathBuf,
     kms_limits: Limits,
+    attestor: Option<AttestorCustodyConfig>,
     network_id: u32,
     protocol_version: u16,
     signing_limits: SigningLimits,
@@ -293,6 +296,7 @@ impl ProductionComponentsConfig {
             kms_client_certificate: absolute("LAYERX_HUMAN_KMS_CLIENT_CERTIFICATE_DER")?,
             kms_client_private_key: absolute("LAYERX_HUMAN_KMS_CLIENT_PRIVATE_KEY_DER")?,
             kms_limits: bounded_limits("LAYERX_HUMAN_KMS")?,
+            attestor: AttestorCustodyConfig::from_environment()?,
             network_id: number("LAYERX_HUMAN_NETWORK_ID")?,
             protocol_version: configured_protocol()?,
             signing_limits: SigningLimits::new(
@@ -361,6 +365,7 @@ pub struct ProductionComponents {
     agent_limits: Limits,
     native_asset: [u8; 32],
     custody: Arc<CustodySigner>,
+    attestor: Option<AttestorKms>,
     security: Mutex<RemoteSecurityProvider>,
     stream: super::stream_journal::StreamJournal,
     feed: Feed,
@@ -412,10 +417,19 @@ use owner::resolve_principal_owner;
 impl ProductionComponents {
     /// # Errors
     /// Refuses unverified production dependencies or invalid configuration.
-    pub fn open(config: ProductionComponentsConfig, clock: Arc<dyn Clock>) -> Result<Self, String> {
+    pub fn open(
+        mut config: ProductionComponentsConfig,
+        clock: Arc<dyn Clock>,
+    ) -> Result<Self, String> {
         validate_production_configuration(&config)?;
         let withdrawal_boundary = production_withdrawal_boundary(&config)?;
-        let provider = production_kms_provider(&config)?;
+        let provider = match config.attestor.take() {
+            Some(attestor) => ProductionKms::Attestor(
+                AttestorKms::connect(attestor)
+                    .map_err(|_| "attestor quorum refused startup".to_owned())?,
+            ),
+            None => ProductionKms::Remote(production_kms_provider(&config)?),
+        };
         let passkeys =
             Passkeys::new(config.auth).map_err(|_| "invalid passkey configuration".to_owned())?;
         let agent_purpose_catalog =
@@ -430,8 +444,17 @@ impl ProductionComponents {
         let auth_index = production_auth_index(config.auth_index_root, config.auth_index_key)?;
         let (agent_contract, agent, native_asset) =
             production_agent(config.agent_socket, config.agent_limits)?;
-        let keystore = Keystore::open_production(config.custody_root, config.network_id, provider)
-            .map_err(|_| "KMS or custody storage refused startup".to_owned())?;
+        let (keystore, attestor) = match provider {
+            ProductionKms::Attestor(attestor) => (
+                Keystore::open_production(config.custody_root, config.network_id, attestor.clone()),
+                Some(attestor),
+            ),
+            ProductionKms::Remote(remote) => (
+                Keystore::open_production(config.custody_root, config.network_id, remote),
+                None,
+            ),
+        };
+        let keystore = keystore.map_err(|_| "KMS or custody storage refused startup".to_owned())?;
         let custody = Arc::new(CustodySigner::new_shared(
             keystore,
             Arc::clone(&store),
@@ -477,6 +500,7 @@ impl ProductionComponents {
             agent_limits: config.agent_limits,
             native_asset,
             custody,
+            attestor,
             security: Mutex::new(security),
             stream: super::stream_journal::StreamJournal::new(
                 config.stream_cursor_key,
@@ -511,6 +535,11 @@ impl ProductionComponents {
             continuation_unknown_deadline_seconds: config.continuation_unknown_deadline_seconds,
             maintenance_healthy: AtomicBool::new(true),
         })
+    }
+
+    #[must_use]
+    pub const fn attestor_custody(&self) -> Option<&AttestorKms> {
+        self.attestor.as_ref()
     }
 
     fn revoke_browser_grants(
@@ -5743,6 +5772,423 @@ fn production_kms_provider(
     )
     .map_err(|_| "KMS configuration was refused".to_owned())?;
     Ok(provider)
+}
+
+const ATTESTOR_PROVIDER_REFERENCE: &str = "attestor-quorum/v1";
+
+enum ProductionKms {
+    Attestor(AttestorKms),
+    Remote(RemoteKmsProvider),
+}
+
+pub struct AttestorCustodyConfig {
+    nodes: Vec<(String, SocketAddr)>,
+    signers: Vec<String>,
+    root_certificate: Vec<u8>,
+    client_certificate: Vec<u8>,
+    client_private_key: zeroize::Zeroizing<Vec<u8>>,
+    deadline: Duration,
+}
+
+impl std::fmt::Debug for AttestorCustodyConfig {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("AttestorCustodyConfig")
+            .field("nodes", &self.nodes)
+            .field("signers", &self.signers)
+            .field("identity", &"[client identity]")
+            .field("deadline", &self.deadline)
+            .finish()
+    }
+}
+
+impl AttestorCustodyConfig {
+    pub fn new(
+        nodes: Vec<(String, SocketAddr)>,
+        signers: Vec<String>,
+        root_certificate: Vec<u8>,
+        client_certificate: Vec<u8>,
+        client_private_key: Vec<u8>,
+        deadline: Duration,
+    ) -> Result<Self, String> {
+        let config = Self {
+            nodes,
+            signers,
+            root_certificate,
+            client_certificate,
+            client_private_key: zeroize::Zeroizing::new(client_private_key),
+            deadline,
+        };
+        config
+            .client()
+            .map_err(|_| "attestor client configuration was refused".to_owned())?;
+        let distinct: std::collections::BTreeSet<&str> =
+            config.signers.iter().map(String::as_str).collect();
+        if distinct.len() != config.signers.len()
+            || distinct.len() < 3
+            || distinct
+                .iter()
+                .any(|signer| !config.nodes.iter().any(|(id, _)| id == signer))
+        {
+            return Err("attestor signing quorum was refused".to_owned());
+        }
+        Ok(config)
+    }
+
+    fn from_environment() -> Result<Option<Self>, String> {
+        let Some(table) = env::var("LAYERX_HUMAN_ATTESTOR_NODES")
+            .ok()
+            .filter(|value| !value.is_empty())
+        else {
+            return Ok(None);
+        };
+        let invalid = || "LAYERX_HUMAN_ATTESTOR_NODES is invalid".to_owned();
+        let nodes = table
+            .split(',')
+            .map(|entry| {
+                let (id, address) = entry.split_once('=').ok_or_else(invalid)?;
+                Ok((id.to_owned(), address.parse().map_err(|_| invalid())?))
+            })
+            .collect::<Result<Vec<(String, SocketAddr)>, String>>()?;
+        let signers = required("LAYERX_HUMAN_ATTESTOR_SIGNERS")?
+            .split(',')
+            .map(str::to_owned)
+            .collect();
+        Self::new(
+            nodes,
+            signers,
+            read_nonempty(&absolute("LAYERX_HUMAN_ATTESTOR_ROOT_CERTIFICATE_DER")?)?,
+            read_nonempty(&absolute("LAYERX_HUMAN_ATTESTOR_CLIENT_CERTIFICATE_DER")?)?,
+            read_nonempty(&absolute("LAYERX_HUMAN_ATTESTOR_CLIENT_PRIVATE_KEY_DER")?)?,
+            Duration::from_secs(number("LAYERX_HUMAN_ATTESTOR_DEADLINE_SECONDS")?),
+        )
+        .map(Some)
+    }
+
+    fn client(
+        &self,
+    ) -> Result<layerx_human_kms::attestor::AttestorClient, layerx_human_kms::attestor::AttestorError>
+    {
+        layerx_human_kms::attestor::AttestorClient::new(
+            &self.nodes,
+            std::slice::from_ref(&self.root_certificate),
+            std::slice::from_ref(&self.client_certificate),
+            &self.client_private_key,
+            self.deadline,
+        )
+    }
+}
+
+struct AttestorKmsState {
+    config: AttestorCustodyConfig,
+    creation: Mutex<()>,
+    enrolment: Mutex<Option<(String, String)>>,
+    assertions: Mutex<std::collections::BTreeMap<String, zeroize::Zeroizing<String>>>,
+}
+
+#[derive(Clone)]
+pub struct AttestorKms {
+    inner: Arc<AttestorKmsState>,
+}
+
+impl std::fmt::Debug for AttestorKms {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("AttestorKms")
+            .field("config", &self.inner.config)
+            .field("assertions", &"[redacted]")
+            .finish()
+    }
+}
+
+fn attestor_kms_failure(error: &layerx_human_kms::attestor::AttestorError) -> KmsError {
+    use layerx_human_kms::attestor::AttestorError;
+    match error {
+        AttestorError::Configuration(_) => KmsError::InvalidConfiguration,
+        AttestorError::Disclosure(_)
+        | AttestorError::WrongNetwork { .. }
+        | AttestorError::Refused { .. } => KmsError::Refused,
+        AttestorError::Timeout { .. } => KmsError::Timeout,
+        AttestorError::Unavailable { .. } => KmsError::Unavailable,
+        AttestorError::Authentication { .. } => KmsError::Authentication,
+        AttestorError::MalformedResponse { .. } | AttestorError::SignatureInvalid { .. } => {
+            KmsError::InvalidResponse
+        }
+    }
+}
+
+fn attestor_custody_failure(error: layerx_human_kms::attestor::AttestorError) -> CustodyError {
+    use layerx_human_kms::attestor::AttestorError;
+    match error {
+        AttestorError::Disclosure(error) => CustodyError::Sign(error),
+        AttestorError::WrongNetwork { .. } => CustodyError::InvalidNetwork,
+        other => CustodyError::Kms(attestor_kms_failure(&other)),
+    }
+}
+
+fn attestor_owner_valid(owner: &str) -> bool {
+    !owner.is_empty() && owner.len() <= 1_024 && !owner.chars().any(char::is_control)
+}
+
+fn attestor_key_id(binding: &PrincipalKeyBinding) -> String {
+    let digest = binding.digest();
+    let mut key_id = String::from("lx-");
+    for byte in &digest[..16] {
+        key_id.push_str(&format!("{byte:02x}"));
+    }
+    key_id
+}
+
+fn attestor_reference(
+    key_id: &str,
+    public_key: [u8; 32],
+    owner: &str,
+) -> Result<ProviderKeyReference, KmsError> {
+    let mut public = String::with_capacity(64);
+    for byte in public_key {
+        public.push_str(&format!("{byte:02x}"));
+    }
+    ProviderKeyReference::new(format!("{key_id}\n{public}\n{owner}").into_bytes())
+}
+
+fn attestor_reference_parts(
+    reference: &ProviderKeyReference,
+) -> Result<(String, [u8; 32], String), KmsError> {
+    let text = std::str::from_utf8(reference.as_bytes()).map_err(|_| KmsError::InvalidReference)?;
+    let mut parts = text.splitn(3, '\n');
+    let (Some(key_id), Some(public), Some(owner)) = (parts.next(), parts.next(), parts.next())
+    else {
+        return Err(KmsError::InvalidReference);
+    };
+    if public.len() != 64 || !attestor_owner_valid(owner) {
+        return Err(KmsError::InvalidReference);
+    }
+    let mut public_key = [0_u8; 32];
+    for (index, byte) in public_key.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&public[index * 2..index * 2 + 2], 16)
+            .map_err(|_| KmsError::InvalidReference)?;
+    }
+    Ok((key_id.to_owned(), public_key, owner.to_owned()))
+}
+
+impl AttestorKms {
+    pub fn connect(config: AttestorCustodyConfig) -> Result<Self, CustodyError> {
+        let kms = Self {
+            inner: Arc::new(AttestorKmsState {
+                config,
+                creation: Mutex::new(()),
+                enrolment: Mutex::new(None),
+                assertions: Mutex::new(std::collections::BTreeMap::new()),
+            }),
+        };
+        crate::custody::KmsProvider::probe(&kms).map_err(CustodyError::Kms)?;
+        Ok(kms)
+    }
+
+    pub fn admit_assertion(&self, subject: &str, assertion: &str) -> Result<(), CustodyError> {
+        if !attestor_owner_valid(subject) || assertion.is_empty() {
+            return Err(CustodyError::Kms(KmsError::Authentication));
+        }
+        self.inner
+            .assertions
+            .lock()
+            .map_err(|_| CustodyError::Kms(KmsError::Unavailable))?
+            .insert(
+                subject.to_owned(),
+                zeroize::Zeroizing::new(assertion.to_owned()),
+            );
+        Ok(())
+    }
+
+    pub fn create_owned_key(
+        &self,
+        keystore: &Keystore,
+        principal: &crate::store::PrincipalId,
+        key: &KeyId,
+        owner: &str,
+        account: &str,
+    ) -> Result<[u8; 32], CustodyError> {
+        if !attestor_owner_valid(owner) || account.is_empty() {
+            return Err(CustodyError::Kms(KmsError::Refused));
+        }
+        let _serial = self
+            .inner
+            .creation
+            .lock()
+            .map_err(|_| CustodyError::Kms(KmsError::Unavailable))?;
+        *self
+            .inner
+            .enrolment
+            .lock()
+            .map_err(|_| CustodyError::Kms(KmsError::Unavailable))? =
+            Some((owner.to_owned(), account.to_owned()));
+        let created = keystore.create(principal, key, KeyClass::HumanPrimary);
+        let cleared = self
+            .inner
+            .enrolment
+            .lock()
+            .map(|mut enrolment| *enrolment = None);
+        let public_key = created?;
+        cleared.map_err(|_| CustodyError::Kms(KmsError::Unavailable))?;
+        Ok(public_key)
+    }
+
+    fn sign_now(
+        &self,
+        binding: &PrincipalKeyBinding,
+        reference: &ProviderKeyReference,
+        request: ProviderSignRequest<'_>,
+    ) -> Result<[u8; 64], CustodyError> {
+        let (key_id, public_key, owner) =
+            attestor_reference_parts(reference).map_err(CustodyError::Kms)?;
+        if key_id != attestor_key_id(binding)
+            || !layerx_crypto::ct::eq_fixed(&public_key, &request.expected_public_key())
+        {
+            return Err(CustodyError::Kms(KmsError::Integrity));
+        }
+        let assertion = self
+            .inner
+            .assertions
+            .lock()
+            .map_err(|_| CustodyError::Kms(KmsError::Unavailable))?
+            .remove(&owner)
+            .ok_or(CustodyError::Kms(KmsError::Authentication))?;
+        let client = self
+            .inner
+            .config
+            .client()
+            .map_err(attestor_custody_failure)?;
+        let signers: Vec<&str> = self
+            .inner
+            .config
+            .signers
+            .iter()
+            .map(String::as_str)
+            .collect();
+        let signer = layerx_human_kms::attestor::AttestorSigner::new(
+            client,
+            &key_id,
+            public_key,
+            &signers,
+            binding.network_id(),
+        )
+        .map_err(attestor_custody_failure)?;
+        let signature = signer
+            .sign_activity(
+                request.canonical_bytes(),
+                request.disclosure(),
+                request.registry(),
+                &assertion,
+            )
+            .map_err(attestor_custody_failure)?;
+        Ok(*signature.signature())
+    }
+}
+
+impl crate::custody::KmsProvider for AttestorKms {
+    fn provider_reference(&self) -> &str {
+        ATTESTOR_PROVIDER_REFERENCE
+    }
+
+    fn deployment(&self) -> ProviderDeployment {
+        ProviderDeployment::Production
+    }
+
+    fn probe(&self) -> Result<(), KmsError> {
+        let client = self
+            .inner
+            .config
+            .client()
+            .map_err(|error| attestor_kms_failure(&error))?;
+        for signer in &self.inner.config.signers {
+            let health =
+                client
+                    .health(signer)
+                    .map_err(|error| match attestor_kms_failure(&error) {
+                        KmsError::Authentication => KmsError::Authentication,
+                        _ => KmsError::Unavailable,
+                    })?;
+            if !health.ready {
+                return Err(KmsError::Unavailable);
+            }
+        }
+        Ok(())
+    }
+
+    fn create_key(
+        &self,
+        binding: &PrincipalKeyBinding,
+    ) -> Result<ProviderKeyDescription, KmsError> {
+        let (owner, account) = self
+            .inner
+            .enrolment
+            .lock()
+            .map_err(|_| KmsError::Unavailable)?
+            .clone()
+            .ok_or(KmsError::Refused)?;
+        let key_id = attestor_key_id(binding);
+        let client = self
+            .inner
+            .config
+            .client()
+            .map_err(|error| attestor_kms_failure(&error))?;
+        let generated = client
+            .generate_ed25519(&key_id, &owner, &account)
+            .map_err(|error| attestor_kms_failure(&error))?;
+        if generated.key_id != key_id {
+            return Err(KmsError::InvalidResponse);
+        }
+        ProviderKeyDescription::new(
+            attestor_reference(&key_id, generated.public_key, &owner)?,
+            generated.public_key,
+            binding.digest(),
+            RotationState::Stable,
+        )
+    }
+
+    fn describe_key(
+        &self,
+        binding: &PrincipalKeyBinding,
+        reference: &ProviderKeyReference,
+    ) -> Result<ProviderKeyDescription, KmsError> {
+        let (key_id, public_key, _) = attestor_reference_parts(reference)?;
+        if key_id != attestor_key_id(binding) {
+            return Err(KmsError::Integrity);
+        }
+        ProviderKeyDescription::new(
+            reference.clone(),
+            public_key,
+            binding.digest(),
+            RotationState::Stable,
+        )
+    }
+
+    fn rotate_key(
+        &self,
+        _binding: &PrincipalKeyBinding,
+        _reference: &ProviderKeyReference,
+    ) -> Result<ProviderKeyDescription, KmsError> {
+        Err(KmsError::Refused)
+    }
+
+    fn destroy_key(
+        &self,
+        _binding: &PrincipalKeyBinding,
+        _reference: &ProviderKeyReference,
+    ) -> Result<(), KmsError> {
+        Err(KmsError::Refused)
+    }
+
+    fn sign<'a>(
+        &'a self,
+        binding: &'a PrincipalKeyBinding,
+        reference: &'a ProviderKeyReference,
+        request: ProviderSignRequest<'a>,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<[u8; 64], CustodyError>> + Send + 'a>,
+    > {
+        Box::pin(async move { self.sign_now(binding, reference, request) })
+    }
 }
 
 fn finality_host(url: &str) -> Result<String, String> {

@@ -191,3 +191,10 @@ PAXSCAN_API_URL - removed with the funded lane
 PAXSCAN_TIMEOUT_MS - removed with the funded lane
 PAXSCAN_CACHE_TTL_MS - removed with the funded lane
 AGENT_BIND_OWNER_FROM_DID - removed; an owner is recorded only through the authenticated claim route
+# human service
+LAYERX_HUMAN_ATTESTOR_NODES - comma-separated id=address list of the attestors that hold human custody keys; when unset the human service keeps the remote KMS
+LAYERX_HUMAN_ATTESTOR_SIGNERS - comma-separated ids of at least three configured attestors that form the signing quorum
+LAYERX_HUMAN_ATTESTOR_ROOT_CERTIFICATE_DER - path to the DER CA that authenticates the attestors
+LAYERX_HUMAN_ATTESTOR_CLIENT_CERTIFICATE_DER - path to the DER client certificate, issued by the CA in ATTESTOR_TLS_CA_FILE, that the human service presents to the attestors for keys.generate and sign
+LAYERX_HUMAN_ATTESTOR_CLIENT_PRIVATE_KEY_DER - path to the DER PKCS8 private key of the client certificate
+LAYERX_HUMAN_ATTESTOR_DEADLINE_SECONDS - deadline in seconds for each attestor request; startup is refused when a signing attestor is unreachable

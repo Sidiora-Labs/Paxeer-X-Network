@@ -933,3 +933,27 @@ symbol = "TestDeliverExitsNonZeroOnMismatch"
 observed = "Deliver now signs through operator_verification with no token source, so both command tests are restored: the full deliver marks every eligible wallet migrated beside the verified archive, and a corrupted signing key stops the run on the recovered-address mismatch with exit 1; this closes observation 4.17.1."
 assumption = "The daemon-side isolation keeps the verification signature from standing in for any owner signature."
 severity = "low"
+
+[observation.4.6.1]
+task = "4.6"
+file = "human/crates/layerx-human-identity-provider/Cargo.toml"
+symbol = "AssertionVerifier"
+observed = "The identity provider crate depends on layerx-human-service, so the service cannot link the assertion verifier into production construction, and no service request carries the wallet assertion to AttestorKms::admit_assertion."
+assumption = "The attestors verify the assertion themselves on every sign; the end-to-end test resolves the principal through the identity provider as a dev-dependency and a later task adds the request carrier."
+severity = "note"
+
+[observation.4.6.2]
+task = "4.6"
+file = "human/wallet/attestor/internal/server/sign.go"
+symbol = "KindLXActivity"
+observed = "The daemon has no kind for the 402LXP owner send-debit authorization, so an owner-kind debit for an attestor-held key cannot be signed and CustodySigner::authorize_send refuses on the attestor provider."
+assumption = "The end-to-end kernel send carries a session-key debit authorization while the owner activity is signed by the attestor quorum."
+severity = "suspect"
+
+[observation.4.6.3]
+task = "4.6"
+file = "human/wallet/attestor/internal/policy/lx/lx.go"
+symbol = "DecodeEffect"
+observed = "Against the hardened daemon the e2e signs in, generates the key under the gateway authority and reaches sign, which every signer refuses: the kernel's asset operation 5 payload is the signed send encoding tagged 0x5301 while the kernel evaluator decodes operation 5 as a 112-byte from, to, asset and amount transfer, and the test agent layer also builds a label authority and a fixed validity window the evaluator checks against the wall clock."
+assumption = "The kernel evaluator must decode the kernel's own send payload before any human send can be attestor-signed; the test's owner-key authority and wall-clock window are follow-up edits once that decoder exists."
+severity = "blocker"

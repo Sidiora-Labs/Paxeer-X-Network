@@ -230,7 +230,7 @@
     - Add human/wallet/docs/runbooks covering node loss and replacement by add-share and refresh, refresh cadence, backup restore, identity provider outage, RPC pool failure and gateway rollback, each with the exact commands from the repository's tools and no hosts or secrets.
     - Add human/wallet/docs/cutover.md: the operator checklist from rehearsal record through live ceremony, funded archive verification, wallet flag flip, endpoint cutover through the current host's proxy, old service read-only, sealed retention of the old master key and old service shutdown, each step naming its readiness check and its rollback.
     - _Requirements: 13.2, 4.5_
-  - [ ] 4.6 Prove the human service end to end on the wallet identity and the attestor custody
+  - [-] 4.6 Prove the human service end to end on the wallet identity and the attestor custody
     - Add a human service integration test that spawns the real attestor daemon, signs in with a wallet assertion minted from an in-test JWKS, opens the account, plans a kernel send, submits it with the attestor-backed signer, and observes the journey reach a receipt-verified state against the crate's in-process kernel test support.
     - Wire the attestor-backed signer and the assertion principal into the service's production component construction behind configuration, refusing to start when configured but unreachable.
     - _Requirements: 8.4, 8.1, 8.2_
