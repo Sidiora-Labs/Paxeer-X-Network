@@ -194,6 +194,9 @@
     - Switch human/wallet/deploy/endpoint.toml to the plain listener behind the platform's http_service: set LAYERX_GATEWAY_LISTENER to plain in its environment, drop the listener certificate and key paths and their two secret file mappings, keep the outbound CA and every other mapping, and make the readiness check speak http; document LAYERX_GATEWAY_LISTENER in human/wallet/deploy/env.
     - Add degraded tests that start the real binary in plain mode with the chain-only inputs and see eth_chainId, px_getNetwork and readiness over plain HTTP, and that prove a plain listener with a certificate path set, and an unknown listener value, are each refused by name.
     - _Requirements: 12.2_
+  - [x] 3.13 Resolve the SDK's curve and hash imports under both dependency majors
+    - Import ed25519 from @noble/curves/ed25519.js and sha256 from @noble/hashes/sha2.js in the SDK agent module so the specifiers resolve against the 1.x line the SDK pins and the 2.x line the wallet app pins and dedupes to, matching the repository's other TypeScript SDK; behaviour unchanged.
+    - _Requirements: 9.5, 6.6_
 
 ## Wave 4 - Completion
 
@@ -249,7 +252,7 @@
   "waves": [
     { "id": 1,  "tasks": ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "1.10", "1.11", "1.12", "1.13", "1.14", "1.15", "1.16"] },
     { "id": 2,  "tasks": ["2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7", "2.8", "2.9"] },
-    { "id": 3,  "tasks": ["3.1", "3.2", "3.3", "3.4", "3.5", "3.6", "3.7", "3.8", "3.9", "3.10", "3.11", "3.12"] },
+    { "id": 3,  "tasks": ["3.1", "3.2", "3.3", "3.4", "3.5", "3.6", "3.7", "3.8", "3.9", "3.10", "3.11", "3.12", "3.13"] },
     { "id": 4,  "tasks": ["4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7", "4.8"] },
     { "id": 5,  "tasks": ["5.1", "5.2"] }
   ]

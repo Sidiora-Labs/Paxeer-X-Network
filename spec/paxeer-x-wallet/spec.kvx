@@ -802,6 +802,21 @@ command = "timeout 20m sh -c 'cd platform && cargo test -p layerx-platform-gatew
 exit_code = 0
 log_path = ".logs/verify.log"
 
+[task.3.13]
+title = "Resolve the SDK's curve and hash imports under both dependency majors"
+status = "done"
+wave = 3
+requires = ["3.8"]
+do_1 = "Import ed25519 from @noble/curves/ed25519.js and sha256 from @noble/hashes/sha2.js in the SDK agent module so the specifiers resolve against the 1.x line the SDK pins and the 2.x line the wallet app pins and dedupes to, matching the repository's other TypeScript SDK; behaviour unchanged."
+verify_cmd = "timeout 20m sh -c 'pnpm --dir human/wallet/sdk test -- agent && pnpm --dir human/apps/wallet exec vitest run src/wallet src/surfaces'"
+symbols = ["agentPublicKey","signAgentRequest"]
+touches = ["human/wallet/sdk/src/agent.ts"]
+reqs = ["9.5","6.6"]
+revision = "b77f562ef148da440993499207d601a1896a4733"
+command = "timeout 20m sh -c 'pnpm --dir human/wallet/sdk test -- agent && pnpm --dir human/apps/wallet exec vitest run src/wallet src/surfaces'"
+exit_code = 0
+log_path = ".logs/verify.log"
+
 # --------------------------------------------------------------------------
 # WAVE 4 - COMPLETION
 # --------------------------------------------------------------------------
