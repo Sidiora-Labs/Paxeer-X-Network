@@ -1172,3 +1172,11 @@ symbol = "require"
 observed = "Streaming raw COPY needs pgx v5, so go.mod and go.sum gained github.com/jackc/pgx/v5 and its indirect modules, outside the task's listed touches."
 assumption = "The dependency is part of the move implementation; lib/pq cannot stream COPY TO STDOUT."
 severity = "note"
+
+[observation.5.4.11]
+task = "5.4"
+file = "human/wallet/gateway/src/jobs/backfillAccounts.ts"
+symbol = "backfillAccounts"
+observed = "The gateway and SDK part of 5.4's verify_cmd, pnpm --dir human/wallet/gateway test -- backfill-command && pnpm --dir human/wallet/sdk test -- provider, exited 0 on the lane rebased onto 102ea0677 (log .logs/verify.log); the -- reaches vitest literally, so the gateway half ran all 13 files and 143 tests, not only backfill-command, and the command resets its cursor after a completed run so a rerun after move --delta rescans unbound rows."
+assumption = "The ceremony half of 5.4's verify_cmd and its full run belong to the live move, and [task.5.4] stays with the ceremony lane."
+severity = "note"

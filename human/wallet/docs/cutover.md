@@ -95,7 +95,7 @@ Rules that hold for every step:
   export CEREMONY_ARCHIVE_PATH=<rehearsal-archive-path>
   read -rs CEREMONY_ARCHIVE_PASSPHRASE && export CEREMONY_ARCHIVE_PASSPHRASE
   read -rs CEREMONY_MASTER_KEY && export CEREMONY_MASTER_KEY
-  (cd human/wallet/ceremony && go run ./cmd/ceremony rehearse)
+  (cd human/wallet/ceremony && go run ./cmd/ceremony rehearse --report-only-counts)
   ```
 
   The tool restores the dump into a temporary database it drops afterwards,
@@ -105,8 +105,8 @@ Rules that hold for every step:
   `wallets=<w> eligible=<e> funded_archived=<f> already_migrated=<m> read=<e> verified=<e> imported=<e> refreshed=<e> test_signed=<e> matched=<e>`
   with every count after `eligible` equal to it. A single mismatch exits
   non-zero, stops the checklist and is recorded; it is never worked around.
-  The verify command of task 5.2 passes a `--report-only-counts` flag that the
-  tool does not accept (observation 4.5.4); the tool prints counts only.
+  `--report-only-counts` keeps the output to that counts line, the form the
+  verify commands of tasks 5.2 and 5.4 read.
 - Evidence: the report line as the rehearsal gate record.
 - Rollback: none needed; nothing outside the operator machine changed.
   Afterwards remove the dump and the rehearsal archive:
@@ -114,24 +114,33 @@ Rules that hold for every step:
 
 ## 5. Live preconditions
 
-- Action: confirm the database the ceremony writes is the wallet database
-  the new gateway reads (`CEREMONY_DATABASE_URL` names the same database as
-  the gateway's `DATABASE_URL`), that it holds the production wallet rows,
-  and that the gateway's migrations have run on it. No repository step moves
-  the production rows into that database (observation 4.5.6).
+- Action: move the production wallet rows into the gateway's platform
+  database with the ceremony tool's `move` subcommand (task 5.4), then plan
+  against that database. `CEREMONY_DATABASE_URL` names the same database as
+  the gateway's `DATABASE_URL`, which must hold no gateway table before the
+  move; the source is read through the read-only role named by the source
+  connection variable of task 5.2, in one read-only snapshot, and is never
+  written. The move applies the remaining gateway migrations after its check.
 
   ```sh
+  read -rs <source-connection-variable> && export <source-connection-variable>
   export CEREMONY_DATABASE_URL=<gateway-wallet-database-connection>
+  export CEREMONY_GATEWAY_MIGRATIONS_DIR=human/wallet/gateway/migrations
+  (cd human/wallet/ceremony && go run ./cmd/ceremony move)
   (cd human/wallet/ceremony && go run ./cmd/ceremony plan)
   ```
 
-- Readiness check: exit 0 and `wallets=<w> eligible=<e> funded=<f> already_migrated=0`
-  with the same `wallets`, `eligible` and funded counts as the rehearsal. The
+- Readiness check: `move` exits 0 and prints, for every table, the row count
+  and the stream digest on the source and on the target, equal on both sides;
+  a differing count or digest refuses to finish and stops the checklist. Then
+  `plan` exits 0 with `wallets=<w> eligible=<e> funded=<f> already_migrated=0`
+  and the same `wallets`, `eligible` and funded counts as the rehearsal. The
   tool refuses a `wallets` table without the `migrated_at` column. The live
   deliver has a credential for its test signature (observation 3.3.2 closed by
   the owner's decision).
-- Evidence: the plan line.
-- Rollback: none; read-only.
+- Evidence: the move's per-table counts and digests and the plan line.
+- Rollback: the source and the old service are untouched; empty the gateway's
+  platform database and run the move again.
 
 ## 6. Funded archive verification
 
@@ -188,6 +197,7 @@ Rules that hold for every step:
   export CEREMONY_TLS_CA_FILE=<peer-ca-bundle-path>
   read -rs CEREMONY_MASTER_KEY && export CEREMONY_MASTER_KEY
   (cd human/wallet/ceremony && go run ./cmd/ceremony deliver)
+  (cd human/wallet/ceremony && go run ./cmd/ceremony deliver --report-only-counts)
   ```
 
 - Readiness check: exit 0 and
@@ -195,10 +205,10 @@ Rules that hold for every step:
   `psql "$CEREMONY_DATABASE_URL" -Atc "select count(*) from wallets where migrated_at is not null"`
   prints `<e>`; `tools/wallet/check-live.sh attestors` passes with every
   node's `shares=` raised by the keys imported; a signature through the
-  gateway for one migrated wallet of each class verifies. The verify command of
-  task 5.4 passes a `--report-only-counts` flag the tool does not accept
-  (observation 4.5.4).
-- Evidence: the deliver line and the per-class signature verification.
+  gateway for one migrated wallet of each class verifies;
+  `deliver --report-only-counts` reports every eligible wallet migrated.
+- Evidence: the deliver line, its `--report-only-counts` line and the
+  per-class signature verification.
 - Rollback: a wallet whose delivery fails keeps `migrated_at` unset and stays
   on the envelope path. A migrated wallet returns to the envelope path, whose
   envelope is left in place, with
@@ -218,10 +228,29 @@ Rules that hold for every step:
   any node answers `key_import_disabled`.
 - Evidence: the attestor check's gate record.
 - Rollback: step 7, only for a further approved ceremony window.
-- After the window closes, migrated wallets gain their Ed25519 identity and
-  binding through the gateway backfill, `backfillAccounts` in
-  `human/wallet/gateway/src/provision/backfill.ts`, which has no command
-  entry yet (observation 4.5.6).
+- After the window closes, run the gateway's backfill entry once with the
+  gateway's own environment (`DATABASE_URL`, `RPC_URLS`,
+  `HYPERPAXEER_CHAIN_ID`, `ATTESTOR_ENDPOINTS` with its client certificate,
+  key and CA files, and the rest of the gateway configuration); it refuses to
+  start without the attestor configuration.
+
+  ```sh
+  pnpm --dir human/wallet/gateway build
+  pnpm --dir human/wallet/gateway backfill:accounts --batch-size 100 --max-batches 1000
+  ```
+
+  It generates each moved wallet's Ed25519 identity in bounded batches from
+  its resumable cursor and prints one
+  `backfill total outcome=<outcome> count=<n>` line for each of `bound`,
+  `awaiting_owner`, `awaiting_agent_signature`, `refused`, `skipped` and
+  `failed`, then `backfill batches=<b> done=<true|false>`, with no address,
+  identifier or token. With no user token present it signs nothing and sends
+  no top-up or binding: standard wallets wait for their owner, whose next
+  sign-in completes the binding through the SDK, and agent wallets wait for
+  their agent's signature. Exit 3 with `done=false` means `--max-batches` ran
+  out; run it again and it resumes from the cursor. After a completed run the
+  cursor starts over, so the run after `move --delta` reaches the new rows.
+  Record the totals as a gate record.
 
 ## 10. Endpoint cutover through the current host's proxy
 

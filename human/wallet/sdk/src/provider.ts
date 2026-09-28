@@ -3,6 +3,7 @@ import {
   ChainDisconnectedError,
   DisconnectedError,
   InvalidParamsError,
+  PROVIDER_ERROR_CODES,
   ProviderRpcError,
   RpcResponseError,
   UnauthorizedError,
@@ -78,6 +79,16 @@ const UINT64_MAX = (1n << 64n) - 1n;
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const BYTES = /^0x(?:[0-9a-fA-F]{2})*$/;
 const QUANTITY = /^0x[0-9a-fA-F]+$/;
+
+export class BindingRefusedError extends ProviderRpcError {
+  constructor(
+    message: string,
+    public readonly boundDid: string | null,
+  ) {
+    super(PROVIDER_ERROR_CODES.internal, message, { reason: 'binding_refused', bound_did: boundDid });
+    this.name = 'BindingRefusedError';
+  }
+}
 
 export class PaxeerProvider implements Eip1193Provider {
   readonly isPaxeer = true;
@@ -181,6 +192,7 @@ export class PaxeerProvider implements Eip1193Provider {
     if (me) {
       address = me.wallet.address;
       chainId = me.chain.id;
+      if (needsBinding(me.wallet)) await this.completeBinding();
     } else {
       const provisioned = await this.gateway<{ wallet: PublicWallet }>('POST', '/v1/wallet/provision');
       address = provisioned.wallet.address;
@@ -197,6 +209,21 @@ export class PaxeerProvider implements Eip1193Provider {
     if (chainChanged) this.emit('chainChanged', toQuantity(BigInt(chainId)));
     if (accountsChanged) this.emit('accountsChanged', [...this.accounts]);
     return [...this.accounts];
+  }
+
+  private async completeBinding(): Promise<void> {
+    try {
+      await this.gateway<{ wallet: PublicWallet }>('POST', '/v1/wallet/provision');
+    } catch (error) {
+      if (error instanceof ProviderRpcError && isBindingRefused(error)) {
+        const body = (error.data as { body: Record<string, unknown> }).body;
+        throw new BindingRefusedError(
+          typeof body.message === 'string' ? body.message : 'the account binding was refused',
+          typeof body.bound_did === 'string' ? body.bound_did : null,
+        );
+      }
+      throw error;
+    }
   }
 
   private switchChain(params: readonly unknown[]): null {
@@ -548,6 +575,20 @@ function positional(params: RequestArguments['params']): readonly unknown[] {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function needsBinding(wallet: PublicWallet): boolean {
+  const state = (wallet as { binding_state?: unknown }).binding_state;
+  return state === 'unbound' || state === 'pending';
+}
+
+function isBindingRefused(error: ProviderRpcError): boolean {
+  return (
+    isRecord(error.data) &&
+    error.data.status === 409 &&
+    isRecord(error.data.body) &&
+    error.data.body.error === 'binding_refused'
+  );
 }
 
 function isNoWallet(error: ProviderRpcError): boolean {
