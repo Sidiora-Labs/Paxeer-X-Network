@@ -381,6 +381,8 @@ func TestAutoRestartIfBehind(t *testing.T) {
 		blocksBehindThreshold     uint64
 		blocksBehindCheckInterval time.Duration
 		selfHeight                int64
+		selfHeights               []int64
+		progressing               bool
 		maxPeerHeight             int64
 		isBlockSync               bool
 		restartExpected           bool
@@ -421,13 +423,52 @@ func TestAutoRestartIfBehind(t *testing.T) {
 			isBlockSync:               true,
 			restartExpected:           false,
 		},
+		{
+			name:                      "Should not restart if behind but self height advances between checks",
+			blocksBehindThreshold:     50,
+			selfHeight:                100,
+			progressing:               true,
+			blocksBehindCheckInterval: 10 * time.Millisecond,
+			maxPeerHeight:             100000,
+			isBlockSync:               false,
+			restartExpected:           false,
+		},
+		{
+			name:                      "Should restart if behind and self height is unchanged at two consecutive checks",
+			blocksBehindThreshold:     50,
+			selfHeight:                110,
+			selfHeights:               []int64{100, 105, 110},
+			blocksBehindCheckInterval: 10 * time.Millisecond,
+			maxPeerHeight:             1000,
+			isBlockSync:               false,
+			restartExpected:           true,
+		},
+		{
+			name:                      "Should not restart if not behind and self height is unchanged",
+			blocksBehindThreshold:     50,
+			selfHeight:                100,
+			blocksBehindCheckInterval: 10 * time.Millisecond,
+			maxPeerHeight:             120,
+			isBlockSync:               false,
+			restartExpected:           false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Log(tt.name)
 		t.Run(tt.name, func(t *testing.T) {
 			mockBlockStore := new(MockBlockStore)
-			mockBlockStore.On("Height").Return(tt.selfHeight)
+			switch {
+			case tt.progressing:
+				for i := range int64(10000) {
+					mockBlockStore.On("Height").Return(tt.selfHeight + i).Once()
+				}
+			default:
+				for _, h := range tt.selfHeights {
+					mockBlockStore.On("Height").Return(h).Once()
+				}
+				mockBlockStore.On("Height").Return(tt.selfHeight)
+			}
 
 			blockPool := &BlockPool{
 				height:        tt.selfHeight,
