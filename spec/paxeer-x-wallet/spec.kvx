@@ -1279,10 +1279,10 @@ log_path = ".logs/verify.log"
 
 [task.4.24]
 title = "Sign the kernel send authorization with the attestor-held owner key"
-status = "implemented"
-revision = "af28c940139fbdff0e2d77de204502777ecd2ea8"
+status = "done"
+revision = "9c799168ab2842894f5058daa7fd2d9a3968fc7d"
 command = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./internal/policy/... ./internal/server/... && cd ../../.. && cd human && cargo test -p layerx-human-kms attestor'"
-exit_code = 101
+exit_code = 0
 log_path = ".logs/verify.log"
 wave = 4
 requires = ["4.23","4.19"]
