@@ -27,7 +27,7 @@ const dark: ThemePalette = {
         surface: { base: '#141413', raised: '#1c1c1a', card: '#23231f', control: '#2b2b27', overlay: '#30302b' },
         text: { strong: '#fffdf8', primary: '#eee9e2', secondary: '#aaa69f', tertiary: '#85827c', disabled: '#5e5c57' },
         status: { success: '#33c77a', danger: '#ff6972', warning: '#f3a63b', info: '#77a8f7' },
-        border: { subtle: 'rgba(255, 255, 255, 0.12)', strong: 'rgba(255, 255, 255, 0.15)' },
+        border: { subtle: 'rgba(255, 255, 255, 0.12)', strong: 'rgba(255, 255, 255, 0.15)', separator: 'rgba(255, 255, 255, 0.06)' },
         overlay: {
             scrim: 'rgba(0, 0, 0, 0.6)',
             glass: 'rgba(27, 27, 25, 0.8)',
@@ -48,7 +48,7 @@ const light: ThemePalette = {
         surface: { base: '#faf8f4', raised: '#f2efe9', card: '#ebe7df', control: '#e2ddd4', overlay: '#d8d2c7' },
         text: { strong: '#0d0d0c', primary: '#1c1b19', secondary: '#4f4c47', tertiary: '#6b6862', disabled: '#9a968f' },
         status: { success: '#1a7f4b', danger: '#c7303b', warning: '#9a5b00', info: '#2560c4' },
-        border: { subtle: 'rgba(0, 0, 0, 0.1)', strong: 'rgba(0, 0, 0, 0.14)' },
+        border: { subtle: 'rgba(0, 0, 0, 0.1)', strong: 'rgba(0, 0, 0, 0.14)', separator: 'rgba(0, 0, 0, 0.06)' },
         overlay: {
             scrim: 'rgba(0, 0, 0, 0.4)',
             glass: 'rgba(250, 248, 244, 0.8)',
@@ -69,7 +69,7 @@ const contrastDark: ThemePalette = {
         surface: { base: '#000000', raised: '#0d0d0d', card: '#141414', control: '#1f1f1f', overlay: '#262626' },
         text: { strong: '#ffffff', primary: '#ffffff', secondary: '#e6e6e6', tertiary: '#cccccc', disabled: '#8c8c8c' },
         status: { success: '#5fe39a', danger: '#ff8a91', warning: '#ffc266', info: '#9cc2ff' },
-        border: { subtle: 'rgba(255, 255, 255, 0.4)', strong: 'rgba(255, 255, 255, 0.6)' },
+        border: { subtle: 'rgba(255, 255, 255, 0.4)', strong: 'rgba(255, 255, 255, 0.6)', separator: 'rgba(255, 255, 255, 0.4)' },
         overlay: {
             scrim: 'rgba(0, 0, 0, 0.8)',
             glass: 'rgba(0, 0, 0, 0.9)',
@@ -90,7 +90,7 @@ const contrastLight: ThemePalette = {
         surface: { base: '#ffffff', raised: '#f2f2f2', card: '#ebebeb', control: '#e0e0e0', overlay: '#d6d6d6' },
         text: { strong: '#000000', primary: '#000000', secondary: '#1f1f1f', tertiary: '#333333', disabled: '#666666' },
         status: { success: '#0b6b3a', danger: '#a8141f', warning: '#7a4300', info: '#0f47a8' },
-        border: { subtle: 'rgba(0, 0, 0, 0.45)', strong: 'rgba(0, 0, 0, 0.65)' },
+        border: { subtle: 'rgba(0, 0, 0, 0.45)', strong: 'rgba(0, 0, 0, 0.65)', separator: 'rgba(0, 0, 0, 0.45)' },
         overlay: {
             scrim: 'rgba(0, 0, 0, 0.6)',
             glass: 'rgba(255, 255, 255, 0.92)',

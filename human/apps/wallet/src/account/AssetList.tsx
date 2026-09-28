@@ -23,7 +23,7 @@ function Balances({ balances }: { balances: AccountBalances }) {
     const entries = new Map(balances.asset_map.assets.map((entry) => [entry.asset_id, entry]));
     return (
         <>
-            <ul aria-label="Joined balances" className="divide-y divide-white/[0.06]">
+            <ul aria-label="Joined balances" className="list-separated">
                 {balances.balances.map((row) => {
                     const { symbol, decimals } = metadata(entries.get(row.asset_id));
                     const layerx = typeof row.layerx?.balance === 'string' ? row.layerx.balance : null;

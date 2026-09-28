@@ -63,6 +63,7 @@
   --color-status-info: #77a8f7;
   --color-border-subtle: rgba(255, 255, 255, 0.12);
   --color-border-strong: rgba(255, 255, 255, 0.15);
+  --color-border-separator: rgba(255, 255, 255, 0.06);
   --color-overlay-scrim: rgba(0, 0, 0, 0.6);
   --color-overlay-glass: rgba(27, 27, 25, 0.8);
   --color-overlay-nav: rgba(22, 22, 21, 0.85);
@@ -178,6 +179,11 @@ body {
   backdrop-filter: saturate(180%) blur(20px);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
   border-radius: 1rem;
+}
+
+.list-separated > * + * {
+  margin-top: 1px;
+  box-shadow: 0 -1px 0 var(--color-border-separator);
 }
 
 /* Glass nav */

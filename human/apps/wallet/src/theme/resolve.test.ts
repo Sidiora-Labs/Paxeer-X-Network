@@ -64,7 +64,7 @@ describe('resolveTheme', () => {
         expect(computedPx(resolveTheme({ ...DEFAULT_SELECTION, size: 'compact' }, DARK), '--font-size-md')).toBeCloseTo(14, 6);
     });
 
-    it('tightens spacing and controls under the dense density without touching the type scale', () => {
+    it('tightens spacing and controls under dense density, leaving the typography scale untouched', () => {
         const comfortable = resolveTheme(DEFAULT_SELECTION, DARK);
         const dense = resolveTheme({ ...DEFAULT_SELECTION, density: 'dense' }, DARK);
         const factor = themeCatalogue.densities.dense.factor;
