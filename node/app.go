@@ -2398,7 +2398,7 @@ func (app *App) executeEVMTxWithGigaExecutor(ctx sdk.Context, msg *evmtypes.MsgE
 // hands the exchange, bridge, launchpad, fee-token and web-search precompiles
 // to the ordinary execution path, as it hands the earlier custom precompiles
 // at every height.
-const gigaLatePrecompileHeight int64 = 26150000
+const gigaLatePrecompileHeight int64 = 26300000
 
 // gigaCustomPrecompiles returns the custom precompile set the giga executor
 // runs a block of the given height with: a transaction that reaches any
