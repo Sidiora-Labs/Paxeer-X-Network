@@ -1,11 +1,8 @@
 import { Box, Flex, VStack } from '@chakra-ui/react';
 import React from 'react';
 
-import type { Block } from 'types/api/block';
-
 import { route } from 'nextjs-routes';
 
-import useInitialList from 'lib/hooks/useInitialList';
 import { publicClient } from 'lib/web3/client';
 import { BLOCK } from 'stubs/block';
 import { Link } from 'toolkit/chakra/link';
@@ -29,12 +26,6 @@ const LatestBlocksDegraded = ({ maxNum }: Props) => {
     };
   }, [ enable ]);
 
-  const initialList = useInitialList({
-    data: [] as Array<Block>,
-    idFn: (block) => block.height,
-    enabled: !isError,
-  });
-
   if (isError || !publicClient) {
     return <LatestBlocksFallback/>;
   }
@@ -53,7 +44,6 @@ const LatestBlocksDegraded = ({ maxNum }: Props) => {
             key={ block.height + (isLoading ? String(index) : '') }
             block={ block }
             isLoading={ isLoading }
-            animation={ initialList.getAnimationProp(block) }
           />
         ))) }
       </VStack>

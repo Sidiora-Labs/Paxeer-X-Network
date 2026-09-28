@@ -52,10 +52,12 @@ const TokenPageContent = () => {
 
   const tokenQuery = useTokenQuery(hashString);
 
+  // The address behind the token is asked for with the token itself: it feeds the contract tab and the
+  // socket that used to gate it only reports a changing total supply.
   const addressQuery = useApiQuery('general:address', {
     pathParams: { hash: hashString },
     queryOptions: {
-      enabled: isQueryEnabled && Boolean(router.query.hash),
+      enabled: Boolean(router.query.hash),
       placeholderData: addressStubs.ADDRESS_INFO,
     },
   });
@@ -123,7 +125,8 @@ const TokenPageContent = () => {
     }
   }, [ tokenQuery.data, tokenQuery.isPlaceholderData, verifiedInfoQuery.isPlaceholderData, verifiedInfoQuery.data ]);
 
-  const hasData = (tokenQuery.data && !tokenQuery.isPlaceholderData) && (addressQuery.data && !addressQuery.isPlaceholderData);
+  // The lists below read the token, not the address, so they leave as soon as the token has answered.
+  const hasData = Boolean(tokenQuery.data && !tokenQuery.isPlaceholderData);
   const hasInventoryTab = tokenQuery.data?.type && NFT_TOKEN_TYPE_IDS.includes(tokenQuery.data.type);
 
   const transfersQuery = useQueryWithPages({

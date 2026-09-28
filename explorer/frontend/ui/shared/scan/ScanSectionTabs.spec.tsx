@@ -27,6 +27,31 @@ beforeAll(() => {
 // the suite runs without vitest globals, so the testing library cannot register its own teardown
 afterEach(cleanup);
 
+// Chakra writes the pill rules into the document when it renders, so the spec reads the declarations
+// back off the style elements instead of off a layout jsdom never performs
+const collectCss = (): string => Array.from(document.querySelectorAll('style'))
+  .map((tag) => {
+    if (tag.textContent) {
+      return tag.textContent;
+    }
+
+    try {
+      return tag.sheet ? Array.from(tag.sheet.cssRules).map((rule) => rule.cssText).join('') : '';
+    } catch {
+      return '';
+    }
+  })
+  .join('')
+  .replace(/\s+/g, '');
+
+const declarationsOf = (element: Element, suffix = ''): string => {
+  const css = collectCss();
+
+  return Array.from(element.classList)
+    .flatMap((name) => Array.from(css.matchAll(new RegExp(`\\.${ name }${ suffix }\\{([^}]*)\\}`, 'g'))).map((match) => match[1]))
+    .join(';');
+};
+
 const items = [
   { id: 'transactions', title: 'Transactions', count: 1234 },
   { id: 'transfers', title: 'Token transfers', count: 56 },
@@ -94,5 +119,39 @@ describe('ScanSectionTabs', () => {
     );
 
     expect(container.querySelector('[data-right-slot]')?.textContent).toBe('Download Page Data');
+  });
+
+  it('lets a pill grow with its label instead of holding a height that clips it', () => {
+    const { container } = render(
+      <Provider>
+        <ScanSectionTabs items={ items } value="transactions" onValueChange={ noop }/>
+      </Provider>,
+    );
+
+    const pill = container.querySelector('[data-tab="transfers"]') as Element;
+    const declarations = declarationsOf(pill);
+
+    expect(declarations).toMatch(/(?:^|;)height:auto/);
+    expect(declarations).toContain('min-height:var(--tabs-height)');
+    expect(declarations).toContain('white-space:nowrap');
+    expect(declarations).not.toMatch(/(?:^|;)height:[123]?\dpx/);
+  });
+
+  it('gives way on the title and never on the count', () => {
+    const { container } = render(
+      <Provider>
+        <ScanSectionTabs items={ items } value="transactions" onValueChange={ noop }/>
+      </Provider>,
+    );
+
+    const pill = container.querySelector('[data-tab="transactions"]') as Element;
+    const title = pill.querySelector('[data-tab-title]') as Element;
+    const count = pill.querySelector('[data-count]') as Element;
+
+    expect(title.textContent).toBe('Transactions');
+    expect(count.textContent).toBe('(1,234)');
+    expect(declarationsOf(title)).toContain('text-overflow:ellipsis');
+    expect(declarationsOf(title)).toContain('min-width:0');
+    expect(declarationsOf(count)).toContain('flex-shrink:0');
   });
 });

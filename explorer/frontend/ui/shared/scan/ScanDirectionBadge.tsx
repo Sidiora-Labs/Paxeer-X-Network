@@ -14,6 +14,7 @@ const ScanDirectionBadge = ({ direction, isLoading, className }: ScanDirectionBa
   return (
     <Badge
       variant="direction"
+      size="sm"
       colorPalette={ direction === 'in' ? 'green' : 'orange' }
       loading={ isLoading }
       className={ className }

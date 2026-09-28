@@ -33,9 +33,9 @@
     - Rerun nothing that already passed at this revision, spawn no review of a task whose verify_cmd passed, and write no gate record for a command that did not run.
     - _Requirements: 1.1, 1.2, 1.3, 1.5, 1.6, 1.7, 1.8, 1.9, 1.10_
 
-## Wave 3 - Running The New Binary Before The Fork
+## Wave 3 - Running The New Binary Before The Fork And Naming Its Block
 
-- [ ] 3. Let the activation binary run on a state that predates the fork
+- [ ] 3. Let the activation binary run on a state that predates the fork and apply the plan in the block the operator names
   - [x] 3.1 Serve a mounted store the state-commitment database does not carry yet
     - In storage/state_db/sc/composite record the mount list Initialize is given and resolve, after every load and every applied set of tree upgrades, which mounted names the memiavl database carries no tree for: a name is pending only when the caller mounted it, it is a member of keys.MemIAVLStoreKeys and memiavl holds no tree for it, and only while memiavl is the single backend, because once flatkv participates a missing memiavl tree no longer proves the store is absent.
     - Serve a pending name from GetChildStoreByName instead of panicking, through a view that reads exactly as the absent store reads through the router - nothing found, an empty range, a root hash that fails closed - and whose writes are held on the composite store for the block that made them rather than routed to a backend.
@@ -44,6 +44,14 @@
     - In sdk/storev2/rootmulti keep the change sets aimed at a pending store out of the batch handed to the versioned state store, asking the state-commitment store which names are pending through an interface it may or may not implement, returning the batch unchanged when nothing is pending and still advancing the state store's watermark when the whole batch was pending.
     - Write the tests in the composite package against the real store: a state committed with the legacy mount list loads under a mount list carrying one extra canonical key and reports it pending and empty; a canonical key nobody mounted and a name outside the canonical list still panic; the same block written twice over the same state, once without the extra store and once with a write aimed at it, produces the same working commit info, the same version, the same commit info and the same state on disk; and a load whose tree upgrades add the key creates the tree, ends the pending state, persists a write across a commit and a reload and adds the store's entry to the commit info.
     - _Requirements: 1.5, 1.6, 1.7, 1.8_
+  - [-] 3.3 Apply the activation plan in the block the on-disk upgrade info names
+    - In node/upgrades.go delete the fork-height constant, the step that scheduled the plan one block below it and the step that halted the node at it, and leave the plan name, the store-upgrade list, the handler, its genesis behaviour and the module-presence helper exactly as they are.
+    - Add the step that applies the plan in node/upgrades.go and call it from the application's begin blocker in node/abci.go before the module begin blockers: it returns on a tracing context, when the plan already has a done height and when the module version map already carries every module the plan initialises; otherwise it reads the upgrade info file through the upgrade keeper and returns unless the file names the activation plan at the current block height.
+    - When the file names the plan at the current block height, panic with a message naming the activation stores the commit multistore does not carry and stating that the upgrade info height must equal the last committed height plus one when the process starts; otherwise apply the plan at the current height through the upgrade keeper's apply path, which runs the handler, writes the module version map, records the done height and clears any plan the store carries.
+    - In node/app.go drop the recorded upgrade-info height the halt consulted, now that nothing reads it, and leave the store-loader wiring that maps the plan name to its added stores untouched.
+    - Replace the fork-height tests in node/upgrades_activation_test.go with begin-blocker tests on the real application: the block the file names carries the six modules into the version map, records the done height, leaves no plan, comes up with the web-search module paused on an empty attestor set and serves the eight fork precompiles at that height and none of them one below it; a file naming a later height changes nothing; an unmounted activation store stops the block with that message and writes nothing; and a later block with the file still on disk applies nothing a second time.
+    - Leave tools/chain/upgrade-replay compiling and its assertions intact: it already writes the plan's upgrade info at one above the copied state's committed height and applies the plan there, which is what the begin blocker now does.
+    - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
 
 ## Wave 4 - One Route For Every Fork Module's Authority
 
@@ -105,7 +113,7 @@
   "waves": [
     { "id": 1,  "tasks": ["1.1", "1.2"] },
     { "id": 2,  "tasks": ["2.1"] },
-    { "id": 3,  "tasks": ["3.1"] },
+    { "id": 3,  "tasks": ["3.1", "3.3"] },
     { "id": 4,  "tasks": ["4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7"] }
   ]
 }

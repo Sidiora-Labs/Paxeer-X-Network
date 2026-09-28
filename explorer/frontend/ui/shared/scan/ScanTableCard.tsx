@@ -31,6 +31,15 @@ export function formatScanTableCount({ kind, value, itemsName, shownValue }: Sca
   }
 }
 
+// The card body holds either a desktop table, which keeps its own edge-to-edge rules and scrolls
+// inside the body, or the mobile list items, which carry no gutter of their own and would otherwise
+// sit flush against the card border on a narrow screen.
+const BODY_GUTTER = {
+  '& [data-list-item-mobile]': {
+    px: '4',
+  },
+};
+
 const ScanTableCard = ({ title, note, actions, pagination, showRows, children, className }: ScanTableCardProps) => {
   const hasFooter = Boolean(showRows || pagination);
 
@@ -55,17 +64,20 @@ const ScanTableCard = ({ title, note, actions, pagination, showRows, children, c
         rowGap={ 3 }
         px={ 4 }
         py={ 3 }
+        minW={ 0 }
       >
         <Box minW={ 0 }>
           <chakra.p textStyle="sm" fontWeight="500" color="text.primary" data-title>{ title }</chakra.p>
           { note && <chakra.p textStyle="xs" color="text.muted" data-note>{ note }</chakra.p> }
         </Box>
-        <Flex alignItems="center" flexWrap="wrap" columnGap={ 2 } rowGap={ 2 } data-actions>
+        <Flex alignItems="center" flexWrap="wrap" columnGap={ 2 } rowGap={ 2 } minW={ 0 } data-actions>
           { actions }
-          { pagination }
+          { pagination && (
+            <Box hideBelow="md" data-header-pagination>{ pagination }</Box>
+          ) }
         </Flex>
       </Flex>
-      <Box data-body overflowX="auto">
+      <Box data-body overflowX="auto" maxW="100%" css={ BODY_GUTTER }>
         { children }
       </Box>
       { hasFooter && (
@@ -82,8 +94,8 @@ const ScanTableCard = ({ title, note, actions, pagination, showRows, children, c
           borderStyle="solid"
           borderColor="border.divider"
         >
-          <Box data-footer-rows>{ showRows }</Box>
-          <Box data-footer-pagination>{ pagination }</Box>
+          <Box minW={ 0 } data-footer-rows>{ showRows }</Box>
+          <Box minW={ 0 } data-footer-pagination>{ pagination }</Box>
         </Flex>
       ) }
     </Box>

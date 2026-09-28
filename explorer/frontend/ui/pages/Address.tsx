@@ -458,7 +458,7 @@ const AddressPageContent = () => {
   }, [ hash, addressQuery.data?.hash, isLoading ]);
 
   const titleAfter = (
-    <Flex alignItems="center" columnGap={ 2 } rowGap={ 2 } flexWrap="wrap" ml={ 3 } minW={ 0 }>
+    <Flex alignItems="center" columnGap={ 2 } rowGap={ 2 } flexWrap="wrap" ml={{ base: 0, lg: 3 }} minW={ 0 }>
       { addressQuery.data?.ens_domain_name && (
         <EnsEntity
           domain={ addressQuery.data?.ens_domain_name }

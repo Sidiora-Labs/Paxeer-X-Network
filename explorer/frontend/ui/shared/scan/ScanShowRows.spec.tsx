@@ -59,6 +59,16 @@ describe('ScanShowRows', () => {
     expect(container.querySelector('[data-suffix]')?.textContent).toBe('of 1,000');
   });
 
+  it('lets the label and the select wrap onto two lines in a narrow footer', () => {
+    const { container } = render(
+      <Provider>
+        <ScanShowRows value={ 50 } onValueChange={ noop }/>
+      </Provider>,
+    );
+
+    expect(container.querySelector('[data-scan-show-rows]')?.hasAttribute('data-wrap-row')).toBe(true);
+  });
+
   it('takes the page sizes a caller prefers', () => {
     const { container } = render(
       <Provider>

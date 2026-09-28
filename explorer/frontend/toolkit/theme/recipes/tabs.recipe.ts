@@ -184,6 +184,7 @@ export const recipe = defineSlotRecipe({
           columnGap: '2',
           rowGap: '2',
           flexWrap: 'wrap',
+          height: 'auto',
           _horizontal: {
             _before: {
               display: 'none',
@@ -193,6 +194,11 @@ export const recipe = defineSlotRecipe({
         trigger: {
           fontWeight: '600',
           gap: '1',
+          // the pill grows with its label instead of holding a height its text can outgrow
+          height: 'auto',
+          minH: 'var(--tabs-height)',
+          minW: 'auto',
+          whiteSpace: 'nowrap',
           borderRadius: 'full',
           borderWidth: '1px',
           borderStyle: 'solid',

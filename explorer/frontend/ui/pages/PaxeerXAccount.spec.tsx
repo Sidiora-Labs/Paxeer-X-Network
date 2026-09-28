@@ -30,6 +30,10 @@ vi.mock('next/router', async() => {
 
 import PaxeerXAccount from './PaxeerXAccount';
 
+// The host runs the whole suite at once, and these trees mount real entities, so the first render of
+// each of them reaches well past the default per-test budget.
+vi.setConfig({ testTimeout: 60_000 });
+
 const HASH = paxeerXMock.evmAddress;
 
 const mockApi = (
@@ -49,6 +53,36 @@ const renderPage = async() => {
 
   return result;
 };
+
+// A responsive style prop reaches the document as one rule per breakpoint, each of them inserted
+// into a style element of its own, and jsdom performs no layout, so the widths a declaration belongs
+// to are read from the rules that name the element's own class.
+const ruleTexts = () => {
+  const inline = Array.from(document.querySelectorAll('style')).map((node) => node.textContent ?? '');
+  const parsed = Array.from(document.styleSheets).flatMap((sheet) => {
+    try {
+      return Array.from(sheet.cssRules).map((rule) => rule.cssText);
+    } catch {
+      return [];
+    }
+  });
+
+  return [ ...inline, ...parsed ].filter(Boolean);
+};
+
+const declarationsOf = (element: Element, property: string) => ruleTexts()
+  .filter((text) => Array.from(element.classList).some((name) => new RegExp(`\\.${ name }(?![\\w-])`).test(text)))
+  .map((text) => ({ text, value: new RegExp(`(?:^|[;{\\s])${ property }\\s*:\\s*([^;}]+)`).exec(text)?.[1]?.trim() }))
+  .filter((rule): rule is { text: string; value: string } => rule.value !== undefined);
+
+// Each rule is inserted on its own, so a declaration belongs to the wide layout when the rule that
+// carries it is a breakpoint rule and not the base rule, which declares its own minimum width.
+const isWide = (text: string) => /^\s*@media[^{]*\(min-width/.test(text);
+
+const LEFT_INSET = 'margin-(?:left|inline-start)';
+
+// The scale resolves a zero inset either to the plain length or to the token of the same name.
+const isSpace = (value: string) => !/^0[a-z%]*$/.test(value) && !/spacing-0\b/.test(value);
 
 describe('PaxeerXAccountPageContent', () => {
   beforeEach(() => {
@@ -171,5 +205,18 @@ describe('PaxeerXAccountPageContent', () => {
       expect(container.querySelector('[data-capability-notice="addr"]')).toBeTruthy();
     });
     expect(container.querySelector('[data-label="paxeer-x-identities"]')).toBeNull();
+  });
+
+  it('lets the account identifier wrap and keeps its inset for the wide layout only', async() => {
+    const { container } = await renderPage();
+
+    const identifier = container.querySelector('[data-account-identifier]') as HTMLElement;
+    const insets = declarationsOf(identifier, LEFT_INSET);
+    const spaced = insets.filter((rule) => isSpace(rule.value));
+
+    expect(declarationsOf(identifier, 'flex-wrap').some((rule) => rule.value === 'wrap' && !isWide(rule.text))).toBe(true);
+    expect(insets.length).toBeGreaterThan(0);
+    expect(spaced.length).toBeGreaterThan(0);
+    expect(spaced.every((rule) => isWide(rule.text))).toBe(true);
   });
 });

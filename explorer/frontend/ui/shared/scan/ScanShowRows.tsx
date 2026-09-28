@@ -38,7 +38,16 @@ const ScanShowRows = ({
   }, [ onValueChange ]);
 
   return (
-    <Flex alignItems="center" columnGap={ 2 } className={ className } data-scan-show-rows>
+    <Flex
+      alignItems="center"
+      flexWrap="wrap"
+      columnGap={ 2 }
+      rowGap={ 1 }
+      minW={ 0 }
+      className={ className }
+      data-scan-show-rows
+      data-wrap-row
+    >
       <chakra.span textStyle="sm" color="text.secondary" data-label>{ label }</chakra.span>
       <Select
         collection={ collection }

@@ -721,3 +721,254 @@ environment = "linux/x86_64, docker 28.2.2 over the node:22.14.0-alpine base of 
 outcome = "pass"
 evidence = "build/explorer-gates/frontend-image.log"
 note = "exit code 0. The frontend image built once from the merged tip of waves 5 and 6 through every stage the Dockerfile declares: the dependency stage for the application and its seven deploy tools, the builder stage whose sprite build, env collection and yarn build carried the Next production build and its own type check, and the runner stage, producing sha256:9bb89f7f7f4e35a6b0a9989276c67a90828b3f5d886f944c88ec39277811fecc at 788 MB tagged explorer-frontend-gate:50ad0f4af, kept local and never pushed. The build also printed two LegacyKeyValueFormat advisories for the ENV lines 81 and 213 of the Dockerfile, which the builder does not fail on and which no task of these two waves touches. The run finished after task 7.1 reached its time bound, so this record was appended in a second commit beside the three the first one carried."
+
+[observation.8.3.1]
+task = "8.3"
+file = "explorer/frontend/ui/shared/Page/PageTitle.tsx"
+symbol = "mobile-layout"
+observed = "At 375 the before pass found no page whose document scroll width passed the viewport, so the damage sat inside the pages: the title rows cut the identifier of the address and the two token pages and let the identicon sit over the heading, the block timestamp value ended in a clipped time zone, and the mobile rows of the transactions, blocks, tokens, top accounts and kernel lists ran flush into the right border of the card body."
+assumption = "The after pass over the same pages leaves every document scroll width at 375 and nothing wider than its box but loading skeletons, the deliberately full-bleed action bar and the dev-only query devtools button, and the detail timestamp still ends in an ellipsis because it is the repo truncation primitive doing its own job."
+severity = "note"
+
+[observation.8.3.2]
+task = "8.3"
+file = "explorer/frontend/yarn.lock"
+symbol = "lodash-es"
+observed = "The lock resolves lodash-es@^4.17.21 to 4.17.22, whose published tarball carries 542 files against the 650 of 4.17.21 and leaves roughly a hundred internal modules such as _baseGet.js out, so any bundler pass over the frontend fails to resolve them; the cache entry for that version is short the same files and the failure reproduces with every change of this task reverted."
+assumption = "The lane restores the missing files inside node_modules from the 4.17.21 cache entry to let the gate run, and the lock stays exactly as written because pinning it back is a dependency decision no layout task owns."
+severity = "blocker"
+
+[observation.8.3.3]
+task = "8.3"
+file = "explorer/frontend/ui/tx/TxSubHeading.tsx"
+symbol = "PrevNext"
+observed = "The before measurement pass addressed the transaction page with a hash the dev backend had already dropped, so that page and the two beside it answered blank in the light leg, and the dark leg of that pass rendered light because the appearance was seeded through localStorage, which next-themes had already overwritten by the time the page settled."
+assumption = "The after pass picks a hash the backend still serves and sets the dark class on the document element once the page has settled, so the before evidence for those pages is the dark leg alone and the after evidence carries both appearances."
+severity = "note"
+
+[observation.8.3.4]
+task = "8.3"
+file = "explorer/frontend/playwright"
+symbol = "__screenshots__"
+observed = "Detail values, title rows and card footers now wrap instead of clipping under md, which moves every pixel below them in the mobile Playwright baselines the repo keeps under __screenshots__, and this task may not touch those files."
+assumption = "The stale baselines are a release-time refresh for whoever runs the Playwright matrix on the merged wave, not a task-level gate, so the lane leaves them exactly as recorded."
+severity = "note"
+
+[observation.8.3.5]
+task = "8.3"
+file = "explorer/frontend/ui/home/LatestBlocksItem.tsx"
+symbol = "LatestBlocksItem"
+observed = "At 375 the home Latest blocks rows lay their columns out at fixed widths, so the block hash runs under the value chip and past the right border of the card body while the transactions rows beside it stay inside it."
+assumption = "The file belongs to task 8.1, which owns the home real-time feed, so this task records the finding and leaves the row exactly as written."
+severity = "note"
+note = "Closed by task 8.7: the row now wraps under md, carries no fixed column width and cuts its hash with the dynamic shortener, and the browser measurement at 375 finds every row and its value chip inside the card body."
+
+[observation.8.3.6]
+task = "8.3"
+file = "explorer/frontend/ui/shared/scan/ScanSectionTabs.tsx"
+symbol = "ScanSectionTabs"
+observed = "The address page tab strip is wider than 375 and its last tabs sit past the viewport, and the strip scrolls sideways inside itself rather than widening the page, so the document scroll width still matches the viewport."
+assumption = "The tab strip belongs to task 8.2, which owns the pill and chip sizing, so this task records the finding and leaves the strip exactly as written."
+severity = "note"
+
+[observation.8.3.7]
+task = "8.3"
+file = "explorer/frontend/ui/txs/TxsTable.spec.tsx"
+symbol = "fontfaceobserver"
+observed = "At tree db03290c60c8eece2868feb27f82f13239117a82 over lane head 50ad0f4afcd1ec6974fe09f6db272ace49b186dd the task verify_cmd exits 1, log explorer/frontend/.logs/verify-8.3-run2.log: the type check passes over the project and the vitest leg passes 80 of 80 spec files and 395 of 395 tests, and the exit comes from 29 unhandled ReferenceError: document is not defined raised on a fontfaceobserver timer after the jsdom environment of TxsTable, TxSubHeading, TxsTableItem and TokensTableItem is torn down."
+assumption = "These are the same teardown errors observation.7.1.2 already records at this revision, none of them failing a test and none of them raised by a spec this task owns, so the task leaves the specs and the runner exactly as written rather than silencing the runner to reach exit 0."
+severity = "blocker"
+note = "Closed by task 8.5: the vitest setup now fills the font-face set jsdom leaves out, so the observer settles on its first attempt and starts no timer, and at base revision d83276386c479a0acbfd9ec2d4b3804afbaabd4b the same command exits 0 with 80 spec files and 395 tests passing and no unhandled error, log explorer/frontend/.logs/verify-8.3-run3.log."
+
+[observation.8.4.1]
+task = "8.4"
+file = "explorer/frontend/lib/api/useQueryClientConfig.tsx"
+symbol = "page-load-cost"
+observed = "Measured over the nine scan pages before the change against the development deployment and after it against a production build of this lane carrying the deployment's own runtime environment and the same backend: the address page's counters request moves from 12109 ms to 2549 ms, 9.56 s earlier and 4 ms behind the three requests it belongs with; /api/v2/stats is asked for once per load instead of two or three times, so the transactions list drops from seven requests to five and its first page of transactions arrives at 7041 ms instead of 11405 ms; and the transaction and address pages transfer 1221 KB and 1298 KB of JavaScript instead of 1705 KB and 1838 KB, the 486 KB verified-fetch bundle now arriving only when an ipfs:// image needs it. Reports MEASURE-BEFORE.md and MEASURE-AFTER.md with metrics-before.json and metrics-after.json under /root/lx-ops/explorer-ui-2026-09-27/wave8/8.4."
+assumption = "Only the request count, the request timing and the bytes are read as the change's own effect; the time to first byte, which falls to 19-86 ms because the after pass serves the document from the measuring box, and the long-task totals, which both passes take under a host load average of 6 to 13, are not attributed to it, and the after pass's blocks page carries one contention spike that no code path explains."
+severity = "note"
+
+[observation.8.4.2]
+task = "8.4"
+file = "explorer/backend"
+symbol = "read-path-latency"
+observed = "Timed directly with curl, five samples each, the slowest read endpoints of the development backend are /api/v2/blocks/{number}/transactions at a p50 of 378 ms, /api/v2/addresses at 354 ms, /api/v2/blocks/{number} at 338 ms and /api/v2/stats at 327 ms, against 195-280 ms for the rest, of which roughly 100-180 ms is server time and the remainder the hop to the Railway edge."
+assumption = "The read path is not what makes a page slow - no page waits on one of these - so the figures are left for whoever tunes the backend and nothing in the frontend is changed for them."
+severity = "note"
+
+[observation.8.4.3]
+task = "8.4"
+file = "explorer/backend"
+symbol = "read-path-tail"
+observed = "Endpoints that answer in 200-300 ms at the median carry a repeated tail of about five seconds - /api/v2/stats max 5182 ms, /api/v2/addresses/{hash}/tabs-counters max 5268 ms, /api/v2/addresses/{hash}/tokens max 5360 ms, /api/v2/stats/charts/secondary-coin-price max 5379 ms - in one of five samples on several of them."
+assumption = "A p99 of five seconds on the read path is a backend or database finding, most likely a lock or a cold query plan, and belongs to whoever owns the indexer rather than to this task."
+severity = "note"
+
+[observation.8.4.4]
+task = "8.4"
+file = "explorer/backend"
+symbol = "cache-control"
+observed = "Every backend response carries cache-control: max-age=0, private, must-revalidate, including records that can never change once written, such as /api/v2/transactions/{hash} and /api/v2/blocks/{number}."
+assumption = "Neither the browser nor the Railway edge may reuse an immutable record, so the frontend holds it in memory with a stale time instead, and a public, immutable cache-control on the by-hash paths stays a backend decision."
+severity = "note"
+
+[observation.8.4.5]
+task = "8.4"
+file = "explorer/backend"
+symbol = "stats_charts_secondary_coin_price"
+observed = "/api/v2/stats/charts/secondary-coin-price answers 400 on every call, in 215 ms at the median and 5379 ms at worst, and the frontend asks for it on the pages that show the market chart."
+assumption = "The endpoint needs a secondary coin configured or the feature turned off; the request is made by configuration rather than by code, so no page stops asking for it in this task."
+severity = "note"
+
+[observation.8.4.6]
+task = "8.4"
+file = "explorer/frontend/lib/api/isNeedProxy.ts"
+symbol = "isNeedProxy"
+observed = "The development deployment runs with NEXT_PUBLIC_APP_ENV=development, so isNeedProxy() is true and every browser request takes the /node-api/proxy detour through the Next.js container - two hops per request, and nothing cacheable at the edge; the ten slowest in-page calls of the pass are all proxied, from 236 ms to 760 ms."
+assumption = "The variable is a deployment setting, not code, so it is recorded for the leader rather than changed here; NEXT_PUBLIC_APP_ENV=production on the development service would remove the hop without touching the frontend."
+severity = "note"
+
+[observation.8.4.7]
+task = "8.4"
+file = "explorer/frontend/ui/shared/nft/useLoadImageViaIpfs.tsx"
+symbol = "HELIA_VERIFIED_FETCH_ENABLED"
+observed = "The deployment runs with NEXT_PUBLIC_HELIA_VERIFIED_FETCH_ENABLED=true while the chain carries no ipfs:// media, and the verified-fetch client is a 486 KB gzipped chunk that the transaction, token and address pages loaded eagerly."
+assumption = "This task makes the client arrive only when a gateway fallback is taken; turning the variable off on the deployment would also stop the fallback from ever being reachable, which is the leader's call."
+severity = "note"
+
+[observation.8.4.8]
+task = "8.4"
+file = "explorer/frontend/ui/pages/Stats.tsx"
+symbol = "stats-microservice"
+observed = "/stats answers 404 on the development deployment because no statistics microservice host is configured, and the route still ships 1058 KB of JavaScript over 17 files before it renders the not-found page."
+assumption = "The missing host is a deployment setting; the page is built and shipped by the router either way, so nothing in this task changes what the route sends."
+severity = "note"
+
+[observation.8.4.9]
+task = "8.4"
+file = "explorer/deploy"
+symbol = "remote-configuration"
+observed = "The shell fetches four configuration files from raw.githubusercontent.com while it boots - the featured networks, the footer links, the homepage highlights and the third-party widgets - plus a promo banner and the network logo from further third-party hosts, each a cross-origin request on the critical path."
+assumption = "Serving those files from the explorer's own origin is a deployment change, so the paths are recorded rather than moved, and no request is removed from the code."
+severity = "note"
+
+[observation.8.4.10]
+task = "8.4"
+file = "explorer/deploy"
+symbol = "cold-route"
+observed = "The first request to a route that has not been visited recently costs about 1.25 s of time to first byte, against 160-342 ms once the route is warm."
+assumption = "A cold route compile or a container spin-up on the development service, which a warm-up or a larger instance addresses; it is measured here only so it is not mistaken for page cost."
+severity = "note"
+
+[observation.8.4.11]
+task = "8.4"
+file = "explorer/deploy"
+symbol = "NAVIGATION_LAYOUT"
+observed = "The development service still runs NEXT_PUBLIC_NAVIGATION_LAYOUT=vertical while the wave-5 shell is built around the horizontal navigation, and the page description and social preview text still carry the pre-fork product wording."
+assumption = "Both are deployment variables rather than code, so they are recorded for the leader; the shell itself is not changed to match a stale setting."
+severity = "note"
+
+[observation.8.4.12]
+task = "8.4"
+file = "explorer/frontend/ui/pages/Block.spec.tsx"
+symbol = "testTimeout"
+observed = "The second run of this task's verify command exits 1 on three page specs this task does not touch - ui/pages/Block.spec.tsx, ui/pages/PaxeerXAccount.spec.tsx and ui/pages/Stats.spec.tsx - each stopping at vitest's default five-second per-test budget while the host carried a load average of 13, and the same three files pass on their own at the same revision in 40 s with their slowest test at 3.6 s, having also passed in the first run of the same command at a load average of 10; log build/explorer-gates/8.4-verify-run2.log, diagnosis log build/explorer-gates/8.4-diag-three-specs.log."
+assumption = "A pre-existing, load-bound timeout in specs that do not declare the sixty-second budget their sibling page specs use - the block page spec is the one the wave-7 aggregate already recorded at the merged tip - so it is recorded for their owners rather than repaired or chased from here."
+severity = "note"
+
+[observation.8.4.13]
+task = "8.4"
+file = "explorer/frontend/yarn.lock"
+symbol = "lodash-es"
+observed = "The first production build of this lane failed with dozens of 'Module not found' errors inside node_modules/lodash-es - './_arrayMap.js', './_baseIsNative.js', './_assocIndexOf.js' and more, reached through formik and @dynamic-labs/sdk-react-core from pages/_app - because the installed lodash-es 4.17.22 held 542 of its 650 files; two lanes installed at the same time carry the truncated copy and two others carry the complete one; log build/explorer-gates/8.4-build-after.log."
+assumption = "A concurrent yarn install against the shared yarn cache extracted the package partially, not a repository or lockfile defect, since the same lockfile yields a complete package in the lanes that installed alone; the copy was restored from a complete lane and the build repeated, and any lane whose image build fails on the same message needs its package reinstalled."
+
+[observation.8.1.1]
+task = "8.1"
+file = "explorer/frontend/ui/home/LatestBlocks.tsx"
+symbol = "SOCKET_FLUSH_INTERVAL_MS"
+observed = "Measured over one minute on the running dev explorer, which serves the home page as it stood before this task, the live block list applied 420 row-set updates per minute and touched 2.09 row subtrees per update, a pointer resting on the list held nothing - 41 updates inside a six-second hover - and a click on the first row opened /block/25878773 while that row's link read /block/25878771, log /root/lx-ops/explorer-ui-2026-09-27/wave8/8.1/flushes-before.json; after the change, twenty messages that arrive inside five hundred milliseconds over the real socket reach the list as one flush and one row-set update, which is at most 30 updates per minute at the two-second cadence, one row renders per flush and the rows the flush leaves alone render zero times, and a pointer resting on the list holds the flush until it leaves."
+assumption = "The after figures are the ones the specs of this task measure over the real socket endpoint, the real channel and the real row render path, because the lane's own dev server could not render the home page for a browser measurement, which observation 8.1.3 records."
+severity = "note"
+
+[observation.8.1.2]
+task = "8.1"
+file = "explorer/frontend/ui/home/LatestTxsItem.spec.tsx"
+symbol = "use-font-face-observer"
+observed = "At revision 50ad0f4afcd1ec6974fe09f6db272ace49b186dd with this task's changes applied the command timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/home lib/socket' exits 1 with fifteen spec files and fifty-three cases passing and three unhandled ReferenceError: document is not defined thrown by fontfaceobserver timers after a spec environment is torn down, log .logs/task-8.1-verify-run3.log, while the same spec file run alone passes at exit 0."
+assumption = "The observer comes from use-font-face-observer inside the shared truncation components this task does not touch, the merged-tip gate of task 7.1 already records the vitest teardown errors of this suite, and the leak is left exactly as it is rather than silenced in a config, so task 8.1 stays in progress as implemented and not qualified."
+severity = "note"
+note = "Closed by task 8.5: with the font-face set the vitest setup now fills in, the same command over ui/home and lib/socket exits 0 at revision d83276386c479a0acbfd9ec2d4b3804afbaabd4b with the fifteen spec files and fifty-three cases passing and no unhandled error, log .logs/task-8.1-verify-run4.log."
+
+[observation.8.1.3]
+task = "8.1"
+file = "explorer/frontend/configs/multichain/config.nodejs.ts"
+symbol = "yarn dev"
+observed = "The lane's dev server answered the home page at 200 only after 108 missing files of node_modules/lodash-es were restored from a sibling lane, and the page then threw Element type is invalid, expected a string or a class/function but got: object, check the render method of chakra(svg), so no row of the live list ever rendered and the browser measurement of the after case could not be taken, log /root/lx-ops/explorer-ui-2026-09-27/wave8/8.1/dev-server.log."
+assumption = "The lane install is short of files and the turbopack dev bundle also reports a browser import of the node-only multichain config, both outside this task's files, so the after figures of observation 8.1.1 come from the specs and a browser measurement waits for a lane whose install is whole."
+severity = "note"
+
+[observation.8.7.1]
+task = "8.7"
+file = "explorer/frontend/tools/scripts/dev.sh"
+symbol = "dev"
+observed = "The development server the dev script starts renders every page as the error boundary with Element type is invalid, got object, check the render method of chakra(svg), and it did so twice in this lane after the short install observation 8.1.3 names was made whole from the published package, while the same script with the older bundler serves the same tree and renders the home page and its lists normally."
+assumption = "The fault is in the newer bundler's handling of the icon sprite component and reaches every page rather than any file of this task, so the browser check of this task was taken against the older bundler and the dev script is left exactly as it stands."
+severity = "note"
+
+[observation.8.2.1]
+task = "8.2"
+file = "explorer/frontend/tools/scripts/dev.sh"
+symbol = "next dev --turbopack"
+observed = "yarn dev starts next dev --turbopack against a next.config that only declares a webpack configuration, so the browser bundle follows configs/multichain/config.nodejs.ts into node built-ins, the compiler reports Module not found: Can't resolve 'fs' and every page of the local server renders the error boundary with Element type is invalid, log explorer/frontend/.logs/dev-8.2b.log."
+assumption = "The turbopack flag predates the webpack-only configuration this repository carries and is reproduced with all five runtime files of this task reverted, so it belongs to the dev script rather than to the pills, and the visual check of this task ran the same server through next dev without that flag, log explorer/frontend/.logs/dev-8.2c.log, leaving the script exactly as written."
+severity = "note"
+
+[observation.8.2.2]
+task = "8.2"
+file = "explorer/frontend/ui/shared/scan/ScanMethodChip.tsx"
+symbol = "ScanMethodChip"
+observed = "The development chain behind the local server returns an empty list from /api/v2/tokens and carries no decoded method on any recent transaction, so the token detail page and the method chip of the table rows have no live instance on the nine scan pages the visual check walks."
+assumption = "The absence is in the data of that chain rather than in the recipes, so the check adds the /chakra showcase, whose badge and tag sections render every size and variant of both recipes, and reads those pills instead of waiting for a token or a decoded call the chain does not hold."
+severity = "note"
+
+[observation.8.2.3]
+task = "8.2"
+file = "explorer/frontend/vitest/setup.ts"
+symbol = "fontfaceobserver"
+observed = "At revision 2c7cc3cfa5c7ff30141a39c04e10d9f8b0d042e3 the task verify_cmd passes its type check and all 20 spec files with all 149 tests, the five this task writes among them, and exits 1 because vitest caught one unhandled ReferenceError: document is not defined raised from node_modules/fontfaceobserver/fontfaceobserver.standalone.js on a timer that fires after the jsdom environment of ui/shared/scan/ScanMethodChip.spec.tsx is torn down, log .logs/verify-8.2-run2.log."
+assumption = "It is the teardown race already recorded as observation 7.1.2, where 62 of the same error appeared across many spec files of the wave gate, and the earlier run of this same command over these same specs raised none, so it is the timing of the font poll rather than anything this task wrote; the setup file that installs the environment lies outside this task's paths, so nothing is changed, no test is skipped and the suite is not rerun unchanged."
+severity = "note"
+
+[observation.8.2.4]
+task = "8.2"
+file = "spec/paxeer-x-explorer/spec.kvx"
+symbol = "cg spec done"
+observed = "The task verify_cmd passes at exit 0 over the merged feature tip, log explorer/frontend/.logs/verify-8.2-run3.log, with all 20 spec files and 153 tests green and no unhandled error, but three consecutive runs of cg spec done 8.2 refused to apply because the graph database write lock was held for the whole wait by other concurrent processes, so the task keeps the in_progress status and its done record is still unwritten."
+assumption = "The lock belongs to the editor and indexing processes running beside this work rather than to anything this task changed, since the command reports that nothing was applied and is safe to retry, so the four evidence lines are left for the same command to write once the lock frees instead of being entered by hand."
+severity = "blocker"
+
+[gate.8.wave]
+task = "8"
+reqs = ["16.1","16.2","16.3","16.4"]
+revision = "b4f3d6019f537c547b0753af0f63148f23dc348c"
+command = "timeout 25m sh -c 'cd explorer/frontend && yarn lint:eslint && yarn lint:tsc && yarn test:vitest run'"
+environment = "linux/x86_64, node 22 and yarn 1 in explorer/frontend, the dependency tree installed into this working tree from the lockfile as the gate's one build with HUSKY=0 yarn install --frozen-lockfile at exit 0"
+exit_code = 2
+outcome = "fail"
+log_path = "explorer/frontend/.logs/gate-8-wave.log"
+note = "Wave 8 declares no gate task of its own, so its waves were qualified once on the merged revision with the frontend legs of ac_1 chained as one command. The eslint leg passed over the project with 0 errors and 7 warnings, the type check leg then exited 2 and the chain stopped there, so the vitest leg never ran and wave 8 carries no test-leg record; the backend suites and the cspell and services lint checks are outside this run. The gate is not rerun at this revision."
+observed = "The type check leg, yarn lint:tsc, exits 2 with 31097 diagnostics over 1461 files - nearly every Chakra style prop in the tree, including files no wave-8 task touches, reported from pages/_app.tsx onwards as TS2322 Type string is not assignable to type Nested<SystemStyleObject> - while the eslint leg of the same command passed and the vitest leg was never reached."
+assumption = "The collapse is read as the generated Chakra typings of this fresh install rather than as anything the wave wrote, because the postinstall typegen left node_modules/@chakra-ui/react/dist/types/styled-system/generated/conditions.gen.d.ts zero length beside the four typings the package ships, which is what strips every style prop of its type, and every wave-8 task ran this same type check at its own revision and recorded it passing; nothing is changed, no diagnostic is silenced and neither the install nor the gate is rerun here."
+
+[gate.8.wave.rerun]
+task = "8"
+reqs = ["16.1","16.2","16.3","16.4"]
+revision = "1e970b438fb8f97b0f10e31c43fbe8d01d2c632d"
+command = "timeout 25m sh -c 'cd explorer/frontend && yarn lint:tsc && yarn test:vitest run'"
+environment = "linux/x86_64, node v22.23.2 and yarn 1.22.22 in explorer/frontend, the same installed dependency tree as the first run with the Chakra style typings regenerated by the postinstall command the package declares, chakra typegen ./toolkit/theme/theme.ts, at exit 0 and no reinstall or build"
+exit_code = 0
+outcome = "pass"
+log_path = "explorer/frontend/.logs/gate-8-wave-rerun.log"
+observed = "The type check leg, yarn lint:tsc, exits 0 over the same 1461 files with none of the 31097 TS2322 diagnostics of the first run, and the vitest leg then passes all 192 spec files and all 1102 tests with no unhandled error, so the two legs the first run left unrecorded now hold a passing record; the eslint leg passed at this same revision in the first run and is not repeated, and the backend suites and the cspell and services lint checks stay outside this run."
+assumption = "The difference is read as the generated Chakra conditions typing alone, which the regeneration restored from zero length to a full Conditions interface beside the four other generated typings before the run, since no file under the source tree, the type check configuration, the test configuration, the manifest or the lockfile was touched between the two runs and the revision is unchanged; the first run's record stands as written and nothing in it is revised."

@@ -113,6 +113,19 @@ describe('ScanPagination', () => {
     expect(onLastPageClick).toHaveBeenCalledTimes(1);
   });
 
+  it('lets the control row wrap so it never widens the card it sits in', () => {
+    const { container } = render(
+      <Provider>
+        <ScanPagination { ...params() } pageCount={ 10 }/>
+      </Provider>,
+    );
+
+    const nav = container.querySelector('[data-scan-pagination]');
+
+    expect(nav?.tagName).toBe('NAV');
+    expect(nav?.hasAttribute('data-wrap-row')).toBe(true);
+  });
+
   it('renders nothing while the list is not paginated', () => {
     const { container } = render(
       <Provider>

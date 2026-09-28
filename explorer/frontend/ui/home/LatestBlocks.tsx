@@ -10,9 +10,9 @@ import { route } from 'nextjs-routes';
 
 import config from 'configs/app';
 import useApiQuery, { getResourceKey } from 'lib/api/useApiQuery';
-import useInitialList from 'lib/hooks/useInitialList';
 import useIsMobile from 'lib/hooks/useIsMobile';
 import getNetworkUtilizationParams from 'lib/networks/getNetworkUtilizationParams';
+import useSocketBuffer from 'lib/socket/useSocketBuffer';
 import useSocketChannel from 'lib/socket/useSocketChannel';
 import useSocketMessage from 'lib/socket/useSocketMessage';
 import { BLOCK } from 'stubs/block';
@@ -42,11 +42,6 @@ const LatestBlocks = () => {
       placeholderData: Array(blocksMaxCount).fill(BLOCK),
     },
   });
-  const initialList = useInitialList({
-    data: data ?? [],
-    idFn: (block) => block.height,
-    enabled: !isPlaceholderData,
-  });
 
   const queryClient = useQueryClient();
   const statsQueryResult = useApiQuery('general:stats', {
@@ -59,18 +54,37 @@ const LatestBlocks = () => {
   const rpcDataContext = useHomeRpcDataContext();
   const isRpcData = rpcDataContext.isEnabled && !rpcDataContext.isLoading && !rpcDataContext.isError && rpcDataContext.subscriptions.includes('latest-blocks');
 
-  const handleNewBlockMessage: SocketMessage.NewBlock['handler'] = React.useCallback((payload) => {
+  const handleFlush = React.useCallback((blocks: Array<Block>) => {
     queryClient.setQueryData(getResourceKey('general:homepage_blocks'), (prevData: Array<Block> | undefined) => {
+      const prevLength = prevData?.length ?? 0;
+      const nextData = prevData ? [ ...prevData ] : [];
+      const heights = new Set(nextData.map((block) => block.height));
 
-      const newData = prevData ? [ ...prevData ] : [];
+      blocks.forEach((block) => {
+        if (heights.has(block.height)) {
+          return;
+        }
 
-      if (newData.some((block => block.height === payload.block.height))) {
-        return newData;
+        heights.add(block.height);
+        nextData.push(block);
+      });
+
+      if (nextData.length === prevLength) {
+        return prevData;
       }
 
-      return [ payload.block, ...newData ].sort((b1, b2) => b2.height - b1.height).slice(0, blocksMaxCount);
+      return nextData.sort((b1, b2) => b2.height - b1.height).slice(0, blocksMaxCount);
     });
   }, [ queryClient, blocksMaxCount ]);
+
+  const { push: pushBlock, hoverProps } = useSocketBuffer<Block>({
+    onFlush: handleFlush,
+    limit: blocksMaxCount,
+  });
+
+  const handleNewBlockMessage: SocketMessage.NewBlock['handler'] = React.useCallback((payload) => {
+    pushBlock(payload.block);
+  }, [ pushBlock ]);
 
   const channel = useSocketChannel({
     topic: 'blocks:new_block',
@@ -117,14 +131,15 @@ const LatestBlocks = () => {
 
       return (
         <>
-          { dataToShow.map(((block, index) => (
-            <LatestBlocksItem
-              key={ block.height + (isPlaceholderData ? String(index) : '') }
-              block={ block }
-              isLoading={ isPlaceholderData }
-              animation={ initialList.getAnimationProp(block) }
-            />
-          ))) }
+          <Box data-label="latest-blocks-rows" { ...hoverProps }>
+            { dataToShow.map(((block, index) => (
+              <LatestBlocksItem
+                key={ String(block.height) + (isPlaceholderData ? String(index) : '') }
+                block={ block }
+                isLoading={ isPlaceholderData }
+              />
+            ))) }
+          </Box>
           <Flex data-label="view-all-blocks" justifyContent="center" px={ 4 } py={ 3 } borderTopWidth="1px" borderStyle="solid" borderColor="border.divider">
             <Link
               textStyle="xs"
