@@ -332,3 +332,19 @@ symbol = "@noble/curves/ed25519.js"
 observed = "The SDK agent module now imports the .js subpaths of both noble packages, and the unchanged surfaces verify command reran at 9442335562b93bf1239a206ab197bf77aba56d5e and exited 0 with 10 tests passing across 5 files."
 assumption = "Observation 4.3.1 is resolved by the SDK specifier change; the app's dedupe list and versions are unchanged."
 severity = "note"
+
+[observation.4.2.4]
+task = "4.2"
+file = "human/apps/wallet/e2e/sign-in.spec.ts"
+symbol = "EMAIL_CODE"
+observed = "The app type check exits 2 at 90d15555891d56e28d08e6b43242c55936578f6d on one error outside src/account: TS2367 at line 21, comparing the literal EMAIL_CODE 424242 with 000000."
+assumption = "The browser suite's owner picks the wrong code without comparing two literals; no error is reported under src/account."
+severity = "note"
+
+[observation.4.2.5]
+task = "4.2"
+file = "human/apps/wallet/src/account/test/endpoint.ts"
+symbol = "golden"
+observed = "The unchanged verify command reran at 90d15555891d56e28d08e6b43242c55936578f6d after the SDK specifier fix and exited 1: 20 of 26 tests pass, KernelPlan.test.tsx fails to collect because it reads human/wallet/schema/human-api/golden while the goldens live at human/schema/human-api/golden, and six unavailable-state tests in AccountView and DepositFlow read Checking the LayerX kernel state instead of the named reason."
+assumption = "The task owner corrects the golden path and waits for the kernel state to settle before reading the reason; the import defect of the first run is resolved."
+severity = "note"
