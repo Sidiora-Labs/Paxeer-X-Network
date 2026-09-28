@@ -1116,6 +1116,21 @@ file = "tools/wallet/check-live.sh"
 symbol = "cutover"
 observed = "The verify command ran with CHECK_LIVE_CUTOVER_HOST unset and refused with the missing-variable message and exit 2 (.logs/verify.log), the honest outcome before the live cutover; the check-live test's cutover cases and the gateway served-by test passed."
 assumption = "The verify command is runnable only after the live cutover, when the operator runs preflight.sh and apply.sh on the current host and then the check with the public hostname set; the task is recorded implemented until that run."
+
+[observation.4.7.1]
+task = "4.7"
+file = "human/wallet/attestor/cmd/loadtest/main.go"
+symbol = "Summary"
+observed = "The load test tool passed against five in-process hardened daemons, but the run against the deployed network that req 3 ac_5 asks for has not been executed and no deployed summary is recorded."
+assumption = "The deployed run is executed once from inside the deployment's private network with the gateway client identity, CA bundle and owner token that already live there, and its Summary is appended here without any hostname, address or secret."
+severity = "blocker"
+
+[observation.4.7.2]
+task = "4.7"
+file = "human/wallet/deploy/attestor-1.toml"
+symbol = "ATTESTOR_KERNEL_POLICY_FILE"
+observed = "The five attestor definitions set no kernel policy, RPC URL or activity types, so on the deployed network every ed25519 session the tool drives (an lx_activity program call) will be refused and counted under policy_denied:no_policy."
+assumption = "The deployed Summary reports that class honestly for the ed25519 half until the kernel policy is deployed; the secp256k1 half measures the signing path."
 severity = "note"
 
 [observation.5.2.1]

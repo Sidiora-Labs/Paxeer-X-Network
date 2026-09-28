@@ -989,7 +989,7 @@ log_path = ".logs/verify.log"
 
 [task.4.7]
 title = "Load-test the deployed attestor network once"
-status = "pending"
+status = "implemented"
 wave = 4
 requires = ["3.5"]
 do_1 = "Add human/wallet/attestor/cmd/loadtest driving concurrent signing sessions of both curves against a configured network for a bounded duration with a configured concurrency, reporting throughput, latency percentiles and refusals as JSON."
@@ -998,6 +998,10 @@ verify_cmd = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./
 symbols = ["loadtest","Summary"]
 touches = ["human/wallet/attestor/cmd/loadtest/main.go","human/wallet/attestor/cmd/loadtest/loadtest_test.go","spec/paxeer-x-wallet/qualification.kvx"]
 reqs = ["3.5"]
+revision = "1a9cd6ea1a881856fe2e1e2c883971858e291bd2"
+command = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./cmd/loadtest/...'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.4.8]
 title = "Record the security review of the library delta and the daemon"
