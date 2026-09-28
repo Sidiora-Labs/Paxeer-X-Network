@@ -1,0 +1,138 @@
+# GOTCHA.kvx - the repository's gotcha ledger.
+#
+# Every session reads this file before touching the tree. Every gotcha or
+# small error met while working here is appended as one entry, so the next
+# session starts already knowing it. Append-only; never rewrite history.
+# When a gotcha stops being true, add resolved = "<what changed>" to it.
+#
+# Format: sectioned KV using the portable .kvx convention. String values are
+# ALWAYS double-quoted. One key = value per line.
+#   [gotcha.<n>]
+#   area    = "build | test | git | spec | go | rust | node | chain | ops | tooling"
+#   symptom = "what you see"
+#   cause   = "why it happens"
+#   do      = "what to do instead"
+#
+# Never write a hostname, an IP address, a secret, a credential, a person's
+# name, a date, or the name of a model, an agent, a lane or a branch here.
+
+[meta]
+name    = "LayerX repository gotchas"
+kind    = "gotcha-ledger"
+version = "0.1.0"
+status  = "active"
+read_at = "session start, before the first edit"
+
+[gotcha.1]
+area    = "git"
+symptom = "A commit command prints nothing for minutes after the commit has already been recorded."
+cause   = "The post-commit hook runs cg git-sync, which hangs when several worktrees commit at once."
+do      = "Check git log -1; if the commit is there, kill the post-commit process and carry on. Never re-run the commit for the same change."
+
+[gotcha.2]
+area    = "git"
+symptom = "The advisory cg check pre-commit hook stalls when many worktrees commit in parallel."
+cause   = "The hook indexes the tree and serialises on a shared lock."
+do      = "Commit with --no-verify while a fleet is running; the hook is advisory, not a gate."
+
+[gotcha.3]
+area    = "go"
+symptom = "Rebasing a Go task onto its feature branch conflicts on go.mod and go.sum."
+cause   = "Parallel tasks each add their own require lines to the same module in the same wave."
+do      = "Resolve as the union of both sides with identical pinned versions, then run a read-only go list ./... over the merged module; never drop a sibling's require."
+
+[gotcha.4]
+area    = "go"
+symptom = "Types from go-ethereum do not line up between the root module and a nested module."
+cause   = "The root go.mod replaces go-ethereum with the pax-geth fork; nested modules pin upstream go-ethereum without that replace."
+do      = "Do not import root packages that expose geth types from a nested module; talk to the chain over JSON-RPC and ABI JSON instead, or add the same replace to the nested module on purpose."
+
+[gotcha.5]
+area    = "rust"
+symptom = "cargo test -p <crate> <filter> exits 0 and the gate passes although nothing ran."
+cause   = "A filter that matches no test name runs zero tests and still succeeds."
+do      = "Name every test for the verify filter (prefix it with the filter word) and read the log: a run with 0 tests is a failure, not a pass."
+
+[gotcha.6]
+area    = "build"
+symptom = "Parallel checkouts of the human or platform Rust workspaces fill the disk and rebuild from scratch each time."
+cause   = "Each workspace target directory is 10 to 15 GB; every worktree gets its own by default."
+do      = "Export CARGO_TARGET_DIR to one shared directory per workspace. Cargo serialises on the directory lock; waiting several minutes for the lock is normal."
+
+[gotcha.7]
+area    = "ops"
+symptom = "Disk usage climbs to 95 percent with many worktrees present."
+cause   = "Each worktree checkout costs about 1.5 GB before any build output."
+do      = "Remove worktrees whose branches are already merged and clean (git worktree remove); keep the branches. Do not remove a worktree that a running agent uses."
+
+[gotcha.8]
+area    = "spec"
+symptom = "cg spec lint prints many warnings for a new feature."
+cause   = "Warnings name touches paths that do not exist yet; they are expected before the tasks run."
+do      = "Zero errors is the pass criterion. Pass -f <feature> when the feature is not the active one in workflow.kvx."
+
+[gotcha.9]
+area    = "spec"
+symptom = "A rebase conflicts on spec/<feature>/requirements.md, design.md or tasks.md."
+cause   = "The markdown files are generated mirrors of spec.kvx and every task re-renders them."
+do      = "Take the feature side of the mirrors, keep only your own task block in spec.kvx, then run cg spec render and commit the result."
+
+[gotcha.10]
+area    = "test"
+symptom = "Verify logs vanish or clutter the tree."
+cause   = "/.logs/ and *.log are gitignored at the repository root; anywhere else they show up as untracked files."
+do      = "Write gate output to .logs/verify.log under the checkout root and record that path as the evidence log path."
+
+[gotcha.11]
+area    = "node"
+symptom = "pnpm install --frozen-lockfile fails for an application that carries a package-lock.json."
+cause   = "The repository standard is pnpm; an npm lockfile is not accepted by pnpm."
+do      = "Run pnpm import once to derive pnpm-lock.yaml, delete package-lock.json, and commit the pnpm lockfile."
+
+[gotcha.12]
+area    = "chain"
+symptom = "The public mainnet RPC hostname answers 400 plain HTTP request was sent to HTTPS port on /evm and 502 on /."
+cause   = "The edge in front of it is misconfigured for its upstream scheme."
+do      = "Do not point tests, tools or defaults at it until the edge is fixed; use a node RPC you control and keep the hostname behind a configuration variable."
+
+[gotcha.13]
+area    = "chain"
+symptom = "eth_getLogs over tens of thousands of blocks against a full node never returns."
+cause   = "The node scans the range synchronously and the request outlives the client timeout."
+do      = "Query in ranges of a few thousand blocks and walk forward; use the explorer database for history."
+
+[gotcha.14]
+area    = "chain"
+symptom = "Kernel-dependent lx_ and px_ methods of the hosted endpoint have no live backend; the anchor precompile reports no finalised height."
+cause   = "The kernel is not anchored on mainnet and the hosted endpoint is not deployed."
+do      = "Build and test against chain state alone; kernel-dependent paths must answer a typed unavailable error, never hang or fake data."
+
+[gotcha.15]
+area    = "tooling"
+symptom = "A dispatch call for a background worker reports an internal error although the worker started."
+cause   = "The dispatch result can be lost while the worker itself keeps running."
+do      = "Before dispatching again, check git worktree list and the branch tips for the task; a duplicate worker corrupts the lane."
+
+[gotcha.16]
+area    = "ops"
+symptom = "du over the whole home directory exceeds the shell timeout."
+cause   = "Hundreds of gigabytes of worktrees, build caches and module caches sit under it."
+do      = "Measure one directory at a time or run the measurement in the background and read the output file."
+
+[gotcha.17]
+area    = "ops"
+symptom = "SSH to a remote host resets during key exchange or closes right after connecting."
+cause   = "The host's sshd connection slots are exhausted by unauthenticated login attempts."
+do      = "Retry in a short loop with a few seconds between attempts; harden the host's sshd (rate limiting, key-only auth, a firewall allowlist) before relying on it."
+
+[gotcha.18]
+area    = "test"
+symptom = "A worker's verify command passed before its rebase, and the rebase changed only lockfiles or go.mod."
+cause   = "The task gate ran at an earlier revision than the one that landed on the feature branch."
+do      = "Record the revision the gate actually ran at. A lockfile-only rebase does not require a rerun; the merged wave gate covers it."
+
+[gotcha.19]
+area    = "go"
+symptom = "A threshold wrapper built on the alice library lets fewer signers than intended produce a valid signature."
+cause   = "The library's threshold parameter is the number of shares needed to sign (3 for three-of-five), not the polynomial degree of 2."
+do      = "Pass the signer count as the threshold and keep a test that proves one signer fewer cannot complete a signing session."

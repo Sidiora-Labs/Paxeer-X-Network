@@ -21,7 +21,7 @@ This file is a GENERATED pointer to it. Do not hand-edit it; edit `spec/workflow
 
 ## The loop (every session)
 
-1. Read spec/<active_feature>/spec.kvx — the [meta] status, [req.*] (acceptance criteria), and the [task.*] list with status + wave + requires.
+1. Read GOTCHA.kvx at the repository root, then spec/<active_feature>/spec.kvx — the [meta] status, [req.*] (acceptance criteria), and the [task.*] list with status + wave + requires. Append every gotcha or small error you meet to GOTCHA.kvx as one [gotcha.<n>] entry before you finish.
 2. Select the next eligible task: lowest wave whose every 'requires' task is done and whose status is pending. Set its status to in_progress in spec.kvx.
 3. Before any destructive/irreversible/prod/secret/network-write action, run cortex_guard and self-check against HARD rules; stop for explicit user YES if it risks a HARD rule.
 4. Implementation stage: write the entire task against every referenced acceptance criterion using real code paths and types. Write specified tests, but do not format, build, run tests, or repair failures until the entire task implementation is complete. Keep status in_progress.
