@@ -165,7 +165,7 @@ fn list_assets_params(params: Option<&Value>) -> Result<(Option<String>, usize),
             else {
                 return Err(-32602);
             };
-            limit as usize
+            usize::try_from(limit).map_err(|_| -32602)?
         }
         Some(_) => return Err(-32602),
     };
