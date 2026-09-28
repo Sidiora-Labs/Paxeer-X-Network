@@ -284,7 +284,7 @@ reqs = ["2.3","2.4","2.6","11.2"]
 
 [task.1.7]
 title = "Decode kernel-side payloads against the repository's golden vectors"
-status = "pending"
+status = "done"
 wave = 1
 requires = []
 do_1 = "Add human/wallet/attestor/internal/lxwire decoding the kernel activity envelope from its canonical binary encoding as agent/crates/layerx-wire defines it (big-endian fixed-width integers, field tags, length-prefixed bytes, sorted maps), exposing the typed fields, the account sequence, the authority kind and the signature preimage under the signature-preimage domain."
@@ -292,8 +292,12 @@ do_2 = "Add the account id derivation (protocol 3, LX:ACCOUNT:v1 with length pre
 do_3 = "Add lxwire_test.go that decodes every activity golden under agent/schema/agent-api/golden and re-encodes it byte for byte, checks the binding vectors under layerxproof/testvectors and layerxproof/testdata, and checks account ids against values computed by layerxproof/codec."
 verify_cmd = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./internal/lxwire/...'"
 symbols = ["DecodeActivity","EncodeActivity","SignaturePreimage","AccountID","DIDFromKey","BindMessage","GrantPreimage","ReceivePreimage"]
-touches = ["human/wallet/attestor/internal/lxwire/activity.go","human/wallet/attestor/internal/lxwire/ids.go","human/wallet/attestor/internal/lxwire/bind.go","human/wallet/attestor/internal/lxwire/payments.go","human/wallet/attestor/internal/lxwire/lxwire_test.go"]
+touches = ["human/wallet/attestor/internal/lxwire/activity.go","human/wallet/attestor/internal/lxwire/ids.go","human/wallet/attestor/internal/lxwire/bind.go","human/wallet/attestor/internal/lxwire/payments.go","human/wallet/attestor/internal/lxwire/lxwire_test.go","human/wallet/attestor/internal/lxwire/testdata/activities.json","agent/crates/layerx-wire/tests/wallet_vectors.rs","agent/crates/layerx-wire/tests/support/wallet_vectors/activities.json","human/wallet/attestor/go.mod"]
 reqs = ["2.5","2.7"]
+revision = "c51b28a0dfc2579380c80e4e4baacbc078002de4"
+command = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./internal/lxwire/...'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.1.8]
 title = "Verify user tokens and agent request signatures at the attestor"

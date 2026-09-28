@@ -40,7 +40,7 @@
     - Add human/wallet/attestor/internal/policy with a versioned per-account policy (per-transaction cap and rolling 24-hour cap per asset, request rate, destination and selector rules, allowed request kinds) evaluated from the decoded request and a rolling-window ledger, failing closed with typed reasons.
     - Add policy_test.go and evm_test.go covering each transaction type, each precompile decode against its ABI, chain id refusal, cap and rate refusals, typed data hashing against a known vector, personal message prefixing, both digest constructions recomputed and a mismatched digest refused, and an undecodable transaction refused.
     - _Requirements: 2.3, 2.4, 2.6, 11.2_
-  - [ ] 1.7 Decode kernel-side payloads against the repository's golden vectors
+  - [x] 1.7 Decode kernel-side payloads against the repository's golden vectors
     - Add human/wallet/attestor/internal/lxwire decoding the kernel activity envelope from its canonical binary encoding as agent/crates/layerx-wire defines it (big-endian fixed-width integers, field tags, length-prefixed bytes, sorted maps), exposing the typed fields, the account sequence, the authority kind and the signature preimage under the signature-preimage domain.
     - Add the account id derivation (protocol 3, LX:ACCOUNT:v1 with length prefix), the DID derivation from an Ed25519 public key, the LX:PAXEER-BIND:v1 message builder and parser, and the 402 grant and receive preimages under their documented domains.
     - Add lxwire_test.go that decodes every activity golden under agent/schema/agent-api/golden and re-encodes it byte for byte, checks the binding vectors under layerxproof/testvectors and layerxproof/testdata, and checks account ids against values computed by layerxproof/codec.
