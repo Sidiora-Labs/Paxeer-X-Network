@@ -545,3 +545,19 @@ symbol = "SignRequest"
 observed = "The attestor sign request refuses unknown fields and has no disclosure field, and the crate's custody Signer trait cannot be implemented outside layerx-crypto because AgentSignature has no public constructor."
 assumption = "AttestorSigner.sign_activity matches the disclosure fields against the canonical bytes before any request, sends kind lx_activity with the activity and the user's assertion, and verifies every returned signature with the crate's strict verifier."
 severity = "note"
+
+[observation.3.1.1]
+task = "3.1"
+file = "human/wallet/gateway/src/attestor/client.ts"
+symbol = "AttestorClient"
+observed = "The gateway attestor client probes /v1/health and posts sign bodies with bytes, context, authorisation and participants, where the daemon serves /health and takes kind-specific fields and signers, so it cannot sign against the real daemon."
+assumption = "Provisioning talks to the daemon through its own schema-conformant client in src/provision/bind.ts and leaves client.ts to the task that aligns it."
+severity = "suspect"
+
+[observation.3.1.2]
+task = "3.1"
+file = "human/wallet/attestor/cmd/attestor/main.go"
+symbol = "Agents"
+observed = "The daemon wires no agent verifier and accepts no operator authorisation for lx_bind or evm_tx, and no gateway route in this task's files accepts an agent's binding signature, so a backfill can only generate and store identities and leaves standard wallets awaiting their owner and agent wallets awaiting a signature."
+assumption = "The owner's next authenticated provision completes a backfilled standard wallet and provisionAccount completes an agent wallet once the agent route that carries its signature is added."
+severity = "note"

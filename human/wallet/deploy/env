@@ -141,6 +141,9 @@ NEXT_PUBLIC_SITE_URL - public origin of the demo used for page metadata
 ATTESTOR_ENDPOINTS - comma-separated https base URLs of the five attestor nodes the gateway signs through
 ATTESTOR_CLIENT_CERT_FILE - path to the gateway's mutual TLS client certificate presented to the attestors
 ATTESTOR_CLIENT_KEY_FILE - path to the private key of the gateway's mutual TLS client certificate
+SPONSOR_PRIVATE_KEY - platform secret holding the account setup sponsor key, written to the file named by SPONSOR_PRIVATE_KEY_FILE
+SPONSOR_PRIVATE_KEY_FILE - path to the 64-hex private key of the account that tops up binding gas for new unified accounts
+ACCOUNT_SETUP_GAS_CAP_WEI - largest binding gas top-up in wei the sponsor pays for one account
 ATTESTOR_CA_FILE - path to the CA bundle that authenticates the attestor nodes
 ATTESTOR_QUORUM - number of healthy attestors a signing session needs, defaulting to 3
 ATTESTOR_HEALTH_INTERVAL_MS - interval between attestor health probes in milliseconds, defaulting to 5000

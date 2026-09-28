@@ -143,7 +143,7 @@
 ## Wave 3 - Integration
 
 - [ ] 3. Integrate against real daemons and bring the network up
-  - [ ] 3.1 Provision the unified account: two keys, the binding and the backfill
+  - [x] 3.1 Provision the unified account: two keys, the binding and the backfill
     - In human/wallet/gateway make provisioning request a secp256k1 key and an Ed25519 key through keys.generate, derive the address, the DID and the main account id, store them with the wallet row, send the setup top-up from the sponsor account for the exact binding gas within the cap, request the Ed25519 signature over the binding message for the current nonce, build and sign bindLayerX from the wallet's address, broadcast, and confirm through getUnifiedAccount before reporting active; every step idempotent and resumable by a per-wallet state machine.
     - Extend /v1/wallet/me with the DID, the main account id, the binding state and the kernel availability state; add the backfill command over migrated wallets with a resumable cursor and bounded batches, using the agent's registered key for agent wallets; refuse and record a binding that names a different DID.
     - Add tests that spawn the real attestor daemon built from the repository and an in-test chain RPC server that implements the addr precompile's read and bind semantics, covering a full provision, a retry after each step, the different-DID refusal, the agent path and the backfill.

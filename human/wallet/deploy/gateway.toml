@@ -9,6 +9,11 @@ kill_timeout = "30s"
 [env]
   NODE_ENV = "production"
   PORT = "8080"
+  SPONSOR_PRIVATE_KEY_FILE = "/run/secrets/sponsor_private_key"
+
+[[files]]
+  guest_path = "/run/secrets/sponsor_private_key"
+  secret_name = "SPONSOR_PRIVATE_KEY"
 
 [http_service]
   internal_port = 8080
