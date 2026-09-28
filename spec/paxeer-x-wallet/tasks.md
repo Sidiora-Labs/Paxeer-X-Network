@@ -18,7 +18,7 @@
     - Normalise every signature to low s and compute the recovery id by recovering the public key, so the output is a 65-byte Ethereum signature; refuse to return a signature whose recovered address does not match the key.
     - Add an in-package in-memory peer manager in the test file so five participants run in one process, and tests covering keygen, signing of a real EIP-1559 transaction digest with address recovery through go-ethereum's crypto package, low-s normalisation, and a participant dropping out below threshold failing the session.
     - _Requirements: 1.1_
-  - [ ] 1.3 Wrap FROST on Ed25519 with standard signature output
+  - [x] 1.3 Wrap FROST on Ed25519 with standard signature output
     - Add human/wallet/attestor/internal/tss/eddsa wrapping the vendored library's FROST distributed key generation and two-round signing on Ed25519 with threshold three of five, exposing Keygen, Sign and the persisted share shape.
     - Encode the public key and the signature in RFC 8032 form (32-byte compressed point, 64-byte R||S) and verify every produced signature with the standard library before returning it.
     - Add tests with an in-package in-memory peer manager covering keygen, signing of the LX:PAXEER-BIND:v1 message shape and a receipt-domain digest, verification with crypto/ed25519 and with the strict verifier in layerxproof/verify, and refusal below threshold.

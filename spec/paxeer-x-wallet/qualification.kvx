@@ -15,3 +15,11 @@
 #   the load-test summary of 4.7 and the rehearsal counts of 5.2. Keys:
 #   revision, command, exit_code, log_path, observed. Never a hostname, an
 #   address, a secret or a person's name.
+
+[observation.1.3.1]
+task = "1.3"
+file = "human/wallet/attestor/internal/tss/eddsa/eddsa.go"
+symbol = "Threshold"
+observed = "The library's threshold parameter is the number of shares needed to sign (dkg draws a polynomial of degree threshold-1), so parameter two would be two of five, not three of five as [decision] custody_model and req.1.ac_1 state."
+assumption = "Three of five is the binding property, so the FROST wrapper passes library threshold three; task 1.2 and the decision text carry the same mapping and should be checked against it."
+severity = "suspect"
