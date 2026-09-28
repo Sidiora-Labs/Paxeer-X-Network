@@ -56,7 +56,7 @@
 ## Wave 4 - One Route For Every Fork Module's Authority
 
 - [ ] 4. Make every fork module's authority messages submittable and write the chain's operating values in one plan
-  - [ ] 4.1 Serve the web-search module's authority messages as transaction types
+  - [x] 4.1 Serve the web-search module's authority messages as transaction types
     - Declare the module's authority messages in api/xweb/tx.proto - MsgRegisterAttestor, MsgRemoveAttestor, MsgSetThreshold, MsgSetParams, MsgPause, MsgUnpause with one response message each - and a Msg service with one rpc per message, following api/layerxbridge/tx.proto: the go_package of the module's types package, gogoproto.typedecl false on the Attestor message so the generated code carries the Go type the types package already declares, the Address20 and sdk.Int fields under their custom types, and gogoproto.goproto_stringer false on every message.
     - Generate modules/xweb/types/tx.pb.go with the repository's proto generation and keep modules/xweb/types/msgs.go as the file that carries each message's Route, Type, GetSigners, GetSignBytes and ValidateBasic, with the message structs now coming from the generated file and every ValidateBasic body unchanged.
     - Add modules/xweb/types/codec.go in the shape of the bridge module's: RegisterCodec on the legacy amino codec and RegisterInterfaces registering every message as an implementation of sdk.Msg, and register the service description on the message service registrar.

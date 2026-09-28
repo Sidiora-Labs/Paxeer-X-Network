@@ -19,6 +19,7 @@ import (
 	"github.com/sidiora-labs/paxeer-network/sdk/types/module"
 	"github.com/spf13/cobra"
 
+	"github.com/sidiora-labs/paxeer-network/modules/xweb/client/cli"
 	"github.com/sidiora-labs/paxeer-network/modules/xweb/keeper"
 	"github.com/sidiora-labs/paxeer-network/modules/xweb/types"
 )
@@ -32,9 +33,11 @@ type AppModuleBasic struct{}
 
 func (AppModuleBasic) Name() string { return types.ModuleName }
 
-func (AppModuleBasic) RegisterLegacyAminoCodec(_ *codec.LegacyAmino) {}
+func (AppModuleBasic) RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) { types.RegisterCodec(cdc) }
 
-func (AppModuleBasic) RegisterInterfaces(_ cdctypes.InterfaceRegistry) {}
+func (AppModuleBasic) RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
+	types.RegisterInterfaces(registry)
+}
 
 func (AppModuleBasic) DefaultGenesis(_ codec.JSONCodec) json.RawMessage {
 	encoded, err := json.Marshal(types.DefaultGenesis())
@@ -65,7 +68,9 @@ func (AppModuleBasic) RegisterRESTRoutes(_ client.Context, _ *mux.Router) {}
 
 func (AppModuleBasic) RegisterGRPCGatewayRoutes(_ client.Context, _ *runtime.ServeMux) {}
 
-func (AppModuleBasic) GetTxCmd() *cobra.Command { return nil }
+// GetTxCmd returns the module's transaction command: one subcommand per
+// authority message.
+func (AppModuleBasic) GetTxCmd() *cobra.Command { return cli.GetTxCmd() }
 
 func (AppModuleBasic) GetQueryCmd() *cobra.Command { return nil }
 
@@ -82,7 +87,10 @@ func (AppModule) QuerierRoute() string { return types.QuerierRoute }
 
 func (AppModule) LegacyQuerierHandler(_ *codec.LegacyAmino) sdk.Querier { return nil }
 
-func (AppModule) RegisterServices(_ module.Configurator) {}
+// RegisterServices routes the authority messages to the keeper.
+func (am AppModule) RegisterServices(cfg module.Configurator) {
+	types.RegisterMsgServer(cfg.MsgServer(), keeper.NewMsgServerImpl(am.keeper))
+}
 
 func (AppModule) RegisterInvariants(_ sdk.InvariantRegistry) {}
 

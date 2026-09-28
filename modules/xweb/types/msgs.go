@@ -4,39 +4,76 @@ import (
 	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 )
 
-// The governance messages. Each is executed by the keeper only when Authority
-// is the module authority (the gov module account by default).
+// The governance messages are generated from api/xweb/tx.proto. Each is
+// executed by the keeper only when Authority is the module authority (the gov
+// module account by default), which is also its only signer.
 
-type MsgRegisterAttestor struct {
-	Authority string   `json:"authority"`
-	Attestor  Attestor `json:"attestor"`
+const (
+	TypeMsgRegisterAttestor = "register_attestor"
+	TypeMsgRemoveAttestor   = "remove_attestor"
+	TypeMsgSetThreshold     = "set_threshold"
+	TypeMsgSetParams        = "set_params"
+	TypeMsgPause            = "pause"
+	TypeMsgUnpause          = "unpause"
+)
+
+var (
+	_ sdk.Msg = &MsgRegisterAttestor{}
+	_ sdk.Msg = &MsgRemoveAttestor{}
+	_ sdk.Msg = &MsgSetThreshold{}
+	_ sdk.Msg = &MsgSetParams{}
+	_ sdk.Msg = &MsgPause{}
+	_ sdk.Msg = &MsgUnpause{}
+)
+
+// authoritySigner is the one signer of every governance message. An authority
+// that is not a bech32 account yields no signer, and ValidateBasic refuses it
+// before any signature is checked.
+func authoritySigner(authority string) []sdk.AccAddress {
+	account, err := sdk.AccAddressFromBech32(authority)
+	if err != nil {
+		return []sdk.AccAddress{}
+	}
+	return []sdk.AccAddress{account}
 }
 
-type MsgRemoveAttestor struct {
-	Authority string    `json:"authority"`
-	Signer    Address20 `json:"signer"`
-}
+func signBytes(msg sdk.Msg) []byte { return sdk.MustSortJSON(ModuleCdc.MustMarshalJSON(msg)) }
 
-type MsgSetThreshold struct {
-	Authority string `json:"authority"`
-	Threshold uint32 `json:"threshold"`
-}
+func (m MsgRegisterAttestor) Route() string                { return RouterKey }
+func (m MsgRegisterAttestor) Type() string                 { return TypeMsgRegisterAttestor }
+func (m MsgRegisterAttestor) GetSigners() []sdk.AccAddress { return authoritySigner(m.Authority) }
+func (m MsgRegisterAttestor) GetSignBytes() []byte         { return signBytes(&m) }
+func (m MsgRegisterAttestor) String() string               { return jsonString(m) }
 
-type MsgSetParams struct {
-	Authority       string  `json:"authority"`
-	Fee             sdk.Int `json:"fee"`
-	MaxPayloadBytes uint32  `json:"max_payload_bytes"`
-	MaxCallbackGas  uint64  `json:"max_callback_gas"`
-	TimeoutBlocks   uint64  `json:"timeout_blocks"`
-}
+func (m MsgRemoveAttestor) Route() string                { return RouterKey }
+func (m MsgRemoveAttestor) Type() string                 { return TypeMsgRemoveAttestor }
+func (m MsgRemoveAttestor) GetSigners() []sdk.AccAddress { return authoritySigner(m.Authority) }
+func (m MsgRemoveAttestor) GetSignBytes() []byte         { return signBytes(&m) }
+func (m MsgRemoveAttestor) String() string               { return jsonString(m) }
 
-type MsgPause struct {
-	Authority string `json:"authority"`
-}
+func (m MsgSetThreshold) Route() string                { return RouterKey }
+func (m MsgSetThreshold) Type() string                 { return TypeMsgSetThreshold }
+func (m MsgSetThreshold) GetSigners() []sdk.AccAddress { return authoritySigner(m.Authority) }
+func (m MsgSetThreshold) GetSignBytes() []byte         { return signBytes(&m) }
+func (m MsgSetThreshold) String() string               { return jsonString(m) }
 
-type MsgUnpause struct {
-	Authority string `json:"authority"`
-}
+func (m MsgSetParams) Route() string                { return RouterKey }
+func (m MsgSetParams) Type() string                 { return TypeMsgSetParams }
+func (m MsgSetParams) GetSigners() []sdk.AccAddress { return authoritySigner(m.Authority) }
+func (m MsgSetParams) GetSignBytes() []byte         { return signBytes(&m) }
+func (m MsgSetParams) String() string               { return jsonString(m) }
+
+func (m MsgPause) Route() string                { return RouterKey }
+func (m MsgPause) Type() string                 { return TypeMsgPause }
+func (m MsgPause) GetSigners() []sdk.AccAddress { return authoritySigner(m.Authority) }
+func (m MsgPause) GetSignBytes() []byte         { return signBytes(&m) }
+func (m MsgPause) String() string               { return jsonString(m) }
+
+func (m MsgUnpause) Route() string                { return RouterKey }
+func (m MsgUnpause) Type() string                 { return TypeMsgUnpause }
+func (m MsgUnpause) GetSigners() []sdk.AccAddress { return authoritySigner(m.Authority) }
+func (m MsgUnpause) GetSignBytes() []byte         { return signBytes(&m) }
+func (m MsgUnpause) String() string               { return jsonString(m) }
 
 func validateAuthority(authority string) error {
 	if _, err := sdk.AccAddressFromBech32(authority); err != nil {
