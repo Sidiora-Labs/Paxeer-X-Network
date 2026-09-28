@@ -527,7 +527,7 @@ reqs = ["9.1","9.2"]
 
 [task.2.5]
 title = "Add the typed Paxeer X modules and the gas station flow to the SDK"
-status = "pending"
+status = "done"
 wave = 2
 requires = ["1.10"]
 do_1 = "In human/wallet/sdk add modules for the exchange, bridge, launchpad, fee token and web data precompiles built on the ABI builders under agent/sdk/typescript, each returning transactions the provider signs, with decoders for their events."
@@ -537,6 +537,10 @@ verify_cmd = "timeout 20m sh -c 'pnpm --dir human/wallet/sdk test'"
 symbols = ["exchange","bridge","launchpad","feeToken","webData","gasStation","feeChoice"]
 touches = ["human/wallet/sdk/src/modules/exchange.ts","human/wallet/sdk/src/modules/bridge.ts","human/wallet/sdk/src/modules/launchpad.ts","human/wallet/sdk/src/modules/fee-token.ts","human/wallet/sdk/src/modules/web-data.ts","human/wallet/sdk/src/modules/gas-station.ts","human/wallet/sdk/test/modules.test.ts"]
 reqs = ["9.3","11.1"]
+revision = "6be7e1ef7d7325b4b3b0a35d5fa046c323318de7"
+command = "timeout 20m sh -c 'pnpm --dir human/wallet/sdk test'"
+exit_code = 0
+log_path = ".logs/verify-merged.log"
 
 [task.2.6]
 title = "Add the shared endpoint, kernel and human service clients and the status ladder to the SDK"

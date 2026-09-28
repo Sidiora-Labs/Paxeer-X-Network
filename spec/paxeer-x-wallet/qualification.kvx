@@ -102,4 +102,27 @@ file = "human/apps/wallet/scripts/scan-secrets.sh"
 symbol = "scan-secrets"
 observed = "The scanner reports local artefacts present on disk even when git ignores them, so the tsconfig.tsbuildinfo left by the app's type-check fails the verify scan until it is removed."
 assumption = "Gates that run type-check before the scan remove tsconfig.tsbuildinfo first; the scan stays strict on the working tree."
+
+[observation.2.5.1]
+task = "2.5"
+file = "human/wallet/sdk/src/modules/gas-station.ts"
+symbol = "gasStation.submit"
+observed = "The gateway has no sponsored submit route; the module posts SponsoredSubmitRequest (types.ts) to /v1/wallet/sponsored/submit and passes eth_sign the SponsoredBatchConstruction object as its second parameter."
+assumption = "The gateway relay task adds that route with that body, and the provider task accepts that construction shape for eth_sign."
+severity = "suspect"
+
+[observation.2.5.2]
+task = "2.5"
+file = "precompiles/feetoken/abi.json"
+symbol = "gasStation.quote"
+observed = "The fee token precompile exposes no rate, no decimals and no events; the rate lives in the EVM module params (base units per Paxeer coin) and SID decimals come from the agent SDK constant."
+assumption = "Callers pass the governed rate string to quote, which applies the keeper's ceiling conversion; a rate read through the shared endpoint is follow-up work."
+severity = "note"
+
+[observation.2.5.3]
+task = "2.5"
+file = "human/wallet/sdk/package.json"
+symbol = "build:agent-sdk"
+observed = "The agent SDK is linked with the link protocol and exports only built output, so the SDK's test, typecheck and build scripts first run npm ci and the agent SDK build; its x402 draw module imports node:sqlite, which vitest 2 cannot load, so the SDK moved to vitest 3."
+assumption = "The merged gate has npm registry access or a warm npm cache for the agent SDK's pinned dependencies."
 severity = "note"

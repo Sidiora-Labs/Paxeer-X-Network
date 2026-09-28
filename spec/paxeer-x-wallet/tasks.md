@@ -114,7 +114,7 @@
     - Announce the provider through EIP-6963 and install it as window.paxeer, discover injected providers through EIP-6963, and expose one wallet interface over the embedded provider and every injected provider.
     - Add provider tests against an in-test HTTP server speaking the gateway's recorded response shapes, covering every method, refusal of an arbitrary eth_sign digest, EIP-6963 announcement and discovery, and interface parity between an embedded and an injected provider.
     - _Requirements: 9.1, 9.2_
-  - [ ] 2.5 Add the typed Paxeer X modules and the gas station flow to the SDK
+  - [x] 2.5 Add the typed Paxeer X modules and the gas station flow to the SDK
     - In human/wallet/sdk add modules for the exchange, bridge, launchpad, fee token and web data precompiles built on the ABI builders under agent/sdk/typescript, each returning transactions the provider signs, with decoders for their events.
     - Add the gas station module: quote, sponsored batch construction with the fields the attestor recomputes, and submit, and the fee-choice helper that labels PAX gas, SID sponsored and SID native with their denominations.
     - Add module tests with calldata vectors checked against the agent SDK's own builders and event decoding against recorded logs.

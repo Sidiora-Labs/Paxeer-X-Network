@@ -556,3 +556,43 @@ export interface ExplorerTransactionStatus {
   finalized_batch_number: number | null;
   checkpoint_id: string | null;
 }
+
+export interface SponsoredBatchConstructionCall {
+  to: `0x${string}`;
+  value: string;
+  data: `0x${string}`;
+}
+
+export interface SponsoredBatchConstructionQuote {
+  sponsor: `0x${string}`;
+  token: `0x${string}`;
+  maxTokenAmount: string;
+  tokenAmount: string;
+  deadline: string;
+  quoteNonce: string;
+  gasCost: string;
+}
+
+export interface SponsoredBatchConstruction {
+  kind: 'sponsored_batch';
+  chainId: string;
+  account: `0x${string}`;
+  nonce: string;
+  calls: SponsoredBatchConstructionCall[];
+  quote: SponsoredBatchConstructionQuote;
+}
+
+export interface SponsoredSubmitRequest {
+  chain_id: string;
+  account: `0x${string}`;
+  to: `0x${string}`;
+  data: `0x${string}`;
+  value: string;
+  construction: SponsoredBatchConstruction;
+  account_signature: `0x${string}`;
+  relayer_signature: `0x${string}`;
+}
+
+export interface SponsoredSubmitResponse {
+  tx_hash: `0x${string}`;
+}

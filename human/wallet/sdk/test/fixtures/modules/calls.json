@@ -1,0 +1,84 @@
+{
+  "from": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
+  "exchange": {
+    "placeOrder": {
+      "marketId": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "side": 1,
+      "price": "2500000000000000000",
+      "quantity": "3000000",
+      "timeInForce": 2
+    },
+    "cancelOrder": { "orderId": "0x2222222222222222222222222222222222222222222222222222222222222222" },
+    "requestSettlement": { "positionId": "0x3333333333333333333333333333333333333333333333333333333333333333" },
+    "depositMargin": {
+      "account": "0x4444444444444444444444444444444444444444444444444444444444444444",
+      "amountWei": "1000000000000000000"
+    },
+    "depositMarginToken": {
+      "pointer": "0x5555555555555555555555555555555555555555",
+      "amount": "5000000",
+      "account": "0x4444444444444444444444444444444444444444444444444444444444444444"
+    },
+    "withdrawMargin": {
+      "account": "0x4444444444444444444444444444444444444444444444444444444444444444",
+      "assetId": "0x6666666666666666666666666666666666666666666666666666666666666666",
+      "amount": "42"
+    }
+  },
+  "bridge": {
+    "bridgeIn": {
+      "chain": "1",
+      "vault": "0x7777777777777777777777777777777777777777",
+      "txHash": "0x8888888888888888888888888888888888888888888888888888888888888888",
+      "logIndex": "3",
+      "recipient": "0x0000000000000000000000009999999999999999999999999999999999999999",
+      "asset": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "amount": "123456789",
+      "signatures": [
+        "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb1b",
+        "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc1c"
+      ]
+    },
+    "bridgeOut": {
+      "chain": "137",
+      "asset": "0x21f7b20a555199fa73a238b1a91fd0f549068fee",
+      "amount": "2500000",
+      "recipient": "0xdddddddddddddddddddddddddddddddddddddddd"
+    }
+  },
+  "launchpad": {
+    "buy": {
+      "token": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "amountIn": "1000000000000000000",
+      "minOut": "990000",
+      "recipient": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
+      "deadline": "1900000000"
+    },
+    "sell": {
+      "token": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "amountIn": "500000",
+      "minOut": "400000000000000000",
+      "recipient": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
+      "deadline": "1900000600"
+    },
+    "createMarket": { "name": "Paxeer Dog", "symbol": "PDOG", "feeStrategy": 2 },
+    "setFeeStrategy": { "token": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "feeStrategy": 1 },
+    "claimFees": {
+      "token": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "recipient": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a"
+    },
+    "tokenWrite": ["claimAirdrop", "executeAirdrop", "executeBurn", "executeLpRewards", "pause", "unpause"]
+  },
+  "feeToken": {
+    "denom": "usid",
+    "account": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a"
+  },
+  "webData": {
+    "api": { "method": "GET", "url": "https://api.example.com/v1/price?pair=SID-PAX" },
+    "fetch": "https://example.com/markets/sid",
+    "search": "Sidiora fee token",
+    "callbackGas": "200000",
+    "fee": "1000000000000",
+    "refund": "7"
+  }
+}

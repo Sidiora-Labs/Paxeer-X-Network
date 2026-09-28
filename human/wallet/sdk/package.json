@@ -19,10 +19,11 @@
   },
   "files": ["dist"],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "pnpm run build:agent-sdk && tsc -p tsconfig.json",
+    "build:agent-sdk": "npm --prefix ../../../agent/sdk/typescript ci --no-audit --no-fund && npm --prefix ../../../agent/sdk/typescript run build",
     "dev": "tsc -p tsconfig.json --watch",
-    "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "pnpm run build:agent-sdk && vitest run",
+    "typecheck": "pnpm run build:agent-sdk && tsc -p tsconfig.json --noEmit",
     "lint": "echo 'lint: TODO (eslint config)'"
   },
   "peerDependencies": {
@@ -32,12 +33,15 @@
     "react": { "optional": true }
   },
   "dependencies": {
+    "@sidiora/layerx-sdk": "link:../../../agent/sdk/typescript",
     "@supabase/supabase-js": "^2.45.4"
   },
   "devDependencies": {
+    "@noble/curves": "^1.9.1",
+    "@noble/hashes": "^1.8.0",
     "@types/react": "^18.3.11",
     "react": "^18.3.1",
     "typescript": "^5.6.3",
-    "vitest": "^2.1.2"
+    "vitest": "^3.2.7"
   }
 }
