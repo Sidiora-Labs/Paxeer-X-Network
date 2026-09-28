@@ -1,11 +1,16 @@
 package types_test
 
 import (
+	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/sidiora-labs/paxeer-network/modules/xweb/types"
+	"github.com/sidiora-labs/paxeer-network/sdk/codec"
+	cdctypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
 	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/legacy/legacytx"
 	"github.com/stretchr/testify/require"
 )
 
@@ -225,4 +230,58 @@ func TestAttestorPublicKey(t *testing.T) {
 			Attestor: types.Attestor{Signer: address, Payout: payout, PublicKey: tc.key}}.ValidateBasic()
 		require.ErrorIs(t, err, types.ErrInvalidAttestors, name)
 	}
+}
+
+func TestGovernanceMessagesSignAndRoundTripUnderTheirTypeURL(t *testing.T) {
+	account, err := sdk.AccAddressFromBech32(authority)
+	require.NoError(t, err)
+
+	registry := cdctypes.NewInterfaceRegistry()
+	sdk.RegisterInterfaces(registry)
+	types.RegisterInterfaces(registry)
+	cdc := codec.NewProtoCodec(registry)
+
+	for _, tc := range []struct {
+		kind string
+		msg  sdk.Msg
+	}{
+		{types.TypeMsgRegisterAttestor, &types.MsgRegisterAttestor{Authority: authority,
+			Attestor: types.Attestor{Signer: signer, Payout: payout}}},
+		{types.TypeMsgRemoveAttestor, &types.MsgRemoveAttestor{Authority: authority, Signer: signer}},
+		{types.TypeMsgSetThreshold, &types.MsgSetThreshold{Authority: authority, Threshold: 1}},
+		{types.TypeMsgSetParams, &types.MsgSetParams{Authority: authority, Fee: sdk.NewInt(5),
+			MaxPayloadBytes: 100, MaxCallbackGas: 100, TimeoutBlocks: 10}},
+		{types.TypeMsgPause, &types.MsgPause{Authority: authority}},
+		{types.TypeMsgUnpause, &types.MsgUnpause{Authority: authority}},
+	} {
+		legacy, ok := tc.msg.(legacytx.LegacyMsg)
+		require.True(t, ok, tc.kind)
+		require.NoError(t, tc.msg.ValidateBasic(), tc.kind)
+		require.Equal(t, types.RouterKey, legacy.Route(), tc.kind)
+		require.Equal(t, tc.kind, legacy.Type(), tc.kind)
+		require.Equal(t, []sdk.AccAddress{account}, tc.msg.GetSigners(), tc.kind)
+
+		signBytes := legacy.GetSignBytes()
+		require.Equal(t, sdk.MustSortJSON(signBytes), signBytes, tc.kind)
+		var document struct {
+			Type  string          `json:"type"`
+			Value json.RawMessage `json:"value"`
+		}
+		require.NoError(t, json.Unmarshal(signBytes, &document), tc.kind)
+		require.Equal(t, types.ModuleName+"/"+reflect.TypeOf(tc.msg).Elem().Name(), document.Type, tc.kind)
+		require.Contains(t, string(document.Value), authority, tc.kind)
+
+		encoded, err := cdc.MarshalInterface(tc.msg)
+		require.NoError(t, err, tc.kind)
+		var decoded sdk.Msg
+		require.NoError(t, cdc.UnmarshalInterface(encoded, &decoded), tc.kind)
+		require.Equal(t, sdk.MsgTypeURL(tc.msg), sdk.MsgTypeURL(decoded), tc.kind)
+		require.Equal(t, signBytes, decoded.(legacytx.LegacyMsg).GetSignBytes(), tc.kind)
+		reencoded, err := cdc.MarshalInterface(decoded)
+		require.NoError(t, err, tc.kind)
+		require.Equal(t, encoded, reencoded, tc.kind)
+	}
+
+	require.Empty(t, (&types.MsgPause{Authority: "nope"}).GetSigners(), "an authority that is not an account signs nothing")
+	require.Empty(t, (&types.MsgUnpause{}).GetSigners())
 }

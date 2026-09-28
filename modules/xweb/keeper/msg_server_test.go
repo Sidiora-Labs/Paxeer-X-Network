@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/sidiora-labs/paxeer-network/modules/xweb/keeper"
 	xwebtestutil "github.com/sidiora-labs/paxeer-network/modules/xweb/testutil"
 	"github.com/sidiora-labs/paxeer-network/modules/xweb/types"
 	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
@@ -182,4 +183,91 @@ func TestRegisterAttestorWithAPublicKey(t *testing.T) {
 	require.ErrorIs(t, err, types.ErrInvalidAttestors)
 	require.ErrorContains(t, err, "belongs to "+attestor.Signer.Hex())
 	require.Len(t, s.k.GetAttestorSet(s.ctx).Attestors, 2)
+}
+
+// TestMsgServerExecutesEveryAuthorityMessage passes each authority message
+// through the Msg service over the real keeper and asserts the state it writes.
+func TestMsgServerExecutesEveryAuthorityMessage(t *testing.T) {
+	s := newSuite(t, false)
+	server := keeper.NewMsgServerImpl(s.k)
+	goCtx := sdk.WrapSDKContext(s.ctx)
+
+	first := s.attestors[0]
+	registration := first.Registration()
+	registration.PublicKey = crypto.CompressPubkey(&first.Key.PublicKey)
+	registered, err := server.RegisterAttestor(goCtx, &types.MsgRegisterAttestor{Authority: authority,
+		Attestor: registration})
+	require.NoError(t, err)
+	require.NotNil(t, registered)
+	stored, found := s.k.GetAttestorSet(s.ctx).Find(first.Signer)
+	require.True(t, found)
+	require.Equal(t, registration, stored)
+	require.Equal(t, uint32(1), s.k.Threshold(s.ctx))
+
+	second := s.attestors[1].Registration()
+	_, err = server.RegisterAttestor(goCtx, &types.MsgRegisterAttestor{Authority: authority, Attestor: second})
+	require.NoError(t, err)
+	require.Len(t, s.k.GetAttestorSet(s.ctx).Attestors, 2)
+	require.Equal(t, uint32(2), s.k.Threshold(s.ctx))
+
+	thresholdSet, err := server.SetThreshold(goCtx, &types.MsgSetThreshold{Authority: authority, Threshold: 2})
+	require.NoError(t, err)
+	require.NotNil(t, thresholdSet)
+	require.Equal(t, uint32(2), s.k.Threshold(s.ctx))
+
+	removed, err := server.RemoveAttestor(goCtx, &types.MsgRemoveAttestor{Authority: authority, Signer: second.Signer})
+	require.NoError(t, err)
+	require.NotNil(t, removed)
+	require.False(t, s.k.GetAttestorSet(s.ctx).Has(second.Signer))
+	require.True(t, s.k.GetAttestorSet(s.ctx).Has(first.Signer))
+	require.Equal(t, uint32(1), s.k.Threshold(s.ctx))
+
+	written, err := server.SetParams(goCtx, &types.MsgSetParams{Authority: authority, Fee: sdk.NewInt(77),
+		MaxPayloadBytes: 128, MaxCallbackGas: 120_000, TimeoutBlocks: 11})
+	require.NoError(t, err)
+	require.NotNil(t, written)
+	require.Equal(t, types.Params{Authority: authority, Fee: sdk.NewInt(77), MaxPayloadBytes: 128,
+		MaxCallbackGas: 120_000, TimeoutBlocks: 11}, s.k.GetParams(s.ctx))
+
+	unpaused, err := server.Unpause(goCtx, &types.MsgUnpause{Authority: authority})
+	require.NoError(t, err)
+	require.NotNil(t, unpaused)
+	require.False(t, s.k.IsPaused(s.ctx))
+
+	paused, err := server.Pause(goCtx, &types.MsgPause{Authority: authority})
+	require.NoError(t, err)
+	require.NotNil(t, paused)
+	require.True(t, s.k.IsPaused(s.ctx))
+}
+
+// TestMsgServerRefusesAnAuthorityOtherThanTheModules sends every authority
+// message from an account that is not the module's authority and asserts the
+// error each one returns and that none of them wrote anything.
+func TestMsgServerRefusesAnAuthorityOtherThanTheModules(t *testing.T) {
+	s := newSuite(t, true)
+	server := keeper.NewMsgServerImpl(s.k)
+	goCtx := sdk.WrapSDKContext(s.ctx)
+	stranger := sdk.AccAddress(append([]byte{0xc0}, make([]byte, 19)...)).String()
+	candidate := types.Attestor{Signer: types.Address20{0x7f, 0x11},
+		Payout: sdk.AccAddress(append([]byte{0xb0}, make([]byte, 19)...)).String()}
+	set := s.k.GetAttestorSet(s.ctx)
+	params := s.k.GetParams(s.ctx)
+
+	_, err := server.RegisterAttestor(goCtx, &types.MsgRegisterAttestor{Authority: stranger, Attestor: candidate})
+	require.ErrorIs(t, err, types.ErrUnauthorized)
+	_, err = server.RemoveAttestor(goCtx, &types.MsgRemoveAttestor{Authority: stranger, Signer: set.Attestors[0].Signer})
+	require.ErrorIs(t, err, types.ErrUnauthorized)
+	_, err = server.SetThreshold(goCtx, &types.MsgSetThreshold{Authority: stranger, Threshold: 3})
+	require.ErrorIs(t, err, types.ErrUnauthorized)
+	_, err = server.SetParams(goCtx, &types.MsgSetParams{Authority: stranger, Fee: sdk.NewInt(1),
+		MaxPayloadBytes: 1, MaxCallbackGas: 1, TimeoutBlocks: 1})
+	require.ErrorIs(t, err, types.ErrUnauthorized)
+	_, err = server.Pause(goCtx, &types.MsgPause{Authority: stranger})
+	require.ErrorIs(t, err, types.ErrUnauthorized)
+	_, err = server.Unpause(goCtx, &types.MsgUnpause{Authority: stranger})
+	require.ErrorIs(t, err, types.ErrUnauthorized)
+
+	require.Equal(t, set, s.k.GetAttestorSet(s.ctx))
+	require.Equal(t, params, s.k.GetParams(s.ctx))
+	require.False(t, s.k.IsPaused(s.ctx))
 }

@@ -40,6 +40,15 @@ legacy_untouched    = "Nothing in this feature changes a legacy precompile, a co
 owner_actions       = "A module that comes up paused or unconfigured stays that way until its own admin path is used. The activation initialises the web-search module paused with an empty attestor set and registers no remote asset, because the asset's registration needs a chain record whose parameters this repository does not define as constants. Those are recorded as post-activation owner actions, never guessed at inside a handler."
 evidence            = "Evidence is a revision, a command, an exit code and a log path. A task records the gate it actually ran and nothing else; a gate that did not run is never claimed."
 
+[decision.owner_inputs]
+title               = "Owner inputs this wave waits on"
+authority_model     = "Two authority models are open. The first, which every task of this wave is written for, keeps the governance module account as each module's authority and shortens the voting and expedited voting periods so a proposal decides within a working session. The second records an operator key as each module's authority parameter and sends the same messages as ordinary transactions. The owner names the model that ships, and only that name changes: the message types, the proposal content and the route are the same under either."
+xweb_attestor_list  = "The web-search attestor list - each signer address, its payout account and its public-key credential - together with the threshold over it is an owner input. It is supplied for the v6.10 plan as the four attestors of the validator sidecar operators with a threshold of three, carried in the application package as the value the handler reads, and every later change to that set goes through the governance route rather than through a plan."
+
+[decision.wave4_order]
+title               = "The v6.10 handler ran ahead of the message-service tasks"
+reason              = "The v6.10 plan's handler writes the chain's operating values through each module's own keeper and the governance keeper's voting parameter setter, so it reaches none of the message types, Msg services or proposal route the other wave-4 tasks add and depends on none of them. It was therefore implemented before them, and the message-service tasks are unaffected by the order."
+
 [design]
 overview = "Two waves. Wave 1 is the activation itself in one task, plus a replay of that activation against a copy of a real chain state in a second task that depends on it. Wave 2 runs the chain gates once on the merged wave revision and records what ran."
 
@@ -89,6 +98,21 @@ ac_2 = "THE application's begin blocker SHALL, before the module begin blockers,
 ac_3 = "THE application's begin blocker SHALL stop the block with a message that names the activation stores the commit multistore does not carry and states that the upgrade info height must equal the last committed height plus one when the process starts, when the file names the plan at the current block height and any of those stores is unmounted, and SHALL write no state in that block."
 ac_4 = "THE application's begin blocker SHALL leave the state untouched in every other case - no file, a file naming another plan, a file naming another height, a plan already recorded done, a version map that already carries the modules - and SHALL do nothing on a tracing context."
 ac_5 = "TESTS in the application package SHALL prove, on the real application through its own begin blocker and the real upgrade keeper, that the block the file names carries the six modules into the version map, records the done height, leaves no plan, comes up with the web-search module paused on an empty attestor set and serves the eight fork precompiles at that height and none of them one below it; that a file naming a later height changes nothing; that an unmounted activation store stops the block with that message and writes nothing; that a block after the applied one applies nothing a second time while the file is still on disk; and that the handler tests of the plans that predate the activation keep passing untouched."
+
+[req.3]
+title = "Every Fork Module's Authority Messages Are Reachable On The Live Chain"
+story = "As the owner of a chain whose six fork modules are live, I want each of those modules' authority messages to be a real transaction type that one governance route carries and executes whole, and the chain's own operating values to be written by one recorded plan that applies on the same upgrade-info path as the activation, so that the fork is configured from the chain's governance and from its own history."
+ac_1 = "EACH of the six fork modules - custody, anchor, exchange, bridge, launchpad and web search - SHALL expose its authority messages as protobuf sdk.Msg types declared in api/<module>/tx.proto with their generated Go types in the module's types package, SHALL register them on the interface registry and on the module's legacy amino codec, and SHALL serve them through a Msg service the module's RegisterServices registers on the configurator."
+ac_2 = "THE web-search module SHALL expose its attestor registration, its attestor removal, its threshold, its settings, its pause and its unpause as such messages, served by a Msg service whose handlers call the keeper methods that execute them, and SHALL carry a transaction command under paxd tx that submits each one from a signer the standard transaction flags name."
+ac_3 = "ONE governance proposal content type, modelled on the bridge module's, SHALL carry any of the six modules' authority-signed messages packed under their type URLs, SHALL refuse a proposal without a title, a description or a message, one carrying a message that is not one of the six modules' authority messages, one whose message fails its own ValidateBasic and one whose message names an authority other than the account that executes it, and SHALL execute the messages it carries in submission order through the application's message service router so that a proposal writes every message's effect or none of them."
+ac_4 = "THAT content type SHALL be routed in node/app.go under its own router key and SHALL be submitted with `paxd tx gov submit-proposal layerx-proposal <file>`, mounted on the governance submit command and on the governance proposal REST endpoint through a client proposal handler the application registers beside the ones it already registers, proven by a test that finds the subcommand on the built command tree."
+ac_5 = "THE anchor and the launchpad modules SHALL each carry their parameters in an authority-signed message whose Msg service handler calls the module keeper's UpdateParams, SHALL declare those parameters in proto against the parameter type their types package already declares, and SHALL be accepted by the governance route so that one proposal file sets either module's parameters."
+ac_6 = "A plan named v6.10 SHALL apply in the block its upgrade info names, on the same path and through the same keeper apply step as the activation plan, SHALL add, delete and rename no store, and its handler SHALL write the chain's operating values directly: the anchor module's PaxeerChainID and NetworkID and the custody module's NetworkId from the EVM chain identifier the application derives for its own chain id, and the launchpad module's QuoteDenom from the base coin unit node/params declares. It SHALL leave every other parameter of those modules as it finds it."
+ac_7 = "THE v6.10 handler SHALL set the governance voting period to one hour and the expedited voting period to twenty minutes and SHALL leave the deposit parameters, the minimum deposit, the quorum and both thresholds as it finds them."
+ac_8 = "THE web-search module's attestor set, its threshold and its unpause SHALL be settable through the governance route, and the v6.10 handler SHALL register the attestor set the owner supplied - four signers in ascending signer order, each with its payout account and its compressed public key - set the threshold to three over that set and lift the module's pause in the block it applies, and SHALL write none of the three when the list the application carries is empty."
+ac_9 = "THE store check the activation apply step runs before it applies a plan SHALL count a store the state-commitment store serves through its pending placeholder as one the plan's store upgrades are still to mount, so that a block whose plan is due names those stores in its message and writes no state."
+ac_10 = "THE replay harness under tools/chain/upgrade-replay SHALL carry a copy of a post-activation state through the v6.10 plan and assert, printing every claim and exiting non-zero on a failed one: the voting and expedited voting periods afterwards, the deposit parameters unchanged, the anchor and custody chain and network identifiers, the launchpad quote denom, the web-search set the owner list writes, and that the governance route accepts a proposal carrying one authority message of each of the six modules and refuses one carrying any other message."
+ac_11 = "EVERY authority check the repository carries SHALL stay exactly as written - each keeper's authority comparison, each proposal's authority validation and each precompile's caller check - the plans that predate v6.10 SHALL keep their names, handlers and store lists byte for byte, and no test SHALL be relaxed, skipped or deleted for any of this to pass."
 
 # --------------------------------------------------------------------------
 # TASKS
@@ -159,9 +183,30 @@ touches = ["spec/paxeer-x-activation/qualification.kvx"]
 reqs = ["1.1","1.2","1.3","1.5","1.6","1.7","1.8","1.9","1.10"]
 
 [task.3]
-section = "Wave 3 - The Operator's File Names The Block"
-title = "Take the compiled height out of the activation"
+section = "Wave 3 - Running The New Binary Before The Fork And Naming Its Block"
+title = "Let the activation binary run on a state that predates the fork and apply the plan in the block the operator names"
 status = "pending"
+
+[task.3.1]
+title = "Serve a mounted store the state-commitment database does not carry yet"
+status = "done"
+wave = 3
+requires = []
+do_1 = "In storage/state_db/sc/composite record the mount list Initialize is given and resolve, after every load and every applied set of tree upgrades, which mounted names the memiavl database carries no tree for: a name is pending only when the caller mounted it, it is a member of keys.MemIAVLStoreKeys and memiavl holds no tree for it, and only while memiavl is the single backend, because once flatkv participates a missing memiavl tree no longer proves the store is absent."
+do_2 = "Serve a pending name from GetChildStoreByName instead of panicking, through a view that reads exactly as the absent store reads through the router - nothing found, an empty range, a root hash that fails closed - and whose writes are held on the composite store for the block that made them rather than routed to a backend."
+do_3 = "Hold every change set aimed at a pending store out of the batch ApplyChangeSets routes, return the batch unchanged when nothing is pending, and discard the held writes in Commit once both backends have committed, so a pending store contributes nothing to the commit info, the root hash or the working hash and the persisted state is byte for byte what a binary without the store mounted leaves."
+do_4 = "Propagate the mount list and the resolved pending set to the read-only handle LoadVersion returns and to the in-memory snapshot Copy returns, so a historical query and a snapshot-backed cache multistore serve a pending store rather than panicking on it."
+do_5 = "In sdk/storev2/rootmulti keep the change sets aimed at a pending store out of the batch handed to the versioned state store, asking the state-commitment store which names are pending through an interface it may or may not implement, returning the batch unchanged when nothing is pending and still advancing the state store's watermark when the whole batch was pending."
+do_6 = "Write the tests in the composite package against the real store: a state committed with the legacy mount list loads under a mount list carrying one extra canonical key and reports it pending and empty; a canonical key nobody mounted and a name outside the canonical list still panic; the same block written twice over the same state, once without the extra store and once with a write aimed at it, produces the same working commit info, the same version, the same commit info and the same state on disk; and a load whose tree upgrades add the key creates the tree, ends the pending state, persists a write across a commit and a reload and adds the store's entry to the commit info."
+verify_cmd = "go test ./storage/state_db/sc/... -run 'Pending' -count=1"
+symbols = ["pendingStore","refreshPendingStores","IsPendingStore","PendingStores","holdPendingChangeSets","holdPendingWrite","discardPendingWrites","HeldPendingWrites","withoutPendingStores"]
+touches = ["storage/state_db/sc/composite/pending_store.go","storage/state_db/sc/composite/store.go","storage/state_db/sc/composite/pending_store_test.go","sdk/storev2/rootmulti/store.go"]
+tests = ["storage/state_db/sc/composite/pending_store_test.go"]
+reqs = ["1.5","1.6","1.7","1.8"]
+done_revision = "1cfe5b9c5e619957bfbd6279bc05a547d01aefda"
+done_command = "go test ./storage/state_db/sc/... -run 'Pending' -count=1"
+done_exit_code = 0
+done_log = ".logs/xa-3.1-verify.log"
 
 [task.3.3]
 title = "Apply the activation plan in the block the on-disk upgrade info names"
@@ -182,3 +227,126 @@ done_revision = "1cfe5b9c5e619957bfbd6279bc05a547d01aefda"
 done_command = "go test ./node/ -run 'Activation|Upgrade' -count=1"
 done_exit_code = 0
 done_log = ".logs/xa-3.3-verify.log"
+
+[task.4]
+section = "Wave 4 - One Route For Every Fork Module's Authority"
+title = "Make every fork module's authority messages submittable and write the chain's operating values in one plan"
+status = "pending"
+
+[task.4.1]
+title = "Serve the web-search module's authority messages as transaction types"
+status = "done"
+wave = 4
+requires = []
+do_1 = "Declare the module's authority messages in api/xweb/tx.proto - MsgRegisterAttestor, MsgRemoveAttestor, MsgSetThreshold, MsgSetParams, MsgPause, MsgUnpause with one response message each - and a Msg service with one rpc per message, following api/layerxbridge/tx.proto: the go_package of the module's types package, gogoproto.typedecl false on the Attestor message so the generated code carries the Go type the types package already declares, the Address20 and sdk.Int fields under their custom types, and gogoproto.goproto_stringer false on every message."
+do_2 = "Generate modules/xweb/types/tx.pb.go with the repository's proto generation and keep modules/xweb/types/msgs.go as the file that carries each message's Route, Type, GetSigners, GetSignBytes and ValidateBasic, with the message structs now coming from the generated file and every ValidateBasic body unchanged."
+do_3 = "Add modules/xweb/types/codec.go in the shape of the bridge module's: RegisterCodec on the legacy amino codec and RegisterInterfaces registering every message as an implementation of sdk.Msg, and register the service description on the message service registrar."
+do_4 = "In modules/xweb/keeper/msg_server.go add the msgServer type and NewMsgServerImpl beside the keeper methods that execute the messages: each method unwraps the context, calls the keeper method with the message and returns the message's response type. In modules/xweb/module.go register the codec and the interfaces from AppModuleBasic and register the Msg service from RegisterServices on the configurator."
+do_5 = "Add modules/xweb/client/cli/tx.go with the module's transaction command: one subcommand per authority message, each building the message from its arguments with the signer the standard transaction flags name as the authority, and return it from the module's GetTxCmd."
+do_6 = "Extend modules/xweb/types/msgs_test.go with the sign-bytes, signer and registry round trip of every message, and modules/xweb/keeper/msg_server_test.go with a pass of every message through the msgServer on the real keeper, asserting the state each one writes and the error an authority other than the module's returns."
+verify_cmd = "go test ./modules/xweb/... -count=1"
+symbols = ["MsgRegisterAttestor","MsgRemoveAttestor","MsgSetThreshold","MsgSetParams","MsgPause","MsgUnpause","NewMsgServerImpl","RegisterInterfaces","GetTxCmd"]
+touches = ["api/xweb/tx.proto","modules/xweb/types/tx.pb.go","modules/xweb/types/msgs.go","modules/xweb/types/codec.go","modules/xweb/keeper/msg_server.go","modules/xweb/module.go","modules/xweb/client/cli/tx.go","modules/xweb/types/msgs_test.go","modules/xweb/keeper/msg_server_test.go"]
+tests = ["modules/xweb/types/msgs_test.go","modules/xweb/keeper/msg_server_test.go"]
+reqs = ["3.1","3.2"]
+done_revision = "2db5510cd0e807d5aa4536f97f611d751b357520"
+done_command = "go test ./modules/xweb/... -count=1"
+done_exit_code = 0
+done_log = ".logs/act-4.1-verify.log"
+
+[task.4.2]
+title = "One governance proposal that carries any fork module's authority message"
+status = "pending"
+wave = 4
+requires = ["4.1"]
+do_1 = "Declare the proposal in api/layerxgov/proposal.proto after api/layerxbridge/proposal.proto: a LayerXProposal message carrying a title, a description and a repeated google.protobuf.Any of the messages it executes, and generate modules/layerxgov/types/proposal.pb.go."
+do_2 = "Write modules/layerxgov/types/keys.go with the module name and the router key, and modules/layerxgov/types/proposal.go implementing govtypes.Content and cdctypes.UnpackInterfacesMessage on the generated type: the proposal type constant, its registration with the governance proposal type registry, the amino registration of the content and of every message it may carry, a constructor that packs messages under their type URLs, GetMessages, UnpackInterfaces and String."
+do_3 = "In the same file write the accepted-message table: one function that returns the authority of a message the proposal may carry and refuses every other message, covering the authority messages of the custody, anchor, exchange, bridge, launchpad and web-search modules, and a ValidateBasic that refuses an empty title, an empty description, a proposal with no message, a message that fails its own ValidateBasic and a message whose authority is not the governance module account that executes it."
+do_4 = "Write modules/layerxgov/handler.go: NewProposalHandler takes the application's message service router, and for each carried message in submission order it looks the handler up by the message's type URL and calls it, returning the first error unchanged so the governance keeper's cached context discards the whole proposal, and refusing a content type that is not the proposal."
+do_5 = "Write modules/layerxgov/client/cli/tx.go in the shape of the bridge module's: the layerx-proposal subcommand of paxd tx gov submit-proposal that reads one proposal file, the REST handler beside it, and the client proposal handler that mounts both; register that handler in the application's governance proposal handler list and add the route in node/app.go beside the bridge module's route."
+do_6 = "Write modules/layerxgov/types/proposal_test.go over the real message types: a proposal carrying one authority message of each of the six modules validates and returns its messages in order; a message with another authority, a message no module owns, an empty message list and a proposal without a title are each refused; and the content survives a marshal and unmarshal through an interface registry. Write node/gov_layerx_test.go on the real application: the route resolves the proposal's router key, the handler executes a proposal that carries two messages of two different modules and leaves both effects in state, a proposal whose second message fails leaves neither effect, and the submit subcommand is on the built command tree."
+verify_cmd = "sh -c 'go test -count=1 ./modules/layerxgov/... && go test -count=1 -run LayerXProposal ./node/'"
+symbols = ["LayerXProposal","ProposalTypeLayerX","NewLayerXProposal","NewProposalHandler","governanceMessage","LayerXProposalHandler"]
+touches = ["api/layerxgov/proposal.proto","modules/layerxgov/types/proposal.pb.go","modules/layerxgov/types/proposal.go","modules/layerxgov/types/keys.go","modules/layerxgov/handler.go","modules/layerxgov/client/cli/tx.go","node/app.go","modules/layerxgov/types/proposal_test.go","node/gov_layerx_test.go"]
+tests = ["modules/layerxgov/types/proposal_test.go","node/gov_layerx_test.go"]
+reqs = ["3.3","3.4","3.11"]
+
+[task.4.3]
+title = "Carry the anchor and launchpad parameter updates through the same route"
+status = "pending"
+wave = 4
+requires = ["4.2"]
+do_1 = "Declare api/layerxanchor/tx.proto and api/launchpad/tx.proto: each module's Params message with gogoproto.typedecl false so the generated code carries the parameter type the module's types package already declares, its sdk.Int, sdk.Dec and Address20 fields under their custom types, a MsgUpdateParams carrying an authority and those parameters, its response, and a Msg service with the one rpc; generate modules/layerxanchor/types/tx.pb.go and modules/launchpad/types/tx.pb.go."
+do_2 = "Add each module's types/msgs.go with Route, Type, GetSigners, GetSignBytes and a ValidateBasic that checks the authority is a bech32 account and the parameters pass their own Validate, and types/codec.go with the amino and interface registrations, both after the bridge module's files."
+do_3 = "Add each module's keeper msgServer with NewMsgServerImpl and an UpdateParams method that calls the keeper's UpdateParams with the message's authority and parameters, and register the Msg service and the interfaces from each module's module.go."
+do_4 = "Add both messages to the governance proposal's accepted-message table in modules/layerxgov/types/proposal.go so one proposal file sets either module's parameters."
+do_5 = "Write the tests: each module's keeper test passes MsgUpdateParams through its msgServer on the real keeper and asserts the stored parameters afterwards and the error another authority returns; the proposal test in modules/layerxgov gains a proposal carrying both messages and asserts it validates and returns them in order."
+verify_cmd = "go test -count=1 ./modules/layerxanchor/... ./modules/launchpad/... ./modules/layerxgov/..."
+symbols = ["MsgUpdateParams","MsgUpdateParamsResponse","NewMsgServerImpl","UpdateParams","RegisterServices"]
+touches = ["api/layerxanchor/tx.proto","api/launchpad/tx.proto","modules/layerxanchor/types/tx.pb.go","modules/layerxanchor/types/msgs.go","modules/layerxanchor/types/codec.go","modules/layerxanchor/keeper/msg_server.go","modules/layerxanchor/module.go","modules/launchpad/types/tx.pb.go","modules/launchpad/types/msgs.go","modules/launchpad/types/codec.go","modules/launchpad/keeper/msg_server.go","modules/launchpad/module.go","modules/layerxgov/types/proposal.go","modules/layerxanchor/keeper/keeper_test.go","modules/launchpad/keeper/keeper_test.go","modules/layerxgov/types/proposal_test.go"]
+reqs = ["3.1","3.5"]
+
+[task.4.4]
+title = "The v6.10 plan writes the chain's operating values and shortens the governance periods"
+status = "done"
+wave = 4
+requires = ["4.1","4.3"]
+do_1 = "In node/upgrades.go add the exported plan-name constant for v6.10 beside the activation plan's, register its handler explicitly beside the handlers already registered, leave the embedded tag list, the latest upgrade name and every existing handler and store-upgrade entry byte for byte, and give the plan no added, deleted or renamed store."
+do_2 = "Write the handler: it reads the EVM chain identifier the application derives for its own chain id and writes the anchor module's PaxeerChainID and NetworkID and the custody module's NetworkId from it through each keeper's parameter setter, writes the launchpad module's QuoteDenom from the base coin unit node/params declares, leaves every other field of those parameter sets as it reads it, and returns the version map the module migrations produce."
+do_3 = "In the same handler set the governance voting period to one hour and the expedited voting period to twenty minutes through the governance keeper's voting parameter setter, and leave the deposit parameters, the quorum and both thresholds untouched."
+do_4 = "Add the exported attestor-list value in the application package carrying the initial attestor set the four validator sidecar operators supplied, as four entries in ascending signer order, each with its signer address, its payout account and its 33-byte compressed public key: 0x06070D6094c60b593001875c69F12479E0f19960 with pax1dfsyfa3y4f98azvfxmuc3wmmnm99lcajdkgpk2 and 02a8e98ff88820cda7fd73928b69eac35de668ceebc37a3b8683cdc1d7d776622f; 0x6Db02d954A01C9210DA9d1a61F353F518619bB61 with pax1q48swtar079l4nve5c3pxcw92tr9qrrhrv3g2d and 033e9cfdfb42b2be69d4524490dffb8ef02ab797088abd6236e43a801c27a8944c; 0x969C135d2816dAbeE7f7d47d93b4A92A276028a1 with pax1q3t0u84rp9fhe9lf5a4snrq4mc57wqrmswppll and 03323196cfa3a15889e3671ef05d2558acd97962d98fce1ee3e8a09a4b23e609bf; 0xa76e747d450802eF3DC4b1c803b2dA23ec702341 with pax1g3748rzewdxvuyhgrcm66p5jsachfq4sn4fmyg and 03bb6366c6f29b84fa90d301ec0eb03baa85a0aeff440eb868ba2b98a03bead97f; each entry passes the attestor validation of modules/xweb/types/state.go, which derives the signer from the public key."
+do_5 = "Have the handler register that set in the block it applies, set the web-search threshold to three over it and lift the module's pause in the same block, and write none of the three when the list carries no entry."
+do_6 = "Generalise the apply step the activation uses so it applies the plan the upgrade info file names when that plan is one the application knows and has no done height, keeping every condition it already applies - a tracing context, a file naming another plan or another height, a plan already done - and keeping the activation plan's own module-presence condition for the activation plan."
+do_7 = "Write node/upgrades_v610_test.go on the real application through its own begin blocker and the real upgrade keeper: the block the file names records the plan done, writes the anchor and custody identifiers, the launchpad quote denom and the shortened voting periods, leaves the deposit parameters as they were, brings up the web-search module with those four signers in ascending order, a threshold of three and no pause, writes none of the three from an empty list, and a file naming another height changes nothing; and assert the handler tests of the plans that predate v6.10 keep passing untouched."
+verify_cmd = "go test ./node/ -run 'V610|Activation' -count=1"
+symbols = ["V610Upgrade","runV610Upgrade","applyNamedUpgrade","XWebAttestors"]
+touches = ["node/upgrades.go","node/abci.go","node/xweb_attestors.go","node/upgrades_v610_test.go"]
+tests = ["node/upgrades_v610_test.go"]
+reqs = ["3.6","3.7","3.8","3.11"]
+done_revision = "2db5510cd0e807d5aa4536f97f611d751b357520"
+done_command = "go test ./node/ -run 'V610|Activation' -count=1"
+done_exit_code = 0
+done_log = ".logs/act-4.4-verify.log"
+
+[task.4.5]
+title = "Read a pending placeholder as a store the plan is still to mount"
+status = "pending"
+wave = 4
+requires = ["4.4"]
+do_1 = "In node/upgrades.go extend the check that names the plan's stores the commit multistore carries: a store the state-commitment store serves through the pending placeholder of storage/state_db/sc/composite counts as one the plan's store upgrades are still to mount, asked through the interface that store implements and skipped on a commit multistore that does not implement it."
+do_2 = "Keep the message and the behaviour of the apply step exactly as they are: the block whose plan is due names every store still to be mounted and writes no state, and a process whose stores are all mounted applies the plan as before."
+do_3 = "Extend node/upgrades_activation_test.go with the case on the real application: a process whose state-commitment store serves one of the plan's stores through the pending placeholder stops the block naming that store and writes nothing, and one whose stores all carry trees applies the plan."
+verify_cmd = "go test ./node/ -run 'Activation|Upgrade' -count=1"
+symbols = ["unmountedActivationStores","PendingStores","IsPendingStore"]
+touches = ["node/upgrades.go","node/upgrades_activation_test.go"]
+tests = ["node/upgrades_activation_test.go"]
+reqs = ["3.9"]
+
+[task.4.6]
+title = "Replay the v6.10 plan over a copy of a post-activation state"
+status = "pending"
+wave = 4
+requires = ["4.4"]
+do_1 = "Extend tools/chain/upgrade-replay so a run carries a copy of a state through the activation plan and then through the v6.10 plan in the next block, and so the generated fixture reaches the same shape without a data directory: the fixture applies the activation plan first and the replay applies v6.10 over the state it leaves."
+do_2 = "Add the v6.10 assertions to the replay, printing every claim and exiting non-zero on a failed one: the plan is recorded done at its height, the governance voting period is one hour and the expedited period twenty minutes, the deposit parameters and the quorum are what they were before, the anchor module's chain and network identifiers and the custody module's network identifier equal the EVM chain identifier of the state's chain id, the launchpad quote denom is the base coin unit, the web-search module carries the four supplied signers in ascending order with a threshold of three and no pause, and the state reopens at the new version after the commit."
+do_3 = "Add the route assertion: a proposal carrying one authority message of each of the six modules passes the proposal's validation and its handler leaves every message's effect in the replayed state, and a proposal carrying a message no module owns is refused."
+do_4 = "Keep run.sh's interface as it is - no argument generates the fixture and replays the latest plan, a data directory replays over a copy of it, a plan name chooses the plan - and record the harness's revision, command, exit code and log path."
+verify_cmd = "tools/chain/upgrade-replay/run.sh"
+symbols = ["upgrade-replay"]
+touches = ["tools/chain/upgrade-replay/main.go","tools/chain/upgrade-replay/replay.go","tools/chain/upgrade-replay/probe.go","tools/chain/upgrade-replay/fixture.go","tools/chain/upgrade-replay/run.sh"]
+tests = ["tools/chain/upgrade-replay/run.sh"]
+reqs = ["3.6","3.7","3.8","3.10"]
+
+[task.4.7]
+title = "Build the wave once and record what ran"
+status = "pending"
+wave = 4
+requires = ["4.1","4.2","4.3","4.4","4.5","4.6"]
+do_1 = "On the revision that merges wave 4, build the chain once and run the package suites of the modules the wave touches and of the application once, writing the logs under build/activation-gates/."
+do_2 = "Append one gate record per run to spec/paxeer-x-activation/qualification.kvx carrying the task, the requirements the run qualifies, the revision, the exact command, the exit code and the log path, written only from a command that actually ran."
+do_3 = "Append one observation per failure the run exposes that belongs to no task in this feature: revision, command, exit code, log path, one sentence of what was observed and one sentence of what is assumed; do not investigate it further and do not rerun it."
+do_4 = "Rerun nothing that already passed at this revision, spawn no review of a task whose verify_cmd passed, and write no gate record for a command that did not run."
+verify_cmd = "timeout 40m sh -c 'go build ./node/... ./modules/... ./daemon/... && go test -count=1 ./node/ ./modules/xweb/... ./modules/layerxgov/... ./modules/layerxanchor/... ./modules/launchpad/...'"
+symbols = ["activation-gates"]
+touches = ["spec/paxeer-x-activation/qualification.kvx"]
+reqs = ["3.1","3.2","3.3","3.4","3.5","3.6","3.7","3.8","3.9","3.10","3.11"]

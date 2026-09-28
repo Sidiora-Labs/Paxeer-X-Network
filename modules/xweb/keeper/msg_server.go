@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"bytes"
+	"context"
 	"encoding/hex"
 	"fmt"
 	"sort"
@@ -9,6 +10,59 @@ import (
 	"github.com/sidiora-labs/paxeer-network/modules/xweb/types"
 	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 )
+
+type msgServer struct {
+	keeper Keeper
+}
+
+// NewMsgServerImpl returns the Msg service over the keeper. Every message is
+// executed by the keeper method that carries it, which refuses any authority
+// but the module's.
+func NewMsgServerImpl(k Keeper) types.MsgServer { return msgServer{keeper: k} }
+
+var _ types.MsgServer = msgServer{}
+
+func (s msgServer) RegisterAttestor(goCtx context.Context, msg *types.MsgRegisterAttestor) (*types.MsgRegisterAttestorResponse, error) {
+	if err := s.keeper.RegisterAttestor(sdk.UnwrapSDKContext(goCtx), *msg); err != nil {
+		return nil, err
+	}
+	return &types.MsgRegisterAttestorResponse{}, nil
+}
+
+func (s msgServer) RemoveAttestor(goCtx context.Context, msg *types.MsgRemoveAttestor) (*types.MsgRemoveAttestorResponse, error) {
+	if err := s.keeper.RemoveAttestor(sdk.UnwrapSDKContext(goCtx), *msg); err != nil {
+		return nil, err
+	}
+	return &types.MsgRemoveAttestorResponse{}, nil
+}
+
+func (s msgServer) SetThreshold(goCtx context.Context, msg *types.MsgSetThreshold) (*types.MsgSetThresholdResponse, error) {
+	if err := s.keeper.SetThreshold(sdk.UnwrapSDKContext(goCtx), *msg); err != nil {
+		return nil, err
+	}
+	return &types.MsgSetThresholdResponse{}, nil
+}
+
+func (s msgServer) SetParams(goCtx context.Context, msg *types.MsgSetParams) (*types.MsgSetParamsResponse, error) {
+	if err := s.keeper.UpdateParams(sdk.UnwrapSDKContext(goCtx), *msg); err != nil {
+		return nil, err
+	}
+	return &types.MsgSetParamsResponse{}, nil
+}
+
+func (s msgServer) Pause(goCtx context.Context, msg *types.MsgPause) (*types.MsgPauseResponse, error) {
+	if err := s.keeper.Pause(sdk.UnwrapSDKContext(goCtx), *msg); err != nil {
+		return nil, err
+	}
+	return &types.MsgPauseResponse{}, nil
+}
+
+func (s msgServer) Unpause(goCtx context.Context, msg *types.MsgUnpause) (*types.MsgUnpauseResponse, error) {
+	if err := s.keeper.Unpause(sdk.UnwrapSDKContext(goCtx), *msg); err != nil {
+		return nil, err
+	}
+	return &types.MsgUnpauseResponse{}, nil
+}
 
 // RegisterAttestor adds an attestor with its payout account and, when given,
 // the public key credential envelopes are sealed to. The set is kept

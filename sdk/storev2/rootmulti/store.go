@@ -200,7 +200,18 @@ func (rs *Store) flush() error {
 			return changeSets[i].Name < changeSets[j].Name
 		})
 		if rs.ssStore != nil {
-			if err := rs.ssStore.ApplyChangesetAsync(currentVersion, changeSets); err != nil {
+			// A store the state-commitment database carries no tree for yet
+			// holds no versioned state: the commitment layer discards its
+			// writes with the block, so recording them here would let the
+			// state store serve history the commitment layer cannot prove.
+			// The watermark still advances, exactly as it does for a block
+			// that wrote nothing at all.
+			versioned := rs.withoutPendingStores(changeSets)
+			if len(versioned) > 0 {
+				if err := rs.ssStore.ApplyChangesetAsync(currentVersion, versioned); err != nil {
+					return err
+				}
+			} else if err := rs.ssStore.SetLatestVersion(currentVersion); err != nil {
 				return err
 			}
 			storev2Metrics.ssVersion.Record(context.Background(), currentVersion)
@@ -219,6 +230,43 @@ func (rs *Store) flush() error {
 		}
 	}
 	return rs.scStore.ApplyChangeSets(changeSets)
+}
+
+// pendingStoreReporter is implemented by a state-commitment store that can
+// name the mounted stores it carries no tree for yet, which happens while a
+// binary whose mount list has grown runs on a state that predates the growth.
+// The interface is asked for rather than required so that every other
+// Committer implementation keeps the behaviour it has today.
+type pendingStoreReporter interface {
+	IsPendingStore(name string) bool
+}
+
+// withoutPendingStores returns the change sets bound for the versioned state
+// store: every one whose store the state-commitment database carries a tree
+// for. It returns the slice it was given when nothing is pending, so a state
+// that carries every mounted store follows exactly the path it followed
+// before pending stores existed.
+func (rs *Store) withoutPendingStores(changeSets []*proto.NamedChangeSet) []*proto.NamedChangeSet {
+	reporter, ok := rs.scStore.(pendingStoreReporter)
+	if !ok {
+		return changeSets
+	}
+	pending := 0
+	for _, cs := range changeSets {
+		if reporter.IsPendingStore(cs.Name) {
+			pending++
+		}
+	}
+	if pending == 0 {
+		return changeSets
+	}
+	versioned := make([]*proto.NamedChangeSet, 0, len(changeSets)-pending)
+	for _, cs := range changeSets {
+		if !reporter.IsPendingStore(cs.Name) {
+			versioned = append(versioned, cs)
+		}
+	}
+	return versioned
 }
 
 func (rs *Store) Close() error {
