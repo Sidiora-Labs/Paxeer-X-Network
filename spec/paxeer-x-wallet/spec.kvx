@@ -698,9 +698,9 @@ reqs = ["10.3"]
 
 [task.3.7]
 title = "Deploy the shared endpoint in chain-only mode"
-status = "implemented"
+status = "pending"
 wave = 3
-requires = ["1.15","1.12"]
+requires = ["1.15","1.12","3.9"]
 do_1 = "Build the endpoint image from the repository, deploy it from human/wallet/deploy/endpoint.toml with the chain RPC configured and the kernel backends unconfigured, verify eth_chainId, px_resolveAccount and px_getNetwork answer and that kernel methods return the typed unavailable error, and record the run in the qualification log without hosts."
 do_2 = "Extend tools/wallet/check-live.sh with an endpoint mode that performs those calls against a configured base."
 verify_cmd = "timeout 20m sh -c 'tools/wallet/check-live.sh endpoint'"
@@ -719,6 +719,23 @@ verify_cmd = "timeout 20m sh -c 'pnpm --dir human/wallet/sdk test -- agent'"
 symbols = ["agentDid","signAgentRequest","signBinding"]
 touches = ["human/wallet/sdk/src/agent.ts","human/wallet/sdk/test/agent.test.ts"]
 reqs = ["9.5","6.6"]
+
+[task.3.9]
+title = "Let the endpoint start in chain-only mode without kernel-side secrets"
+status = "done"
+wave = 3
+requires = ["1.15"]
+do_1 = "In platform/hosted/gateway/src/main.rs make config treat the client identity and its password, the four sequencer trust inputs, the key provisioning key and the module registry as kernel-side inputs: required exactly as today when LAYERX_GATEWAY_COMPONENT_URL is set, skipped when it is unset, mirroring configured_kernel, and refuse start-up with a named error when any of them is set without the component URL."
+do_2 = "Carry the absence through every consumer so kernel-dependent methods keep answering the typed unavailable error and chain-only readiness reports the kernel side as unconfigured; keep every response shape and openrpc.json unchanged."
+do_3 = "Add a degraded test that starts the endpoint through its real start-up configuration with only the chain RPC and the listener inputs set, asserts it serves eth_chainId and px_getNetwork, and asserts the named refusal when a kernel-side input is set without the component URL."
+verify_cmd = "timeout 20m sh -c 'cd platform && cargo test -p layerx-platform-gateway degraded'"
+symbols = ["config","configured_kernel"]
+touches = ["platform/hosted/gateway/src/main.rs","platform/hosted/gateway/tests/degraded.rs"]
+reqs = ["12.2"]
+revision = "04529bce25ea08763e3323b40c8e2a10e9a28e3f"
+command = "timeout 20m sh -c 'cd platform && cargo test -p layerx-platform-gateway degraded'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 # --------------------------------------------------------------------------
 # WAVE 4 - COMPLETION

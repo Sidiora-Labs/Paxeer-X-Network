@@ -168,7 +168,7 @@
     - In human/apps/wallet route sign-in through the gateway's identity flow, provisioning through the gateway, and every transaction, message and typed data through the SDK provider, with injected wallets through the same wallet interface, removing any remaining direct RPC signing path.
     - Add component and hook tests against the SDK's provider with an in-test gateway server, covering sign-in, provisioning, a send, a message and a typed-data request, and the injected path.
     - _Requirements: 10.3_
-  - [ ] 3.7 Deploy the shared endpoint in chain-only mode — **Implemented - qualification pending**
+  - [ ] 3.7 Deploy the shared endpoint in chain-only mode
     - Build the endpoint image from the repository, deploy it from human/wallet/deploy/endpoint.toml with the chain RPC configured and the kernel backends unconfigured, verify eth_chainId, px_resolveAccount and px_getNetwork answer and that kernel methods return the typed unavailable error, and record the run in the qualification log without hosts.
     - Extend tools/wallet/check-live.sh with an endpoint mode that performs those calls against a configured base.
     - _Requirements: 12.2_
@@ -176,6 +176,11 @@
     - In human/wallet/sdk add agent helpers that derive did:layerx from an Ed25519 public key, sign gateway requests end to end with the canonical digest, nonce and expiry the gateway verifies, sign the binding message for an agent wallet, and expose the claim flow.
     - Add tests that run the helpers against the gateway's verification code imported from the workspace, covering a valid request, replay, expiry and a wrong key.
     - _Requirements: 9.5, 6.6_
+  - [x] 3.9 Let the endpoint start in chain-only mode without kernel-side secrets
+    - In platform/hosted/gateway/src/main.rs make config treat the client identity and its password, the four sequencer trust inputs, the key provisioning key and the module registry as kernel-side inputs: required exactly as today when LAYERX_GATEWAY_COMPONENT_URL is set, skipped when it is unset, mirroring configured_kernel, and refuse start-up with a named error when any of them is set without the component URL.
+    - Carry the absence through every consumer so kernel-dependent methods keep answering the typed unavailable error and chain-only readiness reports the kernel side as unconfigured; keep every response shape and openrpc.json unchanged.
+    - Add a degraded test that starts the endpoint through its real start-up configuration with only the chain RPC and the listener inputs set, asserts it serves eth_chainId and px_getNetwork, and asserts the named refusal when a kernel-side input is set without the component URL.
+    - _Requirements: 12.2_
 
 ## Wave 4 - Completion
 
@@ -231,7 +236,7 @@
   "waves": [
     { "id": 1,  "tasks": ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "1.10", "1.11", "1.12", "1.13", "1.14", "1.15", "1.16"] },
     { "id": 2,  "tasks": ["2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7", "2.8", "2.9"] },
-    { "id": 3,  "tasks": ["3.1", "3.2", "3.3", "3.4", "3.5", "3.6", "3.7", "3.8"] },
+    { "id": 3,  "tasks": ["3.1", "3.2", "3.3", "3.4", "3.5", "3.6", "3.7", "3.8", "3.9"] },
     { "id": 4,  "tasks": ["4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7", "4.8"] },
     { "id": 5,  "tasks": ["5.1", "5.2"] }
   ]

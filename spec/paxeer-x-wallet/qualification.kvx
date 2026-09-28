@@ -189,3 +189,11 @@ symbol = "gasStation.sign"
 observed = "The gas station module calls eth_sign with params [from, construction] and no digest, while PaxeerProvider requires [address, digest, construction] and refuses a missing or mismatched digest, so the module's sign path is refused by the embedded provider."
 assumption = "One side aligns on a single eth_sign parameter order; the provider keeps recomputing the digest from the fields and forwarding only the fields."
 severity = "suspect"
+
+[observation.3.9.1]
+task = "3.9"
+file = "platform/hosted/internal/src/producer.rs"
+symbol = "Client::from_environment"
+observed = "With the kernel-side inputs absent the endpoint still refuses startup with producer requires mTLS and bearer credentials unless LAYERX_EVENTS_PAYMENT_ and LAYERX_EVENTS_WEBHOOKS_ upstream URL, CA, token file and client identity with its password are set."
+assumption = "The chain-only deployment supplies the event producer inputs, or a later task makes the producer optional; this task left the producer unchanged because it lives outside the gateway crate."
+severity = "medium"

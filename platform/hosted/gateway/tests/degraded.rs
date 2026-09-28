@@ -251,104 +251,103 @@ fn secret(directory: &Path, name: &str, value: &str) -> String {
     path(&file).to_owned()
 }
 
-fn start_gateway(redis: &RedisProcess, chain_port: u16) -> Gateway {
+const KERNEL_SIDE_VARIABLES: [&str; 8] = [
+    "LAYERX_GATEWAY_CLIENT_IDENTITY_PKCS12",
+    "LAYERX_GATEWAY_CLIENT_IDENTITY_PASSWORD_FILE",
+    "LAYERX_GATEWAY_SEQUENCER_PUBLIC_KEY_FILE",
+    "LAYERX_GATEWAY_SEQUENCER_ID_FILE",
+    "LAYERX_GATEWAY_SEQUENCER_FIRST_BATCH_FILE",
+    "LAYERX_GATEWAY_SEQUENCER_LAST_BATCH_FILE",
+    "LAYERX_GATEWAY_KEY_PROVISIONING_KEY_FILE",
+    "LAYERX_GATEWAY_MODULE_REGISTRY_FILE",
+];
+
+fn chain_only_environment(
+    redis: &RedisProcess,
+    chain_port: u16,
+    listen: u16,
+) -> Vec<(String, String)> {
     let directory = &redis.directory;
-    let listen = free_port();
     let unused = free_port();
-    let modules = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../tests/fixtures/public-testnet-modules/registry.json");
     let ca = path(&directory.join("server.der")).to_owned();
-    let child = Command::new(env!("CARGO_BIN_EXE_layerx-gateway"))
+    let mut environment = vec![
+        (
+            "LAYERX_GATEWAY_LISTEN".to_owned(),
+            format!("127.0.0.1:{listen}"),
+        ),
+        ("LAYERX_GATEWAY_TLS_CERT_DER".to_owned(), ca.clone()),
+        (
+            "LAYERX_GATEWAY_TLS_KEY_DER".to_owned(),
+            path(&directory.join("server-key.der")).to_owned(),
+        ),
+        ("LAYERX_GATEWAY_OUTBOUND_CA_DER".to_owned(), ca.clone()),
+        (
+            "LAYERX_GATEWAY_NETWORK_ID".to_owned(),
+            "paxeer-degraded".to_owned(),
+        ),
+        (
+            "LAYERX_GATEWAY_LXP_WIRE_VERSION".to_owned(),
+            layerx_wire::limits::STATE_COMMITMENT_PROTOCOL_VERSION.to_string(),
+        ),
+        (
+            "LAYERX_GATEWAY_PROTOCOL_NETWORK_ID".to_owned(),
+            "7".to_owned(),
+        ),
+        (
+            "LAYERX_GATEWAY_PAXEER_RPC_URL".to_owned(),
+            format!("https://localhost:{chain_port}"),
+        ),
+        (
+            "LAYERX_GATEWAY_REDIS_URL".to_owned(),
+            format!("rediss://localhost:{}", redis.port),
+        ),
+        (
+            "LAYERX_GATEWAY_REDIS_USERNAME_FILE".to_owned(),
+            secret(directory, "redis-username", "gateway"),
+        ),
+        (
+            "LAYERX_GATEWAY_REDIS_PASSWORD_FILE".to_owned(),
+            secret(directory, "redis-password", "gateway-secret"),
+        ),
+    ];
+    for kind in ["PAYMENT", "WEBHOOKS"] {
+        environment.push((
+            format!("LAYERX_EVENTS_{kind}_UPSTREAM_URL"),
+            format!("https://localhost:{unused}"),
+        ));
+        environment.push((format!("LAYERX_EVENTS_{kind}_UPSTREAM_CA_DER"), ca.clone()));
+        environment.push((
+            format!("LAYERX_EVENTS_{kind}_UPSTREAM_TOKEN_FILE"),
+            secret(directory, "producer-token", "producer-token"),
+        ));
+        environment.push((
+            format!("LAYERX_EVENTS_{kind}_UPSTREAM_CLIENT_IDENTITY_PKCS12"),
+            path(&directory.join("client.p12")).to_owned(),
+        ));
+        environment.push((
+            format!("LAYERX_EVENTS_{kind}_UPSTREAM_CLIENT_IDENTITY_PASSWORD_FILE"),
+            secret(directory, "producer-identity-password", "integration-only"),
+        ));
+    }
+    environment
+}
+
+fn gateway_command(environment: &[(String, String)]) -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_layerx-gateway"));
+    command
         .env_clear()
         .env("PATH", std::env::var_os("PATH").unwrap_or_default())
-        .env("LAYERX_GATEWAY_LISTEN", format!("127.0.0.1:{listen}"))
-        .env("LAYERX_GATEWAY_TLS_CERT_DER", &ca)
-        .env(
-            "LAYERX_GATEWAY_TLS_KEY_DER",
-            path(&directory.join("server-key.der")),
-        )
-        .env("LAYERX_GATEWAY_OUTBOUND_CA_DER", &ca)
-        .env(
-            "LAYERX_GATEWAY_CLIENT_IDENTITY_PKCS12",
-            path(&directory.join("client.p12")),
-        )
-        .env(
-            "LAYERX_GATEWAY_CLIENT_IDENTITY_PASSWORD_FILE",
-            secret(directory, "identity-password", "integration-only"),
-        )
-        .env(
-            "LAYERX_GATEWAY_SEQUENCER_PUBLIC_KEY_FILE",
-            secret(
-                directory,
-                "sequencer-key",
-                "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
-            ),
-        )
-        .env(
-            "LAYERX_GATEWAY_SEQUENCER_ID_FILE",
-            secret(directory, "sequencer-id", &"11".repeat(32)),
-        )
-        .env(
-            "LAYERX_GATEWAY_SEQUENCER_FIRST_BATCH_FILE",
-            secret(directory, "sequencer-first", "1"),
-        )
-        .env(
-            "LAYERX_GATEWAY_SEQUENCER_LAST_BATCH_FILE",
-            secret(directory, "sequencer-last", "1"),
-        )
-        .env(
-            "LAYERX_GATEWAY_KEY_PROVISIONING_KEY_FILE",
-            secret(directory, "provisioning-key", &"42".repeat(32)),
-        )
-        .env("LAYERX_GATEWAY_NETWORK_ID", "paxeer-degraded")
-        .env(
-            "LAYERX_GATEWAY_LXP_WIRE_VERSION",
-            layerx_wire::limits::STATE_COMMITMENT_PROTOCOL_VERSION.to_string(),
-        )
-        .env("LAYERX_GATEWAY_PROTOCOL_NETWORK_ID", "7")
-        .env("LAYERX_GATEWAY_MODULE_REGISTRY_FILE", path(&modules))
-        .env(
-            "LAYERX_GATEWAY_PAXEER_RPC_URL",
-            format!("https://localhost:{chain_port}"),
-        )
-        .env(
-            "LAYERX_GATEWAY_REDIS_URL",
-            format!("rediss://localhost:{}", redis.port),
-        )
-        .env(
-            "LAYERX_GATEWAY_REDIS_USERNAME_FILE",
-            secret(directory, "redis-username", "gateway"),
-        )
-        .env(
-            "LAYERX_GATEWAY_REDIS_PASSWORD_FILE",
-            secret(directory, "redis-password", "gateway-secret"),
-        )
-        .env(
-            "LAYERX_EVENTS_PAYMENT_UPSTREAM_URL",
-            format!("https://localhost:{unused}"),
-        )
-        .env("LAYERX_EVENTS_PAYMENT_UPSTREAM_CA_DER", &ca)
-        .env(
-            "LAYERX_EVENTS_WEBHOOKS_UPSTREAM_URL",
-            format!("https://localhost:{unused}"),
-        )
-        .env("LAYERX_EVENTS_WEBHOOKS_UPSTREAM_CA_DER", &ca)
-        .envs(["PAYMENT", "WEBHOOKS"].into_iter().flat_map(|kind| {
-            [
-                (
-                    format!("LAYERX_EVENTS_{kind}_UPSTREAM_TOKEN_FILE"),
-                    secret(directory, "producer-token", "producer-token"),
-                ),
-                (
-                    format!("LAYERX_EVENTS_{kind}_UPSTREAM_CLIENT_IDENTITY_PKCS12"),
-                    path(&directory.join("client.p12")).to_owned(),
-                ),
-                (
-                    format!("LAYERX_EVENTS_{kind}_UPSTREAM_CLIENT_IDENTITY_PASSWORD_FILE"),
-                    secret(directory, "identity-password", "integration-only"),
-                ),
-            ]
-        }))
+        .envs(environment.iter().map(|(name, value)| (name, value)));
+    command
+}
+
+fn start_gateway(redis: &RedisProcess, chain_port: u16) -> Gateway {
+    let listen = free_port();
+    let environment = chain_only_environment(redis, chain_port, listen);
+    assert!(environment.iter().all(|(name, _)| {
+        !KERNEL_SIDE_VARIABLES.contains(&name.as_str()) && name != "LAYERX_GATEWAY_COMPONENT_URL"
+    }));
+    let child = gateway_command(&environment)
         .stdout(Stdio::null())
         .stderr(Stdio::inherit())
         .spawn()
@@ -464,6 +463,91 @@ fn degraded_endpoint_serves_the_chain_and_refuses_kernel_methods_without_the_ker
     }
     drop(gateway);
     drop(chain);
+}
+
+#[test]
+fn degraded_endpoint_starts_chain_only_through_its_real_configuration() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let redis = RedisProcess::start();
+    let (tls, _) = payment_events::tls(&redis);
+    let answers = precompile_answers();
+    let chain = payment_events::Listener::start(Arc::clone(&tls), move |request| {
+        chain_answer(&answers, request)
+    });
+    let gateway = start_gateway(&redis, chain.port);
+
+    let chain_id = gateway.rpc("eth_chainId", &json!([]));
+    assert_eq!(chain_id["result"], CHAIN_ID, "{chain_id}");
+
+    let network = gateway.rpc("px_getNetwork", &json!([]));
+    assert_eq!(
+        network["result"]["kernel"],
+        json!({"available": false, "reason": "not_configured"}),
+        "{network}"
+    );
+    assert_eq!(
+        network["result"]["paxeer"],
+        json!({"chain_id": CHAIN_ID, "latest_block": LATEST_BLOCK}),
+        "{network}"
+    );
+
+    assert_kernel_unavailable(
+        &gateway.rpc("lx_sendActivity", &json!(["00"])),
+        "core_agent_boundary",
+    );
+
+    let activity = gateway
+        .client
+        .post("/v1/activities", b"{}")
+        .unwrap_or_else(|error| panic!("activity route must be answered: {error:?}"));
+    assert_eq!(activity.status, 503);
+    let refusal: Value = serde_json::from_slice(&activity.body)
+        .unwrap_or_else(|error| panic!("activity refusal must be JSON: {error}"));
+    assert_eq!(
+        refusal,
+        json!({"ok": false, "error": {"code": "kernel_unavailable", "backend": "core_agent_boundary", "reason": "not_configured"}})
+    );
+
+    let (status, readiness) = gateway.get("/readyz");
+    assert_eq!(status, 200, "{readiness}");
+    assert_eq!(readiness["status"], "degraded");
+    for kernel in [
+        "core_agent_boundary",
+        "independent_receipt_authority",
+        "program_registry",
+    ] {
+        assert_eq!(
+            readiness["backends"][kernel],
+            json!({"state": "unavailable", "reason": "not_configured"}),
+            "{kernel}"
+        );
+    }
+    drop(gateway);
+    drop(chain);
+}
+
+#[test]
+fn degraded_endpoint_refuses_a_kernel_side_input_without_the_component_url() {
+    let redis = RedisProcess::start();
+    let _ = payment_events::tls(&redis);
+    let input = secret(&redis.directory, "kernel-side-input", &"42".repeat(32));
+    for variable in KERNEL_SIDE_VARIABLES {
+        let mut environment = chain_only_environment(&redis, free_port(), free_port());
+        environment.push((variable.to_owned(), input.clone()));
+        let output = gateway_command(&environment)
+            .stdout(Stdio::null())
+            .output()
+            .unwrap_or_else(|error| panic!("gateway must run: {error}"));
+        assert_eq!(output.status.code(), Some(1), "{variable}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(
+            stderr.trim_end(),
+            format!(
+                "layerx-gateway refused startup: {variable} is set without LAYERX_GATEWAY_COMPONENT_URL"
+            ),
+            "{variable}"
+        );
+    }
 }
 
 #[path = "support/payment_events.rs"]

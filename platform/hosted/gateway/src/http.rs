@@ -74,7 +74,7 @@ impl Endpoint {
 
 pub struct Client {
     ca: Certificate,
-    identity: Identity,
+    identity: Option<Identity>,
     connector: OnceLock<Result<TlsConnector, String>>,
     idle: Mutex<BTreeMap<String, Vec<IdleConnection>>>,
 }
@@ -104,7 +104,17 @@ impl Client {
     pub fn new(ca: Certificate, identity: Identity) -> Self {
         Self {
             ca,
-            identity,
+            identity: Some(identity),
+            connector: OnceLock::new(),
+            idle: Mutex::new(BTreeMap::new()),
+        }
+    }
+
+    #[must_use]
+    pub fn without_identity(ca: Certificate) -> Self {
+        Self {
+            ca,
+            identity: None,
             connector: OnceLock::new(),
             idle: Mutex::new(BTreeMap::new()),
         }
@@ -112,12 +122,14 @@ impl Client {
 
     fn connector(&self) -> Result<&TlsConnector, String> {
         match self.connector.get_or_init(|| {
-            TlsConnector::builder()
+            let mut builder = TlsConnector::builder();
+            builder
                 .add_root_certificate(self.ca.clone())
-                .identity(self.identity.clone())
-                .min_protocol_version(Some(native_tls::Protocol::Tlsv12))
-                .build()
-                .map_err(|error| error.to_string())
+                .min_protocol_version(Some(native_tls::Protocol::Tlsv12));
+            if let Some(identity) = &self.identity {
+                builder.identity(identity.clone());
+            }
+            builder.build().map_err(|error| error.to_string())
         }) {
             Ok(connector) => Ok(connector),
             Err(error) => Err(error.clone()),
