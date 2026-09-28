@@ -1,16 +1,15 @@
 'use client';
 
 import { useState } from 'react';
-import { useWalletState, useWalletActions } from '@/providers/WalletProvider';
-import { useWalletKind } from '@/providers/WalletKindProvider';
-import { useOptionalEmbeddedWallet } from '@/lib/wallet';
+import { useWalletState } from '@/providers/WalletProvider';
+import { useWallet } from '@/wallet/WalletProvider';
 import { shortenAddress } from '@/lib/format';
 import {
     announceRpcChanged,
     PAXEER_CONFIG,
     validateRpcEndpoint,
 } from '@/lib/constants';
-import { Check, LogOut, Repeat, TriangleAlert, Trash2 } from 'lucide-react';
+import { Check, LogOut, TriangleAlert } from 'lucide-react';
 import { SvgIcon } from '@/components/ui/SvgIcon';
 import { getAvatarPath } from '@/lib/avatar';
 import { NotificationToggle, InstallButton } from '@/components/pwa/PWAComponents';
@@ -37,51 +36,15 @@ interface SettingsWidgetProps {
 
 export function SettingsWidget({ onNavigate, onPaxscan }: SettingsWidgetProps) {
     const { activeAccount } = useWalletState();
-    const { reset } = useWalletActions();
     const { t } = useLocale();
-    const { kind, setKind } = useWalletKind();
-    const embedded = useOptionalEmbeddedWallet();
-    const isEmbedded = kind === 'embedded';
-    const isFunded = kind === 'funded';
-    // Whether the user has a funded account on the server. Independent of
-    // `kind` — lets us show "Switch to Funded" for users who already
-    // provisioned an account but are currently viewing in embedded mode.
-    const hasFundedAccount = !!embedded?.fundedSelf;
-    const hasEmbeddedSession = !!embedded?.isAuthenticated;
+    const wallet = useWallet();
+    const isEmbedded = wallet.mode === 'embedded';
 
     const [view, setView] = useState<SettingsView>('main');
-    const [confirmReset, setConfirmReset] = useState(false);
-
-    const handleReset = async () => {
-        if (!confirmReset) { setConfirmReset(true); return; }
-        await reset();
-        resetStorageForLifecycle('reset');
-    };
 
     const handleSignOut = async () => {
-        if (!embedded) return;
-        await embedded.signOut();
+        await wallet.signOut();
         resetStorageForLifecycle('logout');
-        // Keep the custody kind so the next launch lands directly on the
-        // sign-in screen instead of bouncing back to the welcome cards.
-    };
-
-    /**
-     * Pivot from a standard managed wallet into Funded mode. Funded and
-     * standard accounts share the same Supabase identity, so flipping
-     * `kind` hands over to the provider chain: without a funded account
-     * the shell routes to the tier picker, otherwise the funded portfolio
-     * renders immediately.
-     */
-    const handleSwitchToFunded = () => {
-        resetStorageForLifecycle('custody-switch');
-        setKind('funded');
-    };
-
-    /** Go back to the standard managed-wallet view from funded. */
-    const handleSwitchFromFunded = () => {
-        resetStorageForLifecycle('custody-switch');
-        setKind('embedded');
     };
 
     if (view === 'preferences') return <PreferencesView onBack={() => setView('main')} />;
@@ -110,21 +73,17 @@ export function SettingsWidget({ onNavigate, onPaxscan }: SettingsWidgetProps) {
                 </div>
             </div>
 
-            {isEmbedded && (
-                <>
-                    <div className="col-span-2 px-1 pt-1"><p className="text-[13px] font-bold text-pax-muted uppercase tracking-[0.06em]">{t.settings.addressBook}</p></div>
-                    <div className="col-span-2 bg-pax-surface rounded-[20px]  divide-white/[0.04] overflow-hidden">
-                        <SettingsRow icon={<SvgIcon name="user" className="w-4.5 h-4.5" style={{ filter: 'brightness(0) invert(0.6)' }} />} label={t.nav.contacts} subtitle={t.settings.contactsSubtitle} onClick={() => onNavigate?.('contacts')} />
-                    </div>
-                </>
-            )}
+            <div className="col-span-2 px-1 pt-1"><p className="text-[13px] font-bold text-pax-muted uppercase tracking-[0.06em]">{t.settings.addressBook}</p></div>
+            <div className="col-span-2 bg-pax-surface rounded-[20px]  divide-white/[0.04] overflow-hidden">
+                <SettingsRow icon={<SvgIcon name="user" className="w-4.5 h-4.5" style={{ filter: 'brightness(0) invert(0.6)' }} />} label={t.nav.contacts} subtitle={t.settings.contactsSubtitle} onClick={() => onNavigate?.('contacts')} />
+            </div>
 
             <div className="col-span-2 px-1 pt-1"><p className="text-[13px] font-bold text-pax-muted uppercase tracking-[0.06em]">{t.account.title}</p></div>
             <div className="col-span-2 bg-pax-surface rounded-[20px]  divide-white/[0.04] overflow-hidden">
-                {embedded?.user?.email && (
+                {wallet.identity?.email && (
                     <div className="px-4 py-3.5 text-sm">
                         <p className="text-[11px] text-pax-muted uppercase tracking-wider">{t.settings.signedInAs}</p>
-                        <p className="text-sm mt-0.5 truncate">{embedded.user.email}</p>
+                        <p className="text-sm mt-0.5 truncate">{wallet.identity.email}</p>
                     </div>
                 )}
                 <button
@@ -154,70 +113,6 @@ export function SettingsWidget({ onNavigate, onPaxscan }: SettingsWidgetProps) {
                 <NotificationToggle />
                 <div className="px-4 py-3"><InstallButton className="w-full justify-center" /></div>
             </div>
-
-            {(isFunded || hasEmbeddedSession) && (
-                <>
-                    <div className="col-span-2 px-1 pt-1"><p className="text-[13px] font-bold text-pax-muted uppercase tracking-[0.06em]">{t.settings.walletMode}</p></div>
-                    <div className="col-span-2 bg-pax-surface rounded-[20px]  divide-white/[0.04] overflow-hidden">
-                        {hasEmbeddedSession && !isFunded && (
-                            <button
-                                onClick={handleSwitchToFunded}
-                                className="w-full flex items-center gap-3 px-4 py-3.5 text-sm press-scale transition-colors hover:bg-white/5"
-                            >
-                                <span className="text-pax-accent">
-                                    <SvgIcon
-                                        name="bridge"
-                                        className="w-[18px] h-[18px]"
-                                        style={{
-                                            filter:
-                                                'brightness(0) saturate(100%) invert(22%) sepia(93%) saturate(7388%) hue-rotate(222deg) brightness(98%) contrast(101%)',
-                                        }}
-                                    />
-                                </span>
-                                <div className="flex-1 text-left min-w-0">
-                                    <span className="block">
-                                        {hasFundedAccount ? t.settings.switchToFunded : t.settings.becomeFunded}
-                                    </span>
-                                    <span className="block text-[11px] text-pax-muted">
-                                        {hasFundedAccount
-                                            ? t.settings.switchToFundedSubtitle
-                                            : t.settings.becomeFundedSubtitle}
-                                    </span>
-                                </div>
-                                <SvgIcon name="chevron-right" className="w-4 h-4" style={{ filter: 'brightness(0) invert(0.3)' }} />
-                            </button>
-                        )}
-
-                        {isFunded && (
-                            <button
-                                onClick={handleSwitchFromFunded}
-                                className="w-full flex items-center gap-3 px-4 py-3.5 text-sm press-scale transition-colors hover:bg-white/5"
-                            >
-                                <span className="text-pax-muted"><Repeat className="w-[18px] h-[18px]" /></span>
-                                <div className="flex-1 text-left min-w-0">
-                                    <span className="block">{t.settings.switchToStandard}</span>
-                                    <span className="block text-[11px] text-pax-muted">{t.settings.switchToStandardSubtitle}</span>
-                                </div>
-                                <SvgIcon name="chevron-right" className="w-4 h-4" style={{ filter: 'brightness(0) invert(0.3)' }} />
-                            </button>
-                        )}
-                    </div>
-                </>
-            )}
-
-            {isFunded && (
-                <>
-                    <div className="col-span-2 px-1 pt-1"><p className="text-[13px] font-bold text-pax-error/60 uppercase tracking-[0.06em]">{t.settings.dangerZone}</p></div>
-                    <div className="col-span-2 bg-pax-surface rounded-[20px] overflow-hidden">
-                        <button onClick={handleReset} className="w-full flex items-center gap-3 px-4 py-3.5 text-sm press-scale transition-colors">
-                            <Trash2 className="w-[18px] h-[18px] shrink-0 text-red-400" />
-                            <span className={confirmReset ? 'text-red-400 font-medium' : 'text-red-400/60'}>
-                                {confirmReset ? t.settings.eraseConfirm : t.settings.eraseWallet}
-                            </span>
-                        </button>
-                    </div>
-                </>
-            )}
 
             <div className="col-span-2 mt-4 text-center">
                 <p className="text-xs text-pax-muted/50">Paxeer Wallet v0.1.0</p>

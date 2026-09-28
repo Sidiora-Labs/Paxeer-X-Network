@@ -25,6 +25,39 @@
     "paths": {
       "@/*": [
         "./src/*"
+      ],
+      "@paxeer/wallet": [
+        "../../wallet/sdk/src/index.ts"
+      ],
+      "@sidiora/layerx-sdk": [
+        "../../../agent/sdk/typescript/src/index.ts"
+      ],
+      "viem": [
+        "./node_modules/viem"
+      ],
+      "@supabase/supabase-js": [
+        "./node_modules/@supabase/supabase-js"
+      ],
+      "@scure/bip32": [
+        "./node_modules/@scure/bip32"
+      ],
+      "@scure/bip39": [
+        "./node_modules/@scure/bip39"
+      ],
+      "ws": [
+        "./node_modules/@types/ws"
+      ],
+      "viem/*": [
+        "./node_modules/viem/*"
+      ],
+      "@noble/curves/*": [
+        "./node_modules/@noble/curves/*"
+      ],
+      "@noble/hashes/*": [
+        "./node_modules/@noble/hashes/*"
+      ],
+      "@scure/bip39/*": [
+        "./node_modules/@scure/bip39/*"
       ]
     }
   },

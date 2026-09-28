@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { DEFAULT_API_URL, DEFAULT_SUPABASE_URL } from '@/lib/wallet/embedded/client';
+import { resolveWalletConfig } from '@/wallet/config';
 import { PAXEER_CONFIG } from '@/lib/constants';
 import { captureError, logEvent } from '@/lib/observability';
 import { readBoundedUpstream } from '@/server/http';
@@ -86,11 +86,16 @@ export async function GET(request: Request) {
       { status: 400, headers: { 'Cache-Control': 'no-store' } },
     );
   }
+  const wallet = resolveWalletConfig();
+  const walletUrl = (select: (config: { identityUrl: string; gatewayUrl: string }) => string) => async (signal: AbortSignal) => {
+    if (!wallet.ok) throw wallet.error;
+    await checkHttp(select(wallet.config), signal);
+  };
   const checks = {
     rpc: await timedCheck((signal) => checkRpc(signal)),
     indexer: await timedCheck((signal) => checkHttp(`${PAXEER_CONFIG.portfolioApiBase}/health`, signal)),
-    supabase: await timedCheck((signal) => checkHttp(`${DEFAULT_SUPABASE_URL}/auth/v1/health`, signal)),
-    embeddedWallet: await timedCheck((signal) => checkHttp(`${DEFAULT_API_URL}/health`, signal)),
+    supabase: await timedCheck(walletUrl((config) => `${config.identityUrl}/auth/v1/health`)),
+    embeddedWallet: await timedCheck(walletUrl((config) => `${config.gatewayUrl}/health`)),
     push: await timedCheck(async () => {
       if (!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) {
         throw new Error('VAPID keys are not configured');

@@ -70,12 +70,32 @@ describe('canonical shell navigation', () => {
       routeGuard(
         { name: 'send' },
         {
-          custody: 'funded',
-          unlocked: true,
+          custody: 'injected',
+          unlocked: false,
           hasAccount: true,
         },
       ),
     ).toEqual({ allowed: false, recovery: { name: 'portfolio' } });
+    expect(
+      routeGuard(
+        { name: 'contacts' },
+        {
+          custody: 'embedded',
+          unlocked: true,
+          hasAccount: false,
+        },
+      ),
+    ).toEqual({ allowed: false, recovery: { name: 'settings' } });
+    expect(
+      routeGuard(
+        { name: 'send' },
+        {
+          custody: 'injected',
+          unlocked: true,
+          hasAccount: true,
+        },
+      ),
+    ).toEqual({ allowed: true });
     expect(
       routeGuard(
         { name: 'send' },

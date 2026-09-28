@@ -26,7 +26,7 @@ export interface ApprovalIntent<Payload = unknown> {
   readonly expiresAt: UnixMilliseconds;
   readonly identityGeneration: number;
   readonly origin: ApprovalOrigin;
-  readonly custody: 'managed' | 'funded';
+  readonly custody: 'managed' | 'injected';
   readonly account: AccountRef;
   readonly chain: ChainRef;
   readonly operation: ApprovalOperation;

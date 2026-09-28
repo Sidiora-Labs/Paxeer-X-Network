@@ -1,21 +1,6 @@
 import type { TransactionData } from '../types';
 
-/**
- * Discriminator that distinguishes the two custody models the PaxPort
- * wallet library ships:
- *
- *   - `'embedded'` — `EmbeddedWallet` from `/paxport/wallet/embedded/`.
- *     Email / OAuth sign-in via Supabase, server-side signing via
- *     connect.paxportwallet.com. Same wallet on every Paxeer app the user
- *     signs into. Custody is Paxeer-managed.
- *
- *   - `'funded'` — `FundedWallet` from `/paxport/wallet/embedded/`. Shares
- *     the embedded auth surface (Supabase sign-in) but signs through the
- *     funded policy engine (`POST /v1/funded/send`) which enforces a
- *     per-tier contract / selector whitelist, drawdown caps, and a
- *     no-withdrawal rule. UI hides Send / Receive / off-ramp in this mode.
- */
-export type WalletKind = 'embedded' | 'funded';
+export type WalletKind = 'embedded' | 'injected';
 
 /**
  * Minimum surface that both wallet kinds expose to the PWA UI layer.

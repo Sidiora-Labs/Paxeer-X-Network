@@ -228,3 +228,19 @@ symbol = "parseDid"
 observed = "The gateway registers and verifies agents only under did:matrix:<label>:<16 hex> and has no did:layerx derivation, so agentDid (did:layerx plus 64 hex, matching lxwire and the bind vectors) cannot be the X-Agent-Key the gateway accepts."
 assumption = "signAgentRequest and buildClaim take the registered key id as given and the tests sign with the gateway's did:matrix form; moving the gateway to did:layerx principals belongs to a gateway task."
 severity = "medium"
+
+[observation.3.6.1]
+task = "3.6"
+file = "human/wallet/sdk/src/index.ts"
+symbol = "@paxeer/wallet"
+observed = "The SDK root index re-exports modules that import @sidiora/layerx-sdk from source, which pulls node:sqlite, node:child_process, http, https and ws into the app's type check and bundle graph, so the app aliases that package to its source and carries its runtime dependencies."
+assumption = "The SDK gains a browser-safe entry point without the agent modules; until then the app resolves both packages from source through tsconfig paths, the vitest aliases and the Next webpack aliases."
+severity = "suspect"
+
+[observation.3.6.2]
+task = "3.6"
+file = "human/apps/wallet/src/platform/storage/repositories.ts"
+symbol = "parseCustodyChoice"
+observed = "A stored custody choice of funded, left by the retired funded tier, is read as no choice, so those users land on the welcome screen."
+assumption = "The funded tier stays retired, following the same precedent as observation 2.8.4."
+severity = "info"

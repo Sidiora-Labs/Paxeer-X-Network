@@ -2,8 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useWalletState } from '@/providers/WalletProvider';
-import { useWalletKind } from '@/providers/WalletKindProvider';
-import { useOptionalEmbeddedWallet } from '@/lib/wallet';
+import { useWallet } from '@/wallet/WalletProvider';
 import { SvgIcon } from '@/components/ui/SvgIcon';
 import { Onboarding } from '@/components/onboarding/Onboarding';
 import { PortfolioWidget } from '@/widgets/portfolio';
@@ -29,17 +28,6 @@ import { Loader2 } from 'lucide-react';
 import { routeGuard, type ShellRoute } from '@/domains/shell';
 import { pendingSendRepository } from '@/platform/storage/repositories';
 
-// Routes that are structurally disabled in Funded mode. The Funded
-// policy engine blocks withdrawals and contract interactions outside
-// the tier whitelist server-side; gating the UI here keeps users from
-// landing on screens that would offer those actions and then fail at
-// the signing layer.
-const FUNDED_BANNED_ROUTES: ReadonlySet<AppRoute> = new Set<AppRoute>([
-    'send',
-    'receive',
-    'contacts',
-]);
-
 function openExternal(url: string) {
     openExternalUrl(url);
 }
@@ -50,8 +38,8 @@ function unreachableRoute(route: never): never {
 
 export function ShellWidget() {
     const { ready, activeAccount } = useWalletState();
-    const { kind, hydrated } = useWalletKind();
-    const embedded = useOptionalEmbeddedWallet();
+    const { status, mode } = useWallet();
+    const hydrated = status !== 'loading';
     useNotificationLifecycle();
 
     const appRoute = useAppRoute();
@@ -69,25 +57,20 @@ export function ShellWidget() {
         navigateToToken,
         navigateToTx,
     } = appRoute;
-    const shellEligible =
-        kind === 'embedded'
-            ? Boolean(embedded?.isAuthenticated && embedded.publicWallet)
-            : kind === 'funded'
-                ? Boolean(embedded?.isAuthenticated && embedded.fundedSelf)
-                : false;
+    const shellEligible = status === 'ready' && mode !== null;
     const routeDecision = useMemo(
         () =>
-            !shellEligible || kind === null
+            !shellEligible || mode === null
                 ? { allowed: true as const }
                 : routeGuard(routeState, {
-                    custody: kind,
-                    unlocked: Boolean(embedded?.isAuthenticated),
+                    custody: mode,
+                    unlocked: status === 'ready',
                     hasAccount: Boolean(activeAccount),
                 }),
         [
             activeAccount,
-            embedded?.isAuthenticated,
-            kind,
+            mode,
+            status,
             routeState,
             shellEligible,
         ],
@@ -115,21 +98,11 @@ export function ShellWidget() {
         [goBack],
     );
 
-    const isFunded = kind === 'funded';
-
     const setRouteSafe = useCallback(
         (next: AppRoute) => {
-            // Funded users can't reach send / receive / contacts —
-            // bounce them back to the portfolio if anything tries to
-            // navigate there. (ActionBento and TokenActions hide the
-            // entry points already; this is defence-in-depth.)
-            if (isFunded && FUNDED_BANNED_ROUTES.has(next)) {
-                setRoute('portfolio');
-                return;
-            }
             setRoute(next);
         },
-        [isFunded, setRoute],
+        [setRoute],
     );
 
     const navigateToTrade = useCallback((poolAddress: string) => {
@@ -186,53 +159,12 @@ export function ShellWidget() {
         );
     }
 
-    // ── Onboarding (no kind chosen yet) ──────────────────────────────────
-    if (kind === null) {
+    if (status === 'connecting') {
+        return <Onboarding initialStep="embedded-setup" />;
+    }
+
+    if (status !== 'ready' || mode === null) {
         return <Onboarding />;
-    }
-
-    // ── Embedded mode gating ─────────────────────────────────────────────
-    if (kind === 'embedded') {
-        if (!embedded?.isAuthenticated) {
-            // Land users straight in the embedded sign-in screen — they already
-            // picked the embedded card on a previous visit, so the welcome
-            // screen would just be a wasted tap.
-            return <Onboarding initialStep="embedded-signin" />;
-        }
-        if (!embedded.publicWallet) {
-            // Authenticated but standard wallet not yet provisioned. Route
-            // back through onboarding's `embedded-setup` step which kicks
-            // the explicit `provisionStandard()` call and shows a
-            // deterministic loading screen until `publicWallet` flips
-            // non-null.
-            return <Onboarding initialStep="embedded-setup" />;
-        }
-        // Authenticated + provisioned — fall through to render the shell.
-    }
-
-    // ── Funded mode gating ───────────────────────────────────────────────
-    //
-    // Mirrors the embedded gates but pivots on `fundedSelf` instead of
-    // `publicWallet`. When the user picks the Funded tile we set
-    // `kind='funded'` synchronously, which is what gets us here. From
-    // here the shell drives the rest:
-    //
-    //   1. No session → bounce to the funded sign-in screen so the user
-    //      can authenticate with email / OAuth.
-    //   2. Session but no funded account → tier picker. The picker
-    //      calls `provisionFunded(tier_id)` which disburses USDL + PAX
-    //      and flips `fundedSelf` non-null.
-    //   3. Authenticated + provisioned → fall through to render the shell
-    //      with the funded portfolio (`FundedStatusCard` + Swap/Trade
-    //      bento + filtered holdings).
-    if (kind === 'funded') {
-        if (!embedded?.isAuthenticated) {
-            return <Onboarding initialStep="funded-signin" />;
-        }
-        if (!embedded.fundedSelf) {
-            return <Onboarding initialStep="funded-tier-picker" />;
-        }
-        // Authenticated + provisioned — fall through to render the shell.
     }
 
     const showNav = !['send', 'receive', 'contacts', 'pns'].includes(route);

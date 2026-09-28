@@ -31,7 +31,7 @@ export type ShellRoute =
     }
   | { readonly name: 'tx-detail'; readonly hash: string };
 
-export type CustodyMode = 'embedded' | 'funded';
+export type CustodyMode = 'embedded' | 'injected';
 export type RouteDataState =
   | 'loading'
   | 'empty'
@@ -65,8 +65,7 @@ const ALL_STATES: Readonly<Record<RouteDataState, 'render'>> = {
   ready: 'render',
 };
 
-const ALL_CUSTODY: readonly CustodyMode[] = ['embedded', 'funded'];
-const EMBEDDED_ONLY: readonly CustodyMode[] = ['embedded'];
+const ALL_CUSTODY: readonly CustodyMode[] = ['embedded', 'injected'];
 
 function policy(
   custody: readonly CustodyMode[],
@@ -85,14 +84,14 @@ function policy(
 
 export const ROUTE_POLICIES: Readonly<Record<ShellRouteName, RoutePolicy>> = {
   portfolio: policy(ALL_CUSTODY),
-  send: policy(EMBEDDED_ONLY, { draftLifetime: 'route' }),
-  receive: policy(EMBEDDED_ONLY),
+  send: policy(ALL_CUSTODY, { draftLifetime: 'route' }),
+  receive: policy(ALL_CUSTODY),
   transactions: policy(ALL_CUSTODY),
   swap: policy(ALL_CUSTODY, { draftLifetime: 'route' }),
   discover: policy(ALL_CUSTODY),
-  pns: policy(EMBEDDED_ONLY, { recovery: 'discover' }),
+  pns: policy(ALL_CUSTODY, { recovery: 'discover' }),
   settings: policy(ALL_CUSTODY),
-  contacts: policy(EMBEDDED_ONLY, { recovery: 'settings' }),
+  contacts: policy(ALL_CUSTODY, { recovery: 'settings' }),
   'token-detail': policy(ALL_CUSTODY),
   'tx-detail': policy(ALL_CUSTODY, {
     recovery: 'transactions',

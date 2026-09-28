@@ -1,7 +1,7 @@
 /** Public account identity and display metadata. Never secret-bearing. */
 export interface WalletAccount {
   id: string;
-  kind: 'derived' | 'imported' | 'managed' | 'funded';
+  kind: 'managed' | 'injected';
   address: string;
   name: string;
   derivationPath: string;

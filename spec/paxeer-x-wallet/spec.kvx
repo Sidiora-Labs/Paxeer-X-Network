@@ -694,7 +694,7 @@ reqs = ["3.4","3.3"]
 
 [task.3.6]
 title = "Put the app on the SDK provider and the gateway's identity flow"
-status = "pending"
+status = "done"
 wave = 3
 requires = ["2.4","2.8"]
 do_1 = "In human/apps/wallet route sign-in through the gateway's identity flow, provisioning through the gateway, and every transaction, message and typed data through the SDK provider, with injected wallets through the same wallet interface, removing any remaining direct RPC signing path."
@@ -703,6 +703,10 @@ verify_cmd = "timeout 20m sh -c 'pnpm --dir human/apps/wallet exec vitest run sr
 symbols = ["useWallet","WalletProvider"]
 touches = ["human/apps/wallet/src/wallet/","human/apps/wallet/src/app/","human/apps/wallet/package.json"]
 reqs = ["10.3"]
+revision = "5cfcebc073488137a524df1d472ab53593e50872"
+command = "timeout 20m sh -c 'pnpm --dir human/apps/wallet exec vitest run src/wallet'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.3.7]
 title = "Deploy the shared endpoint in chain-only mode"

@@ -93,11 +93,11 @@ export type JsonValue =
   | JsonValue[]
   | { [key: string]: JsonValue };
 
-export type CustodyChoice = 'embedded' | 'funded';
+export type CustodyChoice = 'embedded' | 'injected';
 
 function parseCustodyChoice(input: unknown): CustodyChoice | null {
-  if (input === null || input === 'self-custody') return null;
-  if (input === 'embedded' || input === 'funded') {
+  if (input === null || input === 'self-custody' || input === 'funded') return null;
+  if (input === 'embedded' || input === 'injected') {
     return input;
   }
   throw new TypeError('Custody choice is invalid');

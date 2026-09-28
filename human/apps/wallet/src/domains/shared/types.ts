@@ -38,7 +38,7 @@ export type DataSourceKind =
   | 'chain-rpc'
   | 'indexer'
   | 'managed-wallet'
-  | 'funded-wallet'
+  | 'injected-wallet'
   | 'price-provider'
   | 'local-operation'
   | 'user';

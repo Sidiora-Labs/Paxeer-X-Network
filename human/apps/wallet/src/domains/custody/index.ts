@@ -38,11 +38,10 @@ export interface ManagedCapabilities
   readonly signOut: () => Promise<void>;
 }
 
-export interface FundedCapabilities {
-  readonly submitPolicyCall: (
-    request: TransferRequest,
-  ) => Promise<SubmittedTransfer>;
-  readonly signOut: () => Promise<void>;
+export interface InjectedCapabilities
+  extends ReceiveCapability,
+    TransferCapability {
+  readonly disconnect: () => Promise<void>;
 }
 
 export type CustodySession =
@@ -53,15 +52,14 @@ export type CustodySession =
       readonly capabilities: ManagedCapabilities;
     }
   | {
-      readonly kind: 'funded';
-      readonly identityId: string;
+      readonly kind: 'injected';
+      readonly providerRdns: string;
       readonly snapshot: PublicWalletSnapshot;
-      readonly policyRevision: string;
-      readonly capabilities: FundedCapabilities;
+      readonly capabilities: InjectedCapabilities;
     }
   | {
       readonly kind: 'unavailable';
-      readonly requestedKind: 'managed' | 'funded';
+      readonly requestedKind: 'managed' | 'injected';
       readonly failure: AppFailure;
     };
 

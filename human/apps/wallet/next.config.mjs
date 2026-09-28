@@ -1,10 +1,19 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { withSentryConfig } from '@sentry/nextjs';
+
+const appDir = path.dirname(fileURLToPath(import.meta.url));
+const walletSdk = path.resolve(appDir, '../../wallet/sdk/src/index.ts');
+const layerxSdk = path.resolve(appDir, '../../../agent/sdk/typescript/src/index.ts');
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
     output: 'standalone',
     reactStrictMode: true,
     transpilePackages: ['three', '@react-three/fiber', '@react-three/drei'],
+    experimental: {
+        externalDir: true,
+    },
     images: {
         loader: 'custom',
         loaderFile: './src/lib/safe-image-loader.ts',
@@ -49,6 +58,12 @@ const nextConfig = {
     },
     webpack: (config) => {
         // Polyfill for wallet-core crypto deps
+        config.resolve.alias = {
+            ...config.resolve.alias,
+            '@paxeer/wallet$': walletSdk,
+            '@sidiora/layerx-sdk$': layerxSdk,
+        };
+        config.resolve.modules = [path.resolve(appDir, 'node_modules'), ...(config.resolve.modules ?? ['node_modules'])];
         config.resolve.fallback = {
             ...config.resolve.fallback,
             crypto: false,

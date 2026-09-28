@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useWalletState } from '@/providers/WalletProvider';
-import { useWalletKind } from '@/providers/WalletKindProvider';
+import { useWallet } from '@/wallet/WalletProvider';
 import { shortenAddress } from '@/lib/format';
 import { SvgIcon } from '@/components/ui/SvgIcon';
 import { getAvatarPath } from '@/lib/avatar';
@@ -17,8 +17,8 @@ export interface UniversalHeaderProps {
 
 export function UniversalHeader({ title, showBack, onBack, rightAction }: UniversalHeaderProps) {
     const { activeAccount } = useWalletState();
-    const { kind } = useWalletKind();
-    const isEmbedded = kind === 'embedded';
+    const { mode, wallet } = useWallet();
+    const isEmbedded = mode === 'embedded';
     const [sheetOpen, setSheetOpen] = useState(false);
     const [addressCopied, setAddressCopied] = useState(false);
 
@@ -83,7 +83,7 @@ export function UniversalHeader({ title, showBack, onBack, rightAction }: Univer
                             />
                             <div className="text-center">
                                 <p className="text-base font-bold truncate max-w-[260px]">{activeAccount?.name || 'Paxeer Wallet'}</p>
-                                <p className="text-[11px] text-pax-accent/80 mt-0.5">{isEmbedded ? 'Paxeer Wallet · managed custody' : 'Funded Account'}</p>
+                                <p className="text-[11px] text-pax-accent/80 mt-0.5">{isEmbedded ? 'Paxeer Wallet · managed custody' : `${wallet?.info?.name ?? 'Browser wallet'} · self-custody`}</p>
                             </div>
                             <button
                                 onClick={async () => {
