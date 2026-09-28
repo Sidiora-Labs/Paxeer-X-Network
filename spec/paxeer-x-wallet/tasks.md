@@ -70,7 +70,7 @@
     - Add tools/wallet/check-deploy.sh validating every definition offline: five distinct regions across at least two continents, one machine each, volumes present, no secret values, health checks pointing at the daemon's health route, image references in the repository, and the environment names matching human/wallet/deploy/env.
     - Add tools/wallet/check-deploy.test.sh with fixtures that pass and fixtures that violate each rule.
     - _Requirements: 3.1, 12.2_
-  - [ ] 1.13 Accept the wallet's identity assertion in the human identity provider — **Implemented - qualification pending**
+  - [x] 1.13 Accept the wallet's identity assertion in the human identity provider
     - In human/crates/layerx-human-identity-provider add an assertion login principal: a bearer access token verified against a configured JWKS URL with issuer, audience, expiry and subject checks and key cache by key id, opening or creating the application account mapped to (issuer, subject) and recording the wallet's DID when supplied, leaving the passkey path and its tests unchanged.
     - Expose the mapping through the crate's state so the human service can resolve an assertion to the account and DID, and record a receipt-shaped audit entry for account creation through assertion.
     - Add tests that generate an RSA key, serve a real JWKS from an in-test HTTP server, mint tokens, and cover creation, reopening, wrong issuer, wrong audience, expiry and a DID conflict.

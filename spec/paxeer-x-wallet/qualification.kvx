@@ -71,3 +71,11 @@ symbol = "Threshold"
 observed = "The vendored CGGMP library treats its threshold argument as the number of signers required (random polynomial of degree threshold-1, sign refuses fewer Birkhoff parameters than threshold), so library parameter two would make any two of five shares sign."
 assumption = "Three of five is the custody property, so the wrapper passes library threshold three (polynomial degree two) and a test proves two signers are refused; req.1 ac_1, decision custody_model and sibling tasks that say library parameter two need the same reading."
 severity = "suspect"
+
+[observation.1.13.2]
+task = "1.13"
+file = "tools/runtime/run-with-clock.sh"
+symbol = "original_client_provisions_resolves_and_replays_assertion_devices"
+observed = "The unchanged verify_cmd exits 0 at a3c183a4273cc952708065eb6aa600210606b83e under the repository's clock wrapper: 11 assertion tests and the client test pass."
+assumption = "The runtime clock supervisor wrapper is the required environment for this crate's tests, as observation 1.13.1 assumed."
+severity = "note"

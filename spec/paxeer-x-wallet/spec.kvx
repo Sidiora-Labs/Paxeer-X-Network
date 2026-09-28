@@ -390,7 +390,7 @@ log_path = ".logs/verify.log"
 
 [task.1.13]
 title = "Accept the wallet's identity assertion in the human identity provider"
-status = "implemented"
+status = "done"
 wave = 1
 requires = []
 do_1 = "In human/crates/layerx-human-identity-provider add an assertion login principal: a bearer access token verified against a configured JWKS URL with issuer, audience, expiry and subject checks and key cache by key id, opening or creating the application account mapped to (issuer, subject) and recording the wallet's DID when supplied, leaving the passkey path and its tests unchanged."
@@ -400,9 +400,9 @@ verify_cmd = "timeout 20m sh -c 'cd human && cargo test -p layerx-human-identity
 symbols = ["AssertionPrincipal","AssertionVerifier","open_or_create_by_assertion"]
 touches = ["human/crates/layerx-human-identity-provider/src/assertion.rs","human/crates/layerx-human-identity-provider/src/state.rs","human/crates/layerx-human-identity-provider/src/lib.rs","human/crates/layerx-human-identity-provider/tests/assertion.rs"]
 reqs = ["8.1"]
-revision = "0b4a1a0a26c8586b9125139427604edd69b59990"
+revision = "a3c183a4273cc952708065eb6aa600210606b83e"
 command = "timeout 20m sh -c 'cd human && cargo test -p layerx-human-identity-provider assertion'"
-exit_code = 101
+exit_code = 0
 log_path = ".logs/verify.log"
 
 [task.1.14]
