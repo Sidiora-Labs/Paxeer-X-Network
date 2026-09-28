@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -31,7 +31,9 @@ function runAsOwner(bin: string, args: string[]): void {
   const [cmd, argv] = isRoot ? ['runuser', ['-u', 'postgres', '--', bin, ...args]] : [bin, args];
   const res = spawnSync(cmd, argv, { encoding: 'utf8' });
   if (res.status !== 0) {
-    throw new Error(`${bin} ${args.join(' ')} failed with ${res.status}: ${res.stderr || res.stdout}`);
+    throw new Error(
+      `${bin} ${args.join(' ')} failed with ${res.status}:\nstderr: ${res.stderr ?? ''}\nstdout: ${res.stdout ?? ''}`,
+    );
   }
 }
 
@@ -52,16 +54,26 @@ export async function startPostgres(): Promise<EphemeralPostgres> {
   }
   const port = await freePort();
   runAsOwner(initdb, ['-D', dataDir, '-U', 'postgres', '-A', 'trust', '--no-sync', '-E', 'UTF8']);
-  runAsOwner(pgCtl, [
-    '-D',
-    dataDir,
-    '-l',
-    logFile,
-    '-w',
-    '-o',
-    `-p ${port} -c listen_addresses=127.0.0.1 -c unix_socket_directories=${dir} -c fsync=off -c max_connections=200`,
-    'start',
-  ]);
+  try {
+    runAsOwner(pgCtl, [
+      '-D',
+      dataDir,
+      '-l',
+      logFile,
+      '-w',
+      '-o',
+      `-p ${port} -c listen_addresses=127.0.0.1 -c unix_socket_directories=${dir} -c fsync=off -c max_connections=200`,
+      'start',
+    ]);
+  } catch (err) {
+    let serverLog: string;
+    try {
+      serverLog = readFileSync(logFile, 'utf8');
+    } catch (readErr) {
+      serverLog = `(server log unreadable: ${(readErr as Error).message})`;
+    }
+    throw new Error(`${(err as Error).message}\nserver log kept at ${logFile}:\n${serverLog}`);
+  }
   const url = `postgres://postgres@127.0.0.1:${port}/postgres`;
 
   const stop = async (): Promise<void> => {
