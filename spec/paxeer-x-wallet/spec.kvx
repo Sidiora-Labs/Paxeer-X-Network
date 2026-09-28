@@ -323,7 +323,7 @@ log_path = ".logs/verify.log"
 
 [task.1.10]
 title = "Import the wallet gateway, SDK and demo as one workspace with secrets scrubbed"
-status = "pending"
+status = "done"
 wave = 1
 requires = []
 do_1 = "Copy the existing embedded-wallet API, SDK and demo sources from their current deployment into human/wallet/gateway, human/wallet/sdk and human/wallet/demo under one pnpm workspace rooted at human/wallet/package.json and human/wallet/pnpm-workspace.yaml, excluding every environment file, lock-in of credentials, build output, container data and anything under a mail or console directory; the copy is read-only on the source."
@@ -331,8 +331,12 @@ do_2 = "Replace every literal credential, connection string, key, token or inter
 do_3 = "Make the imported test suites run under the workspace (pnpm install, existing vitest or node test runners), fixing only what the move broke, and add tools/wallet/scan-secrets.sh with a test that runs it over the imported tree and over a fixture containing a key-shaped string."
 verify_cmd = "timeout 20m sh -c 'tools/wallet/scan-secrets.sh human/wallet && pnpm --dir human/wallet -r test'"
 symbols = ["scan-secrets","workspace"]
-touches = ["human/wallet/package.json","human/wallet/pnpm-workspace.yaml","human/wallet/README.md","human/wallet/gateway/","human/wallet/sdk/","human/wallet/demo/","human/wallet/deploy/env","tools/wallet/scan-secrets.sh","tools/wallet/scan-secrets.test.sh"]
+touches = ["human/wallet/package.json","human/wallet/pnpm-workspace.yaml","human/wallet/pnpm-lock.yaml","human/wallet/tsconfig.base.json","human/wallet/.gitignore","human/wallet/README.md","human/wallet/gateway/","human/wallet/sdk/","human/wallet/demo/","human/wallet/deploy/env","tools/wallet/scan-secrets.sh","tools/wallet/scan-secrets.test.sh"]
 reqs = ["5.1","13.1"]
+revision = "9787d3728aa4ebf2769a51d109b1551fbddb9eb0"
+command = "timeout 20m sh -c 'tools/wallet/scan-secrets.sh human/wallet && pnpm --dir human/wallet -r test'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.1.11]
 title = "Add the bounded test and lint gates for the wallet tree"

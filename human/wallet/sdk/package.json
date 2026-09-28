@@ -1,0 +1,43 @@
+{
+  "name": "@paxeer/wallet",
+  "version": "0.1.0",
+  "description": "Paxeer Universal Embedded Wallet SDK \u2014 drop-in for any Paxeer app. Email/social sign-in via Supabase, transparent server-side signing, no popups.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "echo 'lint: TODO (eslint config)'"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": { "optional": true }
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.11",
+    "react": "^18.3.1",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.2"
+  }
+}

@@ -1,0 +1,7 @@
+packages:
+  - "gateway"
+  - "sdk"
+  - "demo"
+allowBuilds:
+  esbuild: true
+  sharp: true

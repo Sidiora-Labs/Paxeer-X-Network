@@ -55,7 +55,7 @@
     - Add human/wallet/attestor/internal/health producing the report of req.3.ac_3 (node id, region, share count, refresh epoch, audit head, per-peer reachability, readiness) from injected providers, and Prometheus-style metrics for sessions, refusals and latency.
     - Add audit_test.go and health_test.go covering chain verification, tamper detection, concurrent appends, and a health report with one unreachable peer.
     - _Requirements: 1.7, 3.3_
-  - [ ] 1.10 Import the wallet gateway, SDK and demo as one workspace with secrets scrubbed
+  - [x] 1.10 Import the wallet gateway, SDK and demo as one workspace with secrets scrubbed
     - Copy the existing embedded-wallet API, SDK and demo sources from their current deployment into human/wallet/gateway, human/wallet/sdk and human/wallet/demo under one pnpm workspace rooted at human/wallet/package.json and human/wallet/pnpm-workspace.yaml, excluding every environment file, lock-in of credentials, build output, container data and anything under a mail or console directory; the copy is read-only on the source.
     - Replace every literal credential, connection string, key, token or internal address found in the imported sources with a documented environment variable, add human/wallet/deploy/env listing every variable name with a one-line purpose and no value, and add human/wallet/README.md describing the workspace layout.
     - Make the imported test suites run under the workspace (pnpm install, existing vitest or node test runners), fixing only what the move broke, and add tools/wallet/scan-secrets.sh with a test that runs it over the imported tree and over a fixture containing a key-shaped string.

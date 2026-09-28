@@ -1,0 +1,20 @@
+{
+  "name": "@paxeer/wallet-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Paxeer X wallet workspace: the wallet gateway, the wallet SDK and the demo app.",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20.10.0"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pnpm --filter @paxeer/api dev",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

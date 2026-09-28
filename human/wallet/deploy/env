@@ -19,3 +19,55 @@ ATTESTOR_OPERATOR_CA_FILE - path to the CA bundle that authenticates the operato
 ATTESTOR_BACKUP_KEY_FILE - path to the key file (32 raw bytes or 64 hex characters) that encrypts store snapshots
 ATTESTOR_BACKUP_DIR - directory where encrypted store snapshots are written
 ATTESTOR_RPC_URL - chain RPC endpoint used to read nonces and binding state
+
+# gateway
+NODE_ENV - runtime mode of the gateway: development, test or production
+PORT - TCP port the gateway HTTP server listens on
+LOG_LEVEL - gateway log verbosity
+CORS_ORIGINS - comma-separated browser origins allowed to call the gateway, with single-level wildcard subdomains
+SUPABASE_URL - Supabase project URL whose published JWKS verifies user access tokens
+DATABASE_URL - connection string of the gateway's wallet database
+DATABASE_POOL_MAX - maximum connections in the gateway's database pool
+WALLET_MASTER_KEY - base64 32-byte key that encrypts legacy wallet key envelopes at rest
+WALLET_MASTER_KEY_VERSION - version number of the active wallet master key
+HYPERPAXEER_CHAIN_ID - EVM chain id the gateway signs for
+HYPERPAXEER_RPC_URL - EVM JSON-RPC endpoint used for reads and broadcasts
+HYPERPAXEER_EXPLORER_URL - block explorer base URL returned to clients for transaction links
+POLICY_MAX_TX_VALUE_WEI - per-transaction native value cap for standard wallets
+POLICY_MAX_DAILY_VALUE_WEI - rolling daily native value cap for standard wallets
+POLICY_RATE_LIMIT_PER_MINUTE - signing requests allowed per wallet per minute
+FUNDED_TREASURY_PRIVATE_KEY - treasury signing key of the funded lane, disabled when unset
+FUNDED_USDL_ADDRESS - USDL token contract used as funded-lane collateral
+FUNDED_USDL_DECIMALS - decimals of the USDL token
+FUNDED_GAS_REFILL_THRESHOLD_WEI - native balance below which a funded wallet is topped up
+FUNDED_GAS_REFILL_AMOUNT_WEI - native amount sent per funded-wallet top-up
+FUNDED_EVALUATOR_INTERVAL_MS - tick interval of the funded drawdown evaluator
+PAXSCAN_API_URL - explorer API base used to value funded wallets
+PAXSCAN_TIMEOUT_MS - timeout of one explorer API request
+PAXSCAN_CACHE_TTL_MS - lifetime of cached explorer valuations
+FUNDED_BALANCE_READ_QUORUM - number of RPC reads sampled per funded balance read
+FUNDED_DAILY_RESET_UTC_HOUR - UTC hour at which the funded daily drawdown window resets
+API_WORKERS - number of gateway worker processes
+AGENT_JWT_SECRET - HS256 secret that signs gateway-minted agent tokens, agent lane disabled when unset
+AGENT_TOKEN_TTL_SECONDS - lifetime of an agent token
+AGENT_CHALLENGE_TTL_SECONDS - lifetime of an agent authentication challenge
+AGENT_DEFAULT_FROZEN - whether a newly seen agent principal starts frozen
+AGENT_DEFAULT_MODE - initial mode of a newly seen agent principal
+AGENT_BIND_OWNER_FROM_DID - whether an agent is bound to the owner named in its DID label
+AGENT_DEFAULT_MAX_TX_VALUE_WEI - default per-transaction native value cap for agent wallets
+AGENT_DEFAULT_MAX_DAILY_VALUE_WEI - default rolling daily native value cap for agent wallets
+AGENT_DEFAULT_RATE_LIMIT_PER_MINUTE - default signing requests per agent per minute
+AGENT_DEFAULT_MAX_APPROVE_WEI - default cap on ERC-20 approval amounts for agent wallets
+LAYERX_VAULT_ADDRESS - LayerX custody vault contract targeted by agent deposit actions
+LAYER_X_DB_URI - read-only connection string of the LayerX sequencer database
+ACTION_CONFIRMATIONS - block confirmations before an agent action transaction is final
+ACTION_RECEIPT_TIMEOUT_MS - maximum wait for one agent action receipt
+ACTION_WORKER_INTERVAL_MS - tick interval of the agent action worker
+ACTION_RECONCILE_INTERVAL_MS - sweep interval of the agent action reconciler
+ACTION_FEE_BUMP_PERCENT - fee increase applied when replacing a stuck agent action transaction
+LAYERX_SYNC_INTERVAL_MS - interval of the LayerX mirror sync worker
+NEXT_PUBLIC_PAXEER_WALLET_API - wallet gateway base URL used by the demo
+NEXT_PUBLIC_SUPABASE_URL - Supabase project URL used by the demo for sign-in
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY - Supabase publishable key used by the demo for sign-in
+NEXT_PUBLIC_AUTH_REDIRECT_URL - sign-in callback URL of the demo
+NEXT_PUBLIC_SITE_URL - public origin of the demo used for page metadata
