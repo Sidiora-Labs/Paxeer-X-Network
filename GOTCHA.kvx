@@ -137,3 +137,39 @@ area    = "go"
 symptom = "A threshold wrapper built on the alice library lets fewer signers than intended produce a valid signature."
 cause   = "The library's threshold parameter is the number of shares needed to sign (3 for three-of-five), not the polynomial degree of 2."
 do      = "Pass the signer count as the threshold and keep a test that proves one signer fewer cannot complete a signing session."
+
+[gotcha.20]
+area    = "rust"
+symptom = "cargo test for a human or platform crate exits 101 with ClockError Unavailable before any test runs."
+cause   = "Those crates require the runtime clock supervisor; a bare cargo test has no clock to attach to."
+do      = "Run the test command through tools/runtime/run-with-clock.sh with LAYERX_RUNTIME_CLOCK_BIN pointing at a built layerx-runtime-clock binary, and record that wrapped command as the gate."
+
+[gotcha.21]
+area    = "git"
+symptom = "The fast-forward merge of a task branch into its feature branch is refused again and again while a wave runs."
+cause    = "Sibling tasks land between the rebase and the merge; any work in between reopens the window."
+do      = "Rebase and fast-forward back to back with nothing in between, up to ten attempts; a rebase that only moved lockfiles or spec mirrors does not require a verify rerun."
+
+[gotcha.22]
+area    = "go"
+symptom = "A nested module's go.mod lists the same require twice, once in the block and once standalone."
+cause   = "Parallel tasks each added the root module require and the union resolution kept both; go tolerates the duplicate."
+do      = "Collapse it to one line inside the require block in the next task that touches go.mod; do not open a task for it."
+
+[gotcha.23]
+area    = "go"
+symptom = "A new module beside another module fails to compile with use of internal package not allowed."
+cause   = "Go permits an import of a path containing internal only from the tree rooted at its parent, and a sibling module is outside that tree."
+do      = "Expose an exported package with thin aliases in the owning module and depend on it through a require plus a relative replace; never copy the internal code."
+
+[gotcha.24]
+area    = "test"
+symptom = "A long Go protocol test is killed after ten minutes with panic: test timed out."
+cause   = "go test applies a ten-minute default timeout per package binary; serial multi-party sessions exceed it."
+do      = "Run participants concurrently inside the test and keep the verify command's outer timeout as the only budget; never raise -timeout to hide a slow test."
+
+[gotcha.25]
+area    = "git"
+symptom = "Merging a branch that tracks an imported application is refused because untracked working tree files would be overwritten."
+cause   = "The original, unscrubbed copy of the application still sits untracked in the main working tree, and it can carry credentials."
+do      = "Move the untracked copy outside the repository before merging and never add it; the tracked copy on the branch is the scrubbed one."
