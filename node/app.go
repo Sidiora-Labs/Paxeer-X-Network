@@ -2208,7 +2208,7 @@ func (app *App) executeEVMTxWithGigaExecutor(ctx sdk.Context, msg *evmtypes.MsgE
 	cfg := cache.chainConfig
 
 	// Create Giga executor VM
-	gigaExecutor := gigaexecutor.NewGethExecutor(blockCtx, execStateDB, cfg, vm.Config{}, gigaprecompiles.AllCustomPrecompilesFailFast)
+	gigaExecutor := gigaexecutor.NewGethExecutor(blockCtx, execStateDB, cfg, vm.Config{}, gigaCustomPrecompiles(ctx.BlockHeight()))
 
 	// Execute with feeAlreadyCharged=true — matching V2's msg_server behavior
 	execResult, execErr := gigaExecutor.ExecuteTransactionFeeCharged(ethTx, sender, cache.baseFee, &gp)
@@ -2392,6 +2392,22 @@ func (app *App) executeEVMTxWithGigaExecutor(ctx sdk.Context, msg *evmtypes.MsgE
 			Nonce:   ethTx.Nonce(),
 		},
 	}, nil
+}
+
+// gigaLatePrecompileHeight is the first height at which the giga executor
+// hands the exchange, bridge, launchpad, fee-token and web-search precompiles
+// to the ordinary execution path, as it hands the earlier custom precompiles
+// at every height.
+const gigaLatePrecompileHeight int64 = 26150000
+
+// gigaCustomPrecompiles returns the custom precompile set the giga executor
+// runs a block of the given height with: a transaction that reaches any
+// address in the set aborts its giga execution and runs on the ordinary path.
+func gigaCustomPrecompiles(height int64) map[common.Address]vm.PrecompiledContract {
+	if height >= gigaLatePrecompileHeight {
+		return gigaprecompiles.AllCustomPrecompilesFailFastLate
+	}
+	return gigaprecompiles.AllCustomPrecompilesFailFast
 }
 
 // gigaDeliverTx is the OCC-compatible deliverTx function for the giga executor.

@@ -9,11 +9,15 @@ import (
 	"github.com/sidiora-labs/paxeer-network/precompiles/addr"
 	"github.com/sidiora-labs/paxeer-network/precompiles/bank"
 	"github.com/sidiora-labs/paxeer-network/precompiles/distribution"
+	"github.com/sidiora-labs/paxeer-network/precompiles/feetoken"
 	"github.com/sidiora-labs/paxeer-network/precompiles/gov"
 	"github.com/sidiora-labs/paxeer-network/precompiles/ibc"
 	"github.com/sidiora-labs/paxeer-network/precompiles/json"
+	"github.com/sidiora-labs/paxeer-network/precompiles/launchpad"
 	"github.com/sidiora-labs/paxeer-network/precompiles/layerxanchor"
+	"github.com/sidiora-labs/paxeer-network/precompiles/layerxbridge"
 	"github.com/sidiora-labs/paxeer-network/precompiles/layerxcustody"
+	"github.com/sidiora-labs/paxeer-network/precompiles/layerxexchange"
 	"github.com/sidiora-labs/paxeer-network/precompiles/layerxverify"
 	"github.com/sidiora-labs/paxeer-network/precompiles/oracle"
 	"github.com/sidiora-labs/paxeer-network/precompiles/p256"
@@ -22,6 +26,7 @@ import (
 	"github.com/sidiora-labs/paxeer-network/precompiles/solo"
 	"github.com/sidiora-labs/paxeer-network/precompiles/staking"
 	"github.com/sidiora-labs/paxeer-network/precompiles/wasmd"
+	"github.com/sidiora-labs/paxeer-network/precompiles/xweb"
 )
 
 var FailFastPrecompileAddresses = []common.Address{
@@ -105,8 +110,28 @@ func (p *FailFastPrecompile) Run(evm *vm.EVM, caller common.Address, callingCont
 
 var AllCustomPrecompilesFailFast = map[common.Address]vm.PrecompiledContract{}
 
+// LateFailFastPrecompileAddresses lists the custom precompiles the giga
+// executor hands to the ordinary execution path from the height the
+// application names, in addition to FailFastPrecompileAddresses.
+var LateFailFastPrecompileAddresses = []common.Address{
+	common.HexToAddress(layerxexchange.ExchangeAddress),
+	common.HexToAddress(layerxbridge.BridgeAddress),
+	common.HexToAddress(launchpad.LaunchpadAddress),
+	common.HexToAddress(feetoken.FeeTokenAddress),
+	common.HexToAddress(xweb.XWebAddress),
+}
+
+// AllCustomPrecompilesFailFastLate maps every address of
+// FailFastPrecompileAddresses and of LateFailFastPrecompileAddresses to the
+// fail-fast singleton.
+var AllCustomPrecompilesFailFastLate = map[common.Address]vm.PrecompiledContract{}
+
 func init() {
 	for _, addr := range FailFastPrecompileAddresses {
 		AllCustomPrecompilesFailFast[addr] = FailFastSingleton
+		AllCustomPrecompilesFailFastLate[addr] = FailFastSingleton
+	}
+	for _, addr := range LateFailFastPrecompileAddresses {
+		AllCustomPrecompilesFailFastLate[addr] = FailFastSingleton
 	}
 }
