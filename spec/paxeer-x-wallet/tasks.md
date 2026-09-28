@@ -210,7 +210,7 @@
     - In human/apps/wallet add the exchange, bridge, launchpad, fee token and web data surfaces through the SDK modules, the fee choice labelling PAX gas, SID sponsored and SID native with denominations, the LayerX fee per leg shown separately, and 402 draws shown with their caps.
     - Add tests for each surface's transaction construction and the fee labels.
     - _Requirements: 10.5, 11.1, 11.3_
-  - [ ] 4.4 Carry the app's native projects, configuration and release tests in the repository
+  - [x] 4.4 Carry the app's native projects, configuration and release tests in the repository
     - Add the iOS and Android native projects generated for the app, the environment configuration by variable name, the release build scripts, and a Playwright suite over the remaining surfaces against the SDK's in-test gateway, keeping every secret out.
     - Add a scripts/release-check.sh that validates the native projects exist, the configuration names resolve and the Playwright suite runs in check mode.
     - _Requirements: 10.6_

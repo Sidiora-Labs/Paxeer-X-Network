@@ -849,7 +849,7 @@ reqs = ["10.5","11.1","11.3"]
 
 [task.4.4]
 title = "Carry the app's native projects, configuration and release tests in the repository"
-status = "pending"
+status = "done"
 wave = 4
 requires = ["3.6"]
 do_1 = "Add the iOS and Android native projects generated for the app, the environment configuration by variable name, the release build scripts, and a Playwright suite over the remaining surfaces against the SDK's in-test gateway, keeping every secret out."
@@ -858,6 +858,10 @@ verify_cmd = "timeout 20m sh -c 'human/apps/wallet/scripts/release-check.sh'"
 symbols = ["release-check"]
 touches = ["human/apps/wallet/ios/","human/apps/wallet/android/","human/apps/wallet/scripts/release-check.sh","human/apps/wallet/playwright.wallet-app.config.ts","human/apps/wallet/e2e/"]
 reqs = ["10.6"]
+revision = "477b62b4e00f714cb83ca97654f18809744a6877"
+command = "timeout 20m sh -c 'human/apps/wallet/scripts/release-check.sh'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.4.5]
 title = "Write the runbooks and the operator cutover checklist"

@@ -13,6 +13,9 @@
     "test:watch": "vitest",
     "generate:swap-abis": "node scripts/generate-swap-abi-index.mjs",
     "check:swap-abis": "node scripts/generate-swap-abi-index.mjs --check",
+    "release:check": "sh scripts/release-check.sh",
+    "release:android": "sh scripts/release-build.sh android",
+    "release:ios": "sh scripts/release-build.sh ios",
     "audit": "npm audit --audit-level=moderate"
   },
   "dependencies": {

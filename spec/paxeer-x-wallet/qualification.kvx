@@ -252,3 +252,27 @@ symbol = "listener_config"
 observed = "LAYERX_GATEWAY_LISTENER set to plain makes the endpoint serve plain HTTP on its listener and refuse either listener certificate variable by name, while unset or tls keeps TLS termination with both required; endpoint.toml now runs plain behind the platform http_service with an http readiness check."
 assumption = "The assumption of observation 1.12.1 is met by the plain listener mode rather than TLS passthrough; public TLS is the platform edge's certificate."
 severity = "note"
+
+[observation.4.4.1]
+task = "4.4"
+file = "human/apps/wallet/ios/App/Podfile"
+symbol = "capacitor_pods"
+observed = "The app declares no @capacitor/ios dependency, so the iOS project was generated from the matching 8.3.4 platform package placed in node_modules for the generator only; the Podfile's Capacitor pods point at ../../node_modules/@capacitor/ios, which a frozen install does not provide, and the plugin pods pin pnpm store paths that cap sync rewrites."
+assumption = "A dependency task adds @capacitor/ios at the core's version before release-build.sh ios or pod install runs; release-check validates the generated project files, not a compiled build."
+severity = "suspect"
+
+[observation.4.4.2]
+task = "4.4"
+file = "human/apps/wallet/src/wallet/test/gateway.ts"
+symbol = "send"
+observed = "The in-test gateway answers CORS preflights with access-control-allow-headers '*', which browsers do not apply to the Authorization header, so the browser suite's cross-origin identity and wallet calls from the app origin may be refused; the suite was listed in check mode only."
+assumption = "The first RELEASE_CHECK_BROWSERS=1 run confirms or refutes this; the fix is naming authorization and apikey in that header inside the test gateway."
+severity = "suspect"
+
+[observation.4.4.3]
+task = "4.4"
+file = "human/apps/wallet/README.md"
+symbol = "NEXT_PUBLIC_AUTH_REDIRECT_URL"
+observed = "The app README's variable table omits NEXT_PUBLIC_AUTH_REDIRECT_URL, so release-check resolves it from human/wallet/deploy/env, where it is listed for the demo; next.config.mjs builds a standalone server and no out directory, so release-build.sh stages the Capacitor web directory from public before cap sync."
+assumption = "The native shell loads the hosted site through server.url, so the bundled web directory only needs the static assets; the README row is added by whichever task next edits the README."
+severity = "note"
