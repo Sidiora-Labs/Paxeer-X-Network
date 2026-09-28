@@ -29,7 +29,7 @@
     - Add add-share for both curves so a new participant receives a share from a quorum of existing ones, followed by a refresh, and the enlarged set signs.
     - Add tests with an in-package in-memory peer manager covering import of a known key and address recovery after refresh for both curves, a mismatched share refused by every participant, refresh leaving the public key unchanged, and replacement of one participant by add-share and refresh followed by a signature from a quorum that includes the replacement.
     - _Requirements: 1.3, 1.4_
-  - [ ] 1.5 Build the mutual-TLS peer transport for protocol sessions
+  - [x] 1.5 Build the mutual-TLS peer transport for protocol sessions
     - Add human/wallet/attestor/internal/transport implementing the vendored library's peer manager interface over HTTP/2 with mutual TLS: a session registry keyed by session id, per-session per-peer ordered delivery, replay refusal by (session, peer, round, sequence), bounded queues, and a participant set fixed at session open.
     - Add certificate loading from configured paths, peer identity pinning by certificate public key, and an operator identity distinguished from peer identities for the import endpoint of a later task.
     - Add transport_test.go generating a CA and five node certificates in the test, running a full protocol session across five listeners, and asserting replay refusal, unknown-peer refusal and ordered delivery.

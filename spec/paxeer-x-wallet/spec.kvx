@@ -249,7 +249,7 @@ reqs = ["1.3","1.4"]
 
 [task.1.5]
 title = "Build the mutual-TLS peer transport for protocol sessions"
-status = "pending"
+status = "done"
 wave = 1
 requires = []
 do_1 = "Add human/wallet/attestor/internal/transport implementing the vendored library's peer manager interface over HTTP/2 with mutual TLS: a session registry keyed by session id, per-session per-peer ordered delivery, replay refusal by (session, peer, round, sequence), bounded queues, and a participant set fixed at session open."
@@ -259,6 +259,10 @@ verify_cmd = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./
 symbols = ["PeerManager","Session","Open","Deliver","Identity"]
 touches = ["human/wallet/attestor/internal/transport/transport.go","human/wallet/attestor/internal/transport/session.go","human/wallet/attestor/internal/transport/tls.go","human/wallet/attestor/internal/transport/transport_test.go"]
 reqs = ["1.6"]
+revision = "9787d3728aa4ebf2769a51d109b1551fbddb9eb0"
+command = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./internal/transport/...'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.1.6]
 title = "Decode chain-side requests and evaluate the account policy"
