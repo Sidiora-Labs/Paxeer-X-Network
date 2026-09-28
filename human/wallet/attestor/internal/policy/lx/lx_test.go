@@ -2,6 +2,7 @@ package lx
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -23,16 +24,17 @@ import (
 )
 
 const (
-	vectorPath   = "../../lxwire/testdata/activities.json"
-	ownerKeyHex  = "af06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d"
-	peerKeyHex   = "5151515151515151515151515151515151515151515151515151515151515151"
-	ownerMain    = "8109bd8602f591480606a006552834a9fa46f3f5a0ec1be754163d6cda0810e7"
-	peerMain     = "1eb1fd9ca7a0fb3a45a93cf1506f4b6c85b30e567272a5631fcbeef4270d0994"
-	tokenAsset   = "7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b"
-	grantAsset   = "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a"
-	walletAddr   = "0x1111111111111111111111111111111111111111"
-	generousAddr = "0x2222222222222222222222222222222222222222"
-	narrowAddr   = "0x3333333333333333333333333333333333333333"
+	vectorPath       = "../../lxwire/testdata/activities.json"
+	kernelVectorPath = "testdata/kernel_activities.json"
+	ownerKeyHex      = "af06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d"
+	peerKeyHex       = "5151515151515151515151515151515151515151515151515151515151515151"
+	ownerMain        = "8109bd8602f591480606a006552834a9fa46f3f5a0ec1be754163d6cda0810e7"
+	peerMain         = "1eb1fd9ca7a0fb3a45a93cf1506f4b6c85b30e567272a5631fcbeef4270d0994"
+	tokenAsset       = "7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b"
+	grantAsset       = "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a"
+	walletAddr       = "0x1111111111111111111111111111111111111111"
+	generousAddr     = "0x2222222222222222222222222222222222222222"
+	narrowAddr       = "0x3333333333333333333333333333333333333333"
 )
 
 type vectors struct {
@@ -55,6 +57,96 @@ type vectors struct {
 		ProtocolVersion   uint16      `json:"protocol_version"`
 		Preimage          string      `json:"preimage"`
 	} `json:"receives"`
+}
+
+type kernelVector struct {
+	Name              string `json:"name"`
+	Module            uint16 `json:"module"`
+	Operation         uint16 `json:"operation"`
+	Accepted          bool   `json:"accepted"`
+	Sequence          uint64 `json:"sequence"`
+	NotBefore         uint64 `json:"not_before"`
+	NotAfter          uint64 `json:"not_after"`
+	From              string `json:"from"`
+	To                string `json:"to"`
+	Asset             string `json:"asset"`
+	Amount            string `json:"amount"`
+	Payload           string `json:"payload"`
+	Unsigned          string `json:"unsigned"`
+	SignaturePreimage string `json:"signature_preimage"`
+}
+
+type kernelVectors struct {
+	PublicKey     string         `json:"public_key"`
+	PeerPublicKey string         `json:"peer_public_key"`
+	NetworkID     uint32         `json:"network_id"`
+	Activities    []kernelVector `json:"activities"`
+}
+
+func loadKernelVectors(t *testing.T) *kernelVectors {
+	t.Helper()
+	raw, err := os.ReadFile(kernelVectorPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v kernelVectors
+	if err := json.Unmarshal(raw, &v); err != nil {
+		t.Fatal(err)
+	}
+	if len(v.Activities) == 0 {
+		t.Fatal("kernel vector file carries no activities")
+	}
+	return &v
+}
+
+func (k *kernelVectors) vector(t *testing.T, name string) kernelVector {
+	t.Helper()
+	for _, v := range k.Activities {
+		if v.Name == name {
+			return v
+		}
+	}
+	t.Fatalf("kernel vector %s is missing", name)
+	return kernelVector{}
+}
+
+func (v kernelVector) disclosure(t *testing.T) Disclosure {
+	t.Helper()
+	module, ok := ModuleName(lxwire.ModuleID(v.Module))
+	if !ok {
+		t.Fatalf("%s names module %d", v.Name, v.Module)
+	}
+	amount, ok := new(big.Int).SetString(v.Amount, 10)
+	if !ok {
+		t.Fatalf("%s amount %q", v.Name, v.Amount)
+	}
+	return Disclosure{
+		Account:      id(t, v.From),
+		Module:       module,
+		Operation:    v.Operation,
+		Amounts:      []Amount{{Asset: id(t, v.Asset), Amount: amount}},
+		Destinations: []ID{id(t, v.To)},
+		Sequence:     v.Sequence,
+		NotBefore:    v.NotBefore,
+		NotAfter:     v.NotAfter,
+	}
+}
+
+func (v kernelVector) activity(t *testing.T) *lxwire.Activity {
+	t.Helper()
+	registry, err := decodedOperations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := hex.DecodeString(v.Unsigned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	activity, err := lxwire.DecodeUnsignedActivity(raw, registry)
+	if err != nil {
+		t.Fatalf("%s: %v", v.Name, err)
+	}
+	return activity
 }
 
 type grantVector struct {
@@ -176,6 +268,7 @@ type harness struct {
 	server    *nonceServer
 	now       time.Time
 	vectors   *vectors
+	kernel    *kernelVectors
 	requests  int
 }
 
@@ -216,7 +309,7 @@ func newHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := &harness{server: newNonceServer(t, 3), now: time.Unix(1_800_000_100, 0).UTC(), vectors: loadVectors(t), dir: t.TempDir()}
+	h := &harness{server: newNonceServer(t, 3), now: time.Unix(1_800_000_100, 0).UTC(), vectors: loadVectors(t), kernel: loadKernelVectors(t), dir: t.TempDir()}
 	h.openLedger(t)
 	chain, err := NewChain(h.server.URL, h.server.Client())
 	if err != nil {
@@ -254,17 +347,32 @@ func (h *harness) activity(t *testing.T, name string) *ActivityRequest {
 	return nil
 }
 
-func nativeSendDisclosure(t *testing.T) Disclosure {
-	return Disclosure{
-		Account:      id(t, ownerMain),
-		Module:       "asset",
-		Operation:    5,
-		Amounts:      []Amount{{Asset: ID{}, Amount: big.NewInt(5_000_000)}},
-		Destinations: []ID{id(t, peerMain)},
-		Sequence:     1,
-		NotBefore:    1_800_000_000,
-		NotAfter:     1_800_000_600,
+func (h *harness) kernelActivity(t *testing.T, name string) *ActivityRequest {
+	t.Helper()
+	v := h.kernel.vector(t, name)
+	envelope, err := hex.DecodeString(v.Unsigned)
+	if err != nil {
+		t.Fatal(err)
 	}
+	return &ActivityRequest{Envelope: envelope, Digest: hex32(t, v.SignaturePreimage), PublicKey: hex32(t, h.kernel.PublicKey), Disclosure: v.disclosure(t)}
+}
+
+func requestFor(t *testing.T, activity *lxwire.Activity, key [32]byte, disclosure Disclosure) *ActivityRequest {
+	t.Helper()
+	envelope, err := lxwire.EncodeUnsignedActivity(activity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest, err := lxwire.SignaturePreimage(activity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &ActivityRequest{Envelope: envelope, Digest: digest, PublicKey: key, Disclosure: disclosure}
+}
+
+func nativeSendDisclosure(t *testing.T) Disclosure {
+	t.Helper()
+	return loadKernelVectors(t).vector(t, "native-send").disclosure(t)
 }
 
 func expect(t *testing.T, got policy.Decision, code string) {
@@ -288,19 +396,19 @@ func TestActivityMatchingDisclosureAccepted(t *testing.T) {
 	wallet := common.HexToAddress(walletAddr)
 	native := "lx:" + strings.Repeat("00", 32)
 
-	send := h.activity(t, "native-send")
+	send := h.kernelActivity(t, "native-send")
 	send.Disclosure = nativeSendDisclosure(t)
 	expect(t, h.evaluator.EvaluateActivity(wallet, send, h.request()), policy.CodeAllowed)
 	if got := h.spent(t, walletAddr, native); got.Cmp(big.NewInt(5_000_000)) != 0 {
 		t.Fatalf("native spent %s", got)
 	}
 
-	tokenSend := h.activity(t, "token-send")
-	ownerTokenAccount, err := lxwire.AssetAccountName(lxwire.DIDFromKey(hex32(t, ownerKeyHex)), hex32(t, tokenAsset), [32]byte{})
+	tokenSend := h.kernelActivity(t, "token-send")
+	ownerTokenAccount, err := lxwire.AssetAccountName(lxwire.DIDFromKey(hex32(t, h.kernel.PublicKey)), hex32(t, tokenAsset), [32]byte{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	peerTokenAccount, err := lxwire.AssetAccountName(lxwire.DIDFromKey(hex32(t, peerKeyHex)), hex32(t, tokenAsset), [32]byte{})
+	peerTokenAccount, err := lxwire.AssetAccountName(lxwire.DIDFromKey(hex32(t, h.kernel.PeerPublicKey)), hex32(t, tokenAsset), [32]byte{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -312,10 +420,9 @@ func TestActivityMatchingDisclosureAccepted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tokenSend.Disclosure = Disclosure{
-		Account: from, Module: "asset", Operation: 5,
-		Amounts:      []Amount{{Asset: id(t, tokenAsset), Amount: big.NewInt(75_000)}},
-		Destinations: []ID{to}, Sequence: 2, NotBefore: 1_800_000_000, NotAfter: 1_800_000_600,
+	if tokenSend.Disclosure.Account != from || tokenSend.Disclosure.Destinations[0] != to ||
+		tokenSend.Disclosure.Amounts[0].Asset != id(t, tokenAsset) || tokenSend.Disclosure.Amounts[0].Amount.Cmp(big.NewInt(75_000)) != 0 {
+		t.Fatalf("token send vector fields %+v", tokenSend.Disclosure)
 	}
 	expect(t, h.evaluator.EvaluateActivity(wallet, tokenSend, h.request()), policy.CodeAllowed)
 
@@ -349,7 +456,7 @@ func TestActivityMatchingDisclosureAccepted(t *testing.T) {
 func TestActivityMismatchedAmountRefused(t *testing.T) {
 	h := newHarness(t)
 	wallet := common.HexToAddress(walletAddr)
-	send := h.activity(t, "native-send")
+	send := h.kernelActivity(t, "native-send")
 
 	send.Disclosure = nativeSendDisclosure(t)
 	send.Disclosure.Amounts[0].Amount = big.NewInt(5_000_001)
@@ -385,7 +492,7 @@ func TestActivityMismatchedAmountRefused(t *testing.T) {
 	send.PublicKey = hex32(t, peerKeyHex)
 	expect(t, h.evaluator.EvaluateActivity(wallet, send, h.request()), CodeAuthorityMismatch)
 
-	over := h.activity(t, "native-send")
+	over := h.kernelActivity(t, "native-send")
 	over.Disclosure = nativeSendDisclosure(t)
 	doc, err := Parse([]byte(strings.Replace(kernelDocument, `"per_operation": "6000000"`, `"per_operation": "4999999"`, 1)))
 	if err != nil {
@@ -400,8 +507,7 @@ func TestActivityDisallowedModuleRefused(t *testing.T) {
 	h := newHarness(t)
 	wallet := common.HexToAddress(walletAddr)
 
-	budget := h.activity(t, "budget-change")
-	budget.Disclosure = Disclosure{Module: "budget", Operation: 2, Sequence: 4, NotBefore: 1_800_000_000, NotAfter: 1_800_000_600}
+	budget := h.kernelActivity(t, "budget-fund")
 	expect(t, h.evaluator.EvaluateActivity(wallet, budget, h.request()), CodeModuleNotAllowed)
 
 	approval := h.activity(t, "approval")
@@ -413,14 +519,14 @@ func TestActivityDisallowedModuleRefused(t *testing.T) {
 	expect(t, h.evaluator.EvaluateActivity(common.HexToAddress(narrowAddr), approval, h.request()), CodeOperationNotAllowed)
 	expect(t, h.evaluator.EvaluateActivity(wallet, approval, h.request()), policy.CodeAllowed)
 
-	unknownModule := h.activity(t, "native-send")
+	unknownModule := h.kernelActivity(t, "native-send")
 	unknownModule.Envelope[activityTypeOffset] = 0
 	unknownModule.Envelope[activityTypeOffset+1] = 12
 	expect(t, h.evaluator.EvaluateActivity(wallet, unknownModule, h.request()), CodeUnknownModule)
-	unknownOperation := h.activity(t, "native-send")
+	unknownOperation := h.kernelActivity(t, "native-send")
 	unknownOperation.Envelope[activityTypeOffset+3] = 6
 	expect(t, h.evaluator.EvaluateActivity(wallet, unknownOperation, h.request()), CodeUnknownOperation)
-	truncated := h.activity(t, "native-send")
+	truncated := h.kernelActivity(t, "native-send")
 	truncated.Envelope = truncated.Envelope[:len(truncated.Envelope)-1]
 	expect(t, h.evaluator.EvaluateActivity(wallet, truncated, h.request()), policy.CodeDecodeError)
 	expect(t, h.evaluator.EvaluateActivity(wallet, &ActivityRequest{}, h.request()), policy.CodeMissingField)
@@ -524,7 +630,7 @@ func TestRecordDecision(t *testing.T) {
 	}
 	defer log.Close()
 	wallet := common.HexToAddress(walletAddr)
-	send := h.activity(t, "native-send")
+	send := h.kernelActivity(t, "native-send")
 	send.Disclosure = nativeSendDisclosure(t)
 	send.Disclosure.Amounts[0].Amount = big.NewInt(1)
 	refused := h.evaluator.EvaluateActivity(wallet, send, h.request())
@@ -621,7 +727,7 @@ func TestKernelSpendsReachTheStoreLedgerOnce(t *testing.T) {
 	wallet := common.HexToAddress(walletAddr)
 	native := "lx:" + strings.Repeat("00", 32)
 
-	send := h.activity(t, "native-send")
+	send := h.kernelActivity(t, "native-send")
 	send.Disclosure = nativeSendDisclosure(t)
 	view := h.ledger.ForRequest("key-1/announced")
 	first := h.evaluator.EvaluateActivity(wallet, send, view)
@@ -694,7 +800,7 @@ func TestKernelGrantSpendsHoldAcrossRestart(t *testing.T) {
 func TestKernelEvaluationRefusesWithoutALedger(t *testing.T) {
 	h := newHarness(t)
 	wallet := common.HexToAddress(walletAddr)
-	send := h.activity(t, "native-send")
+	send := h.kernelActivity(t, "native-send")
 	send.Disclosure = nativeSendDisclosure(t)
 	expect(t, h.evaluator.EvaluateActivity(wallet, send, nil), policy.CodeLedgerError)
 	expect(t, h.evaluator.EvaluateBind(wallet, &BindRequest{Message: lxwire.BindMessage(125, wallet, 3)}, nil), policy.CodeLedgerError)
@@ -704,4 +810,151 @@ func TestKernelEvaluationRefusesWithoutALedger(t *testing.T) {
 	}
 	var missing *Evaluator
 	expect(t, missing.EvaluateActivity(wallet, send, h.request()), policy.CodeNoPolicy)
+}
+
+func TestKernelVectorsDecodeInTheKernelLayout(t *testing.T) {
+	k := loadKernelVectors(t)
+	decoded := map[lxwire.ActivityType]int{}
+	for _, v := range k.Activities {
+		activity := v.activity(t)
+		if !activity.PayloadHashMatches() {
+			t.Fatalf("%s: payload hash", v.Name)
+		}
+		if hex.EncodeToString(activity.Payload) != v.Payload {
+			t.Fatalf("%s: envelope payload is not the vector payload", v.Name)
+		}
+		preimage, err := lxwire.SignaturePreimage(activity)
+		if err != nil || hex.EncodeToString(preimage[:]) != v.SignaturePreimage {
+			t.Fatalf("%s: signature preimage %x (%v)", v.Name, preimage, err)
+		}
+		effect, err := DecodeEffect(activity)
+		if !v.Accepted {
+			if err == nil {
+				t.Fatalf("%s: refused vector decoded to %+v", v.Name, effect)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatalf("%s: %v", v.Name, err)
+		}
+		decoded[activity.Type]++
+		want := v.disclosure(t)
+		if effect.Account != want.Account || len(effect.Amounts) != 1 || effect.Amounts[0].Asset != want.Amounts[0].Asset ||
+			effect.Amounts[0].Amount.Cmp(want.Amounts[0].Amount) != 0 || len(effect.Destinations) != 1 || effect.Destinations[0] != want.Destinations[0] {
+			t.Fatalf("%s: effect %+v, want %+v", v.Name, effect, want)
+		}
+		if len(effect.Legs) != 1 || effect.Legs[0].From != want.Account || effect.Legs[0].To != want.Destinations[0] {
+			t.Fatalf("%s: legs %+v", v.Name, effect.Legs)
+		}
+	}
+	for _, kind := range []lxwire.ActivityType{OpAssetTransfer, OpAssetApprove, OpBudgetFund, OpProgramCall} {
+		if decoded[kind] == 0 {
+			t.Fatalf("no accepted vector for activity type %#x", uint32(kind))
+		}
+	}
+	if decoded[OpAssetTransfer] < 2 {
+		t.Fatalf("%d accepted asset sends", decoded[OpAssetTransfer])
+	}
+}
+
+func TestKernelVectorsEvaluated(t *testing.T) {
+	h := newHarness(t)
+	doc, err := Parse([]byte(strings.Replace(kernelDocument, `"programs": [5]}`, `"programs": [5], "budget": [2]}`, 1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.evaluator.doc = doc
+	wallet := common.HexToAddress(walletAddr)
+	for _, v := range h.kernel.Activities {
+		req := h.kernelActivity(t, v.Name)
+		got := h.evaluator.EvaluateActivity(wallet, req, h.request())
+		if v.Accepted {
+			expect(t, got, policy.CodeAllowed)
+			continue
+		}
+		expect(t, got, policy.CodeDecodeError)
+	}
+	native := "lx:" + strings.Repeat("00", 32)
+	if got := h.spent(t, walletAddr, native); got.Cmp(big.NewInt(5_000_000+250_000+1_000)) != 0 {
+		t.Fatalf("native spent %s", got)
+	}
+	if got := h.spent(t, walletAddr, "lx:"+tokenAsset); got.Cmp(big.NewInt(75_000)) != 0 {
+		t.Fatalf("token spent %s", got)
+	}
+}
+
+func TestKernelSendEnvelopeChecks(t *testing.T) {
+	h := newHarness(t)
+	wallet := common.HexToAddress(walletAddr)
+	var ownerSeed, peerSeed [32]byte
+	for i := range ownerSeed {
+		ownerSeed[i], peerSeed[i] = 0x07, 0x08
+	}
+	ownerKey, peerKey := ed25519.NewKeyFromSeed(ownerSeed[:]), ed25519.NewKeyFromSeed(peerSeed[:])
+	owner, peer := hex32(t, h.kernel.PublicKey), hex32(t, h.kernel.PeerPublicKey)
+	if [32]byte(ownerKey.Public().(ed25519.PublicKey)) != owner || [32]byte(peerKey.Public().(ed25519.PublicKey)) != peer {
+		t.Fatal("vector keys are not the generator's seeds")
+	}
+	v := h.kernel.vector(t, "native-send")
+	resigned := func(signer ed25519.PrivateKey, change func(s *lxwire.Send)) *ActivityRequest {
+		activity := v.activity(t)
+		send, err := lxwire.DecodeSend(activity.Payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		change(send)
+		digest, err := send.AuthorizationDigest()
+		if err != nil {
+			t.Fatal(err)
+		}
+		copy(send.Signature[:], ed25519.Sign(signer, digest[:]))
+		if activity.Payload, err = send.Encode(); err != nil {
+			t.Fatal(err)
+		}
+		activity.PayloadHash = lxwire.PayloadHash(activity.Payload)
+		return requestFor(t, activity, owner, v.disclosure(t))
+	}
+	expect(t, h.evaluator.EvaluateActivity(wallet, resigned(ownerKey, func(*lxwire.Send) {}), h.request()), policy.CodeAllowed)
+	for name, c := range map[string]struct {
+		signer ed25519.PrivateKey
+		change func(s *lxwire.Send)
+	}{
+		"session kind":       {ownerKey, func(s *lxwire.Send) { s.AuthorizationKind = 2 }},
+		"controller":         {ownerKey, func(s *lxwire.Send) { s.Controller = s.To }},
+		"signed context":     {ownerKey, func(s *lxwire.Send) { s.SignedContextHash[0] ^= 1 }},
+		"network":            {ownerKey, func(s *lxwire.Send) { s.NetworkID++ }},
+		"protocol version":   {ownerKey, func(s *lxwire.Send) { s.ProtocolVersion = lxwire.ProtocolVersion }},
+		"idempotency key":    {ownerKey, func(s *lxwire.Send) { s.IdempotencyKey[0] ^= 1 }},
+		"foreign authorizer": {peerKey, func(s *lxwire.Send) { s.PublicKey = peer }},
+	} {
+		got := h.evaluator.EvaluateActivity(wallet, resigned(c.signer, c.change), h.request())
+		if got.Allowed || got.Code != policy.CodeDecodeError {
+			t.Fatalf("%s: %+v", name, got)
+		}
+	}
+}
+
+func TestKernelBudgetFundChecks(t *testing.T) {
+	k := loadKernelVectors(t)
+	v := k.vector(t, "budget-fund")
+	if _, err := DecodeEffect(v.activity(t)); err != nil {
+		t.Fatal(err)
+	}
+	for name, change := range map[string]func(a *lxwire.Activity){
+		"defund tag":      func(a *lxwire.Activity) { a.Payload[1] = 0x07 },
+		"field count":     func(a *lxwire.Activity) { a.Payload[3] = 7 },
+		"no budget":       func(a *lxwire.Activity) { copy(a.Payload[4:36], make([]byte, 32)) },
+		"same accounts":   func(a *lxwire.Activity) { copy(a.Payload[68:100], a.Payload[36:68]) },
+		"zero amount":     func(a *lxwire.Activity) { copy(a.Payload[132:148], make([]byte, 16)) },
+		"idempotency key": func(a *lxwire.Activity) { a.IdempotencyKey[0] ^= 1 },
+		"trailing byte":   func(a *lxwire.Activity) { a.Payload = append(a.Payload, 0) },
+		"truncated":       func(a *lxwire.Activity) { a.Payload = a.Payload[:len(a.Payload)-1] },
+		"oversized":       func(a *lxwire.Activity) { a.Payload = append(a.Payload, make([]byte, lxwire.MaxSendPayloadBytes)...) },
+	} {
+		activity := v.activity(t)
+		change(activity)
+		if effect, err := DecodeEffect(activity); err == nil {
+			t.Fatalf("%s: decoded to %+v", name, effect)
+		}
+	}
 }

@@ -577,8 +577,10 @@ func importKey(t *testing.T, c *testCluster, keyID string, curve dealer.Curve, s
 	return decodeOK[KeyResponse](t, "import "+keyID, results)
 }
 
-func kernelActivityFor(t *testing.T, key [32]byte, sequence uint64) ([]byte, []byte) {
+func kernelActivityFor(t *testing.T, signer ed25519.PrivateKey, sequence uint64) ([]byte, []byte) {
 	t.Helper()
+	var key [32]byte
+	copy(key[:], signer.Public().(ed25519.PublicKey))
 	did := lxwire.DIDFromKey(key)
 	from, err := lxwire.AccountID([]byte(lxwire.MainAccountName(did)))
 	if err != nil {
@@ -592,10 +594,33 @@ func kernelActivityFor(t *testing.T, key [32]byte, sequence uint64) ([]byte, []b
 	if err != nil {
 		t.Fatal(err)
 	}
-	amount := make([]byte, 16)
-	big.NewInt(5_000_000).FillBytes(amount)
-	payload := append(append(append(append([]byte{}, from[:]...), to[:]...), make([]byte, 32)...), amount...)
 	now := uint64(time.Now().Unix())
+	idempotency := sha256.Sum256([]byte(fmt.Sprintf("attestor end-to-end activity %d", sequence)))
+	context := sha256.Sum256([]byte(fmt.Sprintf("attestor end-to-end send context %d", sequence)))
+	send := &lxwire.Send{
+		From:              from,
+		To:                to,
+		Amount:            lxwire.Uint128{Lo: 5_000_000},
+		SourceSequence:    sequence,
+		IdempotencyKey:    idempotency,
+		ExpiresAt:         now + 600,
+		ContextHash:       context,
+		AuthorizationKind: lxwire.OwnerAuthorization,
+		Controller:        from,
+		PublicKey:         key,
+		SignedContextHash: context,
+		NetworkID:         testChainID,
+		ProtocolVersion:   lxwire.MaxProtocolVersion,
+	}
+	digest, err := send.AuthorizationDigest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	copy(send.Signature[:], ed25519.Sign(signer, digest[:]))
+	payload, err := send.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
 	a := &lxwire.Activity{
 		ProtocolVersion: lxwire.MaxProtocolVersion,
 		NetworkID:       testChainID,
@@ -605,7 +630,7 @@ func kernelActivityFor(t *testing.T, key [32]byte, sequence uint64) ([]byte, []b
 		AccountSequence: sequence,
 		NotBefore:       now - 60,
 		NotAfter:        now + 600,
-		IdempotencyKey:  sha256.Sum256([]byte(fmt.Sprintf("attestor end-to-end activity %d", sequence))),
+		IdempotencyKey:  idempotency,
 		FeeLimit:        lxwire.Uint128{Lo: 1000},
 		PayloadHash:     lxwire.PayloadHash(payload),
 		Payload:         payload,
@@ -619,13 +644,6 @@ func kernelActivityFor(t *testing.T, key [32]byte, sequence uint64) ([]byte, []b
 		t.Fatal(err)
 	}
 	return unsigned, pre[:]
-}
-
-func kernelActivity(t *testing.T, key ed25519.PublicKey, sequence uint64) ([]byte, []byte) {
-	t.Helper()
-	var k [32]byte
-	copy(k[:], key)
-	return kernelActivityFor(t, k, sequence)
 }
 
 const mailTypedData = `{"types":{"EIP712Domain":[{"name":"name","type":"string"},{"name":"version","type":"string"},{"name":"chainId","type":"uint256"},{"name":"verifyingContract","type":"address"}],"Person":[{"name":"name","type":"string"},{"name":"wallet","type":"address"}],"Mail":[{"name":"from","type":"Person"},{"name":"to","type":"Person"},{"name":"contents","type":"string"}]},"primaryType":"Mail","domain":{"name":"Ether Mail","version":"1","chainId":125,"verifyingContract":"0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC"},"message":{"from":{"name":"Cow","wallet":"0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826"},"to":{"name":"Bob","wallet":"0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB"},"contents":"Hello, Bob!"}}`
@@ -772,7 +790,7 @@ func TestFiveNodeEndToEnd(t *testing.T) {
 		}
 	}
 
-	unsigned, preimage := kernelActivity(t, edPub, 1)
+	unsigned, preimage := kernelActivityFor(t, ed25519.NewKeyFromSeed(edSeed[:]), 1)
 	actResults := decodeOK[SignResponse](t, "activity", sign("sign-activity", SignRequest{KeyID: "lx-key", Kind: KindLXActivity, Activity: hex.EncodeToString(unsigned)}, fresh()))
 	for _, r := range actResults {
 		sig, _ := hex.DecodeString(r.Signature)
@@ -823,11 +841,8 @@ func TestFiveNodeEndToEnd(t *testing.T) {
 			t.Fatalf("replayed token: %s", e.Message)
 		}
 	}
-	var peer [32]byte
-	for i := range peer {
-		peer[i] = 0x51
-	}
-	foreign, _ := kernelActivityFor(t, peer, 3)
+	peerSeed := sha256.Sum256([]byte("attestor end-to-end foreign identity"))
+	foreign, _ := kernelActivityFor(t, ed25519.NewKeyFromSeed(peerSeed[:]), 3)
 	for _, r := range sign("sign-foreign-activity", SignRequest{KeyID: "lx-key", Kind: KindLXActivity, Activity: hex.EncodeToString(foreign)}, fresh()) {
 		e := expectError(t, "activity for another identity", r, CodePolicyDenied)
 		if e.PolicyCode != lx.CodeAuthorityMismatch {

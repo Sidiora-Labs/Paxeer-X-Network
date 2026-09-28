@@ -1252,6 +1252,23 @@ symbols = ["RequestDigest","TokenReplayStore","UseTokenRequest","TokenVerifier.V
 touches = ["human/wallet/attestor/internal/auth/jwt/","human/wallet/attestor/internal/store/replay.go","human/wallet/attestor/internal/store/replay_test.go","human/wallet/attestor/internal/server/sign.go","human/wallet/attestor/internal/server/server.go","human/wallet/attestor/internal/server/errors.go","human/wallet/attestor/internal/server/e2e_test.go","human/wallet/attestor/internal/server/token_scope_test.go","human/wallet/deploy/env","human/wallet/docs/security-review.md","spec/paxeer-x-wallet/qualification.kvx"]
 reqs = ["2.1"]
 
+[task.4.23]
+title = "Decode kernel asset operations in the layout the kernel encodes"
+status = "done"
+wave = 4
+requires = ["4.11","1.7","2.9"]
+do_1 = "Add human/wallet/attestor/internal/lxwire/send.go decoding asset operation 5 only in the kernel's tagged send layout (tag 0x5301, ten fields: debit, credit, asset, amount, source sequence, idempotency key, payload expiry, context hash, at most eight not-before or not-after conditions, and the embedded authorization with kind, controller, public key, signature, signed context hash, network and protocol version), refusing any other tag, field count, condition kind, trailing byte or payload above 512 bytes, re-encoding it byte for byte, and verifying the embedded authorization signature over the signature-preimage digest of the authorization message."
+do_2 = "The kernel evaluator reads the asset send's policy fields from that layout and refuses it unless the authorization is the owner kind, its controller is the debit account, its signed context hash is the context hash, its network, protocol version and idempotency key are the envelope's, its public key is the envelope authority, the debit and credit differ and the amount is not zero; the bare 112-byte transfer is refused with decode_error. Budget operation 2 is read in the tagged fund layout layerx-crypto's disclosure decodes (tag 0x4202, six fields: budget id, debit, credit, asset, amount, idempotency key) with the same envelope checks, replacing the untagged allowance layout no kernel encoder emits; asset operation 7 and Programs operation 5 keep their decoders."
+do_3 = "Generate byte-level vectors with a generator under internal/policy/lx/testdata/kernelvectors that uses layerx-crypto's send debit encoder and local signer, its payment payload encoders, its payment envelope encoder and its disclosure binder: a native send, a token send with conditions, a budget fund, a grant issue and a Programs transfer that the binder accepts, and a bare transfer, an untagged allowance layout and a send with a tampered authorization that the binder refuses; the Go tests decode every vector, compare the policy fields and the re-encoding, prove the refused vectors refused, and run the accepted sends through the evaluator."
+verify_cmd = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./internal/policy/... ./internal/lxwire/...'"
+symbols = ["Send","SendCondition","DecodeSend","Encode","AuthorizationMessage","AuthorizationValid","DecodeEffect","OpBudgetFund","decodeAssetSend","decodeBudgetFund"]
+touches = ["human/wallet/attestor/internal/lxwire/send.go","human/wallet/attestor/internal/lxwire/send_test.go","human/wallet/attestor/internal/policy/lx/lx.go","human/wallet/attestor/internal/policy/lx/lx_test.go","human/wallet/attestor/internal/policy/lx/testdata/kernel_activities.json","human/wallet/attestor/internal/policy/lx/testdata/kernelvectors/Cargo.toml","human/wallet/attestor/internal/policy/lx/testdata/kernelvectors/Cargo.lock","human/wallet/attestor/internal/policy/lx/testdata/kernelvectors/src/main.rs","human/wallet/attestor/internal/server/e2e_test.go","spec/paxeer-x-wallet/"]
+reqs = ["2.5","2.6","2.7"]
+revision = "e7bf7037fb67ade1a7dd3ec17aee0a47b5920188"
+command = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./internal/policy/... ./internal/lxwire/...'"
+exit_code = 0
+log_path = ".logs/verify.log"
+
 # --------------------------------------------------------------------------
 # WAVE 5 - RELEASE
 # --------------------------------------------------------------------------

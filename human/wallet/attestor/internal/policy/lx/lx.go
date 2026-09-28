@@ -48,10 +48,15 @@ const (
 
 const activityTypeOffset = 14
 
+const (
+	budgetFundTag        uint16 = 0x4202
+	budgetFundFieldCount uint16 = 6
+)
+
 var (
 	OpAssetTransfer = lxwire.ActivityType(uint32(lxwire.ModuleAsset)<<16 | 5)
 	OpAssetApprove  = lxwire.ActivityType(uint32(lxwire.ModuleAsset)<<16 | 7)
-	OpBudgetSet     = lxwire.ActivityType(uint32(lxwire.ModuleBudget)<<16 | 2)
+	OpBudgetFund    = lxwire.ActivityType(uint32(lxwire.ModuleBudget)<<16 | 2)
 	OpProgramCall   = lxwire.ActivityType(uint32(lxwire.ModulePrograms)<<16 | 5)
 )
 
@@ -84,7 +89,7 @@ func knownModuleName(name string) bool {
 }
 
 var decodedOperations = sync.OnceValues(func() (*lxwire.Registry, error) {
-	return lxwire.NewRegistry(OpAssetTransfer, OpAssetApprove, OpBudgetSet, OpProgramCall)
+	return lxwire.NewRegistry(OpAssetTransfer, OpAssetApprove, OpBudgetFund, OpProgramCall)
 })
 
 type ID [32]byte
@@ -794,20 +799,7 @@ func DecodeEffect(activity *lxwire.Activity) (*Effect, error) {
 	r := &payloadReader{data: activity.Payload}
 	switch activity.Type {
 	case OpAssetTransfer:
-		from, to, asset := r.id(), r.id(), r.id()
-		amount := toBig(r.u128())
-		if err := r.finish(); err != nil {
-			return nil, fmt.Errorf("asset transfer: %w", err)
-		}
-		if amount.Sign() == 0 {
-			return nil, errors.New("asset transfer moves no amount")
-		}
-		return &Effect{
-			Account:      from,
-			Amounts:      []Amount{{Asset: asset, Amount: amount}},
-			Destinations: []ID{to},
-			Legs:         []Leg{{From: from, To: to, Asset: asset, Amount: amount}},
-		}, nil
+		return decodeAssetSend(activity)
 	case OpAssetApprove:
 		grantID := r.id()
 		g := lxwire.Grant{
@@ -843,18 +835,8 @@ func DecodeEffect(activity *lxwire.Activity) (*Effect, error) {
 			Destinations: []ID{g.Recipient},
 			Legs:         []Leg{{From: g.From, To: g.Recipient, Asset: g.Asset, Amount: allowance}},
 		}, nil
-	case OpBudgetSet:
-		version := r.u16()
-		account := r.id()
-		allowance := toBig(r.u128())
-		r.u64()
-		if err := r.finish(); err != nil {
-			return nil, fmt.Errorf("budget change: %w", err)
-		}
-		if version != 1 {
-			return nil, fmt.Errorf("budget change payload version %d is not supported", version)
-		}
-		return &Effect{Account: account, Amounts: []Amount{{Asset: ID{}, Amount: allowance}}}, nil
+	case OpBudgetFund:
+		return decodeBudgetFund(activity)
 	case OpProgramCall:
 		r.id()
 		count := int(r.u16())
@@ -876,6 +858,72 @@ func DecodeEffect(activity *lxwire.Activity) (*Effect, error) {
 		return effect, nil
 	}
 	return nil, fmt.Errorf("activity type %#x has no payload decoder", uint32(activity.Type))
+}
+
+func transferEffect(from, to, asset ID, amount *big.Int) *Effect {
+	return &Effect{
+		Account:      from,
+		Amounts:      []Amount{{Asset: asset, Amount: amount}},
+		Destinations: []ID{to},
+		Legs:         []Leg{{From: from, To: to, Asset: asset, Amount: amount}},
+	}
+}
+
+func decodeAssetSend(activity *lxwire.Activity) (*Effect, error) {
+	send, err := lxwire.DecodeSend(activity.Payload)
+	if err != nil {
+		return nil, fmt.Errorf("asset send: %w", err)
+	}
+	authority, ok := activity.AuthorityKey()
+	switch {
+	case send.AuthorizationKind != lxwire.OwnerAuthorization:
+		return nil, fmt.Errorf("asset send authorization kind %d is not the owner kind", send.AuthorizationKind)
+	case send.Controller != send.From:
+		return nil, errors.New("asset send authorization controller is not the debit account")
+	case send.SignedContextHash != send.ContextHash:
+		return nil, errors.New("asset send authorization signs another context hash")
+	case send.NetworkID != activity.NetworkID:
+		return nil, fmt.Errorf("asset send authorization network %d is not the envelope network %d", send.NetworkID, activity.NetworkID)
+	case send.ProtocolVersion != activity.ProtocolVersion:
+		return nil, fmt.Errorf("asset send authorization protocol version %d is not the envelope version %d", send.ProtocolVersion, activity.ProtocolVersion)
+	case send.IdempotencyKey != activity.IdempotencyKey:
+		return nil, errors.New("asset send idempotency key is not the envelope idempotency key")
+	case !ok || send.PublicKey != authority:
+		return nil, errors.New("asset send authorization key is not the envelope authority")
+	case send.From == send.To:
+		return nil, errors.New("asset send debits and credits the same account")
+	case send.Amount.IsZero():
+		return nil, errors.New("asset send moves no amount")
+	}
+	return transferEffect(send.From, send.To, send.Asset, toBig(send.Amount)), nil
+}
+
+func decodeBudgetFund(activity *lxwire.Activity) (*Effect, error) {
+	if len(activity.Payload) > lxwire.MaxSendPayloadBytes {
+		return nil, fmt.Errorf("budget fund payload of %d bytes exceeds %d", len(activity.Payload), lxwire.MaxSendPayloadBytes)
+	}
+	r := &payloadReader{data: activity.Payload}
+	tag, count := r.u16(), r.u16()
+	if r.err == nil && (tag != budgetFundTag || count != budgetFundFieldCount) {
+		return nil, fmt.Errorf("budget fund payload tag %#04x with %d fields is not the fund layout", tag, count)
+	}
+	budget, from, to, asset := r.id(), r.id(), r.id(), r.id()
+	amount := r.u128()
+	idempotency := r.id()
+	if err := r.finish(); err != nil {
+		return nil, fmt.Errorf("budget fund: %w", err)
+	}
+	switch {
+	case budget == ID{}:
+		return nil, errors.New("budget fund names no budget")
+	case from == to:
+		return nil, errors.New("budget fund debits and credits the same account")
+	case amount.IsZero():
+		return nil, errors.New("budget fund moves no amount")
+	case [32]byte(idempotency) != activity.IdempotencyKey:
+		return nil, errors.New("budget fund idempotency key is not the envelope idempotency key")
+	}
+	return transferEffect(from, to, asset, toBig(amount)), nil
 }
 
 func (e *Evaluator) inspectBind(ctx policy.Context, view any) (policy.Inspection, error) {

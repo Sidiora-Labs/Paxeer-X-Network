@@ -315,6 +315,11 @@
     - A token authorises any number of distinct signing requests until its expiry and within ATTESTOR_JWT_MAX_AGE, so one provisioning's binding message and binding transaction and every request of a signed-in session share one token (observation 4.15.1); the identical request under the same token is refused with token_invalid and an audit entry whose reason names the replay; records expire with the earlier of the token's expiry and its maximum age, survive restarts and stay per node.
     - Tests prove two distinct signs under one token succeed on all five nodes, the identical request is refused and audited on every node and again after a restart, a new request under the same token still succeeds after the restart, a token past its maximum age is refused, and the store scopes records to the pair; the end-to-end replay case repeats the identical request, deploy/env and the review's bearer-token finding state the rule.
     - _Requirements: 2.1_
+  - [x] 4.23 Decode kernel asset operations in the layout the kernel encodes
+    - Add human/wallet/attestor/internal/lxwire/send.go decoding asset operation 5 only in the kernel's tagged send layout (tag 0x5301, ten fields: debit, credit, asset, amount, source sequence, idempotency key, payload expiry, context hash, at most eight not-before or not-after conditions, and the embedded authorization with kind, controller, public key, signature, signed context hash, network and protocol version), refusing any other tag, field count, condition kind, trailing byte or payload above 512 bytes, re-encoding it byte for byte, and verifying the embedded authorization signature over the signature-preimage digest of the authorization message.
+    - The kernel evaluator reads the asset send's policy fields from that layout and refuses it unless the authorization is the owner kind, its controller is the debit account, its signed context hash is the context hash, its network, protocol version and idempotency key are the envelope's, its public key is the envelope authority, the debit and credit differ and the amount is not zero; the bare 112-byte transfer is refused with decode_error. Budget operation 2 is read in the tagged fund layout layerx-crypto's disclosure decodes (tag 0x4202, six fields: budget id, debit, credit, asset, amount, idempotency key) with the same envelope checks, replacing the untagged allowance layout no kernel encoder emits; asset operation 7 and Programs operation 5 keep their decoders.
+    - Generate byte-level vectors with a generator under internal/policy/lx/testdata/kernelvectors that uses layerx-crypto's send debit encoder and local signer, its payment payload encoders, its payment envelope encoder and its disclosure binder: a native send, a token send with conditions, a budget fund, a grant issue and a Programs transfer that the binder accepts, and a bare transfer, an untagged allowance layout and a send with a tampered authorization that the binder refuses; the Go tests decode every vector, compare the policy fields and the re-encoding, prove the refused vectors refused, and run the accepted sends through the evaluator.
+    - _Requirements: 2.5, 2.6, 2.7_
 
 ## Wave 5 - Release
 
@@ -353,7 +358,7 @@
     { "id": 1,  "tasks": ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "1.10", "1.11", "1.12", "1.13", "1.14", "1.15", "1.16"] },
     { "id": 2,  "tasks": ["2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7", "2.8", "2.9"] },
     { "id": 3,  "tasks": ["3.1", "3.2", "3.3", "3.4", "3.5", "3.6", "3.7", "3.8", "3.9", "3.10", "3.11", "3.12", "3.13", "3.14", "3.15"] },
-    { "id": 4,  "tasks": ["4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7", "4.8", "4.9", "4.10", "4.11", "4.12", "4.13", "4.14", "4.15", "4.16", "4.17", "4.18", "4.19", "4.20", "4.21", "4.22"] },
+    { "id": 4,  "tasks": ["4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7", "4.8", "4.9", "4.10", "4.11", "4.12", "4.13", "4.14", "4.15", "4.16", "4.17", "4.18", "4.19", "4.20", "4.21", "4.22", "4.23"] },
     { "id": 5,  "tasks": ["5.1", "5.2", "5.3", "5.4"] }
   ]
 }
