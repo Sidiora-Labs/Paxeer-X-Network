@@ -26,6 +26,10 @@ export * from './kernel.js';
 export * from './human.js';
 export * from './ladder.js';
 export * from './modules/index.js';
+export * from './errors.js';
+export * from './provider.js';
+export * from './eip6963.js';
+export * from './wallet.js';
 
 /**
  * `PaxeerWallet` — drop-in client for any Paxeer-network app.

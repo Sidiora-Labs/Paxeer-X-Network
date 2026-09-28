@@ -1,0 +1,16 @@
+{
+  "scenario": "unprovisioned",
+  "method": "POST",
+  "path": "/v1/wallet/provision",
+  "status": 200,
+  "body": {
+    "wallet": {
+      "id": "5d0c7a4e-8f5b-4c71-9a3e-2b6f1d9e4a10",
+      "address": "0xE1952Ec7230F058cd7fd9BCCb15964100e38ea04",
+      "chain_id": 125,
+      "created_at": "1970-01-01T00:00:00.000Z",
+      "last_used_at": null,
+      "kind": "standard"
+    }
+  }
+}

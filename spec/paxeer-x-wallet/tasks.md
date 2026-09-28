@@ -109,7 +109,7 @@
     - Replace the automatic owner binding from the agent label with an authenticated claim route, add end-to-end agent request signing verification (canonical digest, nonce, expiry, registered key, frozen principal) for every value-moving agent route, and scope the gateway-minted agent token to read routes.
     - Add tests covering removed routes answering not found, an archived wallet refused, the claim route, signed and unsigned agent requests, replay and expiry, and the token refused on a write route.
     - _Requirements: 5.4, 5.5_
-  - [ ] 2.4 Build the SDK provider with EIP-1193, EIP-6963 and the custody hand-off
+  - [x] 2.4 Build the SDK provider with EIP-1193, EIP-6963 and the custody hand-off
     - In human/wallet/sdk add an EIP-1193 provider class backed by the gateway routes implementing eth_requestAccounts, eth_accounts, eth_chainId, eth_sendTransaction, eth_signTypedData_v4, personal_sign, paxeer_signCustody (opaque custody bytes from the human service hand-off) and eth_sign restricted to the sponsored batch and EIP-7702 authorisation constructions passed as fields, with typed errors and event emission for accounts and chain.
     - Announce the provider through EIP-6963 and install it as window.paxeer, discover injected providers through EIP-6963, and expose one wallet interface over the embedded provider and every injected provider.
     - Add provider tests against an in-test HTTP server speaking the gateway's recorded response shapes, covering every method, refusal of an arbitrary eth_sign digest, EIP-6963 announcement and discovery, and interface parity between an embedded and an injected provider.

@@ -1,0 +1,10 @@
+{
+  "scenario": "expired",
+  "method": "GET",
+  "path": "/v1/wallet/me",
+  "status": 401,
+  "body": {
+    "error": "unauthorized",
+    "detail": "\"exp\" claim timestamp check failed"
+  }
+}

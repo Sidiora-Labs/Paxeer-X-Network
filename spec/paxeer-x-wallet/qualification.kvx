@@ -173,3 +173,19 @@ symbol = "parseCustodyChoice"
 observed = "A stored custody choice of self-custody from an earlier install would fail closed as corrupt once the kind is removed."
 assumption = "The retired value is read as no choice so earlier self-custody installs land on the welcome screen; any other unknown value still fails closed."
 severity = "note"
+
+[observation.2.4.1]
+task = "2.4"
+file = "human/wallet/sdk/src/provider.ts"
+symbol = "PaxeerProvider"
+observed = "The gateway has no user routes for typed data, restricted digests or custody bytes, so the provider defines POST /v1/wallet/sign-typed-data {typedData}, /v1/wallet/sign-digest {construction} and /v1/wallet/sign-custody {custody}, each answering {signature, address}, recorded in sdk/test/fixtures/gateway."
+assumption = "The gateway's attestor signing task adds these three routes with exactly these request and response shapes."
+severity = "suspect"
+
+[observation.2.4.2]
+task = "2.4"
+file = "human/wallet/sdk/src/modules/gas-station.ts"
+symbol = "gasStation.sign"
+observed = "The gas station module calls eth_sign with params [from, construction] and no digest, while PaxeerProvider requires [address, digest, construction] and refuses a missing or mismatched digest, so the module's sign path is refused by the embedded provider."
+assumption = "One side aligns on a single eth_sign parameter order; the provider keeps recomputing the digest from the fields and forwarding only the fields."
+severity = "suspect"

@@ -34,7 +34,8 @@
   },
   "dependencies": {
     "@sidiora/layerx-sdk": "link:../../../agent/sdk/typescript",
-    "@supabase/supabase-js": "^2.45.4"
+    "@supabase/supabase-js": "^2.45.4",
+    "viem": "^2.56.9"
   },
   "devDependencies": {
     "@noble/curves": "^1.9.1",

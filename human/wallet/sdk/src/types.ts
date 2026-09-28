@@ -557,6 +557,127 @@ export interface ExplorerTransactionStatus {
   checkpoint_id: string | null;
 }
 
+/* ============================================================================
+ * EIP-1193 provider
+ * ========================================================================== */
+
+export type Hex = `0x${string}`;
+
+export interface RequestArguments {
+  readonly method: string;
+  readonly params?: readonly unknown[] | Record<string, unknown>;
+}
+
+export type ProviderEvent = 'connect' | 'disconnect' | 'accountsChanged' | 'chainChanged' | 'message';
+
+export type ProviderListener = (...args: unknown[]) => void;
+
+export interface Eip1193Provider {
+  request(args: RequestArguments): Promise<unknown>;
+  on(event: ProviderEvent, listener: ProviderListener): unknown;
+  removeListener(event: ProviderEvent, listener: ProviderListener): unknown;
+}
+
+export interface ProviderConnectInfo {
+  chainId: Hex;
+}
+
+export interface TransactionParams {
+  from?: Hex;
+  to?: Hex;
+  value?: Hex;
+  data?: Hex;
+  gas?: Hex;
+  maxFeePerGas?: Hex;
+  maxPriorityFeePerGas?: Hex;
+  nonce?: Hex;
+  chainId?: Hex;
+}
+
+export type UintInput = string | number | bigint;
+
+export interface SponsoredCall {
+  to: Hex;
+  value: UintInput;
+  data: Hex;
+}
+
+export interface SponsorQuote {
+  sponsor: Hex;
+  token: Hex;
+  maxTokenAmount: UintInput;
+  tokenAmount: UintInput;
+  deadline: UintInput;
+  quoteNonce: UintInput;
+  gasCost: UintInput;
+}
+
+export interface SponsoredBatchFields {
+  kind: 'sponsored_batch';
+  chainId: UintInput;
+  account: Hex;
+  nonce: UintInput;
+  calls: SponsoredCall[];
+  quote: SponsorQuote;
+}
+
+export interface Eip7702AuthorizationConstruction {
+  kind: 'eip7702_authorization';
+  chainId: UintInput;
+  address: Hex;
+  nonce: UintInput;
+}
+
+export type DigestConstruction = SponsoredBatchFields | Eip7702AuthorizationConstruction;
+
+export interface WireSponsoredBatch {
+  kind: 'sponsored_batch';
+  chainId: string;
+  account: Hex;
+  nonce: string;
+  calls: { to: Hex; value: string; data: Hex }[];
+  quote: {
+    sponsor: Hex;
+    token: Hex;
+    maxTokenAmount: string;
+    tokenAmount: string;
+    deadline: string;
+    quoteNonce: string;
+    gasCost: string;
+  };
+}
+
+export interface WireEip7702Authorization {
+  kind: 'eip7702_authorization';
+  chainId: string;
+  address: Hex;
+  nonce: string;
+}
+
+export type WireDigestConstruction = WireSponsoredBatch | WireEip7702Authorization;
+
+export interface SignTypedDataResponse {
+  signature: Hex;
+  address: Hex;
+}
+
+export interface SignDigestResponse {
+  signature: Hex;
+  address: Hex;
+}
+
+export interface SignCustodyResponse {
+  signature: Hex;
+  address: Hex;
+}
+
+export interface TypedDataPayload {
+  domain?: Record<string, unknown>;
+  types: Record<string, unknown>;
+  primaryType: string;
+  message: Record<string, unknown>;
+}
+
 export interface SponsoredBatchConstructionCall {
   to: `0x${string}`;
   value: string;

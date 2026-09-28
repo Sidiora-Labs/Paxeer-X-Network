@@ -1,0 +1,11 @@
+{
+  "scenario": "default",
+  "method": "POST",
+  "path": "/v1/wallet/sign-digest",
+  "kind": "eip7702_authorization",
+  "status": 200,
+  "body": {
+    "signature": "0xc2f65152f043f4647d45105b8014331d3e0877f764669c6c241cdee25d624ffd07032cbd20836f1d9ddc9e79a7c26979d580f9e5ad2494123b301674ebddb46d1c",
+    "address": "0xE1952Ec7230F058cd7fd9BCCb15964100e38ea04"
+  }
+}

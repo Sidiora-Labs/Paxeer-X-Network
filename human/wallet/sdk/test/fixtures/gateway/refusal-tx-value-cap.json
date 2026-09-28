@@ -1,0 +1,10 @@
+{
+  "scenario": "capped",
+  "method": "POST",
+  "path": "/v1/wallet/send",
+  "status": 403,
+  "body": {
+    "error": "TX_VALUE_CAP",
+    "message": "tx value 1000000000000000 wei exceeds per-tx cap 100000000000000 wei. Step-up auth required (coming in v1.1)."
+  }
+}

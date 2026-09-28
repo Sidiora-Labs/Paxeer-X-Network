@@ -518,7 +518,7 @@ reqs = ["5.4","5.5"]
 
 [task.2.4]
 title = "Build the SDK provider with EIP-1193, EIP-6963 and the custody hand-off"
-status = "pending"
+status = "done"
 wave = 2
 requires = ["1.10"]
 do_1 = "In human/wallet/sdk add an EIP-1193 provider class backed by the gateway routes implementing eth_requestAccounts, eth_accounts, eth_chainId, eth_sendTransaction, eth_signTypedData_v4, personal_sign, paxeer_signCustody (opaque custody bytes from the human service hand-off) and eth_sign restricted to the sponsored batch and EIP-7702 authorisation constructions passed as fields, with typed errors and event emission for accounts and chain."
@@ -528,6 +528,10 @@ verify_cmd = "timeout 20m sh -c 'pnpm --dir human/wallet/sdk test'"
 symbols = ["PaxeerProvider","announceProvider","discoverProviders","WalletInterface"]
 touches = ["human/wallet/sdk/src/provider.ts","human/wallet/sdk/src/eip6963.ts","human/wallet/sdk/src/wallet.ts","human/wallet/sdk/src/errors.ts","human/wallet/sdk/test/provider.test.ts","human/wallet/sdk/test/eip6963.test.ts"]
 reqs = ["9.1","9.2"]
+revision = "8adcc974532c6cd8f84b31c72be1a48567bdd96c"
+command = "timeout 20m sh -c 'pnpm --dir human/wallet/sdk test'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.2.5]
 title = "Add the typed Paxeer X modules and the gas station flow to the SDK"

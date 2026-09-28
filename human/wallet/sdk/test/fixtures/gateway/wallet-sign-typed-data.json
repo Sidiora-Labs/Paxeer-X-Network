@@ -1,0 +1,10 @@
+{
+  "scenario": "default",
+  "method": "POST",
+  "path": "/v1/wallet/sign-typed-data",
+  "status": 200,
+  "body": {
+    "signature": "0xc8e35c33b16460dd7f53a5f722b23624810bf2842eb20e619c428ece89a55a9f1e36e85805e83202813875a6a642b493a72869d2103bfbc8a372e60edd82e1431c",
+    "address": "0xE1952Ec7230F058cd7fd9BCCb15964100e38ea04"
+  }
+}

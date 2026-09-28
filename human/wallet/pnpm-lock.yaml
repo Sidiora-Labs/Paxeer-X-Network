@@ -112,6 +112,9 @@ importers:
       '@supabase/supabase-js':
         specifier: ^2.45.4
         version: 2.117.2
+      viem:
+        specifier: ^2.56.9
+        version: 2.56.9(typescript@5.9.3)(zod@3.25.76)
     devDependencies:
       '@noble/curves':
         specifier: ^1.9.1
