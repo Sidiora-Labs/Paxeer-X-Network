@@ -13,6 +13,7 @@ LAYERX_GATEWAY_PROTOCOL_NETWORK_ID - numeric protocol network identifier of the 
 LAYERX_GATEWAY_LXP_WIRE_VERSION - LXP wire version the shared endpoint speaks
 LAYERX_GATEWAY_IDEMPOTENCY_SECONDS - retention of idempotency records in seconds
 LAYERX_GATEWAY_CAPABILITIES_TTL_SECONDS - cache lifetime of the capabilities answer in seconds
+LAYERX_GATEWAY_LISTENER - listener mode of the shared endpoint: tls, the default, terminates TLS with the certificate and key; plain serves plain HTTP behind the platform proxy and refuses both of them
 LAYERX_GATEWAY_TLS_CERT_DER - path to the shared endpoint's DER server certificate
 LAYERX_GATEWAY_TLS_KEY_DER - path to the shared endpoint's DER PKCS8 server key
 LAYERX_GATEWAY_OUTBOUND_CA_DER - path to the DER CA that authenticates the endpoint's upstream services
@@ -41,8 +42,6 @@ LAYERX_GATEWAY_SEQUENCER_FIRST_BATCH_FILE - path to the first batch the sequence
 LAYERX_GATEWAY_SEQUENCER_LAST_BATCH_FILE - path to the last batch the sequencer authorisation covers
 LAYERX_GATEWAY_KEY_PROVISIONING_KEY_FILE - path to the 64-hex key provisioning key
 LAYERX_GATEWAY_MODULE_REGISTRY_FILE - path to the module registry JSON document
-ENDPOINT_TLS_CERT - platform secret written to the file named by LAYERX_GATEWAY_TLS_CERT_DER
-ENDPOINT_TLS_KEY - platform secret written to the file named by LAYERX_GATEWAY_TLS_KEY_DER
 ENDPOINT_OUTBOUND_CA - platform secret written to the file named by LAYERX_GATEWAY_OUTBOUND_CA_DER
 ENDPOINT_CLIENT_IDENTITY_PKCS12 - platform secret written to the file named by LAYERX_GATEWAY_CLIENT_IDENTITY_PKCS12
 ENDPOINT_CLIENT_IDENTITY_PASSWORD - platform secret written to the file named by LAYERX_GATEWAY_CLIENT_IDENTITY_PASSWORD_FILE

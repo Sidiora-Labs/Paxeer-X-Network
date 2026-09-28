@@ -53,9 +53,14 @@ const MAX_IDEMPOTENCY_SECONDS: u64 = 2_592_000;
 const MAX_REQUESTS_PER_CONNECTION: usize = 128;
 static ACTIVE_CONNECTIONS: AtomicUsize = AtomicUsize::new(0);
 
+enum Listener {
+    Tls(Arc<ServerConfig>),
+    Plain,
+}
+
 struct Config {
     listen: SocketAddr,
-    tls: Arc<ServerConfig>,
+    listener: Listener,
     client: Client,
     kernel: Option<Kernel>,
     paxeer: Option<Endpoint>,
@@ -832,10 +837,29 @@ fn valid_identifier(value: &str, maximum: usize) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
 }
 
-fn tls_config() -> Result<Arc<ServerConfig>, String> {
+const LISTENER_CERTIFICATE_VARIABLES: [&str; 2] =
+    ["LAYERX_GATEWAY_TLS_CERT_DER", "LAYERX_GATEWAY_TLS_KEY_DER"];
+
+fn listener_config() -> Result<Listener, String> {
     rustls::crypto::ring::default_provider()
         .install_default()
         .map_err(|_| "failed to install TLS crypto provider".to_owned())?;
+    match env::var("LAYERX_GATEWAY_LISTENER") {
+        Err(env::VarError::NotPresent) => tls_config().map(Listener::Tls),
+        Ok(mode) if mode == "tls" => tls_config().map(Listener::Tls),
+        Ok(mode) if mode == "plain" => LISTENER_CERTIFICATE_VARIABLES
+            .iter()
+            .find(|variable| env::var_os(variable).is_some())
+            .map_or(Ok(Listener::Plain), |variable| {
+                Err(format!(
+                    "{variable} is set with LAYERX_GATEWAY_LISTENER plain"
+                ))
+            }),
+        _ => Err("LAYERX_GATEWAY_LISTENER must be tls or plain".to_owned()),
+    }
+}
+
+fn tls_config() -> Result<Arc<ServerConfig>, String> {
     let cert = CertificateDer::from(
         fs::read(
             env::var("LAYERX_GATEWAY_TLS_CERT_DER")
@@ -977,7 +1001,7 @@ fn config(event_producer: bool) -> Result<Config, String> {
             .unwrap_or_else(|_| "0.0.0.0:9443".to_owned())
             .parse::<SocketAddr>()
             .map_err(|_| "gateway listen address is invalid".to_owned())?,
-        tls: tls_config()?,
+        listener: listener_config()?,
         client,
         kernel,
         paxeer: paxeer::configured_endpoint()?,
@@ -3477,15 +3501,26 @@ fn serve(config: &Arc<Config>, tcp: TcpStream) -> Result<(), String> {
         .map_err(|error| error.to_string())?;
     tcp.set_write_timeout(Some(Duration::from_secs(10)))
         .map_err(|error| error.to_string())?;
-    let connection =
-        ServerConnection::new(Arc::clone(&config.tls)).map_err(|error| error.to_string())?;
-    let mut stream = StreamOwned::new(connection, tcp);
+    match &config.listener {
+        Listener::Tls(tls) => {
+            let connection =
+                ServerConnection::new(Arc::clone(tls)).map_err(|error| error.to_string())?;
+            exchange(config, &mut StreamOwned::new(connection, tcp))
+        }
+        Listener::Plain => {
+            let mut stream = tcp;
+            exchange(config, &mut stream)
+        }
+    }
+}
+
+fn exchange<S: ws::Connection>(config: &Arc<Config>, stream: &mut S) -> Result<(), String> {
     for request_number in 0..MAX_REQUESTS_PER_CONNECTION {
-        let request = match http::read_request(&mut stream, MAX_REQUEST) {
+        let request = match http::read_request(stream, MAX_REQUEST) {
             Ok(request) => request,
             Err(_) if request_number == 0 => {
                 return http::write_response_connection(
-                    &mut stream,
+                    stream,
                     &response(400, "invalid_http_request", None),
                     false,
                 );
@@ -3493,14 +3528,14 @@ fn serve(config: &Arc<Config>, tcp: TcpStream) -> Result<(), String> {
             Err(_) => return Ok(()),
         };
         if request.path == "/rpc/ws" {
-            return ws::serve(config, &request, &mut stream);
+            return ws::serve(config, &request, stream);
         }
         let keep_alive = request_number + 1 < MAX_REQUESTS_PER_CONNECTION
             && request
                 .headers
                 .get("connection")
                 .is_none_or(|value| !value.eq_ignore_ascii_case("close"));
-        http::write_response_connection(&mut stream, &route(config, &request), keep_alive)?;
+        http::write_response_connection(stream, &route(config, &request), keep_alive)?;
         if !keep_alive {
             return Ok(());
         }

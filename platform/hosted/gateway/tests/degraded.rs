@@ -4,6 +4,7 @@ use layerx_platform_internal::tls::{Origin, Upstream};
 use native_tls::Certificate;
 use serde_json::{json, Value};
 use std::fs;
+use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -174,6 +175,82 @@ impl Gateway {
         let document = serde_json::from_slice(&answer.body)
             .unwrap_or_else(|error| panic!("{path} answer must be JSON: {error}"));
         (answer.status, document)
+    }
+}
+
+struct PlainGateway {
+    child: Child,
+    port: u16,
+}
+
+impl Drop for PlainGateway {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+impl PlainGateway {
+    fn exchange(&self, method: &str, path: &str, body: &[u8]) -> Result<(u16, Vec<u8>), String> {
+        let mut stream =
+            TcpStream::connect(("127.0.0.1", self.port)).map_err(|error| error.to_string())?;
+        stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .map_err(|error| error.to_string())?;
+        let mut request = format!(
+            "{method} {path} HTTP/1.1\r\nHost: localhost\r\nAccept: application/json\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        )
+        .into_bytes();
+        request.extend_from_slice(body);
+        stream
+            .write_all(&request)
+            .map_err(|error| error.to_string())?;
+        let mut answer = Vec::new();
+        stream
+            .read_to_end(&mut answer)
+            .map_err(|error| error.to_string())?;
+        let header_end = answer
+            .windows(4)
+            .position(|window| window == b"\r\n\r\n")
+            .ok_or_else(|| "plain answer has no header terminator".to_owned())?;
+        let head = std::str::from_utf8(&answer[..header_end])
+            .map_err(|_| "plain answer headers are not UTF-8".to_owned())?;
+        let mut start = head
+            .split("\r\n")
+            .next()
+            .unwrap_or_default()
+            .split_whitespace();
+        if start.next() != Some("HTTP/1.1") {
+            return Err(format!("plain answer is not HTTP/1.1: {head}"));
+        }
+        let status = start
+            .next()
+            .and_then(|value| value.parse::<u16>().ok())
+            .ok_or_else(|| format!("plain answer status is invalid: {head}"))?;
+        Ok((status, answer[header_end + 4..].to_vec()))
+    }
+
+    fn rpc(&self, method: &str, params: &Value) -> Value {
+        let request = json!({"jsonrpc": "2.0", "id": 7, "method": method, "params": params});
+        let (status, body) = self
+            .exchange("POST", "/rpc", request.to_string().as_bytes())
+            .unwrap_or_else(|error| panic!("{method} must be answered over plain HTTP: {error}"));
+        assert_eq!(status, 200, "{method}");
+        let document: Value = serde_json::from_slice(&body)
+            .unwrap_or_else(|error| panic!("{method} answer must be JSON: {error}"));
+        assert_eq!(document["jsonrpc"], "2.0");
+        assert_eq!(document["id"], 7);
+        document
+    }
+
+    fn get(&self, path: &str) -> (u16, Value) {
+        let (status, body) = self
+            .exchange("GET", path, b"")
+            .unwrap_or_else(|error| panic!("{path} must be answered over plain HTTP: {error}"));
+        let document = serde_json::from_slice(&body)
+            .unwrap_or_else(|error| panic!("{path} answer must be JSON: {error}"));
+        (status, document)
     }
 }
 
@@ -380,6 +457,61 @@ fn start_gateway(redis: &RedisProcess, chain_port: u16, producer: bool) -> Gatew
         thread::sleep(Duration::from_millis(50));
     }
     panic!("gateway did not become live")
+}
+
+const LISTENER_CERTIFICATE_VARIABLES: [&str; 2] =
+    ["LAYERX_GATEWAY_TLS_CERT_DER", "LAYERX_GATEWAY_TLS_KEY_DER"];
+
+fn plain_environment(redis: &RedisProcess, chain_port: u16, listen: u16) -> Vec<(String, String)> {
+    let mut environment = chain_only_environment(redis, chain_port, listen, false)
+        .into_iter()
+        .filter(|(name, _)| !LISTENER_CERTIFICATE_VARIABLES.contains(&name.as_str()))
+        .collect::<Vec<_>>();
+    environment.push(("LAYERX_GATEWAY_LISTENER".to_owned(), "plain".to_owned()));
+    environment
+}
+
+fn start_plain_gateway(redis: &RedisProcess, chain_port: u16) -> PlainGateway {
+    let port = free_port();
+    let environment = plain_environment(redis, chain_port, port);
+    assert!(environment.iter().all(|(name, _)| {
+        !KERNEL_SIDE_VARIABLES.contains(&name.as_str())
+            && !LISTENER_CERTIFICATE_VARIABLES.contains(&name.as_str())
+            && name != "LAYERX_GATEWAY_COMPONENT_URL"
+            && !name.starts_with("LAYERX_EVENTS_")
+    }));
+    let child = gateway_command(&environment)
+        .stdout(Stdio::null())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .unwrap_or_else(|error| panic!("gateway must start: {error}"));
+    let mut gateway = PlainGateway { child, port };
+    for _ in 0..200 {
+        if let Ok(Some(status)) = gateway.child.try_wait() {
+            panic!("gateway refused start-up with the plain listener: {status}");
+        }
+        if gateway
+            .exchange("GET", "/livez", b"")
+            .is_ok_and(|(status, _)| status == 200)
+        {
+            return gateway;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    panic!("gateway did not become live on the plain listener")
+}
+
+fn startup_refusal(environment: &[(String, String)]) -> (Option<i32>, String) {
+    let output = gateway_command(environment)
+        .stdout(Stdio::null())
+        .output()
+        .unwrap_or_else(|error| panic!("gateway must run: {error}"));
+    (
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr)
+            .trim_end()
+            .to_owned(),
+    )
 }
 
 fn assert_kernel_unavailable(answer: &Value, backend: &str) {
@@ -662,6 +794,135 @@ fn degraded_endpoint_refuses_a_half_set_event_producer_by_name() {
                 format!("layerx-gateway refused startup: {missing} is required")
             ),
             "{missing}"
+        );
+    }
+}
+
+#[test]
+fn degraded_endpoint_serves_the_chain_over_the_plain_listener() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let redis = RedisProcess::start();
+    assert!(redis.store().ready());
+    let (tls, _) = payment_events::tls(&redis);
+    let answers = precompile_answers();
+    let chain = payment_events::Listener::start(Arc::clone(&tls), move |request| {
+        chain_answer(&answers, request)
+    });
+    let gateway = start_plain_gateway(&redis, chain.port);
+
+    let chain_id = gateway.rpc("eth_chainId", &json!([]));
+    assert_eq!(chain_id["result"], CHAIN_ID, "{chain_id}");
+
+    let network = gateway.rpc("px_getNetwork", &json!([]));
+    assert_eq!(
+        network["result"]["kernel"],
+        json!({"available": false, "reason": "not_configured"}),
+        "{network}"
+    );
+    assert_eq!(
+        network["result"]["paxeer"],
+        json!({"chain_id": CHAIN_ID, "latest_block": LATEST_BLOCK}),
+        "{network}"
+    );
+    assert_eq!(network["result"]["network_id"], "paxeer-degraded");
+
+    assert_kernel_unavailable(
+        &gateway.rpc("lx_sendActivity", &json!(["00"])),
+        "core_agent_boundary",
+    );
+
+    let (status, readiness) = gateway.get("/readyz");
+    assert_eq!(status, 200, "{readiness}");
+    assert_eq!(readiness["status"], "degraded");
+    assert_eq!(
+        readiness["backends"]["paxeer_chain"],
+        json!({"state": "ready", "reason": "ready"}),
+        "{readiness}"
+    );
+    assert_eq!(
+        readiness["backends"]["durable_store"],
+        json!({"state": "ready", "reason": "ready"}),
+        "{readiness}"
+    );
+    assert_eq!(
+        readiness["backends"]["event_producer"],
+        json!({"state": "unavailable", "reason": "not_configured"}),
+        "{readiness}"
+    );
+    for kernel in [
+        "core_agent_boundary",
+        "independent_receipt_authority",
+        "program_registry",
+    ] {
+        assert_eq!(
+            readiness["backends"][kernel],
+            json!({"state": "unavailable", "reason": "not_configured"}),
+            "{kernel}"
+        );
+    }
+    drop(gateway);
+    drop(chain);
+}
+
+#[test]
+fn degraded_endpoint_refuses_a_plain_listener_with_a_listener_certificate_by_name() {
+    let redis = RedisProcess::start();
+    let _ = payment_events::tls(&redis);
+    let certificates = chain_only_environment(&redis, free_port(), free_port(), false)
+        .into_iter()
+        .filter(|(name, _)| LISTENER_CERTIFICATE_VARIABLES.contains(&name.as_str()))
+        .collect::<Vec<_>>();
+    assert_eq!(certificates.len(), 2);
+    for entry in &certificates {
+        let mut environment = plain_environment(&redis, free_port(), free_port());
+        environment.push(entry.clone());
+        assert_eq!(
+            startup_refusal(&environment),
+            (
+                Some(1),
+                format!(
+                    "layerx-gateway refused startup: {} is set with LAYERX_GATEWAY_LISTENER plain",
+                    entry.0
+                )
+            ),
+            "{}",
+            entry.0
+        );
+    }
+}
+
+#[test]
+fn degraded_endpoint_refuses_an_unknown_listener_by_name_and_never_downgrades() {
+    let redis = RedisProcess::start();
+    let _ = payment_events::tls(&redis);
+    for mode in ["https", "PLAIN", "", "plain "] {
+        let mut environment = chain_only_environment(&redis, free_port(), free_port(), false);
+        environment.push(("LAYERX_GATEWAY_LISTENER".to_owned(), mode.to_owned()));
+        assert_eq!(
+            startup_refusal(&environment),
+            (
+                Some(1),
+                "layerx-gateway refused startup: LAYERX_GATEWAY_LISTENER must be tls or plain"
+                    .to_owned()
+            ),
+            "{mode:?}"
+        );
+    }
+    for mode in [None, Some("tls")] {
+        let mut environment = chain_only_environment(&redis, free_port(), free_port(), false)
+            .into_iter()
+            .filter(|(name, _)| name != "LAYERX_GATEWAY_TLS_CERT_DER")
+            .collect::<Vec<_>>();
+        if let Some(mode) = mode {
+            environment.push(("LAYERX_GATEWAY_LISTENER".to_owned(), mode.to_owned()));
+        }
+        assert_eq!(
+            startup_refusal(&environment),
+            (
+                Some(1),
+                "layerx-gateway refused startup: gateway TLS certificate is required".to_owned()
+            ),
+            "{mode:?}"
         );
     }
 }

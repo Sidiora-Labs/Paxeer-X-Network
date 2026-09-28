@@ -244,3 +244,11 @@ symbol = "parseCustodyChoice"
 observed = "A stored custody choice of funded, left by the retired funded tier, is read as no choice, so those users land on the welcome screen."
 assumption = "The funded tier stays retired, following the same precedent as observation 2.8.4."
 severity = "info"
+
+[observation.3.12.1]
+task = "3.12"
+file = "platform/hosted/gateway/src/main.rs"
+symbol = "listener_config"
+observed = "LAYERX_GATEWAY_LISTENER set to plain makes the endpoint serve plain HTTP on its listener and refuse either listener certificate variable by name, while unset or tls keeps TLS termination with both required; endpoint.toml now runs plain behind the platform http_service with an http readiness check."
+assumption = "The assumption of observation 1.12.1 is met by the plain listener mode rather than TLS passthrough; public TLS is the platform edge's certificate."
+severity = "note"
