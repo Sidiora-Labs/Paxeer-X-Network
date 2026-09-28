@@ -430,7 +430,7 @@ fn data_words(log: &Value) -> Result<Vec<[u8; 32]>, GatewayError> {
         .strip_prefix("0x")
         .ok_or(GatewayError::MalformedAnswer)?;
     let bytes = hex::decode(body).map_err(|_| GatewayError::MalformedAnswer)?;
-    if bytes.len() % 32 != 0 {
+    if !bytes.len().is_multiple_of(32) {
         return Err(GatewayError::MalformedAnswer);
     }
     bytes

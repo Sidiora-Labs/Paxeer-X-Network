@@ -49,7 +49,11 @@ fn days_from_civil(year: u64, month: u64, day: u64) -> Option<u64> {
     if !(1..=12).contains(&month) || day == 0 || day > 31 {
         return None;
     }
-    let shifted_year = if month <= 2 { year.checked_sub(1)? } else { year };
+    let shifted_year = if month <= 2 {
+        year.checked_sub(1)?
+    } else {
+        year
+    };
     let era = shifted_year / 400;
     let year_of_era = shifted_year - era * 400;
     let month_period = if month > 2 {
@@ -57,11 +61,7 @@ fn days_from_civil(year: u64, month: u64, day: u64) -> Option<u64> {
     } else {
         month.checked_add(9)?
     };
-    let day_of_year = month_period
-        .checked_mul(153)?
-        .checked_add(2)?
-        / 5
-        + day.checked_sub(1)?;
+    let day_of_year = month_period.checked_mul(153)?.checked_add(2)? / 5 + day.checked_sub(1)?;
     let day_of_era = year_of_era
         .checked_mul(365)?
         .checked_add(year_of_era / 4)?

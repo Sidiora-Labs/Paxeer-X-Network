@@ -327,7 +327,7 @@ impl Abi<'_> {
             return Err(EventDecodeError::TopicCount(self.topics.len()));
         }
         let length = self.data.len();
-        if length % 32 != 0 || length < head * 32 || (!dynamic && length != head * 32) {
+        if !length.is_multiple_of(32) || length < head * 32 || (!dynamic && length != head * 32) {
             return Err(EventDecodeError::DataLength(length));
         }
         Ok(())

@@ -65,7 +65,7 @@ fn hex(value: &Json, path: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> 
     let digits = text
         .strip_prefix("0x")
         .ok_or_else(|| format!("custody_abi.json: {path} is not 0x-prefixed"))?;
-    if digits.len() % 2 != 0 {
+    if !digits.len().is_multiple_of(2) {
         return Err(format!("custody_abi.json: {path} has an odd hex length").into());
     }
     let mut bytes = Vec::with_capacity(digits.len() / 2);

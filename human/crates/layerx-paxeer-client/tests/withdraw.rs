@@ -321,7 +321,7 @@ fn tuple(head: &[[u8; 32]], text_index: usize, value: &str) -> Vec<u8> {
     }
     out.extend_from_slice(&number_word(&value.len().to_be_bytes()));
     let mut data = value.as_bytes().to_vec();
-    while data.len() % 32 != 0 {
+    while !data.len().is_multiple_of(32) {
         data.push(0);
     }
     out.extend_from_slice(&data);

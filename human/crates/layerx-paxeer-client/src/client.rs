@@ -850,7 +850,7 @@ fn variable_bytes(value: &Json) -> Result<Vec<u8>, String> {
     let digits = text
         .strip_prefix("0x")
         .ok_or_else(|| format!("missing 0x prefix in {text}"))?;
-    if digits.len() % 2 != 0 {
+    if !digits.len().is_multiple_of(2) {
         return Err(format!("odd hex length in {text}"));
     }
     let mut bytes = Vec::with_capacity(digits.len() / 2);

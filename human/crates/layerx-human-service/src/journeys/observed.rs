@@ -336,8 +336,11 @@ impl ObservedStateBuilder {
             .ok_or(ObservationError::BudgetInventoryUnavailable)?;
         let fees = self.fees.ok_or(ObservationError::FeeScheduleUnavailable)?;
 
-        let custody =
-            CustodyContext::new(network.wallet(), self.reserve.clone(), self.withdrawals.clone())?;
+        let custody = CustodyContext::new(
+            network.wallet(),
+            self.reserve.clone(),
+            self.withdrawals.clone(),
+        )?;
 
         let mut balances = ledger;
         let mut seen = BTreeSet::new();
@@ -382,13 +385,9 @@ fn endpoint_key(endpoint: &Endpoint) -> (u8, String) {
 mod tests {
     use super::*;
 
-    use layerx_network_gateway::{
-        AssetBalance, Evidence, PaxeerAssetBalance, ResolvedIdentities,
-    };
+    use layerx_network_gateway::{AssetBalance, Evidence, PaxeerAssetBalance, ResolvedIdentities};
 
-    use crate::journeys::{
-        plan, Constraints, LegMechanism, Mechanism, UnifiedIntent,
-    };
+    use crate::journeys::{plan, Constraints, LegMechanism, Mechanism, UnifiedIntent};
 
     const ASSET: AssetId = AssetId::new([9; 32]);
     const OTHER: AssetId = AssetId::new([8; 32]);
@@ -530,7 +529,10 @@ mod tests {
             .with_allowances(Vec::new())
             .with_budget_bindings(Vec::new())
             .with_fees(fees());
-        assert_eq!(without_network.build(), Err(ObservationError::WalletNotBound));
+        assert_eq!(
+            without_network.build(),
+            Err(ObservationError::WalletNotBound)
+        );
     }
 
     #[test]
@@ -543,7 +545,10 @@ mod tests {
             .with_fees(fees())
             .requiring(ASSET)
             .build();
-        assert_eq!(refusal, Err(ObservationError::AssetNotJoined { asset: ASSET }));
+        assert_eq!(
+            refusal,
+            Err(ObservationError::AssetNotJoined { asset: ASSET })
+        );
     }
 
     #[test]

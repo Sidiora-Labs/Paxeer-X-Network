@@ -256,7 +256,7 @@ impl EvidenceService {
             .as_text()
             .and_then(|text| text.strip_prefix("0x"))
             .ok_or(Error::Integrity)?;
-        if digits.len() % 2 != 0 || !digits.is_ascii() {
+        if !digits.len().is_multiple_of(2) || !digits.is_ascii() {
             return Err(Error::Integrity);
         }
         let mut bytes = Vec::with_capacity(digits.len() / 2);

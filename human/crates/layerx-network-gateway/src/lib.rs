@@ -74,9 +74,9 @@ impl std::error::Error for IdentifierError {}
 pub enum AccountIdentifier {
     /// A twenty-byte Paxeer EVM address.
     Evm([u8; 20]),
-    /// A LayerX decentralised identifier public key.
+    /// A `LayerX` decentralised identifier public key.
     Did([u8; 32]),
-    /// A LayerX account identifier.
+    /// A `LayerX` account identifier.
     Account([u8; 32]),
 }
 
@@ -150,7 +150,7 @@ fn nibble(byte: u8) -> Option<u8> {
 /// # Errors
 /// Refuses odd lengths and non-hexadecimal characters.
 pub fn decode_hex(text: &str) -> Result<Vec<u8>, IdentifierError> {
-    if text.len() % 2 != 0 {
+    if !text.len().is_multiple_of(2) {
         return Err(IdentifierError);
     }
     let mut bytes = Vec::with_capacity(text.len() / 2);
@@ -186,9 +186,9 @@ pub struct ResolvedIdentities {
     pub evm_address: Option<[u8; 20]>,
     /// The bech32 Paxeer address, when the network reports one.
     pub pax_address: Option<String>,
-    /// The bound LayerX decentralised identifier public key.
+    /// The bound `LayerX` decentralised identifier public key.
     pub layerx_did: Option<[u8; 32]>,
-    /// The bound LayerX account identifier.
+    /// The bound `LayerX` account identifier.
     pub layerx_account: Option<[u8; 32]>,
     /// Whether the two halves are bound to each other.
     pub bound: bool,
@@ -197,7 +197,7 @@ pub struct ResolvedIdentities {
 }
 
 impl ResolvedIdentities {
-    /// The one identifier this account is addressed by: the LayerX account when
+    /// The one identifier this account is addressed by: the `LayerX` account when
     /// the network knows one, otherwise the spelling that was asked for.
     #[must_use]
     pub fn canonical(&self, requested: AccountIdentifier) -> AccountIdentifier {
@@ -231,7 +231,7 @@ pub struct AccountJoin {
     pub account: ResolvedIdentities,
     /// The Paxeer half, absent when the account is not bound to an address.
     pub paxeer: Option<PaxeerAccount>,
-    /// The LayerX public core account document, absent when there is none.
+    /// The `LayerX` public core account document, absent when there is none.
     pub layerx: Option<Value>,
     /// How this fact reached the caller.
     pub evidence: Evidence,
@@ -249,7 +249,7 @@ pub struct PaxeerAssetBalance {
 /// The custody precompile's record for one asset.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CustodyAsset {
-    /// The LayerX asset identifier.
+    /// The `LayerX` asset identifier.
     pub asset_id: [u8; 32],
     /// The bank denomination custody mints against.
     pub denom: String,
@@ -273,7 +273,7 @@ pub struct CustodyAsset {
 /// custody asset map, exactly as `px_getBalances` reports it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AssetBalance {
-    /// The LayerX asset identifier.
+    /// The `LayerX` asset identifier.
     pub asset_id: [u8; 32],
     /// The joined denomination, when either domain reports one.
     pub denom: Option<String>,
@@ -281,7 +281,7 @@ pub struct AssetBalance {
     pub custody: Option<CustodyAsset>,
     /// The Paxeer bank balance, absent when no address or denom is known.
     pub paxeer: Option<PaxeerAssetBalance>,
-    /// The LayerX account document for this asset, absent when there is none.
+    /// The `LayerX` account document for this asset, absent when there is none.
     pub layerx: Option<Value>,
 }
 
@@ -289,7 +289,7 @@ impl AssetBalance {
     /// The LayerX-side spendable amount this row reports, when it reports one.
     ///
     /// # Errors
-    /// Refuses a LayerX document whose balance is not a gateway quantity.
+    /// Refuses a `LayerX` document whose balance is not a gateway quantity.
     pub fn layerx_amount(&self) -> Result<Option<u128>, GatewayError> {
         let Some(document) = self.layerx.as_ref() else {
             return Ok(None);
@@ -326,9 +326,9 @@ impl AccountBalances {
 /// One entry of the joined asset map from `px_listAssets`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AssetEntry {
-    /// The LayerX asset identifier.
+    /// The `LayerX` asset identifier.
     pub asset_id: [u8; 32],
-    /// The LayerX public core asset record.
+    /// The `LayerX` public core asset record.
     pub layerx: Option<Value>,
     /// The custody precompile's record, absent when the asset is not custodied.
     pub paxeer: Option<CustodyAsset>,
@@ -659,7 +659,10 @@ pub fn rpc_result(id: u64, answer: &[u8]) -> Result<Value, GatewayError> {
     if let Some(error) = document.get("error").filter(|value| !value.is_null()) {
         return Err(GatewayError::Refused {
             code: error["code"].as_i64().unwrap_or(0),
-            message: error["message"].as_str().unwrap_or("unspecified").to_owned(),
+            message: error["message"]
+                .as_str()
+                .unwrap_or("unspecified")
+                .to_owned(),
         });
     }
     document
@@ -1008,7 +1011,8 @@ mod tests {
         let answer = br#"{"jsonrpc":"2.0","id":7,"result":{"bound":true}}"#;
         assert_eq!(rpc_result(7, answer), Ok(json!({"bound": true})));
         assert_eq!(rpc_result(8, answer), Err(GatewayError::Unbound));
-        let refusal = br#"{"jsonrpc":"2.0","id":7,"error":{"code":-32001,"message":"unavailable"}}"#;
+        let refusal =
+            br#"{"jsonrpc":"2.0","id":7,"error":{"code":-32001,"message":"unavailable"}}"#;
         assert_eq!(
             rpc_result(7, refusal),
             Err(GatewayError::Refused {

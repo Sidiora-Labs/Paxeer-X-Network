@@ -75,7 +75,7 @@ fn view(endpoint: &EndpointConfig, target: EvmAddress, data: &[u8]) -> Result<Ve
         return Err("eth_call: expected a data string".into());
     };
     let digits = text.strip_prefix("0x").ok_or("eth_call: hex prefix")?;
-    if digits.len() % 2 != 0 {
+    if !digits.len().is_multiple_of(2) {
         return Err("eth_call: odd hex".into());
     }
     (0..digits.len())

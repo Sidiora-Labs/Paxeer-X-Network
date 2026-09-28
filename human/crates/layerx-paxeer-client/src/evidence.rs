@@ -62,7 +62,7 @@ pub(crate) fn split_dynamic(
             .get(index * 32..(index + 1) * 32)
             .ok_or_else(invalid)?,
     )?;
-    if offset < head_words * 32 || offset % 32 != 0 {
+    if offset < head_words * 32 || !offset.is_multiple_of(32) {
         return Err(invalid());
     }
     let length_end = offset.checked_add(32).ok_or_else(invalid)?;

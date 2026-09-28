@@ -2064,7 +2064,7 @@ fn decode_hex_20(value: &str) -> Result<[u8; 20], ()> {
 
 fn decode_hex(value: &str) -> Result<Vec<u8>, ()> {
     let value = value.strip_prefix("0x").ok_or(())?;
-    if value.is_empty() || value.len() % 2 != 0 || value.len() > 512 {
+    if value.is_empty() || !value.len().is_multiple_of(2) || value.len() > 512 {
         return Err(());
     }
     (0..value.len())

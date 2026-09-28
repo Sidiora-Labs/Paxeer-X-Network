@@ -1403,7 +1403,7 @@ fn quantity_bytes(value: &Json, what: &str) -> Result<[u8; 32], WithdrawalError>
         });
     }
     let mut normalized = String::new();
-    if digits.len() % 2 != 0 {
+    if !digits.len().is_multiple_of(2) {
         normalized.push('0');
     }
     normalized.push_str(digits);
@@ -1431,7 +1431,7 @@ fn variable_bytes(value: &Json, what: &str) -> Result<Vec<u8>, WithdrawalError> 
         .ok_or_else(|| WithdrawalError::Contract {
             detail: format!("{what}: missing 0x prefix"),
         })?;
-    if digits.len() % 2 != 0 {
+    if !digits.len().is_multiple_of(2) {
         return Err(WithdrawalError::Contract {
             detail: format!("{what}: odd hex length"),
         });
