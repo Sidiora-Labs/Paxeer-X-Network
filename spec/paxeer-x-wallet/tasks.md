@@ -156,7 +156,7 @@
     - Add rehearsal mode to human/wallet/ceremony: restore a database dump into a temporary database, start or connect to five nodes, run the migration for every row, and emit the report of req.4.ac_3 with counts only, exiting non-zero unless every wallet matched.
     - Add internal/rehearsal/rehearsal_test.go that creates a database with rows encrypted by the imported gateway's routine for both standard and agent wallets plus funded rows, spawns five real daemons, runs the rehearsal and asserts every count, the archive of the funded rows, and a mismatch stopping the run.
     - _Requirements: 4.3_
-  - [ ] 3.4 Back the human service's custody signer with the attestors
+  - [x] 3.4 Back the human service's custody signer with the attestors
     - In human/crates/layerx-human-kms add an attestor-backed implementation of the crate's custody signer trait that signs an activity's preimage through the attestor sign operation with kind lx_activity, the disclosure fields and the user's assertion, over mutual TLS with the operator client identity, refusing when the quorum refuses, and record the audit sequence.
     - Add tests that build and spawn the real attestor daemon from the repository, generate an Ed25519 key through it, sign an activity and verify the signature with the crate's own verifier, and cover a refused disclosure mismatch.
     - _Requirements: 8.2_

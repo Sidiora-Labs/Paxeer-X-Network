@@ -682,7 +682,7 @@ reqs = ["4.3"]
 
 [task.3.4]
 title = "Back the human service's custody signer with the attestors"
-status = "pending"
+status = "done"
 wave = 3
 requires = ["2.1","1.13"]
 do_1 = "In human/crates/layerx-human-kms add an attestor-backed implementation of the crate's custody signer trait that signs an activity's preimage through the attestor sign operation with kind lx_activity, the disclosure fields and the user's assertion, over mutual TLS with the operator client identity, refusing when the quorum refuses, and record the audit sequence."
@@ -691,6 +691,10 @@ verify_cmd = "timeout 20m sh -c 'cd human && cargo test -p layerx-human-kms atte
 symbols = ["AttestorSigner","sign_activity"]
 touches = ["human/crates/layerx-human-kms/src/attestor.rs","human/crates/layerx-human-kms/src/lib.rs","human/crates/layerx-human-kms/tests/attestor.rs"]
 reqs = ["8.2"]
+revision = "a1714f70d9df0a92799592153a0a4dc4c645a483"
+command = "timeout 20m sh -c 'cd human && cargo test -p layerx-human-kms attestor'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.3.5]
 title = "Deploy the attestor network from the definitions and prove a signature across regions"

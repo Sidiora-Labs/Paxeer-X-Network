@@ -1,4 +1,5 @@
 #![forbid(unsafe_code)]
+pub mod attestor;
 mod config;
 mod evm;
 mod evm_types;

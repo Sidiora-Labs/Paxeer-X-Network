@@ -1005,6 +1005,7 @@ dependencies = [
 name = "layerx-human-kms"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "getrandom 0.3.4",
  "k256",
  "layerx-client",
@@ -1012,6 +1013,7 @@ dependencies = [
  "layerx-human-service",
  "layerx-intents",
  "layerx-types",
+ "p256",
  "ring",
  "rustix",
  "rustls",
@@ -1019,6 +1021,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "sha3",
+ "ureq",
  "zeroize",
 ]
 
