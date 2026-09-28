@@ -1021,3 +1021,19 @@ symbol = "TestFiveNodeEndToEnd"
 observed = "The replayed-token case sent the same token with a new session id, which the request-scoped rule now accepts by design, so the case repeats the identical sign-evm-tx request and keeps its token_invalid and already-authorised assertions."
 assumption = "Reusing a token across distinct requests is the behaviour observation 4.15.1 requires, so the case still proves replay refusal."
 severity = "note"
+
+[observation.4.19.1]
+task = "4.19"
+file = "human/wallet/attestor/cmd/attestor/main.go"
+symbol = "policies"
+observed = "The daemon now builds policy.NewSpendLedger over the node store, passes it as the server ledger and builds the kernel evaluator without a ledger, so no in-memory ledger remains; this closes observation 4.11.7 and the ledger half of 4.12.1, while the daemon still sets neither PeerTimeout nor RoundTimeout."
+assumption = "Exposing the peer and round timeouts in configuration stays with the daemon configuration work named in 4.12.1."
+severity = "note"
+
+[observation.4.19.2]
+task = "4.19"
+file = "human/wallet/attestor/internal/server/e2e_test.go"
+symbol = "startNode"
+observed = "Outside the task touches, the test cluster's lx.New call dropped its ledger argument so the package compiles against the new constructor; the cluster still passes a memory ledger as Options.Ledger, which the server replaces with the store-backed spend ledger on that ledger's clock."
+assumption = "The one-argument change is the minimum the new constructor requires and changes no test behaviour."
+severity = "note"

@@ -100,6 +100,37 @@ func certPin(path string) (string, error) {
 	return hex.EncodeToString(pin[:]), nil
 }
 
+func policies(cfg *config.Config, st *store.Store) (*policy.Policy, *policy.SpendLedger, *lx.Evaluator, error) {
+	var doc *policy.Document
+	if cfg.PolicyFile != "" {
+		var err error
+		if doc, err = policy.LoadFile(cfg.PolicyFile); err != nil {
+			return nil, nil, nil, err
+		}
+	}
+	engine := policy.New(doc)
+	ledger, err := policy.NewSpendLedger(st, time.Now)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if cfg.KernelPolicy == "" {
+		return engine, ledger, nil, nil
+	}
+	kdoc, err := lx.LoadFile(cfg.KernelPolicy)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("attestor: %s: %w", config.EnvKernelPolicy, err)
+	}
+	chain, err := lx.NewChain(cfg.RPCURL, &http.Client{Timeout: lx.DefaultRPCWait})
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("attestor: %s: %w", config.EnvRPCURL, err)
+	}
+	kernel, err := lx.New(engine, kdoc, chain)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return engine, ledger, kernel, nil
+}
+
 func run(ctx context.Context, getenv func(string) string, ready func(listening)) error {
 	cfg, err := config.Load(getenv)
 	if err != nil {
@@ -136,11 +167,9 @@ func run(ctx context.Context, getenv func(string) string, ready func(listening))
 	}
 	defer auditLog.Close()
 
-	var doc *policy.Document
-	if cfg.PolicyFile != "" {
-		if doc, err = policy.LoadFile(cfg.PolicyFile); err != nil {
-			return err
-		}
+	engine, ledger, kernel, err := policies(cfg, st)
+	if err != nil {
+		return err
 	}
 	var tokens *jwt.TokenVerifier
 	if cfg.JWKSURL != "" {
@@ -163,22 +192,6 @@ func run(ctx context.Context, getenv func(string) string, ready func(listening))
 			return fmt.Errorf("attestor: %s: %w", config.EnvAgentsFile, err)
 		}
 		if agents, err = agent.NewAgentVerifier(agent.Config{Principals: principals, Nonces: st, MaxExpiry: cfg.AgentMaxExpiry}); err != nil {
-			return err
-		}
-	}
-	engine := policy.New(doc)
-	ledger := policy.NewMemoryLedger(time.Now)
-	var kernel *lx.Evaluator
-	if cfg.KernelPolicy != "" {
-		kdoc, err := lx.LoadFile(cfg.KernelPolicy)
-		if err != nil {
-			return fmt.Errorf("attestor: %s: %w", config.EnvKernelPolicy, err)
-		}
-		chain, err := lx.NewChain(cfg.RPCURL, &http.Client{Timeout: lx.DefaultRPCWait})
-		if err != nil {
-			return fmt.Errorf("attestor: %s: %w", config.EnvRPCURL, err)
-		}
-		if kernel, err = lx.New(engine, kdoc, ledger, chain); err != nil {
 			return err
 		}
 	}

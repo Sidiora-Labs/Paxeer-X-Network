@@ -390,7 +390,7 @@ func (c *testCluster) startNode(t *testing.T, i int, peerListener, apiListener n
 	if err != nil {
 		t.Fatal(err)
 	}
-	kernel, err := lx.New(engine, c.kernel, ledger, chain)
+	kernel, err := lx.New(engine, c.kernel, chain)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,11 +1,14 @@
 package lx
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math/big"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -16,6 +19,7 @@ import (
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/audit"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/lxwire"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy"
+	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/store"
 )
 
 const (
@@ -166,10 +170,40 @@ const kernelDocument = `{
 
 type harness struct {
 	evaluator *Evaluator
-	ledger    *policy.MemoryLedger
+	ledger    *policy.SpendLedger
+	store     *store.Store
+	dir       string
 	server    *nonceServer
 	now       time.Time
 	vectors   *vectors
+	requests  int
+}
+
+func (h *harness) openLedger(t *testing.T) {
+	t.Helper()
+	st, err := store.Open(h.dir, bytes.Repeat([]byte{9}, store.KeySize))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	ledger, err := policy.NewSpendLedger(st, func() time.Time { return h.now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.store, h.ledger = st, ledger
+}
+
+func (h *harness) restart(t *testing.T) {
+	t.Helper()
+	if err := h.store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	h.openLedger(t)
+}
+
+func (h *harness) request() policy.Ledger {
+	h.requests++
+	return h.ledger.ForRequest(fmt.Sprintf("key-1/session-%d", h.requests))
 }
 
 func newHarness(t *testing.T) *harness {
@@ -182,18 +216,21 @@ func newHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := &harness{server: newNonceServer(t, 3), now: time.Unix(1_800_000_100, 0).UTC(), vectors: loadVectors(t)}
-	h.ledger = policy.NewMemoryLedger(func() time.Time { return h.now })
+	h := &harness{server: newNonceServer(t, 3), now: time.Unix(1_800_000_100, 0).UTC(), vectors: loadVectors(t), dir: t.TempDir()}
+	h.openLedger(t)
 	chain, err := NewChain(h.server.URL, h.server.Client())
 	if err != nil {
 		t.Fatal(err)
 	}
 	engine := policy.New(engineDoc)
-	if h.evaluator, err = New(engine, kernelDoc, h.ledger, chain); err != nil {
+	if h.evaluator, err = New(engine, kernelDoc, chain); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := New(engine, kernelDoc, h.ledger, chain); err == nil {
+	if _, err := New(engine, kernelDoc, chain); err == nil {
 		t.Fatal("kernel kinds registered twice on one engine")
+	}
+	if _, err := New(policy.New(engineDoc), kernelDoc, nil); err == nil {
+		t.Fatal("a kernel evaluator was built without a chain reader")
 	}
 	return h
 }
@@ -239,7 +276,7 @@ func expect(t *testing.T, got policy.Decision, code string) {
 
 func (h *harness) spent(t *testing.T, account, key string) *big.Int {
 	t.Helper()
-	total, err := h.ledger.Spent(strings.ToLower(account), key, h.now.Add(-policy.SpendWindow))
+	total, err := h.ledger.Spent(policy.AccountKey(account), key, h.now.Add(-policy.SpendWindow))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -253,7 +290,7 @@ func TestActivityMatchingDisclosureAccepted(t *testing.T) {
 
 	send := h.activity(t, "native-send")
 	send.Disclosure = nativeSendDisclosure(t)
-	expect(t, h.evaluator.EvaluateActivity(wallet, send), policy.CodeAllowed)
+	expect(t, h.evaluator.EvaluateActivity(wallet, send, h.request()), policy.CodeAllowed)
 	if got := h.spent(t, walletAddr, native); got.Cmp(big.NewInt(5_000_000)) != 0 {
 		t.Fatalf("native spent %s", got)
 	}
@@ -280,7 +317,7 @@ func TestActivityMatchingDisclosureAccepted(t *testing.T) {
 		Amounts:      []Amount{{Asset: id(t, tokenAsset), Amount: big.NewInt(75_000)}},
 		Destinations: []ID{to}, Sequence: 2, NotBefore: 1_800_000_000, NotAfter: 1_800_000_600,
 	}
-	expect(t, h.evaluator.EvaluateActivity(wallet, tokenSend), policy.CodeAllowed)
+	expect(t, h.evaluator.EvaluateActivity(wallet, tokenSend, h.request()), policy.CodeAllowed)
 
 	approval := h.activity(t, "approval")
 	approval.Disclosure = Disclosure{
@@ -288,7 +325,7 @@ func TestActivityMatchingDisclosureAccepted(t *testing.T) {
 		Amounts:      []Amount{{Asset: id(t, grantAsset), Amount: big.NewInt(50_000)}},
 		Destinations: []ID{id(t, peerMain)}, Sequence: 3, NotBefore: 1_800_000_000, NotAfter: 1_800_003_600,
 	}
-	expect(t, h.evaluator.EvaluateActivity(wallet, approval), policy.CodeAllowed)
+	expect(t, h.evaluator.EvaluateActivity(wallet, approval, h.request()), policy.CodeAllowed)
 
 	action := h.activity(t, "agent-action")
 	action.Disclosure = Disclosure{
@@ -296,7 +333,7 @@ func TestActivityMatchingDisclosureAccepted(t *testing.T) {
 		Amounts:      []Amount{{Asset: ID{}, Amount: big.NewInt(1_000)}, {Asset: id(t, tokenAsset), Amount: big.NewInt(2_000)}},
 		Destinations: []ID{id(t, peerMain), id(t, ownerMain)}, Sequence: 5, NotBefore: 0, NotAfter: ^uint64(0),
 	}
-	expect(t, h.evaluator.EvaluateActivity(wallet, action), policy.CodeAllowed)
+	expect(t, h.evaluator.EvaluateActivity(wallet, action, h.request()), policy.CodeAllowed)
 	if got := h.spent(t, walletAddr, native); got.Cmp(big.NewInt(5_001_000)) != 0 {
 		t.Fatalf("native spent after the program call %s", got)
 	}
@@ -304,9 +341,9 @@ func TestActivityMatchingDisclosureAccepted(t *testing.T) {
 		t.Fatalf("incoming program leg counted as a spend: %s", got)
 	}
 
-	expect(t, h.evaluator.EvaluateActivity(wallet, send), policy.CodeDailyCap)
+	expect(t, h.evaluator.EvaluateActivity(wallet, send, h.request()), policy.CodeDailyCap)
 	h.now = time.Unix(1_800_000_601, 0).UTC()
-	expect(t, h.evaluator.EvaluateActivity(common.HexToAddress(generousAddr), send), CodeOutsideValidity)
+	expect(t, h.evaluator.EvaluateActivity(common.HexToAddress(generousAddr), send, h.request()), CodeOutsideValidity)
 }
 
 func TestActivityMismatchedAmountRefused(t *testing.T) {
@@ -316,7 +353,7 @@ func TestActivityMismatchedAmountRefused(t *testing.T) {
 
 	send.Disclosure = nativeSendDisclosure(t)
 	send.Disclosure.Amounts[0].Amount = big.NewInt(5_000_001)
-	refused := h.evaluator.EvaluateActivity(wallet, send)
+	refused := h.evaluator.EvaluateActivity(wallet, send, h.request())
 	expect(t, refused, CodeDisclosureMismatch)
 	if !strings.Contains(refused.Reason, "amounts") {
 		t.Fatalf("refusal does not name the amount: %s", refused.Reason)
@@ -336,17 +373,17 @@ func TestActivityMismatchedAmountRefused(t *testing.T) {
 	} {
 		send.Disclosure = nativeSendDisclosure(t)
 		change(&send.Disclosure)
-		if got := h.evaluator.EvaluateActivity(wallet, send); got.Code != CodeDisclosureMismatch || got.Allowed {
+		if got := h.evaluator.EvaluateActivity(wallet, send, h.request()); got.Code != CodeDisclosureMismatch || got.Allowed {
 			t.Fatalf("%s mismatch: %+v", field, got)
 		}
 	}
 
 	send.Disclosure = nativeSendDisclosure(t)
 	send.Digest[0] ^= 1
-	expect(t, h.evaluator.EvaluateActivity(wallet, send), policy.CodeDigestMismatch)
+	expect(t, h.evaluator.EvaluateActivity(wallet, send, h.request()), policy.CodeDigestMismatch)
 	send.Digest[0] ^= 1
 	send.PublicKey = hex32(t, peerKeyHex)
-	expect(t, h.evaluator.EvaluateActivity(wallet, send), CodeAuthorityMismatch)
+	expect(t, h.evaluator.EvaluateActivity(wallet, send, h.request()), CodeAuthorityMismatch)
 
 	over := h.activity(t, "native-send")
 	over.Disclosure = nativeSendDisclosure(t)
@@ -355,8 +392,8 @@ func TestActivityMismatchedAmountRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.evaluator.doc = doc
-	expect(t, h.evaluator.EvaluateActivity(wallet, over), policy.CodeValueCap)
-	expect(t, h.evaluator.EvaluateActivity(common.HexToAddress(narrowAddr), over), policy.CodeDestinationBlocked)
+	expect(t, h.evaluator.EvaluateActivity(wallet, over, h.request()), policy.CodeValueCap)
+	expect(t, h.evaluator.EvaluateActivity(common.HexToAddress(narrowAddr), over, h.request()), policy.CodeDestinationBlocked)
 }
 
 func TestActivityDisallowedModuleRefused(t *testing.T) {
@@ -365,7 +402,7 @@ func TestActivityDisallowedModuleRefused(t *testing.T) {
 
 	budget := h.activity(t, "budget-change")
 	budget.Disclosure = Disclosure{Module: "budget", Operation: 2, Sequence: 4, NotBefore: 1_800_000_000, NotAfter: 1_800_000_600}
-	expect(t, h.evaluator.EvaluateActivity(wallet, budget), CodeModuleNotAllowed)
+	expect(t, h.evaluator.EvaluateActivity(wallet, budget, h.request()), CodeModuleNotAllowed)
 
 	approval := h.activity(t, "approval")
 	approval.Disclosure = Disclosure{
@@ -373,49 +410,49 @@ func TestActivityDisallowedModuleRefused(t *testing.T) {
 		Amounts:      []Amount{{Asset: id(t, grantAsset), Amount: big.NewInt(50_000)}},
 		Destinations: []ID{id(t, peerMain)}, Sequence: 3, NotBefore: 1_800_000_000, NotAfter: 1_800_003_600,
 	}
-	expect(t, h.evaluator.EvaluateActivity(common.HexToAddress(narrowAddr), approval), CodeOperationNotAllowed)
-	expect(t, h.evaluator.EvaluateActivity(wallet, approval), policy.CodeAllowed)
+	expect(t, h.evaluator.EvaluateActivity(common.HexToAddress(narrowAddr), approval, h.request()), CodeOperationNotAllowed)
+	expect(t, h.evaluator.EvaluateActivity(wallet, approval, h.request()), policy.CodeAllowed)
 
 	unknownModule := h.activity(t, "native-send")
 	unknownModule.Envelope[activityTypeOffset] = 0
 	unknownModule.Envelope[activityTypeOffset+1] = 12
-	expect(t, h.evaluator.EvaluateActivity(wallet, unknownModule), CodeUnknownModule)
+	expect(t, h.evaluator.EvaluateActivity(wallet, unknownModule, h.request()), CodeUnknownModule)
 	unknownOperation := h.activity(t, "native-send")
 	unknownOperation.Envelope[activityTypeOffset+3] = 6
-	expect(t, h.evaluator.EvaluateActivity(wallet, unknownOperation), CodeUnknownOperation)
+	expect(t, h.evaluator.EvaluateActivity(wallet, unknownOperation, h.request()), CodeUnknownOperation)
 	truncated := h.activity(t, "native-send")
 	truncated.Envelope = truncated.Envelope[:len(truncated.Envelope)-1]
-	expect(t, h.evaluator.EvaluateActivity(wallet, truncated), policy.CodeDecodeError)
-	expect(t, h.evaluator.EvaluateActivity(wallet, &ActivityRequest{}), policy.CodeMissingField)
-	expect(t, h.evaluator.EvaluateActivity(wallet, nil), policy.CodeMissingField)
+	expect(t, h.evaluator.EvaluateActivity(wallet, truncated, h.request()), policy.CodeDecodeError)
+	expect(t, h.evaluator.EvaluateActivity(wallet, &ActivityRequest{}, h.request()), policy.CodeMissingField)
+	expect(t, h.evaluator.EvaluateActivity(wallet, nil, h.request()), policy.CodeMissingField)
 }
 
 func TestBindForAnotherAddressRefused(t *testing.T) {
 	h := newHarness(t)
 	wallet := common.HexToAddress(walletAddr)
 	other := common.HexToAddress(generousAddr)
-	refused := h.evaluator.EvaluateBind(wallet, &BindRequest{Message: lxwire.BindMessage(125, other, 3)})
+	refused := h.evaluator.EvaluateBind(wallet, &BindRequest{Message: lxwire.BindMessage(125, other, 3)}, h.request())
 	expect(t, refused, CodeBindAddress)
 	if calls, _, _ := h.server.seen(); calls != 0 {
 		t.Fatalf("a binding for another address reached the chain %d times", calls)
 	}
-	expect(t, h.evaluator.EvaluateBind(wallet, &BindRequest{Message: lxwire.BindMessage(1, wallet, 3)}), policy.CodeChainMismatch)
-	expect(t, h.evaluator.EvaluateBind(wallet, &BindRequest{Message: lxwire.BindMessage(125, wallet, 3)[:76]}), policy.CodeDecodeError)
-	expect(t, h.evaluator.EvaluateBind(wallet, nil), policy.CodeMissingField)
+	expect(t, h.evaluator.EvaluateBind(wallet, &BindRequest{Message: lxwire.BindMessage(1, wallet, 3)}, h.request()), policy.CodeChainMismatch)
+	expect(t, h.evaluator.EvaluateBind(wallet, &BindRequest{Message: lxwire.BindMessage(125, wallet, 3)[:76]}, h.request()), policy.CodeDecodeError)
+	expect(t, h.evaluator.EvaluateBind(wallet, nil, h.request()), policy.CodeMissingField)
 }
 
 func TestBindStaleNonceRefused(t *testing.T) {
 	h := newHarness(t)
 	wallet := common.HexToAddress(walletAddr)
 	h.server.setNonce(4)
-	expect(t, h.evaluator.EvaluateBind(wallet, &BindRequest{Message: lxwire.BindMessage(125, wallet, 3)}), CodeStaleBindNonce)
-	expect(t, h.evaluator.EvaluateBind(wallet, &BindRequest{Message: lxwire.BindMessage(125, wallet, 4)}), policy.CodeAllowed)
+	expect(t, h.evaluator.EvaluateBind(wallet, &BindRequest{Message: lxwire.BindMessage(125, wallet, 3)}, h.request()), CodeStaleBindNonce)
+	expect(t, h.evaluator.EvaluateBind(wallet, &BindRequest{Message: lxwire.BindMessage(125, wallet, 4)}, h.request()), policy.CodeAllowed)
 	calls, asked, failed := h.server.seen()
 	if calls != 2 || failed != "" || asked[0] != wallet || asked[1] != wallet {
 		t.Fatalf("chain saw %d calls for %v (%q)", calls, asked, failed)
 	}
 	h.server.Close()
-	expect(t, h.evaluator.EvaluateBind(wallet, &BindRequest{Message: lxwire.BindMessage(125, wallet, 4)}), CodeChainUnavailable)
+	expect(t, h.evaluator.EvaluateBind(wallet, &BindRequest{Message: lxwire.BindMessage(125, wallet, 4)}, h.request()), CodeChainUnavailable)
 }
 
 func TestGrantOverCapRefused(t *testing.T) {
@@ -432,23 +469,23 @@ func TestGrantOverCapRefused(t *testing.T) {
 	}
 	grant := oneShot.grant(t)
 	request := &GrantRequest{PublicKey: hex32(t, ownerKeyHex), Grant: &grant, Digest: hex32(t, oneShot.Preimage)}
-	refused := h.evaluator.EvaluateGrant(wallet, request)
+	refused := h.evaluator.EvaluateGrant(wallet, request, h.request())
 	expect(t, refused, CodeGrantCap)
 	generous := common.HexToAddress(generousAddr)
-	expect(t, h.evaluator.EvaluateGrant(generous, request), policy.CodeAllowed)
+	expect(t, h.evaluator.EvaluateGrant(generous, request, h.request()), policy.CodeAllowed)
 	if got := h.spent(t, generousAddr, "lx-grant:"+grantAsset); got.Cmp(big.NewInt(50_000)) != 0 {
 		t.Fatalf("granted allowance recorded as %s", got)
 	}
-	expect(t, h.evaluator.EvaluateGrant(generous, request), policy.CodeDailyCap)
+	expect(t, h.evaluator.EvaluateGrant(generous, request, h.request()), policy.CodeDailyCap)
 
 	tampered := *request
 	tampered.Digest[31] ^= 1
-	expect(t, h.evaluator.EvaluateGrant(generous, &tampered), policy.CodeDigestMismatch)
+	expect(t, h.evaluator.EvaluateGrant(generous, &tampered, h.request()), policy.CodeDigestMismatch)
 	foreign := *request
 	foreign.PublicKey = hex32(t, peerKeyHex)
-	expect(t, h.evaluator.EvaluateGrant(generous, &foreign), CodeAuthorityMismatch)
+	expect(t, h.evaluator.EvaluateGrant(generous, &foreign, h.request()), CodeAuthorityMismatch)
 	h.now = time.Unix(1_900_000_000, 0).UTC()
-	expect(t, h.evaluator.EvaluateGrant(generous, request), CodeOutsideValidity)
+	expect(t, h.evaluator.EvaluateGrant(generous, request, h.request()), CodeOutsideValidity)
 	h.now = time.Unix(1_800_000_100, 0).UTC()
 
 	v := h.vectors.Receives[0]
@@ -465,18 +502,18 @@ func TestGrantOverCapRefused(t *testing.T) {
 		Controller: receiveGrant.Recipient, SignedContextHash: context, NetworkID: v.NetworkID, ProtocolVersion: v.ProtocolVersion,
 	}
 	receiveRequest := &GrantRequest{PublicKey: hex32(t, peerKeyHex), Receive: &receive, Digest: hex32(t, v.Preimage)}
-	expect(t, h.evaluator.EvaluateGrant(wallet, receiveRequest), policy.CodeAllowed)
+	expect(t, h.evaluator.EvaluateGrant(wallet, receiveRequest, h.request()), policy.CodeAllowed)
 	ownerReceive := *receiveRequest
 	ownerReceive.PublicKey = hex32(t, ownerKeyHex)
-	expect(t, h.evaluator.EvaluateGrant(wallet, &ownerReceive), CodeAccountNotOwned)
+	expect(t, h.evaluator.EvaluateGrant(wallet, &ownerReceive, h.request()), CodeAccountNotOwned)
 	large := receive
 	large.Amount = lxwire.Uint128{Lo: 10_001}
 	largeDigest, err := lxwire.ReceivePreimage(large)
 	if err != nil {
 		t.Fatal(err)
 	}
-	expect(t, h.evaluator.EvaluateGrant(wallet, &GrantRequest{PublicKey: hex32(t, peerKeyHex), Receive: &large, Digest: largeDigest}), CodeGrantCap)
-	expect(t, h.evaluator.EvaluateGrant(wallet, &GrantRequest{PublicKey: hex32(t, ownerKeyHex)}), policy.CodeMissingField)
+	expect(t, h.evaluator.EvaluateGrant(wallet, &GrantRequest{PublicKey: hex32(t, peerKeyHex), Receive: &large, Digest: largeDigest}, h.request()), CodeGrantCap)
+	expect(t, h.evaluator.EvaluateGrant(wallet, &GrantRequest{PublicKey: hex32(t, ownerKeyHex)}, h.request()), policy.CodeMissingField)
 }
 
 func TestRecordDecision(t *testing.T) {
@@ -490,7 +527,7 @@ func TestRecordDecision(t *testing.T) {
 	send := h.activity(t, "native-send")
 	send.Disclosure = nativeSendDisclosure(t)
 	send.Disclosure.Amounts[0].Amount = big.NewInt(1)
-	refused := h.evaluator.EvaluateActivity(wallet, send)
+	refused := h.evaluator.EvaluateActivity(wallet, send, h.request())
 	record, err := Record(log, policy.KindLXActivity, "key-1", "session-1", send.Envelope, refused)
 	if err != nil {
 		t.Fatal(err)
@@ -499,7 +536,7 @@ func TestRecordDecision(t *testing.T) {
 		t.Fatalf("refusal recorded as %+v", record)
 	}
 	send.Disclosure = nativeSendDisclosure(t)
-	allowed := h.evaluator.EvaluateActivity(wallet, send)
+	allowed := h.evaluator.EvaluateActivity(wallet, send, h.request())
 	record, err = Record(log, policy.KindLXActivity, "key-1", "session-2", send.Envelope, allowed)
 	if err != nil {
 		t.Fatal(err)
@@ -555,4 +592,116 @@ func TestParseKernelPolicy(t *testing.T) {
 	if err != nil || string(text) != ownerMain {
 		t.Fatalf("id text %q (%v)", text, err)
 	}
+}
+
+func (h *harness) requestsSeen(t *testing.T, account string) int {
+	t.Helper()
+	count, err := h.ledger.Requests(policy.AccountKey(account), h.now.Add(-policy.RateWindow))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return count
+}
+
+func expectSpends(t *testing.T, got policy.Decision, want map[string]int64) {
+	t.Helper()
+	if !got.Allowed || got.Spends == nil || len(got.Spends) != len(want) {
+		t.Fatalf("decision %+v, want spends %v", got, want)
+	}
+	for _, spend := range got.Spends {
+		amount, ok := want[spend.Asset]
+		if !ok || spend.Amount == nil || spend.Amount.Cmp(big.NewInt(amount)) != 0 {
+			t.Fatalf("spend %s of %v, want %v", spend.Asset, spend.Amount, want)
+		}
+	}
+}
+
+func TestKernelSpendsReachTheStoreLedgerOnce(t *testing.T) {
+	h := newHarness(t)
+	wallet := common.HexToAddress(walletAddr)
+	native := "lx:" + strings.Repeat("00", 32)
+
+	send := h.activity(t, "native-send")
+	send.Disclosure = nativeSendDisclosure(t)
+	view := h.ledger.ForRequest("key-1/announced")
+	first := h.evaluator.EvaluateActivity(wallet, send, view)
+	expect(t, first, policy.CodeAllowed)
+	expectSpends(t, first, map[string]int64{native: 5_000_000})
+	again := h.evaluator.EvaluateActivity(wallet, send, view)
+	expect(t, again, policy.CodeAllowed)
+	expectSpends(t, again, map[string]int64{native: 5_000_000})
+	if got := h.spent(t, walletAddr, native); got.Cmp(big.NewInt(5_000_000)) != 0 {
+		t.Fatalf("one request evaluated twice counted %s", got)
+	}
+	if got := h.requestsSeen(t, walletAddr); got != 1 {
+		t.Fatalf("one request evaluated twice counted %d requests", got)
+	}
+	if err := h.ledger.Apply(policy.AccountKey(walletAddr), "key-1/announced", first.Spends, h.now); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.spent(t, walletAddr, native); got.Cmp(big.NewInt(5_000_000)) != 0 {
+		t.Fatalf("an announcement of the evaluated request counted %s", got)
+	}
+
+	bind := h.evaluator.EvaluateBind(wallet, &BindRequest{Message: lxwire.BindMessage(125, wallet, 3)}, h.request())
+	expect(t, bind, policy.CodeAllowed)
+	if bind.Spends == nil || len(bind.Spends) != 0 {
+		t.Fatalf("binding decision spends %+v", bind.Spends)
+	}
+	if got := h.requestsSeen(t, walletAddr); got != 2 {
+		t.Fatalf("a binding left %d requests in the ledger", got)
+	}
+
+	h.restart(t)
+	if got := h.spent(t, walletAddr, native); got.Cmp(big.NewInt(5_000_000)) != 0 {
+		t.Fatalf("native spent after a restart %s", got)
+	}
+	expect(t, h.evaluator.EvaluateActivity(wallet, send, h.request()), policy.CodeDailyCap)
+
+	raw, err := os.ReadFile(filepath.Join(h.dir, store.FileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(raw, []byte(native)) || bytes.Contains(raw, []byte("5000000")) {
+		t.Fatal("the kernel spend is stored in plaintext")
+	}
+}
+
+func TestKernelGrantSpendsHoldAcrossRestart(t *testing.T) {
+	h := newHarness(t)
+	var oneShot grantVector
+	for _, g := range h.vectors.Grants {
+		if g.Name == "grant-one-shot" {
+			oneShot = g
+		}
+	}
+	if oneShot.Name == "" {
+		t.Fatal("grant-one-shot vector is missing")
+	}
+	grant := oneShot.grant(t)
+	request := &GrantRequest{PublicKey: hex32(t, ownerKeyHex), Grant: &grant, Digest: hex32(t, oneShot.Preimage)}
+	generous := common.HexToAddress(generousAddr)
+	allowed := h.evaluator.EvaluateGrant(generous, request, h.request())
+	expect(t, allowed, policy.CodeAllowed)
+	expectSpends(t, allowed, map[string]int64{"lx-grant:" + grantAsset: 50_000})
+	h.restart(t)
+	expect(t, h.evaluator.EvaluateGrant(generous, request, h.request()), policy.CodeDailyCap)
+	if got := h.requestsSeen(t, generousAddr); got != 1 {
+		t.Fatalf("grant requests counted %d, want the allowed one", got)
+	}
+}
+
+func TestKernelEvaluationRefusesWithoutALedger(t *testing.T) {
+	h := newHarness(t)
+	wallet := common.HexToAddress(walletAddr)
+	send := h.activity(t, "native-send")
+	send.Disclosure = nativeSendDisclosure(t)
+	expect(t, h.evaluator.EvaluateActivity(wallet, send, nil), policy.CodeLedgerError)
+	expect(t, h.evaluator.EvaluateBind(wallet, &BindRequest{Message: lxwire.BindMessage(125, wallet, 3)}, nil), policy.CodeLedgerError)
+	expect(t, h.evaluator.EvaluateGrant(wallet, &GrantRequest{PublicKey: hex32(t, ownerKeyHex)}, nil), policy.CodeLedgerError)
+	if got := h.spent(t, walletAddr, "lx:"+strings.Repeat("00", 32)); got.Sign() != 0 {
+		t.Fatalf("an evaluation without a ledger recorded %s", got)
+	}
+	var missing *Evaluator
+	expect(t, missing.EvaluateActivity(wallet, send, h.request()), policy.CodeNoPolicy)
 }

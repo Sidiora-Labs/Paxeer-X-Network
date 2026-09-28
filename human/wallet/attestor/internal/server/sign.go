@@ -460,11 +460,11 @@ func (s *Server) doSign(r *http.Request, body []byte) (SignResponse, *Error) {
 func (s *Server) evaluate(account, policyKind string, view any, ledger policy.Ledger) policy.Decision {
 	switch v := view.(type) {
 	case *lx.ActivityRequest:
-		return s.opts.Kernel.EvaluateActivity(common.HexToAddress(account), v)
+		return s.opts.Kernel.EvaluateActivity(common.HexToAddress(account), v, ledger)
 	case *lx.BindRequest:
-		return s.opts.Kernel.EvaluateBind(common.HexToAddress(account), v)
+		return s.opts.Kernel.EvaluateBind(common.HexToAddress(account), v, ledger)
 	case *lx.GrantRequest:
-		return s.opts.Kernel.EvaluateGrant(common.HexToAddress(account), v)
+		return s.opts.Kernel.EvaluateGrant(common.HexToAddress(account), v, ledger)
 	}
 	switch policyKind {
 	case policy.KindLXActivity, policy.KindLXBind, policy.KindLXGrant:

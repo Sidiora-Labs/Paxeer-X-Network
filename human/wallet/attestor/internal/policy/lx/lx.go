@@ -338,6 +338,7 @@ type spend struct {
 
 type activityCall struct {
 	req    *ActivityRequest
+	ledger policy.Ledger
 	spends []spend
 }
 
@@ -347,23 +348,23 @@ type bindCall struct {
 
 type grantCall struct {
 	req    *GrantRequest
+	ledger policy.Ledger
 	spends []spend
 }
 
 type Evaluator struct {
 	engine *policy.Policy
 	doc    *Document
-	ledger policy.Ledger
 	chain  *Chain
 
 	mu sync.Mutex
 }
 
-func New(engine *policy.Policy, doc *Document, ledger policy.Ledger, chain *Chain) (*Evaluator, error) {
-	if engine == nil || doc == nil || ledger == nil || chain == nil {
-		return nil, errors.New("kernel evaluator needs an engine, a kernel policy, a ledger and a chain reader")
+func New(engine *policy.Policy, doc *Document, chain *Chain) (*Evaluator, error) {
+	if engine == nil || doc == nil || chain == nil {
+		return nil, errors.New("kernel evaluator needs an engine, a kernel policy and a chain reader")
 	}
-	e := &Evaluator{engine: engine, doc: doc, ledger: ledger, chain: chain}
+	e := &Evaluator{engine: engine, doc: doc, chain: chain}
 	if err := engine.RegisterKernel(e.inspectActivity, e.inspectBind, e.inspectGrant); err != nil {
 		return nil, err
 	}
@@ -378,65 +379,79 @@ func denied(code, format string, args ...any) policy.Decision {
 	return policy.Decision{Allowed: false, Code: code, Reason: fmt.Sprintf(format, args...)}
 }
 
-func (e *Evaluator) record(account common.Address, spends []spend) policy.Decision {
-	now, err := e.ledger.Now()
+func record(ledger policy.Ledger, account common.Address, spends []spend) ([]policy.Spend, policy.Decision) {
+	now, err := ledger.Now()
 	if err != nil {
-		return denied(policy.CodeLedgerError, "%v", err)
+		return nil, denied(policy.CodeLedgerError, "%v", err)
 	}
-	key := accountKey(account)
+	key := policy.AccountKey(account.Hex())
+	recorded := make([]policy.Spend, 0, len(spends))
 	for _, s := range spends {
-		if err := e.ledger.RecordSpend(key, s.asset, s.amount, now); err != nil {
-			return denied(policy.CodeLedgerError, "%v", err)
+		if err := ledger.RecordSpend(key, s.asset, s.amount, now); err != nil {
+			return nil, denied(policy.CodeLedgerError, "%v", err)
 		}
+		recorded = append(recorded, policy.Spend{Asset: s.asset, Amount: new(big.Int).Set(s.amount)})
 	}
-	return policy.Decision{}
+	return recorded, policy.Decision{}
 }
 
-func (e *Evaluator) EvaluateActivity(account common.Address, req *ActivityRequest) policy.Decision {
+func (e *Evaluator) begin(ledger policy.Ledger) (policy.Decision, bool) {
 	if e == nil {
-		return denied(policy.CodeNoPolicy, "no kernel evaluator")
+		return denied(policy.CodeNoPolicy, "no kernel evaluator"), false
+	}
+	if ledger == nil {
+		return denied(policy.CodeLedgerError, "no ledger"), false
+	}
+	return policy.Decision{}, true
+}
+
+func (e *Evaluator) EvaluateActivity(account common.Address, req *ActivityRequest, ledger policy.Ledger) policy.Decision {
+	if refused, ok := e.begin(ledger); !ok {
+		return refused
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	call := &activityCall{req: req}
-	decision := e.engine.Evaluate(account.Hex(), policy.Request{Kind: policy.KindLXActivity, View: call}, e.ledger)
+	call := &activityCall{req: req, ledger: ledger}
+	decision := e.engine.Evaluate(account.Hex(), policy.Request{Kind: policy.KindLXActivity, View: call}, ledger)
 	if !decision.Allowed {
 		return decision
 	}
-	if failed := e.record(account, call.spends); failed.Code != "" {
+	spends, failed := record(ledger, account, call.spends)
+	if failed.Code != "" {
 		return failed
 	}
-	return policy.Decision{Allowed: true, Code: policy.CodeAllowed, Reason: "kernel activity matches its disclosure and the account policy"}
+	return policy.Decision{Allowed: true, Code: policy.CodeAllowed, Reason: "kernel activity matches its disclosure and the account policy", Spends: spends}
 }
 
-func (e *Evaluator) EvaluateBind(account common.Address, req *BindRequest) policy.Decision {
-	if e == nil {
-		return denied(policy.CodeNoPolicy, "no kernel evaluator")
+func (e *Evaluator) EvaluateBind(account common.Address, req *BindRequest, ledger policy.Ledger) policy.Decision {
+	if refused, ok := e.begin(ledger); !ok {
+		return refused
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	decision := e.engine.Evaluate(account.Hex(), policy.Request{Kind: policy.KindLXBind, View: &bindCall{req: req}}, e.ledger)
+	decision := e.engine.Evaluate(account.Hex(), policy.Request{Kind: policy.KindLXBind, View: &bindCall{req: req}}, ledger)
 	if !decision.Allowed {
 		return decision
 	}
-	return policy.Decision{Allowed: true, Code: policy.CodeAllowed, Reason: "binding names the account's own address and the chain's current nonce"}
+	return policy.Decision{Allowed: true, Code: policy.CodeAllowed, Reason: "binding names the account's own address and the chain's current nonce", Spends: []policy.Spend{}}
 }
 
-func (e *Evaluator) EvaluateGrant(account common.Address, req *GrantRequest) policy.Decision {
-	if e == nil {
-		return denied(policy.CodeNoPolicy, "no kernel evaluator")
+func (e *Evaluator) EvaluateGrant(account common.Address, req *GrantRequest, ledger policy.Ledger) policy.Decision {
+	if refused, ok := e.begin(ledger); !ok {
+		return refused
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	call := &grantCall{req: req}
-	decision := e.engine.Evaluate(account.Hex(), policy.Request{Kind: policy.KindLXGrant, View: call}, e.ledger)
+	call := &grantCall{req: req, ledger: ledger}
+	decision := e.engine.Evaluate(account.Hex(), policy.Request{Kind: policy.KindLXGrant, View: call}, ledger)
 	if !decision.Allowed {
 		return decision
 	}
-	if failed := e.record(account, call.spends); failed.Code != "" {
+	spends, failed := record(ledger, account, call.spends)
+	if failed.Code != "" {
 		return failed
 	}
-	return policy.Decision{Allowed: true, Code: policy.CodeAllowed, Reason: "402 preimage is within the account's caps"}
+	return policy.Decision{Allowed: true, Code: policy.CodeAllowed, Reason: "402 preimage is within the account's caps", Spends: spends}
 }
 
 func Record(log *audit.Log, kind, keyID, sessionID string, subject []byte, decision policy.Decision) (audit.Record, error) {
@@ -460,15 +475,11 @@ func Record(log *audit.Log, kind, keyID, sessionID string, subject []byte, decis
 	})
 }
 
-func accountKey(account common.Address) string {
-	return strings.ToLower(account.Hex())
-}
-
 func (e *Evaluator) rules(account common.Address) (*compiled, error) {
 	if e.doc.Version != Version {
 		return nil, refuse(policy.CodeUnknownVersion, "kernel policy version %d is not supported", e.doc.Version)
 	}
-	key := accountKey(account)
+	key := policy.AccountKey(account.Hex())
 	rules := e.doc.Defaults
 	for candidate, override := range e.doc.Accounts {
 		if strings.EqualFold(candidate, key) {
@@ -545,7 +556,7 @@ func checkCaps(ledger policy.Ledger, account common.Address, now time.Time, caps
 		}
 		key := assetKey(prefix, asset)
 		if l.daily != nil {
-			spent, err := ledger.Spent(accountKey(account), key, now.Add(-policy.SpendWindow))
+			spent, err := ledger.Spent(policy.AccountKey(account.Hex()), key, now.Add(-policy.SpendWindow))
 			if err != nil {
 				return nil, refuse(policy.CodeLedgerError, "%v", err)
 			}
@@ -626,7 +637,7 @@ func (e *Evaluator) inspectActivity(ctx policy.Context, view any) (policy.Inspec
 	if err := matchDisclosure(activity, module, effect, req.Disclosure); err != nil {
 		return policy.Inspection{}, err
 	}
-	now, err := e.ledger.Now()
+	now, err := call.ledger.Now()
 	if err != nil {
 		return policy.Inspection{}, refuse(policy.CodeLedgerError, "%v", err)
 	}
@@ -660,7 +671,7 @@ func (e *Evaluator) inspectActivity(ctx policy.Context, view any) (policy.Inspec
 	if activity.Type == OpProgramCall && len(effect.Legs) > 0 && outgoing == 0 {
 		return policy.Inspection{}, refuse(CodeAccountNotOwned, "no program leg debits an account held by the signing key")
 	}
-	spends, err := checkCaps(e.ledger, ctx.Account, now, rules.caps, "lx:", policy.CodeValueCap, totals)
+	spends, err := checkCaps(call.ledger, ctx.Account, now, rules.caps, "lx:", policy.CodeValueCap, totals)
 	if err != nil {
 		return policy.Inspection{}, err
 	}
@@ -908,7 +919,7 @@ func (e *Evaluator) inspectGrant(ctx policy.Context, view any) (policy.Inspectio
 	if err != nil {
 		return policy.Inspection{}, err
 	}
-	now, err := e.ledger.Now()
+	now, err := call.ledger.Now()
 	if err != nil {
 		return policy.Inspection{}, refuse(policy.CodeLedgerError, "%v", err)
 	}
@@ -955,7 +966,7 @@ func (e *Evaluator) inspectGrant(ctx policy.Context, view any) (policy.Inspectio
 	if !owned {
 		return policy.Inspection{}, refuse(CodeAccountNotOwned, "account %x is not held by the signing key", account[:])
 	}
-	spends, err := checkCaps(e.ledger, ctx.Account, now, rules.grants, prefix, CodeGrantCap, map[ID]*big.Int{asset: amount})
+	spends, err := checkCaps(call.ledger, ctx.Account, now, rules.grants, prefix, CodeGrantCap, map[ID]*big.Int{asset: amount})
 	if err != nil {
 		return policy.Inspection{}, err
 	}

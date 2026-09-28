@@ -1188,7 +1188,7 @@ log_path = ".logs/verify.log"
 
 [task.4.19]
 title = "Count kernel-kind spends in the durable ledger"
-status = "pending"
+status = "done"
 wave = 4
 requires = ["4.11","4.12"]
 do_1 = "In human/wallet/attestor/internal/policy/lx drop the ledger the Evaluator holds: lx.New takes the engine, the kernel policy and the chain reader, and EvaluateActivity, EvaluateBind and EvaluateGrant take the policy.Ledger view of the request, so every cap check reads Spent and every allowed request records its spends and its request count through that view under policy.AccountKey of the account, and each allowed decision returns its spends in policy.Decision.Spends in the shape the EVM kinds return (closes observation 4.11.7)."
@@ -1198,6 +1198,10 @@ verify_cmd = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./
 symbols = ["Evaluator","New","EvaluateActivity","EvaluateBind","EvaluateGrant","SpendLedger","ForRequest","NewSpendLedger"]
 touches = ["human/wallet/attestor/internal/policy/lx/lx.go","human/wallet/attestor/internal/policy/lx/lx_test.go","human/wallet/attestor/internal/server/sign.go","human/wallet/attestor/internal/server/durability_test.go","human/wallet/attestor/cmd/attestor/main.go","human/wallet/attestor/cmd/attestor/main_test.go"]
 reqs = ["2.5","2.6","11.3"]
+revision = "cbae88b6a6a7eb99e17bac58c9ceb3fa43c15f8a"
+command = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./internal/policy/... ./internal/server/... ./cmd/attestor/...'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.4.20]
 title = "Expose a key's public material to the operator for node replacement"

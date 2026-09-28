@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -18,14 +19,20 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/audit"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/backup"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/config"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/health"
+	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/lxwire"
+	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy"
+	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy/lx"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/store"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/transport"
 )
@@ -556,5 +563,131 @@ func TestRestoreSubcommand(t *testing.T) {
 	var share []byte
 	if err := restored.WithShare("lx-key", func(p []byte) error { share = append(share, p...); return nil }); err != nil || string(share) != "share material" {
 		t.Fatalf("restored share: %v", err)
+	}
+}
+
+func programTransfer(t *testing.T, key [32]byte, sequence uint64, amount int64) *lx.ActivityRequest {
+	t.Helper()
+	did := lxwire.DIDFromKey(key)
+	from, err := lxwire.AccountID([]byte(lxwire.MainAccountName(did)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	to, err := lxwire.AccountID([]byte(lxwire.MainAccountName(lxwire.DIDFromKey(sha256.Sum256([]byte("daemon ledger recipient"))))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	program := sha256.Sum256([]byte("daemon ledger program"))
+	value := make([]byte, 16)
+	big.NewInt(amount).FillBytes(value)
+	payload := append(append([]byte{}, program[:]...), 0, 1)
+	payload = append(append(append(append(payload, from[:]...), make([]byte, 32)...), to[:]...), value...)
+	now := uint64(time.Now().Unix())
+	a := &lxwire.Activity{
+		ProtocolVersion: lxwire.MaxProtocolVersion,
+		NetworkID:       125,
+		Type:            lx.OpProgramCall,
+		ActorDID:        []byte(did),
+		Authority:       key[:],
+		AccountSequence: sequence,
+		NotBefore:       now - 60,
+		NotAfter:        now + 600,
+		IdempotencyKey:  sha256.Sum256([]byte("daemon ledger activity " + strconv.FormatUint(sequence, 10))),
+		FeeLimit:        lxwire.Uint128{Lo: 1000},
+		PayloadHash:     lxwire.PayloadHash(payload),
+		Payload:         payload,
+	}
+	unsigned, err := lxwire.EncodeUnsignedActivity(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pre, err := lxwire.SignaturePreimage(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	effect, err := lx.DecodeEffect(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &lx.ActivityRequest{Envelope: unsigned, Digest: pre, PublicKey: key, Disclosure: lx.Disclosure{
+		Account: effect.Account, Module: "programs", Operation: a.Type.Ordinal(), Amounts: effect.Amounts,
+		Destinations: effect.Destinations, Sequence: sequence, NotBefore: a.NotBefore, NotAfter: a.NotAfter,
+	}}
+}
+
+func TestPoliciesKeepKernelSpendsInTheNodeStore(t *testing.T) {
+	dir := t.TempDir()
+	keyFile := filepath.Join(dir, "store.key")
+	if err := os.WriteFile(keyFile, []byte(hex.EncodeToString(make([]byte, 31))+"05"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	policyFile := filepath.Join(dir, "policy.json")
+	if err := os.WriteFile(policyFile, []byte(`{"version":1,"defaults":{"chain_id":125,"kinds":["lx_activity"],"rate_per_minute":2}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	kernelFile := filepath.Join(dir, "kernel.json")
+	if err := os.WriteFile(kernelFile, []byte(`{"version":1,"defaults":{"modules":{"programs":[5]},"caps":{"native":{"per_operation":"6000000","daily":"8000000"}}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{
+		config.EnvNodeID: "node-1", config.EnvListenAddr: "127.0.0.1:0", config.EnvPeerListenAddr: freeAddr(t),
+		config.EnvNodeKeyFile: keyFile, config.EnvDataDir: filepath.Join(dir, "data"), config.EnvChainID: "125",
+		config.EnvPolicyFile: policyFile, config.EnvKernelPolicy: kernelFile, config.EnvRPCURL: "http://" + freeAddr(t),
+	}
+	cfg, err := config.Load(func(k string) string { return env[k] })
+	if err != nil {
+		t.Fatal(err)
+	}
+	account := common.HexToAddress("0x5555555555555555555555555555555555555555")
+	key := sha256.Sum256([]byte("daemon ledger kernel key"))
+	native := "lx:" + strings.Repeat("00", 32)
+
+	open := func() (*store.Store, *policy.SpendLedger, *lx.Evaluator) {
+		t.Helper()
+		st, err := store.Open(cfg.DataDir, cfg.NodeKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		engine, ledger, kernel, err := policies(cfg, st)
+		if err != nil {
+			_ = st.Close()
+			t.Fatal(err)
+		}
+		if engine == nil || ledger == nil || kernel == nil {
+			_ = st.Close()
+			t.Fatalf("policies returned engine %v, ledger %v, kernel %v", engine, ledger, kernel)
+		}
+		return st, ledger, kernel
+	}
+
+	st, ledger, kernel := open()
+	allowed := kernel.EvaluateActivity(account, programTransfer(t, key, 1, 5_000_000), ledger.ForRequest("kernel-key/session-1"))
+	if !allowed.Allowed || len(allowed.Spends) != 1 || allowed.Spends[0].Asset != native || allowed.Spends[0].Amount.Cmp(big.NewInt(5_000_000)) != 0 {
+		_ = st.Close()
+		t.Fatalf("kernel activity decision %+v", allowed)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	st, ledger, kernel = open()
+	defer st.Close()
+	now := time.Now()
+	spent, err := ledger.Spent(policy.AccountKey(account.Hex()), native, now.Add(-policy.SpendWindow))
+	if err != nil || spent.Cmp(big.NewInt(5_000_000)) != 0 {
+		t.Fatalf("kernel spend after the daemon reopened its store: %v (%v)", spent, err)
+	}
+	requests, err := ledger.Requests(policy.AccountKey(account.Hex()), now.Add(-policy.RateWindow))
+	if err != nil || requests != 1 {
+		t.Fatalf("kernel requests after the daemon reopened its store: %d (%v)", requests, err)
+	}
+	if refused := kernel.EvaluateActivity(account, programTransfer(t, key, 2, 5_000_000), ledger.ForRequest("kernel-key/session-2")); refused.Allowed || refused.Code != policy.CodeDailyCap {
+		t.Fatalf("a kernel spend over the daily cap after a restart: %+v", refused)
+	}
+	if second := kernel.EvaluateActivity(account, programTransfer(t, key, 3, 1_000_000), ledger.ForRequest("kernel-key/session-3")); !second.Allowed {
+		t.Fatalf("a kernel spend within the cap after a restart: %+v", second)
+	}
+	if limited := kernel.EvaluateActivity(account, programTransfer(t, key, 4, 1), ledger.ForRequest("kernel-key/session-4")); limited.Allowed || limited.Code != policy.CodeRateLimited {
+		t.Fatalf("a third kernel request within a minute across a restart: %+v", limited)
 	}
 }
