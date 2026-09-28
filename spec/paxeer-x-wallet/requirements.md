@@ -55,7 +55,7 @@ The most used service of Paxeer X Network is its hosted embedded wallet: a perso
 2. THE tool SHALL split each key into five shares by a degree-two polynomial for both curves, SHALL deliver each share to its node over mutual TLS through keys.import, SHALL trigger keys.refresh on every node, SHALL request a test signature from three nodes, SHALL recover the address from that signature, and SHALL mark the wallet migrated only when the recovered address equals the stored address.
 3. THE tool SHALL run in rehearsal mode against a restored copy of the database and five in-process or locally deployed nodes, SHALL produce a report counting wallets read, verified, imported, refreshed, test-signed and matched, and SHALL exit non-zero unless every wallet matched.
 4. THE tool SHALL re-encrypt the funded wallets' rows into an archive file under a fresh passphrase supplied through an environment variable name, SHALL verify the archive decrypts to the same rows, and SHALL exclude those wallets from migration; the live tables drop them only after the archive verifies.
-5. THE rehearsal SHALL be executed once in wave 5 against a restored copy of the production backup, and its report SHALL be recorded in the qualification log with counts only; the live ceremony, master key destruction and endpoint cutover remain operator steps outside this feature's tasks.
+5. THE rehearsal SHALL be executed once in wave 5 against the production data read from the current wallet host read-only, and its report SHALL be recorded in the qualification log with counts only; the live ceremony SHALL run only after the rehearsal passes, the current host SHALL proxy the endpoint hostname to the new gateway, the old master key SHALL be retained sealed and never destroyed, and the old service SHALL be retired only after the new gateway has served the endpoint through the proxy.
 
 ## Requirement 5: Wallet Gateway Without Keys
 
@@ -131,8 +131,9 @@ The most used service of Paxeer X Network is its hosted embedded wallet: a perso
 3. THE app SHALL sign in through the gateway's identity flow, provision through the gateway, and sign every transaction, message and typed data through the SDK provider, with no key material in the bundle.
 4. THE app SHALL show the unified account: address, DID, binding state, one asset list with joined balances, one history, the status ladder per transaction, a custody deposit flow, and kernel-side plans with the kernel availability state.
 5. THE app SHALL expose the exchange, bridge, launchpad, fee token choice and web data surfaces through the SDK modules, and the fee choice SHALL label every fee's denomination.
-6. THE app SHALL carry its native projects, environment configuration and release tests in the repository, and its tests SHALL run under vitest and its end-to-end configuration under Playwright.
+6. THE app SHALL carry its environment configuration and release tests in the repository, and its tests SHALL run under vitest and its end-to-end configuration under Playwright.
 7. THE app SHALL offer a theme selection system - colour theme, accent, font family, size preset and density - resolved into design tokens applied before first paint, persisted on the device, with every surface rendered from those tokens and no hard-coded colour outside the theme module.
+8. THE app SHALL ship as an installable progressive web application from its own origin with a self-hosted manifest, icons and service worker, SHALL load no third-party PWA service or script, SHALL produce no store build, and SHALL carry no native project scaffolding or its dependencies.
 
 ## Requirement 11: Fees and Payments Across Both Networks
 
