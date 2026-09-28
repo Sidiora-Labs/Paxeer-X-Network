@@ -66,11 +66,13 @@ impl Drop for Registration {
 }
 
 fn receipt_event(config: &Config, sequence: u64) -> Result<Option<Value>, String> {
-    let endpoint = config.public_core.as_ref().ok_or("core unavailable")?;
+    let (endpoint, token) = config
+        .backend(super::KernelBackend::PublicCore)
+        .map_err(|_| "core unavailable")?;
     let answer = super::upstream_json(
         config,
         endpoint,
-        config.component_token.as_str(),
+        token,
         "GET",
         &format!("/internal/v1/receipt-events/{sequence}"),
         None,

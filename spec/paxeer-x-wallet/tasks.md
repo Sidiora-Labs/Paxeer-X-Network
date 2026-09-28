@@ -7,85 +7,85 @@
 ## Wave 1 - Foundations
 
 - [ ] 1. Build the parts with disjoint paths
-  - [ ] 1.1 Create the attestor module with its configuration and encrypted share store
+  - [x] 1.1 Create the attestor module with its configuration and encrypted share store
     - Create the Go module human/wallet/attestor with go.mod naming the module path under the repository module namespace, a Makefile-free layout (cmd/attestor, internal/), and internal/config that loads listen addresses, node id, region, peer list, node key path, ceremony flag, chain id, identity provider JWKS URL and policy defaults from environment variable names documented in human/wallet/deploy/env, refusing to start when the node key is absent.
     - Implement internal/store with a share record (key id, curve, public key, refresh epoch, participant set, ciphertext) persisted in an embedded key-value file under the data directory, encrypted with AES-256-GCM under the node key with the record's metadata as authenticated associated data, with Put, Get, List and Delete that never return plaintext outside a scoped closure and never log it.
     - Implement internal/store/backup that writes an encrypted snapshot of the store under a separate backup key and restores it, so req.3.ac_2 can build on it.
     - Add internal/config/config_test.go and internal/store/store_test.go covering refusal without a node key, round trip of both curves, tampered associated data refused, snapshot and restore, and that no share bytes appear in any error string or log line.
     - _Requirements: 1.5, 3.2_
-  - [ ] 1.2 Wrap threshold ECDSA on secp256k1 with Ethereum signature shape
+  - [x] 1.2 Wrap threshold ECDSA on secp256k1 with Ethereum signature shape
     - Add human/wallet/attestor/internal/tss/ecdsa wrapping the vendored library's CGGMP distributed key generation and four-round signing for secp256k1 with threshold three of five (library parameter two), exposing Keygen, Sign and the persisted share shape (share, Paillier key, partial public keys, Pedersen parameters, Birkhoff parameters) as typed values.
     - Normalise every signature to low s and compute the recovery id by recovering the public key, so the output is a 65-byte Ethereum signature; refuse to return a signature whose recovered address does not match the key.
     - Add an in-package in-memory peer manager in the test file so five participants run in one process, and tests covering keygen, signing of a real EIP-1559 transaction digest with address recovery through go-ethereum's crypto package, low-s normalisation, and a participant dropping out below threshold failing the session.
     - _Requirements: 1.1_
-  - [ ] 1.3 Wrap FROST on Ed25519 with standard signature output
+  - [x] 1.3 Wrap FROST on Ed25519 with standard signature output
     - Add human/wallet/attestor/internal/tss/eddsa wrapping the vendored library's FROST distributed key generation and two-round signing on Ed25519 with threshold three of five, exposing Keygen, Sign and the persisted share shape.
     - Encode the public key and the signature in RFC 8032 form (32-byte compressed point, 64-byte R||S) and verify every produced signature with the standard library before returning it.
     - Add tests with an in-package in-memory peer manager covering keygen, signing of the LX:PAXEER-BIND:v1 message shape and a receipt-domain digest, verification with crypto/ed25519 and with the strict verifier in layerxproof/verify, and refusal below threshold.
     - _Requirements: 1.2_
-  - [ ] 1.4 Implement dealer import, refresh and add-share for both curves
+  - [x] 1.4 Implement dealer import, refresh and add-share for both curves
     - Add human/wallet/attestor/internal/tss/dealer that splits a whole secp256k1 or Ed25519 private scalar into five shares by a random degree-two polynomial with Birkhoff parameters of rank zero, and returns per-participant share bundles together with the public key, holding the whole scalar only for the duration of the call.
     - Add human/wallet/attestor/internal/tss/refresh that runs the vendored library's CGGMP refresh for secp256k1 from dealer shares (validating each share against the public key in the protocol's own round) and a proactive zero-sharing refresh for Ed25519 shares with Feldman commitments verified by every participant, both leaving the public key unchanged.
     - Add add-share for both curves so a new participant receives a share from a quorum of existing ones, followed by a refresh, and the enlarged set signs.
     - Add tests with an in-package in-memory peer manager covering import of a known key and address recovery after refresh for both curves, a mismatched share refused by every participant, refresh leaving the public key unchanged, and replacement of one participant by add-share and refresh followed by a signature from a quorum that includes the replacement.
     - _Requirements: 1.3, 1.4_
-  - [ ] 1.5 Build the mutual-TLS peer transport for protocol sessions
+  - [x] 1.5 Build the mutual-TLS peer transport for protocol sessions
     - Add human/wallet/attestor/internal/transport implementing the vendored library's peer manager interface over HTTP/2 with mutual TLS: a session registry keyed by session id, per-session per-peer ordered delivery, replay refusal by (session, peer, round, sequence), bounded queues, and a participant set fixed at session open.
     - Add certificate loading from configured paths, peer identity pinning by certificate public key, and an operator identity distinguished from peer identities for the import endpoint of a later task.
     - Add transport_test.go generating a CA and five node certificates in the test, running a full protocol session across five listeners, and asserting replay refusal, unknown-peer refusal and ordered delivery.
     - _Requirements: 1.6_
-  - [ ] 1.6 Decode chain-side requests and evaluate the account policy
+  - [x] 1.6 Decode chain-side requests and evaluate the account policy
     - Add human/wallet/attestor/internal/policy/evm decoding legacy, access-list, dynamic-fee and set-code transactions from bytes with go-ethereum's types, pinning the chain id, computing the signing digest itself, and decoding calldata to every precompile with the ABI files under precompiles/ so the policy sees method names and arguments for the addr, custody, anchor, exchange, bridge, launchpad, fee token and web data precompiles.
     - Add EIP-712 hashing from supplied domain, types and message, EIP-191 personal message hashing applied by the attestor, and the two bare-digest constructions - the sponsored batch digest of agent/sdk/typescript/src/gas-station.ts and the EIP-7702 authorisation digest - recomputed from supplied fields and refused otherwise.
     - Add human/wallet/attestor/internal/policy with a versioned per-account policy (per-transaction cap and rolling 24-hour cap per asset, request rate, destination and selector rules, allowed request kinds) evaluated from the decoded request and a rolling-window ledger, failing closed with typed reasons.
     - Add policy_test.go and evm_test.go covering each transaction type, each precompile decode against its ABI, chain id refusal, cap and rate refusals, typed data hashing against a known vector, personal message prefixing, both digest constructions recomputed and a mismatched digest refused, and an undecodable transaction refused.
     - _Requirements: 2.3, 2.4, 2.6, 11.2_
-  - [ ] 1.7 Decode kernel-side payloads against the repository's golden vectors
+  - [x] 1.7 Decode kernel-side payloads against the repository's golden vectors
     - Add human/wallet/attestor/internal/lxwire decoding the kernel activity envelope from its canonical binary encoding as agent/crates/layerx-wire defines it (big-endian fixed-width integers, field tags, length-prefixed bytes, sorted maps), exposing the typed fields, the account sequence, the authority kind and the signature preimage under the signature-preimage domain.
     - Add the account id derivation (protocol 3, LX:ACCOUNT:v1 with length prefix), the DID derivation from an Ed25519 public key, the LX:PAXEER-BIND:v1 message builder and parser, and the 402 grant and receive preimages under their documented domains.
     - Add lxwire_test.go that decodes every activity golden under agent/schema/agent-api/golden and re-encodes it byte for byte, checks the binding vectors under layerxproof/testvectors and layerxproof/testdata, and checks account ids against values computed by layerxproof/codec.
     - _Requirements: 2.5, 2.7_
-  - [ ] 1.8 Verify user tokens and agent request signatures at the attestor
+  - [x] 1.8 Verify user tokens and agent request signatures at the attestor
     - Add human/wallet/attestor/internal/auth/jwt verifying a Supabase access token against a JWKS URL: RS256 and ES256, key cache by key id with refresh on unknown id and a minimum refresh interval, issuer, audience, expiry, not-before and subject checks, and a binding check that the subject owns the key id being signed for through a caller-supplied ownership lookup.
     - Add human/wallet/attestor/internal/auth/agent verifying an agent request: canonical digest over method, key id, request bytes, nonce and expiry, Ed25519 signature against the registered key from a replicated principal set, nonce replay cache with expiry, and frozen-principal refusal.
     - Add tests that generate RSA and P-256 keys, serve a real JWKS from an in-test HTTP server, mint tokens and cover every refusal; and tests that sign agent requests with real Ed25519 keys and cover replay, expiry, wrong key and frozen principal.
     - _Requirements: 2.1, 2.2_
-  - [ ] 1.9 Add the hash-chained audit log, health report and metrics
+  - [x] 1.9 Add the hash-chained audit log, health report and metrics
     - Add human/wallet/attestor/internal/audit with an append-only log whose every record carries the previous record's hash, the request kind, key id, subject hash, decision, reason and session id, persisted under the data directory, with Head and Verify.
     - Add human/wallet/attestor/internal/health producing the report of req.3.ac_3 (node id, region, share count, refresh epoch, audit head, per-peer reachability, readiness) from injected providers, and Prometheus-style metrics for sessions, refusals and latency.
     - Add audit_test.go and health_test.go covering chain verification, tamper detection, concurrent appends, and a health report with one unreachable peer.
     - _Requirements: 1.7, 3.3_
-  - [ ] 1.10 Import the wallet gateway, SDK and demo as one workspace with secrets scrubbed
+  - [x] 1.10 Import the wallet gateway, SDK and demo as one workspace with secrets scrubbed
     - Copy the existing embedded-wallet API, SDK and demo sources from their current deployment into human/wallet/gateway, human/wallet/sdk and human/wallet/demo under one pnpm workspace rooted at human/wallet/package.json and human/wallet/pnpm-workspace.yaml, excluding every environment file, lock-in of credentials, build output, container data and anything under a mail or console directory; the copy is read-only on the source.
     - Replace every literal credential, connection string, key, token or internal address found in the imported sources with a documented environment variable, add human/wallet/deploy/env listing every variable name with a one-line purpose and no value, and add human/wallet/README.md describing the workspace layout.
     - Make the imported test suites run under the workspace (pnpm install, existing vitest or node test runners), fixing only what the move broke, and add tools/wallet/scan-secrets.sh with a test that runs it over the imported tree and over a fixture containing a key-shaped string.
     - _Requirements: 5.1, 13.1_
-  - [ ] 1.11 Add the bounded test and lint gates for the wallet tree
+  - [x] 1.11 Add the bounded test and lint gates for the wallet tree
     - Add tools/wallet/gate-test.sh running the Go suites under human/wallet/attestor and human/wallet/ceremony, the pnpm workspace tests under human/wallet and human/apps/wallet, and the Rust tests of layerx-human-kms, layerx-human-identity-provider, layerx-human-service and layerx-platform-gateway, bounded by WALLET_GATE_BUDGET_SECONDS with a documented default, reporting the command, exit code and log path of whatever it stopped on.
     - Add tools/wallet/gate-lint.sh running gofmt and go vet for the Go modules, eslint and tsc for the workspace and the app, and cargo fmt and clippy for the named crates, with the same budget and reporting; both gates take --check to validate their syntax, required tooling and target list without running a suite.
     - Add tools/wallet/gate.test.sh exercising --check for both gates and a budget of one second against a deliberately slow target, asserting the reported command and exit code.
     - _Requirements: 13.1_
-  - [ ] 1.12 Write the deployment definitions for the attestors, the gateway and the endpoint
+  - [x] 1.12 Write the deployment definitions for the attestors, the gateway and the endpoint
     - Add human/wallet/deploy with one application definition per attestor node (five, each naming its region, one machine, a persistent volume mount for the data directory, private-network-only peer and health ports, the daemon image built from human/wallet/attestor/Dockerfile, and secrets by name), one for the wallet gateway and one for the hosted endpoint, plus the container files each image builds from.
     - Add tools/wallet/check-deploy.sh validating every definition offline: five distinct regions across at least two continents, one machine each, volumes present, no secret values, health checks pointing at the daemon's health route, image references in the repository, and the environment names matching human/wallet/deploy/env.
     - Add tools/wallet/check-deploy.test.sh with fixtures that pass and fixtures that violate each rule.
     - _Requirements: 3.1, 12.2_
-  - [ ] 1.13 Accept the wallet's identity assertion in the human identity provider
+  - [x] 1.13 Accept the wallet's identity assertion in the human identity provider
     - In human/crates/layerx-human-identity-provider add an assertion login principal: a bearer access token verified against a configured JWKS URL with issuer, audience, expiry and subject checks and key cache by key id, opening or creating the application account mapped to (issuer, subject) and recording the wallet's DID when supplied, leaving the passkey path and its tests unchanged.
     - Expose the mapping through the crate's state so the human service can resolve an assertion to the account and DID, and record a receipt-shaped audit entry for account creation through assertion.
     - Add tests that generate an RSA key, serve a real JWKS from an in-test HTTP server, mint tokens, and cover creation, reopening, wrong issuer, wrong audience, expiry and a DID conflict.
     - _Requirements: 8.1_
-  - [ ] 1.14 Make intent submit execute a journey instead of echoing the plan
+  - [x] 1.14 Make intent submit execute a journey instead of echoing the plan
     - In human/crates/layerx-human-service change the intent submit handler to verify the signed digest and every leg binding against the re-planned plan (action key, actor, authority, account sequence, validity window, fee limit), refuse typed on any mismatch, create a journey, and drive its legs through the existing movement journeys.
     - Return the intent submission shape the contract in human/schema/human-api/intent.kvx declares (journey id, plan digest, state, state copy key), and add the journey state transitions the plan-driven path needs to the existing journey machinery without changing any existing journey's behaviour.
     - Add tests that plan a kernel send and a custody deposit, submit each with valid bindings and observe a journey created and progressed, and submit with a stale digest, a wrong sequence and an expired window and observe typed refusals; assert the response decodes with the TypeScript SDK's submission decoder shape.
     - _Requirements: 8.3_
-  - [ ] 1.15 Let the hosted endpoint degrade honestly without the kernel
+  - [x] 1.15 Let the hosted endpoint degrade honestly without the kernel
     - In platform/hosted/gateway make start-up succeed when the kernel backends are unconfigured or unreachable: eth_ relay and the px_ joins that depend on chain state alone keep serving, kernel-dependent lx_ and px_ methods answer a typed unavailable error naming the backend, and readiness reports each backend separately.
     - Add a px_getNetwork field carrying kernel availability and the reason, keep every existing response shape otherwise unchanged, and keep openrpc.json in step.
     - Add tests that start the endpoint with no kernel configured against an in-test chain RPC server built from the crate's own test support, assert eth_chainId and px_resolveAccount answer, assert lx_getAccount and px_getBalances return the typed unavailable error, and assert readiness.
     - _Requirements: 12.1, 7.5_
-  - [ ] 1.16 Commit the wallet app with every secret scrubbed
+  - [x] 1.16 Commit the wallet app with every secret scrubbed
     - Bring human/apps/wallet under version control as it is, removing every test key, credential, environment file, private key fixture and local artefact, replacing each with a documented environment variable or a synthetic fixture, and adding a .gitignore for build output and native intermediates.
     - Add human/apps/wallet/scripts/scan-secrets.sh calling the shared scanner pattern over the app tree with a fixture test, and make the app's existing vitest suite and type check pass as committed.
     - Record in human/apps/wallet/README.md what was removed and why, without hosts, dates or names.

@@ -337,9 +337,19 @@ fn get_account(config: &Config, id: &Value, params: Option<&Value>) -> Value {
     })
 }
 
-fn layerx_assets(config: &Config) -> Option<Vec<Value>> {
-    let assets = super::rpc::read_result(config, "/v1/assets")?;
-    let mut records: Vec<Value> = assets.get("assets")?.as_array()?.clone();
+fn layerx_assets(config: &Config, id: &Value) -> Result<Vec<Value>, Value> {
+    let answer = public_reads::read(config, "/v1/assets");
+    let document = serde_json::from_slice::<Value>(&answer.body).ok();
+    if let Some(refusal) = document
+        .as_ref()
+        .and_then(super::KernelUnavailable::from_body)
+    {
+        return Err(refusal.rpc(id));
+    }
+    let mut records: Vec<Value> = document
+        .filter(|_| answer.status == 200)
+        .and_then(|document| document.get("result")?.get("assets")?.as_array().cloned())
+        .ok_or_else(|| unavailable(id, "layerx_assets_unavailable"))?;
     records.sort_by(|left, right| {
         left.get("asset_id")
             .and_then(Value::as_str)
@@ -352,7 +362,7 @@ fn layerx_assets(config: &Config) -> Option<Vec<Value>> {
             )
     });
     records.truncate(MAX_JOINED_ASSETS);
-    Some(records)
+    Ok(records)
 }
 
 fn custody_asset(config: &Config, asset_id: &str) -> Value {
@@ -393,8 +403,9 @@ fn list_assets(config: &Config, id: &Value, params: Option<&Value>) -> Value {
     if !no_params(params) {
         return super::rpc::error(id, -32602, "Invalid params");
     }
-    let Some(records) = layerx_assets(config) else {
-        return unavailable(id, "layerx_assets_unavailable");
+    let records = match layerx_assets(config, id) {
+        Ok(records) => records,
+        Err(refusal) => return refusal,
     };
     let mut joined = Vec::with_capacity(records.len());
     for record in records {
@@ -421,8 +432,9 @@ fn get_balances(config: &Config, id: &Value, params: Option<&Value>) -> Value {
         Ok(resolution) => resolution,
         Err(refusal) => return refusal,
     };
-    let Some(records) = layerx_assets(config) else {
-        return unavailable(id, "layerx_assets_unavailable");
+    let records = match layerx_assets(config, id) {
+        Ok(records) => records,
+        Err(refusal) => return refusal,
     };
     let layerx_accounts = resolution
         .did()
@@ -537,6 +549,8 @@ fn get_network(config: &Config, id: &Value, params: Option<&Value>) -> Value {
         Err(code) => return unavailable(id, code),
     };
     let node_info = super::rpc::read_result(config, "/v1/node-info").unwrap_or(Value::Null);
+    let anchor = anchor_head(config);
+    let kernel = kernel_availability(config, &node_info, &anchor);
     json!({
         "jsonrpc": "2.0",
         "id": id,
@@ -544,9 +558,26 @@ fn get_network(config: &Config, id: &Value, params: Option<&Value>) -> Value {
             "network_id": config.network_id,
             "paxeer": {"chain_id": chain_id, "latest_block": block},
             "layerx": {"node_info": node_info},
-            "anchor": anchor_head(config)
+            "anchor": anchor,
+            "kernel": kernel
         }
     })
+}
+
+fn kernel_availability(config: &Config, node_info: &Value, anchor: &Value) -> Value {
+    let reason = match config.backend(super::KernelBackend::PublicCore) {
+        Err(unavailable) => unavailable.reason,
+        Ok(_) if node_info.is_null() => "unreachable",
+        Ok(_)
+            if anchor
+                .get("latest_finalized_batch")
+                .is_none_or(Value::is_null) =>
+        {
+            "no_finalised_checkpoint"
+        }
+        Ok(_) => "available",
+    };
+    json!({"available": reason == "available", "reason": reason})
 }
 
 /// Answers every unified and relayed EVM method, or `None` when the method

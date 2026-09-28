@@ -57,20 +57,12 @@ struct Config {
     listen: SocketAddr,
     tls: Arc<ServerConfig>,
     client: Client,
-    component: Endpoint,
-    public_core: Option<Endpoint>,
+    kernel: Option<Kernel>,
     paxeer: Option<Endpoint>,
     capabilities: capabilities::Cache,
     indexer: Option<history::Indexer>,
-    component_token: Zeroizing<String>,
-    authority: Endpoint,
-    authority_token: Zeroizing<String>,
-    identity: Endpoint,
-    identity_token: Zeroizing<String>,
     registration_token: Option<Zeroizing<String>>,
     faucet: Option<rpc_faucet::Faucet>,
-    registry: Endpoint,
-    registry_token: Zeroizing<String>,
     store: Arc<RedisStore>,
     sequencer_authorization: layerx_proof::inclusion::SequencerAuthorization,
     key_provisioning_key: Zeroizing<[u8; 32]>,
@@ -80,6 +72,188 @@ struct Config {
     protocol_network_id: u32,
     modules: ModuleRegistry,
     idempotency_seconds: u64,
+}
+
+struct Kernel {
+    component: Endpoint,
+    component_token: Zeroizing<String>,
+    public_core: Option<Endpoint>,
+    authority: Endpoint,
+    authority_token: Zeroizing<String>,
+    identity: Endpoint,
+    identity_token: Zeroizing<String>,
+    registry: Endpoint,
+    registry_token: Zeroizing<String>,
+}
+
+const KERNEL_VARIABLES: [&str; 9] = [
+    "LAYERX_GATEWAY_COMPONENT_URL",
+    "LAYERX_GATEWAY_COMPONENT_TOKEN_FILE",
+    "LAYERX_GATEWAY_PUBLIC_CORE_URL",
+    "LAYERX_GATEWAY_AUTHORITY_URL",
+    "LAYERX_GATEWAY_AUTHORITY_TOKEN_FILE",
+    "LAYERX_GATEWAY_IDENTITY_URL",
+    "LAYERX_GATEWAY_IDENTITY_TOKEN_FILE",
+    "LAYERX_GATEWAY_PROGRAM_REGISTRY_URL",
+    "LAYERX_GATEWAY_PROGRAM_REGISTRY_TOKEN_FILE",
+];
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum KernelBackend {
+    Component,
+    PublicCore,
+    Authority,
+    Identity,
+    Registry,
+}
+
+impl KernelBackend {
+    const ALL: [Self; 5] = [
+        Self::Component,
+        Self::PublicCore,
+        Self::Authority,
+        Self::Identity,
+        Self::Registry,
+    ];
+
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Component => "core_agent_boundary",
+            Self::PublicCore => "public_core",
+            Self::Authority => "independent_receipt_authority",
+            Self::Identity => "identity",
+            Self::Registry => "program_registry",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct KernelUnavailable {
+    backend: KernelBackend,
+    reason: &'static str,
+}
+
+impl KernelUnavailable {
+    const CODE: i32 = -32010;
+    const RETRY_AFTER_SECONDS: u64 = 30;
+
+    const fn not_configured(backend: KernelBackend) -> Self {
+        Self {
+            backend,
+            reason: "not_configured",
+        }
+    }
+
+    const fn unreachable(backend: KernelBackend) -> Self {
+        Self {
+            backend,
+            reason: "unreachable",
+        }
+    }
+
+    fn data(self) -> serde_json::Value {
+        serde_json::json!({
+            "code": "kernel_unavailable",
+            "backend": self.backend.name(),
+            "reason": self.reason
+        })
+    }
+
+    fn rpc(self, id: &serde_json::Value) -> serde_json::Value {
+        let mut refusal = rpc::error(id, Self::CODE, "Kernel unavailable");
+        refusal["error"]["data"] = self.data();
+        refusal
+    }
+
+    fn from_body(body: &serde_json::Value) -> Option<Self> {
+        let error = body.get("error")?;
+        if error.get("code")?.as_str()? != "kernel_unavailable" {
+            return None;
+        }
+        let name = error.get("backend")?.as_str()?;
+        let backend = KernelBackend::ALL
+            .into_iter()
+            .find(|backend| backend.name() == name)?;
+        match error.get("reason")?.as_str()? {
+            "not_configured" => Some(Self::not_configured(backend)),
+            "unreachable" => Some(Self::unreachable(backend)),
+            _ => None,
+        }
+    }
+}
+
+impl From<KernelUnavailable> for OutgoingResponse {
+    fn from(unavailable: KernelUnavailable) -> Self {
+        Self {
+            status: 503,
+            body: serde_json::json!({ "ok": false, "error": unavailable.data() })
+                .to_string()
+                .into_bytes(),
+            retry_after: Some(KernelUnavailable::RETRY_AFTER_SECONDS),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct BackendAvailability {
+    backend: &'static str,
+    ready: bool,
+    configured: bool,
+    reason: &'static str,
+}
+
+impl BackendAvailability {
+    const fn probed(backend: &'static str, ready: bool) -> Self {
+        Self {
+            backend,
+            ready,
+            configured: true,
+            reason: if ready { "ready" } else { "unreachable" },
+        }
+    }
+
+    const fn not_configured(backend: &'static str) -> Self {
+        Self {
+            backend,
+            ready: false,
+            configured: false,
+            reason: "not_configured",
+        }
+    }
+
+    fn document(self) -> serde_json::Value {
+        serde_json::json!({
+            "state": if self.ready { "ready" } else { "unavailable" },
+            "reason": self.reason
+        })
+    }
+}
+
+impl Config {
+    fn backend(&self, backend: KernelBackend) -> Result<(&Endpoint, &str), KernelUnavailable> {
+        let kernel = self
+            .kernel
+            .as_ref()
+            .ok_or(KernelUnavailable::not_configured(backend))?;
+        Ok(match backend {
+            KernelBackend::Component => (&kernel.component, kernel.component_token.as_str()),
+            KernelBackend::PublicCore => (
+                kernel
+                    .public_core
+                    .as_ref()
+                    .ok_or(KernelUnavailable::not_configured(backend))?,
+                kernel.component_token.as_str(),
+            ),
+            KernelBackend::Authority => (&kernel.authority, kernel.authority_token.as_str()),
+            KernelBackend::Identity => (&kernel.identity, kernel.identity_token.as_str()),
+            KernelBackend::Registry => (&kernel.registry, kernel.registry_token.as_str()),
+        })
+    }
+
+    fn target(&self, backend: KernelBackend) -> Result<(&Endpoint, &str), String> {
+        self.backend(backend)
+            .map_err(|unavailable| format!("{} {}", backend.name(), unavailable.reason))
+    }
 }
 
 #[derive(Deserialize)]
@@ -544,18 +718,20 @@ fn program_registry_upstream(
 ) -> Result<(ProgramHead, serde_json::Value), OutgoingResponse> {
     let program = hex(&expected_program);
     let upstream = config
-        .client
-        .request(
-            &config.registry,
-            config.registry_token.as_str(),
-            &http::OutboundRequest {
-                method: "GET",
-                path: &format!("/v1/programs/registry/{program}"),
-                idempotency: None,
-                content_type: "application/json",
-                body: &[],
-            },
-        )
+        .target(KernelBackend::Registry)
+        .and_then(|(endpoint, token)| {
+            config.client.request(
+                endpoint,
+                token,
+                &http::OutboundRequest {
+                    method: "GET",
+                    path: &format!("/v1/programs/registry/{program}"),
+                    idempotency: None,
+                    content_type: "application/json",
+                    body: &[],
+                },
+            )
+        })
         .map_err(|_| response(503, "program_registry_unavailable", Some(5)))?;
     if upstream.status == 404 {
         return Err(response(404, "unknown_program", None));
@@ -676,6 +852,43 @@ fn configured_protocol() -> Result<ProtocolConfig, String> {
     })
 }
 
+fn configured_kernel() -> Result<Option<Kernel>, String> {
+    if env::var_os("LAYERX_GATEWAY_COMPONENT_URL").is_none() {
+        if let Some(variable) = KERNEL_VARIABLES
+            .iter()
+            .find(|variable| env::var_os(variable).is_some())
+        {
+            return Err(format!(
+                "{variable} is set without LAYERX_GATEWAY_COMPONENT_URL"
+            ));
+        }
+        return Ok(None);
+    }
+    Ok(Some(Kernel {
+        component: Endpoint::parse(
+            &env::var("LAYERX_GATEWAY_COMPONENT_URL")
+                .map_err(|_| "gateway component URL is required")?,
+        )?,
+        component_token: read_secret("LAYERX_GATEWAY_COMPONENT_TOKEN_FILE")?,
+        public_core: public_reads::configured_endpoint()?,
+        authority: Endpoint::parse(
+            &env::var("LAYERX_GATEWAY_AUTHORITY_URL")
+                .map_err(|_| "gateway authority URL is required")?,
+        )?,
+        authority_token: read_secret("LAYERX_GATEWAY_AUTHORITY_TOKEN_FILE")?,
+        identity: Endpoint::parse(
+            &env::var("LAYERX_GATEWAY_IDENTITY_URL")
+                .map_err(|_| "gateway identity URL is required")?,
+        )?,
+        identity_token: read_secret("LAYERX_GATEWAY_IDENTITY_TOKEN_FILE")?,
+        registry: Endpoint::parse(
+            &env::var("LAYERX_GATEWAY_PROGRAM_REGISTRY_URL")
+                .map_err(|_| "gateway program registry URL is required")?,
+        )?,
+        registry_token: read_secret("LAYERX_GATEWAY_PROGRAM_REGISTRY_TOKEN_FILE")?,
+    }))
+}
+
 fn config() -> Result<Config, String> {
     let ca = Certificate::from_der(
         &fs::read(
@@ -721,32 +934,12 @@ fn config() -> Result<Config, String> {
             .map_err(|_| "gateway listen address is invalid".to_owned())?,
         tls: tls_config()?,
         client: Client::new(ca.clone(), identity),
-        component: Endpoint::parse(
-            &env::var("LAYERX_GATEWAY_COMPONENT_URL")
-                .map_err(|_| "gateway component URL is required")?,
-        )?,
-        public_core: public_reads::configured_endpoint()?,
+        kernel: configured_kernel()?,
         paxeer: paxeer::configured_endpoint()?,
         capabilities: capabilities::configured()?,
         indexer: history::configured_endpoint()?,
-        component_token: read_secret("LAYERX_GATEWAY_COMPONENT_TOKEN_FILE")?,
-        authority: Endpoint::parse(
-            &env::var("LAYERX_GATEWAY_AUTHORITY_URL")
-                .map_err(|_| "gateway authority URL is required")?,
-        )?,
-        authority_token: read_secret("LAYERX_GATEWAY_AUTHORITY_TOKEN_FILE")?,
-        identity: Endpoint::parse(
-            &env::var("LAYERX_GATEWAY_IDENTITY_URL")
-                .map_err(|_| "gateway identity URL is required")?,
-        )?,
-        identity_token: read_secret("LAYERX_GATEWAY_IDENTITY_TOKEN_FILE")?,
         registration_token: rpc_register::configured_token()?,
         faucet: rpc_faucet::configured()?,
-        registry: Endpoint::parse(
-            &env::var("LAYERX_GATEWAY_PROGRAM_REGISTRY_URL")
-                .map_err(|_| "gateway program registry URL is required")?,
-        )?,
-        registry_token: read_secret("LAYERX_GATEWAY_PROGRAM_REGISTRY_TOKEN_FILE")?,
         store: Arc::new(RedisStore::new(
             RedisEndpoint::parse(
                 &env::var("LAYERX_GATEWAY_REDIS_URL")
@@ -1177,10 +1370,11 @@ fn session(
         serde_json::to_vec(&serde_json::json!({ "token": token }))
             .map_err(|_| response(503, "identity_unavailable", Some(5)))?,
     );
+    let (identity, identity_token) = config.backend(KernelBackend::Identity)?;
     let upstream = upstream_json(
         config,
-        &config.identity,
-        config.identity_token.as_str(),
+        identity,
+        identity_token,
         "POST",
         "/v1/sessions/introspect",
         None,
@@ -1376,10 +1570,11 @@ fn authority_request(
     activity_id: &str,
     wait_publication: bool,
 ) -> Result<UpstreamResponse, OutgoingResponse> {
+    let (authority, token) = config.backend(KernelBackend::Authority)?;
     upstream_json(
         config,
-        &config.authority,
-        config.authority_token.as_str(),
+        authority,
+        token,
         "GET",
         &format!(
             "/v1/authorized-batches/{}/{activity_id}",
@@ -1650,19 +1845,21 @@ fn program_simulation(
         body: &canonical,
     };
     let upstream = if read_only {
-        config.client.request_program_read(
-            &config.component,
-            config.component_token.as_str(),
-            &outbound,
-            minimum_sequence,
-            expected_state_root,
-        )
+        config
+            .target(KernelBackend::Component)
+            .and_then(|(endpoint, token)| {
+                config.client.request_program_read(
+                    endpoint,
+                    token,
+                    &outbound,
+                    minimum_sequence,
+                    expected_state_root,
+                )
+            })
     } else {
-        config.client.request(
-            &config.component,
-            config.component_token.as_str(),
-            &outbound,
-        )
+        config
+            .target(KernelBackend::Component)
+            .and_then(|(endpoint, token)| config.client.request(endpoint, token, &outbound))
     };
     let Ok(upstream) = upstream else {
         return response(503, "component_unavailable", Some(5));
@@ -2184,21 +2381,25 @@ fn submit_upstreams(
                 })
             })
         });
-        let component = config.client.request(
-            &config.component,
-            config.component_token.as_str(),
-            &http::OutboundRequest {
-                method: "POST",
-                path: if operation.program_mutation {
-                    &request.path
-                } else {
-                    "/v1/activities"
-                },
-                idempotency: Some(&operation.protocol_idempotency),
-                content_type: "application/octet-stream",
-                body: &operation.canonical,
-            },
-        );
+        let component = config
+            .target(KernelBackend::Component)
+            .and_then(|(endpoint, token)| {
+                config.client.request(
+                    endpoint,
+                    token,
+                    &http::OutboundRequest {
+                        method: "POST",
+                        path: if operation.program_mutation {
+                            &request.path
+                        } else {
+                            "/v1/activities"
+                        },
+                        idempotency: Some(&operation.protocol_idempotency),
+                        content_type: "application/octet-stream",
+                        body: &operation.canonical,
+                    },
+                )
+            });
         let authority = authority.map(|handle| match handle.join() {
             Ok(result) => result,
             Err(_) => Err(response(503, "authority_unavailable", Some(5))),
@@ -2317,18 +2518,20 @@ fn publish_lifecycle(
         .and_then(|unsigned| layerx_wire::hash::receipt_digest(&unsigned))
         .map_err(|_| response(502, "receipt_verification_failed", None))?;
     let upstream = config
-        .client
-        .request(
-            &config.registry,
-            config.registry_token.as_str(),
-            &http::OutboundRequest {
-                method: "POST",
-                path: "/__registry/deployments",
-                idempotency: Some(activity_id),
-                content_type: "application/octet-stream",
-                body: &canonical,
-            },
-        )
+        .target(KernelBackend::Registry)
+        .and_then(|(endpoint, token)| {
+            config.client.request(
+                endpoint,
+                token,
+                &http::OutboundRequest {
+                    method: "POST",
+                    path: "/__registry/deployments",
+                    idempotency: Some(activity_id),
+                    content_type: "application/octet-stream",
+                    body: &canonical,
+                },
+            )
+        })
         .map_err(|error| {
             if std::env::var_os("LAYERX_PAY_TIMING").is_some() {
                 eprintln!("program_registry_transport_failure: {error}");
@@ -2730,20 +2933,25 @@ fn resolve_pending_lifecycle(
         }
         _ => return response(502, "lifecycle_binding_invalid", None),
     };
-    let Ok(upstream) = config.client.request(
-        &config.component,
-        config.component_token.as_str(),
-        &http::OutboundRequest {
-            method: "GET",
-            path: &format!(
-                "/v1/programs/receipts/by-idempotency/{}",
-                operation.idempotency_key
-            ),
-            idempotency: None,
-            content_type: "application/json",
-            body: &[],
-        },
-    ) else {
+    let Ok(upstream) = config
+        .target(KernelBackend::Component)
+        .and_then(|(endpoint, token)| {
+            config.client.request(
+                endpoint,
+                token,
+                &http::OutboundRequest {
+                    method: "GET",
+                    path: &format!(
+                        "/v1/programs/receipts/by-idempotency/{}",
+                        operation.idempotency_key
+                    ),
+                    idempotency: None,
+                    content_type: "application/json",
+                    body: &[],
+                },
+            )
+        })
+    else {
         return pending_program_response(operation, trace_id);
     };
     if matches!(upstream.status, 202 | 404) {
@@ -2810,17 +3018,22 @@ fn resolve_pending_program(
             return resolve_pending_lifecycle(config, record, operation, trace_id);
         }
     }
-    let Ok(upstream) = config.client.request(
-        &config.component,
-        config.component_token.as_str(),
-        &http::OutboundRequest {
-            method: "GET",
-            path: &format!("/v1/programs/activities/{}", operation.activity_id),
-            idempotency: None,
-            content_type: "application/json",
-            body: &[],
-        },
-    ) else {
+    let Ok(upstream) = config
+        .target(KernelBackend::Component)
+        .and_then(|(endpoint, token)| {
+            config.client.request(
+                endpoint,
+                token,
+                &http::OutboundRequest {
+                    method: "GET",
+                    path: &format!("/v1/programs/activities/{}", operation.activity_id),
+                    idempotency: None,
+                    content_type: "application/json",
+                    body: &[],
+                },
+            )
+        })
+    else {
         return pending_program_response(operation, trace_id);
     };
     if matches!(upstream.status, 202 | 404) {
@@ -2994,17 +3207,22 @@ fn dependency_ready(
 }
 
 fn program_registry_ready(config: &Config) -> bool {
-    let Ok(upstream) = config.client.request(
-        &config.registry,
-        config.registry_token.as_str(),
-        &http::OutboundRequest {
-            method: "GET",
-            path: "/healthz",
-            idempotency: None,
-            content_type: "application/json",
-            body: &[],
-        },
-    ) else {
+    let Ok(upstream) = config
+        .target(KernelBackend::Registry)
+        .and_then(|(endpoint, token)| {
+            config.client.request(
+                endpoint,
+                token,
+                &http::OutboundRequest {
+                    method: "GET",
+                    path: "/healthz",
+                    idempotency: None,
+                    content_type: "application/json",
+                    body: &[],
+                },
+            )
+        })
+    else {
         return false;
     };
     let Ok(status) = serde_json::from_slice::<serde_json::Value>(&upstream.body) else {
@@ -3072,9 +3290,6 @@ fn route(config: &Config, request: &IncomingRequest) -> OutgoingResponse {
         );
     }
     if request.method == "GET" && request.path == "/readyz" {
-        if !config.store.producer_health.ready() {
-            return response(503, "event_producer_unavailable", Some(5));
-        }
         return gateway_readiness(config);
     }
     if request.method == "GET" && request.path == "/metrics" {
@@ -3102,6 +3317,18 @@ fn route(config: &Config, request: &IncomingRequest) -> OutgoingResponse {
             result
         };
     };
+    if let Err(unavailable) = config.backend(KernelBackend::Component) {
+        let result = OutgoingResponse::from(unavailable);
+        return if program_request {
+            agent_response(
+                &trace_id,
+                result,
+                &config.sequencer_authorization.public_key(),
+            )
+        } else {
+            result
+        };
+    }
     let record = match authenticate_key(config, request) {
         Ok(value) => value,
         Err(error) => {
@@ -3350,63 +3577,95 @@ fn list_keys(config: &Config, principal_hash: &str) -> OutgoingResponse {
     json_response(200, &serde_json::json!({ "ok": true, "keys": records }))
 }
 
+fn kernel_availability(
+    config: &Config,
+    backend: KernelBackend,
+    probe: impl FnOnce(&Endpoint, &str) -> bool,
+) -> BackendAvailability {
+    config.backend(backend).map_or_else(
+        |_| BackendAvailability::not_configured(backend.name()),
+        |(endpoint, token)| BackendAvailability::probed(backend.name(), probe(endpoint, token)),
+    )
+}
+
+fn readiness(config: &Config) -> Vec<BackendAvailability> {
+    vec![
+        BackendAvailability::probed("durable_store", config.store.ready()),
+        BackendAvailability::probed("event_producer", config.store.producer_health.ready()),
+        match paxeer::status(config) {
+            "not_configured" => BackendAvailability::not_configured("paxeer_chain"),
+            status => BackendAvailability::probed("paxeer_chain", status == "available"),
+        },
+        kernel_availability(config, KernelBackend::Component, |endpoint, token| {
+            dependency_ready(config, endpoint, token, true)
+        }),
+        kernel_availability(config, KernelBackend::Authority, |endpoint, token| {
+            dependency_ready(config, endpoint, token, false)
+        }),
+        kernel_availability(config, KernelBackend::Registry, |_, _| {
+            program_registry_ready(config)
+        }),
+    ]
+}
+
+fn backend_ready(backends: &[BackendAvailability], name: &str) -> bool {
+    backends
+        .iter()
+        .any(|backend| backend.backend == name && backend.ready)
+}
+
 fn gateway_readiness(config: &Config) -> OutgoingResponse {
-    let store = config.store.ready();
-    let component = dependency_ready(
-        config,
-        &config.component,
-        config.component_token.as_str(),
-        true,
-    );
-    let authority = dependency_ready(
-        config,
-        &config.authority,
-        config.authority_token.as_str(),
-        false,
-    );
-    let registry = program_registry_ready(config);
-    let ready = store && component && authority && registry;
+    let backends = readiness(config);
+    let serving = backends
+        .iter()
+        .all(|backend| backend.ready || !backend.configured);
+    let complete = backends.iter().all(|backend| backend.ready);
+    let component_name = |name: &str| {
+        if backend_ready(&backends, name) {
+            "ready"
+        } else {
+            "unavailable"
+        }
+    };
     json_response(
-        if ready { 200 } else { 503 },
+        if serving { 200 } else { 503 },
         &serde_json::json!({
-            "status": if ready { "ready" } else { "degraded" },
+            "status": if complete { "ready" } else { "degraded" },
             "service": "layerx-gateway",
             "package_semver": env!("CARGO_PKG_VERSION"),
             "lxp_wire_version": config.wire_version,
             "network_id": config.network_id,
             "components": {
-                "durable_store": if store { "ready" } else { "unavailable" },
-                "core_agent_boundary": if component { "ready" } else { "unavailable" },
-                "independent_receipt_authority": if authority { "ready" } else { "unavailable" },
-                "program_registry": if registry { "ready" } else { "unavailable" },
+                "durable_store": component_name("durable_store"),
+                "core_agent_boundary": component_name(KernelBackend::Component.name()),
+                "independent_receipt_authority": component_name(KernelBackend::Authority.name()),
+                "program_registry": component_name(KernelBackend::Registry.name()),
                 "principal_state_boundary": "unavailable"
-            }
+            },
+            "backends": backends
+                .iter()
+                .map(|backend| (backend.backend.to_owned(), backend.document()))
+                .collect::<serde_json::Map<_, _>>()
         }),
     )
 }
 
 fn gateway_status(config: &Config) -> OutgoingResponse {
     let gateway = config.store.ready();
-    let core = dependency_ready(
-        config,
-        &config.component,
-        config.component_token.as_str(),
-        true,
-    );
-    let authority = dependency_ready(
-        config,
-        &config.authority,
-        config.authority_token.as_str(),
-        false,
-    );
+    let core = kernel_availability(config, KernelBackend::Component, |endpoint, token| {
+        dependency_ready(config, endpoint, token, true)
+    });
+    let authority = kernel_availability(config, KernelBackend::Authority, |endpoint, token| {
+        dependency_ready(config, endpoint, token, false)
+    });
     json_response(
         200,
         &serde_json::json!({
             "ok": true,
             "services": {
                 "hosted_gateway": if gateway { "degraded" } else { "unavailable" },
-                "testnet_core": if core { "available" } else { "unavailable" },
-                "receipt_authority": if authority { "available" } else { "unavailable" },
+                "testnet_core": if core.ready { "available" } else { "unavailable" },
+                "receipt_authority": if authority.ready { "available" } else { "unavailable" },
                 "paxeer": paxeer::status(config),
                 "indexer": history::status(config)
             },
@@ -3639,17 +3898,22 @@ fn read_receipt(
     {
         return response(404, "receipt_not_found", None);
     }
-    let Ok(upstream) = config.client.request(
-        &config.component,
-        config.component_token.as_str(),
-        &http::OutboundRequest {
-            method: "GET",
-            path: &format!("/v1/receipts/{activity_id}"),
-            idempotency: None,
-            content_type: "application/json",
-            body: &[],
-        },
-    ) else {
+    let Ok(upstream) = config
+        .target(KernelBackend::Component)
+        .and_then(|(endpoint, token)| {
+            config.client.request(
+                endpoint,
+                token,
+                &http::OutboundRequest {
+                    method: "GET",
+                    path: &format!("/v1/receipts/{activity_id}"),
+                    idempotency: None,
+                    content_type: "application/json",
+                    body: &[],
+                },
+            )
+        })
+    else {
         return response(503, "component_unavailable", Some(5));
     };
     if upstream.status == 404 {
@@ -3843,17 +4107,22 @@ fn read_program_registry(config: &Config, program: &str, trace_id: &str) -> Outg
 }
 
 fn read_program_catalog(config: &Config, trace_id: &str) -> OutgoingResponse {
-    let Ok(upstream) = config.client.request(
-        &config.registry,
-        config.registry_token.as_str(),
-        &http::OutboundRequest {
-            method: "GET",
-            path: "/v1/programs/registry",
-            idempotency: None,
-            content_type: "application/json",
-            body: &[],
-        },
-    ) else {
+    let Ok(upstream) = config
+        .target(KernelBackend::Registry)
+        .and_then(|(endpoint, token)| {
+            config.client.request(
+                endpoint,
+                token,
+                &http::OutboundRequest {
+                    method: "GET",
+                    path: "/v1/programs/registry",
+                    idempotency: None,
+                    content_type: "application/json",
+                    body: &[],
+                },
+            )
+        })
+    else {
         return response(503, "program_registry_unavailable", Some(5));
     };
     if upstream.status != 200 || upstream.content_type != "application/json" {
@@ -3962,19 +4231,24 @@ fn publish_program_source(
     })
     .to_string()
     .into_bytes();
-    let Ok(upstream) = config.client.request_with_publication_key(
-        &config.registry,
-        config.registry_token.as_str(),
-        &http::OutboundRequest {
-            method: "POST",
-            path: &format!("/v1/programs/registry/{program}/source"),
-            idempotency: Some(idempotency),
-            content_type: "application/json",
-            body: &body,
-        },
-        None,
-        publication_key,
-    ) else {
+    let Ok(upstream) = config
+        .target(KernelBackend::Registry)
+        .and_then(|(endpoint, token)| {
+            config.client.request_with_publication_key(
+                endpoint,
+                token,
+                &http::OutboundRequest {
+                    method: "POST",
+                    path: &format!("/v1/programs/registry/{program}/source"),
+                    idempotency: Some(idempotency),
+                    content_type: "application/json",
+                    body: &body,
+                },
+                None,
+                publication_key,
+            )
+        })
+    else {
         return response(503, "program_registry_unavailable", Some(5));
     };
     if upstream.content_type != "application/json" {
@@ -4018,17 +4292,22 @@ fn read_program_interface(config: &Config, program: &str, trace_id: &str) -> Out
         Ok(value) => value,
         Err(error) => return error,
     };
-    let Ok(upstream) = config.client.request(
-        &config.registry,
-        config.registry_token.as_str(),
-        &http::OutboundRequest {
-            method: "GET",
-            path: &format!("/v1/programs/registry/{program}/interface"),
-            idempotency: None,
-            content_type: "application/json",
-            body: &[],
-        },
-    ) else {
+    let Ok(upstream) = config
+        .target(KernelBackend::Registry)
+        .and_then(|(endpoint, token)| {
+            config.client.request(
+                endpoint,
+                token,
+                &http::OutboundRequest {
+                    method: "GET",
+                    path: &format!("/v1/programs/registry/{program}/interface"),
+                    idempotency: None,
+                    content_type: "application/json",
+                    body: &[],
+                },
+            )
+        })
+    else {
         return response(503, "program_registry_unavailable", Some(5));
     };
     if upstream.status == 404 {

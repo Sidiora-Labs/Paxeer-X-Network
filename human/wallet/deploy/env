@@ -1,0 +1,135 @@
+# deploy
+NODE_ENV - runtime mode of the wallet gateway process, production on the platform
+PORT - port the wallet gateway listens on behind the platform proxy
+ATTESTOR_NODE_KEY - platform secret holding this attestor's node key, written to the file named by ATTESTOR_NODE_KEY_FILE
+ATTESTOR_BACKUP_KEY - platform secret holding this attestor's backup key, written to the file named by ATTESTOR_BACKUP_KEY_FILE
+ATTESTOR_TLS_CERT - platform secret holding this attestor's TLS certificate, written to the file named by ATTESTOR_TLS_CERT_FILE
+ATTESTOR_TLS_KEY - platform secret holding this attestor's TLS private key, written to the file named by ATTESTOR_TLS_KEY_FILE
+ATTESTOR_TLS_CA - platform secret holding the CA bundle for peers and the gateway, written to the file named by ATTESTOR_TLS_CA_FILE
+ATTESTOR_OPERATOR_CA - platform secret holding the operator CA bundle, written to the file named by ATTESTOR_OPERATOR_CA_FILE
+LAYERX_GATEWAY_LISTEN - socket address the shared endpoint listens on, defaulting to all interfaces on port 9443
+LAYERX_GATEWAY_NETWORK_ID - network identifier the shared endpoint expects from its kernel backends, set as a platform secret
+LAYERX_GATEWAY_PROTOCOL_NETWORK_ID - numeric protocol network identifier of the kernel, set as a platform secret
+LAYERX_GATEWAY_LXP_WIRE_VERSION - LXP wire version the shared endpoint speaks
+LAYERX_GATEWAY_IDEMPOTENCY_SECONDS - retention of idempotency records in seconds
+LAYERX_GATEWAY_CAPABILITIES_TTL_SECONDS - cache lifetime of the capabilities answer in seconds
+LAYERX_GATEWAY_TLS_CERT_DER - path to the shared endpoint's DER server certificate
+LAYERX_GATEWAY_TLS_KEY_DER - path to the shared endpoint's DER PKCS8 server key
+LAYERX_GATEWAY_OUTBOUND_CA_DER - path to the DER CA that authenticates the endpoint's upstream services
+LAYERX_GATEWAY_CLIENT_IDENTITY_PKCS12 - path to the PKCS12 client identity the endpoint presents upstream
+LAYERX_GATEWAY_CLIENT_IDENTITY_PASSWORD_FILE - path to the password of the PKCS12 client identity
+LAYERX_GATEWAY_COMPONENT_URL - agent boundary base URL, set as a platform secret
+LAYERX_GATEWAY_COMPONENT_TOKEN_FILE - path to the agent boundary bearer token
+LAYERX_GATEWAY_AUTHORITY_URL - receipt authority base URL, set as a platform secret
+LAYERX_GATEWAY_AUTHORITY_TOKEN_FILE - path to the receipt authority bearer token
+LAYERX_GATEWAY_IDENTITY_URL - identity service base URL, set as a platform secret
+LAYERX_GATEWAY_IDENTITY_TOKEN_FILE - path to the identity service bearer token
+LAYERX_GATEWAY_IDENTITY_PROVISIONING_TOKEN_FILE - path to the identity provisioning token used by registration
+LAYERX_GATEWAY_PROGRAM_REGISTRY_URL - program registry base URL, set as a platform secret
+LAYERX_GATEWAY_PROGRAM_REGISTRY_TOKEN_FILE - path to the program registry bearer token
+LAYERX_GATEWAY_PUBLIC_CORE_URL - public core read base URL, optional, set as a platform secret
+LAYERX_GATEWAY_PAXEER_RPC_URL - chain RPC base URL for eth_ relay, optional, set as a platform secret
+LAYERX_GATEWAY_INDEXER_URL - indexer base URL for unified history, optional, set as a platform secret
+LAYERX_GATEWAY_FAUCET_URL - faucet service base URL, optional, set as a platform secret
+LAYERX_GATEWAY_FAUCET_SERVICE_TOKEN_FILE - path to the faucet service token
+LAYERX_GATEWAY_REDIS_URL - Redis URL of the endpoint's shared store, set as a platform secret
+LAYERX_GATEWAY_REDIS_USERNAME_FILE - path to the Redis username
+LAYERX_GATEWAY_REDIS_PASSWORD_FILE - path to the Redis password
+LAYERX_GATEWAY_SEQUENCER_PUBLIC_KEY_FILE - path to the trusted sequencer public key
+LAYERX_GATEWAY_SEQUENCER_ID_FILE - path to the trusted sequencer identifier
+LAYERX_GATEWAY_SEQUENCER_FIRST_BATCH_FILE - path to the first batch the sequencer authorisation covers
+LAYERX_GATEWAY_SEQUENCER_LAST_BATCH_FILE - path to the last batch the sequencer authorisation covers
+LAYERX_GATEWAY_KEY_PROVISIONING_KEY_FILE - path to the 64-hex key provisioning key
+LAYERX_GATEWAY_MODULE_REGISTRY_FILE - path to the module registry JSON document
+ENDPOINT_TLS_CERT - platform secret written to the file named by LAYERX_GATEWAY_TLS_CERT_DER
+ENDPOINT_TLS_KEY - platform secret written to the file named by LAYERX_GATEWAY_TLS_KEY_DER
+ENDPOINT_OUTBOUND_CA - platform secret written to the file named by LAYERX_GATEWAY_OUTBOUND_CA_DER
+ENDPOINT_CLIENT_IDENTITY_PKCS12 - platform secret written to the file named by LAYERX_GATEWAY_CLIENT_IDENTITY_PKCS12
+ENDPOINT_CLIENT_IDENTITY_PASSWORD - platform secret written to the file named by LAYERX_GATEWAY_CLIENT_IDENTITY_PASSWORD_FILE
+ENDPOINT_COMPONENT_TOKEN - platform secret written to the file named by LAYERX_GATEWAY_COMPONENT_TOKEN_FILE
+ENDPOINT_AUTHORITY_TOKEN - platform secret written to the file named by LAYERX_GATEWAY_AUTHORITY_TOKEN_FILE
+ENDPOINT_IDENTITY_TOKEN - platform secret written to the file named by LAYERX_GATEWAY_IDENTITY_TOKEN_FILE
+ENDPOINT_IDENTITY_PROVISIONING_TOKEN - platform secret written to the file named by LAYERX_GATEWAY_IDENTITY_PROVISIONING_TOKEN_FILE
+ENDPOINT_PROGRAM_REGISTRY_TOKEN - platform secret written to the file named by LAYERX_GATEWAY_PROGRAM_REGISTRY_TOKEN_FILE
+ENDPOINT_FAUCET_SERVICE_TOKEN - platform secret written to the file named by LAYERX_GATEWAY_FAUCET_SERVICE_TOKEN_FILE
+ENDPOINT_REDIS_USERNAME - platform secret written to the file named by LAYERX_GATEWAY_REDIS_USERNAME_FILE
+ENDPOINT_REDIS_PASSWORD - platform secret written to the file named by LAYERX_GATEWAY_REDIS_PASSWORD_FILE
+ENDPOINT_SEQUENCER_PUBLIC_KEY - platform secret written to the file named by LAYERX_GATEWAY_SEQUENCER_PUBLIC_KEY_FILE
+ENDPOINT_SEQUENCER_ID - platform secret written to the file named by LAYERX_GATEWAY_SEQUENCER_ID_FILE
+ENDPOINT_SEQUENCER_FIRST_BATCH - platform secret written to the file named by LAYERX_GATEWAY_SEQUENCER_FIRST_BATCH_FILE
+ENDPOINT_SEQUENCER_LAST_BATCH - platform secret written to the file named by LAYERX_GATEWAY_SEQUENCER_LAST_BATCH_FILE
+ENDPOINT_KEY_PROVISIONING_KEY - platform secret written to the file named by LAYERX_GATEWAY_KEY_PROVISIONING_KEY_FILE
+ENDPOINT_MODULE_REGISTRY - platform secret written to the file named by LAYERX_GATEWAY_MODULE_REGISTRY_FILE
+# attestor
+ATTESTOR_NODE_ID - identifier of this attestor node within the participant set
+ATTESTOR_REGION - region label this node reports in health
+ATTESTOR_LISTEN_ADDR - host:port the attestor API listens on
+ATTESTOR_PEER_LISTEN_ADDR - host:port the peer transport listens on
+ATTESTOR_PEERS - comma-separated id=host:port list of the other attestor nodes
+ATTESTOR_NODE_KEY_FILE - path to the node key file (32 raw bytes or 64 hex characters) that encrypts the share store
+ATTESTOR_DATA_DIR - directory holding the encrypted share store
+ATTESTOR_CEREMONY - true enables keys.import for the operator during a ceremony window
+ATTESTOR_CHAIN_ID - EVM chain id every decoded transaction is pinned to
+ATTESTOR_JWKS_URL - identity provider JWKS endpoint used to verify user tokens
+ATTESTOR_JWT_ISSUER - expected issuer of user tokens
+ATTESTOR_JWT_AUDIENCE - expected audience of user tokens
+ATTESTOR_POLICY_FILE - path to the default signing policy
+ATTESTOR_TLS_CERT_FILE - path to this node's TLS certificate
+ATTESTOR_TLS_KEY_FILE - path to this node's TLS private key
+ATTESTOR_TLS_CA_FILE - path to the CA bundle that authenticates peers and the gateway
+ATTESTOR_OPERATOR_CA_FILE - path to the CA bundle that authenticates the operator identity
+ATTESTOR_BACKUP_KEY_FILE - path to the key file (32 raw bytes or 64 hex characters) that encrypts store snapshots
+ATTESTOR_BACKUP_DIR - directory where encrypted store snapshots are written
+ATTESTOR_RPC_URL - chain RPC endpoint used to read nonces and binding state
+
+# gateway
+NODE_ENV - runtime mode of the gateway: development, test or production
+PORT - TCP port the gateway HTTP server listens on
+LOG_LEVEL - gateway log verbosity
+CORS_ORIGINS - comma-separated browser origins allowed to call the gateway, with single-level wildcard subdomains
+SUPABASE_URL - Supabase project URL whose published JWKS verifies user access tokens
+DATABASE_URL - connection string of the gateway's wallet database
+DATABASE_POOL_MAX - maximum connections in the gateway's database pool
+WALLET_MASTER_KEY - base64 32-byte key that encrypts legacy wallet key envelopes at rest
+WALLET_MASTER_KEY_VERSION - version number of the active wallet master key
+HYPERPAXEER_CHAIN_ID - EVM chain id the gateway signs for
+HYPERPAXEER_RPC_URL - EVM JSON-RPC endpoint used for reads and broadcasts
+HYPERPAXEER_EXPLORER_URL - block explorer base URL returned to clients for transaction links
+POLICY_MAX_TX_VALUE_WEI - per-transaction native value cap for standard wallets
+POLICY_MAX_DAILY_VALUE_WEI - rolling daily native value cap for standard wallets
+POLICY_RATE_LIMIT_PER_MINUTE - signing requests allowed per wallet per minute
+FUNDED_TREASURY_PRIVATE_KEY - treasury signing key of the funded lane, disabled when unset
+FUNDED_USDL_ADDRESS - USDL token contract used as funded-lane collateral
+FUNDED_USDL_DECIMALS - decimals of the USDL token
+FUNDED_GAS_REFILL_THRESHOLD_WEI - native balance below which a funded wallet is topped up
+FUNDED_GAS_REFILL_AMOUNT_WEI - native amount sent per funded-wallet top-up
+FUNDED_EVALUATOR_INTERVAL_MS - tick interval of the funded drawdown evaluator
+PAXSCAN_API_URL - explorer API base used to value funded wallets
+PAXSCAN_TIMEOUT_MS - timeout of one explorer API request
+PAXSCAN_CACHE_TTL_MS - lifetime of cached explorer valuations
+FUNDED_BALANCE_READ_QUORUM - number of RPC reads sampled per funded balance read
+FUNDED_DAILY_RESET_UTC_HOUR - UTC hour at which the funded daily drawdown window resets
+API_WORKERS - number of gateway worker processes
+AGENT_JWT_SECRET - HS256 secret that signs gateway-minted agent tokens, agent lane disabled when unset
+AGENT_TOKEN_TTL_SECONDS - lifetime of an agent token
+AGENT_CHALLENGE_TTL_SECONDS - lifetime of an agent authentication challenge
+AGENT_DEFAULT_FROZEN - whether a newly seen agent principal starts frozen
+AGENT_DEFAULT_MODE - initial mode of a newly seen agent principal
+AGENT_BIND_OWNER_FROM_DID - whether an agent is bound to the owner named in its DID label
+AGENT_DEFAULT_MAX_TX_VALUE_WEI - default per-transaction native value cap for agent wallets
+AGENT_DEFAULT_MAX_DAILY_VALUE_WEI - default rolling daily native value cap for agent wallets
+AGENT_DEFAULT_RATE_LIMIT_PER_MINUTE - default signing requests per agent per minute
+AGENT_DEFAULT_MAX_APPROVE_WEI - default cap on ERC-20 approval amounts for agent wallets
+LAYERX_VAULT_ADDRESS - LayerX custody vault contract targeted by agent deposit actions
+LAYER_X_DB_URI - read-only connection string of the LayerX sequencer database
+ACTION_CONFIRMATIONS - block confirmations before an agent action transaction is final
+ACTION_RECEIPT_TIMEOUT_MS - maximum wait for one agent action receipt
+ACTION_WORKER_INTERVAL_MS - tick interval of the agent action worker
+ACTION_RECONCILE_INTERVAL_MS - sweep interval of the agent action reconciler
+ACTION_FEE_BUMP_PERCENT - fee increase applied when replacing a stuck agent action transaction
+LAYERX_SYNC_INTERVAL_MS - interval of the LayerX mirror sync worker
+NEXT_PUBLIC_PAXEER_WALLET_API - wallet gateway base URL used by the demo
+NEXT_PUBLIC_SUPABASE_URL - Supabase project URL used by the demo for sign-in
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY - Supabase publishable key used by the demo for sign-in
+NEXT_PUBLIC_AUTH_REDIRECT_URL - sign-in callback URL of the demo
+NEXT_PUBLIC_SITE_URL - public origin of the demo used for page metadata

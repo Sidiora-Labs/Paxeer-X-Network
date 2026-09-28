@@ -125,15 +125,11 @@ fn document(state: &VerifiedState) -> serde_json::Value {
 }
 
 pub(super) fn read(config: &Config, trace_id: &str) -> OutgoingResponse {
-    let upstream = match upstream_json(
-        config,
-        &config.component,
-        config.component_token.as_str(),
-        "GET",
-        "/v1/state",
-        None,
-        &[],
-    ) {
+    let (component, token) = match config.backend(super::KernelBackend::Component) {
+        Ok(target) => target,
+        Err(unavailable) => return unavailable.into(),
+    };
+    let upstream = match upstream_json(config, component, token, "GET", "/v1/state", None, &[]) {
         Ok(upstream) => upstream,
         Err(error) => return error,
     };

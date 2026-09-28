@@ -1,0 +1,470 @@
+use layerx_platform_gateway::store::{RedisEndpoint, RedisStore};
+use layerx_platform_internal::http;
+use layerx_platform_internal::tls::{Origin, Upstream};
+use native_tls::Certificate;
+use serde_json::{json, Value};
+use std::fs;
+use std::net::{TcpListener, TcpStream};
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
+use std::sync::Arc;
+use std::thread;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use zeroize::Zeroizing;
+
+const CHAIN_ID: &str = "0x7d0";
+const LATEST_BLOCK: &str = "0x1a2b";
+const ACCOUNT: &str = "0x102132435465768798a9bacbdcedfe0f1e2d3c4b";
+
+struct RedisProcess {
+    child: Child,
+    directory: PathBuf,
+    endpoint: RedisEndpoint,
+    certificate: Certificate,
+    port: u16,
+}
+
+impl RedisProcess {
+    fn start() -> Self {
+        let unique = format!(
+            "layerx-degraded-redis-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        );
+        let directory = std::env::temp_dir().join(unique);
+        fs::create_dir(&directory)
+            .unwrap_or_else(|error| panic!("test Redis directory must be created: {error}"));
+        let certificate_pem = directory.join("server.pem");
+        let certificate_der = directory.join("server.der");
+        let private_key = directory.join("server.key");
+        command(
+            "openssl",
+            &[
+                "req",
+                "-x509",
+                "-newkey",
+                "rsa:2048",
+                "-nodes",
+                "-keyout",
+                path(&private_key),
+                "-out",
+                path(&certificate_pem),
+                "-days",
+                "1",
+                "-subj",
+                "/CN=localhost",
+                "-addext",
+                "subjectAltName=DNS:localhost",
+            ],
+        );
+        command(
+            "openssl",
+            &[
+                "x509",
+                "-in",
+                path(&certificate_pem),
+                "-outform",
+                "DER",
+                "-out",
+                path(&certificate_der),
+            ],
+        );
+        let port = free_port();
+        let acl = directory.join("users.acl");
+        fs::write(
+            &acl,
+            "user default off\nuser gateway on >gateway-secret ~* &* +@all\n",
+        )
+        .unwrap_or_else(|error| panic!("test Redis ACL must be written: {error}"));
+        let config = directory.join("redis.conf");
+        fs::write(
+            &config,
+            format!(
+                "bind 127.0.0.1\nport 0\ntls-port {port}\ntls-cert-file {}\ntls-key-file {}\ntls-ca-cert-file {}\ntls-auth-clients no\naclfile {}\nappendonly yes\nappendfsync always\ndir {}\nprotected-mode yes\n",
+                path(&certificate_pem),
+                path(&private_key),
+                path(&certificate_pem),
+                path(&acl),
+                path(&directory),
+            ),
+        )
+        .unwrap_or_else(|error| panic!("test Redis config must be written: {error}"));
+        let endpoint = RedisEndpoint::parse(&format!("rediss://localhost:{port}"))
+            .unwrap_or_else(|error| panic!("test Redis endpoint must parse: {error}"));
+        let certificate = Certificate::from_der(
+            &fs::read(&certificate_der)
+                .unwrap_or_else(|error| panic!("test certificate must be read: {error}")),
+        )
+        .unwrap_or_else(|error| panic!("test certificate must parse: {error}"));
+        let child = Command::new("redis-server")
+            .arg(&config)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap_or_else(|error| panic!("real Redis server must start: {error}"));
+        let process = Self {
+            child,
+            directory,
+            endpoint,
+            certificate,
+            port,
+        };
+        for _ in 0..100 {
+            if TcpStream::connect(("127.0.0.1", port)).is_ok() {
+                return process;
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        panic!("real Redis server did not become reachable")
+    }
+
+    fn store(&self) -> RedisStore {
+        RedisStore::new(
+            self.endpoint.clone(),
+            self.certificate.clone(),
+            Zeroizing::new("gateway".to_owned()),
+            Zeroizing::new("gateway-secret".to_owned()),
+        )
+    }
+}
+
+impl Drop for RedisProcess {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        let _ = fs::remove_dir_all(&self.directory);
+    }
+}
+
+struct Gateway {
+    child: Child,
+    client: Upstream,
+}
+
+impl Drop for Gateway {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+impl Gateway {
+    fn rpc(&self, method: &str, params: &Value) -> Value {
+        let request = json!({"jsonrpc": "2.0", "id": 7, "method": method, "params": params});
+        let answer = self
+            .client
+            .post("/rpc", request.to_string().as_bytes())
+            .unwrap_or_else(|error| panic!("{method} must be answered: {error:?}"));
+        assert_eq!(answer.status, 200, "{method}");
+        let document: Value = serde_json::from_slice(&answer.body)
+            .unwrap_or_else(|error| panic!("{method} answer must be JSON: {error}"));
+        assert_eq!(document["jsonrpc"], "2.0");
+        assert_eq!(document["id"], 7);
+        document
+    }
+
+    fn get(&self, path: &str) -> (u16, Value) {
+        let answer = self
+            .client
+            .get(path)
+            .unwrap_or_else(|error| panic!("{path} must be answered: {error:?}"));
+        let document = serde_json::from_slice(&answer.body)
+            .unwrap_or_else(|error| panic!("{path} answer must be JSON: {error}"));
+        (answer.status, document)
+    }
+}
+
+fn command(program: &str, arguments: &[&str]) {
+    let output = Command::new(program)
+        .args(arguments)
+        .output()
+        .unwrap_or_else(|error| panic!("{program} must run: {error}"));
+    assert!(
+        output.status.success(),
+        "{program} failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn path(value: &Path) -> &str {
+    value
+        .to_str()
+        .unwrap_or_else(|| panic!("test path must be UTF-8"))
+}
+
+fn free_port() -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .unwrap_or_else(|error| panic!("test port must be allocated: {error}"));
+    listener
+        .local_addr()
+        .unwrap_or_else(|error| panic!("test port must resolve: {error}"))
+        .port()
+}
+
+fn precompile_answers() -> Vec<(String, String)> {
+    let vectors: Value = serde_json::from_str(include_str!("fixtures/paxeer-abi-vectors.json"))
+        .unwrap_or_else(|error| panic!("ABI vectors: {error}"));
+    vectors["cases"]
+        .as_array()
+        .unwrap_or_else(|| panic!("ABI vector cases missing"))
+        .iter()
+        .filter_map(|case| {
+            Some((
+                format!("0x{}", case["calldata"].as_str()?),
+                format!("0x{}", case["result"].as_str()?),
+            ))
+        })
+        .collect()
+}
+
+fn chain_answer(answers: &[(String, String)], request: &http::Request) -> http::Response {
+    let Ok(call) = serde_json::from_slice::<Value>(&request.body) else {
+        return http::refusal(400, "invalid_json", None);
+    };
+    let id = call["id"].clone();
+    let result = match call["method"].as_str() {
+        Some("eth_chainId") => Some(json!(CHAIN_ID)),
+        Some("eth_blockNumber") => Some(json!(LATEST_BLOCK)),
+        Some("eth_call") => call["params"][0]["data"].as_str().and_then(|data| {
+            answers
+                .iter()
+                .find(|(calldata, _)| calldata == data)
+                .map(|(_, result)| json!(result))
+        }),
+        _ => None,
+    };
+    http::json(
+        200,
+        &result.map_or_else(
+            || json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32000, "message": "execution reverted"}}),
+            |result| json!({"jsonrpc": "2.0", "id": id, "result": result}),
+        ),
+    )
+}
+
+fn secret(directory: &Path, name: &str, value: &str) -> String {
+    let file = directory.join(name);
+    fs::write(&file, value).unwrap_or_else(|error| panic!("{name} must be written: {error}"));
+    path(&file).to_owned()
+}
+
+fn start_gateway(redis: &RedisProcess, chain_port: u16) -> Gateway {
+    let directory = &redis.directory;
+    let listen = free_port();
+    let unused = free_port();
+    let modules = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../tests/fixtures/public-testnet-modules/registry.json");
+    let ca = path(&directory.join("server.der")).to_owned();
+    let child = Command::new(env!("CARGO_BIN_EXE_layerx-gateway"))
+        .env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .env("LAYERX_GATEWAY_LISTEN", format!("127.0.0.1:{listen}"))
+        .env("LAYERX_GATEWAY_TLS_CERT_DER", &ca)
+        .env(
+            "LAYERX_GATEWAY_TLS_KEY_DER",
+            path(&directory.join("server-key.der")),
+        )
+        .env("LAYERX_GATEWAY_OUTBOUND_CA_DER", &ca)
+        .env(
+            "LAYERX_GATEWAY_CLIENT_IDENTITY_PKCS12",
+            path(&directory.join("client.p12")),
+        )
+        .env(
+            "LAYERX_GATEWAY_CLIENT_IDENTITY_PASSWORD_FILE",
+            secret(directory, "identity-password", "integration-only"),
+        )
+        .env(
+            "LAYERX_GATEWAY_SEQUENCER_PUBLIC_KEY_FILE",
+            secret(
+                directory,
+                "sequencer-key",
+                "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+            ),
+        )
+        .env(
+            "LAYERX_GATEWAY_SEQUENCER_ID_FILE",
+            secret(directory, "sequencer-id", &"11".repeat(32)),
+        )
+        .env(
+            "LAYERX_GATEWAY_SEQUENCER_FIRST_BATCH_FILE",
+            secret(directory, "sequencer-first", "1"),
+        )
+        .env(
+            "LAYERX_GATEWAY_SEQUENCER_LAST_BATCH_FILE",
+            secret(directory, "sequencer-last", "1"),
+        )
+        .env(
+            "LAYERX_GATEWAY_KEY_PROVISIONING_KEY_FILE",
+            secret(directory, "provisioning-key", &"42".repeat(32)),
+        )
+        .env("LAYERX_GATEWAY_NETWORK_ID", "paxeer-degraded")
+        .env(
+            "LAYERX_GATEWAY_LXP_WIRE_VERSION",
+            layerx_wire::limits::STATE_COMMITMENT_PROTOCOL_VERSION.to_string(),
+        )
+        .env("LAYERX_GATEWAY_PROTOCOL_NETWORK_ID", "7")
+        .env("LAYERX_GATEWAY_MODULE_REGISTRY_FILE", path(&modules))
+        .env(
+            "LAYERX_GATEWAY_PAXEER_RPC_URL",
+            format!("https://localhost:{chain_port}"),
+        )
+        .env(
+            "LAYERX_GATEWAY_REDIS_URL",
+            format!("rediss://localhost:{}", redis.port),
+        )
+        .env(
+            "LAYERX_GATEWAY_REDIS_USERNAME_FILE",
+            secret(directory, "redis-username", "gateway"),
+        )
+        .env(
+            "LAYERX_GATEWAY_REDIS_PASSWORD_FILE",
+            secret(directory, "redis-password", "gateway-secret"),
+        )
+        .env(
+            "LAYERX_EVENTS_PAYMENT_UPSTREAM_URL",
+            format!("https://localhost:{unused}"),
+        )
+        .env("LAYERX_EVENTS_PAYMENT_UPSTREAM_CA_DER", &ca)
+        .env(
+            "LAYERX_EVENTS_WEBHOOKS_UPSTREAM_URL",
+            format!("https://localhost:{unused}"),
+        )
+        .env("LAYERX_EVENTS_WEBHOOKS_UPSTREAM_CA_DER", &ca)
+        .envs(["PAYMENT", "WEBHOOKS"].into_iter().flat_map(|kind| {
+            [
+                (
+                    format!("LAYERX_EVENTS_{kind}_UPSTREAM_TOKEN_FILE"),
+                    secret(directory, "producer-token", "producer-token"),
+                ),
+                (
+                    format!("LAYERX_EVENTS_{kind}_UPSTREAM_CLIENT_IDENTITY_PKCS12"),
+                    path(&directory.join("client.p12")).to_owned(),
+                ),
+                (
+                    format!("LAYERX_EVENTS_{kind}_UPSTREAM_CLIENT_IDENTITY_PASSWORD_FILE"),
+                    secret(directory, "identity-password", "integration-only"),
+                ),
+            ]
+        }))
+        .stdout(Stdio::null())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .unwrap_or_else(|error| panic!("gateway must start: {error}"));
+    let mut gateway = Gateway {
+        child,
+        client: Upstream::new(
+            Origin::parse(&format!("https://localhost:{listen}"))
+                .unwrap_or_else(|error| panic!("{error}")),
+            redis.certificate.clone(),
+            None,
+            None,
+        ),
+    };
+    for _ in 0..200 {
+        if let Ok(Some(status)) = gateway.child.try_wait() {
+            panic!("gateway refused start-up without the kernel: {status}");
+        }
+        if gateway
+            .client
+            .get("/livez")
+            .is_ok_and(|answer| answer.status == 200)
+        {
+            return gateway;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    panic!("gateway did not become live")
+}
+
+fn assert_kernel_unavailable(answer: &Value, backend: &str) {
+    assert!(answer.get("result").is_none(), "{answer}");
+    assert_eq!(answer["error"]["code"], -32010, "{answer}");
+    assert_eq!(answer["error"]["message"], "Kernel unavailable");
+    assert_eq!(
+        answer["error"]["data"],
+        json!({"code": "kernel_unavailable", "backend": backend, "reason": "not_configured"})
+    );
+}
+
+#[test]
+fn degraded_endpoint_serves_the_chain_and_refuses_kernel_methods_without_the_kernel() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let redis = RedisProcess::start();
+    assert!(redis.store().ready());
+    let (tls, _) = payment_events::tls(&redis);
+    let answers = precompile_answers();
+    let chain = payment_events::Listener::start(Arc::clone(&tls), move |request| {
+        chain_answer(&answers, request)
+    });
+    let gateway = start_gateway(&redis, chain.port);
+
+    let chain_id = gateway.rpc("eth_chainId", &json!([]));
+    assert_eq!(chain_id["result"], CHAIN_ID, "{chain_id}");
+
+    let resolved = gateway.rpc("px_resolveAccount", &json!([ACCOUNT]));
+    assert_eq!(
+        resolved["result"],
+        json!({
+            "evm_address": ACCOUNT,
+            "pax_address": "pax1exampleaccount",
+            "layerx_did": format!("did:layerx:{}", "61".repeat(32)),
+            "layerx_account": "7c".repeat(32),
+            "bound": true
+        }),
+        "{resolved}"
+    );
+
+    assert_kernel_unavailable(
+        &gateway.rpc("lx_getAccount", &json!(["ab".repeat(32)])),
+        "public_core",
+    );
+    assert_kernel_unavailable(
+        &gateway.rpc("px_getBalances", &json!([ACCOUNT])),
+        "public_core",
+    );
+
+    let network = gateway.rpc("px_getNetwork", &json!([]));
+    assert_eq!(
+        network["result"]["kernel"],
+        json!({"available": false, "reason": "not_configured"}),
+        "{network}"
+    );
+    assert_eq!(
+        network["result"]["paxeer"],
+        json!({"chain_id": CHAIN_ID, "latest_block": LATEST_BLOCK})
+    );
+    assert_eq!(network["result"]["network_id"], "paxeer-degraded");
+
+    let (status, readiness) = gateway.get("/readyz");
+    assert_eq!(status, 200, "{readiness}");
+    assert_eq!(readiness["status"], "degraded");
+    let backends = &readiness["backends"];
+    assert_eq!(
+        backends["paxeer_chain"],
+        json!({"state": "ready", "reason": "ready"}),
+        "{readiness}"
+    );
+    assert_eq!(
+        backends["durable_store"],
+        json!({"state": "ready", "reason": "ready"})
+    );
+    for kernel in [
+        "core_agent_boundary",
+        "independent_receipt_authority",
+        "program_registry",
+    ] {
+        assert_eq!(
+            backends[kernel],
+            json!({"state": "unavailable", "reason": "not_configured"}),
+            "{kernel}"
+        );
+    }
+    drop(gateway);
+    drop(chain);
+}
+
+#[path = "support/payment_events.rs"]
+mod payment_events;

@@ -1,11 +1,13 @@
 #![forbid(unsafe_code)]
 
+mod assertion;
 mod binding;
 mod provision;
 mod state;
 mod wire;
 
-pub use state::{Policy, State};
+pub use assertion::{AssertionConfig, AssertionPrincipal, AssertionVerifier, VerifiedAssertion};
+pub use state::{AssertionReceipt, Policy, State};
 
 use std::fs;
 use std::io;

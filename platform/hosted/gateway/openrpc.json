@@ -48,6 +48,38 @@
         {
           "code": -32005,
           "message": "Registration unavailable"
+        },
+        {
+          "code": -32010,
+          "message": "Kernel unavailable",
+          "data": {
+            "type": "object",
+            "required": [
+              "code",
+              "backend",
+              "reason"
+            ],
+            "properties": {
+              "code": {
+                "const": "kernel_unavailable"
+              },
+              "backend": {
+                "enum": [
+                  "core_agent_boundary",
+                  "public_core",
+                  "independent_receipt_authority",
+                  "identity",
+                  "program_registry"
+                ]
+              },
+              "reason": {
+                "enum": [
+                  "not_configured",
+                  "unreachable"
+                ]
+              }
+            }
+          }
         }
       ]
     },
@@ -96,6 +128,38 @@
         {
           "code": -32005,
           "message": "Faucet claim unavailable"
+        },
+        {
+          "code": -32010,
+          "message": "Kernel unavailable",
+          "data": {
+            "type": "object",
+            "required": [
+              "code",
+              "backend",
+              "reason"
+            ],
+            "properties": {
+              "code": {
+                "const": "kernel_unavailable"
+              },
+              "backend": {
+                "enum": [
+                  "core_agent_boundary",
+                  "public_core",
+                  "independent_receipt_authority",
+                  "identity",
+                  "program_registry"
+                ]
+              },
+              "reason": {
+                "enum": [
+                  "not_configured",
+                  "unreachable"
+                ]
+              }
+            }
+          }
         }
       ]
     },
@@ -130,6 +194,38 @@
         {
           "code": -32005,
           "message": "Read unavailable"
+        },
+        {
+          "code": -32010,
+          "message": "Kernel unavailable",
+          "data": {
+            "type": "object",
+            "required": [
+              "code",
+              "backend",
+              "reason"
+            ],
+            "properties": {
+              "code": {
+                "const": "kernel_unavailable"
+              },
+              "backend": {
+                "enum": [
+                  "core_agent_boundary",
+                  "public_core",
+                  "independent_receipt_authority",
+                  "identity",
+                  "program_registry"
+                ]
+              },
+              "reason": {
+                "enum": [
+                  "not_configured",
+                  "unreachable"
+                ]
+              }
+            }
+          }
         }
       ]
     },
@@ -164,6 +260,38 @@
         {
           "code": -32005,
           "message": "Read unavailable"
+        },
+        {
+          "code": -32010,
+          "message": "Kernel unavailable",
+          "data": {
+            "type": "object",
+            "required": [
+              "code",
+              "backend",
+              "reason"
+            ],
+            "properties": {
+              "code": {
+                "const": "kernel_unavailable"
+              },
+              "backend": {
+                "enum": [
+                  "core_agent_boundary",
+                  "public_core",
+                  "independent_receipt_authority",
+                  "identity",
+                  "program_registry"
+                ]
+              },
+              "reason": {
+                "enum": [
+                  "not_configured",
+                  "unreachable"
+                ]
+              }
+            }
+          }
         }
       ]
     },
@@ -198,6 +326,38 @@
         {
           "code": -32005,
           "message": "Read unavailable"
+        },
+        {
+          "code": -32010,
+          "message": "Kernel unavailable",
+          "data": {
+            "type": "object",
+            "required": [
+              "code",
+              "backend",
+              "reason"
+            ],
+            "properties": {
+              "code": {
+                "const": "kernel_unavailable"
+              },
+              "backend": {
+                "enum": [
+                  "core_agent_boundary",
+                  "public_core",
+                  "independent_receipt_authority",
+                  "identity",
+                  "program_registry"
+                ]
+              },
+              "reason": {
+                "enum": [
+                  "not_configured",
+                  "unreachable"
+                ]
+              }
+            }
+          }
         }
       ]
     },
@@ -232,6 +392,38 @@
         {
           "code": -32005,
           "message": "Read unavailable"
+        },
+        {
+          "code": -32010,
+          "message": "Kernel unavailable",
+          "data": {
+            "type": "object",
+            "required": [
+              "code",
+              "backend",
+              "reason"
+            ],
+            "properties": {
+              "code": {
+                "const": "kernel_unavailable"
+              },
+              "backend": {
+                "enum": [
+                  "core_agent_boundary",
+                  "public_core",
+                  "independent_receipt_authority",
+                  "identity",
+                  "program_registry"
+                ]
+              },
+              "reason": {
+                "enum": [
+                  "not_configured",
+                  "unreachable"
+                ]
+              }
+            }
+          }
         }
       ]
     },
@@ -266,6 +458,38 @@
         {
           "code": -32005,
           "message": "Read unavailable"
+        },
+        {
+          "code": -32010,
+          "message": "Kernel unavailable",
+          "data": {
+            "type": "object",
+            "required": [
+              "code",
+              "backend",
+              "reason"
+            ],
+            "properties": {
+              "code": {
+                "const": "kernel_unavailable"
+              },
+              "backend": {
+                "enum": [
+                  "core_agent_boundary",
+                  "public_core",
+                  "independent_receipt_authority",
+                  "identity",
+                  "program_registry"
+                ]
+              },
+              "reason": {
+                "enum": [
+                  "not_configured",
+                  "unreachable"
+                ]
+              }
+            }
+          }
         }
       ]
     },
@@ -300,6 +524,38 @@
         {
           "code": -32005,
           "message": "Read unavailable"
+        },
+        {
+          "code": -32010,
+          "message": "Kernel unavailable",
+          "data": {
+            "type": "object",
+            "required": [
+              "code",
+              "backend",
+              "reason"
+            ],
+            "properties": {
+              "code": {
+                "const": "kernel_unavailable"
+              },
+              "backend": {
+                "enum": [
+                  "core_agent_boundary",
+                  "public_core",
+                  "independent_receipt_authority",
+                  "identity",
+                  "program_registry"
+                ]
+              },
+              "reason": {
+                "enum": [
+                  "not_configured",
+                  "unreachable"
+                ]
+              }
+            }
+          }
         }
       ]
     },
@@ -334,6 +590,38 @@
         {
           "code": -32005,
           "message": "Read unavailable"
+        },
+        {
+          "code": -32010,
+          "message": "Kernel unavailable",
+          "data": {
+            "type": "object",
+            "required": [
+              "code",
+              "backend",
+              "reason"
+            ],
+            "properties": {
+              "code": {
+                "const": "kernel_unavailable"
+              },
+              "backend": {
+                "enum": [
+                  "core_agent_boundary",
+                  "public_core",
+                  "independent_receipt_authority",
+                  "identity",
+                  "program_registry"
+                ]
+              },
+              "reason": {
+                "enum": [
+                  "not_configured",
+                  "unreachable"
+                ]
+              }
+            }
+          }
         }
       ]
     },
@@ -360,6 +648,38 @@
         {
           "code": -32005,
           "message": "Read unavailable"
+        },
+        {
+          "code": -32010,
+          "message": "Kernel unavailable",
+          "data": {
+            "type": "object",
+            "required": [
+              "code",
+              "backend",
+              "reason"
+            ],
+            "properties": {
+              "code": {
+                "const": "kernel_unavailable"
+              },
+              "backend": {
+                "enum": [
+                  "core_agent_boundary",
+                  "public_core",
+                  "independent_receipt_authority",
+                  "identity",
+                  "program_registry"
+                ]
+              },
+              "reason": {
+                "enum": [
+                  "not_configured",
+                  "unreachable"
+                ]
+              }
+            }
+          }
         }
       ]
     },
@@ -405,6 +725,38 @@
         {
           "code": -32005,
           "message": "Read unavailable"
+        },
+        {
+          "code": -32010,
+          "message": "Kernel unavailable",
+          "data": {
+            "type": "object",
+            "required": [
+              "code",
+              "backend",
+              "reason"
+            ],
+            "properties": {
+              "code": {
+                "const": "kernel_unavailable"
+              },
+              "backend": {
+                "enum": [
+                  "core_agent_boundary",
+                  "public_core",
+                  "independent_receipt_authority",
+                  "identity",
+                  "program_registry"
+                ]
+              },
+              "reason": {
+                "enum": [
+                  "not_configured",
+                  "unreachable"
+                ]
+              }
+            }
+          }
         }
       ]
     },
@@ -461,6 +813,38 @@
         {
           "code": -32005,
           "message": "Read unavailable"
+        },
+        {
+          "code": -32010,
+          "message": "Kernel unavailable",
+          "data": {
+            "type": "object",
+            "required": [
+              "code",
+              "backend",
+              "reason"
+            ],
+            "properties": {
+              "code": {
+                "const": "kernel_unavailable"
+              },
+              "backend": {
+                "enum": [
+                  "core_agent_boundary",
+                  "public_core",
+                  "independent_receipt_authority",
+                  "identity",
+                  "program_registry"
+                ]
+              },
+              "reason": {
+                "enum": [
+                  "not_configured",
+                  "unreachable"
+                ]
+              }
+            }
+          }
         }
       ]
     },
@@ -514,6 +898,38 @@
         {
           "code": -32005,
           "message": "Read unavailable"
+        },
+        {
+          "code": -32010,
+          "message": "Kernel unavailable",
+          "data": {
+            "type": "object",
+            "required": [
+              "code",
+              "backend",
+              "reason"
+            ],
+            "properties": {
+              "code": {
+                "const": "kernel_unavailable"
+              },
+              "backend": {
+                "enum": [
+                  "core_agent_boundary",
+                  "public_core",
+                  "independent_receipt_authority",
+                  "identity",
+                  "program_registry"
+                ]
+              },
+              "reason": {
+                "enum": [
+                  "not_configured",
+                  "unreachable"
+                ]
+              }
+            }
+          }
         }
       ]
     },
@@ -639,6 +1055,38 @@
         {
           "code": -32005,
           "message": "Read unavailable"
+        },
+        {
+          "code": -32010,
+          "message": "Kernel unavailable",
+          "data": {
+            "type": "object",
+            "required": [
+              "code",
+              "backend",
+              "reason"
+            ],
+            "properties": {
+              "code": {
+                "const": "kernel_unavailable"
+              },
+              "backend": {
+                "enum": [
+                  "core_agent_boundary",
+                  "public_core",
+                  "independent_receipt_authority",
+                  "identity",
+                  "program_registry"
+                ]
+              },
+              "reason": {
+                "enum": [
+                  "not_configured",
+                  "unreachable"
+                ]
+              }
+            }
+          }
         }
       ]
     },
@@ -674,6 +1122,38 @@
         {
           "code": -32005,
           "message": "Read unavailable"
+        },
+        {
+          "code": -32010,
+          "message": "Kernel unavailable",
+          "data": {
+            "type": "object",
+            "required": [
+              "code",
+              "backend",
+              "reason"
+            ],
+            "properties": {
+              "code": {
+                "const": "kernel_unavailable"
+              },
+              "backend": {
+                "enum": [
+                  "core_agent_boundary",
+                  "public_core",
+                  "independent_receipt_authority",
+                  "identity",
+                  "program_registry"
+                ]
+              },
+              "reason": {
+                "enum": [
+                  "not_configured",
+                  "unreachable"
+                ]
+              }
+            }
+          }
         }
       ]
     },
@@ -711,6 +1191,38 @@
         {
           "code": -32005,
           "message": "Read unavailable"
+        },
+        {
+          "code": -32010,
+          "message": "Kernel unavailable",
+          "data": {
+            "type": "object",
+            "required": [
+              "code",
+              "backend",
+              "reason"
+            ],
+            "properties": {
+              "code": {
+                "const": "kernel_unavailable"
+              },
+              "backend": {
+                "enum": [
+                  "core_agent_boundary",
+                  "public_core",
+                  "independent_receipt_authority",
+                  "identity",
+                  "program_registry"
+                ]
+              },
+              "reason": {
+                "enum": [
+                  "not_configured",
+                  "unreachable"
+                ]
+              }
+            }
+          }
         }
       ]
     },
@@ -815,6 +1327,38 @@
         {
           "code": -32603,
           "message": "Invalid upstream response"
+        },
+        {
+          "code": -32010,
+          "message": "Kernel unavailable",
+          "data": {
+            "type": "object",
+            "required": [
+              "code",
+              "backend",
+              "reason"
+            ],
+            "properties": {
+              "code": {
+                "const": "kernel_unavailable"
+              },
+              "backend": {
+                "enum": [
+                  "core_agent_boundary",
+                  "public_core",
+                  "independent_receipt_authority",
+                  "identity",
+                  "program_registry"
+                ]
+              },
+              "reason": {
+                "enum": [
+                  "not_configured",
+                  "unreachable"
+                ]
+              }
+            }
+          }
         }
       ]
     },
@@ -917,6 +1461,38 @@
         {
           "code": -32005,
           "message": "Read unavailable"
+        },
+        {
+          "code": -32010,
+          "message": "Kernel unavailable",
+          "data": {
+            "type": "object",
+            "required": [
+              "code",
+              "backend",
+              "reason"
+            ],
+            "properties": {
+              "code": {
+                "const": "kernel_unavailable"
+              },
+              "backend": {
+                "enum": [
+                  "core_agent_boundary",
+                  "public_core",
+                  "independent_receipt_authority",
+                  "identity",
+                  "program_registry"
+                ]
+              },
+              "reason": {
+                "enum": [
+                  "not_configured",
+                  "unreachable"
+                ]
+              }
+            }
+          }
         }
       ]
     },
@@ -943,6 +1519,38 @@
         {
           "code": -32005,
           "message": "Read unavailable"
+        },
+        {
+          "code": -32010,
+          "message": "Kernel unavailable",
+          "data": {
+            "type": "object",
+            "required": [
+              "code",
+              "backend",
+              "reason"
+            ],
+            "properties": {
+              "code": {
+                "const": "kernel_unavailable"
+              },
+              "backend": {
+                "enum": [
+                  "core_agent_boundary",
+                  "public_core",
+                  "independent_receipt_authority",
+                  "identity",
+                  "program_registry"
+                ]
+              },
+              "reason": {
+                "enum": [
+                  "not_configured",
+                  "unreachable"
+                ]
+              }
+            }
+          }
         }
       ]
     },
@@ -953,10 +1561,32 @@
       "result": {
         "name": "result",
         "schema": {
-          "type": "object"
+          "type": "object",
+          "properties": {
+            "kernel": {
+              "type": "object",
+              "required": [
+                "available",
+                "reason"
+              ],
+              "properties": {
+                "available": {
+                  "type": "boolean"
+                },
+                "reason": {
+                  "enum": [
+                    "available",
+                    "not_configured",
+                    "unreachable",
+                    "no_finalised_checkpoint"
+                  ]
+                }
+              }
+            }
+          }
         }
       },
-      "description": "One head for the whole network: network_id, paxeer {chain_id, latest_block} from eth_chainId and eth_blockNumber, layerx {node_info} from the public core node information, and anchor {latest_finalized_batch, status, status_name, status_ladder} from the anchor precompile's latestFinalized and statusOf. The status ladder is the anchor's own: 0 unknown, 1 submitted, 2 final. Takes no arguments.",
+      "description": "One head for the whole network: network_id, paxeer {chain_id, latest_block} from eth_chainId and eth_blockNumber, layerx {node_info} from the public core node information, and anchor {latest_finalized_batch, status, status_name, status_ladder} from the anchor precompile's latestFinalized and statusOf. The status ladder is the anchor's own: 0 unknown, 1 submitted, 2 final. kernel {available, reason} reports whether kernel-side operations are offered: reason is available, not_configured when the endpoint runs without the kernel backends, unreachable when the public core node information cannot be read, or no_finalised_checkpoint when the anchor precompile reports no finalised batch. Takes no arguments.",
       "errors": [
         {
           "code": -32602,

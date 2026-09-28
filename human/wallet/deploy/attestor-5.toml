@@ -1,0 +1,92 @@
+app = "paxeer-attestor-5"
+primary_region = "sin"
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[build]
+  dockerfile = "human/wallet/attestor/Dockerfile"
+
+[deploy]
+  strategy = "immediate"
+
+[env]
+  ATTESTOR_NODE_ID = "5"
+  ATTESTOR_REGION = "sin"
+  ATTESTOR_LISTEN_ADDR = ":8443"
+  ATTESTOR_PEER_LISTEN_ADDR = ":9443"
+  ATTESTOR_PEERS = "1=paxeer-attestor-1.internal:9443,2=paxeer-attestor-2.internal:9443,3=paxeer-attestor-3.internal:9443,4=paxeer-attestor-4.internal:9443"
+  ATTESTOR_DATA_DIR = "/data"
+  ATTESTOR_BACKUP_DIR = "/data/backup"
+  ATTESTOR_CHAIN_ID = "125"
+  ATTESTOR_CEREMONY = "false"
+  ATTESTOR_JWT_AUDIENCE = "authenticated"
+  ATTESTOR_POLICY_FILE = "/data/policy/default.json"
+  ATTESTOR_NODE_KEY_FILE = "/run/secrets/node.key"
+  ATTESTOR_BACKUP_KEY_FILE = "/run/secrets/backup.key"
+  ATTESTOR_TLS_CERT_FILE = "/run/secrets/tls.crt"
+  ATTESTOR_TLS_KEY_FILE = "/run/secrets/tls.key"
+  ATTESTOR_TLS_CA_FILE = "/run/secrets/ca.crt"
+  ATTESTOR_OPERATOR_CA_FILE = "/run/secrets/operator-ca.crt"
+
+[[files]]
+  guest_path = "/run/secrets/node.key"
+  secret_name = "ATTESTOR_NODE_KEY"
+
+[[files]]
+  guest_path = "/run/secrets/backup.key"
+  secret_name = "ATTESTOR_BACKUP_KEY"
+
+[[files]]
+  guest_path = "/run/secrets/tls.crt"
+  secret_name = "ATTESTOR_TLS_CERT"
+
+[[files]]
+  guest_path = "/run/secrets/tls.key"
+  secret_name = "ATTESTOR_TLS_KEY"
+
+[[files]]
+  guest_path = "/run/secrets/ca.crt"
+  secret_name = "ATTESTOR_TLS_CA"
+
+[[files]]
+  guest_path = "/run/secrets/operator-ca.crt"
+  secret_name = "ATTESTOR_OPERATOR_CA"
+
+[[mounts]]
+  source = "attestor_data"
+  destination = "/data"
+  initial_size = "10gb"
+
+[[services]]
+  protocol = "tcp"
+  internal_port = 8443
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [[services.http_checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "30s"
+    method = "get"
+    path = "/health"
+    protocol = "https"
+    tls_skip_verify = true
+
+[[services]]
+  protocol = "tcp"
+  internal_port = 9443
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [[services.tcp_checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "30s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"
+  cpus = 1
+  cpu_kind = "shared"

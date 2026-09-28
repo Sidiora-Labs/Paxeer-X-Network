@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <rect width="64" height="64" rx="16" fill="#1a1a2e"/>
+  <text x="32" y="38" text-anchor="middle" font-family="system-ui, sans-serif" font-weight="700" font-size="18" fill="#00d4aa">PNS</text>
+  <path d="M16 48 L32 52 L48 48" stroke="#00d4aa" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+</svg>

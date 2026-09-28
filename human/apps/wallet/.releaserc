@@ -1,0 +1,20 @@
+{
+  "branches": ["main", "develop"],
+  "plugins": [
+    "@semantic-release/commit-analyzer",
+    "@semantic-release/release-notes-generator",
+    "@semantic-release/changelog",
+    "@semantic-release/npm",
+    "@semantic-release/git",
+    "@semantic-release/github"
+  ],
+  "changelogFile": "CHANGELOG.md",
+  "changelogTitle": "# Changelog\n\nAll notable changes to this project will be documented in this file.\n\nThe format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).\n",
+  "releaseRules": [
+    {"type": "feat", "release": "minor"},
+    {"type": "fix", "release": "patch"},
+    {"type": "perf", "release": "minor"},
+    {"type": "refactor", "release": "patch"},
+    {"type": "docs", "release": "patch"}
+  ]
+}

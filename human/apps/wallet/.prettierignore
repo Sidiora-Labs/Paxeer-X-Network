@@ -1,0 +1,40 @@
+# Dependencies
+node_modules
+.pnp
+.pnp.js
+
+# Build outputs
+.next
+out
+dist
+build
+
+# Cache
+.turbo
+.cache
+.tsbuildinfo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Testing
+coverage
+.nyc_output
+
+# Misc
+.DS_Store
+*.pem
+*.log
+pnpm-lock.yaml
+package-lock.json
+
+# Production
+.vercel
+.netlify
+
+# Static assets
+public
+static
+assets

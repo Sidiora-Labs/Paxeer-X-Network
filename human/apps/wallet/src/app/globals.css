@@ -1,0 +1,330 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Paxeer Sans Rounded (PP Pangram Sans Rounded) ──────────────────────── */
+@font-face {
+  font-family: 'Paxeer Sans Rounded';
+  src: url('/Paxeer_Sans_Rounded/PPPangramSansRounded-Thin.otf') format('opentype');
+  font-weight: 100;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Paxeer Sans Rounded';
+  src: url('/Paxeer_Sans_Rounded/PPPangramSansRounded-Light.otf') format('opentype');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Paxeer Sans Rounded';
+  src: url('/Paxeer_Sans_Rounded/PPPangramSansRounded-Medium.otf') format('opentype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Paxeer Sans Rounded';
+  src: url('/Paxeer_Sans_Rounded/PPPangramSansRounded-Semibold.otf') format('opentype');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Paxeer Sans Rounded';
+  src: url('/Paxeer_Sans_Rounded/PPPangramSansRounded-Bold.otf') format('opentype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Paxeer Sans Rounded';
+  src: url('/Paxeer_Sans_Rounded/PPPangramSansRounded-ExtraboldItalic.otf') format('opentype');
+  font-weight: 800;
+  font-style: italic;
+  font-display: swap;
+}
+
+:root {
+  --color-surface-base: #141413;
+  --color-surface-raised: #1c1c1a;
+  --color-surface-card: #23231f;
+  --color-surface-control: #2b2b27;
+  --color-surface-overlay: #30302b;
+  --color-text-strong: #fffdf8;
+  --color-text-primary: #eee9e2;
+  --color-text-secondary: #aaa69f;
+  --color-text-tertiary: #85827c;
+  --color-text-disabled: #5e5c57;
+  --color-action-primary: #2262d1;
+  --color-action-primary-muted: #194796;
+  --color-action-on-primary: #111410;
+  --color-status-success: #33c77a;
+  --color-status-danger: #ff6972;
+  --color-status-warning: #f3a63b;
+  --color-status-info: #77a8f7;
+  --pax-bg: var(--color-surface-base);
+  --pax-surface: var(--color-surface-raised);
+  --pax-card: var(--color-surface-card);
+  --pax-accent: var(--color-action-primary);
+  --pax-accent-dim: var(--color-action-primary-muted);
+  --pax-mid-dark: var(--color-text-disabled);
+  --pax-mid: var(--color-text-tertiary);
+  --pax-subtle: var(--color-text-secondary);
+  --pax-light: var(--color-text-primary);
+  --pax-off-white: var(--color-text-strong);
+  --pax-success: var(--color-status-success);
+  --pax-error: var(--color-status-danger);
+  --pax-warning: var(--color-status-warning);
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.875rem;
+  --font-size-md: 1rem;
+  --font-size-lg: 1.25rem;
+  --font-size-xl: 1.75rem;
+  --line-height-tight: 1.2;
+  --line-height-body: 1.5;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --density-control: 2.75rem;
+  --touch-target: 2.75rem;
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.25rem;
+  --elevation-sheet: 0 24px 60px rgb(0 0 0 / 0.45);
+  --elevation-menu: 0 12px 32px rgb(0 0 0 / 0.35);
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-left: env(safe-area-inset-left, 0px);
+  --safe-area-right: env(safe-area-inset-right, 0px);
+  --motion-fast: 120ms;
+  --motion-normal: 200ms;
+  --motion-slow: 350ms;
+  --pax-ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+html, body {
+  background: var(--pax-bg);
+  color: var(--color-text-primary);
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  font-feature-settings: 'kern' 1;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  display: none;
+}
+
+/* Mobile viewport fix */
+html {
+  height: -webkit-fill-available;
+}
+body {
+  min-height: 100vh;
+  min-height: 100dvh;
+  min-height: -webkit-fill-available;
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-body);
+}
+
+/* Safe area padding */
+.safe-area-pt { padding-top: var(--safe-area-top); }
+.safe-area-pb { padding-bottom: var(--safe-area-bottom); }
+.safe-area-px {
+  padding-left: var(--safe-area-left);
+  padding-right: var(--safe-area-right);
+}
+
+/* iOS standalone mode — safe area handled by fixed header + spacer */
+
+/* Glass card utility */
+.glass-card {
+  background: rgba(27, 27, 25, 0.8);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-radius: 1rem;
+}
+
+/* Glass nav */
+.glass-nav {
+  background: rgba(22, 22, 21, 0.85);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+}
+
+/* PIN dot animation */
+.pin-dot {
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.pin-dot-filled {
+  background: var(--pax-accent);
+  transform: scale(1.15);
+}
+
+/* Scrollbar hide for mobile feel */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Shimmer loading */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.shimmer {
+  background: linear-gradient(90deg, rgba(227,217,212,0.04) 25%, rgba(227,217,212,0.08) 50%, rgba(227,217,212,0.04) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+/* Active press feedback */
+.press-scale {
+  transition: transform 0.1s ease;
+}
+.press-scale:active {
+  transform: scale(0.97);
+}
+
+/* PWA animations */
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(100%); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes slide-down {
+  from { opacity: 0; transform: translateY(-100%); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes bounce-subtle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+.animate-slide-up {
+  animation: slide-up 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.animate-slide-down {
+  animation: slide-down 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.animate-fade-in {
+  animation: fade-in 0.2s ease-out;
+}
+.animate-bounce-subtle {
+  animation: bounce-subtle 2s ease-in-out infinite;
+}
+
+/* AI typing dots */
+@keyframes typingBounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+  30% { transform: translateY(-5px); opacity: 1; }
+}
+
+/* QR Scanner scan line */
+@keyframes scan-line {
+  0% { top: 8px; opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { top: calc(100% - 8px); opacity: 0; }
+}
+.animate-scan-line {
+  animation: scan-line 2s ease-in-out infinite;
+}
+
+/* html5-qrcode overrides — hide default UI chrome */
+#qr-scanner-region video {
+  border-radius: 1rem;
+  object-fit: cover;
+}
+#qr-scanner-region img[alt="Info icon"],
+#qr-scanner-region a[href],
+#qr-scanner-region > div:last-child {
+  display: none !important;
+}
+
+/* Tabular figures for financial data */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Price color utilities */
+.price-up { color: var(--pax-success); }
+.price-down { color: var(--pax-error); }
+
+/* Range slider */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 3px;
+  outline: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--pax-accent);
+  cursor: pointer;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--pax-accent);
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-action-primary);
+  outline-offset: 3px;
+}
+
+/* RTL logical property helpers */
+[dir="rtl"] .rtl\:flip-x {
+  transform: scaleX(-1);
+}
+
+/* Ensure touch targets meet 44px minimum */
+button, [role="button"], a, input, select, textarea {
+  min-height: var(--touch-target);
+}
+
+/* Dynamic viewport height for virtual keyboard */
+@supports (height: 100dvh) {
+  .dvh-full { height: 100dvh; }
+  .dvh-min  { min-height: 100dvh; }
+}
