@@ -316,3 +316,11 @@ symbol = "ACCOUNT_ENV"
 observed = "The account routes read NEXT_PUBLIC_PAXEER_RPC_URL, NEXT_PUBLIC_PAXEER_HUMAN_API and NEXT_PUBLIC_PAXEER_EXPLORER_URL, which no documented environment file names."
 assumption = "The deployment environment documents these three origins alongside the wallet gateway variables."
 severity = "info"
+
+[observation.4.2.3]
+task = "4.2"
+file = "human/wallet/sdk/src/agent.ts"
+symbol = "@noble/curves/ed25519"
+observed = "The verify run collected none of the six account test files and failed only with Missing ./ed25519 specifier in @noble/curves at agent.ts line 1, the import failure recorded in observation 4.3.1."
+assumption = "The .js subpath fix lands on the feature as its own task and the account verify command is rerun there; no repair cycle was spent on it."
+severity = "high"
