@@ -1274,3 +1274,58 @@ symbol = "task.5.1 verify_cmd"
 observed = "The verify command runs both gate scripts with --check, which validates syntax, tooling and target presence only, while do_1 and ac_4 ask for one full run of gate-test.sh and gate-lint.sh on the merged tip; the full runs were outside this lane's allowed gates and did not run."
 assumption = "The full gate-lint.sh and gate-test.sh runs without --check execute once at release on the merged revision, and their result is not claimed by this entry."
 severity = "major"
+
+[gate.5.5]
+revision = "d6933d948117ff345f7d5d5cb72466c9c6ab76ce"
+command = "timeout 60m sh -c 'tools/wallet/gate-lint.sh && tools/wallet/gate-test.sh'"
+exit_code = 1
+log_path = ".logs/verify-5.5.log"
+observed = "gate-lint ran all twelve targets, seven passing (both Go gofmt and vet pairs, wallet eslint, app tsc, platform fmt) and five failing (wallet tsc, app eslint, human fmt, human clippy, platform clippy), so the && stopped before gate-test and no test suite ran at this revision."
+
+[observation.5.5.1]
+task = "2.5"
+file = "human/wallet/sdk/package.json"
+symbol = "@sidiora/layerx-sdk"
+observed = "pnpm-wallet-tsc fails with TS2307 on @sidiora/layerx-sdk in eight sdk src/modules files, plus two TS7006 in gas-station.ts that follow from it, because the link to agent/sdk/typescript resolves to types under dist/ that a fresh checkout does not build and neither pnpm install nor the gate builds."
+assumption = "Building agent/sdk/typescript before the gate, or adding it as a workspace member that builds on install, clears this target without a source change; that is untested here."
+severity = "major"
+
+[observation.5.5.2]
+task = "4.3"
+file = "human/apps/wallet/src/surfaces/useSurface.ts"
+symbol = "@next/next/no-assign-module-variable"
+observed = "pnpm-app-eslint reports five errors for assigning a variable named module in useSurface.ts and in BridgeView.tsx, ExchangeView.tsx, LaunchpadView.tsx and WebDataView.tsx, all landed by task 4.3."
+assumption = "The owning task renames the variable; the rule stays as configured."
+severity = "major"
+
+[observation.5.5.3]
+task = "3.6, 4.2, 4.9"
+file = "human/apps/wallet/src/wallet/WalletProvider.test.tsx"
+symbol = "react-hooks/globals"
+observed = "pnpm-app-eslint reports four errors for reassigning a module-level variable inside a test component, twice in WalletProvider.test.tsx (3.6), once each in DepositFlow.test.tsx (4.2) and ThemeProvider.test.tsx (4.9), plus four warnings (no-img-element, exhaustive-deps)."
+assumption = "Each owning task captures the hook result without module reassignment; the lint rule and the tests' assertions stay as written."
+severity = "major"
+
+[observation.5.5.4]
+task = "outside the feature"
+file = "human/crates/layerx-human-service/src/journeys/observed.rs"
+symbol = "cargo fmt --check"
+observed = "rust-human-fmt finds unformatted hunks in journeys/observed.rs and time.rs of layerx-human-service, both last changed by intent-router commits that reached the feature through main, not by a wallet task."
+assumption = "Pre-existing on main, recorded once for the release gate and not chased here."
+severity = "note"
+
+[observation.5.5.5]
+task = "outside the feature"
+file = "human/crates/layerx-network-gateway/src/lib.rs"
+symbol = "clippy::doc_markdown, clippy::manual_is_multiple_of"
+observed = "rust-human-clippy exits 101 without reaching the wallet crates: the path dependency layerx-network-gateway fails 12 doc_markdown lints and one manual_is_multiple_of in lib.rs, last changed by the intent-router commit from main."
+assumption = "Pre-existing on main; the wallet crates' own clippy result stays unknown until the dependency is clean."
+severity = "major"
+
+[observation.5.5.6]
+task = "3.9"
+file = "platform/hosted/gateway/src/http.rs"
+symbol = "clippy::too_many_arguments, too_many_lines, missing_errors_doc, format_push_string"
+observed = "rust-platform-clippy exits 101 on five pedantic lints in http.rs at lines 252, 303, 529 and 548, a file last changed by task 3.9; which of the lines 3.9 introduced was not traced."
+assumption = "The owner of each flagged function fixes it at the source; no lint allow is added."
+severity = "major"
