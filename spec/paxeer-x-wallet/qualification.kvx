@@ -47,3 +47,19 @@ symbol = "DeriveAccountID"
 observed = "The chain's DeriveAccountID refuses agent:<did>:asset:<hex64> names with ErrAccountIdentity while the Rust wire crate derives them under protocol 3, so the two cannot be compared for the asset subaccount form."
 assumption = "AccountID follows the Rust derivation; the test pins the chain's refusal for asset names so any later chain support fails it and forces the comparison."
 severity = "suspect"
+
+[observation.1.12.1]
+task = "1.12"
+file = "human/wallet/deploy/endpoint.toml"
+symbol = "tls_config"
+observed = "The hosted endpoint always terminates TLS itself on its listener, while the platform http_service forwards plain HTTP to internal_port after terminating TLS at the edge."
+assumption = "The endpoint deployment task adds a plain-HTTP listener mode behind the platform proxy or switches the definition to TLS passthrough; the health check already speaks https to the machine."
+severity = "suspect"
+
+[observation.1.12.2]
+task = "1.12"
+file = "human/wallet/attestor/Dockerfile"
+symbol = "attestor"
+observed = "The daemon runs as the distroless non-root user while the platform mounts the attestor_data volume at /data owned by root, and the daemon's API is mutual TLS while the platform health check presents no client certificate."
+assumption = "The daemon task serves /health without a client certificate and the network deployment task makes /data writable for the non-root user before the first keygen."
+severity = "suspect"

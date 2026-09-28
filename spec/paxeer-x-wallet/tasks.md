@@ -65,7 +65,7 @@
     - Add tools/wallet/gate-lint.sh running gofmt and go vet for the Go modules, eslint and tsc for the workspace and the app, and cargo fmt and clippy for the named crates, with the same budget and reporting; both gates take --check to validate their syntax, required tooling and target list without running a suite.
     - Add tools/wallet/gate.test.sh exercising --check for both gates and a budget of one second against a deliberately slow target, asserting the reported command and exit code.
     - _Requirements: 13.1_
-  - [ ] 1.12 Write the deployment definitions for the attestors, the gateway and the endpoint
+  - [x] 1.12 Write the deployment definitions for the attestors, the gateway and the endpoint
     - Add human/wallet/deploy with one application definition per attestor node (five, each naming its region, one machine, a persistent volume mount for the data directory, private-network-only peer and health ports, the daemon image built from human/wallet/attestor/Dockerfile, and secrets by name), one for the wallet gateway and one for the hosted endpoint, plus the container files each image builds from.
     - Add tools/wallet/check-deploy.sh validating every definition offline: five distinct regions across at least two continents, one machine each, volumes present, no secret values, health checks pointing at the daemon's health route, image references in the repository, and the environment names matching human/wallet/deploy/env.
     - Add tools/wallet/check-deploy.test.sh with fixtures that pass and fixtures that violate each rule.

@@ -369,7 +369,7 @@ log_path = ".logs/verify.log"
 
 [task.1.12]
 title = "Write the deployment definitions for the attestors, the gateway and the endpoint"
-status = "pending"
+status = "done"
 wave = 1
 requires = []
 do_1 = "Add human/wallet/deploy with one application definition per attestor node (five, each naming its region, one machine, a persistent volume mount for the data directory, private-network-only peer and health ports, the daemon image built from human/wallet/attestor/Dockerfile, and secrets by name), one for the wallet gateway and one for the hosted endpoint, plus the container files each image builds from."
@@ -377,8 +377,12 @@ do_2 = "Add tools/wallet/check-deploy.sh validating every definition offline: fi
 do_3 = "Add tools/wallet/check-deploy.test.sh with fixtures that pass and fixtures that violate each rule."
 verify_cmd = "timeout 20m sh -c 'tools/wallet/check-deploy.test.sh'"
 symbols = ["check-deploy"]
-touches = ["human/wallet/deploy/attestor-1.toml","human/wallet/deploy/attestor-2.toml","human/wallet/deploy/attestor-3.toml","human/wallet/deploy/attestor-4.toml","human/wallet/deploy/attestor-5.toml","human/wallet/deploy/gateway.toml","human/wallet/deploy/endpoint.toml","human/wallet/attestor/Dockerfile","human/wallet/gateway/Dockerfile","tools/wallet/check-deploy.sh","tools/wallet/check-deploy.test.sh"]
+touches = ["human/wallet/deploy/attestor-1.toml","human/wallet/deploy/attestor-2.toml","human/wallet/deploy/attestor-3.toml","human/wallet/deploy/attestor-4.toml","human/wallet/deploy/attestor-5.toml","human/wallet/deploy/gateway.toml","human/wallet/deploy/endpoint.toml","human/wallet/attestor/Dockerfile","human/wallet/gateway/Dockerfile","tools/wallet/check-deploy.sh","tools/wallet/check-deploy.test.sh","human/wallet/deploy/env"]
 reqs = ["3.1","12.2"]
+revision = "0b4a1a0a26c8586b9125139427604edd69b59990"
+command = "timeout 20m sh -c 'tools/wallet/check-deploy.test.sh'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.1.13]
 title = "Accept the wallet's identity assertion in the human identity provider"

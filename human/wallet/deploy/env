@@ -1,3 +1,65 @@
+# deploy
+NODE_ENV - runtime mode of the wallet gateway process, production on the platform
+PORT - port the wallet gateway listens on behind the platform proxy
+ATTESTOR_NODE_KEY - platform secret holding this attestor's node key, written to the file named by ATTESTOR_NODE_KEY_FILE
+ATTESTOR_BACKUP_KEY - platform secret holding this attestor's backup key, written to the file named by ATTESTOR_BACKUP_KEY_FILE
+ATTESTOR_TLS_CERT - platform secret holding this attestor's TLS certificate, written to the file named by ATTESTOR_TLS_CERT_FILE
+ATTESTOR_TLS_KEY - platform secret holding this attestor's TLS private key, written to the file named by ATTESTOR_TLS_KEY_FILE
+ATTESTOR_TLS_CA - platform secret holding the CA bundle for peers and the gateway, written to the file named by ATTESTOR_TLS_CA_FILE
+ATTESTOR_OPERATOR_CA - platform secret holding the operator CA bundle, written to the file named by ATTESTOR_OPERATOR_CA_FILE
+LAYERX_GATEWAY_LISTEN - socket address the shared endpoint listens on, defaulting to all interfaces on port 9443
+LAYERX_GATEWAY_NETWORK_ID - network identifier the shared endpoint expects from its kernel backends, set as a platform secret
+LAYERX_GATEWAY_PROTOCOL_NETWORK_ID - numeric protocol network identifier of the kernel, set as a platform secret
+LAYERX_GATEWAY_LXP_WIRE_VERSION - LXP wire version the shared endpoint speaks
+LAYERX_GATEWAY_IDEMPOTENCY_SECONDS - retention of idempotency records in seconds
+LAYERX_GATEWAY_CAPABILITIES_TTL_SECONDS - cache lifetime of the capabilities answer in seconds
+LAYERX_GATEWAY_TLS_CERT_DER - path to the shared endpoint's DER server certificate
+LAYERX_GATEWAY_TLS_KEY_DER - path to the shared endpoint's DER PKCS8 server key
+LAYERX_GATEWAY_OUTBOUND_CA_DER - path to the DER CA that authenticates the endpoint's upstream services
+LAYERX_GATEWAY_CLIENT_IDENTITY_PKCS12 - path to the PKCS12 client identity the endpoint presents upstream
+LAYERX_GATEWAY_CLIENT_IDENTITY_PASSWORD_FILE - path to the password of the PKCS12 client identity
+LAYERX_GATEWAY_COMPONENT_URL - agent boundary base URL, set as a platform secret
+LAYERX_GATEWAY_COMPONENT_TOKEN_FILE - path to the agent boundary bearer token
+LAYERX_GATEWAY_AUTHORITY_URL - receipt authority base URL, set as a platform secret
+LAYERX_GATEWAY_AUTHORITY_TOKEN_FILE - path to the receipt authority bearer token
+LAYERX_GATEWAY_IDENTITY_URL - identity service base URL, set as a platform secret
+LAYERX_GATEWAY_IDENTITY_TOKEN_FILE - path to the identity service bearer token
+LAYERX_GATEWAY_IDENTITY_PROVISIONING_TOKEN_FILE - path to the identity provisioning token used by registration
+LAYERX_GATEWAY_PROGRAM_REGISTRY_URL - program registry base URL, set as a platform secret
+LAYERX_GATEWAY_PROGRAM_REGISTRY_TOKEN_FILE - path to the program registry bearer token
+LAYERX_GATEWAY_PUBLIC_CORE_URL - public core read base URL, optional, set as a platform secret
+LAYERX_GATEWAY_PAXEER_RPC_URL - chain RPC base URL for eth_ relay, optional, set as a platform secret
+LAYERX_GATEWAY_INDEXER_URL - indexer base URL for unified history, optional, set as a platform secret
+LAYERX_GATEWAY_FAUCET_URL - faucet service base URL, optional, set as a platform secret
+LAYERX_GATEWAY_FAUCET_SERVICE_TOKEN_FILE - path to the faucet service token
+LAYERX_GATEWAY_REDIS_URL - Redis URL of the endpoint's shared store, set as a platform secret
+LAYERX_GATEWAY_REDIS_USERNAME_FILE - path to the Redis username
+LAYERX_GATEWAY_REDIS_PASSWORD_FILE - path to the Redis password
+LAYERX_GATEWAY_SEQUENCER_PUBLIC_KEY_FILE - path to the trusted sequencer public key
+LAYERX_GATEWAY_SEQUENCER_ID_FILE - path to the trusted sequencer identifier
+LAYERX_GATEWAY_SEQUENCER_FIRST_BATCH_FILE - path to the first batch the sequencer authorisation covers
+LAYERX_GATEWAY_SEQUENCER_LAST_BATCH_FILE - path to the last batch the sequencer authorisation covers
+LAYERX_GATEWAY_KEY_PROVISIONING_KEY_FILE - path to the 64-hex key provisioning key
+LAYERX_GATEWAY_MODULE_REGISTRY_FILE - path to the module registry JSON document
+ENDPOINT_TLS_CERT - platform secret written to the file named by LAYERX_GATEWAY_TLS_CERT_DER
+ENDPOINT_TLS_KEY - platform secret written to the file named by LAYERX_GATEWAY_TLS_KEY_DER
+ENDPOINT_OUTBOUND_CA - platform secret written to the file named by LAYERX_GATEWAY_OUTBOUND_CA_DER
+ENDPOINT_CLIENT_IDENTITY_PKCS12 - platform secret written to the file named by LAYERX_GATEWAY_CLIENT_IDENTITY_PKCS12
+ENDPOINT_CLIENT_IDENTITY_PASSWORD - platform secret written to the file named by LAYERX_GATEWAY_CLIENT_IDENTITY_PASSWORD_FILE
+ENDPOINT_COMPONENT_TOKEN - platform secret written to the file named by LAYERX_GATEWAY_COMPONENT_TOKEN_FILE
+ENDPOINT_AUTHORITY_TOKEN - platform secret written to the file named by LAYERX_GATEWAY_AUTHORITY_TOKEN_FILE
+ENDPOINT_IDENTITY_TOKEN - platform secret written to the file named by LAYERX_GATEWAY_IDENTITY_TOKEN_FILE
+ENDPOINT_IDENTITY_PROVISIONING_TOKEN - platform secret written to the file named by LAYERX_GATEWAY_IDENTITY_PROVISIONING_TOKEN_FILE
+ENDPOINT_PROGRAM_REGISTRY_TOKEN - platform secret written to the file named by LAYERX_GATEWAY_PROGRAM_REGISTRY_TOKEN_FILE
+ENDPOINT_FAUCET_SERVICE_TOKEN - platform secret written to the file named by LAYERX_GATEWAY_FAUCET_SERVICE_TOKEN_FILE
+ENDPOINT_REDIS_USERNAME - platform secret written to the file named by LAYERX_GATEWAY_REDIS_USERNAME_FILE
+ENDPOINT_REDIS_PASSWORD - platform secret written to the file named by LAYERX_GATEWAY_REDIS_PASSWORD_FILE
+ENDPOINT_SEQUENCER_PUBLIC_KEY - platform secret written to the file named by LAYERX_GATEWAY_SEQUENCER_PUBLIC_KEY_FILE
+ENDPOINT_SEQUENCER_ID - platform secret written to the file named by LAYERX_GATEWAY_SEQUENCER_ID_FILE
+ENDPOINT_SEQUENCER_FIRST_BATCH - platform secret written to the file named by LAYERX_GATEWAY_SEQUENCER_FIRST_BATCH_FILE
+ENDPOINT_SEQUENCER_LAST_BATCH - platform secret written to the file named by LAYERX_GATEWAY_SEQUENCER_LAST_BATCH_FILE
+ENDPOINT_KEY_PROVISIONING_KEY - platform secret written to the file named by LAYERX_GATEWAY_KEY_PROVISIONING_KEY_FILE
+ENDPOINT_MODULE_REGISTRY - platform secret written to the file named by LAYERX_GATEWAY_MODULE_REGISTRY_FILE
 # attestor
 ATTESTOR_NODE_ID - identifier of this attestor node within the participant set
 ATTESTOR_REGION - region label this node reports in health
