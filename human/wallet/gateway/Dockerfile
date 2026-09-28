@@ -4,10 +4,10 @@ ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 RUN corepack enable
 WORKDIR /app
 COPY human/wallet ./
-RUN corepack install
-RUN pnpm install --frozen-lockfile
+RUN corepack prepare pnpm@12.6.0 --activate
+RUN pnpm install --frozen-lockfile --filter ./gateway...
 RUN pnpm --filter ./gateway... run --if-present build
-RUN find . -name node_modules -type d -prune -exec rm -rf {} + && pnpm install --frozen-lockfile --prod --offline
+RUN find . -name node_modules -type d -prune -exec rm -rf {} + && pnpm install --frozen-lockfile --prod --filter ./gateway...
 
 FROM node:22-bookworm-slim
 ENV NODE_ENV=production

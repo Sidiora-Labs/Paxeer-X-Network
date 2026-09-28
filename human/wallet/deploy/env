@@ -151,6 +151,8 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY - Supabase publishable key used by the demo
 NEXT_PUBLIC_AUTH_REDIRECT_URL - sign-in callback URL of the demo
 NEXT_PUBLIC_SITE_URL - public origin of the demo used for page metadata
 NEXT_PUBLIC_PAXEER_ATTESTOR_URL - attestor base URL the wallet app service worker treats as network-only; unset when browsers never reach the attestors
+CHECK_LIVE_GATEWAY_BASE - base URL of a deployed wallet gateway checked by tools/wallet/check-live.sh gateway
+CHECK_LIVE_GATEWAY_TOKEN - access token of a provisioned test identity that tools/wallet/check-live.sh gateway reads /v1/wallet/me with
 # gateway
 ATTESTOR_ENDPOINTS - comma-separated https base URLs of the five attestor nodes the gateway signs through
 ATTESTOR_CLIENT_CERT_FILE - path to the gateway's mutual TLS client certificate presented to the attestors
@@ -159,6 +161,9 @@ SPONSOR_PRIVATE_KEY - platform secret holding the account setup sponsor key, wri
 SPONSOR_PRIVATE_KEY_FILE - path to the 64-hex private key of the account that tops up binding gas for new unified accounts
 ACCOUNT_SETUP_GAS_CAP_WEI - largest binding gas top-up in wei the sponsor pays for one account
 ATTESTOR_CA_FILE - path to the CA bundle that authenticates the attestor nodes
+ATTESTOR_CLIENT_CERT - platform secret holding the gateway's attestor client certificate, written to the file named by ATTESTOR_CLIENT_CERT_FILE
+ATTESTOR_CLIENT_KEY - platform secret holding the private key of the gateway's attestor client certificate, written to the file named by ATTESTOR_CLIENT_KEY_FILE
+ATTESTOR_CA - platform secret holding the CA bundle that authenticates the attestor nodes, written to the file named by ATTESTOR_CA_FILE
 ATTESTOR_QUORUM - number of healthy attestors a signing session needs, defaulting to 3
 ATTESTOR_HEALTH_INTERVAL_MS - interval between attestor health probes in milliseconds, defaulting to 5000
 ATTESTOR_TIMEOUT_MS - timeout of one attestor request in milliseconds, defaulting to 15000

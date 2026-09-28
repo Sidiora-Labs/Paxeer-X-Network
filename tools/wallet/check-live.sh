@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
 	cat <<'EOF'
-usage: tools/wallet/check-live.sh endpoint | attestors
+usage: tools/wallet/check-live.sh endpoint | attestors | gateway
 
 Checks a deployed wallet service against its live answers.
 
@@ -29,12 +29,23 @@ attestors reads GET <base>/health from every base in
           are ready
           Exits 0 only when every node passes and the quorum passes.
 
+gateway   reads a deployed wallet gateway at CHECK_LIVE_GATEWAY_BASE and prints
+          one line per check:
+  readiness  GET <base>/readyz answers ready with the attestors, nonce_store,
+             rpc_pool and identity_provider components each up
+  me         GET <base>/v1/wallet/me with CHECK_LIVE_GATEWAY_TOKEN as the bearer
+             answers the provisioned wallet: an EVM address, a did:layerx
+             identity, a main account id and binding_state bound
+          Exits 0 only when both checks pass.
+
 Environment:
   CHECK_LIVE_ENDPOINT_BASE   base URL of the endpoint, no trailing /rpc
   CHECK_LIVE_ATTESTOR_BASES  comma-separated base URLs of the attestor APIs
   CHECK_LIVE_CLIENT_CERT     client certificate presented to https bases
   CHECK_LIVE_CLIENT_KEY      key of the client certificate
   CHECK_LIVE_CA              CA bundle that authenticates https bases
+  CHECK_LIVE_GATEWAY_BASE    base URL of the wallet gateway
+  CHECK_LIVE_GATEWAY_TOKEN   access token of a provisioned test identity
   CHECK_LIVE_TIMEOUT         seconds per request, default 30
 
 Exits 1 when any check fails, 2 on a usage error.
@@ -47,7 +58,7 @@ case "$mode" in
 	usage
 	exit 0
 	;;
-endpoint | attestors) ;;
+endpoint | attestors | gateway) ;;
 *)
 	usage >&2
 	exit 2
@@ -180,8 +191,120 @@ print(("pass " if ready and peers and not down else "fail ") + state + " " + lin
 	exit 0
 }
 
+gateway() {
+	local base="${CHECK_LIVE_GATEWAY_BASE:-}" token="${CHECK_LIVE_GATEWAY_TOKEN:-}"
+	local failures=0 check path body status verdict
+	if [ -z "$base" ]; then
+		echo "check-live: CHECK_LIVE_GATEWAY_BASE is required" >&2
+		usage >&2
+		exit 2
+	fi
+	if [ -z "$token" ]; then
+		echo "check-live: CHECK_LIVE_GATEWAY_TOKEN is required" >&2
+		usage >&2
+		exit 2
+	fi
+	base="${base%/}"
+	for check in readiness me; do
+		status=0
+		if [ "$check" = readiness ]; then
+			path=/readyz
+			body="$(curl -sS --max-time "$timeout" -w '\n%{http_code}' "$base$path" 2>&1)" || status=$?
+		else
+			path=/v1/wallet/me
+			body="$(curl -sS --max-time "$timeout" -w '\n%{http_code}' -H "authorization: Bearer $token" "$base$path" 2>&1)" || status=$?
+		fi
+		if [ "$status" -ne 0 ]; then
+			verdict="fail transport $(printf '%s' "$body" | tr '\n' ' ' | cut -c1-200)"
+		else
+			verdict="$(printf '%s' "$body" | python3 -c '
+import json
+import re
+import sys
+
+check = sys.argv[1]
+raw = sys.stdin.read()
+text, _, code = raw.rpartition("\n")
+try:
+    doc = json.loads(text)
+except ValueError:
+    print("fail http=" + code + " non-json " + " ".join(text.split())[:200])
+    sys.exit(0)
+
+
+def show(value):
+    return json.dumps(value, separators=(",", ":"), sort_keys=True)[:200]
+
+
+if check == "readiness":
+    components = doc.get("components") if isinstance(doc, dict) else None
+    names = ("attestors", "nonce_store", "rpc_pool", "identity_provider")
+    if not isinstance(components, dict) or any(not isinstance(components.get(n), dict) for n in names):
+        print("fail http=" + code + " not-readiness " + show(doc))
+        sys.exit(0)
+    parts = []
+    down = []
+    for n in names:
+        c = components[n]
+        state = c.get("state")
+        part = n + "=" + str(state)
+        if n == "attestors":
+            part += "(%s/%s)" % (c.get("healthy"), c.get("required"))
+        elif n == "rpc_pool":
+            part += "(%s)" % c.get("healthy")
+        elif n == "identity_provider":
+            part += "(%s)" % c.get("keys")
+        if state != "up":
+            down.append(n)
+            if c.get("reason"):
+                part += " reason=" + " ".join(str(c["reason"]).split())[:120]
+        parts.append(part)
+    ok = code == "200" and doc.get("ready") is True and not down
+    print(("pass " if ok else "fail ") + "http=" + code + " ready=" + str(doc.get("ready") is True).lower() + " " + " ".join(parts))
+else:
+    wallet = doc.get("wallet") if isinstance(doc, dict) else None
+    if code != "200" or not isinstance(wallet, dict):
+        print("fail http=" + code + " " + show(doc))
+        sys.exit(0)
+    address = wallet.get("address")
+    did = wallet.get("did")
+    main = wallet.get("main_account_id")
+    binding = wallet.get("binding_state")
+    kernel = doc.get("kernel") if isinstance(doc.get("kernel"), dict) else {}
+    checks = [
+        ("address", isinstance(address, str) and re.fullmatch(r"0x[0-9a-fA-F]{40}", address) is not None),
+        ("did", isinstance(did, str) and re.fullmatch(r"did:layerx:[0-9a-f]{64}", did) is not None),
+        ("main_account_id", isinstance(main, str) and re.fullmatch(r"[0-9a-f]{64}", main) is not None),
+    ]
+    missing = [n for n, ok in checks if not ok]
+    line = "http=" + code + " binding_state=" + str(binding) + " " + " ".join(
+        n + ("=set" if ok else "=missing") for n, ok in checks
+    ) + " kernel=" + str(kernel.get("state"))
+    print(("pass " if not missing and binding == "bound" else "fail ") + line)
+' "$check")"
+		fi
+		case "$verdict" in
+		pass\ *) echo "pass $check ${verdict#pass }" ;;
+		*)
+			echo "fail $check ${verdict#fail }"
+			failures=$((failures + 1))
+			;;
+		esac
+	done
+	if [ "$failures" -ne 0 ]; then
+		echo "check-live: $failures check(s) failed"
+		exit 1
+	fi
+	echo "check-live: all checks passed"
+	exit 0
+}
+
 if [ "$mode" = attestors ]; then
 	attestors
+fi
+
+if [ "$mode" = gateway ]; then
+	gateway
 fi
 
 base="${CHECK_LIVE_ENDPOINT_BASE:-}"

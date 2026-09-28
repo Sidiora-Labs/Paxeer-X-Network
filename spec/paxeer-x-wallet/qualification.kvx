@@ -878,3 +878,34 @@ symbol = "DecodeEffect"
 observed = "The kernel evaluator decodes an asset transfer as exactly from, to, asset and amount, while layerx-crypto's disclosure binds asset operation 5 only in the tagged send layout with its embedded authorization, so no asset send passes both and the test signs a Programs transfer, the one layout both decoders share."
 assumption = "The human service's kernel sends reach the daemon as the tagged send layout and are refused with decode_error until one of the two decoders follows the other."
 severity = "high"
+
+[observation.4.1.1]
+task = "4.1"
+file = "tools/wallet/check-deploy.sh"
+symbol = "health-check"
+observed = "The definition check exits 1 only on the five attestor health-check failures of observation 3.5.3; every gateway.toml rule passes, including the attestor client [[files]] mappings and their documented names."
+assumption = "The pre-existing attestor rule stays as recorded in 3.5.3; the gateway definition is not blocked by it."
+severity = "note"
+
+[observation.4.1.2]
+task = "4.1"
+file = "human/wallet/gateway/Dockerfile"
+symbol = "corepack install"
+observed = "The image build failed because the workspace names no packageManager for corepack install, the full install follows the SDK's link outside the build context, and the offline production prune finds no store after node_modules is removed; the build now prepares pnpm 12.6.0, installs and prunes only ./gateway... and prunes online, which spent both repair cycles."
+assumption = "The gateway image needs only the gateway's own dependency closure; the SDK and demo are not part of it."
+severity = "suspect"
+
+[observation.4.1.3]
+task = "4.1"
+file = "human/wallet/gateway/src/db/pool.ts"
+symbol = "statement_timeout"
+observed = "The gateway machine exits at start with unsupported startup parameter: statement_timeout because the pool sends statement_timeout as a connection startup parameter and the managed database URL set by attach goes through its connection pooler, so no machine passed readiness and the shadow proof and verify command were not run."
+assumption = "Either DATABASE_URL names the cluster's direct connection or the pool sets statement_timeout after connecting; no third repair cycle was spent, and the stopped machine, the database, the staged secrets and the dedicated IPv4 are left in place."
+severity = "blocker"
+
+[gate.4.1]
+revision = "74879759ed57c9107916264da19e79c1ce4dd657"
+command = "docker build -f human/wallet/gateway/Dockerfile -t paxeer-wallet-gateway:deploy . && flyctl deploy --config human/wallet/deploy/gateway.toml --image paxeer-wallet-gateway:deploy --app paxeer-wallet-gateway --local-only --wait-timeout 10m -y, database attached and secrets staged out of band"
+exit_code = 1
+log_path = ".logs/deploy.log"
+observed = "Image sha256:c0fac1e7d3b775ff4a81bfde81cf5f325f6548c0150e2087c5686c418504c78a was pushed after one registry timeout and one performance-2x 4 GB machine of the planned two was created, wrote its four secret files and exited at database connect on the pooler's statement_timeout refusal, so readiness never passed and no provisioning or transaction was made."

@@ -101,7 +101,71 @@ const health = (id, profile) => {
   return report;
 };
 
+const readiness = (profile) => {
+  const report = {
+    ready: true,
+    components: {
+      attestors: { state: "up", required: 3, healthy: 5, nodes: [], reason: null },
+      nonce_store: { state: "up", reason: null },
+      rpc_pool: { state: "up", healthy: 16, endpoints: [], reason: null },
+      identity_provider: { state: "up", keys: 2, reason: null },
+    },
+  };
+  if (profile === "notready") {
+    report.ready = false;
+    report.components.rpc_pool = { state: "down", healthy: 0, endpoints: [], reason: "rpc_pool_unavailable" };
+    return { status: 503, body: { error: "not_ready", ...report } };
+  }
+  return { status: 200, body: report };
+};
+
+const me = (profile) => {
+  const wallet = {
+    id: "wallet-1",
+    address: "0x00000000000000000000000000000000000000aa",
+    chain_id: 125,
+    created_at: null,
+    last_used_at: null,
+    did: "did:layerx:" + "cd".repeat(32),
+    main_account_id: "ef".repeat(32),
+    binding_state: "bound",
+  };
+  if (profile === "nokeys") {
+    wallet.did = null;
+    wallet.main_account_id = null;
+    wallet.binding_state = "unbound";
+  }
+  return {
+    wallet,
+    chain: { id: 125, rpc_url: "http://127.0.0.1:1", explorer_url: null },
+    kernel: { state: "unavailable", reason: "no kernel checkpoint is finalized on chain" },
+  };
+};
+
 const server = http.createServer((request, response) => {
+  const gateway = request.url.match(/^\/gw_([a-z]+)(\/readyz|\/v1\/wallet\/me)$/);
+  if (gateway) {
+    const [, profile, path] = gateway;
+    if (request.method !== "GET" || !["good", "notready", "nokeys"].includes(profile)) {
+      response.writeHead(404, { "content-type": "application/json" });
+      response.end('{"ok":false}');
+      return;
+    }
+    if (path === "/readyz") {
+      const answer = readiness(profile);
+      response.writeHead(answer.status, { "content-type": "application/json" });
+      response.end(JSON.stringify(answer.body));
+      return;
+    }
+    if (request.headers.authorization !== "Bearer check-live-token") {
+      response.writeHead(401, { "content-type": "application/json" });
+      response.end('{"error":"unauthorized"}');
+      return;
+    }
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify(me(profile)));
+    return;
+  }
   const node = request.url.match(/^\/attest_([a-z]+)\/([1-5])\/health$/);
   if (node) {
     if (request.method !== "GET" || !["ready", "unready", "peerdown"].includes(node[1])) {
@@ -319,6 +383,81 @@ if [ "$status" -eq 2 ] && grep -q 'CHECK_LIVE_CLIENT_CERT is required for https 
 	echo "ok   check_live_attestors_https_needs_identity"
 else
 	echo "FAIL check_live_attestors_https_needs_identity: want exit 2, got exit $status"
+	printf '%s\n' "$output"
+	failures=$((failures + 1))
+fi
+
+expect_gateway() {
+	local name="$1" profile="$2" token="$3" want_status="$4" output status=0
+	shift 4
+	output="$(CHECK_LIVE_GATEWAY_BASE="http://127.0.0.1:$port/gw_$profile" CHECK_LIVE_GATEWAY_TOKEN="$token" CHECK_LIVE_TIMEOUT=5 "$checker" gateway 2>&1)" || status=$?
+	local ok=1 line
+	[ "$status" -eq "$want_status" ] || ok=0
+	for line in "$@"; do
+		grep -qF -- "$line" <<<"$output" || ok=0
+	done
+	if [ "$ok" -eq 1 ]; then
+		echo "ok   $name"
+	else
+		echo "FAIL $name: want exit $want_status with lines [$*], got exit $status"
+		printf '%s\n' "$output"
+		failures=$((failures + 1))
+	fi
+}
+
+expect_gateway check_live_gateway_passing good check-live-token 0 \
+	"pass readiness http=200 ready=true attestors=up(5/3) nonce_store=up rpc_pool=up(16) identity_provider=up(2)" \
+	"pass me http=200 binding_state=bound address=set did=set main_account_id=set kernel=unavailable" \
+	"check-live: all checks passed"
+
+expect_gateway check_live_gateway_not_ready notready check-live-token 1 \
+	"fail readiness http=503 ready=false attestors=up(5/3) nonce_store=up rpc_pool=down(0) reason=rpc_pool_unavailable identity_provider=up(2)" \
+	"pass me http=200 binding_state=bound" \
+	"check-live: 1 check(s) failed"
+
+expect_gateway check_live_gateway_me_without_keys nokeys check-live-token 1 \
+	"pass readiness http=200 ready=true" \
+	"fail me http=200 binding_state=unbound address=set did=missing main_account_id=missing kernel=unavailable" \
+	"check-live: 1 check(s) failed"
+
+expect_gateway check_live_gateway_token_refused good wrong-token 1 \
+	"pass readiness http=200 ready=true" \
+	'fail me http=401 {"error":"unauthorized"}' \
+	"check-live: 1 check(s) failed"
+
+expect_gateway check_live_gateway_wrong_base "" check-live-token 1 \
+	"fail readiness http=404 not-readiness" \
+	"check-live: 2 check(s) failed"
+
+status=0
+output="$(CHECK_LIVE_GATEWAY_BASE="" CHECK_LIVE_GATEWAY_TOKEN="check-live-token" "$checker" gateway 2>&1)" || status=$?
+if [ "$status" -eq 2 ] && grep -q 'CHECK_LIVE_GATEWAY_BASE is required' <<<"$output" &&
+	grep -q '^usage: ' <<<"$output"; then
+	echo "ok   check_live_gateway_missing_base"
+else
+	echo "FAIL check_live_gateway_missing_base: want exit 2 with usage, got exit $status"
+	printf '%s\n' "$output"
+	failures=$((failures + 1))
+fi
+
+status=0
+output="$(CHECK_LIVE_GATEWAY_BASE="http://127.0.0.1:$port/gw_good" CHECK_LIVE_GATEWAY_TOKEN="" "$checker" gateway 2>&1)" || status=$?
+if [ "$status" -eq 2 ] && grep -q 'CHECK_LIVE_GATEWAY_TOKEN is required' <<<"$output" &&
+	grep -q '^usage: ' <<<"$output"; then
+	echo "ok   check_live_gateway_missing_token"
+else
+	echo "FAIL check_live_gateway_missing_token: want exit 2 with usage, got exit $status"
+	printf '%s\n' "$output"
+	failures=$((failures + 1))
+fi
+
+status=0
+output="$(CHECK_LIVE_GATEWAY_BASE="http://127.0.0.1:1" CHECK_LIVE_GATEWAY_TOKEN="check-live-token" CHECK_LIVE_TIMEOUT=2 "$checker" gateway 2>&1)" || status=$?
+if [ "$status" -eq 1 ] && grep -q '^fail readiness transport ' <<<"$output" &&
+	grep -q '^fail me transport ' <<<"$output" && grep -q 'check-live: 2 check(s) failed' <<<"$output"; then
+	echo "ok   check_live_gateway_unreachable"
+else
+	echo "FAIL check_live_gateway_unreachable: want exit 1 with transport failures, got exit $status"
 	printf '%s\n' "$output"
 	failures=$((failures + 1))
 fi

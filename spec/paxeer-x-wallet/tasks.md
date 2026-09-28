@@ -210,7 +210,7 @@
 ## Wave 4 - Completion
 
 - [ ] 4. Complete the gateway in shadow, the app, the operations record and the reviews
-  - [ ] 4.1 Run the gateway in shadow against the live attestors with a fresh account on the chain
+  - [ ] 4.1 Run the gateway in shadow against the live attestors with a fresh account on the chain — **Implemented - qualification pending**
     - Deploy the gateway from human/wallet/deploy/gateway.toml beside the existing service under a platform-issued name, pointed at the deployed attestors, the identity provider and the RPC pool, with the sponsor account funded out of band; sign in with a fresh test identity, provision, observe both keys, the top-up and the binding on the chain, sign and send a minimal transaction, sign a message, and confirm getUnifiedAccount reports the binding.
     - Extend tools/wallet/check-live.sh with a gateway mode that checks readiness and /v1/wallet/me for a configured test identity, and record the run in the qualification log with the transaction hash and no hosts or secrets.
     - _Requirements: 6.2, 5.6_
