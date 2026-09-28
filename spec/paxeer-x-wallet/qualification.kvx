@@ -300,3 +300,19 @@ symbol = "NEXT_PUBLIC_PAXEER_USID_PER_PAX"
 observed = "The SID gas estimate reads the owner-set usid per PAX rate from NEXT_PUBLIC_PAXEER_USID_PER_PAX, which no deploy environment file lists yet, and shows no SID amount while it is unset."
 assumption = "The deploy task adds the variable with the owner-set rate."
 severity = "info"
+
+[observation.4.2.1]
+task = "4.2"
+file = "human/apps/wallet/src/account/custody.ts"
+symbol = "custodyHandoff"
+observed = "Only the LX:CUSTODY:v1 prefix followed by 32 bytes is recorded for the custody hand-off; no byte layout for those 32 bytes exists in the repository."
+assumption = "The app signs the prefix followed by keccak256 of the packed chain id, target, value and calldata until the custody signer publishes its layout."
+severity = "suspect"
+
+[observation.4.2.2]
+task = "4.2"
+file = "human/apps/wallet/src/account/config.ts"
+symbol = "ACCOUNT_ENV"
+observed = "The account routes read NEXT_PUBLIC_PAXEER_RPC_URL, NEXT_PUBLIC_PAXEER_HUMAN_API and NEXT_PUBLIC_PAXEER_EXPLORER_URL, which no documented environment file names."
+assumption = "The deployment environment documents these three origins alongside the wallet gateway variables."
+severity = "info"

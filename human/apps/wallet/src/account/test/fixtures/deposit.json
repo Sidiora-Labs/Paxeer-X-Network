@@ -1,0 +1,101 @@
+[
+  {
+    "request": {
+      "method": "px_getNetwork",
+      "params": []
+    },
+    "response": {
+      "result": {
+        "network_id": "paxeer-x",
+        "paxeer": {
+          "chain_id": "0x7d",
+          "latest_block": "0x1a2b3c"
+        },
+        "layerx": {
+          "node_info": {
+            "network": "layerx",
+            "head_sequence": "4096",
+            "verification": "authenticated_node_snapshot"
+          }
+        },
+        "anchor": {
+          "latest_finalized_batch": 19,
+          "status": 2,
+          "status_name": "final",
+          "status_ladder": {
+            "0": "unknown",
+            "1": "submitted",
+            "2": "final"
+          }
+        },
+        "kernel": {
+          "available": true,
+          "reason": "available"
+        }
+      }
+    }
+  },
+  {
+    "request": {
+      "method": "px_listAssets",
+      "params": []
+    },
+    "response": {
+      "result": {
+        "assets": [
+          {
+            "asset_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "layerx": {
+              "asset_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "symbol": "LXP",
+              "name": "LayerX Points",
+              "decimals": 6,
+              "denom": "ulxp"
+            },
+            "paxeer": {
+              "asset_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "denom": "ulxp",
+              "pointer": "0x2222222222222222222222222222222222222222",
+              "enabled": true,
+              "paused": false,
+              "minimum_deposit": "1000",
+              "custody_cap": "1000000000000",
+              "custodied": "250000000",
+              "released": "50000000",
+              "pending": "0"
+            }
+          },
+          {
+            "asset_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "layerx": {
+              "asset_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "symbol": "SID",
+              "name": "Sidiora",
+              "decimals": 6,
+              "denom": "usid"
+            },
+            "paxeer": null
+          }
+        ],
+        "joined_limit": 16
+      }
+    }
+  },
+  {
+    "request": {
+      "method": "px_resolveAccount",
+      "params": [
+        "0xE1952Ec7230F058cd7fd9BCCb15964100e38ea04"
+      ]
+    },
+    "response": {
+      "result": {
+        "evm_address": "0xE1952Ec7230F058cd7fd9BCCb15964100e38ea04",
+        "pax_address": null,
+        "layerx_did": "did:layerx:e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1",
+        "layerx_account": "e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1",
+        "bound": true
+      }
+    }
+  }
+]

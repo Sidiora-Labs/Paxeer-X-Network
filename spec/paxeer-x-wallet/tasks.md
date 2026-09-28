@@ -202,7 +202,7 @@
     - Deploy the gateway from human/wallet/deploy/gateway.toml beside the existing service under a platform-issued name, pointed at the deployed attestors, the identity provider and the RPC pool, with the sponsor account funded out of band; sign in with a fresh test identity, provision, observe both keys, the top-up and the binding on the chain, sign and send a minimal transaction, sign a message, and confirm getUnifiedAccount reports the binding.
     - Extend tools/wallet/check-live.sh with a gateway mode that checks readiness and /v1/wallet/me for a configured test identity, and record the run in the qualification log with the transaction hash and no hosts or secrets.
     - _Requirements: 6.2, 5.6_
-  - [ ] 4.2 Show the unified account and the kernel surfaces in the app
+  - [ ] 4.2 Show the unified account and the kernel surfaces in the app — **Implemented - qualification pending**
     - In human/apps/wallet add the unified account view (address, DID, binding state), one asset list with joined balances completed by chain calls, one history with cursor paging, the status ladder per transaction, a custody deposit flow through the custody precompile, and kernel plans through the human service client with the kernel availability state shown and every kernel action disabled with its reason when unavailable.
     - Add tests for each view against recorded endpoint responses and the unavailable state.
     - _Requirements: 10.4, 7.2, 7.3, 7.4, 7.5_

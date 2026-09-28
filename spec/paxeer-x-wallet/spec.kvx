@@ -825,7 +825,7 @@ reqs = ["6.2","5.6"]
 
 [task.4.2]
 title = "Show the unified account and the kernel surfaces in the app"
-status = "pending"
+status = "implemented"
 wave = 4
 requires = ["3.6","2.6"]
 do_1 = "In human/apps/wallet add the unified account view (address, DID, binding state), one asset list with joined balances completed by chain calls, one history with cursor paging, the status ladder per transaction, a custody deposit flow through the custody precompile, and kernel plans through the human service client with the kernel availability state shown and every kernel action disabled with its reason when unavailable."
@@ -834,6 +834,10 @@ verify_cmd = "timeout 20m sh -c 'pnpm --dir human/apps/wallet exec vitest run sr
 symbols = ["AccountView","AssetList","HistoryView","StatusLadder","DepositFlow","KernelPlan"]
 touches = ["human/apps/wallet/src/account/","human/apps/wallet/src/app/"]
 reqs = ["10.4","7.2","7.3","7.4","7.5"]
+revision = "477b62b4e00f714cb83ca97654f18809744a6877"
+command = "timeout 20m sh -c 'pnpm --dir human/apps/wallet exec vitest run src/account'"
+exit_code = 1
+log_path = ".logs/verify.log"
 
 [task.4.3]
 title = "Add the Paxeer X surfaces and the fee choice to the app"

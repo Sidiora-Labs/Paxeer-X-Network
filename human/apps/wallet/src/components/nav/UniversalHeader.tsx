@@ -7,6 +7,7 @@ import { shortenAddress } from '@/lib/format';
 import { SvgIcon } from '@/components/ui/SvgIcon';
 import { getAvatarPath } from '@/lib/avatar';
 import Image from "next/image";
+import Link from "next/link";
 
 export interface UniversalHeaderProps {
     title: string;
@@ -104,6 +105,13 @@ export function UniversalHeader({ title, showBack, onBack, rightAction }: Univer
                                     />
                                 )}
                             </button>
+                            <Link
+                                href="/account"
+                                onClick={() => setSheetOpen(false)}
+                                className="w-full rounded-xl bg-white/[0.06] px-4 py-3 text-center text-xs font-semibold press-scale hover:bg-white/[0.09] transition-colors"
+                            >
+                                Unified account
+                            </Link>
                             <p className="text-[11px] text-pax-muted text-center leading-relaxed">
                                 You can manage account-level options from Settings.
                             </p>
