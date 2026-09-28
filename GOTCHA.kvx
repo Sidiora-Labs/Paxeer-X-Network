@@ -197,3 +197,9 @@ area    = "attestor"
 symptom = "Test identity tokens minted twice within one second are byte-identical, so a per-token replay record refuses the second signing request."
 cause   = "The test minter sets only sub, iss, aud, iat and exp, and the replay record keys on the token hash."
 do      = "Give every test token a random jti and mint a fresh token for each signing request."
+
+[gotcha.30]
+area    = "node"
+symptom = "The wallet app release check's secret scan fails with tsconfig.tsbuildinfo: local artefact right after a clean type check."
+cause   = "tsc --noEmit in human/apps/wallet writes an incremental tsconfig.tsbuildinfo, and the scan reports ignored local artefacts too."
+do      = "Delete human/apps/wallet/tsconfig.tsbuildinfo after the type check and before running release-check.sh."

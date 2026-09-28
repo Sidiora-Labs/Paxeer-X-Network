@@ -93,6 +93,22 @@ else
   step "third-party PWA service" fail "referenced in: $(printf '%s' "$third_party" | tr '\n' ' ')"
 fi
 
+vitest="$app_dir/node_modules/.bin/vitest"
+if [ ! -x "$vitest" ]; then
+  step "content security policy" fail "vitest is not installed in node_modules"
+elif csp_output=$("$vitest" run src/lib/security/csp.test.ts 2>&1); then
+  passed=$(printf '%s\n' "$csp_output" | sed -n 's/^ *Tests  *\([0-9][0-9]*\) passed.*/\1/p' | head -n 1)
+  if [ -n "$passed" ]; then
+    step "content security policy" pass "$passed tests passed against the release environment"
+  else
+    printf '%s\n' "$csp_output"
+    step "content security policy" fail "no passing tests reported"
+  fi
+else
+  printf '%s\n' "$csp_output"
+  step "content security policy" fail "csp.test.ts exited non-zero"
+fi
+
 config_module=src/wallet/config.ts
 names=$(sed -n '/^export const WALLET_ENV = {/,/^}/p' "$config_module" \
   | grep -o "'[A-Z][A-Z0-9_]*'" | tr -d "'" || true)

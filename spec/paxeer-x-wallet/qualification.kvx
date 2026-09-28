@@ -743,6 +743,30 @@ observed = "The app had no variable naming the attestor origin, and removing the
 assumption = "NEXT_PUBLIC_PAXEER_ATTESTOR_URL is optional and documented in human/wallet/deploy/env; browser API harnesses in the register and install tests are EventTarget objects because node and jsdom provide no service worker container or install prompt."
 severity = "note"
 
+[observation.4.21.1]
+task = "4.21"
+file = "human/apps/wallet/src/lib/constants.ts"
+symbol = "getActiveRpcUrl"
+observed = "A custom RPC saved in preferences is an origin chosen at run time, which no configuration name yields, so the derived connect-src blocks it and only the configured chain RPC is reachable from the browser."
+assumption = "Widening connect-src for a user-chosen origin would weaken the policy; the owner decides between dropping the custom RPC setting or routing it through a same-origin handler."
+severity = "medium"
+
+[observation.4.21.2]
+task = "4.21"
+file = "human/apps/wallet/sentry.client.config.ts"
+symbol = "NEXT_PUBLIC_SENTRY_DSN"
+observed = "The browser error reporter sends to the DSN's ingest origin, which is not in connect-src, and the DSN carries its public key as URL userinfo, which the network-only URL check refuses."
+assumption = "Browser reporting stays blocked until reports go through a same-origin tunnel route; server and edge reporting are unaffected."
+severity = "low"
+
+[observation.4.21.3]
+task = "4.21"
+file = "human/apps/wallet/README.md, human/apps/wallet/config/env/schema.ts"
+symbol = "NEXT_PUBLIC_MARKET_DATA_API, NEXT_PUBLIC_FX_RATES_API, NEXT_PUBLIC_RPC_URL"
+observed = "The two new names are documented in README.md outside the touches list; the RPC default now reads NEXT_PUBLIC_PAXEER_RPC_URL with no literal fallback, the portfolio and spot overrides are fixed to the same-origin route, frame-src lost its fixed origins (no frame in src), and config/env/schema.ts still lists NEXT_PUBLIC_RPC_URL."
+assumption = "Deployments set NEXT_PUBLIC_PAXEER_RPC_URL, NEXT_PUBLIC_MARKET_DATA_API and NEXT_PUBLIC_FX_RATES_API; the stale schema entry is left for the owner of that file."
+severity = "note"
+
 [observation.4.5.1]
 task = "4.5"
 file = "human/wallet/deploy/gateway.toml"

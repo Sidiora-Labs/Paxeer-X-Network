@@ -5,7 +5,7 @@
  */
 
 export const CHAIN_ID = 125 as const;
-export const RPC_URL = "https://public-mainnet.rpcpaxeer.online/evm" as const;
+export const RPC_URL: string = process.env.NEXT_PUBLIC_PAXEER_RPC_URL ?? "";
 export const EXPLORER_URL = "https://paxscan.io" as const;
 
 

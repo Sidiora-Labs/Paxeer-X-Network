@@ -1215,7 +1215,7 @@ reqs = ["1.4","1.7","3.3","13.2"]
 
 [task.4.21]
 title = "Derive the content security policy connect-src from the configured origins"
-status = "pending"
+status = "done"
 wave = 4
 requires = ["4.10"]
 do_1 = "In human/apps/wallet/src/lib/security/csp.ts build connect-src from 'self' and the origins of the configuration names in PWA_NETWORK_ENV of src/pwa/config.ts (the gateway, the chain RPC, the identity provider, and the attestor base when set), parsed with the same checks the service worker's network-only rule applies, adding the wss form of the identity provider origin for its realtime channel; the fixed CONNECT_ORIGINS list goes away so no literal origin remains in the policy source (closes observation 4.10.2)."
@@ -1226,6 +1226,10 @@ verify_cmd = "timeout 20m sh -c 'pnpm --dir human/apps/wallet exec vitest run sr
 symbols = ["buildContentSecurityPolicy","connectOrigins","assertConnectSrcCoversConfigured","PWA_NETWORK_ENV"]
 touches = ["human/apps/wallet/src/lib/security/csp.ts","human/apps/wallet/src/lib/security/csp.test.ts","human/apps/wallet/src/lib/security/browser-security.test.ts","human/apps/wallet/src/pwa/config.ts","human/apps/wallet/src/proxy.ts","human/apps/wallet/src/lib/","human/apps/wallet/scripts/release-check.sh"]
 reqs = ["10.8","10.6"]
+revision = "e64202a58fa2005a17fe8b3c3d5f7e7603bae098"
+command = "timeout 20m sh -c 'pnpm --dir human/apps/wallet exec vitest run src/lib/security src/pwa && human/apps/wallet/scripts/release-check.sh'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.4.22]
 title = "Scope the bearer-token replay record to the request"

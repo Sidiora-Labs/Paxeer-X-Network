@@ -3,6 +3,12 @@ export const PWA_NETWORK_ENV = {
     rpc: 'NEXT_PUBLIC_PAXEER_RPC_URL',
     identity: 'NEXT_PUBLIC_SUPABASE_URL',
     attestor: 'NEXT_PUBLIC_PAXEER_ATTESTOR_URL',
+    human: 'NEXT_PUBLIC_PAXEER_HUMAN_API',
+    explorer: 'NEXT_PUBLIC_PAXEER_EXPLORER_URL',
+    names: 'NEXT_PUBLIC_PNS_API_BASE',
+    points: 'NEXT_PUBLIC_POINTS_API_BASE',
+    marketData: 'NEXT_PUBLIC_MARKET_DATA_API',
+    fxRates: 'NEXT_PUBLIC_FX_RATES_API',
 } as const;
 
 export type PwaNetworkEnvName = (typeof PWA_NETWORK_ENV)[keyof typeof PWA_NETWORK_ENV];
@@ -40,6 +46,18 @@ function base(env: PwaNetworkEnv, name: PwaNetworkEnvName): string | null {
     return normalizeBase(raw);
 }
 
+export interface ConfiguredOrigin {
+    readonly variable: PwaNetworkEnvName;
+    readonly origin: string;
+}
+
+export function configuredOrigins(env: PwaNetworkEnv): ConfiguredOrigin[] {
+    return Object.values(PWA_NETWORK_ENV).flatMap((variable) => {
+        const value = base(env, variable);
+        return value === null ? [] : [{ variable, origin: new URL(value).origin }];
+    });
+}
+
 export function networkOnlyBases(env: PwaNetworkEnv): string[] {
     const bases = Object.values(PWA_NETWORK_ENV)
         .map((name) => base(env, name))
@@ -49,4 +67,23 @@ export function networkOnlyBases(env: PwaNetworkEnv): string[] {
 
 export function pwaNetworkEnv(source: Record<string, string | undefined>): PwaNetworkEnv {
     return Object.fromEntries(Object.values(PWA_NETWORK_ENV).map((name) => [name, source[name]])) as PwaNetworkEnv;
+}
+
+export function processPwaNetworkEnv(): PwaNetworkEnv {
+    return {
+        NEXT_PUBLIC_PAXEER_WALLET_API: process.env.NEXT_PUBLIC_PAXEER_WALLET_API,
+        NEXT_PUBLIC_PAXEER_RPC_URL: process.env.NEXT_PUBLIC_PAXEER_RPC_URL,
+        NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+        NEXT_PUBLIC_PAXEER_ATTESTOR_URL: process.env.NEXT_PUBLIC_PAXEER_ATTESTOR_URL,
+        NEXT_PUBLIC_PAXEER_HUMAN_API: process.env.NEXT_PUBLIC_PAXEER_HUMAN_API,
+        NEXT_PUBLIC_PAXEER_EXPLORER_URL: process.env.NEXT_PUBLIC_PAXEER_EXPLORER_URL,
+        NEXT_PUBLIC_PNS_API_BASE: process.env.NEXT_PUBLIC_PNS_API_BASE,
+        NEXT_PUBLIC_POINTS_API_BASE: process.env.NEXT_PUBLIC_POINTS_API_BASE,
+        NEXT_PUBLIC_MARKET_DATA_API: process.env.NEXT_PUBLIC_MARKET_DATA_API,
+        NEXT_PUBLIC_FX_RATES_API: process.env.NEXT_PUBLIC_FX_RATES_API,
+    };
+}
+
+export function configuredBase(name: PwaNetworkEnvName, env: PwaNetworkEnv = processPwaNetworkEnv()): string | null {
+    return base(env, name);
 }
