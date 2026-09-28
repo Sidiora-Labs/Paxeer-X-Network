@@ -1,0 +1,1 @@
+export { ContactsWidget } from './ContactsWidget';

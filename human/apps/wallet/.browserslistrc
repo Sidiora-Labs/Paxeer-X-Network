@@ -1,0 +1,18 @@
+# Browserslist configuration
+# See https://github.com/browserslist/browserslist
+
+# Modern browsers
+> 0.5%
+last 2 versions
+not dead
+not IE 11
+
+# Mobile browsers
+iOS >= 13
+Android >= 10
+
+# Desktop browsers
+Chrome >= 90
+Firefox >= 88
+Safari >= 14
+Edge >= 90

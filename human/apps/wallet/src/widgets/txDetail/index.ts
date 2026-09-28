@@ -1,0 +1,1 @@
+export { TxDetailWidget } from './TxDetailWidget';

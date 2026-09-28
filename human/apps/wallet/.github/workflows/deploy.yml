@@ -1,0 +1,27 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: apps/wallet/package-lock.json
+      - name: Install dependencies
+        run: cd apps/wallet && npm ci
+      - name: Build
+        run: cd apps/wallet && npm run build
+      - name: Deploy
+        run: echo "Add your deployment commands here"
+        env:
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}

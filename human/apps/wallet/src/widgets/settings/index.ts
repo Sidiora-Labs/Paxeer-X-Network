@@ -1,0 +1,1 @@
+export { SettingsWidget } from './SettingsWidget';

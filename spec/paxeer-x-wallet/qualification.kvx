@@ -95,3 +95,11 @@ symbol = "Threshold"
 observed = "The library's threshold argument is the signer count (polynomial degree threshold-1, ValidatePublicKey and FeldmanVerify use threshold-1), so three-of-five on a degree-two polynomial is library threshold 3, not the parameter two named in [decision] custody_model and req.1."
 assumption = "dealer.Threshold is 3 and is passed unchanged to refresh, add-share and both signers; tasks 1.2 and 1.3 should use the same value."
 severity = "suspect"
+
+[observation.1.16.1]
+task = "1.16"
+file = "human/apps/wallet/scripts/scan-secrets.sh"
+symbol = "scan-secrets"
+observed = "The scanner reports local artefacts present on disk even when git ignores them, so the tsconfig.tsbuildinfo left by the app's type-check fails the verify scan until it is removed."
+assumption = "Gates that run type-check before the scan remove tsconfig.tsbuildinfo first; the scan stays strict on the working tree."
+severity = "note"

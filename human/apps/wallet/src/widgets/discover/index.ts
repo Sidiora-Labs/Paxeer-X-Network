@@ -1,0 +1,1 @@
+export { DiscoverWidget } from './DiscoverWidget';

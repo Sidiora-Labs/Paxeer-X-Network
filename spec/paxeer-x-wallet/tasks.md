@@ -85,7 +85,7 @@
     - Add a px_getNetwork field carrying kernel availability and the reason, keep every existing response shape otherwise unchanged, and keep openrpc.json in step.
     - Add tests that start the endpoint with no kernel configured against an in-test chain RPC server built from the crate's own test support, assert eth_chainId and px_resolveAccount answer, assert lx_getAccount and px_getBalances return the typed unavailable error, and assert readiness.
     - _Requirements: 12.1, 7.5_
-  - [ ] 1.16 Commit the wallet app with every secret scrubbed
+  - [x] 1.16 Commit the wallet app with every secret scrubbed
     - Bring human/apps/wallet under version control as it is, removing every test key, credential, environment file, private key fixture and local artefact, replacing each with a documented environment variable or a synthetic fixture, and adding a .gitignore for build output and native intermediates.
     - Add human/apps/wallet/scripts/scan-secrets.sh calling the shared scanner pattern over the app tree with a fixture test, and make the app's existing vitest suite and type check pass as committed.
     - Record in human/apps/wallet/README.md what was removed and why, without hosts, dates or names.

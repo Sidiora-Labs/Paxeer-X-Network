@@ -449,7 +449,7 @@ log_path = ".logs/verify.log"
 
 [task.1.16]
 title = "Commit the wallet app with every secret scrubbed"
-status = "pending"
+status = "done"
 wave = 1
 requires = []
 do_1 = "Bring human/apps/wallet under version control as it is, removing every test key, credential, environment file, private key fixture and local artefact, replacing each with a documented environment variable or a synthetic fixture, and adding a .gitignore for build output and native intermediates."
@@ -459,6 +459,10 @@ verify_cmd = "timeout 20m sh -c 'human/apps/wallet/scripts/scan-secrets.sh && pn
 symbols = ["scan-secrets"]
 touches = ["human/apps/wallet/","human/apps/wallet/.gitignore","human/apps/wallet/README.md","human/apps/wallet/scripts/scan-secrets.sh","human/apps/wallet/scripts/scan-secrets.test.sh"]
 reqs = ["10.1"]
+revision = "6ba1aca4e70230555260cead7bf4e372dab0a52f"
+command = "timeout 20m sh -c 'human/apps/wallet/scripts/scan-secrets.sh && pnpm --dir human/apps/wallet install --frozen-lockfile && pnpm --dir human/apps/wallet exec vitest run'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 # --------------------------------------------------------------------------
 # WAVE 2 - ASSEMBLY

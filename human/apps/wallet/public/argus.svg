@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="argus-bg" x1="0" y1="0" x2="64" y2="64">
+      <stop offset="0%" stop-color="#0061EB"/>
+      <stop offset="100%" stop-color="#031B4E"/>
+    </linearGradient>
+    <linearGradient id="eye-glow" x1="24" y1="24" x2="40" y2="40">
+      <stop offset="0%" stop-color="#60A5FA"/>
+      <stop offset="100%" stop-color="#3B82F6"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#argus-bg)"/>
+  <!-- Shield outline -->
+  <path d="M32 12 L48 20 V34 C48 44 40 52 32 54 C24 52 16 44 16 34 V20 Z" stroke="#60A5FA" stroke-width="1.5" fill="none" opacity="0.3"/>
+  <!-- Central eye -->
+  <circle cx="32" cy="32" r="10" fill="url(#eye-glow)" opacity="0.15"/>
+  <circle cx="32" cy="32" r="6" stroke="#60A5FA" stroke-width="1.5" fill="none"/>
+  <circle cx="32" cy="32" r="2.5" fill="#60A5FA"/>
+  <!-- Scan lines -->
+  <line x1="20" y1="32" x2="26" y2="32" stroke="#60A5FA" stroke-width="1" opacity="0.5"/>
+  <line x1="38" y1="32" x2="44" y2="32" stroke="#60A5FA" stroke-width="1" opacity="0.5"/>
+  <line x1="32" y1="20" x2="32" y2="26" stroke="#60A5FA" stroke-width="1" opacity="0.5"/>
+  <line x1="32" y1="38" x2="32" y2="44" stroke="#60A5FA" stroke-width="1" opacity="0.5"/>
+  <!-- Corner brackets -->
+  <path d="M20 24 L20 20 L24 20" stroke="#60A5FA" stroke-width="1.5" fill="none" stroke-linecap="round" opacity="0.6"/>
+  <path d="M44 24 L44 20 L40 20" stroke="#60A5FA" stroke-width="1.5" fill="none" stroke-linecap="round" opacity="0.6"/>
+  <path d="M20 40 L20 44 L24 44" stroke="#60A5FA" stroke-width="1.5" fill="none" stroke-linecap="round" opacity="0.6"/>
+  <path d="M44 40 L44 44 L40 44" stroke="#60A5FA" stroke-width="1.5" fill="none" stroke-linecap="round" opacity="0.6"/>
+</svg>
