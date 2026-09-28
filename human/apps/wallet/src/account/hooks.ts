@@ -49,10 +49,10 @@ export function useAccountDocument(account: string): AsyncState<UnifiedAccountDo
 
 export type KernelGate =
     | { readonly open: true }
-    | { readonly open: false; readonly reason: string };
+    | { readonly open: false; readonly reason: string; readonly checking?: true };
 
 export function kernelGate(state: AsyncState<KernelAvailabilityState>): KernelGate {
-    if (state.status === 'loading') return { open: false, reason: 'Checking the LayerX kernel state' };
+    if (state.status === 'loading') return { open: false, reason: 'Checking the LayerX kernel state', checking: true };
     if (state.status === 'error') {
         return { open: false, reason: `The endpoint did not report the LayerX kernel state: ${errorMessage(state.error)}` };
     }

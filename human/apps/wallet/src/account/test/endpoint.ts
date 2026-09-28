@@ -25,7 +25,7 @@ type Plan = {
 };
 
 const SDK_ENDPOINT_DIR = path.resolve(__dirname, '../../../../../wallet/sdk/test/fixtures/endpoint');
-const GOLDEN_DIR = path.resolve(__dirname, '../../../../../wallet/schema/human-api/golden');
+const GOLDEN_DIR = path.resolve(__dirname, '../../../../../schema/human-api/golden');
 const LOCAL_DIR = path.resolve(__dirname, 'fixtures');
 
 export const SCENARIOS = ['available', 'kernel-unreachable', 'no-finalised-checkpoint', 'kernel-not-configured', 'deposit'] as const;

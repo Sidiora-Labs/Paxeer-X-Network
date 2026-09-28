@@ -459,3 +459,19 @@ symbol = "Flush"
 observed = "The library sends its echo-hash relays from detached goroutines, so a signer that reached Done could flush and close before relaying the last round, leaving a peer waiting for the vote until the session timed out."
 assumption = "Flush in relay-admitting sessions now also waits until the relays sent cover one per other peer for every echo-tracked original received, which is exactly how many the library relays."
 severity = "note"
+
+[observation.4.2.6]
+task = "4.2"
+file = "human/apps/wallet/e2e/sign-in.spec.ts"
+symbol = "EMAIL_CODE"
+observed = "Line 21 compared the literal EMAIL_CODE with 000000 and failed TS2367; it now compares String(EMAIL_CODE), so the wrong code is still the one that differs from the emailed code and the app type check exits 0."
+assumption = "The browser suite asserts the same rejected-code behaviour; no other line of the file changed."
+severity = "note"
+
+[observation.4.2.7]
+task = "4.2"
+file = "human/apps/wallet/src/account/KernelNotice.tsx"
+symbol = "KernelGate"
+observed = "The loading kernel state rendered with data-kernel unavailable, so the tests' wait settled before the endpoint answered; loading now renders as data-kernel checking and the verify command exits 0 with 33 tests across 6 files."
+assumption = "Every surface that shows the kernel notice treats the checking state as closed, as the gate already did."
+severity = "note"

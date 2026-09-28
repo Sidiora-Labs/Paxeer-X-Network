@@ -18,7 +18,7 @@ test.describe('sign-in shell', () => {
     test('shows the identity error for a rejected code and stays signed out', async ({ page }) => {
         await openSignIn(page);
         await requestCode(page);
-        const wrong = EMAIL_CODE === '000000' ? '111111' : '000000';
+        const wrong = String(EMAIL_CODE) === '000000' ? '111111' : '000000';
         await enterCode(page, wrong);
         await expect(page.getByText(/invalid|expired/i)).toBeVisible();
         await expect(bottomTab(page, 'Settings')).toHaveCount(0);
