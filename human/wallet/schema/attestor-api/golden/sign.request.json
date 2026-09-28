@@ -1,0 +1,11 @@
+{
+  "session_id": "session-sign",
+  "key_id": "key-evm",
+  "kind": "evm_tx",
+  "signers": [
+    "node-1",
+    "node-3",
+    "node-5"
+  ],
+  "transaction": "02f86c"
+}

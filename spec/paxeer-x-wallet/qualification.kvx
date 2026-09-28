@@ -411,3 +411,51 @@ symbol = "accent.onPrimary"
 observed = "The previous --color-action-on-primary #111410 on the default accent #2262d1 measures 3.30:1, below the 4.5 text threshold every on-accent pair must meet, so the contrast-checked ink makes the default #fffdf8 (5.53:1); every other default property keeps its previous value."
 assumption = "The WCAG requirement governs that one property; buttons that still carry text-black on bg-pax-accent (3.74:1) are outside this task's files and move to the on-accent token when their owners next touch them."
 severity = "suspect"
+
+[observation.2.1.1]
+task = "2.1"
+file = "human/wallet/attestor/internal/transport/session.go"
+symbol = "decode"
+observed = "CGGMP refresh relays echo-hash messages carrying the original sender's id, and the transport refuses any message whose id differs from the authenticated sender (403), so ECDSA refresh across five daemons cannot complete."
+assumption = "The transport needs an owner decision on accepting alice echo relays; the sender check is left intact."
+severity = "blocker"
+
+[observation.2.1.2]
+task = "2.1"
+file = "human/wallet/attestor/internal/transport/session.go"
+symbol = "admitRelay"
+observed = "Resolves 2.1.1: the sender marks relays (relay and origin envelope fields, sender id never rewritten); the receiver accepts them only in an open secp256k1 refresh session with the origin a participant other than the relaying peer and itself, admits the library's 32-byte echo-hash relays, logs the relaying peer, and the five-node secp256k1 refresh now completes."
+assumption = "The echo MsgMain counts votes by the authenticated relayer, so a relay reaches AddMessage with the relaying peer as sender id and the message's own id left as the original sender."
+severity = "note"
+
+[observation.2.1.3]
+task = "2.1"
+file = "human/wallet/attestor/internal/transport/session.go"
+symbol = "admitRelay"
+observed = "CGGMP signing and DKG also run the echo broadcast, so with relays limited to secp256k1 refresh the end-to-end EVM signing fails with peer 403 on the relayed round-one hash."
+assumption = "Needs an owner decision extending the relay rule to secp256k1 signing (and keygen) sessions; the rule and the test are left as decided."
+severity = "blocker"
+
+[observation.2.1.4]
+task = "2.1"
+file = "human/wallet/attestor/internal/transport/session.go"
+symbol = "admitRelay"
+observed = "Resolves 2.1.3 by engineering decision under the standing order: the library's echo broadcast runs in every CGGMP session, so marked relays are admitted in open secp256k1 keygen, sign and refresh sessions (keygen and sign kinds now split by curve) with every origin, participant, closed-session and body constraint of 2.1.2 unchanged."
+assumption = "Ed25519, add-share and generic sessions admit no relay and answer 403; unmarked foreign ids answer 403 in every session; the audit record keeps both the origin and the relaying peer."
+severity = "note"
+
+[observation.2.1.5]
+task = "2.1"
+file = "human/wallet/ceremony/internal/attestor/client.go"
+symbol = "ImportRequest"
+observed = "The ceremony client differs from human/wallet/schema/attestor-api/v1.kvx and its goldens: paths /v1/keys.import and /v1/keys.refresh against /v1/keys/import and /v1/keys/refresh; import sends curve, public_key, participants, threshold and ceremony at top level with hex-string partial keys where the daemon takes owner and a share object carrying curve, threshold and x/y points; sign sends bytes, context, authorisation and participants where the daemon takes kind-specific fields and signers; responses name audit_seq where the daemon answers audit_sequence."
+assumption = "The ceremony module is aligned to the schema file and its golden vectors by the task that owns it; the daemon and schema are left as implemented."
+severity = "suspect"
+
+[observation.2.1.6]
+task = "2.1"
+file = "human/wallet/attestor/internal/transport/session.go"
+symbol = "Flush"
+observed = "The library sends its echo-hash relays from detached goroutines, so a signer that reached Done could flush and close before relaying the last round, leaving a peer waiting for the vote until the session timed out."
+assumption = "Flush in relay-admitting sessions now also waits until the relays sent cover one per other peer for every echo-tracked original received, which is exactly how many the library relays."
+severity = "note"

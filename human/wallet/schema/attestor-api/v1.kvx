@@ -1,0 +1,262 @@
+# v1.kvx - attestor daemon API, version 1.
+#
+# Every operation is an HTTPS request over mutual TLS 1.3 to the node's API
+# listener with a JSON body. A protocol operation is posted identically, with
+# the same session_id, to every participant; the nodes then find each other
+# through their configured peer list and run one protocol session per phase
+# named session_id/phase. Golden request and response bodies live in golden/.
+
+[meta]
+name        = "attestor-api"
+version     = "1"
+transport   = "https with mutual TLS 1.3; client certificates chain to the operator CA"
+encoding    = "application/json; unknown request fields are refused; binary values are lowercase hex without prefix unless noted"
+threshold   = "three signers of five participants"
+error_shape = "{\"error\": {\"category\": string, \"code\": string, \"message\": string, \"policy_code\": string optional}}"
+
+[type.share_bundle]
+curve               = "string: secp256k1 or ed25519"
+participant_id      = "string: the node the share is issued to"
+share               = "hex big-endian scalar"
+public_key          = "object {x, y}: hex big-endian affine coordinates"
+partial_public_keys = "map participant id to {x, y}"
+bks                 = "map participant id to {x: hex, rank: uint32}"
+threshold           = "uint32: 3"
+
+[type.key_response]
+node_id        = "string"
+key_id         = "string"
+curve          = "string"
+public_key     = "hex: 65-byte uncompressed secp256k1 or 32-byte ed25519"
+address        = "string optional: EIP-55 address of a secp256k1 key"
+did            = "string optional: did:layerx identity of an ed25519 key"
+epoch          = "uint64: refresh epoch"
+participants   = "array of string"
+refreshed      = "bool: auxiliary signing material is present"
+audit_sequence = "uint64: this node's audit record for the operation"
+
+[op.keys.generate]
+method       = "POST"
+path         = "/v1/keys/generate"
+auth         = "operator certificate"
+participants = "all configured participants"
+summary      = "Distributed key generation (CGGMP with auxiliary refresh for secp256k1, FROST for ed25519)."
+response     = "key_response"
+errors       = ["operator_required", "session_bad_request", "key_not_found", "key_exists", "key_curve_mismatch", "key_invalid_share", "key_import_disabled", "quorum_too_few_signers", "quorum_self_missing", "session_open_failed", "session_failed", "session_timeout", "store_failed", "store_audit_failed"]
+
+[op.keys.generate.request]
+session_id = "string"
+key_id = "string"
+curve = "string: secp256k1 or ed25519"
+owner = "string: subject that owns the key"
+account = "string optional: policy account address, required for ed25519"
+
+[op.keys.import]
+method       = "POST"
+path         = "/v1/keys/import"
+auth         = "operator certificate and the node's ceremony flag"
+participants = "local; the body carries this node's share only"
+summary      = "Stores a dealer-split share after validating it against the published partial public keys."
+response     = "key_response"
+errors       = ["operator_required", "session_bad_request", "key_not_found", "key_exists", "key_curve_mismatch", "key_invalid_share", "key_import_disabled", "quorum_too_few_signers", "quorum_self_missing", "session_open_failed", "session_failed", "session_timeout", "store_failed", "store_audit_failed"]
+
+[op.keys.import.request]
+session_id = "string"
+key_id = "string"
+owner = "string"
+account = "string optional: required for ed25519"
+share = "share_bundle"
+
+[op.keys.refresh]
+method       = "POST"
+path         = "/v1/keys/refresh"
+auth         = "operator certificate"
+participants = "every holder of the key"
+summary      = "Proactive refresh behind a share-proof round; secp256k1 also gains Paillier and Pedersen material."
+response     = "key_response"
+errors       = ["operator_required", "session_bad_request", "key_not_found", "key_exists", "key_curve_mismatch", "key_invalid_share", "key_import_disabled", "quorum_too_few_signers", "quorum_self_missing", "session_open_failed", "session_failed", "session_timeout", "store_failed", "store_audit_failed"]
+
+[op.keys.refresh.request]
+session_id = "string"
+key_id = "string"
+
+[op.keys.addshare]
+method       = "POST"
+path         = "/v1/keys/addshare"
+auth         = "operator certificate"
+participants = "quorum plus the new participant"
+summary      = "Issues a share to a new participant from a quorum of existing holders; the key needs keys.refresh afterwards."
+response     = "key_response"
+errors       = ["operator_required", "session_bad_request", "key_not_found", "key_exists", "key_curve_mismatch", "key_invalid_share", "key_import_disabled", "quorum_too_few_signers", "quorum_self_missing", "session_open_failed", "session_failed", "session_timeout", "store_failed", "store_audit_failed"]
+
+[op.keys.addshare.request]
+session_id = "string"
+key_id = "string"
+curve = "string"
+public_key = "hex: 33 or 65 bytes secp256k1, 32 bytes ed25519"
+owner = "string: stored by the new participant"
+account = "string optional"
+new_participant_id = "string"
+quorum = "array of string: at least three existing holders"
+
+[op.sign]
+method       = "POST"
+path         = "/v1/sign"
+auth         = "client certificate plus Authorization: Bearer <identity token> or the agent headers X-Agent-Key, X-Agent-Nonce, X-Agent-Expiry, X-Agent-Signature"
+participants = "the listed signers; every signer receives the identical body"
+summary      = "Verifies the credential, decodes the payload, evaluates the account policy, appends the audit record and runs one signing session."
+kinds        = ["evm_tx", "eip712", "personal_message", "eth_sign_digest", "lx_activity", "lx_bind", "lx_grant"]
+response     = "sign_response"
+errors       = ["operator_required", "token_missing", "token_invalid", "token_not_owner", "token_unavailable", "agent_invalid", "policy_denied", "quorum_too_few_signers", "quorum_not_member", "quorum_self_missing", "session_bad_request", "session_unsupported_kind", "session_open_failed", "session_failed", "session_timeout", "key_not_found", "key_curve_mismatch", "key_not_refreshed", "key_invalid_share", "store_failed", "store_audit_failed"]
+
+[op.sign.request]
+session_id = "string"
+key_id = "string"
+kind = "string: one of kinds"
+signers = "array of string: at least three holders including the receiving node"
+transaction = "hex optional: unsigned typed or legacy transaction for evm_tx"
+typed_data = "string optional: EIP-712 JSON document for eip712"
+message = "hex optional: message for personal_message, bind message for lx_bind"
+digest = "hex optional: 32-byte digest for eth_sign_digest"
+activity = "hex optional: unsigned activity envelope for lx_activity"
+grant = "object optional: 402 grant for lx_grant with hex 32-byte from, recipient, asset, purpose_hash, reference_hash, decimal per_draw_maximum and allowance, bool recurring and has_reference, uint64 window_length, expiration and revocation_sequence"
+
+[op.sign.kind]
+evm_tx           = "secp256k1; signs the chain signer digest of the decoded transaction"
+eip712           = "secp256k1; signs the EIP-712 digest"
+personal_message = "secp256k1; signs the EIP-191 digest of the message"
+eth_sign_digest  = "secp256k1; signs the given 32-byte digest"
+lx_activity      = "ed25519; signs the 32-byte activity signature preimage"
+lx_bind          = "ed25519; signs the LX:PAXEER-BIND:v1 message bytes; the binding chain must be the node chain"
+lx_grant         = "ed25519; signs the 32-byte grant preimage with the key as the grant public key"
+
+[type.sign_response]
+node_id        = "string"
+key_id         = "string"
+kind           = "string"
+signed_bytes   = "hex: the exact bytes the quorum signed"
+signature      = "hex: 65 bytes r || s || v for secp256k1, 64 bytes for ed25519"
+recovery_id    = "uint8 optional: present for secp256k1"
+audit_sequence = "uint64: this node's audit record for the allowed decision"
+
+[op.health]
+method   = "GET"
+path     = "/health"
+auth     = "client certificate"
+summary  = "Returns the health report; 200 when ready, 503 otherwise."
+response = "object: node_id, region, share_count, refresh_epoch, share_error optional, audit_sequence, audit_head, peers map of {reachable, rtt_ns}, reachable_peers, readiness_error optional, ready"
+
+[error.token_missing]
+category = "token"
+status   = "401"
+meaning  = "No bearer token and no agent signature accompanied a sign request."
+
+[error.token_invalid]
+category = "token"
+status   = "401"
+meaning  = "The bearer token failed signature, algorithm, key, issuer, audience or expiry checks."
+
+[error.token_not_owner]
+category = "token"
+status   = "401"
+meaning  = "The token subject does not own the key being signed for."
+
+[error.token_unavailable]
+category = "token"
+status   = "401"
+meaning  = "The node has no verifier configured for the presented credential."
+
+[error.agent_invalid]
+category = "token"
+status   = "401"
+meaning  = "The agent headers are malformed or the agent signature, nonce, expiry or registration failed."
+
+[error.operator_required]
+category = "token"
+status   = "403"
+meaning  = "The caller presented no verified client certificate."
+
+[error.policy_denied]
+category = "policy"
+status   = "403"
+meaning  = "The account policy refused the request; policy_code carries the engine's stable code."
+
+[error.quorum_too_few_signers]
+category = "quorum"
+status   = "409"
+meaning  = "Fewer signers or add-share contributors than the threshold of three."
+
+[error.quorum_not_member]
+category = "quorum"
+status   = "409"
+meaning  = "A named signer does not hold a share of the key."
+
+[error.quorum_self_missing]
+category = "quorum"
+status   = "409"
+meaning  = "The node receiving the request is not among its participants."
+
+[error.session_bad_request]
+category = "session"
+status   = "400"
+meaning  = "The body is malformed, has unknown fields, or lacks a required field."
+
+[error.session_open_failed]
+category = "session"
+status   = "502"
+meaning  = "The node could not open the peer protocol session."
+
+[error.session_failed]
+category = "session"
+status   = "502"
+meaning  = "The peer protocol session failed or a peer refused a message."
+
+[error.session_timeout]
+category = "session"
+status   = "504"
+meaning  = "The peer protocol session did not finish within the protocol timeout."
+
+[error.session_unsupported_kind]
+category = "session"
+status   = "400"
+meaning  = "The sign kind is not one of the supported kinds."
+
+[error.key_not_found]
+category = "key"
+status   = "404"
+meaning  = "The node holds no share for the key id."
+
+[error.key_exists]
+category = "key"
+status   = "409"
+meaning  = "A share for the key id already exists on the node."
+
+[error.key_curve_mismatch]
+category = "key"
+status   = "409"
+meaning  = "The curve is unknown or does not match the key or the sign kind."
+
+[error.key_not_refreshed]
+category = "key"
+status   = "409"
+meaning  = "A secp256k1 key has no auxiliary material yet and needs keys.refresh before signing."
+
+[error.key_invalid_share]
+category = "key"
+status   = "409"
+meaning  = "The share does not validate against its public data or is not issued to this node."
+
+[error.key_import_disabled]
+category = "key"
+status   = "409"
+meaning  = "keys.import is refused unless the node runs with the ceremony flag set."
+
+[error.store_failed]
+category = "store"
+status   = "500"
+meaning  = "The encrypted share store failed to read or write."
+
+[error.store_audit_failed]
+category = "store"
+status   = "500"
+meaning  = "The audit log refused the append."

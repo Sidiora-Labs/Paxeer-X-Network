@@ -1,0 +1,8 @@
+{
+  "error": {
+    "category": "policy",
+    "code": "policy_denied",
+    "message": "amount exceeds the per-transaction cap",
+    "policy_code": "value_cap"
+  }
+}

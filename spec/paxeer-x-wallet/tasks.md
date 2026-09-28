@@ -94,7 +94,7 @@
 ## Wave 2 - Assembly
 
 - [ ] 2. Assemble the daemon, the gateway core, the SDK, the ceremony tool and the app shell
-  - [ ] 2.1 Assemble the attestor daemon with its API and a five-node end-to-end test
+  - [x] 2.1 Assemble the attestor daemon with its API and a five-node end-to-end test
     - Add human/wallet/attestor/cmd/attestor and internal/server wiring configuration, store, transport, both signing wrappers, dealer import and refresh, policy, authentication, audit and health into the HTTP API of [decision] attestor_api over mutual TLS: keys.generate, keys.import (operator identity and ceremony flag only), keys.refresh, keys.addshare, sign and health, with session coordination so the same request posted to every participant runs one protocol session.
     - Write human/wallet/schema/attestor-api/v1.kvx describing every operation, request and response shape and error, and generate golden JSON vectors under human/wallet/schema/attestor-api/golden from the implementation.
     - Add internal/server/e2e_test.go starting five daemons in one process on distinct listeners with certificates generated in the test, importing a known secp256k1 key and a known Ed25519 key, refreshing both, signing an EVM transaction, a typed-data digest, a binding message and an activity envelope under a token minted from an in-test JWKS, verifying each signature, refusing a bad token and an out-of-policy transaction, and verifying the audit chain of every node.

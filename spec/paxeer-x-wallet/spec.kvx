@@ -476,7 +476,11 @@ status = "pending"
 
 [task.2.1]
 title = "Assemble the attestor daemon with its API and a five-node end-to-end test"
-status = "pending"
+status = "done"
+revision = "42f6e9ccc7d9d701df77dfef229089b04d316ea3"
+command = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./internal/server/... ./cmd/...'"
+exit_code = "0"
+log_path = ".logs/verify.log"
 wave = 2
 requires = ["1.1","1.2","1.3","1.4","1.5","1.6","1.7","1.8","1.9"]
 do_1 = "Add human/wallet/attestor/cmd/attestor and internal/server wiring configuration, store, transport, both signing wrappers, dealer import and refresh, policy, authentication, audit and health into the HTTP API of [decision] attestor_api over mutual TLS: keys.generate, keys.import (operator identity and ceremony flag only), keys.refresh, keys.addshare, sign and health, with session coordination so the same request posted to every participant runs one protocol session."

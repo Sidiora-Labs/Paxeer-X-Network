@@ -1,0 +1,24 @@
+{
+  "session_id": "session-grant",
+  "key_id": "key-ed",
+  "kind": "lx_grant",
+  "signers": [
+    "node-1",
+    "node-2",
+    "node-3"
+  ],
+  "grant": {
+    "from": "8181818181818181818181818181818181818181818181818181818181818181",
+    "recipient": "1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e",
+    "asset": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+    "per_draw_maximum": "1000",
+    "allowance": "50000",
+    "recurring": false,
+    "window_length": 0,
+    "expiration": 1900000000,
+    "purpose_hash": "6464646464646464646464646464646464646464646464646464646464646464",
+    "has_reference": false,
+    "reference_hash": "",
+    "revocation_sequence": 0
+  }
+}

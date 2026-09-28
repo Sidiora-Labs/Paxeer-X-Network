@@ -81,6 +81,13 @@ func newKeyShare(id string, threshold uint32, publicKey *pt.ECPoint, share *big.
 	return k, nil
 }
 
+func NewKeyShare(id string, threshold uint32, publicKey *pt.ECPoint, share *big.Int, bks map[string]*birkhoffinterpolation.BkParameter, ys map[string]*pt.ECPoint) (*KeyShare, error) {
+	if publicKey == nil || share == nil {
+		return nil, ErrInconsistent
+	}
+	return newKeyShare(id, threshold, publicKey, share, bks, ys)
+}
+
 func (k *KeyShare) validate() error {
 	curve := elliptic.Ed25519()
 	n := curve.Params().N
@@ -142,6 +149,18 @@ func (k *KeyShare) Participants() []string {
 	}
 	sort.Strings(ids)
 	return ids
+}
+
+func (k *KeyShare) Material() (*pt.ECPoint, *big.Int, map[string]*birkhoffinterpolation.BkParameter, map[string]*pt.ECPoint) {
+	bks := make(map[string]*birkhoffinterpolation.BkParameter, len(k.bks))
+	for pid, bk := range k.bks {
+		bks[pid] = birkhoffinterpolation.NewBkParameter(new(big.Int).Set(bk.GetX()), bk.GetRank())
+	}
+	ys := make(map[string]*pt.ECPoint, len(k.ys))
+	for pid, y := range k.ys {
+		ys[pid] = y.Copy()
+	}
+	return k.publicKey.Copy(), new(big.Int).Set(k.share), bks, ys
 }
 
 func (k *KeyShare) PublicKeyBytes() [32]byte {

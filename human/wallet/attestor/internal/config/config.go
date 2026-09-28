@@ -34,6 +34,8 @@ const (
 	EnvBackupKeyFile   = "ATTESTOR_BACKUP_KEY_FILE"
 	EnvBackupDir       = "ATTESTOR_BACKUP_DIR"
 	EnvRPCURL          = "ATTESTOR_RPC_URL"
+	EnvPeerPins        = "ATTESTOR_PEER_PINS"
+	EnvActivityTypes   = "ATTESTOR_ACTIVITY_TYPES"
 	KeySize            = 32
 	maxKeyFileSize     = 4096
 	peerEntrySeparator = ","
@@ -69,6 +71,8 @@ type Config struct {
 	BackupKey      []byte
 	BackupDir      string
 	RPCURL         string
+	PeerPins       map[string]string
+	ActivityTypes  []uint32
 }
 
 func Load(getenv func(string) string) (*Config, error) {
@@ -140,6 +144,13 @@ func Load(getenv func(string) string) (*Config, error) {
 		return nil, err
 	}
 
+	if c.PeerPins, err = ParsePeerPins(get(EnvPeerPins), c.Peers); err != nil {
+		return nil, err
+	}
+	if c.ActivityTypes, err = ParseActivityTypes(get(EnvActivityTypes)); err != nil {
+		return nil, err
+	}
+
 	if c.BackupKeyFile != "" {
 		if c.BackupKey, err = ReadKeyFile(c.BackupKeyFile); err != nil {
 			return nil, fmt.Errorf("config: %s: %w", EnvBackupKeyFile, err)
@@ -147,6 +158,65 @@ func Load(getenv func(string) string) (*Config, error) {
 	}
 
 	return c, nil
+}
+
+func ParsePeerPins(v string, peers []Peer) (map[string]string, error) {
+	pins := make(map[string]string, len(peers))
+	if v == "" {
+		return pins, nil
+	}
+	{
+		for _, entry := range strings.Split(v, peerEntrySeparator) {
+			id, pin, ok := strings.Cut(strings.TrimSpace(entry), "=")
+			id, pin = strings.TrimSpace(id), strings.ToLower(strings.TrimSpace(pin))
+			if !ok || id == "" {
+				return nil, fmt.Errorf("config: %s: malformed pin entry %q", EnvPeerPins, entry)
+			}
+			raw, err := hex.DecodeString(pin)
+			if err != nil || len(raw) != 32 {
+				return nil, fmt.Errorf("config: %s: pin for %s must be 64 hex characters", EnvPeerPins, id)
+			}
+			if _, dup := pins[id]; dup {
+				return nil, fmt.Errorf("config: %s: duplicate pin for %s", EnvPeerPins, id)
+			}
+			pins[id] = pin
+		}
+	}
+	known := make(map[string]bool, len(peers))
+	for _, p := range peers {
+		known[p.ID] = true
+		if _, ok := pins[p.ID]; !ok {
+			return nil, fmt.Errorf("config: %s: no pin for peer %s", EnvPeerPins, p.ID)
+		}
+	}
+	for id := range pins {
+		if !known[id] {
+			return nil, fmt.Errorf("config: %s: pin for unknown peer %s", EnvPeerPins, id)
+		}
+	}
+	return pins, nil
+}
+
+func ParseActivityTypes(v string) ([]uint32, error) {
+	if v == "" {
+		return nil, nil
+	}
+	var out []uint32
+	seen := make(map[uint32]bool)
+	for _, entry := range strings.Split(v, peerEntrySeparator) {
+		entry = strings.TrimSpace(entry)
+		n, err := strconv.ParseUint(entry, 0, 32)
+		if err != nil || n == 0 {
+			return nil, fmt.Errorf("config: %s: invalid activity type %q", EnvActivityTypes, entry)
+		}
+		if seen[uint32(n)] {
+			return nil, fmt.Errorf("config: %s: duplicate activity type %q", EnvActivityTypes, entry)
+		}
+		seen[uint32(n)] = true
+		out = append(out, uint32(n))
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out, nil
 }
 
 func ReadKeyFile(path string) ([]byte, error) {

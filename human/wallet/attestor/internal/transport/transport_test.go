@@ -24,6 +24,9 @@ import (
 
 	"github.com/getamis/alice/crypto/birkhoffinterpolation"
 	"github.com/getamis/alice/crypto/tss/dkg"
+	cggmpdkg "github.com/getamis/alice/crypto/tss/ecdsa/cggmp/dkg"
+	cggmprefresh "github.com/getamis/alice/crypto/tss/ecdsa/cggmp/refresh"
+	cggmpsign "github.com/getamis/alice/crypto/tss/ecdsa/cggmp/sign"
 	frostdkg "github.com/getamis/alice/crypto/tss/eddsa/frost/dkg"
 	"github.com/getamis/alice/types"
 )
@@ -521,5 +524,236 @@ func TestConfigRejectsBadPins(t *testing.T) {
 	})
 	if !errors.Is(err, ErrConfig) {
 		t.Fatalf("own pin mismatch accepted: %v", err)
+	}
+}
+
+func openKind(t *testing.T, tr *Transport, id string, participants []string, kind SessionKind) *Session {
+	t.Helper()
+	s, err := tr.OpenKind(id, participants, testProtocol, kind)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func relayEnvelope(t *testing.T, s *Session, to string, msg types.Message) *Envelope {
+	t.Helper()
+	env, err := s.envelope(to, msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env.Seq = 1
+	return env
+}
+
+func TestSenderMarksRelayWithoutRewritingSender(t *testing.T) {
+	c := newCluster(t, 3)
+	s1 := openKind(t, c.nodes[1], "mark", c.ids, KindRefreshSecp256k1)
+	own := relayEnvelope(t, s1, "node-0", peerMessage("node-1"))
+	if own.Relay || own.Origin != "" || own.Sender != "node-1" {
+		t.Fatalf("own message marked: relay %v origin %q sender %q", own.Relay, own.Origin, own.Sender)
+	}
+	relayed := relayEnvelope(t, s1, "node-0", peerMessage("node-2"))
+	if !relayed.Relay || relayed.Origin != "node-2" || relayed.Sender != "node-1" {
+		t.Fatalf("relayed message: relay %v origin %q sender %q", relayed.Relay, relayed.Origin, relayed.Sender)
+	}
+	if _, err := c.nodes[0].OpenKind("bad-kind", c.ids, testProtocol, SessionKind(99)); !errors.Is(err, ErrConfig) {
+		t.Fatalf("unknown session kind accepted: %v", err)
+	}
+}
+
+var (
+	relayKinds   = map[string]SessionKind{"keygen-secp256k1": KindKeygenSecp256k1, "sign-secp256k1": KindSignSecp256k1, "refresh-secp256k1": KindRefreshSecp256k1}
+	noRelayKinds = map[string]SessionKind{"keygen-ed25519": KindKeygenEd25519, "sign-ed25519": KindSignEd25519, "refresh-ed25519": KindRefreshEd25519, "addshare": KindAddShare, "generic": KindGeneric}
+)
+
+func TestRelayAcceptedInSecp256k1Sessions(t *testing.T) {
+	c := newCluster(t, 5)
+	participants := c.ids[:4]
+	for name, kind := range relayKinds {
+		t.Run(name, func(t *testing.T) {
+			id := "relay-" + name
+			s0 := openKind(t, c.nodes[0], id, participants, kind)
+			s1 := openKind(t, c.nodes[1], id, participants, kind)
+			env := relayEnvelope(t, s1, "node-0", peerMessage("node-2"))
+			st, err := c.nodes[1].post(context.Background(), "node-0", env)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if st != http.StatusAccepted {
+				t.Fatalf("relay: status %d, want %d", st, http.StatusAccepted)
+			}
+			if got := s0.Refused(); got != 0 {
+				t.Fatalf("refused %d, want 0", got)
+			}
+			if got := s0.Pending("node-1"); got != 1 {
+				t.Fatalf("pending %d, want 1", got)
+			}
+			log := s0.MessageLog()
+			if len(log) != 1 {
+				t.Fatalf("message log %+v", log)
+			}
+			want := LoggedMessage{Sender: "node-2", RelayedBy: "node-1", Round: env.Round, Seq: 1, Type: env.Type}
+			if log[0] != want {
+				t.Fatalf("message log entry %+v, want %+v", log[0], want)
+			}
+
+			direct := relayEnvelope(t, s1, "node-0", decommitMessage("node-1"))
+			direct.Seq = 2
+			if st, err := c.nodes[1].post(context.Background(), "node-0", direct); err != nil || st != http.StatusAccepted {
+				t.Fatalf("direct: status %d err %v", st, err)
+			}
+			log = s0.MessageLog()
+			if len(log) != 2 || log[1].Sender != "node-1" || log[1].RelayedBy != "" {
+				t.Fatalf("direct message log %+v", log)
+			}
+		})
+	}
+}
+
+type relayRefusal struct {
+	name   string
+	kind   SessionKind
+	msg    types.Message
+	mutate func(*Envelope)
+	status int
+}
+
+func TestRelayRefusals(t *testing.T) {
+	c := newCluster(t, 5)
+	participants := c.ids[:4]
+	var cases []relayRefusal
+	for kindName, kind := range relayKinds {
+		cases = append(cases,
+			relayRefusal{name: kindName + "/unmarked", kind: kind, msg: peerMessage("node-2"), mutate: func(e *Envelope) { e.Relay = false; e.Origin = "" }, status: http.StatusForbidden},
+			relayRefusal{name: kindName + "/origin-without-mark", kind: kind, msg: peerMessage("node-2"), mutate: func(e *Envelope) { e.Relay = false }, status: http.StatusForbidden},
+			relayRefusal{name: kindName + "/outsider-origin", kind: kind, msg: peerMessage("node-4"), status: http.StatusForbidden},
+			relayRefusal{name: kindName + "/self-relay", kind: kind, msg: peerMessage("node-1"), mutate: func(e *Envelope) { e.Relay = true; e.Origin = "node-1" }, status: http.StatusForbidden},
+			relayRefusal{name: kindName + "/receiver-origin", kind: kind, msg: peerMessage("node-0"), status: http.StatusForbidden},
+			relayRefusal{name: kindName + "/origin-differs", kind: kind, msg: peerMessage("node-2"), mutate: func(e *Envelope) { e.Origin = "node-3" }, status: http.StatusForbidden},
+		)
+	}
+	for kindName, kind := range noRelayKinds {
+		cases = append(cases,
+			relayRefusal{name: kindName + "/relay", kind: kind, msg: peerMessage("node-2"), status: http.StatusForbidden},
+			relayRefusal{name: kindName + "/unmarked", kind: kind, msg: peerMessage("node-2"), mutate: func(e *Envelope) { e.Relay = false; e.Origin = "" }, status: http.StatusForbidden},
+		)
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			id := "refuse-" + tc.name
+			s0 := openKind(t, c.nodes[0], id, participants, tc.kind)
+			s1 := openKind(t, c.nodes[1], id, participants, tc.kind)
+			env := relayEnvelope(t, s1, "node-0", tc.msg)
+			if tc.mutate != nil {
+				tc.mutate(env)
+			}
+			st, err := c.nodes[1].post(context.Background(), "node-0", env)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if st != tc.status {
+				t.Fatalf("status %d, want %d", st, tc.status)
+			}
+			if got := s0.Refused(); got != 1 {
+				t.Fatalf("refused %d, want 1", got)
+			}
+			if got := s0.Pending("node-1"); got != 0 {
+				t.Fatalf("refused relay queued")
+			}
+			if log := s0.MessageLog(); len(log) != 0 {
+				t.Fatalf("refused relay logged: %+v", log)
+			}
+		})
+	}
+
+	for kindName, kind := range relayKinds {
+		t.Run(kindName+"/closed", func(t *testing.T) {
+			id := "refuse-closed-" + kindName
+			s0 := openKind(t, c.nodes[0], id, participants, kind)
+			s1 := openKind(t, c.nodes[1], id, participants, kind)
+			env := relayEnvelope(t, s1, "node-0", peerMessage("node-2"))
+			s0.Close()
+			st, err := c.nodes[1].post(context.Background(), "node-0", env)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if st != http.StatusGone {
+				t.Fatalf("status %d, want %d", st, http.StatusGone)
+			}
+			if err := s0.deliver(env); !errors.Is(err, ErrSessionClosed) {
+				t.Fatalf("closed session delivery: %v", err)
+			}
+			if log := s0.MessageLog(); len(log) != 0 {
+				t.Fatalf("closed session logged: %+v", log)
+			}
+		})
+	}
+}
+
+func echoHashRelayMessage(origin string, size int) *cggmprefresh.Message {
+	return &cggmprefresh.Message{
+		Type: cggmprefresh.Type_Round1,
+		Id:   origin,
+		Body: &cggmprefresh.Message_EchoHashRelay{EchoHashRelay: make([]byte, size)},
+	}
+}
+
+func echoHashRelayFor(kind SessionKind, origin string, size int) types.Message {
+	switch kind {
+	case KindKeygenSecp256k1:
+		return &cggmpdkg.Message{Type: cggmpdkg.Type_Peer, Id: origin, Body: &cggmpdkg.Message_EchoHashRelay{EchoHashRelay: make([]byte, size)}}
+	case KindSignSecp256k1:
+		return &cggmpsign.Message{Type: cggmpsign.Type_Round1, Id: origin, Body: &cggmpsign.Message_EchoHashRelay{EchoHashRelay: make([]byte, size)}}
+	}
+	return echoHashRelayMessage(origin, size)
+}
+
+func TestEchoHashRelayAdmission(t *testing.T) {
+	c := newCluster(t, 4)
+	type echoCase struct {
+		name   string
+		kind   SessionKind
+		msg    types.Message
+		mutate func(*Envelope)
+		status int
+		logged int
+	}
+	var cases []echoCase
+	for kindName, kind := range relayKinds {
+		cases = append(cases,
+			echoCase{name: kindName + "/hash-relay", kind: kind, msg: echoHashRelayFor(kind, "node-2", 32), status: http.StatusAccepted, logged: 1},
+			echoCase{name: kindName + "/short-hash", kind: kind, msg: echoHashRelayFor(kind, "node-2", 16), status: http.StatusBadRequest},
+			echoCase{name: kindName + "/unmarked-hash", kind: kind, msg: echoHashRelayFor(kind, "node-2", 32), mutate: func(e *Envelope) { e.Relay = false; e.Origin = "" }, status: http.StatusForbidden},
+			echoCase{name: kindName + "/own-hash", kind: kind, msg: echoHashRelayFor(kind, "node-1", 32), status: http.StatusBadRequest},
+		)
+	}
+	for kindName, kind := range noRelayKinds {
+		cases = append(cases, echoCase{name: kindName + "/hash-relay", kind: kind, msg: echoHashRelayMessage("node-2", 32), status: http.StatusForbidden})
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			id := "echo-" + tc.name
+			s0 := openKind(t, c.nodes[0], id, c.ids, tc.kind)
+			s1 := openKind(t, c.nodes[1], id, c.ids, tc.kind)
+			env := relayEnvelope(t, s1, "node-0", tc.msg)
+			if tc.mutate != nil {
+				tc.mutate(env)
+			}
+			st, err := c.nodes[1].post(context.Background(), "node-0", env)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if st != tc.status {
+				t.Fatalf("status %d, want %d", st, tc.status)
+			}
+			log := s0.MessageLog()
+			if len(log) != tc.logged {
+				t.Fatalf("message log %+v", log)
+			}
+			if tc.logged == 1 && (log[0].Sender != "node-2" || log[0].RelayedBy != "node-1") {
+				t.Fatalf("message log entry %+v", log[0])
+			}
+		})
 	}
 }
