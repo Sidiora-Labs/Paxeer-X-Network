@@ -336,7 +336,7 @@ reqs = ["5.1","13.1"]
 
 [task.1.11]
 title = "Add the bounded test and lint gates for the wallet tree"
-status = "pending"
+status = "done"
 wave = 1
 requires = []
 do_1 = "Add tools/wallet/gate-test.sh running the Go suites under human/wallet/attestor and human/wallet/ceremony, the pnpm workspace tests under human/wallet and human/apps/wallet, and the Rust tests of layerx-human-kms, layerx-human-identity-provider, layerx-human-service and layerx-platform-gateway, bounded by WALLET_GATE_BUDGET_SECONDS with a documented default, reporting the command, exit code and log path of whatever it stopped on."
@@ -346,6 +346,10 @@ verify_cmd = "timeout 20m sh -c 'tools/wallet/gate.test.sh'"
 symbols = ["gate-test","gate-lint"]
 touches = ["tools/wallet/gate-test.sh","tools/wallet/gate-lint.sh","tools/wallet/gate.test.sh"]
 reqs = ["13.1"]
+revision = "9787d3728aa4ebf2769a51d109b1551fbddb9eb0"
+command = "timeout 20m sh -c 'tools/wallet/gate.test.sh'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.1.12]
 title = "Write the deployment definitions for the attestors, the gateway and the endpoint"

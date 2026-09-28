@@ -60,7 +60,7 @@
     - Replace every literal credential, connection string, key, token or internal address found in the imported sources with a documented environment variable, add human/wallet/deploy/env listing every variable name with a one-line purpose and no value, and add human/wallet/README.md describing the workspace layout.
     - Make the imported test suites run under the workspace (pnpm install, existing vitest or node test runners), fixing only what the move broke, and add tools/wallet/scan-secrets.sh with a test that runs it over the imported tree and over a fixture containing a key-shaped string.
     - _Requirements: 5.1, 13.1_
-  - [ ] 1.11 Add the bounded test and lint gates for the wallet tree
+  - [x] 1.11 Add the bounded test and lint gates for the wallet tree
     - Add tools/wallet/gate-test.sh running the Go suites under human/wallet/attestor and human/wallet/ceremony, the pnpm workspace tests under human/wallet and human/apps/wallet, and the Rust tests of layerx-human-kms, layerx-human-identity-provider, layerx-human-service and layerx-platform-gateway, bounded by WALLET_GATE_BUDGET_SECONDS with a documented default, reporting the command, exit code and log path of whatever it stopped on.
     - Add tools/wallet/gate-lint.sh running gofmt and go vet for the Go modules, eslint and tsc for the workspace and the app, and cargo fmt and clippy for the named crates, with the same budget and reporting; both gates take --check to validate their syntax, required tooling and target list without running a suite.
     - Add tools/wallet/gate.test.sh exercising --check for both gates and a budget of one second against a deliberately slow target, asserting the reported command and exit code.
