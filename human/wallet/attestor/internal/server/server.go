@@ -19,6 +19,7 @@ import (
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/audit"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/auth/agent"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/auth/jwt"
+	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/backup"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/health"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/lxwire"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy"
@@ -57,6 +58,7 @@ type Options struct {
 	Activities      *lxwire.Registry
 	PeerProbe       func(ctx context.Context) map[string]health.PeerState
 	Replica         func() health.ReplicaState
+	Snapshots       *backup.Writer
 	ProtocolTimeout time.Duration
 	PeerTimeout     time.Duration
 	RoundTimeout    time.Duration
@@ -109,13 +111,17 @@ func New(opts Options) (*Server, error) {
 		return nil, err
 	}
 	s.ceremony = ceremony
-	reporter, err := health.NewReporter(opts.NodeID, opts.Region, health.Providers{
+	providers := health.Providers{
 		Shares:    s.shareStats,
 		AuditHead: opts.Audit.Head,
 		Peers:     opts.PeerProbe,
 		Readiness: s.readiness,
 		Replica:   opts.Replica,
-	})
+	}
+	if opts.Snapshots != nil {
+		providers.Snapshot = opts.Snapshots.State
+	}
+	reporter, err := health.NewReporter(opts.NodeID, opts.Region, providers)
 	if err != nil {
 		return nil, err
 	}
@@ -304,6 +310,12 @@ func (s *Server) HandleHealth(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusServiceUnavailable
 	}
 	writeJSON(w, status, report)
+}
+
+func (s *Server) snapshotAfter(operation string) {
+	if s.opts.Snapshots != nil {
+		_, _ = s.opts.Snapshots.WriteSnapshot(operation)
+	}
 }
 
 func (s *Server) audit(kind, keyID, subject, decision, reason, sessionID string) (uint64, *Error) {

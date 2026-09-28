@@ -957,3 +957,27 @@ symbol = "DecodeEffect"
 observed = "Against the hardened daemon the e2e signs in, generates the key under the gateway authority and reaches sign, which every signer refuses: the kernel's asset operation 5 payload is the signed send encoding tagged 0x5301 while the kernel evaluator decodes operation 5 as a 112-byte from, to, asset and amount transfer, and the test agent layer also builds a label authority and a fixed validity window the evaluator checks against the wall clock."
 assumption = "The kernel evaluator must decode the kernel's own send payload before any human send can be attestor-signed; the test's owner-key authority and wall-clock window are follow-up edits once that decoder exists."
 severity = "blocker"
+
+[observation.4.14.1]
+task = "4.14"
+file = "human/wallet/attestor/internal/replica/replica_test.go"
+symbol = "Store.Snapshot"
+observed = "Binding the node id into the snapshot changed Store.Snapshot to take the node id, so the one replica test call outside the touches list now passes node-1."
+assumption = "The replica package only reads the version byte and ships bytes, so the call change keeps every replica assertion intact."
+severity = "note"
+
+[observation.4.14.2]
+task = "4.14"
+file = "human/wallet/attestor/internal/server/server_test.go"
+symbol = "TestSnapshotFollowsEveryKeyChangeAndRestoresToSign"
+observed = "The restore followed by a quorum signature lives in the server tests, because the five-node cluster harness is only reachable from the server package; backup_test.go proves restore into an empty directory and every refusal against a real store."
+assumption = "do_4 is met by the two files together."
+severity = "note"
+
+[observation.4.14.3]
+task = "4.14"
+file = "human/wallet/deploy/attestor-1.toml"
+symbol = "ATTESTOR_BACKUP_DIR"
+observed = "The deploy definitions place ATTESTOR_BACKUP_DIR inside ATTESTOR_DATA_DIR, so the restore subcommand refuses the live data directory as non-empty and a restore targets a fresh directory given with -data-dir."
+assumption = "Operators restore onto a fresh volume and copy the chosen snapshot out of the old one first."
+severity = "note"

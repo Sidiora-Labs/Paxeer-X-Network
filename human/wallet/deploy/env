@@ -89,6 +89,8 @@ ATTESTOR_TLS_CA_FILE - path to the CA bundle that authenticates peers and the ga
 ATTESTOR_OPERATOR_CA_FILE - path to the CA bundle that authenticates the operator identity; API clients chaining to it may call keys.import, keys.refresh and keys.addshare only; must be a different CA from ATTESTOR_TLS_CA_FILE
 ATTESTOR_BACKUP_KEY_FILE - path to the key file (32 raw bytes or 64 hex characters) that encrypts store snapshots
 ATTESTOR_BACKUP_DIR - directory where encrypted store snapshots are written
+ATTESTOR_SNAPSHOT_INTERVAL - duration between scheduled snapshots into ATTESTOR_BACKUP_DIR, at least 1s, default 1h; a snapshot also follows every successful keys.generate, keys.import, keys.refresh and keys.addshare
+ATTESTOR_SNAPSHOT_RETAIN - number of newest snapshots kept, at least 1, default 48; with a replica configured an older snapshot is deleted only once replica-ledger.json records it as shipped with the same size and digest
 ATTESTOR_REPLICA_KEY_FILE - path to this attestor's OpenSSH private key for the replica; setting any ATTESTOR_REPLICA_ variable requires all six
 ATTESTOR_REPLICA_HOST_KEY_FILE - path to the replica's expected SSH host public key; any other host key is refused and nothing is uploaded
 ATTESTOR_REPLICA_REMOTE_DIR - absolute per-node directory inside the replica user's chroot, /attestor-<node id>, created by the operator on the replica and writable by that user

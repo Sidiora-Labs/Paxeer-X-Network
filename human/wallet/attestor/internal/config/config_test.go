@@ -263,3 +263,48 @@ func TestLoadPeerPinsAndActivityTypes(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadSnapshotSchedule(t *testing.T) {
+	dir := t.TempDir()
+	path := writeKey(t, dir, "node.key", randomKey(t), 0o600)
+	env := baseEnv(t, path)
+	cfg, err := Load(getter(env))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SnapshotInterval != DefaultSnapshotInterval || cfg.SnapshotRetain != DefaultSnapshotRetain {
+		t.Fatalf("defaults: interval %s retain %d", cfg.SnapshotInterval, cfg.SnapshotRetain)
+	}
+
+	env[EnvSnapshotInterval] = "15m"
+	env[EnvSnapshotRetain] = "7"
+	env[EnvBackupDir] = filepath.Join(dir, "backups")
+	env[EnvBackupKeyFile] = writeKey(t, dir, "backup.key", randomKey(t), 0o600)
+	cfg, err = Load(getter(env))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SnapshotInterval.Minutes() != 15 || cfg.SnapshotRetain != 7 {
+		t.Fatalf("set: interval %s retain %d", cfg.SnapshotInterval, cfg.SnapshotRetain)
+	}
+
+	bad := map[string]map[string]string{
+		"interval below minimum": {EnvSnapshotInterval: "500ms"},
+		"interval not duration":  {EnvSnapshotInterval: "hourly"},
+		"retain zero":            {EnvSnapshotRetain: "0"},
+		"retain negative":        {EnvSnapshotRetain: "-3"},
+		"retain text":            {EnvSnapshotRetain: "many"},
+		"backup dir without key": {EnvBackupDir: filepath.Join(dir, "backups")},
+	}
+	for name, extra := range bad {
+		t.Run(name, func(t *testing.T) {
+			e := baseEnv(t, path)
+			for k, v := range extra {
+				e[k] = v
+			}
+			if cfg, err := Load(getter(e)); err == nil {
+				t.Fatalf("Load accepted: %+v", cfg)
+			}
+		})
+	}
+}

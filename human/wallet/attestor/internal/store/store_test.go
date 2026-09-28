@@ -365,7 +365,7 @@ func TestSnapshotRestore(t *testing.T) {
 		}
 	}
 	var snap bytes.Buffer
-	if err := src.Snapshot(&snap, backupKey); err != nil {
+	if err := src.Snapshot(&snap, backupKey, testSnapshotNode); err != nil {
 		t.Fatalf("Snapshot: %v", err)
 	}
 	blob := snap.Bytes()
@@ -379,7 +379,7 @@ func TestSnapshotRestore(t *testing.T) {
 	}
 
 	dstDir := filepath.Join(t.TempDir(), "restored")
-	dst, err := Restore(bytes.NewReader(blob), backupKey, dstDir, nodeKey)
+	dst, err := Restore(bytes.NewReader(blob), backupKey, testSnapshotNode, dstDir, nodeKey)
 	if err != nil {
 		t.Fatalf("Restore: %v", err)
 	}
@@ -402,7 +402,7 @@ func TestSnapshotRestore(t *testing.T) {
 		}
 	}
 
-	if _, err := Restore(bytes.NewReader(blob), backupKey, dstDir, nodeKey); !errors.Is(err, ErrDataDirInUse) {
+	if _, err := Restore(bytes.NewReader(blob), backupKey, testSnapshotNode, dstDir, nodeKey); !errors.Is(err, ErrDataDirInUse) {
 		t.Fatalf("restore into a used directory: %v", err)
 	}
 
@@ -420,7 +420,8 @@ func TestSnapshotRestore(t *testing.T) {
 	}
 	leaks.assert(t, err)
 
-	for _, pos := range []int{1, len(blob) / 2, len(blob) - 1} {
+	headerLen := 3 + len(testSnapshotNode)
+	for _, pos := range []int{headerLen, len(blob) / 2, len(blob) - 1} {
 		tampered := append([]byte(nil), blob...)
 		tampered[pos] ^= 0x01
 		err := restoreFresh(t, tampered, backupKey, nodeKey)
@@ -447,7 +448,7 @@ func TestSnapshotRestore(t *testing.T) {
 	otherNode := randomBytes(t, KeySize)
 	leaks.add(otherNode)
 	failDir := filepath.Join(t.TempDir(), "wrong-node")
-	_, err = Restore(bytes.NewReader(blob), backupKey, failDir, otherNode)
+	_, err = Restore(bytes.NewReader(blob), backupKey, testSnapshotNode, failDir, otherNode)
 	if !errors.Is(err, ErrAuthFailed) {
 		t.Fatalf("restore under another node key: %v", err)
 	}
@@ -456,7 +457,7 @@ func TestSnapshotRestore(t *testing.T) {
 		t.Fatal("failed restore left a store file behind")
 	}
 
-	if err := src.Snapshot(&bytes.Buffer{}, backupKey[:16]); err == nil {
+	if err := src.Snapshot(&bytes.Buffer{}, backupKey[:16], testSnapshotNode); err == nil {
 		t.Fatal("short backup key accepted")
 	} else {
 		leaks.assert(t, err)
@@ -468,10 +469,10 @@ func TestSnapshotEmptyStore(t *testing.T) {
 	backupKey := randomBytes(t, KeySize)
 	src := openStore(t, t.TempDir(), nodeKey)
 	var snap bytes.Buffer
-	if err := src.Snapshot(&snap, backupKey); err != nil {
+	if err := src.Snapshot(&snap, backupKey, testSnapshotNode); err != nil {
 		t.Fatal(err)
 	}
-	dst, err := Restore(&snap, backupKey, t.TempDir(), nodeKey)
+	dst, err := Restore(&snap, backupKey, testSnapshotNode, t.TempDir(), nodeKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -511,15 +512,78 @@ func TestErrorsNeverCarrySecrets(t *testing.T) {
 	}
 	_, err = s.List()
 	leaks.assert(t, err)
-	leaks.assert(t, s.Snapshot(&bytes.Buffer{}, randomBytes(t, KeySize)))
+	leaks.assert(t, s.Snapshot(&bytes.Buffer{}, randomBytes(t, KeySize), testSnapshotNode))
 }
 
 func restoreFresh(t *testing.T, blob, backupKey, nodeKey []byte) error {
 	t.Helper()
-	s, err := Restore(bytes.NewReader(blob), backupKey, filepath.Join(t.TempDir(), "fresh"), nodeKey)
+	s, err := Restore(bytes.NewReader(blob), backupKey, testSnapshotNode, filepath.Join(t.TempDir(), "fresh"), nodeKey)
 	if err == nil {
 		s.db.Close()
 		t.Fatal("restore unexpectedly succeeded")
 	}
 	return err
+}
+
+const testSnapshotNode = "node-1"
+
+func TestSnapshotVersionBindsNodeID(t *testing.T) {
+	nodeKey := randomBytes(t, KeySize)
+	backupKey := randomBytes(t, KeySize)
+	src := openStore(t, t.TempDir(), nodeKey)
+	for _, f := range fixtures(t) {
+		if err := src.Put(f.rec, f.share); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var snap bytes.Buffer
+	if err := src.Snapshot(&snap, backupKey, testSnapshotNode); err != nil {
+		t.Fatal(err)
+	}
+	blob := snap.Bytes()
+	if SnapshotVersion != 2 || blob[0] != SnapshotVersion {
+		t.Fatalf("snapshot version %d, blob version %d", SnapshotVersion, blob[0])
+	}
+	owner, err := SnapshotNodeID(blob)
+	if err != nil || owner != testSnapshotNode {
+		t.Fatalf("SnapshotNodeID = %q, %v", owner, err)
+	}
+
+	s, err := Restore(bytes.NewReader(blob), backupKey, "node-2", filepath.Join(t.TempDir(), "foreign"), nodeKey)
+	if err == nil {
+		s.db.Close()
+		t.Fatal("restore accepted a snapshot of another node")
+	}
+	if !errors.Is(err, ErrSnapshotNode) {
+		t.Fatalf("foreign node: %v", err)
+	}
+
+	relabelled := append([]byte(nil), blob...)
+	relabelled[3+len(testSnapshotNode)-1] = '2'
+	s, err = Restore(bytes.NewReader(relabelled), backupKey, "node-2", filepath.Join(t.TempDir(), "relabelled"), nodeKey)
+	if err == nil {
+		s.db.Close()
+		t.Fatal("restore accepted a snapshot whose node id was rewritten")
+	}
+	if !errors.Is(err, ErrSnapshotAuth) {
+		t.Fatalf("rewritten node id: %v", err)
+	}
+
+	for _, version := range []byte{0, 1, 3, 0xff} {
+		other := append([]byte(nil), blob...)
+		other[0] = version
+		if err := restoreFresh(t, other, backupKey, nodeKey); !errors.Is(err, ErrSnapshotVersion) {
+			t.Fatalf("version %d: %v", version, err)
+		}
+	}
+
+	badLength := append([]byte(nil), blob...)
+	badLength[1], badLength[2] = 0xff, 0xff
+	if err := restoreFresh(t, badLength, backupKey, nodeKey); !errors.Is(err, ErrSnapshotFormat) {
+		t.Fatalf("bad node id length: %v", err)
+	}
+
+	if err := src.Snapshot(&bytes.Buffer{}, backupKey, ""); err == nil {
+		t.Fatal("snapshot accepted an empty node id")
+	}
 }

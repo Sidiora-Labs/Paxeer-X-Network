@@ -424,6 +424,9 @@ func (s *Server) HandleImport(w http.ResponseWriter, r *http.Request) {
 	if e == nil {
 		resp, e = s.doImport(body)
 	}
+	if e == nil {
+		s.snapshotAfter("keys.import")
+	}
 	s.finish(w, "keys.import", body, resp, e)
 }
 
@@ -510,6 +513,9 @@ func (s *Server) HandleRefresh(w http.ResponseWriter, r *http.Request) {
 	var resp KeyResponse
 	if e == nil {
 		resp, e = s.doRefresh(r, body)
+	}
+	if e == nil {
+		s.snapshotAfter("keys.refresh")
 	}
 	s.finish(w, "keys.refresh", body, resp, e)
 }
@@ -626,6 +632,9 @@ func (s *Server) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 	if e == nil {
 		resp, e = s.doGenerate(r, body)
 	}
+	if e == nil {
+		s.snapshotAfter("keys.generate")
+	}
 	s.finish(w, "keys.generate", body, resp, e)
 }
 
@@ -717,6 +726,9 @@ func (s *Server) HandleAddShare(w http.ResponseWriter, r *http.Request) {
 	var resp KeyResponse
 	if e == nil {
 		resp, e = s.doAddShare(r, body)
+	}
+	if e == nil {
+		s.snapshotAfter("keys.addshare")
 	}
 	s.finish(w, "keys.addshare", body, resp, e)
 }

@@ -2,10 +2,15 @@ package server
 
 import (
 	"bytes"
+	"crypto/ed25519"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
+	"io"
+	"log"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -13,12 +18,20 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/getamis/alice/crypto/birkhoffinterpolation"
 	pt "github.com/getamis/alice/crypto/ecpointgrouplaw"
 
+	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/audit"
+	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/backup"
+	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/config"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/health"
+	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/lxwire"
+	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/store"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/transport"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/tss/dealer"
 )
@@ -352,5 +365,220 @@ func TestProtocolSessionKinds(t *testing.T) {
 		if got, ok := protocolKinds[protocol]; !ok || got != kind {
 			t.Fatalf("%s: kind %v, want %v", protocol, got, kind)
 		}
+	}
+}
+
+type snapshotHarness struct {
+	root    string
+	mu      sync.Mutex
+	writers map[string]*backup.Writer
+}
+
+func snapshotBackupKey(nodeID string) []byte {
+	sum := sha256.Sum256([]byte("snapshot backup key " + nodeID))
+	return sum[:]
+}
+
+func (h *snapshotHarness) tune(t *testing.T) func(*Options) {
+	return func(opts *Options) {
+		w, err := backup.New(backup.Config{NodeID: opts.NodeID, Dir: filepath.Join(h.root, opts.NodeID), BackupKey: snapshotBackupKey(opts.NodeID), Retain: 10, Store: opts.Store, Audit: opts.Audit, Logger: log.New(io.Discard, "", 0)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		opts.Snapshots = w
+		opts.ProtocolTimeout = 2 * time.Minute
+		h.mu.Lock()
+		h.writers[opts.NodeID] = w
+		h.mu.Unlock()
+	}
+}
+
+func (h *snapshotHarness) snapshots(t *testing.T, nodeID string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(filepath.Join(h.root, nodeID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".") {
+			t.Fatalf("%s: temporary snapshot %s left behind", nodeID, e.Name())
+		}
+		out = append(out, e.Name())
+	}
+	return out
+}
+
+func (h *snapshotHarness) expect(t *testing.T, c *testCluster, operation string, want map[string]int, keyID string) {
+	t.Helper()
+	for _, cfg := range c.configs {
+		names := h.snapshots(t, cfg.id)
+		if len(names) != want[cfg.id] {
+			t.Fatalf("after %s: %s holds %d snapshots %v, want %d", operation, cfg.id, len(names), names, want[cfg.id])
+		}
+		if want[cfg.id] == 0 {
+			continue
+		}
+		latest := names[len(names)-1]
+		if latest != backup.Name(cfg.id, uint64(want[cfg.id])) {
+			t.Fatalf("after %s: %s latest snapshot %s", operation, cfg.id, latest)
+		}
+		logged, err := os.ReadFile(filepath.Join(cfg.nodeDir, "audit", audit.FileName))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Contains(logged, []byte("name="+latest)) || !bytes.Contains(logged, []byte(backup.SnapshotEvent)) {
+			t.Fatalf("after %s: %s audit log lacks the snapshot event for %s", operation, cfg.id, latest)
+		}
+		if keyID == "" {
+			continue
+		}
+		nodeKey, err := config.ReadKeyFile(cfg.keyPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, err := os.ReadFile(filepath.Join(h.root, cfg.id, latest))
+		if err != nil {
+			t.Fatal(err)
+		}
+		st, err := store.Restore(bytes.NewReader(raw), snapshotBackupKey(cfg.id), cfg.id, filepath.Join(t.TempDir(), "check"), nodeKey)
+		if err != nil {
+			t.Fatalf("after %s: %s snapshot %s: %v", operation, cfg.id, latest, err)
+		}
+		_, getErr := st.Get(keyID)
+		st.Close()
+		if getErr != nil {
+			t.Fatalf("after %s: %s snapshot %s lacks %s: %v", operation, cfg.id, latest, keyID, getErr)
+		}
+	}
+}
+
+func importSnapshotKey(t *testing.T, c *testCluster, holders []string, keyID, account string) ed25519.PublicKey {
+	t.Helper()
+	edSeed := sha256.Sum256([]byte("attestor snapshot ed25519 key " + keyID))
+	edPub := ed25519.NewKeyFromSeed(edSeed[:]).Public().(ed25519.PublicKey)
+	edScalar, err := dealer.Ed25519ScalarFromSeed(edSeed[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundles, _, err := dealer.Split(dealer.Ed25519, edScalar, holders)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byNode := map[string]ShareBundleJSON{}
+	for _, b := range bundles {
+		byNode[b.ParticipantID] = EncodeBundle(b)
+	}
+	decodeOK[KeyResponse](t, "import", c.callAll(t, c.byID(holders...), PathImport, func(n *testNode) any {
+		return ImportRequest{SessionID: "import-" + keyID, KeyID: keyID, Owner: testOwner, Account: account, Share: byNode[n.id]}
+	}, ""))
+	return edPub
+}
+
+func TestSnapshotFollowsEveryKeyChangeAndRestoresToSign(t *testing.T) {
+	h := &snapshotHarness{root: t.TempDir(), writers: map[string]*backup.Writer{}}
+	c := newTestClusterWith(t, 5, true, testPolicy(), h.tune(t))
+	h.expect(t, c, "start", map[string]int{}, "")
+
+	genAccount := common.HexToAddress("0x4444444444444444444444444444444444444444").Hex()
+	decodeOK[KeyResponse](t, "generate", c.callAll(t, c.nodes, PathGenerate, func(*testNode) any {
+		return GenerateRequest{SessionID: "generate-snap", KeyID: "gen-key", Curve: "ed25519", Owner: testOwner, Account: genAccount}
+	}, ""))
+	h.expect(t, c, "keys.generate", map[string]int{"node-1": 1, "node-2": 1, "node-3": 1, "node-4": 1, "node-5": 1}, "gen-key")
+
+	decodeOK[KeyResponse](t, "refresh", c.callAll(t, c.nodes, PathRefresh, func(*testNode) any {
+		return RefreshRequest{SessionID: "refresh-snap", KeyID: "gen-key"}
+	}, ""))
+	h.expect(t, c, "keys.refresh", map[string]int{"node-1": 2, "node-2": 2, "node-3": 2, "node-4": 2, "node-5": 2}, "gen-key")
+
+	account := common.HexToAddress("0x5555555555555555555555555555555555555555").Hex()
+	edPub := importSnapshotKey(t, c, c.ids, "snap-key", account)
+	h.expect(t, c, "keys.import", map[string]int{"node-1": 3, "node-2": 3, "node-3": 3, "node-4": 3, "node-5": 3}, "snap-key")
+
+	for _, id := range c.ids {
+		h.mu.Lock()
+		state := h.writers[id].State()
+		h.mu.Unlock()
+		if state.LastWritten.IsZero() || state.LastError != "" || state.Failures != 0 {
+			t.Fatalf("%s: snapshot state %+v", id, state)
+		}
+	}
+	healthResp, err := c.client.Get("https://" + c.byID("node-1")[0].apiAddr + PathHealth)
+	if err != nil {
+		t.Fatal(err)
+	}
+	healthBody, err := io.ReadAll(healthResp.Body)
+	healthResp.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var report health.Report
+	if err := json.Unmarshal(healthBody, &report); err != nil || report.Snapshot == nil || report.Snapshot.LastWrittenAgeSeconds == nil || report.Snapshot.LastError != "" || report.Snapshot.Failures != 0 {
+		t.Fatalf("health report lacks the snapshot state: %s", healthBody)
+	}
+
+	cfg := c.configs[0]
+	latest := backup.Name(cfg.id, 3)
+	snapPath := filepath.Join(h.root, cfg.id, latest)
+	raw, err := os.ReadFile(snapPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(raw)
+	nodeKey, err := config.ReadKeyFile(cfg.keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.byID(cfg.id)[0].stop()
+	sharesDir := filepath.Join(cfg.nodeDir, "shares")
+	if err := os.Rename(sharesDir, filepath.Join(cfg.nodeDir, "shares-lost")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backup.RestoreFile(snapPath, hex.EncodeToString(digest[:]), "node-2", snapshotBackupKey(cfg.id), sharesDir, nodeKey); err == nil {
+		t.Fatal("restore under a foreign node id succeeded")
+	}
+	res, err := backup.RestoreFile(snapPath, hex.EncodeToString(digest[:]), cfg.id, snapshotBackupKey(cfg.id), sharesDir, nodeKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Name != latest || res.Shares != 2 {
+		t.Fatalf("restore result %+v", res)
+	}
+	c.restart(t, c.byID(cfg.id)[0])
+
+	token := c.idp.mint(t, c.idp.key, testOwner)
+	signers := []string{"node-1", "node-3", "node-5"}
+	bind := lxwire.BindMessage(testChainID, common.HexToAddress(account), 1)
+	results := decodeOK[SignResponse](t, "sign after restore", c.callAll(t, c.byID(signers...), PathSign, func(*testNode) any {
+		return SignRequest{SessionID: "sign-restored", KeyID: "snap-key", Kind: KindLXBind, Signers: signers, Message: hex.EncodeToString(bind)}
+	}, token))
+	for _, r := range results {
+		sig, _ := hex.DecodeString(r.Signature)
+		if !ed25519.Verify(edPub, bind, sig) {
+			t.Fatalf("%s: signature after restore does not verify", r.NodeID)
+		}
+	}
+}
+
+func TestSnapshotFollowsAddShare(t *testing.T) {
+	h := &snapshotHarness{root: t.TempDir(), writers: map[string]*backup.Writer{}}
+	c := newTestClusterWith(t, 6, true, testPolicy(), h.tune(t))
+	holders := c.ids[:5]
+	account := common.HexToAddress("0x6666666666666666666666666666666666666666").Hex()
+	edPub := importSnapshotKey(t, c, holders, "share-key", account)
+	h.expect(t, c, "keys.import", map[string]int{"node-1": 1, "node-2": 1, "node-3": 1, "node-4": 1, "node-5": 1}, "share-key")
+
+	quorum := []string{"node-1", "node-2", "node-3"}
+	newcomer := "node-6"
+	decodeOK[KeyResponse](t, "add-share", c.callAll(t, c.byID(append(append([]string{}, quorum...), newcomer)...), PathAddShare, func(*testNode) any {
+		return AddShareRequest{SessionID: "addshare-snap", KeyID: "share-key", Curve: "ed25519", PublicKey: hex.EncodeToString(edPub), Owner: testOwner, Account: account, NewParticipantID: newcomer, Quorum: quorum}
+	}, ""))
+	h.expect(t, c, "keys.addshare", map[string]int{"node-1": 2, "node-2": 2, "node-3": 2, "node-4": 1, "node-5": 1, "node-6": 1}, "share-key")
+	logged, err := os.ReadFile(filepath.Join(c.configs[5].nodeDir, "audit", audit.FileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(logged, []byte("trigger=keys.addshare")) {
+		t.Fatal("the new participant's snapshot event does not name keys.addshare")
 	}
 }

@@ -6,7 +6,9 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"errors"
+	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -19,6 +21,7 @@ import (
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/audit"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/auth/agent"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/auth/jwt"
+	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/backup"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/config"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/health"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/lxwire"
@@ -38,9 +41,46 @@ type listening struct {
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if len(os.Args) > 1 && os.Args[1] == "restore" {
+		if err := restore(os.Args[2:], os.Getenv, os.Stdout); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	if err := run(ctx, os.Getenv, nil); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func restore(args []string, getenv func(string) string, out io.Writer) error {
+	fs := flag.NewFlagSet("restore", flag.ContinueOnError)
+	fs.SetOutput(out)
+	snapshot := fs.String("snapshot", "", "path of the snapshot file to restore")
+	digest := fs.String("sha256", "", "expected SHA-256 digest of the snapshot file, 64 hex characters")
+	dataDir := fs.String("data-dir", "", "empty directory to restore into, defaulting to "+config.EnvDataDir)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *snapshot == "" || *digest == "" || fs.NArg() != 0 {
+		return errors.New("attestor restore: -snapshot and -sha256 are required and no other arguments are accepted")
+	}
+	cfg, err := config.Load(getenv)
+	if err != nil {
+		return err
+	}
+	if cfg.BackupKey == nil {
+		return fmt.Errorf("attestor restore: %s is required", config.EnvBackupKeyFile)
+	}
+	target := cfg.DataDir
+	if *dataDir != "" {
+		target = *dataDir
+	}
+	res, err := backup.RestoreFile(*snapshot, *digest, cfg.NodeID, cfg.BackupKey, target, cfg.NodeKey)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(out, "restored %s (sha256 %s) for node %s: %d shares, audit sequence %d\n", res.Name, hex.EncodeToString(res.SHA256[:]), cfg.NodeID, res.Shares, res.AuditSequence)
+	return err
 }
 
 func certPin(path string) (string, error) {
@@ -160,12 +200,14 @@ func run(ctx context.Context, getenv func(string) string, ready func(listening))
 		return err
 	}
 	var replicaState func() health.ReplicaState
+	var shipped backup.Shipped
 	if replicaCfg != nil {
 		shipper, err := replica.New(*replicaCfg, log.Default())
 		if err != nil {
 			return err
 		}
 		replicaState = shipper.State
+		shipped = shipper.Ledger()
 		shipCtx, cancelShip := context.WithCancel(ctx)
 		shipDone := make(chan struct{})
 		go func() {
@@ -175,6 +217,33 @@ func run(ctx context.Context, getenv func(string) string, ready func(listening))
 		defer func() {
 			cancelShip()
 			<-shipDone
+		}()
+	}
+
+	var snapshots *backup.Writer
+	if cfg.BackupDir != "" {
+		snapshots, err = backup.New(backup.Config{
+			NodeID:    cfg.NodeID,
+			Dir:       cfg.BackupDir,
+			BackupKey: cfg.BackupKey,
+			Retain:    cfg.SnapshotRetain,
+			Store:     st,
+			Audit:     auditLog,
+			Shipped:   shipped,
+			Logger:    log.Default(),
+		})
+		if err != nil {
+			return err
+		}
+		snapCtx, cancelSnap := context.WithCancel(ctx)
+		snapDone := make(chan struct{})
+		go func() {
+			defer close(snapDone)
+			snapshots.Run(snapCtx, cfg.SnapshotInterval)
+		}()
+		defer func() {
+			cancelSnap()
+			<-snapDone
 		}()
 	}
 
@@ -210,6 +279,7 @@ func run(ctx context.Context, getenv func(string) string, ready func(listening))
 		Activities:   registry,
 		PeerProbe:    server.TCPPeerProbe(probe),
 		Replica:      replicaState,
+		Snapshots:    snapshots,
 	})
 	if err != nil {
 		return err

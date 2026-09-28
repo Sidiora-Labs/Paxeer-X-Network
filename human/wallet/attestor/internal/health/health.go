@@ -30,12 +30,33 @@ type ReplicaReport struct {
 	ErrorClass            string `json:"error_class,omitempty"`
 }
 
+type SnapshotState struct {
+	LastWritten time.Time
+	LastError   string
+	Failures    uint64
+}
+
+type SnapshotReport struct {
+	LastWrittenAgeSeconds *int64 `json:"last_written_age_seconds"`
+	LastError             string `json:"last_error,omitempty"`
+	Failures              uint64 `json:"failures"`
+}
+
+func SnapshotAge(last, now time.Time) *int64 {
+	if last.IsZero() {
+		return nil
+	}
+	age := int64(now.Sub(last) / time.Second)
+	return &age
+}
+
 type Providers struct {
 	Shares    func() (count uint64, epoch uint64, err error)
 	AuditHead func() (sequence uint64, hash [32]byte)
 	Peers     func(ctx context.Context) map[string]PeerState
 	Readiness func() error
 	Replica   func() ReplicaState
+	Snapshot  func() SnapshotState
 	Clock     func() time.Time
 }
 
@@ -51,6 +72,7 @@ type Report struct {
 	ReachablePeers int                  `json:"reachable_peers"`
 	ReadinessError string               `json:"readiness_error,omitempty"`
 	Replica        *ReplicaReport       `json:"replica,omitempty"`
+	Snapshot       *SnapshotReport      `json:"snapshot,omitempty"`
 	Ready          bool                 `json:"ready"`
 }
 
@@ -96,6 +118,14 @@ func (r *Reporter) Report(ctx context.Context) Report {
 			replica.LastShippedAgeSeconds = &age
 		}
 		out.Replica = replica
+	}
+	if r.providers.Snapshot != nil {
+		state := r.providers.Snapshot()
+		out.Snapshot = &SnapshotReport{
+			LastWrittenAgeSeconds: SnapshotAge(state.LastWritten, r.providers.Clock()),
+			LastError:             state.LastError,
+			Failures:              state.Failures,
+		}
 	}
 	readyErr := r.providers.Readiness()
 	if readyErr != nil {

@@ -294,7 +294,7 @@ func (f *fixture) writeSnapshot(name string) []byte {
 	}
 	defer st.Close()
 	var buf bytes.Buffer
-	if err := st.Snapshot(&buf, backupKey); err != nil {
+	if err := st.Snapshot(&buf, backupKey, "node-1"); err != nil {
 		f.t.Fatalf("snapshot: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(f.snapshotDir, name), buf.Bytes(), 0o600); err != nil {
