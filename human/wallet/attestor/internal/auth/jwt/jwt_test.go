@@ -27,6 +27,8 @@ const (
 	testKeyID    = "wallet-key-7"
 )
 
+var testRequest = [32]byte{1}
+
 type testClock struct {
 	mu sync.Mutex
 	t  time.Time
@@ -229,7 +231,7 @@ func ownsTestKey(subject, keyID string) (bool, error) {
 
 func TestVerifyAcceptsRS256(t *testing.T) {
 	f := newFixture(t)
-	sub, err := f.verifier.Verify(context.Background(), mint(t, f.rsaKey, f.validClaims()), testKeyID, ownsTestKey)
+	sub, err := f.verifier.Verify(context.Background(), mint(t, f.rsaKey, f.validClaims()), testKeyID, testRequest, ownsTestKey)
 	if err != nil {
 		t.Fatalf("verify: %v", err)
 	}
@@ -240,7 +242,7 @@ func TestVerifyAcceptsRS256(t *testing.T) {
 
 func TestVerifyAcceptsES256(t *testing.T) {
 	f := newFixture(t)
-	sub, err := f.verifier.Verify(context.Background(), mint(t, f.ecKey, f.validClaims()), testKeyID, ownsTestKey)
+	sub, err := f.verifier.Verify(context.Background(), mint(t, f.ecKey, f.validClaims()), testKeyID, testRequest, ownsTestKey)
 	if err != nil {
 		t.Fatalf("verify: %v", err)
 	}
@@ -254,7 +256,7 @@ func TestVerifyRefusesExpired(t *testing.T) {
 	c := f.validClaims()
 	c.issuedAt = f.clock.Now().Add(-2 * time.Hour)
 	c.expiry = f.clock.Now().Add(-time.Minute)
-	_, err := f.verifier.Verify(context.Background(), mint(t, f.rsaKey, c), testKeyID, ownsTestKey)
+	_, err := f.verifier.Verify(context.Background(), mint(t, f.rsaKey, c), testKeyID, testRequest, ownsTestKey)
 	if !errors.Is(err, ErrClaims) {
 		t.Fatalf("err = %v, want %v", err, ErrClaims)
 	}
@@ -264,7 +266,7 @@ func TestVerifyAllowsExpiryWithinSkew(t *testing.T) {
 	f := newFixture(t)
 	c := f.validClaims()
 	c.expiry = f.clock.Now().Add(-2 * time.Second)
-	if _, err := f.verifier.Verify(context.Background(), mint(t, f.rsaKey, c), testKeyID, ownsTestKey); err != nil {
+	if _, err := f.verifier.Verify(context.Background(), mint(t, f.rsaKey, c), testKeyID, testRequest, ownsTestKey); err != nil {
 		t.Fatalf("verify within skew: %v", err)
 	}
 }
@@ -273,7 +275,7 @@ func TestVerifyRefusesNotYetValid(t *testing.T) {
 	f := newFixture(t)
 	c := f.validClaims()
 	c.notBefore = f.clock.Now().Add(10 * time.Minute)
-	_, err := f.verifier.Verify(context.Background(), mint(t, f.ecKey, c), testKeyID, ownsTestKey)
+	_, err := f.verifier.Verify(context.Background(), mint(t, f.ecKey, c), testKeyID, testRequest, ownsTestKey)
 	if !errors.Is(err, ErrClaims) {
 		t.Fatalf("err = %v, want %v", err, ErrClaims)
 	}
@@ -283,7 +285,7 @@ func TestVerifyRefusesMissingExpiry(t *testing.T) {
 	f := newFixture(t)
 	c := f.validClaims()
 	c.noExpiry = true
-	_, err := f.verifier.Verify(context.Background(), mint(t, f.rsaKey, c), testKeyID, ownsTestKey)
+	_, err := f.verifier.Verify(context.Background(), mint(t, f.rsaKey, c), testKeyID, testRequest, ownsTestKey)
 	if !errors.Is(err, ErrClaims) {
 		t.Fatalf("err = %v, want %v", err, ErrClaims)
 	}
@@ -293,7 +295,7 @@ func TestVerifyRefusesWrongIssuer(t *testing.T) {
 	f := newFixture(t)
 	c := f.validClaims()
 	c.issuer = f.server.srv.URL + "/other/v1"
-	_, err := f.verifier.Verify(context.Background(), mint(t, f.rsaKey, c), testKeyID, ownsTestKey)
+	_, err := f.verifier.Verify(context.Background(), mint(t, f.rsaKey, c), testKeyID, testRequest, ownsTestKey)
 	if !errors.Is(err, ErrClaims) {
 		t.Fatalf("err = %v, want %v", err, ErrClaims)
 	}
@@ -303,7 +305,7 @@ func TestVerifyRefusesWrongAudience(t *testing.T) {
 	f := newFixture(t)
 	c := f.validClaims()
 	c.audience = "anon"
-	_, err := f.verifier.Verify(context.Background(), mint(t, f.ecKey, c), testKeyID, ownsTestKey)
+	_, err := f.verifier.Verify(context.Background(), mint(t, f.ecKey, c), testKeyID, testRequest, ownsTestKey)
 	if !errors.Is(err, ErrClaims) {
 		t.Fatalf("err = %v, want %v", err, ErrClaims)
 	}
@@ -313,7 +315,7 @@ func TestVerifyRefusesMissingSubject(t *testing.T) {
 	f := newFixture(t)
 	c := f.validClaims()
 	c.subject = ""
-	_, err := f.verifier.Verify(context.Background(), mint(t, f.rsaKey, c), testKeyID, ownsTestKey)
+	_, err := f.verifier.Verify(context.Background(), mint(t, f.rsaKey, c), testKeyID, testRequest, ownsTestKey)
 	if !errors.Is(err, ErrMissingSubject) {
 		t.Fatalf("err = %v, want %v", err, ErrMissingSubject)
 	}
@@ -321,7 +323,7 @@ func TestVerifyRefusesMissingSubject(t *testing.T) {
 
 func TestVerifyRefusesWhenSubjectDoesNotOwnKey(t *testing.T) {
 	f := newFixture(t)
-	_, err := f.verifier.Verify(context.Background(), mint(t, f.rsaKey, f.validClaims()), "wallet-key-other", ownsTestKey)
+	_, err := f.verifier.Verify(context.Background(), mint(t, f.rsaKey, f.validClaims()), "wallet-key-other", testRequest, ownsTestKey)
 	if !errors.Is(err, ErrNotOwner) {
 		t.Fatalf("err = %v, want %v", err, ErrNotOwner)
 	}
@@ -330,7 +332,7 @@ func TestVerifyRefusesWhenSubjectDoesNotOwnKey(t *testing.T) {
 func TestVerifyRefusesWhenOwnershipLookupFails(t *testing.T) {
 	f := newFixture(t)
 	lookupErr := errors.New("store unavailable")
-	_, err := f.verifier.Verify(context.Background(), mint(t, f.rsaKey, f.validClaims()), testKeyID, func(string, string) (bool, error) {
+	_, err := f.verifier.Verify(context.Background(), mint(t, f.rsaKey, f.validClaims()), testKeyID, testRequest, func(string, string) (bool, error) {
 		return true, lookupErr
 	})
 	if !errors.Is(err, ErrOwnershipLookup) {
@@ -341,7 +343,7 @@ func TestVerifyRefusesWhenOwnershipLookupFails(t *testing.T) {
 func TestVerifyRefusesTamperedSignature(t *testing.T) {
 	f := newFixture(t)
 	other := newRSAKey(t, "rsa-1")
-	_, err := f.verifier.Verify(context.Background(), mint(t, other, f.validClaims()), testKeyID, ownsTestKey)
+	_, err := f.verifier.Verify(context.Background(), mint(t, other, f.validClaims()), testKeyID, testRequest, ownsTestKey)
 	if !errors.Is(err, ErrSignature) {
 		t.Fatalf("err = %v, want %v", err, ErrSignature)
 	}
@@ -349,7 +351,7 @@ func TestVerifyRefusesTamperedSignature(t *testing.T) {
 
 func TestVerifyRefreshesForUnknownKeyID(t *testing.T) {
 	f := newFixture(t)
-	if _, err := f.verifier.Verify(context.Background(), mint(t, f.rsaKey, f.validClaims()), testKeyID, ownsTestKey); err != nil {
+	if _, err := f.verifier.Verify(context.Background(), mint(t, f.rsaKey, f.validClaims()), testKeyID, testRequest, ownsTestKey); err != nil {
 		t.Fatalf("warm cache: %v", err)
 	}
 	if got := f.server.fetches.Load(); got != 1 {
@@ -358,7 +360,7 @@ func TestVerifyRefreshesForUnknownKeyID(t *testing.T) {
 	rotated := newRSAKey(t, "rsa-2")
 	f.server.addKey(rotated.public)
 
-	_, err := f.verifier.Verify(context.Background(), mint(t, rotated, f.validClaims()), testKeyID, ownsTestKey)
+	_, err := f.verifier.Verify(context.Background(), mint(t, rotated, f.validClaims()), testKeyID, testRequest, ownsTestKey)
 	if !errors.Is(err, ErrUnknownKey) {
 		t.Fatalf("within min interval err = %v, want %v", err, ErrUnknownKey)
 	}
@@ -367,7 +369,7 @@ func TestVerifyRefreshesForUnknownKeyID(t *testing.T) {
 	}
 
 	f.clock.Advance(minRefresh)
-	sub, err := f.verifier.Verify(context.Background(), mint(t, rotated, f.validClaims()), testKeyID, ownsTestKey)
+	sub, err := f.verifier.Verify(context.Background(), mint(t, rotated, f.validClaims()), testKeyID, testRequest, ownsTestKey)
 	if err != nil {
 		t.Fatalf("after refresh: %v", err)
 	}
@@ -381,17 +383,17 @@ func TestVerifyRefreshesForUnknownKeyID(t *testing.T) {
 
 func TestVerifyRefusesUnknownKeyIDWhenFetchFails(t *testing.T) {
 	f := newFixture(t)
-	if _, err := f.verifier.Verify(context.Background(), mint(t, f.ecKey, f.validClaims()), testKeyID, ownsTestKey); err != nil {
+	if _, err := f.verifier.Verify(context.Background(), mint(t, f.ecKey, f.validClaims()), testKeyID, testRequest, ownsTestKey); err != nil {
 		t.Fatalf("warm cache: %v", err)
 	}
 	f.server.setFail(true)
 	f.clock.Advance(minRefresh)
 	unknown := newP256Key(t, "ec-2")
-	_, err := f.verifier.Verify(context.Background(), mint(t, unknown, f.validClaims()), testKeyID, ownsTestKey)
+	_, err := f.verifier.Verify(context.Background(), mint(t, unknown, f.validClaims()), testKeyID, testRequest, ownsTestKey)
 	if !errors.Is(err, ErrKeySetFetch) {
 		t.Fatalf("err = %v, want %v", err, ErrKeySetFetch)
 	}
-	if _, err := f.verifier.Verify(context.Background(), mint(t, f.ecKey, f.validClaims()), testKeyID, ownsTestKey); err != nil {
+	if _, err := f.verifier.Verify(context.Background(), mint(t, f.ecKey, f.validClaims()), testKeyID, testRequest, ownsTestKey); err != nil {
 		t.Fatalf("cached key during outage: %v", err)
 	}
 }
@@ -399,11 +401,11 @@ func TestVerifyRefusesUnknownKeyIDWhenFetchFails(t *testing.T) {
 func TestVerifyRefusesWhenKeySetNeverFetched(t *testing.T) {
 	f := newFixture(t)
 	f.server.setFail(true)
-	_, err := f.verifier.Verify(context.Background(), mint(t, f.rsaKey, f.validClaims()), testKeyID, ownsTestKey)
+	_, err := f.verifier.Verify(context.Background(), mint(t, f.rsaKey, f.validClaims()), testKeyID, testRequest, ownsTestKey)
 	if !errors.Is(err, ErrKeySetFetch) {
 		t.Fatalf("err = %v, want %v", err, ErrKeySetFetch)
 	}
-	_, err = f.verifier.Verify(context.Background(), mint(t, f.rsaKey, f.validClaims()), testKeyID, ownsTestKey)
+	_, err = f.verifier.Verify(context.Background(), mint(t, f.rsaKey, f.validClaims()), testKeyID, testRequest, ownsTestKey)
 	if !errors.Is(err, ErrKeySetFetch) {
 		t.Fatalf("second attempt err = %v, want %v", err, ErrKeySetFetch)
 	}
@@ -423,7 +425,7 @@ func TestVerifyRefusesHS256(t *testing.T) {
 		t.Fatal(err)
 	}
 	token := mint(t, signingKey{alg: jwa.HS256, private: sym}, f.validClaims())
-	_, err = f.verifier.Verify(context.Background(), token, testKeyID, ownsTestKey)
+	_, err = f.verifier.Verify(context.Background(), token, testKeyID, testRequest, ownsTestKey)
 	if !errors.Is(err, ErrAlgorithm) {
 		t.Fatalf("err = %v, want %v", err, ErrAlgorithm)
 	}
@@ -448,7 +450,7 @@ func TestVerifyRefusesNone(t *testing.T) {
 		t.Fatal(err)
 	}
 	token := header + "." + enc.EncodeToString(payload) + "."
-	_, err = f.verifier.Verify(context.Background(), token, testKeyID, ownsTestKey)
+	_, err = f.verifier.Verify(context.Background(), token, testKeyID, testRequest, ownsTestKey)
 	if err == nil {
 		t.Fatal("unsigned token accepted")
 	}
@@ -460,7 +462,7 @@ func TestVerifyRefusesNone(t *testing.T) {
 func TestVerifyRefusesAlgorithmKeyMismatch(t *testing.T) {
 	f := newFixture(t)
 	impostor := newP256Key(t, "rsa-1")
-	_, err := f.verifier.Verify(context.Background(), mint(t, impostor, f.validClaims()), testKeyID, ownsTestKey)
+	_, err := f.verifier.Verify(context.Background(), mint(t, impostor, f.validClaims()), testKeyID, testRequest, ownsTestKey)
 	if !errors.Is(err, ErrAlgorithm) {
 		t.Fatalf("err = %v, want %v", err, ErrAlgorithm)
 	}

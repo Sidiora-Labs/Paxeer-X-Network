@@ -15,11 +15,13 @@ var (
 	prefixNonce  = []byte("agent/")
 )
 
-func (s *Store) UseToken(id string, expiresAt time.Time) (bool, error) {
-	if id == "" {
-		return false, errors.New("store: empty token identifier")
+func (s *Store) UseTokenRequest(token [32]byte, request [32]byte, expiresAt time.Time) (bool, error) {
+	if token == ([32]byte{}) || request == ([32]byte{}) {
+		return false, errors.New("store: empty token or request digest")
 	}
-	return s.useOnce(append(append([]byte(nil), prefixToken...), id...), expiresAt)
+	key := append(append([]byte(nil), prefixToken...), token[:]...)
+	key = append(key, request[:]...)
+	return s.useOnce(key, expiresAt)
 }
 
 func (s *Store) UseNonce(pub [32]byte, nonce [16]byte, expiresAt time.Time) (bool, error) {

@@ -247,11 +247,12 @@ Each path below refuses the request, and no signature is produced. The order is 
   - This conflicts with the decision that the gateway cannot sign.
 - **Fix:**
   - Tokens older than `ATTESTOR_JWT_MAX_AGE` (default one hour) are refused.
-  - Each node records the SHA-256 of every token that authorised a request in its share store (`TokenReplayStore`, `internal/store/replay.go`) and refuses the same token again, across restarts.
-- **Test:** `TestTokenReplayRefusedAcrossRestart` and `TestTokenOlderThanMaximumAgeRefused` in `internal/auth/jwt`, and the replayed token in `TestFiveNodeEndToEnd`.
+  - Each node records the SHA-256 of the token together with a digest of the canonical signing request (method, key id and the request body with session id, kind, signers and payload) in its share store (`TokenReplayStore`, `internal/store/replay.go`) and refuses the identical request under the same token, across restarts, with `token_invalid` and an audit entry that names the replay. Distinct requests under one token are accepted until the token expires or passes the maximum age.
+- **Test:** `TestTokenAuthorisesDistinctRequestsAndRefusesARepeatAcrossRestart` and `TestTokenOlderThanMaximumAgeRefused` in `internal/auth/jwt`, `TestTokenRequestRecordsAreScopedToTheRequest` in `internal/store`, `TestOneTokenAuthorisesDistinctRequestsAndRefusesARepeat` in `internal/server`, and the repeated request in `TestFiveNodeEndToEnd`.
+- **Reviewed:** tokens are now request-scoped against replay but still not proof-of-possession bound; a party holding a live token can issue new distinct requests with it.
 - **Owner decisions:**
   - Binding a token to a device key with a request-bound proof is not implemented. Until it is, a gateway holding a fresh token can still spend it on a request of its choosing.
-  - Each node counts a token once, so one token authorises one signing session across the quorum. The gateway client and the human service must obtain a fresh token for each signing request.
+  - One token authorises every distinct signing request of a session, such as the binding message and the binding transaction of one provisioning, while an identical request under the same token is refused.
   - Whether to require a step-up for signing kinds above a threshold.
 
 ### F-7: kernel kinds are not inspected

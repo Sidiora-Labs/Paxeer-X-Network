@@ -817,7 +817,7 @@ func TestFiveNodeEndToEnd(t *testing.T) {
 		}
 	}
 
-	for _, r := range sign("sign-replayed-token", SignRequest{KeyID: "evm-key", Kind: KindEVMTransaction, Transaction: hex.EncodeToString(rawTx)}, token) {
+	for _, r := range sign("sign-evm-tx", SignRequest{KeyID: "evm-key", Kind: KindEVMTransaction, Transaction: hex.EncodeToString(rawTx)}, token) {
 		e := expectError(t, "replayed token", r, CodeTokenInvalid)
 		if !strings.Contains(e.Message, "already authorised") {
 			t.Fatalf("replayed token: %s", e.Message)

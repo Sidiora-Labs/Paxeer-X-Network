@@ -96,7 +96,7 @@ ATTESTOR_REPLICA_HOST_KEY_FILE - path to the replica's expected SSH host public 
 ATTESTOR_REPLICA_REMOTE_DIR - absolute per-node directory inside the replica user's chroot, /attestor-<node id>, created by the operator on the replica and writable by that user
 ATTESTOR_REPLICA_INTERVAL - duration between shipping passes over ATTESTOR_BACKUP_DIR, at least 1s; each snapshot is uploaded once, verified by size and digest and recorded in replica-ledger.json under ATTESTOR_DATA_DIR
 ATTESTOR_RPC_URL - chain RPC endpoint used to read nonces and binding state
-ATTESTOR_JWT_MAX_AGE - Go duration a user token stays usable after its issue time (default 1h); each token authorises one signing request per node and is recorded in the share store
+ATTESTOR_JWT_MAX_AGE - Go duration a user token stays usable after its issue time (default 1h); a token authorises any number of distinct signing requests until then, and each node records the token and request digest in the share store and refuses the identical request under the same token
 ATTESTOR_AGENTS_FILE - path to the JSON list of registered agent principals (public_key hex, frozen, key_ids); unset refuses agent requests with token_unavailable
 ATTESTOR_AGENT_MAX_EXPIRY - Go duration an agent request's expiry may lie ahead of the node clock (default 5m); agent nonces are recorded in the share store
 ATTESTOR_KERNEL_POLICY_FILE - path to the kernel policy for lx_activity, lx_bind and lx_grant; needs ATTESTOR_RPC_URL; unset refuses every kernel kind with no_policy

@@ -332,7 +332,11 @@ func (s *Server) deny(kind, keyID, subject, decision, sessionID string, e *Error
 	if e == nil || e.audited {
 		return e
 	}
-	if _, ae := s.audit(kind, keyID, subject, decision, e.Code, sessionID); ae != nil {
+	reason := e.Code
+	if e.auditReason != "" {
+		reason = e.auditReason
+	}
+	if _, ae := s.audit(kind, keyID, subject, decision, reason, sessionID); ae != nil {
 		return ae
 	}
 	e.audited = true

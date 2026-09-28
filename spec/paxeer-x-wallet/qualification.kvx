@@ -981,3 +981,19 @@ symbol = "ATTESTOR_BACKUP_DIR"
 observed = "The deploy definitions place ATTESTOR_BACKUP_DIR inside ATTESTOR_DATA_DIR, so the restore subcommand refuses the live data directory as non-empty and a restore targets a fresh directory given with -data-dir."
 assumption = "Operators restore onto a fresh volume and copy the chosen snapshot out of the old one first."
 severity = "note"
+
+[observation.4.22.1]
+task = "4.22"
+file = "human/wallet/attestor/internal/auth/jwt/jwt.go"
+symbol = "TokenVerifier.Verify"
+observed = "Bearer tokens are now request-scoped against replay but remain bearer credentials: a party holding a live token, such as a compromised gateway, can still issue new distinct signing requests with it until expiry or the maximum age."
+assumption = "Binding a token to the client with a proof-of-possession header signed by a per-session key from the SDK remains open and is an owner decision."
+severity = "high"
+
+[observation.4.22.2]
+task = "4.22"
+file = "human/wallet/attestor/internal/server/e2e_test.go"
+symbol = "TestFiveNodeEndToEnd"
+observed = "The replayed-token case sent the same token with a new session id, which the request-scoped rule now accepts by design, so the case repeats the identical sign-evm-tx request and keeps its token_invalid and already-authorised assertions."
+assumption = "Reusing a token across distinct requests is the behaviour observation 4.15.1 requires, so the case still proves replay refusal."
+severity = "note"

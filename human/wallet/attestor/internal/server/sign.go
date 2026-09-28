@@ -293,11 +293,20 @@ func (s *Server) authenticate(r *http.Request, keyID string, body []byte, owner 
 		if s.opts.Tokens == nil {
 			return "", newError(CodeTokenUnavailable, "no token verifier is configured")
 		}
-		subject, err := s.opts.Tokens.Verify(r.Context(), token, keyID, func(subject, id string) (bool, error) {
+		request, err := jwt.RequestDigest(PathSign, keyID, body)
+		if err != nil {
+			return "", newError(CodeSessionBadRequest, "%v", err)
+		}
+		subject, err := s.opts.Tokens.Verify(r.Context(), token, keyID, request, func(subject, id string) (bool, error) {
 			return id == keyID && subject == owner, nil
 		})
 		if errors.Is(err, jwt.ErrNotOwner) {
 			return "", newError(CodeTokenNotOwner, "token subject does not own the key")
+		}
+		if errors.Is(err, jwt.ErrReplayed) {
+			e := newError(CodeTokenInvalid, "%v", err)
+			e.auditReason = auditReasonTokenReplayed
+			return "", e
 		}
 		if err != nil {
 			return "", newError(CodeTokenInvalid, "%v", err)

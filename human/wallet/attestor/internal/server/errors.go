@@ -93,12 +93,15 @@ func ErrorCodes() map[string]string {
 }
 
 type Error struct {
-	Category   string `json:"category"`
-	Code       string `json:"code"`
-	Message    string `json:"message"`
-	PolicyCode string `json:"policy_code,omitempty"`
-	audited    bool
+	Category    string `json:"category"`
+	Code        string `json:"code"`
+	Message     string `json:"message"`
+	PolicyCode  string `json:"policy_code,omitempty"`
+	audited     bool
+	auditReason string
 }
+
+const auditReasonTokenReplayed = "token_invalid: request replayed under the same token"
 
 func (e *Error) Error() string {
 	return e.Category + ": " + e.Code + ": " + e.Message

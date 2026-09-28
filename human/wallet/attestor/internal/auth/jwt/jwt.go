@@ -1,9 +1,11 @@
 package jwt
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/hex"
+	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -29,19 +31,51 @@ var (
 	ErrMissingSubject   = errors.New("jwt: subject missing")
 	ErrMissingKeyIDName = errors.New("jwt: key id being signed for is empty")
 	ErrTooOld           = errors.New("jwt: token is older than the maximum age")
-	ErrReplayed         = errors.New("jwt: token has already authorised a request")
+	ErrReplayed         = errors.New("jwt: token has already authorised this request")
 	ErrReplayStore      = errors.New("jwt: replay store failed")
+	ErrRequest          = errors.New("jwt: request cannot be canonicalised")
 )
 
 const DefaultMaxAge = time.Hour
 
 type TokenReplayStore interface {
-	UseToken(id string, expiresAt time.Time) (bool, error)
+	UseTokenRequest(token [32]byte, request [32]byte, expiresAt time.Time) (bool, error)
 }
 
-func TokenID(token string) string {
-	sum := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(sum[:])
+func TokenID(token string) [32]byte {
+	return sha256.Sum256([]byte(token))
+}
+
+func RequestDigest(method, keyID string, body []byte) ([32]byte, error) {
+	if method == "" || keyID == "" {
+		return [32]byte{}, fmt.Errorf("%w: method and key id are required", ErrRequest)
+	}
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
+	var v any
+	if err := dec.Decode(&v); err != nil {
+		return [32]byte{}, fmt.Errorf("%w: %v", ErrRequest, err)
+	}
+	if _, ok := v.(map[string]any); !ok {
+		return [32]byte{}, fmt.Errorf("%w: body is not a JSON object", ErrRequest)
+	}
+	if dec.More() {
+		return [32]byte{}, fmt.Errorf("%w: trailing data after the body", ErrRequest)
+	}
+	canonical, err := json.Marshal(v)
+	if err != nil {
+		return [32]byte{}, fmt.Errorf("%w: %v", ErrRequest, err)
+	}
+	h := sha256.New()
+	for _, field := range [][]byte{[]byte("attestor bearer request v1"), []byte(method), []byte(keyID), canonical} {
+		var n [8]byte
+		binary.BigEndian.PutUint64(n[:], uint64(len(field)))
+		h.Write(n[:])
+		h.Write(field)
+	}
+	var out [32]byte
+	copy(out[:], h.Sum(nil))
+	return out, nil
 }
 
 type Config struct {
@@ -104,7 +138,7 @@ func NewTokenVerifier(cfg Config) (*TokenVerifier, error) {
 	}, nil
 }
 
-func (v *TokenVerifier) Verify(ctx context.Context, token string, keyID string, owns func(subject, keyID string) (bool, error)) (string, error) {
+func (v *TokenVerifier) Verify(ctx context.Context, token string, keyID string, request [32]byte, owns func(subject, keyID string) (bool, error)) (string, error) {
 	if keyID == "" {
 		return "", ErrMissingKeyIDName
 	}
@@ -167,7 +201,11 @@ func (v *TokenVerifier) Verify(ctx context.Context, token string, keyID string, 
 		return "", ErrNotOwner
 	}
 	if v.replay != nil {
-		fresh, err := v.replay.UseToken(TokenID(token), tok.Expiration().Add(v.skew))
+		expiresAt := tok.Expiration()
+		if limit := tok.IssuedAt().Add(v.maxAge); limit.Before(expiresAt) {
+			expiresAt = limit
+		}
+		fresh, err := v.replay.UseTokenRequest(TokenID(token), request, expiresAt.Add(v.skew))
 		if err != nil {
 			return "", fmt.Errorf("%w: %v", ErrReplayStore, err)
 		}

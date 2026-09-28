@@ -310,6 +310,11 @@
     - Export assertConnectSrcCoversConfigured, which fails naming the variable when a configured origin is absent from connect-src and naming the origin when connect-src carries one no configuration name yields, and add a content security policy step to scripts/release-check.sh that runs src/lib/security/csp.test.ts through vitest with the release environment.
     - Add src/lib/security/csp.test.ts proving that the policy for a full configuration lists exactly self and the configured origins, that a policy built without one configured origin fails the check naming that variable, that an extra origin fails, that an invalid or credential-bearing URL is refused as src/pwa/config.ts refuses it, and that no literal https or wss origin remains in csp.ts; src/pwa/policy.test.ts and browser-security.test.ts keep passing.
     - _Requirements: 10.8, 10.6_
+  - [x] 4.22 Scope the bearer-token replay record to the request
+    - Key each node's bearer-token replay record on the token's SHA-256 together with a digest of the canonical signing request, computed by jwt.RequestDigest from the method, the key id and the request body re-encoded as canonical JSON so session id, kind, signers and the kind's payload are all covered; the body is canonicalised in place of the audit chain because the audit entry carries no payload.
+    - A token authorises any number of distinct signing requests until its expiry and within ATTESTOR_JWT_MAX_AGE, so one provisioning's binding message and binding transaction and every request of a signed-in session share one token (observation 4.15.1); the identical request under the same token is refused with token_invalid and an audit entry whose reason names the replay; records expire with the earlier of the token's expiry and its maximum age, survive restarts and stay per node.
+    - Tests prove two distinct signs under one token succeed on all five nodes, the identical request is refused and audited on every node and again after a restart, a new request under the same token still succeeds after the restart, a token past its maximum age is refused, and the store scopes records to the pair; the end-to-end replay case repeats the identical request, deploy/env and the review's bearer-token finding state the rule.
+    - _Requirements: 2.1_
 
 ## Wave 5 - Release
 
@@ -348,7 +353,7 @@
     { "id": 1,  "tasks": ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "1.10", "1.11", "1.12", "1.13", "1.14", "1.15", "1.16"] },
     { "id": 2,  "tasks": ["2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7", "2.8", "2.9"] },
     { "id": 3,  "tasks": ["3.1", "3.2", "3.3", "3.4", "3.5", "3.6", "3.7", "3.8", "3.9", "3.10", "3.11", "3.12", "3.13", "3.14", "3.15"] },
-    { "id": 4,  "tasks": ["4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7", "4.8", "4.9", "4.10", "4.11", "4.12", "4.13", "4.14", "4.15", "4.16", "4.17", "4.18", "4.19", "4.20", "4.21"] },
+    { "id": 4,  "tasks": ["4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7", "4.8", "4.9", "4.10", "4.11", "4.12", "4.13", "4.14", "4.15", "4.16", "4.17", "4.18", "4.19", "4.20", "4.21", "4.22"] },
     { "id": 5,  "tasks": ["5.1", "5.2", "5.3", "5.4"] }
   ]
 }

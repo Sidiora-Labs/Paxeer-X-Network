@@ -1227,6 +1227,23 @@ symbols = ["buildContentSecurityPolicy","connectOrigins","assertConnectSrcCovers
 touches = ["human/apps/wallet/src/lib/security/csp.ts","human/apps/wallet/src/lib/security/csp.test.ts","human/apps/wallet/src/lib/security/browser-security.test.ts","human/apps/wallet/src/pwa/config.ts","human/apps/wallet/src/proxy.ts","human/apps/wallet/src/lib/","human/apps/wallet/scripts/release-check.sh"]
 reqs = ["10.8","10.6"]
 
+[task.4.22]
+title = "Scope the bearer-token replay record to the request"
+status = "done"
+revision = "27f22b02f4eab01b8e441061423a7fcb0b235539"
+command = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./internal/auth/... ./internal/store/... ./internal/server/...'"
+exit_code = 0
+log_path = ".logs/verify.log"
+wave = 4
+requires = ["4.11","4.12"]
+do_1 = "Key each node's bearer-token replay record on the token's SHA-256 together with a digest of the canonical signing request, computed by jwt.RequestDigest from the method, the key id and the request body re-encoded as canonical JSON so session id, kind, signers and the kind's payload are all covered; the body is canonicalised in place of the audit chain because the audit entry carries no payload."
+do_2 = "A token authorises any number of distinct signing requests until its expiry and within ATTESTOR_JWT_MAX_AGE, so one provisioning's binding message and binding transaction and every request of a signed-in session share one token (observation 4.15.1); the identical request under the same token is refused with token_invalid and an audit entry whose reason names the replay; records expire with the earlier of the token's expiry and its maximum age, survive restarts and stay per node."
+do_3 = "Tests prove two distinct signs under one token succeed on all five nodes, the identical request is refused and audited on every node and again after a restart, a new request under the same token still succeeds after the restart, a token past its maximum age is refused, and the store scopes records to the pair; the end-to-end replay case repeats the identical request, deploy/env and the review's bearer-token finding state the rule."
+verify_cmd = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./internal/auth/... ./internal/store/... ./internal/server/...'"
+symbols = ["RequestDigest","TokenReplayStore","UseTokenRequest","TokenVerifier.Verify","auditReasonTokenReplayed"]
+touches = ["human/wallet/attestor/internal/auth/jwt/","human/wallet/attestor/internal/store/replay.go","human/wallet/attestor/internal/store/replay_test.go","human/wallet/attestor/internal/server/sign.go","human/wallet/attestor/internal/server/server.go","human/wallet/attestor/internal/server/errors.go","human/wallet/attestor/internal/server/e2e_test.go","human/wallet/attestor/internal/server/token_scope_test.go","human/wallet/deploy/env","human/wallet/docs/security-review.md","spec/paxeer-x-wallet/qualification.kvx"]
+reqs = ["2.1"]
+
 # --------------------------------------------------------------------------
 # WAVE 5 - RELEASE
 # --------------------------------------------------------------------------
