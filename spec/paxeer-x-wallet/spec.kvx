@@ -302,7 +302,7 @@ reqs = ["2.1","2.2"]
 
 [task.1.9]
 title = "Add the hash-chained audit log, health report and metrics"
-status = "pending"
+status = "done"
 wave = 1
 requires = []
 do_1 = "Add human/wallet/attestor/internal/audit with an append-only log whose every record carries the previous record's hash, the request kind, key id, subject hash, decision, reason and session id, persisted under the data directory, with Head and Verify."
@@ -312,6 +312,10 @@ verify_cmd = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./
 symbols = ["Log","Append","Head","Verify","Report","Metrics"]
 touches = ["human/wallet/attestor/internal/audit/audit.go","human/wallet/attestor/internal/audit/audit_test.go","human/wallet/attestor/internal/health/health.go","human/wallet/attestor/internal/health/health_test.go"]
 reqs = ["1.7","3.3"]
+revision = "9787d3728aa4ebf2769a51d109b1551fbddb9eb0"
+command = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./internal/audit/... ./internal/health/...'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.1.10]
 title = "Import the wallet gateway, SDK and demo as one workspace with secrets scrubbed"

@@ -50,7 +50,7 @@
     - Add human/wallet/attestor/internal/auth/agent verifying an agent request: canonical digest over method, key id, request bytes, nonce and expiry, Ed25519 signature against the registered key from a replicated principal set, nonce replay cache with expiry, and frozen-principal refusal.
     - Add tests that generate RSA and P-256 keys, serve a real JWKS from an in-test HTTP server, mint tokens and cover every refusal; and tests that sign agent requests with real Ed25519 keys and cover replay, expiry, wrong key and frozen principal.
     - _Requirements: 2.1, 2.2_
-  - [ ] 1.9 Add the hash-chained audit log, health report and metrics
+  - [x] 1.9 Add the hash-chained audit log, health report and metrics
     - Add human/wallet/attestor/internal/audit with an append-only log whose every record carries the previous record's hash, the request kind, key id, subject hash, decision, reason and session id, persisted under the data directory, with Head and Verify.
     - Add human/wallet/attestor/internal/health producing the report of req.3.ac_3 (node id, region, share count, refresh epoch, audit head, per-peer reachability, readiness) from injected providers, and Prometheus-style metrics for sessions, refusals and latency.
     - Add audit_test.go and health_test.go covering chain verification, tamper detection, concurrent appends, and a health report with one unreachable peer.
