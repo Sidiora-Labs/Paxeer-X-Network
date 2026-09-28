@@ -15,7 +15,7 @@ export const attestorModuleDir = resolve(here, '..', '..', '..', 'attestor');
 
 export const CHAIN_ID = 125;
 export const NATIVE_PER_TX_CAP_WEI = 1_000_000_000_000_000_000n;
-const KERNEL_POLICY = { version: 1, defaults: { modules: { asset: [5] }, caps: { native: { per_operation: '6000000', daily: '8000000' } } } };
+export const KERNEL_POLICY = { version: 1, defaults: { modules: { asset: [5] }, caps: { native: { per_operation: '6000000', daily: '8000000' } } } };
 
 export interface Pki {
   dir: string;

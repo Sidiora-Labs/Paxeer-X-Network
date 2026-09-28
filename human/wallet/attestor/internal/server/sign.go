@@ -30,6 +30,7 @@ const (
 	KindLXActivity      = "lx_activity"
 	KindLXBind          = "lx_bind"
 	KindLXGrant         = "lx_grant"
+	KindLXSendAuth      = "lx_send_authorization"
 
 	HeaderAgentKey       = "X-Agent-Key"
 	HeaderAgentNonce     = "X-Agent-Nonce"
@@ -45,10 +46,11 @@ var kindCurves = map[string]dealer.Curve{
 	KindLXActivity:      dealer.Ed25519,
 	KindLXBind:          dealer.Ed25519,
 	KindLXGrant:         dealer.Ed25519,
+	KindLXSendAuth:      dealer.Ed25519,
 }
 
 func SignKinds() []string {
-	return []string{KindEVMTransaction, KindTypedData, KindPersonalMessage, KindEthSignDigest, KindLXActivity, KindLXBind, KindLXGrant}
+	return []string{KindEVMTransaction, KindTypedData, KindPersonalMessage, KindEthSignDigest, KindLXActivity, KindLXBind, KindLXGrant, KindLXSendAuth}
 }
 
 type GrantJSON struct {
@@ -461,6 +463,8 @@ func (s *Server) evaluate(account, policyKind string, view any, ledger policy.Le
 	switch v := view.(type) {
 	case *lx.ActivityRequest:
 		return s.opts.Kernel.EvaluateActivity(common.HexToAddress(account), v, ledger)
+	case *lx.SendAuthorizationRequest:
+		return s.opts.Kernel.EvaluateSendAuthorization(common.HexToAddress(account), v, ledger)
 	case *lx.BindRequest:
 		return s.opts.Kernel.EvaluateBind(common.HexToAddress(account), v, ledger)
 	case *lx.GrantRequest:
@@ -478,6 +482,10 @@ func activityDisclosure(a *lxwire.Activity) (lx.Disclosure, *Error) {
 	if err != nil {
 		return lx.Disclosure{}, policyError(policy.CodeDecodeError, err.Error())
 	}
+	return disclosureFor(a, effect)
+}
+
+func disclosureFor(a *lxwire.Activity, effect *lx.Effect) (lx.Disclosure, *Error) {
 	module, ok := lx.ModuleName(a.Type.Module())
 	if !ok {
 		return lx.Disclosure{}, policyError(lx.CodeUnknownModule, "activity names an unknown module")
@@ -555,6 +563,33 @@ func (s *Server) prepare(req SignRequest, pubBytes []byte) ([]byte, any, string,
 		var pub [32]byte
 		copy(pub[:], pubBytes)
 		return pre[:], &lx.ActivityRequest{Envelope: raw, Digest: pre, PublicKey: pub, Disclosure: disclosure}, policy.KindLXActivity, nil
+	case KindLXSendAuth:
+		raw, e := decodeHex("activity", req.Activity)
+		if e != nil {
+			return nil, nil, "", e
+		}
+		a, err := lxwire.DecodeUnsignedActivity(raw, s.opts.Activities)
+		if err != nil {
+			return nil, nil, "", policyError(policy.CodeDecodeError, err.Error())
+		}
+		if a.Type != lx.OpAssetTransfer {
+			return nil, nil, "", policyError(policy.CodeDecodeError, "a send authorization covers only an asset send")
+		}
+		send, effect, err := lx.DecodeSendAuthorization(a)
+		if err != nil {
+			return nil, nil, "", policyError(policy.CodeDecodeError, err.Error())
+		}
+		digest, err := send.AuthorizationDigest()
+		if err != nil {
+			return nil, nil, "", policyError(policy.CodeDecodeError, err.Error())
+		}
+		disclosure, e := disclosureFor(a, effect)
+		if e != nil {
+			return nil, nil, "", e
+		}
+		var pub [32]byte
+		copy(pub[:], pubBytes)
+		return digest[:], &lx.SendAuthorizationRequest{Envelope: raw, Digest: digest, PublicKey: pub, Disclosure: disclosure}, policy.KindLXActivity, nil
 	case KindLXBind:
 		raw, e := decodeHex("message", req.Message)
 		if e != nil {

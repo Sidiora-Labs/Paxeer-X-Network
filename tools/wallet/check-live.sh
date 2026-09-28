@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
 	cat <<'EOF'
-usage: tools/wallet/check-live.sh endpoint | attestors | gateway
+usage: tools/wallet/check-live.sh endpoint | attestors | gateway | cutover
 
 Checks a deployed wallet service against its live answers.
 
@@ -38,6 +38,16 @@ gateway   reads a deployed wallet gateway at CHECK_LIVE_GATEWAY_BASE and prints
              identity, a main account id and binding_state bound
           Exits 0 only when both checks pass.
 
+cutover   reads the public wallet hostname CHECK_LIVE_CUTOVER_HOST over https,
+          through whatever proxy serves it, and confirms the new gateway
+          answers, one line per check:
+  served_by  GET https://<host>/healthz answers 200 with the response header
+             x-served-by: paxeer-wallet-gateway
+  readiness  GET https://<host>/readyz answers 200 with ready true and the
+             same header
+          Exits 0 only when both checks pass. The mode runs only after the
+          endpoint has been cut over; without the variable it refuses.
+
 Environment:
   CHECK_LIVE_ENDPOINT_BASE   base URL of the endpoint, no trailing /rpc
   CHECK_LIVE_ATTESTOR_BASES  comma-separated base URLs of the attestor APIs
@@ -46,6 +56,8 @@ Environment:
   CHECK_LIVE_CA              CA bundle that authenticates https bases
   CHECK_LIVE_GATEWAY_BASE    base URL of the wallet gateway
   CHECK_LIVE_GATEWAY_TOKEN   access token of a provisioned test identity
+  CHECK_LIVE_CUTOVER_HOST    public wallet hostname, optionally with :port
+                             (CHECK_LIVE_CA, when set, authenticates it)
   CHECK_LIVE_TIMEOUT         seconds per request, default 30
 
 Exits 1 when any check fails, 2 on a usage error.
@@ -58,7 +70,7 @@ case "$mode" in
 	usage
 	exit 0
 	;;
-endpoint | attestors | gateway) ;;
+endpoint | attestors | gateway | cutover) ;;
 *)
 	usage >&2
 	exit 2
@@ -299,8 +311,108 @@ else:
 	exit 0
 }
 
+# served_by_request <url>: GET the URL and print the status code, the value of
+# the last x-served-by response header (or "none") and the body on separate
+# lines; exits with curl's status on a transport error.
+served_by_request() {
+	local url="$1" headers body code status=0 tls=()
+	if [ -n "${CHECK_LIVE_CA:-}" ]; then
+		tls=(--cacert "$CHECK_LIVE_CA")
+	fi
+	headers="$(mktemp)"
+	body="$(mktemp)"
+	code="$(curl -sS --max-time "$timeout" ${tls[@]+"${tls[@]}"} -D "$headers" -o "$body" -w '%{http_code}' "$url" 2>&1)" || status=$?
+	if [ "$status" -ne 0 ]; then
+		printf '%s\n' "$code"
+		rm -f "$headers" "$body"
+		return "$status"
+	fi
+	printf '%s\n' "$code"
+	python3 -c '
+import sys
+
+value = "none"
+for line in open(sys.argv[1], encoding="latin-1"):
+    name, sep, rest = line.partition(":")
+    if sep and name.strip().lower() == "x-served-by":
+        value = rest.strip() or "empty"
+print(value)
+' "$headers"
+	cat "$body"
+	rm -f "$headers" "$body"
+}
+
+cutover() {
+	local host="${CHECK_LIVE_CUTOVER_HOST:-}" failures=0 check path answer status verdict
+	if [ -z "$host" ]; then
+		echo "check-live: CHECK_LIVE_CUTOVER_HOST is required; it names the public wallet hostname and is set only once the endpoint has been cut over" >&2
+		usage >&2
+		exit 2
+	fi
+	if ! printf '%s' "$host" | grep -Eq '^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*(:[0-9]{1,5})?$'; then
+		echo "check-live: CHECK_LIVE_CUTOVER_HOST must be a bare hostname with an optional :port, without a scheme or path" >&2
+		exit 2
+	fi
+	if [ -n "${CHECK_LIVE_CA:-}" ] && [ ! -r "$CHECK_LIVE_CA" ]; then
+		echo "check-live: CHECK_LIVE_CA does not name a readable file" >&2
+		exit 2
+	fi
+	for check in served_by readiness; do
+		if [ "$check" = served_by ]; then
+			path=/healthz
+		else
+			path=/readyz
+		fi
+		status=0
+		answer="$(served_by_request "https://$host$path")" || status=$?
+		if [ "$status" -ne 0 ]; then
+			verdict="fail transport $(printf '%s' "$answer" | tr '\n' ' ' | cut -c1-200)"
+		else
+			verdict="$(printf '%s' "$answer" | python3 -c '
+import json
+import sys
+
+check = sys.argv[1]
+code = sys.stdin.readline().strip()
+served = sys.stdin.readline().strip()
+text = sys.stdin.read()
+named = served == "paxeer-wallet-gateway"
+line = "http=" + code + " x-served-by=" + served
+if check == "served_by":
+    print(("pass " if code == "200" and named else "fail ") + line)
+    sys.exit(0)
+try:
+    doc = json.loads(text)
+except ValueError:
+    print("fail " + line + " non-json " + " ".join(text.split())[:200])
+    sys.exit(0)
+ready = isinstance(doc, dict) and doc.get("ready") is True
+line += " ready=" + str(ready).lower()
+print(("pass " if code == "200" and named and ready else "fail ") + line)
+' "$check")"
+		fi
+		case "$verdict" in
+		pass\ *) echo "pass $check ${verdict#pass }" ;;
+		*)
+			echo "fail $check ${verdict#fail }"
+			failures=$((failures + 1))
+			;;
+		esac
+	done
+	if [ "$failures" -ne 0 ]; then
+		echo "check-live: $failures check(s) failed"
+		exit 1
+	fi
+	echo "check-live: all checks passed"
+	exit 0
+}
+
 if [ "$mode" = attestors ]; then
 	attestors
+fi
+
+if [ "$mode" = cutover ]; then
+	cutover
 fi
 
 if [ "$mode" = gateway ]; then

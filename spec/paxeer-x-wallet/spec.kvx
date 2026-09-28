@@ -706,7 +706,7 @@ log_path = ".logs/verify.log"
 
 [task.3.5]
 title = "Deploy the attestor network from the definitions and prove a signature across regions"
-status = "implemented"
+status = "done"
 wave = 3
 requires = ["2.1","1.12"]
 do_1 = "Build the attestor image from the repository, deploy the five applications from human/wallet/deploy with their volumes and secrets set out of band, verify health on every node and peer reachability across the private network, generate a test key of each curve, sign with a quorum spanning three regions and verify the signatures."
@@ -715,7 +715,7 @@ verify_cmd = "timeout 20m sh -c 'tools/wallet/check-live.sh attestors'"
 symbols = ["check-live"]
 touches = ["tools/wallet/check-live.sh","tools/wallet/check-live.test.sh","spec/paxeer-x-wallet/qualification.kvx"]
 reqs = ["3.4","3.3"]
-revision = "0b95c556344faefaf726eb9f00527b116ad79f66"
+revision = "c206084c87b60ce33b071f819b5aef84abb92803"
 command = "timeout 20m sh -c 'tools/wallet/check-live.sh attestors'"
 exit_code = 0
 log_path = ".logs/verify.log"
@@ -894,10 +894,10 @@ status = "pending"
 [task.4.1]
 title = "Run the gateway in shadow against the live attestors with a fresh account on the chain"
 status = "implemented"
-revision = "74879759ed57c9107916264da19e79c1ce4dd657"
-command = "flyctl deploy --config human/wallet/deploy/gateway.toml --image paxeer-wallet-gateway:deploy --app paxeer-wallet-gateway --local-only --wait-timeout 10m -y"
+revision = "c206084c87b60ce33b071f819b5aef84abb92803"
+command = "flyctl deploy --config human/wallet/deploy/gateway.toml --image <pushed image> --app paxeer-wallet-gateway --wait-timeout 6m -y && flyctl scale count 2 -y, then GET /readyz on each machine"
 exit_code = 1
-log_path = ".logs/deploy.log"
+log_path = ".logs/readiness.log"
 wave = 4
 requires = ["3.1","3.2","3.5"]
 do_1 = "Deploy the gateway from human/wallet/deploy/gateway.toml beside the existing service under a platform-issued name, pointed at the deployed attestors, the identity provider and the RPC pool, with the sponsor account funded out of band; sign in with a fresh test identity, provision, observe both keys, the top-up and the binding on the chain, sign and send a minimal transaction, sign a message, and confirm getUnifiedAccount reports the binding."
@@ -982,14 +982,14 @@ verify_cmd = "timeout 20m sh -c 'cd human && cargo test -p layerx-human-service 
 symbols = ["wallet_identity_e2e"]
 touches = ["human/crates/layerx-human-service/src/server/production_components.rs","human/crates/layerx-human-service/tests/wallet_identity_e2e.rs"]
 reqs = ["8.4","8.1","8.2"]
-revision = "56256c56b498963e9872e2f5ff1fbe360b1a1249"
+revision = "1a9cd6ea1a881856fe2e1e2c883971858e291bd2"
 command = "timeout 20m sh -c 'cd human && cargo test -p layerx-human-service wallet_identity_e2e'"
 exit_code = 101
 log_path = ".logs/verify.log"
 
 [task.4.7]
 title = "Load-test the deployed attestor network once"
-status = "pending"
+status = "implemented"
 wave = 4
 requires = ["3.5"]
 do_1 = "Add human/wallet/attestor/cmd/loadtest driving concurrent signing sessions of both curves against a configured network for a bounded duration with a configured concurrency, reporting throughput, latency percentiles and refusals as JSON."
@@ -998,6 +998,10 @@ verify_cmd = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./
 symbols = ["loadtest","Summary"]
 touches = ["human/wallet/attestor/cmd/loadtest/main.go","human/wallet/attestor/cmd/loadtest/loadtest_test.go","spec/paxeer-x-wallet/qualification.kvx"]
 reqs = ["3.5"]
+revision = "1a9cd6ea1a881856fe2e1e2c883971858e291bd2"
+command = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./cmd/loadtest/...'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.4.8]
 title = "Record the security review of the library delta and the daemon"
@@ -1155,10 +1159,10 @@ log_path = ".logs/verify.log"
 
 [task.4.15]
 title = "Model the chain the provisioning route reads and writes in the gateway end-to-end harness"
-status = "implemented"
-revision = "7a58bc9e48f4d5d60752f5cca6fe1cea5d60df09"
+status = "done"
+revision = "1a9cd6ea1a881856fe2e1e2c883971858e291bd2"
 command = "timeout 20m sh -c 'pnpm --dir human/wallet/gateway test -- e2e'"
-exit_code = 1
+exit_code = 0
 log_path = ".logs/verify.log"
 wave = 4
 requires = ["3.1","3.15"]
@@ -1273,6 +1277,23 @@ command = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./int
 exit_code = 0
 log_path = ".logs/verify.log"
 
+[task.4.24]
+title = "Sign the kernel send authorization with the attestor-held owner key"
+status = "implemented"
+revision = "af28c940139fbdff0e2d77de204502777ecd2ea8"
+command = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./internal/policy/... ./internal/server/... && cd ../../.. && cd human && cargo test -p layerx-human-kms attestor'"
+exit_code = 101
+log_path = ".logs/verify.log"
+wave = 4
+requires = ["4.23","4.19"]
+do_1 = "Add the sign kind lx_send_authorization to human/wallet/attestor/internal/server: the request carries in activity the unsigned activity envelope of an asset send (operation 5) whose tagged send payload holds a placeholder owner authorization, the envelope authority's public key and a zero signature; the daemon decodes the send with the tagged send layout of task 4.23 through lxwire.DecodeSendForAuthorization, which differs from DecodeSend only in requiring the zero signature in place of a valid one, applies every envelope check decodeAssetSend applies (owner kind, the debit account as controller, the signed context hash, the envelope network, protocol version, idempotency key and authority), evaluates the kernel policy of lx_activity (chain id, actor did:layerx of the signing key, validity window around now, allowed module and operation, owned debit account, destination list and caps) through the durable spend ledger, and signs the 32-byte authorization digest Send.AuthorizationDigest computes with the threshold Ed25519 key; the send's amount is counted once, at the lx_activity sign of the completed envelope, while the authorization checks the caps against the ledger without recording a spend; every refusal is audited as sign.lx_send_authorization and the gateway identity requests it under the authority rules of lx_activity."
+do_2 = "In human/crates/layerx-human-kms AttestorSigner gains sign_send, which builds the placeholder send from a layerx-crypto SendDebit, requests lx_send_authorization with its own session and token, verifies the returned signature over SendDebit's authorization message, embeds it with SendDebit::encode_signed, encodes the completed envelope with encode_send_envelope and signs it through sign_activity with a fresh session and token, returning the canonical envelope, its disclosure and both signatures; AttestorError::Refused carries the node, status, category, code and policy code of every refusal into its message and a code accessor, so no attestor refusal reads as a bare refused."
+do_3 = "human/wallet/schema/attestor-api/v1.kvx lists lx_send_authorization with its request and signing rule and sign.request.lx_send_authorization.json is generated by the golden test; server tests over five in-process daemons prove an attestor-held send authorized and then accepted by lx_activity through the strict decoder, a refusal for a foreign debit account, a refusal outside the validity window, a refusal of a send that carries a signature, and the amount counted once; lxwire tests cover the authorization decoder; a kms test runs sign_send against the real daemon binary as the crate's attestor tests do; human/wallet/docs/security-review.md lists the kind."
+verify_cmd = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./internal/policy/... ./internal/server/... && cd ../../.. && cd human && cargo test -p layerx-human-kms attestor'"
+symbols = ["KindLXSendAuth","DecodeSendForAuthorization","SendAuthorizationRequest","EvaluateSendAuthorization","sign_send","KIND_SEND_AUTHORIZATION"]
+touches = ["human/wallet/attestor/internal/lxwire/send.go","human/wallet/attestor/internal/lxwire/send_test.go","human/wallet/attestor/internal/policy/lx/lx.go","human/wallet/attestor/internal/policy/lx/lx_test.go","human/wallet/attestor/internal/server/sign.go","human/wallet/attestor/internal/server/server_test.go","human/wallet/attestor/internal/server/send_authorization_test.go","human/wallet/schema/attestor-api/v1.kvx","human/wallet/schema/attestor-api/golden/sign.request.lx_send_authorization.json","human/crates/layerx-human-kms/src/attestor.rs","human/crates/layerx-human-kms/Cargo.toml","human/crates/layerx-human-kms/tests/attestor.rs","human/wallet/docs/security-review.md","spec/paxeer-x-wallet/qualification.kvx"]
+reqs = ["8.2","2.5","2.6","3.3"]
+
 # --------------------------------------------------------------------------
 # WAVE 5 - RELEASE
 # --------------------------------------------------------------------------
@@ -1311,7 +1332,11 @@ reqs = ["4.5","13.4"]
 
 [task.5.3]
 title = "Cut the wallet endpoint over to the new gateway and retire the old service"
-status = "pending"
+status = "implemented"
+revision = "1a9cd6ea1a881856fe2e1e2c883971858e291bd2"
+command = "timeout 20m sh -c 'tools/wallet/check-live.sh cutover'"
+exit_code = 2
+log_path = ".logs/verify.log"
 wave = 5
 requires = ["4.1","5.2"]
 do_1 = "Add human/wallet/deploy/cutover/ with the reverse-proxy configuration for the current host forwarding the endpoint hostname to the new gateway with the original host and client address headers preserved, a preflight script that checks the new gateway's readiness and the proxied path end to end, an apply script the operator runs on the current host, and a retire script that stops and disables the old service units only after the proxied path has served for a configured soak period."
@@ -1323,7 +1348,11 @@ reqs = ["4.5"]
 
 [task.5.4]
 title = "Migrate the production wallets with the ceremony tool"
-status = "pending"
+status = "in_progress"
+revision = "1a9cd6ea1a881856fe2e1e2c883971858e291bd2"
+command = "timeout 20m sh -c 'cd human/wallet/ceremony && go test -count=1 ./internal/move/... ./internal/rehearsal/... ./cmd/...'"
+exit_code = 0
+log_path = ".logs/verify.log"
 wave = 5
 requires = ["5.2","3.5","5.3","4.13","3.1"]
 do_1 = "Add a move subcommand to human/wallet/ceremony/cmd/ceremony/main.go, in a new internal/move package, over the source-mode copy of task 5.2 (CopySource, checkReadOnlyRole, TableCounts and PrepareSchema): it reads the production wallet database through the read-only role named by the source connection variable of 5.2 in one REPEATABLE READ READ ONLY transaction and streams every table with COPY TO STDOUT into COPY FROM STDIN on the gateway's platform database named by CEREMONY_DATABASE_URL, which must hold no gateway table before the move starts; it never writes to the source, never creates a file, and leaves the production database and the old service running; before the remaining gateway migrations run it records, for every table, the row count and the SHA-256 digest of the COPY stream ordered by primary key on the source and of the same columns re-read in the same order from the target, refuses to finish when a count or a digest differs, and prints counts and digests only."

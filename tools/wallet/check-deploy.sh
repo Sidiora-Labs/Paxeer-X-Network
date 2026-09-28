@@ -20,7 +20,10 @@ Rules, each printed as "pass <rule> <file>" or "fail <rule> <file>: <reason>":
   auto-start          each attestor sets auto_start_machines = false
   auto-stop           each attestor sets auto_stop_machines = false
   no-public-ports     no attestor service declares ports
-  health-check        each attestor checks /health; gateway and endpoint check a route
+  health-check        each attestor checks /health, or, when its API is mutual TLS
+                      (ATTESTOR_TLS_CA_FILE set), has a tcp check on the service
+                      whose internal port is the ATTESTOR_LISTEN_ADDR port;
+                      gateway and endpoint check a route
   dockerfile          the build dockerfile exists in the repository, or the
                       build names a public image and no dockerfile
   env-no-secrets      no [env] value looks like a secret
@@ -196,7 +199,18 @@ for name, definition in sorted(attestors.items()):
            else "an http_service exposes the attestor publicly")
 
     paths = http_check_paths(definition)
-    report("/health" in paths, "health-check", name, f"health check paths {paths}, want /health")
+    env = definition.get("env") or {}
+    api_port = None
+    listen = str(env.get("ATTESTOR_LISTEN_ADDR", ""))
+    if ":" in listen and listen.rsplit(":", 1)[1].isdigit():
+        api_port = int(listen.rsplit(":", 1)[1])
+    mutual_tls = bool(str(env.get("ATTESTOR_TLS_CA_FILE", "")).strip())
+    tcp_ports = [s.get("internal_port") for s in holders if as_list(s.get("tcp_checks"))]
+    tcp_on_api = mutual_tls and api_port is not None and api_port in tcp_ports
+    report("/health" in paths or tcp_on_api, "health-check", name,
+           f"health check paths {paths}, want /health"
+           + (f", or a tcp check on the mutual TLS API port {api_port} (tcp checks on {tcp_ports})"
+              if mutual_tls else ""))
 
 for name in ("gateway.toml", "endpoint.toml"):
     definition = definitions.get(name)

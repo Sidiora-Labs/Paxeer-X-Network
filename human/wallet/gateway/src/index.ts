@@ -22,6 +22,10 @@ import { startActionWorker, type WorkerHandle } from './agent/actions/worker.js'
 import { startLayerxSync, type LayerxSyncHandle } from './jobs/layerxSync.js';
 import { closeLayerxPool } from './layerx/db.js';
 
+/** Response header that names this service on every response it sends. */
+export const SERVED_BY_HEADER = 'x-served-by';
+export const SERVED_BY = 'paxeer-wallet-gateway';
+
 /**
  * Build the Paxeer Embedded Wallet API: connect and migrate the database,
  * then register every route. Background workers and the listener are started
@@ -47,6 +51,11 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.log.info('[db] connected');
   await runMigrations();
   app.log.info('[db] migrations applied');
+
+  app.addHook('onSend', async (_req, reply, payload) => {
+    void reply.header(SERVED_BY_HEADER, SERVED_BY);
+    return payload;
+  });
 
   installRawBodyParser(app);
 

@@ -6,6 +6,7 @@ require (
 	filippo.io/edwards25519 v1.1.0
 	github.com/ethereum/go-ethereum v1.16.8
 	github.com/getamis/alice v1.0.9-0.20260916062408-d8fd6861d3b2
+	github.com/jackc/pgx/v5 v5.11.0
 	github.com/lib/pq v1.10.9
 	github.com/sidiora-labs/paxeer-network/human/wallet/attestor v0.0.0
 	golang.org/x/crypto v0.54.0
@@ -28,6 +29,8 @@ require (
 	github.com/gofrs/flock v0.13.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/holiman/uint256 v1.3.2 // indirect
+	github.com/jackc/pgpassfile v1.0.0 // indirect
+	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/mattn/go-runewidth v0.0.16 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
@@ -37,8 +40,9 @@ require (
 	github.com/supranational/blst v0.3.16-0.20250831170142-f48500c1fdbe // indirect
 	github.com/tklauser/go-sysconf v0.3.15 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
-	golang.org/x/sync v0.21.0 // indirect
+	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/text v0.40.0 // indirect
 	gonum.org/v1/gonum v0.7.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )

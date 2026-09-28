@@ -371,3 +371,75 @@ area    = "attestor"
 symptom = "The first refresh after replacing a lost node fails with a session mismatch."
 cause   = "After an add-share the replacement stored epoch zero while the survivors kept their committed epoch, and refresh names its session after the epoch."
 do      = "Carry the committed epoch in the add-share request, bind it into the session, and have survivors refuse a differing epoch."
+
+[gotcha.59]
+area    = "fleet"
+symptom = "A lane rebase onto the feature branch hangs indefinitely."
+cause   = "The repository post-commit hook runs the sync command inside every replayed commit of a worktree rebase and can block."
+do      = "Rebase lanes with the hooks path pointed at an empty directory and let the helper run the hook once on the final commit."
+
+[gotcha.60]
+area    = "fleet"
+symptom = "The fast-forward merge of a finished lane into the feature branch is refused."
+cause   = "Another lane moved the feature tip between the lane's rebase and its merge."
+do      = "Rebase the lane once more and repeat the fast-forward; never merge with a merge commit into the feature branch."
+
+[gotcha.61]
+area    = "attestor"
+symptom = "A kms test cluster refuses the kernel send authorization sign with a policy error."
+cause   = "The test cluster's kernel policy listed no asset operation, and the send authorization is checked under the asset send operation of the kernel policy; the sign kind symbol is KindLXSendAuth, not a longer name."
+do      = "Give test clusters a kernel policy that allows asset operation 5 and reference the kind by its spec symbol."
+
+[gotcha.62]
+area    = "fly"
+symptom = "Every open flyctl proxy drops at once."
+cause   = "The first flyctl logs call after an automatic flyctl upgrade shuts down the old agent and its WireGuard tunnels."
+do      = "Expect the drop after an upgrade, restart the proxies, and pin one flyctl version for a long-running operator session."
+
+[gotcha.63]
+area    = "attestor"
+symptom = "Health reports snapshot and replica as null right after a deploy."
+cause   = "Both fields fill only after the first scheduled snapshot and the first shipping pass that follows it."
+do      = "Wait one snapshot interval plus one shipping interval before judging the replica path."
+
+[gotcha.64]
+area    = "identity"
+symptom = "A fresh test sign-up yields no session and password sign-in answers email_not_confirmed."
+cause   = "The identity provider requires email confirmation for new users."
+do      = "Use a test identity created with auto-confirm in the provider dashboard for every live proof."
+
+[gotcha.65]
+area    = "fly"
+symptom = "After a deploy one machine stays stopped, and the platform proxy skips a machine that is running."
+cause   = "A deploy does not start a machine that was stopped before it, and the proxy routes only to machines passing their checks."
+do      = "Start the machine explicitly after the deploy and read readiness through machine exec rather than the public address."
+
+[gotcha.66]
+area    = "fly"
+symptom = "A managed Postgres status call leaks the cluster password into the terminal and logs."
+cause   = "The JSON status output includes the credentials."
+do      = "Pipe the status output only into a jq expression that writes a mode 600 file and never run it bare."
+
+[gotcha.67]
+area    = "ceremony"
+symptom = "Deliver is refused with a window or key_exists error after an attestor restart."
+cause   = "The ceremony flag is read once at process start, the window id is per process, the verification signature covers only keys the same process imported, and a half-delivered wallet cannot be resumed."
+do      = "Open the window with a rolling deploy, run deliver to completion without restarting any attestor, then close the window with another deploy."
+
+[gotcha.68]
+area    = "wallet-host"
+symptom = "A docker ps format asking for the restart policy fails on a template field."
+cause   = "The restart policy lives in the inspect output, not in the ps template."
+do      = "Read the restart policy with docker inspect."
+
+[gotcha.69]
+area    = "ops"
+symptom = "pkill -f exits 144 and appears to kill its caller."
+cause   = "The pattern matched the shell running the pkill command itself."
+do      = "Match with a bracketed first character or use pgrep against a pattern absent from the caller."
+
+[gotcha.70]
+area    = "fly"
+symptom = "An ssh console call fails with an API EOF and leaves an empty output file."
+cause   = "The machines API dropped the connection transiently."
+do      = "Check the output file is non-empty and rerun the single call."

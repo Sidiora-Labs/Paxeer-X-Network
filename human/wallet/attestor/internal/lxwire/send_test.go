@@ -216,3 +216,58 @@ func TestSendEncodeRefusesUnemittableFields(t *testing.T) {
 		t.Fatal("authorization verifies under the identity point")
 	}
 }
+
+func TestSendForAuthorizationDecodesOnlyUnsignedPlaceholders(t *testing.T) {
+	file := loadKernelVectors(t)
+	signed := mustHex(t, file.vector(t, "native-send").Payload)
+	if send, err := DecodeSendForAuthorization(signed); !errors.Is(err, ErrSend) || send != nil {
+		t.Fatalf("signed send decoded as a placeholder (%v)", err)
+	}
+	tail := len(signed) - sendAuthorizationTail
+	placeholder := append([]byte{}, signed...)
+	copy(placeholder[tail+65:tail+129], make([]byte, 64))
+	send, err := DecodeSendForAuthorization(placeholder)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DecodeSend(placeholder); !errors.Is(err, ErrSend) {
+		t.Fatalf("placeholder decoded as a signed send (%v)", err)
+	}
+	original, err := DecodeSend(signed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := original.AuthorizationDigest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := send.AuthorizationDigest()
+	if err != nil || got != want {
+		t.Fatalf("placeholder digest %x differs from the signed digest %x (%v)", got, want, err)
+	}
+	send.Signature = original.Signature
+	if !send.AuthorizationValid() {
+		t.Fatal("the signed signature does not verify over the placeholder's digest")
+	}
+	encoded, err := send.Encode()
+	if err != nil || !bytes.Equal(encoded, signed) {
+		t.Fatalf("embedding the signature does not reproduce the signed send (%v)", err)
+	}
+	mutate := func(change func([]byte)) []byte {
+		b := append([]byte{}, placeholder...)
+		change(b)
+		return b
+	}
+	cases := map[string][]byte{
+		"partial signature": mutate(func(b []byte) { b[tail+100] = 1 }),
+		"identity key":      mutate(func(b []byte) { copy(b[tail+33:tail+65], append([]byte{1}, make([]byte, 31)...)) }),
+		"non-canonical key": mutate(func(b []byte) { copy(b[tail+33:tail+65], bytes.Repeat([]byte{0xff}, 32)) }),
+		"trailing byte":     append(append([]byte{}, placeholder...), 0),
+		"bare transfer":     mustHex(t, file.vector(t, "bare-transfer").Payload),
+	}
+	for name, payload := range cases {
+		if send, err := DecodeSendForAuthorization(payload); !errors.Is(err, ErrSend) || send != nil {
+			t.Fatalf("%s: decoded (%v)", name, err)
+		}
+	}
+}

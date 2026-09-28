@@ -7,6 +7,7 @@ import { keccak256, recoverAddress, recoverMessageAddress, recoverTypedDataAddre
 import { privateKeyToAccount } from 'viem/accounts';
 import { SIDIORA_DECIMALS, sponsoredBatchDigest as agentBatchDigest, type SponsoredBatch } from '@sidiora/layerx-sdk';
 import {
+  BindingRefusedError,
   ChainDisconnectedError,
   DisconnectedError,
   GatewayRefusalError,
@@ -549,6 +550,95 @@ describe('PaxeerProvider', () => {
   it('provider_rejects_a_request_without_a_method', async () => {
     const err = await failure(provider().request({ method: '' }));
     expect(err).toMatchObject({ code: -32602, field: 'method' });
+  });
+});
+
+describe('PaxeerProvider binding completion at sign-in', () => {
+  const calls: { scenario: string; method: string; path: string; authorization?: string }[] = [];
+  let bindingServer: Server;
+  let bindingBase: string;
+  const boundDid = `did:layerx:${'ab'.repeat(32)}`;
+
+  function walletBody(bindingState: string): Record<string, unknown> {
+    const me = bodyOf('wallet-me');
+    return { ...me, wallet: { ...(me.wallet as Record<string, unknown>), did: null, main_account_id: null, binding_state: bindingState } };
+  }
+
+  beforeAll(async () => {
+    bindingServer = createServer((req, res) => {
+      void (async () => {
+        const [, scenario = '', ...rest] = (req.url ?? '/').split('/');
+        const path = `/${rest.join('/')}`;
+        await readBody(req);
+        calls.push({ scenario, method: req.method ?? '', path, authorization: req.headers.authorization });
+        if (req.headers.authorization !== `Bearer ${TOKEN}`) return send(res, 401, { error: 'unauthorized' });
+        const [state, outcome] = scenario.split('-');
+        if (req.method === 'GET' && path === '/v1/wallet/me') return send(res, 200, walletBody(state!));
+        if (req.method === 'POST' && path === '/v1/wallet/provision') {
+          if (outcome === 'refused') {
+            return send(res, 409, { error: 'binding_refused', message: 'address is already bound to a different DID', bound_did: boundDid });
+          }
+          return send(res, 200, {
+            wallet: { ...(walletBody('bound').wallet as Record<string, unknown>), kind: 'standard' },
+            provisioning: { state: 'active', awaiting: null },
+          });
+        }
+        send(res, 404, { error: 'not_found' });
+      })();
+    });
+    await new Promise<void>((resolve) => bindingServer.listen(0, '127.0.0.1', resolve));
+    bindingBase = `http://127.0.0.1:${(bindingServer.address() as AddressInfo).port}`;
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((resolve, reject) => bindingServer.close((err) => (err ? reject(err) : resolve())));
+  });
+
+  function bindingProvider(scenario: string): PaxeerProvider {
+    return new PaxeerProvider({ gatewayUrl: `${bindingBase}/${scenario}`, rpcUrl: `${base}/rpc`, token: async () => TOKEN });
+  }
+
+  function callsFor(scenario: string): string[] {
+    return calls.filter((c) => c.scenario === scenario).map((c) => `${c.method} ${c.path}`);
+  }
+
+  it('provider_eth_requestAccounts_completes_an_unbound_wallet_binding_with_the_user_token', async () => {
+    const p = bindingProvider('unbound');
+    expect(await p.request({ method: 'eth_requestAccounts' })).toEqual([vectors.address]);
+    expect(callsFor('unbound')).toEqual(['GET /v1/wallet/me', 'POST /v1/wallet/provision']);
+    expect(calls.filter((c) => c.scenario === 'unbound').every((c) => c.authorization === `Bearer ${TOKEN}`)).toBe(true);
+    expect(p.isConnected()).toBe(true);
+  });
+
+  it('provider_eth_requestAccounts_resumes_a_pending_wallet_binding', async () => {
+    const p = bindingProvider('pending');
+    const events = record(p);
+    expect(await p.request({ method: 'eth_requestAccounts' })).toEqual([vectors.address]);
+    expect(callsFor('pending')).toEqual(['GET /v1/wallet/me', 'POST /v1/wallet/provision']);
+    expect(events.map((e) => e.event)).toEqual(['connect', 'accountsChanged']);
+  });
+
+  it('provider_eth_requestAccounts_makes_no_provision_call_for_a_bound_wallet', async () => {
+    const p = bindingProvider('bound');
+    expect(await p.request({ method: 'eth_requestAccounts' })).toEqual([vectors.address]);
+    expect(callsFor('bound')).toEqual(['GET /v1/wallet/me']);
+  });
+
+  it('provider_eth_requestAccounts_surfaces_a_refused_binding_as_a_typed_error', async () => {
+    const p = bindingProvider('pending-refused');
+    const err = await failure(p.request({ method: 'eth_requestAccounts' }));
+    expect(err).toBeInstanceOf(BindingRefusedError);
+    expect(err).toBeInstanceOf(ProviderRpcError);
+    expect(err).toMatchObject({
+      name: 'BindingRefusedError',
+      code: -32603,
+      boundDid,
+      message: 'address is already bound to a different DID',
+      data: { reason: 'binding_refused', bound_did: boundDid },
+    });
+    expect(callsFor('pending-refused')).toEqual(['GET /v1/wallet/me', 'POST /v1/wallet/provision']);
+    expect(p.isConnected()).toBe(false);
+    expect(await p.request({ method: 'eth_accounts' })).toEqual([]);
   });
 });
 

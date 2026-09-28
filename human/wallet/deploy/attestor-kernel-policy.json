@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "defaults": {
+    "modules": {
+      "asset": [5, 7],
+      "budget": [2],
+      "programs": [5]
+    },
+    "caps": {
+      "native": {
+        "per_operation": "1000000000000000000",
+        "daily": "10000000000000000000"
+      }
+    },
+    "grants": {
+      "native": {
+        "per_grant": "100000000000000000",
+        "daily": "1000000000000000000"
+      }
+    }
+  }
+}

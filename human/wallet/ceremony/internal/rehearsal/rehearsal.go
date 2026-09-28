@@ -37,10 +37,8 @@ import (
 )
 
 const (
-	EnvDump        = "CEREMONY_REHEARSAL_DUMP"
 	EnvAdminURL    = "CEREMONY_REHEARSAL_ADMIN_URL"
 	EnvAttestorBin = "CEREMONY_ATTESTOR_BIN"
-	EnvPGBinDir    = "CEREMONY_PG_BIN_DIR"
 	ChainID        = 125
 	tokenAudience  = "authenticated"
 	tokenKeyID     = "rehearsal"
@@ -51,20 +49,20 @@ const (
 
 var (
 	ErrConfig    = errors.New("rehearsal: invalid configuration")
-	ErrRestore   = errors.New("rehearsal: database dump restore failed")
+	ErrRestore   = errors.New("rehearsal: temporary database failed")
 	ErrNodes     = errors.New("rehearsal: attestor nodes did not start")
 	ErrUnmatched = errors.New("rehearsal: not every eligible wallet matched")
 	errPortTaken = errors.New("rehearsal: node port taken before bind")
 )
 
 type Options struct {
-	DumpPath    string
-	AdminURL    string
-	AttestorBin string
-	PGBinDir    string
-	MasterKey   []byte
-	ArchivePath string
-	Passphrase  []byte
+	SourceURL     string
+	MigrationsDir string
+	AdminURL      string
+	AttestorBin   string
+	MasterKey     []byte
+	ArchivePath   string
+	Passphrase    []byte
 }
 
 type Report struct {
@@ -73,6 +71,7 @@ type Report struct {
 	FundedArchived  int
 	AlreadyMigrated int
 	migrate.Report
+	Copy CopyReport
 }
 
 func (r Report) String() string {
@@ -80,10 +79,18 @@ func (r Report) String() string {
 		r.Wallets, r.Eligible, r.FundedArchived, r.AlreadyMigrated, r.Read, r.Verified, r.Imported, r.Refreshed, r.TestSigned, r.Matched)
 }
 
+func (r Report) Counts() string {
+	return strings.Join(append([]string{r.String(), r.Copy.Summary()}, r.Copy.CountLines()...), "\n")
+}
+
+func (r Report) Full() string {
+	return strings.Join(append([]string{r.String(), r.Copy.Summary()}, r.Copy.DigestLines()...), "\n")
+}
+
 func LoadOptions(getenv func(string) string) (Options, error) {
 	get := func(name string) string { return strings.TrimSpace(getenv(name)) }
-	o := Options{DumpPath: get(EnvDump), AdminURL: get(EnvAdminURL), AttestorBin: get(EnvAttestorBin), PGBinDir: get(EnvPGBinDir)}
-	for name, v := range map[string]string{EnvDump: o.DumpPath, EnvAdminURL: o.AdminURL, EnvAttestorBin: o.AttestorBin} {
+	o := Options{SourceURL: get(EnvSourceURL), MigrationsDir: get(EnvGatewayMigrationsDir), AdminURL: get(EnvAdminURL), AttestorBin: get(EnvAttestorBin)}
+	for name, v := range map[string]string{EnvSourceURL: o.SourceURL, EnvGatewayMigrationsDir: o.MigrationsDir, EnvAdminURL: o.AdminURL, EnvAttestorBin: o.AttestorBin} {
 		if v == "" {
 			return Options{}, fmt.Errorf("%w: %s is not set", ErrConfig, name)
 		}
@@ -109,14 +116,18 @@ func (o Options) Wipe() {
 
 func Rehearse(ctx context.Context, o Options) (Report, error) {
 	var r Report
-	if o.DumpPath == "" || o.AdminURL == "" || o.AttestorBin == "" || o.ArchivePath == "" || len(o.MasterKey) == 0 {
+	if o.SourceURL == "" || o.MigrationsDir == "" || o.AdminURL == "" || o.AttestorBin == "" || o.ArchivePath == "" || len(o.MasterKey) == 0 {
 		return r, ErrConfig
 	}
-	dbURL, drop, err := restore(ctx, o)
+	dbURL, drop, err := temporaryDatabase(ctx, o.AdminURL)
 	if err != nil {
 		return r, err
 	}
 	defer drop()
+	r.Copy, err = CopySource(ctx, o.SourceURL, dbURL, o.MigrationsDir)
+	if err != nil {
+		return r, err
+	}
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		return r, fmt.Errorf("%w: %v", ErrRestore, err)
@@ -156,19 +167,12 @@ func Rehearse(ctx context.Context, o Options) (Report, error) {
 	return r, nil
 }
 
-func pgBin(dir, name string) string {
-	if dir == "" {
-		return name
-	}
-	return filepath.Join(dir, name)
-}
-
-func restore(ctx context.Context, o Options) (string, func(), error) {
-	admin, err := url.Parse(o.AdminURL)
+func temporaryDatabase(ctx context.Context, adminURL string) (string, func(), error) {
+	admin, err := url.Parse(adminURL)
 	if err != nil || admin.Scheme == "" {
 		return "", nil, fmt.Errorf("%w: %s is not a connection URL", ErrConfig, EnvAdminURL)
 	}
-	adminDB, err := sql.Open("postgres", o.AdminURL)
+	adminDB, err := sql.Open("postgres", adminURL)
 	if err != nil {
 		return "", nil, fmt.Errorf("%w: %v", ErrRestore, err)
 	}
@@ -190,11 +194,6 @@ func restore(ctx context.Context, o Options) (string, func(), error) {
 	}
 	target := *admin
 	target.Path = "/" + name
-	cmd := exec.CommandContext(ctx, pgBin(o.PGBinDir, "pg_restore"), "--no-owner", "--no-privileges", "--exit-on-error", "--dbname", target.String(), o.DumpPath)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		drop()
-		return "", nil, fmt.Errorf("%w: pg_restore: %v: %s", ErrRestore, err, strings.TrimSpace(string(out)))
-	}
 	return target.String(), drop, nil
 }
 

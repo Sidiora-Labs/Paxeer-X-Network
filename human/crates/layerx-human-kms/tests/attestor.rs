@@ -503,7 +503,7 @@ impl Cluster {
             serde_json::to_vec(&json!({
                 "version": 1,
                 "defaults": {
-                    "modules": {"programs": [5]},
+                    "modules": {"asset": [5], "programs": [5]},
                     "caps": {"native": {"per_operation": "1000000", "daily": "8000000"}}
                 }
             }))?,
@@ -907,6 +907,163 @@ fn attestor_signs_a_disclosed_activity_through_the_real_daemon_quorum() -> Resul
         assert!(*sequence > first.audit()[node]);
     }
     assert_eq!(&signer.audit_sequences(), second.audit());
+    Ok(())
+}
+
+fn send_debit(
+    from: [u8; 32],
+    amount: u128,
+    sequence: u64,
+    now: u64,
+) -> Result<(layerx_crypto::send::SendDebit, [u8; 32])> {
+    let to = main_account(&actor([0x52; 32]))?;
+    let asset = [0_u8; 32];
+    let idempotency: [u8; 32] =
+        Sha256::digest(format!("attestor send {sequence}").as_bytes()).into();
+    Ok((
+        layerx_crypto::send::SendDebit {
+            from,
+            to,
+            asset,
+            amount,
+            source_sequence: sequence,
+            idempotency_key: idempotency,
+            expires_at: now + 600,
+            context_hash: layerx_crypto::send::send_context_hash(
+                &from,
+                &to,
+                &asset,
+                amount,
+                &idempotency,
+            ),
+            conditions: Vec::new(),
+            authorization_kind: 1,
+            network_id: NETWORK,
+            protocol_version: 3,
+        },
+        idempotency,
+    ))
+}
+
+#[test]
+fn attestor_signs_a_send_authorization_then_the_completed_send() -> Result<()> {
+    let cluster = Cluster::start()?;
+    let generated = checked(
+        cluster
+            .client()?
+            .generate_ed25519("lx-send-key", OWNER, ACCOUNT),
+    )?;
+    let signer = checked(AttestorSigner::new(
+        cluster.client()?,
+        "lx-send-key",
+        generated.public_key,
+        &SIGNERS,
+        NETWORK,
+    ))?;
+    let did = actor(generated.public_key);
+    let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+    let (debit, idempotency) = send_debit(main_account(&did)?, 400_000, 1, now)?;
+    let options = layerx_crypto::send::EnvelopeOptions {
+        actor: &did,
+        public_key: generated.public_key,
+        protocol_version: 3,
+        network_id: NETWORK,
+        identity_sequence: 1,
+        idempotency_key: idempotency,
+        fee_limit: 1,
+        not_before: now - 60,
+        not_after: now + 600,
+    };
+    let mut minted = Vec::new();
+    let signed = checked(signer.sign_send(&debit, &options, || {
+        let token = cluster
+            .tokens
+            .mint(OWNER)
+            .map_err(|_| AttestorError::Configuration("user assertion"))?;
+        minted.push(token.clone());
+        Ok(token)
+    }))?;
+    assert_eq!(minted.len(), 2);
+    assert_ne!(minted[0], minted[1]);
+
+    let message = checked(debit.authorization_message())?;
+    let authorization_digest = checked(layerx_crypto::SignatureMessage::new(
+        Domain::SignaturePreimage,
+        3,
+        NETWORK,
+        &message,
+    ))?
+    .digest();
+    assert_eq!(signed.authorization().digest(), &authorization_digest);
+    checked(layerx_crypto::ed25519::verify_digest(
+        &generated.public_key,
+        signed.authorization().signature(),
+        &authorization_digest,
+    ))?;
+    assert_eq!(
+        signed.payload(),
+        checked(debit.encode_signed(generated.public_key, *signed.authorization().signature()))?
+            .as_slice()
+    );
+    assert_verified(&signer, signed.canonical(), signed.activity())?;
+    let envelope = checked(layerx_crypto::send::encode_send_envelope(
+        signed.payload(),
+        &options,
+    ))?;
+    assert_eq!(signed.canonical(), envelope.canonical.as_slice());
+    assert_eq!(signed.disclosure(), &envelope.disclosure);
+    for (node, sequence) in signed.activity().audit() {
+        assert!(*sequence > signed.authorization().audit()[node]);
+    }
+
+    let foreign = main_account(&actor([0x61; 32]))?;
+    let (stranger_debit, stranger_idempotency) = send_debit(foreign, 400_000, 2, now)?;
+    let refused = signer.sign_send(
+        &stranger_debit,
+        &layerx_crypto::send::EnvelopeOptions {
+            idempotency_key: stranger_idempotency,
+            identity_sequence: 2,
+            ..options
+        },
+        || {
+            cluster
+                .tokens
+                .mint(OWNER)
+                .map_err(|_| AttestorError::Configuration("user assertion"))
+        },
+    );
+    assert!(
+        matches!(
+            &refused,
+            Err(error @ AttestorError::Refused { status: 403, .. })
+                if error.refusal_code() == Some("account_not_owned")
+        ),
+        "{refused:?}"
+    );
+
+    let (over, over_idempotency) = send_debit(main_account(&did)?, 1_000_001, 3, now)?;
+    let refused = signer.sign_send(
+        &over,
+        &layerx_crypto::send::EnvelopeOptions {
+            idempotency_key: over_idempotency,
+            identity_sequence: 3,
+            ..options
+        },
+        || {
+            cluster
+                .tokens
+                .mint(OWNER)
+                .map_err(|_| AttestorError::Configuration("user assertion"))
+        },
+    );
+    assert!(
+        matches!(&refused, Err(error) if error.refusal_code() == Some("value_cap")),
+        "{refused:?}"
+    );
+    assert!(refused
+        .as_ref()
+        .err()
+        .is_some_and(|error| error.to_string().contains("value_cap")));
     Ok(())
 }
 

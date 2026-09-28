@@ -72,6 +72,7 @@ The daemon keeps the pinned commit `d8fd6861d3b2`, and `go.mod` is unchanged.
   - It cannot sign without a token that verifies against the configured JWKS, names the configured issuer and audience, is unexpired and younger than the maximum age.
   - It cannot reuse a token: each node records the token's hash in its share store and refuses a second request with it, across restarts (finding F-6, partially fixed).
   - It cannot sign a kernel kind outside the kernel policy. `lx_activity`, `lx_bind` and `lx_grant` pass through the kernel evaluator, and without a kernel policy they are refused (finding F-7, fixed).
+  - It cannot sign a send authorization outside the kernel policy. `lx_send_authorization` signs only the owner authorization digest of an unsigned asset send, under the `lx_activity` policy and authority rules, and its amount counts once when the completed send is signed as `lx_activity`.
   - It cannot sign outside the per-kind policy. `eth_sign_digest` now recomputes its digest from the construction (finding F-1, fixed).
   - It cannot record a foreign owner or account on a new participant (finding F-2, fixed).
   - It cannot import shares that fall outside the custody scheme (finding F-3, fixed).

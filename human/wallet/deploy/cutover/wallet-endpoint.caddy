@@ -1,0 +1,11 @@
+reverse_proxy https://__CUTOVER_GATEWAY_HOST__ {
+	header_up Host __CUTOVER_GATEWAY_HOST__
+	header_up X-Forwarded-Host {host}
+	header_up X-Forwarded-For {remote_host}
+	header_up X-Real-IP {remote_host}
+	transport http {
+		tls_server_name __CUTOVER_GATEWAY_HOST__
+		dial_timeout 5s
+		response_header_timeout 30s
+	}
+}

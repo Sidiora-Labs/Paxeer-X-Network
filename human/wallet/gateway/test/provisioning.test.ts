@@ -13,6 +13,7 @@ import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import { startPostgres, type EphemeralPostgres } from './support/postgres.js';
 import { newAgentKey, startIdentityProvider, type IdentityProvider } from './support/identity.js';
 import { ADDR, BIND_SELECTOR, TestChain, addrAbiJson, chainMainAccountId, repoRoot } from './support/chain.js';
+import { KERNEL_POLICY } from './e2e/attestors.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const attestorDir = resolve(here, '../../attestor');
@@ -124,6 +125,8 @@ beforeAll(async () => {
       },
     }),
   );
+  const kernelPolicyFile = join(workDir, 'kernel-policy.json');
+  writeFileSync(kernelPolicyFile, JSON.stringify(KERNEL_POLICY));
   const apiPorts = await Promise.all(nodes.map(() => freePort()));
   const peerPorts = await Promise.all(nodes.map(() => freePort()));
   const pins = nodes.map((n) => spkiPin(join(workDir, `${n}.crt`)));
@@ -152,6 +155,8 @@ beforeAll(async () => {
         ATTESTOR_TLS_KEY_FILE: join(workDir, `${node}.key`),
         ATTESTOR_TLS_CA_FILE: join(workDir, 'ca.crt'),
         ATTESTOR_OPERATOR_CA_FILE: join(workDir, 'ca.crt'),
+        ATTESTOR_KERNEL_POLICY_FILE: kernelPolicyFile,
+        ATTESTOR_RPC_URL: chain.url,
         ATTESTOR_ACTIVITY_TYPES: '0x10005',
       },
       stdio: ['ignore', log, log],

@@ -958,3 +958,115 @@ func TestKernelBudgetFundChecks(t *testing.T) {
 		}
 	}
 }
+
+func TestKernelSendAuthorizationChecksWithoutCounting(t *testing.T) {
+	h := newHarness(t)
+	wallet := common.HexToAddress(walletAddr)
+	native := "lx:" + strings.Repeat("00", 32)
+	v := h.kernel.vector(t, "native-send")
+	owner := hex32(t, h.kernel.PublicKey)
+	signed := v.activity(t)
+	send, err := lxwire.DecodeSend(signed.Payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	placeholderFor := func(change func(s *lxwire.Send)) (*SendAuthorizationRequest, *lxwire.Send) {
+		activity := v.activity(t)
+		unsigned := *send
+		unsigned.Conditions = append([]lxwire.SendCondition(nil), send.Conditions...)
+		unsigned.Signature = [64]byte{}
+		change(&unsigned)
+		if activity.Payload, err = unsigned.Encode(); err != nil {
+			t.Fatal(err)
+		}
+		activity.PayloadHash = lxwire.PayloadHash(activity.Payload)
+		envelope, err := lxwire.EncodeUnsignedActivity(activity)
+		if err != nil {
+			t.Fatal(err)
+		}
+		digest, err := unsigned.AuthorizationDigest()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &SendAuthorizationRequest{Envelope: envelope, Digest: digest, PublicKey: owner, Disclosure: v.disclosure(t)}, &unsigned
+	}
+
+	authorization, unsigned := placeholderFor(func(*lxwire.Send) {})
+	if authorization.Digest != mustDigest(t, send) {
+		t.Fatal("the placeholder's authorization digest is not the signed send's digest")
+	}
+	allowed := h.evaluator.EvaluateSendAuthorization(wallet, authorization, h.request())
+	expect(t, allowed, policy.CodeAllowed)
+	if allowed.Spends == nil || len(allowed.Spends) != 0 {
+		t.Fatalf("an authorization decision spends %+v", allowed.Spends)
+	}
+	if got := h.spent(t, walletAddr, native); got.Sign() != 0 {
+		t.Fatalf("an authorization counted %s", got)
+	}
+	unsigned.Signature = send.Signature
+	if !unsigned.AuthorizationValid() {
+		t.Fatal("the vector signature does not verify over the authorized digest")
+	}
+	completed := h.evaluator.EvaluateActivity(wallet, h.kernelActivity(t, "native-send"), h.request())
+	expect(t, completed, policy.CodeAllowed)
+	expectSpends(t, completed, map[string]int64{native: 5_000_000})
+	if got := h.spent(t, walletAddr, native); got.Cmp(big.NewInt(5_000_000)) != 0 {
+		t.Fatalf("an authorized send then signed counted %s", got)
+	}
+	expect(t, h.evaluator.EvaluateSendAuthorization(wallet, authorization, h.request()), policy.CodeDailyCap)
+
+	fresh := newHarness(t)
+	signedRequest := h.kernelActivity(t, "native-send")
+	type refusal struct {
+		req  *SendAuthorizationRequest
+		code string
+	}
+	envelopeDigest, _ := placeholderFor(func(*lxwire.Send) {})
+	placed, err := lxwire.DecodeUnsignedActivity(envelopeDigest.Envelope, mustOperations(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if envelopeDigest.Digest, err = lxwire.SignaturePreimage(placed); err != nil {
+		t.Fatal(err)
+	}
+	foreignController, _ := placeholderFor(func(s *lxwire.Send) { s.Controller = s.To })
+	foreignKey, _ := placeholderFor(func(s *lxwire.Send) { s.PublicKey = hex32(t, h.kernel.PeerPublicKey) })
+	cases := map[string]refusal{
+		"signed payload":     {&SendAuthorizationRequest{Envelope: signedRequest.Envelope, Digest: authorization.Digest, PublicKey: owner, Disclosure: signedRequest.Disclosure}, policy.CodeDecodeError},
+		"envelope digest":    {envelopeDigest, policy.CodeDigestMismatch},
+		"foreign controller": {foreignController, policy.CodeDecodeError},
+		"foreign key":        {foreignKey, policy.CodeDecodeError},
+		"program call":       {&SendAuthorizationRequest{Envelope: h.kernelActivity(t, "program-transfer").Envelope, PublicKey: owner, Disclosure: h.kernel.vector(t, "program-transfer").disclosure(t)}, policy.CodeDecodeError},
+	}
+	for name, c := range cases {
+		got := fresh.evaluator.EvaluateSendAuthorization(wallet, c.req, fresh.request())
+		if got.Allowed || got.Code != c.code {
+			t.Fatalf("%s: %+v, want %s", name, got, c.code)
+		}
+	}
+	fresh.now = time.Unix(int64(v.NotAfter)+1, 0).UTC()
+	fresh.restart(t)
+	expect(t, fresh.evaluator.EvaluateSendAuthorization(wallet, authorization, fresh.request()), CodeOutsideValidity)
+	if got := fresh.spent(t, walletAddr, native); got.Sign() != 0 {
+		t.Fatalf("refused authorizations counted %s", got)
+	}
+	expect(t, fresh.evaluator.EvaluateSendAuthorization(wallet, nil, fresh.request()), policy.CodeMissingField)
+}
+
+func mustDigest(t *testing.T, send *lxwire.Send) [32]byte {
+	t.Helper()
+	digest, err := send.AuthorizationDigest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return digest
+}
+
+func mustOperations(t *testing.T) *lxwire.Registry {
+	t.Helper()
+	registry, err := decodedOperations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return registry
+}

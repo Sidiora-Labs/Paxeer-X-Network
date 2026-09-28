@@ -5,7 +5,9 @@ use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 
 use layerx_crypto::disclosure::{bind, Disclosure};
+use layerx_crypto::send::{encode_send_envelope, EnvelopeOptions, SendDebit};
 use layerx_crypto::signer::SignError;
+use layerx_intents::canonical::Domain;
 use layerx_types::payload::ModuleRegistry;
 use rustls::pki_types::CertificateDer;
 use serde::{Deserialize, Serialize};
@@ -13,6 +15,7 @@ use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
 
 pub const KIND_ACTIVITY: &str = "lx_activity";
+pub const KIND_SEND_AUTHORIZATION: &str = "lx_send_authorization";
 pub const MIN_SIGNERS: usize = 3;
 const PATH_SIGN: &str = "/v1/sign";
 const PATH_GENERATE: &str = "/v1/keys/generate";
@@ -99,6 +102,56 @@ impl fmt::Display for AttestorError {
 }
 
 impl std::error::Error for AttestorError {}
+
+impl AttestorError {
+    /// Names the attestor's own refusal: the policy code when the policy refused, otherwise the
+    /// error code, and nothing for failures that are not attestor refusals.
+    #[must_use]
+    pub fn refusal_code(&self) -> Option<&str> {
+        match self {
+            Self::Refused {
+                code, policy_code, ..
+            } => Some(policy_code.as_deref().unwrap_or(code)),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SignedSend {
+    payload: Vec<u8>,
+    canonical: Vec<u8>,
+    disclosure: Disclosure,
+    authorization: AttestorSignature,
+    activity: AttestorSignature,
+}
+
+impl SignedSend {
+    #[must_use]
+    pub fn payload(&self) -> &[u8] {
+        &self.payload
+    }
+
+    #[must_use]
+    pub fn canonical(&self) -> &[u8] {
+        &self.canonical
+    }
+
+    #[must_use]
+    pub const fn disclosure(&self) -> &Disclosure {
+        &self.disclosure
+    }
+
+    #[must_use]
+    pub const fn authorization(&self) -> &AttestorSignature {
+        &self.authorization
+    }
+
+    #[must_use]
+    pub const fn activity(&self) -> &AttestorSignature {
+        &self.activity
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AttestorHealth {
@@ -481,13 +534,105 @@ impl AttestorSigner {
             return Err(AttestorError::Configuration("user assertion"));
         }
         let digest = preimage(canonical);
-        let session = session_id("activity")?;
+        self.request_signature(KIND_ACTIVITY, "activity", canonical, digest, assertion)
+    }
+
+    /// Signs an asset send with the attestor-held owner key: the quorum first signs the owner
+    /// authorization digest of the unsigned send under `lx_send_authorization`, the signature
+    /// is embedded in the send payload, and the completed send envelope is then signed as
+    /// `lx_activity`. Each request carries its own assertion from `assertion`.
+    ///
+    /// # Errors
+    /// Refuses a debit or envelope on another network, an envelope authority that is not the
+    /// held key, a non-owner authorization kind, any quorum refusal with its refusal code, a
+    /// returned signature that does not verify over the authorization digest and every
+    /// `sign_activity` refusal.
+    pub fn sign_send(
+        &self,
+        debit: &SendDebit,
+        options: &EnvelopeOptions<'_>,
+        mut assertion: impl FnMut() -> Result<String, AttestorError>,
+    ) -> Result<SignedSend, AttestorError> {
+        if debit.network_id != self.network {
+            return Err(AttestorError::WrongNetwork {
+                expected: self.network,
+                actual: debit.network_id,
+            });
+        }
+        if options.network_id != self.network {
+            return Err(AttestorError::WrongNetwork {
+                expected: self.network,
+                actual: options.network_id,
+            });
+        }
+        if debit.authorization_kind != OWNER_AUTHORIZATION
+            || options.public_key != self.public_key
+            || debit.protocol_version != options.protocol_version
+            || debit.idempotency_key != options.idempotency_key
+        {
+            return Err(AttestorError::Disclosure(SignError::DisclosureMismatch(
+                "send_authorization",
+            )));
+        }
+        let message = debit
+            .authorization_message()
+            .map_err(|error| AttestorError::Disclosure(SignError::from(error)))?;
+        let digest = layerx_crypto::SignatureMessage::new(
+            Domain::SignaturePreimage,
+            debit.protocol_version,
+            debit.network_id,
+            &message,
+        )
+        .map_err(|_| AttestorError::Disclosure(SignError::InvalidDisclosure))?
+        .digest();
+        let placeholder = placeholder_envelope(&message, options)?;
+        let first = assertion()?;
+        if first.is_empty() {
+            return Err(AttestorError::Configuration("user assertion"));
+        }
+        let authorization = self.request_signature(
+            KIND_SEND_AUTHORIZATION,
+            "authorization",
+            &placeholder,
+            digest,
+            &first,
+        )?;
+        let payload = debit
+            .encode_signed(self.public_key, *authorization.signature())
+            .map_err(|error| AttestorError::Disclosure(SignError::from(error)))?;
+        let envelope = encode_send_envelope(&payload, options)
+            .map_err(|error| AttestorError::Disclosure(SignError::from(error)))?;
+        let second = assertion()?;
+        let activity = self.sign_activity(
+            &envelope.canonical,
+            &envelope.disclosure,
+            &envelope.registry,
+            &second,
+        )?;
+        Ok(SignedSend {
+            payload,
+            canonical: envelope.canonical,
+            disclosure: envelope.disclosure,
+            authorization,
+            activity,
+        })
+    }
+
+    fn request_signature(
+        &self,
+        kind: &str,
+        label: &str,
+        canonical: &[u8],
+        digest: [u8; 32],
+        assertion: &str,
+    ) -> Result<AttestorSignature, AttestorError> {
+        let session = session_id(label)?;
         let activity_hex = encode_hex(canonical);
         let body = Zeroizing::new(
             serde_json::to_vec(&SignBody {
                 session_id: &session,
                 key_id: &self.key_id,
-                kind: KIND_ACTIVITY,
+                kind,
                 signers: &self.signers,
                 activity: &activity_hex,
             })
@@ -504,7 +649,7 @@ impl AttestorSigner {
                 serde_json::from_slice(&raw).map_err(|_| malformed(&node))?;
             if response.node_id != node
                 || response.key_id != self.key_id
-                || response.kind != KIND_ACTIVITY
+                || response.kind != kind
                 || response.recovery_id.is_some()
             {
                 return Err(malformed(&node));
@@ -593,6 +738,72 @@ fn validate_disclosure(
         return Err(refuse("canonical_bytes"));
     }
     Ok(())
+}
+
+const OWNER_AUTHORIZATION: u8 = 1;
+const SEND_FIELD_COUNT: [u8; 2] = [0x00, 0x0a];
+const SEND_MESSAGE_TAIL: usize = 32 + 4 + 2;
+
+/// Builds the unsigned send envelope the attestors authorize: the send payload carries the
+/// envelope authority as its key and 64 zero signature bytes, in the kernel send layout.
+fn placeholder_envelope(
+    message: &[u8],
+    options: &EnvelopeOptions<'_>,
+) -> Result<Vec<u8>, AttestorError> {
+    use layerx_types::activity::{Authority, EnvelopeBuilder, TimestampBound};
+    use layerx_types::amount::Amount;
+    use layerx_types::ids::{Did, IdempotencyKey};
+    use layerx_types::payload::{ActivityType, ModuleId, ModuleRegistration, Payload};
+    fn bad<E>(_: E) -> AttestorError {
+        AttestorError::Disclosure(SignError::InvalidDisclosure)
+    }
+    if message.len() < 2 + SEND_MESSAGE_TAIL {
+        return Err(AttestorError::Disclosure(SignError::InvalidDisclosure));
+    }
+    let split = message.len() - SEND_MESSAGE_TAIL;
+    let mut payload = Vec::with_capacity(message.len() + 2 + 32 + 64);
+    payload.extend_from_slice(&message[..2]);
+    payload.extend_from_slice(&SEND_FIELD_COUNT);
+    payload.extend_from_slice(&message[2..split]);
+    payload.extend_from_slice(&options.public_key);
+    payload.extend_from_slice(&[0_u8; 64]);
+    payload.extend_from_slice(&message[split..]);
+    let kind = ActivityType::new(ModuleId::Asset, 5).map_err(bad)?;
+    let registry =
+        ModuleRegistry::new(&[ModuleRegistration::new(ModuleId::Asset, &[kind]).map_err(bad)?])
+            .map_err(bad)?;
+    let mut hash = Sha256::new();
+    hash.update(Domain::PayloadHash.tag());
+    hash.update(&payload);
+    let mut builder = EnvelopeBuilder::new();
+    builder
+        .protocol_version(options.protocol_version)
+        .map_err(bad)?;
+    builder.network_id(options.network_id).map_err(bad)?;
+    builder.activity_type(kind).map_err(bad)?;
+    builder
+        .actor_did(Did::new(options.actor.as_bytes()).map_err(bad)?)
+        .map_err(bad)?;
+    builder
+        .authority(Authority::owner(&options.public_key).map_err(bad)?)
+        .map_err(bad)?;
+    builder
+        .account_sequence(options.identity_sequence)
+        .map_err(bad)?;
+    builder
+        .timestamp_bound(TimestampBound::new(options.not_before, options.not_after).map_err(bad)?)
+        .map_err(bad)?;
+    builder
+        .idempotency_key(IdempotencyKey::new(options.idempotency_key))
+        .map_err(bad)?;
+    builder
+        .fee_limit(Amount::from_u128(options.fee_limit))
+        .map_err(bad)?;
+    builder.payload_hash(hash.finalize().into()).map_err(bad)?;
+    builder
+        .payload(Payload::new(&registry, kind, &payload).map_err(bad)?)
+        .map_err(bad)?;
+    layerx_intents::canonical::unsigned_envelope_bytes(&builder.build().map_err(bad)?).map_err(bad)
 }
 
 /// Computes the domain-separated activity preimage the attestors sign.
