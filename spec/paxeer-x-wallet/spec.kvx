@@ -856,7 +856,7 @@ log_path = ".logs/verify.log"
 
 [task.4.3]
 title = "Add the Paxeer X surfaces and the fee choice to the app"
-status = "implemented"
+status = "done"
 wave = 4
 requires = ["3.6","2.5"]
 do_1 = "In human/apps/wallet add the exchange, bridge, launchpad, fee token and web data surfaces through the SDK modules, the fee choice labelling PAX gas, SID sponsored and SID native with denominations, the LayerX fee per leg shown separately, and 402 draws shown with their caps."
@@ -865,9 +865,9 @@ verify_cmd = "timeout 20m sh -c 'pnpm --dir human/apps/wallet exec vitest run sr
 symbols = ["ExchangeView","BridgeView","LaunchpadView","FeeChoice","WebDataView"]
 touches = ["human/apps/wallet/src/surfaces/","human/apps/wallet/src/app/"]
 reqs = ["10.5","11.1","11.3"]
-revision = "477b62b4e00f714cb83ca97654f18809744a6877"
+revision = "9442335562b93bf1239a206ab197bf77aba56d5e"
 command = "timeout 20m sh -c 'pnpm --dir human/apps/wallet exec vitest run src/surfaces'"
-exit_code = 1
+exit_code = 0
 log_path = ".logs/verify.log"
 
 [task.4.4]

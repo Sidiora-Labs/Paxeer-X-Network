@@ -324,3 +324,11 @@ symbol = "@noble/curves/ed25519"
 observed = "The verify run collected none of the six account test files and failed only with Missing ./ed25519 specifier in @noble/curves at agent.ts line 1, the import failure recorded in observation 4.3.1."
 assumption = "The .js subpath fix lands on the feature as its own task and the account verify command is rerun there; no repair cycle was spent on it."
 severity = "high"
+
+[observation.4.3.4]
+task = "4.3"
+file = "human/wallet/sdk/src/agent.ts"
+symbol = "@noble/curves/ed25519.js"
+observed = "The SDK agent module now imports the .js subpaths of both noble packages, and the unchanged surfaces verify command reran at 9442335562b93bf1239a206ab197bf77aba56d5e and exited 0 with 10 tests passing across 5 files."
+assumption = "Observation 4.3.1 is resolved by the SDK specifier change; the app's dedupe list and versions are unchanged."
+severity = "note"
