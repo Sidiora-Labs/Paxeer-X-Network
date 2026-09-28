@@ -488,7 +488,7 @@ reqs = ["1.7","1.8","2.6"]
 
 [task.2.2]
 title = "Give the gateway a keyless signing core, a shared nonce store and an RPC pool"
-status = "pending"
+status = "done"
 wave = 2
 requires = ["1.10"]
 do_1 = "In human/wallet/gateway add an attestor client that selects a quorum by health and latency, posts the same sign request to each participant with one session id, collects the signature, and surfaces typed refusals; route /v1/wallet/sign, /v1/wallet/send, /v1/wallet/sign-message and typed-data signing through it for wallets flagged migrated and through the existing envelope path otherwise, with the flag read in the same transaction as the wallet row."
@@ -498,6 +498,10 @@ verify_cmd = "timeout 20m sh -c 'pnpm --dir human/wallet/gateway test'"
 symbols = ["AttestorClient","selectQuorum","NonceStore","RpcPool","signThroughAttestors"]
 touches = ["human/wallet/gateway/src/attestor/client.ts","human/wallet/gateway/src/attestor/quorum.ts","human/wallet/gateway/src/nonce/store.ts","human/wallet/gateway/src/rpc/pool.ts","human/wallet/gateway/src/routes/wallet.ts","human/wallet/gateway/src/audit.ts","human/wallet/gateway/test/attestor.test.ts","human/wallet/gateway/test/nonce.test.ts","human/wallet/gateway/test/rpc-pool.test.ts"]
 reqs = ["5.2","5.3","5.6"]
+revision = "9a10a60376872fd0689132f9c03aa4ad3b1098c2"
+command = "timeout 20m sh -c 'pnpm --dir human/wallet/gateway test'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.2.3]
 title = "Remove the funded lane and repair agent consent and request signing in the gateway"

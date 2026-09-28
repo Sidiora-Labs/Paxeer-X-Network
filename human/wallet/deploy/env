@@ -133,3 +133,17 @@ NEXT_PUBLIC_SUPABASE_URL - Supabase project URL used by the demo for sign-in
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY - Supabase publishable key used by the demo for sign-in
 NEXT_PUBLIC_AUTH_REDIRECT_URL - sign-in callback URL of the demo
 NEXT_PUBLIC_SITE_URL - public origin of the demo used for page metadata
+# gateway
+ATTESTOR_ENDPOINTS - comma-separated https base URLs of the five attestor nodes the gateway signs through
+ATTESTOR_CLIENT_CERT_FILE - path to the gateway's mutual TLS client certificate presented to the attestors
+ATTESTOR_CLIENT_KEY_FILE - path to the private key of the gateway's mutual TLS client certificate
+ATTESTOR_CA_FILE - path to the CA bundle that authenticates the attestor nodes
+ATTESTOR_QUORUM - number of healthy attestors a signing session needs, defaulting to 3
+ATTESTOR_HEALTH_INTERVAL_MS - interval between attestor health probes in milliseconds, defaulting to 5000
+ATTESTOR_TIMEOUT_MS - timeout of one attestor request in milliseconds, defaulting to 15000
+RPC_URLS - comma-separated chain RPC URLs of the gateway's RPC pool, defaulting to the sixteen public mainnet hosts
+RPC_LAG_THRESHOLD_BLOCKS - blocks an RPC endpoint may trail the best head before it leaves the pool, defaulting to 20
+RPC_HEALTH_INTERVAL_MS - interval between RPC pool health checks in milliseconds, defaulting to 5000
+RPC_TIMEOUT_MS - timeout of one RPC request in milliseconds, defaulting to 8000
+RATE_LIMIT_CLIENT_PER_MINUTE - signing requests one bearer subject may make per minute, defaulting to 120
+RATE_LIMIT_ACCOUNT_PER_MINUTE - signing requests one wallet account may receive per minute, defaulting to 60

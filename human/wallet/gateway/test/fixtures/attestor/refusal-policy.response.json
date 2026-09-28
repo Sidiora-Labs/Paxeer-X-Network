@@ -1,0 +1,7 @@
+{
+  "error": {
+    "category": "policy",
+    "code": "value_cap",
+    "reason": "native value exceeds the per-transaction cap of the account policy"
+  }
+}

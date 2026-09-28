@@ -244,6 +244,66 @@ const Env = z.object({
   // How often the LayerX mirror-sync worker pulls accounts/claims (ms). Only
   // runs when LAYER_X_DB_URI is set.
   LAYERX_SYNC_INTERVAL_MS: z.coerce.number().int().positive().default(120_000),
+
+  ATTESTOR_ENDPOINTS: z
+    .string()
+    .optional()
+    .transform((s) =>
+      (s ?? '')
+        .split(',')
+        .map((u) => u.trim())
+        .filter(Boolean),
+    )
+    .refine(
+      (urls) => urls.every((u) => /^https:\/\/[^\s/]+/.test(u)),
+      'ATTESTOR_ENDPOINTS must be a comma-separated list of https URLs',
+    ),
+  ATTESTOR_CLIENT_CERT_FILE: z.string().min(1).optional(),
+  ATTESTOR_CLIENT_KEY_FILE: z.string().min(1).optional(),
+  ATTESTOR_CA_FILE: z.string().min(1).optional(),
+  ATTESTOR_QUORUM: z.coerce.number().int().min(1).max(64).default(3),
+  ATTESTOR_HEALTH_INTERVAL_MS: z.coerce.number().int().positive().default(5_000),
+  ATTESTOR_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
+
+  RPC_URLS: z
+    .string()
+    .default(
+      Array.from({ length: 16 }, (_, i) => `https://api${i + 1}.mainnet-beta.paxeer.network`).join(','),
+    )
+    .transform((s) =>
+      s
+        .split(',')
+        .map((u) => u.trim())
+        .filter(Boolean),
+    )
+    .refine(
+      (urls) => urls.length > 0 && urls.every((u) => /^https?:\/\/[^\s/]+/.test(u)),
+      'RPC_URLS must be a non-empty comma-separated list of http(s) URLs',
+    ),
+  RPC_LAG_THRESHOLD_BLOCKS: z.coerce.number().int().nonnegative().default(20),
+  RPC_HEALTH_INTERVAL_MS: z.coerce.number().int().positive().default(5_000),
+  RPC_TIMEOUT_MS: z.coerce.number().int().positive().default(8_000),
+
+  RATE_LIMIT_CLIENT_PER_MINUTE: z.coerce.number().int().positive().default(120),
+  RATE_LIMIT_ACCOUNT_PER_MINUTE: z.coerce.number().int().positive().default(60),
+}).superRefine((v, ctx) => {
+  if (v.ATTESTOR_ENDPOINTS.length === 0) return;
+  for (const key of ['ATTESTOR_CLIENT_CERT_FILE', 'ATTESTOR_CLIENT_KEY_FILE', 'ATTESTOR_CA_FILE'] as const) {
+    if (!v[key]) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [key],
+        message: `${key} is required when ATTESTOR_ENDPOINTS is set`,
+      });
+    }
+  }
+  if (v.ATTESTOR_ENDPOINTS.length < v.ATTESTOR_QUORUM) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['ATTESTOR_ENDPOINTS'],
+      message: 'ATTESTOR_ENDPOINTS must list at least ATTESTOR_QUORUM endpoints',
+    });
+  }
 });
 
 export type Env = z.infer<typeof Env>;

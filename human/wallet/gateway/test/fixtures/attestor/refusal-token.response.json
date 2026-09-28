@@ -1,0 +1,7 @@
+{
+  "error": {
+    "category": "token",
+    "code": "claims_invalid",
+    "reason": "jwt: claims invalid"
+  }
+}

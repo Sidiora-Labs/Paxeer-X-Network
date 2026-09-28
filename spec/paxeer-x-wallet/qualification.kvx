@@ -125,6 +125,13 @@ file = "human/wallet/sdk/package.json"
 symbol = "build:agent-sdk"
 observed = "The agent SDK is linked with the link protocol and exports only built output, so the SDK's test, typecheck and build scripts first run npm ci and the agent SDK build; its x402 draw module imports node:sqlite, which vitest 2 cannot load, so the SDK moved to vitest 3."
 assumption = "The merged gate has npm registry access or a warm npm cache for the agent SDK's pinned dependencies."
+
+[observation.2.2.1]
+task = "2.2"
+file = "human/wallet/gateway/src/chainReads.ts"
+symbol = "HYPERPAXEER_RPC_URL"
+observed = "Balance and chain reads in src/chainReads.ts and src/chain.ts still use the single HYPERPAXEER_RPC_URL client; only the signing routes and nonce store go through RpcPool."
+assumption = "Routing the remaining read paths and the readiness report through the pool belongs to a later task that owns those files."
 severity = "note"
 
 [observation.3.7.1]

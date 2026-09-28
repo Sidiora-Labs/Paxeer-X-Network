@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import type { Hex } from 'viem';
+import type { PoolClient } from 'pg';
 import { env } from '../env.js';
 import { encrypt, decrypt, loadMasterKey } from '../crypto.js';
 import { query } from './pool.js';
@@ -93,6 +94,32 @@ export async function findWalletByUserId(
     [userId, kind],
   );
   return rows[0] ?? null;
+}
+
+export interface SigningWallet {
+  row: WalletRow;
+  migratedAt: string | null;
+  attestorKeyId: string | null;
+}
+
+export async function loadWalletForSigning(
+  client: PoolClient,
+  userId: string,
+  kind: WalletKind = 'standard',
+): Promise<SigningWallet | null> {
+  const { rows } = await client.query<WalletRow & { migrated_at: string | null; attestor_key_id: string | null }>(
+    `select id, user_id, address, encrypted_private_key, key_version, chain_id, kind,
+            created_at, last_used_at, is_disabled, disabled_reason, migrated_at, attestor_key_id
+       from wallets
+      where user_id = $1 and kind = $2
+      limit 1
+      for share`,
+    [userId, kind],
+  );
+  const r = rows[0];
+  if (!r) return null;
+  const { migrated_at, attestor_key_id, ...row } = r;
+  return { row, migratedAt: migrated_at, attestorKeyId: attestor_key_id };
 }
 
 /** Look up a wallet by its on-chain address. Used by treasury / evaluator paths. */

@@ -1,0 +1,11 @@
+{
+  "node_id": "",
+  "region": "",
+  "share_count": 2,
+  "refresh_epoch": 1,
+  "audit_sequence": 0,
+  "audit_head": "9f2c6d1f5b0a8e4c3d2b1a09f8e7d6c5b4a3928170f6e5d4c3b2a1908f7e6d5c",
+  "peers": {},
+  "reachable_peers": 4,
+  "ready": true
+}
