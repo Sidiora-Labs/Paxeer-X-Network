@@ -1363,10 +1363,19 @@ fn intent_send_route(
         network: context.network.value(),
         protocol: context.protocol_version,
     };
-    let signature = components
-        .custody
-        .authorize_send(scope.principal(), &context.custody_key, &signed)
-        .map_err(|_| ApiFailure::forbidden())?;
+    let signature = match components.attestor_custody() {
+        Some(attestor) => attestor.authorize_kernel_send(
+            &components.custody,
+            scope.principal(),
+            &context.custody_key,
+            &signed,
+            binding.fee_limit,
+        ),
+        None => components
+            .custody
+            .authorize_send(scope.principal(), &context.custody_key, &signed),
+    }
+    .map_err(|_| ApiFailure::forbidden())?;
     let descriptor = components
         .custody
         .describe_key(scope.principal(), &context.custody_key)
@@ -5884,7 +5893,19 @@ struct AttestorKmsState {
     creation: Mutex<()>,
     enrolment: Mutex<Option<(String, String)>>,
     assertions: Mutex<std::collections::BTreeMap<String, zeroize::Zeroizing<String>>>,
+    send_fee_limit: Mutex<Option<([u8; 32], u128)>>,
+    sends: Mutex<std::collections::BTreeMap<[u8; 32], AttestorSignedSend>>,
+    last_refusal: Mutex<Option<String>>,
 }
+
+struct AttestorSignedSend {
+    authorization: crate::custody::SendPlanAuthorization,
+    fee_limit: u128,
+    signed: layerx_human_kms::attestor::SignedSend,
+}
+
+const ATTESTOR_SEND_OPERATION: u8 = 11;
+const ATTESTOR_SEND_CACHE_LIMIT: usize = 4_096;
 
 #[derive(Clone)]
 pub struct AttestorKms {
@@ -5901,13 +5922,27 @@ impl std::fmt::Debug for AttestorKms {
     }
 }
 
+fn attestor_refusal(code: &str) -> KmsError {
+    match code {
+        "token_invalid" | "token_missing" | "token_not_owner" => KmsError::Authentication,
+        "token_unavailable" | "chain_unavailable" | "quorum_too_few_signers" => {
+            KmsError::Unavailable
+        }
+        "key_not_found" => KmsError::KeyNotFound,
+        "key_exists" => KmsError::Conflict,
+        "session_timeout" => KmsError::Timeout,
+        _ => KmsError::Refused,
+    }
+}
+
 fn attestor_kms_failure(error: &layerx_human_kms::attestor::AttestorError) -> KmsError {
     use layerx_human_kms::attestor::AttestorError;
     match error {
         AttestorError::Configuration(_) => KmsError::InvalidConfiguration,
-        AttestorError::Disclosure(_)
-        | AttestorError::WrongNetwork { .. }
-        | AttestorError::Refused { .. } => KmsError::Refused,
+        AttestorError::Refused { .. } => error
+            .refusal_code()
+            .map_or(KmsError::Refused, attestor_refusal),
+        AttestorError::Disclosure(_) | AttestorError::WrongNetwork { .. } => KmsError::Refused,
         AttestorError::Timeout { .. } => KmsError::Timeout,
         AttestorError::Unavailable { .. } => KmsError::Unavailable,
         AttestorError::Authentication { .. } => KmsError::Authentication,
@@ -5979,6 +6014,9 @@ impl AttestorKms {
                 creation: Mutex::new(()),
                 enrolment: Mutex::new(None),
                 assertions: Mutex::new(std::collections::BTreeMap::new()),
+                send_fee_limit: Mutex::new(None),
+                sends: Mutex::new(std::collections::BTreeMap::new()),
+                last_refusal: Mutex::new(None),
             }),
         };
         crate::custody::KmsProvider::probe(&kms).map_err(CustodyError::Kms)?;
@@ -6033,6 +6071,201 @@ impl AttestorKms {
         Ok(public_key)
     }
 
+    /// Authorizes a kernel send with the attestor-held owner key through the quorum's
+    /// `sign_send`: the owner authorization and the completed send envelope carrying
+    /// `fee_limit` are both signed, the authorization signature is returned for the route and
+    /// the completed envelope's signature answers the journey's later sign of those exact bytes.
+    ///
+    /// # Errors
+    /// Returns the custody refusal of the keystore or the attestor quorum's typed refusal.
+    pub fn authorize_kernel_send(
+        &self,
+        custody: &CustodySigner,
+        principal: &crate::store::PrincipalId,
+        key: &KeyId,
+        authorization: &crate::custody::SendPlanAuthorization,
+        fee_limit: u128,
+    ) -> Result<[u8; 64], CustodyError> {
+        let _serial = self
+            .inner
+            .creation
+            .lock()
+            .map_err(|_| CustodyError::Kms(KmsError::Unavailable))?;
+        *self
+            .inner
+            .send_fee_limit
+            .lock()
+            .map_err(|_| CustodyError::Kms(KmsError::Unavailable))? =
+            Some((authorization.action_key, fee_limit));
+        let signed = custody.authorize_send(principal, key, authorization);
+        let cleared = self
+            .inner
+            .send_fee_limit
+            .lock()
+            .map(|mut pending| *pending = None);
+        let signature = signed?;
+        cleared.map_err(|_| CustodyError::Kms(KmsError::Unavailable))?;
+        Ok(signature)
+    }
+
+    /// Returns the attestor quorum's refusal code for the latest refused operation, or the
+    /// local refusal reason when the request never reached the quorum.
+    #[must_use]
+    pub fn last_refusal_code(&self) -> Option<String> {
+        self.inner
+            .last_refusal
+            .lock()
+            .ok()
+            .and_then(|last| last.clone())
+    }
+
+    fn refused(&self, error: &layerx_human_kms::attestor::AttestorError) {
+        if let Ok(mut last) = self.inner.last_refusal.lock() {
+            *last = Some(
+                error
+                    .refusal_code()
+                    .map_or_else(|| error.to_string(), str::to_owned),
+            );
+        }
+    }
+
+    fn signer(
+        &self,
+        key_id: &str,
+        public_key: [u8; 32],
+        network: u32,
+    ) -> Result<layerx_human_kms::attestor::AttestorSigner, layerx_human_kms::attestor::AttestorError>
+    {
+        let client = self.inner.config.client()?;
+        let signers: Vec<&str> = self
+            .inner
+            .config
+            .signers
+            .iter()
+            .map(String::as_str)
+            .collect();
+        layerx_human_kms::attestor::AttestorSigner::new(
+            client, key_id, public_key, &signers, network,
+        )
+    }
+
+    fn sign_send_now(
+        &self,
+        binding: &PrincipalKeyBinding,
+        reference: &ProviderKeyReference,
+        payload: &[u8],
+    ) -> Result<Vec<u8>, KmsError> {
+        let (key_id, public_key, owner) = attestor_reference_parts(reference)?;
+        if key_id != attestor_key_id(binding) {
+            return Err(KmsError::Integrity);
+        }
+        let authorization: crate::custody::SendPlanAuthorization =
+            serde_json::from_slice(payload).map_err(|_| KmsError::Refused)?;
+        if authorization.binding_digest != binding.digest()
+            || authorization.network != binding.network_id()
+        {
+            return Err(KmsError::Refused);
+        }
+        let fee_limit = match *self
+            .inner
+            .send_fee_limit
+            .lock()
+            .map_err(|_| KmsError::Unavailable)?
+        {
+            Some((action_key, fee_limit)) if action_key == authorization.action_key => fee_limit,
+            _ => return Err(KmsError::Refused),
+        };
+        {
+            let sends = self.inner.sends.lock().map_err(|_| KmsError::Unavailable)?;
+            if let Some(previous) = sends.get(&authorization.action_key) {
+                return if previous.authorization == authorization && previous.fee_limit == fee_limit
+                {
+                    Ok(previous.signed.authorization().signature().to_vec())
+                } else {
+                    Err(KmsError::Conflict)
+                };
+            }
+            if sends.len() >= ATTESTOR_SEND_CACHE_LIMIT {
+                return Err(KmsError::Unavailable);
+            }
+        }
+        let assertion = self
+            .inner
+            .assertions
+            .lock()
+            .map_err(|_| KmsError::Unavailable)?
+            .remove(&owner)
+            .ok_or(KmsError::Authentication)?;
+        let debit = layerx_crypto::send::SendDebit {
+            from: authorization.from,
+            to: authorization.to,
+            asset: authorization.asset,
+            amount: authorization.amount,
+            source_sequence: authorization.sequence,
+            idempotency_key: authorization.idempotency_key,
+            expires_at: authorization.expires_at,
+            context_hash: authorization.context,
+            conditions: Vec::new(),
+            authorization_kind: layerx_types::intent::SendAuthorizationKind::Owner as u8,
+            network_id: authorization.network,
+            protocol_version: authorization.protocol,
+        };
+        let actor = format!("did:layerx:{}", hex_bytes(&public_key));
+        let options = layerx_crypto::send::EnvelopeOptions {
+            actor: &actor,
+            public_key,
+            protocol_version: authorization.protocol,
+            network_id: authorization.network,
+            identity_sequence: authorization.sequence,
+            idempotency_key: authorization.idempotency_key,
+            fee_limit,
+            not_before: authorization.not_before,
+            not_after: authorization.not_after,
+        };
+        let signed = self
+            .signer(&key_id, public_key, binding.network_id())
+            .and_then(|signer| {
+                signer.sign_send(&debit, &options, || Ok(assertion.as_str().to_owned()))
+            })
+            .map_err(|error| {
+                self.refused(&error);
+                attestor_kms_failure(&error)
+            })?;
+        let signature = signed.authorization().signature().to_vec();
+        self.inner
+            .sends
+            .lock()
+            .map_err(|_| KmsError::Unavailable)?
+            .insert(
+                authorization.action_key,
+                AttestorSignedSend {
+                    authorization,
+                    fee_limit,
+                    signed,
+                },
+            );
+        Ok(signature)
+    }
+
+    fn signed_send(
+        &self,
+        request: &ProviderSignRequest<'_>,
+    ) -> Result<Option<[u8; 64]>, CustodyError> {
+        let mut sends = self
+            .inner
+            .sends
+            .lock()
+            .map_err(|_| CustodyError::Kms(KmsError::Unavailable))?;
+        let found = sends.iter().find_map(|(action_key, send)| {
+            (send.signed.canonical() == request.canonical_bytes()
+                && send.signed.disclosure() == request.disclosure())
+            .then_some(*action_key)
+        });
+        Ok(found
+            .and_then(|action_key| sends.remove(&action_key))
+            .map(|send| *send.signed.activity().signature()))
+    }
+
     fn sign_now(
         &self,
         binding: &PrincipalKeyBinding,
@@ -6046,6 +6279,9 @@ impl AttestorKms {
         {
             return Err(CustodyError::Kms(KmsError::Integrity));
         }
+        if let Some(signature) = self.signed_send(&request)? {
+            return Ok(signature);
+        }
         let assertion = self
             .inner
             .assertions
@@ -6053,26 +6289,9 @@ impl AttestorKms {
             .map_err(|_| CustodyError::Kms(KmsError::Unavailable))?
             .remove(&owner)
             .ok_or(CustodyError::Kms(KmsError::Authentication))?;
-        let client = self
-            .inner
-            .config
-            .client()
+        let signer = self
+            .signer(&key_id, public_key, binding.network_id())
             .map_err(attestor_custody_failure)?;
-        let signers: Vec<&str> = self
-            .inner
-            .config
-            .signers
-            .iter()
-            .map(String::as_str)
-            .collect();
-        let signer = layerx_human_kms::attestor::AttestorSigner::new(
-            client,
-            &key_id,
-            public_key,
-            &signers,
-            binding.network_id(),
-        )
-        .map_err(attestor_custody_failure)?;
         let signature = signer
             .sign_activity(
                 request.canonical_bytes(),
@@ -6080,7 +6299,10 @@ impl AttestorKms {
                 request.registry(),
                 &assertion,
             )
-            .map_err(attestor_custody_failure)?;
+            .map_err(|error| {
+                self.refused(&error);
+                attestor_custody_failure(error)
+            })?;
         Ok(*signature.signature())
     }
 }
@@ -6113,6 +6335,19 @@ impl crate::custody::KmsProvider for AttestorKms {
             }
         }
         Ok(())
+    }
+
+    fn evm_operation(
+        &self,
+        operation: u8,
+        binding: &PrincipalKeyBinding,
+        reference: &ProviderKeyReference,
+        payload: &[u8],
+    ) -> Result<Vec<u8>, KmsError> {
+        if operation != ATTESTOR_SEND_OPERATION {
+            return Err(KmsError::Refused);
+        }
+        self.sign_send_now(binding, reference, payload)
     }
 
     fn create_key(

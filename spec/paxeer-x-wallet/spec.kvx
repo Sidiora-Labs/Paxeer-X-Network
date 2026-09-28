@@ -973,7 +973,7 @@ reqs = ["13.2","4.5"]
 
 [task.4.6]
 title = "Prove the human service end to end on the wallet identity and the attestor custody"
-status = "in_progress"
+status = "done"
 wave = 4
 requires = ["3.4","1.14","1.13"]
 do_1 = "Add a human service integration test that spawns the real attestor daemon, signs in with a wallet assertion minted from an in-test JWKS, opens the account, plans a kernel send, submits it with the attestor-backed signer, and observes the journey reach a receipt-verified state against the crate's in-process kernel test support."
@@ -982,9 +982,9 @@ verify_cmd = "timeout 20m sh -c 'cd human && cargo test -p layerx-human-service 
 symbols = ["wallet_identity_e2e"]
 touches = ["human/crates/layerx-human-service/src/server/production_components.rs","human/crates/layerx-human-service/tests/wallet_identity_e2e.rs"]
 reqs = ["8.4","8.1","8.2"]
-revision = "1a9cd6ea1a881856fe2e1e2c883971858e291bd2"
+revision = "9c799168ab2842894f5058daa7fd2d9a3968fc7d"
 command = "timeout 20m sh -c 'cd human && cargo test -p layerx-human-service wallet_identity_e2e'"
-exit_code = 101
+exit_code = 0
 log_path = ".logs/verify.log"
 
 [task.4.7]
