@@ -472,10 +472,14 @@ fn decode_http(raw: &[u8]) -> Option<Value> {
         return None;
     }
     let mut length = None;
+    let mut chunked = false;
     for line in lines {
         let (name, value) = line.split_once(':')?;
         if name.eq_ignore_ascii_case("transfer-encoding") {
-            return None;
+            if chunked || !value.trim().eq_ignore_ascii_case("chunked") {
+                return None;
+            }
+            chunked = true;
         }
         if name.eq_ignore_ascii_case("content-length") {
             if length.is_some() {
@@ -485,10 +489,43 @@ fn decode_http(raw: &[u8]) -> Option<Value> {
         }
     }
     let body = &raw[split + 4..];
+    if chunked {
+        if length.is_some() {
+            return None;
+        }
+        return serde_json::from_slice(&dechunk(body)?).ok();
+    }
     if length.is_some_and(|length| length != body.len()) {
         return None;
     }
     serde_json::from_slice(body).ok()
+}
+
+/// Joins the chunks of a chunked transfer encoding body, refusing a body
+/// that is cut short, carries anything after its last chunk, or names a
+/// chunk size that is not hexadecimal.
+fn dechunk(mut body: &[u8]) -> Option<Vec<u8>> {
+    let mut joined = Vec::new();
+    loop {
+        let line_end = body.windows(2).position(|window| window == b"\r\n")?;
+        let size_line = std::str::from_utf8(&body[..line_end]).ok()?;
+        let size_text = size_line.split(';').next()?.trim();
+        let size = usize::from_str_radix(size_text, 16).ok()?;
+        body = &body[line_end + 2..];
+        if size == 0 {
+            loop {
+                let trailer_end = body.windows(2).position(|window| window == b"\r\n")?;
+                let trailer = &body[..trailer_end];
+                body = &body[trailer_end + 2..];
+                if trailer.is_empty() {
+                    break;
+                }
+            }
+            return body.is_empty().then_some(joined);
+        }
+        joined.extend_from_slice(body.get(..size)?);
+        body = body.get(size..)?.strip_prefix(b"\r\n")?;
+    }
 }
 
 fn decode_answer(value: &Value) -> Option<RpcAnswer> {
@@ -1564,4 +1601,73 @@ fn exact_payload(payload: &Value) -> Result<(Vec<u8>, [u8; 32]), &'static str> {
         .and_then(unhex32)
         .ok_or("invalid_payment_payload")?;
     Ok((receipt, digest))
+}
+
+#[cfg(test)]
+mod chunked_tests {
+    use std::io::{Read as _, Write as _};
+    use std::net::TcpListener;
+    use std::thread;
+
+    use serde_json::json;
+
+    use super::{decode_http, GatewayRpc, RpcAnswer};
+
+    const HEAD: &str = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\nTransfer-Encoding: chunked\r\n\r\n";
+
+    #[test]
+    fn a_chunked_answer_is_joined_across_its_chunks_and_trailers() {
+        let raw = format!(
+            "{HEAD}10;ext=1\r\n{{\"jsonrpc\":\"2.0\"\r\nC\r\n,\"id\":1,\"res\r\nB\r\nult\":\"0x1\"}}\r\n0\r\nExpires: never\r\n\r\n"
+        );
+        let value = decode_http(raw.as_bytes()).expect("chunked answer decodes");
+        assert_eq!(value, json!({"jsonrpc": "2.0", "id": 1, "result": "0x1"}));
+    }
+
+    #[test]
+    fn a_chunked_answer_cut_short_or_followed_by_more_bytes_is_refused() {
+        let cut = format!("{HEAD}20\r\n{{\"jsonrpc\":\"2.0\"}}\r\n");
+        assert!(decode_http(cut.as_bytes()).is_none());
+        let trailing = format!("{HEAD}2\r\n{{}}\r\n0\r\n\r\nx");
+        assert!(decode_http(trailing.as_bytes()).is_none());
+        let both = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nTransfer-Encoding: chunked\r\n\r\n2\r\n{{}}\r\n0\r\n\r\n"
+        );
+        assert!(decode_http(both.as_bytes()).is_none());
+        let gzip = format!("HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip\r\n\r\n{{}}");
+        assert!(decode_http(gzip.as_bytes()).is_none());
+    }
+
+    #[test]
+    fn the_client_reads_a_chunked_answer_from_a_loopback_endpoint() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("loopback listener");
+        let address = listener.local_addr().expect("listener address");
+        let body =
+            json!({"jsonrpc": "2.0", "id": 1, "result": "0x".to_owned() + &"00".repeat(2048)})
+                .to_string();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("one connection");
+            let mut request = [0u8; 4096];
+            let read = stream.read(&mut request).expect("request bytes");
+            assert!(std::str::from_utf8(&request[..read])
+                .expect("utf-8 request")
+                .starts_with("POST / HTTP/1.1\r\n"));
+            let (first, second) = body.split_at(1000);
+            let answer = format!(
+                "{HEAD}{:x}\r\n{first}\r\n{:x}\r\n{second}\r\n0\r\n\r\n",
+                first.len(),
+                second.len()
+            );
+            stream.write_all(answer.as_bytes()).expect("answer written");
+        });
+        let rpc = GatewayRpc::new(&format!("http://{address}")).expect("loopback endpoint");
+        let answer = rpc.call("eth_call", &json!([]));
+        server.join().expect("server thread");
+        match answer {
+            Some(RpcAnswer::Result(value)) => {
+                assert_eq!(value, json!("0x".to_owned() + &"00".repeat(2048)));
+            }
+            other => panic!("chunked answer not read: {other:?}"),
+        }
+    }
 }
