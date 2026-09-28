@@ -661,6 +661,18 @@ func InsertWallet(t *testing.T, db *sql.DB, v Vector, kind string) string {
 	return id
 }
 
+func MarkMigrated(t *testing.T, db *sql.DB, walletID, attestorKeyID string) {
+	t.Helper()
+	res, err := db.Exec(`update wallets set migrated_at = now(), attestor_key_id = $2
+		where id = $1::uuid and migrated_at is null`, walletID, attestorKeyID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, err := res.RowsAffected(); err != nil || n != 1 {
+		t.Fatalf("mark wallet %s migrated: %d rows, %v", walletID, n, err)
+	}
+}
+
 func InsertFundedAccount(t *testing.T, db *sql.DB, walletID string) {
 	t.Helper()
 	if _, err := db.Exec(`insert into funded_accounts (wallet_id, tier_id, starting_value_usd, peak_value_usd)

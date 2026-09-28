@@ -634,8 +634,11 @@ func (c *Client) Refresh(ctx context.Context, keyID string, publicKey *pt.ECPoin
 		return nil, err
 	}
 	for i, n := range c.nodes {
-		if err := checkKeyResponse(n, out[i], keyID, curve, want); err != nil {
-			return nil, err
+		if out[i].NodeID != n.ID || out[i].KeyID != keyID {
+			return nil, fmt.Errorf("%w: node %s refresh response names another node or key", ErrResponse, n.ID)
+		}
+		if out[i].Curve != curve || !strings.EqualFold(out[i].PublicKey, want) {
+			return nil, fmt.Errorf("%w: node %s", ErrPublicKey, n.ID)
 		}
 		if !out[i].Refreshed {
 			return nil, fmt.Errorf("%w: node %s did not report the key refreshed", ErrResponse, n.ID)

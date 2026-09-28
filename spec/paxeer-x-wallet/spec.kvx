@@ -1103,6 +1103,23 @@ symbols = ["Writer","WriteSnapshot","Retain","RestoreFile","SnapshotEvent","Snap
 touches = ["human/wallet/attestor/internal/backup/writer.go","human/wallet/attestor/internal/backup/restore.go","human/wallet/attestor/internal/backup/backup_test.go","human/wallet/attestor/internal/store/backup.go","human/wallet/attestor/internal/store/store_test.go","human/wallet/attestor/internal/health/health.go","human/wallet/attestor/internal/health/health_test.go","human/wallet/attestor/internal/server/keys.go","human/wallet/attestor/internal/server/server.go","human/wallet/attestor/internal/server/server_test.go","human/wallet/attestor/internal/config/config.go","human/wallet/attestor/internal/config/config_test.go","human/wallet/attestor/cmd/attestor/main.go","human/wallet/attestor/cmd/attestor/main_test.go","human/wallet/deploy/env"]
 reqs = ["3.2","3.3"]
 
+[task.4.17]
+title = "Reconcile the ceremony module with the merged daemon and gateway"
+status = "done"
+revision = "5184a94ca26a82c9644250849ecf797fc4c2fdea"
+command = "timeout 20m sh -c 'cd human/wallet/ceremony && go test -count=1 ./...'"
+exit_code = 0
+log_path = ".logs/verify.log"
+wave = 4
+requires = ["3.3","3.1","3.15","4.12"]
+do_1 = "In human/wallet/ceremony make every fixture row that is already migrated look like a row the ceremony marks: migrated_at together with the secp256k1 attestor key id that gateway migration 006's wallets_migrated_key_id_chk requires, written through one test support helper used by the migrate and command tests."
+do_2 = "Follow the attestor API schema on refresh: the refresh request names only the session and the key, so the client refuses a response naming another node or key as an invalid response and a response whose curve or public key differs from the imported key as a different public key, while import keeps refusing a curve that differs from the share it sent."
+do_3 = "Make the command tests assert the daemon's authority rules as they stand: deliver without a signing credential stops at the test signature with the daemon's exact token_missing refusal, prints the counts reached, and marks no wallet migrated; the recovered-address mismatch through the command returns with the operator verification signature, and the migrate tests keep proving the full delivery and the mismatch with an owner token source."
+verify_cmd = "timeout 20m sh -c 'cd human/wallet/ceremony && go test -count=1 ./...'"
+symbols = ["Refresh","MarkMigrated","daemonTokenRefusal","TestPlanArchiveDeliverThroughTheCommand","TestDeliverExitsNonZeroOnMismatch","TestPlanMigrationExcludesFundedAndMigrated","TestClientImportRefreshSignOverMutualTLS"]
+touches = ["human/wallet/ceremony/internal/attestor/client.go","human/wallet/ceremony/internal/testsupport/postgres.go","human/wallet/ceremony/internal/migrate/migrate_test.go","human/wallet/ceremony/cmd/ceremony/main_test.go","human/wallet/ceremony/go.mod","human/wallet/ceremony/go.sum","spec/paxeer-x-wallet/"]
+reqs = ["4.1","4.2","4.3"]
+
 # --------------------------------------------------------------------------
 # WAVE 5 - RELEASE
 # --------------------------------------------------------------------------

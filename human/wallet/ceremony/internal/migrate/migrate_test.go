@@ -49,9 +49,7 @@ func TestPlanMigrationExcludesFundedAndMigrated(t *testing.T) {
 	testsupport.InsertFundedAccount(t, db, funded)
 	fundedKindOnly := testsupport.InsertWallet(t, db, vs[3], "funded")
 	done := testsupport.InsertWallet(t, db, vs[4], "standard")
-	if _, err := db.Exec(`update wallets set migrated_at = now() where id = $1::uuid`, done); err != nil {
-		t.Fatal(err)
-	}
+	testsupport.MarkMigrated(t, db, done, migrate.SecpKeyID(done))
 
 	ctx := context.Background()
 	wallets, err := migrate.ReadWallets(ctx, db)

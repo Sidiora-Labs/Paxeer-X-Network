@@ -846,3 +846,11 @@ symbol = "evaluate"
 observed = "Kernel kinds are evaluated by the lx evaluator, whose caps read and record spends in the ledger it was built with, so they bypass the store-backed spend ledger and its announcement that other kinds now use."
 assumption = "The daemon wiring that moves the node onto the durable spend ledger also builds the kernel evaluator over it; kernel decisions still reach the announcement with the spends they return."
 severity = "medium"
+
+[observation.4.17.1]
+task = "4.17"
+file = "human/wallet/ceremony/cmd/ceremony/main_test.go"
+symbol = "TestDeliverExitsNonZeroOnMismatch"
+observed = "Without a signing credential the command's deliver stops at the test signature with the daemon's 401 token_missing, so the command tests now assert that refusal, the counts reached and no wallet marked, and the recovered-address mismatch through the command is unreachable."
+assumption = "The operator verification signature restores the full deliver and its mismatch path through the command; the migrate tests keep both with an owner token source."
+severity = "blocker"

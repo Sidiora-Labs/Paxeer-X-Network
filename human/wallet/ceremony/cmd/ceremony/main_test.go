@@ -29,9 +29,7 @@ func TestPlanArchiveDeliverThroughTheCommand(t *testing.T) {
 	funded := testsupport.InsertWallet(t, pg.DB, vs[2], "funded")
 	testsupport.InsertFundedAccount(t, pg.DB, funded)
 	done := testsupport.InsertWallet(t, pg.DB, vs[3], "standard")
-	if _, err := pg.DB.Exec(`update wallets set migrated_at = now() where id = $1::uuid`, done); err != nil {
-		t.Fatal(err)
-	}
+	testsupport.MarkMigrated(t, pg.DB, done, migrate.SecpKeyID(done))
 
 	env := map[string]string{migrate.EnvDatabaseURL: pg.URL}
 	code, out, errOut := invoke(env, "plan")
@@ -61,10 +59,10 @@ func TestPlanArchiveDeliverThroughTheCommand(t *testing.T) {
 	}
 
 	code, out, errOut = invoke(env, "deliver")
-	if code != 0 {
+	if code != 1 || !strings.Contains(errOut, " at sign: ") || !strings.Contains(errOut, daemonTokenRefusal) {
 		t.Fatalf("deliver exit %d: %s", code, errOut)
 	}
-	if out != "eligible=2 funded_archived=1 read=2 verified=2 imported=2 refreshed=2 test_signed=2 matched=2\n" {
+	if out != "eligible=2 funded_archived=1 read=1 verified=1 imported=1 refreshed=1 test_signed=0 matched=0\n" {
 		t.Fatalf("deliver printed %q", out)
 	}
 	if strings.Contains(out+errOut, masterB64) {
@@ -72,10 +70,12 @@ func TestPlanArchiveDeliverThroughTheCommand(t *testing.T) {
 	}
 
 	code, out, _ = invoke(env, "plan")
-	if code != 0 || out != "wallets=4 eligible=0 funded=1 already_migrated=3\n" {
-		t.Fatalf("plan after deliver exit %d printed %q", code, out)
+	if code != 0 || out != "wallets=4 eligible=2 funded=1 already_migrated=1\n" {
+		t.Fatalf("plan after refused deliver exit %d printed %q", code, out)
 	}
 }
+
+const daemonTokenRefusal = "answered 401 token_missing: a bearer token or agent signature is required"
 
 func TestDeliverExitsNonZeroOnMismatch(t *testing.T) {
 	pg := testsupport.StartPostgres(t)
@@ -94,11 +94,18 @@ func TestDeliverExitsNonZeroOnMismatch(t *testing.T) {
 		t.Fatalf("archive exit %d: %s", code, errOut)
 	}
 	code, out, errOut := invoke(env, "deliver")
-	if code != 1 || !strings.Contains(errOut, "does not recover the stored address") {
+	if code != 1 || !strings.Contains(errOut, "migrate: wallet "+id+" at sign: ") || !strings.Contains(errOut, daemonTokenRefusal) {
 		t.Fatalf("deliver exit %d: %s", code, errOut)
 	}
-	if !strings.Contains(out, "matched=0") {
+	if out != "eligible=1 funded_archived=0 read=1 verified=1 imported=1 refreshed=1 test_signed=0 matched=0\n" {
 		t.Fatalf("deliver printed %q", out)
+	}
+	var migrated int
+	if err := pg.DB.QueryRow(`select count(*) from wallets where migrated_at is not null`).Scan(&migrated); err != nil {
+		t.Fatal(err)
+	}
+	if migrated != 0 {
+		t.Fatalf("%d wallets marked migrated after a refused deliver", migrated)
 	}
 }
 
