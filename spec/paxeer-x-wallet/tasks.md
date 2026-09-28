@@ -134,7 +134,7 @@
     - Keep MetaMask and other injected wallets through EIP-6963 discovery, keep the embedded sign-in entry, and keep every remaining screen compiling and its tests passing.
     - Update the app's tests and Playwright configuration to the remaining surfaces and delete the tests of removed ones.
     - _Requirements: 10.2_
-  - [ ] 2.9 Enforce kernel-side signing policy at the attestor
+  - [x] 2.9 Enforce kernel-side signing policy at the attestor
     - Add human/wallet/attestor/internal/policy/lx evaluating lx_activity requests: decode the envelope, match it field by field against the disclosure supplied with the request, enforce allowed modules, operations, amounts and destinations per account, and refuse unknown modules; evaluate lx_bind only for the account's own address and current nonce supplied by the caller and verified against the chain through the configured RPC; evaluate lx_grant and receive preimages within caps.
     - Register the kernel request kinds with the policy engine so the sign path applies them, and record each decision with the typed reason.
     - Add lx_test.go covering a matching disclosure, a mismatched amount, a disallowed module, a binding for another address, a stale binding nonce and a grant over cap.

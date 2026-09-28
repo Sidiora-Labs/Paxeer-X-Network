@@ -583,7 +583,7 @@ reqs = ["10.2"]
 
 [task.2.9]
 title = "Enforce kernel-side signing policy at the attestor"
-status = "pending"
+status = "done"
 wave = 2
 requires = ["1.6","1.7"]
 do_1 = "Add human/wallet/attestor/internal/policy/lx evaluating lx_activity requests: decode the envelope, match it field by field against the disclosure supplied with the request, enforce allowed modules, operations, amounts and destinations per account, and refuse unknown modules; evaluate lx_bind only for the account's own address and current nonce supplied by the caller and verified against the chain through the configured RPC; evaluate lx_grant and receive preimages within caps."
@@ -593,6 +593,10 @@ verify_cmd = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./
 symbols = ["EvaluateActivity","EvaluateBind","EvaluateGrant"]
 touches = ["human/wallet/attestor/internal/policy/lx/lx.go","human/wallet/attestor/internal/policy/lx/lx_test.go","human/wallet/attestor/internal/policy/kinds.go"]
 reqs = ["2.5","2.6"]
+revision = "9c6b0e58da8d6a27238705e37ef10677c457532f"
+command = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./internal/policy/lx/...'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 # --------------------------------------------------------------------------
 # WAVE 3 - INTEGRATION
