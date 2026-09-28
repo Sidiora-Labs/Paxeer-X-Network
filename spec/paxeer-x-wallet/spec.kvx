@@ -274,7 +274,7 @@ log_path = ".logs/verify.log"
 
 [task.1.6]
 title = "Decode chain-side requests and evaluate the account policy"
-status = "pending"
+status = "done"
 wave = 1
 requires = []
 do_1 = "Add human/wallet/attestor/internal/policy/evm decoding legacy, access-list, dynamic-fee and set-code transactions from bytes with go-ethereum's types, pinning the chain id, computing the signing digest itself, and decoding calldata to every precompile with the ABI files under precompiles/ so the policy sees method names and arguments for the addr, custody, anchor, exchange, bridge, launchpad, fee token and web data precompiles."
@@ -283,8 +283,12 @@ do_3 = "Add human/wallet/attestor/internal/policy with a versioned per-account p
 do_4 = "Add policy_test.go and evm_test.go covering each transaction type, each precompile decode against its ABI, chain id refusal, cap and rate refusals, typed data hashing against a known vector, personal message prefixing, both digest constructions recomputed and a mismatched digest refused, and an undecodable transaction refused."
 verify_cmd = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./internal/policy/...'"
 symbols = ["DecodeTransaction","DecodeCalldata","TypedDataDigest","PersonalDigest","SponsoredBatchDigest","AuthorizationDigest","Policy","Evaluate"]
-touches = ["human/wallet/attestor/internal/policy/evm/decode.go","human/wallet/attestor/internal/policy/evm/digest.go","human/wallet/attestor/internal/policy/evm/evm_test.go","human/wallet/attestor/internal/policy/policy.go","human/wallet/attestor/internal/policy/ledger.go","human/wallet/attestor/internal/policy/policy_test.go"]
+touches = ["human/wallet/attestor/internal/policy/evm/decode.go","human/wallet/attestor/internal/policy/evm/digest.go","human/wallet/attestor/internal/policy/evm/evm_test.go","human/wallet/attestor/internal/policy/policy.go","human/wallet/attestor/internal/policy/ledger.go","human/wallet/attestor/internal/policy/policy_test.go","human/wallet/attestor/internal/policy/evm/abi/addr.json","human/wallet/attestor/internal/policy/evm/abi/layerxcustody.json","human/wallet/attestor/internal/policy/evm/abi/layerxanchor.json","human/wallet/attestor/internal/policy/evm/abi/layerxexchange.json","human/wallet/attestor/internal/policy/evm/abi/layerxbridge.json","human/wallet/attestor/internal/policy/evm/abi/launchpad.json","human/wallet/attestor/internal/policy/evm/abi/feetoken.json","human/wallet/attestor/internal/policy/evm/abi/xweb.json","human/wallet/attestor/internal/policy/evm/abi/erc20.json","human/wallet/attestor/go.mod","human/wallet/attestor/go.sum"]
 reqs = ["2.3","2.4","2.6","11.2"]
+revision = "9787d3728aa4ebf2769a51d109b1551fbddb9eb0"
+command = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./internal/policy/...'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.1.7]
 title = "Decode kernel-side payloads against the repository's golden vectors"

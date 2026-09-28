@@ -34,7 +34,7 @@
     - Add certificate loading from configured paths, peer identity pinning by certificate public key, and an operator identity distinguished from peer identities for the import endpoint of a later task.
     - Add transport_test.go generating a CA and five node certificates in the test, running a full protocol session across five listeners, and asserting replay refusal, unknown-peer refusal and ordered delivery.
     - _Requirements: 1.6_
-  - [ ] 1.6 Decode chain-side requests and evaluate the account policy
+  - [x] 1.6 Decode chain-side requests and evaluate the account policy
     - Add human/wallet/attestor/internal/policy/evm decoding legacy, access-list, dynamic-fee and set-code transactions from bytes with go-ethereum's types, pinning the chain id, computing the signing digest itself, and decoding calldata to every precompile with the ABI files under precompiles/ so the policy sees method names and arguments for the addr, custody, anchor, exchange, bridge, launchpad, fee token and web data precompiles.
     - Add EIP-712 hashing from supplied domain, types and message, EIP-191 personal message hashing applied by the attestor, and the two bare-digest constructions - the sponsored batch digest of agent/sdk/typescript/src/gas-station.ts and the EIP-7702 authorisation digest - recomputed from supplied fields and refused otherwise.
     - Add human/wallet/attestor/internal/policy with a versioned per-account policy (per-transaction cap and rolling 24-hour cap per asset, request rate, destination and selector rules, allowed request kinds) evaluated from the decoded request and a rolling-window ledger, failing closed with typed reasons.
