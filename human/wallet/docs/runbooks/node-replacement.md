@@ -43,7 +43,8 @@ attestor_post() {
 }
 ```
 
-`keys.addshare` and `keys.refresh` are protocol operations: the identical body,
+`keys.describe` is a local operation answered by one node. `keys.addshare`
+and `keys.refresh` are protocol operations: the identical body,
 with the same `session_id`, is posted to every participant at once, and the
 nodes run the session between themselves over the peer transport. The
 request shapes are those of `human/wallet/schema/attestor-api/v1.kvx` and its
@@ -175,43 +176,63 @@ goldens under `human/wallet/schema/attestor-api/golden/`.
     keys of accounts still provisioning sit in `account_provisioning`.
 
     ```sh
-    psql "$DATABASE_URL" -Atc "select attestor_key_id, user_id from wallets where attestor_key_id is not null"
-    psql "$DATABASE_URL" -Atc "select layerx_key_id, user_id, address from wallets where layerx_key_id is not null"
+    psql "$DATABASE_URL" -Atc "select attestor_key_id from wallets where attestor_key_id is not null"
+    psql "$DATABASE_URL" -Atc "select layerx_key_id from wallets where layerx_key_id is not null"
     ```
 
-    Each add-share also needs the key's public key. For Ed25519 keys it is the
-    hex after `did:layerx:` in the wallet's `did`. For secp256k1 keys no
-    repository tool or attestor operation returns it without every holder
-    present (observation 4.5.3); take it from the `public_key` of the key's
-    last recorded key response.
+    Expected: one key id per line. Only the key ids are taken from the
+    database; every other add-share field comes from the survivors in step 11.
 
-11. For every key, write the add-share body and post it to the four survivors
-    and the replacement at once.
+11. Describe every key on two surviving nodes. `keys.describe` is answered by
+    one node from its own stored record, needs no other participant and so
+    answers while the lost node is down; it accepts only the operator client
+    certificate, returns no share material and writes a `keys.describe` audit
+    record on the node.
 
     ```json
-    {
-      "session_id": "<fresh-session-id>",
-      "key_id": "<key-id>",
-      "curve": "<secp256k1 | ed25519>",
-      "public_key": "<public-key-hex>",
-      "owner": "<owner-subject>",
-      "account": "<account-address, Ed25519 keys only>",
-      "new_participant_id": "<new-id>",
-      "quorum": ["<survivor-id>", "<survivor-id>", "<survivor-id>", "<survivor-id>"]
-    }
+    {"session_id": "<fresh-session-id>", "key_id": "<key-id>"}
     ```
 
     ```sh
+    attestor_post <survivor-base> /v1/keys/describe <describe-body-path> > describe-a.json
+    attestor_post <other-survivor-base> /v1/keys/describe <describe-body-path> > describe-b.json
+    jq -S '{curve, public_key, owner, account, epoch, participants}' describe-a.json > fields-a.json
+    jq -S '{curve, public_key, owner, account, epoch, participants}' describe-b.json > fields-b.json
+    cmp fields-a.json fields-b.json
+    ```
+
+    Expected: both responses carry `node_id`, `key_id`, `curve`, `public_key`,
+    `address` (secp256k1) or `did` (Ed25519), `owner`, `account`, `epoch`,
+    `participants` and `audit_sequence`, and `cmp` prints nothing. If the two
+    survivors differ in curve, public key, owner, account, epoch or
+    participants, or a survivor answers `key_not_found`, stop and escalate to
+    the owner; do not build an add-share body for that key. The same session id
+    may be reused for both describe calls of one key; use a fresh one per key.
+
+12. Build the add-share body from the described fields alone: `curve`,
+    `public_key`, `owner`, `account` and `epoch` as described, `quorum` the
+    described `participants` without the lost node's id, and
+    `new_participant_id` the replacement's `<new-id>`. Post it to every
+    survivor in the quorum and to the replacement at once.
+
+    ```sh
+    jq --arg lost '<lost-id>' --arg new '<new-id>' --arg session '<fresh-session-id>' \
+      '{session_id: $session, key_id, curve, public_key, owner, account, epoch,
+        new_participant_id: $new, quorum: [.participants[] | select(. != $lost)]}' \
+      describe-a.json > addshare.json
     for base in <survivor-base> <survivor-base> <survivor-base> <survivor-base> <replacement-base>; do
-      attestor_post "$base" /v1/keys/addshare <addshare-body-path> &
+      attestor_post "$base" /v1/keys/addshare addshare.json &
     done; wait
     ```
 
     Expected: five key responses with the same `key_id` and `public_key`,
-    `participants` listing the four survivors and `<new-id>`, `refreshed`
-    false and an `audit_sequence` each.
+    `participants` listing the four survivors and `<new-id>`, the described
+    `epoch`, `refreshed` false and an `audit_sequence` each. A survivor answers
+    `session_bad_request` when the owner or epoch differs from its held share
+    and `key_curve_mismatch` when the curve or public key differs; the session
+    then stores nothing on any node.
 
-12. Refresh the same key across the five holders.
+    Then refresh the same key across the five holders.
 
     ```json
     {"session_id": "<fresh-session-id>", "key_id": "<key-id>"}
@@ -224,8 +245,13 @@ goldens under `human/wallet/schema/attestor-api/golden/`.
     ```
 
     Expected: five key responses with the unchanged `public_key`, `epoch` one
-    higher than before, `refreshed` true. The lost node's share of that key is
-    now useless.
+    higher than the described epoch, `refreshed` true. The lost node's share of
+    that key is now useless. A `keys.describe` of the key on the replacement
+    now reports the same `public_key`, `owner` and `account`, the new epoch and
+    the five holders. The sequence of steps 11 and 12 is proven by
+    `TestDescribedFieldsReplaceALostParticipant` in
+    `human/wallet/attestor/internal/server/e2e_test.go`, which signs with a
+    quorum that includes the replacement afterwards.
 
 ## Readiness check that proves recovery
 

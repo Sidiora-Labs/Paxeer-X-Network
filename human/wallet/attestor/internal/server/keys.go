@@ -77,6 +77,26 @@ type AddShareRequest struct {
 	Account          string   `json:"account,omitempty"`
 	NewParticipantID string   `json:"new_participant_id"`
 	Quorum           []string `json:"quorum"`
+	Epoch            uint64   `json:"epoch,omitempty"`
+}
+
+type DescribeRequest struct {
+	SessionID string `json:"session_id"`
+	KeyID     string `json:"key_id"`
+}
+
+type DescribeResponse struct {
+	NodeID        string   `json:"node_id"`
+	KeyID         string   `json:"key_id"`
+	Curve         string   `json:"curve"`
+	PublicKey     string   `json:"public_key"`
+	Address       string   `json:"address,omitempty"`
+	DID           string   `json:"did,omitempty"`
+	Owner         string   `json:"owner"`
+	Account       string   `json:"account"`
+	Epoch         uint64   `json:"epoch"`
+	Participants  []string `json:"participants"`
+	AuditSequence uint64   `json:"audit_sequence"`
 }
 
 type KeyResponse struct {
@@ -790,6 +810,9 @@ func (s *Server) doAddShare(r *http.Request, body []byte) (KeyResponse, *Error) 
 		if req.Owner != stored.Owner {
 			return KeyResponse{}, newError(CodeSessionBadRequest, "owner differs from the owner of the held share")
 		}
+		if req.Epoch != rec.Epoch {
+			return KeyResponse{}, newError(CodeSessionBadRequest, "epoch %d differs from the committed epoch %d of the held share", req.Epoch, rec.Epoch)
+		}
 		addReq.Existing = &b
 		payload.Owner, payload.Account, epoch = stored.Owner, stored.Account, rec.Epoch
 	} else {
@@ -807,12 +830,13 @@ func (s *Server) doAddShare(r *http.Request, body []byte) (KeyResponse, *Error) 
 			return KeyResponse{}, e
 		}
 		payload.Account = account
+		epoch = req.Epoch
 	}
 	pubBytes, err := publicKeyBytes(c, pub)
 	if err != nil {
 		return KeyResponse{}, newError(CodeSessionBadRequest, "public_key: %v", err)
 	}
-	binding := addShareBinding(req.KeyID, curveName(c), hex.EncodeToString(pubBytes), payload.Owner, payload.Account, req.NewParticipantID, quorum)
+	binding := append(addShareBinding(req.KeyID, curveName(c), hex.EncodeToString(pubBytes), payload.Owner, payload.Account, req.NewParticipantID, quorum), epochBinding(epoch)...)
 	var out dealer.ShareBundle
 	e := s.runBoundSession(r.Context(), req.SessionID, "addshare", protocolAddShare, binding, all, func(ctx context.Context, ps *peerSession) error {
 		var err error
@@ -838,4 +862,63 @@ func (s *Server) doAddShare(r *http.Request, body []byte) (KeyResponse, *Error) 
 		return KeyResponse{}, e
 	}
 	return s.keyResponse(req.KeyID, c, pub, epoch, participants, false, seq), nil
+}
+
+func (s *Server) HandleDescribe(w http.ResponseWriter, r *http.Request) {
+	body, e := readBody(r)
+	var resp DescribeResponse
+	if e == nil {
+		resp, e = s.doDescribe(body)
+	}
+	s.finish(w, "keys.describe", body, resp, e)
+}
+
+func (s *Server) doDescribe(body []byte) (DescribeResponse, *Error) {
+	var req DescribeRequest
+	if e := decodeRequest(body, &req); e != nil {
+		return DescribeResponse{}, e
+	}
+	if e := requireIDs(req.SessionID, req.KeyID); e != nil {
+		return DescribeResponse{}, e
+	}
+	rec, err := s.opts.Store.Get(req.KeyID)
+	if errors.Is(err, store.ErrNotFound) {
+		return DescribeResponse{}, newError(CodeKeyNotFound, "key %q is not held by this node", req.KeyID)
+	}
+	if err != nil {
+		return DescribeResponse{}, newError(CodeStoreFailed, "%v", err)
+	}
+	c, ok := parseCurve(rec.Curve)
+	if !ok {
+		return DescribeResponse{}, newError(CodeKeyCurve, "held record names unknown curve %q", rec.Curve)
+	}
+	pub, err := parsePublicKey(c, hex.EncodeToString(rec.PublicKey))
+	if err != nil {
+		return DescribeResponse{}, newError(CodeKeyInvalidShare, "held public key: %v", err)
+	}
+	var holder struct {
+		Owner   string `json:"owner"`
+		Account string `json:"account"`
+	}
+	if err := s.opts.Store.WithShare(req.KeyID, func(plain []byte) error { return json.Unmarshal(plain, &holder) }); err != nil {
+		return DescribeResponse{}, newError(CodeStoreFailed, "%v", err)
+	}
+	seq, e := s.audit("keys.describe", req.KeyID, holder.Owner, "allowed", "described", req.SessionID)
+	if e != nil {
+		return DescribeResponse{}, e
+	}
+	k := s.keyResponse(req.KeyID, c, pub, rec.Epoch, append([]string(nil), rec.Participants...), false, seq)
+	return DescribeResponse{
+		NodeID:        k.NodeID,
+		KeyID:         k.KeyID,
+		Curve:         k.Curve,
+		PublicKey:     k.PublicKey,
+		Address:       k.Address,
+		DID:           k.DID,
+		Owner:         holder.Owner,
+		Account:       holder.Account,
+		Epoch:         k.Epoch,
+		Participants:  k.Participants,
+		AuditSequence: k.AuditSequence,
+	}, nil
 }

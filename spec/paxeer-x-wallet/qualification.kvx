@@ -1037,3 +1037,19 @@ symbol = "startNode"
 observed = "Outside the task touches, the test cluster's lx.New call dropped its ledger argument so the package compiles against the new constructor; the cluster still passes a memory ledger as Options.Ledger, which the server replaces with the store-backed spend ledger on that ledger's clock."
 assumption = "The one-argument change is the minimum the new constructor requires and changes no test behaviour."
 severity = "note"
+
+[observation.4.20.1]
+task = "4.20"
+file = "human/wallet/attestor/internal/server/keys.go"
+symbol = "doAddShare"
+observed = "A new participant stored epoch zero after add-share while the survivors kept their committed epoch, and the refresh that follows binds its session name to each node's epoch, so refreshing a replacement of a key refreshed before failed; add-share now takes an optional epoch, holders refuse a different one, the new participant stores it and the session binding includes it."
+assumption = "The optional field keeps every existing add-share body for epoch-zero keys valid and the keys.addshare golden unchanged; the operator copies the epoch from keys.describe as the runbook shows."
+severity = "note"
+
+[observation.4.20.2]
+task = "4.20"
+file = "human/wallet/docs/security-review.md"
+symbol = "F-4"
+observed = "The security review lists keys.import, keys.refresh and keys.addshare as the operator-only routes and does not yet name keys.describe, which operatorOnly also admits only from the operator CA."
+assumption = "The review is outside this task's touches; its next revision adds keys.describe to the operator routes."
+severity = "low"

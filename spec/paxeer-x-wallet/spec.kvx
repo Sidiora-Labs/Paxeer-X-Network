@@ -1205,7 +1205,11 @@ log_path = ".logs/verify.log"
 
 [task.4.20]
 title = "Expose a key's public material to the operator for node replacement"
-status = "pending"
+status = "done"
+revision = "7370733ea07368b51a9fac539cccafc2a9762741"
+command = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./internal/server/... && cd ../../.. && tools/wallet/scan-secrets.sh human/wallet/docs'"
+exit_code = 0
+log_path = ".logs/verify.log"
 wave = 4
 requires = ["2.1","4.11","4.5"]
 do_1 = "Add keys.describe to human/wallet/attestor/internal/server: POST /v1/keys/describe with session_id and key_id, accepted only from the operator identity through operatorOnly, answering from the node's held record the key id, the curve, the public key hex, the address for secp256k1 or the DID for Ed25519, the owner and the account of the stored share, the committed epoch and the participant set, with the node id and the audit sequence of a keys.describe audit record; it never returns, logs or serialises a share, answers key_not_found for a key the node does not hold, and needs no other participant, so it answers while a node is lost; its fields are exactly the curve, public_key, owner and account that AddShareRequest requires, and the participant set yields the quorum (closes observation 4.5.3)."

@@ -33,6 +33,7 @@ const (
 	PathImport   = "/v1/keys/import"
 	PathRefresh  = "/v1/keys/refresh"
 	PathAddShare = "/v1/keys/addshare"
+	PathDescribe = "/v1/keys/describe"
 	PathSign     = "/v1/sign"
 	PathHealth   = "/health"
 
@@ -130,6 +131,7 @@ func New(opts Options) (*Server, error) {
 	s.mux.HandleFunc(PathImport, s.post(s.operatorOnly("keys.import", s.HandleImport)))
 	s.mux.HandleFunc(PathRefresh, s.post(s.operatorOnly("keys.refresh", s.HandleRefresh)))
 	s.mux.HandleFunc(PathAddShare, s.post(s.operatorOnly("keys.addshare", s.HandleAddShare)))
+	s.mux.HandleFunc(PathDescribe, s.post(s.operatorOnly("keys.describe", s.HandleDescribe)))
 	s.mux.HandleFunc(PathSign, s.post(s.signRoute()))
 	s.mux.HandleFunc(PathHealth, s.HandleHealth)
 	return s, nil

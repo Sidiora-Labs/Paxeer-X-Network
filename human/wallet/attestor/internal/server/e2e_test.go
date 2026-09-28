@@ -271,7 +271,7 @@ func mtlsClient(cert testCert, roots *x509.CertPool) *http.Client {
 }
 
 func operatorPath(path string) bool {
-	return path == PathImport || path == PathRefresh || path == PathAddShare
+	return path == PathImport || path == PathRefresh || path == PathAddShare || path == PathDescribe
 }
 
 func testPolicy() *policy.Document {
@@ -1206,5 +1206,158 @@ func TestOperatorVerificationInTheCeremonyWindow(t *testing.T) {
 	expectError(t, "verification after a restart without the ceremony flag", c.callAs(t, c.opClient, restarted, PathSign, VerificationRequest{SessionID: "verify-after-restart", KeyID: "verify-restart", Kind: KindOperatorVerification, Signers: signers, ImportSessionID: "import-verify-restart"}, ""), CodeVerificationWindow)
 	if !bytes.Contains(auditBytes(t, c, restarted), []byte(CodeVerificationWindow)) {
 		t.Fatal("the restarted node did not audit the refusal outside the window")
+	}
+}
+
+func TestDescribedFieldsReplaceALostParticipant(t *testing.T) {
+	c := newTestCluster(t, 6, true)
+	holders := c.ids[:5]
+	lost, replacement := "node-5", "node-6"
+	survivors := []string{"node-1", "node-2", "node-3", "node-4"}
+
+	secpSeed := sha256.Sum256([]byte("attestor replacement secp256k1 key"))
+	secpKey, err := gethcrypto.ToECDSA(secpSeed[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := gethcrypto.PubkeyToAddress(secpKey.PublicKey)
+	edSeed := sha256.Sum256([]byte("attestor replacement ed25519 key"))
+	edPub := ed25519.NewKeyFromSeed(edSeed[:]).Public().(ed25519.PublicKey)
+	edScalar, err := dealer.Ed25519ScalarFromSeed(edSeed[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	importOn := func(keyID string, curve dealer.Curve, secret *big.Int, account string) {
+		bundles, _, err := dealer.Split(curve, secret, holders)
+		if err != nil {
+			t.Fatal(err)
+		}
+		byNode := map[string]ShareBundleJSON{}
+		for _, b := range bundles {
+			byNode[b.ParticipantID] = EncodeBundle(b)
+		}
+		decodeOK[KeyResponse](t, "import "+keyID, c.callAll(t, c.byID(holders...), PathImport, func(n *testNode) any {
+			return ImportRequest{SessionID: "import-" + keyID, KeyID: keyID, Owner: testOwner, Account: account, Share: byNode[n.id]}
+		}, ""))
+	}
+	importOn("replace-evm", dealer.Secp256k1, new(big.Int).SetBytes(secpSeed[:]), "")
+	importOn("replace-lx", dealer.Ed25519, edScalar, address.Hex())
+	keys := []string{"replace-evm", "replace-lx"}
+
+	refreshAll := func(label string, nodes []string) [][]apiResult {
+		out := make([][]apiResult, len(keys))
+		var wg sync.WaitGroup
+		for i, keyID := range keys {
+			wg.Add(1)
+			go func(i int, keyID string) {
+				defer wg.Done()
+				out[i] = c.callAll(t, c.byID(nodes...), PathRefresh, func(*testNode) any {
+					return RefreshRequest{SessionID: label + "-" + keyID, KeyID: keyID}
+				}, "")
+			}(i, keyID)
+		}
+		wg.Wait()
+		return out
+	}
+	for i, results := range refreshAll("refresh-before-loss", holders) {
+		for _, r := range decodeOK[KeyResponse](t, "refresh before loss "+keys[i], results) {
+			if r.Epoch != 1 {
+				t.Fatalf("%s %s: epoch %d after the first refresh", r.NodeID, r.KeyID, r.Epoch)
+			}
+		}
+	}
+
+	c.byID(lost)[0].stop()
+
+	wantPublic := map[string]string{"replace-evm": "", "replace-lx": hex.EncodeToString(edPub)}
+	wantAccount := map[string]string{"replace-evm": address.Hex(), "replace-lx": address.Hex()}
+	for _, keyID := range keys {
+		described := decodeOK[DescribeResponse](t, "describe "+keyID, []apiResult{
+			c.call(t, c.byID("node-1")[0], PathDescribe, DescribeRequest{SessionID: "describe-a-" + keyID, KeyID: keyID}, ""),
+			c.call(t, c.byID("node-2")[0], PathDescribe, DescribeRequest{SessionID: "describe-b-" + keyID, KeyID: keyID}, ""),
+		})
+		a, b := described[0], described[1]
+		if a.Curve != b.Curve || a.PublicKey != b.PublicKey || a.Owner != b.Owner || a.Account != b.Account || a.Epoch != b.Epoch || strings.Join(a.Participants, ",") != strings.Join(b.Participants, ",") {
+			t.Fatalf("%s: survivors describe the key differently: %+v and %+v", keyID, a, b)
+		}
+		if strings.Join(a.Participants, ",") != strings.Join(holders, ",") || a.Owner != testOwner || a.Account != wantAccount[keyID] || a.Epoch != 1 {
+			t.Fatalf("%s: described %+v", keyID, a)
+		}
+		if want := wantPublic[keyID]; want != "" && a.PublicKey != want {
+			t.Fatalf("%s: described public key %s, want %s", keyID, a.PublicKey, want)
+		}
+		if keyID == "replace-evm" && common.HexToAddress(a.Address) != address {
+			t.Fatalf("%s: described address %s, want %s", keyID, a.Address, address.Hex())
+		}
+
+		var quorum []string
+		for _, id := range a.Participants {
+			if id != lost {
+				quorum = append(quorum, id)
+			}
+		}
+		body := AddShareRequest{SessionID: "addshare-" + keyID, KeyID: keyID, Curve: a.Curve, PublicKey: a.PublicKey, Owner: a.Owner, Account: a.Account, NewParticipantID: replacement, Quorum: quorum, Epoch: a.Epoch}
+		holdersAfter := append(append([]string{}, quorum...), replacement)
+		added := decodeOK[KeyResponse](t, "add-share "+keyID, c.callAll(t, c.byID(holdersAfter...), PathAddShare, func(*testNode) any { return body }, ""))
+		for _, r := range added {
+			if r.PublicKey != a.PublicKey || r.Epoch != a.Epoch || strings.Join(r.Participants, ",") != strings.Join(append(append([]string{}, survivors...), replacement), ",") {
+				t.Fatalf("%s: add-share response %+v", r.NodeID, r)
+			}
+		}
+		refreshed := decodeOK[KeyResponse](t, "refresh after add-share "+keyID, c.callAll(t, c.byID(holdersAfter...), PathRefresh, func(*testNode) any {
+			return RefreshRequest{SessionID: "refresh-after-addshare-" + keyID, KeyID: keyID}
+		}, ""))
+		for _, r := range refreshed {
+			if r.PublicKey != a.PublicKey || r.Epoch != a.Epoch+1 || !r.Refreshed {
+				t.Fatalf("%s: refresh after add-share %+v", r.NodeID, r)
+			}
+		}
+		onReplacement := decodeOK[DescribeResponse](t, "describe on the replacement "+keyID, []apiResult{
+			c.call(t, c.byID(replacement)[0], PathDescribe, DescribeRequest{SessionID: "describe-new-" + keyID, KeyID: keyID}, ""),
+		})[0]
+		if onReplacement.PublicKey != a.PublicKey || onReplacement.Owner != a.Owner || onReplacement.Account != a.Account || onReplacement.Epoch != a.Epoch+1 || strings.Join(onReplacement.Participants, ",") != strings.Join(holdersAfter, ",") {
+			t.Fatalf("%s: the replacement describes %+v", keyID, onReplacement)
+		}
+	}
+
+	evmSigners := []string{"node-1", "node-3", replacement}
+	to := common.HexToAddress("0x1111111111111111111111111111111111111111")
+	tx := types.NewTx(&types.DynamicFeeTx{
+		ChainID: big.NewInt(testChainID), Nonce: 1, GasTipCap: big.NewInt(1_000_000_000), GasFeeCap: big.NewInt(2_000_000_000),
+		Gas: 21000, To: &to, Value: big.NewInt(1_000_000_000_000_000),
+	})
+	rawTx, err := tx.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	txSigner := types.LatestSignerForChainID(big.NewInt(testChainID))
+	txResults := decodeOK[SignResponse](t, "sign with the replacement", c.callAll(t, c.byID(evmSigners...), PathSign, func(*testNode) any {
+		return SignRequest{SessionID: "sign-replacement-evm", KeyID: "replace-evm", Kind: KindEVMTransaction, Signers: evmSigners, Transaction: hex.EncodeToString(rawTx)}
+	}, c.idp.mint(t, c.idp.key, testOwner)))
+	for _, r := range txResults {
+		sig, err := hex.DecodeString(r.Signature)
+		if err != nil {
+			t.Fatal(err)
+		}
+		signed, err := tx.WithSignature(txSigner, sig)
+		if err != nil {
+			t.Fatal(err)
+		}
+		from, err := types.Sender(txSigner, signed)
+		if err != nil || from != address {
+			t.Fatalf("%s: recovered %s, want %s (%v)", r.NodeID, from.Hex(), address.Hex(), err)
+		}
+	}
+
+	edSigners := []string{"node-2", "node-4", replacement}
+	bind := lxwire.BindMessage(testChainID, address, 1)
+	bindResults := decodeOK[SignResponse](t, "bind with the replacement", c.callAll(t, c.byID(edSigners...), PathSign, func(*testNode) any {
+		return SignRequest{SessionID: "sign-replacement-bind", KeyID: "replace-lx", Kind: KindLXBind, Signers: edSigners, Message: hex.EncodeToString(bind)}
+	}, c.idp.mint(t, c.idp.key, testOwner)))
+	for _, r := range bindResults {
+		sig, _ := hex.DecodeString(r.Signature)
+		if !ed25519.Verify(edPub, bind, sig) {
+			t.Fatalf("%s: binding signature with the replacement does not verify", r.NodeID)
+		}
 	}
 }

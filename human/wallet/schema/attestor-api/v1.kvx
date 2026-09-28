@@ -98,6 +98,33 @@ owner = "string: stored by the new participant"
 account = "string optional"
 new_participant_id = "string"
 quorum = "array of string: at least three existing holders"
+epoch = "uint64 optional: the committed refresh epoch of the key as keys.describe reports it, zero when absent; a holder refuses a different epoch and the new participant stores it, so the refresh that follows binds every holder to one epoch"
+
+[op.keys.describe]
+method       = "POST"
+path         = "/v1/keys/describe"
+auth         = "operator certificate"
+participants = "local; needs no other participant, so it answers while a node is lost"
+summary      = "Returns the public material of a key this node holds from its stored record, exactly the curve, public_key, owner and account that keys.addshare needs, with the committed epoch and the participant set from which the add-share quorum is taken; it never returns, logs or serialises a share and records a keys.describe audit entry."
+response     = "describe_response"
+errors       = ["operator_required", "session_bad_request", "key_not_found", "key_curve_mismatch", "key_invalid_share", "store_failed", "store_audit_failed"]
+
+[op.keys.describe.request]
+session_id = "string"
+key_id = "string"
+
+[type.describe_response]
+node_id        = "string"
+key_id         = "string"
+curve          = "string: secp256k1 or ed25519"
+public_key     = "hex: 65-byte uncompressed secp256k1 or 32-byte ed25519"
+address        = "string optional: EIP-55 address of a secp256k1 key"
+did            = "string optional: did:layerx identity of an ed25519 key"
+owner          = "string: owner subject of the stored share"
+account        = "string: policy account address of the stored share"
+epoch          = "uint64: committed refresh epoch"
+participants   = "array of string: holders of the key as this node recorded them"
+audit_sequence = "uint64: this node's keys.describe audit record"
 
 [op.sign]
 method       = "POST"

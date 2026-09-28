@@ -46,12 +46,14 @@ func goldenValues(t *testing.T) map[string]any {
 	bundles := fixedBundles(t, ids)
 	recovery := uint8(1)
 	return map[string]any{
-		"keys.generate.request": GenerateRequest{SessionID: "session-generate", KeyID: "key-ed", Curve: "ed25519", Owner: "user-0001", Account: "0x1111111111111111111111111111111111111111"},
-		"keys.import.request":   ImportRequest{SessionID: "session-import", KeyID: "key-evm", Owner: "user-0001", Share: EncodeBundle(bundles[0])},
-		"keys.refresh.request":  RefreshRequest{SessionID: "session-refresh", KeyID: "key-evm"},
-		"keys.addshare.request": AddShareRequest{SessionID: "session-addshare", KeyID: "key-evm", Curve: "secp256k1", PublicKey: "02" + strings.Repeat("11", 32), Owner: "user-0001", NewParticipantID: "node-6", Quorum: []string{"node-1", "node-3", "node-4", "node-5"}},
-		"keys.response":         KeyResponse{NodeID: "node-1", KeyID: "key-evm", Curve: "secp256k1", PublicKey: "04" + strings.Repeat("22", 64), Address: "0x2222222222222222222222222222222222222222", Epoch: 1, Participants: ids, Refreshed: true, AuditSequence: 3},
-		"sign.request":          SignRequest{SessionID: "session-sign", KeyID: "key-evm", Kind: KindEVMTransaction, Signers: []string{"node-1", "node-3", "node-5"}, Transaction: "02f86c"},
+		"keys.generate.request":  GenerateRequest{SessionID: "session-generate", KeyID: "key-ed", Curve: "ed25519", Owner: "user-0001", Account: "0x1111111111111111111111111111111111111111"},
+		"keys.import.request":    ImportRequest{SessionID: "session-import", KeyID: "key-evm", Owner: "user-0001", Share: EncodeBundle(bundles[0])},
+		"keys.refresh.request":   RefreshRequest{SessionID: "session-refresh", KeyID: "key-evm"},
+		"keys.addshare.request":  AddShareRequest{SessionID: "session-addshare", KeyID: "key-evm", Curve: "secp256k1", PublicKey: "02" + strings.Repeat("11", 32), Owner: "user-0001", NewParticipantID: "node-6", Quorum: []string{"node-1", "node-3", "node-4", "node-5"}},
+		"keys.describe.request":  DescribeRequest{SessionID: "session-describe", KeyID: "key-evm"},
+		"keys.describe.response": DescribeResponse{NodeID: "node-1", KeyID: "key-evm", Curve: "secp256k1", PublicKey: "04" + strings.Repeat("22", 64), Address: "0x2222222222222222222222222222222222222222", Owner: "user-0001", Account: "0x2222222222222222222222222222222222222222", Epoch: 1, Participants: ids, AuditSequence: 4},
+		"keys.response":          KeyResponse{NodeID: "node-1", KeyID: "key-evm", Curve: "secp256k1", PublicKey: "04" + strings.Repeat("22", 64), Address: "0x2222222222222222222222222222222222222222", Epoch: 1, Participants: ids, Refreshed: true, AuditSequence: 3},
+		"sign.request":           SignRequest{SessionID: "session-sign", KeyID: "key-evm", Kind: KindEVMTransaction, Signers: []string{"node-1", "node-3", "node-5"}, Transaction: "02f86c"},
 		"sign.request.lx_grant": SignRequest{SessionID: "session-grant", KeyID: "key-ed", Kind: KindLXGrant, Signers: []string{"node-1", "node-2", "node-3"}, Grant: &GrantJSON{
 			From: strings.Repeat("81", 32), Recipient: strings.Repeat("1e", 32), Asset: strings.Repeat("0a", 32), PerDrawMaximum: "1000", Allowance: "50000",
 			Expiration: 1900000000, PurposeHash: strings.Repeat("64", 32),
@@ -197,7 +199,7 @@ func TestSchemaListsEveryErrorCodeAndOperation(t *testing.T) {
 			described[p] = true
 		}
 	}
-	for _, path := range []string{PathGenerate, PathImport, PathRefresh, PathAddShare, PathSign, PathHealth} {
+	for _, path := range []string{PathGenerate, PathImport, PathRefresh, PathAddShare, PathDescribe, PathSign, PathHealth} {
 		if !described[path] {
 			t.Fatalf("v1.kvx does not describe %s", path)
 		}
@@ -239,7 +241,7 @@ func TestHandlerRefusals(t *testing.T) {
 	expectError(t, "ed25519 without account", do(gw(http.MethodPost, PathGenerate, []byte(`{"session_id":"s","key_id":"k","curve":"ed25519","owner":"o"}`))), CodeSessionBadRequest)
 	expectError(t, "addshare small quorum", do(op(http.MethodPost, PathAddShare, []byte(`{"session_id":"s","key_id":"k","curve":"secp256k1","public_key":"02`+strings.Repeat("79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798", 1)+`","owner":"o","new_participant_id":"node-9","quorum":["node-1","node-2"]}`))), CodeQuorumTooFew)
 
-	for _, path := range []string{PathImport, PathRefresh, PathAddShare} {
+	for _, path := range []string{PathImport, PathRefresh, PathAddShare, PathDescribe} {
 		before, _ := c.nodes[0].audit.Head()
 		r := do(gw(http.MethodPost, path, []byte(`{"session_id":"s","key_id":"k"}`)))
 		if r.status != http.StatusForbidden {
@@ -581,4 +583,133 @@ func TestSnapshotFollowsAddShare(t *testing.T) {
 	if !bytes.Contains(logged, []byte("trigger=keys.addshare")) {
 		t.Fatal("the new participant's snapshot event does not name keys.addshare")
 	}
+}
+
+func heldShareHex(t *testing.T, n *testNode, keyID string) string {
+	t.Helper()
+	_, payload, e := n.server.loadShare(keyID)
+	if e != nil {
+		t.Fatalf("%s %s: %v", n.id, keyID, e)
+	}
+	b, _, e := payload.bundle()
+	if e != nil {
+		t.Fatalf("%s %s: %v", n.id, keyID, e)
+	}
+	defer dealer.Wipe(b.Share)
+	return hexInt(b.Share)
+}
+
+func TestDescribeReturnsPublicMaterialToTheOperator(t *testing.T) {
+	c := newTestCluster(t, 5, true)
+	edAccount := common.HexToAddress("0x4444444444444444444444444444444444444444").Hex()
+	secpSecret := new(big.Int).SetBytes([]byte("attestor describe secp256k1 key"))
+	edSecret := new(big.Int).SetBytes([]byte("attestor describe ed25519 key"))
+	type keyCase struct {
+		id      string
+		curve   string
+		account string
+		created []KeyResponse
+	}
+	cases := []*keyCase{
+		{id: "generated-evm", curve: "secp256k1"},
+		{id: "generated-lx", curve: "ed25519", account: edAccount},
+		{id: "imported-evm", curve: "secp256k1"},
+		{id: "imported-lx", curve: "ed25519", account: edAccount},
+	}
+	var wg sync.WaitGroup
+	results := make([][]apiResult, len(cases))
+	for i, kc := range cases[:2] {
+		wg.Add(1)
+		go func(i int, kc *keyCase) {
+			defer wg.Done()
+			results[i] = c.callAll(t, c.nodes, PathGenerate, func(*testNode) any {
+				return GenerateRequest{SessionID: "generate-" + kc.id, KeyID: kc.id, Curve: kc.curve, Owner: testOwner, Account: kc.account}
+			}, "")
+		}(i, kc)
+	}
+	wg.Wait()
+	for i, kc := range cases[:2] {
+		kc.created = decodeOK[KeyResponse](t, "generate "+kc.id, results[i])
+	}
+	cases[2].created = importKey(t, c, cases[2].id, dealer.Secp256k1, secpSecret, "")
+	cases[3].created = importKey(t, c, cases[3].id, dealer.Ed25519, edSecret, edAccount)
+	for _, kc := range cases {
+		if kc.account == "" {
+			kc.account = common.HexToAddress(kc.created[0].Address).Hex()
+		}
+	}
+
+	check := func(stage string, epoch uint64) {
+		for _, kc := range cases {
+			for i, n := range c.nodes {
+				r := c.call(t, n, PathDescribe, DescribeRequest{SessionID: "describe-" + stage + "-" + kc.id, KeyID: kc.id}, "")
+				if r.status != http.StatusOK {
+					t.Fatalf("%s %s on %s: status %d body %s", stage, kc.id, n.id, r.status, r.body)
+				}
+				var fields map[string]json.RawMessage
+				if err := json.Unmarshal(r.body, &fields); err != nil {
+					t.Fatal(err)
+				}
+				want := []string{"account", "audit_sequence", "curve", "epoch", "key_id", "node_id", "owner", "participants", "public_key"}
+				if kc.curve == "secp256k1" {
+					want = append(want, "address")
+				} else {
+					want = append(want, "did")
+				}
+				if len(fields) != len(want) {
+					t.Fatalf("%s %s on %s: fields %s", stage, kc.id, n.id, r.body)
+				}
+				for _, name := range want {
+					if _, ok := fields[name]; !ok {
+						t.Fatalf("%s %s on %s: field %s missing from %s", stage, kc.id, n.id, name, r.body)
+					}
+				}
+				if share := heldShareHex(t, n, kc.id); strings.Contains(string(r.body), share) {
+					t.Fatalf("%s %s on %s: the response carries the held share", stage, kc.id, n.id)
+				}
+				var got DescribeResponse
+				if err := json.Unmarshal(r.body, &got); err != nil {
+					t.Fatal(err)
+				}
+				created := kc.created[i]
+				head, _ := n.audit.Head()
+				if got.NodeID != n.id || got.KeyID != kc.id || got.Curve != kc.curve || got.PublicKey != created.PublicKey || got.Address != created.Address || got.DID != created.DID ||
+					got.Owner != testOwner || got.Account != kc.account || got.Epoch != epoch || strings.Join(got.Participants, ",") != strings.Join(c.ids, ",") || got.AuditSequence == 0 || got.AuditSequence != head {
+					t.Fatalf("%s %s on %s: described %+v, created %+v, audit head %d", stage, kc.id, n.id, got, created, head)
+				}
+			}
+		}
+	}
+	check("created", 0)
+
+	for i, kc := range cases {
+		wg.Add(1)
+		go func(i int, kc *keyCase) {
+			defer wg.Done()
+			results[i] = c.callAll(t, c.nodes, PathRefresh, func(*testNode) any {
+				return RefreshRequest{SessionID: "refresh-" + kc.id, KeyID: kc.id}
+			}, "")
+		}(i, kc)
+	}
+	wg.Wait()
+	for i, kc := range cases {
+		for _, r := range decodeOK[KeyResponse](t, "refresh "+kc.id, results[i]) {
+			if r.Epoch != 1 || r.PublicKey != kc.created[0].PublicKey {
+				t.Fatalf("refresh %s: %+v", kc.id, r)
+			}
+		}
+	}
+	check("refreshed", 1)
+
+	before, _ := c.nodes[0].audit.Head()
+	gateway := c.callAs(t, c.client, c.nodes[0], PathDescribe, DescribeRequest{SessionID: "describe-by-gateway", KeyID: "generated-evm"}, "")
+	if gateway.status != http.StatusForbidden {
+		t.Fatalf("gateway identity on describe: status %d", gateway.status)
+	}
+	expectError(t, "gateway identity on describe", gateway, CodeOperatorRequired)
+	if after, _ := c.nodes[0].audit.Head(); after != before+1 {
+		t.Fatalf("gateway refusal on describe was not audited: head %d then %d", before, after)
+	}
+	expectError(t, "unheld key", c.call(t, c.nodes[0], PathDescribe, DescribeRequest{SessionID: "describe-unheld", KeyID: "unheld-key"}, ""), CodeKeyNotFound)
+	expectError(t, "describe without a key id", c.call(t, c.nodes[0], PathDescribe, DescribeRequest{SessionID: "describe-empty"}, ""), CodeSessionBadRequest)
 }
