@@ -110,6 +110,7 @@ func TestDeliverMigratesEveryEligibleWallet(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer client.Close()
+	client.SetTokenSource(nodes.TokenSource())
 	ctx := context.Background()
 	plan, err := migrate.PlanMigration(ctx, db)
 	if err != nil {
@@ -162,6 +163,7 @@ func TestDeliverStopsTheRunOnSignatureMismatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer client.Close()
+	client.SetTokenSource(nodes.TokenSource())
 	ctx := context.Background()
 	plan, err := migrate.PlanMigration(ctx, db)
 	if err != nil {
@@ -203,6 +205,7 @@ func TestDeliverRefusesEnvelopeAddressMismatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer client.Close()
+	client.SetTokenSource(nodes.TokenSource())
 	ctx := context.Background()
 	plan, err := migrate.PlanMigration(ctx, db)
 	if err != nil {

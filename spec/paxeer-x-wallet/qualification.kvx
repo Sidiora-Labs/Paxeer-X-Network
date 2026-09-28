@@ -561,3 +561,35 @@ symbol = "Agents"
 observed = "The daemon wires no agent verifier and accepts no operator authorisation for lx_bind or evm_tx, and no gateway route in this task's files accepts an agent's binding signature, so a backfill can only generate and store identities and leaves standard wallets awaiting their owner and agent wallets awaiting a signature."
 assumption = "The owner's next authenticated provision completes a backfilled standard wallet and provisionAccount completes an agent wallet once the agent route that carries its signature is added."
 severity = "note"
+
+[observation.3.3.1]
+task = "3.3"
+file = "human/wallet/ceremony/internal/attestor/client.go"
+symbol = "ImportRequest"
+observed = "Closes 2.1.5 and 2.7.1: the client posts /v1/keys/import with owner, account and a share object, runs refresh and personal_message sign concurrently with one session id and the signers list, reads audit_sequence, keeps key ids wallet:<id>:secp256k1 and wallet:<id>:ed25519 as the schema allows any 1 to 128 character id, and golden_test.go decodes every golden into the client types."
+assumption = "The schema and daemon are unchanged; the rehearsal proves the client against five daemons built from the repository."
+severity = "note"
+
+[observation.3.3.2]
+task = "3.3"
+file = "human/wallet/ceremony/cmd/ceremony/main.go"
+symbol = "runDeliver"
+observed = "The daemon signs only with a bearer token whose subject owns the key or with agent headers, and cmd/attestor configures no agent verifier, so the live deliver has no credential for its test signature and the command tests that drive deliver without a token source answer token_missing."
+assumption = "The rehearsal mints owner tokens from its own issuer; the live ceremony needs an owner decision on how the operator obtains a signing credential."
+severity = "blocker"
+
+[observation.3.3.3]
+task = "3.3"
+file = "human/wallet/ceremony/internal/migrate/migrate.go"
+symbol = "deliverOne"
+observed = "Gateway migration 006 requires attestor_key_id whenever migrated_at is set, so the ceremony mark failed its check constraint; the mark now also writes the secp256k1 key id that the gateway sign route passes as key_id."
+assumption = "The gateway reads attestor_key_id as the attestor key id of a migrated wallet."
+severity = "note"
+
+[observation.3.3.4]
+task = "3.3"
+file = "human/wallet/ceremony/internal/testsupport/postgres.go"
+symbol = "StartNodes"
+observed = "The migrate, client and command tests still run against the in-process test nodes, now speaking the schema shapes, rather than against the daemon."
+assumption = "A later task moves them onto the five-daemon cluster that the rehearsal package starts."
+severity = "suspect"

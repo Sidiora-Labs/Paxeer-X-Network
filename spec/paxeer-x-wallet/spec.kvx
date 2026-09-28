@@ -674,7 +674,7 @@ reqs = ["5.7","5.6"]
 
 [task.3.3]
 title = "Run the rehearsal pipeline against five in-process nodes"
-status = "pending"
+status = "done"
 wave = 3
 requires = ["2.7","2.1"]
 do_1 = "Add rehearsal mode to human/wallet/ceremony: restore a database dump into a temporary database, start or connect to five nodes, run the migration for every row, and emit the report of req.4.ac_3 with counts only, exiting non-zero unless every wallet matched."
@@ -683,6 +683,10 @@ verify_cmd = "timeout 20m sh -c 'cd human/wallet/ceremony && go test -count=1 ./
 symbols = ["Rehearse","Report"]
 touches = ["human/wallet/ceremony/internal/rehearsal/rehearsal.go","human/wallet/ceremony/internal/rehearsal/rehearsal_test.go","human/wallet/ceremony/cmd/ceremony/main.go"]
 reqs = ["4.3"]
+revision = "a1714f70d9df0a92799592153a0a4dc4c645a483"
+command = "timeout 20m sh -c 'cd human/wallet/ceremony && go test -count=1 ./internal/rehearsal/...'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.3.4]
 title = "Back the human service's custody signer with the attestors"

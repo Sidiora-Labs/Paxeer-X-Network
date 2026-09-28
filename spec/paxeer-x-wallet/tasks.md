@@ -152,7 +152,7 @@
     - Add human/wallet/gateway/test/e2e that builds and spawns five attestor daemons from the repository with certificates generated in the test and a JWKS served in the test, and drives the gateway through provision, sign and verify of a transaction, a message and typed data, a refused invalid token, a refused out-of-policy transaction and a refused unsigned agent write.
     - Add the readiness route of req.5.ac_6 reporting the attestor quorum, the nonce store, the RPC pool and the identity provider, and cover it in the same test.
     - _Requirements: 5.7, 5.6_
-  - [ ] 3.3 Run the rehearsal pipeline against five in-process nodes
+  - [x] 3.3 Run the rehearsal pipeline against five in-process nodes
     - Add rehearsal mode to human/wallet/ceremony: restore a database dump into a temporary database, start or connect to five nodes, run the migration for every row, and emit the report of req.4.ac_3 with counts only, exiting non-zero unless every wallet matched.
     - Add internal/rehearsal/rehearsal_test.go that creates a database with rows encrypted by the imported gateway's routine for both standard and agent wallets plus funded rows, spawns five real daemons, runs the rehearsal and asserts every count, the archive of the funded rows, and a mismatch stopping the run.
     - _Requirements: 4.3_

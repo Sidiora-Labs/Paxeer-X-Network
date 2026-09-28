@@ -78,12 +78,12 @@ func TestPointAndBundleCodec(t *testing.T) {
 			t.Fatalf("%s: decode round trip failed: %v", c.curve, err)
 		}
 		for _, b := range bundles {
-			req, err := attestor.EncodeBundle("k", b)
+			req, err := attestor.EncodeBundle(b)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !req.Ceremony || req.Threshold != 3 || len(req.Participants) != 5 || req.PublicKey != c.pub {
-				t.Fatalf("%s: import request fields wrong", c.curve)
+			if req.Threshold != 3 || len(req.PartialPublicKeys) != 5 || len(req.Bks) != 5 || req.ParticipantID != b.ParticipantID {
+				t.Fatalf("%s: share bundle fields wrong", c.curve)
 			}
 			got, err := attestor.DecodeBundle(req)
 			if err != nil {
@@ -112,6 +112,7 @@ func TestClientImportRefreshSignOverMutualTLS(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer client.Close()
+	client.SetTokenSource(nodes.TokenSource())
 	ctx := context.Background()
 
 	key, _ := crypto.HexToECDSA(secpKeyHex)
@@ -120,7 +121,7 @@ func TestClientImportRefreshSignOverMutualTLS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	imports, err := client.Import(ctx, "wallet:test:secp256k1", bundles, pub)
+	imports, err := client.Import(ctx, "wallet:test:secp256k1", "owner-1", want.Hex(), bundles, pub)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,11 +133,11 @@ func TestClientImportRefreshSignOverMutualTLS(t *testing.T) {
 			t.Fatalf("node %s holds no share", id)
 		}
 	}
-	if _, err := client.SignPersonal(ctx, "wallet:test:secp256k1", []byte("before refresh"), "test"); err == nil {
+	if _, err := client.SignPersonal(ctx, "wallet:test:secp256k1", "owner-1", []byte("before refresh")); err == nil {
 		t.Fatal("sign before refresh succeeded")
 	} else {
 		var apiErr *attestor.APIError
-		if !errors.As(err, &apiErr) || apiErr.Code != "participant_share" {
+		if !errors.As(err, &apiErr) || apiErr.Code != "key_not_refreshed" {
 			t.Fatalf("sign before refresh: %v", err)
 		}
 	}
@@ -150,7 +151,7 @@ func TestClientImportRefreshSignOverMutualTLS(t *testing.T) {
 		}
 	}
 	msg := []byte("ceremony client test digest")
-	sig, err := client.SignPersonal(ctx, "wallet:test:secp256k1", msg, "test")
+	sig, err := client.SignPersonal(ctx, "wallet:test:secp256k1", "owner-1", msg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +170,7 @@ func TestClientImportRefreshSignOverMutualTLS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.Import(ctx, "wallet:test:ed25519", edBundles, edPub); err != nil {
+	if _, err := client.Import(ctx, "wallet:test:ed25519", "owner-1", want.Hex(), edBundles, edPub); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := client.Refresh(ctx, "wallet:test:ed25519", edPub); err != nil {
@@ -188,14 +189,16 @@ func TestClientRefusesTamperedShareAndWrongPin(t *testing.T) {
 	}
 	defer client.Close()
 	ctx := context.Background()
+	key, _ := crypto.HexToECDSA(secpKeyHex)
+	account := crypto.PubkeyToAddress(key.PublicKey).Hex()
 	bundles, pub, err := dealer.Split(dealer.Secp256k1, secpSecret(t), client.NodeIDs())
 	if err != nil {
 		t.Fatal(err)
 	}
 	bundles[2].Share.Add(bundles[2].Share, big.NewInt(1))
-	_, err = client.Import(ctx, "wallet:tampered", bundles, pub)
+	_, err = client.Import(ctx, "wallet:tampered", "owner-1", account, bundles, pub)
 	var apiErr *attestor.APIError
-	if !errors.As(err, &apiErr) || apiErr.Code != "share_mismatch" || apiErr.Node != "n3" {
+	if !errors.As(err, &apiErr) || apiErr.Code != "key_invalid_share" || apiErr.Category != "key" || apiErr.Node != "n3" {
 		t.Fatalf("tampered share: %v", err)
 	}
 
@@ -210,7 +213,7 @@ func TestClientRefusesTamperedShareAndWrongPin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pinned.Import(ctx, "wallet:pinned", fresh, pub2); !errors.Is(err, attestor.ErrPinMismatch) {
+	if _, err := pinned.Import(ctx, "wallet:pinned", "owner-1", account, fresh, pub2); !errors.Is(err, attestor.ErrPinMismatch) {
 		t.Fatalf("wrong pin: %v", err)
 	}
 	if nodes.Holds("n1", "wallet:pinned") {

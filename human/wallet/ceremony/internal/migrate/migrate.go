@@ -217,11 +217,11 @@ func deliverOne(ctx context.Context, db *sql.DB, client *attestor.Client, master
 	}
 	defer wipeBundles(edBundles)
 
-	if _, err := client.Import(ctx, SecpKeyID(w.ID), secpBundles, secpPub); err != nil {
+	if _, err := client.Import(ctx, SecpKeyID(w.ID), w.UserID, stored.Hex(), secpBundles, secpPub); err != nil {
 		return wrap("import secp256k1", err)
 	}
 	wipeBundles(secpBundles)
-	if _, err := client.Import(ctx, IdentityKeyID(w.ID), edBundles, edPub); err != nil {
+	if _, err := client.Import(ctx, IdentityKeyID(w.ID), w.UserID, stored.Hex(), edBundles, edPub); err != nil {
 		return wrap("import ed25519", err)
 	}
 	wipeBundles(edBundles)
@@ -239,7 +239,7 @@ func deliverOne(ctx context.Context, db *sql.DB, client *attestor.Client, master
 	if err != nil {
 		return wrap("sign", err)
 	}
-	sig, err := client.SignPersonal(ctx, SecpKeyID(w.ID), msg, w.ID)
+	sig, err := client.SignPersonal(ctx, SecpKeyID(w.ID), w.UserID, msg)
 	if err != nil {
 		return wrap("sign", err)
 	}
@@ -254,8 +254,8 @@ func deliverOne(ctx context.Context, db *sql.DB, client *attestor.Client, master
 		return &MismatchError{WalletID: w.ID, Stored: stored, Recovered: recovered}
 	}
 
-	res, err := db.ExecContext(ctx, `update wallets set migrated_at = now()
-		where id = $1::uuid and migrated_at is null and lower(address) = lower($2)`, w.ID, stored.Hex())
+	res, err := db.ExecContext(ctx, `update wallets set migrated_at = now(), attestor_key_id = $3
+		where id = $1::uuid and migrated_at is null and lower(address) = lower($2)`, w.ID, stored.Hex(), SecpKeyID(w.ID))
 	if err != nil {
 		return wrap("mark", err)
 	}

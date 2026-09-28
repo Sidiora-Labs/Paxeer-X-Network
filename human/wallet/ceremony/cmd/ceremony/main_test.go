@@ -113,4 +113,8 @@ func TestUsageAndMissingEnvironment(t *testing.T) {
 	if code != 1 || !strings.Contains(errOut, migrate.EnvDatabaseURL) {
 		t.Fatalf("plan without database exit %d: %s", code, errOut)
 	}
+	code, out, errOut := invoke(map[string]string{}, "rehearse")
+	if code != 1 || out != "" || !strings.Contains(errOut, "rehearsal: invalid configuration") {
+		t.Fatalf("rehearse without configuration exit %d: %s", code, errOut)
+	}
 }
