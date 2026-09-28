@@ -22,7 +22,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-const NETWORK: u32 = 77;
+const NETWORK: u32 = 125;
 const CHAIN_ID: &str = "125";
 const ISSUER: &str = "attestor-test-issuer";
 const AUDIENCE: &str = "attestor-test-audience";
@@ -31,6 +31,9 @@ const STRANGER: &str = "user-0002";
 const ACCOUNT: &str = "0x00000000000000000000000000000000000000a1";
 const NODES: usize = 5;
 const SIGNERS: [&str; 3] = ["node-1", "node-3", "node-5"];
+const JWT_MAX_AGE: &str = "10m";
+const BIND_NONCE: u64 = 1;
+const TRANSFER: u128 = 5_000;
 
 static SCRATCH: AtomicU64 = AtomicU64::new(0);
 
@@ -239,24 +242,38 @@ fn free_addresses(count: usize) -> Result<Vec<SocketAddr>> {
         .collect()
 }
 
-fn operator_client(pki: &Pki, nodes: &[(String, SocketAddr)]) -> Result<AttestorClient> {
+fn identity_client(
+    pki: &Pki,
+    nodes: &[(String, SocketAddr)],
+    identity: &str,
+) -> Result<AttestorClient> {
     Ok(AttestorClient::new(
         nodes,
-        &[pki.certificate_der("node-ca")?],
-        &[pki.certificate_der("operator")?],
-        &pki.key_der("operator")?,
+        &[pki.certificate_der("gateway-ca")?],
+        &[pki.certificate_der(identity)?],
+        &pki.key_der(identity)?,
         Duration::from_secs(120),
     )?)
 }
 
-struct KeySetServer {
+fn gateway_client(pki: &Pki, nodes: &[(String, SocketAddr)]) -> Result<AttestorClient> {
+    identity_client(pki, nodes, "gateway")
+}
+
+fn operator_client(pki: &Pki, nodes: &[(String, SocketAddr)]) -> Result<AttestorClient> {
+    identity_client(pki, nodes, "operator")
+}
+
+type Responder = Arc<dyn Fn(&[u8]) -> (u16, String) + Send + Sync>;
+
+struct JsonServer {
     address: SocketAddr,
     shutdown: Arc<AtomicBool>,
     worker: Option<JoinHandle<()>>,
 }
 
-impl KeySetServer {
-    fn serve(document: String) -> Result<Self> {
+impl JsonServer {
+    fn serve(responder: Responder) -> Result<Self> {
         let listener = TcpListener::bind("127.0.0.1:0")?;
         let address = listener.local_addr()?;
         let shutdown = Arc::new(AtomicBool::new(false));
@@ -268,7 +285,10 @@ impl KeySetServer {
                         break;
                     }
                     if let Ok(mut stream) = stream {
-                        let _ = respond(&mut stream, &document);
+                        let responder = Arc::clone(&responder);
+                        thread::spawn(move || {
+                            let _ = respond(&mut stream, responder.as_ref());
+                        });
                     }
                 }
             })
@@ -280,12 +300,40 @@ impl KeySetServer {
         })
     }
 
-    fn url(&self) -> String {
-        format!("http://{}/jwks.json", self.address)
+    fn key_set(document: String) -> Result<Self> {
+        Self::serve(Arc::new(move |_: &[u8]| (200, document.clone())))
+    }
+
+    fn bind_nonces(nonce: u64) -> Result<Self> {
+        Self::serve(Arc::new(move |body: &[u8]| bind_nonce_reply(body, nonce)))
+    }
+
+    fn url(&self, path: &str) -> String {
+        format!("http://{}{path}", self.address)
     }
 }
 
-impl Drop for KeySetServer {
+fn bind_nonce_reply(body: &[u8], nonce: u64) -> (u16, String) {
+    let Ok(request) = serde_json::from_slice::<Value>(body) else {
+        return (400, json!({ "error": "bad request" }).to_string());
+    };
+    if request.get("method").and_then(Value::as_str) != Some("eth_call") {
+        return (400, json!({ "error": "bad request" }).to_string());
+    }
+    let mut word = [0_u8; 32];
+    word[24..].copy_from_slice(&nonce.to_be_bytes());
+    (
+        200,
+        json!({
+            "jsonrpc": "2.0",
+            "id": request.get("id").cloned().unwrap_or(Value::Null),
+            "result": format!("0x{}", hex(&word)),
+        })
+        .to_string(),
+    )
+}
+
+impl Drop for JsonServer {
     fn drop(&mut self) {
         self.shutdown.store(true, Ordering::Release);
         let _ = TcpStream::connect(self.address);
@@ -295,20 +343,45 @@ impl Drop for KeySetServer {
     }
 }
 
-fn respond(stream: &mut TcpStream, document: &str) -> Result<()> {
+fn respond(
+    stream: &mut TcpStream,
+    responder: &(dyn Fn(&[u8]) -> (u16, String) + Send + Sync),
+) -> Result<()> {
     stream.set_read_timeout(Some(Duration::from_secs(5)))?;
     let mut request = Vec::new();
     let mut buffer = [0_u8; 1024];
-    while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+    let header_end = loop {
+        if let Some(end) = request.windows(4).position(|window| window == b"\r\n\r\n") {
+            break end + 4;
+        }
         let read = stream.read(&mut buffer)?;
         if read == 0 || request.len() > 16 * 1024 {
             return Ok(());
         }
         request.extend_from_slice(&buffer[..read]);
+    };
+    let headers = String::from_utf8_lossy(&request[..header_end]).to_ascii_lowercase();
+    let length = headers
+        .lines()
+        .find_map(|line| line.strip_prefix("content-length:"))
+        .map(|value| value.trim().parse::<usize>())
+        .transpose()?
+        .unwrap_or(0);
+    if length > 64 * 1024 {
+        return Ok(());
     }
+    while request.len() < header_end + length {
+        let read = stream.read(&mut buffer)?;
+        if read == 0 {
+            return Ok(());
+        }
+        request.extend_from_slice(&buffer[..read]);
+    }
+    let (status, document) = responder(&request[header_end..header_end + length]);
+    let reason = if status == 200 { "OK" } else { "Bad Request" };
     write!(
         stream,
-        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        "HTTP/1.1 {status} {reason}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
         document.len(),
         document
     )?;
@@ -350,14 +423,17 @@ impl TokenSigner {
 
     fn mint(&self, subject: &str) -> Result<String> {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+        let mut id = [0_u8; 16];
+        getrandom::fill(&mut id)?;
         let header = json!({ "alg": "ES256", "typ": "JWT", "kid": self.key_id });
         let claims = json!({
             "iss": ISSUER,
             "sub": subject,
             "aud": AUDIENCE,
-            "exp": now + 3600,
+            "exp": now + 600,
             "iat": now,
             "nbf": now - 5,
+            "jti": hex(&id),
         });
         let input = format!(
             "{}.{}",
@@ -378,7 +454,8 @@ struct Cluster {
     nodes: Vec<(String, SocketAddr)>,
     children: Vec<(String, Child)>,
     tokens: TokenSigner,
-    keys: KeySetServer,
+    keys: JsonServer,
+    chain: JsonServer,
 }
 
 impl Drop for Cluster {
@@ -396,17 +473,19 @@ impl Cluster {
         let root = scratch("attestor-cluster")?;
         let daemon = build_daemon(&root)?;
         let mut pki = Pki::new(&root);
-        pki.authority("node-ca")?;
+        pki.authority("gateway-ca")?;
         pki.authority("operator-ca")?;
+        pki.leaf("gateway-ca", "gateway", false)?;
         pki.leaf("operator-ca", "operator", false)?;
         let ids: Vec<String> = (1..=NODES).map(|index| format!("node-{index}")).collect();
         let mut pins = Vec::new();
         for id in &ids {
-            pki.leaf("node-ca", id, true)?;
+            pki.leaf("gateway-ca", id, true)?;
             pins.push(pki.pin(id)?);
         }
         let tokens = TokenSigner::generate("attestor-test-key")?;
-        let keys = KeySetServer::serve(json!({ "keys": [tokens.jwk()?] }).to_string())?;
+        let keys = JsonServer::key_set(json!({ "keys": [tokens.jwk()?] }).to_string())?;
+        let chain = JsonServer::bind_nonces(BIND_NONCE)?;
         fs::write(
             root.join("policy.json"),
             serde_json::to_vec(&json!({
@@ -416,6 +495,16 @@ impl Cluster {
                     "kinds": ["lx_activity"],
                     "caps": {"native": {"per_transaction": "1000000000000000000", "daily": "10000000000000000000"}},
                     "rate_per_minute": 1000
+                }
+            }))?,
+        )?;
+        fs::write(
+            root.join("kernel-policy.json"),
+            serde_json::to_vec(&json!({
+                "version": 1,
+                "defaults": {
+                    "modules": {"programs": [5]},
+                    "caps": {"native": {"per_operation": "1000000", "daily": "8000000"}}
                 }
             }))?,
         )?;
@@ -443,6 +532,7 @@ impl Cluster {
             children: Vec::new(),
             tokens,
             keys,
+            chain,
         };
         for (index, id) in ids.iter().enumerate() {
             let others: Vec<usize> = (0..NODES).filter(|other| *other != index).collect();
@@ -473,10 +563,16 @@ impl Cluster {
                 .env("ATTESTOR_NODE_KEY_FILE", &key_file)
                 .env("ATTESTOR_DATA_DIR", root.join(format!("{id}.data")))
                 .env("ATTESTOR_CHAIN_ID", CHAIN_ID)
-                .env("ATTESTOR_JWKS_URL", cluster.keys.url())
+                .env("ATTESTOR_JWKS_URL", cluster.keys.url("/jwks.json"))
                 .env("ATTESTOR_JWT_ISSUER", ISSUER)
                 .env("ATTESTOR_JWT_AUDIENCE", AUDIENCE)
+                .env("ATTESTOR_JWT_MAX_AGE", JWT_MAX_AGE)
                 .env("ATTESTOR_POLICY_FILE", root.join("policy.json"))
+                .env(
+                    "ATTESTOR_KERNEL_POLICY_FILE",
+                    root.join("kernel-policy.json"),
+                )
+                .env("ATTESTOR_RPC_URL", cluster.chain.url("/"))
                 .env(
                     "ATTESTOR_TLS_CERT_FILE",
                     cluster.pki.path(&format!("{id}.pem")),
@@ -485,7 +581,7 @@ impl Cluster {
                     "ATTESTOR_TLS_KEY_FILE",
                     cluster.pki.path(&format!("{id}.key")),
                 )
-                .env("ATTESTOR_TLS_CA_FILE", cluster.pki.path("node-ca.pem"))
+                .env("ATTESTOR_TLS_CA_FILE", cluster.pki.path("gateway-ca.pem"))
                 .env(
                     "ATTESTOR_OPERATOR_CA_FILE",
                     cluster.pki.path("operator-ca.pem"),
@@ -502,6 +598,10 @@ impl Cluster {
     }
 
     fn client(&self) -> Result<AttestorClient> {
+        gateway_client(&self.pki, &self.nodes)
+    }
+
+    fn operator(&self) -> Result<AttestorClient> {
         operator_client(&self.pki, &self.nodes)
     }
 
@@ -599,29 +699,43 @@ fn registry() -> Result<layerx_types::payload::ModuleRegistry> {
                 checked(ActivityType::new(ModuleId::Governance, 8))?,
             ],
         ))?,
+        checked(ModuleRegistration::new(
+            ModuleId::Programs,
+            &[checked(ActivityType::new(ModuleId::Programs, 5))?],
+        ))?,
     ]))
 }
 
-fn registration() -> Result<layerx_types::payload::Payload> {
-    use layerx_crypto::payments::{asset_id, Payment, Registration};
-    use layerx_types::ids::Did;
+fn actor(public: [u8; 32]) -> String {
+    format!("did:layerx:{}", hex(&public))
+}
+
+fn main_account(did: &str) -> Result<[u8; 32]> {
+    let account = checked(layerx_types::account::AccountId::parse(&format!(
+        "agent:{did}:main"
+    )))?;
+    checked(layerx_intents::canonical::account_id_for_protocol(
+        &account, 3,
+    ))
+}
+
+fn transfer(public: [u8; 32]) -> Result<layerx_types::payload::Payload> {
+    use layerx_crypto::payments::{Payment, TransferLeg};
     use layerx_types::payload::{ActivityType, ModuleId, Payload};
-    let actor = checked(Did::new(b"did:layerx:alice"))?;
-    let issuer = checked(layerx_intents::canonical::did_id_for_protocol(&actor, 3))?;
-    let registration = Payment::Register(Registration {
-        asset: asset_id(&issuer, &[21; 32]),
-        salt: [21; 32],
-        symbol: "KMS".into(),
-        name: "KMS asset".into(),
-        decimals: 6,
-        supply_cap: 1000,
-        issuer_kind: 1,
-        custody_ref: Vec::new(),
-    });
+    let did = actor(public);
+    let transfer = Payment::ProgramTransfer {
+        program: [21; 32],
+        legs: vec![TransferLeg {
+            from: main_account(&did)?,
+            asset: [0; 32],
+            to: main_account(&actor([0x52; 32]))?,
+            amount: TRANSFER,
+        }],
+    };
     checked(Payload::new(
         &registry()?,
-        checked(ActivityType::new(ModuleId::Asset, 1))?,
-        &checked(registration.encode(actor.as_bytes()))?,
+        checked(ActivityType::new(ModuleId::Programs, 5))?,
+        &checked(transfer.encode(did.as_bytes()))?,
     ))
 }
 
@@ -629,15 +743,16 @@ fn activity(public: [u8; 32], fee: u128) -> Result<(Vec<u8>, Disclosure)> {
     use layerx_types::activity::{Authority, EnvelopeBuilder, TimestampBound};
     use layerx_types::amount::Amount;
     use layerx_types::ids::{Did, IdempotencyKey};
-    let payload = registration()?;
+    let payload = transfer(public)?;
+    let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
     let mut builder = EnvelopeBuilder::new();
     checked(builder.protocol_version(3))?;
     checked(builder.network_id(NETWORK))?;
     checked(builder.activity_type(payload.activity_type()))?;
-    checked(builder.actor_did(checked(Did::new(b"did:layerx:alice"))?))?;
+    checked(builder.actor_did(checked(Did::new(actor(public).as_bytes()))?))?;
     checked(builder.authority(checked(Authority::owner(&public))?))?;
     checked(builder.account_sequence(7))?;
-    checked(builder.timestamp_bound(checked(TimestampBound::new(1000, 1010))?))?;
+    checked(builder.timestamp_bound(checked(TimestampBound::new(now - 60, now + 600))?))?;
     checked(builder.idempotency_key(IdempotencyKey::new([4; 32])))?;
     checked(builder.fee_limit(Amount::from_u128(fee)))?;
     checked(
@@ -695,6 +810,16 @@ fn assert_verified(
 fn attestor_signs_a_disclosed_activity_through_the_real_daemon_quorum() -> Result<()> {
     let cluster = Cluster::start()?;
     let registry = registry()?;
+    let denied = cluster
+        .operator()?
+        .generate_ed25519("lx-operator-key", OWNER, ACCOUNT);
+    assert!(
+        matches!(
+            &denied,
+            Err(AttestorError::Refused { status: 403, code, .. }) if code == "operator_required"
+        ),
+        "{denied:?}"
+    );
     let generated = checked(
         cluster
             .client()?
@@ -761,8 +886,22 @@ fn attestor_signs_a_disclosed_activity_through_the_real_daemon_quorum() -> Resul
     );
     assert_eq!(&signer.audit_sequences(), first.audit());
 
-    let second =
-        checked(signer.sign_activity(&other_canonical, &other_disclosure, &registry, &assertion))?;
+    let replayed = signer.sign_activity(&other_canonical, &other_disclosure, &registry, &assertion);
+    assert!(
+        matches!(
+            &replayed,
+            Err(AttestorError::Refused { status: 401, code, .. }) if code == "token_invalid"
+        ),
+        "{replayed:?}"
+    );
+    assert_eq!(&signer.audit_sequences(), first.audit());
+
+    let second = checked(signer.sign_activity(
+        &other_canonical,
+        &other_disclosure,
+        &registry,
+        &cluster.tokens.mint(OWNER)?,
+    ))?;
     assert_verified(&signer, &other_canonical, &second)?;
     for (node, sequence) in second.audit() {
         assert!(*sequence > first.audit()[node]);
@@ -776,9 +915,8 @@ fn attestor_refuses_a_mismatched_disclosure_before_contacting_any_node() -> Resu
     let root = scratch("attestor-offline")?;
     let outcome = (|| -> Result<()> {
         let mut pki = Pki::new(&root);
-        pki.authority("node-ca")?;
-        pki.authority("operator-ca")?;
-        pki.leaf("operator-ca", "operator", false)?;
+        pki.authority("gateway-ca")?;
+        pki.leaf("gateway-ca", "gateway", false)?;
         let nodes: Vec<(String, SocketAddr)> = free_addresses(NODES)?
             .into_iter()
             .enumerate()
@@ -787,7 +925,7 @@ fn attestor_refuses_a_mismatched_disclosure_before_contacting_any_node() -> Resu
         let registry = registry()?;
         let public = [9; 32];
         let signer = checked(AttestorSigner::new(
-            operator_client(&pki, &nodes)?,
+            gateway_client(&pki, &nodes)?,
             "lx-user-key",
             public,
             &SIGNERS,
@@ -815,7 +953,7 @@ fn attestor_refuses_a_mismatched_disclosure_before_contacting_any_node() -> Resu
         ));
         assert!(signer.audit_sequences().is_empty());
         let foreign = checked(AttestorSigner::new(
-            operator_client(&pki, &nodes)?,
+            gateway_client(&pki, &nodes)?,
             "lx-user-key",
             public,
             &SIGNERS,
@@ -829,7 +967,7 @@ fn attestor_refuses_a_mismatched_disclosure_before_contacting_any_node() -> Resu
             })
         );
         assert!(AttestorSigner::new(
-            operator_client(&pki, &nodes)?,
+            gateway_client(&pki, &nodes)?,
             "lx-user-key",
             public,
             &["node-1", "node-2"],

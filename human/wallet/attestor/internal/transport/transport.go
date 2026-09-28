@@ -87,9 +87,11 @@ type bufferedEnvelope struct {
 }
 
 type pendingSession struct {
-	created time.Time
-	envs    []bufferedEnvelope
-	seen    map[replayKey]struct{}
+	created   time.Time
+	creator   string
+	envs      []bufferedEnvelope
+	seen      map[replayKey]struct{}
+	perSender map[string]int
 }
 
 type Transport struct {
@@ -300,7 +302,7 @@ func statusFor(err error) int {
 		return http.StatusConflict
 	case errors.Is(err, ErrNotParticipant), errors.Is(err, ErrSenderMismatch):
 		return http.StatusForbidden
-	case errors.Is(err, ErrQueueFull), errors.Is(err, ErrClosed):
+	case errors.Is(err, ErrQueueFull), errors.Is(err, ErrClosed), errors.Is(err, ErrPeerQuota):
 		return http.StatusServiceUnavailable
 	case errors.Is(err, ErrSessionClosed):
 		return http.StatusGone
@@ -357,7 +359,16 @@ func (t *Transport) bufferLocked(from string, env *Envelope) error {
 		if len(t.pending) >= t.limits.MaxPendingSessions {
 			return ErrQueueFull
 		}
-		ps = &pendingSession{created: now, seen: make(map[replayKey]struct{})}
+		created := 0
+		for _, other := range t.pending {
+			if other.creator == from {
+				created++
+			}
+		}
+		if created >= t.pendingSessionsPerPeer() {
+			return fmt.Errorf("%w: peer %s holds %d pending sessions", ErrPeerQuota, from, created)
+		}
+		ps = &pendingSession{created: now, creator: from, seen: make(map[replayKey]struct{}), perSender: make(map[string]int)}
 		t.pending[env.Session] = ps
 	}
 	key := replayKey{sender: from, round: env.Round, seq: env.Seq}
@@ -367,9 +378,50 @@ func (t *Transport) bufferLocked(from string, env *Envelope) error {
 	if len(ps.envs) >= t.limits.MaxQueue {
 		return ErrQueueFull
 	}
+	if ps.perSender[from] >= t.pendingMessagesPerPeer() {
+		return fmt.Errorf("%w: peer %s holds %d pending messages in session %s", ErrPeerQuota, from, ps.perSender[from], env.Session)
+	}
 	ps.seen[key] = struct{}{}
+	ps.perSender[from]++
 	ps.envs = append(ps.envs, bufferedEnvelope{from: from, env: *env})
 	return nil
+}
+
+func (t *Transport) otherPeers() int {
+	if n := len(t.peers) - 1; n > 0 {
+		return n
+	}
+	return 1
+}
+
+func (t *Transport) pendingSessionsPerPeer() int {
+	return max(1, t.limits.MaxPendingSessions/t.otherPeers())
+}
+
+func (t *Transport) pendingMessagesPerPeer() int {
+	return max(1, t.limits.MaxQueue/t.otherPeers())
+}
+
+func (t *Transport) Request(ctx context.Context, peerID, path string, body []byte) (int, []byte, error) {
+	c, ok := t.clients[peerID]
+	if !ok {
+		return 0, nil, ErrNotParticipant
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://"+t.peers[peerID].address+path, bytes.NewReader(body))
+	if err != nil {
+		return 0, nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.Do(req)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer resp.Body.Close()
+	out, err := io.ReadAll(io.LimitReader(resp.Body, t.limits.MaxBodyBytes))
+	if err != nil {
+		return 0, nil, err
+	}
+	return resp.StatusCode, out, nil
 }
 
 func (t *Transport) post(ctx context.Context, peerID string, env *Envelope) (int, error) {
@@ -441,4 +493,6 @@ var (
 	ErrPeerRefused        = errors.New("transport: peer refused message")
 	ErrReceiver           = errors.New("transport: receiver rejected message")
 	ErrAlreadyAttached    = errors.New("transport: session already has a receiver")
+	ErrPeerQuota          = errors.New("transport: peer exceeds its pending share")
+	ErrRoundDeadline      = errors.New("transport: no message arrived within the round deadline")
 )

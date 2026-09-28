@@ -15,6 +15,7 @@ import {
   currencyRatesRepository,
   preferencesRepository,
 } from '@/platform/storage/repositories';
+import { PWA_NETWORK_ENV, configuredBase } from '@/pwa/config';
 
 // Supported fiat currencies (matching the settings dropdown)
 export const FIAT_CURRENCIES = [
@@ -66,9 +67,10 @@ function isStale(): boolean {
 }
 
 async function fetchRates(): Promise<void> {
-  const url = 'https://open.er-api.com/v6/latest/USD';
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+    const base = configuredBase(PWA_NETWORK_ENV.fxRates);
+    if (base === null) throw new Error(`${PWA_NETWORK_ENV.fxRates} is not set`);
+    const res = await fetch(`${base}/latest/USD`, { signal: AbortSignal.timeout(10_000) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json() as {
       result?: unknown;

@@ -67,7 +67,7 @@ export function HistoryView({ account, pageSize = 20 }: { account: string; pageS
             {state.started && state.items.length === 0 && !state.loading && !state.error && (
                 <p className="text-xs text-pax-muted">No activity yet.</p>
             )}
-            <ul aria-label="History items" className="divide-y divide-white/[0.06]">
+            <ul aria-label="History items" className="list-separated">
                 {state.items.map((item) => {
                     const decimals = item.asset_metadata?.decimals ?? null;
                     const symbol = assetLabel(item);

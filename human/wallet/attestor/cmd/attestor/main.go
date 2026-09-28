@@ -6,7 +6,9 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"errors"
+	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -17,11 +19,14 @@ import (
 	"time"
 
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/audit"
+	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/auth/agent"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/auth/jwt"
+	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/backup"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/config"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/health"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/lxwire"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy"
+	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy/lx"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/replica"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/server"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/store"
@@ -36,9 +41,46 @@ type listening struct {
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if len(os.Args) > 1 && os.Args[1] == "restore" {
+		if err := restore(os.Args[2:], os.Getenv, os.Stdout); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	if err := run(ctx, os.Getenv, nil); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func restore(args []string, getenv func(string) string, out io.Writer) error {
+	fs := flag.NewFlagSet("restore", flag.ContinueOnError)
+	fs.SetOutput(out)
+	snapshot := fs.String("snapshot", "", "path of the snapshot file to restore")
+	digest := fs.String("sha256", "", "expected SHA-256 digest of the snapshot file, 64 hex characters")
+	dataDir := fs.String("data-dir", "", "empty directory to restore into, defaulting to "+config.EnvDataDir)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *snapshot == "" || *digest == "" || fs.NArg() != 0 {
+		return errors.New("attestor restore: -snapshot and -sha256 are required and no other arguments are accepted")
+	}
+	cfg, err := config.Load(getenv)
+	if err != nil {
+		return err
+	}
+	if cfg.BackupKey == nil {
+		return fmt.Errorf("attestor restore: %s is required", config.EnvBackupKeyFile)
+	}
+	target := cfg.DataDir
+	if *dataDir != "" {
+		target = *dataDir
+	}
+	res, err := backup.RestoreFile(*snapshot, *digest, cfg.NodeID, cfg.BackupKey, target, cfg.NodeKey)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(out, "restored %s (sha256 %s) for node %s: %d shares, audit sequence %d\n", res.Name, hex.EncodeToString(res.SHA256[:]), cfg.NodeID, res.Shares, res.AuditSequence)
+	return err
 }
 
 func certPin(path string) (string, error) {
@@ -56,6 +98,37 @@ func certPin(path string) (string, error) {
 	}
 	pin := transport.SPKIHash(cert)
 	return hex.EncodeToString(pin[:]), nil
+}
+
+func policies(cfg *config.Config, st *store.Store) (*policy.Policy, *policy.SpendLedger, *lx.Evaluator, error) {
+	var doc *policy.Document
+	if cfg.PolicyFile != "" {
+		var err error
+		if doc, err = policy.LoadFile(cfg.PolicyFile); err != nil {
+			return nil, nil, nil, err
+		}
+	}
+	engine := policy.New(doc)
+	ledger, err := policy.NewSpendLedger(st, time.Now)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if cfg.KernelPolicy == "" {
+		return engine, ledger, nil, nil
+	}
+	kdoc, err := lx.LoadFile(cfg.KernelPolicy)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("attestor: %s: %w", config.EnvKernelPolicy, err)
+	}
+	chain, err := lx.NewChain(cfg.RPCURL, &http.Client{Timeout: lx.DefaultRPCWait})
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("attestor: %s: %w", config.EnvRPCURL, err)
+	}
+	kernel, err := lx.New(engine, kdoc, chain)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return engine, ledger, kernel, nil
 }
 
 func run(ctx context.Context, getenv func(string) string, ready func(listening)) error {
@@ -94,11 +167,9 @@ func run(ctx context.Context, getenv func(string) string, ready func(listening))
 	}
 	defer auditLog.Close()
 
-	var doc *policy.Document
-	if cfg.PolicyFile != "" {
-		if doc, err = policy.LoadFile(cfg.PolicyFile); err != nil {
-			return err
-		}
+	engine, ledger, kernel, err := policies(cfg, st)
+	if err != nil {
+		return err
 	}
 	var tokens *jwt.TokenVerifier
 	if cfg.JWKSURL != "" {
@@ -107,10 +178,26 @@ func run(ctx context.Context, getenv func(string) string, ready func(listening))
 			Issuer:     cfg.JWTIssuer,
 			Audience:   cfg.JWTAudience,
 			HTTPClient: &http.Client{Timeout: 10 * time.Second},
+			MaxAge:     cfg.JWTMaxAge,
+			Replay:     st,
 		})
 		if err != nil {
 			return err
 		}
+	}
+	var agents *agent.AgentVerifier
+	if cfg.AgentsFile != "" {
+		principals, err := agent.LoadPrincipals(cfg.AgentsFile)
+		if err != nil {
+			return fmt.Errorf("attestor: %s: %w", config.EnvAgentsFile, err)
+		}
+		if agents, err = agent.NewAgentVerifier(agent.Config{Principals: principals, Nonces: st, MaxExpiry: cfg.AgentMaxExpiry}); err != nil {
+			return err
+		}
+	}
+	clients, err := server.LoadClientAuthorities(cfg.TLSCAFile, cfg.OperatorCAFile)
+	if err != nil {
+		return err
 	}
 	activityTypes := make([]lxwire.ActivityType, 0, len(cfg.ActivityTypes))
 	for _, t := range cfg.ActivityTypes {
@@ -126,12 +213,14 @@ func run(ctx context.Context, getenv func(string) string, ready func(listening))
 		return err
 	}
 	var replicaState func() health.ReplicaState
+	var shipped backup.Shipped
 	if replicaCfg != nil {
 		shipper, err := replica.New(*replicaCfg, log.Default())
 		if err != nil {
 			return err
 		}
 		replicaState = shipper.State
+		shipped = shipper.Ledger()
 		shipCtx, cancelShip := context.WithCancel(ctx)
 		shipDone := make(chan struct{})
 		go func() {
@@ -141,6 +230,33 @@ func run(ctx context.Context, getenv func(string) string, ready func(listening))
 		defer func() {
 			cancelShip()
 			<-shipDone
+		}()
+	}
+
+	var snapshots *backup.Writer
+	if cfg.BackupDir != "" {
+		snapshots, err = backup.New(backup.Config{
+			NodeID:    cfg.NodeID,
+			Dir:       cfg.BackupDir,
+			BackupKey: cfg.BackupKey,
+			Retain:    cfg.SnapshotRetain,
+			Store:     st,
+			Audit:     auditLog,
+			Shipped:   shipped,
+			Logger:    log.Default(),
+		})
+		if err != nil {
+			return err
+		}
+		snapCtx, cancelSnap := context.WithCancel(ctx)
+		snapDone := make(chan struct{})
+		go func() {
+			defer close(snapDone)
+			snapshots.Run(snapCtx, cfg.SnapshotInterval)
+		}()
+		defer func() {
+			cancelSnap()
+			<-snapDone
 		}()
 	}
 
@@ -167,17 +283,21 @@ func run(ctx context.Context, getenv func(string) string, ready func(listening))
 		Store:        st,
 		Audit:        auditLog,
 		Transport:    tr,
-		Policy:       policy.New(doc),
-		Ledger:       policy.NewMemoryLedger(time.Now),
+		Policy:       engine,
+		Kernel:       kernel,
+		Ledger:       ledger,
+		Clients:      clients,
 		Tokens:       tokens,
+		Agents:       agents,
 		Activities:   registry,
 		PeerProbe:    server.TCPPeerProbe(probe),
 		Replica:      replicaState,
+		Snapshots:    snapshots,
 	})
 	if err != nil {
 		return err
 	}
-	tlsCfg, err := server.APITLSConfig(cfg.TLSCertFile, cfg.TLSKeyFile, cfg.OperatorCAFile)
+	tlsCfg, err := server.APITLSConfig(cfg.TLSCertFile, cfg.TLSKeyFile, clients)
 	if err != nil {
 		return err
 	}

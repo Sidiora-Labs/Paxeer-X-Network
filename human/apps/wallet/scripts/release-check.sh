@@ -20,41 +20,93 @@ step() {
   fi
 }
 
-native_files="capacitor.config.ts
-android/build.gradle
-android/settings.gradle
-android/capacitor.settings.gradle
-android/variables.gradle
-android/gradle.properties
-android/gradlew
-android/gradle/wrapper/gradle-wrapper.properties
-android/app/build.gradle
-android/app/capacitor.build.gradle
-android/app/src/main/AndroidManifest.xml
-android/app/src/main/java/com/paxeer/wallet/MainActivity.java
-ios/App/App.xcodeproj/project.pbxproj
-ios/App/Podfile
-ios/App/App/AppDelegate.swift
-ios/App/App/Info.plist"
-
-present=0
-missing=""
-for file in $native_files; do
-  if [ -s "$file" ]; then
-    present=$((present + 1))
-  else
-    missing="$missing $file"
+native=""
+for path in capacitor.config.ts ios android; do
+  if [ -e "$path" ]; then
+    native="$native $path"
   fi
 done
-total=$(printf '%s\n' "$native_files" | wc -l | tr -d ' ')
-if [ -z "$missing" ] \
-  && grep -q "applicationId \"com.paxeer.wallet\"" android/app/build.gradle \
-  && grep -q "PRODUCT_BUNDLE_IDENTIFIER = com.paxeer.wallet;" ios/App/App.xcodeproj/project.pbxproj; then
-  step "native projects" pass "$present of $total files, application id com.paxeer.wallet on both platforms"
-elif [ -z "$missing" ]; then
-  step "native projects" fail "$present of $total files, application id differs from com.paxeer.wallet"
+if grep -q '"@capacitor/' package.json; then
+  native="$native package.json:@capacitor"
+fi
+if [ -z "$native" ]; then
+  step "native scaffolding" pass "no native project, runtime configuration or dependency"
 else
-  step "native projects" fail "$present of $total files, missing:$missing"
+  step "native scaffolding" fail "present:$native"
+fi
+
+if build_output=$(node scripts/build-pwa.mjs 2>&1); then
+  version=$(printf '%s\n' "$build_output" | sed -n 's/.* version \([0-9a-f]\{16\}\),.*/\1/p')
+  if [ -n "$version" ] && [ -s public/sw.js ] && grep -q "$version" public/sw.js \
+    && grep -q 'SKIP_WAITING' public/sw.js; then
+    step "service worker built" pass "public/sw.js version $version"
+  else
+    printf '%s\n' "$build_output"
+    step "service worker built" fail "public/sw.js missing, empty or without version $version"
+  fi
+else
+  printf '%s\n' "$build_output"
+  step "service worker built" fail "build-pwa exited non-zero"
+fi
+
+if manifest_output=$(node --input-type=module -e '
+import { readFileSync, existsSync } from "node:fs";
+const manifest = JSON.parse(readFileSync("public/manifest.json", "utf8"));
+const problems = [];
+for (const key of ["id", "name", "short_name", "start_url", "scope", "background_color", "theme_color"]) {
+  if (typeof manifest[key] !== "string" || manifest[key].length === 0) problems.push(`missing ${key}`);
+}
+if (manifest.display !== "standalone") problems.push("display is not standalone");
+const icons = Array.isArray(manifest.icons) ? manifest.icons : [];
+for (const [size, purpose] of [["192x192", "any"], ["512x512", "any"], ["192x192", "maskable"], ["512x512", "maskable"]]) {
+  if (!icons.some((icon) => icon.sizes === size && icon.purpose === purpose)) problems.push(`no ${purpose} ${size} icon`);
+}
+let checked = 0;
+for (const icon of icons) {
+  const file = `public${icon.src}`;
+  if (!existsSync(file)) { problems.push(`missing ${file}`); continue; }
+  const bytes = readFileSync(file);
+  const size = `${bytes.readUInt32BE(16)}x${bytes.readUInt32BE(20)}`;
+  if (bytes.toString("latin1", 1, 4) !== "PNG" || size !== icon.sizes) problems.push(`${file} is ${size}, declared ${icon.sizes}`);
+  checked += 1;
+}
+if (problems.length > 0) { console.log(problems.join("; ")); process.exit(1); }
+console.log(`${checked} icons present at their declared sizes`);
+' 2>&1); then
+  step "manifest" pass "$manifest_output"
+else
+  step "manifest" fail "$manifest_output"
+fi
+
+if grep -q "register(SERVICE_WORKER_URL" src/pwa/register.ts \
+  && grep -q "SERVICE_WORKER_URL = '/sw.js'" src/pwa/caching.ts \
+  && grep -q "registerServiceWorker(container" src/providers/PWAProvider.tsx; then
+  step "service worker registered" pass "PWAProvider registers /sw.js through registerServiceWorker"
+else
+  step "service worker registered" fail "no client registration of /sw.js"
+fi
+
+third_party=$(grep -rli 'progressier' src/app src/lib src/proxy.ts public next.config.mjs 2>/dev/null || true)
+if [ -z "$third_party" ]; then
+  step "third-party PWA service" pass "no reference"
+else
+  step "third-party PWA service" fail "referenced in: $(printf '%s' "$third_party" | tr '\n' ' ')"
+fi
+
+vitest="$app_dir/node_modules/.bin/vitest"
+if [ ! -x "$vitest" ]; then
+  step "content security policy" fail "vitest is not installed in node_modules"
+elif csp_output=$("$vitest" run src/lib/security/csp.test.ts 2>&1); then
+  passed=$(printf '%s\n' "$csp_output" | sed -n 's/^ *Tests  *\([0-9][0-9]*\) passed.*/\1/p' | head -n 1)
+  if [ -n "$passed" ]; then
+    step "content security policy" pass "$passed tests passed against the release environment"
+  else
+    printf '%s\n' "$csp_output"
+    step "content security policy" fail "no passing tests reported"
+  fi
+else
+  printf '%s\n' "$csp_output"
+  step "content security policy" fail "csp.test.ts exited non-zero"
 fi
 
 config_module=src/wallet/config.ts

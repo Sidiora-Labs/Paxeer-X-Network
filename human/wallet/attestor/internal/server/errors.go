@@ -37,8 +37,12 @@ const (
 	CodeKeyNotRefreshed   = "key_not_refreshed"
 	CodeKeyInvalidShare   = "key_invalid_share"
 	CodeKeyImportDisabled = "key_import_disabled"
-	CodeStoreFailed       = "store_failed"
-	CodeStoreAuditFailed  = "store_audit_failed"
+
+	CodeVerificationWindow      = "verification_outside_window"
+	CodeVerificationNotImported = "verification_not_imported"
+	CodeVerificationUsed        = "verification_used"
+	CodeStoreFailed             = "store_failed"
+	CodeStoreAuditFailed        = "store_audit_failed"
 )
 
 var errorCategories = map[string]string{
@@ -63,8 +67,12 @@ var errorCategories = map[string]string{
 	CodeKeyNotRefreshed:   CategoryKey,
 	CodeKeyInvalidShare:   CategoryKey,
 	CodeKeyImportDisabled: CategoryKey,
-	CodeStoreFailed:       CategoryStore,
-	CodeStoreAuditFailed:  CategoryStore,
+
+	CodeVerificationWindow:      CategoryKey,
+	CodeVerificationNotImported: CategoryKey,
+	CodeVerificationUsed:        CategoryKey,
+	CodeStoreFailed:             CategoryStore,
+	CodeStoreAuditFailed:        CategoryStore,
 }
 
 var errorStatus = map[string]int{
@@ -85,11 +93,15 @@ func ErrorCodes() map[string]string {
 }
 
 type Error struct {
-	Category   string `json:"category"`
-	Code       string `json:"code"`
-	Message    string `json:"message"`
-	PolicyCode string `json:"policy_code,omitempty"`
+	Category    string `json:"category"`
+	Code        string `json:"code"`
+	Message     string `json:"message"`
+	PolicyCode  string `json:"policy_code,omitempty"`
+	audited     bool
+	auditReason string
 }
+
+const auditReasonTokenReplayed = "token_invalid: request replayed under the same token"
 
 func (e *Error) Error() string {
 	return e.Category + ": " + e.Code + ": " + e.Message

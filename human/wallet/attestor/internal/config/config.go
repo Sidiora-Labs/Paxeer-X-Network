@@ -11,34 +11,46 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
-	EnvNodeID          = "ATTESTOR_NODE_ID"
-	EnvRegion          = "ATTESTOR_REGION"
-	EnvListenAddr      = "ATTESTOR_LISTEN_ADDR"
-	EnvPeerListenAddr  = "ATTESTOR_PEER_LISTEN_ADDR"
-	EnvPeers           = "ATTESTOR_PEERS"
-	EnvNodeKeyFile     = "ATTESTOR_NODE_KEY_FILE"
-	EnvDataDir         = "ATTESTOR_DATA_DIR"
-	EnvCeremony        = "ATTESTOR_CEREMONY"
-	EnvChainID         = "ATTESTOR_CHAIN_ID"
-	EnvJWKSURL         = "ATTESTOR_JWKS_URL"
-	EnvJWTIssuer       = "ATTESTOR_JWT_ISSUER"
-	EnvJWTAudience     = "ATTESTOR_JWT_AUDIENCE"
-	EnvPolicyFile      = "ATTESTOR_POLICY_FILE"
-	EnvTLSCertFile     = "ATTESTOR_TLS_CERT_FILE"
-	EnvTLSKeyFile      = "ATTESTOR_TLS_KEY_FILE"
-	EnvTLSCAFile       = "ATTESTOR_TLS_CA_FILE"
-	EnvOperatorCAFile  = "ATTESTOR_OPERATOR_CA_FILE"
-	EnvBackupKeyFile   = "ATTESTOR_BACKUP_KEY_FILE"
-	EnvBackupDir       = "ATTESTOR_BACKUP_DIR"
-	EnvRPCURL          = "ATTESTOR_RPC_URL"
-	EnvPeerPins        = "ATTESTOR_PEER_PINS"
-	EnvActivityTypes   = "ATTESTOR_ACTIVITY_TYPES"
-	KeySize            = 32
-	maxKeyFileSize     = 4096
-	peerEntrySeparator = ","
+	EnvNodeID               = "ATTESTOR_NODE_ID"
+	EnvRegion               = "ATTESTOR_REGION"
+	EnvListenAddr           = "ATTESTOR_LISTEN_ADDR"
+	EnvPeerListenAddr       = "ATTESTOR_PEER_LISTEN_ADDR"
+	EnvPeers                = "ATTESTOR_PEERS"
+	EnvNodeKeyFile          = "ATTESTOR_NODE_KEY_FILE"
+	EnvDataDir              = "ATTESTOR_DATA_DIR"
+	EnvCeremony             = "ATTESTOR_CEREMONY"
+	EnvChainID              = "ATTESTOR_CHAIN_ID"
+	EnvJWKSURL              = "ATTESTOR_JWKS_URL"
+	EnvJWTIssuer            = "ATTESTOR_JWT_ISSUER"
+	EnvJWTAudience          = "ATTESTOR_JWT_AUDIENCE"
+	EnvPolicyFile           = "ATTESTOR_POLICY_FILE"
+	EnvTLSCertFile          = "ATTESTOR_TLS_CERT_FILE"
+	EnvTLSKeyFile           = "ATTESTOR_TLS_KEY_FILE"
+	EnvTLSCAFile            = "ATTESTOR_TLS_CA_FILE"
+	EnvOperatorCAFile       = "ATTESTOR_OPERATOR_CA_FILE"
+	EnvBackupKeyFile        = "ATTESTOR_BACKUP_KEY_FILE"
+	EnvBackupDir            = "ATTESTOR_BACKUP_DIR"
+	EnvRPCURL               = "ATTESTOR_RPC_URL"
+	EnvPeerPins             = "ATTESTOR_PEER_PINS"
+	EnvActivityTypes        = "ATTESTOR_ACTIVITY_TYPES"
+	EnvJWTMaxAge            = "ATTESTOR_JWT_MAX_AGE"
+	EnvAgentsFile           = "ATTESTOR_AGENTS_FILE"
+	EnvAgentMaxExpiry       = "ATTESTOR_AGENT_MAX_EXPIRY"
+	EnvKernelPolicy         = "ATTESTOR_KERNEL_POLICY_FILE"
+	DefaultJWTMaxAge        = time.Hour
+	DefaultAgentExpiry      = 5 * time.Minute
+	EnvSnapshotInterval     = "ATTESTOR_SNAPSHOT_INTERVAL"
+	EnvSnapshotRetain       = "ATTESTOR_SNAPSHOT_RETAIN"
+	DefaultSnapshotInterval = time.Hour
+	DefaultSnapshotRetain   = 48
+	MinSnapshotInterval     = time.Second
+	KeySize                 = 32
+	maxKeyFileSize          = 4096
+	peerEntrySeparator      = ","
 )
 
 var ErrMissing = errors.New("config: required variable not set")
@@ -49,30 +61,36 @@ type Peer struct {
 }
 
 type Config struct {
-	NodeID         string
-	Region         string
-	ListenAddr     string
-	PeerListenAddr string
-	Peers          []Peer
-	NodeKeyFile    string
-	NodeKey        []byte
-	DataDir        string
-	Ceremony       bool
-	ChainID        uint64
-	JWKSURL        string
-	JWTIssuer      string
-	JWTAudience    string
-	PolicyFile     string
-	TLSCertFile    string
-	TLSKeyFile     string
-	TLSCAFile      string
-	OperatorCAFile string
-	BackupKeyFile  string
-	BackupKey      []byte
-	BackupDir      string
-	RPCURL         string
-	PeerPins       map[string]string
-	ActivityTypes  []uint32
+	NodeID           string
+	Region           string
+	ListenAddr       string
+	PeerListenAddr   string
+	Peers            []Peer
+	NodeKeyFile      string
+	NodeKey          []byte
+	DataDir          string
+	Ceremony         bool
+	ChainID          uint64
+	JWKSURL          string
+	JWTIssuer        string
+	JWTAudience      string
+	PolicyFile       string
+	TLSCertFile      string
+	TLSKeyFile       string
+	TLSCAFile        string
+	OperatorCAFile   string
+	BackupKeyFile    string
+	BackupKey        []byte
+	BackupDir        string
+	RPCURL           string
+	PeerPins         map[string]string
+	ActivityTypes    []uint32
+	JWTMaxAge        time.Duration
+	AgentsFile       string
+	AgentMaxExpiry   time.Duration
+	KernelPolicy     string
+	SnapshotInterval time.Duration
+	SnapshotRetain   int
 }
 
 func Load(getenv func(string) string) (*Config, error) {
@@ -98,6 +116,8 @@ func Load(getenv func(string) string) (*Config, error) {
 		BackupKeyFile:  get(EnvBackupKeyFile),
 		BackupDir:      get(EnvBackupDir),
 		RPCURL:         get(EnvRPCURL),
+		AgentsFile:     get(EnvAgentsFile),
+		KernelPolicy:   get(EnvKernelPolicy),
 	}
 
 	var err error
@@ -151,13 +171,54 @@ func Load(getenv func(string) string) (*Config, error) {
 		return nil, err
 	}
 
+	if c.JWTMaxAge, err = positiveDuration(get(EnvJWTMaxAge), EnvJWTMaxAge, DefaultJWTMaxAge); err != nil {
+		return nil, err
+	}
+	if c.AgentMaxExpiry, err = positiveDuration(get(EnvAgentMaxExpiry), EnvAgentMaxExpiry, DefaultAgentExpiry); err != nil {
+		return nil, err
+	}
+	if c.KernelPolicy != "" && c.RPCURL == "" {
+		return nil, fmt.Errorf("%w: %s is needed to read bind nonces when %s is set", ErrMissing, EnvRPCURL, EnvKernelPolicy)
+	}
+
 	if c.BackupKeyFile != "" {
 		if c.BackupKey, err = ReadKeyFile(c.BackupKeyFile); err != nil {
 			return nil, fmt.Errorf("config: %s: %w", EnvBackupKeyFile, err)
 		}
 	}
+	if c.BackupDir != "" && c.BackupKey == nil {
+		return nil, fmt.Errorf("%w: %s is required when %s is set", ErrMissing, EnvBackupKeyFile, EnvBackupDir)
+	}
+
+	c.SnapshotInterval = DefaultSnapshotInterval
+	if v := get(EnvSnapshotInterval); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil || d < MinSnapshotInterval {
+			return nil, fmt.Errorf("config: %s: must be a duration of at least %s", EnvSnapshotInterval, MinSnapshotInterval)
+		}
+		c.SnapshotInterval = d
+	}
+	c.SnapshotRetain = DefaultSnapshotRetain
+	if v := get(EnvSnapshotRetain); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			return nil, fmt.Errorf("config: %s: must be a whole number of at least 1", EnvSnapshotRetain)
+		}
+		c.SnapshotRetain = n
+	}
 
 	return c, nil
+}
+
+func positiveDuration(v, name string, def time.Duration) (time.Duration, error) {
+	if v == "" {
+		return def, nil
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d <= 0 {
+		return 0, fmt.Errorf("config: %s: invalid positive duration %q", name, v)
+	}
+	return d, nil
 }
 
 func ParsePeerPins(v string, peers []Peer) (map[string]string, error) {

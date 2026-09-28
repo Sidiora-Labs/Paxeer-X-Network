@@ -281,3 +281,93 @@ area    = "go"
 symptom = "Adding one module raises a shared dependency and go mod tidy shrinks go.sum by half, and a sibling branch's go.sum then conflicts on merge."
 cause   = "Tidy prunes every entry the new graph no longer needs, so two branches that both tidied disagree on most of the file."
 do      = "On such a conflict take one side whole, run go mod tidy once on the merged tree and commit the result; never hand-merge go.sum."
+
+[gotcha.44]
+area    = "attestor"
+symptom = "A test that greps the audit log for a peer id or subject found nothing although the entry was written."
+cause   = "audit.Log stores only the SHA-256 of Entry.Subject; kind, key id, decision, reason and session id are the only plaintext fields."
+do      = "Put anything a test or operator must read back, such as silent peer ids, in Reason, and keep secrets out of it."
+
+[gotcha.45]
+area    = "attestor"
+symptom = "Adding an agent expiry upper bound failed the existing tampered-expiry test, which expects a signature error for an expiry pushed an hour ahead."
+cause   = "The new bound ran before signature verification, so a tampered expiry was reported as too far instead of as a bad signature."
+do      = "Place new request bounds after the signature check and before the nonce is consumed, so tamper tests keep their error and a refused request never burns a nonce."
+
+[gotcha.46]
+area    = "attestor"
+symptom = "Test identity tokens minted twice within one second are byte-identical, so a per-token replay record refuses the second signing request."
+cause   = "The test minter sets only sub, iss, aud, iat and exp, and the replay record keys on the token hash."
+do      = "Give every test token a random jti and mint a fresh token for each signing request."
+
+[gotcha.47]
+area    = "node"
+symptom = "The wallet app release check's secret scan fails with tsconfig.tsbuildinfo: local artefact right after a clean type check."
+cause   = "tsc --noEmit in human/apps/wallet writes an incremental tsconfig.tsbuildinfo, and the scan reports ignored local artefacts too."
+do      = "Delete human/apps/wallet/tsconfig.tsbuildinfo after the type check and before running release-check.sh."
+
+[gotcha.48]
+area    = "node"
+symptom = "A verify command that runs pnpm exec on a rebased lane reinstalls the workspace on its own and the verify log fills with installer output."
+cause   = "package.json changed under the rebase, and pnpm exec installs before it runs when the lockfile and manifest disagree with node_modules."
+do      = "Run pnpm install --frozen-lockfile at the workspace root right after a rebase and before the verify command."
+
+[gotcha.49]
+area    = "attestor"
+symptom = "A well-formed lx_activity request is refused by the kernel policy although the payload decodes."
+cause   = "The evaluator accepts an activity only when its network is the daemon's chain id, its actor is did:layerx: followed by the key's hex, its validity window covers the present moment, and its type has a decoder."
+do      = "Build kernel activities on the daemon's chain id with the signing key as actor, a window around now, and a type the daemon decodes."
+
+[gotcha.50]
+area    = "ops"
+symptom = "The gateway crashes at startup against the managed database with an error about an unrecognised startup parameter."
+cause   = "The attach connection string goes through a connection pooler that rejects statement_timeout in the startup packet."
+do      = "Use the direct connection string where one exists, or apply the timeout with a SET after connecting instead of a startup parameter."
+
+[gotcha.51]
+area    = "node"
+symptom = "The image build fails while pruning development dependencies with ERR_PNPM_NO_OFFLINE_TARBALL."
+cause   = "pnpm 12 cannot prune offline when a tarball for a production dependency is missing from the store it copied."
+do      = "Prune with network access or install production dependencies in a separate stage from the same lockfile."
+
+[gotcha.52]
+area    = "node"
+symptom = "corepack refuses to prepare pnpm in the image build."
+cause   = "The workspace has no packageManager field, so corepack has no version to prepare."
+do      = "Prepare the exact pnpm version explicitly in the Dockerfile until the field is added."
+
+[gotcha.53]
+area    = "attestor"
+symptom = "A test that splits the same secret twice gets a zero share the second time."
+cause   = "dealer.Split wipes the big integer secret passed to it once the shares are dealt."
+do      = "Give every split its own secret value; never reuse a secret after splitting it."
+
+[gotcha.54]
+area    = "rust"
+symptom = "LocalSigner::public_key fails to compile as a method not found."
+cause   = "The method comes from the Signer trait, which must be in scope."
+do      = "Import layerx_crypto::signer::Signer where the local signer's public key is read."
+
+[gotcha.55]
+area    = "attestor"
+symptom = "Pointing the daemon's client CA at the gateway CA makes every node-to-node connection fail and generate hangs until it is refused."
+cause   = "ATTESTOR_TLS_CA_FILE is also the CA the nodes use to trust each other's peer transport."
+do      = "Give ATTESTOR_TLS_CA_FILE a bundle holding the node CA and the gateway CA together."
+
+[gotcha.56]
+area    = "test"
+symptom = "Keeping both hunks of a rebase conflict in a Go test file leaves code that does not compile."
+cause   = "When both sides add tests at the end of the same file the conflict hunk splits mid-function."
+do      = "Take the feature's file whole, re-add your own functions and imports, and gofmt it."
+
+[gotcha.57]
+area    = "rust"
+symptom = "A vector generator crate placed beside test data fails to resolve or resolves different versions than the workspace."
+cause   = "A crate outside any workspace is its own root and picks its own dependency versions."
+do      = "Give it an empty [workspace] table of its own and a copy of the workspace Cargo.lock so cargo run resolves the same pinned versions."
+
+[gotcha.58]
+area    = "attestor"
+symptom = "The first refresh after replacing a lost node fails with a session mismatch."
+cause   = "After an add-share the replacement stored epoch zero while the survivors kept their committed epoch, and refresh names its session after the epoch."
+do      = "Carry the committed epoch in the add-share request, bind it into the session, and have survivors refuse a differing epoch."

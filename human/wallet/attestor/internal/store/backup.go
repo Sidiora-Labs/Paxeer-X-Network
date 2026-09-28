@@ -5,6 +5,7 @@ import (
 	"crypto/hkdf"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,27 +17,60 @@ import (
 )
 
 const (
-	SnapshotVersion   byte = 1
-	backupDomain           = "paxeer-attestor-backup-v1"
+	SnapshotVersion   byte = 2
+	backupDomain           = "paxeer-attestor-backup-v2"
 	maxSnapshotLength      = 1 << 30
+	maxSnapshotNodeID      = 255
 )
 
 var (
 	ErrSnapshotVersion = errors.New("store: unsupported snapshot version")
 	ErrSnapshotAuth    = errors.New("store: snapshot failed authentication")
 	ErrSnapshotFormat  = errors.New("store: malformed snapshot")
+	ErrSnapshotNode    = errors.New("store: snapshot belongs to another node")
 )
+
+func snapshotHeader(nodeID string) ([]byte, error) {
+	if nodeID == "" || len(nodeID) > maxSnapshotNodeID {
+		return nil, fmt.Errorf("store: snapshot node id must be 1 to %d bytes", maxSnapshotNodeID)
+	}
+	h := make([]byte, 0, 3+len(nodeID))
+	h = append(h, SnapshotVersion)
+	h = binary.BigEndian.AppendUint16(h, uint16(len(nodeID)))
+	return append(h, nodeID...), nil
+}
+
+func SnapshotNodeID(raw []byte) (string, error) {
+	if len(raw) < 1 {
+		return "", fmt.Errorf("%w: too short", ErrSnapshotFormat)
+	}
+	if raw[0] != SnapshotVersion {
+		return "", fmt.Errorf("%w: %d", ErrSnapshotVersion, raw[0])
+	}
+	if len(raw) < 3 {
+		return "", fmt.Errorf("%w: too short", ErrSnapshotFormat)
+	}
+	n := int(binary.BigEndian.Uint16(raw[1:3]))
+	if n == 0 || n > maxSnapshotNodeID || len(raw) < 3+n+NonceSize {
+		return "", fmt.Errorf("%w: bad node id header", ErrSnapshotFormat)
+	}
+	return string(raw[3 : 3+n]), nil
+}
 
 type snapshotBody struct {
 	Records []json.RawMessage `json:"records"`
 }
 
-func (s *Store) Snapshot(w io.Writer, backupKey []byte) error {
+func (s *Store) Snapshot(w io.Writer, backupKey []byte, nodeID string) error {
 	if len(backupKey) != KeySize {
 		return fmt.Errorf("store: snapshot: backup key must be %d bytes", KeySize)
 	}
+	header, err := snapshotHeader(nodeID)
+	if err != nil {
+		return err
+	}
 	var body snapshotBody
-	err := s.db.View(func(tx *bbolt.Tx) error {
+	err = s.db.View(func(tx *bbolt.Tx) error {
 		return tx.Bucket(bucketShares).ForEach(func(k, v []byte) error {
 			if _, err := decodeRecord(string(k), v); err != nil {
 				return err
@@ -53,23 +87,24 @@ func (s *Store) Snapshot(w io.Writer, backupKey []byte) error {
 		return fmt.Errorf("store: snapshot: encode: %w", err)
 	}
 	defer zero(plain)
-	aead, ad, err := backupAEAD(backupKey)
+	aead, ad, err := backupAEAD(backupKey, header)
 	if err != nil {
 		return err
 	}
-	out := make([]byte, 1+NonceSize, 1+NonceSize+len(plain)+aead.Overhead())
-	out[0] = SnapshotVersion
-	if _, err := rand.Read(out[1:]); err != nil {
+	hl := len(header)
+	out := make([]byte, hl+NonceSize, hl+NonceSize+len(plain)+aead.Overhead())
+	copy(out, header)
+	if _, err := rand.Read(out[hl:]); err != nil {
 		return errors.New("store: snapshot: nonce generation failed")
 	}
-	out = aead.Seal(out, out[1:1+NonceSize], plain, ad)
+	out = aead.Seal(out, out[hl:hl+NonceSize], plain, ad)
 	if _, err := w.Write(out); err != nil {
 		return fmt.Errorf("store: snapshot: write: %w", err)
 	}
 	return nil
 }
 
-func Restore(r io.Reader, backupKey []byte, dataDir string, nodeKey []byte) (*Store, error) {
+func Restore(r io.Reader, backupKey []byte, nodeID string, dataDir string, nodeKey []byte) (*Store, error) {
 	if len(backupKey) != KeySize {
 		return nil, fmt.Errorf("store: restore: backup key must be %d bytes", KeySize)
 	}
@@ -83,17 +118,23 @@ func Restore(r io.Reader, backupKey []byte, dataDir string, nodeKey []byte) (*St
 	if len(raw) > maxSnapshotLength {
 		return nil, fmt.Errorf("%w: too large", ErrSnapshotFormat)
 	}
-	if len(raw) < 1+NonceSize {
-		return nil, fmt.Errorf("%w: too short", ErrSnapshotFormat)
-	}
-	if raw[0] != SnapshotVersion {
-		return nil, fmt.Errorf("%w: %d", ErrSnapshotVersion, raw[0])
-	}
-	aead, ad, err := backupAEAD(backupKey)
+	owner, err := SnapshotNodeID(raw)
 	if err != nil {
 		return nil, err
 	}
-	plain, err := aead.Open(nil, raw[1:1+NonceSize], raw[1+NonceSize:], ad)
+	if owner != nodeID {
+		return nil, fmt.Errorf("%w: snapshot names node %q, this node is %q", ErrSnapshotNode, owner, nodeID)
+	}
+	header, err := snapshotHeader(nodeID)
+	if err != nil {
+		return nil, err
+	}
+	hl := len(header)
+	aead, ad, err := backupAEAD(backupKey, header)
+	if err != nil {
+		return nil, err
+	}
+	plain, err := aead.Open(nil, raw[hl:hl+NonceSize], raw[hl+NonceSize:], ad)
 	if err != nil {
 		return nil, ErrSnapshotAuth
 	}
@@ -153,10 +194,10 @@ func Restore(r io.Reader, backupKey []byte, dataDir string, nodeKey []byte) (*St
 	return s, nil
 }
 
-func backupAEAD(backupKey []byte) (cipher.AEAD, []byte, error) {
-	ad := []byte{SnapshotVersion}
+func backupAEAD(backupKey []byte, header []byte) (cipher.AEAD, []byte, error) {
+	ad := append([]byte(nil), header...)
 	ad = append(ad, backupDomain...)
-	key, err := hkdf.Key(sha256.New, backupKey, nil, string(ad), KeySize)
+	key, err := hkdf.Key(sha256.New, backupKey, nil, backupDomain, KeySize)
 	if err != nil {
 		return nil, nil, errors.New("store: derive backup key failed")
 	}

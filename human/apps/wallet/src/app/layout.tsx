@@ -7,14 +7,12 @@ import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { ThemeBootstrap } from '@/theme/bootstrap';
 import { DEFAULT_THEME_COLOR } from '@/theme/catalogue';
 import { ThemeProvider } from '@/theme/ThemeProvider';
-
-const PROGRESSIER_APP_URL =
-  'https://progressier.app/d5yxEsi2PnDew795sxaK';
+import { APPLE_TOUCH_ICON, FAVICON_ICON, MANIFEST_URL } from '@/pwa/manifest';
 
 export const metadata: Metadata = {
   title: 'Paxeer Wallet',
   description: 'Crypto wallet for Paxeer Network',
-  manifest: `${PROGRESSIER_APP_URL}/progressier.json`,
+  manifest: MANIFEST_URL,
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
@@ -36,21 +34,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang="en" className="dark" suppressHydrationWarning>
       <head>
         <ThemeBootstrap nonce={nonce} />
-        <script
-          defer
-          nonce={nonce}
-          src={`${PROGRESSIER_APP_URL}/script.js`}
-        />
-        <link rel="apple-touch-icon" href="/icons/ios/180.png" />
-        <link rel="apple-touch-icon" sizes="152x152" href="/icons/ios/152.png" />
-        <link rel="apple-touch-icon" sizes="167x167" href="/icons/ios/167.png" />
-        <link rel="apple-touch-icon" sizes="180x180" href="/icons/ios/180.png" />
-        <link rel="apple-touch-icon" sizes="1024x1024" href="/icons/ios/1024.png" />
-        <link rel="icon" type="image/png" sizes="32x32" href="/icons/ios/32.png" />
-        <link rel="icon" type="image/png" sizes="16x16" href="/icons/ios/16.png" />
+        <link rel="apple-touch-icon" sizes={APPLE_TOUCH_ICON.sizes} href={APPLE_TOUCH_ICON.src} />
+        <link rel="icon" type="image/png" sizes={FAVICON_ICON.sizes} href={FAVICON_ICON.src} />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
-        <meta name="msapplication-TileImage" content="/icons/windows/Square150x150Logo.scale-100.png" />
         <meta name="msapplication-TileColor" content={DEFAULT_THEME_COLOR} />
 
         {/* iOS Splash Screens — Landscape */}

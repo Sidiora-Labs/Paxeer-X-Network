@@ -1,7 +1,7 @@
 import { preferencesRepository } from '../platform/storage/repositories';
 
 export const PAXEER_CONFIG = {
-    rpcUrl: process.env.NEXT_PUBLIC_RPC_URL || 'https://api.hyperpax.xyz',
+    rpcUrl: process.env.NEXT_PUBLIC_PAXEER_RPC_URL ?? '',
     chainId: Number(process.env.NEXT_PUBLIC_CHAIN_ID) || 125,
     explorerBase: process.env.NEXT_PUBLIC_EXPLORER_BASE || 'https://paxscan.io',
     // Same-origin proxy paths. The Next route handler at
@@ -13,13 +13,13 @@ export const PAXEER_CONFIG = {
     // first-party paxeer-indexer read API, which serves the Blockscout v2
     // contract at /api/v2 and the wallet BFF (portfolio/holdings/balance,
     // market, candles, ws/stream) at /api/v1. The deprecated Sidiora
-    // portfolio/spot bases default to the same-origin proxy so every legacy
-    // caller also lands on the indexer; env vars remain as the rollback lever.
-    portfolioApiBase: process.env.NEXT_PUBLIC_PORTFOLIO_API_BASE || '/api/wallet',
+    // portfolio/spot bases use the same-origin proxy so every legacy
+    // caller also lands on the indexer.
+    portfolioApiBase: '/api/wallet',
     blockscoutApiBase: '/api/wallet',
     /** @deprecated Use blockscoutApiBase — kept for callers that hit /api/v2 directly */
     indexerApiBase: '/api/wallet/api/v2',
-    spotApiBase: process.env.NEXT_PUBLIC_SPOT_API_URL || '/api/wallet',
+    spotApiBase: '/api/wallet',
     sessionTimeoutMs: 15 * 60 * 1000,
     encryptionTimeoutMs: 30 * 60 * 1000,
 } as const;

@@ -1,4 +1,5 @@
 import { PAXEER_CONFIG } from './constants';
+import { PWA_NETWORK_ENV, configuredBase } from '@/pwa/config';
 import { rewriteLogoUrl } from './mediaProxy';
 import {
     watchAddress as portfolioWatchAddress,
@@ -550,7 +551,11 @@ export const fetchTopTokens = () => getWalletTopTokens();
 export const searchTokens = (query: string) => searchWalletTokens(query);
 
 // ── PAX/WPAX Price API (wallet.api.balance.paxportwallet.com) ─────────────
-const balanceApiBase = 'https://data-api.crossverse.app/api/pax';
+function marketDataBase(): string {
+    const base = configuredBase(PWA_NETWORK_ENV.marketData);
+    if (base === null) throw new Error(`${PWA_NETWORK_ENV.marketData} is not set`);
+    return base;
+}
 
 export interface PaxPriceLatest {
     latest: number;
@@ -602,7 +607,7 @@ export interface OhlcResponse {
 }
 
 export async function fetchPaxPriceLatest(symbol: string = 'PAX'): Promise<PaxPriceLatest> {
-    const res = await fetch(`${balanceApiBase}/price/?symbol=${symbol}`);
+    const res = await fetch(`${marketDataBase()}/pax/price/?symbol=${symbol}`);
     if (!res.ok) throw new Error(`Price API ${res.status}`);
     const data: PaxPriceResponse = await res.json();
     return {
@@ -791,7 +796,7 @@ export async function fetchCrossverseHistory(
 export async function fetchCrossversePrice(cvSymbol: string): Promise<PaxPriceLatest> {
     const symbol = cvSymbol.toUpperCase();
     const res = await fetch(
-        `https://data-api.crossverse.app/api/${cvSymbol}/price/?symbol=${symbol}`,
+        `${marketDataBase()}/${cvSymbol}/price/?symbol=${symbol}`,
     );
     if (!res.ok) throw new Error(`Crossverse price API ${res.status}`);
     const data: PaxPriceResponse = await res.json();

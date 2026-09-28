@@ -112,6 +112,11 @@ type inboundQueue struct {
 	pending map[uint64]queued
 }
 
+type originalKey struct {
+	sender string
+	round  int32
+}
+
 type delivery struct {
 	sender string
 	msg    types.Message
@@ -137,10 +142,12 @@ type Session struct {
 
 	expectedRelays atomic.Int64
 	sentRelays     atomic.Int64
+	lastInbound    atomic.Int64
 
 	deliverMu sync.Mutex
 	mu        sync.Mutex
 	receiver  Receiver
+	originals map[originalKey]struct{}
 	inbound   map[string]*inboundQueue
 	closed    bool
 	refused   uint64
@@ -198,7 +205,9 @@ func (t *Transport) OpenKind(sessionID string, participants []string, protocolNa
 		outboxes:     make(map[string]chan *Envelope, len(peers)),
 		nextSeq:      make(map[string]uint64, len(peers)),
 		inbound:      make(map[string]*inboundQueue, len(peers)),
+		originals:    make(map[originalKey]struct{}),
 	}
+	s.lastInbound.Store(time.Now().UnixNano())
 	for _, p := range peers {
 		s.outboxes[p] = make(chan *Envelope, t.limits.MaxQueue)
 		s.inbound[p] = &inboundQueue{next: 1, pending: make(map[uint64]queued)}
@@ -396,8 +405,13 @@ func (s *Session) deliver(env *Envelope) error {
 	}
 	s.inbound[env.Sender].pending[env.Seq] = queued{round: env.Round, msg: msg}
 	if !env.Relay && s.kind.admitsRelay() && echoTracked(msg) {
-		s.expectedRelays.Add(int64(len(s.peers) - 1))
+		key := originalKey{sender: env.Sender, round: env.Round}
+		if _, counted := s.originals[key]; !counted {
+			s.originals[key] = struct{}{}
+			s.expectedRelays.Add(int64(len(s.peers) - 1))
+		}
 	}
+	s.lastInbound.Store(time.Now().UnixNano())
 	entry := LoggedMessage{Sender: origin, Round: env.Round, Seq: env.Seq, Type: env.Type}
 	if env.Relay {
 		entry.RelayedBy = env.Sender
@@ -581,6 +595,26 @@ func (s *Session) Flush(ctx context.Context) error {
 		case <-timer.C:
 		}
 	}
+}
+
+func (s *Session) Stalled(limit time.Duration) ([]string, bool) {
+	if limit <= 0 || time.Since(time.Unix(0, s.lastInbound.Load())) < limit {
+		return nil, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	fewest := ^uint64(0)
+	var laggards []string
+	for _, p := range s.peers {
+		delivered := s.inbound[p].next - 1
+		switch {
+		case delivered < fewest:
+			fewest, laggards = delivered, []string{p}
+		case delivered == fewest:
+			laggards = append(laggards, p)
+		}
+	}
+	return laggards, true
 }
 
 func (s *Session) MessageLog() []LoggedMessage {

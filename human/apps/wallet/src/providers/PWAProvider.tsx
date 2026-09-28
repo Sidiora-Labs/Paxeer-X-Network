@@ -12,6 +12,7 @@ import {
 } from '@/lib/push';
 import { pwaDismissalsRepository } from '@/platform/storage/repositories';
 import { initCurrencyService } from '@/lib/currency';
+import { registerServiceWorker, type ServiceWorkerHandle } from '@/pwa/register';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -89,7 +90,7 @@ export function PWAProvider({ children }: { children: React.ReactNode }) {
   const [showNotificationPrompt, setShowNotificationPrompt] = useState(false);
   const [showFloatingIcon, setShowFloatingIcon] = useState(false);
   const [updateAvailable, setUpdateAvailable] = useState(false);
-  const waitingWorkerRef = useRef<ServiceWorker | null>(null);
+  const workerRef = useRef<ServiceWorkerHandle | null>(null);
 
   // ── Detect standalone / installed ──────────────────────────────────────
   useEffect(() => {
@@ -233,9 +234,10 @@ export function PWAProvider({ children }: { children: React.ReactNode }) {
     setDismissed('notificationAt');
   }, []);
 
-  // ── Listen for SW messages (subscription change + update) ──────────
+  // ── Service worker: registration, update offer and push messages ──
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return;
+    const container = navigator.serviceWorker;
     const handler = (event: MessageEvent) => {
       if (event.data?.type === 'PUSH_SUBSCRIPTION_CHANGED') {
         getCurrentSubscription().then((sub) => {
@@ -243,51 +245,38 @@ export function PWAProvider({ children }: { children: React.ReactNode }) {
           setIsSubscribed(!!sub);
         });
       }
-      if (event.data?.type === 'SW_UPDATED') {
-        setUpdateAvailable(true);
-      }
     };
-    const controllerChangeHandler = () => {
-      if (!refreshing) {
-        refreshing = true;
-        window.location.reload();
-      }
-    };
-    let refreshing = false;
-    navigator.serviceWorker.addEventListener('message', handler);
-    navigator.serviceWorker.addEventListener('controllerchange', controllerChangeHandler);
+    container.addEventListener('message', handler);
 
-    // Also detect waiting SW on initial load
-    navigator.serviceWorker.ready.then((reg) => {
-      if (reg.waiting) {
-        waitingWorkerRef.current = reg.waiting;
-        setUpdateAvailable(true);
-      }
-      reg.addEventListener('updatefound', () => {
-        const newWorker = reg.installing;
-        if (!newWorker) return;
-        newWorker.addEventListener('statechange', () => {
-          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-            waitingWorkerRef.current = newWorker;
-            setUpdateAvailable(true);
+    let disposed = false;
+    if (process.env.NODE_ENV === 'production') {
+      registerServiceWorker(container, {
+        onUpdateReady: () => setUpdateAvailable(true),
+        reload: () => window.location.reload(),
+        visibility: document,
+      })
+        .then((handle) => {
+          if (disposed) {
+            handle?.dispose();
+            return;
           }
+          workerRef.current = handle;
+        })
+        .catch((error) => {
+          console.warn('[PWA] Service worker registration failed', error);
         });
-      });
-    }).catch((error) => {
-      console.warn('[PWA] Service worker readiness failed', error);
-    });
+    }
 
     return () => {
-      navigator.serviceWorker.removeEventListener('message', handler);
-      navigator.serviceWorker.removeEventListener('controllerchange', controllerChangeHandler);
+      disposed = true;
+      container.removeEventListener('message', handler);
+      workerRef.current?.dispose();
+      workerRef.current = null;
     };
   }, []);
 
   const applyUpdate = useCallback(() => {
-    const waiting = waitingWorkerRef.current;
-    if (waiting) {
-      waiting.postMessage({ type: 'SKIP_WAITING' });
-    } else {
+    if (!workerRef.current?.applyUpdate()) {
       window.location.reload();
     }
   }, []);

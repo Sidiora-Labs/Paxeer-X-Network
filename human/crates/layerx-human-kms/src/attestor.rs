@@ -149,14 +149,14 @@ impl fmt::Debug for AttestorClient {
         formatter
             .debug_struct("AttestorClient")
             .field("nodes", &self.nodes)
-            .field("identity", &"[operator client identity]")
+            .field("identity", &"[gateway client identity]")
             .finish()
     }
 }
 
 impl AttestorClient {
     /// Builds a mutual-TLS client that trusts only the given attestor roots and presents the
-    /// operator client identity.
+    /// gateway client identity the attestors accept for key generation and signing.
     ///
     /// # Errors
     /// Refuses an empty or duplicated node list, unparsable roots, a missing client identity
@@ -196,7 +196,7 @@ impl AttestorClient {
         }
         let key = pkcs8_pem(private_key_pkcs8);
         let private_key = ureq::tls::PrivateKey::from_pem(key.as_bytes())
-            .map_err(|_| AttestorError::Configuration("operator client key"))?;
+            .map_err(|_| AttestorError::Configuration("gateway client key"))?;
         let chain: Vec<_> = certificate_chain
             .iter()
             .map(|certificate| ureq::tls::Certificate::from_der(certificate).to_owned())

@@ -25,7 +25,15 @@ var (
 	ErrKeyMismatch    = errors.New("agent: registered key differs from request key")
 	ErrFieldTooLong   = errors.New("agent: field exceeds length limit")
 	ErrExpiryOverflow = errors.New("agent: expiry out of range")
+	ErrExpiryTooFar   = errors.New("agent: expiry beyond the accepted maximum")
+	ErrNonceStore     = errors.New("agent: nonce store failed")
 )
+
+const DefaultMaxExpiry = 5 * time.Minute
+
+type AgentNonceStore interface {
+	UseNonce(pub [ed25519.PublicKeySize]byte, nonce [16]byte, expiresAt time.Time) (bool, error)
+}
 
 type Principal struct {
 	PublicKey [ed25519.PublicKeySize]byte
@@ -106,6 +114,10 @@ func (c *NonceCache) Use(pub [ed25519.PublicKeySize]byte, nonce [16]byte, expire
 	return true
 }
 
+func (c *NonceCache) UseNonce(pub [ed25519.PublicKeySize]byte, nonce [16]byte, expiresAt time.Time) (bool, error) {
+	return c.Use(pub, nonce, expiresAt), nil
+}
+
 func (c *NonceCache) Len() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -120,15 +132,17 @@ func (c *NonceCache) Len() int {
 
 type Config struct {
 	Principals PrincipalSet
-	Nonces     *NonceCache
+	Nonces     AgentNonceStore
 	ClockSkew  time.Duration
+	MaxExpiry  time.Duration
 	Now        func() time.Time
 }
 
 type AgentVerifier struct {
 	principals PrincipalSet
-	nonces     *NonceCache
+	nonces     AgentNonceStore
 	skew       time.Duration
+	maxExpiry  time.Duration
 	now        func() time.Time
 }
 
@@ -139,11 +153,18 @@ func NewAgentVerifier(cfg Config) (*AgentVerifier, error) {
 	if cfg.ClockSkew < 0 {
 		return nil, fmt.Errorf("%w: negative clock skew", ErrInvalidConfig)
 	}
+	if cfg.MaxExpiry < 0 {
+		return nil, fmt.Errorf("%w: negative maximum expiry", ErrInvalidConfig)
+	}
+	maxExpiry := cfg.MaxExpiry
+	if maxExpiry == 0 {
+		maxExpiry = DefaultMaxExpiry
+	}
 	now := cfg.Now
 	if now == nil {
 		now = time.Now
 	}
-	return &AgentVerifier{principals: cfg.Principals, nonces: cfg.Nonces, skew: cfg.ClockSkew, now: now}, nil
+	return &AgentVerifier{principals: cfg.Principals, nonces: cfg.Nonces, skew: cfg.ClockSkew, maxExpiry: maxExpiry, now: now}, nil
 }
 
 func (v *AgentVerifier) Verify(ctx context.Context, req Request) (Principal, error) {
@@ -167,7 +188,8 @@ func (v *AgentVerifier) Verify(ctx context.Context, req Request) (Principal, err
 		return Principal{}, ErrExpiryOverflow
 	}
 	expiresAt := time.Unix(int64(req.Expiry), 0)
-	if !v.now().Before(expiresAt.Add(v.skew)) {
+	now := v.now()
+	if !now.Before(expiresAt.Add(v.skew)) {
 		return Principal{}, ErrExpired
 	}
 	owned := false
@@ -187,7 +209,14 @@ func (v *AgentVerifier) Verify(ctx context.Context, req Request) (Principal, err
 	if !ed25519.Verify(ed25519.PublicKey(principal.PublicKey[:]), digest[:], req.Signature[:]) {
 		return Principal{}, ErrBadSignature
 	}
-	if !v.nonces.Use(req.PublicKey, req.Nonce, expiresAt.Add(v.skew)) {
+	if expiresAt.After(now.Add(v.maxExpiry + v.skew)) {
+		return Principal{}, ErrExpiryTooFar
+	}
+	fresh, err := v.nonces.UseNonce(req.PublicKey, req.Nonce, expiresAt.Add(v.skew))
+	if err != nil {
+		return Principal{}, fmt.Errorf("%w: %v", ErrNonceStore, err)
+	}
+	if !fresh {
 		return Principal{}, ErrReplayedNonce
 	}
 	return principal, nil

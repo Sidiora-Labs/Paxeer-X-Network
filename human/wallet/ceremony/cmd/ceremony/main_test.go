@@ -3,11 +3,15 @@ package main
 import (
 	"bytes"
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/archive"
+	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/attestor"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/envelope"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/migrate"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/testsupport"
@@ -29,9 +33,7 @@ func TestPlanArchiveDeliverThroughTheCommand(t *testing.T) {
 	funded := testsupport.InsertWallet(t, pg.DB, vs[2], "funded")
 	testsupport.InsertFundedAccount(t, pg.DB, funded)
 	done := testsupport.InsertWallet(t, pg.DB, vs[3], "standard")
-	if _, err := pg.DB.Exec(`update wallets set migrated_at = now() where id = $1::uuid`, done); err != nil {
-		t.Fatal(err)
-	}
+	testsupport.MarkMigrated(t, pg.DB, done, migrate.SecpKeyID(done))
 
 	env := map[string]string{migrate.EnvDatabaseURL: pg.URL}
 	code, out, errOut := invoke(env, "plan")
@@ -70,6 +72,14 @@ func TestPlanArchiveDeliverThroughTheCommand(t *testing.T) {
 	if strings.Contains(out+errOut, masterB64) {
 		t.Fatal("output carries the master key")
 	}
+	for _, n := range nodes.IDs[:attestor.SignQuorum] {
+		if nodes.Verifications[n] != 4 || nodes.Signs[n] != 0 {
+			t.Fatalf("node %s granted %d verifications and %d owner signatures", n, nodes.Verifications[n], nodes.Signs[n])
+		}
+	}
+	if info, err := os.Stat(env[archive.EnvPath]); err != nil || info.Size() == 0 {
+		t.Fatalf("funded archive missing after deliver: %v", err)
+	}
 
 	code, out, _ = invoke(env, "plan")
 	if code != 0 || out != "wallets=4 eligible=0 funded=1 already_migrated=3\n" {
@@ -94,11 +104,18 @@ func TestDeliverExitsNonZeroOnMismatch(t *testing.T) {
 		t.Fatalf("archive exit %d: %s", code, errOut)
 	}
 	code, out, errOut := invoke(env, "deliver")
-	if code != 1 || !strings.Contains(errOut, "does not recover the stored address") {
+	if code != 1 || !strings.Contains(errOut, migrate.ErrAddressMismatch.Error()+": wallet "+id+" stored "+common.HexToAddress(vs[0].Address).Hex()+" recovered ") {
 		t.Fatalf("deliver exit %d: %s", code, errOut)
 	}
-	if !strings.Contains(out, "matched=0") {
+	if out != "eligible=1 funded_archived=0 read=1 verified=1 imported=1 refreshed=1 test_signed=1 matched=0\n" {
 		t.Fatalf("deliver printed %q", out)
+	}
+	var migrated int
+	if err := pg.DB.QueryRow(`select count(*) from wallets where migrated_at is not null`).Scan(&migrated); err != nil {
+		t.Fatal(err)
+	}
+	if migrated != 0 {
+		t.Fatalf("%d wallets marked migrated after a refused deliver", migrated)
 	}
 }
 

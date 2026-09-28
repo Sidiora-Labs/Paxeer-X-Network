@@ -85,15 +85,21 @@ ATTESTOR_JWT_AUDIENCE - expected audience of user tokens
 ATTESTOR_POLICY_FILE - path to the default signing policy
 ATTESTOR_TLS_CERT_FILE - path to this node's TLS certificate
 ATTESTOR_TLS_KEY_FILE - path to this node's TLS private key
-ATTESTOR_TLS_CA_FILE - path to the CA bundle that authenticates peers and the gateway
-ATTESTOR_OPERATOR_CA_FILE - path to the CA bundle that authenticates the operator identity
+ATTESTOR_TLS_CA_FILE - path to the CA bundle that authenticates peers and the gateway; API clients chaining to it may call keys.generate and sign only
+ATTESTOR_OPERATOR_CA_FILE - path to the CA bundle that authenticates the operator identity; API clients chaining to it may call keys.import, keys.refresh and keys.addshare only; must be a different CA from ATTESTOR_TLS_CA_FILE
 ATTESTOR_BACKUP_KEY_FILE - path to the key file (32 raw bytes or 64 hex characters) that encrypts store snapshots
 ATTESTOR_BACKUP_DIR - directory where encrypted store snapshots are written
+ATTESTOR_SNAPSHOT_INTERVAL - duration between scheduled snapshots into ATTESTOR_BACKUP_DIR, at least 1s, default 1h; a snapshot also follows every successful keys.generate, keys.import, keys.refresh and keys.addshare
+ATTESTOR_SNAPSHOT_RETAIN - number of newest snapshots kept, at least 1, default 48; with a replica configured an older snapshot is deleted only once replica-ledger.json records it as shipped with the same size and digest
 ATTESTOR_REPLICA_KEY_FILE - path to this attestor's OpenSSH private key for the replica; setting any ATTESTOR_REPLICA_ variable requires all six
 ATTESTOR_REPLICA_HOST_KEY_FILE - path to the replica's expected SSH host public key; any other host key is refused and nothing is uploaded
 ATTESTOR_REPLICA_REMOTE_DIR - absolute per-node directory inside the replica user's chroot, /attestor-<node id>, created by the operator on the replica and writable by that user
 ATTESTOR_REPLICA_INTERVAL - duration between shipping passes over ATTESTOR_BACKUP_DIR, at least 1s; each snapshot is uploaded once, verified by size and digest and recorded in replica-ledger.json under ATTESTOR_DATA_DIR
 ATTESTOR_RPC_URL - chain RPC endpoint used to read nonces and binding state
+ATTESTOR_JWT_MAX_AGE - Go duration a user token stays usable after its issue time (default 1h); a token authorises any number of distinct signing requests until then, and each node records the token and request digest in the share store and refuses the identical request under the same token
+ATTESTOR_AGENTS_FILE - path to the JSON list of registered agent principals (public_key hex, frozen, key_ids); unset refuses agent requests with token_unavailable
+ATTESTOR_AGENT_MAX_EXPIRY - Go duration an agent request's expiry may lie ahead of the node clock (default 5m); agent nonces are recorded in the share store
+ATTESTOR_KERNEL_POLICY_FILE - path to the kernel policy for lx_activity, lx_bind and lx_grant; needs ATTESTOR_RPC_URL; unset refuses every kernel kind with no_policy
 
 # gateway
 NODE_ENV - runtime mode of the gateway: development, test or production
@@ -146,6 +152,9 @@ NEXT_PUBLIC_SUPABASE_URL - Supabase project URL used by the demo for sign-in
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY - Supabase publishable key used by the demo for sign-in
 NEXT_PUBLIC_AUTH_REDIRECT_URL - sign-in callback URL of the demo
 NEXT_PUBLIC_SITE_URL - public origin of the demo used for page metadata
+NEXT_PUBLIC_PAXEER_ATTESTOR_URL - attestor base URL the wallet app service worker treats as network-only; unset when browsers never reach the attestors
+CHECK_LIVE_GATEWAY_BASE - base URL of a deployed wallet gateway checked by tools/wallet/check-live.sh gateway
+CHECK_LIVE_GATEWAY_TOKEN - access token of a provisioned test identity that tools/wallet/check-live.sh gateway reads /v1/wallet/me with
 # gateway
 ATTESTOR_ENDPOINTS - comma-separated https base URLs of the five attestor nodes the gateway signs through
 ATTESTOR_CLIENT_CERT_FILE - path to the gateway's mutual TLS client certificate presented to the attestors
@@ -154,6 +163,9 @@ SPONSOR_PRIVATE_KEY - platform secret holding the account setup sponsor key, wri
 SPONSOR_PRIVATE_KEY_FILE - path to the 64-hex private key of the account that tops up binding gas for new unified accounts
 ACCOUNT_SETUP_GAS_CAP_WEI - largest binding gas top-up in wei the sponsor pays for one account
 ATTESTOR_CA_FILE - path to the CA bundle that authenticates the attestor nodes
+ATTESTOR_CLIENT_CERT - platform secret holding the gateway's attestor client certificate, written to the file named by ATTESTOR_CLIENT_CERT_FILE
+ATTESTOR_CLIENT_KEY - platform secret holding the private key of the gateway's attestor client certificate, written to the file named by ATTESTOR_CLIENT_KEY_FILE
+ATTESTOR_CA - platform secret holding the CA bundle that authenticates the attestor nodes, written to the file named by ATTESTOR_CA_FILE
 ATTESTOR_QUORUM - number of healthy attestors a signing session needs, defaulting to 3
 ATTESTOR_HEALTH_INTERVAL_MS - interval between attestor health probes in milliseconds, defaulting to 5000
 ATTESTOR_TIMEOUT_MS - timeout of one attestor request in milliseconds, defaulting to 15000
@@ -181,3 +193,10 @@ PAXSCAN_API_URL - removed with the funded lane
 PAXSCAN_TIMEOUT_MS - removed with the funded lane
 PAXSCAN_CACHE_TTL_MS - removed with the funded lane
 AGENT_BIND_OWNER_FROM_DID - removed; an owner is recorded only through the authenticated claim route
+# human service
+LAYERX_HUMAN_ATTESTOR_NODES - comma-separated id=address list of the attestors that hold human custody keys; when unset the human service keeps the remote KMS
+LAYERX_HUMAN_ATTESTOR_SIGNERS - comma-separated ids of at least three configured attestors that form the signing quorum
+LAYERX_HUMAN_ATTESTOR_ROOT_CERTIFICATE_DER - path to the DER CA that authenticates the attestors
+LAYERX_HUMAN_ATTESTOR_CLIENT_CERTIFICATE_DER - path to the DER client certificate, issued by the CA in ATTESTOR_TLS_CA_FILE, that the human service presents to the attestors for keys.generate and sign
+LAYERX_HUMAN_ATTESTOR_CLIENT_PRIVATE_KEY_DER - path to the DER PKCS8 private key of the client certificate
+LAYERX_HUMAN_ATTESTOR_DEADLINE_SECONDS - deadline in seconds for each attestor request; startup is refused when a signing attestor is unreachable

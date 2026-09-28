@@ -5,7 +5,7 @@ export type SurfaceToken = 'base' | 'raised' | 'card' | 'control' | 'overlay';
 export type TextToken = 'strong' | 'primary' | 'secondary' | 'tertiary' | 'disabled';
 export type ActionToken = 'primary' | 'primary-muted' | 'on-primary';
 export type StatusToken = 'success' | 'danger' | 'warning' | 'info';
-export type LineToken = 'subtle' | 'strong';
+export type LineToken = 'subtle' | 'strong' | 'separator';
 export type OverlayToken = 'scrim' | 'glass' | 'nav' | 'shimmer' | 'shimmer-strong';
 export type ShadowToken = 'sheet' | 'menu';
 
@@ -13,7 +13,7 @@ export const SURFACE_TOKENS: readonly SurfaceToken[] = ['base', 'raised', 'card'
 export const TEXT_TOKENS: readonly TextToken[] = ['strong', 'primary', 'secondary', 'tertiary', 'disabled'];
 export const ACTION_TOKENS: readonly ActionToken[] = ['primary', 'primary-muted', 'on-primary'];
 export const STATUS_TOKENS: readonly StatusToken[] = ['success', 'danger', 'warning', 'info'];
-export const LINE_TOKENS: readonly LineToken[] = ['subtle', 'strong'];
+export const LINE_TOKENS: readonly LineToken[] = ['subtle', 'strong', 'separator'];
 export const OVERLAY_TOKENS: readonly OverlayToken[] = ['scrim', 'glass', 'nav', 'shimmer', 'shimmer-strong'];
 export const SHADOW_TOKENS: readonly ShadowToken[] = ['sheet', 'menu'];
 

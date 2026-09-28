@@ -38,6 +38,8 @@ The app was brought under version control with every secret and local artefact r
 | `NEXT_PUBLIC_PAXEER_RPC_URL` | build | Chain RPC base |
 | `NEXT_PUBLIC_PNS_API_BASE` | build | Name service indexer base; name lookups return nothing when unset, and its origin joins the policy's connect list when set |
 | `NEXT_PUBLIC_POINTS_API_BASE` | build | Points indexer base; the points balance is absent when unset |
+| `NEXT_PUBLIC_MARKET_DATA_API` | build | Market data base serving the PAX and listed token prices; price reads fail when unset, and its origin joins the policy's connect list when set |
+| `NEXT_PUBLIC_FX_RATES_API` | build | Fiat exchange rate base serving the USD latest rates; amounts stay in USD when unset, and its origin joins the policy's connect list when set |
 | `NEXT_PUBLIC_MEDIA_STORAGE_ORIGIN` | build | Storage origin allowed as an image source by the content security policy |
 | `BLOCKSCOUT_UPSTREAM_BASE` | run | Explorer backend behind the same-origin wallet data route |
 | `OPENAI_API_KEY` | run | Assistant route credential |

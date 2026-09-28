@@ -173,6 +173,71 @@ func TestReportWithoutReplicaOmitsIt(t *testing.T) {
 	}
 }
 
+func TestReportSnapshotAgeAndLastError(t *testing.T) {
+	head := sha256.Sum256([]byte("audit-head"))
+	now := time.Unix(2_000_000, 0)
+	state := SnapshotState{}
+	r, err := NewReporter("attestor-3", "region-c", Providers{
+		Shares:    func() (uint64, uint64, error) { return 42, 7, nil },
+		AuditHead: func() (uint64, [32]byte) { return 1024, head },
+		Peers:     func(context.Context) map[string]PeerState { return fourPeers() },
+		Readiness: func() error { return nil },
+		Snapshot:  func() SnapshotState { return state },
+		Clock:     func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatalf("NewReporter: %v", err)
+	}
+	rep := r.Report(context.Background())
+	if rep.Snapshot == nil || rep.Snapshot.LastWrittenAgeSeconds != nil || rep.Snapshot.LastError != "" || rep.Snapshot.Failures != 0 {
+		t.Fatalf("snapshot report before any write = %+v", rep.Snapshot)
+	}
+	body, err := json.Marshal(rep)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(body), `"snapshot":{"last_written_age_seconds":null,"failures":0}`) {
+		t.Fatalf("report JSON %s lacks the null snapshot age", body)
+	}
+
+	state = SnapshotState{LastWritten: now.Add(-125 * time.Second), LastError: "snapshot write: disk full", Failures: 2}
+	rep = r.Report(context.Background())
+	if rep.Snapshot == nil || rep.Snapshot.LastWrittenAgeSeconds == nil || *rep.Snapshot.LastWrittenAgeSeconds != 125 {
+		t.Fatalf("snapshot report = %+v, want an age of 125", rep.Snapshot)
+	}
+	if rep.Snapshot.LastError != "snapshot write: disk full" || rep.Snapshot.Failures != 2 {
+		t.Fatalf("snapshot error %q failures %d", rep.Snapshot.LastError, rep.Snapshot.Failures)
+	}
+	if !rep.Ready || rep.Replica != nil {
+		t.Fatalf("snapshot state changed readiness or invented a replica: ready %v replica %+v", rep.Ready, rep.Replica)
+	}
+	body, err = json.Marshal(rep)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(body), `"snapshot":{"last_written_age_seconds":125,"last_error":"snapshot write: disk full","failures":2}`) {
+		t.Fatalf("report JSON %s lacks the snapshot age and error", body)
+	}
+
+	if got := SnapshotAge(time.Time{}, now); got != nil {
+		t.Fatalf("SnapshotAge of a zero time = %d", *got)
+	}
+	if got := SnapshotAge(now.Add(-time.Minute), now); got == nil || *got != 60 {
+		t.Fatalf("SnapshotAge = %v, want 60", got)
+	}
+}
+
+func TestReportWithoutSnapshotOmitsIt(t *testing.T) {
+	rep := reporter(t, fourPeers(), nil).Report(context.Background())
+	body, err := json.Marshal(rep)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if rep.Snapshot != nil || strings.Contains(string(body), "snapshot") {
+		t.Fatalf("report JSON %s names the snapshot without a provider", body)
+	}
+}
+
 func TestNewReporterRequiresEveryProvider(t *testing.T) {
 	if _, err := NewReporter("attestor-3", "region-c", Providers{}); !errors.Is(err, ErrMissingProvider) {
 		t.Fatalf("NewReporter with no providers = %v, want ErrMissingProvider", err)

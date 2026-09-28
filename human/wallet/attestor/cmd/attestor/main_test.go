@@ -5,23 +5,35 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"io"
 	"math/big"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+
+	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/audit"
+	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/backup"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/config"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/health"
+	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/lxwire"
+	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy"
+	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy/lx"
+	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/store"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/transport"
 )
 
@@ -197,5 +209,485 @@ func TestRunRefusesPeerWithoutPin(t *testing.T) {
 	}
 	if err := run(context.Background(), func(k string) string { return env[k] }, nil); err == nil {
 		t.Fatal("run accepted a peer without a pin")
+	}
+}
+
+func postStatus(t *testing.T, client *http.Client, url string) (int, string) {
+	t.Helper()
+	resp, err := client.Post(url, "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var body struct {
+		Error *struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	raw, _ := io.ReadAll(resp.Body)
+	if err := json.Unmarshal(raw, &body); err != nil || body.Error == nil {
+		t.Fatalf("%s: status %d body %s", url, resp.StatusCode, raw)
+	}
+	return resp.StatusCode, body.Error.Code
+}
+
+func TestRunSeparatesOperatorAndGatewayAuthority(t *testing.T) {
+	dir := t.TempDir()
+	gatewayDir, operatorDir := filepath.Join(dir, "gateway"), filepath.Join(dir, "operator")
+	for _, d := range []string{gatewayDir, operatorDir} {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	gateway, gatewayCA, _ := makeCert(t, gatewayDir, "ca", nil, true)
+	operator, operatorCA, _ := makeCert(t, operatorDir, "ca", nil, true)
+	_, nodeCert, nodeKey := makeCert(t, gatewayDir, "node-1", gateway, false)
+	peer, _, _ := makeCert(t, gatewayDir, "node-2", gateway, false)
+	_, gatewayCert, gatewayKey := makeCert(t, gatewayDir, "gateway-client", gateway, false)
+	_, operatorCert, operatorKey := makeCert(t, operatorDir, "operator-client", operator, false)
+	keyFile := filepath.Join(dir, "store.key")
+	if err := os.WriteFile(keyFile, []byte(hex.EncodeToString(make([]byte, 31))+"03"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	kernelFile := filepath.Join(dir, "kernel.json")
+	if err := os.WriteFile(kernelFile, []byte(`{"version":1,"defaults":{"modules":{"asset":[5]}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	agentKey := make([]byte, 32)
+	agentKey[0] = 1
+	agentsFile := filepath.Join(dir, "agents.json")
+	if err := os.WriteFile(agentsFile, []byte(`[{"public_key":"`+hex.EncodeToString(agentKey)+`","key_ids":["key-1"]}]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pin := transport.SPKIHash(peer.cert)
+	env := map[string]string{
+		config.EnvNodeID:         "node-1",
+		config.EnvListenAddr:     "127.0.0.1:0",
+		config.EnvPeerListenAddr: freeAddr(t),
+		config.EnvPeers:          "node-2=" + freeAddr(t),
+		config.EnvPeerPins:       "node-2=" + hex.EncodeToString(pin[:]),
+		config.EnvNodeKeyFile:    keyFile,
+		config.EnvDataDir:        filepath.Join(dir, "data"),
+		config.EnvChainID:        "125",
+		config.EnvTLSCertFile:    nodeCert,
+		config.EnvTLSKeyFile:     nodeKey,
+		config.EnvTLSCAFile:      gatewayCA,
+		config.EnvOperatorCAFile: operatorCA,
+		config.EnvActivityTypes:  "0x10005",
+		config.EnvKernelPolicy:   kernelFile,
+		config.EnvRPCURL:         "http://" + freeAddr(t),
+		config.EnvAgentsFile:     agentsFile,
+		config.EnvAgentMaxExpiry: "2m",
+		config.EnvJWTMaxAge:      "30m",
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	readyCh := make(chan listening, 1)
+	done := make(chan error, 1)
+	go func() { done <- run(ctx, func(k string) string { return env[k] }, func(l listening) { readyCh <- l }) }()
+	var addrs listening
+	select {
+	case addrs = <-readyCh:
+	case err := <-done:
+		t.Fatalf("run exited early: %v", err)
+	case <-time.After(30 * time.Second):
+		t.Fatal("daemon did not start")
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(gateway.cert)
+	clientFor := func(certPath, keyPath string) *http.Client {
+		pair, err := tls.LoadX509KeyPair(certPath, keyPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{
+			MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{pair}, RootCAs: roots,
+		}}}
+	}
+	gatewayClient, operatorClient := clientFor(gatewayCert, gatewayKey), clientFor(operatorCert, operatorKey)
+	base := "https://" + addrs.API
+	for _, path := range []string{"/v1/sign", "/v1/keys/generate"} {
+		if status, code := postStatus(t, operatorClient, base+path); status != http.StatusForbidden || code != "operator_required" {
+			t.Fatalf("operator identity on %s: %d %s", path, status, code)
+		}
+		if status, code := postStatus(t, gatewayClient, base+path); status == http.StatusForbidden || code == "operator_required" {
+			t.Fatalf("gateway identity refused on %s: %d %s", path, status, code)
+		}
+	}
+	for _, path := range []string{"/v1/keys/import", "/v1/keys/refresh", "/v1/keys/addshare"} {
+		if status, code := postStatus(t, gatewayClient, base+path); status != http.StatusForbidden || code != "operator_required" {
+			t.Fatalf("gateway identity on %s: %d %s", path, status, code)
+		}
+		if status, code := postStatus(t, operatorClient, base+path); status == http.StatusForbidden || code == "operator_required" {
+			t.Fatalf("operator identity refused on %s: %d %s", path, status, code)
+		}
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("run returned %v after termination", err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("daemon did not stop")
+	}
+}
+
+func TestRunRefusesKernelPolicyWithoutChainReader(t *testing.T) {
+	dir := t.TempDir()
+	ca, caPath, _ := makeCert(t, dir, "ca", nil, true)
+	_, nodeCert, nodeKey := makeCert(t, dir, "node-1", ca, false)
+	keyFile := filepath.Join(dir, "store.key")
+	if err := os.WriteFile(keyFile, []byte(hex.EncodeToString(make([]byte, 31))+"04"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	kernelFile := filepath.Join(dir, "kernel.json")
+	if err := os.WriteFile(kernelFile, []byte(`{"version":1,"defaults":{"modules":{"asset":[5]}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{
+		config.EnvNodeID: "node-1", config.EnvListenAddr: "127.0.0.1:0", config.EnvPeerListenAddr: freeAddr(t),
+		config.EnvNodeKeyFile: keyFile, config.EnvDataDir: filepath.Join(dir, "data"),
+		config.EnvChainID: "125", config.EnvTLSCertFile: nodeCert, config.EnvTLSKeyFile: nodeKey,
+		config.EnvTLSCAFile: caPath, config.EnvOperatorCAFile: caPath, config.EnvKernelPolicy: kernelFile,
+	}
+	if err := run(context.Background(), func(k string) string { return env[k] }, nil); err == nil {
+		t.Fatal("run accepted a kernel policy without a chain reader")
+	}
+	env[config.EnvRPCURL] = "http://" + freeAddr(t)
+	env[config.EnvAgentsFile] = filepath.Join(dir, "absent.json")
+	if err := run(context.Background(), func(k string) string { return env[k] }, nil); err == nil {
+		t.Fatal("run accepted a missing agent principal file")
+	}
+}
+
+func TestRunWritesSnapshotsOnTheInterval(t *testing.T) {
+	dir := t.TempDir()
+	ca, caPath, _ := makeCert(t, dir, "ca", nil, true)
+	_, nodeCert, nodeKey := makeCert(t, dir, "node-1", ca, false)
+	peer, _, _ := makeCert(t, dir, "node-2", ca, false)
+	_, clientCert, clientKey := makeCert(t, dir, "client", ca, false)
+	keyFile := filepath.Join(dir, "store.key")
+	if err := os.WriteFile(keyFile, []byte(hex.EncodeToString(make([]byte, 31))+"03"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	backupKeyFile := filepath.Join(dir, "backup.key")
+	if err := os.WriteFile(backupKeyFile, []byte(hex.EncodeToString(make([]byte, 31))+"04"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pin := transport.SPKIHash(peer.cert)
+	backupDir := filepath.Join(dir, "backup")
+	env := map[string]string{
+		config.EnvNodeID:           "node-1",
+		config.EnvRegion:           "region-a",
+		config.EnvListenAddr:       "127.0.0.1:0",
+		config.EnvPeerListenAddr:   freeAddr(t),
+		config.EnvPeers:            "node-2=" + freeAddr(t),
+		config.EnvPeerPins:         "node-2=" + hex.EncodeToString(pin[:]),
+		config.EnvNodeKeyFile:      keyFile,
+		config.EnvDataDir:          filepath.Join(dir, "data"),
+		config.EnvChainID:          "125",
+		config.EnvTLSCertFile:      nodeCert,
+		config.EnvTLSKeyFile:       nodeKey,
+		config.EnvTLSCAFile:        caPath,
+		config.EnvOperatorCAFile:   caPath,
+		config.EnvBackupDir:        backupDir,
+		config.EnvBackupKeyFile:    backupKeyFile,
+		config.EnvSnapshotInterval: "1s",
+		config.EnvSnapshotRetain:   "2",
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	readyCh := make(chan listening, 1)
+	done := make(chan error, 1)
+	go func() { done <- run(ctx, func(k string) string { return env[k] }, func(l listening) { readyCh <- l }) }()
+	var addrs listening
+	select {
+	case addrs = <-readyCh:
+	case err := <-done:
+		t.Fatalf("run exited early: %v", err)
+	case <-time.After(30 * time.Second):
+		t.Fatal("daemon did not start")
+	}
+
+	deadline := time.Now().Add(30 * time.Second)
+	var names []string
+	for time.Now().Before(deadline) {
+		entries, err := os.ReadDir(backupDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		names = names[:0]
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		if len(names) == 2 {
+			if _, seq, ok := backup.ParseName(names[1]); ok && seq >= 3 {
+				break
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if len(names) != 2 {
+		t.Fatalf("snapshot directory holds %v, want the two newest interval snapshots", names)
+	}
+	_, first, ok1 := backup.ParseName(names[0])
+	_, second, ok2 := backup.ParseName(names[1])
+	if !ok1 || !ok2 || second < 3 || second != first+1 {
+		t.Fatalf("snapshot directory holds %v, want two consecutive snapshots after at least three writes", names)
+	}
+
+	pair, err := tls.LoadX509KeyPair(clientCert, clientKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(ca.cert)
+	client := &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{
+		MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{pair}, RootCAs: roots,
+	}}}
+	resp, err := client.Get("https://" + addrs.API + "/health")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	var report health.Report
+	if err := json.Unmarshal(body, &report); err != nil {
+		t.Fatalf("health body %s: %v", body, err)
+	}
+	if report.Snapshot == nil || report.Snapshot.LastWrittenAgeSeconds == nil || report.Snapshot.LastError != "" || report.Snapshot.Failures != 0 {
+		t.Fatalf("health snapshot section %s", body)
+	}
+
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("run returned %v after termination", err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("daemon did not stop")
+	}
+}
+
+func TestRestoreSubcommand(t *testing.T) {
+	dir := t.TempDir()
+	nodeKey := make([]byte, store.KeySize)
+	nodeKey[31] = 5
+	backupKey := make([]byte, store.KeySize)
+	backupKey[31] = 6
+	keyFile := filepath.Join(dir, "store.key")
+	if err := os.WriteFile(keyFile, []byte(hex.EncodeToString(nodeKey)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	backupKeyFile := filepath.Join(dir, "backup.key")
+	if err := os.WriteFile(backupKeyFile, []byte(hex.EncodeToString(backupKey)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	srcDir := filepath.Join(dir, "source")
+	st, err := store.Open(srcDir, nodeKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub := make([]byte, 32)
+	pub[0] = 9
+	if err := st.Put(store.ShareRecord{KeyID: "lx-key", Curve: store.CurveEd25519, PublicKey: pub, Participants: []string{"node-1", "node-2", "node-3"}}, []byte("share material")); err != nil {
+		t.Fatal(err)
+	}
+	lg, err := audit.Open(filepath.Join(srcDir, "audit"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err := backup.New(backup.Config{NodeID: "node-1", Dir: filepath.Join(dir, "backup"), BackupKey: backupKey, Retain: 5, Store: st, Audit: lg})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap, err := w.WriteSnapshot("test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Close()
+	lg.Close()
+	digest := hex.EncodeToString(snap.SHA256[:])
+
+	env := func(nodeID, dataDir string) func(string) string {
+		m := map[string]string{
+			config.EnvNodeID: nodeID, config.EnvListenAddr: "127.0.0.1:0", config.EnvPeerListenAddr: "127.0.0.1:0",
+			config.EnvNodeKeyFile: keyFile, config.EnvDataDir: dataDir, config.EnvChainID: "125",
+			config.EnvBackupKeyFile: backupKeyFile,
+		}
+		return func(k string) string { return m[k] }
+	}
+
+	var out strings.Builder
+	wrong := strings.Repeat("00", 32)
+	if err := restore([]string{"-snapshot", snap.Path, "-sha256", wrong}, env("node-1", filepath.Join(dir, "r1")), &out); !errors.Is(err, backup.ErrDigestMismatch) {
+		t.Fatalf("wrong digest: %v", err)
+	}
+	if err := restore([]string{"-snapshot", snap.Path, "-sha256", digest}, env("node-2", filepath.Join(dir, "r2")), &out); !errors.Is(err, store.ErrSnapshotNode) {
+		t.Fatalf("foreign node: %v", err)
+	}
+	used := filepath.Join(dir, "used")
+	if err := os.MkdirAll(used, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(used, "leftover"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := restore([]string{"-snapshot", snap.Path, "-sha256", digest}, env("node-1", used), &out); !errors.Is(err, store.ErrDataDirInUse) {
+		t.Fatalf("non-empty data directory: %v", err)
+	}
+	if err := restore([]string{"-snapshot", snap.Path}, env("node-1", filepath.Join(dir, "r3")), &out); err == nil {
+		t.Fatal("restore ran without an expected digest")
+	}
+
+	target := filepath.Join(dir, "restored")
+	if err := restore([]string{"-snapshot", snap.Path, "-sha256", digest}, env("node-1", filepath.Join(dir, "ignored")), &out); err != nil {
+		t.Fatalf("restore into the configured data directory: %v", err)
+	}
+	if err := restore([]string{"-snapshot", snap.Path, "-sha256", digest, "-data-dir", target}, env("node-1", filepath.Join(dir, "ignored-2")), &out); err != nil {
+		t.Fatalf("restore into -data-dir: %v", err)
+	}
+	if !strings.Contains(out.String(), snap.Name) || !strings.Contains(out.String(), "1 shares") {
+		t.Fatalf("restore output %q", out.String())
+	}
+	restored, err := store.Open(target, nodeKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restored.Close()
+	rec, err := restored.Get("lx-key")
+	if err != nil || rec.Curve != store.CurveEd25519 {
+		t.Fatalf("restored record %+v: %v", rec, err)
+	}
+	var share []byte
+	if err := restored.WithShare("lx-key", func(p []byte) error { share = append(share, p...); return nil }); err != nil || string(share) != "share material" {
+		t.Fatalf("restored share: %v", err)
+	}
+}
+
+func programTransfer(t *testing.T, key [32]byte, sequence uint64, amount int64) *lx.ActivityRequest {
+	t.Helper()
+	did := lxwire.DIDFromKey(key)
+	from, err := lxwire.AccountID([]byte(lxwire.MainAccountName(did)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	to, err := lxwire.AccountID([]byte(lxwire.MainAccountName(lxwire.DIDFromKey(sha256.Sum256([]byte("daemon ledger recipient"))))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	program := sha256.Sum256([]byte("daemon ledger program"))
+	value := make([]byte, 16)
+	big.NewInt(amount).FillBytes(value)
+	payload := append(append([]byte{}, program[:]...), 0, 1)
+	payload = append(append(append(append(payload, from[:]...), make([]byte, 32)...), to[:]...), value...)
+	now := uint64(time.Now().Unix())
+	a := &lxwire.Activity{
+		ProtocolVersion: lxwire.MaxProtocolVersion,
+		NetworkID:       125,
+		Type:            lx.OpProgramCall,
+		ActorDID:        []byte(did),
+		Authority:       key[:],
+		AccountSequence: sequence,
+		NotBefore:       now - 60,
+		NotAfter:        now + 600,
+		IdempotencyKey:  sha256.Sum256([]byte("daemon ledger activity " + strconv.FormatUint(sequence, 10))),
+		FeeLimit:        lxwire.Uint128{Lo: 1000},
+		PayloadHash:     lxwire.PayloadHash(payload),
+		Payload:         payload,
+	}
+	unsigned, err := lxwire.EncodeUnsignedActivity(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pre, err := lxwire.SignaturePreimage(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	effect, err := lx.DecodeEffect(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &lx.ActivityRequest{Envelope: unsigned, Digest: pre, PublicKey: key, Disclosure: lx.Disclosure{
+		Account: effect.Account, Module: "programs", Operation: a.Type.Ordinal(), Amounts: effect.Amounts,
+		Destinations: effect.Destinations, Sequence: sequence, NotBefore: a.NotBefore, NotAfter: a.NotAfter,
+	}}
+}
+
+func TestPoliciesKeepKernelSpendsInTheNodeStore(t *testing.T) {
+	dir := t.TempDir()
+	keyFile := filepath.Join(dir, "store.key")
+	if err := os.WriteFile(keyFile, []byte(hex.EncodeToString(make([]byte, 31))+"05"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	policyFile := filepath.Join(dir, "policy.json")
+	if err := os.WriteFile(policyFile, []byte(`{"version":1,"defaults":{"chain_id":125,"kinds":["lx_activity"],"rate_per_minute":2}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	kernelFile := filepath.Join(dir, "kernel.json")
+	if err := os.WriteFile(kernelFile, []byte(`{"version":1,"defaults":{"modules":{"programs":[5]},"caps":{"native":{"per_operation":"6000000","daily":"8000000"}}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{
+		config.EnvNodeID: "node-1", config.EnvListenAddr: "127.0.0.1:0", config.EnvPeerListenAddr: freeAddr(t),
+		config.EnvNodeKeyFile: keyFile, config.EnvDataDir: filepath.Join(dir, "data"), config.EnvChainID: "125",
+		config.EnvPolicyFile: policyFile, config.EnvKernelPolicy: kernelFile, config.EnvRPCURL: "http://" + freeAddr(t),
+	}
+	cfg, err := config.Load(func(k string) string { return env[k] })
+	if err != nil {
+		t.Fatal(err)
+	}
+	account := common.HexToAddress("0x5555555555555555555555555555555555555555")
+	key := sha256.Sum256([]byte("daemon ledger kernel key"))
+	native := "lx:" + strings.Repeat("00", 32)
+
+	open := func() (*store.Store, *policy.SpendLedger, *lx.Evaluator) {
+		t.Helper()
+		st, err := store.Open(cfg.DataDir, cfg.NodeKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		engine, ledger, kernel, err := policies(cfg, st)
+		if err != nil {
+			_ = st.Close()
+			t.Fatal(err)
+		}
+		if engine == nil || ledger == nil || kernel == nil {
+			_ = st.Close()
+			t.Fatalf("policies returned engine %v, ledger %v, kernel %v", engine, ledger, kernel)
+		}
+		return st, ledger, kernel
+	}
+
+	st, ledger, kernel := open()
+	allowed := kernel.EvaluateActivity(account, programTransfer(t, key, 1, 5_000_000), ledger.ForRequest("kernel-key/session-1"))
+	if !allowed.Allowed || len(allowed.Spends) != 1 || allowed.Spends[0].Asset != native || allowed.Spends[0].Amount.Cmp(big.NewInt(5_000_000)) != 0 {
+		_ = st.Close()
+		t.Fatalf("kernel activity decision %+v", allowed)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	st, ledger, kernel = open()
+	defer st.Close()
+	now := time.Now()
+	spent, err := ledger.Spent(policy.AccountKey(account.Hex()), native, now.Add(-policy.SpendWindow))
+	if err != nil || spent.Cmp(big.NewInt(5_000_000)) != 0 {
+		t.Fatalf("kernel spend after the daemon reopened its store: %v (%v)", spent, err)
+	}
+	requests, err := ledger.Requests(policy.AccountKey(account.Hex()), now.Add(-policy.RateWindow))
+	if err != nil || requests != 1 {
+		t.Fatalf("kernel requests after the daemon reopened its store: %d (%v)", requests, err)
+	}
+	if refused := kernel.EvaluateActivity(account, programTransfer(t, key, 2, 5_000_000), ledger.ForRequest("kernel-key/session-2")); refused.Allowed || refused.Code != policy.CodeDailyCap {
+		t.Fatalf("a kernel spend over the daily cap after a restart: %+v", refused)
+	}
+	if second := kernel.EvaluateActivity(account, programTransfer(t, key, 3, 1_000_000), ledger.ForRequest("kernel-key/session-3")); !second.Allowed {
+		t.Fatalf("a kernel spend within the cap after a restart: %+v", second)
+	}
+	if limited := kernel.EvaluateActivity(account, programTransfer(t, key, 4, 1), ledger.ForRequest("kernel-key/session-4")); limited.Allowed || limited.Code != policy.CodeRateLimited {
+		t.Fatalf("a third kernel request within a minute across a restart: %+v", limited)
 	}
 }

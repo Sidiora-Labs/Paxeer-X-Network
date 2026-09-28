@@ -49,9 +49,7 @@ func TestPlanMigrationExcludesFundedAndMigrated(t *testing.T) {
 	testsupport.InsertFundedAccount(t, db, funded)
 	fundedKindOnly := testsupport.InsertWallet(t, db, vs[3], "funded")
 	done := testsupport.InsertWallet(t, db, vs[4], "standard")
-	if _, err := db.Exec(`update wallets set migrated_at = now() where id = $1::uuid`, done); err != nil {
-		t.Fatal(err)
-	}
+	testsupport.MarkMigrated(t, db, done, migrate.SecpKeyID(done))
 
 	ctx := context.Background()
 	wallets, err := migrate.ReadWallets(ctx, db)
@@ -110,7 +108,6 @@ func TestDeliverMigratesEveryEligibleWallet(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer client.Close()
-	client.SetTokenSource(nodes.TokenSource())
 	ctx := context.Background()
 	plan, err := migrate.PlanMigration(ctx, db)
 	if err != nil {
@@ -138,6 +135,11 @@ func TestDeliverMigratesEveryEligibleWallet(t *testing.T) {
 			}
 		}
 	}
+	for _, n := range nodes.IDs[:attestor.SignQuorum] {
+		if nodes.Verifications[n] != 6 || nodes.Signs[n] != 0 {
+			t.Fatalf("node %s granted %d verifications and %d owner signatures", n, nodes.Verifications[n], nodes.Signs[n])
+		}
+	}
 	if migrated[funded] || nodes.Holds("n1", migrate.SecpKeyID(funded)) {
 		t.Fatal("funded wallet was delivered")
 	}
@@ -163,7 +165,6 @@ func TestDeliverStopsTheRunOnSignatureMismatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer client.Close()
-	client.SetTokenSource(nodes.TokenSource())
 	ctx := context.Background()
 	plan, err := migrate.PlanMigration(ctx, db)
 	if err != nil {
@@ -205,7 +206,6 @@ func TestDeliverRefusesEnvelopeAddressMismatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer client.Close()
-	client.SetTokenSource(nodes.TokenSource())
 	ctx := context.Background()
 	plan, err := migrate.PlanMigration(ctx, db)
 	if err != nil {

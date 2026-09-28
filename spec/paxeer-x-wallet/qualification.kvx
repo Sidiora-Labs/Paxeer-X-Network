@@ -751,3 +751,345 @@ symbol = "module_schema_tests::native_generated_registry_admits_exactly_the_clos
 observed = "The rust-platform target of the wallet aggregate gate fails this one test on the merged wave; the platform gateway is untouched by the feature's landings since the previous main revision."
 assumption = "Pre-existing failure outside the feature; recorded once for the release gate, not chased here."
 severity = "note"
+
+[observation.4.12.1]
+task = "4.12"
+file = "human/wallet/attestor/cmd/attestor/main.go"
+symbol = "main"
+observed = "The daemon still passes an in-memory ledger and sets neither PeerTimeout nor RoundTimeout, so the server builds the store-backed spend ledger on that ledger's clock and uses the thirty-second peer and two-minute round defaults."
+assumption = "The daemon wiring task passes policy.NewSpendLedger over the node store and exposes both timeouts in configuration; the server's replacement keeps the ledger durable until then."
+
+[observation.4.10.1]
+task = "4.10"
+file = "human/apps/wallet/src/theme/resolve.test.ts"
+symbol = "scan-secrets.sh mnemonic phrase"
+observed = "The release check's secret scan reports a mnemonic phrase at line 67, a test title of plain English words, so release-check.sh exits 1 after every progressive web application step and the Playwright check mode pass."
+assumption = "Neither the scanner nor the theme test belongs to this task and changing either would weaken a check or edit another task's file, so the finding is left for the owner of the scan rule or the theme test."
+severity = "medium"
+
+[observation.4.10.2]
+task = "4.10"
+file = "human/apps/wallet/src/lib/security/csp.ts"
+symbol = "buildContentSecurityPolicy"
+observed = "connect-src lists fixed origins and does not derive the configured gateway, chain RPC or identity provider origins from NEXT_PUBLIC_PAXEER_WALLET_API, NEXT_PUBLIC_PAXEER_RPC_URL or NEXT_PUBLIC_SUPABASE_URL."
+assumption = "This predates the task; only the third-party PWA service entries were removed and manifest-src became self."
+severity = "note"
+
+[observation.4.10.3]
+task = "4.10"
+file = "human/apps/wallet/src/pwa/config.ts"
+symbol = "PWA_NETWORK_ENV"
+observed = "The app had no variable naming the attestor origin, and removing the native dependencies required edits outside the touches list: src/app/page.tsx, src/providers/PWAProvider.tsx, src/components/pwa/PWAComponents.tsx, src/widgets/settings/SettingsWidget.tsx, next.config.mjs, .gitignore, and deleting src/lib/capacitor.ts and src/providers/CapacitorProvider.tsx."
+assumption = "NEXT_PUBLIC_PAXEER_ATTESTOR_URL is optional and documented in human/wallet/deploy/env; browser API harnesses in the register and install tests are EventTarget objects because node and jsdom provide no service worker container or install prompt."
+severity = "note"
+
+[observation.4.21.1]
+task = "4.21"
+file = "human/apps/wallet/src/lib/constants.ts"
+symbol = "getActiveRpcUrl"
+observed = "A custom RPC saved in preferences is an origin chosen at run time, which no configuration name yields, so the derived connect-src blocks it and only the configured chain RPC is reachable from the browser."
+assumption = "Widening connect-src for a user-chosen origin would weaken the policy; the owner decides between dropping the custom RPC setting or routing it through a same-origin handler."
+severity = "medium"
+
+[observation.4.21.2]
+task = "4.21"
+file = "human/apps/wallet/sentry.client.config.ts"
+symbol = "NEXT_PUBLIC_SENTRY_DSN"
+observed = "The browser error reporter sends to the DSN's ingest origin, which is not in connect-src, and the DSN carries its public key as URL userinfo, which the network-only URL check refuses."
+assumption = "Browser reporting stays blocked until reports go through a same-origin tunnel route; server and edge reporting are unaffected."
+severity = "low"
+
+[observation.4.21.3]
+task = "4.21"
+file = "human/apps/wallet/README.md, human/apps/wallet/config/env/schema.ts"
+symbol = "NEXT_PUBLIC_MARKET_DATA_API, NEXT_PUBLIC_FX_RATES_API, NEXT_PUBLIC_RPC_URL"
+observed = "The two new names are documented in README.md outside the touches list; the RPC default now reads NEXT_PUBLIC_PAXEER_RPC_URL with no literal fallback, the portfolio and spot overrides are fixed to the same-origin route, frame-src lost its fixed origins (no frame in src), and config/env/schema.ts still lists NEXT_PUBLIC_RPC_URL."
+assumption = "Deployments set NEXT_PUBLIC_PAXEER_RPC_URL, NEXT_PUBLIC_MARKET_DATA_API and NEXT_PUBLIC_FX_RATES_API; the stale schema entry is left for the owner of that file."
+severity = "note"
+
+[observation.4.5.1]
+task = "4.5"
+file = "human/wallet/deploy/gateway.toml"
+symbol = "http_service.checks"
+observed = "The gateway's platform check requests /health/ready while the gateway serves only /healthz and /readyz (src/index.ts, src/routes/readiness.ts), so the check can never pass; the runbooks read readiness from /readyz."
+assumption = "The gateway deployment task points the check at a served route; the definition and the routes are left as written."
+severity = "suspect"
+
+[observation.4.5.2]
+task = "4.5"
+file = "human/wallet/attestor/cmd/attestor/main.go"
+symbol = "store.Snapshot"
+observed = "No caller writes store.Snapshot or runs store.Restore: the daemon loads ATTESTOR_BACKUP_KEY_FILE and ATTESTOR_BACKUP_DIR and never uses them, and no command restores a snapshot, so req.3.ac_2 has no backup to restore and the replica shipper of task 3.14 has nothing to ship."
+assumption = "A daemon task writes snapshots after keygen, import, refresh and add-share and adds a restore command; the backup runbook restores platform volume snapshots until then."
+severity = "suspect"
+
+[observation.4.5.3]
+task = "4.5"
+file = "human/wallet/schema/attestor-api/v1.kvx"
+symbol = "keys.addshare"
+observed = "keys.addshare needs each key's public key, curve and owner, but no operator tool enumerates a node's keys, the gateway stores no secp256k1 public key, and only keys.refresh, which needs every holder present, returns one, so replacing a lost node across the wallet population has no source for secp256k1 public keys."
+assumption = "A later task adds an operator listing of a node's key ids, curves, owners and public keys or a bulk add-share and refresh command; the runbook documents the per-key operation."
+severity = "suspect"
+
+[observation.4.5.4]
+task = "4.5"
+file = "human/wallet/ceremony/cmd/ceremony/main.go"
+symbol = "run"
+observed = "The verify commands of tasks 5.2 and 5.4 pass rehearse --report-only-counts and deliver --report-only-counts, while run accepts exactly one argument and answers any second one with usage and exit 2; both subcommands already print counts only."
+assumption = "Either the tool gains the flag or those verify commands drop it; the cutover checklist uses the subcommands as they exist."
+severity = "suspect"
+
+[observation.4.5.5]
+task = "4.5"
+file = "human/wallet/ceremony/internal/archive/archive.go"
+symbol = "Archive"
+observed = "No repository command drops the funded rows from the live tables after the archive verifies, as [decision] funded_lane and req.4.ac_4 state; gateway migration 006_archive_funded.sql marks them archived_at at gateway start, before any archive exists."
+assumption = "The funded rows stay in place marked archived and refused by the gateway until an approved step drops them after verification."
+severity = "note"
+
+[observation.4.5.6]
+task = "4.5"
+file = "human/wallet/ceremony/internal/migrate/migrate.go"
+symbol = "Open"
+observed = "The deliver mode marks migrated_at in the database named by CEREMONY_DATABASE_URL, which the gateway must read for the flag flip to take effect, but no task moves the production wallet rows from the current host into the new gateway's database, and backfillAccounts in the gateway has no command entry."
+assumption = "The owner decides whether the new gateway reads the production database itself or a copied one, and a gateway task adds the backfill command; the cutover checklist states both as preconditions."
+severity = "suspect"
+
+[observation.4.11.1]
+task = "4.11"
+file = "human/wallet/schema/attestor-api/v1.kvx"
+symbol = "op.sign.request.construction"
+observed = "The eth_sign_digest entry now documents the required construction object and the golden sign.request.eth_sign_digest.json, closing observation 4.8.1; gateway and ceremony clients that send a bare digest are refused."
+assumption = "The gateway client already sends the construction the daemon recomputes, as the sign request type has carried it since the bare digest fix."
+severity = "note"
+
+[observation.4.11.2]
+task = "4.11"
+file = "human/wallet/schema/attestor-api/v1.kvx"
+symbol = "error.operator_required"
+observed = "operator_required now also answers a verified certificate from the wrong CA for the route, while the schema meaning still says only that no verified client certificate was presented, and the op auth lines do not name the CA each route needs."
+assumption = "Changing entries other than eth_sign_digest was outside this task's schema scope, so the code reuses the existing code instead of adding a new one."
+severity = "medium"
+
+[observation.4.11.3]
+task = "4.11"
+file = "human/crates/layerx-human-kms/tests/attestor.rs"
+symbol = "attestor"
+observed = "The KMS crate test calls keys.generate and sign with the operator identity, sets no kernel policy and may reuse one identity token, so against this daemon it gets operator_required, no_policy or token_invalid."
+assumption = "Its harness must issue a gateway-CA client certificate for generate and sign, load a kernel policy with a chain reader, and mint one token per signing request."
+severity = "high"
+
+[observation.4.11.4]
+task = "4.11"
+file = "human/wallet/gateway/test/e2e/attestors.ts"
+symbol = "attestors"
+observed = "The gateway end-to-end harness points ATTESTOR_TLS_CA_FILE and ATTESTOR_OPERATOR_CA_FILE at one CA, which grants the gateway both authorities, and may relay one token to several signing requests, which each node now refuses after the first."
+assumption = "The harness should use two CAs and a fresh token per signing request; the daemon does not refuse a shared bundle at start so the harness keeps starting."
+severity = "medium"
+
+[observation.4.11.5]
+task = "4.11"
+file = "human/wallet/attestor/internal/server/sign.go"
+symbol = "activityDisclosure"
+observed = "The sign request has no disclosure field (observation 3.4.1), so the node derives the kernel disclosure from the envelope and the evaluator's disclosure match is always satisfied at the node."
+assumption = "The human service matches its disclosure against the canonical bytes before it asks for a signature, and adding a disclosure field to the API is an owner decision."
+severity = "medium"
+
+[observation.4.11.6]
+task = "4.11"
+file = "human/wallet/attestor/internal/store/replay.go"
+symbol = "Store.UseToken"
+observed = "Token and agent nonce records live in a replay bucket of the share store, a file outside the brief's listed scope, because the task requires the identifier to be recorded in the store."
+assumption = "The record bucket is additive and leaves share records and their encryption unchanged."
+severity = "note"
+
+[observation.4.11.7]
+task = "4.11"
+file = "human/wallet/attestor/internal/server/sign.go"
+symbol = "evaluate"
+observed = "Kernel kinds are evaluated by the lx evaluator, whose caps read and record spends in the ledger it was built with, so they bypass the store-backed spend ledger and its announcement that other kinds now use."
+assumption = "The daemon wiring that moves the node onto the durable spend ledger also builds the kernel evaluator over it; kernel decisions still reach the announcement with the spends they return."
+severity = "medium"
+
+[observation.4.17.1]
+task = "4.17"
+file = "human/wallet/ceremony/cmd/ceremony/main_test.go"
+symbol = "TestDeliverExitsNonZeroOnMismatch"
+observed = "Without a signing credential the command's deliver stops at the test signature with the daemon's 401 token_missing, so the command tests now assert that refusal, the counts reached and no wallet marked, and the recovered-address mismatch through the command is unreachable."
+assumption = "The operator verification signature restores the full deliver and its mismatch path through the command; the migrate tests keep both with an owner token source."
+severity = "blocker"
+
+[observation.4.15.1]
+task = "4.15"
+file = "human/wallet/gateway/src/provision/state.ts"
+symbol = "provisionAccount"
+observed = "One POST /v1/wallet/provision spends its single bearer token on the lx_bind signature and again on the bindLayerX transaction signature, and the daemon now records each token once, so the second sign answers token_invalid, the route answers 401 after the top-up and the end-to-end beforeAll fails."
+assumption = "Either the daemon lets one token authorise the binding pair of one provisioning or provisioning spans two owner requests with the provisioning test updated with it; both sides are left as written."
+severity = "blocker"
+
+[observation.4.15.2]
+task = "4.15"
+file = "human/wallet/gateway/test/provisioning.test.ts"
+symbol = "beforeAll"
+observed = "The provisioning test starts its daemons without ATTESTOR_KERNEL_POLICY_FILE and ATTESTOR_RPC_URL, so every lx_bind is refused with no kernel evaluator and three of its cases fail on the merged daemon."
+assumption = "Its daemon setup gains the kernel policy and chain URL the end-to-end harness now passes, after which it meets observation 4.15.1."
+severity = "blocker"
+
+[observation.4.18.1]
+task = "4.18"
+file = "human/wallet/attestor/internal/policy/lx/lx.go"
+symbol = "DecodeEffect"
+observed = "The kernel evaluator decodes an asset transfer as exactly from, to, asset and amount, while layerx-crypto's disclosure binds asset operation 5 only in the tagged send layout with its embedded authorization, so no asset send passes both and the test signs a Programs transfer, the one layout both decoders share."
+assumption = "The human service's kernel sends reach the daemon as the tagged send layout and are refused with decode_error until one of the two decoders follows the other."
+severity = "high"
+
+[observation.4.1.1]
+task = "4.1"
+file = "tools/wallet/check-deploy.sh"
+symbol = "health-check"
+observed = "The definition check exits 1 only on the five attestor health-check failures of observation 3.5.3; every gateway.toml rule passes, including the attestor client [[files]] mappings and their documented names."
+assumption = "The pre-existing attestor rule stays as recorded in 3.5.3; the gateway definition is not blocked by it."
+severity = "note"
+
+[observation.4.1.2]
+task = "4.1"
+file = "human/wallet/gateway/Dockerfile"
+symbol = "corepack install"
+observed = "The image build failed because the workspace names no packageManager for corepack install, the full install follows the SDK's link outside the build context, and the offline production prune finds no store after node_modules is removed; the build now prepares pnpm 12.6.0, installs and prunes only ./gateway... and prunes online, which spent both repair cycles."
+assumption = "The gateway image needs only the gateway's own dependency closure; the SDK and demo are not part of it."
+severity = "suspect"
+
+[observation.4.1.3]
+task = "4.1"
+file = "human/wallet/gateway/src/db/pool.ts"
+symbol = "statement_timeout"
+observed = "The gateway machine exits at start with unsupported startup parameter: statement_timeout because the pool sends statement_timeout as a connection startup parameter and the managed database URL set by attach goes through its connection pooler, so no machine passed readiness and the shadow proof and verify command were not run."
+assumption = "Either DATABASE_URL names the cluster's direct connection or the pool sets statement_timeout after connecting; no third repair cycle was spent, and the stopped machine, the database, the staged secrets and the dedicated IPv4 are left in place."
+severity = "blocker"
+
+[gate.4.1]
+revision = "74879759ed57c9107916264da19e79c1ce4dd657"
+command = "docker build -f human/wallet/gateway/Dockerfile -t paxeer-wallet-gateway:deploy . && flyctl deploy --config human/wallet/deploy/gateway.toml --image paxeer-wallet-gateway:deploy --app paxeer-wallet-gateway --local-only --wait-timeout 10m -y, database attached and secrets staged out of band"
+exit_code = 1
+log_path = ".logs/deploy.log"
+observed = "Image sha256:c0fac1e7d3b775ff4a81bfde81cf5f325f6548c0150e2087c5686c418504c78a was pushed after one registry timeout and one performance-2x 4 GB machine of the planned two was created, wrote its four secret files and exited at database connect on the pooler's statement_timeout refusal, so readiness never passed and no provisioning or transaction was made."
+
+[observation.4.13.1]
+task = "4.13"
+file = "human/wallet/attestor/internal/policy/policy.go"
+symbol = "Evaluate"
+observed = "Outside the task's touches, New registers the operator_verification inspector and Evaluate hands every request to the verification isolation hook in kinds.go before the account rules, so the kind skips account kinds, rate and caps and any other kind carrying the verification message is refused with verification_isolated."
+assumption = "Two additive lines in policy.go are the narrowest way to make the kind its own and keep every other kind from signing the message; kinds.go holds the logic."
+severity = "low"
+
+[observation.4.13.2]
+task = "4.13"
+file = "human/wallet/ceremony/internal/rehearsal/rehearsal.go"
+symbol = "Run"
+observed = "The rehearsal still sets a token source that deliver no longer uses and now reaches the daemons' operator_verification under the ceremony flag; the rehearsal, migrate and command tests sit outside this task's verify command and were not run by its gate."
+assumption = "The wallet-tree aggregate gate on the merged wave runs the ceremony module in full, including the restored command tests and the rehearsal against real daemons."
+severity = "low"
+
+[observation.4.13.3]
+task = "4.13"
+file = "human/wallet/ceremony/cmd/ceremony/main_test.go"
+symbol = "TestDeliverExitsNonZeroOnMismatch"
+observed = "Deliver now signs through operator_verification with no token source, so both command tests are restored: the full deliver marks every eligible wallet migrated beside the verified archive, and a corrupted signing key stops the run on the recovered-address mismatch with exit 1; this closes observation 4.17.1."
+assumption = "The daemon-side isolation keeps the verification signature from standing in for any owner signature."
+severity = "low"
+
+[observation.4.6.1]
+task = "4.6"
+file = "human/crates/layerx-human-identity-provider/Cargo.toml"
+symbol = "AssertionVerifier"
+observed = "The identity provider crate depends on layerx-human-service, so the service cannot link the assertion verifier into production construction, and no service request carries the wallet assertion to AttestorKms::admit_assertion."
+assumption = "The attestors verify the assertion themselves on every sign; the end-to-end test resolves the principal through the identity provider as a dev-dependency and a later task adds the request carrier."
+severity = "note"
+
+[observation.4.6.2]
+task = "4.6"
+file = "human/wallet/attestor/internal/server/sign.go"
+symbol = "KindLXActivity"
+observed = "The daemon has no kind for the 402LXP owner send-debit authorization, so an owner-kind debit for an attestor-held key cannot be signed and CustodySigner::authorize_send refuses on the attestor provider."
+assumption = "The end-to-end kernel send carries a session-key debit authorization while the owner activity is signed by the attestor quorum."
+severity = "suspect"
+
+[observation.4.6.3]
+task = "4.6"
+file = "human/wallet/attestor/internal/policy/lx/lx.go"
+symbol = "DecodeEffect"
+observed = "Against the hardened daemon the e2e signs in, generates the key under the gateway authority and reaches sign, which every signer refuses: the kernel's asset operation 5 payload is the signed send encoding tagged 0x5301 while the kernel evaluator decodes operation 5 as a 112-byte from, to, asset and amount transfer, and the test agent layer also builds a label authority and a fixed validity window the evaluator checks against the wall clock."
+assumption = "The kernel evaluator must decode the kernel's own send payload before any human send can be attestor-signed; the test's owner-key authority and wall-clock window are follow-up edits once that decoder exists."
+severity = "blocker"
+
+[observation.4.14.1]
+task = "4.14"
+file = "human/wallet/attestor/internal/replica/replica_test.go"
+symbol = "Store.Snapshot"
+observed = "Binding the node id into the snapshot changed Store.Snapshot to take the node id, so the one replica test call outside the touches list now passes node-1."
+assumption = "The replica package only reads the version byte and ships bytes, so the call change keeps every replica assertion intact."
+severity = "note"
+
+[observation.4.14.2]
+task = "4.14"
+file = "human/wallet/attestor/internal/server/server_test.go"
+symbol = "TestSnapshotFollowsEveryKeyChangeAndRestoresToSign"
+observed = "The restore followed by a quorum signature lives in the server tests, because the five-node cluster harness is only reachable from the server package; backup_test.go proves restore into an empty directory and every refusal against a real store."
+assumption = "do_4 is met by the two files together."
+severity = "note"
+
+[observation.4.14.3]
+task = "4.14"
+file = "human/wallet/deploy/attestor-1.toml"
+symbol = "ATTESTOR_BACKUP_DIR"
+observed = "The deploy definitions place ATTESTOR_BACKUP_DIR inside ATTESTOR_DATA_DIR, so the restore subcommand refuses the live data directory as non-empty and a restore targets a fresh directory given with -data-dir."
+assumption = "Operators restore onto a fresh volume and copy the chosen snapshot out of the old one first."
+severity = "note"
+
+[observation.4.22.1]
+task = "4.22"
+file = "human/wallet/attestor/internal/auth/jwt/jwt.go"
+symbol = "TokenVerifier.Verify"
+observed = "Bearer tokens are now request-scoped against replay but remain bearer credentials: a party holding a live token, such as a compromised gateway, can still issue new distinct signing requests with it until expiry or the maximum age."
+assumption = "Binding a token to the client with a proof-of-possession header signed by a per-session key from the SDK remains open and is an owner decision."
+severity = "high"
+
+[observation.4.22.2]
+task = "4.22"
+file = "human/wallet/attestor/internal/server/e2e_test.go"
+symbol = "TestFiveNodeEndToEnd"
+observed = "The replayed-token case sent the same token with a new session id, which the request-scoped rule now accepts by design, so the case repeats the identical sign-evm-tx request and keeps its token_invalid and already-authorised assertions."
+assumption = "Reusing a token across distinct requests is the behaviour observation 4.15.1 requires, so the case still proves replay refusal."
+severity = "note"
+
+[observation.4.19.1]
+task = "4.19"
+file = "human/wallet/attestor/cmd/attestor/main.go"
+symbol = "policies"
+observed = "The daemon now builds policy.NewSpendLedger over the node store, passes it as the server ledger and builds the kernel evaluator without a ledger, so no in-memory ledger remains; this closes observation 4.11.7 and the ledger half of 4.12.1, while the daemon still sets neither PeerTimeout nor RoundTimeout."
+assumption = "Exposing the peer and round timeouts in configuration stays with the daemon configuration work named in 4.12.1."
+severity = "note"
+
+[observation.4.19.2]
+task = "4.19"
+file = "human/wallet/attestor/internal/server/e2e_test.go"
+symbol = "startNode"
+observed = "Outside the task touches, the test cluster's lx.New call dropped its ledger argument so the package compiles against the new constructor; the cluster still passes a memory ledger as Options.Ledger, which the server replaces with the store-backed spend ledger on that ledger's clock."
+assumption = "The one-argument change is the minimum the new constructor requires and changes no test behaviour."
+severity = "note"
+
+[observation.4.20.1]
+task = "4.20"
+file = "human/wallet/attestor/internal/server/keys.go"
+symbol = "doAddShare"
+observed = "A new participant stored epoch zero after add-share while the survivors kept their committed epoch, and the refresh that follows binds its session name to each node's epoch, so refreshing a replacement of a key refreshed before failed; add-share now takes an optional epoch, holders refuse a different one, the new participant stores it and the session binding includes it."
+assumption = "The optional field keeps every existing add-share body for epoch-zero keys valid and the keys.addshare golden unchanged; the operator copies the epoch from keys.describe as the runbook shows."
+severity = "note"
+
+[observation.4.20.2]
+task = "4.20"
+file = "human/wallet/docs/security-review.md"
+symbol = "F-4"
+observed = "The security review lists keys.import, keys.refresh and keys.addshare as the operator-only routes and does not yet name keys.describe, which operatorOnly also admits only from the operator CA."
+assumption = "The review is outside this task's touches; its next revision adds keys.describe to the operator routes."
+severity = "low"

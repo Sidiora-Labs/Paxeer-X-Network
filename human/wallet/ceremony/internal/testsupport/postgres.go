@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha512"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -30,6 +31,7 @@ import (
 	"testing"
 	"time"
 
+	"filippo.io/edwards25519"
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/getamis/alice/crypto/birkhoffinterpolation"
@@ -358,34 +360,38 @@ func writePEM(t *testing.T, path, typ string, der []byte) {
 }
 
 type storedShare struct {
-	bundle dealer.ShareBundle
-	epoch  uint64
+	bundle   dealer.ShareBundle
+	epoch    uint64
+	session  string
+	verified bool
 }
 
 type Nodes struct {
-	TLS     *TLSFiles
-	IDs     []string
-	URLs    map[string]string
-	Pins    map[string][32]byte
-	mu      sync.Mutex
-	shares  map[string]map[string]*storedShare
-	audit   map[string]uint64
-	corrupt map[string]bool
-	Imports map[string]int
-	Signs   map[string]int
+	TLS           *TLSFiles
+	IDs           []string
+	URLs          map[string]string
+	Pins          map[string][32]byte
+	mu            sync.Mutex
+	shares        map[string]map[string]*storedShare
+	audit         map[string]uint64
+	corrupt       map[string]bool
+	Imports       map[string]int
+	Signs         map[string]int
+	Verifications map[string]int
 }
 
 func StartNodes(t *testing.T) *Nodes {
 	t.Helper()
 	n := &Nodes{
-		TLS:     NewTLSFiles(t),
-		URLs:    map[string]string{},
-		Pins:    map[string][32]byte{},
-		shares:  map[string]map[string]*storedShare{},
-		audit:   map[string]uint64{},
-		corrupt: map[string]bool{},
-		Imports: map[string]int{},
-		Signs:   map[string]int{},
+		TLS:           NewTLSFiles(t),
+		URLs:          map[string]string{},
+		Pins:          map[string][32]byte{},
+		shares:        map[string]map[string]*storedShare{},
+		audit:         map[string]uint64{},
+		corrupt:       map[string]bool{},
+		Imports:       map[string]int{},
+		Signs:         map[string]int{},
+		Verifications: map[string]int{},
 	}
 	for i := 1; i <= attestor.NodeCount; i++ {
 		id := fmt.Sprintf("n%d", i)
@@ -453,17 +459,19 @@ func (n *Nodes) Epoch(nodeID, keyID string) uint64 {
 }
 
 var errorCategories = map[string]string{
-	"operator_required":        "token",
-	"token_missing":            "token",
-	"session_bad_request":      "session",
-	"session_failed":           "session",
-	"session_unsupported_kind": "session",
-	"quorum_too_few_signers":   "quorum",
-	"quorum_self_missing":      "quorum",
-	"key_not_found":            "key",
-	"key_exists":               "key",
-	"key_not_refreshed":        "key",
-	"key_invalid_share":        "key",
+	"operator_required":         "token",
+	"token_missing":             "token",
+	"session_bad_request":       "session",
+	"session_failed":            "session",
+	"session_unsupported_kind":  "session",
+	"quorum_too_few_signers":    "quorum",
+	"quorum_self_missing":       "quorum",
+	"key_not_found":             "key",
+	"key_exists":                "key",
+	"key_not_refreshed":         "key",
+	"key_invalid_share":         "key",
+	"verification_not_imported": "key",
+	"verification_used":         "key",
 }
 
 func writeError(w http.ResponseWriter, status int, code, msg string) {
@@ -528,7 +536,7 @@ func (n *Nodes) handler(id string) http.Handler {
 		if n.shares[req.KeyID] == nil {
 			n.shares[req.KeyID] = map[string]*storedShare{}
 		}
-		s := &storedShare{bundle: b}
+		s := &storedShare{bundle: b, session: req.SessionID}
 		n.shares[req.KeyID][id] = s
 		n.audit[id]++
 		n.Imports[id]++
@@ -562,6 +570,10 @@ func (n *Nodes) handler(id string) http.Handler {
 		var req attestor.SignRequest
 		if err := decodeStrict(r, &req); err != nil || req.SessionID == "" {
 			writeError(w, http.StatusBadRequest, "session_bad_request", "malformed sign request")
+			return
+		}
+		if req.Kind == attestor.KindVerify {
+			n.verify(w, r, id, req)
 			return
 		}
 		if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
@@ -627,6 +639,118 @@ func (n *Nodes) handler(id string) http.Handler {
 	return mux
 }
 
+func (n *Nodes) verify(w http.ResponseWriter, r *http.Request, id string, req attestor.SignRequest) {
+	if len(r.TLS.PeerCertificates) == 0 || attestor.SPKIHash(r.TLS.PeerCertificates[0]) != n.TLS.OperatorSPKI {
+		writeError(w, http.StatusForbidden, "operator_required", "operator verification requires the operator identity")
+		return
+	}
+	if r.Header.Get("Authorization") != "" || r.Header.Get("X-Agent-Key") != "" || req.Message != "" || req.ImportSessionID == "" {
+		writeError(w, http.StatusBadRequest, "session_bad_request", "operator verification carries only the import session")
+		return
+	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	own, ok := n.shares[req.KeyID][id]
+	if !ok || own.session != req.ImportSessionID {
+		writeError(w, http.StatusConflict, "verification_not_imported", "key was not imported under this session")
+		return
+	}
+	if own.verified {
+		writeError(w, http.StatusConflict, "verification_used", "key already received its verification signature")
+		return
+	}
+	var bundles []dealer.ShareBundle
+	member := false
+	for _, p := range req.Signers {
+		member = member || p == id
+		s, ok := n.shares[req.KeyID][p]
+		if !ok || (s.bundle.Curve == dealer.Secp256k1 && s.epoch == 0) {
+			writeError(w, http.StatusConflict, "key_not_refreshed", "signer has no signing share")
+			return
+		}
+		bundles = append(bundles, s.bundle)
+	}
+	if !member {
+		writeError(w, http.StatusConflict, "quorum_self_missing", "node is not a signer")
+		return
+	}
+	if len(bundles) < int(own.bundle.Threshold) {
+		writeError(w, http.StatusConflict, "quorum_too_few_signers", "quorum is short")
+		return
+	}
+	secret, err := interpolate(bundles)
+	if err != nil {
+		writeError(w, http.StatusConflict, "key_invalid_share", err.Error())
+		return
+	}
+	if n.corrupt[req.KeyID] {
+		secret.Add(secret, big.NewInt(1))
+	}
+	pub, err := attestor.PublicKeyBytes(own.bundle.PublicKey)
+	if err != nil {
+		writeError(w, http.StatusConflict, "key_invalid_share", err.Error())
+		return
+	}
+	msg := attestor.VerificationMessage(req.KeyID, pub, own.session)
+	resp := attestor.SignResponse{NodeID: id, KeyID: req.KeyID, Kind: req.Kind, Message: hex.EncodeToString(msg)}
+	switch own.bundle.Curve {
+	case dealer.Secp256k1:
+		priv, err := crypto.ToECDSA(secret.FillBytes(make([]byte, 32)))
+		if err != nil {
+			writeError(w, http.StatusConflict, "key_invalid_share", err.Error())
+			return
+		}
+		digest := crypto.Keccak256(msg)
+		sig, err := crypto.Sign(digest, priv)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, "session_failed", err.Error())
+			return
+		}
+		rec := sig[64]
+		resp.SignedBytes, resp.Signature, resp.RecoveryID = hex.EncodeToString(digest), hex.EncodeToString(sig), &rec
+	case dealer.Ed25519:
+		sig, err := signEd25519(secret, pub, msg)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, "session_failed", err.Error())
+			return
+		}
+		resp.SignedBytes, resp.Signature = hex.EncodeToString(msg), hex.EncodeToString(sig)
+	}
+	own.verified = true
+	n.audit[id]++
+	n.Verifications[id]++
+	resp.AuditSequence = n.audit[id]
+	writeJSON(w, resp)
+}
+
+func signEd25519(secret *big.Int, pub, msg []byte) ([]byte, error) {
+	be := secret.FillBytes(make([]byte, 32))
+	le := make([]byte, 32)
+	for i := range be {
+		le[31-i] = be[i]
+	}
+	a, err := edwards25519.NewScalar().SetCanonicalBytes(le)
+	if err != nil {
+		return nil, err
+	}
+	nonce := sha512.Sum512(append(append([]byte(nil), le...), msg...))
+	rs, err := edwards25519.NewScalar().SetUniformBytes(nonce[:])
+	if err != nil {
+		return nil, err
+	}
+	R := new(edwards25519.Point).ScalarBaseMult(rs).Bytes()
+	h := sha512.New()
+	h.Write(R)
+	h.Write(pub)
+	h.Write(msg)
+	k, err := edwards25519.NewScalar().SetUniformBytes(h.Sum(nil))
+	if err != nil {
+		return nil, err
+	}
+	S := edwards25519.NewScalar().MultiplyAdd(k, a, rs)
+	return append(R, S.Bytes()...), nil
+}
+
 func interpolate(bundles []dealer.ShareBundle) (*big.Int, error) {
 	ec, err := bundles[0].Curve.Elliptic()
 	if err != nil {
@@ -659,6 +783,18 @@ func InsertWallet(t *testing.T, db *sql.DB, v Vector, kind string) string {
 		t.Fatal(err)
 	}
 	return id
+}
+
+func MarkMigrated(t *testing.T, db *sql.DB, walletID, attestorKeyID string) {
+	t.Helper()
+	res, err := db.Exec(`update wallets set migrated_at = now(), attestor_key_id = $2
+		where id = $1::uuid and migrated_at is null`, walletID, attestorKeyID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, err := res.RowsAffected(); err != nil || n != 1 {
+		t.Fatalf("mark wallet %s migrated: %d rows, %v", walletID, n, err)
+	}
 }
 
 func InsertFundedAccount(t *testing.T, db *sql.DB, walletID string) {

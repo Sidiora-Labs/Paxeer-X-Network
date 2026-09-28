@@ -26,6 +26,7 @@ const (
 	NonceSize      = 12
 	FileName       = "shares.db"
 	shareDomain    = "paxeer-attestor-share-v1"
+	recordDomain   = "paxeer-attestor-record-v1"
 	openTimeout    = 5 * time.Second
 )
 
@@ -35,7 +36,10 @@ var (
 	ErrAuthFailed   = errors.New("store: share failed authentication")
 	ErrKeySize      = errors.New("store: node key must be 32 bytes")
 	ErrDataDirInUse = errors.New("store: data directory is not empty")
+	ErrStageEpoch   = errors.New("store: staged share does not follow the committed epoch")
 	bucketShares    = []byte("shares")
+	bucketStaged    = []byte("staged")
+	bucketRecords   = []byte("records")
 )
 
 type ShareRecord struct {
@@ -71,8 +75,12 @@ func openFile(path string, nodeKey []byte) (*Store, error) {
 		return nil, fmt.Errorf("store: open: %w", err)
 	}
 	if err := db.Update(func(tx *bbolt.Tx) error {
-		_, err := tx.CreateBucketIfNotExists(bucketShares)
-		return err
+		for _, name := range [][]byte{bucketShares, bucketStaged, bucketRecords} {
+			if _, err := tx.CreateBucketIfNotExists(name); err != nil {
+				return err
+			}
+		}
+		return nil
 	}); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("store: init: %w", err)
@@ -118,6 +126,212 @@ func (s *Store) Put(rec ShareRecord, share []byte) error {
 		}
 		return b.Put([]byte(meta.KeyID), enc)
 	})
+}
+
+type RecordKind string
+
+const RecordLedger RecordKind = "ledger"
+
+func (s *Store) PutStaged(rec ShareRecord, share []byte) error {
+	if len(share) == 0 {
+		return fmt.Errorf("%w: key %q: empty share", ErrInvalid, rec.KeyID)
+	}
+	meta := normalize(rec)
+	if err := validate(meta); err != nil {
+		return err
+	}
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		raw := tx.Bucket(bucketShares).Get([]byte(meta.KeyID))
+		if raw == nil {
+			return fmt.Errorf("%w: key %q", ErrNotFound, meta.KeyID)
+		}
+		current, err := decodeRecord(meta.KeyID, raw)
+		if err != nil {
+			return err
+		}
+		if meta.Epoch != current.Epoch+1 || meta.Curve != current.Curve || !bytes.Equal(meta.PublicKey, current.PublicKey) {
+			return fmt.Errorf("%w: key %q: staged epoch %d over committed epoch %d", ErrStageEpoch, meta.KeyID, meta.Epoch, current.Epoch)
+		}
+		meta.CreatedAt = current.CreatedAt
+		meta.RefreshedAt = s.now().Unix()
+		ct, err := seal(s.nodeKey, meta, share)
+		if err != nil {
+			return err
+		}
+		meta.Ciphertext = ct
+		enc, err := json.Marshal(meta)
+		if err != nil {
+			return fmt.Errorf("store: key %q: encode: %w", meta.KeyID, err)
+		}
+		return tx.Bucket(bucketStaged).Put([]byte(meta.KeyID), enc)
+	})
+}
+
+func (s *Store) GetStaged(keyID string) (ShareRecord, error) {
+	var rec ShareRecord
+	err := s.db.View(func(tx *bbolt.Tx) error {
+		raw := tx.Bucket(bucketStaged).Get([]byte(keyID))
+		if raw == nil {
+			return fmt.Errorf("%w: staged key %q", ErrNotFound, keyID)
+		}
+		var err error
+		rec, err = decodeRecord(keyID, raw)
+		return err
+	})
+	rec.Ciphertext = nil
+	return rec, err
+}
+
+func (s *Store) CommitStaged(keyID string, epoch uint64) error {
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		staged := tx.Bucket(bucketStaged)
+		raw := staged.Get([]byte(keyID))
+		if raw == nil {
+			return fmt.Errorf("%w: staged key %q", ErrNotFound, keyID)
+		}
+		next, err := decodeRecord(keyID, raw)
+		if err != nil {
+			return err
+		}
+		currentRaw := tx.Bucket(bucketShares).Get([]byte(keyID))
+		if currentRaw == nil {
+			return fmt.Errorf("%w: key %q", ErrNotFound, keyID)
+		}
+		current, err := decodeRecord(keyID, currentRaw)
+		if err != nil {
+			return err
+		}
+		if next.Epoch != epoch || next.Epoch != current.Epoch+1 {
+			return fmt.Errorf("%w: key %q: staged epoch %d, committed epoch %d, commit names %d", ErrStageEpoch, keyID, next.Epoch, current.Epoch, epoch)
+		}
+		plain, err := open(s.nodeKey, next)
+		if err != nil {
+			return err
+		}
+		zero(plain)
+		if err := tx.Bucket(bucketShares).Put([]byte(keyID), append([]byte(nil), raw...)); err != nil {
+			return err
+		}
+		return staged.Delete([]byte(keyID))
+	})
+}
+
+func (s *Store) DiscardStaged(keyID string) error {
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		return tx.Bucket(bucketStaged).Delete([]byte(keyID))
+	})
+}
+
+func (s *Store) DiscardAllStaged() ([]string, error) {
+	var keys []string
+	err := s.db.Update(func(tx *bbolt.Tx) error {
+		b := tx.Bucket(bucketStaged)
+		if err := b.ForEach(func(k, _ []byte) error {
+			keys = append(keys, string(k))
+			return nil
+		}); err != nil {
+			return err
+		}
+		for _, k := range keys {
+			if err := b.Delete([]byte(k)); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return keys, nil
+}
+
+func recordAssociatedData(kind RecordKind, id string) []byte {
+	var buf bytes.Buffer
+	for _, field := range []string{recordDomain, string(kind), id} {
+		var n [4]byte
+		binary.BigEndian.PutUint32(n[:], uint32(len(field)))
+		buf.Write(n[:])
+		buf.WriteString(field)
+	}
+	return buf.Bytes()
+}
+
+func recordKey(kind RecordKind, id string) []byte {
+	return []byte(string(kind) + "\x00" + id)
+}
+
+func (s *Store) sealRecord(kind RecordKind, id string, plain []byte) ([]byte, error) {
+	ad := recordAssociatedData(kind, id)
+	aead, err := recordAEAD(s.nodeKey, ad)
+	if err != nil {
+		return nil, fmt.Errorf("store: record %s %q: derive record key failed", kind, id)
+	}
+	nonce := make([]byte, NonceSize, NonceSize+len(plain)+aead.Overhead())
+	if _, err := rand.Read(nonce); err != nil {
+		return nil, fmt.Errorf("store: record %s %q: nonce generation failed", kind, id)
+	}
+	return aead.Seal(nonce, nonce, plain, ad), nil
+}
+
+func (s *Store) openRecord(kind RecordKind, id string, ct []byte) ([]byte, error) {
+	if len(ct) < NonceSize {
+		return nil, fmt.Errorf("%w: record %s %q", ErrAuthFailed, kind, id)
+	}
+	ad := recordAssociatedData(kind, id)
+	aead, err := recordAEAD(s.nodeKey, ad)
+	if err != nil {
+		return nil, fmt.Errorf("store: record %s %q: derive record key failed", kind, id)
+	}
+	plain, err := aead.Open(nil, ct[:NonceSize], ct[NonceSize:], ad)
+	if err != nil {
+		return nil, fmt.Errorf("%w: record %s %q", ErrAuthFailed, kind, id)
+	}
+	return plain, nil
+}
+
+func (s *Store) UpdateRecord(kind RecordKind, id string, fn func(prev []byte) ([]byte, error)) error {
+	if kind == "" || id == "" {
+		return fmt.Errorf("%w: record kind and id are required", ErrInvalid)
+	}
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		b := tx.Bucket(bucketRecords)
+		var prev []byte
+		if ct := b.Get(recordKey(kind, id)); ct != nil {
+			var err error
+			if prev, err = s.openRecord(kind, id, ct); err != nil {
+				return err
+			}
+			defer zero(prev)
+		}
+		next, err := fn(prev)
+		if err != nil {
+			return err
+		}
+		defer zero(next)
+		ct, err := s.sealRecord(kind, id, next)
+		if err != nil {
+			return err
+		}
+		return b.Put(recordKey(kind, id), ct)
+	})
+}
+
+func (s *Store) WithRecord(kind RecordKind, id string, fn func(plain []byte) error) error {
+	var plain []byte
+	err := s.db.View(func(tx *bbolt.Tx) error {
+		ct := tx.Bucket(bucketRecords).Get(recordKey(kind, id))
+		if ct == nil {
+			return fmt.Errorf("%w: record %s %q", ErrNotFound, kind, id)
+		}
+		var err error
+		plain, err = s.openRecord(kind, id, ct)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	defer zero(plain)
+	return fn(plain)
 }
 
 func (s *Store) Get(keyID string) (ShareRecord, error) {

@@ -29,6 +29,7 @@ subtle.workspace = true
 zeroize.workspace = true
 rustls = { version = "0.23.32", default-features = false, features = ["ring", "std", "tls12"] }
 rustix = { workspace = true, features = ["fs"] }
+layerx-human-kms = { path = "../layerx-human-kms" }
 
 [dev-dependencies]
 layerx-human-test-support = { path = "../layerx-human-test-support" }
@@ -38,6 +39,8 @@ ed25519-dalek = "=2.2.0"
 layerx-agentd.workspace = true
 layerx-intents = { workspace = true, features = ["test-vectors"] }
 proptest.workspace = true
+layerx-human-identity-provider = { path = "../layerx-human-identity-provider" }
+p256 = { version = "=0.13.2", default-features = false, features = ["ecdsa", "std"] }
 
 [lints]
 workspace = true

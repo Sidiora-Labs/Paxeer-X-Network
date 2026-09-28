@@ -6,8 +6,11 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"sort"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/getamis/alice/types"
 
@@ -160,11 +163,27 @@ func (s *Server) runBoundSession(ctx context.Context, requestSession, phase, pro
 	}
 	ps := &peerSession{Session: ts}
 	defer ts.Close()
-	runCtx, cancel := context.WithTimeout(ctx, s.opts.ProtocolTimeout)
+	stallCtx, stall := context.WithCancelCause(ctx)
+	defer stall(nil)
+	runCtx, cancel := context.WithTimeout(stallCtx, s.opts.ProtocolTimeout)
 	defer cancel()
+	stopWatch := make(chan struct{})
+	watched := make(chan []string, 1)
+	go s.watchRounds(ts, stall, stopWatch, watched)
 	runErr := fn(runCtx, ps)
 	if runErr == nil {
 		runErr = ts.Flush(runCtx)
+	}
+	close(stopWatch)
+	var laggards []string
+	select {
+	case laggards = <-watched:
+	default:
+	}
+	if runErr != nil && errors.Is(context.Cause(stallCtx), transport.ErrRoundDeadline) {
+		sort.Strings(laggards)
+		_, _ = s.audit("session.stalled", "", "", "failed", fmt.Sprintf("%s: no message from %s within %s", protocol, strings.Join(laggards, ","), s.opts.RoundTimeout), sessionName(requestSession, phase))
+		return newError(CodeSessionTimeout, "%v: %v", context.Cause(stallCtx), runErr)
 	}
 	if runErr != nil {
 		if sessErr := ps.err(); sessErr != nil {
@@ -176,4 +195,25 @@ func (s *Server) runBoundSession(ctx context.Context, requestSession, phase, pro
 		return newError(CodeSessionFailed, "%v", runErr)
 	}
 	return nil
+}
+
+func (s *Server) watchRounds(ts *transport.Session, stall context.CancelCauseFunc, stop <-chan struct{}, watched chan<- []string) {
+	tick := s.opts.RoundTimeout / 4
+	if tick <= 0 {
+		return
+	}
+	ticker := time.NewTicker(tick)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+			if laggards, stalled := ts.Stalled(s.opts.RoundTimeout); stalled {
+				watched <- laggards
+				stall(fmt.Errorf("%w: waiting on %s", transport.ErrRoundDeadline, strings.Join(laggards, ",")))
+				return
+			}
+		}
+	}
 }
