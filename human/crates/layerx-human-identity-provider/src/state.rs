@@ -12,11 +12,17 @@ use layerx_types::intent::{ApprovalThreshold, RecoveryRoot};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::assertion::{
+    validate_wallet_did, AssertionPrincipal, AssertionVerifier, MAX_ISSUER_BYTES, MAX_SUBJECT_BYTES,
+};
 use crate::invalid;
 
 const MAX_STATE_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_ACCOUNTS: usize = 10_000;
 const MAX_BINDINGS: usize = 20_000;
+const MAX_ASSERTION_RECEIPTS: usize = 2 * MAX_ACCOUNTS;
+const ASSERTION_ACCOUNT_CREATED: &str = "account.created.assertion";
+const ASSERTION_DID_RECORDED: &str = "did.recorded.assertion";
 
 /// An existing recovery authority's commitment; this service never invents one.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -68,6 +74,67 @@ struct Binding {
     device: Device,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AssertionAccount {
+    principal: String,
+    issuer: String,
+    subject: String,
+    did: Option<String>,
+    created_at: u64,
+    policy: Policy,
+}
+
+impl AssertionAccount {
+    fn principal(&self) -> AssertionPrincipal {
+        AssertionPrincipal::new(
+            self.principal.clone(),
+            self.issuer.clone(),
+            self.subject.clone(),
+            self.did.clone(),
+            self.created_at,
+        )
+    }
+}
+
+/// A hash-chained audit receipt for an account change made through an assertion.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AssertionReceipt {
+    pub sequence: u64,
+    pub event: String,
+    pub principal: String,
+    pub issuer: String,
+    pub subject: String,
+    pub did: Option<String>,
+    pub recorded_at: u64,
+    pub previous: [u8; 32],
+    pub digest: [u8; 32],
+}
+
+impl AssertionReceipt {
+    /// Recomputes the receipt digest over every field except the digest itself.
+    ///
+    /// # Errors
+    /// Returns serialization failures.
+    pub fn compute_digest(&self) -> io::Result<[u8; 32]> {
+        let body = serde_json::to_vec(&(
+            self.sequence,
+            &self.event,
+            &self.principal,
+            &self.issuer,
+            &self.subject,
+            &self.did,
+            self.recorded_at,
+            self.previous,
+        ))?;
+        let mut hasher = Sha256::new();
+        hasher.update(b"LXIP/assertion-receipt/v1\0");
+        hasher.update(body);
+        Ok(hasher.finalize().into())
+    }
+}
+
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Snapshot {
@@ -76,6 +143,10 @@ struct Snapshot {
     device_bindings: Vec<Binding>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     binding_tenant: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    assertion_accounts: Vec<AssertionAccount>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    assertion_receipts: Vec<AssertionReceipt>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -95,9 +166,154 @@ pub struct State {
     directory: File,
     snapshot: Snapshot,
     policy: Policy,
+    assertion: Option<AssertionVerifier>,
 }
 
 impl State {
+    pub(crate) fn install_assertion_verifier(
+        &mut self,
+        verifier: AssertionVerifier,
+    ) -> io::Result<()> {
+        if self.assertion.is_some() {
+            return Err(invalid("assertion principal already enabled"));
+        }
+        self.assertion = Some(verifier);
+        Ok(())
+    }
+
+    pub(crate) fn assertion_verifier(&self) -> io::Result<&AssertionVerifier> {
+        self.assertion
+            .as_ref()
+            .ok_or_else(|| invalid("assertion principal not enabled"))
+    }
+
+    /// Returns the account mapped to an assertion issuer and subject.
+    #[must_use]
+    pub fn assertion_principal(&self, issuer: &str, subject: &str) -> Option<AssertionPrincipal> {
+        self.snapshot
+            .assertion_accounts
+            .iter()
+            .find(|account| account.issuer == issuer && account.subject == subject)
+            .map(AssertionAccount::principal)
+    }
+
+    /// Returns the account that recorded a wallet DID through an assertion.
+    #[must_use]
+    pub fn assertion_principal_by_did(&self, did: &str) -> Option<AssertionPrincipal> {
+        self.snapshot
+            .assertion_accounts
+            .iter()
+            .find(|account| account.did.as_deref() == Some(did))
+            .map(AssertionAccount::principal)
+    }
+
+    /// Returns the hash-chained receipts of every assertion account change.
+    #[must_use]
+    pub fn assertion_receipts(&self) -> &[AssertionReceipt] {
+        &self.snapshot.assertion_receipts
+    }
+
+    pub(crate) fn record_assertion(
+        &mut self,
+        issuer: &str,
+        subject: &str,
+        did: Option<&str>,
+        now: u64,
+    ) -> io::Result<(AssertionPrincipal, bool)> {
+        self.ready()?;
+        validate_text(issuer, MAX_ISSUER_BYTES)?;
+        validate_text(subject, MAX_SUBJECT_BYTES)?;
+        let position = self
+            .snapshot
+            .assertion_accounts
+            .iter()
+            .position(|account| account.issuer == issuer && account.subject == subject);
+        if let Some(did) = did {
+            validate_wallet_did(did)?;
+            let foreign =
+                self.snapshot
+                    .accounts
+                    .iter()
+                    .any(|account| account.did == did.as_bytes())
+                    || self.snapshot.assertion_accounts.iter().enumerate().any(
+                        |(index, account)| {
+                            Some(index) != position && account.did.as_deref() == Some(did)
+                        },
+                    );
+            if foreign {
+                return Err(invalid("wallet DID bound to another account"));
+            }
+        }
+        let mut next = self.snapshot.clone();
+        let (index, event) = if let Some(index) = position {
+            let account = &mut next.assertion_accounts[index];
+            let recorded = account.did.clone();
+            match (recorded.as_deref(), did) {
+                (_, None) => return Ok((account.principal(), false)),
+                (Some(existing), Some(did)) if existing == did => {
+                    return Ok((account.principal(), false))
+                }
+                (Some(_), Some(_)) => {
+                    return Err(invalid("wallet DID conflicts with the recorded DID"))
+                }
+                (None, Some(did)) => account.did = Some(did.to_owned()),
+            }
+            (index, ASSERTION_DID_RECORDED)
+        } else {
+            if next.accounts.len() + next.assertion_accounts.len() >= MAX_ACCOUNTS {
+                return Err(invalid("account capacity exhausted"));
+            }
+            let mut entropy = [0u8; 32];
+            getrandom::fill(&mut entropy).map_err(|_| io::Error::other("entropy unavailable"))?;
+            let principal = PrincipalId::new(format!("act_{}", hex(&entropy)))
+                .map_err(|_| invalid("invalid principal"))?;
+            if next
+                .accounts
+                .iter()
+                .any(|account| account.principal == principal.as_str())
+                || next
+                    .assertion_accounts
+                    .iter()
+                    .any(|account| account.principal == principal.as_str())
+            {
+                return Err(io::Error::other("principal collision"));
+            }
+            next.assertion_accounts.push(AssertionAccount {
+                principal: principal.as_str().to_owned(),
+                issuer: issuer.to_owned(),
+                subject: subject.to_owned(),
+                did: did.map(str::to_owned),
+                created_at: now,
+                policy: self.policy.clone(),
+            });
+            (next.assertion_accounts.len() - 1, ASSERTION_ACCOUNT_CREATED)
+        };
+        if next.assertion_receipts.len() >= MAX_ASSERTION_RECEIPTS {
+            return Err(invalid("assertion receipt capacity exhausted"));
+        }
+        let account = &next.assertion_accounts[index];
+        let mut receipt = AssertionReceipt {
+            sequence: u64::try_from(next.assertion_receipts.len())
+                .map_err(|_| invalid("receipt sequence overflow"))?,
+            event: event.to_owned(),
+            principal: account.principal.clone(),
+            issuer: account.issuer.clone(),
+            subject: account.subject.clone(),
+            did: account.did.clone(),
+            recorded_at: now,
+            previous: next
+                .assertion_receipts
+                .last()
+                .map_or([0; 32], |last| last.digest),
+            digest: [0; 32],
+        };
+        receipt.digest = receipt.compute_digest()?;
+        let principal = account.principal();
+        next.assertion_receipts.push(receipt);
+        self.commit(next)?;
+        Ok((principal, event == ASSERTION_ACCOUNT_CREATED))
+    }
+
     pub(crate) fn bind_reader_tenant(&mut self, tenant: &str) -> io::Result<()> {
         self.ready()?;
         validate_text(tenant, 255)?;
@@ -182,6 +398,7 @@ impl State {
             directory,
             snapshot,
             policy,
+            assertion: None,
         };
         let pending = state.root.join("state.pending");
         match fs::symlink_metadata(&pending) {
@@ -405,7 +622,10 @@ fn validate_snapshot(snapshot: &Snapshot) -> io::Result<()> {
     if let Some(tenant) = &snapshot.binding_tenant {
         validate_text(tenant, 255)?;
     }
-    if snapshot.accounts.len() > MAX_ACCOUNTS || snapshot.device_bindings.len() > MAX_BINDINGS {
+    if snapshot.accounts.len() + snapshot.assertion_accounts.len() > MAX_ACCOUNTS
+        || snapshot.device_bindings.len() > MAX_BINDINGS
+        || snapshot.assertion_receipts.len() > MAX_ASSERTION_RECEIPTS
+    {
         return Err(invalid("state capacity exceeded"));
     }
     let mut principals = BTreeSet::new();
@@ -443,6 +663,55 @@ fn validate_snapshot(snapshot: &Snapshot) -> io::Result<()> {
         {
             return Err(invalid("orphaned or duplicate assertion binding"));
         }
+    }
+    validate_assertion_snapshot(snapshot, &mut principals)
+}
+
+fn validate_assertion_snapshot<'a>(
+    snapshot: &'a Snapshot,
+    principals: &mut BTreeSet<&'a str>,
+) -> io::Result<()> {
+    let mut subjects = BTreeSet::new();
+    let mut wallet_dids = BTreeSet::new();
+    for account in &snapshot.assertion_accounts {
+        PrincipalId::new(account.principal.clone()).map_err(|_| invalid("corrupt principal"))?;
+        validate_text(&account.issuer, MAX_ISSUER_BYTES)?;
+        validate_text(&account.subject, MAX_SUBJECT_BYTES)?;
+        account.policy.validate()?;
+        if let Some(did) = &account.did {
+            validate_wallet_did(did)?;
+            if !wallet_dids.insert(did.as_str())
+                || snapshot
+                    .accounts
+                    .iter()
+                    .any(|item| item.did == did.as_bytes())
+            {
+                return Err(invalid("duplicate wallet DID"));
+            }
+        }
+        if !principals.insert(account.principal.as_str())
+            || !subjects.insert((account.issuer.as_str(), account.subject.as_str()))
+        {
+            return Err(invalid("duplicate assertion account"));
+        }
+    }
+    let mut previous = [0u8; 32];
+    for (index, receipt) in snapshot.assertion_receipts.iter().enumerate() {
+        if u64::try_from(index).ok() != Some(receipt.sequence)
+            || receipt.previous != previous
+            || receipt.compute_digest()? != receipt.digest
+            || !matches!(
+                receipt.event.as_str(),
+                ASSERTION_ACCOUNT_CREATED | ASSERTION_DID_RECORDED
+            )
+            || !snapshot
+                .assertion_accounts
+                .iter()
+                .any(|account| account.principal == receipt.principal)
+        {
+            return Err(invalid("corrupt assertion receipt chain"));
+        }
+        previous = receipt.digest;
     }
     Ok(())
 }

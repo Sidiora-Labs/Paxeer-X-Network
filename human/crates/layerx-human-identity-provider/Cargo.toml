@@ -17,6 +17,9 @@ serde_json.workspace = true
 sha2.workspace = true
 rustix = { workspace = true, features = ["fs"] }
 signal-hook = "=0.3.18"
+jsonwebtoken = { version = "=9.3.1", default-features = false }
+ureq = { version = "=3.4.0", default-features = false, features = ["rustls-no-provider", "_ring"] }
+rustls-native-certs = "=0.8.4"
 
 [dev-dependencies]
 layerx-client.workspace = true
@@ -24,6 +27,7 @@ layerx-identity-binding.workspace = true
 layerx-intents = { workspace = true, features = ["test-vectors"] }
 base64.workspace = true
 tempfile = "=3.27.0"
+p256 = { version = "=0.13.2", default-features = false, features = ["ecdsa", "std"] }
 
 [lints]
 workspace = true
