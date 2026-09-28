@@ -202,6 +202,10 @@
     - Carry the age of the last shipped snapshot in the health report, and document the new variables and secrets in the attestor deployment definitions and human/wallet/deploy/env.
     - Add tests that run a real in-process SSH and SFTP server and prove upload, the ledger, restart idempotence, host key refusal and digest refusal, and a health test for the snapshot age.
     - _Requirements: 3.2_
+  - [x] 3.15 Align the gateway's attestor client to the daemon's API schema
+    - The client and quorum selector speak human/wallet/schema/attestor-api/v1.kvx exactly: health at the daemon's health path, key generation and signing at the schema's paths with the schema's request bodies (signers and kind-specific fields), the user token in the Authorization header and agent authentication in the agent headers the schema names, errors read from the schema's error shape, signature lengths as the schema defines per curve, key ids and audit_sequence as the schema defines.
+    - The recorded fixtures under test/fixtures/attestor are regenerated from the schema goldens and test/attestor.test.ts asserts them; the sign-typed-data route accepts the body key the SDK fixtures under human/wallet/sdk/test/fixtures/gateway send (observation 3.2.2), with its test updated.
+    - _Requirements: 5.2, 5.5, 5.6, 5.7, 1.7_
 
 ## Wave 4 - Completion
 
@@ -274,7 +278,7 @@
   "waves": [
     { "id": 1,  "tasks": ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "1.10", "1.11", "1.12", "1.13", "1.14", "1.15", "1.16"] },
     { "id": 2,  "tasks": ["2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7", "2.8", "2.9"] },
-    { "id": 3,  "tasks": ["3.1", "3.2", "3.3", "3.4", "3.5", "3.6", "3.7", "3.8", "3.9", "3.10", "3.11", "3.12", "3.13", "3.14"] },
+    { "id": 3,  "tasks": ["3.1", "3.2", "3.3", "3.4", "3.5", "3.6", "3.7", "3.8", "3.9", "3.10", "3.11", "3.12", "3.13", "3.14", "3.15"] },
     { "id": 4,  "tasks": ["4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7", "4.8", "4.9", "4.10"] },
     { "id": 5,  "tasks": ["5.1", "5.2", "5.3", "5.4"] }
   ]

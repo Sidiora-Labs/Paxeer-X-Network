@@ -862,6 +862,22 @@ symbols = ["Shipper","Ledger","Ship","LoadConfig"]
 touches = ["human/wallet/attestor/internal/replica/","human/wallet/attestor/internal/health/","human/wallet/attestor/cmd/attestor/","human/wallet/attestor/go.mod","human/wallet/attestor/go.sum","human/wallet/deploy/env","human/wallet/deploy/attestor-1.toml","human/wallet/deploy/attestor-2.toml","human/wallet/deploy/attestor-3.toml","human/wallet/deploy/attestor-4.toml","human/wallet/deploy/attestor-5.toml"]
 reqs = ["3.2"]
 
+[task.3.15]
+title = "Align the gateway's attestor client to the daemon's API schema"
+status = "done"
+revision = "c82902a279b305b850a8ad6f440d8056741e51d5"
+command = "timeout 20m sh -c 'pnpm --dir human/wallet/gateway test -- e2e'"
+exit_code = 0
+log_path = ".logs/verify.log"
+wave = 3
+requires = ["2.3","2.1","3.2"]
+do_1 = "The client and quorum selector speak human/wallet/schema/attestor-api/v1.kvx exactly: health at the daemon's health path, key generation and signing at the schema's paths with the schema's request bodies (signers and kind-specific fields), the user token in the Authorization header and agent authentication in the agent headers the schema names, errors read from the schema's error shape, signature lengths as the schema defines per curve, key ids and audit_sequence as the schema defines."
+do_2 = "The recorded fixtures under test/fixtures/attestor are regenerated from the schema goldens and test/attestor.test.ts asserts them; the sign-typed-data route accepts the body key the SDK fixtures under human/wallet/sdk/test/fixtures/gateway send (observation 3.2.2), with its test updated."
+verify_cmd = "timeout 20m sh -c 'pnpm --dir human/wallet/gateway test -- e2e'"
+symbols = ["AttestorClient","selectQuorum","signRequestBody","refusalFromWire","SignTypedDataBody"]
+touches = ["human/wallet/gateway/src/attestor/client.ts","human/wallet/gateway/src/attestor/quorum.ts","human/wallet/gateway/src/routes/sign.ts","human/wallet/gateway/test/attestor.test.ts","human/wallet/gateway/test/fixtures/attestor/"]
+reqs = ["5.2","5.5","5.6","5.7","1.7"]
+
 # --------------------------------------------------------------------------
 # WAVE 4 - COMPLETION
 # --------------------------------------------------------------------------

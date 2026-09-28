@@ -664,3 +664,35 @@ command = "docker build -f human/wallet/attestor/Dockerfile -t paxeer-attestor:d
 exit_code = 0
 log_path = ".logs/deploy.log"
 observed = "Image sha256:81820474bad82efcc96aeb0020c751937487b74d49e2efaac9deb696822a9aca runs on one performance-2x 4 GB machine each in iad, sjc, ams, fra and sin, all five nodes answered ready with four of four peers reachable and a quorum of five, keys.generate produced one secp256k1 and one Ed25519 key with identical public keys on all five nodes, and no signature was produced or verified because the deployed nodes honour no signing principal without an identity-provider user."
+
+[observation.3.15.1]
+task = "3.15"
+file = "human/wallet/gateway/src/attestor/client.ts"
+symbol = "AttestorClient"
+observed = "Closes 3.2.1: the client probes /health and reads its 503 body, posts keys.generate, keys.refresh and sign to the schema paths with session_id, key_id, kind, signers and the kind's own field in bare hex, sends Bearer tokens in Authorization and agents in the X-Agent headers, reads error.message and policy_code across all six categories, and requires 65-byte secp256k1 signatures whose last byte equals recovery_id (64 bytes for ed25519)."
+assumption = "Typed transactions are sent with zero signature fields as the daemon's own tests encode them, typed data gains the EIP712Domain type viem derives when absent, and v is derived from the returned recovery byte."
+severity = "note"
+
+[observation.3.15.2]
+task = "3.15"
+file = "human/wallet/gateway/src/routes/sign.ts"
+symbol = "SignTypedDataBody"
+observed = "The SDK fixtures send {typedData} while the read-only end-to-end test posts {typed_data}, so the route accepts exactly one of the two keys and refuses any other body."
+assumption = "Resolves 3.2.2 without editing the end-to-end authority; a later task may retire the snake-case key once the end-to-end test moves to the SDK shape."
+severity = "note"
+
+[observation.3.15.3]
+task = "3.15"
+file = "human/wallet/attestor/internal/auth/agent/agent.go"
+symbol = "RequestDigest"
+observed = "The daemon's agent digest covers the exact sign body, which carries the session_id and signers the gateway chooses, so an agent cannot pre-sign a request the gateway relays; the client forwards the X-Agent headers as given."
+assumption = "The agent route task lets the agent sign the composed body or moves the digest to fields the agent controls; the agent verifier is unwired in the daemon (observation 4.8.3)."
+severity = "suspect"
+
+[observation.3.15.4]
+task = "3.15"
+file = "human/wallet/schema/attestor-api/v1.kvx"
+symbol = "sign_response"
+observed = "The daemon's sign response carries no session_id, so the client binds answers to the session by node_id, key_id, kind, signed_bytes and signature agreement across the quorum."
+assumption = "The schema and daemon agree on this shape; no change is needed on either side."
+severity = "note"

@@ -1,11 +1,16 @@
 {
-  "node_id": "",
-  "region": "",
+  "node_id": "node-1",
+  "region": "region-a",
   "share_count": 2,
   "refresh_epoch": 1,
-  "audit_sequence": 0,
-  "audit_head": "9f2c6d1f5b0a8e4c3d2b1a09f8e7d6c5b4a3928170f6e5d4c3b2a1908f7e6d5c",
-  "peers": {},
-  "reachable_peers": 4,
-  "ready": true
+  "audit_sequence": 9,
+  "audit_head": "5555555555555555555555555555555555555555555555555555555555555555",
+  "peers": {
+    "node-2": {
+      "reachable": true,
+      "rtt_ns": 1000
+    }
+  },
+  "reachable_peers": 1,
+  "ready": false
 }

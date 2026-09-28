@@ -1,5 +1,9 @@
 {
-  "signature": "0x34ce31ffab8eac05fe15b073d8c5949f5e8e2b7e8144b01e71a2d4c5ed5de2ae00e2674a4cd01e46059f7f1ee56e2ad4207365138c017f081425d00bd0fadd17",
+  "node_id": "node-1",
+  "key_id": "secp256k1-wallet-0001",
+  "kind": "evm_tx",
+  "signed_bytes": "6e67c1b377c7fb97c29cddee9be83bdf0e473cc4d82953ba45b4e333877274ea",
+  "signature": "34ce31ffab8eac05fe15b073d8c5949f5e8e2b7e8144b01e71a2d4c5ed5de2ae00e2674a4cd01e46059f7f1ee56e2ad4207365138c017f081425d00bd0fadd1700",
   "recovery_id": 0,
   "audit_sequence": 100
 }

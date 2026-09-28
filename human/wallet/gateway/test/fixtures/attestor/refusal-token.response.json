@@ -1,7 +1,7 @@
 {
   "error": {
     "category": "token",
-    "code": "claims_invalid",
-    "reason": "jwt: claims invalid"
+    "code": "token_missing",
+    "message": "a bearer token or agent signature is required"
   }
 }

@@ -2,6 +2,8 @@ import { Agent, request as httpsRequest } from 'node:https';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import {
+  getTransactionType,
+  getTypesForEIP712Domain,
   hexToBytes,
   recoverMessageAddress,
   recoverTransactionAddress,
@@ -24,6 +26,20 @@ import {
 
 export const ATTESTOR_API_VERSION = 1;
 
+export const ATTESTOR_PATHS = {
+  health: '/health',
+  generate: '/v1/keys/generate',
+  refresh: '/v1/keys/refresh',
+  sign: '/v1/sign',
+} as const;
+
+export const AGENT_HEADERS = {
+  key: 'X-Agent-Key',
+  nonce: 'X-Agent-Nonce',
+  expiry: 'X-Agent-Expiry',
+  signature: 'X-Agent-Signature',
+} as const;
+
 export type SignKind =
   | 'evm_tx'
   | 'eip712'
@@ -33,44 +49,147 @@ export type SignKind =
   | 'lx_bind'
   | 'lx_grant';
 
+export type Curve = 'secp256k1' | 'ed25519';
+
+export const KIND_CURVES: Record<SignKind, Curve> = {
+  evm_tx: 'secp256k1',
+  eip712: 'secp256k1',
+  personal_message: 'secp256k1',
+  eth_sign_digest: 'secp256k1',
+  lx_activity: 'ed25519',
+  lx_bind: 'ed25519',
+  lx_grant: 'ed25519',
+};
+
+export const SIGNATURE_BYTES: Record<Curve, number> = { secp256k1: 65, ed25519: 64 };
+
 export type Authorisation =
   | { scheme: 'supabase_jwt'; token: string }
-  | { scheme: 'agent_ed25519'; did: string; nonce: string; expiry: number; signature: string };
+  | { scheme: 'agent_ed25519'; publicKey: string; nonce: string; expiry: number; signature: string };
+
+export interface GrantWire {
+  from: string;
+  recipient: string;
+  asset: string;
+  per_draw_maximum: string;
+  allowance: string;
+  recurring: boolean;
+  window_length: number;
+  expiration: number;
+  purpose_hash: string;
+  has_reference: boolean;
+  reference_hash: string;
+  revocation_sequence: number;
+}
+
+export interface ConstructionCallWire {
+  to: string;
+  value: string;
+  data: string;
+}
+
+export interface ConstructionQuoteWire {
+  sponsor: string;
+  token: string;
+  maxTokenAmount: string;
+  tokenAmount: string;
+  deadline: string;
+  quoteNonce: string;
+  gasCost: string;
+}
+
+export interface ConstructionWire {
+  kind: string;
+  chainId: string;
+  account?: string;
+  address?: string;
+  nonce: string;
+  calls?: ConstructionCallWire[];
+  quote?: ConstructionQuoteWire;
+}
+
+export type SignPayload =
+  | { kind: 'evm_tx'; transaction: Hex }
+  | { kind: 'eip712'; typedData: string }
+  | { kind: 'personal_message'; message: Hex }
+  | { kind: 'eth_sign_digest'; digest: Hex; construction: ConstructionWire }
+  | { kind: 'lx_activity'; activity: Hex }
+  | { kind: 'lx_bind'; message: Hex }
+  | { kind: 'lx_grant'; grant: GrantWire };
 
 export interface SignRequestWire {
-  api_version: number;
+  session_id: string;
   key_id: string;
   kind: SignKind;
-  bytes: Hex;
-  context: Record<string, unknown>;
-  authorisation: Authorisation;
-  participants: string[];
-  session_id: string;
+  signers: string[];
+  transaction?: string;
+  typed_data?: string;
+  message?: string;
+  digest?: string;
+  activity?: string;
+  grant?: GrantWire;
+  construction?: ConstructionWire;
 }
 
 export interface SignResponseWire {
-  session_id: string;
   node_id: string;
-  signature: Hex;
-  recovery_id: number | null;
+  key_id: string;
+  kind: string;
+  signed_bytes: string;
+  signature: string;
+  recovery_id?: number;
   audit_sequence: number;
 }
 
-export type RefusalCategory = 'token' | 'policy' | 'quorum' | 'session';
+export interface KeyGenerateWire {
+  session_id: string;
+  key_id: string;
+  curve: Curve;
+  owner: string;
+  account?: string;
+}
+
+export interface KeyRefreshWire {
+  session_id: string;
+  key_id: string;
+}
+
+export interface KeyResponseWire {
+  node_id: string;
+  key_id: string;
+  curve: Curve;
+  public_key: string;
+  address?: string;
+  did?: string;
+  epoch: number;
+  participants: string[];
+  refreshed: boolean;
+  audit_sequence: number;
+}
+
+export type RefusalCategory = 'token' | 'policy' | 'quorum' | 'session' | 'key' | 'store';
 
 export interface RefusalWire {
-  error: { category: RefusalCategory; code: string; reason: string };
+  error: { category: RefusalCategory; code: string; message: string; policy_code?: string };
 }
 
 export class AttestorError extends Error {
   readonly category: RefusalCategory;
   readonly code: string;
+  readonly policyCode: string | null;
   readonly nodeId: string | null;
-  constructor(category: RefusalCategory, code: string, reason: string, nodeId: string | null = null) {
+  constructor(
+    category: RefusalCategory,
+    code: string,
+    reason: string,
+    nodeId: string | null = null,
+    policyCode: string | null = null,
+  ) {
     super(`${category}: ${code}: ${reason}`);
     this.name = 'AttestorError';
     this.category = category;
     this.code = code;
+    this.policyCode = policyCode;
     this.nodeId = nodeId;
   }
 }
@@ -83,8 +202,8 @@ export class AttestorTokenError extends AttestorError {
 }
 
 export class AttestorPolicyError extends AttestorError {
-  constructor(code: string, reason: string, nodeId: string | null = null) {
-    super('policy', code, reason, nodeId);
+  constructor(code: string, reason: string, nodeId: string | null = null, policyCode: string | null = null) {
+    super('policy', code, reason, nodeId, policyCode);
     this.name = 'AttestorPolicyError';
   }
 }
@@ -103,11 +222,27 @@ export class AttestorSessionError extends AttestorError {
   }
 }
 
+export class AttestorKeyError extends AttestorError {
+  constructor(code: string, reason: string, nodeId: string | null = null) {
+    super('key', code, reason, nodeId);
+    this.name = 'AttestorKeyError';
+  }
+}
+
+export class AttestorStoreError extends AttestorError {
+  constructor(code: string, reason: string, nodeId: string | null = null) {
+    super('store', code, reason, nodeId);
+    this.name = 'AttestorStoreError';
+  }
+}
+
 const REFUSAL_STATUS: Record<RefusalCategory, number> = {
   token: 401,
   policy: 403,
   quorum: 503,
   session: 502,
+  key: 409,
+  store: 502,
 };
 
 export function attestorErrorStatus(err: AttestorError): number {
@@ -118,32 +253,41 @@ export function attestorErrorBody(err: AttestorError): {
   error: string;
   category: RefusalCategory;
   code: string;
+  policy_code?: string;
   message: string;
 } {
   return {
     error: `attestor_${err.category}_refused`,
     category: err.category,
     code: err.code,
+    ...(err.policyCode !== null ? { policy_code: err.policyCode } : {}),
     message: err.message,
   };
 }
 
-function refusalFromWire(body: unknown, nodeId: string | null): AttestorError {
+export function refusalFromWire(body: unknown, nodeId: string | null): AttestorError {
   const e = (body as Partial<RefusalWire> | null)?.error;
-  if (!e || typeof e.code !== 'string' || typeof e.reason !== 'string') {
+  if (!e || typeof e.code !== 'string' || typeof e.message !== 'string') {
     return new AttestorSessionError('malformed_refusal', 'participant answered with an unreadable error', nodeId);
+  }
+  if (e.policy_code !== undefined && typeof e.policy_code !== 'string') {
+    return new AttestorSessionError('malformed_refusal', 'participant answered with an unreadable policy code', nodeId);
   }
   switch (e.category) {
     case 'token':
-      return new AttestorTokenError(e.code, e.reason, nodeId);
+      return new AttestorTokenError(e.code, e.message, nodeId);
     case 'policy':
-      return new AttestorPolicyError(e.code, e.reason, nodeId);
+      return new AttestorPolicyError(e.code, e.message, nodeId, e.policy_code ?? null);
     case 'quorum':
-      return new AttestorQuorumError(e.code, e.reason, nodeId);
+      return new AttestorQuorumError(e.code, e.message, nodeId);
     case 'session':
-      return new AttestorSessionError(e.code, e.reason, nodeId);
+      return new AttestorSessionError(e.code, e.message, nodeId);
+    case 'key':
+      return new AttestorKeyError(e.code, e.message, nodeId);
+    case 'store':
+      return new AttestorStoreError(e.code, e.message, nodeId);
     default:
-      return new AttestorSessionError('unknown_refusal_category', `category ${String(e.category)}: ${e.reason}`, nodeId);
+      return new AttestorSessionError('unknown_refusal_category', `category ${String(e.category)}: ${e.message}`, nodeId);
   }
 }
 
@@ -163,9 +307,7 @@ export interface AttestorClientOptions {
 
 export interface SignInput {
   keyId: string;
-  kind: SignKind;
-  bytes: Hex;
-  context: Record<string, unknown>;
+  payload: SignPayload;
   authorisation: Authorisation;
 }
 
@@ -176,9 +318,31 @@ export interface NodeAudit {
 
 export interface SignResult {
   sessionId: string;
+  kind: SignKind;
   signature: Hex;
   recoveryId: number | null;
+  signedBytes: Hex;
   participants: string[];
+  audit: NodeAudit[];
+}
+
+export interface GenerateKeyInput {
+  keyId: string;
+  curve: Curve;
+  owner: string;
+  account?: string;
+}
+
+export interface KeyResult {
+  sessionId: string;
+  keyId: string;
+  curve: Curve;
+  publicKey: Hex;
+  address: `0x${string}` | null;
+  did: string | null;
+  epoch: number;
+  participants: string[];
+  refreshed: boolean;
   audit: NodeAudit[];
 }
 
@@ -187,7 +351,65 @@ interface HttpResult {
   body: unknown;
 }
 
-const REFUSAL_PRIORITY: Record<RefusalCategory, number> = { token: 0, policy: 1, quorum: 2, session: 3 };
+const REFUSAL_PRIORITY: Record<RefusalCategory, number> = { token: 0, policy: 1, key: 2, quorum: 3, session: 4, store: 5 };
+
+const HEX_RE = /^[0-9a-f]+$/;
+
+function bareHex(value: string): string {
+  return (value.startsWith('0x') ? value.slice(2) : value).toLowerCase();
+}
+
+export function signRequestBody(sessionId: string, keyId: string, signers: string[], payload: SignPayload): SignRequestWire {
+  const base = { session_id: sessionId, key_id: keyId, kind: payload.kind, signers };
+  switch (payload.kind) {
+    case 'evm_tx':
+      return { ...base, transaction: bareHex(payload.transaction) };
+    case 'eip712':
+      return { ...base, typed_data: payload.typedData };
+    case 'personal_message':
+    case 'lx_bind':
+      return { ...base, message: bareHex(payload.message) };
+    case 'eth_sign_digest':
+      return { ...base, digest: bareHex(payload.digest), construction: payload.construction };
+    case 'lx_activity':
+      return { ...base, activity: bareHex(payload.activity) };
+    case 'lx_grant':
+      return { ...base, grant: payload.grant };
+  }
+}
+
+export function authorisationHeaders(auth: Authorisation): Record<string, string> {
+  if (auth.scheme === 'supabase_jwt') return { authorization: `Bearer ${auth.token}` };
+  return {
+    [AGENT_HEADERS.key]: bareHex(auth.publicKey),
+    [AGENT_HEADERS.nonce]: bareHex(auth.nonce),
+    [AGENT_HEADERS.expiry]: String(auth.expiry),
+    [AGENT_HEADERS.signature]: bareHex(auth.signature),
+  };
+}
+
+function firstRefusal(settled: PromiseSettledResult<unknown>[], members: QuorumMember[], markDown: (endpoint: string, reason: unknown) => void): AttestorError | null {
+  const refusals: AttestorError[] = [];
+  settled.forEach((s, i) => {
+    if (s.status === 'fulfilled') return;
+    const member = members[i]!;
+    if (s.reason instanceof AttestorError) {
+      refusals.push(s.reason);
+      return;
+    }
+    markDown(member.endpoint, s.reason);
+    refusals.push(
+      new AttestorSessionError(
+        'participant_unreachable',
+        s.reason instanceof Error ? s.reason.message : String(s.reason),
+        member.nodeId,
+      ),
+    );
+  });
+  if (refusals.length === 0) return null;
+  refusals.sort((a, b) => REFUSAL_PRIORITY[a.category] - REFUSAL_PRIORITY[b.category]);
+  return refusals[0]!;
+}
 
 export class AttestorClient {
   private readonly agent: Agent;
@@ -206,6 +428,7 @@ export class AttestorClient {
       ca: opts.tls.ca,
       keepAlive: true,
       rejectUnauthorized: true,
+      minVersion: 'TLSv1.3',
     });
     this.nodes = opts.endpoints.map((endpoint) => ({
       endpoint: endpoint.replace(/\/+$/, ''),
@@ -258,68 +481,102 @@ export class AttestorClient {
       }
       throw err;
     }
+    const kind = input.payload.kind;
+    const curve = KIND_CURVES[kind];
     const sessionId = randomUUID();
     const participants = members.map((m) => m.nodeId);
-    const wire: SignRequestWire = {
-      api_version: ATTESTOR_API_VERSION,
-      key_id: input.keyId,
-      kind: input.kind,
-      bytes: input.bytes,
-      context: input.context,
-      authorisation: input.authorisation,
-      participants,
-      session_id: sessionId,
-    };
-    const body = JSON.stringify(wire);
+    const body = JSON.stringify(signRequestBody(sessionId, input.keyId, participants, input.payload));
+    const headers = authorisationHeaders(input.authorisation);
     const settled = await Promise.allSettled(
-      members.map((m) => this.postSign(m, body)),
+      members.map((m) => this.post(m, ATTESTOR_PATHS.sign, body, headers, (b) => parseSignResponse(b, m.nodeId, curve))),
     );
-
-    const refusals: AttestorError[] = [];
-    const answers: SignResponseWire[] = [];
-    settled.forEach((s, i) => {
-      if (s.status === 'fulfilled') {
-        answers.push(s.value);
-        return;
-      }
-      const member = members[i]!;
-      if (s.reason instanceof AttestorError) {
-        refusals.push(s.reason);
-      } else {
-        this.markDown(member.endpoint, s.reason);
-        refusals.push(
-          new AttestorSessionError(
-            'participant_unreachable',
-            s.reason instanceof Error ? s.reason.message : String(s.reason),
-            member.nodeId,
-          ),
-        );
-      }
-    });
-    if (refusals.length > 0) {
-      refusals.sort((a, b) => REFUSAL_PRIORITY[a.category] - REFUSAL_PRIORITY[b.category]);
-      throw refusals[0]!;
-    }
+    const refusal = firstRefusal(settled, members, (e, r) => this.markDown(e, r));
+    if (refusal) throw refusal;
+    const answers = settled.map((s) => (s as PromiseFulfilledResult<SignResponseWire>).value);
 
     const first = answers[0]!;
     for (let i = 0; i < answers.length; i++) {
       const a = answers[i]!;
       const expectedNode = members[i]!.nodeId;
-      if (a.session_id !== sessionId) {
-        throw new AttestorSessionError('session_mismatch', `participant answered for session ${a.session_id}`, a.node_id);
-      }
       if (a.node_id !== expectedNode) {
         throw new AttestorSessionError('participant_mismatch', `expected ${expectedNode}, answered by ${a.node_id}`, a.node_id);
       }
-      if (a.signature.toLowerCase() !== first.signature.toLowerCase() || a.recovery_id !== first.recovery_id) {
+      if (a.key_id !== input.keyId || a.kind !== kind) {
+        throw new AttestorSessionError('request_mismatch', `participant answered for ${a.key_id} ${a.kind}`, a.node_id);
+      }
+      if (a.signed_bytes !== first.signed_bytes) {
+        throw new AttestorSessionError('signed_bytes_disagreement', 'participants signed different bytes', a.node_id);
+      }
+      if (a.signature !== first.signature || a.recovery_id !== first.recovery_id) {
         throw new AttestorSessionError('signature_disagreement', 'participants returned different signatures', a.node_id);
       }
     }
     return {
       sessionId,
-      signature: first.signature,
-      recoveryId: first.recovery_id,
+      kind,
+      signature: `0x${first.signature}`,
+      recoveryId: first.recovery_id ?? null,
+      signedBytes: `0x${first.signed_bytes}`,
       participants,
+      audit: answers.map((a) => ({ node_id: a.node_id, audit_sequence: a.audit_sequence })),
+    };
+  }
+
+  async generateKey(input: GenerateKeyInput): Promise<KeyResult> {
+    const sessionId = randomUUID();
+    const wire: KeyGenerateWire = { session_id: sessionId, key_id: input.keyId, curve: input.curve, owner: input.owner };
+    if (input.account !== undefined) wire.account = input.account;
+    return this.keyOperation(ATTESTOR_PATHS.generate, sessionId, wire);
+  }
+
+  async refreshKey(keyId: string): Promise<KeyResult> {
+    const sessionId = randomUUID();
+    const wire: KeyRefreshWire = { session_id: sessionId, key_id: keyId };
+    return this.keyOperation(ATTESTOR_PATHS.refresh, sessionId, wire);
+  }
+
+  private async keyOperation(path: string, sessionId: string, wire: KeyGenerateWire | KeyRefreshWire): Promise<KeyResult> {
+    const members: QuorumMember[] = this.nodes.map((n) => {
+      if (n.nodeId === null || !n.healthy || n.latencyMs === null) {
+        throw new AttestorQuorumError('participant_unavailable', `${n.endpoint} is not ready for a key operation`);
+      }
+      return { endpoint: n.endpoint, nodeId: n.nodeId, latencyMs: n.latencyMs };
+    });
+    const body = JSON.stringify(wire);
+    const settled = await Promise.allSettled(
+      members.map((m) => this.post(m, path, body, {}, (b) => parseKeyResponse(b, m.nodeId))),
+    );
+    const refusal = firstRefusal(settled, members, (e, r) => this.markDown(e, r));
+    if (refusal) throw refusal;
+    const answers = settled.map((s) => (s as PromiseFulfilledResult<KeyResponseWire>).value);
+    const first = answers[0]!;
+    for (let i = 0; i < answers.length; i++) {
+      const a = answers[i]!;
+      if (a.node_id !== members[i]!.nodeId) {
+        throw new AttestorSessionError('participant_mismatch', `expected ${members[i]!.nodeId}, answered by ${a.node_id}`, a.node_id);
+      }
+      if (
+        a.key_id !== wire.key_id ||
+        a.curve !== first.curve ||
+        a.public_key !== first.public_key ||
+        a.address !== first.address ||
+        a.did !== first.did ||
+        a.epoch !== first.epoch ||
+        a.refreshed !== first.refreshed
+      ) {
+        throw new AttestorSessionError('key_disagreement', 'participants disagree on the key', a.node_id);
+      }
+    }
+    return {
+      sessionId,
+      keyId: first.key_id,
+      curve: first.curve,
+      publicKey: `0x${first.public_key}`,
+      address: (first.address as `0x${string}` | undefined) ?? null,
+      did: first.did ?? null,
+      epoch: first.epoch,
+      participants: first.participants,
+      refreshed: first.refreshed,
       audit: answers.map((a) => ({ node_id: a.node_id, audit_sequence: a.audit_sequence })),
     };
   }
@@ -327,15 +584,18 @@ export class AttestorClient {
   private async probe(node: NodeHealth): Promise<void> {
     const started = performance.now();
     try {
-      const res = await this.http('GET', `${node.endpoint}/v1/health`, null);
+      const res = await this.http('GET', `${node.endpoint}${ATTESTOR_PATHS.health}`, null, {});
       const latency = performance.now() - started;
-      if (res.status !== 200) throw new Error(`health answered ${res.status}`);
+      if (res.status !== 200 && res.status !== 503) throw new Error(`health answered ${res.status}`);
       const report = parseHealth(res.body);
+      if ((res.status === 200) !== report.ready) {
+        throw new Error(`health answered ${res.status} with ready ${String(report.ready)}`);
+      }
       node.nodeId = report.node_id;
       node.report = report;
       node.latencyMs = latency;
       node.healthy = report.ready;
-      node.lastError = report.ready ? null : (report.readiness_error ?? 'not ready');
+      node.lastError = report.ready ? null : (report.readiness_error ?? report.share_error ?? 'not ready');
     } catch (err) {
       node.healthy = false;
       node.latencyMs = null;
@@ -352,13 +612,19 @@ export class AttestorClient {
     node.lastError = reason instanceof Error ? reason.message : String(reason);
   }
 
-  private async postSign(member: QuorumMember, body: string): Promise<SignResponseWire> {
-    const res = await this.http('POST', `${member.endpoint}/v1/sign`, body);
+  private async post<T>(
+    member: QuorumMember,
+    path: string,
+    body: string,
+    headers: Record<string, string>,
+    parse: (body: unknown) => T,
+  ): Promise<T> {
+    const res = await this.http('POST', `${member.endpoint}${path}`, body, headers);
     if (res.status !== 200) throw refusalFromWire(res.body, member.nodeId);
-    return parseSignResponse(res.body, member.nodeId);
+    return parse(res.body);
   }
 
-  private http(method: 'GET' | 'POST', url: string, body: string | null): Promise<HttpResult> {
+  private http(method: 'GET' | 'POST', url: string, body: string | null, extra: Record<string, string>): Promise<HttpResult> {
     return new Promise((resolve, reject) => {
       const req = httpsRequest(
         url,
@@ -367,8 +633,8 @@ export class AttestorClient {
           agent: this.agent,
           timeout: this.opts.timeoutMs,
           headers: body
-            ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) }
-            : { accept: 'application/json' },
+            ? { ...extra, 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) }
+            : { ...extra, accept: 'application/json' },
         },
         (res) => {
           const chunks: Buffer[] = [];
@@ -397,35 +663,88 @@ export class AttestorClient {
   }
 }
 
+function isUint(v: unknown): v is number {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 0;
+}
+
 function parseHealth(body: unknown): AttestorHealthReport {
   const b = body as Partial<AttestorHealthReport> | null;
   if (
     !b ||
     typeof b.node_id !== 'string' ||
     b.node_id.length === 0 ||
+    typeof b.region !== 'string' ||
+    !isUint(b.share_count) ||
+    !isUint(b.refresh_epoch) ||
+    !isUint(b.audit_sequence) ||
+    typeof b.audit_head !== 'string' ||
+    typeof b.peers !== 'object' ||
+    b.peers === null ||
+    !isUint(b.reachable_peers) ||
     typeof b.ready !== 'boolean' ||
-    typeof b.reachable_peers !== 'number' ||
-    typeof b.audit_sequence !== 'number'
+    (b.readiness_error !== undefined && typeof b.readiness_error !== 'string') ||
+    (b.share_error !== undefined && typeof b.share_error !== 'string')
   ) {
     throw new Error('health answer does not match the attestor schema');
   }
   return b as AttestorHealthReport;
 }
 
-function parseSignResponse(body: unknown, nodeId: string): SignResponseWire {
+function parseSignResponse(body: unknown, nodeId: string, curve: Curve): SignResponseWire {
   const b = body as Partial<SignResponseWire> | null;
   if (
     !b ||
-    typeof b.session_id !== 'string' ||
     typeof b.node_id !== 'string' ||
+    typeof b.key_id !== 'string' ||
+    typeof b.kind !== 'string' ||
+    typeof b.signed_bytes !== 'string' ||
+    !HEX_RE.test(b.signed_bytes) ||
     typeof b.signature !== 'string' ||
-    !/^0x[0-9a-fA-F]+$/.test(b.signature) ||
-    typeof b.audit_sequence !== 'number' ||
-    !(b.recovery_id === null || b.recovery_id === 0 || b.recovery_id === 1)
+    !HEX_RE.test(b.signature) ||
+    !isUint(b.audit_sequence)
   ) {
     throw new AttestorSessionError('malformed_response', 'sign answer does not match the attestor schema', nodeId);
   }
+  const length = b.signature.length / 2;
+  if (length !== SIGNATURE_BYTES[curve]) {
+    throw new AttestorSessionError(
+      'bad_signature_length',
+      `expected ${SIGNATURE_BYTES[curve]} ${curve} signature bytes, got ${length}`,
+      nodeId,
+    );
+  }
+  if (curve === 'secp256k1') {
+    const v = Number.parseInt(b.signature.slice(128, 130), 16);
+    if (!(b.recovery_id === 0 || b.recovery_id === 1) || v !== b.recovery_id) {
+      throw new AttestorSessionError('bad_recovery_id', 'secp256k1 signature without a matching recovery id', nodeId);
+    }
+  } else if (b.recovery_id !== undefined) {
+    throw new AttestorSessionError('bad_recovery_id', 'ed25519 signature carries a recovery id', nodeId);
+  }
   return b as SignResponseWire;
+}
+
+function parseKeyResponse(body: unknown, nodeId: string): KeyResponseWire {
+  const b = body as Partial<KeyResponseWire> | null;
+  if (
+    !b ||
+    typeof b.node_id !== 'string' ||
+    typeof b.key_id !== 'string' ||
+    (b.curve !== 'secp256k1' && b.curve !== 'ed25519') ||
+    typeof b.public_key !== 'string' ||
+    !HEX_RE.test(b.public_key) ||
+    b.public_key.length !== (b.curve === 'secp256k1' ? 130 : 64) ||
+    (b.address !== undefined && (typeof b.address !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(b.address))) ||
+    (b.did !== undefined && typeof b.did !== 'string') ||
+    !isUint(b.epoch) ||
+    !Array.isArray(b.participants) ||
+    !b.participants.every((p) => typeof p === 'string') ||
+    typeof b.refreshed !== 'boolean' ||
+    !isUint(b.audit_sequence)
+  ) {
+    throw new AttestorSessionError('malformed_response', 'key answer does not match the attestor schema', nodeId);
+  }
+  return b as KeyResponseWire;
 }
 
 export function attestorClientFromConfig(cfg: {
@@ -460,25 +779,37 @@ export async function signThroughAttestors(client: AttestorClient, input: SignIn
 
 function splitSignature(result: SignResult): { r: Hex; s: Hex; yParity: number } {
   const bytes = hexToBytes(result.signature);
-  if (bytes.length !== 64) {
-    throw new AttestorSessionError('bad_signature_length', `expected 64 signature bytes, got ${bytes.length}`);
+  if (bytes.length !== SIGNATURE_BYTES.secp256k1) {
+    throw new AttestorSessionError('bad_signature_length', `expected 65 signature bytes, got ${bytes.length}`);
   }
-  if (result.recoveryId !== 0 && result.recoveryId !== 1) {
-    throw new AttestorSessionError('missing_recovery_id', 'secp256k1 signature without a recovery id');
+  const yParity = bytes[64]!;
+  if ((yParity !== 0 && yParity !== 1) || result.recoveryId !== yParity) {
+    throw new AttestorSessionError('bad_recovery_id', 'secp256k1 signature without a matching recovery id');
   }
   return {
     r: toHex(bytes.subarray(0, 32)),
     s: toHex(bytes.subarray(32, 64)),
-    yParity: result.recoveryId,
+    yParity,
   };
 }
 
-export function encodeTypedData(td: TypedDataDefinition): Hex {
-  const json = JSON.stringify(
-    { domain: td.domain ?? {}, types: td.types, primaryType: td.primaryType, message: td.message },
+const ZERO_WORD: Hex = `0x${'00'.repeat(32)}`;
+
+export function unsignedTransactionBytes(tx: TransactionSerializable): Hex {
+  if (getTransactionType(tx) === 'legacy') return serializeTransaction(tx);
+  return serializeTransaction(tx, { r: ZERO_WORD, s: ZERO_WORD, yParity: 0 });
+}
+
+export function encodeTypedData(td: TypedDataDefinition): string {
+  const domain = (td.domain ?? {}) as Record<string, unknown>;
+  const types = td.types as Record<string, unknown>;
+  const withDomain = 'EIP712Domain' in types
+    ? types
+    : { EIP712Domain: getTypesForEIP712Domain({ domain: td.domain as never }), ...types };
+  return JSON.stringify(
+    { domain, types: withDomain, primaryType: td.primaryType, message: td.message },
     (_k, v: unknown) => (typeof v === 'bigint' ? v.toString() : v),
   );
-  return stringToHex(json);
 }
 
 export interface AttestorSigning<T> {
@@ -498,7 +829,6 @@ export function attestorSigner(
   wallet: { keyId: string; address: `0x${string}`; chainId: number },
   authorisation: Authorisation,
 ): AttestorSigner {
-  const context = { chain_id: wallet.chainId, address: wallet.address.toLowerCase() };
   const expectSigner = (recovered: string, sessionId: string): void => {
     if (recovered.toLowerCase() !== wallet.address.toLowerCase()) {
       throw new AttestorSessionError(
@@ -510,12 +840,9 @@ export function attestorSigner(
   return {
     address: wallet.address,
     async signTransaction(tx) {
-      const unsigned = serializeTransaction(tx);
       const result = await client.sign({
         keyId: wallet.keyId,
-        kind: 'evm_tx',
-        bytes: unsigned,
-        context,
+        payload: { kind: 'evm_tx', transaction: unsignedTransactionBytes(tx) },
         authorisation,
       });
       const signed = serializeTransaction(tx, splitSignature(result));
@@ -525,9 +852,7 @@ export function attestorSigner(
     async signMessage(message) {
       const result = await client.sign({
         keyId: wallet.keyId,
-        kind: 'personal_message',
-        bytes: stringToHex(message),
-        context,
+        payload: { kind: 'personal_message', message: stringToHex(message) },
         authorisation,
       });
       const signature = serializeSignature(splitSignature(result));
@@ -537,9 +862,7 @@ export function attestorSigner(
     async signTypedData(td) {
       const result = await client.sign({
         keyId: wallet.keyId,
-        kind: 'eip712',
-        bytes: encodeTypedData(td),
-        context,
+        payload: { kind: 'eip712', typedData: encodeTypedData(td) },
         authorisation,
       });
       const signature = serializeSignature(splitSignature(result));
