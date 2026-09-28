@@ -6,19 +6,26 @@ checker="$root/tools/wallet/check-live.sh"
 work="$(mktemp -d)"
 responder_pid=""
 
+cutover_pid=""
+
 cleanup() {
-	if [ -n "$responder_pid" ]; then
-		kill "$responder_pid" 2>/dev/null || true
-		wait "$responder_pid" 2>/dev/null || true
-	fi
+	local pid
+	for pid in "$responder_pid" "$cutover_pid"; do
+		if [ -n "$pid" ]; then
+			kill "$pid" 2>/dev/null || true
+			wait "$pid" 2>/dev/null || true
+		fi
+	done
 	rm -rf "$work"
 }
 trap cleanup EXIT
 
-if ! command -v node >/dev/null 2>&1; then
-	echo "check-live.test: node is required" >&2
-	exit 2
-fi
+for tool in node openssl; do
+	if ! command -v "$tool" >/dev/null 2>&1; then
+		echo "check-live.test: $tool is required" >&2
+		exit 2
+	fi
+done
 
 cat >"$work/responder.mjs" <<'JS'
 import http from "node:http";
@@ -458,6 +465,136 @@ if [ "$status" -eq 1 ] && grep -q '^fail readiness transport ' <<<"$output" &&
 	echo "ok   check_live_gateway_unreachable"
 else
 	echo "FAIL check_live_gateway_unreachable: want exit 1 with transport failures, got exit $status"
+	printf '%s\n' "$output"
+	failures=$((failures + 1))
+fi
+
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
+	-keyout "$work/cutover.key" -out "$work/cutover.crt" -days 1 \
+	-subj /CN=localhost -addext subjectAltName=DNS:localhost >/dev/null 2>&1
+
+cat >"$work/cutover.mjs" <<'JS'
+import https from "node:https";
+import fs from "node:fs";
+
+const [keyFile, certFile, portFile] = process.argv.slice(2);
+const tls = { key: fs.readFileSync(keyFile), cert: fs.readFileSync(certFile) };
+const profiles = {
+  gateway: { served: "paxeer-wallet-gateway", ready: true },
+  old: { served: null, ready: true },
+  other: { served: "some-other-service", ready: true },
+  notready: { served: "paxeer-wallet-gateway", ready: false },
+};
+const ports = {};
+let pending = Object.keys(profiles).length;
+for (const [name, profile] of Object.entries(profiles)) {
+  const server = https.createServer(tls, (request, response) => {
+    const headers = { "content-type": "application/json" };
+    if (profile.served) headers["X-Served-By"] = profile.served;
+    if (request.method === "GET" && request.url === "/healthz") {
+      response.writeHead(200, headers);
+      response.end(JSON.stringify({ ok: true, service: "paxeer-wallet-api" }));
+      return;
+    }
+    if (request.method === "GET" && request.url === "/readyz") {
+      response.writeHead(profile.ready ? 200 : 503, headers);
+      response.end(JSON.stringify(profile.ready ? { ready: true } : { error: "not_ready", ready: false }));
+      return;
+    }
+    response.writeHead(404, headers);
+    response.end('{"error":"not_found"}');
+  });
+  server.listen(0, "127.0.0.1", () => {
+    ports[name] = server.address().port;
+    pending -= 1;
+    if (pending === 0) fs.writeFileSync(portFile, JSON.stringify(ports));
+  });
+}
+JS
+
+node "$work/cutover.mjs" "$work/cutover.key" "$work/cutover.crt" "$work/cutover-ports" &
+cutover_pid=$!
+for _ in $(seq 100); do
+	[ -s "$work/cutover-ports" ] && break
+	sleep 0.05
+done
+if [ ! -s "$work/cutover-ports" ]; then
+	echo "check-live.test: cutover responder did not start" >&2
+	exit 2
+fi
+cutover_port() {
+	python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[sys.argv[2]])' "$work/cutover-ports" "$1"
+}
+
+expect_cutover() {
+	local name="$1" host="$2" want_status="$3" output status=0
+	shift 3
+	output="$(CHECK_LIVE_CUTOVER_HOST="$host" CHECK_LIVE_CA="$work/cutover.crt" CHECK_LIVE_TIMEOUT=5 "$checker" cutover 2>&1)" || status=$?
+	local ok=1 line
+	[ "$status" -eq "$want_status" ] || ok=0
+	for line in "$@"; do
+		grep -qF -- "$line" <<<"$output" || ok=0
+	done
+	if [ "$ok" -eq 1 ]; then
+		echo "ok   $name"
+	else
+		echo "FAIL $name: want exit $want_status with lines [$*], got exit $status"
+		printf '%s\n' "$output"
+		failures=$((failures + 1))
+	fi
+}
+
+expect_cutover check_live_cutover_served_by_gateway "localhost:$(cutover_port gateway)" 0 \
+	"pass served_by http=200 x-served-by=paxeer-wallet-gateway" \
+	"pass readiness http=200 x-served-by=paxeer-wallet-gateway ready=true" \
+	"check-live: all checks passed"
+
+expect_cutover check_live_cutover_still_old_service "localhost:$(cutover_port old)" 1 \
+	"fail served_by http=200 x-served-by=none" \
+	"fail readiness http=200 x-served-by=none ready=true" \
+	"check-live: 2 check(s) failed"
+
+expect_cutover check_live_cutover_other_service "localhost:$(cutover_port other)" 1 \
+	"fail served_by http=200 x-served-by=some-other-service" \
+	"check-live: 2 check(s) failed"
+
+expect_cutover check_live_cutover_gateway_not_ready "localhost:$(cutover_port notready)" 1 \
+	"pass served_by http=200 x-served-by=paxeer-wallet-gateway" \
+	"fail readiness http=503 x-served-by=paxeer-wallet-gateway ready=false" \
+	"check-live: 1 check(s) failed"
+
+expect_cutover check_live_cutover_unreachable "localhost:1" 1 \
+	"fail served_by transport " \
+	"fail readiness transport " \
+	"check-live: 2 check(s) failed"
+
+status=0
+output="$(CHECK_LIVE_CUTOVER_HOST="localhost:$(cutover_port gateway)" CHECK_LIVE_TIMEOUT=5 "$checker" cutover 2>&1)" || status=$?
+if [ "$status" -eq 1 ] && grep -q '^fail served_by transport ' <<<"$output"; then
+	echo "ok   check_live_cutover_untrusted_certificate"
+else
+	echo "FAIL check_live_cutover_untrusted_certificate: want exit 1 with a transport failure, got exit $status"
+	printf '%s\n' "$output"
+	failures=$((failures + 1))
+fi
+
+status=0
+output="$(env -u CHECK_LIVE_CUTOVER_HOST "$checker" cutover 2>&1)" || status=$?
+if [ "$status" -eq 2 ] && grep -q 'CHECK_LIVE_CUTOVER_HOST is required' <<<"$output" &&
+	grep -q '^usage: ' <<<"$output"; then
+	echo "ok   check_live_cutover_missing_host"
+else
+	echo "FAIL check_live_cutover_missing_host: want exit 2 with usage, got exit $status"
+	printf '%s\n' "$output"
+	failures=$((failures + 1))
+fi
+
+status=0
+output="$(CHECK_LIVE_CUTOVER_HOST="https://localhost/healthz" "$checker" cutover 2>&1)" || status=$?
+if [ "$status" -eq 2 ] && grep -q 'CHECK_LIVE_CUTOVER_HOST must be a bare hostname' <<<"$output"; then
+	echo "ok   check_live_cutover_host_with_scheme"
+else
+	echo "FAIL check_live_cutover_host_with_scheme: want exit 2, got exit $status"
 	printf '%s\n' "$output"
 	failures=$((failures + 1))
 fi

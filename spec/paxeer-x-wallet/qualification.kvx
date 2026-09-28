@@ -1101,3 +1101,11 @@ symbol = "F-4"
 observed = "The security review lists keys.import, keys.refresh and keys.addshare as the operator-only routes and does not yet name keys.describe, which operatorOnly also admits only from the operator CA."
 assumption = "The review is outside this task's touches; its next revision adds keys.describe to the operator routes."
 severity = "low"
+
+[observation.5.3.1]
+task = "5.3"
+file = "tools/wallet/check-live.sh"
+symbol = "cutover"
+observed = "The verify command ran with CHECK_LIVE_CUTOVER_HOST unset and refused with the missing-variable message and exit 2 (.logs/verify.log), the honest outcome before the live cutover; the check-live test's cutover cases and the gateway served-by test passed."
+assumption = "The verify command is runnable only after the live cutover, when the operator runs preflight.sh and apply.sh on the current host and then the check with the public hostname set; the task is recorded implemented until that run."
+severity = "note"

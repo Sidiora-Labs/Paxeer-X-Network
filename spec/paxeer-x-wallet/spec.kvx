@@ -1311,7 +1311,11 @@ reqs = ["4.5","13.4"]
 
 [task.5.3]
 title = "Cut the wallet endpoint over to the new gateway and retire the old service"
-status = "pending"
+status = "implemented"
+revision = "1a9cd6ea1a881856fe2e1e2c883971858e291bd2"
+command = "timeout 20m sh -c 'tools/wallet/check-live.sh cutover'"
+exit_code = 2
+log_path = ".logs/verify.log"
 wave = 5
 requires = ["4.1","5.2"]
 do_1 = "Add human/wallet/deploy/cutover/ with the reverse-proxy configuration for the current host forwarding the endpoint hostname to the new gateway with the original host and client address headers preserved, a preflight script that checks the new gateway's readiness and the proxied path end to end, an apply script the operator runs on the current host, and a retire script that stops and disables the old service units only after the proxied path has served for a configured soak period."
