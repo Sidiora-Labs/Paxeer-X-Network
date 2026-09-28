@@ -987,6 +987,22 @@ command = "timeout 20m sh -c 'cd human && cargo test -p layerx-human-service wal
 exit_code = 0
 log_path = ".logs/verify.log"
 
+[task.4.25]
+title = "Require protocol 3 when attestor custody is configured"
+status = "done"
+wave = 4
+requires = ["4.6"]
+do_1 = "When attestor custody is configured and LAYERX_HUMAN_PROTOCOL_VERSION is unset, selected_protocol is 3; when it is set to any value other than 3 under attestor custody, production component construction refuses to start with an error naming the variable and the required value; without attestor custody the existing behaviour stays."
+do_2 = "Add tests for the three cases against the real construction path."
+verify_cmd = "timeout 20m sh -c 'cd human && cargo test -p layerx-human-service attestor_custody_protocol'"
+symbols = ["attestor_custody_protocol","selected_custody_protocol","require_attestor_custody_protocol"]
+touches = ["human/crates/layerx-human-service/src/server/production_components.rs"]
+reqs = ["8.4"]
+revision = "09120235704d1ee2e6aa5164a2a01dc297b3a85e"
+command = "timeout 20m sh -c 'cd human && cargo test -p layerx-human-service attestor_custody_protocol'"
+exit_code = 0
+log_path = ".logs/verify.log"
+
 [task.4.7]
 title = "Load-test the deployed attestor network once"
 status = "implemented"

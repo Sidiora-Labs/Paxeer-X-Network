@@ -260,6 +260,8 @@ impl ProductionComponentsConfig {
     /// # Errors
     /// Refuses incomplete, invalid, or unsupported production dependency configuration.
     pub fn from_environment() -> Result<Self, String> {
+        let attestor = AttestorCustodyConfig::from_environment()?;
+        let attestor_configured = attestor.is_some();
         Ok(Self {
             store_root: absolute("LAYERX_HUMAN_STORE_ROOT")?,
             custody_root: absolute("LAYERX_HUMAN_CUSTODY_ROOT")?,
@@ -296,9 +298,9 @@ impl ProductionComponentsConfig {
             kms_client_certificate: absolute("LAYERX_HUMAN_KMS_CLIENT_CERTIFICATE_DER")?,
             kms_client_private_key: absolute("LAYERX_HUMAN_KMS_CLIENT_PRIVATE_KEY_DER")?,
             kms_limits: bounded_limits("LAYERX_HUMAN_KMS")?,
-            attestor: AttestorCustodyConfig::from_environment()?,
+            attestor,
             network_id: number("LAYERX_HUMAN_NETWORK_ID")?,
-            protocol_version: configured_protocol()?,
+            protocol_version: configured_protocol(attestor_configured)?,
             signing_limits: SigningLimits::new(
                 number("LAYERX_HUMAN_SIGNING_RATE_MAXIMUM")?,
                 number("LAYERX_HUMAN_SIGNING_RATE_WINDOW_SECONDS")?,
@@ -422,6 +424,7 @@ impl ProductionComponents {
         clock: Arc<dyn Clock>,
     ) -> Result<Self, String> {
         validate_production_configuration(&config)?;
+        require_attestor_custody_protocol(config.attestor.is_some(), config.protocol_version)?;
         let withdrawal_boundary = production_withdrawal_boundary(&config)?;
         let provider = match config.attestor.take() {
             Some(attestor) => ProductionKms::Attestor(
@@ -2195,10 +2198,79 @@ mod protocol_tests {
     }
 }
 
-fn configured_protocol() -> Result<u16, String> {
+const ATTESTOR_CUSTODY_PROTOCOL: u16 = layerx_intents::canonical::STATE_COMMITMENT_PROTOCOL_VERSION;
+
+fn require_attestor_custody_protocol(attestor: bool, protocol: u16) -> Result<u16, String> {
+    if attestor && protocol != ATTESTOR_CUSTODY_PROTOCOL {
+        return Err(format!(
+            "LAYERX_HUMAN_PROTOCOL_VERSION must be {ATTESTOR_CUSTODY_PROTOCOL} when attestor custody is configured"
+        ));
+    }
+    Ok(protocol)
+}
+
+fn selected_custody_protocol(value: Option<&str>, attestor: bool) -> Result<u16, String> {
+    let protocol = match value {
+        None if attestor => ATTESTOR_CUSTODY_PROTOCOL,
+        value => selected_protocol(value).map_err(|error| {
+            if attestor {
+                format!(
+                    "{error}; LAYERX_HUMAN_PROTOCOL_VERSION must be {ATTESTOR_CUSTODY_PROTOCOL} when attestor custody is configured"
+                )
+            } else {
+                error
+            }
+        })?,
+    };
+    require_attestor_custody_protocol(attestor, protocol)
+}
+
+#[cfg(test)]
+mod attestor_custody_protocol {
+    use super::{require_attestor_custody_protocol, selected_custody_protocol};
+
+    const REFUSAL: &str =
+        "LAYERX_HUMAN_PROTOCOL_VERSION must be 3 when attestor custody is configured";
+
+    #[test]
+    fn attestor_custody_protocol_defaults_to_three_when_unset() {
+        assert_eq!(selected_custody_protocol(None, true), Ok(3));
+        assert_eq!(selected_custody_protocol(Some("3"), true), Ok(3));
+        assert_eq!(require_attestor_custody_protocol(true, 3), Ok(3));
+    }
+
+    #[test]
+    fn attestor_custody_protocol_refuses_any_other_value() {
+        for value in ["2", "", "0", "1", "4", "65536", "three"] {
+            let refused = selected_custody_protocol(Some(value), true)
+                .expect_err("attestor custody accepted a protocol other than 3");
+            assert!(
+                refused.contains(REFUSAL),
+                "refusal for {value:?} does not name the variable and value: {refused}"
+            );
+        }
+        assert_eq!(
+            require_attestor_custody_protocol(true, 2),
+            Err(REFUSAL.to_owned())
+        );
+    }
+
+    #[test]
+    fn attestor_custody_protocol_keeps_the_existing_behaviour_without_attestors() {
+        assert_eq!(selected_custody_protocol(None, false), Ok(2));
+        assert_eq!(selected_custody_protocol(Some("2"), false), Ok(2));
+        assert_eq!(selected_custody_protocol(Some("3"), false), Ok(3));
+        for invalid in ["", "0", "1", "4", "65536", "three"] {
+            assert!(selected_custody_protocol(Some(invalid), false).is_err());
+        }
+        assert_eq!(require_attestor_custody_protocol(false, 2), Ok(2));
+    }
+}
+
+fn configured_protocol(attestor: bool) -> Result<u16, String> {
     match env::var("LAYERX_HUMAN_PROTOCOL_VERSION") {
-        Ok(value) => selected_protocol(Some(&value)),
-        Err(env::VarError::NotPresent) => selected_protocol(None),
+        Ok(value) => selected_custody_protocol(Some(&value), attestor),
+        Err(env::VarError::NotPresent) => selected_custody_protocol(None, attestor),
         Err(env::VarError::NotUnicode(_)) => {
             Err("LAYERX_HUMAN_PROTOCOL_VERSION is invalid".to_owned())
         }
