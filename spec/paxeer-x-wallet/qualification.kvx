@@ -1022,6 +1022,14 @@ observed = "Against the hardened daemon the e2e signs in, generates the key unde
 assumption = "The kernel evaluator must decode the kernel's own send payload before any human send can be attestor-signed; the test's owner-key authority and wall-clock window are follow-up edits once that decoder exists."
 severity = "blocker"
 
+[observation.4.6.4]
+task = "4.6"
+file = "human/wallet/attestor/internal/policy/lx/lx.go"
+symbol = "decodeAssetSend"
+observed = "With the owner key as envelope authority and a wall-clock window the e2e reaches sign and every signer refuses it: the evaluator now requires the send's embedded authorization to be the owner kind, signed by the envelope authority and verified strictly, and no daemon kind signs that authorization digest with an attestor-held key, so the embedded session-key authorization cannot be replaced."
+assumption = "Observation 4.6.2 is a blocker for any attestor-held kernel send until the daemon gains a kind that signs the owner send authorization; the refusal code is not surfaced because the human provider maps every attestor refusal to a bare refused error."
+severity = "blocker"
+
 [observation.4.14.1]
 task = "4.14"
 file = "human/wallet/attestor/internal/replica/replica_test.go"

@@ -178,7 +178,11 @@ fn kernel_plan(home: &str, now: u64) -> UnifiedPlan {
         Endpoint::agent(account(WORKER)).unwrap_or_else(|error| panic!("worker: {error:?}")),
         AssetId::new(ASSET),
         Amount::from_u128(AMOUNT),
-        Constraints::new(TimestampSeconds::from_u64(1_200), MAX_FEE, false),
+        Constraints::new(
+            TimestampSeconds::from_u64(now.saturating_add(200)),
+            MAX_FEE,
+            false,
+        ),
     )
     .unwrap_or_else(|error| panic!("intent: {error:?}"));
     plan(&intent, &observed).unwrap_or_else(|error| panic!("plan: {error:?}"))
@@ -287,10 +291,15 @@ struct RealAgentLayer {
     receipts: BTreeMap<[u8; 32], ReceiptMaterial>,
     submissions: BTreeMap<String, [u8; 32]>,
     signers: Vec<[u8; 32]>,
+    owner: [u8; 32],
 }
 
 impl RealAgentLayer {
-    fn new(root: &std::path::Path, specifications: BTreeMap<[u8; 32], ReceiptSpec>) -> Self {
+    fn new(
+        root: &std::path::Path,
+        owner: [u8; 32],
+        specifications: BTreeMap<[u8; 32], ReceiptSpec>,
+    ) -> Self {
         Self {
             store: AgentStore::open(root).unwrap_or_else(|error| panic!("agent store: {error}")),
             outbox: Outbox::default(),
@@ -301,6 +310,7 @@ impl RealAgentLayer {
             receipts: BTreeMap::new(),
             submissions: BTreeMap::new(),
             signers: Vec::new(),
+            owner,
         }
     }
 
@@ -364,7 +374,7 @@ impl AgentBoundary for RealAgentLayer {
                 PrepareRequest {
                     actor: Did::new(request.actor.as_str().as_bytes())
                         .map_err(|_| AgentBoundaryError::CorruptResponse)?,
-                    authority: Authority::owner(request.authority.as_str().as_bytes())
+                    authority: Authority::owner(&self.owner)
                         .map_err(|_| AgentBoundaryError::CorruptResponse)?,
                     activity_type: specification.activity,
                     expected_account_sequence: Some(request.account_sequence.get()),
@@ -746,18 +756,23 @@ fn wallet_identity_e2e_signs_a_kernel_send_through_the_attestors_to_a_verified_r
 
     let home = format!("agent:{did}:main");
     let actor = AgentDid::new(did.clone()).unwrap_or_else(|error| panic!("actor: {error:?}"));
-    let plan = kernel_plan(&home, 1_000);
+    let now = wall_clock();
+    let plan = kernel_plan(&home, now);
     assert_eq!(
         plan.legs()[0].mechanism(),
         LegMechanism::Protocol(Mechanism::Send)
     );
-    let request = submit_request(&plan, &actor, (995, 1_100));
+    let request = submit_request(
+        &plan,
+        &actor,
+        (now.saturating_sub(5), now.saturating_add(100)),
+    );
     let expectation = BindingExpectation {
         actor: actor.clone(),
         authority: authority(),
         account_sequence: SEQUENCE,
         currency: "LXP".to_owned(),
-        now: 1_000,
+        now,
     };
     verify_bindings(&plan, &request, &expectation)
         .unwrap_or_else(|error| panic!("bindings: {error}"));
@@ -802,6 +817,7 @@ fn wallet_identity_e2e_signs_a_kernel_send_through_the_attestors_to_a_verified_r
         .unwrap_or_else(|error| panic!("key: {error:?}"));
     let mut agent = RealAgentLayer::new(
         &root.join("agent-store"),
+        public_key,
         BTreeMap::from([(
             key,
             ReceiptSpec {
@@ -826,7 +842,7 @@ fn wallet_identity_e2e_signs_a_kernel_send_through_the_attestors_to_a_verified_r
             custody: &signer,
             registry: &registry(),
             trace: &trace,
-            now: 1_000,
+            now,
         },
     ))
     .unwrap_or_else(|error| panic!("drive: {error}: {}", cluster.logs()));
@@ -861,7 +877,7 @@ fn wallet_identity_e2e_signs_a_kernel_send_through_the_attestors_to_a_verified_r
             &signer,
             &registry(),
             &trace,
-            1_000_u64.saturating_add(step),
+            now.saturating_add(step),
         ))
         .unwrap_or_else(|error| panic!("advance: {error}"));
     }
