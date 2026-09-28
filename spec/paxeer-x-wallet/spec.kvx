@@ -749,6 +749,22 @@ command = "timeout 20m sh -c 'cd platform && cargo test -p layerx-platform-gatew
 exit_code = 0
 log_path = ".logs/verify.log"
 
+[task.3.10]
+title = "Align the gas station module with the provider's construction signing path"
+status = "done"
+wave = 3
+requires = ["2.4","2.5"]
+do_1 = "In human/wallet/sdk make the gas station module's sign path call eth_sign with the provider's parameter order, the signer address, the locally computed sponsored batch digest and the construction object of kind sponsored_batch, so the provider recomputes the digest from the fields, accepts it, and forwards only the fields; keep one exported construction type shared by the module and the provider."
+do_2 = "Add tests that drive the module's sign path through PaxeerProvider against the in-test gateway server, proving acceptance for a correct batch and refusal when the digest or a field is altered, and that the agent SDK's digest for the same fields equals the module's."
+verify_cmd = "timeout 20m sh -c 'pnpm --dir human/wallet/sdk test -- modules provider'"
+symbols = ["gasStation.sign","SponsoredBatchConstruction"]
+touches = ["human/wallet/sdk/src/modules/gas-station.ts","human/wallet/sdk/src/provider.ts","human/wallet/sdk/src/types.ts","human/wallet/sdk/test/modules.test.ts","human/wallet/sdk/test/provider.test.ts"]
+reqs = ["9.1","9.2","9.3","11.1"]
+revision = "5cfcebc073488137a524df1d472ab53593e50872"
+command = "timeout 20m sh -c 'pnpm --dir human/wallet/sdk test -- modules provider'"
+exit_code = 0
+log_path = ".logs/verify.log"
+
 [task.3.11]
 title = "Make the endpoint's event producer optional in chain-only mode"
 status = "done"

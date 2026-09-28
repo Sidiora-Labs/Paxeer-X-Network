@@ -4,7 +4,6 @@ import {
   abiSelector,
   requestGasQuote,
   sponsoredBatchCall,
-  sponsoredBatchDigest,
   type GasQuoteRequest,
   type GasRefusal,
   type GasResult,
@@ -13,10 +12,13 @@ import {
   type SponsoredBatch,
 } from '@sidiora/layerx-sdk';
 
+import { sponsoredBatchDigest, wireSponsoredBatch } from '../provider.js';
 import type {
+  Hex,
   SponsoredBatchConstruction,
   SponsoredSubmitRequest,
   SponsoredSubmitResponse,
+  WireSponsoredBatch,
 } from '../types.js';
 import {
   ModuleError,
@@ -82,8 +84,8 @@ export interface GasStationModule {
   quote(budget: GasBudget): Promise<GasBudgetQuote>;
   requestQuote(request: GasQuoteRequest, options?: { readonly signal?: AbortSignal; readonly now?: bigint }): Promise<SignedGasQuote>;
   batchNonce(account: string): Promise<bigint>;
-  construction(batch: SponsoredBatch): SponsoredBatchConstruction;
-  digest(batch: SponsoredBatch): string;
+  construction(batch: SponsoredBatch): WireSponsoredBatch;
+  digest(batch: SponsoredBatch): Hex;
   sign(batch: SponsoredBatch): Promise<string>;
   executeCall(batch: SponsoredBatch, accountSignature: string, relayerSignature: string, now?: bigint): ModuleTransaction;
   submitRequest(batch: SponsoredBatch, accountSignature: string, relayerSignature: string, now?: bigint): SponsoredSubmitRequest;
@@ -158,19 +160,14 @@ export function gasStation(provider: ModuleProvider, options: GasStationOptions)
   };
   const fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis);
 
-  const digest = (batch: SponsoredBatch): string => {
+  const construction = (batch: SponsoredBatch): WireSponsoredBatch => {
     if (batch.calls.length === 0) {
       throw new ModuleError('invalid_value', 'calls');
     }
     if (batch.chainId !== config.chainId) {
       throw new GasStationError({ code: 'chain_mismatch', field: 'chainId' });
     }
-    return unwrap(sponsoredBatchDigest(batch));
-  };
-
-  const construction = (batch: SponsoredBatch): SponsoredBatchConstruction => {
-    digest(batch);
-    return {
+    const fields: SponsoredBatchConstruction = {
       kind: 'sponsored_batch',
       chainId: decimal(batch.chainId),
       account: hexAddress(batch.account, 'account'),
@@ -190,11 +187,17 @@ export function gasStation(provider: ModuleProvider, options: GasStationOptions)
         gasCost: decimal(batch.quote.gasCost),
       },
     };
+    return wireSponsoredBatch(fields);
   };
+
+  const digest = (batch: SponsoredBatch): Hex => sponsoredBatchDigest(construction(batch));
 
   const sign = async (batch: SponsoredBatch): Promise<string> => {
     const fields = construction(batch);
-    const answer = await provider.request({ method: 'eth_sign', params: [fields.account, fields] });
+    const answer = await provider.request({
+      method: 'eth_sign',
+      params: [fields.account, sponsoredBatchDigest(fields), fields],
+    });
     return signature(answer, 'eth_sign');
   };
 

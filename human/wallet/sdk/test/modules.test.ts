@@ -47,6 +47,7 @@ import {
   SPONSORED_SUBMIT_PATH,
   WEB_DATA_EVENTS,
   bridge,
+  constructionDigest,
   decodeAbiString,
   exchange,
   feeChoice,
@@ -54,6 +55,7 @@ import {
   feeTokenAmount,
   gasStation,
   launchpad,
+  toWireConstruction,
   webData,
   type ModuleProvider,
   type SponsoredBatchConstruction,
@@ -218,9 +220,11 @@ const signer: ModuleProvider = {
     signed.push({ method: argument.method, params });
     if (argument.method === 'eth_gasPrice') return '0x3b9aca00';
     if (argument.method === 'eth_sign') {
-      const [from, construction] = params as [string, SponsoredBatchConstruction];
+      const [from, digest, construction] = params as [string, string, SponsoredBatchConstruction];
       if (from.toLowerCase() !== account || construction.kind !== 'sponsored_batch') throw new Error('refused construction');
-      return signDigest(value(sponsoredBatchDigest(batchFromConstruction(construction))), accountKey);
+      const recomputed = value(sponsoredBatchDigest(batchFromConstruction(construction)));
+      if (digest !== recomputed) throw new Error('refused digest');
+      return signDigest(recomputed, accountKey);
     }
     throw new Error(`unsupported ${argument.method}`);
   },
@@ -501,7 +505,7 @@ describe('modules', () => {
     const now = quote.deadline - 60n;
     const hash = await station.submit(batch, relayerSignature, { now });
     const signRequest = signed.find((entry) => entry.method === 'eth_sign');
-    expect(signRequest?.params).toEqual([account, construction]);
+    expect(signRequest?.params).toEqual([account, station.digest(batch), construction]);
     const accountSignature = signDigest(station.digest(batch), accountKey);
     const config = { quoteUrl: `${gatewayUrl}/quote`, chainId, sponsor: relayer, token: SIDIORA_TOKEN, decimals: SIDIORA_DECIMALS, paymaster };
     const reference = value(sponsoredBatchCall(config, batch, accountSignature, relayerSignature, now));
@@ -525,6 +529,42 @@ describe('modules', () => {
     expect(() => station.executeCall(batch, relayerSignature, relayerSignature, now)).toThrow(GasStationError);
     const offline = gasStation(signer, { chainId, sponsor: relayer, paymaster, quoteUrl: `${gatewayUrl}/quote` });
     await expect(offline.submit(batch, relayerSignature, { now })).rejects.toThrow(ModuleError);
+  });
+
+  it('modules_gas_station digest is the provider routine and equals the agent SDK for identical fields', () => {
+    const station = gasStation(signer, { chainId, sponsor: relayer, paymaster, quoteUrl: `${gatewayUrl}/quote` });
+    const batch: SponsoredBatch = {
+      chainId,
+      account,
+      nonce: 11n,
+      calls: [
+        { to: SIDIORA_TOKEN, value: 0n, data: `0xa9059cbb${'00'.repeat(12)}${relayer.slice(2)}${'00'.repeat(31)}2a` },
+        { to: `0x${'dd'.repeat(20)}`, value: 7n, data: '0x' },
+      ],
+      quote: {
+        sponsor: relayer,
+        token: SIDIORA_TOKEN,
+        maxTokenAmount: 500n,
+        tokenAmount: 311n,
+        deadline: 1_900_000_000n,
+        quoteNonce: 2n,
+        gasCost: 10n ** 14n,
+        decimals: SIDIORA_DECIMALS,
+      },
+    };
+    const construction = station.construction(batch);
+    const digest = station.digest(batch);
+    expect(construction.account).toBe(account);
+    expect(construction.calls[0]?.data).toBe(batch.calls[0]?.data);
+    expect(digest).toBe(value(sponsoredBatchDigest(batch)));
+    expect(digest).toBe(value(sponsoredBatchDigest(batchFromConstruction(construction))));
+    expect(constructionDigest(toWireConstruction(construction))).toBe(digest);
+    expect(toWireConstruction(construction)).toEqual(construction);
+    const altered = station.construction({ ...batch, quote: { ...batch.quote, tokenAmount: 312n } });
+    expect(station.digest({ ...batch, quote: { ...batch.quote, tokenAmount: 312n } })).toBe(
+      value(sponsoredBatchDigest(batchFromConstruction(altered))),
+    );
+    expect(constructionDigest(altered)).not.toBe(digest);
   });
 
   it('modules_fee_choice labels PAX gas, SID sponsored and SID native with their denominations and paths', () => {

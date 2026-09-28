@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { keccak256, recoverAddress, recoverMessageAddress, recoverTypedDataAddress, toHex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
+import { SIDIORA_DECIMALS, sponsoredBatchDigest as agentBatchDigest, type SponsoredBatch } from '@sidiora/layerx-sdk';
 import {
   ChainDisconnectedError,
   DisconnectedError,
@@ -18,6 +19,7 @@ import {
   UserRejectedRequestError,
   WalletInterface,
   constructionDigest,
+  gasStation,
   toWireConstruction,
   type Eip1193Provider,
   type Hex,
@@ -547,6 +549,111 @@ describe('PaxeerProvider', () => {
   it('provider_rejects_a_request_without_a_method', async () => {
     const err = await failure(provider().request({ method: '' }));
     expect(err).toMatchObject({ code: -32602, field: 'method' });
+  });
+});
+
+describe('gas station through PaxeerProvider', () => {
+  const paymaster = `0x${'5f'.repeat(20)}` as Hex;
+
+  function vectorBatch(): SponsoredBatch {
+    const v = vectors.sponsoredBatch;
+    return {
+      chainId: BigInt(v.chainId),
+      account: v.account,
+      nonce: BigInt(v.nonce),
+      calls: v.calls.map((call) => ({ to: call.to, value: BigInt(call.value), data: call.data })),
+      quote: {
+        sponsor: v.quote.sponsor,
+        token: v.quote.token,
+        maxTokenAmount: BigInt(v.quote.maxTokenAmount),
+        tokenAmount: BigInt(v.quote.tokenAmount),
+        deadline: BigInt(v.quote.deadline),
+        quoteNonce: BigInt(v.quote.quoteNonce),
+        gasCost: BigInt(v.quote.gasCost),
+        decimals: SIDIORA_DECIMALS,
+      },
+    };
+  }
+
+  async function station(asked: { method: string; params: readonly unknown[] }[]) {
+    const p = new PaxeerProvider({
+      gatewayUrl: `${base}/default`,
+      rpcUrl: `${base}/rpc`,
+      token: () => TOKEN,
+      confirm: (request) => {
+        asked.push(request);
+        return true;
+      },
+    });
+    await p.request({ method: 'eth_requestAccounts' });
+    const module = gasStation(p, {
+      chainId: 125n,
+      sponsor: vectors.sponsoredBatch.quote.sponsor,
+      paymaster,
+      quoteUrl: `${base}/quote`,
+    });
+    return { p, module };
+  }
+
+  it('provider_gas_station_digest_equals_the_agent_sdk_and_the_recorded_vector', async () => {
+    const { module } = await station([]);
+    const batch = vectorBatch();
+    const digest = module.digest(batch);
+    expect(digest).toBe(vectors.sponsoredBatchDigest);
+    const agent = agentBatchDigest(batch);
+    expect(agent).toEqual({ ok: true, value: digest });
+    expect(constructionDigest(toWireConstruction(module.construction(batch)))).toBe(digest);
+  });
+
+  it('provider_gas_station_sign_is_accepted_and_forwards_only_the_fields', async () => {
+    const asked: { method: string; params: readonly unknown[] }[] = [];
+    const { module } = await station(asked);
+    const batch = vectorBatch();
+    const before = seen.length;
+    const signature = (await module.sign(batch)) as Hex;
+    expect(signature).toBe(String(bodyOf('wallet-sign-digest-sponsored-batch').signature).toLowerCase());
+    const construction = module.construction(batch);
+    expect(asked.filter((request) => request.method === 'eth_sign').map((request) => request.params)).toEqual([
+      [construction.account, vectors.sponsoredBatchDigest, construction],
+    ]);
+    const forwarded = seen.slice(before);
+    expect(forwarded).toHaveLength(1);
+    expect(forwarded[0]).toMatchObject({ method: 'POST', path: '/v1/wallet/sign-digest', body: { construction } });
+    expect(JSON.stringify(forwarded[0]!.body)).not.toContain(vectors.sponsoredBatchDigest.slice(2));
+    expect(await recoverAddress({ hash: module.digest(batch), signature })).toBe(vectors.address);
+  });
+
+  it('provider_gas_station_sign_parameters_with_an_altered_digest_or_field_are_refused', async () => {
+    const asked: { method: string; params: readonly unknown[] }[] = [];
+    const { p, module } = await station(asked);
+    const batch = vectorBatch();
+    await module.sign(batch);
+    const [address, digest, construction] = asked.find((request) => request.method === 'eth_sign')!.params as [
+      Hex,
+      Hex,
+      ReturnType<typeof module.construction>,
+    ];
+    const before = seen.length;
+    const alteredDigest = `${digest.slice(0, -1)}${digest.endsWith('0') ? '1' : '0'}` as Hex;
+    const wrongDigest = await failure(p.request({ method: 'eth_sign', params: [address, alteredDigest, construction] }));
+    expect(wrongDigest).toBeInstanceOf(UnauthorizedError);
+    expect(wrongDigest).toMatchObject({ code: 4100, reason: 'digest_mismatch' });
+    const alteredField = { ...construction, quote: { ...construction.quote, tokenAmount: '311401' } };
+    const wrongField = await failure(p.request({ method: 'eth_sign', params: [address, digest, alteredField] }));
+    expect(wrongField).toBeInstanceOf(UnauthorizedError);
+    expect(wrongField).toMatchObject({ code: 4100, reason: 'digest_mismatch' });
+    const alteredCall = { ...construction, calls: [...construction.calls].reverse() };
+    const wrongCall = await failure(p.request({ method: 'eth_sign', params: [address, digest, alteredCall] }));
+    expect(wrongCall).toMatchObject({ code: 4100, reason: 'digest_mismatch' });
+    const bare = await failure(p.request({ method: 'eth_sign', params: [address, digest] }));
+    expect(bare).toMatchObject({ code: 4100, reason: 'missing_construction' });
+    const reordered = await failure(p.request({ method: 'eth_sign', params: [address, construction] }));
+    expect(reordered).toBeInstanceOf(InvalidParamsError);
+    expect(reordered).toMatchObject({ code: -32602, field: 'digest' });
+    expect(seen.length).toBe(before);
+    const foreign = await failure(module.sign({ ...batch, account: '0x3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c' }));
+    expect(foreign).toMatchObject({ code: 4100, reason: 'account_mismatch' });
+    expect(seen.length).toBe(before);
   });
 });
 

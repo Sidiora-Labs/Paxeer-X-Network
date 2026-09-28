@@ -612,7 +612,7 @@ export interface SponsorQuote {
   gasCost: UintInput;
 }
 
-export interface SponsoredBatchFields {
+export interface SponsoredBatchConstruction {
   kind: 'sponsored_batch';
   chainId: UintInput;
   account: Hex;
@@ -628,7 +628,7 @@ export interface Eip7702AuthorizationConstruction {
   nonce: UintInput;
 }
 
-export type DigestConstruction = SponsoredBatchFields | Eip7702AuthorizationConstruction;
+export type DigestConstruction = SponsoredBatchConstruction | Eip7702AuthorizationConstruction;
 
 export interface WireSponsoredBatch {
   kind: 'sponsored_batch';
@@ -678,38 +678,13 @@ export interface TypedDataPayload {
   message: Record<string, unknown>;
 }
 
-export interface SponsoredBatchConstructionCall {
-  to: `0x${string}`;
-  value: string;
-  data: `0x${string}`;
-}
-
-export interface SponsoredBatchConstructionQuote {
-  sponsor: `0x${string}`;
-  token: `0x${string}`;
-  maxTokenAmount: string;
-  tokenAmount: string;
-  deadline: string;
-  quoteNonce: string;
-  gasCost: string;
-}
-
-export interface SponsoredBatchConstruction {
-  kind: 'sponsored_batch';
-  chainId: string;
-  account: `0x${string}`;
-  nonce: string;
-  calls: SponsoredBatchConstructionCall[];
-  quote: SponsoredBatchConstructionQuote;
-}
-
 export interface SponsoredSubmitRequest {
   chain_id: string;
   account: `0x${string}`;
   to: `0x${string}`;
   data: `0x${string}`;
   value: string;
-  construction: SponsoredBatchConstruction;
+  construction: WireSponsoredBatch;
   account_signature: `0x${string}`;
   relayer_signature: `0x${string}`;
 }

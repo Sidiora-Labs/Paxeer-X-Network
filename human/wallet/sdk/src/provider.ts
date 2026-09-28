@@ -24,7 +24,7 @@ import type {
   SignDigestResponse,
   SignMessageResponse,
   SignTypedDataResponse,
-  SponsoredBatchFields,
+  SponsoredBatchConstruction,
   TypedDataPayload,
   UintInput,
   WireDigestConstruction,
@@ -487,7 +487,7 @@ export function constructionDigest(construction: WireDigestConstruction): Hex {
     : eip7702AuthorizationDigest(construction);
 }
 
-export function wireSponsoredBatch(construction: SponsoredBatchFields): WireSponsoredBatch {
+export function wireSponsoredBatch(construction: SponsoredBatchConstruction): WireSponsoredBatch {
   if (!Array.isArray(construction.calls) || construction.calls.length === 0) {
     throw new InvalidParamsError('calls', 'a sponsored batch requires at least one call');
   }
