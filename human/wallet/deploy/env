@@ -1,0 +1,21 @@
+# attestor
+ATTESTOR_NODE_ID - identifier of this attestor node within the participant set
+ATTESTOR_REGION - region label this node reports in health
+ATTESTOR_LISTEN_ADDR - host:port the attestor API listens on
+ATTESTOR_PEER_LISTEN_ADDR - host:port the peer transport listens on
+ATTESTOR_PEERS - comma-separated id=host:port list of the other attestor nodes
+ATTESTOR_NODE_KEY_FILE - path to the node key file (32 raw bytes or 64 hex characters) that encrypts the share store
+ATTESTOR_DATA_DIR - directory holding the encrypted share store
+ATTESTOR_CEREMONY - true enables keys.import for the operator during a ceremony window
+ATTESTOR_CHAIN_ID - EVM chain id every decoded transaction is pinned to
+ATTESTOR_JWKS_URL - identity provider JWKS endpoint used to verify user tokens
+ATTESTOR_JWT_ISSUER - expected issuer of user tokens
+ATTESTOR_JWT_AUDIENCE - expected audience of user tokens
+ATTESTOR_POLICY_FILE - path to the default signing policy
+ATTESTOR_TLS_CERT_FILE - path to this node's TLS certificate
+ATTESTOR_TLS_KEY_FILE - path to this node's TLS private key
+ATTESTOR_TLS_CA_FILE - path to the CA bundle that authenticates peers and the gateway
+ATTESTOR_OPERATOR_CA_FILE - path to the CA bundle that authenticates the operator identity
+ATTESTOR_BACKUP_KEY_FILE - path to the key file (32 raw bytes or 64 hex characters) that encrypts store snapshots
+ATTESTOR_BACKUP_DIR - directory where encrypted store snapshots are written
+ATTESTOR_RPC_URL - chain RPC endpoint used to read nonces and binding state

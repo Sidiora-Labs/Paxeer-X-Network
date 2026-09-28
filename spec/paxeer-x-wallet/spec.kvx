@@ -191,7 +191,7 @@ status = "pending"
 
 [task.1.1]
 title = "Create the attestor module with its configuration and encrypted share store"
-status = "pending"
+status = "done"
 wave = 1
 requires = []
 do_1 = "Create the Go module human/wallet/attestor with go.mod naming the module path under the repository module namespace, a Makefile-free layout (cmd/attestor, internal/), and internal/config that loads listen addresses, node id, region, peer list, node key path, ceremony flag, chain id, identity provider JWKS URL and policy defaults from environment variable names documented in human/wallet/deploy/env, refusing to start when the node key is absent."
@@ -202,6 +202,10 @@ verify_cmd = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./
 symbols = ["Config","Load","Store","ShareRecord","Snapshot","Restore"]
 touches = ["human/wallet/attestor/go.mod","human/wallet/attestor/internal/config/config.go","human/wallet/attestor/internal/config/config_test.go","human/wallet/attestor/internal/store/store.go","human/wallet/attestor/internal/store/backup.go","human/wallet/attestor/internal/store/store_test.go","human/wallet/deploy/env"]
 reqs = ["1.5","3.2"]
+revision = "9787d3728aa4ebf2769a51d109b1551fbddb9eb0"
+command = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./internal/config/... ./internal/store/...'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.1.2]
 title = "Wrap threshold ECDSA on secp256k1 with Ethereum signature shape"

@@ -7,7 +7,7 @@
 ## Wave 1 - Foundations
 
 - [ ] 1. Build the parts with disjoint paths
-  - [ ] 1.1 Create the attestor module with its configuration and encrypted share store
+  - [x] 1.1 Create the attestor module with its configuration and encrypted share store
     - Create the Go module human/wallet/attestor with go.mod naming the module path under the repository module namespace, a Makefile-free layout (cmd/attestor, internal/), and internal/config that loads listen addresses, node id, region, peer list, node key path, ceremony flag, chain id, identity provider JWKS URL and policy defaults from environment variable names documented in human/wallet/deploy/env, refusing to start when the node key is absent.
     - Implement internal/store with a share record (key id, curve, public key, refresh epoch, participant set, ciphertext) persisted in an embedded key-value file under the data directory, encrypted with AES-256-GCM under the node key with the record's metadata as authenticated associated data, with Put, Get, List and Delete that never return plaintext outside a scoped closure and never log it.
     - Implement internal/store/backup that writes an encrypted snapshot of the store under a separate backup key and restores it, so req.3.ac_2 can build on it.

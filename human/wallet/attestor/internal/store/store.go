@@ -1,0 +1,315 @@
+package store
+
+import (
+	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/hkdf"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"time"
+
+	"go.etcd.io/bbolt"
+)
+
+const (
+	CurveSecp256k1 = "secp256k1"
+	CurveEd25519   = "ed25519"
+	KeySize        = 32
+	NonceSize      = 12
+	FileName       = "shares.db"
+	shareDomain    = "paxeer-attestor-share-v1"
+	openTimeout    = 5 * time.Second
+)
+
+var (
+	ErrNotFound     = errors.New("store: share not found")
+	ErrInvalid      = errors.New("store: invalid share record")
+	ErrAuthFailed   = errors.New("store: share failed authentication")
+	ErrKeySize      = errors.New("store: node key must be 32 bytes")
+	ErrDataDirInUse = errors.New("store: data directory is not empty")
+	bucketShares    = []byte("shares")
+)
+
+type ShareRecord struct {
+	KeyID        string   `json:"key_id"`
+	Curve        string   `json:"curve"`
+	PublicKey    []byte   `json:"public_key"`
+	Epoch        uint64   `json:"epoch"`
+	Participants []string `json:"participants"`
+	CreatedAt    int64    `json:"created_at"`
+	RefreshedAt  int64    `json:"refreshed_at"`
+	Ciphertext   []byte   `json:"ciphertext,omitempty"`
+}
+
+type Store struct {
+	db      *bbolt.DB
+	nodeKey []byte
+	now     func() time.Time
+}
+
+func Open(dataDir string, nodeKey []byte) (*Store, error) {
+	if len(nodeKey) != KeySize {
+		return nil, ErrKeySize
+	}
+	if err := os.MkdirAll(dataDir, 0o700); err != nil {
+		return nil, fmt.Errorf("store: create data directory: %w", err)
+	}
+	return openFile(filepath.Join(dataDir, FileName), nodeKey)
+}
+
+func openFile(path string, nodeKey []byte) (*Store, error) {
+	db, err := bbolt.Open(path, 0o600, &bbolt.Options{Timeout: openTimeout})
+	if err != nil {
+		return nil, fmt.Errorf("store: open: %w", err)
+	}
+	if err := db.Update(func(tx *bbolt.Tx) error {
+		_, err := tx.CreateBucketIfNotExists(bucketShares)
+		return err
+	}); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("store: init: %w", err)
+	}
+	key := make([]byte, KeySize)
+	copy(key, nodeKey)
+	return &Store{db: db, nodeKey: key, now: time.Now}, nil
+}
+
+func (s *Store) Close() error {
+	zero(s.nodeKey)
+	return s.db.Close()
+}
+
+func (s *Store) Put(rec ShareRecord, share []byte) error {
+	if len(share) == 0 {
+		return fmt.Errorf("%w: key %q: empty share", ErrInvalid, rec.KeyID)
+	}
+	meta := normalize(rec)
+	if err := validate(meta); err != nil {
+		return err
+	}
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		b := tx.Bucket(bucketShares)
+		now := s.now().Unix()
+		meta.CreatedAt = now
+		if raw := b.Get([]byte(meta.KeyID)); raw != nil {
+			prev, err := decodeRecord(meta.KeyID, raw)
+			if err != nil {
+				return err
+			}
+			meta.CreatedAt = prev.CreatedAt
+		}
+		meta.RefreshedAt = now
+		ct, err := seal(s.nodeKey, meta, share)
+		if err != nil {
+			return err
+		}
+		meta.Ciphertext = ct
+		enc, err := json.Marshal(meta)
+		if err != nil {
+			return fmt.Errorf("store: key %q: encode: %w", meta.KeyID, err)
+		}
+		return b.Put([]byte(meta.KeyID), enc)
+	})
+}
+
+func (s *Store) Get(keyID string) (ShareRecord, error) {
+	rec, err := s.load(keyID)
+	if err != nil {
+		return ShareRecord{}, err
+	}
+	rec.Ciphertext = nil
+	return rec, nil
+}
+
+func (s *Store) WithShare(keyID string, fn func(plain []byte) error) error {
+	rec, err := s.load(keyID)
+	if err != nil {
+		return err
+	}
+	plain, err := open(s.nodeKey, rec)
+	if err != nil {
+		return err
+	}
+	defer zero(plain)
+	return fn(plain)
+}
+
+func (s *Store) List() ([]ShareRecord, error) {
+	var out []ShareRecord
+	err := s.db.View(func(tx *bbolt.Tx) error {
+		return tx.Bucket(bucketShares).ForEach(func(k, v []byte) error {
+			rec, err := decodeRecord(string(k), v)
+			if err != nil {
+				return err
+			}
+			rec.Ciphertext = nil
+			out = append(out, rec)
+			return nil
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (s *Store) Delete(keyID string) error {
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		b := tx.Bucket(bucketShares)
+		if b.Get([]byte(keyID)) == nil {
+			return fmt.Errorf("%w: key %q", ErrNotFound, keyID)
+		}
+		return b.Delete([]byte(keyID))
+	})
+}
+
+func (s *Store) load(keyID string) (ShareRecord, error) {
+	var rec ShareRecord
+	err := s.db.View(func(tx *bbolt.Tx) error {
+		raw := tx.Bucket(bucketShares).Get([]byte(keyID))
+		if raw == nil {
+			return fmt.Errorf("%w: key %q", ErrNotFound, keyID)
+		}
+		var err error
+		rec, err = decodeRecord(keyID, raw)
+		return err
+	})
+	return rec, err
+}
+
+func decodeRecord(keyID string, raw []byte) (ShareRecord, error) {
+	var rec ShareRecord
+	if err := json.Unmarshal(raw, &rec); err != nil {
+		return ShareRecord{}, fmt.Errorf("%w: key %q: undecodable record", ErrInvalid, keyID)
+	}
+	if rec.KeyID != keyID {
+		return ShareRecord{}, fmt.Errorf("%w: key %q: record names another key", ErrInvalid, keyID)
+	}
+	return rec, nil
+}
+
+func normalize(rec ShareRecord) ShareRecord {
+	out := ShareRecord{
+		KeyID:        rec.KeyID,
+		Curve:        rec.Curve,
+		PublicKey:    append([]byte(nil), rec.PublicKey...),
+		Epoch:        rec.Epoch,
+		Participants: append([]string(nil), rec.Participants...),
+	}
+	sort.Strings(out.Participants)
+	return out
+}
+
+func validate(rec ShareRecord) error {
+	if rec.KeyID == "" {
+		return fmt.Errorf("%w: empty key id", ErrInvalid)
+	}
+	switch rec.Curve {
+	case CurveSecp256k1:
+		if n := len(rec.PublicKey); n != 33 && n != 65 {
+			return fmt.Errorf("%w: key %q: secp256k1 public key must be 33 or 65 bytes", ErrInvalid, rec.KeyID)
+		}
+	case CurveEd25519:
+		if len(rec.PublicKey) != 32 {
+			return fmt.Errorf("%w: key %q: ed25519 public key must be 32 bytes", ErrInvalid, rec.KeyID)
+		}
+	default:
+		return fmt.Errorf("%w: key %q: unknown curve %q", ErrInvalid, rec.KeyID, rec.Curve)
+	}
+	if len(rec.Participants) == 0 {
+		return fmt.Errorf("%w: key %q: empty participant set", ErrInvalid, rec.KeyID)
+	}
+	for i, p := range rec.Participants {
+		if p == "" {
+			return fmt.Errorf("%w: key %q: empty participant id", ErrInvalid, rec.KeyID)
+		}
+		if i > 0 && rec.Participants[i-1] == p {
+			return fmt.Errorf("%w: key %q: duplicate participant %q", ErrInvalid, rec.KeyID, p)
+		}
+	}
+	return nil
+}
+
+func associatedData(rec ShareRecord) []byte {
+	var buf bytes.Buffer
+	putField := func(b []byte) {
+		var n [4]byte
+		binary.BigEndian.PutUint32(n[:], uint32(len(b)))
+		buf.Write(n[:])
+		buf.Write(b)
+	}
+	putField([]byte(shareDomain))
+	putField([]byte(rec.KeyID))
+	putField([]byte(rec.Curve))
+	putField(rec.PublicKey)
+	var epoch [8]byte
+	binary.BigEndian.PutUint64(epoch[:], rec.Epoch)
+	buf.Write(epoch[:])
+	var count [4]byte
+	binary.BigEndian.PutUint32(count[:], uint32(len(rec.Participants)))
+	buf.Write(count[:])
+	for _, p := range rec.Participants {
+		putField([]byte(p))
+	}
+	return buf.Bytes()
+}
+
+func recordAEAD(nodeKey []byte, ad []byte) (cipher.AEAD, error) {
+	key, err := hkdf.Key(sha256.New, nodeKey, nil, string(ad), KeySize)
+	if err != nil {
+		return nil, err
+	}
+	defer zero(key)
+	return newGCM(key)
+}
+
+func newGCM(key []byte) (cipher.AEAD, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	return cipher.NewGCM(block)
+}
+
+func seal(nodeKey []byte, rec ShareRecord, share []byte) ([]byte, error) {
+	ad := associatedData(rec)
+	aead, err := recordAEAD(nodeKey, ad)
+	if err != nil {
+		return nil, fmt.Errorf("store: key %q: derive record key failed", rec.KeyID)
+	}
+	nonce := make([]byte, NonceSize, NonceSize+len(share)+aead.Overhead())
+	if _, err := rand.Read(nonce); err != nil {
+		return nil, fmt.Errorf("store: key %q: nonce generation failed", rec.KeyID)
+	}
+	return aead.Seal(nonce, nonce, share, ad), nil
+}
+
+func open(nodeKey []byte, rec ShareRecord) ([]byte, error) {
+	if len(rec.Ciphertext) < NonceSize {
+		return nil, fmt.Errorf("%w: key %q", ErrAuthFailed, rec.KeyID)
+	}
+	ad := associatedData(rec)
+	aead, err := recordAEAD(nodeKey, ad)
+	if err != nil {
+		return nil, fmt.Errorf("store: key %q: derive record key failed", rec.KeyID)
+	}
+	plain, err := aead.Open(nil, rec.Ciphertext[:NonceSize], rec.Ciphertext[NonceSize:], ad)
+	if err != nil {
+		return nil, fmt.Errorf("%w: key %q", ErrAuthFailed, rec.KeyID)
+	}
+	return plain, nil
+}
+
+func zero(b []byte) {
+	for i := range b {
+		b[i] = 0
+	}
+}
