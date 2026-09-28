@@ -266,6 +266,7 @@ fn chain_only_environment(
     redis: &RedisProcess,
     chain_port: u16,
     listen: u16,
+    producer: bool,
 ) -> Vec<(String, String)> {
     let directory = &redis.directory;
     let unused = free_port();
@@ -310,6 +311,9 @@ fn chain_only_environment(
             secret(directory, "redis-password", "gateway-secret"),
         ),
     ];
+    if !producer {
+        return environment;
+    }
     for kind in ["PAYMENT", "WEBHOOKS"] {
         environment.push((
             format!("LAYERX_EVENTS_{kind}_UPSTREAM_URL"),
@@ -341,9 +345,9 @@ fn gateway_command(environment: &[(String, String)]) -> Command {
     command
 }
 
-fn start_gateway(redis: &RedisProcess, chain_port: u16) -> Gateway {
+fn start_gateway(redis: &RedisProcess, chain_port: u16, producer: bool) -> Gateway {
     let listen = free_port();
-    let environment = chain_only_environment(redis, chain_port, listen);
+    let environment = chain_only_environment(redis, chain_port, listen, producer);
     assert!(environment.iter().all(|(name, _)| {
         !KERNEL_SIDE_VARIABLES.contains(&name.as_str()) && name != "LAYERX_GATEWAY_COMPONENT_URL"
     }));
@@ -398,7 +402,7 @@ fn degraded_endpoint_serves_the_chain_and_refuses_kernel_methods_without_the_ker
     let chain = payment_events::Listener::start(Arc::clone(&tls), move |request| {
         chain_answer(&answers, request)
     });
-    let gateway = start_gateway(&redis, chain.port);
+    let gateway = start_gateway(&redis, chain.port, true);
 
     let chain_id = gateway.rpc("eth_chainId", &json!([]));
     assert_eq!(chain_id["result"], CHAIN_ID, "{chain_id}");
@@ -474,7 +478,7 @@ fn degraded_endpoint_starts_chain_only_through_its_real_configuration() {
     let chain = payment_events::Listener::start(Arc::clone(&tls), move |request| {
         chain_answer(&answers, request)
     });
-    let gateway = start_gateway(&redis, chain.port);
+    let gateway = start_gateway(&redis, chain.port, true);
 
     let chain_id = gateway.rpc("eth_chainId", &json!([]));
     assert_eq!(chain_id["result"], CHAIN_ID, "{chain_id}");
@@ -532,7 +536,7 @@ fn degraded_endpoint_refuses_a_kernel_side_input_without_the_component_url() {
     let _ = payment_events::tls(&redis);
     let input = secret(&redis.directory, "kernel-side-input", &"42".repeat(32));
     for variable in KERNEL_SIDE_VARIABLES {
-        let mut environment = chain_only_environment(&redis, free_port(), free_port());
+        let mut environment = chain_only_environment(&redis, free_port(), free_port(), true);
         environment.push((variable.to_owned(), input.clone()));
         let output = gateway_command(&environment)
             .stdout(Stdio::null())
@@ -546,6 +550,118 @@ fn degraded_endpoint_refuses_a_kernel_side_input_without_the_component_url() {
                 "layerx-gateway refused startup: {variable} is set without LAYERX_GATEWAY_COMPONENT_URL"
             ),
             "{variable}"
+        );
+    }
+}
+
+#[test]
+fn degraded_endpoint_starts_without_the_event_producer_and_reports_it_unconfigured() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let redis = RedisProcess::start();
+    let (tls, _) = payment_events::tls(&redis);
+    let answers = precompile_answers();
+    let chain = payment_events::Listener::start(Arc::clone(&tls), move |request| {
+        chain_answer(&answers, request)
+    });
+    let environment = chain_only_environment(&redis, chain.port, free_port(), false);
+    assert!(environment
+        .iter()
+        .all(|(name, _)| !name.starts_with("LAYERX_EVENTS_")));
+    let gateway = start_gateway(&redis, chain.port, false);
+
+    let chain_id = gateway.rpc("eth_chainId", &json!([]));
+    assert_eq!(chain_id["result"], CHAIN_ID, "{chain_id}");
+
+    let network = gateway.rpc("px_getNetwork", &json!([]));
+    assert_eq!(
+        network["result"]["kernel"],
+        json!({"available": false, "reason": "not_configured"}),
+        "{network}"
+    );
+    assert_eq!(
+        network["result"]["paxeer"],
+        json!({"chain_id": CHAIN_ID, "latest_block": LATEST_BLOCK}),
+        "{network}"
+    );
+
+    assert_kernel_unavailable(
+        &gateway.rpc("lx_sendActivity", &json!(["00"])),
+        "core_agent_boundary",
+    );
+
+    let (status, readiness) = gateway.get("/readyz");
+    assert_eq!(status, 200, "{readiness}");
+    assert_eq!(readiness["status"], "degraded");
+    assert_eq!(
+        readiness["backends"]["event_producer"],
+        json!({"state": "unavailable", "reason": "not_configured"}),
+        "{readiness}"
+    );
+    assert_eq!(
+        readiness["backends"]["durable_store"],
+        json!({"state": "ready", "reason": "ready"}),
+        "{readiness}"
+    );
+    assert_eq!(
+        readiness["backends"]["paxeer_chain"],
+        json!({"state": "ready", "reason": "ready"}),
+        "{readiness}"
+    );
+    drop(gateway);
+    drop(chain);
+}
+
+#[test]
+fn degraded_endpoint_refuses_a_half_set_event_producer_by_name() {
+    let redis = RedisProcess::start();
+    let _ = payment_events::tls(&redis);
+    let refusal = |environment: &[(String, String)]| {
+        let output = gateway_command(environment)
+            .stdout(Stdio::null())
+            .output()
+            .unwrap_or_else(|error| panic!("gateway must run: {error}"));
+        (
+            output.status.code(),
+            String::from_utf8_lossy(&output.stderr)
+                .trim_end()
+                .to_owned(),
+        )
+    };
+    let chain_only = chain_only_environment(&redis, free_port(), free_port(), false);
+    let producer = chain_only_environment(&redis, free_port(), free_port(), true)
+        .into_iter()
+        .filter(|(name, _)| name.starts_with("LAYERX_EVENTS_"))
+        .collect::<Vec<_>>();
+    assert_eq!(producer.len(), 10);
+    for entry in producer
+        .iter()
+        .filter(|(name, _)| !name.ends_with("_UPSTREAM_URL"))
+    {
+        let mut environment = chain_only.clone();
+        environment.push(entry.clone());
+        assert_eq!(
+            refusal(&environment),
+            (
+                Some(1),
+                format!(
+                    "layerx-gateway refused startup: {} is set without LAYERX_EVENTS_PAYMENT_UPSTREAM_URL",
+                    entry.0
+                )
+            ),
+            "{}",
+            entry.0
+        );
+    }
+    for (missing, _) in &producer {
+        let mut environment = chain_only.clone();
+        environment.extend(producer.iter().filter(|(name, _)| name != missing).cloned());
+        assert_eq!(
+            refusal(&environment),
+            (
+                Some(1),
+                format!("layerx-gateway refused startup: {missing} is required")
+            ),
+            "{missing}"
         );
     }
 }

@@ -64,6 +64,7 @@ struct Config {
     registration_token: Option<Zeroizing<String>>,
     faucet: Option<rpc_faucet::Faucet>,
     store: Arc<RedisStore>,
+    event_producer: bool,
     network_id: String,
     wire_version: String,
     protocol_version: u16,
@@ -950,7 +951,7 @@ fn configured_kernel() -> Result<Option<(Kernel, Identity)>, String> {
     Ok(Some((kernel, identity)))
 }
 
-fn config() -> Result<Config, String> {
+fn config(event_producer: bool) -> Result<Config, String> {
     let ca = Certificate::from_der(
         &fs::read(
             env::var("LAYERX_GATEWAY_OUTBOUND_CA_DER")
@@ -993,6 +994,7 @@ fn config() -> Result<Config, String> {
             read_secret("LAYERX_GATEWAY_REDIS_USERNAME_FILE")?,
             read_secret("LAYERX_GATEWAY_REDIS_PASSWORD_FILE")?,
         )),
+        event_producer,
         network_id: protocol.network_id,
         wire_version: protocol.wire_version,
         protocol_version: protocol.protocol_version,
@@ -3507,11 +3509,15 @@ fn serve(config: &Arc<Config>, tcp: TcpStream) -> Result<(), String> {
 }
 
 fn run() -> Result<(), String> {
-    let config = Arc::new(config()?);
-    layerx_platform_internal::producer::Client::from_environment(&["payment"])?.spawn(
-        Arc::downgrade(&config.store),
-        Arc::clone(&config.store.producer_health),
-    )?;
+    let producer =
+        layerx_platform_internal::producer::Client::from_environment_if_configured(&["payment"])?;
+    let config = Arc::new(config(producer.is_some())?);
+    if let Some(producer) = producer {
+        producer.spawn(
+            Arc::downgrade(&config.store),
+            Arc::clone(&config.store.producer_health),
+        )?;
+    }
     let listener = TcpListener::bind(config.listen).map_err(|error| error.to_string())?;
     for incoming in listener.incoming() {
         let tcp = incoming.map_err(|error| error.to_string())?;
@@ -3666,7 +3672,11 @@ fn kernel_availability(
 fn readiness(config: &Config) -> Vec<BackendAvailability> {
     vec![
         BackendAvailability::probed("durable_store", config.store.ready()),
-        BackendAvailability::probed("event_producer", config.store.producer_health.ready()),
+        if config.event_producer {
+            BackendAvailability::probed("event_producer", config.store.producer_health.ready())
+        } else {
+            BackendAvailability::not_configured("event_producer")
+        },
         match paxeer::status(config) {
             "not_configured" => BackendAvailability::not_configured("paxeer_chain"),
             status => BackendAvailability::probed("paxeer_chain", status == "available"),

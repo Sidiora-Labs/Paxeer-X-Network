@@ -12,6 +12,21 @@ use crate::tls::Upstream;
 pub const MAX_PENDING: usize = 1024;
 pub const MAX_OBSERVATION_BYTES: usize = 16 * 1024;
 const UNAVAILABLE_AFTER: Duration = Duration::from_secs(30);
+const REQUIRED_UPSTREAM_SUFFIXES: [&str; 5] = [
+    "UPSTREAM_URL",
+    "UPSTREAM_CA_DER",
+    "UPSTREAM_TOKEN_FILE",
+    "UPSTREAM_CLIENT_IDENTITY_PKCS12",
+    "UPSTREAM_CLIENT_IDENTITY_PASSWORD_FILE",
+];
+const UPSTREAM_SUFFIXES: [&str; 6] = [
+    "UPSTREAM_URL",
+    "UPSTREAM_CA_DER",
+    "UPSTREAM_TOKEN_FILE",
+    "UPSTREAM_CLIENT_IDENTITY_PKCS12",
+    "UPSTREAM_CLIENT_IDENTITY_PASSWORD_FILE",
+    "UPSTREAM_COOKIE_FILE",
+];
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -379,6 +394,52 @@ impl Client {
     }
 
     /// # Errors
+    /// Refuses a producer variable set without any upstream URL, and names the first
+    /// required producer variable missing once an upstream URL is set.
+    pub fn configured(kinds: &[&str], present: impl Fn(&str) -> bool) -> Result<bool, String> {
+        let prefixes = kinds
+            .iter()
+            .map(|kind| format!("LAYERX_EVENTS_{}", kind.to_ascii_uppercase()))
+            .chain(std::iter::once("LAYERX_EVENTS_WEBHOOKS".to_owned()))
+            .collect::<Vec<_>>();
+        let urls = prefixes
+            .iter()
+            .map(|prefix| format!("{prefix}_UPSTREAM_URL"))
+            .collect::<Vec<_>>();
+        if !urls.iter().any(|url| present(url)) {
+            for prefix in &prefixes {
+                for suffix in UPSTREAM_SUFFIXES {
+                    let variable = format!("{prefix}_{suffix}");
+                    if present(&variable) {
+                        return Err(format!("{variable} is set without {}", urls[0]));
+                    }
+                }
+            }
+            return Ok(false);
+        }
+        for prefix in &prefixes {
+            for suffix in REQUIRED_UPSTREAM_SUFFIXES {
+                let variable = format!("{prefix}_{suffix}");
+                if !present(&variable) {
+                    return Err(format!("{variable} is required"));
+                }
+            }
+        }
+        Ok(true)
+    }
+
+    /// # Errors
+    /// Refuses a partially configured producer; returns no client when no producer
+    /// variable is set.
+    pub fn from_environment_if_configured(kinds: &[&str]) -> Result<Option<Self>, String> {
+        if Self::configured(kinds, |variable| std::env::var_os(variable).is_some())? {
+            Self::from_environment(kinds).map(Some)
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// # Errors
     /// Returns observation or notification failures without discarding the queue entry.
     pub fn deliver(&self, pending: &Pending) -> Result<bool, String> {
         pending.validate()?;
@@ -519,6 +580,52 @@ mod tests {
         changed = observation(1);
         changed.facts[0].value = "x".repeat(513);
         assert!(changed.validate().is_err());
+    }
+
+    #[test]
+    fn degraded_producer_is_absent_only_when_every_producer_variable_is_unset() {
+        let names = ["PAYMENT", "WEBHOOKS"]
+            .into_iter()
+            .flat_map(|kind| {
+                UPSTREAM_SUFFIXES
+                    .into_iter()
+                    .map(move |suffix| format!("LAYERX_EVENTS_{kind}_{suffix}"))
+            })
+            .collect::<Vec<_>>();
+        let required = names
+            .iter()
+            .filter(|name| !name.ends_with("_UPSTREAM_COOKIE_FILE"))
+            .cloned()
+            .collect::<Vec<_>>();
+        let configured = |set: &[String]| {
+            Client::configured(&["payment"], |variable| {
+                set.iter().any(|name| name == variable)
+            })
+        };
+        assert_eq!(configured(&[]), Ok(false));
+        assert_eq!(configured(&required), Ok(true));
+        for name in names.iter().filter(|name| !name.ends_with("_UPSTREAM_URL")) {
+            assert_eq!(
+                configured(std::slice::from_ref(name)),
+                Err(format!(
+                    "{name} is set without LAYERX_EVENTS_PAYMENT_UPSTREAM_URL"
+                ))
+            );
+        }
+        for missing in &required {
+            let set = required
+                .iter()
+                .filter(|name| *name != missing)
+                .cloned()
+                .collect::<Vec<_>>();
+            assert_eq!(configured(&set), Err(format!("{missing} is required")));
+        }
+        assert_eq!(
+            Client::configured(&["payment", "program"], |variable| {
+                required.iter().any(|name| name == variable)
+            }),
+            Err("LAYERX_EVENTS_PROGRAM_UPSTREAM_URL is required".to_owned())
+        );
     }
 
     #[test]

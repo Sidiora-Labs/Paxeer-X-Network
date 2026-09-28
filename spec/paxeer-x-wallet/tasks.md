@@ -181,6 +181,10 @@
     - Carry the absence through every consumer so kernel-dependent methods keep answering the typed unavailable error and chain-only readiness reports the kernel side as unconfigured; keep every response shape and openrpc.json unchanged.
     - Add a degraded test that starts the endpoint through its real start-up configuration with only the chain RPC and the listener inputs set, asserts it serves eth_chainId and px_getNetwork, and asserts the named refusal when a kernel-side input is set without the component URL.
     - _Requirements: 12.2_
+  - [x] 3.11 Make the endpoint's event producer optional in chain-only mode
+    - Make the shared endpoint construct its payment and webhook event producer only when the producer's upstream URL is configured: when it is absent the endpoint starts without a producer, readiness reports the producer as unconfigured, and any path that would emit an event on the kernel side is already unavailable; when the upstream URL is set, the producer's credentials stay required exactly as today and a half-set producer is refused with a named error.
+    - Add a degraded test that starts the endpoint through its real start-up configuration with the chain-only inputs and no producer variables, asserts it serves eth_chainId and px_getNetwork and reports the producer unconfigured, and asserts the named refusal for a half-set producer.
+    - _Requirements: 12.2_
 
 ## Wave 4 - Completion
 
@@ -236,7 +240,7 @@
   "waves": [
     { "id": 1,  "tasks": ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "1.10", "1.11", "1.12", "1.13", "1.14", "1.15", "1.16"] },
     { "id": 2,  "tasks": ["2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7", "2.8", "2.9"] },
-    { "id": 3,  "tasks": ["3.1", "3.2", "3.3", "3.4", "3.5", "3.6", "3.7", "3.8", "3.9"] },
+    { "id": 3,  "tasks": ["3.1", "3.2", "3.3", "3.4", "3.5", "3.6", "3.7", "3.8", "3.9", "3.11"] },
     { "id": 4,  "tasks": ["4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7", "4.8"] },
     { "id": 5,  "tasks": ["5.1", "5.2"] }
   ]
