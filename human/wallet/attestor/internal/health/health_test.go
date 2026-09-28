@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -108,6 +109,67 @@ func TestReportShareErrorNotReady(t *testing.T) {
 	rep := r.Report(context.Background())
 	if rep.Ready || rep.ShareError != "share store unreadable" {
 		t.Fatalf("ready %v share error %q", rep.Ready, rep.ShareError)
+	}
+}
+
+func TestReportReplicaSnapshotAge(t *testing.T) {
+	head := sha256.Sum256([]byte("audit-head"))
+	now := time.Unix(1_000_000, 0)
+	state := ReplicaState{LastShipped: now.Add(-95 * time.Second)}
+	r, err := NewReporter("attestor-3", "region-c", Providers{
+		Shares:    func() (uint64, uint64, error) { return 42, 7, nil },
+		AuditHead: func() (uint64, [32]byte) { return 1024, head },
+		Peers:     func(context.Context) map[string]PeerState { return fourPeers() },
+		Readiness: func() error { return nil },
+		Replica:   func() ReplicaState { return state },
+		Clock:     func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatalf("NewReporter: %v", err)
+	}
+	rep := r.Report(context.Background())
+	if rep.Replica == nil || rep.Replica.LastShippedAgeSeconds == nil {
+		t.Fatalf("replica report = %+v, want an age", rep.Replica)
+	}
+	if *rep.Replica.LastShippedAgeSeconds != 95 || rep.Replica.ErrorClass != "" {
+		t.Fatalf("replica age %d error class %q, want 95 and none", *rep.Replica.LastShippedAgeSeconds, rep.Replica.ErrorClass)
+	}
+	if !rep.Ready || rep.ShareCount != 42 || rep.ReachablePeers != 4 {
+		t.Fatalf("existing fields changed: ready %v shares %d reachable %d", rep.Ready, rep.ShareCount, rep.ReachablePeers)
+	}
+	body, err := json.Marshal(rep)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(body), `"replica":{"last_shipped_age_seconds":95}`) {
+		t.Fatalf("report JSON %s lacks the replica age", body)
+	}
+
+	state = ReplicaState{ErrorClass: "host_key"}
+	rep = r.Report(context.Background())
+	if rep.Replica == nil || rep.Replica.LastShippedAgeSeconds != nil || rep.Replica.ErrorClass != "host_key" {
+		t.Fatalf("replica report before any shipment = %+v", rep.Replica)
+	}
+	body, err = json.Marshal(rep)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(body), `"replica":{"last_shipped_age_seconds":null,"error_class":"host_key"}`) {
+		t.Fatalf("report JSON %s lacks the null age and the error class", body)
+	}
+}
+
+func TestReportWithoutReplicaOmitsIt(t *testing.T) {
+	rep := reporter(t, fourPeers(), nil).Report(context.Background())
+	if rep.Replica != nil {
+		t.Fatalf("replica report = %+v without a replica provider", rep.Replica)
+	}
+	body, err := json.Marshal(rep)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(body), "replica") {
+		t.Fatalf("report JSON %s names the replica without a provider", body)
 	}
 }
 

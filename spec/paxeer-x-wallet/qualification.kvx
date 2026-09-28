@@ -696,3 +696,18 @@ symbol = "sign_response"
 observed = "The daemon's sign response carries no session_id, so the client binds answers to the session by node_id, key_id, kind, signed_bytes and signature agreement across the quorum."
 assumption = "The schema and daemon agree on this shape; no change is needed on either side."
 severity = "note"
+
+[observation.3.14.1]
+task = "3.14"
+file = "human/wallet/attestor/cmd/attestor/main.go"
+symbol = "Snapshot"
+observed = "No daemon code writes store snapshots into ATTESTOR_BACKUP_DIR, neither on the schedule nor after keygen, import, refresh or add-share, so the shipper started from main ships nothing on a deployed node until a writer lands."
+assumption = "The req.3.ac_2 backup task writes each snapshot as a temporary dot-prefixed or .tmp file renamed into place under a unique name; the shipper skips such names and ships every other regular file once."
+severity = "suspect"
+
+[observation.3.14.2]
+task = "3.14"
+file = "human/wallet/attestor/internal/server/server.go"
+symbol = "Options.Replica"
+observed = "The health reporter is built inside server.New, outside the task's touches, so one Options field and one provider line were added there to carry the shipper state into the report."
+assumption = "The field is optional and nil keeps the report unchanged, so sibling edits to the server merge as the union."

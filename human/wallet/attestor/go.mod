@@ -8,9 +8,11 @@ require (
 	github.com/getamis/alice v1.0.9-0.20260916062408-d8fd6861d3b2
 	github.com/holiman/uint256 v1.3.2
 	github.com/lestrrat-go/jwx/v2 v2.1.7
+	github.com/pkg/sftp v1.13.11
 	github.com/prometheus/client_golang v1.24.1
 	github.com/sidiora-labs/paxeer-network v0.0.0
 	go.etcd.io/bbolt v1.5.0
+	golang.org/x/crypto v0.54.0
 	google.golang.org/protobuf v1.36.11
 )
 
@@ -32,6 +34,7 @@ require (
 	github.com/go-stack/stack v1.8.0 // indirect
 	github.com/goccy/go-json v0.10.6 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
+	github.com/kr/fs v0.1.0 // indirect
 	github.com/lestrrat-go/blackmagic v1.0.4 // indirect
 	github.com/lestrrat-go/httpcc v1.0.1 // indirect
 	github.com/lestrrat-go/httprc v1.0.6 // indirect
@@ -45,11 +48,9 @@ require (
 	github.com/rollbar/rollbar-go v1.2.0 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/supranational/blst v0.3.16-0.20250831170142-f48500c1fdbe // indirect
-	golang.org/x/crypto v0.53.0 // indirect
 	golang.org/x/sync v0.21.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	gonum.org/v1/gonum v0.7.0 // indirect
 )
-
 
 replace github.com/sidiora-labs/paxeer-network => ../../..

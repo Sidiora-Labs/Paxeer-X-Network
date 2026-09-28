@@ -197,7 +197,7 @@
   - [x] 3.13 Resolve the SDK's curve and hash imports under both dependency majors
     - Import ed25519 from @noble/curves/ed25519.js and sha256 from @noble/hashes/sha2.js in the SDK agent module so the specifiers resolve against the 1.x line the SDK pins and the 2.x line the wallet app pins and dedupes to, matching the repository's other TypeScript SDK; behaviour unchanged.
     - _Requirements: 9.5, 6.6_
-  - [ ] 3.14 Ship encrypted store snapshots to the replica server
+  - [x] 3.14 Ship encrypted store snapshots to the replica server
     - Add human/wallet/attestor/internal/replica and wire it into the attestor daemon: a shipper that watches the snapshot directory and uploads each new snapshot exactly once over SFTP to the replica, with the replica address, user, private key file, expected host key file and remote directory taken from environment variables documented in human/wallet/deploy/env, verifying the remote size and digest after upload, keeping a ledger of shipped snapshots so a restart does not upload again, and failing closed on a host key mismatch or a digest mismatch.
     - Carry the age of the last shipped snapshot in the health report, and document the new variables and secrets in the attestor deployment definitions and human/wallet/deploy/env.
     - Add tests that run a real in-process SSH and SFTP server and prove upload, the ledger, restart idempotence, host key refusal and digest refusal, and a health test for the snapshot age.

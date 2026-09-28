@@ -20,11 +20,23 @@ type PeerState struct {
 	RTT       time.Duration `json:"rtt_ns"`
 }
 
+type ReplicaState struct {
+	LastShipped time.Time
+	ErrorClass  string
+}
+
+type ReplicaReport struct {
+	LastShippedAgeSeconds *int64 `json:"last_shipped_age_seconds"`
+	ErrorClass            string `json:"error_class,omitempty"`
+}
+
 type Providers struct {
 	Shares    func() (count uint64, epoch uint64, err error)
 	AuditHead func() (sequence uint64, hash [32]byte)
 	Peers     func(ctx context.Context) map[string]PeerState
 	Readiness func() error
+	Replica   func() ReplicaState
+	Clock     func() time.Time
 }
 
 type Report struct {
@@ -38,6 +50,7 @@ type Report struct {
 	Peers          map[string]PeerState `json:"peers"`
 	ReachablePeers int                  `json:"reachable_peers"`
 	ReadinessError string               `json:"readiness_error,omitempty"`
+	Replica        *ReplicaReport       `json:"replica,omitempty"`
 	Ready          bool                 `json:"ready"`
 }
 
@@ -50,6 +63,9 @@ type Reporter struct {
 func NewReporter(nodeID, region string, providers Providers) (*Reporter, error) {
 	if providers.Shares == nil || providers.AuditHead == nil || providers.Peers == nil || providers.Readiness == nil {
 		return nil, ErrMissingProvider
+	}
+	if providers.Clock == nil {
+		providers.Clock = time.Now
 	}
 	return &Reporter{nodeID: nodeID, region: region, providers: providers}, nil
 }
@@ -71,6 +87,15 @@ func (r *Reporter) Report(ctx context.Context) Report {
 		if state.Reachable {
 			out.ReachablePeers++
 		}
+	}
+	if r.providers.Replica != nil {
+		state := r.providers.Replica()
+		replica := &ReplicaReport{ErrorClass: state.ErrorClass}
+		if !state.LastShipped.IsZero() {
+			age := int64(r.providers.Clock().Sub(state.LastShipped) / time.Second)
+			replica.LastShippedAgeSeconds = &age
+		}
+		out.Replica = replica
 	}
 	readyErr := r.providers.Readiness()
 	if readyErr != nil {

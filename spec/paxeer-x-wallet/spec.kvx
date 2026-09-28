@@ -851,7 +851,7 @@ log_path = ".logs/verify.log"
 
 [task.3.14]
 title = "Ship encrypted store snapshots to the replica server"
-status = "pending"
+status = "done"
 wave = 3
 requires = ["1.1","2.1"]
 do_1 = "Add human/wallet/attestor/internal/replica and wire it into the attestor daemon: a shipper that watches the snapshot directory and uploads each new snapshot exactly once over SFTP to the replica, with the replica address, user, private key file, expected host key file and remote directory taken from environment variables documented in human/wallet/deploy/env, verifying the remote size and digest after upload, keeping a ledger of shipped snapshots so a restart does not upload again, and failing closed on a host key mismatch or a digest mismatch."
@@ -861,6 +861,10 @@ verify_cmd = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./
 symbols = ["Shipper","Ledger","Ship","LoadConfig"]
 touches = ["human/wallet/attestor/internal/replica/","human/wallet/attestor/internal/health/","human/wallet/attestor/cmd/attestor/","human/wallet/attestor/go.mod","human/wallet/attestor/go.sum","human/wallet/deploy/env","human/wallet/deploy/attestor-1.toml","human/wallet/deploy/attestor-2.toml","human/wallet/deploy/attestor-3.toml","human/wallet/deploy/attestor-4.toml","human/wallet/deploy/attestor-5.toml"]
 reqs = ["3.2"]
+revision = "c82902a279b305b850a8ad6f440d8056741e51d5"
+command = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 -v ./internal/replica/...'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.3.15]
 title = "Align the gateway's attestor client to the daemon's API schema"

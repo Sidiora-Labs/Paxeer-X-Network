@@ -27,6 +27,10 @@ kill_timeout = "30s"
   ATTESTOR_TLS_KEY_FILE = "/run/secrets/tls.key"
   ATTESTOR_TLS_CA_FILE = "/run/secrets/ca.crt"
   ATTESTOR_OPERATOR_CA_FILE = "/run/secrets/operator-ca.crt"
+  ATTESTOR_REPLICA_KEY_FILE = "/run/secrets/replica.key"
+  ATTESTOR_REPLICA_HOST_KEY_FILE = "/run/secrets/replica-host.pub"
+  ATTESTOR_REPLICA_REMOTE_DIR = "/attestor-1"
+  ATTESTOR_REPLICA_INTERVAL = "5m"
 
 [[files]]
   guest_path = "/etc/attestor/policy.json"
@@ -55,6 +59,14 @@ kill_timeout = "30s"
 [[files]]
   guest_path = "/run/secrets/operator-ca.crt"
   secret_name = "ATTESTOR_OPERATOR_CA"
+
+[[files]]
+  guest_path = "/run/secrets/replica.key"
+  secret_name = "ATTESTOR_REPLICA_KEY"
+
+[[files]]
+  guest_path = "/run/secrets/replica-host.pub"
+  secret_name = "ATTESTOR_REPLICA_HOST_KEY"
 
 [[mounts]]
   source = "attestor_data"

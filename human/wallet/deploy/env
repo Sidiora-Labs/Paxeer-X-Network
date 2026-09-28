@@ -7,6 +7,10 @@ ATTESTOR_TLS_CERT - platform secret holding this attestor's TLS certificate, wri
 ATTESTOR_TLS_KEY - platform secret holding this attestor's TLS private key, written to the file named by ATTESTOR_TLS_KEY_FILE
 ATTESTOR_TLS_CA - platform secret holding the CA bundle for peers and the gateway, written to the file named by ATTESTOR_TLS_CA_FILE
 ATTESTOR_OPERATOR_CA - platform secret holding the operator CA bundle, written to the file named by ATTESTOR_OPERATOR_CA_FILE
+ATTESTOR_REPLICA_KEY - platform secret holding this attestor's own OpenSSH private key for the snapshot replica, written to the file named by ATTESTOR_REPLICA_KEY_FILE; set it before the next attestor deploy, because the platform destroys a machine whose file mapping names an unset secret
+ATTESTOR_REPLICA_HOST_KEY - platform secret holding the replica server's SSH host public key as one OpenSSH public key line, written to the file named by ATTESTOR_REPLICA_HOST_KEY_FILE; set it before the next attestor deploy, because the platform destroys a machine whose file mapping names an unset secret
+ATTESTOR_REPLICA_ADDR - platform secret holding the replica server's SSH host:port, read as an environment variable and named nowhere else
+ATTESTOR_REPLICA_USER - platform secret holding the replica's dedicated backup user, which the replica gives an SFTP-only login chrooted to the replica directory, one authorised key per attestor and no shell or forwarding
 LAYERX_GATEWAY_LISTEN - socket address the shared endpoint listens on, defaulting to all interfaces on port 9443
 LAYERX_GATEWAY_NETWORK_ID - network identifier the shared endpoint expects from its kernel backends, set as a platform secret
 LAYERX_GATEWAY_PROTOCOL_NETWORK_ID - numeric protocol network identifier of the kernel, set as a platform secret
@@ -85,6 +89,10 @@ ATTESTOR_TLS_CA_FILE - path to the CA bundle that authenticates peers and the ga
 ATTESTOR_OPERATOR_CA_FILE - path to the CA bundle that authenticates the operator identity
 ATTESTOR_BACKUP_KEY_FILE - path to the key file (32 raw bytes or 64 hex characters) that encrypts store snapshots
 ATTESTOR_BACKUP_DIR - directory where encrypted store snapshots are written
+ATTESTOR_REPLICA_KEY_FILE - path to this attestor's OpenSSH private key for the replica; setting any ATTESTOR_REPLICA_ variable requires all six
+ATTESTOR_REPLICA_HOST_KEY_FILE - path to the replica's expected SSH host public key; any other host key is refused and nothing is uploaded
+ATTESTOR_REPLICA_REMOTE_DIR - absolute per-node directory inside the replica user's chroot, /attestor-<node id>, created by the operator on the replica and writable by that user
+ATTESTOR_REPLICA_INTERVAL - duration between shipping passes over ATTESTOR_BACKUP_DIR, at least 1s; each snapshot is uploaded once, verified by size and digest and recorded in replica-ledger.json under ATTESTOR_DATA_DIR
 ATTESTOR_RPC_URL - chain RPC endpoint used to read nonces and binding state
 
 # gateway
