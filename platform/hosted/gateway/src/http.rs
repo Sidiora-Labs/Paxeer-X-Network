@@ -1,6 +1,7 @@
 use crate::pay_timing;
 use native_tls::{Certificate, Identity, TlsConnector, TlsStream};
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::io::{Read, Write};
 use std::net::{IpAddr, TcpStream, ToSocketAddrs};
 use std::sync::{Mutex, OnceLock};
@@ -97,6 +98,14 @@ pub struct OutboundRequest<'a> {
     pub idempotency: Option<&'a str>,
     pub content_type: &'a str,
     pub body: &'a [u8],
+}
+
+#[derive(Clone, Copy, Default)]
+struct OutboundHeaders<'a> {
+    trace: Option<&'a str>,
+    freshness: Option<(u64, Option<[u8; 32]>)>,
+    publication_key: Option<&'a str>,
+    query: Option<&'a str>,
 }
 
 impl Client {
@@ -221,7 +230,15 @@ impl Client {
         request: &OutboundRequest<'_>,
         trace: Option<&str>,
     ) -> Result<UpstreamResponse, String> {
-        self.request_with_freshness(endpoint, authorization, request, trace, None, None, None)
+        self.request_with_freshness(
+            endpoint,
+            authorization,
+            request,
+            OutboundHeaders {
+                trace,
+                ..OutboundHeaders::default()
+            },
+        )
     }
 
     /// Forwards one bounded request together with the caller's publication key,
@@ -242,13 +259,20 @@ impl Client {
             endpoint,
             &format!("Bearer {bearer}"),
             request,
-            trace,
-            None,
-            Some(publication_key),
-            None,
+            OutboundHeaders {
+                trace,
+                publication_key: Some(publication_key),
+                ..OutboundHeaders::default()
+            },
         )
     }
 
+    /// Sends one bounded program read that the component answers only at or
+    /// after `minimum_sequence`, and only against `expected_state_root` when
+    /// one is given.
+    ///
+    /// # Errors
+    /// Refuses requests outside the configured bounds and TLS or HTTP failures.
     pub fn request_program_read(
         &self,
         endpoint: &Endpoint,
@@ -261,10 +285,10 @@ impl Client {
             endpoint,
             &format!("Bearer {bearer}"),
             request,
-            None,
-            Some((minimum_sequence, expected_state_root)),
-            None,
-            None,
+            OutboundHeaders {
+                freshness: Some((minimum_sequence, expected_state_root)),
+                ..OutboundHeaders::default()
+            },
         )
     }
 
@@ -293,10 +317,10 @@ impl Client {
                 content_type: "application/json",
                 body: &[],
             },
-            None,
-            None,
-            None,
-            (!query.is_empty()).then_some(query),
+            OutboundHeaders {
+                query: (!query.is_empty()).then_some(query),
+                ..OutboundHeaders::default()
+            },
         )
     }
 
@@ -305,38 +329,10 @@ impl Client {
         endpoint: &Endpoint,
         authorization: &str,
         request: &OutboundRequest<'_>,
-        trace: Option<&str>,
-        freshness: Option<(u64, Option<[u8; 32]>)>,
-        publication_key: Option<&str>,
-        query: Option<&str>,
+        headers: OutboundHeaders<'_>,
     ) -> Result<UpstreamResponse, String> {
         let total_started = Instant::now();
-        let path = request.path;
-        let body = request.body;
-        if !path.starts_with('/') || path.contains(['?', '#', '\\']) || body.len() > MAX_RESPONSE {
-            return Err("outbound request exceeds its boundary".to_owned());
-        }
-        if authorization.len() > 4096
-            || authorization
-                .bytes()
-                .any(|byte| matches!(byte, b'\r' | b'\n' | 0))
-        {
-            return Err("outbound authorization exceeds its boundary".to_owned());
-        }
-        if trace.is_some_and(|value| {
-            value.is_empty()
-                || value.len() > 64
-                || value.bytes().any(|byte| matches!(byte, b'\r' | b'\n' | 0))
-        }) {
-            return Err("outbound trace exceeds its boundary".to_owned());
-        }
-        if publication_key.is_some_and(|value| {
-            value.is_empty()
-                || value.len() > 4096
-                || !value.bytes().all(|byte| byte.is_ascii_graphic())
-        }) {
-            return Err("outbound publication key exceeds its boundary".to_owned());
-        }
+        check_outbound_boundary(authorization, request, headers)?;
         let connector_started = Instant::now();
         let connector = self.connector()?;
         pay_timing("gateway.http.connector", connector_started);
@@ -346,16 +342,7 @@ impl Client {
         pay_timing("gateway.http.pool", pool_started);
         if let Some(mut stream) = pooled {
             let exchange_started = Instant::now();
-            let result = exchange(
-                &mut stream,
-                endpoint,
-                authorization,
-                request,
-                trace,
-                freshness,
-                publication_key,
-                query,
-            );
+            let result = exchange(&mut stream, endpoint, authorization, request, headers);
             pay_timing("gateway.http.exchange", exchange_started);
             if result
                 .as_ref()
@@ -388,16 +375,7 @@ impl Client {
                         .map_err(|error| error.to_string())?;
                     pay_timing("gateway.http.tls_handshake", tls_started);
                     let exchange_started = Instant::now();
-                    let result = exchange(
-                        &mut stream,
-                        endpoint,
-                        authorization,
-                        request,
-                        trace,
-                        freshness,
-                        publication_key,
-                        query,
-                    );
+                    let result = exchange(&mut stream, endpoint, authorization, request, headers);
                     pay_timing("gateway.http.exchange", exchange_started);
                     if result
                         .as_ref()
@@ -419,6 +397,43 @@ impl Client {
             |error| error.to_string(),
         ))
     }
+}
+
+fn check_outbound_boundary(
+    authorization: &str,
+    request: &OutboundRequest<'_>,
+    headers: OutboundHeaders<'_>,
+) -> Result<(), String> {
+    let OutboundHeaders {
+        trace,
+        publication_key,
+        ..
+    } = headers;
+    let path = request.path;
+    let body = request.body;
+    if !path.starts_with('/') || path.contains(['?', '#', '\\']) || body.len() > MAX_RESPONSE {
+        return Err("outbound request exceeds its boundary".to_owned());
+    }
+    if authorization.len() > 4096
+        || authorization
+            .bytes()
+            .any(|byte| matches!(byte, b'\r' | b'\n' | 0))
+    {
+        return Err("outbound authorization exceeds its boundary".to_owned());
+    }
+    if trace.is_some_and(|value| {
+        value.is_empty()
+            || value.len() > 64
+            || value.bytes().any(|byte| matches!(byte, b'\r' | b'\n' | 0))
+    }) {
+        return Err("outbound trace exceeds its boundary".to_owned());
+    }
+    if publication_key.is_some_and(|value| {
+        value.is_empty() || value.len() > 4096 || !value.bytes().all(|byte| byte.is_ascii_graphic())
+    }) {
+        return Err("outbound publication key exceeds its boundary".to_owned());
+    }
+    Ok(())
 }
 
 const MAX_QUERY: usize = 2048;
@@ -531,11 +546,14 @@ fn exchange(
     endpoint: &Endpoint,
     authorization: &str,
     request: &OutboundRequest<'_>,
-    trace: Option<&str>,
-    freshness: Option<(u64, Option<[u8; 32]>)>,
-    publication_key: Option<&str>,
-    query: Option<&str>,
+    headers: OutboundHeaders<'_>,
 ) -> Result<UpstreamResponse, String> {
+    let OutboundHeaders {
+        trace,
+        freshness,
+        publication_key,
+        query,
+    } = headers;
     let idempotency = request
         .idempotency
         .map_or_else(String::new, |key| format!("Idempotency-Key: {key}\r\n"));
@@ -545,7 +563,7 @@ fn exchange(
         if let Some(root) = root {
             headers.push_str("LayerX-Expected-State-Root: ");
             for byte in root {
-                headers.push_str(&format!("{byte:02x}"));
+                let _ = write!(headers, "{byte:02x}");
             }
             headers.push_str("\r\n");
         }
