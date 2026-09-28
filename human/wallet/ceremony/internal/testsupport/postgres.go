@@ -19,6 +19,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/user"
@@ -824,4 +825,195 @@ func MasterKey(t *testing.T) ([]byte, string) {
 		t.Fatal(err)
 	}
 	return key, base64.StdEncoding.EncodeToString(key)
+}
+
+const ledgerDDL = `create table if not exists _migrations (
+  filename   text primary key,
+  applied_at timestamptz not null default now()
+)`
+
+func (p *Postgres) withURL(t *testing.T, edit func(*url.URL)) string {
+	t.Helper()
+	u, err := url.Parse(p.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edit(u)
+	return u.String()
+}
+
+func (p *Postgres) Database(t *testing.T, name string) *Postgres {
+	t.Helper()
+	if _, err := p.DB.Exec("create database " + name); err != nil {
+		t.Fatalf("create database %s: %v", name, err)
+	}
+	dsn := p.withURL(t, func(u *url.URL) { u.Path = "/" + name })
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if err := db.Ping(); err != nil {
+		t.Fatal(err)
+	}
+	return &Postgres{URL: dsn, DB: db}
+}
+
+func (p *Postgres) As(role string) string {
+	u, err := url.Parse(p.URL)
+	if err != nil {
+		panic(err)
+	}
+	u.User = url.User(role)
+	return u.String()
+}
+
+func (p *Postgres) ReadOnlyRole(t *testing.T, role string) string {
+	t.Helper()
+	var dbName string
+	if err := p.DB.QueryRow(`select current_database()`).Scan(&dbName); err != nil {
+		t.Fatal(err)
+	}
+	for _, stmt := range []string{
+		"create role " + role + " login",
+		"grant connect on database " + dbName + " to " + role,
+		"grant usage on schema public to " + role,
+		"grant select on all tables in schema public to " + role,
+		"grant select on all sequences in schema public to " + role,
+	} {
+		if _, err := p.DB.Exec(stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+	return p.As(role)
+}
+
+func GatewayMigrationsDir(t *testing.T) string {
+	t.Helper()
+	return filepath.Join(WalletDir(t), "gateway", "migrations")
+}
+
+func GatewayMigrationFiles(t *testing.T) []string {
+	t.Helper()
+	entries, err := os.ReadDir(GatewayMigrationsDir(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var files []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".sql") {
+			files = append(files, e.Name())
+		}
+	}
+	sort.Strings(files)
+	return files
+}
+
+func ApplyGatewayLedger(t *testing.T, db *sql.DB, through string) []string {
+	t.Helper()
+	if _, err := db.Exec(ledgerDDL); err != nil {
+		t.Fatal(err)
+	}
+	var applied []string
+	for _, f := range GatewayMigrationFiles(t) {
+		if f > through {
+			break
+		}
+		sqlText, err := os.ReadFile(filepath.Join(GatewayMigrationsDir(t), f))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(string(sqlText)); err != nil {
+			t.Fatalf("apply %s: %v", f, err)
+		}
+		if _, err := db.Exec(`insert into _migrations(filename) values ($1)`, f); err != nil {
+			t.Fatal(err)
+		}
+		applied = append(applied, f)
+	}
+	return applied
+}
+
+func InsertSignature(t *testing.T, db *sql.DB, walletID string) int64 {
+	t.Helper()
+	var id int64
+	if err := db.QueryRow(`insert into wallet_signatures (user_id, wallet_id, address, kind, request_hash)
+		select user_id, id, address, 'message', encode(gen_random_bytes(32), 'hex') from wallets where id = $1::uuid
+		returning id`, walletID).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+func Fingerprint(t *testing.T, db *sql.DB) map[string]string {
+	t.Helper()
+	rows, err := db.Query(`select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
+		where n.nspname = current_schema() and c.relkind = 'r' order by 1`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tables []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			t.Fatal(err)
+		}
+		tables = append(tables, name)
+	}
+	rows.Close()
+	out := make(map[string]string, len(tables)+1)
+	for _, name := range tables {
+		var sum string
+		if err := db.QueryRow(`select count(*)::text || ':' || coalesce(md5(string_agg(x::text, E'\n' order by x::text)), '') from "` + name + `" x`).Scan(&sum); err != nil {
+			t.Fatal(err)
+		}
+		out[name] = sum
+	}
+	var seqs string
+	if err := db.QueryRow(`select coalesce(string_agg(sequencename || '=' || coalesce(last_value::text, 'null'), ',' order by sequencename), '') from pg_sequences where schemaname = current_schema()`).Scan(&seqs); err != nil {
+		t.Fatal(err)
+	}
+	out["sequences"] = seqs
+	return out
+}
+
+func DirEntries(t *testing.T, dir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := make([]string, len(entries))
+	for i, e := range entries {
+		out[i] = e.Name()
+	}
+	return out
+}
+
+var (
+	attestorOnce sync.Once
+	attestorBin  string
+	attestorErr  error
+)
+
+func AttestorBinary(t *testing.T) string {
+	t.Helper()
+	walletDir := WalletDir(t)
+	attestorOnce.Do(func() {
+		dir, err := os.MkdirTemp("", "ceremony-attestor-bin-")
+		if err != nil {
+			attestorErr = err
+			return
+		}
+		attestorBin = filepath.Join(dir, "attestor")
+		cmd := exec.Command("go", "build", "-o", attestorBin, "./cmd/attestor")
+		cmd.Dir = filepath.Join(walletDir, "attestor")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			attestorErr = fmt.Errorf("%v\n%s", err, out)
+		}
+	})
+	if attestorErr != nil {
+		t.Fatalf("build attestor daemon: %v", attestorErr)
+	}
+	return attestorBin
 }

@@ -1327,7 +1327,11 @@ reqs = ["4.5"]
 
 [task.5.4]
 title = "Migrate the production wallets with the ceremony tool"
-status = "pending"
+status = "in_progress"
+revision = "1a9cd6ea1a881856fe2e1e2c883971858e291bd2"
+command = "timeout 20m sh -c 'cd human/wallet/ceremony && go test -count=1 ./internal/move/... ./internal/rehearsal/... ./cmd/...'"
+exit_code = 0
+log_path = ".logs/verify.log"
 wave = 5
 requires = ["5.2","3.5","5.3","4.13","3.1"]
 do_1 = "Add a move subcommand to human/wallet/ceremony/cmd/ceremony/main.go, in a new internal/move package, over the source-mode copy of task 5.2 (CopySource, checkReadOnlyRole, TableCounts and PrepareSchema): it reads the production wallet database through the read-only role named by the source connection variable of 5.2 in one REPEATABLE READ READ ONLY transaction and streams every table with COPY TO STDOUT into COPY FROM STDIN on the gateway's platform database named by CEREMONY_DATABASE_URL, which must hold no gateway table before the move starts; it never writes to the source, never creates a file, and leaves the production database and the old service running; before the remaining gateway migrations run it records, for every table, the row count and the SHA-256 digest of the COPY stream ordered by primary key on the source and of the same columns re-read in the same order from the target, refuses to finish when a count or a digest differs, and prints counts and digests only."

@@ -1117,3 +1117,43 @@ symbol = "cutover"
 observed = "The verify command ran with CHECK_LIVE_CUTOVER_HOST unset and refused with the missing-variable message and exit 2 (.logs/verify.log), the honest outcome before the live cutover; the check-live test's cutover cases and the gateway served-by test passed."
 assumption = "The verify command is runnable only after the live cutover, when the operator runs preflight.sh and apply.sh on the current host and then the check with the public hostname set; the task is recorded implemented until that run."
 severity = "note"
+
+[observation.5.2.1]
+task = "5.2"
+file = "human/wallet/ceremony/internal/rehearsal/source.go"
+symbol = "CopySource"
+observed = "The rehearsal run against a production copy was skipped by owner decision and the source-mode rehearsal code (read-only snapshot copy, schema preparation, counts flags) landed under task 5.4."
+assumption = "Task 5.2 keeps its status; the live move in 5.4 stands in for the rehearsal counts."
+severity = "note"
+
+[observation.5.4.1]
+task = "5.4"
+file = "spec/paxeer-x-wallet/spec.kvx"
+symbol = "verify_cmd"
+observed = "The lane ran only the Go half of the verify (move, rehearsal and command tests); the gateway and SDK tests and deliver --report-only-counts against the live database belong to the other half of the task and the live move."
+assumption = "The full 5.4 verify_cmd runs once at the live move, after the gateway and SDK half lands."
+severity = "note"
+
+[observation.5.4.2]
+task = "5.4"
+file = "human/wallet/ceremony/internal/move/move.go"
+symbol = "MoveDelta"
+observed = "move --delta refuses any source row whose content differs from the target row with the same key, so a last_used_at refreshed by the old service's signature trigger or a serial id taken by both services during the window stops the delta."
+assumption = "The refusal is kept as specified; the window between move and delta keeps the old service write-frozen, or the operator reconciles refused rows by hand."
+severity = "medium"
+
+[observation.5.4.3]
+task = "5.4"
+file = "human/wallet/docs/cutover.md"
+symbol = "rehearsal"
+observed = "The cutover document still names CEREMONY_REHEARSAL_DUMP and CEREMONY_PG_BIN_DIR, which the rehearsal no longer reads; it now reads CEREMONY_SOURCE_DATABASE_URL, CEREMONY_GATEWAY_MIGRATIONS_DIR and CEREMONY_REHEARSAL_ADMIN_URL."
+assumption = "The document half of 5.4 updates the variables; this lane left the file untouched."
+severity = "low"
+
+[observation.5.4.4]
+task = "5.4"
+file = "human/wallet/ceremony/go.mod"
+symbol = "require"
+observed = "Streaming raw COPY needs pgx v5, so go.mod and go.sum gained github.com/jackc/pgx/v5 and its indirect modules, outside the task's listed touches."
+assumption = "The dependency is part of the move implementation; lib/pq cannot stream COPY TO STDOUT."
+severity = "note"
