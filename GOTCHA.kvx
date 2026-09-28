@@ -245,3 +245,39 @@ area    = "test"
 symptom = "The wallet application's visual-system acceptance test fails on a source file that never sets a colour."
 cause   = "The test rejects any string literal starting with the word border, whatever follows it."
 do      = "Keep border values in the theme tokens and avoid string literals beginning with that word in application sources."
+
+[gotcha.38]
+area    = "attestor"
+symptom = "Every add-share through the daemon failed with the refresh participant-set error although the protocol tests passed."
+cause   = "refresh.AddShare requires each contributor's peer list to hold only bundle members, while the daemon session also lists the new participant."
+do      = "Keep the new participant in the transport session and give contributors a network whose PeerIDs leave it out."
+
+[gotcha.39]
+area    = "attestor"
+symptom = "The daemon refuses a well-formed EVM transaction request with a decode error although the same bytes sign fine elsewhere."
+cause   = "The evm_tx kind accepts only a typed transaction serialised with zero r, s and yParity; a serialisation carrying a signature or the legacy chain-id fields is rejected."
+do      = "Serialise the unsigned typed transaction with empty signature fields before submitting it; do not send the signed form back."
+
+[gotcha.40]
+area    = "test"
+symptom = "A test that starts several local daemons reports a ninety-second readiness timeout on one of them."
+cause   = "The free ports were reserved one at a time and released before the processes bound them, so two daemons raced for one port and the loser exited."
+do      = "Reserve every port together and hold them until each process has started, and watch each process for early exit so a bind failure is reported as such."
+
+[gotcha.41]
+area    = "ops"
+symptom = "An internal-only application receives public addresses on its first deploy."
+cause   = "The platform allocates public IPs to any application whose definition declares services unless the deploy is told not to."
+do      = "Deploy internal applications with --no-public-ips and release any address that was allocated before that flag was used."
+
+[gotcha.42]
+area    = "ops"
+symptom = "A liveness check across the private network fails right after a deploy and passes unchanged a minute later."
+cause   = "The first private-network contact between freshly placed machines takes longer than a two-second dial."
+do      = "Give the first probe a longer dial or one retry after a pause before concluding the peer is down; never treat one immediate failure as a verdict."
+
+[gotcha.43]
+area    = "go"
+symptom = "Adding one module raises a shared dependency and go mod tidy shrinks go.sum by half, and a sibling branch's go.sum then conflicts on merge."
+cause   = "Tidy prunes every entry the new graph no longer needs, so two branches that both tidied disagree on most of the file."
+do      = "On such a conflict take one side whole, run go mod tidy once on the merged tree and commit the result; never hand-merge go.sum."

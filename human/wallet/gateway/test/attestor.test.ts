@@ -26,22 +26,29 @@ const fixtureDir = join(here, 'fixtures', 'attestor');
 const fixture = <T>(name: string): T => JSON.parse(readFileSync(join(fixtureDir, name), 'utf8')) as T;
 
 interface RecordedRequest {
-  api_version: number;
   key_id: string;
   kind: string;
-  bytes: string;
-  context: Record<string, unknown>;
-  authorisation: { scheme: string };
+  transaction?: string;
+  typed_data?: string;
+  message?: string;
 }
 interface RecordedResponse {
-  signature: Hex;
+  node_id: string;
+  key_id: string;
+  kind: string;
+  signed_bytes: string;
+  signature: string;
   recovery_id: number;
   audit_sequence: number;
 }
-interface WireRequest extends Omit<RecordedRequest, 'authorisation'> {
-  authorisation: { scheme: string; token: string };
-  participants: string[];
+interface WireRequest extends RecordedRequest {
   session_id: string;
+  signers: string[];
+}
+interface Received {
+  path: string;
+  authorization: string | undefined;
+  body: WireRequest;
 }
 
 const walletFixture = fixture<{ key_id: string; address: `0x${string}`; chain_id: number }>('wallet.json');
@@ -57,6 +64,9 @@ const recorded: Array<{ request: RecordedRequest; response: RecordedResponse }> 
   'sign-typed-data',
 ].map((n) => ({ request: fixture(`${n}.request.json`), response: fixture(`${n}.response.json`) }));
 const healthTemplate = fixture<Record<string, unknown>>('health.json');
+const keyTemplate = fixture<Record<string, unknown>>('keys.generate.response.json');
+const goldenDir = join(here, '..', '..', 'schema', 'attestor-api', 'golden');
+const golden = <T>(name: string): T => JSON.parse(readFileSync(join(goldenDir, name), 'utf8')) as T;
 
 interface AttestorNode {
   nodeId: string;
@@ -66,7 +76,8 @@ interface AttestorNode {
   ready: boolean;
   healthDelayMs: number;
   refuse: 'policy' | 'token' | null;
-  received: WireRequest[];
+  truncate: boolean;
+  received: Received[];
 }
 
 let tlsDir: string;
@@ -104,14 +115,8 @@ function makeCertificates(): void {
 }
 
 function strip(req: WireRequest): RecordedRequest {
-  return {
-    api_version: req.api_version,
-    key_id: req.key_id,
-    kind: req.kind,
-    bytes: req.bytes,
-    context: req.context,
-    authorisation: { scheme: req.authorisation.scheme },
-  };
+  const { session_id: _session, signers: _signers, ...rest } = req;
+  return rest;
 }
 
 function startAttestor(index: number): Promise<AttestorNode> {
@@ -123,6 +128,7 @@ function startAttestor(index: number): Promise<AttestorNode> {
     ready: true,
     healthDelayMs: 0,
     refuse: null,
+    truncate: false,
     received: [],
   };
   node.server = createHttpsServer(
@@ -135,13 +141,18 @@ function startAttestor(index: number): Promise<AttestorNode> {
           res.writeHead(status, { 'content-type': 'application/json' });
           res.end(JSON.stringify(body));
         };
-        if (req.method === 'GET' && req.url === '/v1/health') {
+        const peers = Object.fromEntries(
+          [1, 2, 3, 4, 5].filter((i) => i !== index).map((i) => [`attestor-${i}`, { reachable: true, rtt_ns: 1000 }]),
+        );
+        if (req.method === 'GET' && req.url === '/health') {
           setTimeout(
             () =>
-              send(200, {
+              send(node.ready ? 200 : 503, {
                 ...healthTemplate,
                 node_id: node.nodeId,
                 region: `region-${index}`,
+                peers,
+                reachable_peers: 4,
                 ready: node.ready,
                 ...(node.ready ? {} : { readiness_error: 'share store locked' }),
               }),
@@ -149,32 +160,35 @@ function startAttestor(index: number): Promise<AttestorNode> {
           );
           return;
         }
-        if (req.method === 'POST' && req.url === '/v1/sign') {
+        if (req.method === 'POST' && (req.url === '/v1/sign' || req.url === '/v1/keys/generate')) {
           const wire = JSON.parse(Buffer.concat(chunks).toString('utf8')) as WireRequest;
-          node.received.push(wire);
+          node.received.push({ path: req.url, authorization: req.headers.authorization, body: wire });
+          if (req.url === '/v1/keys/generate') {
+            send(200, { ...keyTemplate, node_id: node.nodeId, key_id: wire.key_id, audit_sequence: index });
+            return;
+          }
           if (node.refuse) {
             send(node.refuse === 'policy' ? 403 : 401, fixture(`refusal-${node.refuse}.response.json`));
             return;
           }
-          if (wire.authorisation.token !== expectedToken || !wire.participants.includes(node.nodeId)) {
+          if (req.headers.authorization !== `Bearer ${expectedToken}` || !wire.signers.includes(node.nodeId)) {
             send(401, fixture('refusal-token.response.json'));
             return;
           }
           const match = recorded.find((r) => JSON.stringify(r.request) === JSON.stringify(strip(wire)));
           if (!match) {
-            send(400, { error: { category: 'session', code: 'no_recorded_request', reason: 'request does not match a recorded fixture' } });
+            send(400, { error: { category: 'session', code: 'session_bad_request', message: 'request does not match a recorded fixture' } });
             return;
           }
           send(200, {
-            session_id: wire.session_id,
+            ...match.response,
             node_id: node.nodeId,
-            signature: match.response.signature,
-            recovery_id: match.response.recovery_id,
+            signature: node.truncate ? match.response.signature.slice(0, 128) : match.response.signature,
             audit_sequence: match.response.audit_sequence + index,
           });
           return;
         }
-        send(404, { error: { category: 'session', code: 'not_found', reason: 'unknown route' } });
+        send(404, { error: { category: 'session', code: 'session_bad_request', message: 'unknown route' } });
       });
     },
   );
@@ -303,6 +317,7 @@ beforeEach(() => {
     n.ready = true;
     n.healthDelayMs = 0;
     n.refuse = null;
+    n.truncate = false;
     n.received = [];
   }
 });
@@ -315,6 +330,7 @@ describe('selectQuorum', () => {
     refresh_epoch: 1,
     audit_sequence: 0,
     audit_head: '',
+    peers: {},
     reachable_peers: peers,
     ready,
   });
@@ -371,20 +387,24 @@ describe('AttestorClient over mutual TLS', () => {
       const req = recorded[1]!.request;
       const result = await clientMod.signThroughAttestors(client, {
         keyId: req.key_id,
-        kind: 'personal_message',
-        bytes: req.bytes as Hex,
-        context: req.context,
+        payload: { kind: 'personal_message', message: `0x${req.message!}` },
         authorisation: { scheme: 'supabase_jwt', token: expectedToken },
       });
       const hit = attestorNodes.filter((n) => n.received.length > 0);
       expect(hit.map((n) => n.nodeId).sort()).toEqual(['attestor-1', 'attestor-3', 'attestor-4']);
-      const bodies = hit.map((n) => n.received[0]!);
+      expect(hit.every((n) => n.received[0]!.path === '/v1/sign')).toBe(true);
+      expect(hit.every((n) => n.received[0]!.authorization === `Bearer ${expectedToken}`)).toBe(true);
+      const bodies = hit.map((n) => n.received[0]!.body);
       expect(new Set(bodies.map((b) => b.session_id)).size).toBe(1);
       expect(new Set(bodies.map((b) => JSON.stringify(b))).size).toBe(1);
+      const goldenKeys = Object.keys(golden<Record<string, unknown>>('sign.request.json')).filter((k) => k !== 'transaction');
+      expect(Object.keys(bodies[0]!).sort()).toEqual([...goldenKeys, 'message'].sort());
       expect(bodies[0]!.session_id).toBe(result.sessionId);
-      expect(bodies[0]!.participants).toEqual(result.participants);
-      expect(result.signature).toBe(recorded[1]!.response.signature);
+      expect(bodies[0]!.signers).toEqual(result.participants);
+      expect(result.signature).toBe(`0x${recorded[1]!.response.signature}`);
+      expect(result.signature.length).toBe(2 + 65 * 2);
       expect(result.recoveryId).toBe(recorded[1]!.response.recovery_id);
+      expect(result.signedBytes).toBe(`0x${recorded[1]!.response.signed_bytes}`);
       expect(result.audit.sort((x, y) => x.audit_sequence - y.audit_sequence)).toEqual([
         { node_id: 'attestor-1', audit_sequence: 201 },
         { node_id: 'attestor-3', audit_sequence: 203 },
@@ -400,9 +420,7 @@ describe('AttestorClient over mutual TLS', () => {
     const client = newClient();
     const input = {
       keyId: recorded[1]!.request.key_id,
-      kind: 'personal_message' as const,
-      bytes: recorded[1]!.request.bytes as Hex,
-      context: recorded[1]!.request.context,
+      payload: { kind: 'personal_message' as const, message: `0x${recorded[1]!.request.message!}` as Hex },
       authorisation: { scheme: 'supabase_jwt' as const, token: expectedToken },
     };
     try {
@@ -410,13 +428,22 @@ describe('AttestorClient over mutual TLS', () => {
       for (const n of attestorNodes) n.refuse = 'policy';
       const policy = await client.sign(input).catch((e: unknown) => e);
       expect(policy).toBeInstanceOf(clientMod.AttestorPolicyError);
-      expect((policy as InstanceType<ClientModule['AttestorPolicyError']>).code).toBe('value_cap');
+      const policyGolden = golden<{ error: { code: string; policy_code: string } }>('error.policy.json');
+      expect((policy as InstanceType<ClientModule['AttestorPolicyError']>).code).toBe(policyGolden.error.code);
+      expect((policy as InstanceType<ClientModule['AttestorPolicyError']>).policyCode).toBe(policyGolden.error.policy_code);
       expect(clientMod.attestorErrorStatus(policy as InstanceType<ClientModule['AttestorError']>)).toBe(403);
 
       for (const n of attestorNodes) n.refuse = null;
       const token = await client.sign({ ...input, authorisation: { scheme: 'supabase_jwt', token: 'forged' } }).catch((e: unknown) => e);
       expect(token).toBeInstanceOf(clientMod.AttestorTokenError);
+      expect((token as InstanceType<ClientModule['AttestorTokenError']>).code).toBe('token_missing');
       expect(clientMod.attestorErrorStatus(token as InstanceType<ClientModule['AttestorError']>)).toBe(401);
+
+      for (const n of attestorNodes) n.truncate = true;
+      const truncated = await client.sign(input).catch((e: unknown) => e);
+      expect(truncated).toBeInstanceOf(clientMod.AttestorSessionError);
+      expect((truncated as InstanceType<ClientModule['AttestorSessionError']>).code).toBe('bad_signature_length');
+      for (const n of attestorNodes) n.truncate = false;
 
       attestorNodes[0]!.ready = false;
       attestorNodes[1]!.ready = false;
@@ -426,6 +453,26 @@ describe('AttestorClient over mutual TLS', () => {
       expect(quorum).toBeInstanceOf(clientMod.AttestorQuorumError);
       expect((quorum as InstanceType<ClientModule['AttestorQuorumError']>).code).toBe('quorum_unavailable');
       expect(clientMod.attestorErrorStatus(quorum as InstanceType<ClientModule['AttestorError']>)).toBe(503);
+    } finally {
+      client.stop();
+    }
+  });
+
+  it('generates a key on every participant with the schema request body', async () => {
+    const client = newClient();
+    try {
+      await client.refreshHealth();
+      const key = await client.generateKey({ keyId: 'key-evm', curve: 'secp256k1', owner: 'user-0001' });
+      const bodies = attestorNodes.map((n) => n.received[0]!);
+      expect(bodies.every((b) => b.path === '/v1/keys/generate')).toBe(true);
+      expect(new Set(bodies.map((b) => JSON.stringify(b.body))).size).toBe(1);
+      const goldenKeys = Object.keys(golden<Record<string, unknown>>('keys.generate.request.json')).filter((k) => k !== 'account');
+      expect(Object.keys(bodies[0]!.body).sort()).toEqual(goldenKeys.sort());
+      expect(bodies[0]!.body.session_id).toBe(key.sessionId);
+      expect(key.publicKey).toBe(`0x${keyTemplate.public_key as string}`);
+      expect(key.address).toBe(keyTemplate.address);
+      expect(key.refreshed).toBe(true);
+      expect(key.audit.map((a) => a.audit_sequence)).toEqual([1, 2, 3, 4, 5]);
     } finally {
       client.stop();
     }
@@ -445,9 +492,7 @@ describe('AttestorClient over mutual TLS', () => {
       await expect(
         bare.sign({
           keyId: recorded[1]!.request.key_id,
-          kind: 'personal_message',
-          bytes: recorded[1]!.request.bytes as Hex,
-          context: recorded[1]!.request.context,
+          payload: { kind: 'personal_message', message: `0x${recorded[1]!.request.message!}` },
           authorisation: { scheme: 'supabase_jwt', token: 'session-token' },
         }),
       ).rejects.toBeInstanceOf(clientMod.AttestorQuorumError);
@@ -561,7 +606,7 @@ describe('signing routes', () => {
       expect(thAudit).toHaveLength(1);
       expect(thAudit[0]!.path).toBe('attestor');
       expect(thAudit[0]!.decision).toBe('signed');
-      expect(thAudit[0]!.session_id).toBe(attestorNodes.find((n) => n.received.length === 1)!.received[0]!.session_id);
+      expect(thAudit[0]!.session_id).toBe(attestorNodes.find((n) => n.received.length === 1)!.received[0]!.body.session_id);
       expect(thAudit[0]!.attestor_audit).toHaveLength(3);
       expect(thAudit[0]!.attestor_audit.every((a) => a.audit_sequence > 200 && a.audit_sequence <= 205)).toBe(true);
     } finally {
@@ -605,7 +650,7 @@ describe('signing routes', () => {
         method: 'POST',
         url: '/v1/wallet/sign-typed-data',
         headers,
-        payload: { typed_data: routeInputs.typed_data },
+        payload: { typedData: routeInputs.typed_data },
       });
       expect(typed.statusCode).toBe(200);
       const typedSig = typed.json<{ signature: Hex }>().signature;
@@ -626,15 +671,20 @@ describe('signing routes', () => {
       for (const n of attestorNodes) n.refuse = 'policy';
       const policy = await app.inject({ method: 'POST', url: '/v1/wallet/sign-message', headers, payload: { message: routeInputs.message } });
       expect(policy.statusCode).toBe(403);
-      expect(policy.json()).toMatchObject({ error: 'attestor_policy_refused', category: 'policy', code: 'value_cap' });
+      expect(policy.json()).toMatchObject({
+        error: 'attestor_policy_refused',
+        category: 'policy',
+        code: 'policy_denied',
+        policy_code: 'value_cap',
+      });
       const policyAudit = await auditFor(policy.json<{ request_id: string }>().request_id);
-      expect(policyAudit[0]).toMatchObject({ decision: 'refused', path: 'attestor', reason_code: 'policy:value_cap' });
+      expect(policyAudit[0]).toMatchObject({ decision: 'refused', path: 'attestor', reason_code: 'policy:policy_denied' });
 
       for (const n of attestorNodes) n.refuse = null;
       expectedToken = 'a-different-token';
       const token = await app.inject({ method: 'POST', url: '/v1/wallet/sign-message', headers, payload: { message: routeInputs.message } });
       expect(token.statusCode).toBe(401);
-      expect(token.json()).toMatchObject({ category: 'token', code: 'claims_invalid' });
+      expect(token.json()).toMatchObject({ category: 'token', code: 'token_missing' });
     } finally {
       await app.close();
     }

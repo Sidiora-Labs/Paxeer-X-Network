@@ -1,5 +1,9 @@
 {
-  "signature": "0x0df36f659ba7018b12a59308dcc61d3c43fd84087d78f64621c6c0c2c739c2fb7b4560fdbaf27751bf7482e60a01aa13c17b9763e727550dfb6c93eda28d0af2",
+  "node_id": "node-1",
+  "key_id": "secp256k1-wallet-0001",
+  "kind": "personal_message",
+  "signed_bytes": "a37eb2373f2319928f0fe4f7d9c6fee18b15c03f6754ed8b1e62e67e9358095d",
+  "signature": "0df36f659ba7018b12a59308dcc61d3c43fd84087d78f64621c6c0c2c739c2fb7b4560fdbaf27751bf7482e60a01aa13c17b9763e727550dfb6c93eda28d0af200",
   "recovery_id": 0,
   "audit_sequence": 200
 }

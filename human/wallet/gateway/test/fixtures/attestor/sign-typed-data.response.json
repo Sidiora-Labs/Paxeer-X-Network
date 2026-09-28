@@ -1,5 +1,9 @@
 {
-  "signature": "0x22ca1a1f1f5475718dedde172c6636476dc3add78d24968710e244c6f34799d02d062626715795e6982e1a3a24fc40b65ec6f6d67eccb7d43609c64282da0085",
+  "node_id": "node-1",
+  "key_id": "secp256k1-wallet-0001",
+  "kind": "eip712",
+  "signed_bytes": "5a5566ce3024381554dc1d828e253c0ce5a5cc2e69cf05b0d9e553fc798a8412",
+  "signature": "22ca1a1f1f5475718dedde172c6636476dc3add78d24968710e244c6f34799d02d062626715795e6982e1a3a24fc40b65ec6f6d67eccb7d43609c64282da008500",
   "recovery_id": 0,
   "audit_sequence": 300
 }

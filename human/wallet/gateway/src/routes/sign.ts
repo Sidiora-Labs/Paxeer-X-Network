@@ -48,18 +48,19 @@ export interface SignRoutesOptions {
 
 const TypedDataField = z.object({ name: z.string().min(1).max(256), type: z.string().min(1).max(256) }).strict();
 
-export const SignTypedDataBody = z
+const TypedDataDocument = z
   .object({
-    typed_data: z
-      .object({
-        domain: z.record(z.unknown()),
-        types: z.record(z.array(TypedDataField).max(256)),
-        primaryType: z.string().min(1).max(256),
-        message: z.record(z.unknown()),
-      })
-      .strict(),
+    domain: z.record(z.unknown()),
+    types: z.record(z.array(TypedDataField).max(256)),
+    primaryType: z.string().min(1).max(256),
+    message: z.record(z.unknown()),
   })
   .strict();
+
+export const SignTypedDataBody = z.union([
+  z.object({ typedData: TypedDataDocument }).strict(),
+  z.object({ typed_data: TypedDataDocument }).strict(),
+]);
 
 function hashRequest(payload: unknown): string {
   return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
@@ -540,8 +541,9 @@ export async function signRoutes(app: FastifyInstance, opts: SignRoutesOptions =
       return reply.code(400).send({ error: 'invalid_body', issues: parsed.error.issues });
     }
     const userId = req.user!.id;
-    const td = parsed.data.typed_data as unknown as TypedDataDefinition;
-    const requestHash = hashRequest({ typed_data: parsed.data.typed_data });
+    const document = 'typedData' in parsed.data ? parsed.data.typedData : parsed.data.typed_data;
+    const td = document as unknown as TypedDataDefinition;
+    const requestHash = hashRequest({ typed_data: document });
     return run(
       req,
       reply,

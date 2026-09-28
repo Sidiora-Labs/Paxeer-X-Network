@@ -1,13 +1,20 @@
+export interface AttestorPeerState {
+  reachable: boolean;
+  rtt_ns: number;
+}
+
 export interface AttestorHealthReport {
   node_id: string;
   region: string;
   share_count: number;
   refresh_epoch: number;
+  share_error?: string;
   audit_sequence: number;
   audit_head: string;
+  peers: Record<string, AttestorPeerState>;
   reachable_peers: number;
-  ready: boolean;
   readiness_error?: string;
+  ready: boolean;
 }
 
 export interface NodeHealth {
@@ -41,7 +48,7 @@ export function isHealthy(node: NodeHealth, required: number): boolean {
   if (!node.healthy || node.report === null || node.nodeId === null || node.latencyMs === null) {
     return false;
   }
-  return node.report.ready && node.report.reachable_peers + 1 >= required;
+  return node.report.ready && node.report.share_error === undefined && node.report.reachable_peers + 1 >= required;
 }
 
 export function selectQuorum(nodes: readonly NodeHealth[], required: number): QuorumMember[] {

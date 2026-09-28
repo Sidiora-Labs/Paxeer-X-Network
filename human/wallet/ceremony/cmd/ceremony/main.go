@@ -12,9 +12,10 @@ import (
 	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/attestor"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/envelope"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/migrate"
+	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/rehearsal"
 )
 
-const usage = "usage: ceremony plan|deliver|archive"
+const usage = "usage: ceremony plan|deliver|archive|rehearse"
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -36,6 +37,8 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 		err = runDeliver(ctx, getenv, stdout)
 	case "archive":
 		err = runArchive(ctx, getenv, stdout)
+	case "rehearse":
+		err = runRehearse(ctx, getenv, stdout)
 	default:
 		fmt.Fprintln(stderr, usage)
 		return 2
@@ -131,6 +134,17 @@ func runArchive(ctx context.Context, getenv func(string) string, stdout io.Write
 	}
 	fmt.Fprintf(stdout, "funded_archived=%d verified=true\n", res.Rows)
 	return nil
+}
+
+func runRehearse(ctx context.Context, getenv func(string) string, stdout io.Writer) error {
+	opts, err := rehearsal.LoadOptions(getenv)
+	if err != nil {
+		return err
+	}
+	defer opts.Wipe()
+	report, err := rehearsal.Rehearse(ctx, opts)
+	fmt.Fprintln(stdout, report.String())
+	return err
 }
 
 func zero(b []byte) {

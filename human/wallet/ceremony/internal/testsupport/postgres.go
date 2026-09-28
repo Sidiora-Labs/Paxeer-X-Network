@@ -452,10 +452,24 @@ func (n *Nodes) Epoch(nodeID, keyID string) uint64 {
 	return 0
 }
 
+var errorCategories = map[string]string{
+	"operator_required":        "token",
+	"token_missing":            "token",
+	"session_bad_request":      "session",
+	"session_failed":           "session",
+	"session_unsupported_kind": "session",
+	"quorum_too_few_signers":   "quorum",
+	"quorum_self_missing":      "quorum",
+	"key_not_found":            "key",
+	"key_exists":               "key",
+	"key_not_refreshed":        "key",
+	"key_invalid_share":        "key",
+}
+
 func writeError(w http.ResponseWriter, status int, code, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": code, "message": msg}})
+	json.NewEncoder(w).Encode(attestor.ErrorBody{Error: attestor.ErrorDetail{Category: errorCategories[code], Code: code, Message: msg}})
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
@@ -469,114 +483,126 @@ func decodeStrict(r *http.Request, v any) error {
 	return dec.Decode(v)
 }
 
+func (n *Nodes) TokenSource() attestor.TokenSource {
+	return func(_ context.Context, owner, keyID string) (string, error) {
+		return "owner-token." + owner + "." + keyID, nil
+	}
+}
+
+func (n *Nodes) keyResponse(id, keyID string, s *storedShare, seq uint64) attestor.KeyResponse {
+	pub, _ := attestor.PublicKeyHex(s.bundle.PublicKey)
+	curve, _ := attestor.CurveName(s.bundle.Curve)
+	return attestor.KeyResponse{NodeID: id, KeyID: keyID, Curve: curve, PublicKey: pub, Epoch: s.epoch, Participants: s.bundle.ParticipantIDs(), Refreshed: s.epoch > 0, AuditSequence: seq}
+}
+
 func (n *Nodes) handler(id string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST "+attestor.PathImport, func(w http.ResponseWriter, r *http.Request) {
 		if len(r.TLS.PeerCertificates) == 0 || attestor.SPKIHash(r.TLS.PeerCertificates[0]) != n.TLS.OperatorSPKI {
-			writeError(w, http.StatusForbidden, "not_operator", "keys.import requires the operator identity")
+			writeError(w, http.StatusForbidden, "operator_required", "keys.import requires the operator identity")
 			return
 		}
 		var req attestor.ImportRequest
-		if err := decodeStrict(r, &req); err != nil {
-			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
-			return
-		}
-		if !req.Ceremony {
-			writeError(w, http.StatusForbidden, "ceremony_closed", "keys.import requires the ceremony flag")
+		if err := decodeStrict(r, &req); err != nil || req.SessionID == "" || req.KeyID == "" || req.Owner == "" {
+			writeError(w, http.StatusBadRequest, "session_bad_request", "malformed import request")
 			return
 		}
 		if req.Share.ParticipantID != id {
-			writeError(w, http.StatusBadRequest, "wrong_participant", "share addressed to another node")
+			writeError(w, http.StatusConflict, "key_invalid_share", "share addressed to another node")
 			return
 		}
-		b, err := attestor.DecodeBundle(req)
+		b, err := attestor.DecodeBundle(req.Share)
+		if err == nil {
+			err = b.Validate()
+		}
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "bad_share", err.Error())
-			return
-		}
-		if err := b.Validate(); err != nil {
-			writeError(w, http.StatusUnprocessableEntity, "share_mismatch", err.Error())
-			return
-		}
-		pub, err := attestor.EncodePoint(b.PublicKey)
-		if err != nil || pub != req.PublicKey {
-			writeError(w, http.StatusUnprocessableEntity, "public_key", "public key encoding mismatch")
+			writeError(w, http.StatusConflict, "key_invalid_share", err.Error())
 			return
 		}
 		n.mu.Lock()
+		defer n.mu.Unlock()
+		if _, exists := n.shares[req.KeyID][id]; exists {
+			writeError(w, http.StatusConflict, "key_exists", "key already exists")
+			return
+		}
 		if n.shares[req.KeyID] == nil {
 			n.shares[req.KeyID] = map[string]*storedShare{}
 		}
-		n.shares[req.KeyID][id] = &storedShare{bundle: b}
+		s := &storedShare{bundle: b}
+		n.shares[req.KeyID][id] = s
 		n.audit[id]++
 		n.Imports[id]++
-		seq := n.audit[id]
-		n.mu.Unlock()
-		writeJSON(w, attestor.ImportResponse{KeyID: req.KeyID, Curve: req.Curve, PublicKey: pub, ParticipantID: id, AuditSeq: seq})
+		writeJSON(w, n.keyResponse(id, req.KeyID, s, n.audit[id]))
 	})
 	mux.HandleFunc("POST "+attestor.PathRefresh, func(w http.ResponseWriter, r *http.Request) {
 		var req attestor.RefreshRequest
-		if err := decodeStrict(r, &req); err != nil {
-			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		if err := decodeStrict(r, &req); err != nil || req.SessionID == "" {
+			writeError(w, http.StatusBadRequest, "session_bad_request", "malformed refresh request")
 			return
 		}
 		n.mu.Lock()
 		defer n.mu.Unlock()
 		own, ok := n.shares[req.KeyID][id]
 		if !ok {
-			writeError(w, http.StatusNotFound, "unknown_key", "no share for key")
+			writeError(w, http.StatusNotFound, "key_not_found", "no share for key")
 			return
 		}
-		for _, p := range req.Participants {
+		for _, p := range own.bundle.ParticipantIDs() {
 			s, ok := n.shares[req.KeyID][p]
 			if !ok || s.bundle.ValidatePublicData() != nil || !s.bundle.PublicKey.Equal(own.bundle.PublicKey) {
-				writeError(w, http.StatusConflict, "participant_share", "participant share missing or inconsistent")
+				writeError(w, http.StatusBadGateway, "session_failed", "participant share missing or inconsistent")
 				return
 			}
 		}
 		own.epoch++
 		n.audit[id]++
-		pub, _ := attestor.EncodePoint(own.bundle.PublicKey)
-		curve, _ := attestor.CurveName(own.bundle.Curve)
-		writeJSON(w, attestor.RefreshResponse{KeyID: req.KeyID, Curve: curve, PublicKey: pub, Epoch: own.epoch, AuditSeq: n.audit[id]})
+		writeJSON(w, n.keyResponse(id, req.KeyID, own, n.audit[id]))
 	})
 	mux.HandleFunc("POST "+attestor.PathSign, func(w http.ResponseWriter, r *http.Request) {
 		var req attestor.SignRequest
-		if err := decodeStrict(r, &req); err != nil {
-			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		if err := decodeStrict(r, &req); err != nil || req.SessionID == "" {
+			writeError(w, http.StatusBadRequest, "session_bad_request", "malformed sign request")
 			return
 		}
-		if req.Kind != attestor.KindPersonal || req.Authorisation.Kind != attestor.AuthOperator || req.SessionID == "" {
-			writeError(w, http.StatusForbidden, "policy", "request kind or authorisation refused")
+		if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
+			writeError(w, http.StatusUnauthorized, "token_missing", "a bearer token or agent signature is required")
 			return
 		}
-		msg, err := hex.DecodeString(req.Bytes)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "bad_bytes", err.Error())
+		if req.Kind != attestor.KindPersonal {
+			writeError(w, http.StatusBadRequest, "session_unsupported_kind", "kind refused")
+			return
+		}
+		msg, err := hex.DecodeString(req.Message)
+		if err != nil || len(msg) == 0 {
+			writeError(w, http.StatusBadRequest, "session_bad_request", "message must be non-empty hex")
 			return
 		}
 		n.mu.Lock()
 		defer n.mu.Unlock()
 		var bundles []dealer.ShareBundle
 		member := false
-		for _, p := range req.Participants {
+		for _, p := range req.Signers {
 			if p == id {
 				member = true
 			}
 			s, ok := n.shares[req.KeyID][p]
 			if !ok || s.epoch == 0 || s.bundle.Curve != dealer.Secp256k1 {
-				writeError(w, http.StatusConflict, "participant_share", "participant has no refreshed secp256k1 share")
+				writeError(w, http.StatusConflict, "key_not_refreshed", "signer has no refreshed secp256k1 share")
 				return
 			}
 			bundles = append(bundles, s.bundle)
 		}
-		if !member || len(bundles) < int(bundles[0].Threshold) {
-			writeError(w, http.StatusBadRequest, "quorum", "node is not a participant or the quorum is short")
+		if !member {
+			writeError(w, http.StatusConflict, "quorum_self_missing", "node is not a signer")
+			return
+		}
+		if len(bundles) < int(bundles[0].Threshold) {
+			writeError(w, http.StatusConflict, "quorum_too_few_signers", "quorum is short")
 			return
 		}
 		secret, err := interpolate(bundles)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "interpolate", err.Error())
+			writeError(w, http.StatusConflict, "key_invalid_share", err.Error())
 			return
 		}
 		if n.corrupt[req.KeyID] {
@@ -584,18 +610,19 @@ func (n *Nodes) handler(id string) http.Handler {
 		}
 		priv, err := crypto.ToECDSA(secret.FillBytes(make([]byte, 32)))
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "key", err.Error())
+			writeError(w, http.StatusConflict, "key_invalid_share", err.Error())
 			return
 		}
-		sig, err := crypto.Sign(accounts.TextHash(msg), priv)
+		digest := accounts.TextHash(msg)
+		sig, err := crypto.Sign(digest, priv)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "sign", err.Error())
+			writeError(w, http.StatusBadGateway, "session_failed", err.Error())
 			return
 		}
 		n.audit[id]++
 		n.Signs[id]++
-		rec := int(sig[64])
-		writeJSON(w, attestor.SignResponse{Signature: hex.EncodeToString(sig[:64]), RecoveryID: &rec, AuditSeq: n.audit[id]})
+		rec := sig[64]
+		writeJSON(w, attestor.SignResponse{NodeID: id, KeyID: req.KeyID, Kind: req.Kind, SignedBytes: hex.EncodeToString(digest), Signature: hex.EncodeToString(sig), RecoveryID: &rec, AuditSequence: n.audit[id]})
 	})
 	return mux
 }

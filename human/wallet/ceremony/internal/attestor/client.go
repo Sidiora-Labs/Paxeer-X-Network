@@ -18,10 +18,12 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"filippo.io/edwards25519"
 	"filippo.io/edwards25519/field"
+	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/getamis/alice/crypto/birkhoffinterpolation"
 	pt "github.com/getamis/alice/crypto/ecpointgrouplaw"
@@ -38,11 +40,11 @@ const (
 	EnvTLSCAFile    = "CEREMONY_TLS_CA_FILE"
 	NodeCount       = 5
 	SignQuorum      = 3
-	PathImport      = "/v1/keys.import"
-	PathRefresh     = "/v1/keys.refresh"
+	PathImport      = "/v1/keys/import"
+	PathRefresh     = "/v1/keys/refresh"
 	PathSign        = "/v1/sign"
+	PathHealth      = "/health"
 	KindPersonal    = "personal_message"
-	AuthOperator    = "operator"
 	CurveSecp256k1  = "secp256k1"
 	CurveEd25519    = "ed25519"
 	maxResponseSize = 1 << 20
@@ -60,10 +62,12 @@ var (
 )
 
 type APIError struct {
-	Node    string
-	Status  int
-	Code    string
-	Message string
+	Node       string
+	Status     int
+	Category   string
+	Code       string
+	Message    string
+	PolicyCode string
 }
 
 func (e *APIError) Error() string {
@@ -158,7 +162,8 @@ func SPKIHash(cert *x509.Certificate) [32]byte {
 }
 
 type Client struct {
-	nodes []*Node
+	nodes  []*Node
+	tokens TokenSource
 }
 
 func New(cfg Config) (*Client, error) {
@@ -217,82 +222,110 @@ func (c *Client) NodeIDs() []string {
 	return ids
 }
 
+func (c *Client) SetTokenSource(src TokenSource) { c.tokens = src }
+
 func (c *Client) Close() {
 	for _, n := range c.nodes {
 		n.http.CloseIdleConnections()
 	}
 }
 
-type Bk struct {
+type PointJSON struct {
+	X string `json:"x"`
+	Y string `json:"y"`
+}
+
+type BkJSON struct {
 	X    string `json:"x"`
 	Rank uint32 `json:"rank"`
 }
 
-type ImportShare struct {
-	ParticipantID     string            `json:"participant_id"`
-	Share             string            `json:"share"`
-	PartialPublicKeys map[string]string `json:"partial_public_keys"`
-	Bks               map[string]Bk     `json:"bks"`
+type ShareBundleJSON struct {
+	Curve             string               `json:"curve"`
+	ParticipantID     string               `json:"participant_id"`
+	Share             string               `json:"share"`
+	PublicKey         PointJSON            `json:"public_key"`
+	PartialPublicKeys map[string]PointJSON `json:"partial_public_keys"`
+	Bks               map[string]BkJSON    `json:"bks"`
+	Threshold         uint32               `json:"threshold"`
 }
 
 type ImportRequest struct {
-	KeyID        string      `json:"key_id"`
-	Curve        string      `json:"curve"`
-	PublicKey    string      `json:"public_key"`
-	Participants []string    `json:"participants"`
-	Threshold    uint32      `json:"threshold"`
-	Ceremony     bool        `json:"ceremony"`
-	Share        ImportShare `json:"share"`
-}
-
-type ImportResponse struct {
-	KeyID         string `json:"key_id"`
-	Curve         string `json:"curve"`
-	PublicKey     string `json:"public_key"`
-	ParticipantID string `json:"participant_id"`
-	AuditSeq      uint64 `json:"audit_seq"`
+	SessionID string          `json:"session_id"`
+	KeyID     string          `json:"key_id"`
+	Owner     string          `json:"owner"`
+	Account   string          `json:"account,omitempty"`
+	Share     ShareBundleJSON `json:"share"`
 }
 
 type RefreshRequest struct {
-	KeyID        string   `json:"key_id"`
-	Participants []string `json:"participants"`
-	SessionID    string   `json:"session_id"`
-}
-
-type RefreshResponse struct {
+	SessionID string `json:"session_id"`
 	KeyID     string `json:"key_id"`
-	Curve     string `json:"curve"`
-	PublicKey string `json:"public_key"`
-	Epoch     uint64 `json:"epoch"`
-	AuditSeq  uint64 `json:"audit_seq"`
 }
 
-type Authorisation struct {
-	Kind string `json:"kind"`
+type KeyResponse struct {
+	NodeID        string   `json:"node_id"`
+	KeyID         string   `json:"key_id"`
+	Curve         string   `json:"curve"`
+	PublicKey     string   `json:"public_key"`
+	Address       string   `json:"address,omitempty"`
+	DID           string   `json:"did,omitempty"`
+	Epoch         uint64   `json:"epoch"`
+	Participants  []string `json:"participants"`
+	Refreshed     bool     `json:"refreshed"`
+	AuditSequence uint64   `json:"audit_sequence"`
+}
+
+type GrantJSON struct {
+	From               string `json:"from"`
+	Recipient          string `json:"recipient"`
+	Asset              string `json:"asset"`
+	PerDrawMaximum     string `json:"per_draw_maximum"`
+	Allowance          string `json:"allowance"`
+	Recurring          bool   `json:"recurring"`
+	WindowLength       uint64 `json:"window_length"`
+	Expiration         uint64 `json:"expiration"`
+	PurposeHash        string `json:"purpose_hash"`
+	HasReference       bool   `json:"has_reference"`
+	ReferenceHash      string `json:"reference_hash"`
+	RevocationSequence uint64 `json:"revocation_sequence"`
 }
 
 type SignRequest struct {
-	KeyID         string            `json:"key_id"`
-	Kind          string            `json:"kind"`
-	Bytes         string            `json:"bytes"`
-	Context       map[string]string `json:"context"`
-	Authorisation Authorisation     `json:"authorisation"`
-	Participants  []string          `json:"participants"`
-	SessionID     string            `json:"session_id"`
+	SessionID   string     `json:"session_id"`
+	KeyID       string     `json:"key_id"`
+	Kind        string     `json:"kind"`
+	Signers     []string   `json:"signers"`
+	Transaction string     `json:"transaction,omitempty"`
+	TypedData   string     `json:"typed_data,omitempty"`
+	Message     string     `json:"message,omitempty"`
+	Digest      string     `json:"digest,omitempty"`
+	Activity    string     `json:"activity,omitempty"`
+	Grant       *GrantJSON `json:"grant,omitempty"`
 }
 
 type SignResponse struct {
-	Signature  string `json:"signature"`
-	RecoveryID *int   `json:"recovery_id"`
-	AuditSeq   uint64 `json:"audit_seq"`
+	NodeID        string `json:"node_id"`
+	KeyID         string `json:"key_id"`
+	Kind          string `json:"kind"`
+	SignedBytes   string `json:"signed_bytes"`
+	Signature     string `json:"signature"`
+	RecoveryID    *uint8 `json:"recovery_id,omitempty"`
+	AuditSequence uint64 `json:"audit_sequence"`
 }
 
-type errorBody struct {
-	Error struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
-	} `json:"error"`
+type ErrorDetail struct {
+	Category   string `json:"category"`
+	Code       string `json:"code"`
+	Message    string `json:"message"`
+	PolicyCode string `json:"policy_code,omitempty"`
 }
+
+type ErrorBody struct {
+	Error ErrorDetail `json:"error"`
+}
+
+type TokenSource func(ctx context.Context, owner, keyID string) (string, error)
 
 func CurveName(c dealer.Curve) (string, error) {
 	switch c {
@@ -389,80 +422,116 @@ func littleEndianInt(le []byte) *big.Int {
 	return new(big.Int).SetBytes(be)
 }
 
-func EncodeBundle(keyID string, b dealer.ShareBundle) (ImportRequest, error) {
-	curve, err := CurveName(b.Curve)
-	if err != nil {
-		return ImportRequest{}, err
+func hexInt(v *big.Int) string { return hex.EncodeToString(v.Bytes()) }
+
+func parseHexInt(s string) (*big.Int, error) {
+	raw, err := hex.DecodeString(s)
+	if err != nil || len(raw) == 0 || len(raw) > 64 {
+		return nil, ErrPoint
 	}
-	pub, err := EncodePoint(b.PublicKey)
-	if err != nil {
-		return ImportRequest{}, err
-	}
-	if b.Share == nil {
-		return ImportRequest{}, ErrBundle
-	}
-	req := ImportRequest{
-		KeyID:        keyID,
-		Curve:        curve,
-		PublicKey:    pub,
-		Participants: b.ParticipantIDs(),
-		Threshold:    b.Threshold,
-		Ceremony:     true,
-		Share: ImportShare{
-			ParticipantID:     b.ParticipantID,
-			Share:             hex.EncodeToString(b.Share.FillBytes(make([]byte, 32))),
-			PartialPublicKeys: make(map[string]string, len(b.PartialPublicKeys)),
-			Bks:               make(map[string]Bk, len(b.Bks)),
-		},
-	}
-	for id, p := range b.PartialPublicKeys {
-		enc, err := EncodePoint(p)
-		if err != nil {
-			return ImportRequest{}, err
-		}
-		req.Share.PartialPublicKeys[id] = enc
-	}
-	for id, bk := range b.Bks {
-		req.Share.Bks[id] = Bk{X: bk.GetX().String(), Rank: bk.GetRank()}
-	}
-	return req, nil
+	return new(big.Int).SetBytes(raw), nil
 }
 
-func DecodeBundle(req ImportRequest) (dealer.ShareBundle, error) {
-	curve, err := ParseCurve(req.Curve)
+func pointJSON(p *pt.ECPoint) PointJSON {
+	return PointJSON{X: hexInt(p.GetX()), Y: hexInt(p.GetY())}
+}
+
+func parsePointJSON(curve dealer.Curve, p PointJSON) (*pt.ECPoint, error) {
+	ec, err := curve.Elliptic()
+	if err != nil {
+		return nil, ErrPoint
+	}
+	x, err := parseHexInt(p.X)
+	if err != nil {
+		return nil, err
+	}
+	y, err := parseHexInt(p.Y)
+	if err != nil {
+		return nil, err
+	}
+	out, err := pt.NewECPoint(ec, x, y)
+	if err != nil {
+		return nil, ErrPoint
+	}
+	return out, nil
+}
+
+func PublicKeyHex(p *pt.ECPoint) (string, error) {
+	if p == nil || p.IsIdentity() {
+		return "", ErrPoint
+	}
+	switch p.GetCurve() {
+	case elliptic.Secp256k1():
+		out := make([]byte, 65)
+		out[0] = 0x04
+		p.GetX().FillBytes(out[1:33])
+		p.GetY().FillBytes(out[33:])
+		return hex.EncodeToString(out), nil
+	case elliptic.Ed25519():
+		return EncodePoint(p)
+	}
+	return "", ErrPoint
+}
+
+func EncodeBundle(b dealer.ShareBundle) (ShareBundleJSON, error) {
+	curve, err := CurveName(b.Curve)
+	if err != nil {
+		return ShareBundleJSON{}, err
+	}
+	if b.Share == nil || b.Share.Sign() <= 0 || b.PublicKey == nil {
+		return ShareBundleJSON{}, ErrBundle
+	}
+	out := ShareBundleJSON{
+		Curve:             curve,
+		ParticipantID:     b.ParticipantID,
+		Share:             hexInt(b.Share),
+		PublicKey:         pointJSON(b.PublicKey),
+		PartialPublicKeys: make(map[string]PointJSON, len(b.PartialPublicKeys)),
+		Bks:               make(map[string]BkJSON, len(b.Bks)),
+		Threshold:         b.Threshold,
+	}
+	for id, p := range b.PartialPublicKeys {
+		if p == nil {
+			return ShareBundleJSON{}, ErrBundle
+		}
+		out.PartialPublicKeys[id] = pointJSON(p)
+	}
+	for id, bk := range b.Bks {
+		out.Bks[id] = BkJSON{X: hexInt(bk.GetX()), Rank: bk.GetRank()}
+	}
+	return out, nil
+}
+
+func DecodeBundle(in ShareBundleJSON) (dealer.ShareBundle, error) {
+	curve, err := ParseCurve(in.Curve)
 	if err != nil {
 		return dealer.ShareBundle{}, err
 	}
-	pub, err := DecodePoint(curve, req.PublicKey)
+	share, err := parseHexInt(in.Share)
 	if err != nil {
-		return dealer.ShareBundle{}, err
-	}
-	shareBytes, err := hex.DecodeString(req.Share.Share)
-	if err != nil || len(shareBytes) != 32 {
 		return dealer.ShareBundle{}, ErrBundle
+	}
+	pub, err := parsePointJSON(curve, in.PublicKey)
+	if err != nil {
+		return dealer.ShareBundle{}, err
 	}
 	b := dealer.ShareBundle{
 		Curve:             curve,
-		ParticipantID:     req.Share.ParticipantID,
-		Share:             new(big.Int).SetBytes(shareBytes),
+		ParticipantID:     in.ParticipantID,
+		Share:             share,
 		PublicKey:         pub,
-		PartialPublicKeys: make(map[string]*pt.ECPoint, len(req.Share.PartialPublicKeys)),
-		Bks:               make(map[string]*birkhoffinterpolation.BkParameter, len(req.Share.Bks)),
-		Threshold:         req.Threshold,
+		PartialPublicKeys: make(map[string]*pt.ECPoint, len(in.PartialPublicKeys)),
+		Bks:               make(map[string]*birkhoffinterpolation.BkParameter, len(in.Bks)),
+		Threshold:         in.Threshold,
 	}
-	for i := range shareBytes {
-		shareBytes[i] = 0
-	}
-	for id, s := range req.Share.PartialPublicKeys {
-		p, err := DecodePoint(curve, s)
-		if err != nil {
+	for id, p := range in.PartialPublicKeys {
+		if b.PartialPublicKeys[id], err = parsePointJSON(curve, p); err != nil {
 			return dealer.ShareBundle{}, err
 		}
-		b.PartialPublicKeys[id] = p
 	}
-	for id, bk := range req.Share.Bks {
-		x, ok := new(big.Int).SetString(bk.X, 10)
-		if !ok || x.Sign() <= 0 {
+	for id, bk := range in.Bks {
+		x, err := parseHexInt(bk.X)
+		if err != nil {
 			return dealer.ShareBundle{}, ErrBundle
 		}
 		b.Bks[id] = birkhoffinterpolation.NewBkParameter(x, bk.Rank)
@@ -479,43 +548,21 @@ func (c *Client) node(id string) (*Node, error) {
 	return nil, fmt.Errorf("%w: unknown node %s", ErrConfig, id)
 }
 
-func (c *Client) Import(ctx context.Context, keyID string, bundles []dealer.ShareBundle, publicKey *pt.ECPoint) ([]ImportResponse, error) {
+func checkKeyResponse(n *Node, resp KeyResponse, keyID, curve, want string) error {
+	if resp.NodeID != n.ID || resp.KeyID != keyID || resp.Curve != curve {
+		return fmt.Errorf("%w: node %s key response names another node, key or curve", ErrResponse, n.ID)
+	}
+	if !strings.EqualFold(resp.PublicKey, want) {
+		return fmt.Errorf("%w: node %s", ErrPublicKey, n.ID)
+	}
+	return nil
+}
+
+func (c *Client) Import(ctx context.Context, keyID, owner, account string, bundles []dealer.ShareBundle, publicKey *pt.ECPoint) ([]KeyResponse, error) {
 	if len(bundles) != len(c.nodes) {
 		return nil, ErrBundle
 	}
-	want, err := EncodePoint(publicKey)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]ImportResponse, 0, len(bundles))
-	for _, b := range bundles {
-		n, err := c.node(b.ParticipantID)
-		if err != nil {
-			return nil, err
-		}
-		req, err := EncodeBundle(keyID, b)
-		if err != nil {
-			return nil, err
-		}
-		var resp ImportResponse
-		err = n.post(ctx, PathImport, req, &resp)
-		req.Share.Share = ""
-		if err != nil {
-			return nil, err
-		}
-		if resp.KeyID != keyID || resp.ParticipantID != n.ID || resp.Curve != req.Curve {
-			return nil, fmt.Errorf("%w: node %s import response names another key", ErrResponse, n.ID)
-		}
-		if !strings.EqualFold(resp.PublicKey, want) {
-			return nil, fmt.Errorf("%w: node %s on import", ErrPublicKey, n.ID)
-		}
-		out = append(out, resp)
-	}
-	return out, nil
-}
-
-func (c *Client) Refresh(ctx context.Context, keyID string, publicKey *pt.ECPoint) ([]RefreshResponse, error) {
-	want, err := EncodePoint(publicKey)
+	want, err := PublicKeyHex(publicKey)
 	if err != nil {
 		return nil, err
 	}
@@ -523,28 +570,88 @@ func (c *Client) Refresh(ctx context.Context, keyID string, publicKey *pt.ECPoin
 	if err != nil {
 		return nil, err
 	}
-	req := RefreshRequest{KeyID: keyID, Participants: c.NodeIDs(), SessionID: session}
-	out := make([]RefreshResponse, 0, len(c.nodes))
-	var epoch uint64
-	for i, n := range c.nodes {
-		var resp RefreshResponse
-		if err := n.post(ctx, PathRefresh, req, &resp); err != nil {
+	out := make([]KeyResponse, 0, len(bundles))
+	for _, b := range bundles {
+		n, err := c.node(b.ParticipantID)
+		if err != nil {
 			return nil, err
 		}
-		if resp.KeyID != keyID {
-			return nil, fmt.Errorf("%w: node %s refresh response names another key", ErrResponse, n.ID)
+		if !b.PublicKey.Equal(publicKey) {
+			return nil, ErrBundle
 		}
-		if !strings.EqualFold(resp.PublicKey, want) {
-			return nil, fmt.Errorf("%w: node %s on refresh", ErrPublicKey, n.ID)
+		share, err := EncodeBundle(b)
+		if err != nil {
+			return nil, err
 		}
-		if i == 0 {
-			epoch = resp.Epoch
-		} else if resp.Epoch != epoch {
-			return nil, fmt.Errorf("%w: refresh epoch", ErrDisagree)
+		req := ImportRequest{SessionID: session, KeyID: keyID, Owner: owner, Account: account, Share: share}
+		var resp KeyResponse
+		err = n.post(ctx, PathImport, "", req, &resp)
+		req.Share.Share = ""
+		if err != nil {
+			return nil, err
+		}
+		if err := checkKeyResponse(n, resp, keyID, share.Curve, want); err != nil {
+			return nil, err
+		}
+		if resp.Epoch != 0 || resp.Refreshed || len(resp.Participants) != len(c.nodes) {
+			return nil, fmt.Errorf("%w: node %s import response state", ErrResponse, n.ID)
 		}
 		out = append(out, resp)
 	}
 	return out, nil
+}
+
+func (c *Client) postAll(ctx context.Context, nodes []*Node, path, token string, body any, decode func(i int) any) error {
+	errs := make([]error, len(nodes))
+	var wg sync.WaitGroup
+	for i, n := range nodes {
+		wg.Add(1)
+		go func(i int, n *Node) {
+			defer wg.Done()
+			errs[i] = n.post(ctx, path, token, body, decode(i))
+		}(i, n)
+	}
+	wg.Wait()
+	return errors.Join(errs...)
+}
+
+func (c *Client) Refresh(ctx context.Context, keyID string, publicKey *pt.ECPoint) ([]KeyResponse, error) {
+	want, err := PublicKeyHex(publicKey)
+	if err != nil {
+		return nil, err
+	}
+	curve, err := CurveName(curveOf(publicKey))
+	if err != nil {
+		return nil, err
+	}
+	session, err := NewSessionID()
+	if err != nil {
+		return nil, err
+	}
+	req := RefreshRequest{SessionID: session, KeyID: keyID}
+	out := make([]KeyResponse, len(c.nodes))
+	if err := c.postAll(ctx, c.nodes, PathRefresh, "", req, func(i int) any { return &out[i] }); err != nil {
+		return nil, err
+	}
+	for i, n := range c.nodes {
+		if err := checkKeyResponse(n, out[i], keyID, curve, want); err != nil {
+			return nil, err
+		}
+		if !out[i].Refreshed {
+			return nil, fmt.Errorf("%w: node %s did not report the key refreshed", ErrResponse, n.ID)
+		}
+		if out[i].Epoch != out[0].Epoch {
+			return nil, fmt.Errorf("%w: refresh epoch", ErrDisagree)
+		}
+	}
+	return out, nil
+}
+
+func curveOf(p *pt.ECPoint) dealer.Curve {
+	if p != nil && p.GetCurve() == elliptic.Ed25519() {
+		return dealer.Ed25519
+	}
+	return dealer.Secp256k1
 }
 
 type Signature struct {
@@ -561,47 +668,44 @@ func (s Signature) Ethereum() []byte {
 	return out
 }
 
-func (c *Client) SignPersonal(ctx context.Context, keyID string, message []byte, walletID string) (Signature, error) {
+func (c *Client) SignPersonal(ctx context.Context, keyID, owner string, message []byte) (Signature, error) {
+	var token string
+	if c.tokens != nil {
+		t, err := c.tokens(ctx, owner, keyID)
+		if err != nil {
+			return Signature{}, err
+		}
+		token = t
+	}
 	session, err := NewSessionID()
 	if err != nil {
 		return Signature{}, err
 	}
-	participants := c.NodeIDs()[:SignQuorum]
-	req := SignRequest{
-		KeyID:         keyID,
-		Kind:          KindPersonal,
-		Bytes:         hex.EncodeToString(message),
-		Context:       map[string]string{"purpose": "ceremony_test_signature", "wallet_id": walletID},
-		Authorisation: Authorisation{Kind: AuthOperator},
-		Participants:  participants,
-		SessionID:     session,
+	signers := c.NodeIDs()[:SignQuorum]
+	nodes := c.nodes[:SignQuorum]
+	req := SignRequest{SessionID: session, KeyID: keyID, Kind: KindPersonal, Signers: signers, Message: hex.EncodeToString(message)}
+	resps := make([]SignResponse, len(nodes))
+	if err := c.postAll(ctx, nodes, PathSign, token, req, func(i int) any { return &resps[i] }); err != nil {
+		return Signature{}, err
 	}
-	var result Signature
-	result.AuditSeqs = make(map[string]uint64, len(participants))
+	digest := hex.EncodeToString(accounts.TextHash(message))
+	result := Signature{AuditSeqs: make(map[string]uint64, len(nodes))}
 	var first []byte
-	for _, id := range participants {
-		n, err := c.node(id)
-		if err != nil {
-			return Signature{}, err
+	for i, n := range nodes {
+		resp := resps[i]
+		if resp.NodeID != n.ID || resp.KeyID != keyID || resp.Kind != KindPersonal || !strings.EqualFold(resp.SignedBytes, digest) {
+			return Signature{}, fmt.Errorf("%w: node %s sign response names another node, key, kind or digest", ErrResponse, n.ID)
 		}
-		var resp SignResponse
-		if err := n.post(ctx, PathSign, req, &resp); err != nil {
-			return Signature{}, err
-		}
-		sig, err := hex.DecodeString(strings.TrimPrefix(resp.Signature, "0x"))
-		if err != nil || (len(sig) != 64 && len(sig) != 65) || resp.RecoveryID == nil || *resp.RecoveryID < 0 || *resp.RecoveryID > 1 {
+		sig, err := hex.DecodeString(resp.Signature)
+		if err != nil || len(sig) != 65 || resp.RecoveryID == nil || *resp.RecoveryID > 1 || sig[64] != *resp.RecoveryID {
 			return Signature{}, fmt.Errorf("%w: node %s signature shape", ErrResponse, n.ID)
 		}
-		full := append(append([]byte{}, sig[:64]...), byte(*resp.RecoveryID))
-		if len(sig) == 65 && sig[64] != byte(*resp.RecoveryID) && sig[64] != byte(*resp.RecoveryID)+27 {
-			return Signature{}, fmt.Errorf("%w: node %s recovery id", ErrResponse, n.ID)
-		}
 		if first == nil {
-			first = full
-		} else if !bytes.Equal(first, full) {
+			first = sig
+		} else if !bytes.Equal(first, sig) {
 			return Signature{}, fmt.Errorf("%w: signature", ErrDisagree)
 		}
-		result.AuditSeqs[n.ID] = resp.AuditSeq
+		result.AuditSeqs[n.ID] = resp.AuditSequence
 	}
 	copy(result.R[:], first[:32])
 	copy(result.S[:], first[32:64])
@@ -617,7 +721,7 @@ func NewSessionID() (string, error) {
 	return hex.EncodeToString(b[:]), nil
 }
 
-func (n *Node) post(ctx context.Context, path string, body, out any) error {
+func (n *Node) post(ctx context.Context, path, token string, body, out any) error {
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return err
@@ -633,6 +737,9 @@ func (n *Node) post(ctx context.Context, path string, body, out any) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 	resp, err := n.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("attestor: node %s: %w", n.ID, err)
@@ -643,9 +750,9 @@ func (n *Node) post(ctx context.Context, path string, body, out any) error {
 		return fmt.Errorf("attestor: node %s: %w", n.ID, err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		var eb errorBody
+		var eb ErrorBody
 		_ = json.Unmarshal(raw, &eb)
-		return &APIError{Node: n.ID, Status: resp.StatusCode, Code: eb.Error.Code, Message: eb.Error.Message}
+		return &APIError{Node: n.ID, Status: resp.StatusCode, Category: eb.Error.Category, Code: eb.Error.Code, Message: eb.Error.Message, PolicyCode: eb.Error.PolicyCode}
 	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()

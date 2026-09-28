@@ -19,8 +19,10 @@ import (
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/audit"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/auth/jwt"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/config"
+	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/health"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/lxwire"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy"
+	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/replica"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/server"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/store"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/transport"
@@ -119,6 +121,29 @@ func run(ctx context.Context, getenv func(string) string, ready func(listening))
 		return fmt.Errorf("attestor: %s: %w", config.EnvActivityTypes, err)
 	}
 
+	replicaCfg, err := replica.LoadConfig(getenv, cfg.BackupDir, cfg.DataDir)
+	if err != nil {
+		return err
+	}
+	var replicaState func() health.ReplicaState
+	if replicaCfg != nil {
+		shipper, err := replica.New(*replicaCfg, log.Default())
+		if err != nil {
+			return err
+		}
+		replicaState = shipper.State
+		shipCtx, cancelShip := context.WithCancel(ctx)
+		shipDone := make(chan struct{})
+		go func() {
+			defer close(shipDone)
+			shipper.Run(shipCtx)
+		}()
+		defer func() {
+			cancelShip()
+			<-shipDone
+		}()
+	}
+
 	tr, err := transport.New(transport.Config{
 		SelfID:         cfg.NodeID,
 		ListenAddr:     cfg.PeerListenAddr,
@@ -147,6 +172,7 @@ func run(ctx context.Context, getenv func(string) string, ready func(listening))
 		Tokens:       tokens,
 		Activities:   registry,
 		PeerProbe:    server.TCPPeerProbe(probe),
+		Replica:      replicaState,
 	})
 	if err != nil {
 		return err

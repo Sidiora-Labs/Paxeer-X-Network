@@ -143,24 +143,24 @@
 ## Wave 3 - Integration
 
 - [ ] 3. Integrate against real daemons and bring the network up
-  - [ ] 3.1 Provision the unified account: two keys, the binding and the backfill
+  - [x] 3.1 Provision the unified account: two keys, the binding and the backfill
     - In human/wallet/gateway make provisioning request a secp256k1 key and an Ed25519 key through keys.generate, derive the address, the DID and the main account id, store them with the wallet row, send the setup top-up from the sponsor account for the exact binding gas within the cap, request the Ed25519 signature over the binding message for the current nonce, build and sign bindLayerX from the wallet's address, broadcast, and confirm through getUnifiedAccount before reporting active; every step idempotent and resumable by a per-wallet state machine.
     - Extend /v1/wallet/me with the DID, the main account id, the binding state and the kernel availability state; add the backfill command over migrated wallets with a resumable cursor and bounded batches, using the agent's registered key for agent wallets; refuse and record a binding that names a different DID.
     - Add tests that spawn the real attestor daemon built from the repository and an in-test chain RPC server that implements the addr precompile's read and bind semantics, covering a full provision, a retry after each step, the different-DID refusal, the agent path and the backfill.
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6_
-  - [ ] 3.2 Prove the gateway against the real daemon end to end
+  - [x] 3.2 Prove the gateway against the real daemon end to end
     - Add human/wallet/gateway/test/e2e that builds and spawns five attestor daemons from the repository with certificates generated in the test and a JWKS served in the test, and drives the gateway through provision, sign and verify of a transaction, a message and typed data, a refused invalid token, a refused out-of-policy transaction and a refused unsigned agent write.
     - Add the readiness route of req.5.ac_6 reporting the attestor quorum, the nonce store, the RPC pool and the identity provider, and cover it in the same test.
     - _Requirements: 5.7, 5.6_
-  - [ ] 3.3 Run the rehearsal pipeline against five in-process nodes
+  - [x] 3.3 Run the rehearsal pipeline against five in-process nodes
     - Add rehearsal mode to human/wallet/ceremony: restore a database dump into a temporary database, start or connect to five nodes, run the migration for every row, and emit the report of req.4.ac_3 with counts only, exiting non-zero unless every wallet matched.
     - Add internal/rehearsal/rehearsal_test.go that creates a database with rows encrypted by the imported gateway's routine for both standard and agent wallets plus funded rows, spawns five real daemons, runs the rehearsal and asserts every count, the archive of the funded rows, and a mismatch stopping the run.
     - _Requirements: 4.3_
-  - [ ] 3.4 Back the human service's custody signer with the attestors
+  - [x] 3.4 Back the human service's custody signer with the attestors
     - In human/crates/layerx-human-kms add an attestor-backed implementation of the crate's custody signer trait that signs an activity's preimage through the attestor sign operation with kind lx_activity, the disclosure fields and the user's assertion, over mutual TLS with the operator client identity, refusing when the quorum refuses, and record the audit sequence.
     - Add tests that build and spawn the real attestor daemon from the repository, generate an Ed25519 key through it, sign an activity and verify the signature with the crate's own verifier, and cover a refused disclosure mismatch.
     - _Requirements: 8.2_
-  - [ ] 3.5 Deploy the attestor network from the definitions and prove a signature across regions
+  - [ ] 3.5 Deploy the attestor network from the definitions and prove a signature across regions — **Implemented - qualification pending**
     - Build the attestor image from the repository, deploy the five applications from human/wallet/deploy with their volumes and secrets set out of band, verify health on every node and peer reachability across the private network, generate a test key of each curve, sign with a quorum spanning three regions and verify the signatures.
     - Add tools/wallet/check-live.sh that reads the health of every configured node and the quorum state without secrets, and record the run - image digest, regions, node health, signature verification - in spec/paxeer-x-wallet/qualification.kvx.
     - _Requirements: 3.4, 3.3_
@@ -197,6 +197,15 @@
   - [x] 3.13 Resolve the SDK's curve and hash imports under both dependency majors
     - Import ed25519 from @noble/curves/ed25519.js and sha256 from @noble/hashes/sha2.js in the SDK agent module so the specifiers resolve against the 1.x line the SDK pins and the 2.x line the wallet app pins and dedupes to, matching the repository's other TypeScript SDK; behaviour unchanged.
     - _Requirements: 9.5, 6.6_
+  - [x] 3.14 Ship encrypted store snapshots to the replica server
+    - Add human/wallet/attestor/internal/replica and wire it into the attestor daemon: a shipper that watches the snapshot directory and uploads each new snapshot exactly once over SFTP to the replica, with the replica address, user, private key file, expected host key file and remote directory taken from environment variables documented in human/wallet/deploy/env, verifying the remote size and digest after upload, keeping a ledger of shipped snapshots so a restart does not upload again, and failing closed on a host key mismatch or a digest mismatch.
+    - Carry the age of the last shipped snapshot in the health report, and document the new variables and secrets in the attestor deployment definitions and human/wallet/deploy/env.
+    - Add tests that run a real in-process SSH and SFTP server and prove upload, the ledger, restart idempotence, host key refusal and digest refusal, and a health test for the snapshot age.
+    - _Requirements: 3.2_
+  - [x] 3.15 Align the gateway's attestor client to the daemon's API schema
+    - The client and quorum selector speak human/wallet/schema/attestor-api/v1.kvx exactly: health at the daemon's health path, key generation and signing at the schema's paths with the schema's request bodies (signers and kind-specific fields), the user token in the Authorization header and agent authentication in the agent headers the schema names, errors read from the schema's error shape, signature lengths as the schema defines per curve, key ids and audit_sequence as the schema defines.
+    - The recorded fixtures under test/fixtures/attestor are regenerated from the schema goldens and test/attestor.test.ts asserts them; the sign-typed-data route accepts the body key the SDK fixtures under human/wallet/sdk/test/fixtures/gateway send (observation 3.2.2), with its test updated.
+    - _Requirements: 5.2, 5.5, 5.6, 5.7, 1.7_
 
 ## Wave 4 - Completion
 
@@ -219,7 +228,7 @@
     - _Requirements: 10.6_
   - [ ] 4.5 Write the runbooks and the operator cutover checklist
     - Add human/wallet/docs/runbooks covering node loss and replacement by add-share and refresh, refresh cadence, backup restore, identity provider outage, RPC pool failure and gateway rollback, each with the exact commands from the repository's tools and no hosts or secrets.
-    - Add human/wallet/docs/cutover.md: the operator checklist from rehearsal record through live ceremony, funded archive verification, wallet flag flip, endpoint cutover, old service read-only, master key destruction and old service shutdown, each step naming its approval gate and its rollback.
+    - Add human/wallet/docs/cutover.md: the operator checklist from rehearsal record through live ceremony, funded archive verification, wallet flag flip, endpoint cutover through the current host's proxy, old service read-only, sealed retention of the old master key and old service shutdown, each step naming its readiness check and its rollback.
     - _Requirements: 13.2, 4.5_
   - [ ] 4.6 Prove the human service end to end on the wallet identity and the attestor custody
     - Add a human service integration test that spawns the real attestor daemon, signs in with a wallet assertion minted from an in-test JWKS, opens the account, plans a kernel send, submits it with the attestor-backed signer, and observes the journey reach a receipt-verified state against the crate's in-process kernel test support.
@@ -229,7 +238,7 @@
     - Add human/wallet/attestor/cmd/loadtest driving concurrent signing sessions of both curves against a configured network for a bounded duration with a configured concurrency, reporting throughput, latency percentiles and refusals as JSON.
     - Add loadtest_test.go running the tool against five in-process daemons for a short bound, and run it once against the deployed network, recording the summary in the qualification log.
     - _Requirements: 3.5_
-  - [ ] 4.8 Record the security review of the library delta and the daemon
+  - [x] 4.8 Record the security review of the library delta and the daemon
     - Add human/wallet/docs/security-review.md recording the review of every change to the vendored threshold library's CGGMP, FROST, refresh and Birkhoff code since its published audit, the daemon's trust boundaries (gateway, attestor, identity provider, operator, dealer), the policy fail-closed paths, and every open finding with severity and owner action.
     - Where the review finds a defect in the daemon, fix it in this task with a test; where it finds one in the library, record it and pin the dependency version in go.mod with the reason.
     - _Requirements: 13.3_
@@ -238,6 +247,11 @@
     - Add a ThemeProvider mounted in src/app/layout.tsx that applies the resolved properties on the root element, follows the system scheme when the selection says system, persists the selection on the device keyed by the signed-in account when one is present, and emits an inline bootstrap script that applies the stored selection before first paint so no theme flash occurs; add an Appearance section to the settings widget with pickers for colour theme, accent, font, size and density and a live preview card; migrate the remaining hard-coded colour literals under src/ (outside src/theme/ and globals.css) to tokens.
     - Add tests under src/theme/ for the schema (every theme complete, every on-accent pair meets WCAG AA contrast), the resolver (system scheme, size presets scale together, reduced motion), persistence and account keying, the provider applying properties on the root, the bootstrap script output, the appearance pickers changing the applied properties, and a scan that fails on any hard-coded colour literal under src/ outside src/theme/ and src/app/globals.css.
     - _Requirements: 10.7_
+  - [ ] 4.10 Ship the app as a self-hosted progressive web application
+    - In human/apps/wallet add a self-hosted manifest with name, short name, icons in the required sizes including maskable ones, theme and background colours taken from the theme tokens, standalone display, start url and scope; the icon files under public/; the iOS meta tags; a service worker built in the repository that precaches the application shell and static assets under versioned cache names, treats the gateway, chain RPC, identity provider and attestor origins as network-only and never caches their responses, serves an offline fallback page, and offers a reload when a new worker is waiting; an install prompt surfaced in settings; and remove the third-party PWA service's script, manifest and content-security-policy entries.
+    - Remove the native projects, the native runtime configuration and its dependencies, and re-point scripts/release-check.sh at the progressive web application: manifest validity, icon files present, service worker built and registered, and the Playwright suite in check mode.
+    - Add tests under src/pwa/ proving manifest completeness and icon presence, the caching rule per origin, the update flow, the install prompt, and that no policy references the third-party PWA service's origin.
+    - _Requirements: 10.8_
 
 ## Wave 5 - Release
 
@@ -245,10 +259,17 @@
   - [ ] 5.1 Run the merged test and lint gates on the feature tip
     - On the merged feature tip run tools/wallet/gate-test.sh once and tools/wallet/gate-lint.sh once, each tee'd to a log under .logs, and append the evidence of both to spec/paxeer-x-wallet/qualification.kvx; a failure is recorded, not repaired here.
     - _Requirements: 13.4_
-  - [ ] 5.2 Rehearse the ceremony against the restored production copy
-    - Restore the sealed backup into a temporary database on an operator machine, run the ceremony tool in rehearsal mode against five locally started daemons with the master key supplied through its environment variable, and require every standard and agent wallet to match and every funded wallet to archive.
-    - Append the report's counts to spec/paxeer-x-wallet/qualification.kvx; the live ceremony remains an operator step on explicit approval.
+  - [ ] 5.2 Rehearse the ceremony against the production data
+    - Take a read-only copy of the production wallet data from the current wallet host into a temporary database on an operator machine, run the ceremony tool in rehearsal mode against five locally started daemons with the master key supplied through its environment variable, and require every standard and agent wallet to match and every funded wallet to archive.
+    - Append the report's counts to spec/paxeer-x-wallet/qualification.kvx; a passing rehearsal is the readiness check of the live ceremony, which runs as its own task.
     - _Requirements: 4.5, 13.4_
+  - [ ] 5.3 Cut the wallet endpoint over to the new gateway and retire the old service
+    - Add human/wallet/deploy/cutover/ with the reverse-proxy configuration for the current host forwarding the endpoint hostname to the new gateway with the original host and client address headers preserved, a preflight script that checks the new gateway's readiness and the proxied path end to end, an apply script the operator runs on the current host, and a retire script that stops and disables the old service units only after the proxied path has served for a configured soak period.
+    - Make the gateway set a response header that names it on every response, and extend tools/wallet/check-live.sh with a cutover mode that confirms the public hostname, taken from an environment variable with no default, is served by the new gateway through that header; record the run in the qualification log without hosts or secrets.
+    - _Requirements: 4.5_
+  - [ ] 5.4 Migrate the production wallets with the ceremony tool
+    - Run the ceremony tool's deliver mode against the deployed attestors with the production data read from the current wallet host read-only and the master key from its environment variable, require every standard and agent wallet to match and every funded wallet to archive into the verified archive, keep the old master key sealed, and append the counts and the verification of a signature from every migrated wallet class to spec/paxeer-x-wallet/qualification.kvx.
+    - _Requirements: 4.1, 4.2, 4.4, 4.5_
 
 ## Task Dependency Graph
 
@@ -257,9 +278,9 @@
   "waves": [
     { "id": 1,  "tasks": ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "1.10", "1.11", "1.12", "1.13", "1.14", "1.15", "1.16"] },
     { "id": 2,  "tasks": ["2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7", "2.8", "2.9"] },
-    { "id": 3,  "tasks": ["3.1", "3.2", "3.3", "3.4", "3.5", "3.6", "3.7", "3.8", "3.9", "3.10", "3.11", "3.12", "3.13"] },
-    { "id": 4,  "tasks": ["4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7", "4.8", "4.9"] },
-    { "id": 5,  "tasks": ["5.1", "5.2"] }
+    { "id": 3,  "tasks": ["3.1", "3.2", "3.3", "3.4", "3.5", "3.6", "3.7", "3.8", "3.9", "3.10", "3.11", "3.12", "3.13", "3.14", "3.15"] },
+    { "id": 4,  "tasks": ["4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7", "4.8", "4.9", "4.10"] },
+    { "id": 5,  "tasks": ["5.1", "5.2", "5.3", "5.4"] }
   ]
 }
 ```

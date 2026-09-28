@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "defaults": {
+    "chain_id": 125,
+    "kinds": [
+      "evm_tx",
+      "eip712",
+      "personal_message",
+      "eth_sign_digest",
+      "lx_activity",
+      "lx_bind",
+      "lx_grant"
+    ],
+    "caps": {
+      "native": {
+        "per_transaction": "1000000000000000000",
+        "daily": "10000000000000000000"
+      }
+    },
+    "rate_per_minute": 60
+  }
+}

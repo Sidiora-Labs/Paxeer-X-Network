@@ -490,3 +490,264 @@ command = "docker build -f platform/hosted/gateway/Dockerfile -t paxeer-shared-e
 exit_code = 0
 log_path = ".logs/deploy.log"
 observed = "The image built, two performance-4x 8 GB machines started and passed the readiness check, and eth_chainId, px_resolveAccount, px_getNetwork and a kernel lx_ call answered as expected with the kernel reported not configured."
+
+[observation.3.2.1]
+task = "3.2"
+file = "human/wallet/gateway/src/attestor/client.ts"
+symbol = "AttestorClient"
+observed = "Against five real daemons the gateway client probes /v1/health where the daemon serves /health (404), posts sign bodies with api_version, bytes, context, authorisation and participants where v1.kvx takes signers, kind-specific fields and the Authorization header, reads error.reason where the daemon answers error.message, and expects 64-byte signatures where the daemon returns 65, so every sign answers quorum_unavailable and five e2e tests fail."
+assumption = "The client and the recorded fixtures in test/fixtures/attestor that test/attestor.test.ts asserts belong to the relay task and are aligned to v1.kvx and its goldens there; the e2e assertions and the daemon are left as written."
+severity = "blocker"
+
+[observation.3.2.2]
+task = "3.2"
+file = "human/wallet/gateway/src/routes/sign.ts"
+symbol = "SignTypedDataBody"
+observed = "POST /v1/wallet/sign-typed-data already exists on the relay path but takes {typed_data} while observation 2.4.1 and the SDK fixtures send {typedData}; no route was added and the e2e test posts the gateway's own shape."
+assumption = "One side aligns the body key; the digest, custody and sponsored submit routes of 2.4.1 and 2.5.1 remain absent."
+severity = "suspect"
+
+[observation.3.2.3]
+task = "3.2"
+file = "human/wallet/gateway/test/e2e/gateway.e2e.test.ts"
+symbol = "provision"
+observed = "Attestor-backed provisioning has not landed, so the e2e test provisions through the existing route, generates the secp256k1 key with operator keys.generate on all five daemons and marks the row migrated with the key id as the ceremony does; readinessRoutes is registered in src/index.ts."
+assumption = "The provisioning task replaces the operator keygen step with its own flow and the test then drives /v1/wallet/provision alone."
+severity = "note"
+
+[observation.4.8.1]
+task = "4.8"
+file = "human/wallet/schema/attestor-api/v1.kvx"
+symbol = "eth_sign_digest"
+observed = "The schema says eth_sign_digest signs the given 32-byte digest, while the daemon now refuses a digest without the sponsored batch or authorisation construction it is recomputed from."
+assumption = "The schema owner adds the construction field; the daemon's refusal of a bare digest is the intended behaviour."
+severity = "high"
+
+[observation.4.8.2]
+task = "4.8"
+file = "human/wallet/gateway/src/attestor/client.ts"
+symbol = "AttestorClient"
+observed = "The gateway client sends bytes, context, authorisation and participants, which differs from the daemon's sign request shape and carries no construction for eth_sign_digest."
+assumption = "The gateway task aligns its wire shape with the daemon's sign request; the daemon is not changed to match."
+severity = "high"
+
+[observation.4.8.3]
+task = "4.8"
+file = "human/wallet/attestor/cmd/attestor/main.go"
+symbol = "main"
+observed = "The kernel policy evaluator lx.New and the agent verifier are not wired, so lx kinds pass without inspection and agent requests answer token_unavailable."
+assumption = "Wiring them needs kernel chain access that belongs to a later task; the review records it as finding F-7."
+severity = "high"
+[observation.3.4.1]
+task = "3.4"
+file = "human/wallet/attestor/internal/server/sign.go"
+symbol = "SignRequest"
+observed = "The attestor sign request refuses unknown fields and has no disclosure field, and the crate's custody Signer trait cannot be implemented outside layerx-crypto because AgentSignature has no public constructor."
+assumption = "AttestorSigner.sign_activity matches the disclosure fields against the canonical bytes before any request, sends kind lx_activity with the activity and the user's assertion, and verifies every returned signature with the crate's strict verifier."
+severity = "note"
+
+[observation.3.1.1]
+task = "3.1"
+file = "human/wallet/gateway/src/attestor/client.ts"
+symbol = "AttestorClient"
+observed = "The gateway attestor client probes /v1/health and posts sign bodies with bytes, context, authorisation and participants, where the daemon serves /health and takes kind-specific fields and signers, so it cannot sign against the real daemon."
+assumption = "Provisioning talks to the daemon through its own schema-conformant client in src/provision/bind.ts and leaves client.ts to the task that aligns it."
+severity = "suspect"
+
+[observation.3.1.2]
+task = "3.1"
+file = "human/wallet/attestor/cmd/attestor/main.go"
+symbol = "Agents"
+observed = "The daemon wires no agent verifier and accepts no operator authorisation for lx_bind or evm_tx, and no gateway route in this task's files accepts an agent's binding signature, so a backfill can only generate and store identities and leaves standard wallets awaiting their owner and agent wallets awaiting a signature."
+assumption = "The owner's next authenticated provision completes a backfilled standard wallet and provisionAccount completes an agent wallet once the agent route that carries its signature is added."
+severity = "note"
+
+[observation.3.3.1]
+task = "3.3"
+file = "human/wallet/ceremony/internal/attestor/client.go"
+symbol = "ImportRequest"
+observed = "Closes 2.1.5 and 2.7.1: the client posts /v1/keys/import with owner, account and a share object, runs refresh and personal_message sign concurrently with one session id and the signers list, reads audit_sequence, keeps key ids wallet:<id>:secp256k1 and wallet:<id>:ed25519 as the schema allows any 1 to 128 character id, and golden_test.go decodes every golden into the client types."
+assumption = "The schema and daemon are unchanged; the rehearsal proves the client against five daemons built from the repository."
+severity = "note"
+
+[observation.3.3.2]
+task = "3.3"
+file = "human/wallet/ceremony/cmd/ceremony/main.go"
+symbol = "runDeliver"
+observed = "The daemon signs only with a bearer token whose subject owns the key or with agent headers, and cmd/attestor configures no agent verifier, so the live deliver has no credential for its test signature and the command tests that drive deliver without a token source answer token_missing."
+assumption = "The rehearsal mints owner tokens from its own issuer; the live ceremony needs an owner decision on how the operator obtains a signing credential."
+severity = "blocker"
+
+[observation.3.3.3]
+task = "3.3"
+file = "human/wallet/ceremony/internal/migrate/migrate.go"
+symbol = "deliverOne"
+observed = "Gateway migration 006 requires attestor_key_id whenever migrated_at is set, so the ceremony mark failed its check constraint; the mark now also writes the secp256k1 key id that the gateway sign route passes as key_id."
+assumption = "The gateway reads attestor_key_id as the attestor key id of a migrated wallet."
+severity = "note"
+
+[observation.3.3.4]
+task = "3.3"
+file = "human/wallet/ceremony/internal/testsupport/postgres.go"
+symbol = "StartNodes"
+observed = "The migrate, client and command tests still run against the in-process test nodes, now speaking the schema shapes, rather than against the daemon."
+assumption = "A later task moves them onto the five-daemon cluster that the rehearsal package starts."
+severity = "suspect"
+
+[observation.3.5.1]
+task = "3.5"
+file = "human/wallet/attestor/cmd/attestor/main.go"
+symbol = "APITLSConfig"
+observed = "The API listener is built with the operator CA as its only client CA, so the gateway's client certificate must chain to the operator CA, and the peer transport's identify then also classes that certificate as an operator identity entitled to keys.import during a ceremony window."
+assumption = "The gateway and operator identities were issued from the operator CA so the network answers at all; a later daemon task gives the API listener a separate gateway client CA and restricts keys.import to the operator identity."
+severity = "suspect"
+
+[observation.3.5.2]
+task = "3.5"
+file = "human/wallet/attestor/cmd/attestor/main.go"
+symbol = "server.Options.Agents"
+observed = "run never sets server.Options.Agents, so a sign request with agent headers always answers no agent verifier is configured, and the only principal the deployed nodes honour for sign is an identity-provider user token whose subject owns the key."
+assumption = "Signing across regions needs either the agent verifier wired into the daemon with a registered agent key or a real identity-provider user; keys.generate was proven on both curves across all five nodes and the signing half of the deployment proof waits on one of those."
+severity = "blocker"
+
+[observation.3.5.3]
+task = "3.5"
+file = "tools/wallet/check-deploy.sh"
+symbol = "health-check"
+observed = "The attestor API requires and verifies a client certificate at the TLS handshake for every path, so the https /health platform check could never pass; the five definitions now carry a tcp_check on 8443, closing the health half of observation 1.12.2, while check-deploy's health-check rule still demands an http /health check on every attestor and fails for them."
+assumption = "check-deploy learns that an attestor whose API is mutual TLS is checked by tcp on its API port, or the daemon grows a plain health listener that the platform check can reach."
+severity = "suspect"
+
+[observation.3.5.4]
+task = "3.5"
+file = "human/wallet/deploy/env"
+symbol = "ATTESTOR_PEER_PINS"
+observed = "The daemon refuses to start unless ATTESTOR_PEER_PINS pins every peer's TLS public key, and neither the definitions nor the environment documentation named it."
+assumption = "The pins derive from the node certificates, so they are set per node as a platform secret beside the certificates and documented in deploy/env."
+severity = "note"
+
+[observation.3.5.5]
+task = "3.5"
+file = "human/wallet/deploy/gateway.toml"
+symbol = "[[files]]"
+observed = "The gateway definition carries no [[files]] mapping for ATTESTOR_CLIENT_CERT_FILE, ATTESTOR_CLIENT_KEY_FILE or ATTESTOR_CA_FILE, so the gateway's attestor client identity was staged as the secrets ATTESTOR_CLIENT_CERT, ATTESTOR_CLIENT_KEY and ATTESTOR_CA without a mapping that writes them."
+assumption = "The gateway deployment task adds the three mappings under those secret names and the matching [env] paths."
+severity = "suspect"
+
+[observation.3.5.6]
+task = "3.5"
+file = "human/wallet/deploy/attestor-1.toml"
+symbol = "[[mounts]]"
+observed = "The platform init mounted attestor_data at /data with uid and gid 65532, the distroless non-root user, on all five machines, the daemon opened its share store and audit log there and answered ready, and the default policy reached /etc/attestor/policy.json through a local_path file mapping owned by the same user."
+assumption = "The volume half of observation 1.12.2 is closed by the platform's own chown for an image with a non-root USER; no definition change was needed for it."
+severity = "note"
+
+[observation.3.5.7]
+task = "3.5"
+file = "human/wallet/attestor/internal/server/server.go"
+symbol = "TCPPeerProbe"
+observed = "The first verify run right after the deployment reported each node reaching only the peers whose health had already been read, because the first private-network contact between two machines outlasted the probe's two-second dial timeout; once every pair had been contacted all five nodes reached all four peers."
+assumption = "Health probes that the gateway runs on a steady interval keep the paths warm; a node that has been idle may report a peer unreachable on its first probe."
+severity = "note"
+
+[observation.3.5.8]
+task = "3.5"
+file = "human/wallet/deploy/attestor-1.toml"
+symbol = "[[services]]"
+observed = "The first deployment of an application with [[services]] blocks made flyctl allocate a shared public IPv4 and a dedicated public IPv6 although no service declares a port, so those two addresses were released and the other four applications were deployed with --no-public-ips; no attestor holds a public address."
+assumption = "Every later attestor deployment passes --no-public-ips so the network stays private-only."
+severity = "suspect"
+
+[gate.3.3]
+revision = "0b95c556344faefaf726eb9f00527b116ad79f66"
+command = "docker build -f human/wallet/attestor/Dockerfile -t paxeer-attestor:deploy . && cd human/wallet/deploy && flyctl deploy --config attestor-N.toml --image paxeer-attestor:deploy --app paxeer-attestor-N --local-only --ha=false --no-public-ips -y for N in 1 to 5, secrets imported out of band"
+exit_code = 0
+log_path = ".logs/deploy.log"
+observed = "Image sha256:81820474bad82efcc96aeb0020c751937487b74d49e2efaac9deb696822a9aca runs on one performance-2x 4 GB machine each in iad, sjc, ams, fra and sin, all five nodes answered ready with four of four peers reachable and a quorum of five, keys.generate produced one secp256k1 and one Ed25519 key with identical public keys on all five nodes, and no signature was produced or verified because the deployed nodes honour no signing principal without an identity-provider user."
+
+[observation.3.15.1]
+task = "3.15"
+file = "human/wallet/gateway/src/attestor/client.ts"
+symbol = "AttestorClient"
+observed = "Closes 3.2.1: the client probes /health and reads its 503 body, posts keys.generate, keys.refresh and sign to the schema paths with session_id, key_id, kind, signers and the kind's own field in bare hex, sends Bearer tokens in Authorization and agents in the X-Agent headers, reads error.message and policy_code across all six categories, and requires 65-byte secp256k1 signatures whose last byte equals recovery_id (64 bytes for ed25519)."
+assumption = "Typed transactions are sent with zero signature fields as the daemon's own tests encode them, typed data gains the EIP712Domain type viem derives when absent, and v is derived from the returned recovery byte."
+severity = "note"
+
+[observation.3.15.2]
+task = "3.15"
+file = "human/wallet/gateway/src/routes/sign.ts"
+symbol = "SignTypedDataBody"
+observed = "The SDK fixtures send {typedData} while the read-only end-to-end test posts {typed_data}, so the route accepts exactly one of the two keys and refuses any other body."
+assumption = "Resolves 3.2.2 without editing the end-to-end authority; a later task may retire the snake-case key once the end-to-end test moves to the SDK shape."
+severity = "note"
+
+[observation.3.15.3]
+task = "3.15"
+file = "human/wallet/attestor/internal/auth/agent/agent.go"
+symbol = "RequestDigest"
+observed = "The daemon's agent digest covers the exact sign body, which carries the session_id and signers the gateway chooses, so an agent cannot pre-sign a request the gateway relays; the client forwards the X-Agent headers as given."
+assumption = "The agent route task lets the agent sign the composed body or moves the digest to fields the agent controls; the agent verifier is unwired in the daemon (observation 4.8.3)."
+severity = "suspect"
+
+[observation.3.15.4]
+task = "3.15"
+file = "human/wallet/schema/attestor-api/v1.kvx"
+symbol = "sign_response"
+observed = "The daemon's sign response carries no session_id, so the client binds answers to the session by node_id, key_id, kind, signed_bytes and signature agreement across the quorum."
+assumption = "The schema and daemon agree on this shape; no change is needed on either side."
+severity = "note"
+
+[observation.3.14.1]
+task = "3.14"
+file = "human/wallet/attestor/cmd/attestor/main.go"
+symbol = "Snapshot"
+observed = "No daemon code writes store snapshots into ATTESTOR_BACKUP_DIR, neither on the schedule nor after keygen, import, refresh or add-share, so the shipper started from main ships nothing on a deployed node until a writer lands."
+assumption = "The req.3.ac_2 backup task writes each snapshot as a temporary dot-prefixed or .tmp file renamed into place under a unique name; the shipper skips such names and ships every other regular file once."
+severity = "suspect"
+
+[observation.3.14.2]
+task = "3.14"
+file = "human/wallet/attestor/internal/server/server.go"
+symbol = "Options.Replica"
+observed = "The health reporter is built inside server.New, outside the task's touches, so one Options field and one provider line were added there to carry the shipper state into the report."
+assumption = "The field is optional and nil keeps the report unchanged, so sibling edits to the server merge as the union."
+severity = "note"
+
+[gate.3.4]
+revision = "f57192008+2ab9c4fc1"
+command = "WALLET_GATE_BUDGET_SECONDS=3600 tools/wallet/gate-test.sh (merged wave revision; go-ceremony rerun once after go mod tidy in human/wallet/ceremony)"
+exit_code = 1
+log_path = ".logs/wave3-gate.log"
+observed = "Six targets ran: go-attestor passed (every package); go-ceremony first refused to run until its module pins followed the attestor module's crypto dependency, then failed four tests in cmd/ceremony, internal/attestor and internal/migrate against the merged daemon and gateway schema; pnpm-wallet failed only the gateway end-to-end file whose local chain responder does not model the provisioning route's calls; pnpm-app failed one visual-system scan case on two account files; rust-human failed the two identity-provider client tests already recorded in observation 1.13.1; rust-platform failed one platform gateway module-registry test outside this feature; every task's own verify command had passed in its lane and the four in-feature findings are recorded below with repair tasks."
+
+[observation.3.2.4]
+task = "3.2"
+file = "human/wallet/gateway/test/e2e/gateway.e2e.test.ts"
+symbol = "beforeAll"
+observed = "On the merged wave the provisioning route reads the address precompile and sends the top-up and binding transactions through the RPC pool, and the end-to-end harness's local responder answers those calls with empty data, so provision returns 500 and all nine cases skip; the aligned-client gate ran before the provisioning task was rebased under it."
+assumption = "Cross-task contradiction between the provisioning task and the end-to-end harness; repaired by a wave repair task that makes the responder a stateful model of the chain for the provisioning flow."
+severity = "blocker"
+
+[observation.3.3.5]
+task = "3.3"
+file = "human/wallet/ceremony/internal/migrate/migrate_test.go"
+symbol = "TestPlanMigrationExcludesFundedAndMigrated"
+observed = "On the merged wave the ceremony module's tests fail against the merged daemon and gateway: fixture rows violate the gateway's wallets_migrated_key_id_chk constraint from migration 006 (also TestPlanArchiveDeliverThroughTheCommand), TestDeliverExitsNonZeroOnMismatch stops earlier with the daemon's 401 token_missing at sign, and TestClientImportRefreshSignOverMutualTLS reports that a refresh response names another node, key or curve."
+assumption = "Cross-task contradictions between the ceremony task and the gateway schema, the daemon's authority rules and the refresh response; repaired by a wave repair task that reconciles the ceremony module with the merged interfaces without weakening any daemon or gateway check."
+severity = "blocker"
+
+[observation.4.9.3]
+task = "4.9"
+file = "human/apps/wallet/src/components/ui/visual-system.acceptance.test.ts"
+symbol = "keeps production UI free of border utilities, purple styling, glow, and emoji"
+observed = "On the merged wave the scan rejects src/account/AssetList.tsx and one more account file landed by the account-surface tasks, which never met the theme task's scan before the merged run."
+assumption = "Cross-task contradiction; repaired by a wave repair task that moves the values into theme tokens, the scan unchanged."
+severity = "suspect"
+
+[observation.5.1.1]
+task = "5.1"
+file = "platform/hosted/gateway/src/main.rs"
+symbol = "module_schema_tests::native_generated_registry_admits_exactly_the_closed_protocol_module_set"
+observed = "The rust-platform target of the wallet aggregate gate fails this one test on the merged wave; the platform gateway is untouched by the feature's landings since the previous main revision."
+assumption = "Pre-existing failure outside the feature; recorded once for the release gate, not chased here."
+severity = "note"

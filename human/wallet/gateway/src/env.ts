@@ -195,6 +195,9 @@ const Env = z.object({
   RPC_HEALTH_INTERVAL_MS: z.coerce.number().int().positive().default(5_000),
   RPC_TIMEOUT_MS: z.coerce.number().int().positive().default(8_000),
 
+  SPONSOR_PRIVATE_KEY_FILE: z.string().min(1).optional(),
+  ACCOUNT_SETUP_GAS_CAP_WEI: z.coerce.bigint().nonnegative().default(10_000_000_000_000_000n),
+
   RATE_LIMIT_CLIENT_PER_MINUTE: z.coerce.number().int().positive().default(120),
   RATE_LIMIT_ACCOUNT_PER_MINUTE: z.coerce.number().int().positive().default(60),
 }).superRefine((v, ctx) => {

@@ -1,13 +1,5 @@
 {
-  "api_version": 1,
   "key_id": "secp256k1-wallet-0001",
   "kind": "personal_message",
-  "bytes": "0x5369676e20696e20746f207468652050617865657220582077616c6c6574",
-  "context": {
-    "chain_id": 125,
-    "address": "0x20e9802d60c74eecfab0d2d85f953f9ef9eac9f3"
-  },
-  "authorisation": {
-    "scheme": "supabase_jwt"
-  }
+  "message": "5369676e20696e20746f207468652050617865657220582077616c6c6574"
 }

@@ -51,6 +51,7 @@ type Options struct {
 	Agents          *agent.AgentVerifier
 	Activities      *lxwire.Registry
 	PeerProbe       func(ctx context.Context) map[string]health.PeerState
+	Replica         func() health.ReplicaState
 	ProtocolTimeout time.Duration
 }
 
@@ -96,6 +97,7 @@ func New(opts Options) (*Server, error) {
 		AuditHead: opts.Audit.Head,
 		Peers:     opts.PeerProbe,
 		Readiness: s.readiness,
+		Replica:   opts.Replica,
 	})
 	if err != nil {
 		return nil, err

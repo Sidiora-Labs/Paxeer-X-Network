@@ -8,7 +8,7 @@ require (
 	github.com/getamis/alice v1.0.9-0.20260916062408-d8fd6861d3b2
 	github.com/lib/pq v1.10.9
 	github.com/sidiora-labs/paxeer-network/human/wallet/attestor v0.0.0
-	golang.org/x/crypto v0.53.0
+	golang.org/x/crypto v0.54.0
 )
 
 require (
