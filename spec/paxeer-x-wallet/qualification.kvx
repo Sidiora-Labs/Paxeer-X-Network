@@ -1267,7 +1267,7 @@ exit_code = 0
 log_path = ".logs/verify.log"
 observed = "Both gate scripts passed their syntax check, found go, pnpm, cargo and timeout, and listed all twelve lint targets and all six test targets as existing; the --check mode runs no lint or test, so no target's lint or test result exists at this revision."
 
-[observation.5.1.1]
+[observation.5.1.2]
 task = "5.1"
 file = "spec/paxeer-x-wallet/spec.kvx"
 symbol = "task.5.1 verify_cmd"
@@ -1329,3 +1329,34 @@ symbol = "clippy::too_many_arguments, too_many_lines, missing_errors_doc, format
 observed = "rust-platform-clippy exits 101 on five pedantic lints in http.rs at lines 252, 303, 529 and 548, a file last changed by task 3.9; which of the lines 3.9 introduced was not traced."
 assumption = "The owner of each flagged function fixes it at the source; no lint allow is added."
 severity = "major"
+
+[gate.5.5.test]
+revision = "9b40f2ace69ad0d23e1d1712b72cc868683cf1fb"
+command = "timeout 60m tools/wallet/gate-test.sh"
+exit_code = 1
+log_path = ".logs/verify-5.5-test.log"
+observed = "With agent/sdk/typescript built and both pnpm workspaces installed first, gate-test ran all six targets: go-attestor, go-ceremony and pnpm-app passed, and pnpm-wallet, rust-human and rust-platform failed."
+
+[observation.5.5.7]
+task = "2.2"
+file = "human/wallet/gateway/test/nonce.test.ts"
+symbol = "startPostgres"
+observed = "pnpm-wallet fails because gateway test/nonce.test.ts could not start its throwaway Postgres (pg_ctl start exited 1 in test/support/postgres.ts); the other 13 gateway files passed 147 tests with 4 skipped, the sdk passed 88 of 88, and the recursive run stopped before the demo package."
+assumption = "The Postgres start failure is environmental, from parallel test files starting servers at once on this host; the server's own log was in a temp directory that was not kept, so this is not proven."
+severity = "major"
+
+[observation.5.5.8]
+task = "outside the feature"
+file = "human/crates/layerx-human-identity-provider/tests/client.rs"
+symbol = "original_client_provisions_resolves_and_replays_assertion_devices, original_client_observes_wrong_uid_refusal_and_survives_malformed_peer"
+observed = "rust-human stops at layerx-human-identity-provider's client test binary, where two of three tests return Error: Unavailable; the file was last changed by a clock-authority commit from main, and cargo stopped there, so the kms and service crates' tests did not run."
+assumption = "Pre-existing on main or dependent on a service this host lacks; a rerun with --no-fail-fast would show the remaining crates, which this gate does not do."
+severity = "major"
+
+[observation.5.5.9]
+task = "outside the feature"
+file = "platform/hosted/gateway/src/main.rs"
+symbol = "module_schema_tests::native_generated_registry_admits_exactly_the_closed_protocol_module_set"
+observed = "rust-platform fails this one test out of 79: the native generated registry holds nine modules while the expected closed set adds Spot and Web; this is the same failure observation.5.1.1 records."
+assumption = "Pre-existing outside the feature, where the generated registry lags the Spot and Web modules; recorded for the release gate and not chased."
+severity = "note"
