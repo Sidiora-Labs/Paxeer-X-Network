@@ -105,6 +105,10 @@
     - Append one observation per failure the run exposes that belongs to no task in this feature: revision, command, exit code, log path, one sentence of what was observed and one sentence of what is assumed; do not investigate it further and do not rerun it.
     - Rerun nothing that already passed at this revision, spawn no review of a task whose verify_cmd passed, and write no gate record for a command that did not run.
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9, 3.10, 3.11_
+  - [x] 4.8 Hand the fork precompiles to the ordinary execution path under the giga executor
+    - Observation 4.4.1: the giga executor runs every EVM transaction of a block against engine/executor/precompiles.AllCustomPrecompilesFailFast, whose sixteen addresses abort the giga execution so that node/app.go reruns the transaction on the ordinary path with the real precompiles, while the exchange, bridge, launchpad, fee-token and web-search addresses are not in that set, so a transaction that calls one of them runs in the giga EVM as a call to an address without code and its value moves without the precompile running, whereas eth_call, gas estimation and tracing run the ordinary path and answer as if it had; add those five addresses to a second fail-fast set and have node/app.go build the giga executor with it from one named height on, keeping the first set below that height so that every node's execution of past blocks is unchanged.
+    - Add a test in engine/executor/precompiles that the second set carries every address of the first plus exactly the five fork addresses, each mapped to the fail-fast singleton whose call aborts giga execution, and a test in node/ that the height selection returns the first set one below the named height and the second set at and above it.
+    - _Requirements: 1.9, 3.6_
 
 ## Task Dependency Graph
 
@@ -114,7 +118,7 @@
     { "id": 1,  "tasks": ["1.1", "1.2"] },
     { "id": 2,  "tasks": ["2.1"] },
     { "id": 3,  "tasks": ["3.1", "3.3"] },
-    { "id": 4,  "tasks": ["4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7"] }
+    { "id": 4,  "tasks": ["4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7", "4.8"] }
   ]
 }
 ```
