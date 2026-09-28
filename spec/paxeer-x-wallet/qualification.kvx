@@ -909,3 +909,27 @@ command = "docker build -f human/wallet/gateway/Dockerfile -t paxeer-wallet-gate
 exit_code = 1
 log_path = ".logs/deploy.log"
 observed = "Image sha256:c0fac1e7d3b775ff4a81bfde81cf5f325f6548c0150e2087c5686c418504c78a was pushed after one registry timeout and one performance-2x 4 GB machine of the planned two was created, wrote its four secret files and exited at database connect on the pooler's statement_timeout refusal, so readiness never passed and no provisioning or transaction was made."
+
+[observation.4.13.1]
+task = "4.13"
+file = "human/wallet/attestor/internal/policy/policy.go"
+symbol = "Evaluate"
+observed = "Outside the task's touches, New registers the operator_verification inspector and Evaluate hands every request to the verification isolation hook in kinds.go before the account rules, so the kind skips account kinds, rate and caps and any other kind carrying the verification message is refused with verification_isolated."
+assumption = "Two additive lines in policy.go are the narrowest way to make the kind its own and keep every other kind from signing the message; kinds.go holds the logic."
+severity = "low"
+
+[observation.4.13.2]
+task = "4.13"
+file = "human/wallet/ceremony/internal/rehearsal/rehearsal.go"
+symbol = "Run"
+observed = "The rehearsal still sets a token source that deliver no longer uses and now reaches the daemons' operator_verification under the ceremony flag; the rehearsal, migrate and command tests sit outside this task's verify command and were not run by its gate."
+assumption = "The wallet-tree aggregate gate on the merged wave runs the ceremony module in full, including the restored command tests and the rehearsal against real daemons."
+severity = "low"
+
+[observation.4.13.3]
+task = "4.13"
+file = "human/wallet/ceremony/cmd/ceremony/main_test.go"
+symbol = "TestDeliverExitsNonZeroOnMismatch"
+observed = "Deliver now signs through operator_verification with no token source, so both command tests are restored: the full deliver marks every eligible wallet migrated beside the verified archive, and a corrupted signing key stops the run on the recovered-address mismatch with exit 1; this closes observation 4.17.1."
+assumption = "The daemon-side isolation keeps the verification signature from standing in for any owner signature."
+severity = "low"

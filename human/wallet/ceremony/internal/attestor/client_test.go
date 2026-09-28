@@ -1,9 +1,11 @@
 package attestor_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/sha512"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"math/big"
@@ -125,8 +127,8 @@ func TestClientImportRefreshSignOverMutualTLS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(imports) != 5 {
-		t.Fatalf("%d import responses", len(imports))
+	if len(imports.Keys) != 5 || imports.SessionID == "" {
+		t.Fatalf("%d import responses under session %q", len(imports.Keys), imports.SessionID)
 	}
 	for _, id := range nodes.IDs {
 		if !nodes.Holds(id, "wallet:test:secp256k1") {
@@ -247,5 +249,112 @@ func TestLoadConfig(t *testing.T) {
 	cfg.Nodes = cfg.Nodes[:4]
 	if _, err := attestor.New(cfg); !errors.Is(err, attestor.ErrConfig) {
 		t.Fatalf("four nodes: %v", err)
+	}
+}
+
+func TestVerificationMessageLayout(t *testing.T) {
+	pub := bytes.Repeat([]byte{0x04}, 65)
+	var want []byte
+	want = append(want, "LX:PAXEER-CEREMONY-VERIFY:v1"...)
+	for _, f := range [][]byte{[]byte("wallet:a:secp256k1"), pub, []byte("import-a")} {
+		want = binary.BigEndian.AppendUint16(want, uint16(len(f)))
+		want = append(want, f...)
+	}
+	if got := attestor.VerificationMessage("wallet:a:secp256k1", pub, "import-a"); !bytes.Equal(got, want) {
+		t.Fatalf("verification message %x want %x", got, want)
+	}
+}
+
+func TestSignVerificationOverTheOperatorIdentity(t *testing.T) {
+	nodes := testsupport.StartNodes(t)
+	client, err := attestor.New(nodes.Config())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	client.SetTokenSource(nodes.TokenSource())
+	ctx := context.Background()
+
+	key, _ := crypto.HexToECDSA(secpKeyHex)
+	want := crypto.PubkeyToAddress(key.PublicKey)
+	bundles, pub, err := dealer.Split(dealer.Secp256k1, secpSecret(t), client.NodeIDs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	imported, err := client.Import(ctx, "wallet:verify:secp256k1", "owner-1", want.Hex(), bundles, pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var apiErr *attestor.APIError
+	if _, err := client.SignVerification(ctx, "wallet:verify:secp256k1", imported.SessionID, pub); !errors.As(err, &apiErr) || apiErr.Code != "key_not_refreshed" {
+		t.Fatalf("verification before refresh: %v", err)
+	}
+	if _, err := client.Refresh(ctx, "wallet:verify:secp256k1", pub); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.SignVerification(ctx, "wallet:verify:secp256k1", "another-session", pub); !errors.As(err, &apiErr) || apiErr.Code != "verification_not_imported" || apiErr.Category != "key" {
+		t.Fatalf("verification under another import session: %v", err)
+	}
+	v, err := client.SignVerification(ctx, "wallet:verify:secp256k1", imported.SessionID, pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uncompressed := crypto.FromECDSAPub(&key.PublicKey)
+	if !bytes.Equal(v.Message, attestor.VerificationMessage("wallet:verify:secp256k1", uncompressed, imported.SessionID)) || v.Curve != dealer.Secp256k1 || len(v.AuditSeqs) != attestor.SignQuorum {
+		t.Fatalf("secp256k1 verification %+v", v)
+	}
+	recovered, err := crypto.SigToPub(crypto.Keccak256(v.Message), v.Signature)
+	if err != nil || crypto.PubkeyToAddress(*recovered) != want {
+		t.Fatalf("verification signature does not recover the imported address: %v", err)
+	}
+	if _, err := client.SignVerification(ctx, "wallet:verify:secp256k1", imported.SessionID, pub); !errors.As(err, &apiErr) || apiErr.Code != "verification_used" {
+		t.Fatalf("second verification: %v", err)
+	}
+
+	edBundles, edPub, err := dealer.Split(dealer.Ed25519, edSecret(t), client.NodeIDs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	edImported, err := client.Import(ctx, "wallet:verify:ed25519", "owner-1", want.Hex(), edBundles, edPub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Refresh(ctx, "wallet:verify:ed25519", edPub); err != nil {
+		t.Fatal(err)
+	}
+	ev, err := client.SignVerification(ctx, "wallet:verify:ed25519", edImported.SessionID, edPub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edKey, _ := hex.DecodeString(edPubHex)
+	if !bytes.Equal(ev.Message, attestor.VerificationMessage("wallet:verify:ed25519", edKey, edImported.SessionID)) || ev.Curve != dealer.Ed25519 {
+		t.Fatalf("ed25519 verification %+v", ev)
+	}
+	if !ed25519.Verify(ed25519.PublicKey(edKey), ev.Message, ev.Signature) {
+		t.Fatal("ed25519 verification signature does not verify against the imported identity key")
+	}
+	for _, id := range nodes.IDs[:attestor.SignQuorum] {
+		if nodes.Verifications[id] != 2 || nodes.Signs[id] != 0 {
+			t.Fatalf("node %s granted %d verifications and %d signatures", id, nodes.Verifications[id], nodes.Signs[id])
+		}
+	}
+	nodes.CorruptSigning("wallet:verify:other")
+	otherBundles, otherPub, err := dealer.Split(dealer.Secp256k1, secpSecret(t), client.NodeIDs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := client.Import(ctx, "wallet:verify:other", "owner-1", want.Hex(), otherBundles, otherPub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Refresh(ctx, "wallet:verify:other", otherPub); err != nil {
+		t.Fatal(err)
+	}
+	corrupt, err := client.SignVerification(ctx, "wallet:verify:other", other.SessionID, otherPub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered, err := crypto.SigToPub(crypto.Keccak256(corrupt.Message), corrupt.Signature); err != nil || crypto.PubkeyToAddress(*recovered) == want {
+		t.Fatalf("corrupted verification still recovers the imported address: %v", err)
 	}
 }

@@ -1081,7 +1081,11 @@ log_path = ".logs/verify.log"
 
 [task.4.13]
 title = "Audited verification signature for keys imported in the ceremony window"
-status = "pending"
+status = "done"
+revision = "5a6940f5148f77d48cd70e91761b77746f7dc35d"
+command = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./internal/server/... && cd ../ceremony && go test -count=1 ./internal/attestor/...'"
+exit_code = 0
+log_path = ".logs/verify.log"
 wave = 4
 requires = ["3.3","4.11","2.1"]
 do_1 = "In human/wallet/attestor/internal/server record, for every key accepted by keys.import from the operator identity while the daemon runs with the ceremony flag set, the import session id and the ceremony window it belongs to (the current process start under the flag), and add the operator_verification sign kind: the operator identity may request exactly one signature per imported key over the fixed domain-separated message LX:PAXEER-CEREMONY-VERIFY:v1 followed by the key id, the public key and the import session id, built by the daemon itself from its stored record and never taken from the request; the daemon refuses a second request for the same key, a request outside the ceremony window, a request naming a key or session that was not imported in that window, and a request from any identity other than the operator's, and writes each grant and each refusal to the audit chain as its own event, distinct from sign.* records."

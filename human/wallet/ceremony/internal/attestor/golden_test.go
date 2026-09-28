@@ -55,14 +55,15 @@ func sameJSON(t *testing.T, name string, v any) {
 
 func TestGoldenVectorsRoundTripThroughClientTypes(t *testing.T) {
 	cases := map[string]func() any{
-		"keys.import.request":   func() any { return &attestor.ImportRequest{} },
-		"keys.refresh.request":  func() any { return &attestor.RefreshRequest{} },
-		"keys.response":         func() any { return &attestor.KeyResponse{} },
-		"sign.request":          func() any { return &attestor.SignRequest{} },
-		"sign.request.lx_grant": func() any { return &attestor.SignRequest{} },
-		"sign.response":         func() any { return &attestor.SignResponse{} },
-		"error.policy":          func() any { return &attestor.ErrorBody{} },
-		"error.token":           func() any { return &attestor.ErrorBody{} },
+		"keys.import.request":                func() any { return &attestor.ImportRequest{} },
+		"keys.refresh.request":               func() any { return &attestor.RefreshRequest{} },
+		"keys.response":                      func() any { return &attestor.KeyResponse{} },
+		"sign.request":                       func() any { return &attestor.SignRequest{} },
+		"sign.request.lx_grant":              func() any { return &attestor.SignRequest{} },
+		"sign.request.operator_verification": func() any { return &attestor.SignRequest{} },
+		"sign.response":                      func() any { return &attestor.SignResponse{} },
+		"error.policy":                       func() any { return &attestor.ErrorBody{} },
+		"error.token":                        func() any { return &attestor.ErrorBody{} },
 	}
 	for name, mk := range cases {
 		v := mk()
@@ -112,6 +113,11 @@ func TestGoldenResponsesMatchClientExpectations(t *testing.T) {
 	decodeGolden(t, "sign.request", &sign)
 	if len(sign.Signers) != attestor.SignQuorum || sign.Transaction == "" {
 		t.Fatalf("sign request %+v", sign)
+	}
+	var verify attestor.SignRequest
+	decodeGolden(t, "sign.request.operator_verification", &verify)
+	if verify.Kind != attestor.KindVerify || verify.ImportSessionID == "" || len(verify.Signers) != attestor.SignQuorum || verify.Message != "" || verify.Transaction != "" || verify.Digest != "" {
+		t.Fatalf("verification request %+v", verify)
 	}
 	var e attestor.ErrorBody
 	decodeGolden(t, "error.policy", &e)

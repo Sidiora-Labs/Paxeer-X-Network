@@ -473,6 +473,7 @@ func (s *Server) doImport(body []byte) (KeyResponse, *Error) {
 	if e != nil {
 		return KeyResponse{}, e
 	}
+	s.ceremony.record(req.KeyID, req.SessionID, b.Curve)
 	return s.keyResponse(req.KeyID, b.Curve, b.PublicKey, 0, participants, false, seq), nil
 }
 

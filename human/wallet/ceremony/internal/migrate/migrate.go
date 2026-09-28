@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"filippo.io/edwards25519"
-	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	pt "github.com/getamis/alice/crypto/ecpointgrouplaw"
@@ -29,10 +28,11 @@ const EnvDatabaseURL = "CEREMONY_DATABASE_URL"
 var (
 	ErrDatabaseURL     = errors.New("migrate: database connection string is not set")
 	ErrSchema          = errors.New("migrate: wallets table lacks the migrated_at column")
-	ErrAddressMismatch = errors.New("migrate: test signature does not recover the stored address")
+	ErrAddressMismatch = errors.New("migrate: verification signature does not recover the stored address")
 	ErrSplitMismatch   = errors.New("migrate: dealer public key does not derive the stored address")
 	ErrIdentityKey     = errors.New("migrate: identity key split does not match its public key")
 	ErrMarkMigrated    = errors.New("migrate: wallet row was not marked migrated")
+	ErrIdentitySig     = errors.New("migrate: verification signature does not verify against the imported identity key")
 )
 
 const fundedPredicate = `(w.kind = 'funded' or exists (select 1 from funded_accounts f where f.wallet_id = w.id))`
@@ -164,14 +164,6 @@ func SecpKeyID(walletID string) string { return "wallet:" + walletID + ":secp256
 
 func IdentityKeyID(walletID string) string { return "wallet:" + walletID + ":ed25519" }
 
-func TestMessage(walletID string) ([]byte, error) {
-	var nonce [32]byte
-	if _, err := rand.Read(nonce[:]); err != nil {
-		return nil, err
-	}
-	return append([]byte("paxeer-x ceremony test signature "+walletID+" "), nonce[:]...), nil
-}
-
 func Deliver(ctx context.Context, db *sql.DB, client *attestor.Client, masterKey []byte, plan *Plan) (Report, error) {
 	var r Report
 	if err := checkSchema(ctx, db); err != nil {
@@ -217,11 +209,13 @@ func deliverOne(ctx context.Context, db *sql.DB, client *attestor.Client, master
 	}
 	defer wipeBundles(edBundles)
 
-	if _, err := client.Import(ctx, SecpKeyID(w.ID), w.UserID, stored.Hex(), secpBundles, secpPub); err != nil {
+	secpImport, err := client.Import(ctx, SecpKeyID(w.ID), w.UserID, stored.Hex(), secpBundles, secpPub)
+	if err != nil {
 		return wrap("import secp256k1", err)
 	}
 	wipeBundles(secpBundles)
-	if _, err := client.Import(ctx, IdentityKeyID(w.ID), w.UserID, stored.Hex(), edBundles, edPub); err != nil {
+	edImport, err := client.Import(ctx, IdentityKeyID(w.ID), w.UserID, stored.Hex(), edBundles, edPub)
+	if err != nil {
 		return wrap("import ed25519", err)
 	}
 	wipeBundles(edBundles)
@@ -235,23 +229,30 @@ func deliverOne(ctx context.Context, db *sql.DB, client *attestor.Client, master
 	}
 	r.Refreshed++
 
-	msg, err := TestMessage(w.ID)
+	secpSig, err := client.SignVerification(ctx, SecpKeyID(w.ID), secpImport.SessionID, secpPub)
 	if err != nil {
-		return wrap("sign", err)
+		return wrap("verify secp256k1", err)
 	}
-	sig, err := client.SignPersonal(ctx, SecpKeyID(w.ID), w.UserID, msg)
+	edSig, err := client.SignVerification(ctx, IdentityKeyID(w.ID), edImport.SessionID, edPub)
 	if err != nil {
-		return wrap("sign", err)
+		return wrap("verify ed25519", err)
 	}
 	r.TestSigned++
 
-	pub, err := crypto.SigToPub(accounts.TextHash(msg), sig.Ethereum())
+	pub, err := crypto.SigToPub(crypto.Keccak256(secpSig.Message), secpSig.Signature)
 	if err != nil {
 		return wrap("recover", err)
 	}
 	recovered := crypto.PubkeyToAddress(*pub)
 	if recovered != stored {
 		return &MismatchError{WalletID: w.ID, Stored: stored, Recovered: recovered}
+	}
+	identity, err := attestor.PublicKeyBytes(edPub)
+	if err != nil {
+		return wrap("verify ed25519", err)
+	}
+	if !ed25519.Verify(ed25519.PublicKey(identity), edSig.Message, edSig.Signature) {
+		return wrap("verify ed25519", ErrIdentitySig)
 	}
 
 	res, err := db.ExecContext(ctx, `update wallets set migrated_at = now(), attestor_key_id = $3

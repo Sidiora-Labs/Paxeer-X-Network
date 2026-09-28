@@ -46,10 +46,11 @@ func goldenValues(t *testing.T) map[string]any {
 		"sign.request.eth_sign_digest": SignRequest{SessionID: "session-authorization", KeyID: "key-evm", Kind: KindEthSignDigest, Signers: []string{"node-1", "node-3", "node-5"}, Digest: "0x" + strings.Repeat("66", 32), Construction: &ConstructionJSON{
 			Kind: "eip7702_authorization", ChainID: "125", Address: "0x2222222222222222222222222222222222222222", Nonce: "3",
 		}},
-		"sign.response":   SignResponse{NodeID: "node-1", KeyID: "key-evm", Kind: KindEVMTransaction, SignedBytes: strings.Repeat("33", 32), Signature: strings.Repeat("44", 64) + "01", RecoveryID: &recovery, AuditSequence: 9},
-		"error.policy":    errorBody{Error: policyError("value_cap", "amount exceeds the per-transaction cap")},
-		"error.token":     errorBody{Error: newError(CodeTokenMissing, "a bearer token or agent signature is required")},
-		"health.response": health.Report{NodeID: "node-1", Region: "region-a", ShareCount: 2, RefreshEpoch: 1, AuditSequence: 9, AuditHead: strings.Repeat("55", 32), Peers: map[string]health.PeerState{"node-2": {Reachable: true, RTT: 1000}}, ReachablePeers: 1},
+		"sign.request.operator_verification": VerificationRequest{SessionID: "session-verification", KeyID: "key-evm", Kind: KindOperatorVerification, Signers: []string{"node-1", "node-3", "node-5"}, ImportSessionID: "session-import"},
+		"sign.response":                      SignResponse{NodeID: "node-1", KeyID: "key-evm", Kind: KindEVMTransaction, SignedBytes: strings.Repeat("33", 32), Signature: strings.Repeat("44", 64) + "01", RecoveryID: &recovery, AuditSequence: 9},
+		"error.policy":                       errorBody{Error: policyError("value_cap", "amount exceeds the per-transaction cap")},
+		"error.token":                        errorBody{Error: newError(CodeTokenMissing, "a bearer token or agent signature is required")},
+		"health.response":                    health.Report{NodeID: "node-1", Region: "region-a", ShareCount: 2, RefreshEpoch: 1, AuditSequence: 9, AuditHead: strings.Repeat("55", 32), Peers: map[string]health.PeerState{"node-2": {Reachable: true, RTT: 1000}}, ReachablePeers: 1},
 	}
 }
 

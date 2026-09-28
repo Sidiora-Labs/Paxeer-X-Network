@@ -328,6 +328,7 @@ func New(doc *Document) *Policy {
 	p.kinds[KindPersonalMessage] = inspectPersonalMessage
 	p.kinds[KindSponsoredBatch] = inspectSponsoredBatch
 	p.kinds[KindAuthorization] = inspectAuthorization
+	p.kinds[KindOperatorVerification] = inspectVerification
 	return p
 }
 
@@ -383,6 +384,9 @@ func (p *Policy) Evaluate(account string, req Request, ledger Ledger) Decision {
 	}
 	if req.Kind == "" {
 		return denied(CodeMissingField, "request kind is missing")
+	}
+	if decision, handled := p.evaluateVerification(req); handled {
+		return decision
 	}
 	inspect, ok := p.inspector(req.Kind)
 	if !ok {

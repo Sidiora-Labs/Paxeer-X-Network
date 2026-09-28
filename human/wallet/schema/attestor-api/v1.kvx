@@ -131,6 +131,28 @@ lx_activity      = "ed25519; signs the 32-byte activity signature preimage"
 lx_bind          = "ed25519; signs the LX:PAXEER-BIND:v1 message bytes; the binding chain must be the node chain"
 lx_grant         = "ed25519; signs the 32-byte grant preimage with the key as the grant public key"
 
+[op.sign.operator_verification]
+method       = "POST"
+path         = "/v1/sign"
+kind         = "operator_verification"
+auth         = "client certificate issued by the operator CA; no Authorization header and no agent headers; a gateway certificate is refused with operator_required"
+participants = "the listed signers; every signer receives the identical body"
+window       = "granted only by a node running with the ceremony flag, for a key that node accepted through keys.import in its current process, under the import session named in the request"
+message      = "LX:PAXEER-CEREMONY-VERIFY:v1 followed by the key id, the public key bytes (65-byte uncompressed secp256k1 or 32-byte ed25519, as in key_response public_key) and the import session id, each as a 2-byte big-endian length and the field bytes; the node builds it from its own import record, never from the request"
+signing      = "secp256k1 signs keccak256 of the message and needs a refreshed share; ed25519 signs the message bytes"
+limit        = "one grant per imported key and node; a second request is refused with verification_used"
+isolation    = "no other kind signs a payload carrying the verification domain or the verification message of an imported key; such requests are refused with policy_denied and policy_code verification_isolated"
+audit        = "every grant is a ceremony.verification record with decision allowed and every refusal a ceremony.verification record with decision denied or failed, distinct from sign records"
+response     = "sign_response with message"
+errors       = ["operator_required", "session_bad_request", "session_unsupported_kind", "verification_outside_window", "verification_not_imported", "verification_used", "key_not_found", "key_curve_mismatch", "key_not_refreshed", "key_invalid_share", "quorum_too_few_signers", "quorum_not_member", "quorum_self_missing", "policy_denied", "session_open_failed", "session_failed", "session_timeout", "store_failed", "store_audit_failed"]
+
+[op.sign.operator_verification.request]
+session_id        = "string"
+key_id            = "string"
+kind              = "string: operator_verification"
+signers           = "array of string: at least three holders including the receiving node"
+import_session_id = "string: the session_id of the keys.import that delivered the key"
+
 [type.sign_response]
 node_id        = "string"
 key_id         = "string"
@@ -139,6 +161,7 @@ signed_bytes   = "hex: the exact bytes the quorum signed"
 signature      = "hex: 65 bytes r || s || v for secp256k1, 64 bytes for ed25519"
 recovery_id    = "uint8 optional: present for secp256k1"
 audit_sequence = "uint64: this node's audit record for the allowed decision"
+message        = "hex optional: present for operator_verification; the verification message the node built"
 
 [op.health]
 method   = "GET"
@@ -251,6 +274,21 @@ meaning  = "The share does not validate against its public data or is not issued
 category = "key"
 status   = "409"
 meaning  = "keys.import is refused unless the node runs with the ceremony flag set."
+
+[error.verification_outside_window]
+category = "key"
+status   = "409"
+meaning  = "operator_verification is refused by a node running without the ceremony flag."
+
+[error.verification_not_imported]
+category = "key"
+status   = "409"
+meaning  = "The key was not accepted through keys.import in this node's ceremony window under the named import session; a generated key is never eligible."
+
+[error.verification_used]
+category = "key"
+status   = "409"
+meaning  = "The key already received its one operator verification signature from this node."
 
 [error.store_failed]
 category = "store"

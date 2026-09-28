@@ -3,11 +3,15 @@ package main
 import (
 	"bytes"
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/archive"
+	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/attestor"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/envelope"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/migrate"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/testsupport"
@@ -59,23 +63,29 @@ func TestPlanArchiveDeliverThroughTheCommand(t *testing.T) {
 	}
 
 	code, out, errOut = invoke(env, "deliver")
-	if code != 1 || !strings.Contains(errOut, " at sign: ") || !strings.Contains(errOut, daemonTokenRefusal) {
+	if code != 0 {
 		t.Fatalf("deliver exit %d: %s", code, errOut)
 	}
-	if out != "eligible=2 funded_archived=1 read=1 verified=1 imported=1 refreshed=1 test_signed=0 matched=0\n" {
+	if out != "eligible=2 funded_archived=1 read=2 verified=2 imported=2 refreshed=2 test_signed=2 matched=2\n" {
 		t.Fatalf("deliver printed %q", out)
 	}
 	if strings.Contains(out+errOut, masterB64) {
 		t.Fatal("output carries the master key")
 	}
+	for _, n := range nodes.IDs[:attestor.SignQuorum] {
+		if nodes.Verifications[n] != 4 || nodes.Signs[n] != 0 {
+			t.Fatalf("node %s granted %d verifications and %d owner signatures", n, nodes.Verifications[n], nodes.Signs[n])
+		}
+	}
+	if info, err := os.Stat(env[archive.EnvPath]); err != nil || info.Size() == 0 {
+		t.Fatalf("funded archive missing after deliver: %v", err)
+	}
 
 	code, out, _ = invoke(env, "plan")
-	if code != 0 || out != "wallets=4 eligible=2 funded=1 already_migrated=1\n" {
-		t.Fatalf("plan after refused deliver exit %d printed %q", code, out)
+	if code != 0 || out != "wallets=4 eligible=0 funded=1 already_migrated=3\n" {
+		t.Fatalf("plan after deliver exit %d printed %q", code, out)
 	}
 }
-
-const daemonTokenRefusal = "answered 401 token_missing: a bearer token or agent signature is required"
 
 func TestDeliverExitsNonZeroOnMismatch(t *testing.T) {
 	pg := testsupport.StartPostgres(t)
@@ -94,10 +104,10 @@ func TestDeliverExitsNonZeroOnMismatch(t *testing.T) {
 		t.Fatalf("archive exit %d: %s", code, errOut)
 	}
 	code, out, errOut := invoke(env, "deliver")
-	if code != 1 || !strings.Contains(errOut, "migrate: wallet "+id+" at sign: ") || !strings.Contains(errOut, daemonTokenRefusal) {
+	if code != 1 || !strings.Contains(errOut, migrate.ErrAddressMismatch.Error()+": wallet "+id+" stored "+common.HexToAddress(vs[0].Address).Hex()+" recovered ") {
 		t.Fatalf("deliver exit %d: %s", code, errOut)
 	}
-	if out != "eligible=1 funded_archived=0 read=1 verified=1 imported=1 refreshed=1 test_signed=0 matched=0\n" {
+	if out != "eligible=1 funded_archived=0 read=1 verified=1 imported=1 refreshed=1 test_signed=1 matched=0\n" {
 		t.Fatalf("deliver printed %q", out)
 	}
 	var migrated int

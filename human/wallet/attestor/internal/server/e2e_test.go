@@ -1033,3 +1033,163 @@ func TestImportRefusesSharesOutsideTheCustodyScheme(t *testing.T) {
 	good := bundleFor([]*big.Int{secret, coefficient("c1"), coefficient("c2")}, plain, dealer.Threshold)
 	decodeOK[KeyResponse](t, "custody scheme import", []apiResult{c.call(t, c.byID("node-1")[0], PathImport, ImportRequest{SessionID: "import-scheme-good", KeyID: "scheme-key", Owner: testOwner, Share: good}, "")})
 }
+
+func (c *testCluster) verifyOn(t *testing.T, client *http.Client, signers []string, session, keyID, importSession string) []apiResult {
+	t.Helper()
+	nodes := c.byID(signers...)
+	results := make([]apiResult, len(nodes))
+	var wg sync.WaitGroup
+	for i, node := range nodes {
+		wg.Add(1)
+		go func(i int, node *testNode) {
+			defer wg.Done()
+			results[i] = c.callAs(t, client, node, PathSign, VerificationRequest{SessionID: session, KeyID: keyID, Kind: KindOperatorVerification, Signers: signers, ImportSessionID: importSession}, "")
+		}(i, node)
+	}
+	wg.Wait()
+	return results
+}
+
+func auditBytes(t *testing.T, c *testCluster, n *testNode) []byte {
+	t.Helper()
+	logged, err := os.ReadFile(filepath.Join(c.configs[n.index].nodeDir, "audit", audit.FileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return logged
+}
+
+func TestOperatorVerificationInTheCeremonyWindow(t *testing.T) {
+	c := newTestCluster(t, 5, true)
+	fresh := func() string { return c.idp.mint(t, c.idp.key, testOwner) }
+	signers := []string{"node-1", "node-3", "node-5"}
+
+	secpSeed := sha256.Sum256([]byte("operator verification secp256k1 key"))
+	secpKey, err := gethcrypto.ToECDSA(secpSeed[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := gethcrypto.PubkeyToAddress(secpKey.PublicKey)
+	secpPub := gethcrypto.FromECDSAPub(&secpKey.PublicKey)
+	edSeed := sha256.Sum256([]byte("operator verification ed25519 key"))
+	edPub := ed25519.NewKeyFromSeed(edSeed[:]).Public().(ed25519.PublicKey)
+	edScalar, err := dealer.Ed25519ScalarFromSeed(edSeed[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	importKey(t, c, "verify-evm", dealer.Secp256k1, new(big.Int).SetBytes(secpSeed[:]), "")
+	importKey(t, c, "verify-lx", dealer.Ed25519, edScalar, address.Hex())
+	for _, keyID := range []string{"verify-evm", "verify-lx"} {
+		decodeOK[KeyResponse](t, "refresh "+keyID, c.callAll(t, c.nodes, PathRefresh, func(*testNode) any {
+			return RefreshRequest{SessionID: "refresh-" + keyID, KeyID: keyID}
+		}, ""))
+	}
+	secpMsg := policy.VerificationMessage("verify-evm", secpPub, "import-verify-evm")
+	edMsg := policy.VerificationMessage("verify-lx", edPub, "import-verify-lx")
+
+	for _, r := range c.verifyOn(t, c.opClient, signers, "verify-mismatch", "verify-evm", "import-other") {
+		expectError(t, "mismatched import session", r, CodeVerificationNotImported)
+	}
+	gateway := c.callAs(t, c.client, c.nodes[0], PathSign, VerificationRequest{SessionID: "verify-by-gateway", KeyID: "verify-evm", Kind: KindOperatorVerification, Signers: signers, ImportSessionID: "import-verify-evm"}, "")
+	if gateway.status != http.StatusForbidden {
+		t.Fatalf("gateway identity on verification: status %d", gateway.status)
+	}
+	expectError(t, "gateway identity on verification", gateway, CodeOperatorRequired)
+	expectError(t, "verification with a bearer token", c.callAs(t, c.opClient, c.nodes[0], PathSign, VerificationRequest{SessionID: "verify-with-token", KeyID: "verify-evm", Kind: KindOperatorVerification, Signers: signers, ImportSessionID: "import-verify-evm"}, fresh()), CodeSessionBadRequest)
+	expectError(t, "verification carrying a message", c.callAs(t, c.opClient, c.nodes[0], PathSign, map[string]any{"session_id": "verify-with-message", "key_id": "verify-evm", "kind": KindOperatorVerification, "signers": signers, "import_session_id": "import-verify-evm", "message": hex.EncodeToString(secpMsg)}, ""), CodeSessionBadRequest)
+
+	for _, r := range decodeOK[SignResponse](t, "secp256k1 verification", c.verifyOn(t, c.opClient, signers, "verify-evm-grant", "verify-evm", "import-verify-evm")) {
+		if r.Kind != KindOperatorVerification || r.KeyID != "verify-evm" || r.Message != hex.EncodeToString(secpMsg) || r.SignedBytes != hex.EncodeToString(gethcrypto.Keccak256(secpMsg)) || r.RecoveryID == nil {
+			t.Fatalf("%s: secp256k1 verification response %+v", r.NodeID, r)
+		}
+		sig, err := hex.DecodeString(r.Signature)
+		if err != nil || len(sig) != 65 || sig[64] != *r.RecoveryID {
+			t.Fatalf("%s: secp256k1 verification signature %s", r.NodeID, r.Signature)
+		}
+		pub, err := gethcrypto.SigToPub(gethcrypto.Keccak256(secpMsg), sig)
+		if err != nil || gethcrypto.PubkeyToAddress(*pub) != address {
+			t.Fatalf("%s: verification signature does not recover the imported address: %v", r.NodeID, err)
+		}
+	}
+	for _, r := range decodeOK[SignResponse](t, "ed25519 verification", c.verifyOn(t, c.opClient, signers, "verify-lx-grant", "verify-lx", "import-verify-lx")) {
+		sig, err := hex.DecodeString(r.Signature)
+		if err != nil || r.Message != hex.EncodeToString(edMsg) || r.SignedBytes != hex.EncodeToString(edMsg) || r.RecoveryID != nil || !ed25519.Verify(edPub, edMsg, sig) {
+			t.Fatalf("%s: ed25519 verification response %+v", r.NodeID, r)
+		}
+	}
+	for _, keyID := range []string{"verify-evm", "verify-lx"} {
+		for _, r := range c.verifyOn(t, c.opClient, signers, keyID+"-again", keyID, "import-"+keyID) {
+			expectError(t, "second verification of "+keyID, r, CodeVerificationUsed)
+		}
+	}
+
+	keyFor := map[dealer.Curve]string{dealer.Secp256k1: "verify-evm", dealer.Ed25519: "verify-lx"}
+	msgFor := map[string][]byte{"verify-evm": secpMsg, "verify-lx": edMsg}
+	for _, kind := range SignKinds() {
+		keyID := keyFor[kindCurves[kind]]
+		raw := hex.EncodeToString(msgFor[keyID])
+		req := SignRequest{SessionID: "isolated-" + kind, KeyID: keyID, Kind: kind, Signers: signers, Message: raw}
+		switch kind {
+		case KindEVMTransaction:
+			req.Message, req.Transaction = "", raw
+		case KindTypedData:
+			req.Message, req.TypedData = "", `{"types":{"EIP712Domain":[{"name":"chainId","type":"uint256"}],"Note":[{"name":"text","type":"string"}]},"primaryType":"Note","domain":{"chainId":125},"message":{"text":"`+VerificationDomain+`"}}`
+		case KindLXActivity:
+			req.Message, req.Activity = "", raw
+		case KindEthSignDigest:
+			req.Message, req.Digest = "", hex.EncodeToString(gethcrypto.Keccak256(secpMsg))
+			req.Construction = &ConstructionJSON{Kind: policy.KindAuthorization, ChainID: "125", Address: address.Hex(), Nonce: "1"}
+		}
+		for _, r := range c.callAll(t, c.byID(signers...), PathSign, func(*testNode) any { return req }, fresh()) {
+			if e := expectError(t, "verification message under "+kind, r, CodePolicyDenied); e.PolicyCode != policy.CodeVerificationIsolated {
+				t.Fatalf("verification message under %s: policy code %s", kind, e.PolicyCode)
+			}
+		}
+	}
+
+	decodeOK[KeyResponse](t, "generate", c.callAll(t, c.nodes, PathGenerate, func(*testNode) any {
+		return GenerateRequest{SessionID: "generate-verify", KeyID: "verify-generated", Curve: "ed25519", Owner: testOwner, Account: address.Hex()}
+	}, ""))
+	for _, session := range []string{"generate-verify", "import-verify-generated"} {
+		for _, r := range c.verifyOn(t, c.opClient, signers, "verify-generated-"+session, "verify-generated", session) {
+			expectError(t, "generated key", r, CodeVerificationNotImported)
+		}
+	}
+
+	for _, id := range signers {
+		n := c.byID(id)[0]
+		logged := auditBytes(t, c, n)
+		if got := bytes.Count(logged, []byte("verification granted in window")); got != 2 {
+			t.Fatalf("%s: %d verification grants audited, want 2", id, got)
+		}
+		for _, want := range []string{"ceremony.verification", "import-verify-evm", "import-verify-lx", CodeVerificationUsed, CodeVerificationNotImported, "sign." + KindPersonalMessage} {
+			if !bytes.Contains(logged, []byte(want)) {
+				t.Fatalf("%s: audit log lacks %q", id, want)
+			}
+		}
+		if err := n.audit.Verify(); err != nil {
+			t.Fatalf("%s: audit chain: %v", id, err)
+		}
+	}
+	if logged := auditBytes(t, c, c.nodes[0]); !bytes.Contains(logged, []byte(CodeOperatorRequired)) || !bytes.Contains(logged, []byte(CodeSessionBadRequest)) {
+		t.Fatal("node-1 did not audit the refused gateway and token verification requests")
+	}
+	for _, id := range []string{"node-2", "node-4"} {
+		if bytes.Contains(auditBytes(t, c, c.byID(id)[0]), []byte("verification granted")) {
+			t.Fatalf("%s granted a verification it was not asked for", id)
+		}
+	}
+
+	restartSeed := sha256.Sum256([]byte("operator verification restart key"))
+	restartScalar, err := dealer.Ed25519ScalarFromSeed(restartSeed[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	importKey(t, c, "verify-restart", dealer.Ed25519, restartScalar, address.Hex())
+	c.ceremony = false
+	restarted := c.restart(t, c.nodes[0])
+	expectError(t, "verification after a restart without the ceremony flag", c.callAs(t, c.opClient, restarted, PathSign, VerificationRequest{SessionID: "verify-after-restart", KeyID: "verify-restart", Kind: KindOperatorVerification, Signers: signers, ImportSessionID: "import-verify-restart"}, ""), CodeVerificationWindow)
+	if !bytes.Contains(auditBytes(t, c, restarted), []byte(CodeVerificationWindow)) {
+		t.Fatal("the restarted node did not audit the refusal outside the window")
+	}
+}

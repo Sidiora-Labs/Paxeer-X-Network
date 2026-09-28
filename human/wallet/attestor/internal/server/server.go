@@ -72,6 +72,7 @@ type Server struct {
 	votesMu    sync.Mutex
 	votes      map[string]*refreshVote
 	afterStage func(keyID string)
+	ceremony   *ceremonyImports
 }
 
 func New(opts Options) (*Server, error) {
@@ -103,6 +104,11 @@ func New(opts Options) (*Server, error) {
 	if err := s.initPeer(); err != nil {
 		return nil, err
 	}
+	ceremony, err := newCeremonyImports(opts.Ceremony)
+	if err != nil {
+		return nil, err
+	}
+	s.ceremony = ceremony
 	reporter, err := health.NewReporter(opts.NodeID, opts.Region, health.Providers{
 		Shares:    s.shareStats,
 		AuditHead: opts.Audit.Head,
@@ -118,7 +124,7 @@ func New(opts Options) (*Server, error) {
 	s.mux.HandleFunc(PathImport, s.post(s.operatorOnly("keys.import", s.HandleImport)))
 	s.mux.HandleFunc(PathRefresh, s.post(s.operatorOnly("keys.refresh", s.HandleRefresh)))
 	s.mux.HandleFunc(PathAddShare, s.post(s.operatorOnly("keys.addshare", s.HandleAddShare)))
-	s.mux.HandleFunc(PathSign, s.post(s.gatewayOnly("sign", s.HandleSign)))
+	s.mux.HandleFunc(PathSign, s.post(s.signRoute()))
 	s.mux.HandleFunc(PathHealth, s.HandleHealth)
 	return s, nil
 }

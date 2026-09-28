@@ -114,6 +114,7 @@ type SignResponse struct {
 	Signature     string `json:"signature"`
 	RecoveryID    *uint8 `json:"recovery_id,omitempty"`
 	AuditSequence uint64 `json:"audit_sequence"`
+	Message       string `json:"message,omitempty"`
 }
 
 func decodeHex(field, s string) ([]byte, *Error) {
@@ -378,9 +379,15 @@ func (s *Server) doSign(r *http.Request, body []byte) (SignResponse, *Error) {
 		return refuse(newError(CodeQuorumSelfMissing, "this node is not among the signers"))
 	}
 
+	if requestCarriesVerification(req) {
+		return refuse(policyError(policy.CodeVerificationIsolated, "the verification message is signed only under "+KindOperatorVerification))
+	}
 	signed, view, policyKind, e := s.prepare(req, rec.PublicKey)
 	if e != nil {
 		return refuse(e)
+	}
+	if s.signsVerification(req.KeyID, rec.PublicKey, signed, view) {
+		return refuse(policyError(policy.CodeVerificationIsolated, "the verification message is signed only under "+KindOperatorVerification))
 	}
 	unlockAccount := s.lockKey("ledger\x00" + policy.AccountKey(payload.Account))
 	decision := s.evaluate(payload.Account, policyKind, view, s.spends.ForRequest(requestID(req.KeyID, req.SessionID)))

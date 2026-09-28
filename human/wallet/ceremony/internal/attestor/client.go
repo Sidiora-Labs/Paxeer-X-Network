@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -45,6 +46,8 @@ const (
 	PathSign        = "/v1/sign"
 	PathHealth      = "/health"
 	KindPersonal    = "personal_message"
+	KindVerify      = "operator_verification"
+	VerifyDomain    = "LX:PAXEER-CEREMONY-VERIFY:v1"
 	CurveSecp256k1  = "secp256k1"
 	CurveEd25519    = "ed25519"
 	maxResponseSize = 1 << 20
@@ -292,16 +295,17 @@ type GrantJSON struct {
 }
 
 type SignRequest struct {
-	SessionID   string     `json:"session_id"`
-	KeyID       string     `json:"key_id"`
-	Kind        string     `json:"kind"`
-	Signers     []string   `json:"signers"`
-	Transaction string     `json:"transaction,omitempty"`
-	TypedData   string     `json:"typed_data,omitempty"`
-	Message     string     `json:"message,omitempty"`
-	Digest      string     `json:"digest,omitempty"`
-	Activity    string     `json:"activity,omitempty"`
-	Grant       *GrantJSON `json:"grant,omitempty"`
+	SessionID       string     `json:"session_id"`
+	KeyID           string     `json:"key_id"`
+	Kind            string     `json:"kind"`
+	Signers         []string   `json:"signers"`
+	Transaction     string     `json:"transaction,omitempty"`
+	TypedData       string     `json:"typed_data,omitempty"`
+	Message         string     `json:"message,omitempty"`
+	Digest          string     `json:"digest,omitempty"`
+	Activity        string     `json:"activity,omitempty"`
+	Grant           *GrantJSON `json:"grant,omitempty"`
+	ImportSessionID string     `json:"import_session_id,omitempty"`
 }
 
 type SignResponse struct {
@@ -312,6 +316,7 @@ type SignResponse struct {
 	Signature     string `json:"signature"`
 	RecoveryID    *uint8 `json:"recovery_id,omitempty"`
 	AuditSequence uint64 `json:"audit_sequence"`
+	Message       string `json:"message,omitempty"`
 }
 
 type ErrorDetail struct {
@@ -558,45 +563,50 @@ func checkKeyResponse(n *Node, resp KeyResponse, keyID, curve, want string) erro
 	return nil
 }
 
-func (c *Client) Import(ctx context.Context, keyID, owner, account string, bundles []dealer.ShareBundle, publicKey *pt.ECPoint) ([]KeyResponse, error) {
+type Imported struct {
+	SessionID string
+	Keys      []KeyResponse
+}
+
+func (c *Client) Import(ctx context.Context, keyID, owner, account string, bundles []dealer.ShareBundle, publicKey *pt.ECPoint) (Imported, error) {
 	if len(bundles) != len(c.nodes) {
-		return nil, ErrBundle
+		return Imported{}, ErrBundle
 	}
 	want, err := PublicKeyHex(publicKey)
 	if err != nil {
-		return nil, err
+		return Imported{}, err
 	}
 	session, err := NewSessionID()
 	if err != nil {
-		return nil, err
+		return Imported{}, err
 	}
-	out := make([]KeyResponse, 0, len(bundles))
+	out := Imported{SessionID: session, Keys: make([]KeyResponse, 0, len(bundles))}
 	for _, b := range bundles {
 		n, err := c.node(b.ParticipantID)
 		if err != nil {
-			return nil, err
+			return Imported{}, err
 		}
 		if !b.PublicKey.Equal(publicKey) {
-			return nil, ErrBundle
+			return Imported{}, ErrBundle
 		}
 		share, err := EncodeBundle(b)
 		if err != nil {
-			return nil, err
+			return Imported{}, err
 		}
 		req := ImportRequest{SessionID: session, KeyID: keyID, Owner: owner, Account: account, Share: share}
 		var resp KeyResponse
 		err = n.post(ctx, PathImport, "", req, &resp)
 		req.Share.Share = ""
 		if err != nil {
-			return nil, err
+			return Imported{}, err
 		}
 		if err := checkKeyResponse(n, resp, keyID, share.Curve, want); err != nil {
-			return nil, err
+			return Imported{}, err
 		}
 		if resp.Epoch != 0 || resp.Refreshed || len(resp.Participants) != len(c.nodes) {
-			return nil, fmt.Errorf("%w: node %s import response state", ErrResponse, n.ID)
+			return Imported{}, fmt.Errorf("%w: node %s import response state", ErrResponse, n.ID)
 		}
-		out = append(out, resp)
+		out.Keys = append(out.Keys, resp)
 	}
 	return out, nil
 }
@@ -714,6 +724,83 @@ func (c *Client) SignPersonal(ctx context.Context, keyID, owner string, message 
 	copy(result.S[:], first[32:64])
 	result.RecoveryID = first[64]
 	return result, nil
+}
+
+func PublicKeyBytes(p *pt.ECPoint) ([]byte, error) {
+	h, err := PublicKeyHex(p)
+	if err != nil {
+		return nil, err
+	}
+	return hex.DecodeString(h)
+}
+
+func VerificationMessage(keyID string, publicKey []byte, importSession string) []byte {
+	out := []byte(VerifyDomain)
+	for _, field := range [][]byte{[]byte(keyID), publicKey, []byte(importSession)} {
+		out = binary.BigEndian.AppendUint16(out, uint16(len(field)))
+		out = append(out, field...)
+	}
+	return out
+}
+
+type Verification struct {
+	Curve     dealer.Curve
+	Message   []byte
+	Signature []byte
+	AuditSeqs map[string]uint64
+}
+
+func (c *Client) SignVerification(ctx context.Context, keyID, importSession string, publicKey *pt.ECPoint) (Verification, error) {
+	if keyID == "" || importSession == "" {
+		return Verification{}, fmt.Errorf("%w: verification needs the key id and the import session", ErrConfig)
+	}
+	curve := curveOf(publicKey)
+	pub, err := PublicKeyBytes(publicKey)
+	if err != nil {
+		return Verification{}, err
+	}
+	msg := VerificationMessage(keyID, pub, importSession)
+	signed := msg
+	sigLen := 64
+	if curve == dealer.Secp256k1 {
+		signed = crypto.Keccak256(msg)
+		sigLen = 65
+	}
+	session, err := NewSessionID()
+	if err != nil {
+		return Verification{}, err
+	}
+	signers := c.NodeIDs()[:SignQuorum]
+	nodes := c.nodes[:SignQuorum]
+	req := SignRequest{SessionID: session, KeyID: keyID, Kind: KindVerify, Signers: signers, ImportSessionID: importSession}
+	resps := make([]SignResponse, len(nodes))
+	if err := c.postAll(ctx, nodes, PathSign, "", req, func(i int) any { return &resps[i] }); err != nil {
+		return Verification{}, err
+	}
+	out := Verification{Curve: curve, Message: msg, AuditSeqs: make(map[string]uint64, len(nodes))}
+	for i, n := range nodes {
+		resp := resps[i]
+		if resp.NodeID != n.ID || resp.KeyID != keyID || resp.Kind != KindVerify || !strings.EqualFold(resp.Message, hex.EncodeToString(msg)) || !strings.EqualFold(resp.SignedBytes, hex.EncodeToString(signed)) {
+			return Verification{}, fmt.Errorf("%w: node %s verification response names another node, key, kind or message", ErrResponse, n.ID)
+		}
+		sig, err := hex.DecodeString(resp.Signature)
+		if err != nil || len(sig) != sigLen {
+			return Verification{}, fmt.Errorf("%w: node %s signature shape", ErrResponse, n.ID)
+		}
+		if curve == dealer.Secp256k1 && (resp.RecoveryID == nil || *resp.RecoveryID > 1 || sig[64] != *resp.RecoveryID) {
+			return Verification{}, fmt.Errorf("%w: node %s recovery id", ErrResponse, n.ID)
+		}
+		if curve == dealer.Ed25519 && resp.RecoveryID != nil {
+			return Verification{}, fmt.Errorf("%w: node %s recovery id on an ed25519 signature", ErrResponse, n.ID)
+		}
+		if out.Signature == nil {
+			out.Signature = sig
+		} else if !bytes.Equal(out.Signature, sig) {
+			return Verification{}, fmt.Errorf("%w: signature", ErrDisagree)
+		}
+		out.AuditSeqs[n.ID] = resp.AuditSequence
+	}
+	return out, nil
 }
 
 func NewSessionID() (string, error) {

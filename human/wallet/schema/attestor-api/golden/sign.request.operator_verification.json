@@ -1,0 +1,11 @@
+{
+  "session_id": "session-verification",
+  "key_id": "key-evm",
+  "kind": "operator_verification",
+  "signers": [
+    "node-1",
+    "node-3",
+    "node-5"
+  ],
+  "import_session_id": "session-import"
+}
