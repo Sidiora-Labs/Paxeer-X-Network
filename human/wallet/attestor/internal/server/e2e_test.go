@@ -188,18 +188,35 @@ func (p *identityProvider) mint(t *testing.T, signer *rsa.PrivateKey, subject st
 
 type testNode struct {
 	id      string
+	index   int
 	apiAddr string
 	server  *Server
 	audit   *audit.Log
 	store   *store.Store
+	stop    func()
+}
+
+type testNodeConfig struct {
+	id       string
+	peerAddr string
+	apiAddr  string
+	cert     testCert
+	nodeDir  string
+	keyPath  string
 }
 
 type testCluster struct {
-	ca     *testCA
-	nodes  []*testNode
-	client *http.Client
-	idp    *identityProvider
-	ids    []string
+	ca       *testCA
+	nodes    []*testNode
+	client   *http.Client
+	idp      *identityProvider
+	ids      []string
+	peers    []transport.Peer
+	configs  []testNodeConfig
+	registry *lxwire.Registry
+	ceremony bool
+	doc      *policy.Document
+	tune     func(*Options)
 }
 
 func testPolicy() *policy.Document {
@@ -218,8 +235,13 @@ func testPolicy() *policy.Document {
 
 func newTestCluster(t *testing.T, n int, ceremony bool) *testCluster {
 	t.Helper()
+	return newTestClusterWith(t, n, ceremony, testPolicy(), nil)
+}
+
+func newTestClusterWith(t *testing.T, n int, ceremony bool, doc *policy.Document, tune func(*Options)) *testCluster {
+	t.Helper()
 	dir := t.TempDir()
-	c := &testCluster{ca: newTestCA(t, dir), idp: newIdentityProvider(t)}
+	c := &testCluster{ca: newTestCA(t, dir), idp: newIdentityProvider(t), ceremony: ceremony, doc: doc, tune: tune}
 	clientCert := c.ca.issue(t, dir, "api-client", x509.ExtKeyUsageClientAuth)
 	roots := x509.NewCertPool()
 	roots.AddCert(c.ca.cert)
@@ -229,8 +251,6 @@ func newTestCluster(t *testing.T, n int, ceremony bool) *testCluster {
 
 	peerListeners := make([]net.Listener, n)
 	apiListeners := make([]net.Listener, n)
-	certs := make([]testCert, n)
-	peers := make([]transport.Peer, n)
 	for i := 0; i < n; i++ {
 		id := fmt.Sprintf("node-%d", i+1)
 		c.ids = append(c.ids, id)
@@ -241,73 +261,119 @@ func newTestCluster(t *testing.T, n int, ceremony bool) *testCluster {
 		if apiListeners[i], err = net.Listen("tcp", "127.0.0.1:0"); err != nil {
 			t.Fatal(err)
 		}
-		certs[i] = c.ca.issue(t, dir, id, x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth)
-		pin := transport.SPKIHash(certs[i].cert)
-		peers[i] = transport.Peer{ID: id, Address: peerListeners[i].Addr().String(), SPKISHA256: hex.EncodeToString(pin[:])}
+		cert := c.ca.issue(t, dir, id, x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth)
+		pin := transport.SPKIHash(cert.cert)
+		c.peers = append(c.peers, transport.Peer{ID: id, Address: peerListeners[i].Addr().String(), SPKISHA256: hex.EncodeToString(pin[:])})
+		keyPath := filepath.Join(dir, id+".key")
+		seed := sha256.Sum256([]byte("store key " + id))
+		if err := os.WriteFile(keyPath, []byte(hex.EncodeToString(seed[:])), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		c.configs = append(c.configs, testNodeConfig{id: id, peerAddr: peerListeners[i].Addr().String(), apiAddr: apiListeners[i].Addr().String(), cert: cert, nodeDir: filepath.Join(dir, id), keyPath: keyPath})
 	}
 	registry, err := lxwire.NewRegistry(0x10005, 0x10007, 0x30002, 0x90005)
 	if err != nil {
 		t.Fatal(err)
 	}
+	c.registry = registry
 	for i := 0; i < n; i++ {
-		nodeDir := filepath.Join(dir, c.ids[i])
-		keyPath := filepath.Join(dir, c.ids[i]+".key")
-		seed := sha256.Sum256([]byte("store key " + c.ids[i]))
-		if err := os.WriteFile(keyPath, []byte(hex.EncodeToString(seed[:])), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		nodeKey, err := config.ReadKeyFile(keyPath)
-		if err != nil {
-			t.Fatal(err)
-		}
-		st, err := store.Open(filepath.Join(nodeDir, "shares"), nodeKey)
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = st.Close() })
-		lg, err := audit.Open(filepath.Join(nodeDir, "audit"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = lg.Close() })
-		tr, err := transport.New(transport.Config{
-			SelfID: c.ids[i], CertFile: certs[i].certPath, KeyFile: certs[i].keyPath,
-			CAFile: c.ca.pemPath, Peers: peers, OperatorCAFile: c.ca.pemPath,
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		pl := peerListeners[i]
-		go func() { _ = tr.Serve(pl) }()
-		t.Cleanup(func() { _ = tr.Close() })
-		tokens, err := jwt.NewTokenVerifier(jwt.Config{JWKSURL: c.idp.srv.URL, Issuer: c.idp.issuer, Audience: "authenticated", HTTPClient: c.idp.srv.Client()})
-		if err != nil {
-			t.Fatal(err)
-		}
-		probe := map[string]string{}
-		for j, p := range peers {
-			if j != i {
-				probe[p.ID] = p.Address
-			}
-		}
-		srv, err := New(Options{
-			NodeID: c.ids[i], Region: "test", ChainID: testChainID, Ceremony: ceremony, Participants: c.ids,
-			Store: st, Audit: lg, Transport: tr, Policy: policy.New(testPolicy()),
-			Ledger: policy.NewMemoryLedger(time.Now), Tokens: tokens, Activities: registry,
-			PeerProbe: TCPPeerProbe(probe), ProtocolTimeout: 8 * time.Minute,
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		tlsCfg, err := APITLSConfig(certs[i].certPath, certs[i].keyPath, c.ca.pemPath)
-		if err != nil {
-			t.Fatal(err)
-		}
-		api := srv.Serve(apiListeners[i], tlsCfg)
-		t.Cleanup(func() { _ = api.Close() })
-		c.nodes = append(c.nodes, &testNode{id: c.ids[i], apiAddr: apiListeners[i].Addr().String(), server: srv, audit: lg, store: st})
+		c.nodes = append(c.nodes, c.startNode(t, i, peerListeners[i], apiListeners[i]))
 	}
 	return c
+}
+
+func (c *testCluster) startNode(t *testing.T, i int, peerListener, apiListener net.Listener) *testNode {
+	t.Helper()
+	cfg := c.configs[i]
+	nodeKey, err := config.ReadKeyFile(cfg.keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Open(filepath.Join(cfg.nodeDir, "shares"), nodeKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lg, err := audit.Open(filepath.Join(cfg.nodeDir, "audit"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr, err := transport.New(transport.Config{
+		SelfID: cfg.id, CertFile: cfg.cert.certPath, KeyFile: cfg.cert.keyPath,
+		CAFile: c.ca.pemPath, Peers: c.peers, OperatorCAFile: c.ca.pemPath,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = tr.Serve(peerListener) }()
+	tokens, err := jwt.NewTokenVerifier(jwt.Config{JWKSURL: c.idp.srv.URL, Issuer: c.idp.issuer, Audience: "authenticated", HTTPClient: c.idp.srv.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	probe := map[string]string{}
+	for j, p := range c.peers {
+		if j != i {
+			probe[p.ID] = p.Address
+		}
+	}
+	opts := Options{
+		NodeID: cfg.id, Region: "test", ChainID: testChainID, Ceremony: c.ceremony, Participants: c.ids,
+		Store: st, Audit: lg, Transport: tr, Policy: policy.New(c.doc),
+		Ledger: policy.NewMemoryLedger(time.Now), Tokens: tokens, Activities: c.registry,
+		PeerProbe: TCPPeerProbe(probe), ProtocolTimeout: 8 * time.Minute,
+	}
+	if c.tune != nil {
+		c.tune(&opts)
+	}
+	srv, err := New(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tlsCfg, err := APITLSConfig(cfg.cert.certPath, cfg.cert.keyPath, c.ca.pemPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	api := srv.Serve(apiListener, tlsCfg)
+	var once sync.Once
+	node := &testNode{id: cfg.id, index: i, apiAddr: cfg.apiAddr, server: srv, audit: lg, store: st}
+	node.stop = func() {
+		once.Do(func() {
+			_ = api.Close()
+			_ = tr.Close()
+			_ = st.Close()
+			_ = lg.Close()
+		})
+	}
+	t.Cleanup(node.stop)
+	return node
+}
+
+func (c *testCluster) restart(t *testing.T, node *testNode) *testNode {
+	t.Helper()
+	node.stop()
+	cfg := c.configs[node.index]
+	var peerListener, apiListener net.Listener
+	var err error
+	for attempt := 0; attempt < 50; attempt++ {
+		if peerListener, err = net.Listen("tcp", cfg.peerAddr); err == nil {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	for attempt := 0; attempt < 50; attempt++ {
+		if apiListener, err = net.Listen("tcp", cfg.apiAddr); err == nil {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	fresh := c.startNode(t, node.index, peerListener, apiListener)
+	c.nodes[node.index] = fresh
+	return fresh
 }
 
 type apiResult struct {
@@ -315,15 +381,14 @@ type apiResult struct {
 	body   []byte
 }
 
-func (c *testCluster) call(t *testing.T, node *testNode, path string, body any, token string) apiResult {
-	t.Helper()
+func (c *testCluster) post(apiAddr, path string, body any, token string) (apiResult, error) {
 	raw, err := json.Marshal(body)
 	if err != nil {
-		t.Fatal(err)
+		return apiResult{}, err
 	}
-	req, err := http.NewRequest(http.MethodPost, "https://"+node.apiAddr+path, bytes.NewReader(raw))
+	req, err := http.NewRequest(http.MethodPost, "https://"+apiAddr+path, bytes.NewReader(raw))
 	if err != nil {
-		t.Fatal(err)
+		return apiResult{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if token != "" {
@@ -331,12 +396,20 @@ func (c *testCluster) call(t *testing.T, node *testNode, path string, body any, 
 	}
 	resp, err := c.client.Do(req)
 	if err != nil {
-		t.Errorf("%s %s: %v", node.id, path, err)
-		return apiResult{}
+		return apiResult{}, err
 	}
 	defer resp.Body.Close()
 	out, _ := io.ReadAll(resp.Body)
-	return apiResult{status: resp.StatusCode, body: out}
+	return apiResult{status: resp.StatusCode, body: out}, nil
+}
+
+func (c *testCluster) call(t *testing.T, node *testNode, path string, body any, token string) apiResult {
+	t.Helper()
+	r, err := c.post(node.apiAddr, path, body, token)
+	if err != nil {
+		t.Errorf("%s %s: %v", node.id, path, err)
+	}
+	return r
 }
 
 func (c *testCluster) callAll(t *testing.T, nodes []*testNode, path string, body func(*testNode) any, token string) []apiResult {

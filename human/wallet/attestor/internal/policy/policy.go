@@ -54,6 +54,7 @@ type Decision struct {
 	Allowed bool
 	Reason  string
 	Code    string
+	Spends  []Spend
 }
 
 type Cap struct {
@@ -446,12 +447,14 @@ func (p *Policy) Evaluate(account string, req Request, ledger Ledger) Decision {
 			}
 		}
 	}
+	spends := make([]Spend, 0, len(order))
 	for _, asset := range order {
 		if err := ledger.RecordSpend(accountKey, asset, totals[asset], now); err != nil {
 			return denied(CodeLedgerError, "%v", err)
 		}
+		spends = append(spends, Spend{Asset: asset, Amount: new(big.Int).Set(totals[asset])})
 	}
-	return Decision{Allowed: true, Code: CodeAllowed, Reason: "request satisfies the account policy"}
+	return Decision{Allowed: true, Code: CodeAllowed, Reason: "request satisfies the account policy", Spends: spends}
 }
 
 func checkDestination(effective *compiled, destination Destination) (Decision, bool) {
@@ -606,7 +609,59 @@ func inspectTypedData(ctx Context, view any) (Inspection, error) {
 		address := common.HexToAddress(domain.VerifyingContract)
 		out.Destinations = append(out.Destinations, Destination{Address: address, Precompile: evm.IsPrecompile(address)})
 	}
+	if typed.Data.PrimaryType == "Permit" {
+		spend, spender, err := permitSpend(typed)
+		if err != nil {
+			return Inspection{}, err
+		}
+		out.Spends = append(out.Spends, spend)
+		out.Destinations = append(out.Destinations, Destination{Address: spender, Precompile: evm.IsPrecompile(spender)})
+	}
 	return out, nil
+}
+
+var maxUint256 = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1))
+
+func permitSpend(typed *evm.TypedData) (Spend, common.Address, error) {
+	domain := typed.Data.Domain
+	if !common.IsHexAddress(domain.VerifyingContract) {
+		return Spend{}, common.Address{}, refuse(CodeMissingField, "permit has no verifying token contract")
+	}
+	token := common.HexToAddress(domain.VerifyingContract)
+	message := typed.Data.Message
+	spenderRaw, ok := message["spender"].(string)
+	if !ok || !common.IsHexAddress(spenderRaw) {
+		return Spend{}, common.Address{}, refuse(CodeDecodeError, "permit spender is missing or not an address")
+	}
+	spender := common.HexToAddress(spenderRaw)
+	if raw, present := message["value"]; present {
+		amount, err := permitAmount(raw)
+		if err != nil {
+			return Spend{}, common.Address{}, err
+		}
+		return Spend{Asset: TokenAsset(token), Amount: amount}, spender, nil
+	}
+	if allowed, present := message["allowed"].(bool); present {
+		amount := new(big.Int)
+		if allowed {
+			amount.Set(maxUint256)
+		}
+		return Spend{Asset: TokenAsset(token), Amount: amount}, spender, nil
+	}
+	return Spend{}, common.Address{}, refuse(CodeDecodeError, "permit carries neither a value nor an allowed flag")
+}
+
+func permitAmount(raw any) (*big.Int, error) {
+	text := strings.TrimSpace(fmt.Sprint(raw))
+	base := 10
+	if rest, ok := strings.CutPrefix(text, "0x"); ok {
+		text, base = rest, 16
+	}
+	amount, ok := new(big.Int).SetString(text, base)
+	if text == "" || !ok || amount.Sign() < 0 || amount.BitLen() > 256 {
+		return nil, refuse(CodeDecodeError, "permit value %v is not an unsigned 256-bit integer", raw)
+	}
+	return amount, nil
 }
 
 func inspectPersonalMessage(_ Context, view any) (Inspection, error) {

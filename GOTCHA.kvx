@@ -179,3 +179,9 @@ area    = "attestor"
 symptom = "Every add-share through the daemon failed with the refresh participant-set error although the protocol tests passed."
 cause   = "refresh.AddShare requires each contributor's peer list to hold only bundle members, while the daemon session also lists the new participant."
 do      = "Keep the new participant in the transport session and give contributors a network whose PeerIDs leave it out."
+
+[gotcha.27]
+area    = "attestor"
+symptom = "A test that greps the audit log for a peer id or subject found nothing although the entry was written."
+cause   = "audit.Log stores only the SHA-256 of Entry.Subject; kind, key id, decision, reason and session id are the only plaintext fields."
+do      = "Put anything a test or operator must read back, such as silent peer ids, in Reason, and keep secrets out of it."

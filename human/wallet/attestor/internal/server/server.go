@@ -53,14 +53,20 @@ type Options struct {
 	PeerProbe       func(ctx context.Context) map[string]health.PeerState
 	Replica         func() health.ReplicaState
 	ProtocolTimeout time.Duration
+	PeerTimeout     time.Duration
+	RoundTimeout    time.Duration
 }
 
 type Server struct {
-	opts     Options
-	mux      *http.ServeMux
-	reporter *health.Reporter
-	keyMu    sync.Mutex
-	keyLocks map[string]*sync.Mutex
+	opts       Options
+	mux        *http.ServeMux
+	reporter   *health.Reporter
+	keyMu      sync.Mutex
+	keyLocks   map[string]*sync.Mutex
+	spends     *policy.SpendLedger
+	votesMu    sync.Mutex
+	votes      map[string]*refreshVote
+	afterStage func(keyID string)
 }
 
 func New(opts Options) (*Server, error) {
@@ -92,6 +98,9 @@ func New(opts Options) (*Server, error) {
 		return nil, err
 	}
 	s := &Server{opts: opts, mux: http.NewServeMux(), keyLocks: make(map[string]*sync.Mutex)}
+	if err := s.initPeer(); err != nil {
+		return nil, err
+	}
 	reporter, err := health.NewReporter(opts.NodeID, opts.Region, health.Providers{
 		Shares:    s.shareStats,
 		AuditHead: opts.Audit.Head,

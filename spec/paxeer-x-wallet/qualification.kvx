@@ -711,3 +711,11 @@ file = "human/wallet/attestor/internal/server/server.go"
 symbol = "Options.Replica"
 observed = "The health reporter is built inside server.New, outside the task's touches, so one Options field and one provider line were added there to carry the shipper state into the report."
 assumption = "The field is optional and nil keeps the report unchanged, so sibling edits to the server merge as the union."
+
+[observation.4.12.1]
+task = "4.12"
+file = "human/wallet/attestor/cmd/attestor/main.go"
+symbol = "main"
+observed = "The daemon still passes an in-memory ledger and sets neither PeerTimeout nor RoundTimeout, so the server builds the store-backed spend ledger on that ledger's clock and uses the thirty-second peer and two-minute round defaults."
+assumption = "The daemon wiring task passes policy.NewSpendLedger over the node store and exposes both timeouts in configuration; the server's replacement keeps the ledger durable until then."
+severity = "note"

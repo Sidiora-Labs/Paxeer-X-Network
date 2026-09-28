@@ -320,6 +320,27 @@ func (s *Server) saveShare(keyID string, c dealer.Curve, pub *pt.ECPoint, epoch 
 	return nil
 }
 
+func (s *Server) stageShare(keyID string, c dealer.Curve, pub *pt.ECPoint, epoch uint64, participants []string, payload storedShare) *Error {
+	pubBytes, err := publicKeyBytes(c, pub)
+	if err != nil {
+		return newError(CodeKeyInvalidShare, "%v", err)
+	}
+	plain, err := json.Marshal(payload)
+	if err != nil {
+		return newError(CodeStoreFailed, "%v", err)
+	}
+	defer func() {
+		for i := range plain {
+			plain[i] = 0
+		}
+	}()
+	rec := store.ShareRecord{KeyID: keyID, Curve: curveName(c), PublicKey: pubBytes, Epoch: epoch, Participants: participants}
+	if err := s.opts.Store.PutStaged(rec, plain); err != nil {
+		return newError(CodeStoreFailed, "%v", err)
+	}
+	return nil
+}
+
 func (s *Server) keyExists(keyID string) (bool, *Error) {
 	_, err := s.opts.Store.Get(keyID)
 	if errors.Is(err, store.ErrNotFound) {
@@ -525,7 +546,7 @@ func (s *Server) doRefresh(r *http.Request, body []byte) (KeyResponse, *Error) {
 	switch b.Curve {
 	case dealer.Secp256k1:
 		var out *refresh.ECDSAShare
-		e = s.runSession(r.Context(), req.SessionID, "refresh", protocolRefreshSecp, participants, func(ctx context.Context, ps *peerSession) error {
+		e = s.runBoundSession(r.Context(), req.SessionID, "refresh", protocolRefreshSecp, epochBinding(rec.Epoch), participants, func(ctx context.Context, ps *peerSession) error {
 			var err error
 			out, err = refresh.RefreshECDSA(ctx, refreshNet{ps}, b, ssid)
 			return err
@@ -553,7 +574,7 @@ func (s *Server) doRefresh(r *http.Request, body []byte) (KeyResponse, *Error) {
 		next.ECDSA, next.Bundle = raw, nil
 	case dealer.Ed25519:
 		var out dealer.ShareBundle
-		e = s.runSession(r.Context(), req.SessionID, "refresh", protocolRefreshEd, participants, func(ctx context.Context, ps *peerSession) error {
+		e = s.runBoundSession(r.Context(), req.SessionID, "refresh", protocolRefreshEd, epochBinding(rec.Epoch), participants, func(ctx context.Context, ps *peerSession) error {
 			var err error
 			out, err = refresh.RefreshEdDSA(ctx, refreshNet{ps}, b, ssid)
 			return err
@@ -572,8 +593,25 @@ func (s *Server) doRefresh(r *http.Request, body []byte) (KeyResponse, *Error) {
 		return KeyResponse{}, e
 	}
 	epoch := rec.Epoch + 1
-	if e := s.saveShare(req.KeyID, b.Curve, b.PublicKey, epoch, participants, next); e != nil {
+	if e := s.stageShare(req.KeyID, b.Curve, b.PublicKey, epoch, participants, next); e != nil {
+		_, _ = s.audit("keys.refresh", req.KeyID, payload.Owner, "failed", e.Code, req.SessionID)
 		return KeyResponse{}, e
+	}
+	if s.afterStage != nil {
+		s.afterStage(req.KeyID)
+	}
+	committed, err := s.decideRefresh(r.Context(), req.KeyID, req.SessionID, epoch, participants)
+	if !committed {
+		if derr := s.opts.Store.DiscardStaged(req.KeyID); derr != nil {
+			err = errors.Join(err, derr)
+		}
+		e = newError(CodeSessionFailed, "refresh aborted at epoch %d: %v", epoch, err)
+		_, _ = s.audit("keys.refresh", req.KeyID, payload.Owner, "failed", "aborted before commit", req.SessionID)
+		return KeyResponse{}, e
+	}
+	if err := s.opts.Store.CommitStaged(req.KeyID, epoch); err != nil {
+		_, _ = s.audit("keys.refresh", req.KeyID, payload.Owner, "failed", "commit failed after the coordinator committed", req.SessionID)
+		return KeyResponse{}, newError(CodeStoreFailed, "%v", err)
 	}
 	seq, e := s.audit("keys.refresh", req.KeyID, payload.Owner, "allowed", "refreshed", req.SessionID)
 	if e != nil {

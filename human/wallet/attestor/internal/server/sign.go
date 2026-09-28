@@ -412,10 +412,16 @@ func (s *Server) doSign(r *http.Request, body []byte) (SignResponse, *Error) {
 		_, _ = s.audit("sign."+req.Kind, req.KeyID, subject, "denied", e.Code, req.SessionID)
 		return SignResponse{}, e
 	}
-	decision := s.opts.Policy.Evaluate(payload.Account, policy.Request{Kind: policyKind, View: view}, s.opts.Ledger)
+	unlockAccount := s.lockKey("ledger\x00" + policy.AccountKey(payload.Account))
+	decision := s.opts.Policy.Evaluate(payload.Account, policy.Request{Kind: policyKind, View: view}, s.spends.ForRequest(requestID(req.KeyID, req.SessionID)))
+	unlockAccount()
 	if !decision.Allowed {
 		_, _ = s.audit("sign."+req.Kind, req.KeyID, subject, "denied", decision.Code, req.SessionID)
 		return SignResponse{}, policyError(decision.Code, decision.Reason)
+	}
+	if acked, silent := s.Announce(r.Context(), req.KeyID, req.SessionID, payload.Account, rec.Participants, decision.Spends); acked < int(dealer.Threshold) {
+		_, _ = s.audit("sign."+req.Kind, req.KeyID, subject, "denied", "announcement not acknowledged by a quorum", req.SessionID)
+		return SignResponse{}, newError(CodeQuorumTooFew, "%d of %d participants recorded the request; %d are required; silent: %s", acked, len(rec.Participants), dealer.Threshold, strings.Join(silent, ","))
 	}
 	seq, e := s.audit("sign."+req.Kind, req.KeyID, subject, "allowed", decision.Code, req.SessionID)
 	if e != nil {
@@ -433,7 +439,7 @@ func (s *Server) doSign(r *http.Request, body []byte) (SignResponse, *Error) {
 			return SignResponse{}, newError(CodeKeyNotRefreshed, "key %q needs a refresh before it can sign", req.KeyID)
 		}
 		var sig tssecdsa.EthereumSignature
-		e = s.runSession(r.Context(), req.SessionID, "sign", protocolSignSecp, signers, func(ctx context.Context, ps *peerSession) error {
+		e = s.runBoundSession(r.Context(), req.SessionID, "sign", protocolSignSecp, epochBinding(rec.Epoch), signers, func(ctx context.Context, ps *peerSession) error {
 			var err error
 			sig, err = tssecdsa.Sign(ctx, share, ecdsaNet{ps}, signers, signed)
 			return err
@@ -449,7 +455,7 @@ func (s *Server) doSign(r *http.Request, body []byte) (SignResponse, *Error) {
 			return SignResponse{}, newError(CodeKeyInvalidShare, "%v", err)
 		}
 		var sig [64]byte
-		e = s.runSession(r.Context(), req.SessionID, "sign", protocolSignEd, signers, func(ctx context.Context, ps *peerSession) error {
+		e = s.runBoundSession(r.Context(), req.SessionID, "sign", protocolSignEd, epochBinding(rec.Epoch), signers, func(ctx context.Context, ps *peerSession) error {
 			var err error
 			sig, err = eddsa.Sign(ctx, k, eddsaNet{ps}, signers, signed)
 			return err

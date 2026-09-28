@@ -1033,6 +1033,23 @@ symbols = ["buildManifest","registerServiceWorker","InstallPrompt","OfflineFallb
 touches = ["human/apps/wallet/public/manifest.json","human/apps/wallet/public/icons/","human/apps/wallet/src/pwa/","human/apps/wallet/src/app/layout.tsx","human/apps/wallet/src/proxy.ts","human/apps/wallet/src/lib/security/","human/apps/wallet/scripts/release-check.sh","human/apps/wallet/package.json","human/apps/wallet/capacitor.config.ts","human/apps/wallet/ios/","human/apps/wallet/android/"]
 reqs = ["10.8"]
 
+[task.4.12]
+title = "Make refresh atomic and the spend ledger durable across the attestor network"
+status = "done"
+wave = 4
+requires = ["4.8","2.1"]
+do_1 = "keys.refresh runs as a two-phase commit: every participant stages the new share under the next epoch beside the committed one, the first participant in sorted order commits only after every participant acknowledges its stage over the peer refresh route and otherwise aborts, participants swap epochs in one store transaction on commit and discard the stage on abort, on a missing decision or on restart with an uncommitted stage, and refresh and signing sessions bind the committed epoch into the protocol name so signers at different epochs fail closed; proven by a test that stops one node between stage and commit and shows the key still signs at the old epoch after that node returns."
+do_2 = "The spend ledger persists sealed in the store per account with its rolling windows; every allowed sign request is announced to every participant of the key, the non-signing peers record the policy view and answer, a signing session proceeds only when at least the quorum has acknowledged the announcement, entries carry the request id so a request announced by several signers counts once, and permits count against the caps of the token they permit; proven by tests that restart a node and show the caps hold, and that spreading requests over different signer sets cannot exceed a cap."
+do_3 = "One peer cannot stall a session or exhaust the pending buffer: pending sessions and pending messages are bounded per peer, expected relays are counted once per sender and round, and a per-round deadline aborts the session with session_timeout and a session.stalled audit entry naming the silent peers."
+verify_cmd = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./internal/server/... ./internal/policy/... ./internal/store/... ./internal/transport/...'"
+symbols = ["SpendLedger","Announce","PutStaged","CommitStaged","DiscardStaged","DiscardAllStaged","decideRefresh","epochBinding","Stalled","ErrPeerQuota","ErrRoundDeadline"]
+touches = ["human/wallet/attestor/internal/server/keys.go","human/wallet/attestor/internal/server/sign.go","human/wallet/attestor/internal/server/session.go","human/wallet/attestor/internal/server/server.go","human/wallet/attestor/internal/server/peer.go","human/wallet/attestor/internal/server/e2e_test.go","human/wallet/attestor/internal/server/durability_test.go","human/wallet/attestor/internal/policy/ledger.go","human/wallet/attestor/internal/policy/policy.go","human/wallet/attestor/internal/policy/ledger_test.go","human/wallet/attestor/internal/store/store.go","human/wallet/attestor/internal/store/staged_test.go","human/wallet/attestor/internal/transport/transport.go","human/wallet/attestor/internal/transport/session.go","human/wallet/attestor/internal/transport/bounds_test.go","human/wallet/docs/security-review.md","spec/paxeer-x-wallet/"]
+reqs = ["1.4","1.5","1.6","2.6","3.3","13.3"]
+revision = "7bf854b7bd1c60e6de5118d194898fb021a937e0"
+command = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./internal/server/... ./internal/policy/... ./internal/store/... ./internal/transport/...'"
+exit_code = 0
+log_path = ".logs/verify.log"
+
 [task.4.13]
 title = "Audited verification signature for keys imported in the ceremony window"
 status = "pending"

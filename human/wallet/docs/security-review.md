@@ -67,7 +67,7 @@ The daemon keeps the pinned commit `d8fd6861d3b2`, and `go.mod` is unchanged.
   - It can submit any signing request with a user's live identity token, and every node signs anything the policy allows for that user (finding F-6).
   - It can call the import, refresh and add-share routes, because its client certificate is accepted on the same terms as the operator's (finding F-4).
   - It can withhold or delay requests.
-  - It can start refresh sessions with a subset of nodes (finding F-5).
+  - It can start refresh sessions with a subset of nodes. A refresh commits only when every participant has staged the new share, so a partial start leaves every node at the old epoch (finding F-5, fixed).
 - **What it cannot cause:**
   - It cannot sign without a token that verifies against the configured JWKS.
   - It cannot sign outside the per-kind policy. `eth_sign_digest` now recomputes its digest from the construction (finding F-1, fixed).
@@ -80,12 +80,15 @@ The daemon keeps the pinned commit `d8fd6861d3b2`, and `go.mod` is unchanged.
 - **How they connect:** over TLS 1.3 with a required client certificate, identified by SPKI pin (`internal/transport/tls.go`).
 - **What one peer can cause:**
   - It can abort any session it participates in: protocol mismatch, invalid messages, or equivocation, which the echo broadcast catches.
-  - It can stall `Flush` until the protocol timeout by sending a duplicate original, since expected relays grow per original received (finding F-11).
-  - It can fill the pending-session buffer (64 sessions, 256 messages each, 30-second TTL). Other senders then get 503 answers and retry (finding F-11).
-  - During refresh, it can leave nodes in different share epochs (finding F-5).
+  - It can delay a session by going silent, until the round deadline aborts it with `session_timeout` and a `session.stalled` audit entry naming the silent peer (finding F-11, fixed).
+  - It can fill only its own share of the pending-session buffer: pending sessions it opens and messages it queues are capped per peer, and excess answers 503 (finding F-11, fixed).
+  - During refresh, it can withhold its staged acknowledgement and abort the refresh, but it cannot leave nodes in different share epochs short of a crash between acknowledgement and commit (finding F-5, fixed).
+  - It can inflate an account's recorded spend by announcing requests, which only tightens the caps (finding F-8, fixed).
 - **What one peer cannot cause:**
   - It cannot impersonate another peer. A non-relay message whose id differs from the authenticated sender is `ErrSenderMismatch`.
   - It cannot relay outside secp256k1 key generation, signing and refresh sessions.
+  - It cannot stall `Flush` with a duplicate original: expected relays are counted once per sender and round.
+  - It cannot sign with a share from another epoch: the committed epoch is bound into the session protocol name, so signers at different epochs fail closed.
   - It cannot relay for itself, for the receiver, or for a non-participant.
   - It cannot learn a share: every protocol message is a zero-knowledge-backed library message.
   - Below the threshold of three signers, it cannot produce a signature.
@@ -134,7 +137,8 @@ Each path below refuses the request, and no signature is produced. The order is 
 9. Transaction bytes that do not decode, a foreign chain id, or an unprotected legacy transaction: refused by `evm.DecodeTransaction`.
 10. Policy decision deny: `policy_denied`, carrying the policy code.
 11. Allowed-sign audit append fails: refused before the session starts.
-12. Session failure, timeout or protocol mismatch: a session error, and nothing is returned.
+12. Fewer than three participants record the announced request in their spend ledgers: `quorum_too_few_signers`, before any session.
+13. Session failure, timeout, round deadline or protocol mismatch, including an epoch mismatch between signers: a session error, and nothing is returned.
 
 ### `internal/policy`
 
@@ -156,7 +160,6 @@ Each path below refuses the request, and no signature is produced. The order is 
 - Destinations are not limited when a document has no allow list.
 - Calls to unknown contracts count only their native value (`evm.DecodeCalldata` returns an unknown call).
 - `personal_message` has no content policy.
-- EIP-712 permits count no token spend (finding F-9).
 
 ## Findings
 
@@ -218,12 +221,16 @@ Each path below refuses the request, and no signature is produced. The order is 
 
 ### F-5: refresh is not atomic across nodes
 
-- **Severity:** high. **Status:** open.
-- **Evidence:**
-  - Refresh in `internal/server/keys.go` overwrites the stored share when the local session completes.
-  - A peer or gateway that lets some nodes finish and others fail leaves nodes in different epochs.
-  - Fewer than three nodes may then agree, and the key can be lost.
-- **Owner action:** design a two-phase refresh: keep the old share until every participant confirms the new epoch, with the backup snapshot taken before each refresh.
+- **Severity:** high. **Status:** fixed.
+- **Evidence:** before this change, refresh in `internal/server/keys.go` overwrote the stored share when the local session completed, so a peer or gateway that let some nodes finish and others fail left nodes in different epochs.
+- **Fix:**
+  - Each participant stages the new share beside the committed one (`PutStaged` in `internal/store`).
+  - The first participant in sorted order coordinates. It commits only after every participant acknowledges its stage over `/v1/peer/refresh`, and otherwise aborts.
+  - Participants swap epochs in one transaction on commit (`CommitStaged`) and discard the stage on abort or on a missing decision (`DiscardStaged`). A node that restarts with an uncommitted stage discards it and audits the discard.
+  - Refresh and signing sessions bind the committed epoch into the protocol name, so signers at different epochs fail closed.
+- **Residual:** a node that crashes after acknowledging but before receiving the commit stays at the old epoch. Signing with it fails closed, and a new refresh brings it back.
+- **Test:** `TestRefreshKeepsTheOldEpochWhenAParticipantStopsBeforeCommit` in `internal/server/durability_test.go` stops one node between stage and commit, shows every node at the old epoch with no stage, and signs at the old epoch after the node returns. It then shows a signer at a different epoch cannot sign. `TestStagedShareCommitsOrDiscardsWhole` covers the store.
+- **Owner action:** take the backup snapshot before each refresh.
 
 ### F-6: identity tokens are bearer tokens
 
@@ -244,23 +251,22 @@ Each path below refuses the request, and no signature is produced. The order is 
 
 ### F-8: policy ledger is in memory and per node
 
-- **Severity:** medium. **Status:** open.
-- **Evidence:**
-  - The ledger in `internal/policy` resets on restart.
-  - With three of five signers, each node sees only the spends it co-signs, so the effective daily cap can reach five thirds of the configured cap.
-- **Owner action:**
-  - Persist the ledger.
-  - Set caps with the five-thirds factor, or share spend records among nodes.
+- **Severity:** medium. **Status:** fixed.
+- **Evidence:** before this change, the ledger reset on restart and each node saw only the spends it co-signed, so the effective daily cap could reach five thirds of the configured cap.
+- **Fix:**
+  - `SpendLedger` in `internal/policy` keeps each account's spends and requests, with their rolling windows, sealed in the store.
+  - A signer announces every allowed request to every participant of the key over `/v1/peer/announce`. The others record it, and the session starts only when at least three participants hold the record. Entries carry the request id, so a request announced by several signers counts once.
+- **Test:** `TestSpendLedgerHoldsAcrossSignerSetsAndRestarts` spreads spends over three signer sets and shows a fourth set refused at the daily cap, before and after a restart. `TestSpendLedgerCapsHoldAcrossRestart` covers the ledger alone.
+- **Owner action:** `cmd/attestor/main.go` still passes an in-memory ledger; the server replaces it with the store ledger on the same clock (observation recorded).
 
 ### F-9: permits and replay windows
 
-- **Severity:** medium. **Status:** open.
+- **Severity:** medium. **Status:** open; the permit part is fixed.
 - **Evidence:**
-  - EIP-712 permits count no token spend, only the verifying contract as destination.
+  - EIP-712 permits counted no token spend, only the verifying contract as destination. They now count their value, or the maximum amount for an allowed-style permit, against the cap of the token they permit, and the spender is checked as a destination (`TestPermitCountsAgainstTheTokenCap`).
   - Agent credential expiry in `internal/auth/agent.go` has no upper bound.
   - The agent nonce cache is in memory, so a request can be replayed after a restart. The agent path is not wired, so this is latent.
 - **Owner action:**
-  - Decode permit amounts into the cap ledger.
   - Bound agent expiry.
   - Persist nonces before wiring agents.
 
@@ -272,14 +278,14 @@ Each path below refuses the request, and no signature is produced. The order is 
 
 ### F-11: peer-driven stalls
 
-- **Severity:** low. **Status:** open.
-- **Evidence:**
-  - A duplicate original makes `Flush` wait for relays that never arrive, until the protocol timeout.
-  - One peer can fill the pending-session buffer (`internal/transport/session.go`).
-  - Both cause only delay and retries.
-- **Owner action:**
-  - Count expected relays per distinct original.
-  - Cap pending sessions per peer.
+- **Severity:** low. **Status:** fixed.
+- **Evidence:** before this change, a duplicate original made `Flush` wait for relays that never arrived, and one peer could fill the pending-session buffer.
+- **Fix:**
+  - Expected relays are counted once per sender and round.
+  - Each peer may open at most its share of the pending sessions and queue at most its share of messages per pending session; excess is `ErrPeerQuota` and answers 503.
+  - A round deadline aborts a session in which no message arrives in time, with `session_timeout` and a `session.stalled` audit entry naming the silent peers.
+- **Test:** `TestPendingBufferBoundedPerPeer` and `TestStalledSessionNamesTheSilentPeer` in `internal/transport`, and `TestStalledPeerAbortsTheSessionWithAnAuditEntry` in `internal/server`.
+- **Owner action:** none.
 
 ### F-12: audit-to-tag gap in the library
 
