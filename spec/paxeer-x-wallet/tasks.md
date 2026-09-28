@@ -288,6 +288,11 @@
     - Follow the attestor API schema on refresh: the refresh request names only the session and the key, so the client refuses a response naming another node or key as an invalid response and a response whose curve or public key differs from the imported key as a different public key, while import keeps refusing a curve that differs from the share it sent.
     - Make the command tests assert the daemon's authority rules as they stand: deliver without a signing credential stops at the test signature with the daemon's exact token_missing refusal, prints the counts reached, and marks no wallet migrated; the recovered-address mismatch through the command returns with the operator verification signature, and the migrate tests keep proving the full delivery and the mismatch with an owner token source.
     - _Requirements: 4.1, 4.2, 4.3_
+  - [x] 4.18 Bring the custody signer's attestor test to the hardened daemon's authority rules
+    - The KMS crate's attestor test starts the real daemons with two client authorities, a gateway CA that issues the nodes and the gateway client identity used for keys.generate and sign and a separate operator CA whose identity is proven refused with operator_required on keys.generate, a kernel policy file allowing the Programs transfer operation with a native cap, a JSON-RPC chain reader answering the bind nonce call, and ATTESTOR_JWT_MAX_AGE set.
+    - The signed activity is a Programs transfer on the daemon's chain id whose actor is the generated key's DID, whose leg debits that DID's main account and whose validity window holds the current time, so the kernel evaluator admits it; every test token carries a random jti, every signing request gets a freshly minted token, and a replayed token is proven refused with token_invalid without advancing the signer's audit record.
+    - The signer's client names the gateway identity it presents instead of the operator identity, since the daemon now accepts keys.generate and sign only from the gateway CA.
+    - _Requirements: 8.2, 2.1, 2.5_
 
 ## Wave 5 - Release
 
@@ -317,7 +322,7 @@
     { "id": 1,  "tasks": ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "1.10", "1.11", "1.12", "1.13", "1.14", "1.15", "1.16"] },
     { "id": 2,  "tasks": ["2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7", "2.8", "2.9"] },
     { "id": 3,  "tasks": ["3.1", "3.2", "3.3", "3.4", "3.5", "3.6", "3.7", "3.8", "3.9", "3.10", "3.11", "3.12", "3.13", "3.14", "3.15"] },
-    { "id": 4,  "tasks": ["4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7", "4.8", "4.9", "4.10", "4.11", "4.12", "4.13", "4.14", "4.15", "4.16", "4.17"] },
+    { "id": 4,  "tasks": ["4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7", "4.8", "4.9", "4.10", "4.11", "4.12", "4.13", "4.14", "4.15", "4.16", "4.17", "4.18"] },
     { "id": 5,  "tasks": ["5.1", "5.2", "5.3", "5.4"] }
   ]
 }

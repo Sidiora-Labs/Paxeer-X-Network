@@ -1153,6 +1153,23 @@ symbols = ["TestChain","ChainRpcError","chainMainAccountId","ADDR","ANCHOR","BIN
 touches = ["human/wallet/gateway/test/support/chain.ts","human/wallet/gateway/test/e2e/attestors.ts","human/wallet/gateway/test/e2e/gateway.e2e.test.ts","human/wallet/gateway/test/provisioning.test.ts"]
 reqs = ["6.1","6.2","6.3","6.4","6.5","6.6","5.7","5.6"]
 
+[task.4.18]
+title = "Bring the custody signer's attestor test to the hardened daemon's authority rules"
+status = "done"
+wave = 4
+requires = ["3.4","4.11"]
+do_1 = "The KMS crate's attestor test starts the real daemons with two client authorities, a gateway CA that issues the nodes and the gateway client identity used for keys.generate and sign and a separate operator CA whose identity is proven refused with operator_required on keys.generate, a kernel policy file allowing the Programs transfer operation with a native cap, a JSON-RPC chain reader answering the bind nonce call, and ATTESTOR_JWT_MAX_AGE set."
+do_2 = "The signed activity is a Programs transfer on the daemon's chain id whose actor is the generated key's DID, whose leg debits that DID's main account and whose validity window holds the current time, so the kernel evaluator admits it; every test token carries a random jti, every signing request gets a freshly minted token, and a replayed token is proven refused with token_invalid without advancing the signer's audit record."
+do_3 = "The signer's client names the gateway identity it presents instead of the operator identity, since the daemon now accepts keys.generate and sign only from the gateway CA."
+verify_cmd = "timeout 20m sh -c 'cd human && cargo test -p layerx-human-kms attestor'"
+symbols = ["AttestorClient","AttestorSigner","sign_activity","gateway_client","JsonServer","bind_nonce_reply"]
+touches = ["human/crates/layerx-human-kms/tests/attestor.rs","human/crates/layerx-human-kms/src/attestor.rs"]
+reqs = ["8.2","2.1","2.5"]
+revision = "a9ce2f53455434c8d473ee9c701c7f89a13320c3"
+command = "timeout 20m sh -c 'cd human && cargo test -p layerx-human-kms attestor'"
+exit_code = 0
+log_path = ".logs/verify.log"
+
 # --------------------------------------------------------------------------
 # WAVE 5 - RELEASE
 # --------------------------------------------------------------------------
