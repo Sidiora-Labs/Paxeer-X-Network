@@ -348,3 +348,50 @@ symbol = "golden"
 observed = "The unchanged verify command reran at 90d15555891d56e28d08e6b43242c55936578f6d after the SDK specifier fix and exited 1: 20 of 26 tests pass, KernelPlan.test.tsx fails to collect because it reads human/wallet/schema/human-api/golden while the goldens live at human/schema/human-api/golden, and six unavailable-state tests in AccountView and DepositFlow read Checking the LayerX kernel state instead of the named reason."
 assumption = "The task owner corrects the golden path and waits for the kernel state to settle before reading the reason; the import defect of the first run is resolved."
 severity = "note"
+
+[observation.3.7.2]
+task = "3.7"
+file = "human/wallet/deploy/endpoint.toml"
+symbol = "configured_kernel"
+observed = "The definition's [env] still set the client identity, sequencer, provisioning key, module registry, kernel token, registration token and faucet token paths, so configured_kernel, rpc_register and rpc_faucet refuse chain-only start-up; those fourteen [env] lines were removed and their [[files]] mappings kept."
+assumption = "The kernel task restores those [env] paths together with LAYERX_GATEWAY_COMPONENT_URL and the backend URLs."
+severity = "suspect"
+
+[observation.3.7.3]
+task = "3.7"
+file = "platform/hosted/gateway/src/main.rs"
+symbol = "configured_protocol"
+observed = "The endpoint is deployed with LAYERX_GATEWAY_NETWORK_ID paxeer-x-mainnet and LAYERX_GATEWAY_PROTOCOL_NETWORK_ID 125 while the kernel is not anchored, so both are provisional labels."
+assumption = "The kernel task fixes the final network and protocol network identifiers and resets both platform secrets."
+severity = "assumption"
+
+[observation.3.7.4]
+task = "3.7"
+file = "tools/wallet/check-deploy.sh"
+symbol = "dockerfile"
+observed = "flyctl deploy --config resolves [build] dockerfile against the definition's directory and lets it override --dockerfile, while check-deploy resolves it against the repository root, so the endpoint image was built with docker build -f platform/hosted/gateway/Dockerfile from the repository root and deployed with --image; gateway.toml and the attestor definitions carry the same shape."
+assumption = "Deployments of every definition under human/wallet/deploy build from the repository root and pass --image until the definitions and the check agree on one resolution."
+severity = "suspect"
+
+[observation.3.7.5]
+task = "3.7"
+file = "human/wallet/deploy/endpoint.toml"
+symbol = "[[files]]"
+observed = "The platform destroyed the endpoint machine two seconds after creating it, before the binary ran and with no log line, while the definition still maps the client identity, token, sequencer, provisioning key and module registry secrets that chain-only mode leaves unset; the Redis machine, whose every mapped secret is set, started."
+assumption = "The platform refuses a machine whose [[files]] mapping names an unset secret, so chain-only deployment needs those fourteen mappings removed or their secrets set; the second repair cycle was spent and the deployment stops here."
+severity = "blocker"
+
+[observation.3.7.6]
+task = "3.7"
+file = "tools/wallet/check-deploy.sh"
+symbol = "dockerfile"
+observed = "check-deploy applies its dockerfile rule to every definition under human/wallet/deploy, so redis.toml, which runs the public Redis image through [build] image, fails it with build dockerfile None."
+assumption = "The check learns that a definition with a [build] image needs no dockerfile; redis.toml keeps the public image as specified."
+severity = "suspect"
+
+[gate.3.1]
+revision = "fded4443642d52f1407f1f6146cbd18c9b7442f6"
+command = "docker build -f platform/hosted/gateway/Dockerfile -t paxeer-shared-endpoint:deploy . && flyctl deploy --config human/wallet/deploy/endpoint.toml --image paxeer-shared-endpoint:deploy --app paxeer-shared-endpoint --local-only --ha=false"
+exit_code = 1
+log_path = ".logs/deploy.log"
+observed = "The image built and the private TLS Redis machine started ready on its TLS port, but the platform destroyed the endpoint machine before the binary ran, so no call was made."

@@ -59,6 +59,11 @@ ENDPOINT_SEQUENCER_FIRST_BATCH - platform secret written to the file named by LA
 ENDPOINT_SEQUENCER_LAST_BATCH - platform secret written to the file named by LAYERX_GATEWAY_SEQUENCER_LAST_BATCH_FILE
 ENDPOINT_KEY_PROVISIONING_KEY - platform secret written to the file named by LAYERX_GATEWAY_KEY_PROVISIONING_KEY_FILE
 ENDPOINT_MODULE_REGISTRY - platform secret written to the file named by LAYERX_GATEWAY_MODULE_REGISTRY_FILE
+REDIS_CONF - platform secret holding the private Redis server configuration, written to /run/secrets/redis.conf
+REDIS_TLS_CERT - platform secret holding the private Redis server's PEM certificate, signed by the CA in ENDPOINT_OUTBOUND_CA, written to /run/secrets/redis.crt
+REDIS_TLS_KEY - platform secret holding the private Redis server's PEM private key, written to /run/secrets/redis.key
+REDIS_TLS_CA - platform secret holding the PEM form of the CA in ENDPOINT_OUTBOUND_CA, written to /run/secrets/ca.crt
+REDIS_ACL - platform secret holding the private Redis ACL file with the default user off and the endpoint's user, written to /run/secrets/users.acl
 # attestor
 ATTESTOR_NODE_ID - identifier of this attestor node within the participant set
 ATTESTOR_REGION - region label this node reports in health

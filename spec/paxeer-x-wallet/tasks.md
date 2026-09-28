@@ -168,7 +168,7 @@
     - In human/apps/wallet route sign-in through the gateway's identity flow, provisioning through the gateway, and every transaction, message and typed data through the SDK provider, with injected wallets through the same wallet interface, removing any remaining direct RPC signing path.
     - Add component and hook tests against the SDK's provider with an in-test gateway server, covering sign-in, provisioning, a send, a message and a typed-data request, and the injected path.
     - _Requirements: 10.3_
-  - [ ] 3.7 Deploy the shared endpoint in chain-only mode
+  - [ ] 3.7 Deploy the shared endpoint in chain-only mode — **Implemented - qualification pending**
     - Build the endpoint image from the repository, deploy it from human/wallet/deploy/endpoint.toml with the chain RPC configured and the kernel backends unconfigured, verify eth_chainId, px_resolveAccount and px_getNetwork answer and that kernel methods return the typed unavailable error, and record the run in the qualification log without hosts.
     - Extend tools/wallet/check-live.sh with an endpoint mode that performs those calls against a configured base.
     - _Requirements: 12.2_

@@ -710,14 +710,14 @@ log_path = ".logs/verify.log"
 
 [task.3.7]
 title = "Deploy the shared endpoint in chain-only mode"
-status = "pending"
+status = "implemented"
 wave = 3
 requires = ["1.15","1.12","3.9","3.11","3.12"]
 do_1 = "Build the endpoint image from the repository, deploy it from human/wallet/deploy/endpoint.toml with the chain RPC configured and the kernel backends unconfigured, verify eth_chainId, px_resolveAccount and px_getNetwork answer and that kernel methods return the typed unavailable error, and record the run in the qualification log without hosts."
 do_2 = "Extend tools/wallet/check-live.sh with an endpoint mode that performs those calls against a configured base."
 verify_cmd = "timeout 20m sh -c 'tools/wallet/check-live.sh endpoint'"
 symbols = ["check-live"]
-touches = ["tools/wallet/check-live.sh","tools/wallet/check-live.test.sh","spec/paxeer-x-wallet/qualification.kvx"]
+touches = ["tools/wallet/check-live.sh","tools/wallet/check-live.test.sh","spec/paxeer-x-wallet/qualification.kvx","human/wallet/deploy/redis.toml","human/wallet/deploy/env","human/wallet/deploy/endpoint.toml"]
 reqs = ["12.2"]
 
 [task.3.8]
