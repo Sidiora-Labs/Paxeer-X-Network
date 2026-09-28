@@ -718,7 +718,7 @@ reqs = ["12.2"]
 
 [task.3.8]
 title = "Add the agent lane helpers to the SDK"
-status = "pending"
+status = "done"
 wave = 3
 requires = ["2.3","2.4"]
 do_1 = "In human/wallet/sdk add agent helpers that derive did:layerx from an Ed25519 public key, sign gateway requests end to end with the canonical digest, nonce and expiry the gateway verifies, sign the binding message for an agent wallet, and expose the claim flow."
@@ -727,6 +727,10 @@ verify_cmd = "timeout 20m sh -c 'pnpm --dir human/wallet/sdk test -- agent'"
 symbols = ["agentDid","signAgentRequest","signBinding"]
 touches = ["human/wallet/sdk/src/agent.ts","human/wallet/sdk/test/agent.test.ts"]
 reqs = ["9.5","6.6"]
+revision = "dcdee6a234b702d2869698f65dd8f72053323286"
+command = "timeout 20m sh -c 'pnpm --dir human/wallet/sdk test -- agent'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.3.9]
 title = "Let the endpoint start in chain-only mode without kernel-side secrets"

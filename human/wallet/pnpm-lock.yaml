@@ -106,6 +106,12 @@ importers:
 
   sdk:
     dependencies:
+      '@noble/curves':
+        specifier: ^1.9.1
+        version: 1.9.1
+      '@noble/hashes':
+        specifier: ^1.8.0
+        version: 1.8.0
       '@sidiora/layerx-sdk':
         specifier: link:../../../agent/sdk/typescript
         version: link:../../../agent/sdk/typescript
@@ -116,12 +122,6 @@ importers:
         specifier: ^2.56.9
         version: 2.56.9(typescript@5.9.3)(zod@3.25.76)
     devDependencies:
-      '@noble/curves':
-        specifier: ^1.9.1
-        version: 1.9.1
-      '@noble/hashes':
-        specifier: ^1.8.0
-        version: 1.8.0
       '@types/react':
         specifier: ^18.3.11
         version: 18.3.31

@@ -30,6 +30,7 @@ export * from './errors.js';
 export * from './provider.js';
 export * from './eip6963.js';
 export * from './wallet.js';
+export * from './agent.js';
 
 /**
  * `PaxeerWallet` — drop-in client for any Paxeer-network app.

@@ -220,3 +220,11 @@ symbol = "funded"
 observed = "The SDK client, its types and client test, the demo's funded account panel and the workspace README still call or describe the removed /v1/funded routes, which now answer 404."
 assumption = "The SDK tasks of this wave own those files and drop the funded surface there."
 severity = "suspect"
+
+[observation.3.8.1]
+task = "3.8"
+file = "human/wallet/gateway/src/auth/did.ts"
+symbol = "parseDid"
+observed = "The gateway registers and verifies agents only under did:matrix:<label>:<16 hex> and has no did:layerx derivation, so agentDid (did:layerx plus 64 hex, matching lxwire and the bind vectors) cannot be the X-Agent-Key the gateway accepts."
+assumption = "signAgentRequest and buildClaim take the registered key id as given and the tests sign with the gateway's did:matrix form; moving the gateway to did:layerx principals belongs to a gateway task."
+severity = "medium"

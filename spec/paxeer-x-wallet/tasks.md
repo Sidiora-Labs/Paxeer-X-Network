@@ -172,7 +172,7 @@
     - Build the endpoint image from the repository, deploy it from human/wallet/deploy/endpoint.toml with the chain RPC configured and the kernel backends unconfigured, verify eth_chainId, px_resolveAccount and px_getNetwork answer and that kernel methods return the typed unavailable error, and record the run in the qualification log without hosts.
     - Extend tools/wallet/check-live.sh with an endpoint mode that performs those calls against a configured base.
     - _Requirements: 12.2_
-  - [ ] 3.8 Add the agent lane helpers to the SDK
+  - [x] 3.8 Add the agent lane helpers to the SDK
     - In human/wallet/sdk add agent helpers that derive did:layerx from an Ed25519 public key, sign gateway requests end to end with the canonical digest, nonce and expiry the gateway verifies, sign the binding message for an agent wallet, and expose the claim flow.
     - Add tests that run the helpers against the gateway's verification code imported from the workspace, covering a valid request, replay, expiry and a wrong key.
     - _Requirements: 9.5, 6.6_
