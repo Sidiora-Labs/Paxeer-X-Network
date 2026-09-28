@@ -13,7 +13,7 @@
     - Implement internal/store/backup that writes an encrypted snapshot of the store under a separate backup key and restores it, so req.3.ac_2 can build on it.
     - Add internal/config/config_test.go and internal/store/store_test.go covering refusal without a node key, round trip of both curves, tampered associated data refused, snapshot and restore, and that no share bytes appear in any error string or log line.
     - _Requirements: 1.5, 3.2_
-  - [ ] 1.2 Wrap threshold ECDSA on secp256k1 with Ethereum signature shape
+  - [x] 1.2 Wrap threshold ECDSA on secp256k1 with Ethereum signature shape
     - Add human/wallet/attestor/internal/tss/ecdsa wrapping the vendored library's CGGMP distributed key generation and four-round signing for secp256k1 with threshold three of five (library parameter two), exposing Keygen, Sign and the persisted share shape (share, Paillier key, partial public keys, Pedersen parameters, Birkhoff parameters) as typed values.
     - Normalise every signature to low s and compute the recovery id by recovering the public key, so the output is a 65-byte Ethereum signature; refuse to return a signature whose recovered address does not match the key.
     - Add an in-package in-memory peer manager in the test file so five participants run in one process, and tests covering keygen, signing of a real EIP-1559 transaction digest with address recovery through go-ethereum's crypto package, low-s normalisation, and a participant dropping out below threshold failing the session.

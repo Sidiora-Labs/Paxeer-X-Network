@@ -209,7 +209,7 @@ log_path = ".logs/verify.log"
 
 [task.1.2]
 title = "Wrap threshold ECDSA on secp256k1 with Ethereum signature shape"
-status = "pending"
+status = "done"
 wave = 1
 requires = []
 do_1 = "Add human/wallet/attestor/internal/tss/ecdsa wrapping the vendored library's CGGMP distributed key generation and four-round signing for secp256k1 with threshold three of five (library parameter two), exposing Keygen, Sign and the persisted share shape (share, Paillier key, partial public keys, Pedersen parameters, Birkhoff parameters) as typed values."
@@ -219,6 +219,10 @@ verify_cmd = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./
 symbols = ["Keygen","Sign","KeyShare","EthereumSignature"]
 touches = ["human/wallet/attestor/internal/tss/ecdsa/ecdsa.go","human/wallet/attestor/internal/tss/ecdsa/share.go","human/wallet/attestor/internal/tss/ecdsa/ecdsa_test.go"]
 reqs = ["1.1"]
+revision = "9787d3728aa4ebf2769a51d109b1551fbddb9eb0"
+command = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./internal/tss/ecdsa/...'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.1.3]
 title = "Wrap FROST on Ed25519 with standard signature output"

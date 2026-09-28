@@ -63,3 +63,11 @@ symbol = "attestor"
 observed = "The daemon runs as the distroless non-root user while the platform mounts the attestor_data volume at /data owned by root, and the daemon's API is mutual TLS while the platform health check presents no client certificate."
 assumption = "The daemon task serves /health without a client certificate and the network deployment task makes /data writable for the non-root user before the first keygen."
 severity = "suspect"
+
+[observation.1.2.1]
+task = "1.2"
+file = "human/wallet/attestor/internal/tss/ecdsa/ecdsa.go"
+symbol = "Threshold"
+observed = "The vendored CGGMP library treats its threshold argument as the number of signers required (random polynomial of degree threshold-1, sign refuses fewer Birkhoff parameters than threshold), so library parameter two would make any two of five shares sign."
+assumption = "Three of five is the custody property, so the wrapper passes library threshold three (polynomial degree two) and a test proves two signers are refused; req.1 ac_1, decision custody_model and sibling tasks that say library parameter two need the same reading."
+severity = "suspect"
