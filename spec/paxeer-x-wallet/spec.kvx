@@ -894,10 +894,10 @@ status = "pending"
 [task.4.1]
 title = "Run the gateway in shadow against the live attestors with a fresh account on the chain"
 status = "implemented"
-revision = "c206084c87b60ce33b071f819b5aef84abb92803"
-command = "flyctl deploy --config human/wallet/deploy/gateway.toml --image <pushed image> --app paxeer-wallet-gateway --wait-timeout 6m -y && flyctl scale count 2 -y, then GET /readyz on each machine"
+revision = "d42c36bf4b01902334f0bc969571ec156af84013"
+command = "flyctl deploy --config human/wallet/deploy/gateway.toml --image <pushed image> --app paxeer-wallet-gateway --local-only --wait-timeout 6m -y, then GET /readyz on each machine and a password sign-in of the staged test identity"
 exit_code = 1
-log_path = ".logs/readiness.log"
+log_path = ".logs/shadow.log"
 wave = 4
 requires = ["3.1","3.2","3.5"]
 do_1 = "Deploy the gateway from human/wallet/deploy/gateway.toml beside the existing service under a platform-issued name, pointed at the deployed attestors, the identity provider and the RPC pool, with the sponsor account funded out of band; sign in with a fresh test identity, provision, observe both keys, the top-up and the binding on the chain, sign and send a minimal transaction, sign a message, and confirm getUnifiedAccount reports the binding."

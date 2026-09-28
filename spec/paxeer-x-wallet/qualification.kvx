@@ -991,11 +991,11 @@ assumption = "Either DATABASE_URL names the cluster's direct connection or the p
 severity = "blocker"
 
 [gate.4.1]
-revision = "c206084c87b60ce33b071f819b5aef84abb92803"
-command = "docker build -f human/wallet/gateway/Dockerfile . && flyctl deploy --config human/wallet/deploy/gateway.toml --image <pushed image> --app paxeer-wallet-gateway --wait-timeout 6m -y && flyctl scale count 2 -y, then GET /readyz on each machine"
+revision = "d42c36bf4b01902334f0bc969571ec156af84013"
+command = "docker build -f human/wallet/gateway/Dockerfile . && flyctl deploy --config human/wallet/deploy/gateway.toml --image <pushed image> --app paxeer-wallet-gateway --local-only --wait-timeout 6m -y, then GET /readyz on each machine and a password sign-in of the staged test identity"
 exit_code = 1
-log_path = ".logs/readiness.log"
-observed = "Image sha256:5619819ea3d71094e6069cee563f201f6cd43431957e20f47784322bc02f683e built from 1a9cd6ea1 runs on two performance-2x 4 GB machines that connect to the database, apply every migration and listen, and both answer /readyz 503 with nonce_store, rpc_pool and identity_provider up and attestors down at 0 of 5, every node refusing the reissued gateway client certificate with unknown ca, so no provisioning, binding, transaction or message signature was made and there are no hashes to record; check-deploy passed every rule."
+log_path = ".logs/shadow.log"
+observed = "Image sha256:af20d15a47423b56410f61d76e2ed62ee9ab90d4dc093daa7a6288e62bcec165 built from d42c36bf4 runs on both performance-2x 4 GB machines, both passing the platform check and answering /readyz 200 with x-served-by set and attestors up at 5 of 5, nonce_store, rpc_pool and identity_provider up (.logs/readiness.log); the staged test identity's password sign-in was refused with invalid_credentials, so no provisioning, binding or transaction was made, there is no binding hash, and the verify command was not run."
 
 [observation.4.13.1]
 task = "4.13"
@@ -1251,3 +1251,11 @@ symbol = "attestors"
 observed = "The attestors mode could not be run from the operator host because the attestor APIs are reachable only on the private network; each gateway machine's own attestor readiness, which calls every node's health over mutual TLS, stands as the attestor-side evidence."
 assumption = "The attestors mode runs from a machine on the private network holding a client identity the redeployed nodes accept."
 severity = "note"
+
+[observation.4.1.8]
+task = "4.1"
+file = "tools/wallet/check-live.sh"
+symbol = "CHECK_LIVE_GATEWAY_TOKEN"
+observed = "With attestor readiness green, the password sign-in of the confirmed test identity staged by the owner answered 400 invalid_credentials from the identity provider, with the staged values loaded intact, so there is still no access token, the provisioning journey did not start and the verify command was not run; the first deploy attempt hung on a platform API call and the retry with the local image succeeded."
+assumption = "The owner re-stages the test identity's password or confirms the identity on the same provider, and the provisioning journey and the verify command then run once against the gateway as deployed."
+severity = "blocker"
