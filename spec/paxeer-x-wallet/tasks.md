@@ -148,7 +148,7 @@
     - Extend /v1/wallet/me with the DID, the main account id, the binding state and the kernel availability state; add the backfill command over migrated wallets with a resumable cursor and bounded batches, using the agent's registered key for agent wallets; refuse and record a binding that names a different DID.
     - Add tests that spawn the real attestor daemon built from the repository and an in-test chain RPC server that implements the addr precompile's read and bind semantics, covering a full provision, a retry after each step, the different-DID refusal, the agent path and the backfill.
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6_
-  - [ ] 3.2 Prove the gateway against the real daemon end to end
+  - [ ] 3.2 Prove the gateway against the real daemon end to end — **Implemented - qualification pending**
     - Add human/wallet/gateway/test/e2e that builds and spawns five attestor daemons from the repository with certificates generated in the test and a JWKS served in the test, and drives the gateway through provision, sign and verify of a transaction, a message and typed data, a refused invalid token, a refused out-of-policy transaction and a refused unsigned agent write.
     - Add the readiness route of req.5.ac_6 reporting the attestor quorum, the nonce store, the RPC pool and the identity provider, and cover it in the same test.
     - _Requirements: 5.7, 5.6_

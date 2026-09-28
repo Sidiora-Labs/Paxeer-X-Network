@@ -490,3 +490,27 @@ command = "docker build -f platform/hosted/gateway/Dockerfile -t paxeer-shared-e
 exit_code = 0
 log_path = ".logs/deploy.log"
 observed = "The image built, two performance-4x 8 GB machines started and passed the readiness check, and eth_chainId, px_resolveAccount, px_getNetwork and a kernel lx_ call answered as expected with the kernel reported not configured."
+
+[observation.3.2.1]
+task = "3.2"
+file = "human/wallet/gateway/src/attestor/client.ts"
+symbol = "AttestorClient"
+observed = "Against five real daemons the gateway client probes /v1/health where the daemon serves /health (404), posts sign bodies with api_version, bytes, context, authorisation and participants where v1.kvx takes signers, kind-specific fields and the Authorization header, reads error.reason where the daemon answers error.message, and expects 64-byte signatures where the daemon returns 65, so every sign answers quorum_unavailable and five e2e tests fail."
+assumption = "The client and the recorded fixtures in test/fixtures/attestor that test/attestor.test.ts asserts belong to the relay task and are aligned to v1.kvx and its goldens there; the e2e assertions and the daemon are left as written."
+severity = "blocker"
+
+[observation.3.2.2]
+task = "3.2"
+file = "human/wallet/gateway/src/routes/sign.ts"
+symbol = "SignTypedDataBody"
+observed = "POST /v1/wallet/sign-typed-data already exists on the relay path but takes {typed_data} while observation 2.4.1 and the SDK fixtures send {typedData}; no route was added and the e2e test posts the gateway's own shape."
+assumption = "One side aligns the body key; the digest, custody and sponsored submit routes of 2.4.1 and 2.5.1 remain absent."
+severity = "suspect"
+
+[observation.3.2.3]
+task = "3.2"
+file = "human/wallet/gateway/test/e2e/gateway.e2e.test.ts"
+symbol = "provision"
+observed = "Attestor-backed provisioning has not landed, so the e2e test provisions through the existing route, generates the secp256k1 key with operator keys.generate on all five daemons and marks the row migrated with the key id as the ceremony does; readinessRoutes is registered in src/index.ts."
+assumption = "The provisioning task replaces the operator keygen step with its own flow and the test then drives /v1/wallet/provision alone."
+severity = "note"

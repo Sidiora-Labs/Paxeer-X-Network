@@ -9,6 +9,7 @@ import { closePool, getPool } from './db/pool.js';
 import { runMigrations } from './db/migrate.js';
 import { walletRoutes } from './routes/wallet.js';
 import { signRoutes } from './routes/sign.js';
+import { readinessRoutes } from './routes/readiness.js';
 import { agentAuthRoutes } from './routes/agentAuth.js';
 import { agentRoutes } from './routes/agent.js';
 import { agentsRoutes } from './routes/agents.js';
@@ -71,6 +72,8 @@ export async function buildApp(): Promise<FastifyInstance> {
     version: '0.1.0',
     chain_id: env.HYPERPAXEER_CHAIN_ID,
   }));
+
+  await app.register(readinessRoutes);
 
   // v1 routes
   await app.register(walletRoutes);
