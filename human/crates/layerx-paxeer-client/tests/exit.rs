@@ -593,7 +593,7 @@ fn eligibility_reports_exactly_what_the_precompiles_declare() -> TestResult {
     let node = Node::launch(fixture.chain())?;
     let exit = node.exit()?;
 
-    assert_eq!(exit.contract(), CUSTODY_PRECOMPILE);
+    assert_eq!(EmergencyExit::contract(), CUSTODY_PRECOMPILE);
     assert_eq!(exit.network_id(), NETWORK_ID);
     assert_eq!(exit.required_confirmations(), REQUIRED_CONFIRMATIONS);
     assert_eq!(

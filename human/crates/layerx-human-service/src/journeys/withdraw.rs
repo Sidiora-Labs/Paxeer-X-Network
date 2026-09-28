@@ -1286,7 +1286,7 @@ impl WithdrawalJourney {
             },
             action_key: self.record.claim_action_key,
             action: PaxeerAction::QueueClaim,
-            target: claim.contract(),
+            target: layerx_paxeer_client::WithdrawalClaim::contract(),
             calldata: claim.calldata().to_vec(),
         })
     }
@@ -1312,7 +1312,7 @@ impl WithdrawalJourney {
             },
             action_key: self.record.payout_action_key,
             action: PaxeerAction::FinalisePayout,
-            target: boundary.custody_precompile(),
+            target: WithdrawalBoundary::custody_precompile(),
             calldata: submitted.finalise_calldata(),
         })
     }

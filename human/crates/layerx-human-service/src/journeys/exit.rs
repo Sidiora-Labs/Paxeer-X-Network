@@ -869,7 +869,7 @@ impl ExitJourney {
         layerx_paxeer_client::verify_exit_balance(&evidence, exit.network_id(), claim.state_root)
             .map_err(|_| ExitJourneyError::ClaimMismatch)?;
         let material = &evidence.material;
-        if claim.contract != exit.contract()
+        if claim.contract != EmergencyExit::contract()
             || claim.batch_number != material.batch_number
             || claim.account != material.account
             || claim.asset_id != material.asset_id

@@ -220,7 +220,7 @@ impl NativeCustodyCredit {
     /// Checks the light-client credit head against the pinned profile, the
     /// expected account, the carried bundle hash and the bundle header's height,
     /// validator-set hash and application root. The header hash, commit and
-    /// store proofs inside the bundle are verified by the LayerX bridge module,
+    /// store proofs inside the bundle are verified by the `LayerX` bridge module,
     /// not here.
     ///
     /// # Errors

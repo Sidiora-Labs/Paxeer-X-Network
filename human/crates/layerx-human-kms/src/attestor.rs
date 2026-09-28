@@ -203,7 +203,7 @@ impl fmt::Debug for AttestorClient {
             .debug_struct("AttestorClient")
             .field("nodes", &self.nodes)
             .field("identity", &"[gateway client identity]")
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -910,7 +910,7 @@ fn transport_error(node: &str, error: &ureq::Error) -> AttestorError {
         ureq::Error::Io(io)
             if io
                 .get_ref()
-                .is_some_and(|inner| inner.is::<rustls::Error>()) =>
+                .is_some_and(<dyn std::error::Error + Send + Sync>::is::<rustls::Error>) =>
         {
             AttestorError::Authentication { node }
         }

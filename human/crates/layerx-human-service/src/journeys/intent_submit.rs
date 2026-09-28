@@ -279,7 +279,7 @@ pub struct KernelStart<'a> {
 }
 
 /// Creates the durable engine journey for a verified plan whose legs all run
-/// inside LayerX. Each leg's relationship material must resolve to exactly
+/// inside `LayerX`. Each leg's relationship material must resolve to exactly
 /// the planned mechanism, term, endpoints, asset and amount.
 ///
 /// # Errors

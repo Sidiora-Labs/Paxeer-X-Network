@@ -243,7 +243,7 @@ impl EmergencyExit {
 
     /// The custody precompile every exit transaction targets.
     #[must_use]
-    pub const fn contract(&self) -> EvmAddress {
+    pub const fn contract() -> EvmAddress {
         CUSTODY_PRECOMPILE
     }
 
