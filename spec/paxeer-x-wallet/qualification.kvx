@@ -126,3 +126,11 @@ symbol = "build:agent-sdk"
 observed = "The agent SDK is linked with the link protocol and exports only built output, so the SDK's test, typecheck and build scripts first run npm ci and the agent SDK build; its x402 draw module imports node:sqlite, which vitest 2 cannot load, so the SDK moved to vitest 3."
 assumption = "The merged gate has npm registry access or a warm npm cache for the agent SDK's pinned dependencies."
 severity = "note"
+
+[observation.3.7.1]
+task = "3.7"
+file = "platform/hosted/gateway/src/main.rs"
+symbol = "config"
+observed = "With every kernel backend URL unset, config still refuses startup unless LAYERX_GATEWAY_CLIENT_IDENTITY_PKCS12 and its password file, the four LAYERX_GATEWAY_SEQUENCER_ files, LAYERX_GATEWAY_KEY_PROVISIONING_KEY_FILE and LAYERX_GATEWAY_MODULE_REGISTRY_FILE are present and valid, so chain-only mode cannot start without kernel-side secrets and the deployment was not attempted."
+assumption = "The endpoint needs a change that makes those inputs optional when LAYERX_GATEWAY_COMPONENT_URL is unset (as configured_kernel already does for the backend URLs and tokens), or an owner decision to issue them; tools/wallet/check-live.sh endpoint is ready for the deployment that follows."
+severity = "blocker"

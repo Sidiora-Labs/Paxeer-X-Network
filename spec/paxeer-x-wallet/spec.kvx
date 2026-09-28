@@ -686,7 +686,7 @@ reqs = ["10.3"]
 
 [task.3.7]
 title = "Deploy the shared endpoint in chain-only mode"
-status = "pending"
+status = "implemented"
 wave = 3
 requires = ["1.15","1.12"]
 do_1 = "Build the endpoint image from the repository, deploy it from human/wallet/deploy/endpoint.toml with the chain RPC configured and the kernel backends unconfigured, verify eth_chainId, px_resolveAccount and px_getNetwork answer and that kernel methods return the typed unavailable error, and record the run in the qualification log without hosts."
