@@ -206,7 +206,7 @@
     - In human/apps/wallet add the unified account view (address, DID, binding state), one asset list with joined balances completed by chain calls, one history with cursor paging, the status ladder per transaction, a custody deposit flow through the custody precompile, and kernel plans through the human service client with the kernel availability state shown and every kernel action disabled with its reason when unavailable.
     - Add tests for each view against recorded endpoint responses and the unavailable state.
     - _Requirements: 10.4, 7.2, 7.3, 7.4, 7.5_
-  - [ ] 4.3 Add the Paxeer X surfaces and the fee choice to the app
+  - [ ] 4.3 Add the Paxeer X surfaces and the fee choice to the app — **Implemented - qualification pending**
     - In human/apps/wallet add the exchange, bridge, launchpad, fee token and web data surfaces through the SDK modules, the fee choice labelling PAX gas, SID sponsored and SID native with denominations, the LayerX fee per leg shown separately, and 402 draws shown with their caps.
     - Add tests for each surface's transaction construction and the fee labels.
     - _Requirements: 10.5, 11.1, 11.3_

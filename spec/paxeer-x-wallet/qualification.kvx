@@ -276,3 +276,27 @@ symbol = "NEXT_PUBLIC_AUTH_REDIRECT_URL"
 observed = "The app README's variable table omits NEXT_PUBLIC_AUTH_REDIRECT_URL, so release-check resolves it from human/wallet/deploy/env, where it is listed for the demo; next.config.mjs builds a standalone server and no out directory, so release-build.sh stages the Capacitor web directory from public before cap sync."
 assumption = "The native shell loads the hosted site through server.url, so the bundled web directory only needs the static assets; the README row is added by whichever task next edits the README."
 severity = "note"
+
+[observation.4.3.1]
+task = "4.3"
+file = "human/wallet/sdk/src/agent.ts"
+symbol = "@noble/curves/ed25519"
+observed = "agent.ts imports @noble/curves/ed25519 and @noble/hashes/sha2 without the .js subpath, valid in the SDK's @noble/curves 1.9.1, but the app's vitest dedupes @noble/curves to 2.4.0, which exports only ./ed25519.js, so every app test that reaches the @paxeer/wallet index, including WalletProvider, fails at import with Missing ./ed25519 specifier."
+assumption = "The SDK owner switches to the .js subpaths or the app test config stops deduping @noble/curves; the surfaces keep the index import and the provider layer unchanged, so the surfaces gate is blocked until then."
+severity = "high"
+
+[observation.4.3.2]
+task = "4.3"
+file = "human/apps/wallet/src/surfaces/useSurface.ts"
+symbol = "SPONSORED_UNAVAILABLE"
+observed = "The app configures no gas station quote service, sponsor or paymaster, so the SID sponsored fee path is shown with its denomination and signing path but refuses to send."
+assumption = "A deploy task supplies the gas station settings to the app; SID native and PAX gas are fully wired through the fee token precompile and eth_sendTransaction."
+severity = "medium"
+
+[observation.4.3.3]
+task = "4.3"
+file = "human/apps/wallet/src/surfaces/config.ts"
+symbol = "NEXT_PUBLIC_PAXEER_USID_PER_PAX"
+observed = "The SID gas estimate reads the owner-set usid per PAX rate from NEXT_PUBLIC_PAXEER_USID_PER_PAX, which no deploy environment file lists yet, and shows no SID amount while it is unset."
+assumption = "The deploy task adds the variable with the owner-set rate."
+severity = "info"

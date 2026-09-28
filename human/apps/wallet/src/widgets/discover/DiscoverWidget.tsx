@@ -9,6 +9,8 @@ import { openExternalUrl } from '@/lib/security/navigation';
 import { DiscoverRankingSkeleton } from '@/components/ui/Skeletons';
 import { RankedTokenList } from './RankedTokenList';
 import { DiscoverCarousel } from './DiscoverCarousel';
+import Link from 'next/link';
+import { SURFACE_ROUTES } from '@/surfaces/routes';
 
 const BANNER_SLIDES = [
   { src: '/1c56896f-202b-4da0-a145-5e469abf0f85.png', alt: 'Paxeer Banner 1' },
@@ -63,6 +65,16 @@ export function DiscoverWidget({ onNavigate, onTokenTrade }: DiscoverWidgetProps
         </div>
         <div className="mt-auto pt-2"><p className="text-[13px] font-bold">PNS</p></div>
       </button>
+
+      <div className="col-span-2 px-1 pt-1">
+        <h3 className="text-[13px] font-bold text-pax-muted uppercase tracking-[0.06em]">Paxeer X</h3>
+      </div>
+      {SURFACE_ROUTES.map((route) => (
+        <Link key={route.id} href={route.href} className="bg-pax-surface rounded-[20px] p-4 flex flex-col justify-between text-left press-scale min-h-[80px]">
+          <p className="text-[13px] font-bold">{route.label}</p>
+          <p className="text-[11px] text-pax-muted mt-1">{route.description}</p>
+        </Link>
+      ))}
 
       <DiscoverCarousel slides={BANNER_SLIDES} />
 
