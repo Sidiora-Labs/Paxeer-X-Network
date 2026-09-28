@@ -243,7 +243,7 @@ log_path = ".logs/verify.log"
 
 [task.1.4]
 title = "Implement dealer import, refresh and add-share for both curves"
-status = "pending"
+status = "done"
 wave = 1
 requires = []
 do_1 = "Add human/wallet/attestor/internal/tss/dealer that splits a whole secp256k1 or Ed25519 private scalar into five shares by a random degree-two polynomial with Birkhoff parameters of rank zero, and returns per-participant share bundles together with the public key, holding the whole scalar only for the duration of the call."
@@ -254,6 +254,10 @@ verify_cmd = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./
 symbols = ["Split","ShareBundle","RefreshECDSA","RefreshEdDSA","AddShare"]
 touches = ["human/wallet/attestor/internal/tss/dealer/dealer.go","human/wallet/attestor/internal/tss/dealer/dealer_test.go","human/wallet/attestor/internal/tss/refresh/ecdsa.go","human/wallet/attestor/internal/tss/refresh/eddsa.go","human/wallet/attestor/internal/tss/refresh/addshare.go","human/wallet/attestor/internal/tss/refresh/refresh_test.go"]
 reqs = ["1.3","1.4"]
+revision = "9787d3728aa4ebf2769a51d109b1551fbddb9eb0"
+command = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./internal/tss/dealer/... ./internal/tss/refresh/...'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.1.5]
 title = "Build the mutual-TLS peer transport for protocol sessions"

@@ -23,7 +23,7 @@
     - Encode the public key and the signature in RFC 8032 form (32-byte compressed point, 64-byte R||S) and verify every produced signature with the standard library before returning it.
     - Add tests with an in-package in-memory peer manager covering keygen, signing of the LX:PAXEER-BIND:v1 message shape and a receipt-domain digest, verification with crypto/ed25519 and with the strict verifier in layerxproof/verify, and refusal below threshold.
     - _Requirements: 1.2_
-  - [ ] 1.4 Implement dealer import, refresh and add-share for both curves
+  - [x] 1.4 Implement dealer import, refresh and add-share for both curves
     - Add human/wallet/attestor/internal/tss/dealer that splits a whole secp256k1 or Ed25519 private scalar into five shares by a random degree-two polynomial with Birkhoff parameters of rank zero, and returns per-participant share bundles together with the public key, holding the whole scalar only for the duration of the call.
     - Add human/wallet/attestor/internal/tss/refresh that runs the vendored library's CGGMP refresh for secp256k1 from dealer shares (validating each share against the public key in the protocol's own round) and a proactive zero-sharing refresh for Ed25519 shares with Feldman commitments verified by every participant, both leaving the public key unchanged.
     - Add add-share for both curves so a new participant receives a share from a quorum of existing ones, followed by a refresh, and the enlarged set signs.

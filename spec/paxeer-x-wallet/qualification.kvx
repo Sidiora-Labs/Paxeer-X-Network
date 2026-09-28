@@ -87,3 +87,11 @@ symbol = "IntentShape"
 observed = "Intent submit executes plans made only of kernel send and budget legs, or exactly a custody deposit followed by its credit; withdrawal plans and a deposit followed by further kernel legs are refused as unsupported because no existing movement journey chains them."
 assumption = "Withdrawal and chained deposit execution through intent submit is follow-up work; the golden sequence numbering is illustrative, while the service requires Paxeer legs to consume no account sequence."
 severity = "note"
+
+[observation.1.4.1]
+task = "1.4"
+file = "human/wallet/attestor/internal/tss/dealer/dealer.go"
+symbol = "Threshold"
+observed = "The library's threshold argument is the signer count (polynomial degree threshold-1, ValidatePublicKey and FeldmanVerify use threshold-1), so three-of-five on a degree-two polynomial is library threshold 3, not the parameter two named in [decision] custody_model and req.1."
+assumption = "dealer.Threshold is 3 and is passed unchanged to refresh, add-share and both signers; tasks 1.2 and 1.3 should use the same value."
+severity = "suspect"
