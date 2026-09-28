@@ -289,7 +289,11 @@ reqs = ["2.5","2.7"]
 
 [task.1.8]
 title = "Verify user tokens and agent request signatures at the attestor"
-status = "pending"
+status = "done"
+revision = "9787d3728aa4ebf2769a51d109b1551fbddb9eb0"
+command = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./internal/auth/...'"
+exit_code = 0
+log_path = ".logs/verify.log"
 wave = 1
 requires = []
 do_1 = "Add human/wallet/attestor/internal/auth/jwt verifying a Supabase access token against a JWKS URL: RS256 and ES256, key cache by key id with refresh on unknown id and a minimum refresh interval, issuer, audience, expiry, not-before and subject checks, and a binding check that the subject owns the key id being signed for through a caller-supplied ownership lookup."

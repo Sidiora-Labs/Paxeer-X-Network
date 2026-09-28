@@ -45,7 +45,7 @@
     - Add the account id derivation (protocol 3, LX:ACCOUNT:v1 with length prefix), the DID derivation from an Ed25519 public key, the LX:PAXEER-BIND:v1 message builder and parser, and the 402 grant and receive preimages under their documented domains.
     - Add lxwire_test.go that decodes every activity golden under agent/schema/agent-api/golden and re-encodes it byte for byte, checks the binding vectors under layerxproof/testvectors and layerxproof/testdata, and checks account ids against values computed by layerxproof/codec.
     - _Requirements: 2.5, 2.7_
-  - [ ] 1.8 Verify user tokens and agent request signatures at the attestor
+  - [x] 1.8 Verify user tokens and agent request signatures at the attestor
     - Add human/wallet/attestor/internal/auth/jwt verifying a Supabase access token against a JWKS URL: RS256 and ES256, key cache by key id with refresh on unknown id and a minimum refresh interval, issuer, audience, expiry, not-before and subject checks, and a binding check that the subject owns the key id being signed for through a caller-supplied ownership lookup.
     - Add human/wallet/attestor/internal/auth/agent verifying an agent request: canonical digest over method, key id, request bytes, nonce and expiry, Ed25519 signature against the registered key from a replicated principal set, nonce replay cache with expiry, and frozen-principal refusal.
     - Add tests that generate RSA and P-256 keys, serve a real JWKS from an in-test HTTP server, mint tokens and cover every refusal; and tests that sign agent requests with real Ed25519 keys and cover replay, expiry, wrong key and frozen principal.
