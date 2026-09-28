@@ -79,3 +79,11 @@ symbol = "original_client_provisions_resolves_and_replays_assertion_devices"
 observed = "The unchanged verify_cmd exits 0 at a3c183a4273cc952708065eb6aa600210606b83e under the repository's clock wrapper: 11 assertion tests and the client test pass."
 assumption = "The runtime clock supervisor wrapper is the required environment for this crate's tests, as observation 1.13.1 assumed."
 severity = "note"
+
+[observation.1.14.1]
+task = "1.14"
+file = "human/crates/layerx-human-service/src/journeys/intent_submit.rs"
+symbol = "IntentShape"
+observed = "Intent submit executes plans made only of kernel send and budget legs, or exactly a custody deposit followed by its credit; withdrawal plans and a deposit followed by further kernel legs are refused as unsupported because no existing movement journey chains them."
+assumption = "Withdrawal and chained deposit execution through intent submit is follow-up work; the golden sequence numbering is illustrative, while the service requires Paxeer legs to consume no account sequence."
+severity = "note"

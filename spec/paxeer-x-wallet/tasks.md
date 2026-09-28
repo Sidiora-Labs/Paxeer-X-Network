@@ -75,7 +75,7 @@
     - Expose the mapping through the crate's state so the human service can resolve an assertion to the account and DID, and record a receipt-shaped audit entry for account creation through assertion.
     - Add tests that generate an RSA key, serve a real JWKS from an in-test HTTP server, mint tokens, and cover creation, reopening, wrong issuer, wrong audience, expiry and a DID conflict.
     - _Requirements: 8.1_
-  - [ ] 1.14 Make intent submit execute a journey instead of echoing the plan
+  - [x] 1.14 Make intent submit execute a journey instead of echoing the plan
     - In human/crates/layerx-human-service change the intent submit handler to verify the signed digest and every leg binding against the re-planned plan (action key, actor, authority, account sequence, validity window, fee limit), refuse typed on any mismatch, create a journey, and drive its legs through the existing movement journeys.
     - Return the intent submission shape the contract in human/schema/human-api/intent.kvx declares (journey id, plan digest, state, state copy key), and add the journey state transitions the plan-driven path needs to the existing journey machinery without changing any existing journey's behaviour.
     - Add tests that plan a kernel send and a custody deposit, submit each with valid bindings and observe a journey created and progressed, and submit with a stale digest, a wrong sequence and an expired window and observe typed refusals; assert the response decodes with the TypeScript SDK's submission decoder shape.

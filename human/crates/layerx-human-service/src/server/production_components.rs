@@ -884,6 +884,26 @@ impl ProductionComponents {
         let mut agent = self.principal_agent(scope)?;
         let registry = agent.registry().clone();
         match kind {
+            "intent" => {
+                let mut journey = crate::journeys::JourneyEngine::load(scope, id)
+                    .map_err(|_| ApiFailure::upstream_degraded())?
+                    .ok_or_else(ApiFailure::not_found)?;
+                let status = crate::server::poll_once_ready(journey.advance(
+                    scope,
+                    &self.agent_contract,
+                    &mut agent,
+                    &self.custody,
+                    &registry,
+                    trace,
+                    observed_at,
+                ))
+                .map_err(|_| ApiFailure::upstream_degraded())?
+                .map_err(|_| ApiFailure::upstream_degraded())?;
+                Ok(matches!(
+                    status.state(),
+                    crate::journeys::JourneyState::Done | crate::journeys::JourneyState::Refused
+                ))
+            }
             "move" => {
                 let mut journey = crate::journeys::MoveJourney::load(scope, id)
                     .map_err(move_journey_failure)?
@@ -1216,6 +1236,177 @@ fn move_quote_json(value: &super::movement_provider::AuthorizedMovePlan) -> serd
         "fee_ceiling": {"amount": quote.fee_ceiling().to_string(), "currency": quote.asset_label()},
         "arrival_estimate": quote.arrival_expectation(), "expires_at": value.expires_at,
         "irreversibility_copy_key": "movement.review.irreversible"})
+}
+
+#[derive(Clone, Copy)]
+struct KernelSubmission<'a> {
+    planned: &'a crate::journeys::UnifiedPlan,
+    submitted: &'a crate::journeys::SubmitPlanRequest,
+    expectation: &'a crate::journeys::BindingExpectation,
+    context: &'a super::movement_provider::PlanningContext,
+    idempotency: &'a str,
+}
+
+fn submit_failure(refusal: crate::journeys::SubmitRefusal) -> ApiFailure {
+    ApiFailure {
+        status: refusal.status(),
+        code: refusal.code().to_owned(),
+        copy_key: refusal.copy_key().to_owned(),
+        retry: refusal.retry().to_owned(),
+        retry_after_ms: None,
+        field: refusal.field().map(str::to_owned),
+    }
+}
+
+fn intent_leg_route(
+    components: &ProductionComponents,
+    scope: &crate::store::PrincipalScope<'_>,
+    agent: &mut AgentRuntime,
+    context: &super::movement_provider::PlanningContext,
+    leg: &crate::journeys::PlannedLeg,
+    binding: &crate::journeys::IntentLegBinding,
+) -> Result<crate::journeys::RouteRequest, ApiFailure> {
+    use crate::journeys::{Endpoint, LegMechanism, Mechanism};
+    match (leg.mechanism(), leg.source(), leg.destination()) {
+        (
+            LegMechanism::Protocol(Mechanism::Send),
+            Endpoint::Human(from),
+            Endpoint::Human(to) | Endpoint::Agent(to),
+        ) if from == &context.account => {
+            intent_send_route(components, scope, agent, context, leg, binding, to)
+        }
+        (
+            LegMechanism::Protocol(Mechanism::BudgetFund),
+            Endpoint::Human(_),
+            Endpoint::AgentBudget(budget),
+        )
+        | (
+            LegMechanism::Protocol(Mechanism::BudgetDefund),
+            Endpoint::AgentBudget(budget),
+            Endpoint::Human(_),
+        ) => intent_budget_route(scope, agent, context, leg, binding, budget),
+        _ => Err(ApiFailure::forbidden()),
+    }
+}
+
+fn intent_send_route(
+    components: &ProductionComponents,
+    scope: &crate::store::PrincipalScope<'_>,
+    agent: &mut AgentRuntime,
+    context: &super::movement_provider::PlanningContext,
+    leg: &crate::journeys::PlannedLeg,
+    binding: &crate::journeys::IntentLegBinding,
+    to: &AccountId,
+) -> Result<crate::journeys::RouteRequest, ApiFailure> {
+    let canonical = to.canonical();
+    if let Some(recipient_did) = canonical
+        .strip_prefix("agent:")
+        .and_then(|value| value.strip_suffix(":main"))
+    {
+        let recipient = agent
+            .identity_resolve(recipient_did)
+            .map_err(agent_failure)?;
+        if recipient.frozen || recipient.verification < 3 || recipient.canonical_bytes.is_empty() {
+            return Err(ApiFailure::forbidden());
+        }
+    }
+    let context_hash = action_key(&format!(
+        "{}:{}",
+        scope.tenant().as_str(),
+        hex_bytes(&context.binding_receipt_digest)
+    ));
+    let signed = crate::custody::SendPlanAuthorization {
+        plan_id: binding.action_key,
+        action_key: binding.action_key,
+        principal: scope.principal().as_str().to_owned(),
+        tenant: scope.tenant().as_str().to_owned(),
+        binding_digest: context.custody_binding_digest,
+        from: movement_account_address(&context.account, context.protocol_version)?,
+        to: movement_account_address(to, context.protocol_version)?,
+        asset: leg.asset().bytes(),
+        amount: leg.amount().value(),
+        sequence: binding.account_sequence,
+        idempotency_key: binding.action_key,
+        expires_at: binding.not_after,
+        not_before: binding.not_before,
+        not_after: binding.not_after,
+        context: context_hash,
+        network: context.network.value(),
+        protocol: context.protocol_version,
+    };
+    let signature = components
+        .custody
+        .authorize_send(scope.principal(), &context.custody_key, &signed)
+        .map_err(|_| ApiFailure::forbidden())?;
+    let descriptor = components
+        .custody
+        .describe_key(scope.principal(), &context.custody_key)
+        .map_err(|_| ApiFailure::forbidden())?;
+    crate::journeys::RouteRequest::from_wire_parts(
+        leg.source().clone(),
+        leg.destination().clone(),
+        crate::journeys::Relationship::Direct(crate::journeys::SendRoute {
+            account_sequence: ProtocolSequence::from_u64(binding.account_sequence),
+            idempotency_key: IdempotencyKey::new(binding.action_key),
+            expires_at: TimestampSeconds::from_u64(binding.not_after),
+            context_hash: layerx_types::intent::ContextHash::new(context_hash),
+            authorization: layerx_types::intent::SendAuthorization::new(
+                layerx_types::intent::SendAuthorizationKind::Owner,
+                PublicKey::new(descriptor.public_key),
+                layerx_types::intent::AuthorizationSignature::new(signature),
+            ),
+            network_id: context.network,
+            protocol_version: layerx_types::intent::ProtocolVersion::new(context.protocol_version)
+                .map_err(|_| ApiFailure::forbidden())?,
+        }),
+        leg.asset(),
+        leg.amount(),
+    )
+    .map_err(|_| ApiFailure::forbidden())
+}
+
+fn intent_budget_route(
+    scope: &crate::store::PrincipalScope<'_>,
+    agent: &mut AgentRuntime,
+    context: &super::movement_provider::PlanningContext,
+    leg: &crate::journeys::PlannedLeg,
+    binding: &crate::journeys::IntentLegBinding,
+    budget: &AccountId,
+) -> Result<crate::journeys::RouteRequest, ApiFailure> {
+    let managed = CreationJourney::list(scope).map_err(|_| ApiFailure::upstream_degraded())?;
+    for journey in &managed {
+        let alias = format!("agt_{}", hex_bytes(&journey.agent_id()));
+        let agent_context = agent.agent_context(&alias).map_err(agent_failure)?;
+        if agent_context.seed.budget_account != budget.canonical() {
+            continue;
+        }
+        if agent_context.seed.owner_account != context.account.canonical()
+            || agent_context.seed.budget_asset != leg.asset().bytes()
+            || agent_context.protocol_grant_id == [0; 32]
+        {
+            return Err(ApiFailure::forbidden());
+        }
+        let state = agent
+            .agent_budget_state(agent_context.active_budget_id)
+            .map_err(agent_failure)?;
+        if state.asset != leg.asset().bytes() || state.age_sequences > state.maximum_age_sequences {
+            return Err(ApiFailure::forbidden());
+        }
+        return crate::journeys::RouteRequest::from_wire_parts(
+            leg.source().clone(),
+            leg.destination().clone(),
+            crate::journeys::Relationship::ManagedBudget(crate::journeys::BudgetRoute {
+                budget_id: BudgetId::new(agent_context.active_budget_id),
+                idempotency_key: IdempotencyKey::new(binding.action_key),
+                revocation_sequence: ProtocolSequence::from_u64(state.revocation_sequence),
+                create: None,
+            }),
+            leg.asset(),
+            leg.amount(),
+        )
+        .map_err(|_| ApiFailure::forbidden());
+    }
+    Err(ApiFailure::forbidden())
 }
 
 fn movement_failure(_: super::movement_provider::MovementProviderError) -> ApiFailure {
@@ -3339,7 +3530,9 @@ impl ProductionComponents {
                         ),
                         ProtocolAmount::from_u128(headroom),
                         ProtocolAmount::from_u128(headroom),
-                        layerx_types::intent::TimestampSeconds::from_u64(context.seed.budget_expiry_seconds),
+                        layerx_types::intent::TimestampSeconds::from_u64(
+                            context.seed.budget_expiry_seconds,
+                        ),
                     )
                     .map_err(intent_failure)?,
                 );
@@ -3372,8 +3565,14 @@ impl ProductionComponents {
             (LegMechanism::Protocol(Mechanism::Send), protocol),
             (LegMechanism::Protocol(Mechanism::BudgetFund), protocol),
             (LegMechanism::Protocol(Mechanism::BudgetDefund), protocol),
-            (LegMechanism::Protocol(Mechanism::BridgeDepositCredit), protocol),
-            (LegMechanism::Protocol(Mechanism::BridgeWithdrawRequest), protocol),
+            (
+                LegMechanism::Protocol(Mechanism::BridgeDepositCredit),
+                protocol,
+            ),
+            (
+                LegMechanism::Protocol(Mechanism::BridgeWithdrawRequest),
+                protocol,
+            ),
             (
                 LegMechanism::PaxeerCustodyDeposit,
                 u128::from(self.evm_gas_limit).saturating_mul(u128::from(self.evm_max_fee_per_gas)),
@@ -3434,24 +3633,127 @@ impl ProductionComponents {
         })
     }
 
-    fn execute_intent_submit(
+    fn submit_intent(
         &self,
         request: &ScopedRequest<'_>,
         scope: &mut crate::store::PrincipalScope<'_>,
     ) -> Result<BackendResponse, ApiFailure> {
-        let _ = required_idempotency(request)?;
+        let idempotency = required_idempotency(request)?.to_owned();
+        let submitted =
+            crate::journeys::SubmitPlanRequest::from_json(&request.body).map_err(submit_failure)?;
         let asset = intent_asset(&request.body)?;
         let intent = self.intent_from_request(request, asset)?;
         let (observed, _, currency) = self.intent_observed_state(scope, asset)?;
         let planned = crate::journeys::plan(&intent, &observed).map_err(intent_failure)?;
-        let declared = text_field(&request.body, "plan_digest")?;
-        if declared != hex_bytes(&planned.digest()) {
-            return Err(ApiFailure::forbidden());
-        }
+        let now = self.now()?;
+        let context = resolve_movement_context(self, request, scope, now)?;
+        let expectation = crate::journeys::BindingExpectation {
+            actor: context.actor.clone(),
+            authority: context.authority.clone(),
+            account_sequence: context.account_sequence,
+            currency,
+            now,
+        };
+        crate::journeys::verify_bindings(&planned, &submitted, &expectation)
+            .map_err(submit_failure)?;
+        let submission = match crate::journeys::IntentShape::of(&planned).map_err(submit_failure)? {
+            crate::journeys::IntentShape::Kernel => self.submit_kernel_intent(
+                request,
+                scope,
+                &KernelSubmission {
+                    planned: &planned,
+                    submitted: &submitted,
+                    expectation: &expectation,
+                    context: &context,
+                    idempotency: &idempotency,
+                },
+            )?,
+            crate::journeys::IntentShape::CustodyDeposit => {
+                let planning = movement_request(self, request, scope, now)?;
+                let movement = self
+                    .movement
+                    .lock()
+                    .map_err(|_| ApiFailure::unavailable())?;
+                let deposit = movement.deposit_plan(planning).map_err(movement_failure)?;
+                let binding = crate::binding::BindingJourney::new(
+                    self.principal_agent(scope)?.registry().clone(),
+                );
+                let journey = crate::journeys::start_deposit_journey(
+                    scope,
+                    &planned,
+                    &submitted,
+                    &expectation,
+                    &deposit,
+                    &binding,
+                )
+                .map_err(submit_failure)?;
+                let status = journey.status().map_err(deposit_journey_failure)?;
+                crate::journeys::IntentSubmission::from_deposit(&status, planned.digest())
+            }
+        };
         Ok(BackendResponse {
-            result: intent_plan_json(&planned, &currency),
+            result: submission.to_json(),
             session: None,
         })
+    }
+
+    fn submit_kernel_intent(
+        &self,
+        request: &ScopedRequest<'_>,
+        scope: &mut crate::store::PrincipalScope<'_>,
+        submission: &KernelSubmission<'_>,
+    ) -> Result<crate::journeys::IntentSubmission, ApiFailure> {
+        let KernelSubmission {
+            planned,
+            submitted,
+            expectation,
+            context,
+            idempotency,
+        } = *submission;
+        let mut agent = self.principal_agent(scope)?;
+        let registry = agent.registry().clone();
+        let mut routes = Vec::with_capacity(planned.legs().len());
+        for (leg, binding) in planned.legs().iter().zip(&submitted.bindings) {
+            routes.push(intent_leg_route(
+                self, scope, &mut agent, context, leg, binding,
+            )?);
+        }
+        let journey_id = crate::journeys::intent_journey_id(idempotency, planned.digest())
+            .map_err(submit_failure)?;
+        let mut journey = crate::journeys::start_kernel_journey(
+            scope,
+            planned,
+            submitted,
+            expectation,
+            crate::journeys::KernelStart {
+                routes: &routes,
+                journey_id,
+                custody_key: context.custody_key.clone(),
+                registry: &registry,
+            },
+        )
+        .map_err(submit_failure)?;
+        let trace =
+            TraceId::parse(&request.trace).map_err(|_| ApiFailure::invalid_request(None))?;
+        let status = super::executor::poll_once_ready(crate::journeys::drive_intent_journey(
+            &mut journey,
+            scope,
+            &mut agent,
+            &crate::journeys::IntentDriver {
+                agent_contract: &self.agent_contract,
+                custody: &self.custody,
+                registry: &registry,
+                trace: &trace,
+                now: expectation.now,
+            },
+        ))
+        .map_err(|_| ApiFailure::upstream_degraded())?
+        .map_err(|_| ApiFailure::upstream_degraded())?;
+        schedule_continuation(scope, "intent", status.journey_id(), expectation.now)?;
+        Ok(crate::journeys::IntentSubmission::from_kernel(
+            &status,
+            planned.digest(),
+        ))
     }
 
     fn execute_move_quote(
@@ -5123,7 +5425,7 @@ impl ProductionComponents {
             "binding.rebind.action" => self.execute_binding_rebind_action(request, scope),
             "binding.rebind" => self.execute_binding_rebind(request, scope),
             "intent.plan" => self.execute_intent_plan(request, scope),
-            "intent.submit" => self.execute_intent_submit(request, scope),
+            "intent.submit" => self.submit_intent(request, scope),
             "move.quote" => self.execute_move_quote(request, scope),
             "move.commit" => self.execute_move_commit(request, scope),
             "deposit.start" => self.execute_deposit_start(request, scope),
@@ -5974,11 +6276,7 @@ fn intent_plan_json(plan: &crate::journeys::UnifiedPlan, currency: &str) -> serd
 }
 
 const fn intent_authority_label(authority: crate::journeys::RequiredAuthority) -> &'static str {
-    match authority {
-        crate::journeys::RequiredAuthority::PaxeerWalletKey => "paxeer-wallet-key",
-        crate::journeys::RequiredAuthority::AccountOwner => "account-owner",
-        crate::journeys::RequiredAuthority::Allowance(_) => "allowance",
-    }
+    crate::journeys::authority_label(authority)
 }
 
 const fn intent_journey_kind_label(kind: crate::journeys::JourneyKind) -> &'static str {

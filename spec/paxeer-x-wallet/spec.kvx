@@ -407,7 +407,7 @@ log_path = ".logs/verify.log"
 
 [task.1.14]
 title = "Make intent submit execute a journey instead of echoing the plan"
-status = "pending"
+status = "done"
 wave = 1
 requires = []
 do_1 = "In human/crates/layerx-human-service change the intent submit handler to verify the signed digest and every leg binding against the re-planned plan (action key, actor, authority, account sequence, validity window, fee limit), refuse typed on any mismatch, create a journey, and drive its legs through the existing movement journeys."
@@ -417,6 +417,10 @@ verify_cmd = "timeout 20m sh -c 'cd human && cargo test -p layerx-human-service 
 symbols = ["submit_intent","IntentSubmission","verify_bindings"]
 touches = ["human/crates/layerx-human-service/src/server/production_components.rs","human/crates/layerx-human-service/src/journeys/intent_submit.rs","human/crates/layerx-human-service/src/journeys/mod.rs","human/crates/layerx-human-service/tests/intent_submit.rs"]
 reqs = ["8.3"]
+revision = "0b4a1a0a26c8586b9125139427604edd69b59990"
+command = "timeout 20m sh -c 'cd human && cargo test -p layerx-human-service intent_submit'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.1.15]
 title = "Let the hosted endpoint degrade honestly without the kernel"
