@@ -1433,6 +1433,23 @@ touches = ["interop/crates/x-websearch/src/submit.rs","interop/crates/x-websearc
 tests = ["interop/crates/x-websearch/src/submit.rs","interop/crates/x-websearch/tests/submit.rs","interop/deploy/x-websearch/tests/dry-run-check.sh"]
 reqs = ["15.1","15.2","15.3"]
 
+[task.2.47]
+title = "Read chunked JSON-RPC answers in the sidecar's HTTP client"
+status = "done"
+revision = "0e01d107fd6b9ac250e90c0a147db4f4619afe54"
+command = "timeout 20m sh -c 'cargo test --manifest-path interop/Cargo.toml -p x-websearch chunked'"
+exit_code = 0
+log_path = ".logs/verify.log"
+wave = 2
+requires = ["2.46"]
+do_1 = "Observation 2.46.1: decode_http in interop/crates/x-websearch/src/payment.rs refuses every HTTP answer that carries a Transfer-Encoding header, while a JSON-RPC node's HTTP server sends any answer beyond a few kilobytes, such as the getAttestors tuple array the submitter reads, with Transfer-Encoding: chunked and no Content-Length; accept a single chunked transfer encoding, join the chunk bodies in order, tolerate chunk extensions and trailers, refuse an answer that carries both a Content-Length and a chunked encoding, an unknown or repeated transfer encoding, a chunk cut short or bytes after the terminating chunk, and keep the Content-Length path exactly as it is."
+do_2 = "Add unit tests in interop/crates/x-websearch/src/payment.rs that join a chunked answer with a chunk extension and a trailer into its JSON value, that refuse a chunked answer cut short and one followed by more bytes, and that read a two-chunk answer larger than a socket read from a loopback TcpListener through GatewayRpc::call."
+verify_cmd = "timeout 20m sh -c 'cargo test --manifest-path interop/Cargo.toml -p x-websearch chunked'"
+symbols = ["xweb-http-client"]
+touches = ["interop/crates/x-websearch/src/payment.rs"]
+tests = ["interop/crates/x-websearch/src/payment.rs"]
+reqs = ["15.1","15.2","15.3"]
+
 [task.3.1]
 title = "Run the xweb workflow's legs once on the merged revision and record the evidence"
 status = "pending"
