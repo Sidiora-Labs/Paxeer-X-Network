@@ -131,6 +131,13 @@ type ActivityRequest struct {
 	Disclosure Disclosure
 }
 
+type SendAuthorizationRequest struct {
+	Envelope   []byte
+	Digest     [32]byte
+	PublicKey  [32]byte
+	Disclosure Disclosure
+}
+
 type BindRequest struct {
 	Message []byte
 }
@@ -342,9 +349,10 @@ type spend struct {
 }
 
 type activityCall struct {
-	req    *ActivityRequest
-	ledger policy.Ledger
-	spends []spend
+	req       *ActivityRequest
+	ledger    policy.Ledger
+	authorize bool
+	spends    []spend
 }
 
 type bindCall struct {
@@ -426,6 +434,27 @@ func (e *Evaluator) EvaluateActivity(account common.Address, req *ActivityReques
 		return failed
 	}
 	return policy.Decision{Allowed: true, Code: policy.CodeAllowed, Reason: "kernel activity matches its disclosure and the account policy", Spends: spends}
+}
+
+func (e *Evaluator) EvaluateSendAuthorization(account common.Address, req *SendAuthorizationRequest, ledger policy.Ledger) policy.Decision {
+	if refused, ok := e.begin(ledger); !ok {
+		return refused
+	}
+	if req == nil {
+		return denied(policy.CodeMissingField, "kernel send authorization request is missing")
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	call := &activityCall{
+		req:       &ActivityRequest{Envelope: req.Envelope, Digest: req.Digest, PublicKey: req.PublicKey, Disclosure: req.Disclosure},
+		ledger:    ledger,
+		authorize: true,
+	}
+	decision := e.engine.Evaluate(account.Hex(), policy.Request{Kind: policy.KindLXActivity, View: call}, ledger)
+	if !decision.Allowed {
+		return decision
+	}
+	return policy.Decision{Allowed: true, Code: policy.CodeAllowed, Reason: "send authorization matches its disclosure and fits the account policy; the amount counts when the completed send is signed", Spends: []policy.Spend{}}
 }
 
 func (e *Evaluator) EvaluateBind(account common.Address, req *BindRequest, ledger policy.Ledger) policy.Decision {
@@ -613,12 +642,31 @@ func (e *Evaluator) inspectActivity(ctx policy.Context, view any) (policy.Inspec
 	if !activity.PayloadHashMatches() {
 		return policy.Inspection{}, refuse(policy.CodeDecodeError, "activity payload hash does not match its payload")
 	}
-	preimage, err := lxwire.SignaturePreimage(activity)
-	if err != nil {
-		return policy.Inspection{}, refuse(policy.CodeDecodeError, "activity preimage: %v", err)
-	}
-	if preimage != req.Digest {
-		return policy.Inspection{}, refuse(policy.CodeDigestMismatch, "activity preimage %x does not match %x", preimage, req.Digest)
+	var effect *Effect
+	if call.authorize {
+		if activity.Type != OpAssetTransfer {
+			return policy.Inspection{}, refuse(policy.CodeDecodeError, "a send authorization covers only an asset send, not activity type %#x", uint32(activity.Type))
+		}
+		send, sendEffect, err := DecodeSendAuthorization(activity)
+		if err != nil {
+			return policy.Inspection{}, refuse(policy.CodeDecodeError, "%v", err)
+		}
+		digest, err := send.AuthorizationDigest()
+		if err != nil {
+			return policy.Inspection{}, refuse(policy.CodeDecodeError, "send authorization digest: %v", err)
+		}
+		if digest != req.Digest {
+			return policy.Inspection{}, refuse(policy.CodeDigestMismatch, "send authorization digest %x does not match %x", digest, req.Digest)
+		}
+		effect = sendEffect
+	} else {
+		preimage, err := lxwire.SignaturePreimage(activity)
+		if err != nil {
+			return policy.Inspection{}, refuse(policy.CodeDecodeError, "activity preimage: %v", err)
+		}
+		if preimage != req.Digest {
+			return policy.Inspection{}, refuse(policy.CodeDigestMismatch, "activity preimage %x does not match %x", preimage, req.Digest)
+		}
 	}
 	module, _ := ModuleName(activity.Type.Module())
 	operations, allowed := rules.modules[module]
@@ -635,9 +683,11 @@ func (e *Evaluator) inspectActivity(ctx policy.Context, view any) (policy.Inspec
 	if activity.AuthorityKind(req.PublicKey) != lxwire.AuthorityOwner {
 		return policy.Inspection{}, refuse(CodeAuthorityMismatch, "activity authority is not the signing key")
 	}
-	effect, err := DecodeEffect(activity)
-	if err != nil {
-		return policy.Inspection{}, refuse(policy.CodeDecodeError, "%v", err)
+	if effect == nil {
+		effect, err = DecodeEffect(activity)
+		if err != nil {
+			return policy.Inspection{}, refuse(policy.CodeDecodeError, "%v", err)
+		}
 	}
 	if err := matchDisclosure(activity, module, effect, req.Disclosure); err != nil {
 		return policy.Inspection{}, err
@@ -874,6 +924,22 @@ func decodeAssetSend(activity *lxwire.Activity) (*Effect, error) {
 	if err != nil {
 		return nil, fmt.Errorf("asset send: %w", err)
 	}
+	return checkAssetSend(activity, send)
+}
+
+func DecodeSendAuthorization(activity *lxwire.Activity) (*lxwire.Send, *Effect, error) {
+	send, err := lxwire.DecodeSendForAuthorization(activity.Payload)
+	if err != nil {
+		return nil, nil, fmt.Errorf("asset send awaiting authorization: %w", err)
+	}
+	effect, err := checkAssetSend(activity, send)
+	if err != nil {
+		return nil, nil, err
+	}
+	return send, effect, nil
+}
+
+func checkAssetSend(activity *lxwire.Activity, send *lxwire.Send) (*Effect, error) {
 	authority, ok := activity.AuthorityKey()
 	switch {
 	case send.AuthorizationKind != lxwire.OwnerAuthorization:

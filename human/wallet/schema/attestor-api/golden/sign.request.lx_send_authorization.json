@@ -1,0 +1,11 @@
+{
+  "session_id": "session-send-authorization",
+  "key_id": "key-ed",
+  "kind": "lx_send_authorization",
+  "signers": [
+    "node-1",
+    "node-2",
+    "node-3"
+  ],
+  "activity": "000377777777777777777777777777777777"
+}

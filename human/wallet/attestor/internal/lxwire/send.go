@@ -58,6 +58,31 @@ func (d *decoder) raw32() ([32]byte, error) {
 }
 
 func DecodeSend(payload []byte) (*Send, error) {
+	s, err := parseSend(payload)
+	if err != nil {
+		return nil, err
+	}
+	if !s.AuthorizationValid() {
+		return nil, ErrSend
+	}
+	return s, nil
+}
+
+func DecodeSendForAuthorization(payload []byte) (*Send, error) {
+	s, err := parseSend(payload)
+	if err != nil {
+		return nil, err
+	}
+	if s.Signature != ([64]byte{}) || !strictPoint(s.PublicKey[:]) {
+		return nil, ErrSend
+	}
+	if _, err := s.AuthorizationDigest(); err != nil {
+		return nil, ErrSend
+	}
+	return s, nil
+}
+
+func parseSend(payload []byte) (*Send, error) {
 	if len(payload) > MaxSendPayloadBytes {
 		return nil, ErrSend
 	}
@@ -146,9 +171,6 @@ func DecodeSend(payload []byte) (*Send, error) {
 	}
 	encoded, err := s.Encode()
 	if err != nil || !bytes.Equal(encoded, payload) {
-		return nil, ErrSend
-	}
-	if !s.AuthorizationValid() {
 		return nil, ErrSend
 	}
 	return s, nil

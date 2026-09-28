@@ -58,6 +58,7 @@ func goldenValues(t *testing.T) map[string]any {
 			From: strings.Repeat("81", 32), Recipient: strings.Repeat("1e", 32), Asset: strings.Repeat("0a", 32), PerDrawMaximum: "1000", Allowance: "50000",
 			Expiration: 1900000000, PurposeHash: strings.Repeat("64", 32),
 		}},
+		"sign.request.lx_send_authorization": SignRequest{SessionID: "session-send-authorization", KeyID: "key-ed", Kind: KindLXSendAuth, Signers: []string{"node-1", "node-2", "node-3"}, Activity: "0003" + strings.Repeat("77", 16)},
 		"sign.request.eth_sign_digest": SignRequest{SessionID: "session-authorization", KeyID: "key-evm", Kind: KindEthSignDigest, Signers: []string{"node-1", "node-3", "node-5"}, Digest: "0x" + strings.Repeat("66", 32), Construction: &ConstructionJSON{
 			Kind: "eip7702_authorization", ChainID: "125", Address: "0x2222222222222222222222222222222222222222", Nonce: "3",
 		}},

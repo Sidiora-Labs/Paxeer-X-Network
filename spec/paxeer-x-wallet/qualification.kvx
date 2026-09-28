@@ -1171,6 +1171,29 @@ file = "human/wallet/ceremony/go.mod"
 symbol = "require"
 observed = "Streaming raw COPY needs pgx v5, so go.mod and go.sum gained github.com/jackc/pgx/v5 and its indirect modules, outside the task's listed touches."
 assumption = "The dependency is part of the move implementation; lib/pq cannot stream COPY TO STDOUT."
+
+[observation.4.24.1]
+task = "4.24"
+file = "human/crates/layerx-human-kms/tests/attestor.rs"
+symbol = "attestor_signs_a_disclosed_activity_through_the_real_daemon_quorum"
+observed = "The verify command exits 101 only because this existing test expects token_invalid when one assertion signs a second, different activity, while the daemon now scopes bearer replay to the token together with the request and signs it; every Go package and the new sign_send test passed."
+assumption = "The assertion predates the request-scoped replay change and is left intact; the task that changed replay scoping or 4.6's continuation reconciles the test with the daemon."
+severity = "medium"
+
+[observation.4.24.2]
+task = "4.24"
+file = "human/crates/layerx-human-service/src/server/production_components.rs"
+symbol = "AttestorKms"
+observed = "sign_send and AttestorError::refusal_code exist in the kms crate, but the service's AttestorKms still signs only through sign_activity and maps every attestor refusal to a bare KmsError::Refused."
+assumption = "Wiring sign_send into the service and carrying the refusal code through its error mapping belong to 4.6's continuation, which also reruns the end-to-end test."
+severity = "medium"
+
+[observation.4.24.3]
+task = "4.24"
+file = "human/wallet/attestor/internal/policy/lx/lx.go"
+symbol = "EvaluateSendAuthorization"
+observed = "The send authorization checks the caps against the durable ledger without recording, and the amount counts once when the completed send is signed as lx_activity."
+assumption = "The kernel accepts an owner-authorized send only inside an envelope whose authority is the same key, so every authorized send reaches lx_activity; if that ever changes, the count must move to the authorization."
 severity = "note"
 
 [observation.5.4.11]

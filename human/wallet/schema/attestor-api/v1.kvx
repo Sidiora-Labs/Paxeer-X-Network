@@ -132,7 +132,7 @@ path         = "/v1/sign"
 auth         = "client certificate plus Authorization: Bearer <identity token> or the agent headers X-Agent-Key, X-Agent-Nonce, X-Agent-Expiry, X-Agent-Signature"
 participants = "the listed signers; every signer receives the identical body"
 summary      = "Verifies the credential, decodes the payload, evaluates the account policy, appends the audit record and runs one signing session."
-kinds        = ["evm_tx", "eip712", "personal_message", "eth_sign_digest", "lx_activity", "lx_bind", "lx_grant"]
+kinds        = ["evm_tx", "eip712", "personal_message", "eth_sign_digest", "lx_activity", "lx_bind", "lx_grant", "lx_send_authorization"]
 response     = "sign_response"
 errors       = ["operator_required", "token_missing", "token_invalid", "token_not_owner", "token_unavailable", "agent_invalid", "policy_denied", "quorum_too_few_signers", "quorum_not_member", "quorum_self_missing", "session_bad_request", "session_unsupported_kind", "session_open_failed", "session_failed", "session_timeout", "key_not_found", "key_curve_mismatch", "key_not_refreshed", "key_invalid_share", "store_failed", "store_audit_failed"]
 
@@ -146,7 +146,7 @@ typed_data = "string optional: EIP-712 JSON document for eip712"
 message = "hex optional: message for personal_message, bind message for lx_bind"
 digest = "hex optional: 32-byte digest for eth_sign_digest; the node recomputes it from construction and refuses a digest that differs"
 construction = "object required for eth_sign_digest: kind eip7702_authorization with decimal or 0x chainId, 0x address and 64-bit nonce, or kind sponsored_batch with chainId, 0x account, nonce, calls (0x to, value, 0x data) and quote (0x sponsor, 0x token, maxTokenAmount, tokenAmount, deadline, quoteNonce, gasCost); a bare digest is refused"
-activity = "hex optional: unsigned activity envelope for lx_activity"
+activity = "hex optional: unsigned activity envelope for lx_activity; for lx_send_authorization the unsigned asset send envelope whose send payload carries the envelope authority as its key and 64 zero signature bytes"
 grant = "object optional: 402 grant for lx_grant with hex 32-byte from, recipient, asset, purpose_hash, reference_hash, decimal per_draw_maximum and allowance, bool recurring and has_reference, uint64 window_length, expiration and revocation_sequence"
 
 [op.sign.kind]
@@ -157,6 +157,7 @@ eth_sign_digest  = "secp256k1; signs a 32-byte digest only when it equals the EI
 lx_activity      = "ed25519; signs the 32-byte activity signature preimage"
 lx_bind          = "ed25519; signs the LX:PAXEER-BIND:v1 message bytes; the binding chain must be the node chain"
 lx_grant         = "ed25519; signs the 32-byte grant preimage with the key as the grant public key"
+lx_send_authorization = "ed25519; signs the 32-byte owner authorization digest of the asset send in activity under the lx_activity policy and authority rules, checking the account caps without counting; the amount counts once when the completed send is signed as lx_activity"
 
 [op.sign.operator_verification]
 method       = "POST"
