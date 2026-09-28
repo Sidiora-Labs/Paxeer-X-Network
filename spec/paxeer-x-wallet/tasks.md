@@ -226,7 +226,7 @@
     - Add the iOS and Android native projects generated for the app, the environment configuration by variable name, the release build scripts, and a Playwright suite over the remaining surfaces against the SDK's in-test gateway, keeping every secret out.
     - Add a scripts/release-check.sh that validates the native projects exist, the configuration names resolve and the Playwright suite runs in check mode.
     - _Requirements: 10.6_
-  - [ ] 4.5 Write the runbooks and the operator cutover checklist
+  - [x] 4.5 Write the runbooks and the operator cutover checklist
     - Add human/wallet/docs/runbooks covering node loss and replacement by add-share and refresh, refresh cadence, backup restore, identity provider outage, RPC pool failure and gateway rollback, each with the exact commands from the repository's tools and no hosts or secrets.
     - Add human/wallet/docs/cutover.md: the operator checklist from rehearsal record through live ceremony, funded archive verification, wallet flag flip, endpoint cutover through the current host's proxy, old service read-only, sealed retention of the old master key and old service shutdown, each step naming its readiness check and its rollback.
     - _Requirements: 13.2, 4.5_

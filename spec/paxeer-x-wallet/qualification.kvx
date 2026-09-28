@@ -743,3 +743,51 @@ symbol = "PWA_NETWORK_ENV"
 observed = "The app had no variable naming the attestor origin, and removing the native dependencies required edits outside the touches list: src/app/page.tsx, src/providers/PWAProvider.tsx, src/components/pwa/PWAComponents.tsx, src/widgets/settings/SettingsWidget.tsx, next.config.mjs, .gitignore, and deleting src/lib/capacitor.ts and src/providers/CapacitorProvider.tsx."
 assumption = "NEXT_PUBLIC_PAXEER_ATTESTOR_URL is optional and documented in human/wallet/deploy/env; browser API harnesses in the register and install tests are EventTarget objects because node and jsdom provide no service worker container or install prompt."
 severity = "note"
+
+[observation.4.5.1]
+task = "4.5"
+file = "human/wallet/deploy/gateway.toml"
+symbol = "http_service.checks"
+observed = "The gateway's platform check requests /health/ready while the gateway serves only /healthz and /readyz (src/index.ts, src/routes/readiness.ts), so the check can never pass; the runbooks read readiness from /readyz."
+assumption = "The gateway deployment task points the check at a served route; the definition and the routes are left as written."
+severity = "suspect"
+
+[observation.4.5.2]
+task = "4.5"
+file = "human/wallet/attestor/cmd/attestor/main.go"
+symbol = "store.Snapshot"
+observed = "No caller writes store.Snapshot or runs store.Restore: the daemon loads ATTESTOR_BACKUP_KEY_FILE and ATTESTOR_BACKUP_DIR and never uses them, and no command restores a snapshot, so req.3.ac_2 has no backup to restore and the replica shipper of task 3.14 has nothing to ship."
+assumption = "A daemon task writes snapshots after keygen, import, refresh and add-share and adds a restore command; the backup runbook restores platform volume snapshots until then."
+severity = "suspect"
+
+[observation.4.5.3]
+task = "4.5"
+file = "human/wallet/schema/attestor-api/v1.kvx"
+symbol = "keys.addshare"
+observed = "keys.addshare needs each key's public key, curve and owner, but no operator tool enumerates a node's keys, the gateway stores no secp256k1 public key, and only keys.refresh, which needs every holder present, returns one, so replacing a lost node across the wallet population has no source for secp256k1 public keys."
+assumption = "A later task adds an operator listing of a node's key ids, curves, owners and public keys or a bulk add-share and refresh command; the runbook documents the per-key operation."
+severity = "suspect"
+
+[observation.4.5.4]
+task = "4.5"
+file = "human/wallet/ceremony/cmd/ceremony/main.go"
+symbol = "run"
+observed = "The verify commands of tasks 5.2 and 5.4 pass rehearse --report-only-counts and deliver --report-only-counts, while run accepts exactly one argument and answers any second one with usage and exit 2; both subcommands already print counts only."
+assumption = "Either the tool gains the flag or those verify commands drop it; the cutover checklist uses the subcommands as they exist."
+severity = "suspect"
+
+[observation.4.5.5]
+task = "4.5"
+file = "human/wallet/ceremony/internal/archive/archive.go"
+symbol = "Archive"
+observed = "No repository command drops the funded rows from the live tables after the archive verifies, as [decision] funded_lane and req.4.ac_4 state; gateway migration 006_archive_funded.sql marks them archived_at at gateway start, before any archive exists."
+assumption = "The funded rows stay in place marked archived and refused by the gateway until an approved step drops them after verification."
+severity = "note"
+
+[observation.4.5.6]
+task = "4.5"
+file = "human/wallet/ceremony/internal/migrate/migrate.go"
+symbol = "Open"
+observed = "The deliver mode marks migrated_at in the database named by CEREMONY_DATABASE_URL, which the gateway must read for the flag flip to take effect, but no task moves the production wallet rows from the current host into the new gateway's database, and backfillAccounts in the gateway has no command entry."
+assumption = "The owner decides whether the new gateway reads the production database itself or a copied one, and a gateway task adds the backfill command; the cutover checklist states both as preconditions."
+severity = "suspect"

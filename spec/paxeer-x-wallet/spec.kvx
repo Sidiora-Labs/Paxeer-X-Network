@@ -953,7 +953,11 @@ log_path = ".logs/verify.log"
 
 [task.4.5]
 title = "Write the runbooks and the operator cutover checklist"
-status = "pending"
+status = "done"
+revision = "74879759ed57c9107916264da19e79c1ce4dd657"
+command = "timeout 20m sh -c 'tools/wallet/scan-secrets.sh human/wallet/docs'"
+exit_code = 0
+log_path = ".logs/verify.log"
 wave = 4
 requires = ["3.3","3.5"]
 do_1 = "Add human/wallet/docs/runbooks covering node loss and replacement by add-share and refresh, refresh cadence, backup restore, identity provider outage, RPC pool failure and gateway rollback, each with the exact commands from the repository's tools and no hosts or secrets."
