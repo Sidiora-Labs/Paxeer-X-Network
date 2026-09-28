@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3099",
-    "build": "NEXT_MANUAL_SIG_HANDLE=true next build",
+    "build:pwa": "node scripts/build-pwa.mjs",
+    "build": "node scripts/build-pwa.mjs && NEXT_MANUAL_SIG_HANDLE=true next build",
     "start": "next start",
     "lint": "eslint .",
     "type-check": "tsc --noEmit",
@@ -14,18 +15,10 @@
     "generate:swap-abis": "node scripts/generate-swap-abi-index.mjs",
     "check:swap-abis": "node scripts/generate-swap-abi-index.mjs --check",
     "release:check": "sh scripts/release-check.sh",
-    "release:android": "sh scripts/release-build.sh android",
-    "release:ios": "sh scripts/release-build.sh ios",
     "audit": "npm audit --audit-level=moderate"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.993.0",
-    "@capacitor/android": "^8.3.0",
-    "@capacitor/app": "^8.1.0",
-    "@capacitor/core": "^8.3.0",
-    "@capacitor/push-notifications": "^8.0.3",
-    "@capacitor/splash-screen": "^8.0.1",
-    "@capacitor/status-bar": "^8.0.2",
     "@noble/curves": "2.4.0",
     "@noble/hashes": "2.4.0",
     "@number-flow/react": "^0.6.0",
@@ -62,7 +55,6 @@
     "ws": "^8.21.1"
   },
   "devDependencies": {
-    "@capacitor/cli": "^8.4.2",
     "@playwright/test": "1.62.0",
     "@tanstack/react-query-devtools": "^5.100.9",
     "@types/node": "22.18.1",

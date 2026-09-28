@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  buildContentSecurityPolicy,
-  buildProgressierWorkerContentSecurityPolicy,
-  createCspNonce,
-} from './csp';
+import { buildContentSecurityPolicy, createCspNonce } from './csp';
 import { isAllowedMediaContentType, safeMediaPath } from './media-policy';
 import { validatedExternalUrl } from './navigation';
 
@@ -14,15 +10,9 @@ describe('browser security policy', () => {
     expect(policy).toContain(`script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`);
     expect(policy).toContain("object-src 'none'");
     expect(policy).toContain("frame-ancestors 'none'");
-    expect(policy).toContain("manifest-src 'self' https://progressier.app");
+    expect(policy).toContain("manifest-src 'self';");
     expect(policy).toContain("'unsafe-eval'");
     expect(policy).not.toContain('img-src https:');
-  });
-
-  it('limits the Progressier service worker to its reviewed script origin', () => {
-    expect(buildProgressierWorkerContentSecurityPolicy()).toBe(
-      "default-src 'none'; script-src https://progressier.app; connect-src https://progressier.app; object-src 'none'",
-    );
   });
 
   it('routes reviewed media through the same-origin proxy', () => {

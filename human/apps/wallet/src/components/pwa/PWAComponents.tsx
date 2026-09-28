@@ -177,33 +177,6 @@ export function FloatingAppIcon() {
   );
 }
 
-// ── Install Button (inline, for use in Settings or any page) ────────────────
-
-export function InstallButton({ className = '' }: { className?: string }) {
-  const { isInstallable, isInstalled, isStandalone, promptInstall } = usePWA();
-
-  if (isInstalled || isStandalone) {
-    return (
-      <div className={`flex items-center gap-2 text-xs text-green-400 ${className}`}>
-        <SvgIcon name="apps" className="w-3.5 h-3.5" style={{ filter: 'invert(69%) sepia(61%) saturate(588%) hue-rotate(88deg) brightness(93%) contrast(93%)' }} />
-        <span>App installed</span>
-      </div>
-    );
-  }
-
-  if (!isInstallable) return null;
-
-  return (
-    <button
-      onClick={promptInstall}
-      className={`flex items-center gap-2 py-2.5 px-4 rounded-xl bg-pax-accent text-black text-sm font-semibold press-scale ${className}`}
-    >
-      <SvgIcon name="arrow-left" className="w-4 h-4 rotate-90" style={{ filter: 'brightness(0)' }} />
-      Install App
-    </button>
-  );
-}
-
 // ── Notification Toggle (inline, for use in Settings) ───────────────────────
 
 export function NotificationToggle({ className = '' }: { className?: string }) {

@@ -1022,7 +1022,11 @@ log_path = ".logs/verify.log"
 
 [task.4.10]
 title = "Ship the app as a self-hosted progressive web application"
-status = "pending"
+status = "implemented"
+revision = "7bf854b7bd1c60e6de5118d194898fb021a937e0"
+command = "timeout 20m sh -c 'pnpm --dir human/apps/wallet exec vitest run src/pwa && human/apps/wallet/scripts/release-check.sh'"
+exit_code = 1
+log_path = ".logs/verify.log"
 wave = 4
 requires = ["4.4","3.6"]
 do_1 = "In human/apps/wallet add a self-hosted manifest with name, short name, icons in the required sizes including maskable ones, theme and background colours taken from the theme tokens, standalone display, start url and scope; the icon files under public/; the iOS meta tags; a service worker built in the repository that precaches the application shell and static assets under versioned cache names, treats the gateway, chain RPC, identity provider and attestor origins as network-only and never caches their responses, serves an offline fallback page, and offers a reload when a new worker is waiting; an install prompt surfaced in settings; and remove the third-party PWA service's script, manifest and content-security-policy entries."

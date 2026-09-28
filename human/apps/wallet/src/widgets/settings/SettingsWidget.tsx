@@ -12,7 +12,8 @@ import {
 import { Check, LogOut, Palette, TriangleAlert } from 'lucide-react';
 import { SvgIcon } from '@/components/ui/SvgIcon';
 import { getAvatarPath } from '@/lib/avatar';
-import { NotificationToggle, InstallButton } from '@/components/pwa/PWAComponents';
+import { NotificationToggle } from '@/components/pwa/PWAComponents';
+import { InstallPrompt } from '@/pwa/InstallPrompt';
 import Image from "next/image";
 import { preferencesRepository } from '@/platform/storage/repositories';
 import { useLocale } from '@/providers/LocaleProvider';
@@ -116,7 +117,7 @@ export function SettingsWidget({ onNavigate, onPaxscan }: SettingsWidgetProps) {
             <div className="col-span-2 px-1 pt-1"><p className="text-[13px] font-bold text-pax-muted uppercase tracking-[0.06em]">{t.settings.about}</p></div>
             <div className="col-span-2 bg-pax-surface rounded-[20px] p-1 space-y-1 overflow-hidden">
                 <NotificationToggle />
-                <div className="px-4 py-3"><InstallButton className="w-full justify-center" /></div>
+                <InstallPrompt />
             </div>
 
             <div className="col-span-2 mt-4 text-center">

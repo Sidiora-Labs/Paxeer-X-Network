@@ -1,16 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import {
-  buildContentSecurityPolicy,
-  buildProgressierWorkerContentSecurityPolicy,
-  createCspNonce,
-} from '@/lib/security/csp';
+import { buildContentSecurityPolicy, createCspNonce } from '@/lib/security/csp';
 
 export function proxy(request: NextRequest) {
   const nonce = createCspNonce();
-  const policy =
-    request.nextUrl.pathname === '/progressier.js'
-      ? buildProgressierWorkerContentSecurityPolicy()
-      : buildContentSecurityPolicy(nonce);
+  const policy = buildContentSecurityPolicy(nonce);
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set('x-nonce', nonce);
   requestHeaders.set('Content-Security-Policy', policy);

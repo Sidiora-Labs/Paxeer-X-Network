@@ -11,8 +11,6 @@ const CONNECT_ORIGINS: readonly string[] = [
   'https://data-api.crossverse.app',
   'https://eu-east-1.public.node.hyperpaxeer.com',
   'https://open.er-api.com',
-  'https://progressier.app',
-  'https://progressier.com',
   'https://public-mainnet.rpcpaxeer.online',
   'https://sidiora.fun',
   'https://supabase.paxeer.app',
@@ -21,8 +19,6 @@ const CONNECT_ORIGINS: readonly string[] = [
 ];
 
 const IMAGE_ORIGINS: readonly string[] = [
-  'https://progressier.app',
-  'https://progressier.com',
   ...configuredOrigins(process.env.NEXT_PUBLIC_MEDIA_STORAGE_ORIGIN),
 ];
 
@@ -51,7 +47,7 @@ export function buildContentSecurityPolicy(nonce: string): string {
     `connect-src 'self' data: blob: ${CONNECT_ORIGINS.join(' ')}`,
     `frame-src 'self' blob: ${FRAME_ORIGINS.join(' ')}`,
     "worker-src 'self' blob:",
-    "manifest-src 'self' https://progressier.app",
+    "manifest-src 'self'",
     "media-src 'self' blob:",
     "object-src 'none'",
     "base-uri 'self'",
@@ -60,13 +56,4 @@ export function buildContentSecurityPolicy(nonce: string): string {
     'upgrade-insecure-requests',
   ];
   return directives.join('; ');
-}
-
-export function buildProgressierWorkerContentSecurityPolicy(): string {
-  return [
-    "default-src 'none'",
-    "script-src https://progressier.app",
-    "connect-src https://progressier.app",
-    "object-src 'none'",
-  ].join('; ');
 }

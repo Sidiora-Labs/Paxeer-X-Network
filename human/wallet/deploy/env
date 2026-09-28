@@ -146,6 +146,7 @@ NEXT_PUBLIC_SUPABASE_URL - Supabase project URL used by the demo for sign-in
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY - Supabase publishable key used by the demo for sign-in
 NEXT_PUBLIC_AUTH_REDIRECT_URL - sign-in callback URL of the demo
 NEXT_PUBLIC_SITE_URL - public origin of the demo used for page metadata
+NEXT_PUBLIC_PAXEER_ATTESTOR_URL - attestor base URL the wallet app service worker treats as network-only; unset when browsers never reach the attestors
 # gateway
 ATTESTOR_ENDPOINTS - comma-separated https base URLs of the five attestor nodes the gateway signs through
 ATTESTOR_CLIENT_CERT_FILE - path to the gateway's mutual TLS client certificate presented to the attestors

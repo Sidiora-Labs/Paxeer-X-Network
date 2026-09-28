@@ -719,3 +719,27 @@ symbol = "main"
 observed = "The daemon still passes an in-memory ledger and sets neither PeerTimeout nor RoundTimeout, so the server builds the store-backed spend ledger on that ledger's clock and uses the thirty-second peer and two-minute round defaults."
 assumption = "The daemon wiring task passes policy.NewSpendLedger over the node store and exposes both timeouts in configuration; the server's replacement keeps the ledger durable until then."
 severity = "note"
+
+[observation.4.10.1]
+task = "4.10"
+file = "human/apps/wallet/src/theme/resolve.test.ts"
+symbol = "scan-secrets.sh mnemonic phrase"
+observed = "The release check's secret scan reports a mnemonic phrase at line 67, a test title of plain English words, so release-check.sh exits 1 after every progressive web application step and the Playwright check mode pass."
+assumption = "Neither the scanner nor the theme test belongs to this task and changing either would weaken a check or edit another task's file, so the finding is left for the owner of the scan rule or the theme test."
+severity = "medium"
+
+[observation.4.10.2]
+task = "4.10"
+file = "human/apps/wallet/src/lib/security/csp.ts"
+symbol = "buildContentSecurityPolicy"
+observed = "connect-src lists fixed origins and does not derive the configured gateway, chain RPC or identity provider origins from NEXT_PUBLIC_PAXEER_WALLET_API, NEXT_PUBLIC_PAXEER_RPC_URL or NEXT_PUBLIC_SUPABASE_URL."
+assumption = "This predates the task; only the third-party PWA service entries were removed and manifest-src became self."
+severity = "note"
+
+[observation.4.10.3]
+task = "4.10"
+file = "human/apps/wallet/src/pwa/config.ts"
+symbol = "PWA_NETWORK_ENV"
+observed = "The app had no variable naming the attestor origin, and removing the native dependencies required edits outside the touches list: src/app/page.tsx, src/providers/PWAProvider.tsx, src/components/pwa/PWAComponents.tsx, src/widgets/settings/SettingsWidget.tsx, next.config.mjs, .gitignore, and deleting src/lib/capacitor.ts and src/providers/CapacitorProvider.tsx."
+assumption = "NEXT_PUBLIC_PAXEER_ATTESTOR_URL is optional and documented in human/wallet/deploy/env; browser API harnesses in the register and install tests are EventTarget objects because node and jsdom provide no service worker container or install prompt."
+severity = "note"
