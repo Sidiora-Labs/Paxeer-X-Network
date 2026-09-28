@@ -66,16 +66,43 @@ type GrantJSON struct {
 }
 
 type SignRequest struct {
-	SessionID   string     `json:"session_id"`
-	KeyID       string     `json:"key_id"`
-	Kind        string     `json:"kind"`
-	Signers     []string   `json:"signers"`
-	Transaction string     `json:"transaction,omitempty"`
-	TypedData   string     `json:"typed_data,omitempty"`
-	Message     string     `json:"message,omitempty"`
-	Digest      string     `json:"digest,omitempty"`
-	Activity    string     `json:"activity,omitempty"`
-	Grant       *GrantJSON `json:"grant,omitempty"`
+	SessionID    string            `json:"session_id"`
+	KeyID        string            `json:"key_id"`
+	Kind         string            `json:"kind"`
+	Signers      []string          `json:"signers"`
+	Transaction  string            `json:"transaction,omitempty"`
+	TypedData    string            `json:"typed_data,omitempty"`
+	Message      string            `json:"message,omitempty"`
+	Digest       string            `json:"digest,omitempty"`
+	Activity     string            `json:"activity,omitempty"`
+	Grant        *GrantJSON        `json:"grant,omitempty"`
+	Construction *ConstructionJSON `json:"construction,omitempty"`
+}
+
+type BatchCallJSON struct {
+	To    string `json:"to"`
+	Value string `json:"value"`
+	Data  string `json:"data"`
+}
+
+type QuoteJSON struct {
+	Sponsor        string `json:"sponsor"`
+	Token          string `json:"token"`
+	MaxTokenAmount string `json:"maxTokenAmount"`
+	TokenAmount    string `json:"tokenAmount"`
+	Deadline       string `json:"deadline"`
+	QuoteNonce     string `json:"quoteNonce"`
+	GasCost        string `json:"gasCost"`
+}
+
+type ConstructionJSON struct {
+	Kind    string          `json:"kind"`
+	ChainID string          `json:"chainId"`
+	Account string          `json:"account,omitempty"`
+	Address string          `json:"address,omitempty"`
+	Nonce   string          `json:"nonce"`
+	Calls   []BatchCallJSON `json:"calls,omitempty"`
+	Quote   *QuoteJSON      `json:"quote,omitempty"`
 }
 
 type SignResponse struct {
@@ -86,10 +113,6 @@ type SignResponse struct {
 	Signature     string `json:"signature"`
 	RecoveryID    *uint8 `json:"recovery_id,omitempty"`
 	AuditSequence uint64 `json:"audit_sequence"`
-}
-
-type DigestView struct {
-	Digest common.Hash
 }
 
 func emptyInspector(want func(any) bool) policy.Inspector {
@@ -103,8 +126,7 @@ func emptyInspector(want func(any) bool) policy.Inspector {
 
 func registerKernelKinds(p *policy.Policy) error {
 	kinds := map[string]policy.Inspector{
-		KindEthSignDigest: emptyInspector(func(v any) bool { _, ok := v.(*DigestView); return ok }),
-		KindLXActivity:    emptyInspector(func(v any) bool { _, ok := v.(*lxwire.Activity); return ok }),
+		KindLXActivity: emptyInspector(func(v any) bool { _, ok := v.(*lxwire.Activity); return ok }),
 		KindLXBind: func(ctx policy.Context, view any) (policy.Inspection, error) {
 			b, ok := view.(*lxwire.Binding)
 			if !ok {
@@ -117,7 +139,7 @@ func registerKernelKinds(p *policy.Policy) error {
 		},
 		KindLXGrant: emptyInspector(func(v any) bool { _, ok := v.(*lxwire.Grant); return ok }),
 	}
-	for _, kind := range []string{KindEthSignDigest, KindLXActivity, KindLXBind, KindLXGrant} {
+	for _, kind := range []string{KindLXActivity, KindLXBind, KindLXGrant} {
 		if err := p.Register(kind, kinds[kind]); err != nil && !strings.Contains(err.Error(), "already") {
 			return err
 		}
@@ -185,6 +207,102 @@ func (g *GrantJSON) decode(pub [32]byte) (lxwire.Grant, *Error) {
 	out.Recurring, out.WindowLength, out.Expiration = g.Recurring, g.WindowLength, g.Expiration
 	out.HasReference, out.RevocationSequence, out.PublicKey = g.HasReference, g.RevocationSequence, pub
 	return out, nil
+}
+
+func parseUint256(field, s string) (*big.Int, *Error) {
+	base := 10
+	digits := s
+	if rest, ok := strings.CutPrefix(s, "0x"); ok {
+		base, digits = 16, rest
+	}
+	v, ok := new(big.Int).SetString(digits, base)
+	if digits == "" || !ok || v.Sign() < 0 || v.BitLen() > 256 {
+		return nil, newError(CodeSessionBadRequest, "%s must be an unsigned 256-bit integer", field)
+	}
+	return v, nil
+}
+
+func parseAddress(field, s string) (common.Address, *Error) {
+	if !common.IsHexAddress(s) || !strings.HasPrefix(s, "0x") {
+		return common.Address{}, newError(CodeSessionBadRequest, "%s must be a 0x-prefixed address", field)
+	}
+	return common.HexToAddress(s), nil
+}
+
+func (c *ConstructionJSON) claim(digest common.Hash) (any, string, *Error) {
+	chainID, e := parseUint256("construction.chainId", c.ChainID)
+	if e != nil {
+		return nil, "", e
+	}
+	switch c.Kind {
+	case policy.KindAuthorization:
+		if c.Account != "" || len(c.Calls) > 0 || c.Quote != nil {
+			return nil, "", newError(CodeSessionBadRequest, "an authorization construction carries only chainId, address and nonce")
+		}
+		address, e := parseAddress("construction.address", c.Address)
+		if e != nil {
+			return nil, "", e
+		}
+		nonce, e := parseUint256("construction.nonce", c.Nonce)
+		if e != nil {
+			return nil, "", e
+		}
+		if !nonce.IsUint64() {
+			return nil, "", newError(CodeSessionBadRequest, "construction.nonce must fit in 64 bits")
+		}
+		return &evm.AuthorizationClaim{ChainID: chainID, Address: address, Nonce: nonce.Uint64(), ClaimedDigest: digest}, policy.KindAuthorization, nil
+	case policy.KindSponsoredBatch:
+		if c.Address != "" || c.Quote == nil {
+			return nil, "", newError(CodeSessionBadRequest, "a sponsored batch construction carries account, nonce, calls and quote")
+		}
+		batch := evm.SponsoredBatch{ChainID: chainID}
+		var e *Error
+		if batch.Account, e = parseAddress("construction.account", c.Account); e != nil {
+			return nil, "", e
+		}
+		if batch.Nonce, e = parseUint256("construction.nonce", c.Nonce); e != nil {
+			return nil, "", e
+		}
+		for i, call := range c.Calls {
+			var out evm.BatchCall
+			if out.To, e = parseAddress("construction.calls.to", call.To); e != nil {
+				return nil, "", e
+			}
+			if out.Value, e = parseUint256("construction.calls.value", call.Value); e != nil {
+				return nil, "", e
+			}
+			data, err := hex.DecodeString(strings.TrimPrefix(call.Data, "0x"))
+			if err != nil || !strings.HasPrefix(call.Data, "0x") {
+				return nil, "", newError(CodeSessionBadRequest, "construction.calls[%d].data must be 0x-prefixed hex", i)
+			}
+			out.Data = data
+			batch.Calls = append(batch.Calls, out)
+		}
+		q := c.Quote
+		if batch.Quote.Sponsor, e = parseAddress("construction.quote.sponsor", q.Sponsor); e != nil {
+			return nil, "", e
+		}
+		if batch.Quote.Token, e = parseAddress("construction.quote.token", q.Token); e != nil {
+			return nil, "", e
+		}
+		for _, f := range []struct {
+			name string
+			raw  string
+			dst  **big.Int
+		}{
+			{"construction.quote.maxTokenAmount", q.MaxTokenAmount, &batch.Quote.MaxTokenAmount},
+			{"construction.quote.tokenAmount", q.TokenAmount, &batch.Quote.TokenAmount},
+			{"construction.quote.deadline", q.Deadline, &batch.Quote.Deadline},
+			{"construction.quote.quoteNonce", q.QuoteNonce, &batch.Quote.QuoteNonce},
+			{"construction.quote.gasCost", q.GasCost, &batch.Quote.GasCost},
+		} {
+			if *f.dst, e = parseUint256(f.name, f.raw); e != nil {
+				return nil, "", e
+			}
+		}
+		return &evm.SponsoredBatchClaim{Batch: batch, ClaimedDigest: digest}, policy.KindSponsoredBatch, nil
+	}
+	return nil, "", newError(CodeSessionBadRequest, "construction kind %q is neither %s nor %s", c.Kind, policy.KindSponsoredBatch, policy.KindAuthorization)
 }
 
 func (s *Server) HandleSign(w http.ResponseWriter, r *http.Request) {
@@ -377,7 +495,14 @@ func (s *Server) prepare(req SignRequest, pubBytes []byte) ([]byte, any, string,
 		if e != nil {
 			return nil, nil, "", e
 		}
-		return d[:], &DigestView{Digest: common.Hash(d)}, KindEthSignDigest, nil
+		if req.Construction == nil {
+			return nil, nil, "", newError(CodeSessionBadRequest, "eth_sign_digest needs the construction its digest is recomputed from")
+		}
+		view, policyKind, e := req.Construction.claim(common.Hash(d))
+		if e != nil {
+			return nil, nil, "", e
+		}
+		return d[:], view, policyKind, nil
 	case KindLXActivity:
 		raw, e := decodeHex("activity", req.Activity)
 		if e != nil {

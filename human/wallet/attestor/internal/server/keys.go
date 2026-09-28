@@ -428,6 +428,9 @@ func (s *Server) doImport(body []byte) (KeyResponse, *Error) {
 	if b.ParticipantID != s.opts.NodeID {
 		return KeyResponse{}, newError(CodeKeyInvalidShare, "share is issued to %q, not this node", b.ParticipantID)
 	}
+	if e := s.checkImportedScheme(b); e != nil {
+		return KeyResponse{}, e
+	}
 	account, e := s.accountFor(b.Curve, b.PublicKey, req.Account)
 	if e != nil {
 		return KeyResponse{}, e
@@ -450,6 +453,34 @@ func (s *Server) doImport(body []byte) (KeyResponse, *Error) {
 		return KeyResponse{}, e
 	}
 	return s.keyResponse(req.KeyID, b.Curve, b.PublicKey, 0, participants, false, seq), nil
+}
+
+func (s *Server) checkImportedScheme(b dealer.ShareBundle) *Error {
+	if b.Threshold != dealer.Threshold {
+		return newError(CodeKeyInvalidShare, "share threshold %d is not the custody threshold %d", b.Threshold, dealer.Threshold)
+	}
+	configured := make(map[string]bool, len(s.opts.Participants))
+	for _, id := range s.opts.Participants {
+		configured[id] = true
+	}
+	bks := make(birkhoffinterpolation.BkParameters, 0, len(b.Bks))
+	for _, id := range b.ParticipantIDs() {
+		if !configured[id] {
+			return newError(CodeKeyInvalidShare, "share names %q, which is not a configured participant", id)
+		}
+		if b.Bks[id].GetRank() != 0 {
+			return newError(CodeKeyInvalidShare, "share of %q has rank %d; custody shares are rank zero", id, b.Bks[id].GetRank())
+		}
+		bks = append(bks, b.Bks[id])
+	}
+	curve, err := b.Curve.Elliptic()
+	if err != nil {
+		return newError(CodeKeyCurve, "%v", err)
+	}
+	if err := bks.ValidateThresholdScheme(dealer.Threshold, curve.Params().N); err != nil {
+		return newError(CodeKeyInvalidShare, "share layout is not a %d-of-%d scheme: %v", dealer.Threshold, len(bks), err)
+	}
+	return nil
 }
 
 func (s *Server) HandleRefresh(w http.ResponseWriter, r *http.Request) {
@@ -707,6 +738,9 @@ func (s *Server) doAddShare(r *http.Request, body []byte) (KeyResponse, *Error) 
 		if b.Curve != c || !b.PublicKey.Equal(pub) {
 			return KeyResponse{}, newError(CodeKeyCurve, "request curve or public key differs from the held share")
 		}
+		if req.Owner != stored.Owner {
+			return KeyResponse{}, newError(CodeSessionBadRequest, "owner differs from the owner of the held share")
+		}
 		addReq.Existing = &b
 		payload.Owner, payload.Account, epoch = stored.Owner, stored.Account, rec.Epoch
 	} else {
@@ -725,10 +759,19 @@ func (s *Server) doAddShare(r *http.Request, body []byte) (KeyResponse, *Error) 
 		}
 		payload.Account = account
 	}
+	pubBytes, err := publicKeyBytes(c, pub)
+	if err != nil {
+		return KeyResponse{}, newError(CodeSessionBadRequest, "public_key: %v", err)
+	}
+	binding := addShareBinding(req.KeyID, curveName(c), hex.EncodeToString(pubBytes), payload.Owner, payload.Account, req.NewParticipantID, quorum)
 	var out dealer.ShareBundle
-	e := s.runSession(r.Context(), req.SessionID, "addshare", protocolAddShare, all, func(ctx context.Context, ps *peerSession) error {
+	e := s.runBoundSession(r.Context(), req.SessionID, "addshare", protocolAddShare, binding, all, func(ctx context.Context, ps *peerSession) error {
 		var err error
-		out, err = refresh.AddShare(ctx, refreshNet{ps}, addReq)
+		var net refresh.Network = refreshNet{ps}
+		if addReq.Existing != nil {
+			net = contributorNet{refreshNet{ps}, req.NewParticipantID}
+		}
+		out, err = refresh.AddShare(ctx, net, addReq)
 		return err
 	})
 	if e != nil {

@@ -173,3 +173,9 @@ area    = "git"
 symptom = "Merging a branch that tracks an imported application is refused because untracked working tree files would be overwritten."
 cause   = "The original, unscrubbed copy of the application still sits untracked in the main working tree, and it can carry credentials."
 do      = "Move the untracked copy outside the repository before merging and never add it; the tracked copy on the branch is the scrubbed one."
+
+[gotcha.26]
+area    = "attestor"
+symptom = "Every add-share through the daemon failed with the refresh participant-set error although the protocol tests passed."
+cause   = "refresh.AddShare requires each contributor's peer list to hold only bundle members, while the daemon session also lists the new participant."
+do      = "Keep the new participant in the transport session and give contributors a network whose PeerIDs leave it out."

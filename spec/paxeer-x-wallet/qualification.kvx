@@ -514,3 +514,27 @@ symbol = "provision"
 observed = "Attestor-backed provisioning has not landed, so the e2e test provisions through the existing route, generates the secp256k1 key with operator keys.generate on all five daemons and marks the row migrated with the key id as the ceremony does; readinessRoutes is registered in src/index.ts."
 assumption = "The provisioning task replaces the operator keygen step with its own flow and the test then drives /v1/wallet/provision alone."
 severity = "note"
+
+[observation.4.8.1]
+task = "4.8"
+file = "human/wallet/schema/attestor-api/v1.kvx"
+symbol = "eth_sign_digest"
+observed = "The schema says eth_sign_digest signs the given 32-byte digest, while the daemon now refuses a digest without the sponsored batch or authorisation construction it is recomputed from."
+assumption = "The schema owner adds the construction field; the daemon's refusal of a bare digest is the intended behaviour."
+severity = "high"
+
+[observation.4.8.2]
+task = "4.8"
+file = "human/wallet/gateway/src/attestor/client.ts"
+symbol = "AttestorClient"
+observed = "The gateway client sends bytes, context, authorisation and participants, which differs from the daemon's sign request shape and carries no construction for eth_sign_digest."
+assumption = "The gateway task aligns its wire shape with the daemon's sign request; the daemon is not changed to match."
+severity = "high"
+
+[observation.4.8.3]
+task = "4.8"
+file = "human/wallet/attestor/cmd/attestor/main.go"
+symbol = "main"
+observed = "The kernel policy evaluator lx.New and the agent verifier are not wired, so lx kinds pass without inspection and agent requests answer token_unavailable."
+assumption = "Wiring them needs kernel chain access that belongs to a later task; the review records it as finding F-7."
+severity = "high"

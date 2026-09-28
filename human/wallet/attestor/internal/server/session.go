@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"sort"
 	"sync"
@@ -81,6 +83,23 @@ type refreshNet struct{ *peerSession }
 
 func (n refreshNet) Bind(r refresh.Receiver) { n.attach(r) }
 
+type contributorNet struct {
+	refreshNet
+	newcomer string
+}
+
+func (n contributorNet) PeerIDs() []string {
+	var out []string
+	for _, id := range n.refreshNet.PeerIDs() {
+		if id != n.newcomer {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+func (n contributorNet) NumPeers() uint32 { return uint32(len(n.PeerIDs())) }
+
 type eddsaNet struct{ *peerSession }
 
 func (n eddsaNet) Register(m types.MessageMain) { n.attach(m) }
@@ -110,12 +129,32 @@ func sortedUnique(ids []string) ([]string, bool) {
 	return out, true
 }
 
+func addShareBinding(keyID, curve, publicKey, owner, account, newParticipant string, quorum []string) []byte {
+	h := sha256.New()
+	h.Write([]byte("paxeer-x-attestor/addshare-binding"))
+	for _, field := range append([]string{keyID, curve, publicKey, owner, account, newParticipant}, quorum...) {
+		var n [4]byte
+		binary.BigEndian.PutUint32(n[:], uint32(len(field)))
+		h.Write(n[:])
+		h.Write([]byte(field))
+	}
+	return h.Sum(nil)
+}
+
 func (s *Server) runSession(ctx context.Context, requestSession, phase, protocol string, participants []string, fn func(context.Context, *peerSession) error) *Error {
+	return s.runBoundSession(ctx, requestSession, phase, protocol, nil, participants, fn)
+}
+
+func (s *Server) runBoundSession(ctx context.Context, requestSession, phase, protocol string, binding []byte, participants []string, fn func(context.Context, *peerSession) error) *Error {
 	kind, known := protocolKinds[protocol]
 	if !known {
 		return newError(CodeSessionOpen, "unknown protocol %s", protocol)
 	}
-	ts, err := s.opts.Transport.OpenKind(sessionName(requestSession, phase), participants, protocol, kind)
+	name := protocol
+	if binding != nil {
+		name = protocol + "/" + hex.EncodeToString(binding)
+	}
+	ts, err := s.opts.Transport.OpenKind(sessionName(requestSession, phase), participants, name, kind)
 	if err != nil {
 		return newError(CodeSessionOpen, "%v", err)
 	}

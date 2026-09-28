@@ -953,7 +953,7 @@ reqs = ["3.5"]
 
 [task.4.8]
 title = "Record the security review of the library delta and the daemon"
-status = "pending"
+status = "done"
 wave = 4
 requires = ["2.1"]
 do_1 = "Add human/wallet/docs/security-review.md recording the review of every change to the vendored threshold library's CGGMP, FROST, refresh and Birkhoff code since its published audit, the daemon's trust boundaries (gateway, attestor, identity provider, operator, dealer), the policy fail-closed paths, and every open finding with severity and owner action."
@@ -962,6 +962,10 @@ verify_cmd = "timeout 20m sh -c 'tools/wallet/scan-secrets.sh human/wallet/docs 
 symbols = ["security-review"]
 touches = ["human/wallet/docs/security-review.md","human/wallet/attestor/go.mod"]
 reqs = ["13.3"]
+revision = "860bf81024caa3e3d7a36405e55256119f6a1a76"
+command = "timeout 20m sh -c 'tools/wallet/scan-secrets.sh human/wallet/docs && cd human/wallet/attestor && go vet ./...'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.4.9]
 title = "Add the theme selection system to the app"

@@ -32,12 +32,15 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	gethcrypto "github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/signer/core/apitypes"
+	"github.com/getamis/alice/crypto/birkhoffinterpolation"
+	pt "github.com/getamis/alice/crypto/ecpointgrouplaw"
 
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/audit"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/auth/jwt"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/config"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/lxwire"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy"
+	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy/evm"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/store"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/transport"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/tss/dealer"
@@ -206,7 +209,7 @@ func testPolicy() *policy.Document {
 		Version: policy.Version,
 		Defaults: policy.Rules{
 			ChainID:       &chain,
-			Kinds:         append([]string{}, SignKinds()...),
+			Kinds:         append([]string{policy.KindSponsoredBatch, policy.KindAuthorization}, SignKinds()...),
 			Caps:          map[string]policy.Cap{policy.AssetNative: {PerTransaction: "1000000000000000000", Daily: "10000000000000000000"}},
 			RatePerMinute: &rate,
 		},
@@ -597,6 +600,42 @@ func TestFiveNodeEndToEnd(t *testing.T) {
 		}
 	}
 
+	delegate := common.HexToAddress("0x2222222222222222222222222222222222222222")
+	authDigest, err := evm.AuthorizationDigest(big.NewInt(testChainID), delegate, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authConstruction := &ConstructionJSON{Kind: policy.KindAuthorization, ChainID: "125", Address: delegate.Hex(), Nonce: "3"}
+	authResults := decodeOK[SignResponse](t, "authorization digest", sign("sign-authorization", SignRequest{KeyID: "evm-key", Kind: KindEthSignDigest, Digest: authDigest.Hex(), Construction: authConstruction}, token))
+	for _, r := range authResults {
+		sig, _ := hex.DecodeString(r.Signature)
+		pub, err := gethcrypto.SigToPub(authDigest.Bytes(), sig)
+		if r.SignedBytes != hex.EncodeToString(authDigest.Bytes()) || err != nil || gethcrypto.PubkeyToAddress(*pub) != address {
+			t.Fatalf("%s: authorization signature does not recover the key over the recomputed digest (%v)", r.NodeID, err)
+		}
+	}
+	for _, r := range sign("sign-bare-digest", SignRequest{KeyID: "evm-key", Kind: KindEthSignDigest, Digest: authDigest.Hex()}, token) {
+		expectError(t, "bare digest", r, CodeSessionBadRequest)
+	}
+	txDigest := txSigner.Hash(tx)
+	for _, r := range sign("sign-foreign-digest", SignRequest{KeyID: "evm-key", Kind: KindEthSignDigest, Digest: txDigest.Hex(), Construction: authConstruction}, token) {
+		e := expectError(t, "authorization over a foreign digest", r, CodePolicyDenied)
+		if e.PolicyCode != policy.CodeDigestMismatch {
+			t.Fatalf("authorization over a foreign digest: policy code %s", e.PolicyCode)
+		}
+	}
+	batchConstruction := &ConstructionJSON{
+		Kind: policy.KindSponsoredBatch, ChainID: "125", Account: address.Hex(), Nonce: "0",
+		Calls: []BatchCallJSON{{To: to.Hex(), Value: "0", Data: "0x"}},
+		Quote: &QuoteJSON{Sponsor: delegate.Hex(), Token: to.Hex(), MaxTokenAmount: "10", TokenAmount: "5", Deadline: "4102444800", QuoteNonce: "1", GasCost: "21000"},
+	}
+	for _, r := range sign("sign-batch-foreign-digest", SignRequest{KeyID: "evm-key", Kind: KindEthSignDigest, Digest: txDigest.Hex(), Construction: batchConstruction}, token) {
+		e := expectError(t, "sponsored batch over a foreign digest", r, CodePolicyDenied)
+		if e.PolicyCode != policy.CodeDigestMismatch {
+			t.Fatalf("sponsored batch over a foreign digest: policy code %s", e.PolicyCode)
+		}
+	}
+
 	otherKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatal(err)
@@ -638,4 +677,140 @@ func TestFiveNodeEndToEnd(t *testing.T) {
 			t.Fatalf("%s: audit head %d does not hold every signing decision", id, seq)
 		}
 	}
+}
+
+func TestAddShareBindsOwnerAcrossParticipants(t *testing.T) {
+	c := newTestCluster(t, 6, true)
+	for _, n := range c.nodes {
+		n.server.opts.ProtocolTimeout = 30 * time.Second
+	}
+	holders := c.ids[:5]
+	edSeed := sha256.Sum256([]byte("attestor add-share binding ed25519 key"))
+	edPub := ed25519.NewKeyFromSeed(edSeed[:]).Public().(ed25519.PublicKey)
+	edScalar, err := dealer.Ed25519ScalarFromSeed(edSeed[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	account := common.HexToAddress("0x3333333333333333333333333333333333333333").Hex()
+	bundles, _, err := dealer.Split(dealer.Ed25519, edScalar, holders)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byNode := map[string]ShareBundleJSON{}
+	for _, b := range bundles {
+		byNode[b.ParticipantID] = EncodeBundle(b)
+	}
+	decodeOK[KeyResponse](t, "import", c.callAll(t, c.byID(holders...), PathImport, func(n *testNode) any {
+		return ImportRequest{SessionID: "import-bound", KeyID: "bound-key", Owner: testOwner, Account: account, Share: byNode[n.id]}
+	}, ""))
+
+	quorum := []string{"node-1", "node-2", "node-3"}
+	newcomer := "node-6"
+	addShare := func(session, newcomerOwner string) []apiResult {
+		return c.callAll(t, c.byID(append(append([]string{}, quorum...), newcomer)...), PathAddShare, func(n *testNode) any {
+			owner := testOwner
+			if n.id == newcomer {
+				owner = newcomerOwner
+			}
+			return AddShareRequest{SessionID: session, KeyID: "bound-key", Curve: "ed25519", PublicKey: hex.EncodeToString(edPub), Owner: owner, Account: account, NewParticipantID: newcomer, Quorum: quorum}
+		}, "")
+	}
+
+	for i, r := range addShare("addshare-foreign-owner", "user-9999") {
+		if r.status == http.StatusOK {
+			t.Fatalf("add-share with a foreign owner on the new participant succeeded on result %d: %s", i, r.body)
+		}
+	}
+	if _, err := c.byID(newcomer)[0].store.Get("bound-key"); err == nil {
+		t.Fatal("the new participant stored a share under a foreign owner")
+	}
+	for _, r := range c.callAll(t, c.byID("node-1"), PathAddShare, func(*testNode) any {
+		return AddShareRequest{SessionID: "addshare-quorum-owner", KeyID: "bound-key", Curve: "ed25519", PublicKey: hex.EncodeToString(edPub), Owner: "user-9999", Account: account, NewParticipantID: newcomer, Quorum: quorum}
+	}, "") {
+		expectError(t, "quorum member told a foreign owner", r, CodeSessionBadRequest)
+	}
+
+	added := decodeOK[KeyResponse](t, "add-share", addShare("addshare-bound", testOwner))
+	for _, r := range added {
+		if r.PublicKey != hex.EncodeToString(edPub) {
+			t.Fatalf("%s: add-share public key %s", r.NodeID, r.PublicKey)
+		}
+	}
+
+	token := c.idp.mint(t, c.idp.key, testOwner)
+	signers := []string{"node-1", "node-2", newcomer}
+	bind := lxwire.BindMessage(testChainID, common.HexToAddress(account), 1)
+	results := decodeOK[SignResponse](t, "sign with the new share", c.callAll(t, c.byID(signers...), PathSign, func(*testNode) any {
+		return SignRequest{SessionID: "sign-bound", KeyID: "bound-key", Kind: KindLXBind, Signers: signers, Message: hex.EncodeToString(bind)}
+	}, token))
+	for _, r := range results {
+		sig, _ := hex.DecodeString(r.Signature)
+		if !ed25519.Verify(edPub, bind, sig) {
+			t.Fatalf("%s: signature with the added share does not verify", r.NodeID)
+		}
+	}
+}
+
+func TestImportRefusesSharesOutsideTheCustodyScheme(t *testing.T) {
+	c := newTestCluster(t, 5, true)
+	curve, err := dealer.Secp256k1.Elliptic()
+	if err != nil {
+		t.Fatal(err)
+	}
+	order := curve.Params().N
+	seed := sha256.Sum256([]byte("attestor import scheme secret"))
+	secret := new(big.Int).Mod(new(big.Int).SetBytes(seed[:]), order)
+	coefficient := func(label string) *big.Int {
+		sum := sha256.Sum256([]byte("attestor import scheme coefficient " + label))
+		return new(big.Int).Mod(new(big.Int).SetBytes(sum[:]), order)
+	}
+	evaluate := func(coefficients []*big.Int, x int64, rank uint32) *big.Int {
+		out := new(big.Int)
+		for i := len(coefficients) - 1; i >= int(rank); i-- {
+			term := new(big.Int).Set(coefficients[i])
+			for k := 0; k < int(rank); k++ {
+				term.Mul(term, big.NewInt(int64(i-k)))
+			}
+			out.Mul(out, big.NewInt(x))
+			out.Add(out, term)
+			out.Mod(out, order)
+		}
+		return out
+	}
+	type point struct {
+		x    int64
+		rank uint32
+	}
+	bundleFor := func(coefficients []*big.Int, points []point, threshold uint32) ShareBundleJSON {
+		b := dealer.ShareBundle{
+			Curve: dealer.Secp256k1, ParticipantID: "node-1", PublicKey: pt.ScalarBaseMult(curve, secret),
+			PartialPublicKeys: map[string]*pt.ECPoint{}, Bks: map[string]*birkhoffinterpolation.BkParameter{}, Threshold: threshold,
+		}
+		for i, id := range c.ids {
+			v := evaluate(coefficients, points[i].x, points[i].rank)
+			b.Bks[id] = birkhoffinterpolation.NewBkParameter(big.NewInt(points[i].x), points[i].rank)
+			b.PartialPublicKeys[id] = pt.ScalarBaseMult(curve, v)
+			if id == "node-1" {
+				b.Share = v
+			}
+		}
+		if err := b.Validate(); err != nil {
+			t.Fatalf("crafted bundle does not validate: %v", err)
+		}
+		return EncodeBundle(b)
+	}
+	plain := []point{{1, 0}, {2, 0}, {3, 0}, {4, 0}, {5, 0}}
+	cases := map[string]ShareBundleJSON{
+		"two of five": bundleFor([]*big.Int{secret, coefficient("a1")}, plain, 2),
+		"a derivative share that discloses the key with one other share": bundleFor([]*big.Int{secret, coefficient("b1"), coefficient("b2")}, []point{{3, 0}, {4, 0}, {5, 0}, {2, 0}, {1, 1}}, dealer.Threshold),
+	}
+	for label, bundle := range cases {
+		r := c.call(t, c.byID("node-1")[0], PathImport, ImportRequest{SessionID: "import-scheme", KeyID: "scheme-key", Owner: testOwner, Share: bundle}, "")
+		expectError(t, label, r, CodeKeyInvalidShare)
+	}
+	if _, err := c.byID("node-1")[0].store.Get("scheme-key"); err == nil {
+		t.Fatal("a share outside the custody scheme was stored")
+	}
+	good := bundleFor([]*big.Int{secret, coefficient("c1"), coefficient("c2")}, plain, dealer.Threshold)
+	decodeOK[KeyResponse](t, "custody scheme import", []apiResult{c.call(t, c.byID("node-1")[0], PathImport, ImportRequest{SessionID: "import-scheme-good", KeyID: "scheme-key", Owner: testOwner, Share: good}, "")})
 }

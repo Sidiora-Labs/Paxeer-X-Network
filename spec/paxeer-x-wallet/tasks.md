@@ -234,7 +234,7 @@
     - Add human/wallet/attestor/cmd/loadtest driving concurrent signing sessions of both curves against a configured network for a bounded duration with a configured concurrency, reporting throughput, latency percentiles and refusals as JSON.
     - Add loadtest_test.go running the tool against five in-process daemons for a short bound, and run it once against the deployed network, recording the summary in the qualification log.
     - _Requirements: 3.5_
-  - [ ] 4.8 Record the security review of the library delta and the daemon
+  - [x] 4.8 Record the security review of the library delta and the daemon
     - Add human/wallet/docs/security-review.md recording the review of every change to the vendored threshold library's CGGMP, FROST, refresh and Birkhoff code since its published audit, the daemon's trust boundaries (gateway, attestor, identity provider, operator, dealer), the policy fail-closed paths, and every open finding with severity and owner action.
     - Where the review finds a defect in the daemon, fix it in this task with a test; where it finds one in the library, record it and pin the dependency version in go.mod with the reason.
     - _Requirements: 13.3_
