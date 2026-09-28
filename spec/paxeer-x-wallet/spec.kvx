@@ -1026,10 +1026,10 @@ log_path = ".logs/verify.log"
 
 [task.4.10]
 title = "Ship the app as a self-hosted progressive web application"
-status = "implemented"
-revision = "7bf854b7bd1c60e6de5118d194898fb021a937e0"
+status = "done"
+revision = "f6343b8312f26e5fe81dd97c32beb7bd8ec49dd9"
 command = "timeout 20m sh -c 'pnpm --dir human/apps/wallet exec vitest run src/pwa && human/apps/wallet/scripts/release-check.sh'"
-exit_code = 1
+exit_code = 0
 log_path = ".logs/verify.log"
 wave = 4
 requires = ["4.4","3.6"]
