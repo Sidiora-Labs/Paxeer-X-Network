@@ -29,9 +29,9 @@ export interface ExchangeViewProps {
 
 export function ExchangeView({ sidRate, legs }: ExchangeViewProps) {
     const { provider, address } = useSurfaceWallet();
-    const module = useMemo(() => (provider ? exchange(provider) : null), [provider]);
+    const surfaceModule = useMemo(() => (provider ? exchange(provider) : null), [provider]);
     const fee = useFeeSelection(provider, address);
-    const state = useModuleSend(module, provider, address);
+    const state = useModuleSend(surfaceModule, provider, address);
     const [action, setAction] = useState<ExchangeAction>('order');
     const [marketId, setMarketId] = useState('');
     const [side, setSide] = useState<'0' | '1'>('0');
@@ -44,12 +44,12 @@ export function ExchangeView({ sidRate, legs }: ExchangeViewProps) {
     const [amount, setAmount] = useState('');
 
     const built = useMemo(() => {
-        if (!module) return { value: null, error: null };
+        if (!surfaceModule) return { value: null, error: null };
         return buildOrError<ModuleTransaction | null>(() => {
             switch (action) {
                 case 'order':
                     if (!marketId || !price || !quantity) return null;
-                    return module.placeOrder({
+                    return surfaceModule.placeOrder({
                         marketId,
                         side: Number(side),
                         price: parseUnits(price, 18),
@@ -57,17 +57,17 @@ export function ExchangeView({ sidRate, legs }: ExchangeViewProps) {
                         timeInForce: Number(timeInForce),
                     });
                 case 'cancel':
-                    return orderId ? module.cancelOrder(orderId) : null;
+                    return orderId ? surfaceModule.cancelOrder(orderId) : null;
                 case 'deposit':
-                    return account && amount ? module.depositMargin(account, parseUnits(amount, 18)) : null;
+                    return account && amount ? surfaceModule.depositMargin(account, parseUnits(amount, 18)) : null;
                 case 'withdraw':
-                    return account && assetId && amount ? module.withdrawMargin(account, assetId, BigInt(amount)) : null;
+                    return account && assetId && amount ? surfaceModule.withdrawMargin(account, assetId, BigInt(amount)) : null;
             }
         });
-    }, [module, action, marketId, side, price, quantity, timeInForce, orderId, account, assetId, amount]);
+    }, [surfaceModule, action, marketId, side, price, quantity, timeInForce, orderId, account, assetId, amount]);
 
     return (
-        <SurfaceFrame title="Exchange" connected={module !== null}>
+        <SurfaceFrame title="Exchange" connected={surfaceModule !== null}>
             <SegmentedControl label="Exchange action" value={action} options={ACTIONS} onChange={setAction} />
             {action === 'order' && (
                 <>

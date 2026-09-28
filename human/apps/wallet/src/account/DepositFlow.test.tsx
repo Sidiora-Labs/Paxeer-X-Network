@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { act } from 'react';
+import { act, useLayoutEffect } from 'react';
 import { ethers } from 'ethers';
 import { afterEach, beforeAll, afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { PAXEER_CHAIN_ID, type Hex } from '@paxeer/wallet';
@@ -24,7 +24,10 @@ let view: Mounted | null = null;
 let wallet: WalletContextValue | null = null;
 
 function Probe() {
-    wallet = useWallet();
+    const value = useWallet();
+    useLayoutEffect(() => {
+        wallet = value;
+    });
     return null;
 }
 

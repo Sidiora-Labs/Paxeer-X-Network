@@ -65,12 +65,12 @@ function isLog(value: unknown): value is SurfaceLog {
     );
 }
 
-export function receiptEvents(receipt: unknown, module: Pick<SurfaceModule, 'address' | 'decodeEvent'>): SentTransaction['events'] {
+export function receiptEvents(receipt: unknown, surfaceModule: Pick<SurfaceModule, 'address' | 'decodeEvent'>): SentTransaction['events'] {
     if (!isRecord(receipt) || !Array.isArray(receipt.logs)) throw new Error('the receipt carries no logs');
     return receipt.logs
         .filter(isLog)
-        .filter((log) => log.address.toLowerCase() === module.address)
-        .map((log) => module.decodeEvent(log));
+        .filter((log) => log.address.toLowerCase() === surfaceModule.address)
+        .map((log) => surfaceModule.decodeEvent(log));
 }
 
 export function receiptStatus(receipt: unknown): ReceiptStatus {
@@ -102,7 +102,7 @@ export interface ModuleSend {
     readonly send: (tx: ModuleTransaction) => Promise<void>;
 }
 
-export function useModuleSend(module: SurfaceModule | null, provider: ModuleProvider | null, address: string | null): ModuleSend {
+export function useModuleSend(surfaceModule: SurfaceModule | null, provider: ModuleProvider | null, address: string | null): ModuleSend {
     const [sending, setSending] = useState(false);
     const [sent, setSent] = useState<SentTransaction | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -116,7 +116,7 @@ export function useModuleSend(module: SurfaceModule | null, provider: ModuleProv
 
     const send = useCallback(
         async (tx: ModuleTransaction) => {
-            if (!module || !provider || !address) {
+            if (!surfaceModule || !provider || !address) {
                 setError('connect a wallet first');
                 return;
             }
@@ -124,7 +124,7 @@ export function useModuleSend(module: SurfaceModule | null, provider: ModuleProv
             setError(null);
             setSent(null);
             try {
-                const hash = await module.send(address, tx);
+                const hash = await surfaceModule.send(address, tx);
                 if (alive.current) setSent({ hash, status: 'pending', events: [] });
                 const receipt = await waitForReceipt(provider, hash);
                 if (!alive.current) return;
@@ -132,14 +132,14 @@ export function useModuleSend(module: SurfaceModule | null, provider: ModuleProv
                     setSent({ hash, status: 'pending', events: [] });
                     return;
                 }
-                setSent({ hash, status: receiptStatus(receipt), events: receiptEvents(receipt, module) });
+                setSent({ hash, status: receiptStatus(receipt), events: receiptEvents(receipt, surfaceModule) });
             } catch (cause) {
                 if (alive.current) setError(errorMessage(cause));
             } finally {
                 if (alive.current) setSending(false);
             }
         },
-        [module, provider, address],
+        [surfaceModule, provider, address],
     );
 
     return { sending, sent, error, send };
@@ -170,18 +170,18 @@ export function useFeeSelection(provider: ModuleProvider | null, address: string
     const [feeDenom, setFeeDenom] = useState<string | null>(null);
     const [denomError, setDenomError] = useState<string | null>(null);
     const [updating, setUpdating] = useState(false);
-    const module = useMemo(() => (provider ? feeToken(provider) : null), [provider]);
+    const surfaceModule = useMemo(() => (provider ? feeToken(provider) : null), [provider]);
 
     const read = useCallback(async () => {
-        if (!module || !address) return;
+        if (!surfaceModule || !address) return;
         try {
-            const denom = await module.getFeeDenom(address);
+            const denom = await surfaceModule.getFeeDenom(address);
             setFeeDenom(denom);
             setDenomError(null);
         } catch (cause) {
             setDenomError(errorMessage(cause));
         }
-    }, [module, address]);
+    }, [surfaceModule, address]);
 
     useEffect(() => {
         setFeeDenom(null);
@@ -189,11 +189,11 @@ export function useFeeSelection(provider: ModuleProvider | null, address: string
     }, [read]);
 
     const applyPreference = useCallback(async () => {
-        if (!module || !provider || !address) return;
-        const tx = choice === 'sid_native' ? module.setFeeDenom(SIDIORA_FEE_DENOM) : module.clearFeeDenom();
+        if (!surfaceModule || !provider || !address) return;
+        const tx = choice === 'sid_native' ? surfaceModule.setFeeDenom(SIDIORA_FEE_DENOM) : surfaceModule.clearFeeDenom();
         setUpdating(true);
         try {
-            const hash = await module.send(address, tx);
+            const hash = await surfaceModule.send(address, tx);
             const receipt = await waitForReceipt(provider, hash);
             if (receiptStatus(receipt) !== 'confirmed') throw new Error('the fee token preference was not applied');
             await read();
@@ -202,7 +202,7 @@ export function useFeeSelection(provider: ModuleProvider | null, address: string
         } finally {
             setUpdating(false);
         }
-    }, [module, provider, address, choice, read]);
+    }, [surfaceModule, provider, address, choice, read]);
 
     return { choice, setChoice, feeDenom, denomError, updating, blocked: feeBlocked(choice, feeDenom), applyPreference };
 }
