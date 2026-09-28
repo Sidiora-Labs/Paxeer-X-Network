@@ -1391,6 +1391,11 @@ reqs = ["4.1","4.2","4.4","4.5","6.2","6.5"]
 [task.5.5]
 title = "Run the full merged lint and test gates once on the wave revision"
 status = "in_progress"
+revision = "afd70054d7f8bff8072e1fdaf94cd2de8d3d50f7"
+command = "timeout 60m sh -c 'tools/wallet/gate-lint.sh && tools/wallet/gate-test.sh'"
+exit_code = 1
+log_path = ".logs/verify-5.5-lint-2.log, .logs/verify-5.5-test-2.log"
+evidence = "Verify exit code 1: the wallet-owned Go and pnpm lint and test targets are green (lint at afd70054d, tests at e6702e2fe with the no-fail-fast gate), rust-human-fmt and rust-platform-fmt are green, and the residual failures are recorded as 5.5.8 (human crate tests, kms included, blocked on the clock authority), 5.5.9 (platform registry test), 5.5.10 (human-service clippy, three lines last written by 4.6) and 5.5.11 (platform gateway clippy)."
 wave = 5
 requires = ["5.1"]
 do_1 = "Run tools/wallet/gate-lint.sh and tools/wallet/gate-test.sh without --check on the feature tip and record every target's result in spec/paxeer-x-wallet/qualification.kvx; a failure is recorded, not repaired here."

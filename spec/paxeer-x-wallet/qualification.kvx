@@ -1391,3 +1391,26 @@ symbol = "module_schema_tests::native_generated_registry_admits_exactly_the_clos
 observed = "This still fails, 78 of 79 passing, with the same registry that lacks Spot and Web; with --no-fail-fast it is the only failing test in rust-platform."
 assumption = "Unchanged pre-existing failure, owned outside the feature."
 severity = "note"
+
+[gate.5.5.lint.2]
+revision = "afd70054d7f8bff8072e1fdaf94cd2de8d3d50f7"
+command = "WALLET_GATE_LOG_DIR=.logs/wallet-gate-lint-2 timeout 60m tools/wallet/gate-lint.sh"
+exit_code = 1
+log_path = ".logs/verify-5.5-lint-2.log"
+observed = "Ten of twelve targets pass (go-attestor-gofmt, go-attestor-vet, go-ceremony-gofmt, go-ceremony-vet, pnpm-wallet-eslint, pnpm-wallet-tsc, pnpm-app-eslint, pnpm-app-tsc, rust-human-fmt, rust-platform-fmt) and two fail: rust-human-clippy on 14 findings in the layerx-human-service lib and rust-platform-clippy on 3 in the layerx-gateway binary."
+
+[observation.5.5.10]
+task = "outside the wallet tasks except three lines last written by 4.6"
+file = "human/crates/layerx-human-service/src/server/production_components.rs"
+symbol = "clippy dead_code, too_many_lines, format_push_string, match_same_arms, needless_pass_by_value, manual_let_else, single_match_else"
+observed = "rust-human-clippy stops on 14 findings in layerx-human-service, all from restructuring: dead code in journeys/wire.rs (MAX_PROOF_ITEMS, two boolean methods); too_many_lines in router.rs:1551, movement_provider.rs:411 and production_components.rs:422, 908 and 3557; and small lints at router.rs:1601 and 1897 and production_components.rs:6049, 6061, 6919 and 6921. Blame puts 11 on non-wallet commits and 3 on lines last written by wallet task 4.6 (production_components.rs:422, 6049 and 6061). layerx-human-kms was checked with no finding, and identity-provider shows none in this log."
+assumption = "left for the owning feature; kms and identity-provider crates lint clean"
+severity = "medium"
+
+[observation.5.5.11]
+task = "outside the feature"
+file = "platform/hosted/gateway/src/main.rs"
+symbol = "clippy::too_many_lines"
+observed = "rust-platform-clippy fails only on three too_many_lines findings in main.rs at lines 1852 (169/100), 3376 (110/100) and 3797 (123/100); blame puts all three function heads on non-wallet gateway commits, and the earlier http.rs findings of observation 5.5.6 are gone."
+assumption = "Pre-existing, left for the gateway's owning feature."
+severity = "medium"
