@@ -4,10 +4,10 @@
  * Action bento — the home-screen action grid that fronts the wallet's
  * primary user actions. Layout adapts to the active wallet kind:
  *
- *   - **self-custody / embedded** — 5 buttons: Send, Swap, Bridge,
- *     Receive, Buy. The shipped layout (Bridge is a "coming soon" toast).
+ *   - **embedded** — 4 buttons: Send, Swap, Bridge, Receive
+ *     (Bridge is a "coming soon" toast).
  *
- *   - **funded** — 2 buttons: Swap and Trade. Send, Receive, Buy,
+ *   - **funded** — 2 buttons: Swap and Trade. Send, Receive and
  *     Bridge are hidden because Funded accounts are locked to the tier
  *     whitelist (no withdrawals, no fiat in/out, no bridges). Swap still
  *     works for whitelisted token pairs; Trade deep-links to the
@@ -18,6 +18,7 @@ import { useCallback, useState } from 'react';
 import { SvgIcon } from '@/components/ui/SvgIcon';
 import { useWalletKind } from '@/providers/WalletKindProvider';
 import type { AppRoute } from '@/widgets/shell/useAppRoute';
+import { openExternalUrl } from '@/lib/security/navigation';
 
 const ACCENT_FILTER =
     'brightness(0) saturate(100%) invert(22%) sepia(93%) saturate(7388%) hue-rotate(222deg) brightness(98%) contrast(101%)';
@@ -53,7 +54,7 @@ export function ActionBento({ onNavigate }: ActionBentoProps) {
                     </span>
                 </button>
                 <button
-                    onClick={() => onNavigate('dex')}
+                    onClick={() => openExternalUrl('https://app.hyperpax.xyz')}
                     className="absolute bg-pax-surface rounded-[20px] flex flex-col items-center justify-center gap-2 press-scale"
                     style={{ left: '50%', top: 0, width: '50%', height: '100%' }}
                 >
@@ -67,7 +68,7 @@ export function ActionBento({ onNavigate }: ActionBentoProps) {
         );
     }
 
-    // ── Standard mode: 5-button bento ─────────────────────────────────
+    // ── Standard mode: 4-button bento ─────────────────────────────────
     return (
         <>
             {bridgeToast && (
@@ -103,18 +104,10 @@ export function ActionBento({ onNavigate }: ActionBentoProps) {
                 <button
                     onClick={() => onNavigate('receive')}
                     className="absolute bg-pax-surface rounded-[20px] flex flex-col items-center justify-center gap-1.5 press-scale"
-                    style={{ left: '39.39%', top: '57.14%', width: 'calc(30.3% - 5px)', height: '42.86%' }}
+                    style={{ left: '39.39%', top: '57.14%', width: '60.61%', height: '42.86%' }}
                 >
                     <SvgIcon name="qr-code" className="w-5 h-5" style={{ filter: ACCENT_FILTER }} />
                     <span className="text-xs font-bold text-pax-subtle">Receive</span>
-                </button>
-                <button
-                    onClick={() => onNavigate('ramp')}
-                    className="absolute bg-pax-surface rounded-[20px] flex flex-col items-center justify-center gap-1.5 press-scale"
-                    style={{ left: '72.73%', top: '57.14%', width: '27.27%', height: '42.86%' }}
-                >
-                    <SvgIcon name="tokens" className="w-5 h-5" style={{ filter: ACCENT_FILTER }} />
-                    <span className="text-xs font-bold text-pax-subtle">Buy</span>
                 </button>
             </div>
         </>

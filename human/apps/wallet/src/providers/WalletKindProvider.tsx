@@ -16,11 +16,11 @@ import { custodyChoiceRepository } from '@/platform/storage/repositories';
  * `WalletKindProvider` — owns the user's choice between the two custody
  * models the PaxPort wallet ships with:
  *
- *   - `'self-custody'` — PIN + BIP39 mnemonic, authenticated in
- *     storage. The current behavior, byte-for-byte.
- *
  *   - `'embedded'`     — Paxeer-managed custody via Supabase auth +
  *     `connect.paxportwallet.com`. Same wallet on every Paxeer app.
+ *
+ *   - `'funded'`       — the same sign-in surface, signing through the
+ *     funded policy engine.
  *
  * Persisted in `localStorage['paxeer:wallet-kind']`. `null` means the user
  * has not chosen yet — the shell renders the onboarding welcome screen so

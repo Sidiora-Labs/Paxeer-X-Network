@@ -4,7 +4,7 @@
  * Action row for the token-detail screen.
  *
  * Layout adapts to the active wallet kind:
- *   - **self-custody / embedded** — 3 buttons: Send, Receive, Swap.
+ *   - **embedded** — 3 buttons: Send, Receive, Swap.
  *   - **funded** — 1 button: Swap. Send and Receive are hidden because
  *     Funded accounts can't move tokens outside the tier whitelist (no
  *     arbitrary sends, no incoming transfers to off-policy addresses).

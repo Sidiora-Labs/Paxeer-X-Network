@@ -141,3 +141,35 @@ symbol = "config"
 observed = "With every kernel backend URL unset, config still refuses startup unless LAYERX_GATEWAY_CLIENT_IDENTITY_PKCS12 and its password file, the four LAYERX_GATEWAY_SEQUENCER_ files, LAYERX_GATEWAY_KEY_PROVISIONING_KEY_FILE and LAYERX_GATEWAY_MODULE_REGISTRY_FILE are present and valid, so chain-only mode cannot start without kernel-side secrets and the deployment was not attempted."
 assumption = "The endpoint needs a change that makes those inputs optional when LAYERX_GATEWAY_COMPONENT_URL is unset (as configured_kernel already does for the backend URLs and tokens), or an owner decision to issue them; tools/wallet/check-live.sh endpoint is ready for the deployment that follows."
 severity = "blocker"
+
+[observation.2.8.1]
+task = "2.8"
+file = "human/apps/wallet/src"
+symbol = "EIP-6963"
+observed = "The app had no injected-wallet path through EIP-6963 to keep; the only provider injection lived in the removed in-app dApp browser."
+assumption = "The EIP-6963 injected-wallet path arrives with the SDK provider task and is wired into the app there."
+severity = "suspect"
+
+[observation.2.8.2]
+task = "2.8"
+file = "human/apps/wallet/src/components/onboarding/Onboarding.tsx"
+symbol = "funded-tier-picker"
+observed = "The funded-tier-picker step imports FundedTierPicker but renders nothing, so a funded session without a funded account shows a blank screen."
+assumption = "Pre-existing; left unchanged because the funded lane belongs to another task."
+severity = "suspect"
+
+[observation.2.8.3]
+task = "2.8"
+file = "human/apps/wallet/src/domains/shell/index.ts"
+symbol = "ROUTE_POLICIES.pns"
+observed = "The name-service screen was reachable only in self-custody; with self-custody removed its route policy now admits embedded custody so the kept screen stays reachable from Discover."
+assumption = "The name-service registration flow signs through the embedded signer; any signing method the embedded API lacks surfaces as a typed error on that screen."
+severity = "note"
+
+[observation.2.8.4]
+task = "2.8"
+file = "human/apps/wallet/src/platform/storage/repositories.ts"
+symbol = "parseCustodyChoice"
+observed = "A stored custody choice of self-custody from an earlier install would fail closed as corrupt once the kind is removed."
+assumption = "The retired value is read as no choice so earlier self-custody installs land on the welcome screen; any other unknown value still fails closed."
+severity = "note"

@@ -129,7 +129,7 @@
     - Split each key for both curves with the dealer of the attestor module, deliver shares over mutual TLS to keys.import, trigger keys.refresh, request a test signature, recover the address, and mark the row migrated in the same database only on a match; write the funded wallets' rows into an archive file encrypted under a passphrase named by environment variable and verify the archive decrypts before excluding them.
     - Add tests that generate envelopes with the imported gateway's own encryption routine through a node script invoked from the test, verify decryption and address derivation, cover a tampered envelope, the archive round trip, and a mismatch stopping the run.
     - _Requirements: 4.1, 4.2, 4.4_
-  - [ ] 2.8 Strip the app to embedded custody and injected wallets
+  - [x] 2.8 Strip the app to embedded custody and injected wallets
     - In human/apps/wallet remove the self-custody vault, the PIN flow, the seed import and backup screens, the same-origin dapp proxy and its relay, the in-app browser and the browser plane, and the ramp screen, together with their routes, state, dependencies and tests.
     - Keep MetaMask and other injected wallets through EIP-6963 discovery, keep the embedded sign-in entry, and keep every remaining screen compiling and its tests passing.
     - Update the app's tests and Playwright configuration to the remaining surfaces and delete the tests of removed ones.

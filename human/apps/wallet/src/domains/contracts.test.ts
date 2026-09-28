@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { parseDappRequest } from './dapp';
 import { parseNativeRouteEvent, storageEnvelopeParser } from './platform';
 import { parseServerRequestMeta, upstreamEnvelopeParser } from './server-edge';
 import { parseRouteQuery } from './shell';
@@ -27,39 +26,6 @@ describe('canonical domain boundary contracts', () => {
     expect(
       parseHttpsUrl('https://unknown.example', {
         allowedOrigins: new Set(['https://paxscan.io']),
-      }).ok,
-    ).toBe(false);
-  });
-
-  it('rejects unknown and unsupported dApp request fields', () => {
-    const valid = parseDappRequest({
-      id: 'request-1',
-      origin: 'https://app.hyperpax.xyz',
-      tabId: 'tab-1',
-      navigationGeneration: 2,
-      method: 'eth_requestAccounts',
-      params: [],
-    });
-    expect(valid.ok).toBe(true);
-    expect(
-      parseDappRequest({
-        id: 'request-2',
-        origin: 'https://app.hyperpax.xyz',
-        tabId: 'tab-1',
-        navigationGeneration: 2,
-        method: 'eth_sign',
-        params: [],
-      }).ok,
-    ).toBe(false);
-    expect(
-      parseDappRequest({
-        id: 'request-3',
-        origin: 'https://app.hyperpax.xyz',
-        tabId: 'tab-1',
-        navigationGeneration: 2,
-        method: 'eth_requestAccounts',
-        params: [],
-        autoApprove: true,
       }).ok,
     ).toBe(false);
   });

@@ -10,7 +10,6 @@ import {
 import {
   contactsRepository,
   custodyChoiceRepository,
-  dappTabsRepository,
   pendingSendRepository,
   preferencesRepository,
 } from './repositories';
@@ -85,14 +84,7 @@ describe('application storage registry', () => {
       showHexData: false,
       notifications: {},
     });
-    dappTabsRepository.write([
-      {
-        id: 'tab-1',
-        url: 'https://example.com/',
-        title: 'Example',
-        lastVisited: 1,
-      },
-    ]);
+    custodyChoiceRepository.write('embedded');
     pendingSendRepository.write({
       symbol: 'PAX',
       amount: '1',
@@ -105,7 +97,7 @@ describe('application storage registry', () => {
 
     resetStorageForLifecycle('custody-switch');
 
-    expect(dappTabsRepository.read()).toEqual([]);
+    expect(custodyChoiceRepository.read()).toBeNull();
     expect(pendingSendRepository.read()).toBeNull();
     expect(preferencesRepository.read().currency).toBe('EUR');
   });

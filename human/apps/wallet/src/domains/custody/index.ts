@@ -32,16 +32,6 @@ export interface TransferCapability {
   readonly submitTransfer: (request: TransferRequest) => Promise<SubmittedTransfer>;
 }
 
-export interface SelfCustodyCapabilities
-  extends ReceiveCapability,
-    TransferCapability {
-  readonly createAccount: (name: string) => Promise<AccountRef>;
-  readonly deleteAccount: (account: AccountRef) => Promise<void>;
-  readonly exportAccount: (account: AccountRef) => Promise<string>;
-  readonly lock: () => Promise<void>;
-  readonly unlock: (secret: string) => Promise<void>;
-}
-
 export interface ManagedCapabilities
   extends ReceiveCapability,
     TransferCapability {
@@ -57,11 +47,6 @@ export interface FundedCapabilities {
 
 export type CustodySession =
   | {
-      readonly kind: 'self-custody';
-      readonly snapshot: PublicWalletSnapshot;
-      readonly capabilities: SelfCustodyCapabilities;
-    }
-  | {
       readonly kind: 'managed';
       readonly identityId: string;
       readonly snapshot: PublicWalletSnapshot;
@@ -76,7 +61,7 @@ export type CustodySession =
     }
   | {
       readonly kind: 'unavailable';
-      readonly requestedKind: 'self-custody' | 'managed' | 'funded';
+      readonly requestedKind: 'managed' | 'funded';
       readonly failure: AppFailure;
     };
 

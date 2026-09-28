@@ -93,11 +93,11 @@ export type JsonValue =
   | JsonValue[]
   | { [key: string]: JsonValue };
 
-export type CustodyChoice = 'embedded' | 'funded' | 'self-custody';
+export type CustodyChoice = 'embedded' | 'funded';
 
 function parseCustodyChoice(input: unknown): CustodyChoice | null {
-  if (input === null) return null;
-  if (input === 'embedded' || input === 'funded' || input === 'self-custody') {
+  if (input === null || input === 'self-custody') return null;
+  if (input === 'embedded' || input === 'funded') {
     return input;
   }
   throw new TypeError('Custody choice is invalid');
@@ -453,109 +453,6 @@ export const currencyRatesRepository = defineStorageRepository({
   parse: parseCurrencyRates,
 });
 
-export interface BiometricUnlockRecord {
-  credentialId: string;
-  prfSalt: string;
-  iv: string;
-  ciphertext: string;
-  createdAt: number;
-}
-
-function parseBiometricUnlock(input: unknown): BiometricUnlockRecord | null {
-  if (input === null) return null;
-  const value = record(input);
-  exactKeys(value, ['credentialId', 'prfSalt', 'iv', 'ciphertext', 'createdAt']);
-  const encoded = /^[A-Za-z0-9_-]+$/;
-  const credentialId = stringValue(value.credentialId, 16, 2_048);
-  const prfSalt = stringValue(value.prfSalt, 43, 64);
-  const iv = stringValue(value.iv, 16, 32);
-  const ciphertext = stringValue(value.ciphertext, 16, 256);
-  if (
-    !encoded.test(credentialId) ||
-    !encoded.test(prfSalt) ||
-    !encoded.test(iv) ||
-    !encoded.test(ciphertext)
-  ) {
-    throw new TypeError('Biometric unlock record is invalid');
-  }
-  return {
-    credentialId,
-    prfSalt,
-    iv,
-    ciphertext,
-    createdAt: integer(value.createdAt),
-  };
-}
-
-export const biometricUnlockRepository = defineStorageRepository({
-  id: 'biometric-unlock',
-  key: 'paxport:v1:biometric-unlock',
-  owner: 'security',
-  schema: 'BiometricUnlockRecord | null',
-  version: 1,
-  area: 'local',
-  sensitivity: 'security-relevant',
-  retention: 'Until disabled, wallet reset, account removal, or uninstall',
-  quotaBytes: 4_096,
-  migration: 'Legacy biometric flags are intentionally not migrated',
-  resetOn: ['reset', 'account-removal', 'uninstall'],
-  corruption: 'fail-closed',
-  prohibitedData: PROHIBITED,
-  fallback: () => null,
-  parse: parseBiometricUnlock,
-});
-
-export interface DappTabRecord {
-  id: string;
-  url: string;
-  title: string;
-  lastVisited: number;
-}
-
-function parseDappTabs(input: unknown): DappTabRecord[] {
-  if (!Array.isArray(input) || input.length > 8) {
-    throw new TypeError('dApp tabs are invalid');
-  }
-  return input.map((item) => {
-    const value = record(item);
-    exactKeys(value, ['id', 'url', 'title', 'lastVisited']);
-    const url = stringValue(value.url, 8, 2_048);
-    const parsed = new URL(url);
-    if (parsed.protocol !== 'https:' || parsed.username || parsed.password) {
-      throw new TypeError('dApp URL is invalid');
-    }
-    return {
-      id: stringValue(value.id, 1, 80),
-      url: parsed.toString(),
-      title: stringValue(value.title, 1, 120),
-      lastVisited: integer(value.lastVisited),
-    };
-  });
-}
-
-export const dappTabsRepository = defineStorageRepository({
-  id: 'dapp-tabs',
-  key: 'paxport:v1:dapp-tabs',
-  owner: 'dapp',
-  schema: 'DappTabRecord[0..8]',
-  version: 1,
-  area: 'local',
-  sensitivity: 'private-metadata',
-  retention: 'Eight recent dApp origins until revoke, logout, custody switch, or reset',
-  quotaBytes: 24_576,
-  migration: 'Validate legacy paxeer:dapp-tabs and rewrite v1 envelope',
-  resetOn: ['reset', 'logout', 'custody-switch', 'account-removal', 'uninstall'],
-  corruption: 'reset-and-signal',
-  prohibitedData: PROHIBITED,
-  fallback: () => [],
-  parse: parseDappTabs,
-  legacyKeys: ['paxeer:dapp-tabs'],
-  migrateLegacy: (storage) => {
-    const raw = storage.getItem('paxeer:dapp-tabs');
-    return raw === null ? undefined : JSON.parse(raw);
-  },
-});
-
 export interface PortfolioFilters {
   hideDust: boolean;
   hiddenTokens: string[];
@@ -854,81 +751,4 @@ export const announcementRepository = defineStorageRepository({
   parse: parseAnnouncementVersion,
   legacyKeys: ['paxeer_whats_new_seen'],
   migrateLegacy: (storage) => storage.getItem('paxeer_whats_new_seen') ?? undefined,
-});
-
-export interface DappPermissionRecord {
-  origin: string;
-  address: string;
-  chainId: number;
-  methods: string[];
-  createdAt: number;
-  lastUsedAt: number;
-}
-
-export const dappPermissionsRepository = defineStorageRepository<
-  Record<string, DappPermissionRecord>
->({
-  id: 'dapp-permissions',
-  key: 'paxport:v1:dapp-permissions',
-  owner: 'dapp',
-  schema: 'Record<https-origin, DappPermissionRecord>',
-  version: 1,
-  area: 'local',
-  sensitivity: 'security-relevant',
-  retention: 'Until revoke, logout, custody switch, account removal, reset, or uninstall',
-  quotaBytes: 32_768,
-  migration: 'No legacy permission state is trusted',
-  resetOn: ['reset', 'logout', 'custody-switch', 'account-removal', 'uninstall'],
-  corruption: 'fail-closed',
-  prohibitedData: PROHIBITED,
-  fallback: () => ({}),
-  parse: (input): Record<string, DappPermissionRecord> => {
-    const value = record(input);
-    if (Object.keys(value).length > 100) throw new TypeError('dApp permissions are too large');
-    return Object.fromEntries(
-      Object.entries(value).map(([origin, permissions]) => {
-        const url = new URL(origin);
-        if (url.origin !== origin || url.protocol !== 'https:') {
-          throw new TypeError('dApp permission origin is invalid');
-        }
-        // Normalize the short-lived v1 array shape produced by the initial
-        // bridge implementation. It did not contain account or chain
-        // identity, so it cannot remain authorized.
-        if (Array.isArray(permissions)) return [origin, null];
-        const permission = record(permissions);
-        exactKeys(permission, [
-          'origin',
-          'address',
-          'chainId',
-          'methods',
-          'createdAt',
-          'lastUsedAt',
-        ]);
-        const permissionAddress = stringValue(permission.address, 42, 42);
-        if (
-          permission.origin !== origin ||
-          !ADDRESS.test(permissionAddress) ||
-          !Number.isSafeInteger(permission.chainId) ||
-          Number(permission.chainId) <= 0 ||
-          !Array.isArray(permission.methods) ||
-          permission.methods.length > 32 ||
-          permission.methods.some(
-            (method) =>
-              typeof method !== 'string' ||
-              !/^[a-z0-9:_-]{1,64}$/i.test(method),
-          )
-        ) {
-          throw new TypeError('dApp permissions are invalid');
-        }
-        return [origin, {
-          origin,
-          address: permissionAddress,
-          chainId: Number(permission.chainId),
-          methods: permission.methods as string[],
-          createdAt: integer(permission.createdAt),
-          lastUsedAt: integer(permission.lastUsedAt),
-        }];
-      }).filter((entry): entry is [string, DappPermissionRecord] => entry[1] !== null),
-    );
-  },
 });

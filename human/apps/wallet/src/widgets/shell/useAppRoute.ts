@@ -38,13 +38,9 @@ function defaultRoute(name: AppRoute): ShellRoute {
   switch (name) {
     case 'send':
       return { name };
-    case 'browser':
-    case 'paxfun':
     case 'token-detail':
     case 'tx-detail':
       return { name: 'portfolio' };
-    case 'paxscan':
-      return { name };
     default:
       return { name };
   }
@@ -82,17 +78,10 @@ export interface AppRouteState {
   tokenDetailId: string;
   tokenDetailSymbol: string;
   txDetailHash: string;
-  paxfunUrl: string;
-  paxfunTitle: string;
-  browserUrl: string;
-  browserTitle: string;
   sendTokenId: string;
   navigateToSend: (tokenAddress?: string) => void;
   navigateToToken: (id: string, symbol?: string) => void;
   navigateToTx: (hash: string) => void;
-  navigateToTrade: (poolAddress: string, symbol?: string) => void;
-  navigateToBrowser: (url: string) => void;
-  navigateToPaxscan: (path?: string) => void;
 }
 
 export function useAppRoute(): AppRouteState {
@@ -195,40 +184,10 @@ export function useAppRoute(): AppRouteState {
     (hash: string) => commit({ name: 'tx-detail', hash }),
     [commit],
   );
-  const navigateToTrade = useCallback(
-    (pool: string, symbol?: string) =>
-      commit({ name: 'paxfun', pool, ...(symbol ? { symbol } : {}) }),
-    [commit],
-  );
-  const navigateToBrowser = useCallback(
-    (url: string) => {
-      const parsed = parseRouteUrl(
-        `/?screen=browser&url=${encodeURIComponent(
-          url.startsWith('http') ? url : `https://${url}`,
-        )}`,
-      );
-      if (parsed.ok) commit(parsed.value);
-    },
-    [commit],
-  );
-  const navigateToPaxscan = useCallback(
-    (path?: string) =>
-      commit({ name: 'paxscan', ...(path ? { path } : {}) }),
-    [commit],
-  );
-
   return useMemo(() => {
     const tokenDetail =
       routeState.name === 'token-detail' ? routeState : null;
     const transaction = routeState.name === 'tx-detail' ? routeState : null;
-    const trade = routeState.name === 'paxfun' ? routeState : null;
-    const explorer = routeState.name === 'paxscan' ? routeState : null;
-    const browser = routeState.name === 'browser' ? routeState : null;
-    const browserUrl = browser
-      ? browser.url
-      : explorer
-        ? `https://paxscan.io${explorer.path ?? ''}`
-        : '';
     return {
       routeState,
       route: routeState.name,
@@ -238,25 +197,10 @@ export function useAppRoute(): AppRouteState {
       tokenDetailId: tokenDetail?.token ?? '',
       tokenDetailSymbol: tokenDetail?.symbol ?? '',
       txDetailHash: transaction?.hash ?? '',
-      paxfunUrl: trade
-        ? `https://www.kindlelaunch.com/token/${trade.pool}`
-        : '',
-      paxfunTitle: trade?.symbol
-        ? `${trade.symbol} · Kindle Launch`
-        : 'Kindle Launch',
-      browserUrl,
-      browserTitle: browser
-        ? new URL(browser.url).hostname
-        : explorer
-          ? 'PaxScan'
-          : '',
       sendTokenId: routeState.name === 'send' ? routeState.token ?? '' : '',
       navigateToSend,
       navigateToToken,
       navigateToTx,
-      navigateToTrade,
-      navigateToBrowser,
-      navigateToPaxscan,
     };
   }, [
     routeState,
@@ -266,8 +210,5 @@ export function useAppRoute(): AppRouteState {
     navigateToSend,
     navigateToToken,
     navigateToTx,
-    navigateToTrade,
-    navigateToBrowser,
-    navigateToPaxscan,
   ]);
 }

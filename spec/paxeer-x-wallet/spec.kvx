@@ -578,7 +578,7 @@ reqs = ["4.1","4.2","4.4"]
 
 [task.2.8]
 title = "Strip the app to embedded custody and injected wallets"
-status = "pending"
+status = "done"
 wave = 2
 requires = ["1.16"]
 do_1 = "In human/apps/wallet remove the self-custody vault, the PIN flow, the seed import and backup screens, the same-origin dapp proxy and its relay, the in-app browser and the browser plane, and the ramp screen, together with their routes, state, dependencies and tests."
@@ -588,6 +588,10 @@ verify_cmd = "timeout 20m sh -c 'pnpm --dir human/apps/wallet exec tsc --noEmit 
 symbols = ["app-shell"]
 touches = ["human/apps/wallet/src/","human/apps/wallet/browser-plane/","human/apps/wallet/proxy-relay/","human/apps/wallet/package.json","human/apps/wallet/playwright.wallet-app.config.ts"]
 reqs = ["10.2"]
+revision = "d168ddf225c4fa1ea4a5d6952d9e8b7375008e5d"
+command = "timeout 20m sh -c 'pnpm --dir human/apps/wallet exec tsc --noEmit && pnpm --dir human/apps/wallet exec vitest run'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.2.9]
 title = "Enforce kernel-side signing policy at the attestor"

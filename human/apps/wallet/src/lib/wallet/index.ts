@@ -1,27 +1,3 @@
-// ── Self-custody facade ───────────────────────────────────────────────
-export { PaxeerWallet } from './PaxeerWallet';
-export type { PaxeerWalletDeps } from './PaxeerWallet';
-
-// ── Hardened self-custody core modules ────────────────────────────────
-export {
-    AuthenticationManager,
-    IndexedDBStorageAdapter,
-    LegacyMigrationManager,
-    SessionManager,
-    TransactionServiceV2,
-    VaultManager,
-    VaultSigner,
-    WalletCoreV2,
-    WalletError,
-    WebCryptoAdapter,
-} from './v2';
-export type { WalletErrorCode } from './v2';
-
-// ── Embedded / Funded wallet (Paxeer-managed custody via Supabase + REST)
-//
-// Mirror of the self-custody facade for the second + third custody models
-// the PaxPort PWA supports. Read `./embedded/README.md` (or the top-level
-// README.md) for the integration guide.
 export {
     EmbeddedWallet,
     EmbeddedSigner,
@@ -75,17 +51,14 @@ export type {
 
 // ── Types ─────────────────────────────────────────────────────────────
 export type {
-    SelfCustodyWalletSnapshot,
     WalletAccount,
     TransactionData,
-    PaxeerWalletConfig,
 } from './types';
 export { WalletEvents } from './types';
 
-// ── Port interfaces (for custom adapter authors + polymorphic UI) ─────
-export type { CryptoPort, EventPort, StoragePort, TimerPort } from './v2';
+// ── Port interfaces ─────
 export type { IEventBus, EventHandler } from './ports/IEventBus';
-export type { ISelfCustodyWallet, IWallet, WalletKind } from './ports/IWallet';
+export type { IWallet, WalletKind } from './ports/IWallet';
 
 // ── Shared non-security event compatibility ───────────────────────────
 export { SimpleEventBus } from './adapters/SimpleEventBus';

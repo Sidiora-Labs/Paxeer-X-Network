@@ -24,9 +24,9 @@ export async function ensureApproval(
 
 // ── Execute swap — dispatches by protocol ───────────────────────────────────
 //
-// Accepts any ethers.Signer so the same SDK drives both `ethers.Wallet`
-// (self-custody, signs locally) and `EmbeddedSigner` (Paxeer-managed,
-// delegates `sendTransaction` to connect.paxportwallet.com). Read calls
+// Accepts any ethers.Signer so the same SDK drives `EmbeddedSigner`
+// (Paxeer-managed, delegates `sendTransaction` to
+// connect.paxportwallet.com) and `FundedSigner`. Read calls
 // inside this module hit `signer.provider` regardless of custody model.
 export async function executeSwap(
     signer: ethers.Signer,
