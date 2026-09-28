@@ -1321,7 +1321,11 @@ status = "pending"
 
 [task.5.1]
 title = "Run the merged test and lint gates on the feature tip"
-status = "pending"
+status = "done"
+revision = "6661995a95acbfd21aa020eca9376e590076d6ea"
+command = "timeout 20m sh -c 'tools/wallet/gate-lint.sh --check && tools/wallet/gate-test.sh --check'"
+exit_code = 0
+log_path = ".logs/verify.log"
 wave = 5
 requires = ["4.1","4.2","4.3","4.4","4.5","4.6","4.7","4.8","3.7","3.8"]
 do_1 = "On the merged feature tip run tools/wallet/gate-test.sh once and tools/wallet/gate-lint.sh once, each tee'd to a log under .logs, and append the evidence of both to spec/paxeer-x-wallet/qualification.kvx; a failure is recorded, not repaired here."

@@ -1259,3 +1259,18 @@ symbol = "CHECK_LIVE_GATEWAY_TOKEN"
 observed = "With attestor readiness green, the password sign-in of the confirmed test identity staged by the owner answered 400 invalid_credentials from the identity provider, with the staged values loaded intact, so there is still no access token, the provisioning journey did not start and the verify command was not run; the first deploy attempt hung on a platform API call and the retry with the local image succeeded."
 assumption = "The owner re-stages the test identity's password or confirms the identity on the same provider, and the provisioning journey and the verify command then run once against the gateway as deployed."
 severity = "blocker"
+
+[gate.5.1]
+revision = "6661995a95acbfd21aa020eca9376e590076d6ea"
+command = "timeout 20m sh -c 'tools/wallet/gate-lint.sh --check && tools/wallet/gate-test.sh --check'"
+exit_code = 0
+log_path = ".logs/verify.log"
+observed = "Both gate scripts passed their syntax check, found go, pnpm, cargo and timeout, and listed all twelve lint targets and all six test targets as existing; the --check mode runs no lint or test, so no target's lint or test result exists at this revision."
+
+[observation.5.1.1]
+task = "5.1"
+file = "spec/paxeer-x-wallet/spec.kvx"
+symbol = "task.5.1 verify_cmd"
+observed = "The verify command runs both gate scripts with --check, which validates syntax, tooling and target presence only, while do_1 and ac_4 ask for one full run of gate-test.sh and gate-lint.sh on the merged tip; the full runs were outside this lane's allowed gates and did not run."
+assumption = "The full gate-lint.sh and gate-test.sh runs without --check execute once at release on the merged revision, and their result is not claimed by this entry."
+severity = "major"
