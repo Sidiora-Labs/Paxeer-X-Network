@@ -443,3 +443,27 @@ area    = "fly"
 symptom = "An ssh console call fails with an API EOF and leaves an empty output file."
 cause   = "The machines API dropped the connection transiently."
 do      = "Check the output file is non-empty and rerun the single call."
+
+[gotcha.71]
+area    = "fleet"
+symptom = "The commit helper runs past the tool timeout inside a lane although the commit has landed."
+cause   = "The repository post-commit hook starts the sync command, which never exits inside a lane worktree."
+do      = "Give the helper the maximum timeout, check the log for the landed commit, and kill the hung sync process once."
+
+[gotcha.72]
+area    = "attestor"
+symptom = "A test cannot reproduce the bearer-token replay refusal through the kms signer."
+cause   = "The signer gives every call a fresh random session id, so no two requests are ever identical."
+do      = "Send the repeated request as a raw mutual-TLS call through the test-only cluster helper."
+
+[gotcha.73]
+area    = "fly"
+symptom = "A deploy by image reference hangs for more than ten minutes on a platform API call."
+cause   = "Without the local-only flag the deploy resolves the image remotely and the call can stall."
+do      = "Build locally and deploy with the local-only flag against the local image."
+
+[gotcha.74]
+area    = "human-service"
+symptom = "A live kernel send through attestor custody is refused with account_not_owned."
+cause   = "The attestors own only protocol-3 account ids while the shared intents constant selects protocol 2 by default."
+do      = "Under attestor custody the service defaults to protocol 3 and refuses any other configured value; keep it that way when the intents constant changes."

@@ -25,16 +25,15 @@ use layerx_agent_api::track::{
 use layerx_agent_api::verify::Level;
 use layerx_agentd::outbox::{Outbox, SubmissionState as OutboxState};
 use layerx_agentd::prepare::{
-    prepare_activity, CorePreparationBoundary, CorePreparationState, CoreStateError,
+    prepare_activity_for_protocol, CorePreparationBoundary, CorePreparationState, CoreStateError,
     PreparationDefaults, PrepareRequest, Prepared,
 };
 use layerx_agentd::receipt::{self as daemon_receipt, ReceiptLookupKey as DaemonReceiptKey};
 use layerx_agentd::sign::{attach_external_signature, verify_before_submit};
 use layerx_agentd::store::{Store as AgentStore, TenantId};
-use layerx_crypto::signer::Signer as _;
 use layerx_human_identity_provider::{AssertionConfig, AssertionVerifier, Policy, State};
 use layerx_human_service::custody::{
-    CustodyError, CustodySigner, KeyId, Keystore, KmsError, SigningLimits,
+    CustodyError, CustodySigner, KeyId, Keystore, KmsError, SendPlanAuthorization, SigningLimits,
 };
 use layerx_human_service::journeys::{
     authority_label, drive_intent_journey, intent_journey_id, plan, start_kernel_journey,
@@ -72,6 +71,7 @@ const SEQUENCE: u64 = 7;
 const SEND_FEE: u128 = 2;
 const MAX_FEE: u128 = 20;
 const AMOUNT: u128 = 90;
+const SEND_PROTOCOL: u16 = layerx_intents::canonical::STATE_COMMITMENT_PROTOCOL_VERSION;
 
 struct NoopWake;
 
@@ -213,31 +213,63 @@ fn submit_request(plan: &UnifiedPlan, actor: &AgentDid, window: (u64, u64)) -> S
     .unwrap_or_else(|error| panic!("submission: {error}"))
 }
 
-fn send_route(plan: &UnifiedPlan, request: &SubmitPlanRequest, home: &str) -> RouteRequest {
+struct SendAuthority<'a> {
+    cluster: &'a cluster::Cluster,
+    kms: &'a AttestorKms,
+    signer: &'a CustodySigner,
+    principal: &'a PrincipalId,
+    public_key: [u8; 32],
+}
+
+fn send_route(
+    plan: &UnifiedPlan,
+    request: &SubmitPlanRequest,
+    home: &str,
+    owner: &SendAuthority<'_>,
+) -> RouteRequest {
     let binding = &request.bindings[0];
-    let session = layerx_crypto::local::LocalSigner::new([0x61; 32]);
-    let debit = layerx_crypto::send::SendDebit {
-        from: layerx_intents::canonical::account_id_for_protocol(
-            &account(home),
-            layerx_intents::canonical::PROTOCOL_VERSION,
-        )
-        .unwrap_or_else(|error| panic!("source account: {error:?}")),
-        to: layerx_intents::canonical::account_id_for_protocol(
-            &account(WORKER),
-            layerx_intents::canonical::PROTOCOL_VERSION,
-        )
-        .unwrap_or_else(|error| panic!("destination account: {error:?}")),
+    let protocol = SEND_PROTOCOL;
+    let authorization = SendPlanAuthorization {
+        plan_id: binding.action_key,
+        action_key: binding.action_key,
+        principal: owner.principal.as_str().to_owned(),
+        tenant: "tenant-a".to_owned(),
+        binding_digest: owner
+            .signer
+            .evm_binding(owner.principal, &custody_key())
+            .unwrap_or_else(|error| panic!("custody binding: {error:?}"))
+            .digest(),
+        from: layerx_intents::canonical::account_id_for_protocol(&account(home), protocol)
+            .unwrap_or_else(|error| panic!("source account: {error:?}")),
+        to: layerx_intents::canonical::account_id_for_protocol(&account(WORKER), protocol)
+            .unwrap_or_else(|error| panic!("destination account: {error:?}")),
         asset: ASSET,
         amount: AMOUNT,
-        source_sequence: binding.account_sequence,
+        sequence: binding.account_sequence,
         idempotency_key: binding.action_key,
         expires_at: binding.not_after,
-        context_hash: [0x55; 32],
-        conditions: Vec::new(),
-        authorization_kind: SendAuthorizationKind::SessionKey as u8,
-        network_id: NETWORK_ID,
-        protocol_version: layerx_intents::canonical::PROTOCOL_VERSION,
+        context: [0x55; 32],
+        network: NETWORK_ID,
+        protocol,
+        not_before: binding.not_before,
+        not_after: binding.not_after,
     };
+    let signature = owner
+        .kms
+        .authorize_kernel_send(
+            owner.signer,
+            owner.principal,
+            &custody_key(),
+            &authorization,
+            binding.fee_limit,
+        )
+        .unwrap_or_else(|error| {
+            panic!(
+                "owner send authorization: {error}: {:?}: {}",
+                owner.kms.last_refusal_code(),
+                owner.cluster.logs()
+            )
+        });
     let leg = &plan.legs()[0];
     RouteRequest {
         source: leg.source().clone(),
@@ -247,18 +279,14 @@ fn send_route(plan: &UnifiedPlan, request: &SubmitPlanRequest, home: &str) -> Ro
             idempotency_key: IdempotencyKey::new(binding.action_key),
             expires_at: TimestampSeconds::from_u64(binding.not_after),
             context_hash: ContextHash::new([0x55; 32]),
-            authorization: support::sign_send(
-                &session,
-                &debit,
-                SendAuthorization::new(
-                    SendAuthorizationKind::SessionKey,
-                    PublicKey::new(session.public_key()),
-                    AuthorizationSignature::new([0x77; 64]),
-                ),
+            authorization: SendAuthorization::new(
+                SendAuthorizationKind::Owner,
+                PublicKey::new(owner.public_key),
+                AuthorizationSignature::new(signature),
             ),
             network_id: NetworkId::new(NETWORK_ID)
                 .unwrap_or_else(|error| panic!("network: {error:?}")),
-            protocol_version: ProtocolVersion::new(layerx_intents::canonical::PROTOCOL_VERSION)
+            protocol_version: ProtocolVersion::new(protocol)
                 .unwrap_or_else(|error| panic!("protocol: {error:?}")),
         }),
         asset: leg.asset(),
@@ -360,7 +388,7 @@ impl AgentBoundary for RealAgentLayer {
                 observed_head_sequence: 88,
                 module_registry: self.registry.clone(),
             });
-            let prepared = prepare_activity(
+            let prepared = prepare_activity_for_protocol(
                 &mut core,
                 PreparationDefaults {
                     timestamp_span: request
@@ -390,6 +418,7 @@ impl AgentBoundary for RealAgentLayer {
                     payload: request.payload.as_bytes().to_vec(),
                     declared_payload_limit: 1_024,
                 },
+                SEND_PROTOCOL,
             )
             .map_err(|_| AgentBoundaryError::Refused)?;
             self.preparations.insert(key, prepared);
@@ -776,7 +805,24 @@ fn wallet_identity_e2e_signs_a_kernel_send_through_the_attestors_to_a_verified_r
     };
     verify_bindings(&plan, &request, &expectation)
         .unwrap_or_else(|error| panic!("bindings: {error}"));
-    let routes = vec![send_route(&plan, &request, &home)];
+    let client = cluster
+        .client()
+        .unwrap_or_else(|error| panic!("operator client: {error}"));
+    let audit_before = cluster
+        .audit(&client)
+        .unwrap_or_else(|error| panic!("audit before: {error}"));
+    let routes = vec![send_route(
+        &plan,
+        &request,
+        &home,
+        &SendAuthority {
+            cluster: &cluster,
+            kms: &kms,
+            signer: &signer,
+            principal: &principal_id,
+            public_key,
+        },
+    )];
     let journey_id = intent_journey_id("kernel-submit", plan.digest())
         .unwrap_or_else(|error| panic!("journey id: {error}"));
 
@@ -806,12 +852,6 @@ fn wallet_identity_e2e_signs_a_kernel_send_through_the_attestors_to_a_verified_r
         JourneyState::GettingReady
     );
 
-    let client = cluster
-        .client()
-        .unwrap_or_else(|error| panic!("operator client: {error}"));
-    let audit_before = cluster
-        .audit(&client)
-        .unwrap_or_else(|error| panic!("audit before: {error}"));
     let key = plan
         .action_key(0)
         .unwrap_or_else(|error| panic!("key: {error:?}"));
@@ -845,7 +885,13 @@ fn wallet_identity_e2e_signs_a_kernel_send_through_the_attestors_to_a_verified_r
             now,
         },
     ))
-    .unwrap_or_else(|error| panic!("drive: {error}: {}", cluster.logs()));
+    .unwrap_or_else(|error| {
+        panic!(
+            "drive: {error}: {:?}: {}",
+            kms.last_refusal_code(),
+            cluster.logs()
+        )
+    });
     assert!(
         !matches!(
             status.state(),

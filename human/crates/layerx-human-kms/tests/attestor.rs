@@ -645,6 +645,68 @@ impl Cluster {
             .collect()
     }
 
+    fn sign_raw(&self, body: &[u8], token: &str) -> Result<Vec<(String, u16, Value)>> {
+        let root_der = self.pki.certificate_der("gateway-ca")?;
+        let chain_der = self.pki.certificate_der("gateway")?;
+        let key_pem = fs::read(self.pki.path("gateway.key"))?;
+        let root = ureq::tls::Certificate::from_der(&root_der).to_owned();
+        let chain = ureq::tls::Certificate::from_der(&chain_der).to_owned();
+        let key = ureq::tls::PrivateKey::from_pem(&key_pem)?;
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .tls_config(
+                ureq::tls::TlsConfig::builder()
+                    .provider(ureq::tls::TlsProvider::Rustls)
+                    .root_certs(ureq::tls::RootCerts::new_with_certs(&[root]))
+                    .client_cert(Some(ureq::tls::ClientCert::new_with_certs(&[chain], key)))
+                    .build(),
+            )
+            .timeout_global(Some(Duration::from_secs(120)))
+            .http_status_as_error(false)
+            .build()
+            .into();
+        let targets: Vec<(String, SocketAddr)> = self
+            .nodes
+            .iter()
+            .filter(|(id, _)| SIGNERS.contains(&id.as_str()))
+            .cloned()
+            .collect();
+        thread::scope(|scope| {
+            let handles: Vec<_> = targets
+                .iter()
+                .map(|(id, address)| {
+                    let agent = agent.clone();
+                    scope.spawn(
+                        move || -> std::result::Result<(String, u16, Value), String> {
+                            let mut response = agent
+                                .post(format!("https://{address}/v1/sign"))
+                                .header("content-type", "application/json")
+                                .header("authorization", format!("Bearer {token}"))
+                                .send(body)
+                                .map_err(|error| format!("{id}: {error}"))?;
+                            let status = response.status().as_u16();
+                            let text = response
+                                .body_mut()
+                                .read_to_string()
+                                .map_err(|error| format!("{id}: {error}"))?;
+                            let value = serde_json::from_str(&text)
+                                .map_err(|error| format!("{id}: {error}: {text}"))?;
+                            Ok((id.clone(), status, value))
+                        },
+                    )
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|handle| {
+                    handle
+                        .join()
+                        .map_err(|_| "raw sign thread panicked".to_owned())?
+                        .map_err(Into::into)
+                })
+                .collect()
+        })
+    }
+
     fn audit(&self, client: &AttestorClient) -> Result<Vec<u64>> {
         SIGNERS
             .iter()
@@ -886,15 +948,33 @@ fn attestor_signs_a_disclosed_activity_through_the_real_daemon_quorum() -> Resul
     );
     assert_eq!(&signer.audit_sequences(), first.audit());
 
-    let replayed = signer.sign_activity(&other_canonical, &other_disclosure, &registry, &assertion);
-    assert!(
-        matches!(
-            &replayed,
-            Err(AttestorError::Refused { status: 401, code, .. }) if code == "token_invalid"
-        ),
-        "{replayed:?}"
-    );
-    assert_eq!(&signer.audit_sequences(), first.audit());
+    let shared =
+        checked(signer.sign_activity(&other_canonical, &other_disclosure, &registry, &assertion))?;
+    assert_verified(&signer, &other_canonical, &shared)?;
+    for (node, sequence) in shared.audit() {
+        assert!(*sequence > first.audit()[node]);
+    }
+    assert_eq!(&signer.audit_sequences(), shared.audit());
+
+    let (repeat_canonical, _) = activity(generated.public_key, 3)?;
+    let repeat = serde_json::to_vec(&json!({
+        "session_id": "activity-repeated-under-one-token",
+        "key_id": "lx-user-key",
+        "kind": "lx_activity",
+        "signers": SIGNERS,
+        "activity": hex(&repeat_canonical),
+    }))?;
+    for (node, status, body) in cluster.sign_raw(&repeat, &assertion)? {
+        assert_eq!(status, 200, "{node}: {body}");
+    }
+    let before = cluster.audit(&observer)?;
+    for (node, status, body) in cluster.sign_raw(&repeat, &assertion)? {
+        assert_eq!(status, 401, "{node}: {body}");
+        assert_eq!(body["error"]["code"], "token_invalid", "{node}: {body}");
+    }
+    for (index, sequence) in cluster.audit(&observer)?.iter().enumerate() {
+        assert!(*sequence > before[index]);
+    }
 
     let second = checked(signer.sign_activity(
         &other_canonical,
@@ -904,7 +984,7 @@ fn attestor_signs_a_disclosed_activity_through_the_real_daemon_quorum() -> Resul
     ))?;
     assert_verified(&signer, &other_canonical, &second)?;
     for (node, sequence) in second.audit() {
-        assert!(*sequence > first.audit()[node]);
+        assert!(*sequence > shared.audit()[node]);
     }
     assert_eq!(&signer.audit_sequences(), second.audit());
     Ok(())
