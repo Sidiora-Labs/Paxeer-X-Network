@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
 	cat <<'EOF'
-usage: tools/wallet/check-live.sh endpoint
+usage: tools/wallet/check-live.sh endpoint | attestors
 
 Checks a deployed wallet service against its live answers.
 
@@ -19,9 +19,23 @@ Checks, each printed as "pass <check> <observed>" or "fail <check> <observed>":
   lx_getAccount      the answer is error -32010 with data.code kernel_unavailable,
                      a named backend and a reason
 
+attestors reads GET <base>/health from every base in
+          CHECK_LIVE_ATTESTOR_BASES and prints one line per node, then one
+          quorum line:
+  node    "pass node <id> ..." when the node answers ready with every peer
+          reachable, with its region, share count, refresh epoch, audit
+          sequence and head, reachable peers and readiness
+  quorum  "pass quorum ready=<n>/<total> need=3" when at least three nodes
+          are ready
+          Exits 0 only when every node passes and the quorum passes.
+
 Environment:
-  CHECK_LIVE_ENDPOINT_BASE  base URL of the endpoint, no trailing /rpc
-  CHECK_LIVE_TIMEOUT        seconds per request, default 30
+  CHECK_LIVE_ENDPOINT_BASE   base URL of the endpoint, no trailing /rpc
+  CHECK_LIVE_ATTESTOR_BASES  comma-separated base URLs of the attestor APIs
+  CHECK_LIVE_CLIENT_CERT     client certificate presented to https bases
+  CHECK_LIVE_CLIENT_KEY      key of the client certificate
+  CHECK_LIVE_CA              CA bundle that authenticates https bases
+  CHECK_LIVE_TIMEOUT         seconds per request, default 30
 
 Exits 1 when any check fails, 2 on a usage error.
 EOF
@@ -33,7 +47,7 @@ case "$mode" in
 	usage
 	exit 0
 	;;
-endpoint) ;;
+endpoint | attestors) ;;
 *)
 	usage >&2
 	exit 2
@@ -45,13 +59,6 @@ if [ "$#" -ne 1 ]; then
 	exit 2
 fi
 
-base="${CHECK_LIVE_ENDPOINT_BASE:-}"
-if [ -z "$base" ]; then
-	echo "check-live: CHECK_LIVE_ENDPOINT_BASE is required" >&2
-	usage >&2
-	exit 2
-fi
-base="${base%/}"
 timeout="${CHECK_LIVE_TIMEOUT:-30}"
 
 for tool in curl python3; do
@@ -60,6 +67,130 @@ for tool in curl python3; do
 		exit 2
 	fi
 done
+
+attestors() {
+	local bases="${CHECK_LIVE_ATTESTOR_BASES:-}" base entry tls=() need_tls=0
+	local failures=0 total=0 ready=0 body status verdict
+	if [ -z "$bases" ]; then
+		echo "check-live: CHECK_LIVE_ATTESTOR_BASES is required" >&2
+		usage >&2
+		exit 2
+	fi
+	IFS=',' read -r -a entries <<<"$bases"
+	for entry in "${entries[@]}"; do
+		entry="${entry// /}"
+		if [ -z "$entry" ]; then
+			echo "check-live: CHECK_LIVE_ATTESTOR_BASES holds an empty entry" >&2
+			exit 2
+		fi
+		case "$entry" in
+		https://*) need_tls=1 ;;
+		http://*) ;;
+		*)
+			echo "check-live: attestor base $entry is not an http or https URL" >&2
+			exit 2
+			;;
+		esac
+	done
+	if [ "$need_tls" -eq 1 ]; then
+		local var
+		for var in CHECK_LIVE_CLIENT_CERT CHECK_LIVE_CLIENT_KEY CHECK_LIVE_CA; do
+			if [ -z "${!var:-}" ]; then
+				echo "check-live: $var is required for https attestor bases" >&2
+				usage >&2
+				exit 2
+			fi
+			if [ ! -r "${!var}" ]; then
+				echo "check-live: $var does not name a readable file" >&2
+				exit 2
+			fi
+		done
+		tls=(--cert "$CHECK_LIVE_CLIENT_CERT" --key "$CHECK_LIVE_CLIENT_KEY" --cacert "$CHECK_LIVE_CA")
+	fi
+	for entry in "${entries[@]}"; do
+		base="${entry// /}"
+		base="${base%/}"
+		total=$((total + 1))
+		status=0
+		body="$(curl -sS --max-time "$timeout" ${tls[@]+"${tls[@]}"} "$base/health" 2>&1)" || status=$?
+		if [ "$status" -ne 0 ]; then
+			verdict="fail $base transport $(printf '%s' "$body" | tr '\n' ' ' | cut -c1-200)"
+		else
+			verdict="$(printf '%s' "$body" | python3 -c '
+import json
+import sys
+
+base = sys.argv[1]
+raw = sys.stdin.read()
+try:
+    doc = json.loads(raw)
+except ValueError:
+    print("fail " + base + " non-json " + " ".join(raw.split())[:200])
+    sys.exit(0)
+fields = ("node_id", "region", "share_count", "refresh_epoch", "audit_sequence", "audit_head", "peers", "ready")
+if not isinstance(doc, dict) or any(f not in doc for f in fields) or not isinstance(doc["peers"], dict):
+    print("fail " + base + " not-health " + json.dumps(doc, sort_keys=True)[:200])
+    sys.exit(0)
+peers = doc["peers"]
+reachable = sum(1 for p in peers.values() if isinstance(p, dict) and p.get("reachable") is True)
+down = sorted(i for i, p in peers.items() if not (isinstance(p, dict) and p.get("reachable") is True))
+ready = doc["ready"] is True
+line = "node %s region=%s shares=%s epoch=%s audit=%s:%s peers=%d/%d ready=%s" % (
+    doc["node_id"], doc["region"], doc["share_count"], doc["refresh_epoch"],
+    doc["audit_sequence"], doc["audit_head"], reachable, len(peers), str(ready).lower())
+if down:
+    line += " unreachable=" + ",".join(down)
+if doc.get("readiness_error"):
+    line += " readiness_error=" + " ".join(str(doc["readiness_error"]).split())[:120]
+state = "ready" if ready else "unready"
+print(("pass " if ready and peers and not down else "fail ") + state + " " + line)
+' "$base")"
+		fi
+		case "$verdict" in
+		pass\ *)
+			ready=$((ready + 1))
+			echo "pass ${verdict#pass ready }"
+			;;
+		fail\ ready\ *)
+			ready=$((ready + 1))
+			echo "fail ${verdict#fail ready }"
+			failures=$((failures + 1))
+			;;
+		fail\ unready\ *)
+			echo "fail ${verdict#fail unready }"
+			failures=$((failures + 1))
+			;;
+		*)
+			echo "$verdict"
+			failures=$((failures + 1))
+			;;
+		esac
+	done
+	if [ "$ready" -ge 3 ]; then
+		echo "pass quorum ready=$ready/$total need=3"
+	else
+		echo "fail quorum ready=$ready/$total need=3"
+		failures=$((failures + 1))
+	fi
+	if [ "$failures" -ne 0 ]; then
+		echo "check-live: $failures check(s) failed"
+		exit 1
+	fi
+	echo "check-live: all checks passed"
+	exit 0
+}
+
+if [ "$mode" = attestors ]; then
+	attestors
+fi
+
+base="${CHECK_LIVE_ENDPOINT_BASE:-}"
+if [ -z "$base" ]; then
+	echo "check-live: CHECK_LIVE_ENDPOINT_BASE is required" >&2
+	usage >&2
+	exit 2
+fi
+base="${base%/}"
 
 failures=0
 

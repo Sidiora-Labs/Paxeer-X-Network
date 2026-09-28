@@ -593,3 +593,74 @@ symbol = "StartNodes"
 observed = "The migrate, client and command tests still run against the in-process test nodes, now speaking the schema shapes, rather than against the daemon."
 assumption = "A later task moves them onto the five-daemon cluster that the rehearsal package starts."
 severity = "suspect"
+
+[observation.3.5.1]
+task = "3.5"
+file = "human/wallet/attestor/cmd/attestor/main.go"
+symbol = "APITLSConfig"
+observed = "The API listener is built with the operator CA as its only client CA, so the gateway's client certificate must chain to the operator CA, and the peer transport's identify then also classes that certificate as an operator identity entitled to keys.import during a ceremony window."
+assumption = "The gateway and operator identities were issued from the operator CA so the network answers at all; a later daemon task gives the API listener a separate gateway client CA and restricts keys.import to the operator identity."
+severity = "suspect"
+
+[observation.3.5.2]
+task = "3.5"
+file = "human/wallet/attestor/cmd/attestor/main.go"
+symbol = "server.Options.Agents"
+observed = "run never sets server.Options.Agents, so a sign request with agent headers always answers no agent verifier is configured, and the only principal the deployed nodes honour for sign is an identity-provider user token whose subject owns the key."
+assumption = "Signing across regions needs either the agent verifier wired into the daemon with a registered agent key or a real identity-provider user; keys.generate was proven on both curves across all five nodes and the signing half of the deployment proof waits on one of those."
+severity = "blocker"
+
+[observation.3.5.3]
+task = "3.5"
+file = "tools/wallet/check-deploy.sh"
+symbol = "health-check"
+observed = "The attestor API requires and verifies a client certificate at the TLS handshake for every path, so the https /health platform check could never pass; the five definitions now carry a tcp_check on 8443, closing the health half of observation 1.12.2, while check-deploy's health-check rule still demands an http /health check on every attestor and fails for them."
+assumption = "check-deploy learns that an attestor whose API is mutual TLS is checked by tcp on its API port, or the daemon grows a plain health listener that the platform check can reach."
+severity = "suspect"
+
+[observation.3.5.4]
+task = "3.5"
+file = "human/wallet/deploy/env"
+symbol = "ATTESTOR_PEER_PINS"
+observed = "The daemon refuses to start unless ATTESTOR_PEER_PINS pins every peer's TLS public key, and neither the definitions nor the environment documentation named it."
+assumption = "The pins derive from the node certificates, so they are set per node as a platform secret beside the certificates and documented in deploy/env."
+severity = "note"
+
+[observation.3.5.5]
+task = "3.5"
+file = "human/wallet/deploy/gateway.toml"
+symbol = "[[files]]"
+observed = "The gateway definition carries no [[files]] mapping for ATTESTOR_CLIENT_CERT_FILE, ATTESTOR_CLIENT_KEY_FILE or ATTESTOR_CA_FILE, so the gateway's attestor client identity was staged as the secrets ATTESTOR_CLIENT_CERT, ATTESTOR_CLIENT_KEY and ATTESTOR_CA without a mapping that writes them."
+assumption = "The gateway deployment task adds the three mappings under those secret names and the matching [env] paths."
+severity = "suspect"
+
+[observation.3.5.6]
+task = "3.5"
+file = "human/wallet/deploy/attestor-1.toml"
+symbol = "[[mounts]]"
+observed = "The platform init mounted attestor_data at /data with uid and gid 65532, the distroless non-root user, on all five machines, the daemon opened its share store and audit log there and answered ready, and the default policy reached /etc/attestor/policy.json through a local_path file mapping owned by the same user."
+assumption = "The volume half of observation 1.12.2 is closed by the platform's own chown for an image with a non-root USER; no definition change was needed for it."
+severity = "note"
+
+[observation.3.5.7]
+task = "3.5"
+file = "human/wallet/attestor/internal/server/server.go"
+symbol = "TCPPeerProbe"
+observed = "The first verify run right after the deployment reported each node reaching only the peers whose health had already been read, because the first private-network contact between two machines outlasted the probe's two-second dial timeout; once every pair had been contacted all five nodes reached all four peers."
+assumption = "Health probes that the gateway runs on a steady interval keep the paths warm; a node that has been idle may report a peer unreachable on its first probe."
+severity = "note"
+
+[observation.3.5.8]
+task = "3.5"
+file = "human/wallet/deploy/attestor-1.toml"
+symbol = "[[services]]"
+observed = "The first deployment of an application with [[services]] blocks made flyctl allocate a shared public IPv4 and a dedicated public IPv6 although no service declares a port, so those two addresses were released and the other four applications were deployed with --no-public-ips; no attestor holds a public address."
+assumption = "Every later attestor deployment passes --no-public-ips so the network stays private-only."
+severity = "suspect"
+
+[gate.3.3]
+revision = "0b95c556344faefaf726eb9f00527b116ad79f66"
+command = "docker build -f human/wallet/attestor/Dockerfile -t paxeer-attestor:deploy . && cd human/wallet/deploy && flyctl deploy --config attestor-N.toml --image paxeer-attestor:deploy --app paxeer-attestor-N --local-only --ha=false --no-public-ips -y for N in 1 to 5, secrets imported out of band"
+exit_code = 0
+log_path = ".logs/deploy.log"
+observed = "Image sha256:81820474bad82efcc96aeb0020c751937487b74d49e2efaac9deb696822a9aca runs on one performance-2x 4 GB machine each in iad, sjc, ams, fra and sin, all five nodes answered ready with four of four peers reachable and a quorum of five, keys.generate produced one secp256k1 and one Ed25519 key with identical public keys on all five nodes, and no signature was produced or verified because the deployed nodes honour no signing principal without an identity-provider user."

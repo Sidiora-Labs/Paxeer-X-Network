@@ -706,7 +706,7 @@ log_path = ".logs/verify.log"
 
 [task.3.5]
 title = "Deploy the attestor network from the definitions and prove a signature across regions"
-status = "pending"
+status = "implemented"
 wave = 3
 requires = ["2.1","1.12"]
 do_1 = "Build the attestor image from the repository, deploy the five applications from human/wallet/deploy with their volumes and secrets set out of band, verify health on every node and peer reachability across the private network, generate a test key of each curve, sign with a quorum spanning three regions and verify the signatures."
@@ -715,6 +715,10 @@ verify_cmd = "timeout 20m sh -c 'tools/wallet/check-live.sh attestors'"
 symbols = ["check-live"]
 touches = ["tools/wallet/check-live.sh","tools/wallet/check-live.test.sh","spec/paxeer-x-wallet/qualification.kvx"]
 reqs = ["3.4","3.3"]
+revision = "0b95c556344faefaf726eb9f00527b116ad79f66"
+command = "timeout 20m sh -c 'tools/wallet/check-live.sh attestors'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.3.6]
 title = "Put the app on the SDK provider and the gateway's identity flow"

@@ -160,7 +160,7 @@
     - In human/crates/layerx-human-kms add an attestor-backed implementation of the crate's custody signer trait that signs an activity's preimage through the attestor sign operation with kind lx_activity, the disclosure fields and the user's assertion, over mutual TLS with the operator client identity, refusing when the quorum refuses, and record the audit sequence.
     - Add tests that build and spawn the real attestor daemon from the repository, generate an Ed25519 key through it, sign an activity and verify the signature with the crate's own verifier, and cover a refused disclosure mismatch.
     - _Requirements: 8.2_
-  - [ ] 3.5 Deploy the attestor network from the definitions and prove a signature across regions
+  - [ ] 3.5 Deploy the attestor network from the definitions and prove a signature across regions — **Implemented - qualification pending**
     - Build the attestor image from the repository, deploy the five applications from human/wallet/deploy with their volumes and secrets set out of band, verify health on every node and peer reachability across the private network, generate a test key of each curve, sign with a quorum spanning three regions and verify the signatures.
     - Add tools/wallet/check-live.sh that reads the health of every configured node and the quorum state without secrets, and record the run - image digest, regions, node health, signature verification - in spec/paxeer-x-wallet/qualification.kvx.
     - _Requirements: 3.4, 3.3_

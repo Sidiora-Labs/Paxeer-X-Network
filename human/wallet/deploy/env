@@ -70,6 +70,7 @@ ATTESTOR_REGION - region label this node reports in health
 ATTESTOR_LISTEN_ADDR - host:port the attestor API listens on
 ATTESTOR_PEER_LISTEN_ADDR - host:port the peer transport listens on
 ATTESTOR_PEERS - comma-separated id=host:port list of the other attestor nodes
+ATTESTOR_PEER_PINS - comma-separated id=sha256 list pinning each peer's TLS public key, 64 hex characters per pin, set as a platform secret
 ATTESTOR_NODE_KEY_FILE - path to the node key file (32 raw bytes or 64 hex characters) that encrypts the share store
 ATTESTOR_DATA_DIR - directory holding the encrypted share store
 ATTESTOR_CEREMONY - true enables keys.import for the operator during a ceremony window

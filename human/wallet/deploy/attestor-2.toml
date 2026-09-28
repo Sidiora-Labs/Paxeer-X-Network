@@ -20,13 +20,17 @@ kill_timeout = "30s"
   ATTESTOR_CHAIN_ID = "125"
   ATTESTOR_CEREMONY = "false"
   ATTESTOR_JWT_AUDIENCE = "authenticated"
-  ATTESTOR_POLICY_FILE = "/data/policy/default.json"
+  ATTESTOR_POLICY_FILE = "/etc/attestor/policy.json"
   ATTESTOR_NODE_KEY_FILE = "/run/secrets/node.key"
   ATTESTOR_BACKUP_KEY_FILE = "/run/secrets/backup.key"
   ATTESTOR_TLS_CERT_FILE = "/run/secrets/tls.crt"
   ATTESTOR_TLS_KEY_FILE = "/run/secrets/tls.key"
   ATTESTOR_TLS_CA_FILE = "/run/secrets/ca.crt"
   ATTESTOR_OPERATOR_CA_FILE = "/run/secrets/operator-ca.crt"
+
+[[files]]
+  guest_path = "/etc/attestor/policy.json"
+  local_path = "attestor-policy.json"
 
 [[files]]
   guest_path = "/run/secrets/node.key"
@@ -64,14 +68,10 @@ kill_timeout = "30s"
   auto_start_machines = false
   min_machines_running = 1
 
-  [[services.http_checks]]
+  [[services.tcp_checks]]
     interval = "15s"
     timeout = "5s"
     grace_period = "30s"
-    method = "get"
-    path = "/health"
-    protocol = "https"
-    tls_skip_verify = true
 
 [[services]]
   protocol = "tcp"
@@ -86,7 +86,7 @@ kill_timeout = "30s"
     grace_period = "30s"
 
 [[vm]]
-  size = "shared-cpu-1x"
-  memory = "1gb"
-  cpus = 1
-  cpu_kind = "shared"
+  size = "performance-2x"
+  memory = "4gb"
+  cpus = 2
+  cpu_kind = "performance"
