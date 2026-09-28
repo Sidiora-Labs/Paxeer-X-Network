@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { requireAgent } from '../middleware/principal.js';
+import { requireSignedAgentRequest } from '../agent/verify.js';
 import { env } from '../env.js';
 import { AllowanceAndCallBody, ActionIdParam, LayerxDepositBody } from '../schemas/agent.js';
 import { ensureAgentWallet } from './agentExec.js';
@@ -68,7 +69,7 @@ function serialize(row: ActionRow): Record<string, unknown> {
 
 export async function agentActionRoutes(app: FastifyInstance): Promise<void> {
   // ── LayerX deposit ─────────────────────────────────────────────────────────
-  app.post('/v1/agent/actions/layerx/deposit', { preHandler: requireAgent }, async (req, reply) => {
+  app.post('/v1/agent/actions/layerx/deposit', { preHandler: requireSignedAgentRequest }, async (req, reply) => {
     if (!env.LAYERX_VAULT_ADDRESS) {
       return reply
         .code(503)
@@ -90,7 +91,7 @@ export async function agentActionRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ── Generic allowance-and-call ──────────────────────────────────────────────
-  app.post('/v1/agent/actions/allowance-and-call', { preHandler: requireAgent }, async (req, reply) => {
+  app.post('/v1/agent/actions/allowance-and-call', { preHandler: requireSignedAgentRequest }, async (req, reply) => {
     const parsed = AllowanceAndCallBody.safeParse(req.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: 'invalid_body', issues: parsed.error.issues });

@@ -1,0 +1,38 @@
+[
+  {
+    "request": {
+      "method": "px_getNetwork",
+      "params": []
+    },
+    "response": {
+      "result": {
+        "network_id": "paxeer-x",
+        "paxeer": {
+          "chain_id": "0x7d",
+          "latest_block": "0x1a2b3c"
+        },
+        "layerx": {
+          "node_info": {
+            "network": "layerx",
+            "head_sequence": "4096",
+            "verification": "authenticated_node_snapshot"
+          }
+        },
+        "anchor": {
+          "latest_finalized_batch": null,
+          "status": null,
+          "status_name": null,
+          "status_ladder": {
+            "0": "unknown",
+            "1": "submitted",
+            "2": "final"
+          }
+        },
+        "kernel": {
+          "available": false,
+          "reason": "no_finalised_checkpoint"
+        }
+      }
+    }
+  }
+]

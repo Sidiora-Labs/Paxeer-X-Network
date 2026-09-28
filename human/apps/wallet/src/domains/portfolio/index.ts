@@ -33,7 +33,7 @@ export type PortfolioResult =
   | { readonly status: 'unavailable'; readonly failure: AppFailure };
 
 export interface PortfolioQueryIdentity {
-  readonly custody: 'self-custody' | 'managed' | 'funded';
+  readonly custody: 'managed' | 'injected';
   readonly identityGeneration: number;
   readonly account: AccountRef;
   readonly resource: 'activity' | 'balances' | 'chart' | 'positions' | 'prices';

@@ -1,1 +1,0 @@
-export { DAppBrowserWidget } from './DAppBrowserWidget';

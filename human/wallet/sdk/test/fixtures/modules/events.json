@@ -1,0 +1,205 @@
+{
+  "exchange": [
+    {
+      "event": "MarginDeposited",
+      "fields": {
+        "intentId": "0x3030303030303030303030303030303030303030303030303030303030303030",
+        "account": "0x5555555555555555555555555555555555555555555555555555555555555555",
+        "owner": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
+        "assetId": "0x9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f",
+        "amount": "57896044618658097711785492504343953926634992332820282019728792003961503091573",
+        "depositId": "0xe9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9",
+        "nonce": "18446744073702551594"
+      }
+    },
+    {
+      "event": "MarginWithdrawalRequested",
+      "fields": {
+        "intentId": "0x3333333333333333333333333333333333333333333333333333333333333333",
+        "account": "0x5858585858585858585858585858585858585858585858585858585858585858",
+        "owner": "0x7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d",
+        "assetId": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2",
+        "amount": "57896044618658097711785492504343953926634992332820282019728792003968416671820",
+        "nonce": "18446744073696551576"
+      }
+    },
+    {
+      "event": "OrderCancelRequested",
+      "fields": {
+        "intentId": "0x1111111111111111111111111111111111111111111111111111111111111111",
+        "orderId": "0x3636363636363636363636363636363636363636363636363636363636363636",
+        "owner": "0x5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b",
+        "nonce": "18446744073692551564"
+      }
+    },
+    {
+      "event": "OrderPlaced",
+      "fields": {
+        "intentId": "0xa5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5",
+        "marketId": "0xcacacacacacacacacacacacacacacacacacacacacacacacacacacacacacacaca",
+        "owner": "0xefefefefefefefefefefefefefefefefefefefef",
+        "side": "0",
+        "price": "57896044618658097711785492504343953926634992332820282019728792003978293215030",
+        "quantity": "57896044618658097711785492504343953926634992332820282019728792003979280869351",
+        "timeInForce": "3",
+        "nonce": "18446744073684551540"
+      }
+    },
+    {
+      "event": "SettlementRequested",
+      "fields": {
+        "intentId": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "positionId": "0xf2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2",
+        "owner": "0x1717171717171717171717171717171717171717",
+        "nonce": "18446744073680551528"
+      }
+    }
+  ],
+  "bridge": [
+    {
+      "event": "BridgeIn",
+      "fields": {
+        "chain": "18446744073679551525",
+        "txHash": "0x8686868686868686868686868686868686868686868686868686868686868686",
+        "recipient": "0xabababababababababababababababababababab",
+        "logIndex": "18446744073676551516",
+        "asset": "0xf5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5",
+        "amount": "57896044618658097711785492504343953926634992332820282019728792003991132721203",
+        "denom": "factory/paxeer/usdc"
+      }
+    },
+    {
+      "event": "BridgeOut",
+      "fields": {
+        "chain": "18446744073672551504",
+        "asset": "0x8989898989898989898989898989898989898989",
+        "amount": "57896044618658097711785492504343953926634992332820282019728792003995083338487",
+        "recipient": "0xd3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3",
+        "nonce": "18446744073668551492"
+      }
+    }
+  ],
+  "launchpad": [
+    {
+      "event": "AirdropClaimed",
+      "fields": {
+        "token": "0x1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d",
+        "holder": "0x4242424242424242424242424242424242424242",
+        "amount": "57896044618658097711785492504343953926634992332820282019728792004000021610092",
+        "epoch": "57896044618658097711785492504343953926634992332820282019728792004001009264413"
+      }
+    },
+    {
+      "event": "AirdropExecuted",
+      "fields": {
+        "token": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+        "amount": "57896044618658097711785492504343953926634992332820282019728792004002984573055",
+        "epoch": "57896044618658097711785492504343953926634992332820282019728792004003972227376"
+      }
+    },
+    {
+      "event": "FeeRecorded",
+      "fields": {
+        "token": "0x2020202020202020202020202020202020202020",
+        "feeAmount": "57896044618658097711785492504343953926634992332820282019728792004005947536018",
+        "protocolCut": "57896044618658097711785492504343953926634992332820282019728792004006935190339",
+        "poolCut": "57896044618658097711785492504343953926634992332820282019728792004007922844660"
+      }
+    },
+    {
+      "event": "FeeStrategyChanged",
+      "fields": {
+        "token": "0xb4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4",
+        "oldStrategy": "5",
+        "newStrategy": "6"
+      }
+    },
+    {
+      "event": "FeesBurned",
+      "fields": {
+        "token": "0x2323232323232323232323232323232323232323",
+        "amount": "57896044618658097711785492504343953926634992332820282019728792004012861116265"
+      }
+    },
+    {
+      "event": "FeesClaimed",
+      "fields": {
+        "token": "0x6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d",
+        "recipient": "0x9292929292929292929292929292929292929292",
+        "amount": "57896044618658097711785492504343953926634992332820282019728792004015824079228"
+      }
+    },
+    {
+      "event": "LpRewardsExecuted",
+      "fields": {
+        "token": "0xdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdc",
+        "amount": "57896044618658097711785492504343953926634992332820282019728792004017799387870"
+      }
+    },
+    {
+      "event": "MarketCreated",
+      "fields": {
+        "token": "0x2626262626262626262626262626262626262626",
+        "creator": "0x4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b",
+        "denom": "factory/paxeer/usdc",
+        "name": "Paxeer Dog",
+        "symbol": "PDOG",
+        "feeStrategy": "5"
+      }
+    },
+    {
+      "event": "PauseToggled",
+      "fields": {
+        "token": "0x0404040404040404040404040404040404040404",
+        "paused": true
+      }
+    },
+    {
+      "event": "Swap",
+      "fields": {
+        "token": "0x4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e",
+        "trader": "0x7373737373737373737373737373737373737373",
+        "recipient": "0x9898989898989898989898989898989898989898",
+        "isBuy": true,
+        "amountIn": "57896044618658097711785492504343953926634992332820282019728792004030638894043",
+        "amountOut": "57896044618658097711785492504343953926634992332820282019728792004031626548364",
+        "feeAmount": "57896044618658097711785492504343953926634992332820282019728792004032614202685",
+        "price": "57896044618658097711785492504343953926634992332820282019728792004033601857006"
+      }
+    }
+  ],
+  "webData": [
+    {
+      "event": "XWebRequested",
+      "fields": {
+        "requestId": "18446744073630551378",
+        "requester": "0x9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b",
+        "kind": "4",
+        "payload": "0x68747470733a2f2f6578616d706c652e636f6d2fff00",
+        "callbackGas": "18446744073626551366",
+        "paid": "57896044618658097711785492504343953926634992332820282019728792004039527782932",
+        "timeoutHeight": "18446744073624551360"
+      }
+    },
+    {
+      "event": "XWebFulfilled",
+      "fields": {
+        "requestId": "18446744073623551357",
+        "requester": "0x9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e",
+        "contentDigest": "0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+        "fullLength": "4185",
+        "level": "6",
+        "callback": "0",
+        "callbackGasUsed": "18446744073617551339"
+      }
+    },
+    {
+      "event": "XWebRefunded",
+      "fields": {
+        "requestId": "18446744073616551336",
+        "requester": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+        "refunded": "57896044618658097711785492504343953926634992332820282019728792004050391980463"
+      }
+    }
+  ]
+}

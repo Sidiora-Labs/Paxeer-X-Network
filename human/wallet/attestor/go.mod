@@ -51,6 +51,5 @@ require (
 	gonum.org/v1/gonum v0.7.0 // indirect
 )
 
-require github.com/sidiora-labs/paxeer-network v0.0.0
 
 replace github.com/sidiora-labs/paxeer-network => ../../..

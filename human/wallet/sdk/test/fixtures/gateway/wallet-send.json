@@ -1,0 +1,11 @@
+{
+  "scenario": "default",
+  "method": "POST",
+  "path": "/v1/wallet/send",
+  "status": 200,
+  "body": {
+    "tx_hash": "0xb225632d311e952443a90894a97bdb4c24740591777343ed8b3e9dd175a6de15",
+    "address": "0xE1952Ec7230F058cd7fd9BCCb15964100e38ea04",
+    "chain_id": 125
+  }
+}

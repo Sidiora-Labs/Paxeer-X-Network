@@ -59,92 +59,6 @@ const Env = z.object({
     .default(10_000_000_000_000_000_000n),
   POLICY_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(60),
 
-  // -- Funded accounts (prop-firm tier) -------------------------------------
-  //
-  // The treasury wallet pre-funds new funded accounts with USDL collateral
-  // and PAX gas. It also auto-tops-up PAX when a funded wallet drops below
-  // FUNDED_GAS_REFILL_THRESHOLD_WEI. Its private key never appears in DB —
-  // it lives only here, in process memory, behind the same module boundary
-  // as the per-user master key.
-  //
-  // For prod, this MUST come from a secrets manager. For local dev, dropping
-  // it into .env is acceptable.
-  FUNDED_TREASURY_PRIVATE_KEY: z
-    .string()
-    .regex(/^0x[0-9a-fA-F]{64}$/,
-      'FUNDED_TREASURY_PRIVATE_KEY must be a 0x-prefixed 32-byte hex string')
-    .optional(),
-
-  // USDL token (ERC-20, 6 decimals) on chain 125.
-  FUNDED_USDL_ADDRESS: z
-    .string()
-    .regex(/^0x[0-9a-fA-F]{40}$/, 'FUNDED_USDL_ADDRESS must be a 20-byte hex address')
-    .default('0x7c69c84daAEe90B21eeCABDb8f0387897E9B7B37'),
-  FUNDED_USDL_DECIMALS: z.coerce.number().int().nonnegative().default(6),
-
-  // Auto top-up: if a funded wallet's PAX balance drops below this threshold
-  // before a sign/send request, the treasury sends FUNDED_GAS_REFILL_AMOUNT_WEI
-  // PAX to it (and we wait for the receipt before signing the user's tx).
-  // Defaults: top up when below 2 PAX, send 5 PAX at a time.
-  FUNDED_GAS_REFILL_THRESHOLD_WEI: z.coerce
-    .bigint()
-    .nonnegative()
-    .default(2_000_000_000_000_000_000n),
-  FUNDED_GAS_REFILL_AMOUNT_WEI: z.coerce
-    .bigint()
-    .nonnegative()
-    .default(5_000_000_000_000_000_000n),
-
-  // Drawdown evaluator tick interval (ms). Lower = faster breach detection
-  // and tighter scale/payout reaction, higher = less RPC + DB load.
-  FUNDED_EVALUATOR_INTERVAL_MS: z.coerce.number().int().positive().default(10_000),
-
-  // -- Paxscan (Blockscout-based explorer) integration ----------------------
-  //
-  // The funded-account evaluator values wallets via Paxscan rather than direct
-  // RPC reads. Paxscan already indexes every ERC-20 + native balance with live
-  // USD exchange_rate per token, so a single HTTP call returns the full USD
-  // equity of a wallet across every spot asset it holds — including SID,
-  // USDC, vault shares, anything indexed.
-  //
-  // The previous USDL-only evaluator wrongly breached any user who swapped
-  // their starting USDL for any other token (USDL → 0 read as $0 equity).
-  // Paxscan-based valuation handles all spot trading transparently. Open
-  // perp positions on the Diamond are NOT reflected here yet — that is a
-  // Stage-2 adapter in jobs/fundedEvaluator.ts.
-  PAXSCAN_API_URL: z
-    .string()
-    .url()
-    .default('https://api.paxscan.io/api/v2'),
-  // HTTP timeout per Paxscan request. Conservative — Paxscan typically
-  // responds in <100ms; 5s is to absorb transient indexer-side stalls.
-  PAXSCAN_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
-  // In-process TTL cache for per-wallet Paxscan results. Evaluator ticks every
-  // ~10s and may evaluate the same wallet from multiple workers; a 4s cache
-  // collapses redundant requests without making valuations meaningfully stale.
-  PAXSCAN_CACHE_TTL_MS: z.coerce.number().int().nonnegative().default(4_000),
-
-  // RPC quorum for on-chain balance reads. HYPERPAXEER_RPC_URL is a global
-  // load balancer fronting ~100 validator-aligned nodes; cross-region nodes
-  // can lag by hundreds of ms. A single balance call can land on a behind
-  // node and return the pre-funding state (0 USDL), causing the evaluator
-  // to compute equity=$0 and falsely breach a freshly-provisioned account.
-  //
-  // We fix this at the read layer by sampling N nodes in parallel and
-  // taking the MAX value. Behind nodes can only be BEHIND, never ahead —
-  // so the highest balance any sampled node reports is the truest, freshest
-  // state visible somewhere in the cluster. With N=3 the probability of all
-  // three samples hitting behind nodes is vanishingly small for any normal
-  // cluster lag distribution.
-  //
-  // Cost: 3x RPC calls per balance read. Acceptable because the operator owns the
-  // nodes; bump to 5–7 in extreme conditions, 1 in dev against a single
-  // local node.
-  FUNDED_BALANCE_READ_QUORUM: z.coerce.number().int().min(1).max(15).default(3),
-
-  // UTC hour at which the daily drawdown window resets (00 = midnight UTC).
-  FUNDED_DAILY_RESET_UTC_HOUR: z.coerce.number().int().min(0).max(23).default(0),
-
   // Number of worker processes to fork via node:cluster. Default 1 = single
   // process (matches dev/test). In production set to ~(vCPU - 2) to leave
   // headroom for Postgres, Caddy, mail. The 18-vCPU prod box runs 12.
@@ -162,8 +76,7 @@ const Env = z.object({
   // AGENT_JWT_SECRET signs the short-lived agent_token (HS256) the API mints
   // after a successful DID verify. The API both mints AND verifies it, so a
   // symmetric secret is sufficient and self-contained. If unset, the agent
-  // auth routes return 503 (lane disabled) — they never crash boot. Mirrors
-  // the FUNDED_TREASURY_PRIVATE_KEY optional-feature posture.
+  // auth routes return 503 (lane disabled) — they never crash boot.
   AGENT_JWT_SECRET: z
     .string()
     .min(32, 'AGENT_JWT_SECRET must be >=32 chars. Generate with: node -e "console.log(require(\'crypto\').randomBytes(48).toString(\'base64url\'))"')
@@ -184,14 +97,7 @@ const Env = z.object({
     .transform((s) => s === 'true'),
   AGENT_DEFAULT_MODE: z.enum(['read_only', 'trade_only', 'full']).default('read_only'),
 
-  // When true, an agent DID whose label segment (did:matrix:<label>:<fp>) is a
-  // UUID is auto-bound to the owner whose Supabase user_id == that label. This
-  // is the ownership binding the control plane pivots on. Disable to require an
-  // explicit owner claim for every agent.
-  AGENT_BIND_OWNER_FROM_DID: z
-    .enum(['true', 'false'])
-    .default('true')
-    .transform((s) => s === 'true'),
+  AGENT_REQUEST_MAX_TTL_SECONDS: z.coerce.number().int().positive().max(3_600).default(300),
 
   // Default per-agent caps used when a policy row leaves a field NULL. These
   // are the SAME knobs as the standard POLICY_* caps so behaviour is familiar;
@@ -218,6 +124,11 @@ const Env = z.object({
     .string()
     .regex(/^0x[0-9a-fA-F]{40}$/, 'LAYERX_VAULT_ADDRESS must be a 20-byte hex address')
     .optional(),
+  LAYERX_USDL_ADDRESS: z
+    .string()
+    .regex(/^0x[0-9a-fA-F]{40}$/, 'LAYERX_USDL_ADDRESS must be a 20-byte hex address')
+    .default('0x7c69c84daAEe90B21eeCABDb8f0387897E9B7B37'),
+  LAYERX_USDL_DECIMALS: z.coerce.number().int().nonnegative().default(6),
 
   // Read-only connection to the LayerX sequencer Postgres (whitelisted). Used
   // to (a) authoritatively verify a deposit credited (deposits.deposit_tx =
@@ -244,6 +155,66 @@ const Env = z.object({
   // How often the LayerX mirror-sync worker pulls accounts/claims (ms). Only
   // runs when LAYER_X_DB_URI is set.
   LAYERX_SYNC_INTERVAL_MS: z.coerce.number().int().positive().default(120_000),
+
+  ATTESTOR_ENDPOINTS: z
+    .string()
+    .optional()
+    .transform((s) =>
+      (s ?? '')
+        .split(',')
+        .map((u) => u.trim())
+        .filter(Boolean),
+    )
+    .refine(
+      (urls) => urls.every((u) => /^https:\/\/[^\s/]+/.test(u)),
+      'ATTESTOR_ENDPOINTS must be a comma-separated list of https URLs',
+    ),
+  ATTESTOR_CLIENT_CERT_FILE: z.string().min(1).optional(),
+  ATTESTOR_CLIENT_KEY_FILE: z.string().min(1).optional(),
+  ATTESTOR_CA_FILE: z.string().min(1).optional(),
+  ATTESTOR_QUORUM: z.coerce.number().int().min(1).max(64).default(3),
+  ATTESTOR_HEALTH_INTERVAL_MS: z.coerce.number().int().positive().default(5_000),
+  ATTESTOR_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
+
+  RPC_URLS: z
+    .string()
+    .default(
+      Array.from({ length: 16 }, (_, i) => `https://api${i + 1}.mainnet-beta.paxeer.network`).join(','),
+    )
+    .transform((s) =>
+      s
+        .split(',')
+        .map((u) => u.trim())
+        .filter(Boolean),
+    )
+    .refine(
+      (urls) => urls.length > 0 && urls.every((u) => /^https?:\/\/[^\s/]+/.test(u)),
+      'RPC_URLS must be a non-empty comma-separated list of http(s) URLs',
+    ),
+  RPC_LAG_THRESHOLD_BLOCKS: z.coerce.number().int().nonnegative().default(20),
+  RPC_HEALTH_INTERVAL_MS: z.coerce.number().int().positive().default(5_000),
+  RPC_TIMEOUT_MS: z.coerce.number().int().positive().default(8_000),
+
+  RATE_LIMIT_CLIENT_PER_MINUTE: z.coerce.number().int().positive().default(120),
+  RATE_LIMIT_ACCOUNT_PER_MINUTE: z.coerce.number().int().positive().default(60),
+}).superRefine((v, ctx) => {
+  if (v.ATTESTOR_ENDPOINTS.length === 0) return;
+  for (const key of ['ATTESTOR_CLIENT_CERT_FILE', 'ATTESTOR_CLIENT_KEY_FILE', 'ATTESTOR_CA_FILE'] as const) {
+    if (!v[key]) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [key],
+        message: `${key} is required when ATTESTOR_ENDPOINTS is set`,
+      });
+    }
+  }
+  if (v.ATTESTOR_ENDPOINTS.length < v.ATTESTOR_QUORUM) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['ATTESTOR_ENDPOINTS'],
+      message: 'ATTESTOR_ENDPOINTS must list at least ATTESTOR_QUORUM endpoints',
+    });
+  }
 });
 
 export type Env = z.infer<typeof Env>;

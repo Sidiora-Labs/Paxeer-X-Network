@@ -173,3 +173,75 @@ area    = "git"
 symptom = "Merging a branch that tracks an imported application is refused because untracked working tree files would be overwritten."
 cause   = "The original, unscrubbed copy of the application still sits untracked in the main working tree, and it can carry credentials."
 do      = "Move the untracked copy outside the repository before merging and never add it; the tracked copy on the branch is the scrubbed one."
+
+[gotcha.26]
+area    = "git"
+symptom = "A rebase onto a busy feature branch stalls after each replayed commit, and rebase --continue stalls too."
+cause   = "The post-commit hook runs on every commit a rebase replays and hangs the same way it does after a plain commit."
+do      = "Run the rebase in the background and poll the rebase state; stop only the hook process whose working directory is your lane. Never wrap rebase --continue in timeout: it kills the rebase after its commit has landed and the next reset --soft moves HEAD off that commit."
+
+[gotcha.27]
+area    = "git"
+symptom = "Two lanes that both appended to the end of qualification.kvx conflict on rebase, and after the resolution the feature's last entry has lost its severity line."
+cause   = "The conflict hunk starts inside the previous entry, so its trailing line ends up outside the marked block."
+do      = "After resolving, read the entry before the hunk and restore its severity line; keep the feature's entries first and yours after them."
+
+[gotcha.28]
+area    = "git"
+symptom = "rebase --autostash conflicts on qualification.kvx and leaves an autostash entry in the repository's shared stash list."
+cause   = "Every worktree shares one stash list, and an autostash that fails to reapply stays there."
+do      = "Commit with the helper before rebasing so nothing is stashed; never run a bare git stash in a lane."
+
+[gotcha.29]
+area    = "node"
+symptom = "An application test fails at import with Missing specifier ./ed25519 in @noble/curves although the package's own tests pass."
+cause   = "The package pins the dependency at one major and the consuming application dedupes it to a later major whose exports carry only .js-suffixed subpaths."
+do      = "Import such subpaths with the .js suffix (for example @noble/curves/ed25519.js and @noble/hashes/sha2.js); it resolves under both majors."
+
+[gotcha.30]
+area    = "node"
+symptom = "A package test script called with a trailing -- and a name runs every test file instead of the named one."
+cause   = "The script already invokes vitest run, and the literal -- reaches vitest as an argument that matches nothing, so no filter applies."
+do      = "Pass the filter as a plain positional argument without --, or run vitest directly with the file path; read the log to confirm which files ran."
+
+[gotcha.31]
+area    = "node"
+symptom = "A vitest file under the jsdom environment cannot resolve fixture paths built from import.meta.url."
+cause   = "Under jsdom import.meta.url is not a file: URL."
+do      = "Build fixture paths from __dirname in those files."
+
+[gotcha.32]
+area    = "node"
+symptom = "A tsconfig paths alias to a package inside the workspace compiles it without its type declarations."
+cause   = "A paths mapping to source bypasses the package's @types resolution."
+do      = "Map the types in the same tsconfig or reference the package's declaration file explicitly."
+
+[gotcha.33]
+area    = "ops"
+symptom = "A platform machine is destroyed about two seconds after creation with no log line at all."
+cause   = "A [[files]] mapping in the definition names a secret that is not set on the application, and init gives up before the process starts."
+do      = "Set every mapped secret before the first deploy, or remove the mapping; read the machine's init events, not the application logs."
+
+[gotcha.34]
+area    = "ops"
+symptom = "flyctl deploy reports the dockerfile named in [build] as not found although the path exists at the repository root."
+cause   = "flyctl resolves the [build] dockerfile path relative to the configuration file's directory, not the working directory."
+do      = "Build the image with docker from the right context and deploy with --image; flyctl scale count needs -y in a non-interactive shell."
+
+[gotcha.35]
+area    = "go"
+symptom = "A threshold session over a custom transport hangs or refuses messages although every participant's own messages were delivered."
+cause   = "The library's echo broadcast sends relays from detached goroutines after the participant's own send returns, and a hash-only relay message reports IsValid false."
+do      = "Admit marked relays where the protocol needs them, count the expected relays in the transport flush before returning, and never judge a relay by IsValid alone."
+
+[gotcha.36]
+area    = "test"
+symptom = "An application test that waits for a final state settles at once on the loading state and asserts against it."
+cause   = "The loading state renders the same data marker as one of the final states, so the wait matches early."
+do      = "Give the loading state its own marker and let the wait target the final marker only; do not accept the loading text in an assertion."
+
+[gotcha.37]
+area    = "test"
+symptom = "The wallet application's visual-system acceptance test fails on a source file that never sets a colour."
+cause   = "The test rejects any string literal starting with the word border, whatever follows it."
+do      = "Keep border values in the theme tokens and avoid string literals beginning with that word in application sources."

@@ -1,0 +1,7 @@
+{
+  "error": {
+    "category": "token",
+    "code": "token_missing",
+    "message": "a bearer token or agent signature is required"
+  }
+}

@@ -16,23 +16,9 @@ const ROUTES: ShellRoute[] = [
   { name: 'transactions' },
   { name: 'swap' },
   { name: 'discover' },
-  { name: 'dex' },
-  { name: 'colosseum' },
-  { name: 'dao' },
-  {
-    name: 'paxfun',
-    pool: '0x1111111111111111111111111111111111111111',
-    symbol: 'PAX',
-  },
-  { name: 'wormhole' },
-  { name: 'points' },
-  { name: 'paxscan', path: '/tx/0x1234' },
   { name: 'pns' },
-  { name: 'sidiora-fun' },
-  { name: 'browser', url: 'https://example.com/path' },
   { name: 'settings' },
   { name: 'contacts' },
-  { name: 'ramp' },
   {
     name: 'token-detail',
     token: '0x1111111111111111111111111111111111111111',
@@ -70,19 +56,6 @@ describe('canonical shell navigation', () => {
     }
   });
 
-  it('preserves dApp query and fragment data required by the destination', () => {
-    const parsed = parseRouteUrl(
-      '/?screen=browser&url=https%3A%2F%2Fexample.com%2Fapp%3Ftoken%3Dsecret%23fragment',
-    );
-    expect(parsed).toEqual({
-      ok: true,
-      value: {
-        name: 'browser',
-        url: 'https://example.com/app?token=secret#fragment',
-      },
-    });
-  });
-
   it('defines complete state behavior and custody guards for every route', () => {
     expect(Object.keys(ROUTE_POLICIES).sort()).toEqual(
       [...SHELL_ROUTE_NAMES].sort(),
@@ -97,21 +70,39 @@ describe('canonical shell navigation', () => {
       routeGuard(
         { name: 'send' },
         {
-          custody: 'funded',
-          unlocked: true,
+          custody: 'injected',
+          unlocked: false,
           hasAccount: true,
-          features: new Set(['dapp-browser']),
         },
       ),
     ).toEqual({ allowed: false, recovery: { name: 'portfolio' } });
     expect(
       routeGuard(
+        { name: 'contacts' },
+        {
+          custody: 'embedded',
+          unlocked: true,
+          hasAccount: false,
+        },
+      ),
+    ).toEqual({ allowed: false, recovery: { name: 'settings' } });
+    expect(
+      routeGuard(
         { name: 'send' },
         {
-          custody: 'self-custody',
+          custody: 'injected',
           unlocked: true,
           hasAccount: true,
-          features: new Set(['dapp-browser']),
+        },
+      ),
+    ).toEqual({ allowed: true });
+    expect(
+      routeGuard(
+        { name: 'send' },
+        {
+          custody: 'embedded',
+          unlocked: true,
+          hasAccount: true,
         },
       ),
     ).toEqual({ allowed: true });

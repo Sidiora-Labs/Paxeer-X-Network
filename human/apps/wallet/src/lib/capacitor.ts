@@ -7,17 +7,9 @@ import { App, type URLOpenListenerEvent } from '@capacitor/app';
 import { StatusBar, Style } from '@capacitor/status-bar';
 import { SplashScreen } from '@capacitor/splash-screen';
 import { PushNotifications } from '@capacitor/push-notifications';
-import { Browser } from '@capacitor/browser';
-import {
-  BiometricAuth,
-  BiometryType,
-} from '@aparajita/capacitor-biometric-auth';
-import {
-  openExternalUrl,
-  validatedExternalUrl,
-} from '@/lib/security/navigation';
 import { parseRouteUrl, serializeRoute } from '@/domains/shell';
 import { reportBackgroundFailure } from '@/platform/status/background-failures';
+import { currentThemeColor, currentThemeScheme } from '@/theme/dom';
 
 // ── Platform Detection ──────────────────────────────────────────────────────
 
@@ -50,8 +42,8 @@ export async function initCapacitor(): Promise<void> {
   }
 
   try {
-    await StatusBar.setStyle({ style: Style.Dark });
-    await StatusBar.setBackgroundColor({ color: '#141413' });
+    await StatusBar.setStyle({ style: currentThemeScheme() === 'light' ? Style.Light : Style.Dark });
+    await StatusBar.setBackgroundColor({ color: currentThemeColor() });
   } catch {
     reportBackgroundFailure({
       domain: 'platform',
@@ -104,52 +96,6 @@ export async function initCapacitor(): Promise<void> {
       App.minimizeApp();
     }
   });
-}
-
-// ── Native Biometric Auth ───────────────────────────────────────────────────
-
-export interface NativeBiometricInfo {
-  available: boolean;
-  biometryType: BiometryType;
-  reason: string;
-}
-
-export async function checkNativeBiometric(): Promise<NativeBiometricInfo> {
-  if (!isNativeApp()) {
-    return { available: false, biometryType: BiometryType.none, reason: 'Not a native app' };
-  }
-
-  try {
-    const result = await BiometricAuth.checkBiometry();
-    return {
-      available: result.isAvailable,
-      biometryType: result.biometryType,
-      reason: result.reason ?? '',
-    };
-  } catch (e) {
-    return {
-      available: false,
-      biometryType: BiometryType.none,
-      reason: String(e),
-    };
-  }
-}
-
-export async function authenticateNativeBiometric(
-  reason: string = 'Confirm your device identity for PaxPort',
-): Promise<boolean> {
-  if (!isNativeApp()) return false;
-
-  try {
-    await BiometricAuth.authenticate({
-      reason,
-      cancelTitle: 'Cancel',
-      allowDeviceCredential: true,
-    });
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 // ── Native Push Notifications (FCM) ────────────────────────────────────────
@@ -211,28 +157,6 @@ export async function initNativePush(
       }
     },
   );
-}
-
-// ── Native In-App Browser ───────────────────────────────────────────────────
-
-export async function openNativeBrowser(url: string): Promise<void> {
-  const validated = validatedExternalUrl(url);
-  if (!validated) return;
-  if (!isNativeApp()) {
-    openExternalUrl(validated.toString());
-    return;
-  }
-
-  await Browser.open({
-    url: validated.toString(),
-    toolbarColor: '#141413',
-    presentationStyle: 'popover',
-  });
-}
-
-export async function closeNativeBrowser(): Promise<void> {
-  if (!isNativeApp()) return;
-  await Browser.close();
 }
 
 // ── App State (Resume / Pause) ──────────────────────────────────────────────

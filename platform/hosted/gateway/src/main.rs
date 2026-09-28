@@ -53,9 +53,14 @@ const MAX_IDEMPOTENCY_SECONDS: u64 = 2_592_000;
 const MAX_REQUESTS_PER_CONNECTION: usize = 128;
 static ACTIVE_CONNECTIONS: AtomicUsize = AtomicUsize::new(0);
 
+enum Listener {
+    Tls(Arc<ServerConfig>),
+    Plain,
+}
+
 struct Config {
     listen: SocketAddr,
-    tls: Arc<ServerConfig>,
+    listener: Listener,
     client: Client,
     kernel: Option<Kernel>,
     paxeer: Option<Endpoint>,
@@ -64,13 +69,11 @@ struct Config {
     registration_token: Option<Zeroizing<String>>,
     faucet: Option<rpc_faucet::Faucet>,
     store: Arc<RedisStore>,
-    sequencer_authorization: layerx_proof::inclusion::SequencerAuthorization,
-    key_provisioning_key: Zeroizing<[u8; 32]>,
+    event_producer: bool,
     network_id: String,
     wire_version: String,
     protocol_version: u16,
     protocol_network_id: u32,
-    modules: ModuleRegistry,
     idempotency_seconds: u64,
 }
 
@@ -84,9 +87,12 @@ struct Kernel {
     identity_token: Zeroizing<String>,
     registry: Endpoint,
     registry_token: Zeroizing<String>,
+    sequencer_authorization: layerx_proof::inclusion::SequencerAuthorization,
+    key_provisioning_key: Zeroizing<[u8; 32]>,
+    modules: ModuleRegistry,
 }
 
-const KERNEL_VARIABLES: [&str; 9] = [
+const KERNEL_VARIABLES: [&str; 17] = [
     "LAYERX_GATEWAY_COMPONENT_URL",
     "LAYERX_GATEWAY_COMPONENT_TOKEN_FILE",
     "LAYERX_GATEWAY_PUBLIC_CORE_URL",
@@ -96,6 +102,14 @@ const KERNEL_VARIABLES: [&str; 9] = [
     "LAYERX_GATEWAY_IDENTITY_TOKEN_FILE",
     "LAYERX_GATEWAY_PROGRAM_REGISTRY_URL",
     "LAYERX_GATEWAY_PROGRAM_REGISTRY_TOKEN_FILE",
+    "LAYERX_GATEWAY_CLIENT_IDENTITY_PKCS12",
+    "LAYERX_GATEWAY_CLIENT_IDENTITY_PASSWORD_FILE",
+    "LAYERX_GATEWAY_SEQUENCER_PUBLIC_KEY_FILE",
+    "LAYERX_GATEWAY_SEQUENCER_ID_FILE",
+    "LAYERX_GATEWAY_SEQUENCER_FIRST_BATCH_FILE",
+    "LAYERX_GATEWAY_SEQUENCER_LAST_BATCH_FILE",
+    "LAYERX_GATEWAY_KEY_PROVISIONING_KEY_FILE",
+    "LAYERX_GATEWAY_MODULE_REGISTRY_FILE",
 ];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -253,6 +267,34 @@ impl Config {
     fn target(&self, backend: KernelBackend) -> Result<(&Endpoint, &str), String> {
         self.backend(backend)
             .map_err(|unavailable| format!("{} {}", backend.name(), unavailable.reason))
+    }
+
+    fn kernel_side(&self, backend: KernelBackend) -> Result<&Kernel, KernelUnavailable> {
+        self.kernel
+            .as_ref()
+            .ok_or(KernelUnavailable::not_configured(backend))
+    }
+
+    fn sequencer_authorization(
+        &self,
+    ) -> Result<&layerx_proof::inclusion::SequencerAuthorization, KernelUnavailable> {
+        self.kernel_side(KernelBackend::Authority)
+            .map(|kernel| &kernel.sequencer_authorization)
+    }
+
+    fn sequencer_public_key(&self) -> Result<[u8; 32], KernelUnavailable> {
+        self.sequencer_authorization()
+            .map(layerx_proof::inclusion::SequencerAuthorization::public_key)
+    }
+
+    fn key_provisioning_key(&self) -> Result<&Zeroizing<[u8; 32]>, KernelUnavailable> {
+        self.kernel_side(KernelBackend::Identity)
+            .map(|kernel| &kernel.key_provisioning_key)
+    }
+
+    fn modules(&self) -> Result<&ModuleRegistry, KernelUnavailable> {
+        self.kernel_side(KernelBackend::Component)
+            .map(|kernel| &kernel.modules)
     }
 }
 
@@ -753,7 +795,7 @@ fn program_registry_upstream(
         &document,
         expected_program,
         &program,
-        &config.sequencer_authorization.public_key(),
+        &config.sequencer_public_key()?,
     )?;
     Ok((head, document))
 }
@@ -795,10 +837,29 @@ fn valid_identifier(value: &str, maximum: usize) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
 }
 
-fn tls_config() -> Result<Arc<ServerConfig>, String> {
+const LISTENER_CERTIFICATE_VARIABLES: [&str; 2] =
+    ["LAYERX_GATEWAY_TLS_CERT_DER", "LAYERX_GATEWAY_TLS_KEY_DER"];
+
+fn listener_config() -> Result<Listener, String> {
     rustls::crypto::ring::default_provider()
         .install_default()
         .map_err(|_| "failed to install TLS crypto provider".to_owned())?;
+    match env::var("LAYERX_GATEWAY_LISTENER") {
+        Err(env::VarError::NotPresent) => tls_config().map(Listener::Tls),
+        Ok(mode) if mode == "tls" => tls_config().map(Listener::Tls),
+        Ok(mode) if mode == "plain" => LISTENER_CERTIFICATE_VARIABLES
+            .iter()
+            .find(|variable| env::var_os(variable).is_some())
+            .map_or(Ok(Listener::Plain), |variable| {
+                Err(format!(
+                    "{variable} is set with LAYERX_GATEWAY_LISTENER plain"
+                ))
+            }),
+        _ => Err("LAYERX_GATEWAY_LISTENER must be tls or plain".to_owned()),
+    }
+}
+
+fn tls_config() -> Result<Arc<ServerConfig>, String> {
     let cert = CertificateDer::from(
         fs::read(
             env::var("LAYERX_GATEWAY_TLS_CERT_DER")
@@ -852,7 +913,7 @@ fn configured_protocol() -> Result<ProtocolConfig, String> {
     })
 }
 
-fn configured_kernel() -> Result<Option<Kernel>, String> {
+fn configured_kernel() -> Result<Option<(Kernel, Identity)>, String> {
     if env::var_os("LAYERX_GATEWAY_COMPONENT_URL").is_none() {
         if let Some(variable) = KERNEL_VARIABLES
             .iter()
@@ -864,7 +925,28 @@ fn configured_kernel() -> Result<Option<Kernel>, String> {
         }
         return Ok(None);
     }
-    Ok(Some(Kernel {
+    let identity_password = read_secret("LAYERX_GATEWAY_CLIENT_IDENTITY_PASSWORD_FILE")?;
+    let identity = Identity::from_pkcs12(
+        &fs::read(
+            env::var("LAYERX_GATEWAY_CLIENT_IDENTITY_PKCS12")
+                .map_err(|_| "gateway client identity is required")?,
+        )
+        .map_err(|error| error.to_string())?,
+        identity_password.as_str(),
+    )
+    .map_err(|error| error.to_string())?;
+    let trusted_key = read_secret("LAYERX_GATEWAY_SEQUENCER_PUBLIC_KEY_FILE")?;
+    let sequencer_authorization = layerx_platform_gateway::configured_sequencer(
+        read_secret("LAYERX_GATEWAY_SEQUENCER_ID_FILE")?.as_str(),
+        trusted_key.as_str(),
+        read_secret("LAYERX_GATEWAY_SEQUENCER_FIRST_BATCH_FILE")?.as_str(),
+        read_secret("LAYERX_GATEWAY_SEQUENCER_LAST_BATCH_FILE")?.as_str(),
+    )
+    .map_err(|field| format!("invalid gateway {field}"))?;
+    let provisioning_key = read_secret("LAYERX_GATEWAY_KEY_PROVISIONING_KEY_FILE")?;
+    let key_provisioning_key = Zeroizing::new(parse_hex32(provisioning_key.as_str())?);
+    let modules = configured_modules()?;
+    let kernel = Kernel {
         component: Endpoint::parse(
             &env::var("LAYERX_GATEWAY_COMPONENT_URL")
                 .map_err(|_| "gateway component URL is required")?,
@@ -886,10 +968,14 @@ fn configured_kernel() -> Result<Option<Kernel>, String> {
                 .map_err(|_| "gateway program registry URL is required")?,
         )?,
         registry_token: read_secret("LAYERX_GATEWAY_PROGRAM_REGISTRY_TOKEN_FILE")?,
-    }))
+        sequencer_authorization,
+        key_provisioning_key,
+        modules,
+    };
+    Ok(Some((kernel, identity)))
 }
 
-fn config() -> Result<Config, String> {
+fn config(event_producer: bool) -> Result<Config, String> {
     let ca = Certificate::from_der(
         &fs::read(
             env::var("LAYERX_GATEWAY_OUTBOUND_CA_DER")
@@ -898,26 +984,10 @@ fn config() -> Result<Config, String> {
         .map_err(|error| error.to_string())?,
     )
     .map_err(|error| error.to_string())?;
-    let identity_password = read_secret("LAYERX_GATEWAY_CLIENT_IDENTITY_PASSWORD_FILE")?;
-    let identity = Identity::from_pkcs12(
-        &fs::read(
-            env::var("LAYERX_GATEWAY_CLIENT_IDENTITY_PKCS12")
-                .map_err(|_| "gateway client identity is required")?,
-        )
-        .map_err(|error| error.to_string())?,
-        identity_password.as_str(),
-    )
-    .map_err(|error| error.to_string())?;
-    let trusted_key = read_secret("LAYERX_GATEWAY_SEQUENCER_PUBLIC_KEY_FILE")?;
-    let sequencer_authorization = layerx_platform_gateway::configured_sequencer(
-        read_secret("LAYERX_GATEWAY_SEQUENCER_ID_FILE")?.as_str(),
-        trusted_key.as_str(),
-        read_secret("LAYERX_GATEWAY_SEQUENCER_FIRST_BATCH_FILE")?.as_str(),
-        read_secret("LAYERX_GATEWAY_SEQUENCER_LAST_BATCH_FILE")?.as_str(),
-    )
-    .map_err(|field| format!("invalid gateway {field}"))?;
-    let provisioning_key = read_secret("LAYERX_GATEWAY_KEY_PROVISIONING_KEY_FILE")?;
-    let key_provisioning_key = Zeroizing::new(parse_hex32(provisioning_key.as_str())?);
+    let (client, kernel) = match configured_kernel()? {
+        Some((kernel, identity)) => (Client::new(ca.clone(), identity), Some(kernel)),
+        None => (Client::without_identity(ca.clone()), None),
+    };
     let idempotency_seconds = env::var("LAYERX_GATEWAY_IDEMPOTENCY_SECONDS")
         .unwrap_or_else(|_| "604800".to_owned())
         .parse::<u64>()
@@ -926,15 +996,14 @@ fn config() -> Result<Config, String> {
         return Err("gateway idempotency retention is outside its bound".to_owned());
     }
     let protocol = configured_protocol()?;
-    let modules = configured_modules()?;
     Ok(Config {
         listen: env::var("LAYERX_GATEWAY_LISTEN")
             .unwrap_or_else(|_| "0.0.0.0:9443".to_owned())
             .parse::<SocketAddr>()
             .map_err(|_| "gateway listen address is invalid".to_owned())?,
-        tls: tls_config()?,
-        client: Client::new(ca.clone(), identity),
-        kernel: configured_kernel()?,
+        listener: listener_config()?,
+        client,
+        kernel,
         paxeer: paxeer::configured_endpoint()?,
         capabilities: capabilities::configured()?,
         indexer: history::configured_endpoint()?,
@@ -949,13 +1018,11 @@ fn config() -> Result<Config, String> {
             read_secret("LAYERX_GATEWAY_REDIS_USERNAME_FILE")?,
             read_secret("LAYERX_GATEWAY_REDIS_PASSWORD_FILE")?,
         )),
-        sequencer_authorization,
-        key_provisioning_key,
+        event_producer,
         network_id: protocol.network_id,
         wire_version: protocol.wire_version,
         protocol_version: protocol.protocol_version,
         protocol_network_id: protocol.protocol_network_id,
-        modules,
         idempotency_seconds,
     })
 }
@@ -1153,48 +1220,68 @@ fn agent_response(
     response: OutgoingResponse,
     sequencer_public_key: &[u8; 32],
 ) -> OutgoingResponse {
+    if !(200..300).contains(&response.status) {
+        return agent_refusal(request_id, response);
+    }
     let OutgoingResponse {
         status,
         body,
         retry_after,
     } = response;
     let document = serde_json::from_slice::<serde_json::Value>(&body).ok();
-    let body = if (200..300).contains(&status) {
-        document
-            .as_ref()
-            .and_then(|value| value.get("value").or_else(|| value.get("result")))
-            .cloned()
-            .map_or_else(
-                || {
+    let body = document
+        .as_ref()
+        .and_then(|value| value.get("value").or_else(|| value.get("result")))
+        .cloned()
+        .map_or_else(
+            || {
+                serde_json::json!({
+                    "class": "InternalFault",
+                    "protocol_result_code": null,
+                    "retriability": "Retriable",
+                    "request_id": request_id,
+                    "reason": "invalid_program_success",
+                })
+            },
+            |mut value| {
+                if normalize_program_u64s(&mut value) {
+                    let verification_status =
+                        program_verification_status(&value, sequencer_public_key);
+                    serde_json::json!({
+                        "request_id": request_id,
+                        "value": value,
+                        "verification_status": verification_status,
+                    })
+                } else {
                     serde_json::json!({
                         "class": "InternalFault",
                         "protocol_result_code": null,
                         "retriability": "Retriable",
                         "request_id": request_id,
-                        "reason": "invalid_program_success",
+                        "reason": "invalid_program_u64",
                     })
-                },
-                |mut value| {
-                    if normalize_program_u64s(&mut value) {
-                        let verification_status =
-                            program_verification_status(&value, sequencer_public_key);
-                        serde_json::json!({
-                            "request_id": request_id,
-                            "value": value,
-                            "verification_status": verification_status,
-                        })
-                    } else {
-                        serde_json::json!({
-                            "class": "InternalFault",
-                            "protocol_result_code": null,
-                            "retriability": "Retriable",
-                            "request_id": request_id,
-                            "reason": "invalid_program_u64",
-                        })
-                    }
-                },
-            )
-    } else {
+                }
+            },
+        );
+    OutgoingResponse {
+        status: if body.get("class").is_some() {
+            500
+        } else {
+            status
+        },
+        body: body.to_string().into_bytes(),
+        retry_after,
+    }
+}
+
+fn agent_refusal(request_id: &str, response: OutgoingResponse) -> OutgoingResponse {
+    let OutgoingResponse {
+        status,
+        body,
+        retry_after,
+    } = response;
+    let document = serde_json::from_slice::<serde_json::Value>(&body).ok();
+    let body = {
         let error = document.as_ref().and_then(|value| value.get("error"));
         let code = error
             .and_then(|value| value.get("code"))
@@ -1221,11 +1308,7 @@ fn agent_response(
         })
     };
     OutgoingResponse {
-        status: if (200..300).contains(&status) && body.get("class").is_some() {
-            500
-        } else {
-            status
-        },
+        status,
         body: body.to_string().into_bytes(),
         retry_after,
     }
@@ -1627,7 +1710,7 @@ fn authority_response(
                 .authorize(
                     &receipt,
                     &authority.authorized(),
-                    &config.sequencer_authorization,
+                    config.sequencer_authorization()?,
                 )
                 .map_err(|_| response(503, "authority_invalid", Some(5)))?;
             Ok(AuthorityFacts::new(
@@ -1689,7 +1772,7 @@ fn verified_result(
     let verified = verify_activity_operation(
         &receipt,
         facts,
-        &config.sequencer_authorization.public_key(),
+        &config.sequencer_public_key()?,
         Some(expected),
     )
     .map_err(|_| response(503, "receipt_verification_failed", Some(5)))?;
@@ -1720,7 +1803,7 @@ fn verified_program_result(
         .map_err(|_| response(503, "component_invalid", Some(5)))?;
     let call_graph = decode_hex(call_graph_hex, 1_048_576)
         .map_err(|_| response(503, "component_invalid", Some(5)))?;
-    let activity = decode_signed(signed_activity, &config.modules)
+    let activity = decode_signed(signed_activity, config.modules()?)
         .map_err(|_| response(503, "program_activity_invalid", Some(5)))?;
     let program_id = if activity.protocol_version() == 3 {
         let call = layerx_types::program_call::NativeProgramCall::decode(activity.payload())
@@ -1750,7 +1833,7 @@ fn verified_program_result(
         &terminal_payload,
         &call_graph,
         facts,
-        &config.sequencer_authorization.public_key(),
+        &config.sequencer_public_key()?,
         layerx_platform_gateway::ProgramExpectation {
             activity_id: expected_activity,
             payload_hash,
@@ -1788,7 +1871,11 @@ fn program_simulation(
         },
         _ => None,
     };
-    let Ok((canonical, program_id)) = program_call_bytes(request, &config.modules) else {
+    let modules = match config.modules() {
+        Ok(modules) => modules,
+        Err(unavailable) => return unavailable.into(),
+    };
+    let Ok((canonical, program_id)) = program_call_bytes(request, modules) else {
         return response(400, "invalid_program_call", None);
     };
     let Ok(signer_public_key) = parse_hex32(&record.signer_public_key) else {
@@ -1796,7 +1883,7 @@ fn program_simulation(
     };
     let Ok(submission) = verify_submission(
         &canonical,
-        &config.modules,
+        modules,
         config.protocol_version,
         config.protocol_network_id,
         &signer_public_key,
@@ -1907,7 +1994,7 @@ fn program_simulation(
         observed_sequence = sequence;
         observed_at = at;
     }
-    let Ok(activity) = decode_signed(&canonical, &config.modules) else {
+    let Ok(activity) = decode_signed(&canonical, modules) else {
         return response(400, "invalid_program_call", None);
     };
     let Ok(payload_hash) = layerx_wire::hash::payload_hash(&activity) else {
@@ -1987,12 +2074,16 @@ fn render_simulation(
     else {
         return response(503, "component_invalid", Some(5));
     };
+    let sequencer_public_key = match config.sequencer_public_key() {
+        Ok(key) => key,
+        Err(unavailable) => return unavailable.into(),
+    };
     let Ok(verified) = verify_program_simulation_operation(
         &receipt,
         &terminal_payload,
         &call_graph,
         expected.state_root,
-        config.sequencer_authorization.public_key(),
+        sequencer_public_key,
         layerx_platform_gateway::ProgramExpectation {
             activity_id: expected.activity_id,
             payload_hash: expected.payload_hash,
@@ -2015,6 +2106,10 @@ fn render_simulation_evidence(
 ) -> OutgoingResponse {
     let Some(evidence) = value.get("simulation_evidence") else {
         return response(503, "program_simulation_unverified", Some(5));
+    };
+    let sequencer_public_key = match config.sequencer_public_key() {
+        Ok(key) => key,
+        Err(unavailable) => return unavailable.into(),
     };
     let boundary_id = evidence
         .get("boundary_id")
@@ -2059,7 +2154,7 @@ fn render_simulation_evidence(
         || evidence_activity != Some(expected.activity_id)
         || evidence_sequence != Some(expected.observed_sequence)
         || evidence_at != Some(expected.observed_at)
-        || public_key != Some(config.sequencer_authorization.public_key())
+        || public_key != Some(sequencer_public_key)
         || hypothetical != verified_root
     {
         return response(503, "program_simulation_unverified", Some(5));
@@ -2089,7 +2184,7 @@ fn render_simulation_evidence(
                     "observed_sequence": expected.observed_sequence.to_string(),
                     "observed_at": expected.observed_at.to_string(),
                     "committed": false,
-                    "public_key": hex(&config.sequencer_authorization.public_key()),
+                    "public_key": hex(&sequencer_public_key),
                     "signature": hex(&signature),
                 },
             },
@@ -2141,9 +2236,13 @@ fn activity(
         let Ok(signer_public_key) = parse_hex32(&record.signer_public_key) else {
             return response(503, "persistence_unavailable", Some(5));
         };
+        let modules = match config.modules() {
+            Ok(modules) => modules,
+            Err(unavailable) => return unavailable.into(),
+        };
         let Ok(verified) = verify_submission(
             &canonical,
-            &config.modules,
+            modules,
             config.protocol_version,
             config.protocol_network_id,
             &signer_public_key,
@@ -2244,12 +2343,12 @@ fn decode_activity_request(
         return Err(response(415, "activity_content_type_required", None));
     }
     let (canonical, expected_program) = if let Some(ordinal) = lifecycle_ordinal {
-        if program_lifecycle::validate(&request.body, &config.modules, ordinal).is_err() {
+        if program_lifecycle::validate(&request.body, config.modules()?, ordinal).is_err() {
             return Err(response(400, "invalid_program_lifecycle", None));
         }
         (request.body.clone(), None)
     } else if program_call {
-        match program_call_bytes(request, &config.modules) {
+        match program_call_bytes(request, config.modules()?) {
             Ok((activity, program)) => (activity, Some(program)),
             Err(_) => return Err(response(400, "invalid_program_call", None)),
         }
@@ -2505,7 +2604,7 @@ fn publish_lifecycle(
 ) -> Result<(), OutgoingResponse> {
     let canonical = decode_hex(canonical_hex, 1_048_576)
         .map_err(|_| response(503, "persistence_unavailable", Some(5)))?;
-    let activity = decode_signed(&canonical, &config.modules)
+    let activity = decode_signed(&canonical, config.modules()?)
         .map_err(|_| response(503, "persistence_unavailable", Some(5)))?;
     if activity.activity_type().module() != ModuleId::Programs {
         return Err(response(502, "lifecycle_binding_invalid", None));
@@ -2581,7 +2680,11 @@ fn complete_lifecycle(
         Ok(value) => value,
         Err(error) => return error,
     };
-    if facts.sequencer_public_key() != config.sequencer_authorization.public_key()
+    let sequencer_public_key = match config.sequencer_public_key() {
+        Ok(key) => key,
+        Err(unavailable) => return unavailable.into(),
+    };
+    if facts.sequencer_public_key() != sequencer_public_key
         || program_lifecycle::verify_receipt(&receipt, &facts.authorized(), operation.activity_id)
             .is_err()
     {
@@ -2664,10 +2767,13 @@ fn program_terminal_response(
     let Ok(receipt) = decode_hex(receipt_hex, 1_048_576) else {
         return response(503, "receipt_encoding_failed", Some(5));
     };
-    let Ok(verified) = layerx_proof::receipt::verify_sequencer_signature(
-        &receipt,
-        config.sequencer_authorization.public_key(),
-    ) else {
+    let sequencer_public_key = match config.sequencer_public_key() {
+        Ok(key) => key,
+        Err(unavailable) => return unavailable.into(),
+    };
+    let Ok(verified) =
+        layerx_proof::receipt::verify_sequencer_signature(&receipt, sequencer_public_key)
+    else {
         return response(502, "receipt_verification_failed", None);
     };
     let Some(protocol) = verified.protocol() else {
@@ -2844,7 +2950,7 @@ fn verify_withdrawal_submission(
         protocol.asset(),
         protocol.previous_state_root(),
         protocol.resulting_state_root(),
-        config.sequencer_authorization.public_key(),
+        config.sequencer_public_key().map_err(|_| ())?,
     );
     layerx_proof::receipt::withdrawal::verify(
         receipt,
@@ -2918,9 +3024,13 @@ fn resolve_pending_lifecycle(
     let Ok(signer) = parse_hex32(&record.signer_public_key) else {
         return response(503, "persistence_unavailable", Some(5));
     };
+    let modules = match config.modules() {
+        Ok(modules) => modules,
+        Err(unavailable) => return unavailable.into(),
+    };
     let binding = match verify_submission(
         &canonical,
-        &config.modules,
+        modules,
         config.protocol_version,
         config.protocol_network_id,
         &signer,
@@ -2975,7 +3085,11 @@ fn resolve_pending_lifecycle(
         Ok(value) => value,
         Err(error) => return error,
     };
-    if facts.sequencer_public_key() != config.sequencer_authorization.public_key()
+    let sequencer_public_key = match config.sequencer_public_key() {
+        Ok(key) => key,
+        Err(unavailable) => return unavailable.into(),
+    };
+    if facts.sequencer_public_key() != sequencer_public_key
         || program_lifecycle::verify_receipt(&receipt, &facts.authorized(), binding.activity_id())
             .is_err()
     {
@@ -3007,12 +3121,16 @@ fn resolve_pending_program(
         let Ok(canonical) = decode_hex(&operation.continuation, 1_048_576) else {
             return response(503, "persistence_unavailable", Some(5));
         };
-        let Ok(activity) = decode_signed(&canonical, &config.modules) else {
+        let modules = match config.modules() {
+            Ok(modules) => modules,
+            Err(unavailable) => return unavailable.into(),
+        };
+        let Ok(activity) = decode_signed(&canonical, modules) else {
             return response(503, "persistence_unavailable", Some(5));
         };
         let ordinal = activity.activity_type().ordinal();
         if activity.activity_type().module() == ModuleId::Programs && matches!(ordinal, 1 | 2 | 7) {
-            if program_lifecycle::validate(&canonical, &config.modules, ordinal).is_err() {
+            if program_lifecycle::validate(&canonical, modules, ordinal).is_err() {
                 return response(502, "lifecycle_binding_invalid", None);
             }
             return resolve_pending_lifecycle(config, record, operation, trace_id);
@@ -3264,11 +3382,7 @@ fn route(config: &Config, request: &IncomingRequest) -> OutgoingResponse {
     {
         let result = response(400, "untrusted_identity_header", None);
         return if program_request {
-            agent_response(
-                &trace_id,
-                result,
-                &config.sequencer_authorization.public_key(),
-            )
+            agent_refusal(&trace_id, result)
         } else {
             result
         };
@@ -3308,11 +3422,7 @@ fn route(config: &Config, request: &IncomingRequest) -> OutgoingResponse {
     let Ok(parsed) = production_route(&request.method, &request.path) else {
         let result = response(404, "not_found", None);
         return if program_request {
-            agent_response(
-                &trace_id,
-                result,
-                &config.sequencer_authorization.public_key(),
-            )
+            agent_refusal(&trace_id, result)
         } else {
             result
         };
@@ -3320,11 +3430,7 @@ fn route(config: &Config, request: &IncomingRequest) -> OutgoingResponse {
     if let Err(unavailable) = config.backend(KernelBackend::Component) {
         let result = OutgoingResponse::from(unavailable);
         return if program_request {
-            agent_response(
-                &trace_id,
-                result,
-                &config.sequencer_authorization.public_key(),
-            )
+            agent_refusal(&trace_id, result)
         } else {
             result
         };
@@ -3333,11 +3439,7 @@ fn route(config: &Config, request: &IncomingRequest) -> OutgoingResponse {
         Ok(value) => value,
         Err(error) => {
             return if program_request {
-                agent_response(
-                    &trace_id,
-                    error,
-                    &config.sequencer_authorization.public_key(),
-                )
+                agent_refusal(&trace_id, error)
             } else {
                 error
             };
@@ -3346,11 +3448,7 @@ fn route(config: &Config, request: &IncomingRequest) -> OutgoingResponse {
     if !permits(&record, &parsed) {
         let result = response(403, "insufficient_scope", None);
         return if program_request {
-            agent_response(
-                &trace_id,
-                result,
-                &config.sequencer_authorization.public_key(),
-            )
+            agent_refusal(&trace_id, result)
         } else {
             result
         };
@@ -3380,11 +3478,10 @@ fn route(config: &Config, request: &IncomingRequest) -> OutgoingResponse {
                 || program_lifecycle::ordinal(&request.path).is_some())
             && (200..300).contains(&result.status))
     {
-        agent_response(
-            &trace_id,
-            result,
-            &config.sequencer_authorization.public_key(),
-        )
+        match config.sequencer_public_key() {
+            Ok(sequencer_public_key) => agent_response(&trace_id, result, &sequencer_public_key),
+            Err(unavailable) => agent_refusal(&trace_id, OutgoingResponse::from(unavailable)),
+        }
     } else {
         result
     }
@@ -3404,15 +3501,26 @@ fn serve(config: &Arc<Config>, tcp: TcpStream) -> Result<(), String> {
         .map_err(|error| error.to_string())?;
     tcp.set_write_timeout(Some(Duration::from_secs(10)))
         .map_err(|error| error.to_string())?;
-    let connection =
-        ServerConnection::new(Arc::clone(&config.tls)).map_err(|error| error.to_string())?;
-    let mut stream = StreamOwned::new(connection, tcp);
+    match &config.listener {
+        Listener::Tls(tls) => {
+            let connection =
+                ServerConnection::new(Arc::clone(tls)).map_err(|error| error.to_string())?;
+            exchange(config, &mut StreamOwned::new(connection, tcp))
+        }
+        Listener::Plain => {
+            let mut stream = tcp;
+            exchange(config, &mut stream)
+        }
+    }
+}
+
+fn exchange<S: ws::Connection>(config: &Arc<Config>, stream: &mut S) -> Result<(), String> {
     for request_number in 0..MAX_REQUESTS_PER_CONNECTION {
-        let request = match http::read_request(&mut stream, MAX_REQUEST) {
+        let request = match http::read_request(stream, MAX_REQUEST) {
             Ok(request) => request,
             Err(_) if request_number == 0 => {
                 return http::write_response_connection(
-                    &mut stream,
+                    stream,
                     &response(400, "invalid_http_request", None),
                     false,
                 );
@@ -3420,14 +3528,14 @@ fn serve(config: &Arc<Config>, tcp: TcpStream) -> Result<(), String> {
             Err(_) => return Ok(()),
         };
         if request.path == "/rpc/ws" {
-            return ws::serve(config, &request, &mut stream);
+            return ws::serve(config, &request, stream);
         }
         let keep_alive = request_number + 1 < MAX_REQUESTS_PER_CONNECTION
             && request
                 .headers
                 .get("connection")
                 .is_none_or(|value| !value.eq_ignore_ascii_case("close"));
-        http::write_response_connection(&mut stream, &route(config, &request), keep_alive)?;
+        http::write_response_connection(stream, &route(config, &request), keep_alive)?;
         if !keep_alive {
             return Ok(());
         }
@@ -3436,11 +3544,15 @@ fn serve(config: &Arc<Config>, tcp: TcpStream) -> Result<(), String> {
 }
 
 fn run() -> Result<(), String> {
-    let config = Arc::new(config()?);
-    layerx_platform_internal::producer::Client::from_environment(&["payment"])?.spawn(
-        Arc::downgrade(&config.store),
-        Arc::clone(&config.store.producer_health),
-    )?;
+    let producer =
+        layerx_platform_internal::producer::Client::from_environment_if_configured(&["payment"])?;
+    let config = Arc::new(config(producer.is_some())?);
+    if let Some(producer) = producer {
+        producer.spawn(
+            Arc::downgrade(&config.store),
+            Arc::clone(&config.store.producer_health),
+        )?;
+    }
     let listener = TcpListener::bind(config.listen).map_err(|error| error.to_string())?;
     for incoming in listener.incoming() {
         let tcp = incoming.map_err(|error| error.to_string())?;
@@ -3498,7 +3610,11 @@ fn issue_key(
         principal_hash.as_bytes(),
         issuance_idempotency.as_bytes(),
     ]);
-    let issued = IssuedKey::derive(&config.key_provisioning_key, context.as_bytes());
+    let key_provisioning_key = match config.key_provisioning_key() {
+        Ok(key) => key,
+        Err(unavailable) => return unavailable.into(),
+    };
+    let issued = IssuedKey::derive(key_provisioning_key, context.as_bytes());
     let record = key_record(
         &issued,
         principal,
@@ -3591,7 +3707,11 @@ fn kernel_availability(
 fn readiness(config: &Config) -> Vec<BackendAvailability> {
     vec![
         BackendAvailability::probed("durable_store", config.store.ready()),
-        BackendAvailability::probed("event_producer", config.store.producer_health.ready()),
+        if config.event_producer {
+            BackendAvailability::probed("event_producer", config.store.producer_health.ready())
+        } else {
+            BackendAvailability::not_configured("event_producer")
+        },
         match paxeer::status(config) {
             "not_configured" => BackendAvailability::not_configured("paxeer_chain"),
             status => BackendAvailability::probed("paxeer_chain", status == "available"),
@@ -4022,10 +4142,14 @@ fn settle(
             trace_id,
         );
     }
+    let sequencer_public_key = match config.sequencer_public_key() {
+        Ok(key) => key,
+        Err(unavailable) => return unavailable.into(),
+    };
     let verified = match verify_activity_operation(
         claim.receipt(),
         prepared.facts,
-        &config.sequencer_authorization.public_key(),
+        &sequencer_public_key,
         Some(claim.activity_id()),
     ) {
         Ok(verified) => verified,
@@ -4521,8 +4645,9 @@ fn verify_simulation_signature(
     hypothetical: [u8; 32],
     signature: &[u8; 64],
 ) -> Result<(), OutgoingResponse> {
+    let sequencer_public_key = config.sequencer_public_key()?;
     let mut boundary_material = b"LayerX/emulator/simulation-boundary/v1\0".to_vec();
-    boundary_material.extend_from_slice(&config.sequencer_authorization.public_key());
+    boundary_material.extend_from_slice(&sequencer_public_key);
     let expected_boundary: [u8; 32] = Sha256::digest(boundary_material).into();
     if boundary_id != expected_boundary {
         return Err(response(503, "program_simulation_unverified", Some(5)));
@@ -4536,13 +4661,7 @@ fn verify_simulation_signature(
     signed.extend_from_slice(&expected.observed_at.to_be_bytes());
     signed.push(0);
     let evidence_digest: [u8; 32] = Sha256::digest(signed).into();
-    if ed25519::verify_digest(
-        &config.sequencer_authorization.public_key(),
-        signature,
-        &evidence_digest,
-    )
-    .is_err()
-    {
+    if ed25519::verify_digest(&sequencer_public_key, signature, &evidence_digest).is_err() {
         return Err(response(503, "program_simulation_unverified", Some(5)));
     }
     Ok(())
@@ -4621,7 +4740,11 @@ fn rotate_key(
         key_id.as_bytes(),
         rotation_idempotency.as_bytes(),
     ]);
-    let issued = IssuedKey::derive(&config.key_provisioning_key, context.as_bytes());
+    let key_provisioning_key = match config.key_provisioning_key() {
+        Ok(key) => key,
+        Err(unavailable) => return unavailable.into(),
+    };
+    let issued = IssuedKey::derive(key_provisioning_key, context.as_bytes());
     let Ok(quota) = Quota::new(old.quota_requests, old.quota_window_seconds) else {
         return response(503, "persistence_unavailable", Some(5));
     };

@@ -1,0 +1,16 @@
+{
+  "cases": [
+    { "name": "version byte", "offset": 0, "want": "unsupported_version" },
+    { "name": "first iv byte", "offset": 1, "want": "decrypt" },
+    { "name": "last iv byte", "offset": 12, "want": "decrypt" },
+    { "name": "first tag byte", "offset": 13, "want": "decrypt" },
+    { "name": "last tag byte", "offset": 28, "want": "decrypt" },
+    { "name": "first ciphertext byte", "offset": 29, "want": "decrypt" },
+    { "name": "last ciphertext byte", "offset": 60, "want": "decrypt" }
+  ],
+  "truncations": [
+    { "name": "header only", "length": 29, "want": "format" },
+    { "name": "one ciphertext byte", "length": 30, "want": "decrypt" },
+    { "name": "empty", "length": 0, "want": "format" }
+  ]
+}

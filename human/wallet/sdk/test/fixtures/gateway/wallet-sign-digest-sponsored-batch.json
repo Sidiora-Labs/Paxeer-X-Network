@@ -1,0 +1,11 @@
+{
+  "scenario": "default",
+  "method": "POST",
+  "path": "/v1/wallet/sign-digest",
+  "kind": "sponsored_batch",
+  "status": 200,
+  "body": {
+    "signature": "0x0a608a353e9c91f21172546535b638b9cc1f790a91ebec19bad93bc526ad57cc64f43d2f98dafde22aa21ed42ba010c74e7a6431c79d485a48bacc5d8f0e7fad1b",
+    "address": "0xE1952Ec7230F058cd7fd9BCCb15964100e38ea04"
+  }
+}

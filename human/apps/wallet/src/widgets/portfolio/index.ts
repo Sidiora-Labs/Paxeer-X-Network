@@ -13,7 +13,6 @@ export { HeroBalance } from './HeroBalance';
 export type { HeroBalanceProps } from './HeroBalance';
 export { ActionBento } from './ActionBento';
 export type { ActionBentoProps } from './ActionBento';
-export { FundedStatusCard } from './FundedStatusCard';
 export { HoldingsFilter } from './HoldingsFilter';
 export type { HoldingsFilterProps } from './HoldingsFilter';
 export { HoldingsGrid } from './HoldingsGrid';

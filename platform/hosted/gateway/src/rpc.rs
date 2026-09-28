@@ -559,9 +559,13 @@ fn send(config: &Config, request: &IncomingRequest, id: &Value, params: Option<&
     let Ok(signer_public_key) = super::parse_hex32(&record.signer_public_key) else {
         return error(id, -32603, "Gateway persistence unavailable");
     };
+    let modules = match config.modules() {
+        Ok(modules) => modules,
+        Err(unavailable) => return unavailable.rpc(id),
+    };
     let verified = match layerx_platform_gateway::verify_submission(
         &canonical,
-        &config.modules,
+        modules,
         config.protocol_version,
         config.protocol_network_id,
         &signer_public_key,

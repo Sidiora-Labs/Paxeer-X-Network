@@ -3,10 +3,6 @@ export interface ExternalProductDescriptor {
   readonly label: string;
   readonly origin: string;
   readonly trust: 'first-party' | 'reviewed-third-party' | 'untrusted';
-  readonly supportedCustody: readonly (
-    | 'self-custody'
-    | 'managed'
-    | 'funded'
-  )[];
-  readonly handoff: 'embedded-browser' | 'system-browser';
+  readonly supportedCustody: readonly ('managed' | 'injected')[];
+  readonly handoff: 'system-browser';
 }

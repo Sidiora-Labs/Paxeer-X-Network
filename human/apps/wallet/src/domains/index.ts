@@ -1,6 +1,5 @@
 export * as ApprovalDomain from './approval';
 export * as CustodyDomain from './custody';
-export * as DappDomain from './dapp';
 export * as PlatformDomain from './platform';
 export * as PortfolioDomain from './portfolio';
 export * as ProductDomain from './product';

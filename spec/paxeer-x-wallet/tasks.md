@@ -94,47 +94,47 @@
 ## Wave 2 - Assembly
 
 - [ ] 2. Assemble the daemon, the gateway core, the SDK, the ceremony tool and the app shell
-  - [ ] 2.1 Assemble the attestor daemon with its API and a five-node end-to-end test
+  - [x] 2.1 Assemble the attestor daemon with its API and a five-node end-to-end test
     - Add human/wallet/attestor/cmd/attestor and internal/server wiring configuration, store, transport, both signing wrappers, dealer import and refresh, policy, authentication, audit and health into the HTTP API of [decision] attestor_api over mutual TLS: keys.generate, keys.import (operator identity and ceremony flag only), keys.refresh, keys.addshare, sign and health, with session coordination so the same request posted to every participant runs one protocol session.
     - Write human/wallet/schema/attestor-api/v1.kvx describing every operation, request and response shape and error, and generate golden JSON vectors under human/wallet/schema/attestor-api/golden from the implementation.
     - Add internal/server/e2e_test.go starting five daemons in one process on distinct listeners with certificates generated in the test, importing a known secp256k1 key and a known Ed25519 key, refreshing both, signing an EVM transaction, a typed-data digest, a binding message and an activity envelope under a token minted from an in-test JWKS, verifying each signature, refusing a bad token and an out-of-policy transaction, and verifying the audit chain of every node.
     - _Requirements: 1.7, 1.8, 2.6_
-  - [ ] 2.2 Give the gateway a keyless signing core, a shared nonce store and an RPC pool
+  - [x] 2.2 Give the gateway a keyless signing core, a shared nonce store and an RPC pool
     - In human/wallet/gateway add an attestor client that selects a quorum by health and latency, posts the same sign request to each participant with one session id, collects the signature, and surfaces typed refusals; route /v1/wallet/sign, /v1/wallet/send, /v1/wallet/sign-message and typed-data signing through it for wallets flagged migrated and through the existing envelope path otherwise, with the flag read in the same transaction as the wallet row.
     - Replace the per-process nonce lock with a shared store using a per-address row lock that holds across workers and instances, add an RPC pool with health checks and failover for reads, gas estimation, simulation and broadcast, and add per-client and per-account HTTP rate limits and the audit table of req.5.ac_6.
     - Extend the gateway tests to cover quorum selection with one unhealthy node, session posting to three participants against an in-test HTTPS server that speaks the attestor schema goldens, nonce allocation under concurrent requests across two processes, pool failover, rate limiting and audit rows, and the migrated flag switching the path.
     - _Requirements: 5.2, 5.3, 5.6_
-  - [ ] 2.3 Remove the funded lane and repair agent consent and request signing in the gateway
+  - [x] 2.3 Remove the funded lane and repair agent consent and request signing in the gateway
     - Remove the funded routes, the treasury evaluator, the tier tables, the fund and sweep paths and every configuration variable of the treasury from human/wallet/gateway, add a migration that marks funded wallets archived and excludes them from every query, and refuse any request naming one.
     - Replace the automatic owner binding from the agent label with an authenticated claim route, add end-to-end agent request signing verification (canonical digest, nonce, expiry, registered key, frozen principal) for every value-moving agent route, and scope the gateway-minted agent token to read routes.
     - Add tests covering removed routes answering not found, an archived wallet refused, the claim route, signed and unsigned agent requests, replay and expiry, and the token refused on a write route.
     - _Requirements: 5.4, 5.5_
-  - [ ] 2.4 Build the SDK provider with EIP-1193, EIP-6963 and the custody hand-off
+  - [x] 2.4 Build the SDK provider with EIP-1193, EIP-6963 and the custody hand-off
     - In human/wallet/sdk add an EIP-1193 provider class backed by the gateway routes implementing eth_requestAccounts, eth_accounts, eth_chainId, eth_sendTransaction, eth_signTypedData_v4, personal_sign, paxeer_signCustody (opaque custody bytes from the human service hand-off) and eth_sign restricted to the sponsored batch and EIP-7702 authorisation constructions passed as fields, with typed errors and event emission for accounts and chain.
     - Announce the provider through EIP-6963 and install it as window.paxeer, discover injected providers through EIP-6963, and expose one wallet interface over the embedded provider and every injected provider.
     - Add provider tests against an in-test HTTP server speaking the gateway's recorded response shapes, covering every method, refusal of an arbitrary eth_sign digest, EIP-6963 announcement and discovery, and interface parity between an embedded and an injected provider.
     - _Requirements: 9.1, 9.2_
-  - [ ] 2.5 Add the typed Paxeer X modules and the gas station flow to the SDK
+  - [x] 2.5 Add the typed Paxeer X modules and the gas station flow to the SDK
     - In human/wallet/sdk add modules for the exchange, bridge, launchpad, fee token and web data precompiles built on the ABI builders under agent/sdk/typescript, each returning transactions the provider signs, with decoders for their events.
     - Add the gas station module: quote, sponsored batch construction with the fields the attestor recomputes, and submit, and the fee-choice helper that labels PAX gas, SID sponsored and SID native with their denominations.
     - Add module tests with calldata vectors checked against the agent SDK's own builders and event decoding against recorded logs.
     - _Requirements: 9.3, 11.1_
-  - [ ] 2.6 Add the shared endpoint, kernel and human service clients and the status ladder to the SDK
+  - [x] 2.6 Add the shared endpoint, kernel and human service clients and the status ladder to the SDK
     - In human/wallet/sdk add the shared endpoint client (px_resolveAccount, px_getAccount, px_getBalances with completion by eth_getBalance and ERC-20 calls, px_listAssets, px_getCapabilities, px_getUnifiedHistory by cursor, px_getNetwork with kernel availability) and the kernel read client (lx_getAccount, lx_getBalances, lx_getSequence, lx_getReceipt, lx_getActivityStatus) over one JSON-RPC base with batching.
     - Add the human service client for intent plan, intent submit and journey read, and the status ladder mapping the explorer status, journey states and anchor states to instant, sealed and final with source, plus the kernel availability state every kernel operation checks first.
     - Add tests with responses decoded from the schema goldens under human/schema and recorded endpoint responses, covering batching, completion of unmapped assets, cursor paging, every ladder mapping and the unavailable state.
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 9.4_
-  - [ ] 2.7 Write the ceremony tool: read, verify, split, deliver, archive
+  - [x] 2.7 Write the ceremony tool: read, verify, split, deliver, archive
     - Create the Go module human/wallet/ceremony reading wallet rows from a database connection string named by environment variable, decrypting the version-one key envelope exactly as the imported gateway encrypts it, deriving the address and refusing on mismatch, holding keys only in memory with zeroing after use, and never writing key material anywhere.
     - Split each key for both curves with the dealer of the attestor module, deliver shares over mutual TLS to keys.import, trigger keys.refresh, request a test signature, recover the address, and mark the row migrated in the same database only on a match; write the funded wallets' rows into an archive file encrypted under a passphrase named by environment variable and verify the archive decrypts before excluding them.
     - Add tests that generate envelopes with the imported gateway's own encryption routine through a node script invoked from the test, verify decryption and address derivation, cover a tampered envelope, the archive round trip, and a mismatch stopping the run.
     - _Requirements: 4.1, 4.2, 4.4_
-  - [ ] 2.8 Strip the app to embedded custody and injected wallets
+  - [x] 2.8 Strip the app to embedded custody and injected wallets
     - In human/apps/wallet remove the self-custody vault, the PIN flow, the seed import and backup screens, the same-origin dapp proxy and its relay, the in-app browser and the browser plane, and the ramp screen, together with their routes, state, dependencies and tests.
     - Keep MetaMask and other injected wallets through EIP-6963 discovery, keep the embedded sign-in entry, and keep every remaining screen compiling and its tests passing.
     - Update the app's tests and Playwright configuration to the remaining surfaces and delete the tests of removed ones.
     - _Requirements: 10.2_
-  - [ ] 2.9 Enforce kernel-side signing policy at the attestor
+  - [x] 2.9 Enforce kernel-side signing policy at the attestor
     - Add human/wallet/attestor/internal/policy/lx evaluating lx_activity requests: decode the envelope, match it field by field against the disclosure supplied with the request, enforce allowed modules, operations, amounts and destinations per account, and refuse unknown modules; evaluate lx_bind only for the account's own address and current nonce supplied by the caller and verified against the chain through the configured RPC; evaluate lx_grant and receive preimages within caps.
     - Register the kernel request kinds with the policy engine so the sign path applies them, and record each decision with the typed reason.
     - Add lx_test.go covering a matching disclosure, a mismatched amount, a disallowed module, a binding for another address, a stale binding nonce and a grant over cap.
@@ -164,17 +164,38 @@
     - Build the attestor image from the repository, deploy the five applications from human/wallet/deploy with their volumes and secrets set out of band, verify health on every node and peer reachability across the private network, generate a test key of each curve, sign with a quorum spanning three regions and verify the signatures.
     - Add tools/wallet/check-live.sh that reads the health of every configured node and the quorum state without secrets, and record the run - image digest, regions, node health, signature verification - in spec/paxeer-x-wallet/qualification.kvx.
     - _Requirements: 3.4, 3.3_
-  - [ ] 3.6 Put the app on the SDK provider and the gateway's identity flow
+  - [x] 3.6 Put the app on the SDK provider and the gateway's identity flow
     - In human/apps/wallet route sign-in through the gateway's identity flow, provisioning through the gateway, and every transaction, message and typed data through the SDK provider, with injected wallets through the same wallet interface, removing any remaining direct RPC signing path.
     - Add component and hook tests against the SDK's provider with an in-test gateway server, covering sign-in, provisioning, a send, a message and a typed-data request, and the injected path.
     - _Requirements: 10.3_
-  - [ ] 3.7 Deploy the shared endpoint in chain-only mode
+  - [x] 3.7 Deploy the shared endpoint in chain-only mode
     - Build the endpoint image from the repository, deploy it from human/wallet/deploy/endpoint.toml with the chain RPC configured and the kernel backends unconfigured, verify eth_chainId, px_resolveAccount and px_getNetwork answer and that kernel methods return the typed unavailable error, and record the run in the qualification log without hosts.
     - Extend tools/wallet/check-live.sh with an endpoint mode that performs those calls against a configured base.
     - _Requirements: 12.2_
-  - [ ] 3.8 Add the agent lane helpers to the SDK
+  - [x] 3.8 Add the agent lane helpers to the SDK
     - In human/wallet/sdk add agent helpers that derive did:layerx from an Ed25519 public key, sign gateway requests end to end with the canonical digest, nonce and expiry the gateway verifies, sign the binding message for an agent wallet, and expose the claim flow.
     - Add tests that run the helpers against the gateway's verification code imported from the workspace, covering a valid request, replay, expiry and a wrong key.
+    - _Requirements: 9.5, 6.6_
+  - [x] 3.9 Let the endpoint start in chain-only mode without kernel-side secrets
+    - In platform/hosted/gateway/src/main.rs make config treat the client identity and its password, the four sequencer trust inputs, the key provisioning key and the module registry as kernel-side inputs: required exactly as today when LAYERX_GATEWAY_COMPONENT_URL is set, skipped when it is unset, mirroring configured_kernel, and refuse start-up with a named error when any of them is set without the component URL.
+    - Carry the absence through every consumer so kernel-dependent methods keep answering the typed unavailable error and chain-only readiness reports the kernel side as unconfigured; keep every response shape and openrpc.json unchanged.
+    - Add a degraded test that starts the endpoint through its real start-up configuration with only the chain RPC and the listener inputs set, asserts it serves eth_chainId and px_getNetwork, and asserts the named refusal when a kernel-side input is set without the component URL.
+    - _Requirements: 12.2_
+  - [x] 3.10 Align the gas station module with the provider's construction signing path
+    - In human/wallet/sdk make the gas station module's sign path call eth_sign with the provider's parameter order, the signer address, the locally computed sponsored batch digest and the construction object of kind sponsored_batch, so the provider recomputes the digest from the fields, accepts it, and forwards only the fields; keep one exported construction type shared by the module and the provider.
+    - Add tests that drive the module's sign path through PaxeerProvider against the in-test gateway server, proving acceptance for a correct batch and refusal when the digest or a field is altered, and that the agent SDK's digest for the same fields equals the module's.
+    - _Requirements: 9.1, 9.2, 9.3, 11.1_
+  - [x] 3.11 Make the endpoint's event producer optional in chain-only mode
+    - Make the shared endpoint construct its payment and webhook event producer only when the producer's upstream URL is configured: when it is absent the endpoint starts without a producer, readiness reports the producer as unconfigured, and any path that would emit an event on the kernel side is already unavailable; when the upstream URL is set, the producer's credentials stay required exactly as today and a half-set producer is refused with a named error.
+    - Add a degraded test that starts the endpoint through its real start-up configuration with the chain-only inputs and no producer variables, asserts it serves eth_chainId and px_getNetwork and reports the producer unconfigured, and asserts the named refusal for a half-set producer.
+    - _Requirements: 12.2_
+  - [x] 3.12 Add a plain listener mode to the shared endpoint for deployment behind the platform proxy
+    - Let the shared endpoint serve plain HTTP on its listener when LAYERX_GATEWAY_LISTENER is set to plain: the platform proxy terminates public TLS and forwards plain HTTP to the machine, so in that mode the endpoint refuses startup if LAYERX_GATEWAY_TLS_CERT_DER or LAYERX_GATEWAY_TLS_KEY_DER is set, naming the variable; when LAYERX_GATEWAY_LISTENER is unset or tls the listener terminates TLS exactly as today with the certificate and key required; any other value is refused by name; every route, the websocket upgrade, the request and connection limits and the timeouts behave identically in both modes.
+    - Switch human/wallet/deploy/endpoint.toml to the plain listener behind the platform's http_service: set LAYERX_GATEWAY_LISTENER to plain in its environment, drop the listener certificate and key paths and their two secret file mappings, keep the outbound CA and every other mapping, and make the readiness check speak http; document LAYERX_GATEWAY_LISTENER in human/wallet/deploy/env.
+    - Add degraded tests that start the real binary in plain mode with the chain-only inputs and see eth_chainId, px_getNetwork and readiness over plain HTTP, and that prove a plain listener with a certificate path set, and an unknown listener value, are each refused by name.
+    - _Requirements: 12.2_
+  - [x] 3.13 Resolve the SDK's curve and hash imports under both dependency majors
+    - Import ed25519 from @noble/curves/ed25519.js and sha256 from @noble/hashes/sha2.js in the SDK agent module so the specifiers resolve against the 1.x line the SDK pins and the 2.x line the wallet app pins and dedupes to, matching the repository's other TypeScript SDK; behaviour unchanged.
     - _Requirements: 9.5, 6.6_
 
 ## Wave 4 - Completion
@@ -184,15 +205,15 @@
     - Deploy the gateway from human/wallet/deploy/gateway.toml beside the existing service under a platform-issued name, pointed at the deployed attestors, the identity provider and the RPC pool, with the sponsor account funded out of band; sign in with a fresh test identity, provision, observe both keys, the top-up and the binding on the chain, sign and send a minimal transaction, sign a message, and confirm getUnifiedAccount reports the binding.
     - Extend tools/wallet/check-live.sh with a gateway mode that checks readiness and /v1/wallet/me for a configured test identity, and record the run in the qualification log with the transaction hash and no hosts or secrets.
     - _Requirements: 6.2, 5.6_
-  - [ ] 4.2 Show the unified account and the kernel surfaces in the app
+  - [x] 4.2 Show the unified account and the kernel surfaces in the app
     - In human/apps/wallet add the unified account view (address, DID, binding state), one asset list with joined balances completed by chain calls, one history with cursor paging, the status ladder per transaction, a custody deposit flow through the custody precompile, and kernel plans through the human service client with the kernel availability state shown and every kernel action disabled with its reason when unavailable.
     - Add tests for each view against recorded endpoint responses and the unavailable state.
     - _Requirements: 10.4, 7.2, 7.3, 7.4, 7.5_
-  - [ ] 4.3 Add the Paxeer X surfaces and the fee choice to the app
+  - [x] 4.3 Add the Paxeer X surfaces and the fee choice to the app
     - In human/apps/wallet add the exchange, bridge, launchpad, fee token and web data surfaces through the SDK modules, the fee choice labelling PAX gas, SID sponsored and SID native with denominations, the LayerX fee per leg shown separately, and 402 draws shown with their caps.
     - Add tests for each surface's transaction construction and the fee labels.
     - _Requirements: 10.5, 11.1, 11.3_
-  - [ ] 4.4 Carry the app's native projects, configuration and release tests in the repository
+  - [x] 4.4 Carry the app's native projects, configuration and release tests in the repository
     - Add the iOS and Android native projects generated for the app, the environment configuration by variable name, the release build scripts, and a Playwright suite over the remaining surfaces against the SDK's in-test gateway, keeping every secret out.
     - Add a scripts/release-check.sh that validates the native projects exist, the configuration names resolve and the Playwright suite runs in check mode.
     - _Requirements: 10.6_
@@ -212,6 +233,11 @@
     - Add human/wallet/docs/security-review.md recording the review of every change to the vendored threshold library's CGGMP, FROST, refresh and Birkhoff code since its published audit, the daemon's trust boundaries (gateway, attestor, identity provider, operator, dealer), the policy fail-closed paths, and every open finding with severity and owner action.
     - Where the review finds a defect in the daemon, fix it in this task with a test; where it finds one in the library, record it and pin the dependency version in go.mod with the reason.
     - _Requirements: 13.3_
+  - [x] 4.9 Add the theme selection system to the app
+    - In human/apps/wallet add src/theme/: a typed token schema covering colour (surface, text, action, status, border, overlay), typography (font family per role, a modular size scale, line heights, weights), spacing, radius, shadow and density; a catalogue of named colour themes (the current dark, a light theme, a high-contrast dark and a high-contrast light) each complete for every colour token, an accent palette choice applied to the action tokens with contrast-checked on-accent text, font choices (the bundled Paxeer Sans Rounded, a system stack, and a monospace stack for addresses and amounts), size presets (compact, regular, large) that scale the type scale, spacing and control heights together, and a density toggle; a resolver that turns a selection plus the system colour scheme and reduced-motion preferences into one flat set of CSS custom properties, keeping the existing --color-*, --pax-* and --radius-* names so tailwind.config.ts and every surface keep working.
+    - Add a ThemeProvider mounted in src/app/layout.tsx that applies the resolved properties on the root element, follows the system scheme when the selection says system, persists the selection on the device keyed by the signed-in account when one is present, and emits an inline bootstrap script that applies the stored selection before first paint so no theme flash occurs; add an Appearance section to the settings widget with pickers for colour theme, accent, font, size and density and a live preview card; migrate the remaining hard-coded colour literals under src/ (outside src/theme/ and globals.css) to tokens.
+    - Add tests under src/theme/ for the schema (every theme complete, every on-accent pair meets WCAG AA contrast), the resolver (system scheme, size presets scale together, reduced motion), persistence and account keying, the provider applying properties on the root, the bootstrap script output, the appearance pickers changing the applied properties, and a scan that fails on any hard-coded colour literal under src/ outside src/theme/ and src/app/globals.css.
+    - _Requirements: 10.7_
 
 ## Wave 5 - Release
 
@@ -231,8 +257,8 @@
   "waves": [
     { "id": 1,  "tasks": ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "1.10", "1.11", "1.12", "1.13", "1.14", "1.15", "1.16"] },
     { "id": 2,  "tasks": ["2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7", "2.8", "2.9"] },
-    { "id": 3,  "tasks": ["3.1", "3.2", "3.3", "3.4", "3.5", "3.6", "3.7", "3.8"] },
-    { "id": 4,  "tasks": ["4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7", "4.8"] },
+    { "id": 3,  "tasks": ["3.1", "3.2", "3.3", "3.4", "3.5", "3.6", "3.7", "3.8", "3.9", "3.10", "3.11", "3.12", "3.13"] },
+    { "id": 4,  "tasks": ["4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7", "4.8", "4.9"] },
     { "id": 5,  "tasks": ["5.1", "5.2"] }
   ]
 }

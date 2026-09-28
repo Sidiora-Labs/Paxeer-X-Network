@@ -79,6 +79,17 @@ set_region "$dir/attestor-4.toml" sea
 set_region "$dir/attestor-5.toml" yyz
 expect_fail "same-continent set" "$dir" continents "attestor-\*.toml"
 
+dir="$(fresh image-build)"
+image_output="$("$checker" "$dir" 2>&1)" || true
+if grep -q '^pass dockerfile redis.toml$' <<<"$image_output"; then
+	sed -i '/^  image = /d' "$dir/redis.toml"
+	expect_fail "image build accepted, empty build refused" "$dir" dockerfile redis.toml
+else
+	echo "FAIL image build accepted, empty build refused: redis.toml with a build image did not pass the dockerfile rule"
+	printf '%s\n' "$image_output"
+	failures=$((failures + 1))
+fi
+
 if [ "$failures" -ne 0 ]; then
 	echo "check-deploy.test: $failures case(s) failed"
 	exit 1

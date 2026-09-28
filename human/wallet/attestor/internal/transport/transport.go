@@ -65,6 +65,8 @@ type Envelope struct {
 	Seq      uint64 `json:"seq"`
 	Type     string `json:"type"`
 	Payload  []byte `json:"payload"`
+	Relay    bool   `json:"relay,omitempty"`
+	Origin   string `json:"origin,omitempty"`
 }
 
 type peerEntry struct {

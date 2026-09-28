@@ -1,0 +1,16 @@
+{
+  "node_id": "node-1",
+  "region": "region-a",
+  "share_count": 2,
+  "refresh_epoch": 1,
+  "audit_sequence": 9,
+  "audit_head": "5555555555555555555555555555555555555555555555555555555555555555",
+  "peers": {
+    "node-2": {
+      "reachable": true,
+      "rtt_ns": 1000
+    }
+  },
+  "reachable_peers": 1,
+  "ready": false
+}

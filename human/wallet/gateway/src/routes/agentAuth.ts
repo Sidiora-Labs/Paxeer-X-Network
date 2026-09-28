@@ -2,12 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { randomBytes } from 'node:crypto';
 import { env } from '../env.js';
 import { ChallengeBody, VerifyBody } from '../schemas/agent.js';
-import {
-  challengeMessage,
-  labelIsUuid,
-  parseDid,
-  verifyAgentSignature,
-} from '../auth/did.js';
+import { challengeMessage, parseDid, verifyAgentSignature } from '../auth/did.js';
 import { agentLaneEnabled, mintAgentToken } from '../auth/agentToken.js';
 import {
   consumeChallenge,
@@ -99,11 +94,8 @@ export async function agentAuthRoutes(app: FastifyInstance): Promise<void> {
         .send({ error: 'challenge_invalid', message: 'nonce unknown, expired, or already used' });
     }
 
-    // 3. Owner binding from the DID label when it is a Supabase UUID.
-    const ownerUserId =
-      env.AGENT_BIND_OWNER_FROM_DID && labelIsUuid(sig.parsed.label) ? sig.parsed.label : null;
-
-    // 4. Upsert principal (+ default policy) and mint the access token.
+    // 3. Upsert principal (+ default policy) and mint the read-scoped token.
+    //    Ownership is recorded only through POST /v1/agents/:did/claim.
     let principal;
     try {
       principal = await upsertPrincipalOnVerify({
@@ -111,7 +103,6 @@ export async function agentAuthRoutes(app: FastifyInstance): Promise<void> {
         label: sig.parsed.label,
         keyFingerprint: sig.parsed.keyFingerprint,
         publicKey: sig.publicKeyHex,
-        ownerUserId,
       });
     } catch (err) {
       req.log.error({ err, did }, 'principal upsert failed');

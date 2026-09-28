@@ -13,10 +13,9 @@ import { env } from './env.js';
 /**
  * Read-only chain access for the agent lane.
  *
- * Unlike `treasury/index.ts` (which needs FUNDED_TREASURY_PRIVATE_KEY to build
- * its wallet client), this module exposes a KEYLESS public client so balance /
- * allowance / nonce / simulation reads work even on a deployment that has no
- * treasury configured. All helpers are pure reads — they never sign or send.
+ * This module exposes a KEYLESS public client so balance / allowance / nonce /
+ * simulation reads need no signing key. All helpers are pure reads — they never
+ * sign or send.
  */
 
 let cached: PublicClient | null = null;

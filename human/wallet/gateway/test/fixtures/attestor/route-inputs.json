@@ -1,0 +1,57 @@
+{
+  "tx": {
+    "to": "0x000000000000000000000000000000000000c0de",
+    "value": "1000",
+    "gas": "21000",
+    "maxFeePerGas": "2000000000",
+    "maxPriorityFeePerGas": "1000000000"
+  },
+  "nonce": 7,
+  "message": "Sign in to the Paxeer X wallet",
+  "typed_data": {
+    "domain": {
+      "name": "Ether Mail",
+      "version": "1",
+      "chainId": 125,
+      "verifyingContract": "0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC"
+    },
+    "types": {
+      "Person": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "wallet",
+          "type": "address"
+        }
+      ],
+      "Mail": [
+        {
+          "name": "from",
+          "type": "Person"
+        },
+        {
+          "name": "to",
+          "type": "Person"
+        },
+        {
+          "name": "contents",
+          "type": "string"
+        }
+      ]
+    },
+    "primaryType": "Mail",
+    "message": {
+      "from": {
+        "name": "Cow",
+        "wallet": "0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826"
+      },
+      "to": {
+        "name": "Bob",
+        "wallet": "0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB"
+      },
+      "contents": "Hello, Bob!"
+    }
+  }
+}

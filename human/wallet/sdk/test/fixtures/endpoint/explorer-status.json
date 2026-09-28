@@ -1,0 +1,30 @@
+{
+  "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1": {
+    "rung": "pending",
+    "block_number": null,
+    "sealed_batch_number": null,
+    "finalized_batch_number": null,
+    "checkpoint_id": null
+  },
+  "0xe2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2": {
+    "rung": "instant",
+    "block_number": 4242,
+    "sealed_batch_number": null,
+    "finalized_batch_number": null,
+    "checkpoint_id": null
+  },
+  "0xe3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3": {
+    "rung": "sealed",
+    "block_number": 4242,
+    "sealed_batch_number": 19,
+    "finalized_batch_number": null,
+    "checkpoint_id": "0x0000000000000000000000000000000000000000000000000000000000000013"
+  },
+  "0xe4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4": {
+    "rung": "final",
+    "block_number": 4242,
+    "sealed_batch_number": 19,
+    "finalized_batch_number": 18,
+    "checkpoint_id": "0x0000000000000000000000000000000000000000000000000000000000000013"
+  }
+}

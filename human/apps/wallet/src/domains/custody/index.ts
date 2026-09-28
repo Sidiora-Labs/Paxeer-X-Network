@@ -32,35 +32,19 @@ export interface TransferCapability {
   readonly submitTransfer: (request: TransferRequest) => Promise<SubmittedTransfer>;
 }
 
-export interface SelfCustodyCapabilities
-  extends ReceiveCapability,
-    TransferCapability {
-  readonly createAccount: (name: string) => Promise<AccountRef>;
-  readonly deleteAccount: (account: AccountRef) => Promise<void>;
-  readonly exportAccount: (account: AccountRef) => Promise<string>;
-  readonly lock: () => Promise<void>;
-  readonly unlock: (secret: string) => Promise<void>;
-}
-
 export interface ManagedCapabilities
   extends ReceiveCapability,
     TransferCapability {
   readonly signOut: () => Promise<void>;
 }
 
-export interface FundedCapabilities {
-  readonly submitPolicyCall: (
-    request: TransferRequest,
-  ) => Promise<SubmittedTransfer>;
-  readonly signOut: () => Promise<void>;
+export interface InjectedCapabilities
+  extends ReceiveCapability,
+    TransferCapability {
+  readonly disconnect: () => Promise<void>;
 }
 
 export type CustodySession =
-  | {
-      readonly kind: 'self-custody';
-      readonly snapshot: PublicWalletSnapshot;
-      readonly capabilities: SelfCustodyCapabilities;
-    }
   | {
       readonly kind: 'managed';
       readonly identityId: string;
@@ -68,15 +52,14 @@ export type CustodySession =
       readonly capabilities: ManagedCapabilities;
     }
   | {
-      readonly kind: 'funded';
-      readonly identityId: string;
+      readonly kind: 'injected';
+      readonly providerRdns: string;
       readonly snapshot: PublicWalletSnapshot;
-      readonly policyRevision: string;
-      readonly capabilities: FundedCapabilities;
+      readonly capabilities: InjectedCapabilities;
     }
   | {
       readonly kind: 'unavailable';
-      readonly requestedKind: 'self-custody' | 'managed' | 'funded';
+      readonly requestedKind: 'managed' | 'injected';
       readonly failure: AppFailure;
     };
 

@@ -1,0 +1,59 @@
+{
+  "session_id": "session-import",
+  "key_id": "key-evm",
+  "owner": "user-0001",
+  "share": {
+    "curve": "secp256k1",
+    "participant_id": "node-1",
+    "share": "a778",
+    "public_key": {
+      "x": "cca6649424131300f1ff26543e27b7f1e20f7268d707e11210ea53a00171d198",
+      "y": "695e5b35f332d455ec8f989d9261c80ab62c882859af3c590de14f9e3c3b1e1a"
+    },
+    "partial_public_keys": {
+      "node-1": {
+        "x": "f3a233273c7bcacd7ea9fcf4134e29393d840b1550c790868a268745170ad299",
+        "y": "1ea60513fb411905b411fb4536f30d208b60a399d7dc8688adb6bc2fc1b5b387"
+      },
+      "node-2": {
+        "x": "fb76b76efe4bd190efc294bb4a945bd4a7ee226b0f479646b9f35ab2b4052da5",
+        "y": "a6374172f88f512f6e85653dca35d2a089d36cfbe7434c61f322c1f458a5130c"
+      },
+      "node-3": {
+        "x": "dee5e1d3f60183561a4616706e04caef397ef78921d59a9c43bb848d57bf1c33",
+        "y": "c77bd68a00033d81114eaa02d89e2252531a129d58ba0000990a34179e4f38fa"
+      },
+      "node-4": {
+        "x": "78c105dae324d7ca59d953c558d4e080c5204ced0bc7b5fc5a774cf5ef935812",
+        "y": "9193eb6ca7f188a09edbd9fea783769ed2805acacce097dd797e0f0e026501f7"
+      },
+      "node-5": {
+        "x": "415bb861cce7480041fde41a55dc85a17f0d7bb86d7876535e612ef15988a7c6",
+        "y": "c848cb97a18abf9a2dfd5082312af1f3d2a6a8a068b0200b8c3047c990328c1f"
+      }
+    },
+    "bks": {
+      "node-1": {
+        "x": "01",
+        "rank": 0
+      },
+      "node-2": {
+        "x": "02",
+        "rank": 0
+      },
+      "node-3": {
+        "x": "03",
+        "rank": 0
+      },
+      "node-4": {
+        "x": "04",
+        "rank": 0
+      },
+      "node-5": {
+        "x": "05",
+        "rank": 0
+      }
+    },
+    "threshold": 3
+  }
+}

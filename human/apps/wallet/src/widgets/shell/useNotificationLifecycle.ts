@@ -17,8 +17,8 @@ import { useTxCountQuery } from '@/lib/queries/txCount';
  *   forwards each new count to handleTxCount for comparison + notification.
  */
 export function useNotificationLifecycle(): void {
-  const { activeAccount, isLocked } = useWalletState();
-  const address = !isLocked && activeAccount?.address ? activeAccount.address : undefined;
+  const { activeAccount } = useWalletState();
+  const address = activeAccount?.address ? activeAccount.address : undefined;
 
   const { data: txCount } = useTxCountQuery(address);
 

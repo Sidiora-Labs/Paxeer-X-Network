@@ -1,0 +1,10 @@
+{
+  "scenario": "default",
+  "method": "POST",
+  "path": "/v1/wallet/sign-custody",
+  "status": 200,
+  "body": {
+    "signature": "0x64be58dca7ab275d548ce0a0025fb790c52b08e168f2b387d7fe54edc9e5cb463682559d151950e935c492ed875014b69a5419e5256da23589dbd3032d2eee5a1b",
+    "address": "0xE1952Ec7230F058cd7fd9BCCb15964100e38ea04"
+  }
+}

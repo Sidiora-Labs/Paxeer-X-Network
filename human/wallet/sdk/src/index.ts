@@ -20,6 +20,17 @@ import {
 } from './types.js';
 
 export * from './types.js';
+export * from './rpc.js';
+export * from './endpoint.js';
+export * from './kernel.js';
+export * from './human.js';
+export * from './ladder.js';
+export * from './modules/index.js';
+export * from './errors.js';
+export * from './provider.js';
+export * from './eip6963.js';
+export * from './wallet.js';
+export * from './agent.js';
 
 /**
  * `PaxeerWallet` — drop-in client for any Paxeer-network app.

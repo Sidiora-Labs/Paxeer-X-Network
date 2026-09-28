@@ -1,0 +1,9 @@
+{
+  "0xb225632d311e952443a90894a97bdb4c24740591777343ed8b3e9dd175a6de15": {
+    "rung": "instant",
+    "block_number": 4243,
+    "sealed_batch_number": null,
+    "finalized_batch_number": null,
+    "checkpoint_id": null
+  }
+}

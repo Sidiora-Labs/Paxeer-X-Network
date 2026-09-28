@@ -159,7 +159,11 @@ pub(super) fn read(config: &Config, trace_id: &str) -> OutgoingResponse {
             Some(RETRY_AFTER_SECONDS),
         );
     }
-    let Ok(state) = verified_state(&head, &config.sequencer_authorization) else {
+    let sequencer_authorization = match config.sequencer_authorization() {
+        Ok(authorization) => authorization,
+        Err(unavailable) => return unavailable.into(),
+    };
+    let Ok(state) = verified_state(&head, sequencer_authorization) else {
         return response(502, "state_proof_unverified", None);
     };
     json_response(

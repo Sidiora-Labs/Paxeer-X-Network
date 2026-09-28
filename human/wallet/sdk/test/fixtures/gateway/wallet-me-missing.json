@@ -1,0 +1,10 @@
+{
+  "scenario": "unprovisioned",
+  "method": "GET",
+  "path": "/v1/wallet/me",
+  "status": 404,
+  "body": {
+    "error": "no_wallet",
+    "message": "wallet not provisioned"
+  }
+}

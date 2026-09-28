@@ -102,4 +102,391 @@ file = "human/apps/wallet/scripts/scan-secrets.sh"
 symbol = "scan-secrets"
 observed = "The scanner reports local artefacts present on disk even when git ignores them, so the tsconfig.tsbuildinfo left by the app's type-check fails the verify scan until it is removed."
 assumption = "Gates that run type-check before the scan remove tsconfig.tsbuildinfo first; the scan stays strict on the working tree."
+
+[observation.2.5.1]
+task = "2.5"
+file = "human/wallet/sdk/src/modules/gas-station.ts"
+symbol = "gasStation.submit"
+observed = "The gateway has no sponsored submit route; the module posts SponsoredSubmitRequest (types.ts) to /v1/wallet/sponsored/submit and passes eth_sign the SponsoredBatchConstruction object as its second parameter."
+assumption = "The gateway relay task adds that route with that body, and the provider task accepts that construction shape for eth_sign."
+severity = "suspect"
+
+[observation.2.5.2]
+task = "2.5"
+file = "precompiles/feetoken/abi.json"
+symbol = "gasStation.quote"
+observed = "The fee token precompile exposes no rate, no decimals and no events; the rate lives in the EVM module params (base units per Paxeer coin) and SID decimals come from the agent SDK constant."
+assumption = "Callers pass the governed rate string to quote, which applies the keeper's ceiling conversion; a rate read through the shared endpoint is follow-up work."
 severity = "note"
+
+[observation.2.5.3]
+task = "2.5"
+file = "human/wallet/sdk/package.json"
+symbol = "build:agent-sdk"
+observed = "The agent SDK is linked with the link protocol and exports only built output, so the SDK's test, typecheck and build scripts first run npm ci and the agent SDK build; its x402 draw module imports node:sqlite, which vitest 2 cannot load, so the SDK moved to vitest 3."
+assumption = "The merged gate has npm registry access or a warm npm cache for the agent SDK's pinned dependencies."
+
+[observation.2.2.1]
+task = "2.2"
+file = "human/wallet/gateway/src/chainReads.ts"
+symbol = "HYPERPAXEER_RPC_URL"
+observed = "Balance and chain reads in src/chainReads.ts and src/chain.ts still use the single HYPERPAXEER_RPC_URL client; only the signing routes and nonce store go through RpcPool."
+assumption = "Routing the remaining read paths and the readiness report through the pool belongs to a later task that owns those files."
+severity = "note"
+
+[observation.3.7.1]
+task = "3.7"
+file = "platform/hosted/gateway/src/main.rs"
+symbol = "config"
+observed = "With every kernel backend URL unset, config still refuses startup unless LAYERX_GATEWAY_CLIENT_IDENTITY_PKCS12 and its password file, the four LAYERX_GATEWAY_SEQUENCER_ files, LAYERX_GATEWAY_KEY_PROVISIONING_KEY_FILE and LAYERX_GATEWAY_MODULE_REGISTRY_FILE are present and valid, so chain-only mode cannot start without kernel-side secrets and the deployment was not attempted."
+assumption = "The endpoint needs a change that makes those inputs optional when LAYERX_GATEWAY_COMPONENT_URL is unset (as configured_kernel already does for the backend URLs and tokens), or an owner decision to issue them; tools/wallet/check-live.sh endpoint is ready for the deployment that follows."
+severity = "blocker"
+
+[observation.2.8.1]
+task = "2.8"
+file = "human/apps/wallet/src"
+symbol = "EIP-6963"
+observed = "The app had no injected-wallet path through EIP-6963 to keep; the only provider injection lived in the removed in-app dApp browser."
+assumption = "The EIP-6963 injected-wallet path arrives with the SDK provider task and is wired into the app there."
+severity = "suspect"
+
+[observation.2.8.2]
+task = "2.8"
+file = "human/apps/wallet/src/components/onboarding/Onboarding.tsx"
+symbol = "funded-tier-picker"
+observed = "The funded-tier-picker step imports FundedTierPicker but renders nothing, so a funded session without a funded account shows a blank screen."
+assumption = "Pre-existing; left unchanged because the funded lane belongs to another task."
+severity = "suspect"
+
+[observation.2.8.3]
+task = "2.8"
+file = "human/apps/wallet/src/domains/shell/index.ts"
+symbol = "ROUTE_POLICIES.pns"
+observed = "The name-service screen was reachable only in self-custody; with self-custody removed its route policy now admits embedded custody so the kept screen stays reachable from Discover."
+assumption = "The name-service registration flow signs through the embedded signer; any signing method the embedded API lacks surfaces as a typed error on that screen."
+severity = "note"
+
+[observation.2.8.4]
+task = "2.8"
+file = "human/apps/wallet/src/platform/storage/repositories.ts"
+symbol = "parseCustodyChoice"
+observed = "A stored custody choice of self-custody from an earlier install would fail closed as corrupt once the kind is removed."
+assumption = "The retired value is read as no choice so earlier self-custody installs land on the welcome screen; any other unknown value still fails closed."
+severity = "note"
+
+[observation.2.4.1]
+task = "2.4"
+file = "human/wallet/sdk/src/provider.ts"
+symbol = "PaxeerProvider"
+observed = "The gateway has no user routes for typed data, restricted digests or custody bytes, so the provider defines POST /v1/wallet/sign-typed-data {typedData}, /v1/wallet/sign-digest {construction} and /v1/wallet/sign-custody {custody}, each answering {signature, address}, recorded in sdk/test/fixtures/gateway."
+assumption = "The gateway's attestor signing task adds these three routes with exactly these request and response shapes."
+severity = "suspect"
+
+[observation.2.4.2]
+task = "2.4"
+file = "human/wallet/sdk/src/modules/gas-station.ts"
+symbol = "gasStation.sign"
+observed = "The gas station module calls eth_sign with params [from, construction] and no digest, while PaxeerProvider requires [address, digest, construction] and refuses a missing or mismatched digest, so the module's sign path is refused by the embedded provider."
+assumption = "One side aligns on a single eth_sign parameter order; the provider keeps recomputing the digest from the fields and forwarding only the fields."
+
+[observation.2.7.1]
+task = "2.7"
+file = "human/wallet/ceremony/internal/attestor/client.go"
+symbol = "ImportRequest"
+observed = "The attestor API schema human/wallet/schema/attestor-api/v1.kvx and the daemon are written by task 2.1 in the same wave, so the ceremony client's paths (/v1/keys.import, /v1/keys.refresh, /v1/sign), field names and key ids (wallet:<id>:secp256k1, wallet:<id>:ed25519) are coded from [decision] attestor_api alone."
+assumption = "Task 2.1 or wave 3 aligns the daemon and the client to the schema file and its golden vectors; the ceremony tests decode those vectors once they exist."
+severity = "suspect"
+
+[observation.3.9.1]
+task = "3.9"
+file = "platform/hosted/internal/src/producer.rs"
+symbol = "Client::from_environment"
+observed = "With the kernel-side inputs absent the endpoint still refuses startup with producer requires mTLS and bearer credentials unless LAYERX_EVENTS_PAYMENT_ and LAYERX_EVENTS_WEBHOOKS_ upstream URL, CA, token file and client identity with its password are set."
+assumption = "The chain-only deployment supplies the event producer inputs, or a later task makes the producer optional; this task left the producer unchanged because it lives outside the gateway crate."
+severity = "medium"
+
+[observation.2.3.1]
+task = "2.3"
+file = "human/wallet/gateway/src/schemas/tx.ts"
+symbol = "ProvisionFundedBody"
+observed = "The funded provision body schema outlives the removed lane because test/schemas.injection.test.ts exercises it and that test belongs to a kept module."
+assumption = "The schema and its injection test are removed together by whichever task retires the schema module's funded shapes."
+severity = "note"
+
+[observation.2.3.2]
+task = "2.3"
+file = "human/wallet/sdk/src/index.ts"
+symbol = "funded"
+observed = "The SDK client, its types and client test, the demo's funded account panel and the workspace README still call or describe the removed /v1/funded routes, which now answer 404."
+assumption = "The SDK tasks of this wave own those files and drop the funded surface there."
+severity = "suspect"
+
+[observation.3.8.1]
+task = "3.8"
+file = "human/wallet/gateway/src/auth/did.ts"
+symbol = "parseDid"
+observed = "The gateway registers and verifies agents only under did:matrix:<label>:<16 hex> and has no did:layerx derivation, so agentDid (did:layerx plus 64 hex, matching lxwire and the bind vectors) cannot be the X-Agent-Key the gateway accepts."
+assumption = "signAgentRequest and buildClaim take the registered key id as given and the tests sign with the gateway's did:matrix form; moving the gateway to did:layerx principals belongs to a gateway task."
+severity = "medium"
+
+[observation.3.6.1]
+task = "3.6"
+file = "human/wallet/sdk/src/index.ts"
+symbol = "@paxeer/wallet"
+observed = "The SDK root index re-exports modules that import @sidiora/layerx-sdk from source, which pulls node:sqlite, node:child_process, http, https and ws into the app's type check and bundle graph, so the app aliases that package to its source and carries its runtime dependencies."
+assumption = "The SDK gains a browser-safe entry point without the agent modules; until then the app resolves both packages from source through tsconfig paths, the vitest aliases and the Next webpack aliases."
+severity = "suspect"
+
+[observation.3.6.2]
+task = "3.6"
+file = "human/apps/wallet/src/platform/storage/repositories.ts"
+symbol = "parseCustodyChoice"
+observed = "A stored custody choice of funded, left by the retired funded tier, is read as no choice, so those users land on the welcome screen."
+assumption = "The funded tier stays retired, following the same precedent as observation 2.8.4."
+severity = "info"
+
+[observation.3.12.1]
+task = "3.12"
+file = "platform/hosted/gateway/src/main.rs"
+symbol = "listener_config"
+observed = "LAYERX_GATEWAY_LISTENER set to plain makes the endpoint serve plain HTTP on its listener and refuse either listener certificate variable by name, while unset or tls keeps TLS termination with both required; endpoint.toml now runs plain behind the platform http_service with an http readiness check."
+assumption = "The assumption of observation 1.12.1 is met by the plain listener mode rather than TLS passthrough; public TLS is the platform edge's certificate."
+severity = "note"
+
+[observation.4.4.1]
+task = "4.4"
+file = "human/apps/wallet/ios/App/Podfile"
+symbol = "capacitor_pods"
+observed = "The app declares no @capacitor/ios dependency, so the iOS project was generated from the matching 8.3.4 platform package placed in node_modules for the generator only; the Podfile's Capacitor pods point at ../../node_modules/@capacitor/ios, which a frozen install does not provide, and the plugin pods pin pnpm store paths that cap sync rewrites."
+assumption = "A dependency task adds @capacitor/ios at the core's version before release-build.sh ios or pod install runs; release-check validates the generated project files, not a compiled build."
+severity = "suspect"
+
+[observation.4.4.2]
+task = "4.4"
+file = "human/apps/wallet/src/wallet/test/gateway.ts"
+symbol = "send"
+observed = "The in-test gateway answers CORS preflights with access-control-allow-headers '*', which browsers do not apply to the Authorization header, so the browser suite's cross-origin identity and wallet calls from the app origin may be refused; the suite was listed in check mode only."
+assumption = "The first RELEASE_CHECK_BROWSERS=1 run confirms or refutes this; the fix is naming authorization and apikey in that header inside the test gateway."
+severity = "suspect"
+
+[observation.4.4.3]
+task = "4.4"
+file = "human/apps/wallet/README.md"
+symbol = "NEXT_PUBLIC_AUTH_REDIRECT_URL"
+observed = "The app README's variable table omits NEXT_PUBLIC_AUTH_REDIRECT_URL, so release-check resolves it from human/wallet/deploy/env, where it is listed for the demo; next.config.mjs builds a standalone server and no out directory, so release-build.sh stages the Capacitor web directory from public before cap sync."
+assumption = "The native shell loads the hosted site through server.url, so the bundled web directory only needs the static assets; the README row is added by whichever task next edits the README."
+severity = "note"
+
+[observation.4.3.1]
+task = "4.3"
+file = "human/wallet/sdk/src/agent.ts"
+symbol = "@noble/curves/ed25519"
+observed = "agent.ts imports @noble/curves/ed25519 and @noble/hashes/sha2 without the .js subpath, valid in the SDK's @noble/curves 1.9.1, but the app's vitest dedupes @noble/curves to 2.4.0, which exports only ./ed25519.js, so every app test that reaches the @paxeer/wallet index, including WalletProvider, fails at import with Missing ./ed25519 specifier."
+assumption = "The SDK owner switches to the .js subpaths or the app test config stops deduping @noble/curves; the surfaces keep the index import and the provider layer unchanged, so the surfaces gate is blocked until then."
+severity = "high"
+
+[observation.4.3.2]
+task = "4.3"
+file = "human/apps/wallet/src/surfaces/useSurface.ts"
+symbol = "SPONSORED_UNAVAILABLE"
+observed = "The app configures no gas station quote service, sponsor or paymaster, so the SID sponsored fee path is shown with its denomination and signing path but refuses to send."
+assumption = "A deploy task supplies the gas station settings to the app; SID native and PAX gas are fully wired through the fee token precompile and eth_sendTransaction."
+severity = "medium"
+
+[observation.4.3.3]
+task = "4.3"
+file = "human/apps/wallet/src/surfaces/config.ts"
+symbol = "NEXT_PUBLIC_PAXEER_USID_PER_PAX"
+observed = "The SID gas estimate reads the owner-set usid per PAX rate from NEXT_PUBLIC_PAXEER_USID_PER_PAX, which no deploy environment file lists yet, and shows no SID amount while it is unset."
+assumption = "The deploy task adds the variable with the owner-set rate."
+severity = "info"
+
+[observation.4.2.1]
+task = "4.2"
+file = "human/apps/wallet/src/account/custody.ts"
+symbol = "custodyHandoff"
+observed = "Only the LX:CUSTODY:v1 prefix followed by 32 bytes is recorded for the custody hand-off; no byte layout for those 32 bytes exists in the repository."
+assumption = "The app signs the prefix followed by keccak256 of the packed chain id, target, value and calldata until the custody signer publishes its layout."
+severity = "suspect"
+
+[observation.4.2.2]
+task = "4.2"
+file = "human/apps/wallet/src/account/config.ts"
+symbol = "ACCOUNT_ENV"
+observed = "The account routes read NEXT_PUBLIC_PAXEER_RPC_URL, NEXT_PUBLIC_PAXEER_HUMAN_API and NEXT_PUBLIC_PAXEER_EXPLORER_URL, which no documented environment file names."
+assumption = "The deployment environment documents these three origins alongside the wallet gateway variables."
+severity = "info"
+
+[observation.4.2.3]
+task = "4.2"
+file = "human/wallet/sdk/src/agent.ts"
+symbol = "@noble/curves/ed25519"
+observed = "The verify run collected none of the six account test files and failed only with Missing ./ed25519 specifier in @noble/curves at agent.ts line 1, the import failure recorded in observation 4.3.1."
+assumption = "The .js subpath fix lands on the feature as its own task and the account verify command is rerun there; no repair cycle was spent on it."
+severity = "high"
+
+[observation.4.3.4]
+task = "4.3"
+file = "human/wallet/sdk/src/agent.ts"
+symbol = "@noble/curves/ed25519.js"
+observed = "The SDK agent module now imports the .js subpaths of both noble packages, and the unchanged surfaces verify command reran at 9442335562b93bf1239a206ab197bf77aba56d5e and exited 0 with 10 tests passing across 5 files."
+assumption = "Observation 4.3.1 is resolved by the SDK specifier change; the app's dedupe list and versions are unchanged."
+severity = "note"
+
+[observation.4.2.4]
+task = "4.2"
+file = "human/apps/wallet/e2e/sign-in.spec.ts"
+symbol = "EMAIL_CODE"
+observed = "The app type check exits 2 at 90d15555891d56e28d08e6b43242c55936578f6d on one error outside src/account: TS2367 at line 21, comparing the literal EMAIL_CODE 424242 with 000000."
+assumption = "The browser suite's owner picks the wrong code without comparing two literals; no error is reported under src/account."
+severity = "note"
+
+[observation.4.2.5]
+task = "4.2"
+file = "human/apps/wallet/src/account/test/endpoint.ts"
+symbol = "golden"
+observed = "The unchanged verify command reran at 90d15555891d56e28d08e6b43242c55936578f6d after the SDK specifier fix and exited 1: 20 of 26 tests pass, KernelPlan.test.tsx fails to collect because it reads human/wallet/schema/human-api/golden while the goldens live at human/schema/human-api/golden, and six unavailable-state tests in AccountView and DepositFlow read Checking the LayerX kernel state instead of the named reason."
+assumption = "The task owner corrects the golden path and waits for the kernel state to settle before reading the reason; the import defect of the first run is resolved."
+severity = "note"
+
+[observation.3.7.2]
+task = "3.7"
+file = "human/wallet/deploy/endpoint.toml"
+symbol = "configured_kernel"
+observed = "The definition's [env] still set the client identity, sequencer, provisioning key, module registry, kernel token, registration token and faucet token paths, so configured_kernel, rpc_register and rpc_faucet refuse chain-only start-up; those fourteen [env] lines were removed and their [[files]] mappings kept."
+assumption = "The kernel task restores those [env] paths together with LAYERX_GATEWAY_COMPONENT_URL and the backend URLs."
+severity = "suspect"
+
+[observation.3.7.3]
+task = "3.7"
+file = "platform/hosted/gateway/src/main.rs"
+symbol = "configured_protocol"
+observed = "The endpoint is deployed with LAYERX_GATEWAY_NETWORK_ID paxeer-x-mainnet and LAYERX_GATEWAY_PROTOCOL_NETWORK_ID 125 while the kernel is not anchored, so both are provisional labels."
+assumption = "The kernel task fixes the final network and protocol network identifiers and resets both platform secrets."
+severity = "assumption"
+
+[observation.3.7.4]
+task = "3.7"
+file = "tools/wallet/check-deploy.sh"
+symbol = "dockerfile"
+observed = "flyctl deploy --config resolves [build] dockerfile against the definition's directory and lets it override --dockerfile, while check-deploy resolves it against the repository root, so the endpoint image was built with docker build -f platform/hosted/gateway/Dockerfile from the repository root and deployed with --image; gateway.toml and the attestor definitions carry the same shape."
+assumption = "Deployments of every definition under human/wallet/deploy build from the repository root and pass --image until the definitions and the check agree on one resolution."
+severity = "suspect"
+
+[observation.3.7.5]
+task = "3.7"
+file = "human/wallet/deploy/endpoint.toml"
+symbol = "[[files]]"
+observed = "The platform destroyed the endpoint machine two seconds after creating it, before the binary ran and with no log line, while the definition still maps the client identity, token, sequencer, provisioning key and module registry secrets that chain-only mode leaves unset; the Redis machine, whose every mapped secret is set, started."
+assumption = "The platform refuses a machine whose [[files]] mapping names an unset secret, so chain-only deployment needs those fourteen mappings removed or their secrets set; the second repair cycle was spent and the deployment stops here."
+severity = "blocker"
+
+[observation.3.7.6]
+task = "3.7"
+file = "tools/wallet/check-deploy.sh"
+symbol = "dockerfile"
+observed = "check-deploy applies its dockerfile rule to every definition under human/wallet/deploy, so redis.toml, which runs the public Redis image through [build] image, fails it with build dockerfile None."
+assumption = "The check learns that a definition with a [build] image needs no dockerfile; redis.toml keeps the public image as specified."
+severity = "suspect"
+
+[gate.3.1]
+revision = "fded4443642d52f1407f1f6146cbd18c9b7442f6"
+command = "docker build -f platform/hosted/gateway/Dockerfile -t paxeer-shared-endpoint:deploy . && flyctl deploy --config human/wallet/deploy/endpoint.toml --image paxeer-shared-endpoint:deploy --app paxeer-shared-endpoint --local-only --ha=false"
+exit_code = 1
+log_path = ".logs/deploy.log"
+observed = "The image built and the private TLS Redis machine started ready on its TLS port, but the platform destroyed the endpoint machine before the binary ran, so no call was made."
+
+[observation.4.9.1]
+task = "4.9"
+file = "human/apps/wallet/e2e/sign-in.spec.ts"
+symbol = "type-check"
+observed = "The app type check exits 2 on one pre-existing error, TS2367 at e2e/sign-in.spec.ts line 21 comparing the literal types 424242 and 000000; no error comes from src/theme or the files this task changed."
+assumption = "The task that owns the Playwright suite widens that comparison; the theme verify command does not depend on it."
+severity = "note"
+
+[observation.4.9.2]
+task = "4.9"
+file = "human/apps/wallet/src/theme/catalogue.ts"
+symbol = "accent.onPrimary"
+observed = "The previous --color-action-on-primary #111410 on the default accent #2262d1 measures 3.30:1, below the 4.5 text threshold every on-accent pair must meet, so the contrast-checked ink makes the default #fffdf8 (5.53:1); every other default property keeps its previous value."
+assumption = "The WCAG requirement governs that one property; buttons that still carry text-black on bg-pax-accent (3.74:1) are outside this task's files and move to the on-accent token when their owners next touch them."
+severity = "suspect"
+
+[observation.2.1.1]
+task = "2.1"
+file = "human/wallet/attestor/internal/transport/session.go"
+symbol = "decode"
+observed = "CGGMP refresh relays echo-hash messages carrying the original sender's id, and the transport refuses any message whose id differs from the authenticated sender (403), so ECDSA refresh across five daemons cannot complete."
+assumption = "The transport needs an owner decision on accepting alice echo relays; the sender check is left intact."
+severity = "blocker"
+
+[observation.2.1.2]
+task = "2.1"
+file = "human/wallet/attestor/internal/transport/session.go"
+symbol = "admitRelay"
+observed = "Resolves 2.1.1: the sender marks relays (relay and origin envelope fields, sender id never rewritten); the receiver accepts them only in an open secp256k1 refresh session with the origin a participant other than the relaying peer and itself, admits the library's 32-byte echo-hash relays, logs the relaying peer, and the five-node secp256k1 refresh now completes."
+assumption = "The echo MsgMain counts votes by the authenticated relayer, so a relay reaches AddMessage with the relaying peer as sender id and the message's own id left as the original sender."
+severity = "note"
+
+[observation.2.1.3]
+task = "2.1"
+file = "human/wallet/attestor/internal/transport/session.go"
+symbol = "admitRelay"
+observed = "CGGMP signing and DKG also run the echo broadcast, so with relays limited to secp256k1 refresh the end-to-end EVM signing fails with peer 403 on the relayed round-one hash."
+assumption = "Needs an owner decision extending the relay rule to secp256k1 signing (and keygen) sessions; the rule and the test are left as decided."
+severity = "blocker"
+
+[observation.2.1.4]
+task = "2.1"
+file = "human/wallet/attestor/internal/transport/session.go"
+symbol = "admitRelay"
+observed = "Resolves 2.1.3 by engineering decision under the standing order: the library's echo broadcast runs in every CGGMP session, so marked relays are admitted in open secp256k1 keygen, sign and refresh sessions (keygen and sign kinds now split by curve) with every origin, participant, closed-session and body constraint of 2.1.2 unchanged."
+assumption = "Ed25519, add-share and generic sessions admit no relay and answer 403; unmarked foreign ids answer 403 in every session; the audit record keeps both the origin and the relaying peer."
+severity = "note"
+
+[observation.2.1.5]
+task = "2.1"
+file = "human/wallet/ceremony/internal/attestor/client.go"
+symbol = "ImportRequest"
+observed = "The ceremony client differs from human/wallet/schema/attestor-api/v1.kvx and its goldens: paths /v1/keys.import and /v1/keys.refresh against /v1/keys/import and /v1/keys/refresh; import sends curve, public_key, participants, threshold and ceremony at top level with hex-string partial keys where the daemon takes owner and a share object carrying curve, threshold and x/y points; sign sends bytes, context, authorisation and participants where the daemon takes kind-specific fields and signers; responses name audit_seq where the daemon answers audit_sequence."
+assumption = "The ceremony module is aligned to the schema file and its golden vectors by the task that owns it; the daemon and schema are left as implemented."
+severity = "suspect"
+
+[observation.2.1.6]
+task = "2.1"
+file = "human/wallet/attestor/internal/transport/session.go"
+symbol = "Flush"
+observed = "The library sends its echo-hash relays from detached goroutines, so a signer that reached Done could flush and close before relaying the last round, leaving a peer waiting for the vote until the session timed out."
+assumption = "Flush in relay-admitting sessions now also waits until the relays sent cover one per other peer for every echo-tracked original received, which is exactly how many the library relays."
+severity = "note"
+
+[observation.4.2.6]
+task = "4.2"
+file = "human/apps/wallet/e2e/sign-in.spec.ts"
+symbol = "EMAIL_CODE"
+observed = "Line 21 compared the literal EMAIL_CODE with 000000 and failed TS2367; it now compares String(EMAIL_CODE), so the wrong code is still the one that differs from the emailed code and the app type check exits 0."
+assumption = "The browser suite asserts the same rejected-code behaviour; no other line of the file changed."
+severity = "note"
+
+[observation.4.2.7]
+task = "4.2"
+file = "human/apps/wallet/src/account/KernelNotice.tsx"
+symbol = "KernelGate"
+observed = "The loading kernel state rendered with data-kernel unavailable, so the tests' wait settled before the endpoint answered; loading now renders as data-kernel checking and the verify command exits 0 with 33 tests across 6 files."
+assumption = "Every surface that shows the kernel notice treats the checking state as closed, as the gate already did."
+severity = "note"
+
+[observation.3.7.7]
+task = "3.7"
+file = "human/wallet/deploy/endpoint.toml"
+symbol = "[[files]]"
+observed = "The fourteen [[files]] mappings whose secrets chain-only mode leaves unset (client identity and its password, component, authority, identity, identity provisioning, registry and faucet tokens, four sequencer files, provisioning key, module registry) were removed, keeping the outbound CA and the two Redis credential files; the platform then wrote the three files and the binary started."
+assumption = "The kernel task restores those fourteen mappings together with their [env] path lines and LAYERX_GATEWAY_COMPONENT_URL; the blocker of observation 3.7.5 is met by the removal."
+severity = "note"
+
+[gate.3.2]
+revision = "49ef95c29d11e14f83a5a91d33456bb81bec09ca"
+command = "docker build -f platform/hosted/gateway/Dockerfile -t paxeer-shared-endpoint:deploy . && flyctl deploy --config human/wallet/deploy/endpoint.toml --image paxeer-shared-endpoint:deploy --app paxeer-shared-endpoint --local-only --ha=false && flyctl scale count 2 --app paxeer-shared-endpoint --region ams"
+exit_code = 0
+log_path = ".logs/deploy.log"
+observed = "The image built, two performance-4x 8 GB machines started and passed the readiness check, and eth_chainId, px_resolveAccount, px_getNetwork and a kernel lx_ call answered as expected with the kernel reported not configured."

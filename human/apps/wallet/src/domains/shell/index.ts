@@ -7,19 +7,9 @@ export const SHELL_ROUTE_NAMES = [
   'transactions',
   'swap',
   'discover',
-  'dex',
-  'colosseum',
-  'dao',
-  'paxfun',
-  'wormhole',
-  'points',
-  'paxscan',
   'pns',
-  'sidiora-fun',
-  'browser',
   'settings',
   'contacts',
-  'ramp',
   'token-detail',
   'tx-detail',
 ] as const;
@@ -28,7 +18,7 @@ export type ShellRouteName = (typeof SHELL_ROUTE_NAMES)[number];
 
 type StaticRouteName = Exclude<
   ShellRouteName,
-  'browser' | 'paxfun' | 'paxscan' | 'send' | 'token-detail' | 'tx-detail'
+  'send' | 'token-detail' | 'tx-detail'
 >;
 
 export type ShellRoute =
@@ -39,16 +29,9 @@ export type ShellRoute =
       readonly token: string;
       readonly symbol?: string;
     }
-  | { readonly name: 'tx-detail'; readonly hash: string }
-  | {
-      readonly name: 'paxfun';
-      readonly pool: string;
-      readonly symbol?: string;
-    }
-  | { readonly name: 'paxscan'; readonly path?: string }
-  | { readonly name: 'browser'; readonly url: string };
+  | { readonly name: 'tx-detail'; readonly hash: string };
 
-export type CustodyMode = 'embedded' | 'funded' | 'self-custody';
+export type CustodyMode = 'embedded' | 'injected';
 export type RouteDataState =
   | 'loading'
   | 'empty'
@@ -82,16 +65,7 @@ const ALL_STATES: Readonly<Record<RouteDataState, 'render'>> = {
   ready: 'render',
 };
 
-const ALL_CUSTODY: readonly CustodyMode[] = [
-  'embedded',
-  'funded',
-  'self-custody',
-];
-const SELF_AND_EMBEDDED: readonly CustodyMode[] = [
-  'embedded',
-  'self-custody',
-];
-const SELF_ONLY: readonly CustodyMode[] = ['self-custody'];
+const ALL_CUSTODY: readonly CustodyMode[] = ['embedded', 'injected'];
 
 function policy(
   custody: readonly CustodyMode[],
@@ -110,27 +84,14 @@ function policy(
 
 export const ROUTE_POLICIES: Readonly<Record<ShellRouteName, RoutePolicy>> = {
   portfolio: policy(ALL_CUSTODY),
-  send: policy(SELF_AND_EMBEDDED, { draftLifetime: 'route' }),
-  receive: policy(SELF_AND_EMBEDDED),
+  send: policy(ALL_CUSTODY, { draftLifetime: 'route' }),
+  receive: policy(ALL_CUSTODY),
   transactions: policy(ALL_CUSTODY),
   swap: policy(ALL_CUSTODY, { draftLifetime: 'route' }),
   discover: policy(ALL_CUSTODY),
-  dex: policy(SELF_ONLY, { recovery: 'discover', feature: 'dapp-browser' }),
-  colosseum: policy(SELF_ONLY, { recovery: 'discover', feature: 'dapp-browser' }),
-  dao: policy(SELF_ONLY, { recovery: 'discover', feature: 'dapp-browser' }),
-  paxfun: policy(SELF_ONLY, { recovery: 'discover', feature: 'dapp-browser' }),
-  wormhole: policy(SELF_ONLY, { recovery: 'discover', feature: 'dapp-browser' }),
-  points: policy(SELF_ONLY, { recovery: 'discover', feature: 'dapp-browser' }),
-  paxscan: policy(SELF_ONLY, { recovery: 'discover', feature: 'dapp-browser' }),
-  pns: policy(SELF_ONLY, { recovery: 'discover' }),
-  'sidiora-fun': policy(SELF_ONLY, {
-    recovery: 'discover',
-    feature: 'dapp-browser',
-  }),
-  browser: policy(SELF_ONLY, { recovery: 'discover', feature: 'dapp-browser' }),
+  pns: policy(ALL_CUSTODY, { recovery: 'discover' }),
   settings: policy(ALL_CUSTODY),
-  contacts: policy(SELF_AND_EMBEDDED, { recovery: 'settings' }),
-  ramp: policy(SELF_AND_EMBEDDED),
+  contacts: policy(ALL_CUSTODY, { recovery: 'settings' }),
   'token-detail': policy(ALL_CUSTODY),
   'tx-detail': policy(ALL_CUSTODY, {
     recovery: 'transactions',
@@ -141,7 +102,6 @@ export const ROUTE_POLICIES: Readonly<Record<ShellRouteName, RoutePolicy>> = {
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const HASH = /^0x[0-9a-fA-F]{64}$/;
 const SYMBOL = /^[A-Za-z0-9._+-]{1,20}$/;
-const PAXSCAN_PATH = /^\/[A-Za-z0-9._~:@%+/-]{0,512}$/;
 
 function invalid(message: string): ParseResult<never> {
   return issue('$route', 'invalid_format', message);
@@ -150,9 +110,7 @@ function invalid(message: string): ParseResult<never> {
 function isStaticRoute(name: string): name is StaticRouteName {
   return (
     (SHELL_ROUTE_NAMES as readonly string[]).includes(name) &&
-    !['browser', 'paxfun', 'paxscan', 'send', 'token-detail', 'tx-detail'].includes(
-      name,
-    )
+    !['send', 'token-detail', 'tx-detail'].includes(name)
   );
 }
 
@@ -164,7 +122,7 @@ export function parseRouteUrl(input: string | URL): ParseResult<ShellRoute> {
     return invalid('Route URL is invalid');
   }
   if (url.pathname !== '/') return invalid('Route path is invalid');
-  const allowed = new Set(['screen', 'token', 'symbol', 'hash', 'pool', 'path', 'url', 'to']);
+  const allowed = new Set(['screen', 'token', 'symbol', 'hash', 'to']);
   const keys = [...url.searchParams.keys()];
   if (
     keys.some((key) => !allowed.has(key)) ||
@@ -229,57 +187,6 @@ export function parseRouteUrl(input: string | URL): ParseResult<ShellRoute> {
       ? { ok: true, value: { name, hash: hash.toLowerCase() } }
       : invalid('Transaction route is invalid');
   }
-  if (name === 'paxfun') {
-    if (!hasOnly(['screen', 'pool', 'symbol'])) {
-      return invalid('Trade route is invalid');
-    }
-    const pool = url.searchParams.get('pool');
-    const symbol = url.searchParams.get('symbol');
-    if (!pool || !ADDRESS.test(pool) || (symbol !== null && !SYMBOL.test(symbol))) {
-      return invalid('Trade route is invalid');
-    }
-    return {
-      ok: true,
-      value: {
-        name,
-        pool: pool.toLowerCase(),
-        ...(symbol ? { symbol } : {}),
-      },
-    };
-  }
-  if (name === 'paxscan') {
-    if (!hasOnly(['screen', 'path'])) {
-      return invalid('Explorer route is invalid');
-    }
-    const path = url.searchParams.get('path');
-    if (path !== null && !PAXSCAN_PATH.test(path)) {
-      return invalid('Explorer route is invalid');
-    }
-    return {
-      ok: true,
-      value: { name, ...(path ? { path } : {}) },
-    };
-  }
-  if (name === 'browser') {
-    if (!hasOnly(['screen', 'url'])) {
-      return invalid('Browser route is invalid');
-    }
-    const raw = url.searchParams.get('url');
-    if (!raw || raw.length > 2_048) return invalid('Browser route is invalid');
-    try {
-      const destination = new URL(raw);
-      if (
-        destination.protocol !== 'https:' ||
-        destination.username ||
-        destination.password
-      ) {
-        return invalid('Browser route is invalid');
-      }
-      return { ok: true, value: { name, url: destination.toString() } };
-    } catch {
-      return invalid('Browser route is invalid');
-    }
-  }
   return issue('$route.name', 'unsupported_value', 'Route is unsupported');
 }
 
@@ -300,13 +207,7 @@ export const parseRouteQuery: BoundaryParser<ShellRoute> = (input) => {
           ? 'hash'
           : name === 'token-detail' || name === 'send'
             ? 'token'
-            : name === 'browser'
-              ? 'url'
-              : name === 'paxfun'
-                ? 'pool'
-                : name === 'paxscan'
-                  ? 'path'
-                  : 'value';
+            : 'value';
     }
     url.searchParams.set(target, value);
   }
@@ -326,16 +227,6 @@ export function serializeRoute(route: ShellRoute): string {
       break;
     case 'tx-detail':
       url.searchParams.set('hash', route.hash);
-      break;
-    case 'paxfun':
-      url.searchParams.set('pool', route.pool);
-      if (route.symbol) url.searchParams.set('symbol', route.symbol);
-      break;
-    case 'paxscan':
-      if (route.path) url.searchParams.set('path', route.path);
-      break;
-    case 'browser':
-      url.searchParams.set('url', route.url);
       break;
   }
   return `${url.pathname}${url.search}`;

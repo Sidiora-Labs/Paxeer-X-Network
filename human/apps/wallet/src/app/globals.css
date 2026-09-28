@@ -57,13 +57,20 @@
   --color-text-secondary: #aaa69f;
   --color-text-tertiary: #85827c;
   --color-text-disabled: #5e5c57;
-  --color-action-primary: #2262d1;
-  --color-action-primary-muted: #194796;
-  --color-action-on-primary: #111410;
   --color-status-success: #33c77a;
   --color-status-danger: #ff6972;
   --color-status-warning: #f3a63b;
   --color-status-info: #77a8f7;
+  --color-border-subtle: rgba(255, 255, 255, 0.12);
+  --color-border-strong: rgba(255, 255, 255, 0.15);
+  --color-overlay-scrim: rgba(0, 0, 0, 0.6);
+  --color-overlay-glass: rgba(27, 27, 25, 0.8);
+  --color-overlay-nav: rgba(22, 22, 21, 0.85);
+  --color-overlay-shimmer: rgba(227, 217, 212, 0.04);
+  --color-overlay-shimmer-strong: rgba(227, 217, 212, 0.08);
+  --color-action-primary: #2262d1;
+  --color-action-primary-muted: #194796;
+  --color-action-on-primary: #fffdf8;
   --pax-bg: var(--color-surface-base);
   --pax-surface: var(--color-surface-raised);
   --pax-card: var(--color-surface-card);
@@ -84,6 +91,16 @@
   --font-size-xl: 1.75rem;
   --line-height-tight: 1.2;
   --line-height-body: 1.5;
+  --font-weight-light: 300;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --font-sans: 'Paxeer Sans Rounded', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: 'Paxeer Sans Rounded', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --font-scale: 1;
+  --root-font-size: 100%;
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
@@ -106,6 +123,7 @@
   --motion-fast: 120ms;
   --motion-normal: 200ms;
   --motion-slow: 350ms;
+  --motion-scale: 1;
   --pax-ease: cubic-bezier(0.2, 0, 0, 1);
 }
 
@@ -134,6 +152,7 @@ body::-webkit-scrollbar {
 /* Mobile viewport fix */
 html {
   height: -webkit-fill-available;
+  font-size: var(--root-font-size);
 }
 body {
   min-height: 100vh;
@@ -155,7 +174,7 @@ body {
 
 /* Glass card utility */
 .glass-card {
-  background: rgba(27, 27, 25, 0.8);
+  background: var(--color-overlay-glass);
   backdrop-filter: saturate(180%) blur(20px);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
   border-radius: 1rem;
@@ -163,14 +182,14 @@ body {
 
 /* Glass nav */
 .glass-nav {
-  background: rgba(22, 22, 21, 0.85);
+  background: var(--color-overlay-nav);
   backdrop-filter: saturate(180%) blur(20px);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
 }
 
 /* PIN dot animation */
 .pin-dot {
-  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all calc(0.15s * var(--motion-scale)) cubic-bezier(0.4, 0, 0.2, 1);
 }
 .pin-dot-filled {
   background: var(--pax-accent);
@@ -192,14 +211,14 @@ body {
   100% { background-position: 200% 0; }
 }
 .shimmer {
-  background: linear-gradient(90deg, rgba(227,217,212,0.04) 25%, rgba(227,217,212,0.08) 50%, rgba(227,217,212,0.04) 75%);
+  background: linear-gradient(90deg, var(--color-overlay-shimmer) 25%, var(--color-overlay-shimmer-strong) 50%, var(--color-overlay-shimmer) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s ease-in-out infinite;
 }
 
 /* Active press feedback */
 .press-scale {
-  transition: transform 0.1s ease;
+  transition: transform calc(0.1s * var(--motion-scale)) ease;
 }
 .press-scale:active {
   transform: scale(0.97);
@@ -306,6 +325,15 @@ input[type="range"]::-moz-range-thumb {
     animation-iteration-count: 1 !important;
     transition-duration: 1ms !important;
   }
+}
+
+:root[data-motion="reduced"] *,
+:root[data-motion="reduced"] *::before,
+:root[data-motion="reduced"] *::after {
+  scroll-behavior: auto !important;
+  animation-duration: 1ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 1ms !important;
 }
 
 :focus-visible {

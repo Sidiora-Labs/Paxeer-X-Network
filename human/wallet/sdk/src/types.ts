@@ -210,3 +210,485 @@ export interface FundedDenyDetail {
   spender?: string;
   status?: FundedAccountStatus;
 }
+
+/* ============================================================================
+ * Shared endpoint, kernel and human service shapes
+ * ========================================================================== */
+
+export type JsonRpcParams = readonly unknown[];
+
+export interface JsonRpcCall {
+  method: string;
+  params: JsonRpcParams;
+}
+
+export interface JsonRpcErrorObject {
+  code: number;
+  message: string;
+  data?: unknown;
+}
+
+export type JsonRpcOutcome<T = unknown> =
+  | { ok: true; result: T }
+  | { ok: false; error: JsonRpcErrorObject };
+
+export interface UnifiedAccountDocument {
+  evm_address: `0x${string}` | null;
+  pax_address: string | null;
+  layerx_did: string | null;
+  layerx_account: string | null;
+  bound: boolean;
+}
+
+export interface PaxeerAccountHalf {
+  address: `0x${string}`;
+  balance: `0x${string}`;
+  nonce: `0x${string}`;
+}
+
+export interface JoinedAccount {
+  account: UnifiedAccountDocument;
+  paxeer: PaxeerAccountHalf | null;
+  layerx: Record<string, unknown> | null;
+}
+
+export interface CustodyAssetRecord {
+  asset_id: string;
+  denom: string;
+  pointer: `0x${string}`;
+  enabled: boolean;
+  paused: boolean;
+  minimum_deposit: string;
+  custody_cap: string;
+  custodied: string;
+  released: string;
+  pending: string;
+}
+
+export interface JoinedAsset {
+  asset_id: string;
+  layerx: Record<string, unknown>;
+  paxeer: CustodyAssetRecord | null;
+}
+
+export interface AssetMap {
+  assets: JoinedAsset[];
+  joined_limit: number;
+}
+
+export interface JoinedBalanceRow {
+  asset_id: string;
+  denom: string | null;
+  custody: CustodyAssetRecord | null;
+  paxeer: { denom: string; amount: string } | null;
+  layerx: Record<string, unknown> | null;
+}
+
+export interface JoinedBalances {
+  account: UnifiedAccountDocument;
+  balances: JoinedBalanceRow[];
+  joined_limit: number;
+}
+
+export type CompletionAsset =
+  | { kind: 'native'; symbol: string; decimals: number; denom?: string }
+  | { kind: 'erc20'; address: `0x${string}`; symbol?: string; decimals?: number };
+
+export interface CompletedBalance {
+  asset: CompletionAsset;
+  source: 'eth_getBalance' | 'erc20_balanceOf';
+  amount: string | null;
+  error: JsonRpcErrorObject | null;
+}
+
+export interface AccountBalances extends JoinedBalances {
+  asset_map: AssetMap;
+  join_limit_reached: boolean;
+  completed: CompletedBalance[];
+}
+
+export interface Capabilities {
+  exchange: boolean;
+  bridge: boolean;
+  launchpad: boolean;
+  probed_at: number;
+  rpc_height: string;
+}
+
+export type KernelReason = 'available' | 'not_configured' | 'unreachable' | 'no_finalised_checkpoint';
+
+export interface KernelStatus {
+  available: boolean;
+  reason: KernelReason;
+}
+
+export interface AnchorHead {
+  latest_finalized_batch: number | null;
+  status: number | null;
+  status_name: AnchorStatusName | null;
+  status_ladder: Record<string, string>;
+}
+
+export type AnchorStatusName = 'unknown' | 'submitted' | 'final';
+
+export interface NetworkHead {
+  network_id: string;
+  paxeer: { chain_id: `0x${string}`; latest_block: `0x${string}` };
+  layerx: { node_info: Record<string, unknown> | null };
+  anchor: AnchorHead | null;
+  kernel: KernelStatus;
+}
+
+export interface HistoryAssetMetadata {
+  asset: string;
+  chain: 'layerx' | 'paxeer';
+  kind: string;
+  address: string | null;
+  denom: string | null;
+  symbol: string | null;
+  decimals: number | null;
+  native_id: string | null;
+  pointer: string | null;
+  metadata: unknown;
+}
+
+export interface HistoryItem {
+  id: string;
+  height_or_seq: string;
+  chain: 'layerx' | 'paxeer';
+  kind: string;
+  direction: 'in' | 'out';
+  account: string;
+  counterparty: string | null;
+  asset: string;
+  amount: string;
+  tx_id: string;
+  ordinal: string;
+  final: boolean;
+  decoded: unknown;
+  asset_metadata: HistoryAssetMetadata | null;
+  side: 'layerx' | 'paxeer';
+}
+
+export interface HistoryPage {
+  account: UnifiedAccountDocument;
+  accounts: { side: 'layerx' | 'paxeer'; account: string }[];
+  items: HistoryItem[];
+  next_cursor: string | null;
+}
+
+export interface HistoryQuery {
+  limit?: number;
+  kind?: string;
+}
+
+export type KernelBackendName =
+  | 'core_agent_boundary'
+  | 'public_core'
+  | 'independent_receipt_authority'
+  | 'identity'
+  | 'program_registry';
+
+export interface KernelAvailable {
+  available: true;
+  reason: 'available';
+}
+
+export interface KernelUnavailableState {
+  available: false;
+  reason: Exclude<KernelReason, 'available'>;
+  backend: KernelBackendName | null;
+}
+
+export type KernelAvailabilityState = KernelAvailable | KernelUnavailableState;
+
+export type KernelRead<T> = { available: true; result: T } | KernelUnavailableState;
+
+export type KernelDocument = Record<string, unknown>;
+
+export interface HumanMoney {
+  amount: string;
+  currency: string;
+}
+
+export type IntentEndpointKind = 'paxeer-wallet' | 'human' | 'agent' | 'agent-budget';
+
+export interface IntentEndpoint {
+  kind: IntentEndpointKind;
+  account?: string;
+}
+
+export type IntentDomain = 'paxeer' | 'layerx';
+
+export interface PlanIntentRequest {
+  source: IntentEndpoint;
+  destination: IntentEndpoint;
+  asset_id: string;
+  money: HumanMoney;
+  constraints: { deadline: string; max_fee: HumanMoney; allow_top_up: boolean };
+}
+
+export interface IntentLeg {
+  index: number;
+  mechanism: string;
+  domain: IntentDomain;
+  source: IntentEndpoint;
+  destination: IntentEndpoint;
+  money: HumanMoney;
+  fee: HumanMoney;
+}
+
+export interface IntentSigningRequirement {
+  leg_index: number;
+  action_key: string;
+  signing_context: string;
+  authority: string;
+}
+
+export interface IntentPlan {
+  plan_digest: string;
+  journey_kind: string;
+  total_fee: HumanMoney;
+  legs: IntentLeg[];
+  signing_requirements: IntentSigningRequirement[];
+}
+
+export interface IntentLegBinding {
+  leg_index: number;
+  action_key: string;
+  actor: string;
+  authority: string;
+  relationship: string;
+  account_sequence: number;
+  not_before: number;
+  not_after: number;
+  fee_limit: HumanMoney;
+}
+
+export interface SubmitPlanRequest {
+  plan_digest: string;
+  signed_digest: string;
+  bindings: IntentLegBinding[];
+}
+
+export type JourneyState =
+  | 'getting-ready'
+  | 'sending'
+  | 'processing'
+  | 'done'
+  | 'done-finalised'
+  | 'still-checking'
+  | 'refused'
+  | 'waiting-for-you';
+
+export interface IntentSubmission {
+  journey_id: string;
+  plan_digest: string;
+  state: JourneyState;
+  state_copy_key: string;
+}
+
+export type EvidenceClass =
+  | 'local-journey-state'
+  | 'submission-record'
+  | 'layerx-receipt'
+  | 'checkpoint-proof'
+  | 'paxeer-finality'
+  | 'typed-refusal'
+  | 'approval-hold'
+  | 'wallet-ack';
+
+export type VerificationLevel = 'unverified' | 'receipt-verified' | 'checkpoint-finalised' | 'paxeer-finalised';
+
+export interface EvidenceRef {
+  evidence_id: string;
+  class: EvidenceClass;
+  verification: VerificationLevel;
+  settlement_domain?: string;
+}
+
+export interface JourneyStage {
+  stage_id: string;
+  copy_key: string;
+  state: JourneyState;
+  evidence: EvidenceRef[];
+}
+
+export type JourneyKind =
+  | 'onboarding'
+  | 'wallet-binding'
+  | 'deposit'
+  | 'withdraw'
+  | 'exit'
+  | 'move'
+  | 'agent-create'
+  | 'agent-fund'
+  | 'agent-pause'
+  | 'agent-retire';
+
+export interface Journey {
+  journey_id: string;
+  kind: JourneyKind;
+  state: JourneyState;
+  state_copy_key: string;
+  stages: JourneyStage[];
+  evidence: EvidenceRef[];
+  started_at: string;
+  updated_at: string;
+  refusal?: Record<string, unknown>;
+  wallet_request?: Record<string, unknown>;
+}
+
+export interface HumanErrorBody {
+  code: string;
+  copy_key: string;
+  retry: 'retriable' | 'retriable-after' | 'structural' | 'final';
+  retry_after_ms?: number;
+  field?: string;
+}
+
+export type ExplorerRung = 'pending' | 'instant' | 'sealed' | 'final';
+
+export interface ExplorerTransactionStatus {
+  rung: ExplorerRung;
+  block_number: number | null;
+  sealed_batch_number: number | null;
+  finalized_batch_number: number | null;
+  checkpoint_id: string | null;
+}
+
+/* ============================================================================
+ * EIP-1193 provider
+ * ========================================================================== */
+
+export type Hex = `0x${string}`;
+
+export interface RequestArguments {
+  readonly method: string;
+  readonly params?: readonly unknown[] | Record<string, unknown>;
+}
+
+export type ProviderEvent = 'connect' | 'disconnect' | 'accountsChanged' | 'chainChanged' | 'message';
+
+export type ProviderListener = (...args: unknown[]) => void;
+
+export interface Eip1193Provider {
+  request(args: RequestArguments): Promise<unknown>;
+  on(event: ProviderEvent, listener: ProviderListener): unknown;
+  removeListener(event: ProviderEvent, listener: ProviderListener): unknown;
+}
+
+export interface ProviderConnectInfo {
+  chainId: Hex;
+}
+
+export interface TransactionParams {
+  from?: Hex;
+  to?: Hex;
+  value?: Hex;
+  data?: Hex;
+  gas?: Hex;
+  maxFeePerGas?: Hex;
+  maxPriorityFeePerGas?: Hex;
+  nonce?: Hex;
+  chainId?: Hex;
+}
+
+export type UintInput = string | number | bigint;
+
+export interface SponsoredCall {
+  to: Hex;
+  value: UintInput;
+  data: Hex;
+}
+
+export interface SponsorQuote {
+  sponsor: Hex;
+  token: Hex;
+  maxTokenAmount: UintInput;
+  tokenAmount: UintInput;
+  deadline: UintInput;
+  quoteNonce: UintInput;
+  gasCost: UintInput;
+}
+
+export interface SponsoredBatchConstruction {
+  kind: 'sponsored_batch';
+  chainId: UintInput;
+  account: Hex;
+  nonce: UintInput;
+  calls: SponsoredCall[];
+  quote: SponsorQuote;
+}
+
+export interface Eip7702AuthorizationConstruction {
+  kind: 'eip7702_authorization';
+  chainId: UintInput;
+  address: Hex;
+  nonce: UintInput;
+}
+
+export type DigestConstruction = SponsoredBatchConstruction | Eip7702AuthorizationConstruction;
+
+export interface WireSponsoredBatch {
+  kind: 'sponsored_batch';
+  chainId: string;
+  account: Hex;
+  nonce: string;
+  calls: { to: Hex; value: string; data: Hex }[];
+  quote: {
+    sponsor: Hex;
+    token: Hex;
+    maxTokenAmount: string;
+    tokenAmount: string;
+    deadline: string;
+    quoteNonce: string;
+    gasCost: string;
+  };
+}
+
+export interface WireEip7702Authorization {
+  kind: 'eip7702_authorization';
+  chainId: string;
+  address: Hex;
+  nonce: string;
+}
+
+export type WireDigestConstruction = WireSponsoredBatch | WireEip7702Authorization;
+
+export interface SignTypedDataResponse {
+  signature: Hex;
+  address: Hex;
+}
+
+export interface SignDigestResponse {
+  signature: Hex;
+  address: Hex;
+}
+
+export interface SignCustodyResponse {
+  signature: Hex;
+  address: Hex;
+}
+
+export interface TypedDataPayload {
+  domain?: Record<string, unknown>;
+  types: Record<string, unknown>;
+  primaryType: string;
+  message: Record<string, unknown>;
+}
+
+export interface SponsoredSubmitRequest {
+  chain_id: string;
+  account: `0x${string}`;
+  to: `0x${string}`;
+  data: `0x${string}`;
+  value: string;
+  construction: WireSponsoredBatch;
+  account_signature: `0x${string}`;
+  relayer_signature: `0x${string}`;
+}
+
+export interface SponsoredSubmitResponse {
+  tx_hash: `0x${string}`;
+}

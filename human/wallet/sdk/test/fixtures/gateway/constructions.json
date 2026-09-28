@@ -1,0 +1,108 @@
+{
+  "address": "0xE1952Ec7230F058cd7fd9BCCb15964100e38ea04",
+  "sponsoredBatch": {
+    "kind": "sponsored_batch",
+    "chainId": "125",
+    "account": "0xE1952Ec7230F058cd7fd9BCCb15964100e38ea04",
+    "nonce": "3",
+    "calls": [
+      {
+        "to": "0x21f7b20a555199fa73A238B1a91FD0f549068fEe",
+        "value": "0",
+        "data": "0xa9059cbb0000000000000000000000003c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c00000000000000000000000000000000000000000000000000000000002625a0"
+      },
+      {
+        "to": "0x3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c",
+        "value": "1000000000000000",
+        "data": "0x"
+      }
+    ],
+    "quote": {
+      "sponsor": "0x5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+      "token": "0x21f7b20a555199fa73A238B1a91FD0f549068fEe",
+      "maxTokenAmount": "400000",
+      "tokenAmount": "311400",
+      "deadline": "4000000000",
+      "quoteNonce": "7",
+      "gasCost": "100000000000000"
+    }
+  },
+  "sponsoredBatchDigest": "0x700e36d4b28a94774d07d7ad545d42bbcac654940fcd88b4b90620c7e75c4322",
+  "eip7702Authorization": {
+    "kind": "eip7702_authorization",
+    "chainId": "125",
+    "address": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
+    "nonce": "4"
+  },
+  "eip7702AuthorizationDigest": "0xa501c698f0bd294728a0b3f68e8fa395affcfdd895c92c3954184ef2b9001333",
+  "typedData": {
+    "domain": {
+      "name": "Paxeer X Exchange",
+      "version": "1",
+      "chainId": 125,
+      "verifyingContract": "0x9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b"
+    },
+    "types": {
+      "EIP712Domain": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "version",
+          "type": "string"
+        },
+        {
+          "name": "chainId",
+          "type": "uint256"
+        },
+        {
+          "name": "verifyingContract",
+          "type": "address"
+        }
+      ],
+      "Order": [
+        {
+          "name": "maker",
+          "type": "address"
+        },
+        {
+          "name": "market",
+          "type": "uint32"
+        },
+        {
+          "name": "size",
+          "type": "uint256"
+        },
+        {
+          "name": "price",
+          "type": "uint256"
+        },
+        {
+          "name": "nonce",
+          "type": "uint64"
+        }
+      ]
+    },
+    "primaryType": "Order",
+    "message": {
+      "maker": "0xE1952Ec7230F058cd7fd9BCCb15964100e38ea04",
+      "market": 1,
+      "size": "1500000",
+      "price": "2750000000",
+      "nonce": "9"
+    }
+  },
+  "message": "Sign in to Paxeer X",
+  "transaction": {
+    "to": "0x3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c",
+    "value": "1000000000000000",
+    "data": "0x",
+    "gas": "21000",
+    "maxFeePerGas": "2000000000",
+    "maxPriorityFeePerGas": "1000000000",
+    "nonce": 11,
+    "chainId": 125
+  },
+  "custody": "0x4c583a435553544f44593a76319ccbb3f6dde2158db77b723656da5db0c94cbc4e6bcae932518f9bd1cfb83e5e"
+}

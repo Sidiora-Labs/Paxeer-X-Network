@@ -2,12 +2,15 @@
 
 import { useState } from 'react';
 import Image from 'next/image';
-import { Flame, Globe, ArrowRight, Zap, Sparkles, BarChart3, Activity, RefreshCw } from 'lucide-react';
+import { Flame, Zap, Sparkles, BarChart3, Activity, RefreshCw } from 'lucide-react';
 import { useRankingsQuery, type RankingCategory } from '@/lib/queries/rankings';
 import type { AppRoute } from '@/widgets/shell/useAppRoute';
+import { openExternalUrl } from '@/lib/security/navigation';
 import { DiscoverRankingSkeleton } from '@/components/ui/Skeletons';
 import { RankedTokenList } from './RankedTokenList';
 import { DiscoverCarousel } from './DiscoverCarousel';
+import Link from 'next/link';
+import { SURFACE_ROUTES } from '@/surfaces/routes';
 
 const BANNER_SLIDES = [
   { src: '/1c56896f-202b-4da0-a145-5e469abf0f85.png', alt: 'Paxeer Banner 1' },
@@ -17,7 +20,6 @@ const BANNER_SLIDES = [
 interface DiscoverWidgetProps {
   onNavigate: (route: AppRoute) => void;
   onTokenTrade?: (poolAddress: string, symbol?: string) => void;
-  onBrowse?: (url: string) => void;
 }
 
 const RANKING_TABS: { id: RankingCategory; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
@@ -28,39 +30,19 @@ const RANKING_TABS: { id: RankingCategory; label: string; icon: React.ComponentT
   { id: 'movers', label: 'Movers', icon: Activity },
 ];
 
-export function DiscoverWidget({ onNavigate, onTokenTrade, onBrowse }: DiscoverWidgetProps) {
+export function DiscoverWidget({ onNavigate, onTokenTrade }: DiscoverWidgetProps) {
   const [rankingCategory, setRankingCategory] = useState<RankingCategory>('trending');
-  const [urlInput, setUrlInput] = useState('');
 
   const { data: ranked = [], isFetching, isError, refetch } = useRankingsQuery(rankingCategory);
 
   return (
     <div className="grid grid-cols-2 gap-2.5 px-3 pt-3 pb-24">
 
-      {/* URL Bar */}
-      <div className="col-span-2 bg-pax-surface rounded-[20px] px-4 py-3">
-        <div className="flex items-center gap-2">
-          <div className="flex-1 flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.04]    transition-colors">
-            <Globe className="w-4 h-4 text-pax-muted shrink-0" />
-            <input
-              type="text" value={urlInput} onChange={(e) => setUrlInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && urlInput.trim()) { onBrowse?.(urlInput.trim()); setUrlInput(''); } }}
-              placeholder="Enter URL or search..."
-              className="flex-1 bg-transparent text-sm outline-none placeholder:text-white/20 min-w-0"
-            />
-          </div>
-          <button onClick={() => { if (urlInput.trim()) { onBrowse?.(urlInput.trim()); setUrlInput(''); } }} disabled={!urlInput.trim()}
-            className="p-2 rounded-xl bg-pax-accent/10 text-pax-accent press-scale disabled:opacity-30 transition-all shrink-0">
-            <ArrowRight className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-
       <div className="col-span-2 px-1 pt-1">
         <h3 className="text-[13px] font-bold text-pax-muted uppercase tracking-[0.06em]">Apps</h3>
       </div>
 
-      <button onClick={() => onNavigate('sidiora-fun')} className="row-span-2 bg-pax-surface rounded-[20px] p-4 flex flex-col justify-between text-left press-scale min-h-[200px]">
+      <button onClick={() => openExternalUrl('https://www.kindlelaunch.com')} className="row-span-2 bg-pax-surface rounded-[20px] p-4 flex flex-col justify-between text-left press-scale min-h-[200px]">
         <div className="w-[48px] h-[48px] rounded-2xl overflow-hidden shrink-0">
           <Image src="/Kindle-Launch-logo-dark.webp" alt="Sidiora.Fun" width={48} height={48} className="w-full h-full object-contain" />
         </div>
@@ -70,7 +52,7 @@ export function DiscoverWidget({ onNavigate, onTokenTrade, onBrowse }: DiscoverW
         </div>
       </button>
 
-      <button onClick={() => onNavigate('paxscan')} className="bg-pax-surface rounded-[20px] p-4 flex flex-col justify-between text-left press-scale min-h-[95px]">
+      <button onClick={() => openExternalUrl('https://paxscan.io')} className="bg-pax-surface rounded-[20px] p-4 flex flex-col justify-between text-left press-scale min-h-[95px]">
         <div className="w-[36px] h-[36px] rounded-xl overflow-hidden shrink-0">
           <Image src="/paxscan.svg" alt="PaxScan" width={36} height={36} className="w-full h-full object-contain" />
         </div>
@@ -83,6 +65,16 @@ export function DiscoverWidget({ onNavigate, onTokenTrade, onBrowse }: DiscoverW
         </div>
         <div className="mt-auto pt-2"><p className="text-[13px] font-bold">PNS</p></div>
       </button>
+
+      <div className="col-span-2 px-1 pt-1">
+        <h3 className="text-[13px] font-bold text-pax-muted uppercase tracking-[0.06em]">Paxeer X</h3>
+      </div>
+      {SURFACE_ROUTES.map((route) => (
+        <Link key={route.id} href={route.href} className="bg-pax-surface rounded-[20px] p-4 flex flex-col justify-between text-left press-scale min-h-[80px]">
+          <p className="text-[13px] font-bold">{route.label}</p>
+          <p className="text-[11px] text-pax-muted mt-1">{route.description}</p>
+        </Link>
+      ))}
 
       <DiscoverCarousel slides={BANNER_SLIDES} />
 

@@ -158,6 +158,7 @@ ac_3 = "THE app SHALL sign in through the gateway's identity flow, provision thr
 ac_4 = "THE app SHALL show the unified account: address, DID, binding state, one asset list with joined balances, one history, the status ladder per transaction, a custody deposit flow, and kernel-side plans with the kernel availability state."
 ac_5 = "THE app SHALL expose the exchange, bridge, launchpad, fee token choice and web data surfaces through the SDK modules, and the fee choice SHALL label every fee's denomination."
 ac_6 = "THE app SHALL carry its native projects, environment configuration and release tests in the repository, and its tests SHALL run under vitest and its end-to-end configuration under Playwright."
+ac_7 = "THE app SHALL offer a theme selection system - colour theme, accent, font family, size preset and density - resolved into design tokens applied before first paint, persisted on the device, with every surface rendered from those tokens and no hard-coded colour outside the theme module."
 
 [req.11]
 title = "Fees and Payments Across Both Networks"
@@ -475,7 +476,11 @@ status = "pending"
 
 [task.2.1]
 title = "Assemble the attestor daemon with its API and a five-node end-to-end test"
-status = "pending"
+status = "done"
+revision = "42f6e9ccc7d9d701df77dfef229089b04d316ea3"
+command = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./internal/server/... ./cmd/...'"
+exit_code = "0"
+log_path = ".logs/verify.log"
 wave = 2
 requires = ["1.1","1.2","1.3","1.4","1.5","1.6","1.7","1.8","1.9"]
 do_1 = "Add human/wallet/attestor/cmd/attestor and internal/server wiring configuration, store, transport, both signing wrappers, dealer import and refresh, policy, authentication, audit and health into the HTTP API of [decision] attestor_api over mutual TLS: keys.generate, keys.import (operator identity and ceremony flag only), keys.refresh, keys.addshare, sign and health, with session coordination so the same request posted to every participant runs one protocol session."
@@ -488,7 +493,7 @@ reqs = ["1.7","1.8","2.6"]
 
 [task.2.2]
 title = "Give the gateway a keyless signing core, a shared nonce store and an RPC pool"
-status = "pending"
+status = "done"
 wave = 2
 requires = ["1.10"]
 do_1 = "In human/wallet/gateway add an attestor client that selects a quorum by health and latency, posts the same sign request to each participant with one session id, collects the signature, and surfaces typed refusals; route /v1/wallet/sign, /v1/wallet/send, /v1/wallet/sign-message and typed-data signing through it for wallets flagged migrated and through the existing envelope path otherwise, with the flag read in the same transaction as the wallet row."
@@ -498,10 +503,14 @@ verify_cmd = "timeout 20m sh -c 'pnpm --dir human/wallet/gateway test'"
 symbols = ["AttestorClient","selectQuorum","NonceStore","RpcPool","signThroughAttestors"]
 touches = ["human/wallet/gateway/src/attestor/client.ts","human/wallet/gateway/src/attestor/quorum.ts","human/wallet/gateway/src/nonce/store.ts","human/wallet/gateway/src/rpc/pool.ts","human/wallet/gateway/src/routes/wallet.ts","human/wallet/gateway/src/audit.ts","human/wallet/gateway/test/attestor.test.ts","human/wallet/gateway/test/nonce.test.ts","human/wallet/gateway/test/rpc-pool.test.ts"]
 reqs = ["5.2","5.3","5.6"]
+revision = "9a10a60376872fd0689132f9c03aa4ad3b1098c2"
+command = "timeout 20m sh -c 'pnpm --dir human/wallet/gateway test'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.2.3]
 title = "Remove the funded lane and repair agent consent and request signing in the gateway"
-status = "pending"
+status = "done"
 wave = 2
 requires = ["1.10"]
 do_1 = "Remove the funded routes, the treasury evaluator, the tier tables, the fund and sweep paths and every configuration variable of the treasury from human/wallet/gateway, add a migration that marks funded wallets archived and excludes them from every query, and refuse any request naming one."
@@ -511,10 +520,14 @@ verify_cmd = "timeout 20m sh -c 'pnpm --dir human/wallet/gateway test'"
 symbols = ["claimAgent","verifyAgentRequest","archivedWalletGuard"]
 touches = ["human/wallet/gateway/src/routes/agent.ts","human/wallet/gateway/src/routes/agents.ts","human/wallet/gateway/src/agent/verify.ts","human/wallet/gateway/src/db/migrations/","human/wallet/gateway/test/agent.test.ts","human/wallet/gateway/test/funded-removed.test.ts"]
 reqs = ["5.4","5.5"]
+revision = "40965a18b9a8f67dfba6d6aff23e16980f36b88b"
+command = "timeout 20m sh -c 'pnpm --dir human/wallet/gateway test'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.2.4]
 title = "Build the SDK provider with EIP-1193, EIP-6963 and the custody hand-off"
-status = "pending"
+status = "done"
 wave = 2
 requires = ["1.10"]
 do_1 = "In human/wallet/sdk add an EIP-1193 provider class backed by the gateway routes implementing eth_requestAccounts, eth_accounts, eth_chainId, eth_sendTransaction, eth_signTypedData_v4, personal_sign, paxeer_signCustody (opaque custody bytes from the human service hand-off) and eth_sign restricted to the sponsored batch and EIP-7702 authorisation constructions passed as fields, with typed errors and event emission for accounts and chain."
@@ -524,10 +537,14 @@ verify_cmd = "timeout 20m sh -c 'pnpm --dir human/wallet/sdk test'"
 symbols = ["PaxeerProvider","announceProvider","discoverProviders","WalletInterface"]
 touches = ["human/wallet/sdk/src/provider.ts","human/wallet/sdk/src/eip6963.ts","human/wallet/sdk/src/wallet.ts","human/wallet/sdk/src/errors.ts","human/wallet/sdk/test/provider.test.ts","human/wallet/sdk/test/eip6963.test.ts"]
 reqs = ["9.1","9.2"]
+revision = "8adcc974532c6cd8f84b31c72be1a48567bdd96c"
+command = "timeout 20m sh -c 'pnpm --dir human/wallet/sdk test'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.2.5]
 title = "Add the typed Paxeer X modules and the gas station flow to the SDK"
-status = "pending"
+status = "done"
 wave = 2
 requires = ["1.10"]
 do_1 = "In human/wallet/sdk add modules for the exchange, bridge, launchpad, fee token and web data precompiles built on the ABI builders under agent/sdk/typescript, each returning transactions the provider signs, with decoders for their events."
@@ -537,10 +554,14 @@ verify_cmd = "timeout 20m sh -c 'pnpm --dir human/wallet/sdk test'"
 symbols = ["exchange","bridge","launchpad","feeToken","webData","gasStation","feeChoice"]
 touches = ["human/wallet/sdk/src/modules/exchange.ts","human/wallet/sdk/src/modules/bridge.ts","human/wallet/sdk/src/modules/launchpad.ts","human/wallet/sdk/src/modules/fee-token.ts","human/wallet/sdk/src/modules/web-data.ts","human/wallet/sdk/src/modules/gas-station.ts","human/wallet/sdk/test/modules.test.ts"]
 reqs = ["9.3","11.1"]
+revision = "6be7e1ef7d7325b4b3b0a35d5fa046c323318de7"
+command = "timeout 20m sh -c 'pnpm --dir human/wallet/sdk test'"
+exit_code = 0
+log_path = ".logs/verify-merged.log"
 
 [task.2.6]
 title = "Add the shared endpoint, kernel and human service clients and the status ladder to the SDK"
-status = "pending"
+status = "done"
 wave = 2
 requires = ["1.10"]
 do_1 = "In human/wallet/sdk add the shared endpoint client (px_resolveAccount, px_getAccount, px_getBalances with completion by eth_getBalance and ERC-20 calls, px_listAssets, px_getCapabilities, px_getUnifiedHistory by cursor, px_getNetwork with kernel availability) and the kernel read client (lx_getAccount, lx_getBalances, lx_getSequence, lx_getReceipt, lx_getActivityStatus) over one JSON-RPC base with batching."
@@ -550,10 +571,14 @@ verify_cmd = "timeout 20m sh -c 'pnpm --dir human/wallet/sdk test'"
 symbols = ["EndpointClient","KernelClient","HumanClient","statusLadder","KernelAvailability"]
 touches = ["human/wallet/sdk/src/endpoint.ts","human/wallet/sdk/src/kernel.ts","human/wallet/sdk/src/human.ts","human/wallet/sdk/src/ladder.ts","human/wallet/sdk/test/endpoint.test.ts","human/wallet/sdk/test/ladder.test.ts"]
 reqs = ["7.1","7.2","7.3","7.4","7.5","9.4"]
+revision = "9c6b0e58da8d6a27238705e37ef10677c457532f"
+command = "timeout 20m sh -c 'pnpm --dir human/wallet/sdk test'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.2.7]
 title = "Write the ceremony tool: read, verify, split, deliver, archive"
-status = "pending"
+status = "done"
 wave = 2
 requires = ["1.4","1.10"]
 do_1 = "Create the Go module human/wallet/ceremony reading wallet rows from a database connection string named by environment variable, decrypting the version-one key envelope exactly as the imported gateway encrypts it, deriving the address and refusing on mismatch, holding keys only in memory with zeroing after use, and never writing key material anywhere."
@@ -563,10 +588,14 @@ verify_cmd = "timeout 20m sh -c 'cd human/wallet/ceremony && go test -count=1 ./
 symbols = ["ReadWallets","OpenEnvelope","PlanMigration","Deliver","Archive"]
 touches = ["human/wallet/ceremony/go.mod","human/wallet/ceremony/cmd/ceremony/main.go","human/wallet/ceremony/internal/envelope/envelope.go","human/wallet/ceremony/internal/envelope/envelope_test.go","human/wallet/ceremony/internal/migrate/migrate.go","human/wallet/ceremony/internal/migrate/migrate_test.go","human/wallet/ceremony/internal/archive/archive.go","human/wallet/ceremony/internal/archive/archive_test.go"]
 reqs = ["4.1","4.2","4.4"]
+revision = "d168ddf225c4fa1ea4a5d6952d9e8b7375008e5d"
+command = "timeout 20m sh -c 'cd human/wallet/ceremony && go test -count=1 ./...'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.2.8]
 title = "Strip the app to embedded custody and injected wallets"
-status = "pending"
+status = "done"
 wave = 2
 requires = ["1.16"]
 do_1 = "In human/apps/wallet remove the self-custody vault, the PIN flow, the seed import and backup screens, the same-origin dapp proxy and its relay, the in-app browser and the browser plane, and the ramp screen, together with their routes, state, dependencies and tests."
@@ -576,10 +605,14 @@ verify_cmd = "timeout 20m sh -c 'pnpm --dir human/apps/wallet exec tsc --noEmit 
 symbols = ["app-shell"]
 touches = ["human/apps/wallet/src/","human/apps/wallet/browser-plane/","human/apps/wallet/proxy-relay/","human/apps/wallet/package.json","human/apps/wallet/playwright.wallet-app.config.ts"]
 reqs = ["10.2"]
+revision = "d168ddf225c4fa1ea4a5d6952d9e8b7375008e5d"
+command = "timeout 20m sh -c 'pnpm --dir human/apps/wallet exec tsc --noEmit && pnpm --dir human/apps/wallet exec vitest run'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.2.9]
 title = "Enforce kernel-side signing policy at the attestor"
-status = "pending"
+status = "done"
 wave = 2
 requires = ["1.6","1.7"]
 do_1 = "Add human/wallet/attestor/internal/policy/lx evaluating lx_activity requests: decode the envelope, match it field by field against the disclosure supplied with the request, enforce allowed modules, operations, amounts and destinations per account, and refuse unknown modules; evaluate lx_bind only for the account's own address and current nonce supplied by the caller and verified against the chain through the configured RPC; evaluate lx_grant and receive preimages within caps."
@@ -589,6 +622,10 @@ verify_cmd = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./
 symbols = ["EvaluateActivity","EvaluateBind","EvaluateGrant"]
 touches = ["human/wallet/attestor/internal/policy/lx/lx.go","human/wallet/attestor/internal/policy/lx/lx_test.go","human/wallet/attestor/internal/policy/kinds.go"]
 reqs = ["2.5","2.6"]
+revision = "9c6b0e58da8d6a27238705e37ef10677c457532f"
+command = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./internal/policy/lx/...'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 # --------------------------------------------------------------------------
 # WAVE 3 - INTEGRATION
@@ -662,7 +699,7 @@ reqs = ["3.4","3.3"]
 
 [task.3.6]
 title = "Put the app on the SDK provider and the gateway's identity flow"
-status = "pending"
+status = "done"
 wave = 3
 requires = ["2.4","2.8"]
 do_1 = "In human/apps/wallet route sign-in through the gateway's identity flow, provisioning through the gateway, and every transaction, message and typed data through the SDK provider, with injected wallets through the same wallet interface, removing any remaining direct RPC signing path."
@@ -671,22 +708,30 @@ verify_cmd = "timeout 20m sh -c 'pnpm --dir human/apps/wallet exec vitest run sr
 symbols = ["useWallet","WalletProvider"]
 touches = ["human/apps/wallet/src/wallet/","human/apps/wallet/src/app/","human/apps/wallet/package.json"]
 reqs = ["10.3"]
+revision = "5cfcebc073488137a524df1d472ab53593e50872"
+command = "timeout 20m sh -c 'pnpm --dir human/apps/wallet exec vitest run src/wallet'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.3.7]
 title = "Deploy the shared endpoint in chain-only mode"
-status = "pending"
+status = "done"
 wave = 3
-requires = ["1.15","1.12"]
+requires = ["1.15","1.12","3.9","3.11","3.12"]
 do_1 = "Build the endpoint image from the repository, deploy it from human/wallet/deploy/endpoint.toml with the chain RPC configured and the kernel backends unconfigured, verify eth_chainId, px_resolveAccount and px_getNetwork answer and that kernel methods return the typed unavailable error, and record the run in the qualification log without hosts."
 do_2 = "Extend tools/wallet/check-live.sh with an endpoint mode that performs those calls against a configured base."
 verify_cmd = "timeout 20m sh -c 'tools/wallet/check-live.sh endpoint'"
 symbols = ["check-live"]
-touches = ["tools/wallet/check-live.sh","tools/wallet/check-live.test.sh","spec/paxeer-x-wallet/qualification.kvx"]
+touches = ["tools/wallet/check-live.sh","tools/wallet/check-live.test.sh","spec/paxeer-x-wallet/qualification.kvx","human/wallet/deploy/redis.toml","human/wallet/deploy/env","human/wallet/deploy/endpoint.toml"]
 reqs = ["12.2"]
+revision = "49ef95c29d11e14f83a5a91d33456bb81bec09ca"
+command = "timeout 20m sh -c 'tools/wallet/check-live.sh endpoint'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.3.8]
 title = "Add the agent lane helpers to the SDK"
-status = "pending"
+status = "done"
 wave = 3
 requires = ["2.3","2.4"]
 do_1 = "In human/wallet/sdk add agent helpers that derive did:layerx from an Ed25519 public key, sign gateway requests end to end with the canonical digest, nonce and expiry the gateway verifies, sign the binding message for an agent wallet, and expose the claim flow."
@@ -695,6 +740,91 @@ verify_cmd = "timeout 20m sh -c 'pnpm --dir human/wallet/sdk test -- agent'"
 symbols = ["agentDid","signAgentRequest","signBinding"]
 touches = ["human/wallet/sdk/src/agent.ts","human/wallet/sdk/test/agent.test.ts"]
 reqs = ["9.5","6.6"]
+revision = "dcdee6a234b702d2869698f65dd8f72053323286"
+command = "timeout 20m sh -c 'pnpm --dir human/wallet/sdk test -- agent'"
+exit_code = 0
+log_path = ".logs/verify.log"
+
+[task.3.9]
+title = "Let the endpoint start in chain-only mode without kernel-side secrets"
+status = "done"
+wave = 3
+requires = ["1.15"]
+do_1 = "In platform/hosted/gateway/src/main.rs make config treat the client identity and its password, the four sequencer trust inputs, the key provisioning key and the module registry as kernel-side inputs: required exactly as today when LAYERX_GATEWAY_COMPONENT_URL is set, skipped when it is unset, mirroring configured_kernel, and refuse start-up with a named error when any of them is set without the component URL."
+do_2 = "Carry the absence through every consumer so kernel-dependent methods keep answering the typed unavailable error and chain-only readiness reports the kernel side as unconfigured; keep every response shape and openrpc.json unchanged."
+do_3 = "Add a degraded test that starts the endpoint through its real start-up configuration with only the chain RPC and the listener inputs set, asserts it serves eth_chainId and px_getNetwork, and asserts the named refusal when a kernel-side input is set without the component URL."
+verify_cmd = "timeout 20m sh -c 'cd platform && cargo test -p layerx-platform-gateway degraded'"
+symbols = ["config","configured_kernel"]
+touches = ["platform/hosted/gateway/src/main.rs","platform/hosted/gateway/tests/degraded.rs"]
+reqs = ["12.2"]
+revision = "04529bce25ea08763e3323b40c8e2a10e9a28e3f"
+command = "timeout 20m sh -c 'cd platform && cargo test -p layerx-platform-gateway degraded'"
+exit_code = 0
+log_path = ".logs/verify.log"
+
+[task.3.10]
+title = "Align the gas station module with the provider's construction signing path"
+status = "done"
+wave = 3
+requires = ["2.4","2.5"]
+do_1 = "In human/wallet/sdk make the gas station module's sign path call eth_sign with the provider's parameter order, the signer address, the locally computed sponsored batch digest and the construction object of kind sponsored_batch, so the provider recomputes the digest from the fields, accepts it, and forwards only the fields; keep one exported construction type shared by the module and the provider."
+do_2 = "Add tests that drive the module's sign path through PaxeerProvider against the in-test gateway server, proving acceptance for a correct batch and refusal when the digest or a field is altered, and that the agent SDK's digest for the same fields equals the module's."
+verify_cmd = "timeout 20m sh -c 'pnpm --dir human/wallet/sdk test -- modules provider'"
+symbols = ["gasStation.sign","SponsoredBatchConstruction"]
+touches = ["human/wallet/sdk/src/modules/gas-station.ts","human/wallet/sdk/src/provider.ts","human/wallet/sdk/src/types.ts","human/wallet/sdk/test/modules.test.ts","human/wallet/sdk/test/provider.test.ts"]
+reqs = ["9.1","9.2","9.3","11.1"]
+revision = "5cfcebc073488137a524df1d472ab53593e50872"
+command = "timeout 20m sh -c 'pnpm --dir human/wallet/sdk test -- modules provider'"
+exit_code = 0
+log_path = ".logs/verify.log"
+
+[task.3.11]
+title = "Make the endpoint's event producer optional in chain-only mode"
+status = "done"
+wave = 3
+requires = ["3.9"]
+do_1 = "Make the shared endpoint construct its payment and webhook event producer only when the producer's upstream URL is configured: when it is absent the endpoint starts without a producer, readiness reports the producer as unconfigured, and any path that would emit an event on the kernel side is already unavailable; when the upstream URL is set, the producer's credentials stay required exactly as today and a half-set producer is refused with a named error."
+do_2 = "Add a degraded test that starts the endpoint through its real start-up configuration with the chain-only inputs and no producer variables, asserts it serves eth_chainId and px_getNetwork and reports the producer unconfigured, and asserts the named refusal for a half-set producer."
+verify_cmd = "timeout 20m sh -c 'cd platform && cargo test -p layerx-platform-gateway degraded'"
+symbols = ["Client::from_environment","config"]
+touches = ["platform/hosted/internal/src/producer.rs","platform/hosted/gateway/src/main.rs","platform/hosted/gateway/tests/degraded.rs"]
+reqs = ["12.2"]
+revision = "d1ab833d7fccb398e1624b64b076f950f55a3493"
+command = "timeout 20m sh -c 'cd platform && cargo test -p layerx-platform-gateway degraded'"
+exit_code = 0
+log_path = ".logs/verify.log"
+
+[task.3.12]
+title = "Add a plain listener mode to the shared endpoint for deployment behind the platform proxy"
+status = "done"
+wave = 3
+requires = ["3.11"]
+do_1 = "Let the shared endpoint serve plain HTTP on its listener when LAYERX_GATEWAY_LISTENER is set to plain: the platform proxy terminates public TLS and forwards plain HTTP to the machine, so in that mode the endpoint refuses startup if LAYERX_GATEWAY_TLS_CERT_DER or LAYERX_GATEWAY_TLS_KEY_DER is set, naming the variable; when LAYERX_GATEWAY_LISTENER is unset or tls the listener terminates TLS exactly as today with the certificate and key required; any other value is refused by name; every route, the websocket upgrade, the request and connection limits and the timeouts behave identically in both modes."
+do_2 = "Switch human/wallet/deploy/endpoint.toml to the plain listener behind the platform's http_service: set LAYERX_GATEWAY_LISTENER to plain in its environment, drop the listener certificate and key paths and their two secret file mappings, keep the outbound CA and every other mapping, and make the readiness check speak http; document LAYERX_GATEWAY_LISTENER in human/wallet/deploy/env."
+do_3 = "Add degraded tests that start the real binary in plain mode with the chain-only inputs and see eth_chainId, px_getNetwork and readiness over plain HTTP, and that prove a plain listener with a certificate path set, and an unknown listener value, are each refused by name."
+verify_cmd = "timeout 20m sh -c 'cd platform && cargo test -p layerx-platform-gateway degraded'"
+symbols = ["serve","config"]
+touches = ["platform/hosted/gateway/src/main.rs","platform/hosted/gateway/tests/degraded.rs","human/wallet/deploy/endpoint.toml","human/wallet/deploy/env"]
+reqs = ["12.2"]
+revision = "3b2f4bd28b150cb5441c96d29b81eb4a99c3b42f"
+command = "timeout 20m sh -c 'cd platform && cargo test -p layerx-platform-gateway degraded'"
+exit_code = 0
+log_path = ".logs/verify.log"
+
+[task.3.13]
+title = "Resolve the SDK's curve and hash imports under both dependency majors"
+status = "done"
+wave = 3
+requires = ["3.8"]
+do_1 = "Import ed25519 from @noble/curves/ed25519.js and sha256 from @noble/hashes/sha2.js in the SDK agent module so the specifiers resolve against the 1.x line the SDK pins and the 2.x line the wallet app pins and dedupes to, matching the repository's other TypeScript SDK; behaviour unchanged."
+verify_cmd = "timeout 20m sh -c 'pnpm --dir human/wallet/sdk test -- agent && pnpm --dir human/apps/wallet exec vitest run src/wallet src/surfaces'"
+symbols = ["agentPublicKey","signAgentRequest"]
+touches = ["human/wallet/sdk/src/agent.ts"]
+reqs = ["9.5","6.6"]
+revision = "b77f562ef148da440993499207d601a1896a4733"
+command = "timeout 20m sh -c 'pnpm --dir human/wallet/sdk test -- agent && pnpm --dir human/apps/wallet exec vitest run src/wallet src/surfaces'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 # --------------------------------------------------------------------------
 # WAVE 4 - COMPLETION
@@ -719,7 +849,7 @@ reqs = ["6.2","5.6"]
 
 [task.4.2]
 title = "Show the unified account and the kernel surfaces in the app"
-status = "pending"
+status = "done"
 wave = 4
 requires = ["3.6","2.6"]
 do_1 = "In human/apps/wallet add the unified account view (address, DID, binding state), one asset list with joined balances completed by chain calls, one history with cursor paging, the status ladder per transaction, a custody deposit flow through the custody precompile, and kernel plans through the human service client with the kernel availability state shown and every kernel action disabled with its reason when unavailable."
@@ -728,10 +858,14 @@ verify_cmd = "timeout 20m sh -c 'pnpm --dir human/apps/wallet exec vitest run sr
 symbols = ["AccountView","AssetList","HistoryView","StatusLadder","DepositFlow","KernelPlan"]
 touches = ["human/apps/wallet/src/account/","human/apps/wallet/src/app/"]
 reqs = ["10.4","7.2","7.3","7.4","7.5"]
+revision = "e7a0153985f3bff4e9c08c4fe410bc7158ea9635"
+command = "timeout 20m sh -c 'pnpm --dir human/apps/wallet exec vitest run src/account'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.4.3]
 title = "Add the Paxeer X surfaces and the fee choice to the app"
-status = "pending"
+status = "done"
 wave = 4
 requires = ["3.6","2.5"]
 do_1 = "In human/apps/wallet add the exchange, bridge, launchpad, fee token and web data surfaces through the SDK modules, the fee choice labelling PAX gas, SID sponsored and SID native with denominations, the LayerX fee per leg shown separately, and 402 draws shown with their caps."
@@ -740,10 +874,14 @@ verify_cmd = "timeout 20m sh -c 'pnpm --dir human/apps/wallet exec vitest run sr
 symbols = ["ExchangeView","BridgeView","LaunchpadView","FeeChoice","WebDataView"]
 touches = ["human/apps/wallet/src/surfaces/","human/apps/wallet/src/app/"]
 reqs = ["10.5","11.1","11.3"]
+revision = "9442335562b93bf1239a206ab197bf77aba56d5e"
+command = "timeout 20m sh -c 'pnpm --dir human/apps/wallet exec vitest run src/surfaces'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.4.4]
 title = "Carry the app's native projects, configuration and release tests in the repository"
-status = "pending"
+status = "done"
 wave = 4
 requires = ["3.6"]
 do_1 = "Add the iOS and Android native projects generated for the app, the environment configuration by variable name, the release build scripts, and a Playwright suite over the remaining surfaces against the SDK's in-test gateway, keeping every secret out."
@@ -752,6 +890,10 @@ verify_cmd = "timeout 20m sh -c 'human/apps/wallet/scripts/release-check.sh'"
 symbols = ["release-check"]
 touches = ["human/apps/wallet/ios/","human/apps/wallet/android/","human/apps/wallet/scripts/release-check.sh","human/apps/wallet/playwright.wallet-app.config.ts","human/apps/wallet/e2e/"]
 reqs = ["10.6"]
+revision = "477b62b4e00f714cb83ca97654f18809744a6877"
+command = "timeout 20m sh -c 'human/apps/wallet/scripts/release-check.sh'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 [task.4.5]
 title = "Write the runbooks and the operator cutover checklist"
@@ -800,6 +942,23 @@ verify_cmd = "timeout 20m sh -c 'tools/wallet/scan-secrets.sh human/wallet/docs 
 symbols = ["security-review"]
 touches = ["human/wallet/docs/security-review.md","human/wallet/attestor/go.mod"]
 reqs = ["13.3"]
+
+[task.4.9]
+title = "Add the theme selection system to the app"
+status = "done"
+wave = 4
+requires = ["3.6"]
+do_1 = "In human/apps/wallet add src/theme/: a typed token schema covering colour (surface, text, action, status, border, overlay), typography (font family per role, a modular size scale, line heights, weights), spacing, radius, shadow and density; a catalogue of named colour themes (the current dark, a light theme, a high-contrast dark and a high-contrast light) each complete for every colour token, an accent palette choice applied to the action tokens with contrast-checked on-accent text, font choices (the bundled Paxeer Sans Rounded, a system stack, and a monospace stack for addresses and amounts), size presets (compact, regular, large) that scale the type scale, spacing and control heights together, and a density toggle; a resolver that turns a selection plus the system colour scheme and reduced-motion preferences into one flat set of CSS custom properties, keeping the existing --color-*, --pax-* and --radius-* names so tailwind.config.ts and every surface keep working."
+do_2 = "Add a ThemeProvider mounted in src/app/layout.tsx that applies the resolved properties on the root element, follows the system scheme when the selection says system, persists the selection on the device keyed by the signed-in account when one is present, and emits an inline bootstrap script that applies the stored selection before first paint so no theme flash occurs; add an Appearance section to the settings widget with pickers for colour theme, accent, font, size and density and a live preview card; migrate the remaining hard-coded colour literals under src/ (outside src/theme/ and globals.css) to tokens."
+do_3 = "Add tests under src/theme/ for the schema (every theme complete, every on-accent pair meets WCAG AA contrast), the resolver (system scheme, size presets scale together, reduced motion), persistence and account keying, the provider applying properties on the root, the bootstrap script output, the appearance pickers changing the applied properties, and a scan that fails on any hard-coded colour literal under src/ outside src/theme/ and src/app/globals.css."
+verify_cmd = "timeout 20m sh -c 'pnpm --dir human/apps/wallet exec vitest run src/theme'"
+symbols = ["ThemeProvider","useTheme","resolveTheme","themeCatalogue","AppearanceSettings"]
+touches = ["human/apps/wallet/src/theme/","human/apps/wallet/src/app/globals.css","human/apps/wallet/src/app/layout.tsx","human/apps/wallet/tailwind.config.ts","human/apps/wallet/src/widgets/settings/"]
+reqs = ["10.7"]
+revision = "94f3281695cb745b0fb7419411851811a96bcbfc"
+command = "timeout 20m sh -c 'pnpm --dir human/apps/wallet exec vitest run src/theme'"
+exit_code = 0
+log_path = ".logs/verify.log"
 
 # --------------------------------------------------------------------------
 # WAVE 5 - RELEASE

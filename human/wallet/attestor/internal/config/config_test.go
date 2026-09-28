@@ -209,3 +209,57 @@ func TestLoadDoesNotReadProcessEnvironment(t *testing.T) {
 		t.Fatalf("Load read the process environment: %v", err)
 	}
 }
+
+func TestLoadPeerPinsAndActivityTypes(t *testing.T) {
+	path := writeKey(t, t.TempDir(), "node.key", randomKey(t), 0o600)
+	pinB := strings.Repeat("ab", 32)
+	pinC := strings.Repeat("CD", 32)
+	env := baseEnv(t, path)
+	env[EnvPeerPins] = "node-2=" + pinB + ", node-3=" + pinC
+	env[EnvActivityTypes] = "0x30002, 0x10005,65543"
+	cfg, err := Load(getter(env))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.PeerPins["node-2"] != pinB || cfg.PeerPins["node-3"] != strings.ToLower(pinC) || len(cfg.PeerPins) != 2 {
+		t.Fatalf("pins %v", cfg.PeerPins)
+	}
+	want := []uint32{0x10005, 0x10007, 0x30002}
+	if len(cfg.ActivityTypes) != len(want) {
+		t.Fatalf("activity types %v", cfg.ActivityTypes)
+	}
+	for i := range want {
+		if cfg.ActivityTypes[i] != want[i] {
+			t.Fatalf("activity types %v, want %v", cfg.ActivityTypes, want)
+		}
+	}
+
+	delete(env, EnvPeerPins)
+	delete(env, EnvActivityTypes)
+	cfg, err = Load(getter(env))
+	if err != nil || len(cfg.PeerPins) != 0 || cfg.ActivityTypes != nil {
+		t.Fatalf("unset pins and types: %+v %v", cfg, err)
+	}
+
+	bad := map[string]map[string]string{
+		"missing peer pin": {EnvPeerPins: "node-2=" + pinB},
+		"unknown peer pin": {EnvPeerPins: "node-2=" + pinB + ",node-3=" + pinC + ",node-9=" + pinB},
+		"short pin":        {EnvPeerPins: "node-2=abcd,node-3=" + pinC},
+		"duplicate pin":    {EnvPeerPins: "node-2=" + pinB + ",node-2=" + pinB + ",node-3=" + pinC},
+		"no equals":        {EnvPeerPins: "node-2"},
+		"zero type":        {EnvActivityTypes: "0"},
+		"text type":        {EnvActivityTypes: "send"},
+		"duplicate type":   {EnvActivityTypes: "0x10005,65541"},
+	}
+	for name, extra := range bad {
+		t.Run(name, func(t *testing.T) {
+			e := baseEnv(t, path)
+			for k, v := range extra {
+				e[k] = v
+			}
+			if cfg, err := Load(getter(e)); err == nil {
+				t.Fatalf("Load accepted: %+v", cfg)
+			}
+		})
+	}
+}

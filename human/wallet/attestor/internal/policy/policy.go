@@ -281,6 +281,7 @@ type Request struct {
 
 type Context struct {
 	ChainID *big.Int
+	Account common.Address
 }
 
 type Destination struct {
@@ -395,7 +396,7 @@ func (p *Policy) Evaluate(account string, req Request, ledger Ledger) Decision {
 	if ledger == nil {
 		return denied(CodeLedgerError, "no ledger")
 	}
-	inspection, err := inspect(Context{ChainID: new(big.Int).Set(effective.chainID)}, req.View)
+	inspection, err := inspect(Context{ChainID: new(big.Int).Set(effective.chainID), Account: common.HexToAddress(account)}, req.View)
 	if err != nil {
 		var refusal *Refusal
 		if errors.As(err, &refusal) {

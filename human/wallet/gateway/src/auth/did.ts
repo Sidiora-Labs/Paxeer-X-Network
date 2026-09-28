@@ -9,8 +9,8 @@ import { createPublicKey, verify as cryptoVerify } from 'node:crypto';
  *   did:matrix:<label>:<keyfp>
  *
  * where <keyfp> = hex(ed25519_public_key)[:16] (first 8 bytes, 16 hex chars)
- * and <label> is a free-form suffix — in hosted Matrix it is the owner's
- * Supabase user_id, which is how we bind an agent to a human.
+ * and <label> is a free-form suffix. The label never binds an owner; a human
+ * claims an agent through the authenticated claim route.
  *
  * The DID embeds only the first 8 bytes of the public key, so the agent MUST
  * present the full 32-byte key at verify time. We:
@@ -23,7 +23,6 @@ import { createPublicKey, verify as cryptoVerify } from 'node:crypto';
  */
 
 const DID_RE = /^did:matrix:([A-Za-z0-9_-]{1,128}):([0-9a-f]{16})$/;
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // ASN.1 SPKI prefix for an Ed25519 public key (RFC 8410):
 //   SEQUENCE(0x30 0x2a) { SEQUENCE(0x30 0x05) { OID 1.3.101.112 } BIT STRING(0x03 0x21 0x00) }
@@ -41,11 +40,6 @@ export function parseDid(did: string): ParsedDid | null {
   const m = DID_RE.exec(did.trim());
   if (!m) return null;
   return { did: did.trim(), label: m[1]!, keyFingerprint: m[2]! };
-}
-
-/** True when the DID's label segment is a UUID (i.e. an owner Supabase id). */
-export function labelIsUuid(label: string): boolean {
-  return UUID_RE.test(label);
 }
 
 /** Strip an optional 0x prefix and lowercase. */
@@ -132,4 +126,21 @@ export function verifyAgentSignature(input: VerifyAgentSigInput): VerifyAgentSig
 
   if (!valid) return { ok: false, reason: 'bad_signature', parsed };
   return { ok: true, parsed, publicKeyHex: keyHex };
+}
+
+export function verifyEd25519(publicKeyHex: string, message: Buffer, signatureHex: string): boolean {
+  const rawKey = parsePublicKey(publicKeyHex);
+  if (!rawKey) return false;
+  const sigHex = stripHex(signatureHex);
+  if (!/^[0-9a-f]{128}$/.test(sigHex)) return false;
+  try {
+    const keyObject = createPublicKey({
+      key: Buffer.concat([ED25519_SPKI_PREFIX, rawKey]),
+      format: 'der',
+      type: 'spki',
+    });
+    return cryptoVerify(null, message, keyObject, Buffer.from(sigHex, 'hex'));
+  } catch {
+    return false;
+  }
 }

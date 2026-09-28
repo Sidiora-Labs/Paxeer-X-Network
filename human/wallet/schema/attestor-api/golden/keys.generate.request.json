@@ -1,0 +1,7 @@
+{
+  "session_id": "session-generate",
+  "key_id": "key-ed",
+  "curve": "ed25519",
+  "owner": "user-0001",
+  "account": "0x1111111111111111111111111111111111111111"
+}

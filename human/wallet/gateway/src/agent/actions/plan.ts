@@ -60,7 +60,7 @@ export async function buildLayerxDepositPlan(args: {
 }): Promise<ActionPlan> {
   const vault = env.LAYERX_VAULT_ADDRESS;
   if (!vault) throw new PlanError('INVALID_REQUEST', 'LayerX vault not configured');
-  const usdl = env.FUNDED_USDL_ADDRESS as `0x${string}`;
+  const usdl = env.LAYERX_USDL_ADDRESS as `0x${string}`;
 
   // Cheap, pure validations FIRST so a malformed request never round-trips the
   // RPC for token metadata.
@@ -69,7 +69,7 @@ export async function buildLayerxDepositPlan(args: {
   }
 
   const meta = await getErc20Metadata(usdl).catch(() => ({ decimals: null, symbol: null }));
-  const decimals = meta.decimals ?? env.FUNDED_USDL_DECIMALS;
+  const decimals = meta.decimals ?? env.LAYERX_USDL_DECIMALS;
 
   let amountWei: bigint;
   try {

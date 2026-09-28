@@ -1,7 +1,8 @@
 use super::{http, public_reads, rpc, ws_wire, Config, IncomingRequest};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
-use std::io::Write;
+use std::io::{Read, Write};
+use std::net::TcpStream;
 use std::sync::{mpsc, Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -403,10 +404,26 @@ fn valid_upgrade(request: &IncomingRequest) -> Option<String> {
     ws_wire::accept(header("sec-websocket-key"))
 }
 
-pub(super) fn serve(
+pub(super) trait Connection: Read + Write {
+    fn socket(&self) -> &TcpStream;
+}
+
+impl Connection for rustls::StreamOwned<rustls::ServerConnection, TcpStream> {
+    fn socket(&self) -> &TcpStream {
+        &self.sock
+    }
+}
+
+impl Connection for TcpStream {
+    fn socket(&self) -> &TcpStream {
+        self
+    }
+}
+
+pub(super) fn serve<S: Connection>(
     config: &Arc<Config>,
     request: &IncomingRequest,
-    stream: &mut rustls::StreamOwned<rustls::ServerConnection, std::net::TcpStream>,
+    stream: &mut S,
 ) -> Result<(), String> {
     let Some(accept) = valid_upgrade(request) else {
         return http::write_response(
@@ -446,20 +463,20 @@ pub(super) fn serve(
     start_feed(config)?;
     write!(stream, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\n\r\n").and_then(|()| stream.flush()).map_err(|e| e.to_string())?;
     stream
-        .sock
+        .socket()
         .set_read_timeout(Some(Duration::from_millis(50)))
         .map_err(|e| e.to_string())?;
     stream
-        .sock
+        .socket()
         .set_write_timeout(Some(Duration::from_secs(2)))
         .map_err(|e| e.to_string())?;
     session(config, request, stream, &receiver)
 }
 
-fn session(
+fn session<S: Connection>(
     config: &Config,
     request: &IncomingRequest,
-    stream: &mut rustls::StreamOwned<rustls::ServerConnection, std::net::TcpStream>,
+    stream: &mut S,
     receiver: &mpsc::Receiver<(u64, Value)>,
 ) -> Result<(), String> {
     let mut reader = ws_wire::Reader::default();

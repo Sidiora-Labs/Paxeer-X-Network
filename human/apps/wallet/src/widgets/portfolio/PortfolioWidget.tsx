@@ -21,7 +21,6 @@
 
 import { useCallback, useRef } from 'react';
 import { useWalletState } from '@/providers/WalletProvider';
-import { useWalletKind } from '@/providers/WalletKindProvider';
 import { formatBalance } from '@/lib/format';
 import { ErrorBanner } from '@/components/ui/NetworkErrorScreen';
 import { PortfolioSkeleton } from '@/components/ui/Skeletons';
@@ -33,7 +32,6 @@ import {
 import type { AppRoute } from '@/widgets/shell/useAppRoute';
 import { HeroBalance } from './HeroBalance';
 import { ActionBento } from './ActionBento';
-import { FundedStatusCard } from './FundedStatusCard';
 import { HoldingsFilter } from './HoldingsFilter';
 import { HoldingsGrid, type HoldingsGridHolding } from './HoldingsGrid';
 import { PaxCardExpand } from './PaxCardExpand';
@@ -47,9 +45,7 @@ export interface PortfolioWidgetProps {
 
 export function PortfolioWidget({ onNavigate, onTokenDetail }: PortfolioWidgetProps) {
     const { activeAccount } = useWalletState();
-    const { kind } = useWalletKind();
     const address = activeAccount?.address;
-    const isFunded = kind === 'funded';
 
     // ── Optimistic guard ─────────────────────────────────────────────────
     // While a post-send mutation is in flight, query hooks must skip background
@@ -113,33 +109,19 @@ export function PortfolioWidget({ onNavigate, onTokenDetail }: PortfolioWidgetPr
                 />
             )}
             <div className="grid grid-cols-2 gap-2.5 px-3 pt-3 pb-4">
-                {/*
-                  Funded mode replaces the standard "hero balance + PAX
-                  card" pair with a single status card that surfaces
-                  equity, drawdown headroom, and tier state — the metrics
-                  a funded trader actually cares about. Token holdings
-                  (HoldingsGrid) still render below so users can see what's
-                  in their funded wallet.
-                */}
-                {isFunded ? (
-                    <FundedStatusCard />
-                ) : (
-                    <HeroBalance
-                        totalUsd={totalUsd}
-                        loading={loading}
-                        paxPrice={paxPrice}
-                        dailyPnlUsd={balanceData?.daily_pnl_usd ?? null}
-                        dailyPnlPercent={balanceData?.daily_pnl_percent ?? null}
-                    />
-                )}
+                <HeroBalance
+                    totalUsd={totalUsd}
+                    loading={loading}
+                    paxPrice={paxPrice}
+                    dailyPnlUsd={balanceData?.daily_pnl_usd ?? null}
+                    dailyPnlPercent={balanceData?.daily_pnl_percent ?? null}
+                />
 
                 <ActionBento onNavigate={onNavigate} />
 
-                {!isFunded && (
-                    <div className="col-span-2">
-                        <PaxCardExpand address={address} onTokenDetail={onTokenDetail} />
-                    </div>
-                )}
+                <div className="col-span-2">
+                    <PaxCardExpand address={address} onTokenDetail={onTokenDetail} />
+                </div>
 
                 {allHoldings.length > 3 && (
                     <>

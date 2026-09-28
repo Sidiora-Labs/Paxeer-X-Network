@@ -18,5 +18,3 @@ process.env.DATABASE_URL ??= 'postgres://localhost:5432/test';
 process.env.HYPERPAXEER_RPC_URL ??= 'http://localhost:0/rpc';
 process.env.WALLET_MASTER_KEY ??= randomBytes(32).toString('base64');
 process.env.CORS_ORIGINS ??= 'http://localhost:3000';
-// FUNDED_TREASURY_PRIVATE_KEY is optional — leave unset so we exercise the
-// "treasury disabled" code paths in tests that don't depend on it.

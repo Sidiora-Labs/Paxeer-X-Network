@@ -15,9 +15,6 @@ const SOURCE_FILES = [
 ];
 
 const APPROVED_DIRECT_STORAGE = new Set([
-  'src/lib/wallet/PaxeerWallet.ts',
-  'src/lib/wallet/v2/adapters/indexeddb-storage-adapter.ts',
-  'src/lib/wallet/v2/core/legacy-migration-manager.ts',
   'src/platform/storage/registry.ts',
 ]);
 

@@ -10,7 +10,6 @@ import { withWalletLock } from '../util/walletLock.js';
 import {
   addBudget,
   addRule,
-  claimPrincipal,
   deactivateBudget,
   deleteRule,
   findPrincipal,
@@ -25,6 +24,7 @@ import {
 } from '../db/agents.js';
 import {
   agentWalletUserId,
+  archivedWalletGuard,
   findWalletByUserId,
   getSigningAccountForRow,
   logSignature,
@@ -237,19 +237,6 @@ export async function ownerRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ did: principal.did, is_frozen: false });
   });
 
-  // Claim an UNOWNED principal (e.g. a DID whose label wasn't a UUID).
-  app.post('/v1/agents/:did/claim', { preHandler: requireAuth }, async (req, reply) => {
-    const { did } = req.params as { did: string };
-    if (!parseDid(did)) return reply.code(400).send({ error: 'malformed_did' });
-    const principal = await findPrincipal(did);
-    if (!principal) return reply.code(404).send({ error: 'not_found' });
-    if (principal.owner_user_id && principal.owner_user_id !== req.user!.id) {
-      return reply.code(409).send({ error: 'already_owned', message: 'agent is owned by another user' });
-    }
-    const ok = await claimPrincipal(did, req.user!.id);
-    return reply.code(ok ? 200 : 409).send({ did, owner_user_id: ok ? req.user!.id : principal.owner_user_id });
-  });
-
   // ── Rules ─────────────────────────────────────────────────────────────────
 
   app.get('/v1/agents/:did/rules', { preHandler: requireAuth }, async (req, reply) => {
@@ -421,6 +408,11 @@ export async function ownerRoutes(app: FastifyInstance): Promise<void> {
     const agentWallet = await findWalletByUserId(agentWalletUserId(principal.did), 'agent');
     if (!agentWallet) {
       return reply.code(400).send({ error: 'agent_wallet_missing', message: 'agent has no wallet to sweep' });
+    }
+
+    if (parsed.data.to) {
+      const refusal = await archivedWalletGuard({ address: parsed.data.to });
+      if (refusal) return reply.code(refusal.status).send(refusal.body);
     }
 
     // Destination defaults to the owner's standard wallet.

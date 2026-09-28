@@ -1,0 +1,14 @@
+{
+  "session_id": "session-addshare",
+  "key_id": "key-evm",
+  "curve": "secp256k1",
+  "public_key": "021111111111111111111111111111111111111111111111111111111111111111",
+  "owner": "user-0001",
+  "new_participant_id": "node-6",
+  "quorum": [
+    "node-1",
+    "node-3",
+    "node-4",
+    "node-5"
+  ]
+}
