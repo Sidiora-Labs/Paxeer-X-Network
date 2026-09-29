@@ -229,3 +229,11 @@ command   = "timeout 20m tools/runtime/run-with-clock.sh sh -c 'cd human && carg
 exit_code = 0
 log_path  = ".logs/verify.log"
 observed  = "Three bearer admission tests passed after one build repair and one fixture repair; the run needed a dedicated cargo target directory."
+
+[gate.4.16.1]
+task      = "4.16"
+revision  = "62aa3831683469c8bcc2774090e00d72bb7bfa1d plus the lane's reactor change committed with this record"
+command   = "timeout 20m sh -c 'cd consensus && go test ./internal/blocksync/ -run TestAutoRestartIfBehind -count=1'"
+exit_code = 0
+log_path  = ".logs/verify.log"
+observed  = "The existing self-remediation table test and the new distance-trend test (shrinking, constant, growing distance, block-sync skip, cooldown skip) passed on the first run after one build of the blocksync package; do_2, the rolling binary swap across the full nodes, was not part of this run."
