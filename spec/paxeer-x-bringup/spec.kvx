@@ -198,7 +198,7 @@ status  = "pending"
 
 [task.0.1]
 title      = "Deliver the operator host-map contract and the bring-up live probe"
-status     = "pending"
+status     = "implemented"
 wave       = 0
 requires   = []
 do_1       = "Write tools/bringup/check-live.sh after tools/wallet/check-live.sh: a usage block, one function per subcommand of [design.probe], pass and fail lines with the observed value, CHECK_LIVE_TIMEOUT, exit 0 only when every check passes and 2 on usage; every subcommand of a later task is added by that task."
