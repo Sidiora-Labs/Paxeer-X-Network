@@ -4,7 +4,7 @@ kill_signal = "SIGTERM"
 kill_timeout = "30s"
 
 [build]
-  dockerfile = "human/wallet/gateway/Dockerfile"
+  dockerfile = "docker/wallet-gateway/Dockerfile"
 
 [env]
   NODE_ENV = "production"

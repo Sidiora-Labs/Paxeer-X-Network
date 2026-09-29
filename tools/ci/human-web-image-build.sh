@@ -12,7 +12,7 @@ failure the browser-performance job sees when it brings its cluster up.
 The context is a tar of every tracked file of the repository, with the
 environment files, the qualification logs and the two working notes left out,
 exactly as platform/hosted/tests/beta-cluster.sh packs it; the Dockerfile is
-human/apps/web/Dockerfile, read from inside that context. The build log is
+docker/web/Dockerfile, read from inside that context. The build log is
 written to the work directory and its path is printed on failure. When the
 image builds, its entry point is checked: the standalone server the image's
 command runs has to be present in the image.
@@ -30,7 +30,7 @@ REPO_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 IMAGE_REF=layerx-human-web:local
 WORK_DIR=$REPO_ROOT/build/human-web-image
 KEEP_IMAGE=0
-DOCKERFILE=human/apps/web/Dockerfile
+DOCKERFILE=docker/web/Dockerfile
 
 while [ "$#" -gt 0 ]; do
     case "$1" in

@@ -1453,3 +1453,18 @@ symbol = "HumanClient"
 observed = "The wallet SDK sends its identity as an Authorization bearer header while the human service admits only its __Host- session cookies, which are Secure, SameSite=Strict and never sent cross-site, and the human-api schema opens a session only from a passkey assertion_id; the wallet assertion sign-in exists in process (open_or_create_by_assertion) but has no HTTP operation, so a cross-origin wallet app cannot authenticate against the deployed service today."
 assumption = "One side of the contract must move before NEXT_PUBLIC_PAXEER_HUMAN_API is set: either the service admits the wallet assertion as a bearer credential on the plan and submit operations, or the wallet app is served from a listed origin and opens a service session; the authenticated proof stays implemented-not-qualified until the owner decides."
 severity = "high"
+
+[gate.6.10.verify]
+revision = "bcf3bd09a3eb6362384ba47aabd58a58dceadd01"
+command = "timeout 20m sh -c 'tools/containers/check.sh wallet-pwa web wallet-gateway wallet-attestor && docker build -f docker/wallet-pwa/Dockerfile -t paxeer-wallet-pwa:verify .'"
+exit_code = 1
+log_path = ".logs/verify-6.10-3.log"
+observed = "check.sh passes for the four services and the wallet-pwa image reaches npm run build, where webpack stops on node:child_process, node:crypto, node:https, node:http and node:path imported by agent/sdk/typescript/src through human/wallet/sdk/src/modules/index.ts into the client bundle of src/surfaces/SurfacePage.tsx; the first two runs (.logs/verify-6.10.log, .logs/verify-6.10-2.log) failed earlier on the Turbopack default and on the app-first module lookup, both repaired within the two cycles."
+
+[observation.6.10.1]
+task = "outside the container move"
+file = "human/wallet/sdk/src/modules/index.ts"
+symbol = "export from @sidiora/layerx-sdk"
+observed = "The wallet PWA client bundle imports the whole agent SDK index, whose node-mirror.ts, program-lifecycle.ts and agent-http.ts import node:child_process, node:crypto, node:https, node:http and node:path, so next build cannot finish and no image of the app can be produced from any Dockerfile."
+assumption = "Pre-existing in the app and SDK sources; needs a browser-safe SDK entry, left for the wallet SDK owner; the container move is complete and the gate is implemented, not qualified."
+severity = "high"

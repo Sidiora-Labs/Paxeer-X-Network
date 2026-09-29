@@ -1,7 +1,7 @@
 # Gateway rollback
 
 The wallet gateway runs as the application `paxeer-wallet-gateway` from
-`human/wallet/deploy/gateway.toml`, built from `human/wallet/gateway/Dockerfile`
+`human/wallet/deploy/gateway.toml`, built from `docker/wallet-gateway/Dockerfile`
 at the repository root and deployed with `--image` (observation 3.7.4). It
 applies the SQL files under `human/wallet/gateway/migrations` in filename
 order at start and never reverts one. A rollback therefore returns the

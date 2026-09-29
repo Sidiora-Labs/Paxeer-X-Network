@@ -1,0 +1,8 @@
+*
+!human/wallet
+**/.git
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+**/*.log

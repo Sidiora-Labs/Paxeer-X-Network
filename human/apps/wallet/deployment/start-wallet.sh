@@ -13,7 +13,7 @@ shutdown() {
 
 trap shutdown TERM INT EXIT
 
-PORT=3000 HOSTNAME=127.0.0.1 node /app/server.js &
+PORT=3000 HOSTNAME=127.0.0.1 node /app/human/apps/wallet/server.js &
 node_pid="$!"
 
 nginx -e /dev/stderr -c /etc/nginx/nginx.conf -g 'daemon off;' &

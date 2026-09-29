@@ -551,3 +551,27 @@ area    = "codify"
 symptom = "The guard tool reports no task in progress although a spec.kvx task is in_progress."
 cause   = "The guard reads Codify claims, not spec.kvx status."
 do      = "Treat the guard as advisory on kvx-driven lanes and keep the spec status as the record."
+
+[gotcha.89]
+area    = "wallet-app"
+symptom = "next build on the wallet app runs Turbopack and fails with Module not found on the SDK's .js specifiers, although the config defines a webpack function."
+cause   = "Next 16 defaults to Turbopack, and withSentryConfig injects a turbopack key so the guard that stops a webpack-only config never fires; Turbopack has no extension alias for externalDir sources."
+do      = "Build with next build --webpack and set experimental.extensionAlias for .js to .js, .ts and .tsx, as human/apps/web does."
+
+[gotcha.90]
+area    = "wallet-app"
+symptom = "Webpack reports Package path ./sha3 is not exported from @noble/hashes for an import inside ethers."
+cause   = "A global resolve.modules with the app's node_modules first makes every bare import, including nested pnpm dependencies, resolve to the app's own package versions."
+do      = "Scope the app-first lookup to the external SDK source directories through a module rule's resolve option and leave the global order alone."
+
+[gotcha.91]
+area    = "containers"
+symptom = "A per-Dockerfile ignore file that starts with * and then lists !dir exceptions looks like it would exclude everything."
+cause   = "BuildKit still walks excluded parents when a later exception has that directory as a prefix, and the last matching pattern wins."
+do      = "Use the whitelist form for small root-context images and put the excludes for .git, node_modules and environment files after the exceptions."
+
+[gotcha.92]
+area    = "wallet-app"
+symptom = "The wallet PWA image cannot be built from any Dockerfile: webpack stops on node:child_process, node:crypto, node:https, node:http and node:path."
+cause   = "human/wallet/sdk/src/modules/index.ts re-exports the whole agent SDK index, which includes Node-only modules, into the client bundle."
+do      = "Give the agent SDK a browser-safe entry or import only the browser-safe modules from the wallet SDK before expecting a wallet image build to pass."

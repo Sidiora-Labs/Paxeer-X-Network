@@ -1,0 +1,11 @@
+.git
+.logs
+build
+docs
+explorer
+human/apps
+**/node_modules
+**/target
+**/.next
+**/.env
+**/.env.*
