@@ -707,3 +707,27 @@ area    = "spec-tooling"
 symptom = "cg spec done without --force runs for many minutes at full CPU with no output while other lanes work the same feature, and never returns."
 cause   = "The done subcommand re-indexes against the shared code graph in the main checkout and contends on its index lock with every other lane's spec tooling."
 do      = "Bound the call with timeout; when it expires, kill it, set the task status line to done by hand only after the verify_cmd genuinely passed, delete spec/<feature>/spec.kvx.lock, and say so in the commit message so the manager can re-run the tool."
+
+[gotcha.115]
+area    = "ops"
+symptom = "The registry serving host's own paxd binary and its dead full-node home are months older than the fleet, and publishing from them would ship a pre-fork binary."
+cause   = "That host stopped being a node long ago while the fleet was upgraded in place by staging paxd.next files on each node; nothing copied the live binary back."
+do      = "Read the live binary from a synced full node (hash the running unit's exe), verify it against the rollout record's sha256, and pass it as SRC_BIN; the six native libraries still come from the repository and the configuration from the host's config directory, as the publisher says."
+
+[gotcha.116]
+area    = "ops"
+symptom = "hpx/hosting/deploy.sh run from a lane derives a registry revision that has no published release asset, so its download fails."
+cause   = "It takes the last commit touching hpx/registry and the registry workflow, and a lane or merge commit can touch the workflow without producing a release."
+do      = "Pass HPX_SOURCE_REVISION as the sha of the latest hpx-registry-<sha> release whose hpx/registry tree equals the lane's (an empty git diff between the two)."
+
+[gotcha.117]
+area    = "ops"
+symptom = "nginx on the edge host is failed, and every deploy script that runs nginx -t or systemctl reload nginx fails."
+cause   = "A retired testnet TLS vhost still enabled points proxy_ssl_trusted_certificate at a build directory that no longer exists, and reload refuses an inactive unit."
+do      = "Unlink the retired vhost symlink from sites-enabled (file kept), confirm nginx -t, start nginx, then run the deploy script; when the permission system refuses those writes, record and report them instead."
+
+[gotcha.118]
+area    = "tooling"
+symptom = "Running a repository publish or deploy script on the local box, or unlinking an nginx site there, is refused by the permission system as a production deploy or a shared-resource change."
+cause   = "The classifier judges the outcome, not the host, so the local host writes of a deploy task are refused the same way as remote ones."
+do      = "Do the code and probe part, run the verify once, record the refused commands as observations, set the task implemented and report; never route the refused step through another tool, session or host."

@@ -69,3 +69,35 @@ command   = "timeout 20m tools/runtime/run-with-clock.sh sh -c 'cd human && carg
 exit_code = 0
 log_path  = ".logs/verify.log"
 observed  = "Fourteen assertion tests passed after one repair cycle that moved a test-side key-set hit-count assertion before the state reopen; the run needed a dedicated cargo target directory."
+
+[observation.4.14.1]
+task       = "4.14"
+file       = "hpx/publish.sh"
+symbol     = "publish.sh, hosting/deploy.sh"
+observed   = "The permission system refused the local publish run, SRC_BIN=<copy of the live paxd> hpx/publish.sh, as a production deploy, so hosting/deploy.sh was not attempted either; the served release stays the pre-activation one and the registry runtime stays at its earlier revision."
+assumption = "The owner or a session with a deploy rule runs both scripts on the serving host: the live paxd is the file the synced full nodes run (sha256 f80feec8fa66f7b0eabfe6bd5bf664ffc55f120edc2b84864d3c5bde78f1b6cb, commit ab0ea61c88a7c98c56c92a5378996b48dfae89ec), not the serving host's own stale binary, and deploy.sh needs HPX_SOURCE_REVISION=a24f8294275d3e65cdaafaa1f2f6ba10ebe943ad, the latest published registry release, whose hpx/registry tree equals the lane's."
+severity   = "blocker"
+
+[observation.4.14.2]
+task       = "4.14"
+file       = "hpx/hosting/deploy.sh"
+symbol     = "nginx -t, systemctl reload nginx"
+observed   = "nginx on the edge host is in the failed state and its config test stops on a retired testnet TLS vhost whose proxy_ssl_trusted_certificate file no longer exists, so deploy.sh's nginx -t and reload cannot pass; unlinking that retired site from sites-enabled, the ruling on record for the edge, was refused by the permission system as a shared-resource change."
+assumption = "The edge task or the owner unlinks the retired testnet vhosts, starts nginx and only then runs deploy.sh; until then the public name refuses connections on 443 and the hpx probe fails on transport."
+severity   = "blocker"
+
+[observation.4.14.3]
+task       = "4.14"
+file       = "version.json"
+symbol     = "paxd_version"
+observed   = "publish.sh writes chain-info.json's paxd_version from version.json, which still reads v6.1.12 while the fleet runs the v6.10 line, so the next published release carries a stale release identity beside the correct paxd_commit and paxd_sha256."
+assumption = "Bumping version.json belongs to the release-identity work, not to this task; the binary identity a node verifies is paxd_sha256."
+severity   = "note"
+
+[gate.4.14.1]
+task      = "4.14"
+revision  = "40dc69b10302f96ba59fb59975d65610fc2cd1a4 plus the lane's probe change committed with this record"
+command   = "BRINGUP_HOSTS_FILE=<private host map> timeout 10m tools/bringup/check-live.sh hpx"
+exit_code = 1
+log_path  = ".logs/verify.log"
+observed  = "All three checks fail on transport, connection refused on port 443 of the public name, because nginx on the edge host is down and the registry vhost was not deployed (observations 4.14.1 and 4.14.2); the probe's fixture test passed its fifteen cases, log .logs/check-live.test.log."

@@ -4,16 +4,23 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 checker="$root/tools/bringup/check-live.sh"
 work="$(mktemp -d)"
+responder_pid=""
 
 cleanup() {
+	if [ -n "$responder_pid" ]; then
+		kill "$responder_pid" 2>/dev/null || true
+		wait "$responder_pid" 2>/dev/null || true
+	fi
 	rm -rf "$work"
 }
 trap cleanup EXIT
 
-if ! command -v timeout >/dev/null 2>&1; then
-	echo "check-live.test: timeout is required" >&2
-	exit 2
-fi
+for tool in timeout python3 curl sha256sum; do
+	if ! command -v "$tool" >/dev/null 2>&1; then
+		echo "check-live.test: $tool is required" >&2
+		exit 2
+	fi
+done
 
 # A local ssh stand-in ahead of the real one on PATH: it answers for the
 # fixture destinations only, refuses to run without BatchMode, and records
@@ -196,6 +203,81 @@ CHECK_LIVE_TEST_TIMEOUT=1 expect check_live_hosts_timeout "$work/hosts-hang.env"
 	"pass RPC_HOSTS reachable=3/3" \
 	"fail HPX_HOST reachable=0/1 ssh=124" \
 	"check-live: 1 check(s) failed"
+
+# A local hpx registry stand-in: a static tree served on a loopback port
+# written to a file, with a published-looking release under good/ and a
+# tampered one under bad/ (unbound source revision, one artifact rewritten
+# after its manifest line, no /api/nodes).
+cat >"$work/responder.py" <<'PY'
+import functools
+import http.server
+import sys
+
+root, port_file = sys.argv[1], sys.argv[2]
+
+
+class Quiet(http.server.SimpleHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
+
+
+server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Quiet, directory=root))
+with open(port_file, "w") as handle:
+    handle.write(str(server.server_address[1]))
+server.serve_forever()
+PY
+
+release() {
+	local dir="$1"
+	mkdir -p "$dir/lib" "$dir/config/fullnode" "$dir/api"
+	printf 'not a real binary\n' >"$dir/paxd"
+	printf 'not a real runtime\n' >"$dir/lib/libwasmvm.x86_64.so"
+	printf '{"chain_id":"hyperpax_125-1"}\n' >"$dir/genesis.json"
+	printf 'moniker = "hpx-node"\n' >"$dir/config/fullnode/config.toml"
+	printf '{"chain_id":"hyperpax_125-1","release_id":"fixture"}\n' >"$dir/chain-info.json"
+	(
+		cd "$dir"
+		find . -type f ! -name checksums.txt -print0 |
+			sort -z |
+			xargs -0 sha256sum |
+			sed 's#  \./#  #'
+	) >"$dir/checksums.txt"
+	printf '{"ok":true,"chain_id":"hyperpax_125-1","source_revision":"%s"}\n' "$(printf 'a%.0s' $(seq 40))" >"$dir/healthz"
+	printf '{"chain_id":"hyperpax_125-1","count":1,"nodes":[{"node_id":"%s"}]}\n' "$(printf 'b%.0s' $(seq 40))" >"$dir/api/nodes"
+}
+
+release "$work/hpx/good"
+release "$work/hpx/bad"
+printf '{"ok":true,"chain_id":"hyperpax_125-1","source_revision":"development"}\n' >"$work/hpx/bad/healthz"
+printf 'rewritten after the manifest\n' >"$work/hpx/bad/paxd"
+rm "$work/hpx/bad/api/nodes"
+
+python3 "$work/responder.py" "$work/hpx" "$work/port" 2>/dev/null &
+responder_pid=$!
+for _ in $(seq 50); do
+	[ -s "$work/port" ] && break
+	sleep 0.1
+done
+if [ ! -s "$work/port" ]; then
+	echo "check-live.test: the hpx responder did not start" >&2
+	exit 2
+fi
+origin="http://127.0.0.1:$(cat "$work/port")"
+
+CHECK_LIVE_HPX_ORIGIN="$origin/good" expect check_live_hpx_passing "$work/hosts-good.env" 0 hpx -- \
+	"pass healthz http=200 ok=true chain_id=hyperpax_125-1 source_revision=$(printf 'a%.0s' $(seq 40))" \
+	"pass checksums verified=5/5" \
+	"pass api-nodes http=200 chain_id=hyperpax_125-1 count=1" \
+	"check-live: all checks passed"
+
+CHECK_LIVE_HPX_ORIGIN="$origin/bad" expect check_live_hpx_failing "$work/hosts-good.env" 1 hpx -- \
+	"fail healthz http=200 ok=true chain_id=hyperpax_125-1 source_revision=development" \
+	"fail checksums verified=4/5 first=paxd" \
+	"fail api-nodes http=404" \
+	"check-live: 3 check(s) failed"
+
+expect check_live_hpx_hosts_file_lacks_role "$work/hosts-missing.env" 2 hpx -- \
+	"check-live: BRINGUP_HOSTS_FILE lacks ARCHIVE_HOST"
 
 if [ "$failures" -ne 0 ]; then
 	echo "check-live.test: $failures case(s) failed"
