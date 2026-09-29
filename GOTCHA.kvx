@@ -593,3 +593,21 @@ area    = "containers"
 symptom = "The same Dockerfile path is right in one referrer and wrong in the next after a move."
 cause   = "Compose resolves dockerfile relative to the build context, docker/build-push-action resolves file relative to the checkout, flyctl resolves build.dockerfile relative to the fly.toml directory, and the CLI resolves --file relative to the working directory."
 do      = "Check which base each referrer uses before rewriting the path: context-relative for compose, repository-relative for the workflows and the CLI, and remember the flyctl rule from gotcha.34."
+
+[gotcha.96]
+area    = "agent-sdk"
+symptom = "npm install --package-lock-only inside agent/sdk/typescript reports up to date and leaves the SDK's own package-lock.json unchanged while the repository root package-lock.json changes."
+cause   = "The root package.json lists agent/sdk/typescript as a workspace, so npm treats the repository root as the project and records the new dependency there; the container build runs npm ci against the SDK's own lock."
+do      = "Run npm install --prefix agent/sdk/typescript --workspaces=false --package-lock-only for the SDK lock and keep the root lock change too, both must carry the dependency."
+
+[gotcha.97]
+area    = "wallet-app"
+symptom = "next build compiles the wallet app and then stops in the TypeScript step with Route src/app/api/token-metadata/route.ts does not match the required types of a Next.js Route, naming a helper function."
+cause   = "Next 16 checks that a route module exports only the route fields, and the module exported its parser beside GET; the failure was never reached while webpack stopped earlier on the agent SDK's node imports."
+do      = "Keep helpers in route modules module-local or in a sibling module; expect the next gate in the chain to surface once an earlier build failure is fixed."
+
+[gotcha.98]
+area    = "agent-sdk"
+symptom = "A module that must run in the browser uses node:crypto for ECDH, HKDF and AES-GCM and Buffer for hex and latin1."
+cause   = "The xweb api envelope was written against Node primitives although its callers include the wallet SDK's browser bundle."
+do      = "Use @noble/curves secp256k1 getSharedSecret with the compressed output's x coordinate, @noble/hashes hkdf and randomBytes, @noble/ciphers gcm, and plain loops for hex and latin1; the byte layout matches Node's computeSecret, hkdfSync and createCipheriv with a 16-byte tag."

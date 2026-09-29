@@ -9,7 +9,7 @@ import {
   exchangeRequestSettlementCall,
   exchangeWithdrawMarginCall,
   type PrecompileEventSpec,
-} from '@sidiora/layerx-sdk';
+} from '@sidiora/layerx-sdk/browser';
 
 import {
   moduleAddress,

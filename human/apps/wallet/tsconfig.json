@@ -29,6 +29,9 @@
       "@paxeer/wallet": [
         "../../wallet/sdk/src/index.ts"
       ],
+      "@sidiora/layerx-sdk/browser": [
+        "../../../agent/sdk/typescript/src/browser.ts"
+      ],
       "@sidiora/layerx-sdk": [
         "../../../agent/sdk/typescript/src/index.ts"
       ],

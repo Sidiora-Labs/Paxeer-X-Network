@@ -11,7 +11,7 @@ import {
   type XWebApiCall,
   type XWebApiRequest,
   type XWebAttestorSet,
-} from '@sidiora/layerx-sdk';
+} from '@sidiora/layerx-sdk/browser';
 
 import {
   ModuleError,

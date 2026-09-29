@@ -3,6 +3,7 @@ import path from 'node:path';
 
 const walletSdk = path.resolve(__dirname, '../../wallet/sdk/src/index.ts');
 const layerxSdk = path.resolve(__dirname, '../../../agent/sdk/typescript/src/index.ts');
+const layerxSdkBrowser = path.resolve(__dirname, '../../../agent/sdk/typescript/src/browser.ts');
 
 export default defineConfig({
   test: {
@@ -13,6 +14,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@paxeer/wallet': walletSdk,
+      '@sidiora/layerx-sdk/browser': layerxSdkBrowser,
       '@sidiora/layerx-sdk': layerxSdk,
       '@': path.resolve(__dirname, 'src'),
     },

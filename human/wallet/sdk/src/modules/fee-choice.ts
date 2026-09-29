@@ -1,4 +1,4 @@
-import { SIDIORA_TOKEN } from '@sidiora/layerx-sdk';
+import { SIDIORA_TOKEN } from '@sidiora/layerx-sdk/browser';
 
 import { FEE_TOKEN_PRECOMPILE, SIDIORA_FEE_DECIMALS, SIDIORA_FEE_DENOM } from './fee-token.js';
 import { ModuleError, moduleAddress } from './index.js';

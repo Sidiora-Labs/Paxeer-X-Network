@@ -10,7 +10,7 @@ import {
   type GasStationConfig,
   type SignedGasQuote,
   type SponsoredBatch,
-} from '@sidiora/layerx-sdk';
+} from '@sidiora/layerx-sdk/browser';
 
 import { sponsoredBatchDigest, wireSponsoredBatch } from '../provider.js';
 import type {

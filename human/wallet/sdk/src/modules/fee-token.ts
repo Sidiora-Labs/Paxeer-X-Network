@@ -1,4 +1,4 @@
-import { SIDIORA_DECIMALS, encodeAbiCall } from '@sidiora/layerx-sdk';
+import { SIDIORA_DECIMALS, encodeAbiCall } from '@sidiora/layerx-sdk/browser';
 
 import {
   ModuleError,
