@@ -803,3 +803,9 @@ area    = "chain"
 symptom = "A public JSON-RPC name whose head advances at chain speed was still tens of thousands of blocks behind the tip, so a settlement test against it ran on stale state."
 cause   = "A lagging full node receives blocks at production rate and stays behind by a constant; head advancement cannot tell it from the tip and the RPC exposes no eth_syncing."
 do      = "Point LAYERX_NODE_PAXEER_RPC_URL at a name the fleet probe measured at lag zero before the run; keep the head-advance assertion as the in-band check."
+
+[gotcha.131]
+area    = "kernel"
+symptom = "An LNI balance read of a freshly bootstrapped agent main account is refused with -208 LXP_ERR_UNKNOWN_ACCOUNT_NAMESPACE although the name and the derived id are canonical."
+cause   = "The daemon returns that code for any id absent from the kernel account registry; a fresh genesis holds only the three system accounts and a main account is opened by its first credit or a sponsored onboarding, never by identity registration."
+do      = "Treat -208 on a read as account-not-yet-opened before suspecting the derivation; compare the name hash on both sides only after listing the DID's accounts through the kind-3 read."

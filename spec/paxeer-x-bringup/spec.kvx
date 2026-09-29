@@ -364,7 +364,7 @@ status  = "pending"
 
 [task.1.8]
 title      = "Make the node test's treasury balance read resolve under the kernel's account namespace"
-status     = "pending"
+status     = "in_progress"
 wave       = 1
 requires   = ["1.1"]
 do_1       = "Find why the probe's balance read of the treasury account that bootstrap.sh writes into node.env is refused by the kernel with LXP_ERR_UNKNOWN_ACCOUNT_NAMESPACE, the namespace byte of the account id, since the EVM account and identity were derived from one secret, and fix the root cause where the treasury account id is derived or registered: the probe's balance path, bootstrap.sh's treasury derivation or the sequencer's namespace registration, never by relaxing the kernel check or the test's assertion."
