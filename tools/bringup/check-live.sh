@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
 	cat <<'EOF'
-usage: tools/bringup/check-live.sh hosts
+usage: tools/bringup/check-live.sh {hosts|archive-node}
 
 Checks one system of the Paxeer X Network bring-up against its live answers.
 Every subcommand reads the operator's private host map from the file named
@@ -16,6 +16,20 @@ hosts     runs ssh true against every destination of every role of the host
           code of the first destination that did not answer (255 when ssh
           could not connect, 124 when CHECK_LIVE_TIMEOUT elapsed)
           Exits 0 only when every role passes.
+
+archive-node  reads the archive host's retention keys, paxd unit state and
+          public RPC name over ssh, then asks that name and the sixteen
+          public RPC names over HTTPS, printing three lines:
+  retention  "pass ARCHIVE_HOST retention min-retain-blocks=0 ss-keep-recent=0 paxd=active"
+             or the fail line with the values read (ssh=<exit> when the host
+             did not answer)
+  head       "pass ARCHIVE_HOST eth_blockNumber archive=<n> head=<m> gap=<d>"
+             where head is the highest answer of the sixteen public names
+             and the gap is at most ten blocks
+  history    "pass ARCHIVE_HOST eth_getBlockByNumber height=<h> hash=<hash>"
+             for h = archive head minus 200000, twice the 100000 blocks the
+             pruned public nodes retain
+          Exits 0 only when all three pass.
 
 Environment:
   BRINGUP_HOSTS_FILE   private env file assigning EDGE_HOST, KERNEL_HOST,
@@ -36,7 +50,7 @@ case "$mode" in
 	usage
 	exit 0
 	;;
-hosts) ;;
+hosts | archive-node) ;;
 *)
 	usage >&2
 	exit 2
@@ -50,7 +64,7 @@ fi
 
 timeout="${CHECK_LIVE_TIMEOUT:-30}"
 
-for tool in ssh timeout; do
+for tool in ssh timeout curl python3; do
 	if ! command -v "$tool" >/dev/null 2>&1; then
 		echo "check-live: $tool is required" >&2
 		exit 2
@@ -58,6 +72,9 @@ for tool in ssh timeout; do
 done
 
 roles=(EDGE_HOST KERNEL_HOST PLATFORM_HOST EXPLORER_HOST ARCHIVE_HOST VALIDATOR_HOSTS RPC_HOSTS HPX_HOST)
+
+# The sixteen public RPC names of docs/site/docs/reference/public-rpc.md.
+rpc_names=(api{1..16}.mainnet-beta.paxeer.network)
 
 # load_hosts: sources BRINGUP_HOSTS_FILE and exits 2 naming the first role it
 # lacks. Nothing read from the file is ever printed.
@@ -121,6 +138,125 @@ check_hosts() {
 			failures=$((failures + 1))
 		fi
 	done
+	finish "$failures"
+}
+
+# rpc <name> <method> <params>: posts one JSON-RPC request to https://<name>
+# bounded by CHECK_LIVE_TIMEOUT and prints "result <value>" (a string result
+# as is, a block as its number and hash) or "error <reason>".
+rpc() {
+	local body status=0
+	body="$(curl -sS --max-time "$timeout" -H 'content-type: application/json' \
+		--data "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"$2\",\"params\":$3}" \
+		"https://$1" 2>&1)" || status=$?
+	if [ "$status" -ne 0 ]; then
+		echo "error transport $(printf '%s' "$body" | tr '\n' ' ' | cut -c1-120)"
+		return 0
+	fi
+	printf '%s' "$body" | python3 -c '
+import json
+import sys
+
+try:
+    doc = json.loads(sys.stdin.read())
+except ValueError:
+    print("error non-json")
+    sys.exit(0)
+result = doc.get("result") if isinstance(doc, dict) else None
+error = doc.get("error") if isinstance(doc, dict) else None
+if isinstance(error, dict):
+    print("error " + " ".join(str(error.get("message", error)).split())[:120])
+elif isinstance(result, str):
+    print("result " + result)
+elif isinstance(result, dict):
+    print("result " + str(result.get("number")) + " " + str(result.get("hash")))
+else:
+    print("error no-result")
+'
+}
+
+# hex_to_dec <quantity>: prints the decimal value of a 0x-prefixed hex
+# quantity and nothing for anything else.
+hex_to_dec() {
+	if [[ "$1" =~ ^0x[0-9a-fA-F]+$ ]]; then
+		printf '%d' "$((16#${1#0x}))"
+	fi
+}
+
+# The read-only inspection the archive-node check runs on the archive host:
+# the public RPC name its nginx serves, the two retention keys of the hpx
+# node home and the paxd unit state, one line, none of it a host address.
+# shellcheck disable=SC2016
+archive_facts='name=$(sed -n "s/^[[:space:]]*server_name[[:space:]]*\([a-z0-9-]*\.mainnet-beta\.paxeer\.network\);.*/\1/p" /etc/nginx/sites-enabled/*.conf 2>/dev/null | head -n 1)
+retain=$(sed -n "s/^min-retain-blocks = //p" /root/.paxeer/config/app.toml 2>/dev/null)
+keep=$(sed -n "s/^ss-keep-recent = //p" /root/.paxeer/config/app.toml 2>/dev/null)
+unit=$(systemctl is-active paxd 2>/dev/null)
+printf "%s %s %s %s\n" "${name:-none}" "${retain:-none}" "${keep:-none}" "${unit:-none}"'
+
+check_archive_node() {
+	local failures=0 status=0 facts name retain keep unit dir i verdict value n head=0 archive="" deep hash
+	facts="$(timeout "$timeout" ssh -n -o BatchMode=yes -- "$ARCHIVE_HOST" "$archive_facts" 2>/dev/null)" || status=$?
+	read -r name retain keep unit <<<"$facts" || true
+	if [ "$status" -ne 0 ]; then
+		echo "fail ARCHIVE_HOST retention ssh=$status"
+		failures=$((failures + 1))
+		name=none
+	elif [ "$retain" = 0 ] && [ "$keep" = 0 ] && [ "$unit" = active ]; then
+		echo "pass ARCHIVE_HOST retention min-retain-blocks=0 ss-keep-recent=0 paxd=active"
+	else
+		echo "fail ARCHIVE_HOST retention min-retain-blocks=$retain ss-keep-recent=$keep paxd=$unit"
+		failures=$((failures + 1))
+	fi
+
+	dir="$(mktemp -d)"
+	trap 'rm -rf "$dir"' EXIT
+	for i in "${!rpc_names[@]}"; do
+		rpc "${rpc_names[$i]}" eth_blockNumber '[]' >"$dir/$i" &
+	done
+	wait
+	for i in "${!rpc_names[@]}"; do
+		read -r verdict value <"$dir/$i" || true
+		n="$(hex_to_dec "${value:-}")"
+		if [ "$verdict" = result ] && [ -n "$n" ] && [ "$n" -gt "$head" ]; then
+			head=$n
+		fi
+	done
+
+	verdict=""
+	value=""
+	if [ "$name" != none ]; then
+		read -r verdict value <<<"$(rpc "$name" eth_blockNumber '[]')" || true
+		if [ "$verdict" = result ]; then
+			archive="$(hex_to_dec "$value")"
+		fi
+	fi
+	if [ "$name" = none ]; then
+		echo "fail ARCHIVE_HOST eth_blockNumber public-name=none"
+		failures=$((failures + 1))
+	elif [ -z "$archive" ]; then
+		echo "fail ARCHIVE_HOST eth_blockNumber $verdict $value"
+		failures=$((failures + 1))
+	elif [ "$head" -gt 0 ] && [ $((head - archive)) -le 10 ]; then
+		echo "pass ARCHIVE_HOST eth_blockNumber archive=$archive head=$head gap=$((head - archive))"
+	else
+		echo "fail ARCHIVE_HOST eth_blockNumber archive=$archive head=$head gap=$((head - archive))"
+		failures=$((failures + 1))
+	fi
+
+	if [ -z "$archive" ]; then
+		echo "fail ARCHIVE_HOST eth_getBlockByNumber no-archive-head"
+		failures=$((failures + 1))
+	else
+		deep=$((archive - 200000))
+		hash=""
+		read -r verdict value hash <<<"$(rpc "$name" eth_getBlockByNumber "[\"$(printf '0x%x' "$deep")\",false]")" || true
+		if [ "$verdict" = result ] && [ "$(hex_to_dec "$value")" = "$deep" ] && [[ "$hash" =~ ^0x[0-9a-f]{64}$ ]]; then
+			echo "pass ARCHIVE_HOST eth_getBlockByNumber height=$deep hash=$hash"
+		else
+			echo "fail ARCHIVE_HOST eth_getBlockByNumber height=$deep $verdict $value $hash"
+			failures=$((failures + 1))
+		fi
+	fi
 	finish "$failures"
 }
 

@@ -22,3 +22,27 @@ symbol     = "load_hosts, check_hosts, usage"
 observed   = "cg spec done reran the verify_cmd itself (exit 0) and then refused with three graph checks failed: the symbol check finds no bash function at all, the long-standing functions of tools/wallet/check-live.sh included, since the graph holds shell scripts as full text only."
 assumption = "No shell-only task can pass cg spec done without --force until the graph defines shell function symbols; the task stays at implemented with its verify_cmd passing until the feature manager rules on the symbol gate."
 severity   = "blocker"
+
+[observation.4.3.1]
+task       = "4.3"
+file       = "tools/bringup/install-archive.sh"
+symbol     = "install-archive"
+observed   = "The archive host already ran paxd active and enabled under the hpx unit with min-retain-blocks 0, ss-keep-recent 0 and sc-keep-recent 0 in its app.toml, hpx present, and nginx serving its public RPC name over a Let's Encrypt certificate with the fleet vhost; the installer was written idempotent against that state and not run, since this run may not write on any host."
+assumption = "The task's state-sync keep-recent is the ss-keep-recent state-store key that the earlier archive conversion and the intended-shape survey name; the probe's retention line reads exactly those two keys."
+severity   = "note"
+
+[observation.4.3.2]
+task       = "4.3"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_archive_node"
+observed   = "The verify_cmd exits 1 on the head line only: the archive node answers a block 200000 below its head and reports catching_up false, yet its head trails the highest public answer by about 93500 blocks with its latest block time about five hours behind the clock, advances slower than the head, and sits only about 6000 blocks inside the 100000-block window the pruned public nodes retain."
+assumption = "A paxd restart on the archive host refills the gap through block sync while the pruned peers still hold those blocks; that is a remote write outside this run's scope, so the task stays implemented until an operator restarts the node and the probe is rerun."
+severity   = "blocker"
+
+[observation.4.3.3]
+task       = "4.3"
+file       = "tools/bringup/install-archive.sh"
+symbol     = "hpx setup, hpx update"
+observed   = "The hpx mirror name refused connections from the operator host during this run, so the installer's fresh-node, hpx download and published-release steps have no reachable authority, and the archive host's current paxd could not be compared with the mirror's publication."
+assumption = "The mirror returns with the hpx registry task; a fresh archive host state-syncs from the newest snapshot its peers offer, so the blocks before that point come from the explorer's history copy rather than from an earliest snapshot the node could choose."
+severity   = "suspect"

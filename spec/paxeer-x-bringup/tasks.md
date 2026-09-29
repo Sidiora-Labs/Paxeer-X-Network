@@ -140,7 +140,7 @@
     - Register the SID, PAX, USDC and USDL assets in the kernel registry from the kernel host and write tools/bringup/xweb-config.sh that renders the four sidecar configs with gateway.endpoint https://api.mainnet-beta.router.paxeer.network/rpc, the kernel host's sequencer id and public key, the registered asset ids and the owner-set PAX price, then restarts x-websearch@<slot> on both validator hosts.
     - Add the search subcommand: /health ok on every sidecar through https://search.paxeer.network, one paid /search returning 200 after PAYMENT-SIGNATURE settled at the router, and, once the submitters are funded, the XWebFulfilled event for the owner's request.
     - _Requirements: 13.1, 13.2_
-  - [ ] 4.3 Run the archive node with min-retain-blocks 0 on the archive host
+  - [ ] 4.3 Run the archive node with min-retain-blocks 0 on the archive host — **Implemented - qualification pending**
     - Install paxd at the live release on the archive host through hpx with HPX_TYPE=fullnode, set min-retain-blocks 0 and the state-sync keep-recent to 0, sync from the earliest reachable snapshot, and keep its public RPC name serving the JSON-RPC over TLS as the other fifteen do.
     - Add the archive-node subcommand: eth_getBlockByNumber for a block below the public nodes' first retained height answers a block and eth_blockNumber is within ten of a public node.
     - _Requirements: 14.1_
