@@ -12,7 +12,7 @@
     - Source BRINGUP_HOSTS_FILE in a load_hosts function that exits 2 naming the first missing role of EDGE_HOST, KERNEL_HOST, PLATFORM_HOST, EXPLORER_HOST, ARCHIVE_HOST, VALIDATOR_HOSTS, RPC_HOSTS and HPX_HOST, and never echoes a value; implement the hosts subcommand as one ssh true per role.
     - Write tools/bringup/check-live.test.sh after tools/wallet/check-live.test.sh proving the usage exit, a passing subcommand and a failing subcommand against local fixtures with no network.
     - _Requirements: 4.1, 4.2, 4.3_
-  - [ ] 0.2 Create the internal CA on the edge host and issue per-service certificates on their hosts
+  - [ ] 0.2 Create the internal CA on the edge host and issue per-service certificates on their hosts — **Implemented - qualification pending**
     - Write tools/bringup/ca.sh with init (CA key and certificate under /etc/layerx/ca on the edge host, 0600, printing only the fingerprint) and issue <service> <role> (the target host generates key and CSR under /etc/layerx/<service>/tls, the edge signs with the SAN list the pod definition declares plus localhost and the loopback address for loopback-reached services, the certificate is copied back; the key never leaves the host).
     - Take the SAN list per service from platform/hosted/tests/beta-cluster.sh issue_cert calls so the receipt authority, core, agent boundary, identity, internal, registry, gateway, human and interop certificates match what their clients verify.
     - Add the ca subcommand to tools/bringup/check-live.sh: every issued certificate chains to the CA, carries its SANs and expires in more than thirty days.

@@ -22,3 +22,11 @@ symbol     = "load_hosts, check_hosts, usage"
 observed   = "cg spec done reran the verify_cmd itself (exit 0) and then refused with three graph checks failed: the symbol check finds no bash function at all, the long-standing functions of tools/wallet/check-live.sh included, since the graph holds shell scripts as full text only."
 assumption = "No shell-only task can pass cg spec done without --force until the graph defines shell function symbols; the task stays at implemented with its verify_cmd passing until the feature manager rules on the symbol gate."
 severity   = "blocker"
+
+[observation.0.2.1]
+task       = "0.2"
+file       = "tools/bringup/ca.sh"
+symbol     = "ca_issue, check_ca"
+observed   = "The CA exists on the edge host and the fixture test proves init, issue and the ca probe (timeout 10m tools/bringup/check-live.test.sh, exit 0, .logs/test.log), but no certificate has been issued on the kernel, platform or validator hosts: this session may not write on any remote host, and its one run of timeout 10m tools/bringup/check-live.sh ca against the host map was denied by the session's permission system as a production read, so no exit code or log exists for it."
+assumption = "The remote issuance, one tools/bringup/ca.sh issue <service> <role> per line of tools/bringup/ca.sh services run from the edge host, is the missing step; until it runs the probe reports cert=absent for every service and exits 1."
+severity   = "blocker"

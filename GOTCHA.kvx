@@ -653,3 +653,15 @@ area    = "spec-tooling"
 symptom = "cg sync and cg index exit 124 under a timeout while a fleet runs, and cg spec done reports the graph refresh skipped because the database is busy."
 cause   = "Every worktree shares one graph database and one indexing gate, and any cg process in another lane holds it."
 do      = "Do not wait on the index inside a task; run the verify_cmd yourself, record it, and let the graph catch up after the commit."
+
+[gotcha.106]
+area    = "test"
+symptom = "A probe loop that feeds a while-read from a here-string stops after its first iteration under the test's ssh stand-in although the real ssh runs every iteration."
+cause   = "The stand-in ignored the -n flag and piped its stdin through tee, so it consumed the rest of the here-string that the loop was reading."
+do      = "Make every ssh stand-in honour -n by redirecting its stdin from /dev/null before running the command; the code under test may rely on that documented ssh behaviour."
+
+[gotcha.107]
+area    = "test"
+symptom = "An assertion on the exact number of days a fresh certificate has left fails one run and passes the next."
+cause   = "Whole-day arithmetic on notAfter minus now reads one day less as soon as a second has elapsed since signing."
+do      = "Assert a prefix of the day count or a range, never the exact number, for material signed inside the same test run."
