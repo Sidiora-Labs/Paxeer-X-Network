@@ -585,7 +585,7 @@ reqs       = ["13.1", "13.2"]
 
 [task.4.3]
 title      = "Run the archive node with min-retain-blocks 0 on the archive host"
-status     = "pending"
+status     = "implemented"
 wave       = 4
 requires   = ["0.1"]
 do_1       = "Install paxd at the live release on the archive host through hpx with HPX_TYPE=fullnode, set min-retain-blocks 0 and the state-sync keep-recent to 0, sync from the earliest reachable snapshot, and keep its public RPC name serving the JSON-RPC over TLS as the other fifteen do."

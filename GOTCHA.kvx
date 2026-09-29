@@ -725,3 +725,27 @@ area    = "bringup-probe"
 symptom = "A probe that asks sixteen public RPC names for eth_blockNumber one after another reports the synced names as lagging by ten to thirty blocks."
 cause   = "Each request takes a fraction of a second and the chain advances several blocks a second, so names asked first fall behind names asked last by more than the ten-block window."
 do      = "Ask every name at once in background jobs into per-name files, wait, then compare the answers against the highest one."
+
+[gotcha.118]
+area    = "chain"
+symptom = "A full node reports catching_up false while its head trails the public head by tens of thousands of blocks and its latest block time is hours old."
+cause   = "Once block sync hands over to consensus the flag never returns to true; a node that then falls behind is fed old blocks by its peers at about chain speed and never closes the gap."
+do      = "Judge sync by the gap to the highest public answer and by the latest block time against the clock, never by catching_up alone; restart the node so block sync refills the gap while the pruned peers still hold those blocks, and treat a gap approaching their retention window as urgent."
+
+[gotcha.119]
+area    = "tooling"
+symptom = "hpx setup looks interactive: it prompts for the node type, moniker, public address and a confirmation."
+cause   = "The type menu reads the terminal only when HPX_TYPE is unset; the other prompts read stdin and take their defaults on an empty line, and the script does not set -e."
+do      = "Run HPX_TYPE=fullnode hpx setup with stdin from /dev/null for a non-interactive install with the default moniker and detected address."
+
+[gotcha.120]
+area    = "chain"
+symptom = "jq over the node's /status with .result.sync_info prints nulls, and jq tonumber rejects EVM quantities such as 0x19afc7d."
+cause   = "The fork's CometBFT status answers the document at the top level without a result wrapper, and jq parses decimal only."
+do      = "Read .sync_info directly and convert quantities in bash with $((16#${q#0x}))."
+
+[gotcha.121]
+area    = "tooling"
+symptom = "shellcheck reports SC2016 on a single-quoted command string that is sent to a remote shell."
+cause   = "The expansions inside it are meant for the remote shell, which shellcheck cannot know."
+do      = "Keep the single quotes and put a shellcheck disable=SC2016 directive on the line above, as the probe does for its remote inspection."
