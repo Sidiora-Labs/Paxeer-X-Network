@@ -1458,7 +1458,12 @@ reqs = ["12.2"]
 
 [task.6.4]
 title = "Deploy the human service to the platform and check it live"
-status = "pending"
+status = "done"
+revision = "2e5ee46aba1fa82a848e9a10803375bf12dd63c7"
+command = "timeout 10m sh -c 'tools/wallet/check-live.test.sh && CHECK_LIVE_HUMAN_BASE=https://paxeer-human-service.fly.dev CHECK_LIVE_HUMAN_ORIGIN=https://app.paxportwallet.com tools/wallet/check-live.sh human'"
+exit_code = 0
+log_path = ".logs/verify-6.4.log"
+evidence = "Verify exit code 0: thirty-four responder cases pass including the seven human cases, and the deployed service answers live 200, the preflight from the wallet origin with the matching allow-origin, and the unauthenticated plan with the structured 401 envelope; deploy recorded under gate.6.4.deploy, readiness and rate-key findings under observation.6.4.1 and 6.4.2."
 wave = 6
 requires = ["6.3"]
 do_1 = "Create the application paxeer-human-service in the platform organisation and deploy the image built from docker/human-service/Dockerfile with human/wallet/deploy/human.toml; no database is created because the service keeps file-based stores with in-process migrations; record the deploy in spec/paxeer-x-wallet/qualification.kvx without hosts."
@@ -1473,7 +1478,7 @@ title = "Prove the authenticated human-api path from the wallet identity against
 status = "pending"
 wave = 6
 requires = ["6.4"]
-do_1 = "With a staged wallet identity assertion in CHECK_LIVE_HUMAN_ASSERTION, open a session through the operation the human-api schema declares for the wallet assertion, plan a kernel send with the golden intent plan body under that session and expect the plan shape the contract declares; add this as the human-session mode of tools/wallet/check-live.sh with its responder cases in tools/wallet/check-live.test.sh."
+do_1 = "Once the human-api schema declares an HTTP operation that opens a session from the wallet identity assertion (today session.open takes only a passkey assertion_id and the wallet assertion sign-in exists only in process), open a session with a staged assertion from CHECK_LIVE_HUMAN_ASSERTION, plan a kernel send with the golden intent plan body under that session and expect the plan shape the contract declares; add this as the human-session mode of tools/wallet/check-live.sh with its responder cases in tools/wallet/check-live.test.sh."
 do_2 = "Record in spec/paxeer-x-wallet/qualification.kvx the contract gap between the wallet SDK, which sends a bearer authorization header, and the service, which admits only its same-site session cookies, so the owner can decide which side moves before the wallet app sets NEXT_PUBLIC_PAXEER_HUMAN_API."
 verify_cmd = "timeout 10m sh -c 'tools/wallet/check-live.test.sh && CHECK_LIVE_HUMAN_BASE=https://paxeer-human-service.fly.dev CHECK_LIVE_HUMAN_ORIGIN=https://app.paxportwallet.com tools/wallet/check-live.sh human-session'"
 symbols = ["human-session","check-live"]

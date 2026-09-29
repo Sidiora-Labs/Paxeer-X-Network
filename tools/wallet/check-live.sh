@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
 	cat <<'EOF'
-usage: tools/wallet/check-live.sh endpoint | attestors | gateway | cutover
+usage: tools/wallet/check-live.sh endpoint | attestors | gateway | cutover | human
 
 Checks a deployed wallet service against its live answers.
 
@@ -38,6 +38,18 @@ gateway   reads a deployed wallet gateway at CHECK_LIVE_GATEWAY_BASE and prints
              identity, a main account id and binding_state bound
           Exits 0 only when both checks pass.
 
+human     reads a deployed human service at CHECK_LIVE_HUMAN_BASE as the wallet
+          origin CHECK_LIVE_HUMAN_ORIGIN and prints one line per check:
+  live       GET <base>/livez answers 200 with result.live true and
+             result.service layerx-human-service
+  preflight  OPTIONS <base>/v1/intents/plan from the origin answers 2xx with
+             access-control-allow-origin equal to the origin
+  plan       POST <base>/v1/intents/plan from the origin with the golden plan
+             request body and no session answers the structured envelope:
+             http 401, ok false, error.code unauthenticated and a trace;
+             a 5xx or a non-envelope body fails
+          Exits 0 only when all three checks pass.
+
 cutover   reads the public wallet hostname CHECK_LIVE_CUTOVER_HOST over https,
           through whatever proxy serves it, and confirms the new gateway
           answers, one line per check:
@@ -56,6 +68,8 @@ Environment:
   CHECK_LIVE_CA              CA bundle that authenticates https bases
   CHECK_LIVE_GATEWAY_BASE    base URL of the wallet gateway
   CHECK_LIVE_GATEWAY_TOKEN   access token of a provisioned test identity
+  CHECK_LIVE_HUMAN_BASE      base URL of the human service
+  CHECK_LIVE_HUMAN_ORIGIN    https origin of the wallet app the service must admit
   CHECK_LIVE_CUTOVER_HOST    public wallet hostname, optionally with :port
                              (CHECK_LIVE_CA, when set, authenticates it)
   CHECK_LIVE_TIMEOUT         seconds per request, default 30
@@ -70,7 +84,7 @@ case "$mode" in
 	usage
 	exit 0
 	;;
-endpoint | attestors | gateway | cutover) ;;
+endpoint | attestors | gateway | cutover | human) ;;
 *)
 	usage >&2
 	exit 2
@@ -311,6 +325,110 @@ else:
 	exit 0
 }
 
+human() {
+	local base="${CHECK_LIVE_HUMAN_BASE:-}" origin="${CHECK_LIVE_HUMAN_ORIGIN:-}"
+	local failures=0 check raw status verdict golden
+	if [ -z "$base" ]; then
+		echo "check-live: CHECK_LIVE_HUMAN_BASE is required" >&2
+		usage >&2
+		exit 2
+	fi
+	if [ -z "$origin" ]; then
+		echo "check-live: CHECK_LIVE_HUMAN_ORIGIN is required" >&2
+		usage >&2
+		exit 2
+	fi
+	base="${base%/}"
+	golden="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/human/schema/human-api/golden/intent.plan.request.json"
+	for check in live preflight plan; do
+		status=0
+		case "$check" in
+		live)
+			raw="$(curl -sS --max-time "$timeout" -i -H "origin: $origin" "$base/livez" 2>&1)" || status=$?
+			;;
+		preflight)
+			raw="$(curl -sS --max-time "$timeout" -i -X OPTIONS -H "origin: $origin" -H 'access-control-request-method: POST' -H 'access-control-request-headers: authorization,content-type,idempotency-key' "$base/v1/intents/plan" 2>&1)" || status=$?
+			;;
+		plan)
+			raw="$(python3 -c 'import json, sys; print(json.dumps(json.load(open(sys.argv[1]))["body"]))' "$golden" |
+				curl -sS --max-time "$timeout" -i -X POST -H "origin: $origin" -H 'content-type: application/json' --data-binary @- "$base/v1/intents/plan" 2>&1)" || status=$?
+			;;
+		esac
+		if [ "$status" -ne 0 ]; then
+			verdict="fail transport $(printf '%s' "$raw" | tr '\n' ' ' | cut -c1-200)"
+		else
+			verdict="$(printf '%s' "$raw" | python3 -c '
+import json
+import sys
+
+check, origin = sys.argv[1], sys.argv[2]
+raw = sys.stdin.read()
+head, sep, body = raw.partition("\r\n\r\n")
+if not sep:
+    head, sep, body = raw.partition("\n\n")
+lines = head.split("\n")
+parts = lines[0].strip().split(" ")
+code = parts[1] if len(parts) > 1 else "?"
+headers = {}
+for line in lines[1:]:
+    name, colon, value = line.partition(":")
+    if colon:
+        headers[name.strip().lower()] = value.strip()
+try:
+    doc = json.loads(body) if body.strip() else None
+except ValueError:
+    doc = None
+
+
+def show():
+    if doc is not None:
+        return json.dumps(doc, separators=(",", ":"), sort_keys=True)[:200]
+    return " ".join(body.split())[:200] or "empty"
+
+
+if check == "live":
+    result = doc.get("result") if isinstance(doc, dict) else None
+    if code == "200" and isinstance(result, dict) and result.get("live") is True and result.get("service") == "layerx-human-service":
+        print("pass http=200 live=true service=layerx-human-service")
+    else:
+        print("fail http=" + code + " " + show())
+elif check == "preflight":
+    allow = headers.get("access-control-allow-origin")
+    if code.startswith("2") and allow == origin:
+        print("pass http=" + code + " allow-origin=" + allow)
+    else:
+        print("fail http=" + code + " allow-origin=" + str(allow))
+else:
+    error = doc.get("error") if isinstance(doc, dict) else None
+    if (
+        code == "401"
+        and isinstance(doc, dict)
+        and doc.get("ok") is False
+        and isinstance(error, dict)
+        and error.get("code") == "unauthenticated"
+        and isinstance(doc.get("trace"), str)
+    ):
+        print("pass http=401 code=unauthenticated trace=present")
+    else:
+        print("fail http=" + code + " " + show())
+' "$check" "$origin")"
+		fi
+		case "$verdict" in
+		pass\ *) echo "pass $check ${verdict#pass }" ;;
+		*)
+			echo "fail $check ${verdict#fail }"
+			failures=$((failures + 1))
+			;;
+		esac
+	done
+	if [ "$failures" -ne 0 ]; then
+		echo "check-live: $failures check(s) failed"
+		exit 1
+	fi
+	echo "check-live: all checks passed"
+	exit 0
+}
+
 # served_by_request <url>: GET the URL and print the status code, the value of
 # the last x-served-by response header (or "none") and the body on separate
 # lines; exits with curl's status on a transport error.
@@ -409,6 +527,10 @@ print(("pass " if code == "200" and named and ready else "fail ") + line)
 
 if [ "$mode" = attestors ]; then
 	attestors
+fi
+
+if [ "$mode" = human ]; then
+	human
 fi
 
 if [ "$mode" = cutover ]; then

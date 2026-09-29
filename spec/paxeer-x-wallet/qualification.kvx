@@ -1422,3 +1422,34 @@ symbol = "rustls"
 observed = "cargo build --locked for cmd/layerxctl refused the lock inside the image build because the workspace pins rustls at =0.23.45 while the committed lock still resolved 0.23.43; the lock was stale before this task."
 assumption = "Refreshing the lock with cargo update -w (only rustls moved) is the smallest change that lets the image build; no other manifest changed."
 severity = "note"
+
+[gate.6.4.deploy]
+revision = "2e5ee46aba1fa82a848e9a10803375bf12dd63c7"
+command = "flyctl deploy --config human/wallet/deploy/human.toml --image layerx-human-service:verify --app paxeer-human-service --local-only --ha=false"
+exit_code = 0
+log_path = ".logs/deploy-6.4.log"
+observed = "One app machine (86e959ae709698) created in the primary region from image digest sha256:76570c149f561f2731ed88f6fb7225184dbe6e876fe3e4cc27a8359c06feafbc; the platform check on GET /livez passes, https://paxeer-human-service.fly.dev/livez answers 200 and /readyz answers the structured unavailable envelope with 503; no database and no secrets were created."
+
+[observation.6.4.1]
+task = "6.4"
+file = "human/wallet/deploy/human.toml"
+symbol = "LAYERX_HUMAN_COMPONENT_SOCKET"
+observed = "The platform machine runs the runtime clock and the human service alone; nothing listens on the component socket, so GET /readyz answers the structured unavailable envelope with 503 while GET /livez, the browser preflight and the unauthenticated plan refusal answer as the contract declares."
+assumption = "The component graph (components, kms, agent daemon, identity, security and movement providers) needs cluster-provisioned evidence and a reachable kernel; readiness turns green only once that graph is wired beside the service."
+severity = "note"
+
+[observation.6.4.2]
+task = "6.4"
+file = "human/crates/layerx-human-service/src/server/mod.rs"
+symbol = "public_rate_key"
+observed = "In plain listener mode the public bootstrap rate key is derived from the accepted peer address, which behind the platform proxy is the proxy's address, so every unauthenticated bootstrap and version request shares one per-minute budget."
+assumption = "A forwarded client address header would have to be trusted only in plain mode; left for the owner to decide before public bootstrap traffic arrives."
+severity = "medium"
+
+[observation.6.5.1]
+task = "6.5"
+file = "human/wallet/sdk/src/human.ts"
+symbol = "HumanClient"
+observed = "The wallet SDK sends its identity as an Authorization bearer header while the human service admits only its __Host- session cookies, which are Secure, SameSite=Strict and never sent cross-site, and the human-api schema opens a session only from a passkey assertion_id; the wallet assertion sign-in exists in process (open_or_create_by_assertion) but has no HTTP operation, so a cross-origin wallet app cannot authenticate against the deployed service today."
+assumption = "One side of the contract must move before NEXT_PUBLIC_PAXEER_HUMAN_API is set: either the service admits the wallet assertion as a bearer credential on the plan and submit operations, or the wallet app is served from a listed origin and opens a service session; the authenticated proof stays implemented-not-qualified until the owner decides."
+severity = "high"
