@@ -201,3 +201,115 @@ LAYERX_HUMAN_ATTESTOR_ROOT_CERTIFICATE_DER - path to the DER CA that authenticat
 LAYERX_HUMAN_ATTESTOR_CLIENT_CERTIFICATE_DER - path to the DER client certificate, issued by the CA in ATTESTOR_TLS_CA_FILE, that the human service presents to the attestors for keys.generate and sign
 LAYERX_HUMAN_ATTESTOR_CLIENT_PRIVATE_KEY_DER - path to the DER PKCS8 private key of the client certificate
 LAYERX_HUMAN_ATTESTOR_DEADLINE_SECONDS - deadline in seconds for each attestor request; startup is refused when a signing attestor is unreachable
+LAYERX_HUMAN_LISTENER - plain when the platform proxy terminates public TLS and forwards plain HTTP to the service, unset or tls to terminate TLS in the service; plain refuses the two TLS paths below by name
+LAYERX_HUMAN_BIND - socket address the human service listens on; behind the platform proxy its port is the http_service internal port
+LAYERX_HUMAN_TLS_CERT_DER - path to the DER certificate the service presents in tls mode; must be unset in plain mode
+LAYERX_HUMAN_TLS_KEY_DER - path to the DER private key of that certificate; must be unset in plain mode
+LAYERX_HUMAN_COMPONENT_SOCKET - absolute path of the unix socket where layerx-human-components serves the business operations; readiness reports unavailable while nothing listens there
+LAYERX_HUMAN_WEB_ORIGIN - comma-separated https origins of the wallet app that may call mutating operations and receive the browser preflight answer
+LAYERX_HUMAN_REQUESTS_PER_MINUTE - requests one principal or bootstrap address may make per minute before rate-limited
+LAYERX_HUMAN_MAX_PRINCIPALS - number of principals tracked by the rate limiter before the oldest is evicted
+LAYERX_HUMAN_MAX_HEADER_BYTES - largest request head the service reads before answering invalid-request
+LAYERX_HUMAN_MAX_BODY_BYTES - largest JSON body the service reads before answering invalid-request
+LAYERX_HUMAN_MAX_CONNECTIONS - concurrent connections the listener admits; further connections are dropped
+LAYERX_HUMAN_IO_DEADLINE_SECONDS - read and write deadline of one connection in seconds
+LAYERX_HUMAN_COMPONENT_ALLOWED_UID - uid that may connect to the components socket; must equal the uid of the components process
+LAYERX_HUMAN_COMPONENT_WORKERS - worker threads of the components server
+LAYERX_HUMAN_COMPONENT_QUEUE_CAPACITY - queued requests the components server holds before refusing
+LAYERX_HUMAN_RECIPIENT_SOCKET - path of the notification recipient socket the components server calls
+LAYERX_HUMAN_RECIPIENT_CALLER_UID - uid the recipient socket must present
+LAYERX_HUMAN_RECIPIENT_CALLER_GID - gid the recipient socket must present
+LAYERX_HUMAN_RECIPIENT_DEADLINE_SECONDS - deadline of one recipient call in seconds
+LAYERX_HUMAN_MAINTENANCE_INTERVAL_SECONDS - seconds between two maintenance passes over journeys, notifications and retention
+LAYERX_HUMAN_MAINTENANCE_MAXIMUM_ITEMS - items one maintenance pass handles
+LAYERX_HUMAN_STORE_ROOT - absolute directory of the principal, journey, audit and telemetry stores
+LAYERX_HUMAN_CUSTODY_ROOT - absolute directory of the custody keystore
+LAYERX_HUMAN_AUTH_INDEX_ROOT - absolute directory of the authentication index
+LAYERX_HUMAN_TENANCY_DIGEST - base64url 32-byte key that scopes tenancy digests
+LAYERX_HUMAN_AUTH_INDEX_KEY - base64url 32-byte MAC key of the authentication index
+LAYERX_HUMAN_STREAM_CURSOR_KEY - base64url 32-byte key that authenticates stream cursors
+LAYERX_HUMAN_CAPABILITY_TTL_SECONDS - lifetime of an issued capability, between one and sixty seconds
+LAYERX_HUMAN_AGENT - prefix of the agent daemon transport limits below
+LAYERX_HUMAN_AGENT_SOCKET - absolute path of the agent daemon socket
+LAYERX_HUMAN_AGENT_MAX_FRAME_BYTES - largest frame exchanged with the agent daemon
+LAYERX_HUMAN_AGENT_MAX_CONNECTIONS - concurrent connections to the agent daemon
+LAYERX_HUMAN_AGENT_MAX_STREAMS - concurrent streams per agent daemon connection
+LAYERX_HUMAN_AGENT_MAX_QUEUED_BYTES - bytes queued towards the agent daemon before back-pressure
+LAYERX_HUMAN_AGENT_DEADLINE_SECONDS - deadline of one agent daemon exchange in seconds
+LAYERX_HUMAN_AGENT_ACTOR - agent DID the human service acts as towards the kernel
+LAYERX_HUMAN_AGENT_AUTHORITY - authority reference the human service signs under
+LAYERX_HUMAN_AGENT_TIMESTAMP_SPAN_SECONDS - accepted timestamp span of an agent activity in seconds
+LAYERX_HUMAN_AGENT_FEE_LIMIT - highest fee the human service authorises on an activity
+LAYERX_HUMAN_AGENT_PURPOSE_CATALOG - absolute path of the agent purpose catalog file
+LAYERX_HUMAN_AGENT_OWNER_ACCOUNT - kernel account that owns agents created by the service
+LAYERX_HUMAN_AGENT_RECOVERY_ROOT - base64url 32-byte root of the agent recovery derivation
+LAYERX_HUMAN_AGENT_RECOVERY_THRESHOLD - guardians required to recover an agent
+LAYERX_HUMAN_SECURITY_SOCKET - absolute path of the security provider socket
+LAYERX_HUMAN_SECURITY_DEADLINE_SECONDS - deadline of one security provider call in seconds
+LAYERX_HUMAN_SECURITY_MAX_FRAME_BYTES - largest frame exchanged with the security provider
+LAYERX_HUMAN_IDENTITY_SOCKET - absolute path of the identity provider socket
+LAYERX_HUMAN_IDENTITY_DEADLINE_SECONDS - deadline of one identity provider call in seconds
+LAYERX_HUMAN_IDENTITY_MAX_FRAME_BYTES - largest frame exchanged with the identity provider
+LAYERX_HUMAN_IDENTITY_PEER_UID - uid the identity provider socket must present
+LAYERX_HUMAN_IDENTITY_PEER_GID - gid the identity provider socket must present
+LAYERX_HUMAN_IDENTITY_BINDING_SOCKET - absolute path of the identity binding socket
+LAYERX_HUMAN_IDENTITY_BINDING_TENANT - tenant the identity binding calls are scoped to
+LAYERX_HUMAN_IDENTITY_BINDING_PEER_UID - uid the identity binding socket must present
+LAYERX_HUMAN_IDENTITY_BINDING_PEER_GID - gid the identity binding socket must present
+LAYERX_HUMAN_IDENTITY_BINDING_DEADLINE_SECONDS - deadline of one identity binding call in seconds
+LAYERX_HUMAN_MOVEMENT_SOCKET - absolute path of the movement provider socket
+LAYERX_HUMAN_MOVEMENT_PEER_UID - uid the movement provider socket must present
+LAYERX_HUMAN_MOVEMENT_PEER_GID - gid the movement provider socket must present
+LAYERX_HUMAN_MOVEMENT_MAX_FRAME_BYTES - largest frame exchanged with the movement provider
+LAYERX_HUMAN_MOVEMENT_DEADLINE_SECONDS - deadline of one movement provider call in seconds
+LAYERX_HUMAN_KMS - prefix of the remote KMS transport limits below
+LAYERX_HUMAN_KMS_PROVIDER_REFERENCE - reference of the KMS provider the custody keystore records
+LAYERX_HUMAN_KMS_ENDPOINT - socket address of the remote KMS
+LAYERX_HUMAN_KMS_SERVER_NAME - TLS server name expected from the remote KMS
+LAYERX_HUMAN_KMS_ROOT_CERTIFICATE_DER - absolute path of the DER CA that authenticates the KMS
+LAYERX_HUMAN_KMS_CLIENT_CERTIFICATE_DER - absolute path of the DER client certificate presented to the KMS
+LAYERX_HUMAN_KMS_CLIENT_PRIVATE_KEY_DER - absolute path of the DER private key of that client certificate
+LAYERX_HUMAN_KMS_MAX_FRAME_BYTES - largest frame exchanged with the KMS
+LAYERX_HUMAN_KMS_MAX_CONNECTIONS - concurrent connections to the KMS
+LAYERX_HUMAN_KMS_MAX_STREAMS - concurrent streams per KMS connection
+LAYERX_HUMAN_KMS_MAX_QUEUED_BYTES - bytes queued towards the KMS before back-pressure
+LAYERX_HUMAN_KMS_DEADLINE_SECONDS - deadline of one KMS exchange in seconds
+LAYERX_HUMAN_NETWORK_ID - kernel network identifier the custody keys are derived for
+LAYERX_HUMAN_PROTOCOL_VERSION - custody protocol version; three is required when attestor custody is configured
+LAYERX_HUMAN_SIGNING_RATE_MAXIMUM - signatures one principal may request per window
+LAYERX_HUMAN_SIGNING_RATE_WINDOW_SECONDS - length of the signing rate window in seconds
+LAYERX_HUMAN_ONBOARDING_SPONSOR_PRINCIPAL - principal that sponsors the first funding of a new account
+LAYERX_HUMAN_ONBOARDING_INITIAL_FUNDING - amount the sponsor grants a new account
+LAYERX_HUMAN_ONBOARDING_NATIVE_ASSET - 64-hex asset identifier of the native asset used for onboarding
+LAYERX_HUMAN_ONBOARDING_REGISTRY_FILE - path of the onboarding registry file the sponsor signer reads
+LAYERX_HUMAN_EVM_GAS_LIMIT - gas limit of settlement transactions on the chain
+LAYERX_HUMAN_EVM_MAX_FEE_PER_GAS - highest fee per gas of settlement transactions
+LAYERX_HUMAN_EVM_MAX_PRIORITY_FEE_PER_GAS - highest priority fee per gas of settlement transactions
+LAYERX_HUMAN_BINDING_STATEMENT_TTL_SECONDS - lifetime of a binding statement in seconds
+LAYERX_HUMAN_PAXEER_RPC_URL - primary chain JSON-RPC url reached over pinned TLS
+LAYERX_HUMAN_PAXEER_RPC_URLS - JSON array of two to eight chain JSON-RPC urls that must agree
+LAYERX_HUMAN_PAXEER_MINIMUM_AGREEMENT - endpoints that must agree on an observation
+LAYERX_HUMAN_PAXEER_RPC_TIMEOUT_SECONDS - deadline of one chain request in seconds
+LAYERX_HUMAN_PAXEER_TRUST_ANCHOR_DER - absolute path of the DER trust anchor pinned for the chain endpoints
+LAYERX_HUMAN_PAXEER_CHAIN_ID - chain identifier every endpoint must report
+LAYERX_HUMAN_EXIT_REQUIRED_CONFIRMATIONS - confirmations an exit needs before it is final
+LAYERX_HUMAN_EXIT_POLL_CADENCE_SECONDS - seconds between two exit observations
+LAYERX_HUMAN_EXIT_DELAYED_AFTER_POLLS - observations without progress before an exit is reported delayed
+LAYERX_HUMAN_ACTIVITY_FRESHNESS_SECONDS - age after which an activity observation is refreshed
+LAYERX_HUMAN_ACTIVITY_EXPORT_MAXIMUM_BYTES - largest activity export the service produces
+LAYERX_HUMAN_CONTINUATION_UNKNOWN_DEADLINE_SECONDS - non-zero seconds after which an unknown continuation is treated as failed
+LAYERX_HUMAN_RP_ID - passkey relying party identifier
+LAYERX_HUMAN_RP_NAME - passkey relying party display name
+LAYERX_HUMAN_ORIGIN - https origin passkey ceremonies are bound to
+LAYERX_HUMAN_CEREMONY_TTL_SECONDS - lifetime of a passkey ceremony in seconds
+LAYERX_HUMAN_ASSERTION_TTL_SECONDS - lifetime of a passkey assertion in seconds
+LAYERX_HUMAN_SESSION_TTL_SECONDS - lifetime of the access session in seconds
+LAYERX_HUMAN_REFRESH_TTL_SECONDS - lifetime of the refresh session in seconds
+LAYERX_HUMAN_STEP_UP_TTL_SECONDS - lifetime of a step-up grant in seconds
+LAYERX_HUMAN_AUTH_RATE_ATTEMPTS - authentication attempts allowed per window
+LAYERX_HUMAN_AUTH_RATE_WINDOW_SECONDS - length of the authentication rate window in seconds
+LAYERX_HUMAN_RETENTION_JOURNEYS_SECONDS - retention of finished journeys in seconds
+LAYERX_HUMAN_RETENTION_NOTIFICATIONS_SECONDS - retention of delivered notifications in seconds
+LAYERX_HUMAN_RETENTION_AUDIT_SECONDS - retention of audit records in seconds
+LAYERX_HUMAN_RETENTION_TELEMETRY_SECONDS - retention of telemetry in seconds
+LAYERX_HUMAN_RETENTION_CACHE_SECONDS - retention of cached reads in seconds

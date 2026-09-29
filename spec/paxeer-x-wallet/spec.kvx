@@ -1403,3 +1403,69 @@ verify_cmd = "timeout 60m sh -c 'tools/wallet/gate-lint.sh && tools/wallet/gate-
 symbols = ["gate-test","gate-lint"]
 touches = ["spec/paxeer-x-wallet/qualification.kvx"]
 reqs = ["13.4"]
+
+[task.6.1]
+title = "Map the human service configuration and describe its platform deployment"
+status = "done"
+revision = "bcf3bd09a3eb6362384ba47aabd58a58dceadd01"
+command = "sh -c 'set -f; f=0; for n in $(grep -rhoE LAYERX_HUMAN_[A-Z0-9_]+ human/crates/layerx-human-service/src | sort -u); do grep -qw ^$n human/wallet/deploy/env || { echo missing $n; f=1; }; done; grep -qE internal_port.=.8080 human/wallet/deploy/human.toml || f=1; grep -qE LAYERX_HUMAN_BIND.=.*:8080 human/wallet/deploy/human.toml || f=1; grep -q /livez human/wallet/deploy/human.toml || f=1; exit $f'"
+exit_code = 0
+log_path = ".logs/verify-6.1.log"
+evidence = "Verify exit code 0: all 112 names the service crate reads are described in human/wallet/deploy/env and human.toml binds the plain listener on the http_service port with the /livez check."
+wave = 6
+requires = ["4.6"]
+do_1 = "List every LAYERX_HUMAN_* name that layerx-human-service, layerx-human-components and their production component configuration read, one line per name with its meaning and never a value, under the human service header of human/wallet/deploy/env, so the deploy definition and the env example agree."
+do_2 = "Write human/wallet/deploy/human.toml for the application paxeer-human-service in the platform region: the plain listener behind the platform's http_service with internal_port equal to the LAYERX_HUMAN_BIND port, a GET /livez check over http, the four wallet origins in LAYERX_HUMAN_WEB_ORIGIN, the component socket path and the request bounds; the image builds from docker/human-service/Dockerfile with the repository root as context."
+do_3 = "Decide the container's process set from platform/hosted/human: the runtime clock supervises the service alone; the component graph (components, kms, agent daemon, identity, security and movement providers) needs cluster-provisioned evidence and a reachable kernel that the platform does not hold, so it stays out and /readyz reports unavailable until it is wired."
+verify_cmd = "sh -c 'set -f; f=0; for n in $(grep -rhoE LAYERX_HUMAN_[A-Z0-9_]+ human/crates/layerx-human-service/src | sort -u); do grep -qw ^$n human/wallet/deploy/env || { echo missing $n; f=1; }; done; grep -qE internal_port.=.8080 human/wallet/deploy/human.toml || f=1; grep -qE LAYERX_HUMAN_BIND.=.*:8080 human/wallet/deploy/human.toml || f=1; grep -q /livez human/wallet/deploy/human.toml || f=1; exit $f'"
+symbols = ["run","from_environment"]
+touches = ["human/wallet/deploy/env","human/wallet/deploy/human.toml"]
+reqs = ["12.2"]
+
+[task.6.2]
+title = "Add a plain listener and browser preflight handling to the human service for the platform proxy"
+status = "pending"
+wave = 6
+requires = ["6.1"]
+do_1 = "Let layerx-human-service serve plain HTTP when LAYERX_HUMAN_LISTENER is plain: the platform proxy terminates public TLS and forwards plain HTTP/1.1 to the machine, so in that mode startup refuses LAYERX_HUMAN_TLS_CERT_DER or LAYERX_HUMAN_TLS_KEY_DER by name; unset or tls keeps today's TLS listener with the certificate and key required; any other value is refused by name; routing, limits and deadlines are identical in both modes."
+do_2 = "Let LAYERX_HUMAN_WEB_ORIGIN carry a comma-separated list of https origins; answer an OPTIONS preflight whose Origin is listed with Access-Control-Allow-Origin echoing that origin, Allow-Methods, Allow-Headers for authorization, content-type, idempotency-key, x-layerx-trace and x-layerx-csrf, Expose-Headers for the trace, Max-Age and Vary: Origin, never Allow-Credentials; add Allow-Origin and Vary: Origin to every response whose Origin is listed; a preflight from any other origin is refused with the structured forbidden failure; the same-origin check on mutating operations accepts any listed origin."
+do_3 = "Add tests over the real router and the plain listener that prove the preflight answer, the allow-origin header on a live check served over plain TCP, the forbidden preflight from an unlisted origin, the origin gate on the intent plan operation for a listed and an unlisted origin with the unauthenticated envelope on the listed one, and that a plain listener with a certificate path set and an unknown listener value are refused by name."
+verify_cmd = "timeout 20m tools/runtime/run-with-clock.sh sh -c 'cd human && cargo test -p layerx-human-service --test server_browser_boundary'"
+symbols = ["Listener","PlainServer","HttpConfig","Router"]
+touches = ["human/crates/layerx-human-service/src/main.rs","human/crates/layerx-human-service/src/server/mod.rs","human/crates/layerx-human-service/src/server/http.rs","human/crates/layerx-human-service/tests/server_browser_boundary.rs"]
+reqs = ["12.2"]
+
+[task.6.3]
+title = "Build the human service image from docker/human-service at the repository root"
+status = "pending"
+wave = 6
+requires = ["6.2"]
+do_1 = "Move the human image definition from platform/hosted/human to docker/human-service: the Dockerfile with the repository root as its build context, its dockerignore beside it, and the entrypoint; keep every binary and helper the beta cluster consumes, create the service's runtime directory owned by the service user so the entrypoint starts without a mounted volume, update platform/hosted/tests/beta-images.sh and delete the old files."
+verify_cmd = "timeout 90m docker build -f docker/human-service/Dockerfile -t layerx-human-service:verify ."
+symbols = ["human-entrypoint"]
+touches = ["docker/human-service/Dockerfile","docker/human-service/Dockerfile.dockerignore","docker/human-service/entrypoint.sh","platform/hosted/human/Dockerfile","platform/hosted/human/Dockerfile.dockerignore","platform/hosted/human/entrypoint.sh","platform/hosted/tests/beta-images.sh"]
+reqs = ["12.2"]
+
+[task.6.4]
+title = "Deploy the human service to the platform and check it live"
+status = "pending"
+wave = 6
+requires = ["6.3"]
+do_1 = "Create the application paxeer-human-service in the platform organisation and deploy the image built from docker/human-service/Dockerfile with human/wallet/deploy/human.toml; no database is created because the service keeps file-based stores with in-process migrations; record the deploy in spec/paxeer-x-wallet/qualification.kvx without hosts."
+do_2 = "Extend tools/wallet/check-live.sh with a human mode over CHECK_LIVE_HUMAN_BASE and CHECK_LIVE_HUMAN_ORIGIN: GET /livez must answer 200 with live true and the service name, an OPTIONS preflight from the origin must answer with Access-Control-Allow-Origin equal to that origin, and an unauthenticated POST /v1/intents/plan with the golden request body from that origin must answer the structured unauthenticated envelope, never a 5xx; extend tools/wallet/check-live.test.sh with responder profiles for each pass and fail case."
+verify_cmd = "timeout 10m sh -c 'tools/wallet/check-live.test.sh && CHECK_LIVE_HUMAN_BASE=https://paxeer-human-service.fly.dev CHECK_LIVE_HUMAN_ORIGIN=https://app.paxportwallet.com tools/wallet/check-live.sh human'"
+symbols = ["human","check-live"]
+touches = ["tools/wallet/check-live.sh","tools/wallet/check-live.test.sh","spec/paxeer-x-wallet/qualification.kvx"]
+reqs = ["12.2"]
+
+[task.6.5]
+title = "Prove the authenticated human-api path from the wallet identity against the deployed service"
+status = "pending"
+wave = 6
+requires = ["6.4"]
+do_1 = "With a staged wallet identity assertion in CHECK_LIVE_HUMAN_ASSERTION, open a session through the operation the human-api schema declares for the wallet assertion, plan a kernel send with the golden intent plan body under that session and expect the plan shape the contract declares; add this as the human-session mode of tools/wallet/check-live.sh with its responder cases in tools/wallet/check-live.test.sh."
+do_2 = "Record in spec/paxeer-x-wallet/qualification.kvx the contract gap between the wallet SDK, which sends a bearer authorization header, and the service, which admits only its same-site session cookies, so the owner can decide which side moves before the wallet app sets NEXT_PUBLIC_PAXEER_HUMAN_API."
+verify_cmd = "timeout 10m sh -c 'tools/wallet/check-live.test.sh && CHECK_LIVE_HUMAN_BASE=https://paxeer-human-service.fly.dev CHECK_LIVE_HUMAN_ORIGIN=https://app.paxportwallet.com tools/wallet/check-live.sh human-session'"
+symbols = ["human-session","check-live"]
+touches = ["tools/wallet/check-live.sh","tools/wallet/check-live.test.sh","spec/paxeer-x-wallet/qualification.kvx"]
+reqs = ["8.3","8.4"]
