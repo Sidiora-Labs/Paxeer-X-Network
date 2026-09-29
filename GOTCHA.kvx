@@ -709,24 +709,120 @@ cause   = "The done subcommand re-indexes against the shared code graph in the m
 do      = "Bound the call with timeout; when it expires, kill it, set the task status line to done by hand only after the verify_cmd genuinely passed, delete spec/<feature>/spec.kvx.lock, and say so in the commit message so the manager can re-run the tool."
 
 [gotcha.115]
+area    = "ops-shell"
+symptom = "Piping a script into a remote shell with ssh -n ... bash -s returns exit 0 and prints nothing on every host."
+cause   = "The -n flag redirects the ssh client's stdin from /dev/null, so bash -s on the far side reads an empty script."
+do      = "Drop -n when the remote command reads its script from stdin; keep -n only for commands that take no input."
+
+[gotcha.116]
+area    = "ops-shell"
+symptom = "A per-host survey that greps journalctl --since over a time window overruns its timeout on hosts with large journals while the fast hosts answer at once."
+cause    = "A time-window query walks the whole journal index; the survey pays that on every host."
+do      = "Bound journal reads with -n <lines> -o cat into one variable and grep that, and keep the per-host timeout well under the caller's cap."
+
+[gotcha.117]
+area    = "bringup-probe"
+symptom = "A probe that asks sixteen public RPC names for eth_blockNumber one after another reports the synced names as lagging by ten to thirty blocks."
+cause   = "Each request takes a fraction of a second and the chain advances several blocks a second, so names asked first fall behind names asked last by more than the ten-block window."
+do      = "Ask every name at once in background jobs into per-name files, wait, then compare the answers against the highest one."
+
+[gotcha.118]
+area    = "chain"
+symptom = "A full node reports catching_up false while its head trails the public head by tens of thousands of blocks and its latest block time is hours old."
+cause   = "Once block sync hands over to consensus the flag never returns to true; a node that then falls behind is fed old blocks by its peers at about chain speed and never closes the gap."
+do      = "Judge sync by the gap to the highest public answer and by the latest block time against the clock, never by catching_up alone; restart the node so block sync refills the gap while the pruned peers still hold those blocks, and treat a gap approaching their retention window as urgent."
+
+[gotcha.119]
+area    = "tooling"
+symptom = "hpx setup looks interactive: it prompts for the node type, moniker, public address and a confirmation."
+cause   = "The type menu reads the terminal only when HPX_TYPE is unset; the other prompts read stdin and take their defaults on an empty line, and the script does not set -e."
+do      = "Run HPX_TYPE=fullnode hpx setup with stdin from /dev/null for a non-interactive install with the default moniker and detected address."
+
+[gotcha.120]
+area    = "chain"
+symptom = "jq over the node's /status with .result.sync_info prints nulls, and jq tonumber rejects EVM quantities such as 0x19afc7d."
+cause   = "The fork's CometBFT status answers the document at the top level without a result wrapper, and jq parses decimal only."
+do      = "Read .sync_info directly and convert quantities in bash with $((16#${q#0x}))."
+
+[gotcha.121]
+area    = "tooling"
+symptom = "shellcheck reports SC2016 on a single-quoted command string that is sent to a remote shell."
+cause   = "The expansions inside it are meant for the remote shell, which shellcheck cannot know."
+do      = "Keep the single quotes and put a shellcheck disable=SC2016 directive on the line above, as the probe does for its remote inspection."
+
+[gotcha.122]
+area    = "test"
+symptom = "A probe loop that feeds a while-read from a here-string stops after its first iteration under the test's ssh stand-in although the real ssh runs every iteration."
+cause   = "The stand-in ignored the -n flag and piped its stdin through tee, so it consumed the rest of the here-string that the loop was reading."
+do      = "Make every ssh stand-in honour -n by redirecting its stdin from /dev/null before running the command; the code under test may rely on that documented ssh behaviour."
+
+[gotcha.123]
+area    = "test"
+symptom = "An assertion on the exact number of days a fresh certificate has left fails one run and passes the next."
+cause   = "Whole-day arithmetic on notAfter minus now reads one day less as soon as a second has elapsed since signing."
+do      = "Assert a prefix of the day count or a range, never the exact number, for material signed inside the same test run."
+
+[gotcha.124]
+area    = "tooling"
+symptom = "After merging two lanes that each extended the same shell probe, shellcheck reports a variable used as an array and later assigned a string, although each lane's file passed on its own."
+cause   = "Both lanes added a top-level variable of the same name at different points of the shared file, and git merged the two definitions without conflict because they sit in different hunks."
+do      = "When a lane adds a top-level variable to a shared script, grep the feature branch for that name before merging and reconcile to one definition; a clean textual merge is not a clean shell file."
+
+[gotcha.125]
+area    = "build"
+symptom = "With CARGO_TARGET_DIR exported the layerxctl target fails at the cp step and the node test cannot find its probe binary."
+cause   = "make layerxctl copies from cmd/layerxctl/target/release and node-test.sh runs its probe from platform/hosted/node/tests/probe/target/release, both fixed in-tree paths."
+do      = "Do not export CARGO_TARGET_DIR for platform-test-node; let the shared-target advice of entry 6 apply to the workspaces that honour it."
+
+[gotcha.126]
+area    = "chain"
+symptom = "eth_getCode of the registry, custody and anchor precompiles returns 0x although they answer calls."
+cause   = "Native precompiles have no bytecode at their address."
+do      = "Prove a precompile with eth_call of one of its views (threshold(), depositCount(), layerXBindNonce(address)) encoded from its ABI under precompiles/, never with a code-size check."
+
+[gotcha.127]
+area    = "chain"
+symptom = "eth_syncing on the chain's JSON-RPC fails with error -32000 not supported, and the latest block timestamp is hours behind a synchronised clock while advancing in real time."
+cause   = "The EVM RPC omits eth_syncing and the block timestamps do not track UTC on this chain."
+do      = "Test that a node follows the chain by reading eth_blockNumber twice a few seconds apart; do not gate on eth_syncing or on block age."
+
+[gotcha.128]
+area    = "spec-tooling"
+symptom = "cg spec start leaves an empty untracked spec/<feature>/spec.kvx.lock that git add -A would commit."
+cause   = "The lock file is neither removed by the tool nor listed in .gitignore."
+do      = "Delete spec/<feature>/spec.kvx.lock before the commit."
+
+[gotcha.129]
+area    = "spec-tooling"
+symptom = "cg spec implemented refuses a task whose touches list names a file that needed no change, and a second call can hang on the tool's lock while other checkouts run cg."
+cause   = "The tool requires a worktree or tagged-commit change for every touched file, and its lock is shared across checkouts."
+do      = "Record why the file needed no change in qualification.kvx, leave the status in_progress and say so in the report; kill a hung call and remove spec/<feature>/spec.kvx.lock before the commit."
+
+[gotcha.130]
+area    = "chain"
+symptom = "A public JSON-RPC name whose head advances at chain speed was still tens of thousands of blocks behind the tip, so a settlement test against it ran on stale state."
+cause   = "A lagging full node receives blocks at production rate and stays behind by a constant; head advancement cannot tell it from the tip and the RPC exposes no eth_syncing."
+do      = "Point LAYERX_NODE_PAXEER_RPC_URL at a name the fleet probe measured at lag zero before the run; keep the head-advance assertion as the in-band check."
+
+[gotcha.131]
 area    = "ops"
 symptom = "The registry serving host's own paxd binary and its dead full-node home are months older than the fleet, and publishing from them would ship a pre-fork binary."
 cause   = "That host stopped being a node long ago while the fleet was upgraded in place by staging paxd.next files on each node; nothing copied the live binary back."
 do      = "Read the live binary from a synced full node (hash the running unit's exe), verify it against the rollout record's sha256, and pass it as SRC_BIN; the six native libraries still come from the repository and the configuration from the host's config directory, as the publisher says."
 
-[gotcha.116]
+[gotcha.132]
 area    = "ops"
 symptom = "hpx/hosting/deploy.sh run from a lane derives a registry revision that has no published release asset, so its download fails."
 cause   = "It takes the last commit touching hpx/registry and the registry workflow, and a lane or merge commit can touch the workflow without producing a release."
 do      = "Pass HPX_SOURCE_REVISION as the sha of the latest hpx-registry-<sha> release whose hpx/registry tree equals the lane's (an empty git diff between the two)."
 
-[gotcha.117]
+[gotcha.133]
 area    = "ops"
 symptom = "nginx on the edge host is failed, and every deploy script that runs nginx -t or systemctl reload nginx fails."
 cause   = "A retired testnet TLS vhost still enabled points proxy_ssl_trusted_certificate at a build directory that no longer exists, and reload refuses an inactive unit."
 do      = "Unlink the retired vhost symlink from sites-enabled (file kept), confirm nginx -t, start nginx, then run the deploy script; when the permission system refuses those writes, record and report them instead."
 
-[gotcha.118]
+[gotcha.134]
 area    = "tooling"
 symptom = "Running a repository publish or deploy script on the local box, or unlinking an nginx site there, is refused by the permission system as a production deploy or a shared-resource change."
 cause   = "The classifier judges the outcome, not the host, so the local host writes of a deploy task are refused the same way as remote ones."

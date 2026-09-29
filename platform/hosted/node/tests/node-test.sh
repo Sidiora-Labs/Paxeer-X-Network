@@ -11,6 +11,18 @@
 # first socat on PATH is used. The genesis metadata the bootstrap requires is
 # built from tests/support/lxgb_metadata.py over the beta asset and the
 # treasury key generated here.
+#
+# Settlement inputs: with LAYERX_NODE_PAXEER_RPC_URL unset the bootstrap takes
+# the chain 125 defaults (the loopback JSON-RPC http://127.0.0.1:8545 and the
+# registry, custody and anchor precompiles) and no chain is contacted. Set to
+# the JSON-RPC of a synced node (http://127.0.0.1:PORT, or an https origin
+# relayed onto a loopback port the way the pod's paxeer-relay does) the
+# precompile settlement case first proves the node is not anvil, answers the
+# chain id, follows the chain (its head advances between two reads; the RPC
+# has no eth_syncing) and answers the three precompiles' views encoded from
+# the ABIs under precompiles/, then bootstraps the sequencer against that
+# loopback URL. LAYERX_NODE_TEST_CA_FILE names the trust store of the https
+# relay (default: the system bundle).
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../../../.." && pwd)
@@ -23,6 +35,11 @@ NETWORK_ID=${LAYERX_NODE_TEST_NETWORK_ID:-4242}
 ASSET_ID=b5a32b12029f8ddfb905f90f280f664b46390de0fc62770fc197dd87b18cd898
 PROGRAM_PORT=${LAYERX_NODE_TEST_PROGRAM_PORT:-19401}
 REPLICA_PORT=${LAYERX_NODE_TEST_REPLICA_PORT:-19402}
+PAXEER_CHAIN_ID=${LAYERX_NODE_PAXEER_CHAIN_ID:-125}
+RPC_URL=${LAYERX_NODE_PAXEER_RPC_URL:-}
+REGISTRY_PRECOMPILE=0x0000000000000000000000000000000000001004
+CUSTODY_PRECOMPILE=0x0000000000000000000000000000000000001013
+ANCHOR_PRECOMPILE=0x0000000000000000000000000000000000001014
 
 log() { printf 'node-test: %s\n' "$*" >&2; }
 fail() { log "FAIL: $*"; exit 1; }
@@ -59,6 +76,7 @@ DATA="$WORK/data"
 RUN="$WORK/run"
 SEQUENCER_PID=""
 REPLICA_PID=""
+RELAY_PID=""
 KEEP=1
 
 cleanup() {
@@ -73,6 +91,10 @@ cleanup() {
     done
     pkill -TERM -f "$LAYERXD --serve $DATA/" 2>/dev/null || true
     pkill -TERM -f "$LAYERXD --authority-replica $DATA/" 2>/dev/null || true
+    if [ -n "$RELAY_PID" ]; then
+        kill -TERM "$RELAY_PID" 2>/dev/null || true
+        wait "$RELAY_PID" 2>/dev/null || true
+    fi
     if [ "$KEEP" -eq 1 ]; then
         log "logs retained under $WORK"
         for logfile in "$WORK/sequencer.log" "$WORK/replica.log"; do
@@ -125,6 +147,95 @@ wait_for() {
 expect_contains() {
     case "$1" in *"$2"*) ;; *) fail "expected $2 in: $1" ;; esac
 }
+
+free_port() {
+    python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])'
+}
+
+json_rpc() {
+    # json_rpc URL METHOD PARAMS -> the JSON result
+    python3 - "$1" "$2" "$3" <<'RPC'
+import json, sys, urllib.request
+url, method, params = sys.argv[1:4]
+body = json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': method, 'params': json.loads(params)}).encode()
+with urllib.request.urlopen(urllib.request.Request(url, body, {'Content-Type': 'application/json'}), timeout=30) as response:
+    reply = json.load(response)
+if reply.get('error') is not None or 'result' not in reply:
+    raise SystemExit('%s answered %s' % (method, json.dumps(reply)))
+print(json.dumps(reply['result']))
+RPC
+}
+
+abi_declares() {
+    # abi_declares ABI_FILE SIGNATURE
+    jq -e --arg signature "$2" \
+        'any(.[] | select(.type == "function") | .name + "(" + ([.inputs[].type] | join(",")) + ")"; . == $signature)' "$1" > /dev/null
+}
+
+precompile_view() {
+    # precompile_view URL ADDRESS ABI_FILE SIGNATURE [ARGUMENT_WORDS] -> the 32-byte word the view answers, as hex
+    local url=$1 address=$2 abi=$3 signature=$4 words=${5:-} selector result
+    abi_declares "$abi" "$signature" || fail "$abi does not declare $signature"
+    selector=$(python3 - "$ROOT/platform/hosted/paxeer/evm.py" "$signature" <<'SELECTOR'
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location('evm', sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+print('0x' + module.keccak(sys.argv[2].encode())[:4].hex())
+SELECTOR
+    )
+    result=$(json_rpc "$url" eth_call "[{\"to\":\"$address\",\"data\":\"$selector$words\"},\"latest\"]")
+    [[ $result =~ ^\"0x[0-9a-f]{64}\"$ ]] || fail "$signature at $address answered $result"
+    printf '%s' "${result:3:64}"
+}
+
+SETTLEMENT_RPC=""
+if [ -n "$RPC_URL" ]; then
+    log "precompile settlement case against $RPC_URL"
+    if [[ $RPC_URL =~ ^http://127\.0\.0\.1:[1-9][0-9]{0,4}$ ]]; then
+        SETTLEMENT_RPC=$RPC_URL
+    elif [[ $RPC_URL =~ ^https://([A-Za-z0-9.-]+)(:([1-9][0-9]{0,4}))?/?$ ]]; then
+        RELAY_HOST=${BASH_REMATCH[1]}
+        RELAY_PORT=${BASH_REMATCH[3]:-443}
+        SETTLEMENT_RPC="http://127.0.0.1:$(free_port)"
+        "$SOCAT" -T 120 "TCP4-LISTEN:${SETTLEMENT_RPC##*:},bind=127.0.0.1,reuseaddr,fork" \
+            "OPENSSL:$RELAY_HOST:$RELAY_PORT,cafile=${LAYERX_NODE_TEST_CA_FILE:-/etc/ssl/certs/ca-certificates.crt},verify=1,commonname=$RELAY_HOST" \
+            > "$WORK/relay.log" 2>&1 &
+        RELAY_PID=$!
+        log "relaying $SETTLEMENT_RPC to $RELAY_HOST:$RELAY_PORT"
+    else
+        fail "LAYERX_NODE_PAXEER_RPC_URL must be http://127.0.0.1:PORT or an https origin, not $RPC_URL"
+    fi
+    CLIENT_VERSION=$(json_rpc "$SETTLEMENT_RPC" web3_clientVersion '[]')
+    case "${CLIENT_VERSION,,}" in
+        *anvil*|*hardhat*) fail "refusing the settlement case against a development chain: $CLIENT_VERSION" ;;
+    esac
+    CHAIN_ID_HEX=$(json_rpc "$SETTLEMENT_RPC" eth_chainId '[]')
+    [ "$CHAIN_ID_HEX" != '"0x7a69"' ] || fail "refusing the settlement case against anvil chain 31337"
+    [ "$CHAIN_ID_HEX" = "\"$(printf '0x%x' "$PAXEER_CHAIN_ID")\"" ] || fail "the node answers chain $CHAIN_ID_HEX, not $PAXEER_CHAIN_ID"
+    HEAD_BEFORE=$(json_rpc "$SETTLEMENT_RPC" eth_blockNumber '[]')
+    HEAD_BEFORE=${HEAD_BEFORE//\"/}
+    [[ $HEAD_BEFORE =~ ^0x[0-9a-f]+$ ]] || fail "eth_blockNumber at $RPC_URL answered $HEAD_BEFORE"
+    sleep 3
+    HEAD_AFTER=$(json_rpc "$SETTLEMENT_RPC" eth_blockNumber '[]')
+    HEAD_AFTER=${HEAD_AFTER//\"/}
+    [ $((HEAD_AFTER)) -gt $((HEAD_BEFORE)) ] || fail "the node at $RPC_URL is not following the chain: its head stayed at $HEAD_BEFORE"
+    THRESHOLD=$(precompile_view "$SETTLEMENT_RPC" "$ANCHOR_PRECOMPILE" "$ROOT/precompiles/layerxanchor/abi.json" 'threshold()')
+    [ $((16#$THRESHOLD)) -ge 1 ] || fail "the anchor precompile reports no certificate threshold"
+    STATUS=$(precompile_view "$SETTLEMENT_RPC" "$ANCHOR_PRECOMPILE" "$ROOT/precompiles/layerxanchor/abi.json" 'statusOf(uint64)' "$(printf '%064x' 1)")
+    DEPOSITS=$(precompile_view "$SETTLEMENT_RPC" "$CUSTODY_PRECOMPILE" "$ROOT/precompiles/layerxcustody/abi.json" 'depositCount()')
+    BIND_NONCE=$(precompile_view "$SETTLEMENT_RPC" "$REGISTRY_PRECOMPILE" "$ROOT/precompiles/addr/abi.json" 'layerXBindNonce(address)' "$(printf '%064x' 0)")
+    log "chain $PAXEER_CHAIN_ID ($CLIENT_VERSION): anchor threshold $((16#$THRESHOLD)), checkpoint 1 status $((16#$STATUS)), custody deposits $((16#$DEPOSITS)), registry bind nonce $((16#$BIND_NONCE))"
+    for signature in 'submitCheckpoint(bytes,bytes,bytes)' 'finalize(uint64)'; do
+        abi_declares "$ROOT/precompiles/layerxanchor/abi.json" "$signature" || fail "the anchor ABI does not declare $signature"
+    done
+    export LAYERX_NODE_PAXEER_CHAIN_ID="$PAXEER_CHAIN_ID" LAYERX_NODE_PAXEER_RPC_URL="$SETTLEMENT_RPC"
+    export LAYERX_NODE_REGISTRY_PRECOMPILE="$REGISTRY_PRECOMPILE" LAYERX_NODE_CUSTODY_PRECOMPILE="$CUSTODY_PRECOMPILE" \
+        LAYERX_NODE_ANCHOR_PRECOMPILE="$ANCHOR_PRECOMPILE"
+else
+    SETTLEMENT_RPC=http://127.0.0.1:8545
+    log "no LAYERX_NODE_PAXEER_RPC_URL: the bootstrap takes the chain $PAXEER_CHAIN_ID loopback defaults"
+fi
 
 log "starting the replica supervisor"
 bash "$NODE_DIR/supervisor.sh" --role replica --data-dir "$DATA" --run-dir "$RUN" \
@@ -187,6 +298,25 @@ fi
 if tr '\0' '\n' < "/proc/$SEQUENCER_PID/environ" | grep -q '^LAYERX_NODE_SEQUENCER_PRIVATE_KEY='; then
     fail "the sequencer supervisor environment carries the sequencer seed"
 fi
+
+log "settlement inputs name the precompiles on chain $PAXEER_CHAIN_ID through $SETTLEMENT_RPC"
+settlement_line() { sed -n "s/^$1=//p" "$DATA/sequencer.env" | tail -n 1; }
+[ "$(settlement_line LAYERX_NODE_PAXEER_CHAIN_ID)" = "$PAXEER_CHAIN_ID" ] || fail "sequencer.env chain id mismatch"
+[ "$(settlement_line LAYERX_NODE_PAXEER_RPC_URL)" = "$SETTLEMENT_RPC" ] || fail "sequencer.env does not name the loopback JSON-RPC $SETTLEMENT_RPC"
+[ "$(settlement_line LAYERX_NODE_REGISTRY_PRECOMPILE)" = "$REGISTRY_PRECOMPILE" ] || fail "sequencer.env registry precompile mismatch"
+[ "$(settlement_line LAYERX_NODE_CUSTODY_PRECOMPILE)" = "$CUSTODY_PRECOMPILE" ] || fail "sequencer.env custody precompile mismatch"
+[ "$(settlement_line LAYERX_NODE_ANCHOR_PRECOMPILE)" = "$ANCHOR_PRECOMPILE" ] || fail "sequencer.env anchor precompile mismatch"
+[ "$(settlement_line LAYERX_NODE_SETTLEMENT_CONTRACT)" = "$ANCHOR_PRECOMPILE" ] || fail "the settlement contract pin is not the anchor precompile"
+[ "$(settlement_line LAYERX_NODE_CHECKPOINT_REGISTRY)" = "$ANCHOR_PRECOMPILE" ] || fail "the checkpoint registry pin is not the anchor precompile"
+[ "$(settlement_line LAYERX_NODE_PAXEER_RPC_ADDRESS)" = 127.0.0.1 ] || fail "the JSON-RPC address pin is not loopback"
+[ "$(settlement_line LAYERX_NODE_PAXEER_RPC_PORT)" = "${SETTLEMENT_RPC##*:}" ] || fail "the JSON-RPC port pin is not the port of $SETTLEMENT_RPC"
+if grep -q '^LAYERX_NODE_SETTLEMENT_ENV=' "$DATA/sequencer.env"; then
+    fail "sequencer.env defers the settlement binding to a file"
+fi
+for pin in "LAYERX_NODE_ANCHOR_PRECOMPILE=$ANCHOR_PRECOMPILE" "LAYERX_NODE_SETTLEMENT_CONTRACT=$ANCHOR_PRECOMPILE" \
+        "LAYERX_NODE_PAXEER_RPC_URL=$SETTLEMENT_RPC" "LAYERX_NODE_PAXEER_RPC_PORT=${SETTLEMENT_RPC##*:}"; do
+    tr '\0' '\n' < "/proc/$DAEMON_PID/environ" | grep -qx "$pin" || fail "the layerxd --serve environment does not carry $pin"
+done
 
 log "operator state read over the real LNI"
 OPERATOR_STATE=$(as_client "$WORK/layerxctl" read-state --socket "$LAYERX_NODE_LNI_SOCKET" \

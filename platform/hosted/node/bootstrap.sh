@@ -75,23 +75,33 @@
 #   --layerxd PATH          layerxd binary. Default: build/bin/layerxd or
 #                           /usr/local/bin/layerxd.
 #   --genesis-build PATH    layerx-genesis-build binary. Same lookup.
-#   --settlement-env FILE   Defer the Paxeer settlement binding: the five
-#                           LAYERX_NODE_PAXEER_CHAIN_ID, LAYERX_NODE_SETTLEMENT_CONTRACT,
-#                           LAYERX_NODE_CHECKPOINT_REGISTRY, LAYERX_NODE_PAXEER_RPC_ADDRESS
-#                           and LAYERX_NODE_PAXEER_RPC_PORT values are read from FILE
+#   --settlement-env FILE   Defer the Paxeer settlement binding: the
+#                           LAYERX_NODE_PAXEER_CHAIN_ID, LAYERX_NODE_PAXEER_RPC_URL,
+#                           LAYERX_NODE_REGISTRY_PRECOMPILE, LAYERX_NODE_CUSTODY_PRECOMPILE
+#                           and LAYERX_NODE_ANCHOR_PRECOMPILE values are read from FILE
 #                           when the sequencer starts (the supervisor validates FILE
 #                           with --check-settlement first) instead of from the
-#                           bootstrap environment, because the settlement contracts
-#                           are deployed from the genesis artifacts this bootstrap
-#                           produces. sequencer.env then carries
-#                           LAYERX_NODE_SETTLEMENT_ENV=FILE in place of the five values.
+#                           bootstrap environment. sequencer.env then carries
+#                           LAYERX_NODE_SETTLEMENT_ENV=FILE in place of the settlement
+#                           lines.
 #   --force                 Discard the data directory contents first.
+#
+# Settlement inputs (environment or --settlement-env FILE): the chain id defaults
+# to 125, LAYERX_NODE_PAXEER_RPC_URL to the loopback JSON-RPC http://127.0.0.1:8545
+# of the synced chain node beside the sequencer, and the three precompile
+# addresses to the native modules 0x...1004 (registry), 0x...1013 (custody) and
+# 0x...1014 (anchor); no other address is accepted. The settlement lines the
+# bootstrap writes are those five values plus the pins cmd/layerxd reads:
+# LAYERX_NODE_SETTLEMENT_CONTRACT and LAYERX_NODE_CHECKPOINT_REGISTRY are the anchor
+# precompile, LAYERX_NODE_PAXEER_RPC_ADDRESS and LAYERX_NODE_PAXEER_RPC_PORT the
+# loopback URL split. Given pins must agree with that derivation.
 #
 # Validation mode:
 #   bootstrap.sh --check-settlement FILE
-#                           Validate a settlement environment file holding exactly the
-#                           five KEY=VALUE lines above under the same rules the
-#                           bootstrap applies to its environment and print them.
+#                           Validate a settlement environment file holding KEY=VALUE
+#                           lines of the settlement inputs (and, optionally, the
+#                           derived pins) under the same rules the bootstrap applies
+#                           to its environment and print the settlement lines.
 #
 # Outputs under DATA_DIR:
 #   genesis/genesis.manifest, genesis/00000000000000000000.lxs,
@@ -112,54 +122,73 @@ fail() {
     exit 1
 }
 
-validate_settlement() {
-    # validate_settlement CHAIN_ID SETTLEMENT_CONTRACT CHECKPOINT_REGISTRY RPC_ADDRESS RPC_PORT
-    local chain_id=$1 settlement_contract=$2 checkpoint_registry=$3 rpc_address=$4 rpc_port=$5 contract_name contract_value
-    [[ $chain_id =~ ^[1-9][0-9]{0,19}$ ]] || fail "LAYERX_NODE_PAXEER_CHAIN_ID must be a positive decimal uint64"
-    if [ ${#chain_id} -eq 20 ] && [[ $chain_id > 18446744073709551615 ]]; then
-        fail "LAYERX_NODE_PAXEER_CHAIN_ID exceeds uint64"
-    fi
-    for contract_name in SETTLEMENT_CONTRACT CHECKPOINT_REGISTRY; do
-        case "$contract_name" in
-            SETTLEMENT_CONTRACT) contract_value=$settlement_contract ;;
-            CHECKPOINT_REGISTRY) contract_value=$checkpoint_registry ;;
-        esac
-        [[ $contract_value =~ ^0x[0-9a-fA-F]{40}$ ]] || fail "LAYERX_NODE_$contract_name must be a 0x-prefixed address"
-        [ "$contract_value" = 0x0000000000000000000000000000000000001014 ] \
-            || fail "LAYERX_NODE_$contract_name must be the anchor precompile 0x0000000000000000000000000000000000001014"
+REGISTRY_PRECOMPILE=0x0000000000000000000000000000000000001004
+CUSTODY_PRECOMPILE=0x0000000000000000000000000000000000001013
+ANCHOR_PRECOMPILE=0x0000000000000000000000000000000000001014
+SETTLEMENT_KEYS=(LAYERX_NODE_PAXEER_CHAIN_ID LAYERX_NODE_PAXEER_RPC_URL LAYERX_NODE_REGISTRY_PRECOMPILE
+    LAYERX_NODE_CUSTODY_PRECOMPILE LAYERX_NODE_ANCHOR_PRECOMPILE LAYERX_NODE_SETTLEMENT_CONTRACT
+    LAYERX_NODE_CHECKPOINT_REGISTRY LAYERX_NODE_PAXEER_RPC_ADDRESS LAYERX_NODE_PAXEER_RPC_PORT)
+declare -A SETTLEMENT=()
+SETTLEMENT_LINES=""
+
+settlement_read_environment() {
+    # settlement_read_environment -> SETTLEMENT holds the non-empty settlement keys of the environment
+    local key
+    SETTLEMENT=()
+    for key in "${SETTLEMENT_KEYS[@]}"; do
+        [ -z "${!key:-}" ] || SETTLEMENT[$key]=${!key}
     done
-    [ "$rpc_address" = 127.0.0.1 ] || fail "LAYERX_NODE_PAXEER_RPC_ADDRESS must be 127.0.0.1"
-    [[ $rpc_port =~ ^[1-9][0-9]{0,4}$ ]] && [ "$rpc_port" -le 65535 ] || fail "LAYERX_NODE_PAXEER_RPC_PORT must be in 1..65535"
 }
 
-check_settlement_file() {
-    local file=$1 line key value
-    local chain_id="" settlement_contract="" checkpoint_registry="" rpc_address="" rpc_port=""
+settlement_read_file() {
+    # settlement_read_file FILE -> SETTLEMENT holds the KEY=VALUE lines of FILE
+    local file=$1 line key
+    SETTLEMENT=()
     [ -r "$file" ] || fail "settlement environment file is not readable: $file"
     [ -f "$file" ] || fail "settlement environment file is not a regular file: $file"
     [ "$(stat -c %s "$file")" -le 4096 ] || fail "settlement environment file exceeds 4096 bytes: $file"
     while IFS= read -r line || [ -n "$line" ]; do
         [ -n "$line" ] || continue
-        [[ $line =~ ^([A-Z_]+)=([^[:space:]]*)$ ]] || fail "settlement environment line is not KEY=VALUE: ${line%%=*}"
+        [[ $line =~ ^([A-Z_]+)=([^[:space:]]+)$ ]] || fail "settlement environment line is not KEY=VALUE: ${line%%=*}"
         key=${BASH_REMATCH[1]}
-        value=${BASH_REMATCH[2]}
-        case "$key" in
-            LAYERX_NODE_PAXEER_CHAIN_ID) [ -z "$chain_id" ] || fail "$key repeated"; chain_id=$value ;;
-            LAYERX_NODE_SETTLEMENT_CONTRACT) [ -z "$settlement_contract" ] || fail "$key repeated"; settlement_contract=$value ;;
-            LAYERX_NODE_CHECKPOINT_REGISTRY) [ -z "$checkpoint_registry" ] || fail "$key repeated"; checkpoint_registry=$value ;;
-            LAYERX_NODE_PAXEER_RPC_ADDRESS) [ -z "$rpc_address" ] || fail "$key repeated"; rpc_address=$value ;;
-            LAYERX_NODE_PAXEER_RPC_PORT) [ -z "$rpc_port" ] || fail "$key repeated"; rpc_port=$value ;;
-            *) fail "settlement environment file carries an unexpected key $key" ;;
-        esac
+        [[ " ${SETTLEMENT_KEYS[*]} " = *" $key "* ]] || fail "settlement environment file carries an unexpected key $key"
+        [ -z "${SETTLEMENT[$key]+set}" ] || fail "$key repeated"
+        SETTLEMENT[$key]=${BASH_REMATCH[2]}
     done < "$file"
-    validate_settlement "$chain_id" "$settlement_contract" "$checkpoint_registry" "$rpc_address" "$rpc_port"
-    printf 'LAYERX_NODE_PAXEER_CHAIN_ID=%s\nLAYERX_NODE_SETTLEMENT_CONTRACT=%s\nLAYERX_NODE_CHECKPOINT_REGISTRY=%s\nLAYERX_NODE_PAXEER_RPC_ADDRESS=%s\nLAYERX_NODE_PAXEER_RPC_PORT=%s\n' \
-        "$chain_id" "$settlement_contract" "$checkpoint_registry" "$rpc_address" "$rpc_port"
+}
+
+settlement_resolve() {
+    # settlement_resolve -> SETTLEMENT_LINES: the settlement inputs of SETTLEMENT with the
+    # chain 125 loopback defaults filling what is absent, followed by the daemon pins
+    # derived from them; a pin that was given must agree with the derivation.
+    local chain_id=${SETTLEMENT[LAYERX_NODE_PAXEER_CHAIN_ID]:-125} rpc_url=${SETTLEMENT[LAYERX_NODE_PAXEER_RPC_URL]:-}
+    local address=${SETTLEMENT[LAYERX_NODE_PAXEER_RPC_ADDRESS]:-} port=${SETTLEMENT[LAYERX_NODE_PAXEER_RPC_PORT]:-}
+    local url_port binding given
+    [[ $chain_id =~ ^[1-9][0-9]{0,19}$ ]] || fail "LAYERX_NODE_PAXEER_CHAIN_ID must be a positive decimal uint64"
+    if [ ${#chain_id} -eq 20 ] && [[ $chain_id > 18446744073709551615 ]]; then
+        fail "LAYERX_NODE_PAXEER_CHAIN_ID exceeds uint64"
+    fi
+    [ -n "$rpc_url" ] || rpc_url="http://${address:-127.0.0.1}:${port:-8545}"
+    [[ $rpc_url =~ ^http://127\.0\.0\.1:([1-9][0-9]{0,4})$ ]] && [ "${BASH_REMATCH[1]}" -le 65535 ] \
+        || fail "LAYERX_NODE_PAXEER_RPC_URL must be the loopback JSON-RPC http://127.0.0.1:PORT"
+    url_port=${BASH_REMATCH[1]}
+    [ -z "$address" ] || [ "$address" = 127.0.0.1 ] || fail "LAYERX_NODE_PAXEER_RPC_ADDRESS must be 127.0.0.1"
+    [ -z "$port" ] || [ "$port" = "$url_port" ] || fail "LAYERX_NODE_PAXEER_RPC_PORT must be the port of LAYERX_NODE_PAXEER_RPC_URL"
+    for binding in "LAYERX_NODE_REGISTRY_PRECOMPILE=$REGISTRY_PRECOMPILE" "LAYERX_NODE_CUSTODY_PRECOMPILE=$CUSTODY_PRECOMPILE" \
+            "LAYERX_NODE_ANCHOR_PRECOMPILE=$ANCHOR_PRECOMPILE" "LAYERX_NODE_SETTLEMENT_CONTRACT=$ANCHOR_PRECOMPILE" \
+            "LAYERX_NODE_CHECKPOINT_REGISTRY=$ANCHOR_PRECOMPILE"; do
+        given=${SETTLEMENT[${binding%%=*}]:-}
+        [ -z "$given" ] || [ "${given,,}" = "${binding#*=}" ] || fail "${binding%%=*} must be the native precompile ${binding#*=}"
+    done
+    SETTLEMENT_LINES=$(printf 'LAYERX_NODE_PAXEER_CHAIN_ID=%s\nLAYERX_NODE_PAXEER_RPC_URL=%s\nLAYERX_NODE_REGISTRY_PRECOMPILE=%s\nLAYERX_NODE_CUSTODY_PRECOMPILE=%s\nLAYERX_NODE_ANCHOR_PRECOMPILE=%s\nLAYERX_NODE_SETTLEMENT_CONTRACT=%s\nLAYERX_NODE_CHECKPOINT_REGISTRY=%s\nLAYERX_NODE_PAXEER_RPC_ADDRESS=127.0.0.1\nLAYERX_NODE_PAXEER_RPC_PORT=%s' \
+        "$chain_id" "$rpc_url" "$REGISTRY_PRECOMPILE" "$CUSTODY_PRECOMPILE" "$ANCHOR_PRECOMPILE" "$ANCHOR_PRECOMPILE" "$ANCHOR_PRECOMPILE" "$url_port")
 }
 
 if [ "${1:-}" = --check-settlement ]; then
     [ $# -eq 2 ] || fail "--check-settlement takes exactly one file argument"
-    check_settlement_file "$2"
+    settlement_read_file "$2"
+    settlement_resolve
+    printf '%s\n' "$SETTLEMENT_LINES"
     exit 0
 fi
 
@@ -318,17 +347,13 @@ if [ "$TREASURY_BALANCE" != 0 ]; then
     fail "treasury_balance_unsupported: the protocol genesis manifest (src/protocol/lxp_genesis.c validate) admits only the three system accounts at balance zero; the treasury is funded after genesis, not in it"
 fi
 
-PAXEER_CHAIN_ID=${LAYERX_NODE_PAXEER_CHAIN_ID:-}
-SETTLEMENT_CONTRACT=${LAYERX_NODE_SETTLEMENT_CONTRACT:-}
-CHECKPOINT_REGISTRY=${LAYERX_NODE_CHECKPOINT_REGISTRY:-}
-PAXEER_RPC_ADDRESS=${LAYERX_NODE_PAXEER_RPC_ADDRESS:-}
-PAXEER_RPC_PORT=${LAYERX_NODE_PAXEER_RPC_PORT:-}
+settlement_read_environment
 if [ -n "$SETTLEMENT_ENV" ]; then
     [[ $SETTLEMENT_ENV = /* ]] || fail "--settlement-env must be an absolute path"
-    [ -z "$PAXEER_CHAIN_ID$SETTLEMENT_CONTRACT$CHECKPOINT_REGISTRY$PAXEER_RPC_ADDRESS$PAXEER_RPC_PORT" ] \
-        || fail "--settlement-env excludes the LAYERX_NODE_PAXEER_* and LAYERX_NODE_SETTLEMENT_CONTRACT/CHECKPOINT_REGISTRY environment"
+    [ ${#SETTLEMENT[@]} -eq 0 ] \
+        || fail "--settlement-env excludes the LAYERX_NODE_PAXEER_*, LAYERX_NODE_*_PRECOMPILE and LAYERX_NODE_SETTLEMENT_CONTRACT/CHECKPOINT_REGISTRY environment"
 else
-    validate_settlement "$PAXEER_CHAIN_ID" "$SETTLEMENT_CONTRACT" "$CHECKPOINT_REGISTRY" "$PAXEER_RPC_ADDRESS" "$PAXEER_RPC_PORT"
+    settlement_resolve
 fi
 
 DAEMON_UID=$(id -u)
@@ -659,8 +684,7 @@ LAST_BATCH=18446744073709551615
 if [ -n "$SETTLEMENT_ENV" ]; then
     printf 'LAYERX_NODE_SETTLEMENT_ENV=%s\n' "$SETTLEMENT_ENV" > "$DATA_DIR/sequencer.env"
 else
-    printf 'LAYERX_NODE_PAXEER_CHAIN_ID=%s\nLAYERX_NODE_SETTLEMENT_CONTRACT=%s\nLAYERX_NODE_CHECKPOINT_REGISTRY=%s\nLAYERX_NODE_PAXEER_RPC_ADDRESS=%s\nLAYERX_NODE_PAXEER_RPC_PORT=%s\n' \
-        "$PAXEER_CHAIN_ID" "$SETTLEMENT_CONTRACT" "$CHECKPOINT_REGISTRY" "$PAXEER_RPC_ADDRESS" "$PAXEER_RPC_PORT" > "$DATA_DIR/sequencer.env"
+    printf '%s\n' "$SETTLEMENT_LINES" > "$DATA_DIR/sequencer.env"
 fi
 cat >> "$DATA_DIR/sequencer.env" <<EOF
 LAYERX_NODE_CHECKPOINT_DIRECTORY=$DATA_DIR/checkpoints
@@ -711,8 +735,7 @@ if [ "$HANDOVER_PARAMETER_COUNT" -eq 1 ]; then
     if [ -n "$SETTLEMENT_ENV" ]; then
         printf 'LAYERX_NODE_SETTLEMENT_ENV=%s\n' "$SETTLEMENT_ENV" >> "$DATA_DIR/replica.env"
     else
-        printf 'LAYERX_NODE_PAXEER_CHAIN_ID=%s\nLAYERX_NODE_SETTLEMENT_CONTRACT=%s\nLAYERX_NODE_CHECKPOINT_REGISTRY=%s\nLAYERX_NODE_PAXEER_RPC_ADDRESS=%s\nLAYERX_NODE_PAXEER_RPC_PORT=%s\n' \
-            "$PAXEER_CHAIN_ID" "$SETTLEMENT_CONTRACT" "$CHECKPOINT_REGISTRY" "$PAXEER_RPC_ADDRESS" "$PAXEER_RPC_PORT" >> "$DATA_DIR/replica.env"
+        printf '%s\n' "$SETTLEMENT_LINES" >> "$DATA_DIR/replica.env"
     fi
 fi
 

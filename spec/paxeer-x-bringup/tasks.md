@@ -12,7 +12,7 @@
     - Source BRINGUP_HOSTS_FILE in a load_hosts function that exits 2 naming the first missing role of EDGE_HOST, KERNEL_HOST, PLATFORM_HOST, EXPLORER_HOST, ARCHIVE_HOST, VALIDATOR_HOSTS, RPC_HOSTS and HPX_HOST, and never echoes a value; implement the hosts subcommand as one ssh true per role.
     - Write tools/bringup/check-live.test.sh after tools/wallet/check-live.test.sh proving the usage exit, a passing subcommand and a failing subcommand against local fixtures with no network.
     - _Requirements: 4.1, 4.2, 4.3_
-  - [ ] 0.2 Create the internal CA on the edge host and issue per-service certificates on their hosts
+  - [ ] 0.2 Create the internal CA on the edge host and issue per-service certificates on their hosts — **Implemented - qualification pending**
     - Write tools/bringup/ca.sh with init (CA key and certificate under /etc/layerx/ca on the edge host, 0600, printing only the fingerprint) and issue <service> <role> (the target host generates key and CSR under /etc/layerx/<service>/tls, the edge signs with the SAN list the pod definition declares plus localhost and the loopback address for loopback-reached services, the certificate is copied back; the key never leaves the host).
     - Take the SAN list per service from platform/hosted/tests/beta-cluster.sh issue_cert calls so the receipt authority, core, agent boundary, identity, internal, registry, gateway, human and interop certificates match what their clients verify.
     - Add the ca subcommand to tools/bringup/check-live.sh: every issued certificate chains to the CA, carries its SANs and expires in more than thirty days.
@@ -31,9 +31,9 @@
 ## Wave 1 - Kernel host
 
 - [ ] 1. Settle on the precompiles, bind the finality verifier, fix the abort points, generate the genesis, run under systemd and prove a value loop
-  - [ ] 1.1 Point the node pod's settlement inputs at the registry, custody and anchor precompiles and retire the Solidity path from the bring-up
-    - Replace LAYERX_NODE_SETTLEMENT_CONTRACT and LAYERX_NODE_SETTLEMENT_ENV in platform/hosted/node/bootstrap.sh, sequencer-env.sh, checkpoint-authority.py and deployment.yaml by LAYERX_NODE_REGISTRY_PRECOMPILE, LAYERX_NODE_CUSTODY_PRECOMPILE and LAYERX_NODE_ANCHOR_PRECOMPILE defaulting to 0x0000000000000000000000000000000000001004, 0x0000000000000000000000000000000000001013 and 0x0000000000000000000000000000000000001014 on chain 125, read through LAYERX_NODE_PAXEER_RPC_URL on loopback.
-    - Make the guarantor (guarantor.sh, checkpoint-authority.py) submit certificates and checkpoints to the anchor precompile's submitCheckpoint and finalize and read statusOf, using the ABI under precompiles/, and delete the call to platform/hosted/paxeer/deploy-contracts.sh from platform/hosted/tests/beta-cluster.sh while keeping the script for private networks.
+  - [ ] 1.1 Point the node pod's settlement inputs at the registry, custody and anchor precompiles and retire the Solidity path from the bring-up — **Implemented - qualification pending**
+    - Replace LAYERX_NODE_SETTLEMENT_CONTRACT and LAYERX_NODE_SETTLEMENT_ENV in platform/hosted/node/bootstrap.sh, sequencer-env.sh, cmd/layerx-guarantor/settlement.py and deployment.yaml by LAYERX_NODE_REGISTRY_PRECOMPILE, LAYERX_NODE_CUSTODY_PRECOMPILE and LAYERX_NODE_ANCHOR_PRECOMPILE defaulting to 0x0000000000000000000000000000000000001004, 0x0000000000000000000000000000000000001013 and 0x0000000000000000000000000000000000001014 on chain 125, read through LAYERX_NODE_PAXEER_RPC_URL on loopback.
+    - Make the guarantor (guarantor.sh, cmd/layerx-guarantor/settlement.py) submit certificates and checkpoints to the anchor precompile's submitCheckpoint and finalize and read statusOf, using the ABI under precompiles/, and delete the call to platform/hosted/paxeer/deploy-contracts.sh from platform/hosted/tests/beta-cluster.sh while keeping the script for private networks.
     - Extend platform/hosted/node/tests/node-test.sh with a precompile settlement case against the loopback RPC of a synced node when LAYERX_NODE_PAXEER_RPC_URL is set, refusing to run against anvil.
     - _Requirements: 5.1_
   - [ ] 1.2 Bind a real finality-authority verifier in layerxd so the sequencer bootstraps against the chain
@@ -140,7 +140,7 @@
     - Register the SID, PAX, USDC and USDL assets in the kernel registry from the kernel host and write tools/bringup/xweb-config.sh that renders the four sidecar configs with gateway.endpoint https://api.mainnet-beta.router.paxeer.network/rpc, the kernel host's sequencer id and public key, the registered asset ids and the owner-set PAX price, then restarts x-websearch@<slot> on both validator hosts.
     - Add the search subcommand: /health ok on every sidecar through https://search.paxeer.network, one paid /search returning 200 after PAYMENT-SIGNATURE settled at the router, and, once the submitters are funded, the XWebFulfilled event for the owner's request.
     - _Requirements: 13.1, 13.2_
-  - [ ] 4.3 Run the archive node with min-retain-blocks 0 on the archive host
+  - [ ] 4.3 Run the archive node with min-retain-blocks 0 on the archive host — **Implemented - qualification pending**
     - Install paxd at the live release on the archive host through hpx with HPX_TYPE=fullnode, set min-retain-blocks 0 and the state-sync keep-recent to 0, sync from the earliest reachable snapshot, and keep its public RPC name serving the JSON-RPC over TLS as the other fifteen do.
     - Add the archive-node subcommand: eth_getBlockByNumber for a block below the public nodes' first retained height answers a block and eth_blockNumber is within ten of a public node.
     - _Requirements: 14.1_
@@ -186,7 +186,7 @@
     - On the host the map names as HPX_HOST run hpx/publish.sh with the live paxd, the six native libraries and the live config, then hpx/hosting/deploy.sh for the current release assets with a generated HPX_REGISTER_TOKEN under /etc/hpx-registry.env.
     - Add the hpx subcommand: /healthz at https://node.hyperpaxeer.com with the chain id and the source revision, checksums.txt verified against the served artifacts, and /api/nodes answering.
     - _Requirements: 18.2_
-  - [ ] 4.15 Repair the lagging and frozen public RPC nodes
+  - [ ] 4.15 Repair the lagging and frozen public RPC nodes — **Implemented - qualification pending**
     - On each of the RPC_HOSTS install the release that fixes the JSON-RPC double-bind, clear the frozen state where a node stopped advancing, resync the lagging nodes with state sync, and restart their units.
     - Add the rpc-nodes subcommand: each of the sixteen public RPC names answers eth_blockNumber within ten blocks of the highest answer and each unit is active without a restart in the last hour.
     - _Requirements: 18.3_
