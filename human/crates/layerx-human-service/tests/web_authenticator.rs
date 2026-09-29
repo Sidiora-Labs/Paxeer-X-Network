@@ -11,7 +11,7 @@ use layerx_human_test_support::{directory, install_and_open, retention_uniform, 
 use serde_json::{json, Value};
 
 const PRINCIPAL: &str = "act_00112233445566778899aabbccddeeff";
-const ORIGIN: &str = "https://id.layerx.example";
+const ORIGIN: &str = "https://paxportwallet.com";
 
 fn required<T, E: Debug>(value: Result<T, E>) -> T {
     value.unwrap_or_else(|error| panic!("real browser authenticator: {error:?}"))
@@ -86,7 +86,7 @@ fn browser_authenticator_interoperates_with_real_passkeys_and_refuses_forgery_an
     let principal = required(PrincipalId::new(PRINCIPAL));
     let mut scope = required(store.principal(&principal));
     let passkeys = required(Passkeys::new(AuthConfig {
-        rp_id: "id.layerx.example".to_owned(),
+        rp_id: "paxportwallet.com".to_owned(),
         rp_name: "LayerX".to_owned(),
         origin: ORIGIN.to_owned(),
         ceremony_ttl_secs: 300,

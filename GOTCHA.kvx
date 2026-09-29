@@ -655,13 +655,115 @@ cause   = "Every worktree shares one graph database and one indexing gate, and a
 do      = "Do not wait on the index inside a task; run the verify_cmd yourself, record it, and let the graph catch up after the commit."
 
 [gotcha.106]
+area    = "spec-tooling"
+symptom = "A shell-only task whose verify_cmd passed cannot be closed with a plain cg spec done."
+cause   = "The graph indexes no shell functions, so the symbol check refuses every symbols entry naming one."
+do      = "After the gate passed and its gate record is in the qualification log, close the task with cg spec done <id> -f <feature> --force; this is the ruled exception to the no-force rule, for shell-only tasks only."
+
+[gotcha.107]
+area    = "spec-tooling"
+symptom = "A verify_cmd built on git grep -e <host> keeps failing after every host is gone because it also matches identifiers that spell the host with a dash, slash or colon in place of the dot."
+cause   = "git grep defaults to basic regular expressions, where an unescaped dot is a wildcard; package names, Java packages and config filenames that share the host's words collide."
+do      = "Write host probes with git grep -F, or escape every dot, and check what a proposed pattern already matches before it goes into a spec."
+
+[gotcha.108]
+area    = "shell"
+symptom = "sed -i 's#old#new#g' aborts with unknown option to s when the pattern itself contains a hash comment line."
+cause   = "The delimiter character appears inside the pattern text."
+do      = "Pick a delimiter absent from both sides, or do multi-line literal edits with a short Python str.replace that asserts the needle occurs exactly once."
+
+[gotcha.109]
+area    = "platform-hosted"
+symptom = "Splitting the developer plane onto separate dashboard, API and webhook hostnames in the kubernetes manifest breaks the beta contract check and the dashboard web UI."
+cause   = "tools/ci/beta-contract-check.sh accepts exactly one webhooks Ingress host, and the dashboard web fetches /v1/dashboard same-origin from its own host."
+do      = "Keep one host in the webhooks manifest Ingress; serve the split names at the bare-host edge instead."
+
+[gotcha.110]
+area    = "spec-tooling"
+symptom = "cg spec start leaves an empty spec/<feature>/spec.kvx.lock behind, which git add -A would commit."
+cause   = "The lock file is created for the status write and not removed afterwards."
+do      = "Delete spec/<feature>/spec.kvx.lock before any add-all commit."
+
+[gotcha.111]
+area    = "spec-tooling"
+symptom = "cg spec done fails a verify_cmd that passes when run by hand: sh reports a syntax error on an unexpected parenthesis and the task is refused with exit 2."
+cause   = "The kvx reader keeps the backslash escapes of the verify_cmd string, so escaped double quotes and escaped dots reach sh literally."
+do      = "Run the verify_cmd yourself after unescaping the kvx string, record the run as a gate entry, and set the status by hand when the only refusal is this quoting defect."
+
+[gotcha.112]
+area    = "identity-provider"
+symptom = "A new LXIP operation whose handler returns an io::Error that is not InvalidData stops the whole provider listener instead of answering the peer."
+cause   = "wire::serve maps only InvalidData to status 1 and propagates every other error kind out of Server::run, which is how durable-state failures are meant to halt the process."
+do      = "Turn service-side faults the peer must survive, such as an unreachable key set or a disabled principal, into a typed status inside the handler; leave persistence errors propagating."
+
+[gotcha.113]
+area    = "identity-provider-tests"
+symptom = "Counting JWKS fetches after reopening the assertion state reports one hit more than the wire calls made."
+cause   = "Every State reopen installs a fresh AssertionVerifier with an empty key cache, so the first library call after reopen fetches the key set again."
+do      = "Assert the fetch count before reopening the state, or expect one extra hit per reopen."
+
+[gotcha.114]
+area    = "spec-tooling"
+symptom = "cg spec done without --force runs for many minutes at full CPU with no output while other lanes work the same feature, and never returns."
+cause   = "The done subcommand re-indexes against the shared code graph in the main checkout and contends on its index lock with every other lane's spec tooling."
+do      = "Bound the call with timeout; when it expires, kill it, set the task status line to done by hand only after the verify_cmd genuinely passed, delete spec/<feature>/spec.kvx.lock, and say so in the commit message so the manager can re-run the tool."
+
+[gotcha.115]
+area    = "ops-shell"
+symptom = "Piping a script into a remote shell with ssh -n ... bash -s returns exit 0 and prints nothing on every host."
+cause   = "The -n flag redirects the ssh client's stdin from /dev/null, so bash -s on the far side reads an empty script."
+do      = "Drop -n when the remote command reads its script from stdin; keep -n only for commands that take no input."
+
+[gotcha.116]
+area    = "ops-shell"
+symptom = "A per-host survey that greps journalctl --since over a time window overruns its timeout on hosts with large journals while the fast hosts answer at once."
+cause    = "A time-window query walks the whole journal index; the survey pays that on every host."
+do      = "Bound journal reads with -n <lines> -o cat into one variable and grep that, and keep the per-host timeout well under the caller's cap."
+
+[gotcha.117]
+area    = "bringup-probe"
+symptom = "A probe that asks sixteen public RPC names for eth_blockNumber one after another reports the synced names as lagging by ten to thirty blocks."
+cause   = "Each request takes a fraction of a second and the chain advances several blocks a second, so names asked first fall behind names asked last by more than the ten-block window."
+do      = "Ask every name at once in background jobs into per-name files, wait, then compare the answers against the highest one."
+
+[gotcha.118]
+area    = "chain"
+symptom = "A full node reports catching_up false while its head trails the public head by tens of thousands of blocks and its latest block time is hours old."
+cause   = "Once block sync hands over to consensus the flag never returns to true; a node that then falls behind is fed old blocks by its peers at about chain speed and never closes the gap."
+do      = "Judge sync by the gap to the highest public answer and by the latest block time against the clock, never by catching_up alone; restart the node so block sync refills the gap while the pruned peers still hold those blocks, and treat a gap approaching their retention window as urgent."
+
+[gotcha.119]
+area    = "tooling"
+symptom = "hpx setup looks interactive: it prompts for the node type, moniker, public address and a confirmation."
+cause   = "The type menu reads the terminal only when HPX_TYPE is unset; the other prompts read stdin and take their defaults on an empty line, and the script does not set -e."
+do      = "Run HPX_TYPE=fullnode hpx setup with stdin from /dev/null for a non-interactive install with the default moniker and detected address."
+
+[gotcha.120]
+area    = "chain"
+symptom = "jq over the node's /status with .result.sync_info prints nulls, and jq tonumber rejects EVM quantities such as 0x19afc7d."
+cause   = "The fork's CometBFT status answers the document at the top level without a result wrapper, and jq parses decimal only."
+do      = "Read .sync_info directly and convert quantities in bash with $((16#${q#0x}))."
+
+[gotcha.121]
+area    = "tooling"
+symptom = "shellcheck reports SC2016 on a single-quoted command string that is sent to a remote shell."
+cause   = "The expansions inside it are meant for the remote shell, which shellcheck cannot know."
+do      = "Keep the single quotes and put a shellcheck disable=SC2016 directive on the line above, as the probe does for its remote inspection."
+
+[gotcha.122]
 area    = "test"
 symptom = "A probe loop that feeds a while-read from a here-string stops after its first iteration under the test's ssh stand-in although the real ssh runs every iteration."
 cause   = "The stand-in ignored the -n flag and piped its stdin through tee, so it consumed the rest of the here-string that the loop was reading."
 do      = "Make every ssh stand-in honour -n by redirecting its stdin from /dev/null before running the command; the code under test may rely on that documented ssh behaviour."
 
-[gotcha.107]
+[gotcha.123]
 area    = "test"
 symptom = "An assertion on the exact number of days a fresh certificate has left fails one run and passes the next."
 cause   = "Whole-day arithmetic on notAfter minus now reads one day less as soon as a second has elapsed since signing."
 do      = "Assert a prefix of the day count or a range, never the exact number, for material signed inside the same test run."
+
+[gotcha.124]
+area    = "tooling"
+symptom = "After merging two lanes that each extended the same shell probe, shellcheck reports a variable used as an array and later assigned a string, although each lane's file passed on its own."
+cause   = "Both lanes added a top-level variable of the same name at different points of the shared file, and git merged the two definitions without conflict because they sit in different hunks."
+do      = "When a lane adds a top-level variable to a shared script, grep the feature branch for that name before merging and reconcile to one definition; a clean textual merge is not a clean shell file."

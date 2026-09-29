@@ -13,7 +13,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::assertion::{
-    validate_wallet_did, AssertionPrincipal, AssertionVerifier, MAX_ISSUER_BYTES, MAX_SUBJECT_BYTES,
+    validate_wallet_did, AssertionPrincipal, AssertionRefusal, AssertionVerifier, MAX_ISSUER_BYTES,
+    MAX_SUBJECT_BYTES,
 };
 use crate::invalid;
 
@@ -241,7 +242,7 @@ impl State {
                         },
                     );
             if foreign {
-                return Err(invalid("wallet DID bound to another account"));
+                return Err(AssertionRefusal::Identity.into());
             }
         }
         let mut next = self.snapshot.clone();
@@ -253,9 +254,7 @@ impl State {
                 (Some(existing), Some(did)) if existing == did => {
                     return Ok((account.principal(), false))
                 }
-                (Some(_), Some(_)) => {
-                    return Err(invalid("wallet DID conflicts with the recorded DID"))
-                }
+                (Some(_), Some(_)) => return Err(AssertionRefusal::Identity.into()),
                 (None, Some(did)) => account.did = Some(did.to_owned()),
             }
             (index, ASSERTION_DID_RECORDED)
@@ -756,7 +755,7 @@ fn validate_text(value: &str, maximum: usize) -> io::Result<()> {
     Ok(())
 }
 
-fn text(bytes: &[u8]) -> io::Result<&str> {
+pub(crate) fn text(bytes: &[u8]) -> io::Result<&str> {
     let value = std::str::from_utf8(bytes).map_err(|_| invalid("invalid UTF-8"))?;
     validate_text(value, 4096)?;
     Ok(value)

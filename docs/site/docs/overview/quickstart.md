@@ -210,8 +210,8 @@ current identity sequence through `lx_getSequence`. The examples read
 [402LXP transport](../interop/x402.md) for the offer, grant and commitment
 contracts.
 
-The public hosted equivalents are `https://api.paxeer.network/rpc` and
-`wss://api.paxeer.network/rpc/ws`; the faucet origin is
+The public hosted equivalents are `https://api.mainnet-beta.router.paxeer.network/rpc` and
+`wss://api.mainnet-beta.router.paxeer.network/rpc/ws`; the faucet origin is
 `https://faucet.paxeer.network`. See
 [Getting started](getting-started.md) for the public
 checklist and [Public JSON-RPC](../platform/gateway-rpc.md) for every method and typed error.

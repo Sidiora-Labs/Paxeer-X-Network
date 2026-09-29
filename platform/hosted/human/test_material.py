@@ -97,8 +97,8 @@ class MaterialTests(unittest.TestCase):
     def test_passkey_relying_party_follows_the_deployed_web_origin(self):
         self.assertEqual(material.passkey_relying_party(''),
                          ('app.paxeer.network', 'https://app.paxeer.network'))
-        self.assertEqual(material.passkey_relying_party('https://human.beta.layerx.example'),
-                         ('human.beta.layerx.example', 'https://human.beta.layerx.example'))
+        self.assertEqual(material.passkey_relying_party('https://paxportwallet.com'),
+                         ('paxportwallet.com', 'https://paxportwallet.com'))
         for refused in ('http://app.paxeer.network', 'https://localhost:19457',
                         'https://127.0.0.1', 'https://app.paxeer.network/',
                         'https://Human.Testnet.Layerx.Network', 'https://app.paxeer.network?a=1'):
@@ -111,9 +111,9 @@ class MaterialTests(unittest.TestCase):
                 (root / name).mkdir(mode=0o700)
             (root.parent / 'receipt-authority-replica-id').write_text('6c61796572782d626574612d726563656970742d617574686f726974792d3031')
             subprocess.run([sys.executable, str(HERE / 'material.py'), str(root), '402', '31337', '',
-                            'https://human.beta.layerx.example'], check=True)
-            self.assertEqual((root / 'config/LAYERX_HUMAN_ORIGIN').read_text(), 'https://human.beta.layerx.example')
-            self.assertEqual((root / 'config/LAYERX_HUMAN_RP_ID').read_text(), 'human.beta.layerx.example')
+                            'https://paxportwallet.com'], check=True)
+            self.assertEqual((root / 'config/LAYERX_HUMAN_ORIGIN').read_text(), 'https://paxportwallet.com')
+            self.assertEqual((root / 'config/LAYERX_HUMAN_RP_ID').read_text(), 'paxportwallet.com')
 
     def test_bring_up_publishes_the_web_origin_the_ceremony_configuration_uses(self):
         cluster = (ROOT / 'platform/hosted/tests/beta-cluster.sh').read_text()

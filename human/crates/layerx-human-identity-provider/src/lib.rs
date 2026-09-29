@@ -6,7 +6,9 @@ mod provision;
 mod state;
 mod wire;
 
-pub use assertion::{AssertionConfig, AssertionPrincipal, AssertionVerifier, VerifiedAssertion};
+pub use assertion::{
+    AssertionConfig, AssertionPrincipal, AssertionRefusal, AssertionVerifier, VerifiedAssertion,
+};
 pub use state::{AssertionReceipt, Policy, State};
 
 use std::fs;

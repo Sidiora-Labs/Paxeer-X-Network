@@ -39,7 +39,7 @@
 #                                       and every Paxeer transaction is signed by platform/hosted/paxeer/evm.py
 #   LAYERX_BETA_FAUCET_HOST             public faucet hostname (default faucet.paxeer.network)
 #   LAYERX_BETA_DEVELOPER_HOST          public developer hostname (default developers.paxeer.network)
-#   LAYERX_BETA_RELAY_HOST              public relay/archive hostname (default relay.paxeer.network)
+#   LAYERX_BETA_RELAY_HOST              public relay/archive hostname (default archive.paxeer.network)
 #   LAYERX_BETA_RELAY_UPSTREAM          comma-separated public HTTPS relay/archive origins the beta relay reads
 #                                       canonical history from; unset leaves the colocated canonical availability
 #                                       log of the sequencer node as its only source
@@ -231,10 +231,10 @@ CALICO_SHA256=9382d2b27a76f40c170454b408653e6d71e2205ef0aef069e942bb690e7381d0
 CLUSTER_NAME=${LAYERX_BETA_CLUSTER_NAME:-layerx-beta}
 FAUCET_HOST=${LAYERX_BETA_FAUCET_HOST:-faucet.paxeer.network}
 DEVELOPER_HOST=${LAYERX_BETA_DEVELOPER_HOST:-developers.paxeer.network}
-RELAY_HOST=${LAYERX_BETA_RELAY_HOST:-relay.paxeer.network}
+RELAY_HOST=${LAYERX_BETA_RELAY_HOST:-archive.paxeer.network}
 HUMAN_WEB_HOST=app.paxeer.network
 TESTNET_HOST=beta.paxeer.network
-GATEWAY_HOST=api.paxeer.network
+GATEWAY_HOST=api.mainnet-beta.router.paxeer.network
 KIND_CNI=${LAYERX_BETA_KIND_CNI:-calico}
 READY_TIMEOUT=${LAYERX_BETA_READY_TIMEOUT:-900}
 MIN_FREE_GIB=${LAYERX_BETA_MIN_FREE_GIB:-24}
@@ -1494,7 +1494,7 @@ render_manifest() {
         sed -i "s|image: $canonical\$|image: $pin|" "$dst"
     done < "$WORK_DIR/images"
     sed -i "s|imagePullPolicy: Always|imagePullPolicy: $PULL_POLICY|" "$dst"
-    sed -i "s|developers\.layerx\.example|$DEVELOPER_HOST|g" "$dst"
+    sed -i "s|developers\.paxeer\.network|$DEVELOPER_HOST|g" "$dst"
     if grep -E 'image: ghcr.io/[^@[:space:]]*:[^@[:space:]]+$' "$dst"; then
         fail "rendered manifest $dst still references a mutable GHCR image"
     fi
@@ -1839,7 +1839,7 @@ PYREG
     render_manifest "$REPO_ROOT/platform/hosted/internal/deployment.yaml" "$MANIFESTS_DIR/internal.yaml"
     render_manifest "$REPO_ROOT/platform/hosted/webhooks/deployment.yaml" "$MANIFESTS_DIR/developer.yaml"
     render_manifest "$REPO_ROOT/platform/relay_archive/deployment.yaml" "$MANIFESTS_DIR/relay-archive.yaml"
-    sed -i "s|relay\.layerx\.example|$RELAY_HOST|g" "$MANIFESTS_DIR/relay-archive.yaml"
+    sed -i "s|archive\.paxeer\.network|$RELAY_HOST|g" "$MANIFESTS_DIR/relay-archive.yaml"
     grep -Fq "host: $RELAY_HOST" "$MANIFESTS_DIR/relay-archive.yaml" \
         || fail "the relay/archive manifest host could not be bound to $RELAY_HOST"
     if [ "$RAMP_ENABLED" = 1 ]; then

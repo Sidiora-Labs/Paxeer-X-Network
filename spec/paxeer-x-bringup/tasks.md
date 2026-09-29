@@ -7,7 +7,7 @@
 ## Wave 0 - Edge and docs
 
 - [ ] 0. Front every public name, issue the internal CA, fix the docs and deliver the probe
-  - [ ] 0.1 Deliver the operator host-map contract and the bring-up live probe — **Implemented - qualification pending**
+  - [x] 0.1 Deliver the operator host-map contract and the bring-up live probe
     - Write tools/bringup/check-live.sh after tools/wallet/check-live.sh: a usage block, one function per subcommand of [design.probe], pass and fail lines with the observed value, CHECK_LIVE_TIMEOUT, exit 0 only when every check passes and 2 on usage; every subcommand of a later task is added by that task.
     - Source BRINGUP_HOSTS_FILE in a load_hosts function that exits 2 naming the first missing role of EDGE_HOST, KERNEL_HOST, PLATFORM_HOST, EXPLORER_HOST, ARCHIVE_HOST, VALIDATOR_HOSTS, RPC_HOSTS and HPX_HOST, and never echoes a value; implement the hosts subcommand as one ssh true per role.
     - Write tools/bringup/check-live.test.sh after tools/wallet/check-live.test.sh proving the usage exit, a passing subcommand and a failing subcommand against local fixtures with no network.
@@ -22,7 +22,7 @@
     - Write tools/bringup/edge/apply.sh that renders on the edge host, runs certbot for each name, reloads nginx, and writes the nftables rules on every backend host allowing each backend port from the edge host only.
     - Add the edge subcommand: every name answers over TLS with a valid chain and a status below 504, and every backend port is refused from the operator host.
     - _Requirements: 1.1, 1.2, 1.3_
-  - [ ] 0.4 Replace api.paxeer.network by the router URL and every layerx.example host by its public name
+  - [x] 0.4 Replace api.paxeer.network by the router URL and every layerx.example host by its public name
     - Rewrite every occurrence of api.paxeer.network outside spec/ to https://api.mainnet-beta.router.paxeer.network in docs/site, docs/wiki, platform/docs, platform/hosted (gateway README, deployment, testnet lib, topology regressions, beta-cluster.sh), platform/relay_archive, platform/examples, platform/sdk/jvm and .github/workflows/platform.yml.
     - Replace developers.layerx.example, relay.layerx.example and every other layerx.example host in manifests, examples and docs by the names of [decision.public_names]; keep the sixteen RPC names and public-rpc.md unchanged except linking the router URL as the unified interface.
     - Update docs/site/docs/overview/unified-network.md's single endpoint section and the hosted-gateway pages so the router URL is the only unified endpoint and paxscan.io and paxportwallet.com are the explorer and wallet names.
@@ -96,7 +96,7 @@
 ## Wave 3 - Human graph
 
 - [ ] 3. Admit the wallet identity, run the graph on the kernel host, bring agentd and MCP live and cut the Fly human service over
-  - [ ] 3.1 Add LXIP operation 4, assertion resolution, to the identity provider and wire it at startup
+  - [x] 3.1 Add LXIP operation 4, assertion resolution, to the identity provider and wire it at startup
     - Add operation 4 to the LXIP wire protocol in layerx-human-identity-provider: request carries the assertion, response carries the principal and the did:layerx identity or a typed refusal; verify with the AssertionConfig JWKS and max age the crate already reads.
     - Wire AssertionConfig::from_environment into the serve command in src/main.rs so the verifier is constructed at startup and operation 4 is dispatched; extend tests/assertion.rs with the wire round trip.
     - _Requirements: 10.1_
@@ -140,7 +140,7 @@
     - Register the SID, PAX, USDC and USDL assets in the kernel registry from the kernel host and write tools/bringup/xweb-config.sh that renders the four sidecar configs with gateway.endpoint https://api.mainnet-beta.router.paxeer.network/rpc, the kernel host's sequencer id and public key, the registered asset ids and the owner-set PAX price, then restarts x-websearch@<slot> on both validator hosts.
     - Add the search subcommand: /health ok on every sidecar through https://search.paxeer.network, one paid /search returning 200 after PAYMENT-SIGNATURE settled at the router, and, once the submitters are funded, the XWebFulfilled event for the owner's request.
     - _Requirements: 13.1, 13.2_
-  - [ ] 4.3 Run the archive node with min-retain-blocks 0 on the archive host
+  - [ ] 4.3 Run the archive node with min-retain-blocks 0 on the archive host — **Implemented - qualification pending**
     - Install paxd at the live release on the archive host through hpx with HPX_TYPE=fullnode, set min-retain-blocks 0 and the state-sync keep-recent to 0, sync from the earliest reachable snapshot, and keep its public RPC name serving the JSON-RPC over TLS as the other fifteen do.
     - Add the archive-node subcommand: eth_getBlockByNumber for a block below the public nodes' first retained height answers a block and eth_blockNumber is within ten of a public node.
     - _Requirements: 14.1_
@@ -186,7 +186,7 @@
     - On the host the map names as HPX_HOST run hpx/publish.sh with the live paxd, the six native libraries and the live config, then hpx/hosting/deploy.sh for the current release assets with a generated HPX_REGISTER_TOKEN under /etc/hpx-registry.env.
     - Add the hpx subcommand: /healthz at https://node.hyperpaxeer.com with the chain id and the source revision, checksums.txt verified against the served artifacts, and /api/nodes answering.
     - _Requirements: 18.2_
-  - [ ] 4.15 Repair the lagging and frozen public RPC nodes
+  - [ ] 4.15 Repair the lagging and frozen public RPC nodes — **Implemented - qualification pending**
     - On each of the RPC_HOSTS install the release that fixes the JSON-RPC double-bind, clear the frozen state where a node stopped advancing, resync the lagging nodes with state sync, and restart their units.
     - Add the rpc-nodes subcommand: each of the sixteen public RPC names answers eth_blockNumber within ten blocks of the highest answer and each unit is active without a restart in the last hour.
     - _Requirements: 18.3_

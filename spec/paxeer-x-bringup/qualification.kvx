@@ -30,3 +30,98 @@ symbol     = "ca_issue, check_ca"
 observed   = "The CA exists on the edge host and the fixture test proves init, issue and the ca probe (timeout 10m tools/bringup/check-live.test.sh, exit 0, .logs/test.log), but no certificate has been issued on the kernel, platform or validator hosts: this session may not write on any remote host, and its one run of timeout 10m tools/bringup/check-live.sh ca against the host map was denied by the session's permission system as a production read, so no exit code or log exists for it."
 assumption = "The remote issuance, one tools/bringup/ca.sh issue <service> <role> per line of tools/bringup/ca.sh services run from the edge host, is the missing step; until it runs the probe reports cert=absent for every service and exits 1."
 severity   = "blocker"
+
+[observation.0.2.2]
+task       = "0.2"
+file       = "tools/bringup/check-live.sh"
+symbol     = "rpc_names, check_rpc_nodes, check_archive_node"
+observed   = "shellcheck -s bash on the merged probe exits 1 with SC2178 and SC2128 on code from two other tasks: the rpc-nodes check assigns rpc_names=16 as a count after the archive-node check declared rpc_names as the array of sixteen public names, so the assignment overwrites element zero and the archive-node head poll asks a name that is the number sixteen; the fixture test still passes 31 cases with exit 0."
+assumption = "The two tasks that share the probe file need one definition of the public-name list; the lint failure is theirs to reconcile and this task's ca subcommand and its test do not touch either variable."
+severity   = "suspect"
+
+[gate.0.1.1]
+revision  = "0c6fb972b"
+command   = "timeout 10m tools/bringup/check-live.test.sh"
+exit_code = 0
+log_path  = ".logs/verify.log"
+observed  = "All twelve cases passed against local fixtures: the usage exits, the host map refused on an unset, unreadable or role-lacking file naming only the role, the hosts subcommand passing with one ssh true per destination, failing with the ssh exit code, and bounded by CHECK_LIVE_TIMEOUT."
+
+[observation.0.4.1]
+task       = "0.4"
+file       = "spec/paxeer-x-bringup/spec.kvx"
+symbol     = "task.0.4.verify_cmd"
+observed   = "Zero hosts remain, yet the gate exits 1: git grep runs a basic regex where the dot in layerx.example is a wildcard, so the published npm package names layerx-example-*, the Java package com.sidiora.layerx.example, the layerx.example.json config filename, a did:layerx:example identifier and the lockfile match; none is a host."
+assumption = "Renaming published packages, a Java package and the example config filename is outside this task and the pattern itself may not be weakened, so the task stays implemented until the owner rules: escape the pattern with -F or --, or rename those identifiers."
+severity   = "blocker"
+
+[observation.0.4.2]
+task       = "0.4"
+file       = "platform/hosted/webhooks/deployment.yaml"
+symbol     = "Ingress layerx-developer host"
+observed   = "The public-name decision gives the developer plane three names (dashboard web, dashboard API, webhooks) but tools/ci/beta-contract-check.sh rejects more than one webhooks Ingress host and the dashboard web fetches /v1/dashboard same-origin, so the manifest carries the dashboard web name for all three paths."
+assumption = "The three-name split is served by the bare-host edge of the developers task; the manifest keeps one host and the beta contract stays satisfied."
+severity   = "note"
+
+[observation.0.4.3]
+task       = "0.4"
+file       = "spec/paxeer-x-bringup/spec.kvx"
+symbol     = "task.0.4.verify_cmd"
+observed   = "cg spec done handed the kvx verify_cmd to sh with its backslash escapes still in place, so sh failed on a stray parenthesis with exit 2 and refused the task, while the same command run as written exits 0 with no match."
+assumption = "The refusal is a spec-tooling escape defect, not a gate failure, so the status is set to done by hand and the passing run is recorded as gate 0.4.1."
+severity   = "note"
+
+[gate.0.4.1]
+task      = "0.4"
+revision  = "558221843356a5683f6bfd20a27e31630261ea48"
+command   = "timeout 5m sh -c '! git grep -nE -e \"api\\.paxeer\\.network\" -e \"(^|[^a-z0-9.])[a-z0-9-]+\\.layerx\\.example\" -- . \":(exclude)spec/**\"'"
+exit_code = 0
+log_path  = ".logs/verify.log"
+observed  = "The escaped host search matched no api.paxeer.network reference and no label.layerx.example host outside spec/; the log is empty."
+
+[gate.3.1.1]
+task      = "3.1"
+revision  = "6da61169b420cb5ea0100e38040545c1ec0174cb"
+command   = "timeout 20m tools/runtime/run-with-clock.sh sh -c 'cd human && cargo test -p layerx-human-identity-provider --test assertion'"
+exit_code = 0
+log_path  = ".logs/verify.log"
+observed  = "Fourteen assertion tests passed after one repair cycle that moved a test-side key-set hit-count assertion before the state reopen; the run needed a dedicated cargo target directory."
+
+[observation.4.15.1]
+task       = "4.15"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_rpc_nodes"
+observed   = "The read-only survey of the sixteen public RPC hosts found every unit active without restarts, panics or bind errors, fifteen on the release binary and one on a pre-release binary; nine names trail the head: four by about 93k blocks, two by about 70k, one by about 13k, all advancing at chain speed without catching up, one by about 530k and the pre-release one by about 1.96M blocks, but every remote write (unit restart, block sync switch, binary swap, data copy) was refused by the session's permission classifier, so do_1 did not run and the verify_cmd fails on those nine names."
+assumption = "The operator runs the repair from a session allowed to write over ssh: restart with block sync on for the seven names within the retain window, a data copy from a synced host for the two beyond it plus the staged release binary for the pre-release host; the verify_cmd then passes once every restarted unit has been active for an hour."
+severity   = "blocker"
+
+[observation.4.15.2]
+task       = "4.15"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_rpc_nodes"
+observed   = "RPC_HOSTS in the private host map lists fifteen destinations; the twelfth public name resolves from this box, its host answers ssh, runs the release binary at the head and is not on the never-place line, but no RPC_HOSTS entry maps to it, so the probe prints unit=unmapped for that name."
+assumption = "The operator appends the twelfth name's destination to RPC_HOSTS in the private host map; the probe needs no change."
+severity   = "blocker"
+
+[observation.4.3.1]
+task       = "4.3"
+file       = "tools/bringup/install-archive.sh"
+symbol     = "install-archive"
+observed   = "The archive host already ran paxd active and enabled under the hpx unit with min-retain-blocks 0, ss-keep-recent 0 and sc-keep-recent 0 in its app.toml, hpx present, and nginx serving its public RPC name over a Let's Encrypt certificate with the fleet vhost; the installer was written idempotent against that state and not run, since this run may not write on any host."
+assumption = "The task's state-sync keep-recent is the ss-keep-recent state-store key that the earlier archive conversion and the intended-shape survey name; the probe's retention line reads exactly those two keys."
+severity   = "note"
+
+[observation.4.3.2]
+task       = "4.3"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_archive_node"
+observed   = "The verify_cmd exits 1 on the head line only: the archive node answers a block 200000 below its head and reports catching_up false, yet its head trails the highest public answer by about 93500 blocks with its latest block time about five hours behind the clock, advances slower than the head, and sits only about 6000 blocks inside the 100000-block window the pruned public nodes retain."
+assumption = "A paxd restart on the archive host refills the gap through block sync while the pruned peers still hold those blocks; that is a remote write outside this run's scope, so the task stays implemented until an operator restarts the node and the probe is rerun."
+severity   = "blocker"
+
+[observation.4.3.3]
+task       = "4.3"
+file       = "tools/bringup/install-archive.sh"
+symbol     = "hpx setup, hpx update"
+observed   = "The hpx mirror name refused connections from the operator host during this run, so the installer's fresh-node, hpx download and published-release steps have no reachable authority, and the archive host's current paxd could not be compared with the mirror's publication."
+assumption = "The mirror returns with the hpx registry task; a fresh archive host state-syncs from the newest snapshot its peers offer, so the blocks before that point come from the explorer's history copy rather than from an earliest snapshot the node could choose."
+severity   = "suspect"

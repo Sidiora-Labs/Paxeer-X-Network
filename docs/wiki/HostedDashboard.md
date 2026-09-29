@@ -23,11 +23,12 @@ Webhook registration and delivery live on
 ## Deployment
 
 The checked-in Ingress `layerx-developer` host is
-`developers.layerx.example` (`platform/hosted/webhooks/deployment.yaml`).
-That hostname is the placeholder in the repository manifest, not a
-published public origin. Path `/v1/dashboard` goes to the dashboard
-API over HTTPS; path `/` goes to the web UI. Body size on that Ingress
-is `512k`.
+`developers.paxeer.network` (`platform/hosted/webhooks/deployment.yaml`).
+Path `/v1/dashboard` goes to the dashboard API over HTTPS; path `/` goes
+to the web UI. Body size on that Ingress is `512k`. On the bare-host
+deployment the edge serves the web UI at `developers.paxeer.network`, the
+dashboard API at `api.developers.paxeer.network` and webhooks at
+`webhooks.paxeer.network`.
 
 The API listens on `LAYERX_DASHBOARD_LISTEN`, default
 `0.0.0.0:9445` (`platform/hosted/dashboard/src/main.rs`). At most 256

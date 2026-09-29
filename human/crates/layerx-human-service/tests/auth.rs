@@ -16,8 +16,8 @@ use sha2::{Digest as _, Sha256};
 
 use support::{directory, install_and_open, principal, retention_uniform, tenancy};
 
-const RP_ID: &str = "id.layerx.example";
-const ORIGIN: &str = "https://id.layerx.example";
+const RP_ID: &str = "paxportwallet.com";
+const ORIGIN: &str = "https://paxportwallet.com";
 const FLAG_UP: u8 = 1 << 0;
 const FLAG_UV: u8 = 1 << 2;
 const FLAG_AT: u8 = 1 << 6;

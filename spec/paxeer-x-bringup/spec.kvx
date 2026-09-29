@@ -198,7 +198,7 @@ status  = "pending"
 
 [task.0.1]
 title      = "Deliver the operator host-map contract and the bring-up live probe"
-status     = "implemented"
+status     = "done"
 wave       = 0
 requires   = []
 do_1       = "Write tools/bringup/check-live.sh after tools/wallet/check-live.sh: a usage block, one function per subcommand of [design.probe], pass and fail lines with the observed value, CHECK_LIVE_TIMEOUT, exit 0 only when every check passes and 2 on usage; every subcommand of a later task is added by that task."
@@ -240,7 +240,7 @@ reqs       = ["1.1", "1.2", "1.3"]
 
 [task.0.4]
 title      = "Replace api.paxeer.network by the router URL and every layerx.example host by its public name"
-status     = "pending"
+status     = "done"
 wave       = 0
 requires   = []
 do_1       = "Rewrite every occurrence of api.paxeer.network outside spec/ to https://api.mainnet-beta.router.paxeer.network in docs/site, docs/wiki, platform/docs, platform/hosted (gateway README, deployment, testnet lib, topology regressions, beta-cluster.sh), platform/relay_archive, platform/examples, platform/sdk/jvm and .github/workflows/platform.yml."
@@ -251,6 +251,10 @@ symbols    = []
 touches    = ["docs/site/docs/overview/unified-network.md", "docs/site/docs/reference/public-rpc.md", "docs/site/docs/platform/hosted-gateway.md", "docs/wiki/HostedGateway.md", "platform/hosted/gateway/README.md", "platform/hosted/gateway/deployment.yaml", "platform/docs/content/beta.md", "platform/relay_archive/README.md", "platform/relay_archive/config.example.json", "platform/examples", "platform/hosted/dashboard", "platform/hosted/webhooks"]
 tests      = []
 reqs       = ["3.1", "3.2", "3.3"]
+revision   = "558221843356a5683f6bfd20a27e31630261ea48"
+command    = "timeout 5m sh -c '! git grep -nE -e \"api\\.paxeer\\.network\" -e \"(^|[^a-z0-9.])[a-z0-9-]+\\.layerx\\.example\" -- . \":(exclude)spec/**\"'"
+exit_code  = 0
+log_path   = ".logs/verify.log"
 
 [task.1]
 section = "Wave 1 - Kernel host"
@@ -444,7 +448,7 @@ status  = "pending"
 
 [task.3.1]
 title      = "Add LXIP operation 4, assertion resolution, to the identity provider and wire it at startup"
-status     = "pending"
+status     = "done"
 wave       = 3
 requires   = []
 do_1       = "Add operation 4 to the LXIP wire protocol in layerx-human-identity-provider: request carries the assertion, response carries the principal and the did:layerx identity or a typed refusal; verify with the AssertionConfig JWKS and max age the crate already reads."
@@ -581,7 +585,7 @@ reqs       = ["13.1", "13.2"]
 
 [task.4.3]
 title      = "Run the archive node with min-retain-blocks 0 on the archive host"
-status     = "pending"
+status     = "implemented"
 wave       = 4
 requires   = ["0.1"]
 do_1       = "Install paxd at the live release on the archive host through hpx with HPX_TYPE=fullnode, set min-retain-blocks 0 and the state-sync keep-recent to 0, sync from the earliest reachable snapshot, and keep its public RPC name serving the JSON-RPC over TLS as the other fifteen do."
@@ -740,7 +744,7 @@ reqs       = ["18.2"]
 
 [task.4.15]
 title      = "Repair the lagging and frozen public RPC nodes"
-status     = "pending"
+status     = "implemented"
 wave       = 4
 requires   = ["0.1"]
 do_1       = "On each of the RPC_HOSTS install the release that fixes the JSON-RPC double-bind, clear the frozen state where a node stopped advancing, resync the lagging nodes with state sync, and restart their units."
