@@ -186,7 +186,7 @@
   - [ ] 4.13 Deploy the CI runner image and controller on Fly and prove the canary
     - Build and push the runner image, create the runner deploy token, set GITHUB_TOKEN, FLY_API_TOKEN and RUNNER_IMAGE on the controller app, deploy the controller, and set the repository variable CI_LINUX_RUNNER to fly-linux.
     - _Requirements: 18.1_
-  - [ ] 4.14 Publish the current release and serve the hpx registry at node.hyperpaxeer.com
+  - [ ] 4.14 Publish the current release and serve the hpx registry at node.hyperpaxeer.com — **Implemented - qualification pending**
     - On the host the map names as HPX_HOST run hpx/publish.sh with the live paxd, the six native libraries and the live config, then hpx/hosting/deploy.sh for the current release assets with a generated HPX_REGISTER_TOKEN under /etc/hpx-registry.env.
     - Add the hpx subcommand: /healthz at https://node.hyperpaxeer.com with the chain id and the source revision, checksums.txt verified against the served artifacts, and /api/nodes answering.
     - _Requirements: 18.2_
