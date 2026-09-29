@@ -3,8 +3,8 @@
 FROM golang:1.22-alpine AS build
 ARG SOURCE_REVISION=unknown
 WORKDIR /src
-COPY go.mod ./
-COPY main.go ./
+COPY hpx/registry/go.mod ./
+COPY hpx/registry/main.go ./
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.sourceRevision=${SOURCE_REVISION}" -o /hpx-registry .
 
 FROM alpine:3.20

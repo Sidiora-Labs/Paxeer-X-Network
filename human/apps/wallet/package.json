@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev -p 3099",
     "build:pwa": "node scripts/build-pwa.mjs",
-    "build": "node scripts/build-pwa.mjs && NEXT_MANUAL_SIG_HANDLE=true next build",
+    "build": "node scripts/build-pwa.mjs && NEXT_MANUAL_SIG_HANDLE=true next build --webpack",
     "start": "next start",
     "lint": "eslint .",
     "type-check": "tsc --noEmit",

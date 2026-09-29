@@ -7,28 +7,28 @@ IMAGE_NAMES=(layerx-testnet-control layerx-gateway layerx-faucet layerx-program-
 
 image_source() {
     case "$1" in
-        layerx-testnet-control) printf 'ghcr.io/sidiora-labs/layerx-testnet-control:0.1.0 platform/hosted/testnet/Dockerfile' ;;
-        layerx-gateway) printf 'ghcr.io/sidiora-labs/layerx-gateway:0.1.0 platform/hosted/gateway/Dockerfile' ;;
-        layerx-faucet) printf 'ghcr.io/sidiora-labs/layerx-faucet:0.1.0 platform/hosted/faucet/Dockerfile' ;;
-        layerx-program-registry) printf 'ghcr.io/sidiora-labs/layerx-program-registry:0.1.0 platform/hosted/registry/Dockerfile' ;;
-        layerx-webhooks) printf 'ghcr.io/sidiora-labs/layerx-webhooks:0.1.0 platform/hosted/webhooks/Dockerfile' ;;
-        layerx-dashboard) printf 'ghcr.io/sidiora-labs/layerx-dashboard:0.1.0 platform/hosted/dashboard/Dockerfile' ;;
-        layerx-dashboard-web) printf 'ghcr.io/sidiora-labs/layerx-dashboard-web:0.1.0 platform/hosted/dashboard/web/Dockerfile' ;;
-        layerx-internal) printf 'ghcr.io/sidiora-labs/layerx-internal:0.1.0 platform/hosted/internal/Dockerfile' ;;
+        layerx-testnet-control) printf 'ghcr.io/sidiora-labs/layerx-testnet-control:0.1.0 docker/platform-testnet/Dockerfile' ;;
+        layerx-gateway) printf 'ghcr.io/sidiora-labs/layerx-gateway:0.1.0 docker/platform-gateway/Dockerfile' ;;
+        layerx-faucet) printf 'ghcr.io/sidiora-labs/layerx-faucet:0.1.0 docker/platform-faucet/Dockerfile' ;;
+        layerx-program-registry) printf 'ghcr.io/sidiora-labs/layerx-program-registry:0.1.0 docker/platform-registry/Dockerfile' ;;
+        layerx-webhooks) printf 'ghcr.io/sidiora-labs/layerx-webhooks:0.1.0 docker/platform-webhooks/Dockerfile' ;;
+        layerx-dashboard) printf 'ghcr.io/sidiora-labs/layerx-dashboard:0.1.0 docker/platform-dashboard/Dockerfile' ;;
+        layerx-dashboard-web) printf 'ghcr.io/sidiora-labs/layerx-dashboard-web:0.1.0 docker/platform-dashboard-web/Dockerfile' ;;
+        layerx-internal) printf 'ghcr.io/sidiora-labs/layerx-internal:0.1.0 docker/platform-internal/Dockerfile' ;;
         layerx-human) printf 'ghcr.io/sidiora-labs/layerx-human:0.1.0 docker/human-service/Dockerfile' ;;
-        layerx-human-web) printf 'ghcr.io/sidiora-labs/layerx-human-web:0.1.0 human/apps/web/Dockerfile' ;;
-        layerx-node) printf 'ghcr.io/sidiora-labs/layerx-node:0.1.0 platform/hosted/node/Dockerfile' ;;
-        layerx-core-boundary) printf 'ghcr.io/sidiora-labs/layerx-core-boundary:0.1.0 platform/hosted/core/Dockerfile' ;;
-        layerx-receipt-authority) printf 'ghcr.io/sidiora-labs/layerx-receipt-authority:0.1.0 platform/hosted/authority/Dockerfile' ;;
-        layerx-agent-boundary) printf 'ghcr.io/sidiora-labs/layerx-agent-boundary:0.1.0 platform/hosted/agent-boundary/Dockerfile' ;;
-        layerx-identity) printf 'ghcr.io/sidiora-labs/layerx-identity:0.1.0 platform/hosted/identity/Dockerfile' ;;
-        layerx-paxeer-boundary) printf 'ghcr.io/sidiora-labs/layerx-paxeer-boundary:0.1.0 platform/hosted/paxeer/Dockerfile' ;;
-        layerx-mirror) printf 'ghcr.io/sidiora-labs/layerx-mirror:0.1.0 interop/deploy/mirror/Dockerfile' ;;
-        layerx-relay-archive) printf 'ghcr.io/sidiora-labs/layerx-relay-archive:0.1.0 platform/relay_archive/Dockerfile' ;;
-        layerx-interop-gateway) printf 'ghcr.io/sidiora-labs/layerx-interop-gateway:0.1.0 interop/deploy/gateway/Dockerfile' ;;
-        layerx-reference-ramp) printf 'ghcr.io/sidiora-labs/layerx-reference-ramp:0.1.0 platform/ramps/Dockerfile' ;;
-        paxd-node) printf 'ghcr.io/sidiora-labs/paxd-node:0.1.0 platform/hosted/paxeer/Dockerfile.paxd-node' ;;
-        paxd) printf 'ghcr.io/sidiora-labs/paxd:0.1.0 platform/hosted/paxeer/Dockerfile.paxd' ;;
+        layerx-human-web) printf 'ghcr.io/sidiora-labs/layerx-human-web:0.1.0 docker/web/Dockerfile' ;;
+        layerx-node) printf 'ghcr.io/sidiora-labs/layerx-node:0.1.0 docker/platform-node/Dockerfile' ;;
+        layerx-core-boundary) printf 'ghcr.io/sidiora-labs/layerx-core-boundary:0.1.0 docker/platform-core/Dockerfile' ;;
+        layerx-receipt-authority) printf 'ghcr.io/sidiora-labs/layerx-receipt-authority:0.1.0 docker/platform-authority/Dockerfile' ;;
+        layerx-agent-boundary) printf 'ghcr.io/sidiora-labs/layerx-agent-boundary:0.1.0 docker/platform-agent-boundary/Dockerfile' ;;
+        layerx-identity) printf 'ghcr.io/sidiora-labs/layerx-identity:0.1.0 docker/platform-identity/Dockerfile' ;;
+        layerx-paxeer-boundary) printf 'ghcr.io/sidiora-labs/layerx-paxeer-boundary:0.1.0 docker/paxeer/Dockerfile' ;;
+        layerx-mirror) printf 'ghcr.io/sidiora-labs/layerx-mirror:0.1.0 docker/interop-mirror/Dockerfile' ;;
+        layerx-relay-archive) printf 'ghcr.io/sidiora-labs/layerx-relay-archive:0.1.0 docker/relay-archive/Dockerfile' ;;
+        layerx-interop-gateway) printf 'ghcr.io/sidiora-labs/layerx-interop-gateway:0.1.0 docker/interop-gateway/Dockerfile' ;;
+        layerx-reference-ramp) printf 'ghcr.io/sidiora-labs/layerx-reference-ramp:0.1.0 docker/ramps/Dockerfile' ;;
+        paxd-node) printf 'ghcr.io/sidiora-labs/paxd-node:0.1.0 docker/paxeer/Dockerfile.paxd-node' ;;
+        paxd) printf 'ghcr.io/sidiora-labs/paxd:0.1.0 docker/paxeer/Dockerfile.paxd' ;;
         *) fail "unknown image $1" ;;
     esac
 }

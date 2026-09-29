@@ -227,7 +227,7 @@ Build the image from the repository root so both native executables and the
 Python runtime come from the same source revision:
 
 ```sh
-docker build -f platform/relay_archive/Dockerfile \
+docker build -f docker/relay-archive/Dockerfile \
   --build-arg LXP_REVISION="$(git rev-parse HEAD)" \
   -t layerx-relay-archive:local .
 ```

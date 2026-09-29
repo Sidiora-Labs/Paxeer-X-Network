@@ -47,10 +47,10 @@ CMD ["/usr/bin/deploy.sh"]
 
 STOPSIGNAL SIGTERM
 
-COPY scripts/deploy.sh /usr/bin/deploy.sh
-COPY scripts/step0_build.sh /usr/bin/build.sh
-COPY scripts/step1_configure_init.sh /usr/bin/configure_init.sh
-COPY scripts/step2_genesis.sh /usr/bin/genesis.sh
-COPY scripts/step3_add_validator_to_genesis.sh /usr/bin/add_validator_to_gensis.sh
-COPY scripts/step4_config_override.sh /usr/bin/config_override.sh
-COPY scripts/step5_start_pax.sh /usr/bin/start_pax.sh
+COPY docker/localnode/scripts/deploy.sh /usr/bin/deploy.sh
+COPY docker/localnode/scripts/step0_build.sh /usr/bin/build.sh
+COPY docker/localnode/scripts/step1_configure_init.sh /usr/bin/configure_init.sh
+COPY docker/localnode/scripts/step2_genesis.sh /usr/bin/genesis.sh
+COPY docker/localnode/scripts/step3_add_validator_to_genesis.sh /usr/bin/add_validator_to_gensis.sh
+COPY docker/localnode/scripts/step4_config_override.sh /usr/bin/config_override.sh
+COPY docker/localnode/scripts/step5_start_pax.sh /usr/bin/start_pax.sh

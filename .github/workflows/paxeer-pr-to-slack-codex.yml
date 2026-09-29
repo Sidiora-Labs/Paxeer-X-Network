@@ -7,8 +7,8 @@ on:
       - 'go.mod'
       - 'go.sum'
       - 'chain.mk'
-      - 'Dockerfile'
-      - 'Dockerfile.dockerignore'
+      - 'docker/layerx/Dockerfile'
+      - 'docker/layerx/Dockerfile.dockerignore'
       - 'foundry.paxeer.toml'
       - 'buf.gen.yaml'
       - 'buf.lock'
@@ -119,7 +119,7 @@ jobs:
           set -euo pipefail
           git fetch --no-tags origin "$BASE_REF":"refs/remotes/origin/$BASE_REF"
           MB=$(git merge-base "origin/$BASE_REF" HEAD)
-          CHAIN_PATHS=(go.mod go.sum chain.mk Dockerfile Dockerfile.dockerignore foundry.paxeer.toml buf.gen.yaml buf.lock buf.yaml codecov.yml config.yml .golangci.yml gen.go link_directives_test.go mod_test.go run_blocktests.sh version.json admin api assets benchmark consensus custodyproof daemon docker engine example hpx integration_test interchain loadtest modules node occ_tests parallelization precompiles ratelimiter rpc sdk storage store sync testutil types utils wasm wasm-runtime wasmbinding contracts/src contracts/test contracts/scripts contracts/wasm docs/swagger docs/swagger-ui tests/chain tools/chain tools/tx-scanner tools/utils contracts/config/client.toml contracts/hardhat.config.js contracts/package.json contracts/package-lock.json contracts/tsconfig.json docs/evm_jsonrpc_unsupported.md docs/paxeer-network.md docs/paxeer-chain-docs.md scripts ':(exclude)scripts/PaxeerBetaDeploy.s.sol' ':(exclude)scripts/qualify-mirror-live.sh' ':(exclude)scripts/qualify-mirror-verification-live.sh')
+          CHAIN_PATHS=(go.mod go.sum chain.mk docker/layerx/Dockerfile docker/layerx/Dockerfile.dockerignore foundry.paxeer.toml buf.gen.yaml buf.lock buf.yaml codecov.yml config.yml .golangci.yml gen.go link_directives_test.go mod_test.go run_blocktests.sh version.json admin api assets benchmark consensus custodyproof daemon docker engine example hpx integration_test interchain loadtest modules node occ_tests parallelization precompiles ratelimiter rpc sdk storage store sync testutil types utils wasm wasm-runtime wasmbinding contracts/src contracts/test contracts/scripts contracts/wasm docs/swagger docs/swagger-ui tests/chain tools/chain tools/tx-scanner tools/utils contracts/config/client.toml contracts/hardhat.config.js contracts/package.json contracts/package-lock.json contracts/tsconfig.json docs/evm_jsonrpc_unsupported.md docs/paxeer-network.md docs/paxeer-chain-docs.md scripts ':(exclude)scripts/PaxeerBetaDeploy.s.sol' ':(exclude)scripts/qualify-mirror-live.sh' ':(exclude)scripts/qualify-mirror-verification-live.sh')
           git diff --unified=0 "$MB"..HEAD -- "${CHAIN_PATHS[@]}" > pr.diff
           git --no-pager diff --stat "$MB"..HEAD -- "${CHAIN_PATHS[@]}" > pr.stat || true
 

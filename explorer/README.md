@@ -59,7 +59,7 @@ password redacted, and exits with the mix exit code. The sidecar and its volume
 are removed when the command finishes and when it is interrupted.
 
 The builder image is built on demand from
-`deploy/tools/Dockerfile.elixir-builder`, which pins the Elixir and Erlang
+`docker/explorer-elixir-builder/Dockerfile` at the repository root, which pins the Elixir and Erlang
 versions the explorer build workflow uses. The script labels the image it
 builds with the digest of that Dockerfile, `mix.lock` and the application
 manifests, and builds again when the image is absent or when one of those

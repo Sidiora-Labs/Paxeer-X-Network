@@ -4,9 +4,9 @@
 # and the explorer build workflow compiles the backend on the same Elixir and
 # Erlang versions, so the toolchain moves in one place.
 #
-# Build context: explorer/backend
-#   docker build --file explorer/deploy/tools/Dockerfile.elixir-builder \
-#     --tag explorer-elixir-builder:v10.2.6 explorer/backend
+# Build context: the repository root
+#   docker build --file docker/explorer-elixir-builder/Dockerfile \
+#     --tag explorer-elixir-builder:v10.2.6 .
 #
 # The image carries the dependency sources and the build toolchain, not the
 # compiled artefacts: mix-in-builder.sh points MIX_BUILD_PATH at a named volume
@@ -24,13 +24,13 @@ RUN apk --no-cache --update add \
 
 ENV MIX_HOME=/opt/mix
 
-COPY mix.exs mix.lock ./
-COPY apps/block_scout_web/mix.exs ./apps/block_scout_web/
-COPY apps/explorer/mix.exs ./apps/explorer/
-COPY apps/ethereum_jsonrpc/mix.exs ./apps/ethereum_jsonrpc/
-COPY apps/indexer/mix.exs ./apps/indexer/
-COPY apps/utils/mix.exs ./apps/utils/
-COPY apps/nft_media_handler/mix.exs ./apps/nft_media_handler/
+COPY explorer/backend/mix.exs explorer/backend/mix.lock ./
+COPY explorer/backend/apps/block_scout_web/mix.exs ./apps/block_scout_web/
+COPY explorer/backend/apps/explorer/mix.exs ./apps/explorer/
+COPY explorer/backend/apps/ethereum_jsonrpc/mix.exs ./apps/ethereum_jsonrpc/
+COPY explorer/backend/apps/indexer/mix.exs ./apps/indexer/
+COPY explorer/backend/apps/utils/mix.exs ./apps/utils/
+COPY explorer/backend/apps/nft_media_handler/mix.exs ./apps/nft_media_handler/
 
 RUN mix local.hex --force && mix local.rebar --force
 RUN mix deps.get

@@ -2,4 +2,4 @@ app = "paxeer-ci-runners"
 primary_region = "iad"
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = "docker/flyci-runner/Dockerfile"

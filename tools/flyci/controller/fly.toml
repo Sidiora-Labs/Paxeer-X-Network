@@ -2,7 +2,7 @@ app = "paxeer-ci-controller"
 primary_region = "iad"
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = "docker/flyci-controller/Dockerfile"
 
 [env]
   GITHUB_REPOSITORY = "Sidiora-Labs/Paxeer-X-Network"

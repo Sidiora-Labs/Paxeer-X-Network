@@ -5,14 +5,20 @@ import { withSentryConfig } from '@sentry/nextjs';
 const appDir = path.dirname(fileURLToPath(import.meta.url));
 const walletSdk = path.resolve(appDir, '../../wallet/sdk/src/index.ts');
 const layerxSdk = path.resolve(appDir, '../../../agent/sdk/typescript/src/index.ts');
+const walletSdkDir = path.resolve(appDir, '../../wallet/sdk');
+const layerxSdkDir = path.resolve(appDir, '../../../agent/sdk/typescript');
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
     output: 'standalone',
+    outputFileTracingRoot: path.resolve(appDir, '../../..'),
     reactStrictMode: true,
     transpilePackages: ['three', '@react-three/fiber', '@react-three/drei'],
     experimental: {
         externalDir: true,
+        extensionAlias: {
+            '.js': ['.js', '.ts', '.tsx'],
+        },
     },
     images: {
         loader: 'custom',
@@ -55,7 +61,14 @@ const nextConfig = {
             '@paxeer/wallet$': walletSdk,
             '@sidiora/layerx-sdk$': layerxSdk,
         };
-        config.resolve.modules = [path.resolve(appDir, 'node_modules'), ...(config.resolve.modules ?? ['node_modules'])];
+        config.module.rules.push({
+            test: /\.(m?js|tsx?)$/,
+            include: [walletSdkDir, layerxSdkDir],
+            exclude: /node_modules/,
+            resolve: {
+                modules: [path.resolve(appDir, 'node_modules'), ...(config.resolve.modules ?? ['node_modules'])],
+            },
+        });
         config.resolve.fallback = {
             ...config.resolve.fallback,
             crypto: false,

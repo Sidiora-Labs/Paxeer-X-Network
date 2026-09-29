@@ -4,8 +4,8 @@ services:
     ## you can build an image locally, or use pre-built images from registry
 #    image: ghcr.io/blockscout/smart-contract-verifier:main
     build:
-      context: .
-      dockerfile: ./Dockerfile
+      context: ../../..
+      dockerfile: docker/explorer-smart-contract-verifier/Dockerfile
     ports:
       - "8050:8050"
       - "8051:8051"

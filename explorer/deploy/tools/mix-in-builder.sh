@@ -46,7 +46,7 @@ readonly CONTAINER_SCRIPT
 script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)
 repo_root=$(CDPATH='' cd -- "$script_dir/../../.." && pwd -P)
 backend_dir=$repo_root/explorer/backend
-dockerfile=$script_dir/Dockerfile.elixir-builder
+dockerfile=$repo_root/docker/explorer-elixir-builder/Dockerfile
 
 image=${MIX_IN_BUILDER_IMAGE:-$DEFAULT_IMAGE}
 mix_env=${MIX_ENV:-test}
@@ -248,7 +248,7 @@ ensure_image() {
     --file "$dockerfile" \
     --tag "$image" \
     --label "$IMAGE_INPUT_LABEL=$(image_input_digest)" \
-    "$backend_dir" >&2
+    "$repo_root" >&2
 }
 
 # The database is ready once it accepts a connection over the transport the mix

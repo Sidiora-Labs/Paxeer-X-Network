@@ -16,7 +16,7 @@ provisioning
 
 The image is `ghcr.io/sidiora-labs/layerx-identity:0.1.0`, user
 `4020:4020`, entrypoint `/usr/local/bin/layerx-identity`
-(`platform/hosted/identity/Dockerfile:5-11`;
+(`docker/platform-identity/Dockerfile:5-11`;
 `platform/hosted/identity/deployment.yaml:16-19`). The Deployment has
 one replica, strategy `Recreate`, listens on `0.0.0.0:9443`, and
 exposes Service port `9443`
@@ -329,7 +329,7 @@ containing ASCII control (`platform/hosted/identity/src/main.rs:244-250`).
 `IMAGE_NAMES` includes `layerx-identity`
 (`platform/hosted/tests/beta-cluster.sh:89-90`). Image source is
 `ghcr.io/sidiora-labs/layerx-identity:0.1.0` from
-`platform/hosted/identity/Dockerfile`
+`docker/platform-identity/Dockerfile`
 (`platform/hosted/tests/beta-cluster.sh:125`). Render writes
 `platform/hosted/identity/deployment.yaml` as `identity.yaml`
 (`platform/hosted/tests/beta-cluster.sh:829`).

@@ -28,23 +28,23 @@ jobs:
         include:
           - image: paxeer-x-explorer-backend
             context: explorer/backend
-            dockerfile: explorer/backend/docker/Dockerfile
+            dockerfile: docker/explorer-backend/Dockerfile
             build_args: |
               RELEASE_VERSION=10.2.6
             timeout: 120
           - image: paxeer-x-explorer-frontend
-            context: explorer/frontend
-            dockerfile: explorer/frontend/Dockerfile
+            context: .
+            dockerfile: docker/explorer-frontend/Dockerfile
             build_args: ''
             timeout: 60
           - image: paxeer-x-explorer-smart-contract-verifier
-            context: explorer/services/smart-contract-verifier
-            dockerfile: explorer/services/smart-contract-verifier/Dockerfile
+            context: .
+            dockerfile: docker/explorer-smart-contract-verifier/Dockerfile
             build_args: ''
             timeout: 60
           - image: paxeer-x-explorer-sig-provider
-            context: explorer/services/sig-provider
-            dockerfile: explorer/services/sig-provider/Dockerfile
+            context: .
+            dockerfile: docker/explorer-sig-provider/Dockerfile
             build_args: ''
             timeout: 60
     steps:

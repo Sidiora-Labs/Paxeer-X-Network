@@ -5,8 +5,8 @@ The hosted node is the in-cluster sequencer pod. Image
 `layerx-genesis-build`, and `layerxctl`, copies
 `bootstrap.sh` and `supervisor.sh`, and sets `USER 4020:4020`
 with `ENTRYPOINT` `/opt/layerx/supervisor.sh`
-(`platform/hosted/node/Dockerfile:10-11`;
-`platform/hosted/node/Dockerfile:20-27`). The binary
+(`docker/platform-node/Dockerfile:10-11`;
+`docker/platform-node/Dockerfile:20-27`). The binary
 `layerxd` is `cmd/layerxd/`; its CLI is `--check-config`,
 `--serve`, or `--authority-replica` plus a configuration path
 (`cmd/layerxd/lxp_daemon_cli.c:8-16`). Any other argv is

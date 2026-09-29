@@ -28,7 +28,7 @@ services:
       service: backend
     build:
       context: ..
-      dockerfile: ./docker/Dockerfile
+      dockerfile: ../../docker/explorer-backend/Dockerfile
       args:
         RELEASE_VERSION: 9.0.2
     links:
@@ -47,7 +47,7 @@ services:
       service: nft_media_handler
     build:
       context: ..
-      dockerfile: ./docker/Dockerfile
+      dockerfile: ../../docker/explorer-backend/Dockerfile
       args:
         RELEASE_VERSION: 9.0.2
 

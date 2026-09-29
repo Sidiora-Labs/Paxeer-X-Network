@@ -16,7 +16,7 @@ fetched over loopback HTTP
 (`platform/hosted/authority/src/main.rs:57, 218-224`).
 
 The image entrypoint is `/usr/local/bin/layerx-receipt-authority`
-(`platform/hosted/authority/Dockerfile:9-11`). Make target
+(`docker/platform-authority/Dockerfile:9-11`). Make target
 `platform-test-authority` runs the crate tests; `platform-test-trusted-boundary`
 depends on it (`platform/Makefile.inc:147-148, 159`).
 
@@ -47,7 +47,7 @@ container port `authority-tls` (`9445`)
 (`platform/hosted/node/deployment.yaml:181, 255-256`).
 
 The Dockerfile sets `USER 4020:4020`
-(`platform/hosted/authority/Dockerfile:8-10`). The pod security context
+(`docker/platform-authority/Dockerfile:8-10`). The pod security context
 is `runAsUser` / `runAsGroup` `4020`
 (`platform/hosted/node/deployment.yaml:26`). The `receipt-authority`
 container overrides that to `runAsUser: 4021`, `runAsGroup: 4020`

@@ -35,8 +35,8 @@ area:paxeer:
           - go.mod
           - go.sum
           - chain.mk
-          - Dockerfile
-          - Dockerfile.dockerignore
+          - docker/layerx/Dockerfile
+          - docker/layerx/Dockerfile.dockerignore
           - foundry.paxeer.toml
           - buf.gen.yaml
           - buf.lock

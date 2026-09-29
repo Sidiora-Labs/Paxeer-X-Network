@@ -1453,3 +1453,40 @@ symbol = "HumanClient"
 observed = "The wallet SDK sends its identity as an Authorization bearer header while the human service admits only its __Host- session cookies, which are Secure, SameSite=Strict and never sent cross-site, and the human-api schema opens a session only from a passkey assertion_id; the wallet assertion sign-in exists in process (open_or_create_by_assertion) but has no HTTP operation, so a cross-origin wallet app cannot authenticate against the deployed service today."
 assumption = "One side of the contract must move before NEXT_PUBLIC_PAXEER_HUMAN_API is set: either the service admits the wallet assertion as a bearer credential on the plan and submit operations, or the wallet app is served from a listed origin and opens a service session; the authenticated proof stays implemented-not-qualified until the owner decides."
 severity = "high"
+
+[gate.6.10.verify]
+revision = "bcf3bd09a3eb6362384ba47aabd58a58dceadd01"
+command = "timeout 20m sh -c 'tools/containers/check.sh wallet-pwa web wallet-gateway wallet-attestor && docker build -f docker/wallet-pwa/Dockerfile -t paxeer-wallet-pwa:verify .'"
+exit_code = 1
+log_path = ".logs/verify-6.10-3.log"
+observed = "check.sh passes for the four services and the wallet-pwa image reaches npm run build, where webpack stops on node:child_process, node:crypto, node:https, node:http and node:path imported by agent/sdk/typescript/src through human/wallet/sdk/src/modules/index.ts into the client bundle of src/surfaces/SurfacePage.tsx; the first two runs (.logs/verify-6.10.log, .logs/verify-6.10-2.log) failed earlier on the Turbopack default and on the app-first module lookup, both repaired within the two cycles."
+
+[observation.6.10.1]
+task = "outside the container move"
+file = "human/wallet/sdk/src/modules/index.ts"
+symbol = "export from @sidiora/layerx-sdk"
+observed = "The wallet PWA client bundle imports the whole agent SDK index, whose node-mirror.ts, program-lifecycle.ts and agent-http.ts import node:child_process, node:crypto, node:https, node:http and node:path, so next build cannot finish and no image of the app can be produced from any Dockerfile."
+assumption = "Pre-existing in the app and SDK sources; needs a browser-safe SDK entry, left for the wallet SDK owner; the container move is complete and the gate is implemented, not qualified."
+severity = "high"
+
+[gate.6.11.verify]
+revision = "c4eab3d00409b6643e93ec4819465dd403e72fb3"
+command = "timeout 20m tools/containers/check.sh platform-agent-boundary platform-authority platform-core platform-dashboard platform-dashboard-web platform-faucet platform-gateway platform-identity platform-internal platform-node paxeer platform-registry platform-registry-builder platform-testnet platform-webhooks ramps relay-archive hpx-registry"
+exit_code = 1
+log_path = ".logs/verify-6.11.log"
+observed = "Twenty of the twenty-one Dockerfiles pass docker build --check and the layout and reference checks pass; docker/paxeer/Dockerfile.paxd fails because its default base ghcr.io/sidiora-labs/paxd-node:0.1.0 cannot be resolved (log .logs/containers-check/docker_paxeer_Dockerfile.paxd.log)."
+
+[observation.6.11.1]
+task = "missing external authority"
+file = "docker/paxeer/Dockerfile.paxd"
+symbol = "ARG PAXD_IMAGE=ghcr.io/sidiora-labs/paxd-node:0.1.0"
+observed = "docker buildx imagetools inspect returns not found for paxd-node:0.1.0, paxd:0.1.0, layerx-node:0.1.0 and layerx-gateway:0.1.0 under ghcr.io/sidiora-labs with this host logged in to ghcr.io, so no beta image named by platform/hosted/tests/beta-images.sh is published and the paxd file cannot be linted without a local paxd-node build passed as PAXD_IMAGE."
+assumption = "Pre-existing publication gap outside this task; the file is unchanged by the move and the check is left strict; the check passes once paxd-node is published or built locally under that name."
+severity = "medium"
+
+[gate.6.12.verify]
+revision = "732d95082038f6143eb5352461337e2d35d868b9"
+command = "timeout 20m tools/containers/check.sh"
+exit_code = 1
+log_path = ".logs/verify-6.12-2.log"
+observed = "The layout and reference checks pass and thirty-six of thirty-seven Dockerfiles pass docker build --check; the first run (.logs/verify-6.12.log) also failed on FromAsCasing in the two explorer service images and LegacyKeyValueFormat in the explorer frontend image, repaired within one cycle by normalising the syntax without changing the images, and the only remaining failure is docker/paxeer/Dockerfile.paxd on the unpublished base image already recorded as observation.6.11.1."

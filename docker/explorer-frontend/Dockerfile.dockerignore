@@ -1,0 +1,14 @@
+*
+!explorer/frontend
+explorer/frontend/node_modules
+**/node_modules
+explorer/frontend/node_modules_linux
+**/npm-debug.log
+explorer/frontend/README.md
+explorer/frontend/.next
+**/.git
+**/*.tsbuildinfo
+**/.eslintcache
+explorer/frontend/test-results/
+explorer/frontend/playwright-report/
+explorer/frontend/blob-report/

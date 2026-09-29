@@ -1,0 +1,6 @@
+*
+!explorer/services/sig-provider
+explorer/services/sig-provider/target
+explorer/services/sig-provider/README.md
+explorer/services/sig-provider/tests
+explorer/services/sig-provider/config.toml

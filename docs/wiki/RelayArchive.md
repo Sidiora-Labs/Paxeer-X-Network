@@ -188,7 +188,7 @@ read peer.
 ## Container deployment
 
 ```sh
-docker build -f platform/relay_archive/Dockerfile \
+docker build -f docker/relay-archive/Dockerfile \
   --build-arg LXP_REVISION="$(git rev-parse HEAD)" \
   -t layerx-relay-archive:local .
 ```

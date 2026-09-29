@@ -1,0 +1,9 @@
+*
+!explorer/backend/mix.exs
+!explorer/backend/mix.lock
+!explorer/backend/apps/block_scout_web/mix.exs
+!explorer/backend/apps/explorer/mix.exs
+!explorer/backend/apps/ethereum_jsonrpc/mix.exs
+!explorer/backend/apps/indexer/mix.exs
+!explorer/backend/apps/utils/mix.exs
+!explorer/backend/apps/nft_media_handler/mix.exs

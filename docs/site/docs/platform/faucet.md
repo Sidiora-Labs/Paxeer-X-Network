@@ -25,7 +25,7 @@ as the JSON-RPC method `lx_requestFunds`
 
 The image is `ghcr.io/sidiora-labs/layerx-faucet:0.1.0`, user
 `4020:4020`, entrypoint `/usr/local/bin/layerx-faucet`
-(`platform/hosted/faucet/Dockerfile:5-11`;
+(`docker/platform-faucet/Dockerfile:5-11`;
 `platform/hosted/testnet/deployment.yaml:138`;
 `platform/hosted/tests/beta-cluster.sh:116`). There is no
 `platform/hosted/faucet/deployment.yaml`. The Deployment, Redis,

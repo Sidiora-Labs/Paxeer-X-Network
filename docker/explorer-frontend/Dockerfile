@@ -9,13 +9,13 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python
 ### APP
 # Install dependencies
 WORKDIR /app
-COPY package.json yarn.lock tsconfig.json ./
-COPY types ./types
-COPY lib ./lib
-COPY configs/app ./configs/app
-COPY toolkit/theme ./toolkit/theme
-COPY toolkit/utils ./toolkit/utils
-COPY toolkit/components/forms/validators/url.ts ./toolkit/components/forms/validators/url.ts
+COPY explorer/frontend/package.json explorer/frontend/yarn.lock explorer/frontend/tsconfig.json ./
+COPY explorer/frontend/types ./types
+COPY explorer/frontend/lib ./lib
+COPY explorer/frontend/configs/app ./configs/app
+COPY explorer/frontend/toolkit/theme ./toolkit/theme
+COPY explorer/frontend/toolkit/utils ./toolkit/utils
+COPY explorer/frontend/toolkit/components/forms/validators/url.ts ./toolkit/components/forms/validators/url.ts
 RUN apk add git
 RUN yarn --frozen-lockfile --network-timeout 100000
 
@@ -23,44 +23,44 @@ RUN yarn --frozen-lockfile --network-timeout 100000
 ### FEATURE REPORTER
 # Install dependencies
 WORKDIR /feature-reporter
-COPY ./deploy/tools/feature-reporter/package.json ./deploy/tools/feature-reporter/yarn.lock ./
+COPY explorer/frontend/deploy/tools/feature-reporter/package.json explorer/frontend/deploy/tools/feature-reporter/yarn.lock ./
 RUN yarn --frozen-lockfile --network-timeout 100000
 
 
 ### ENV VARIABLES CHECKER
 # Install dependencies
 WORKDIR /envs-validator
-COPY ./deploy/tools/envs-validator/package.json ./deploy/tools/envs-validator/yarn.lock ./
+COPY explorer/frontend/deploy/tools/envs-validator/package.json explorer/frontend/deploy/tools/envs-validator/yarn.lock ./
 RUN yarn --frozen-lockfile --network-timeout 100000
 
 ### FAVICON GENERATOR
 # Install dependencies
 WORKDIR /favicon-generator
-COPY ./deploy/tools/favicon-generator/package.json ./deploy/tools/favicon-generator/yarn.lock ./
+COPY explorer/frontend/deploy/tools/favicon-generator/package.json explorer/frontend/deploy/tools/favicon-generator/yarn.lock ./
 RUN yarn --frozen-lockfile --network-timeout 100000
 
 ### SITEMAP GENERATOR
 # Install dependencies
 WORKDIR /sitemap-generator
-COPY ./deploy/tools/sitemap-generator/package.json ./deploy/tools/sitemap-generator/yarn.lock ./
+COPY explorer/frontend/deploy/tools/sitemap-generator/package.json explorer/frontend/deploy/tools/sitemap-generator/yarn.lock ./
 RUN yarn --frozen-lockfile --network-timeout 100000
 
 ### MULTICHAIN CONFIG GENERATOR
 # Install dependencies
 WORKDIR /multichain-config-generator
-COPY ./deploy/tools/multichain-config-generator/package.json ./deploy/tools/multichain-config-generator/yarn.lock ./
+COPY explorer/frontend/deploy/tools/multichain-config-generator/package.json explorer/frontend/deploy/tools/multichain-config-generator/yarn.lock ./
 RUN yarn --frozen-lockfile --network-timeout 100000
 
 ### ESSENTIAL DAPPS CHAINS CONFIG GENERATOR
 # Install dependencies
 WORKDIR /essential-dapps-chains-config-generator
-COPY ./deploy/tools/essential-dapps-chains-config-generator/package.json ./
+COPY explorer/frontend/deploy/tools/essential-dapps-chains-config-generator/package.json ./
 RUN yarn --frozen-lockfile --network-timeout 100000
 
 ### llms.txt GENERATOR
 # Install dependencies
 WORKDIR /llms-txt-generator
-COPY ./deploy/tools/llms-txt-generator/package.json ./deploy/tools/llms-txt-generator/yarn.lock ./
+COPY explorer/frontend/deploy/tools/llms-txt-generator/package.json explorer/frontend/deploy/tools/llms-txt-generator/yarn.lock ./
 RUN yarn --frozen-lockfile --network-timeout 100000
 
 
@@ -78,13 +78,13 @@ ENV NEXT_PUBLIC_GIT_TAG=$GIT_TAG
 ARG NEXT_OPEN_TELEMETRY_ENABLED
 ENV NEXT_OPEN_TELEMETRY_ENABLED=$NEXT_OPEN_TELEMETRY_ENABLED
 
-ENV NODE_ENV production
+ENV NODE_ENV=production
 
 ### APP
 # Copy dependencies and source code
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+COPY explorer/frontend .
 
 # Build SVG sprite and generate .env.registry with ENVs list and save build args into .env file
 RUN set -a && \
@@ -173,21 +173,21 @@ COPY --from=builder /app/deploy/tools/essential-dapps-chains-config-generator/di
 
 # Copy scripts
 ## Entrypoint
-COPY --chmod=755 ./deploy/scripts/entrypoint.sh .
+COPY --chmod=755 explorer/frontend/deploy/scripts/entrypoint.sh .
 ## ENV validator and client script maker
-COPY --chmod=755 ./deploy/scripts/validate_envs.sh .
-COPY --chmod=755 ./deploy/scripts/make_envs_script.sh .
+COPY --chmod=755 explorer/frontend/deploy/scripts/validate_envs.sh .
+COPY --chmod=755 explorer/frontend/deploy/scripts/make_envs_script.sh .
 ## Assets downloader
-COPY --chmod=755 ./deploy/scripts/download_assets.sh .
+COPY --chmod=755 explorer/frontend/deploy/scripts/download_assets.sh .
 ## OG image generator
-COPY ./deploy/scripts/og_image_generator.js .
+COPY explorer/frontend/deploy/scripts/og_image_generator.js .
 ## Favicon generator
-COPY --chmod=755 ./deploy/scripts/favicon_generator.sh .
+COPY --chmod=755 explorer/frontend/deploy/scripts/favicon_generator.sh .
 COPY --from=builder /app/deploy/tools/favicon-generator ./deploy/tools/favicon-generator
 RUN ["chmod", "-R", "777", "./deploy/tools/favicon-generator"]
 RUN ["chmod", "-R", "777", "./public"]
 ## Sitemap generator
-COPY --chmod=755 ./deploy/scripts/sitemap_generator.sh .
+COPY --chmod=755 explorer/frontend/deploy/scripts/sitemap_generator.sh .
 COPY --from=builder /app/deploy/tools/sitemap-generator ./deploy/tools/sitemap-generator
 
 # Copy ENVs files
@@ -197,7 +197,7 @@ COPY --from=builder /app/.env .
 # Copy ENVs presets
 ARG ENVS_PRESET
 ENV ENVS_PRESET=$ENVS_PRESET
-COPY ./configs/envs ./configs/envs
+COPY explorer/frontend/configs/envs ./configs/envs
 
 # Automatically leverage output traces to reduce image size
 # https://nextjs.org/docs/advanced-features/output-file-tracing
@@ -210,6 +210,6 @@ USER nextjs
 
 EXPOSE 3000
 
-ENV PORT 3000
+ENV PORT=3000
 
 CMD ["node", "server.js"]

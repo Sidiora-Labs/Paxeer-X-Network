@@ -36,7 +36,7 @@ Set these in Vercel dashboard:
 ### Build Image
 
 ```bash
-docker build -t paxport-wallet .
+docker build -f docker/wallet-pwa/Dockerfile -t paxport-wallet .
 ```
 
 ### Run Container

@@ -36,7 +36,7 @@ GitHub workflows and CI jobs use prefixed names to make subsystem ownership clea
 - LayerX workflows: `agent.yml`, `human.yml`, `platform.yml`, `programs-conformance.yml`
 - Paxeer workflows: `Paxeer / Build`, `Paxeer / Lint`, `Paxeer / Test`
 
-The Paxeer chain sources sit at the repository root next to the LayerX trees, so no single directory scopes Paxeer CI. Each `paxeer-*.yml` workflow lists the chain paths it covers explicitly: the root Go module files (`go.mod`, `go.sum`, `chain.mk`, `foundry.paxeer.toml`, `Dockerfile`), the chain-only directories (`daemon/`, `node/`, `modules/`, `consensus/`, `sdk/`, `rpc/`, `precompiles/`, `storage/`, `wasm/`, and the rest of that list), and the chain-owned subpaths of the shared directories (`contracts/src/`, `contracts/test/`, `docs/swagger/`, `scripts/`, `tests/chain/`, `tools/chain/`, `tools/tx-scanner/`, `tools/utils/`). Changes outside those paths do not run Paxeer builds.
+The Paxeer chain sources sit at the repository root next to the LayerX trees, so no single directory scopes Paxeer CI. Each `paxeer-*.yml` workflow lists the chain paths it covers explicitly: the root Go module files (`go.mod`, `go.sum`, `chain.mk`, `foundry.paxeer.toml`, `docker/layerx/Dockerfile`), the chain-only directories (`daemon/`, `node/`, `modules/`, `consensus/`, `sdk/`, `rpc/`, `precompiles/`, `storage/`, `wasm/`, and the rest of that list), and the chain-owned subpaths of the shared directories (`contracts/src/`, `contracts/test/`, `docs/swagger/`, `scripts/`, `tests/chain/`, `tools/chain/`, `tools/tx-scanner/`, `tools/utils/`). Changes outside those paths do not run Paxeer builds.
 
 ## Further reading
 
