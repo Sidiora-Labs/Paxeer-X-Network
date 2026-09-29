@@ -150,6 +150,52 @@ const me = (profile) => {
 };
 
 const server = http.createServer((request, response) => {
+  const human = request.url.match(/^\/human_([a-z]+)(\/livez|\/v1\/intents\/plan)$/);
+  if (human) {
+    const [, profile, path] = human;
+    if (!["good", "noorigin", "crash", "dead"].includes(profile)) {
+      response.writeHead(404, { "content-type": "application/json" });
+      response.end('{"ok":false}');
+      return;
+    }
+    const trace = "trc_00112233445566778899aabbccddeeff";
+    const headers = { "content-type": "application/json", "x-layerx-trace": trace };
+    if (request.headers.origin && profile !== "noorigin") {
+      headers["access-control-allow-origin"] = request.headers.origin;
+      headers["vary"] = "Origin";
+    }
+    const envelope = (ok, extra) => JSON.stringify({ ok, trace, ...extra });
+    if (path === "/livez" && request.method === "GET") {
+      if (profile === "dead") {
+        response.writeHead(503, headers);
+        response.end(envelope(false, { error: { code: "unavailable", copy_key: "error.service.unavailable", retry: "retriable" } }));
+        return;
+      }
+      response.writeHead(200, headers);
+      response.end(envelope(true, { result: { live: true, service: "layerx-human-service" } }));
+      return;
+    }
+    if (path !== "/livez" && request.method === "OPTIONS") {
+      headers["access-control-allow-methods"] = "DELETE, GET, PATCH, POST, PUT";
+      headers["access-control-allow-headers"] = "authorization, content-type, idempotency-key, x-layerx-trace, x-layerx-csrf";
+      response.writeHead(200, headers);
+      response.end(envelope(true, { result: { preflight: true } }));
+      return;
+    }
+    if (path !== "/livez" && request.method === "POST") {
+      if (profile === "crash") {
+        response.writeHead(500, { "content-type": "text/plain" });
+        response.end("internal error");
+        return;
+      }
+      response.writeHead(401, headers);
+      response.end(envelope(false, { error: { code: "unauthenticated", copy_key: "error.session.required", retry: "structural" } }));
+      return;
+    }
+    response.writeHead(404, headers);
+    response.end('{"ok":false}');
+    return;
+  }
   const gateway = request.url.match(/^\/gw_([a-z]+)(\/readyz|\/v1\/wallet\/me)$/);
   if (gateway) {
     const [, profile, path] = gateway;
@@ -465,6 +511,78 @@ if [ "$status" -eq 1 ] && grep -q '^fail readiness transport ' <<<"$output" &&
 	echo "ok   check_live_gateway_unreachable"
 else
 	echo "FAIL check_live_gateway_unreachable: want exit 1 with transport failures, got exit $status"
+	printf '%s\n' "$output"
+	failures=$((failures + 1))
+fi
+
+expect_human() {
+	local name="$1" profile="$2" want_status="$3" output status=0
+	shift 3
+	output="$(CHECK_LIVE_HUMAN_BASE="http://127.0.0.1:$port/human_$profile" CHECK_LIVE_HUMAN_ORIGIN="https://app.wallet.example" CHECK_LIVE_TIMEOUT=5 "$checker" human 2>&1)" || status=$?
+	local ok=1 line
+	[ "$status" -eq "$want_status" ] || ok=0
+	for line in "$@"; do
+		grep -qF -- "$line" <<<"$output" || ok=0
+	done
+	if [ "$ok" -eq 1 ]; then
+		echo "ok   $name"
+	else
+		echo "FAIL $name: want exit $want_status with lines [$*], got exit $status"
+		printf '%s\n' "$output"
+		failures=$((failures + 1))
+	fi
+}
+
+expect_human check_live_human_passing good 0 \
+	"pass live http=200 live=true service=layerx-human-service" \
+	"pass preflight http=200 allow-origin=https://app.wallet.example" \
+	"pass plan http=401 code=unauthenticated trace=present" \
+	"check-live: all checks passed"
+
+expect_human check_live_human_preflight_without_allow_origin noorigin 1 \
+	"pass live http=200 live=true service=layerx-human-service" \
+	"fail preflight http=200 allow-origin=None" \
+	"pass plan http=401 code=unauthenticated trace=present" \
+	"check-live: 1 check(s) failed"
+
+expect_human check_live_human_plan_server_error crash 1 \
+	"pass preflight http=200 allow-origin=https://app.wallet.example" \
+	"fail plan http=500 internal error" \
+	"check-live: 1 check(s) failed"
+
+expect_human check_live_human_not_live dead 1 \
+	'fail live http=503 {"error":{"code":"unavailable"' \
+	"check-live: 1 check(s) failed"
+
+status=0
+output="$(CHECK_LIVE_HUMAN_BASE="" CHECK_LIVE_HUMAN_ORIGIN="https://app.wallet.example" "$checker" human 2>&1)" || status=$?
+if [ "$status" -eq 2 ] && grep -q 'CHECK_LIVE_HUMAN_BASE is required' <<<"$output" &&
+	grep -q '^usage: ' <<<"$output"; then
+	echo "ok   check_live_human_missing_base"
+else
+	echo "FAIL check_live_human_missing_base: want exit 2 with usage, got exit $status"
+	printf '%s\n' "$output"
+	failures=$((failures + 1))
+fi
+
+status=0
+output="$(CHECK_LIVE_HUMAN_BASE="http://127.0.0.1:$port/human_good" CHECK_LIVE_HUMAN_ORIGIN="" "$checker" human 2>&1)" || status=$?
+if [ "$status" -eq 2 ] && grep -q 'CHECK_LIVE_HUMAN_ORIGIN is required' <<<"$output" &&
+	grep -q '^usage: ' <<<"$output"; then
+	echo "ok   check_live_human_missing_origin"
+else
+	echo "FAIL check_live_human_missing_origin: want exit 2 with usage, got exit $status"
+	printf '%s\n' "$output"
+	failures=$((failures + 1))
+fi
+
+status=0
+output="$(CHECK_LIVE_HUMAN_BASE="http://127.0.0.1:1" CHECK_LIVE_HUMAN_ORIGIN="https://app.wallet.example" CHECK_LIVE_TIMEOUT=2 "$checker" human 2>&1)" || status=$?
+if [ "$status" -eq 1 ] && grep -q '^fail live transport ' <<<"$output" &&
+	grep -q '^fail plan transport ' <<<"$output" && grep -q 'check-live: 3 check(s) failed' <<<"$output"; then
+	echo "ok   check_live_human_unreachable"
+else
+	echo "FAIL check_live_human_unreachable: want exit 1 with transport failures, got exit $status"
 	printf '%s\n' "$output"
 	failures=$((failures + 1))
 fi

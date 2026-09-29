@@ -2,7 +2,10 @@
 **/.env
 **/.env.*
 **/target
+**/.lane-target
 **/.build
+**/.logs
+**/.next
 **/node_modules
 build
 qual-logs

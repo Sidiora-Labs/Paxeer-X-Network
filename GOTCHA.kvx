@@ -521,3 +521,33 @@ area    = "repo-layout"
 symptom = "A brief names the wallet app path under the wallet directory and the lane finds nothing there."
 cause   = "The app lives under human/apps/wallet, not human/wallet/app."
 do      = "Name human/apps/wallet in every brief that touches the app."
+
+[gotcha.84]
+area    = "flyctl"
+symptom = "A value fetched with flyctl ssh console -C arrives with a first line reading No machine specified, using <id> in region ams, and a file written from it is malformed."
+cause   = "flyctl prints the machine selection notice on stdout before the command output."
+do      = "Pass a machine explicitly or pipe the output through tail -n1 before writing it anywhere."
+
+[gotcha.85]
+area    = "cargo/docker"
+symptom = "The human service image build fails with lock file needs to be updated but --locked was passed for cmd/layerxctl."
+cause   = "cmd/layerxctl/Cargo.lock predates the pinned rustls patch version the workspace depends on."
+do      = "Run cargo update -w inside cmd/layerxctl, confirm only the pinned crate moves, and commit the lock before the image build."
+
+[gotcha.86]
+area    = "docker/buildkit"
+symptom = "Any Cargo.lock change reruns every cargo stage of the human service image, about six minutes at eight build jobs."
+cause   = "A single COPY . . precedes all five cargo build steps, so one changed file invalidates them all."
+do      = "Budget a full rebuild per repair cycle, or copy manifests and locks first when restructuring the Dockerfile."
+
+[gotcha.87]
+area    = "fly"
+symptom = "A runtime directory created in the image for the service user exists on the machine without a volume."
+cause   = "Fly keeps the image root filesystem, including /run, on the machine."
+do      = "Pre-create service directories in the image; a role that keeps no state needs no volume."
+
+[gotcha.88]
+area    = "codify"
+symptom = "The guard tool reports no task in progress although a spec.kvx task is in_progress."
+cause   = "The guard reads Codify claims, not spec.kvx status."
+do      = "Treat the guard as advisory on kvx-driven lanes and keep the spec status as the record."
