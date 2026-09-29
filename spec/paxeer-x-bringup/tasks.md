@@ -108,7 +108,7 @@
     - In layerx-human-service, admit an Authorization bearer on intent plan, intent submit, journey get and the account reads from an origin in the listed set by calling operation 4 through the identity socket, resolving the principal and did, and keeping the passkey cookie path exactly as it is.
     - Carry the admitted assertion on the request context so components pass it to AttestorKms::admit_assertion at signing; add tests/bearer_admission.rs proving admission, refusal of a foreign origin and refusal of an expired assertion.
     - _Requirements: 10.2_
-  - [ ] 3.3 Make the KMS group optional under attestor custody in the components loader
+  - [x] 3.3 Make the KMS group optional under attestor custody in the components loader
     - In production_components.rs require the LAYERX_HUMAN_KMS_* group only when LAYERX_HUMAN_ATTESTOR_NODES is unset; under attestor custody use the five Fly attestors with LAYERX_HUMAN_ATTESTOR_SIGNERS of at least three, protocol 3, the human-service client leaf chained to the attestor CA, and wire admit_assertion into the sign path.
     - Extend tests/wallet_identity_e2e.rs so it runs with no KMS variables set and proves the attestor-only path end to end.
     - _Requirements: 10.3_

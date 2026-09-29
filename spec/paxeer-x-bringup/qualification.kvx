@@ -229,3 +229,19 @@ command   = "timeout 20m tools/runtime/run-with-clock.sh sh -c 'cd human && carg
 exit_code = 0
 log_path  = ".logs/verify.log"
 observed  = "Three bearer admission tests passed after one build repair and one fixture repair; the run needed a dedicated cargo target directory."
+
+[observation.3.3.1]
+task       = "3.3"
+file       = "spec/paxeer-x-bringup/spec.kvx"
+symbol     = "ProductionComponents::from_environment"
+observed   = "cg spec done reran the verify_cmd to exit 0 but refused with the graph database busy and two symbol checks failed against the last completed index: the task listed ProductionComponents::from_environment, which no type defines because the loader is ProductionComponentsConfig::from_environment, and AttestorKms::admit_assertion was not yet in that index."
+assumption = "The task's symbols line is corrected to the real loader symbol in this lane, the status is set done by hand after the genuine pass, and the manager re-runs the tool on the merged feature."
+severity   = "note"
+
+[gate.3.3.1]
+task      = "3.3"
+revision  = "62aa3831683469c8bcc2774090e00d72bb7bfa1d plus the lane's loader and test change committed with this record"
+command   = "CARGO_TARGET_DIR=/root/lx-target/human LAYERX_RUNTIME_CLOCK_BIN=/root/lx-target/human/debug/layerx-runtime-clock timeout 30m tools/runtime/run-with-clock.sh sh -c 'cd human && cargo test -p layerx-human-service --test wallet_identity_e2e'"
+exit_code = 0
+log_path  = ".logs/verify.log"
+observed  = "Both wallet identity tests passed with no LAYERX_HUMAN_KMS_ variable in the environment after one build repair; the components loader accepted the attestor group without the KMS group at protocol 3 and refused with the KMS group named once the attestor nodes were unset."

@@ -839,3 +839,15 @@ area    = "human-service exports"
 symptom = "The library built with private_interfaces warnings, then the integration test failed to compile with 'type IdentityDispatchError is private' on the first call into the exported identity client."
 cause   = "Exporting a client whose methods return Result<_, E> while E stays pub(crate) compiles inside the crate but leaves integration tests unable to name the result type."
 do      = "When a crate-private client becomes a public export, make its error type pub and export it alongside in the same change."
+
+[gotcha.137]
+area    = "human-service tests"
+symptom = "An integration test that proves the components loader has to set the whole LAYERX_HUMAN_ environment, and two such tests in one binary would race on the process-global variables."
+cause   = "The loader reads only the process environment, cargo runs the tests of one binary on parallel threads, and env::set_var and remove_var are visible to every thread."
+do      = "Keep every environment-touching step of one loader proof inside one test function, set the variables right before from_environment and remove them at the end; let sibling tests in that binary read no environment."
+
+[gotcha.138]
+area    = "spec-tooling"
+symptom = "cg spec done refuses a task whose verify_cmd it just reran to exit 0 with symbol not defined in the graph, and the symbol named in the task does not exist under that type."
+cause   = "The symbols line was written from the type that owns the components, while the environment loader is a method of the configuration type, and the graph check is exact."
+do      = "Check every symbols entry against the real definition before starting the task; correct a mis-named symbol inside your own task block, record the refusal once, and set the status by hand after the genuine pass."

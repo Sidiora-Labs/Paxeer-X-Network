@@ -487,13 +487,13 @@ reqs       = ["10.2"]
 
 [task.3.3]
 title      = "Make the KMS group optional under attestor custody in the components loader"
-status     = "pending"
+status     = "done"
 wave       = 3
 requires   = ["3.2"]
 do_1       = "In production_components.rs require the LAYERX_HUMAN_KMS_* group only when LAYERX_HUMAN_ATTESTOR_NODES is unset; under attestor custody use the five Fly attestors with LAYERX_HUMAN_ATTESTOR_SIGNERS of at least three, protocol 3, the human-service client leaf chained to the attestor CA, and wire admit_assertion into the sign path."
 do_2       = "Extend tests/wallet_identity_e2e.rs so it runs with no KMS variables set and proves the attestor-only path end to end."
 verify_cmd = "timeout 30m tools/runtime/run-with-clock.sh sh -c 'cd human && cargo test -p layerx-human-service --test wallet_identity_e2e'"
-symbols    = ["ProductionComponents::from_environment", "AttestorKms::admit_assertion"]
+symbols    = ["ProductionComponentsConfig::from_environment", "AttestorKms::admit_assertion"]
 touches    = ["human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-service/tests/wallet_identity_e2e.rs"]
 tests      = ["human/crates/layerx-human-service/tests/wallet_identity_e2e.rs"]
 reqs       = ["10.3"]
