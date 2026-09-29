@@ -863,3 +863,27 @@ area    = "tooling"
 symptom = "shellcheck on the node test script exits 1 on the base revision."
 cause   = "Two pre-existing SC2015 info findings (A && B || C used as if-then-else) sit in the script."
 do      = "Compare shellcheck findings on that script against the base revision before treating a non-zero exit as a regression."
+
+[gotcha.141]
+area    = "client"
+symptom = "A probe read over a raw LNI transport cannot reuse the header-derived authorization of a Client read, because Client keeps its transport private and does not expose every read."
+cause   = "Client::batch_header wraps batch::lookup on its own transport, while reads Client lacks (the DID account listing) run on a separately handshaken Uds transport."
+do      = "Build the authorization in one helper that takes the header fetch as a closure: client.batch_header for Client reads, batch::lookup on the raw transport for the others."
+
+[gotcha.142]
+area    = "kernel"
+symptom = "Right after an acknowledged submission, a repeated layerxctl submit fails before sending with state read CoreRefusal class 4 result -903 LXP_ERR_PROJECTION_STALE."
+cause   = "Preparation reads answer only when the receipt authority and the program feed have scanned through the kernel head, which holds again only once the admitted activity is sealed; -903 is the retriable pending answer."
+do      = "Wait, bounded, until a preparation read (layerxctl read-state) answers before resubmitting; treat -903 as pending, as the registry's head classifier does."
+
+[gotcha.143]
+area    = "tests"
+symptom = "An inode comparison meant to prove a reset re-created a file fails although the supervisor log shows the bootstrap re-ran with a new genesis state root."
+cause   = "The reset clears the data directory before the bootstrap writes the new file, and ext4 hands the freed inode number straight to the new file."
+do      = "Hold the old file open across the reset so its inode stays allocated; do not hard-link it, since the daemon's artifact loaders refuse a file whose link count is not one."
+
+[gotcha.144]
+area    = "tests"
+symptom = "Right after a supervisor reset the node test finds the checkpoint directory non-empty."
+cause   = "The reset replies only once the restarted sequencer is ready, and that daemon writes initialized-genesis.lxg, the prepared-batch group files, da-bodies.log, its admission log and da/ at startup."
+do      = "Do not read directory emptiness after a reset as proof of a missed discard; compare the pre-reset files' identities instead, once that assertion change is ruled."

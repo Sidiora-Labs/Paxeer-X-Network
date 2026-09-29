@@ -237,3 +237,11 @@ exit_code  = 2
 log_path   = ".logs/verify.log"
 observed   = "After both repair cycles the run built every prerequisite, exported the treasury's custody deposit and signed first credit from a real deposit on an owned paxd chain, saw the unopened refusal class 4 result -208 and the empty DID listing, had the credit acknowledged and read the credited balance 1000000 at StateProven, then failed at the DID account listing with 'layerx-node-probe: did account listing failed: AuthorityRangeMismatch'."
 assumption = "The probe's did_accounts still binds its read context to (key, key, 1, latest sealed batch) instead of the sealed batch header's signing terms that balance now takes, so giving it the same header-derived authorization is the remaining task-scoped repair, not made because both repair cycles were spent; the task stays in_progress."
+
+[observation.1.8.7]
+revision   = "40dc909795ed150cb7b07d6d1384e7d031bc73f8 plus the uncommitted change committed with this entry"
+command    = "timeout 30m make layerxd platform-test-node"
+exit_code  = 2
+log_path   = ".logs/verify.log"
+observed   = "With the balance read and the DID listing sharing the probe's sealed-header authorization, the listing names the credited main account, the operator SEND is acknowledged and its repeat, issued once the SEND has sealed and the preparation read stops answering -903, keeps its identity, supervisor status and reset pass and the genesis inode check passes once the first manifest's inode is held open; the run then fails at 'checkpoint directory was not discarded by the reset' because the restarted daemon has already written initialized-genesis.lxg, both prepared-batch group files, da-bodies.log, its admission log and da/ into the fresh checkpoint directory."
+assumption = "The emptiness assertion contradicts the daemon's own startup writes, since the reset replies only after the restarted sequencer is ready; both are left intact as written, both repair cycles are spent, and a ruling is needed on what proves the discard (for example that the pre-reset batch and admission files were replaced), so the task stays in_progress."

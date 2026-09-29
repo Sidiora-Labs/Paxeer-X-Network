@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Duration;
 
+use layerx_client::batch::{self, BatchHeaderError, SignedBatchHeader};
 use layerx_client::client::{Client, ClientConfig, ReconnectPolicy};
 use layerx_client::evidence::RootSelector;
 use layerx_client::head::HeadTracker;
@@ -141,6 +142,30 @@ fn handshake(parsed: &BTreeMap<String, String>) -> Result<String, String> {
     ))
 }
 
+// Read evidence is bound to the signing terms of the latest sealed batch header, so they are
+// taken from that header; before the first seal no state can be answered with evidence.
+fn sealed_authorization(
+    sequencer_key: [u8; 32],
+    sealed: u64,
+    header: impl FnOnce(u64) -> Result<SignedBatchHeader, BatchHeaderError>,
+) -> Result<SequencerAuthorization, String> {
+    if sealed == 0 {
+        return Ok(SequencerAuthorization::new(
+            sequencer_key,
+            sequencer_key,
+            1,
+            1,
+        ));
+    }
+    let header = header(sealed).map_err(|error| format!("batch header {sealed}: {error:?}"))?;
+    Ok(SequencerAuthorization::new(
+        header.sequencer_id,
+        sequencer_key,
+        header.first_batch_number,
+        header.last_batch_number,
+    ))
+}
+
 fn balance(parsed: &BTreeMap<String, String>) -> Result<String, String> {
     let socket = required(parsed, "socket")?;
     let network_id: u32 = required(parsed, "network-id")?
@@ -155,21 +180,8 @@ fn balance(parsed: &BTreeMap<String, String>) -> Result<String, String> {
         .map_err(|error| format!("account id: {error:?}"))?;
     let sequencer_key = node.authorised_sequencer_key;
     let sealed = node.latest_sealed_batch;
-    // Read evidence is bound to the signing terms of the latest sealed batch header, so they are
-    // taken from that header; before the first seal no state can be answered with evidence.
-    let authorization = if sealed == 0 {
-        SequencerAuthorization::new(sequencer_key, sequencer_key, 1, 1)
-    } else {
-        let header = client
-            .batch_header(sealed, 2)
-            .map_err(|error| format!("batch header {sealed}: {error:?}"))?;
-        SequencerAuthorization::new(
-            header.sequencer_id,
-            sequencer_key,
-            header.first_batch_number,
-            header.last_batch_number,
-        )
-    };
+    let authorization =
+        sealed_authorization(sequencer_key, sealed, |batch| client.batch_header(batch, 2))?;
     let read = match client.balance(
         account_id,
         asset,
@@ -218,6 +230,16 @@ fn did_accounts(parsed: &BTreeMap<String, String>) -> Result<String, String> {
     .map_err(|error| format!("lni handshake failed: {error:?}"))?;
     let node = handshake.node();
     let sequencer_key = node.authorised_sequencer_key;
+    let sequencer_authorization =
+        sealed_authorization(sequencer_key, node.latest_sealed_batch, |sealed| {
+            batch::lookup(
+                &mut transport,
+                node.interface_version,
+                sealed,
+                2,
+                sequencer_key,
+            )
+        })?;
     let context = ReadContext {
         interface_version: node.interface_version,
         correlation_id: 1,
@@ -225,12 +247,7 @@ fn did_accounts(parsed: &BTreeMap<String, String>) -> Result<String, String> {
         expected_network_id: network_id,
         requested: Requested::new(VerificationLevel::UNVERIFIED),
         head: HeadTracker::new(node).current(),
-        sequencer_authorization: SequencerAuthorization::new(
-            sequencer_key,
-            sequencer_key,
-            1,
-            node.latest_sealed_batch.max(1),
-        ),
+        sequencer_authorization,
         handshake_sequencer_key: sequencer_key,
         root_selector: RootSelector::Latest,
     };

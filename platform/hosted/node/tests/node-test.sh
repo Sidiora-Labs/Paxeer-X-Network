@@ -308,6 +308,7 @@ grep -q "^$(printf '%s' "$LAYERX_NODE_TREASURY_DID" | od -An -v -tx1 | tr -d ' \
     || fail "treasury identity not registered"
 [ "$LAYERX_NODE_GENESIS_GUARANTOR_COUNT" -eq "$(jq -r '.finality_policy.certificate_threshold' "$ROOT/contracts/config/checkpoint-settlement.json")" ] || fail "genesis guarantor count mismatch"
 FIRST_MANIFEST_INODE=$(stat -c %i "$DATA/genesis/genesis.manifest")
+exec {FIRST_MANIFEST_FD}<"$DATA/genesis/genesis.manifest"
 
 log "LNI handshake as uid $CLIENT_UID"
 HANDSHAKE=$(as_client "$WORK/probe" handshake --socket "$LAYERX_NODE_LNI_SOCKET" --network-id "$NETWORK_ID")
@@ -405,6 +406,12 @@ ADMISSION=$(as_client "$WORK/layerxctl" submit --socket "$LAYERX_NODE_LNI_SOCKET
     --public-key "$LAYERX_NODE_TREASURY_PUBLIC_KEY" --activity "$WORK/operator/send.bin")
 expect_contains "$ADMISSION" '"state":"acknowledged"'
 expect_contains "$ADMISSION" "\"activity_id\":\"$ACTIVITY_ID\""
+SEAL_DEADLINE=$(( $(date +%s) + 60 ))
+until as_client "$WORK/layerxctl" read-state --socket "$LAYERX_NODE_LNI_SOCKET" \
+    --network-id "$NETWORK_ID" --protocol-version 3 --actor "$LAYERX_NODE_TREASURY_DID" >/dev/null 2>&1; do
+    [ "$(date +%s)" -lt "$SEAL_DEADLINE" ] || fail "the admitted SEND never sealed: the preparation read stays refused with -903 LXP_ERR_PROJECTION_STALE"
+    sleep 0.5
+done
 REPEATED_ADMISSION=$(as_client "$WORK/layerxctl" submit --socket "$LAYERX_NODE_LNI_SOCKET" \
     --network-id "$NETWORK_ID" --protocol-version 3 --actor "$LAYERX_NODE_TREASURY_DID" \
     --public-key "$LAYERX_NODE_TREASURY_PUBLIC_KEY" --activity "$WORK/operator/send.bin")
@@ -425,6 +432,7 @@ set -a
 . "$DATA/node.env"
 set +a
 [ "$(stat -c %i "$DATA/genesis/genesis.manifest")" != "$FIRST_MANIFEST_INODE" ] || fail "genesis was not rebuilt by the reset"
+exec {FIRST_MANIFEST_FD}<&-
 [ -z "$(ls -A "$DATA/checkpoints")" ] || fail "checkpoint directory was not discarded by the reset"
 STATUS=$(as_client "$WORK/probe" supervisor --socket "$LAYERX_NODE_SUPERVISOR_SOCKET" --request status)
 expect_contains "$STATUS" '"state":"running","generation":2'
