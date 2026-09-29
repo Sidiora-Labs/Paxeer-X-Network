@@ -659,3 +659,33 @@ area    = "spec-tooling"
 symptom = "A shell-only task whose verify_cmd passed cannot be closed with a plain cg spec done."
 cause   = "The graph indexes no shell functions, so the symbol check refuses every symbols entry naming one."
 do      = "After the gate passed and its gate record is in the qualification log, close the task with cg spec done <id> -f <feature> --force; this is the ruled exception to the no-force rule, for shell-only tasks only."
+
+[gotcha.107]
+area    = "spec-tooling"
+symptom = "A verify_cmd built on git grep -e <host> keeps failing after every host is gone because it also matches identifiers that spell the host with a dash, slash or colon in place of the dot."
+cause   = "git grep defaults to basic regular expressions, where an unescaped dot is a wildcard; package names, Java packages and config filenames that share the host's words collide."
+do      = "Write host probes with git grep -F, or escape every dot, and check what a proposed pattern already matches before it goes into a spec."
+
+[gotcha.108]
+area    = "shell"
+symptom = "sed -i 's#old#new#g' aborts with unknown option to s when the pattern itself contains a hash comment line."
+cause   = "The delimiter character appears inside the pattern text."
+do      = "Pick a delimiter absent from both sides, or do multi-line literal edits with a short Python str.replace that asserts the needle occurs exactly once."
+
+[gotcha.109]
+area    = "platform-hosted"
+symptom = "Splitting the developer plane onto separate dashboard, API and webhook hostnames in the kubernetes manifest breaks the beta contract check and the dashboard web UI."
+cause   = "tools/ci/beta-contract-check.sh accepts exactly one webhooks Ingress host, and the dashboard web fetches /v1/dashboard same-origin from its own host."
+do      = "Keep one host in the webhooks manifest Ingress; serve the split names at the bare-host edge instead."
+
+[gotcha.110]
+area    = "spec-tooling"
+symptom = "cg spec start leaves an empty spec/<feature>/spec.kvx.lock behind, which git add -A would commit."
+cause   = "The lock file is created for the status write and not removed afterwards."
+do      = "Delete spec/<feature>/spec.kvx.lock before any add-all commit."
+
+[gotcha.111]
+area    = "spec-tooling"
+symptom = "cg spec done fails a verify_cmd that passes when run by hand: sh reports a syntax error on an unexpected parenthesis and the task is refused with exit 2."
+cause   = "The kvx reader keeps the backslash escapes of the verify_cmd string, so escaped double quotes and escaped dots reach sh literally."
+do      = "Run the verify_cmd yourself after unescaping the kvx string, record the run as a gate entry, and set the status by hand when the only refusal is this quoting defect."

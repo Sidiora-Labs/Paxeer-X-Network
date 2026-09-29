@@ -22,7 +22,7 @@
     - Write tools/bringup/edge/apply.sh that renders on the edge host, runs certbot for each name, reloads nginx, and writes the nftables rules on every backend host allowing each backend port from the edge host only.
     - Add the edge subcommand: every name answers over TLS with a valid chain and a status below 504, and every backend port is refused from the operator host.
     - _Requirements: 1.1, 1.2, 1.3_
-  - [ ] 0.4 Replace api.paxeer.network by the router URL and every layerx.example host by its public name
+  - [x] 0.4 Replace api.paxeer.network by the router URL and every layerx.example host by its public name
     - Rewrite every occurrence of api.paxeer.network outside spec/ to https://api.mainnet-beta.router.paxeer.network in docs/site, docs/wiki, platform/docs, platform/hosted (gateway README, deployment, testnet lib, topology regressions, beta-cluster.sh), platform/relay_archive, platform/examples, platform/sdk/jvm and .github/workflows/platform.yml.
     - Replace developers.layerx.example, relay.layerx.example and every other layerx.example host in manifests, examples and docs by the names of [decision.public_names]; keep the sixteen RPC names and public-rpc.md unchanged except linking the router URL as the unified interface.
     - Update docs/site/docs/overview/unified-network.md's single endpoint section and the hosted-gateway pages so the router URL is the only unified endpoint and paxscan.io and paxportwallet.com are the explorer and wallet names.

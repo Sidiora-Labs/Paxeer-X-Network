@@ -126,8 +126,12 @@ Genesis for the anchor module is written by `platform/hosted/paxeer/anchor-genes
 ## The single network endpoint
 
 One endpoint serves the whole network: the hosted gateway at
-`https://api.paxeer.network/rpc`. A caller does not choose a chain — the
-method name decides the domain.
+`https://api.mainnet-beta.router.paxeer.network/rpc`, the router URL. It is
+the only unified endpoint; the sixteen numbered names in
+[Public RPC endpoints](../reference/public-rpc.md) serve the EVM domain alone.
+A caller does not choose a chain — the method name decides the domain. The
+block explorer for the network is `paxscan.io` and the wallet is
+`paxportwallet.com`.
 
 - `eth_*`, `net_*` and `web3_*` are the Paxeer EVM JSON-RPC, relayed verbatim to
   the chain through the Paxeer boundary named by

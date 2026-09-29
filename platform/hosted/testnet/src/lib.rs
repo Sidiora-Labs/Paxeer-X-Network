@@ -73,7 +73,7 @@ pub fn platform_testnet() -> TestnetConfig {
         wire_protocol_version: LXP_WIRE_PROTOCOL_VERSION,
         network_id: TESTNET_NETWORK_ID,
         public_endpoint: "https://beta.paxeer.network".to_owned(),
-        gateway_endpoint: "https://api.paxeer.network".to_owned(),
+        gateway_endpoint: "https://api.mainnet-beta.router.paxeer.network".to_owned(),
         faucet_endpoint: "https://faucet.paxeer.network".to_owned(),
         status_endpoint: "https://status.paxeer.network".to_owned(),
         reset_schedule: "09:00 UTC on the first Tuesday of every month".to_owned(),

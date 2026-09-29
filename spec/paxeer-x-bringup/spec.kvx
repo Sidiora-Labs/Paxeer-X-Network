@@ -240,7 +240,7 @@ reqs       = ["1.1", "1.2", "1.3"]
 
 [task.0.4]
 title      = "Replace api.paxeer.network by the router URL and every layerx.example host by its public name"
-status     = "pending"
+status     = "done"
 wave       = 0
 requires   = []
 do_1       = "Rewrite every occurrence of api.paxeer.network outside spec/ to https://api.mainnet-beta.router.paxeer.network in docs/site, docs/wiki, platform/docs, platform/hosted (gateway README, deployment, testnet lib, topology regressions, beta-cluster.sh), platform/relay_archive, platform/examples, platform/sdk/jvm and .github/workflows/platform.yml."
@@ -251,6 +251,10 @@ symbols    = []
 touches    = ["docs/site/docs/overview/unified-network.md", "docs/site/docs/reference/public-rpc.md", "docs/site/docs/platform/hosted-gateway.md", "docs/wiki/HostedGateway.md", "platform/hosted/gateway/README.md", "platform/hosted/gateway/deployment.yaml", "platform/docs/content/beta.md", "platform/relay_archive/README.md", "platform/relay_archive/config.example.json", "platform/examples", "platform/hosted/dashboard", "platform/hosted/webhooks"]
 tests      = []
 reqs       = ["3.1", "3.2", "3.3"]
+revision   = "558221843356a5683f6bfd20a27e31630261ea48"
+command    = "timeout 5m sh -c '! git grep -nE -e \"api\\.paxeer\\.network\" -e \"(^|[^a-z0-9.])[a-z0-9-]+\\.layerx\\.example\" -- . \":(exclude)spec/**\"'"
+exit_code  = 0
+log_path   = ".logs/verify.log"
 
 [task.1]
 section = "Wave 1 - Kernel host"

@@ -2844,15 +2844,15 @@ mod tests {
         let platform_handler = PaymentHandler::new(
             "dev.layerx.payment",
             "2026-04-08",
-            "https://interop.layerx.example/specs/payment-handler",
-            "https://interop.layerx.example/schemas/payment-handler.json",
+            "https://interop.paxeer.network/specs/payment-handler",
+            "https://interop.paxeer.network/schemas/payment-handler.json",
         )
         .unwrap_or_else(|error| panic!("platform payment handler is valid: {error:?}"));
         let handler_wire = serde_json::json!([{
             "id": "dev.layerx.payment",
             "version": "2026-04-08",
-            "spec": "https://interop.layerx.example/specs/payment-handler",
-            "schema": "https://interop.layerx.example/schemas/payment-handler.json"
+            "spec": "https://interop.paxeer.network/specs/payment-handler",
+            "schema": "https://interop.paxeer.network/schemas/payment-handler.json"
         }]);
         let checkout_wire = serde_json::json!([{
             "name": "dev.ucp.shopping.checkout",
