@@ -81,7 +81,7 @@ ac_3  = "WHEN tools/bringup/check-live.sh ca runs THE probe SHALL verify every i
 title = "Docs and configs name the router URL and the real hosts"
 story = "As a developer reading the docs or an example, I find the endpoint that answers today."
 ac_1  = "WHEN any tracked file outside spec/ is searched for api.paxeer.network THE repository SHALL contain no match; the unified endpoint is written as https://api.mainnet-beta.router.paxeer.network everywhere."
-ac_2  = "WHEN any tracked file is searched for layerx.example THE repository SHALL contain no match; the names of [decision.public_names] replace them."
+ac_2  = "WHEN any tracked file outside spec/ is searched for a layerx.example host, a name of the form label.layerx.example, THE repository SHALL contain no match; the names of [decision.public_names] replace them. A package identifier or a file name that merely contains the words layerx and example is not a host."
 ac_3  = "WHEN docs/site/docs/reference/public-rpc.md is read THE sixteen RPC endpoints SHALL be unchanged and the page SHALL link the router URL as the unified interface."
 
 [req.4]
@@ -246,7 +246,7 @@ requires   = []
 do_1       = "Rewrite every occurrence of api.paxeer.network outside spec/ to https://api.mainnet-beta.router.paxeer.network in docs/site, docs/wiki, platform/docs, platform/hosted (gateway README, deployment, testnet lib, topology regressions, beta-cluster.sh), platform/relay_archive, platform/examples, platform/sdk/jvm and .github/workflows/platform.yml."
 do_2       = "Replace developers.layerx.example, relay.layerx.example and every other layerx.example host in manifests, examples and docs by the names of [decision.public_names]; keep the sixteen RPC names and public-rpc.md unchanged except linking the router URL as the unified interface."
 do_3       = "Update docs/site/docs/overview/unified-network.md's single endpoint section and the hosted-gateway pages so the router URL is the only unified endpoint and paxscan.io and paxportwallet.com are the explorer and wallet names."
-verify_cmd = "timeout 5m sh -c '! git grep -n -e api.paxeer.network -e layerx.example -- . \":(exclude)spec/**\"'"
+verify_cmd = "timeout 5m sh -c '! git grep -nE -e \"api\\.paxeer\\.network\" -e \"(^|[^a-z0-9.])[a-z0-9-]+\\.layerx\\.example\" -- . \":(exclude)spec/**\"'"
 symbols    = []
 touches    = ["docs/site/docs/overview/unified-network.md", "docs/site/docs/reference/public-rpc.md", "docs/site/docs/platform/hosted-gateway.md", "docs/wiki/HostedGateway.md", "platform/hosted/gateway/README.md", "platform/hosted/gateway/deployment.yaml", "platform/docs/content/beta.md", "platform/relay_archive/README.md", "platform/relay_archive/config.example.json", "platform/examples", "platform/hosted/dashboard", "platform/hosted/webhooks"]
 tests      = []
