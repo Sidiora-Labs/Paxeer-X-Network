@@ -597,7 +597,10 @@ func (s *syncController) poolRoutine(ctx context.Context, pool *BlockPool, initi
 }
 
 // autoRestartIfBehind will check if the node is behind the max peer height by
-// a certain threshold. If it is, the node will attempt to restart itself.
+// a certain threshold. A node past the threshold is left alone only while its
+// distance behind the highest peer shrinks between two checks; a node that
+// advances at chain speed with a constant or growing distance restarts into
+// block sync once the cooldown has passed.
 // TODO(gprusak): this should be a sub task of the consensus reactor instead.
 func (s *syncController) autoRestartIfBehind(ctx context.Context, pool *BlockPool) {
 	if s.blocksBehindThreshold == 0 || s.blocksBehindCheckInterval <= 0 {
@@ -606,7 +609,7 @@ func (s *syncController) autoRestartIfBehind(ctx context.Context, pool *BlockPoo
 	}
 
 	lastRestartTime := time.Now()
-	previousSelfHeight := int64(-1)
+	previousBehindHeight := int64(-1)
 
 	logger.Info("checking if node is behind threshold, auto restarting if its behind", "threshold", s.blocksBehindThreshold, "interval", s.blocksBehindCheckInterval)
 	for {
@@ -617,22 +620,22 @@ func (s *syncController) autoRestartIfBehind(ctx context.Context, pool *BlockPoo
 			threshold := int64(s.blocksBehindThreshold) //nolint:gosec // validated in config.ValidateBasic against MaxInt64
 			behindHeight := maxPeerHeight - selfHeight
 			blockSyncIsSet := s.blockSync.Load()
-			lastSelfHeight := previousSelfHeight
-			previousSelfHeight = selfHeight
+			lastBehindHeight := previousBehindHeight
+			previousBehindHeight = behindHeight
 
 			if maxPeerHeight == 0 || behindHeight < threshold || blockSyncIsSet {
-				logger.Debug("does not exceed threshold or is already in block sync mode", "threshold", threshold, "behindHeight", behindHeight, "maxPeerHeight", maxPeerHeight, "selfHeight", selfHeight, "blockSyncIsSet", blockSyncIsSet)
+				logger.Debug("does not exceed threshold or is already in block sync mode", "threshold", threshold, "behindHeight", behindHeight, "previousBehindHeight", lastBehindHeight, "maxPeerHeight", maxPeerHeight, "selfHeight", selfHeight, "blockSyncIsSet", blockSyncIsSet)
 				continue
 			}
-			if lastSelfHeight < 0 || selfHeight > lastSelfHeight {
-				logger.Info("Blocks behind threshold but node is making progress, skipping restart", "threshold", threshold, "behindHeight", behindHeight, "maxPeerHeight", maxPeerHeight, "selfHeight", selfHeight, "previousSelfHeight", lastSelfHeight)
+			if lastBehindHeight < 0 || behindHeight < lastBehindHeight {
+				logger.Info("Blocks behind threshold but the distance to the peers is closing, skipping restart", "threshold", threshold, "behindHeight", behindHeight, "previousBehindHeight", lastBehindHeight, "maxPeerHeight", maxPeerHeight, "selfHeight", selfHeight)
 				continue
 			}
 			if time.Since(lastRestartTime).Seconds() < float64(s.restartCooldownSeconds) {
-				logger.Debug("we are lagging behind, going to trigger a restart after cooldown time passes")
+				logger.Debug("we are lagging behind, going to trigger a restart after cooldown time passes", "behindHeight", behindHeight, "previousBehindHeight", lastBehindHeight)
 				continue
 			}
-			logger.Info("Blocks behind threshold, restarting node", "threshold", threshold, "behindHeight", behindHeight, "maxPeerHeight", maxPeerHeight, "selfHeight", selfHeight)
+			logger.Info("Blocks behind threshold and the distance to the peers is not closing, restarting node", "threshold", threshold, "behindHeight", behindHeight, "previousBehindHeight", lastBehindHeight, "maxPeerHeight", maxPeerHeight, "selfHeight", selfHeight)
 
 			s.blockSync.Store(true)
 			s.restartEvent()

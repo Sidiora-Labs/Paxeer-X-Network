@@ -48,7 +48,7 @@ export async function establishPublicSession(
   };
   const client = createHumanApiClient({ baseUrl: origin, fetch: transport, csrfToken: () => csrf });
   const authenticator = new SoftwareAuthenticator(origin);
-  const email = `browser-${randomUUID()}@layerx.example`;
+  const email = `browser-${randomUUID()}@paxeer.network`;
   const account = await client.accountCreate({ email, display_name: "Browser qualification" }, randomUUID());
   const registration = await client.passkeyRegisterBegin({ account_id: account.account_id });
   const passkey = await client.passkeyRegisterFinish(registration.registration_id, {

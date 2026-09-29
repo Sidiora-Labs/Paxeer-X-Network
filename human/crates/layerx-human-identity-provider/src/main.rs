@@ -9,7 +9,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 
-use layerx_human_identity_provider::{Policy, Server, State};
+use layerx_human_identity_provider::{AssertionConfig, AssertionVerifier, Policy, Server, State};
 use layerx_human_service::auth::Device;
 use layerx_human_service::store::PrincipalId;
 use serde::Deserialize;
@@ -138,6 +138,9 @@ fn run() -> io::Result<()> {
         let principal = PrincipalId::new(enrollment.principal)
             .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid principal"))?;
         return state.bind_device(&principal, &enrollment.assertion_id, enrollment.device);
+    }
+    if let Some(config) = AssertionConfig::from_environment()? {
+        state.enable_assertion(AssertionVerifier::new(config)?)?;
     }
     let socket = PathBuf::from(required("LAYERX_HUMAN_IDENTITY_PROVIDER_SOCKET")?);
     let uid = required("LAYERX_HUMAN_IDENTITY_PROVIDER_ALLOWED_UID")?

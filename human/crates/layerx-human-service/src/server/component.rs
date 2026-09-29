@@ -18,8 +18,8 @@ use zeroize::Zeroize;
 use crate::store::{AgentTenantId, PrincipalId};
 
 use super::backend::{
-    component_owner, ApiFailure, HumanApiComponents, PrincipalContext, ScopedRequest,
-    SessionCredentials,
+    component_owner, ApiFailure, BearerCredentials, HumanApiComponents, PrincipalContext,
+    ScopedRequest, SessionCredentials,
 };
 use super::component_protocol::{
     authorized_request_digest, encode_authorized, encode_backend, encode_failure, encode_readiness,
@@ -362,6 +362,52 @@ impl Dispatcher {
                 )?;
                 encode_authorized(&context)
             }
+            ComponentRequest::Bearer {
+                operation,
+                assertion,
+                intended_destination,
+                request_digest,
+                disclosure_digest,
+                path_parameters,
+                body,
+                idempotency_key,
+                trace,
+                ..
+            } => {
+                let operation = self
+                    .schema
+                    .operation(operation)
+                    .ok_or_else(ApiFailure::not_found)?;
+                let request_digest = parse_digest(request_digest, "request_digest")?;
+                let disclosure_digest = parse_digest(disclosure_digest, "disclosure_digest")?;
+                if disclosure_digest != json_digest(body)?
+                    || request_digest
+                        != authorized_request_digest(
+                            operation,
+                            intended_destination,
+                            path_parameters,
+                            body,
+                            idempotency_key.as_deref(),
+                            trace,
+                        )?
+                {
+                    return Err(ApiFailure::unauthenticated());
+                }
+                let context = self.backend.admit_bearer_assertion(
+                    operation,
+                    BearerCredentials {
+                        assertion,
+                        intended_destination,
+                        request_digest,
+                        disclosure_digest,
+                        path_parameters,
+                        body,
+                        idempotency_key: idempotency_key.as_deref(),
+                    },
+                    trace,
+                )?;
+                encode_authorized(&context)
+            }
             ComponentRequest::Execute {
                 component,
                 operation,
@@ -446,10 +492,18 @@ fn principal_context(
                 principal.issued_at,
                 principal.expires_at,
             )?;
-            match (&principal.refresh_token, &principal.refresh_csrf) {
-                (Some(token), Some(csrf)) => context.with_refresh(token.clone(), csrf.clone()),
-                (None, None) => Ok(context),
-                _ => Err(ApiFailure::unauthenticated()),
+            let context = match (&principal.refresh_token, &principal.refresh_csrf) {
+                (Some(token), Some(csrf)) => context.with_refresh(token.clone(), csrf.clone())?,
+                (None, None) => context,
+                _ => return Err(ApiFailure::unauthenticated()),
+            };
+            let context = match &principal.assertion {
+                Some(assertion) => context.with_assertion(assertion.clone())?,
+                None => context,
+            };
+            match &principal.did {
+                Some(did) => context.with_did(did.clone()),
+                None => Ok(context),
             }
         })
         .transpose()

@@ -40,6 +40,20 @@ if [ -n "${LAYERX_GUARANTOR_PUBLICATION_AUTHORIZATION_FILE:-}" ] && \
         exit 2
     }
 fi
+# The producer settles through cmd/layerx-guarantor/settlement.py: certificates and checkpoints
+# go to the anchor precompile's submitCheckpoint and finalize and their state is read back with
+# statusOf, encoded by these signatures, so the ABI shipped from precompiles/layerxanchor must
+# declare them before the producer starts.
+guarantor_anchor_abi() {
+    anchor_abi=${LAYERX_GUARANTOR_ANCHOR_ABI:-/opt/layerx/precompiles/layerxanchor/abi.json}
+    [ -r "$anchor_abi" ] || { echo "anchor precompile ABI is not readable: $anchor_abi" >&2; exit 2; }
+    for signature in 'submitCheckpoint(bytes,bytes,bytes)' 'finalize(uint64)' 'statusOf(uint64)'; do
+        jq -e --arg signature "$signature" \
+            'any(.[] | select(.type == "function") | .name + "(" + ([.inputs[].type] | join(",")) + ")"; . == $signature)' \
+            "$anchor_abi" > /dev/null || { echo "anchor precompile ABI $anchor_abi does not declare $signature" >&2; exit 2; }
+    done
+}
+guarantor_anchor_abi
 guarantor_binary=${LAYERX_GUARANTOR_BINARY:-/usr/local/bin/layerx-guarantor}
 [ -x "$guarantor_binary" ] || { echo "guarantor binary is not executable: $guarantor_binary" >&2; exit 2; }
 child=""

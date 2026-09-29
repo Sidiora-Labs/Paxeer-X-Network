@@ -5,14 +5,17 @@ use layerx_human_test_support as support;
 mod cluster;
 
 use std::collections::BTreeMap;
+use std::env;
 use std::fs;
 use std::future::Future;
 use std::os::unix::fs::PermissionsExt as _;
+use std::path::Path;
 use std::pin::pin;
 use std::sync::Arc;
 use std::task::{Context, Poll, Wake, Waker};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use ed25519_dalek::{Signer as _, SigningKey};
 use layerx_agent_api::idempotency::IdempotentMutation;
 use layerx_agent_api::identity::{AgentDid, AuthorityRef};
@@ -43,7 +46,9 @@ use layerx_human_service::journeys::{
     ObservedState, ReceiptLookup, ReceiptMaterial, Relationship, RouteRequest, SendRoute,
     SubmitPlanRequest, UnifiedIntent, UnifiedPlan,
 };
-use layerx_human_service::server::production_components::{AttestorCustodyConfig, AttestorKms};
+use layerx_human_service::server::production_components::{
+    AttestorCustodyConfig, AttestorKms, ProductionComponentsConfig,
+};
 use layerx_human_service::store::{PrincipalId, PrincipalStore};
 use layerx_human_service::trace::TraceId;
 use layerx_proof::receipt::AuthorizedBatch;
@@ -650,25 +655,232 @@ fn push_bytes(output: &mut Vec<u8>, value: &[u8]) {
     output.extend_from_slice(value);
 }
 
-fn custody_config(cluster: &cluster::Cluster) -> AttestorCustodyConfig {
-    AttestorCustodyConfig::new(
-        cluster.nodes.clone(),
-        cluster::SIGNERS.iter().map(|id| (*id).to_owned()).collect(),
-        cluster
+fn write_private(path: &Path, bytes: &[u8]) {
+    fs::write(path, bytes).unwrap_or_else(|error| panic!("write {}: {error}", path.display()));
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+        .unwrap_or_else(|error| panic!("permissions {}: {error}", path.display()));
+}
+
+/// The complete components environment of the kernel host under attestor custody: the five
+/// attestors, three signers, the service's client leaf chained to the attestor CA, and no
+/// `LAYERX_HUMAN_KMS_*` variable at all.
+fn loader_environment(
+    root: &Path,
+    cluster: &cluster::Cluster,
+    tenancy_digest: [u8; 32],
+) -> Vec<(&'static str, String)> {
+    write_private(
+        &root.join("attestor-ca.der"),
+        &cluster
             .pki
             .certificate_der("node-ca")
             .unwrap_or_else(|error| panic!("node CA: {error}")),
-        cluster
+    );
+    write_private(
+        &root.join("attestor-client.der"),
+        &cluster
             .pki
             .certificate_der("gateway")
             .unwrap_or_else(|error| panic!("gateway certificate: {error}")),
-        cluster
+    );
+    write_private(
+        &root.join("attestor-client-key.der"),
+        &cluster
             .pki
             .key_der("gateway")
             .unwrap_or_else(|error| panic!("gateway key: {error}")),
-        Duration::from_secs(120),
-    )
-    .unwrap_or_else(|error| panic!("attestor custody configuration: {error}"))
+    );
+    let path = |name: &str| root.join(name).display().to_string();
+    let secret = |byte: u8| URL_SAFE_NO_PAD.encode([byte; 32]);
+    let nodes = cluster
+        .nodes
+        .iter()
+        .map(|(id, address)| format!("{id}={address}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    vec![
+        ("LAYERX_HUMAN_STORE_ROOT", path("human-store")),
+        ("LAYERX_HUMAN_CUSTODY_ROOT", path("custody")),
+        ("LAYERX_HUMAN_AUTH_INDEX_ROOT", path("auth-index")),
+        (
+            "LAYERX_HUMAN_TENANCY_DIGEST",
+            URL_SAFE_NO_PAD.encode(tenancy_digest),
+        ),
+        ("LAYERX_HUMAN_AUTH_INDEX_KEY", secret(0x61)),
+        ("LAYERX_HUMAN_STREAM_CURSOR_KEY", secret(0x62)),
+        ("LAYERX_HUMAN_RP_ID", "paxportwallet.com".to_owned()),
+        ("LAYERX_HUMAN_RP_NAME", "Paxport".to_owned()),
+        (
+            "LAYERX_HUMAN_ORIGIN",
+            "https://paxportwallet.com".to_owned(),
+        ),
+        ("LAYERX_HUMAN_CEREMONY_TTL_SECONDS", "300".to_owned()),
+        ("LAYERX_HUMAN_ASSERTION_TTL_SECONDS", "300".to_owned()),
+        ("LAYERX_HUMAN_SESSION_TTL_SECONDS", "900".to_owned()),
+        ("LAYERX_HUMAN_REFRESH_TTL_SECONDS", "86400".to_owned()),
+        ("LAYERX_HUMAN_STEP_UP_TTL_SECONDS", "300".to_owned()),
+        ("LAYERX_HUMAN_AUTH_RATE_ATTEMPTS", "10".to_owned()),
+        ("LAYERX_HUMAN_AUTH_RATE_WINDOW_SECONDS", "60".to_owned()),
+        (
+            "LAYERX_HUMAN_RETENTION_JOURNEYS_SECONDS",
+            "86400".to_owned(),
+        ),
+        (
+            "LAYERX_HUMAN_RETENTION_NOTIFICATIONS_SECONDS",
+            "86400".to_owned(),
+        ),
+        ("LAYERX_HUMAN_RETENTION_AUDIT_SECONDS", "86400".to_owned()),
+        (
+            "LAYERX_HUMAN_RETENTION_TELEMETRY_SECONDS",
+            "86400".to_owned(),
+        ),
+        ("LAYERX_HUMAN_RETENTION_CACHE_SECONDS", "86400".to_owned()),
+        ("LAYERX_HUMAN_CAPABILITY_TTL_SECONDS", "30".to_owned()),
+        ("LAYERX_HUMAN_AGENT_SOCKET", path("agent.sock")),
+        ("LAYERX_HUMAN_AGENT_MAX_FRAME_BYTES", "1048576".to_owned()),
+        ("LAYERX_HUMAN_AGENT_MAX_CONNECTIONS", "4".to_owned()),
+        ("LAYERX_HUMAN_AGENT_MAX_STREAMS", "4".to_owned()),
+        ("LAYERX_HUMAN_AGENT_MAX_QUEUED_BYTES", "1048576".to_owned()),
+        ("LAYERX_HUMAN_AGENT_DEADLINE_SECONDS", "5".to_owned()),
+        ("LAYERX_HUMAN_SECURITY_SOCKET", path("security.sock")),
+        ("LAYERX_HUMAN_SECURITY_DEADLINE_SECONDS", "5".to_owned()),
+        (
+            "LAYERX_HUMAN_SECURITY_MAX_FRAME_BYTES",
+            "1048576".to_owned(),
+        ),
+        (
+            "LAYERX_HUMAN_IDENTITY_BINDING_SOCKET",
+            path("identity-binding.sock"),
+        ),
+        (
+            "LAYERX_HUMAN_IDENTITY_BINDING_TENANT",
+            "tenant-a".to_owned(),
+        ),
+        ("LAYERX_HUMAN_IDENTITY_BINDING_PEER_UID", "4020".to_owned()),
+        ("LAYERX_HUMAN_IDENTITY_BINDING_PEER_GID", "4020".to_owned()),
+        (
+            "LAYERX_HUMAN_IDENTITY_BINDING_DEADLINE_SECONDS",
+            "10".to_owned(),
+        ),
+        ("LAYERX_HUMAN_IDENTITY_SOCKET", path("identity.sock")),
+        ("LAYERX_HUMAN_IDENTITY_DEADLINE_SECONDS", "5".to_owned()),
+        (
+            "LAYERX_HUMAN_IDENTITY_MAX_FRAME_BYTES",
+            "1048576".to_owned(),
+        ),
+        ("LAYERX_HUMAN_IDENTITY_PEER_UID", "4020".to_owned()),
+        ("LAYERX_HUMAN_IDENTITY_PEER_GID", "4020".to_owned()),
+        ("LAYERX_HUMAN_MOVEMENT_SOCKET", path("movement.sock")),
+        ("LAYERX_HUMAN_MOVEMENT_PEER_UID", "4020".to_owned()),
+        ("LAYERX_HUMAN_MOVEMENT_PEER_GID", "4020".to_owned()),
+        (
+            "LAYERX_HUMAN_MOVEMENT_MAX_FRAME_BYTES",
+            "1048576".to_owned(),
+        ),
+        ("LAYERX_HUMAN_MOVEMENT_DEADLINE_SECONDS", "5".to_owned()),
+        ("LAYERX_HUMAN_ATTESTOR_NODES", nodes),
+        ("LAYERX_HUMAN_ATTESTOR_SIGNERS", cluster::SIGNERS.join(",")),
+        (
+            "LAYERX_HUMAN_ATTESTOR_ROOT_CERTIFICATE_DER",
+            path("attestor-ca.der"),
+        ),
+        (
+            "LAYERX_HUMAN_ATTESTOR_CLIENT_CERTIFICATE_DER",
+            path("attestor-client.der"),
+        ),
+        (
+            "LAYERX_HUMAN_ATTESTOR_CLIENT_PRIVATE_KEY_DER",
+            path("attestor-client-key.der"),
+        ),
+        ("LAYERX_HUMAN_ATTESTOR_DEADLINE_SECONDS", "120".to_owned()),
+        ("LAYERX_HUMAN_NETWORK_ID", NETWORK_ID.to_string()),
+        ("LAYERX_HUMAN_SIGNING_RATE_MAXIMUM", "1000".to_owned()),
+        (
+            "LAYERX_HUMAN_SIGNING_RATE_WINDOW_SECONDS",
+            "10000".to_owned(),
+        ),
+        (
+            "LAYERX_HUMAN_AGENT_ACTOR",
+            format!("did:layerx:{}", hex(&[0x77; 32])),
+        ),
+        (
+            "LAYERX_HUMAN_AGENT_AUTHORITY",
+            "custody-human-primary".to_owned(),
+        ),
+        (
+            "LAYERX_HUMAN_AGENT_TIMESTAMP_SPAN_SECONDS",
+            "300".to_owned(),
+        ),
+        ("LAYERX_HUMAN_AGENT_FEE_LIMIT", "1000000".to_owned()),
+        (
+            "LAYERX_HUMAN_ONBOARDING_SPONSOR_PRINCIPAL",
+            "onboarding-sponsor".to_owned(),
+        ),
+        ("LAYERX_HUMAN_ONBOARDING_INITIAL_FUNDING", "1000".to_owned()),
+        ("LAYERX_HUMAN_EVM_GAS_LIMIT", "300000".to_owned()),
+        ("LAYERX_HUMAN_EVM_MAX_FEE_PER_GAS", "1000000000".to_owned()),
+        (
+            "LAYERX_HUMAN_EVM_MAX_PRIORITY_FEE_PER_GAS",
+            "1000000000".to_owned(),
+        ),
+        (
+            "LAYERX_HUMAN_BINDING_STATEMENT_TTL_SECONDS",
+            "300".to_owned(),
+        ),
+        (
+            "LAYERX_HUMAN_AGENT_PURPOSE_CATALOG",
+            path("purpose-catalog.json"),
+        ),
+        (
+            "LAYERX_HUMAN_AGENT_OWNER_ACCOUNT",
+            WALLET_ACCOUNT.to_owned(),
+        ),
+        ("LAYERX_HUMAN_AGENT_RECOVERY_ROOT", secret(0x63)),
+        ("LAYERX_HUMAN_AGENT_RECOVERY_THRESHOLD", "1".to_owned()),
+        (
+            "LAYERX_HUMAN_PAXEER_RPC_URL",
+            "https://127.0.0.1:9443".to_owned(),
+        ),
+        ("LAYERX_HUMAN_PAXEER_RPC_TIMEOUT_SECONDS", "5".to_owned()),
+        (
+            "LAYERX_HUMAN_PAXEER_TRUST_ANCHOR_DER",
+            path("attestor-ca.der"),
+        ),
+        ("LAYERX_HUMAN_PAXEER_CHAIN_ID", "125".to_owned()),
+        (
+            "LAYERX_HUMAN_PAXEER_RPC_URLS",
+            json!(["https://127.0.0.1:9443", "https://127.0.0.2:9443"]).to_string(),
+        ),
+        ("LAYERX_HUMAN_PAXEER_MINIMUM_AGREEMENT", "2".to_owned()),
+        ("LAYERX_HUMAN_EXIT_REQUIRED_CONFIRMATIONS", "12".to_owned()),
+        ("LAYERX_HUMAN_ACTIVITY_FRESHNESS_SECONDS", "300".to_owned()),
+        (
+            "LAYERX_HUMAN_ACTIVITY_EXPORT_MAXIMUM_BYTES",
+            "1048576".to_owned(),
+        ),
+        ("LAYERX_HUMAN_EXIT_POLL_CADENCE_SECONDS", "5".to_owned()),
+        ("LAYERX_HUMAN_EXIT_DELAYED_AFTER_POLLS", "12".to_owned()),
+        (
+            "LAYERX_HUMAN_CONTINUATION_UNKNOWN_DEADLINE_SECONDS",
+            "300".to_owned(),
+        ),
+    ]
+}
+
+/// Loads the attestor custody backend the way the components binary does on the kernel
+/// host: through `ProductionComponentsConfig::from_environment` with the attestor group set
+/// and the KMS group absent.
+fn loader_custody(environment: &[(&'static str, String)]) -> AttestorCustodyConfig {
+    for (name, value) in environment {
+        env::set_var(name, value);
+    }
+    let config = ProductionComponentsConfig::from_environment()
+        .unwrap_or_else(|error| panic!("components loader without the KMS group: {error}"));
+    assert_eq!(config.protocol_version(), SEND_PROTOCOL);
+    config
+        .attestor_custody()
+        .cloned()
+        .unwrap_or_else(|| panic!("components loader did not select attestor custody"))
 }
 
 fn kernel_policy() -> Value {
@@ -711,6 +923,14 @@ fn identity_state(root: &std::path::Path, key_set_url: String) -> State {
 
 #[test]
 fn wallet_identity_e2e_signs_a_kernel_send_through_the_attestors_to_a_verified_receipt() {
+    let kms_variables: Vec<String> = env::vars()
+        .map(|(name, _)| name)
+        .filter(|name| name.starts_with("LAYERX_HUMAN_KMS_"))
+        .collect();
+    assert!(
+        kms_variables.is_empty(),
+        "the attestor-only path must run without the KMS group: {kms_variables:?}"
+    );
     let cluster = cluster::Cluster::start_with_kernel_policy(&activity_types(), &kernel_policy())
         .unwrap_or_else(|error| panic!("attestor cluster: {error}"));
     let root = directory("wallet-identity-e2e");
@@ -738,7 +958,8 @@ fn wallet_identity_e2e_signs_a_kernel_send_through_the_attestors_to_a_verified_r
         .install(&store_root)
         .unwrap_or_else(|error| panic!("tenancy: {error}"));
 
-    let kms = AttestorKms::connect(custody_config(&cluster))
+    let environment = loader_environment(&root, &cluster, tenancy_digest.bytes());
+    let kms = AttestorKms::connect(loader_custody(&environment))
         .unwrap_or_else(|error| panic!("attestor custody: {error}"));
     let keystore = Keystore::open_production(root.join("custody"), NETWORK_ID, kms.clone())
         .unwrap_or_else(|error| panic!("production keystore: {error}"));
@@ -933,6 +1154,18 @@ fn wallet_identity_e2e_signs_a_kernel_send_through_the_attestors_to_a_verified_r
     assert_eq!(agent.signers, vec![public_key]);
     let submission = IntentSubmission::from_kernel(&status, plan.digest());
     assert_eq!(submission.journey_id(), &journey_id);
+
+    env::remove_var("LAYERX_HUMAN_ATTESTOR_NODES");
+    let refused = ProductionComponentsConfig::from_environment()
+        .err()
+        .unwrap_or_else(|| panic!("components loader started with neither custody backend"));
+    assert!(
+        refused.contains("LAYERX_HUMAN_KMS_PROVIDER_REFERENCE is required"),
+        "refusal without any custody backend does not name the KMS group: {refused}"
+    );
+    for (name, _) in &environment {
+        env::remove_var(name);
+    }
 
     drop(scope);
     drop(store);

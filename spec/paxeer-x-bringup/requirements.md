@@ -31,7 +31,7 @@ Every LayerX system that the surveys found ready, blocked or incomplete is broug
 ### Acceptance Criteria
 
 1. WHEN any tracked file outside spec/ is searched for api.paxeer.network THE repository SHALL contain no match; the unified endpoint is written as https://api.mainnet-beta.router.paxeer.network everywhere.
-2. WHEN any tracked file is searched for layerx.example THE repository SHALL contain no match; the names of [decision.public_names] replace them.
+2. WHEN any tracked file outside spec/ is searched for a layerx.example host, a name of the form label.layerx.example, THE repository SHALL contain no match; the names of [decision.public_names] replace them. A package identifier or a file name that merely contains the words layerx and example is not a host.
 3. WHEN docs/site/docs/reference/public-rpc.md is read THE sixteen RPC endpoints SHALL be unchanged and the page SHALL link the router URL as the unified interface.
 
 ## Requirement 4: Operator host map and live probe

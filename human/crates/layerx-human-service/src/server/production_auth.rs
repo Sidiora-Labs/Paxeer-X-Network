@@ -528,6 +528,84 @@ pub fn authorize_execution(
     })
 }
 
+/// The session identifier a wallet bearer assertion runs under: derived from the
+/// assertion so the capability digest binds the exact token that was admitted.
+#[must_use]
+pub fn bearer_session_id(assertion: &str) -> String {
+    let mut hash = Sha256::new();
+    hash.update(b"layerx-human/bearer-session/v1\0");
+    put_text(&mut hash, assertion);
+    let digest: [u8; 32] = hash.finalize().into();
+    let mut session = String::with_capacity(39);
+    session.push_str("bearer-");
+    for byte in &digest[..16] {
+        session.push_str(&format!("{byte:02x}"));
+    }
+    session
+}
+
+/// Issues an execution capability for a principal the identity provider admitted
+/// through a wallet bearer assertion; the passkey session path is not involved.
+///
+/// # Errors
+///
+/// Refuses invalid disclosure, an unknown principal, or capability storage failures.
+pub fn authorize_bearer_execution(
+    store: &mut PrincipalStore,
+    index: &AuthDiscoveryIndex,
+    principal: &PrincipalId,
+    assertion: &str,
+    d: AuthorizationDisclosure<'_>,
+    now: u64,
+    max_age: u64,
+) -> Result<ExecutionCapability, ProductionAuthError> {
+    if max_age == 0
+        || max_age > 60
+        || assertion.is_empty()
+        || !d.destination.starts_with('/')
+        || d.destination.starts_with("//")
+        || d.trace.is_empty()
+        || d.trace.len() > 255
+    {
+        return Err(ProductionAuthError::InvalidDisclosure);
+    }
+    let scope = store.principal(principal)?;
+    let tenant = scope.tenant().clone();
+    let session = SessionContext {
+        session_id: bearer_session_id(assertion),
+        device_id: "bearer".into(),
+    };
+    let body = body_hash(d.body)?;
+    let request = request_hash(&d)?;
+    let digest = capability_digest(
+        principal,
+        &tenant,
+        &session.session_id,
+        d.operation,
+        d.destination,
+        d.trace,
+        [request, body],
+    );
+    let expires_at = now
+        .checked_add(max_age)
+        .ok_or(ProductionAuthError::InvalidConfiguration)?;
+    let nonce = index.issue(digest, now, expires_at)?;
+    Ok(ExecutionCapability {
+        operation: d.operation.name.clone(),
+        principal: principal.clone(),
+        tenant,
+        session,
+        destination: d.destination.into(),
+        trace: d.trace.into(),
+        nonce,
+        body,
+        request,
+        digest,
+        issued_at: now,
+        expires_at,
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 /// # Errors
 ///

@@ -33,6 +33,7 @@ node
 occ_tests
 parallelization
 precompiles
+!precompiles/layerxanchor/abi.json
 ratelimiter
 rpc
 sdk

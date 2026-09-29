@@ -18,11 +18,11 @@
       "idempotencyEnvironment": "LAYERX_EMULATOR_MARKETPLACE_KEY"
     },
     "beta": {
-      "endpoint": "https://api.paxeer.network",
+      "endpoint": "https://api.mainnet-beta.router.paxeer.network",
       "network": "layerx:beta",
       "protocolVersion": 3,
       "cliBinaryEnvironment": "LAYERX_BIN",
-      "receiptAuthorityUrl": "https://api.paxeer.network",
+      "receiptAuthorityUrl": "https://api.mainnet-beta.router.paxeer.network",
       "tokenEnvironment": "LAYERX_TESTNET_TOKEN",
       "programIdEnvironment": "LAYERX_TESTNET_MARKETPLACE_PROGRAM_ID",
       "listingIdEnvironment": "LAYERX_TESTNET_MARKETPLACE_LISTING_ID",

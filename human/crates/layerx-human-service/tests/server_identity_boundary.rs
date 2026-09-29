@@ -24,8 +24,8 @@ use sha2::{Digest as _, Sha256};
 
 use support::{directory, install_and_open, retention_uniform, tenancy};
 
-const RP_ID: &str = "id.layerx.example";
-const ORIGIN: &str = "https://id.layerx.example";
+const RP_ID: &str = "paxportwallet.com";
+const ORIGIN: &str = "https://paxportwallet.com";
 const ACCOUNT_ID: &str = "act_00112233445566778899aabbccddeeff";
 const EMAIL: &str = "mara@example.com";
 const PUBLIC_TRACE: &str = "trc_00112233445566778899aabbccddeeff";
@@ -486,7 +486,7 @@ fn verify_principal_route(socket: &std::path::Path, access_token: &str) {
         } else {
             format!("Cookie: __Host-layerx_access={credential}\r\n")
         };
-        required(write!(client, "GET /internal/v1/principal HTTP/1.1\r\nHost: id.layerx.example\r\n{cookie}X-LayerX-Principal: another-principal\r\nContent-Length: 0\r\n\r\n"), "principal request");
+        required(write!(client, "GET /internal/v1/principal HTTP/1.1\r\nHost: paxportwallet.com\r\n{cookie}X-LayerX-Principal: another-principal\r\nContent-Length: 0\r\n\r\n"), "principal request");
         let mut response = String::new();
         required(client.read_to_string(&mut response), "principal response");
         worker.join().unwrap_or_else(|_| panic!("principal worker"));

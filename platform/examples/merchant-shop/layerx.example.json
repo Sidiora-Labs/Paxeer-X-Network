@@ -21,8 +21,8 @@
     },
     "beta": {
       "publicUrl": "http://127.0.0.1:8082",
-      "settlementUrl": "https://api.paxeer.network/v1/settle",
-      "receiptAuthorityUrl": "https://api.paxeer.network",
+      "settlementUrl": "https://api.mainnet-beta.router.paxeer.network/v1/settle",
+      "receiptAuthorityUrl": "https://api.mainnet-beta.router.paxeer.network",
       "scheme": "exact",
       "network": "layerx:beta",
       "protocolVersion": 3,

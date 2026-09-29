@@ -501,6 +501,104 @@ func TestAutoRestartIfBehind(t *testing.T) {
 	}
 }
 
+// TestAutoRestartIfBehind_DistanceTrend drives the real syncController over a
+// real BlockPool whose single peer's height is set at every check, so the
+// restart decision is judged on the distance behind that peer between two
+// checks and not on the node's own height advancing: a node that advances at
+// chain speed with a constant or growing distance restarts, a node whose
+// distance is closing does not, and the block-sync and cooldown skips stay.
+func TestAutoRestartIfBehind_DistanceTrend(t *testing.T) {
+	t.Parallel()
+
+	type step struct{ self, peer int64 }
+	seq := func(n int, self0, selfStep, peer0, peerStep int64) []step {
+		steps := make([]step, n)
+		for i := range steps {
+			steps[i] = step{self: self0 + int64(i)*selfStep, peer: peer0 + int64(i)*peerStep}
+		}
+		return steps
+	}
+
+	tests := []struct {
+		name            string
+		steps           []step
+		isBlockSync     bool
+		cooldownSeconds uint64
+		restartExpected bool
+	}{
+		{
+			name:            "Should not restart while the distance behind the peer shrinks between checks",
+			steps:           seq(200, 100, 2, 1000, 1),
+			restartExpected: false,
+		},
+		{
+			name:            "Should restart when the node advances at chain speed and the distance stays constant",
+			steps:           seq(10, 100, 1, 93574, 1),
+			restartExpected: true,
+		},
+		{
+			name:            "Should restart when the node advances and the distance grows",
+			steps:           seq(10, 100, 1, 1000, 2),
+			restartExpected: true,
+		},
+		{
+			name:            "Should not restart on a constant distance while already in block sync",
+			steps:           seq(200, 100, 1, 1000, 1),
+			isBlockSync:     true,
+			restartExpected: false,
+		},
+		{
+			name:            "Should not restart on a growing distance before the cooldown has passed",
+			steps:           seq(200, 100, 1, 1000, 2),
+			cooldownSeconds: 3600,
+			restartExpected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			peer := types.NodeID(strings.Repeat("c", 40))
+			pool := NewBlockPool(1, makeRouter(testPeers{
+				peer: {id: peer, base: 1, height: 1, inputChan: make(chan inputData, 1)},
+			}))
+
+			mockBlockStore := new(MockBlockStore)
+			for _, st := range tt.steps {
+				mockBlockStore.On("Height").Return(st.self).Run(func(mock.Arguments) {
+					pool.SetPeerRange(peer, 1, st.peer)
+				}).Once()
+			}
+			last := tt.steps[len(tt.steps)-1]
+			mockBlockStore.On("Height").Return(last.self)
+
+			restart := utils.NewAtomicSend(false)
+			syncer := &syncController{
+				store:                     mockBlockStore,
+				blocksBehindThreshold:     50,
+				blocksBehindCheckInterval: 10 * time.Millisecond,
+				restartCooldownSeconds:    tt.cooldownSeconds,
+				restartEvent:              func() { restart.Store(true) },
+			}
+			if tt.isBlockSync {
+				syncer.blockSync.Store(true)
+			}
+
+			if tt.restartExpected {
+				ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+				defer cancel()
+				syncer.autoRestartIfBehind(ctx, pool)
+				assert.True(t, restart.Load(), "Expected restart but did not occur")
+				assert.True(t, syncer.blockSync.Load(), "Expected block sync to be set on restart")
+			} else {
+				ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+				defer cancel()
+				syncer.autoRestartIfBehind(ctx, pool)
+				assert.False(t, restart.Load(), "Unexpected restart")
+			}
+		})
+	}
+}
+
 func makeValidationFailurePair(
 	ctx context.Context,
 	t *testing.T,

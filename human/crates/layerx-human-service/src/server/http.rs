@@ -12,8 +12,8 @@ use zeroize::Zeroize;
 use crate::trace::TraceId;
 
 use super::backend::{
-    ApiFailure, BackendResponse, HumanApiComponents, PrincipalContext, ScopedRequest,
-    SessionCredentials, SessionSecrets,
+    valid_bearer_assertion, ApiFailure, BackendResponse, BearerCredentials, HumanApiComponents,
+    PrincipalContext, ScopedRequest, SessionCredentials, SessionSecrets,
 };
 use super::limits::PrincipalLimits;
 use super::schema::{ApiSchema, Operation};
@@ -338,6 +338,26 @@ impl<B: HumanApiComponents> Router<B> {
         if operation.is_public_bootstrap() {
             self.limits.admit(public_rate_key, self.unix_seconds()?)?;
             Ok(None)
+        } else if let Some(assertion) = bearer_assertion(request, operation) {
+            if !origin_allowed(request.header("origin"), &self.config.allowed_origin) {
+                return Err(ApiFailure::forbidden());
+            }
+            let context = self.backend.admit_bearer_assertion(
+                operation,
+                BearerCredentials {
+                    assertion: assertion?,
+                    intended_destination: &request.path,
+                    request_digest,
+                    disclosure_digest,
+                    path_parameters,
+                    body,
+                    idempotency_key,
+                },
+                trace.as_str(),
+            )?;
+            self.limits
+                .admit(context.principal.as_str(), self.unix_seconds()?)?;
+            Ok(Some(context))
         } else {
             let credential_name = if operation.uses_refresh_cookie() {
                 REFRESH_COOKIE
@@ -435,6 +455,30 @@ fn idempotency_key(
         })
         .ok_or_else(|| ApiFailure::invalid_request(Some("Idempotency-Key")))?;
     Ok(Some(key.to_owned()))
+}
+
+const BEARER_OPERATIONS: &[&str] = &[
+    "intent.plan",
+    "intent.submit",
+    "journey.get",
+    "account.balance",
+    "home.summary",
+];
+
+fn bearer_assertion<'request>(
+    request: &'request HttpRequest,
+    operation: &Operation,
+) -> Option<Result<&'request str, ApiFailure>> {
+    if !BEARER_OPERATIONS.contains(&operation.name.as_str()) {
+        return None;
+    }
+    let header = request.header("authorization")?;
+    Some(
+        header
+            .strip_prefix("Bearer ")
+            .filter(|value| valid_bearer_assertion(value))
+            .ok_or_else(|| ApiFailure::invalid_request(Some("Authorization"))),
+    )
 }
 
 fn origin_allowed(origin: Option<&str>, allowed: &str) -> bool {

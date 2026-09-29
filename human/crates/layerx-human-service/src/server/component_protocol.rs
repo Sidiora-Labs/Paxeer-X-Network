@@ -8,8 +8,8 @@ use zeroize::Zeroize;
 use crate::trace::TraceId;
 
 use super::backend::{
-    ApiFailure, BackendResponse, PrincipalContext, Readiness, SessionSecrets,
-    COMPONENT_PROTOCOL_VERSION,
+    valid_bearer_assertion, ApiFailure, BackendResponse, PrincipalContext, Readiness,
+    SessionSecrets, COMPONENT_PROTOCOL_VERSION,
 };
 use super::schema::Operation;
 
@@ -32,6 +32,19 @@ pub(super) enum ComponentRequest {
         csrf_token: Option<String>,
         intended_destination: String,
         refresh: bool,
+        request_digest: String,
+        disclosure_digest: String,
+        path_parameters: BTreeMap<String, String>,
+        body: Value,
+        idempotency_key: Option<String>,
+        trace: String,
+    },
+    #[serde(rename = "session.bearer")]
+    Bearer {
+        version: u64,
+        operation: String,
+        assertion: String,
+        intended_destination: String,
         request_digest: String,
         disclosure_digest: String,
         path_parameters: BTreeMap<String, String>,
@@ -70,6 +83,8 @@ pub(super) struct WirePrincipal {
     pub expires_at: u64,
     pub refresh_token: Option<String>,
     pub refresh_csrf: Option<String>,
+    pub assertion: Option<String>,
+    pub did: Option<String>,
 }
 
 impl ComponentRequest {
@@ -104,6 +119,43 @@ impl ComponentRequest {
                 }
                 parse_digest(request_digest, "request_digest")?;
                 parse_digest(disclosure_digest, "disclosure_digest")?;
+                validate_parameters(path_parameters)?;
+                if idempotency_key
+                    .as_ref()
+                    .is_some_and(|value| !valid_idempotency(value))
+                {
+                    return Err(ApiFailure::invalid_request(Some("idempotency_key")));
+                }
+                if json_digest(body)? != parse_digest(disclosure_digest, "disclosure_digest")? {
+                    return Err(ApiFailure::unauthenticated());
+                }
+                valid_trace(trace)
+            }
+            Self::Bearer {
+                version,
+                operation,
+                assertion,
+                intended_destination,
+                request_digest,
+                disclosure_digest,
+                path_parameters,
+                body,
+                idempotency_key,
+                trace,
+            } => {
+                valid_version(*version)?;
+                valid_operation(operation)?;
+                if !valid_bearer_assertion(assertion) {
+                    return Err(ApiFailure::unauthenticated());
+                }
+                if intended_destination.is_empty()
+                    || intended_destination.len() > DESTINATION_LIMIT
+                    || !intended_destination.starts_with('/')
+                    || intended_destination.contains(['\0', '\r', '\n'])
+                {
+                    return Err(ApiFailure::invalid_request(Some("intended_destination")));
+                }
+                parse_digest(request_digest, "request_digest")?;
                 validate_parameters(path_parameters)?;
                 if idempotency_key
                     .as_ref()
@@ -188,6 +240,33 @@ impl ComponentRequest {
                 }
                 trace.zeroize();
             }
+            Self::Bearer {
+                operation,
+                assertion,
+                intended_destination,
+                request_digest,
+                disclosure_digest,
+                path_parameters,
+                body,
+                idempotency_key,
+                trace,
+                ..
+            } => {
+                operation.zeroize();
+                assertion.zeroize();
+                intended_destination.zeroize();
+                request_digest.zeroize();
+                disclosure_digest.zeroize();
+                for (mut name, mut value) in std::mem::take(path_parameters) {
+                    name.zeroize();
+                    value.zeroize();
+                }
+                zeroize_value(body);
+                if let Some(value) = idempotency_key {
+                    value.zeroize();
+                }
+                trace.zeroize();
+            }
             Self::Execute {
                 component,
                 operation,
@@ -214,6 +293,12 @@ impl ComponentRequest {
                         value.zeroize();
                     }
                     if let Some(value) = &mut principal.refresh_csrf {
+                        value.zeroize();
+                    }
+                    if let Some(value) = &mut principal.assertion {
+                        value.zeroize();
+                    }
+                    if let Some(value) = &mut principal.did {
                         value.zeroize();
                     }
                 }
@@ -277,7 +362,9 @@ pub(super) fn encode_authorized(context: &PrincipalContext) -> Result<Vec<u8>, A
             "issued_at": context.issued_at(),
             "expires_at": context.expires_at(),
             "refresh_token": context.refresh_credentials().map(|value| value.0),
-            "refresh_csrf": context.refresh_credentials().map(|value| value.1)
+            "refresh_csrf": context.refresh_credentials().map(|value| value.1),
+            "assertion": context.assertion(),
+            "did": context.did()
         }
     }))
     .map_err(|_| ApiFailure::upstream_degraded())
@@ -517,6 +604,20 @@ fn validate_principal(principal: &WirePrincipal) -> Result<(), ApiFailure> {
     }
     if let Some(csrf) = &principal.refresh_csrf {
         valid_secret(csrf)?;
+    }
+    if principal
+        .assertion
+        .as_deref()
+        .is_some_and(|value| !valid_bearer_assertion(value))
+    {
+        return Err(ApiFailure::unauthenticated());
+    }
+    if principal
+        .did
+        .as_deref()
+        .is_some_and(|value| value.is_empty() || value.len() > DESTINATION_LIMIT)
+    {
+        return Err(ApiFailure::invalid_request(Some("principal")));
     }
     Ok(())
 }

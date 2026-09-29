@@ -81,7 +81,7 @@ ac_3  = "WHEN tools/bringup/check-live.sh ca runs THE probe SHALL verify every i
 title = "Docs and configs name the router URL and the real hosts"
 story = "As a developer reading the docs or an example, I find the endpoint that answers today."
 ac_1  = "WHEN any tracked file outside spec/ is searched for api.paxeer.network THE repository SHALL contain no match; the unified endpoint is written as https://api.mainnet-beta.router.paxeer.network everywhere."
-ac_2  = "WHEN any tracked file is searched for layerx.example THE repository SHALL contain no match; the names of [decision.public_names] replace them."
+ac_2  = "WHEN any tracked file outside spec/ is searched for a layerx.example host, a name of the form label.layerx.example, THE repository SHALL contain no match; the names of [decision.public_names] replace them. A package identifier or a file name that merely contains the words layerx and example is not a host."
 ac_3  = "WHEN docs/site/docs/reference/public-rpc.md is read THE sixteen RPC endpoints SHALL be unchanged and the page SHALL link the router URL as the unified interface."
 
 [req.4]
@@ -198,7 +198,7 @@ status  = "pending"
 
 [task.0.1]
 title      = "Deliver the operator host-map contract and the bring-up live probe"
-status     = "pending"
+status     = "done"
 wave       = 0
 requires   = []
 do_1       = "Write tools/bringup/check-live.sh after tools/wallet/check-live.sh: a usage block, one function per subcommand of [design.probe], pass and fail lines with the observed value, CHECK_LIVE_TIMEOUT, exit 0 only when every check passes and 2 on usage; every subcommand of a later task is added by that task."
@@ -212,7 +212,7 @@ reqs       = ["4.1", "4.2", "4.3"]
 
 [task.0.2]
 title      = "Create the internal CA on the edge host and issue per-service certificates on their hosts"
-status     = "pending"
+status     = "implemented"
 wave       = 0
 requires   = ["0.1"]
 do_1       = "Write tools/bringup/ca.sh with init (CA key and certificate under /etc/layerx/ca on the edge host, 0600, printing only the fingerprint) and issue <service> <role> (the target host generates key and CSR under /etc/layerx/<service>/tls, the edge signs with the SAN list the pod definition declares plus localhost and the loopback address for loopback-reached services, the certificate is copied back; the key never leaves the host)."
@@ -240,17 +240,21 @@ reqs       = ["1.1", "1.2", "1.3"]
 
 [task.0.4]
 title      = "Replace api.paxeer.network by the router URL and every layerx.example host by its public name"
-status     = "pending"
+status     = "done"
 wave       = 0
 requires   = []
 do_1       = "Rewrite every occurrence of api.paxeer.network outside spec/ to https://api.mainnet-beta.router.paxeer.network in docs/site, docs/wiki, platform/docs, platform/hosted (gateway README, deployment, testnet lib, topology regressions, beta-cluster.sh), platform/relay_archive, platform/examples, platform/sdk/jvm and .github/workflows/platform.yml."
 do_2       = "Replace developers.layerx.example, relay.layerx.example and every other layerx.example host in manifests, examples and docs by the names of [decision.public_names]; keep the sixteen RPC names and public-rpc.md unchanged except linking the router URL as the unified interface."
 do_3       = "Update docs/site/docs/overview/unified-network.md's single endpoint section and the hosted-gateway pages so the router URL is the only unified endpoint and paxscan.io and paxportwallet.com are the explorer and wallet names."
-verify_cmd = "timeout 5m sh -c '! git grep -n -e api.paxeer.network -e layerx.example -- . \":(exclude)spec/**\"'"
+verify_cmd = "timeout 5m sh -c '! git grep -nE -e \"api\\.paxeer\\.network\" -e \"(^|[^a-z0-9.])[a-z0-9-]+\\.layerx\\.example\" -- . \":(exclude)spec/**\"'"
 symbols    = []
 touches    = ["docs/site/docs/overview/unified-network.md", "docs/site/docs/reference/public-rpc.md", "docs/site/docs/platform/hosted-gateway.md", "docs/wiki/HostedGateway.md", "platform/hosted/gateway/README.md", "platform/hosted/gateway/deployment.yaml", "platform/docs/content/beta.md", "platform/relay_archive/README.md", "platform/relay_archive/config.example.json", "platform/examples", "platform/hosted/dashboard", "platform/hosted/webhooks"]
 tests      = []
 reqs       = ["3.1", "3.2", "3.3"]
+revision   = "558221843356a5683f6bfd20a27e31630261ea48"
+command    = "timeout 5m sh -c '! git grep -nE -e \"api\\.paxeer\\.network\" -e \"(^|[^a-z0-9.])[a-z0-9-]+\\.layerx\\.example\" -- . \":(exclude)spec/**\"'"
+exit_code  = 0
+log_path   = ".logs/verify.log"
 
 [task.1]
 section = "Wave 1 - Kernel host"
@@ -259,15 +263,15 @@ status  = "pending"
 
 [task.1.1]
 title      = "Point the node pod's settlement inputs at the registry, custody and anchor precompiles and retire the Solidity path from the bring-up"
-status     = "pending"
+status     = "implemented"
 wave       = 1
 requires   = []
-do_1       = "Replace LAYERX_NODE_SETTLEMENT_CONTRACT and LAYERX_NODE_SETTLEMENT_ENV in platform/hosted/node/bootstrap.sh, sequencer-env.sh, checkpoint-authority.py and deployment.yaml by LAYERX_NODE_REGISTRY_PRECOMPILE, LAYERX_NODE_CUSTODY_PRECOMPILE and LAYERX_NODE_ANCHOR_PRECOMPILE defaulting to 0x0000000000000000000000000000000000001004, 0x0000000000000000000000000000000000001013 and 0x0000000000000000000000000000000000001014 on chain 125, read through LAYERX_NODE_PAXEER_RPC_URL on loopback."
-do_2       = "Make the guarantor (guarantor.sh, checkpoint-authority.py) submit certificates and checkpoints to the anchor precompile's submitCheckpoint and finalize and read statusOf, using the ABI under precompiles/, and delete the call to platform/hosted/paxeer/deploy-contracts.sh from platform/hosted/tests/beta-cluster.sh while keeping the script for private networks."
+do_1       = "Replace LAYERX_NODE_SETTLEMENT_CONTRACT and LAYERX_NODE_SETTLEMENT_ENV in platform/hosted/node/bootstrap.sh, sequencer-env.sh, cmd/layerx-guarantor/settlement.py and deployment.yaml by LAYERX_NODE_REGISTRY_PRECOMPILE, LAYERX_NODE_CUSTODY_PRECOMPILE and LAYERX_NODE_ANCHOR_PRECOMPILE defaulting to 0x0000000000000000000000000000000000001004, 0x0000000000000000000000000000000000001013 and 0x0000000000000000000000000000000000001014 on chain 125, read through LAYERX_NODE_PAXEER_RPC_URL on loopback."
+do_2       = "Make the guarantor (guarantor.sh, cmd/layerx-guarantor/settlement.py) submit certificates and checkpoints to the anchor precompile's submitCheckpoint and finalize and read statusOf, using the ABI under precompiles/, and delete the call to platform/hosted/paxeer/deploy-contracts.sh from platform/hosted/tests/beta-cluster.sh while keeping the script for private networks."
 do_3       = "Extend platform/hosted/node/tests/node-test.sh with a precompile settlement case against the loopback RPC of a synced node when LAYERX_NODE_PAXEER_RPC_URL is set, refusing to run against anvil."
 verify_cmd = "timeout 30m make layerxd platform-test-node"
-symbols    = ["sequencer_env", "checkpoint_authority", "guarantor_submit"]
-touches    = ["platform/hosted/node/bootstrap.sh", "platform/hosted/node/sequencer-env.sh", "platform/hosted/node/checkpoint-authority.py", "platform/hosted/node/guarantor.sh", "platform/hosted/node/deployment.yaml", "platform/hosted/node/tests/node-test.sh", "platform/hosted/tests/beta-cluster.sh"]
+symbols    = ["settlement_resolve", "layerx_sequencer_environment", "guarantor_anchor_abi", "precompile_view"]
+touches    = ["platform/hosted/node/bootstrap.sh", "platform/hosted/node/sequencer-env.sh", "cmd/layerx-guarantor/settlement.py", "platform/hosted/node/guarantor.sh", "platform/hosted/node/deployment.yaml", "platform/hosted/node/tests/node-test.sh", "platform/hosted/tests/beta-cluster.sh", "platform/Makefile.inc", "docker/platform-node/Dockerfile", "docker/platform-node/Dockerfile.dockerignore", "platform/hosted/node/tests/fixtures/settlement-configuration.txt", "platform/hosted/node/tests/probe/Cargo.lock"]
 tests      = ["platform/hosted/node/tests/node-test.sh"]
 reqs       = ["5.1"]
 
@@ -358,6 +362,19 @@ section = "Wave 2 - Boundaries and platform host"
 title   = "Serve the boundaries from the kernel host and the gateway, identity, internal services and registry from the platform host"
 status  = "pending"
 
+[task.1.8]
+title      = "Make the node test's treasury balance read resolve under the kernel's account namespace"
+status     = "pending"
+wave       = 1
+requires   = ["1.1"]
+do_1       = "Find why the probe's balance read of the treasury account that bootstrap.sh writes into node.env is refused by the kernel with LXP_ERR_UNKNOWN_ACCOUNT_NAMESPACE, the namespace byte of the account id, since the EVM account and identity were derived from one secret, and fix the root cause where the treasury account id is derived or registered: the probe's balance path, bootstrap.sh's treasury derivation or the sequencer's namespace registration, never by relaxing the kernel check or the test's assertion."
+do_2       = "Keep every step of node-test.sh as written and make the whole target pass; add the derivation case to the probe's or bootstrap's existing tests where one exists."
+verify_cmd = "timeout 30m make layerxd platform-test-node"
+symbols    = ["balance"]
+touches    = ["platform/hosted/node/tests/probe/src/main.rs", "platform/hosted/node/bootstrap.sh", "platform/hosted/node/tests/node-test.sh"]
+tests      = ["platform/hosted/node/tests/node-test.sh"]
+reqs       = ["5.1"]
+
 [task.2.1]
 title      = "Run the core boundary, the receipt authority and the agent boundary over TLS on the kernel host"
 status     = "pending"
@@ -444,7 +461,7 @@ status  = "pending"
 
 [task.3.1]
 title      = "Add LXIP operation 4, assertion resolution, to the identity provider and wire it at startup"
-status     = "pending"
+status     = "done"
 wave       = 3
 requires   = []
 do_1       = "Add operation 4 to the LXIP wire protocol in layerx-human-identity-provider: request carries the assertion, response carries the principal and the did:layerx identity or a typed refusal; verify with the AssertionConfig JWKS and max age the crate already reads."
@@ -457,7 +474,7 @@ reqs       = ["10.1"]
 
 [task.3.2]
 title      = "Admit the wallet's bearer assertion on the wallet-facing operations of the human service"
-status     = "pending"
+status     = "done"
 wave       = 3
 requires   = ["3.1"]
 do_1       = "In layerx-human-service, admit an Authorization bearer on intent plan, intent submit, journey get and the account reads from an origin in the listed set by calling operation 4 through the identity socket, resolving the principal and did, and keeping the passkey cookie path exactly as it is."
@@ -470,20 +487,20 @@ reqs       = ["10.2"]
 
 [task.3.3]
 title      = "Make the KMS group optional under attestor custody in the components loader"
-status     = "pending"
+status     = "done"
 wave       = 3
 requires   = ["3.2"]
 do_1       = "In production_components.rs require the LAYERX_HUMAN_KMS_* group only when LAYERX_HUMAN_ATTESTOR_NODES is unset; under attestor custody use the five Fly attestors with LAYERX_HUMAN_ATTESTOR_SIGNERS of at least three, protocol 3, the human-service client leaf chained to the attestor CA, and wire admit_assertion into the sign path."
 do_2       = "Extend tests/wallet_identity_e2e.rs so it runs with no KMS variables set and proves the attestor-only path end to end."
 verify_cmd = "timeout 30m tools/runtime/run-with-clock.sh sh -c 'cd human && cargo test -p layerx-human-service --test wallet_identity_e2e'"
-symbols    = ["ProductionComponents::from_environment", "AttestorKms::admit_assertion"]
+symbols    = ["ProductionComponentsConfig::from_environment", "AttestorKms::admit_assertion"]
 touches    = ["human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-service/tests/wallet_identity_e2e.rs"]
 tests      = ["human/crates/layerx-human-service/tests/wallet_identity_e2e.rs"]
 reqs       = ["10.3"]
 
 [task.3.4]
 title      = "Serve every HTTP route the wallet SDK calls from the human service"
-status     = "pending"
+status     = "done"
 wave       = 3
 requires   = ["3.2"]
 do_1       = "List every path and method human/wallet/sdk calls on the human API (human.ts and its siblings), compare with the routes layerx-human-service serves and the human-api schema, and implement each missing route on the real component paths with the schema the SDK expects."
@@ -581,7 +598,7 @@ reqs       = ["13.1", "13.2"]
 
 [task.4.3]
 title      = "Run the archive node with min-retain-blocks 0 on the archive host"
-status     = "pending"
+status     = "implemented"
 wave       = 4
 requires   = ["0.1"]
 do_1       = "Install paxd at the live release on the archive host through hpx with HPX_TYPE=fullnode, set min-retain-blocks 0 and the state-sync keep-recent to 0, sync from the earliest reachable snapshot, and keep its public RPC name serving the JSON-RPC over TLS as the other fifteen do."
@@ -727,7 +744,7 @@ reqs       = ["18.1"]
 
 [task.4.14]
 title      = "Publish the current release and serve the hpx registry at node.hyperpaxeer.com"
-status     = "pending"
+status     = "done"
 wave       = 4
 requires   = ["0.1"]
 do_1       = "On the host the map names as HPX_HOST run hpx/publish.sh with the live paxd, the six native libraries and the live config, then hpx/hosting/deploy.sh for the current release assets with a generated HPX_REGISTER_TOKEN under /etc/hpx-registry.env."
@@ -740,7 +757,7 @@ reqs       = ["18.2"]
 
 [task.4.15]
 title      = "Repair the lagging and frozen public RPC nodes"
-status     = "pending"
+status     = "implemented"
 wave       = 4
 requires   = ["0.1"]
 do_1       = "On each of the RPC_HOSTS install the release that fixes the JSON-RPC double-bind, clear the frozen state where a node stopped advancing, resync the lagging nodes with state sync, and restart their units."
@@ -749,4 +766,30 @@ verify_cmd = "timeout 10m tools/bringup/check-live.sh rpc-nodes"
 symbols    = ["check_rpc_nodes"]
 touches    = ["tools/bringup/check-live.sh"]
 tests      = ["tools/bringup/check-live.test.sh"]
+reqs       = ["18.3"]
+
+[task.4.16]
+title      = "Make the node's lag self-remediation restart a node whose gap is not closing, and roll that binary to every full node"
+status     = "implemented"
+wave       = 4
+requires   = []
+do_1       = "In consensus/internal/blocksync/reactor.go change autoRestartIfBehind so a node past blocks-behind-threshold is left alone only while its distance behind the highest peer is shrinking between two checks; a node that advances at chain speed with a constant or growing gap restarts into block sync after the cooldown, a node already in block sync is still skipped, and the log line names the previous and current distance; add the unit test in the blocksync package covering the shrinking, constant and growing gap cases through the real syncController."
+do_2       = "Build paxd from the merged revision, stage it on every RPC_HOSTS destination beside the live binary with its checksum verified, swap and restart one full-node unit at a time waiting for each to return within ten blocks of the head before the next, never touching a validator unit, and record the binary checksum every host now runs."
+verify_cmd = "timeout 20m sh -c 'cd consensus && go test ./internal/blocksync/ -run TestAutoRestartIfBehind -count=1'"
+symbols    = ["autoRestartIfBehind"]
+touches    = ["consensus/internal/blocksync/reactor.go", "consensus/internal/blocksync/reactor_test.go", "tools/bringup/sync-fleet.sh"]
+tests      = ["consensus/internal/blocksync/reactor_test.go"]
+reqs       = ["18.3"]
+
+[task.4.17]
+title      = "Turn on lag self-remediation on every full node, restart the trailing nodes into block sync and resync the nodes beyond the retain window"
+status     = "implemented"
+wave       = 4
+requires   = []
+do_1       = "Write tools/bringup/sync-fleet.sh reading the host map: for every RPC_HOSTS destination and the archive host set blocks-behind-threshold 200, blocks-behind-check-interval 30 and restart-cooldown-seconds 300 in the self-remediation section of the node config with a dated backup, and restart the full-node unit of every node whose head trails the highest public answer by more than two hundred blocks; never touch a validator unit; print one line per host with the values written and the unit state; a dry-run flag prints every remote command instead."
+do_2       = "For a node whose gap exceeds the retained window of the pruned peers, stop its unit, copy the data directory from a synced full node, install the release binary the fleet runs when the host's binary differs, then start it; run the script against the whole fleet and record what every host received."
+verify_cmd = "timeout 10m tools/bringup/check-live.sh rpc-nodes"
+symbols    = ["check_rpc_nodes"]
+touches    = ["tools/bringup/sync-fleet.sh", "tools/bringup/sync-fleet.test.sh"]
+tests      = ["tools/bringup/sync-fleet.test.sh"]
 reqs       = ["18.3"]

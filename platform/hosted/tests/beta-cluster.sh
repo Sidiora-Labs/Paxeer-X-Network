@@ -39,7 +39,7 @@
 #                                       and every Paxeer transaction is signed by platform/hosted/paxeer/evm.py
 #   LAYERX_BETA_FAUCET_HOST             public faucet hostname (default faucet.paxeer.network)
 #   LAYERX_BETA_DEVELOPER_HOST          public developer hostname (default developers.paxeer.network)
-#   LAYERX_BETA_RELAY_HOST              public relay/archive hostname (default relay.paxeer.network)
+#   LAYERX_BETA_RELAY_HOST              public relay/archive hostname (default archive.paxeer.network)
 #   LAYERX_BETA_RELAY_UPSTREAM          comma-separated public HTTPS relay/archive origins the beta relay reads
 #                                       canonical history from; unset leaves the colocated canonical availability
 #                                       log of the sequencer node as its only source
@@ -186,11 +186,11 @@
 # The trusted-boundary services (node with core boundary, receipt authority and agent boundary; identity;
 # Paxeer chain with its boundary) are built from the repository, applied before the testnet, gateway,
 # registry and developer manifests, and bound together in this order: the Paxeer chain starts with the
-# generated deployer address and the custody and anchor module genesis, the node bootstraps its genesis,
-# anchor-guarantors.sh registers and activates the node's guarantors in the anchor module through the Paxeer
-# boundary, and the anchor precompile address is published to the node as the settlement contract and
-# checkpoint registry of the layerx-node-settlement ConfigMap the sequencer supervisor waits for before
-# starting layerxd --serve. No Solidity contract is deployed for custody, checkpoints, bonds or challenges.
+# generated deployer address and the custody and anchor module genesis, the node bootstraps its genesis with
+# the registry, custody and anchor precompile addresses its manifest carries as settlement inputs on chain 125
+# through the loopback relay, anchor-guarantors.sh registers and activates the node's guarantors in the anchor
+# module through the Paxeer boundary, and the same settlement inputs are published as the layerx-node-settlement
+# ConfigMap the guarantors read. No Solidity contract is deployed for custody, checkpoints, bonds or challenges.
 #
 # Two reference programs are deployed through the program registry deployment ingress before the explorer
 # observation is published: programs/sdk/rust/examples/escrow, whose deployment record carries the program
@@ -231,10 +231,10 @@ CALICO_SHA256=9382d2b27a76f40c170454b408653e6d71e2205ef0aef069e942bb690e7381d0
 CLUSTER_NAME=${LAYERX_BETA_CLUSTER_NAME:-layerx-beta}
 FAUCET_HOST=${LAYERX_BETA_FAUCET_HOST:-faucet.paxeer.network}
 DEVELOPER_HOST=${LAYERX_BETA_DEVELOPER_HOST:-developers.paxeer.network}
-RELAY_HOST=${LAYERX_BETA_RELAY_HOST:-relay.paxeer.network}
+RELAY_HOST=${LAYERX_BETA_RELAY_HOST:-archive.paxeer.network}
 HUMAN_WEB_HOST=app.paxeer.network
 TESTNET_HOST=beta.paxeer.network
-GATEWAY_HOST=api.paxeer.network
+GATEWAY_HOST=api.mainnet-beta.router.paxeer.network
 KIND_CNI=${LAYERX_BETA_KIND_CNI:-calico}
 READY_TIMEOUT=${LAYERX_BETA_READY_TIMEOUT:-900}
 MIN_FREE_GIB=${LAYERX_BETA_MIN_FREE_GIB:-24}
@@ -283,6 +283,7 @@ RAMP_OPTIONAL_INPUTS=(LAYERX_BETA_RAMP_PORT LAYERX_BETA_RAMP_WORKER_ID LAYERX_BE
     LAYERX_BETA_RAMP_OFF_GRANT_JSON LAYERX_BETA_RAMP_ON_ACCOUNT_SEQUENCE
     LAYERX_BETA_RAMP_OFF_RECEIVER_SEQUENCE)
 PAXEER_CHAIN_ID=125
+REGISTRY_PRECOMPILE=0x0000000000000000000000000000000000001004
 CUSTODY_PRECOMPILE=0x0000000000000000000000000000000000001013
 ANCHOR_PRECOMPILE=0x0000000000000000000000000000000000001014
 MIRROR_SIGNER_SOCKET=/run/mirror-signer/signer.sock
@@ -1494,7 +1495,7 @@ render_manifest() {
         sed -i "s|image: $canonical\$|image: $pin|" "$dst"
     done < "$WORK_DIR/images"
     sed -i "s|imagePullPolicy: Always|imagePullPolicy: $PULL_POLICY|" "$dst"
-    sed -i "s|developers\.layerx\.example|$DEVELOPER_HOST|g" "$dst"
+    sed -i "s|developers\.paxeer\.network|$DEVELOPER_HOST|g" "$dst"
     if grep -E 'image: ghcr.io/[^@[:space:]]*:[^@[:space:]]+$' "$dst"; then
         fail "rendered manifest $dst still references a mutable GHCR image"
     fi
@@ -1839,7 +1840,7 @@ PYREG
     render_manifest "$REPO_ROOT/platform/hosted/internal/deployment.yaml" "$MANIFESTS_DIR/internal.yaml"
     render_manifest "$REPO_ROOT/platform/hosted/webhooks/deployment.yaml" "$MANIFESTS_DIR/developer.yaml"
     render_manifest "$REPO_ROOT/platform/relay_archive/deployment.yaml" "$MANIFESTS_DIR/relay-archive.yaml"
-    sed -i "s|relay\.layerx\.example|$RELAY_HOST|g" "$MANIFESTS_DIR/relay-archive.yaml"
+    sed -i "s|archive\.paxeer\.network|$RELAY_HOST|g" "$MANIFESTS_DIR/relay-archive.yaml"
     grep -Fq "host: $RELAY_HOST" "$MANIFESTS_DIR/relay-archive.yaml" \
         || fail "the relay/archive manifest host could not be bound to $RELAY_HOST"
     if [ "$RAMP_ENABLED" = 1 ]; then
@@ -2433,8 +2434,8 @@ settlement_publish() {
     if [ -n "$CUSTODY_PROFILE" ]; then
         custody_registration_publish
     fi
-    printf 'LAYERX_NODE_PAXEER_CHAIN_ID=%s\nLAYERX_NODE_SETTLEMENT_CONTRACT=%s\nLAYERX_NODE_CHECKPOINT_REGISTRY=%s\nLAYERX_NODE_PAXEER_RPC_ADDRESS=127.0.0.1\nLAYERX_NODE_PAXEER_RPC_PORT=%s\n' \
-        "$PAXEER_CHAIN_ID" "$GUARANTOR_BOND" "$CHECKPOINT_REGISTRY" "$PAXEER_RELAY_PORT" > "$WORK_DIR/paxeer/settlement.env"
+    printf 'LAYERX_NODE_PAXEER_CHAIN_ID=%s\nLAYERX_NODE_PAXEER_RPC_URL=http://127.0.0.1:%s\nLAYERX_NODE_REGISTRY_PRECOMPILE=%s\nLAYERX_NODE_CUSTODY_PRECOMPILE=%s\nLAYERX_NODE_ANCHOR_PRECOMPILE=%s\n' \
+        "$PAXEER_CHAIN_ID" "$PAXEER_RELAY_PORT" "$REGISTRY_PRECOMPILE" "$CUSTODY_PRECOMPILE" "$ANCHOR_PRECOMPILE" > "$WORK_DIR/paxeer/settlement.env"
     bash "$REPO_ROOT/platform/hosted/node/bootstrap.sh" --check-settlement "$WORK_DIR/paxeer/settlement.env" > /dev/null \
         || fail "the settlement environment was refused by bootstrap.sh --check-settlement"
     apply_configmap "$ns" layerx-node-settlement --from-file=settlement.env="$WORK_DIR/paxeer/settlement.env" \

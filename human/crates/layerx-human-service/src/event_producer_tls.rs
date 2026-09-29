@@ -28,8 +28,8 @@ use ed25519_dalek::{Signer as _, SigningKey};
 use serde_json::{json, Value};
 use sha2::{Digest as _, Sha256};
 
-const RP_ID: &str = "id.layerx.example";
-const ORIGIN: &str = "https://id.layerx.example";
+const RP_ID: &str = "paxportwallet.com";
+const ORIGIN: &str = "https://paxportwallet.com";
 const ACCOUNT_ID: &str = "act_00112233445566778899aabbccddeeff";
 const EMAIL: &str = "mara@example.com";
 const PUBLIC_TRACE: &str = "trc_00112233445566778899aabbccddeeff";

@@ -142,7 +142,7 @@ platform-test-cli-production-credential-refusal:
 platform-test-registry:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(PLATFORM_CARGO) test --offline --manifest-path $(PLATFORM_MANIFEST) --locked -p layerx-platform-registry
 
-platform-test-node: test-layerxctl
+platform-test-node: test-layerxctl layerx-handover
 	bash -n platform/hosted/node/bootstrap.sh platform/hosted/node/supervisor.sh platform/hosted/node/sequencer-env.sh platform/hosted/node/tests/node-test.sh
 	PLATFORM_CARGO="$(PLATFORM_CARGO)" bash platform/hosted/node/tests/node-test.sh
 	python3 platform/hosted/node/tests/sequencer-seed-test.py

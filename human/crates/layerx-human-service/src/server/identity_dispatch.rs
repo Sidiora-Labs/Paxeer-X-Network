@@ -45,6 +45,13 @@ pub struct ProvisionedAccount {
     pub onboarding: OnboardingStart,
 }
 
+/// The account the identity provider resolved for a wallet bearer assertion.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AssertionAccount {
+    pub principal: PrincipalId,
+    pub did: Option<String>,
+}
+
 impl RemoteIdentityProvider {
     pub fn new(config: IdentityProviderConfig) -> Result<Self, IdentityDispatchError> {
         if !config.socket.is_absolute()
@@ -107,6 +114,39 @@ impl RemoteIdentityProvider {
             principal,
             onboarding,
         })
+    }
+
+    /// Resolves a wallet bearer assertion through LXIP operation 4 to its account and
+    /// recorded wallet DID.
+    ///
+    /// # Errors
+    ///
+    /// Refuses an empty assertion as invalid input, maps a refused assertion or identity
+    /// conflict to `ProviderRefused`, an unavailable principal or key set to
+    /// `ProviderUnavailable`, and a malformed answer to `ProviderEvidence`.
+    pub fn resolve_assertion(
+        &self,
+        assertion: &str,
+    ) -> Result<AssertionAccount, IdentityDispatchError> {
+        if assertion.is_empty() {
+            return Err(IdentityDispatchError::InvalidInput);
+        }
+        let fields = self.call(4, &[assertion.as_bytes()])?;
+        if !matches!(fields.len(), 1 | 2) {
+            return Err(IdentityDispatchError::ProviderEvidence);
+        }
+        let principal = PrincipalId::new(provider_text(&fields[0])?)?;
+        let did = fields
+            .get(1)
+            .map(|field| {
+                let did = provider_text(field)?;
+                if !did.starts_with("did:layerx:") || Did::new(did.as_bytes()).is_err() {
+                    return Err(IdentityDispatchError::ProviderEvidence);
+                }
+                Ok(did)
+            })
+            .transpose()?;
+        Ok(AssertionAccount { principal, did })
     }
 
     pub fn probe(&self) -> Result<(), IdentityDispatchError> {
@@ -339,8 +379,10 @@ fn decode_provider_response(bytes: &[u8]) -> Result<Vec<Vec<u8>>, IdentityDispat
     if bytes.len() < 10 || &bytes[..4] != IDENTITY_MAGIC || bytes[4] != 1 {
         return Err(IdentityDispatchError::ProviderEvidence);
     }
-    if bytes[5] != 0 {
-        return Err(IdentityDispatchError::ProviderRefused);
+    match bytes[5] {
+        0 => {}
+        4 => return Err(IdentityDispatchError::ProviderUnavailable),
+        _ => return Err(IdentityDispatchError::ProviderRefused),
     }
     let count = u32::from_be_bytes(
         bytes[6..10]
@@ -379,7 +421,7 @@ fn decode_provider_response(bytes: &[u8]) -> Result<Vec<Vec<u8>>, IdentityDispat
 }
 
 #[derive(Debug)]
-pub(crate) enum IdentityDispatchError {
+pub enum IdentityDispatchError {
     InvalidConfiguration,
     InvalidInput,
     NotFound,
