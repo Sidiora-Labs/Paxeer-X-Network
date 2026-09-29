@@ -363,11 +363,11 @@ title   = "Serve the boundaries from the kernel host and the gateway, identity, 
 status  = "pending"
 
 [task.1.8]
-title      = "Make the node test read the treasury the way the kernel serves an unopened main account"
+title      = "Make the node test's genesis fund the treasury so the operator SEND is admitted"
 status     = "in_progress"
 wave       = 1
 requires   = ["1.1"]
-do_1       = "The kernel opens agent:<did>:main on its first credit: a fresh genesis registers only the three system accounts, bootstrap registers the treasury as an identity only, and the daemon answers a read of an absent account with class 4 result -208 LXP_ERR_UNKNOWN_ACCOUNT_NAMESPACE, which the daemon's onboarding test and the core boundary tests both assert; the probe's balance derivation already matches the ledger. Correct the node test so its treasury steps expect that typed refusal and an empty DID account listing before any credit, and let the probe surface the refusal as a typed line and list a DID's accounts; never by relaxing the kernel check."
+do_1       = "The kernel opens agent:<did>:main on its first credit and a genesis allocation is that first credit: the node test's genesis, and only it, must carry a real non-zero treasury balance so the balance reads see the genesis balance before the SEND and after the reset and the signed SEND is admitted. Today no such path exists: bootstrap refuses a non-zero --treasury-balance, the genesis builder emits only lxp_genesis_fresh_empty_accounts, the manifest account record carries no name or authority key, validate and materialize_account admit only the system kinds at balance zero, and genesis seeds custody-issued at zero which the bridge credit path reconciles against the sum of every account of the asset. Completing it means a manifest account record with name, authority key and balance carried through encode, decode and hash, the builder request and bootstrap's hand-encoded LXGB v2 request with its length check, validate and materialize_account admitting an agent main account with its authority key, the issued-supply seed, and the builder tests; never by relaxing the kernel check or the test's assertions."
 do_2       = "Keep every step of node-test.sh as written and make the whole target pass; add the derivation case to the probe's or bootstrap's existing tests where one exists."
 verify_cmd = "timeout 30m make layerxd platform-test-node"
 symbols    = ["balance", "did_accounts", "expect_treasury_unopened"]

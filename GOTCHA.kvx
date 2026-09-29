@@ -821,3 +821,9 @@ area    = "kernel"
 symptom = "A signed SEND from a freshly bootstrapped treasury identity is refused at admission with class 4 result -602 FeeUnpayable, never acknowledged."
 cause   = "The sequencer resolves the fee payer through agent:<did>:main, which does not exist before its first credit, so the fee balance is zero and admission stops before sequencing."
 do      = "Fund or credit the main account before asserting an acknowledged submission; on a fresh genesis assert the typed refusal, as the core boundary test does."
+
+[gotcha.134]
+area    = "genesis"
+symptom = "The bootstrap's treasury balance option looks like a genesis allocation knob, but any non-zero value is refused and the value only lands in node.env and treasury.json."
+cause   = "The genesis manifest account record carries no name or authority key and its validation admits only the system accounts at balance zero, so the builder has nothing to allocate to."
+do      = "Treat the option as documentation of the genesis zero; fund a main account through a credit activity after genesis, or extend the manifest record, builder request, validation, materialisation and supply seed together before allowing a non-zero value."
