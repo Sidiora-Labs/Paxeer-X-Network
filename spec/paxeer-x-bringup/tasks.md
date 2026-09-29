@@ -194,6 +194,14 @@
     - On each of the RPC_HOSTS install the release that fixes the JSON-RPC double-bind, clear the frozen state where a node stopped advancing, resync the lagging nodes with state sync, and restart their units.
     - Add the rpc-nodes subcommand: each of the sixteen public RPC names answers eth_blockNumber within ten blocks of the highest answer and each unit is active without a restart in the last hour.
     - _Requirements: 18.3_
+  - [ ] 4.16 Make the node's lag self-remediation restart a node whose gap is not closing, and roll that binary to every full node
+    - In consensus/internal/blocksync/reactor.go change autoRestartIfBehind so a node past blocks-behind-threshold is left alone only while its distance behind the highest peer is shrinking between two checks; a node that advances at chain speed with a constant or growing gap restarts into block sync after the cooldown, a node already in block sync is still skipped, and the log line names the previous and current distance; add the unit test in the blocksync package covering the shrinking, constant and growing gap cases through the real syncController.
+    - Build paxd from the merged revision, stage it on every RPC_HOSTS destination beside the live binary with its checksum verified, swap and restart one full-node unit at a time waiting for each to return within ten blocks of the head before the next, never touching a validator unit, and record the binary checksum every host now runs.
+    - _Requirements: 18.3_
+  - [ ] 4.17 Turn on lag self-remediation on every full node, restart the trailing nodes into block sync and resync the nodes beyond the retain window
+    - Write tools/bringup/sync-fleet.sh reading the host map: for every RPC_HOSTS destination and the archive host set blocks-behind-threshold 200, blocks-behind-check-interval 30 and restart-cooldown-seconds 300 in the self-remediation section of the node config with a dated backup, and restart the full-node unit of every node whose head trails the highest public answer by more than two hundred blocks; never touch a validator unit; print one line per host with the values written and the unit state; a dry-run flag prints every remote command instead.
+    - For a node whose gap exceeds the retained window of the pruned peers, stop its unit, copy the data directory from a synced full node, install the release binary the fleet runs when the host's binary differs, then start it; run the script against the whole fleet and record what every host received.
+    - _Requirements: 18.3_
 
 ## Task Dependency Graph
 
@@ -204,7 +212,7 @@
     { "id": 1,  "tasks": ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8"] },
     { "id": 2,  "tasks": ["2.1", "2.2", "2.3", "2.4", "2.5", "2.6"] },
     { "id": 3,  "tasks": ["3.1", "3.2", "3.3", "3.4", "3.5", "3.6", "3.7", "3.8"] },
-    { "id": 4,  "tasks": ["4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7", "4.8", "4.9", "4.10", "4.11", "4.12", "4.13", "4.14", "4.15"] }
+    { "id": 4,  "tasks": ["4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7", "4.8", "4.9", "4.10", "4.11", "4.12", "4.13", "4.14", "4.15", "4.16", "4.17"] }
   ]
 }
 ```
