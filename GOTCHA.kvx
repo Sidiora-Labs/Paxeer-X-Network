@@ -623,3 +623,21 @@ area    = "spec-tooling"
 symptom = "cg spec lint --help does not print help; it lints the active feature and reports clean."
 cause   = "The lint subcommand treats unknown flags as absent and defaults to the active feature."
 do      = "Use cg spec lint -f <feature>; read the usage from spec/workflow.kvx and the fleet protocol instead of --help."
+
+[gotcha.101]
+area    = "identity-provider"
+symptom = "A new LXIP operation whose handler returns an io::Error that is not InvalidData stops the whole provider listener instead of answering the peer."
+cause   = "wire::serve maps only InvalidData to status 1 and propagates every other error kind out of Server::run, which is how durable-state failures are meant to halt the process."
+do      = "Turn service-side faults the peer must survive, such as an unreachable key set or a disabled principal, into a typed status inside the handler; leave persistence errors propagating."
+
+[gotcha.102]
+area    = "identity-provider-tests"
+symptom = "Counting JWKS fetches after reopening the assertion state reports one hit more than the wire calls made."
+cause   = "Every State reopen installs a fresh AssertionVerifier with an empty key cache, so the first library call after reopen fetches the key set again."
+do      = "Assert the fetch count before reopening the state, or expect one extra hit per reopen."
+
+[gotcha.103]
+area    = "spec-tooling"
+symptom = "cg spec done without --force runs for many minutes at full CPU with no output while other lanes work the same feature, and never returns."
+cause   = "The done subcommand re-indexes against the shared code graph in the main checkout and contends on its index lock with every other lane's spec tooling."
+do      = "Bound the call with timeout; when it expires, kill it, set the task status line to done by hand only after the verify_cmd genuinely passed, delete spec/<feature>/spec.kvx.lock, and say so in the commit message so the manager can re-run the tool."

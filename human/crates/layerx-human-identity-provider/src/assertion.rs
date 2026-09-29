@@ -7,6 +7,7 @@ use jsonwebtoken::jwk::{AlgorithmParameters, EllipticCurve, Jwk, KeyAlgorithm, P
 use jsonwebtoken::{Algorithm, DecodingKey, Validation};
 use serde::Deserialize;
 
+use crate::state::text;
 use crate::{invalid, State};
 
 const MAX_TOKEN_BYTES: usize = 16 * 1024;
@@ -150,6 +151,52 @@ impl AssertionPrincipal {
     #[must_use]
     pub const fn created_at(&self) -> u64 {
         self.created_at
+    }
+}
+
+/// A typed refusal of LXIP operation 4, carried on the wire as the response status.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AssertionRefusal {
+    /// The token's signature, key or claims were refused.
+    Assertion,
+    /// The wallet DID is bound to another account or differs from the recorded DID.
+    Identity,
+    /// The assertion principal is disabled or its key set is unavailable.
+    Unavailable,
+}
+
+impl AssertionRefusal {
+    /// The response status carrying this refusal; status 1 stays the malformed-request refusal.
+    #[must_use]
+    pub const fn status(self) -> u8 {
+        match self {
+            Self::Assertion => 2,
+            Self::Identity => 3,
+            Self::Unavailable => 4,
+        }
+    }
+}
+
+impl std::fmt::Display for AssertionRefusal {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Assertion => "assertion refused",
+            Self::Identity => "wallet DID conflicts with a recorded identity",
+            Self::Unavailable => "assertion principal unavailable",
+        })
+    }
+}
+
+impl std::error::Error for AssertionRefusal {}
+
+impl From<AssertionRefusal> for io::Error {
+    fn from(refusal: AssertionRefusal) -> Self {
+        match refusal {
+            AssertionRefusal::Unavailable => Self::other(refusal),
+            AssertionRefusal::Assertion | AssertionRefusal::Identity => {
+                Self::new(io::ErrorKind::InvalidData, refusal)
+            }
+        }
     }
 }
 
@@ -307,11 +354,11 @@ impl AssertionVerifier {
             .with_config()
             .limit(MAX_KEY_SET_BYTES)
             .read_to_vec()
-            .map_err(|_| invalid("assertion key set unreadable"))?;
-        let document: KeySet =
-            serde_json::from_slice(&bytes).map_err(|_| invalid("invalid assertion key set"))?;
+            .map_err(|_| io::Error::other("assertion key set unreadable"))?;
+        let document: KeySet = serde_json::from_slice(&bytes)
+            .map_err(|_| io::Error::other("invalid assertion key set"))?;
         if document.keys.len() > MAX_KEYS {
-            return Err(invalid("assertion key set too large"));
+            return Err(io::Error::other("assertion key set too large"));
         }
         let mut keys = HashMap::new();
         for value in document.keys {
@@ -321,14 +368,14 @@ impl AssertionVerifier {
             let Some((key_id, algorithm)) = usable(&jwk) else {
                 continue;
             };
-            let key =
-                DecodingKey::from_jwk(&jwk).map_err(|_| invalid("invalid assertion key set"))?;
+            let key = DecodingKey::from_jwk(&jwk)
+                .map_err(|_| io::Error::other("invalid assertion key set"))?;
             if keys.insert(key_id, (algorithm, key)).is_some() {
-                return Err(invalid("duplicate assertion key id"));
+                return Err(io::Error::other("duplicate assertion key id"));
             }
         }
         if keys.is_empty() {
-            return Err(invalid("assertion key set has no usable key"));
+            return Err(io::Error::other("assertion key set has no usable key"));
         }
         Ok(keys)
     }
@@ -372,6 +419,49 @@ impl State {
         self.assertion_principal(&verified.issuer, &verified.subject)
             .ok_or_else(|| invalid("unknown assertion principal"))
     }
+
+    pub(crate) fn assertion(
+        &mut self,
+        fields: &[Vec<u8>],
+        now: u64,
+    ) -> io::Result<(u8, Vec<Vec<u8>>)> {
+        let token = std::str::from_utf8(&fields[0]).map_err(|_| invalid("invalid UTF-8"))?;
+        let did = fields.get(1).map(|field| text(field)).transpose()?;
+        if let Some(did) = did {
+            validate_wallet_did(did)?;
+        }
+        let Ok(verifier) = self.assertion_verifier() else {
+            return Ok(refused(AssertionRefusal::Unavailable));
+        };
+        let verified = match verifier.verify(token, now) {
+            Ok(verified) => verified,
+            Err(error) if error.kind() == io::ErrorKind::InvalidData => {
+                return Ok(refused(AssertionRefusal::Assertion))
+            }
+            Err(_) => return Ok(refused(AssertionRefusal::Unavailable)),
+        };
+        match self.record_assertion(&verified.issuer, &verified.subject, did, now) {
+            Ok((principal, _)) => Ok((
+                0,
+                std::iter::once(principal.principal())
+                    .chain(principal.did())
+                    .map(|value| value.as_bytes().to_vec())
+                    .collect(),
+            )),
+            Err(error) => match error
+                .get_ref()
+                .and_then(|source| source.downcast_ref::<AssertionRefusal>())
+                .copied()
+            {
+                Some(refusal) => Ok(refused(refusal)),
+                None => Err(error),
+            },
+        }
+    }
+}
+
+fn refused(refusal: AssertionRefusal) -> (u8, Vec<Vec<u8>>) {
+    (refusal.status(), Vec::new())
 }
 
 pub(crate) fn validate_wallet_did(did: &str) -> io::Result<()> {
