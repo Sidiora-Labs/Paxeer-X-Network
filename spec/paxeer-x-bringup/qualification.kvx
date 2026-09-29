@@ -70,3 +70,11 @@ symbol = "resolve_binary"
 observed = "The third verify run passed the precompile settlement case (chain id, head advancing, anchor threshold 1, statusOf, depositCount and layerXBindNonce answered through the loopback relay) and then failed in the untouched supervisor at line 245: it requires build/bin/layerx-handover for the sequencer key check, a binary neither make layerxd nor platform-test-node builds, so the sequencer supervisor exited before the daemon started (log .logs/verify.log, make exit 2)."
 assumption = "Pre-existing gap between the declared verify_cmd and the supervisor's prerequisites, present at the base revision; the task stops at its second repair cycle as implemented, not qualified, and the gate should be rerun after make layerx-handover or with the target added to the verify_cmd."
 severity = "blocker"
+
+[observation.1.1.8]
+task = "1.1"
+file = "platform/hosted/node/tests/node-test.sh"
+symbol = "precompile_view"
+observed = "With layerx-handover a prerequisite of platform-test-node and a lag-zero RPC name, the fourth verify run built the handover binary, passed the precompile settlement case, the sequencer bootstrap, the LNI handshake, the seed check and the nine settlement lines plus daemon pins, then failed in the untouched treasury balance read step with CoreRefusal class 4 result -208 LXP_ERR_UNKNOWN_ACCOUNT_NAMESPACE from the probe (log .logs/verify.log, make exit 2; earlier runs never reached this step)."
+assumption = "The refused account is the treasury name bootstrap.sh has always written to node.env and the probe's balance path was last changed by the commit that derived the EVM account and identity from one secret, neither touched here; recorded as pre-existing per the manager's one-cycle ruling and not chased, the task stays implemented, not qualified."
+severity = "blocker"

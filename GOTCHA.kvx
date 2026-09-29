@@ -653,3 +653,9 @@ area    = "spec-tooling"
 symptom = "cg spec implemented refuses a task whose touches list names a file that needed no change, and a second call can hang on the tool's lock while other checkouts run cg."
 cause   = "The tool requires a worktree or tagged-commit change for every touched file, and its lock is shared across checkouts."
 do      = "Record why the file needed no change in qualification.kvx, leave the status in_progress and say so in the report; kill a hung call and remove spec/<feature>/spec.kvx.lock before the commit."
+
+[gotcha.106]
+area    = "chain"
+symptom = "A public JSON-RPC name whose head advances at chain speed was still tens of thousands of blocks behind the tip, so a settlement test against it ran on stale state."
+cause   = "A lagging full node receives blocks at production rate and stays behind by a constant; head advancement cannot tell it from the tip and the RPC exposes no eth_syncing."
+do      = "Point LAYERX_NODE_PAXEER_RPC_URL at a name the fleet probe measured at lag zero before the run; keep the head-advance assertion as the in-band check."
