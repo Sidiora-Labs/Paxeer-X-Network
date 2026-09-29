@@ -209,13 +209,7 @@ pub struct ProductionComponentsConfig {
     identity: IdentityProviderConfig,
     identity_binding: layerx_identity_binding::Config,
     movement: MovementProviderConfig,
-    kms_provider_reference: String,
-    kms_endpoint: SocketAddr,
-    kms_server_name: String,
-    kms_root_certificate: PathBuf,
-    kms_client_certificate: PathBuf,
-    kms_client_private_key: PathBuf,
-    kms_limits: Limits,
+    kms: Option<RemoteKmsConfig>,
     attestor: Option<AttestorCustodyConfig>,
     network_id: u32,
     protocol_version: u16,
@@ -289,15 +283,11 @@ impl ProductionComponentsConfig {
             },
             movement: MovementProviderConfig::from_environment()
                 .map_err(|_| "movement provider configuration was refused".to_owned())?,
-            kms_provider_reference: required("LAYERX_HUMAN_KMS_PROVIDER_REFERENCE")?,
-            kms_endpoint: required("LAYERX_HUMAN_KMS_ENDPOINT")?
-                .parse()
-                .map_err(|_| "LAYERX_HUMAN_KMS_ENDPOINT is invalid".to_owned())?,
-            kms_server_name: required("LAYERX_HUMAN_KMS_SERVER_NAME")?,
-            kms_root_certificate: absolute("LAYERX_HUMAN_KMS_ROOT_CERTIFICATE_DER")?,
-            kms_client_certificate: absolute("LAYERX_HUMAN_KMS_CLIENT_CERTIFICATE_DER")?,
-            kms_client_private_key: absolute("LAYERX_HUMAN_KMS_CLIENT_PRIVATE_KEY_DER")?,
-            kms_limits: bounded_limits("LAYERX_HUMAN_KMS")?,
+            kms: if attestor_configured {
+                None
+            } else {
+                Some(RemoteKmsConfig::from_environment()?)
+            },
             attestor,
             network_id: number("LAYERX_HUMAN_NETWORK_ID")?,
             protocol_version: configured_protocol(attestor_configured)?,
@@ -350,6 +340,45 @@ impl ProductionComponentsConfig {
             continuation_unknown_deadline_seconds: number(
                 "LAYERX_HUMAN_CONTINUATION_UNKNOWN_DEADLINE_SECONDS",
             )?,
+        })
+    }
+
+    /// The attestor custody backend when `LAYERX_HUMAN_ATTESTOR_NODES` selected it.
+    #[must_use]
+    pub const fn attestor_custody(&self) -> Option<&AttestorCustodyConfig> {
+        self.attestor.as_ref()
+    }
+
+    /// The custody protocol version the loader settled on.
+    #[must_use]
+    pub const fn protocol_version(&self) -> u16 {
+        self.protocol_version
+    }
+}
+
+/// The remote KMS group, required only while no attestor custody is configured.
+struct RemoteKmsConfig {
+    provider_reference: String,
+    endpoint: SocketAddr,
+    server_name: String,
+    root_certificate: PathBuf,
+    client_certificate: PathBuf,
+    client_private_key: PathBuf,
+    limits: Limits,
+}
+
+impl RemoteKmsConfig {
+    fn from_environment() -> Result<Self, String> {
+        Ok(Self {
+            provider_reference: required("LAYERX_HUMAN_KMS_PROVIDER_REFERENCE")?,
+            endpoint: required("LAYERX_HUMAN_KMS_ENDPOINT")?
+                .parse()
+                .map_err(|_| "LAYERX_HUMAN_KMS_ENDPOINT is invalid".to_owned())?,
+            server_name: required("LAYERX_HUMAN_KMS_SERVER_NAME")?,
+            root_certificate: absolute("LAYERX_HUMAN_KMS_ROOT_CERTIFICATE_DER")?,
+            client_certificate: absolute("LAYERX_HUMAN_KMS_CLIENT_CERTIFICATE_DER")?,
+            client_private_key: absolute("LAYERX_HUMAN_KMS_CLIENT_PRIVATE_KEY_DER")?,
+            limits: bounded_limits("LAYERX_HUMAN_KMS")?,
         })
     }
 }
@@ -426,12 +455,15 @@ impl ProductionComponents {
         validate_production_configuration(&config)?;
         require_attestor_custody_protocol(config.attestor.is_some(), config.protocol_version)?;
         let withdrawal_boundary = production_withdrawal_boundary(&config)?;
-        let provider = match config.attestor.take() {
-            Some(attestor) => ProductionKms::Attestor(
+        let provider = match (config.attestor.take(), config.kms.take()) {
+            (Some(attestor), _) => ProductionKms::Attestor(
                 AttestorKms::connect(attestor)
                     .map_err(|_| "attestor quorum refused startup".to_owned())?,
             ),
-            None => ProductionKms::Remote(production_kms_provider(&config)?),
+            (None, Some(kms)) => ProductionKms::Remote(production_kms_provider(&kms)?),
+            (None, None) => {
+                return Err("neither attestor custody nor the remote KMS is configured".to_owned())
+            }
         };
         let passkeys =
             Passkeys::new(config.auth).map_err(|_| "invalid passkey configuration".to_owned())?;
@@ -5917,20 +5949,18 @@ fn validate_production_configuration(config: &ProductionComponentsConfig) -> Res
     }
     Ok(())
 }
-fn production_kms_provider(
-    config: &ProductionComponentsConfig,
-) -> Result<RemoteKmsProvider, String> {
+fn production_kms_provider(config: &RemoteKmsConfig) -> Result<RemoteKmsProvider, String> {
     let tls = mutual_tls(
-        &config.kms_root_certificate,
-        &config.kms_client_certificate,
-        &config.kms_client_private_key,
+        &config.root_certificate,
+        &config.client_certificate,
+        &config.client_private_key,
     )?;
     let provider = RemoteKmsProvider::new(
-        config.kms_provider_reference.clone(),
-        config.kms_endpoint,
-        config.kms_server_name.clone(),
+        config.provider_reference.clone(),
+        config.endpoint,
+        config.server_name.clone(),
         tls,
-        config.kms_limits,
+        config.limits,
     )
     .map_err(|_| "KMS configuration was refused".to_owned())?;
     Ok(provider)
@@ -5943,6 +5973,7 @@ enum ProductionKms {
     Remote(RemoteKmsProvider),
 }
 
+#[derive(Clone)]
 pub struct AttestorCustodyConfig {
     nodes: Vec<(String, SocketAddr)>,
     signers: Vec<String>,

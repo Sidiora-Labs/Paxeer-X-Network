@@ -869,3 +869,15 @@ area    = "spec-tooling"
 symptom = "cg spec done re-runs a passing verify_cmd and then refuses a Rust task with symbol <name> not defined in the graph, where the symbols entry names the integration test target or a fixture function inside it."
 cause   = "The graph checks run against the last completed index, which has not seen a file added by the task, and a test target name is never a symbol at all; under a busy graph the checks are not retried before the refusal."
 do      = "Name only graph-defined library symbols in a task's symbols entry, never a test target or a test-local function; when the refusal is only this, record it, set the status by hand after the genuine pass and say so in the commit line, and do not retry, since each retry runs the verify again."
+
+[gotcha.142]
+area    = "human-service tests"
+symptom = "An integration test that proves the components loader has to set the whole LAYERX_HUMAN_ environment, and two such tests in one binary would race on the process-global variables."
+cause   = "The loader reads only the process environment, cargo runs the tests of one binary on parallel threads, and env::set_var and remove_var are visible to every thread."
+do      = "Keep every environment-touching step of one loader proof inside one test function, set the variables right before from_environment and remove them at the end; let sibling tests in that binary read no environment."
+
+[gotcha.143]
+area    = "spec-tooling"
+symptom = "cg spec done refuses a task whose verify_cmd it just reran to exit 0 with symbol not defined in the graph, and the symbol named in the task does not exist under that type."
+cause   = "The symbols line was written from the type that owns the components, while the environment loader is a method of the configuration type, and the graph check is exact."
+do      = "Check every symbols entry against the real definition before starting the task; correct a mis-named symbol inside your own task block, record the refusal once, and set the status by hand after the genuine pass."
