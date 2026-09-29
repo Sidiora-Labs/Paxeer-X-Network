@@ -76,14 +76,14 @@ use crate::trace::TraceId;
 
 use super::agent_runtime::AgentRuntime;
 use super::backend::{
-    ApiFailure, BackendResponse, ComponentState, HumanApiComponents, PrincipalContext, Readiness,
-    ScopedRequest, SessionCredentials, SessionSecrets,
+    ApiFailure, BackendResponse, BearerCredentials, ComponentState, HumanApiComponents,
+    PrincipalContext, Readiness, ScopedRequest, SessionCredentials, SessionSecrets,
 };
 use super::identity_dispatch::{self, IdentityProviderConfig, RemoteIdentityProvider};
 use super::movement_provider::{MovementProviderConfig, NativeMovementCodec, UnixMovementProvider};
 use super::production_auth::{
-    authorize_execution, authorize_refresh_execution, consume_context, AuthDiscoveryIndex,
-    AuthorizationDisclosure, IndexAuthenticationKey, RemoteSecurityProvider,
+    authorize_bearer_execution, authorize_execution, authorize_refresh_execution, consume_context,
+    AuthDiscoveryIndex, AuthorizationDisclosure, IndexAuthenticationKey, RemoteSecurityProvider,
     SecurityProviderConfig,
 };
 use super::schema::{ApiSchema, Operation};
@@ -693,6 +693,49 @@ impl HumanApiComponents for ProductionComponents {
         capability.into_context()
     }
 
+    fn admit_bearer_assertion(
+        &self,
+        operation: &Operation,
+        credentials: BearerCredentials<'_>,
+        trace: &str,
+    ) -> Result<PrincipalContext, ApiFailure> {
+        let now = self.now()?;
+        let account = self
+            .identity
+            .resolve_assertion(credentials.assertion)
+            .map_err(|error| bearer_failure(&error))?;
+        let mut store = self.store.lock().map_err(|_| ApiFailure::unavailable())?;
+        let capability = authorize_bearer_execution(
+            &mut store,
+            &self.auth_index,
+            &account.principal,
+            credentials.assertion,
+            AuthorizationDisclosure {
+                operation,
+                destination: credentials.intended_destination,
+                path_parameters: credentials.path_parameters,
+                body: credentials.body,
+                idempotency_key: credentials.idempotency_key,
+                trace,
+            },
+            now,
+            self.capability_ttl_seconds,
+        )
+        .map_err(|error| auth_failure(&error))?;
+        if capability.request_disclosure() != credentials.request_digest
+            || capability.body_disclosure() != credentials.disclosure_digest
+        {
+            return Err(ApiFailure::forbidden());
+        }
+        let context = capability
+            .into_context()?
+            .with_assertion(credentials.assertion.to_owned())?;
+        match account.did {
+            Some(did) => context.with_did(did),
+            None => Ok(context),
+        }
+    }
+
     fn execute(&self, request: ScopedRequest<'_>) -> Result<BackendResponse, ApiFailure> {
         if request.operation.name == "version" {
             return Ok(BackendResponse {
@@ -1297,6 +1340,7 @@ fn intent_leg_route(
     context: &super::movement_provider::PlanningContext,
     leg: &crate::journeys::PlannedLeg,
     binding: &crate::journeys::IntentLegBinding,
+    assertion: Option<&str>,
 ) -> Result<crate::journeys::RouteRequest, ApiFailure> {
     use crate::journeys::{Endpoint, LegMechanism, Mechanism};
     match (leg.mechanism(), leg.source(), leg.destination()) {
@@ -1304,9 +1348,9 @@ fn intent_leg_route(
             LegMechanism::Protocol(Mechanism::Send),
             Endpoint::Human(from),
             Endpoint::Human(to) | Endpoint::Agent(to),
-        ) if from == &context.account => {
-            intent_send_route(components, scope, agent, context, leg, binding, to)
-        }
+        ) if from == &context.account => intent_send_route(
+            components, scope, agent, context, leg, binding, to, assertion,
+        ),
         (
             LegMechanism::Protocol(Mechanism::BudgetFund),
             Endpoint::Human(_),
@@ -1321,6 +1365,7 @@ fn intent_leg_route(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn intent_send_route(
     components: &ProductionComponents,
     scope: &crate::store::PrincipalScope<'_>,
@@ -1329,6 +1374,7 @@ fn intent_send_route(
     leg: &crate::journeys::PlannedLeg,
     binding: &crate::journeys::IntentLegBinding,
     to: &AccountId,
+    assertion: Option<&str>,
 ) -> Result<crate::journeys::RouteRequest, ApiFailure> {
     let canonical = to.canonical();
     if let Some(recipient_did) = canonical
@@ -1366,6 +1412,11 @@ fn intent_send_route(
         network: context.network.value(),
         protocol: context.protocol_version,
     };
+    if let (Some(attestor), Some(assertion)) = (components.attestor_custody(), assertion) {
+        attestor
+            .admit_assertion(&assertion_subject(assertion)?, assertion)
+            .map_err(|_| ApiFailure::forbidden())?;
+    }
     let signature = match components.attestor_custody() {
         Some(attestor) => attestor.authorize_kernel_send(
             &components.custody,
@@ -1826,6 +1877,28 @@ fn agent_creation_json(
         })).collect::<Vec<_>>(),
         "started_at": projection.started_at,
     })
+}
+
+fn bearer_failure(error: &identity_dispatch::IdentityDispatchError) -> ApiFailure {
+    match error {
+        identity_dispatch::IdentityDispatchError::ProviderRefused => ApiFailure::unauthenticated(),
+        other => identity_failure(other),
+    }
+}
+
+fn assertion_subject(assertion: &str) -> Result<String, ApiFailure> {
+    let payload = assertion
+        .split('.')
+        .nth(1)
+        .and_then(|segment| URL_SAFE_NO_PAD.decode(segment).ok())
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .ok_or_else(ApiFailure::unauthenticated)?;
+    payload
+        .get("sub")
+        .and_then(serde_json::Value::as_str)
+        .filter(|subject| attestor_owner_valid(subject))
+        .map(str::to_owned)
+        .ok_or_else(ApiFailure::unauthenticated)
 }
 
 fn identity_failure(error: &identity_dispatch::IdentityDispatchError) -> ApiFailure {
@@ -3824,7 +3897,16 @@ impl ProductionComponents {
         let mut routes = Vec::with_capacity(planned.legs().len());
         for (leg, binding) in planned.legs().iter().zip(&submitted.bindings) {
             routes.push(intent_leg_route(
-                self, scope, &mut agent, context, leg, binding,
+                self,
+                scope,
+                &mut agent,
+                context,
+                leg,
+                binding,
+                request
+                    .principal
+                    .as_ref()
+                    .and_then(PrincipalContext::assertion),
             )?);
         }
         let journey_id = crate::journeys::intent_journey_id(idempotency, planned.digest())

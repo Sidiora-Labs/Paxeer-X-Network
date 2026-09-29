@@ -707,3 +707,15 @@ area    = "spec-tooling"
 symptom = "cg spec done without --force runs for many minutes at full CPU with no output while other lanes work the same feature, and never returns."
 cause   = "The done subcommand re-indexes against the shared code graph in the main checkout and contends on its index lock with every other lane's spec tooling."
 do      = "Bound the call with timeout; when it expires, kill it, set the task status line to done by hand only after the verify_cmd genuinely passed, delete spec/<feature>/spec.kvx.lock, and say so in the commit message so the manager can re-run the tool."
+
+[gotcha.115]
+area    = "human-service tests"
+symptom = "Every test in a new integration file failed at fixture start with a 503 unavailable before any request was sent."
+cause   = "ProvisionedAccounts::new refuses an empty account set with unavailable, so an IdentityServices stand-in built from an empty iterator never constructs."
+do      = "Give the fixture at least one ProvisionedAccount for the principal the test admits, even when the services under test never touch passkeys."
+
+[gotcha.116]
+area    = "human-service exports"
+symptom = "The library built with private_interfaces warnings, then the integration test failed to compile with 'type IdentityDispatchError is private' on the first call into the exported identity client."
+cause   = "Exporting a client whose methods return Result<_, E> while E stays pub(crate) compiles inside the crate but leaves integration tests unable to name the result type."
+do      = "When a crate-private client becomes a public export, make its error type pub and export it alongside in the same change."

@@ -8,6 +8,7 @@ use serde_json::{json, Map, Value};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::store::{AgentTenantId, PrincipalId};
+use layerx_types::ids::Did;
 
 use super::schema::Operation;
 
@@ -163,7 +164,12 @@ pub struct PrincipalContext {
     expires_at: u64,
     refresh_token: Option<Zeroizing<String>>,
     refresh_csrf: Option<Zeroizing<String>>,
+    assertion: Option<Zeroizing<String>>,
+    did: Option<String>,
 }
+
+/// The admitted request context: a passkey session or a wallet bearer assertion.
+pub type RequestContext = PrincipalContext;
 
 impl Debug for PrincipalContext {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
@@ -184,6 +190,8 @@ impl Debug for PrincipalContext {
                 "refresh_token",
                 &self.refresh_token.as_ref().map(|_| "[REDACTED]"),
             )
+            .field("assertion", &self.assertion.as_ref().map(|_| "[REDACTED]"))
+            .field("did", &self.did)
             .finish_non_exhaustive()
     }
 }
@@ -229,7 +237,25 @@ impl PrincipalContext {
             expires_at,
             refresh_token: None,
             refresh_csrf: None,
+            assertion: None,
+            did: None,
         })
+    }
+
+    pub(crate) fn with_assertion(mut self, assertion: String) -> Result<Self, ApiFailure> {
+        if !valid_bearer_assertion(&assertion) {
+            return Err(ApiFailure::unauthenticated());
+        }
+        self.assertion = Some(Zeroizing::new(assertion));
+        Ok(self)
+    }
+
+    pub(crate) fn with_did(mut self, did: String) -> Result<Self, ApiFailure> {
+        if !did.starts_with("did:layerx:") || Did::new(did.as_bytes()).is_err() {
+            return Err(ApiFailure::upstream_degraded());
+        }
+        self.did = Some(did);
+        Ok(self)
     }
 
     pub(crate) fn with_refresh(mut self, token: String, csrf: String) -> Result<Self, ApiFailure> {
@@ -270,6 +296,53 @@ impl PrincipalContext {
             self.refresh_token.as_ref()?.as_str(),
             self.refresh_csrf.as_ref()?.as_str(),
         ))
+    }
+}
+
+impl RequestContext {
+    /// The wallet bearer assertion this request was admitted with, if any.
+    #[must_use]
+    pub fn assertion(&self) -> Option<&str> {
+        self.assertion.as_ref().map(|value| value.as_str())
+    }
+
+    /// The wallet DID the identity provider resolved for the assertion, if recorded.
+    #[must_use]
+    pub fn did(&self) -> Option<&str> {
+        self.did.as_deref()
+    }
+}
+
+/// A bearer assertion is a compact token: base64url segments joined by dots.
+#[must_use]
+pub fn valid_bearer_assertion(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 4_096
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~'))
+}
+
+/// One wallet bearer assertion bound to the exact request it authorizes.
+#[derive(Clone, Copy)]
+pub struct BearerCredentials<'a> {
+    pub assertion: &'a str,
+    pub intended_destination: &'a str,
+    pub request_digest: [u8; 32],
+    pub disclosure_digest: [u8; 32],
+    pub path_parameters: &'a BTreeMap<String, String>,
+    pub body: &'a Value,
+    pub idempotency_key: Option<&'a str>,
+}
+
+impl Debug for BearerCredentials<'_> {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("BearerCredentials")
+            .field("assertion", &"[REDACTED]")
+            .field("intended_destination", &self.intended_destination)
+            .field("idempotency_key", &self.idempotency_key)
+            .finish_non_exhaustive()
     }
 }
 
@@ -389,6 +462,19 @@ pub trait HumanApiComponents: Send + Sync + 'static {
         trace: &str,
     ) -> Result<PrincipalContext, ApiFailure>;
 
+    /// Admits a wallet bearer assertion through the identity provider's assertion
+    /// resolution and binds the resolved principal to this exact request.
+    ///
+    /// # Errors
+    ///
+    /// Returns configured backend readiness or assertion admission failures.
+    fn admit_bearer_assertion(
+        &self,
+        operation: &Operation,
+        credentials: BearerCredentials<'_>,
+        trace: &str,
+    ) -> Result<PrincipalContext, ApiFailure>;
+
     /// Dispatches one already schema-decoded request into its real owning component.
     ///
     /// # Errors
@@ -489,68 +575,55 @@ impl HumanApiComponents for UnixComponents {
             "idempotency_key": credentials.idempotency_key,
             "trace": trace
         }))?;
-        let parsed = (|| {
-            let result = response
-                .get("result")
-                .and_then(Value::as_object)
-                .ok_or_else(ApiFailure::upstream_degraded)?;
-            let principal = result
-                .get("principal_id")
-                .and_then(Value::as_str)
-                .ok_or_else(ApiFailure::upstream_degraded)
-                .and_then(|value| {
-                    PrincipalId::new(value).map_err(|_| ApiFailure::upstream_degraded())
-                })?;
-            let tenant = result
-                .get("tenant_id")
-                .and_then(Value::as_str)
-                .ok_or_else(ApiFailure::upstream_degraded)
-                .and_then(|value| {
-                    AgentTenantId::new(value).map_err(|_| ApiFailure::upstream_degraded())
-                })?;
-            let session_id = result
-                .get("session_id")
-                .and_then(Value::as_str)
-                .filter(|value| !value.is_empty() && value.len() <= 255)
-                .ok_or_else(ApiFailure::upstream_degraded)?
-                .to_owned();
-            let capability = bounded_secret(result, "capability")?;
-            let request_digest = digest(result, "request_digest")?;
-            let disclosure_digest = digest(result, "disclosure_digest")?;
-            let operation_name = bounded_result_text(result, "operation", 128)?;
-            let destination = bounded_result_text(result, "destination", 2_048)?;
-            let response_trace = bounded_result_text(result, "trace", 255)?;
-            let issued_at = result
-                .get("issued_at")
-                .and_then(Value::as_u64)
-                .ok_or_else(ApiFailure::upstream_degraded)?;
-            let expires_at = result
-                .get("expires_at")
-                .and_then(Value::as_u64)
-                .filter(|expires| *expires > issued_at)
-                .ok_or_else(ApiFailure::upstream_degraded)?;
-            if request_digest != credentials.request_digest
-                || disclosure_digest != credentials.disclosure_digest
-                || operation_name != operation.name
-                || destination != credentials.intended_destination
-                || response_trace != trace
-            {
+        let parsed = parse_authorized(
+            &response,
+            AuthorizedExpectation {
+                operation,
+                request_digest: credentials.request_digest,
+                disclosure_digest: credentials.disclosure_digest,
+                intended_destination: credentials.intended_destination,
+                trace,
+            },
+        );
+        zeroize_value(&mut response);
+        parsed
+    }
+
+    fn admit_bearer_assertion(
+        &self,
+        operation: &Operation,
+        credentials: BearerCredentials<'_>,
+        trace: &str,
+    ) -> Result<PrincipalContext, ApiFailure> {
+        let mut response = self.round_trip(json!({
+            "version": COMPONENT_PROTOCOL_VERSION,
+            "kind": "session.bearer",
+            "operation": operation.name.as_str(),
+            "assertion": credentials.assertion,
+            "intended_destination": credentials.intended_destination,
+            "request_digest": hex(&credentials.request_digest),
+            "disclosure_digest": hex(&credentials.disclosure_digest),
+            "path_parameters": credentials.path_parameters,
+            "body": credentials.body,
+            "idempotency_key": credentials.idempotency_key,
+            "trace": trace
+        }))?;
+        let parsed = parse_authorized(
+            &response,
+            AuthorizedExpectation {
+                operation,
+                request_digest: credentials.request_digest,
+                disclosure_digest: credentials.disclosure_digest,
+                intended_destination: credentials.intended_destination,
+                trace,
+            },
+        )
+        .and_then(|context| {
+            if context.assertion() != Some(credentials.assertion) {
                 return Err(ApiFailure::upstream_degraded());
             }
-            PrincipalContext::authorized(
-                principal,
-                tenant,
-                session_id,
-                capability,
-                request_digest,
-                disclosure_digest,
-                operation_name,
-                destination,
-                response_trace,
-                issued_at,
-                expires_at,
-            )
-        })();
+            Ok(context)
+        });
         zeroize_value(&mut response);
         parsed
     }
@@ -569,7 +642,9 @@ impl HumanApiComponents for UnixComponents {
                 "destination": context.destination.as_str(),
                 "trace": context.trace.as_str(),
                 "issued_at": context.issued_at,
-                "expires_at": context.expires_at
+                "expires_at": context.expires_at,
+                "assertion": context.assertion(),
+                "did": context.did()
             })
         });
         let mut response = self.round_trip(json!({
@@ -624,6 +699,89 @@ impl HumanApiComponents for UnixComponents {
         })();
         zeroize_value(&mut response);
         parsed
+    }
+}
+
+struct AuthorizedExpectation<'a> {
+    operation: &'a Operation,
+    request_digest: [u8; 32],
+    disclosure_digest: [u8; 32],
+    intended_destination: &'a str,
+    trace: &'a str,
+}
+
+fn parse_authorized(
+    response: &Value,
+    expected: AuthorizedExpectation<'_>,
+) -> Result<PrincipalContext, ApiFailure> {
+    let result = response
+        .get("result")
+        .and_then(Value::as_object)
+        .ok_or_else(ApiFailure::upstream_degraded)?;
+    let principal = result
+        .get("principal_id")
+        .and_then(Value::as_str)
+        .ok_or_else(ApiFailure::upstream_degraded)
+        .and_then(|value| PrincipalId::new(value).map_err(|_| ApiFailure::upstream_degraded()))?;
+    let tenant = result
+        .get("tenant_id")
+        .and_then(Value::as_str)
+        .ok_or_else(ApiFailure::upstream_degraded)
+        .and_then(|value| AgentTenantId::new(value).map_err(|_| ApiFailure::upstream_degraded()))?;
+    let session_id = result
+        .get("session_id")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty() && value.len() <= 255)
+        .ok_or_else(ApiFailure::upstream_degraded)?
+        .to_owned();
+    let capability = bounded_secret(result, "capability")?;
+    let request_digest = digest(result, "request_digest")?;
+    let disclosure_digest = digest(result, "disclosure_digest")?;
+    let operation_name = bounded_result_text(result, "operation", 128)?;
+    let destination = bounded_result_text(result, "destination", 2_048)?;
+    let response_trace = bounded_result_text(result, "trace", 255)?;
+    let issued_at = result
+        .get("issued_at")
+        .and_then(Value::as_u64)
+        .ok_or_else(ApiFailure::upstream_degraded)?;
+    let expires_at = result
+        .get("expires_at")
+        .and_then(Value::as_u64)
+        .filter(|expires| *expires > issued_at)
+        .ok_or_else(ApiFailure::upstream_degraded)?;
+    if request_digest != expected.request_digest
+        || disclosure_digest != expected.disclosure_digest
+        || operation_name != expected.operation.name
+        || destination != expected.intended_destination
+        || response_trace != expected.trace
+    {
+        return Err(ApiFailure::upstream_degraded());
+    }
+    let context = PrincipalContext::authorized(
+        principal,
+        tenant,
+        session_id,
+        capability,
+        request_digest,
+        disclosure_digest,
+        operation_name,
+        destination,
+        response_trace,
+        issued_at,
+        expires_at,
+    )?;
+    let context = if result
+        .get("assertion")
+        .is_some_and(|value| !value.is_null())
+    {
+        context.with_assertion(bounded_result_text(result, "assertion", 4_096)?)?
+    } else {
+        context
+    };
+    if result.get("did").is_some_and(|value| !value.is_null()) {
+        context.with_did(bounded_result_text(result, "did", 2_048)?)
+    } else {
+        Ok(context)
     }
 }
 
