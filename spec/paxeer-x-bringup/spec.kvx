@@ -363,15 +363,15 @@ title   = "Serve the boundaries from the kernel host and the gateway, identity, 
 status  = "pending"
 
 [task.1.8]
-title      = "Make the node test's genesis fund the treasury so the operator SEND is admitted"
+title      = "Make the node test credit the treasury through the first-credit path so the operator SEND is admitted"
 status     = "in_progress"
 wave       = 1
 requires   = ["1.1"]
-do_1       = "The kernel opens agent:<did>:main on its first credit and a genesis allocation is that first credit: the node test's genesis, and only it, must carry a real non-zero treasury balance so the balance reads see the genesis balance before the SEND and after the reset and the signed SEND is admitted. Today no such path exists: bootstrap refuses a non-zero --treasury-balance, the genesis builder emits only lxp_genesis_fresh_empty_accounts, the manifest account record carries no name or authority key, validate and materialize_account admit only the system kinds at balance zero, and genesis seeds custody-issued at zero which the bridge credit path reconciles against the sum of every account of the asset. Completing it means a manifest account record with name, authority key and balance carried through encode, decode and hash, the builder request and bootstrap's hand-encoded LXGB v2 request with its length check, validate and materialize_account admitting an agent main account with its authority key, the issued-supply seed, and the builder tests; never by relaxing the kernel check or the test's assertions."
+do_1       = "The kernel opens agent:<did>:main on its first credit and genesis stays untouched: before any credit the treasury read expects the typed -208 refusal and an empty DID listing (expect_treasury_unopened), then the node test funds the treasury through the zero-fee custody credit the kernel already tests, reusing tests/daemon/withdraw-custody.py rather than re-implementing it: give that script an export mode that builds the custody profile and the signed credit activity for a given beneficiary seed and stops before program-admission.sh, have node-test.sh run it for the treasury seed before the supervisors start, pass the profile to bootstrap through the sequencer supervisor's trailing arguments as --custody-profile, submit the credit through layerxctl as the treasury, wait until the read shows the credited balance and the treasury DID lists the opened main account, then run the operator SEND exactly as written and, since the reset rebuilds genesis, expect the unopened refusal again after it. The fixture needs eth_account under BRIDGE_PYTHON, the sign-credit, layerx-custody-proof and layerx-paxeer-boundary binaries, forge artifacts and a local paxd chain, and it reads CARGO_TARGET_DIR while the layerxctl target needs it unset, so platform-test-node must gain those prerequisites and the fixture step its own target directory; never by relaxing the kernel check or the test's assertions."
 do_2       = "Keep every step of node-test.sh as written and make the whole target pass; add the derivation case to the probe's or bootstrap's existing tests where one exists."
 verify_cmd = "timeout 30m make layerxd platform-test-node"
-symbols    = ["balance", "did_accounts", "expect_treasury_unopened"]
-touches    = ["platform/hosted/node/tests/probe/src/main.rs", "platform/hosted/node/tests/node-test.sh", "platform/Makefile.inc"]
+symbols    = ["balance", "did_accounts", "expect_treasury_unopened", "main"]
+touches    = ["platform/hosted/node/tests/probe/src/main.rs", "platform/hosted/node/tests/node-test.sh", "platform/Makefile.inc", "tests/daemon/withdraw-custody.py"]
 tests      = ["platform/hosted/node/tests/node-test.sh"]
 reqs       = ["5.1"]
 

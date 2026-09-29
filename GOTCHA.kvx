@@ -827,3 +827,9 @@ area    = "genesis"
 symptom = "The bootstrap's treasury balance option looks like a genesis allocation knob, but any non-zero value is refused and the value only lands in node.env and treasury.json."
 cause   = "The genesis manifest account record carries no name or authority key and its validation admits only the system accounts at balance zero, so the builder has nothing to allocate to."
 do      = "Treat the option as documentation of the genesis zero; fund a main account through a credit activity after genesis, or extend the manifest record, builder request, validation, materialisation and supply seed together before allowing a non-zero value."
+
+[gotcha.135]
+area    = "tooling"
+symptom = "The custody credit fixture pipeline behind the daemon onboarding tests cannot start on a box whose default python3 lacks eth_account, although forge, cast, go and paxd are all present."
+cause   = "withdraw-custody.py and the custody chain helper import eth_account and cryptography directly and the Makefile's BRIDGE_PYTHON defaults to python3 with no venv."
+do      = "Before dispatching any task that reuses the first-credit path, run python3 -c 'import eth_account, cryptography' under the BRIDGE_PYTHON the gate will use and name that interpreter in the prompt."
