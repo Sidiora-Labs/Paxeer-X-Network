@@ -653,3 +653,9 @@ area    = "spec-tooling"
 symptom = "cg sync and cg index exit 124 under a timeout while a fleet runs, and cg spec done reports the graph refresh skipped because the database is busy."
 cause   = "Every worktree shares one graph database and one indexing gate, and any cg process in another lane holds it."
 do      = "Do not wait on the index inside a task; run the verify_cmd yourself, record it, and let the graph catch up after the commit."
+
+[gotcha.106]
+area    = "spec-tooling"
+symptom = "A shell-only task whose verify_cmd passed cannot be closed with a plain cg spec done."
+cause   = "The graph indexes no shell functions, so the symbol check refuses every symbols entry naming one."
+do      = "After the gate passed and its gate record is in the qualification log, close the task with cg spec done <id> -f <feature> --force; this is the ruled exception to the no-force rule, for shell-only tasks only."

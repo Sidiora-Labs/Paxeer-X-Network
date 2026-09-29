@@ -22,3 +22,10 @@ symbol     = "load_hosts, check_hosts, usage"
 observed   = "cg spec done reran the verify_cmd itself (exit 0) and then refused with three graph checks failed: the symbol check finds no bash function at all, the long-standing functions of tools/wallet/check-live.sh included, since the graph holds shell scripts as full text only."
 assumption = "No shell-only task can pass cg spec done without --force until the graph defines shell function symbols; the task stays at implemented with its verify_cmd passing until the feature manager rules on the symbol gate."
 severity   = "blocker"
+
+[gate.0.1.1]
+revision  = "0c6fb972b"
+command   = "timeout 10m tools/bringup/check-live.test.sh"
+exit_code = 0
+log_path  = ".logs/verify.log"
+observed  = "All twelve cases passed against local fixtures: the usage exits, the host map refused on an unset, unreadable or role-lacking file naming only the role, the hosts subcommand passing with one ssh true per destination, failing with the ssh exit code, and bounded by CHECK_LIVE_TIMEOUT."
