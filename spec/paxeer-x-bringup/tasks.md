@@ -104,7 +104,7 @@
     - Add operation 4 to the LXIP wire protocol in layerx-human-identity-provider: request carries the assertion, response carries the principal and the did:layerx identity or a typed refusal; verify with the AssertionConfig JWKS and max age the crate already reads.
     - Wire AssertionConfig::from_environment into the serve command in src/main.rs so the verifier is constructed at startup and operation 4 is dispatched; extend tests/assertion.rs with the wire round trip.
     - _Requirements: 10.1_
-  - [ ] 3.2 Admit the wallet's bearer assertion on the wallet-facing operations of the human service
+  - [x] 3.2 Admit the wallet's bearer assertion on the wallet-facing operations of the human service
     - In layerx-human-service, admit an Authorization bearer on intent plan, intent submit, journey get and the account reads from an origin in the listed set by calling operation 4 through the identity socket, resolving the principal and did, and keeping the passkey cookie path exactly as it is.
     - Carry the admitted assertion on the request context so components pass it to AttestorKms::admit_assertion at signing; add tests/bearer_admission.rs proving admission, refusal of a foreign origin and refusal of an expired assertion.
     - _Requirements: 10.2_

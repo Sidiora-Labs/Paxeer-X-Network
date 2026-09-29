@@ -221,3 +221,11 @@ command   = "BRINGUP_HOSTS_FILE=<private host map> timeout 10m tools/bringup/che
 exit_code = 1
 log_path  = ".logs/verify.log"
 observed  = "All three checks fail on transport, connection refused on port 443 of the public name, because nginx on the edge host is down and the registry vhost was not deployed (observations 4.14.1 and 4.14.2); the probe's fixture test passed its fifteen cases, log .logs/check-live.test.log."
+
+[gate.3.2.1]
+task      = "3.2"
+revision  = "84903e84c26f31a2761e09b94e533b6d109e3045"
+command   = "timeout 20m tools/runtime/run-with-clock.sh sh -c 'cd human && cargo test -p layerx-human-service --test bearer_admission'"
+exit_code = 0
+log_path  = ".logs/verify.log"
+observed  = "Three bearer admission tests passed after one build repair and one fixture repair; the run needed a dedicated cargo target directory."

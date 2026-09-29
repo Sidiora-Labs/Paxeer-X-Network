@@ -13,9 +13,11 @@ use crate::auth::{
 use crate::store::{PrincipalScope, PrincipalStore};
 
 use super::backend::{
-    ApiFailure, BackendResponse, HumanApiComponents, PrincipalContext, Readiness, ScopedRequest,
-    SessionCredentials,
+    ApiFailure, BackendResponse, BearerCredentials, HumanApiComponents, PrincipalContext,
+    Readiness, ScopedRequest, SessionCredentials,
 };
+use super::identity_dispatch::{IdentityDispatchError, RemoteIdentityProvider};
+use super::production_auth::bearer_session_id;
 use super::schema::Operation;
 
 /// Finite lifetime and cardinality for transient authorize-to-execute grants.
@@ -85,6 +87,7 @@ pub struct PrivilegedHumanComponents<S: PrivilegedHumanServices> {
     state: Mutex<PrivilegedState<S>>,
     policy: AuthorizationGrantPolicy,
     clock: std::sync::Arc<dyn Clock>,
+    identity: Option<RemoteIdentityProvider>,
 }
 
 struct PrivilegedState<S> {
@@ -102,6 +105,7 @@ struct AuthorizationGrant {
     token: String,
     csrf_token: Option<String>,
     refresh: bool,
+    bearer: bool,
     session: SessionContext,
     expires_at: u64,
 }
@@ -136,7 +140,15 @@ impl<S: PrivilegedHumanServices> PrivilegedHumanComponents<S> {
             }),
             policy: policy.validate()?,
             clock,
+            identity: None,
         })
+    }
+
+    /// Admits wallet bearer assertions through the given identity provider socket.
+    #[must_use]
+    pub fn with_identity_provider(mut self, identity: RemoteIdentityProvider) -> Self {
+        self.identity = Some(identity);
+        self
     }
 }
 
@@ -213,6 +225,7 @@ impl<S: PrivilegedHumanServices> HumanApiComponents for PrivilegedHumanComponent
                 token: credentials.access_token.to_owned(),
                 csrf_token: credentials.csrf_token.map(str::to_owned),
                 refresh: credentials.refresh,
+                bearer: false,
                 session: session.clone(),
                 expires_at,
             },
@@ -230,6 +243,81 @@ impl<S: PrivilegedHumanServices> HumanApiComponents for PrivilegedHumanComponent
             now,
             expires_at,
         )
+    }
+
+    fn admit_bearer_assertion(
+        &self,
+        operation: &Operation,
+        credentials: BearerCredentials<'_>,
+        trace: &str,
+    ) -> Result<PrincipalContext, ApiFailure> {
+        if operation.is_public_bootstrap() {
+            return Err(ApiFailure::forbidden());
+        }
+        let identity = self
+            .identity
+            .as_ref()
+            .ok_or_else(ApiFailure::unauthenticated)?;
+        let now = self
+            .clock
+            .sample(Duration::from_secs(1))
+            .map_err(|_| ApiFailure::unavailable())?
+            .unix_seconds();
+        let account = identity
+            .resolve_assertion(credentials.assertion)
+            .map_err(|error| map_identity_error(&error))?;
+        let mut state = self.state.lock().map_err(|_| ApiFailure::unavailable())?;
+        let tenant = state
+            .store
+            .principal(&account.principal)
+            .map_err(|_| ApiFailure::unavailable())?
+            .tenant()
+            .clone();
+        let session = SessionContext {
+            session_id: bearer_session_id(credentials.assertion),
+            device_id: "bearer".to_owned(),
+        };
+        state.grants.retain(|_, grant| grant.expires_at >= now);
+        if state.grants.len() >= self.policy.maximum_outstanding {
+            return Err(ApiFailure::unavailable());
+        }
+        let authorization = mint_authorization()?;
+        let expires_at = now
+            .checked_add(self.policy.lifetime_seconds)
+            .ok_or_else(ApiFailure::unavailable)?;
+        state.grants.insert(
+            authorization.clone(),
+            AuthorizationGrant {
+                principal: account.principal.as_str().to_owned(),
+                tenant: tenant.as_str().to_owned(),
+                operation: operation.name.clone(),
+                trace: trace.to_owned(),
+                token: credentials.assertion.to_owned(),
+                csrf_token: None,
+                refresh: false,
+                bearer: true,
+                session: session.clone(),
+                expires_at,
+            },
+        );
+        let context = PrincipalContext::authorized(
+            account.principal,
+            tenant,
+            session.session_id,
+            authorization,
+            credentials.request_digest,
+            credentials.disclosure_digest,
+            operation.name.clone(),
+            credentials.intended_destination.to_owned(),
+            trace.to_owned(),
+            now,
+            expires_at,
+        )?
+        .with_assertion(credentials.assertion.to_owned())?;
+        match account.did {
+            Some(did) => context.with_did(did),
+            None => Ok(context),
+        }
     }
 
     fn execute(&self, request: ScopedRequest<'_>) -> Result<BackendResponse, ApiFailure> {
@@ -279,7 +367,9 @@ impl<S: PrivilegedHumanServices> HumanApiComponents for PrivilegedHumanComponent
         if scope.tenant() != &context.tenant {
             return Err(ApiFailure::forbidden());
         }
-        let session = if grant.refresh {
+        let session = if grant.bearer {
+            grant.session.clone()
+        } else if grant.refresh {
             let csrf = grant
                 .csrf_token
                 .as_deref()
@@ -348,6 +438,14 @@ fn mint_authorization() -> Result<String, ApiFailure> {
     let encoded = URL_SAFE_NO_PAD.encode(entropy);
     entropy.zeroize();
     Ok(encoded)
+}
+
+fn map_identity_error(error: &IdentityDispatchError) -> ApiFailure {
+    match error {
+        IdentityDispatchError::ProviderRefused => ApiFailure::unauthenticated(),
+        IdentityDispatchError::InvalidInput => ApiFailure::invalid_request(None),
+        _ => ApiFailure::unavailable(),
+    }
 }
 
 pub(super) fn map_auth_error(error: &AuthError) -> ApiFailure {

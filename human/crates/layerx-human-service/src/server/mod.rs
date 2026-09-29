@@ -31,8 +31,9 @@ use rustls::{ServerConfig, ServerConnection, StreamOwned};
 use zeroize::Zeroize;
 
 pub use backend::{
-    default_component_limits, ApiFailure, BackendResponse, ComponentState, HumanApiComponents,
-    Readiness, ScopedRequest, SessionCredentials, UnixComponents,
+    default_component_limits, ApiFailure, BackendResponse, BearerCredentials, ComponentState,
+    HumanApiComponents, Readiness, RequestContext, ScopedRequest, SessionCredentials,
+    UnixComponents,
 };
 pub use component::{
     BoundHumanComponentServer, ComponentMaintenance, ComponentServerConfig, ComponentServerError,
@@ -41,6 +42,9 @@ pub use component::{
 pub(crate) use executor::poll_once_ready;
 pub use http::{HttpConfig, Router};
 pub use identity::IdentityProjector;
+pub use identity_dispatch::{
+    IdentityDispatchError, IdentityProviderConfig, RemoteIdentityProvider,
+};
 pub use identity_services::{IdentityServices, ProvisionedAccount, ProvisionedAccounts};
 pub use limits::PrincipalLimits;
 pub use privileged::{

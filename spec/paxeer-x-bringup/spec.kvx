@@ -474,7 +474,7 @@ reqs       = ["10.1"]
 
 [task.3.2]
 title      = "Admit the wallet's bearer assertion on the wallet-facing operations of the human service"
-status     = "pending"
+status     = "done"
 wave       = 3
 requires   = ["3.1"]
 do_1       = "In layerx-human-service, admit an Authorization bearer on intent plan, intent submit, journey get and the account reads from an origin in the listed set by calling operation 4 through the identity socket, resolving the principal and did, and keeping the passkey cookie path exactly as it is."
