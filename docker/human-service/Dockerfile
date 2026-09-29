@@ -1,6 +1,7 @@
 FROM rust:1.91.1-bookworm@sha256:c1e5f19e773b7878c3f7a805dd00a495e747acbdc76fb2337a4ebf0418896b33 AS build
 WORKDIR /src
-ENV CARGO_BUILD_JOBS=4 MAKEFLAGS=-j4
+ARG CARGO_BUILD_JOBS=4
+ENV CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS} MAKEFLAGS=-j${CARGO_BUILD_JOBS}
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential libssl-dev pkg-config \
     && rm -rf /var/lib/apt/lists/*
 COPY . .
@@ -13,7 +14,8 @@ RUN cargo build --locked --release --manifest-path human/Cargo.toml -p layerx-hu
 FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libssl3 curl python3 python3-cryptography util-linux \
     && rm -rf /var/lib/apt/lists/* \
-    && groupadd -g 4020 layerx && useradd -M -u 4020 -g 4020 -s /usr/sbin/nologin layerx
+    && groupadd -g 4020 layerx && useradd -M -u 4020 -g 4020 -s /usr/sbin/nologin layerx \
+    && install -d -m 0750 -o 4020 -g 4020 /run/layerx/human
 COPY --from=build /src/platform/target/release/layerx-runtime-clock /usr/local/bin/layerx-runtime-clock
 COPY --from=build /src/human/target/release/layerx-human-service /usr/local/bin/layerx-human-service
 COPY --from=build /src/human/target/release/layerx-human-components /usr/local/bin/layerx-human-components
@@ -26,7 +28,7 @@ COPY --from=build /src/human/target/release/layerx-human-security-provider /usr/
 COPY --from=build /src/human/target/release/layerx-human-movement-provider /usr/local/bin/layerx-human-movement-provider
 COPY --from=build /src/cmd/layerxctl/target/release/layerxctl /usr/local/bin/layerxctl
 COPY platform/hosted/human/provision.py platform/hosted/human/owner_native.py platform/hosted/human/owner_kms.py platform/hosted/human/onboarding_socket.py platform/hosted/human/onboarding_bootstrap.py platform/hosted/human/onboarding_material.py platform/hosted/human/material.py platform/hosted/human/recipient_binding.py /usr/local/lib/layerx-human/
-COPY --chmod=0555 platform/hosted/human/entrypoint.sh /usr/local/bin/human-entrypoint
+COPY --chmod=0555 docker/human-service/entrypoint.sh /usr/local/bin/human-entrypoint
 COPY platform/hosted/human/recipient_check.py /usr/local/lib/layerx-human/recipient_check.py
 USER 4020:4020
 ENTRYPOINT ["/usr/local/bin/human-entrypoint", "service"]

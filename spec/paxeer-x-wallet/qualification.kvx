@@ -1414,3 +1414,11 @@ symbol = "clippy::too_many_lines"
 observed = "rust-platform-clippy fails only on three too_many_lines findings in main.rs at lines 1852 (169/100), 3376 (110/100) and 3797 (123/100); blame puts all three function heads on non-wallet gateway commits, and the earlier http.rs findings of observation 5.5.6 are gone."
 assumption = "Pre-existing, left for the gateway's owning feature."
 severity = "medium"
+
+[observation.6.3.1]
+task = "6.3"
+file = "cmd/layerxctl/Cargo.lock"
+symbol = "rustls"
+observed = "cargo build --locked for cmd/layerxctl refused the lock inside the image build because the workspace pins rustls at =0.23.45 while the committed lock still resolved 0.23.43; the lock was stale before this task."
+assumption = "Refreshing the lock with cargo update -w (only rustls moved) is the smallest change that lets the image build; no other manifest changed."
+severity = "note"

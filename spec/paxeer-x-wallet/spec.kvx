@@ -1442,13 +1442,18 @@ reqs = ["12.2"]
 
 [task.6.3]
 title = "Build the human service image from docker/human-service at the repository root"
-status = "pending"
+status = "done"
+revision = "db0ced778bbcfcc6878652adf89672488eaa9efc"
+command = "timeout 90m docker build --build-arg CARGO_BUILD_JOBS=8 -f docker/human-service/Dockerfile -t layerx-human-service:verify ."
+exit_code = 0
+log_path = ".logs/verify-6.3.log, .logs/verify-6.3-2.log"
+evidence = "First run exit code 1: the layerxctl build step refused the stale cmd/layerxctl/Cargo.lock under --locked (rustls pinned at =0.23.45 since the workspace bump, lock still at 0.23.43); one repair refreshed that lock with cargo update -w (only rustls moved); second run exit code 0 with the image tagged layerx-human-service:verify, user 4020:4020, entrypoint human-entrypoint service."
 wave = 6
 requires = ["6.2"]
 do_1 = "Move the human image definition from platform/hosted/human to docker/human-service: the Dockerfile with the repository root as its build context, its dockerignore beside it, and the entrypoint; keep every binary and helper the beta cluster consumes, create the service's runtime directory owned by the service user so the entrypoint starts without a mounted volume, update platform/hosted/tests/beta-images.sh and delete the old files."
-verify_cmd = "timeout 90m docker build -f docker/human-service/Dockerfile -t layerx-human-service:verify ."
+verify_cmd = "timeout 90m docker build --build-arg CARGO_BUILD_JOBS=8 -f docker/human-service/Dockerfile -t layerx-human-service:verify ."
 symbols = ["human-entrypoint"]
-touches = ["docker/human-service/Dockerfile","docker/human-service/Dockerfile.dockerignore","docker/human-service/entrypoint.sh","platform/hosted/human/Dockerfile","platform/hosted/human/Dockerfile.dockerignore","platform/hosted/human/entrypoint.sh","platform/hosted/tests/beta-images.sh"]
+touches = ["docker/human-service/Dockerfile","docker/human-service/Dockerfile.dockerignore","docker/human-service/entrypoint.sh","platform/hosted/human/Dockerfile","platform/hosted/human/Dockerfile.dockerignore","platform/hosted/human/entrypoint.sh","platform/hosted/tests/beta-images.sh","cmd/layerxctl/Cargo.lock"]
 reqs = ["12.2"]
 
 [task.6.4]
