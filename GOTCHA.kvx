@@ -851,3 +851,15 @@ area    = "consensus"
 symptom = "A unit test that expects the lag self-remediation to restart on a constant or growing distance never sees the restart when it scripts a single check."
 cause   = "The first check after the consensus handoff has no previous distance to compare against, so it only records the distance; the earliest restart is on the second check."
 do      = "Script at least two checks for a restart-expected case, and judge a node's lag by the distance to the highest peer between two checks, never by whether its own height advanced."
+
+[gotcha.139]
+area    = "ops-shell"
+symptom = "A tar stream built with the same exclude list as an rsync copy still carries the snapshots directory."
+cause   = "rsync reads --exclude=snapshots/ as a directory match, while tar matches the pattern against path components and a trailing slash never matches."
+do      = "Write shared exclude lists without a trailing slash; --exclude=snapshots excludes the directory under both tools."
+
+[gotcha.140]
+area    = "test"
+symptom = "Every case of a probe fixture test fails on its no-destination check although the output names no fixture host."
+cause   = "The check greps for (up|down|hang)- followed by a letter, and the node config key restart-cooldown-seconds matches it through cooldown-s."
+do      = "Anchor the fixture-host pattern with a word boundary, \\b(up|down|hang)-, and keep fixture host prefixes out of real key names."
