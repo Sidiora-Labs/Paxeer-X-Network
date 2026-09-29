@@ -28,7 +28,7 @@ services:
       service: backend
     build:
       context: ..
-      dockerfile: ./docker/Dockerfile
+      dockerfile: ../../docker/explorer-backend/Dockerfile
       args:
         API_V1_READ_METHODS_DISABLED: "false"
         DISABLE_WEBAPP: "false"

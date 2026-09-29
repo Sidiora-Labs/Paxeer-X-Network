@@ -130,7 +130,7 @@ services:
     image: "pax-chain/x-websearch"
     build:
       context: ..
-      dockerfile: interop/deploy/x-websearch/Dockerfile
+      dockerfile: docker/x-websearch/Dockerfile
     user: "${USERID}:${GROUPID}"
     command: ["--config", "/etc/x-websearch/config.json"]
     ports:

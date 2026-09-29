@@ -13,11 +13,11 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 DEPLOY_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/../../../.." && pwd)
-IMAGE_DOCKERFILE="$DEPLOY_DIR/Dockerfile"
+IMAGE_DOCKERFILE="$REPO_ROOT/docker/x-websearch/Dockerfile"
 UNIT="$DEPLOY_DIR/x-websearch.service"
 EXAMPLE="$DEPLOY_DIR/config.example.json"
 COMPOSE="$REPO_ROOT/docker/docker-compose.yml"
-NODE_DOCKERFILE="$REPO_ROOT/Dockerfile"
+NODE_DOCKERFILE="$REPO_ROOT/docker/layerx/Dockerfile"
 VALID_FIXTURE="$REPO_ROOT/interop/crates/x-websearch/tests/fixtures/config/valid.json"
 
 RUST_BASE='rust:1.91.1-bookworm@sha256:c1e5f19e773b7878c3f7a805dd00a495e747acbdc76fb2337a4ebf0418896b33'
@@ -164,7 +164,7 @@ for line in \
     '    image: "pax-chain/x-websearch"' \
     '    build:' \
     '      context: ..' \
-    '      dockerfile: interop/deploy/x-websearch/Dockerfile' \
+    '      dockerfile: docker/x-websearch/Dockerfile' \
     "    user: \"\${USERID}:\${GROUPID}\"" \
     '    command: ["--config", "/etc/x-websearch/config.json"]' \
     '      - "8480:8480"' \
@@ -182,7 +182,7 @@ for index in 0 1 2; do
     has_line "$COMPOSE_ENTRY" "      - ${KEY_VARIABLES[$index]}=/run/x-websearch/keys/${KEY_NAMES[$index]}.key" "compose key-file environment"
 done
 lacks_match "$COMPOSE_ENTRY" 'privileged|network_mode|pid:|cap_add' "compose x-websearch service"
-[ -f "$REPO_ROOT/docker/../interop/deploy/x-websearch/Dockerfile" ] \
+[ -f "$REPO_ROOT/docker/../docker/x-websearch/Dockerfile" ] \
     || fail "compose: the build context and Dockerfile path do not resolve from docker/"
 pass "compose: x-websearch service beside node0 to node3, built from the sidecar Dockerfile"
 

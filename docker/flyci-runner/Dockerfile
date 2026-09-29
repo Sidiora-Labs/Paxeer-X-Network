@@ -93,6 +93,6 @@ RUN curl --fail --silent --show-error --location --output /tmp/rustup-init \
     && su --login runner -c '/tmp/rustup-init -y --no-modify-path --profile minimal --default-toolchain stable --target wasm32-unknown-unknown' \
     && rm -f /tmp/rustup-init /tmp/rustup-init.sha256
 
-COPY --chmod=0755 entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY --chmod=0755 tools/flyci/runner/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

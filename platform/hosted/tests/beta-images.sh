@@ -23,9 +23,9 @@ image_source() {
         layerx-agent-boundary) printf 'ghcr.io/sidiora-labs/layerx-agent-boundary:0.1.0 docker/platform-agent-boundary/Dockerfile' ;;
         layerx-identity) printf 'ghcr.io/sidiora-labs/layerx-identity:0.1.0 docker/platform-identity/Dockerfile' ;;
         layerx-paxeer-boundary) printf 'ghcr.io/sidiora-labs/layerx-paxeer-boundary:0.1.0 docker/paxeer/Dockerfile' ;;
-        layerx-mirror) printf 'ghcr.io/sidiora-labs/layerx-mirror:0.1.0 interop/deploy/mirror/Dockerfile' ;;
+        layerx-mirror) printf 'ghcr.io/sidiora-labs/layerx-mirror:0.1.0 docker/interop-mirror/Dockerfile' ;;
         layerx-relay-archive) printf 'ghcr.io/sidiora-labs/layerx-relay-archive:0.1.0 docker/relay-archive/Dockerfile' ;;
-        layerx-interop-gateway) printf 'ghcr.io/sidiora-labs/layerx-interop-gateway:0.1.0 interop/deploy/gateway/Dockerfile' ;;
+        layerx-interop-gateway) printf 'ghcr.io/sidiora-labs/layerx-interop-gateway:0.1.0 docker/interop-gateway/Dockerfile' ;;
         layerx-reference-ramp) printf 'ghcr.io/sidiora-labs/layerx-reference-ramp:0.1.0 docker/ramps/Dockerfile' ;;
         paxd-node) printf 'ghcr.io/sidiora-labs/paxd-node:0.1.0 docker/paxeer/Dockerfile.paxd-node' ;;
         paxd) printf 'ghcr.io/sidiora-labs/paxd:0.1.0 docker/paxeer/Dockerfile.paxd' ;;

@@ -1483,3 +1483,10 @@ symbol = "ARG PAXD_IMAGE=ghcr.io/sidiora-labs/paxd-node:0.1.0"
 observed = "docker buildx imagetools inspect returns not found for paxd-node:0.1.0, paxd:0.1.0, layerx-node:0.1.0 and layerx-gateway:0.1.0 under ghcr.io/sidiora-labs with this host logged in to ghcr.io, so no beta image named by platform/hosted/tests/beta-images.sh is published and the paxd file cannot be linted without a local paxd-node build passed as PAXD_IMAGE."
 assumption = "Pre-existing publication gap outside this task; the file is unchanged by the move and the check is left strict; the check passes once paxd-node is published or built locally under that name."
 severity = "medium"
+
+[gate.6.12.verify]
+revision = "732d95082038f6143eb5352461337e2d35d868b9"
+command = "timeout 20m tools/containers/check.sh"
+exit_code = 1
+log_path = ".logs/verify-6.12-2.log"
+observed = "The layout and reference checks pass and thirty-six of thirty-seven Dockerfiles pass docker build --check; the first run (.logs/verify-6.12.log) also failed on FromAsCasing in the two explorer service images and LegacyKeyValueFormat in the explorer frontend image, repaired within one cycle by normalising the syntax without changing the images, and the only remaining failure is docker/paxeer/Dockerfile.paxd on the unpublished base image already recorded as observation.6.11.1."

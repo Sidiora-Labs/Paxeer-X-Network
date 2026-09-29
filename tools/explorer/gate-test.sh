@@ -34,7 +34,7 @@ readonly KILLED_STATUS=137
 script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)
 repo_root=$(CDPATH='' cd -- "$script_dir/../.." && pwd -P)
 runner=$repo_root/explorer/deploy/tools/mix-in-builder.sh
-dockerfile=$repo_root/explorer/deploy/tools/Dockerfile.elixir-builder
+dockerfile=$repo_root/docker/explorer-elixir-builder/Dockerfile
 backend_dir=$repo_root/explorer/backend
 frontend_dir=$repo_root/explorer/frontend
 log_dir=${EXPLORER_GATE_LOG_DIR:-$repo_root/build/explorer-gates}

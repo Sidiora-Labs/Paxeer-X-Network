@@ -226,11 +226,11 @@ export DOCKER_PLATFORM
 # Build docker image for detected platform
 build-docker-node:
 	@echo "Building for $(DOCKER_PLATFORM)..."
-	@cd docker && docker build --tag pax-chain/localnode localnode --platform $(DOCKER_PLATFORM)
+	@docker build -f docker/localnode/Dockerfile --tag pax-chain/localnode . --platform $(DOCKER_PLATFORM)
 .PHONY: build-docker-node
 
 build-rpc-node:
-	@cd docker && docker build --tag pax-chain/rpcnode rpcnode --platform linux/x86_64
+	@docker build -f docker/rpcnode/Dockerfile --tag pax-chain/rpcnode . --platform linux/x86_64
 .PHONY: build-rpc-node
 
 # Integration-test CI: verify images loaded from prepare-cluster artifacts.

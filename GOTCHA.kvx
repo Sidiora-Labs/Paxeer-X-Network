@@ -581,3 +581,15 @@ area    = "containers"
 symptom = "docker build --check fails on a Dockerfile whose FROM is an ARG defaulting to an in-repo image, with not found from the registry."
 cause   = "The check resolves base image metadata, and none of the ghcr.io/sidiora-labs beta images named in the repository are published."
 do      = "Build or pull the base image under that name before linting, or pass the build argument the real pipeline passes; do not drop the file from the check."
+
+[gotcha.94]
+area    = "containers"
+symptom = "docker build --check exits non-zero on Dockerfiles that build fine, reporting FromAsCasing or LegacyKeyValueFormat."
+cause   = "The check treats every lint warning as a failure, and the Blockscout-lineage Dockerfiles use lowercase as after FROM and the ENV key value form."
+do      = "Write FROM ... AS and ENV key=value when a Dockerfile joins a linted directory; neither change alters the image."
+
+[gotcha.95]
+area    = "containers"
+symptom = "The same Dockerfile path is right in one referrer and wrong in the next after a move."
+cause   = "Compose resolves dockerfile relative to the build context, docker/build-push-action resolves file relative to the checkout, flyctl resolves build.dockerfile relative to the fly.toml directory, and the CLI resolves --file relative to the working directory."
+do      = "Check which base each referrer uses before rewriting the path: context-relative for compose, repository-relative for the workflows and the CLI, and remember the flyctl rule from gotcha.34."

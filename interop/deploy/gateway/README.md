@@ -44,7 +44,7 @@ authenticated principal and both verified mandate references.
 
 ## Image, configuration and cluster bring-up
 
-`Dockerfile` builds the `layerx-interop-gateway` binary from the tracked
+`docker/interop-gateway/Dockerfile` at the repository root builds the `layerx-interop-gateway` binary from the tracked
 repository sources and runs it as the non-root 4020 user, the same identity the
 hosted gateway image uses. `platform/hosted/interop/deployment.yaml` deploys it
 into the `layerx-testnet` namespace beside the hosted gateway: it mounts its
