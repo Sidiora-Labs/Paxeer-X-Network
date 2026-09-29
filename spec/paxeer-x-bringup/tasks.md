@@ -7,7 +7,7 @@
 ## Wave 0 - Edge and docs
 
 - [ ] 0. Front every public name, issue the internal CA, fix the docs and deliver the probe
-  - [ ] 0.1 Deliver the operator host-map contract and the bring-up live probe
+  - [ ] 0.1 Deliver the operator host-map contract and the bring-up live probe — **Implemented - qualification pending**
     - Write tools/bringup/check-live.sh after tools/wallet/check-live.sh: a usage block, one function per subcommand of [design.probe], pass and fail lines with the observed value, CHECK_LIVE_TIMEOUT, exit 0 only when every check passes and 2 on usage; every subcommand of a later task is added by that task.
     - Source BRINGUP_HOSTS_FILE in a load_hosts function that exits 2 naming the first missing role of EDGE_HOST, KERNEL_HOST, PLATFORM_HOST, EXPLORER_HOST, ARCHIVE_HOST, VALIDATOR_HOSTS, RPC_HOSTS and HPX_HOST, and never echoes a value; implement the hosts subcommand as one ssh true per role.
     - Write tools/bringup/check-live.test.sh after tools/wallet/check-live.test.sh proving the usage exit, a passing subcommand and a failing subcommand against local fixtures with no network.
@@ -141,12 +141,12 @@
     - Add the search subcommand: /health ok on every sidecar through https://search.paxeer.network, one paid /search returning 200 after PAYMENT-SIGNATURE settled at the router, and, once the submitters are funded, the XWebFulfilled event for the owner's request.
     - _Requirements: 13.1, 13.2_
   - [ ] 4.3 Run the archive node with min-retain-blocks 0 on the archive host
-    - Install paxd at the live release on the archive host through hpx with HPX_TYPE=fullnode, set min-retain-blocks 0 and the state-sync keep-recent to 0, sync from the earliest reachable snapshot, and firewall the JSON-RPC to the explorer host and the edge.
+    - Install paxd at the live release on the archive host through hpx with HPX_TYPE=fullnode, set min-retain-blocks 0 and the state-sync keep-recent to 0, sync from the earliest reachable snapshot, and keep its public RPC name serving the JSON-RPC over TLS as the other fifteen do.
     - Add the archive-node subcommand: eth_getBlockByNumber for a block below the public nodes' first retained height answers a block and eth_blockNumber is within ten of a public node.
     - _Requirements: 14.1_
-  - [ ] 4.4 Run the explorer fork in production on the explorer host against the archive host and copy the history
-    - Write explorer/deploy/systemd/ units for the backend, frontend and Postgres from the docker/explorer-* images pulled by digest, ETHEREUM_JSONRPC_VARIANT paxeer_x, CHAIN_TYPE paxeer_x, the archive host as primary RPC and a public node as fallback, PAXEER_X_CAPABILITIES_ENABLED true, the database password generated under /etc/layerx/explorer, served at explorer.paxeer.network through the edge.
-    - Run explorer/deploy/tools/copy-blockscout-11-to-10.sh from the legacy database into the production database from the first indexed block and add the explorer subcommand: frontend 200, /api/health, /api/v2/stats and /api/v2/paxeer-x/capabilities 200 through the edge, and the block count from the first indexed block equal to the source's.
+  - [ ] 4.4 Complete the deployed explorer fork: archive RPC, history copy and the probe through paxscan.io
+    - Set the deployed explorer backend's primary JSON-RPC to the archive host's public RPC name with a second public RPC name as fallback in explorer/deploy/railway/backend.railway.json and on the running service through the Railway CLI, keep FIRST_BLOCK, CHAIN_TYPE paxeer_x, ETHEREUM_JSONRPC_VARIANT paxeer_x and PAXEER_X_CAPABILITIES_ENABLED true as deployed, and confirm after the redeploy that the indexer reads a block below the pruned nodes' first retained height.
+    - Run explorer/deploy/tools/copy-blockscout-11-to-10.sh from the copied legacy database into the production database on the same Postgres from block 0, and add the explorer subcommand: https://paxscan.io 200, the backend's /api/health, /api/v2/stats and /api/v2/paxeer-x/capabilities 200, and the block count from the first copied block equal to the source's.
     - _Requirements: 14.2, 14.3_
   - [ ] 4.5 Run webhooks, the dashboard API and the dashboard web at their names on the platform host
     - Write platform/hosted/webhooks/systemd and platform/hosted/dashboard/systemd units from their definitions: webhooks at 9444 dialing the internal event sources, identity, the receipt authority and the agent boundary; dashboard API at 9445 and web at 3000 with the webhooks and gateway Redis, all behind webhooks.paxeer.network, api.developers.paxeer.network and developers.paxeer.network.
