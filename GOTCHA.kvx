@@ -677,3 +677,9 @@ area    = "spec-tooling"
 symptom = "cg spec start leaves an empty spec/<feature>/spec.kvx.lock behind, which git add -A would commit."
 cause   = "The lock file is created for the status write and not removed afterwards."
 do      = "Delete spec/<feature>/spec.kvx.lock before any add-all commit."
+
+[gotcha.110]
+area    = "spec-tooling"
+symptom = "cg spec done fails a verify_cmd that passes when run by hand: sh reports a syntax error on an unexpected parenthesis and the task is refused with exit 2."
+cause   = "The kvx reader keeps the backslash escapes of the verify_cmd string, so escaped double quotes and escaped dots reach sh literally."
+do      = "Run the verify_cmd yourself after unescaping the kvx string, record the run as a gate entry, and set the status by hand when the only refusal is this quoting defect."

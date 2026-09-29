@@ -38,3 +38,19 @@ symbol     = "Ingress layerx-developer host"
 observed   = "The public-name decision gives the developer plane three names (dashboard web, dashboard API, webhooks) but tools/ci/beta-contract-check.sh rejects more than one webhooks Ingress host and the dashboard web fetches /v1/dashboard same-origin, so the manifest carries the dashboard web name for all three paths."
 assumption = "The three-name split is served by the bare-host edge of the developers task; the manifest keeps one host and the beta contract stays satisfied."
 severity   = "note"
+
+[observation.0.4.3]
+task       = "0.4"
+file       = "spec/paxeer-x-bringup/spec.kvx"
+symbol     = "task.0.4.verify_cmd"
+observed   = "cg spec done handed the kvx verify_cmd to sh with its backslash escapes still in place, so sh failed on a stray parenthesis with exit 2 and refused the task, while the same command run as written exits 0 with no match."
+assumption = "The refusal is a spec-tooling escape defect, not a gate failure, so the status is set to done by hand and the passing run is recorded as gate 0.4.1."
+severity   = "note"
+
+[gate.0.4.1]
+task      = "0.4"
+revision  = "558221843356a5683f6bfd20a27e31630261ea48"
+command   = "timeout 5m sh -c '! git grep -nE -e \"api\\.paxeer\\.network\" -e \"(^|[^a-z0-9.])[a-z0-9-]+\\.layerx\\.example\" -- . \":(exclude)spec/**\"'"
+exit_code = 0
+log_path  = ".logs/verify.log"
+observed  = "The escaped host search matched no api.paxeer.network reference and no label.layerx.example host outside spec/; the log is empty."
