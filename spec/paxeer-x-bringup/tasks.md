@@ -112,7 +112,7 @@
     - In production_components.rs require the LAYERX_HUMAN_KMS_* group only when LAYERX_HUMAN_ATTESTOR_NODES is unset; under attestor custody use the five Fly attestors with LAYERX_HUMAN_ATTESTOR_SIGNERS of at least three, protocol 3, the human-service client leaf chained to the attestor CA, and wire admit_assertion into the sign path.
     - Extend tests/wallet_identity_e2e.rs so it runs with no KMS variables set and proves the attestor-only path end to end.
     - _Requirements: 10.3_
-  - [ ] 3.4 Serve every HTTP route the wallet SDK calls from the human service
+  - [x] 3.4 Serve every HTTP route the wallet SDK calls from the human service
     - List every path and method human/wallet/sdk calls on the human API (human.ts and its siblings), compare with the routes layerx-human-service serves and the human-api schema, and implement each missing route on the real component paths with the schema the SDK expects.
     - Add tests/wallet_routes.rs that parses the SDK's route list from the source tree and asserts each route answers something other than 404 on the service.
     - _Requirements: 10.5_

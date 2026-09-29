@@ -500,7 +500,7 @@ reqs       = ["10.3"]
 
 [task.3.4]
 title      = "Serve every HTTP route the wallet SDK calls from the human service"
-status     = "pending"
+status     = "done"
 wave       = 3
 requires   = ["3.2"]
 do_1       = "List every path and method human/wallet/sdk calls on the human API (human.ts and its siblings), compare with the routes layerx-human-service serves and the human-api schema, and implement each missing route on the real component paths with the schema the SDK expects."
