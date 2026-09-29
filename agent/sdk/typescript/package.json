@@ -14,6 +14,10 @@
     ".": {
       "types": "./dist/src/index.d.ts",
       "import": "./dist/src/index.js"
+    },
+    "./browser": {
+      "types": "./dist/src/browser.d.ts",
+      "import": "./dist/src/browser.js"
     }
   },
   "files": [
@@ -33,6 +37,7 @@
     "typescript": "5.9.2"
   },
   "dependencies": {
+    "@noble/ciphers": "2.4.0",
     "@noble/curves": "2.4.0",
     "@noble/hashes": "2.4.0",
     "@scure/bip32": "2.4.0",

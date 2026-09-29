@@ -5,6 +5,7 @@ import { withSentryConfig } from '@sentry/nextjs';
 const appDir = path.dirname(fileURLToPath(import.meta.url));
 const walletSdk = path.resolve(appDir, '../../wallet/sdk/src/index.ts');
 const layerxSdk = path.resolve(appDir, '../../../agent/sdk/typescript/src/index.ts');
+const layerxSdkBrowser = path.resolve(appDir, '../../../agent/sdk/typescript/src/browser.ts');
 const walletSdkDir = path.resolve(appDir, '../../wallet/sdk');
 const layerxSdkDir = path.resolve(appDir, '../../../agent/sdk/typescript');
 
@@ -59,6 +60,7 @@ const nextConfig = {
         config.resolve.alias = {
             ...config.resolve.alias,
             '@paxeer/wallet$': walletSdk,
+            '@sidiora/layerx-sdk/browser$': layerxSdkBrowser,
             '@sidiora/layerx-sdk$': layerxSdk,
         };
         config.module.rules.push({

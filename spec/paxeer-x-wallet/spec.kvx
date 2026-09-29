@@ -1487,11 +1487,12 @@ reqs = ["8.3","8.4"]
 
 [task.6.10]
 title = "Move the wallet, web, gateway and attestor container files under docker/ with the repository root as build context"
-status = "in_progress"
-revision = "bcf3bd09a3eb6362384ba47aabd58a58dceadd01"
-command = "timeout 20m sh -c 'tools/containers/check.sh wallet-pwa web wallet-gateway wallet-attestor && docker build -f docker/wallet-pwa/Dockerfile -t paxeer-wallet-pwa:verify .'"
-exit_code = 1
-log_path = ".logs/verify-6.10-3.log"
+status = "done"
+revision = "a24f8294275d3e65cdaafaa1f2f6ba10ebe943ad"
+command = "timeout 30m sh -c 'tools/containers/check.sh wallet-pwa web wallet-gateway wallet-attestor && docker build -f docker/wallet-pwa/Dockerfile -t paxeer-wallet-pwa:verify .'"
+exit_code = 0
+log_path = ".logs/verify-6.13-2.log"
+evidence = "Verify exit code 0 at the 6.13 lane: check.sh passes for the four services and docker/wallet-pwa/Dockerfile builds paxeer-wallet-pwa:verify from the repository root once the wallet SDK imports the agent SDK's browser entry (task 6.13); the earlier runs are recorded under gate.6.10.verify."
 wave = 6
 requires = ["4.10"]
 do_1 = "Move human/apps/wallet/Dockerfile to docker/wallet-pwa/Dockerfile and rewrite it for the repository root as build context: copy human/wallet and agent/sdk/typescript, install the wallet workspace and build the SDK with pnpm --filter ./sdk... run build, then install and build the app so the link dependency on the SDK resolves; keep the runner stage with the standalone output, nginx on 3001 and deployment/start-wallet.sh; declare ARG and ENV for every NEXT_PUBLIC_ name read by src/pwa/config.ts, src/wallet/config.ts and src/account/config.ts so build-time variables reach next build; set outputFileTracingRoot to the repository root so the standalone output carries the linked SDK."
@@ -1533,4 +1534,23 @@ do_2 = "Update every referrer: the explorer-images, paxeer-docker-publish, paxee
 verify_cmd = "timeout 20m tools/containers/check.sh"
 symbols = ["check.sh","mix-in-builder.sh","packaging-check.sh"]
 touches = ["docker/layerx/Dockerfile","docker/layerx/Dockerfile.dockerignore","docker/interop-gateway/Dockerfile","docker/interop-mirror/Dockerfile","docker/x-websearch/Dockerfile","docker/flyci-controller/Dockerfile","docker/flyci-runner/Dockerfile","docker/explorer-frontend/Dockerfile","docker/explorer-frontend/Dockerfile.dockerignore","docker/explorer-sig-provider/Dockerfile","docker/explorer-smart-contract-verifier/Dockerfile","docker/explorer-elixir-builder/Dockerfile","docker/explorer-backend/Dockerfile","docker/explorer-backend/oldUI.Dockerfile","docker/localnode/Dockerfile","docker/rpcnode/Dockerfile","docker/docker-compose.yml","chain.mk",".github/workflows/explorer-images.yml",".github/workflows/paxeer-docker-publish.yml",".github/workflows/paxeer-docker-build.yml",".github/workflows/paxeer-integration-test.yml",".github/labeler.yml","explorer/deploy/tools/mix-in-builder.sh","tools/explorer/gate-lint.sh","tools/explorer/gate-test.sh","interop/deploy/x-websearch/tests/packaging-check.sh","tools/flyci/controller/fly.toml","tools/flyci/runner/fly.toml","docker/interop-gateway/Dockerfile.dockerignore","docker/interop-mirror/Dockerfile.dockerignore","docker/x-websearch/Dockerfile.dockerignore","docker/flyci-controller/Dockerfile.dockerignore","docker/flyci-runner/Dockerfile.dockerignore","docker/explorer-sig-provider/Dockerfile.dockerignore","docker/explorer-smart-contract-verifier/Dockerfile.dockerignore","docker/explorer-elixir-builder/Dockerfile.dockerignore","docker/localnode/Dockerfile.dockerignore","docker/rpcnode/Dockerfile.dockerignore",".github/workflows/paxeer-buf-check.yml",".github/workflows/paxeer-cross-arch-build.yml",".github/workflows/paxeer-db-tests.yml",".github/workflows/paxeer-ecr.yml",".github/workflows/paxeer-enforce-labels.yml",".github/workflows/paxeer-eth-blocktests.yml",".github/workflows/paxeer-forge-test.yml",".github/workflows/paxeer-go-test.yml",".github/workflows/paxeer-golangci.yml",".github/workflows/paxeer-libwasmvm.yml",".github/workflows/paxeer-mock-balances-build.yml",".github/workflows/paxeer-pr-to-slack-codex.yml",".github/workflows/paxeer-rocksdb-unit-tests.yml",".github/workflows/paxeer-uci-backport.yml",".github/workflows/paxeer-uci-go-lint.yml","explorer/backend/docker-compose/docker-compose.yml","explorer/backend/docker-compose/no-services.yml","explorer/services/smart-contract-verifier/docker-compose.yml","explorer/frontend/tools/scripts/build.docker.sh","platform/hosted/tests/beta-images.sh","explorer/README.md","interop/deploy/gateway/README.md","docs/MONOREPO.md"]
+reqs = ["12.2"]
+
+[task.6.13]
+title = "Give the wallet SDK a browser-safe dependency on the agent SDK so the wallet PWA image builds"
+status = "done"
+revision = "a24f8294275d3e65cdaafaa1f2f6ba10ebe943ad"
+command = "timeout 30m sh -c 'tools/containers/check.sh wallet-pwa web wallet-gateway wallet-attestor && docker build -f docker/wallet-pwa/Dockerfile -t paxeer-wallet-pwa:verify .'"
+exit_code = 0
+log_path = ".logs/verify-6.13-2.log"
+evidence = "First run exit code 1 (.logs/verify-6.13.log): check.sh passed for the four services and webpack compiled the client bundle without a node: scheme error, then the Next route type check refused src/app/api/token-metadata/route.ts for exporting parseTokenMetadata beside GET; one repair made the parser module-local; second run exit code 0 with the image paxeer-wallet-pwa:verify built, 312MB, exposing 3001."
+wave = 6
+requires = ["6.10"]
+do_1 = "Add agent/sdk/typescript/src/browser.ts as the browser entry of @sidiora/layerx-sdk: it re-exports only the modules whose import graph is free of node: built-ins (the generated client, mirror and receipt types, mirror, production, stream, verifier, native program call and capability codecs, account derivation, the exchange, gas station, bridge, launchpad, perps, spot and xweb api modules) and package.json publishes it as the ./browser export beside the root entry, built by the same tsc run into dist/src/browser.js."
+do_2 = "Make xweb-api.ts node-free without changing its exported API or wire format: the ECIES envelope moves from node:crypto onto @noble/curves secp256k1 for the ephemeral key, point decompression and the shared x coordinate, @noble/hashes hkdf and randomBytes, and @noble/ciphers aes-256-gcm with the same key, nonce, aad and 16-byte tag layout; hex, unhex and latin1 decoding no longer use Buffer; @noble/ciphers 2.4.0 joins the dependencies and the lock file."
+do_3 = "Point every human/wallet/sdk/src/modules import of the agent SDK at @sidiora/layerx-sdk/browser and resolve that specifier in the wallet app the same way the root entry is resolved: the webpack alias in next.config.mjs, the tsconfig paths entry and the vitest alias each map it to agent/sdk/typescript/src/browser.ts; the webpack build, extension alias and SDK-scoped module lookup from 6.10 stay."
+do_4 = "Keep parseTokenMetadata in src/app/api/token-metadata/route.ts module-local so the route module exports only the route fields the Next type check accepts; nothing outside the module imported it."
+verify_cmd = "timeout 30m sh -c 'tools/containers/check.sh wallet-pwa web wallet-gateway wallet-attestor && docker build -f docker/wallet-pwa/Dockerfile -t paxeer-wallet-pwa:verify .'"
+symbols = ["browser.ts","sealXWebEnvelope","xwebAttestorAddress","decompress","hex","unhex","latin1"]
+touches = ["agent/sdk/typescript/src/browser.ts","agent/sdk/typescript/src/xweb-api.ts","agent/sdk/typescript/package.json","agent/sdk/typescript/package-lock.json","human/wallet/sdk/src/modules/index.ts","human/wallet/sdk/src/modules/bridge.ts","human/wallet/sdk/src/modules/exchange.ts","human/wallet/sdk/src/modules/fee-choice.ts","human/wallet/sdk/src/modules/fee-token.ts","human/wallet/sdk/src/modules/gas-station.ts","human/wallet/sdk/src/modules/launchpad.ts","human/wallet/sdk/src/modules/web-data.ts","human/apps/wallet/next.config.mjs","human/apps/wallet/tsconfig.json","human/apps/wallet/vitest.config.ts","human/apps/wallet/src/app/api/token-metadata/route.ts"]
 reqs = ["12.2"]

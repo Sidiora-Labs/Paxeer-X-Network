@@ -1468,6 +1468,7 @@ symbol = "export from @sidiora/layerx-sdk"
 observed = "The wallet PWA client bundle imports the whole agent SDK index, whose node-mirror.ts, program-lifecycle.ts and agent-http.ts import node:child_process, node:crypto, node:https, node:http and node:path, so next build cannot finish and no image of the app can be produced from any Dockerfile."
 assumption = "Pre-existing in the app and SDK sources; needs a browser-safe SDK entry, left for the wallet SDK owner; the container move is complete and the gate is implemented, not qualified."
 severity = "high"
+resolved_by = "6.13"
 
 [gate.6.11.verify]
 revision = "c4eab3d00409b6643e93ec4819465dd403e72fb3"
@@ -1490,3 +1491,10 @@ command = "timeout 20m tools/containers/check.sh"
 exit_code = 1
 log_path = ".logs/verify-6.12-2.log"
 observed = "The layout and reference checks pass and thirty-six of thirty-seven Dockerfiles pass docker build --check; the first run (.logs/verify-6.12.log) also failed on FromAsCasing in the two explorer service images and LegacyKeyValueFormat in the explorer frontend image, repaired within one cycle by normalising the syntax without changing the images, and the only remaining failure is docker/paxeer/Dockerfile.paxd on the unpublished base image already recorded as observation.6.11.1."
+
+[gate.6.13.verify]
+revision = "a24f8294275d3e65cdaafaa1f2f6ba10ebe943ad"
+command = "timeout 30m sh -c 'tools/containers/check.sh wallet-pwa web wallet-gateway wallet-attestor && docker build -f docker/wallet-pwa/Dockerfile -t paxeer-wallet-pwa:verify .'"
+exit_code = 0
+log_path = ".logs/verify-6.13-2.log"
+observed = "check.sh passes for wallet-pwa, web, wallet-gateway and wallet-attestor and the wallet-pwa image builds, 312MB, port 3001; the first run (.logs/verify-6.13.log) compiled the client bundle without the node: scheme errors of gate.6.10.verify and stopped in the Next route type check on src/app/api/token-metadata/route.ts exporting parseTokenMetadata, a pre-existing defect the earlier webpack failure had hidden, repaired in one cycle by making the parser module-local."

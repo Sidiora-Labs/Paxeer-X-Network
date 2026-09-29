@@ -6,7 +6,7 @@ import {
   type PrecompileCall,
   type PrecompileEventSpec,
   type PrecompileLog,
-} from '@sidiora/layerx-sdk';
+} from '@sidiora/layerx-sdk/browser';
 
 export type ModuleProvider = Eip1193Requester;
 export type ModuleTransaction = PrecompileCall;

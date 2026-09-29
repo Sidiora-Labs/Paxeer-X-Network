@@ -9,8 +9,12 @@
  * envelope-vectors.json pin both.
  */
 
-import { ECDH, createCipheriv, createECDH, hkdfSync, randomBytes } from "node:crypto";
+import { gcm } from "@noble/ciphers/aes.js";
+import { secp256k1 } from "@noble/curves/secp256k1.js";
+import { hkdf } from "@noble/hashes/hkdf.js";
+import { sha256 } from "@noble/hashes/sha2.js";
 import { keccak_256 } from "@noble/hashes/sha3.js";
+import { randomBytes } from "@noble/hashes/utils.js";
 
 import { abiSelector, type PrecompileCall } from "./exchange.js";
 
@@ -145,14 +149,31 @@ const SECP256K1_ORDER = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e
 const WORD = 32;
 
 function hex(bytes: Uint8Array): string {
-  return `0x${Buffer.from(bytes).toString("hex")}`;
+  let out = "0x";
+  for (const byte of bytes) {
+    out += byte.toString(16).padStart(2, "0");
+  }
+  return out;
 }
 
 function unhex(value: string, label: string, code: XWebApiErrorCode = "invalid_api"): Uint8Array {
   if (!HEX.test(value)) {
     throw new XWebApiError(code, `${label} is not 0x-prefixed hex`);
   }
-  return new Uint8Array(Buffer.from(value.slice(2), "hex"));
+  const body = value.slice(2);
+  const out = new Uint8Array(body.length / 2);
+  for (let index = 0; index < out.length; index += 1) {
+    out[index] = Number.parseInt(body.slice(index * 2, index * 2 + 2), 16);
+  }
+  return out;
+}
+
+function latin1(bytes: Uint8Array): string {
+  let out = "";
+  for (const byte of bytes) {
+    out += String.fromCharCode(byte);
+  }
+  return out;
 }
 
 function concat(parts: readonly Uint8Array[]): Uint8Array {
@@ -337,7 +358,7 @@ function decompress(publicKey: Uint8Array, label: string): Uint8Array {
     throw new XWebApiError("invalid_envelope", `${label} is not a 33-byte compressed secp256k1 key`);
   }
   try {
-    return new Uint8Array(ECDH.convertKey(Buffer.from(publicKey), "secp256k1", undefined, undefined, "uncompressed") as Buffer);
+    return secp256k1.Point.fromBytes(publicKey).toBytes(false);
   } catch {
     throw new XWebApiError("invalid_envelope", `${label} is not a point on secp256k1`);
   }
@@ -489,7 +510,7 @@ class Reader {
     for (let index = 0; index < count; index += 1) {
       const name = this.field(`${what} ${index} name`);
       const value = this.field(`${what} ${index} value`);
-      headers.push({ name: Buffer.from(name).toString("latin1"), value: Buffer.from(value).toString("latin1") });
+      headers.push({ name: latin1(name), value: latin1(value) });
     }
     return headers;
   }
@@ -517,7 +538,7 @@ export function decodeXWebApiPayload(raw: Uint8Array): XWebApiPayload {
   const method = methodName(head[1]!);
   const level = head[2]!;
   const attestor = hex(head.subarray(3, 23));
-  const url = Buffer.from(reader.field("url")).toString("latin1");
+  const url = latin1(reader.field("url"));
   const headers = reader.headers("header");
   const body = new Uint8Array(reader.field("body"));
   const pointers: string[] = [];
@@ -580,11 +601,11 @@ export function sealXWebEnvelope(
   }
   const recipient = typeof publicKey === "string" ? unhex(publicKey, "public key", "invalid_envelope") : publicKey;
   const attestor = unhex(xwebAttestorAddress(recipient), "attestor");
-  const ecdh = createECDH("secp256k1");
+  let ephemeralPrivateKey: Uint8Array;
   let nonce: Uint8Array;
   if (randomness === undefined) {
-    ecdh.generateKeys();
-    nonce = new Uint8Array(randomBytes(XWEB_ENVELOPE_NONCE_LENGTH));
+    ephemeralPrivateKey = secp256k1.utils.randomSecretKey();
+    nonce = randomBytes(XWEB_ENVELOPE_NONCE_LENGTH);
   } else {
     const secret = scalar(randomness.ephemeralPrivateKey);
     if (randomness.ephemeralPrivateKey.length !== 32 || secret === 0n || secret >= SECP256K1_ORDER) {
@@ -593,18 +614,16 @@ export function sealXWebEnvelope(
     if (randomness.nonce.length !== XWEB_ENVELOPE_NONCE_LENGTH) {
       throw new XWebApiError("invalid_envelope", `nonce is ${randomness.nonce.length} bytes, want ${XWEB_ENVELOPE_NONCE_LENGTH}`);
     }
-    ecdh.setPrivateKey(Buffer.from(randomness.ephemeralPrivateKey));
+    ephemeralPrivateKey = randomness.ephemeralPrivateKey;
     nonce = randomness.nonce;
   }
-  const ephemeralKey = new Uint8Array(ecdh.getPublicKey(null, "compressed"));
-  const shared = new Uint8Array(ecdh.computeSecret(Buffer.from(recipient)));
+  const ephemeralKey = secp256k1.getPublicKey(ephemeralPrivateKey, true);
+  const shared = secp256k1.getSharedSecret(ephemeralPrivateKey, recipient, true).subarray(1);
   if (shared.every((byte) => byte === 0)) {
     throw new XWebApiError("invalid_envelope", "shared point is the identity");
   }
-  const key = new Uint8Array(hkdfSync("sha256", shared, ephemeralKey, XWEB_ENVELOPE_INFO, 32));
-  const cipher = createCipheriv("aes-256-gcm", key, nonce, { authTagLength: XWEB_ENVELOPE_TAG_LENGTH });
-  cipher.setAAD(concat([attestor, ascii(origin)]));
-  const ciphertext = concat([cipher.update(plaintext), cipher.final(), cipher.getAuthTag()]);
+  const key = hkdf(sha256, shared, ephemeralKey, ascii(XWEB_ENVELOPE_INFO), 32);
+  const ciphertext = gcm(key, nonce, concat([attestor, ascii(origin)])).encrypt(plaintext);
   key.fill(0);
   shared.fill(0);
   return concat([attestor, ephemeralKey, nonce, ciphertext]);

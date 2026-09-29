@@ -11,7 +11,7 @@ import {
   type LaunchpadSwapOrder,
   type LaunchpadTokenWrite,
   type PrecompileEventSpec,
-} from '@sidiora/layerx-sdk';
+} from '@sidiora/layerx-sdk/browser';
 
 import {
   moduleAddress,

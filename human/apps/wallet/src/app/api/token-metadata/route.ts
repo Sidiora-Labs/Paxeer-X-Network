@@ -54,7 +54,7 @@ function timestamp(input: unknown): number {
   return input
 }
 
-export function parseTokenMetadata(input: unknown): TokenMetadata {
+function parseTokenMetadata(input: unknown): TokenMetadata {
   if (!isRecord(input) || typeof input.poolAddress !== 'string') {
     throw new TypeError('Token metadata is invalid')
   }
