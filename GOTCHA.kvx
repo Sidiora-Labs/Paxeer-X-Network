@@ -611,3 +611,15 @@ area    = "agent-sdk"
 symptom = "A module that must run in the browser uses node:crypto for ECDH, HKDF and AES-GCM and Buffer for hex and latin1."
 cause   = "The xweb api envelope was written against Node primitives although its callers include the wallet SDK's browser bundle."
 do      = "Use @noble/curves secp256k1 getSharedSecret with the compressed output's x coordinate, @noble/hashes hkdf and randomBytes, @noble/ciphers gcm, and plain loops for hex and latin1; the byte layout matches Node's computeSecret, hkdfSync and createCipheriv with a 16-byte tag."
+
+[gotcha.99]
+area    = "spec-tooling"
+symptom = "cg spec new takes whatever follows it as the feature name, flags included, creates spec/<that>/ with a template spec.kvx and three rendered mirrors, switches active_feature in spec/workflow.kvx, re-renders every pointer file and the other features' tasks.md mirrors, and leaves spec/workflow.kvx.lock behind."
+cause   = "The subcommand has no argument validation and its render step is global, not scoped to the new feature."
+do      = "Pass exactly one plain feature name; afterwards delete spec/workflow.kvx.lock and keep the re-rendered pointer files; to undo a wrong name delete the created directory and the lock file and check out the rewritten pointer files and mirrors."
+
+[gotcha.100]
+area    = "spec-tooling"
+symptom = "cg spec lint --help does not print help; it lints the active feature and reports clean."
+cause   = "The lint subcommand treats unknown flags as absent and defaults to the active feature."
+do      = "Use cg spec lint -f <feature>; read the usage from spec/workflow.kvx and the fleet protocol instead of --help."
