@@ -770,7 +770,7 @@ reqs       = ["18.3"]
 
 [task.4.16]
 title      = "Make the node's lag self-remediation restart a node whose gap is not closing, and roll that binary to every full node"
-status     = "pending"
+status     = "implemented"
 wave       = 4
 requires   = []
 do_1       = "In consensus/internal/blocksync/reactor.go change autoRestartIfBehind so a node past blocks-behind-threshold is left alone only while its distance behind the highest peer is shrinking between two checks; a node that advances at chain speed with a constant or growing gap restarts into block sync after the cooldown, a node already in block sync is still skipped, and the log line names the previous and current distance; add the unit test in the blocksync package covering the shrinking, constant and growing gap cases through the real syncController."

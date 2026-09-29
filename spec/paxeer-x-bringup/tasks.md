@@ -194,7 +194,7 @@
     - On each of the RPC_HOSTS install the release that fixes the JSON-RPC double-bind, clear the frozen state where a node stopped advancing, resync the lagging nodes with state sync, and restart their units.
     - Add the rpc-nodes subcommand: each of the sixteen public RPC names answers eth_blockNumber within ten blocks of the highest answer and each unit is active without a restart in the last hour.
     - _Requirements: 18.3_
-  - [ ] 4.16 Make the node's lag self-remediation restart a node whose gap is not closing, and roll that binary to every full node
+  - [ ] 4.16 Make the node's lag self-remediation restart a node whose gap is not closing, and roll that binary to every full node — **Implemented - qualification pending**
     - In consensus/internal/blocksync/reactor.go change autoRestartIfBehind so a node past blocks-behind-threshold is left alone only while its distance behind the highest peer is shrinking between two checks; a node that advances at chain speed with a constant or growing gap restarts into block sync after the cooldown, a node already in block sync is still skipped, and the log line names the previous and current distance; add the unit test in the blocksync package covering the shrinking, constant and growing gap cases through the real syncController.
     - Build paxd from the merged revision, stage it on every RPC_HOSTS destination beside the live binary with its checksum verified, swap and restart one full-node unit at a time waiting for each to return within ten blocks of the head before the next, never touching a validator unit, and record the binary checksum every host now runs.
     - _Requirements: 18.3_

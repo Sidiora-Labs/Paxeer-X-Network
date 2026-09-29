@@ -839,3 +839,15 @@ area    = "human-service exports"
 symptom = "The library built with private_interfaces warnings, then the integration test failed to compile with 'type IdentityDispatchError is private' on the first call into the exported identity client."
 cause   = "Exporting a client whose methods return Result<_, E> while E stays pub(crate) compiles inside the crate but leaves integration tests unable to name the result type."
 do      = "When a crate-private client becomes a public export, make its error type pub and export it alongside in the same change."
+
+[gotcha.137]
+area    = "test"
+symptom = "A blocksync test that tries to make the node's distance to its peer shrink by lowering the peer's height through SetPeerRange evicts the peer instead, and the pool's maximum peer height never goes down."
+cause   = "SetPeerRange treats a base or height below the peer's previous report as a misbehaving peer and removes it; the maximum peer height only drops when the highest peer leaves."
+do      = "Drive a shrinking distance by advancing the node's own height faster than the peer's height; never lower a peer's reported height in a test."
+
+[gotcha.138]
+area    = "consensus"
+symptom = "A unit test that expects the lag self-remediation to restart on a constant or growing distance never sees the restart when it scripts a single check."
+cause   = "The first check after the consensus handoff has no previous distance to compare against, so it only records the distance; the earliest restart is on the second check."
+do      = "Script at least two checks for a restart-expected case, and judge a node's lag by the distance to the highest peer between two checks, never by whether its own height advanced."
