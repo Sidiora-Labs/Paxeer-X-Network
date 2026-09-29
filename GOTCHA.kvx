@@ -839,3 +839,9 @@ area    = "human-service exports"
 symptom = "The library built with private_interfaces warnings, then the integration test failed to compile with 'type IdentityDispatchError is private' on the first call into the exported identity client."
 cause   = "Exporting a client whose methods return Result<_, E> while E stays pub(crate) compiles inside the crate but leaves integration tests unable to name the result type."
 do      = "When a crate-private client becomes a public export, make its error type pub and export it alongside in the same change."
+
+[gotcha.137]
+area    = "spec-tooling"
+symptom = "cg spec done re-runs a passing verify_cmd and then refuses a Rust task with symbol <name> not defined in the graph, where the symbols entry names the integration test target or a fixture function inside it."
+cause   = "The graph checks run against the last completed index, which has not seen a file added by the task, and a test target name is never a symbol at all; under a busy graph the checks are not retried before the refusal."
+do      = "Name only graph-defined library symbols in a task's symbols entry, never a test target or a test-local function; when the refusal is only this, record it, set the status by hand after the genuine pass and say so in the commit line, and do not retry, since each retry runs the verify again."
