@@ -14,3 +14,59 @@
 #   probe runs of the deploy tasks and the wave gates on the merged wave tip.
 #   Keys: revision, command, exit_code, log_path, observed. Never a hostname,
 #   an address, a secret or a person's name.
+
+[observation.1.1.1]
+task = "1.1"
+file = "platform/hosted/node/checkpoint-authority.py"
+symbol = "checkpoint_authority"
+observed = "do_1 and do_2 name this file, but at this revision it only provisions the Ed25519 checkpoint-authority keys and holds no settlement input, address or submission code; the certificate and checkpoint submission the guarantor runs lives in cmd/layerx-guarantor/settlement.py, which already pins the anchor precompile and encodes submitCheckpoint, finalize and statusOf from their signatures."
+assumption = "The file is left as it is; guarantor.sh now asserts those three signatures against the anchor ABI shipped under precompiles/ before it starts, so the submission path is bound to the ABI without a second encoder."
+severity = "note"
+
+[observation.1.1.2]
+task = "1.1"
+file = "platform/hosted/tests/beta-cluster.sh"
+symbol = "paxeer_contracts_deploy"
+observed = "do_2 asks to delete the call to platform/hosted/paxeer/deploy-contracts.sh; no such call exists at this revision, the function only writes deployment.json from the precompile addresses and registers the guarantors, so nothing was deleted and the script stays available for private networks."
+assumption = "The settlement ConfigMap the cluster publishes now carries the chain id, the loopback relay URL and the three precompile addresses instead of the contract and registry pins."
+severity = "note"
+
+[observation.1.1.3]
+task = "1.1"
+file = "docker/platform-node/Dockerfile"
+symbol = "guarantor_submit"
+observed = "Three files outside the touches list changed: the node image and its dockerignore now ship precompiles/layerxanchor/abi.json under /opt/layerx/precompiles because guarantor.sh refuses to start without it, and tests/fixtures/settlement-configuration.txt moved to the five precompile inputs because the gate's sequencer-seed-test.py feeds it through bootstrap.sh --check-settlement."
+assumption = "Each is directly required by a do line or the verify_cmd; no other file outside the list was touched."
+severity = "note"
+
+[observation.1.1.4]
+task = "1.1"
+file = "platform/hosted/node/bootstrap.sh"
+symbol = "sequencer_env"
+observed = "cmd/layerxd at this revision still reads LAYERX_NODE_SETTLEMENT_CONTRACT, LAYERX_NODE_CHECKPOINT_REGISTRY, LAYERX_NODE_PAXEER_RPC_ADDRESS, LAYERX_NODE_PAXEER_RPC_PORT and LAYERX_NODE_PAXEER_CHAIN_ID, and thirteen tests and tools outside the touches list still write that shape into a --settlement-env file."
+assumption = "The bootstrap derives those pins from the precompile inputs (contract and registry both the anchor precompile, address 127.0.0.1, port from the URL) and accepts a given pin only when it equals the derivation, so both shapes resolve to the same nine lines until task 1.2 rebinds the daemon; LAYERX_NODE_SETTLEMENT_ENV survives only as the deferral to such a file and can no longer name a Solidity deployment."
+severity = "assumption"
+
+[observation.1.1.5]
+task = "1.1"
+file = "platform/hosted/node/tests/probe/Cargo.lock"
+symbol = "layerx-node-probe"
+observed = "The first verify run stopped before any test with cargo refusing --locked on the untouched probe lock file (log .logs/verify-cycle0.log, make exit 2); the lock predated the rustls patch version the workspace pins, the class GOTCHA entry 85 records for cmd/layerxctl."
+assumption = "cargo update -w --offline moved only rustls 0.23.43 to 0.23.45 and the refreshed lock is committed with the task because the gate cannot run without it; counted as the first of the two repair cycles."
+severity = "note"
+
+[observation.1.1.6]
+task = "1.1"
+file = "platform/hosted/node/tests/node-test.sh"
+symbol = "precompile_view"
+observed = "The chain's JSON-RPC answers eth_syncing with error -32000 not supported (log .logs/verify-cycle1.log), and the latest block's timestamp sits about four and three quarter hours behind this box's synchronised clock while advancing one second per second, so neither eth_syncing nor block age can tell a node at the tip from one that lags at production rate."
+assumption = "The case asserts what is observable in band: the node is not anvil, answers the expected chain id, its head advances between two reads three seconds apart, and the three precompiles answer their views; whether the archive node is at the chain tip and why the block timestamps are offset from UTC is an owner input; counted as the second repair cycle."
+severity = "assumption"
+
+[observation.1.1.7]
+task = "1.1"
+file = "platform/hosted/node/supervisor.sh"
+symbol = "resolve_binary"
+observed = "The third verify run passed the precompile settlement case (chain id, head advancing, anchor threshold 1, statusOf, depositCount and layerXBindNonce answered through the loopback relay) and then failed in the untouched supervisor at line 245: it requires build/bin/layerx-handover for the sequencer key check, a binary neither make layerxd nor platform-test-node builds, so the sequencer supervisor exited before the daemon started (log .logs/verify.log, make exit 2)."
+assumption = "Pre-existing gap between the declared verify_cmd and the supervisor's prerequisites, present at the base revision; the task stops at its second repair cycle as implemented, not qualified, and the gate should be rerun after make layerx-handover or with the target added to the verify_cmd."
+severity = "blocker"

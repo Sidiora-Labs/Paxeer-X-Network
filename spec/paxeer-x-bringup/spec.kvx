@@ -259,7 +259,7 @@ status  = "pending"
 
 [task.1.1]
 title      = "Point the node pod's settlement inputs at the registry, custody and anchor precompiles and retire the Solidity path from the bring-up"
-status     = "pending"
+status     = "in_progress"
 wave       = 1
 requires   = []
 do_1       = "Replace LAYERX_NODE_SETTLEMENT_CONTRACT and LAYERX_NODE_SETTLEMENT_ENV in platform/hosted/node/bootstrap.sh, sequencer-env.sh, checkpoint-authority.py and deployment.yaml by LAYERX_NODE_REGISTRY_PRECOMPILE, LAYERX_NODE_CUSTODY_PRECOMPILE and LAYERX_NODE_ANCHOR_PRECOMPILE defaulting to 0x0000000000000000000000000000000000001004, 0x0000000000000000000000000000000000001013 and 0x0000000000000000000000000000000000001014 on chain 125, read through LAYERX_NODE_PAXEER_RPC_URL on loopback."

@@ -31,7 +31,7 @@
 ## Wave 1 - Kernel host
 
 - [ ] 1. Settle on the precompiles, bind the finality verifier, fix the abort points, generate the genesis, run under systemd and prove a value loop
-  - [ ] 1.1 Point the node pod's settlement inputs at the registry, custody and anchor precompiles and retire the Solidity path from the bring-up
+  - [-] 1.1 Point the node pod's settlement inputs at the registry, custody and anchor precompiles and retire the Solidity path from the bring-up
     - Replace LAYERX_NODE_SETTLEMENT_CONTRACT and LAYERX_NODE_SETTLEMENT_ENV in platform/hosted/node/bootstrap.sh, sequencer-env.sh, checkpoint-authority.py and deployment.yaml by LAYERX_NODE_REGISTRY_PRECOMPILE, LAYERX_NODE_CUSTODY_PRECOMPILE and LAYERX_NODE_ANCHOR_PRECOMPILE defaulting to 0x0000000000000000000000000000000000001004, 0x0000000000000000000000000000000000001013 and 0x0000000000000000000000000000000000001014 on chain 125, read through LAYERX_NODE_PAXEER_RPC_URL on loopback.
     - Make the guarantor (guarantor.sh, checkpoint-authority.py) submit certificates and checkpoints to the anchor precompile's submitCheckpoint and finalize and read statusOf, using the ABI under precompiles/, and delete the call to platform/hosted/paxeer/deploy-contracts.sh from platform/hosted/tests/beta-cluster.sh while keeping the script for private networks.
     - Extend platform/hosted/node/tests/node-test.sh with a precompile settlement case against the loopback RPC of a synced node when LAYERX_NODE_PAXEER_RPC_URL is set, refusing to run against anvil.

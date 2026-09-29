@@ -623,3 +623,33 @@ area    = "spec-tooling"
 symptom = "cg spec lint --help does not print help; it lints the active feature and reports clean."
 cause   = "The lint subcommand treats unknown flags as absent and defaults to the active feature."
 do      = "Use cg spec lint -f <feature>; read the usage from spec/workflow.kvx and the fleet protocol instead of --help."
+
+[gotcha.101]
+area    = "build"
+symptom = "With CARGO_TARGET_DIR exported the layerxctl target fails at the cp step and the node test cannot find its probe binary."
+cause   = "make layerxctl copies from cmd/layerxctl/target/release and node-test.sh runs its probe from platform/hosted/node/tests/probe/target/release, both fixed in-tree paths."
+do      = "Do not export CARGO_TARGET_DIR for platform-test-node; let the shared-target advice of entry 6 apply to the workspaces that honour it."
+
+[gotcha.102]
+area    = "chain"
+symptom = "eth_getCode of the registry, custody and anchor precompiles returns 0x although they answer calls."
+cause   = "Native precompiles have no bytecode at their address."
+do      = "Prove a precompile with eth_call of one of its views (threshold(), depositCount(), layerXBindNonce(address)) encoded from its ABI under precompiles/, never with a code-size check."
+
+[gotcha.103]
+area    = "chain"
+symptom = "eth_syncing on the chain's JSON-RPC fails with error -32000 not supported, and the latest block timestamp is hours behind a synchronised clock while advancing in real time."
+cause   = "The EVM RPC omits eth_syncing and the block timestamps do not track UTC on this chain."
+do      = "Test that a node follows the chain by reading eth_blockNumber twice a few seconds apart; do not gate on eth_syncing or on block age."
+
+[gotcha.104]
+area    = "spec-tooling"
+symptom = "cg spec start leaves an empty untracked spec/<feature>/spec.kvx.lock that git add -A would commit."
+cause   = "The lock file is neither removed by the tool nor listed in .gitignore."
+do      = "Delete spec/<feature>/spec.kvx.lock before the commit."
+
+[gotcha.105]
+area    = "spec-tooling"
+symptom = "cg spec implemented refuses a task whose touches list names a file that needed no change, and a second call can hang on the tool's lock while other checkouts run cg."
+cause   = "The tool requires a worktree or tagged-commit change for every touched file, and its lock is shared across checkouts."
+do      = "Record why the file needed no change in qualification.kvx, leave the status in_progress and say so in the report; kill a hung call and remove spec/<feature>/spec.kvx.lock before the commit."
