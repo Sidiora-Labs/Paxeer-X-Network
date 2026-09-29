@@ -1424,7 +1424,12 @@ reqs = ["12.2"]
 
 [task.6.2]
 title = "Add a plain listener and browser preflight handling to the human service for the platform proxy"
-status = "pending"
+status = "done"
+revision = "382912bf78662e002fd1e1787cbecb82333468d3"
+command = "timeout 20m tools/runtime/run-with-clock.sh sh -c 'cd human && cargo test -p layerx-human-service --test server_browser_boundary'"
+exit_code = 0
+log_path = ".logs/verify-6.2.log"
+evidence = "Verify exit code 0: six tests pass over the real router and the plain listener; the three dead-code warnings in the library predate this task and are recorded under 5.5.10."
 wave = 6
 requires = ["6.1"]
 do_1 = "Let layerx-human-service serve plain HTTP when LAYERX_HUMAN_LISTENER is plain: the platform proxy terminates public TLS and forwards plain HTTP/1.1 to the machine, so in that mode startup refuses LAYERX_HUMAN_TLS_CERT_DER or LAYERX_HUMAN_TLS_KEY_DER by name; unset or tls keeps today's TLS listener with the certificate and key required; any other value is refused by name; routing, limits and deadlines are identical in both modes."

@@ -49,6 +49,129 @@ pub use privileged::{
 };
 pub use production_components::{ProductionComponents, ProductionComponentsConfig};
 
+/// The listener the deployment selects: TLS terminated in the service, or plain
+/// HTTP behind a proxy that terminates public TLS.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Listener {
+    Tls,
+    Plain,
+}
+
+impl Listener {
+    /// Selects the listener from `LAYERX_HUMAN_LISTENER` and the two TLS material paths.
+    ///
+    /// # Errors
+    ///
+    /// Refuses an unknown mode by name and TLS material supplied to a plain listener by name.
+    pub fn parse(
+        mode: Option<&str>,
+        certificate_path: Option<&str>,
+        private_key_path: Option<&str>,
+    ) -> Result<Self, String> {
+        match mode {
+            None | Some("tls") => Ok(Self::Tls),
+            Some("plain") => {
+                for (name, value) in [
+                    ("LAYERX_HUMAN_TLS_CERT_DER", certificate_path),
+                    ("LAYERX_HUMAN_TLS_KEY_DER", private_key_path),
+                ] {
+                    if value.is_some_and(|value| !value.is_empty()) {
+                        return Err(format!("{name} is set with LAYERX_HUMAN_LISTENER plain"));
+                    }
+                }
+                Ok(Self::Plain)
+            }
+            Some(_) => Err("LAYERX_HUMAN_LISTENER must be tls or plain".to_owned()),
+        }
+    }
+}
+
+/// Explicit finite plain HTTP listener configuration for deployment behind a
+/// proxy that terminates public TLS.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PlainConfig {
+    pub bind: SocketAddr,
+    pub maximum_connections: usize,
+    pub io_deadline: Duration,
+}
+
+/// Runnable plain HTTP server which accepts one bounded request per connection.
+pub struct PlainServer<B: HumanApiComponents> {
+    router: Arc<Router<B>>,
+    configuration: PlainConfig,
+}
+
+impl<B: HumanApiComponents> PlainServer<B> {
+    #[must_use]
+    pub const fn new(router: Arc<Router<B>>, configuration: PlainConfig) -> Self {
+        Self {
+            router,
+            configuration,
+        }
+    }
+
+    /// Binds the configured address without serving yet.
+    ///
+    /// # Errors
+    ///
+    /// Refuses disabled bounds and propagates the bind failure.
+    pub fn bind(self) -> Result<BoundPlainServer<B>, ServerError> {
+        if self.configuration.maximum_connections == 0 || self.configuration.io_deadline.is_zero() {
+            return Err(ServerError::Configuration(ApiFailure::unavailable()));
+        }
+        let listener = TcpListener::bind(self.configuration.bind).map_err(ServerError::Io)?;
+        Ok(BoundPlainServer {
+            router: self.router,
+            listener,
+            configuration: self.configuration,
+        })
+    }
+}
+
+/// A plain HTTP server holding its bound listener.
+pub struct BoundPlainServer<B: HumanApiComponents> {
+    router: Arc<Router<B>>,
+    listener: TcpListener,
+    configuration: PlainConfig,
+}
+
+impl<B: HumanApiComponents> BoundPlainServer<B> {
+    /// # Errors
+    ///
+    /// Propagates the listener's address lookup failure.
+    pub fn local_addr(&self) -> io::Result<SocketAddr> {
+        self.listener.local_addr()
+    }
+
+    /// Serves until the listener fails.
+    ///
+    /// # Errors
+    ///
+    /// Propagates listener failures. Individual connection failures are isolated
+    /// to their bounded worker.
+    pub fn serve(self) -> Result<(), ServerError> {
+        let gate = ConnectionGate::new(self.configuration.maximum_connections);
+        loop {
+            let (mut tcp, peer) = self.listener.accept().map_err(ServerError::Io)?;
+            let Ok(permit) = gate.acquire() else {
+                continue;
+            };
+            let router = Arc::clone(&self.router);
+            let deadline = self.configuration.io_deadline;
+            thread::spawn(move || {
+                let _permit = permit;
+                if tcp.set_read_timeout(Some(deadline)).is_err()
+                    || tcp.set_write_timeout(Some(deadline)).is_err()
+                {
+                    return;
+                }
+                let public_rate_key = public_rate_key(peer);
+                let _ = router.serve_one(&mut tcp, &public_rate_key);
+            });
+        }
+    }
+}
+
 /// Explicit finite HTTPS listener configuration.
 pub struct HttpsConfig {
     pub bind: SocketAddr,

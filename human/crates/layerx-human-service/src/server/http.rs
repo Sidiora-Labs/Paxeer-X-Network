@@ -21,8 +21,14 @@ use super::schema::{ApiSchema, Operation};
 const ACCESS_COOKIE: &str = "__Host-layerx_access";
 const REFRESH_COOKIE: &str = "__Host-layerx_refresh";
 const CSRF_COOKIE: &str = "__Host-layerx_csrf";
+const PREFLIGHT_ALLOW_METHODS: &str = "DELETE, GET, PATCH, POST, PUT";
+const PREFLIGHT_ALLOW_HEADERS: &str =
+    "authorization, content-type, idempotency-key, x-layerx-trace, x-layerx-csrf";
+const PREFLIGHT_MAX_AGE: &str = "600";
+const EXPOSED_HEADERS: &str = "X-LayerX-Trace";
 
-/// Finite HTTP parsing and browser-origin policy.
+/// Finite HTTP parsing and browser-origin policy; `allowed_origin` lists one or
+/// more comma-separated HTTPS origins.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HttpConfig {
     pub maximum_header_bytes: usize,
@@ -32,30 +38,35 @@ pub struct HttpConfig {
 }
 
 impl HttpConfig {
-    /// Refuses disabled bounds or a non-HTTPS browser origin.
+    /// Refuses disabled bounds or a listed browser origin that is not a bare HTTPS origin.
     ///
     /// # Errors
     ///
     /// Returns a startup failure before the service binds.
     pub fn validate(self) -> Result<Self, ApiFailure> {
-        let origin_authority = self.allowed_origin.strip_prefix("https://");
         if self.maximum_header_bytes == 0
             || self.maximum_body_bytes == 0
-            || origin_authority.is_none_or(str::is_empty)
-            || origin_authority.is_some_and(|authority| {
-                authority.bytes().any(|byte| {
-                    byte.is_ascii_whitespace()
-                        || byte.is_ascii_control()
-                        || matches!(byte, b'/' | b'?' | b'#' | b'\\')
-                })
-            })
-            || self.allowed_origin.ends_with('/')
+            || self.allowed_origin.is_empty()
+            || !self.allowed_origin.split(',').all(valid_origin)
             || self.service_version.is_empty()
         {
             return Err(ApiFailure::unavailable());
         }
         Ok(self)
     }
+}
+
+fn valid_origin(origin: &str) -> bool {
+    let Some(authority) = origin.strip_prefix("https://") else {
+        return false;
+    };
+    !authority.is_empty()
+        && !origin.ends_with('/')
+        && !authority.bytes().any(|byte| {
+            byte.is_ascii_whitespace()
+                || byte.is_ascii_control()
+                || matches!(byte, b'/' | b'?' | b'#' | b'\\')
+        })
 }
 
 /// One bounded synchronous HTTPS request router. Business actions can only cross
@@ -121,7 +132,20 @@ impl<B: HumanApiComponents> Router<B> {
                 return write_response(stream, &error_response(&trace, &failure));
             }
         };
-        let response = self.handle(request, public_rate_key);
+        let browser_origin = request
+            .header("origin")
+            .filter(|origin| origin_allowed(Some(origin), &self.config.allowed_origin))
+            .map(str::to_owned);
+        let mut response = self.handle(request, public_rate_key);
+        if let Some(origin) = browser_origin {
+            response
+                .headers
+                .push(("Access-Control-Allow-Origin", origin));
+            response
+                .headers
+                .push(("Access-Control-Expose-Headers", EXPOSED_HEADERS.to_owned()));
+            response.headers.push(("Vary", "Origin".to_owned()));
+        }
         write_response(stream, &response)
     }
 
@@ -130,6 +154,9 @@ impl<B: HumanApiComponents> Router<B> {
             Ok(trace) => trace,
             Err(trace) => return error_response(&trace, &ApiFailure::unavailable()),
         };
+        if request.method == "OPTIONS" {
+            return self.preflight_response(&request, &trace);
+        }
         if let Some(response) = self.health_response(&request, &trace) {
             return response;
         }
@@ -150,7 +177,7 @@ impl<B: HumanApiComponents> Router<B> {
         }
         if operation.mutates()
             && !operation.is_public_bootstrap()
-            && !same_origin(request.header("origin"), &self.config.allowed_origin)
+            && !origin_allowed(request.header("origin"), &self.config.allowed_origin)
         {
             return error_response(&trace, &ApiFailure::forbidden());
         }
@@ -244,6 +271,28 @@ impl<B: HumanApiComponents> Router<B> {
                 "service": self.config.service_version.as_str()
             }),
             Vec::new(),
+        )
+    }
+
+    fn preflight_response(&self, request: &HttpRequest, trace: &TraceId) -> HttpResponse {
+        if !origin_allowed(request.header("origin"), &self.config.allowed_origin) {
+            return error_response(trace, &ApiFailure::forbidden());
+        }
+        success_response(
+            200,
+            trace,
+            json!({ "preflight": true }),
+            vec![
+                (
+                    "Access-Control-Allow-Methods",
+                    PREFLIGHT_ALLOW_METHODS.to_owned(),
+                ),
+                (
+                    "Access-Control-Allow-Headers",
+                    PREFLIGHT_ALLOW_HEADERS.to_owned(),
+                ),
+                ("Access-Control-Max-Age", PREFLIGHT_MAX_AGE.to_owned()),
+            ],
         )
     }
 
@@ -388,8 +437,12 @@ fn idempotency_key(
     Ok(Some(key.to_owned()))
 }
 
-fn same_origin(origin: Option<&str>, allowed: &str) -> bool {
-    origin.is_some_and(|value| bool::from(value.as_bytes().ct_eq(allowed.as_bytes())))
+fn origin_allowed(origin: Option<&str>, allowed: &str) -> bool {
+    origin.is_some_and(|value| {
+        allowed
+            .split(',')
+            .any(|entry| bool::from(value.as_bytes().ct_eq(entry.as_bytes())))
+    })
 }
 
 fn csrf_matches(cookie: Option<&str>, header: Option<&str>) -> bool {
@@ -524,7 +577,10 @@ impl HttpRequest {
         let target = request_parts.next().unwrap_or_default();
         let version = request_parts.next().unwrap_or_default();
         if request_parts.next().is_some()
-            || !matches!(method, "DELETE" | "GET" | "PATCH" | "POST" | "PUT")
+            || !matches!(
+                method,
+                "DELETE" | "GET" | "OPTIONS" | "PATCH" | "POST" | "PUT"
+            )
             || version != "HTTP/1.1"
         {
             return Err(ApiFailure::invalid_request(None));
