@@ -44,6 +44,24 @@ ANCHOR_PRECOMPILE=0x0000000000000000000000000000000000001014
 log() { printf 'node-test: %s\n' "$*" >&2; }
 fail() { log "FAIL: $*"; exit 1; }
 
+# The kernel opens agent:<did>:main on its first credit; until then an account
+# read is refused with class 4 result -208 (LXP_ERR_UNKNOWN_ACCOUNT_NAMESPACE,
+# the absent-account code) and the DID account listing is empty, exactly what
+# the daemon's onboarding test and the core boundary assert for a fresh genesis.
+expect_treasury_unopened() {
+    BALANCE=$(as_client "$WORK/probe" balance --socket "$LAYERX_NODE_LNI_SOCKET" --network-id "$NETWORK_ID" \
+        --account "$LAYERX_NODE_TREASURY_ACCOUNT" --asset "$LAYERX_NODE_ASSET_ID")
+    log "$BALANCE"
+    expect_contains "$BALANCE" "\"account\":\"$LAYERX_NODE_TREASURY_ACCOUNT\""
+    expect_contains "$BALANCE" "\"asset\":\"$LAYERX_NODE_ASSET_ID\""
+    expect_contains "$BALANCE" '"refused":{"class":4,"result":-208}'
+    [ "$LAYERX_NODE_TREASURY_BALANCE" = 0 ] || fail "node.env treasury balance is not the genesis zero"
+    ACCOUNTS=$(as_client "$WORK/probe" did-accounts --socket "$LAYERX_NODE_LNI_SOCKET" --network-id "$NETWORK_ID" \
+        --did "$LAYERX_NODE_TREASURY_DID")
+    log "$ACCOUNTS"
+    expect_contains "$ACCOUNTS" "\"did\":\"$LAYERX_NODE_TREASURY_DID\",\"count\":0,\"accounts\":[]"
+}
+
 [ -x "$LAYERXD" ] || fail "$LAYERXD missing; run make layerxd"
 [ -x "$GENESIS_BUILD" ] || fail "$GENESIS_BUILD missing; run make layerx-genesis-build"
 for tool in openssl setpriv od sha256sum jq python3; do
@@ -325,12 +343,8 @@ expect_contains "$OPERATOR_STATE" "\"network_id\":$NETWORK_ID"
 expect_contains "$OPERATOR_STATE" '"global_sequence":0'
 expect_contains "$OPERATOR_STATE" '"evidence":"authenticated_node_snapshot"'
 
-log "treasury balance read"
-BALANCE=$(as_client "$WORK/probe" balance --socket "$LAYERX_NODE_LNI_SOCKET" --network-id "$NETWORK_ID" \
-    --account "$LAYERX_NODE_TREASURY_ACCOUNT" --asset "$LAYERX_NODE_ASSET_ID")
-log "$BALANCE"
-expect_contains "$BALANCE" "\"balance\":\"$LAYERX_NODE_TREASURY_BALANCE\""
-expect_contains "$BALANCE" "\"asset\":\"$LAYERX_NODE_ASSET_ID\""
+log "treasury balance read: the main account opens on its first credit, so a fresh genesis refuses the read"
+expect_treasury_unopened
 
 log "operator submits a real signed SEND once and preserves its idempotency key"
 chown "$CLIENT_UID:$CLIENT_GID" "$WORK/treasury.key"
@@ -370,9 +384,7 @@ STATUS=$(as_client "$WORK/probe" supervisor --socket "$LAYERX_NODE_SUPERVISOR_SO
 expect_contains "$STATUS" '"state":"running","generation":2'
 HANDSHAKE=$(as_client "$WORK/probe" handshake --socket "$LAYERX_NODE_LNI_SOCKET" --network-id "$NETWORK_ID")
 expect_contains "$HANDSHAKE" "\"network_id\":$NETWORK_ID"
-BALANCE=$(as_client "$WORK/probe" balance --socket "$LAYERX_NODE_LNI_SOCKET" --network-id "$NETWORK_ID" \
-    --account "$LAYERX_NODE_TREASURY_ACCOUNT" --asset "$LAYERX_NODE_ASSET_ID")
-expect_contains "$BALANCE" "\"balance\":\"$LAYERX_NODE_TREASURY_BALANCE\""
+expect_treasury_unopened
 
 log "stopping"
 kill -TERM "$SEQUENCER_PID" "$REPLICA_PID"

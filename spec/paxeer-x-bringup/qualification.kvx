@@ -197,3 +197,19 @@ symbol = "latest_account_evidence"
 observed = "The -208 on the treasury balance read is the daemon's absent-account code, not a namespace byte: the probe's account_id_for_protocol and the ledger's lx_account_id_from_string both hash LX:ACCOUNT:v1 || u32 length || name and both accept agent:<did>:main, and the one-secret commit changed only the probe's Cargo.lock; the account is refused because a fresh genesis registers only the three system accounts (lxp_genesis validate, lxp_genesis_fresh_empty_accounts), bootstrap registers the treasury as an identity only, and a main account is opened only by a sponsored onboarding activity, a bridge credit or a SEND from a funded account, none of which exists on a fresh network."
 assumption = "The kernel's own onboarding test asserts -208 for an unopened main account and the core boundary tests assert a fresh genesis carries no treasury account, so the node test's balance-zero assertion contradicts the kernel by design; both are left intact as written, no code was changed and the recorded gate was not rerun (log /root/lx-lanes/bringup-1.1/.logs/verify.log, make exit 2); an owner ruling is needed on which is authoritative: genesis admits the treasury's zero-balance main account (validate, genesis-build and bootstrap manifest change, every fresh state root moves), or the node test reads the treasury through the typed refusal and the DID account listing like the core does."
 severity = "blocker"
+
+[observation.1.8.2]
+task = "1.8"
+file = "platform/Makefile.inc"
+symbol = "platform-test-node"
+observed = "The first verify run on a clean build directory failed before the node test started: node-test.sh requires build/bin/layerx-genesis-build and the platform-test-node prerequisites built only layerxctl and layerx-handover (log .logs/verify-cycle1.log, make exit 2)."
+assumption = "Pre-existing gap between the declared verify_cmd and the node test's prerequisites, the same class as observation 1.1.7 and hidden earlier by a build directory that already carried the binary; repaired as cycle one by adding layerx-genesis-build to the platform-test-node prerequisites the way layerx-handover was added."
+severity = "assumption"
+
+[observation.1.8.3]
+task = "1.8"
+file = "platform/hosted/node/tests/node-test.sh"
+symbol = "expect_treasury_unopened"
+observed = "The second verify run (cycle two, lag-zero public RPC name) passed the precompile settlement case, both supervisors, the LNI handshake, the seed check, the settlement inputs, the operator state read and the corrected treasury steps, which observed the typed refusal class 4 result -208 and an empty DID account listing for the treasury; it then failed in the untouched next step, the operator SEND, whose layerxctl submission was refused with class 4 result -602 FeeUnpayable instead of the asserted acknowledged state (log .logs/verify.log, make exit 2)."
+assumption = "The same design rule that refuses the balance read refuses the send: an unopened, unfunded treasury main account cannot pay the fee, and the core boundary test asserts that an unfunded treasury send is refused, not completed; the step's acknowledged assertion came from the same handoff that never passed against a real layerxd, so extending the ruling to it (expect the typed refusal -602 and keep the idempotent repeat check) needs the feature manager's word before the assertion changes; no second repair was made, the task stays in_progress and task 1.1 stays implemented."
+severity = "blocker"

@@ -363,15 +363,15 @@ title   = "Serve the boundaries from the kernel host and the gateway, identity, 
 status  = "pending"
 
 [task.1.8]
-title      = "Make the node test's treasury balance read resolve under the kernel's account namespace"
+title      = "Make the node test read the treasury the way the kernel serves an unopened main account"
 status     = "in_progress"
 wave       = 1
 requires   = ["1.1"]
-do_1       = "Find why the probe's balance read of the treasury account that bootstrap.sh writes into node.env is refused by the kernel with LXP_ERR_UNKNOWN_ACCOUNT_NAMESPACE, the namespace byte of the account id, since the EVM account and identity were derived from one secret, and fix the root cause where the treasury account id is derived or registered: the probe's balance path, bootstrap.sh's treasury derivation or the sequencer's namespace registration, never by relaxing the kernel check or the test's assertion."
+do_1       = "The kernel opens agent:<did>:main on its first credit: a fresh genesis registers only the three system accounts, bootstrap registers the treasury as an identity only, and the daemon answers a read of an absent account with class 4 result -208 LXP_ERR_UNKNOWN_ACCOUNT_NAMESPACE, which the daemon's onboarding test and the core boundary tests both assert; the probe's balance derivation already matches the ledger. Correct the node test so its treasury steps expect that typed refusal and an empty DID account listing before any credit, and let the probe surface the refusal as a typed line and list a DID's accounts; never by relaxing the kernel check."
 do_2       = "Keep every step of node-test.sh as written and make the whole target pass; add the derivation case to the probe's or bootstrap's existing tests where one exists."
 verify_cmd = "timeout 30m make layerxd platform-test-node"
-symbols    = ["balance"]
-touches    = ["platform/hosted/node/tests/probe/src/main.rs", "platform/hosted/node/bootstrap.sh", "platform/hosted/node/tests/node-test.sh"]
+symbols    = ["balance", "did_accounts", "expect_treasury_unopened"]
+touches    = ["platform/hosted/node/tests/probe/src/main.rs", "platform/hosted/node/tests/node-test.sh", "platform/Makefile.inc"]
 tests      = ["platform/hosted/node/tests/node-test.sh"]
 reqs       = ["5.1"]
 

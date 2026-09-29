@@ -12,18 +12,22 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use layerx_client::client::{Client, ClientConfig, ReconnectPolicy};
-use layerx_client::lni::handshake::HandshakeConfig;
+use layerx_client::evidence::RootSelector;
+use layerx_client::head::HeadTracker;
+use layerx_client::lni::handshake::{perform, HandshakeConfig};
 use layerx_client::lni::schema::Version;
-use layerx_client::lni::transport::Limits;
+use layerx_client::lni::transport::{ConnectionGate, Limits, Uds};
+use layerx_client::read::{ReadContext, ReadError, Requested};
 use layerx_proof::inclusion::SequencerAuthorization;
 use layerx_types::account::AccountId;
+use layerx_types::ids::Did;
 use layerx_types::verify::VerificationLevel;
 
 const FRAME_BYTES: usize = 1_212_416;
 
 fn usage() -> ExitCode {
     eprintln!(
-        "usage: layerx-node-probe handshake --socket PATH --network-id N\n       layerx-node-probe balance --socket PATH --network-id N --account NAME --asset HEX64\n       layerx-node-probe supervisor --socket PATH --request reset|status"
+        "usage: layerx-node-probe handshake --socket PATH --network-id N\n       layerx-node-probe balance --socket PATH --network-id N --account NAME --asset HEX64\n       layerx-node-probe did-accounts --socket PATH --network-id N --did DID\n       layerx-node-probe supervisor --socket PATH --request reset|status"
     );
     ExitCode::from(2)
 }
@@ -72,21 +76,29 @@ fn hex32(text: &str) -> Result<[u8; 32], String> {
     Ok(out)
 }
 
+fn limits() -> Limits {
+    Limits {
+        maximum_frame_bytes: FRAME_BYTES,
+        maximum_connections: 4,
+        maximum_streams: 32,
+        maximum_queued_bytes: 4 * FRAME_BYTES,
+        deadline: Duration::from_secs(5),
+    }
+}
+
+fn handshake_config(built: Version, network_id: u32) -> HandshakeConfig {
+    HandshakeConfig {
+        built_interface_version: built,
+        expected_protocol_version: layerx_wire::limits::STATE_COMMITMENT_PROTOCOL_VERSION,
+        expected_network_id: network_id,
+    }
+}
+
 fn connect(socket: &str, network_id: u32) -> Result<Client, String> {
     Client::connect(ClientConfig {
         endpoint: PathBuf::from(socket),
-        handshake: HandshakeConfig {
-            built_interface_version: Version::V1_3,
-            expected_protocol_version: layerx_wire::limits::STATE_COMMITMENT_PROTOCOL_VERSION,
-            expected_network_id: network_id,
-        },
-        limits: Limits {
-            maximum_frame_bytes: FRAME_BYTES,
-            maximum_connections: 4,
-            maximum_streams: 32,
-            maximum_queued_bytes: 4 * FRAME_BYTES,
-            deadline: Duration::from_secs(5),
-        },
+        handshake: handshake_config(Version::V1_3, network_id),
+        limits: limits(),
         reconnect: ReconnectPolicy {
             maximum_attempts: 3,
             base_delay: Duration::from_millis(50),
@@ -144,15 +156,25 @@ fn balance(parsed: &BTreeMap<String, String>) -> Result<String, String> {
     let sequencer_key = node.authorised_sequencer_key;
     let sealed = node.latest_sealed_batch.max(1);
     let authorization = SequencerAuthorization::new(sequencer_key, sequencer_key, 1, sealed);
-    let read = client
-        .balance(
-            account_id,
-            asset,
-            VerificationLevel::UNVERIFIED,
-            1,
-            authorization,
-        )
-        .map_err(|error| format!("balance read failed: {error:?}"))?;
+    let read = match client.balance(
+        account_id,
+        asset,
+        VerificationLevel::UNVERIFIED,
+        1,
+        authorization,
+    ) {
+        Ok(read) => read,
+        Err(ReadError::CoreRefusal { class, result }) => {
+            return Ok(format!(
+                "{{\"account\":\"{}\",\"account_id\":\"{}\",\"asset\":\"{}\",\"refused\":{{\"class\":{class},\"result\":{}}}}}",
+                account.canonical(),
+                hex(&account_id),
+                hex(&asset),
+                result.raw()
+            ));
+        }
+        Err(error) => return Err(format!("balance read failed: {error:?}")),
+    };
     Ok(format!(
         "{{\"account\":\"{}\",\"account_id\":\"{}\",\"asset\":\"{}\",\"balance\":\"{}\",\"achieved\":\"{:?}\",\"global_sequence\":{}}}",
         account.canonical(),
@@ -161,6 +183,60 @@ fn balance(parsed: &BTreeMap<String, String>) -> Result<String, String> {
         read.amount.value(),
         read.achieved(),
         read.freshness().global_sequence
+    ))
+}
+
+fn did_accounts(parsed: &BTreeMap<String, String>) -> Result<String, String> {
+    let socket = required(parsed, "socket")?;
+    let network_id: u32 = required(parsed, "network-id")?
+        .parse()
+        .map_err(|error| format!("--network-id: {error}"))?;
+    let did = required(parsed, "did")?;
+    let did_value = Did::new(did.as_bytes()).map_err(|error| format!("--did: {error:?}"))?;
+    let gate = ConnectionGate::new(1);
+    let mut transport = Uds::connect(&PathBuf::from(socket), &gate, limits())
+        .map_err(|error| format!("lni connect failed: {error:?}"))?;
+    let handshake = perform(
+        &mut transport,
+        &handshake_config(Version::V1_6, network_id),
+        None,
+    )
+    .map_err(|error| format!("lni handshake failed: {error:?}"))?;
+    let node = handshake.node();
+    let sequencer_key = node.authorised_sequencer_key;
+    let context = ReadContext {
+        interface_version: node.interface_version,
+        correlation_id: 1,
+        expected_protocol_version: node.protocol_version,
+        expected_network_id: network_id,
+        requested: Requested::new(VerificationLevel::UNVERIFIED),
+        head: HeadTracker::new(node).current(),
+        sequencer_authorization: SequencerAuthorization::new(
+            sequencer_key,
+            sequencer_key,
+            1,
+            node.latest_sealed_batch.max(1),
+        ),
+        handshake_sequencer_key: sequencer_key,
+        root_selector: RootSelector::Latest,
+    };
+    let values = layerx_client::read::did_accounts(&mut transport, &did_value, context)
+        .map_err(|error| format!("did account listing failed: {error:?}"))?;
+    let mut names = Vec::with_capacity(values.len());
+    for value in &values {
+        let bytes = value.canonical_bytes();
+        let name = bytes
+            .get(..2)
+            .map(|v| usize::from(u16::from_be_bytes([v[0], v[1]])))
+            .and_then(|length| bytes.get(2..2 + length))
+            .and_then(|name| std::str::from_utf8(name).ok())
+            .ok_or_else(|| "malformed account name in listing".to_owned())?;
+        names.push(format!("\"{name}\""));
+    }
+    Ok(format!(
+        "{{\"did\":\"{did}\",\"count\":{},\"accounts\":[{}]}}",
+        values.len(),
+        names.join(",")
     ))
 }
 
@@ -266,6 +342,7 @@ fn main() -> ExitCode {
     let outcome = match command.as_str() {
         "handshake" => handshake(&parsed),
         "balance" => balance(&parsed),
+        "did-accounts" => did_accounts(&parsed),
         "supervisor" => supervisor(&parsed),
         "write-send" => write_send(&parsed),
         _ => return usage(),

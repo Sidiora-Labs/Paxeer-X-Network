@@ -809,3 +809,15 @@ area    = "kernel"
 symptom = "An LNI balance read of a freshly bootstrapped agent main account is refused with -208 LXP_ERR_UNKNOWN_ACCOUNT_NAMESPACE although the name and the derived id are canonical."
 cause   = "The daemon returns that code for any id absent from the kernel account registry; a fresh genesis holds only the three system accounts and a main account is opened by its first credit or a sponsored onboarding, never by identity registration."
 do      = "Treat -208 on a read as account-not-yet-opened before suspecting the derivation; compare the name hash on both sides only after listing the DID's accounts through the kind-3 read."
+
+[gotcha.132]
+area    = "build"
+symptom = "The node test failed at its first line on a clean build directory because build/bin/layerx-genesis-build was missing, although the same verify command had passed elsewhere."
+cause   = "platform-test-node listed only layerxctl and layerx-handover as prerequisites; a build directory that already carried the genesis builder hid the gap."
+do      = "Keep every binary node-test.sh requires in the platform-test-node prerequisite list; when a gate passes on one checkout and fails on another, diff build/bin before suspecting the code."
+
+[gotcha.133]
+area    = "kernel"
+symptom = "A signed SEND from a freshly bootstrapped treasury identity is refused at admission with class 4 result -602 FeeUnpayable, never acknowledged."
+cause   = "The sequencer resolves the fee payer through agent:<did>:main, which does not exist before its first credit, so the fee balance is zero and admission stops before sequencing."
+do      = "Fund or credit the main account before asserting an acknowledged submission; on a fresh genesis assert the typed refusal, as the core boundary test does."
