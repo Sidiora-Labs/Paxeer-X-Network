@@ -168,7 +168,7 @@ days_left() {
 }
 
 rpc_domain="mainnet-beta.paxeer.network"
-rpc_names=16
+rpc_name_count=16
 rpc_max_lag=10
 rpc_min_active=3600
 # shellcheck disable=SC2016
@@ -217,17 +217,17 @@ check_rpc_nodes() {
 	# eaten by the chain advancing between one request and the next.
 	polls="$(mktemp -d)"
 	trap 'rm -rf "$polls"' EXIT
-	for n in $(seq 1 "$rpc_names"); do
+	for n in $(seq 1 "$rpc_name_count"); do
 		rpc_head "api$n" >"$polls/$n" 2>/dev/null &
 	done
 	wait
-	for n in $(seq 1 "$rpc_names"); do
+	for n in $(seq 1 "$rpc_name_count"); do
 		heads[n]="$(cat "$polls/$n")"
 		if [ -n "${heads[n]}" ] && [ "${heads[n]}" -gt "$top" ]; then
 			top="${heads[n]}"
 		fi
 	done
-	for n in $(seq 1 "$rpc_names"); do
+	for n in $(seq 1 "$rpc_name_count"); do
 		name="api$n"
 		head="${heads[n]}"
 		lag=none

@@ -63,6 +63,10 @@
     - Write platform/hosted/paxeer/systemd/layerx-paxeer-boundary@.service with instances loopback and public: LAYERX_PAXEER_CHAIN_ID 125, the loopback JSON-RPC for the first and one of the sixteen public RPC names for the second, TLS under /etc/layerx/paxeer-boundary-<instance>/tls; drop the in-cluster chain bootstrap from the bare-host path while keeping deployment.yaml for private networks.
     - Add the paxeer-boundary subcommand: both instances answer eth_chainId 0x7d over TLS under the internal CA from the kernel host.
     - _Requirements: 7.2_
+  - [ ] 1.8 Make the node test's treasury balance read resolve under the kernel's account namespace
+    - Find why the probe's balance read of the treasury account that bootstrap.sh writes into node.env is refused by the kernel with LXP_ERR_UNKNOWN_ACCOUNT_NAMESPACE, the namespace byte of the account id, since the EVM account and identity were derived from one secret, and fix the root cause where the treasury account id is derived or registered: the probe's balance path, bootstrap.sh's treasury derivation or the sequencer's namespace registration, never by relaxing the kernel check or the test's assertion.
+    - Keep every step of node-test.sh as written and make the whole target pass; add the derivation case to the probe's or bootstrap's existing tests where one exists.
+    - _Requirements: 5.1_
 
 ## Wave 2 - Boundaries and platform host
 
@@ -197,7 +201,7 @@
 {
   "waves": [
     { "id": 0,  "tasks": ["0.1", "0.2", "0.3", "0.4"] },
-    { "id": 1,  "tasks": ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7"] },
+    { "id": 1,  "tasks": ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8"] },
     { "id": 2,  "tasks": ["2.1", "2.2", "2.3", "2.4", "2.5", "2.6"] },
     { "id": 3,  "tasks": ["3.1", "3.2", "3.3", "3.4", "3.5", "3.6", "3.7", "3.8"] },
     { "id": 4,  "tasks": ["4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7", "4.8", "4.9", "4.10", "4.11", "4.12", "4.13", "4.14", "4.15"] }

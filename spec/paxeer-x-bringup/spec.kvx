@@ -362,6 +362,19 @@ section = "Wave 2 - Boundaries and platform host"
 title   = "Serve the boundaries from the kernel host and the gateway, identity, internal services and registry from the platform host"
 status  = "pending"
 
+[task.1.8]
+title      = "Make the node test's treasury balance read resolve under the kernel's account namespace"
+status     = "pending"
+wave       = 1
+requires   = ["1.1"]
+do_1       = "Find why the probe's balance read of the treasury account that bootstrap.sh writes into node.env is refused by the kernel with LXP_ERR_UNKNOWN_ACCOUNT_NAMESPACE, the namespace byte of the account id, since the EVM account and identity were derived from one secret, and fix the root cause where the treasury account id is derived or registered: the probe's balance path, bootstrap.sh's treasury derivation or the sequencer's namespace registration, never by relaxing the kernel check or the test's assertion."
+do_2       = "Keep every step of node-test.sh as written and make the whole target pass; add the derivation case to the probe's or bootstrap's existing tests where one exists."
+verify_cmd = "timeout 30m make layerxd platform-test-node"
+symbols    = ["balance"]
+touches    = ["platform/hosted/node/tests/probe/src/main.rs", "platform/hosted/node/bootstrap.sh", "platform/hosted/node/tests/node-test.sh"]
+tests      = ["platform/hosted/node/tests/node-test.sh"]
+reqs       = ["5.1"]
+
 [task.2.1]
 title      = "Run the core boundary, the receipt authority and the agent boundary over TLS on the kernel host"
 status     = "pending"
