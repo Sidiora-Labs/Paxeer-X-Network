@@ -448,7 +448,7 @@ status  = "pending"
 
 [task.3.1]
 title      = "Add LXIP operation 4, assertion resolution, to the identity provider and wire it at startup"
-status     = "pending"
+status     = "done"
 wave       = 3
 requires   = []
 do_1       = "Add operation 4 to the LXIP wire protocol in layerx-human-identity-provider: request carries the assertion, response carries the principal and the did:layerx identity or a typed refusal; verify with the AssertionConfig JWKS and max age the crate already reads."

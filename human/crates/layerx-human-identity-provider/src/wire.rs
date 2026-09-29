@@ -86,14 +86,18 @@ pub(crate) fn serve(
     let request = read_request(stream, &mut expires, clock);
     state.ready()?;
     let result = match request {
-        Ok((0, fields)) if fields.is_empty() => Ok(Vec::new()),
-        Ok((1, fields)) if fields.len() == 4 => state.provision(&fields),
-        Ok((2, fields)) if fields.len() == 1 => state.resolve(&fields),
-        Ok((3, fields)) if fields.len() == 2 => state.device(&fields),
+        Ok((0, fields)) if fields.is_empty() => Ok((0, Vec::new())),
+        Ok((1, fields)) if fields.len() == 4 => state.provision(&fields).map(|fields| (0, fields)),
+        Ok((2, fields)) if fields.len() == 1 => state.resolve(&fields).map(|fields| (0, fields)),
+        Ok((3, fields)) if fields.len() == 2 => state.device(&fields).map(|fields| (0, fields)),
+        Ok((4, fields)) if matches!(fields.len(), 1 | 2) => clock
+            .sample(Duration::from_secs(1).min(deadline))
+            .map_err(io::Error::other)
+            .and_then(|reading| state.assertion(&fields, reading.unix_seconds())),
         _ => Err(invalid("invalid request")),
     };
     let (status, fields) = match result {
-        Ok(fields) => (0, fields),
+        Ok(response) => response,
         Err(error) if error.kind() == io::ErrorKind::InvalidData => (1, Vec::new()),
         Err(error) => return Err(error),
     };
@@ -142,19 +146,20 @@ fn decode(bytes: &[u8]) -> io::Result<(u8, Vec<Vec<u8>>)> {
         return Err(invalid("frame header"));
     }
     let operation = bytes[5];
-    let expected = match operation {
-        0 => 0,
-        1 => 4,
-        2 => 1,
-        3 => 2,
-        _ => return Err(invalid("operation")),
-    };
     let count = u32::from_be_bytes(
         bytes[6..10]
             .try_into()
             .map_err(|_| invalid("field count"))?,
     );
-    if count != expected {
+    let expected = match operation {
+        0 => count == 0,
+        1 => count == 4,
+        2 => count == 1,
+        3 => count == 2,
+        4 => matches!(count, 1 | 2),
+        _ => return Err(invalid("operation")),
+    };
+    if !expected {
         return Err(invalid("field count"));
     }
     let mut fields = Vec::new();

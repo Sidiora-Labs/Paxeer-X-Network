@@ -689,3 +689,21 @@ area    = "spec-tooling"
 symptom = "cg spec done fails a verify_cmd that passes when run by hand: sh reports a syntax error on an unexpected parenthesis and the task is refused with exit 2."
 cause   = "The kvx reader keeps the backslash escapes of the verify_cmd string, so escaped double quotes and escaped dots reach sh literally."
 do      = "Run the verify_cmd yourself after unescaping the kvx string, record the run as a gate entry, and set the status by hand when the only refusal is this quoting defect."
+
+[gotcha.112]
+area    = "identity-provider"
+symptom = "A new LXIP operation whose handler returns an io::Error that is not InvalidData stops the whole provider listener instead of answering the peer."
+cause   = "wire::serve maps only InvalidData to status 1 and propagates every other error kind out of Server::run, which is how durable-state failures are meant to halt the process."
+do      = "Turn service-side faults the peer must survive, such as an unreachable key set or a disabled principal, into a typed status inside the handler; leave persistence errors propagating."
+
+[gotcha.113]
+area    = "identity-provider-tests"
+symptom = "Counting JWKS fetches after reopening the assertion state reports one hit more than the wire calls made."
+cause   = "Every State reopen installs a fresh AssertionVerifier with an empty key cache, so the first library call after reopen fetches the key set again."
+do      = "Assert the fetch count before reopening the state, or expect one extra hit per reopen."
+
+[gotcha.114]
+area    = "spec-tooling"
+symptom = "cg spec done without --force runs for many minutes at full CPU with no output while other lanes work the same feature, and never returns."
+cause   = "The done subcommand re-indexes against the shared code graph in the main checkout and contends on its index lock with every other lane's spec tooling."
+do      = "Bound the call with timeout; when it expires, kill it, set the task status line to done by hand only after the verify_cmd genuinely passed, delete spec/<feature>/spec.kvx.lock, and say so in the commit message so the manager can re-run the tool."

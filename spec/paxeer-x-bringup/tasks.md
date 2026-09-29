@@ -96,7 +96,7 @@
 ## Wave 3 - Human graph
 
 - [ ] 3. Admit the wallet identity, run the graph on the kernel host, bring agentd and MCP live and cut the Fly human service over
-  - [ ] 3.1 Add LXIP operation 4, assertion resolution, to the identity provider and wire it at startup
+  - [x] 3.1 Add LXIP operation 4, assertion resolution, to the identity provider and wire it at startup
     - Add operation 4 to the LXIP wire protocol in layerx-human-identity-provider: request carries the assertion, response carries the principal and the did:layerx identity or a typed refusal; verify with the AssertionConfig JWKS and max age the crate already reads.
     - Wire AssertionConfig::from_environment into the serve command in src/main.rs so the verifier is constructed at startup and operation 4 is dispatched; extend tests/assertion.rs with the wire round trip.
     - _Requirements: 10.1_

@@ -1,8 +1,10 @@
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
+use layerx_client::runtime_clock::RuntimeClock;
 use layerx_human_identity_provider::{
-    AssertionConfig, AssertionReceipt, AssertionVerifier, Policy, State,
+    AssertionConfig, AssertionReceipt, AssertionRefusal, AssertionVerifier, Policy, Server, State,
 };
+use layerx_types::clock::{Clock as _, Deadline};
 use p256::ecdsa::signature::Signer as _;
 use p256::ecdsa::{Signature, SigningKey};
 use serde_json::{json, Value};
@@ -11,7 +13,8 @@ use std::error::Error;
 use std::fs;
 use std::io::{Read as _, Write as _};
 use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::os::unix::fs::PermissionsExt as _;
+use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
+use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -604,5 +607,338 @@ fn assertion_configuration_is_absent_by_default_and_complete_when_set() -> Resul
         "3600",
     );
     assert!(AssertionConfig::from_lookup(lookup(&wide_skew)).is_err());
+    Ok(())
+}
+
+struct Running {
+    shutdown: Arc<AtomicBool>,
+    worker: Option<JoinHandle<std::io::Result<()>>>,
+}
+
+impl Running {
+    fn start(socket: &Path, state: State) -> Result<Self> {
+        let server = Server::bind(
+            socket,
+            state,
+            rustix::process::geteuid().as_raw(),
+            Duration::from_secs(2),
+            RuntimeClock::from_environment()?,
+        )?;
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&shutdown);
+        Ok(Self {
+            shutdown,
+            worker: Some(thread::spawn(move || server.run(&flag))),
+        })
+    }
+
+    fn stop(mut self) -> Result {
+        self.shutdown.store(true, Ordering::Release);
+        self.worker
+            .take()
+            .ok_or("worker missing")?
+            .join()
+            .map_err(|_| "worker panic")??;
+        Ok(())
+    }
+}
+
+struct OwnedChild(std::process::Child);
+
+impl Drop for OwnedChild {
+    fn drop(&mut self) {
+        if matches!(self.0.try_wait(), Ok(None)) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+}
+
+fn authority_now() -> Result<u64> {
+    Ok(RuntimeClock::from_environment()?
+        .sample(Duration::from_secs(1))?
+        .unix_seconds())
+}
+
+fn request(operation: u8, fields: &[&[u8]]) -> Result<Vec<u8>> {
+    let mut bytes = b"LXIP\x01".to_vec();
+    bytes.push(operation);
+    bytes.extend_from_slice(&u32::try_from(fields.len())?.to_be_bytes());
+    for field in fields {
+        bytes.extend_from_slice(&u32::try_from(field.len())?.to_be_bytes());
+        bytes.extend_from_slice(field);
+    }
+    Ok(bytes)
+}
+
+fn exchange(socket: &Path, bytes: &[u8]) -> Result<Vec<u8>> {
+    let mut stream = UnixStream::connect(socket)?;
+    stream.set_read_timeout(Some(Duration::from_secs(5)))?;
+    stream.write_all(&u32::try_from(bytes.len())?.to_be_bytes())?;
+    stream.write_all(bytes)?;
+    let mut length = [0; 4];
+    stream.read_exact(&mut length)?;
+    let length = u32::from_be_bytes(length) as usize;
+    assert!((10..=1_048_576).contains(&length));
+    let mut response = vec![0; length];
+    stream.read_exact(&mut response)?;
+    Ok(response)
+}
+
+fn probe(socket: &Path) -> Result {
+    assert_eq!(
+        exchange(socket, &request(0, &[])?)?,
+        b"LXIP\x01\x00\x00\x00\x00\x00"
+    );
+    Ok(())
+}
+
+fn operation_four(socket: &Path, fields: &[&[u8]]) -> Result<(u8, Vec<Vec<u8>>)> {
+    let response = exchange(socket, &request(4, fields)?)?;
+    assert_eq!(&response[..5], b"LXIP\x01");
+    let count = u32::from_be_bytes(response[6..10].try_into()?);
+    let mut remaining = &response[10..];
+    let mut decoded = Vec::new();
+    for _ in 0..count {
+        let length = u32::from_be_bytes(remaining[..4].try_into()?) as usize;
+        decoded.push(remaining[4..4 + length].to_vec());
+        remaining = &remaining[4 + length..];
+    }
+    assert!(remaining.is_empty());
+    Ok((response[5], decoded))
+}
+
+fn wait_ready(socket: &Path, child: &mut std::process::Child) -> Result {
+    let clock = RuntimeClock::from_environment()?;
+    let mut expires = Deadline::start(clock.as_ref(), Duration::from_secs(5))?;
+    while !expires.remaining(clock.as_ref())?.is_zero() {
+        if exchange(socket, &request(0, &[])?).is_ok() {
+            return Ok(());
+        }
+        assert!(
+            child.try_wait()?.is_none(),
+            "provider exited during startup"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+    Err("provider did not become ready".into())
+}
+
+#[test]
+fn assertion_wire_operation_four_returns_principal_and_recorded_did() -> Result {
+    let fixture = Fixture::new()?;
+    let socket = fixture
+        .root
+        .parent()
+        .ok_or("parent missing")?
+        .join("identity.sock");
+    let running = Running::start(&socket, fixture.state()?)?;
+    let now = authority_now()?;
+    let token = fixture.signer.mint(&claims("user-0014", now));
+
+    let (status, fields) = operation_four(&socket, &[token.as_bytes()])?;
+    assert_eq!(status, 0);
+    assert_eq!(fields.len(), 1);
+    let principal = String::from_utf8(fields[0].clone())?;
+    assert!(principal.starts_with("act_"));
+
+    let (status, fields) = operation_four(&socket, &[token.as_bytes(), WALLET_DID.as_bytes()])?;
+    assert_eq!(status, 0);
+    assert_eq!(
+        fields,
+        vec![
+            principal.as_bytes().to_vec(),
+            WALLET_DID.as_bytes().to_vec()
+        ]
+    );
+    let (status, fields) = operation_four(&socket, &[token.as_bytes()])?;
+    assert_eq!(status, 0);
+    assert_eq!(
+        fields,
+        vec![
+            principal.as_bytes().to_vec(),
+            WALLET_DID.as_bytes().to_vec()
+        ]
+    );
+
+    let (status, fields) = operation_four(&socket, &[token.as_bytes(), OTHER_DID.as_bytes()])?;
+    assert_eq!(
+        (status, fields.len()),
+        (AssertionRefusal::Identity.status(), 0)
+    );
+    let other = fixture.signer.mint(&claims("user-0015", now));
+    let (status, _) = operation_four(&socket, &[other.as_bytes(), WALLET_DID.as_bytes()])?;
+    assert_eq!(status, AssertionRefusal::Identity.status());
+
+    let mut expired = claims("user-0014", now);
+    expired["exp"] = json!(now - 120);
+    let expired = fixture.signer.mint(&expired);
+    let (status, fields) = operation_four(&socket, &[expired.as_bytes()])?;
+    assert_eq!(
+        (status, fields.len()),
+        (AssertionRefusal::Assertion.status(), 0)
+    );
+    let forged = TokenSigner::generate("signing-key-1")?.mint(&claims("user-0014", now));
+    let (status, _) = operation_four(&socket, &[forged.as_bytes()])?;
+    assert_eq!(status, AssertionRefusal::Assertion.status());
+    let (status, _) = operation_four(&socket, &[b""])?;
+    assert_eq!(status, AssertionRefusal::Assertion.status());
+
+    for malformed in [
+        vec![token.as_bytes(), b"did:layerx:3f1c0a9e5b7d2468".as_slice()],
+        vec![token.as_bytes(), b"\xff"],
+        vec![b"\xff".as_slice()],
+        vec![],
+        vec![token.as_bytes(), WALLET_DID.as_bytes(), b"extra"],
+    ] {
+        let (status, fields) = operation_four(&socket, &malformed)?;
+        assert_eq!((status, fields.len()), (1, 0));
+    }
+    probe(&socket)?;
+    running.stop()?;
+    assert_eq!(fixture.server.hits(), 1);
+
+    let reopened = fixture.state()?;
+    let resolved = reopened.resolve_assertion(&token, now)?;
+    assert_eq!(resolved.principal(), principal);
+    assert_eq!(resolved.did(), Some(WALLET_DID));
+    assert!(reopened.assertion_principal(ISSUER, "user-0015").is_none());
+    assert_eq!(reopened.assertion_receipts().len(), 2);
+    assert_chain(reopened.assertion_receipts())?;
+    Ok(())
+}
+
+#[test]
+fn assertion_wire_operation_four_reports_unavailable_without_a_verifier_or_key_set() -> Result {
+    let fixture = Fixture::new()?;
+    let socket = fixture
+        .root
+        .parent()
+        .ok_or("parent missing")?
+        .join("identity.sock");
+    let now = authority_now()?;
+    let token = fixture.signer.mint(&claims("user-0016", now));
+
+    let disabled = Running::start(&socket, State::open(&fixture.root, policy())?)?;
+    let (status, fields) = operation_four(&socket, &[token.as_bytes()])?;
+    assert_eq!(
+        (status, fields.len()),
+        (AssertionRefusal::Unavailable.status(), 0)
+    );
+    probe(&socket)?;
+    disabled.stop()?;
+
+    let closed = TcpListener::bind("127.0.0.1:0")?;
+    let unreachable = format!(
+        "http://{}/auth/v1/.well-known/jwks.json",
+        closed.local_addr()?
+    );
+    drop(closed);
+    let running = Running::start(
+        &socket,
+        open_state(&fixture.root, config(unreachable, 300))?,
+    )?;
+    let (status, fields) = operation_four(&socket, &[token.as_bytes()])?;
+    assert_eq!(
+        (status, fields.len()),
+        (AssertionRefusal::Unavailable.status(), 0)
+    );
+    probe(&socket)?;
+    running.stop()?;
+
+    assert!(State::open(&fixture.root, policy())?
+        .assertion_principal(ISSUER, "user-0016")
+        .is_none());
+    assert_eq!(fixture.server.hits(), 0);
+    Ok(())
+}
+
+#[test]
+fn assertion_binary_serve_wires_the_configuration_from_the_environment() -> Result {
+    let fixture = Fixture::new()?;
+    let directory = fixture.root.parent().ok_or("parent missing")?;
+    let socket = directory.join("identity.sock");
+    let policy_file = directory.join("policy.json");
+    fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&policy_file)?
+        .write_all(&serde_json::to_vec(&policy())?)?;
+    let command = || {
+        let mut command =
+            std::process::Command::new(env!("CARGO_BIN_EXE_layerx-human-identity-provider"));
+        command
+            .arg("serve")
+            .env("LAYERX_HUMAN_IDENTITY_PROVIDER_STATE_ROOT", &fixture.root)
+            .env("LAYERX_HUMAN_IDENTITY_PROVIDER_SOCKET", &socket)
+            .env(
+                "LAYERX_HUMAN_IDENTITY_PROVIDER_RECOVERY_POLICY_FILE",
+                &policy_file,
+            )
+            .env(
+                "LAYERX_HUMAN_IDENTITY_PROVIDER_ALLOWED_UID",
+                rustix::process::geteuid().as_raw().to_string(),
+            );
+        command
+    };
+    let now = authority_now()?;
+    let token = fixture.signer.mint(&claims("user-0017", now));
+
+    let mut configured = OwnedChild(
+        command()
+            .env(
+                "LAYERX_HUMAN_IDENTITY_PROVIDER_ASSERTION_JWKS_URL",
+                fixture.server.url(),
+            )
+            .env("LAYERX_HUMAN_IDENTITY_PROVIDER_ASSERTION_ISSUER", ISSUER)
+            .env(
+                "LAYERX_HUMAN_IDENTITY_PROVIDER_ASSERTION_AUDIENCE",
+                AUDIENCE,
+            )
+            .spawn()?,
+    );
+    wait_ready(&socket, &mut configured.0)?;
+    let (status, fields) = operation_four(&socket, &[token.as_bytes(), WALLET_DID.as_bytes()])?;
+    assert_eq!(status, 0);
+    assert_eq!(fields.len(), 2);
+    assert!(fields[0].starts_with(b"act_"));
+    assert_eq!(fields[1], WALLET_DID.as_bytes());
+    assert_eq!(fixture.server.hits(), 1);
+    let principal = String::from_utf8(fields[0].clone())?;
+    drop(configured);
+
+    let mut unconfigured = OwnedChild(command().spawn()?);
+    wait_ready(&socket, &mut unconfigured.0)?;
+    let (status, fields) = operation_four(&socket, &[token.as_bytes()])?;
+    assert_eq!(
+        (status, fields.len()),
+        (AssertionRefusal::Unavailable.status(), 0)
+    );
+    drop(unconfigured);
+
+    let mut partial = OwnedChild(
+        command()
+            .env("LAYERX_HUMAN_IDENTITY_PROVIDER_ASSERTION_ISSUER", ISSUER)
+            .spawn()?,
+    );
+    let clock = RuntimeClock::from_environment()?;
+    let mut expires = Deadline::start(clock.as_ref(), Duration::from_secs(5))?;
+    let status = loop {
+        if let Some(status) = partial.0.try_wait()? {
+            break status;
+        }
+        assert!(
+            !expires.remaining(clock.as_ref())?.is_zero(),
+            "partial assertion configuration was not refused"
+        );
+        thread::sleep(Duration::from_millis(10));
+    };
+    assert!(!status.success());
+
+    let reopened = fixture.state()?;
+    let resolved = reopened.resolve_assertion(&token, now)?;
+    assert_eq!(resolved.principal(), principal);
+    assert_eq!(resolved.did(), Some(WALLET_DID));
     Ok(())
 }

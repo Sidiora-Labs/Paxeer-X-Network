@@ -61,3 +61,11 @@ command   = "timeout 5m sh -c '! git grep -nE -e \"api\\.paxeer\\.network\" -e \
 exit_code = 0
 log_path  = ".logs/verify.log"
 observed  = "The escaped host search matched no api.paxeer.network reference and no label.layerx.example host outside spec/; the log is empty."
+
+[gate.3.1.1]
+task      = "3.1"
+revision  = "6da61169b420cb5ea0100e38040545c1ec0174cb"
+command   = "timeout 20m tools/runtime/run-with-clock.sh sh -c 'cd human && cargo test -p layerx-human-identity-provider --test assertion'"
+exit_code = 0
+log_path  = ".logs/verify.log"
+observed  = "Fourteen assertion tests passed after one repair cycle that moved a test-side key-set hit-count assertion before the state reopen; the run needed a dedicated cargo target directory."
