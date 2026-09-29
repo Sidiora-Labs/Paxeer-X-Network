@@ -41,7 +41,20 @@ while [ "$#" -gt 0 ]; do
 done
 printf '%s %s\n' "$dest" "$command" >>"$CHECK_LIVE_TEST_CALLS"
 [ "$batch" -eq 1 ] || exit 99
-[ "$command" = true ] || exit 98
+case "$command" in
+true) ;;
+*systemctl*)
+	n="${dest#*-rpc-}"
+	n="${n%%-*}"
+	case "$dest" in
+	up-rpc-*-fresh) echo "api$n active 120" ;;
+	up-rpc-*-dead) echo "api$n failed 0" ;;
+	up-rpc-*) echo "api$n active 7200" ;;
+	up-*) echo "none none 0" ;;
+	esac
+	;;
+*) exit 98 ;;
+esac
 case "$dest" in
 up-*) exit 0 ;;
 hang-*) exec sleep 5 ;;
@@ -49,6 +62,35 @@ hang-*) exec sleep 5 ;;
 esac
 SH
 chmod +x "$work/bin/ssh"
+
+# A local curl stand-in: answers eth_blockNumber for the public names, at the
+# fixed head minus the lag CHECK_LIVE_TEST_LAG ("apiN:blocks ...") assigns,
+# and fails to connect for the names in CHECK_LIVE_TEST_DOWN.
+cat >"$work/bin/curl" <<'SH'
+#!/usr/bin/env bash
+set -eu
+url=""
+for arg in "$@"; do
+	case "$arg" in
+	https://*) url="$arg" ;;
+	esac
+done
+name="${url#https://}"
+name="${name%%.*}"
+printf '%s curl\n' "$name" >>"$CHECK_LIVE_TEST_CALLS"
+case " ${CHECK_LIVE_TEST_DOWN:-} " in
+*" $name "*) exit 7 ;;
+esac
+lag=0
+case " ${CHECK_LIVE_TEST_LAG:-} " in
+*" $name:"*)
+	lag="${CHECK_LIVE_TEST_LAG##*"$name:"}"
+	lag="${lag%% *}"
+	;;
+esac
+printf '{"jsonrpc":"2.0","id":1,"result":"0x%x"}\n' "$((26400000 - lag))"
+SH
+chmod +x "$work/bin/curl"
 export PATH="$work/bin:$PATH"
 export CHECK_LIVE_TEST_CALLS="$work/calls"
 
@@ -92,6 +134,28 @@ PLATFORM_HOST=up-platform
 EXPLORER_HOST=up-explorer
 VALIDATOR_HOSTS="up-validator-a up-validator-b"
 RPC_HOSTS="up-rpc-1 up-rpc-2 up-rpc-3"
+HPX_HOST=up-hpx
+ENV
+
+cat >"$work/hosts-rpc-good.env" <<'ENV'
+EDGE_HOST=up-edge
+KERNEL_HOST=up-kernel
+PLATFORM_HOST=up-platform
+EXPLORER_HOST=up-explorer
+ARCHIVE_HOST=up-archive
+VALIDATOR_HOSTS="up-validator-a up-validator-b"
+RPC_HOSTS="up-rpc-1 up-rpc-2 up-rpc-3 up-rpc-4 up-rpc-5 up-rpc-6 up-rpc-7 up-rpc-8 up-rpc-9 up-rpc-10 up-rpc-11 up-rpc-12 up-rpc-13 up-rpc-14 up-rpc-15 up-rpc-16"
+HPX_HOST=up-hpx
+ENV
+
+cat >"$work/hosts-rpc-bad.env" <<'ENV'
+EDGE_HOST=up-edge
+KERNEL_HOST=up-kernel
+PLATFORM_HOST=up-platform
+EXPLORER_HOST=up-explorer
+ARCHIVE_HOST=up-archive
+VALIDATOR_HOSTS="up-validator-a up-validator-b"
+RPC_HOSTS="up-rpc-1 up-rpc-2 up-rpc-3 up-rpc-4 up-rpc-5 up-rpc-6 up-rpc-7 up-rpc-8 up-rpc-9-fresh up-rpc-10-dead up-rpc-11 up-rpc-13 up-rpc-14 up-rpc-15 down-rpc-16"
 HPX_HOST=up-hpx
 ENV
 
@@ -142,6 +206,7 @@ expect check_live_extra_argument "$work/hosts-good.env" 2 hosts extra -- \
 
 expect check_live_help "$work/hosts-good.env" 0 --help -- \
 	"usage: tools/bringup/check-live.sh" \
+	"rpc-nodes" \
 	"BRINGUP_HOSTS_FILE" \
 	"CHECK_LIVE_TIMEOUT"
 
@@ -196,6 +261,35 @@ CHECK_LIVE_TEST_TIMEOUT=1 expect check_live_hosts_timeout "$work/hosts-hang.env"
 	"pass RPC_HOSTS reachable=3/3" \
 	"fail HPX_HOST reachable=0/1 ssh=124" \
 	"check-live: 1 check(s) failed"
+
+expect check_live_rpc_nodes_passing "$work/hosts-rpc-good.env" 0 rpc-nodes -- \
+	"pass api1 head=26400000 lag=0 unit=active active=7200s" \
+	"pass api12 head=26400000 lag=0 unit=active active=7200s" \
+	"pass api16 head=26400000 lag=0 unit=active active=7200s" \
+	"check-live: all checks passed"
+
+if [ "$(grep -c ' curl$' "$CHECK_LIVE_TEST_CALLS")" -eq 16 ] && [ "$(grep -c 'systemctl' "$CHECK_LIVE_TEST_CALLS")" -eq 16 ] &&
+	[ "$(grep -c '^pass api' <<<"$(BRINGUP_HOSTS_FILE="$work/hosts-rpc-good.env" "$checker" rpc-nodes)")" -eq 16 ]; then
+	echo "ok   check_live_rpc_nodes_one_request_per_name_and_destination"
+else
+	echo "FAIL check_live_rpc_nodes_one_request_per_name_and_destination: want sixteen curl calls, sixteen ssh unit calls and sixteen pass lines"
+	cat "$CHECK_LIVE_TEST_CALLS"
+	failures=$((failures + 1))
+fi
+
+export CHECK_LIVE_TEST_LAG="api14:11 api2:10" CHECK_LIVE_TEST_DOWN="api3"
+expect check_live_rpc_nodes_failing "$work/hosts-rpc-bad.env" 1 rpc-nodes -- \
+	"pass api1 head=26400000 lag=0 unit=active active=7200s" \
+	"pass api2 head=26399990 lag=10 unit=active active=7200s" \
+	"fail api3 head=none lag=none unit=active active=7200s" \
+	"fail api9 head=26400000 lag=0 unit=active active=120s" \
+	"fail api10 head=26400000 lag=0 unit=failed active=0s" \
+	"fail api12 head=26400000 lag=0 unit=unmapped active=none" \
+	"fail api14 head=26399989 lag=11 unit=active active=7200s" \
+	"fail RPC_HOSTS[14] ssh=255" \
+	"fail api16 head=26400000 lag=0 unit=unmapped active=none" \
+	"check-live: 7 check(s) failed"
+unset CHECK_LIVE_TEST_LAG CHECK_LIVE_TEST_DOWN
 
 if [ "$failures" -ne 0 ]; then
 	echo "check-live.test: $failures case(s) failed"

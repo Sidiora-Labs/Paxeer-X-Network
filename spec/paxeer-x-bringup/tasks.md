@@ -186,7 +186,7 @@
     - On the host the map names as HPX_HOST run hpx/publish.sh with the live paxd, the six native libraries and the live config, then hpx/hosting/deploy.sh for the current release assets with a generated HPX_REGISTER_TOKEN under /etc/hpx-registry.env.
     - Add the hpx subcommand: /healthz at https://node.hyperpaxeer.com with the chain id and the source revision, checksums.txt verified against the served artifacts, and /api/nodes answering.
     - _Requirements: 18.2_
-  - [ ] 4.15 Repair the lagging and frozen public RPC nodes
+  - [ ] 4.15 Repair the lagging and frozen public RPC nodes — **Implemented - qualification pending**
     - On each of the RPC_HOSTS install the release that fixes the JSON-RPC double-bind, clear the frozen state where a node stopped advancing, resync the lagging nodes with state sync, and restart their units.
     - Add the rpc-nodes subcommand: each of the sixteen public RPC names answers eth_blockNumber within ten blocks of the highest answer and each unit is active without a restart in the last hour.
     - _Requirements: 18.3_

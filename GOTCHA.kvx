@@ -653,3 +653,21 @@ area    = "spec-tooling"
 symptom = "cg sync and cg index exit 124 under a timeout while a fleet runs, and cg spec done reports the graph refresh skipped because the database is busy."
 cause   = "Every worktree shares one graph database and one indexing gate, and any cg process in another lane holds it."
 do      = "Do not wait on the index inside a task; run the verify_cmd yourself, record it, and let the graph catch up after the commit."
+
+[gotcha.106]
+area    = "ops-shell"
+symptom = "Piping a script into a remote shell with ssh -n ... bash -s returns exit 0 and prints nothing on every host."
+cause   = "The -n flag redirects the ssh client's stdin from /dev/null, so bash -s on the far side reads an empty script."
+do      = "Drop -n when the remote command reads its script from stdin; keep -n only for commands that take no input."
+
+[gotcha.107]
+area    = "ops-shell"
+symptom = "A per-host survey that greps journalctl --since over a time window overruns its timeout on hosts with large journals while the fast hosts answer at once."
+cause    = "A time-window query walks the whole journal index; the survey pays that on every host."
+do      = "Bound journal reads with -n <lines> -o cat into one variable and grep that, and keep the per-host timeout well under the caller's cap."
+
+[gotcha.108]
+area    = "bringup-probe"
+symptom = "A probe that asks sixteen public RPC names for eth_blockNumber one after another reports the synced names as lagging by ten to thirty blocks."
+cause   = "Each request takes a fraction of a second and the chain advances several blocks a second, so names asked first fall behind names asked last by more than the ten-block window."
+do      = "Ask every name at once in background jobs into per-name files, wait, then compare the answers against the highest one."
