@@ -7,6 +7,7 @@ data:
   asset-id: "b5a32b12029f8ddfb905f90f280f664b46390de0fc62770fc197dd87b18cd898"
   replica-id: "6c61796572782d626574612d726563656970742d617574686f726974792d3031"
   paxeer-relay-port: "18545"
+  paxeer-chain-id: "125"
 ---
 apiVersion: v1
 kind: Service
@@ -186,8 +187,6 @@ spec:
             - "4021"
             - --lni-gid
             - "4020"
-            - --settlement-env
-            - /run/layerx/settlement/settlement.env
           env:
             - name: LAYERX_NODE_HANDOVER_AUTHORITY_PUBLIC_KEY
               valueFrom:
@@ -198,6 +197,12 @@ spec:
             - {name: LAYERX_NODE_NETWORK_ID, valueFrom: {configMapKeyRef: {name: layerx-node-config, key: network-id}}}
             - {name: LAYERX_NODE_ASSET_ID, valueFrom: {configMapKeyRef: {name: layerx-node-config, key: asset-id}}}
             - {name: LAYERX_NODE_REPLICA_ID, valueFrom: {configMapKeyRef: {name: layerx-node-config, key: replica-id}}}
+            - {name: LAYERX_NODE_PAXEER_CHAIN_ID, valueFrom: {configMapKeyRef: {name: layerx-node-config, key: paxeer-chain-id}}}
+            - {name: LAYERX_NODE_PAXEER_RELAY_PORT, valueFrom: {configMapKeyRef: {name: layerx-node-config, key: paxeer-relay-port}}}
+            - {name: LAYERX_NODE_PAXEER_RPC_URL, value: "http://127.0.0.1:$(LAYERX_NODE_PAXEER_RELAY_PORT)"}
+            - {name: LAYERX_NODE_REGISTRY_PRECOMPILE, value: "0x0000000000000000000000000000000000001004"}
+            - {name: LAYERX_NODE_CUSTODY_PRECOMPILE, value: "0x0000000000000000000000000000000000001013"}
+            - {name: LAYERX_NODE_ANCHOR_PRECOMPILE, value: "0x0000000000000000000000000000000000001014"}
           resources: {requests: {cpu: 500m, memory: 512Mi}, limits: {cpu: "2", memory: 2Gi}}
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
           volumeMounts:
@@ -206,7 +211,6 @@ spec:
             - {name: keys, mountPath: /run/layerx/keys, readOnly: true}
             - {name: genesis-metadata, mountPath: /run/layerx/genesis/metadata.lxgb, subPath: metadata.lxgb, readOnly: true}
             - {name: tokens, mountPath: /run/layerx/tokens, readOnly: true}
-            - {name: settlement, mountPath: /run/layerx/settlement, readOnly: true}
             - {name: tmp, mountPath: /tmp}
         - name: treasury-signer
           image: ghcr.io/sidiora-labs/layerx-node:0.1.0

@@ -186,11 +186,11 @@
 # The trusted-boundary services (node with core boundary, receipt authority and agent boundary; identity;
 # Paxeer chain with its boundary) are built from the repository, applied before the testnet, gateway,
 # registry and developer manifests, and bound together in this order: the Paxeer chain starts with the
-# generated deployer address and the custody and anchor module genesis, the node bootstraps its genesis,
-# anchor-guarantors.sh registers and activates the node's guarantors in the anchor module through the Paxeer
-# boundary, and the anchor precompile address is published to the node as the settlement contract and
-# checkpoint registry of the layerx-node-settlement ConfigMap the sequencer supervisor waits for before
-# starting layerxd --serve. No Solidity contract is deployed for custody, checkpoints, bonds or challenges.
+# generated deployer address and the custody and anchor module genesis, the node bootstraps its genesis with
+# the registry, custody and anchor precompile addresses its manifest carries as settlement inputs on chain 125
+# through the loopback relay, anchor-guarantors.sh registers and activates the node's guarantors in the anchor
+# module through the Paxeer boundary, and the same settlement inputs are published as the layerx-node-settlement
+# ConfigMap the guarantors read. No Solidity contract is deployed for custody, checkpoints, bonds or challenges.
 #
 # Two reference programs are deployed through the program registry deployment ingress before the explorer
 # observation is published: programs/sdk/rust/examples/escrow, whose deployment record carries the program
@@ -283,6 +283,7 @@ RAMP_OPTIONAL_INPUTS=(LAYERX_BETA_RAMP_PORT LAYERX_BETA_RAMP_WORKER_ID LAYERX_BE
     LAYERX_BETA_RAMP_OFF_GRANT_JSON LAYERX_BETA_RAMP_ON_ACCOUNT_SEQUENCE
     LAYERX_BETA_RAMP_OFF_RECEIVER_SEQUENCE)
 PAXEER_CHAIN_ID=125
+REGISTRY_PRECOMPILE=0x0000000000000000000000000000000000001004
 CUSTODY_PRECOMPILE=0x0000000000000000000000000000000000001013
 ANCHOR_PRECOMPILE=0x0000000000000000000000000000000000001014
 MIRROR_SIGNER_SOCKET=/run/mirror-signer/signer.sock
@@ -2433,8 +2434,8 @@ settlement_publish() {
     if [ -n "$CUSTODY_PROFILE" ]; then
         custody_registration_publish
     fi
-    printf 'LAYERX_NODE_PAXEER_CHAIN_ID=%s\nLAYERX_NODE_SETTLEMENT_CONTRACT=%s\nLAYERX_NODE_CHECKPOINT_REGISTRY=%s\nLAYERX_NODE_PAXEER_RPC_ADDRESS=127.0.0.1\nLAYERX_NODE_PAXEER_RPC_PORT=%s\n' \
-        "$PAXEER_CHAIN_ID" "$GUARANTOR_BOND" "$CHECKPOINT_REGISTRY" "$PAXEER_RELAY_PORT" > "$WORK_DIR/paxeer/settlement.env"
+    printf 'LAYERX_NODE_PAXEER_CHAIN_ID=%s\nLAYERX_NODE_PAXEER_RPC_URL=http://127.0.0.1:%s\nLAYERX_NODE_REGISTRY_PRECOMPILE=%s\nLAYERX_NODE_CUSTODY_PRECOMPILE=%s\nLAYERX_NODE_ANCHOR_PRECOMPILE=%s\n' \
+        "$PAXEER_CHAIN_ID" "$PAXEER_RELAY_PORT" "$REGISTRY_PRECOMPILE" "$CUSTODY_PRECOMPILE" "$ANCHOR_PRECOMPILE" > "$WORK_DIR/paxeer/settlement.env"
     bash "$REPO_ROOT/platform/hosted/node/bootstrap.sh" --check-settlement "$WORK_DIR/paxeer/settlement.env" > /dev/null \
         || fail "the settlement environment was refused by bootstrap.sh --check-settlement"
     apply_configmap "$ns" layerx-node-settlement --from-file=settlement.env="$WORK_DIR/paxeer/settlement.env" \
