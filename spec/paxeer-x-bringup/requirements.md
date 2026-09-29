@@ -134,14 +134,14 @@ Every LayerX system that the surveys found ready, blocked or incomplete is broug
 1. WHEN the four sidecar configs are re-rendered THE gateway.endpoint SHALL be the router URL's /rpc, the sequencer id and public key SHALL be the kernel host's real ones, the four asset ids SHALL be the kernel-registered ids, and the units SHALL restart with /health ok.
 2. WHEN one /search is paid with a PAYMENT-SIGNATURE THE sidecar SHALL answer 200 through search.paxeer.network, and WHEN the submitters are funded and one fetch request is sent to the xweb precompile THE loop SHALL end in XWebFulfilled.
 
-## Requirement 14: Explorer production on the explorer host over the archive host
+## Requirement 14: Explorer fork in production over the archive host
 
-**User Story:** As a user, explorer.paxeer.network shows the whole chain history and the kernel entities.
+**User Story:** As a user, paxscan.io shows the whole chain history and the kernel entities.
 
 ### Acceptance Criteria
 
 1. WHEN the archive host's node runs with min-retain-blocks 0 THE node SHALL answer eth_getBlockByNumber for a block below the first pruned height of the public nodes and follow the head.
-2. WHEN the explorer backend, frontend and database run on the explorer host against the archive host THE frontend SHALL answer 200 at explorer.paxeer.network, /api/health and /api/v2/stats SHALL answer 200, and PAXEER_X_CAPABILITIES_ENABLED SHALL be true with /api/v2/paxeer-x/capabilities answering 200.
+2. WHEN the deployed explorer backend reads the archive host's public RPC name as its primary endpoint THE frontend SHALL answer 200 at paxscan.io, the backend's /api/health and /api/v2/stats SHALL answer 200, and PAXEER_X_CAPABILITIES_ENABLED SHALL be true with /api/v2/paxeer-x/capabilities answering 200.
 3. WHEN the history copy job has run THE block count from the first indexed block SHALL match the legacy source.
 
 ## Requirement 15: Developer plane
