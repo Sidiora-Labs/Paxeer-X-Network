@@ -154,8 +154,22 @@ fn balance(parsed: &BTreeMap<String, String>) -> Result<String, String> {
     let account_id = layerx_wire::hash::account_id_for_protocol(&account, node.protocol_version)
         .map_err(|error| format!("account id: {error:?}"))?;
     let sequencer_key = node.authorised_sequencer_key;
-    let sealed = node.latest_sealed_batch.max(1);
-    let authorization = SequencerAuthorization::new(sequencer_key, sequencer_key, 1, sealed);
+    let sealed = node.latest_sealed_batch;
+    // Read evidence is bound to the signing terms of the latest sealed batch header, so they are
+    // taken from that header; before the first seal no state can be answered with evidence.
+    let authorization = if sealed == 0 {
+        SequencerAuthorization::new(sequencer_key, sequencer_key, 1, 1)
+    } else {
+        let header = client
+            .batch_header(sealed, 2)
+            .map_err(|error| format!("batch header {sealed}: {error:?}"))?;
+        SequencerAuthorization::new(
+            header.sequencer_id,
+            sequencer_key,
+            header.first_batch_number,
+            header.last_batch_number,
+        )
+    };
     let read = match client.balance(
         account_id,
         asset,

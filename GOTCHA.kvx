@@ -833,3 +833,33 @@ area    = "tooling"
 symptom = "The custody credit fixture pipeline behind the daemon onboarding tests cannot start on a box whose default python3 lacks eth_account, although forge, cast, go and paxd are all present."
 cause   = "withdraw-custody.py and the custody chain helper import eth_account and cryptography directly and the Makefile's BRIDGE_PYTHON defaults to python3 with no venv."
 do      = "Before dispatching any task that reuses the first-credit path, run python3 -c 'import eth_account, cryptography' under the BRIDGE_PYTHON the gate will use and name that interpreter in the prompt."
+
+[gotcha.136]
+area    = "tooling"
+symptom = "The custody fixture's local chain refuses to start with 'init-chain: paxd lacks the loopback RPC bind setting; rebuild the current source'."
+cause   = "The paxd on PATH is an installed release build without the loopback RPC bind setting that init-chain.sh requires."
+do      = "Make the test target depend on paxeer-build and pass PAXD naming build/paxd, as the human and agent test targets already do."
+
+[gotcha.137]
+area    = "client"
+symptom = "A probe read over the LNI fails with AuthorityRangeMismatch although the handshake, network id and sequencer key are right."
+cause   = "The client compares the signed batch header's response authorization (sequencer id, key, first and last batch) with the read context's SequencerAuthorization, which a context built as (key, key, 1, latest sealed batch) does not match; batch 0 has no header, so no read carries evidence before the first seal."
+do      = "Wait for a sealed batch, fetch its header with batch_header and build the authorization from its sequencer id and batch range in every read helper of the probe at once, since each helper builds its own context."
+
+[gotcha.138]
+area    = "tests"
+symptom = "Running withdraw-custody.py in its default mode leaves evidence files under qual-logs/set1 that git add -A would commit."
+cause   = "The script's default evidence directory is qual-logs/set1 at the repository root and no ignore rule covers it."
+do      = "Run it with --export into the test's temporary work directory, or clear qual-logs before committing."
+
+[gotcha.139]
+area    = "tests"
+symptom = "A first credit signed by sign-credit is admissible for only five minutes after it is signed."
+cause   = "sign-credit sets not_before to the signing wall clock and not_after five minutes later, and the daemon admits against its own wall clock."
+do      = "Export the credit in the same test run right before the supervisors start and submit it as soon as the node answers; never cache a signed credit across runs."
+
+[gotcha.140]
+area    = "tooling"
+symptom = "shellcheck on the node test script exits 1 on the base revision."
+cause   = "Two pre-existing SC2015 info findings (A && B || C used as if-then-else) sit in the script."
+do      = "Compare shellcheck findings on that script against the base revision before treating a non-zero exit as a regression."
