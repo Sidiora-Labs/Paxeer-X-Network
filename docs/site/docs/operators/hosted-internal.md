@@ -21,7 +21,7 @@ The image is `ghcr.io/sidiora-labs/layerx-internal:0.1.0`, user
 `4020:4020`. The build produces both binaries. The image `ENTRYPOINT`
 is `/usr/local/bin/layerx-kms`; event-source Deployments set
 `command: [/usr/local/bin/layerx-event-source]`
-(`platform/hosted/internal/Dockerfile:5-11`;
+(`docker/platform-internal/Dockerfile:5-11`;
 `platform/hosted/internal/deployment.yaml:99-100`;
 `platform/hosted/internal/deployment.yaml:160-161`).
 

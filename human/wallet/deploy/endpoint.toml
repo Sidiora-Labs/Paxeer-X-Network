@@ -4,7 +4,7 @@ kill_signal = "SIGTERM"
 kill_timeout = "30s"
 
 [build]
-  dockerfile = "platform/hosted/gateway/Dockerfile"
+  dockerfile = "docker/platform-gateway/Dockerfile"
 
 [env]
   LAYERX_GATEWAY_LXP_WIRE_VERSION = "3"

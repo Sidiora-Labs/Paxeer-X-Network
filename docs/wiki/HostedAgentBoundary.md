@@ -13,7 +13,7 @@ gateway, program registry, and webhooks
 The image is `ghcr.io/sidiora-labs/layerx-agent-boundary:0.1.0`,
 user `4020:4020`, entrypoint
 `/usr/local/bin/layerx-agent-boundary`
-(`platform/hosted/agent-boundary/Dockerfile:5-11`). The node
+(`docker/platform-agent-boundary/Dockerfile:5-11`). The node
 StatefulSet runs that image as container `agent-boundary` with
 `runAsUser: 4021` and `runAsGroup: 4020`
 (`platform/hosted/node/deployment.yaml:193-196`). Those two

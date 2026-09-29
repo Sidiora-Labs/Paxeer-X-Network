@@ -575,3 +575,9 @@ area    = "wallet-app"
 symptom = "The wallet PWA image cannot be built from any Dockerfile: webpack stops on node:child_process, node:crypto, node:https, node:http and node:path."
 cause   = "human/wallet/sdk/src/modules/index.ts re-exports the whole agent SDK index, which includes Node-only modules, into the client bundle."
 do      = "Give the agent SDK a browser-safe entry or import only the browser-safe modules from the wallet SDK before expecting a wallet image build to pass."
+
+[gotcha.93]
+area    = "containers"
+symptom = "docker build --check fails on a Dockerfile whose FROM is an ARG defaulting to an in-repo image, with not found from the registry."
+cause   = "The check resolves base image metadata, and none of the ghcr.io/sidiora-labs beta images named in the repository are published."
+do      = "Build or pull the base image under that name before linting, or pass the build argument the real pipeline passes; do not drop the file from the check."

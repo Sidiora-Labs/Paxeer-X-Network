@@ -1,0 +1,10 @@
+*
+!human/apps/web/package.json
+!human/apps/web/package-lock.json
+!human/apps/web/packages/layerx-ui
+!platform/hosted/dashboard/web
+!tools/ci/developer-dashboard-lock.mjs
+**/node_modules
+**/.next
+**/.env
+**/.env.*

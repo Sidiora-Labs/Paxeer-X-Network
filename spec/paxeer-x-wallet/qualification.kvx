@@ -1468,3 +1468,18 @@ symbol = "export from @sidiora/layerx-sdk"
 observed = "The wallet PWA client bundle imports the whole agent SDK index, whose node-mirror.ts, program-lifecycle.ts and agent-http.ts import node:child_process, node:crypto, node:https, node:http and node:path, so next build cannot finish and no image of the app can be produced from any Dockerfile."
 assumption = "Pre-existing in the app and SDK sources; needs a browser-safe SDK entry, left for the wallet SDK owner; the container move is complete and the gate is implemented, not qualified."
 severity = "high"
+
+[gate.6.11.verify]
+revision = "c4eab3d00409b6643e93ec4819465dd403e72fb3"
+command = "timeout 20m tools/containers/check.sh platform-agent-boundary platform-authority platform-core platform-dashboard platform-dashboard-web platform-faucet platform-gateway platform-identity platform-internal platform-node paxeer platform-registry platform-registry-builder platform-testnet platform-webhooks ramps relay-archive hpx-registry"
+exit_code = 1
+log_path = ".logs/verify-6.11.log"
+observed = "Twenty of the twenty-one Dockerfiles pass docker build --check and the layout and reference checks pass; docker/paxeer/Dockerfile.paxd fails because its default base ghcr.io/sidiora-labs/paxd-node:0.1.0 cannot be resolved (log .logs/containers-check/docker_paxeer_Dockerfile.paxd.log)."
+
+[observation.6.11.1]
+task = "missing external authority"
+file = "docker/paxeer/Dockerfile.paxd"
+symbol = "ARG PAXD_IMAGE=ghcr.io/sidiora-labs/paxd-node:0.1.0"
+observed = "docker buildx imagetools inspect returns not found for paxd-node:0.1.0, paxd:0.1.0, layerx-node:0.1.0 and layerx-gateway:0.1.0 under ghcr.io/sidiora-labs with this host logged in to ghcr.io, so no beta image named by platform/hosted/tests/beta-images.sh is published and the paxd file cannot be linted without a local paxd-node build passed as PAXD_IMAGE."
+assumption = "Pre-existing publication gap outside this task; the file is unchanged by the move and the check is left strict; the check passes once paxd-node is published or built locally under that name."
+severity = "medium"

@@ -39,7 +39,7 @@ registry prefix. The Dockerfile builds
 `-p layerx-platform-webhooks --bin layerx-webhooks`, copies
 `/src/platform/target/release/layerx-webhooks`, sets `USER 65532:65532`,
 and entrypoint `/usr/local/bin/layerx-webhooks`
-(`platform/hosted/webhooks/Dockerfile:4-10`). The Deployment sets
+(`docker/platform-webhooks/Dockerfile:4-10`). The Deployment sets
 `runAsNonRoot: true` without `runAsUser`
 (`platform/hosted/webhooks/deployment.yaml:80-83`). Those two user
 bindings differ.

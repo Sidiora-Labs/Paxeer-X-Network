@@ -23,7 +23,7 @@ that Human origin as `LAYERX_QUALIFICATION_HUMAN_URL`
 
 The image is `ghcr.io/sidiora-labs/layerx-gateway:0.1.0`, user
 `4020:4020`, entrypoint `/usr/local/bin/layerx-gateway`
-(`platform/hosted/gateway/Dockerfile:5-11`;
+(`docker/platform-gateway/Dockerfile:5-11`;
 `platform/hosted/gateway/deployment.yaml:67-69`). The Deployment has
 three replicas, listens on `0.0.0.0:9443`, exposes Service port `443`
 to container `9443`, and is reached as Ingress host

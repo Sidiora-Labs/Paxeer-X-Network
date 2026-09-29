@@ -13,11 +13,11 @@ the reset operator call the admin listener.
 
 The image is `ghcr.io/sidiora-labs/layerx-testnet-control:0.1.0`, user
 `4020:4020`, entrypoint `/usr/local/bin/layerx-testnet-control`
-(`platform/hosted/testnet/Dockerfile:6-13`;
+(`docker/platform-testnet/Dockerfile:6-13`;
 `platform/hosted/testnet/deployment.yaml:80-82`;
 `platform/hosted/tests/beta-cluster.sh:114`). The image also copies
 `run-testnet.sh`, `reset-testnet.sh`, and `render-status.sh` to
-`/opt/layerx/` (`platform/hosted/testnet/Dockerfile:11`). The
+`/opt/layerx/` (`docker/platform-testnet/Dockerfile:11`). The
 Deployment command is the binary, not `run-testnet.sh`
 (`platform/hosted/testnet/deployment.yaml:82`).
 

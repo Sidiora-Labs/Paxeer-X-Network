@@ -4,8 +4,9 @@ umask 077
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo=$(cd "$here/../../../.." && pwd)
 recipe_path=platform/hosted/registry/builder-environment
+dockerfile_path=docker/platform-registry-builder
 revision=$(git -C "$repo" rev-parse HEAD)
-git -C "$repo" diff --quiet "$revision" -- programs/vendor "$recipe_path" || {
+git -C "$repo" diff --quiet "$revision" -- programs/vendor "$recipe_path" "$dockerfile_path" || {
     printf 'Commit builder inputs before constructing the source-bound environment\n' >&2
     exit 1
 }
@@ -24,14 +25,17 @@ cleanup() {
     if [ -n "$container" ]; then docker rm "$container" >/dev/null; fi
 }
 trap cleanup EXIT
-git -C "$repo" archive "$revision" programs/vendor "$recipe_path" | tar -C "$out/source" -xf -
+git -C "$repo" archive "$revision" programs/vendor "$recipe_path" "$dockerfile_path" | tar -C "$out/source" -xf -
 recipe="$out/source/$recipe_path"
+dockerfile="$out/source/$dockerfile_path/Dockerfile"
 python3 "$recipe/verify-vendor.py" "$out/source/programs/vendor" "$context/vendor"
-for name in Dockerfile package.json package-lock.json rust-downloads.lock install-rust.sh cargo-config.toml layerx-rustc layerx-build; do
+test -f "$dockerfile" && test ! -L "$dockerfile"
+cp -- "$dockerfile" "$context/Dockerfile"
+for name in package.json package-lock.json rust-downloads.lock install-rust.sh cargo-config.toml layerx-rustc layerx-build; do
     test -f "$recipe/$name" && test ! -L "$recipe/$name"
     cp -- "$recipe/$name" "$context/$name"
 done
-docker build --platform linux/amd64 --iidfile "$out/image-id" "$context"
+docker build --platform linux/amd64 --iidfile "$out/image-id" --file "$context/Dockerfile" "$context"
 container=$(docker create "$(cat "$out/image-id")" /bin/true)
 docker export "$container" -o "$out/export.tar"
 docker rm "$container" >/dev/null
