@@ -744,7 +744,7 @@ reqs       = ["18.2"]
 
 [task.4.15]
 title      = "Repair the lagging and frozen public RPC nodes"
-status     = "pending"
+status     = "implemented"
 wave       = 4
 requires   = ["0.1"]
 do_1       = "On each of the RPC_HOSTS install the release that fixes the JSON-RPC double-bind, clear the frozen state where a node stopped advancing, resync the lagging nodes with state sync, and restart their units."

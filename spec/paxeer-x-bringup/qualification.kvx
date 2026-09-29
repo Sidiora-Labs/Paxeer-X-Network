@@ -69,3 +69,19 @@ command   = "timeout 20m tools/runtime/run-with-clock.sh sh -c 'cd human && carg
 exit_code = 0
 log_path  = ".logs/verify.log"
 observed  = "Fourteen assertion tests passed after one repair cycle that moved a test-side key-set hit-count assertion before the state reopen; the run needed a dedicated cargo target directory."
+
+[observation.4.15.1]
+task       = "4.15"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_rpc_nodes"
+observed   = "The read-only survey of the sixteen public RPC hosts found every unit active without restarts, panics or bind errors, fifteen on the release binary and one on a pre-release binary; nine names trail the head: four by about 93k blocks, two by about 70k, one by about 13k, all advancing at chain speed without catching up, one by about 530k and the pre-release one by about 1.96M blocks, but every remote write (unit restart, block sync switch, binary swap, data copy) was refused by the session's permission classifier, so do_1 did not run and the verify_cmd fails on those nine names."
+assumption = "The operator runs the repair from a session allowed to write over ssh: restart with block sync on for the seven names within the retain window, a data copy from a synced host for the two beyond it plus the staged release binary for the pre-release host; the verify_cmd then passes once every restarted unit has been active for an hour."
+severity   = "blocker"
+
+[observation.4.15.2]
+task       = "4.15"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_rpc_nodes"
+observed   = "RPC_HOSTS in the private host map lists fifteen destinations; the twelfth public name resolves from this box, its host answers ssh, runs the release binary at the head and is not on the never-place line, but no RPC_HOSTS entry maps to it, so the probe prints unit=unmapped for that name."
+assumption = "The operator appends the twelfth name's destination to RPC_HOSTS in the private host map; the probe needs no change."
+severity   = "blocker"
