@@ -14,3 +14,11 @@
 #   probe runs of the deploy tasks and the wave gates on the merged wave tip.
 #   Keys: revision, command, exit_code, log_path, observed. Never a hostname,
 #   an address, a secret or a person's name.
+
+[observation.0.1.1]
+task       = "0.1"
+file       = "tools/bringup/check-live.sh"
+symbol     = "load_hosts, check_hosts, usage"
+observed   = "cg spec done reran the verify_cmd itself (exit 0) and then refused with three graph checks failed: the symbol check finds no bash function at all, the long-standing functions of tools/wallet/check-live.sh included, since the graph holds shell scripts as full text only."
+assumption = "No shell-only task can pass cg spec done without --force until the graph defines shell function symbols; the task stays at implemented with its verify_cmd passing until the feature manager rules on the symbol gate."
+severity   = "blocker"

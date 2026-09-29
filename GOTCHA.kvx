@@ -623,3 +623,33 @@ area    = "spec-tooling"
 symptom = "cg spec lint --help does not print help; it lints the active feature and reports clean."
 cause   = "The lint subcommand treats unknown flags as absent and defaults to the active feature."
 do      = "Use cg spec lint -f <feature>; read the usage from spec/workflow.kvx and the fleet protocol instead of --help."
+
+[gotcha.101]
+area    = "spec-tooling"
+symptom = "cg spec start leaves spec/<feature>/spec.kvx.lock behind as an untracked file that .gitignore does not cover, so git add -A would commit it."
+cause   = "The spec commands take a lock beside the feature file and do not remove it on exit."
+do      = "Delete spec/<feature>/spec.kvx.lock before staging a lane commit; never commit it."
+
+[gotcha.102]
+area    = "spec-tooling"
+symptom = "cg spec done runs the task's verify_cmd itself, so the gate runs a second time at the same revision right after the agent's own run."
+cause   = "The done command re-executes verify_cmd before its graph checks instead of reading the recorded evidence."
+do      = "Expect that second run inside cg spec done, record the agent's own run as the evidence, and never launch a third run."
+
+[gotcha.103]
+area    = "tooling"
+symptom = "The qualification format step has no shell formatter: shfmt is not installed on the build box."
+cause   = "Only shellcheck ships with the box; the tab-indented style of the scripts under tools/ came from shfmt runs elsewhere."
+do      = "Indent shell scripts with tabs by hand after the neighbouring script and run shellcheck -s bash as the lint; do not install a formatter inside a task."
+
+[gotcha.104]
+area    = "spec-tooling"
+symptom = "cg spec done without --force refuses a shell-only task with symbol <function> not defined in the graph although the function exists and the verify_cmd passed."
+cause   = "The code graph stores shell scripts as full text only and defines no symbols for bash functions, so every symbols entry naming a shell function fails the graph check."
+do      = "Record the refusal once in the qualification log, set the task to implemented with cg spec implemented, and let the feature manager rule on the graph gate; never force."
+
+[gotcha.105]
+area    = "spec-tooling"
+symptom = "cg sync and cg index exit 124 under a timeout while a fleet runs, and cg spec done reports the graph refresh skipped because the database is busy."
+cause   = "Every worktree shares one graph database and one indexing gate, and any cg process in another lane holds it."
+do      = "Do not wait on the index inside a task; run the verify_cmd yourself, record it, and let the graph catch up after the commit."

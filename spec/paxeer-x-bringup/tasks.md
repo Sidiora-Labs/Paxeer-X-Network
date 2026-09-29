@@ -7,7 +7,7 @@
 ## Wave 0 - Edge and docs
 
 - [ ] 0. Front every public name, issue the internal CA, fix the docs and deliver the probe
-  - [ ] 0.1 Deliver the operator host-map contract and the bring-up live probe
+  - [-] 0.1 Deliver the operator host-map contract and the bring-up live probe
     - Write tools/bringup/check-live.sh after tools/wallet/check-live.sh: a usage block, one function per subcommand of [design.probe], pass and fail lines with the observed value, CHECK_LIVE_TIMEOUT, exit 0 only when every check passes and 2 on usage; every subcommand of a later task is added by that task.
     - Source BRINGUP_HOSTS_FILE in a load_hosts function that exits 2 naming the first missing role of EDGE_HOST, KERNEL_HOST, PLATFORM_HOST, EXPLORER_HOST, ARCHIVE_HOST, VALIDATOR_HOSTS, RPC_HOSTS and HPX_HOST, and never echoes a value; implement the hosts subcommand as one ssh true per role.
     - Write tools/bringup/check-live.test.sh after tools/wallet/check-live.test.sh proving the usage exit, a passing subcommand and a failing subcommand against local fixtures with no network.
