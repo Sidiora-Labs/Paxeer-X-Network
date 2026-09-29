@@ -2064,7 +2064,7 @@ fn decode_hex_20(value: &str) -> Result<[u8; 20], ()> {
 
 fn decode_hex(value: &str) -> Result<Vec<u8>, ()> {
     let value = value.strip_prefix("0x").ok_or(())?;
-    if value.is_empty() || value.len() % 2 != 0 || value.len() > 512 {
+    if value.is_empty() || !value.len().is_multiple_of(2) || value.len() > 512 {
         return Err(());
     }
     (0..value.len())
@@ -3696,7 +3696,6 @@ impl ProductionComponents {
     }
 
     fn intent_from_request(
-        &self,
         request: &ScopedRequest<'_>,
         asset: AssetId,
     ) -> Result<crate::journeys::UnifiedIntent, ApiFailure> {
@@ -3734,7 +3733,7 @@ impl ProductionComponents {
         scope: &mut crate::store::PrincipalScope<'_>,
     ) -> Result<BackendResponse, ApiFailure> {
         let asset = intent_asset(&request.body)?;
-        let intent = self.intent_from_request(request, asset)?;
+        let intent = Self::intent_from_request(request, asset)?;
         let (observed, _, currency) = self.intent_observed_state(scope, asset)?;
         let planned = crate::journeys::plan(&intent, &observed).map_err(intent_failure)?;
         Ok(BackendResponse {
@@ -3752,7 +3751,7 @@ impl ProductionComponents {
         let submitted =
             crate::journeys::SubmitPlanRequest::from_json(&request.body).map_err(submit_failure)?;
         let asset = intent_asset(&request.body)?;
-        let intent = self.intent_from_request(request, asset)?;
+        let intent = Self::intent_from_request(request, asset)?;
         let (observed, _, currency) = self.intent_observed_state(scope, asset)?;
         let planned = crate::journeys::plan(&intent, &observed).map_err(intent_failure)?;
         let now = self.now()?;
@@ -5879,11 +5878,17 @@ impl std::fmt::Debug for AttestorCustodyConfig {
             .field("signers", &self.signers)
             .field("identity", &"[client identity]")
             .field("deadline", &self.deadline)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
 impl AttestorCustodyConfig {
+    /// Builds the attestor custody configuration and checks its client identity and quorum.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a configuration whose client certificates or private key are rejected, or whose
+    /// signers are not at least three distinct configured attestor nodes.
     pub fn new(
         nodes: Vec<(String, SocketAddr)>,
         signers: Vec<String>,
@@ -6079,6 +6084,11 @@ fn attestor_reference_parts(
 }
 
 impl AttestorKms {
+    /// Connects to the attestor quorum described by `config` and probes it.
+    ///
+    /// # Errors
+    ///
+    /// Returns the probe's KMS error when the attestor quorum does not answer.
     pub fn connect(config: AttestorCustodyConfig) -> Result<Self, CustodyError> {
         let kms = Self {
             inner: Arc::new(AttestorKmsState {
@@ -6095,6 +6105,12 @@ impl AttestorKms {
         Ok(kms)
     }
 
+    /// Records the identity assertion that authorizes signing for `subject`.
+    ///
+    /// # Errors
+    ///
+    /// Refuses an invalid subject or an empty assertion as an authentication failure, and
+    /// reports the KMS unavailable when the assertion store cannot be locked.
     pub fn admit_assertion(&self, subject: &str, assertion: &str) -> Result<(), CustodyError> {
         if !attestor_owner_valid(subject) || assertion.is_empty() {
             return Err(CustodyError::Kms(KmsError::Authentication));
@@ -6110,6 +6126,12 @@ impl AttestorKms {
         Ok(())
     }
 
+    /// Creates the attestor-held primary key for `owner` and `account` in `keystore`.
+    ///
+    /// # Errors
+    ///
+    /// Refuses an invalid owner or an empty account, returns the keystore's creation error,
+    /// and reports the KMS unavailable when the enrolment state cannot be locked.
     pub fn create_owned_key(
         &self,
         keystore: &Keystore,

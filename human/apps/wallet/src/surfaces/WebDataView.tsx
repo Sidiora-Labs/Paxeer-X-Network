@@ -75,9 +75,9 @@ export function DrawCaps({ kernel, grants, budget }: Pick<WebDataViewProps, 'ker
 
 export function WebDataView({ sidRate, kernel, grants, budget, legs }: WebDataViewProps) {
     const { provider, address } = useSurfaceWallet();
-    const module = useMemo(() => (provider ? webData(provider) : null), [provider]);
+    const surfaceModule = useMemo(() => (provider ? webData(provider) : null), [provider]);
     const fee = useFeeSelection(provider, address);
-    const state = useModuleSend(module, provider, address);
+    const state = useModuleSend(surfaceModule, provider, address);
     const [action, setAction] = useState<WebDataAction>('fetch');
     const [query, setQuery] = useState('');
     const [callbackGas, setCallbackGas] = useState(DEFAULT_CALLBACK_GAS);
@@ -89,8 +89,8 @@ export function WebDataView({ sidRate, kernel, grants, budget, legs }: WebDataVi
         let alive = true;
         setCallFee(null);
         setFeeError(null);
-        if (!module) return undefined;
-        module.fee().then(
+        if (!surfaceModule) return undefined;
+        surfaceModule.fee().then(
             (value) => {
                 if (alive) setCallFee(value);
             },
@@ -101,20 +101,20 @@ export function WebDataView({ sidRate, kernel, grants, budget, legs }: WebDataVi
         return () => {
             alive = false;
         };
-    }, [module]);
+    }, [surfaceModule]);
 
     const built = useMemo(() => {
-        if (!module) return { value: null, error: null };
+        if (!surfaceModule) return { value: null, error: null };
         return buildOrError<ModuleTransaction | null>(() => {
-            if (action === 'refund') return requestId ? module.refund(BigInt(requestId)) : null;
+            if (action === 'refund') return requestId ? surfaceModule.refund(BigInt(requestId)) : null;
             if (!query || callFee === null) return null;
             const kind = action === 'fetch' ? WEB_DATA_KIND_FETCH : WEB_DATA_KIND_SEARCH;
-            return module.request(kind, query, BigInt(callbackGas), callFee);
+            return surfaceModule.request(kind, query, BigInt(callbackGas), callFee);
         });
-    }, [module, action, query, callbackGas, requestId, callFee]);
+    }, [surfaceModule, action, query, callbackGas, requestId, callFee]);
 
     return (
-        <SurfaceFrame title="Web data" connected={module !== null}>
+        <SurfaceFrame title="Web data" connected={surfaceModule !== null}>
             <SegmentedControl label="Web data action" value={action} options={ACTIONS} onChange={setAction} />
             {action === 'refund' ? (
                 <TextField label="Request id" name="requestId" value={requestId} onChange={(e) => setRequestId(e.target.value)} />

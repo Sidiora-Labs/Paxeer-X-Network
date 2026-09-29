@@ -115,7 +115,7 @@ fn call(config: &Config, to: &[u8; 20], data: &[u8]) -> Result<Vec<u8>, &'static
         .map_err(|_| "invalid_paxeer_response")
 }
 
-fn quantity(config: &Config, method: &str, params: Value) -> Result<String, &'static str> {
+fn quantity(config: &Config, method: &str, params: &Value) -> Result<String, &'static str> {
     let request = json!({"jsonrpc":"2.0","id":"px-read","method":method,"params":params});
     let answer = node(config, &request)?;
     answer
@@ -249,6 +249,8 @@ fn resolved(config: &Config, id: &Value, params: Option<&Value>) -> Result<Resol
     resolve(config, &selector).map_err(|code| unavailable(id, code))
 }
 
+type HistoryAccounts = (Value, Vec<(&'static str, String)>);
+
 /// The indexer account keys one unified account answers to: its EVM
 /// address on the Paxeer side and every `LayerX` account its DID holds (the
 /// bound main account plus the public core's per-asset accounts), with the
@@ -257,7 +259,7 @@ pub(super) fn history_accounts(
     config: &Config,
     id: &Value,
     account: &str,
-) -> Result<(Value, Vec<(&'static str, String)>), Value> {
+) -> Result<HistoryAccounts, Value> {
     let resolution = resolved(config, id, Some(&json!([account])))?;
     let mut accounts: Vec<(&'static str, String)> = Vec::new();
     if let Some(address) = &resolution.evm {
@@ -308,15 +310,18 @@ fn get_account(config: &Config, id: &Value, params: Option<&Value>) -> Value {
         None => Value::Null,
         Some(address) => {
             let address = evm::address_hex(&address);
-            let balance =
-                match quantity(config, "eth_getBalance", json!([address.clone(), "latest"])) {
-                    Ok(balance) => balance,
-                    Err(code) => return unavailable(id, code),
-                };
+            let balance = match quantity(
+                config,
+                "eth_getBalance",
+                &json!([address.clone(), "latest"]),
+            ) {
+                Ok(balance) => balance,
+                Err(code) => return unavailable(id, code),
+            };
             let nonce = match quantity(
                 config,
                 "eth_getTransactionCount",
-                json!([address.clone(), "latest"]),
+                &json!([address.clone(), "latest"]),
             ) {
                 Ok(nonce) => nonce,
                 Err(code) => return unavailable(id, code),
@@ -540,11 +545,11 @@ fn get_network(config: &Config, id: &Value, params: Option<&Value>) -> Value {
     if !no_params(params) {
         return super::rpc::error(id, -32602, "Invalid params");
     }
-    let chain_id = match quantity(config, "eth_chainId", json!([])) {
+    let chain_id = match quantity(config, "eth_chainId", &json!([])) {
         Ok(chain_id) => chain_id,
         Err(code) => return unavailable(id, code),
     };
-    let block = match quantity(config, "eth_blockNumber", json!([])) {
+    let block = match quantity(config, "eth_blockNumber", &json!([])) {
         Ok(block) => block,
         Err(code) => return unavailable(id, code),
     };
@@ -610,7 +615,7 @@ pub(super) fn status(config: &Config) -> &'static str {
     if config.paxeer.is_none() {
         return "not_configured";
     }
-    if quantity(config, "eth_chainId", json!([])).is_ok() {
+    if quantity(config, "eth_chainId", &json!([])).is_ok() {
         "available"
     } else {
         "unavailable"

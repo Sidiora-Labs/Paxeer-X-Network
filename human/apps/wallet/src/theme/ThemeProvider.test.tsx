@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from 'react';
+import { act, useLayoutEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_SELECTION, themeCatalogue } from './catalogue';
@@ -18,8 +18,11 @@ let container: HTMLDivElement;
 let current: ThemeContextValue | null = null;
 
 function Probe({ account }: { account?: string | null }) {
-    current = useTheme();
+    const value = useTheme();
     useThemeAccount(account);
+    useLayoutEffect(() => {
+        current = value;
+    });
     return null;
 }
 

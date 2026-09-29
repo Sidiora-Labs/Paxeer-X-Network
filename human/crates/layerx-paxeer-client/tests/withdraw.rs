@@ -321,7 +321,7 @@ fn tuple(head: &[[u8; 32]], text_index: usize, value: &str) -> Vec<u8> {
     }
     out.extend_from_slice(&number_word(&value.len().to_be_bytes()));
     let mut data = value.as_bytes().to_vec();
-    while data.len() % 32 != 0 {
+    while !data.len().is_multiple_of(32) {
         data.push(0);
     }
     out.extend_from_slice(&data);
@@ -729,7 +729,7 @@ fn a_constructed_claim_binds_the_real_inclusion_and_precompile_state() -> TestRe
     let node = Node::launch(fixture.chain())?;
     let boundary = node.boundary()?;
 
-    assert_eq!(boundary.custody_precompile(), CUSTODY_PRECOMPILE);
+    assert_eq!(WithdrawalBoundary::custody_precompile(), CUSTODY_PRECOMPILE);
     assert_eq!(
         boundary.protocol_version(),
         layerx_intents::canonical::STATE_COMMITMENT_PROTOCOL_VERSION
@@ -738,7 +738,7 @@ fn a_constructed_claim_binds_the_real_inclusion_and_precompile_state() -> TestRe
     let claim = boundary
         .construct_claim(fixture.debit.clone(), fixture.material.clone())
         .map_err(|error| format!("{error:?}"))?;
-    assert_eq!(claim.contract(), CUSTODY_PRECOMPILE);
+    assert_eq!(WithdrawalClaim::contract(), CUSTODY_PRECOMPILE);
     assert_eq!(claim.batch_number(), fixture.batch_number);
     assert_eq!(claim.anchor(), fixture.anchor);
     assert_eq!(claim.nullifier(), fixture.nullifier);

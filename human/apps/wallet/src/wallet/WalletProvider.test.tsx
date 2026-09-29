@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from 'react';
+import { act, useLayoutEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ethers } from 'ethers';
@@ -19,8 +19,12 @@ let current: WalletContextValue | null = null;
 let facade: WalletState | null = null;
 
 function Probe() {
-    current = useWallet();
-    facade = useWalletState();
+    const value = useWallet();
+    const state = useWalletState();
+    useLayoutEffect(() => {
+        current = value;
+        facade = state;
+    });
     return null;
 }
 

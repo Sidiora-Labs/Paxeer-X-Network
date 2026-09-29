@@ -2,7 +2,7 @@
 //!
 //! A human states an intent once: move an amount of one asset from a source
 //! endpoint to a destination endpoint, where either end may be the bound Paxeer
-//! wallet or a LayerX account, agent or agent budget. [`plan`] turns that intent
+//! wallet or a `LayerX` account, agent or agent budget. [`plan`] turns that intent
 //! plus one observed state snapshot into a single ordered plan spanning both
 //! domains. Planning is pure: it reads no clock, no randomness and performs no
 //! input/output, so the same intent over the same observed state always yields
@@ -23,7 +23,7 @@
 //!
 //! # Top-ups
 //!
-//! A top-up leg — moving funds from the Paxeer side into LayerX, or funding an
+//! A top-up leg — moving funds from the Paxeer side into `LayerX`, or funding an
 //! agent budget, so that a payment becomes possible — is emitted only when the
 //! observed state contains a user-signed allowance whose scope and remaining
 //! caps cover that exact leg. Each top-up leg records the allowance it consumes.
@@ -71,7 +71,7 @@ const NOTE_LIMIT: usize = 256;
 pub enum Domain {
     /// Paxeer EVM execution, reached through the bound wallet.
     Paxeer,
-    /// The LayerX interaction layer, reached through typed intents.
+    /// The `LayerX` interaction layer, reached through typed intents.
     LayerX,
 }
 
@@ -89,11 +89,11 @@ impl Domain {
 /// The exact mechanism selected for one planned leg in either domain.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LegMechanism {
-    /// A Paxeer-side custody deposit into the LayerX custody precompile.
+    /// A Paxeer-side custody deposit into the `LayerX` custody precompile.
     PaxeerCustodyDeposit,
     /// The Paxeer-side settlement that completes an accepted withdrawal.
     PaxeerWithdrawFinalise,
-    /// A LayerX protocol mechanism already resolved by [`RouteResolver`].
+    /// A `LayerX` protocol mechanism already resolved by [`RouteResolver`].
     Protocol(Mechanism),
 }
 
@@ -139,7 +139,7 @@ impl LegMechanism {
         }
     }
 
-    /// Returns the LayerX protocol mechanism when this leg is a typed intent.
+    /// Returns the `LayerX` protocol mechanism when this leg is a typed intent.
     #[must_use]
     pub const fn protocol(self) -> Option<Mechanism> {
         match self {
@@ -1776,7 +1776,7 @@ const fn term_code(term: MovementTerm) -> u8 {
     }
 }
 
-/// Signature-bearing material and execution context for one LayerX plan leg.
+/// Signature-bearing material and execution context for one `LayerX` plan leg.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LegBinding {
     leg_index: usize,
@@ -1831,7 +1831,7 @@ impl LegBinding {
     }
 }
 
-/// A plan whose LayerX legs carry validated signed material. Construction is
+/// A plan whose `LayerX` legs carry validated signed material. Construction is
 /// atomic: no partially bound plan exists.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SignedPlan {
@@ -1930,7 +1930,7 @@ impl SignedPlan {
     ///
     /// # Errors
     ///
-    /// Refuses a plan the engine rejects, such as one with no LayerX leg.
+    /// Refuses a plan the engine rejects, such as one with no `LayerX` leg.
     pub fn journey_plan(
         &self,
         journey_id: JourneyId,
@@ -2023,9 +2023,9 @@ pub enum Refusal {
         /// The refused leg position.
         index: usize,
     },
-    /// The bindings do not cover exactly the plan's LayerX legs.
+    /// The bindings do not cover exactly the plan's `LayerX` legs.
     UnboundLegs {
-        /// The number of LayerX legs in the plan.
+        /// The number of `LayerX` legs in the plan.
         expected: usize,
         /// The number of bindings presented.
         bound: usize,

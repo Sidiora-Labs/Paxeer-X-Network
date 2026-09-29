@@ -298,7 +298,7 @@ pub struct WithdrawalClaim {
 impl WithdrawalClaim {
     /// The custody precompile every claim transaction targets.
     #[must_use]
-    pub const fn contract(&self) -> EvmAddress {
+    pub const fn contract() -> EvmAddress {
         CUSTODY_PRECOMPILE
     }
 
@@ -534,7 +534,7 @@ fn verify_material(
     let body = protocol
         .effects()
         .get(1)
-        .map(|effect| effect.body())
+        .map(layerx_wire::receipt::Effect::body)
         .filter(|body| body.len() == WITHDRAWAL_EVENT_BYTES)
         .ok_or(ClaimRefusal::Effect("event"))?;
     if body[2..6] != expectation.network_id.to_be_bytes()
@@ -652,7 +652,7 @@ impl WithdrawalBoundary {
 
     /// The custody precompile every withdrawal transaction targets.
     #[must_use]
-    pub const fn custody_precompile(&self) -> EvmAddress {
+    pub const fn custody_precompile() -> EvmAddress {
         CUSTODY_PRECOMPILE
     }
 
@@ -1403,7 +1403,7 @@ fn quantity_bytes(value: &Json, what: &str) -> Result<[u8; 32], WithdrawalError>
         });
     }
     let mut normalized = String::new();
-    if digits.len() % 2 != 0 {
+    if !digits.len().is_multiple_of(2) {
         normalized.push('0');
     }
     normalized.push_str(digits);
@@ -1431,7 +1431,7 @@ fn variable_bytes(value: &Json, what: &str) -> Result<Vec<u8>, WithdrawalError> 
         .ok_or_else(|| WithdrawalError::Contract {
             detail: format!("{what}: missing 0x prefix"),
         })?;
-    if digits.len() % 2 != 0 {
+    if !digits.len().is_multiple_of(2) {
         return Err(WithdrawalError::Contract {
             detail: format!("{what}: odd hex length"),
         });

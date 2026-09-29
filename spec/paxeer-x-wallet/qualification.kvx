@@ -1259,3 +1259,158 @@ symbol = "CHECK_LIVE_GATEWAY_TOKEN"
 observed = "With attestor readiness green, the password sign-in of the confirmed test identity staged by the owner answered 400 invalid_credentials from the identity provider, with the staged values loaded intact, so there is still no access token, the provisioning journey did not start and the verify command was not run; the first deploy attempt hung on a platform API call and the retry with the local image succeeded."
 assumption = "The owner re-stages the test identity's password or confirms the identity on the same provider, and the provisioning journey and the verify command then run once against the gateway as deployed."
 severity = "blocker"
+
+[gate.5.1]
+revision = "6661995a95acbfd21aa020eca9376e590076d6ea"
+command = "timeout 20m sh -c 'tools/wallet/gate-lint.sh --check && tools/wallet/gate-test.sh --check'"
+exit_code = 0
+log_path = ".logs/verify.log"
+observed = "Both gate scripts passed their syntax check, found go, pnpm, cargo and timeout, and listed all twelve lint targets and all six test targets as existing; the --check mode runs no lint or test, so no target's lint or test result exists at this revision."
+
+[observation.5.1.2]
+task = "5.1"
+file = "spec/paxeer-x-wallet/spec.kvx"
+symbol = "task.5.1 verify_cmd"
+observed = "The verify command runs both gate scripts with --check, which validates syntax, tooling and target presence only, while do_1 and ac_4 ask for one full run of gate-test.sh and gate-lint.sh on the merged tip; the full runs were outside this lane's allowed gates and did not run."
+assumption = "The full gate-lint.sh and gate-test.sh runs without --check execute once at release on the merged revision, and their result is not claimed by this entry."
+severity = "major"
+
+[gate.5.5]
+revision = "d6933d948117ff345f7d5d5cb72466c9c6ab76ce"
+command = "timeout 60m sh -c 'tools/wallet/gate-lint.sh && tools/wallet/gate-test.sh'"
+exit_code = 1
+log_path = ".logs/verify-5.5.log"
+observed = "gate-lint ran all twelve targets, seven passing (both Go gofmt and vet pairs, wallet eslint, app tsc, platform fmt) and five failing (wallet tsc, app eslint, human fmt, human clippy, platform clippy), so the && stopped before gate-test and no test suite ran at this revision."
+
+[observation.5.5.1]
+task = "2.5"
+file = "human/wallet/sdk/package.json"
+symbol = "@sidiora/layerx-sdk"
+observed = "pnpm-wallet-tsc fails with TS2307 on @sidiora/layerx-sdk in eight sdk src/modules files, plus two TS7006 in gas-station.ts that follow from it, because the link to agent/sdk/typescript resolves to types under dist/ that a fresh checkout does not build and neither pnpm install nor the gate builds."
+assumption = "Building agent/sdk/typescript before the gate, or adding it as a workspace member that builds on install, clears this target without a source change; that is untested here."
+severity = "major"
+
+[observation.5.5.2]
+task = "4.3"
+file = "human/apps/wallet/src/surfaces/useSurface.ts"
+symbol = "@next/next/no-assign-module-variable"
+observed = "pnpm-app-eslint reports five errors for assigning a variable named module in useSurface.ts and in BridgeView.tsx, ExchangeView.tsx, LaunchpadView.tsx and WebDataView.tsx, all landed by task 4.3."
+assumption = "The owning task renames the variable; the rule stays as configured."
+severity = "major"
+
+[observation.5.5.3]
+task = "3.6, 4.2, 4.9"
+file = "human/apps/wallet/src/wallet/WalletProvider.test.tsx"
+symbol = "react-hooks/globals"
+observed = "pnpm-app-eslint reports four errors for reassigning a module-level variable inside a test component, twice in WalletProvider.test.tsx (3.6), once each in DepositFlow.test.tsx (4.2) and ThemeProvider.test.tsx (4.9), plus four warnings (no-img-element, exhaustive-deps)."
+assumption = "Each owning task captures the hook result without module reassignment; the lint rule and the tests' assertions stay as written."
+severity = "major"
+
+[observation.5.5.4]
+task = "outside the feature"
+file = "human/crates/layerx-human-service/src/journeys/observed.rs"
+symbol = "cargo fmt --check"
+observed = "rust-human-fmt finds unformatted hunks in journeys/observed.rs and time.rs of layerx-human-service, both last changed by intent-router commits that reached the feature through main, not by a wallet task."
+assumption = "Pre-existing on main, recorded once for the release gate and not chased here."
+severity = "note"
+
+[observation.5.5.5]
+task = "outside the feature"
+file = "human/crates/layerx-network-gateway/src/lib.rs"
+symbol = "clippy::doc_markdown, clippy::manual_is_multiple_of"
+observed = "rust-human-clippy exits 101 without reaching the wallet crates: the path dependency layerx-network-gateway fails 12 doc_markdown lints and one manual_is_multiple_of in lib.rs, last changed by the intent-router commit from main."
+assumption = "Pre-existing on main; the wallet crates' own clippy result stays unknown until the dependency is clean."
+severity = "major"
+
+[observation.5.5.6]
+task = "3.9"
+file = "platform/hosted/gateway/src/http.rs"
+symbol = "clippy::too_many_arguments, too_many_lines, missing_errors_doc, format_push_string"
+observed = "rust-platform-clippy exits 101 on five pedantic lints in http.rs at lines 252, 303, 529 and 548, a file last changed by task 3.9; which of the lines 3.9 introduced was not traced."
+assumption = "The owner of each flagged function fixes it at the source; no lint allow is added."
+severity = "major"
+
+[gate.5.5.test]
+revision = "9b40f2ace69ad0d23e1d1712b72cc868683cf1fb"
+command = "timeout 60m tools/wallet/gate-test.sh"
+exit_code = 1
+log_path = ".logs/verify-5.5-test.log"
+observed = "With agent/sdk/typescript built and both pnpm workspaces installed first, gate-test ran all six targets: go-attestor, go-ceremony and pnpm-app passed, and pnpm-wallet, rust-human and rust-platform failed."
+
+[observation.5.5.7]
+task = "2.2"
+file = "human/wallet/gateway/test/nonce.test.ts"
+symbol = "startPostgres"
+observed = "pnpm-wallet fails because gateway test/nonce.test.ts could not start its throwaway Postgres (pg_ctl start exited 1 in test/support/postgres.ts); the other 13 gateway files passed 147 tests with 4 skipped, the sdk passed 88 of 88, and the recursive run stopped before the demo package."
+assumption = "The Postgres start failure is environmental, from parallel test files starting servers at once on this host; the server's own log was in a temp directory that was not kept, so this is not proven."
+severity = "major"
+
+[observation.5.5.8]
+task = "outside the feature"
+file = "human/crates/layerx-human-identity-provider/tests/client.rs"
+symbol = "original_client_provisions_resolves_and_replays_assertion_devices, original_client_observes_wrong_uid_refusal_and_survives_malformed_peer"
+observed = "rust-human stops at layerx-human-identity-provider's client test binary, where two of three tests return Error: Unavailable; the file was last changed by a clock-authority commit from main, and cargo stopped there, so the kms and service crates' tests did not run."
+assumption = "Pre-existing on main or dependent on a service this host lacks; a rerun with --no-fail-fast would show the remaining crates, which this gate does not do."
+severity = "major"
+
+[observation.5.5.9]
+task = "outside the feature"
+file = "platform/hosted/gateway/src/main.rs"
+symbol = "module_schema_tests::native_generated_registry_admits_exactly_the_closed_protocol_module_set"
+observed = "rust-platform fails this one test out of 79: the native generated registry holds nine modules while the expected closed set adds Spot and Web; this is the same failure observation.5.1.1 records."
+assumption = "Pre-existing outside the feature, where the generated registry lags the Spot and Web modules; recorded for the release gate and not chased."
+severity = "note"
+
+[gate.5.5.test.2]
+revision = "e6702e2fe53c85d20485543a6e8054aaa1c274a8 plus the lane's gate-test.sh --no-fail-fast/--no-bail flags and the gateway Postgres helper's log reporting"
+command = "timeout 60m tools/wallet/gate-test.sh"
+exit_code = 1
+log_path = ".logs/verify-5.5-test-2.log"
+observed = "Nothing stopped early this time: go-attestor, go-ceremony, pnpm-wallet (sdk 88/88, gateway 14 files 151/151) and pnpm-app pass, while rust-human fails 8 test targets and rust-platform fails 1 test."
+
+[observation.5.5.7.close]
+task = "2.2"
+file = "human/wallet/gateway/test/support/postgres.ts"
+symbol = "startPostgres"
+observed = "Closed: nonce.test.ts did not reproduce and passed. The first run's server log had survived at /tmp/gateway-pg-SXiux7/postgres.log and says 'could not bind IPv4 address 127.0.0.1: Address already in use' on port 36867, a race between freePort releasing the port and pg_ctl binding it while another test file took it; the helper now prints pg_ctl stderr and the kept server log on a start failure."
+assumption = "The freePort race can recur under parallel test files; it is recorded here, not fixed."
+severity = "note"
+
+[observation.5.5.8.extend]
+task = "outside the feature (supervised clock authority from main); wallet tasks 4.6 and 4.24 also touch the kms crate"
+file = "human/crates/layerx-human-identity-provider/tests/client.rs"
+symbol = "clock authority: Unavailable"
+observed = "The full list of failing rust-human targets: identity-provider tests client, principal_store, probe and provider; kms test provider (1 passed, 14 failed); service lib (event_producer_tls), server_identity_boundary and withdraw. Every failure but withdraw returns Error: Unavailable or panics on 'clock authority: Unavailable', and withdraw's two tests panic because the native fixture exits 1 (evidence under /tmp/layerx-human-store-hwd-165970-*)."
+assumption = "The tests need the supervised clock authority that main's clock-injection commit added, and this host does not provide it; until it does, no rust-human wallet behaviour is proven, including the kms replay case in observation 4.24.1."
+severity = "blocker"
+
+[observation.5.5.9.extend]
+task = "outside the feature"
+file = "platform/hosted/gateway/src/main.rs"
+symbol = "module_schema_tests::native_generated_registry_admits_exactly_the_closed_protocol_module_set"
+observed = "This still fails, 78 of 79 passing, with the same registry that lacks Spot and Web; with --no-fail-fast it is the only failing test in rust-platform."
+assumption = "Unchanged pre-existing failure, owned outside the feature."
+severity = "note"
+
+[gate.5.5.lint.2]
+revision = "afd70054d7f8bff8072e1fdaf94cd2de8d3d50f7"
+command = "WALLET_GATE_LOG_DIR=.logs/wallet-gate-lint-2 timeout 60m tools/wallet/gate-lint.sh"
+exit_code = 1
+log_path = ".logs/verify-5.5-lint-2.log"
+observed = "Ten of twelve targets pass (go-attestor-gofmt, go-attestor-vet, go-ceremony-gofmt, go-ceremony-vet, pnpm-wallet-eslint, pnpm-wallet-tsc, pnpm-app-eslint, pnpm-app-tsc, rust-human-fmt, rust-platform-fmt) and two fail: rust-human-clippy on 14 findings in the layerx-human-service lib and rust-platform-clippy on 3 in the layerx-gateway binary."
+
+[observation.5.5.10]
+task = "outside the wallet tasks except three lines last written by 4.6"
+file = "human/crates/layerx-human-service/src/server/production_components.rs"
+symbol = "clippy dead_code, too_many_lines, format_push_string, match_same_arms, needless_pass_by_value, manual_let_else, single_match_else"
+observed = "rust-human-clippy stops on 14 findings in layerx-human-service, all from restructuring: dead code in journeys/wire.rs (MAX_PROOF_ITEMS, two boolean methods); too_many_lines in router.rs:1551, movement_provider.rs:411 and production_components.rs:422, 908 and 3557; and small lints at router.rs:1601 and 1897 and production_components.rs:6049, 6061, 6919 and 6921. Blame puts 11 on non-wallet commits and 3 on lines last written by wallet task 4.6 (production_components.rs:422, 6049 and 6061). layerx-human-kms was checked with no finding, and identity-provider shows none in this log."
+assumption = "left for the owning feature; kms and identity-provider crates lint clean"
+severity = "medium"
+
+[observation.5.5.11]
+task = "outside the feature"
+file = "platform/hosted/gateway/src/main.rs"
+symbol = "clippy::too_many_lines"
+observed = "rust-platform-clippy fails only on three too_many_lines findings in main.rs at lines 1852 (169/100), 3376 (110/100) and 3797 (123/100); blame puts all three function heads on non-wallet gateway commits, and the earlier http.rs findings of observation 5.5.6 are gone."
+assumption = "Pre-existing, left for the gateway's owning feature."
+severity = "medium"

@@ -259,7 +259,7 @@ pub fn base_units_from_wei(value: &[u8; 32]) -> Result<u128, CustodyAbiError> {
     let mut low = [0_u8; 16];
     low.copy_from_slice(&value[16..]);
     let wei = u128::from_be_bytes(low);
-    if wei % WEI_PER_BASE_UNIT != 0 {
+    if !wei.is_multiple_of(WEI_PER_BASE_UNIT) {
         return Err(CustodyAbiError::WeiRemainder);
     }
     Ok(wei / WEI_PER_BASE_UNIT)
@@ -546,7 +546,7 @@ impl<'a> Words<'a> {
 
     fn text(&self, index: usize, what: &'static str) -> Result<String, CustodyAbiError> {
         let offset = small(&self.word(index, what)?, what)?;
-        if offset % WORD != 0 {
+        if !offset.is_multiple_of(WORD) {
             return Err(CustodyAbiError::Layout(what));
         }
         let length = small(&self.word(offset / WORD, what)?, what)?;
@@ -564,7 +564,7 @@ impl<'a> Words<'a> {
     }
 
     fn tuple(bytes: &'a [u8], what: &'static str) -> Result<Self, CustodyAbiError> {
-        if bytes.len() % WORD != 0 {
+        if !bytes.len().is_multiple_of(WORD) {
             return Err(CustodyAbiError::Layout(what));
         }
         let offset = small(&Words(bytes).word(0, what)?, what)?;

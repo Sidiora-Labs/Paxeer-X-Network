@@ -1014,7 +1014,7 @@ fn checksum_address(address: [u8; 20]) -> String {
     let mut output = String::with_capacity(42);
     output.push_str("0x");
     for (index, byte) in lower.bytes().enumerate() {
-        let nibble = if index % 2 == 0 {
+        let nibble = if index.is_multiple_of(2) {
             digest[index / 2] >> 4
         } else {
             digest[index / 2] & 0x0f

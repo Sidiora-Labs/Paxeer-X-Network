@@ -15,7 +15,9 @@ Usage: tools/wallet/gate-lint.sh [--check | --help]
 Runs the lints of the wallet tree in order: gofmt -l and go vet ./... for
 the Go modules human/wallet/attestor and human/wallet/ceremony; eslint in
 every package of the pnpm workspace human/wallet that has an eslint config
-and tsc --noEmit in every package that has a tsconfig.json; eslint and
+and tsc --noEmit in every package that has a tsconfig.json, after building
+the sdk with its own build script, which first builds the linked sdk
+agent/sdk/typescript; eslint and
 tsc --noEmit for the app human/apps/wallet; cargo fmt --check and
 cargo clippy -- -D warnings for layerx-human-kms,
 layerx-human-identity-provider and layerx-human-service in the human
@@ -46,7 +48,8 @@ EOF
 
 GOFMT_CMD='out="$(gofmt -l .)"; if [ -n "$out" ]; then printf "unformatted:\n%s\n" "$out"; exit 1; fi'
 PNPM_ESLINT_CMD='pnpm -r exec bash -c '"'"'if compgen -G "eslint.config.*" >/dev/null || compgen -G ".eslintrc*" >/dev/null; then exec eslint .; fi'"'"
-PNPM_TSC_CMD='pnpm -r exec bash -c '"'"'if [ -f tsconfig.json ]; then exec tsc --noEmit; fi'"'"
+SDK_BUILD_CMD='pnpm --filter @paxeer/wallet run build'
+PNPM_TSC_CMD="$SDK_BUILD_CMD"' && pnpm -r exec bash -c '"'"'if [ -f tsconfig.json ]; then exec tsc --noEmit; fi'"'"
 HUMAN_PKGS='-p layerx-human-kms -p layerx-human-identity-provider -p layerx-human-service'
 
 builtin_targets() {

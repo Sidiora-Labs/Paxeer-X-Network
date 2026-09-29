@@ -15,9 +15,9 @@ export interface BridgeViewProps {
 
 export function BridgeView({ sidRate, legs }: BridgeViewProps) {
     const { provider, address } = useSurfaceWallet();
-    const module = useMemo(() => (provider ? bridge(provider) : null), [provider]);
+    const surfaceModule = useMemo(() => (provider ? bridge(provider) : null), [provider]);
     const fee = useFeeSelection(provider, address);
-    const state = useModuleSend(module, provider, address);
+    const state = useModuleSend(surfaceModule, provider, address);
     const [chain, setChain] = useState('');
     const [asset, setAsset] = useState('');
     const [decimals, setDecimals] = useState('18');
@@ -25,15 +25,15 @@ export function BridgeView({ sidRate, legs }: BridgeViewProps) {
     const [recipient, setRecipient] = useState('');
 
     const built = useMemo(() => {
-        if (!module) return { value: null, error: null };
+        if (!surfaceModule) return { value: null, error: null };
         return buildOrError<ModuleTransaction | null>(() => {
             if (!chain || !asset || !amount || !recipient) return null;
-            return module.bridgeOut(BigInt(chain), asset, parseUnits(amount, Number(decimals)), recipient);
+            return surfaceModule.bridgeOut(BigInt(chain), asset, parseUnits(amount, Number(decimals)), recipient);
         });
-    }, [module, chain, asset, decimals, amount, recipient]);
+    }, [surfaceModule, chain, asset, decimals, amount, recipient]);
 
     return (
-        <SurfaceFrame title="Bridge" connected={module !== null}>
+        <SurfaceFrame title="Bridge" connected={surfaceModule !== null}>
             <TextField label="Destination chain id" name="chain" value={chain} onChange={(e) => setChain(e.target.value)} />
             <TextField label="Asset address" name="asset" value={asset} onChange={(e) => setAsset(e.target.value)} />
             <TextField label="Asset decimals" name="decimals" value={decimals} onChange={(e) => setDecimals(e.target.value)} />

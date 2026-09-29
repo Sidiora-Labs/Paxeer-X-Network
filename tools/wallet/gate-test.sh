@@ -45,10 +45,10 @@ builtin_targets() {
   printf '%s\t%s\t%s\t%s\n' \
     go-attestor human/wallet/attestor 'go test ./...' go.mod \
     go-ceremony human/wallet/ceremony 'go test ./...' go.mod \
-    pnpm-wallet human/wallet 'pnpm -r test' pnpm-workspace.yaml \
+    pnpm-wallet human/wallet 'pnpm -r --no-bail test' pnpm-workspace.yaml \
     pnpm-app human/apps/wallet 'pnpm exec vitest run' package.json \
-    rust-human human 'cargo test -p layerx-human-kms -p layerx-human-identity-provider -p layerx-human-service' Cargo.toml \
-    rust-platform platform 'cargo test -p layerx-platform-gateway' hosted/gateway/Cargo.toml
+    rust-human human 'cargo test --no-fail-fast -p layerx-human-kms -p layerx-human-identity-provider -p layerx-human-service' Cargo.toml \
+    rust-platform platform 'cargo test --no-fail-fast -p layerx-platform-gateway' hosted/gateway/Cargo.toml
 }
 
 LABELS=()

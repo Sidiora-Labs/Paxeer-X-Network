@@ -467,3 +467,57 @@ area    = "human-service"
 symptom = "A live kernel send through attestor custody is refused with account_not_owned."
 cause   = "The attestors own only protocol-3 account ids while the shared intents constant selects protocol 2 by default."
 do      = "Under attestor custody the service defaults to protocol 3 and refuses any other configured value; keep it that way when the intents constant changes."
+
+[gotcha.75]
+area    = "gate"
+symptom = "The wallet type-check target fails on a fresh checkout with unresolved module errors in the SDK."
+cause   = "The SDK links the TypeScript agent SDK whose types live in its build output, and the recursive tsc run stops at the first failing package."
+do      = "Run the SDK's own build script, which builds the agent SDK first, before the type-check target."
+
+[gotcha.76]
+area    = "lint"
+symptom = "Clippy reports findings in one crate, and after fixing them a different crate or the binary fails."
+cause   = "Clippy stops at the first failing crate or target, and the pedantic deny level applies to every path dependency of the named packages."
+do      = "Before scoping a clippy repair, expect the whole dependency chain and both library and binary to need the pedantic level; sweep mechanical classes across the chain in one pass."
+
+[gotcha.77]
+area    = "lint"
+symptom = "Every remainder-based divisibility check fails clippy after a toolchain update."
+cause   = "The current clippy adds the manual is_multiple_of lint under the default group."
+do      = "Rewrite unsigned remainder checks with is_multiple_of; grep the chain for the pattern rather than fixing one logged crate at a time."
+
+[gotcha.78]
+area    = "gate"
+symptom = "A single failing test binary or package hides every result after it."
+cause   = "cargo test and the recursive pnpm run stop at the first failure by default."
+do      = "Run the aggregate gate with no-fail-fast and no-bail so every target reports; the gate script now does."
+
+[gotcha.79]
+area    = "human-service"
+symptom = "Nearly every test in the human crates returns clock authority Unavailable."
+cause   = "The supervised clock authority service added by the intent router is required by those tests and is not provided on the host."
+do      = "Provide the clock authority on every host and CI runner that tests or runs the human service; crate-filtered wallet tests that pass do not prove the rest."
+
+[gotcha.80]
+area    = "gateway-tests"
+symptom = "A gateway test file fails to start its throwaway Postgres with address already in use."
+cause   = "The free-port helper releases the port before pg_ctl binds it, and parallel test files race for it."
+do      = "Treat one such failure as a race, check the kept temp directory log before concluding it is lost, and rerun once."
+
+[gotcha.81]
+area    = "wallet-app"
+symptom = "Lint rejects assigning a hook result to a module-level variable during render, and a variable named module."
+cause   = "The React hooks globals rule forbids module-variable writes during render and the Next rule forbids the module name."
+do      = "Store the hook result in a local and assign it inside a layout effect; rename the variable."
+
+[gotcha.82]
+area    = "fleet"
+symptom = "A lane commit message carries a stale base revision after the feature moved."
+cause   = "The lane fast-forwarded after a rebase without the soft reset and second helper run."
+do      = "Whenever the feature moved, finish the rebase, soft reset and helper steps before the fast-forward; rewriting after landing means rewriting the feature branch."
+
+[gotcha.83]
+area    = "repo-layout"
+symptom = "A brief names the wallet app path under the wallet directory and the lane finds nothing there."
+cause   = "The app lives under human/apps/wallet, not human/wallet/app."
+do      = "Name human/apps/wallet in every brief that touches the app."

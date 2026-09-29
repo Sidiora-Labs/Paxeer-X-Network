@@ -1543,7 +1543,7 @@ fn record_scopes(record: &KeyRecord) -> Vec<&str> {
 fn permits(record: &KeyRecord, route: &ProductionRoute<'_>) -> bool {
     let required = match route {
         ProductionRoute::Activity => "activity:write",
-        ProductionRoute::Settle => "receipt:read",
+        ProductionRoute::Settle | ProductionRoute::Receipt(_) => "receipt:read",
         ProductionRoute::ProgramCall
         | ProductionRoute::ProgramDeploy
         | ProductionRoute::ProgramUpgrade
@@ -1551,7 +1551,6 @@ fn permits(record: &KeyRecord, route: &ProductionRoute<'_>) -> bool {
         | ProductionRoute::ProgramSource(_) => "program:call",
         ProductionRoute::ProgramSimulation => "program:simulate",
         ProductionRoute::State => "state:read",
-        ProductionRoute::Receipt(_) => "receipt:read",
         ProductionRoute::ProgramCatalog
         | ProductionRoute::ProgramRegistry(_)
         | ProductionRoute::ProgramRead
@@ -1792,7 +1791,7 @@ fn verified_program_result(
     receipt_hex: &str,
     terminal_payload_hex: &str,
     call_graph_hex: &str,
-    head: ProgramHead,
+    head: &ProgramHead,
     signed_activity: &[u8],
 ) -> Result<(Vec<u8>, Vec<u8>, i32), OutgoingResponse> {
     let expected_activity =
@@ -2865,7 +2864,7 @@ fn complete_activity(
                 &component.receipt,
                 &component.terminal_payload,
                 &component.call_graph,
-                head,
+                &head,
                 &operation.canonical,
             )
         },
@@ -3201,7 +3200,7 @@ fn resolve_pending_program(
         &component.receipt,
         &component.terminal_payload,
         &component.call_graph,
-        head,
+        &head,
         &canonical,
     ) {
         Ok(value) => value,
@@ -4146,20 +4145,17 @@ fn settle(
         Ok(key) => key,
         Err(unavailable) => return unavailable.into(),
     };
-    let verified = match verify_activity_operation(
+    let Ok(verified) = verify_activity_operation(
         claim.receipt(),
         prepared.facts,
         &sequencer_public_key,
         Some(claim.activity_id()),
-    ) {
-        Ok(verified) => verified,
-        Err(_) => {
-            return settlement_response(
-                200,
-                &settlement::refused("receipt_verification_failed"),
-                trace_id,
-            )
-        }
+    ) else {
+        return settlement_response(
+            200,
+            &settlement::refused("receipt_verification_failed"),
+            trace_id,
+        );
     };
     if verified.result_code() != 0 {
         return settlement_response(
@@ -4444,7 +4440,7 @@ fn read_program_interface(config: &Config, program: &str, trace_id: &str) -> Out
         Ok(value) => value,
         Err(_) => return response(503, "program_registry_invalid", Some(5)),
     };
-    render_program_interface(&document, head, trace_id)
+    render_program_interface(&document, &head, trace_id)
 }
 
 fn read_program_receipt(
@@ -4551,7 +4547,7 @@ fn read_program_activity(
 
 fn render_program_interface(
     document: &serde_json::Value,
-    head: ProgramHead,
+    head: &ProgramHead,
     trace_id: &str,
 ) -> OutgoingResponse {
     let value = document.get("result").unwrap_or(document);

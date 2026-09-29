@@ -25,9 +25,9 @@ export interface LaunchpadViewProps {
 
 export function LaunchpadView({ sidRate, legs, now = Date.now }: LaunchpadViewProps) {
     const { provider, address } = useSurfaceWallet();
-    const module = useMemo(() => (provider ? launchpad(provider) : null), [provider]);
+    const surfaceModule = useMemo(() => (provider ? launchpad(provider) : null), [provider]);
     const fee = useFeeSelection(provider, address);
-    const state = useModuleSend(module, provider, address);
+    const state = useModuleSend(surfaceModule, provider, address);
     const [action, setAction] = useState<LaunchpadAction>('buy');
     const [token, setToken] = useState('');
     const [amountIn, setAmountIn] = useState('');
@@ -38,7 +38,7 @@ export function LaunchpadView({ sidRate, legs, now = Date.now }: LaunchpadViewPr
     const [feeStrategy, setFeeStrategy] = useState('0');
 
     const built = useMemo(() => {
-        if (!module || !address) return { value: null, error: null };
+        if (!surfaceModule || !address) return { value: null, error: null };
         return buildOrError<ModuleTransaction | null>(() => {
             switch (action) {
                 case 'buy':
@@ -52,18 +52,18 @@ export function LaunchpadView({ sidRate, legs, now = Date.now }: LaunchpadViewPr
                         recipient: address,
                         deadline: BigInt(Math.floor(now() / 1000) + Number(deadlineMinutes) * 60),
                     };
-                    return buying ? module.buy(order) : module.sell(order);
+                    return buying ? surfaceModule.buy(order) : surfaceModule.sell(order);
                 }
                 case 'create':
-                    return name && symbol ? module.createMarket(name, symbol, Number(feeStrategy)) : null;
+                    return name && symbol ? surfaceModule.createMarket(name, symbol, Number(feeStrategy)) : null;
                 case 'claim':
-                    return token ? module.claimFees(token, address) : null;
+                    return token ? surfaceModule.claimFees(token, address) : null;
             }
         });
-    }, [module, address, action, token, amountIn, minOut, deadlineMinutes, name, symbol, feeStrategy, now]);
+    }, [surfaceModule, address, action, token, amountIn, minOut, deadlineMinutes, name, symbol, feeStrategy, now]);
 
     return (
-        <SurfaceFrame title="Launchpad" connected={module !== null}>
+        <SurfaceFrame title="Launchpad" connected={surfaceModule !== null}>
             <SegmentedControl label="Launchpad action" value={action} options={ACTIONS} onChange={setAction} />
             {action !== 'create' && (
                 <TextField label="Token address" name="token" value={token} onChange={(e) => setToken(e.target.value)} />
