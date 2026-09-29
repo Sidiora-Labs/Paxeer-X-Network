@@ -16,8 +16,10 @@ if ! command -v timeout >/dev/null 2>&1; then
 fi
 
 # A local ssh stand-in ahead of the real one on PATH: it answers for the
-# fixture destinations only, refuses to run without BatchMode, and records
-# every call so the test can count one call per destination.
+# fixture destinations only, refuses to run without BatchMode, records every
+# call and everything sent on stdin, and runs any command other than true on
+# this box with the service root moved under a directory of its own per
+# destination, so each fixture host keeps its own /etc/layerx.
 mkdir -p "$work/bin"
 cat >"$work/bin/ssh" <<'SH'
 #!/usr/bin/env bash
@@ -27,6 +29,10 @@ dest=""
 command=""
 while [ "$#" -gt 0 ]; do
 	case "$1" in
+	-n)
+		exec </dev/null
+		shift
+		;;
 	-o)
 		[ "${2:-}" = BatchMode=yes ] && batch=1
 		shift 2
@@ -41,8 +47,13 @@ while [ "$#" -gt 0 ]; do
 done
 printf '%s %s\n' "$dest" "$command" >>"$CHECK_LIVE_TEST_CALLS"
 [ "$batch" -eq 1 ] || exit 99
+case "$dest" in
+up-*) ;;
+hang-*) exec sleep 5 ;;
+*) exit 255 ;;
+esac
 case "$command" in
-true) ;;
+true) exit 0 ;;
 *systemctl*)
 	n="${dest#*-rpc-}"
 	n="${n%%-*}"
@@ -50,16 +61,13 @@ true) ;;
 	up-rpc-*-fresh) echo "api$n active 120" ;;
 	up-rpc-*-dead) echo "api$n failed 0" ;;
 	up-rpc-*) echo "api$n active 7200" ;;
-	up-*) echo "none none 0" ;;
+	*) echo "none none 0" ;;
 	esac
+	exit 0
 	;;
-*) exit 98 ;;
 esac
-case "$dest" in
-up-*) exit 0 ;;
-hang-*) exec sleep 5 ;;
-*) exit 255 ;;
-esac
+command="${command//"$LAYERX_ETC_DIR"/"$LAYERX_ETC_DIR/$dest"}"
+tee -a "$CHECK_LIVE_TEST_STDIN" | bash -c "$command"
 SH
 chmod +x "$work/bin/ssh"
 
@@ -93,6 +101,10 @@ SH
 chmod +x "$work/bin/curl"
 export PATH="$work/bin:$PATH"
 export CHECK_LIVE_TEST_CALLS="$work/calls"
+export CHECK_LIVE_TEST_STDIN="$work/stdin"
+export LAYERX_ETC_DIR="$work/etc"
+export LAYERX_CA_DIR="$work/ca"
+ca="$root/tools/bringup/ca.sh"
 
 cat >"$work/hosts-good.env" <<'ENV'
 EDGE_HOST=up-edge
@@ -162,10 +174,12 @@ ENV
 failures=0
 
 # expect <name> <hosts file or -> <want exit> <args...> -- <lines...>: runs the
-# checker with the fixture (or with BRINGUP_HOSTS_FILE unset for -) and wants
-# the exit code, every line, and no fixture destination in the output.
+# checker, or the program CHECK_LIVE_TEST_PROGRAM names, with the fixture (or
+# with BRINGUP_HOSTS_FILE unset for -) and wants the exit code, every line,
+# and no fixture destination in the output.
 expect() {
 	local name="$1" hosts="$2" want_status="$3" output status=0 ok=1 line
+	local program="${CHECK_LIVE_TEST_PROGRAM:-$checker}"
 	shift 3
 	local args=()
 	while [ "$#" -gt 0 ] && [ "$1" != -- ]; do
@@ -175,9 +189,9 @@ expect() {
 	shift
 	: >"$CHECK_LIVE_TEST_CALLS"
 	if [ "$hosts" = - ]; then
-		output="$(env -u BRINGUP_HOSTS_FILE CHECK_LIVE_TIMEOUT=5 "$checker" ${args[@]+"${args[@]}"} 2>&1)" || status=$?
+		output="$(env -u BRINGUP_HOSTS_FILE CHECK_LIVE_TIMEOUT=5 "$program" ${args[@]+"${args[@]}"} 2>&1)" || status=$?
 	else
-		output="$(BRINGUP_HOSTS_FILE="$hosts" CHECK_LIVE_TIMEOUT="${CHECK_LIVE_TEST_TIMEOUT:-5}" "$checker" ${args[@]+"${args[@]}"} 2>&1)" || status=$?
+		output="$(BRINGUP_HOSTS_FILE="$hosts" CHECK_LIVE_TIMEOUT="${CHECK_LIVE_TEST_TIMEOUT:-5}" "$program" ${args[@]+"${args[@]}"} 2>&1)" || status=$?
 	fi
 	[ "$status" -eq "$want_status" ] || ok=0
 	for line in "$@"; do
@@ -262,6 +276,122 @@ CHECK_LIVE_TEST_TIMEOUT=1 expect check_live_hosts_timeout "$work/hosts-hang.env"
 	"fail HPX_HOST reachable=0/1 ssh=124" \
 	"check-live: 1 check(s) failed"
 
+LAYERX_CA_DIR="$work/absent-ca" expect check_live_ca_without_a_ca "$work/hosts-good.env" 1 ca -- \
+	"fail ca ca cert=absent" \
+	"check-live: 1 check(s) failed"
+
+CHECK_LIVE_TEST_PROGRAM="$ca" expect ca_no_subcommand "$work/hosts-good.env" 2 -- \
+	"usage: tools/bringup/ca.sh"
+
+CHECK_LIVE_TEST_PROGRAM="$ca" expect ca_issue_without_a_ca "$work/hosts-good.env" 1 issue human KERNEL_HOST -- \
+	"ca: no CA under"
+
+status=0
+fingerprint="$("$ca" init 2>&1)" || status=$?
+if [ "$status" -eq 0 ] && [[ "$fingerprint" =~ ^([0-9A-F]{2}:){31}[0-9A-F]{2}$ ]] &&
+	[ "$(stat -c %a "$work/ca")" = 700 ] &&
+	[ "$(stat -c %a "$work/ca/ca.key")" = 600 ] && [ "$(stat -c %a "$work/ca/ca.pem")" = 600 ] && [ "$(stat -c %a "$work/ca/ca.der")" = 600 ] &&
+	[ "$(openssl x509 -in "$work/ca/ca.pem" -noout -fingerprint -sha256 | cut -d= -f2)" = "$fingerprint" ] &&
+	openssl x509 -in "$work/ca/ca.pem" -noout -ext basicConstraints | grep -q 'CA:TRUE'; then
+	echo "ok   ca_init_prints_only_the_fingerprint"
+else
+	echo "FAIL ca_init_prints_only_the_fingerprint: want exit 0, one sha256 fingerprint and 0600 files under a 0700 directory, got exit $status"
+	printf '%s\n' "$fingerprint"
+	failures=$((failures + 1))
+fi
+
+before="$(sha256sum "$work/ca/ca.key")"
+CHECK_LIVE_TEST_PROGRAM="$ca" expect ca_init_refuses_an_existing_ca "$work/hosts-good.env" 1 init -- \
+	"already holds a CA"
+if [ "$(sha256sum "$work/ca/ca.key")" = "$before" ]; then
+	echo "ok   ca_init_keeps_the_existing_key"
+else
+	echo "FAIL ca_init_keeps_the_existing_key: the refused init changed ca.key"
+	failures=$((failures + 1))
+fi
+
+CHECK_LIVE_TEST_PROGRAM="$ca" expect ca_issue_unknown_service "$work/hosts-good.env" 2 issue nonexistent KERNEL_HOST -- \
+	"ca: unknown service nonexistent"
+
+CHECK_LIVE_TEST_PROGRAM="$ca" expect ca_issue_wrong_role "$work/hosts-good.env" 2 issue human PLATFORM_HOST -- \
+	"ca: human lives on KERNEL_HOST, not PLATFORM_HOST"
+
+CHECK_LIVE_TEST_PROGRAM="$ca" expect ca_issue_hosts_file_lacks_role "$work/hosts-missing.env" 2 issue human KERNEL_HOST -- \
+	"check-live: BRINGUP_HOSTS_FILE lacks ARCHIVE_HOST"
+
+: >"$CHECK_LIVE_TEST_STDIN"
+CHECK_LIVE_TEST_PROGRAM="$ca" expect ca_issue_receipt_authority "$work/hosts-good.env" 0 issue receipt-authority KERNEL_HOST -- \
+	"issued receipt-authority KERNEL_HOST fingerprint=" \
+	"expires_in=39"
+
+tls="$work/etc/up-kernel/receipt-authority/tls"
+san="$(openssl x509 -in "$tls/cert.pem" -noout -ext subjectAltName 2>/dev/null || true)"
+if [ "$(stat -c %a "$tls")" = 700 ] &&
+	[ "$(stat -c %a "$tls/key.pem")$(stat -c %a "$tls/key.der")$(stat -c %a "$tls/identity.p12")$(stat -c %a "$tls/password")" = 600600600600 ] &&
+	[ ! -e "$tls/key.pem.new" ] && [ ! -e "$tls/cert.pem.new" ] && [ ! -e "$tls/ca.pem.new" ] &&
+	cmp -s "$tls/ca.pem" "$work/ca/ca.pem" && cmp -s "$tls/ca.der" "$work/ca/ca.der" &&
+	openssl verify -CAfile "$work/ca/ca.pem" "$tls/cert.pem" >/dev/null 2>&1 &&
+	[ "$(openssl pkey -in "$tls/key.pem" -pubout 2>/dev/null)" = "$(openssl x509 -in "$tls/cert.pem" -noout -pubkey)" ] &&
+	[ "$(openssl pkey -inform DER -in "$tls/key.der" -pubout 2>/dev/null)" = "$(openssl x509 -inform DER -in "$tls/cert.der" -noout -pubkey)" ] &&
+	openssl pkcs12 -in "$tls/identity.p12" -passin "file:$tls/password" -noout >/dev/null 2>&1 &&
+	grep -q 'DNS:layerx-receipt-authority' <<<"$san" && grep -q 'DNS:authority' <<<"$san" &&
+	grep -q 'DNS:localhost' <<<"$san" && grep -q 'IP Address:127.0.0.1' <<<"$san" && grep -q 'DNS:up-kernel' <<<"$san" &&
+	openssl x509 -in "$tls/cert.pem" -noout -ext extendedKeyUsage | grep -q 'TLS Web Server Authentication'; then
+	echo "ok   ca_issue_lands_the_material_on_the_host"
+else
+	echo "FAIL ca_issue_lands_the_material_on_the_host: want 0600 key, der, p12 and password files in a 0700 directory, no .new leftovers, the CA copied, a chained certificate on the host key with the receipt authority SANs, localhost, the loopback address and the host address"
+	ls -la "$tls" 2>&1 || true
+	printf '%s\n' "$san"
+	failures=$((failures + 1))
+fi
+
+if [ "$(grep -c '^up-kernel ' "$CHECK_LIVE_TEST_CALLS")" -eq 2 ] &&
+	! grep -q 'PRIVATE KEY' "$CHECK_LIVE_TEST_CALLS" "$CHECK_LIVE_TEST_STDIN" &&
+	[ "$(grep -c 'BEGIN CERTIFICATE' "$CHECK_LIVE_TEST_STDIN")" -eq 1 ]; then
+	echo "ok   ca_issue_never_moves_the_key"
+else
+	echo "FAIL ca_issue_never_moves_the_key: want two ssh calls, one certificate on stdin and no private key in any call or on stdin"
+	failures=$((failures + 1))
+fi
+
+want=0
+while read -r _ role _; do
+	case "$role" in
+	VALIDATOR_HOSTS) want=$((want + 2)) ;;
+	*) want=$((want + 1)) ;;
+	esac
+done < <("$ca" services)
+status=0
+output="$("$ca" services | while read -r service role _; do
+	BRINGUP_HOSTS_FILE="$work/hosts-good.env" "$ca" issue "$service" "$role" </dev/null || exit 1
+done 2>&1)" || status=$?
+if [ "$status" -eq 0 ] && [ "$(grep -c '^issued ' <<<"$output")" -eq "$want" ] && ! grep -qE '(up|down|hang)-[a-z]' <<<"$output" &&
+	grep -q 'DNS:up-validator-a' <<<"$(openssl x509 -in "$work/etc/up-validator-a/x-websearch/tls/cert.pem" -noout -ext subjectAltName)" &&
+	grep -q 'DNS:up-validator-b' <<<"$(openssl x509 -in "$work/etc/up-validator-b/x-websearch/tls/cert.pem" -noout -ext subjectAltName)"; then
+	echo "ok   ca_issue_every_service"
+else
+	echo "FAIL ca_issue_every_service: want exit 0 and $want issued lines naming no destination, with one certificate per validator host, got exit $status"
+	printf '%s\n' "$output"
+	failures=$((failures + 1))
+fi
+
+expect check_live_ca_passing "$work/hosts-good.env" 0 ca -- \
+	"pass ca ca expires_in=36" \
+	"pass receipt-authority@KERNEL_HOST chain=ok san=5/5 expires_in=39" \
+	"pass agentd-client@KERNEL_HOST chain=ok san=0/0 expires_in=39" \
+	"pass gateway@PLATFORM_HOST chain=ok san=5/5 expires_in=39" \
+	"pass x-websearch@VALIDATOR_HOSTS[1] chain=ok san=5/5 expires_in=39" \
+	"pass x-websearch@VALIDATOR_HOSTS[2] chain=ok san=5/5 expires_in=39" \
+	"check-live: all checks passed"
+
+if [ "$(grep -c '^up-' "$CHECK_LIVE_TEST_CALLS")" -eq "$want" ] && ! grep -qvE '^up-[a-z0-9-]+ cat ' "$CHECK_LIVE_TEST_CALLS"; then
+	echo "ok   check_live_ca_reads_one_certificate_per_destination"
+else
+	echo "FAIL check_live_ca_reads_one_certificate_per_destination: want $want read-only cat calls"
+	cat "$CHECK_LIVE_TEST_CALLS"
+	failures=$((failures + 1))
+fi
+
 expect check_live_rpc_nodes_passing "$work/hosts-rpc-good.env" 0 rpc-nodes -- \
 	"pass api1 head=26400000 lag=0 unit=active active=7200s" \
 	"pass api12 head=26400000 lag=0 unit=active active=7200s" \
@@ -276,6 +406,31 @@ else
 	cat "$CHECK_LIVE_TEST_CALLS"
 	failures=$((failures + 1))
 fi
+
+# Four ways a certificate fails: absent, signed by another CA, short of its
+# SANs, and inside thirty days of expiry.
+rm "$work/etc/up-kernel/human/tls/cert.pem"
+LAYERX_CA_DIR="$work/other-ca" "$ca" init >/dev/null
+LAYERX_CA_DIR="$work/other-ca" BRINGUP_HOSTS_FILE="$work/hosts-good.env" "$ca" issue identity PLATFORM_HOST >/dev/null
+gateway="$work/etc/up-platform/gateway/tls"
+openssl req -new -key "$gateway/key.pem" -subj '/CN=layerx-gateway' -out "$work/gateway.csr" 2>/dev/null
+printf 'subjectAltName=DNS:localhost\n' >"$work/gateway.cnf"
+openssl x509 -req -in "$work/gateway.csr" -CA "$work/ca/ca.pem" -CAkey "$work/ca/ca.key" -CAcreateserial \
+	-days 397 -sha256 -extfile "$work/gateway.cnf" -out "$gateway/cert.pem" 2>/dev/null
+relay="$work/etc/up-platform/relay-archive/tls"
+openssl req -new -key "$relay/key.pem" -subj '/CN=layerx-relay-archive' -out "$work/relay.csr" 2>/dev/null
+printf 'subjectAltName=%s,DNS:up-platform\n' "$("$ca" services | awk '$1 == "relay-archive" {print $5}')" >"$work/relay.cnf"
+openssl x509 -req -in "$work/relay.csr" -CA "$work/ca/ca.pem" -CAkey "$work/ca/ca.key" -CAcreateserial \
+	-days 10 -sha256 -extfile "$work/relay.cnf" -out "$relay/cert.pem" 2>/dev/null
+
+expect check_live_ca_failing "$work/hosts-good.env" 1 ca -- \
+	"pass ca ca expires_in=36" \
+	"pass receipt-authority@KERNEL_HOST chain=ok san=5/5 expires_in=39" \
+	"fail human@KERNEL_HOST cert=absent" \
+	"fail identity@PLATFORM_HOST chain=untrusted san=6/6 expires_in=39" \
+	"fail gateway@PLATFORM_HOST chain=ok san=1/5 missing=DNS:layerx-gateway,DNS:api.mainnet-beta.router.paxeer.network,IP:127.0.0.1,host expires_in=39" \
+	"fail relay-archive@PLATFORM_HOST chain=ok san=5/5 expires_in=" \
+	"check-live: 4 check(s) failed"
 
 export CHECK_LIVE_TEST_LAG="api14:11 api2:10" CHECK_LIVE_TEST_DOWN="api3"
 expect check_live_rpc_nodes_failing "$work/hosts-rpc-bad.env" 1 rpc-nodes -- \

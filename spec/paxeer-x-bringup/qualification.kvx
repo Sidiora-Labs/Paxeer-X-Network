@@ -23,6 +23,22 @@ observed   = "cg spec done reran the verify_cmd itself (exit 0) and then refused
 assumption = "No shell-only task can pass cg spec done without --force until the graph defines shell function symbols; the task stays at implemented with its verify_cmd passing until the feature manager rules on the symbol gate."
 severity   = "blocker"
 
+[observation.0.2.1]
+task       = "0.2"
+file       = "tools/bringup/ca.sh"
+symbol     = "ca_issue, check_ca"
+observed   = "The CA exists on the edge host and the fixture test proves init, issue and the ca probe (timeout 10m tools/bringup/check-live.test.sh, exit 0, .logs/test.log), but no certificate has been issued on the kernel, platform or validator hosts: this session may not write on any remote host, and its one run of timeout 10m tools/bringup/check-live.sh ca against the host map was denied by the session's permission system as a production read, so no exit code or log exists for it."
+assumption = "The remote issuance, one tools/bringup/ca.sh issue <service> <role> per line of tools/bringup/ca.sh services run from the edge host, is the missing step; until it runs the probe reports cert=absent for every service and exits 1."
+severity   = "blocker"
+
+[observation.0.2.2]
+task       = "0.2"
+file       = "tools/bringup/check-live.sh"
+symbol     = "rpc_names, check_rpc_nodes, check_archive_node"
+observed   = "shellcheck -s bash on the merged probe exits 1 with SC2178 and SC2128 on code from two other tasks: the rpc-nodes check assigns rpc_names=16 as a count after the archive-node check declared rpc_names as the array of sixteen public names, so the assignment overwrites element zero and the archive-node head poll asks a name that is the number sixteen; the fixture test still passes 31 cases with exit 0."
+assumption = "The two tasks that share the probe file need one definition of the public-name list; the lint failure is theirs to reconcile and this task's ca subcommand and its test do not touch either variable."
+severity   = "suspect"
+
 [gate.0.1.1]
 revision  = "0c6fb972b"
 command   = "timeout 10m tools/bringup/check-live.test.sh"
