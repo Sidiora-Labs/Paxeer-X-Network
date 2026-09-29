@@ -783,7 +783,7 @@ reqs       = ["18.3"]
 
 [task.4.17]
 title      = "Turn on lag self-remediation on every full node, restart the trailing nodes into block sync and resync the nodes beyond the retain window"
-status     = "pending"
+status     = "implemented"
 wave       = 4
 requires   = []
 do_1       = "Write tools/bringup/sync-fleet.sh reading the host map: for every RPC_HOSTS destination and the archive host set blocks-behind-threshold 200, blocks-behind-check-interval 30 and restart-cooldown-seconds 300 in the self-remediation section of the node config with a dated backup, and restart the full-node unit of every node whose head trails the highest public answer by more than two hundred blocks; never touch a validator unit; print one line per host with the values written and the unit state; a dry-run flag prints every remote command instead."

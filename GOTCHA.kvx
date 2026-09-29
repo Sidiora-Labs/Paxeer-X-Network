@@ -839,3 +839,15 @@ area    = "human-service exports"
 symptom = "The library built with private_interfaces warnings, then the integration test failed to compile with 'type IdentityDispatchError is private' on the first call into the exported identity client."
 cause   = "Exporting a client whose methods return Result<_, E> while E stays pub(crate) compiles inside the crate but leaves integration tests unable to name the result type."
 do      = "When a crate-private client becomes a public export, make its error type pub and export it alongside in the same change."
+
+[gotcha.130]
+area    = "ops-shell"
+symptom = "A tar stream built with the same exclude list as an rsync copy still carries the snapshots directory."
+cause   = "rsync reads --exclude=snapshots/ as a directory match, while tar matches the pattern against path components and a trailing slash never matches."
+do      = "Write shared exclude lists without a trailing slash; --exclude=snapshots excludes the directory under both tools."
+
+[gotcha.131]
+area    = "test"
+symptom = "Every case of a probe fixture test fails on its no-destination check although the output names no fixture host."
+cause   = "The check greps for (up|down|hang)- followed by a letter, and the node config key restart-cooldown-seconds matches it through cooldown-s."
+do      = "Anchor the fixture-host pattern with a word boundary, \\b(up|down|hang)-, and keep fixture host prefixes out of real key names."

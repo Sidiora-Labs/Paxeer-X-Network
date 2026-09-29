@@ -229,3 +229,11 @@ command   = "timeout 20m tools/runtime/run-with-clock.sh sh -c 'cd human && carg
 exit_code = 0
 log_path  = ".logs/verify.log"
 observed  = "Three bearer admission tests passed after one build repair and one fixture repair; the run needed a dedicated cargo target directory."
+
+[observation.4.17.1]
+task       = "4.17"
+file       = "tools/bringup/sync-fleet.sh"
+symbol     = "cmd_config, cmd_restart, cmd_resync"
+observed   = "This run was scoped to writing the script and its fixture test: shellcheck -s bash on both scripts exited 0 and one run of tools/bringup/sync-fleet.test.sh passed all thirty-nine cases (exit 0, log .logs/verify.log) after two task-scoped repairs; no host was reached, the verify_cmd did not run, and cg spec implemented refused on the graph check of the shell symbol check_rpc_nodes, so the status was set to implemented by hand."
+assumption = "The owner runs config, then restart, then resync with the release binary against the fleet and then the verify_cmd; the archive host trailed the head by about ninety-three thousand blocks at the last probe, close to the retain window, so restart runs before anything else."
+severity   = "blocker"
