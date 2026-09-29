@@ -27,7 +27,7 @@ The image is `ghcr.io/sidiora-labs/layerx-gateway:0.1.0`, user
 `platform/hosted/gateway/deployment.yaml:67-69`). The Deployment has
 three replicas, listens on `0.0.0.0:9443`, exposes Service port `443`
 to container `9443`, and is reached as Ingress host
-`api.paxeer.network`
+`api.mainnet-beta.router.paxeer.network`
 (`platform/hosted/gateway/deployment.yaml:60`;
 `platform/hosted/gateway/deployment.yaml:70-72`;
 `platform/hosted/gateway/deployment.yaml:123-126`;
@@ -35,6 +35,11 @@ to container `9443`, and is reached as Ingress host
 `minAvailable` is `2`; HPA scales `3`–`30` on 65% CPU
 (`platform/hosted/gateway/deployment.yaml:131`;
 `platform/hosted/gateway/deployment.yaml:138-143`).
+
+The router URL `https://api.mainnet-beta.router.paxeer.network` is the
+network's only unified endpoint: `eth_*`, `lx_*` and `px_*` methods answer
+there. The block explorer is `paxscan.io` and the wallet is
+`paxportwallet.com`; the sixteen public RPC names serve the EVM domain alone.
 
 This page covers that binary, its Redis, and the tests in
 `platform/hosted/gateway/`. It does not document the emulator

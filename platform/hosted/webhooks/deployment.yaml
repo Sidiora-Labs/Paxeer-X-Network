@@ -239,9 +239,9 @@ metadata:
     nginx.ingress.kubernetes.io/backend-protocol: HTTPS
     nginx.ingress.kubernetes.io/proxy-body-size: 512k
 spec:
-  tls: [{ hosts: [developers.layerx.example], secretName: layerx-developer-ingress-tls }]
+  tls: [{ hosts: [developers.paxeer.network], secretName: layerx-developer-ingress-tls }]
   rules:
-    - host: developers.layerx.example
+    - host: developers.paxeer.network
       http:
         paths:
           - path: /v1/dashboard
@@ -256,9 +256,9 @@ kind: Ingress
 metadata:
   name: layerx-developer-web
 spec:
-  tls: [{ hosts: [developers.layerx.example], secretName: layerx-developer-ingress-tls }]
+  tls: [{ hosts: [developers.paxeer.network], secretName: layerx-developer-ingress-tls }]
   rules:
-    - host: developers.layerx.example
+    - host: developers.paxeer.network
       http:
         paths:
           - path: /

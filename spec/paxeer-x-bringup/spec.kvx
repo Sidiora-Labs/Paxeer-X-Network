@@ -240,7 +240,7 @@ reqs       = ["1.1", "1.2", "1.3"]
 
 [task.0.4]
 title      = "Replace api.paxeer.network by the router URL and every layerx.example host by its public name"
-status     = "pending"
+status     = "implemented"
 wave       = 0
 requires   = []
 do_1       = "Rewrite every occurrence of api.paxeer.network outside spec/ to https://api.mainnet-beta.router.paxeer.network in docs/site, docs/wiki, platform/docs, platform/hosted (gateway README, deployment, testnet lib, topology regressions, beta-cluster.sh), platform/relay_archive, platform/examples, platform/sdk/jvm and .github/workflows/platform.yml."

@@ -33,8 +33,8 @@ use layerx_types::verify::VerificationLevel;
 use serde_json::{json, Value};
 
 const ARCHIVE_ASSET: [u8; 32] = [0x33; 32];
-const ARCHIVE_RP_ID: &str = "id.layerx.example";
-const ARCHIVE_ORIGIN: &str = "https://id.layerx.example";
+const ARCHIVE_RP_ID: &str = "paxportwallet.com";
+const ARCHIVE_ORIGIN: &str = "https://paxportwallet.com";
 const FLAG_UP: u8 = 1;
 const FLAG_UV: u8 = 1 << 2;
 const FLAG_AT: u8 = 1 << 6;

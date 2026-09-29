@@ -43,8 +43,8 @@ use layerx_types::ids::Did;
 use serde_json::{json, Value};
 use sha2::{Digest as _, Sha256};
 
-const RP_ID: &str = "id.layerx.example";
-const ORIGIN: &str = "https://id.layerx.example";
+const RP_ID: &str = "paxportwallet.com";
+const ORIGIN: &str = "https://paxportwallet.com";
 const FLAG_UP: u8 = 1;
 const FLAG_UV: u8 = 1 << 2;
 const FLAG_AT: u8 = 1 << 6;

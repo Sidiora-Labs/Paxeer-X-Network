@@ -16,7 +16,7 @@ For a shorter environment checklist, start with
 The published gateway and faucet origins are:
 
 ```sh
-export RPC_URL=https://api.paxeer.network/rpc
+export RPC_URL=https://api.mainnet-beta.router.paxeer.network/rpc
 export FAUCET_URL=https://faucet.paxeer.network
 ```
 

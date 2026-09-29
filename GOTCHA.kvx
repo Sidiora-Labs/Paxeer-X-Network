@@ -623,3 +623,27 @@ area    = "spec-tooling"
 symptom = "cg spec lint --help does not print help; it lints the active feature and reports clean."
 cause   = "The lint subcommand treats unknown flags as absent and defaults to the active feature."
 do      = "Use cg spec lint -f <feature>; read the usage from spec/workflow.kvx and the fleet protocol instead of --help."
+
+[gotcha.101]
+area    = "spec-tooling"
+symptom = "A verify_cmd built on git grep -e <host> keeps failing after every host is gone because it also matches identifiers that spell the host with a dash, slash or colon in place of the dot."
+cause   = "git grep defaults to basic regular expressions, where an unescaped dot is a wildcard; package names, Java packages and config filenames that share the host's words collide."
+do      = "Write host probes with git grep -F, or escape every dot, and check what a proposed pattern already matches before it goes into a spec."
+
+[gotcha.102]
+area    = "shell"
+symptom = "sed -i 's#old#new#g' aborts with unknown option to s when the pattern itself contains a hash comment line."
+cause   = "The delimiter character appears inside the pattern text."
+do      = "Pick a delimiter absent from both sides, or do multi-line literal edits with a short Python str.replace that asserts the needle occurs exactly once."
+
+[gotcha.103]
+area    = "platform-hosted"
+symptom = "Splitting the developer plane onto separate dashboard, API and webhook hostnames in the kubernetes manifest breaks the beta contract check and the dashboard web UI."
+cause   = "tools/ci/beta-contract-check.sh accepts exactly one webhooks Ingress host, and the dashboard web fetches /v1/dashboard same-origin from its own host."
+do      = "Keep one host in the webhooks manifest Ingress; serve the split names at the bare-host edge instead."
+
+[gotcha.104]
+area    = "spec-tooling"
+symptom = "cg spec start leaves an empty spec/<feature>/spec.kvx.lock behind, which git add -A would commit."
+cause   = "The lock file is created for the status write and not removed afterwards."
+do      = "Delete spec/<feature>/spec.kvx.lock before any add-all commit."

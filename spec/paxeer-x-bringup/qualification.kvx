@@ -14,3 +14,19 @@
 #   probe runs of the deploy tasks and the wave gates on the merged wave tip.
 #   Keys: revision, command, exit_code, log_path, observed. Never a hostname,
 #   an address, a secret or a person's name.
+
+[observation.0.4.1]
+task       = "0.4"
+file       = "spec/paxeer-x-bringup/spec.kvx"
+symbol     = "task.0.4.verify_cmd"
+observed   = "Zero hosts remain, yet the gate exits 1: git grep runs a basic regex where the dot in layerx.example is a wildcard, so the published npm package names layerx-example-*, the Java package com.sidiora.layerx.example, the layerx.example.json config filename, a did:layerx:example identifier and the lockfile match; none is a host."
+assumption = "Renaming published packages, a Java package and the example config filename is outside this task and the pattern itself may not be weakened, so the task stays implemented until the owner rules: escape the pattern with -F or --, or rename those identifiers."
+severity   = "blocker"
+
+[observation.0.4.2]
+task       = "0.4"
+file       = "platform/hosted/webhooks/deployment.yaml"
+symbol     = "Ingress layerx-developer host"
+observed   = "The public-name decision gives the developer plane three names (dashboard web, dashboard API, webhooks) but tools/ci/beta-contract-check.sh rejects more than one webhooks Ingress host and the dashboard web fetches /v1/dashboard same-origin, so the manifest carries the dashboard web name for all three paths."
+assumption = "The three-name split is served by the bare-host edge of the developers task; the manifest keeps one host and the beta contract stays satisfied."
+severity   = "note"
