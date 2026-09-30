@@ -689,3 +689,11 @@ command   = "timeout 30m make layerxd test-daemon-finality-authority"
 exit_code = 0
 log_path  = ".logs/verify.log"
 observed  = "Under the leader ruling that protocol_network_id belongs to the by-activity body, real_node.rs asserts all eleven keys by name and protocol_network_id against the chain's value; the recorded-fixture replay, the JSON test and both real_node_authority_serves_verified_facts_and_reflects_replica_loss runs pass against the bound authority, so observation 1.9.2 is resolved and task 1.2 closes on this record; cg spec done timed out on the busy graph index after its own passing run of the gate, so the status was set by hand."
+
+[gate.1.2.1]
+task       = "1.2"
+revision   = "c9c4144f8 plus the change committed with this entry"
+command    = "timeout 30m make layerxd test-daemon-finality-authority"
+exit_code  = 0
+log_path   = ".logs/verify.log"
+observed   = "The same gate as task 1.9, which is task 1.2's verify_cmd, passed at this revision; task 1.2 closes on gate.1.9.1 as the spec's task 1.9 says."
