@@ -1421,3 +1421,9 @@ area    = "bringup"
 symptom = "A check-live subcommand exits with 'unbound variable' at the very end after all its lines printed."
 cause   = "An EXIT trap set inside a function with a single-quoted reference to a local variable runs after the function's locals are gone, and set -u trips on it."
 do      = "Expand the path into the trap when it is set (double quotes, shellcheck SC2064 disabled) as the other probes of the file do."
+
+[gotcha.234]
+area    = "bringup"
+symptom = "A new check-live subcommand needs its own curl answers in the harness, but lanes may only append cases at the end of check-live.test.sh."
+cause   = "The harness's curl stand-in is written once near the top and answers every https URL with its own fixtures."
+do      = "Write a second curl stand-in in a directory of its own in the appended cases that answers the new paths and execs the harness's stand-in for everything else, and run those cases with that directory first on PATH."

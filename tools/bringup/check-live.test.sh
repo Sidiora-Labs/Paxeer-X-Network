@@ -1197,6 +1197,69 @@ CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_internal_router_unreadab
 	"check-live: 3 check(s) failed"
 unset CHECK_LIVE_ROUTER_CONNECT
 
+# The search cases put a curl stand-in for the serving sidecars ahead of the
+# harness's: /xweb/health answers status ok except on the names of
+# CHECK_LIVE_TEST_SEARCH_DOWN, and an unpaid /search answers 402 with a
+# PAYMENT-REQUIRED offer in CHECK_LIVE_TEST_SEARCH_CURRENCY; every other
+# request goes to the harness's stand-in.
+mkdir -p "$work/search-bin"
+cat >"$work/search-bin/curl" <<'SH'
+#!/usr/bin/env bash
+set -eu
+url=""
+wout=""
+prev=""
+for arg in "$@"; do
+	case "$arg" in
+	https://*) url="$arg" ;;
+	esac
+	[ "$prev" != -w ] || wout="$arg"
+	prev="$arg"
+done
+name="${url#https://}"
+path="/${name#*/}"
+name="${name%%/*}"
+case "$path" in
+/xweb/health)
+	printf '%s search\n' "${name%%.*}" >>"$CHECK_LIVE_TEST_CALLS"
+	case " ${CHECK_LIVE_TEST_SEARCH_DOWN:-} " in
+	*" ${name%%.*} "*) exit 7 ;;
+	esac
+	printf '{"status":"ok"}'
+	[ -z "$wout" ] || printf '\n200'
+	exit 0
+	;;
+/search\?*)
+	printf '%s search\n' "${name%%.*}" >>"$CHECK_LIVE_TEST_CALLS"
+	offer="$(printf '{"x402Version":2,"accepts":[{"scheme":"metered","network":"layerx:125","amount":"2000000000000000","asset":"%064d","payTo":"fixture","maxTimeoutSeconds":60,"extra":{"layerx":{"currency":"%s"}}}]}' 7 "${CHECK_LIVE_TEST_SEARCH_CURRENCY:-PAX}" | base64 -w 0)"
+	printf 'HTTP/2 402\r\npayment-required: %s\r\n\r\n' "$offer"
+	exit 0
+	;;
+esac
+exec "$CHECK_LIVE_TEST_HARNESS_CURL" "$@"
+SH
+chmod +x "$work/search-bin/curl"
+export CHECK_LIVE_TEST_HARNESS_CURL="$work/bin/curl"
+
+PATH="$work/search-bin:$PATH" expect check_live_search_passing "$work/hosts-good.env" 0 search -- \
+	"pass health https://api1.mainnet-beta.paxeer.network/xweb/health http=200 status=ok" \
+	"pass health https://api2.mainnet-beta.paxeer.network/xweb/health http=200 status=ok" \
+	"pass health https://api3.mainnet-beta.paxeer.network/xweb/health http=200 status=ok" \
+	"pass offer https://api1.mainnet-beta.paxeer.network/search http=402 pax=metered amount=2000000000000000" \
+	"pass offer https://search.paxeer.network/search http=402 pax=metered amount=2000000000000000" \
+	"check-live: all checks passed"
+
+CHECK_LIVE_TEST_SEARCH_DOWN="api2" CHECK_LIVE_TEST_SEARCH_CURRENCY="USDC" PATH="$work/search-bin:$PATH" expect check_live_search_failing "$work/hosts-good.env" 1 search -- \
+	"pass health https://api1.mainnet-beta.paxeer.network/xweb/health http=200 status=ok" \
+	"fail health https://api2.mainnet-beta.paxeer.network/xweb/health http=none" \
+	"fail offer https://api1.mainnet-beta.paxeer.network/search http=402 pax=none amount=none" \
+	"fail offer https://search.paxeer.network/search http=402 pax=none amount=none" \
+	"check-live: 3 check(s) failed"
+
+PATH="$work/search-bin:$PATH" expect check_live_search_unmapped "$work/hosts-down.env" 1 search -- \
+	"fail names names=unreadable" \
+	"check-live: 1 check(s) failed"
+
 # The fleet script shares the host map and the ssh helpers, so its own test
 # runs as the last case, with this test's stand-ins off the PATH.
 status=0

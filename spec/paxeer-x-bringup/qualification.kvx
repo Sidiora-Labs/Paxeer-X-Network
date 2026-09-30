@@ -1055,3 +1055,27 @@ symbol     = "check_internal"
 observed   = "timeout 10m tools/bringup/check-live.sh internal exited 1 (log .logs/verify.log): the router's served chain ends at ISRG Root X1, but the internal and internal Redis apps do not exist yet, so the public-ip reads, the payments and programs pin reads and the five readiness routes from the kernel machine all fail."
 assumption = "The deploy side runs the handoff steps (build, volumes, Redis secrets, both deploys with no public IPs, the five internal certificates) once tasks 1.5, 2.2 and 3.5 are live, then reruns the gate; the human TLS listener port 9449 is the coordinator's ruling pending the design block."
 severity   = "external"
+
+[observation.4.2.1]
+task       = "4.2"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_search"
+observed   = "The paid /search needs a payer-signed 346-byte grant (metered) or a sequencer-signed receipt of the payer's send (exact) in PAYMENT-SIGNATURE, and the tree has no production WebPayer, no layerxctl grant command and no CLI that signs either, so the 402 then 200 step has no signing interface to call."
+assumption = "Open question to the owner: which signer produces the credited payer's PAYMENT-SIGNATURE for the probe (an agentd tenant in the kernel app through grant.issue, a payer key file the probe signs with, or another boundary), and which account is the credited payer; check_search stops at the 402 offer until then and the task stays in_progress."
+severity   = "blocker"
+
+[observation.4.2.2]
+task       = "4.2"
+file       = "interop/deploy/x-websearch/config.example.json"
+symbol     = "xweb_render_serve"
+observed   = "A loader-valid serving example needs the sequencer id and public key and the four asset ids that task 1.4 produces inside the kernel machine, the decimals of those asset records (USDC's are fixed nowhere in the tree) and the crawl seeds, which no spec block fixes; the example still carries its placeholders and note."
+assumption = "Open question to the owner: the crawl seed URLs of a serving sidecar and the USDC decimals; the example is rendered with xweb-config.sh render serve once task 1.4 prints its ids, and interop/deploy/x-websearch/tests/packaging-check.sh, which requires the note and the placeholders, then needs its example assertions rewritten by its owner."
+severity   = "blocker"
+
+[observation.4.2.3]
+task       = "4.2"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_search"
+observed   = "timeout 15m tools/bringup/check-live.sh search exited 1 (log .logs/verify.log): every serving RPC name answers 404 on /xweb/health and /search, and search.paxeer.network answers 404 on /search, because no serving sidecar or nginx include is installed yet."
+assumption = "The deploy side runs the handoff install steps after tasks 1.4 and 2.2 are live and the owner answers observations 4.2.1 and 4.2.2, then reruns the gate."
+severity   = "external"

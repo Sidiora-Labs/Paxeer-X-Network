@@ -2090,6 +2090,61 @@ print(len(ms), len(started), len(data))
 	finish "$failures"
 }
 
+# check_search: the serving x-websearch sidecars behind the serving RPC names
+# that tools/bringup/search-front.sh names lists. /xweb/health answers 200
+# with status ok on every serving RPC name, and an unpaid /search answers 402
+# with a PAYMENT-REQUIRED offer in PAX on the first serving RPC name and
+# through search.paxeer.network. One line per check.
+search_offer_py='
+import base64
+import json
+import sys
+
+code, header = sys.argv[1], sys.argv[2]
+try:
+    doc = json.loads(base64.b64decode(header, validate=True))
+    offers = [o for o in doc.get("accepts") or [] if ((o.get("extra") or {}).get("layerx") or {}).get("currency") == "PAX"]
+except (ValueError, TypeError, AttributeError):
+    doc, offers = {}, []
+ok = code == "402" and doc.get("x402Version") == 2 and bool(offers)
+schemes = ",".join(sorted({str(o.get("scheme")) for o in offers})) or "none"
+amount = offers[0].get("amount", "none") if offers else "none"
+print(("pass" if ok else "fail") + " http=%s pax=%s amount=%s" % (code or "none", schemes, amount))
+'
+check_search() {
+	local listing name code body headers first="" line failures=0
+	local -a names=()
+	if ! listing="$("$(dirname "${BASH_SOURCE[0]}")/search-front.sh" names 2>&1)"; then
+		echo "fail names names=unreadable $(printf '%s' "$listing" | tr '\n' ' ' | cut -c1-160)"
+		finish 1
+	fi
+	mapfile -t names < <(sed -n 's/^serve //p' <<<"$listing")
+	if [ "${#names[@]}" -eq 0 ]; then
+		echo "fail names serving=0"
+		finish 1
+	fi
+	for name in "${names[@]}"; do
+		[ -n "$first" ] || first="$name"
+		body="$(curl -sS --max-time "$timeout" -w '\n%{http_code}' "https://$name/xweb/health" 2>/dev/null)" || body=""
+		code="${body##*$'\n'}"
+		body="${body%$'\n'*}"
+		if [ "$code" = 200 ] && [[ "$body" == *'"status":"ok"'* ]]; then
+			echo "pass health https://$name/xweb/health http=200 status=ok"
+		else
+			echo "fail health https://$name/xweb/health http=${code:-none}"
+			failures=$((failures + 1))
+		fi
+	done
+	for name in "$first" search.paxeer.network; do
+		headers="$(curl -sS --max-time "$timeout" -D - -o /dev/null "https://$name/search?q=paxeer" 2>/dev/null)" || headers=""
+		code="$(sed -n '1s/^HTTP\/[0-9.]* \([0-9]*\).*/\1/p' <<<"$headers")"
+		line="$(python3 -c "$search_offer_py" "$code" "$(sed -n 's/^payment-required:[[:space:]]*//Ip' <<<"$headers" | tr -d '\r' | head -n 1)")"
+		echo "${line%% *} offer https://$name/search ${line#* }"
+		[ "${line%% *}" = pass ] || failures=$((failures + 1))
+	done
+	finish "$failures"
+}
+
 mode="${1:-}"
 case "$mode" in
 -h | --help)
@@ -2109,6 +2164,7 @@ paxeer-boundary) ;;
 agent-public) ;;
 gas) ;;
 internal) ;;
+search) ;;
 *)
 	usage >&2
 	exit 2
