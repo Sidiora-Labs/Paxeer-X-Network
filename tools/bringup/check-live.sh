@@ -2326,7 +2326,7 @@ check_kernel_node() {
 		finish 1
 	fi
 	# shellcheck disable=SC2016 # the command expands on the machine
-	answer="$(fly_ssh "$app" - 'n=/data/layerx/node; r=/run/layerx/node; t="Authorization: Bearer $(cat /data/layerx/keys/tokens/replica-token)"; echo genesis $(sha256sum $n/genesis/genesis.manifest | cut -d" " -f1); echo network $(curl -fsS -m 10 -H "$t" http://127.0.0.1:9402/v1/sync/network | jq -c .); echo public $(cat $n/*.env | sed -n "s/^LAYERX_NODE_SEQUENCER_PUBLIC_KEY=//p" | head -1); echo core $(sed -n "s/^LAYERX_CORE_SEQUENCER_ID=//p" $r/core.env); echo status $(printf "status\n" | socat -t 5 - UNIX-CONNECT:$r/supervisor.sock | jq -c .); [ -S $r/layerxd.lni.sock ] && echo lni socket; echo head $(curl -fsS -m 10 -H "$t" http://127.0.0.1:9402/v1/sync/head | jq -c .); for s in treasury-signer layerxd layerxd-authority guarantor-1 guarantor-2; do p=; read -r u st p </run/layerx/init/$s 2>/dev/null; echo clock $s $(tr "\000" " " </proc/${p:-0}/cmdline 2>/dev/null | cut -d" " -f1); done' 2>/dev/null)" || answer=""
+	answer="$(fly_ssh "$app" - 'n=/data/layerx/node; r=/run/layerx/node; e=$n/replica.env; u=http://127.0.0.1:$(sed -n "s/^LAYERX_AUTHORITY_PORT=//p" $e); t="Authorization: Bearer $(sed -n "s/^LAYERX_AUTHORITY_BEARER_TOKEN=//p" $e)"; echo genesis $(sha256sum $n/genesis/genesis.manifest | cut -d" " -f1); echo network $(curl -fsS -m 10 -H "$t" $u/v1/sync/network | jq -c .); echo public $(cat $n/*.env | sed -n "s/^LAYERX_NODE_SEQUENCER_PUBLIC_KEY=//p" | head -1); echo core $(sed -n "s/^LAYERX_CORE_SEQUENCER_ID=//p" $r/core.env); echo status $(printf "status\n" | socat -t 5 - UNIX-CONNECT:$r/supervisor.sock | jq -c .); [ -S $r/layerxd.lni.sock ] && echo lni socket; echo head $(curl -fsS -m 10 -H "$t" $u/v1/sync/head | jq -c .); for s in treasury-signer layerxd layerxd-authority guarantor-1 guarantor-2; do p=; read -r u st p </run/layerx/init/$s 2>/dev/null; echo clock $s $(tr "\000" " " </proc/${p:-0}/cmdline 2>/dev/null | cut -d" " -f1); done' 2>/dev/null)" || answer=""
 	while read -r key value; do
 		case "$key" in
 		genesis) genesis=$value ;;
@@ -2336,7 +2336,11 @@ check_kernel_node() {
 		status) status=$value ;;
 		lni) lni=$value ;;
 		head) head=$value ;;
-		clock) clocks[${value%% *}]=${value#* } ;;
+		clock)
+			key=${value%% *}
+			value=${value#"$key"}
+			clocks[$key]=${value# }
+			;;
 		esac
 	done <<<"$answer"
 	value="$(python3 -c 'import json, sys; print(json.loads(sys.argv[1]).get("genesis_sha256", "none"))' "$network" 2>/dev/null)" || value=none

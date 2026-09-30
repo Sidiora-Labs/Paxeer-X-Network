@@ -1140,6 +1140,30 @@ severity   = "blocker"
 task       = "1.4"
 file       = "tools/bringup/kernel-genesis.sh"
 symbol     = "kernel_genesis"
-observed   = "The custody asset map on chain 125 is empty: eth_call 0x...1013 nativeAssetId() answers bytes32 zero, assetByPointer(0x21f7b20a555199fa73A238B1a91FD0f549068fEe) answers bytes32 zero, getAsset(zero) answers an empty record and depositRootAuthority() answers zero; no USDC or USDL pointer on chain 125 is fixed in the tree."
-assumption = "The script refuses with that exact call until governance registers the assets with MsgSetAsset; the USDC and USDL pointers come from that registration; the guarantor's publication authorization.json needs the deposit root authority the chain does not hold yet."
+observed   = "The custody asset map and deposit root authority on chain 125 are unset: eth_call 0x...1013 nativeAssetId(), assetByPointer(0x21f7b20a555199fa73A238B1a91FD0f549068fEe) and depositRootAuthority() each answer bytes32 zero."
+assumption = "Ordering: step A kernel-genesis.sh keys prints the public keys, the deposit authority among them; step B governance registers PAX, SID, USDC, USDL and sets the deposit root authority; step C kernel-genesis.sh genesis refuses with the exact call until B is done."
 severity   = "blocker"
+
+[observation.1.4.6]
+task       = "1.4"
+file       = "modules/layerxcustody/module.go, sdk/x/gov/keeper/msg_server.go"
+symbol     = "custody_governance"
+observed   = "Step B has no governance path: the custody authority defaults to the gov module account, gov SubmitProposal executes only legacy content (msg.GetContent), and layerxcustody registers no proposal content type, handler or tx CLI (GetTxCmd returns nil), so no proposal document the chain accepts can carry MsgSetAsset or MsgUpdateParams; tools/bringup/custody-governance.sh is therefore not written."
+assumption = "A chain task adds a custody proposal content type with its gov handler and submit-proposal subcommand (as layerxbridge-proposal did), shipped by a chain upgrade, before step B can run."
+severity   = "blocker"
+
+[observation.1.4.7]
+task       = "1.4"
+file       = "docker/kernel/Dockerfile"
+symbol     = "kernel_genesis"
+observed   = "For this bring-up the deploy side copies tools/bringup/kernel-genesis.sh into the kernel machine through flyctl ssh sftp."
+assumption = "The next kernel image revision (task 1.5's touches) bakes kernel-genesis.sh and custody-governance.sh into the image so the copy step goes away."
+severity   = "info"
+
+[observation.1.4.8]
+task       = "1.4"
+file       = "tools/bringup/check-live.test.sh"
+symbol     = "check_kernel_node"
+observed   = "bash tools/bringup/check-live.test.sh exit 1 (.logs/harness.log): check_live_kernel_node_no_kernel_image passes, check_live_kernel_node_passing and _one_failing read every value absent after one repair cycle; 21 other cases fail identically on the unmodified tree (rpc-nodes, rpc-placement, edge, agent-public, gas, internal) and are unrelated."
+assumption = "The kernel-node fixture read times out or fails inside the flyctl stand-in; left for the next cycle rather than weakened."
+severity   = "warning"

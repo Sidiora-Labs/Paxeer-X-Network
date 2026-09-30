@@ -208,7 +208,7 @@ service() {
 guarantor() {
 	local identity=$1 port=$2 peer=$3
 	service "guarantor-$identity" 4021 \
-		"$genesis_files $tls/guarantor/cert.pem $keys/checkpoint-authority/key.pem" \
+		"$genesis_files $tls/guarantor/cert.pem $keys/checkpoint-authority/key.pem $keys/publication/authorization.json" \
 		guarantor_prepare clock -- \
 		env \
 		LAYERX_GUARANTOR_IDENTITY_DIR="$layerx/guarantor-$identity/identity" \
@@ -225,13 +225,17 @@ guarantor() {
 		LAYERX_GUARANTOR_SUBMITTER_KEY_FILE="$keys/checkpoint-submitter/key" \
 		LAYERX_GUARANTOR_SUBMITTER_LOCK_FILE="$layerx/guarantor-submitter/submitter.lock" \
 		LAYERX_GUARANTOR_CHECKPOINT_AUTHORITY_KEY_FILE="$layerx/guarantor-submitter/checkpoint-authority.pem" \
-		LAYERX_GUARANTOR_PUBLICATION_AUTHORIZATION_SOURCE="$keys/publication/authorization.json" \
+		LAYERX_GUARANTOR_PUBLICATION_AUTHORIZATION_SOURCE="$layerx/guarantor-submitter/publication-authorization.json" \
 		LAYERX_GUARANTOR_PYTHON=/opt/layerx/guarantor/venv/bin/python3 \
 		/opt/layerx/guarantor.sh
 }
 
+# The publication authorization of kernel-genesis.sh, handed from the root-only
+# publication directory to the guarantor uid that installs it.
 guarantor_prepare() {
-	checkpoint_authority && tls_for guarantor 4021
+	checkpoint_authority && tls_for guarantor 4021 &&
+		install -o 4021 -g 4020 -m 0600 "$keys/publication/authorization.json" \
+			"$layerx/guarantor-submitter/publication-authorization.json"
 }
 
 human_authority_ready() {
