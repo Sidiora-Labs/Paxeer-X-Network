@@ -1319,3 +1319,9 @@ area    = "bringup"
 symptom = "A read-only comparison of a public RPC name's resolution against the host-map roles exits 1 before it compares anything."
 cause   = "The comparison read the scalar role list of the host map with array syntax, so the roles came back empty."
 do      = "Read the roles the way tools/bringup/check-live.sh reads them, read -r -a from the scalar role list, before comparing a name against them."
+
+[gotcha.217]
+area    = "bridge"
+symptom = "A task that pairs the bridge relayer with layerx-mirror-signer in one machine cannot configure the signer for the relayer's keys."
+cause   = "layerx-mirror-signer binds exactly one secp256k1 handle and one ed25519 handle to the mirror policy domains, while the relayer signs under five LayerX/bridge domains with an attestor handle distinct from every submitter handle."
+do      = "Read the relayer's policy domain constants in src/signer.rs against the signer's key set before writing the image or app; the bridge key set needs a ruled signer mode first."
