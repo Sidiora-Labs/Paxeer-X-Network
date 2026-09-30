@@ -1484,7 +1484,11 @@ fn real_node_authority_serves_verified_facts_and_reflects_replica_loss() {
         field(&ready_body, "wire_version"),
         PROTOCOL_VERSION.to_string()
     );
-    assert_eq!(ready_body.as_object().map(serde_json::Map::len), Some(3));
+    assert_eq!(
+        ready_body["protocol_network_id"],
+        serde_json::Value::from(NETWORK_ID)
+    );
+    assert_eq!(ready_body.as_object().map(serde_json::Map::len), Some(4));
 
     let unauthenticated = https_get(
         cluster.authority_port,

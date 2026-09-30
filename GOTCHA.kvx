@@ -995,3 +995,9 @@ area    = "tests"
 symptom = "The real-node authority test fails on a /readyz field count right after the sequencer starts."
 cause   = "readiness() gained protocol_network_id, but the test still asserts three fields; the failure stayed hidden while the sequencer could not start."
 do      = "Treat it as a recorded code-versus-assertion conflict awaiting a ruling, not as a finality-authority failure."
+
+[gotcha.163]
+area    = "tests"
+symptom = "The real-node authority test fails in stages: after one stale assertion is fixed, the gateway's authorized-batch lookup returns 503 receipt_source_unavailable."
+cause   = "The sequencer did not start in this test for a long time, so several later checks were never run; layerxd's LNI now refuses the authority's lookup with -105 (malformed envelope)."
+do      = "Expect more hidden failures further down this test; record each one with its line and result code instead of reading it as a finality-authority failure."
