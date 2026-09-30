@@ -1199,3 +1199,21 @@ area    = "nginx"
 symptom = "A stream server cannot send a PROXY header to the loopback HTTP listener for one SNI and raw bytes to the passthrough app for another."
 cause   = "proxy_protocol is a per-server switch and takes no variable."
 do      = "Send every connection with the PROXY header to loopback, and give the passthrough names an inner loopback stream server that accepts the header and forwards the raw TLS without it."
+
+[gotcha.197]
+area    = "tests"
+symptom = "The movement provider exits 1 at startup with only its generic refusal line when a test passes a repeated-byte PAXEER_CHECKPOINT_AUTHORITY such as 0x5a5a…."
+cause   = "DepositProofVerifier::new decodes the value as an Ed25519 verifying key and refuses bytes that are not a curve point, and main collapses every startup error into one line."
+do      = "Give fixtures a real verifying key from ed25519_dalek::SigningKey::from_bytes on a random seed, and trace the child with strace -f when the refusal line gives no reason."
+
+[gotcha.198]
+area    = "platform"
+symptom = "The topology regression suite fails with a named-but-absent edge after two lanes merge in either order."
+cause   = "One lane named a manifest edge in topology-regressions.py while another lane replaced that manifest variable, and neither saw the other's change."
+do      = "After merging a lane that edits a manifest env edge, rerun the topology check on the merged revision before closing tasks that depend on it."
+
+[gotcha.199]
+area    = "platform"
+symptom = "A topology regression entry for an env edge cannot be renamed when the manifest variable changes from one URL to a JSON list of URLs."
+cause   = "topology-check.sh matches each env value against one scheme-anchored URL pattern, so a JSON array yields no edge, and a public host would be offcluster rather than ok."
+do      = "Before renaming a named edge, confirm check() emits it on the merged manifest; a list-valued or public-host variable needs a checker change or a ruling, not a renamed line."
