@@ -11,6 +11,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
+	"github.com/sidiora-labs/paxeer-network/modules/layerxcustody/client/cli"
 	"github.com/sidiora-labs/paxeer-network/modules/layerxcustody/keeper"
 	"github.com/sidiora-labs/paxeer-network/modules/layerxcustody/types"
 	"github.com/sidiora-labs/paxeer-network/sdk/client"
@@ -66,7 +67,9 @@ func (AppModuleBasic) RegisterRESTRoutes(_ client.Context, _ *mux.Router) {}
 // the layerxCustody precompile views.
 func (AppModuleBasic) RegisterGRPCGatewayRoutes(_ client.Context, _ *runtime.ServeMux) {}
 
-func (AppModuleBasic) GetTxCmd() *cobra.Command { return nil }
+// GetTxCmd returns the custody proposal submit command: only governance sends
+// the module's authority-gated messages.
+func (AppModuleBasic) GetTxCmd() *cobra.Command { return cli.GetTxCmd() }
 
 func (AppModuleBasic) GetQueryCmd() *cobra.Command { return nil }
 

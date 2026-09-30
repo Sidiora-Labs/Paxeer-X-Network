@@ -1215,3 +1215,11 @@ symbol     = "check_live_internal_passing"
 observed   = "bash tools/bringup/check-live.test.sh exited 1 with the five indexer cases passing: the two ca_issue /dev/shm cases, check_live_agent_public_no_daemon and the four internal cases failed while other copies of the harness ran at the same moment, whose layerx-event-source and agentd stand-in processes the /proc scans by executable name also see."
 assumption = "Run alone the harness passes these cases; the process scans stay as written."
 severity   = "unrelated"
+
+[observation.1.10.1]
+task       = "1.10"
+file       = "modules/layerxcustody/handler.go"
+symbol     = "NewProposalHandler"
+observed   = "go test ./modules/layerxcustody/... exited 0 (log .logs/1.10-verify.log) after go build ./modules/layerxcustody/... ./cmd/... exited 0 (log .logs/1.10-build.log, ./cmd/... matches no Go package; node/app.go and node/upgrades.go compile through testutil/keeper)."
+assumption = "CustodyProposal takes effect only from plan v6.11, whose height is an owner input in the 1.10 deploy handoff; 1.4 step B resumes after it passes."
+severity   = "external"

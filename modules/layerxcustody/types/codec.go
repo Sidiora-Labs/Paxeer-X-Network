@@ -5,6 +5,7 @@ import (
 	cdctypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
 	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 	"github.com/sidiora-labs/paxeer-network/sdk/types/msgservice"
+	govtypes "github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
 )
 
 func RegisterCodec(cdc *codec.LegacyAmino) {
@@ -17,6 +18,7 @@ func RegisterCodec(cdc *codec.LegacyAmino) {
 	cdc.RegisterConcrete(&MsgFinaliseWithdrawal{}, "layerxcustody/MsgFinaliseWithdrawal", nil)
 	cdc.RegisterConcrete(&MsgRequestForcedExit{}, "layerxcustody/MsgRequestForcedExit", nil)
 	cdc.RegisterConcrete(&MsgExecuteForcedExit{}, "layerxcustody/MsgExecuteForcedExit", nil)
+	cdc.RegisterConcrete(&CustodyProposal{}, "layerxcustody/CustodyProposal", nil)
 }
 
 func RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
@@ -31,6 +33,7 @@ func RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
 		&MsgRequestForcedExit{},
 		&MsgExecuteForcedExit{},
 	)
+	registry.RegisterImplementations((*govtypes.Content)(nil), &CustodyProposal{})
 	msgservice.RegisterMsgServiceDesc(registry, &_Msg_serviceDesc)
 }
 
