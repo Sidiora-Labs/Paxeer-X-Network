@@ -1509,6 +1509,161 @@ kill "${internal_pids##* }" 2>/dev/null || true
 wait "${internal_pids##* }" 2>/dev/null || true
 unset CHECK_LIVE_TEST_MIRROR_REQUEST
 
+# The interop cases run the check against a loopback stand-in of the gateway
+# and the router's JSON-RPC (CHECK_LIVE_INTEROP_ORIGIN and _RPC point at it):
+# it wants the payer's LayerX-Key on every call and an Idempotency-Key on every
+# POST to the gateway, answers /readyz from its mode file, the x402 routes with
+# the shapes of layerx-interop-service, and settles only the payload the build
+# returned, for the activity the encoder signed. The encoder stand-in answers
+# the signing request of platform/cli/examples/hosted-send.rs only for the
+# payer's seed and the kernel asset.
+mkdir -p "$work/interop" "$fx/platform/hosted/node"
+cp "$root/platform/hosted/node/bootstrap.sh" "$fx/platform/hosted/node/"
+interop_asset="$(sed -n 's/^ASSET_ID="\([0-9a-f]*\)"$/\1/p' "$root/platform/hosted/node/bootstrap.sh")"
+interop_secret="lxp_live_$(openssl rand -hex 24)"
+printf 'key_fixture:%s\n' "$interop_secret" >"$work/interop/api-key"
+openssl genpkey -algorithm ed25519 -out "$work/interop/payer.pem" 2>/dev/null
+interop_seed="$(python3 -c '
+import sys
+from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat, load_pem_private_key
+print(load_pem_private_key(open(sys.argv[1], "rb").read(), None).private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()).hex())
+' "$work/interop/payer.pem")"
+interop_payee="did:layerx:$(openssl rand -hex 32)"
+interop_activity="$(openssl rand -hex 32)"
+cat >"$work/interop/encoder" <<SH
+#!/usr/bin/env python3
+import json, sys
+request = json.load(sys.stdin)
+ok = (request["seed"] == "$interop_seed" and request["asset"] == "$interop_asset" and request["network_id"] == 125
+      and request["source_sequence"] == 7 and request["identity_sequence"] == 3 and request["to_name"] == "agent:$interop_payee:main")
+if not ok:
+    sys.exit(1)
+print(json.dumps({"canonical": "ab" * 40, "activity_id": "$interop_activity"}))
+SH
+chmod +x "$work/interop/encoder"
+cat >"$work/interop/gateway.py" <<'PY'
+import hashlib, http.server, json, sys
+
+work, authorization, activity = sys.argv[1:]
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
+
+    def answer(self, code, doc):
+        body = json.dumps(doc).encode()
+        self.send_response(code)
+        self.send_header("content-type", "application/json")
+        self.send_header("content-length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def mode(self):
+        return open(work + "/mode").read().strip()
+
+    def do_GET(self):
+        if self.path == "/readyz":
+            waiting = "pending" if self.mode() == "not-ready" else "ready"
+            return self.answer(200 if waiting == "ready" else 503, {
+                "status": "ready" if waiting == "ready" else "not_ready",
+                "components": {"durable_gateway_store": "ready", "hosted_gateway": "ready", "receipt_authority": waiting}})
+        if self.headers.get("authorization") != authorization:
+            return self.answer(401, {"ok": False, "error": {"code": "api_key_required"}})
+        if self.path == "/v1/http/x402/supported":
+            return self.answer(200, {"ok": True, "result": {"transport": "http", "supported": {
+                "kinds": [{"x402Version": 2, "scheme": "exact", "network": "layerx:125"}], "extensions": [], "signers": {}}}})
+        self.answer(404, {"ok": False, "error": {"code": "unknown_route"}})
+
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers.get("content-length", "0"))))
+        if self.path == "/rpc":
+            method, params = body["method"], body["params"]
+            if method == "lx_getBalances":
+                result = {"accounts": [{"name": "agent:%s:main" % params[0], "asset_id": ASSET,
+                                        "account_id": hashlib.sha256(params[0].encode()).hexdigest()}]}
+            elif method == "lx_getAccount":
+                result = {"account_id": params[0], "next_sequence": "7"}
+            else:
+                result = {"next_sequence": "3"}
+            return self.answer(200, {"jsonrpc": "2.0", "id": body["id"], "result": result})
+        if self.headers.get("authorization") != authorization or not self.headers.get("idempotency-key"):
+            return self.answer(401, {"ok": False, "error": {"code": "api_key_required"}})
+        if self.path == "/v1/http/x402/seller/offer":
+            accepts = body["accepts"][0]
+            if accepts["scheme"] != "exact" or accepts["asset"] != ASSET or accepts["network"] != "layerx:125":
+                return self.answer(400, {"ok": False, "error": {"code": "invalid_x402_offer"}})
+            return self.answer(200, {"ok": True, "result": {"transport": "http", "status": 402,
+                                     "payment_required_header": "cmVxdWlyZWQ=", "payment_required": body}})
+        if self.path == "/v1/http/x402/buyer/build":
+            payload = {"x402Version": 2, "accepted": body["payment_required"]["accepts"][0], "payload": body["scheme_payload"]}
+            return self.answer(200, {"ok": True, "result": {"payment_header": "c2lnbmVk", "payment_payload": payload,
+                                     "idempotency_key": body["scheme_payload"]["layerxIdempotencyKey"]}})
+        if self.path == "/v1/http/x402/settle":
+            settled = body["paymentPayload"]["accepted"] == body["paymentRequirements"]
+            transaction = "lxp:" + (activity if self.mode() != "other-activity" else "00" * 32)
+            return self.answer(200, {"ok": True, "result": {"success": settled, "payer": "fixture", "transaction": transaction,
+                                     "network": "layerx:125", "amount": body["paymentRequirements"]["amount"],
+                                     "extensions": {"layerx": {"receipt": "cmVjZWlwdA==", "receiptDigest": "ab" * 32}}}})
+        self.answer(404, {"ok": False, "error": {"code": "unknown_route"}})
+
+
+ASSET = open(work + "/asset").read().strip()
+server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+open(work + "/port", "w").write(str(server.server_address[1]))
+server.serve_forever()
+PY
+printf '%s' "$interop_asset" >"$work/interop/asset"
+printf 'ready' >"$work/interop/mode"
+python3 "$work/interop/gateway.py" "$work/interop" "LayerX-Key key_fixture:$interop_secret" "$interop_activity" &
+interop_pid=$!
+for _ in $(seq 50); do [ -s "$work/interop/port" ] && break; python3 -c 'import time; time.sleep(0.1)'; done
+interop_origin="http://127.0.0.1:$(cat "$work/interop/port")"
+
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_interop_inputs_unset "$work/hosts-good.env" 2 interop -- \
+	"check-live: CHECK_LIVE_INTEROP_API_KEY_FILE is unset"
+
+export CHECK_LIVE_INTEROP_API_KEY_FILE="$work/interop/api-key" CHECK_LIVE_INTEROP_PAYER_KEY_FILE="$work/interop/payer.pem"
+export CHECK_LIVE_INTEROP_PAYEE_DID="$interop_payee" CHECK_LIVE_INTEROP_ENCODER="$work/interop/encoder"
+export CHECK_LIVE_INTEROP_ORIGIN="$interop_origin" CHECK_LIVE_INTEROP_RPC="$interop_origin/rpc"
+export LAYERX_INTEROP_PROTOCOL_NETWORK_ID=125
+export CHECK_LIVE_TEST_MACHINES='[{"state":"started","region":"ams"},{"state":"started","region":"fra"},{"state":"stopped","region":"ams"}]'
+: >"$CHECK_LIVE_TEST_STDIN"
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_interop_passing "$work/hosts-good.env" 0 interop -- \
+	"pass machines app=$interop started=2 regions=ams,fra" \
+	"pass readyz $interop_origin/readyz http=200 status=ready components=3/3" \
+	"pass supported $interop_origin/v1/http/x402/supported http=200 scheme=exact network=layerx:125" \
+	"pass offer $interop_origin/v1/http/x402/seller/offer http=200 status=402 PAYMENT-REQUIRED=present" \
+	"pass build $interop_origin/v1/http/x402/buyer/build http=200 PAYMENT-SIGNATURE=present" \
+	"pass settle $interop_origin/v1/http/x402/settle http=200 success=true transaction=lxp:$interop_activity receipt=present" \
+	"check-live: all checks passed"
+output="$(BRINGUP_HOSTS_FILE="$work/hosts-good.env" CHECK_LIVE_TIMEOUT=5 "$fx_checker" interop 2>&1)" || true
+if grep -qF -e "$interop_secret" -e "$interop_seed" - "$CHECK_LIVE_TEST_CALLS" "$CHECK_LIVE_TEST_STDIN" <<<"$output"; then
+	echo "FAIL check_live_interop_keeps_the_payer_secrets: the router key or the payer seed left the check"
+	failures=$((failures + 1))
+else
+	echo "ok   check_live_interop_keeps_the_payer_secrets"
+fi
+
+printf 'not-ready' >"$work/interop/mode"
+export CHECK_LIVE_TEST_MACHINES='[{"state":"started","region":"ams"},{"state":"stopped","region":"fra"}]'
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_interop_failing "$work/hosts-good.env" 1 interop -- \
+	"fail machines app=$interop started=1 regions=ams" \
+	"fail readyz $interop_origin/readyz http=503 status=not_ready components=2/3 not_ready=receipt_authority" \
+	"pass settle $interop_origin/v1/http/x402/settle http=200 success=true" \
+	"check-live: 2 check(s) failed"
+
+printf 'other-activity' >"$work/interop/mode"
+export CHECK_LIVE_TEST_MACHINES='[{"state":"started","region":"ams"},{"state":"started","region":"fra"}]'
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_interop_settles_another_activity "$work/hosts-good.env" 1 interop -- \
+	"pass readyz $interop_origin/readyz http=200 status=ready components=3/3" \
+	"fail settle $interop_origin/v1/http/x402/settle http=200 success=true transaction=lxp:$(printf '0%.0s' {1..64}) receipt=present want=lxp:$interop_activity" \
+	"check-live: 1 check(s) failed"
+kill "$interop_pid" 2>/dev/null || true
+wait "$interop_pid" 2>/dev/null || true
+unset CHECK_LIVE_INTEROP_API_KEY_FILE CHECK_LIVE_INTEROP_PAYER_KEY_FILE CHECK_LIVE_INTEROP_PAYEE_DID CHECK_LIVE_INTEROP_ENCODER
+unset CHECK_LIVE_INTEROP_ORIGIN CHECK_LIVE_INTEROP_RPC LAYERX_INTEROP_PROTOCOL_NETWORK_ID CHECK_LIVE_TEST_MACHINES
+
 # The fleet script shares the host map and the ssh helpers, so its own test
 # runs as the last case, with this test's stand-ins off the PATH.
 status=0

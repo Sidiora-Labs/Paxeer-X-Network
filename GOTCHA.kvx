@@ -1457,3 +1457,9 @@ area    = "tooling"
 symptom = "A script that inserts shell test text through python3 - <<'PY' ends early with a Python syntax error, and the rest of the inserted text runs as shell commands."
 cause   = "The inserted text itself carried a heredoc ending in a PY line, which closed the outer heredoc."
 do      = "Write text that holds its own heredocs to a scratch file first and insert it from there, or give the outer heredoc a delimiter the text cannot contain."
+
+[gotcha.240]
+area    = "bringup"
+symptom = "An x402 round trip against the interop gateway would fail to reach the public router URL once the gateway's outbound CA points at the internal CA."
+cause   = "It looked as if LAYERX_INTEROP_OUTBOUND_CA_DER replaced the trust store, but the service adds that one DER to native-tls on top of the system roots."
+do      = "Point the interop outbound CA at the internal CA DER alone: it verifies the receipt authority and Redis, while the router's public chain verifies through the image's ca-certificates bundle."
