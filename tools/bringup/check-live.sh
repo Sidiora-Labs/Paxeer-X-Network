@@ -134,6 +134,18 @@ Environment:
                        /etc/layerx/ca
   LAYERX_FLY_TLS_DIR   the certificate directory root on the volume of a
                        Fly app, default /data/tls
+  CHECK_LIVE_GAS_ACCOUNT_KEYSTORE, CHECK_LIVE_GAS_ACCOUNT_PASSWORD_FILE
+                       the keystore and password file of the gas check's
+                       account, already delegated to the paymaster and
+                       holding SID; the sponsored batch spends SID from it;
+                       never printed
+  CHECK_LIVE_GAS_MAX_TOKEN_AMOUNT  the most SID base units the gas check's
+                       quote may charge
+  CHECK_LIVE_GAS_ORIGIN  origin of the gas station, default
+                       https://chain.paxeer.network
+  CHECK_LIVE_GAS_RPC   JSON-RPC URL the gas check reads the chain from,
+                       default https://api-mainnet-beta.paxeer.network/rpc
+  CHECK_LIVE_GAS_RECEIPT_ATTEMPTS  receipt polls five seconds apart, default 36
 
 Exits 1 when any check fails, 2 on a usage error, an unset BRINGUP_HOSTS_FILE
 or a host map lacking a role.
@@ -1666,6 +1678,219 @@ check_agent_public() {
 	finish "$failures"
 }
 
+# check_gas: the gas station app of interop/deploy/gas-station/fly.toml runs
+# one started machine with one volume and the configuration its init rendered
+# there names chain 125, the SID token, the router first among three
+# endpoints and the paymaster; the account of CHECK_LIVE_GAS_ACCOUNT_KEYSTORE
+# is delegated to that paymaster; POST /quote at chain.paxeer.network answers
+# 200 with a quote for one no-op call whose SID amount lies within the
+# contract's spread of the paymaster's currentRate; the account signs the
+# batch and its EIP-7702 authorization with cast, POST /submit answers 200
+# with a transaction hash, and its receipt succeeds with the SID Transfer of
+# the quoted amount from the account to the sponsor. The keystore password
+# never leaves cast. One line per check.
+gas_sid=0x21f7b20a555199fa73A238B1a91FD0f549068fEe
+gas_transfer_topic=0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef
+gas_eth_prefix=0x19457468657265756d205369676e6564204d6573736167653a0a3332
+
+# gas_rpc <method> <params json>: the result of one JSON-RPC call to the gas
+# check's RPC URL, a string as is and anything else as compact JSON; status 1
+# when there is no result.
+gas_rpc() {
+	curl -sS -m "$timeout" -H 'content-type: application/json' \
+		-d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"$1\",\"params\":$2}" "$gas_rpc_url" 2>/dev/null | python3 -c '
+import json, sys
+try:
+    r = json.load(sys.stdin)["result"]
+except Exception:
+    sys.exit(1)
+print(r if isinstance(r, str) else json.dumps(r, separators=(",", ":")))
+'
+}
+
+# gas_post <route> <request file> <response file>: POSTs the file to the
+# station's route and prints the HTTP status.
+gas_post() {
+	curl -sS --max-time "$timeout" --output "$3" --write-out '%{http_code}' \
+		-H 'content-type: application/json' --data-binary "@$2" "$gas_origin$1" 2>/dev/null || true
+}
+
+# gas_signed <32-byte hash>: the EIP-191 hash of the 32 bytes, as
+# MessageHashUtils.toEthSignedMessageHash computes it.
+gas_signed() {
+	cast keccak "$gas_eth_prefix${1#0x}"
+}
+
+gas_sign() {
+	cast wallet sign --no-hash "$1" --keystore "$CHECK_LIVE_GAS_ACCOUNT_KEYSTORE" \
+		--password-file "$CHECK_LIVE_GAS_ACCOUNT_PASSWORD_FILE" 2>/dev/null
+}
+
+check_gas() {
+	local toml=interop/deploy/gas-station/fly.toml name
+	local app answer n_machines n_started n_mounts config chain token endpoints first paymaster gas_limit priority
+	local account code rate price nonce auth_nonce gas_cost w status body quote sponsor amount maximum deadline qnonce
+	local qd calls_hash bd account_sig auth_sig auth_rlp call_data tx receipt attempt verdict failures=0
+	for name in CHECK_LIVE_GAS_ACCOUNT_KEYSTORE CHECK_LIVE_GAS_ACCOUNT_PASSWORD_FILE CHECK_LIVE_GAS_MAX_TOKEN_AMOUNT; do
+		if [ -z "${!name:-}" ]; then
+			echo "check-live: $name is unset" >&2
+			exit 2
+		fi
+	done
+	if ! [[ "$CHECK_LIVE_GAS_MAX_TOKEN_AMOUNT" =~ ^[1-9][0-9]*$ ]]; then
+		echo "check-live: CHECK_LIVE_GAS_MAX_TOKEN_AMOUNT is not a positive integer" >&2
+		exit 2
+	fi
+	gas_origin="${CHECK_LIVE_GAS_ORIGIN:-https://chain.paxeer.network}"
+	gas_rpc_url="${CHECK_LIVE_GAS_RPC:-https://api-mainnet-beta.paxeer.network/rpc}"
+	if ! app="$(fly_app "$toml")"; then
+		echo "fail gas toml=absent"
+		finish 1
+	fi
+	answer="$(timeout "$timeout" flyctl machines list --app "$app" --json 2>/dev/null | python3 -c '
+import json, sys
+ms = json.load(sys.stdin)
+started = [m for m in ms if m.get("state") == "started"]
+mounts = [x.get("volume", "") for m in ms for x in (m.get("config") or {}).get("mounts") or []]
+print(len(ms), len(started), len(mounts))
+' 2>/dev/null)" || answer=""
+	read -r n_machines n_started n_mounts <<<"${answer:-none none none}"
+	if [ "$n_machines" = 1 ] && [ "$n_started" = 1 ] && [ "$n_mounts" = 1 ]; then
+		echo "pass machines app=$app machines=1 started=1 volumes=1"
+	else
+		echo "fail machines app=$app machines=$n_machines started=$n_started volumes=$n_mounts"
+		failures=$((failures + 1))
+	fi
+
+	config="$(fly_ssh "$app" - "cat /data/gas-station/station.json" </dev/null | python3 -c '
+import json, sys
+c = json.load(sys.stdin)
+print(c["chain_id"], c["token"], len(c["endpoints"]), c["endpoints"][0], c["paymaster"], c["gas_limit"], c["max_priority_fee_per_gas"])
+' 2>/dev/null)" || config=""
+	read -r chain token endpoints first paymaster gas_limit priority <<<"${config:-none none none none none none none}"
+	if [ -z "$config" ]; then
+		echo "fail config app=$app station.json=unreadable"
+		finish $((failures + 1))
+	fi
+	if [ "$chain" = 125 ] && [ "${token,,}" = "${gas_sid,,}" ] && [ "$endpoints" = 3 ] && [ "$first" = https://api-mainnet-beta.paxeer.network/rpc ]; then
+		echo "pass config app=$app chain_id=125 token=SID endpoints=3 first=router paymaster=$paymaster"
+	else
+		echo "fail config app=$app chain_id=$chain token=$token endpoints=$endpoints first=$first"
+		finish $((failures + 1))
+	fi
+
+	account="$(cast wallet address --keystore "$CHECK_LIVE_GAS_ACCOUNT_KEYSTORE" --password-file "$CHECK_LIVE_GAS_ACCOUNT_PASSWORD_FILE" 2>/dev/null)" || account=""
+	if [ -z "$account" ]; then
+		echo "fail account keystore=unreadable"
+		finish $((failures + 1))
+	fi
+	code="$(gas_rpc eth_getCode "[\"$account\",\"latest\"]")" || code=""
+	if [ "${code,,}" = "0xef0100$(tr '[:upper:]' '[:lower:]' <<<"${paymaster#0x}")" ]; then
+		echo "pass delegation account=$account delegate=$paymaster"
+	else
+		echo "fail delegation account=$account code=${code:-none} want=0xef0100${paymaster#0x}"
+		finish $((failures + 1))
+	fi
+
+	rate="$(gas_rpc eth_call "[{\"to\":\"$paymaster\",\"data\":\"$(cast sig 'currentRate()')\"},\"latest\"]")" || rate=""
+	price="$(gas_rpc eth_gasPrice '[]')" || price=""
+	nonce="$(gas_rpc eth_call "[{\"to\":\"$account\",\"data\":\"$(cast sig 'nonce()')\"},\"pending\"]")" || nonce=""
+	auth_nonce="$(gas_rpc eth_getTransactionCount "[\"$account\",\"pending\"]")" || auth_nonce=""
+	if ! [[ "$rate" =~ ^0x[0-9a-fA-F]+$ && "$price" =~ ^0x[0-9a-fA-F]+$ && "$nonce" =~ ^0x[0-9a-fA-F]+$ && "$auth_nonce" =~ ^0x[0-9a-fA-F]+$ ]] || [ "$((rate))" -eq 0 ]; then
+		echo "fail chain-state rate=${rate:-none} gas_price=${price:-none} batch_nonce=${nonce:-none} account_nonce=${auth_nonce:-none}"
+		finish $((failures + 1))
+	fi
+	read -r rate nonce auth_nonce gas_cost <<<"$(python3 -c '
+import sys
+rate, price, nonce, auth, limit, priority = (int(v, 0) for v in sys.argv[1:])
+fee = 2 * price + priority
+print(rate, nonce, auth, limit * fee)
+' "$rate" "$price" "$nonce" "$auth_nonce" "$gas_limit" "$priority")"
+
+	w="$(mktemp -d)"
+	printf '{"account":"%s","nonce":"%s","calls":[{"to":"%s","value":"0","data":"0x"}],"maxTokenAmount":"%s","gasCost":"%s","chainId":"125","token":"%s","decimals":6}' \
+		"$account" "$nonce" "$account" "$CHECK_LIVE_GAS_MAX_TOKEN_AMOUNT" "$gas_cost" "$gas_sid" >"$w/quote.json"
+	status="$(gas_post /quote "$w/quote.json" "$w/quote.out")"
+	quote="$(python3 -c '
+import json, sys
+account, sid, maximum, gas_cost, rate = sys.argv[1].lower(), sys.argv[2].lower(), int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5])
+try:
+    doc = json.load(open(sys.argv[6]))
+    q = doc["quote"]
+    fields = [q["sponsor"], q["token"], int(q["maxTokenAmount"]), int(q["tokenAmount"]), int(q["deadline"]), int(q["quoteNonce"]), int(q["gasCost"]), q["decimals"], doc["relayerSignature"]]
+except Exception:
+    print("|body=unreadable")
+    sys.exit(1)
+sponsor, token, qmax, amount, deadline, qnonce, qcost, decimals, signature = fields
+expected = -(-gas_cost * rate // 10**18)
+lower, upper = -(-expected * 9500 // 10000), expected * 10500 // 10000
+ok = (token.lower() == sid and decimals == 6 and qcost == gas_cost and qmax <= maximum and 0 < amount <= qmax
+      and lower <= amount <= upper and sponsor.lower() not in ("", account) and len(signature) == 132)
+print(sponsor, qmax, amount, deadline, qnonce, signature, "|rate=%d token_amount=%d expected=%d max=%d sponsor=%s" % (rate, amount, expected, qmax, sponsor))
+sys.exit(0 if ok else 1)
+' "$account" "$gas_sid" "$CHECK_LIVE_GAS_MAX_TOKEN_AMOUNT" "$gas_cost" "$rate" "$w/quote.out" 2>/dev/null)" && verdict=pass || verdict=fail
+	[ "$status" = 200 ] || verdict=fail
+	if [ "$verdict" != pass ]; then
+		echo "fail quote $gas_origin/quote http=${status:-none} ${quote#*|}"
+		rm -rf "$w"
+		finish $((failures + 1))
+	fi
+	read -r sponsor maximum amount deadline qnonce body <<<"${quote%%|*}"
+	echo "pass quote $gas_origin/quote http=200 ${quote#*|}"
+
+	qd="$(gas_signed "$(cast keccak "$(cast abi-encode 'f(bytes32,uint256,address,address,address,uint256,uint256,uint256,uint256,uint256)' \
+		"$(cast keccak 'Quote(uint256 chainId,address account,address sponsor,address token,uint256 maxTokenAmount,uint256 tokenAmount,uint256 deadline,uint256 quoteNonce,uint256 gasCost)')" \
+		125 "$account" "$sponsor" "$gas_sid" "$maximum" "$amount" "$deadline" "$qnonce" "$gas_cost")")")"
+	calls_hash="$(cast keccak "$(cast abi-encode 'f((address,uint256,bytes)[])' "[($account,0,0x)]")")"
+	bd="$(gas_signed "$(cast keccak "$(cast abi-encode 'f(bytes32,uint256,bytes32,bytes32)' \
+		"$(cast keccak 'SponsoredBatch(uint256 nonce,bytes32 callsHash,bytes32 quoteDigest)')" "$nonce" "$calls_hash" "$qd")")")"
+	auth_rlp="$(cast to-rlp "[\"0x7d\",\"$paymaster\",\"$(python3 -c 'import sys; n = int(sys.argv[1]); print("0x" + (("%x" % n).rjust(len("%x" % n) + len("%x" % n) % 2, "0") if n else ""))' "$auth_nonce")\"]")"
+	account_sig="$(gas_sign "$bd")" || account_sig=""
+	auth_sig="$(gas_sign "$(cast keccak "0x05${auth_rlp#0x}")")" || auth_sig=""
+	if [ "${#account_sig}" -ne 132 ] || [ "${#auth_sig}" -ne 132 ]; then
+		echo "fail sign account=$account keystore=refused"
+		rm -rf "$w"
+		finish $((failures + 1))
+	fi
+	call_data="$(cast calldata 'executeSponsored((address,uint256,bytes)[],(address,address,uint256,uint256,uint256,uint256,uint256),bytes,bytes)' \
+		"[($account,0,0x)]" "($sponsor,$gas_sid,$maximum,$amount,$deadline,$qnonce,$gas_cost)" "$account_sig" "$body")"
+	printf '{"call":{"to":"%s","value":"0","data":"%s"},"authorization":{"chainId":"125","address":"%s","nonce":"%s","yParity":%d,"r":"0x%s","s":"0x%s"},"batch":{"chainId":"125","account":"%s","nonce":"%s","calls":[{"to":"%s","value":"0","data":"0x"}],"quote":{"sponsor":"%s","token":"%s","maxTokenAmount":"%s","tokenAmount":"%s","deadline":"%s","quoteNonce":"%s","gasCost":"%s","decimals":6}},"accountSignature":"%s","relayerSignature":"%s"}' \
+		"$account" "$call_data" "$paymaster" "$auth_nonce" "$((16#${auth_sig:130:2} - 27))" "${auth_sig:2:64}" "${auth_sig:66:64}" \
+		"$account" "$nonce" "$account" "$sponsor" "$gas_sid" "$maximum" "$amount" "$deadline" "$qnonce" "$gas_cost" "$account_sig" "$body" >"$w/submit.json"
+	status="$(gas_post /submit "$w/submit.json" "$w/submit.out")"
+	tx="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["transactionHash"])' "$w/submit.out" 2>/dev/null)" || tx=""
+	rm -rf "$w"
+	if [ "$status" != 200 ] || ! [[ "$tx" =~ ^0x[0-9a-fA-F]{64}$ ]]; then
+		echo "fail submit $gas_origin/submit http=${status:-none} tx=${tx:-none}"
+		finish $((failures + 1))
+	fi
+	receipt=""
+	for attempt in $(seq "${CHECK_LIVE_GAS_RECEIPT_ATTEMPTS:-36}"); do
+		receipt="$(gas_rpc eth_getTransactionReceipt "[\"$tx\"]")" || receipt=""
+		[ -z "$receipt" ] || [ "$receipt" = null ] || break
+		[ "$attempt" = "${CHECK_LIVE_GAS_RECEIPT_ATTEMPTS:-36}" ] || sleep 5
+	done
+	answer="$(python3 -c '
+import json, sys
+sid, topic, account, sponsor, amount = sys.argv[1].lower(), sys.argv[2], sys.argv[3].lower(), sys.argv[4].lower(), int(sys.argv[5])
+try:
+    r = json.loads(sys.argv[6])
+    status = int(r["status"], 16)
+    logs = r["logs"]
+except Exception:
+    print("receipt=none")
+    sys.exit(1)
+pad = lambda a: "0x" + a[2:].rjust(64, "0")
+moved = [l for l in logs if l.get("address", "").lower() == sid and [t.lower() for t in l.get("topics", [])] == [topic, pad(account), pad(sponsor)]]
+paid = moved and int(moved[0].get("data", "0x0"), 16) or 0
+print("status=%d sid_transfer=%d want=%d to=sponsor" % (status, paid, amount))
+sys.exit(0 if status == 1 and paid == amount else 1)
+' "$gas_sid" "$gas_transfer_topic" "$account" "$sponsor" "$amount" "${receipt:-null}")" && verdict=pass || verdict=fail
+	echo "$verdict submit $gas_origin/submit http=200 tx=$tx $answer"
+	[ "$verdict" = pass ] || failures=$((failures + 1))
+	finish "$failures"
+}
+
 # Sourced by tools/bringup/ca.sh for the Fly helpers and the CA settings: the
 # probe's own dispatch below runs only when this file is executed.
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
@@ -1686,6 +1911,7 @@ ci) ;;
 human-session) ;;
 paxeer-boundary) ;;
 agent-public) ;;
+gas) ;;
 *)
 	usage >&2
 	exit 2
@@ -1700,6 +1926,7 @@ fi
 tools=(ssh timeout curl python3 openssl sha256sum)
 [ "$mode" != explorer ] || tools=(curl python3 psql)
 [ "$mode" != ca ] || tools+=(flyctl)
+[ "$mode" != gas ] || tools+=(flyctl cast)
 for tool in "${tools[@]}"; do
 	if ! command -v "$tool" >/dev/null 2>&1; then
 		echo "check-live: $tool is required" >&2

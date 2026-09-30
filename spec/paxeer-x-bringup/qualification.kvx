@@ -897,3 +897,43 @@ symbol     = "LAYERX_REGISTRY_NODE_AUTHORIZATION"
 observed   = "The registry's node and receipt authority bearer values, its receipt authority replica id and its sequencer trust history file come from the kernel side, whose Fly paths the spec and the tree do not fix, because the kernel app's init that would place the registry-authority and registry-component tokens is not in the tree."
 assumption = "None taken: the owner names where the kernel app keeps those four values, or whether task 2.6 generates them and imports them into both apps."
 severity   = "blocker"
+
+[observation.4.11.1]
+task       = "4.11"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_gas"
+observed   = "The verify_cmd timeout 15m tools/bringup/check-live.sh gas exited 2 with check-live: CHECK_LIVE_GAS_ACCOUNT_KEYSTORE is unset, because no check account exists yet and the gas station app, its paymaster and its edge name are not deployed; the harness cases passed."
+assumption = "The deploy side runs the handoff steps, delegates and funds the check account, and reruns the gate with the CHECK_LIVE_GAS_* inputs set."
+severity   = "warning"
+
+[observation.4.11.2]
+task       = "4.11"
+file       = "docker/gas-station/init.sh"
+symbol     = "need"
+observed   = "The station config requires margin_bps, per_quote_limit, per_account_limit, per_interval_limit, interval_seconds, balance_floor, gas_limit and max_priority_fee_per_gas, and neither the spec nor the tree fixes their values."
+assumption = "None taken: the owner supplies the eight values, imported as GAS_STATION_* secrets, and the init refuses to start without them."
+severity   = "warning"
+
+[observation.4.11.3]
+task       = "4.11"
+file       = "interop/crates/layerx-gas-station/src/config.rs"
+symbol     = "max_rate_age"
+observed   = "The station refuses a max_rate_age outside 1..300 seconds, while do_1 and do_2 make both the contract's maximumAge and max_rate_age the owner's setRate refresh interval."
+assumption = "None taken: the owner's refresh interval must be at most 300 seconds, with setRate called at least that often, or the station bound changes in its own task."
+severity   = "warning"
+
+[observation.4.11.4]
+task       = "4.11"
+file       = "interop/crates/layerx-gas-station/src/station.rs"
+symbol     = "quote"
+observed   = "The station reads nonce() and usedQuoteNonces from the account itself, so an account not yet EIP-7702 delegated to the paymaster gets no quote, and a first-time user cannot be sponsored through /quote alone."
+assumption = "The gate's check account is delegated once in the handoff with a sponsor-paid authorization; first-time delegation for users is left to the wallet side."
+severity   = "warning"
+
+[observation.4.11.5]
+task       = "4.11"
+file       = "interop/deploy/gas-station/fly.toml"
+symbol     = "checks.listening"
+observed   = "The station serves only POST /quote and POST /submit and no GET route, so the app carries a tcp check and the edge gate has no http health path to probe for chain.paxeer.network."
+assumption = "The edge gate's route line for this name stays without a health path until the station gains a GET health route in its own task."
+severity   = "warning"

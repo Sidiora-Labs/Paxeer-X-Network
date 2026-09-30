@@ -844,7 +844,7 @@ reqs       = ["16.5"]
 
 [task.4.11]
 title      = "Run the gas station at chain.paxeer.network"
-status     = "pending"
+status     = "in_progress"
 wave       = 4
 requires   = ["2.2", "0.9"]
 blocked_on = "the owner's address for initialOwner of the paymaster; and the interval within which the owner refreshes the paymaster rate with setRate, used as maximumAge and max_rate_age"

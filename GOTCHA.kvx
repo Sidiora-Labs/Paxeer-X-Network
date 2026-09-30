@@ -1337,3 +1337,21 @@ area    = "registry"
 symptom = "A registry deployed with only its listener, builder and kernel variables exits at startup before /healthz answers."
 cause   = "Its program outbox builds the event producer client with the mandatory from_environment, not from_environment_if_configured, so the program and webhooks upstream groups are required at start."
 do      = "Configure the LAYERX_EVENTS_PROGRAM_UPSTREAM_* and LAYERX_EVENTS_WEBHOOKS_UPSTREAM_* groups, with reachable mTLS upstreams, before the first registry deploy."
+
+[gotcha.220]
+area    = "gas-station"
+symptom = "A /quote for an account that has never used the paymaster answers 503 instead of a quote."
+cause   = "The station eth_calls nonce() and usedQuoteNonces on the account itself; an undelegated account returns empty code, which reads as malformed."
+do      = "Delegate the account to the paymaster with an EIP-7702 authorization before its first quote, and check eth_getCode equals 0xef0100 followed by the paymaster."
+
+[gotcha.221]
+area    = "gas-station"
+symptom = "A health check or edge probe of the gas station gets 404 on every GET path."
+cause   = "The service routes only POST /quote and POST /submit."
+do      = "Use a tcp check on the Fly app and probe the station with a POST; do not give it an http check path."
+
+[gotcha.222]
+area    = "gas-station"
+symptom = "The station refuses its configuration when max_rate_age is set to a paymaster refresh interval of more than five minutes."
+cause   = "The station config bounds max_rate_age to 1..300 seconds, independent of the contract's maximumAge."
+do      = "Keep the owner's setRate refresh interval at most 300 seconds, or change the station bound in its own task first."
