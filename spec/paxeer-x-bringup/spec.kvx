@@ -988,7 +988,7 @@ reqs       = ["18.4"]
 
 [task.4.22]
 title      = "Move the public full node off the validator host onto its own server"
-status     = "pending"
+status     = "implemented"
 wave       = 4
 requires   = ["0.5", "4.14"]
 blocked_on = "the owner's server for the full node, added to RPC_HOSTS in the private host map as an ssh destination, and the owner's move of the DNS record of the apiN name that a validator host serves today to that server's address"

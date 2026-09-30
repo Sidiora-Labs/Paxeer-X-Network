@@ -424,3 +424,19 @@ exit_code  = 2
 log_path   = ".logs/verify.log"
 observed   = "layerxd and both test binaries build under -Werror and lxp_test_finality_json passes; finality-authority-chain.py then stops because tests/daemon/fixtures/finality-authority/rpc.json does not exist, and the worker environment could not reach the chain's JSON-RPC to capture it."
 assumption = "Only a capture from the live chain is acceptable, so none was written by hand; an operator runs 'LAYERX_NODE_PAXEER_RPC_URL=http://127.0.0.1:<port> python3 tests/daemon/finality-authority-chain.py --capture' on a synced node, commits rpc.json and reruns the gate; the task stays in_progress."
+
+[observation.4.22.1]
+task       = "4.22"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_rpc_placement"
+observed   = "The gate ran once at eb2184b5e plus this change and exited 1 (.logs/verify.log): api1 resolves to RPC_HOSTS[0], which is a validator host; both validator hosts report paxd.service active and listen on 80 and 443; nine names trail the highest answer by 200 to 2222081 blocks; the fixture cases of check-live.test.sh pass."
+assumption = "do_1 and do_2 need the owner's new full-node server in RPC_HOSTS and the owner's move of the api1 DNS record; paxd.service is taken as the full-node unit on a validator host, and the lagging names are the node sync work of task 4.14 and req 18.3, so the task stays implemented until the move and the rerun."
+severity   = "blocker"
+
+[observation.4.22.2]
+task       = "4.22"
+file       = "spec/paxeer-x-bringup/spec.kvx"
+symbol     = "check_rpc_placement"
+observed   = "cg spec implemented 4.22 exited 75: the graph was busy and its symbol check does not define the shell function check_rpc_placement."
+assumption = "The known shell-symbol gap of gotcha 104; the status line was set to implemented by hand and the manager may re-run the tool."
+severity   = "note"
