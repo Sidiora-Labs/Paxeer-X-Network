@@ -1577,3 +1577,27 @@ area    = "bringup"
 symptom = "The interop and ramp conformance make targets look like live probes but interop-test-mandates and interop-test-visa-tap run only the crates' local vectors and interop-test-ramps-sandbox drives the ramp, not the gateway."
 cause   = "The targets are cargo test runs of layerx-ap2 and layerx-visa-tap and platform/ramps/sandbox-journey.sh; only GET /v1/adapters of the gateway reports the pinned suites and adapter readiness."
 do      = "Pair each target with the gateway's /v1/adapters entry for its adapter, comparing the served conformance pins against render.py first_party_suite of the checkout."
+
+[gotcha.260]
+area    = "bringup"
+symptom = "A task hunts for a platform/deploy tree to find the node bootstrap and loses time."
+cause   = "There is no platform/deploy tree; the node bootstrap is platform/hosted/node/bootstrap.sh beside supervisor.sh and the pod definition."
+do      = "Open platform/hosted/node/ directly for the bootstrap, the supervisor and the genesis inputs."
+
+[gotcha.261]
+area    = "bringup"
+symptom = "A kernel genesis that reads its asset records from the custody precompile finds nothing to read."
+cause   = "The custody precompile has no enumeration view and an unregistered asset answers bytes32 zero from nativeAssetId and assetByPointer instead of reverting."
+do      = "Treat a zero asset id as an absent record and refuse with the exact call; register assets through MsgSetAsset before generating the genesis."
+
+[gotcha.262]
+area    = "bringup"
+symptom = "A remote /proc/$pid/cmdline read reports the kernel boot line instead of a process."
+cause   = "With an empty pid the path collapses to /proc//cmdline, which is /proc/cmdline."
+do      = "Default the pid (/proc/${p:-0}/cmdline) so an absent process reads as absent."
+
+[gotcha.263]
+area    = "bringup"
+symptom = "A check-live read through fly_ssh reports every machine value absent in the harness although the fixture files are in place."
+cause   = "The fly_ssh call left stdin open, so the flyctl stand-in's tee (and a real ssh console) waited on it until the timeout, and the timeout status discarded the answer; a merge had also dropped the exit and fi closing the gas block of the curl stand-in, so every curl call inside the harness failed to parse."
+do      = "Give every fly_ssh call that sends no script </dev/null, and run bash -n on the harness stand-ins after a merge."
