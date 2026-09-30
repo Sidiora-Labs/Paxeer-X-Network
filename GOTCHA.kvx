@@ -971,3 +971,9 @@ area    = "tests"
 symptom = "An inode comparison meant to prove a reset replaced a directory can pass or fail by chance."
 cause   = "Once the old directory is removed ext4 may reuse its inode number for the recreated directory, just as it does for files."
 do      = "Hold an fd on the old directory across the reset (exec {FD}<dir) before comparing inode numbers, then close it."
+
+[gotcha.159]
+area    = "tests"
+symptom = "A Python readiness poll hangs forever instead of timing out while the service it polls is healthy."
+cause   = "The assertion message was built eagerly with process.stderr.read(), which blocks until the child closes stderr, so the loop never reached its deadline."
+do      = "Read a child's piped stderr only after poll() reports it exited; never inside an always-evaluated assertion message."

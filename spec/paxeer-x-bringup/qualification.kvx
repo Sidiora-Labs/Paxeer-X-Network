@@ -349,3 +349,11 @@ command   = "timeout 30m make layerxd platform-test-node"
 exit_code = 0
 log_path  = ".logs/verify.log"
 observed  = "Per the ruling the checkpoint-emptiness proxy after the reset is replaced by proof that the checkpoint directory object was replaced and that the admission journal, which held generation-1 admissions, is back to its 32-byte superblock; the node test passes the custody credit, DID listing, SEND, reset and generation-2 checks at the first run."
+
+[gate.2.7.1]
+task      = "2.7"
+revision  = "9296a0d2c40024e02afe7a12f57177cb27183bc6 plus the change committed with this entry"
+command   = "timeout 30m make platform-test-plain-listeners"
+exit_code = 0
+log_path  = ".logs/verify.log"
+observed  = "Dashboard, webhooks, reference ramp and interop each pass three listener tests and the relay archive passes plain, tls, default and refusal paths; the first run hung in the relay test's eager stderr read, repaired once, and cg spec done timed out on the graph lock so the status was set by hand."
