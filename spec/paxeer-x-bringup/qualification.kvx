@@ -1589,3 +1589,11 @@ symbol     = "task.2.1"
 observed   = "cg spec start 2.1 exited 1 because in-progress task 4.2 also claims tools/bringup/check-live.sh, and cg spec implemented 2.1 exited 1 with the graph database busy and symbol check_kernel_boundaries not defined in the graph."
 assumption = "Shell functions are not graph symbols, so the status line was set to implemented by hand without forcing either command."
 severity   = "note"
+
+[observation.1.5.9]
+task       = "1.5"
+file       = "docker/kernel/init.sh"
+symbol     = "genesis_files"
+observed   = "genesis_files now also lists $keys/publication/binding-policy.json and $keys/publication/authorization.json, the kernel-genesis.sh genesis outputs it lacked, because the kernel-app gate reported the treasury-signer wait on binding-policy.json as a failure instead of waiting-genesis."
+assumption = "the kernel-app gate now passes the wait as waiting-genesis before the genesis step; the deploy side builds the kernel image once from the merged revision"
+severity   = "info"
