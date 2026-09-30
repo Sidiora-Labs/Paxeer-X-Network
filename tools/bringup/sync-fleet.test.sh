@@ -84,7 +84,8 @@ SH
 
 # systemctl stand-in: records the call for its destination as a unit line, reports active,
 # and lets a started or restarted node catch up by dropping its lag from the
-# lag file, unless the destination is listed in SYNC_FLEET_TEST_STUCK.
+# lag file, unless the destination is listed in SYNC_FLEET_TEST_STUCK; a
+# restart fails for a destination listed in SYNC_FLEET_TEST_UNIT_FAIL.
 cat >"$work/bin/systemctl" <<'SH'
 #!/usr/bin/env bash
 set -eu
@@ -95,6 +96,9 @@ case "$1" in
 show) echo active ;;
 is-active) echo active ;;
 start | restart)
+	case " ${SYNC_FLEET_TEST_UNIT_FAIL:-} " in
+	*" ${SYNC_FLEET_TEST_DEST:-} "*) exit 1 ;;
+	esac
 	case " ${SYNC_FLEET_TEST_STUCK:-} " in
 	*" ${SYNC_FLEET_TEST_DEST:-} "*) ;;
 	*) sed -i "s/api$n:[0-9]*//" "$SYNC_FLEET_TEST_LAG_FILE" ;;
@@ -163,16 +167,26 @@ done
 exec "\$SYNC_FLEET_TEST_REAL_RSYNC" "\${args[@]}"
 SH
 
-# scp stand-in: copies the local file to the target host's fixture directory.
+# scp stand-in: copies the local file to the target host's fixture directory;
+# fails for a destination listed in SYNC_FLEET_TEST_SCP_FAIL and appends a
+# byte to the copy for one listed in SYNC_FLEET_TEST_CORRUPT.
 cat >"$work/bin/scp" <<SH
 #!/usr/bin/env bash
 set -eu
 $remap
 printf 'local scp %s\n' "\$*" >>"\$SYNC_FLEET_TEST_CALLS"
 src="\${*: -2:1}"
+host="\${*: -1}"
+host="\${host%%:*}"
+case " \${SYNC_FLEET_TEST_SCP_FAIL:-} " in
+*" \$host "*) exit 1 ;;
+esac
 dst="\$(remap "\${*: -1}")"
 mkdir -p "\$(dirname "\$dst")"
 cp "\$src" "\$dst"
+case " \${SYNC_FLEET_TEST_CORRUPT:-} " in
+*" \$host "*) printf x >>"\$dst" ;;
+esac
 SH
 
 # sha256sum stand-in: the fixture release binary hashes to the release sha.
@@ -479,6 +493,121 @@ SYNC_FLEET_TEST_STUCK=up-rpc-4 expect sync_fleet_resync_reports_a_target_that_st
 	"fail resync RPC_HOSTS[3] api4 source=api1 mode=rsync binary=kept stale=data.stale-" \
 	"unit=active lag=529862" \
 	"sync-fleet: 1 host(s) failed"
+
+# Rollout fixture: three full nodes on the release binary, api2 the archive
+# trailing at chain speed and api3 within the threshold, no validator among
+# them; the rollout binary hashes to its real sha256.
+printf 'rollout binary' >"$work/rollout"
+rollout_sha="$("$SYNC_FLEET_TEST_REAL_SHA256SUM" "$work/rollout" | cut -d' ' -f1)"
+export SYNC_FLEET_REPORT="$work/rollout-report"
+cat >"$work/hosts-rollout.env" <<'ENV'
+EDGE_HOST=up-edge
+ARCHIVE_HOST=up-rpc-2
+VALIDATOR_HOSTS="up-validator-a up-validator-b"
+RPC_HOSTS="up-rpc-1 up-rpc-2 up-rpc-3"
+HPX_HOST=up-hpx
+OLD_WALLET_HOST=up-old-wallet
+ENV
+rollout_hosts() {
+	local h
+	rm -f "$SYNC_FLEET_REPORT"
+	for h in up-rpc-1 up-rpc-2 up-rpc-3; do
+		rm -f "${hosts:?}/$h/paxd".*
+		printf 'release binary' >"$hosts/$h/paxd"
+	done
+}
+# binaries: how many rollout fixture hosts hold the rollout binary.
+binaries() {
+	local h n=0
+	for h in up-rpc-1 up-rpc-2 up-rpc-3; do
+		[ "$(cat "$hosts/$h/paxd" 2>/dev/null)" != "rollout binary" ] || n=$((n + 1))
+	done
+	echo "$n"
+}
+
+expect sync_fleet_rollout_without_sha "$work/hosts-rollout.env" 2 rollout "$work/rollout" -- \
+	"usage: tools/bringup/sync-fleet.sh"
+
+expect sync_fleet_rollout_malformed_sha "$work/hosts-rollout.env" 2 rollout "$work/rollout" "${rollout_sha^^}" -- \
+	"is not a lowercase hex sha256"
+
+expect sync_fleet_rollout_refuses_a_binary_off_its_sha "$work/hosts-rollout.env" 2 rollout "$work/other" "$rollout_sha" -- \
+	"not the expected $rollout_sha"
+check sync_fleet_rollout_sha_refusal_asks_no_host [ ! -s "$SYNC_FLEET_TEST_CALLS" ]
+
+expect sync_fleet_resync_still_pins_the_release "$work/hosts-rollout.env" 2 resync "$work/rollout" -- \
+	"not the release $release_sha256"
+
+rollout_hosts
+expect sync_fleet_rollout_refuses_a_validator_destination "$work/hosts-good.env" 1 rollout "$work/rollout" "$rollout_sha" -- \
+	"fail rollout RPC_HOSTS[4] refused: the destination is also a validator host, whose validator units run the same paxd; nothing was staged on any host" \
+	"sync-fleet: 1 host(s) failed"
+check sync_fleet_rollout_validator_refusal_touches_no_host bash -c "[ ! -s '$SYNC_FLEET_TEST_CALLS' ] && [ ! -e '$SYNC_FLEET_REPORT' ] && ! ls '$hosts'/*/paxd.new-* >/dev/null 2>&1"
+
+rollout_hosts
+expect sync_fleet_rollout_dry_run "$work/hosts-rollout.env" 0 --dry-run rollout "$work/rollout" "$rollout_sha" -- \
+	"scp -q -- $work/rollout RPC_HOSTS[0]:$PAXD.new-" \
+	"ssh -- RPC_HOSTS[2] set -e; chmod 0755 $PAXD.new-" \
+	"ssh -- RPC_HOSTS[1] set -e; [ \"\$(sha256sum $PAXD.new-" \
+	"cp -p $PAXD $PAXD.pre-" \
+	"systemctl restart paxd.service" \
+	"wait until api2 is within 10 blocks of the head" \
+	"record the sha256 of $PAXD on every host into $SYNC_FLEET_REPORT" \
+	"sync-fleet: all hosts passed"
+check sync_fleet_rollout_dry_run_changes_nothing bash -c "[ \"\$(grep -c ' unit restart ' '$SYNC_FLEET_TEST_CALLS')\" -eq 0 ] && ! grep -q '^local scp' '$SYNC_FLEET_TEST_CALLS' && [ ! -e '$SYNC_FLEET_REPORT' ] && [ '$(binaries)' -eq 0 ]"
+
+rollout_hosts
+expect sync_fleet_rollout_passing "$work/hosts-rollout.env" 0 rollout "$work/rollout" "$rollout_sha" -- \
+	"staged RPC_HOSTS[0] api1 sha256=$rollout_sha" \
+	"staged RPC_HOSTS[2] api3 sha256=$rollout_sha" \
+	"swapped RPC_HOSTS[0] api1 unit=active lag=0" \
+	"swapped RPC_HOSTS[1] api2 unit=active lag=0" \
+	"swapped RPC_HOSTS[2] api3 unit=active lag=0" \
+	"report $SYNC_FLEET_REPORT" \
+	"sync-fleet: all hosts passed"
+c="$SYNC_FLEET_TEST_CALLS"
+check sync_fleet_rollout_installs_the_binary_everywhere [ "$(binaries)" -eq 3 ]
+check sync_fleet_rollout_keeps_the_previous_binary bash -c "for h in up-rpc-1 up-rpc-2 up-rpc-3; do [ \"\$(cat '$hosts'/\$h/paxd.pre-*)\" = 'release binary' ] || exit 1; done; ! ls '$hosts'/*/paxd.new-* >/dev/null 2>&1"
+check sync_fleet_rollout_stages_everywhere_before_the_first_swap bash -c "s=\$(grep -n '^local scp' '$c' | tail -n 1 | cut -d: -f1); r=\$(grep -n ' unit restart ' '$c' | head -n 1 | cut -d: -f1); [ \"\$(grep -c '^local scp' '$c')\" -eq 3 ] && [ \"\$s\" -lt \"\$r\" ]"
+check sync_fleet_rollout_restarts_one_host_at_a_time_in_order bash -c "[ \"\$(grep ' unit restart ' '$c' | cut -d' ' -f1 | tr '\n' ' ')\" = 'up-rpc-1 up-rpc-2 up-rpc-3 ' ] && grep -q '^up-rpc-2 unit restart paxd.service\$' '$c'"
+check sync_fleet_rollout_waits_for_each_node_before_the_next bash -c "a=\$(grep -n '^up-rpc-2 unit restart' '$c' | cut -d: -f1); b=\$(grep -n '^up-rpc-3 unit restart' '$c' | cut -d: -f1); [ \"\$(sed -n \"\${a},\${b}p\" '$c' | grep -c ' curl\$')\" -eq 16 ]"
+check sync_fleet_rollout_records_every_host bash -c "[ \"\$(grep -c '^RPC_HOSTS.* sha256=$rollout_sha\$' '$SYNC_FLEET_REPORT')\" -eq 3 ] && grep -q '^RPC_HOSTS\[1\] api2 sha256=$rollout_sha\$' '$SYNC_FLEET_REPORT' && ! grep -qE '\b(up|down|hang)-' '$SYNC_FLEET_REPORT'"
+check sync_fleet_rollout_never_touches_a_validator_unit bash -c "! grep -q 'paxd-a' '$c' && ! grep -q '^up-validator' '$c'"
+
+rollout_hosts
+SYNC_FLEET_TEST_CORRUPT=up-rpc-2 expect sync_fleet_rollout_stops_on_a_checksum_mismatch "$work/hosts-rollout.env" 1 rollout "$work/rollout" "$rollout_sha" -- \
+	"staged RPC_HOSTS[0] api1 sha256=$rollout_sha" \
+	"fail rollout RPC_HOSTS[1] api2 verify sha256=" \
+	"want=$rollout_sha" \
+	"report $SYNC_FLEET_REPORT" \
+	"sync-fleet: 1 host(s) failed"
+check sync_fleet_rollout_mismatch_swaps_nothing bash -c "! grep -q ' unit restart ' '$SYNC_FLEET_TEST_CALLS' && [ \"\$(grep -c '^local scp' '$SYNC_FLEET_TEST_CALLS')\" -eq 2 ] && [ '$(binaries)' -eq 0 ] && [ \"\$(grep -c 'sha256=$release_sha256\$' '$SYNC_FLEET_REPORT')\" -eq 3 ]"
+
+rollout_hosts
+SYNC_FLEET_TEST_STUCK=up-rpc-2 expect sync_fleet_rollout_stops_on_a_node_that_stays_behind "$work/hosts-rollout.env" 1 rollout "$work/rollout" "$rollout_sha" -- \
+	"swapped RPC_HOSTS[0] api1 unit=active lag=0" \
+	"fail rollout RPC_HOSTS[1] api2 wait lag=93474 unit=active" \
+	"sync-fleet: 1 host(s) failed"
+check sync_fleet_rollout_lag_stop_leaves_the_next_host bash -c "! grep -q '^up-rpc-3 unit restart' '$SYNC_FLEET_TEST_CALLS' && [ \"\$(cat '$hosts/up-rpc-3/paxd')\" = 'release binary' ] && grep -q '^RPC_HOSTS\[2\] api3 sha256=$release_sha256\$' '$SYNC_FLEET_REPORT' && grep -q '^RPC_HOSTS\[1\] api2 sha256=$rollout_sha\$' '$SYNC_FLEET_REPORT'"
+
+rollout_hosts
+SYNC_FLEET_TEST_SCP_FAIL=up-rpc-3 expect sync_fleet_rollout_stops_on_a_failed_copy "$work/hosts-rollout.env" 1 rollout "$work/rollout" "$rollout_sha" -- \
+	"staged RPC_HOSTS[1] api2 sha256=$rollout_sha" \
+	"fail rollout RPC_HOSTS[2] api3 stage scp=1" \
+	"sync-fleet: 1 host(s) failed"
+check sync_fleet_rollout_copy_failure_swaps_nothing bash -c "! grep -q ' unit restart ' '$SYNC_FLEET_TEST_CALLS' && [ '$(binaries)' -eq 0 ]"
+
+rollout_hosts
+SYNC_FLEET_TEST_UNIT_FAIL=up-rpc-2 expect sync_fleet_rollout_stops_on_a_failed_swap "$work/hosts-rollout.env" 1 rollout "$work/rollout" "$rollout_sha" -- \
+	"swapped RPC_HOSTS[0] api1 unit=active lag=0" \
+	"fail rollout RPC_HOSTS[1] api2 swap ssh=1" \
+	"report $SYNC_FLEET_REPORT" \
+	"sync-fleet: 1 host(s) failed"
+check sync_fleet_rollout_swap_failure_leaves_the_next_host bash -c "! grep -q '^up-rpc-3 unit restart' '$SYNC_FLEET_TEST_CALLS' && ! grep -q '^up-rpc-2 unit show' '$SYNC_FLEET_TEST_CALLS' && [ \"\$(cat '$hosts/up-rpc-3/paxd')\" = 'release binary' ] && grep -q '^RPC_HOSTS\[1\] api2 sha256=$rollout_sha\$' '$SYNC_FLEET_REPORT' && grep -q '^RPC_HOSTS\[2\] api3 sha256=$release_sha256\$' '$SYNC_FLEET_REPORT'"
+
+expect sync_fleet_rollout_stops_on_an_unreachable_host "$work/hosts-bad.env" 1 rollout "$work/rollout" "$rollout_sha" -- \
+	"fail rollout RPC_HOSTS[2] none survey ssh=255"
+check sync_fleet_rollout_unreachable_host_stages_nothing bash -c "! grep -q '^local scp' '$SYNC_FLEET_TEST_CALLS'"
 
 if [ "$failures" -ne 0 ]; then
 	echo "sync-fleet.test: $failures case(s) failed"

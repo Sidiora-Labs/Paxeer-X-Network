@@ -1319,3 +1319,9 @@ area    = "bringup"
 symptom = "A read-only comparison of a public RPC name's resolution against the host-map roles exits 1 before it compares anything."
 cause   = "The comparison read the scalar role list of the host map with array syntax, so the roles came back empty."
 do      = "Read the roles the way tools/bringup/check-live.sh reads them, read -r -a from the scalar role list, before comparing a name against them."
+
+[gotcha.217]
+area    = "test"
+symptom = "A sync-fleet fixture case that makes a remote step fail by removing a host file fails the harness's no-destination check."
+cause   = "The ssh stand-in rewrites shared paths under the fixture host's own directory, so the remote command's error text carries the fixture destination."
+do      = "Fail remote steps in fixtures through a stand-in switch (the systemctl or scp stand-in exiting non-zero for a listed destination) rather than a missing file."

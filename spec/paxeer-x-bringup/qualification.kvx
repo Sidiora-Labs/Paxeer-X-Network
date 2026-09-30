@@ -841,3 +841,11 @@ revision = "26b211c9ccba18c31c51a4bae828cf17e185902e"
 command = "BRINGUP_HOSTS_FILE=/root/lx-ops/bringup-2026-09-29/hosts.env timeout 10m tools/bringup/check-live.sh search-front"
 exit_code = 0
 log_path = ".logs/0.3-search-front-live.log"
+
+[observation.4.16-src.1]
+task       = "4.16"
+file       = "tools/bringup/sync-fleet.sh"
+symbol     = "resync_target"
+observed   = "resync installs its pinned release over any target whose binary differs, so after a rollout of a newer paxd a later resync would put the older pinned binary back on the resynced host."
+assumption = "The pin stays as the brief requires and rollout never uses it; the pin must be moved to the rolled-out sha256 by a ruled follow-up before the next resync."
+severity   = "major"
