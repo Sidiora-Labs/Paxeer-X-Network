@@ -1169,3 +1169,9 @@ area    = "bringup-probe"
 symptom = "A check that a public name has moved to a Fly app cannot rely on DNS when the name keeps resolving to the edge host and the edge proxies it to the app."
 cause   = "Behind an edge proxy the record never changes, so a CNAME or address check cannot tell the edge-local service from the proxied app."
 do      = "Compare the name's answer with the app's answer at its fly.dev name and require the fly-request-id header the Fly edge adds, which nginx passes through from its upstream."
+
+[gotcha.192]
+area    = "rust-tests"
+symptom = "cargo test -p layerx-crypto fails to compile the account-derivation tests with ed25519::Error not implementing std::error::Error, while a workspace-wide build compiles them."
+cause   = "Built alone the crate enables ed25519-dalek without std, so k256's signature error type lacks the StdError impl that `?` into Box<dyn Error> needs; other workspace members turn std on through feature unification."
+do      = "In tests of that crate convert k256 signing errors with .map_err(|error| error.to_string())? instead of a bare ?, and qualify crate tests with -p so a unification-only pass is caught."

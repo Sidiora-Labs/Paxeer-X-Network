@@ -1024,7 +1024,7 @@ reqs       = ["13.3", "1.2"]
 
 [task.4.26]
 title      = "Apply the owner's ruling on the account-derivation signing origin"
-status     = "pending"
+status     = "implemented"
 wave       = 4
 requires   = []
 do_1       = "The owner ruled for paxportwallet.com: change the message together in agent/crates/layerx-crypto/src/account_derivation.rs, agent/sdk/python/layerx_sdk/account_derivation.py, agent/sdk/typescript/src/account-derivation.ts, platform/sdk/conformance/fixtures/account-derivation-v1.json, the default of platform/hosted/human/material.py and its test platform/hosted/human/test_material.py, and the signing warning of docs/site/docs/concepts/one-account.md."
