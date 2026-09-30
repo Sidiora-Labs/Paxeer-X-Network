@@ -1,7 +1,7 @@
 use layerx_gas_station::config::ServiceConfig;
 use layerx_gas_station::journal::Journal;
 use layerx_gas_station::price::PaymasterRateSource;
-use layerx_gas_station::rate::{PublisherConfig, RatePublisher, RateRefusal};
+use layerx_gas_station::rate::{PublisherConfig, RatePublisher, RateRefusal, DAY_SECONDS};
 use layerx_gas_station::rpc::{ConfiguredRpc, HttpsExchange};
 use layerx_gas_station::service::{serve, Limits, Service};
 use layerx_gas_station::signer::LocalSigner;
@@ -84,6 +84,7 @@ fn run_rate(arguments: &RateArguments) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    let daily_wei = config.daily_wei_ceiling().unwrap_or(u128::MAX);
     let mut publisher =
         match RatePublisher::new(config, signer, rpc, journal, Duration::from_secs(2)) {
             Ok(publisher) => publisher,
@@ -93,15 +94,27 @@ fn run_rate(arguments: &RateArguments) -> ExitCode {
             }
         };
     let cadence = publisher.cadence();
-    println!("Paxeer X Network rate publisher publishing every {cadence} s");
+    println!(
+        "Paxeer X Network rate publisher publishing every {cadence} s, at most {daily_wei} wei per chain day"
+    );
     loop {
         let wait = match publisher.publish(&arguments.rate_file) {
             Ok(publication) => {
+                let state = publisher.journal().state();
+                let day = publication.signed_at / DAY_SECONDS;
                 println!(
-                    "rate published nonce={} hash={} rate={}",
+                    "rate published nonce={} hash={} rate={} cost_wei={} spent_wei={} spent_gas={} reserved_wei={} daily_wei_max={daily_wei}",
                     publication.nonce,
                     layerx_gas_station::rpc::hex(&publication.hash),
-                    u128::from_be_bytes(publication.rate[16..].try_into().unwrap_or([0; 16]))
+                    u128::from_be_bytes(publication.rate[16..].try_into().unwrap_or([0; 16])),
+                    state
+                        .publications
+                        .get(&publication.hash)
+                        .and_then(|(_, settled)| *settled)
+                        .map_or(0, |settled| settled.cost_wei),
+                    state.publication_wei(day),
+                    state.publication_gas(day),
+                    state.reserved_wei(),
                 );
                 cadence
             }

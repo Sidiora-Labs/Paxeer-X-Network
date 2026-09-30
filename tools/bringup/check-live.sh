@@ -1734,7 +1734,11 @@ check_agent_public() {
 # 200 with a quote for one no-op call whose SID amount lies within the
 # contract's spread of the paymaster's currentRate; the paymaster's
 # rateUpdatedAt is no older than the station's max_rate_age at the latest
-# block, which the machine's rate publisher keeps true; the account signs the
+# block, which the machine's rate publisher keeps true; an info line reports
+# the publisher's worst-case daily wei (rate_max_fee_per_gas times
+# rate_gas_budget_per_day of its rate.json) and the wei its journal rate.jsonl
+# records as spent on the latest block's chain day, none for what the machine
+# does not answer; the account signs the
 # batch and its EIP-7702 authorization with cast, POST /submit answers 200
 # with a transaction hash, and its receipt succeeds with the SID Transfer of
 # the quoted amount from the account to the sponsor. The keystore password
@@ -1781,7 +1785,7 @@ check_gas() {
 	local app answer n_machines n_started n_mounts config chain token endpoints first paymaster gas_limit priority
 	local account code rate price nonce auth_nonce gas_cost w status body quote sponsor amount maximum deadline qnonce
 	local qd calls_hash bd account_sig auth_sig auth_rlp call_data tx receipt attempt verdict failures=0
-	local max_age updated head age updated_at
+	local max_age updated head age updated_at rate_config journal worst spent
 	for name in CHECK_LIVE_GAS_ACCOUNT_KEYSTORE CHECK_LIVE_GAS_ACCOUNT_PASSWORD_FILE CHECK_LIVE_GAS_MAX_TOKEN_AMOUNT; do
 		if [ -z "${!name:-}" ]; then
 			echo "check-live: $name is unset" >&2
@@ -1843,6 +1847,30 @@ print(int(head["timestamp"], 16) - updated, updated)
 		echo "fail rate-age paymaster=$paymaster updated_at=${updated_at:-none} age=${age:-none} max_rate_age=$max_age"
 		failures=$((failures + 1))
 	fi
+	rate_config="$(fly_ssh "$app" - "cat /data/gas-station/rate.json" </dev/null)" || rate_config=""
+	worst="$(python3 -c '
+import json, sys
+c = json.loads(sys.argv[1])
+print(int(c["rate_max_fee_per_gas"]) * int(c["rate_gas_budget_per_day"]))
+' "$rate_config" 2>/dev/null)" || worst=none
+	spent=none
+	if journal="$(fly_ssh "$app" - "cat /data/gas-station/rate.jsonl" </dev/null)"; then
+		spent="$(python3 -c '
+import json, sys
+day = int(json.loads(sys.argv[1])["timestamp"], 16) // 86400
+signed, spent = {}, 0
+for line in sys.stdin:
+    if not line.strip():
+        continue
+    e = json.loads(line)
+    if e["kind"] == "rate_published":
+        signed[tuple(e["publication"]["hash"])] = e["publication"]["signed_at"] // 86400
+    elif e["kind"] == "rate_settled" and signed.get(tuple(e["hash"])) == day:
+        spent += int(e["settlement"]["cost_wei"])
+print(spent)
+' "$head" <<<"$journal" 2>/dev/null)" || spent=none
+	fi
+	echo "info rate-spend app=$app daily_wei_max=$worst spent_wei=$spent"
 
 	account="$(cast wallet address --keystore "$CHECK_LIVE_GAS_ACCOUNT_KEYSTORE" --password-file "$CHECK_LIVE_GAS_ACCOUNT_PASSWORD_FILE" 2>/dev/null)" || account=""
 	if [ -z "$account" ]; then

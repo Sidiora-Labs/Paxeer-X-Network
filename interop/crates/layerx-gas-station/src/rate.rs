@@ -27,6 +27,7 @@ pub enum RateRefusal {
     NotOwner,
     BudgetExhausted,
     BelowFloor,
+    FeeAboveCeiling { required: u128, ceiling: u128 },
     Reverted,
     ReceiptTimeout,
     Rpc(RpcFault),
@@ -146,7 +147,8 @@ fn integer(text: &str) -> Option<u128> {
 /// The station configuration plus the publisher's own fields: the env
 /// variable holding the paymaster owner's key, the publication cadence
 /// (strictly below `max_rate_age`), the daily gas budget of publications, the
-/// owner balance floor in PAX base units and the priority fee per gas.
+/// owner balance floor in PAX base units, the priority fee per gas and the
+/// ceiling on the fee per gas of a publication, in wei.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PublisherConfig {
     pub station: StationConfig,
@@ -155,6 +157,7 @@ pub struct PublisherConfig {
     pub gas_budget_per_day: u128,
     pub balance_floor: u128,
     pub max_priority_fee_per_gas: u128,
+    pub max_fee_per_gas: u128,
 }
 impl PublisherConfig {
     /// # Errors
@@ -166,6 +169,7 @@ impl PublisherConfig {
         let gas_budget_per_day: u128 = field(&mut map, "rate_gas_budget_per_day")?;
         let balance_floor: u128 = field(&mut map, "rate_balance_floor")?;
         let max_priority_fee_per_gas: u128 = field(&mut map, "max_priority_fee_per_gas")?;
+        let max_fee_per_gas: u128 = field(&mut map, "rate_max_fee_per_gas")?;
         let config = Self {
             station: StationConfig::from_map(map)?,
             owner_key_env,
@@ -173,6 +177,7 @@ impl PublisherConfig {
             gas_budget_per_day,
             balance_floor,
             max_priority_fee_per_gas,
+            max_fee_per_gas,
         };
         config.validate()?;
         Ok(config)
@@ -186,8 +191,9 @@ impl PublisherConfig {
 
     /// # Errors
     /// Names the first field that is inconsistent: a cadence not below
-    /// `max_rate_age`, a budget below one publication, a zero floor, or an
-    /// owner key env that is invalid or the sponsor's.
+    /// `max_rate_age`, a budget below one publication, a zero floor, a fee
+    /// ceiling not above the priority fee or whose daily worst case overflows,
+    /// or an owner key env that is invalid or the sponsor's.
     pub fn validate(&self) -> Result<(), ConfigError> {
         self.station.validate()?;
         let checks = [
@@ -208,6 +214,11 @@ impl PublisherConfig {
                 self.gas_budget_per_day >= u128::from(RATE_GAS_LIMIT),
             ),
             ("rate_balance_floor", self.balance_floor > 0),
+            (
+                "rate_max_fee_per_gas",
+                self.max_fee_per_gas > self.max_priority_fee_per_gas
+                    && self.daily_wei_ceiling().is_some(),
+            ),
         ];
         for (field, valid) in checks {
             if !valid {
@@ -215,6 +226,13 @@ impl PublisherConfig {
             }
         }
         Ok(())
+    }
+
+    /// The most wei the publisher may spend in one chain day: the fee ceiling
+    /// times the daily gas budget.
+    #[must_use]
+    pub fn daily_wei_ceiling(&self) -> Option<u128> {
+        self.max_fee_per_gas.checked_mul(self.gas_budget_per_day)
     }
 }
 
@@ -286,9 +304,12 @@ impl<S: QuoteSigner, R: JsonRpc> RatePublisher<S, R> {
     /// # Errors
     /// Refuses a missing, malformed, zero, not yet set or expired rate file,
     /// a rate unchanged on chain within the cadence, a signer that is not the
-    /// paymaster owner, an exhausted daily gas budget, an owner balance below
-    /// its floor, a reverted or unconfirmed publication, and node or journal
-    /// failures. A refusal never publishes, so the paymaster's rate ages
+    /// paymaster owner, an exhausted daily gas budget, a fee per gas above the
+    /// ceiling, an owner balance that would fall below its floor once this
+    /// publication and every unsettled one pay their most, a reverted or
+    /// unconfirmed publication, and node or journal failures. Before the
+    /// budget and balance checks it settles every unsettled publication whose
+    /// receipt the node now has. A refusal never publishes, so the paymaster's rate ages
     /// until `currentRate` reverts with `StaleRate`.
     pub fn publish(&mut self, rate_file: &Path) -> Result<Publication, RateRefusal> {
         let file = RateFile::load(rate_file)?;
@@ -315,16 +336,39 @@ impl<S: QuoteSigner, R: JsonRpc> RatePublisher<S, R> {
         if owner[..12] != [0; 12] || owner[12..] != signer {
             return Err(RateRefusal::NotOwner);
         }
+        for pending in self.journal.state().unsettled() {
+            let receipt = self
+                .rpc
+                .call("eth_getTransactionReceipt", json!([hex(&pending.hash)]))?;
+            if !receipt.is_null() {
+                self.record(&pending, &receipt)?;
+            }
+        }
         let spent = self.journal.state().publication_gas(now / DAY_SECONDS);
         if spent + u128::from(RATE_GAS_LIMIT) > self.config.gas_budget_per_day {
             return Err(RateRefusal::BudgetExhausted);
+        }
+        let max_fee_per_gas = base_fee
+            .checked_mul(2)
+            .and_then(|fee| fee.checked_add(self.config.max_priority_fee_per_gas))
+            .ok_or(TxError::Invalid)?;
+        if max_fee_per_gas > self.config.max_fee_per_gas {
+            return Err(RateRefusal::FeeAboveCeiling {
+                required: max_fee_per_gas,
+                ceiling: self.config.max_fee_per_gas,
+            });
         }
         let balance: String = read(
             &self.rpc,
             "eth_getBalance",
             json!([hex(&signer), "pending"]),
         )?;
-        if quantity(&balance)? < self.config.balance_floor {
+        let balance = quantity(&balance)?;
+        let required = max_fee_per_gas
+            .checked_mul(u128::from(RATE_GAS_LIMIT))
+            .and_then(|cost| cost.checked_add(self.journal.state().reserved_wei()))
+            .and_then(|cost| cost.checked_add(self.config.balance_floor));
+        if required.is_none_or(|required| balance < required) {
             return Err(RateRefusal::BelowFloor);
         }
         let count: String = read(
@@ -335,10 +379,7 @@ impl<S: QuoteSigner, R: JsonRpc> RatePublisher<S, R> {
         let nonce = u64::try_from(quantity(&count)?).map_err(|_| RpcFault::Malformed)?;
         let fees = Fees {
             gas_limit: RATE_GAS_LIMIT,
-            max_fee_per_gas: base_fee
-                .checked_mul(2)
-                .and_then(|fee| fee.checked_add(self.config.max_priority_fee_per_gas))
-                .ok_or(TxError::Invalid)?,
+            max_fee_per_gas,
             max_priority_fee_per_gas: self.config.max_priority_fee_per_gas,
         };
         let data = [
@@ -360,6 +401,7 @@ impl<S: QuoteSigner, R: JsonRpc> RatePublisher<S, R> {
             hash: signed.hash,
             rate: word(file.rate),
             gas_limit: RATE_GAS_LIMIT,
+            max_fee_per_gas,
             signed_at: now,
         };
         self.journal.append(&Entry::RatePublished { publication })?;
@@ -382,24 +424,7 @@ impl<S: QuoteSigner, R: JsonRpc> RatePublisher<S, R> {
                 .rpc
                 .call("eth_getTransactionReceipt", json!([hex(&publication.hash)]))?;
             if !receipt.is_null() {
-                if receipt["transactionHash"] != hex(&publication.hash)
-                    || receipt["from"] != hex(&publication.owner)
-                    || receipt["to"] != hex(&self.config.station.paymaster)
-                {
-                    return Err(RpcFault::Malformed.into());
-                }
-                let settlement = Settlement {
-                    block_number: u64::try_from(field_quantity(&receipt, "blockNumber")?)
-                        .map_err(|_| RpcFault::Malformed)?,
-                    gas_used: u64::try_from(field_quantity(&receipt, "gasUsed")?)
-                        .map_err(|_| RpcFault::Malformed)?,
-                    succeeded: field_quantity(&receipt, "status")? == 1,
-                };
-                self.journal.append(&Entry::RateSettled {
-                    hash: publication.hash,
-                    settlement,
-                })?;
-                return if settlement.succeeded {
+                return if self.record(publication, &receipt)?.succeeded {
                     Ok(*publication)
                 } else {
                     Err(RateRefusal::Reverted)
@@ -410,6 +435,41 @@ impl<S: QuoteSigner, R: JsonRpc> RatePublisher<S, R> {
             }
             std::thread::sleep(self.poll);
         }
+    }
+
+    /// Journals the settlement the receipt reports, its cost the effective
+    /// gas price times the gas used.
+    fn record(
+        &mut self,
+        publication: &Publication,
+        receipt: &Value,
+    ) -> Result<Settlement, RateRefusal> {
+        if receipt["transactionHash"] != hex(&publication.hash)
+            || receipt["from"] != hex(&publication.owner)
+            || receipt["to"] != hex(&self.config.station.paymaster)
+        {
+            return Err(RpcFault::Malformed.into());
+        }
+        let gas_used =
+            u64::try_from(field_quantity(receipt, "gasUsed")?).map_err(|_| RpcFault::Malformed)?;
+        let price = field_quantity(receipt, "effectiveGasPrice")?;
+        if price > publication.max_fee_per_gas {
+            return Err(RpcFault::Malformed.into());
+        }
+        let settlement = Settlement {
+            block_number: u64::try_from(field_quantity(receipt, "blockNumber")?)
+                .map_err(|_| RpcFault::Malformed)?,
+            gas_used,
+            cost_wei: price
+                .checked_mul(u128::from(gas_used))
+                .ok_or(RpcFault::Malformed)?,
+            succeeded: field_quantity(receipt, "status")? == 1,
+        };
+        self.journal.append(&Entry::RateSettled {
+            hash: publication.hash,
+            settlement,
+        })?;
+        Ok(settlement)
     }
 }
 

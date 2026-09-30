@@ -152,8 +152,8 @@ pub enum Entry {
 }
 /// One setRate transaction of the rate publisher, journalled before it is
 /// broadcast: the owner's nonce, the transaction hash, the published rate in
-/// SID base units per whole PAX, the gas limit it may spend and the chain time
-/// it was signed at.
+/// SID base units per whole PAX, the gas limit it may spend, its fee per gas
+/// ceiling in wei and the chain time it was signed at.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Publication {
@@ -162,13 +162,19 @@ pub struct Publication {
     pub hash: Word,
     pub rate: Word,
     pub gas_limit: u64,
+    #[serde(with = "crate::tx::fee_amount")]
+    pub max_fee_per_gas: u128,
     pub signed_at: u64,
 }
+/// The receipt of a publication: its block, the gas it used, what it cost in
+/// wei (effective gas price times gas used) and whether it succeeded.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Settlement {
     pub block_number: u64,
     pub gas_used: u64,
+    #[serde(with = "crate::tx::fee_amount")]
+    pub cost_wei: u128,
     pub succeeded: bool,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -195,6 +201,41 @@ impl State {
             .filter(|(p, _)| p.signed_at / 86_400 == day)
             .map(|(p, s)| u128::from(s.map_or(p.gas_limit, |s| s.gas_used)))
             .sum()
+    }
+    /// The wei the rate publisher spent on the chain day `day`: the cost of
+    /// each settled publication signed that day.
+    #[must_use]
+    pub fn publication_wei(&self, day: u64) -> u128 {
+        self.publications
+            .values()
+            .filter(|(p, _)| p.signed_at / 86_400 == day)
+            .filter_map(|(_, s)| s.map(|s| s.cost_wei))
+            .fold(0, u128::saturating_add)
+    }
+    /// The publications still able to spend: unsettled, with no settled
+    /// publication of the same owner at their nonce or above.
+    #[must_use]
+    pub fn unsettled(&self) -> Vec<Publication> {
+        self.publications
+            .values()
+            .filter(|(p, s)| {
+                s.is_none()
+                    && !self
+                        .publications
+                        .values()
+                        .any(|(q, t)| t.is_some() && q.owner == p.owner && q.nonce >= p.nonce)
+            })
+            .map(|(p, _)| *p)
+            .collect()
+    }
+    /// The wei reserved by unsettled publications: each one's fee per gas
+    /// ceiling times its gas limit.
+    #[must_use]
+    pub fn reserved_wei(&self) -> u128 {
+        self.unsettled()
+            .iter()
+            .map(|p| p.max_fee_per_gas.saturating_mul(u128::from(p.gas_limit)))
+            .fold(0, u128::saturating_add)
     }
     /// Whether a live submission or replacement of `sponsor` holds `nonce`.
     #[must_use]
@@ -333,6 +374,7 @@ impl State {
                 if publication.hash == [0; 32]
                     || publication.rate == [0; 32]
                     || publication.gas_limit == 0
+                    || publication.max_fee_per_gas == 0
                 {
                     return Err(JournalError::Corrupt);
                 }
@@ -347,7 +389,13 @@ impl State {
                     .publications
                     .get_mut(hash)
                     .ok_or(JournalError::Conflict)?;
-                if settled.is_some() || settlement.gas_used > publication.gas_limit {
+                if settled.is_some()
+                    || settlement.gas_used > publication.gas_limit
+                    || publication
+                        .max_fee_per_gas
+                        .checked_mul(u128::from(settlement.gas_used))
+                        .is_none_or(|most| settlement.cost_wei > most)
+                {
                     return Err(JournalError::Conflict);
                 }
                 *settled = Some(*settlement);

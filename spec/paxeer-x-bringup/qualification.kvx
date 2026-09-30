@@ -1144,6 +1144,14 @@ observed   = "The handoff's forge create ran with --root contracts, where no fou
 assumption = "The preset's contracts/lib remapping stays, provisioned by the tree's bootstrap-libs.sh at OpenZeppelin v5.3.0 as CI does; the handoff builds, broadcasts once and checks the receipt and the immutable-masked deployed code."
 severity   = "note"
 
+[observation.4.11.9]
+task       = "4.11"
+file       = "interop/crates/layerx-gas-station/src/rate.rs"
+symbol     = "RatePublisher::publish"
+observed   = "The publisher now refuses a fee above rate_max_fee_per_gas (FeeAboveCeiling, nothing signed), reserves max fee x gas limit of this and every unsettled publication against the balance floor, and journals cost_wei = effectiveGasPrice x gasUsed; cargo test -p layerx-gas-station exited 0 (.logs/w350-test.log) and every gas case of check-live.test.sh passed, while its internal and indexer cases failed on pins read from other harness copies' stand-ins under /proc (.logs/w350-harness.log, exit 1)."
+assumption = "A publication with no receipt stays reserved until a settled publication of the owner reaches its nonce; the internal and indexer failures are the concurrent-harness effect of gotcha 245, unrelated to this change."
+severity   = "note"
+
 [observation.4.9.1]
 task       = "4.9"
 file       = "tools/bringup/check-live.sh"

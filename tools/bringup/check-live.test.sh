@@ -1171,6 +1171,25 @@ else
 	echo "ok   check_live_gas_keystore_stays_local"
 fi
 
+# The rate-spend case gives the machine the publisher's rate.json and a
+# journal of a publication settled today, one settled the day before and one
+# unsettled today; only today's settled cost counts as spent.
+gas_hash() { printf '[%s%d]' "$(printf "$1,%.0s" {1..31})" "$1"; }
+printf '{"rate_gas_budget_per_day":1000000,"rate_max_fee_per_gas":2000000000}\n' >"$work/fly/$gas/app/data/gas-station/rate.json"
+{
+	printf '{"kind":"rate_published","publication":{"owner":[],"nonce":7,"hash":%s,"rate":[],"gas_limit":60000,"max_fee_per_gas":"2000000000","signed_at":1899999000}}\n' "$(gas_hash 1)"
+	printf '{"kind":"rate_settled","hash":%s,"settlement":{"block_number":16,"gas_used":35000,"cost_wei":"52500000000000","succeeded":true}}\n' "$(gas_hash 1)"
+	printf '{"kind":"rate_published","publication":{"owner":[],"nonce":6,"hash":%s,"rate":[],"gas_limit":60000,"max_fee_per_gas":"2000000000","signed_at":1899900000}}\n' "$(gas_hash 2)"
+	printf '{"kind":"rate_settled","hash":%s,"settlement":{"block_number":15,"gas_used":35000,"cost_wei":"7","succeeded":true}}\n' "$(gas_hash 2)"
+	printf '{"kind":"rate_published","publication":{"owner":[],"nonce":8,"hash":%s,"rate":[],"gas_limit":60000,"max_fee_per_gas":"2000000000","signed_at":1899999900}}\n' "$(gas_hash 3)"
+} >"$work/fly/$gas/app/data/gas-station/rate.jsonl"
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_gas_rate_spend "$work/hosts-good.env" 0 gas -- \
+	"pass rate-age paymaster=$gas_paymaster updated_at=1899999880 age=120 max_rate_age=300" \
+	"info rate-spend app=$gas daily_wei_max=2000000000000000 spent_wei=52500000000000" \
+	"pass quote https://chain.paxeer.network/quote http=200 rate=3114000 token_amount=1869 expected=1869 max=5000 sponsor=$gas_sponsor" \
+	"check-live: all checks passed"
+rm "$work/fly/$gas/app/data/gas-station/rate.json" "$work/fly/$gas/app/data/gas-station/rate.jsonl"
+
 gas_quote 2000
 CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_gas_quote_outside_spread "$work/hosts-good.env" 1 gas -- \
 	"pass delegation account=$gas_account delegate=$gas_paymaster" \

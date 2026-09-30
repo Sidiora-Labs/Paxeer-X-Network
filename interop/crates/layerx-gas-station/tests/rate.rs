@@ -6,7 +6,7 @@ use std::time::Duration;
 use k256::ecdsa::SigningKey;
 use k256::elliptic_curve::rand_core::OsRng;
 use layerx_gas_station::config::ConfigError;
-use layerx_gas_station::journal::{Entry, Journal};
+use layerx_gas_station::journal::{Entry, Journal, Publication};
 use layerx_gas_station::quote::{address_word, keccak, word, Address, Word};
 use layerx_gas_station::rate::{
     PublisherConfig, RateFile, RatePublisher, RateRefusal, RATE_GAS_LIMIT,
@@ -30,6 +30,7 @@ struct Chain {
     nonce: u64,
     status: u64,
     gas_used: u64,
+    effective_gas_price: u128,
     sent: Vec<Vec<u8>>,
 }
 struct ChainExchange(Rc<RefCell<Chain>>);
@@ -73,6 +74,7 @@ impl Exchange for ChainExchange {
                 assert_eq!(params[0], hex(&hash));
                 json!({"transactionHash": hex(&hash), "from": hex(&chain.owner), "to": hex(&PAYMASTER),
                     "blockNumber": "0x10", "gasUsed": quantity(chain.gas_used.into()),
+                    "effectiveGasPrice": quantity(chain.effective_gas_price),
                     "status": quantity(chain.status.into())})
             }
             _ => return Err(RpcFault::Rejected { code: -32601 }),
@@ -105,6 +107,7 @@ impl Lane {
                 nonce: 7,
                 status: 1,
                 gas_used: 35_000,
+                effective_gas_price: 1_500_000_000,
                 sent: Vec::new(),
             })),
             owner,
@@ -121,8 +124,17 @@ impl Lane {
         budget: u128,
     ) -> Result<RatePublisher<LocalSigner, ConfiguredRpc<ChainExchange>>, Box<dyn std::error::Error>>
     {
+        self.publisher_with(budget, 5_000_000_000)
+    }
+    fn publisher_with(
+        &self,
+        budget: u128,
+        ceiling: u128,
+    ) -> Result<RatePublisher<LocalSigner, ConfiguredRpc<ChainExchange>>, Box<dyn std::error::Error>>
+    {
         let mut value = config_json();
         value["rate_gas_budget_per_day"] = json!(budget);
+        value["rate_max_fee_per_gas"] = json!(ceiling);
         let config = PublisherConfig::parse(&value.to_string())?;
         let rpc = ConfiguredRpc::new(&config.station, ChainExchange(self.chain.clone()))?;
         let journal = Journal::open(&self.dir.join("rate.jsonl"))?;
@@ -164,7 +176,7 @@ fn config_json() -> Value {
         "balance_floor":100,"relayer_key_env":"GAS_STATION_RELAYER_KEY",
         "max_priority_fee_per_gas":1_000_000_000,"rate_owner_key_env":"GAS_STATION_RATE_OWNER_KEY",
         "rate_cadence_seconds":120,"rate_gas_budget_per_day":1_000_000,
-        "rate_balance_floor":10_u64.pow(15)})
+        "rate_balance_floor":10_u64.pow(15),"rate_max_fee_per_gas":5_000_000_000_u64})
 }
 
 /// The paymaster, the rate and the recovered signer of a type-2 setRate
@@ -335,6 +347,7 @@ fn cadence_must_stay_below_max_rate_age() {
         ("rate_owner_key_env", json!("sensitive-value")),
         ("rate_gas_budget_per_day", json!(RATE_GAS_LIMIT - 1)),
         ("rate_balance_floor", json!(0)),
+        ("rate_max_fee_per_gas", json!(1_000_000_000)),
     ] {
         let mut value_map = config_json();
         value_map[name] = value;
@@ -375,4 +388,98 @@ fn rate_file_reads_the_owner_rate() {
             not_after: Some(1_999_000_000),
         })
     );
+}
+
+/// The most the owner pays for one publication at a 1 gwei base fee and a
+/// 1 gwei tip: (2 * 1 gwei + 1 gwei) * 60000.
+const RESERVE: u128 = 3_000_000_000 * RATE_GAS_LIMIT as u128;
+
+#[test]
+fn fee_above_the_ceiling_is_refused_unsigned() -> TestResult {
+    let lane = Lane::new("ceiling")?;
+    let file = lane.rate_file("rate = 3200000\nset_at = 1899000000\n")?;
+    let mut publisher = lane.publisher_with(1_000_000, 2_999_999_999)?;
+    assert_eq!(
+        publisher.publish(&file),
+        Err(RateRefusal::FeeAboveCeiling {
+            required: 3_000_000_000,
+            ceiling: 2_999_999_999,
+        })
+    );
+    lane.chain.borrow_mut().balance = u128::MAX;
+    assert!(matches!(
+        publisher.publish(&file),
+        Err(RateRefusal::FeeAboveCeiling { .. })
+    ));
+    assert_eq!(lane.sent(), 0);
+    assert!(publisher.journal().state().publications.is_empty());
+    drop(publisher);
+    let mut publisher = lane.publisher_with(1_000_000, 3_000_000_000)?;
+    assert_eq!(publisher.publish(&file)?.max_fee_per_gas, 3_000_000_000);
+    assert_eq!(lane.sent(), 1);
+    Ok(())
+}
+
+#[test]
+fn unsettled_publications_reserve_their_most_against_the_floor() -> TestResult {
+    let lane = Lane::new("reserve")?;
+    let file = lane.rate_file("rate = 3200000\nset_at = 1899000000\n")?;
+    let pending = Publication {
+        owner: lane.owner,
+        nonce: 7,
+        hash: word(0xabc),
+        rate: word(3_114_000),
+        gas_limit: RATE_GAS_LIMIT,
+        max_fee_per_gas: 4_000_000_000,
+        signed_at: NOW - 60,
+    };
+    let mut journal = Journal::open(&lane.dir.join("rate.jsonl"))?;
+    journal.append(&Entry::RatePublished {
+        publication: pending,
+    })?;
+    assert_eq!(journal.state().reserved_wei(), 4_000_000_000 * 60_000);
+    drop(journal);
+    let floor = 10_u128.pow(15);
+    let needed = floor + RESERVE + 4_000_000_000 * 60_000;
+    lane.chain.borrow_mut().balance = needed - 1;
+    let mut publisher = lane.publisher(1_000_000)?;
+    assert_eq!(publisher.publish(&file), Err(RateRefusal::BelowFloor));
+    assert_eq!(lane.sent(), 0);
+    lane.chain.borrow_mut().balance = needed;
+    lane.chain.borrow_mut().nonce = 8;
+    let publication = publisher.publish(&file)?;
+    assert_eq!(publication.nonce, 8);
+    let state = publisher.journal().state();
+    assert!(state.unsettled().is_empty());
+    assert_eq!(state.reserved_wei(), 0);
+    assert_eq!(state.publications[&pending.hash].1, None);
+    Ok(())
+}
+
+#[test]
+fn settlement_records_the_actual_cost() -> TestResult {
+    let lane = Lane::new("cost")?;
+    let file = lane.rate_file("rate = 3200000\nset_at = 1899000000\n")?;
+    let mut publisher = lane.publisher(1_000_000)?;
+    let publication = publisher.publish(&file)?;
+    let state = publisher.journal().state().clone();
+    let settlement = state.publications[&publication.hash]
+        .1
+        .ok_or("publication unsettled")?;
+    assert_eq!(settlement.cost_wei, 1_500_000_000 * 35_000);
+    assert_eq!(state.publication_wei(NOW / 86_400), 1_500_000_000 * 35_000);
+    assert_eq!(state.publication_gas(NOW / 86_400), 35_000);
+    assert_eq!(state.reserved_wei(), 0);
+    drop(publisher);
+    assert_eq!(Journal::open(&lane.dir.join("rate.jsonl"))?.state(), &state);
+    lane.chain.borrow_mut().effective_gas_price = 3_000_000_001;
+    lane.chain.borrow_mut().nonce = 8;
+    lane.chain.borrow_mut().updated_at = NOW - 300;
+    let mut publisher = lane.publisher(1_000_000)?;
+    assert_eq!(
+        publisher.publish(&file),
+        Err(RateRefusal::Rpc(RpcFault::Malformed))
+    );
+    assert_eq!(publisher.journal().state().unsettled().len(), 1);
+    Ok(())
 }

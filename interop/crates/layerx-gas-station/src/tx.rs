@@ -42,7 +42,7 @@ pub struct Fees {
     #[serde(with = "fee_amount")]
     pub max_priority_fee_per_gas: u128,
 }
-mod fee_amount {
+pub(crate) mod fee_amount {
     use serde::{Deserialize as _, Deserializer, Serializer};
 
     pub fn serialize<S: Serializer>(value: &u128, serializer: S) -> Result<S::Ok, S::Error> {
