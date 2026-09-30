@@ -1223,3 +1223,11 @@ symbol     = "NewProposalHandler"
 observed   = "go test ./modules/layerxcustody/... exited 0 (log .logs/1.10-verify.log) after go build ./modules/layerxcustody/... ./cmd/... exited 0 (log .logs/1.10-build.log, ./cmd/... matches no Go package; node/app.go and node/upgrades.go compile through testutil/keeper)."
 assumption = "CustodyProposal takes effect only from plan v6.11, whose height is an owner input in the 1.10 deploy handoff; 1.4 step B resumes after it passes."
 severity   = "external"
+
+[observation.1.10.2]
+task       = "1.10"
+file       = "daemon/paxd"
+symbol     = "daemon_build"
+observed   = "The task build target matched no package, so the daemon was built once afterwards from the lane revision: go build ./daemon/paxd, exit 0, 16 s, binary 153501752 bytes; log .logs/1.10-paxd-build.log on the lane."
+assumption = "The app wiring and the v6.11 upgrade handler compile into the daemon; the chain upgrade rollout is the deploy side step named in the handoff."
+severity   = "info"
