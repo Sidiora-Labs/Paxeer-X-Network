@@ -765,3 +765,15 @@ exit_code = 0
 log_path = ".logs/0.9-edge-register.log"
 observed = "Nginx reload reported protocol options redefined on existing sites. The live edge gate passed. No unrelated site was repaired."
 assumption = "Warnings belong to existing listener configuration and need a separately scoped task if repair is required."
+
+[gate.0.3.live_deploy]
+revision = "26b211c9ccba18c31c51a4bae828cf17e185902e"
+command = "BRINGUP_HOSTS_FILE=/root/lx-ops/bringup-2026-09-29/hosts.env timeout 15m tools/bringup/search-front.sh deploy"
+exit_code = 0
+log_path = ".logs/0.3-deploy.private.log"
+
+[gate.0.3.live_search_front]
+revision = "26b211c9ccba18c31c51a4bae828cf17e185902e"
+command = "BRINGUP_HOSTS_FILE=/root/lx-ops/bringup-2026-09-29/hosts.env timeout 10m tools/bringup/check-live.sh search-front"
+exit_code = 0
+log_path = ".logs/0.3-search-front-live.log"

@@ -1259,3 +1259,9 @@ area = "nginx"
 symptom = "Registering an HTTP proxy name reports protocol options redefined on existing shared TLS listeners, although the reload and live gate succeed."
 cause = "Enabled TLS sites declare different protocol options on the shared listen socket."
 do = "Record the warnings and preserve unrelated sites; qualify the registered name with its declared live gate and scope any listener repair separately."
+
+[gotcha.207]
+area = "fly"
+symptom = "The machine-list prerequisite exits one before an application has been created."
+cause = "The CLI treats an absent application as an error, while the deployment script creates it when absent."
+do = "Retain the diagnostic in a private log and distinguish an explicit app-not-found result from authentication or API errors before proceeding through the approved deployment script."
