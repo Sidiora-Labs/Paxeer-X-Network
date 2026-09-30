@@ -1181,3 +1181,21 @@ area    = "rust-tests"
 symptom = "cargo test -p layerx-crypto fails to compile the account-derivation tests with ed25519::Error not implementing std::error::Error, while a workspace-wide build compiles them."
 cause   = "Built alone the crate enables ed25519-dalek without std, so k256's signature error type lacks the StdError impl that `?` into Box<dyn Error> needs; other workspace members turn std on through feature unification."
 do      = "In tests of that crate convert k256 signing errors with .map_err(|error| error.to_string())? instead of a bare ?, and qualify crate tests with -p so a unification-only pass is caught."
+
+[gotcha.194]
+area    = "tooling"
+symptom = "git grep -x fails with unknown switch although grep -x matches whole lines."
+cause   = "git grep has no whole-line flag."
+do      = "Anchor the pattern with -E '^...$' in git grep."
+
+[gotcha.195]
+area    = "nginx"
+symptom = "nginx -V lists the stream and ssl_preread modules, yet a stream block fails to load on the edge."
+cause   = "The distribution builds stream as a dynamic module that ships in a separate package, and modules-enabled is empty until that package is installed."
+do      = "Check modules-enabled for ngx_stream_module before rendering a stream block, and install the distribution's stream module package first."
+
+[gotcha.196]
+area    = "nginx"
+symptom = "A stream server cannot send a PROXY header to the loopback HTTP listener for one SNI and raw bytes to the passthrough app for another."
+cause   = "proxy_protocol is a per-server switch and takes no variable."
+do      = "Send every connection with the PROXY header to loopback, and give the passthrough names an inner loopback stream server that accepts the header and forwards the raw TLS without it."
