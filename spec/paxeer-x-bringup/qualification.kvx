@@ -1590,7 +1590,7 @@ observed   = "cg spec start 2.1 exited 1 because in-progress task 4.2 also claim
 assumption = "Shell functions are not graph symbols, so the status line was set to implemented by hand without forcing either command."
 severity   = "note"
 
-[observation.1.5.9]
+[observation.1.5.10]
 task       = "1.5"
 file       = "docker/kernel/init.sh"
 symbol     = "genesis_files"
