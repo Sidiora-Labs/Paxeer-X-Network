@@ -26,7 +26,7 @@ This section covers hosted developer surfaces that exist in
 | Public relay / archive nodes | [Relay and archive](relay-archive.md) |
 
 The public origin named in the wiki is the router,
-`https://api.mainnet-beta.router.paxeer.network/rpc`; accounts are funded
+`https://api-mainnet-beta.paxeer.network/rpc`; accounts are funded
 through custody credit submitted to it, and there is no public faucet
 ([Getting started](../overview/getting-started.md)).
 Access still requires credentials and an independently supplied verification

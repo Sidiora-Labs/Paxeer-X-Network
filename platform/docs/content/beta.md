@@ -134,10 +134,10 @@ The reached rung of a surface is raised only by a `[gate.*]` record in the evide
 | Key | Value | Source |
 | --- | --- | --- |
 | testnet_public_url | https://beta.paxeer.network | platform/hosted/testnet/deployment.yaml Ingress layerx-testnet-public; .github/workflows/platform.yml LAYERX_TESTNET_URL; platform/hosted/testnet/src/lib.rs; platform/hosted/testnet/status.json; platform/docs/beta-environment.md |
-| gateway_url | https://api.mainnet-beta.router.paxeer.network | .github/workflows/platform.yml LAYERX_GATEWAY_URL; platform/hosted/testnet/src/lib.rs; platform/docs/beta-environment.md; platform/examples/*/layerx.example.json |
+| gateway_url | https://api-mainnet-beta.paxeer.network | .github/workflows/platform.yml LAYERX_GATEWAY_URL; platform/hosted/testnet/src/lib.rs; platform/docs/beta-environment.md; platform/examples/*/layerx.example.json |
 | faucet_url | https://faucet.paxeer.network | .github/workflows/platform.yml LAYERX_FAUCET_URL; platform/hosted/testnet/src/lib.rs; platform/docs/beta-environment.md |
 | status_url | https://status.paxeer.network | platform/hosted/testnet/src/lib.rs; platform/docs/beta-environment.md |
-| developer_host | developers.paxeer.network | platform/hosted/webhooks/deployment.yaml Ingress layerx-developer and layerx-developer-web |
+| developer_host | dev.paxeer.network | platform/hosted/webhooks/deployment.yaml Ingress layerx-developer and layerx-developer-web |
 | ramp_host | ramp.paxeer.network | platform/ramps/deployment.yaml Ingress |
 | emulator_endpoint | http://127.0.0.1:9402 | platform/docs/content/install.md; platform/docs/content/environments/emulator.md |
 | testnet_core_url | https://layerx-pending-core.layerx-testnet.svc.cluster.local:9443 | platform/hosted/testnet/deployment.yaml LAYERX_TESTNET_CORE_URL; platform/hosted/node/deployment.yaml Service layerx-pending-core |

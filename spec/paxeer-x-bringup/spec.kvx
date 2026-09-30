@@ -1031,7 +1031,7 @@ reqs       = ["3.4"]
 
 [task.0.8]
 title = "Rename every served public name to the owner's ruling across docs, manifests, configs and code defaults"
-status = "pending"
+status = "done"
 wave = 0
 verify_cmd = "timeout 5m sh -c '! git grep -nE \"api\\.mainnet-beta\\.router\\.paxeer\\.network|human\\.paxeer\\.network|agent\\.paxeer\\.network|registry\\.paxeer\\.network|developers\\.paxeer\\.network|webhooks\\.paxeer\\.network|interop\\.paxeer\\.network|gas\\.paxeer\\.network\" -- . \":!spec/\" \":!GOTCHA.kvx\"'"
 requires = ["0.4", "0.5", "0.7"]

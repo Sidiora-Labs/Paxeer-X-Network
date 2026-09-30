@@ -1061,3 +1061,15 @@ area    = "tests"
 symptom = "The lxp_test_daemon_finality_authority binary looks free to rewrite, but its prepare and emit modes feed the handover, guarantor and availability chain scripts."
 cause   = "Several tests/daemon Python drivers call that binary directly with their own arguments."
 do      = "Add new modes beside the existing ones and grep tests/daemon for the binary's name before changing its command line."
+
+[gotcha.174]
+area    = "tools"
+symptom = "tools/bringup/docs-names.sh stopped with 'cannot read the router' after the spec renamed the router, and 'sh docs-names.sh' fails on set -o pipefail."
+cause   = "The script compared the parsed allowed list against a literal router name, and it is a bash script run through dash when invoked with sh."
+do      = "Derive every checked name from the spec key that holds it, and run the bringup scripts through their shebang or bash."
+
+[gotcha.175]
+area    = "names"
+symptom = "Renaming developers.paxeer.network before api.developers.paxeer.network yields api.dev.paxeer.network instead of api-dev.paxeer.network."
+cause   = "The rename gate matches substrings, so longer names that contain a shorter old name are rewritten by the shorter rule first."
+do      = "Apply the rewrite rules longest name first in one sed pass."

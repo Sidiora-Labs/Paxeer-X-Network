@@ -72,7 +72,7 @@ pending-core human/wallet/deploy/human.toml - volume layerx-pending-core serverA
 pending-core-admin human/wallet/deploy/human.toml - volume layerx-pending-core-admin serverAuth DNS:layerx-pending-core-admin,DNS:<app>.internal
 receipt-authority human/wallet/deploy/human.toml - volume layerx-receipt-authority serverAuth DNS:layerx-receipt-authority,DNS:authority,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
 agent-boundary human/wallet/deploy/human.toml - volume layerx-agent-boundary serverAuth DNS:layerx-agent-boundary,DNS:component,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
-agentd human/wallet/deploy/human.toml - volume layerx-agentd serverAuth DNS:layerx-agentd,DNS:agent.paxeer.network,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
+agentd human/wallet/deploy/human.toml - volume layerx-agentd serverAuth DNS:layerx-agentd,DNS:machine.paxeer.network,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
 agentd-client human/wallet/deploy/human.toml - volume layerx-agentd-client clientAuth -
 paxeer-boundary-loopback human/wallet/deploy/human.toml - volume paxeer-boundary serverAuth DNS:paxeer-boundary,DNS:paxeer-boundary-loopback,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
 paxeer-boundary-public human/wallet/deploy/human.toml - volume paxeer-observer-boundary serverAuth DNS:paxeer-observer-boundary,DNS:paxeer-boundary-public,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
@@ -89,7 +89,7 @@ internal-payments platform/hosted/internal/fly.toml payments volume payments ser
 internal-approvals platform/hosted/internal/fly.toml approvals volume approvals serverAuth DNS:approvals,DNS:approvals.process.<app>.internal,DNS:localhost,IP:127.0.0.1
 internal-programs platform/hosted/internal/fly.toml programs volume programs serverAuth DNS:programs,DNS:programs.process.<app>.internal,DNS:localhost,IP:127.0.0.1
 internal-redis platform/hosted/internal/redis.toml - REDIS_TLS redis serverAuth DNS:redis,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
-registry platform/hosted/registry/fly.toml - volume layerx-program-registry serverAuth DNS:layerx-program-registry,DNS:registry.paxeer.network,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
+registry platform/hosted/registry/fly.toml - volume layerx-program-registry serverAuth DNS:layerx-program-registry,DNS:index.paxeer.network,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
 registry-event-client platform/hosted/registry/fly.toml - volume layerx-registry-events clientAuth -
 interop-client platform/hosted/interop/fly.toml - INTEROP_CLIENT layerx-interop-gateway clientAuth -
 developer platform/hosted/webhooks/fly.toml ingress WEBHOOKS_INGRESS_TLS layerx-developer serverAuth DNS:layerx-webhooks,DNS:ingress.process.<app>.internal,DNS:localhost,IP:127.0.0.1

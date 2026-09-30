@@ -38,7 +38,7 @@
 #                                       anchor (0x…1014) are native chain modules configured in the Paxeer genesis,
 #                                       and every Paxeer transaction is signed by platform/hosted/paxeer/evm.py
 #   LAYERX_BETA_FAUCET_HOST             public faucet hostname (default faucet.paxeer.network)
-#   LAYERX_BETA_DEVELOPER_HOST          public developer hostname (default developers.paxeer.network)
+#   LAYERX_BETA_DEVELOPER_HOST          public developer hostname (default dev.paxeer.network)
 #   LAYERX_BETA_RELAY_HOST              public relay/archive hostname (default archive.paxeer.network)
 #   LAYERX_BETA_RELAY_UPSTREAM          comma-separated public HTTPS relay/archive origins the beta relay reads
 #                                       canonical history from; unset leaves the colocated canonical availability
@@ -230,11 +230,11 @@ CALICO_SHA256=9382d2b27a76f40c170454b408653e6d71e2205ef0aef069e942bb690e7381d0
 
 CLUSTER_NAME=${LAYERX_BETA_CLUSTER_NAME:-layerx-beta}
 FAUCET_HOST=${LAYERX_BETA_FAUCET_HOST:-faucet.paxeer.network}
-DEVELOPER_HOST=${LAYERX_BETA_DEVELOPER_HOST:-developers.paxeer.network}
+DEVELOPER_HOST=${LAYERX_BETA_DEVELOPER_HOST:-dev.paxeer.network}
 RELAY_HOST=${LAYERX_BETA_RELAY_HOST:-archive.paxeer.network}
 HUMAN_WEB_HOST=app.paxeer.network
 TESTNET_HOST=beta.paxeer.network
-GATEWAY_HOST=api.mainnet-beta.router.paxeer.network
+GATEWAY_HOST=api-mainnet-beta.paxeer.network
 KIND_CNI=${LAYERX_BETA_KIND_CNI:-calico}
 READY_TIMEOUT=${LAYERX_BETA_READY_TIMEOUT:-900}
 MIN_FREE_GIB=${LAYERX_BETA_MIN_FREE_GIB:-24}
