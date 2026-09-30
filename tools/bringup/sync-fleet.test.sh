@@ -189,6 +189,16 @@ case " \${SYNC_FLEET_TEST_CORRUPT:-} " in
 esac
 SH
 
+# getent stand-in: each public name apiN resolves to the fixture destination
+# up-rpc-N.
+cat >"$work/bin/getent" <<'SH'
+#!/usr/bin/env bash
+set -eu
+[ "${1:-}" = ahosts ] || exit 2
+name="${2%%.*}"
+printf 'up-rpc-%s STREAM %s\n' "${name#api}" "$2"
+SH
+
 # sha256sum stand-in: the fixture release binary hashes to the release sha.
 cat >"$work/bin/sha256sum" <<'SH'
 #!/usr/bin/env bash
@@ -533,11 +543,31 @@ check sync_fleet_rollout_sha_refusal_asks_no_host [ ! -s "$SYNC_FLEET_TEST_CALLS
 expect sync_fleet_resync_still_pins_the_release "$work/hosts-rollout.env" 2 resync "$work/rollout" -- \
 	"not the release $release_sha256"
 
+# A validator host among the RPC destinations: api5's host serves its name
+# retained by owner ruling and api6's host is a never-place host; both are
+# skipped, never asked or staged on, and every other host rolls.
+cat >"$work/hosts-rollout-retained.env" <<'ENV'
+EDGE_HOST=up-edge
+ARCHIVE_HOST=up-rpc-2
+VALIDATOR_HOSTS="up-rpc-5 up-validator-b"
+RPC_HOSTS="up-rpc-1 up-rpc-5 up-rpc-2 up-rpc-6 up-rpc-3"
+OLD_WALLET_HOST=up-old-wallet
+BRINGUP_NEVER_PLACE="$VALIDATOR_HOSTS up-rpc-6"
+RETAINED_ON_VALIDATOR="api5.mainnet-beta.paxeer.network"
+ENV
 rollout_hosts
-expect sync_fleet_rollout_refuses_a_validator_destination "$work/hosts-good.env" 1 rollout "$work/rollout" "$rollout_sha" -- \
-	"fail rollout RPC_HOSTS[4] refused: the destination is also a validator host, whose validator units run the same paxd; nothing was staged on any host" \
-	"sync-fleet: 1 host(s) failed"
-check sync_fleet_rollout_validator_refusal_touches_no_host bash -c "[ ! -s '$SYNC_FLEET_TEST_CALLS' ] && [ ! -e '$SYNC_FLEET_REPORT' ] && ! ls '$hosts'/*/paxd.new-* >/dev/null 2>&1"
+expect sync_fleet_rollout_skips_retained_and_validator_hosts "$work/hosts-rollout-retained.env" 0 rollout "$work/rollout" "$rollout_sha" -- \
+	"skipped api5: retained on a validator host by owner ruling" \
+	"skipped RPC_HOSTS[3]: a validator or never-place host" \
+	"staged RPC_HOSTS[0] api1 sha256=$rollout_sha" \
+	"swapped RPC_HOSTS[2] api2 unit=active lag=0" \
+	"swapped RPC_HOSTS[4] api3 unit=active lag=0" \
+	"not rolled api5" \
+	"not rolled RPC_HOSTS[3]" \
+	"report $SYNC_FLEET_REPORT" \
+	"sync-fleet: all hosts passed"
+check sync_fleet_rollout_skip_touches_no_skipped_host bash -c "! grep -qE '^up-rpc-[56] ' '$SYNC_FLEET_TEST_CALLS' && ! grep -qE 'up-rpc-[56]:' '$SYNC_FLEET_TEST_CALLS' && [ \"\$(cat '$hosts/up-rpc-5/paxd')\" = 'release binary' ] && [ '$(binaries)' -eq 3 ]"
+check sync_fleet_rollout_skip_records_not_rolled bash -c "grep -qx 'RPC_HOSTS\[1\] api5 not rolled' '$SYNC_FLEET_REPORT' && grep -qx 'RPC_HOSTS\[3\] none not rolled' '$SYNC_FLEET_REPORT' && [ \"\$(grep -c '^RPC_HOSTS.* sha256=$rollout_sha\$' '$SYNC_FLEET_REPORT')\" -eq 3 ]"
 
 rollout_hosts
 expect sync_fleet_rollout_dry_run "$work/hosts-rollout.env" 0 --dry-run rollout "$work/rollout" "$rollout_sha" -- \
