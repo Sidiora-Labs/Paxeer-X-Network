@@ -586,3 +586,11 @@ symbol     = "COMPLETE_EDGES"
 observed   = "The movement probe tests now pass alone (the fixture's checkpoint authority was not an Ed25519 point), but the verify_cmd exits 2 at the topology regression suite: the gateway edge to paxeer-boundary:9443 through LAYERX_GATEWAY_PAXEER_RPC_URL is named but absent, because the merged gateway-failover task replaced that variable with LAYERX_GATEWAY_PAXEER_RPC_URLS on public names; escrow and the provider probe targets did not run in the gate."
 assumption = "Cross-task contradiction between the regression list's named edge and the gateway manifest, outside this task's touches; recorded, not repaired, pending a ruling on which side owns the edge list."
 severity   = "blocker"
+
+[observation.1.3.6]
+task       = "1.3"
+file       = "platform/hosted/tests/topology-check.sh"
+symbol     = "URL, edges"
+observed   = "The rename ruling cannot be applied: LAYERX_GATEWAY_PAXEER_RPC_URLS holds a JSON array, which the checker's URL pattern (anchored at a scheme) never matches, so check() emits no edge at all under the new env name; even parsed, its public hosts would be offcluster, never ok, so any renamed RESOLVED_EDGES line stays named-but-absent."
+assumption = "Satisfying the suite needs either dropping the line (ruled out) or teaching the checker to read JSON URL lists (outside this task and the ruling); no edit made and the verify_cmd not rerun, since an unchanged rerun repeats observation 1.3.5."
+severity   = "blocker"

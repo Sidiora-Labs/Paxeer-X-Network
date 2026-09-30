@@ -1181,3 +1181,9 @@ area    = "platform"
 symptom = "The topology regression suite fails with a named-but-absent edge after two lanes merge in either order."
 cause   = "One lane named a manifest edge in topology-regressions.py while another lane replaced that manifest variable, and neither saw the other's change."
 do      = "After merging a lane that edits a manifest env edge, rerun the topology check on the merged revision before closing tasks that depend on it."
+
+[gotcha.194]
+area    = "platform"
+symptom = "A topology regression entry for an env edge cannot be renamed when the manifest variable changes from one URL to a JSON list of URLs."
+cause   = "topology-check.sh matches each env value against one scheme-anchored URL pattern, so a JSON array yields no edge, and a public host would be offcluster rather than ok."
+do      = "Before renaming a named edge, confirm check() emits it on the merged manifest; a list-valued or public-host variable needs a checker change or a ruling, not a renamed line."
