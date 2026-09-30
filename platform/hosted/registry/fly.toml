@@ -1,0 +1,94 @@
+app = "paxeer-registry"
+primary_region = "ams"
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[build]
+  dockerfile = "../../../docker/platform-registry/Dockerfile"
+  build-target = "fly"
+
+[deploy]
+  strategy = "immediate"
+
+# docker/platform-registry/init.sh runs as root: it provisions the build
+# boundary of node-provision-build-boundary.sh without systemd, writes the
+# token secrets below into /run/layerx and starts the registry, which
+# delegates its cgroup and drops to uid 4030 itself. Secrets of this app,
+# imported on standard input by the task's deploy step:
+# LAYERX_REGISTRY_NODE_AUTHORIZATION and
+# LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION (the bearers the kernel app
+# holds as well), REGISTRY_IDENTITY_TOKEN, REGISTRY_PROGRAM_EVENTS_TOKEN and
+# REGISTRY_WEBHOOKS_EVENTS_TOKEN.
+[env]
+  LAYERX_REGISTRY_LISTEN = "[::]:9420"
+  LAYERX_REGISTRY_TLS_CERT_DER = "/data/tls/registry/cert.der"
+  LAYERX_REGISTRY_TLS_KEY_DER = "/data/tls/registry/key.der"
+  LAYERX_REGISTRY_CLIENT_CA_DER = "/data/tls/registry/ca.der"
+  LAYERX_REGISTRY_OUTBOUND_CA_DER = "/data/tls/registry/ca.der"
+  LAYERX_REGISTRY_STATE = "/data/state"
+  LAYERX_REGISTRY_JOURNAL = "/data/journal"
+  LAYERX_REGISTRY_REQUEST_TOKEN_FILE = "/data/tokens/request"
+  LAYERX_REGISTRY_PUBLICATION_TOKEN_FILE = "/data/tokens/publication"
+  LAYERX_REGISTRY_BUILDER_ENVIRONMENT_ROOT = "/data/builder/rootfs"
+  LAYERX_REGISTRY_BUILDER_ENTRYPOINT = "/bin/layerx-build"
+  LAYERX_REGISTRY_BUILDER_ISOLATION_RUNTIME = "/usr/bin/bwrap"
+  LAYERX_REGISTRY_BUILDER_JOB_SUPERVISOR = "/usr/bin/layerx-cgroup-exec"
+  LAYERX_REGISTRY_HOST_CGROUP_MOUNT = "/run/layerx/host-cgroup"
+  LAYERX_REGISTRY_BUILD_ROOT = "/data/builds"
+  LAYERX_REGISTRY_BUILD_QUOTA_BYTES = "5368709120"
+  LAYERX_REGISTRY_BUILD_QUOTA_INODES = "65536"
+  LAYERX_REGISTRY_BUILD_MEMORY_BYTES = "2147483648"
+  LAYERX_REGISTRY_BUILD_PROCESS_LIMIT = "64"
+  LAYERX_REGISTRY_BUILD_FILE_SIZE_BYTES = "67108864"
+  LAYERX_REGISTRY_REQUEST_TIMEOUT_SECONDS = "1800"
+  LAYERX_REGISTRY_BUILD_TIMEOUT_SECONDS = "1800"
+  LAYERX_REGISTRY_MAX_CONNECTIONS = "128"
+  LAYERX_REGISTRY_MAX_BUILDS = "4"
+  LAYERX_REGISTRY_NODE_ENDPOINT = "https://paxeer-human-service.internal:9446"
+  LAYERX_REGISTRY_RECEIPT_AUTHORITY_ENDPOINT = "https://paxeer-human-service.internal:9445"
+  LAYERX_REGISTRY_SEQUENCER_TRUST_HISTORY = "/data/kernel/trust-history"
+  LAYERX_REGISTRY_IDENTITY_URL = "https://paxeer-identity.internal:9443"
+  LAYERX_REGISTRY_IDENTITY_CA_DER = "/data/tls/registry/ca.der"
+  LAYERX_REGISTRY_IDENTITY_TOKEN_FILE = "/run/layerx/secrets/identity-token"
+  LAYERX_REGISTRY_IDENTITY_CLIENT_IDENTITY_PKCS12 = "/data/tls/registry-event-client/identity.p12"
+  LAYERX_REGISTRY_IDENTITY_CLIENT_IDENTITY_PASSWORD_FILE = "/data/tls/registry-event-client/password"
+  LAYERX_EVENTS_PROGRAM_UPSTREAM_URL = "https://programs.process.paxeer-internal.internal:9443"
+  LAYERX_EVENTS_PROGRAM_UPSTREAM_CA_DER = "/data/tls/registry/ca.der"
+  LAYERX_EVENTS_PROGRAM_UPSTREAM_TOKEN_FILE = "/run/layerx/secrets/program-events-token"
+  LAYERX_EVENTS_PROGRAM_UPSTREAM_CLIENT_IDENTITY_PKCS12 = "/data/tls/registry-event-client/identity.p12"
+  LAYERX_EVENTS_PROGRAM_UPSTREAM_CLIENT_IDENTITY_PASSWORD_FILE = "/data/tls/registry-event-client/password"
+  LAYERX_EVENTS_WEBHOOKS_UPSTREAM_URL = "https://ingress.process.paxeer-webhooks.internal:9444"
+  LAYERX_EVENTS_WEBHOOKS_UPSTREAM_CA_DER = "/data/tls/registry/ca.der"
+  LAYERX_EVENTS_WEBHOOKS_UPSTREAM_TOKEN_FILE = "/run/layerx/secrets/webhooks-events-token"
+  LAYERX_EVENTS_WEBHOOKS_UPSTREAM_CLIENT_IDENTITY_PKCS12 = "/data/tls/registry-event-client/identity.p12"
+  LAYERX_EVENTS_WEBHOOKS_UPSTREAM_CLIENT_IDENTITY_PASSWORD_FILE = "/data/tls/registry-event-client/password"
+
+[[mounts]]
+  source = "registry_data"
+  destination = "/data"
+  initial_size = "50gb"
+  snapshot_retention = 14
+
+# The ingress on the private network is <app>.internal:9420; the public name
+# index.paxeer.network reaches the same listener through the edge's SNI
+# stream passthrough to port 443 of the app's dedicated IPv4, TLS untouched.
+[[services]]
+  protocol = "tcp"
+  internal_port = 9420
+  auto_stop_machines = "off"
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [[services.ports]]
+    port = 443
+
+  [[services.tcp_checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "120s"
+
+[[vm]]
+  size = "shared-cpu-4x"
+  memory = "4gb"
+  cpus = 4
+  cpu_kind = "shared"
