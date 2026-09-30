@@ -72,7 +72,9 @@ ca        reads the internal CA under LAYERX_CA_DIR on this host and, through
           Exits 0 only when the CA and every certificate pass.
 
 hpx       reads the hpx registry at CHECK_LIVE_HPX_ORIGIN, by default
-          https://node.hyperpaxeer.com, and prints one line per check:
+          https://node.hyperpaxeer.com, and at CHECK_LIVE_HPX_APP_ORIGIN, by
+          default https://<app>.fly.dev for the app of hpx/hosting/fly.toml,
+          and prints one line per check; the app's lines carry the app- prefix:
   healthz    GET <origin>/healthz answers 200 with ok true, chain_id
              hyperpax_125-1 and a forty-hex source_revision
   checksums  GET <origin>/checksums.txt lists "<sha256>  <path>" lines and
@@ -81,7 +83,14 @@ hpx       reads the hpx registry at CHECK_LIVE_HPX_ORIGIN, by default
              verified=<k>/<n> first=<path>" naming the first mismatch
   api-nodes  GET <origin>/api/nodes answers 200 with chain_id hyperpax_125-1
              and a nodes list whose length is count
-          Exits 0 only when all three checks pass.
+  landing    GET <origin>/ answers 200 with the landing page of
+             hpx/hosting/index.html
+  served-by  the public origin's /healthz carries the Fly edge's
+             fly-request-id header and equals the app's /healthz, so the name
+             is served by the app and not by the registry on the edge host;
+             "fail served-by app=<app> fly-request-id=<present|absent>
+             healthz=<match|differ>" otherwise
+          Exits 0 only when all eight checks pass.
 
 explorer  reads the deployed explorer at CHECK_LIVE_EXPLORER_ORIGIN, by default
           https://paxscan.io, its envs.js, its backend and its databases, and
@@ -112,6 +121,8 @@ Environment:
                        for the plural roles, a space-separated list of them
   CHECK_LIVE_HPX_ORIGIN  origin of the hpx registry, default
                        https://node.hyperpaxeer.com
+  CHECK_LIVE_HPX_APP_ORIGIN  origin of the hpx registry's Fly app, default
+                       https://<app>.fly.dev
   CHECK_LIVE_EXPLORER_ORIGIN  origin of the explorer frontend, default
                        https://paxscan.io
   EXPLORER_DATABASE_URL, EXPLORER_LEGACY_DATABASE_URL,
@@ -534,21 +545,32 @@ check_ca() {
 	finish "$failures"
 }
 
-# check_hpx: reads the hpx registry at its public origin: /healthz with the
-# chain id and the source revision, checksums.txt verified against every
-# served artifact it lists, and /api/nodes answering.
+# check_hpx: reads the hpx registry at its public origin and at the fly.dev
+# name of the Fly app of hpx/hosting/fly.toml: at both, /healthz with the chain
+# id and the source revision, checksums.txt verified against every served
+# artifact it lists and /api/nodes answering; the landing page at the public
+# origin; and the public origin served by the app: its /healthz carries the
+# Fly edge's fly-request-id header and matches the app's /healthz.
 check_hpx() {
 	local origin="${CHECK_LIVE_HPX_ORIGIN:-https://node.hyperpaxeer.com}" failures=0
-	local status body verdict manifest line sum path served total=0 verified=0 first=""
+	local status body verdict manifest line sum path served total verified first
 	local entry='^([0-9a-f]{64})  ([A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*)$'
+	local app app_origin base prefix code name_health app_health fly_id
 	origin="${origin%/}"
+	app="$(fly_app hpx/hosting/fly.toml)" || app=absent
+	app_origin="${CHECK_LIVE_HPX_APP_ORIGIN:-https://$app.fly.dev}"
+	app_origin="${app_origin%/}"
 
-	status=0
-	body="$(curl -sS --max-time "$timeout" -w '\n%{http_code}' "$origin/healthz" 2>&1)" || status=$?
-	if [ "$status" -ne 0 ]; then
-		verdict="fail transport $(printf '%s' "$body" | tr '\n' ' ' | cut -c1-200)"
-	else
-		verdict="$(printf '%s' "$body" | python3 -c '
+	for prefix in "" app-; do
+		base="$origin"
+		[ -z "$prefix" ] || base="$app_origin"
+
+		status=0
+		body="$(curl -sS --max-time "$timeout" -w '\n%{http_code}' "$base/healthz" 2>&1)" || status=$?
+		if [ "$status" -ne 0 ]; then
+			verdict="fail transport $(printf '%s' "$body" | tr '\n' ' ' | cut -c1-200)"
+		else
+			verdict="$(printf '%s' "$body" | python3 -c '
 import json
 import re
 import sys
@@ -575,52 +597,55 @@ ok = (
 print(("pass " if ok else "fail ") + "http=" + code + " ok=" + str(doc.get("ok") is True).lower()
       + " chain_id=" + str(chain) + " source_revision=" + str(rev))
 ')"
-	fi
-	case "$verdict" in
-	pass\ *) echo "pass healthz ${verdict#pass }" ;;
-	*)
-		echo "fail healthz ${verdict#fail }"
-		failures=$((failures + 1))
-		;;
-	esac
-
-	status=0
-	manifest="$(curl -sS --max-time "$timeout" "$origin/checksums.txt" 2>&1)" || status=$?
-	if [ "$status" -ne 0 ]; then
-		echo "fail checksums transport $(printf '%s' "$manifest" | tr '\n' ' ' | cut -c1-200)"
-		failures=$((failures + 1))
-	else
-		while IFS= read -r line; do
-			[ -n "$line" ] || continue
-			total=$((total + 1))
-			if [[ "$line" =~ $entry ]]; then
-				sum="${BASH_REMATCH[1]}"
-				path="${BASH_REMATCH[2]}"
-				status=0
-				served="$(curl -sS --max-time "$timeout" "$origin/$path" 2>/dev/null | sha256sum | cut -d' ' -f1)" || status=$?
-				if [ "$status" -eq 0 ] && [ "$served" = "$sum" ]; then
-					verified=$((verified + 1))
-				else
-					first="${first:-$path}"
-				fi
-			else
-				first="${first:-malformed:$(printf '%s' "$line" | cut -c1-80)}"
-			fi
-		done <<<"$manifest"
-		if [ "$total" -gt 0 ] && [ "$verified" -eq "$total" ]; then
-			echo "pass checksums verified=$verified/$total"
-		else
-			echo "fail checksums verified=$verified/$total first=${first:-empty-manifest}"
-			failures=$((failures + 1))
 		fi
-	fi
+		case "$verdict" in
+		pass\ *) echo "pass ${prefix}healthz ${verdict#pass }" ;;
+		*)
+			echo "fail ${prefix}healthz ${verdict#fail }"
+			failures=$((failures + 1))
+			;;
+		esac
 
-	status=0
-	body="$(curl -sS --max-time "$timeout" -w '\n%{http_code}' "$origin/api/nodes" 2>&1)" || status=$?
-	if [ "$status" -ne 0 ]; then
-		verdict="fail transport $(printf '%s' "$body" | tr '\n' ' ' | cut -c1-200)"
-	else
-		verdict="$(printf '%s' "$body" | python3 -c '
+		total=0
+		verified=0
+		first=""
+		status=0
+		manifest="$(curl -sS --max-time "$timeout" "$base/checksums.txt" 2>&1)" || status=$?
+		if [ "$status" -ne 0 ]; then
+			echo "fail ${prefix}checksums transport $(printf '%s' "$manifest" | tr '\n' ' ' | cut -c1-200)"
+			failures=$((failures + 1))
+		else
+			while IFS= read -r line; do
+				[ -n "$line" ] || continue
+				total=$((total + 1))
+				if [[ "$line" =~ $entry ]]; then
+					sum="${BASH_REMATCH[1]}"
+					path="${BASH_REMATCH[2]}"
+					status=0
+					served="$(curl -sS --max-time "$timeout" "$base/$path" 2>/dev/null | sha256sum | cut -d' ' -f1)" || status=$?
+					if [ "$status" -eq 0 ] && [ "$served" = "$sum" ]; then
+						verified=$((verified + 1))
+					else
+						first="${first:-$path}"
+					fi
+				else
+					first="${first:-malformed:$(printf '%s' "$line" | cut -c1-80)}"
+				fi
+			done <<<"$manifest"
+			if [ "$total" -gt 0 ] && [ "$verified" -eq "$total" ]; then
+				echo "pass ${prefix}checksums verified=$verified/$total"
+			else
+				echo "fail ${prefix}checksums verified=$verified/$total first=${first:-empty-manifest}"
+				failures=$((failures + 1))
+			fi
+		fi
+
+		status=0
+		body="$(curl -sS --max-time "$timeout" -w '\n%{http_code}' "$base/api/nodes" 2>&1)" || status=$?
+		if [ "$status" -ne 0 ]; then
+			verdict="fail transport $(printf '%s' "$body" | tr '\n' ' ' | cut -c1-200)"
+		else
+			verdict="$(printf '%s' "$body" | python3 -c '
 import json
 import sys
 
@@ -646,14 +671,47 @@ ok = (
 )
 print(("pass " if ok else "fail ") + "http=" + code + " chain_id=" + str(chain) + " count=" + str(count))
 ')"
-	fi
-	case "$verdict" in
-	pass\ *) echo "pass api-nodes ${verdict#pass }" ;;
-	*)
-		echo "fail api-nodes ${verdict#fail }"
+		fi
+		case "$verdict" in
+		pass\ *) echo "pass ${prefix}api-nodes ${verdict#pass }" ;;
+		*)
+			echo "fail ${prefix}api-nodes ${verdict#fail }"
+			failures=$((failures + 1))
+			;;
+		esac
+	done
+
+	status=0
+	body="$(curl -sS --max-time "$timeout" -w '\n%{http_code}' "$origin/" 2>&1)" || status=$?
+	code="${body##*$'\n'}"
+	if [ "$status" -ne 0 ]; then
+		echo "fail landing transport $(printf '%s' "$body" | tr '\n' ' ' | cut -c1-200)"
 		failures=$((failures + 1))
-		;;
-	esac
+	elif [ "$code" = 200 ] && grep -qF '<title>HPX — HyperPax Node Network</title>' <<<"$body"; then
+		echo "pass landing http=200"
+	else
+		echo "fail landing http=$code"
+		failures=$((failures + 1))
+	fi
+
+	# The public name is served by the app when its answer passed the Fly edge
+	# (fly-request-id) and equals the app's own answer; the registry on the
+	# edge host answers without that header.
+	name_health="$(curl -sS --max-time "$timeout" -D - "$origin/healthz" 2>/dev/null)" || name_health=""
+	fly_id=absent
+	grep -qiE '^fly-request-id: *[^[:space:]]' <<<"$name_health" && fly_id=present
+	name_health="${name_health#*$'\r\n\r\n'}"
+	app_health="$(curl -sS --max-time "$timeout" "$app_origin/healthz" 2>/dev/null)" || app_health=""
+	if [ "$fly_id" = present ] && [ -n "$app_health" ] && [ "$name_health" = "$app_health" ]; then
+		echo "pass served-by app=$app fly-request-id=present healthz=match"
+	else
+		code=differ
+		if [ -n "$app_health" ] && [ "$name_health" = "$app_health" ]; then
+			code=match
+		fi
+		echo "fail served-by app=$app fly-request-id=$fly_id healthz=$code"
+		failures=$((failures + 1))
+	fi
 	finish "$failures"
 }
 
