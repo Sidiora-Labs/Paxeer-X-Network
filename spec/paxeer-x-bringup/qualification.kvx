@@ -1343,3 +1343,11 @@ symbol     = "config example"
 observed   = "packaging-check.sh asserts the example's note and its placeholder values, which task 4.2 replaces with a working serving example rendered by xweb-config.sh; the two cannot both hold."
 assumption = "Cross-task contradiction: the example is rewritten from the renderer in the commit that follows task 1.4, and packaging-check.sh gets its example assertions updated in that same commit; neither changes now."
 severity   = "contradiction"
+
+[observation.4.5.6]
+task       = "4.5"
+file       = "tools/bringup/ca.sh"
+symbol     = "ca_services"
+observed   = "The feature merge placed the dashboard-client service row after the usage text instead of inside the services list, so the developers harness cases reported the dashboard toml absent at two merged revisions."
+assumption = "Merge repair: the row is moved into the services list and the harness literal follows the row count; no check changed."
+severity   = "medium"
