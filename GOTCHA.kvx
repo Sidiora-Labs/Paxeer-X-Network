@@ -1253,3 +1253,21 @@ area    = "ci"
 symptom = "The runner canary dispatched while CI_LINUX_RUNNER is unset runs on a hosted runner and fails at its lld step, and the API reports an empty runner name for that job."
 cause   = "The routing expression falls back to the hosted image, which lacks ld.lld, and completed hosted jobs carry no runnerName in the jobs listing."
 do      = "Read a hosted canary failure as the variable being unset, not as a runner image fault; judge the Fly runner only from a run whose job names a fly- runner."
+
+[gotcha.206]
+area    = "tooling"
+symptom = "A command line of the form cd <lane> && mkdir ... && ( long build ) & ran every later command of the same call in the previous directory, so shellcheck and check-deploy read the main checkout."
+cause   = "The trailing & backgrounds the whole && list, cd included, in a subshell."
+do      = "Put cd on its own line, or background only the build subshell, before running gates in a lane."
+
+[gotcha.207]
+area    = "bringup"
+symptom = "A Fly toml [env] entry carrying the node asset id or replica id fails tools/wallet/check-deploy.sh env-no-secrets."
+cause   = "The rule refuses any value of 64 hex characters, which also matches public 32-byte ids."
+do      = "Keep public 32-byte ids of a pod ConfigMap in the app's init or config file, not in [env]."
+
+[gotcha.208]
+area    = "bringup"
+symptom = "check-live.test kernel-app cases resolved the real app name instead of the fx- fixture app."
+cause   = "The default checker reads tomls from the real repository root; only the fixture copy reads the fixture tree."
+do      = "Run cases that read a fixture toml with CHECK_LIVE_TEST_PROGRAM=\"$fx_checker\"."

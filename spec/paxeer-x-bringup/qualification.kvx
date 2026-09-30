@@ -745,3 +745,43 @@ symbol     = "check_ci"
 observed   = "cg spec implemented 4.13 exited 75 with the graph database busy and symbol check_ci not defined in the graph; both fly.toml files already carry the real app names and the controller's env by name, so they needed no change."
 assumption = "Shell functions are not graph symbols, so the status line was set to implemented by hand; the controller's three secrets are set by name through flyctl secrets import, never in the toml."
 severity   = "note"
+
+[observation.1.5.1]
+task       = "1.5"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_kernel_app"
+observed   = "timeout 20m tools/bringup/check-live.sh kernel-app exited 1 at 3df583333 plus this task's change (log .logs/verify.log): the app runs one started machine with no volume at /data, the volumeless machine do_4 replaces."
+assumption = "The image push, CA root secret, volume, scale to zero, deploy and machine start are the deploy fleet's steps in the owner handoff; the gate reruns after them."
+severity   = "blocker"
+
+[observation.1.5.2]
+task       = "1.5"
+file       = "docker/kernel/init.sh"
+symbol     = "guarantor, treasury-signer"
+observed   = "The treasury signer waits on keys/publication/binding-policy.json, whose publication-policy.py treasury render needs a recipient address, and both guarantors wait on keys/checkpoint-authority/key.pem, the key the Paxeer custody genesis pins as depositRootAuthority; neither value is fixed by the spec or the tree."
+assumption = "The owner supplies both; the init never generates or guesses them, so kernel-app reports the signer as waiting until the policy is on the volume."
+severity   = "blocker"
+
+[observation.1.5.3]
+task       = "1.5"
+file       = "docker/kernel/init.sh, human/wallet/deploy/human.toml"
+symbol     = "task 1.4 do_1, [design.fly] layout"
+observed   = "Task 1.4 writes the sequencer key and metadata under /data/layerx/node, which bootstrap.sh refuses inside --data-dir, and [design] layout puts the pod env in [env] while check-deploy env-no-secrets refuses the 64-hex asset and replica ids."
+assumption = "The init keeps --data-dir /data/layerx/node, reads the key at /data/layerx/keys/sequencer.key and the metadata at /data/layerx/genesis/metadata.lxgb, and exports the pod ConfigMap values itself; task 1.4 writes to those paths."
+severity   = "warning"
+
+[observation.1.5.4]
+task       = "1.5"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_kernel_app"
+observed   = "kernel-app asserts do_5 only: one started machine with its volume at /data, the root init as entrypoint, and each recorded service running under its uid or waiting on the genesis; req 6.3's supervisor readiness, LNI socket, replica head and clock authority do not exist before the genesis."
+assumption = "Task 1.4's kernel-node subcommand asserts 6.3's readiness after kernel-genesis.sh; kernel-app does not claim it."
+severity   = "note"
+
+[observation.1.5.5]
+task       = "1.5"
+file       = "docker/kernel/init.sh"
+symbol     = "LAYERX_NODE_NETWORK_ID"
+observed   = "The kernel network id is not fixed for this network: the tree's testnet ConfigMap carries 402, and the asset and replica ids the init exports are that testnet ConfigMap's values."
+assumption = "The init requires LAYERX_NODE_NETWORK_ID from a staged Fly secret the owner sets; the asset and replica ids stay the tree's values until the owner rules otherwise."
+severity   = "blocker"

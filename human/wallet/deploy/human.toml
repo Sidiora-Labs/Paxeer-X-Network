@@ -1,14 +1,17 @@
 app = "paxeer-human-service"
 primary_region = "ams"
 kill_signal = "SIGTERM"
-kill_timeout = "30s"
+kill_timeout = "60s"
 
 [build]
-  dockerfile = "docker/human-service/Dockerfile"
+  dockerfile = "docker/kernel/Dockerfile"
+
+[deploy]
+  strategy = "immediate"
 
 [env]
   LAYERX_HUMAN_LISTENER = "plain"
-  LAYERX_HUMAN_BIND = "0.0.0.0:8080"
+  LAYERX_HUMAN_BIND = "[::]:8080"
   LAYERX_HUMAN_COMPONENT_SOCKET = "/run/layerx/human/components.sock"
   LAYERX_HUMAN_WEB_ORIGIN = "https://app.paxportwallet.com,https://paxportwallet.com,https://www.paxportwallet.com,https://paxport-production.up.railway.app"
   LAYERX_HUMAN_REQUESTS_PER_MINUTE = "240"
@@ -17,6 +20,17 @@ kill_timeout = "30s"
   LAYERX_HUMAN_MAX_BODY_BYTES = "1048576"
   LAYERX_HUMAN_MAX_CONNECTIONS = "1024"
   LAYERX_HUMAN_IO_DEADLINE_SECONDS = "15"
+
+[[files]]
+  guest_path = "/etc/layerx/trust/ca.crt"
+  secret_name = "LAYERX_INTERNAL_CA_ROOT"
+
+[[mounts]]
+  source = "kernel_data"
+  destination = "/data"
+  initial_size = "50gb"
+  scheduled_snapshots = true
+  snapshot_retention = 14
 
 [http_service]
   internal_port = 8080
@@ -39,7 +53,7 @@ kill_timeout = "30s"
     protocol = "http"
 
 [[vm]]
-  size = "shared-cpu-2x"
-  memory = "2gb"
-  cpus = 2
-  cpu_kind = "shared"
+  size = "performance-4x"
+  memory = "16gb"
+  cpus = 4
+  cpu_kind = "performance"
