@@ -1361,3 +1361,9 @@ area    = "bringup"
 symptom = "Dropping a role from the check-live host map breaks the hosts timeout case and the one-ssh-per-destination count, not only the fixture lines."
 cause   = "The hang fixture put its only hanging destination on the dropped role, and the harness counts the distinct ssh destinations of the good map."
 do      = "Move the hanging destination to a remaining single-destination role and recount the good map's destinations when a role leaves the map."
+
+[gotcha.224]
+area    = "test"
+symptom = "A sync-fleet fixture case that makes a remote step fail by removing a host file fails the harness's no-destination check."
+cause   = "The ssh stand-in rewrites shared paths under the fixture host's own directory, so the remote command's error text carries the fixture destination."
+do      = "Fail remote steps in fixtures through a stand-in switch (the systemctl or scp stand-in exiting non-zero for a listed destination) rather than a missing file."
