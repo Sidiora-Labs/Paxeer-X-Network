@@ -33,7 +33,7 @@ human_state=/data/human-state
 tls=${LAYERX_FLY_TLS_DIR:-/data/tls}
 run=/run/layerx
 status=$run/init
-genesis_files="$genesis/metadata.lxgb $keys/sequencer.key $genesis/asset-id $genesis/replica-id"
+genesis_files="$genesis/metadata.lxgb $keys/sequencer.key $genesis/asset-id $genesis/replica-id $keys/publication/binding-policy.json $keys/publication/authorization.json"
 
 # The layerx-node-config ConfigMap of the pod, and the precompile addresses of
 # its layerxd container. The network id is kernel_network_id of the spec's
