@@ -1519,3 +1519,17 @@ exit_code  = 0
 log_path   = ".logs/4.13-fix-gh-api.log"
 observed   = "gh run view job JSON carries no runner identity on the installed gh, so the canary runner assertion could not pass; corrected to the workflow-jobs REST API and pinned head_sha"
 assumption = "the Fly runner registers with a name starting fly-"
+
+[observation.4.1.6]
+task       = "4.1"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_wallet"
+observed   = "By the owner's correction the legacy wallet runs as a Docker deployment on the legacy wallet host, not on Railway, so the Railway paxport inference of the wallet endpoint and the handoff's railway link step were the wrong target; wallet_endpoint is set to wallet-api.paxeer.network and is the only source, an unset or non-host value failing as source=spec name=unset."
+assumption = "The PWA rows of [decision.public_names], ac_6 and task 3.7 stay as they are while the owner rules on PWA hosting. The legacy wallet is one standalone Docker container (frontend and proxy) with its state at a backend origin, so host_roles and do_3 are rewritten to it and retire.sh gains a container mode beside its unchanged Compose mode."
+
+[observation.4.1.7]
+task       = "4.1"
+file       = "tools/bringup/check-live.test.sh"
+symbol     = "check_live_kernel_app_*, check_live_developers_*"
+observed   = "bash tools/bringup/check-live.test.sh exited 1 at base a178501b3 plus this amendment (log .logs/build.log): every wallet case passed, and five cases of the kernel app and developers checks failed (init status=absent, developers readiness and machines), which use neither the wallet check nor the removed railway stand-in."
+assumption = "Unrelated to this amendment; recorded once and not chased here."

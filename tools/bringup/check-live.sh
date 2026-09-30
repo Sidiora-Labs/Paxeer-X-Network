@@ -133,15 +133,13 @@ bridge    runs bridge/deploy/checklist.sh for every chain under bridge/evm/chain
           (each chain's RPC variable, PAXEER_BRIDGE_PAXEER_RPC_URL,
           PAXEER_BRIDGE_GOVERNANCE_AUTHORITY) pass through the environment.
 
-wallet    finds the public wallet endpoint name: the wallet_endpoint value of
-          [decision.public_names] in spec/paxeer-x-bringup/spec.kvx when it is
-          a bare hostname, otherwise the host of NEXT_PUBLIC_PAXEER_WALLET_API
-          that railway variable list --service paxport --kv reads from the
-          Railway project linked at the checkout root. Then runs the wallet
-          gates of tools/wallet/check-live.sh and prints their check lines:
-  endpoint   "pass endpoint name=<host> source=spec|railway", or "fail
-             endpoint source=railway api=unset|unusable" when the variable is
-             missing or not an https URL, in which case cutover is skipped
+wallet    reads the public wallet endpoint name from the wallet_endpoint
+          value of [decision.public_names] in
+          spec/paxeer-x-bringup/spec.kvx, then runs the wallet gates of
+          tools/wallet/check-live.sh and prints their check lines:
+  endpoint   "pass endpoint name=<host> source=spec", or "fail endpoint
+             source=spec name=unset" when the value is unset or not a host
+             name, in which case cutover is skipped
   cutover    the served_by and readiness lines of its cutover mode with
              CHECK_LIVE_CUTOVER_HOST set to that name
   gateway    the readiness and me lines of its gateway mode with
@@ -2250,9 +2248,7 @@ check_bridge() {
 }
 
 # check_wallet: the public wallet endpoint name is the wallet_endpoint of
-# [decision.public_names] in the spec when that value is a bare hostname,
-# otherwise the host of NEXT_PUBLIC_PAXEER_WALLET_API of the wallet PWA,
-# service paxport of the Railway project linked at the checkout root. The
+# [decision.public_names] in the spec, which must be a host name. The
 # wallet feature's cutover gate reads that name, its gateway gate reads the
 # wallet gateway app of human/wallet/deploy/gateway.toml at its fly.dev name
 # with CHECK_LIVE_GATEWAY_TOKEN passed through, and the app runs started
@@ -2260,7 +2256,7 @@ check_bridge() {
 # without their summary lines, and a failing gate counts as one failure.
 check_wallet() {
 	local toml=human/wallet/deploy/gateway.toml spec=spec/paxeer-x-bringup/spec.kvx
-	local app name source api="" output status failures=0
+	local app name output status failures=0
 	local host_re='^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+(:[0-9]{1,5})?$'
 	if [ -z "${CHECK_LIVE_GATEWAY_TOKEN:-}" ]; then
 		echo "check-live: CHECK_LIVE_GATEWAY_TOKEN is required; it is the access token of a provisioned test identity of the wallet gateway" >&2
@@ -2275,41 +2271,15 @@ check_wallet() {
 		finish 1
 	fi
 
-	source=spec
 	name="$(sed -n '/^\[decision\.public_names\]$/,/^\[/s/^wallet_endpoint[[:space:]]*=[[:space:]]*"\(.*\)"[[:space:]]*$/\1/p' "$repo_root/$spec" 2>/dev/null | head -n 1)" || name=""
-	if ! grep -Eq "$host_re" <<<"$name"; then
-		source=railway
-		if ! command -v railway >/dev/null 2>&1; then
-			echo "check-live: railway is required to read NEXT_PUBLIC_PAXEER_WALLET_API while the spec names no wallet endpoint" >&2
-			exit 2
-		fi
-		api="$(cd "$repo_root" && timeout "$timeout" railway variable list --service paxport --kv 2>/dev/null | sed -n 's/^NEXT_PUBLIC_PAXEER_WALLET_API=//p' | head -n 1)" || api=""
-		name="$(python3 -c '
-import sys
-from urllib.parse import urlsplit
-
-try:
-    parts = urlsplit(sys.argv[1].strip())
-    port = parts.port
-except ValueError:
-    sys.exit(1)
-if parts.scheme != "https" or not parts.hostname:
-    sys.exit(1)
-print(parts.hostname + (":%d" % port if port else ""))
-' "$api" 2>/dev/null)" || name=""
-	fi
 	if grep -Eq "$host_re" <<<"$name"; then
-		echo "pass endpoint name=$name source=$source"
+		echo "pass endpoint name=$name source=spec"
 		status=0
 		output="$(CHECK_LIVE_CUTOVER_HOST="$name" "$repo_root/tools/wallet/check-live.sh" cutover 2>&1)" || status=$?
 		grep -Ev '^check-live: (all checks passed|[0-9]+ check\(s\) failed)$' <<<"$output" || true
 		[ "$status" -eq 0 ] || failures=$((failures + 1))
 	else
-		if [ -n "$api" ]; then
-			echo "fail endpoint source=$source api=unusable"
-		else
-			echo "fail endpoint source=$source api=unset"
-		fi
+		echo "fail endpoint source=spec name=unset"
 		failures=$((failures + 1))
 	fi
 
