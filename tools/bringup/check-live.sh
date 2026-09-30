@@ -1374,6 +1374,155 @@ print(len(ms), len([m for m in ms if m.get("state") == "started"]))
 	finish "$failures"
 }
 
+# check_paxeer_boundary: inside the machine of the kernel app of
+# human/wallet/deploy/human.toml, the layerx-paxeer-boundary processes are
+# found with their listen and node ports, the loopback socat hops to port 443
+# with the RPC name each dials, and every boundary is asked for eth_chainId and
+# eth_blockNumber over TLS verified against this host's internal CA for the
+# name localhost, at once with the sixteen public RPC names, so the ten-block
+# window is not eaten between the answers. Two boundaries must answer 0x7d
+# within ten blocks of the highest public answer, each through its own hop,
+# and the two hops must name two different serving RPC names of
+# tools/bringup/search-front.sh names, neither a validator host's. One line
+# per check, the boundaries numbered by listen port.
+check_paxeer_boundary() {
+	# shellcheck disable=SC2016
+	local script='d=$(mktemp -d)
+ca="$d/ca.pem"
+printf "%s\n" "$CA" >"$ca"
+ask() {
+	curl -sS -m "$T" --cacert "$ca" -H "content-type: application/json" -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"$2\",\"params\":[]}" "https://localhost:$1/" >"$d/$3.body" 2>/dev/null
+	echo "$?" >"$d/$3.exit"
+}
+pub() {
+	curl -sS -m "$T" -H "content-type: application/json" -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_blockNumber\",\"params\":[]}" "https://api$1.mainnet-beta.paxeer.network/" >"$d/p$1.body" 2>/dev/null
+	echo "$?" >"$d/p$1.exit"
+}
+result() {
+	sed -n "s/.*\"result\":\"\(0x[0-9a-fA-F]*\)\".*/\1/p" "$d/$1.body" 2>/dev/null | head -n 1
+}
+for p in /proc/[0-9]*; do
+	c=$(tr "\000" " " <"$p/cmdline" 2>/dev/null) || continue
+	case "$c" in
+	*/layerx-paxeer-boundary*)
+		e=$(tr "\000" "\n" <"$p/environ" 2>/dev/null) || continue
+		l=$(printf "%s\n" "$e" | sed -n "s/^LAYERX_PAXEER_BOUNDARY_LISTEN=.*:\([0-9]*\)$/\1/p")
+		u=$(printf "%s\n" "$e" | sed -n "s/^LAYERX_PAXEER_NODE_URL=http:\/\/[^/]*:\([0-9]*\).*$/\1/p")
+		echo "boundary ${l:-none} ${u:-none}"
+		;;
+	socat\ *TCP4-LISTEN:*OPENSSL:*:443,*)
+		l=$(printf "%s\n" "$c" | sed -n "s/.*TCP4-LISTEN:\([0-9]*\),.*/\1/p")
+		n=$(printf "%s\n" "$c" | sed -n "s/.*OPENSSL:\([a-z0-9.-]*\):443,.*/\1/p")
+		echo "hop ${l:-none} ${n:-none}"
+		;;
+	esac
+done | sort -u >"$d/found"
+cat "$d/found"
+for l in $(sed -n "s/^boundary \([0-9][0-9]*\) .*/\1/p" "$d/found"); do
+	ask "$l" eth_chainId "c$l" &
+	ask "$l" eth_blockNumber "h$l" &
+done
+n=1
+while [ "$n" -le 16 ]; do
+	pub "$n" &
+	n=$((n + 1))
+done
+wait
+for l in $(sed -n "s/^boundary \([0-9][0-9]*\) .*/\1/p" "$d/found"); do
+	echo "chain $l $(result "c$l") $(cat "$d/c$l.exit")"
+	echo "head $l $(result "h$l")"
+done
+n=1
+while [ "$n" -le 16 ]; do
+	echo "public $n $(result "p$n")"
+	n=$((n + 1))
+done
+rm -rf "$d"'
+	local toml=human/wallet/deploy/human.toml
+	local app reply listing serving validators top=0 n value k port node hop chain code head lag tls ok
+	local -a ports=() nodes=() hops=()
+	local failures=0
+	if ! command -v flyctl >/dev/null 2>&1; then
+		echo "check-live: flyctl is required" >&2
+		exit 2
+	fi
+	if ! app="$(fly_app "$toml")"; then
+		echo "fail paxeer-boundary toml=absent"
+		finish 1
+	fi
+	if [ ! -r "$ca_dir/ca.pem" ]; then
+		echo "fail paxeer-boundary app=$app ca=absent"
+		finish 1
+	fi
+	reply="$(fly_ssh "$app" - "sh -s" < <(printf "T=%s\nCA='%s'\n%s\n" "$(((timeout + 1) / 2))" "$(cat "$ca_dir/ca.pem")" "$script"))" || reply=""
+	if [ -z "$reply" ]; then
+		echo "fail paxeer-boundary app=$app machine=unreadable"
+		finish 1
+	fi
+	while read -r _ n value; do
+		value="$(hex_to_dec "${value:-}")"
+		if [ -n "$value" ] && [ "$value" -gt "$top" ]; then
+			top="$value"
+		fi
+	done < <(grep '^public ' <<<"$reply")
+	mapfile -t ports < <(sed -n 's/^boundary \([0-9][0-9]*\) .*/\1/p' <<<"$reply" | sort -n)
+	if [ "${#ports[@]}" -eq 2 ]; then
+		echo "pass boundaries app=$app count=2"
+	else
+		echo "fail boundaries app=$app count=${#ports[@]}"
+		failures=$((failures + 1))
+	fi
+	for k in "${!ports[@]}"; do
+		port="${ports[$k]}"
+		node="$(sed -n "s/^boundary $port \([0-9a-z]*\)$/\1/p" <<<"$reply" | head -n 1)"
+		hop="$(sed -n "s/^hop $node \([a-z0-9.-]*\)$/\1/p" <<<"$reply" | head -n 1)"
+		read -r _ _ chain code <<<"$(grep "^chain $port " <<<"$reply" | head -n 1)" || true
+		read -r _ _ head <<<"$(grep "^head $port " <<<"$reply" | head -n 1)" || true
+		if [ "${code:-none}" = 0 ]; then
+			tls=verified
+		else
+			tls="curl-${code:-none}"
+		fi
+		head="$(hex_to_dec "${head:-}")"
+		lag=none
+		ok=1
+		if [ -n "$head" ] && [ "$top" -gt 0 ]; then
+			lag=$((top - head))
+			[ "$lag" -le "$rpc_max_lag" ] || ok=0
+		else
+			ok=0
+		fi
+		[ "$tls" = verified ] && [ "${chain:-}" = 0x7d ] && [ -n "$hop" ] || ok=0
+		nodes[k]="$node"
+		hops[k]="${hop:-none}"
+		value="boundary-$((k + 1)) port=$port tls=$tls chain_id=${chain:-none} node_port=$node hop=${hop:-none} head=${head:-none} top=$top lag=$lag"
+		if [ "$ok" -eq 1 ]; then
+			echo "pass $value"
+		else
+			echo "fail $value"
+			failures=$((failures + 1))
+		fi
+	done
+	if ! listing="$("$(dirname "${BASH_SOURCE[0]}")/search-front.sh" names 2>&1)"; then
+		echo "fail hops names=unreadable $(printf '%s' "$listing" | tr '\n' ' ' | cut -c1-160)"
+		finish $((failures + 1))
+	fi
+	serving=0
+	validators=0
+	for k in "${!hops[@]}"; do
+		grep -qxF "serve ${hops[$k]}" <<<"$listing" && serving=$((serving + 1))
+		grep -qxF "validator ${hops[$k]}" <<<"$listing" && validators=$((validators + 1))
+	done
+	value="hops first=${hops[0]:-none} second=${hops[1]:-none} serving=$serving/2 validator=$validators"
+	if [ "${#hops[@]}" -eq 2 ] && [ "${hops[0]}" != "${hops[1]}" ] && [ "${nodes[0]}" != "${nodes[1]}" ] && [ "$serving" -eq 2 ] && [ "$validators" -eq 0 ]; then
+		echo "pass $value distinct=yes"
+	else
+		echo "fail $value distinct=$([ "${#hops[@]}" -eq 2 ] && [ "${hops[0]}" != "${hops[1]}" ] && [ "${nodes[0]}" != "${nodes[1]}" ] && echo yes || echo no)"
+		failures=$((failures + 1))
+	fi
+	finish "$failures"
+}
+
 # Sourced by tools/bringup/ca.sh for the Fly helpers and the CA settings: the
 # probe's own dispatch below runs only when this file is executed.
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
@@ -1391,6 +1540,7 @@ identity) ;;
 search-front) ;;
 edge) ;;
 ci) ;;
+paxeer-boundary) ;;
 *)
 	usage >&2
 	exit 2

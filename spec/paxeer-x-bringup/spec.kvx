@@ -423,7 +423,7 @@ reqs       = ["6.4"]
 
 [task.1.7]
 title      = "Run two Paxeer boundaries in the kernel machine, each fronting a different serving RPC name"
-status     = "pending"
+status     = "implemented"
 wave       = 1
 requires   = ["1.5", "0.5"]
 do_1       = "Run two Paxeer boundary processes under docker/kernel/init.sh, fronting two different serving RPC names of [decision] host_roles that the rpc-nodes subcommand shows within ten blocks of the head, never the name served from a validator host, each through its own loopback socat hop to port 443 of its name with the system CA file and the name as SNI, with LAYERX_PAXEER_CHAIN_ID 125 and TLS under the internal CA with the loopback SANs issued through tools/bringup/ca.sh; the pod's paxeer relay dials the first."

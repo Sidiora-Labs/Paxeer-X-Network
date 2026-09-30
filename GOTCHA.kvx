@@ -1253,3 +1253,27 @@ area    = "ci"
 symptom = "The runner canary dispatched while CI_LINUX_RUNNER is unset runs on a hosted runner and fails at its lld step, and the API reports an empty runner name for that job."
 cause   = "The routing expression falls back to the hosted image, which lacks ld.lld, and completed hosted jobs carry no runnerName in the jobs listing."
 do      = "Read a hosted canary failure as the variable being unset, not as a runner image fault; judge the Fly runner only from a run whose job names a fly- runner."
+
+[gotcha.206]
+area    = "spec"
+symptom = "cg spec start refuses a task with unmet requires even when it is dispatched deliberately ahead of them for its build side."
+cause   = "start enforces the requires graph and has no override for build-side work against a parallel lane."
+do      = "Set the status line to in_progress by hand, delete spec.kvx.lock, and record the refusal as an observation."
+
+[gotcha.207]
+area    = "bringup"
+symptom = "A check-live function with set -u dies with 'unbound variable' when an array declared by name only is empty."
+cause   = "local -a name declares without assigning, and bash before 5.2 treats \"${!name[@]}\" of an unset array as unbound."
+do      = "Declare arrays as local -a name=() in check-live functions."
+
+[gotcha.208]
+area    = "bringup"
+symptom = "A script piped to sh -s with data appended after it can lose the data to a cat inside the script."
+cause   = "The shell reads its script from stdin in blocks, so trailing bytes may already be consumed before cat runs."
+do      = "Embed the data in the script as a quoted variable instead of appending it to stdin."
+
+[gotcha.209]
+area    = "rpc"
+symptom = "The public RPC names answer a request whose Host header is a loopback address and port."
+cause   = "Their nginx serves by SNI and does not reject an unmatched Host header."
+do      = "A loopback socat hop to port 443 with the name as SNI needs no vhost change for a boundary that sends Host 127.0.0.1:PORT."
