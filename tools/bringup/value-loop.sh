@@ -172,7 +172,7 @@ main() {
 		answer=$(python3 -c '
 import json, sys
 receipt = json.loads(sys.argv[1]).get("result") or {}
-custody, topic, beneficiary, asset = sys.argv[2:6]
+custody, topic, asset, beneficiary = sys.argv[2:6]
 if int(receipt.get("status", "0x0"), 16) != 1:
     sys.exit("deposit transaction not successful")
 logs = [log for log in receipt.get("logs", []) if log["address"].lower() == custody

@@ -31,6 +31,13 @@ RUN make LXP_REVISION="$LXP_REVISION" layerx-archive-codec && test -x build/bin/
 RUN make LXP_REVISION="$LXP_REVISION" build/tests/bridge/sign-credit && test -x build/tests/bridge/sign-credit
 RUN cargo build --locked --release --manifest-path platform/hosted/node/tests/probe/Cargo.toml
 
+# The light credit of tools/bringup/value-loop.sh and the light profile of
+# tools/bringup/kernel-genesis.sh (task 1.6): the Go custody proof tool.
+FROM docker.io/golang:1.25.6-bookworm@sha256:2f768d462dbffbb0f0b3a5171009f162945b086f326e0b2a8fd5d29c3219ff14 AS custody-proof
+WORKDIR /src
+COPY . .
+RUN make custody-proof-build && test -x build/bin/layerx-custody-proof
+
 FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates libssl3 libsqlite3-0 openssl socat bash coreutils jq curl util-linux \
@@ -85,5 +92,6 @@ COPY --from=build --chmod=0555 /src/platform/relay_archive/install.sh /opt/layer
 # The value loop of tools/bringup/value-loop.sh (task 1.6).
 COPY --from=build /src/platform/hosted/node/tests/probe/target/release/layerx-node-probe \
      /src/build/tests/bridge/sign-credit /usr/local/bin/
+COPY --from=custody-proof /src/build/bin/layerx-custody-proof /usr/local/bin/layerx-custody-proof
 COPY --chmod=0555 docker/kernel/init.sh /usr/local/bin/kernel-init
 ENTRYPOINT ["/usr/local/bin/kernel-init"]

@@ -1487,3 +1487,11 @@ symbol     = "value_loop"
 observed   = "Build (make build/tests/bridge/sign-credit, cargo build of the node probe) exit 0 in .logs/build.log; verify_cmd exit 1 in .logs/verify.log, the machine answered and stopped on its own line: fail precondition genesis-ids /data/layerx/genesis/asset-id absent; run kernel-genesis.sh genesis (step C) first; harness exit 1 in .logs/harness.log with 2 FAIL (kernel_value_loop_passing and _one_failing): the credit step answers deposit asset or beneficiary differs."
 assumption = "value-loop.sh unpacks the receipt check's arguments as custody, topic, beneficiary, asset while it passes asset before the sender main id, so a correct deposit is refused and the one-failing case never reaches its SEND; one-attempt rule, not repaired: swap the unpacked names, then rerun the harness once."
 severity   = "blocker"
+
+[observation.1.6.8]
+task       = "1.6"
+file       = "tools/bringup/value-loop.sh, docker/kernel/Dockerfile, docker/kernel/Dockerfile.dockerignore"
+symbol     = "value_loop"
+observed   = "Repair once on 783271723: the receipt check unpacks custody, topic, asset, beneficiary in the caller's order, and the kernel image gains a custody-proof stage on the pinned golang:1.25.6-bookworm image of docker/layerx/Dockerfile running make custody-proof-build into /usr/local/bin/layerx-custody-proof, with the dockerignore opening consensus, custodyproof, sdk, storage, daemon/layerx-custody-proof, engine/deps/store, modules/evm/config and modules/layerxcustody/types; bash -n exit 0, docker buildx build --check exit 0 in .logs/1.6-repair-dockerfile-check.log, bash tools/bringup/check-live.test.sh exit 0 in .logs/1.6-repair-harness.log (131 ok, all five value-loop cases)."
+assumption = "the deploy side builds the kernel image once from the merged revision, so the Go stage is qualified by that build, not here"
+severity   = "info"
