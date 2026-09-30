@@ -1199,3 +1199,15 @@ area    = "nginx"
 symptom = "A stream server cannot send a PROXY header to the loopback HTTP listener for one SNI and raw bytes to the passthrough app for another."
 cause   = "proxy_protocol is a per-server switch and takes no variable."
 do      = "Send every connection with the PROXY header to loopback, and give the passthrough names an inner loopback stream server that accepts the header and forwards the raw TLS without it."
+
+[gotcha.197]
+area    = "nginx"
+symptom = "A Fly app behind the edge nginx hashes every client to the same split_clients bucket."
+cause   = "Fly-Client-IP is the address that reached the Fly proxy, which behind the edge is the edge host for every client; the real client arrives in the edge's X-Real-IP."
+do      = "Key split_clients on a map of $http_x_real_ip that falls back to $http_fly_client_ip when the header is absent."
+
+[gotcha.198]
+area    = "cg"
+symptom = "cg spec start on a task already marked implemented exits 1 and leaves the status unchanged."
+cause   = "start only moves pending tasks; an implemented task expects done or --force."
+do      = "For a follow-up cycle on an implemented task, set its status line to in_progress by hand and back to implemented at the end."
