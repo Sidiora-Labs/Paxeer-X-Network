@@ -1549,6 +1549,7 @@ fn real_node_authority_serves_verified_facts_and_reflects_replica_loss() {
             "batch_id",
             "network_id",
             "previous_state_root",
+            "protocol_network_id",
             "receipt",
             "resulting_state_root",
             "sequencer_public_key",
@@ -1564,6 +1565,10 @@ fn real_node_authority_serves_verified_facts_and_reflects_replica_loss() {
     assert_eq!(field(&facts, "receipt"), hex::encode(&submitted.receipt));
     assert_eq!(field(&facts, "network_id"), NETWORK_NAME);
     assert_eq!(field(&facts, "wire_version"), PROTOCOL_VERSION.to_string());
+    assert_eq!(
+        facts["protocol_network_id"],
+        serde_json::Value::from(NETWORK_ID)
+    );
     assert_eq!(
         field(&facts, "sequencer_public_key"),
         hex::encode(&cluster.sequencer_key)
