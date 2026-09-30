@@ -1670,6 +1670,75 @@ check_agent_public() {
 # probe's own dispatch below runs only when this file is executed.
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
 
+# check_kernel_app: the kernel app of human/wallet/deploy/human.toml runs
+# exactly one machine, started, with its one volume mounted at /data; the
+# init of docker/kernel/init.sh runs as root as the entrypoint; and every
+# service the init records under /run/layerx/init either runs under its uid
+# or waits on the genesis. One line per check.
+check_kernel_app() {
+	local app answer n_machines n_started n_data line kind name want state detail uid services=0 failures=0
+	if ! command -v flyctl >/dev/null 2>&1; then
+		echo "check-live: flyctl is required" >&2
+		exit 2
+	fi
+	if ! app="$(fly_app human/wallet/deploy/human.toml)"; then
+		echo "fail kernel-app toml=absent"
+		finish 1
+	fi
+	answer="$(timeout "$timeout" flyctl machines list --app "$app" --json 2>/dev/null | python3 -c '
+import json, sys
+ms = json.load(sys.stdin)
+started = [m for m in ms if m.get("state") == "started"]
+data = [x for m in started for x in (m.get("config") or {}).get("mounts") or [] if x.get("path") == "/data" and x.get("volume")]
+print(len(ms), len(started), len(data))
+' 2>/dev/null)" || answer=""
+	read -r n_machines n_started n_data <<<"${answer:-none none none}"
+	if [ "$n_machines" = 1 ] && [ "$n_started" = 1 ] && [ "$n_data" = 1 ]; then
+		echo "pass machines app=$app machines=1 started=1 volume=/data"
+	else
+		echo "fail machines app=$app machines=$n_machines started=$n_started volume-at-data=$n_data"
+		finish $((failures + 1))
+	fi
+	# shellcheck disable=SC2016 # the command expands on the machine
+	answer="$(fly_ssh "$app" - 'cd /run/layerx/init/ && p=$(cat pid) && echo init init 0 $(stat -c %u /proc/$p 2>/dev/null || echo -) $(tr "\000" " " </proc/$p/cmdline 2>/dev/null) && for f in *; do [ "$f" != pid ] || continue; read -r u s d <"$f"; a=-; [ "$s" != running ] || a=$(stat -c %u /proc/$d 2>/dev/null || echo -); echo svc "$f" $u $s $d $a; done')" || answer=""
+	if ! grep -q '^init ' <<<"$answer"; then
+		echo "fail init app=$app status=absent"
+		finish $((failures + 1))
+	fi
+	while read -r kind name want state detail; do
+		case "$kind" in
+		init)
+			if [ "$state" = 0 ] && [[ " $detail " == *kernel-init* ]]; then
+				echo "pass init app=$app uid=0 entrypoint=kernel-init"
+			else
+				echo "fail init app=$app uid=$state entrypoint=${detail%% *}"
+				failures=$((failures + 1))
+			fi
+			;;
+		svc)
+			services=$((services + 1))
+			read -r detail uid <<<"$detail"
+			if [ "$state" = running ] && [ "$uid" = "$want" ]; then
+				echo "pass service $name uid=$want state=running"
+			elif [ "$state" = waiting ] && [ "$detail" = genesis ]; then
+				echo "pass service $name uid=$want state=waiting-genesis"
+			elif [ "$state" = running ]; then
+				echo "fail service $name uid=$uid want=$want state=running"
+				failures=$((failures + 1))
+			else
+				echo "fail service $name uid=$want state=$state on=$detail"
+				failures=$((failures + 1))
+			fi
+			;;
+		esac
+	done <<<"$answer"
+	if [ "$services" -eq 0 ]; then
+		echo "fail services app=$app count=0"
+		failures=$((failures + 1))
+	fi
+	finish "$failures"
+}
+
 mode="${1:-}"
 case "$mode" in
 -h | --help)
@@ -1680,6 +1749,7 @@ hosts | rpc-nodes | archive-node | ca | hpx | explorer) ;;
 rpc-placement) ;;
 validators) ;;
 identity) ;;
+kernel-app) ;;
 search-front) ;;
 edge) ;;
 ci) ;;
