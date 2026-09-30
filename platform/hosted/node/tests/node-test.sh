@@ -23,6 +23,17 @@
 # the ABIs under precompiles/, then bootstraps the sequencer against that
 # loopback URL. LAYERX_NODE_TEST_CA_FILE names the trust store of the https
 # relay (default: the system bundle).
+#
+# The treasury's main account opens on its first credit, never at genesis:
+# tests/daemon/withdraw-custody.py --export deposits into the custody
+# precompile of an owned paxd chain for the treasury, builds the custody
+# profile the genesis is bootstrapped with and the credit the treasury signs,
+# and the test submits that credit before the operator SEND. The fixture runs
+# under BRIDGE_PYTHON (default python3), which must import the packages of
+# tests/bridge/requirements.txt, and needs forge, cast, go, cargo,
+# build/tests/bridge/sign-credit and PAXD naming the paxd of make paxeer-build
+# (an installed release paxd lacks the loopback RPC bind setting); its cargo
+# builds use platform/target.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../../../.." && pwd)
@@ -31,6 +42,7 @@ NATIVE_BIN_DIR=${LAYERX_TEST_NATIVE_BIN_DIR:-$ROOT/build/bin}
 LAYERXD="$NATIVE_BIN_DIR/layerxd"
 GENESIS_BUILD="$NATIVE_BIN_DIR/layerx-genesis-build"
 CARGO=${PLATFORM_CARGO:-cargo}
+BRIDGE_PYTHON=${BRIDGE_PYTHON:-python3}
 NETWORK_ID=${LAYERX_NODE_TEST_NETWORK_ID:-4242}
 ASSET_ID=b5a32b12029f8ddfb905f90f280f664b46390de0fc62770fc197dd87b18cd898
 PROGRAM_PORT=${LAYERX_NODE_TEST_PROGRAM_PORT:-19401}
@@ -43,6 +55,24 @@ ANCHOR_PRECOMPILE=0x0000000000000000000000000000000000001014
 
 log() { printf 'node-test: %s\n' "$*" >&2; }
 fail() { log "FAIL: $*"; exit 1; }
+
+# The kernel opens agent:<did>:main on its first credit; until then an account
+# read is refused with class 4 result -208 (LXP_ERR_UNKNOWN_ACCOUNT_NAMESPACE,
+# the absent-account code) and the DID account listing is empty, exactly what
+# the daemon's onboarding test and the core boundary assert for a fresh genesis.
+expect_treasury_unopened() {
+    BALANCE=$(as_client "$WORK/probe" balance --socket "$LAYERX_NODE_LNI_SOCKET" --network-id "$NETWORK_ID" \
+        --account "$LAYERX_NODE_TREASURY_ACCOUNT" --asset "$LAYERX_NODE_ASSET_ID")
+    log "$BALANCE"
+    expect_contains "$BALANCE" "\"account\":\"$LAYERX_NODE_TREASURY_ACCOUNT\""
+    expect_contains "$BALANCE" "\"asset\":\"$LAYERX_NODE_ASSET_ID\""
+    expect_contains "$BALANCE" '"refused":{"class":4,"result":-208}'
+    [ "$LAYERX_NODE_TREASURY_BALANCE" = 0 ] || fail "node.env treasury balance is not the genesis zero"
+    ACCOUNTS=$(as_client "$WORK/probe" did-accounts --socket "$LAYERX_NODE_LNI_SOCKET" --network-id "$NETWORK_ID" \
+        --did "$LAYERX_NODE_TREASURY_DID")
+    log "$ACCOUNTS"
+    expect_contains "$ACCOUNTS" "\"did\":\"$LAYERX_NODE_TREASURY_DID\",\"count\":0,\"accounts\":[]"
+}
 
 [ -x "$LAYERXD" ] || fail "$LAYERXD missing; run make layerxd"
 [ -x "$GENESIS_BUILD" ] || fail "$GENESIS_BUILD missing; run make layerx-genesis-build"
@@ -237,6 +267,14 @@ else
     log "no LAYERX_NODE_PAXEER_RPC_URL: the bootstrap takes the chain $PAXEER_CHAIN_ID loopback defaults"
 fi
 
+log "custody deposit for the treasury on an owned paxd chain, its custody profile and the signed first credit"
+mkdir "$WORK/custody"
+CARGO_TARGET_DIR="$ROOT/platform/target" "$BRIDGE_PYTHON" "$ROOT/tests/daemon/withdraw-custody.py" "$NATIVE_BIN_DIR/.." \
+    --export "$WORK/custody" --network-id "$NETWORK_ID" --sequencer-key "$WORK/sequencer.key" \
+    --beneficiary-key "$WORK/treasury.key" >&2 || fail "the custody credit fixture failed"
+CREDIT_AMOUNT=$(jq -r '.amount' "$WORK/custody/custody.json")
+[[ $CREDIT_AMOUNT =~ ^[1-9][0-9]*$ ]] || fail "custody deposit amount is $CREDIT_AMOUNT"
+
 log "starting the replica supervisor"
 bash "$NODE_DIR/supervisor.sh" --role replica --data-dir "$DATA" --run-dir "$RUN" \
     --layerxd "$LAYERXD" --socat "$SOCAT" > "$WORK/replica.log" 2>&1 &
@@ -250,7 +288,7 @@ bash "$NODE_DIR/supervisor.sh" --role sequencer --data-dir "$DATA" --run-dir "$R
     --lni-uid "$CLIENT_UID" --lni-gid "$CLIENT_GID" \
     --program-port "$PROGRAM_PORT" --replica-port "$REPLICA_PORT" \
     --migrations "$ROOT/migrations/0007_history_index.sql" \
-    --genesis-build "$GENESIS_BUILD" > "$WORK/sequencer.log" 2>&1 &
+    --genesis-build "$GENESIS_BUILD" --custody-profile "$WORK/custody/custody.profile" > "$WORK/sequencer.log" 2>&1 &
 SEQUENCER_PID=$!
 
 wait_for "$DATA/node.env" 60
@@ -270,6 +308,7 @@ grep -q "^$(printf '%s' "$LAYERX_NODE_TREASURY_DID" | od -An -v -tx1 | tr -d ' \
     || fail "treasury identity not registered"
 [ "$LAYERX_NODE_GENESIS_GUARANTOR_COUNT" -eq "$(jq -r '.finality_policy.certificate_threshold' "$ROOT/contracts/config/checkpoint-settlement.json")" ] || fail "genesis guarantor count mismatch"
 FIRST_MANIFEST_INODE=$(stat -c %i "$DATA/genesis/genesis.manifest")
+exec {FIRST_MANIFEST_FD}<"$DATA/genesis/genesis.manifest"
 
 log "LNI handshake as uid $CLIENT_UID"
 HANDSHAKE=$(as_client "$WORK/probe" handshake --socket "$LAYERX_NODE_LNI_SOCKET" --network-id "$NETWORK_ID")
@@ -325,12 +364,34 @@ expect_contains "$OPERATOR_STATE" "\"network_id\":$NETWORK_ID"
 expect_contains "$OPERATOR_STATE" '"global_sequence":0'
 expect_contains "$OPERATOR_STATE" '"evidence":"authenticated_node_snapshot"'
 
-log "treasury balance read"
-BALANCE=$(as_client "$WORK/probe" balance --socket "$LAYERX_NODE_LNI_SOCKET" --network-id "$NETWORK_ID" \
-    --account "$LAYERX_NODE_TREASURY_ACCOUNT" --asset "$LAYERX_NODE_ASSET_ID")
+log "treasury balance read: the main account opens on its first credit, so a fresh genesis refuses the read"
+expect_treasury_unopened
+
+log "the treasury submits its first custody credit, which opens and funds its main account"
+CREDIT=$(as_client "$WORK/layerxctl" submit --socket "$LAYERX_NODE_LNI_SOCKET" \
+    --network-id "$NETWORK_ID" --protocol-version 3 --actor "$LAYERX_NODE_TREASURY_DID" \
+    --public-key "$LAYERX_NODE_TREASURY_PUBLIC_KEY" --activity "$WORK/custody/custody.activity")
+log "$CREDIT"
+expect_contains "$CREDIT" '"state":"acknowledged"'
+CREDIT_DEADLINE=$(( $(date +%s) + 60 ))
+BALANCE=""
+while :; do
+    HANDSHAKE=$(as_client "$WORK/probe" handshake --socket "$LAYERX_NODE_LNI_SOCKET" --network-id "$NETWORK_ID")
+    case "$HANDSHAKE" in *'"latest_sealed_batch":0,'*) ;; *)
+        BALANCE=$(as_client "$WORK/probe" balance --socket "$LAYERX_NODE_LNI_SOCKET" --network-id "$NETWORK_ID" \
+            --account "$LAYERX_NODE_TREASURY_ACCOUNT" --asset "$LAYERX_NODE_ASSET_ID")
+        case "$BALANCE" in *"\"balance\":\"$CREDIT_AMOUNT\""*) break ;; esac ;;
+    esac
+    [ "$(date +%s)" -lt "$CREDIT_DEADLINE" ] || fail "the credited treasury balance never appeared: ${BALANCE:-$HANDSHAKE}"
+    sleep 0.5
+done
 log "$BALANCE"
-expect_contains "$BALANCE" "\"balance\":\"$LAYERX_NODE_TREASURY_BALANCE\""
+expect_contains "$BALANCE" "\"account\":\"$LAYERX_NODE_TREASURY_ACCOUNT\""
 expect_contains "$BALANCE" "\"asset\":\"$LAYERX_NODE_ASSET_ID\""
+ACCOUNTS=$(as_client "$WORK/probe" did-accounts --socket "$LAYERX_NODE_LNI_SOCKET" --network-id "$NETWORK_ID" \
+    --did "$LAYERX_NODE_TREASURY_DID")
+log "$ACCOUNTS"
+expect_contains "$ACCOUNTS" "\"did\":\"$LAYERX_NODE_TREASURY_DID\",\"count\":1,\"accounts\":[\"$LAYERX_NODE_TREASURY_ACCOUNT\"]"
 
 log "operator submits a real signed SEND once and preserves its idempotency key"
 chown "$CLIENT_UID:$CLIENT_GID" "$WORK/treasury.key"
@@ -345,6 +406,12 @@ ADMISSION=$(as_client "$WORK/layerxctl" submit --socket "$LAYERX_NODE_LNI_SOCKET
     --public-key "$LAYERX_NODE_TREASURY_PUBLIC_KEY" --activity "$WORK/operator/send.bin")
 expect_contains "$ADMISSION" '"state":"acknowledged"'
 expect_contains "$ADMISSION" "\"activity_id\":\"$ACTIVITY_ID\""
+SEAL_DEADLINE=$(( $(date +%s) + 60 ))
+until as_client "$WORK/layerxctl" read-state --socket "$LAYERX_NODE_LNI_SOCKET" \
+    --network-id "$NETWORK_ID" --protocol-version 3 --actor "$LAYERX_NODE_TREASURY_DID" >/dev/null 2>&1; do
+    [ "$(date +%s)" -lt "$SEAL_DEADLINE" ] || fail "the admitted SEND never sealed: the preparation read stays refused with -903 LXP_ERR_PROJECTION_STALE"
+    sleep 0.5
+done
 REPEATED_ADMISSION=$(as_client "$WORK/layerxctl" submit --socket "$LAYERX_NODE_LNI_SOCKET" \
     --network-id "$NETWORK_ID" --protocol-version 3 --actor "$LAYERX_NODE_TREASURY_DID" \
     --public-key "$LAYERX_NODE_TREASURY_PUBLIC_KEY" --activity "$WORK/operator/send.bin")
@@ -354,6 +421,9 @@ log "supervisor status"
 STATUS=$(as_client "$WORK/probe" supervisor --socket "$LAYERX_NODE_SUPERVISOR_SOCKET" --request status)
 log "$STATUS"
 expect_contains "$STATUS" '"state":"running","generation":1'
+[ "$(stat -c %s "$DATA/checkpoints/.layerxd-lni-admission.log")" -gt 32 ] || fail "generation 1 admitted nothing into its admission journal"
+FIRST_CHECKPOINTS_INODE=$(stat -c %i "$DATA/checkpoints")
+exec {FIRST_CHECKPOINTS_FD}<"$DATA/checkpoints"
 
 log "supervisor reset"
 RESET=$(as_client "$WORK/probe" supervisor --socket "$LAYERX_NODE_SUPERVISOR_SOCKET" --request reset)
@@ -365,14 +435,15 @@ set -a
 . "$DATA/node.env"
 set +a
 [ "$(stat -c %i "$DATA/genesis/genesis.manifest")" != "$FIRST_MANIFEST_INODE" ] || fail "genesis was not rebuilt by the reset"
-[ -z "$(ls -A "$DATA/checkpoints")" ] || fail "checkpoint directory was not discarded by the reset"
+exec {FIRST_MANIFEST_FD}<&-
+[ "$(stat -c %i "$DATA/checkpoints")" != "$FIRST_CHECKPOINTS_INODE" ] || fail "checkpoint directory was not discarded by the reset"
+exec {FIRST_CHECKPOINTS_FD}<&-
+[ "$(stat -c %s "$DATA/checkpoints/.layerxd-lni-admission.log")" = 32 ] || fail "generation 1 admissions survived the reset in the admission journal"
 STATUS=$(as_client "$WORK/probe" supervisor --socket "$LAYERX_NODE_SUPERVISOR_SOCKET" --request status)
 expect_contains "$STATUS" '"state":"running","generation":2'
 HANDSHAKE=$(as_client "$WORK/probe" handshake --socket "$LAYERX_NODE_LNI_SOCKET" --network-id "$NETWORK_ID")
 expect_contains "$HANDSHAKE" "\"network_id\":$NETWORK_ID"
-BALANCE=$(as_client "$WORK/probe" balance --socket "$LAYERX_NODE_LNI_SOCKET" --network-id "$NETWORK_ID" \
-    --account "$LAYERX_NODE_TREASURY_ACCOUNT" --asset "$LAYERX_NODE_ASSET_ID")
-expect_contains "$BALANCE" "\"balance\":\"$LAYERX_NODE_TREASURY_BALANCE\""
+expect_treasury_unopened
 
 log "stopping"
 kill -TERM "$SEQUENCER_PID" "$REPLICA_PID"

@@ -881,3 +881,93 @@ area    = "spec-tooling"
 symptom = "cg spec done refuses a task whose verify_cmd it just reran to exit 0 with symbol not defined in the graph, and the symbol named in the task does not exist under that type."
 cause   = "The symbols line was written from the type that owns the components, while the environment loader is a method of the configuration type, and the graph check is exact."
 do      = "Check every symbols entry against the real definition before starting the task; correct a mis-named symbol inside your own task block, record the refusal once, and set the status by hand after the genuine pass."
+
+[gotcha.144]
+area    = "kernel"
+symptom = "An LNI balance read of a freshly bootstrapped agent main account is refused with -208 LXP_ERR_UNKNOWN_ACCOUNT_NAMESPACE although the name and the derived id are canonical."
+cause   = "The daemon returns that code for any id absent from the kernel account registry; a fresh genesis holds only the three system accounts and a main account is opened by its first credit or a sponsored onboarding, never by identity registration."
+do      = "Treat -208 on a read as account-not-yet-opened before suspecting the derivation; compare the name hash on both sides only after listing the DID's accounts through the kind-3 read."
+
+[gotcha.145]
+area    = "build"
+symptom = "The node test failed at its first line on a clean build directory because build/bin/layerx-genesis-build was missing, although the same verify command had passed elsewhere."
+cause   = "platform-test-node listed only layerxctl and layerx-handover as prerequisites; a build directory that already carried the genesis builder hid the gap."
+do      = "Keep every binary node-test.sh requires in the platform-test-node prerequisite list; when a gate passes on one checkout and fails on another, diff build/bin before suspecting the code."
+
+[gotcha.146]
+area    = "kernel"
+symptom = "A signed SEND from a freshly bootstrapped treasury identity is refused at admission with class 4 result -602 FeeUnpayable, never acknowledged."
+cause   = "The sequencer resolves the fee payer through agent:<did>:main, which does not exist before its first credit, so the fee balance is zero and admission stops before sequencing."
+do      = "Fund or credit the main account before asserting an acknowledged submission; on a fresh genesis assert the typed refusal, as the core boundary test does."
+
+[gotcha.147]
+area    = "genesis"
+symptom = "The bootstrap's treasury balance option looks like a genesis allocation knob, but any non-zero value is refused and the value only lands in node.env and treasury.json."
+cause   = "The genesis manifest account record carries no name or authority key and its validation admits only the system accounts at balance zero, so the builder has nothing to allocate to."
+do      = "Treat the option as documentation of the genesis zero; fund a main account through a credit activity after genesis, or extend the manifest record, builder request, validation, materialisation and supply seed together before allowing a non-zero value."
+
+[gotcha.148]
+area    = "tooling"
+symptom = "The custody credit fixture pipeline behind the daemon onboarding tests cannot start on a box whose default python3 lacks eth_account, although forge, cast, go and paxd are all present."
+cause   = "withdraw-custody.py and the custody chain helper import eth_account and cryptography directly and the Makefile's BRIDGE_PYTHON defaults to python3 with no venv."
+do      = "Before dispatching any task that reuses the first-credit path, run python3 -c 'import eth_account, cryptography' under the BRIDGE_PYTHON the gate will use and name that interpreter in the prompt."
+
+[gotcha.149]
+area    = "tooling"
+symptom = "The custody fixture's local chain refuses to start with 'init-chain: paxd lacks the loopback RPC bind setting; rebuild the current source'."
+cause   = "The paxd on PATH is an installed release build without the loopback RPC bind setting that init-chain.sh requires."
+do      = "Make the test target depend on paxeer-build and pass PAXD naming build/paxd, as the human and agent test targets already do."
+
+[gotcha.150]
+area    = "client"
+symptom = "A probe read over the LNI fails with AuthorityRangeMismatch although the handshake, network id and sequencer key are right."
+cause   = "The client compares the signed batch header's response authorization (sequencer id, key, first and last batch) with the read context's SequencerAuthorization, which a context built as (key, key, 1, latest sealed batch) does not match; batch 0 has no header, so no read carries evidence before the first seal."
+do      = "Wait for a sealed batch, fetch its header with batch_header and build the authorization from its sequencer id and batch range in every read helper of the probe at once, since each helper builds its own context."
+
+[gotcha.151]
+area    = "tests"
+symptom = "Running withdraw-custody.py in its default mode leaves evidence files under qual-logs/set1 that git add -A would commit."
+cause   = "The script's default evidence directory is qual-logs/set1 at the repository root and no ignore rule covers it."
+do      = "Run it with --export into the test's temporary work directory, or clear qual-logs before committing."
+
+[gotcha.152]
+area    = "tests"
+symptom = "A first credit signed by sign-credit is admissible for only five minutes after it is signed."
+cause   = "sign-credit sets not_before to the signing wall clock and not_after five minutes later, and the daemon admits against its own wall clock."
+do      = "Export the credit in the same test run right before the supervisors start and submit it as soon as the node answers; never cache a signed credit across runs."
+
+[gotcha.153]
+area    = "tooling"
+symptom = "shellcheck on the node test script exits 1 on the base revision."
+cause   = "Two pre-existing SC2015 info findings (A && B || C used as if-then-else) sit in the script."
+do      = "Compare shellcheck findings on that script against the base revision before treating a non-zero exit as a regression."
+
+[gotcha.154]
+area    = "client"
+symptom = "A probe read over a raw LNI transport cannot reuse the header-derived authorization of a Client read, because Client keeps its transport private and does not expose every read."
+cause   = "Client::batch_header wraps batch::lookup on its own transport, while reads Client lacks (the DID account listing) run on a separately handshaken Uds transport."
+do      = "Build the authorization in one helper that takes the header fetch as a closure: client.batch_header for Client reads, batch::lookup on the raw transport for the others."
+
+[gotcha.155]
+area    = "kernel"
+symptom = "Right after an acknowledged submission, a repeated layerxctl submit fails before sending with state read CoreRefusal class 4 result -903 LXP_ERR_PROJECTION_STALE."
+cause   = "Preparation reads answer only when the receipt authority and the program feed have scanned through the kernel head, which holds again only once the admitted activity is sealed; -903 is the retriable pending answer."
+do      = "Wait, bounded, until a preparation read (layerxctl read-state) answers before resubmitting; treat -903 as pending, as the registry's head classifier does."
+
+[gotcha.156]
+area    = "tests"
+symptom = "An inode comparison meant to prove a reset re-created a file fails although the supervisor log shows the bootstrap re-ran with a new genesis state root."
+cause   = "The reset clears the data directory before the bootstrap writes the new file, and ext4 hands the freed inode number straight to the new file."
+do      = "Hold the old file open across the reset so its inode stays allocated; do not hard-link it, since the daemon's artifact loaders refuse a file whose link count is not one."
+
+[gotcha.157]
+area    = "tests"
+symptom = "Right after a supervisor reset the node test finds the checkpoint directory non-empty."
+cause   = "The reset replies only once the restarted sequencer is ready, and that daemon writes initialized-genesis.lxg, the prepared-batch group files, da-bodies.log, its admission log and da/ at startup."
+do      = "Do not read directory emptiness after a reset as proof of a missed discard; compare the pre-reset files' identities instead, once that assertion change is ruled."
+
+[gotcha.158]
+area    = "tests"
+symptom = "An inode comparison meant to prove a reset replaced a directory can pass or fail by chance."
+cause   = "Once the old directory is removed ext4 may reuse its inode number for the recreated directory, just as it does for files."
+do      = "Hold an fd on the old directory across the reset (exec {FD}<dir) before comparing inode numbers, then close it."

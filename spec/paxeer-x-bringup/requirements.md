@@ -2,27 +2,28 @@
 
 # Requirements
 
-Every LayerX system that the surveys found ready, blocked or incomplete is brought up on real hosts with real keys and served under a public name, and nothing that is still useful is disabled or removed. The kernel host carries the sequencer, the boundaries, the human graph, the agent daemon and the MCP server; the platform host carries the gateway at the router URL and the developer plane; the edge host fronts every name with nginx and Let's Encrypt. Work is ordered in five waves from the edge and the docs to the kernel, the boundaries, the human graph and finally everything that runs beside them. A task whose only missing piece is an owner input carries blocked_on naming that input and stays a real task with a real probe.
+Every LayerX system that the surveys found ready, blocked or incomplete is brought up with real keys and served under a public name, and nothing that is still useful is disabled or removed. What can run on Fly runs on Fly: the kernel pod with its boundaries, the human graph, agentd and MCP as one app with one machine and one volume, the router on the existing endpoint app across two regions, the wallet endpoint on the existing wallet gateway app, and the identity service, the internal services, the registry, the indexer, the developer plane, the relay archive, the interop gateway, the ramp, the gas station, the bridge relayer, the hpx registry, the search front and each of the four x-websearch attestors as its own app. Our servers keep the chain: the sixteen RPC nodes, each also serving paid search from a loopback sidecar and none on a validator host, the archive node and the private validators, which serve no public surface. Work is ordered in five waves from the tooling and the search front to the kernel, the router and the platform apps, the human graph, and finally everything that runs beside them. A task whose only missing piece is an owner input carries blocked_on naming that input and stays a real task with a real probe.
 
-## Requirement 1: Edge host serves every public name
+## Requirement 1: Every public name is served from its platform
 
-**User Story:** As a user of any Paxeer X surface, I reach it under its public name over a valid certificate and never a backend port.
+**User Story:** As a user of any Paxeer X surface, I reach it under its public name over a valid certificate, and nothing public reaches a validator.
 
 ### Acceptance Criteria
 
-1. WHEN any name of [decision.public_names] under paxeer.network is requested over HTTPS THE edge host SHALL answer with a Let's Encrypt certificate valid for that name and proxy to the backend named for it over the backend's own TLS under the internal CA.
-2. WHEN a backend port is opened from anywhere but the edge host THE backend host SHALL refuse the connection, and WHEN tools/bringup/check-live.sh edge runs THE probe SHALL report every public name and every firewalled port.
-3. WHEN a backend is not yet up THE edge host SHALL answer 502 or 503 for its name rather than refuse the TLS connection, so the name and certificate exist before the backend.
+1. WHEN a name of [decision.public_names] served by a Fly http_service is requested over HTTPS THE Fly edge SHALL answer with a certificate for that name from flyctl certs add and route to the app its toml declares; WHEN registry.paxeer.network or agent.paxeer.network is dialled on its passthrough port THE backend SHALL present its internal-CA certificate for that name; and WHEN search.paxeer.network is requested THE search front app SHALL answer under its Fly certificate and proxy over verified TLS to a serving RPC name only.
+2. WHEN the x-websearch attestor ports of a validator host are dialled from anywhere but loopback and the other validator host THE host SHALL refuse the connection, and WHEN tools/bringup/check-live.sh names runs THE probe SHALL show each Fly-served name except ramp.paxeer.network, which task 4.10 probes, search.paxeer.network included, as an explicit CNAME to its app's fly.dev name and no public name resolving to a validator host.
+3. WHEN the backend of a name served by a Fly http_service is not yet up THE Fly edge SHALL answer 502 or 503 for its name rather than refuse the TLS connection, so the name and certificate exist before the backend; a passthrough name is probed once its backend is up.
 
 ## Requirement 2: Internal CA and per-service certificates
 
-**User Story:** As an operator, every service on every host presents a certificate chained to one internal CA whose key never leaves the edge host.
+**User Story:** As an operator, every internal TLS surface on Fly presents a certificate chained to one internal CA whose key never leaves the edge host.
 
 ### Acceptance Criteria
 
 1. WHEN tools/bringup/ca.sh init runs on the edge host THE script SHALL generate the CA key and certificate under /etc/layerx/ca with mode 0600 and print nothing but the certificate fingerprint.
 2. WHEN tools/bringup/ca.sh issue <service> <host role> runs THE target host SHALL generate its own key and signing request, THE edge host SHALL sign it with the SANs the pod definition needs including localhost and the loopback address for services reached on loopback, and THE certificate SHALL land under /etc/layerx/<service>/tls without the key ever leaving the target host.
 3. WHEN tools/bringup/check-live.sh ca runs THE probe SHALL verify every issued certificate chains to the CA, carries its SANs and is at least thirty days from expiry.
+4. WHEN tools/bringup/ca.sh issue <service> runs for a service of a single-machine Fly app THE machine SHALL generate its key and signing request on its volume, THE script SHALL fetch the request through flyctl ssh console, sign it on the edge host and write the certificate back to the volume the same way; WHEN it runs for an app with several machines THE key and request SHALL be generated in a tmpfs directory on the edge host, the operator host, piped into flyctl secrets import on standard input and the directory removed; every such certificate SHALL carry the app's .internal name beside the SANs of ac_2, and no key SHALL be printed.
 
 ## Requirement 3: Docs and configs name the router URL and the real hosts
 
@@ -33,6 +34,7 @@ Every LayerX system that the surveys found ready, blocked or incomplete is broug
 1. WHEN any tracked file outside spec/ is searched for api.paxeer.network THE repository SHALL contain no match; the unified endpoint is written as https://api.mainnet-beta.router.paxeer.network everywhere.
 2. WHEN any tracked file outside spec/ is searched for a layerx.example host, a name of the form label.layerx.example, THE repository SHALL contain no match; the names of [decision.public_names] replace them. A package identifier or a file name that merely contains the words layerx and example is not a host.
 3. WHEN docs/site/docs/reference/public-rpc.md is read THE sixteen RPC endpoints SHALL be unchanged and the page SHALL link the router URL as the unified interface.
+4. WHEN tools/bringup/docs-names.sh runs THE tracked user, developer and operator docs SHALL name no *.paxeer.network host outside [decision.public_names], the sixteen RPC names and the signing origin of [decision] derivation_message, SHALL carry no FAUCET_URL, and SHALL fund accounts through the custody-credit path; the faucet, beta-control and testnet pages SHALL be marked private-network only with no public name.
 
 ## Requirement 4: Operator host map and live probe
 
@@ -40,9 +42,10 @@ Every LayerX system that the surveys found ready, blocked or incomplete is broug
 
 ### Acceptance Criteria
 
-1. WHEN BRINGUP_HOSTS_FILE is unset or lacks one of the eight role names of [decision] host_map THE probe SHALL exit 2 naming the missing role and nothing else.
+1. WHEN BRINGUP_HOSTS_FILE is unset or lacks one of the role names of [decision] host_map THE probe SHALL exit 2 naming the missing role and nothing else.
 2. WHEN tools/bringup/check-live.sh <subcommand> runs THE probe SHALL print one pass or fail line per check with the observed value and exit 0 only when every check passes.
 3. WHEN tools/bringup/check-live.test.sh runs THE test SHALL prove the usage error, one passing subcommand and one failing subcommand against local fixtures without the network.
+4. WHEN a subcommand checks a Fly app THE probe SHALL read the app's name from the app line of its toml and reach its machines through flyctl ssh console, bounded by CHECK_LIVE_TIMEOUT.
 
 ## Requirement 5: Kernel settlement on the precompiles and a bound finality verifier
 
@@ -54,25 +57,26 @@ Every LayerX system that the surveys found ready, blocked or incomplete is broug
 2. WHEN layerxd starts as the sequencer THE finality-authority verifier SHALL be bound to the anchor precompile's certificate rules and the chain's finalized head read over the loopback RPC, and the sequencer SHALL bootstrap without a fake or a stub verifier.
 3. WHEN make layerxd test-daemon-finality-authority runs THE test SHALL exercise the bound verifier against the real chain through the loopback RPC or a recorded chain fixture of it, never through anvil.
 
-## Requirement 6: Kernel node on the kernel host
+## Requirement 6: Kernel node as one Fly app
 
-**User Story:** As the network, the sequencer, its replica, the guarantor and the clock authority run under systemd on the kernel host from a genesis and a sequencer key made on that host.
+**User Story:** As the network, the sequencer, its replica, the guarantor and the clock authority run in the kernel app's one machine from a genesis and a sequencer key made inside that machine.
 
 ### Acceptance Criteria
 
 1. WHEN the bare-host bring-up of platform/hosted/node runs THE seven abort points of the readiness report SHALL be fixed: the genesis metadata is generated before the node starts, the three human providers implement probe, the Solidity deploy step is not called, the receipt-authority certificate carries the loopback SANs, the evidence provisioning journal path is set, a missing builder environment directory fails loudly, and the program lint's ABI module name matches the runtime's.
-2. WHEN tools/bringup/kernel-genesis.sh runs on the kernel host THE script SHALL build the genesis manifest with layerx-genesis-build, generate the sequencer key with the pod's signer material contract, write both under /etc/layerx/node with mode 0600, print only the genesis digest and the sequencer public key, and record that path as the custody path.
-3. WHEN the layerxd units are started THE supervisor socket SHALL report ready, the LNI socket SHALL exist, the authority replica SHALL answer its head on loopback and every process SHALL run under the clock authority.
+2. WHEN tools/bringup/kernel-genesis.sh runs inside the kernel app's machine through flyctl ssh console THE script SHALL build the genesis manifest with layerx-genesis-build, its LXGB metadata carrying one canonical Asset record for each asset of the custody precompile's asset map, SID, PAX, USDC and USDL among them, whose ids the x-websearch configs name, generate the sequencer key with the pod's signer material contract, write both under /data/layerx/node on the app's volume with mode 0600, print only the genesis digest, the sequencer public key and the asset ids, and record that path as the custody path.
+3. WHEN the kernel app's machine runs THE init SHALL run every container command of the node pod under its uid and restart one that exits, THE supervisor socket SHALL report ready, the LNI socket SHALL exist, the authority replica SHALL answer its head on loopback and every process SHALL run under the clock authority.
 4. WHEN one SEND activity is submitted with layerxctl over the LNI THE replica SHALL show the batch that carries it and THE anchor precompile SHALL show a checkpoint at or after that batch as submitted or final.
+5. WHEN the relay archive app runs its machines in both regions, each with its own volume syncing from the origin in the kernel machine, THE volume of every machine SHALL hold the kernel's genesis, snapshot and every batch up to the head verified under the sequencer public key, as the relay subcommand of task 4.6 proves on each machine with /v1/sync/head within one batch of the origin and genesis_sha256 equal to the kernel's, so the kernel's history survives the loss of its one Fly volume.
 
-## Requirement 7: Trusted boundaries on the kernel host
+## Requirement 7: Trusted boundaries in the kernel app
 
-**User Story:** As the gateway and the human graph, I reach the core boundary, the receipt authority, the agent boundary and two Paxeer boundaries over TLS on the kernel host.
+**User Story:** As the router and the human graph, I reach the core boundary, the receipt authority, the agent boundary and two Paxeer boundaries over TLS in the kernel app.
 
 ### Acceptance Criteria
 
-1. WHEN the core boundary, receipt authority and agent boundary units run THE three SHALL answer their readiness routes over TLS under the internal CA with their pod env names, the receipt authority bound to the replica on loopback and the identity binding socket, and the agent boundary bound to the LNI socket.
-2. WHEN the two Paxeer boundary units run THE first SHALL relay to the loopback node and the second to one of the sixteen public RPC names, both with LAYERX_PAXEER_CHAIN_ID 125, so a reader requiring agreement of two has two sources.
+1. WHEN the core boundary, receipt authority and agent boundary run in the kernel machine THE three SHALL answer their readiness routes over TLS under the internal CA at the kernel app's .internal name with their pod env names, the receipt authority bound to the replica on loopback and the identity binding socket, the agent boundary bound to the LNI socket, and no public service of the app SHALL reach them.
+2. WHEN the two Paxeer boundaries run in the kernel machine THE two SHALL relay to two different serving RPC names that follow the head, each through its own loopback hop with LAYERX_PAXEER_CHAIN_ID 125, the pod's paxeer relay SHALL dial the first, and a reader requiring agreement of two SHALL have two sources.
 
 ## Requirement 8: Gateway at the router URL
 
@@ -80,21 +84,22 @@ Every LayerX system that the surveys found ready, blocked or incomplete is broug
 
 ### Acceptance Criteria
 
-1. WHEN the gateway and Redis units run on the platform host THE gateway SHALL be in kernel mode with core_agent_boundary, independent_receipt_authority and program_registry configured and its readiness SHALL report every backend up.
-2. WHEN tools/bringup/check-live.sh router runs THE probe SHALL see eth_chainId 0x7d, px_getNetwork with kernel.available true and lx_getAccount answering a read for a bound account, all through the edge.
-3. WHEN the router passes its probe THE Fly shared endpoint SHALL be cut over: the wallet gateway and the PWA point at the router URL, the Fly app is stopped and not deleted, and tools/bringup/check-live.sh router-cutover confirms the router answers where the endpoint did.
+1. WHEN the existing endpoint app runs the gateway THE gateway SHALL be in kernel mode with core_agent_boundary and independent_receipt_authority at the kernel app's .internal name over mTLS, its Redis the existing Redis app, its Paxeer RPC at least two serving RPC names tried in order, on at least two machines in two regions, and its readiness SHALL report every configured backend up.
+2. WHEN tools/bringup/check-live.sh router runs THE probe SHALL see eth_chainId 0x7d, px_getNetwork with kernel.available true and lx_getAccount answering a read for a bound account, all through the router URL.
+3. WHEN the router passes its probe THE wallet gateway's RPC_URLS SHALL name the router URL first followed by serving RPC names, the wallet PWA SHALL name the router URL as its RPC endpoint and the wallet gateway's readiness SHALL report its rpc pool up.
+4. WHEN LAYERX_GATEWAY_PAXEER_RPC_URLS names two to eight https URLs and the first fails at transport or answers other than 200 THE gateway SHALL answer from the next, and its Paxeer status SHALL report up while any one answers.
 
-## Requirement 9: Identity, internal services and program registry on the platform host
+## Requirement 9: Identity, internal services and program registry on Fly
 
-**User Story:** As the developer plane, I dial the identity service, the internal kms with its four event sources and the program registry on real names.
+**User Story:** As the developer plane, I dial the identity service and the internal kms with its four event sources on the private network and the program registry at its name.
 
 ### Acceptance Criteria
 
-1. WHEN the identity unit runs THE service SHALL answer readiness at identity.paxeer.network through the edge with its pod env names and its key material generated on the platform host.
-2. WHEN the internal kms and the journeys, payments, approvals and programs event source units run THE five SHALL answer readiness over mandatory mTLS under the internal CA on the platform host, reachable only from that host and the edge.
-3. WHEN the program registry unit and its builder rootfs run THE registry SHALL answer /healthz over mTLS at registry.paxeer.network, the builder environment directory SHALL exist from builder-environment/build-env.sh, and one reference program deploy SHALL return a sequencer-signed receipt with result code 0.
+1. WHEN the identity app runs on one machine with a volume THE service SHALL answer readiness over TLS under the internal CA at its app's .internal name with its pod env names and its key material generated inside the machine, and the app SHALL hold no public IP.
+2. WHEN the internal kms and the journeys, payments, approvals and programs event sources run as one Fly app with one process group each, every group one machine with its own volume, beside the internal Redis app THE five SHALL answer readiness over mandatory mTLS under the internal CA at their <group>.process.<app>.internal names on the private network only.
+3. WHEN the program registry app and its builder rootfs run on one machine with a volume THE registry SHALL answer /healthz over mTLS at registry.paxeer.network through its TCP passthrough, the builder environment directory SHALL exist from builder-environment/build-env.sh, one reference program deploy SHALL return a sequencer-signed receipt with result code 0, and the router SHALL name the registry app's .internal name as program_registry and report it up in its readiness.
 
-## Requirement 10: Human graph on the kernel host for the wallet identity
+## Requirement 10: Human graph in the kernel app for the wallet identity
 
 **User Story:** As a wallet user signed in with the Supabase identity, the human service admits my assertion, resolves my principal and signs through the five attestors.
 
@@ -103,19 +108,20 @@ Every LayerX system that the surveys found ready, blocked or incomplete is broug
 1. WHEN the identity provider receives LXIP operation 4 with an assertion THE provider SHALL verify it against the configured JWKS and return the principal and did:layerx identity, and THE provider's serve command SHALL wire the assertion configuration at startup.
 2. WHEN a wallet-facing operation arrives with an Authorization bearer from a listed origin THE human service SHALL admit the assertion through operation 4, keep the passkey cookie path unchanged, and pass the same assertion to admit_assertion for attestor signing.
 3. WHEN LAYERX_HUMAN_ATTESTOR_NODES is set THE components loader SHALL accept an absent LAYERX_HUMAN_KMS group, use the five attestors at protocol 3 with threshold three, and refuse to start only when neither custody backend is complete.
-4. WHEN the identity, security, movement, components, service and onboarding units run on the kernel host under their uids THE service SHALL answer /livez and /readyz ready at human.paxeer.network through the edge, admitting https://paxportwallet.com.
+4. WHEN the identity, security, movement, components, service and onboarding processes run in the kernel machine under their uids THE service SHALL answer /livez and /readyz ready at human.paxeer.network through the Fly edge, admitting https://paxportwallet.com as its web origin and its passkey relying party id paxportwallet.com, and a second service process SHALL serve the event sources over TLS under the internal CA on the private network.
 5. WHEN every HTTP route the wallet SDK calls is compared with the routes the human service serves THE service SHALL serve each one with the schema the SDK expects.
-6. WHEN the wallet PWA on Railway carries NEXT_PUBLIC_PAXEER_HUMAN_API=https://human.paxeer.network THE check-live human-session gate of the wallet feature SHALL pass against that name, and the Fly human service SHALL then be stopped and not deleted.
+6. WHEN the wallet PWA on Railway carries NEXT_PUBLIC_PAXEER_HUMAN_API=https://human.paxeer.network THE check-live human-session gate of the wallet feature SHALL pass against that name.
 
 ## Requirement 11: Agent daemon and MCP live
 
-**User Story:** As a model client, I open an MCP session whose every call goes through a live agentd on the kernel host.
+**User Story:** As a model client, I open an MCP session whose every call goes through a live agentd in the kernel app.
 
 ### Acceptance Criteria
 
-1. WHEN the agentd unit runs in human-owner mode on the kernel host THE daemon SHALL answer /healthz ready with the program bearer after its LNI handshake and authority read, and THE agentd boundary SHALL publish it over mTLS at agent.paxeer.network.
-2. WHEN tools/bringup/mcp-enrol.sh runs on the kernel host THE script SHALL enrol one session and capability through the daemon and write the binding document with two owner-only secret files, and THE layerx-mcp unit SHALL serve the peer-admitted socket.
+1. WHEN agentd runs in full mode in the kernel machine as one daemon THE daemon SHALL serve its human-owner listener, its program listener and its MCP binding, SHALL answer /healthz ready with the program bearer after its LNI handshake and authority read, and THE agentd boundary SHALL publish the program listener over mTLS at agent.paxeer.network port 9454 through a TCP passthrough.
+2. WHEN tools/bringup/mcp-enrol.sh runs inside the kernel machine THE script SHALL enrol one session and capability through the full-mode daemon and write the binding document with two owner-only secret files under the daemon's MCP binding root on the volume, and THE layerx-mcp process SHALL serve the peer-admitted socket.
 3. WHEN an admitted client runs layerx mcp serve with the binding THE tools/list answer SHALL contain the read tools and the web tools.
+4. WHEN an SDK posts the agent-plane envelope of an operation of the operation catalogue to the daemon's program listener THE daemon SHALL authorize it under tenant control for that operation and surface, run it through the same handler its read or program route runs, and answer the request_id, value and verification_status envelope the router's agent routes answer; the JVM SDK SHALL name that listener at agent.paxeer.network as its agent endpoint.
 
 ## Requirement 12: Wallet move completed
 
@@ -123,16 +129,17 @@ Every LayerX system that the surveys found ready, blocked or incomplete is broug
 
 ### Acceptance Criteria
 
-1. WHEN the pre-approved move runbook steps 00 to 11 have run THE wallet endpoint SHALL answer through the new gateway with the x-served-by header and readiness true, as tools/wallet/check-live.sh cutover checks.
+1. WHEN steps 1 to 9 of human/wallet/docs/cutover.md have run, the public wallet endpoint name is served by the wallet gateway app under its Fly certificate in place of step 10's endpoint proxy, and steps 11 to 13 have made the old database role read-only, sealed the old master key and retired the old wallet service THE wallet endpoint SHALL answer through the new gateway with the x-served-by header and readiness true, as tools/wallet/check-live.sh cutover checks.
 
-## Requirement 13: Paid web search on the validator sidecars
+## Requirement 13: Paid web search on the RPC nodes and attestation from the Fly attestor apps
 
-**User Story:** As an agent, I pay 402LXP for a search and the sidecar settles through the router.
+**User Story:** As an agent, I pay 402LXP for a search on any serving RPC name and the sidecar settles through the router; as the network, the four attestor apps fulfil fetch requests on chain.
 
 ### Acceptance Criteria
 
-1. WHEN the four sidecar configs are re-rendered THE gateway.endpoint SHALL be the router URL's /rpc, the sequencer id and public key SHALL be the kernel host's real ones, the four asset ids SHALL be the kernel-registered ids, and the units SHALL restart with /health ok.
-2. WHEN one /search is paid with a PAYMENT-SIGNATURE THE sidecar SHALL answer 200 through search.paxeer.network, and WHEN the submitters are funded and one fetch request is sent to the xweb precompile THE loop SHALL end in XWebFulfilled.
+1. WHEN the serving sidecar config is rendered on the host of a serving RPC name THE sidecar SHALL listen on loopback only with gateway.endpoint the router URL's /rpc, the kernel's sequencer id and public key, the kernel-registered asset ids and a receiver key generated on that host, and THE host's apiN vhost SHALL route /search, /fetch, /content/ and /xweb/health to it.
+2. WHEN one /search is paid with a PAYMENT-SIGNATURE THE sidecar SHALL answer 200 on a serving RPC name, the redundant path a client uses directly, and through search.paxeer.network, whose search front keeps the 402 answer and the paid retry on one node.
+3. WHEN the four attestor configs are rendered for the four private Fly attestor apps with the router, the real sequencer, the kernel block and their peers reached through loopback hops, the attestor receiver DIDs are registered and funded on the kernel, the submitters are funded and one fetch request is sent to the xweb precompile THE loop SHALL end in XWebFulfilled, and no validator host SHALL run an x-websearch process or listen on the attestor ports.
 
 ## Requirement 14: Explorer fork in production over the archive host
 
@@ -141,8 +148,8 @@ Every LayerX system that the surveys found ready, blocked or incomplete is broug
 ### Acceptance Criteria
 
 1. WHEN the archive host's node runs with min-retain-blocks 0 THE node SHALL answer eth_getBlockByNumber for a block below the first pruned height of the public nodes and follow the head.
-2. WHEN the deployed explorer backend reads the archive host's public RPC name as its primary endpoint THE frontend SHALL answer 200 at paxscan.io, the backend's /api/health and /api/v2/stats SHALL answer 200, and PAXEER_X_CAPABILITIES_ENABLED SHALL be true with /api/v2/paxeer-x/capabilities answering 200.
-3. WHEN the history copy job has run THE block count from the first indexed block SHALL match the legacy source.
+2. WHEN the deployed explorer backend reads the archive host's public RPC name as its HTTP, WebSocket, trace and eth_call endpoint and the frontend names it as its network RPC URL THE frontend SHALL answer 200 at paxscan.io and the backend's /api/health and /api/v2/stats SHALL answer 200.
+3. WHEN the history copy job has run from the legacy source and, above its ceiling, from the read-only copy source up to the archive node's first retained block, and FIRST_BLOCK and TRACE_FIRST_BLOCK sit at that block THE block count from the first copied block SHALL match the sources and the backend's missing block ranges SHALL lie only inside the ranges recorded as lost in the source.
 
 ## Requirement 15: Developer plane
 
@@ -150,7 +157,7 @@ Every LayerX system that the surveys found ready, blocked or incomplete is broug
 
 ### Acceptance Criteria
 
-1. WHEN the webhooks, dashboard API and dashboard web units run on the platform host THE three SHALL answer readiness at webhooks.paxeer.network, api.developers.paxeer.network and developers.paxeer.network through the edge, dialing identity, the internal event sources and the gateway Redis.
+1. WHEN the webhooks, dashboard API and dashboard web apps run on Fly on at least two machines in two regions each THE three SHALL answer readiness at webhooks.paxeer.network, api.developers.paxeer.network and developers.paxeer.network through the Fly edge, dialing identity, the internal event sources, the internal Redis and the router's Redis over the private network, and the event producers of the router, the registry and the human service SHALL deliver to the webhooks ingress.
 
 ## Requirement 16: Relay archive, interop gateway, mirrors and ramp
 
@@ -158,11 +165,11 @@ Every LayerX system that the surveys found ready, blocked or incomplete is broug
 
 ### Acceptance Criteria
 
-1. WHEN the relay archive unit runs on the platform host with the kernel's pins and the sequencer-colocated origin THE service SHALL answer /readyz and /v1/sync/head at archive.paxeer.network and forward one signed activity to the router with the router's verdict.
-2. WHEN the interop gateway unit runs with a config rendered by render.py --check THE service SHALL answer /readyz at interop.paxeer.network and complete one x402 exact-scheme exchange.
+1. WHEN the relay archive app runs on several machines in two regions, each with its own volume, with the kernel's pins and the origin in the kernel machine THE service SHALL answer /readyz and /v1/sync/head at archive.paxeer.network and forward one signed activity to the router with the router's verdict.
+2. WHEN the interop gateway app runs on several machines with a config rendered by render.py --check THE service SHALL answer /readyz at interop.paxeer.network and complete one x402 exact-scheme exchange.
 3. WHEN the AP2 keys, Visa TAP identities and fiat provider credentials are supplied THE rendered config SHALL enable those adapters and their conformance legs SHALL pass against the deployed host.
-4. WHEN the mirror chain inputs are supplied THE archive contract and program SHALL be deployed, the signer and publisher units SHALL run beside the node, and layerx-mirror-verify SHALL verify one receipt from the mirror alone.
-5. WHEN the ramp's provider, compliance, KMS and custody-owner coordinates are supplied THE reference ramp unit SHALL answer /readyz at ramp.paxeer.network and the sandbox journey SHALL record done.
+4. WHEN the mirror chain inputs are supplied THE archive contract and program SHALL be deployed, the signer and publisher SHALL run in the kernel machine, and layerx-mirror-verify SHALL verify one receipt from the mirror alone.
+5. WHEN the ramp's provider, compliance, KMS and custody-owner coordinates are supplied THE reference ramp app SHALL answer /readyz at ramp.paxeer.network and the sandbox journey SHALL record done.
 
 ## Requirement 17: Gas station and bridge relayer
 
@@ -170,8 +177,8 @@ Every LayerX system that the surveys found ready, blocked or incomplete is broug
 
 ### Acceptance Criteria
 
-1. WHEN the gas station unit runs on the platform host with the sponsor account THE station SHALL answer readiness at gas.paxeer.network and complete one sponsored batch at the owner-set rate.
-2. WHEN the bridge inputs are supplied THE vaults and program SHALL be deployed, the governance proposals SHALL open each chain, the checklist SHALL read every chain back, and the relayer unit with its remote signer SHALL journal one observed deposit as bridgeIn.
+1. WHEN the gas station app runs on one machine with the sponsor account THE station SHALL answer POST /quote at gas.paxeer.network and complete one sponsored batch through /submit at the owner-set rate.
+2. WHEN the bridge inputs are supplied THE vaults and program SHALL be deployed, the governance proposals SHALL open each chain, the checklist SHALL read every chain back, and the relayer app with its remote signer in the same machine SHALL journal one observed deposit as bridgeIn.
 
 ## Requirement 18: CI runners, hpx registry and the public RPC fleet
 
@@ -182,4 +189,24 @@ Every LayerX system that the surveys found ready, blocked or incomplete is broug
 1. WHEN the controller's GitHub token is supplied THE runner image and controller SHALL be deployed, CI_LINUX_RUNNER SHALL be fly-linux and the canary SHALL run on a fly- runner.
 2. WHEN publish.sh and hosting/deploy.sh have run on the serving host THE registry SHALL answer /healthz at node.hyperpaxeer.com with the chain id and the source revision, and a clean install SHALL state-sync.
 3. WHEN tools/bringup/check-live.sh rpc-nodes runs THE sixteen public RPC names SHALL each answer eth_blockNumber within ten blocks of the highest answer and none SHALL be frozen or crash-looping.
+4. WHEN the hpx registry runs as a Fly app on one machine with its artifacts and node directory on one volume THE registry SHALL answer /healthz, the landing page and the checksummed release artifacts at node.hyperpaxeer.com under a Fly certificate, take the client address for its rate limit and node directory from Fly-Client-IP, and the hpx host SHALL no longer serve the name.
+
+## Requirement 19: Plain listeners behind the Fly edge
+
+**User Story:** As an operator, every TLS-only service that serves a public name from Fly can run a plain listener behind the Fly certificate, as the gateway and the human service already do.
+
+### Acceptance Criteria
+
+1. WHEN LAYERX_DASHBOARD_LISTENER, LAYERX_WEBHOOKS_LISTENER or LAYERX_INTEROP_LISTENER is plain, or the reference ramp's or the relay archive's config sets its listener to plain, THE service SHALL serve plain HTTP on its listen address and refuse to start when its TLS certificate or key is also set, as listener_config of platform/hosted/gateway does.
+2. WHEN the listener is unset or tls THE service SHALL keep today's TLS listener unchanged.
+3. WHEN make platform-test-plain-listeners runs THE tests SHALL prove both modes and the refusal for each of the five services through their real listeners.
+
+## Requirement 20: Indexer behind the router's history methods
+
+**User Story:** As a wallet or explorer client, lx_getHistory, px_getHistory and px_getUnifiedHistory at the router URL answer from a live indexer.
+
+### Acceptance Criteria
+
+1. WHEN the indexer app runs on one Fly machine with its SQLite database on a volume, its TLS listener under the internal CA at its app's .internal name on [::] and no public IP THE indexer SHALL read EVM and CometBFT data from the archive node's public RPC name, hold the history from the archive node's first retained block up to its cutover height through a backfill from the explorer database verified block by block against the archive node, follow live from the cutover and read the relay archive; history below the archive node's first retained block stays served by the explorer database copy of task 4.4.
+2. WHEN LAYERX_GATEWAY_INDEXER_URL names the indexer's .internal name on the router THE router's history methods SHALL answer from the indexer, as tools/bringup/check-live.sh indexer checks through the router URL.
 

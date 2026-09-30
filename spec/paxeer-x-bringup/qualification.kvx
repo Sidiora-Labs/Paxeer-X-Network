@@ -285,3 +285,67 @@ command   = "CARGO_TARGET_DIR=/root/lx-target/human LAYERX_RUNTIME_CLOCK_BIN=/ro
 exit_code = 0
 log_path  = ".logs/verify.log"
 observed  = "Both wallet identity tests passed with no LAYERX_HUMAN_KMS_ variable in the environment after one build repair; the components loader accepted the attestor group without the KMS group at protocol 3 and refused with the KMS group named once the attestor nodes were unset."
+
+[observation.1.8.1]
+task = "1.8"
+file = "cmd/layerxd/lxp_daemon_lni_account.h"
+symbol = "latest_account_evidence"
+observed = "The -208 on the treasury balance read is the daemon's absent-account code, not a namespace byte: the probe's account_id_for_protocol and the ledger's lx_account_id_from_string both hash LX:ACCOUNT:v1 || u32 length || name and both accept agent:<did>:main, and the one-secret commit changed only the probe's Cargo.lock; the account is refused because a fresh genesis registers only the three system accounts (lxp_genesis validate, lxp_genesis_fresh_empty_accounts), bootstrap registers the treasury as an identity only, and a main account is opened only by a sponsored onboarding activity, a bridge credit or a SEND from a funded account, none of which exists on a fresh network."
+assumption = "The kernel's own onboarding test asserts -208 for an unopened main account and the core boundary tests assert a fresh genesis carries no treasury account, so the node test's balance-zero assertion contradicts the kernel by design; both are left intact as written, no code was changed and the recorded gate was not rerun (log /root/lx-lanes/bringup-1.1/.logs/verify.log, make exit 2); an owner ruling is needed on which is authoritative: genesis admits the treasury's zero-balance main account (validate, genesis-build and bootstrap manifest change, every fresh state root moves), or the node test reads the treasury through the typed refusal and the DID account listing like the core does."
+severity = "blocker"
+
+[observation.1.8.2]
+task = "1.8"
+file = "platform/Makefile.inc"
+symbol = "platform-test-node"
+observed = "The first verify run on a clean build directory failed before the node test started: node-test.sh requires build/bin/layerx-genesis-build and the platform-test-node prerequisites built only layerxctl and layerx-handover (log .logs/verify-cycle1.log, make exit 2)."
+assumption = "Pre-existing gap between the declared verify_cmd and the node test's prerequisites, the same class as observation 1.1.7 and hidden earlier by a build directory that already carried the binary; repaired as cycle one by adding layerx-genesis-build to the platform-test-node prerequisites the way layerx-handover was added."
+severity = "assumption"
+
+[observation.1.8.3]
+task = "1.8"
+file = "platform/hosted/node/tests/node-test.sh"
+symbol = "expect_treasury_unopened"
+observed = "The second verify run (cycle two, lag-zero public RPC name) passed the precompile settlement case, both supervisors, the LNI handshake, the seed check, the settlement inputs, the operator state read and the corrected treasury steps, which observed the typed refusal class 4 result -208 and an empty DID account listing for the treasury; it then failed in the untouched next step, the operator SEND, whose layerxctl submission was refused with class 4 result -602 FeeUnpayable instead of the asserted acknowledged state (log .logs/verify.log, make exit 2)."
+assumption = "The same design rule that refuses the balance read refuses the send: an unopened, unfunded treasury main account cannot pay the fee, and the core boundary test asserts that an unfunded treasury send is refused, not completed; the step's acknowledged assertion came from the same handoff that never passed against a real layerxd, so extending the ruling to it (expect the typed refusal -602 and keep the idempotent repeat check) needs the feature manager's word before the assertion changes; no second repair was made, the task stays in_progress and task 1.1 stays implemented."
+severity = "blocker"
+
+[observation.1.8.4]
+task = "1.8"
+file = "src/protocol/lxp_genesis.c"
+symbol = "materialize_account"
+observed = "Tracing the treasury balance knob: bootstrap.sh refuses a non-zero --treasury-balance before building the request, the LXGB v2 request it hand-encodes has no allocation field, the genesis builder fills accounts only through lxp_genesis_fresh_empty_accounts, the manifest account record holds account id, asset id, balance, locked, subaccount kind and parent id but no name or authority key, validate rejects any non-system kind or non-zero balance, materialize_account names accounts only through fresh_system_name, and genesis seeds custody-issued at zero which lxp_ctx bridge credit reconciles against the sum of every account of the asset (LXP_FATAL_SUPPLY_MISMATCH)."
+assumption = "There is no balance-written-but-account-unopened gap to complete; the kernel has no genesis allocation path at all, and adding one changes the shared manifest format, its hash, the builder request, bootstrap's request and length check, validate, materialize_account and the supply seed, which exceeds one bounded cycle and touches the production manifest format; no code was changed in this cycle, the funded assertions were not restored because they would reinstate a failing step, the gate was not rerun, the task record states the intended shape, the task stays in_progress and task 1.1 implemented."
+severity = "blocker"
+
+[observation.1.8.5]
+task = "1.8"
+file = "tests/daemon/withdraw-custody.py"
+symbol = "main"
+observed = "The first-credit path the kernel tests is one monolithic main: forge builds of the custody contracts, a cargo build of layerx-paxeer-boundary, a Go build of layerx-custody-proof, a local paxd chain with a custody genesis, a real deposit transaction through cast, two TLS boundary relays with a disposable identity, custody_credit.py profile and attest, sign-credit, then program-admission.sh with the local chain as the settlement environment; on this box the default BRIDGE_PYTHON lacks eth_account (python3 -c 'import eth_account' exits with ModuleNotFoundError, no other interpreter carries it), the sign-credit and custody-proof binaries are not built and are not prerequisites of platform-test-node, and the script requires CARGO_TARGET_DIR while the layerxctl target needs it unset."
+assumption = "Reusing that code needs an export mode in withdraw-custody.py plus node-test.sh, supervisor trailing-argument and Makefile prerequisite changes, and the gate cannot run here until eth_account is available to BRIDGE_PYTHON, which is a dependency install outside this worker's authority; no code was written in this cycle so that no half-built test enters the lane, the task record states the ruled shape, the gate was not rerun, the task stays in_progress and task 1.1 implemented."
+severity = "blocker"
+
+[observation.1.8.6]
+revision   = "3061e88fe427dc378faa0d5a2fb21a4f9f9d5574 plus the uncommitted change committed with this entry"
+command    = "timeout 30m make layerxd platform-test-node"
+exit_code  = 2
+log_path   = ".logs/verify.log"
+observed   = "After both repair cycles the run built every prerequisite, exported the treasury's custody deposit and signed first credit from a real deposit on an owned paxd chain, saw the unopened refusal class 4 result -208 and the empty DID listing, had the credit acknowledged and read the credited balance 1000000 at StateProven, then failed at the DID account listing with 'layerx-node-probe: did account listing failed: AuthorityRangeMismatch'."
+assumption = "The probe's did_accounts still binds its read context to (key, key, 1, latest sealed batch) instead of the sealed batch header's signing terms that balance now takes, so giving it the same header-derived authorization is the remaining task-scoped repair, not made because both repair cycles were spent; the task stays in_progress."
+
+[observation.1.8.7]
+revision   = "40dc909795ed150cb7b07d6d1384e7d031bc73f8 plus the uncommitted change committed with this entry"
+command    = "timeout 30m make layerxd platform-test-node"
+exit_code  = 2
+log_path   = ".logs/verify.log"
+observed   = "With the balance read and the DID listing sharing the probe's sealed-header authorization, the listing names the credited main account, the operator SEND is acknowledged and its repeat, issued once the SEND has sealed and the preparation read stops answering -903, keeps its identity, supervisor status and reset pass and the genesis inode check passes once the first manifest's inode is held open; the run then fails at 'checkpoint directory was not discarded by the reset' because the restarted daemon has already written initialized-genesis.lxg, both prepared-batch group files, da-bodies.log, its admission log and da/ into the fresh checkpoint directory."
+assumption = "The emptiness assertion contradicts the daemon's own startup writes, since the reset replies only after the restarted sequencer is ready; both are left intact as written, both repair cycles are spent, and a ruling is needed on what proves the discard (for example that the pre-reset batch and admission files were replaced), so the task stays in_progress."
+
+[gate.1.8.1]
+task      = "1.8"
+revision  = "0f373faf16061c77863fbbcd87bcf6821592fcf3 plus the change committed with this entry"
+command   = "timeout 30m make layerxd platform-test-node"
+exit_code = 0
+log_path  = ".logs/verify.log"
+observed  = "Per the ruling the checkpoint-emptiness proxy after the reset is replaced by proof that the checkpoint directory object was replaced and that the admission journal, which held generation-1 admissions, is back to its 32-byte superblock; the node test passes the custody credit, DID listing, SEND, reset and generation-2 checks at the first run."
