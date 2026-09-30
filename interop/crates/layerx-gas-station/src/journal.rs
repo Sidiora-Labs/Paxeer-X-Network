@@ -142,6 +142,34 @@ pub enum Entry {
         hash: Word,
         block_number: u64,
     },
+    RatePublished {
+        publication: Publication,
+    },
+    RateSettled {
+        hash: Word,
+        settlement: Settlement,
+    },
+}
+/// One setRate transaction of the rate publisher, journalled before it is
+/// broadcast: the owner's nonce, the transaction hash, the published rate in
+/// SID base units per whole PAX, the gas limit it may spend and the chain time
+/// it was signed at.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Publication {
+    pub owner: Address,
+    pub nonce: u64,
+    pub hash: Word,
+    pub rate: Word,
+    pub gas_limit: u64,
+    pub signed_at: u64,
+}
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Settlement {
+    pub block_number: u64,
+    pub gas_used: u64,
+    pub succeeded: bool,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Item {
@@ -154,8 +182,20 @@ pub struct Item {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct State {
     pub items: BTreeMap<Key, Item>,
+    pub publications: BTreeMap<Word, (Publication, Option<Settlement>)>,
 }
 impl State {
+    /// The gas the rate publisher spent or reserved on the chain day `day`
+    /// (chain time divided by 86400): the gas used of each settled
+    /// publication and the gas limit of each unsettled one.
+    #[must_use]
+    pub fn publication_gas(&self, day: u64) -> u128 {
+        self.publications
+            .values()
+            .filter(|(p, _)| p.signed_at / 86_400 == day)
+            .map(|(p, s)| u128::from(s.map_or(p.gas_limit, |s| s.gas_used)))
+            .sum()
+    }
     /// Whether a live submission or replacement of `sponsor` holds `nonce`.
     #[must_use]
     pub fn holds(&self, sponsor: Address, nonce: u64) -> bool {
@@ -288,6 +328,29 @@ impl State {
                     hash: *hash,
                     block_number: *block_number,
                 });
+            }
+            Entry::RatePublished { publication } => {
+                if publication.hash == [0; 32]
+                    || publication.rate == [0; 32]
+                    || publication.gas_limit == 0
+                {
+                    return Err(JournalError::Corrupt);
+                }
+                if self.publications.contains_key(&publication.hash) {
+                    return Err(JournalError::Conflict);
+                }
+                self.publications
+                    .insert(publication.hash, (*publication, None));
+            }
+            Entry::RateSettled { hash, settlement } => {
+                let (publication, settled) = self
+                    .publications
+                    .get_mut(hash)
+                    .ok_or(JournalError::Conflict)?;
+                if settled.is_some() || settlement.gas_used > publication.gas_limit {
+                    return Err(JournalError::Conflict);
+                }
+                *settled = Some(*settlement);
             }
         }
         Ok(())

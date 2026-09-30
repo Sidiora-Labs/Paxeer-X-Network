@@ -1493,3 +1493,15 @@ area    = "bringup"
 symptom = "Probe cases that find a stand-in process by executable name under /proc pass alone and fail when several copies of check-live.test.sh run at once."
 cause   = "Each copy starts its own layerx-event-source or agentd stand-in, and every copy's /proc scan sees the other copies' processes with their environment."
 do      = "Run the harness alone before reading those cases, or give a new stand-in an executable name no other case uses; a flyctl machine run one-off also skips fly.toml [env], so pass the static env with --env from the toml."
+
+[gotcha.246]
+area    = "fly"
+symptom = "A second [processes] entry in fly.toml meant to run beside a service on its volume starts on a machine of its own without that volume."
+cause   = "Fly gives every process group its own machines, and a volume attaches to exactly one machine."
+do      = "Run a helper that must share a service's volume as a second process under the machine's init (start both, wait -n, stop the other, exit with the status) instead of as a process group."
+
+[gotcha.247]
+area    = "contracts"
+symptom = "forge build --config-path foundry.paxeer.toml panics with the config-path must be a path to a foundry.toml file."
+cause   = "forge accepts --config-path only for a file named foundry.toml; contracts/lib is also absent until contracts/bootstrap-libs.sh fetches the pinned libraries."
+do      = "Run bash contracts/bootstrap-libs.sh, then build and create from the repository root with FOUNDRY_CONFIG=foundry.paxeer.toml."

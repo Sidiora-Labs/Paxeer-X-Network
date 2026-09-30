@@ -1732,7 +1732,9 @@ check_agent_public() {
 # endpoints and the paymaster; the account of CHECK_LIVE_GAS_ACCOUNT_KEYSTORE
 # is delegated to that paymaster; POST /quote at chain.paxeer.network answers
 # 200 with a quote for one no-op call whose SID amount lies within the
-# contract's spread of the paymaster's currentRate; the account signs the
+# contract's spread of the paymaster's currentRate; the paymaster's
+# rateUpdatedAt is no older than the station's max_rate_age at the latest
+# block, which the machine's rate publisher keeps true; the account signs the
 # batch and its EIP-7702 authorization with cast, POST /submit answers 200
 # with a transaction hash, and its receipt succeeds with the SID Transfer of
 # the quoted amount from the account to the sponsor. The keystore password
@@ -1779,6 +1781,7 @@ check_gas() {
 	local app answer n_machines n_started n_mounts config chain token endpoints first paymaster gas_limit priority
 	local account code rate price nonce auth_nonce gas_cost w status body quote sponsor amount maximum deadline qnonce
 	local qd calls_hash bd account_sig auth_sig auth_rlp call_data tx receipt attempt verdict failures=0
+	local max_age updated head age updated_at
 	for name in CHECK_LIVE_GAS_ACCOUNT_KEYSTORE CHECK_LIVE_GAS_ACCOUNT_PASSWORD_FILE CHECK_LIVE_GAS_MAX_TOKEN_AMOUNT; do
 		if [ -z "${!name:-}" ]; then
 			echo "check-live: $name is unset" >&2
@@ -1813,9 +1816,9 @@ print(len(ms), len(started), len(mounts))
 	config="$(fly_ssh "$app" - "cat /data/gas-station/station.json" </dev/null | python3 -c '
 import json, sys
 c = json.load(sys.stdin)
-print(c["chain_id"], c["token"], len(c["endpoints"]), c["endpoints"][0], c["paymaster"], c["gas_limit"], c["max_priority_fee_per_gas"])
+print(c["chain_id"], c["token"], len(c["endpoints"]), c["endpoints"][0], c["paymaster"], c["gas_limit"], c["max_priority_fee_per_gas"], c["max_rate_age"])
 ' 2>/dev/null)" || config=""
-	read -r chain token endpoints first paymaster gas_limit priority <<<"${config:-none none none none none none none}"
+	read -r chain token endpoints first paymaster gas_limit priority max_age <<<"${config:-none none none none none none none none}"
 	if [ -z "$config" ]; then
 		echo "fail config app=$app station.json=unreadable"
 		finish $((failures + 1))
@@ -1825,6 +1828,20 @@ print(c["chain_id"], c["token"], len(c["endpoints"]), c["endpoints"][0], c["paym
 	else
 		echo "fail config app=$app chain_id=$chain token=$token endpoints=$endpoints first=$first"
 		finish $((failures + 1))
+	fi
+
+	updated="$(gas_rpc eth_call "[{\"to\":\"$paymaster\",\"data\":\"$(cast sig 'rateUpdatedAt()')\"},\"latest\"]")" || updated=""
+	head="$(gas_rpc eth_getBlockByNumber '["latest",false]')" || head=""
+	read -r age updated_at <<<"$(python3 -c '
+import json, sys
+updated, head = int(sys.argv[1], 16), json.loads(sys.argv[2])
+print(int(head["timestamp"], 16) - updated, updated)
+' "$updated" "$head" 2>/dev/null || echo none none)"
+	if [[ "$age" =~ ^[0-9]+$ && "$max_age" =~ ^[0-9]+$ ]] && [ "$updated_at" -gt 0 ] && [ "$age" -le "$max_age" ]; then
+		echo "pass rate-age paymaster=$paymaster updated_at=$updated_at age=$age max_rate_age=$max_age"
+	else
+		echo "fail rate-age paymaster=$paymaster updated_at=${updated_at:-none} age=${age:-none} max_rate_age=$max_age"
+		failures=$((failures + 1))
 	fi
 
 	account="$(cast wallet address --keystore "$CHECK_LIVE_GAS_ACCOUNT_KEYSTORE" --password-file "$CHECK_LIVE_GAS_ACCOUNT_PASSWORD_FILE" 2>/dev/null)" || account=""

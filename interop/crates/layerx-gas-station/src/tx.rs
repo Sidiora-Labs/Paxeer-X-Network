@@ -364,7 +364,24 @@ pub fn sign_cancellation(
     fees: Fees,
     signer: &impl QuoteSigner,
 ) -> Result<SignedTransaction, TxError> {
-    if chain_id == 0 || fees.gas_limit != CANCELLATION_GAS {
+    if fees.gas_limit != CANCELLATION_GAS {
+        return Err(TxError::Invalid);
+    }
+    sign_call(chain_id, nonce, fees, signer.address(), &[], signer)
+}
+
+/// Signs a zero-value EIP-1559 call of `data` to `to`.
+/// # Errors
+/// Refuses a zero chain, invalid fees, or signer failures.
+pub fn sign_call(
+    chain_id: u64,
+    nonce: u64,
+    fees: Fees,
+    to: Address,
+    data: &[u8],
+    signer: &impl QuoteSigner,
+) -> Result<SignedTransaction, TxError> {
+    if chain_id == 0 {
         return Err(TxError::Invalid);
     }
     fees.gas_cost()?;
@@ -378,9 +395,9 @@ pub fn sign_cancellation(
     ] {
         integer(&bytes, &mut payload)?;
     }
-    rlp_bytes(&signer.address(), &mut payload)?;
+    rlp_bytes(&to, &mut payload)?;
     integer(&[], &mut payload)?;
-    rlp_bytes(&[], &mut payload)?;
+    rlp_bytes(data, &mut payload)?;
     payload.push(192);
     let unsigned = [vec![2], list(&payload)?].concat();
     let signature = signer

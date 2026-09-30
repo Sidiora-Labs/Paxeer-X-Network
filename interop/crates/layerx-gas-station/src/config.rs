@@ -35,7 +35,7 @@ pub struct StationConfig {
     pub relayer_key_env: String,
 }
 
-fn field<T: DeserializeOwned>(
+pub(crate) fn field<T: DeserializeOwned>(
     map: &mut Map<String, Value>,
     name: &'static str,
 ) -> Result<T, ConfigError> {
@@ -57,11 +57,11 @@ fn address(map: &mut Map<String, Value>, name: &'static str) -> Result<Address, 
     Ok(result)
 }
 
-fn object(text: &str) -> Result<Map<String, Value>, ConfigError> {
+pub(crate) fn object(text: &str) -> Result<Map<String, Value>, ConfigError> {
     serde_json::from_str(text).map_err(|_| ConfigError { field: "config" })
 }
 
-fn read_text(path: &Path) -> Result<String, ConfigError> {
+pub(crate) fn read_text(path: &Path) -> Result<String, ConfigError> {
     let file = std::fs::File::open(path).map_err(|_| ConfigError {
         field: "config_path",
     })?;
@@ -86,7 +86,7 @@ impl StationConfig {
         Self::from_map(object(text)?)
     }
 
-    fn from_map(mut map: Map<String, Value>) -> Result<Self, ConfigError> {
+    pub(crate) fn from_map(mut map: Map<String, Value>) -> Result<Self, ConfigError> {
         let config = Self {
             chain_id: field(&mut map, "chain_id")?,
             endpoints: field(&mut map, "endpoints")?,

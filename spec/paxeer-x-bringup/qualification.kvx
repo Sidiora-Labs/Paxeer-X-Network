@@ -1128,6 +1128,22 @@ observed   = "The dockerignore excluded the docker tree, so the runtime stage's 
 assumption = "Fixed on the feature with an exception line for the init and an explicit util-linux in the runtime stage; the image is built once on the deploy side's builder from the corrected revision."
 severity   = "high"
 
+[observation.4.11.7]
+task       = "4.11"
+file       = "interop/crates/layerx-gas-station/src/rate.rs"
+symbol     = "RatePublisher::publish"
+observed   = "The paymaster's rate went stale after maxRateAge with no production process publishing it, the handoff delegating manual setRate calls; closed by the paxeer-gas-station rate subcommand, run as the machine's second process under the init, which signs setRate from GAS_STATION_RATE_OWNER_KEY every GAS_STATION_RATE_CADENCE_SECONDS (strictly below max_rate_age) from the owner's rate file, journals each publication, bounds daily gas and the owner balance floor, plus the rate-age case of check_gas."
+assumption = "Fly process groups each get their own machines and volumes, so the second [processes] entry the ruling named would not share the volume; the publisher runs under the one machine's init instead, and the owner supplies the owner key, the daily gas budget and the balance floor."
+severity   = "note"
+
+[observation.4.11.8]
+task       = "4.11"
+file       = "foundry.paxeer.toml"
+symbol     = "remappings"
+observed   = "The handoff's forge create ran with --root contracts, where no foundry.toml exists, and contracts/lib is not committed; FOUNDRY_CONFIG=foundry.paxeer.toml forge build contracts/src/BatchCallAndSponsor.sol exited 0 after bash contracts/bootstrap-libs.sh (log .logs/forge-build.log)."
+assumption = "The preset's contracts/lib remapping stays, provisioned by the tree's bootstrap-libs.sh at OpenZeppelin v5.3.0 as CI does; the handoff builds, broadcasts once and checks the receipt and the immutable-masked deployed code."
+severity   = "note"
+
 [observation.4.9.1]
 task       = "4.9"
 file       = "tools/bringup/check-live.sh"
