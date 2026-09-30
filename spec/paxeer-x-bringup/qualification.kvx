@@ -1021,7 +1021,7 @@ task       = "1.5"
 file       = "spec/paxeer-x-bringup/spec.kvx, tools/bringup/check-live.sh"
 symbol     = "task.1.5 do_4, check_kernel_app"
 observed   = "do_4 still orders flyctl scale count 0 before the deploy, and kernel-app fails on machines=2 while the stopped old machine is kept as the rollback the cutover requires."
-assumption = "The handoff clones the old machine onto the volume, deploys with --exclude-machines, checks the restored state, livez and the init status lines before the destroy, and runs kernel-app after it; do_4 and the check stay as written until the manager rules on them."
+assumption = "Ruled and applied: check_kernel_app stays one machine and one volume, the handoff order stands with the pre-destroy checks and verify as the rollback window and kernel-app after the destroy, and do_4 now states that order instead of scale count 0."
 severity   = "warning"
 
 [observation.1.5.8]
