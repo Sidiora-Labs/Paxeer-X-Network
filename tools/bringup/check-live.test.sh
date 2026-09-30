@@ -648,12 +648,14 @@ status=0
 output="$("$ca" services | while read -r service _; do
 	CHECK_LIVE_TIMEOUT=5 "$ca" issue "$service" </dev/null || exit 1
 done 2>&1)" || status=$?
-if [ "$status" -eq 0 ] && [ "$(grep -c '^issued ' <<<"$output")" -eq "$want" ] && [ "$want" -eq 26 ] &&
+if [ "$status" -eq 0 ] && [ "$(grep -c '^issued ' <<<"$output")" -eq "$want" ] && [ "$want" -eq 27 ] &&
 	! grep -q 'PRIVATE KEY' <<<"$output" &&
 	grep -q "DNS:kms.process.$internal.internal" <<<"$(openssl x509 -in "$fly/$internal/kms/data/tls/internal-kms/cert.pem" -noout -ext subjectAltName)" &&
 	grep -q "DNS:programs.process.$internal.internal" <<<"$(openssl x509 -in "$fly/$internal/programs/data/tls/internal-programs/cert.pem" -noout -ext subjectAltName)" &&
 	grep -q "DNS:ingress.process.$webhooks.internal" <<<"$(openssl x509 -in "$fly/$webhooks/secrets/WEBHOOKS_INGRESS_TLS_CERT" -noout -ext subjectAltName)" &&
-	[ -s "$fly/$endpoint/secrets/ENDPOINT_CLIENT_P12" ] && [ -s "$fly/$interop/secrets/INTEROP_CLIENT_P12" ]; then
+	[ -s "$fly/$endpoint/secrets/ENDPOINT_CLIENT_P12" ] && [ -s "$fly/$interop/secrets/INTEROP_CLIENT_P12" ] &&
+	grep -q "DNS:$(fx_app platform/ramps/fly.toml).internal" <<<"$(openssl x509 -in "$fly/$(fx_app platform/ramps/fly.toml)/secrets/RAMP_CLIENT_CERT" -noout -ext subjectAltName)" &&
+	[ -s "$fly/$(fx_app platform/ramps/fly.toml)/secrets/RAMP_CLIENT_P12" ]; then
 	echo "ok   ca_issue_every_service"
 else
 	echo "FAIL ca_issue_every_service: want exit 0 and $want issued lines, the internal groups' certificates on their own volumes under their process-group names and the webhooks ingress certificate staged under its group name, got exit $status"
@@ -1197,8 +1199,8 @@ CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_internal_router_unreadab
 	"check-live: 3 check(s) failed"
 unset CHECK_LIVE_ROUTER_CONNECT
 
-# The ramp cases: the fixture repository carries the ramp toml naming the
-# fixture app and the real sandbox journey; the edge manifest registers the
+# The ramp cases: the fixture repository carries the ramp toml of the ca
+# fixtures, naming the fixture app, and the real sandbox journey; the edge manifest registers the
 # name and it resolves to the edge fixture destination. A ramp stand-in curl
 # ahead of the others answers the journey's order and operator requests as
 # the ramp does, moving each order through its stages on the operator's work
@@ -1258,12 +1260,12 @@ CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_ramp_inputs_unset "$work
 export LAYERX_RAMP_CUSTOMER_TOKEN=fixture-customer LAYERX_RAMP_OPERATOR_URL="https://$ramp.fly.dev" LAYERX_RAMP_OPERATOR_TOKEN=fixture-operator
 export LAYERX_RAMP_ON_QUOTE_ID=on-quote LAYERX_RAMP_OFF_QUOTE_ID=off-quote LAYERX_RAMP_OFF_GRANT_JSON='{"grant":1}'
 export LAYERX_RAMP_ON_ACCOUNT_SEQUENCE=4 LAYERX_RAMP_OFF_RECEIVER_SEQUENCE=5
+mv "$fx/platform/ramps/fly.toml" "$work/ramp-fly.toml"
 CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_ramp_toml_absent "$work/hosts-good.env" 1 ramp -- \
 	"fail ramp toml=absent" \
 	"check-live: 1 check(s) failed"
+mv "$work/ramp-fly.toml" "$fx/platform/ramps/fly.toml"
 
-mkdir -p "$fx/platform/ramps"
-printf 'app = "%s"\n' "$ramp" >"$fx/platform/ramps/fly.toml"
 cp "$root/platform/ramps/sandbox-journey.sh" "$fx/platform/ramps/"
 export CHECK_LIVE_TEST_MACHINES='[{"state":"started","config":{"mounts":[{"volume":"vol_fixture"}]}}]'
 printf '%s\n' "api-mainnet-beta.paxeer.network http paxeer-shared-endpoint 443" "ramp.paxeer.network http $ramp 443" @@sites \

@@ -1424,12 +1424,24 @@ do      = "Expand the path into the trap when it is set (double quotes, shellche
 
 [gotcha.234]
 area    = "ramp"
-symptom = "A ramp config pointing one upstream at a public certificate and another at the internal CA cannot work."
-cause   = "The ramp's MutualTlsClient disables built-in roots and trusts exactly the one client_tls ca_pem for every upstream, with one client identity."
-do      = "Put every ramp upstream behind certificates of one CA before rendering its config."
+symptom = "A PEM bundle given to a native-tls client verifies only the upstreams under its first root."
+cause   = "native_tls Certificate::from_pem parses only the first certificate of the file."
+do      = "Load a CA file with Certificate::stack_from_pem and add every root to the connector."
 
 [gotcha.235]
 area    = "fly"
 symptom = "A service dropped to its uid cannot open its config under a /run directory the root init created."
 cause   = "mkdir -p under umask 077 leaves the parent directory root 0700, so the service uid cannot traverse it."
 do      = "chmod 0711 each parent directory the init creates before dropping privileges."
+
+[gotcha.236]
+area    = "bringup"
+symptom = "The kernel-app harness cases of check-live.test.sh report init status=absent once and pass on the next run."
+cause   = "Several lanes run the harness at the same moment and the loaded box pushes the stand-in ssh console past its five-second bound."
+do      = "Treat a lone kernel-app init=absent failure under concurrent harness runs like the ca_issue /dev/shm cases: record it, rerun once."
+
+[gotcha.237]
+area    = "bringup"
+symptom = "Adding a row to the ca.sh service table fails ca_issue_every_service and any case that expects that app's toml to be absent from the fixture repository."
+cause   = "The harness pins the row count and creates a fixture toml for every row's app."
+do      = "Raise the pinned count with the row and take the fixture toml aside in a toml-absent case instead of assuming it is missing."

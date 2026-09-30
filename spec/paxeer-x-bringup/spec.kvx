@@ -831,7 +831,7 @@ reqs       = ["16.4"]
 
 [task.4.10]
 title      = "Run the reference ramp at ramp.paxeer.network"
-status     = "in_progress"
+status     = "implemented"
 wave       = 4
 requires   = ["2.2", "2.4", "2.7", "0.9"]
 blocked_on = "the provider sandbox endpoint and credential, the compliance decision service endpoint and public key, KMS non-exporting Ed25519 handles for the LayerX and Paxeer signers, the Paxeer custody-owner broadcast API, the operator wallet and vault ids and the quote catalogue"
@@ -839,7 +839,7 @@ do_1       = "Write platform/ramps/fly.toml for a new Fly app from docker/ramps:
 do_2       = "Add the ramp subcommand: ramp.paxeer.network is registered on the edge and proxied to the app's fly.dev name, /readyz answers at the name under the edge's certificate and platform/ramps/sandbox-journey.sh records done."
 verify_cmd = "timeout 15m tools/bringup/check-live.sh ramp"
 symbols    = ["check_ramp"]
-touches    = ["platform/ramps/fly.toml", "tools/bringup/check-live.sh"]
+touches    = ["platform/ramps/fly.toml", "tools/bringup/check-live.sh", "platform/ramps/toolkit/src/clients.rs", "tools/bringup/ca.sh"]
 tests      = ["tools/bringup/check-live.test.sh"]
 reqs       = ["16.5"]
 

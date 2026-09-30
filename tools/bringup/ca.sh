@@ -94,6 +94,7 @@ registry-event-client platform/hosted/registry/fly.toml - volume layerx-registry
 interop-client platform/hosted/interop/fly.toml - INTEROP_CLIENT layerx-interop-gateway clientAuth -
 developer platform/hosted/webhooks/fly.toml ingress WEBHOOKS_INGRESS_TLS layerx-developer serverAuth DNS:layerx-webhooks,DNS:ingress.process.<app>.internal,DNS:localhost,IP:127.0.0.1
 developer-client platform/hosted/webhooks/fly.toml - WEBHOOKS_CLIENT layerx-developer clientAuth -
+ramp-client platform/ramps/fly.toml - RAMP_CLIENT layerx-reference-ramp clientAuth DNS:<app>.internal
 EOF
 }
 
