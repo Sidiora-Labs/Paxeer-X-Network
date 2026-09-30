@@ -124,6 +124,7 @@ topology_check() {
     inputs+=("${namespaces[$index]}" "${manifests[$index]}")
   done
   TOPOLOGY_YAML_PARSER="$parser" TOPOLOGY_STRICT="$strict" python3 - "${inputs[@]}" <<'PY'
+import json
 import os
 import re
 import sys
@@ -627,22 +628,18 @@ class Topology:
     def edges(self):
         for workload in self.workloads:
             for source, value in self.resolved_env(workload):
-                match = URL.match(value.strip())
-                if not match:
-                    continue
-                scheme, host, port = match.group(1), match.group(2), match.group(3)
-                service_match = SERVICE_HOST.match(host)
-                if not service_match:
-                    yield {"caller": workload, "source": source, "host": host, "kind": "offcluster", "port": port or DEFAULT_PORTS[scheme]}
-                    continue
-                yield {
-                    "caller": workload,
-                    "source": source,
-                    "host": host,
-                    "kind": "service",
-                    "service": (service_match.group(2), service_match.group(1)),
-                    "port": port or DEFAULT_PORTS[scheme],
-                }
+                values, listed = [value.strip()], False
+                if values[0].startswith("["):
+                    try:
+                        entries = json.loads(values[0])
+                    except ValueError:
+                        entries = None
+                    if isinstance(entries, list) and entries and all(isinstance(entry, str) for entry in entries):
+                        values, listed = [entry.strip() for entry in entries], True
+                for item in values:
+                    edge = self.url_edge(workload, source, item, listed)
+                    if edge is not None:
+                        yield edge
         for ingress in self.ingresses:
             for host_path, service, port in ingress["backends"]:
                 yield {
@@ -653,6 +650,23 @@ class Topology:
                     "service": (ingress["ns"], service),
                     "port": port,
                 }
+
+    def url_edge(self, workload, source, value, listed):
+        match = URL.match(value)
+        if not match:
+            return None
+        scheme, host, port = match.group(1), match.group(2), match.group(3)
+        service_match = SERVICE_HOST.match(host)
+        if not service_match:
+            return {"caller": workload, "source": source, "host": host, "kind": "offcluster", "listed": listed, "port": port or DEFAULT_PORTS[scheme]}
+        return {
+            "caller": workload,
+            "source": source,
+            "host": host,
+            "kind": "service",
+            "service": (service_match.group(2), service_match.group(1)),
+            "port": port or DEFAULT_PORTS[scheme],
+        }
 
     def selected_policies(self, ns, labels, direction):
         return [policy for policy in self.policies if policy["ns"] == ns and direction in policy["types"] and label_selector_matches(policy["selector"], labels)]
@@ -736,6 +750,9 @@ def check(topology):
     for edge in topology.edges():
         caller = edge["caller"]
         label = "%s -> %s:%s [%s]" % (describe(caller), edge["host"], edge["port"], edge["source"])
+        if edge["kind"] == "offcluster" and edge["listed"]:
+            results.append(("offcluster", label, "listed URL entry names a host outside the cluster; not checked against NetworkPolicy"))
+            continue
         if edge["kind"] == "offcluster":
             results.append(("note", label, "host is not an in-cluster Service name; not checked"))
             continue
@@ -834,11 +851,11 @@ def main():
         results.append(("note", note, "not checked"))
     for problem in topology.problems:
         results.append(("FAIL", problem, "unresolvable configuration"))
-    counts = {"ok": 0, "external": 0, "note": 0, "FAIL": 0}
+    counts = {"ok": 0, "external": 0, "offcluster": 0, "note": 0, "FAIL": 0}
     for status, label, detail in results:
         counts[status] += 1
         print("%-8s %s: %s" % (status, label, detail))
-    print("topology-check: %d edges, ok=%d external=%d note=%d failed=%d" % (counts["ok"] + counts["external"] + counts["FAIL"], counts["ok"], counts["external"], counts["note"], counts["FAIL"]))
+    print("topology-check: %d edges, ok=%d external=%d offcluster=%d note=%d failed=%d" % (counts["ok"] + counts["external"] + counts["offcluster"] + counts["FAIL"], counts["ok"], counts["external"], counts["offcluster"], counts["note"], counts["FAIL"]))
     if counts["FAIL"]:
         return 1
     if STRICT and counts["external"]:

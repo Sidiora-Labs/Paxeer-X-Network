@@ -697,3 +697,19 @@ command    = "timeout 30m make layerxd test-daemon-finality-authority"
 exit_code  = 0
 log_path   = ".logs/verify.log"
 observed   = "The same gate as task 1.9, which is task 1.2's verify_cmd, passed at this revision; task 1.2 closes on gate.1.9.1 as the spec's task 1.9 says."
+
+[gate.1.3.1]
+task      = "1.3"
+revision  = "5f981872a plus this task's change"
+command   = "timeout 30m tools/runtime/run-with-clock.sh make platform-hosted-topology-check programs-reference-escrow human-test-provider-probe"
+exit_code = 0
+log_path  = ".logs/verify.log"
+observed  = "The checker reads the gateway's JSON RPC URL list as two offcluster edges (63 edges, failed=0, both parsers), the regression suite resolves the 62 named edges, escrow builds and the identity, security and movement probe tests pass 2 of 2 each; format step was bash -n and py_compile."
+
+[observation.1.3.7]
+task       = "1.3"
+file       = "spec/paxeer-x-bringup/spec.kvx"
+symbol     = "write_genesis_metadata, builder_release_publish, CANDIDATE_ABI_MODULE"
+observed   = "cg spec done 1.3 reran the verify_cmd to a pass, then refused (exit 75) because the graph database was busy and those three symbols, two shell functions and one Rust constant, are not in the last completed index."
+assumption = "The refusal concerns the graph index, not the task; per the existing gotcha the status was set to done by hand after the genuine pass recorded in gate.1.3.1, and the gate was not rerun."
+severity   = "note"

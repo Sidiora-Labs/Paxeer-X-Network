@@ -1223,3 +1223,21 @@ area    = "lni"
 symptom = "A hosted service's receipt lookup is refused with class 1, result -105 (malformed envelope) although its selector is well formed for LNI minor 5."
 cause   = "At LNI minor 6 the daemon requires a trailing wait byte on every receipt-lookup selector (0 immediate, 1 published, 2 durable), and a caller that echoes the node's interface version but builds a minor-5 selector omits it."
 do      = "When a caller echoes the node's interface version, build the selector for that version: append 0 for an immediate lookup at minor 6 or later, as platform/hosted/core and the SDK client's receipt lookup do."
+
+[gotcha.201]
+area    = "platform"
+symptom = "A regression suite that compares only rows labelled ok cannot name an edge the topology checker labels offcluster."
+cause   = "named() filtered rows by one exact status, so a listed public-host edge was named but absent even once the checker emitted it."
+do      = "Compare resolved lists against the set of statuses that count as resolved (ok and offcluster) and keep the per-policy refusal counts on that same set."
+
+[gotcha.202]
+area    = "nginx"
+symptom = "A Fly app behind the edge nginx hashes every client to the same split_clients bucket."
+cause   = "Fly-Client-IP is the address that reached the Fly proxy, which behind the edge is the edge host for every client; the real client arrives in the edge's X-Real-IP."
+do      = "Key split_clients on a map of $http_x_real_ip that falls back to $http_fly_client_ip when the header is absent."
+
+[gotcha.203]
+area    = "cg"
+symptom = "cg spec start on a task already marked implemented exits 1 and leaves the status unchanged."
+cause   = "start only moves pending tasks; an implemented task expects done or --force."
+do      = "For a follow-up cycle on an implemented task, set its status line to in_progress by hand and back to implemented at the end."
