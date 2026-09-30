@@ -380,7 +380,7 @@ reqs       = ["6.1"]
 
 [task.1.4]
 title      = "Generate the genesis manifest and the sequencer key inside the kernel machine, start the sequencer and hand custody to the owner"
-status     = "pending"
+status     = "in_progress"
 wave       = 1
 requires   = ["1.2", "1.3", "1.5", "1.7"]
 do_1       = "Write tools/bringup/kernel-genesis.sh that runs inside the kernel app's machine through flyctl ssh console: build the genesis manifest with layerx-genesis-build from platform/hosted/node/genesis-modules.conf and genesis-module-fees.json with the anchor point read from the chain through the pod's paxeer relay and an LXGB v2 genesis metadata file passed as --genesis-metadata that carries one canonical Asset record for each asset of the custody precompile's asset map on chain 125, SID, PAX, USDC and USDL among them, read from the chain at run time, generate the sequencer key through the pod's signer material contract, write everything under /data/layerx/node on the app's volume with mode 0600 owned by the node user, and print only the genesis digest, the sequencer public key and the registered asset ids."
