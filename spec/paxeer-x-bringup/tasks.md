@@ -102,6 +102,10 @@
     - With the finality authority bound (task 1.2), the authority's lookup for /v1/authorized-batches/by-activity over the node interface is refused by layerxd as a malformed envelope, so the gateway sees receipt_source_unavailable: read the request the authority builds and the envelope layerxd parses, find which side departed from the wire contract the daemon tests and the SDK conformance fixtures fix, and change that side only, never both and never by relaxing the envelope check; record the departure as one observation naming the introducing commit when the history shows it.
     - The gate is task 1.2's whole target: the recorded-fixture replay, the JSON test and bootstrap-send.sh's real_node_authority_serves_verified_facts_and_reflects_replica_loss all pass against the bound authority; when it passes, task 1.2 closes on the same gate record at the same revision.
     - _Requirements: 5.2, 5.3_
+  - [ ] 1.10 Give the custody module a governance proposal type, handler and submit-proposal command so the asset map and the deposit root authority can be set on chain 125 — **Implemented - qualification pending**
+    - Follow the layerxbridge pattern: CustodyProposal (title, description, messages as Any) in the custody proto package generated through the repository's buf template, registered as governance content, with NewProposalHandler executing MsgUpdateParams, MsgSetAsset, MsgRegisterCheckpoint, MsgSetEmergency and MsgCancelClaim through the keeper's Msg service; ValidateBasic refuses an empty list, a non-custody message and an authority other than the governance module account.
+    - paxd tx layerxcustody submit-proposal custody <file.json> reads title, description, deposit and messages and is signed by the proposer; the handler is on the governance router beside the bridge handler and the plan v6.11 gates the new content and messages, its height an owner input named in the deploy handoff.
+    - _Requirements: 6.2_
 
 ## Wave 2 - Kernel boundaries, router and platform apps
 
@@ -310,7 +314,7 @@
 {
   "waves": [
     { "id": 0,  "tasks": ["0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "0.10"] },
-    { "id": 1,  "tasks": ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9"] },
+    { "id": 1,  "tasks": ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "1.10"] },
     { "id": 2,  "tasks": ["2.1", "2.2", "2.4", "2.6", "2.7", "2.8"] },
     { "id": 3,  "tasks": ["3.1", "3.2", "3.3", "3.4", "3.5", "3.6", "3.7", "3.9", "3.10", "3.11"] },
     { "id": 4,  "tasks": ["4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7", "4.8", "4.9", "4.10", "4.11", "4.12", "4.13", "4.14", "4.15", "4.16", "4.17", "4.18", "4.19", "4.20", "4.21", "4.22", "4.23", "4.26", "4.27"] }

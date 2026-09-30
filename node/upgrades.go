@@ -96,6 +96,14 @@ const ActivationUpgrade = "v6.9"
 // and, like the activation plan, carries no entry in the embedded tag list.
 const V610Upgrade = "v6.10"
 
+// V611Upgrade is the plan from whose height the chain executes the custody
+// module's governance proposal, CustodyProposal, through the proposal handler
+// on the governance router, so a passed proposal can set the custody asset map
+// and parameters, the deposit root authority among them. It runs the module
+// migrations only, adds, deletes and renames no store and carries no entry in
+// the embedded tag list.
+const V611Upgrade = "v6.11"
+
 // The governance voting periods the v6.10 plan writes. Every other governance
 // parameter, the deposit and the tally parameters among them, is left as the
 // plan finds it.
@@ -178,6 +186,10 @@ func (app *App) RegisterUpgradeHandlers() {
 	// The v6.10 plan is registered the same way, beside the activation plan and
 	// the handlers the tag list registers.
 	app.UpgradeKeeper.SetUpgradeHandler(V610Upgrade, app.runV610Upgrade)
+	// The v6.11 plan gates the custody proposal content and its messages.
+	app.UpgradeKeeper.SetUpgradeHandler(V611Upgrade, func(ctx sdk.Context, _ upgradetypes.Plan, fromVM module.VersionMap) (module.VersionMap, error) {
+		return app.mm.RunMigrations(ctx, app.configurator, fromVM)
+	})
 }
 
 // runXWebUpgrade runs the module migrations with xweb taken as present, so the

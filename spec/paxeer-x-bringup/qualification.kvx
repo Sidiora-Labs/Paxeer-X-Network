@@ -1495,3 +1495,19 @@ symbol     = "RatePublisher::publish"
 observed   = "The publisher now refuses a fee above rate_max_fee_per_gas (FeeAboveCeiling, nothing signed), reserves max fee x gas limit of this and every unsettled publication against the balance floor, and journals cost_wei = effectiveGasPrice x gasUsed; cargo test -p layerx-gas-station exited 0 (.logs/w350-test.log) and every gas case of check-live.test.sh passed, while its internal and indexer cases failed on pins read from other harness copies' stand-ins under /proc (.logs/w350-harness.log, exit 1)."
 assumption = "A publication with no receipt stays reserved until a settled publication of the owner reaches its nonce; the internal and indexer failures are the concurrent-harness effect of gotcha 245, unrelated to this change."
 severity   = "note"
+
+[observation.1.10.1]
+task       = "1.10"
+file       = "modules/layerxcustody/handler.go"
+symbol     = "NewProposalHandler"
+observed   = "go test ./modules/layerxcustody/... exited 0 (log .logs/1.10-verify.log) after go build ./modules/layerxcustody/... ./cmd/... exited 0 (log .logs/1.10-build.log, ./cmd/... matches no Go package; node/app.go and node/upgrades.go compile through testutil/keeper)."
+assumption = "CustodyProposal takes effect only from plan v6.11, whose height is an owner input in the 1.10 deploy handoff; 1.4 step B resumes after it passes."
+severity   = "external"
+
+[observation.1.10.2]
+task       = "1.10"
+file       = "daemon/paxd"
+symbol     = "daemon_build"
+observed   = "The task build target matched no package, so the daemon was built once afterwards from the lane revision: go build ./daemon/paxd, exit 0, 16 s, binary 153501752 bytes; log .logs/1.10-paxd-build.log on the lane."
+assumption = "The app wiring and the v6.11 upgrade handler compile into the daemon; the chain upgrade rollout is the deploy side step named in the handoff."
+severity   = "info"
