@@ -1337,3 +1337,15 @@ area    = "registry"
 symptom = "A registry deployed with only its listener, builder and kernel variables exits at startup before /healthz answers."
 cause   = "Its program outbox builds the event producer client with the mandatory from_environment, not from_environment_if_configured, so the program and webhooks upstream groups are required at start."
 do      = "Configure the LAYERX_EVENTS_PROGRAM_UPSTREAM_* and LAYERX_EVENTS_WEBHOOKS_UPSTREAM_* groups, with reachable mTLS upstreams, before the first registry deploy."
+
+[gotcha.220]
+area    = "spec-tooling"
+symptom = "cg spec start on a build-side lane exits 1 with unmet requires and leaves the task pending."
+cause   = "start checks that every required task is done, and build-side lanes are cut before their prerequisites land."
+do      = "Set the status line to in_progress by hand, never with --force, and delete spec/<feature>/spec.kvx.lock."
+
+[gotcha.221]
+area    = "agent"
+symptom = "layerx-mcp exits with the binding document declares no protocol socket against the binding the full-mode daemon published."
+cause   = "The daemon's binding publisher writes only the base keys, while the binary requires a listener section and a web-scoped session also requires a web section plus an attached web payer that no served path attaches."
+do      = "Plan the listener and web sections and the production web payer before promising an MCP socket or the web tools; the stdio CLI ignores listener but still refuses web scopes."
