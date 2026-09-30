@@ -1091,3 +1091,9 @@ area    = "ops-shell"
 symptom = "A sed range from a shell function's first line to the next line starting with } stops inside the function."
 cause   = "A here-document inside the function (an nft ruleset, for one) holds its own closing brace at column zero."
 do      = "Extract such functions up to a marker comment that follows them, or source the script behind a guard instead of cutting it with sed."
+
+[gotcha.179]
+area    = "tests"
+symptom = "A Python readiness poll hangs forever instead of timing out while the service it polls is healthy."
+cause   = "The assertion message was built eagerly with process.stderr.read(), which blocks until the child closes stderr, so the loop never reached its deadline."
+do      = "Read a child's piped stderr only after poll() reports it exited; never inside an always-evaluated assertion message."

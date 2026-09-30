@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::{Read as _, Write as _};
+use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -39,14 +39,15 @@ const MAX_CONNECTIONS: usize = 128;
 #[serde(deny_unknown_fields)]
 struct Config {
     listen: String,
+    listener: Option<String>,
     journal_path: PathBuf,
     worker_id: String,
     lease_seconds: u64,
     reconcile_seconds: u64,
     operator: OperatorIdentity,
     quotes: Vec<QuoteTerms>,
-    server_identity_pkcs12: PathBuf,
-    server_identity_password_file: PathBuf,
+    server_identity_pkcs12: Option<PathBuf>,
+    server_identity_password_file: Option<PathBuf>,
     client_tls: ClientTls,
     identity: IdentityConfig,
     compliance: ComplianceConfig,
@@ -131,6 +132,27 @@ struct PaxeerConfig {
     delayed_after_polls: u64,
 }
 
+enum Listener {
+    Tls(TlsAcceptor),
+    Plain,
+}
+
+trait Transport: Read + Write {
+    fn tcp(&self) -> &TcpStream;
+}
+
+impl Transport for TlsStream<TcpStream> {
+    fn tcp(&self) -> &TcpStream {
+        self.get_ref()
+    }
+}
+
+impl Transport for TcpStream {
+    fn tcp(&self) -> &TcpStream {
+        self
+    }
+}
+
 struct State {
     journal: Mutex<Journal>,
     quotes: BTreeMap<String, QuoteTerms>,
@@ -196,7 +218,7 @@ fn run() -> Result<(), String> {
     )
     .map_err(|error| format!("parse config: {error}"))?;
     validate_config(&config)?;
-    let acceptor = server_acceptor(&config)?;
+    let listener_mode = Arc::new(listener_config(&config)?);
     let state = Arc::new(build_state(&config)?);
     let reconcile_state = Arc::clone(&state);
     let cadence = Duration::from_secs(config.reconcile_seconds);
@@ -222,12 +244,12 @@ fn run() -> Result<(), String> {
             continue;
         };
         let state = Arc::clone(&state);
-        let acceptor = acceptor.clone();
+        let listener_mode = Arc::clone(&listener_mode);
         if thread::Builder::new()
             .name("ramp-request".to_owned())
             .spawn(move || {
                 let _permit = permit;
-                serve(stream, &acceptor, &state);
+                serve(stream, &listener_mode, &state);
             })
             .is_err()
         {
@@ -300,12 +322,37 @@ fn valid_opaque(value: &str) -> bool {
             .any(|byte| byte.is_ascii_control() || matches!(byte, b'"' | b'\'' | b'\\'))
 }
 
+fn listener_config(config: &Config) -> Result<Listener, String> {
+    match config.listener.as_deref() {
+        None | Some("tls") => server_acceptor(config).map(Listener::Tls),
+        Some("plain") => match (
+            &config.server_identity_pkcs12,
+            &config.server_identity_password_file,
+        ) {
+            (Some(_), _) => Err("server_identity_pkcs12 is set with listener plain".to_owned()),
+            (_, Some(_)) => {
+                Err("server_identity_password_file is set with listener plain".to_owned())
+            }
+            (None, None) => Ok(Listener::Plain),
+        },
+        Some(_) => Err("listener must be tls or plain".to_owned()),
+    }
+}
+
 fn server_acceptor(config: &Config) -> Result<TlsAcceptor, String> {
-    let identity = SecretFile::new(&config.server_identity_pkcs12)
+    let identity_path = config
+        .server_identity_pkcs12
+        .as_ref()
+        .ok_or_else(|| "server_identity_pkcs12 is required".to_owned())?;
+    let password_path = config
+        .server_identity_password_file
+        .as_ref()
+        .ok_or_else(|| "server_identity_password_file is required".to_owned())?;
+    let identity = SecretFile::new(identity_path)
         .map_err(|_| "invalid server identity file".to_owned())?
         .read()
         .map_err(|_| "server identity unavailable".to_owned())?;
-    let password = secret_text(&config.server_identity_password_file)?;
+    let password = secret_text(password_path)?;
     let identity = Identity::from_pkcs12(&identity, &password)
         .map_err(|_| "server identity rejected".to_owned())?;
     TlsAcceptor::builder(identity)
@@ -494,15 +541,27 @@ fn secret_text(path: &PathBuf) -> Result<String, String> {
     Ok(value)
 }
 
-fn serve(stream: TcpStream, acceptor: &TlsAcceptor, state: &State) {
-    let Ok(mut tls) = acceptor.accept(stream) else {
-        return;
-    };
-    let response = read_request(&mut tls)
+fn serve(stream: TcpStream, listener: &Listener, state: &State) {
+    match listener {
+        Listener::Tls(acceptor) => {
+            let Ok(mut tls) = acceptor.accept(stream) else {
+                return;
+            };
+            exchange(&mut tls, state);
+        }
+        Listener::Plain => {
+            let mut stream = stream;
+            exchange(&mut stream, state);
+        }
+    }
+}
+
+fn exchange<S: Transport>(stream: &mut S, state: &State) {
+    let response = read_request(stream)
         .and_then(|request| route(state, &request))
         .unwrap_or_else(|response| response);
-    let _ = tls.write_all(&response.encode());
-    let _ = tls.flush();
+    let _ = stream.write_all(&response.encode());
+    let _ = stream.flush();
 }
 
 struct Request {
@@ -542,9 +601,9 @@ impl Response {
     }
 }
 
-fn read_request(stream: &mut TlsStream<TcpStream>) -> Result<Request, Response> {
+fn read_request<S: Transport>(stream: &mut S) -> Result<Request, Response> {
     stream
-        .get_ref()
+        .tcp()
         .set_read_timeout(Some(Duration::from_secs(10)))
         .map_err(|_| error(503, "request_timeout"))?;
     let mut bytes = Vec::new();

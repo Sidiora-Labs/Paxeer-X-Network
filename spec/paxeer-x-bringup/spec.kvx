@@ -513,7 +513,7 @@ reqs       = ["9.3"]
 
 [task.2.7]
 title      = "Give the dashboard API, webhooks, the interop gateway, the reference ramp and the relay archive a plain listener for the Fly edge"
-status     = "pending"
+status     = "done"
 wave       = 2
 requires   = []
 do_1       = "Add a listener choice after listener_config of platform/hosted/gateway/src/main.rs: LAYERX_DASHBOARD_LISTENER in platform/hosted/dashboard/src/main.rs, LAYERX_WEBHOOKS_LISTENER in platform/hosted/webhooks/src/main.rs, LAYERX_INTEROP_LISTENER in interop/crates/layerx-interop-service/src/config.rs, and a listener field in the configs of platform/ramps/reference/src/main.rs and platform/relay_archive/protocol.py; plain serves plain HTTP on the listen address and refuses to start when the TLS certificate or key is also set, and unset or tls keeps today's TLS listener unchanged."

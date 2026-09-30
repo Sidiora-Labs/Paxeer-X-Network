@@ -8,6 +8,7 @@ use rustls::{ServerConfig, ServerConnection, StreamOwned};
 use serde::Serialize;
 use std::env;
 use std::fs;
+use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -18,9 +19,14 @@ const MAX_CONNECTIONS: usize = 256;
 const DEFAULT_PAGE: usize = 50;
 static ACTIVE_CONNECTIONS: AtomicUsize = AtomicUsize::new(0);
 
+enum Listener {
+    Tls(Arc<ServerConfig>),
+    Plain,
+}
+
 struct Config {
     listen: SocketAddr,
-    tls: Arc<ServerConfig>,
+    listener: Listener,
     dashboard: Arc<Dashboard>,
     identity: Arc<DeveloperIdentity>,
 }
@@ -31,10 +37,31 @@ fn now() -> u64 {
         .map_or(0, |duration| duration.as_secs())
 }
 
-fn tls_config() -> Result<Arc<ServerConfig>, String> {
+const LISTENER_CERTIFICATE_VARIABLES: [&str; 2] = [
+    "LAYERX_DASHBOARD_TLS_CERT_DER",
+    "LAYERX_DASHBOARD_TLS_KEY_DER",
+];
+
+fn listener_config() -> Result<Listener, String> {
     rustls::crypto::ring::default_provider()
         .install_default()
         .map_err(|_| "failed to install TLS provider".to_owned())?;
+    match env::var("LAYERX_DASHBOARD_LISTENER") {
+        Err(env::VarError::NotPresent) => tls_config().map(Listener::Tls),
+        Ok(mode) if mode == "tls" => tls_config().map(Listener::Tls),
+        Ok(mode) if mode == "plain" => LISTENER_CERTIFICATE_VARIABLES
+            .iter()
+            .find(|variable| env::var_os(variable).is_some())
+            .map_or(Ok(Listener::Plain), |variable| {
+                Err(format!(
+                    "{variable} is set with LAYERX_DASHBOARD_LISTENER plain"
+                ))
+            }),
+        _ => Err("LAYERX_DASHBOARD_LISTENER must be tls or plain".to_owned()),
+    }
+}
+
+fn tls_config() -> Result<Arc<ServerConfig>, String> {
     let cert = CertificateDer::from(
         fs::read(
             env::var("LAYERX_DASHBOARD_TLS_CERT_DER")
@@ -62,7 +89,7 @@ fn config() -> Result<Config, String> {
             .unwrap_or_else(|_| "0.0.0.0:9445".to_owned())
             .parse::<SocketAddr>()
             .map_err(|_| "dashboard listen address is invalid".to_owned())?,
-        tls: tls_config()?,
+        listener: listener_config()?,
         dashboard: Arc::new(Dashboard::from_environment()?),
         identity: Arc::new(DeveloperIdentity::from_dashboard_environment()?),
     })
@@ -208,14 +235,25 @@ fn handle(tcp: TcpStream, config: &Config) -> Result<(), String> {
         .map_err(|error| error.to_string())?;
     tcp.set_write_timeout(Some(Duration::from_secs(15)))
         .map_err(|error| error.to_string())?;
-    let connection =
-        ServerConnection::new(Arc::clone(&config.tls)).map_err(|error| error.to_string())?;
-    let mut stream = StreamOwned::new(connection, tcp);
-    let reply = http::read_request(&mut stream).map_or_else(
+    match &config.listener {
+        Listener::Tls(tls) => {
+            let connection =
+                ServerConnection::new(Arc::clone(tls)).map_err(|error| error.to_string())?;
+            exchange(config, &mut StreamOwned::new(connection, tcp))
+        }
+        Listener::Plain => {
+            let mut stream = tcp;
+            exchange(config, &mut stream)
+        }
+    }
+}
+
+fn exchange<S: Read + Write>(config: &Config, stream: &mut S) -> Result<(), String> {
+    let reply = http::read_request(stream).map_or_else(
         |_| Reply::refusal(400, "invalid_request", None),
         |request| route(config, &request),
     );
-    http::write_reply(&mut stream, &reply).map_err(|error| error.to_string())
+    http::write_reply(stream, &reply).map_err(|error| error.to_string())
 }
 
 fn main() {

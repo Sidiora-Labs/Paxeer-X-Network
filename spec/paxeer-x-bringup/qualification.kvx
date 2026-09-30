@@ -471,3 +471,11 @@ file       = "tools/bringup/validator-firewall.sh"
 observed   = "The one run of the adopt script against the validator hosts was refused by the permission system as a remote shell write, so it read no loaded table and wrote nothing; its rule evaluator was exercised only against tables loaded in a throwaway local network namespace."
 assumption = "The owner-installed table already behaves as the gate proves, so the adopt run is expected to print rules=match action=none on both hosts; the owner runs it once from the operator host."
 severity   = "note"
+
+[gate.2.7.1]
+task      = "2.7"
+revision  = "9296a0d2c40024e02afe7a12f57177cb27183bc6 plus the change committed with this entry"
+command   = "timeout 30m make platform-test-plain-listeners"
+exit_code = 0
+log_path  = ".logs/verify.log"
+observed  = "Dashboard, webhooks, reference ramp and interop each pass three listener tests and the relay archive passes plain, tls, default and refusal paths; the first run hung in the relay test's eager stderr read, repaired once, and cg spec done timed out on the graph lock so the status was set by hand."
