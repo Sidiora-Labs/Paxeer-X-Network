@@ -2436,7 +2436,7 @@ print(len(ms), len(started), len(data))
 		finish $((failures + 1))
 	fi
 	# shellcheck disable=SC2016 # the command expands on the machine
-	answer="$(fly_ssh "$app" - 'cd /run/layerx/init/ && p=$(cat pid) && echo init init 0 $(stat -c %u /proc/$p 2>/dev/null || echo -) $(tr "\000" " " </proc/$p/cmdline 2>/dev/null) && for f in *; do [ "$f" != pid ] || continue; read -r u s d <"$f"; a=-; [ "$s" != running ] || a=$(stat -c %u /proc/$d 2>/dev/null || echo -); echo svc "$f" $u $s $d $a; done')" || answer=""
+	answer="$(fly_ssh "$app" - 'cd /run/layerx/init/ && p=$(cat pid) && echo init init 0 $(stat -c %u /proc/$p 2>/dev/null || echo -) $(tr "\000" " " </proc/$p/cmdline 2>/dev/null) && for f in *; do [ "$f" != pid ] || continue; read -r u s d <"$f"; a=-; [ "$s" != running ] || a=$(stat -c %u /proc/$d 2>/dev/null || echo -); echo svc "$f" $u $s $d $a; done' </dev/null)" || answer=""
 	if ! grep -q '^init ' <<<"$answer"; then
 		echo "fail init app=$app status=absent"
 		finish $((failures + 1))
@@ -3447,6 +3447,160 @@ else:
 	finish "$failures"
 }
 
+# check_interop_adapters: three conformance legs of the AP2, Visa TAP and fiat
+# adapters of the interop gateway app of platform/hosted/interop/fly.toml,
+# each the make target of the tree followed by the adapter's entry of
+# GET <CHECK_LIVE_INTEROP_ORIGIN>/v1/adapters (default
+# https://interchain.paxeer.network), whose conformance suite, vector count
+# and digest equal the suite interop/deploy/gateway/render.py derives from this
+# checkout and whose four readiness fields are ready: mandates
+# (interop-test-mandates, ap2), visa-tap (interop-test-visa-tap, visa-tap) and
+# ramps-sandbox (interop-test-ramps-sandbox, fiat). The sandbox journey reads
+# the LAYERX_RAMP_* inputs of platform/ramps/sandbox-journey.sh from the
+# environment and its two bearer tokens from the files named by
+# CHECK_LIVE_INTEROP_ADAPTERS_CUSTOMER_TOKEN_FILE and
+# CHECK_LIVE_INTEROP_ADAPTERS_OPERATOR_TOKEN_FILE; no value is printed. One
+# line per leg.
+check_interop_adapters() {
+	local toml=platform/hosted/interop/fly.toml name app origin w status http target exits=()
+	for name in LAYERX_RAMP_URL LAYERX_RAMP_CA_PEM LAYERX_RAMP_OPERATOR_URL LAYERX_RAMP_ON_QUOTE_ID \
+		LAYERX_RAMP_OFF_QUOTE_ID LAYERX_RAMP_OFF_GRANT_JSON LAYERX_RAMP_ON_ACCOUNT_SEQUENCE \
+		LAYERX_RAMP_OFF_RECEIVER_SEQUENCE CHECK_LIVE_INTEROP_ADAPTERS_CUSTOMER_TOKEN_FILE \
+		CHECK_LIVE_INTEROP_ADAPTERS_OPERATOR_TOKEN_FILE; do
+		if [ -z "${!name:-}" ]; then
+			echo "check-live: $name is unset" >&2
+			exit 2
+		fi
+	done
+	origin="${CHECK_LIVE_INTEROP_ORIGIN:-https://interchain.paxeer.network}"
+	if ! app="$(fly_app "$toml")"; then
+		echo "fail interop-adapters toml=absent"
+		finish 1
+	fi
+	w="$(mktemp -d)"
+	# shellcheck disable=SC2064 # the path expands now, the locals are gone at exit
+	trap "rm -rf '$w'" EXIT
+
+	for target in interop-test-mandates interop-test-visa-tap interop-test-ramps-sandbox; do
+		status=0
+		(
+			if [ "$target" = interop-test-ramps-sandbox ]; then
+				LAYERX_RAMP_CUSTOMER_TOKEN="$(<"$CHECK_LIVE_INTEROP_ADAPTERS_CUSTOMER_TOKEN_FILE")"
+				LAYERX_RAMP_OPERATOR_TOKEN="$(<"$CHECK_LIVE_INTEROP_ADAPTERS_OPERATOR_TOKEN_FILE")"
+				export LAYERX_RAMP_CUSTOMER_TOKEN LAYERX_RAMP_OPERATOR_TOKEN
+			fi
+			make -C "$repo_root" --no-print-directory "$target"
+		) >"$w/$target.log" 2>&1 </dev/null || status=$?
+		exits+=("$status")
+	done
+	http="$(curl -sS -m "$timeout" -o "$w/adapters" -w '%{http_code}' "$origin/v1/adapters" 2>/dev/null)" || http=""
+	status=0
+	python3 - "$repo_root" "$app" "$w/adapters" "${http:-none}" "${exits[@]}" <<'PY' || status=$?
+import importlib.util, json, pathlib, sys
+
+root, app, path, http = sys.argv[1:5]
+exits = sys.argv[5:]
+spec = importlib.util.spec_from_file_location("render", root + "/interop/deploy/gateway/render.py")
+render = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(render)
+try:
+    served = {entry["id"]: entry for entry in json.load(open(path))["adapters"]}
+except Exception:
+    served = {}
+failed = 0
+for (leg, target, adapter), code in zip((("mandates", "interop-test-mandates", "ap2"),
+                                         ("visa-tap", "interop-test-visa-tap", "visa-tap"),
+                                         ("ramps-sandbox", "interop-test-ramps-sandbox", "fiat")), exits):
+    entry = served.get(adapter)
+    suite = render.first_party_suite(pathlib.Path(root), adapter)
+    if entry is None:
+        pins, ready = "absent", 0
+    else:
+        pins = "match" if suite is not None and (entry.get("conformance_suite"), entry.get("conformance_vectors"),
+                                                 entry.get("conformance_sha256")) == suite else "differ"
+        ready = sum(1 for value in (entry.get("readiness") or {}).values() if value == "ready")
+    ok = code == "0" and http == "200" and pins == "match" and ready == 4
+    failed += not ok
+    print("%s %s app=%s make=%s exit=%s adapter=%s http=%s pins=%s readiness=%d/4" % (
+        "pass" if ok else "fail", leg, app, target, code, adapter, http, pins, ready))
+sys.exit(failed)
+PY
+	finish "$status"
+}
+
+check_kernel_node() {
+	local app answer key value genesis="" network="" public="" core="" status="" lni="" head="" failures=0
+	local -A clocks=()
+	if ! command -v flyctl >/dev/null 2>&1; then
+		echo "check-live: flyctl is required" >&2
+		exit 2
+	fi
+	if ! app="$(fly_app human/wallet/deploy/human.toml)"; then
+		echo "fail kernel-node toml=absent"
+		finish 1
+	fi
+	# shellcheck disable=SC2016 # the command expands on the machine
+	answer="$(fly_ssh "$app" - 'n=/data/layerx/node; r=/run/layerx/node; e=$n/replica.env; u=http://127.0.0.1:$(sed -n "s/^LAYERX_AUTHORITY_PORT=//p" $e); t="Authorization: Bearer $(sed -n "s/^LAYERX_AUTHORITY_BEARER_TOKEN=//p" $e)"; echo genesis $(sha256sum $n/genesis/genesis.manifest | cut -d" " -f1); echo network $(curl -fsS -m 10 -H "$t" $u/v1/sync/network | jq -c .); echo public $(cat $n/*.env | sed -n "s/^LAYERX_NODE_SEQUENCER_PUBLIC_KEY=//p" | head -1); echo core $(sed -n "s/^LAYERX_CORE_SEQUENCER_ID=//p" $r/core.env); echo status $(printf "status\n" | socat -t 5 - UNIX-CONNECT:$r/supervisor.sock | jq -c .); [ -S $r/layerxd.lni.sock ] && echo lni socket; echo head $(curl -fsS -m 10 -H "$t" $u/v1/sync/head | jq -c .); for s in treasury-signer layerxd layerxd-authority guarantor-1 guarantor-2; do p=; read -r u st p </run/layerx/init/$s 2>/dev/null; echo clock $s $(tr "\000" " " </proc/${p:-0}/cmdline 2>/dev/null | cut -d" " -f1); done' </dev/null 2>/dev/null)" || answer=""
+	while read -r key value; do
+		case "$key" in
+		genesis) genesis=$value ;;
+		network) network=$value ;;
+		public) public=$value ;;
+		core) core=$value ;;
+		status) status=$value ;;
+		lni) lni=$value ;;
+		head) head=$value ;;
+		clock)
+			key=${value%% *}
+			value=${value#"$key"}
+			clocks[$key]=${value# }
+			;;
+		esac
+	done <<<"$answer"
+	value="$(python3 -c 'import json, sys; print(json.loads(sys.argv[1]).get("genesis_sha256", "none"))' "$network" 2>/dev/null)" || value=none
+	if [[ $genesis =~ ^[0-9a-f]{64}$ ]] && [ "$value" = "$genesis" ]; then
+		echo "pass genesis app=$app sha256=$genesis replica=match"
+	else
+		echo "fail genesis app=$app sha256=${genesis:-absent} replica=$value"
+		failures=$((failures + 1))
+	fi
+	value="$(printf 'layerx-sequencer:%s' "$public" | sha256sum | cut -d' ' -f1)"
+	if [[ $public =~ ^[0-9a-f]{64}$ ]] && [ "$value" = "$core" ]; then
+		echo "pass sequencer public=$public core=match"
+	else
+		echo "fail sequencer public=${public:-absent} core=${core:-absent}"
+		failures=$((failures + 1))
+	fi
+	if [ "$(python3 -c 'import json, sys; print(json.loads(sys.argv[1]).get("state"))' "$status" 2>/dev/null)" = running ]; then
+		echo "pass supervisor state=running"
+	else
+		echo "fail supervisor status=${status:-absent}"
+		failures=$((failures + 1))
+	fi
+	if [ "$lni" = socket ]; then
+		echo "pass lni socket=present"
+	else
+		echo "fail lni socket=absent"
+		failures=$((failures + 1))
+	fi
+	if [ -n "$head" ] && python3 -c 'import json, sys; json.loads(sys.argv[1])["head"]' "$head" 2>/dev/null; then
+		echo "pass replica head=$head"
+	else
+		echo "fail replica head=${head:-absent}"
+		failures=$((failures + 1))
+	fi
+	for key in treasury-signer layerxd layerxd-authority guarantor-1 guarantor-2; do
+		value=${clocks[$key]:-absent}
+		if [ "${value##*/}" = layerx-runtime-clock ]; then
+			echo "pass clock $key"
+		else
+			echo "fail clock $key exec=$value"
+			failures=$((failures + 1))
+		fi
+	done
+	finish "$failures"
+}
+
 mode="${1:-}"
 case "$mode" in
 -h | --help)
@@ -3458,6 +3612,7 @@ rpc-placement) ;;
 validators) ;;
 identity) ;;
 kernel-app) ;;
+kernel-node) ;;
 search-front) ;;
 edge) ;;
 ci) ;;
@@ -3476,6 +3631,7 @@ developers) ;;
 router) ;;
 search) ;;
 registry) ;;
+interop-adapters) ;;
 *)
 	usage >&2
 	exit 2
@@ -3491,6 +3647,7 @@ tools=(ssh timeout curl python3 openssl sha256sum)
 [ "$mode" != explorer ] || tools=(curl python3 psql)
 [ "$mode" != ca ] || tools+=(flyctl)
 [ "$mode" != gas ] || tools+=(flyctl cast)
+[ "$mode" != interop-adapters ] || tools+=(make)
 for tool in "${tools[@]}"; do
 	if ! command -v "$tool" >/dev/null 2>&1; then
 		echo "check-live: $tool is required" >&2

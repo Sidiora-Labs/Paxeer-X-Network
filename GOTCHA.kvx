@@ -1565,3 +1565,51 @@ area    = "test"
 symptom = "A sync-fleet harness count of report lines ending in the rollout sha256 finds one more line than hosts rolled."
 cause   = "The report's first line want sha256=<sha> also matches a pattern of a space, sha256= and the hash."
 do      = "Anchor report-line counts on ^RPC_HOSTS as the existing record case does."
+
+[gotcha.258]
+area    = "bringup"
+symptom = "A harness case that expects a failing make target to report the recipe's own exit code sees exit 2 instead."
+cause   = "make exits 2 whenever any recipe fails, whatever code the recipe itself returned."
+do      = "Expect exit 2 from a failed make target in check-live lines and harness cases; read the target's log for the recipe's own code."
+
+[gotcha.259]
+area    = "bringup"
+symptom = "The interop and ramp conformance make targets look like live probes but interop-test-mandates and interop-test-visa-tap run only the crates' local vectors and interop-test-ramps-sandbox drives the ramp, not the gateway."
+cause   = "The targets are cargo test runs of layerx-ap2 and layerx-visa-tap and platform/ramps/sandbox-journey.sh; only GET /v1/adapters of the gateway reports the pinned suites and adapter readiness."
+do      = "Pair each target with the gateway's /v1/adapters entry for its adapter, comparing the served conformance pins against render.py first_party_suite of the checkout."
+
+[gotcha.260]
+area    = "bringup"
+symptom = "A task hunts for a platform/deploy tree to find the node bootstrap and loses time."
+cause   = "There is no platform/deploy tree; the node bootstrap is platform/hosted/node/bootstrap.sh beside supervisor.sh and the pod definition."
+do      = "Open platform/hosted/node/ directly for the bootstrap, the supervisor and the genesis inputs."
+
+[gotcha.261]
+area    = "bringup"
+symptom = "A kernel genesis that reads its asset records from the custody precompile finds nothing to read."
+cause   = "The custody precompile has no enumeration view and an unregistered asset answers bytes32 zero from nativeAssetId and assetByPointer instead of reverting."
+do      = "Treat a zero asset id as an absent record and refuse with the exact call; register assets through MsgSetAsset before generating the genesis."
+
+[gotcha.262]
+area    = "bringup"
+symptom = "A remote /proc/$pid/cmdline read reports the kernel boot line instead of a process."
+cause   = "With an empty pid the path collapses to /proc//cmdline, which is /proc/cmdline."
+do      = "Default the pid (/proc/${p:-0}/cmdline) so an absent process reads as absent."
+
+[gotcha.263]
+area    = "bringup"
+symptom = "A check-live read through fly_ssh reports every machine value absent in the harness although the fixture files are in place."
+cause   = "The fly_ssh call left stdin open, so the flyctl stand-in's tee (and a real ssh console) waited on it until the timeout, and the timeout status discarded the answer; a merge had also dropped the exit and fi closing the gas block of the curl stand-in, so every curl call inside the harness failed to parse."
+do      = "Give every fly_ssh call that sends no script </dev/null, and run bash -n on the harness stand-ins after a merge."
+
+[gotcha.264]
+area    = "bringup"
+symptom = "The edge check prints route=unknown for the router name and the edge harness cases fail although the router manifest looks complete."
+cause   = "A merge duplicated a key and a [[files]] entry in a fly manifest; tomllib refuses the whole file with Cannot overwrite a value, so the check reads no route."
+do      = "After a merge that touches a fly manifest, parse every tracked toml with python3 tomllib and drop the duplicated second copies."
+
+[gotcha.265]
+area    = "bringup"
+symptom = "Two check-live harness runs on one box fail cases at random, the flyctl and curl stand-ins and the CA cases among them."
+cause   = "Concurrent runs on one box share host state the stand-ins and the CA cases rely on and disturb each other."
+do      = "The harness takes flock on /run/lock/check-live-harness for its whole run; a second run waits instead of racing, so never bypass the lock."
