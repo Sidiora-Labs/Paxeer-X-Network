@@ -9,14 +9,18 @@
 #       deposit authority key and the publication recipient key under
 #       /data/layerx/keys and prints their public values, which the custody
 #       governance proposals of tools/bringup/custody-governance.sh carry.
-#   kernel-genesis.sh genesis SID=POINTER USDC=POINTER USDL=POINTER [SYMBOL=POINTER...]
+#   kernel-genesis.sh genesis COMET=HOST SID=POINTER USDC=POINTER USDL=POINTER [SYMBOL=POINTER...]
 #       step C, once governance has set the custody asset map and the deposit
 #       root authority: reads PAX from nativeAssetId() and every pointer from
 #       assetByPointer() through the pod's paxeer relay, writes the LXGB v2
 #       genesis metadata with one canonical Asset record per mapped asset, the
 #       treasury recipient-binding policy and the guarantor's publication
-#       authorization, and the kernel asset id (the PAX record) and replica id
-#       the init reads. The init then runs bootstrap.sh, whose
+#       authorization, the PAX custody profile that layerx-custody-proof
+#       light-profile builds from the chain 125 Comet RPC at
+#       https://HOST/comet (the opening credit of the first-credit path verifies
+#       against it, bootstrap.sh --custody-profile) with that RPC URL beside
+#       it, and the kernel asset id (the PAX record) and replica id the init
+#       reads. The init then runs bootstrap.sh, whose
 #       layerx-genesis-build signs the manifest under /data/layerx/node; this
 #       step waits for it and prints the digests and the asset ids.
 #       Precondition: every registered asset id is the derivation
@@ -38,7 +42,7 @@ custody=0x0000000000000000000000000000000000001013
 deposit_key=$keys/checkpoint-submitter/deposit-authority.pem
 key_files=("$keys/sequencer.key" "$keys/checkpoint-authority/key.pem" "$deposit_key" "$keys/publication/recipient.key")
 genesis_files=("$keys/publication/binding-policy.json" "$keys/publication/authorization.json"
-	"$genesis/metadata.lxgb" "$genesis/asset-id" "$genesis/replica-id")
+	"$genesis/metadata.lxgb" "$genesis/custody.profile" "$genesis/comet-url" "$genesis/asset-id" "$genesis/replica-id")
 
 fail() {
 	printf 'kernel-genesis: %s\n' "$*" >&2
@@ -134,16 +138,22 @@ asset_id() {
 }
 
 genesis_step() {
-	local argument file symbol pointer id onchain decimals pax manifest record
+	local argument file symbol pointer id onchain decimals pax manifest record comet="" height
 	local -A pointers=()
 	local -a records=()
 	for argument in "$@"; do
+		if [[ $argument =~ ^COMET=([a-z0-9.-]+)$ ]]; then
+			comet=https://${BASH_REMATCH[1]}/comet
+			continue
+		fi
 		[[ $argument =~ ^([A-Z0-9]{1,16})=(0x[0-9a-fA-F]{40})$ ]] || fail "not SYMBOL=POINTER: $argument"
 		pointers[${BASH_REMATCH[1]}]=${BASH_REMATCH[2]}
 	done
 	for symbol in SID USDC USDL; do
 		[ -n "${pointers[$symbol]:-}" ] || fail "the pointer of $symbol is required"
 	done
+	[ -n "$comet" ] || fail "COMET=HOST, the chain 125 archive name serving /comet, is required"
+	command -v layerx-custody-proof >/dev/null || fail "layerx-custody-proof is not in the kernel image"
 	for file in "${key_files[@]}"; do
 		[ -s "$file" ] || fail "$file is absent; run kernel-genesis.sh keys first"
 	done
@@ -165,6 +175,19 @@ genesis_step() {
 	[ "$pax" = "$(asset_id PAX)" ] ||
 		fail "the PAX asset id 0x$pax is not sha256(\"layerx-asset:125:PAX\") 0x$(asset_id PAX)"
 	records+=("$pax:PAX:18")
+
+	# The PAX custody profile of the opening credit: a light-client profile
+	# trusting the Comet header one below the latest, built from the chain.
+	height=$(curl -fsS -m 15 "$comet" -H 'content-type: application/json' \
+		-d '{"jsonrpc":"2.0","id":1,"method":"status","params":{}}' |
+		jq -er '(.result // .).sync_info.latest_block_height | tonumber') || fail "the Comet RPC at $comet did not answer status"
+	layerx-custody-proof light-profile --rpc "$comet" --asset "0x$pax" --network-id "$network_id" \
+		--trusted-height "$((height - 1))" --trusting-period-seconds 1209600 --output "$genesis/custody.profile" >/dev/null ||
+		fail "layerx-custody-proof light-profile refused the chain 125 custody state at height $((height - 1))"
+	[ "$(stat -c %s "$genesis/custody.profile")" = 223 ] || fail "the custody profile is not 223 bytes"
+	printf '%s\n' "$comet" >"$genesis/comet-url"
+	chown 4020:4020 "$genesis/custody.profile" "$genesis/comet-url"
+	chmod 0444 "$genesis/custody.profile" "$genesis/comet-url"
 	for symbol in "${!pointers[@]}"; do
 		pointer=${pointers[$symbol]}
 		id=$(call "0xca65021c$(word "$pointer")") || fail "eth_call assetByPointer($pointer) failed"
@@ -250,6 +273,7 @@ PY
 	echo "network_id=$network_id"
 	echo "genesis_sha256=$(sha256sum "$manifest" | cut -d' ' -f1)"
 	echo "metadata_sha256=$(sha256sum "$genesis/metadata.lxgb" | cut -d' ' -f1)"
+	echo "custody_profile_sha256=$(sha256sum "$genesis/custody.profile" | cut -d' ' -f1)"
 	echo "sequencer_public_key=$sequencer_public"
 	echo "replica_id=$replica_id"
 	echo "publication_recipient=0x$recipient"
@@ -263,5 +287,5 @@ PY
 case "${1:-}" in
 keys) keys_step "${@:2}" ;;
 genesis) genesis_step "${@:2}" ;;
-*) fail "usage: kernel-genesis.sh keys [rotate] | genesis SID=POINTER USDC=POINTER USDL=POINTER [SYMBOL=POINTER...]" ;;
+*) fail "usage: kernel-genesis.sh keys [rotate] | genesis COMET=HOST SID=POINTER USDC=POINTER USDL=POINTER [SYMBOL=POINTER...]" ;;
 esac

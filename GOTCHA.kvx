@@ -1625,3 +1625,21 @@ area    = "spec-tooling"
 symptom = "cg spec start refuses a task because another in-progress task also claims tools/bringup/check-live.sh."
 cause   = "Most bring-up tasks touch the shared probe, and start refuses overlapping touches without --force."
 do      = "Set the status line to in_progress by hand, never with --force, delete spec.kvx.lock, and record the refusal as an observation."
+
+[gotcha.268]
+area    = "bringup"
+symptom = "A script piped into a fixture machine through the harness's flyctl stand-in reads and writes the live paths of this box instead of the fixture tree."
+cause   = "The stand-in rewrites /data/, /run/layerx/ and /run/secrets/ only in the --command string, never in the script it feeds on stdin."
+do      = "Pass the roots as environment assignments inside the --command string (for example LAYERX_KERNEL_DATA=/data/layerx/) and have the piped script read them, so the stand-in rewrites them."
+
+[gotcha.269]
+area    = "shell"
+symptom = "A background job started as `cd lane && ( build ) &` leaves the next command running in the old directory, so a gate runs the main checkout's script and writes its log there."
+cause   = "The whole && list becomes the background job, so the cd happens only in that subshell."
+do      = "Put the cd on its own line or use absolute paths for the foreground command after any backgrounded list."
+
+[gotcha.270]
+area    = "bringup"
+symptom = "The kernel image cannot run layerx-custody-proof although the genesis profile and the opening credit both need it inside the machine."
+cause   = "It is a Go binary whose source trees the kernel image's dockerignore excludes, and the image's build stage is Rust and C only."
+do      = "Add a pinned Go build stage and the dockerignore exceptions for its trees before relying on custody proofs inside the kernel machine."

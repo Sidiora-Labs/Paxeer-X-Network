@@ -401,6 +401,7 @@ service layerxd 4020 "$genesis_files" kernel_ids clock -- \
 	--role sequencer --data-dir "$node_data" --run-dir "$run/node" -- \
 	--network-id "$LAYERX_NODE_NETWORK_ID" \
 	--genesis-metadata "$genesis/metadata.lxgb" \
+	--custody-profile "$genesis/custody.profile" \
 	--withdrawal-fee 0 \
 	--module-fees /opt/layerx/genesis-module-fees.json \
 	--sequencer-key "$keys/sequencer.key" \

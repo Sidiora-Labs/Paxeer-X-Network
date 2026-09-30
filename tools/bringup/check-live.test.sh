@@ -2598,6 +2598,199 @@ unset CHECK_LIVE_TEST_LEGS CHECK_LIVE_INTEROP_ORIGIN LAYERX_RAMP_URL LAYERX_RAMP
 unset LAYERX_RAMP_ON_QUOTE_ID LAYERX_RAMP_OFF_QUOTE_ID LAYERX_RAMP_OFF_GRANT_JSON LAYERX_RAMP_ON_ACCOUNT_SEQUENCE
 unset LAYERX_RAMP_OFF_RECEIVER_SEQUENCE CHECK_LIVE_INTEROP_ADAPTERS_CUSTOMER_TOKEN_FILE CHECK_LIVE_INTEROP_ADAPTERS_OPERATOR_TOKEN_FILE
 
+# kernel-value-loop: the kernel app's fixture machine holds the genesis
+# outputs, the publication policy, a bound LNI socket and the receipt
+# authority's CA; a copy of sleep named layerx-receipt-authority carries the
+# token file in its environment. Stand-ins for setpriv, layerx-node-probe,
+# layerxctl, layerx-custody-proof and sign-credit keep their state under
+# $vl, and a curl stand-in answers the pod's relay (nativeAssetId, the deposit
+# receipt, statusOf from CHECK_LIVE_TEST_VL_FINAL_FROM on) and the receipt
+# authority; the sender's opening credit comes from the named deposit.
+cp "$root/tools/bringup/value-loop.sh" "$fx/tools/bringup/"
+vl="$work/value-loop"
+vlroot="$CHECK_LIVE_TEST_FLY/$kernel/app"
+vl_asset="$(printf 'layerx-asset:125:PAX' | sha256sum | cut -d' ' -f1)"
+vl_deposit="0x$(printf '5%.0s' $(seq 64))"
+vl_activity="$(printf 'ab%.0s' $(seq 32))"
+vl_batch="$(printf 'cd%.0s' $(seq 32))"
+mkdir -p "$vl/bin" "$vl/state" "$vlroot/data/layerx/genesis" "$vlroot/data/layerx/keys/publication" \
+	"$vlroot/data/tls/receipt-authority" "$vlroot/run/layerx/node"
+printf '%s\n' "$vl_asset" >"$vlroot/data/layerx/genesis/asset-id"
+printf '%064d\n' 9 >"$vlroot/data/layerx/genesis/replica-id"
+head -c 223 /dev/zero >"$vlroot/data/layerx/genesis/custody.profile"
+printf 'https://comet.invalid/comet\n' >"$vlroot/data/layerx/genesis/comet-url"
+echo '{}' >"$vlroot/data/layerx/keys/publication/authorization.json"
+echo '{}' >"$vlroot/data/layerx/keys/publication/binding-policy.json"
+echo 'fixture ca' >"$vlroot/data/tls/receipt-authority/ca.pem"
+printf 'fixture-authority-token\n' >"$vl/authority-token"
+cat >"$vl/bin/setpriv" <<'SH'
+#!/usr/bin/env bash
+while [ "$#" -gt 0 ] && [ "$1" != -- ]; do shift; done
+shift
+exec "$@"
+SH
+cat >"$vl/bin/layerx-node-probe" <<'SH'
+#!/usr/bin/env bash
+set -eu
+command=$1
+shift
+declare -A flag=()
+while [ "$#" -gt 1 ]; do flag[${1#--}]=$2; shift 2; done
+case "$command" in
+handshake) printf '{"latest_sealed_batch":5}\n' ;;
+balance)
+	account=${flag[account]#agent:did:layerx:}
+	account=${account%:main}
+	if [ -s "$CHECK_LIVE_TEST_VL/state/balance-$account" ]; then
+		printf '{"account":"%s","balance":"%s"}\n' "${flag[account]}" "$(cat "$CHECK_LIVE_TEST_VL/state/balance-$account")"
+	else
+		printf '{"refused":{"class":4,"result":-208}}\n'
+	fi
+	;;
+write-send)
+	[ -s "${flag[seed-file]}" ] || exit 2
+	printf '%s' "${flag[destination-did]#did:layerx:}" >"$CHECK_LIVE_TEST_VL/state/send-destination"
+	printf 'send' >"${flag[output]}"
+	printf '%s\n' "$(printf 'ab%.0s' $(seq 32))"
+	;;
+*) exit 2 ;;
+esac
+SH
+cat >"$vl/bin/layerxctl" <<'SH'
+#!/usr/bin/env bash
+set -eu
+command=$1
+shift
+declare -A flag=()
+while [ "$#" -gt 1 ]; do flag[${1#--}]=$2; shift 2; done
+state=$CHECK_LIVE_TEST_VL/state
+case "$command" in
+submit)
+	case "$(cat "${flag[activity]}")" in
+	credit) printf '1000' >"$state/balance-${flag[public-key]}" ;;
+	send)
+		printf '999' >"$state/balance-${flag[public-key]}"
+		printf '1' >"$state/balance-$(cat "$state/send-destination")"
+		;;
+	*) exit 2 ;;
+	esac
+	printf '{"state":"acknowledged","activity_id":"%s"}\n' "$(printf 'ab%.0s' $(seq 32))"
+	;;
+read-state) printf '{"sequence":1}\n' ;;
+*) exit 2 ;;
+esac
+SH
+cat >"$vl/bin/layerx-custody-proof" <<'SH'
+#!/usr/bin/env bash
+[ "$1" = light-credit ] || exit 2
+while [ "$#" -gt 1 ] && [ "$1" != --output ]; do shift; done
+printf 'proof' >"$2"
+SH
+cat >"$vl/bin/sign-credit" <<'SH'
+#!/usr/bin/env bash
+[ "$#" -eq 7 ] && [ -s "$1" ] && [ -s "$2" ] && [ -s "$4" ] || exit 2
+printf 'credit' >"$7"
+SH
+cat >"$vl/bin/curl" <<'SH'
+#!/usr/bin/env bash
+data="" url="" auth=""
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+	-d) data=$2; shift 2 ;;
+	-H) [[ $2 != Authorization:* ]] || auth=${2#Authorization: Bearer }; shift 2 ;;
+	-m | --cacert) shift 2 ;;
+	-*) shift ;;
+	*) url=$1; shift ;;
+	esac
+done
+exec python3 - "$url" "$data" "$auth" <<'PY'
+import hashlib, json, os, sys
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+url, data, auth = sys.argv[1:]
+vl = os.environ["CHECK_LIVE_TEST_VL"]
+if url == "http://127.0.0.1:18545":
+    request = json.loads(data)
+    if request["method"] == "eth_call":
+        call = request["params"][0]
+        if call["to"].endswith("1013") and call["data"] == "0xaafcde84":
+            result = "0x" + hashlib.sha256(b"layerx-asset:125:PAX").hexdigest()
+        elif call["to"].endswith("1014") and call["data"].startswith("0x4eb47710"):
+            batch = int(call["data"][10:], 16)
+            result = "0x%064x" % (1 if batch >= int(os.environ.get("CHECK_LIVE_TEST_VL_FINAL_FROM", "5")) else 0)
+        else:
+            sys.exit(22)
+    elif request["method"] == "eth_getTransactionReceipt":
+        seed = open(os.environ["CHECK_LIVE_TEST_VL_SENDER"], "rb").read()
+        public = Ed25519PrivateKey.from_private_bytes(seed).public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+        name = ("agent:did:layerx:" + public.hex() + ":main").encode()
+        main = hashlib.sha256(b"LX:ACCOUNT:v1" + len(name).to_bytes(4, "big") + name).hexdigest()
+        result = {"status": "0x1", "logs": [{"address": "0x" + "0" * 36 + "1013", "topics": [
+            "0x7edb71c9100c656847896d0b5b194f69f7da287eb57964a81e7f807a6a944028", "0x" + "77" * 32,
+            "0x" + hashlib.sha256(b"layerx-asset:125:PAX").hexdigest(), "0x" + "00" * 32],
+            "data": "0x" + main + "%064x" % 1000 + "%064x" % 1}]}
+    else:
+        sys.exit(22)
+    print(json.dumps({"jsonrpc": "2.0", "id": 1, "result": result}))
+elif url == "https://127.0.0.1:9445/readyz":
+    print(json.dumps({"ready": True, "network_id": 125, "wire_version": 3}))
+elif url.startswith("https://127.0.0.1:9445/v1/authorized-batches/by-activity/") and auth == "fixture-authority-token":
+    print(json.dumps({"activity_id": url.rsplit("/", 1)[1], "batch_id": "cd" * 32, "network_id": 125}))
+else:
+    sys.exit(7)
+PY
+SH
+cp "$(command -v sleep)" "$vl/bin/layerx-receipt-authority"
+chmod +x "$vl/bin/"*
+env LAYERX_AUTHORITY_TOKEN_FILES="$vl/authority-token" "$vl/bin/layerx-receipt-authority" 300 &
+vl_authority_pid=$!
+python3 -c 'import socket, sys, time; s = socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); time.sleep(300)' \
+	"$vlroot/run/layerx/node/layerxd.lni.sock" &
+vl_lni_pid=$!
+for _ in $(seq 50); do [ -S "$vlroot/run/layerx/node/layerxd.lni.sock" ] && break; sleep 0.1; done
+export CHECK_LIVE_TEST_VL="$vl" CHECK_LIVE_TEST_VL_SENDER="$vlroot/data/layerx/keys/value-loop/sender.key"
+CHECK_LIVE_VALUE_LOOP_DEPOSIT_TX="$vl_deposit" PATH="$vl/bin:$PATH" CHECK_LIVE_TEST_PROGRAM="$fx_checker" \
+	expect check_live_kernel_value_loop_passing "$work/hosts-good.env" 0 kernel-value-loop -- \
+	"pass asset PAX id=$vl_asset" \
+	"pass account sender did=did:layerx:" \
+	"pass account recipient did=did:layerx:" \
+	"pass credit deposit=$vl_deposit amount=1000" \
+	"pass activity id=$vl_activity" \
+	'pass balance sender {"balance":"999","refused":null}' \
+	'pass balance recipient {"balance":"1","refused":null}' \
+	"pass batch id=$vl_batch sealed=5" \
+	"pass checkpoint batch=5 status=submitted" \
+	"check-live: all checks passed"
+if [ "$(stat -c '%s %a %u' "$vlroot/data/layerx/keys/value-loop/sender.key")" = "32 400 4021" ] &&
+	! grep -qF "$(od -An -tx1 "$vlroot/data/layerx/keys/value-loop/sender.key" | tr -d ' \n')" "$CHECK_LIVE_TEST_CALLS"; then
+	echo "ok   check_live_kernel_value_loop_keeps_the_seeds"
+else
+	echo "FAIL check_live_kernel_value_loop_keeps_the_seeds: want a 32-byte 0400 seed owned by 4021 that never leaves the machine"
+	failures=$((failures + 1))
+fi
+CHECK_LIVE_TEST_VL_FINAL_FROM=99 CHECK_LIVE_VALUE_LOOP_CHECKPOINT_SECONDS=0 PATH="$vl/bin:$PATH" CHECK_LIVE_TEST_PROGRAM="$fx_checker" \
+	expect check_live_kernel_value_loop_one_failing "$work/hosts-good.env" 1 kernel-value-loop -- \
+	"pass activity id=$vl_activity" \
+	"pass batch id=$vl_batch sealed=5" \
+	"fail checkpoint batch=5 status=none" \
+	"check-live: 1 check(s) failed"
+kill "$vl_authority_pid" 2>/dev/null || true
+wait "$vl_authority_pid" 2>/dev/null || true
+PATH="$vl/bin:$PATH" CHECK_LIVE_TEST_PROGRAM="$fx_checker" \
+	expect check_live_kernel_value_loop_receipt_authority_absent "$work/hosts-good.env" 1 kernel-value-loop -- \
+	"fail precondition receipt-authority no layerx-receipt-authority process" \
+	"check-live: 1 check(s) failed"
+rm -f "$vlroot/data/layerx/genesis/asset-id"
+PATH="$vl/bin:$PATH" CHECK_LIVE_TEST_PROGRAM="$fx_checker" \
+	expect check_live_kernel_value_loop_precondition_absent "$work/hosts-good.env" 1 kernel-value-loop -- \
+	"fail precondition genesis-ids" \
+	"run kernel-genesis.sh genesis (step C) first" \
+	"check-live: 1 check(s) failed"
+kill "$vl_lni_pid" 2>/dev/null || true
+wait "$vl_lni_pid" 2>/dev/null || true
+rm -rf "${vlroot:?}/data/layerx" "${vlroot:?}/data/tls/receipt-authority" "${vlroot:?}/run/layerx/node"
+unset CHECK_LIVE_TEST_VL CHECK_LIVE_TEST_VL_SENDER
+
 # The fleet script shares the host map and the ssh helpers, so its own test
 # runs as the last case, with this test's stand-ins off the PATH.
 status=0

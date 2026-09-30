@@ -420,14 +420,14 @@ reqs       = ["6.3"]
 
 [task.1.6]
 title      = "Prove the value loop through layerxctl: a SEND over the LNI, batch evidence at the replica and a checkpoint on chain"
-status     = "in_progress"
+status     = "implemented"
 wave       = 1
-requires   = ["1.4"]
+requires   = ["1.4", "2.1"]
 do_1       = "Write tools/bringup/value-loop.sh that runs inside the kernel app's machine through flyctl ssh console: layerxctl submit of one SEND between two funded accounts over the LNI, layerxctl read-state showing the new balances, the replica's batch document carrying the activity, and eth_call statusOf on the anchor precompile returning submitted or final for a checkpoint at or after that batch."
 do_2       = "Add the kernel-value-loop subcommand that runs the script in the machine and reports the activity digest, the batch number and the checkpoint status."
 verify_cmd = "timeout 15m tools/bringup/check-live.sh kernel-value-loop"
 symbols    = ["value_loop", "check_kernel_value_loop"]
-touches    = ["tools/bringup/value-loop.sh", "tools/bringup/check-live.sh"]
+touches    = ["tools/bringup/value-loop.sh", "tools/bringup/check-live.sh", "docker/kernel/Dockerfile", "tools/bringup/kernel-genesis.sh", "docker/kernel/init.sh"]
 tests      = ["tools/bringup/check-live.test.sh"]
 reqs       = ["6.4"]
 
