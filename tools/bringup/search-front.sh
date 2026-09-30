@@ -22,8 +22,8 @@ names     asks every RPC_HOSTS destination over ssh which apiN site its nginx
           destination does not answer or serves no apiN site.
 
 render    prints the upstream list that nginx includes at http level: a
-          comment line and the split_clients block on Fly-Client-IP that sets
-          $xweb_node, one "<percent>% <name>;" line per serving RPC name with
+          comment line and the split_clients block on $xweb_client (the edge's
+          X-Real-IP, else Fly-Client-IP) that sets $xweb_node, one "<percent>% <name>;" line per serving RPC name with
           "*" on the last, every name an equal share. With no serving name
           the block is empty and the search paths answer 502.
 
@@ -90,7 +90,7 @@ search_front_render() {
 	mapfile -t names < <(sed -n 's/^serve //p' <<<"$listing")
 	echo "# The serving RPC names of $search_front_host, rendered by tools/bringup/search-front.sh."
 	# shellcheck disable=SC2016
-	echo 'split_clients "${http_fly_client_ip}" $xweb_node {'
+	echo 'split_clients "${xweb_client}" $xweb_node {'
 	if [ "${#names[@]}" -gt 0 ]; then
 		share=$((10000 / ${#names[@]}))
 		for i in "${!names[@]}"; do
