@@ -745,3 +745,19 @@ symbol     = "check_ci"
 observed   = "cg spec implemented 4.13 exited 75 with the graph database busy and symbol check_ci not defined in the graph; both fly.toml files already carry the real app names and the controller's env by name, so they needed no change."
 assumption = "Shell functions are not graph symbols, so the status line was set to implemented by hand; the controller's three secrets are set by name through flyctl secrets import, never in the toml."
 severity   = "note"
+
+[observation.2.6.1]
+task       = "2.6"
+file       = "platform/hosted/registry/src/event_producer.rs"
+symbol     = "ProgramOutbox::start"
+observed   = "The registry calls Client::from_environment(&[\"program\"]) at startup, so it refuses to start without the LAYERX_EVENTS_PROGRAM_UPSTREAM_* and LAYERX_EVENTS_WEBHOOKS_UPSTREAM_* groups, which task 4.5 adds later against the internal and webhooks apps that no task has created and whose app names the spec does not fix."
+assumption = "None taken: either the registry uses the optional from_environment_if_configured path as other producers do, or task 2.6 carries both groups now with named upstream apps; the owner decides, and the task stays in_progress with no code written."
+severity   = "blocker"
+
+[observation.2.6.2]
+task       = "2.6"
+file       = "platform/hosted/node/deployment.yaml"
+symbol     = "LAYERX_REGISTRY_NODE_AUTHORIZATION"
+observed   = "The registry's node and receipt authority bearer values, its receipt authority replica id and its sequencer trust history file come from the kernel side, whose Fly paths the spec and the tree do not fix, because the kernel app's init that would place the registry-authority and registry-component tokens is not in the tree."
+assumption = "None taken: the owner names where the kernel app keeps those four values, or whether task 2.6 generates them and imports them into both apps."
+severity   = "blocker"
