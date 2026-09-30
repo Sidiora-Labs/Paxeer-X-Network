@@ -147,6 +147,7 @@ case "$sub" in
 	mkdir -p "$root/$group/data" "$root/secrets"
 	command="${command//\/data\//$root/$group/data/}"
 	command="${command//\/run\/secrets\//$root/secrets/}"
+	command="${command//\/run\/layerx\//$root/$group/run/layerx/}"
 	tee -a "$CHECK_LIVE_TEST_STDIN" | bash -c "$command"
 	;;
 "secrets import")
@@ -158,6 +159,9 @@ case "$sub" in
 	done
 	;;
 "ips list") printf '%s\n' "${CHECK_LIVE_TEST_IPS:-[]}" ;;
+"machines list")
+	cat "$root/machines.json"
+	;;
 *) exit 96 ;;
 esac
 SH
@@ -915,6 +919,39 @@ kill "$agentd_pid" 2>/dev/null || true
 wait "$agentd_pid" 2>/dev/null || true
 agentd_pid=""
 unset CHECK_LIVE_TEST_IPS CHECK_LIVE_TEST_AGENT_RPC CHECK_LIVE_TEST_AGENT_RPC_CODE
+# kernel-app: the fixture machine list and the init status directory of the
+# kernel app; the init and each running service are live local processes, so
+# their uid is this test's uid.
+me="$(id -u)"
+kinit="$CHECK_LIVE_TEST_FLY/$kernel/app/run/layerx/init"
+mkdir -p "$kinit"
+bash -c 'exec -a /usr/local/bin/kernel-init sleep 300' &
+kernel_init_pid=$!
+sleep 300 &
+kernel_service_pid=$!
+echo "$kernel_init_pid" >"$kinit/pid"
+echo "$me running $kernel_service_pid" >"$kinit/human"
+echo "4020 waiting genesis" >"$kinit/layerxd"
+printf '[{"state":"started","config":{"mounts":[{"volume":"vol_kernel","path":"/data"}]}}]' \
+	>"$CHECK_LIVE_TEST_FLY/$kernel/machines.json"
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_kernel_app_passing "$work/hosts-good.env" 0 kernel-app -- \
+	"pass machines app=$kernel machines=1 started=1 volume=/data" \
+	"pass init app=$kernel uid=0 entrypoint=kernel-init" \
+	"pass service human uid=$me state=running" \
+	"pass service layerxd uid=4020 state=waiting-genesis" \
+	"check-live: all checks passed"
+echo "4020 running $kernel_service_pid" >"$kinit/human"
+echo "4020 waiting /data/layerx/keys/publication/binding-policy.json" >"$kinit/treasury-signer"
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_kernel_app_failing "$work/hosts-good.env" 1 kernel-app -- \
+	"fail service human uid=$me want=4020 state=running" \
+	"fail service treasury-signer uid=4020 state=waiting on=/data/layerx/keys/publication/binding-policy.json" \
+	"check-live: 2 check(s) failed"
+printf '[{"state":"started","config":{"mounts":[]}},{"state":"stopped","config":{}}]' \
+	>"$CHECK_LIVE_TEST_FLY/$kernel/machines.json"
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_kernel_app_volumeless "$work/hosts-good.env" 1 kernel-app -- \
+	"fail machines app=$kernel machines=2 started=1 volume-at-data=0" \
+	"check-live: 1 check(s) failed"
+kill "$kernel_init_pid" "$kernel_service_pid" 2>/dev/null || true
 
 # The fleet script shares the host map and the ssh helpers, so its own test
 # runs as the last case, with this test's stand-ins off the PATH.
