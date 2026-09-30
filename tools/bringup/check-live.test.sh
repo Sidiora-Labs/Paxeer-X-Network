@@ -20,7 +20,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for tool in timeout python3 curl sha256sum openssl base64; do
+for tool in timeout python3 curl sha256sum openssl base64 cast; do
 	if ! command -v "$tool" >/dev/null 2>&1; then
 		echo "check-live.test: $tool is required" >&2
 		exit 2
@@ -101,7 +101,7 @@ chmod +x "$work/bin/ssh"
 # for /data, so every fixture machine keeps its own files. ssh console runs
 # its command on this box and records its stdin; secrets import wants
 # --stage, decodes each NAME=base64 line into the app's secrets directory and
-# records only the names.
+# records only the names. machines list answers CHECK_LIVE_TEST_MACHINES.
 cat >"$work/bin/flyctl" <<'SH'
 #!/usr/bin/env bash
 set -eu
@@ -162,6 +162,7 @@ case "$sub" in
 "machines list")
 	cat "$root/machines.json"
 	;;
+"machines list") printf '%s\n' "${CHECK_LIVE_TEST_MACHINES:-[]}" ;;
 *) exit 96 ;;
 esac
 SH
@@ -176,6 +177,8 @@ chmod +x "$work/bin/flyctl"
 # and /rpc want the bearer CHECK_LIVE_TEST_AGENT_BEARER in the --config file,
 # and /rpc answers a program.discover of CHECK_LIVE_TEST_AGENT_PROGRAM with
 # CHECK_LIVE_TEST_AGENT_RPC_CODE and CHECK_LIVE_TEST_AGENT_RPC.
+# With CHECK_LIVE_TEST_GAS set, the chain name and the router's /rpc answer
+# from the files of that directory, as the gas cases below describe.
 cat >"$work/bin/curl" <<'SH'
 #!/usr/bin/env bash
 set -eu
@@ -192,6 +195,35 @@ printf '%s curl\n' "$name" >>"$CHECK_LIVE_TEST_CALLS"
 case " ${CHECK_LIVE_TEST_DOWN:-} " in
 *" $name "*) exit 7 ;;
 esac
+if [ -n "${CHECK_LIVE_TEST_GAS:-}" ] && { [ "$name" = chain ] || [ "$url" = https://api-mainnet-beta.paxeer.network/rpc ]; }; then
+	out=/dev/stdout
+	data=""
+	wout=""
+	while [ "$#" -gt 0 ]; do
+		case "$1" in
+		--output) out="$2" ;;
+		--write-out) wout="$2" ;;
+		--data-binary) data="$(cat "${2#@}")" ;;
+		-d) data="$2" ;;
+		esac
+		shift
+	done
+	if [ "$name" = chain ]; then
+		route="${url##*/}"
+		printf '%s' "$data" >"$CHECK_LIVE_TEST_GAS/$route.request"
+		cat "$CHECK_LIVE_TEST_GAS/$route.body" >"$out"
+		[ -z "$wout" ] || cat "$CHECK_LIVE_TEST_GAS/$route.code"
+		exit 0
+	fi
+	file="$(python3 -c '
+import json, sys
+r = json.loads(sys.argv[1])
+m = r["method"]
+print(m + "-" + r["params"][0]["data"] if m == "eth_call" else m)
+' "$data")"
+	printf '{"jsonrpc":"2.0","id":1,"result":%s}\n' "$(cat "$CHECK_LIVE_TEST_GAS/$file" 2>/dev/null || echo null)"
+	exit 0
+fi
 if [ "$name" = machine ]; then
 	out=/dev/stdout
 	conf=""
@@ -952,6 +984,103 @@ CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_kernel_app_volumeless "$
 	"fail machines app=$kernel machines=2 started=1 volume-at-data=0" \
 	"check-live: 1 check(s) failed"
 kill "$kernel_init_pid" "$kernel_service_pid" 2>/dev/null || true
+
+# The gas cases run the probe of the fixture tree against the gas station
+# app's fixture machine, whose volume holds the rendered station.json, with a
+# real cast keystore as the check account; the curl stand-in answers the
+# chain name's /quote and /submit and the router's JSON-RPC from the files of
+# CHECK_LIVE_TEST_GAS, and keeps each request the station received.
+gas="$(fx_app interop/deploy/gas-station/fly.toml)"
+gas_sid=0x21f7b20a555199fa73A238B1a91FD0f549068fEe
+gas_paymaster=0x1234567890abcdef1234567890abcdef12345678
+gas_sponsor=0x5ce0000000000000000000000000000000000001
+gas_password="fixture-gas-password-$(openssl rand -hex 16)"
+export CHECK_LIVE_TEST_GAS="$work/gas"
+mkdir -p "$CHECK_LIVE_TEST_GAS" "$work/gas-keystore"
+printf '%s\n' "$gas_password" >"$work/gas-password"
+cast wallet new "$work/gas-keystore" --unsafe-password "$gas_password" >/dev/null
+gas_account="$(cast wallet address --keystore "$work/gas-keystore"/* --password-file "$work/gas-password")"
+
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_gas_inputs_unset "$work/hosts-good.env" 2 gas -- \
+	"check-live: CHECK_LIVE_GAS_ACCOUNT_KEYSTORE is unset"
+
+CHECK_LIVE_GAS_ACCOUNT_KEYSTORE="$(echo "$work/gas-keystore"/*)"
+export CHECK_LIVE_GAS_ACCOUNT_KEYSTORE CHECK_LIVE_GAS_ACCOUNT_PASSWORD_FILE="$work/gas-password"
+export CHECK_LIVE_GAS_MAX_TOKEN_AMOUNT=5000 CHECK_LIVE_GAS_RECEIPT_ATTEMPTS=1
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_gas_toml_absent "$work/hosts-good.env" 1 gas -- \
+	"fail gas toml=absent" \
+	"check-live: 1 check(s) failed"
+
+mkdir -p "$fx/interop/deploy/gas-station" "$work/fly/$gas/app/data/gas-station"
+printf 'app = "%s"\n' "$gas" >"$fx/interop/deploy/gas-station/fly.toml"
+printf '{"listen":"[::]:8080","chain_id":125,"endpoints":["https://api-mainnet-beta.paxeer.network/rpc","https://api4.mainnet-beta.paxeer.network","https://api5.mainnet-beta.paxeer.network"],"paymaster":"%s","token":"%s","decimals":6,"gas_limit":200000,"max_priority_fee_per_gas":1000000000}\n' \
+	"$gas_paymaster" "$gas_sid" >"$work/fly/$gas/app/data/gas-station/station.json"
+export CHECK_LIVE_TEST_MACHINES='[{"state":"started","config":{"mounts":[{"volume":"vol_fixture"}]}}]'
+printf '"0xef0100%s"' "${gas_paymaster#0x}" >"$CHECK_LIVE_TEST_GAS/eth_getCode"
+printf '"0x%064x"' 3114000 >"$CHECK_LIVE_TEST_GAS/eth_call-$(cast sig 'currentRate()')"
+printf '"0x%064x"' 0 >"$CHECK_LIVE_TEST_GAS/eth_call-$(cast sig 'nonce()')"
+printf '"0x3b9aca00"' >"$CHECK_LIVE_TEST_GAS/eth_gasPrice"
+printf '"0x0"' >"$CHECK_LIVE_TEST_GAS/eth_getTransactionCount"
+# gasCost = 200000 * (2 * 1 gwei + 1 gwei) = 6e14 wei; at 3114000 SID base
+# units per PAX the expected amount is ceil(1868.4) = 1869.
+gas_quote() {
+	printf '{"quote":{"sponsor":"%s","token":"%s","maxTokenAmount":"5000","tokenAmount":"%s","deadline":"1900000000","quoteNonce":"7","gasCost":"600000000000000","decimals":6},"relayerSignature":"0x%s"}' \
+		"$gas_sponsor" "$gas_sid" "$1" "$(printf 'ab%.0s' {1..65})" >"$CHECK_LIVE_TEST_GAS/quote.body"
+}
+gas_quote 1869
+printf '200' >"$CHECK_LIVE_TEST_GAS/quote.code"
+printf '{"transactionHash":"0x%s"}' "$(printf 'cd%.0s' {1..32})" >"$CHECK_LIVE_TEST_GAS/submit.body"
+printf '200' >"$CHECK_LIVE_TEST_GAS/submit.code"
+printf '{"status":"0x1","logs":[{"address":"%s","topics":["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef","0x%064s","0x%064s"],"data":"0x%064x"}]}' \
+	"$gas_sid" "${gas_account#0x}" "${gas_sponsor#0x}" 1869 | tr " " 0 >"$CHECK_LIVE_TEST_GAS/eth_getTransactionReceipt"
+: >"$CHECK_LIVE_TEST_STDIN"
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_gas_passing "$work/hosts-good.env" 0 gas -- \
+	"pass machines app=$gas machines=1 started=1 volumes=1" \
+	"pass config app=$gas chain_id=125 token=SID endpoints=3 first=router paymaster=$gas_paymaster" \
+	"pass delegation account=$gas_account delegate=$gas_paymaster" \
+	"pass quote https://chain.paxeer.network/quote http=200 rate=3114000 token_amount=1869 expected=1869 max=5000 sponsor=$gas_sponsor" \
+	"pass submit https://chain.paxeer.network/submit http=200 tx=0x$(printf 'cd%.0s' {1..32}) status=1 sid_transfer=1869 want=1869 to=sponsor" \
+	"check-live: all checks passed"
+
+if python3 - "$CHECK_LIVE_TEST_GAS/submit.request" "$gas_account" "$gas_paymaster" "$(cast sig 'executeSponsored((address,uint256,bytes)[],(address,address,uint256,uint256,uint256,uint256,uint256),bytes,bytes)')" <<'PY'
+import json, sys
+r = json.load(open(sys.argv[1]))
+account, paymaster, selector = sys.argv[2].lower(), sys.argv[3].lower(), sys.argv[4]
+q = r["batch"]["quote"]
+assert r["call"]["to"].lower() == account and r["call"]["value"] == "0" and r["call"]["data"].startswith(selector)
+assert r["authorization"]["address"].lower() == paymaster and r["authorization"]["nonce"] == "0" and r["authorization"]["yParity"] in (0, 1)
+assert len(r["authorization"]["r"]) == 66 and len(r["authorization"]["s"]) == 66
+assert r["batch"]["account"].lower() == account and r["batch"]["nonce"] == "0" and r["batch"]["chainId"] == "125"
+assert q["tokenAmount"] == "1869" and q["quoteNonce"] == "7" and q["gasCost"] == "600000000000000" and q["decimals"] == 6
+assert len(r["accountSignature"]) == 132 and r["relayerSignature"] == "0x" + "ab" * 65
+PY
+then
+	echo "ok   check_live_gas_submit_request_shape"
+else
+	echo "FAIL check_live_gas_submit_request_shape: the /submit request the station received is not the sponsored batch of the quote"
+	failures=$((failures + 1))
+fi
+if grep -qF -e "$gas_password" -e "$CHECK_LIVE_GAS_ACCOUNT_KEYSTORE" "$CHECK_LIVE_TEST_STDIN" "$CHECK_LIVE_TEST_CALLS" "$CHECK_LIVE_TEST_GAS"/*.request; then
+	echo "FAIL check_live_gas_keystore_stays_local: the password or keystore path reached a machine, a call line or a station request"
+	failures=$((failures + 1))
+else
+	echo "ok   check_live_gas_keystore_stays_local"
+fi
+
+gas_quote 2000
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_gas_quote_outside_spread "$work/hosts-good.env" 1 gas -- \
+	"pass delegation account=$gas_account delegate=$gas_paymaster" \
+	"fail quote https://chain.paxeer.network/quote http=200 rate=3114000 token_amount=2000 expected=1869 max=5000" \
+	"check-live: 1 check(s) failed"
+
+gas_quote 1869
+printf '"0x"' >"$CHECK_LIVE_TEST_GAS/eth_getCode"
+export CHECK_LIVE_TEST_MACHINES='[]'
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_gas_undelegated "$work/hosts-good.env" 1 gas -- \
+	"fail machines app=$gas machines=0 started=0 volumes=0" \
+	"fail delegation account=$gas_account code=0x want=0xef0100${gas_paymaster#0x}" \
+	"check-live: 2 check(s) failed"
+unset CHECK_LIVE_TEST_GAS CHECK_LIVE_TEST_MACHINES CHECK_LIVE_GAS_ACCOUNT_KEYSTORE CHECK_LIVE_GAS_ACCOUNT_PASSWORD_FILE CHECK_LIVE_GAS_MAX_TOKEN_AMOUNT CHECK_LIVE_GAS_RECEIPT_ATTEMPTS
 
 # The fleet script shares the host map and the ssh helpers, so its own test
 # runs as the last case, with this test's stand-ins off the PATH.

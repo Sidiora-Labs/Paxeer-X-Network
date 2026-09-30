@@ -1385,3 +1385,21 @@ area    = "bringup"
 symptom = "check-live.test kernel-app cases resolved the real app name instead of the fx- fixture app."
 cause   = "The default checker reads tomls from the real repository root; only the fixture copy reads the fixture tree."
 do      = "Run cases that read a fixture toml with CHECK_LIVE_TEST_PROGRAM=\"$fx_checker\"."
+
+[gotcha.228]
+area    = "gas-station"
+symptom = "A /quote for an account that has never used the paymaster answers 503 instead of a quote."
+cause   = "The station eth_calls nonce() and usedQuoteNonces on the account itself; an undelegated account returns empty code, which reads as malformed."
+do      = "Delegate the account to the paymaster with an EIP-7702 authorization before its first quote, and check eth_getCode equals 0xef0100 followed by the paymaster."
+
+[gotcha.229]
+area    = "gas-station"
+symptom = "A health check or edge probe of the gas station gets 404 on every GET path."
+cause   = "The service routes only POST /quote and POST /submit."
+do      = "Use a tcp check on the Fly app and probe the station with a POST; do not give it an http check path."
+
+[gotcha.230]
+area    = "gas-station"
+symptom = "The station refuses its configuration when max_rate_age is set to a paymaster refresh interval of more than five minutes."
+cause   = "The station config bounds max_rate_age to 1..300 seconds, independent of the contract's maximumAge."
+do      = "Keep the owner's setRate refresh interval at most 300 seconds, or change the station bound in its own task first."
