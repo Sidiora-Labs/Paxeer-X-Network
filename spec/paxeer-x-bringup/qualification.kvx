@@ -251,7 +251,7 @@ task      = "4.14"
 revision  = "b1e3dc76071c7c08b8c36303b8065951d24297ce"
 command   = "timeout 5m tools/bringup/check-live.sh hpx"
 exit_code = 0
-log_path  = "/root/lx-ops/bringup-2026-09-29/log/fm-hpx-probe.log"
+log_path  = "not retained; the probe's pass lines are quoted in observed"
 observed  = "After the registry release was published from the verified release binary and the registry deployed at its public name, healthz answers 200 with the expected chain id and source revision, all eighteen manifest checksums verify and the nodes API answers 200."
 
 [observation.3.4.1]
