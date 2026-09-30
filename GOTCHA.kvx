@@ -1061,3 +1061,9 @@ area    = "tests"
 symptom = "The lxp_test_daemon_finality_authority binary looks free to rewrite, but its prepare and emit modes feed the handover, guarantor and availability chain scripts."
 cause   = "Several tests/daemon Python drivers call that binary directly with their own arguments."
 do      = "Add new modes beside the existing ones and grep tests/daemon for the binary's name before changing its command line."
+
+[gotcha.174]
+area    = "bringup-probe"
+symptom = "A placement probe that compares a public name's DNS answer with the host map needs a resolver it can fake in the fixture test without the network."
+cause   = "check-live.sh has no DNS helper; getent is the only resolver it can call, and the fixture destinations are not addresses."
+do      = "Resolve with getent ahosts, compare against the destination with any user@ prefix stripped, and put a getent stand-in on the test PATH that maps apiN to fixture destinations."

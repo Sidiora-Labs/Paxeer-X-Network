@@ -26,8 +26,8 @@ real_path="$PATH"
 
 # A local ssh stand-in ahead of the real one on PATH: it answers for the
 # fixture destinations only, refuses to run without BatchMode, records every
-# call, and answers true and the rpc-nodes unit inspection; any other command
-# is refused.
+# call, and answers true, the rpc-nodes unit inspection and the rpc-placement
+# validator inspection; any other command is refused.
 mkdir -p "$work/bin"
 cat >"$work/bin/ssh" <<'SH'
 #!/usr/bin/env bash
@@ -62,6 +62,14 @@ hang-*) exec sleep 5 ;;
 esac
 case "$command" in
 true) exit 0 ;;
+*"ss -Hltn"*)
+	case "$dest" in
+	up-validator-*-node) echo "active none" ;;
+	up-validator-*-web) echo "inactive 80,443" ;;
+	*) echo "inactive none" ;;
+	esac
+	exit 0
+	;;
 *systemctl*)
 	n="${dest#*-rpc-}"
 	n="${n%%-*}"
@@ -176,6 +184,25 @@ esac
 printf '{"jsonrpc":"2.0","id":1,"result":"0x%x"}\n' "$((26400000 - lag))"
 SH
 chmod +x "$work/bin/curl"
+# A local getent stand-in: resolves each public name apiN to the fixture
+# destination up-rpc-N unless CHECK_LIVE_TEST_DNS ("apiN:destination ...")
+# assigns another, where - resolves to nothing.
+cat >"$work/bin/getent" <<'SH'
+#!/usr/bin/env bash
+set -eu
+[ "${1:-}" = ahosts ] || exit 2
+name="${2%%.*}"
+addr="up-rpc-${name#api}"
+case " ${CHECK_LIVE_TEST_DNS:-} " in
+*" $name:"*)
+	addr="${CHECK_LIVE_TEST_DNS##*"$name:"}"
+	addr="${addr%% *}"
+	;;
+esac
+[ "$addr" != - ] || exit 2
+printf '%s STREAM %s\n' "$addr" "$2"
+SH
+chmod +x "$work/bin/getent"
 export PATH="$work/bin:$PATH"
 export CHECK_LIVE_TEST_CALLS="$work/calls"
 export CHECK_LIVE_TEST_STDIN="$work/stdin"
@@ -233,6 +260,15 @@ EDGE_HOST=up-edge
 ARCHIVE_HOST=up-archive
 VALIDATOR_HOSTS="up-validator-a up-validator-b"
 RPC_HOSTS="up-rpc-1 up-rpc-2 up-rpc-3 up-rpc-4 up-rpc-5 up-rpc-6 up-rpc-7 up-rpc-8 up-rpc-9-fresh up-rpc-10-dead up-rpc-11 up-rpc-13 up-rpc-14 up-rpc-15 down-rpc-16"
+HPX_HOST=up-hpx
+OLD_WALLET_HOST=up-old-wallet
+ENV
+
+cat >"$work/hosts-placement-bad.env" <<'ENV'
+EDGE_HOST=up-edge
+ARCHIVE_HOST=up-archive
+VALIDATOR_HOSTS="up-validator-a-node up-validator-b-web down-validator-c"
+RPC_HOSTS="up-validator-a-node up-rpc-2 up-rpc-3 up-rpc-4 up-rpc-5 up-rpc-6 up-rpc-7 up-rpc-8 up-rpc-9 up-rpc-10 up-rpc-11 up-rpc-12 up-rpc-13 up-rpc-14 up-rpc-15"
 HPX_HOST=up-hpx
 OLD_WALLET_HOST=up-old-wallet
 ENV
@@ -586,6 +622,27 @@ expect check_live_rpc_nodes_failing "$work/hosts-rpc-bad.env" 1 rpc-nodes -- \
 	"fail api16 head=26400000 lag=0 unit=unmapped active=none" \
 	"check-live: 7 check(s) failed"
 unset CHECK_LIVE_TEST_LAG CHECK_LIVE_TEST_DOWN
+
+expect check_live_rpc_placement_passing "$work/hosts-rpc-good.env" 0 rpc-placement -- \
+	"pass api1 host=RPC_HOSTS[0] validator=no head=26400000 lag=0" \
+	"pass api16 host=RPC_HOSTS[15] validator=no head=26400000 lag=0" \
+	"pass VALIDATOR_HOSTS[0] paxd=inactive listen=none" \
+	"pass VALIDATOR_HOSTS[1] paxd=inactive listen=none" \
+	"check-live: all checks passed"
+
+export CHECK_LIVE_TEST_LAG="api7:11" CHECK_LIVE_TEST_DNS="api1:up-validator-a-node api4:- api5:up-validator-b-web"
+expect check_live_rpc_placement_failing "$work/hosts-placement-bad.env" 1 rpc-placement -- \
+	"fail api1 host=RPC_HOSTS[0] validator=yes head=26400000 lag=0" \
+	"pass api2 host=RPC_HOSTS[1] validator=no head=26400000 lag=0" \
+	"fail api4 host=none validator=no head=26400000 lag=0" \
+	"fail api5 host=VALIDATOR_HOSTS[1] validator=yes head=26400000 lag=0" \
+	"fail api7 host=RPC_HOSTS[6] validator=no head=26399989 lag=11" \
+	"fail api16 host=none validator=no head=26400000 lag=0" \
+	"fail VALIDATOR_HOSTS[0] paxd=active listen=none" \
+	"fail VALIDATOR_HOSTS[1] paxd=inactive listen=80,443" \
+	"fail VALIDATOR_HOSTS[2] ssh=255" \
+	"check-live: 8 check(s) failed"
+unset CHECK_LIVE_TEST_LAG CHECK_LIVE_TEST_DNS
 
 # A local hpx registry stand-in: a static tree served on a loopback port
 # written to a file, with a published-looking release under good/ and a

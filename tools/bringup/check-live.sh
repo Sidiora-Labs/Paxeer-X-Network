@@ -328,6 +328,88 @@ check_rpc_nodes() {
 	finish "$failures"
 }
 
+# The read-only inspection rpc-placement runs on a validator host: the
+# ActiveState of the full-node unit paxd.service (never a validator unit) and
+# the HTTP and HTTPS ports it listens on beyond loopback, one line, no address.
+# shellcheck disable=SC2016
+placement_cmd='s=$(systemctl is-active paxd.service 2>/dev/null); p=$(ss -Hltn 2>/dev/null | awk "{print \$4}" | grep -Ev "^(127\.|\[::1\]:|::1:)" | sed -n "s/.*:\(80\|443\)$/\1/p" | sort -u | paste -sd, -); echo "${s:-inactive} ${p:-none}"'
+
+# check_rpc_placement: each public RPC name resolves to an RPC_HOSTS
+# destination outside VALIDATOR_HOSTS and answers within ten blocks of the
+# highest answer, and no validator host runs the full-node unit or listens on
+# a public HTTP or HTTPS port. Destinations are named by role and index only.
+check_rpc_placement() {
+	local -a rpcs validators heads addrs
+	local k j n name head lag at validator ok polls status reply state ports top=0 failures=0
+	read -r -a rpcs <<<"$RPC_HOSTS"
+	read -r -a validators <<<"$VALIDATOR_HOSTS"
+	polls="$(mktemp -d)"
+	trap 'rm -rf "$polls"' EXIT
+	for n in $(seq 1 "$rpc_name_count"); do
+		rpc_head "api$n" >"$polls/$n" 2>/dev/null &
+	done
+	wait
+	for n in $(seq 1 "$rpc_name_count"); do
+		heads[n]="$(cat "$polls/$n")"
+		if [ -n "${heads[n]}" ] && [ "${heads[n]}" -gt "$top" ]; then
+			top="${heads[n]}"
+		fi
+	done
+	for n in $(seq 1 "$rpc_name_count"); do
+		name="api$n"
+		mapfile -t addrs < <(getent ahosts "$name.$rpc_domain" 2>/dev/null | awk '{print $1}' | sort -u)
+		at=none
+		validator=no
+		for k in "${!rpcs[@]}"; do
+			if printf '%s\n' "${addrs[@]}" | grep -qxF -- "${rpcs[$k]#*@}"; then
+				at="RPC_HOSTS[$k]"
+				break
+			fi
+		done
+		for j in "${!validators[@]}"; do
+			if printf '%s\n' "${addrs[@]}" | grep -qxF -- "${validators[$j]#*@}"; then
+				validator=yes
+				[ "$at" != none ] || at="VALIDATOR_HOSTS[$j]"
+				break
+			fi
+		done
+		head="${heads[n]}"
+		ok=1
+		if [ -n "$head" ]; then
+			lag=$((top - head))
+			[ "$lag" -le "$rpc_max_lag" ] || ok=0
+		else
+			head=none
+			lag=none
+			ok=0
+		fi
+		[ "$at" != none ] && [ "$validator" = no ] && [ "${at%%\[*}" = RPC_HOSTS ] || ok=0
+		if [ "$ok" -eq 1 ]; then
+			echo "pass $name host=$at validator=$validator head=$head lag=$lag"
+		else
+			echo "fail $name host=$at validator=$validator head=$head lag=$lag"
+			failures=$((failures + 1))
+		fi
+	done
+	for j in "${!validators[@]}"; do
+		status=0
+		reply="$(ssh_read "${validators[$j]}" "$placement_cmd")" || status=$?
+		if [ "$status" -ne 0 ] || [ -z "$reply" ]; then
+			echo "fail VALIDATOR_HOSTS[$j] ssh=$status"
+			failures=$((failures + 1))
+			continue
+		fi
+		read -r state ports <<<"$reply"
+		if [ "$state" = inactive ] && [ "$ports" = none ]; then
+			echo "pass VALIDATOR_HOSTS[$j] paxd=$state listen=$ports"
+		else
+			echo "fail VALIDATOR_HOSTS[$j] paxd=$state listen=$ports"
+			failures=$((failures + 1))
+		fi
+	done
+	finish "$failures"
+}
+
 check_hosts() {
 	local role dest dests total answered first status failures=0
 	for role in "${roles[@]}"; do
@@ -865,6 +947,7 @@ case "$mode" in
 	exit 0
 	;;
 hosts | rpc-nodes | archive-node | ca | hpx | explorer) ;;
+rpc-placement) ;;
 *)
 	usage >&2
 	exit 2
