@@ -87,6 +87,7 @@ true) exit 0 ;;
 	case "$dest" in
 	up-validator-*-node) echo "active none" ;;
 	up-validator-*-web) echo "inactive 80,443" ;;
+	up-validator-*-kept) echo "active 443,80 api1" ;;
 	*) echo "inactive none" ;;
 	esac
 	exit 0
@@ -253,6 +254,8 @@ m = r["method"]
 print(m + "-" + r["params"][0]["data"] if m == "eth_call" else m)
 ' "$data")"
 	printf '{"jsonrpc":"2.0","id":1,"result":%s}\n' "$(cat "$CHECK_LIVE_TEST_GAS/$file" 2>/dev/null || echo null)"
+	exit 0
+fi
 if [ "$name" = walletfx ] || [ "$name" = fx-human-wallet-deploy-gateway ]; then
 	out=""
 	dump=""
@@ -465,6 +468,17 @@ VALIDATOR_HOSTS="up-validator-a-node up-validator-b-web down-validator-c"
 RPC_HOSTS="up-validator-a-node up-rpc-2 up-rpc-3 up-rpc-4 up-rpc-5 up-rpc-6 up-rpc-7 up-rpc-8 up-rpc-9 up-rpc-10 up-rpc-11 up-rpc-12 up-rpc-13 up-rpc-14 up-rpc-15"
 OLD_WALLET_HOST=up-old-wallet
 ENV
+
+rpc_rest="up-rpc-2 up-rpc-3 up-rpc-4 up-rpc-5 up-rpc-6 up-rpc-7 up-rpc-8 up-rpc-9 up-rpc-10 up-rpc-11 up-rpc-12 up-rpc-13 up-rpc-14 up-rpc-15 up-rpc-16"
+cat >"$work/hosts-placement-unretained.env" <<ENV
+EDGE_HOST=up-edge
+ARCHIVE_HOST=up-archive
+VALIDATOR_HOSTS="up-validator-a-kept up-validator-b"
+RPC_HOSTS="up-validator-a-kept $rpc_rest"
+OLD_WALLET_HOST=up-old-wallet
+ENV
+cp "$work/hosts-placement-unretained.env" "$work/hosts-placement-retained.env"
+echo 'RETAINED_ON_VALIDATOR="api1.mainnet-beta.paxeer.network"' >>"$work/hosts-placement-retained.env"
 
 failures=0
 
@@ -834,6 +848,32 @@ expect check_live_rpc_placement_failing "$work/hosts-placement-bad.env" 1 rpc-pl
 	"fail VALIDATOR_HOSTS[2] ssh=255" \
 	"check-live: 8 check(s) failed"
 unset CHECK_LIVE_TEST_LAG CHECK_LIVE_TEST_DNS
+
+# api1 is served from a validator host that is also RPC_HOSTS[0]: retained by
+# owner ruling it passes with its unit and listeners tolerated, a second name
+# on that host still fails, and without the retained list it fails as before.
+export CHECK_LIVE_TEST_DNS="api1:up-validator-a-kept"
+expect check_live_rpc_placement_retained "$work/hosts-placement-retained.env" 0 rpc-placement -- \
+	"retained api1: on a validator host by owner ruling" \
+	"pass api1 host=RPC_HOSTS[0] validator=retained head=26400000 lag=0" \
+	"pass api2 host=RPC_HOSTS[1] validator=no head=26400000 lag=0" \
+	"retained VALIDATOR_HOSTS[0] paxd=active listen=443,80 sites=api1 for api1 by owner ruling" \
+	"pass VALIDATOR_HOSTS[1] paxd=inactive listen=none" \
+	"check-live: all checks passed"
+
+export CHECK_LIVE_TEST_DNS="api1:up-validator-a-kept api2:up-validator-a-kept"
+expect check_live_rpc_placement_unretained_name_on_validator "$work/hosts-placement-retained.env" 1 rpc-placement -- \
+	"retained api1: on a validator host by owner ruling" \
+	"fail api2 host=RPC_HOSTS[0] validator=yes head=26400000 lag=0" \
+	"retained VALIDATOR_HOSTS[0] paxd=active listen=443,80 sites=api1 for api1 by owner ruling" \
+	"check-live: 1 check(s) failed"
+
+export CHECK_LIVE_TEST_DNS="api1:up-validator-a-kept"
+expect check_live_rpc_placement_retained_unset "$work/hosts-placement-unretained.env" 1 rpc-placement -- \
+	"fail api1 host=RPC_HOSTS[0] validator=yes head=26400000 lag=0" \
+	"fail VALIDATOR_HOSTS[0] paxd=active listen=443,80 sites=api1" \
+	"check-live: 2 check(s) failed"
+unset CHECK_LIVE_TEST_DNS
 
 # A local hpx registry stand-in: a static tree served on a loopback port
 # written to a file, with a published-looking release and landing page under

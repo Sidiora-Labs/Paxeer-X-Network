@@ -1159,3 +1159,19 @@ symbol     = "check_mirrors"
 observed   = "layerx-mirror-verify needs a request carrying one receipt's canonical bytes, its batch number and the archive commitment of that batch, and neither the spec nor the tree fixes the read path the deploy side takes them from; the publisher's /status exposes no commitments."
 assumption = "None taken: CHECK_LIVE_MIRRORS_REQUEST is an owner input in the shape scripts/qualify-mirror-verification-live.sh reads as its canonical request, until the owner names its read path."
 severity   = "warning"
+
+[observation.4.22.5]
+task       = "4.22"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_rpc_placement"
+observed   = "Under the owner ruling the gate ran once with the private host map and exited 1 (.logs/verify.log): api1 prints retained on a validator host by owner ruling and passes at lag 2; VALIDATOR_HOSTS[0] fails only on its non-retained acme and rpc-ssl sites and VALIDATOR_HOSTS[1] on its full node and wallet sites, as observation 4.22.4 records; eleven names trail the head by 735 to 2464340 blocks, as observation 4.22.3 records."
+assumption = "The retained name needs nothing further; the other validator-host sites and the lagging names are outside the ruling and keep the task implemented until an owner ruling or their own tasks close them."
+severity   = "blocker"
+
+[observation.4.22.6]
+task       = "4.22"
+file       = "tools/bringup/check-live.test.sh"
+symbol     = "curl stand-in"
+observed   = "At the feature head the harness failed 25 cases because a merge dropped the exit 0 and fi closing the gas block of the curl stand-in, so every stubbed curl call was a syntax error; the two lines were restored as the lane 4.9 revision had them, and the harness then passed."
+assumption = "The restore is the merge repair only; no case was changed to pass."
+severity   = "warning"

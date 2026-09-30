@@ -1457,3 +1457,15 @@ area    = "tooling"
 symptom = "A script that inserts shell test text through python3 - <<'PY' ends early with a Python syntax error, and the rest of the inserted text runs as shell commands."
 cause   = "The inserted text itself carried a heredoc ending in a PY line, which closed the outer heredoc."
 do      = "Write text that holds its own heredocs to a scratch file first and insert it from there, or give the outer heredoc a delimiter the text cannot contain."
+
+[gotcha.240]
+area    = "test"
+symptom = "Every check-live harness case that asks a public name over https fails with head=none or empty answers at once, across unrelated subcommands."
+cause   = "A merge dropped the closing lines of one branch of the heredoc curl stand-in, so the stub is a shell syntax error and every stubbed curl call exits 2."
+do      = "Extract the stand-in between its heredoc lines and run bash -n on it before chasing a subcommand; restore the lines from the lane revision that added the branch."
+
+[gotcha.241]
+area    = "test"
+symptom = "A sync-fleet harness count of report lines ending in the rollout sha256 finds one more line than hosts rolled."
+cause   = "The report's first line want sha256=<sha> also matches a pattern of a space, sha256= and the hash."
+do      = "Anchor report-line counts on ^RPC_HOSTS as the existing record case does."
