@@ -107,17 +107,6 @@ exit 97
 SH
 chmod +x "$work/bin/ssh"
 
-# A local railway stand-in: records every call and answers variable list
-# --service paxport --kv with the lines of CHECK_LIVE_TEST_RAILWAY.
-cat >"$work/bin/railway" <<'SH'
-#!/usr/bin/env bash
-set -eu
-printf 'railway %s\n' "$*" >>"$CHECK_LIVE_TEST_CALLS"
-[ "$*" = "variable list --service paxport --kv" ] || exit 95
-printf '%s\n' "${CHECK_LIVE_TEST_RAILWAY:-}"
-SH
-chmod +x "$work/bin/railway"
-
 # A local flyctl stand-in: answers ssh console and secrets import for the
 # fixture apps (fx-*) only, answers machines list with
 # CHECK_LIVE_TEST_MACHINES and ips list with CHECK_LIVE_TEST_IPS, records every call, and gives each app a secrets
@@ -1392,42 +1381,40 @@ bridge_pids=""
 
 # The wallet cases run the probe of the fixture tree, which carries the
 # wallet gates of tools/wallet/check-live.sh and a gateway toml naming its
-# fixture app; the public wallet name comes from the railway stand-in, or
-# from the spec's wallet_endpoint once it names a host.
+# fixture app; the public wallet name comes from the spec's wallet_endpoint.
 mkdir -p "$fx/tools/wallet" "$fx/spec/paxeer-x-bringup"
 cp "$root/tools/wallet/check-live.sh" "$fx/tools/wallet/"
 gateway="$(fx_app human/wallet/deploy/gateway.toml)"
 printf 'app = "%s"\n' "$gateway" >"$fx/human/wallet/deploy/gateway.toml"
 CHECK_LIVE_TEST_WALLET_TOKEN="fixture-wallet-token-$(openssl rand -hex 16)"
 export CHECK_LIVE_TEST_WALLET_TOKEN
-export CHECK_LIVE_TEST_RAILWAY="NEXT_PUBLIC_PAXEER_RPC_URL=https://rpc.example.com
-NEXT_PUBLIC_PAXEER_WALLET_API=https://walletfx.example.com/v1/"
+printf '[decision.public_names]\nwallet_endpoint = "walletfx.example.com"\n\n[design]\n' >"$fx/spec/paxeer-x-bringup/spec.kvx"
 export CHECK_LIVE_TEST_MACHINES='[{"state":"started","region":"ams"},{"state":"started","region":"iad"},{"state":"stopped","region":"ams"}]'
 
 CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_wallet_requires_the_gateway_token "$work/hosts-good.env" 2 wallet -- \
 	"check-live: CHECK_LIVE_GATEWAY_TOKEN is required"
 
 CHECK_LIVE_GATEWAY_TOKEN="$CHECK_LIVE_TEST_WALLET_TOKEN" CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_wallet_passing "$work/hosts-good.env" 0 wallet -- \
-	"pass endpoint name=walletfx.example.com source=railway" \
+	"pass endpoint name=walletfx.example.com source=spec" \
 	"pass served_by http=200 x-served-by=paxeer-wallet-gateway" \
 	"pass readiness http=200 x-served-by=paxeer-wallet-gateway ready=true" \
 	"pass readiness http=200 ready=true attestors=up(5/3) nonce_store=up rpc_pool=up(2) identity_provider=up(1)" \
 	"pass me http=200 binding_state=bound address=set did=set main_account_id=set kernel=available" \
 	"pass machines started=2 regions=ams,iad app=$gateway" \
 	"check-live: all checks passed"
-if grep -qx 'railway variable list --service paxport --kv' "$CHECK_LIVE_TEST_CALLS" && grep -qx 'walletfx curl' "$CHECK_LIVE_TEST_CALLS" &&
+if grep -qx 'walletfx curl' "$CHECK_LIVE_TEST_CALLS" &&
 	[ "$(grep -c "^$gateway curl$" "$CHECK_LIVE_TEST_CALLS")" -eq 2 ] && grep -q "^$gateway app machines list" "$CHECK_LIVE_TEST_CALLS"; then
-	echo "ok   check_live_wallet_reads_railway_then_the_name_and_the_gateway_app"
+	echo "ok   check_live_wallet_reads_the_spec_name_and_the_gateway_app"
 else
-	echo "FAIL check_live_wallet_reads_railway_then_the_name_and_the_gateway_app: want the railway read, the name, two gateway requests and the machines list"
+	echo "FAIL check_live_wallet_reads_the_spec_name_and_the_gateway_app: want the name, two gateway requests and the machines list"
 	cat "$CHECK_LIVE_TEST_CALLS"
 	failures=$((failures + 1))
 fi
 
-export CHECK_LIVE_TEST_RAILWAY="NEXT_PUBLIC_PAXEER_RPC_URL=https://rpc.example.com"
+printf '[decision.public_names]\nwallet = "walletfx.example.com"\n\n[design]\nwallet_endpoint = "walletfx.example.com"\n' >"$fx/spec/paxeer-x-bringup/spec.kvx"
 export CHECK_LIVE_TEST_MACHINES='[{"state":"started","region":"ams"},{"state":"started","region":"ams"}]'
-CHECK_LIVE_GATEWAY_TOKEN=wrong-token CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_wallet_unset_api_one_region "$work/hosts-good.env" 1 wallet -- \
-	"fail endpoint source=railway api=unset" \
+CHECK_LIVE_GATEWAY_TOKEN=wrong-token CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_wallet_spec_name_unset_one_region "$work/hosts-good.env" 1 wallet -- \
+	"fail endpoint source=spec name=unset" \
 	"pass readiness http=200 ready=true" \
 	"fail me http=401" \
 	"fail machines started=2 regions=ams app=$gateway" \
@@ -1448,12 +1435,6 @@ CHECK_LIVE_TEST_WALLET_SERVED_BY=- CHECK_LIVE_GATEWAY_TOKEN="$CHECK_LIVE_TEST_WA
 	"pass me http=200 binding_state=bound" \
 	"pass machines started=2 regions=ams,iad app=$gateway" \
 	"check-live: 1 check(s) failed"
-if grep -q '^railway ' "$CHECK_LIVE_TEST_CALLS"; then
-	echo "FAIL check_live_wallet_spec_name_skips_railway: railway was called although the spec names the endpoint"
-	failures=$((failures + 1))
-else
-	echo "ok   check_live_wallet_spec_name_skips_railway"
-fi
 
 CHECK_LIVE_TEST_DOWN="walletfx" CHECK_LIVE_GATEWAY_TOKEN="$CHECK_LIVE_TEST_WALLET_TOKEN" CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_wallet_name_unreachable "$work/hosts-good.env" 1 wallet -- \
 	"pass endpoint name=walletfx.example.com source=spec" \
@@ -1462,7 +1443,7 @@ CHECK_LIVE_TEST_DOWN="walletfx" CHECK_LIVE_GATEWAY_TOKEN="$CHECK_LIVE_TEST_WALLE
 	"pass me http=200" \
 	"check-live: 1 check(s) failed"
 rm "$fx/spec/paxeer-x-bringup/spec.kvx"
-unset CHECK_LIVE_TEST_RAILWAY CHECK_LIVE_TEST_MACHINES
+unset CHECK_LIVE_TEST_MACHINES
 
 # mirrors: a loopback stand-in for the publisher's status listener answers
 # /readyz with the code and body its arguments give, and a stand-in for

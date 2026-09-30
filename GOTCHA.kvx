@@ -1535,3 +1535,9 @@ area    = "bringup"
 symptom = "A new check-live subcommand needs its own curl answers in the harness, but lanes may only append cases at the end of check-live.test.sh."
 cause   = "The harness's curl stand-in is written once near the top and answers every https URL with its own fixtures."
 do      = "Write a second curl stand-in in a directory of its own in the appended cases that answers the new paths and execs the harness's stand-in for everything else, and run those cases with that directory first on PATH."
+
+[gotcha.253]
+area    = "check-live"
+symptom = "A probe inferred a public name from a platform variable of a service that was never part of the system it checks."
+cause   = "The fallback read a variable from a hosting platform assumed to run the legacy service, and nobody confirmed where that service actually ran."
+do      = "Take a public name only from the spec's decision value and fail with the value unset; never add a platform-read fallback without the owner confirming where the service runs."
