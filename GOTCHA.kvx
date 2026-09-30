@@ -1487,3 +1487,9 @@ area    = "bringup"
 symptom = "Adding a row to the ca.sh service table fails ca_issue_every_service and any case that expects that app's toml to be absent from the fixture repository."
 cause   = "The harness pins the row count and creates a fixture toml for every row's app."
 do      = "Raise the pinned count with the row and take the fixture toml aside in a toml-absent case instead of assuming it is missing."
+
+[gotcha.245]
+area    = "bringup"
+symptom = "Probe cases that find a stand-in process by executable name under /proc pass alone and fail when several copies of check-live.test.sh run at once."
+cause   = "Each copy starts its own layerx-event-source or agentd stand-in, and every copy's /proc scan sees the other copies' processes with their environment."
+do      = "Run the harness alone before reading those cases, or give a new stand-in an executable name no other case uses; a flyctl machine run one-off also skips fly.toml [env], so pass the static env with --env from the toml."
