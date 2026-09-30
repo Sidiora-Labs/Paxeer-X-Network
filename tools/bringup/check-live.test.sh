@@ -1281,12 +1281,14 @@ CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_gas_toml_absent "$work/h
 
 mkdir -p "$fx/interop/deploy/gas-station" "$work/fly/$gas/app/data/gas-station"
 printf 'app = "%s"\n' "$gas" >"$fx/interop/deploy/gas-station/fly.toml"
-printf '{"listen":"[::]:8080","chain_id":125,"endpoints":["https://api-mainnet-beta.paxeer.network/rpc","https://api4.mainnet-beta.paxeer.network","https://api5.mainnet-beta.paxeer.network"],"paymaster":"%s","token":"%s","decimals":6,"gas_limit":200000,"max_priority_fee_per_gas":1000000000}\n' \
+printf '{"listen":"[::]:8080","chain_id":125,"endpoints":["https://api-mainnet-beta.paxeer.network/rpc","https://api4.mainnet-beta.paxeer.network","https://api5.mainnet-beta.paxeer.network"],"paymaster":"%s","token":"%s","decimals":6,"gas_limit":200000,"max_priority_fee_per_gas":1000000000,"max_rate_age":300}\n' \
 	"$gas_paymaster" "$gas_sid" >"$work/fly/$gas/app/data/gas-station/station.json"
 export CHECK_LIVE_TEST_MACHINES='[{"state":"started","config":{"mounts":[{"volume":"vol_fixture"}]}}]'
 printf '"0xef0100%s"' "${gas_paymaster#0x}" >"$CHECK_LIVE_TEST_GAS/eth_getCode"
 printf '"0x%064x"' 3114000 >"$CHECK_LIVE_TEST_GAS/eth_call-$(cast sig 'currentRate()')"
 printf '"0x%064x"' 0 >"$CHECK_LIVE_TEST_GAS/eth_call-$(cast sig 'nonce()')"
+printf '"0x%064x"' 1899999880 >"$CHECK_LIVE_TEST_GAS/eth_call-$(cast sig 'rateUpdatedAt()')"
+printf '{"timestamp":"0x%x"}' 1900000000 >"$CHECK_LIVE_TEST_GAS/eth_getBlockByNumber"
 printf '"0x3b9aca00"' >"$CHECK_LIVE_TEST_GAS/eth_gasPrice"
 printf '"0x0"' >"$CHECK_LIVE_TEST_GAS/eth_getTransactionCount"
 # gasCost = 200000 * (2 * 1 gwei + 1 gwei) = 6e14 wei; at 3114000 SID base
@@ -1305,6 +1307,7 @@ printf '{"status":"0x1","logs":[{"address":"%s","topics":["0xddf252ad1be2c89b69c
 CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_gas_passing "$work/hosts-good.env" 0 gas -- \
 	"pass machines app=$gas machines=1 started=1 volumes=1" \
 	"pass config app=$gas chain_id=125 token=SID endpoints=3 first=router paymaster=$gas_paymaster" \
+	"pass rate-age paymaster=$gas_paymaster updated_at=1899999880 age=120 max_rate_age=300" \
 	"pass delegation account=$gas_account delegate=$gas_paymaster" \
 	"pass quote https://chain.paxeer.network/quote http=200 rate=3114000 token_amount=1869 expected=1869 max=5000 sponsor=$gas_sponsor" \
 	"pass submit https://chain.paxeer.network/submit http=200 tx=0x$(printf 'cd%.0s' {1..32}) status=1 sid_transfer=1869 want=1869 to=sponsor" \
@@ -1335,11 +1338,38 @@ else
 	echo "ok   check_live_gas_keystore_stays_local"
 fi
 
+# The rate-spend case gives the machine the publisher's rate.json and a
+# journal of a publication settled today, one settled the day before and one
+# unsettled today; only today's settled cost counts as spent.
+gas_hash() { printf '[%s%d]' "$(printf "$1,%.0s" {1..31})" "$1"; }
+printf '{"rate_gas_budget_per_day":1000000,"rate_max_fee_per_gas":2000000000}\n' >"$work/fly/$gas/app/data/gas-station/rate.json"
+{
+	printf '{"kind":"rate_published","publication":{"owner":[],"nonce":7,"hash":%s,"rate":[],"gas_limit":60000,"max_fee_per_gas":"2000000000","signed_at":1899999000}}\n' "$(gas_hash 1)"
+	printf '{"kind":"rate_settled","hash":%s,"settlement":{"block_number":16,"gas_used":35000,"cost_wei":"52500000000000","succeeded":true}}\n' "$(gas_hash 1)"
+	printf '{"kind":"rate_published","publication":{"owner":[],"nonce":6,"hash":%s,"rate":[],"gas_limit":60000,"max_fee_per_gas":"2000000000","signed_at":1899900000}}\n' "$(gas_hash 2)"
+	printf '{"kind":"rate_settled","hash":%s,"settlement":{"block_number":15,"gas_used":35000,"cost_wei":"7","succeeded":true}}\n' "$(gas_hash 2)"
+	printf '{"kind":"rate_published","publication":{"owner":[],"nonce":8,"hash":%s,"rate":[],"gas_limit":60000,"max_fee_per_gas":"2000000000","signed_at":1899999900}}\n' "$(gas_hash 3)"
+} >"$work/fly/$gas/app/data/gas-station/rate.jsonl"
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_gas_rate_spend "$work/hosts-good.env" 0 gas -- \
+	"pass rate-age paymaster=$gas_paymaster updated_at=1899999880 age=120 max_rate_age=300" \
+	"info rate-spend app=$gas daily_wei_max=2000000000000000 spent_wei=52500000000000" \
+	"pass quote https://chain.paxeer.network/quote http=200 rate=3114000 token_amount=1869 expected=1869 max=5000 sponsor=$gas_sponsor" \
+	"check-live: all checks passed"
+rm "$work/fly/$gas/app/data/gas-station/rate.json" "$work/fly/$gas/app/data/gas-station/rate.jsonl"
+
 gas_quote 2000
 CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_gas_quote_outside_spread "$work/hosts-good.env" 1 gas -- \
 	"pass delegation account=$gas_account delegate=$gas_paymaster" \
 	"fail quote https://chain.paxeer.network/quote http=200 rate=3114000 token_amount=2000 expected=1869 max=5000" \
 	"check-live: 1 check(s) failed"
+
+printf '"0x%064x"' 1899999699 >"$CHECK_LIVE_TEST_GAS/eth_call-$(cast sig 'rateUpdatedAt()')"
+gas_quote 1869
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_gas_rate_stale "$work/hosts-good.env" 1 gas -- \
+	"fail rate-age paymaster=$gas_paymaster updated_at=1899999699 age=301 max_rate_age=300" \
+	"pass delegation account=$gas_account delegate=$gas_paymaster" \
+	"check-live: 1 check(s) failed"
+printf '"0x%064x"' 1899999880 >"$CHECK_LIVE_TEST_GAS/eth_call-$(cast sig 'rateUpdatedAt()')"
 
 gas_quote 1869
 printf '"0x"' >"$CHECK_LIVE_TEST_GAS/eth_getCode"

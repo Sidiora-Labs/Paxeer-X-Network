@@ -859,8 +859,8 @@ do_2       = "Write docker/gas-station/Dockerfile building paxeer-gas-station fr
 do_3       = "Add the gas subcommand: POST /quote at the name answers 200 with a quote at the paymaster's current rate, and one /submit of a sponsored batch completes with a SID transfer to the sponsor."
 verify_cmd = "timeout 15m tools/bringup/check-live.sh gas"
 symbols    = ["check_gas"]
-touches    = ["docker/gas-station/Dockerfile", "interop/deploy/gas-station/fly.toml", "tools/bringup/check-live.sh"]
-tests      = ["tools/bringup/check-live.test.sh"]
+touches    = ["docker/gas-station/Dockerfile", "docker/gas-station/init.sh", "interop/deploy/gas-station/fly.toml", "tools/bringup/check-live.sh", "interop/crates/layerx-gas-station/src/rate.rs", "interop/crates/layerx-gas-station/src/main.rs", "interop/crates/layerx-gas-station/src/lib.rs", "interop/crates/layerx-gas-station/src/journal.rs", "interop/crates/layerx-gas-station/src/tx.rs", "interop/crates/layerx-gas-station/src/signer.rs", "interop/crates/layerx-gas-station/src/config.rs"]
+tests      = ["tools/bringup/check-live.test.sh", "interop/crates/layerx-gas-station/tests/rate.rs"]
 reqs       = ["17.1"]
 
 [task.4.12]
