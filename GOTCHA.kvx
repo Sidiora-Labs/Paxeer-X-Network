@@ -1175,3 +1175,9 @@ area    = "nginx"
 symptom = "Copying an apiN site file from one RPC node onto another node that serves its own apiN name would fail nginx -t."
 cause   = "Each apiN site file carries the two http-level map blocks for the upgrade and backend variables, and a second definition of the same map variable is a duplicate."
 do      = "Copy only the server blocks of the moved name and rely on the maps the node's own site already defines, after checking both maps are identical; install it in sites-available and enable it only once its certificate exists."
+
+[gotcha.193]
+area    = "rust-tests"
+symptom = "cargo test -p layerx-crypto fails to compile the account-derivation tests with ed25519::Error not implementing std::error::Error, while a workspace-wide build compiles them."
+cause   = "Built alone the crate enables ed25519-dalek without std, so k256's signature error type lacks the StdError impl that `?` into Box<dyn Error> needs; other workspace members turn std on through feature unification."
+do      = "In tests of that crate convert k256 signing errors with .map_err(|error| error.to_string())? instead of a bare ?, and qualify crate tests with -p so a unification-only pass is caught."

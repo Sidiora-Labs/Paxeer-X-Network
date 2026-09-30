@@ -292,7 +292,7 @@
     - Migrate one slot at a time, as the owner approved, so at least three of the four signers stay live throughout: for slot N stop and disable x-websearch@N on its validator host, then create that slot's Fly app and volume, stream its registered attestor key with its submitter and receiver keys over ssh from the validator host into the volume through flyctl ssh console without printing them, deploy it and probe its /health over the private network, and move to slot N+1 only after that passes; once the four apps answer /health and the owner holds the sealed copy, remove the configs and keys from both validator hosts, and make the validators subcommand check that nothing listens on 8480 or 8481 on any validator host in place of the loopback /health check of task 0.6.
     - Add the xweb-attestors subcommand: each of the four apps runs one started machine with its volume and no public IP, answers /health inside its machine through flyctl ssh console and reaches each peer through its hop, and no validator host runs an x-websearch unit.
     - _Requirements: 13.3, 1.2_
-  - [ ] 4.26 Apply the owner's ruling on the account-derivation signing origin
+  - [x] 4.26 Apply the owner's ruling on the account-derivation signing origin
     - The owner ruled for paxportwallet.com: change the message together in agent/crates/layerx-crypto/src/account_derivation.rs, agent/sdk/python/layerx_sdk/account_derivation.py, agent/sdk/typescript/src/account-derivation.ts, platform/sdk/conformance/fixtures/account-derivation-v1.json, the default of platform/hosted/human/material.py and its test platform/hosted/human/test_material.py, and the signing warning of docs/site/docs/concepts/one-account.md.
     - _Requirements: 3.4_
 
