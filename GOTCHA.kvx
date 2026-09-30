@@ -887,3 +887,9 @@ area    = "tests"
 symptom = "Right after a supervisor reset the node test finds the checkpoint directory non-empty."
 cause   = "The reset replies only once the restarted sequencer is ready, and that daemon writes initialized-genesis.lxg, the prepared-batch group files, da-bodies.log, its admission log and da/ at startup."
 do      = "Do not read directory emptiness after a reset as proof of a missed discard; compare the pre-reset files' identities instead, once that assertion change is ruled."
+
+[gotcha.145]
+area    = "tests"
+symptom = "An inode comparison meant to prove a reset replaced a directory can pass or fail by chance."
+cause   = "Once the old directory is removed ext4 may reuse its inode number for the recreated directory, just as it does for files."
+do      = "Hold an fd on the old directory across the reset (exec {FD}<dir) before comparing inode numbers, then close it."

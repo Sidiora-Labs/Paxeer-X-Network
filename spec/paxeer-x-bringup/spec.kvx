@@ -364,7 +364,7 @@ status  = "pending"
 
 [task.1.8]
 title      = "Make the node test credit the treasury through the first-credit path so the operator SEND is admitted"
-status     = "in_progress"
+status     = "done"
 wave       = 1
 requires   = ["1.1"]
 do_1       = "The kernel opens agent:<did>:main on its first credit and genesis stays untouched: before any credit the treasury read expects the typed -208 refusal and an empty DID listing (expect_treasury_unopened), then the node test funds the treasury through the zero-fee custody credit the kernel already tests, reusing tests/daemon/withdraw-custody.py rather than re-implementing it: give that script an export mode that builds the custody profile and the signed credit activity for a given beneficiary seed and stops before program-admission.sh, have node-test.sh run it for the treasury seed before the supervisors start, pass the profile to bootstrap through the sequencer supervisor's trailing arguments as --custody-profile, submit the credit through layerxctl as the treasury, wait until the read shows the credited balance and the treasury DID lists the opened main account, then run the operator SEND exactly as written and, since the reset rebuilds genesis, expect the unopened refusal again after it. The fixture needs eth_account under BRIDGE_PYTHON, the sign-credit, layerx-custody-proof and layerx-paxeer-boundary binaries, forge artifacts and a local paxd chain, and it reads CARGO_TARGET_DIR while the layerxctl target needs it unset, so platform-test-node must gain those prerequisites and the fixture step its own target directory; never by relaxing the kernel check or the test's assertions."

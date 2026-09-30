@@ -421,6 +421,9 @@ log "supervisor status"
 STATUS=$(as_client "$WORK/probe" supervisor --socket "$LAYERX_NODE_SUPERVISOR_SOCKET" --request status)
 log "$STATUS"
 expect_contains "$STATUS" '"state":"running","generation":1'
+[ "$(stat -c %s "$DATA/checkpoints/.layerxd-lni-admission.log")" -gt 32 ] || fail "generation 1 admitted nothing into its admission journal"
+FIRST_CHECKPOINTS_INODE=$(stat -c %i "$DATA/checkpoints")
+exec {FIRST_CHECKPOINTS_FD}<"$DATA/checkpoints"
 
 log "supervisor reset"
 RESET=$(as_client "$WORK/probe" supervisor --socket "$LAYERX_NODE_SUPERVISOR_SOCKET" --request reset)
@@ -433,7 +436,9 @@ set -a
 set +a
 [ "$(stat -c %i "$DATA/genesis/genesis.manifest")" != "$FIRST_MANIFEST_INODE" ] || fail "genesis was not rebuilt by the reset"
 exec {FIRST_MANIFEST_FD}<&-
-[ -z "$(ls -A "$DATA/checkpoints")" ] || fail "checkpoint directory was not discarded by the reset"
+[ "$(stat -c %i "$DATA/checkpoints")" != "$FIRST_CHECKPOINTS_INODE" ] || fail "checkpoint directory was not discarded by the reset"
+exec {FIRST_CHECKPOINTS_FD}<&-
+[ "$(stat -c %s "$DATA/checkpoints/.layerxd-lni-admission.log")" = 32 ] || fail "generation 1 admissions survived the reset in the admission journal"
 STATUS=$(as_client "$WORK/probe" supervisor --socket "$LAYERX_NODE_SUPERVISOR_SOCKET" --request status)
 expect_contains "$STATUS" '"state":"running","generation":2'
 HANDSHAKE=$(as_client "$WORK/probe" handshake --socket "$LAYERX_NODE_LNI_SOCKET" --network-id "$NETWORK_ID")

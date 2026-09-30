@@ -245,3 +245,11 @@ exit_code  = 2
 log_path   = ".logs/verify.log"
 observed   = "With the balance read and the DID listing sharing the probe's sealed-header authorization, the listing names the credited main account, the operator SEND is acknowledged and its repeat, issued once the SEND has sealed and the preparation read stops answering -903, keeps its identity, supervisor status and reset pass and the genesis inode check passes once the first manifest's inode is held open; the run then fails at 'checkpoint directory was not discarded by the reset' because the restarted daemon has already written initialized-genesis.lxg, both prepared-batch group files, da-bodies.log, its admission log and da/ into the fresh checkpoint directory."
 assumption = "The emptiness assertion contradicts the daemon's own startup writes, since the reset replies only after the restarted sequencer is ready; both are left intact as written, both repair cycles are spent, and a ruling is needed on what proves the discard (for example that the pre-reset batch and admission files were replaced), so the task stays in_progress."
+
+[gate.1.8.1]
+task      = "1.8"
+revision  = "0f373faf16061c77863fbbcd87bcf6821592fcf3 plus the change committed with this entry"
+command   = "timeout 30m make layerxd platform-test-node"
+exit_code = 0
+log_path  = ".logs/verify.log"
+observed  = "Per the ruling the checkpoint-emptiness proxy after the reset is replaced by proof that the checkpoint directory object was replaced and that the admission journal, which held generation-1 admissions, is back to its 32-byte superblock; the node test passes the custody credit, DID listing, SEND, reset and generation-2 checks at the first run."
