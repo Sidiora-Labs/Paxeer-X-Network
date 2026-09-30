@@ -14,7 +14,7 @@
 feature   = "paxeer-x-bringup"
 title     = "Bring every LayerX system of Paxeer X Network live on Fly and on the chain hosts"
 kind      = "product-feature-specification"
-version        = "1.5.1"
+version        = "1.5.2"
 status    = "in_progress"
 language  = "Rust (platform/, human/, agent/, interop/ crates), C (cmd/layerxd, src/), Go (hpx/registry, tools/flyci, bridge/deploy), POSIX shell for the probe, the Fly inits and the host scripts, Fly toml for the app definitions, Python where the hosted pod definitions already use it"
 repo_root = "platform/hosted/ (the pod definitions, entrypoints and env contracts every Fly app reuses, with each new fly.toml beside its definition); docker/ (one directory per service image, docker/kernel for the kernel app); human/wallet/deploy/ (the Fly toml files of the wallet fleet, including the router and the kernel app); tools/bringup/ (the host-map contract, the internal CA and the live probe); cmd/layerxd and src/ (the kernel); human/crates/ (the human graph); agent/crates/ (agentd and MCP); interop/ (interop gateway, mirrors, x-websearch, bridge relayer, gas station); explorer/ (the explorer fork); docs/site and docs/wiki (the public names); spec/paxeer-x-bringup/ (this feature and its qualification log)"
@@ -1030,9 +1030,23 @@ requires   = []
 do_1       = "The owner ruled for paxportwallet.com: change the message together in agent/crates/layerx-crypto/src/account_derivation.rs, agent/sdk/python/layerx_sdk/account_derivation.py, agent/sdk/typescript/src/account-derivation.ts, platform/sdk/conformance/fixtures/account-derivation-v1.json, the default of platform/hosted/human/material.py and its test platform/hosted/human/test_material.py, and the signing warning of docs/site/docs/concepts/one-account.md."
 verify_cmd = "timeout 20m cargo test --locked --manifest-path agent/Cargo.toml -p layerx-crypto account_derivation"
 symbols    = ["account_derivation"]
-touches    = ["agent/crates/layerx-crypto/src/account_derivation.rs", "agent/sdk/python/layerx_sdk/account_derivation.py", "agent/sdk/typescript/src/account-derivation.ts", "platform/sdk/conformance/fixtures/account-derivation-v1.json", "platform/hosted/human/material.py", "platform/hosted/human/test_material.py", "docs/site/docs/concepts/one-account.md", "interop/deploy/search-front/nginx.conf"]
+touches    = ["agent/crates/layerx-crypto/src/account_derivation.rs", "agent/sdk/python/layerx_sdk/account_derivation.py", "agent/sdk/typescript/src/account-derivation.ts", "platform/sdk/conformance/fixtures/account-derivation-v1.json", "platform/hosted/human/material.py", "platform/hosted/human/test_material.py", "docs/site/docs/concepts/one-account.md"]
 tests      = ["agent/crates/layerx-crypto/src/account_derivation.rs"]
 reqs       = ["3.4"]
+
+[task.4.27]
+title = "Take the second validator host off the public internet: move the four public names its nginx serves and close its web ports"
+status = "pending"
+wave = 4
+requires = ["4.1", "4.22", "0.9"]
+blocked_on = "the owner's ruling on where web3.paxportwallet.com, data-api.crossverse.app and rpc-mainnet-beta-o25.rpcpaxeer.online go, and confirmation that api.paxportwallet.com is the wallet gateway the wallet PWA calls"
+verify_cmd = "timeout 10m tools/bringup/check-live.sh rpc-placement"
+symbols = ["check_rpc_placement"]
+touches = ["tools/bringup/check-live.sh", "tools/bringup/edge.sh", "human/wallet/deploy"]
+tests = ["tools/bringup/check-live.test.sh"]
+reqs = ["1.2", "18.3"]
+do_1 = "The placement probe found the second validator host's nginx answering four public names on 80 and 443 (the wallet API and web3 names of paxportwallet.com, a data API name and a public RPC alias) beside a database and a cache the validators do not need, which breaks the ruling that validator hosts answer no public name: for each name apply the owner's ruling, the wallet API name moving with task 4.1 to the Fly wallet gateway and its record once to the edge, the web3 name registered on the edge and proxied to the router, the RPC alias served by an RPC node's nginx or retired, the data API name moved to the platform host or retired, and for each moved name run its certificate on the new host and remove the site and certificate on the validator host only after the name answers from the new place."
+do_2 = "When no public name resolves to the host, stop and disable its nginx, the database and the cache unless a validator-side service uses them (record which, never stop a validator or attestor unit), and drop the host's public HTTP and HTTPS listeners; the placement gate's no-public-port check on both validator hosts then passes."
 
 [task.0.8]
 title = "Rename every served public name to the owner's ruling across docs, manifests, configs and code defaults"
@@ -1058,3 +1072,15 @@ reqs = ["1.1", "1.3"]
 do_1 = "Write tools/bringup/edge.sh with add <name> <app> [<port> stream] and remove <name>, run on the edge host where the *.paxeer.network wildcard lands: add renders one nginx site per public name under /etc/nginx/sites-available named after the name, with the certbot certificate for the name issued by edge.sh over HTTP-01 through the wildcard when absent and renewed by certbot's timer, proxy_pass https://<app>.fly.dev with proxy_set_header Host <app>.fly.dev, X-Forwarded-Host the public name, X-Forwarded-For and X-Forwarded-Proto set, the Upgrade and Connection headers passed for websockets, proxy_ssl_server_name on, proxy_ssl_verify on against the system roots and a resolver with a short validity so the fly.dev address may change, every other request and response header unchanged; it enables the site, runs nginx -t and reloads, is idempotent, changes no site it did not render (the sixteen RPC names stay on their nodes, paxscan.io on its proxy host, node.hyperpaxeer.com on its existing site until task 4.21 registers it), and prints one line per name without an address."
 do_2 = "Give edge.sh the stream mode the mTLS names need: machine.paxeer.network on 9454 and index.paxeer.network on 443 pass through unchanged to the app's dedicated IPv4 on the same port through an nginx stream block keyed by SNI with ssl_preread, where a port shared with HTTP names moves those names' server blocks behind the stream block on a loopback port the first time a stream name is added on it, so client certificates reach the app untouched; remove deletes the site, and the stream entry when one exists, and reloads."
 do_3 = "Add the edge subcommand: every registered name resolves to the edge host, answers over TLS with a valid certificate for the name, and reaches its app (the app's fly.dev name answers the same readiness route with the same body), stream names present the app's own certificate through the edge, and no rendered site names a validator host; add fixture cases to tools/bringup/check-live.test.sh and a render test tools/bringup/edge.test.sh comparing the rendered site of one HTTP name and one stream name against expected text."
+
+[task.0.10]
+title = "Retire app.paxeer.network: the human web origin is https://paxportwallet.com everywhere"
+status = "pending"
+wave = 0
+requires = ["4.26"]
+verify_cmd = "timeout 5m sh -c '! git grep -nE \"app\\.paxeer\\.network\" -- . \":!spec/\" \":!CHANGELOG.md\"'"
+symbols = ["human_web_origin"]
+touches = ["platform/hosted/human/web-deployment.yaml", "platform/hosted/node/deployment.yaml", "platform/hosted/tests/beta-cluster.sh", "platform/hosted/human/test_material.py", "human/apps/web/e2e/harness.test.ts"]
+tests = ["platform/hosted/human/test_material.py"]
+reqs = ["3.4"]
+do_1 = "The owner ruled that paxportwallet.com is the wallet app's frontend and task 4.26 made it the derivation origin: set the human web origin to https://paxportwallet.com in the human web deployment, the node deployment, the beta cluster script, the material test and the web end-to-end harness, so the passkey relying party, the CORS allow list and the signing origin agree, and leave the changelog's history as written; the gate proves the retired name is gone from the tree outside the spec and the changelog."
