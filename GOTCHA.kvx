@@ -971,3 +971,21 @@ area    = "tests"
 symptom = "An inode comparison meant to prove a reset replaced a directory can pass or fail by chance."
 cause   = "Once the old directory is removed ext4 may reuse its inode number for the recreated directory, just as it does for files."
 do      = "Hold an fd on the old directory across the reset (exec {FD}<dir) before comparing inode numbers, then close it."
+
+[gotcha.159]
+area    = "platform"
+symptom = "platform-hosted-topology-check fails the node StatefulSet on an env value whose configMapKeyRef is marked optional: true."
+cause   = "The topology checker resolves every configMapKeyRef against the manifest's ConfigMap data and does not honour the optional flag."
+do      = "When adding an optional configMapKeyRef to a manifest, also add the key to the ConfigMap or run the topology check before handing the task over; never relax the checker inside an unrelated task."
+
+[gotcha.160]
+area    = "spec"
+symptom = "A task's do lines name abort points from an older readiness report that are already closed at the task's base revision."
+cause   = "The readiness report predates later lanes that fixed most of its items, and the task text was carried forward unchanged."
+do      = "Check each listed abort point against the current code before editing; record the ones already closed in qualification.kvx instead of re-editing their files."
+
+[gotcha.161]
+area    = "human"
+symptom = "The movement provider's probe cannot reach a healthy answer from a plain local chain emulator when the provider runs from its environment."
+cause   = "The environment-configured provider requires at least two pinned-TLS origins on distinct hosts with agreement two and a configured execution authority before it answers Ready."
+do      = "In a binary-level test, front the local chain with TLS listeners on two loopback addresses (127.0.0.1 and 127.0.0.2) under one CA-signed certificate carrying both IP SANs, pass that CA as PAXEER_CA_DER, and give every file the provider reads mode 0600 and a single link."

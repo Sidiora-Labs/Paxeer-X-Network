@@ -20,6 +20,10 @@
 #                           data directory.
 #   --network-id N          Decimal network id, 1..4294967295.
 #   --genesis-metadata FILE LXGB v2 suffix: canonical Asset records and named fees.
+#                           When FILE does not exist yet, bootstrap writes it (mode
+#                           0600) before the node starts: one canonical Asset record
+#                           for --asset issued by the treasury identity, with a fresh
+#                           salt; an existing FILE is used as given.
 #   --withdrawal-fee PRICE Commit an explicit v3 withdrawal price, preserving existing fees.
 #   --module-fees FILE     Commit the exact v4 native module price configuration.
 #   --sequencer-key FILE    Sequencer ed25519 seed: 32 raw bytes or 64 hex
@@ -287,8 +291,17 @@ if [ "${#GENESIS_MODULES[@]}" -eq 0 ]; then
     [ "${#GENESIS_MODULES[@]}" -eq 6 ] || fail "public testnet genesis requires six configured modules"
 fi
 
-[ -n "$GENESIS_METADATA" ] && [ -f "$GENESIS_METADATA" ] && [ ! -L "$GENESIS_METADATA" ] && [ -r "$GENESIS_METADATA" ] || fail "--genesis-metadata requires an authoritative LXGB v2 metadata file"
-GENESIS_METADATA=$(readlink -f "$GENESIS_METADATA")
+[ -n "$GENESIS_METADATA" ] || fail "--genesis-metadata is required: name the LXGB v2 metadata file, or the path where bootstrap writes it"
+GENESIS_METADATA_WRITE=0
+if [ -e "$GENESIS_METADATA" ] || [ -L "$GENESIS_METADATA" ]; then
+    [ -f "$GENESIS_METADATA" ] && [ ! -L "$GENESIS_METADATA" ] && [ -r "$GENESIS_METADATA" ] || fail "--genesis-metadata requires an authoritative LXGB v2 metadata file"
+    GENESIS_METADATA=$(readlink -f "$GENESIS_METADATA")
+else
+    [ -d "$(dirname "$GENESIS_METADATA")" ] && [ -w "$(dirname "$GENESIS_METADATA")" ] \
+        || fail "the genesis metadata is absent and its directory is not writable, so bootstrap cannot write it: $GENESIS_METADATA"
+    GENESIS_METADATA=$(readlink -m "$GENESIS_METADATA")
+    GENESIS_METADATA_WRITE=1
+fi
 fee_arguments=()
 if [ -n "$MODULE_FEES" ]; then
     [ -n "$WITHDRAWAL_FEE" ] || fail "--module-fees requires an explicit --withdrawal-fee"
@@ -297,10 +310,13 @@ if [ -n "$MODULE_FEES" ]; then
     case "$MODULE_FEES" in "$(readlink -m "$DATA_DIR")"/*) fail "module fees must be outside the data directory" ;; esac
     fee_arguments+=(--module-fees "$MODULE_FEES")
 fi
-if [ -n "$WITHDRAWAL_FEE" ]; then
-    python3 "$SCRIPT_DIR/genesis_fees.py" "$GENESIS_METADATA" "$WITHDRAWAL_FEE" "${fee_arguments[@]}" --check \
-        || fail "invalid withdrawal fee configuration"
-fi
+check_genesis_metadata_fees() {
+    if [ -n "$WITHDRAWAL_FEE" ]; then
+        python3 "$SCRIPT_DIR/genesis_fees.py" "$GENESIS_METADATA" "$WITHDRAWAL_FEE" "${fee_arguments[@]}" --check \
+            || fail "invalid withdrawal fee configuration"
+    fi
+}
+[ "$GENESIS_METADATA_WRITE" -eq 1 ] || check_genesis_metadata_fees
 case "$GENESIS_METADATA" in "$(readlink -m "$DATA_DIR")"/*) fail "genesis metadata must be outside the data directory" ;; esac
 [ -n "$DATA_DIR" ] || fail "--data-dir is required"
 [ -n "$RUN_DIR" ] || fail "--run-dir is required"
@@ -400,9 +416,14 @@ fi
 GUARANTOR_COUNT=$(jq -er '.finality_policy.certificate_threshold | select(type == "number" and . == floor and . >= 1 and . <= 32)' "$SETTLEMENT_DOCUMENT") \
     || fail "certificate threshold must be an integer in 1..32 (LXP_GENESIS_MAX_GUARANTORS)"
 GENESIS_METADATA_MAX_BYTES=$((16384 - 314 - 81 * GUARANTOR_COUNT - 66 * (${#GENESIS_MODULES[@]} + HANDOVER_PARAMETER_COUNT)))
-GENESIS_METADATA_BYTES=$(stat -c %s "$GENESIS_METADATA")
-[ "$GENESIS_METADATA_BYTES" -gt 219 ] && [ "$GENESIS_METADATA_BYTES" -le "$GENESIS_METADATA_MAX_BYTES" ] \
-    || fail "genesis metadata length is outside request bounds: $GENESIS_METADATA_BYTES bytes, expected 220..$GENESIS_METADATA_MAX_BYTES with $GUARANTOR_COUNT guarantors"
+check_genesis_metadata_bounds() {
+    [ -f "$GENESIS_METADATA" ] && [ ! -L "$GENESIS_METADATA" ] && [ -s "$GENESIS_METADATA" ] \
+        || fail "the LXGB v2 genesis metadata is absent: $GENESIS_METADATA"
+    GENESIS_METADATA_BYTES=$(stat -c %s "$GENESIS_METADATA")
+    [ "$GENESIS_METADATA_BYTES" -gt 219 ] && [ "$GENESIS_METADATA_BYTES" -le "$GENESIS_METADATA_MAX_BYTES" ] \
+        || fail "genesis metadata length is outside request bounds: $GENESIS_METADATA_BYTES bytes, expected 220..$GENESIS_METADATA_MAX_BYTES with $GUARANTOR_COUNT guarantors"
+}
+[ "$GENESIS_METADATA_WRITE" -eq 1 ] || check_genesis_metadata_bounds
 
 bin_to_hex() { od -An -v -tx1 | tr -d ' \n'; }
 
@@ -476,6 +497,44 @@ REPLICA_ID=$(printf '%s' "$REPLICA_ID" | tr 'A-F' 'a-f')
 is_hex64 "$REPLICA_ID" || fail "--replica-id must be 64 hex characters"
 [ -n "$GENESIS_TIMESTAMP_MS" ] || GENESIS_TIMESTAMP_MS=$(( $(date +%s) * 1000 ))
 is_decimal "$GENESIS_TIMESTAMP_MS" && [ "$GENESIS_TIMESTAMP_MS" -gt 0 ] || fail "--genesis-timestamp-ms must be a positive decimal"
+
+write_genesis_metadata() {
+    # The one-asset LXGB v2 metadata: the canonical Asset record of ASSET_ID with the declared
+    # symbol and decimals, issued by the treasury identity under a fresh salt, followed by the
+    # zero fee schedule; genesis_fees.py adds the withdrawal and module prices below.
+    python3 - "$GENESIS_METADATA" "$ASSET_ID" "$TREASURY_PUBLIC" "$ASSET_SYMBOL" "$ASSET_DECIMALS" <<'PYGENESISMETADATA'
+import hashlib
+import os
+import sys
+
+output, asset, issuer_public = sys.argv[1], bytes.fromhex(sys.argv[2]), bytes.fromhex(sys.argv[3])
+symbol, decimals = sys.argv[4].encode('ascii'), int(sys.argv[5])
+if len(asset) != 32 or len(issuer_public) != 32:
+    raise SystemExit('asset and treasury public key must be 32 bytes')
+if not 0 < len(symbol) <= 16 or any(byte > 0x7f for byte in symbol) or not 0 <= decimals <= 38:
+    raise SystemExit('asset symbol must be 1 to 16 ASCII bytes and decimals 0..38')
+reference = bytes(12) + asset[12:]
+if not any(reference):
+    raise SystemExit('paxeer custody reference must be non-zero')
+did = ('did:layerx:' + issuer_public.hex()).encode()
+issuer = hashlib.sha256(b'LXP/v1/did-id\0' + len(did).to_bytes(2, 'big') + did).digest()
+record = (b'\0\x03' + asset + len(symbol).to_bytes(1, 'big') + symbol + decimals.to_bytes(1, 'big')
+          + b'\x02' + len(reference).to_bytes(2, 'big') + reference
+          + b'\0\x0dCustody token' + bytes(16) + issuer + b'\x02' + bytes(16) + os.urandom(32))
+schedule = b'\0\x02' + bytes(80) + (10000).to_bytes(4, 'big') + b'\x0a' + bytes(160)
+metadata = b'\0\x01' + len(record).to_bytes(2, 'big') + record + len(schedule).to_bytes(2, 'big') + schedule
+with os.fdopen(os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600), 'wb') as handle:
+    handle.write(metadata)
+    handle.flush()
+    os.fsync(handle.fileno())
+PYGENESISMETADATA
+}
+
+if [ "$GENESIS_METADATA_WRITE" -eq 1 ]; then
+    write_genesis_metadata || fail "writing the LXGB v2 genesis metadata failed: $GENESIS_METADATA"
+    check_genesis_metadata_bounds
+    check_genesis_metadata_fees
+fi
 
 TREASURY_DID="did:layerx:$TREASURY_PUBLIC"
 TREASURY_DID_HEX=$(printf '%s' "$TREASURY_DID" | bin_to_hex)
