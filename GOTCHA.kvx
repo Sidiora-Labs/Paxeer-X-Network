@@ -1637,3 +1637,15 @@ area    = "gas-station"
 symptom = "A u128 field added to a journal record serialises but every journal reopen fails with Corrupt."
 cause   = "Entry is an internally tagged serde enum, which buffers fields through serde's Content and cannot carry a u128 number."
 do      = "Put #[serde(with = \"crate::tx::fee_amount\")] on every u128 journal field so it travels as a decimal string, as Fees does."
+
+[gotcha.270]
+area    = "go"
+symptom = "buf generate --path layerxcustody/x.proto or --path api/layerxcustody/x.proto with no input fails with no .proto files were targeted."
+cause   = "buf.gen.yaml v2 lists its own inputs, and --path does not match against them."
+do      = "Generate one file with buf generate . --path api/<module>/<file>.proto after building protoc-gen-gocosmos into build/proto/gocosmos as scripts/protoc.sh does, copy only the gocosmos output pb.go into the module and remove build/proto."
+
+[gotcha.271]
+area    = "go"
+symptom = "go build ./cmd/... prints matched no packages and exits 0, so it builds nothing Go."
+cause   = "cmd/ holds the C and Rust daemons; the chain binary lives under daemon/paxd and the app under node/."
+do      = "Build the chain with go build ./daemon/paxd or ./node/... when the task touches the app wiring."

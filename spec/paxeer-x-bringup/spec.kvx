@@ -476,6 +476,19 @@ reqs = ["5.2", "5.3"]
 do_1 = "With the finality authority bound (task 1.2), the authority's lookup for /v1/authorized-batches/by-activity over the node interface is refused by layerxd as a malformed envelope, so the gateway sees receipt_source_unavailable: read the request the authority builds and the envelope layerxd parses, find which side departed from the wire contract the daemon tests and the SDK conformance fixtures fix, and change that side only, never both and never by relaxing the envelope check; record the departure as one observation naming the introducing commit when the history shows it."
 do_2 = "The gate is task 1.2's whole target: the recorded-fixture replay, the JSON test and bootstrap-send.sh's real_node_authority_serves_verified_facts_and_reflects_replica_loss all pass against the bound authority; when it passes, task 1.2 closes on the same gate record at the same revision."
 
+[task.1.10]
+title = "Give the custody module a governance proposal type, handler and submit-proposal command so the asset map and the deposit root authority can be set on chain 125"
+status = "implemented"
+wave = 1
+requires = []
+verify_cmd = "go test ./modules/layerxcustody/..."
+symbols = ["CustodyProposal", "NewProposalHandler", "NewSubmitCustodyProposalMsg", "V611Upgrade"]
+touches = ["api/layerxcustody/proposal.proto", "modules/layerxcustody/types/proposal.pb.go", "modules/layerxcustody/types/proposal.go", "modules/layerxcustody/types/codec.go", "modules/layerxcustody/handler.go", "modules/layerxcustody/handler_test.go", "modules/layerxcustody/client/cli/tx.go", "modules/layerxcustody/module.go", "node/app.go", "node/upgrades.go"]
+tests = ["modules/layerxcustody/handler_test.go"]
+reqs = ["6.2"]
+do_1 = "Follow the layerxbridge pattern: CustodyProposal (title, description, messages as Any) in the custody proto package generated through the repository's buf template, registered as governance content, with NewProposalHandler executing MsgUpdateParams, MsgSetAsset, MsgRegisterCheckpoint, MsgSetEmergency and MsgCancelClaim through the keeper's Msg service; ValidateBasic refuses an empty list, a non-custody message and an authority other than the governance module account."
+do_2 = "paxd tx layerxcustody submit-proposal custody <file.json> reads title, description, deposit and messages and is signed by the proposer; the handler is on the governance router beside the bridge handler and the plan v6.11 gates the new content and messages, its height an owner input named in the deploy handoff."
+
 [task.2.1]
 title      = "Run the core boundary, the receipt authority and the agent boundary over TLS in the kernel machine"
 status     = "pending"
