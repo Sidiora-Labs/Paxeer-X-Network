@@ -52,7 +52,6 @@ Environment:
 
 Exits 1 when the CA is missing, already present on init, a toml names no
 app, or a Fly step fails; 2 on a usage error or an unknown service.
-dashboard-client platform/hosted/dashboard/fly.toml - DASHBOARD_CLIENT layerx-dashboard clientAuth -
 EOF
 }
 
@@ -96,6 +95,7 @@ indexer platform/hosted/indexer/fly.toml - volume layerx-indexer serverAuth DNS:
 interop-client platform/hosted/interop/fly.toml - INTEROP_CLIENT layerx-interop-gateway clientAuth -
 developer platform/hosted/webhooks/fly.toml ingress WEBHOOKS_INGRESS_TLS layerx-developer serverAuth DNS:layerx-webhooks,DNS:ingress.process.<app>.internal,DNS:localhost,IP:127.0.0.1
 developer-client platform/hosted/webhooks/fly.toml - WEBHOOKS_CLIENT layerx-developer clientAuth -
+dashboard-client platform/hosted/dashboard/fly.toml - DASHBOARD_CLIENT layerx-dashboard clientAuth -
 ramp-client platform/ramps/fly.toml - RAMP_CLIENT layerx-reference-ramp clientAuth DNS:<app>.internal
 EOF
 }
