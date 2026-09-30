@@ -257,7 +257,7 @@ reqs       = ["2.1", "2.2", "2.3"]
 
 [task.0.3]
 title      = "Serve search.paxeer.network from a Fly nginx app that keeps each client on one serving RPC node"
-status     = "implemented"
+status     = "done"
 wave       = 0
 requires   = ["0.5", "0.9"]
 do_1       = "Write docker/search-front/Dockerfile and Dockerfile.dockerignore on the nginx stable image with interop/deploy/search-front/nginx.conf: listen [::]:8080 plain; a split_clients map on $http_fly_client_ip over an upstream name list that nginx includes from a file mounted as a Fly [[files]] secret, so every machine picks the same serving node for one client; proxy_pass over HTTPS to the chosen name with proxy_set_header Host $proxy_host so the apiN vhost matches, proxy_ssl_server_name on, proxy_ssl_verify on against the image's system roots and resolver [fdaa::3] valid=30s for dynamic upstream resolution; the other request and response headers passed through unchanged plus add_header X-Search-Node $xweb_node always, naming the chosen serving name, so the header also rides 4xx and 5xx answers; /healthz answered locally; 502 while no node serves search."
@@ -268,6 +268,10 @@ symbols    = ["search_front", "check_search_front"]
 touches    = ["docker/search-front/Dockerfile", "docker/search-front/Dockerfile.dockerignore", "interop/deploy/search-front/nginx.conf", "interop/deploy/search-front/fly.toml", "tools/bringup/search-front.sh", "tools/bringup/check-live.sh"]
 tests      = ["tools/bringup/check-live.test.sh"]
 reqs       = ["1.1", "1.3"]
+revision = "26b211c9ccba18c31c51a4bae828cf17e185902e"
+command = "BRINGUP_HOSTS_FILE=/root/lx-ops/bringup-2026-09-29/hosts.env timeout 10m tools/bringup/check-live.sh search-front"
+exit_code = 0
+log_path = ".logs/0.3-search-front-live.log"
 
 [task.0.4]
 title      = "Replace api.paxeer.network by the router URL and every layerx.example host by its public name"
