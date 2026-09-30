@@ -10,7 +10,7 @@ Every LayerX system that the surveys found ready, blocked or incomplete is broug
 
 ### Acceptance Criteria
 
-1. WHEN a name of [decision.public_names] served by a Fly http_service is requested over HTTPS THE Fly edge SHALL answer with a certificate for that name from flyctl certs add and route to the app its toml declares; WHEN registry.paxeer.network or agent.paxeer.network is dialled on its passthrough port THE backend SHALL present its internal-CA certificate for that name; and WHEN search.paxeer.network is requested THE search front app SHALL answer under its Fly certificate and proxy over verified TLS to a serving RPC name only.
+1. WHEN a name of [decision.public_names] served by a Fly http_service is requested over HTTPS THE Fly edge SHALL answer with a certificate for that name from flyctl certs add and route to the app its toml declares; WHEN index.paxeer.network or machine.paxeer.network is dialled on its passthrough port THE backend SHALL present its internal-CA certificate for that name; and WHEN search.paxeer.network is requested THE search front app SHALL answer under its Fly certificate and proxy over verified TLS to a serving RPC name only.
 2. WHEN the x-websearch attestor ports of a validator host are dialled from anywhere but loopback and the other validator host THE host SHALL refuse the connection, and WHEN tools/bringup/check-live.sh names runs THE probe SHALL show each Fly-served name except ramp.paxeer.network, which task 4.10 probes, search.paxeer.network included, as an explicit CNAME to its app's fly.dev name and no public name resolving to a validator host.
 3. WHEN the backend of a name served by a Fly http_service is not yet up THE Fly edge SHALL answer 502 or 503 for its name rather than refuse the TLS connection, so the name and certificate exist before the backend; a passthrough name is probed once its backend is up.
 
@@ -31,7 +31,7 @@ Every LayerX system that the surveys found ready, blocked or incomplete is broug
 
 ### Acceptance Criteria
 
-1. WHEN any tracked file outside spec/ is searched for api.paxeer.network THE repository SHALL contain no match; the unified endpoint is written as https://api.mainnet-beta.router.paxeer.network everywhere.
+1. WHEN any tracked file outside spec/ is searched for api.paxeer.network THE repository SHALL contain no match; the unified endpoint is written as https://api-mainnet-beta.paxeer.network everywhere.
 2. WHEN any tracked file outside spec/ is searched for a layerx.example host, a name of the form label.layerx.example, THE repository SHALL contain no match; the names of [decision.public_names] replace them. A package identifier or a file name that merely contains the words layerx and example is not a host.
 3. WHEN docs/site/docs/reference/public-rpc.md is read THE sixteen RPC endpoints SHALL be unchanged and the page SHALL link the router URL as the unified interface.
 4. WHEN tools/bringup/docs-names.sh runs THE tracked user, developer and operator docs SHALL name no *.paxeer.network host outside [decision.public_names], the sixteen RPC names and the signing origin of [decision] derivation_message, SHALL carry no FAUCET_URL, and SHALL fund accounts through the custody-credit path; the faucet, beta-control and testnet pages SHALL be marked private-network only with no public name.
@@ -80,7 +80,7 @@ Every LayerX system that the surveys found ready, blocked or incomplete is broug
 
 ## Requirement 8: Gateway at the router URL
 
-**User Story:** As any client, https://api.mainnet-beta.router.paxeer.network answers eth_, lx_ and px_ methods from one endpoint with the kernel available.
+**User Story:** As any client, https://api-mainnet-beta.paxeer.network answers eth_, lx_ and px_ methods from one endpoint with the kernel available.
 
 ### Acceptance Criteria
 
@@ -97,7 +97,7 @@ Every LayerX system that the surveys found ready, blocked or incomplete is broug
 
 1. WHEN the identity app runs on one machine with a volume THE service SHALL answer readiness over TLS under the internal CA at its app's .internal name with its pod env names and its key material generated inside the machine, and the app SHALL hold no public IP.
 2. WHEN the internal kms and the journeys, payments, approvals and programs event sources run as one Fly app with one process group each, every group one machine with its own volume, beside the internal Redis app THE five SHALL answer readiness over mandatory mTLS under the internal CA at their <group>.process.<app>.internal names on the private network only.
-3. WHEN the program registry app and its builder rootfs run on one machine with a volume THE registry SHALL answer /healthz over mTLS at registry.paxeer.network through its TCP passthrough, the builder environment directory SHALL exist from builder-environment/build-env.sh, one reference program deploy SHALL return a sequencer-signed receipt with result code 0, and the router SHALL name the registry app's .internal name as program_registry and report it up in its readiness.
+3. WHEN the program registry app and its builder rootfs run on one machine with a volume THE registry SHALL answer /healthz over mTLS at index.paxeer.network through its TCP passthrough, the builder environment directory SHALL exist from builder-environment/build-env.sh, one reference program deploy SHALL return a sequencer-signed receipt with result code 0, and the router SHALL name the registry app's .internal name as program_registry and report it up in its readiness.
 
 ## Requirement 10: Human graph in the kernel app for the wallet identity
 
@@ -108,9 +108,9 @@ Every LayerX system that the surveys found ready, blocked or incomplete is broug
 1. WHEN the identity provider receives LXIP operation 4 with an assertion THE provider SHALL verify it against the configured JWKS and return the principal and did:layerx identity, and THE provider's serve command SHALL wire the assertion configuration at startup.
 2. WHEN a wallet-facing operation arrives with an Authorization bearer from a listed origin THE human service SHALL admit the assertion through operation 4, keep the passkey cookie path unchanged, and pass the same assertion to admit_assertion for attestor signing.
 3. WHEN LAYERX_HUMAN_ATTESTOR_NODES is set THE components loader SHALL accept an absent LAYERX_HUMAN_KMS group, use the five attestors at protocol 3 with threshold three, and refuse to start only when neither custody backend is complete.
-4. WHEN the identity, security, movement, components, service and onboarding processes run in the kernel machine under their uids THE service SHALL answer /livez and /readyz ready at human.paxeer.network through the Fly edge, admitting https://paxportwallet.com as its web origin and its passkey relying party id paxportwallet.com, and a second service process SHALL serve the event sources over TLS under the internal CA on the private network.
+4. WHEN the identity, security, movement, components, service and onboarding processes run in the kernel machine under their uids THE service SHALL answer /livez and /readyz ready at api-hull.paxeer.network through the Fly edge, admitting https://paxportwallet.com as its web origin and its passkey relying party id paxportwallet.com, and a second service process SHALL serve the event sources over TLS under the internal CA on the private network.
 5. WHEN every HTTP route the wallet SDK calls is compared with the routes the human service serves THE service SHALL serve each one with the schema the SDK expects.
-6. WHEN the wallet PWA on Railway carries NEXT_PUBLIC_PAXEER_HUMAN_API=https://human.paxeer.network THE check-live human-session gate of the wallet feature SHALL pass against that name.
+6. WHEN the wallet PWA on Railway carries NEXT_PUBLIC_PAXEER_HUMAN_API=https://api-hull.paxeer.network THE check-live human-session gate of the wallet feature SHALL pass against that name.
 
 ## Requirement 11: Agent daemon and MCP live
 
@@ -118,10 +118,10 @@ Every LayerX system that the surveys found ready, blocked or incomplete is broug
 
 ### Acceptance Criteria
 
-1. WHEN agentd runs in full mode in the kernel machine as one daemon THE daemon SHALL serve its human-owner listener, its program listener and its MCP binding, SHALL answer /healthz ready with the program bearer after its LNI handshake and authority read, and THE agentd boundary SHALL publish the program listener over mTLS at agent.paxeer.network port 9454 through a TCP passthrough.
+1. WHEN agentd runs in full mode in the kernel machine as one daemon THE daemon SHALL serve its human-owner listener, its program listener and its MCP binding, SHALL answer /healthz ready with the program bearer after its LNI handshake and authority read, and THE agentd boundary SHALL publish the program listener over mTLS at machine.paxeer.network port 9454 through a TCP passthrough.
 2. WHEN tools/bringup/mcp-enrol.sh runs inside the kernel machine THE script SHALL enrol one session and capability through the full-mode daemon and write the binding document with two owner-only secret files under the daemon's MCP binding root on the volume, and THE layerx-mcp process SHALL serve the peer-admitted socket.
 3. WHEN an admitted client runs layerx mcp serve with the binding THE tools/list answer SHALL contain the read tools and the web tools.
-4. WHEN an SDK posts the agent-plane envelope of an operation of the operation catalogue to the daemon's program listener THE daemon SHALL authorize it under tenant control for that operation and surface, run it through the same handler its read or program route runs, and answer the request_id, value and verification_status envelope the router's agent routes answer; the JVM SDK SHALL name that listener at agent.paxeer.network as its agent endpoint.
+4. WHEN an SDK posts the agent-plane envelope of an operation of the operation catalogue to the daemon's program listener THE daemon SHALL authorize it under tenant control for that operation and surface, run it through the same handler its read or program route runs, and answer the request_id, value and verification_status envelope the router's agent routes answer; the JVM SDK SHALL name that listener at machine.paxeer.network as its agent endpoint.
 
 ## Requirement 12: Wallet move completed
 
@@ -157,7 +157,7 @@ Every LayerX system that the surveys found ready, blocked or incomplete is broug
 
 ### Acceptance Criteria
 
-1. WHEN the webhooks, dashboard API and dashboard web apps run on Fly on at least two machines in two regions each THE three SHALL answer readiness at webhooks.paxeer.network, api.developers.paxeer.network and developers.paxeer.network through the Fly edge, dialing identity, the internal event sources, the internal Redis and the router's Redis over the private network, and the event producers of the router, the registry and the human service SHALL deliver to the webhooks ingress.
+1. WHEN the webhooks, dashboard API and dashboard web apps run on Fly on at least two machines in two regions each THE three SHALL answer readiness at hooks.paxeer.network, api-dev.paxeer.network and dev.paxeer.network through the Fly edge, dialing identity, the internal event sources, the internal Redis and the router's Redis over the private network, and the event producers of the router, the registry and the human service SHALL deliver to the webhooks ingress.
 
 ## Requirement 16: Relay archive, interop gateway, mirrors and ramp
 
@@ -166,7 +166,7 @@ Every LayerX system that the surveys found ready, blocked or incomplete is broug
 ### Acceptance Criteria
 
 1. WHEN the relay archive app runs on several machines in two regions, each with its own volume, with the kernel's pins and the origin in the kernel machine THE service SHALL answer /readyz and /v1/sync/head at archive.paxeer.network and forward one signed activity to the router with the router's verdict.
-2. WHEN the interop gateway app runs on several machines with a config rendered by render.py --check THE service SHALL answer /readyz at interop.paxeer.network and complete one x402 exact-scheme exchange.
+2. WHEN the interop gateway app runs on several machines with a config rendered by render.py --check THE service SHALL answer /readyz at interchain.paxeer.network and complete one x402 exact-scheme exchange.
 3. WHEN the AP2 keys, Visa TAP identities and fiat provider credentials are supplied THE rendered config SHALL enable those adapters and their conformance legs SHALL pass against the deployed host.
 4. WHEN the mirror chain inputs are supplied THE archive contract and program SHALL be deployed, the signer and publisher SHALL run in the kernel machine, and layerx-mirror-verify SHALL verify one receipt from the mirror alone.
 5. WHEN the ramp's provider, compliance, KMS and custody-owner coordinates are supplied THE reference ramp app SHALL answer /readyz at ramp.paxeer.network and the sandbox journey SHALL record done.
@@ -177,7 +177,7 @@ Every LayerX system that the surveys found ready, blocked or incomplete is broug
 
 ### Acceptance Criteria
 
-1. WHEN the gas station app runs on one machine with the sponsor account THE station SHALL answer POST /quote at gas.paxeer.network and complete one sponsored batch through /submit at the owner-set rate.
+1. WHEN the gas station app runs on one machine with the sponsor account THE station SHALL answer POST /quote at chain.paxeer.network and complete one sponsored batch through /submit at the owner-set rate.
 2. WHEN the bridge inputs are supplied THE vaults and program SHALL be deployed, the governance proposals SHALL open each chain, the checklist SHALL read every chain back, and the relayer app with its remote signer in the same machine SHALL journal one observed deposit as bridgeIn.
 
 ## Requirement 18: CI runners, hpx registry and the public RPC fleet
