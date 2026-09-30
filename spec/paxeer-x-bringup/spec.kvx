@@ -819,7 +819,7 @@ reqs       = ["16.3"]
 
 [task.4.9]
 title      = "Publish and verify the Ethereum and Solana mirrors from the kernel machine"
-status     = "pending"
+status     = "implemented"
 wave       = 4
 requires   = ["1.4"]
 blocked_on = "per mirror chain three independent RPC endpoints with CA and bearer files, a funded deployer key, and the Ethereum secp256k1 and Solana ed25519 publisher keys"

@@ -16,6 +16,7 @@
 #   /data/layerx/genesis      metadata.lxgb of tools/bringup/kernel-genesis.sh
 #   /data/layerx/guarantor-*  the pod's guarantor storage
 #   /data/layerx/settlement   settlement.env and checkpoint-settlement.json
+#   /data/layerx/mirror       the mirror publisher's state directory
 #   /data/human-state         the pod's human-state volume
 #   /data/tls/<service>       identities of tools/bringup/ca.sh issue <service>
 set -euo pipefail
@@ -71,14 +72,55 @@ memory() {
 	mountpoint -q "$1" || mount -t tmpfs -o "nosuid,nodev,mode=$2" tmpfs "$1"
 }
 
+# The mirror-signer and mirror-publisher containers' secrets, imported as Fly
+# secrets of the app, each base64: the Ethereum secp256k1 publisher key, the
+# Solana ed25519 publisher keypair, the config interop/deploy/mirror/
+# render-config.py rendered, and a tar of the <backend>.ca.der and
+# <backend>.token files its RPC endpoints name under $mirror_run/rpc.
+# mirror_inputs writes each present one to memory for uid 4021 and drops it
+# from the environment every service inherits.
+mirror_material=/run/mirror-material
+mirror_run=/run/mirror-publisher
+
+mirror_input() {
+	local name=$1 file=$2
+	[ -n "${!name:-}" ] || return 0
+	base64 -d <<<"${!name}" >"$file" || {
+		log "$name is not base64"
+		exit 1
+	}
+	chown 4021:4020 "$file"
+	chmod 0400 "$file"
+}
+
+mirror_inputs() {
+	mirror_input LAYERX_KERNEL_MIRROR_ETHEREUM_KEY "$mirror_material/ethereum.key"
+	mirror_input LAYERX_KERNEL_MIRROR_SOLANA_KEYPAIR "$mirror_material/solana.json"
+	mirror_input LAYERX_KERNEL_MIRROR_CONFIG "$mirror_run/config.json"
+	if [ -n "${LAYERX_KERNEL_MIRROR_RPC_CREDENTIALS:-}" ]; then
+		install -d -o 4021 -g 4020 -m 0700 "$mirror_run/rpc"
+		base64 -d <<<"$LAYERX_KERNEL_MIRROR_RPC_CREDENTIALS" | tar -x -C "$mirror_run/rpc" --no-same-owner --no-same-permissions || {
+			log "LAYERX_KERNEL_MIRROR_RPC_CREDENTIALS is not a base64 tar"
+			exit 1
+		}
+		chown -R 4021:4020 "$mirror_run/rpc"
+		find "$mirror_run/rpc" -type f -exec chmod 0400 {} +
+	fi
+	unset LAYERX_KERNEL_MIRROR_ETHEREUM_KEY LAYERX_KERNEL_MIRROR_SOLANA_KEYPAIR LAYERX_KERNEL_MIRROR_CONFIG \
+		LAYERX_KERNEL_MIRROR_RPC_CREDENTIALS
+}
+
 memory "$run" 0755
 memory /run/authority-private 0700
 memory /run/human-private 0755
 memory /run/mirror-signer 0700
+memory "$mirror_material" 0700
+memory "$mirror_run" 0700
 memory /tmp 1777
 chown 4020:4020 "$run"
 chmod 2775 "$run"
-chown 4021:4020 /run/authority-private /run/mirror-signer
+chown 4021:4020 /run/authority-private /run/mirror-signer "$mirror_material" "$mirror_run"
+mirror_inputs
 mkdir -p "$status" "$run/clock"
 install -d -o 4020 -g 4020 -m 0750 "$run/node"
 chmod 0755 "$status"
@@ -88,6 +130,7 @@ install -d -o 0 -g 4020 -m 2775 "$layerx" "$genesis" "$layerx/settlement"
 install -d -o 0 -g 4020 -m 0750 "$keys" "$keys/tokens"
 install -d -o 0 -g 0 -m 0700 "$keys/checkpoint-authority" "$keys/publication" "$keys/human-authority"
 install -d -o 4021 -g 4020 -m 0750 "$keys/checkpoint-submitter"
+install -d -o 4021 -g 4020 -m 0700 "$layerx/mirror"
 install -d -o 0 -g 4020 -m 0711 "$tls"
 
 # guarantor-storage
@@ -337,6 +380,21 @@ guarantor 2 9452 9451
 start_paxeer
 
 service human 4020 "" - - -- /usr/local/bin/human-entrypoint service
+
+# The mirror-signer and mirror-publisher containers: the signer serves both
+# publisher keys on its socket, and the publisher reads the LNI socket and
+# answers /readyz and /status on 127.0.0.1:9456, the status_listen the
+# rendered config names.
+service mirror-signer 4021 "$genesis_files $mirror_material/ethereum.key" - - -- \
+	env \
+	LAYERX_MIRROR_SIGNER_SOCKET=/run/mirror-signer/signer.sock \
+	LAYERX_MIRROR_SIGNER_ETHEREUM_KEY_FILE="$mirror_material/ethereum.key" \
+	LAYERX_MIRROR_SIGNER_SOLANA_KEY_FILE="$mirror_material/solana.json" \
+	/usr/local/bin/layerx-mirror-signer
+
+service mirror-publisher 4021 \
+	"$genesis_files $run/node/layerxd.lni.sock $mirror_run/config.json /run/mirror-signer/signer.sock" - - -- \
+	/usr/local/bin/layerx-mirror-publisher "$mirror_run/config.json"
 
 human_authority_ready &
 

@@ -1419,6 +1419,94 @@ CHECK_LIVE_TEST_DOWN="walletfx" CHECK_LIVE_GATEWAY_TOKEN="$CHECK_LIVE_TEST_WALLE
 rm "$fx/spec/paxeer-x-bringup/spec.kvx"
 unset CHECK_LIVE_TEST_RAILWAY CHECK_LIVE_TEST_MACHINES
 
+# mirrors: a loopback stand-in for the publisher's status listener answers
+# /readyz with the code and body its arguments give, and a stand-in for
+# layerx-mirror-verify answers as the verifier does for its config and the
+# request on stdin, refusing when a LayerX origin reaches its environment.
+mkdir -p "$work/mirrors/bin"
+cat >"$work/mirrors/status.py" <<'PY'
+import http.server
+import sys
+
+code, body = int(sys.argv[2]), sys.argv[3].encode()
+
+
+class Status(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(code if self.path == "/readyz" else 404)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *_):
+        pass
+
+
+http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), Status).serve_forever()
+PY
+cat >"$work/mirrors/bin/layerx-mirror-verify" <<'SH'
+#!/usr/bin/env bash
+set -eu
+if [ -n "${LAYERX_NODE_URL:-}${LAYERX_GATEWAY_URL:-}${LAYERX_EXPLORER_API_ORIGIN:-}" ] ||
+	! cmp -s - "$CHECK_LIVE_TEST_MIRROR_REQUEST" || [ ! -r "$1" ]; then
+	echo '{"ok":false,"error":"configuration"}'
+	exit 0
+fi
+case "${CHECK_LIVE_TEST_MIRROR_VERIFY:-pass}" in
+pass) echo '{"ok":true,"verification":{"level":"SequencerSigned","batchNumber":"7","sourceId":"ethereum-primary","provenance":"Canonical","failoverCount":0}}' ;;
+*) echo "{\"ok\":false,\"error\":\"$CHECK_LIVE_TEST_MIRROR_VERIFY\"}" ;;
+esac
+SH
+chmod +x "$work/mirrors/bin/layerx-mirror-verify"
+printf '{"sources":[{"kind":"ethereum","id":"ethereum-primary"},{"kind":"solana","id":"solana-primary"}]}' >"$work/mirrors/verify.json"
+printf '{"sources":[{"kind":"ethereum","id":"ethereum-primary"}]}' >"$work/mirrors/verify-ethereum.json"
+printf '{"batch_number":"7","evidence":{"kind":"receipt","canonical_hex":"00"},"policy":{"kind":"exact","candidate":{"source":0,"commitment_hex":"00"}}}' >"$work/mirrors/request.json"
+export CHECK_LIVE_TEST_MIRROR_REQUEST="$work/mirrors/request.json"
+mirror_port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
+mirror_status() {
+	python3 "$work/mirrors/status.py" "$mirror_port" "$1" "$2" &
+	internal_pids="$internal_pids $!"
+	for _ in $(seq 50); do
+		(: <"/dev/tcp/127.0.0.1/$mirror_port") 2>/dev/null && break
+		sleep 0.1
+	done
+}
+
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_mirrors_inputs_unset "$work/hosts-good.env" 2 mirrors -- \
+	"check-live: CHECK_LIVE_MIRRORS_VERIFY_CONFIG is unset"
+
+mirror_status 200 '{"ready":true}'
+LAYERX_NODE_URL=https://api-mainnet-beta.paxeer.network CHECK_LIVE_MIRRORS_STATUS="127.0.0.1:$mirror_port" \
+	CHECK_LIVE_MIRRORS_VERIFY_BIN="$work/mirrors/bin/layerx-mirror-verify" CHECK_LIVE_MIRRORS_VERIFY_CONFIG="$work/mirrors/verify.json" \
+	CHECK_LIVE_MIRRORS_REQUEST="$work/mirrors/request.json" CHECK_LIVE_TEST_PROGRAM="$fx_checker" \
+	expect check_live_mirrors_passing "$work/hosts-good.env" 0 mirrors -- \
+	"pass mirror-readyz app=$kernel listen=127.0.0.1:$mirror_port http=200 ready=true" \
+	"pass mirror-sources ethereum=1 solana=1" \
+	"pass mirror-verify source=ethereum-primary batch=7 provenance=Canonical level=SequencerSigned" \
+	"check-live: all checks passed"
+if [ "$(grep -c "^$kernel app ssh console sh -c 'status=127.0.0.1:$mirror_port limit=5 sh -s'$" "$CHECK_LIVE_TEST_CALLS")" -eq 1 ]; then
+	echo "ok   check_live_mirrors_reads_the_kernel_machine_once"
+else
+	echo "FAIL check_live_mirrors_reads_the_kernel_machine_once: want one sh -s call on $kernel with the status listener"
+	cat "$CHECK_LIVE_TEST_CALLS"
+	failures=$((failures + 1))
+fi
+
+kill "${internal_pids##* }" 2>/dev/null || true
+wait "${internal_pids##* }" 2>/dev/null || true
+mirror_status 503 '{"ready":false}'
+CHECK_LIVE_TEST_MIRROR_VERIFY=divergent CHECK_LIVE_MIRRORS_STATUS="127.0.0.1:$mirror_port" \
+	CHECK_LIVE_MIRRORS_VERIFY_BIN="$work/mirrors/bin/layerx-mirror-verify" CHECK_LIVE_MIRRORS_VERIFY_CONFIG="$work/mirrors/verify-ethereum.json" \
+	CHECK_LIVE_MIRRORS_REQUEST="$work/mirrors/request.json" CHECK_LIVE_TEST_PROGRAM="$fx_checker" \
+	expect check_live_mirrors_failing "$work/hosts-good.env" 1 mirrors -- \
+	"fail mirror-readyz app=$kernel listen=127.0.0.1:$mirror_port curl=0 http=503" \
+	"fail mirror-sources ethereum=1 solana=0" \
+	"fail mirror-verify error=divergent provenance=none" \
+	"check-live: 3 check(s) failed"
+kill "${internal_pids##* }" 2>/dev/null || true
+wait "${internal_pids##* }" 2>/dev/null || true
+unset CHECK_LIVE_TEST_MIRROR_REQUEST
+
 # The fleet script shares the host map and the ssh helpers, so its own test
 # runs as the last case, with this test's stand-ins off the PATH.
 status=0

@@ -1451,3 +1451,9 @@ area    = "bringup"
 symptom = "A service image build fails at the runtime stage COPY of its own init under docker/<service>/."
 cause   = "The image's Dockerfile.dockerignore excludes the whole docker tree, so the init it copies is not in the build context."
 do      = "Add an exception line for that file after the docker exclusion, and declare util-linux in a runtime stage that drops privileges with setpriv instead of relying on the base image."
+
+[gotcha.239]
+area    = "tooling"
+symptom = "A script that inserts shell test text through python3 - <<'PY' ends early with a Python syntax error, and the rest of the inserted text runs as shell commands."
+cause   = "The inserted text itself carried a heredoc ending in a PY line, which closed the outer heredoc."
+do      = "Write text that holds its own heredocs to a scratch file first and insert it from there, or give the outer heredoc a delimiter the text cannot contain."
