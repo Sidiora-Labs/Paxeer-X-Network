@@ -1253,3 +1253,9 @@ area    = "ci"
 symptom = "The runner canary dispatched while CI_LINUX_RUNNER is unset runs on a hosted runner and fails at its lld step, and the API reports an empty runner name for that job."
 cause   = "The routing expression falls back to the hosted image, which lacks ld.lld, and completed hosted jobs carry no runnerName in the jobs listing."
 do      = "Read a hosted canary failure as the variable being unset, not as a runner image fault; judge the Fly runner only from a run whose job names a fly- runner."
+
+[gotcha.206]
+area    = "agentd"
+symptom = "Tenant control cannot be applied to a request that arrives on the program listener with only the daemon program bearer."
+cause   = "tenant::resolve needs a session Token authenticated from a full SessionCredential (tenant, session id, token id, generation); the program bearer names no session, and MCP authorizes in-process from its binding's session token file instead of over HTTP."
+do      = "Before building an HTTP route that must run under tenant control, fix how the caller presents its session credential and which tenant::Surface it maps to; the SDK transports send a single Authorization header."

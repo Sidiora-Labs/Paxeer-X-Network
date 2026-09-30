@@ -745,3 +745,11 @@ symbol     = "check_ci"
 observed   = "cg spec implemented 4.13 exited 75 with the graph database busy and symbol check_ci not defined in the graph; both fly.toml files already carry the real app names and the controller's env by name, so they needed no change."
 assumption = "Shell functions are not graph symbols, so the status line was set to implemented by hand; the controller's three secrets are set by name through flyctl secrets import, never in the toml."
 severity   = "note"
+
+[observation.3.9.1]
+task       = "3.9"
+file       = "agent/crates/layerx-agentd/src/main.rs"
+symbol     = "serve"
+observed   = "tenant::resolve authorizes only a session Token authenticated from a SessionCredential (tenant, session_id, 32-byte token_id, generation), while HttpProductionTransport sends the envelope with one Authorization: Bearer value and the program listener checks the daemon program bearer; neither the agent-api schema nor the tree defines how an /rpc caller presents its session credential, and tenant::Surface has no variant for an HTTP SDK or JVM caller."
+assumption = "Nothing was implemented; the task stays in_progress until the owner fixes the /rpc credential (encoding and header) and the Surface value, then the whole task is built in one pass."
+severity   = "blocker"
