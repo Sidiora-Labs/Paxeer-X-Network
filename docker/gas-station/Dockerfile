@@ -9,7 +9,7 @@ RUN cargo build --locked --manifest-path interop/Cargo.toml --release --package 
 
 FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends ca-certificates libssl3 \
+    && apt-get install --yes --no-install-recommends ca-certificates libssl3 util-linux \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 4020 layerx \
     && useradd --system --uid 4020 --gid 4020 --home-dir /nonexistent --shell /usr/sbin/nologin layerx
