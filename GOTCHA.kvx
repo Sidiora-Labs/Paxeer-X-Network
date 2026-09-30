@@ -1661,3 +1661,9 @@ area    = "check-live"
 symptom = "A probe inferred a public name from a platform variable of a service that was never part of the system it checks."
 cause   = "The fallback read a variable from a hosting platform assumed to run the legacy service, and nobody confirmed where that service actually ran."
 do      = "Take a public name only from the spec's decision value and fail with the value unset; never add a platform-read fallback without the owner confirming where the service runs."
+
+[gotcha.274]
+area    = "bringup"
+symptom = "A check-live harness run inside a capped tool call ends with exit 143 and an empty log, never having run a case."
+cause   = "The harness waits on its flock while another lane's run holds it, and the caller's timeout kills it during the wait."
+do      = "Run the harness in the background or with no outer timeout shorter than a full queued run; an empty log with exit 143 is no gate result."

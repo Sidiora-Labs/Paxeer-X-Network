@@ -22,6 +22,7 @@ consensus
 custodyproof
 daemon
 docker
+!docker/x-websearch/entrypoint.sh
 engine
 example
 hpx

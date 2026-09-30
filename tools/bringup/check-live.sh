@@ -1110,6 +1110,9 @@ print((proto + "://" + host if host else "none") + " " + (get("NEXT_PUBLIC_NETWO
 #   "pass VALIDATOR_HOSTS[k] loopback-<port> health=200"
 #   "pass VALIDATOR_HOSTS[k] peer-VALIDATOR_HOSTS[j]-<port> health=200"
 # with fail and the observed code (ssh=<exit> when the host did not answer).
+# With XWEB_ATTESTORS_ON_FLY=yes in the host map the loopback and peer checks
+# give way to "pass VALIDATOR_HOSTS[k] listeners-8480-8481=0": nothing listens
+# on the attestor ports.
 check_validators() {
 	local -a dests addrs
 	local k j port err status code line target failures=0
@@ -1134,6 +1137,22 @@ check_validators() {
 			echo "$line"
 			[ "${line%% *}" = pass ] || failures=$((failures + 1))
 		done
+		# Once the four attestors run as Fly apps (XWEB_ATTESTORS_ON_FLY=yes
+		# in the host map), nothing listens on the attestor ports here.
+		if [ "${XWEB_ATTESTORS_ON_FLY:-}" = yes ]; then
+			status=0
+			code="$(ssh_read "${dests[$k]}" 'ss -Hltn "( sport = :8480 or sport = :8481 )" | wc -l')" || status=$?
+			if [ "$status" -ne 0 ]; then
+				echo "fail VALIDATOR_HOSTS[$k] listeners-8480-8481 ssh=$status"
+				failures=$((failures + 1))
+			elif [ "$code" = 0 ]; then
+				echo "pass VALIDATOR_HOSTS[$k] listeners-8480-8481=0"
+			else
+				echo "fail VALIDATOR_HOSTS[$k] listeners-8480-8481=${code:-none}"
+				failures=$((failures + 1))
+			fi
+			continue
+		fi
 		for port in 8480 8481; do
 			for j in "${!dests[@]}"; do
 				target="${addrs[j]}"
@@ -3618,6 +3637,89 @@ check_kernel_node() {
 	finish "$failures"
 }
 
+# check_xweb_attestors: each of the four apps of
+# interop/deploy/x-websearch/attestor-<N>.toml runs one started machine with
+# its volume and holds no public IP; inside it, through flyctl ssh console,
+# the attestor answers /health on 8480 and every other attestor answers
+# /health through its loopback hop 849<M>; no VALIDATOR_HOSTS destination
+# runs an x-websearch unit. One line per check:
+#   "pass machines app=<app> machines=1 started=1 volumes=1"
+#   "pass public-ips app=<app> count=0"
+#   "pass health app=<app> http=200"
+#   "pass hop app=<app> peer=<peer app> port=849<M> http=200"
+#   "pass VALIDATOR_HOSTS[k] x-websearch-units=0"
+# with fail and the observed values (ssh=<exit> when a host did not answer).
+check_xweb_attestors() {
+	local -a apps dests
+	local n m answer n_machines n_started n_mounts code status failures=0
+	for n in 1 2 3 4; do
+		apps[n]="$(fly_app "interop/deploy/x-websearch/attestor-$n.toml")" || apps[n]=""
+	done
+	for n in 1 2 3 4; do
+		if [ -z "${apps[n]}" ]; then
+			echo "fail attestor-$n toml=absent"
+			failures=$((failures + 1))
+			continue
+		fi
+		answer="$(timeout "$timeout" flyctl machines list --app "${apps[n]}" --json 2>/dev/null | python3 -c '
+import json, sys
+ms = json.load(sys.stdin)
+started = [m for m in ms if m.get("state") == "started"]
+mounts = [x.get("volume", "") for m in ms for x in (m.get("config") or {}).get("mounts") or []]
+print(len(ms), len(started), len(mounts))
+' 2>/dev/null)" || answer=""
+		read -r n_machines n_started n_mounts <<<"${answer:-none none none}"
+		if [ "$n_machines" = 1 ] && [ "$n_started" = 1 ] && [ "$n_mounts" = 1 ]; then
+			echo "pass machines app=${apps[n]} machines=1 started=1 volumes=1"
+		else
+			echo "fail machines app=${apps[n]} machines=$n_machines started=$n_started volumes=$n_mounts"
+			failures=$((failures + 1))
+		fi
+		answer="$(timeout "$timeout" flyctl ips list --app "${apps[n]}" --json 2>/dev/null | python3 -c 'import json, sys; print(len(json.load(sys.stdin) or []))' 2>/dev/null)" || answer=none
+		if [ "$answer" = 0 ]; then
+			echo "pass public-ips app=${apps[n]} count=0"
+		else
+			echo "fail public-ips app=${apps[n]} count=${answer:-none}"
+			failures=$((failures + 1))
+		fi
+		# The image carries socat, not curl: one HTTP/1.0 request per port,
+		# the status code of the answer's first line.
+		answer="$(fly_ssh "${apps[n]}" - "for p in 8480 8491 8492 8493 8494; do printf \"%s \" \$p; printf \"GET /health HTTP/1.0\\r\\nHost: 127.0.0.1\\r\\n\\r\\n\" | timeout $timeout socat -t $timeout - TCP:127.0.0.1:\$p 2>/dev/null | head -n 1 | cut -d\" \" -f2; echo; done")" || answer=""
+		code="$(awk '$1 == 8480 { print $2 }' <<<"$answer")"
+		if [ "$code" = 200 ]; then
+			echo "pass health app=${apps[n]} http=200"
+		else
+			echo "fail health app=${apps[n]} http=${code:-none}"
+			failures=$((failures + 1))
+		fi
+		for m in 1 2 3 4; do
+			[ "$m" -ne "$n" ] || continue
+			code="$(awk -v p=$((8490 + m)) '$1 == p { print $2 }' <<<"$answer")"
+			if [ "$code" = 200 ]; then
+				echo "pass hop app=${apps[n]} peer=${apps[m]:-attestor-$m} port=$((8490 + m)) http=200"
+			else
+				echo "fail hop app=${apps[n]} peer=${apps[m]:-attestor-$m} port=$((8490 + m)) http=${code:-none}"
+				failures=$((failures + 1))
+			fi
+		done
+	done
+	read -r -a dests <<<"$VALIDATOR_HOSTS"
+	for n in "${!dests[@]}"; do
+		status=0
+		answer="$(ssh_read "${dests[$n]}" 'systemctl list-units --no-legend --plain --state=active,activating,reloading "x-websearch*" | wc -l')" || status=$?
+		if [ "$status" -ne 0 ]; then
+			echo "fail VALIDATOR_HOSTS[$n] x-websearch-units ssh=$status"
+			failures=$((failures + 1))
+		elif [ "$answer" = 0 ]; then
+			echo "pass VALIDATOR_HOSTS[$n] x-websearch-units=0"
+		else
+			echo "fail VALIDATOR_HOSTS[$n] x-websearch-units=${answer:-none}"
+			failures=$((failures + 1))
+		fi
+	done
+	finish "$failures"
+}
+
 mode="${1:-}"
 case "$mode" in
 -h | --help)
@@ -3649,6 +3751,7 @@ router) ;;
 search) ;;
 registry) ;;
 interop-adapters) ;;
+xweb-attestors) ;;
 *)
 	usage >&2
 	exit 2
