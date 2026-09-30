@@ -1653,3 +1653,11 @@ symbol     = "do_restore"
 observed   = "Shape chosen: a clone of the old machine (old image and env) with one volume, staged at /var/lib/layerx/human-restore and moved to /var/lib/layerx/human by flyctl machine update --mount-point, because a Fly machine mounts one volume, the old entrypoint is the service itself (runtime-clock exits with its child, so any service restart is a machine restart that resets the root) and the export proves every state root lies under /var/lib/layerx/human; the other sources return to the root as the old machine held them. Gates: bash -n tools/bringup/human-state-preserve.sh | 0 | -; cg spec render | 0 | -; cg spec lint | 0 (0 errors, 5 pre-existing warnings) | .logs/1.11-lint.log; timeout 900 bash tools/bringup/check-live.test.sh | 0 | .logs/1.11-harness.log."
 assumption = "flyctl machine update --mount-point moves the existing mount of the clone in place (flyctl v0.4.109 help: New volume mount point); the live R1 run is the deploy side's and was not run here."
 severity   = "info"
+
+[observation.1.5.10]
+task       = "1.5"
+file       = "docker/kernel/init.sh"
+symbol     = "genesis_files"
+observed   = "genesis_files now also lists $keys/publication/binding-policy.json and $keys/publication/authorization.json, the kernel-genesis.sh genesis outputs it lacked, because the kernel-app gate reported the treasury-signer wait on binding-policy.json as a failure instead of waiting-genesis."
+assumption = "the kernel-app gate now passes the wait as waiting-genesis before the genesis step; the deploy side builds the kernel image once from the merged revision"
+severity   = "info"
