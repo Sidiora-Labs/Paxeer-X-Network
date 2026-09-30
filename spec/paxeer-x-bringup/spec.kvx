@@ -720,7 +720,7 @@ reqs       = ["12.1"]
 
 [task.4.2]
 title      = "Serve paid web search from sidecars on the serving RPC nodes, settled through the router"
-status     = "pending"
+status     = "in_progress"
 wave       = 4
 requires   = ["2.2", "1.6", "0.3"]
 blocked_on = "the owner's PAX price in US dollars, from which the four per-request prices of 0.001 US dollars are set in base units: USDC and USDL at 0.001, PAX at 0.001 divided by that price, and SID at that PAX amount times the owner-set rate of 3.114 SID per PAX; and the owner's PAX deposit that funds the payer account through custody credit"

@@ -1529,3 +1529,9 @@ area    = "check-live"
 symptom = "After a merge of check-live.test.sh most cases fail with head=none or empty answers although no probe changed."
 cause   = "A merge dropped the closing exit 0 and fi of one curl stand-in block, so the heredoc stand-in no longer parses and every curl call fails."
 do      = "After resolving a merge of the harness, run bash -n over each heredoc stand-in (ssh, flyctl, curl, node, getent) before the full harness."
+
+[gotcha.252]
+area    = "bringup"
+symptom = "A new check-live subcommand needs its own curl answers in the harness, but lanes may only append cases at the end of check-live.test.sh."
+cause   = "The harness's curl stand-in is written once near the top and answers every https URL with its own fixtures."
+do      = "Write a second curl stand-in in a directory of its own in the appended cases that answers the new paths and execs the harness's stand-in for everything else, and run those cases with that directory first on PATH."
