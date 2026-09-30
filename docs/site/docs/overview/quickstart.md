@@ -2,7 +2,7 @@
 
 At the end of this path a developer has a disposable beta cluster from this
 repository, the env file `up` writes, a local Ed25519 key and a stored hosted
-session token, a faucet claim against that cluster, one Programs deploy
+session token, a claim from that cluster's private-network faucet, one Programs deploy
 submitted through the CLI command that exists (and the hosted
 `POST /v1/programs/deploy` route the gateway actually serves), one payment
 submitted through the CLI command that exists (and the hosted activity HTTP
@@ -14,7 +14,7 @@ cited to the tree. Related pages: [CLI](../platform/cli.md), [Beta cluster](../o
 [Hosted gateway](../platform/hosted-gateway.md), [Hosted identity](../platform/identity.md),
 [Programs](../programs/index.md), [Finality](../protocol/finality.md).
 
-Faucet, send, Asset, program, and 402 surfaces are on
+Funding, send, Asset, program, and 402 surfaces are on
 [Payments developer path](payments.md). The public endpoint
 checklist is [Getting started](getting-started.md).
 Asset encodings: [Assets](../concepts/assets.md). Public `POST /rpc`: [Public JSON-RPC](../platform/gateway-rpc.md).
@@ -79,7 +79,7 @@ Default host ports are control `19443`, gateway `19444`, faucet `19445`
 (`platform/hosted/tests/beta-cluster.sh:81-83`). `up` binds
 `TESTNET_URL=https://localhost:$TESTNET_PORT`,
 `GATEWAY_URL=https://localhost:$GATEWAY_PORT`,
-`FAUCET_URL=https://localhost:$FAUCET_PORT`,
+the private-network faucet at `https://localhost:$FAUCET_PORT`,
 `DEVELOPER_URL=https://localhost:19450`,
 `NODE_URL=https://localhost:19446`,
 `AGENT_URL=https://localhost:19447`,
@@ -116,7 +116,7 @@ separate export step. Source it:
 | --- | --- |
 | `LAYERX_TESTNET_URL` | `$TESTNET_URL` |
 | `LAYERX_GATEWAY_URL` | `$GATEWAY_URL` |
-| `LAYERX_FAUCET_URL` | `$FAUCET_URL` |
+| `LAYERX_FAUCET_URL` | `https://localhost:$FAUCET_PORT` |
 | `LAYERX_TEST_AUTH_TOKEN_FILE` | `build/beta-cluster/secrets/test-auth.token` |
 | `LAYERX_TEST_CA_FILE` | `build/beta-cluster/ca/ca.crt` |
 | `LAYERX_TEST_SOURCE_DID` | smoke source DID |
@@ -166,7 +166,8 @@ and `reset_schedule` (`platform/hosted/testnet/src/main.rs:1155-1163`;
 
 The maintained 402LXP client path uses JSON-RPC 2.0 at gateway `POST /rpc` and
 WebSocket subscriptions at `GET /rpc/ws`. The Node and Python examples accept
-the gateway and faucet origins explicitly:
+the gateway origin and, on a disposable cluster, its private-network faucet
+origin explicitly:
 
 ```sh
 node platform/middleware/examples/public-rpc.mjs --help
@@ -202,7 +203,7 @@ verified settlement reference was
 `lxp:21d0e81da67a7dac4d669d45b07f67b241c47285b120121e3d5700c8978233fd`.
 These measurements describe that qualification run, not a service-level target.
 
-Faucet funding is separate. Confirm the funded account with `lx_getAccount`,
+Funding is separate. Confirm the funded account with `lx_getAccount`,
 `lx_getBalance` or `lx_getBalances(did)` before preparing a draw, and obtain the
 current identity sequence through `lx_getSequence`. The examples read
 `LAYERX_RPC_URL`, `LAYERX_FAUCET_URL` and `LAYERX_DID`; authentication uses
@@ -211,8 +212,9 @@ current identity sequence through `lx_getSequence`. The examples read
 contracts.
 
 The public hosted equivalents are `https://api.mainnet-beta.router.paxeer.network/rpc` and
-`wss://api.mainnet-beta.router.paxeer.network/rpc/ws`; the faucet origin is
-`https://faucet.paxeer.network`. See
+`wss://api.mainnet-beta.router.paxeer.network/rpc/ws`. There is no public
+faucet: a public account is funded through
+[custody credit](../human/custody.md) submitted to that router. See
 [Getting started](getting-started.md) for the public
 checklist and [Public JSON-RPC](../platform/gateway-rpc.md) for every method and typed error.
 
@@ -291,7 +293,18 @@ not include `/v1/accounts` (`platform/hosted/gateway/src/lib.rs:809-881`).
 
 ---
 
-## 4. Request funds from the faucet
+## 4. Fund the account
+
+On the public network there is no faucet. An account is funded through the
+custody-credit path: a deposit into the custody precompile
+`0x0000000000000000000000000000000000001013` on Paxeer chain `125`, then the
+signed credit activity submitted with `lx_sendActivity` at
+`https://api.mainnet-beta.router.paxeer.network/rpc`; the commands are in
+[Getting started](getting-started.md#wallet-and-funding) and every input is on
+[Custody credit](../human/custody.md).
+
+The disposable cluster below also runs a private-network faucet with no
+public name; the rest of this section claims from it.
 
 There is no `layerx faucet` command (`platform/cli/src/main.rs:53-99`). The
 faucet claim route is `POST /v1/faucet/claims`
@@ -349,7 +362,7 @@ The command is `layerx program deploy <artifact>`
 (`platform/cli/src/main.rs:263-272, 1101-1117`;
 `platform/cli/src/programs.rs:245-279`).
 
-From the faucet-funded credential, scaffold and compile a WASM artifact:
+From the funded credential, scaffold and compile a WASM artifact:
 
 ```sh
 layerx new quickstart-program

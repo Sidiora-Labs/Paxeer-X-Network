@@ -1,6 +1,6 @@
 # Payments developer path
 
-This path covers a wallet, faucet funding, an Asset transfer, token issuance,
+This path covers a wallet, custody-credit funding, an Asset transfer, token issuance,
 an LXT20 program, and an HTTP 402 payment. The wallet/token CLI, native Asset
 execution, public RPC, payment signer, and extended 402LXP flow described here
 are served by this tree. The LXT20 example is not: neither
@@ -13,16 +13,15 @@ For a shorter environment checklist, start with
 
 ## 1. Configure trusted inputs
 
-The published gateway and faucet origins are:
+The published router origin is:
 
 ```sh
 export RPC_URL=https://api.mainnet-beta.router.paxeer.network/rpc
-export FAUCET_URL=https://faucet.paxeer.network
 ```
 
 You also need:
 
-- a bearer session token for the faucet;
+- a custody deposit on Paxeer chain `125` for the account you fund;
 - a stored `LayerX-Key` gateway credential with the scopes required by the
   operations you will submit;
 - the network id and a receipt policy obtained independently of the RPC
@@ -73,32 +72,40 @@ export WALLET_PUBLIC_KEY='<64-hex public key>'
 Public wallet registration and public DID history are not exposed by the CLI;
 those attempts return typed unavailable errors.
 
-## 3. Request test funds
+## 3. Fund the account through custody credit
 
-The faucet accepts exactly `did` and `public_key`. It requires a bearer session,
-`Content-Type: application/json`, and a unique `Idempotency-Key` of 1–128
-letters, digits, `-`, `_`, `.`, or `:`. Preserve the key for retries.
+There is no public faucet. An account is funded by an authenticated custody
+credit: deposit into the custody precompile
+`0x0000000000000000000000000000000000001013` on Paxeer chain `125` through one
+of the [public RPC names](../reference/public-rpc.md), then build the credit from that deposit's
+evidence, sign the funding activity with the account's own key, and submit it
+through the router. [Custody credit](../human/custody.md) documents every input and
+refusal.
 
 ```sh
-jq -n --arg did "$WALLET_DID" --arg public_key "$WALLET_PUBLIC_KEY" \
-  '{did:$did, public_key:$public_key}' > faucet-request.json
+python tests/bridge/custody_credit.py attest \
+  --rpc "$FIRST_RPC" --rpc "$SECOND_RPC" --comet-rpc "$COMET_RPC" \
+  --ca-bundle "$CA_BUNDLE" --disposable-identity "$IDENTITY" \
+  --profile custody.profile --network-id "$NETWORK_ID" \
+  --transaction "$DEPOSIT_TRANSACTION" --beneficiary "$WALLET_DID" \
+  --beneficiary-key "$WALLET_PUBLIC_KEY" --expected-amount "$AMOUNT" \
+  --output custody.credit
+build/tests/bridge/sign-credit custody.profile custody.credit "$WALLET_DID" \
+  "$WALLET_KEY" "$WALLET_SEQUENCE" "$TIMESTAMP_MS" funding.activity
 
-curl --fail-with-body --silent --show-error \
-  --request POST "$FAUCET_URL/v1/faucet/claims" \
-  --header 'Content-Type: application/json' \
-  --header "Authorization: Bearer $FAUCET_SESSION_TOKEN" \
-  --header "Idempotency-Key: $FAUCET_REQUEST_ID" \
-  --data-binary @faucet-request.json > faucet-response.json
-
-jq -e '.funded == true and (.funding_id | type == "string")' faucet-response.json
+jq -cn --arg canonical "$(xxd -p funding.activity | tr -d '\n')" \
+  '{jsonrpc:"2.0",id:1,method:"lx_sendActivity",params:[$canonical,"executed"]}' |
+  curl --fail-with-body --silent --show-error "$RPC_URL" \
+    --header 'Content-Type: application/json' \
+    --header "Authorization: LayerX-Key $GATEWAY_KEY_ID:$GATEWAY_KEY_SECRET" \
+    --data-binary @- > funding-response.json
 ```
 
-For a disposable cluster, add `--cacert "$LAYERX_TEST_CA_FILE"`. A successful
-body contains `funded: true`, `funding_id`, optional `transaction_id`, decimal
-string `amount`, and `network: "layerx-testnet"`. HTTP 202
-`still_checking`, any refusal, or an unobserved response is not funding
-confirmation. Retry only with the same idempotency key and body, then confirm
-the account through `lx_getAccount`, `lx_getBalance`, or `lx_getBalances`.
+The credit's idempotency is the deposit nullifier in `custody.credit.nullifier`,
+so a repeated submission of the same deposit cannot credit it twice. A signed
+credit is admissible for five minutes; sign it right before submitting. Accept
+funding only after the `executed` outcome and a confirming `lx_getAccount`,
+`lx_getBalance`, or `lx_getBalances` read.
 
 ## 4. Create and use an Asset
 

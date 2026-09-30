@@ -7,8 +7,8 @@ DTSTART:20260901T090000Z
 RRULE:FREQ=MONTHLY;BYDAY=1TU
 DURATION:PT30M
 SUMMARY:LayerX public beta reset
-DESCRIPTION:Balances and receipts on the LayerX public beta are reset.
-URL:https://status.paxeer.network/beta-resets.ics
+DESCRIPTION:Private-network only. Balances and receipts on the beta network are reset.
+URL:https://github.com/Sidiora-Labs/Paxeer-X-Network/blob/main/platform/docs/beta-resets.ics
 CATEGORIES:MAINTENANCE,BETA
 TRANSP:TRANSPARENT
 END:VEVENT

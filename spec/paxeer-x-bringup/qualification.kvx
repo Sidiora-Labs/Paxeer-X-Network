@@ -349,3 +349,11 @@ command   = "timeout 30m make layerxd platform-test-node"
 exit_code = 0
 log_path  = ".logs/verify.log"
 observed  = "Per the ruling the checkpoint-emptiness proxy after the reset is replaced by proof that the checkpoint directory object was replaced and that the admission journal, which held generation-1 admissions, is back to its 32-byte superblock; the node test passes the custody credit, DID listing, SEND, reset and generation-2 checks at the first run."
+
+[observation.0.7.1]
+revision   = "9296a0d2c plus the change committed with this entry"
+command    = "timeout 5m tools/bringup/docs-names.sh"
+exit_code  = 1
+log_path   = ".logs/verify.log"
+observed   = "Every site, wiki, README and SDK page passes; the check fails only on beta.paxeer.network, faucet.paxeer.network and status.paxeer.network in platform/docs/beta-environment.md and platform/docs/content/beta.md, which now carry the private-network banner but keep those names because tools/ci/beta-contract-check.sh requires both pages to repeat the endpoint values of platform/hosted/testnet/src/lib.rs, .github/workflows/platform.yml and platform/hosted/testnet/deployment.yaml, including the faucet claims origin and the status host of the reset calendar."
+assumption = "Removing the names breaks the beta contract check and changing its sources is outside task 0.7, so both checks stay as written; a ruling is needed on whether the retired testnet sources drop those names (with the contract check and its contradictions table updated) or the beta contract pages leave the docs-names scope, and FAUCET_URL is read as the whole identifier so the private-network LAYERX_FAUCET_URL of the disposable cluster stays documented."

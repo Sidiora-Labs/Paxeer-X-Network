@@ -1,17 +1,16 @@
 # Getting started
 
-This checklist uses the gateway and faucet contracts available to approved developers; access still requires credentials
+This checklist uses the router and the custody-credit funding path available to approved developers; access still requires credentials
 and independently supplied verification policy.
 
 ## Endpoints and trust
 
 ```sh
 export RPC_URL=https://api.mainnet-beta.router.paxeer.network/rpc
-export FAUCET_URL=https://faucet.paxeer.network
 ```
 
-Store a gateway `LayerX-Key` credential under the CLI alias `beta`, keep the
-faucet bearer session out of command history, and obtain the network id and
+Store a gateway `LayerX-Key` credential under the CLI alias `beta`, keep it out of
+command history, and obtain the network id and
 receipt-policy trust pins independently of any response you are verifying.
 
 For the disposable local beta cluster, follow [Quickstart](quickstart.md)
@@ -20,7 +19,7 @@ credential-file paths, and `LAYERX_TEST_CA_FILE` at
 `build/beta-cluster/ca/ca.crt`. Add `--cacert "$LAYERX_TEST_CA_FILE"` only to
 requests for those local cluster endpoints.
 
-## Wallet and faucet
+## Wallet and funding
 
 For a public identity, create an ordinary signing key. Public
 `wallet create` is deliberately unavailable because the gateway exposes no
@@ -32,40 +31,43 @@ layerx key default alice
 layerx wallet list
 ```
 
-Request test funds with the wallet's public DID and 64-hex Ed25519 key. The
-faucet body accepts no other fields:
+There is no public faucet. An account is funded by an authenticated custody
+credit: deposit into the custody precompile
+`0x0000000000000000000000000000000000001013` on Paxeer chain `125` through one
+of the [public RPC names](../reference/public-rpc.md), then build the credit from that deposit's
+evidence, sign the funding activity with the account's own key, and submit it
+through the router. [Custody credit](../human/custody.md) documents every input and
+refusal.
 
 ```sh
-jq -n --arg did "$WALLET_DID" --arg public_key "$WALLET_PUBLIC_KEY" \
-  '{did:$did, public_key:$public_key}' > faucet-request.json
+python tests/bridge/custody_credit.py attest \
+  --rpc "$FIRST_RPC" --rpc "$SECOND_RPC" --comet-rpc "$COMET_RPC" \
+  --ca-bundle "$CA_BUNDLE" --disposable-identity "$IDENTITY" \
+  --profile custody.profile --network-id "$NETWORK_ID" \
+  --transaction "$DEPOSIT_TRANSACTION" --beneficiary "$WALLET_DID" \
+  --beneficiary-key "$WALLET_PUBLIC_KEY" --expected-amount "$AMOUNT" \
+  --output custody.credit
+build/tests/bridge/sign-credit custody.profile custody.credit "$WALLET_DID" \
+  "$WALLET_KEY" "$WALLET_SEQUENCE" "$TIMESTAMP_MS" funding.activity
 
-curl --fail-with-body --silent --show-error \
-  --request POST "$FAUCET_URL/v1/faucet/claims" \
-  --header 'Content-Type: application/json' \
-  --header "Authorization: Bearer $FAUCET_SESSION_TOKEN" \
-  --header "Idempotency-Key: $FAUCET_REQUEST_ID" \
-  --data-binary @faucet-request.json > faucet-response.json
+jq -cn --arg canonical "$(xxd -p funding.activity | tr -d '\n')" \
+  '{jsonrpc:"2.0",id:1,method:"lx_sendActivity",params:[$canonical,"executed"]}' |
+  curl --fail-with-body --silent --show-error "$RPC_URL" \
+    --header 'Content-Type: application/json' \
+    --header "Authorization: LayerX-Key $GATEWAY_KEY_ID:$GATEWAY_KEY_SECRET" \
+    --data-binary @- > funding-response.json
 ```
 
-Reuse the same idempotency key only for the same claim. Accept funding only
-after a `funded: true` response and a confirming account read. HTTP 202
-`still_checking` is not funding evidence. The exact pending body is:
-
-```json
-{"state":"still_checking","retry":"after","retry_after_seconds":10}
-```
-
-A faucet refusal is an HTTP 4xx/5xx body shaped as
-`{"error":{"code":"<typed-code>","retry":"after|never"}}`; when retry is
-`after`, `retry_after_seconds` is present. The source refuses missing or invalid
-idempotency, authentication, malformed DID/key input, quota, persistence, and
-funding independently (`platform/hosted/faucet/src/main.rs:1025-1098,
-1012-1035`).
+The credit's idempotency is the deposit nullifier in `custody.credit.nullifier`,
+so a repeated submission of the same deposit cannot credit it twice. A signed
+credit is admissible for five minutes; sign it right before submitting. Accept
+funding only after the `executed` outcome and a confirming `lx_getAccount`,
+`lx_getBalance`, or `lx_getBalances` read.
 
 ## Run the register, open, mint, send flow
 
-The tracked real-process flow performs these writes in order:
-faucet claim, Asset register, per-Asset account open, mint, then native-Asset
+The tracked real-process flow performs these writes in order
+after funding: Asset register, per-Asset account open, mint, then native-Asset
 SEND. Register, open, mint, and SEND are four fresh signed canonical
 activities. Each is submitted through the same exact JSON-RPC method and waits
 for `executed` before the next activity is built
