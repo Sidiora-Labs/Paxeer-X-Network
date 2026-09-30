@@ -1421,3 +1421,9 @@ area    = "bringup"
 symptom = "A check-live subcommand exits with 'unbound variable' at the very end after all its lines printed."
 cause   = "An EXIT trap set inside a function with a single-quoted reference to a local variable runs after the function's locals are gone, and set -u trips on it."
 do      = "Expand the path into the trap when it is set (double quotes, shellcheck SC2064 disabled) as the other probes of the file do."
+
+[gotcha.234]
+area    = "tooling"
+symptom = "A script that inserts shell test text through python3 - <<'PY' ends early with a Python syntax error, and the rest of the inserted text runs as shell commands."
+cause   = "The inserted text itself carried a heredoc ending in a PY line, which closed the outer heredoc."
+do      = "Write text that holds its own heredocs to a scratch file first and insert it from there, or give the outer heredoc a delimiter the text cannot contain."

@@ -1055,3 +1055,35 @@ symbol     = "check_internal"
 observed   = "timeout 10m tools/bringup/check-live.sh internal exited 1 (log .logs/verify.log): the router's served chain ends at ISRG Root X1, but the internal and internal Redis apps do not exist yet, so the public-ip reads, the payments and programs pin reads and the five readiness routes from the kernel machine all fail."
 assumption = "The deploy side runs the handoff steps (build, volumes, Redis secrets, both deploys with no public IPs, the five internal certificates) once tasks 1.5, 2.2 and 3.5 are live, then reruns the gate; the human TLS listener port 9449 is the coordinator's ruling pending the design block."
 severity   = "external"
+
+[observation.4.9.1]
+task       = "4.9"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_mirrors"
+observed   = "The verify_cmd timeout 15m tools/bringup/check-live.sh mirrors exited 2 with check-live: CHECK_LIVE_MIRRORS_VERIFY_CONFIG is unset (log .logs/verify.log), because the mirror chain inputs, the deployed archive contract and program and the kernel genesis do not exist yet; the harness cases passed."
+assumption = "The deploy side runs the handoff steps once task 1.4 is live and the owner supplies the mirror inputs, then reruns the gate with the CHECK_LIVE_MIRRORS_* inputs set."
+severity   = "external"
+
+[observation.4.9.2]
+task       = "4.9"
+file       = "docker/kernel/init.sh"
+symbol     = "mirror-publisher"
+observed   = "The publisher's status listener needs a new in-machine port and 9455 is taken by another lane, so the init and the rendered config use 127.0.0.1:9456, which the kernel_ports map of [design.fly] does not list yet."
+assumption = "The manager adds 9456 the mirror publisher's status listener on loopback to kernel_ports."
+severity   = "warning"
+
+[observation.4.9.3]
+task       = "4.9"
+file       = "docker/kernel/init.sh"
+symbol     = "mirror_inputs"
+observed   = "[design.fly] layout carries app secrets as [[files]] entries, but a [[files]] entry naming a secret that is not set would stop every kernel-app deploy while the mirror inputs are still owner-blocked, so the four mirror secrets are plain Fly secrets the init decodes into memory for uid 4021 and unsets before any service starts."
+assumption = "Until the owner supplies them kernel-app shows mirror-signer and mirror-publisher as waiting on their decoded paths after genesis, which the kernel-app gate reports as a fail line by design."
+severity   = "warning"
+
+[observation.4.9.4]
+task       = "4.9"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_mirrors"
+observed   = "layerx-mirror-verify needs a request carrying one receipt's canonical bytes, its batch number and the archive commitment of that batch, and neither the spec nor the tree fixes the read path the deploy side takes them from; the publisher's /status exposes no commitments."
+assumption = "None taken: CHECK_LIVE_MIRRORS_REQUEST is an owner input in the shape scripts/qualify-mirror-verification-live.sh reads as its canonical request, until the owner names its read path."
+severity   = "warning"
