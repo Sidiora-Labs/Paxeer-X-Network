@@ -481,7 +481,7 @@ reqs       = ["7.1"]
 
 [task.2.2]
 title      = "Run the gateway in kernel mode on the existing endpoint app, served only at the router URL"
-status     = "pending"
+status     = "in_progress"
 wave       = 2
 requires   = ["2.1", "2.4", "2.8", "0.9"]
 do_1       = "Switch the Redis certificate and the gateway's outbound root in one deploy window, because the gateway takes one outbound DER root and cannot verify Redis between two deploys: when the served chain of the Redis app of human/wallet/deploy/redis.toml does not end at the internal CA root, issue its certificate through the gateway-redis row of tools/bringup/ca.sh with the Redis app's .internal name by the several-machine path of ca_issue, because the Redis image reads its key from a [[files]] secret, and stage REDIS_TLS_CERT, REDIS_TLS_KEY and REDIS_TLS_CA with flyctl secrets import --stage; then import ENDPOINT_OUTBOUND_CA as the internal CA root on the endpoint app, deploy the Redis app on its new certificate and at once deploy the endpoint app of do_2, so the gateway's one outbound root serves both Redis and the kernel backends."

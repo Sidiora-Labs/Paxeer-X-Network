@@ -1374,6 +1374,138 @@ print(len(ms), len([m for m in ms if m.get("state") == "started"]))
 	finish "$failures"
 }
 
+# check_router: the router URL https://api-mainnet-beta.paxeer.network serves
+# the gateway of human/wallet/deploy/endpoint.toml in kernel mode. Through its
+# /rpc: eth_chainId 0x7d, px_getNetwork kernel.available true and lx_getAccount
+# answering a read for the bound account CHECK_LIVE_ROUTER_ACCOUNT. The app
+# runs started machines in at least two regions; /readyz through the router,
+# forced to the first started machine of each region with
+# fly-force-instance-id, answers 200 with durable_store (its Redis round trip)
+# and every configured backend ready. The wallet gateway of
+# human/wallet/deploy/gateway.toml, read inside its machine, reports its
+# rpc_pool up with the router URL first. One line per check.
+check_router() {
+	local url=https://api-mainnet-beta.paxeer.network account="${CHECK_LIVE_ROUTER_ACCOUNT:-}"
+	local app wallet method params body answer machines region id code failures=0
+	if ! command -v flyctl >/dev/null 2>&1; then
+		echo "check-live: flyctl is required" >&2
+		exit 2
+	fi
+	if ! app="$(fly_app human/wallet/deploy/endpoint.toml)"; then
+		echo "fail router toml=absent"
+		finish 1
+	fi
+
+	for method in eth_chainId px_getNetwork lx_getAccount; do
+		params='[]'
+		if [ "$method" = lx_getAccount ]; then
+			if [[ ! "$account" =~ ^[A-Za-z0-9:._-]+$ ]]; then
+				echo "fail lx_getAccount account=${account:+invalid}${account:-unset}"
+				failures=$((failures + 1))
+				continue
+			fi
+			params="[\"$account\"]"
+		fi
+		body="$(curl -sS -m "$timeout" -H 'content-type: application/json' \
+			-d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"$method\",\"params\":$params}" "$url/rpc" 2>/dev/null)" || body=""
+		answer="$(python3 -c '
+import json
+import sys
+
+method = sys.argv[1]
+try:
+    doc = json.loads(sys.stdin.read())
+except ValueError:
+    print("fail %s answer=unreadable" % method)
+    sys.exit(0)
+if not isinstance(doc, dict) or "result" not in doc:
+    error = doc.get("error") if isinstance(doc, dict) else None
+    print("fail %s error=%s" % (method, (error or {}).get("code", "none") if isinstance(error, dict) else "none"))
+    sys.exit(0)
+result = doc["result"]
+if method == "eth_chainId":
+    print("%s eth_chainId result=%s" % ("pass" if result == "0x7d" else "fail", result))
+elif method == "px_getNetwork":
+    kernel = (result or {}).get("kernel") if isinstance(result, dict) else None
+    kernel = kernel if isinstance(kernel, dict) else {}
+    ok = kernel.get("available") is True
+    print("%s px_getNetwork kernel.available=%s reason=%s" % ("pass" if ok else "fail", json.dumps(kernel.get("available")), kernel.get("reason") or "none"))
+else:
+    ok = isinstance(result, dict) and len(result) > 0
+    print("%s lx_getAccount read=%s" % ("pass" if ok else "fail", "answered" if ok else "empty"))
+' "$method" <<<"$body")"
+		echo "$answer"
+		[ "${answer%% *}" = pass ] || failures=$((failures + 1))
+	done
+
+	machines="$(timeout "$timeout" flyctl machines list --app "$app" --json 2>/dev/null | python3 -c '
+import json
+import sys
+
+first = {}
+for machine in json.load(sys.stdin):
+    if machine.get("state") == "started" and machine.get("id"):
+        first.setdefault(machine.get("region") or "none", machine["id"])
+for region in sorted(first):
+    print(region, first[region])
+' 2>/dev/null)" || machines=""
+	if [ "$(grep -c . <<<"$machines")" -ge 2 ]; then
+		echo "pass machines app=$app regions=$(cut -d' ' -f1 <<<"$machines" | paste -sd,)"
+	else
+		echo "fail machines app=$app regions=$(cut -d' ' -f1 <<<"$machines" | paste -sd,)"
+		failures=$((failures + 1))
+	fi
+	while read -r region id; do
+		[ -n "$id" ] || continue
+		body="$(curl -sS -m "$timeout" -H "fly-force-instance-id: $id" -w '\n%{http_code}' "$url/readyz" 2>/dev/null)" || body=""
+		code="${body##*$'\n'}"
+		answer="$(python3 -c '
+import json
+import sys
+
+code = sys.argv[1]
+try:
+    backends = json.loads(sys.stdin.read()).get("backends") or {}
+except (ValueError, AttributeError):
+    print("fail http=%s backends=unreadable" % (code or "none"))
+    sys.exit(0)
+configured = sorted(n for n, b in backends.items() if (b or {}).get("reason") != "not_configured")
+unready = [n for n in configured if (backends[n] or {}).get("state") != "ready"]
+store = (backends.get("durable_store") or {}).get("state", "absent")
+ok = code == "200" and not unready and store == "ready"
+line = "http=%s durable_store=%s configured=%d/%d" % (code or "none", store, len(configured) - len(unready), len(configured))
+print(("pass " if ok else "fail ") + line + (" unready=" + ",".join(unready) if unready else ""))
+' "$code" <<<"${body%$'\n'*}")"
+		echo "${answer%% *} readyz app=$app region=$region ${answer#* }"
+		[ "${answer%% *}" = pass ] || failures=$((failures + 1))
+	done <<<"$machines"
+
+	if ! wallet="$(fly_app human/wallet/deploy/gateway.toml)"; then
+		echo "fail wallet-gateway toml=absent"
+		finish $((failures + 1))
+	fi
+	body="$(fly_ssh "$wallet" - 'node -e "fetch(\"http://127.0.0.1:8080/readyz\").then(r => r.text()).then(t => process.stdout.write(t))"' </dev/null | tail -n 1)" || body=""
+	answer="$(python3 -c '
+import json
+import sys
+
+router = sys.argv[1]
+try:
+    pool = json.loads(sys.stdin.read())["components"]["rpc_pool"]
+except (ValueError, KeyError, TypeError):
+    print("fail rpc_pool=unreadable")
+    sys.exit(0)
+endpoints = pool.get("endpoints") or []
+first = (endpoints[0].get("url") or "").rstrip("/") if endpoints else ""
+place = "router" if first == router else ("other" if first else "none")
+ok = pool.get("state") == "up" and place == "router"
+print("%s rpc_pool=%s healthy=%s first=%s" % ("pass" if ok else "fail", pool.get("state") or "none", pool.get("healthy", 0), place))
+' "$url" <<<"$body")"
+	echo "${answer%% *} wallet-gateway app=$wallet ${answer#* }"
+	[ "${answer%% *}" = pass ] || failures=$((failures + 1))
+	finish "$failures"
+}
+
 # Sourced by tools/bringup/ca.sh for the Fly helpers and the CA settings: the
 # probe's own dispatch below runs only when this file is executed.
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
@@ -1391,6 +1523,7 @@ identity) ;;
 search-front) ;;
 edge) ;;
 ci) ;;
+router) ;;
 *)
 	usage >&2
 	exit 2

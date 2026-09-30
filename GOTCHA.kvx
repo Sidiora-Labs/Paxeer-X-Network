@@ -1253,3 +1253,21 @@ area    = "ci"
 symptom = "The runner canary dispatched while CI_LINUX_RUNNER is unset runs on a hosted runner and fails at its lld step, and the API reports an empty runner name for that job."
 cause   = "The routing expression falls back to the hosted image, which lacks ld.lld, and completed hosted jobs carry no runnerName in the jobs listing."
 do      = "Read a hosted canary failure as the variable being unset, not as a runner image fault; judge the Fly runner only from a run whose job names a fly- runner."
+
+[gotcha.206]
+area    = "cg"
+symptom = "cg spec start exits 1 naming unmet requires for a build-side task whose required tasks are not done."
+cause   = "start checks the requires graph and only --force overrides it."
+do      = "For a lane told to build ahead of its requires, set the status line to in_progress by hand and delete spec.kvx.lock; never pass --force."
+
+[gotcha.207]
+area    = "gateway"
+symptom = "A plan leaves LAYERX_GATEWAY_PROGRAM_REGISTRY_URL unset in kernel mode expecting program_registry to report not_configured, but the gateway would refuse to start."
+cause   = "configured_kernel requires the registry URL and its token file whenever LAYERX_GATEWAY_COMPONENT_URL is set; not_configured appears only when the whole kernel is unset."
+do      = "Treat the registry as mandatory in kernel mode until the gateway makes it optional; readiness is 200 only when every configured backend is ready."
+
+[gotcha.208]
+area    = "flyctl"
+symptom = "JSON read from a Fly machine through flyctl ssh console fails to parse although the command printed valid JSON."
+cause   = "flyctl writes its machine-selection notice to stdout ahead of the command's output when no machine is named."
+do      = "Keep only the last line of the output (tail -n 1), as the identity check does, and print the JSON without a trailing newline or on one line."

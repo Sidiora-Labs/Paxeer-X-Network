@@ -124,7 +124,7 @@ while [ "$#" -gt 0 ]; do
 		stage=1
 		shift
 		;;
-	--quiet) shift ;;
+	--quiet | --json) shift ;;
 	*) exit 98 ;;
 	esac
 done
@@ -152,6 +152,7 @@ case "$sub" in
 		printf '%s %s\n' "$app" "${line%%=*}" >>"$CHECK_LIVE_TEST_IMPORTS"
 	done
 	;;
+"machines list") cat "$root/machines.json" ;;
 *) exit 96 ;;
 esac
 SH
@@ -178,6 +179,32 @@ printf '%s curl\n' "$name" >>"$CHECK_LIVE_TEST_CALLS"
 case " ${CHECK_LIVE_TEST_DOWN:-} " in
 *" $name "*) exit 7 ;;
 esac
+# With CHECK_LIVE_TEST_ROUTER set, the router name answers /rpc from the
+# fixture file named after the request's method and /readyz from
+# readyz-<fly-force-instance-id>, whose first line is the status code the -w
+# format appends.
+if [ -n "${CHECK_LIVE_TEST_ROUTER:-}" ] && [ "$name" = api-mainnet-beta ]; then
+	data=""
+	instance=""
+	write=0
+	prev=""
+	for arg in "$@"; do
+		case "$prev" in
+		-d) data="$arg" ;;
+		-H) [[ "$arg" != fly-force-instance-id:* ]] || instance="${arg#*: }" ;;
+		-w) write=1 ;;
+		esac
+		prev="$arg"
+	done
+	case "$url" in
+	*/readyz)
+		tail -n +2 "$CHECK_LIVE_TEST_ROUTER/readyz-$instance"
+		[ "$write" -eq 0 ] || printf '\n%s' "$(head -n 1 "$CHECK_LIVE_TEST_ROUTER/readyz-$instance")"
+		;;
+	*) cat "$CHECK_LIVE_TEST_ROUTER/$(sed -n 's/.*"method":"\([A-Za-z_]*\)".*/\1/p' <<<"$data")" ;;
+	esac
+	exit 0
+fi
 case "$url" in
 https://*/?*)
 	body='{"status":"ready"}'
@@ -198,6 +225,14 @@ esac
 printf '{"jsonrpc":"2.0","id":1,"result":"0x%x"}\n' "$((26400000 - lag))"
 SH
 chmod +x "$work/bin/curl"
+# A local node stand-in for the command the router case runs inside the wallet
+# gateway's machine: prints the readiness answer in CHECK_LIVE_TEST_ROUTER.
+cat >"$work/bin/node" <<'SH'
+#!/usr/bin/env bash
+set -eu
+cat "$CHECK_LIVE_TEST_ROUTER/wallet-readyz"
+SH
+chmod +x "$work/bin/node"
 # A local getent stand-in: resolves each public name apiN to the fixture
 # destination up-rpc-N unless CHECK_LIVE_TEST_DNS ("apiN:destination ...")
 # assigns another, where - resolves to nothing.
@@ -796,6 +831,46 @@ expect check_live_edge_failing "$work/hosts-good.env" 1 edge -- \
 	"fail machine.paxeer.network mode=stream app=fx-stream-app port=9454 edge=yes presented=none" \
 	"check-live: 5 check(s) failed"
 unset CHECK_LIVE_TEST_DNS CHECK_LIVE_TEST_DIFFER
+
+# The router cases run the fixture tree's checker: the endpoint app's machines
+# come from the flyctl stand-in, /rpc and /readyz from the curl stand-in's
+# router fixtures and the wallet gateway's readiness from the node stand-in.
+gateway="$(fx_app human/wallet/deploy/gateway.toml)"
+printf 'app = "%s"\n' "$gateway" >"$fx/human/wallet/deploy/gateway.toml"
+mkdir -p "$CHECK_LIVE_TEST_FLY/$endpoint" "$work/router-good" "$work/router-bad"
+router_ready='{"status":"degraded","backends":{"durable_store":{"state":"ready","reason":"ready"},"event_producer":{"state":"unavailable","reason":"not_configured"},"paxeer_chain":{"state":"ready","reason":"ready"},"core_agent_boundary":{"state":"ready","reason":"ready"},"independent_receipt_authority":{"state":"ready","reason":"ready"},"program_registry":{"state":"unavailable","reason":"not_configured"}}}'
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":"0x7d"}' >"$work/router-good/eth_chainId"
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"chain_id":"0x7d","kernel":{"available":true,"reason":null}}}' >"$work/router-good/px_getNetwork"
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"account":"fixture","sequence":"0"}}' >"$work/router-good/lx_getAccount"
+printf '200\n%s\n' "$router_ready" >"$work/router-good/readyz-m-ams-1"
+printf '200\n%s\n' "$router_ready" >"$work/router-good/readyz-m-fra-1"
+printf '%s\n' '{"ready":true,"components":{"rpc_pool":{"state":"up","healthy":3,"endpoints":[{"url":"https://api-mainnet-beta.paxeer.network","state":"healthy"},{"url":"https://api1.mainnet-beta.paxeer.network","state":"healthy"}]}}}' >"$work/router-good/wallet-readyz"
+printf '%s\n' '[{"id":"m-ams-1","region":"ams","state":"started"},{"id":"m-ams-2","region":"ams","state":"started"},{"id":"m-fra-1","region":"fra","state":"started"},{"id":"m-fra-0","region":"fra","state":"stopped"}]' >"$CHECK_LIVE_TEST_FLY/$endpoint/machines.json"
+CHECK_LIVE_TEST_ROUTER="$work/router-good" CHECK_LIVE_ROUTER_ACCOUNT="$(printf 'ab%.0s' $(seq 32))" CHECK_LIVE_TEST_PROGRAM="$fx_checker" \
+	expect check_live_router_passing "$work/hosts-good.env" 0 router -- \
+	"pass eth_chainId result=0x7d" \
+	"pass px_getNetwork kernel.available=true reason=none" \
+	"pass lx_getAccount read=answered" \
+	"pass machines app=$endpoint regions=ams,fra" \
+	"pass readyz app=$endpoint region=ams http=200 durable_store=ready configured=4/4" \
+	"pass readyz app=$endpoint region=fra http=200 durable_store=ready configured=4/4" \
+	"pass wallet-gateway app=$gateway rpc_pool=up healthy=3 first=router" \
+	"check-live: all checks passed"
+
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":"0x1"}' >"$work/router-bad/eth_chainId"
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"kernel":{"available":false,"reason":"core_unavailable"}}}' >"$work/router-bad/px_getNetwork"
+printf '503\n%s\n' '{"status":"degraded","backends":{"durable_store":{"state":"unavailable","reason":"unreachable"},"core_agent_boundary":{"state":"ready","reason":"ready"},"program_registry":{"state":"unavailable","reason":"not_configured"}}}' >"$work/router-bad/readyz-m-ams-1"
+printf '%s\n' '{"ready":true,"components":{"rpc_pool":{"state":"up","healthy":1,"endpoints":[{"url":"https://api1.mainnet-beta.paxeer.network","state":"healthy"}]}}}' >"$work/router-bad/wallet-readyz"
+printf '%s\n' '[{"id":"m-ams-1","region":"ams","state":"started"},{"id":"m-ams-2","region":"ams","state":"started"}]' >"$CHECK_LIVE_TEST_FLY/$endpoint/machines.json"
+CHECK_LIVE_TEST_ROUTER="$work/router-bad" CHECK_LIVE_TEST_PROGRAM="$fx_checker" \
+	expect check_live_router_failing "$work/hosts-good.env" 1 router -- \
+	"fail eth_chainId result=0x1" \
+	"fail px_getNetwork kernel.available=false reason=core_unavailable" \
+	"fail lx_getAccount account=unset" \
+	"fail machines app=$endpoint regions=ams" \
+	"fail readyz app=$endpoint region=ams http=503 durable_store=unavailable configured=1/2 unready=durable_store" \
+	"fail wallet-gateway app=$gateway rpc_pool=up healthy=1 first=other" \
+	"check-live: 6 check(s) failed"
 
 # The fleet script shares the host map and the ssh helpers, so its own test
 # runs as the last case, with this test's stand-ins off the PATH.

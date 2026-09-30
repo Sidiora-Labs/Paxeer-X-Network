@@ -745,3 +745,27 @@ symbol     = "check_ci"
 observed   = "cg spec implemented 4.13 exited 75 with the graph database busy and symbol check_ci not defined in the graph; both fly.toml files already carry the real app names and the controller's env by name, so they needed no change."
 assumption = "Shell functions are not graph symbols, so the status line was set to implemented by hand; the controller's three secrets are set by name through flyctl secrets import, never in the toml."
 severity   = "note"
+
+[observation.2.2.1]
+task       = "2.2"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_router"
+observed   = "timeout 10m tools/bringup/check-live.sh router exited 1 at 3df583333 plus this task's change (log .logs/verify.log): eth_chainId 0x7d and ams readyz passed; px_getNetwork kernel not_configured, account unset, one region only and the wallet gateway's first RPC not the router failed."
+assumption = "The endpoint app still runs the pre-kernel deploy in one region and the wallet gateway is not repointed; the handoff steps and the owner's bound account close these, then the gate reruns once."
+severity   = "blocker"
+
+[observation.2.2.2]
+task       = "2.2"
+file       = "platform/hosted/gateway/src/main.rs"
+symbol     = "configured_kernel"
+observed   = "do_2 leaves LAYERX_GATEWAY_PROGRAM_REGISTRY_URL unset so the registry reports not_configured, but configured_kernel requires the registry URL and token file whenever the component URL is set, so the endpoint.toml of do_2 cannot start in kernel mode."
+assumption = "Owner decision needed: make the registry optional in the gateway (outside this task's touches) or point the router at the registry app's .internal name on 9420 with /readyz 503 until task 2.6; endpoint.toml follows do_2 and the status stays in_progress."
+severity   = "blocker"
+
+[observation.2.2.3]
+task       = "2.2"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_router"
+observed   = "The bound account lx_getAccount reads is fixed nowhere in the spec or the tree; the check reads it from CHECK_LIVE_ROUTER_ACCOUNT and fails with account=unset without it; shellcheck's SC2034 on eku in check_ca predates this task."
+assumption = "The owner names the account id; token and sequencer custody for the gateway's secrets follows the open question of task 2.1."
+severity   = "blocker"
