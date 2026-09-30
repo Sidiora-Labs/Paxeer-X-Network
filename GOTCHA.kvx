@@ -1445,3 +1445,9 @@ area    = "bringup"
 symptom = "A check-live subcommand exits 2 with no output in the harness fixture tree."
 cause   = "It read an optional spec value with sed from a file the fixture tree does not carry, and under set -euo pipefail the failed read ended the script before any check line printed."
 do      = "Guard an optional read with an explicit fallback such as || name=\"\" so an absent file falls through to the next source."
+
+[gotcha.238]
+area    = "bringup"
+symptom = "A service image build fails at the runtime stage COPY of its own init under docker/<service>/."
+cause   = "The image's Dockerfile.dockerignore excludes the whole docker tree, so the init it copies is not in the build context."
+do      = "Add an exception line for that file after the docker exclusion, and declare util-linux in a runtime stage that drops privileges with setpriv instead of relying on the base image."

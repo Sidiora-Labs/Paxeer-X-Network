@@ -1119,3 +1119,11 @@ symbol     = "check-live.test"
 observed   = "One sanity run of the build gate after the handoff edits exited 1 with its output discarded; the next four runs at the same revision passed, and the qualifying run is .logs/build.log exit 0."
 assumption = "A harness case is intermittently flaky; the failing case was not captured and is not hunted by rerunning."
 severity   = "note"
+
+[observation.4.11.6]
+task       = "4.11"
+file       = "docker/gas-station/Dockerfile.dockerignore"
+symbol     = "COPY docker/gas-station/init.sh"
+observed   = "The dockerignore excluded the docker tree, so the runtime stage's COPY of the station init had no source; the deploy side's read-only build plan found it before any build ran."
+assumption = "Fixed on the feature with an exception line for the init and an explicit util-linux in the runtime stage; the image is built once on the deploy side's builder from the corrected revision."
+severity   = "high"
