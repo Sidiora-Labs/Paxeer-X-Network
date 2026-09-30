@@ -1355,3 +1355,9 @@ area    = "agentd"
 symptom = "Tenant control cannot be applied to a request that arrives on the program listener with only the daemon program bearer."
 cause   = "tenant::resolve needs a session Token authenticated from a full SessionCredential (tenant, session id, token id, generation); the program bearer names no session, and MCP authorizes in-process from its binding's session token file instead of over HTTP."
 do      = "Before building an HTTP route that must run under tenant control, fix how the caller presents its session credential and which tenant::Surface it maps to; the SDK transports send a single Authorization header."
+
+[gotcha.223]
+area    = "bringup"
+symptom = "Dropping a role from the check-live host map breaks the hosts timeout case and the one-ssh-per-destination count, not only the fixture lines."
+cause   = "The hang fixture put its only hanging destination on the dropped role, and the harness counts the distinct ssh destinations of the good map."
+do      = "Move the hanging destination to a remaining single-destination role and recount the good map's destinations when a role leaves the map."

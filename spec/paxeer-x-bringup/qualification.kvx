@@ -937,3 +937,25 @@ symbol     = "serve"
 observed   = "tenant::resolve authorizes only a session Token authenticated from a SessionCredential (tenant, session_id, 32-byte token_id, generation), while HttpProductionTransport sends the envelope with one Authorization: Bearer value and the program listener checks the daemon program bearer; neither the agent-api schema nor the tree defines how an /rpc caller presents its session credential, and tenant::Surface has no variant for an HTTP SDK or JVM caller."
 assumption = "Nothing was implemented; the task stays in_progress until the owner fixes the /rpc credential (encoding and header) and the Surface value, then the whole task is built in one pass."
 severity   = "blocker"
+
+[observation.4.21.runtime_retirement]
+revision = "12d05f76b940b21ffd1476bdc7c29026950bd1a3"
+command = "systemctl stop hpx-registry.service; systemctl disable hpx-registry.service; rename reviewed unit, legacy vhost and environment into private rollback archive; systemctl daemon-reload"
+exit_code = 0
+log_path = ".logs/4.21-retirement.log"
+observed = "Old unit is inactive and not found; reviewed originals absent, environment mode preserved and artifacts/data untouched. Serving gate already passed; task remains in_progress pending host-role fixture and README completion."
+
+[observation.4.21.5]
+task = "4.21"
+file = "hpx/hosting/deploy.sh, hpx/hosting/nginx.conf, hpx/hosting/nginx-http.conf"
+symbol = "deploy.sh"
+observed = "The local systemd and nginx deployment of the registry stays in the tree although the name is served by the Fly app and the README no longer points to it."
+assumption = "Retiring or repurposing the local deployment files is outside do_3's touches and needs an owner decision; nothing was removed."
+severity = "low"
+
+[gate.4.21.final]
+revision = "e7badb10d66a221f7d0d8da99a4f56d842244464"
+command = "BRINGUP_HOSTS_FILE=/root/lx-ops/bringup-2026-09-29/hosts.env timeout 10m tools/bringup/check-live.sh hpx"
+exit_code = 0
+log_path = ".logs/4.21-final-hpx-live.log"
+observed = "Final changed-source gate passed after host-role, fixture and release-streaming documentation completion; earlier serving and runtime-retirement evidence retained."

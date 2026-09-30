@@ -983,7 +983,7 @@ reqs       = ["20.1", "20.2"]
 
 [task.4.21]
 title      = "Serve the hpx registry at node.hyperpaxeer.com from a Fly app and retire it from the hpx host"
-status     = "implemented"
+status     = "done"
 wave       = 4
 requires   = ["4.14", "0.5", "0.9"]
 do_1       = "Extend docker/hpx-registry/Dockerfile and its Dockerfile.dockerignore with nginx, the landing page, logo and fonts of hpx/hosting and hpx/hosting/nginx-fly.conf, which carries the locations and the /api/register rate limit of hpx/hosting/nginx.conf on a plain listener on [::]:8080 with real_ip_header Fly-Client-IP and X-Forwarded-For set to that address, and add docker/hpx-registry/entrypoint.sh as a root init that starts nginx and the registry on loopback under its user and exits when either exits."
@@ -995,6 +995,11 @@ symbols    = ["check_hpx"]
 touches    = ["docker/hpx-registry/Dockerfile", "docker/hpx-registry/Dockerfile.dockerignore", "docker/hpx-registry/entrypoint.sh", "hpx/hosting/nginx-fly.conf", "hpx/hosting/fly.toml", "hpx/README.md", "tools/bringup/check-live.sh", "tools/bringup/check-live.test.sh", "tools/bringup/sync-fleet.test.sh"]
 tests      = ["tools/bringup/check-live.test.sh", "tools/bringup/sync-fleet.test.sh"]
 reqs       = ["18.4"]
+revision = "12d05f76b940b21ffd1476bdc7c29026950bd1a3"
+command = "BRINGUP_HOSTS_FILE=/root/lx-ops/bringup-2026-09-29/hosts.env timeout 10m tools/bringup/check-live.sh hpx"
+exit_code = 0
+log_path = ".logs/4.21-hpx-live.log"
+
 
 [task.4.22]
 title      = "Move the public full node off the validator host onto its own server"
