@@ -713,3 +713,19 @@ symbol     = "write_genesis_metadata, builder_release_publish, CANDIDATE_ABI_MOD
 observed   = "cg spec done 1.3 reran the verify_cmd to a pass, then refused (exit 75) because the graph database was busy and those three symbols, two shell functions and one Rust constant, are not in the last completed index."
 assumption = "The refusal concerns the graph index, not the task; per the existing gotcha the status was set to done by hand after the genuine pass recorded in gate.1.3.1, and the gate was not rerun."
 severity   = "note"
+
+[gate.0.10.1]
+task      = "0.10"
+revision  = "f677c1cca plus this task's change"
+command   = "timeout 5m sh -c '! git grep -nE \"app\\.paxeer\\.network\" -- . \":!spec/\" \":!CHANGELOG.md\"'"
+exit_code = 0
+log_path  = ".logs/verify.log"
+observed  = "No hit outside spec/ and CHANGELOG.md; platform/hosted/human/test_material.py ran 10 tests OK (.logs/material.log) and node --test e2e/harness.test.ts passed 3 of 3 (.logs/harness.log); format step was bash -n and py_compile."
+
+[observation.0.10.1]
+task       = "0.10"
+file       = "spec/paxeer-x-bringup/spec.kvx"
+symbol     = "human_web_origin"
+observed   = "cg spec done 0.10 reran the verify_cmd, then refused (exit 75) with the graph database busy and symbol human_web_origin not defined in the graph; no code symbol of that name exists, the origin lives in manifest values and shell variables."
+assumption = "Per the task's own instruction the status was set to done by hand after the genuine pass recorded in gate.0.10.1, and the gate was not rerun."
+severity   = "note"

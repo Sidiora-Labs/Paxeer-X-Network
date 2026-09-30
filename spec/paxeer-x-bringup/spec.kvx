@@ -1076,7 +1076,7 @@ do_3 = "Add the edge subcommand: every registered name resolves to the edge host
 
 [task.0.10]
 title = "Retire app.paxeer.network: the human web origin is https://paxportwallet.com everywhere"
-status = "pending"
+status = "done"
 wave = 0
 requires = ["4.26"]
 verify_cmd = "timeout 5m sh -c '! git grep -nE \"app\\.paxeer\\.network\" -- . \":!spec/\" \":!CHANGELOG.md\"'"

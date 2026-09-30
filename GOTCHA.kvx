@@ -1241,3 +1241,9 @@ area    = "cg"
 symptom = "cg spec start on a task already marked implemented exits 1 and leaves the status unchanged."
 cause   = "start only moves pending tasks; an implemented task expects done or --force."
 do      = "For a follow-up cycle on an implemented task, set its status line to in_progress by hand and back to implemented at the end."
+
+[gotcha.204]
+area    = "node"
+symptom = "The human web e2e unit tests look unrunnable in a fresh checkout because human/apps/web has no node_modules."
+cause   = "The package test script lists many files, some importing installed packages, while harness.test.ts imports only node builtins and a local .ts module."
+do      = "Run node --test e2e/harness.test.ts directly from human/apps/web; Node 22 strips the TypeScript types itself, no install needed."
