@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
 	cat <<'EOF'
-usage: tools/wallet/check-live.sh endpoint | attestors | gateway | cutover | human
+usage: tools/wallet/check-live.sh endpoint | attestors | gateway | cutover | human | human-session
 
 Checks a deployed wallet service against its live answers.
 
@@ -50,6 +50,25 @@ human     reads a deployed human service at CHECK_LIVE_HUMAN_BASE as the wallet
              a 5xx or a non-envelope body fails
           Exits 0 only when all three checks pass.
 
+human-session
+          plans the golden intent against a deployed human service at
+          CHECK_LIVE_HUMAN_BASE as the wallet origin CHECK_LIVE_HUMAN_ORIGIN,
+          authenticated by the wallet identity assertion
+          CHECK_LIVE_HUMAN_ASSERTION, and prints one line per check:
+  preflight  OPTIONS <base>/v1/intents/plan from the origin answers 2xx with
+             access-control-allow-origin equal to the origin and
+             access-control-allow-headers admitting authorization
+  plan       POST <base>/v1/intents/plan from the origin with the assertion as
+             its bearer and the golden plan request body, its asset_id set to
+             CHECK_LIVE_HUMAN_ASSET, its destination account set to
+             CHECK_LIVE_HUMAN_DESTINATION and its deadline ten minutes ahead,
+             answers http 200, ok true and the IntentPlan the contract
+             declares: a lowercase hex plan_digest, a journey_kind, a
+             total_fee, legs indexed from 0 in order each carrying mechanism,
+             domain, source, destination, money and fee, and signing
+             requirements each naming a leg of the plan
+          Exits 0 only when both checks pass.
+
 cutover   reads the public wallet hostname CHECK_LIVE_CUTOVER_HOST over https,
           through whatever proxy serves it, and confirms the new gateway
           answers, one line per check:
@@ -70,6 +89,11 @@ Environment:
   CHECK_LIVE_GATEWAY_TOKEN   access token of a provisioned test identity
   CHECK_LIVE_HUMAN_BASE      base URL of the human service
   CHECK_LIVE_HUMAN_ORIGIN    https origin of the wallet app the service must admit
+  CHECK_LIVE_HUMAN_ASSERTION wallet identity assertion of a provisioned, funded
+                             test identity, sent as the bearer of the plan
+  CHECK_LIVE_HUMAN_ASSET     64-hex asset id of the kernel's native asset
+  CHECK_LIVE_HUMAN_DESTINATION
+                             kernel account the planned send pays
   CHECK_LIVE_CUTOVER_HOST    public wallet hostname, optionally with :port
                              (CHECK_LIVE_CA, when set, authenticates it)
   CHECK_LIVE_TIMEOUT         seconds per request, default 30
@@ -84,7 +108,7 @@ case "$mode" in
 	usage
 	exit 0
 	;;
-endpoint | attestors | gateway | cutover | human) ;;
+endpoint | attestors | gateway | cutover | human | human-session) ;;
 *)
 	usage >&2
 	exit 2
@@ -429,6 +453,152 @@ else:
 	exit 0
 }
 
+human_session() {
+	local base="${CHECK_LIVE_HUMAN_BASE:-}" origin="${CHECK_LIVE_HUMAN_ORIGIN:-}"
+	local assertion="${CHECK_LIVE_HUMAN_ASSERTION:-}" asset="${CHECK_LIVE_HUMAN_ASSET:-}"
+	local destination="${CHECK_LIVE_HUMAN_DESTINATION:-}" name
+	local failures=0 check raw status verdict golden body
+	for name in CHECK_LIVE_HUMAN_BASE CHECK_LIVE_HUMAN_ORIGIN CHECK_LIVE_HUMAN_ASSERTION CHECK_LIVE_HUMAN_ASSET CHECK_LIVE_HUMAN_DESTINATION; do
+		if [ -z "${!name:-}" ]; then
+			echo "check-live: $name is required" >&2
+			usage >&2
+			exit 2
+		fi
+	done
+	base="${base%/}"
+	golden="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/human/schema/human-api/golden/intent.plan.request.json"
+	body="$(python3 -c '
+import datetime, json, sys
+body = json.load(open(sys.argv[1]))["body"]
+body["asset_id"] = sys.argv[2]
+body["destination"]["account"] = sys.argv[3]
+deadline = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=10)
+body["constraints"]["deadline"] = deadline.strftime("%Y-%m-%dT%H:%M:%SZ")
+print(json.dumps(body))
+' "$golden" "$asset" "$destination")"
+	for check in preflight plan; do
+		status=0
+		case "$check" in
+		preflight)
+			raw="$(curl -sS --max-time "$timeout" -i -X OPTIONS -H "origin: $origin" -H 'access-control-request-method: POST' -H 'access-control-request-headers: authorization,content-type' "$base/v1/intents/plan" 2>&1)" || status=$?
+			;;
+		plan)
+			raw="$(printf '%s' "$body" | curl -sS --max-time "$timeout" -i -X POST -H "origin: $origin" -H 'content-type: application/json' -H @<(printf 'authorization: Bearer %s\n' "$assertion") --data-binary @- "$base/v1/intents/plan" 2>&1)" || status=$?
+			;;
+		esac
+		if [ "$status" -ne 0 ]; then
+			verdict="fail transport $(printf '%s' "$raw" | tr '\n' ' ' | cut -c1-200)"
+		else
+			verdict="$(printf '%s' "$raw" | python3 -c '
+import json
+import re
+import sys
+
+check, origin = sys.argv[1], sys.argv[2]
+raw = sys.stdin.read()
+head, sep, body = raw.partition("\r\n\r\n")
+if not sep:
+    head, sep, body = raw.partition("\n\n")
+lines = head.split("\n")
+parts = lines[0].strip().split(" ")
+code = parts[1] if len(parts) > 1 else "?"
+headers = {}
+for line in lines[1:]:
+    name, colon, value = line.partition(":")
+    if colon:
+        headers[name.strip().lower()] = value.strip()
+try:
+    doc = json.loads(body) if body.strip() else None
+except ValueError:
+    doc = None
+
+
+def show():
+    if doc is not None:
+        return json.dumps(doc, separators=(",", ":"), sort_keys=True)[:200]
+    return " ".join(body.split())[:200] or "empty"
+
+
+def money(value):
+    return isinstance(value, dict) and isinstance(value.get("amount"), str) and value["amount"].isdigit() and isinstance(value.get("currency"), str) and value["currency"] != ""
+
+
+def endpoint(value):
+    return isinstance(value, dict) and isinstance(value.get("kind"), str) and value["kind"] != ""
+
+
+def plan_fault(result):
+    if not isinstance(result, dict):
+        return "result"
+    if not isinstance(result.get("plan_digest"), str) or not re.fullmatch("[0-9a-f]{64}", result["plan_digest"]):
+        return "plan_digest"
+    if not isinstance(result.get("journey_kind"), str) or result["journey_kind"] == "":
+        return "journey_kind"
+    if not money(result.get("total_fee")):
+        return "total_fee"
+    legs = result.get("legs")
+    if not isinstance(legs, list) or not legs:
+        return "legs"
+    for position, leg in enumerate(legs):
+        if (
+            not isinstance(leg, dict)
+            or leg.get("index") != position
+            or not isinstance(leg.get("mechanism"), str)
+            or leg["mechanism"] == ""
+            or not isinstance(leg.get("domain"), str)
+            or leg["domain"] == ""
+            or not endpoint(leg.get("source"))
+            or not endpoint(leg.get("destination"))
+            or not money(leg.get("money"))
+            or not money(leg.get("fee"))
+        ):
+            return "legs[" + str(position) + "]"
+    requirements = result.get("signing_requirements")
+    if not isinstance(requirements, list):
+        return "signing_requirements"
+    for position, requirement in enumerate(requirements):
+        if (
+            not isinstance(requirement, dict)
+            or not isinstance(requirement.get("leg_index"), int)
+            or not 0 <= requirement["leg_index"] < len(legs)
+            or not all(isinstance(requirement.get(key), str) and requirement[key] != "" for key in ("action_key", "signing_context", "authority"))
+        ):
+            return "signing_requirements[" + str(position) + "]"
+    return None
+
+
+if check == "preflight":
+    allow = headers.get("access-control-allow-origin")
+    allowed = [value.strip().lower() for value in headers.get("access-control-allow-headers", "").split(",")]
+    if code.startswith("2") and allow == origin and "authorization" in allowed:
+        print("pass http=" + code + " allow-origin=" + allow + " allow-headers=authorization")
+    else:
+        print("fail http=" + code + " allow-origin=" + str(allow) + " allow-headers=" + (",".join(value for value in allowed if value) or "none"))
+else:
+    result = doc.get("result") if isinstance(doc, dict) else None
+    fault = plan_fault(result) if code == "200" and isinstance(doc, dict) and doc.get("ok") is True else "envelope"
+    if fault is None and isinstance(doc.get("trace"), str):
+        print("pass http=200 journey_kind=" + result["journey_kind"] + " legs=" + str(len(result["legs"])) + " signing_requirements=" + str(len(result["signing_requirements"])) + " plan_digest=" + result["plan_digest"][:16])
+    else:
+        print("fail http=" + code + " shape=" + (fault or "trace") + " " + show())
+' "$check" "$origin")"
+		fi
+		case "$verdict" in
+		pass\ *) echo "pass $check ${verdict#pass }" ;;
+		*)
+			echo "fail $check ${verdict#fail }"
+			failures=$((failures + 1))
+			;;
+		esac
+	done
+	if [ "$failures" -ne 0 ]; then
+		echo "check-live: $failures check(s) failed"
+		exit 1
+	fi
+	echo "check-live: all checks passed"
+	exit 0
+}
+
 # served_by_request <url>: GET the URL and print the status code, the value of
 # the last x-served-by response header (or "none") and the body on separate
 # lines; exits with curl's status on a transport error.
@@ -531,6 +701,10 @@ fi
 
 if [ "$mode" = human ]; then
 	human
+fi
+
+if [ "$mode" = human-session ]; then
+	human_session
 fi
 
 if [ "$mode" = cutover ]; then

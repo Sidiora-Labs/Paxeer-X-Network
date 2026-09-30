@@ -1374,6 +1374,29 @@ print(len(ms), len([m for m in ms if m.get("state") == "started"]))
 	finish "$failures"
 }
 
+# check_human_session: the wallet check-live harness tools/wallet/check-live.test.sh
+# passes, then the wallet feature's human-session gate plans the golden intent
+# at https://api-hull.paxeer.network from the wallet origin
+# https://paxportwallet.com under the wallet identity assertion of
+# CHECK_LIVE_HUMAN_ASSERTION, with CHECK_LIVE_HUMAN_ASSET and
+# CHECK_LIVE_HUMAN_DESTINATION passed through; its check lines are printed as
+# they come and any failure of either fails the subcommand.
+check_human_session() {
+	local output status=0 failures=0
+	output="$("$repo_root/tools/wallet/check-live.test.sh" 2>&1)" || status=$?
+	if [ "$status" -eq 0 ]; then
+		echo "pass harness tools/wallet/check-live.test.sh"
+	else
+		echo "fail harness tools/wallet/check-live.test.sh exit=$status first=$(grep -m 1 '^FAIL ' <<<"$output" | cut -c1-160 || echo none)"
+		failures=$((failures + 1))
+	fi
+	status=0
+	CHECK_LIVE_HUMAN_BASE=https://api-hull.paxeer.network CHECK_LIVE_HUMAN_ORIGIN=https://paxportwallet.com \
+		"$repo_root/tools/wallet/check-live.sh" human-session || status=$?
+	[ "$status" -eq 0 ] || failures=$((failures + 1))
+	finish "$failures"
+}
+
 # Sourced by tools/bringup/ca.sh for the Fly helpers and the CA settings: the
 # probe's own dispatch below runs only when this file is executed.
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
@@ -1391,6 +1414,7 @@ identity) ;;
 search-front) ;;
 edge) ;;
 ci) ;;
+human-session) ;;
 *)
 	usage >&2
 	exit 2

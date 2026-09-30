@@ -765,3 +765,11 @@ exit_code = 0
 log_path = ".logs/0.9-edge-register.log"
 observed = "Nginx reload reported protocol options redefined on existing sites. The live edge gate passed. No unrelated site was repaired."
 assumption = "Warnings belong to existing listener configuration and need a separately scoped task if repair is required."
+
+[observation.3.7.1]
+task = "3.7"
+file = "tools/bringup/check-live.sh"
+symbol = "check_human_session"
+observed = "The verify_cmd ran once and exited 1: the harness tools/wallet/check-live.test.sh passed, and the human-session gate refused with exit 2 because CHECK_LIVE_HUMAN_ASSERTION, CHECK_LIVE_HUMAN_ASSET and CHECK_LIVE_HUMAN_DESTINATION are unset and api-hull.paxeer.network is not yet served by the kernel app of tasks 3.5 and 3.6; log .logs/verify.log."
+assumption = "A live plan needs a funded, provisioned test identity's wallet assertion, the kernel's native asset id and a destination account, which the tree cannot fix, and the golden body's fixture asset and past deadline are replaced at run time; the owner supplies the three inputs and the deploy fleet runs the PWA redeploy of the handoff before the gate is rerun."
+severity = "high"

@@ -166,7 +166,7 @@
     - Write tools/bringup/mcp-enrol.sh that runs inside the machine and enrols one session and capability through the full-mode daemon, writing the binding document with its two owner-only secret files under /data/layerx/mcp, and run layerx-mcp under the init serving the peer-admitted socket.
     - Add the agent subcommand, run inside the kernel machine through flyctl ssh console: agentd /healthz ready with the program bearer, the binding document of tools/bringup/mcp-enrol.sh present under /data/layerx/mcp with its two owner-only secret files, and layerx mcp serve with the binding listing the read tools and the web tools.
     - _Requirements: 11.1, 11.2, 11.3_
-  - [ ] 3.7 Point the wallet PWA at api-hull.paxeer.network and prove the authenticated human-api path
+  - [ ] 3.7 Point the wallet PWA at api-hull.paxeer.network and prove the authenticated human-api path — **Implemented - qualification pending**
     - Set NEXT_PUBLIC_PAXEER_HUMAN_API=https://api-hull.paxeer.network on the service paxport of the Railway project honest-spontaneity, the wallet PWA served at paxportwallet.com, and redeploy the PWA; no DNS change.
     - Add the human-session subcommand that runs tools/wallet/check-live.test.sh and then the wallet feature's human-session gate, tools/wallet/check-live.sh human-session with CHECK_LIVE_HUMAN_BASE=https://api-hull.paxeer.network and CHECK_LIVE_HUMAN_ORIGIN=https://paxportwallet.com, as this task's proof.
     - _Requirements: 10.6_
