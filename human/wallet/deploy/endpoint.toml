@@ -23,6 +23,24 @@ kill_timeout = "30s"
   LAYERX_EVENTS_WEBHOOKS_UPSTREAM_TOKEN_FILE = "/run/secrets/events-webhooks-token"
   LAYERX_EVENTS_WEBHOOKS_UPSTREAM_CLIENT_IDENTITY_PKCS12 = "/run/secrets/events-client.p12"
   LAYERX_EVENTS_WEBHOOKS_UPSTREAM_CLIENT_IDENTITY_PASSWORD_FILE = "/run/secrets/events-client-password"
+  LAYERX_GATEWAY_COMPONENT_URL = "https://paxeer-human-service.internal:9446"
+  LAYERX_GATEWAY_AUTHORITY_URL = "https://paxeer-human-service.internal:9445"
+  LAYERX_GATEWAY_PUBLIC_CORE_URL = "https://paxeer-human-service.internal:9443"
+  LAYERX_GATEWAY_IDENTITY_URL = "https://paxeer-identity.internal:9443"
+  LAYERX_GATEWAY_PROGRAM_REGISTRY_URL = "https://paxeer-registry.internal:9420"
+  LAYERX_GATEWAY_CLIENT_IDENTITY_PKCS12 = "/run/secrets/client.p12"
+  LAYERX_GATEWAY_CLIENT_IDENTITY_PASSWORD_FILE = "/run/secrets/client-password"
+  LAYERX_GATEWAY_COMPONENT_TOKEN_FILE = "/run/secrets/component-token"
+  LAYERX_GATEWAY_AUTHORITY_TOKEN_FILE = "/run/secrets/authority-token"
+  LAYERX_GATEWAY_IDENTITY_TOKEN_FILE = "/run/secrets/identity-token"
+  LAYERX_GATEWAY_IDENTITY_PROVISIONING_TOKEN_FILE = "/run/secrets/identity-provisioning-token"
+  LAYERX_GATEWAY_PROGRAM_REGISTRY_TOKEN_FILE = "/run/secrets/program-registry-token"
+  LAYERX_GATEWAY_SEQUENCER_PUBLIC_KEY_FILE = "/run/secrets/sequencer-public-key"
+  LAYERX_GATEWAY_SEQUENCER_ID_FILE = "/run/secrets/sequencer-id"
+  LAYERX_GATEWAY_SEQUENCER_FIRST_BATCH_FILE = "/run/secrets/sequencer-first-batch"
+  LAYERX_GATEWAY_SEQUENCER_LAST_BATCH_FILE = "/run/secrets/sequencer-last-batch"
+  LAYERX_GATEWAY_KEY_PROVISIONING_KEY_FILE = "/run/secrets/key-provisioning-key"
+  LAYERX_GATEWAY_MODULE_REGISTRY_FILE = "/run/secrets/module-registry.json"
 
 [[files]]
   guest_path = "/run/secrets/ca.crt.der"
@@ -54,6 +72,62 @@ kill_timeout = "30s"
 [[files]]
   guest_path = "/run/secrets/events-webhooks-token"
   secret_name = "ENDPOINT_EVENTS_WEBHOOKS_TOKEN"
+
+[[files]]
+  guest_path = "/run/secrets/client.crt"
+  secret_name = "ENDPOINT_CLIENT_CERT"
+
+[[files]]
+  guest_path = "/run/secrets/client.p12"
+  secret_name = "ENDPOINT_CLIENT_P12"
+
+[[files]]
+  guest_path = "/run/secrets/client-password"
+  secret_name = "ENDPOINT_CLIENT_PASSWORD"
+
+[[files]]
+  guest_path = "/run/secrets/component-token"
+  secret_name = "ENDPOINT_COMPONENT_TOKEN"
+
+[[files]]
+  guest_path = "/run/secrets/authority-token"
+  secret_name = "ENDPOINT_AUTHORITY_TOKEN"
+
+[[files]]
+  guest_path = "/run/secrets/identity-token"
+  secret_name = "ENDPOINT_IDENTITY_TOKEN"
+
+[[files]]
+  guest_path = "/run/secrets/identity-provisioning-token"
+  secret_name = "ENDPOINT_IDENTITY_PROVISIONING_TOKEN"
+
+[[files]]
+  guest_path = "/run/secrets/program-registry-token"
+  secret_name = "ENDPOINT_PROGRAM_REGISTRY_TOKEN"
+
+[[files]]
+  guest_path = "/run/secrets/sequencer-public-key"
+  secret_name = "ENDPOINT_SEQUENCER_PUBLIC_KEY"
+
+[[files]]
+  guest_path = "/run/secrets/sequencer-id"
+  secret_name = "ENDPOINT_SEQUENCER_ID"
+
+[[files]]
+  guest_path = "/run/secrets/sequencer-first-batch"
+  secret_name = "ENDPOINT_SEQUENCER_FIRST_BATCH"
+
+[[files]]
+  guest_path = "/run/secrets/sequencer-last-batch"
+  secret_name = "ENDPOINT_SEQUENCER_LAST_BATCH"
+
+[[files]]
+  guest_path = "/run/secrets/key-provisioning-key"
+  secret_name = "ENDPOINT_KEY_PROVISIONING_KEY"
+
+[[files]]
+  guest_path = "/run/secrets/module-registry.json"
+  secret_name = "ENDPOINT_MODULE_REGISTRY"
 
 [http_service]
   internal_port = 9443
