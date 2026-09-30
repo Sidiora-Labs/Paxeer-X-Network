@@ -1613,3 +1613,9 @@ area    = "bringup"
 symptom = "Two check-live harness runs on one box fail cases at random, the flyctl and curl stand-ins and the CA cases among them."
 cause   = "Concurrent runs on one box share host state the stand-ins and the CA cases rely on and disturb each other."
 do      = "The harness takes flock on /run/lock/check-live-harness for its whole run; a second run waits instead of racing, so never bypass the lock."
+
+[gotcha.266]
+area    = "bringup"
+symptom = "A Fly command under the check-live harness tests the real box instead of the fixture machine, for example test -d /data or a path under /var/lib."
+cause   = "The flyctl ssh console stand-in rewrites only the prefixes it knows, each with its trailing slash, so /data without a slash and any unlisted root reach the real filesystem."
+do      = "Write machine paths with the trailing slash (/data/, cd /data/) and add a rewrite line to the stand-in for each new machine root a command reads; never match processes by an exe path outside a rewritten root, or the harness can signal real processes on the box."
