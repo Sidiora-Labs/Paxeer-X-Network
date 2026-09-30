@@ -375,3 +375,11 @@ symbol     = "RESOLVED_EDGES"
 observed   = "With configMapKeyRef optional: true honoured the node check passes (62 edges, failed=0) and the checker's regression suite now runs for the first time, stopping at exit 2 because the gateway edge to paxeer-boundary:9443 through LAYERX_GATEWAY_PAXEER_RPC_URL, added to the gateway manifest by an older commit, is absent from RESOLVED_EDGES; escrow and the probe tests did not run."
 assumption = "Pre-existing staleness masked by the earlier handover failure and outside this task's ruling, so recorded, not repaired; naming that edge in RESOLVED_EDGES is the fix for whoever owns the regression list."
 severity   = "blocker"
+
+[observation.1.3.4]
+task       = "1.3"
+file       = "human/crates/layerx-human-movement-provider/tests/probe.rs"
+symbol     = "probe_exits_zero_only_on_the_serving_providers_healthy_answer"
+observed   = "On the ruling rerun the topology check (61 named edges, both parsers) and programs-reference-escrow passed and the identity probe tests passed, then the movement provider's healthy-answer probe test panicked at probe.rs:323 with 'movement provider exited before binding'; the security provider's probe tests did not run, and the gate exited 2."
+assumption = "The ruling allowed only the edge line and one rerun, so the movement provider's early exit under the test's TLS chain fixture was not investigated; its stderr is not captured by the test, and diagnosing it is the next cycle's first step."
+severity   = "blocker"

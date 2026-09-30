@@ -364,7 +364,7 @@ reqs       = ["5.2", "5.3"]
 
 [task.1.3]
 title      = "Fix the seven bare-host abort points of the kernel bring-up"
-status     = "in_progress"
+status     = "implemented"
 wave       = 1
 requires   = ["1.1"]
 do_1       = "Generate the LXGB v2 genesis metadata in platform/hosted/node/bootstrap.sh before the node starts and fail with a clear message when it is absent, instead of relying on a volume that was never applied."

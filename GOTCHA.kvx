@@ -995,3 +995,9 @@ area    = "platform"
 symptom = "Fixing the first failure of the topology check exposes a second, unrelated failure in its regression suite."
 cause   = "topology-check.sh runs topology-regressions.py only after the main check passes, so any main-check failure hides staleness in the regression suite's named edge lists."
 do      = "When a manifest gains an env edge, add it to the matching named edge list in topology-regressions.py in the same change, and expect a first green main check to surface regression-suite drift."
+
+[gotcha.163]
+area    = "human"
+symptom = "A provider probe test fails with only 'provider exited before binding' and no reason."
+cause   = "The test spawns the provider binary without surfacing its stderr when the child exits before its socket appears."
+do      = "When a spawned provider exits early in a binary-level test, include the child's exit status and captured stderr in the panic message so one run is enough to diagnose it."
