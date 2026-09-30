@@ -367,3 +367,11 @@ symbol     = "builder_release_publish, CANDIDATE_ABI_MODULE, probe"
 observed   = "At this revision six of the seven listed abort points were already closed: the three providers already serve a probe subcommand (identity with tests/probe.rs), the receipt-authority SANs carry localhost and 127.0.0.1 in beta-cluster.sh and ca.sh, provision.sh passes the work directory's registry-journal, require_builder_environment fails on a missing directory, and the SDK and runtime candidate ABI module are both the v2 name; only the genesis metadata still depended on an unapplied volume."
 assumption = "The unchanged files in the touches list (the three main.rs, identity tests/probe.rs, native_manifest.py, provision.sh, beta-cluster.sh, ca.sh, lint/src/lib.rs) needed no edit; the task added bootstrap's write_genesis_metadata, the security and movement probe tests against a real serving provider, and the Makefile target."
 severity   = "note"
+
+[observation.1.3.3]
+task       = "1.3"
+file       = "platform/hosted/tests/topology-regressions.py"
+symbol     = "RESOLVED_EDGES"
+observed   = "With configMapKeyRef optional: true honoured the node check passes (62 edges, failed=0) and the checker's regression suite now runs for the first time, stopping at exit 2 because the gateway edge to paxeer-boundary:9443 through LAYERX_GATEWAY_PAXEER_RPC_URL, added to the gateway manifest by an older commit, is absent from RESOLVED_EDGES; escrow and the probe tests did not run."
+assumption = "Pre-existing staleness masked by the earlier handover failure and outside this task's ruling, so recorded, not repaired; naming that edge in RESOLVED_EDGES is the fix for whoever owns the regression list."
+severity   = "blocker"

@@ -594,7 +594,7 @@ class Topology:
                     continue
                 reference = get(entry, "valueFrom", "configMapKeyRef")
                 if reference:
-                    env.append((env_name, ("configmap", text(get(reference, "name")), text(get(reference, "key")))))
+                    env.append((env_name, ("configmap", text(get(reference, "name")), text(get(reference, "key")), text(get(reference, "optional")) == "true")))
             for entry in get(container, "envFrom", default=[]) or []:
                 reference = get(entry, "configMapRef")
                 if reference:
@@ -609,6 +609,8 @@ class Topology:
                     self.notes.append("%s %s/%s env %s comes from ConfigMap %s which is provisioned outside these manifests; its value is not checked" % (workload["kind"], workload["ns"], workload["name"], env_name, value[1]))
                     continue
                 if value[2] not in data:
+                    if value[3]:
+                        continue
                     self.problems.append("%s %s/%s env %s references key %s missing from ConfigMap %s" % (workload["kind"], workload["ns"], workload["name"], env_name, value[2], value[1]))
                     continue
                 yield "env %s (ConfigMap %s/%s)" % (env_name, value[1], value[2]), data[value[2]]

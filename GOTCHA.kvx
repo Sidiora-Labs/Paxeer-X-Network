@@ -989,3 +989,9 @@ area    = "human"
 symptom = "The movement provider's probe cannot reach a healthy answer from a plain local chain emulator when the provider runs from its environment."
 cause   = "The environment-configured provider requires at least two pinned-TLS origins on distinct hosts with agreement two and a configured execution authority before it answers Ready."
 do      = "In a binary-level test, front the local chain with TLS listeners on two loopback addresses (127.0.0.1 and 127.0.0.2) under one CA-signed certificate carrying both IP SANs, pass that CA as PAXEER_CA_DER, and give every file the provider reads mode 0600 and a single link."
+
+[gotcha.162]
+area    = "platform"
+symptom = "Fixing the first failure of the topology check exposes a second, unrelated failure in its regression suite."
+cause   = "topology-check.sh runs topology-regressions.py only after the main check passes, so any main-check failure hides staleness in the regression suite's named edge lists."
+do      = "When a manifest gains an env edge, add it to the matching named edge list in topology-regressions.py in the same change, and expect a first green main check to surface regression-suite drift."
