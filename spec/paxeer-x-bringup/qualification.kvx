@@ -1661,3 +1661,11 @@ symbol     = "genesis_files"
 observed   = "genesis_files now also lists $keys/publication/binding-policy.json and $keys/publication/authorization.json, the kernel-genesis.sh genesis outputs it lacked, because the kernel-app gate reported the treasury-signer wait on binding-policy.json as a failure instead of waiting-genesis."
 assumption = "the kernel-app gate now passes the wait as waiting-genesis before the genesis step; the deploy side builds the kernel image once from the merged revision"
 severity   = "info"
+
+[observation.1.5.11]
+task       = "1.5"
+file       = "docker/kernel/init.sh"
+symbol     = "service core-boundary, service agent-boundary"
+observed   = "core-boundary and agent-boundary waited first on layerxd's runtime outputs, which are absent until the genesis step, so the kernel-app gate failed them as plain waits; both wait lists now begin with the genesis outputs like the other layerxd-dependent services. Gate: 8bd5310c901846272d5d2d1a345561a592a0f3a6 | bash -n docker/kernel/init.sh | 0 | .logs/1.5-boundary-waits-shellcheck.log"
+assumption = "the kernel-app gate at task 1.5 time passes every service as running or waiting-genesis"
+severity   = "info"
