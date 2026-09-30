@@ -1613,3 +1613,15 @@ area    = "bringup"
 symptom = "Two check-live harness runs on one box fail cases at random, the flyctl and curl stand-ins and the CA cases among them."
 cause   = "Concurrent runs on one box share host state the stand-ins and the CA cases rely on and disturb each other."
 do      = "The harness takes flock on /run/lock/check-live-harness for its whole run; a second run waits instead of racing, so never bypass the lock."
+
+[gotcha.266]
+area    = "bringup"
+symptom = "A value loop on the live kernel is told to fund its accounts through the node test's first-credit path, and that path cannot run against a genesis already built."
+cause   = "The first custody credit is admitted only when its custody profile was passed to bootstrap as --custody-profile at genesis build time; the node test builds its genesis with it, the kernel genesis script does not."
+do      = "Decide the opening credit before the live genesis is built, and pass its custody profile to that genesis; check any funding plan against the bootstrap arguments it needs."
+
+[gotcha.267]
+area    = "spec-tooling"
+symptom = "cg spec start refuses a task because another in-progress task also claims tools/bringup/check-live.sh."
+cause   = "Most bring-up tasks touch the shared probe, and start refuses overlapping touches without --force."
+do      = "Set the status line to in_progress by hand, never with --force, delete spec.kvx.lock, and record the refusal as an observation."
