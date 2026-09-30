@@ -1649,3 +1649,9 @@ area    = "go"
 symptom = "go build ./cmd/... prints matched no packages and exits 0, so it builds nothing Go."
 cause   = "cmd/ holds the C and Rust daemons; the chain binary lives under daemon/paxd and the app under node/."
 do      = "Build the chain with go build ./daemon/paxd or ./node/... when the task touches the app wiring."
+
+[gotcha.272]
+area    = "bringup"
+symptom = "A check that asserts which runner ran a workflow job always reads runner none, even when the expected runner completed the job."
+cause   = "gh run view --json jobs exports no runner field (only completedAt, conclusion, databaseId, name, startedAt, status, steps, url), so a runnerName select never matches."
+do      = "Read the jobs with gh api repos/{owner}/{repo}/actions/runs/<run>/jobs and use .jobs[].runner_name when a check must assert which runner ran a job."
