@@ -805,7 +805,7 @@ reqs       = ["16.2"]
 
 [task.4.8]
 title      = "Enable the AP2, Visa TAP and fiat adapters of the interop gateway"
-status     = "pending"
+status     = "implemented"
 wave       = 4
 requires   = ["4.7"]
 blocked_on = "the AP2 signing keys and asset list, the Visa TAP agent and target identities, and the fiat provider credentials for the interop gateway"

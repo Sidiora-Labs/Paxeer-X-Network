@@ -1183,3 +1183,11 @@ symbol     = "check_live_internal_failing"
 observed   = "bash tools/bringup/check-live.test.sh exited 1 (log .logs/build.log) on the single case check_live_internal_failing, whose programs event source answered pin=ISRG-Root-X1 where the case wants X2; every interop case passed."
 assumption = "The case belongs to task 3.11 and races the restart of its background event source, so it is recorded as unrelated and not chased in this task."
 severity   = "unrelated"
+
+[observation.4.8.1]
+task       = "4.8"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_interop_adapters"
+observed   = "timeout 30m tools/bringup/check-live.sh interop-adapters exited 2 (log .logs/verify.log) at its first unset input, LAYERX_RAMP_URL; the AP2, Visa TAP and fiat roots, the ramp journey inputs and the adapters' deployment are owner and deploy-side inputs; the harness passes every interop-adapters case (log .logs/harness.log)."
+assumption = "The deploy side runs the 4.8 handoff (import the five LAYERX_BETA_INTEROP_* inputs as secrets of the interop app, re-render, redeploy) once task 4.7 is live and task 4.10 serves the ramp, then reruns the gate."
+severity   = "external"

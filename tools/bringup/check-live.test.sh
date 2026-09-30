@@ -1664,6 +1664,121 @@ wait "$interop_pid" 2>/dev/null || true
 unset CHECK_LIVE_INTEROP_API_KEY_FILE CHECK_LIVE_INTEROP_PAYER_KEY_FILE CHECK_LIVE_INTEROP_PAYEE_DID CHECK_LIVE_INTEROP_ENCODER
 unset CHECK_LIVE_INTEROP_ORIGIN CHECK_LIVE_INTEROP_RPC LAYERX_INTEROP_PROTOCOL_NETWORK_ID CHECK_LIVE_TEST_MACHINES
 
+# The interop-adapters cases run the check against a loopback stand-in of the
+# gateway's /v1/adapters (CHECK_LIVE_INTEROP_ORIGIN points at it), which
+# answers the conformance pins render.py derives from this checkout's vectors,
+# and a fixture Makefile whose three conformance targets exit with the code in
+# their leg file; the sandbox target also wants both bearer tokens in its
+# environment exactly as their files hold them.
+mkdir -p "$work/adapters" "$fx/interop/deploy/gateway" "$fx/interop/specs/conformance"
+cp "$root/interop/deploy/gateway/render.py" "$fx/interop/deploy/gateway/"
+cp -r "$root/interop/specs/conformance/ap2" "$root/interop/specs/conformance/visa-tap" \
+	"$root/interop/specs/conformance/fiat" "$fx/interop/specs/conformance/"
+cat >"$fx/Makefile" <<'MK'
+interop-test-mandates interop-test-visa-tap:
+	@exit $$(cat $(CHECK_LIVE_TEST_LEGS)/$@)
+interop-test-ramps-sandbox:
+	@test "$$LAYERX_RAMP_CUSTOMER_TOKEN" = "$$(cat $(CHECK_LIVE_INTEROP_ADAPTERS_CUSTOMER_TOKEN_FILE))"
+	@test "$$LAYERX_RAMP_OPERATOR_TOKEN" = "$$(cat $(CHECK_LIVE_INTEROP_ADAPTERS_OPERATOR_TOKEN_FILE))"
+	@exit $$(cat $(CHECK_LIVE_TEST_LEGS)/$@)
+MK
+for leg in interop-test-mandates interop-test-visa-tap interop-test-ramps-sandbox; do printf '0' >"$work/adapters/$leg"; done
+adapters_customer="$(openssl rand -hex 24)"
+adapters_operator="$(openssl rand -hex 24)"
+printf '%s' "$adapters_customer" >"$work/adapters/customer"
+printf '%s' "$adapters_operator" >"$work/adapters/operator"
+python3 - "$root" >"$work/adapters/doc.json" <<'PY'
+import importlib.util, json, pathlib, sys
+
+spec = importlib.util.spec_from_file_location("render", sys.argv[1] + "/interop/deploy/gateway/render.py")
+render = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(render)
+adapters = []
+for adapter in ("ap2", "visa-tap", "fiat"):
+    suite, count, digest = render.first_party_suite(pathlib.Path(sys.argv[1]), adapter)
+    adapters.append({"id": adapter, "conformance_suite": suite, "conformance_vectors": count, "conformance_sha256": digest,
+                     "readiness": {k: "ready" for k in ("configuration", "ingress", "settlement", "receipt_verification")}})
+print(json.dumps({"adapters": adapters, "transports": []}))
+PY
+cat >"$work/adapters/gateway.py" <<'PY'
+import http.server, sys
+
+work = sys.argv[1]
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
+
+    def do_GET(self):
+        code, body = (200, open(work + "/doc.json", "rb").read()) if self.path == "/v1/adapters" else (404, b"{}")
+        self.send_response(code)
+        self.send_header("content-type", "application/json")
+        self.send_header("content-length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+open(work + "/port", "w").write(str(server.server_address[1]))
+server.serve_forever()
+PY
+python3 "$work/adapters/gateway.py" "$work/adapters" &
+adapters_pid=$!
+for _ in $(seq 50); do [ -s "$work/adapters/port" ] && break; python3 -c 'import time; time.sleep(0.1)'; done
+adapters_origin="http://127.0.0.1:$(cat "$work/adapters/port")"
+
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_interop_adapters_inputs_unset "$work/hosts-good.env" 2 interop-adapters -- \
+	"check-live: LAYERX_RAMP_URL is unset"
+
+export CHECK_LIVE_TEST_LEGS="$work/adapters" CHECK_LIVE_INTEROP_ORIGIN="$adapters_origin"
+export LAYERX_RAMP_URL=https://ramp.example LAYERX_RAMP_CA_PEM="$work/adapters/ca.pem" LAYERX_RAMP_OPERATOR_URL=https://operator.example
+export LAYERX_RAMP_ON_QUOTE_ID=quote-on LAYERX_RAMP_OFF_QUOTE_ID=quote-off LAYERX_RAMP_OFF_GRANT_JSON='{}'
+export LAYERX_RAMP_ON_ACCOUNT_SEQUENCE=1 LAYERX_RAMP_OFF_RECEIVER_SEQUENCE=2
+export CHECK_LIVE_INTEROP_ADAPTERS_CUSTOMER_TOKEN_FILE="$work/adapters/customer"
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_interop_adapters_token_unset "$work/hosts-good.env" 2 interop-adapters -- \
+	"check-live: CHECK_LIVE_INTEROP_ADAPTERS_OPERATOR_TOKEN_FILE is unset"
+
+export CHECK_LIVE_INTEROP_ADAPTERS_OPERATOR_TOKEN_FILE="$work/adapters/operator"
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_interop_adapters_passing "$work/hosts-good.env" 0 interop-adapters -- \
+	"pass mandates app=$interop make=interop-test-mandates exit=0 adapter=ap2 http=200 pins=match readiness=4/4" \
+	"pass visa-tap app=$interop make=interop-test-visa-tap exit=0 adapter=visa-tap http=200 pins=match readiness=4/4" \
+	"pass ramps-sandbox app=$interop make=interop-test-ramps-sandbox exit=0 adapter=fiat http=200 pins=match readiness=4/4" \
+	"check-live: all checks passed"
+output="$(BRINGUP_HOSTS_FILE="$work/hosts-good.env" CHECK_LIVE_TIMEOUT=5 "$fx_checker" interop-adapters 2>&1)" || true
+if grep -qF -e "$adapters_customer" -e "$adapters_operator" - "$CHECK_LIVE_TEST_CALLS" <<<"$output"; then
+	echo "FAIL check_live_interop_adapters_keeps_the_ramp_tokens: a bearer token left the check"
+	failures=$((failures + 1))
+else
+	echo "ok   check_live_interop_adapters_keeps_the_ramp_tokens"
+fi
+
+printf '1' >"$work/adapters/interop-test-visa-tap"
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_interop_adapters_one_leg_failing "$work/hosts-good.env" 1 interop-adapters -- \
+	"pass mandates app=$interop make=interop-test-mandates exit=0" \
+	"fail visa-tap app=$interop make=interop-test-visa-tap exit=2 adapter=visa-tap http=200 pins=match readiness=4/4" \
+	"pass ramps-sandbox app=$interop make=interop-test-ramps-sandbox exit=0" \
+	"check-live: 1 check(s) failed"
+
+printf '0' >"$work/adapters/interop-test-visa-tap"
+python3 - "$work/adapters/doc.json" <<'PY'
+import json, sys
+
+doc = json.load(open(sys.argv[1]))
+fiat = next(entry for entry in doc["adapters"] if entry["id"] == "fiat")
+fiat["conformance_sha256"] = "00" * 32
+fiat["readiness"]["configuration"] = "unavailable"
+open(sys.argv[1], "w").write(json.dumps(doc))
+PY
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_interop_adapters_served_pins_differ "$work/hosts-good.env" 1 interop-adapters -- \
+	"fail ramps-sandbox app=$interop make=interop-test-ramps-sandbox exit=0 adapter=fiat http=200 pins=differ readiness=3/4" \
+	"check-live: 1 check(s) failed"
+kill "$adapters_pid" 2>/dev/null || true
+wait "$adapters_pid" 2>/dev/null || true
+unset CHECK_LIVE_TEST_LEGS CHECK_LIVE_INTEROP_ORIGIN LAYERX_RAMP_URL LAYERX_RAMP_CA_PEM LAYERX_RAMP_OPERATOR_URL
+unset LAYERX_RAMP_ON_QUOTE_ID LAYERX_RAMP_OFF_QUOTE_ID LAYERX_RAMP_OFF_GRANT_JSON LAYERX_RAMP_ON_ACCOUNT_SEQUENCE
+unset LAYERX_RAMP_OFF_RECEIVER_SEQUENCE CHECK_LIVE_INTEROP_ADAPTERS_CUSTOMER_TOKEN_FILE CHECK_LIVE_INTEROP_ADAPTERS_OPERATOR_TOKEN_FILE
+
 # The fleet script shares the host map and the ssh helpers, so its own test
 # runs as the last case, with this test's stand-ins off the PATH.
 status=0
