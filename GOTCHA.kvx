@@ -1313,3 +1313,9 @@ area = "fly"
 symptom = "The machine-list prerequisite exits one before an application has been created."
 cause = "The CLI treats an absent application as an error, while the deployment script creates it when absent."
 do = "Retain the diagnostic in a private log and distinguish an explicit app-not-found result from authentication or API errors before proceeding through the approved deployment script."
+
+[gotcha.216]
+area    = "bringup"
+symptom = "A read-only comparison of a public RPC name's resolution against the host-map roles exits 1 before it compares anything."
+cause   = "The comparison read the scalar role list of the host map with array syntax, so the roles came back empty."
+do      = "Read the roles the way tools/bringup/check-live.sh reads them, read -r -a from the scalar role list, before comparing a name against them."
