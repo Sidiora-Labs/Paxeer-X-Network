@@ -495,3 +495,22 @@ symbol     = "check_identity"
 observed   = "The task lists check-live.test.sh as its test, but the lane scope allows only one function and one case-arm in check-live.sh and parallel lanes extend the same test file, so no identity fixture case was added."
 assumption = "The feature manager adds the identity fixture case with a flyctl stand-in answering machines list, ips list and ssh console once the wave's probe lanes are merged."
 severity   = "low"
+
+[observation.1.2.2]
+task       = "1.2"
+revision   = "411c57eaa plus the change committed with this entry"
+command    = "timeout 30m make layerxd test-daemon-finality-authority"
+exit_code  = 2
+log_path   = ".logs/verify.log"
+observed   = "lxp_test_finality_json and the recorded-fixture replay pass (chain 125, threshold 1, no finalized checkpoint) and bootstrap-send's sequencer now binds against the replayed chain, but real_node.rs asserts the receipt authority's /readyz body has 3 fields while platform/hosted/authority/src/main.rs readiness() returns 4 (ready, network_id, protocol_network_id, wire_version)."
+assumption = "A pre-existing code-versus-assertion conflict in the receipt authority, hidden until the sequencer could start; both sides are left as written for an owner ruling on which is right; severity medium."
+resolved   = "Leader ruling: readiness() is right with four fields; the test now asserts all four by name and value, protocol_network_id included."
+
+[observation.1.2.3]
+task       = "1.2"
+revision   = "the change committed with this entry"
+command    = "timeout 30m make layerxd test-daemon-finality-authority"
+exit_code  = 2
+log_path   = ".logs/verify.log"
+observed   = "With the readyz assertion ruled and passing, real_node.rs:1515 gets 503 receipt_source_unavailable instead of 200 for the gateway's authorized-batch lookup, because layerxd's LNI refuses the lookup with class 1, result -105 (LXP_ERR_MALFORMED_ENVELOPE)."
+assumption = "Another pre-existing conflict between the receipt authority's LNI lookup and the sequencer, hidden while the sequencer could not start; left as written for a ruling; task stays implemented; severity medium."

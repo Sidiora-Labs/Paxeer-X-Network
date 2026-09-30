@@ -81,6 +81,75 @@ fn free_port() -> u16 {
     must(listener.local_addr(), "port address").port()
 }
 
+fn serve_recorded_chain() -> (u64, u16) {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../tests/daemon/fixtures/finality-authority/rpc.json");
+    let fixture: serde_json::Value = must(
+        serde_json::from_slice(&must(fs::read(&path), "recorded chain fixture")),
+        "recorded chain fixture JSON",
+    );
+    let chain_id = fixture["chain_id"]
+        .as_u64()
+        .unwrap_or_else(|| panic!("recorded chain fixture chain_id"));
+    let exchanges = fixture["exchanges"]
+        .as_array()
+        .unwrap_or_else(|| panic!("recorded chain fixture exchanges"))
+        .clone();
+    let listener = must(TcpListener::bind("127.0.0.1:0"), "recorded chain listener");
+    let port = must(listener.local_addr(), "recorded chain address").port();
+    thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let mut request = Vec::new();
+            let mut buffer = [0_u8; 4096];
+            let body = loop {
+                let Ok(count) = stream.read(&mut buffer) else {
+                    break None;
+                };
+                if count == 0 {
+                    break None;
+                }
+                request.extend_from_slice(&buffer[..count]);
+                let Some(end) = request.windows(4).position(|w| w == b"\r\n\r\n") else {
+                    continue;
+                };
+                let head = String::from_utf8_lossy(&request[..end]).to_ascii_lowercase();
+                let length = head
+                    .lines()
+                    .find_map(|line| line.strip_prefix("content-length:"))
+                    .and_then(|value| value.trim().parse::<usize>().ok())
+                    .unwrap_or(0);
+                if request.len() >= end + 4 + length {
+                    break Some(request[end + 4..end + 4 + length].to_vec());
+                }
+            };
+            let Some(call) =
+                body.and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+            else {
+                continue;
+            };
+            let recorded = exchanges
+                .iter()
+                .find(|item| item["method"] == call["method"] && item["params"] == call["params"]);
+            let reply = match recorded {
+                Some(item) => {
+                    serde_json::json!({"jsonrpc": "2.0", "id": call["id"], "result": item["result"]})
+                }
+                None => serde_json::json!({"jsonrpc": "2.0", "id": call["id"],
+                    "error": {"code": -32000, "message": "not recorded"}}),
+            };
+            let reply = reply.to_string();
+            let _ = write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                reply.len(),
+                reply
+            );
+        }
+    });
+    (chain_id, port)
+}
+
 fn write(path: &Path, bytes: &[u8], mode: u32) {
     must(fs::write(path, bytes), &format!("write {}", path.display()));
     must(
@@ -1029,16 +1098,11 @@ fn start_cluster(with_sequencer: bool) -> Cluster {
     let socket = run_dir.join("layerxd.sock");
     let text = |path: PathBuf| path.to_string_lossy().into_owned();
     let mut node_env = BTreeMap::new();
-    node_env.insert("LAYERX_NODE_PAXEER_CHAIN_ID", "31337".to_owned());
-    node_env.insert("LAYERX_NODE_PAXEER_RPC_ADDRESS", "127.0.0.1".to_owned());
-    node_env.insert("LAYERX_NODE_PAXEER_RPC_PORT", free_port().to_string());
+    let (paxeer_chain_id, paxeer_rpc_port) = serve_recorded_chain();
+    node_env.insert("LAYERX_NODE_PAXEER_CHAIN_ID", paxeer_chain_id.to_string());
     node_env.insert(
-        "LAYERX_NODE_SETTLEMENT_CONTRACT",
-        format!("0x{}", "11".repeat(20)),
-    );
-    node_env.insert(
-        "LAYERX_NODE_CHECKPOINT_REGISTRY",
-        format!("0x{}", "22".repeat(20)),
+        "LAYERX_NODE_PAXEER_RPC_URL",
+        format!("http://127.0.0.1:{paxeer_rpc_port}"),
     );
     node_env.insert(
         "LAYERX_NODE_CHECKPOINT_DIRECTORY",
@@ -1420,7 +1484,11 @@ fn real_node_authority_serves_verified_facts_and_reflects_replica_loss() {
         field(&ready_body, "wire_version"),
         PROTOCOL_VERSION.to_string()
     );
-    assert_eq!(ready_body.as_object().map(serde_json::Map::len), Some(3));
+    assert_eq!(
+        ready_body["protocol_network_id"],
+        serde_json::Value::from(NETWORK_ID)
+    );
+    assert_eq!(ready_body.as_object().map(serde_json::Map::len), Some(4));
 
     let unauthenticated = https_get(
         cluster.authority_port,

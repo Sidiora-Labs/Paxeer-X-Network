@@ -1115,3 +1115,21 @@ area    = "fly"
 symptom = "A non-root image cannot read files that ca.sh wrote to its volume, and fly.toml offers no way to run the machine's process as root."
 cause   = "Fly init honours the image USER, while ca.sh writes key material as root through ssh console."
 do      = "Give the Dockerfile a separate fly target without USER whose root init prepares the volume and execs the binary under setpriv, and keep the default last stage unchanged for other runtimes."
+
+[gotcha.183]
+area    = "tests"
+symptom = "Once layerxd binds its finality authority at startup, every test that launches the sequencer with invented settlement and registry addresses and an unused RPC port exits with result -3."
+cause   = "The bind requires both pins to be the anchor precompile and a loopback JSON-RPC that answers the chain id, threshold and finalized-checkpoint calls."
+do      = "Point those tests at LAYERX_NODE_PAXEER_RPC_URL served by a replay of tests/daemon/fixtures/finality-authority/rpc.json with its chain id, and drop the invented pins."
+
+[gotcha.184]
+area    = "tests"
+symptom = "The real-node authority test fails on a /readyz field count right after the sequencer starts."
+cause   = "readiness() gained protocol_network_id, but the test still asserts three fields; the failure stayed hidden while the sequencer could not start."
+do      = "Treat it as a recorded code-versus-assertion conflict awaiting a ruling, not as a finality-authority failure."
+
+[gotcha.185]
+area    = "tests"
+symptom = "The real-node authority test fails in stages: after one stale assertion is fixed, the gateway's authorized-batch lookup returns 503 receipt_source_unavailable."
+cause   = "The sequencer did not start in this test for a long time, so several later checks were never run; layerxd's LNI now refuses the authority's lookup with -105 (malformed envelope)."
+do      = "Expect more hidden failures further down this test; record each one with its line and result code instead of reading it as a finality-authority failure."
