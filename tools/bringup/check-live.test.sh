@@ -2868,6 +2868,83 @@ CHECK_LIVE_TEST_XWEB_LISTENERS=1 CHECK_LIVE_TEST_PROGRAM="$fx_checker" PATH="$wo
 	"fail VALIDATOR_HOSTS[0] listeners-8480-8481=1" \
 	"fail VALIDATOR_HOSTS[1] listeners-8480-8481=1"
 
+# The rollback restore of the preserved human state without Fly: the export
+# of the preservation cases above goes back onto a fixture clone of the old
+# machine. Its volume first sits at the stage path (a mode the restore must
+# replace with the old directory's), then, as a machine update would move it,
+# at the old path, with a loopback /livez stand-in on the old service's bind
+# port; the machine config comes from CHECK_LIVE_TEST_MACHINES.
+rb="$work/restore-rb/$kernel/app"
+stage="$rb/var/lib/layerx/human-restore"
+mkdir -p "$stage/lost+found" "$work/restore-livez"
+chmod 0700 "$stage"
+: >"$work/restore-livez/livez"
+rb_stage='[{"id":"m-rb","state":"started","config":{"mounts":[{"volume":"vol_rb","path":"/var/lib/layerx/human-restore"}]}},{"id":"m-old","state":"stopped","config":{}}]'
+rb_old='[{"id":"m-rb","state":"started","config":{"mounts":[{"volume":"vol_rb","path":"/var/lib/layerx/human"}]}}]'
+export CHECK_LIVE_TEST_FLY="$work/restore-rb"
+
+CHECK_LIVE_TEST_PROGRAM="$preserve" expect human_state_restore_usage - 2 restore "$out_dir" -- \
+	"usage: tools/bringup/human-state-preserve.sh"
+CHECK_LIVE_TEST_MACHINES="$rb_stage" CHECK_LIVE_TEST_PROGRAM="$preserve" expect human_state_restore_no_export - 1 restore "$work/preserve-none" m-rb -- \
+	"holds no export"
+cp -r "$out_dir" "$work/restore-bad"
+awk 'NR == 1 { $0 = (substr($0, 1, 1) == "0" ? "1" : "0") substr($0, 2) } 1' "$out_dir/manifest.sha256" >"$work/restore-bad/manifest.sha256"
+CHECK_LIVE_TEST_MACHINES="$rb_stage" CHECK_LIVE_TEST_PROGRAM="$preserve" expect human_state_restore_manifest_mismatch - 1 restore "$work/restore-bad" m-rb -- \
+	"does not match $work/restore-bad/manifest.sha256"
+CHECK_LIVE_TEST_MACHINES='[{"id":"m-new","state":"started","config":{"mounts":[{"volume":"vol_k","path":"/data"}]}}]' CHECK_LIVE_TEST_PROGRAM="$preserve" expect human_state_restore_kernel_machine - 1 restore "$out_dir" m-new -- \
+	"m-new is not a restore target of $kernel (mounts=/data)"
+CHECK_LIVE_TEST_MACHINES='[{"id":"m-rb","state":"started","config":{"mounts":[{"volume":"vol_rb","path":"/var/lib/layerx/human-restore"}]}},{"id":"m-new","state":"started","config":{}}]' CHECK_LIVE_TEST_PROGRAM="$preserve" expect human_state_restore_two_started - 1 restore "$out_dir" m-rb -- \
+	"m-rb is not a restore target of $kernel (started=m-rb,m-new)"
+printf 'fresh\n' >"$stage/store"
+CHECK_LIVE_TEST_MACHINES="$rb_stage" CHECK_LIVE_TEST_PROGRAM="$preserve" expect human_state_restore_stage_holds_state - 1 restore "$out_dir" m-rb -- \
+	"the volume of m-rb already holds state"
+rm "$stage/store"
+
+CHECK_LIVE_TEST_MACHINES="$rb_stage" CHECK_LIVE_TEST_PROGRAM="$preserve" expect human_state_restore_stage - 0 restore "$out_dir" m-rb -- \
+	"pass restore-stage app=$kernel machine=m-rb files=2 sha256=match"
+if [ "$(stat -c %A "$stage")" = "$(tar -tvf "$out_dir/state.tar" human-state/components | head -n 1 | awk '{print $1}')" ] &&
+	[ "$(cat "$stage/store/a/journal")" = journal ] && [ "$(cat "$stage/custody/keystore")" = sealed ] &&
+	[ ! -e "$rb/data/human-state" ] && [ ! -e "$rb/data/layerx" ] && [ ! -e "$rb/run/human-material" ]; then
+	echo "ok   human_state_restore_stage_maps"
+else
+	echo "FAIL human_state_restore_stage_maps: want the components on the volume with the old directory's mode and nothing on the root"
+	failures=$((failures + 1))
+fi
+
+mv "$stage" "$rb/var/lib/layerx/human"
+livez_port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
+LAYERX_HUMAN_BIND="127.0.0.1:$livez_port" CHECK_LIVE_TEST_MACHINES="$rb_old" CHECK_LIVE_TEST_PROGRAM="$preserve" expect human_state_restore_livez_down - 1 restore "$out_dir" m-rb -- \
+	"pass restore-volume app=$kernel machine=m-rb files=2 sha256=match" \
+	"the old service on m-rb does not answer /livez"
+[ ! -e "$rb/data/human-state" ] && [ ! -e "$rb/data/layerx" ] && [ ! -e "$rb/run/human-material" ] ||
+	{ echo "FAIL human_state_restore_livez_down_writes_nothing"; failures=$((failures + 1)); }
+python3 -m http.server --bind 127.0.0.1 --directory "$work/restore-livez" "$livez_port" >/dev/null 2>&1 &
+livez_pid=$!
+for _ in $(seq 50); do
+	"$real_curl" -fsS -o /dev/null "http://127.0.0.1:$livez_port/livez" 2>/dev/null && break
+	sleep 0.1
+done
+LAYERX_HUMAN_BIND="127.0.0.1:$livez_port" CHECK_LIVE_TEST_MACHINES="$rb_old" CHECK_LIVE_TEST_PROGRAM="$preserve" expect human_state_restore_old - 0 restore "$out_dir" m-rb -- \
+	"pass restore-volume app=$kernel machine=m-rb files=2 sha256=match" \
+	"pass livez app=$kernel machine=m-rb http=200" \
+	"pass restore app=$kernel machine=m-rb files=5 sha256=match"
+if [ "$(cat "$rb/data/human-state/kms/seal")" = seal ] && [ "$(cat "$rb/data/layerx/keys/treasury.key")" = treasury ] &&
+	[ "$(cat "$rb/run/human-material/recovery-policy.json")" = recovery ] && [ ! -e "$rb/data/layerx/keys/human-material" ] &&
+	[ ! -e "$rb/data/human-state/components" ]; then
+	echo "ok   human_state_restore_old_maps"
+else
+	echo "FAIL human_state_restore_old_maps: want kms and keys under /data, the material at /run/human-material and no components under /data"
+	failures=$((failures + 1))
+fi
+LAYERX_HUMAN_BIND="127.0.0.1:$livez_port" CHECK_LIVE_TEST_MACHINES="$rb_old" CHECK_LIVE_TEST_PROGRAM="$preserve" expect human_state_restore_old_twice - 1 restore "$out_dir" m-rb -- \
+	"already exists at its old path on m-rb"
+printf 'changed\n' >"$rb/var/lib/layerx/human/store/a/journal"
+LAYERX_HUMAN_BIND="127.0.0.1:$livez_port" CHECK_LIVE_TEST_MACHINES="$rb_old" CHECK_LIVE_TEST_PROGRAM="$preserve" expect human_state_restore_old_volume_mismatch - 1 restore "$out_dir" m-rb -- \
+	"a file of the volume of m-rb differs from $out_dir/manifest.sha256"
+kill "$livez_pid" 2>/dev/null || true
+wait "$livez_pid" 2>/dev/null || true
+export CHECK_LIVE_TEST_FLY="$fly"
+
 # The fleet script shares the host map and the ssh helpers, so its own test
 # runs as the last case, with this test's stand-ins off the PATH.
 status=0
