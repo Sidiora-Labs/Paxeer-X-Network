@@ -651,7 +651,7 @@ reqs       = ["10.6"]
 
 [task.3.9]
 title      = "Serve the SDK agent-plane envelope from agentd and point the JVM SDK at machine.paxeer.network"
-status     = "in_progress"
+status     = "pending"
 wave       = 3
 requires   = ["3.6"]
 do_1       = "Add POST /rpc to the full-mode program listener of agent/crates/layerx-agentd/src/main.rs beside its GET routes: it reads the operation and request of the SDK envelope, resolves the operation by Operation::name of agent/crates/layerx-agent-api/src/operation_generated.rs, authorizes it under tenant control for that operation and the caller's surface, dispatches it to the agentd handler that serves it, the native reads and program routes of the listener and the approval, budget, capability, session, subscription, export and submission handlers of agentd's modules, writing the dispatch for any catalogue operation that has none yet, and answers the request_id, value and verification_status envelope that agent_response of platform/hosted/gateway/src/main.rs answers; faucet.claim answers UnavailableCapability because the faucet is retired."
