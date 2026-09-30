@@ -62,6 +62,10 @@ hang-*) exec sleep 5 ;;
 esac
 case "$command" in
 true) exit 0 ;;
+*"@@sites"*)
+	cat "$CHECK_LIVE_TEST_EDGE"
+	exit 0
+	;;
 *"ss -Hltn"*)
 	case "$dest" in
 	up-validator-*-node) echo "active none" ;;
@@ -174,6 +178,16 @@ printf '%s curl\n' "$name" >>"$CHECK_LIVE_TEST_CALLS"
 case " ${CHECK_LIVE_TEST_DOWN:-} " in
 *" $name "*) exit 7 ;;
 esac
+case "$url" in
+https://*/?*)
+	body='{"status":"ready"}'
+	case " ${CHECK_LIVE_TEST_DIFFER:-} " in
+	*" $name "*) body='{"status":"starting"}' ;;
+	esac
+	printf 'HTTP/2 200\r\nfly-request-id: 01FIXTURE-ams\r\n\r\n%s' "$body"
+	exit 0
+	;;
+esac
 lag=0
 case " ${CHECK_LIVE_TEST_LAG:-} " in
 *" $name:"*)
@@ -209,6 +223,7 @@ export CHECK_LIVE_TEST_STDIN="$work/stdin"
 export CHECK_LIVE_TEST_REAL_CURL="$real_curl"
 export CHECK_LIVE_TEST_FLY="$work/fly"
 export CHECK_LIVE_TEST_IMPORTS="$work/imports"
+export CHECK_LIVE_TEST_EDGE="$work/edge-manifest"
 export LAYERX_CA_DIR="$work/ca"
 
 cat >"$work/hosts-good.env" <<'ENV'
@@ -747,6 +762,40 @@ CHECK_LIVE_HPX_ORIGIN="$origin/local" CHECK_LIVE_HPX_APP_ORIGIN="$origin/good" e
 
 expect check_live_hpx_hosts_file_lacks_role "$work/hosts-missing.env" 2 hpx -- \
 	"check-live: BRINGUP_HOSTS_FILE lacks ARCHIVE_HOST"
+
+# The edge cases read the manifest and rendered sites that the ssh stand-in
+# answers from CHECK_LIVE_TEST_EDGE; the registered names resolve to the edge
+# fixture destination through CHECK_LIVE_TEST_DNS.
+printf '@@sites\n' >"$CHECK_LIVE_TEST_EDGE"
+expect check_live_edge_empty_manifest "$work/hosts-good.env" 1 edge -- \
+	"fail manifest names=0" \
+	"check-live: 1 check(s) failed"
+
+printf '%s\n' "api-mainnet-beta.paxeer.network http paxeer-shared-endpoint 443" @@sites \
+	"# rendered by tools/bringup/edge.sh; edit the manifest through it, not this file" \
+	"proxy_pass https://\$edge_upstream;" >"$CHECK_LIVE_TEST_EDGE"
+export CHECK_LIVE_TEST_DNS="api-mainnet-beta:up-edge up-edge:up-edge search:up-edge machine:up-edge"
+expect check_live_edge_passing "$work/hosts-good.env" 0 edge -- \
+	"pass manifest names=1" \
+	"pass sites validator=0" \
+	"pass api-mainnet-beta.paxeer.network mode=http app=paxeer-shared-endpoint edge=yes tls=verified route=/readyz http=200 fly-request-id=present body=match" \
+	"check-live: all checks passed"
+
+printf '%s\n' "api-mainnet-beta.paxeer.network http paxeer-shared-endpoint 443" \
+	"search.paxeer.network http paxeer-search-front 443" \
+	"hooks.paxeer.network http paxeer-no-such-app 443" \
+	"machine.paxeer.network stream fx-stream-app 9454" @@sites \
+	"	server up-validator-a:443;" >"$CHECK_LIVE_TEST_EDGE"
+export CHECK_LIVE_TEST_DNS="api-mainnet-beta:up-rpc-1 up-edge:up-edge search:up-edge machine:up-edge hooks:up-edge" CHECK_LIVE_TEST_DIFFER="search"
+expect check_live_edge_failing "$work/hosts-good.env" 1 edge -- \
+	"pass manifest names=4" \
+	"fail sites validator=1" \
+	"fail api-mainnet-beta.paxeer.network mode=http app=paxeer-shared-endpoint edge=no tls=verified route=/readyz http=200 fly-request-id=present body=match" \
+	"fail search.paxeer.network mode=http app=paxeer-search-front edge=yes tls=verified route=/healthz http=200 fly-request-id=present body=differ" \
+	"fail hooks.paxeer.network mode=http app=paxeer-no-such-app edge=yes route=unknown" \
+	"fail machine.paxeer.network mode=stream app=fx-stream-app port=9454 edge=yes presented=none" \
+	"check-live: 5 check(s) failed"
+unset CHECK_LIVE_TEST_DNS CHECK_LIVE_TEST_DIFFER
 
 # The fleet script shares the host map and the ssh helpers, so its own test
 # runs as the last case, with this test's stand-ins off the PATH.

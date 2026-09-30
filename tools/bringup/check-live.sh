@@ -1193,6 +1193,115 @@ print(("pass" if ok else "fail") + " machines started=%d regions=%s" % (len(star
 	finish "$failures"
 }
 
+# check_edge: the names tools/bringup/edge.sh registered on the edge host, read
+# with its rendered sites over ssh from EDGE_HOST. The manifest names at least
+# one name; no rendered site names a validator host; every name resolves only
+# to EDGE_HOST's addresses; an http name answers the readiness route of its
+# app's toml (the first http check path) over TLS verified for the name with
+# 200, the Fly edge's fly-request-id header and the body the app's fly.dev name
+# answers; a stream name presents through the edge the certificate its app
+# presents at its fly.dev name for that SNI. One line per check, no address.
+# shellcheck disable=SC2016
+edge_cmd='cat /etc/nginx/edge/manifest 2>/dev/null; echo @@sites; for f in /etc/nginx/sites-available/* /etc/nginx/edge/stream/*.conf; do head -n 1 "$f" 2>/dev/null | grep -q "^# rendered by tools/bringup/edge.sh" && cat "$f"; done; true'
+edge_route_py='
+import sys
+import tomllib
+
+with open(sys.argv[1], "rb") as handle:
+    doc = tomllib.load(handle)
+for check in (doc.get("http_service") or {}).get("checks") or []:
+    if check.get("path"):
+        print(check["path"])
+        break
+'
+check_edge() {
+	local reply status=0 manifest sites edge_addrs addrs v named=0 name mode app port at toml route
+	local out headers code fly_id body app_body tls first fp_edge fp_app failures=0
+	reply="$(ssh_read "$EDGE_HOST" "$edge_cmd")" || status=$?
+	if [ "$status" -ne 0 ] || [[ "$reply" != *@@sites* ]]; then
+		echo "fail EDGE_HOST manifest ssh=$status"
+		finish 1
+	fi
+	manifest="$(grep -E '^[a-z0-9.-]+ (http|stream) [a-z0-9-]+ [0-9]+$' <<<"${reply%%@@sites*}" || true)"
+	sites="${reply#*@@sites}"
+	if [ -z "$manifest" ]; then
+		echo "fail manifest names=0"
+		finish 1
+	fi
+	echo "pass manifest names=$(grep -c . <<<"$manifest")"
+	for v in $VALIDATOR_HOSTS; do
+		if grep -qF -- "${v#*@}" <<<"$sites"; then
+			named=$((named + 1))
+		fi
+	done
+	if [ "$named" -eq 0 ]; then
+		echo "pass sites validator=0"
+	else
+		echo "fail sites validator=$named"
+		failures=$((failures + 1))
+	fi
+	edge_addrs="$(getent ahosts "${EDGE_HOST#*@}" 2>/dev/null | awk '{print $1}' | sort -u)"
+	while read -r name mode app port; do
+		addrs="$(getent ahosts "$name" 2>/dev/null | awk '{print $1}' | sort -u)"
+		at=no
+		if [ -n "$addrs" ] && [ -n "$edge_addrs" ] && [ -z "$(comm -23 <(printf '%s\n' "$addrs") <(printf '%s\n' "$edge_addrs"))" ]; then
+			at=yes
+		fi
+		if [ "$mode" = stream ]; then
+			first="$(head -n 1 <<<"$addrs")"
+			fp_edge=""
+			[ -z "$first" ] || fp_edge="$(timeout "$timeout" openssl s_client -connect "$first:$port" -servername "$name" </dev/null 2>/dev/null | openssl x509 -noout -fingerprint -sha256 2>/dev/null | cut -d= -f2)" || fp_edge=""
+			fp_app="$(timeout "$timeout" openssl s_client -connect "$app.fly.dev:$port" -servername "$name" </dev/null 2>/dev/null | openssl x509 -noout -fingerprint -sha256 2>/dev/null | cut -d= -f2)" || fp_app=""
+			out="$name mode=stream app=$app port=$port edge=$at presented=${fp_edge:-none} app-presents=${fp_app:-none}"
+			if [ "$at" = yes ] && [ -n "$fp_edge" ] && [ "$fp_edge" = "$fp_app" ]; then
+				echo "pass $out"
+			else
+				echo "fail $out"
+				failures=$((failures + 1))
+			fi
+			continue
+		fi
+		route=""
+		toml="$(git -C "$repo_root" grep -l -E "^app = \"$app\"$" -- '*.toml' 2>/dev/null | head -n 1)" || toml=""
+		[ -z "$toml" ] || route="$(python3 -c "$edge_route_py" "$repo_root/$toml" 2>/dev/null)" || route=""
+		if [ -z "$route" ]; then
+			echo "fail $name mode=http app=$app edge=$at route=unknown"
+			failures=$((failures + 1))
+			continue
+		fi
+		status=0
+		out="$(curl -sS --max-time "$timeout" -D - "https://$name$route" 2>&1)" || status=$?
+		tls=verified
+		code=none
+		fly_id=absent
+		body=""
+		if [ "$status" -ne 0 ]; then
+			tls="curl-$status"
+		else
+			headers="${out%%$'\r\n\r\n'*}"
+			body="${out#*$'\r\n\r\n'}"
+			code="$(sed -n '1s/^HTTP\/[0-9.]* \([0-9]*\).*/\1/p' <<<"$headers")"
+			if grep -qiE '^fly-request-id: *[^[:space:]]' <<<"$headers"; then
+				fly_id=present
+			fi
+		fi
+		app_body="$(curl -sS --max-time "$timeout" -D - "https://$app.fly.dev$route" 2>/dev/null)" || app_body=""
+		app_body="${app_body#*$'\r\n\r\n'}"
+		v=differ
+		if [ -n "$body" ] && [ "$body" = "$app_body" ]; then
+			v=match
+		fi
+		out="$name mode=http app=$app edge=$at tls=$tls route=$route http=${code:-none} fly-request-id=$fly_id body=$v"
+		if [ "$at" = yes ] && [ "$tls" = verified ] && [ "$code" = 200 ] && [ "$fly_id" = present ] && [ "$v" = match ]; then
+			echo "pass $out"
+		else
+			echo "fail $out"
+			failures=$((failures + 1))
+		fi
+	done <<<"$manifest"
+	finish "$failures"
+}
+
 # Sourced by tools/bringup/ca.sh for the Fly helpers and the CA settings: the
 # probe's own dispatch below runs only when this file is executed.
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
@@ -1208,6 +1317,7 @@ rpc-placement) ;;
 validators) ;;
 identity) ;;
 search-front) ;;
+edge) ;;
 *)
 	usage >&2
 	exit 2
