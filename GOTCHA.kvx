@@ -1349,3 +1349,9 @@ area    = "agent"
 symptom = "layerx-mcp exits with the binding document declares no protocol socket against the binding the full-mode daemon published."
 cause   = "The daemon's binding publisher writes only the base keys, while the binary requires a listener section and a web-scoped session also requires a web section plus an attached web payer that no served path attaches."
 do      = "Plan the listener and web sections and the production web payer before promising an MCP socket or the web tools; the stdio CLI ignores listener but still refuses web scopes."
+
+[gotcha.222]
+area    = "agentd"
+symptom = "Tenant control cannot be applied to a request that arrives on the program listener with only the daemon program bearer."
+cause   = "tenant::resolve needs a session Token authenticated from a full SessionCredential (tenant, session id, token id, generation); the program bearer names no session, and MCP authorizes in-process from its binding's session token file instead of over HTTP."
+do      = "Before building an HTTP route that must run under tenant control, fix how the caller presents its session credential and which tenant::Surface it maps to; the SDK transports send a single Authorization header."

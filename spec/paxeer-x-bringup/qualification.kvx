@@ -929,3 +929,11 @@ symbol     = "mcp_enrolment"
 observed   = "The daemon's full-mode MCP enrolment requires LAYERX_AGENT_MCP_AGENT_DID (resolved through the human authority), SCOPES, ACTIVITY_TYPES, LIMIT_*, EXPIRY_SEQUENCE, CORE_SEQUENCE, POLICY_VERSION, OPENING_CLIENT and PEER_UID; the spec fixes only the binding root /data/layerx/mcp."
 assumption = "Which agent DID and tenant the MCP session binds, its scopes, activity types, limit and expiry need a ruling before material.py can write them without a placeholder."
 severity   = "blocker"
+
+[observation.3.9.1]
+task       = "3.9"
+file       = "agent/crates/layerx-agentd/src/main.rs"
+symbol     = "serve"
+observed   = "tenant::resolve authorizes only a session Token authenticated from a SessionCredential (tenant, session_id, 32-byte token_id, generation), while HttpProductionTransport sends the envelope with one Authorization: Bearer value and the program listener checks the daemon program bearer; neither the agent-api schema nor the tree defines how an /rpc caller presents its session credential, and tenant::Surface has no variant for an HTTP SDK or JVM caller."
+assumption = "Nothing was implemented; the task stays in_progress until the owner fixes the /rpc credential (encoding and header) and the Surface value, then the whole task is built in one pass."
+severity   = "blocker"
