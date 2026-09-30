@@ -25,6 +25,8 @@ RUN CARGO_TARGET_DIR=/src/.lane-target cargo build --locked --manifest-path inte
 RUN cargo build --locked --release --manifest-path human/Cargo.toml -p layerx-human-service -p layerx-human-kms -p layerx-explorer-index --bins
 RUN cargo build --locked --release --manifest-path agent/Cargo.toml -p layerx-agentd --bin layerx-agentd -p layerx-mcp --bin layerx-mcp
 RUN cargo build --locked --release --manifest-path human/Cargo.toml -p layerx-human-identity-provider -p layerx-human-security-provider -p layerx-human-movement-provider --bins
+# The relay archive origin of docker/kernel/init.sh (task 4.6): its codec.
+RUN make LXP_REVISION="$LXP_REVISION" layerx-archive-codec && test -x build/bin/layerx-archive-codec
 
 FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -70,5 +72,12 @@ COPY platform/hosted/human/provision.py platform/hosted/human/owner_native.py pl
      platform/hosted/human/onboarding_material.py platform/hosted/human/material.py \
      platform/hosted/human/recipient_binding.py platform/hosted/human/recipient_check.py /usr/local/lib/layerx-human/
 COPY --chmod=0555 docker/human-service/entrypoint.sh /usr/local/bin/human-entrypoint
+# The relay archive origin of docker/kernel/init.sh (task 4.6): the codec, the
+# runtime modules and install.sh --config-only that renders its config.
+COPY --from=build /src/build/bin/layerx-archive-codec /usr/local/bin/layerx-archive-codec
+COPY --from=build /src/platform/relay_archive/__init__.py /src/platform/relay_archive/runtime.py \
+     /src/platform/relay_archive/store.py /src/platform/relay_archive/protocol.py \
+     /src/platform/relay_archive/forward.py /src/platform/relay_archive/peers.py /opt/layerx/relay_archive/
+COPY --from=build --chmod=0555 /src/platform/relay_archive/install.sh /opt/layerx/relay_archive/install.sh
 COPY --chmod=0555 docker/kernel/init.sh /usr/local/bin/kernel-init
 ENTRYPOINT ["/usr/local/bin/kernel-init"]
