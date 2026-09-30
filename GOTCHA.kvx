@@ -1271,3 +1271,39 @@ area    = "spec-tooling"
 symptom = "cg spec implemented refuses a task whose touched data file changed in the worktree, reporting no matching change, while the graph database is busy with another lane's index."
 cause   = "With the refresh skipped the check reads the last completed index, which knows nothing of uncommitted edits to files it does not parse."
 do      = "Treat the refusal like gotcha 104: record it, set the status line by hand, remove any spec.kvx.lock and let the manager re-run the tool after the merge."
+
+[gotcha.209]
+area    = "spec"
+symptom = "cg spec start refuses a task with unmet requires even when it is dispatched deliberately ahead of them for its build side."
+cause   = "start enforces the requires graph and has no override for build-side work against a parallel lane."
+do      = "Set the status line to in_progress by hand, delete spec.kvx.lock, and record the refusal as an observation."
+
+[gotcha.210]
+area    = "bringup"
+symptom = "A check-live function with set -u dies with 'unbound variable' when an array declared by name only is empty."
+cause   = "local -a name declares without assigning, and bash before 5.2 treats \"${!name[@]}\" of an unset array as unbound."
+do      = "Declare arrays as local -a name=() in check-live functions."
+
+[gotcha.211]
+area    = "bringup"
+symptom = "A script piped to sh -s with data appended after it can lose the data to a cat inside the script."
+cause   = "The shell reads its script from stdin in blocks, so trailing bytes may already be consumed before cat runs."
+do      = "Embed the data in the script as a quoted variable instead of appending it to stdin."
+
+[gotcha.212]
+area    = "rpc"
+symptom = "The public RPC names answer a request whose Host header is a loopback address and port."
+cause   = "Their nginx serves by SNI and does not reject an unmatched Host header."
+do      = "A loopback socat hop to port 443 with the name as SNI needs no vhost change for a boundary that sends Host 127.0.0.1:PORT."
+
+[gotcha.213]
+area    = "bringup-probe"
+symptom = "A live probe needs a daemon's bearer inside a Fly machine, but no task has fixed the file path the bearer is materialised to."
+cause   = "The daemon takes the bearer as an environment variable and the init that sets it is written by another task."
+do      = "Read the running daemon's own /proc/<pid>/environ inside the machine (found by its exe name) and keep the bearer in a 0600 temporary file there; never pass it through the ssh console input or the local command line."
+
+[gotcha.214]
+area    = "test"
+symptom = "A fixture test needs a running process that a probe finds by its executable name and whose environment it reads."
+cause   = "The probe matches /proc/<pid>/exe, which a shell function or alias cannot fake."
+do      = "Copy sleep under the expected executable name, start it with the environment the probe reads, and kill it in the test's cleanup trap."

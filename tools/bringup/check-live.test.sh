@@ -5,11 +5,16 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 checker="$root/tools/bringup/check-live.sh"
 work="$(mktemp -d)"
 responder_pid=""
+agentd_pid=""
 
 cleanup() {
 	if [ -n "$responder_pid" ]; then
 		kill "$responder_pid" 2>/dev/null || true
 		wait "$responder_pid" 2>/dev/null || true
+	fi
+	if [ -n "$agentd_pid" ]; then
+		kill "$agentd_pid" 2>/dev/null || true
+		wait "$agentd_pid" 2>/dev/null || true
 	fi
 	rm -rf "$work"
 }
@@ -124,7 +129,7 @@ while [ "$#" -gt 0 ]; do
 		stage=1
 		shift
 		;;
-	--quiet) shift ;;
+	--quiet | --json) shift ;;
 	*) exit 98 ;;
 	esac
 done
@@ -152,6 +157,7 @@ case "$sub" in
 		printf '%s %s\n' "$app" "${line%%=*}" >>"$CHECK_LIVE_TEST_IMPORTS"
 	done
 	;;
+"ips list") printf '%s\n' "${CHECK_LIVE_TEST_IPS:-[]}" ;;
 *) exit 96 ;;
 esac
 SH
@@ -161,7 +167,11 @@ chmod +x "$work/bin/flyctl"
 # fixed head minus the lag CHECK_LIVE_TEST_LAG ("apiN:blocks ...") assigns,
 # fails to connect for the names in CHECK_LIVE_TEST_DOWN, and hands any
 # request without a public https name to the real curl, so the hpx cases
-# reach the loopback registry stand-in below.
+# reach the loopback registry stand-in below. The machine name answers as the
+# agentd boundary does: no client certificate fails the handshake, /healthz
+# and /rpc want the bearer CHECK_LIVE_TEST_AGENT_BEARER in the --config file,
+# and /rpc answers a program.discover of CHECK_LIVE_TEST_AGENT_PROGRAM with
+# CHECK_LIVE_TEST_AGENT_RPC_CODE and CHECK_LIVE_TEST_AGENT_RPC.
 cat >"$work/bin/curl" <<'SH'
 #!/usr/bin/env bash
 set -eu
@@ -178,6 +188,48 @@ printf '%s curl\n' "$name" >>"$CHECK_LIVE_TEST_CALLS"
 case " ${CHECK_LIVE_TEST_DOWN:-} " in
 *" $name "*) exit 7 ;;
 esac
+if [ "$name" = machine ]; then
+	out=/dev/stdout
+	conf=""
+	data=""
+	wout=""
+	cert=0
+	while [ "$#" -gt 0 ]; do
+		case "$1" in
+		--output) out="$2" ;;
+		--config) conf="$2" ;;
+		--data-binary) data="${2#@}" ;;
+		--write-out) wout="$2" ;;
+		--cert) cert=1 ;;
+		esac
+		shift
+	done
+	if [ "$cert" -eq 0 ]; then
+		echo "curl: (56) OpenSSL SSL_read: tlsv13 alert certificate required" >&2
+		exit 56
+	fi
+	code=401
+	body='{"error":"unauthorized"}'
+	if [ -n "$conf" ] && grep -qxF "header = \"Authorization: Bearer $CHECK_LIVE_TEST_AGENT_BEARER\"" "$conf"; then
+		case "$url" in
+		*/healthz)
+			code=200
+			body='{"ready":true}'
+			;;
+		*/rpc)
+			code=400
+			body='{"error":"invalid_request"}'
+			if [ -n "$data" ] && grep -qF "{\"operation\":\"program.discover\",\"request\":{\"program_id\":\"$CHECK_LIVE_TEST_AGENT_PROGRAM\",\"requested_verification_level\":\"sequencer-signed\"}}" "$data"; then
+				code="$CHECK_LIVE_TEST_AGENT_RPC_CODE"
+				body="$CHECK_LIVE_TEST_AGENT_RPC"
+			fi
+			;;
+		esac
+	fi
+	printf '%s' "$body" >"$out"
+	[ -z "$wout" ] || printf '%s' "$code"
+	exit 0
+fi
 case "$url" in
 https://*/?*)
 	body='{"status":"ready"}'
@@ -796,6 +848,82 @@ expect check_live_edge_failing "$work/hosts-good.env" 1 edge -- \
 	"fail machine.paxeer.network mode=stream app=fx-stream-app port=9454 edge=yes presented=none" \
 	"check-live: 5 check(s) failed"
 unset CHECK_LIVE_TEST_DNS CHECK_LIVE_TEST_DIFFER
+
+# The paxeer-boundary case reads the kernel machine through the flyctl
+# stand-in, which runs no layerx-paxeer-boundary process and no hop, and the
+# fixture repo carries no search-front.sh to list the serving names.
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_paxeer_boundary_failing "$work/hosts-good.env" 1 paxeer-boundary -- \
+	"fail boundaries app=$kernel count=0" \
+	"fail hops names=unreadable" \
+	"check-live: 2 check(s) failed"
+if [ "$(grep -c "^$kernel [a-z]* ssh console " "$CHECK_LIVE_TEST_CALLS")" -eq 1 ] && grep -qF "$kernel app ssh console sh -c 'sh -s'" "$CHECK_LIVE_TEST_CALLS" && grep -q "^CA='-----BEGIN CERTIFICATE-----" "$CHECK_LIVE_TEST_STDIN"; then
+	echo "ok   check_live_paxeer_boundary_reads_the_kernel_machine_once"
+else
+	echo "FAIL check_live_paxeer_boundary_reads_the_kernel_machine_once: want one sh -s call on $kernel carrying the internal CA"
+	cat "$CHECK_LIVE_TEST_CALLS"
+	failures=$((failures + 1))
+fi
+
+# The agent-public cases run the probe of the fixture tree against the kernel
+# app's fixture machine: its volume holds the agentd-client identity files, a
+# copy of sleep named layerx-agentd stands in for the running daemon with its
+# program bearer and probe program in its environment, and the curl stand-in
+# answers the machine name as the agentd boundary does.
+mkdir -p "$fx/platform/hosted/agentd" "$work/fly/$kernel/app/data/tls/agentd-client" "$work/agentd"
+cp "$root/platform/hosted/agentd/probe.sh" "$fx/platform/hosted/agentd/"
+for file in ca.pem cert.pem key.pem; do
+	printf 'fixture %s\n' "$file" >"$work/fly/$kernel/app/data/tls/agentd-client/$file"
+done
+cp "$(command -v sleep)" "$work/agentd/layerx-agentd"
+CHECK_LIVE_TEST_AGENT_BEARER="fixture-program-bearer-$(openssl rand -hex 16)"
+CHECK_LIVE_TEST_AGENT_PROGRAM="$(openssl rand -hex 32)"
+export CHECK_LIVE_TEST_AGENT_BEARER CHECK_LIVE_TEST_AGENT_PROGRAM
+export CHECK_LIVE_TEST_AGENT_RPC_CODE=200
+export CHECK_LIVE_TEST_AGENT_RPC='{"request_id":"req_fixture","value":{"program_id":"fixture","state":"active"},"verification_status":{"state":"Achieved","level":"SequencerSigned"}}'
+
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_agent_public_no_daemon "$work/hosts-good.env" 1 agent-public -- \
+	"fail ipv4 app=$kernel dedicated=0" \
+	"fail agentd app=$kernel process=none" \
+	"check-live: 2 check(s) failed"
+
+LAYERX_AGENT_PROGRAM_BEARER_TOKEN="$CHECK_LIVE_TEST_AGENT_BEARER" LAYERX_AGENT_PROGRAM_PROBE_ID="$CHECK_LIVE_TEST_AGENT_PROGRAM" \
+	"$work/agentd/layerx-agentd" 600 &
+agentd_pid=$!
+export CHECK_LIVE_TEST_IPS='[{"Type":"shared_v4"},{"Type":"v6"},{"Type":"v4"}]'
+: >"$CHECK_LIVE_TEST_STDIN"
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_agent_public_passing "$work/hosts-good.env" 0 agent-public -- \
+	"pass ipv4 app=$kernel dedicated=1" \
+	"pass agentd app=$kernel process=found" \
+	"pass probe https://machine.paxeer.network:9454 ready=true bearer=enforced client-cert=enforced" \
+	"pass rpc https://machine.paxeer.network:9454/rpc operation=program.discover http=200 request_id=present value=present verification_status=Achieved" \
+	"check-live: all checks passed"
+
+if grep -qF "$CHECK_LIVE_TEST_AGENT_BEARER" "$CHECK_LIVE_TEST_STDIN" "$CHECK_LIVE_TEST_CALLS"; then
+	echo "FAIL check_live_agent_public_bearer_stays_in_machine: the bearer reached the ssh console input or a call line"
+	failures=$((failures + 1))
+else
+	echo "ok   check_live_agent_public_bearer_stays_in_machine"
+fi
+
+export CHECK_LIVE_TEST_IPS='[{"Type":"shared_v4"}]' CHECK_LIVE_TEST_AGENT_RPC_CODE=403
+export CHECK_LIVE_TEST_AGENT_RPC='{"class":"CapabilityRefusal","protocol_result_code":null,"retriability":"NonRetriable","request_id":"req_fixture","reason":"operation_not_granted"}'
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_agent_public_refused "$work/hosts-good.env" 1 agent-public -- \
+	"fail ipv4 app=$kernel dedicated=0" \
+	"pass agentd app=$kernel process=found" \
+	"pass probe https://machine.paxeer.network:9454 ready=true bearer=enforced client-cert=enforced" \
+	"fail rpc https://machine.paxeer.network:9454/rpc operation=program.discover http=403 request_id=present value=absent verification_status=absent" \
+	"check-live: 2 check(s) failed"
+
+rm "$work/fly/$kernel/app/data/tls/agentd-client/key.pem"
+CHECK_LIVE_TEST_DOWN="machine" CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_agent_public_unreachable "$work/hosts-good.env" 1 agent-public -- \
+	"pass agentd app=$kernel process=found" \
+	"fail probe https://machine.paxeer.network:9454 exit=2 probe.sh:" \
+	"fail rpc https://machine.paxeer.network:9454/rpc operation=program.discover transport=curl-7" \
+	"check-live: 3 check(s) failed"
+kill "$agentd_pid" 2>/dev/null || true
+wait "$agentd_pid" 2>/dev/null || true
+agentd_pid=""
+unset CHECK_LIVE_TEST_IPS CHECK_LIVE_TEST_AGENT_RPC CHECK_LIVE_TEST_AGENT_RPC_CODE
 
 # The fleet script shares the host map and the ssh helpers, so its own test
 # runs as the last case, with this test's stand-ins off the PATH.

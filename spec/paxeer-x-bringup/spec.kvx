@@ -423,7 +423,7 @@ reqs       = ["6.4"]
 
 [task.1.7]
 title      = "Run two Paxeer boundaries in the kernel machine, each fronting a different serving RPC name"
-status     = "pending"
+status     = "implemented"
 wave       = 1
 requires   = ["1.5", "0.5"]
 do_1       = "Run two Paxeer boundary processes under docker/kernel/init.sh, fronting two different serving RPC names of [decision] host_roles that the rpc-nodes subcommand shows within ten blocks of the head, never the name served from a validator host, each through its own loopback socat hop to port 443 of its name with the system CA file and the name as SNI, with LAYERX_PAXEER_CHAIN_ID 125 and TLS under the internal CA with the loopback SANs issued through tools/bringup/ca.sh; the pod's paxeer relay dials the first."
@@ -665,7 +665,7 @@ reqs       = ["11.4"]
 
 [task.3.10]
 title      = "Publish agentd's mTLS surface at machine.paxeer.network through a TCP passthrough of the kernel app"
-status     = "pending"
+status     = "implemented"
 wave       = 3
 requires   = ["3.6", "3.9", "0.9"]
 do_1       = "Give human/wallet/deploy/human.toml a [[services]] TCP passthrough on public port 9454 to the agentd boundary's [::]:9454 inside the machine, allocate a dedicated IPv4 for the app with flyctl ips allocate-v4, deploy it and register machine.paxeer.network on the edge with tools/bringup/edge.sh add machine.paxeer.network <app> 9454 stream, which passes port 9454 through unchanged to that IPv4."
