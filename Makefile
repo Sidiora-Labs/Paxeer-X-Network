@@ -2314,6 +2314,11 @@ human-test-hosted-provisioning:
 	LAYERX_HUMAN_IDENTITY_PROVIDER_BIN=$(HUMAN_IDENTITY_PROVIDER) \
 		sh $(CURDIR)/tools/runtime/run-with-clock.sh python3 -m pytest platform/hosted/human -q
 
+.PHONY: human-test-provider-probe
+human-test-provider-probe:
+	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(HUMAN_CARGO) test --manifest-path $(HUMAN_MANIFEST) --locked \
+		-p layerx-human-identity-provider -p layerx-human-security-provider -p layerx-human-movement-provider --test probe
+
 human-test-unit:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(HUMAN_CARGO) test --manifest-path $(HUMAN_MANIFEST) --locked --workspace --lib
 
