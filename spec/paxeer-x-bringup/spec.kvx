@@ -410,7 +410,7 @@ reqs       = ["6.3"]
 
 [task.1.6]
 title      = "Prove the value loop through layerxctl: a SEND over the LNI, batch evidence at the replica and a checkpoint on chain"
-status     = "in_progress"
+status     = "pending"
 wave       = 1
 requires   = ["1.4"]
 do_1       = "Write tools/bringup/value-loop.sh that runs inside the kernel app's machine through flyctl ssh console: layerxctl submit of one SEND between two funded accounts over the LNI, layerxctl read-state showing the new balances, the replica's batch document carrying the activity, and eth_call statusOf on the anchor precompile returning submitted or final for a checkpoint at or after that batch."
