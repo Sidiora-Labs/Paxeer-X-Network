@@ -2598,6 +2598,103 @@ unset CHECK_LIVE_TEST_LEGS CHECK_LIVE_INTEROP_ORIGIN LAYERX_RAMP_URL LAYERX_RAMP
 unset LAYERX_RAMP_ON_QUOTE_ID LAYERX_RAMP_OFF_QUOTE_ID LAYERX_RAMP_OFF_GRANT_JSON LAYERX_RAMP_ON_ACCOUNT_SEQUENCE
 unset LAYERX_RAMP_OFF_RECEIVER_SEQUENCE CHECK_LIVE_INTEROP_ADAPTERS_CUSTOMER_TOKEN_FILE CHECK_LIVE_INTEROP_ADAPTERS_OPERATOR_TOKEN_FILE
 
+# The xweb-attestors cases: four fixture attestor apps whose tomls sit in the
+# fixture repository, a socat stand-in that answers each loopback port's
+# /health request with 200 unless CHECK_LIVE_TEST_XWEB_DOWN lists the port,
+# and an ssh stand-in ahead of the harness one that answers the validator
+# host unit count with CHECK_LIVE_TEST_XWEB_UNITS and the attestor listener
+# count with CHECK_LIVE_TEST_XWEB_LISTENERS for the up-* destinations, so the
+# validators cases see every remote port unreachable and exit 1.
+mkdir -p "$fx/interop/deploy/x-websearch"
+for n in 1 2 3 4; do
+	printf 'app = "%s"\n' "$(fx_app "interop/deploy/x-websearch/attestor-$n.toml")" >"$fx/interop/deploy/x-websearch/attestor-$n.toml"
+done
+xweb1="$(fx_app interop/deploy/x-websearch/attestor-1.toml)"
+xweb2="$(fx_app interop/deploy/x-websearch/attestor-2.toml)"
+xweb4="$(fx_app interop/deploy/x-websearch/attestor-4.toml)"
+mkdir -p "$work/xweb-bin"
+cat >"$work/xweb-bin/socat" <<'SH'
+#!/usr/bin/env bash
+set -eu
+port="${*: -1}"
+port="${port##*:}"
+cat >/dev/null
+case " ${CHECK_LIVE_TEST_XWEB_DOWN:-} " in
+*" $port "*) exit 1 ;;
+esac
+printf 'HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\nok'
+SH
+cat >"$work/xweb-bin/ssh" <<'SH'
+#!/usr/bin/env bash
+set -eu
+last="${*: -1}"
+dest="${*: -2:1}"
+# ssh -G resolves a fixture destination to an address no connect reaches.
+if [ "$1" = -G ]; then
+	echo "hostname 256.0.0.1"
+	exit 0
+fi
+case "$last" in
+*'"x-websearch*"'* | *'sport = :8480'*)
+	printf '%s %s\n' "$dest" "$last" >>"$CHECK_LIVE_TEST_CALLS"
+	case "$dest" in
+	up-*) ;;
+	*) exit 255 ;;
+	esac
+	case "$last" in
+	*x-websearch*) echo "${CHECK_LIVE_TEST_XWEB_UNITS:-0}" ;;
+	*) echo "${CHECK_LIVE_TEST_XWEB_LISTENERS:-0}" ;;
+	esac
+	exit 0
+	;;
+esac
+exec "$CHECK_LIVE_TEST_HARNESS_SSH" "$@"
+SH
+chmod +x "$work/xweb-bin/socat" "$work/xweb-bin/ssh"
+export CHECK_LIVE_TEST_HARNESS_SSH="$work/bin/ssh"
+xweb_machine='[{"state":"started","region":"ams","config":{"mounts":[{"volume":"vol_fx"}]}}]'
+{ cat "$work/hosts-good.env"; echo "XWEB_ATTESTORS_ON_FLY=yes"; } >"$work/hosts-xweb-fly.env"
+sed 's/^VALIDATOR_HOSTS=.*/VALIDATOR_HOSTS="down-validator-a"/' "$work/hosts-good.env" >"$work/hosts-xweb-down.env"
+
+CHECK_LIVE_TEST_MACHINES="$xweb_machine" CHECK_LIVE_TEST_IPS='[]' CHECK_LIVE_TEST_PROGRAM="$fx_checker" PATH="$work/xweb-bin:$PATH" expect check_live_xweb_attestors_passing "$work/hosts-good.env" 0 xweb-attestors -- \
+	"pass machines app=$xweb1 machines=1 started=1 volumes=1" \
+	"pass public-ips app=$xweb1 count=0" \
+	"pass health app=$xweb1 http=200" \
+	"pass hop app=$xweb1 peer=$xweb2 port=8492 http=200" \
+	"pass hop app=$xweb4 peer=$xweb1 port=8491 http=200" \
+	"pass VALIDATOR_HOSTS[0] x-websearch-units=0" \
+	"pass VALIDATOR_HOSTS[1] x-websearch-units=0" \
+	"check-live: all checks passed"
+
+CHECK_LIVE_TEST_XWEB_DOWN="8480 8493" CHECK_LIVE_TEST_XWEB_UNITS=2 CHECK_LIVE_TEST_MACHINES='[{"state":"stopped","config":{"mounts":[]}}]' CHECK_LIVE_TEST_IPS='[{"address":"x","type":"v4"}]' CHECK_LIVE_TEST_PROGRAM="$fx_checker" PATH="$work/xweb-bin:$PATH" expect check_live_xweb_attestors_failing "$work/hosts-good.env" 1 xweb-attestors -- \
+	"fail machines app=$xweb1 machines=1 started=0 volumes=0" \
+	"fail public-ips app=$xweb1 count=1" \
+	"fail health app=$xweb1 http=none" \
+	"fail hop app=$xweb1 peer=$(fx_app interop/deploy/x-websearch/attestor-3.toml) port=8493 http=none" \
+	"pass hop app=$xweb1 peer=$xweb2 port=8492 http=200" \
+	"fail VALIDATOR_HOSTS[0] x-websearch-units=2" \
+	"check-live: 17 check(s) failed"
+
+mv "$fx/interop/deploy/x-websearch/attestor-2.toml" "$work/attestor-2.toml"
+CHECK_LIVE_TEST_MACHINES="$xweb_machine" CHECK_LIVE_TEST_IPS='[]' CHECK_LIVE_TEST_PROGRAM="$fx_checker" PATH="$work/xweb-bin:$PATH" expect check_live_xweb_attestors_missing_toml "$work/hosts-xweb-down.env" 1 xweb-attestors -- \
+	"fail attestor-2 toml=absent" \
+	"pass hop app=$xweb1 peer=attestor-2 port=8492 http=200" \
+	"fail VALIDATOR_HOSTS[0] x-websearch-units ssh=255" \
+	"check-live: 2 check(s) failed"
+mv "$work/attestor-2.toml" "$fx/interop/deploy/x-websearch/attestor-2.toml"
+
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" PATH="$work/xweb-bin:$PATH" expect check_live_validators_after_the_move "$work/hosts-xweb-fly.env" 1 validators -- \
+	"pass VALIDATOR_HOSTS[0] listeners-8480-8481=0" \
+	"pass VALIDATOR_HOSTS[1] listeners-8480-8481=0"
+if grep -q '/health' "$CHECK_LIVE_TEST_CALLS"; then
+	echo "FAIL check_live_validators_after_the_move_skips_health: want no /health request over ssh once the attestors run on Fly"
+	failures=$((failures + 1))
+fi
+
+CHECK_LIVE_TEST_XWEB_LISTENERS=1 CHECK_LIVE_TEST_PROGRAM="$fx_checker" PATH="$work/xweb-bin:$PATH" expect check_live_validators_listener_left "$work/hosts-xweb-fly.env" 1 validators -- \
+	"fail VALIDATOR_HOSTS[0] listeners-8480-8481=1" \
+	"fail VALIDATOR_HOSTS[1] listeners-8480-8481=1"
+
 # The fleet script shares the host map and the ssh helpers, so its own test
 # runs as the last case, with this test's stand-ins off the PATH.
 status=0

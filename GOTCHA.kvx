@@ -1613,3 +1613,9 @@ area    = "bringup"
 symptom = "Two check-live harness runs on one box fail cases at random, the flyctl and curl stand-ins and the CA cases among them."
 cause   = "Concurrent runs on one box share host state the stand-ins and the CA cases rely on and disturb each other."
 do      = "The harness takes flock on /run/lock/check-live-harness for its whole run; a second run waits instead of racing, so never bypass the lock."
+
+[gotcha.266]
+area    = "bringup"
+symptom = "A check-live harness run inside a capped tool call ends with exit 143 and an empty log, never having run a case."
+cause   = "The harness waits on its flock while another lane's run holds it, and the caller's timeout kills it during the wait."
+do      = "Run the harness in the background or with no outer timeout shorter than a full queued run; an empty log with exit 143 is no gate result."

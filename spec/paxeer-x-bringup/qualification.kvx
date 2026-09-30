@@ -1447,3 +1447,11 @@ symbol     = "check_kernel_node"
 observed   = "bash tools/bringup/check-live.test.sh exit 1 (.logs/harness.log): check_live_kernel_node_no_kernel_image passes, check_live_kernel_node_passing and _one_failing read every value absent after one repair cycle; 21 other cases fail identically on the unmodified tree (rpc-nodes, rpc-placement, edge, agent-public, gas, internal) and are unrelated."
 assumption = "The kernel-node fixture read times out or fails inside the flyctl stand-in; left for the next cycle rather than weakened."
 severity   = "warning"
+
+[observation.4.23.1]
+task       = "4.23"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_xweb_attestors"
+observed   = "timeout 15m tools/bringup/check-live.sh xweb-attestors exit 1 (.logs/verify.log): the four attestor apps do not exist yet (machines, public-ips, health and hop read none) and both validator hosts still run two x-websearch units each."
+assumption = "Deploy-side precondition: the gate passes once the handoff's slot-by-slot migration runs; the validator-host removal waits on the owner's sealed offline copy of the four attestor keys."
+severity   = "info"
