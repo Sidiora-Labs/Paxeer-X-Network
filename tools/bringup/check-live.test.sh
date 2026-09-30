@@ -172,6 +172,9 @@ case "$sub" in
 	command="${command//\/data\//$root/$group/data/}"
 	command="${command//\/run\/secrets\//$root/secrets/}"
 	command="${command//\/run\/layerx\//$root/$group/run/layerx/}"
+	command="${command//\/var\/lib\//$root/$group/var/lib/}"
+	command="${command//\/usr\/local\/bin\//$root/$group/usr/local/bin/}"
+	command="${command//\/run\/human-material/$root/$group/run/human-material}"
 	tee -a "$CHECK_LIVE_TEST_STDIN" | bash -c "$command"
 	;;
 "secrets import")
@@ -575,7 +578,7 @@ CHECK_LIVE_TEST_TIMEOUT=1 expect check_live_hosts_timeout "$work/hosts-hang.env"
 # <PREFIX>_CERT.
 fx="$work/repo"
 mkdir -p "$fx/tools/bringup"
-cp "$root/tools/bringup/check-live.sh" "$root/tools/bringup/ca.sh" "$fx/tools/bringup/"
+cp "$root/tools/bringup/check-live.sh" "$root/tools/bringup/ca.sh" "$root/tools/bringup/human-state-preserve.sh" "$fx/tools/bringup/"
 ca="$fx/tools/bringup/ca.sh"
 fx_checker="$fx/tools/bringup/check-live.sh"
 fx_app() {
@@ -1763,6 +1766,76 @@ CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_ramp_down "$work/hosts-g
 unset CHECK_LIVE_TEST_DOWN CHECK_LIVE_TEST_DNS CHECK_LIVE_TEST_DIFFER CHECK_LIVE_TEST_MACHINES
 unset LAYERX_RAMP_CUSTOMER_TOKEN LAYERX_RAMP_OPERATOR_URL LAYERX_RAMP_OPERATOR_TOKEN LAYERX_RAMP_ON_QUOTE_ID
 unset LAYERX_RAMP_OFF_QUOTE_ID LAYERX_RAMP_OFF_GRANT_JSON LAYERX_RAMP_ON_ACCOUNT_SEQUENCE LAYERX_RAMP_OFF_RECEIVER_SEQUENCE
+
+# The human state preservation round trip without Fly: export from a fixture
+# old machine whose serving process is a copy of sleep that the export stops,
+# import into a fixture kernel volume, verify, and each refusal.
+preserve="$fx/tools/bringup/human-state-preserve.sh"
+old="$work/preserve-old/$kernel/app"
+new="$work/preserve-new/$kernel/app"
+mkdir -p "$old/var/lib/layerx/human/store/a" "$old/var/lib/layerx/human/custody" "$old/data/human-state/kms" \
+	"$old/data/layerx/keys" "$old/run/human-material" "$old/usr/local/bin" "$new/data" "$work/preserve-empty/$kernel/app"
+printf 'journal\n' >"$old/var/lib/layerx/human/store/a/journal"
+printf 'sealed\n' >"$old/var/lib/layerx/human/custody/keystore"
+printf 'seal\n' >"$old/data/human-state/kms/seal"
+printf 'treasury\n' >"$old/data/layerx/keys/treasury.key"
+printf 'recovery\n' >"$old/run/human-material/recovery-policy.json"
+python3 -c 'import socket, sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "$old/var/lib/layerx/human/components.sock"
+cp "$(command -v sleep)" "$old/usr/local/bin/layerx-human-service"
+LAYERX_HUMAN_STORE_ROOT="$old/var/lib/layerx/human/store" "$old/usr/local/bin/layerx-human-service" 300 &
+serving_pid=$!
+out_dir="$work/preserve-out"
+
+export CHECK_LIVE_TEST_FLY="$work/preserve-old"
+CHECK_LIVE_TEST_PROGRAM="$preserve" expect human_state_preserve_export - 0 export "$out_dir" -- \
+	"pass quiesce app=$kernel stopped=1" \
+	"pass export app=$kernel files=5 manifest=match"
+if [ "$(awk '{print $3}' "/proc/$serving_pid/stat")" = T ] &&
+	grep -q '  human-state/components/store/a/journal$' "$out_dir/manifest.sha256" &&
+	grep -q '  layerx/keys/human-material/recovery-policy.json$' "$out_dir/manifest.sha256" &&
+	! grep -q 'components.sock' "$out_dir/manifest.sha256" && [ "$(stat -c %a "$out_dir/state.tar")" = 600 ]; then
+	echo "ok   human_state_preserve_export_quiesces_and_maps"
+else
+	echo "FAIL human_state_preserve_export_quiesces_and_maps: want the serving process stopped, mapped manifest paths, no socket and a 0600 tar"
+	failures=$((failures + 1))
+fi
+kill -KILL "$serving_pid" 2>/dev/null || true
+wait "$serving_pid" 2>/dev/null || true
+CHECK_LIVE_TEST_PROGRAM="$preserve" expect human_state_preserve_export_twice - 1 export "$out_dir" -- \
+	"already holds an export"
+export CHECK_LIVE_TEST_FLY="$work/preserve-empty"
+CHECK_LIVE_TEST_PROGRAM="$preserve" expect human_state_preserve_export_empty - 1 export "$work/preserve-none" -- \
+	"nothing to preserve"
+[ ! -e "$work/preserve-none/state.tar" ] && [ ! -e "$work/preserve-none/manifest.sha256" ] ||
+	{ echo "FAIL human_state_preserve_export_empty_leaves_nothing"; failures=$((failures + 1)); }
+
+export CHECK_LIVE_TEST_FLY="$work/preserve-new"
+CHECK_LIVE_TEST_PROGRAM="$preserve" expect human_state_preserve_import - 0 import "$out_dir" -- \
+	"pass import app=$kernel files=5" \
+	"pass verify app=$kernel files=5 sha256=match owners=match"
+if [ "$(stat -c '%u:%g %a' "$new/data/human-state/components")" = "4020:4020 700" ] &&
+	[ "$(stat -c '%u:%g %a' "$new/data/human-state/kms")" = "4026:4020 700" ] &&
+	[ "$(stat -c '%u:%g %a' "$new/data/layerx/keys/human-material")" = "0:4020 750" ] &&
+	[ ! -e "$new/data/human-state/components/components.sock" ]; then
+	echo "ok   human_state_preserve_import_owners"
+else
+	echo "FAIL human_state_preserve_import_owners: want components 4020:4020 700, kms 4026:4020 700, human-material 0:4020 750 and no socket"
+	failures=$((failures + 1))
+fi
+CHECK_LIVE_TEST_PROGRAM="$preserve" expect human_state_preserve_import_twice - 1 import "$out_dir" -- \
+	"already exists under /data"
+mkdir "$new/data/human-state/identity"
+CHECK_LIVE_TEST_PROGRAM="$preserve" expect human_state_preserve_verify_owner - 1 verify "$out_dir" -- \
+	"another owner than the init expects"
+rmdir "$new/data/human-state/identity"
+printf 'changed\n' >"$new/data/human-state/components/store/a/journal"
+CHECK_LIVE_TEST_PROGRAM="$preserve" expect human_state_preserve_verify_mismatch - 1 verify "$out_dir" -- \
+	"differs from $out_dir/manifest.sha256"
+CHECK_LIVE_TEST_PROGRAM="$preserve" expect human_state_preserve_verify_no_export - 1 verify "$work/preserve-none" -- \
+	"holds no export"
+CHECK_LIVE_TEST_PROGRAM="$preserve" expect human_state_preserve_usage - 2 export -- \
+	"usage: tools/bringup/human-state-preserve.sh"
+export CHECK_LIVE_TEST_FLY="$fly"
 
 # The fleet script shares the host map and the ssh helpers, so its own test
 # runs as the last case, with this test's stand-ins off the PATH.

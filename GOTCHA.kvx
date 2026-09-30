@@ -1487,3 +1487,9 @@ area    = "bringup"
 symptom = "Adding a row to the ca.sh service table fails ca_issue_every_service and any case that expects that app's toml to be absent from the fixture repository."
 cause   = "The harness pins the row count and creates a fixture toml for every row's app."
 do      = "Raise the pinned count with the row and take the fixture toml aside in a toml-absent case instead of assuming it is missing."
+
+[gotcha.245]
+area    = "bringup"
+symptom = "A Fly command under the check-live harness tests the real box instead of the fixture machine, for example test -d /data or a path under /var/lib."
+cause   = "The flyctl ssh console stand-in rewrites only the prefixes it knows, each with its trailing slash, so /data without a slash and any unlisted root reach the real filesystem."
+do      = "Write machine paths with the trailing slash (/data/, cd /data/) and add a rewrite line to the stand-in for each new machine root a command reads; never match processes by an exe path outside a rewritten root, or the harness can signal real processes on the box."

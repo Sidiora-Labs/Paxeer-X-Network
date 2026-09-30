@@ -411,7 +411,7 @@ do_4       = "The existing machine of the app is a volumeless machine in ams, an
 do_5       = "Add the kernel-app subcommand: the app has exactly one started machine with its volume mounted at /data, the init runs as the entrypoint, and every process of the pod not waiting on the genesis runs under its uid."
 verify_cmd = "timeout 20m tools/bringup/check-live.sh kernel-app"
 symbols    = ["check_kernel_app"]
-touches    = ["docker/kernel/Dockerfile", "docker/kernel/Dockerfile.dockerignore", "docker/kernel/init.sh", "human/wallet/deploy/human.toml", "human/wallet/deploy/env", "tools/bringup/check-live.sh"]
+touches    = ["docker/kernel/Dockerfile", "docker/kernel/Dockerfile.dockerignore", "docker/kernel/init.sh", "human/wallet/deploy/human.toml", "human/wallet/deploy/env", "tools/bringup/check-live.sh", "tools/bringup/human-state-preserve.sh"]
 tests      = ["tools/bringup/check-live.test.sh"]
 reqs       = ["6.3"]
 
