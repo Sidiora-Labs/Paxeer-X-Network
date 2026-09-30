@@ -1008,6 +1008,30 @@ observed   = "The kernel network id is not fixed for this network: the tree's te
 assumption = "The init requires LAYERX_NODE_NETWORK_ID from a staged Fly secret the owner sets; the asset and replica ids stay the tree's values until the owner rules otherwise."
 severity   = "blocker"
 
+[observation.1.5.6]
+task       = "1.5"
+file       = "tools/bringup/human-state-preserve.sh"
+symbol     = "do_4, export, import, verify"
+observed   = "do_4 destroyed the volumeless machine without carrying its writable-root state, while the human README requires retained encrypted state to keep its matching material and its PVC retention covers Kubernetes only; the old image runs only the stateless layerx-human-service front and the app holds no secrets, so the carried set may be empty."
+assumption = "Closed by the export, import and verify subcommands and a cutover that imports before the kernel init first runs and keeps the old machine stopped as rollback until the gates pass; an export that refuses with nothing to preserve is the evidence that no state existed, and nothing is regenerated in its place."
+severity   = "blocker"
+
+[observation.1.5.7]
+task       = "1.5"
+file       = "spec/paxeer-x-bringup/spec.kvx, tools/bringup/check-live.sh"
+symbol     = "task.1.5 do_4, check_kernel_app"
+observed   = "do_4 still orders flyctl scale count 0 before the deploy, and kernel-app fails on machines=2 while the stopped old machine is kept as the rollback the cutover requires."
+assumption = "Ruled and applied: check_kernel_app stays one machine and one volume, the handoff order stands with the pre-destroy checks and verify as the rollback window and kernel-app after the destroy, and do_4 now states that order instead of scale count 0."
+severity   = "warning"
+
+[observation.1.5.8]
+task       = "1.5"
+file       = "tools/bringup/check-live.test.sh"
+symbol     = "check_live_kernel_app_passing, check_live_kernel_app_failing"
+observed   = "timeout 20m bash tools/bringup/check-live.test.sh exited 1 on two consecutive runs with no other harness running (log .logs/check-live-test.log): both kernel-app cases report init status=absent, while all eleven human_state_preserve cases and every other case pass."
+assumption = "The kernel-app command reads only /proc/ and /run/layerx/init/, which this change's stand-in rewrites do not touch, so the failure predates it; it is left for the manager rather than chased here."
+severity   = "warning"
+
 [observation.4.11.1]
 task       = "4.11"
 file       = "tools/bringup/check-live.sh"
