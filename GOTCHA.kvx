@@ -1331,3 +1331,9 @@ area    = "kernel"
 symptom = "A task says layerxctl read-state shows balances and that the loopback replica serves the batch document carrying an activity, and neither is true."
 cause   = "layerxctl read-state answers only the actor's account sequence, state root and epoch; the authority replica serves only batch evidence by batch id and receipt digest; balances and receipt lookups live in the node test probe, and the activities[] batch document is the relay archive's /v1/history/batches/N."
 do      = "Before writing a value-loop probe, pick the real read path (probe balance, LNI receipt lookup, relay archive history) and get it into the task text; do not grep a layerxctl output for a balance."
+
+[gotcha.219]
+area    = "registry"
+symptom = "A registry deployed with only its listener, builder and kernel variables exits at startup before /healthz answers."
+cause   = "Its program outbox builds the event producer client with the mandatory from_environment, not from_environment_if_configured, so the program and webhooks upstream groups are required at start."
+do      = "Configure the LAYERX_EVENTS_PROGRAM_UPSTREAM_* and LAYERX_EVENTS_WEBHOOKS_UPSTREAM_* groups, with reachable mTLS upstreams, before the first registry deploy."

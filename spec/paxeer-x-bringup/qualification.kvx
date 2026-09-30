@@ -881,3 +881,19 @@ symbol     = "value_loop"
 observed   = "layerxctl read-state prints the actor's account sequence and state root, not balances, and has no receipt lookup; the authority replica on loopback 9402 serves only /v1/batches/<batch_id>/receipt-authority?receipt_digest=, while the batch document with activities[] is /v1/history/batches/N of the relay archive, which the kernel pod does not run; balance and receipt-by-activity reads exist only in the node test probe."
 assumption = "do_1 needs a ruling on the interface: extend layerxctl (outside this task's touches) with balance and receipt-lookup reads, ship layerx-node-probe in the kernel image of task 1.5, or read the batch from the relay archive origin."
 severity   = "blocker"
+
+[observation.2.6.1]
+task       = "2.6"
+file       = "platform/hosted/registry/src/event_producer.rs"
+symbol     = "ProgramOutbox::start"
+observed   = "The registry calls Client::from_environment(&[\"program\"]) at startup, so it refuses to start without the LAYERX_EVENTS_PROGRAM_UPSTREAM_* and LAYERX_EVENTS_WEBHOOKS_UPSTREAM_* groups, which task 4.5 adds later against the internal and webhooks apps that no task has created and whose app names the spec does not fix."
+assumption = "None taken: either the registry uses the optional from_environment_if_configured path as other producers do, or task 2.6 carries both groups now with named upstream apps; the owner decides, and the task stays in_progress with no code written."
+severity   = "blocker"
+
+[observation.2.6.2]
+task       = "2.6"
+file       = "platform/hosted/node/deployment.yaml"
+symbol     = "LAYERX_REGISTRY_NODE_AUTHORIZATION"
+observed   = "The registry's node and receipt authority bearer values, its receipt authority replica id and its sequencer trust history file come from the kernel side, whose Fly paths the spec and the tree do not fix, because the kernel app's init that would place the registry-authority and registry-component tokens is not in the tree."
+assumption = "None taken: the owner names where the kernel app keeps those four values, or whether task 2.6 generates them and imports them into both apps."
+severity   = "blocker"
