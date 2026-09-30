@@ -1445,3 +1445,21 @@ area    = "bringup"
 symptom = "A check-live subcommand exits 2 with no output in the harness fixture tree."
 cause   = "It read an optional spec value with sed from a file the fixture tree does not carry, and under set -euo pipefail the failed read ended the script before any check line printed."
 do      = "Guard an optional read with an explicit fallback such as || name=\"\" so an absent file falls through to the next source."
+
+[gotcha.238]
+area    = "bringup"
+symptom = "A Dockerfile COPY of an init script under docker/ fails with file not found although the file is in the tree."
+cause   = "The per-Dockerfile .dockerignore excludes the whole docker directory, so only paths it re-includes with a ! line reach the build context."
+do      = "Add a !docker/<image>/<file> line to that Dockerfile's .dockerignore for every file under docker/ the image copies."
+
+[gotcha.239]
+area    = "bringup"
+symptom = "A harness curl wrapper case sees its next @@ marker line glued to a JSON body and the sed parse finds nothing."
+cause   = "The wrapper ignored -o and wrote the body to standard output, which real curl sends to the -o file."
+do      = "Honour -o (and -w) in every curl stand-in exactly as real curl does before asserting on marker lines."
+
+[gotcha.240]
+area    = "bringup"
+symptom = "A whole block of live-check harness cases fails at once with head=none or transport-style lines."
+cause   = "A merge left a branch of the shared curl stand-in without its closing lines, so the stand-in script is a bash syntax error and every curl through it fails."
+do      = "Run bash -n on the extracted stand-in heredoc after resolving a harness merge before reading individual case failures."

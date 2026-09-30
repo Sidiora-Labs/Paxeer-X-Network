@@ -1419,6 +1419,123 @@ CHECK_LIVE_TEST_DOWN="walletfx" CHECK_LIVE_GATEWAY_TOKEN="$CHECK_LIVE_TEST_WALLE
 rm "$fx/spec/paxeer-x-bringup/spec.kvx"
 unset CHECK_LIVE_TEST_RAILWAY CHECK_LIVE_TEST_MACHINES
 
+# The registry cases put a curl of their own ahead of the stand-in: the
+# registry's public name answers /healthz ready to a request with a client
+# certificate and refuses one without (admits it with
+# CHECK_LIVE_TEST_REGISTRY_ANON=1); the fixture router routerfx answers
+# lx_getProgramEvents from $work/registry-rpc/from-<from_sequence>.json and
+# /readyz with CHECK_LIVE_TEST_REGISTRY_READYZ; anything else goes on to the
+# stand-in.
+registry="$(fx_app platform/hosted/registry/fly.toml)"
+mkdir -p "$work/registry-bin" "$work/registry-rpc"
+cat >"$work/registry-bin/curl" <<'SH'
+#!/usr/bin/env bash
+set -eu
+url=""
+data=""
+wout=""
+out=/dev/stdout
+cert=0
+prev=""
+for arg in "$@"; do
+	case "$prev" in
+	-d) data="$arg" ;;
+	-w) wout="$arg" ;;
+	-o) out="$arg" ;;
+	esac
+	case "$arg" in
+	https://*) url="$arg" ;;
+	--cert) cert=1 ;;
+	esac
+	prev="$arg"
+done
+case "$url" in
+https://index.paxeer.network/*)
+	printf 'index curl\n' >>"$CHECK_LIVE_TEST_CALLS"
+	if [ "$cert" -eq 0 ] && [ "${CHECK_LIVE_TEST_REGISTRY_ANON:-0}" != 1 ]; then
+		echo "curl: (56) OpenSSL SSL_read: tlsv13 alert certificate required" >&2
+		exit 56
+	fi
+	printf '{"status":"ready","service":"program-registry"}' >"$out"
+	[ -z "$wout" ] || printf '%b' "${wout//%\{http_code\}/200}"
+	exit 0
+	;;
+https://routerfx.example.com/rpc)
+	from="$(sed -n 's/.*"from_sequence":\([0-9]*\).*/\1/p' <<<"$data")"
+	printf 'routerfx curl %s\n' "$from" >>"$CHECK_LIVE_TEST_CALLS"
+	cat "$CHECK_LIVE_TEST_REGISTRY_RPC/from-$from.json"
+	exit 0
+	;;
+https://routerfx.example.com/readyz)
+	printf 'routerfx curl readyz\n' >>"$CHECK_LIVE_TEST_CALLS"
+	printf '%s' "$CHECK_LIVE_TEST_REGISTRY_READYZ"
+	[ -z "$wout" ] || printf '%b' "${wout//%\{http_code\}/200}"
+	exit 0
+	;;
+esac
+PATH="${PATH#*registry-bin:}" exec curl "$@"
+SH
+chmod +x "$work/registry-bin/curl"
+export CHECK_LIVE_TEST_REGISTRY_RPC="$work/registry-rpc"
+registry_program="$(printf 'c%.0s' $(seq 64))"
+registry_other="$(printf 'd%.0s' $(seq 64))"
+registry_topic=6c782e7265662e657363726f772e637573746f6479
+printf '{"jsonrpc":"2.0","id":1,"result":{"events":[{"sequence":3,"program_id":"%s","topic":"%s","data":"00"}],"next_sequence":9}}\n' "$registry_other" "$registry_topic" >"$work/registry-rpc/from-0.json"
+printf '{"jsonrpc":"2.0","id":2,"result":{"events":[{"sequence":12,"program_id":"%s","topic":"%s","data":"01"}],"next_sequence":13}}\n' "$registry_program" "$registry_topic" >"$work/registry-rpc/from-9.json"
+printf '{"jsonrpc":"2.0","id":3,"result":{"events":[],"next_sequence":13}}\n' >"$work/registry-rpc/from-13.json"
+registry_ready='{"status":"ready","service":"layerx-gateway","components":{"durable_store":"ready","core_agent_boundary":"ready","independent_receipt_authority":"ready","program_registry":"ready","principal_state_boundary":"unavailable"},"backends":{}}'
+registry_unready="$(sed 's/"program_registry":"ready"/"program_registry":"unavailable"/' <<<"$registry_ready")"
+
+PATH="$work/registry-bin:$PATH" CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_registry_toml_absent "$work/hosts-good.env" 1 registry -- \
+	"fail registry toml=absent" \
+	"check-live: 1 check(s) failed"
+
+printf 'app = "%s"\n' "$registry" >"$fx/platform/hosted/registry/fly.toml"
+PATH="$work/registry-bin:$PATH" CHECK_LIVE_ROUTER_URL=https://routerfx.example.com CHECK_LIVE_TEST_REGISTRY_ANON=1 \
+	CHECK_LIVE_TEST_REGISTRY_READYZ="$registry_unready" \
+	CHECK_LIVE_TEST_MACHINES='[{"state":"stopped","config":{"mounts":[{"path":"/data","volume":"vol_1"}]}}]' \
+	CHECK_LIVE_TEST_IPS='[{"Type":"shared_v4"},{"Type":"v6"}]' \
+	CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_registry_failing "$work/hosts-good.env" 1 registry -- \
+	"fail machines app=$registry machines=1 started=0 volumes=1" \
+	"fail dedicated-ipv4 app=$registry count=0" \
+	"fail healthz url=https://index.paxeer.network/healthz from=$kernel curl=0 http=200 anonymous=admitted" \
+	"fail program-events program=unset want=CHECK_LIVE_REGISTRY_PROGRAM_ID" \
+	"fail router-readyz url=https://routerfx.example.com/readyz http=200 program_registry=unavailable" \
+	"check-live: 5 check(s) failed"
+
+PATH="$work/registry-bin:$PATH" CHECK_LIVE_ROUTER_URL=https://routerfx.example.com CHECK_LIVE_REGISTRY_PROGRAM_ID="$(printf 'e%.0s' $(seq 64))" \
+	CHECK_LIVE_TEST_REGISTRY_READYZ="$registry_ready" \
+	CHECK_LIVE_TEST_MACHINES='[{"state":"started","config":{"mounts":[{"path":"/data","volume":"vol_1"}]}}]' \
+	CHECK_LIVE_TEST_IPS='[{"Type":"v4"},{"Type":"v6"}]' \
+	CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_registry_no_event_of_the_program "$work/hosts-good.env" 1 registry -- \
+	"pass machines app=$registry machines=1 started=1 volumes=1" \
+	"pass dedicated-ipv4 app=$registry count=1" \
+	"pass healthz url=https://index.paxeer.network/healthz from=$kernel http=200 status=ready anonymous=refused" \
+	"fail program-events program=$(printf 'e%.0s' $(seq 64)) events=none next_sequence=13" \
+	"pass router-readyz url=https://routerfx.example.com/readyz http=200 program_registry=ready" \
+	"check-live: 1 check(s) failed"
+
+PATH="$work/registry-bin:$PATH" CHECK_LIVE_ROUTER_URL=https://routerfx.example.com CHECK_LIVE_REGISTRY_PROGRAM_ID="$registry_program" \
+	CHECK_LIVE_TEST_REGISTRY_READYZ="$registry_ready" \
+	CHECK_LIVE_TEST_MACHINES='[{"state":"started","config":{"mounts":[{"path":"/data","volume":"vol_1"}]}}]' \
+	CHECK_LIVE_TEST_IPS='[{"Type":"v4"},{"Type":"v6"}]' \
+	CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_registry_passing "$work/hosts-good.env" 0 registry -- \
+	"pass machines app=$registry machines=1 started=1 volumes=1" \
+	"pass dedicated-ipv4 app=$registry count=1" \
+	"pass healthz url=https://index.paxeer.network/healthz from=$kernel http=200 status=ready anonymous=refused" \
+	"pass program-events program=$registry_program sequence=12" \
+	"pass router-readyz url=https://routerfx.example.com/readyz http=200 program_registry=ready" \
+	"check-live: all checks passed"
+if [ "$(grep -c "^$kernel app ssh console " "$CHECK_LIVE_TEST_CALLS")" -eq 1 ] && [ "$(grep -c '^index curl$' "$CHECK_LIVE_TEST_CALLS")" -eq 2 ] &&
+	grep -qx 'routerfx curl 0' "$CHECK_LIVE_TEST_CALLS" && grep -qx 'routerfx curl 9' "$CHECK_LIVE_TEST_CALLS" &&
+	grep -q "^$registry app machines list" "$CHECK_LIVE_TEST_CALLS" && grep -q "^$registry app ips list" "$CHECK_LIVE_TEST_CALLS"; then
+	echo "ok   check_live_registry_asks_the_kernel_machine_once_and_pages_the_events"
+else
+	echo "FAIL check_live_registry_asks_the_kernel_machine_once_and_pages_the_events: want one kernel ssh call, two healthz requests, pages from 0 and 9, machines and ips of the registry app"
+	cat "$CHECK_LIVE_TEST_CALLS"
+	failures=$((failures + 1))
+fi
+
 # The fleet script shares the host map and the ssh helpers, so its own test
 # runs as the last case, with this test's stand-ins off the PATH.
 status=0

@@ -117,6 +117,28 @@ fresh "$keys/tokens/program-token" 4020:4020 0440 openssl rand -hex 32
 fresh "$keys/tokens/replica-token" 4020:4020 0440 openssl rand -hex 32
 fresh "$keys/checkpoint-submitter/key" 4021:4020 0400 evm_key
 
+# The registry's two bearers, Fly secrets of this app and of the registry app
+# (platform/hosted/registry/fly.toml): the agent boundary reads the node bearer
+# from registry-component/token and the receipt authority the authority bearer
+# from registry-authority/token of LAYERX_AUTHORITY_TOKEN_FILES, where the pod
+# mounted the layerx-program-registry-node-client and
+# layerx-program-registry-authority-client secrets. Neither reaches a service's
+# environment.
+registry_bearer() {
+	local variable=$1 directory=$run/$2
+	if [ -z "${!variable:-}" ]; then
+		log "$variable is unset; the program registry cannot authenticate until its deploy step imports it"
+	else
+		install -d -o 4021 -g 4020 -m 0750 "$directory"
+		printf '%s' "${!variable}" >"$directory/token"
+		chown 4021:4020 "$directory/token"
+		chmod 0440 "$directory/token"
+	fi
+	unset "$variable"
+}
+registry_bearer LAYERX_REGISTRY_NODE_AUTHORIZATION registry-component
+registry_bearer LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION registry-authority
+
 # checkpoint_authority: the guarantor-checkpoint-authority init container.
 checkpoint_authority() {
 	local source=$keys/checkpoint-authority/key.pem target=$layerx/guarantor-submitter/checkpoint-authority.pem

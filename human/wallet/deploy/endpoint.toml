@@ -13,6 +13,7 @@ kill_timeout = "30s"
   LAYERX_GATEWAY_OUTBOUND_CA_DER = "/run/secrets/ca.crt.der"
   LAYERX_GATEWAY_REDIS_USERNAME_FILE = "/run/secrets/redis-username"
   LAYERX_GATEWAY_REDIS_PASSWORD_FILE = "/run/secrets/redis-password"
+  LAYERX_GATEWAY_PROGRAM_REGISTRY_TOKEN_FILE = "/run/secrets/program-registry-token"
 
 [[files]]
   guest_path = "/run/secrets/ca.crt.der"
@@ -25,6 +26,10 @@ kill_timeout = "30s"
 [[files]]
   guest_path = "/run/secrets/redis-password"
   secret_name = "ENDPOINT_REDIS_PASSWORD"
+
+[[files]]
+  guest_path = "/run/secrets/program-registry-token"
+  secret_name = "ENDPOINT_PROGRAM_REGISTRY_TOKEN"
 
 [http_service]
   internal_port = 9443

@@ -1119,3 +1119,27 @@ symbol     = "check-live.test"
 observed   = "One sanity run of the build gate after the handoff edits exited 1 with its output discarded; the next four runs at the same revision passed, and the qualifying run is .logs/build.log exit 0."
 assumption = "A harness case is intermittently flaky; the failing case was not captured and is not hunted by rerunning."
 severity   = "note"
+
+[observation.2.6.3]
+task       = "2.6"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_registry"
+observed   = "At revision 0ea0ce461 plus the lane's changes, timeout 20m tools/bringup/check-live.sh registry exited 1 (log .logs/verify.log): no paxeer-registry machine or dedicated IPv4 exists, index.paxeer.network does not connect, no reference escrow program id is recorded, and the router reports program_registry unavailable."
+assumption = "The deploy side runs the task's deploy handoff in order; the gate is rerun after its last step."
+severity   = "expected"
+
+[observation.2.6.4]
+task       = "2.6"
+file       = "tools/bringup/check-live.test.sh"
+symbol     = "curl stand-in"
+observed   = "At revision 0ea0ce461 the harness's curl stand-in fails bash -n (unexpected end of file: the gas branch lost its exit 0 and fi in the wallet merge), so 21 rpc-nodes, rpc-placement, edge, agent-public, gas, internal and wallet cases fail; the five registry cases, which use their own curl ahead of the stand-in, pass."
+assumption = "Unrelated to this task and left as found; the merge that owns the gas and wallet branches restores the closing lines."
+severity   = "major"
+
+[observation.2.6.5]
+task       = "2.6"
+file       = "programs/sdk/rust/examples/escrow/src/lib.rs"
+symbol     = "emit"
+observed   = "lx_getProgramEvents reads events a program emits; the reference escrow emits its only topic lx.ref.escrow.custody on open and settle calls, never on deployment, so do_4's read-back of the deploy needs an escrow open call whose account, amount and counterparty the spec and the tree do not fix."
+assumption = "None taken for the call: the gate reads that topic for the deployed program's id, and the handoff's step 11 waits for the owner to name the open call."
+severity   = "blocker"
