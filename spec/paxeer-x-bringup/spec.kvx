@@ -489,6 +489,21 @@ reqs = ["6.2"]
 do_1 = "Follow the layerxbridge pattern: CustodyProposal (title, description, messages as Any) in the custody proto package generated through the repository's buf template, registered as governance content, with NewProposalHandler executing MsgUpdateParams, MsgSetAsset, MsgRegisterCheckpoint, MsgSetEmergency and MsgCancelClaim through the keeper's Msg service; ValidateBasic refuses an empty list, a non-custody message and an authority other than the governance module account."
 do_2 = "paxd tx layerxcustody submit-proposal custody <file.json> reads title, description, deposit and messages and is signed by the proposer; the handler is on the governance router beside the bridge handler and the plan v6.11 gates the new content and messages, its height an owner input named in the deploy handoff."
 
+[task.1.11]
+title      = "Restore the preserved human state into the old service shape after the kernel cutover"
+status     = "implemented"
+wave       = 1
+requires   = ["1.5"]
+do_1       = "Add the restore <dir> <machine> subcommand to tools/bringup/human-state-preserve.sh: it rechecks state.tar against manifest.sha256, requires <machine> to be the app's only started machine with one volume, and puts every exported source back at the old machine's path by the export map inverted (human-state/components to /var/lib/layerx/human, layerx/keys/human-material to /run/human-material, the rest under /data) with the tar's owners and modes; every file is checked against the manifest digest at its old path and the old service's /livez answers 200 on its bind port before the rollback counts as verified."
+do_2       = "The old shape comes back as a clone of the old machine (old image and env, the export guarantees its state roots lie under /var/lib/layerx/human) with a new volume: restore stages the components onto the volume while it is mounted at /var/lib/layerx/human-restore and refuses a volume holding anything but lost+found; flyctl machine update --mount-point /var/lib/layerx/human restarts the old service on it, so the state roots persist across every later stop; the second restore run checks the volume, /livez, and puts the remaining sources back onto the root as the old machine held them, reapplied by a rerun after any stop."
+do_3       = "Operator sequence of rollback R1 in the deploy handoff: stop the kernel machine, create the rollback volume in the old machine's region, clone the old machine with the volume at the stage path, restore (stage), move the mount with a machine update, restore again; rollback verified is pass restore app=<app> machine=<machine> files=<n> sha256=match after pass livez, with the old and kernel machines and kernel_data left stopped and PRESERVE_DIR kept."
+do_4       = "Fixture cases in tools/bringup/check-live.test.sh restore the preservation cases' export onto a fixture clone: the stage mapping and mode, the old-path mapping of every source, the livez refusal writing nothing, and the refusals for a missing export, a manifest mismatch, a kernel or second started machine, a stage volume or old path already holding state and a changed volume file."
+verify_cmd = "timeout 15m bash tools/bringup/check-live.test.sh"
+symbols    = ["do_restore", "restore_phase"]
+touches    = ["tools/bringup/human-state-preserve.sh", "tools/bringup/check-live.test.sh"]
+tests      = ["tools/bringup/check-live.test.sh"]
+reqs       = ["6.3"]
+
 [task.2.1]
 title      = "Run the core boundary, the receipt authority and the agent boundary over TLS in the kernel machine"
 status     = "implemented"
