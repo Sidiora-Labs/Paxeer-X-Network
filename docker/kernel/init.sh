@@ -475,7 +475,7 @@ agent_boundary_prepare() {
 
 # shellcheck disable=SC2016 # core.env is read when the service starts
 service core-boundary 4021 \
-	"$run/node/core.env $tls/pending-core/cert.der $tls/pending-core/key.der $tls/pending-core/ca.der $tls/pending-core-admin/cert.der $tls/pending-core-admin/key.der" \
+	"$genesis_files $run/node/core.env $tls/pending-core/cert.der $tls/pending-core/key.der $tls/pending-core/ca.der $tls/pending-core-admin/cert.der $tls/pending-core-admin/key.der" \
 	core_boundary_prepare - -- \
 	env \
 	"LAYERX_CORE_LISTEN=[::]:9443" \
@@ -544,7 +544,7 @@ exec /usr/local/bin/layerx-runtime-clock --runtime-dir '"$run"'/human/authority-
 
 # shellcheck disable=SC2016 # the network name is read when the service starts
 service agent-boundary 4021 \
-	"$run/node/layerxd.lni.sock $tls/agent-boundary/cert.der $tls/agent-boundary/key.der $tls/agent-boundary/ca.der $run/registry-component/token" \
+	"$genesis_files $run/node/layerxd.lni.sock $tls/agent-boundary/cert.der $tls/agent-boundary/key.der $tls/agent-boundary/ca.der $run/registry-component/token" \
 	agent_boundary_prepare - -- \
 	env \
 	"LAYERX_AGENT_BOUNDARY_LISTEN=[::]:9446" \

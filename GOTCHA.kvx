@@ -1769,3 +1769,45 @@ area    = "bringup"
 symptom = "The kernel image cannot run layerx-custody-proof although the genesis profile and the opening credit both need it inside the machine."
 cause   = "It is a Go binary whose source trees the kernel image's dockerignore excludes, and the image's build stage is Rust and C only."
 do      = "Add a pinned Go build stage and the dockerignore exceptions for its trees before relying on custody proofs inside the kernel machine."
+
+[gotcha.292]
+area    = "fleet"
+symptom = "A full public monorepo archive streamed over ssh can exceed a short staging timeout even with ample destination space."
+cause   = "The stream is bounded by the timeout, not by destination space, and a pipeline hides the producer's exit code."
+do      = "Preserve both the producer's and the receiver's exit codes, and prefer an exact-commit fetch into an existing public git base for a separately authorized recovery."
+
+[gotcha.293]
+area    = "fleet"
+symptom = "Checks of HEAD or index activity in a linked worktree read the wrong place."
+cause   = "A linked worktree's .git is a file."
+do      = "Resolve the real git directory with git rev-parse --absolute-git-dir before checking HEAD or index activity."
+
+[gotcha.294]
+area    = "fleet"
+symptom = "A worktree looks safe to delete because git status is clean."
+cause   = "A clean git status omits ignored files; evidence logs, credentials and artifacts live there."
+do      = "Never justify deleting a whole worktree by a clean status."
+
+[gotcha.295]
+area    = "fleet"
+symptom = "A dry run changed state."
+cause   = "It fetched, pruned or mutated something."
+do      = "A dry run must not fetch, prune or mutate anything; it lists only."
+
+[gotcha.296]
+area    = "fleet"
+symptom = "A merge chain on a nearly full box runs out of disk partway."
+cause   = "The fixture harness uses about a quarter of a gigabyte of transient disk per run."
+do      = "Guard free space before each merge, not only before the first."
+
+[gotcha.297]
+area    = "fleet"
+symptom = "Two lanes that each append a whole function or case block at the same insertion point conflict with an empty base."
+cause   = "Both lanes add at the same point, so the merge cannot order the blocks."
+do      = "Keep both blocks in feature-then-lane order and change nothing else, and prove the added-only shape from the index stages (:1 base, :2 ours, :3 theirs) without touching the tree."
+
+[gotcha.298]
+area    = "bringup"
+symptom = "A service whose wait list starts with another service's runtime output reports a plain wait before the genesis."
+cause   = "The wait label comes from the first absent path, and only genesis outputs read as waiting-genesis."
+do      = "Every layerxd-dependent service lists the genesis outputs first so the kernel-app gate reads waiting-genesis."
