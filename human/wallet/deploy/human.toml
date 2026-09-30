@@ -1,14 +1,18 @@
 app = "paxeer-human-service"
 primary_region = "ams"
 kill_signal = "SIGTERM"
-kill_timeout = "30s"
+kill_timeout = "60s"
 
 [build]
-  dockerfile = "docker/human-service/Dockerfile"
+  dockerfile = "docker/kernel/Dockerfile"
+
+[deploy]
+  strategy = "immediate"
 
 [env]
+  LAYERX_NODE_NETWORK_ID = "125"
   LAYERX_HUMAN_LISTENER = "plain"
-  LAYERX_HUMAN_BIND = "0.0.0.0:8080"
+  LAYERX_HUMAN_BIND = "[::]:8080"
   LAYERX_HUMAN_COMPONENT_SOCKET = "/run/layerx/human/components.sock"
   LAYERX_HUMAN_WEB_ORIGIN = "https://app.paxportwallet.com,https://paxportwallet.com,https://www.paxportwallet.com,https://paxport-production.up.railway.app"
   LAYERX_HUMAN_REQUESTS_PER_MINUTE = "240"
@@ -17,6 +21,48 @@ kill_timeout = "30s"
   LAYERX_HUMAN_MAX_BODY_BYTES = "1048576"
   LAYERX_HUMAN_MAX_CONNECTIONS = "1024"
   LAYERX_HUMAN_IO_DEADLINE_SECONDS = "15"
+  LAYERX_EVENTS_JOURNEY_UPSTREAM_URL = "https://journeys.process.paxeer-internal.internal:9443"
+  LAYERX_EVENTS_JOURNEY_UPSTREAM_CA_DER = "/data/tls/human-event-client/ca.der"
+  LAYERX_EVENTS_JOURNEY_UPSTREAM_TOKEN_FILE = "/run/secrets/events-journey-token"
+  LAYERX_EVENTS_JOURNEY_UPSTREAM_CLIENT_IDENTITY_PKCS12 = "/data/tls/human-event-client/identity.p12"
+  LAYERX_EVENTS_JOURNEY_UPSTREAM_CLIENT_IDENTITY_PASSWORD_FILE = "/data/tls/human-event-client/password"
+  LAYERX_EVENTS_APPROVAL_UPSTREAM_URL = "https://approvals.process.paxeer-internal.internal:9443"
+  LAYERX_EVENTS_APPROVAL_UPSTREAM_CA_DER = "/data/tls/human-event-client/ca.der"
+  LAYERX_EVENTS_APPROVAL_UPSTREAM_TOKEN_FILE = "/run/secrets/events-approval-token"
+  LAYERX_EVENTS_APPROVAL_UPSTREAM_CLIENT_IDENTITY_PKCS12 = "/data/tls/human-event-client/identity.p12"
+  LAYERX_EVENTS_APPROVAL_UPSTREAM_CLIENT_IDENTITY_PASSWORD_FILE = "/data/tls/human-event-client/password"
+  LAYERX_EVENTS_WEBHOOKS_UPSTREAM_URL = "https://ingress.process.paxeer-webhooks.internal"
+  LAYERX_EVENTS_WEBHOOKS_UPSTREAM_CA_DER = "/data/tls/human-event-client/ca.der"
+  LAYERX_EVENTS_WEBHOOKS_UPSTREAM_TOKEN_FILE = "/run/secrets/events-webhooks-token"
+  LAYERX_EVENTS_WEBHOOKS_UPSTREAM_CLIENT_IDENTITY_PKCS12 = "/data/tls/human-event-client/identity.p12"
+  LAYERX_EVENTS_WEBHOOKS_UPSTREAM_CLIENT_IDENTITY_PASSWORD_FILE = "/data/tls/human-event-client/password"
+
+[[files]]
+  guest_path = "/etc/layerx/trust/ca.crt"
+  secret_name = "LAYERX_INTERNAL_CA_ROOT"
+
+# The journey and approval event producers of the human components: their
+# client identity and internal CA root are the human-event-client identity
+# tools/bringup/ca.sh issues on the volume; the producer tokens of the two event
+# sources and the webhooks source trigger token are Fly secrets.
+[[files]]
+  guest_path = "/run/secrets/events-journey-token"
+  secret_name = "HUMAN_EVENTS_JOURNEY_TOKEN"
+
+[[files]]
+  guest_path = "/run/secrets/events-approval-token"
+  secret_name = "HUMAN_EVENTS_APPROVAL_TOKEN"
+
+[[files]]
+  guest_path = "/run/secrets/events-webhooks-token"
+  secret_name = "HUMAN_EVENTS_WEBHOOKS_TOKEN"
+
+[[mounts]]
+  source = "kernel_data"
+  destination = "/data"
+  initial_size = "50gb"
+  scheduled_snapshots = true
+  snapshot_retention = 14
 
 [http_service]
   internal_port = 8080
@@ -38,8 +84,23 @@ kill_timeout = "30s"
     path = "/livez"
     protocol = "http"
 
+[[services]]
+  internal_port = 9454
+  protocol = "tcp"
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [[services.ports]]
+    port = 9454
+
+  [[services.tcp_checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "30s"
+
 [[vm]]
-  size = "shared-cpu-2x"
-  memory = "2gb"
-  cpus = 2
-  cpu_kind = "shared"
+  size = "performance-4x"
+  memory = "16gb"
+  cpus = 4
+  cpu_kind = "performance"

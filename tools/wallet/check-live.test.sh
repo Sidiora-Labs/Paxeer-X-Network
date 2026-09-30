@@ -153,7 +153,7 @@ const server = http.createServer((request, response) => {
   const human = request.url.match(/^\/human_([a-z]+)(\/livez|\/v1\/intents\/plan)$/);
   if (human) {
     const [, profile, path] = human;
-    if (!["good", "noorigin", "crash", "dead"].includes(profile)) {
+    if (!["good", "noorigin", "crash", "dead", "shapeless", "refused"].includes(profile)) {
       response.writeHead(404, { "content-type": "application/json" });
       response.end('{"ok":false}');
       return;
@@ -188,8 +188,62 @@ const server = http.createServer((request, response) => {
         response.end("internal error");
         return;
       }
-      response.writeHead(401, headers);
-      response.end(envelope(false, { error: { code: "unauthenticated", copy_key: "error.session.required", retry: "structural" } }));
+      if (request.headers.authorization === undefined) {
+        response.writeHead(401, headers);
+        response.end(envelope(false, { error: { code: "unauthenticated", copy_key: "error.session.required", retry: "structural" } }));
+        return;
+      }
+      let text = "";
+      request.on("data", (chunk) => (text += chunk));
+      request.on("end", () => {
+        let body = null;
+        try {
+          body = JSON.parse(text);
+        } catch {}
+        const deadline = Date.parse(body?.constraints?.deadline ?? "");
+        if (
+          request.headers.authorization !== "Bearer check-live-assertion" ||
+          profile === "refused"
+        ) {
+          response.writeHead(403, headers);
+          response.end(envelope(false, { error: { code: "forbidden", copy_key: "error.request.forbidden", retry: "final" } }));
+          return;
+        }
+        if (
+          body?.asset_id !== "ab".repeat(32) ||
+          body?.destination?.account !== "agent:did:layerx:check-live:main" ||
+          !(deadline > Date.now())
+        ) {
+          response.writeHead(400, headers);
+          response.end(envelope(false, { error: { code: "invalid_request", copy_key: "error.request.invalid", retry: "final" } }));
+          return;
+        }
+        const leg = (index, mechanism, domain, source, destination) => ({
+          index,
+          mechanism,
+          domain,
+          source,
+          destination,
+          money: body.money,
+          fee: { amount: "1", currency: body.money.currency },
+        });
+        const home = { kind: "human", account: "agent:did:layerx:alice:main" };
+        const result = {
+          plan_digest: "4b".repeat(32),
+          journey_kind: "deposit",
+          total_fee: { amount: "2", currency: body.money.currency },
+          legs: [
+            leg(0, "paxeer-custody-deposit", "paxeer", body.source, home),
+            leg(1, "transfer", "layerx", home, body.destination),
+          ],
+          signing_requirements: [
+            { leg_index: 1, action_key: "5c".repeat(32), signing_context: "6d".repeat(32), authority: "human-primary" },
+          ],
+        };
+        if (profile === "shapeless") delete result.signing_requirements;
+        response.writeHead(200, headers);
+        response.end(envelope(true, { result }));
+      });
       return;
     }
     response.writeHead(404, headers);
@@ -583,6 +637,74 @@ if [ "$status" -eq 1 ] && grep -q '^fail live transport ' <<<"$output" &&
 	echo "ok   check_live_human_unreachable"
 else
 	echo "FAIL check_live_human_unreachable: want exit 1 with transport failures, got exit $status"
+	printf '%s\n' "$output"
+	failures=$((failures + 1))
+fi
+
+expect_human_session() {
+	local name="$1" profile="$2" assertion="$3" want_status="$4" output status=0
+	shift 4
+	output="$(CHECK_LIVE_HUMAN_BASE="http://127.0.0.1:$port/human_$profile" CHECK_LIVE_HUMAN_ORIGIN="https://app.wallet.example" CHECK_LIVE_HUMAN_ASSERTION="$assertion" CHECK_LIVE_HUMAN_ASSET="$(printf 'ab%.0s' $(seq 32))" CHECK_LIVE_HUMAN_DESTINATION="agent:did:layerx:check-live:main" CHECK_LIVE_TIMEOUT=5 "$checker" human-session 2>&1)" || status=$?
+	local ok=1 line
+	[ "$status" -eq "$want_status" ] || ok=0
+	for line in "$@"; do
+		grep -qF -- "$line" <<<"$output" || ok=0
+	done
+	if [ "$ok" -eq 1 ]; then
+		echo "ok   $name"
+	else
+		echo "FAIL $name: want exit $want_status with lines [$*], got exit $status"
+		printf '%s\n' "$output"
+		failures=$((failures + 1))
+	fi
+}
+
+expect_human_session check_live_human_session_passing good check-live-assertion 0 \
+	"pass preflight http=200 allow-origin=https://app.wallet.example allow-headers=authorization" \
+	"pass plan http=200 journey_kind=deposit legs=2 signing_requirements=1 plan_digest=4b4b4b4b4b4b4b4b" \
+	"check-live: all checks passed"
+
+expect_human_session check_live_human_session_wrong_assertion good other-assertion 1 \
+	"pass preflight http=200" \
+	'fail plan http=403 shape=envelope {"error":{"code":"forbidden"' \
+	"check-live: 1 check(s) failed"
+
+expect_human_session check_live_human_session_refused refused check-live-assertion 1 \
+	'fail plan http=403 shape=envelope {"error":{"code":"forbidden"' \
+	"check-live: 1 check(s) failed"
+
+expect_human_session check_live_human_session_plan_without_signing_requirements shapeless check-live-assertion 1 \
+	"fail plan http=200 shape=signing_requirements " \
+	"check-live: 1 check(s) failed"
+
+expect_human_session check_live_human_session_preflight_without_allow_origin noorigin check-live-assertion 1 \
+	"fail preflight http=200 allow-origin=None allow-headers=authorization" \
+	"check-live: 1 check(s) failed"
+
+expect_human_session check_live_human_session_server_error crash check-live-assertion 1 \
+	"fail plan http=500 shape=envelope internal error" \
+	"check-live: 1 check(s) failed"
+
+for missing in CHECK_LIVE_HUMAN_ASSERTION CHECK_LIVE_HUMAN_ASSET CHECK_LIVE_HUMAN_DESTINATION; do
+	status=0
+	output="$(env CHECK_LIVE_HUMAN_BASE="http://127.0.0.1:$port/human_good" CHECK_LIVE_HUMAN_ORIGIN="https://app.wallet.example" CHECK_LIVE_HUMAN_ASSERTION=check-live-assertion CHECK_LIVE_HUMAN_ASSET="$(printf 'ab%.0s' $(seq 32))" CHECK_LIVE_HUMAN_DESTINATION="agent:did:layerx:check-live:main" "$missing=" "$checker" human-session 2>&1)" || status=$?
+	if [ "$status" -eq 2 ] && grep -q "$missing is required" <<<"$output" &&
+		grep -q '^usage: ' <<<"$output"; then
+		echo "ok   check_live_human_session_missing_$missing"
+	else
+		echo "FAIL check_live_human_session_missing_$missing: want exit 2 with usage, got exit $status"
+		printf '%s\n' "$output"
+		failures=$((failures + 1))
+	fi
+done
+
+status=0
+output="$(CHECK_LIVE_HUMAN_BASE="http://127.0.0.1:1" CHECK_LIVE_HUMAN_ORIGIN="https://app.wallet.example" CHECK_LIVE_HUMAN_ASSERTION=check-live-assertion CHECK_LIVE_HUMAN_ASSET="$(printf 'ab%.0s' $(seq 32))" CHECK_LIVE_HUMAN_DESTINATION="agent:did:layerx:check-live:main" CHECK_LIVE_TIMEOUT=2 "$checker" human-session 2>&1)" || status=$?
+if [ "$status" -eq 1 ] && grep -q '^fail preflight transport ' <<<"$output" &&
+	grep -q '^fail plan transport ' <<<"$output" && grep -q 'check-live: 2 check(s) failed' <<<"$output"; then
+	echo "ok   check_live_human_session_unreachable"
+else
+	echo "FAIL check_live_human_session_unreachable: want exit 1 with transport failures, got exit $status"
 	printf '%s\n' "$output"
 	failures=$((failures + 1))
 fi

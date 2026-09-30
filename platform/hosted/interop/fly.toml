@@ -1,0 +1,126 @@
+# The interop gateway at interchain.paxeer.network: layerx-interop-gateway of
+# interop/crates/layerx-interop-service on its plain listener behind the Fly
+# edge, on at least two machines in ams and fra. It keeps no state of its own:
+# its operations live in the router's Redis under the gateway keyspace. The
+# env is the LAYERX_INTEROP_* contract of deployment.yaml beside this file,
+# with the router URL as the hosted gateway, the receipt authority on its
+# kernel_ports port inside the kernel app and the router's Redis on its TLS
+# port under the internal CA. Secrets, all staged before the first deploy:
+# INTEROP_CLIENT_P12, INTEROP_CLIENT_PASSWORD and INTEROP_CLIENT_CA_DER from
+# tools/bringup/ca.sh issue interop-client (the CA DER is the outbound root of
+# the receipt authority and Redis; the router's public chain verifies against
+# the image's system roots); INTEROP_CONFIG, the document
+# interop/deploy/gateway/render.py renders, its AP2, Visa TAP and fiat roots
+# from the owner inputs LAYERX_BETA_INTEROP_AP2_KEYS, _AP2_ASSETS,
+# _VISA_AGENTS, _VISA_TARGETS and _FIAT_PROVIDERS, each also staged as a
+# secret of this app under its own name, and INTEROP_MODULE_REGISTRY, the
+# modules of the router's registry; INTEROP_AUTHORITY_TOKEN and the four
+# INTEROP_SEQUENCER_* pins, the values the router holds; INTEROP_REDIS_USERNAME
+# and INTEROP_REDIS_PASSWORD, the ACL user of the router's Redis; and the
+# plain secrets LAYERX_INTEROP_NETWORK_ID and
+# LAYERX_INTEROP_PROTOCOL_NETWORK_ID, equal to the router's. The image is
+# built from the repository root and deployed with --image (flyctl resolves
+# [build] paths against this directory).
+app = "paxeer-interop"
+primary_region = "ams"
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[build]
+  dockerfile = "../../../docker/interop-gateway/Dockerfile"
+
+[env]
+  LAYERX_INTEROP_LISTEN = "[::]:8080"
+  LAYERX_INTEROP_LISTENER = "plain"
+  LAYERX_INTEROP_CONFIG = "/run/layerx/interop/config.json"
+  LAYERX_INTEROP_MODULE_REGISTRY_FILE = "/run/layerx/interop/registry.json"
+  LAYERX_INTEROP_OUTBOUND_CA_DER = "/run/layerx/trust/ca.crt.der"
+  LAYERX_INTEROP_CLIENT_IDENTITY_PKCS12 = "/run/layerx/client/client.p12"
+  LAYERX_INTEROP_CLIENT_IDENTITY_PASSWORD_FILE = "/run/layerx/client/password"
+  LAYERX_INTEROP_HOSTED_GATEWAY_URL = "https://api-mainnet-beta.paxeer.network"
+  LAYERX_INTEROP_RECEIPT_AUTHORITY_URL = "https://paxeer-human-service.internal:9445"
+  LAYERX_INTEROP_RECEIPT_AUTHORITY_TOKEN_FILE = "/run/layerx/authority/token"
+  LAYERX_INTEROP_REDIS_URL = "rediss://paxeer-shared-endpoint-redis.internal:6379"
+  LAYERX_INTEROP_REDIS_USERNAME_FILE = "/run/layerx/redis/username"
+  LAYERX_INTEROP_REDIS_PASSWORD_FILE = "/run/layerx/redis/password"
+  LAYERX_INTEROP_SEQUENCER_PUBLIC_KEY_FILE = "/run/layerx/authority/sequencer-public-key"
+  LAYERX_INTEROP_SEQUENCER_ID_FILE = "/run/layerx/authority/sequencer-id"
+  LAYERX_INTEROP_SEQUENCER_FIRST_BATCH_FILE = "/run/layerx/authority/sequencer-first-batch"
+  LAYERX_INTEROP_SEQUENCER_LAST_BATCH_FILE = "/run/layerx/authority/sequencer-last-batch"
+  LAYERX_INTEROP_WIRE_VERSION = "3"
+  LAYERX_INTEROP_TAP_CLOCK_SKEW_SECONDS = "60"
+  LAYERX_INTEROP_IDEMPOTENCY_SECONDS = "604800"
+
+[[files]]
+  guest_path = "/run/layerx/interop/config.json"
+  secret_name = "INTEROP_CONFIG"
+
+[[files]]
+  guest_path = "/run/layerx/interop/registry.json"
+  secret_name = "INTEROP_MODULE_REGISTRY"
+
+[[files]]
+  guest_path = "/run/layerx/trust/ca.crt.der"
+  secret_name = "INTEROP_CLIENT_CA_DER"
+
+[[files]]
+  guest_path = "/run/layerx/client/client.p12"
+  secret_name = "INTEROP_CLIENT_P12"
+
+[[files]]
+  guest_path = "/run/layerx/client/password"
+  secret_name = "INTEROP_CLIENT_PASSWORD"
+
+[[files]]
+  guest_path = "/run/layerx/authority/token"
+  secret_name = "INTEROP_AUTHORITY_TOKEN"
+
+[[files]]
+  guest_path = "/run/layerx/authority/sequencer-public-key"
+  secret_name = "INTEROP_SEQUENCER_PUBLIC_KEY"
+
+[[files]]
+  guest_path = "/run/layerx/authority/sequencer-id"
+  secret_name = "INTEROP_SEQUENCER_ID"
+
+[[files]]
+  guest_path = "/run/layerx/authority/sequencer-first-batch"
+  secret_name = "INTEROP_SEQUENCER_FIRST_BATCH"
+
+[[files]]
+  guest_path = "/run/layerx/authority/sequencer-last-batch"
+  secret_name = "INTEROP_SEQUENCER_LAST_BATCH"
+
+[[files]]
+  guest_path = "/run/layerx/redis/username"
+  secret_name = "INTEROP_REDIS_USERNAME"
+
+[[files]]
+  guest_path = "/run/layerx/redis/password"
+  secret_name = "INTEROP_REDIS_PASSWORD"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 2
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 400
+    hard_limit = 500
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "30s"
+    method = "GET"
+    path = "/livez"
+    protocol = "http"
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "1gb"
+  cpus = 2
+  cpu_kind = "shared"

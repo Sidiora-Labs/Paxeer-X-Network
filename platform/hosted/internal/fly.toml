@@ -1,0 +1,63 @@
+app = "paxeer-internal"
+primary_region = "ams"
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[build]
+  dockerfile = "../../../docker/platform-internal/Dockerfile"
+  build-target = "fly"
+
+[deploy]
+  strategy = "immediate"
+
+# Each group is one machine with its own volume; the arguments of
+# platform/hosted/internal/fly-init.sh name the group, its upstream origin and
+# the root that verifies it: the internal CA for the human service's event
+# listener in the kernel app, ISRG Root X1 for the router's served chain.
+[processes]
+  kms = "kms"
+  journeys = "journeys https://paxeer-human-service.internal:9449 internal"
+  payments = "payments https://api-mainnet-beta.paxeer.network ISRG_Root_X1"
+  approvals = "approvals https://paxeer-human-service.internal:9449 internal"
+  programs = "programs https://api-mainnet-beta.paxeer.network ISRG_Root_X1"
+
+[[mounts]]
+  source = "kms_data"
+  destination = "/data"
+  initial_size = "1gb"
+  snapshot_retention = 14
+  processes = ["kms"]
+
+[[mounts]]
+  source = "journeys_data"
+  destination = "/data"
+  initial_size = "1gb"
+  snapshot_retention = 14
+  processes = ["journeys"]
+
+[[mounts]]
+  source = "payments_data"
+  destination = "/data"
+  initial_size = "1gb"
+  snapshot_retention = 14
+  processes = ["payments"]
+
+[[mounts]]
+  source = "approvals_data"
+  destination = "/data"
+  initial_size = "1gb"
+  snapshot_retention = 14
+  processes = ["approvals"]
+
+[[mounts]]
+  source = "programs_data"
+  destination = "/data"
+  initial_size = "1gb"
+  snapshot_retention = 14
+  processes = ["programs"]
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  cpus = 1
+  cpu_kind = "shared"

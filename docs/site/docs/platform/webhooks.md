@@ -28,57 +28,37 @@ dashboard.
 
 ## Deployment
 
-The image is `ghcr.io/sidiora-labs/layerx-webhooks:0.1.0`
-(`platform/hosted/webhooks/deployment.yaml:69`;
-`platform/hosted/tests/beta-cluster.sh:118`). Dashboard images in the
-same list also use `ghcr.io/sidiora-labs/...`
-(`platform/hosted/tests/beta-cluster.sh:119-120`). Control, gateway, faucet, registry, node, boundary, identity, and paxd
-images in that list use `ghcr.io/sidiora-labs/...`
-(`platform/hosted/tests/beta-cluster.sh:114-117, 121-128`). These images share the same
-registry prefix. The Dockerfile builds
-`-p layerx-platform-webhooks --bin layerx-webhooks`, copies
-`/src/platform/target/release/layerx-webhooks`, sets `USER 65532:65532`,
-and entrypoint `/usr/local/bin/layerx-webhooks`
-(`docker/platform-webhooks/Dockerfile:4-10`). The Deployment sets
-`runAsNonRoot: true` without `runAsUser`
-(`platform/hosted/webhooks/deployment.yaml:80-83`). Those two user
-bindings differ.
+Webhooks run as the Fly app `paxeer-webhooks`
+(`platform/hosted/webhooks/fly.toml`), built from the `fly` target of
+`docker/platform-webhooks/Dockerfile`. The `fly` target starts
+`platform/hosted/webhooks/fly-init.sh`, which sets
+`LAYERX_WEBHOOKS_INSTANCE_ID` from `FLY_MACHINE_ID` and starts
+`layerx-webhooks` as uid `65532`. The app has two process groups, each
+with at least two machines across `ams` and `fra`:
 
-Deployment `layerx-webhooks` has three replicas, listens on
-`0.0.0.0:9444`, exposes Service port `443` to container `9444`, PDB
-`minAvailable` `2`
-(`platform/hosted/webhooks/deployment.yaml:6, 61, 74, 195-198, 250-251`).
-Ingress `layerx-developer` host `dev.paxeer.network` path
-`/v1/webhooks` uses backend protocol HTTPS and body size `512k`
-(`platform/hosted/webhooks/deployment.yaml:217-232`); the bare-host edge
-serves it at `hooks.paxeer.network`. NetworkPolicy
-ingress admits `ingress-nginx` and namespaces labeled
-`layerx.internal-events: "true"` on TCP `9444`; egress is UDP `53`,
-TCP `443`, and TCP `6379`
-(`platform/hosted/webhooks/deployment.yaml:253-269`). Namespace
-`layerx-internal` carries that label
-(`platform/hosted/internal/deployment.yaml:3`).
+- `public` listens in plain HTTP on `[::]:9444` behind the Fly
+  `http_service`. The edge proxies `hooks.paxeer.network` to it through
+  the wildcard name with a certbot certificate.
+- `ingress` listens with TLS on `[::]:443` under the internal CA. Its
+  certificate, from the `developer` row of `tools/bringup/ca.sh`, names
+  `ingress.process.paxeer-webhooks.internal`. Producers post events to
+  `https://ingress.process.paxeer-webhooks.internal`: the router
+  (`human/wallet/deploy/endpoint.toml`), the kernel app
+  (`human/wallet/deploy/human.toml`) and the registry.
 
-Beta-cluster `IMAGE_NAMES` includes `layerx-webhooks`
-(`platform/hosted/tests/beta-cluster.sh:89`). Render writes
-`platform/hosted/webhooks/deployment.yaml` as `developer.yaml`
-(`platform/hosted/tests/beta-cluster.sh:826`). Bring-up port-forwards
-Service `layerx-webhooks` `19450:443` and exports `WEBHOOKS_URL`
-(`platform/hosted/tests/beta-cluster.sh:1252, 1272, 1117`).
-`--boundary-checks` runs `platform/hosted/webhooks/tests/fault-injection.sh`
-(`platform/hosted/tests/beta-cluster.sh:49-50, 1184-1195`).
+Webhook state lives in the internal Redis `paxeer-internal-redis`
+(`rediss://paxeer-internal-redis.internal:6379`). Event sources are the
+`journeys`, `payments`, `approvals` and `programs` groups of
+`paxeer-internal` on port `9443`. The KMS is its `kms` group. Identity
+is `paxeer-identity` on `9443`. The receipt authority and the agent
+boundary are `paxeer-human-service.internal` on `9445` and `9446`.
+Every client identity, token and key is a Fly secret mounted under
+`/run/layerx` (`platform/hosted/webhooks/fly.toml`).
 
-Default `topology-check.sh` manifests are node, identity, paxeer,
-testnet, gateway, and registry. They do not include
-`platform/hosted/webhooks/deployment.yaml` or
-`platform/hosted/internal/deployment.yaml`
-(`platform/hosted/tests/topology-check.sh:17-23, 81-88`). Node
-NetworkPolicy admits `layerx-webhooks` from namespace
-`layerx-developer` on TCP `9445` only
-(`platform/hosted/node/deployment.yaml:278-279`). Receipt-authority
-container port `authority-tls` is `9445`; agent-boundary
-`agent-tls` is `9446`
-(`platform/hosted/node/deployment.yaml:181, 210`).
+`tools/bringup/check-live.sh developers` checks the deployment. It
+checks readiness at the three names and started machines in two regions
+per app and per webhooks group. It then runs one subscription round
+trip and waits for one delivered producer event.
 
 ---
 

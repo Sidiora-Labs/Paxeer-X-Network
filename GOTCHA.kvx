@@ -1255,13 +1255,391 @@ cause   = "The routing expression falls back to the hosted image, which lacks ld
 do      = "Read a hosted canary failure as the variable being unset, not as a runner image fault; judge the Fly runner only from a run whose job names a fly- runner."
 
 [gotcha.206]
+area = "nginx"
+symptom = "Registering an HTTP proxy name reports protocol options redefined on existing shared TLS listeners, although the reload and live gate succeed."
+cause = "Enabled TLS sites declare different protocol options on the shared listen socket."
+do = "Record the warnings and preserve unrelated sites; qualify the registered name with its declared live gate and scope any listener repair separately."
+
+[gotcha.207]
+area    = "check-live"
+symptom = "A live authenticated plan with the golden intent.plan request body is refused although the bearer is admitted."
+cause   = "The golden body is a schema fixture: its asset_id is a placeholder the planner refuses unless it equals the principal's balance asset, its destination is a fixture account and its deadline has already passed."
+do      = "Take the golden body and set asset_id, destination.account and a deadline ahead of now at run time from named inputs; never send the fixture body to a live service expecting a plan."
+
+[gotcha.208]
+area    = "spec-tooling"
+symptom = "cg spec implemented refuses a task whose touched data file changed in the worktree, reporting no matching change, while the graph database is busy with another lane's index."
+cause   = "With the refresh skipped the check reads the last completed index, which knows nothing of uncommitted edits to files it does not parse."
+do      = "Treat the refusal like gotcha 104: record it, set the status line by hand, remove any spec.kvx.lock and let the manager re-run the tool after the merge."
+
+[gotcha.209]
+area    = "spec"
+symptom = "cg spec start refuses a task with unmet requires even when it is dispatched deliberately ahead of them for its build side."
+cause   = "start enforces the requires graph and has no override for build-side work against a parallel lane."
+do      = "Set the status line to in_progress by hand, delete spec.kvx.lock, and record the refusal as an observation."
+
+[gotcha.210]
+area    = "bringup"
+symptom = "A check-live function with set -u dies with 'unbound variable' when an array declared by name only is empty."
+cause   = "local -a name declares without assigning, and bash before 5.2 treats \"${!name[@]}\" of an unset array as unbound."
+do      = "Declare arrays as local -a name=() in check-live functions."
+
+[gotcha.211]
+area    = "bringup"
+symptom = "A script piped to sh -s with data appended after it can lose the data to a cat inside the script."
+cause   = "The shell reads its script from stdin in blocks, so trailing bytes may already be consumed before cat runs."
+do      = "Embed the data in the script as a quoted variable instead of appending it to stdin."
+
+[gotcha.212]
+area    = "rpc"
+symptom = "The public RPC names answer a request whose Host header is a loopback address and port."
+cause   = "Their nginx serves by SNI and does not reject an unmatched Host header."
+do      = "A loopback socat hop to port 443 with the name as SNI needs no vhost change for a boundary that sends Host 127.0.0.1:PORT."
+
+[gotcha.213]
+area    = "bringup-probe"
+symptom = "A live probe needs a daemon's bearer inside a Fly machine, but no task has fixed the file path the bearer is materialised to."
+cause   = "The daemon takes the bearer as an environment variable and the init that sets it is written by another task."
+do      = "Read the running daemon's own /proc/<pid>/environ inside the machine (found by its exe name) and keep the bearer in a 0600 temporary file there; never pass it through the ssh console input or the local command line."
+
+[gotcha.214]
+area    = "test"
+symptom = "A fixture test needs a running process that a probe finds by its executable name and whose environment it reads."
+cause   = "The probe matches /proc/<pid>/exe, which a shell function or alias cannot fake."
+do      = "Copy sleep under the expected executable name, start it with the environment the probe reads, and kill it in the test's cleanup trap."
+
+[gotcha.215]
+area = "fly"
+symptom = "The machine-list prerequisite exits one before an application has been created."
+cause = "The CLI treats an absent application as an error, while the deployment script creates it when absent."
+do = "Retain the diagnostic in a private log and distinguish an explicit app-not-found result from authentication or API errors before proceeding through the approved deployment script."
+
+[gotcha.216]
+area    = "bringup"
+symptom = "A read-only comparison of a public RPC name's resolution against the host-map roles exits 1 before it compares anything."
+cause   = "The comparison read the scalar role list of the host map with array syntax, so the roles came back empty."
+do      = "Read the roles the way tools/bringup/check-live.sh reads them, read -r -a from the scalar role list, before comparing a name against them."
+
+[gotcha.217]
+area    = "chain"
+symptom = "A script that must list every asset of the custody precompile's asset map over JSON-RPC finds no view that enumerates it."
+cause   = "The layerxcustody precompile answers getAsset, assetByPointer and nativeAssetId only, and the module registers no query route; the map is keyed by id, pointer and denom."
+do      = "Get the pointer list from an authoritative source and look each one up with assetByPointer, PAX through nativeAssetId; never treat a hand-kept list as the complete map without a ruling."
+
+[gotcha.218]
+area    = "kernel"
+symptom = "A task says layerxctl read-state shows balances and that the loopback replica serves the batch document carrying an activity, and neither is true."
+cause   = "layerxctl read-state answers only the actor's account sequence, state root and epoch; the authority replica serves only batch evidence by batch id and receipt digest; balances and receipt lookups live in the node test probe, and the activities[] batch document is the relay archive's /v1/history/batches/N."
+do      = "Before writing a value-loop probe, pick the real read path (probe balance, LNI receipt lookup, relay archive history) and get it into the task text; do not grep a layerxctl output for a balance."
+
+[gotcha.219]
+area    = "registry"
+symptom = "A registry deployed with only its listener, builder and kernel variables exits at startup before /healthz answers."
+cause   = "Its program outbox builds the event producer client with the mandatory from_environment, not from_environment_if_configured, so the program and webhooks upstream groups are required at start."
+do      = "Configure the LAYERX_EVENTS_PROGRAM_UPSTREAM_* and LAYERX_EVENTS_WEBHOOKS_UPSTREAM_* groups, with reachable mTLS upstreams, before the first registry deploy."
+
+[gotcha.220]
+area    = "spec-tooling"
+symptom = "cg spec start on a build-side lane exits 1 with unmet requires and leaves the task pending."
+cause   = "start checks that every required task is done, and build-side lanes are cut before their prerequisites land."
+do      = "Set the status line to in_progress by hand, never with --force, and delete spec/<feature>/spec.kvx.lock."
+
+[gotcha.221]
+area    = "agent"
+symptom = "layerx-mcp exits with the binding document declares no protocol socket against the binding the full-mode daemon published."
+cause   = "The daemon's binding publisher writes only the base keys, while the binary requires a listener section and a web-scoped session also requires a web section plus an attached web payer that no served path attaches."
+do      = "Plan the listener and web sections and the production web payer before promising an MCP socket or the web tools; the stdio CLI ignores listener but still refuses web scopes."
+
+[gotcha.222]
+area    = "agentd"
+symptom = "Tenant control cannot be applied to a request that arrives on the program listener with only the daemon program bearer."
+cause   = "tenant::resolve needs a session Token authenticated from a full SessionCredential (tenant, session id, token id, generation); the program bearer names no session, and MCP authorizes in-process from its binding's session token file instead of over HTTP."
+do      = "Before building an HTTP route that must run under tenant control, fix how the caller presents its session credential and which tenant::Surface it maps to; the SDK transports send a single Authorization header."
+
+[gotcha.223]
+area    = "bringup"
+symptom = "Dropping a role from the check-live host map breaks the hosts timeout case and the one-ssh-per-destination count, not only the fixture lines."
+cause   = "The hang fixture put its only hanging destination on the dropped role, and the harness counts the distinct ssh destinations of the good map."
+do      = "Move the hanging destination to a remaining single-destination role and recount the good map's destinations when a role leaves the map."
+
+[gotcha.224]
+area    = "test"
+symptom = "A sync-fleet fixture case that makes a remote step fail by removing a host file fails the harness's no-destination check."
+cause   = "The ssh stand-in rewrites shared paths under the fixture host's own directory, so the remote command's error text carries the fixture destination."
+do      = "Fail remote steps in fixtures through a stand-in switch (the systemctl or scp stand-in exiting non-zero for a listed destination) rather than a missing file."
+
+[gotcha.225]
+area    = "tooling"
+symptom = "A command line of the form cd <lane> && mkdir ... && ( long build ) & ran every later command of the same call in the previous directory, so shellcheck and check-deploy read the main checkout."
+cause   = "The trailing & backgrounds the whole && list, cd included, in a subshell."
+do      = "Put cd on its own line, or background only the build subshell, before running gates in a lane."
+
+[gotcha.226]
+area    = "bringup"
+symptom = "A Fly toml [env] entry carrying the node asset id or replica id fails tools/wallet/check-deploy.sh env-no-secrets."
+cause   = "The rule refuses any value of 64 hex characters, which also matches public 32-byte ids."
+do      = "Keep public 32-byte ids of a pod ConfigMap in the app's init or config file, not in [env]."
+
+[gotcha.227]
+area    = "bringup"
+symptom = "check-live.test kernel-app cases resolved the real app name instead of the fx- fixture app."
+cause   = "The default checker reads tomls from the real repository root; only the fixture copy reads the fixture tree."
+do      = "Run cases that read a fixture toml with CHECK_LIVE_TEST_PROGRAM=\"$fx_checker\"."
+
+[gotcha.228]
+area    = "gas-station"
+symptom = "A /quote for an account that has never used the paymaster answers 503 instead of a quote."
+cause   = "The station eth_calls nonce() and usedQuoteNonces on the account itself; an undelegated account returns empty code, which reads as malformed."
+do      = "Delegate the account to the paymaster with an EIP-7702 authorization before its first quote, and check eth_getCode equals 0xef0100 followed by the paymaster."
+
+[gotcha.229]
+area    = "gas-station"
+symptom = "A health check or edge probe of the gas station gets 404 on every GET path."
+cause   = "The service routes only POST /quote and POST /submit."
+do      = "Use a tcp check on the Fly app and probe the station with a POST; do not give it an http check path."
+
+[gotcha.230]
+area    = "gas-station"
+symptom = "The station refuses its configuration when max_rate_age is set to a paymaster refresh interval of more than five minutes."
+cause   = "The station config bounds max_rate_age to 1..300 seconds, independent of the contract's maximumAge."
+do      = "Keep the owner's setRate refresh interval at most 300 seconds, or change the station bound in its own task first."
+
+[gotcha.231]
+area    = "bringup"
+symptom = "A port copied from a Kubernetes manifest's upstream URL collides with another listener once the pod's containers share one Fly machine."
+cause   = "Manifest URLs carry Service ports that map to distinct pods or containerPorts; in the one-machine kernel app core already holds 9443 and the first Paxeer boundary holds 9447."
+do      = "Take every in-machine port from docker/kernel/init.sh and the kernel toml, and treat a Service port in a manifest URL as unfixed until the spec names it."
+
+[gotcha.232]
+area    = "bringup"
+symptom = "A probe that splits openssl s_client -showcerts output into one file per certificate gets an unreadable second certificate."
+cause   = "The awk split kept printing the text between certificates after close(), and a print to a closed file reopens and truncates it."
+do      = "Print only between BEGIN and END CERTIFICATE lines with an in-certificate flag, and close the file at the END line."
+
+[gotcha.233]
+area    = "bringup"
+symptom = "A check-live subcommand exits with 'unbound variable' at the very end after all its lines printed."
+cause   = "An EXIT trap set inside a function with a single-quoted reference to a local variable runs after the function's locals are gone, and set -u trips on it."
+do      = "Expand the path into the trap when it is set (double quotes, shellcheck SC2064 disabled) as the other probes of the file do."
+
+[gotcha.234]
+area    = "bridge"
+symptom = "A task that pairs the bridge relayer with layerx-mirror-signer in one machine cannot configure the signer for the relayer's keys."
+cause   = "layerx-mirror-signer binds exactly one secp256k1 handle and one ed25519 handle to the mirror policy domains, while the relayer signs under five LayerX/bridge domains with an attestor handle distinct from every submitter handle."
+do      = "Read the relayer's policy domain constants in src/signer.rs against the signer's key set before writing the image or app; the bridge key set needs a ruled signer mode first."
+
+[gotcha.235]
+area    = "fly"
+symptom = "A Fly app's [[files]] entry mounts garbage instead of the JSON or key text set as its secret."
+cause   = "A [[files]] entry with secret_name decodes the secret's value as base64."
+do      = "Import every file-mounted secret as NAME=<base64 -w0 of the file> through secrets import --stage."
+
+[gotcha.236]
+area    = "bringup"
+symptom = "A check-live harness case that wants a checklist failure passes the fixture record check instead."
+cause   = "The fixture checklist matched a substring (match) that the failing record's value (mismatch) also contained."
+do      = "Pick fixture marker words that no failing fixture value contains."
+
+[gotcha.237]
+area    = "bringup"
+symptom = "A check-live subcommand exits 2 with no output in the harness fixture tree."
+cause   = "It read an optional spec value with sed from a file the fixture tree does not carry, and under set -euo pipefail the failed read ended the script before any check line printed."
+do      = "Guard an optional read with an explicit fallback such as || name=\"\" so an absent file falls through to the next source."
+
+[gotcha.238]
+area    = "bringup"
+symptom = "A service image build fails at the runtime stage COPY of its own init under docker/<service>/."
+cause   = "The image's Dockerfile.dockerignore excludes the whole docker tree, so the init it copies is not in the build context."
+do      = "Add an exception line for that file after the docker exclusion, and declare util-linux in a runtime stage that drops privileges with setpriv instead of relying on the base image."
+
+[gotcha.239]
+area    = "tooling"
+symptom = "A script that inserts shell test text through python3 - <<'PY' ends early with a Python syntax error, and the rest of the inserted text runs as shell commands."
+cause   = "The inserted text itself carried a heredoc ending in a PY line, which closed the outer heredoc."
+do      = "Write text that holds its own heredocs to a scratch file first and insert it from there, or give the outer heredoc a delimiter the text cannot contain."
+
+[gotcha.240]
+area    = "bringup"
+symptom = "An x402 round trip against the interop gateway would fail to reach the public router URL once the gateway's outbound CA points at the internal CA."
+cause   = "It looked as if LAYERX_INTEROP_OUTBOUND_CA_DER replaced the trust store, but the service adds that one DER to native-tls on top of the system roots."
+do      = "Point the interop outbound CA at the internal CA DER alone: it verifies the receipt authority and Redis, while the router's public chain verifies through the image's ca-certificates bundle."
+
+[gotcha.241]
+area    = "ramp"
+symptom = "A PEM bundle given to a native-tls client verifies only the upstreams under its first root."
+cause   = "native_tls Certificate::from_pem parses only the first certificate of the file."
+do      = "Load a CA file with Certificate::stack_from_pem and add every root to the connector."
+
+[gotcha.242]
+area    = "fly"
+symptom = "A service dropped to its uid cannot open its config under a /run directory the root init created."
+cause   = "mkdir -p under umask 077 leaves the parent directory root 0700, so the service uid cannot traverse it."
+do      = "chmod 0711 each parent directory the init creates before dropping privileges."
+
+[gotcha.243]
+area    = "bringup"
+symptom = "The kernel-app harness cases of check-live.test.sh report init status=absent once and pass on the next run."
+cause   = "Several lanes run the harness at the same moment and the loaded box pushes the stand-in ssh console past its five-second bound."
+do      = "Treat a lone kernel-app init=absent failure under concurrent harness runs like the ca_issue /dev/shm cases: record it, rerun once."
+
+[gotcha.244]
+area    = "bringup"
+symptom = "Adding a row to the ca.sh service table fails ca_issue_every_service and any case that expects that app's toml to be absent from the fixture repository."
+cause   = "The harness pins the row count and creates a fixture toml for every row's app."
+do      = "Raise the pinned count with the row and take the fixture toml aside in a toml-absent case instead of assuming it is missing."
+
+[gotcha.245]
+area    = "bringup"
+symptom = "Probe cases that find a stand-in process by executable name under /proc pass alone and fail when several copies of check-live.test.sh run at once."
+cause   = "Each copy starts its own layerx-event-source or agentd stand-in, and every copy's /proc scan sees the other copies' processes with their environment."
+do      = "Run the harness alone before reading those cases, or give a new stand-in an executable name no other case uses; a flyctl machine run one-off also skips fly.toml [env], so pass the static env with --env from the toml."
+
+[gotcha.246]
+area    = "bringup"
+symptom = "cg spec start refuses a task whose requires are not done yet although the wave builds against the design blocks."
+cause   = "cg checks the requires list before it moves a task to in_progress."
+do      = "Set the status to in_progress by hand in spec.kvx and remove spec.kvx.lock, as the build-side wave rule allows."
+
+[gotcha.247]
+area    = "bringup"
+symptom = "A Fly app with two process groups needs a plain listener in one group and a TLS listener in the other, but the service refuses the plain mode when any TLS variable is set."
+cause   = "Fly [env] is shared by every process group, and the plain listener rejects the TLS certificate variables."
+do      = "Set the per-group listener variables in a small init that the group's process command names, and keep them out of [env]."
+
+[gotcha.248]
+area    = "bringup"
+symptom = "A new ca.sh row fails check-live ca and the every-service count of check-live.test.sh."
+cause   = "check_ca wants a [[files]] entry that mounts <PREFIX>_CERT in the row's toml, and the harness pins the number of rows."
+do      = "Mount <PREFIX>_CERT in the toml with the row and raise the pinned row count in the same change."
+
+[gotcha.249]
+area    = "gateway"
+symptom = "A plan leaves LAYERX_GATEWAY_PROGRAM_REGISTRY_URL unset in kernel mode expecting program_registry to report not_configured, but the gateway would refuse to start."
+cause   = "configured_kernel requires the registry URL and its token file whenever LAYERX_GATEWAY_COMPONENT_URL is set; not_configured appears only when the whole kernel is unset."
+do      = "Treat the registry as mandatory in kernel mode until the gateway makes it optional; readiness is 200 only when every configured backend is ready."
+
+[gotcha.250]
+area    = "flyctl"
+symptom = "JSON read from a Fly machine through flyctl ssh console fails to parse although the command printed valid JSON."
+cause   = "flyctl writes its machine-selection notice to stdout ahead of the command's output when no machine is named."
+do      = "Keep only the last line of the output (tail -n 1), as the identity check does, and print the JSON without a trailing newline or on one line."
+
+[gotcha.251]
+area    = "check-live"
+symptom = "After a merge of check-live.test.sh most cases fail with head=none or empty answers although no probe changed."
+cause   = "A merge dropped the closing exit 0 and fi of one curl stand-in block, so the heredoc stand-in no longer parses and every curl call fails."
+do      = "After resolving a merge of the harness, run bash -n over each heredoc stand-in (ssh, flyctl, curl, node, getent) before the full harness."
+
+[gotcha.252]
+area    = "bringup"
+symptom = "A new check-live subcommand needs its own curl answers in the harness, but lanes may only append cases at the end of check-live.test.sh."
+cause   = "The harness's curl stand-in is written once near the top and answers every https URL with its own fixtures."
+do      = "Write a second curl stand-in in a directory of its own in the appended cases that answers the new paths and execs the harness's stand-in for everything else, and run those cases with that directory first on PATH."
+
+[gotcha.253]
+area    = "bringup"
+symptom = "A Dockerfile COPY of an init script under docker/ fails with file not found although the file is in the tree."
+cause   = "The per-Dockerfile .dockerignore excludes the whole docker directory, so only paths it re-includes with a ! line reach the build context."
+do      = "Add a !docker/<image>/<file> line to that Dockerfile's .dockerignore for every file under docker/ the image copies."
+
+[gotcha.254]
+area    = "bringup"
+symptom = "A harness curl wrapper case sees its next @@ marker line glued to a JSON body and the sed parse finds nothing."
+cause   = "The wrapper ignored -o and wrote the body to standard output, which real curl sends to the -o file."
+do      = "Honour -o (and -w) in every curl stand-in exactly as real curl does before asserting on marker lines."
+
+[gotcha.255]
+area    = "bringup"
+symptom = "A whole block of live-check harness cases fails at once with head=none or transport-style lines."
+cause   = "A merge left a branch of the shared curl stand-in without its closing lines, so the stand-in script is a bash syntax error and every curl through it fails."
+do      = "Run bash -n on the extracted stand-in heredoc after resolving a harness merge before reading individual case failures."
+
+[gotcha.256]
+area    = "test"
+symptom = "Every check-live harness case that asks a public name over https fails with head=none or empty answers at once, across unrelated subcommands."
+cause   = "A merge dropped the closing lines of one branch of the heredoc curl stand-in, so the stub is a shell syntax error and every stubbed curl call exits 2."
+do      = "Extract the stand-in between its heredoc lines and run bash -n on it before chasing a subcommand; restore the lines from the lane revision that added the branch."
+
+[gotcha.257]
+area    = "test"
+symptom = "A sync-fleet harness count of report lines ending in the rollout sha256 finds one more line than hosts rolled."
+cause   = "The report's first line want sha256=<sha> also matches a pattern of a space, sha256= and the hash."
+do      = "Anchor report-line counts on ^RPC_HOSTS as the existing record case does."
+
+[gotcha.258]
+area    = "bringup"
+symptom = "A harness case that expects a failing make target to report the recipe's own exit code sees exit 2 instead."
+cause   = "make exits 2 whenever any recipe fails, whatever code the recipe itself returned."
+do      = "Expect exit 2 from a failed make target in check-live lines and harness cases; read the target's log for the recipe's own code."
+
+[gotcha.259]
+area    = "bringup"
+symptom = "The interop and ramp conformance make targets look like live probes but interop-test-mandates and interop-test-visa-tap run only the crates' local vectors and interop-test-ramps-sandbox drives the ramp, not the gateway."
+cause   = "The targets are cargo test runs of layerx-ap2 and layerx-visa-tap and platform/ramps/sandbox-journey.sh; only GET /v1/adapters of the gateway reports the pinned suites and adapter readiness."
+do      = "Pair each target with the gateway's /v1/adapters entry for its adapter, comparing the served conformance pins against render.py first_party_suite of the checkout."
+
+[gotcha.260]
+area    = "bringup"
+symptom = "A task hunts for a platform/deploy tree to find the node bootstrap and loses time."
+cause   = "There is no platform/deploy tree; the node bootstrap is platform/hosted/node/bootstrap.sh beside supervisor.sh and the pod definition."
+do      = "Open platform/hosted/node/ directly for the bootstrap, the supervisor and the genesis inputs."
+
+[gotcha.261]
+area    = "bringup"
+symptom = "A kernel genesis that reads its asset records from the custody precompile finds nothing to read."
+cause   = "The custody precompile has no enumeration view and an unregistered asset answers bytes32 zero from nativeAssetId and assetByPointer instead of reverting."
+do      = "Treat a zero asset id as an absent record and refuse with the exact call; register assets through MsgSetAsset before generating the genesis."
+
+[gotcha.262]
+area    = "bringup"
+symptom = "A remote /proc/$pid/cmdline read reports the kernel boot line instead of a process."
+cause   = "With an empty pid the path collapses to /proc//cmdline, which is /proc/cmdline."
+do      = "Default the pid (/proc/${p:-0}/cmdline) so an absent process reads as absent."
+
+[gotcha.263]
+area    = "bringup"
+symptom = "A check-live read through fly_ssh reports every machine value absent in the harness although the fixture files are in place."
+cause   = "The fly_ssh call left stdin open, so the flyctl stand-in's tee (and a real ssh console) waited on it until the timeout, and the timeout status discarded the answer; a merge had also dropped the exit and fi closing the gas block of the curl stand-in, so every curl call inside the harness failed to parse."
+do      = "Give every fly_ssh call that sends no script </dev/null, and run bash -n on the harness stand-ins after a merge."
+
+[gotcha.264]
+area    = "bringup"
+symptom = "The edge check prints route=unknown for the router name and the edge harness cases fail although the router manifest looks complete."
+cause   = "A merge duplicated a key and a [[files]] entry in a fly manifest; tomllib refuses the whole file with Cannot overwrite a value, so the check reads no route."
+do      = "After a merge that touches a fly manifest, parse every tracked toml with python3 tomllib and drop the duplicated second copies."
+
+[gotcha.265]
+area    = "bringup"
+symptom = "Two check-live harness runs on one box fail cases at random, the flyctl and curl stand-ins and the CA cases among them."
+cause   = "Concurrent runs on one box share host state the stand-ins and the CA cases rely on and disturb each other."
+do      = "The harness takes flock on /run/lock/check-live-harness for its whole run; a second run waits instead of racing, so never bypass the lock."
+
+[gotcha.266]
 area    = "spec-tooling"
 symptom = "cg spec start refuses a task with unmet requires and exits 1, although the worker was told to build it against the spec before its prerequisites land."
 cause   = "start checks that every requires task is done and offers only --force."
 do      = "Set the status line to in_progress by hand, record the refusal once in the qualification log, and do not force."
 
-[gotcha.207]
+[gotcha.267]
 area    = "test"
 symptom = "The flyctl stand-in of check-live.test.sh exits 98 on a call that passes --json, so a new probe that lists machines reads nothing."
 cause   = "The stand-in parses only the flags earlier probes used and treats any other flag as an error."
 do      = "Teach the stand-in the new flag and subcommand in the same change that adds the probe, answering from a fixture file."
+
+[gotcha.268]
+area    = "test"
+symptom = "After a merge, fixture cases that wrote machine JSON to a file named by CHECK_LIVE_TEST_MACHINES made other flyctl cases read a path instead of JSON."
+cause   = "The feature's flyctl stand-in prints CHECK_LIVE_TEST_MACHINES as the JSON itself and falls back to the app's machines.json only when the variable is empty."
+do      = "Export the JSON inline for the cases that need it and unset it afterwards; never export CHECK_LIVE_TEST_MACHINES as a file path."
+
+[gotcha.269]
+area    = "kernel-init"
+symptom = "A boundary that runs as the node's second uid cannot read the sequencer seed to derive the sequencer public key it must present."
+cause   = "The seed is 0600 to the node uid; the pod used to mount the public key from a secret instead."
+do      = "Derive the public key in the root prepare step of docker/kernel/init.sh into the run directory, the same way kernel-genesis.sh derives it."
+
+[gotcha.270]
+area    = "test"
+symptom = "A single check-live.test.sh run hung in check_live_hosts_timeout until an outer timeout killed it, after eleven passing cases."
+cause   = "Not investigated under the one-try rule; the case drives a hanging ssh stand-in under CHECK_LIVE_TEST_TIMEOUT=1."
+do      = "Bound the harness with an outer timeout and read the last ok line in the log to locate the hanging case before blaming the change under test."
