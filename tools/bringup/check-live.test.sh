@@ -2126,6 +2126,123 @@ CHECK_LIVE_TEST_ROUTER="$work/router-bad" CHECK_LIVE_TEST_PROGRAM="$fx_checker" 
 	"fail wallet-gateway app=$gateway rpc_pool=up healthy=1 first=other" \
 	"check-live: 6 check(s) failed"
 
+# The search cases put a curl stand-in for the serving sidecars ahead of the
+# harness's: /xweb/health answers status ok except on the names of
+# CHECK_LIVE_TEST_SEARCH_DOWN; an unpaid /search answers 402 with a metered
+# PAYMENT-REQUIRED offer in CHECK_LIVE_TEST_SEARCH_CURRENCY to the payer the
+# LAYERX-PAYER-DID header names, and a /search with a PAYMENT-SIGNATURE
+# answers 200 with a PAYMENT-RESPONSE only when its grant matches that offer,
+# its id is the domain digest of its fields and its Ed25519 signature
+# verifies under its public key; every other request goes to the harness's
+# stand-in.
+mkdir -p "$work/search-bin"
+cat >"$work/search-bin/curl" <<'SH'
+#!/usr/bin/env bash
+set -eu
+url=""
+wout=""
+prev=""
+did=""
+payment=""
+for arg in "$@"; do
+	case "$arg" in
+	https://*) url="$arg" ;;
+	esac
+	[ "$prev" != -w ] || wout="$arg"
+	if [ "$prev" = -H ]; then
+		case "$arg" in
+		"LAYERX-PAYER-DID: "*) did="${arg#*: }" ;;
+		"PAYMENT-SIGNATURE: "*) payment="${arg#*: }" ;;
+		esac
+	fi
+	prev="$arg"
+done
+name="${url#https://}"
+path="/${name#*/}"
+name="${name%%/*}"
+case "$path" in
+/xweb/health)
+	printf '%s search\n' "${name%%.*}" >>"$CHECK_LIVE_TEST_CALLS"
+	case " ${CHECK_LIVE_TEST_SEARCH_DOWN:-} " in
+	*" ${name%%.*} "*) exit 7 ;;
+	esac
+	printf '{"status":"ok"}'
+	[ -z "$wout" ] || printf '\n200'
+	exit 0
+	;;
+/search\?*)
+	printf '%s search\n' "${name%%.*}" >>"$CHECK_LIVE_TEST_CALLS"
+	accepted="$(printf '{"scheme":"metered","network":"layerx:125","amount":"2000000000000000","asset":"%064d","payTo":"%064d","maxTimeoutSeconds":60,"extra":{"layerx":{"commitment":"executed","account":"fixture-receiver","currency":"%s","payer":"%s","purposeHash":"%064d"}}}' 7 9 "${CHECK_LIVE_TEST_SEARCH_CURRENCY:-PAX}" "$(printf '%s' "$did" | sha256sum | cut -c1-64)" 5)"
+	if [ -z "$payment" ]; then
+		printf 'HTTP/2 402\r\npayment-required: %s\r\n\r\n' "$(printf '{"x402Version":2,"accepts":[%s]}' "$accepted" | base64 -w 0)"
+		exit 0
+	fi
+	if python3 - "$payment" "$accepted" <<'PY'; then
+import base64
+import hashlib
+import json
+import sys
+
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+header = json.loads(base64.b64decode(sys.argv[1]))
+offer = json.loads(sys.argv[2])
+grant = bytes.fromhex(header["payload"]["grant"])
+terms = offer["extra"]["layerx"]
+assert header["x402Version"] == 2 and header["accepted"] == offer and len(grant) == 346
+assert len(bytes.fromhex(header["payload"]["idempotencyKey"])) == 32
+assert grant[32:64].hex() == terms["payer"] and grant[64:96].hex() == offer["payTo"] and grant[96:128].hex() == offer["asset"]
+assert int.from_bytes(grant[128:144], "big") >= int(offer["amount"]) and grant[160] == 0 and grant[161:169] == bytes(8)
+assert grant[177:209].hex() == terms["purposeHash"] and grant[209] == 0 and grant[210:242] == bytes(32)
+digest = hashlib.sha256(b"LXP/v1/authority-hash\0LXP:GRANT:v1" + grant[32:282]).digest()
+assert grant[:32] == digest
+Ed25519PublicKey.from_public_bytes(grant[250:282]).verify(grant[282:], digest)
+PY
+		printf 'HTTP/2 200\r\npayment-response: fixture\r\n\r\n'
+	else
+		printf 'HTTP/2 402\r\n\r\n'
+	fi
+	exit 0
+	;;
+esac
+exec "$CHECK_LIVE_TEST_HARNESS_CURL" "$@"
+SH
+chmod +x "$work/search-bin/curl"
+export CHECK_LIVE_TEST_HARNESS_CURL="$work/bin/curl"
+openssl genpkey -algorithm ed25519 -out "$work/search-payer.pem" 2>/dev/null
+export CHECK_LIVE_SEARCH_PAYER_KEY_FILE="$work/search-payer.pem" CHECK_LIVE_SEARCH_PAYER_DID="did:layerx:fixture-payer"
+
+PATH="$work/search-bin:$PATH" expect check_live_search_passing "$work/hosts-good.env" 0 search -- \
+	"pass health https://api1.mainnet-beta.paxeer.network/xweb/health http=200 status=ok" \
+	"pass health https://api2.mainnet-beta.paxeer.network/xweb/health http=200 status=ok" \
+	"pass health https://api3.mainnet-beta.paxeer.network/xweb/health http=200 status=ok" \
+	"pass offer https://api1.mainnet-beta.paxeer.network/search http=402 pax=metered amount=2000000000000000" \
+	"pass paid https://api1.mainnet-beta.paxeer.network/search http=200 currency=PAX payment-response=present" \
+	"pass offer https://search.paxeer.network/search http=402 pax=metered amount=2000000000000000" \
+	"pass paid https://search.paxeer.network/search http=200 currency=PAX payment-response=present" \
+	"check-live: all checks passed"
+
+CHECK_LIVE_TEST_SEARCH_DOWN="api2" CHECK_LIVE_TEST_SEARCH_CURRENCY="USDC" PATH="$work/search-bin:$PATH" expect check_live_search_failing "$work/hosts-good.env" 1 search -- \
+	"pass health https://api1.mainnet-beta.paxeer.network/xweb/health http=200 status=ok" \
+	"fail health https://api2.mainnet-beta.paxeer.network/xweb/health http=none" \
+	"fail offer https://api1.mainnet-beta.paxeer.network/search http=402 pax=none amount=none" \
+	"fail offer https://search.paxeer.network/search http=402 pax=none amount=none" \
+	"check-live: 3 check(s) failed"
+
+CHECK_LIVE_SEARCH_PAYER_KEY_FILE="$work/absent.pem" PATH="$work/search-bin:$PATH" expect check_live_search_no_payer_key "$work/hosts-good.env" 1 search -- \
+	"pass offer https://api1.mainnet-beta.paxeer.network/search http=402 pax=metered amount=2000000000000000" \
+	"fail paid https://api1.mainnet-beta.paxeer.network/search signature=unavailable" \
+	"fail paid https://search.paxeer.network/search signature=unavailable" \
+	"check-live: 2 check(s) failed"
+
+CHECK_LIVE_SEARCH_PAYER_DID="" PATH="$work/search-bin:$PATH" expect check_live_search_no_payer_did "$work/hosts-good.env" 2 search -- \
+	"check-live: CHECK_LIVE_SEARCH_PAYER_DID is unset"
+
+PATH="$work/search-bin:$PATH" expect check_live_search_unmapped "$work/hosts-down.env" 1 search -- \
+	"fail names names=unreadable" \
+	"check-live: 1 check(s) failed"
+unset CHECK_LIVE_SEARCH_PAYER_KEY_FILE CHECK_LIVE_SEARCH_PAYER_DID
+
 # The fleet script shares the host map and the ssh helpers, so its own test
 # runs as the last case, with this test's stand-ins off the PATH.
 status=0

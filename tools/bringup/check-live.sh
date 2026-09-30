@@ -3165,6 +3165,136 @@ for d in json.load(open(sys.argv[1])):
 	finish "$failures"
 }
 
+# check_search: the serving x-websearch sidecars behind the serving RPC names
+# that tools/bringup/search-front.sh names lists. /xweb/health answers 200
+# with status ok on every serving RPC name, and an unpaid /search answers 402
+# with a PAYMENT-REQUIRED metered offer in PAX to the payer
+# CHECK_LIVE_SEARCH_PAYER_DID on the first serving RPC name and through
+# search.paxeer.network; the retry carrying a PAYMENT-SIGNATURE with the
+# payer's grant for that offer, signed with the Ed25519 PEM key of
+# CHECK_LIVE_SEARCH_PAYER_KEY_FILE (never printed), answers 200 with a
+# PAYMENT-RESPONSE. One line per check.
+search_offer_py='
+import base64
+import json
+import sys
+
+code, header = sys.argv[1], sys.argv[2]
+try:
+    doc = json.loads(base64.b64decode(header, validate=True))
+    offers = [o for o in doc.get("accepts") or [] if ((o.get("extra") or {}).get("layerx") or {}).get("currency") == "PAX"]
+except (ValueError, TypeError, AttributeError):
+    doc, offers = {}, []
+ok = code == "402" and doc.get("x402Version") == 2 and bool(offers)
+schemes = ",".join(sorted({str(o.get("scheme")) for o in offers})) or "none"
+amount = offers[0].get("amount", "none") if offers else "none"
+print(("pass" if ok else "fail") + " http=%s pax=%s amount=%s" % (code or "none", schemes, amount))
+metered = [o for o in offers if o.get("scheme") == "metered"]
+if ok and metered:
+    print(base64.b64encode(json.dumps(metered[0], separators=(",", ":")).encode()).decode())
+'
+# search_grant_py <offer b64> <public key hex> <sig hex|->: with - prints the
+# grant id to sign (the digest of the grant fields under the authority-hash
+# and LXP:GRANT:v1 domains, as layerx-crypto verifies it); with a signature
+# prints the PAYMENT-SIGNATURE header value carrying the canonical grant.
+search_grant_py='
+import base64
+import hashlib
+import json
+import os
+import sys
+import time
+
+offer = json.loads(base64.b64decode(sys.argv[1]))
+terms = offer["extra"]["layerx"]
+amount = int(offer["amount"])
+state = os.environ["search_grant_state"]
+if sys.argv[3] == "-":
+    fields = b"".join((
+        bytes.fromhex(terms["payer"]), bytes.fromhex(offer["payTo"]), bytes.fromhex(offer["asset"]),
+        amount.to_bytes(16, "big"), amount.to_bytes(16, "big"), b"\0", (0).to_bytes(8, "big"),
+        (int(time.time()) + 300).to_bytes(8, "big"), bytes.fromhex(terms["purposeHash"]), b"\0", bytes(32),
+        (0).to_bytes(8, "big"), bytes.fromhex(sys.argv[2]),
+    ))
+    grant_id = hashlib.sha256(b"LXP/v1/authority-hash\0" + b"LXP:GRANT:v1" + fields).digest()
+    with open(state, "wb") as handle:
+        handle.write(grant_id + fields)
+    sys.stdout.buffer.write(grant_id)
+    sys.exit(0)
+with open(state, "rb") as handle:
+    grant = handle.read() + bytes.fromhex(sys.argv[3])
+header = {"x402Version": 2, "accepted": offer, "payload": {"grant": grant.hex(), "idempotencyKey": os.urandom(32).hex()}}
+print(base64.b64encode(json.dumps(header, separators=(",", ":")).encode()).decode())
+'
+check_search() {
+	local listing name code body headers first="" line reply offer public signature payment work v failures=0
+	local -a names=()
+	for v in CHECK_LIVE_SEARCH_PAYER_KEY_FILE CHECK_LIVE_SEARCH_PAYER_DID; do
+		if [ -z "${!v:-}" ]; then
+			echo "check-live: $v is unset" >&2
+			exit 2
+		fi
+	done
+	if ! listing="$("$(dirname "${BASH_SOURCE[0]}")/search-front.sh" names 2>&1)"; then
+		echo "fail names names=unreadable $(printf '%s' "$listing" | tr '\n' ' ' | cut -c1-160)"
+		finish 1
+	fi
+	mapfile -t names < <(sed -n 's/^serve //p' <<<"$listing")
+	if [ "${#names[@]}" -eq 0 ]; then
+		echo "fail names serving=0"
+		finish 1
+	fi
+	for name in "${names[@]}"; do
+		[ -n "$first" ] || first="$name"
+		body="$(curl -sS --max-time "$timeout" -w '\n%{http_code}' "https://$name/xweb/health" 2>/dev/null)" || body=""
+		code="${body##*$'\n'}"
+		body="${body%$'\n'*}"
+		if [ "$code" = 200 ] && [[ "$body" == *'"status":"ok"'* ]]; then
+			echo "pass health https://$name/xweb/health http=200 status=ok"
+		else
+			echo "fail health https://$name/xweb/health http=${code:-none}"
+			failures=$((failures + 1))
+		fi
+	done
+	work="$(mktemp -d)"
+	# shellcheck disable=SC2064
+	trap "rm -rf '$work'" EXIT
+	public="$(openssl pkey -in "$CHECK_LIVE_SEARCH_PAYER_KEY_FILE" -pubout -outform DER 2>/dev/null | tail -c 32 | od -An -tx1 | tr -d ' \n')" || public=""
+	for name in "$first" search.paxeer.network; do
+		headers="$(curl -sS --max-time "$timeout" -H "LAYERX-PAYER-DID: $CHECK_LIVE_SEARCH_PAYER_DID" -D - -o /dev/null "https://$name/search?q=paxeer" 2>/dev/null)" || headers=""
+		code="$(sed -n '1s/^HTTP\/[0-9.]* \([0-9]*\).*/\1/p' <<<"$headers")"
+		reply="$(python3 -c "$search_offer_py" "$code" "$(sed -n 's/^payment-required:[[:space:]]*//Ip' <<<"$headers" | tr -d '\r' | head -n 1)")"
+		line="$(head -n 1 <<<"$reply")"
+		offer="$(sed -n 2p <<<"$reply")"
+		echo "${line%% *} offer https://$name/search ${line#* }"
+		if [ "${line%% *}" != pass ] || [ -z "$offer" ]; then
+			[ "${line%% *}" != pass ] || echo "fail paid https://$name/search metered=none"
+			failures=$((failures + 1))
+			continue
+		fi
+		signature=""
+		if [ "${#public}" -eq 64 ] && search_grant_state="$work/grant" python3 -c "$search_grant_py" "$offer" "$public" - >"$work/digest" &&
+			openssl pkeyutl -sign -rawin -inkey "$CHECK_LIVE_SEARCH_PAYER_KEY_FILE" -in "$work/digest" -out "$work/signature" 2>/dev/null; then
+			signature="$(od -An -tx1 "$work/signature" | tr -d ' \n')"
+		fi
+		if [ "${#signature}" -ne 128 ]; then
+			echo "fail paid https://$name/search signature=unavailable"
+			failures=$((failures + 1))
+			continue
+		fi
+		payment="$(search_grant_state="$work/grant" python3 -c "$search_grant_py" "$offer" "$public" "$signature")"
+		headers="$(curl -sS --max-time "$timeout" -H "LAYERX-PAYER-DID: $CHECK_LIVE_SEARCH_PAYER_DID" -H "PAYMENT-SIGNATURE: $payment" -D - -o /dev/null "https://$name/search?q=paxeer" 2>/dev/null)" || headers=""
+		code="$(sed -n '1s/^HTTP\/[0-9.]* \([0-9]*\).*/\1/p' <<<"$headers")"
+		if [ "$code" = 200 ] && grep -qi '^payment-response:' <<<"$headers"; then
+			echo "pass paid https://$name/search http=200 currency=PAX payment-response=present"
+		else
+			echo "fail paid https://$name/search http=${code:-none} payment-response=$(grep -qi '^payment-response:' <<<"$headers" && echo present || echo absent)"
+			failures=$((failures + 1))
+		fi
+	done
+	finish "$failures"
+}
+
 mode="${1:-}"
 case "$mode" in
 -h | --help)
@@ -3192,6 +3322,7 @@ ramp) ;;
 indexer) ;;
 developers) ;;
 router) ;;
+search) ;;
 *)
 	usage >&2
 	exit 2
