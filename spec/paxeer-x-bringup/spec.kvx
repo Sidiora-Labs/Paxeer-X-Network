@@ -304,7 +304,7 @@ reqs       = ["4.1", "4.3", "4.4", "2.4"]
 
 [task.0.6]
 title      = "Close the x-websearch attestor ports of the validator hosts to everything but loopback and the peer host"
-status     = "pending"
+status     = "done"
 wave       = 0
 requires   = ["0.5"]
 do_1       = "Write tools/bringup/validator-firewall.sh that adopts on each of VALIDATOR_HOSTS the table inet xweb that /etc/xweb-firewall.nft and xweb-firewall.service already install and persist: when the loaded rules accept tcp 8480 and 8481 only from loopback and from the other validator host and reject them with tcp reset from every other source, so a probe sees a refusal rather than a timeout, it changes nothing; otherwise it rewrites /etc/xweb-firewall.nft to exactly those rules, leaving every validator and chain port as it is, and restarts xweb-firewall.service; it is idempotent and prints one line per host with the rule state and never an address."

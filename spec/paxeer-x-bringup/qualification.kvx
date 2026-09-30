@@ -456,3 +456,18 @@ symbol     = "allowed, router"
 observed   = "After the rewrite docs-names.sh (log .logs/docs-names.log) exits 1 only on beta.paxeer.network, faucet.paxeer.network and status.paxeer.network in platform/docs/beta-environment.md and platform/docs/content/beta.md; its router check had named the superseded router literally, so it now reads the router key of [decision.public_names] instead."
 assumption = "The two beta contract pages are the finding already recorded by task 0.7 and await an owner ruling; the scope of the script is unchanged."
 severity   = "note"
+
+[gate.0.6.1]
+task      = "0.6"
+revision  = "eb2184b5e with the task change in the working tree"
+command   = "timeout 10m tools/bringup/check-live.sh validators"
+exit_code = 0
+log_path  = ".logs/verify.log"
+observed  = "Twelve checks passed after one repair cycle: 8480 and 8481 refused with a reset from the operator host on both validator hosts, each attestor answers /health 200 on loopback, and each host reaches its peer's two attestor ports with 200; the first run failed only because curl reports a refusal and an unreachable host both as exit 7, so the refusal is now read from a bash /dev/tcp connect."
+
+[observation.0.6.1]
+task       = "0.6"
+file       = "tools/bringup/validator-firewall.sh"
+observed   = "The one run of the adopt script against the validator hosts was refused by the permission system as a remote shell write, so it read no loaded table and wrote nothing; its rule evaluator was exercised only against tables loaded in a throwaway local network namespace."
+assumption = "The owner-installed table already behaves as the gate proves, so the adopt run is expected to print rules=match action=none on both hosts; the owner runs it once from the operator host."
+severity   = "note"
