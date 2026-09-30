@@ -1047,7 +1047,7 @@ do_2 = "Confirm tools/bringup/docs-names.sh still derives its allowed list from 
 
 [task.0.9]
 title = "Serve every public name on the edge host through the wildcard, proxied to its Fly app, with no per-name DNS record"
-status = "pending"
+status = "implemented"
 wave = 0
 requires = ["0.5"]
 verify_cmd = "timeout 10m tools/bringup/check-live.sh edge"

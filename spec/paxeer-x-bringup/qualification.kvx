@@ -578,3 +578,35 @@ symbol     = "check_ca"
 observed   = "shellcheck -s bash reports SC2034 (eku unused) in the read loop of check_ca at the base revision, unrelated to this task."
 assumption = "Left as found; the owner of check_ca resolves it."
 severity   = "note"
+
+[observation.0.9.1]
+task       = "0.9"
+file       = "tools/bringup/edge.sh"
+symbol     = "edge_add"
+observed   = "Registering the router name on the edge (edge.sh add, which writes the nginx site and obtains its certbot certificate) was refused by the permission system as a DNS/certificate change, so 'timeout 10m tools/bringup/check-live.sh edge' exited 1 at fdb8f5fb5 with 'fail manifest names=0' (.logs/verify.log); edge.test.sh and check-live.test.sh pass."
+assumption = "The owner runs the private handoff's edge.sh add for the router, whose app answers its readiness route at its fly.dev name today, then the gate reruns; status set to implemented."
+severity   = "blocker"
+
+[observation.0.9.2]
+task       = "0.9"
+file       = "tools/bringup/edge.sh"
+symbol     = "edge_add"
+observed   = "The edge nginx has no stream module package installed, and several enabled legacy sites that edge.sh did not render listen on 443, so edge.sh refuses a stream name until the module is installed and refuses a stream name on 443 while those sites hold the port."
+assumption = "Stream names are registered by their own tasks once their apps run; the owner installs the stream module and rules how the 443 legacy sites move before the registry name is added."
+severity   = "blocker"
+
+[observation.0.9.3]
+task       = "0.9"
+file       = "interop/deploy/search-front/nginx.conf"
+symbol     = "split_clients"
+observed   = "The edge now sends X-Forwarded-For and X-Real-IP with the client address, but the search front still hashes Fly-Client-IP, which behind the edge is the edge's own address for every client."
+assumption = "The search front's owner switches the hash key to X-Real-IP when set by the edge; not changed here, outside this task's files."
+severity   = "note"
+
+[observation.0.9.4]
+task       = "0.9"
+file       = "tools/bringup/edge.sh"
+symbol     = "edge_add"
+observed   = "cg spec implemented refused the task on symbols edge_add, edge_remove and check_edge as not defined in the graph, which indexes no shell functions (gotcha 104); the three functions exist under those names."
+assumption = "Status set to implemented by hand; the feature manager rules on the graph gate."
+severity   = "note"
