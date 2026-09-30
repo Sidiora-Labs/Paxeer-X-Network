@@ -317,7 +317,7 @@ reqs       = ["1.2"]
 
 [task.0.7]
 title      = "Rewrite the user-facing pages so no retired or unserved name is promised and accounts are funded through custody credit"
-status     = "pending"
+status     = "implemented"
 wave       = 0
 requires   = ["0.4"]
 do_1       = "Rewrite docs/site/docs/overview/getting-started.md, docs/site/docs/overview/quickstart.md, docs/site/docs/overview/payments.md and docs/site/docs/platform/index.md, and their wiki copies docs/wiki/Getting-Started-Beta.md, docs/wiki/Quickstart.md and docs/wiki/PaymentsQuickstart.md, so an account is funded through the custody-credit path at the router URL instead of FAUCET_URL, and no page names faucet.paxeer.network, beta.paxeer.network, status.paxeer.network or docs.paxeer.network."

@@ -357,3 +357,11 @@ command   = "timeout 30m tools/runtime/run-with-clock.sh cargo test --locked --m
 exit_code = 0
 log_path  = ".logs/verify.log"
 observed  = "Both tests pass at the first run: the real gateway binary answers from the second RPC name when the first answers 502 or refuses the connection, reports paxeer_chain ready while one answers and unavailable only when both fail, and refuses an empty, single, nine-entry or non-https array at startup."
+
+[observation.0.7.1]
+revision   = "9296a0d2c plus the change committed with this entry"
+command    = "timeout 5m tools/bringup/docs-names.sh"
+exit_code  = 1
+log_path   = ".logs/verify.log"
+observed   = "Every site, wiki, README and SDK page passes; the check fails only on beta.paxeer.network, faucet.paxeer.network and status.paxeer.network in platform/docs/beta-environment.md and platform/docs/content/beta.md, which now carry the private-network banner but keep those names because tools/ci/beta-contract-check.sh requires both pages to repeat the endpoint values of platform/hosted/testnet/src/lib.rs, .github/workflows/platform.yml and platform/hosted/testnet/deployment.yaml, including the faucet claims origin and the status host of the reset calendar."
+assumption = "Removing the names breaks the beta contract check and changing its sources is outside task 0.7, so both checks stay as written; a ruling is needed on whether the retired testnet sources drop those names (with the contract check and its contradictions table updated) or the beta contract pages leave the docs-names scope, and FAUCET_URL is read as the whole identifier so the private-network LAYERX_FAUCET_URL of the disposable cluster stays documented."
