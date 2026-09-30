@@ -134,8 +134,9 @@ block explorer for the network is `paxscan.io` and the wallet is
 `paxportwallet.com`.
 
 - `eth_*`, `net_*` and `web3_*` are the Paxeer EVM JSON-RPC, relayed verbatim to
-  the chain through the Paxeer boundary named by
-  `LAYERX_GATEWAY_PAXEER_RPC_URL`. `eth_sendRawTransaction` is included: a
+  the chain through the first answering Paxeer RPC name of
+  `LAYERX_GATEWAY_PAXEER_RPC_URLS`, two to eight names tried in order.
+  `eth_sendRawTransaction` is included: a
   signed transaction sent to the gateway lands on Paxeer. The node's own key
   never signs for a caller, so `eth_accounts`, `eth_coinbase`,
   `eth_sendTransaction`, `eth_sign`, `eth_signTransaction`, `eth_signTypedData`,

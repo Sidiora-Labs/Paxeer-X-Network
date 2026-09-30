@@ -349,3 +349,11 @@ command   = "timeout 30m make layerxd platform-test-node"
 exit_code = 0
 log_path  = ".logs/verify.log"
 observed  = "Per the ruling the checkpoint-emptiness proxy after the reset is replaced by proof that the checkpoint directory object was replaced and that the admission journal, which held generation-1 admissions, is back to its 32-byte superblock; the node test passes the custody credit, DID listing, SEND, reset and generation-2 checks at the first run."
+
+[gate.2.8.1]
+task      = "2.8"
+revision  = "9296a0d2c40024e02afe7a12f57177cb27183bc6 plus the change committed with this entry"
+command   = "timeout 30m tools/runtime/run-with-clock.sh cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --test paxeer_failover"
+exit_code = 0
+log_path  = ".logs/verify.log"
+observed  = "Both tests pass at the first run: the real gateway binary answers from the second RPC name when the first answers 502 or refuses the connection, reports paxeer_chain ready while one answers and unavailable only when both fail, and refuses an empty, single, nine-entry or non-https array at startup."

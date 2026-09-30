@@ -15,11 +15,40 @@ use serde_json::{json, Map, Value};
 /// Assets joined per `px_getBalances` and `px_listAssets` answer.
 const MAX_JOINED_ASSETS: usize = 16;
 
-pub(super) fn configured_endpoint() -> Result<Option<super::Endpoint>, String> {
-    std::env::var("LAYERX_GATEWAY_PAXEER_RPC_URL")
-        .ok()
-        .map(|url| super::Endpoint::parse(&url))
-        .transpose()
+/// Paxeer RPC names the relay may fail over across.
+const MIN_ENDPOINTS: usize = 2;
+const MAX_ENDPOINTS: usize = 8;
+
+pub(super) fn configured_endpoint() -> Result<Option<Vec<super::Endpoint>>, String> {
+    let Ok(value) = std::env::var("LAYERX_GATEWAY_PAXEER_RPC_URLS") else {
+        return Ok(None);
+    };
+    parse_endpoints(&value).map(Some)
+}
+
+fn parse_endpoints(value: &str) -> Result<Vec<super::Endpoint>, String> {
+    let urls: Vec<String> = serde_json::from_str(value)
+        .map_err(|_| "LAYERX_GATEWAY_PAXEER_RPC_URLS must be a JSON array".to_owned())?;
+    if !(MIN_ENDPOINTS..=MAX_ENDPOINTS).contains(&urls.len()) {
+        return Err(
+            "LAYERX_GATEWAY_PAXEER_RPC_URLS must hold two to eight Paxeer RPC urls".to_owned(),
+        );
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    let mut endpoints = Vec::with_capacity(urls.len());
+    for url in urls {
+        let endpoint = super::Endpoint::parse(&url)
+            .map_err(|error| format!("LAYERX_GATEWAY_PAXEER_RPC_URLS entry is invalid: {error}"))?;
+        if !seen.insert((
+            endpoint.host.clone(),
+            endpoint.port,
+            endpoint.base_path.clone(),
+        )) {
+            return Err("LAYERX_GATEWAY_PAXEER_RPC_URLS entries must be distinct".to_owned());
+        }
+        endpoints.push(endpoint);
+    }
+    Ok(endpoints)
 }
 
 pub(super) fn unconfigured(id: &Value) -> Value {
@@ -34,19 +63,21 @@ pub(super) fn unavailable(id: &Value, code: &str) -> Value {
     refusal
 }
 
-/// Sends one JSON-RPC request to the Paxeer node and returns its answer
-/// document unchanged.
+/// Sends one JSON-RPC request to the Paxeer nodes in their configured order
+/// and returns the answer document of the first one that answers 200 without
+/// a transport failure, unchanged. Every skipped node is reported on stderr.
 pub(super) fn node(config: &Config, request: &Value) -> Result<Value, &'static str> {
-    let Some(endpoint) = &config.paxeer else {
+    let Some(endpoints) = &config.paxeer else {
         return Err("paxeer_rpc_not_configured");
     };
     if !public_reads::consume_read() {
         return Err("public_read_rate_limit");
     }
     let body = serde_json::to_vec(request).map_err(|_| "invalid_paxeer_request")?;
-    let upstream = config
-        .client
-        .request_unauthenticated(
+    let mut failure = "paxeer_unreachable";
+    let mut answered = None;
+    for endpoint in endpoints {
+        match config.client.request_unauthenticated(
             endpoint,
             &OutboundRequest {
                 method: "POST",
@@ -55,9 +86,29 @@ pub(super) fn node(config: &Config, request: &Value) -> Result<Value, &'static s
                 content_type: "application/json",
                 body: &body,
             },
-        )
-        .map_err(|_| "paxeer_unreachable")?;
-    if upstream.status != 200 || upstream.content_type != "application/json" {
+        ) {
+            Ok(upstream) if upstream.status == 200 => {
+                answered = Some(upstream);
+                break;
+            }
+            Ok(upstream) => {
+                eprintln!(
+                    "paxeer_endpoint_failed endpoint={}:{} status={}",
+                    endpoint.host, endpoint.port, upstream.status
+                );
+                failure = "paxeer_node_unavailable";
+            }
+            Err(error) => {
+                eprintln!(
+                    "paxeer_endpoint_failed endpoint={}:{} transport={error}",
+                    endpoint.host, endpoint.port
+                );
+                failure = "paxeer_unreachable";
+            }
+        }
+    }
+    let upstream = answered.ok_or(failure)?;
+    if upstream.content_type != "application/json" {
         return Err("paxeer_node_unavailable");
     }
     let document: Value =
@@ -625,6 +676,29 @@ pub(super) fn status(config: &Config) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn endpoint_arrays_hold_two_to_eight_distinct_https_names() {
+        let url = |index: usize| format!("\"https://api{index}.example.net\"");
+        let array =
+            |count: usize| format!("[{}]", (1..=count).map(url).collect::<Vec<_>>().join(","));
+        for count in [2, 8] {
+            assert_eq!(
+                parse_endpoints(&array(count)).map(|all| all.len()),
+                Ok(count)
+            );
+        }
+        for invalid in [
+            array(0),
+            array(1),
+            array(9),
+            "\"https://api1.example.net\"".to_owned(),
+            "[\"http://api1.example.net\",\"https://api2.example.net\"]".to_owned(),
+            "[\"https://api1.example.net\",\"https://api1.example.net\"]".to_owned(),
+        ] {
+            assert!(parse_endpoints(&invalid).is_err(), "{invalid}");
+        }
+    }
 
     #[test]
     fn empty_parameter_lists_are_the_only_accepted_shape() {

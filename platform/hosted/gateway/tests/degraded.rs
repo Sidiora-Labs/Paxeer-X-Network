@@ -372,8 +372,12 @@ fn chain_only_environment(
             "7".to_owned(),
         ),
         (
-            "LAYERX_GATEWAY_PAXEER_RPC_URL".to_owned(),
-            format!("https://localhost:{chain_port}"),
+            "LAYERX_GATEWAY_PAXEER_RPC_URLS".to_owned(),
+            json!([
+                format!("https://localhost:{chain_port}"),
+                format!("https://localhost:{unused}")
+            ])
+            .to_string(),
         ),
         (
             "LAYERX_GATEWAY_REDIS_URL".to_owned(),

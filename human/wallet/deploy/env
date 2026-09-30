@@ -33,7 +33,7 @@ LAYERX_GATEWAY_IDENTITY_PROVISIONING_TOKEN_FILE - path to the identity provision
 LAYERX_GATEWAY_PROGRAM_REGISTRY_URL - program registry base URL, set as a platform secret
 LAYERX_GATEWAY_PROGRAM_REGISTRY_TOKEN_FILE - path to the program registry bearer token
 LAYERX_GATEWAY_PUBLIC_CORE_URL - public core read base URL, optional, set as a platform secret
-LAYERX_GATEWAY_PAXEER_RPC_URL - chain RPC base URL for eth_ relay, optional, set as a platform secret
+LAYERX_GATEWAY_PAXEER_RPC_URLS - JSON array of two to eight chain RPC https urls tried in order for eth_ relay, optional, set as a platform secret
 LAYERX_GATEWAY_INDEXER_URL - indexer base URL for unified history, optional, set as a platform secret
 LAYERX_GATEWAY_FAUCET_URL - faucet service base URL, optional, set as a platform secret
 LAYERX_GATEWAY_FAUCET_SERVICE_TOKEN_FILE - path to the faucet service token

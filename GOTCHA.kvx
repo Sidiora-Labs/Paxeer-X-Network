@@ -971,3 +971,15 @@ area    = "tests"
 symptom = "An inode comparison meant to prove a reset replaced a directory can pass or fail by chance."
 cause   = "Once the old directory is removed ext4 may reuse its inode number for the recreated directory, just as it does for files."
 do      = "Hold an fd on the old directory across the reset (exec {FD}<dir) before comparing inode numbers, then close it."
+
+[gotcha.159]
+area    = "gateway tests"
+symptom = "A local single-threaded TLS upstream that loops on keep-alive requests stalls the gateway's next connection for its read timeout."
+cause   = "The listener thread stays inside one kept-alive connection while the gateway opens a fresh one that waits unaccepted in the backlog."
+do      = "Serve one request per accepted connection in test upstreams, as tests/support/payment_events.rs does."
+
+[gotcha.160]
+area    = "gateway tests"
+symptom = "Including tests/support/payment_events.rs for its TLS listener pulls its own payment test and its RedisProcess and helper imports into the new test binary."
+cause   = "The support file holds a #[test] and takes command, fs, path, Duration, RedisProcess and TcpListener from its parent module."
+do      = "Keep a new gateway integration test self-contained with its own small TLS upstream rather than including that support file."
