@@ -155,7 +155,9 @@ Environment:
   BRINGUP_HOSTS_FILE   private env file assigning EDGE_HOST, ARCHIVE_HOST,
                        VALIDATOR_HOSTS, RPC_HOSTS and OLD_WALLET_HOST;
                        each value is one ssh destination or,
-                       for the plural roles, a space-separated list of them
+                       for the plural roles, a space-separated list of them;
+                       optionally RETAINED_ON_VALIDATOR, the public RPC names
+                       retained on a validator host by owner ruling
   CHECK_LIVE_HPX_ORIGIN  origin of the hpx registry, default
                        https://node.hyperpaxeer.com
   CHECK_LIVE_HPX_APP_ORIGIN  origin of the hpx registry's Fly app, default
@@ -415,20 +417,35 @@ check_rpc_nodes() {
 }
 
 # The read-only inspection rpc-placement runs on a validator host: the
-# ActiveState of the full-node unit paxd.service (never a validator unit) and
-# the HTTP and HTTPS ports it listens on beyond loopback, one line, no address.
+# ActiveState of the full-node unit paxd.service (never a validator unit), the
+# HTTP and HTTPS ports it listens on beyond loopback and the apiN names of its
+# enabled nginx sites (other for a site that is no apiN name), one line, no
+# address.
 # shellcheck disable=SC2016
-placement_cmd='s=$(systemctl is-active paxd.service 2>/dev/null); p=$(ss -Hltn 2>/dev/null | awk "{print \$4}" | grep -Ev "^(127\.|\[::1\]:|::1:)" | sed -n "s/.*:\(80\|443\)$/\1/p" | sort -u | paste -sd, -); echo "${s:-inactive} ${p:-none}"'
+placement_cmd='s=$(systemctl is-active paxd.service 2>/dev/null); p=$(ss -Hltn 2>/dev/null | awk "{print \$4}" | grep -Ev "^(127\.|\[::1\]:|::1:)" | sed -n "s/.*:\(80\|443\)$/\1/p" | sort -u | paste -sd, -); n=$(ls /etc/nginx/sites-enabled 2>/dev/null | sed -e "s/^\(api[0-9]*\)\..*/\1/" -e "/^api[0-9]*$/!s/.*/other/" | sort -u | paste -sd, -); echo "${s:-inactive} ${p:-none} ${n:-none}"'
+
+# rpc_addrs <apiN>: the addresses the public name resolves to, one per line.
+rpc_addrs() {
+	getent ahosts "$1.$rpc_domain" 2>/dev/null | awk '{print $1}' | sort -u
+}
 
 # check_rpc_placement: each public RPC name resolves to an RPC_HOSTS
 # destination outside VALIDATOR_HOSTS and answers within ten blocks of the
 # highest answer, and no validator host runs the full-node unit or listens on
-# a public HTTP or HTTPS port. Destinations are named by role and index only.
+# a public HTTP or HTTPS port. A name RETAINED_ON_VALIDATOR lists (full public
+# names or apiN) may resolve to an RPC_HOSTS destination that is a validator
+# host by owner ruling: it is reported as retained, and that validator host
+# may run the full-node unit and listen on HTTP and HTTPS for the retained
+# names' nginx sites only. Destinations are named by role and index only.
 check_rpc_placement() {
 	local -a rpcs validators heads addrs
-	local k j n name head lag at validator ok polls status reply state ports top=0 failures=0
+	local -A retained=() kept=()
+	local k j n r name head lag at validator ok polls status reply state ports sites site top=0 failures=0
 	read -r -a rpcs <<<"$RPC_HOSTS"
 	read -r -a validators <<<"$VALIDATOR_HOSTS"
+	for r in ${RETAINED_ON_VALIDATOR:-}; do
+		retained[${r%%.*}]=1
+	done
 	polls="$(mktemp -d)"
 	trap 'rm -rf "$polls"' EXIT
 	for n in $(seq 1 "$rpc_name_count"); do
@@ -443,7 +460,7 @@ check_rpc_placement() {
 	done
 	for n in $(seq 1 "$rpc_name_count"); do
 		name="api$n"
-		mapfile -t addrs < <(getent ahosts "$name.$rpc_domain" 2>/dev/null | awk '{print $1}' | sort -u)
+		mapfile -t addrs < <(rpc_addrs "$name")
 		at=none
 		validator=no
 		for k in "${!rpcs[@]}"; do
@@ -461,6 +478,11 @@ check_rpc_placement() {
 		done
 		head="${heads[n]}"
 		ok=1
+		if [ "$validator" = yes ] && [ -n "${retained[$name]:-}" ] && [ "${at%%\[*}" = RPC_HOSTS ]; then
+			echo "retained $name: on a validator host by owner ruling"
+			kept[$j]="${kept[$j]:-}${kept[$j]:+,}$name"
+			validator=retained
+		fi
 		if [ -n "$head" ]; then
 			lag=$((top - head))
 			[ "$lag" -le "$rpc_max_lag" ] || ok=0
@@ -469,7 +491,7 @@ check_rpc_placement() {
 			lag=none
 			ok=0
 		fi
-		[ "$at" != none ] && [ "$validator" = no ] && [ "${at%%\[*}" = RPC_HOSTS ] || ok=0
+		[ "$at" != none ] && [ "$validator" != yes ] && [ "${at%%\[*}" = RPC_HOSTS ] || ok=0
 		if [ "$ok" -eq 1 ]; then
 			echo "pass $name host=$at validator=$validator head=$head lag=$lag"
 		else
@@ -485,11 +507,23 @@ check_rpc_placement() {
 			failures=$((failures + 1))
 			continue
 		fi
-		read -r state ports <<<"$reply"
+		read -r state ports sites <<<"$reply"
 		if [ "$state" = inactive ] && [ "$ports" = none ]; then
 			echo "pass VALIDATOR_HOSTS[$j] paxd=$state listen=$ports"
+			continue
+		fi
+		ok=0
+		if [ -n "${kept[$j]:-}" ]; then
+			ok=1
+			for site in ${sites//,/ }; do
+				[ "$site:$ports" != none:none ] || continue
+				[[ ",${kept[$j]}," == *",$site,"* ]] || ok=0
+			done
+		fi
+		if [ "$ok" -eq 1 ]; then
+			echo "retained VALIDATOR_HOSTS[$j] paxd=$state listen=$ports sites=$sites for ${kept[$j]} by owner ruling"
 		else
-			echo "fail VALIDATOR_HOSTS[$j] paxd=$state listen=$ports"
+			echo "fail VALIDATOR_HOSTS[$j] paxd=$state listen=$ports sites=${sites:-none}"
 			failures=$((failures + 1))
 		fi
 	done

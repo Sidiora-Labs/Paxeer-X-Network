@@ -64,26 +64,33 @@ resync <paxd>
   validator host are never resync targets.
 
 rollout <paxd> <sha256>
-          checks that <paxd> hashes to <sha256>, then refuses the whole run
-          before asking any host when an RPC_HOSTS destination is also in
-          VALIDATOR_HOSTS, because its validator units run the same binary:
-  "fail rollout RPC_HOSTS[k] refused: ...". Otherwise it copies <paxd> to
-          every RPC_HOSTS destination as <PAXD>.new-<stamp> beside the live
+          checks that <paxd> hashes to <sha256>, then skips without asking it
+          every RPC_HOSTS destination that is in VALIDATOR_HOSTS or
+          BRINGUP_NEVER_PLACE or that a name of RETAINED_ON_VALIDATOR
+          resolves to, because a validator host's validator units run the
+          same binary:
+  "skipped <apiN>: retained on a validator host by owner ruling" for the
+          destination of a retained name, "skipped RPC_HOSTS[k]: a validator
+          or never-place host" for any other. It copies <paxd> to
+          every other RPC_HOSTS destination as <PAXD>.new-<stamp> beside the live
           binary and checks its sha256 there, then one host at a time keeps
           the live binary as <PAXD>.pre-<stamp>, moves the staged one into
           place, restarts paxd.service and waits for the node to come within
           ten blocks of the head before the next host. It stops at the first
           failure, naming the host and the step (survey, stage, verify, swap,
-          wait), and last writes the sha256 of <PAXD> on every destination
-          into the report file. Prints:
+          wait), and last writes the sha256 of <PAXD> on every rolled
+          destination into the report file, and "not rolled" for a skipped
+          one. Prints:
   "staged <label> <apiN> sha256=<sha256>" per host once the copy verified,
   "swapped <label> <apiN> unit=<state> lag=<blocks>" per host back at the
-  head, "report <path>", and "fail rollout <label> <apiN> <step> ..." at
-  the failure. It never installs the release pinned for resync unless that
+  head, "not rolled <apiN|label>" per skipped host, "report <path>", and
+  "fail rollout <label> <apiN> <step> ..." at the failure. It never installs the release pinned for resync unless that
   is the binary it was given.
 
 Environment:
-  BRINGUP_HOSTS_FILE  the private host map, required
+  BRINGUP_HOSTS_FILE  the private host map, required; its optional
+                      BRINGUP_NEVER_PLACE and RETAINED_ON_VALIDATOR lists
+                      name hosts and public names the rollout skips
   CHECK_LIVE_TIMEOUT  seconds per request or short remote command, default 30
   SYNC_FLEET_SETTLE   seconds to wait for a restarted node to come within ten
                       blocks of the head, default 1800
@@ -174,6 +181,11 @@ survey() {
 	read -r -a dests <<<"$RPC_HOSTS"
 	for k in "${!dests[@]}"; do
 		status=0
+		if [ -n "${skipped[$k]:-}" ]; then
+			names[k]=none
+			ssh_status[k]=0
+			continue
+		fi
 		reply="$(rpc_unit "${dests[$k]}")" || status=$?
 		name=none
 		if [ "$status" -eq 0 ]; then
@@ -414,6 +426,7 @@ rollout_steps() {
 	local k label dest name status reply lag staged="$paxd.new-$stamp"
 	survey
 	for k in "${!dests[@]}"; do
+		[ -z "${skipped[$k]:-}" ] || continue
 		if [ "${ssh_status[$k]}" -ne 0 ]; then
 			fail "rollout RPC_HOSTS[$k] none survey ssh=${ssh_status[$k]}"
 			return 1
@@ -424,6 +437,7 @@ rollout_steps() {
 		fi
 	done
 	for k in "${!dests[@]}"; do
+		[ -z "${skipped[$k]:-}" ] || continue
 		label="RPC_HOSTS[$k]" dest="${dests[$k]}" name="${names[$k]}" status=0
 		if [ "$dry_run" -eq 1 ]; then
 			say "scp -q -- $bin $label:$staged"
@@ -450,6 +464,7 @@ rollout_steps() {
 		say "staged $label $name sha256=$want_sha"
 	done
 	for k in "${!dests[@]}"; do
+		[ -z "${skipped[$k]:-}" ] || continue
 		label="RPC_HOSTS[$k]" dest="${dests[$k]}" name="${names[$k]}" status=0
 		reply="$(remote "$label" "$dest" "set -e; [ \"\$(sha256sum $staged | cut -d' ' -f1)\" = $want_sha ]; cp -p $paxd $paxd.pre-$stamp; mv -f $staged $paxd; systemctl restart $unit; systemctl show $unit -p ActiveState --value")" || status=$?
 		if [ "$dry_run" -eq 1 ]; then
@@ -469,10 +484,14 @@ rollout_steps() {
 	done
 }
 
-# rollout_record: writes the sha256 of the node binary on every destination
-# into the report file, one "<label> <apiN> sha256=<hash>" line per host.
+# rollout_record: writes the sha256 of the node binary on every rolled
+# destination into the report file, one "<label> <apiN> sha256=<hash>" line
+# per host, and "<label> <apiN|none> not rolled" per skipped host.
 rollout_record() {
 	local k status sha
+	for k in "${!dests[@]}"; do
+		[ -z "${skipped[$k]:-}" ] || say "not rolled ${skipped[$k]/#none/RPC_HOSTS[$k]}"
+	done
 	if [ "$dry_run" -eq 1 ]; then
 		say "record the sha256 of $paxd on every host into $report"
 		return 0
@@ -480,6 +499,10 @@ rollout_record() {
 	echo "want sha256=$want_sha" >"$report"
 	for k in "${!dests[@]}"; do
 		status=0
+		if [ -n "${skipped[$k]:-}" ]; then
+			echo "RPC_HOSTS[$k] ${skipped[$k]} not rolled" >>"$report"
+			continue
+		fi
 		sha="$(ssh_read "${dests[$k]}" "sha256sum $paxd")" || status=$?
 		if [ "$status" -ne 0 ]; then
 			echo "RPC_HOSTS[$k] ${names[$k]:-none} sha256=none ssh=$status" >>"$report"
@@ -491,17 +514,29 @@ rollout_record() {
 	say "report $report"
 }
 
+# cmd_rollout: skipped[k] names each RPC_HOSTS destination the rollout never
+# asks or stages on: the retained apiN name that resolves to it, or none
+# when it is a validator or never-place host no retained name resolves to.
 cmd_rollout() {
 	local -a dests names ssh_status
-	local -A heads
-	local top k
+	local -A heads skipped=()
+	local top k r
 	read -r -a dests <<<"$RPC_HOSTS"
+	for r in ${RETAINED_ON_VALIDATOR:-}; do
+		r="${r%%.*}"
+		for k in "${!dests[@]}"; do
+			if rpc_addrs "$r" | grep -qxF -- "${dests[$k]#*@}"; then
+				skipped[$k]="$r"
+				say "skipped $r: retained on a validator host by owner ruling"
+			fi
+		done
+	done
 	for k in "${!dests[@]}"; do
-		if is_member "${dests[$k]}" "$VALIDATOR_HOSTS"; then
-			fail "rollout RPC_HOSTS[$k] refused: the destination is also a validator host, whose validator units run the same paxd; nothing was staged on any host"
+		if [ -z "${skipped[$k]:-}" ] && is_member "${dests[$k]}" "$VALIDATOR_HOSTS ${BRINGUP_NEVER_PLACE:-}"; then
+			skipped[$k]=none
+			say "skipped RPC_HOSTS[$k]: a validator or never-place host"
 		fi
 	done
-	[ "$failures" -eq 0 ] || return 0
 	rollout_steps || true
 	rollout_record
 }

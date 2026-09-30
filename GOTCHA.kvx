@@ -1553,3 +1553,15 @@ area    = "bringup"
 symptom = "A whole block of live-check harness cases fails at once with head=none or transport-style lines."
 cause   = "A merge left a branch of the shared curl stand-in without its closing lines, so the stand-in script is a bash syntax error and every curl through it fails."
 do      = "Run bash -n on the extracted stand-in heredoc after resolving a harness merge before reading individual case failures."
+
+[gotcha.256]
+area    = "test"
+symptom = "Every check-live harness case that asks a public name over https fails with head=none or empty answers at once, across unrelated subcommands."
+cause   = "A merge dropped the closing lines of one branch of the heredoc curl stand-in, so the stub is a shell syntax error and every stubbed curl call exits 2."
+do      = "Extract the stand-in between its heredoc lines and run bash -n on it before chasing a subcommand; restore the lines from the lane revision that added the branch."
+
+[gotcha.257]
+area    = "test"
+symptom = "A sync-fleet harness count of report lines ending in the rollout sha256 finds one more line than hosts rolled."
+cause   = "The report's first line want sha256=<sha> also matches a pattern of a space, sha256= and the hash."
+do      = "Anchor report-line counts on ^RPC_HOSTS as the existing record case does."
