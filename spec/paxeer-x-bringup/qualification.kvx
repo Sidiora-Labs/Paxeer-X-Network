@@ -389,3 +389,11 @@ exit_code  = 1
 log_path   = ".logs/verify.log"
 observed   = "paxscan.io answers 200 and the backend's /api/health and /api/v2/stats answer 200, but envs.js still names a raw node address as NEXT_PUBLIC_NETWORK_RPC_URL, so no archive name, no indexed block below the pruned floor and, with the database variables unset, no history or missing-range check could pass."
 assumption = "The failures follow only from the refused remote steps of observation 4.4.1; no repair in the probe can clear them."
+
+[gate.0.5.1]
+task      = "0.5"
+revision  = "9296a0d2c with the task change in the working tree"
+command   = "timeout 10m tools/bringup/check-live.test.sh"
+exit_code = 0
+log_path  = ".logs/verify.log"
+observed  = "All 37 cases passed at the first run: the six-role host map, Fly issuance on a volume and as staged secrets with every row's .internal or process-group name, the ca probe passing and failing seven ways through the flyctl stand-in, and sync-fleet.test.sh as the last case."

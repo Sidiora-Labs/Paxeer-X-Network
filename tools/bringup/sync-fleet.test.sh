@@ -247,56 +247,46 @@ data up-rpc-6 frozen 25070653
 
 cat >"$work/hosts-good.env" <<'ENV'
 EDGE_HOST=up-edge
-KERNEL_HOST=up-kernel
-PLATFORM_HOST=up-platform
-EXPLORER_HOST=up-explorer
 ARCHIVE_HOST=up-rpc-2
 VALIDATOR_HOSTS="up-rpc-5 up-validator-b"
 RPC_HOSTS="up-rpc-1 up-rpc-2 up-rpc-3 up-rpc-4 up-rpc-5 up-rpc-6"
 HPX_HOST=up-hpx
+OLD_WALLET_HOST=up-old-wallet
 ENV
 
 cat >"$work/hosts-apart.env" <<'ENV'
 EDGE_HOST=up-edge
-KERNEL_HOST=up-kernel
-PLATFORM_HOST=up-platform
-EXPLORER_HOST=up-explorer
 ARCHIVE_HOST=up-rpc-8
 VALIDATOR_HOSTS="up-rpc-5 up-validator-b"
 RPC_HOSTS="up-rpc-1 up-rpc-3"
 HPX_HOST=up-hpx
+OLD_WALLET_HOST=up-old-wallet
 ENV
 
 cat >"$work/hosts-bad.env" <<'ENV'
 EDGE_HOST=up-edge
-KERNEL_HOST=up-kernel
-PLATFORM_HOST=up-platform
-EXPLORER_HOST=up-explorer
 ARCHIVE_HOST=up-rpc-1
 VALIDATOR_HOSTS="up-validator-a up-validator-b"
 RPC_HOSTS="up-rpc-1 up-rpc-9 down-rpc-7"
 HPX_HOST=up-hpx
+OLD_WALLET_HOST=up-old-wallet
 ENV
 
 cat >"$work/hosts-refuse.env" <<'ENV'
 EDGE_HOST=up-edge
-KERNEL_HOST=up-kernel
-PLATFORM_HOST=up-platform
-EXPLORER_HOST=up-explorer
 ARCHIVE_HOST=up-rpc-4
 VALIDATOR_HOSTS="up-rpc-6 up-validator-b"
 RPC_HOSTS="up-rpc-1 up-rpc-4 up-rpc-6"
 HPX_HOST=up-hpx
+OLD_WALLET_HOST=up-old-wallet
 ENV
 
 cat >"$work/hosts-missing.env" <<'ENV'
 EDGE_HOST=up-edge
-KERNEL_HOST=up-kernel
-PLATFORM_HOST=up-platform
-EXPLORER_HOST=up-explorer
 VALIDATOR_HOSTS="up-validator-a up-validator-b"
 RPC_HOSTS="up-rpc-1"
 HPX_HOST=up-hpx
+OLD_WALLET_HOST=up-old-wallet
 ENV
 
 failures=0

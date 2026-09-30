@@ -290,7 +290,7 @@ log_path   = ".logs/verify.log"
 
 [task.0.5]
 title      = "Retarget the host map, the CA service list and the fleet script from host roles to Fly apps"
-status     = "pending"
+status     = "done"
 wave       = 0
 requires   = ["0.1"]
 do_1       = "In tools/bringup/check-live.sh make the roles EDGE_HOST, ARCHIVE_HOST, VALIDATOR_HOSTS, RPC_HOSTS, HPX_HOST and OLD_WALLET_HOST, update the usage text and the hosts subcommand, and add the helpers every Fly check uses: the app name read from the app line of a toml and a command run inside the app's machine through flyctl ssh console, bounded by CHECK_LIVE_TIMEOUT; these six roles replace the eight roles that task 0.1 introduced; move the fixtures of tools/bringup/check-live.test.sh and tools/bringup/sync-fleet.test.sh to the six roles and make check-live.test.sh run sync-fleet.test.sh as its last case, so the one verify_cmd covers both."
