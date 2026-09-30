@@ -971,3 +971,21 @@ area    = "tests"
 symptom = "An inode comparison meant to prove a reset replaced a directory can pass or fail by chance."
 cause   = "Once the old directory is removed ext4 may reuse its inode number for the recreated directory, just as it does for files."
 do      = "Hold an fd on the old directory across the reset (exec {FD}<dir) before comparing inode numbers, then close it."
+
+[gotcha.159]
+area    = "explorer-ops"
+symptom = "The public RPC name serving the lowest first block was not the archive node but a frozen pruned node."
+cause   = "A pruned node that stopped following the head keeps its retain window below its own stale head, which can sit under the archive's state-sync start."
+do      = "Identify the archive as the name the explorer is configured with, or the lowest first block among names within ten blocks of the head; never the lowest first block overall."
+
+[gotcha.160]
+area    = "ops"
+symptom = "Reading the explorer's Railway variables, setting its RPC variables and writing production RPC names into a repo README were each refused by the permission system."
+cause   = "The classifier treats variable reads as credential materialization, variable sets as a production deploy and production names in repo files as sensitive detail."
+do      = "Attempt each once, write the ordered commands with placeholders into the private handoff, keep repo docs names-only, and report implemented, not qualified."
+
+[gotcha.161]
+area    = "spec"
+symptom = "The explorer task names ETH_CALL_URL, which the backend never reads."
+cause   = "The spec shortened ETHEREUM_JSONRPC_ETH_CALL_URL, the name config_helper.exs reads."
+do      = "Check each variable name against explorer/backend/config/config_helper.exs before setting it."

@@ -349,3 +349,27 @@ command   = "timeout 30m make layerxd platform-test-node"
 exit_code = 0
 log_path  = ".logs/verify.log"
 observed  = "Per the ruling the checkpoint-emptiness proxy after the reset is replaced by proof that the checkpoint directory object was replaced and that the admission journal, which held generation-1 admissions, is back to its 32-byte superblock; the node test passes the custody credit, DID listing, SEND, reset and generation-2 checks at the first run."
+
+[observation.4.4.1]
+task       = "4.4"
+file       = "explorer/deploy/railway/README.md"
+symbol     = "railway variables, copy-blockscout-11-to-10.sh"
+observed   = "The permission system refused reading the explorer project's Railway variables as credential materialization, setting the backend's RPC, FIRST_BLOCK and TRACE_FIRST_BLOCK variables as a production deploy, and writing the production RPC values into the README as sensitive detail; the frontend variable and the history copy, which needs the Postgres connection strings, were therefore not attempted."
+assumption = "The owner runs the ordered commands in the private handoff for this task, then the probe with the three database variables exported; the archive's first retained block is 25534609."
+severity   = "blocker"
+
+[observation.4.4.2]
+task       = "4.4"
+file       = "explorer/backend/config/config_helper.exs"
+symbol     = "define_urls_vars(:eth_call)"
+observed   = "The task names ETH_CALL_URL but the backend reads ETHEREUM_JSONRPC_ETH_CALL_URL, the name the README table already lists; the handoff sets that name."
+assumption = "ETH_CALL_URL in the do line is shorthand for the backend's variable."
+severity   = "note"
+
+[observation.4.4.3]
+revision   = "9296a0d2c40024e02afe7a12f57177cb27183bc6 plus the lane's probe change committed with this record"
+command    = "timeout 20m tools/bringup/check-live.sh explorer"
+exit_code  = 1
+log_path   = ".logs/verify.log"
+observed   = "paxscan.io answers 200 and the backend's /api/health and /api/v2/stats answer 200, but envs.js still names a raw node address as NEXT_PUBLIC_NETWORK_RPC_URL, so no archive name, no indexed block below the pruned floor and, with the database variables unset, no history or missing-range check could pass."
+assumption = "The failures follow only from the refused remote steps of observation 4.4.1; no repair in the probe can clear them."

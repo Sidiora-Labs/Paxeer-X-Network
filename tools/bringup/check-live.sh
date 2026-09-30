@@ -3,11 +3,12 @@ set -euo pipefail
 
 usage() {
 	cat <<'EOF'
-usage: tools/bringup/check-live.sh hosts|rpc-nodes|archive-node|ca|hpx
+usage: tools/bringup/check-live.sh hosts|rpc-nodes|archive-node|ca|hpx|explorer
 
 Checks one system of the Paxeer X Network bring-up against its live answers.
 Every subcommand reads the operator's private host map from the file named
-by BRINGUP_HOSTS_FILE and never prints a value from it.
+by BRINGUP_HOSTS_FILE and never prints a value from it; explorer needs no
+host map.
 
 hosts     runs ssh true against every destination of every role of the host
           map and prints one line per role:
@@ -75,6 +76,28 @@ hpx       reads the hpx registry at CHECK_LIVE_HPX_ORIGIN, by default
              and a nodes list whose length is count
           Exits 0 only when all three checks pass.
 
+explorer  reads the deployed explorer at CHECK_LIVE_EXPLORER_ORIGIN, by default
+          https://paxscan.io, its envs.js, its backend and its databases, and
+          asks the sixteen public RPC names for their head and the lowest
+          block they serve, one line per check:
+  frontend   the origin answers 200 and the NEXT_PUBLIC_NETWORK_RPC_URL of its
+             /assets/envs.js is https://<one of the sixteen public names>
+  archive    that name serves a lower first block than every other name
+             within ten blocks of the head (the pruned floor)
+  backend    GET /api/health and /api/v2/stats at the NEXT_PUBLIC_API_HOST of
+             envs.js answer 200, one line each, and GET
+             /api/v2/blocks/<the archive name's first block> answers 200
+  history    over EXPLORER_DATABASE_URL, EXPLORER_LEGACY_DATABASE_URL and
+             PAXSCAN_DATABASE_PUBLIC_URL: the consensus blocks the explorer
+             database holds from its first block up to the archive name's
+             first block equal the legacy database's from that block up to
+             its ceiling plus the paxscan database's above the ceiling
+  missing-ranges
+             every missing_block_ranges row of the explorer database at or
+             above its first block lies inside the union of the two sources'
+             missing_block_ranges
+          Exits 0 only when every check passes.
+
 Environment:
   BRINGUP_HOSTS_FILE   private env file assigning EDGE_HOST, KERNEL_HOST,
                        PLATFORM_HOST, EXPLORER_HOST, ARCHIVE_HOST,
@@ -83,6 +106,12 @@ Environment:
                        space-separated list of them
   CHECK_LIVE_HPX_ORIGIN  origin of the hpx registry, default
                        https://node.hyperpaxeer.com
+  CHECK_LIVE_EXPLORER_ORIGIN  origin of the explorer frontend, default
+                       https://paxscan.io
+  EXPLORER_DATABASE_URL, EXPLORER_LEGACY_DATABASE_URL,
+  PAXSCAN_DATABASE_PUBLIC_URL  read-only connection strings of the explorer's
+                       production database, its legacy database and the
+                       paxscan copy source; never printed
   CHECK_LIVE_TIMEOUT   seconds per request, default 30
   LAYERX_CA_DIR        the internal CA directory on this host, default
                        /etc/layerx/ca
@@ -596,6 +625,203 @@ print(("pass " if ok else "fail ") + "http=" + code + " chain_id=" + str(chain) 
 	finish "$failures"
 }
 
+# earliest <name>: asks https://<name> for block 1 and prints the lowest
+# height the node still serves: 1 when block 1 answers, the height its pruning
+# error names otherwise, nothing when neither can be read.
+earliest() {
+	curl -sS --max-time "$timeout" -H 'content-type: application/json' \
+		--data '{"jsonrpc":"2.0","id":1,"method":"eth_getBlockByNumber","params":["0x1",false]}' \
+		"https://$1" 2>/dev/null | python3 -c '
+import json
+import re
+import sys
+
+try:
+    doc = json.loads(sys.stdin.read())
+except ValueError:
+    sys.exit(0)
+if not isinstance(doc, dict):
+    sys.exit(0)
+if isinstance(doc.get("result"), dict):
+    print(1)
+    sys.exit(0)
+error = doc.get("error")
+match = re.search(r"earliest available height (\d+)", str(error.get("message", "")) if isinstance(error, dict) else "")
+if match:
+    print(match.group(1))
+'
+}
+
+# http_code <url>: prints the HTTP status of one GET bounded by
+# CHECK_LIVE_TIMEOUT, or "transport" when no answer arrived.
+http_code() {
+	curl -sS --max-time "$timeout" -o /dev/null -w '%{http_code}' "$1" 2>/dev/null || echo transport
+}
+
+# sql <variable> <query>: runs one read-only query against the database whose
+# connection string the named variable holds and prints the unaligned rows;
+# never prints the connection string or psql's diagnostics.
+sql() {
+	PGCONNECT_TIMEOUT="$timeout" psql -X -At -F ' ' -v ON_ERROR_STOP=1 -d "${!1}" -c "$2" 2>/dev/null
+}
+
+# ranges_inside: reads "dst" and "src" lines of "<kind> <a> <b>" block ranges
+# on stdin and prints "inside" when every dst range lies inside the union of
+# the src ranges, or the first dst range that does not.
+ranges_inside='
+import sys
+
+dst, src = [], []
+for line in sys.stdin:
+    parts = line.split()
+    if parts and parts[0] == "error":
+        print("error " + " ".join(parts[1:]))
+        sys.exit(0)
+    if len(parts) != 3:
+        continue
+    lo, hi = sorted((int(parts[1]), int(parts[2])))
+    (dst if parts[0] == "dst" else src).append((lo, hi))
+merged = []
+for lo, hi in sorted(src):
+    if merged and lo <= merged[-1][1] + 1:
+        merged[-1] = (merged[-1][0], max(merged[-1][1], hi))
+    else:
+        merged.append((lo, hi))
+for lo, hi in sorted(dst):
+    if not any(a <= lo and hi <= b for a, b in merged):
+        print("outside %d-%d" % (lo, hi))
+        sys.exit(0)
+print("inside")
+'
+
+check_explorer() {
+	local origin="${CHECK_LIVE_EXPLORER_ORIGIN:-https://paxscan.io}" failures=0
+	local dir i verdict value n head=0 floor="" code envs api rpc_url name="" archive_low="" var missing=""
+	local first ceiling dst legacy paxscan answer
+	origin="${origin%/}"
+
+	dir="$(mktemp -d)"
+	trap 'rm -rf "$dir"' EXIT
+	for i in "${!rpc_names[@]}"; do
+		rpc "${rpc_names[$i]}" eth_blockNumber '[]' >"$dir/head.$i" &
+		earliest "${rpc_names[$i]}" >"$dir/low.$i" &
+	done
+	wait
+	for i in "${!rpc_names[@]}"; do
+		read -r verdict value <"$dir/head.$i" || true
+		n="$(hex_to_dec "${value:-}")"
+		if [ "$verdict" = result ] && [ -n "$n" ] && [ "$n" -gt "$head" ]; then
+			head=$n
+		fi
+		echo "$n" >"$dir/n.$i"
+	done
+
+	code="$(http_code "$origin")"
+	envs="$(curl -sS --max-time "$timeout" "$origin/assets/envs.js" 2>/dev/null)" || envs=""
+	read -r api rpc_url <<<"$(printf '%s' "$envs" | python3 -c '
+import re
+import sys
+
+text = sys.stdin.read()
+def get(key):
+    match = re.search(key + r"\s*:\s*\"([^\"]*)\"", text)
+    return match.group(1) if match else ""
+host = get("NEXT_PUBLIC_API_HOST")
+proto = get("NEXT_PUBLIC_API_PROTOCOL") or "https"
+print((proto + "://" + host if host else "none") + " " + (get("NEXT_PUBLIC_NETWORK_RPC_URL") or "none"))
+')" || true
+	for i in "${!rpc_names[@]}"; do
+		if [ "${rpc_url%/}" = "https://${rpc_names[$i]}" ]; then
+			name="${rpc_names[$i]}"
+			archive_low="$(cat "$dir/low.$i")"
+		fi
+	done
+	if [ "$code" = 200 ] && [ -n "$name" ]; then
+		echo "pass frontend $origin http=200 rpc=$name"
+	else
+		echo "fail frontend $origin http=$code rpc=${rpc_url:-none}"
+		failures=$((failures + 1))
+	fi
+
+	# The pruned floor: the lowest height any other name at the head serves.
+	for i in "${!rpc_names[@]}"; do
+		n="$(cat "$dir/n.$i")"
+		value="$(cat "$dir/low.$i")"
+		if [ "${rpc_names[$i]}" != "$name" ] && [ -n "$n" ] && [ -n "$value" ] && [ $((head - n)) -le 10 ]; then
+			if [ -z "$floor" ] || [ "$value" -lt "$floor" ]; then
+				floor=$value
+			fi
+		fi
+	done
+	if [ -n "$archive_low" ] && [ -n "$floor" ] && [ "$archive_low" -lt "$floor" ]; then
+		echo "pass archive $name first_retained=$archive_low pruned_floor=$floor"
+	else
+		echo "fail archive ${name:-none} first_retained=${archive_low:-none} pruned_floor=${floor:-none}"
+		failures=$((failures + 1))
+	fi
+
+	for value in /api/health /api/v2/stats; do
+		code="none"
+		[ "$api" = none ] || code="$(http_code "$api$value")"
+		if [ "$code" = 200 ]; then
+			echo "pass backend $value http=200"
+		else
+			echo "fail backend $value http=$code"
+			failures=$((failures + 1))
+		fi
+	done
+
+	code="none"
+	if [ "$api" != none ] && [ -n "$archive_low" ]; then
+		code="$(http_code "$api/api/v2/blocks/$archive_low")"
+	fi
+	if [ "$code" = 200 ]; then
+		echo "pass backend block=$archive_low below pruned_floor=$floor"
+	else
+		echo "fail backend block=${archive_low:-none} http=$code"
+		failures=$((failures + 1))
+	fi
+
+	for var in EXPLORER_DATABASE_URL EXPLORER_LEGACY_DATABASE_URL PAXSCAN_DATABASE_PUBLIC_URL; do
+		[ -n "${!var:-}" ] || missing="$missing${missing:+,}$var"
+	done
+	if [ -n "$missing" ] || [ -z "$archive_low" ]; then
+		echo "fail history unset=${missing:-none} first_retained=${archive_low:-none}"
+		finish $((failures + 2))
+	fi
+
+	first="$(sql EXPLORER_DATABASE_URL 'SELECT min(number) FROM blocks WHERE consensus')" || first=""
+	ceiling="$(sql EXPLORER_LEGACY_DATABASE_URL 'SELECT max(number) FROM blocks WHERE consensus')" || ceiling=""
+	if ! [[ "$first" =~ ^[0-9]+$ && "$ceiling" =~ ^[0-9]+$ ]]; then
+		echo "fail history first=${first:-none} legacy_ceiling=${ceiling:-none}"
+		finish $((failures + 2))
+	fi
+	dst="$(sql EXPLORER_DATABASE_URL "SELECT count(*) FROM blocks WHERE consensus AND number BETWEEN $first AND $((archive_low - 1))")" || dst=""
+	legacy="$(sql EXPLORER_LEGACY_DATABASE_URL "SELECT count(*) FROM blocks WHERE consensus AND number BETWEEN $first AND $ceiling")" || legacy=""
+	paxscan="$(sql PAXSCAN_DATABASE_PUBLIC_URL "SELECT count(*) FROM blocks WHERE consensus AND number > $ceiling AND number < $archive_low")" || paxscan=""
+	if [[ "$dst" =~ ^[0-9]+$ && "$legacy" =~ ^[0-9]+$ && "$paxscan" =~ ^[0-9]+$ ]] && [ "$dst" -eq $((legacy + paxscan)) ]; then
+		echo "pass history blocks=$dst from=$first legacy=$legacy paxscan=$paxscan ceiling=$ceiling"
+	else
+		echo "fail history blocks=${dst:-none} from=$first legacy=${legacy:-none} paxscan=${paxscan:-none} ceiling=$ceiling"
+		failures=$((failures + 1))
+	fi
+
+	answer="$(
+		{
+			sql EXPLORER_DATABASE_URL "SELECT 'dst', from_number, to_number FROM missing_block_ranges WHERE greatest(from_number, to_number) >= $first" || echo "error explorer-database"
+			sql EXPLORER_LEGACY_DATABASE_URL "SELECT 'src', from_number, to_number FROM missing_block_ranges" || echo "error legacy-database"
+			sql PAXSCAN_DATABASE_PUBLIC_URL "SELECT 'src', from_number, to_number FROM missing_block_ranges" || echo "error paxscan-database"
+		} | python3 -c "$ranges_inside"
+	)"
+	if [ "$answer" = inside ]; then
+		echo "pass missing-ranges inside-source-lost from=$first"
+	else
+		echo "fail missing-ranges $answer from=$first"
+		failures=$((failures + 1))
+	fi
+	finish "$failures"
+}
+
 # Sourced by tools/bringup/ca.sh for the host map and the ssh helpers: the
 # probe's own dispatch below runs only when this file is executed.
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
@@ -606,7 +832,7 @@ case "$mode" in
 	usage
 	exit 0
 	;;
-hosts | rpc-nodes | archive-node | ca | hpx) ;;
+hosts | rpc-nodes | archive-node | ca | hpx | explorer) ;;
 *)
 	usage >&2
 	exit 2
@@ -618,12 +844,14 @@ if [ "$#" -ne 1 ]; then
 	exit 2
 fi
 
-for tool in ssh timeout curl python3 openssl sha256sum; do
+tools=(ssh timeout curl python3 openssl sha256sum)
+[ "$mode" != explorer ] || tools=(curl python3 psql)
+for tool in "${tools[@]}"; do
 	if ! command -v "$tool" >/dev/null 2>&1; then
 		echo "check-live: $tool is required" >&2
 		exit 2
 	fi
 done
 
-load_hosts
+[ "$mode" = explorer ] || load_hosts
 "check_${mode//-/_}"

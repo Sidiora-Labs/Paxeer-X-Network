@@ -732,7 +732,7 @@ reqs       = ["14.1"]
 
 [task.4.4]
 title      = "Complete the deployed explorer fork: archive RPC, history copy and the probe through paxscan.io"
-status     = "pending"
+status     = "in_progress"
 wave       = 4
 requires   = ["4.3"]
 do_1       = "Identify the explorer services from the NEXT_PUBLIC_API_HOST of the envs.js that https://paxscan.io serves through our explorer proxy host: the Explorer Backend and Explorer Frontend services of the Railway project paxeer-x-explorer-dev, their Postgres, its production database explorer_10_2_6 and its legacy database railway; the Railway project paxscan is read-only and is touched only as the copy source for the range from the legacy database's ceiling up to the archive node's first retained block. On the Explorer Backend set as service variables ETHEREUM_JSONRPC_HTTP_URL, ETHEREUM_JSONRPC_TRACE_URL and ETH_CALL_URL to the archive host's public RPC name over https, ETHEREUM_JSONRPC_WS_URL to that name over wss, ETHEREUM_JSONRPC_FALLBACK_HTTP_URL to another serving RPC name, and FIRST_BLOCK and TRACE_FIRST_BLOCK to the archive node's first retained block, keeping CHAIN_TYPE paxeer_x and ETHEREUM_JSONRPC_VARIANT paxeer_x; on the Explorer Frontend set NEXT_PUBLIC_NETWORK_RPC_URL to the archive host's public RPC name; no other variable changes, nothing else is redeployed and no DNS record changes; record these production values in the variable table of explorer/deploy/railway/README.md; confirm after the backend restarts on its new variables that it indexes a block below the pruned nodes' first retained height."
