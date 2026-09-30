@@ -1183,3 +1183,19 @@ symbol     = "check_live_internal_failing"
 observed   = "bash tools/bringup/check-live.test.sh exited 1 (log .logs/build.log) on the single case check_live_internal_failing, whose programs event source answered pin=ISRG-Root-X1 where the case wants X2; every interop case passed."
 assumption = "The case belongs to task 3.11 and races the restart of its background event source, so it is recorded as unrelated and not chased in this task."
 severity   = "unrelated"
+
+[observation.4.10.1]
+task       = "4.10"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_ramp"
+observed   = "timeout 15m tools/bringup/check-live.sh ramp exited 2 (log .logs/verify.log) on LAYERX_RAMP_CUSTOMER_TOKEN unset: the journey's provider inputs are not supplied and the app is not deployed."
+assumption = "The deploy side supplies the blocked_on inputs and the journey variables of the handoff, deploys, registers the name on the edge and reruns the gate."
+severity   = "external"
+
+[observation.4.10.2]
+task       = "4.10"
+file       = "platform/ramps/toolkit/src/clients.rs"
+symbol     = "MutualTlsClient::new"
+observed   = "The ramp's outbound client loaded only the first certificate of client_tls ca_pem, so a bundle of the internal CA root, the ISRG roots and the owner's service roots could not verify the router and the internal upstreams together; the loader now trusts every certificate of the file, touches extended with that file and tools/bringup/ca.sh (ramp-client row)."
+assumption = "Resolved by the feature manager: the gateway is the router URL and the CA file is that bundle, with RAMP_EXTERNAL_ROOT_PEMS a named deploy input."
+severity   = "resolved"

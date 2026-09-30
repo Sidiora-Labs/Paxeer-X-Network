@@ -1463,3 +1463,27 @@ area    = "bringup"
 symptom = "An x402 round trip against the interop gateway would fail to reach the public router URL once the gateway's outbound CA points at the internal CA."
 cause   = "It looked as if LAYERX_INTEROP_OUTBOUND_CA_DER replaced the trust store, but the service adds that one DER to native-tls on top of the system roots."
 do      = "Point the interop outbound CA at the internal CA DER alone: it verifies the receipt authority and Redis, while the router's public chain verifies through the image's ca-certificates bundle."
+
+[gotcha.241]
+area    = "ramp"
+symptom = "A PEM bundle given to a native-tls client verifies only the upstreams under its first root."
+cause   = "native_tls Certificate::from_pem parses only the first certificate of the file."
+do      = "Load a CA file with Certificate::stack_from_pem and add every root to the connector."
+
+[gotcha.242]
+area    = "fly"
+symptom = "A service dropped to its uid cannot open its config under a /run directory the root init created."
+cause   = "mkdir -p under umask 077 leaves the parent directory root 0700, so the service uid cannot traverse it."
+do      = "chmod 0711 each parent directory the init creates before dropping privileges."
+
+[gotcha.243]
+area    = "bringup"
+symptom = "The kernel-app harness cases of check-live.test.sh report init status=absent once and pass on the next run."
+cause   = "Several lanes run the harness at the same moment and the loaded box pushes the stand-in ssh console past its five-second bound."
+do      = "Treat a lone kernel-app init=absent failure under concurrent harness runs like the ca_issue /dev/shm cases: record it, rerun once."
+
+[gotcha.244]
+area    = "bringup"
+symptom = "Adding a row to the ca.sh service table fails ca_issue_every_service and any case that expects that app's toml to be absent from the fixture repository."
+cause   = "The harness pins the row count and creates a fixture toml for every row's app."
+do      = "Raise the pinned count with the row and take the fixture toml aside in a toml-absent case instead of assuming it is missing."
