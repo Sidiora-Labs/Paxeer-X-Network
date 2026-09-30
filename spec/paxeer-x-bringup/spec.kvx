@@ -970,7 +970,7 @@ reqs       = ["1.1", "1.2"]
 
 [task.4.20]
 title      = "Run the indexer as a private Fly app behind the router's history methods"
-status     = "pending"
+status     = "implemented"
 wave       = 4
 requires   = ["2.2", "4.4", "4.6"]
 blocked_on = "the owner's approval of exposing the archive node's CometBFT RPC read-only on its public RPC name: a location on that name's nginx vhost that accepts only POST and proxies to the node's loopback CometBFT RPC, with the node's unsafe routes off and an nginx request rate limit"
@@ -980,7 +980,7 @@ do_3       = "Import LAYERX_GATEWAY_INDEXER_URL, the indexer's https .internal n
 do_4       = "Add the indexer subcommand: inside the indexer machine its listener answers over TLS under the internal CA, the app holds no public IP, its backfill cursor has reached the cutover, and through the router URL lx_getHistory, px_getHistory and px_getUnifiedHistory each answer a known account's history."
 verify_cmd = "timeout 15m tools/bringup/check-live.sh indexer"
 symbols    = ["check_indexer"]
-touches    = ["docker/platform-indexer/Dockerfile", "docker/platform-indexer/Dockerfile.dockerignore", "platform/hosted/indexer/fly.toml", "tools/bringup/ca.sh", "tools/bringup/check-live.sh"]
+touches    = ["docker/platform-indexer/Dockerfile", "docker/platform-indexer/Dockerfile.dockerignore", "platform/hosted/indexer/fly.toml", "platform/hosted/indexer/fly-init.sh", "tools/bringup/archive-comet-zone.conf", "tools/bringup/archive-comet-location.conf", "tools/bringup/ca.sh", "tools/bringup/check-live.sh"]
 tests      = ["tools/bringup/check-live.test.sh"]
 reqs       = ["20.1", "20.2"]
 
