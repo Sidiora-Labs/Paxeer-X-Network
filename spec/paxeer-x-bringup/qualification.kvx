@@ -1159,3 +1159,11 @@ symbol     = "check_mirrors"
 observed   = "layerx-mirror-verify needs a request carrying one receipt's canonical bytes, its batch number and the archive commitment of that batch, and neither the spec nor the tree fixes the read path the deploy side takes them from; the publisher's /status exposes no commitments."
 assumption = "None taken: CHECK_LIVE_MIRRORS_REQUEST is an owner input in the shape scripts/qualify-mirror-verification-live.sh reads as its canonical request, until the owner names its read path."
 severity   = "warning"
+
+[observation.4.1.5]
+task       = "4.1"
+file       = "tools/bringup/check-live.test.sh"
+symbol     = "curl stand-in, gas block"
+observed   = "The feature merge of this task dropped the exit and closing fi of the curl stand-in's gas block, so the stand-in did not parse and twenty-one harness cases failed at every merge after it."
+assumption = "The two lines are restored once by the feature manager and the harness run once at the fix revision; the merged harness result of every merge in between is superseded by this run."
+severity   = "high"
