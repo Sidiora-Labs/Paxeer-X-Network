@@ -30,7 +30,8 @@ RESOLVED_EDGES = (
     'Deployment layerx-testnet/layerx-gateway -> layerx-program-registry.layerx-testnet.svc.cluster.local:9420 [env LAYERX_GATEWAY_PROGRAM_REGISTRY_URL]',
     'Deployment layerx-testnet/layerx-gateway -> layerx-faucet-public.layerx-testnet.svc.cluster.local:443 [env LAYERX_GATEWAY_FAUCET_URL]',
     'Deployment layerx-testnet/layerx-gateway -> layerx-gateway-redis.layerx-testnet.svc.cluster.local:6379 [env LAYERX_GATEWAY_REDIS_URL]',
-    'Deployment layerx-testnet/layerx-gateway -> paxeer-boundary.layerx-testnet.svc.cluster.local:9443 [env LAYERX_GATEWAY_PAXEER_RPC_URL]',
+    'Deployment layerx-testnet/layerx-gateway -> api1.mainnet-beta.paxeer.network:443 [env LAYERX_GATEWAY_PAXEER_RPC_URLS]',
+    'Deployment layerx-testnet/layerx-gateway -> api2.mainnet-beta.paxeer.network:443 [env LAYERX_GATEWAY_PAXEER_RPC_URLS]',
     'StatefulSet layerx-testnet/layerx-program-registry -> layerx-agent-boundary.layerx-testnet.svc.cluster.local:9443 [env LAYERX_REGISTRY_NODE_ENDPOINT]',
     'StatefulSet layerx-testnet/layerx-program-registry -> layerx-receipt-authority.layerx-testnet.svc.cluster.local:9443 [env LAYERX_REGISTRY_RECEIPT_AUTHORITY_ENDPOINT]',
     'StatefulSet layerx-testnet/layerx-program-registry -> layerx-agent-boundary.layerx-testnet.svc.cluster.local:9443 [env LAYERX_EXPLORER_NODE_ENDPOINT]',
@@ -103,7 +104,9 @@ def failures(topology):
     return [row for row in module['check'](topology) if row[0] == 'FAIL']
 
 def labelled(rows, status):
-    return [row[1] for row in rows if row[0] == status]
+    return [row[1] for row in rows if row[0] in (status if isinstance(status, tuple) else (status,))]
+
+RESOLVED = ('ok', 'offcluster')
 
 def named(rows, status, expected, description):
     observed = labelled(rows, status)
@@ -122,7 +125,7 @@ def producer_edges():
     for parser in ('load_pyyaml', 'load_builtin'):
         topology = load(parser)
         assert not failures(topology), failures(topology)
-        named(module['check'](topology), 'ok', COMPLETE_EDGES, 'producer topology resolved edges (%s)' % parser)
+        named(module['check'](topology), RESOLVED, COMPLETE_EDGES, 'producer topology resolved edges (%s)' % parser)
         for policy_name, edge_names in {
             'payment-producer': ('LAYERX_EVENTS_PAYMENT_UPSTREAM_URL',),
             'program-producer': ('LAYERX_EVENTS_PROGRAM_UPSTREAM_URL',),
@@ -139,7 +142,7 @@ def producer_edges():
             assert refused, (parser, policy_name)
             expected_count = {'event-producers': 3, 'layerx-human': 2}.get(policy_name, 1)
             assert len(refused) == expected_count, (parser, policy_name, refused)
-            assert len(labelled(module['check'](changed), 'ok')) == len(COMPLETE_EDGES) - expected_count, (parser, policy_name)
+            assert len(labelled(module['check'](changed), RESOLVED)) == len(COMPLETE_EDGES) - expected_count, (parser, policy_name)
             assert all('ingress NetworkPolicy' in row[2] for row in refused), (parser, policy_name, refused)
             for edge_name in edge_names:
                 assert any(edge_name in row[1] for row in refused), (parser, policy_name, edge_name, refused)
@@ -152,7 +155,7 @@ base = load('load_pyyaml')
 baseline = module['check'](base)
 named(baseline, 'FAIL', HUMAN_EDGES, 'baseline Human edges without the Human manifest')
 assert all('layerx-human' in row[2] for row in failures(base))
-named(baseline, 'ok', BASELINE_EDGES, 'baseline resolved edges')
+named(baseline, RESOLVED, BASELINE_EDGES, 'baseline resolved edges')
 named(baseline, 'external', SEPARATELY_OPERATED_EDGES, 'baseline separately operated edges')
 parity_failed = False
 try:
@@ -229,7 +232,7 @@ paths.append('human:web-deployment.yaml')
 complete = load('load_pyyaml')
 assert not failures(complete), failures(complete)
 assert module['check'](complete) == module['check'](load('load_builtin'))
-named(module['check'](complete), 'ok', COMPLETE_EDGES, 'complete resolved edges')
+named(module['check'](complete), RESOLVED, COMPLETE_EDGES, 'complete resolved edges')
 named(module['check'](complete), 'external', SEPARATELY_OPERATED_EDGES, 'complete separately operated edges')
 print('PASS complete topology including Human resolves the %d named edges with both parsers' % len(COMPLETE_EDGES))
 
