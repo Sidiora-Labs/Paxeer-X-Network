@@ -780,3 +780,10 @@ symbol = "deploy.sh"
 observed = "The local systemd and nginx deployment of the registry stays in the tree although the name is served by the Fly app and the README no longer points to it."
 assumption = "Retiring or repurposing the local deployment files is outside do_3's touches and needs an owner decision; nothing was removed."
 severity = "low"
+
+[gate.4.21.final]
+revision = "e7badb10d66a221f7d0d8da99a4f56d842244464"
+command = "BRINGUP_HOSTS_FILE=/root/lx-ops/bringup-2026-09-29/hosts.env timeout 10m tools/bringup/check-live.sh hpx"
+exit_code = 0
+log_path = ".logs/4.21-final-hpx-live.log"
+observed = "Final changed-source gate passed after host-role, fixture and release-streaming documentation completion; earlier serving and runtime-retirement evidence retained."
