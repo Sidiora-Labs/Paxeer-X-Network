@@ -748,13 +748,13 @@ severity   = "note"
 
 [gate.0.9.live_registration]
 revision = "3df583333c69b96d90174806635ae6be55d3f094"
-command = "BRINGUP_HOSTS_FILE=/root/lx-ops/bringup-2026-09-29/hosts.env tools/bringup/edge.sh add api-mainnet-beta.paxeer.network paxeer-shared-endpoint"
+command = "BRINGUP_HOSTS_FILE=<private hosts file> tools/bringup/edge.sh add api-mainnet-beta.paxeer.network paxeer-shared-endpoint"
 exit_code = 0
 log_path = ".logs/0.9-edge-register.log"
 
 [gate.0.9.live_edge]
 revision = "3df583333c69b96d90174806635ae6be55d3f094"
-command = "BRINGUP_HOSTS_FILE=/root/lx-ops/bringup-2026-09-29/hosts.env timeout 10m tools/bringup/check-live.sh edge"
+command = "BRINGUP_HOSTS_FILE=<private hosts file> timeout 10m tools/bringup/check-live.sh edge"
 exit_code = 0
 log_path = ".logs/0.9-edge-live.log"
 
@@ -832,13 +832,13 @@ severity   = "note"
 
 [gate.0.3.live_deploy]
 revision = "26b211c9ccba18c31c51a4bae828cf17e185902e"
-command = "BRINGUP_HOSTS_FILE=/root/lx-ops/bringup-2026-09-29/hosts.env timeout 15m tools/bringup/search-front.sh deploy"
+command = "BRINGUP_HOSTS_FILE=<private hosts file> timeout 15m tools/bringup/search-front.sh deploy"
 exit_code = 0
 log_path = ".logs/0.3-deploy.private.log"
 
 [gate.0.3.live_search_front]
 revision = "26b211c9ccba18c31c51a4bae828cf17e185902e"
-command = "BRINGUP_HOSTS_FILE=/root/lx-ops/bringup-2026-09-29/hosts.env timeout 10m tools/bringup/check-live.sh search-front"
+command = "BRINGUP_HOSTS_FILE=<private hosts file> timeout 10m tools/bringup/check-live.sh search-front"
 exit_code = 0
 log_path = ".logs/0.3-search-front-live.log"
 
@@ -955,7 +955,7 @@ severity = "low"
 
 [gate.4.21.final]
 revision = "e7badb10d66a221f7d0d8da99a4f56d842244464"
-command = "BRINGUP_HOSTS_FILE=/root/lx-ops/bringup-2026-09-29/hosts.env timeout 10m tools/bringup/check-live.sh hpx"
+command = "BRINGUP_HOSTS_FILE=<private hosts file> timeout 10m tools/bringup/check-live.sh hpx"
 exit_code = 0
 log_path = ".logs/4.21-final-hpx-live.log"
 observed = "Final changed-source gate passed after host-role, fixture and release-streaming documentation completion; earlier serving and runtime-retirement evidence retained."
@@ -1030,6 +1030,14 @@ file       = "tools/bringup/check-live.test.sh"
 symbol     = "check_live_kernel_app_passing, check_live_kernel_app_failing"
 observed   = "timeout 20m bash tools/bringup/check-live.test.sh exited 1 on two consecutive runs with no other harness running (log .logs/check-live-test.log): both kernel-app cases report init status=absent, while all eleven human_state_preserve cases and every other case pass."
 assumption = "The kernel-app command reads only /proc/ and /run/layerx/init/, which this change's stand-in rewrites do not touch, so the failure predates it; it is left for the manager rather than chased here."
+severity   = "warning"
+
+[observation.1.5.9]
+task       = "1.5"
+file       = "docker/kernel/init.sh"
+symbol     = "treasury-signer wait"
+observed   = "The treasury-signer service waits on publication/binding-policy.json, which only the genesis step of tools/bringup/kernel-genesis.sh produces after the kernel app runs; the init's genesis_files list (metadata.lxgb, sequencer.key, asset-id, replica-id) does not name it or publication/authorization.json, although kernel-genesis.sh lists both as genesis files, so the kernel-app gate reports the wait as a failure instead of waiting-genesis until that step has run."
+assumption = "The genesis step follows the cutover on the same machine; the two publication files belong in the init's genesis_files list so the gate passes the wait as waiting-genesis before the genesis step, which a kernel init correction supplies."
 severity   = "warning"
 
 [observation.4.11.1]

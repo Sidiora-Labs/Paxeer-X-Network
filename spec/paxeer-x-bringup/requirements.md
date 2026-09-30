@@ -86,7 +86,7 @@ Every LayerX system that the surveys found ready, blocked or incomplete is broug
 
 1. WHEN the existing endpoint app runs the gateway THE gateway SHALL be in kernel mode with core_agent_boundary and independent_receipt_authority at the kernel app's .internal name over mTLS, its Redis the existing Redis app, its Paxeer RPC at least two serving RPC names tried in order, on at least two machines in two regions, and its readiness SHALL report every configured backend up.
 2. WHEN tools/bringup/check-live.sh router runs THE probe SHALL see eth_chainId 0x7d, px_getNetwork with kernel.available true and lx_getAccount answering a read for a bound account, all through the router URL.
-3. WHEN the router passes its probe THE wallet gateway's RPC_URLS SHALL name the router URL first followed by serving RPC names, the wallet PWA SHALL name the router URL as its RPC endpoint and the wallet gateway's readiness SHALL report its rpc pool up.
+3. WHEN the router passes its probe THE wallet gateway's RPC_URLS SHALL name the router URL first followed by serving RPC names, the wallet PWA SHALL name the router URL as its RPC endpoint (unverified: PWA host pending owner ruling) and the wallet gateway's readiness SHALL report its rpc pool up.
 4. WHEN LAYERX_GATEWAY_PAXEER_RPC_URLS names two to eight https URLs and the first fails at transport or answers other than 200 THE gateway SHALL answer from the next, and its Paxeer status SHALL report up while any one answers.
 
 ## Requirement 9: Identity, internal services and program registry on Fly
@@ -101,16 +101,16 @@ Every LayerX system that the surveys found ready, blocked or incomplete is broug
 
 ## Requirement 10: Human graph in the kernel app for the wallet identity
 
-**User Story:** As a wallet user signed in with the Supabase identity, the human service admits my assertion, resolves my principal and signs through the five attestors.
+**User Story:** As a wallet user signed in with the Supabase identity, the human service admits my assertion, resolves my principal and signs through the wallet attestors (count unresolved).
 
 ### Acceptance Criteria
 
 1. WHEN the identity provider receives LXIP operation 4 with an assertion THE provider SHALL verify it against the configured JWKS and return the principal and did:layerx identity, and THE provider's serve command SHALL wire the assertion configuration at startup.
 2. WHEN a wallet-facing operation arrives with an Authorization bearer from a listed origin THE human service SHALL admit the assertion through operation 4, keep the passkey cookie path unchanged, and pass the same assertion to admit_assertion for attestor signing.
-3. WHEN LAYERX_HUMAN_ATTESTOR_NODES is set THE components loader SHALL accept an absent LAYERX_HUMAN_KMS group, use the five attestors at protocol 3 with threshold three, and refuse to start only when neither custody backend is complete.
+3. WHEN LAYERX_HUMAN_ATTESTOR_NODES is set THE components loader SHALL accept an absent LAYERX_HUMAN_KMS group, use the five attestors at protocol 3 with threshold three (unverified: five-vs-four attestors, threshold unresolved), and refuse to start only when neither custody backend is complete.
 4. WHEN the identity, security, movement, components, service and onboarding processes run in the kernel machine under their uids THE service SHALL answer /livez and /readyz ready at api-hull.paxeer.network through the Fly edge, admitting https://paxportwallet.com as its web origin and its passkey relying party id paxportwallet.com, and a second service process SHALL serve the event sources over TLS under the internal CA on the private network.
 5. WHEN every HTTP route the wallet SDK calls is compared with the routes the human service serves THE service SHALL serve each one with the schema the SDK expects.
-6. WHEN the wallet PWA on Railway carries NEXT_PUBLIC_PAXEER_HUMAN_API=https://api-hull.paxeer.network THE check-live human-session gate of the wallet feature SHALL pass against that name.
+6. WHEN the wallet PWA at paxportwallet.com on its ruled host carries NEXT_PUBLIC_PAXEER_HUMAN_API=https://api-hull.paxeer.network THE check-live human-session gate of the wallet feature SHALL pass against that name.
 
 ## Requirement 11: Agent daemon and MCP live
 
