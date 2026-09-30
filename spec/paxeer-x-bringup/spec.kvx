@@ -831,7 +831,7 @@ reqs       = ["16.4"]
 
 [task.4.10]
 title      = "Run the reference ramp at ramp.paxeer.network"
-status     = "pending"
+status     = "in_progress"
 wave       = 4
 requires   = ["2.2", "2.4", "2.7", "0.9"]
 blocked_on = "the provider sandbox endpoint and credential, the compliance decision service endpoint and public key, KMS non-exporting Ed25519 handles for the LayerX and Paxeer signers, the Paxeer custody-owner broadcast API, the operator wallet and vault ids and the quote catalogue"

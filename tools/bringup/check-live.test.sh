@@ -1197,6 +1197,104 @@ CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_internal_router_unreadab
 	"check-live: 3 check(s) failed"
 unset CHECK_LIVE_ROUTER_CONNECT
 
+# The ramp cases: the fixture repository carries the ramp toml naming the
+# fixture app and the real sandbox journey; the edge manifest registers the
+# name and it resolves to the edge fixture destination. A ramp stand-in curl
+# ahead of the others answers the journey's order and operator requests as
+# the ramp does, moving each order through its stages on the operator's work
+# actions, and hands every other request to the curl stand-in above.
+ramp="$(fx_app platform/ramps/fly.toml)"
+mkdir -p "$work/ramp-bin" "$work/ramp-state"
+cat >"$work/ramp-bin/curl" <<'SH'
+#!/usr/bin/env bash
+set -eu
+url=""
+data=""
+prev=""
+for arg in "$@"; do
+	case "$arg" in
+	https://*) url="$arg" ;;
+	esac
+	[ "$prev" != --data ] || data="$arg"
+	prev="$arg"
+done
+state="$CHECK_LIVE_TEST_RAMP"
+case "$url" in
+https://ramp.paxeer.network/v1/orders)
+	case "$data" in
+	*'"order_id":"sandbox-on-ramp-'*) printf '{"order_digest":[%s1]}' "$(printf '1,%.0s' {1..31})" ;;
+	*) printf '{"order_digest":[%s2]}' "$(printf '2,%.0s' {1..31})" ;;
+	esac
+	;;
+https://ramp.paxeer.network/v1/orders/*)
+	hex="${url##*/}"
+	stage="$(cat "$state/$hex" 2>/dev/null || echo created)"
+	if [ "$stage" = done ]; then
+		printf '{"stage":"done","presentation":{"status":"done","receipt_digest":"ab","provider_evidence_digest":"cd","external_custody_label":"operator vault"}}'
+	else
+		printf '{"stage":"%s"}' "$stage"
+	fi
+	;;
+*/internal/v1/work)
+	first="$(sed -n 's/.*"order_digest":\[\([0-9]*\),.*/\1/p' <<<"$data")"
+	action="$(sed -n 's/.*"action":"\([a-z_]*\)".*/\1/p' <<<"$data")"
+	hex="$(printf "%02x" $(seq 32 | sed "s/.*/$first/"))"
+	case "$first:$action" in
+	1:submit_provider) echo provider_settled >"$state/$hex" ;;
+	1:submit_layerx | 2:submit_provider) echo done >"$state/$hex" ;;
+	2:submit_layerx) echo layerx_verified >"$state/$hex" ;;
+	esac
+	printf '{}'
+	;;
+*) exec "$CHECK_LIVE_TEST_RAMP_NEXT" "$@" ;;
+esac
+SH
+chmod +x "$work/ramp-bin/curl"
+export CHECK_LIVE_TEST_RAMP="$work/ramp-state" CHECK_LIVE_TEST_RAMP_NEXT="$work/bin/curl"
+
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_ramp_inputs_unset "$work/hosts-good.env" 2 ramp -- \
+	"check-live: LAYERX_RAMP_CUSTOMER_TOKEN is unset"
+
+export LAYERX_RAMP_CUSTOMER_TOKEN=fixture-customer LAYERX_RAMP_OPERATOR_URL="https://$ramp.fly.dev" LAYERX_RAMP_OPERATOR_TOKEN=fixture-operator
+export LAYERX_RAMP_ON_QUOTE_ID=on-quote LAYERX_RAMP_OFF_QUOTE_ID=off-quote LAYERX_RAMP_OFF_GRANT_JSON='{"grant":1}'
+export LAYERX_RAMP_ON_ACCOUNT_SEQUENCE=4 LAYERX_RAMP_OFF_RECEIVER_SEQUENCE=5
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_ramp_toml_absent "$work/hosts-good.env" 1 ramp -- \
+	"fail ramp toml=absent" \
+	"check-live: 1 check(s) failed"
+
+mkdir -p "$fx/platform/ramps"
+printf 'app = "%s"\n' "$ramp" >"$fx/platform/ramps/fly.toml"
+cp "$root/platform/ramps/sandbox-journey.sh" "$fx/platform/ramps/"
+export CHECK_LIVE_TEST_MACHINES='[{"state":"started","config":{"mounts":[{"volume":"vol_fixture"}]}}]'
+printf '%s\n' "api-mainnet-beta.paxeer.network http paxeer-shared-endpoint 443" "ramp.paxeer.network http $ramp 443" @@sites \
+	"# rendered by tools/bringup/edge.sh; edit the manifest through it, not this file" >"$CHECK_LIVE_TEST_EDGE"
+export CHECK_LIVE_TEST_DNS="ramp:up-edge up-edge:up-edge"
+PATH="$work/ramp-bin:$PATH" CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_ramp_passing "$work/hosts-good.env" 0 ramp -- \
+	"pass machines app=$ramp machines=1 started=1 volumes=1" \
+	"pass edge ramp.paxeer.network mode=http app=$ramp edge=yes" \
+	"pass readyz https://ramp.paxeer.network/readyz tls=verified http=200 fly-request-id=present body=match" \
+	"pass journey https://ramp.paxeer.network on-ramp=done off-ramp=done" \
+	"check-live: all checks passed"
+
+rm -f "$work/ramp-state"/*
+printf '%s\n' "ramp.paxeer.network http paxeer-other-app 443" @@sites >"$CHECK_LIVE_TEST_EDGE"
+export CHECK_LIVE_TEST_DNS="ramp:up-rpc-1 up-edge:up-edge" CHECK_LIVE_TEST_DIFFER="ramp"
+export CHECK_LIVE_TEST_MACHINES='[{"state":"started","config":{"mounts":[]}},{"state":"stopped","config":{"mounts":[]}}]'
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_ramp_failing "$work/hosts-good.env" 1 ramp -- \
+	"fail machines app=$ramp machines=2 started=1 volumes=0" \
+	"fail edge ramp.paxeer.network mode=http app=paxeer-other-app want=$ramp edge=no" \
+	"fail readyz https://ramp.paxeer.network/readyz tls=verified http=200 fly-request-id=present body=differ" \
+	"fail journey https://ramp.paxeer.network exit=" \
+	"check-live: 4 check(s) failed"
+
+export CHECK_LIVE_TEST_DOWN="ramp"
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_ramp_down "$work/hosts-good.env" 1 ramp -- \
+	"fail readyz https://ramp.paxeer.network/readyz curl=7" \
+	"check-live: 4 check(s) failed"
+unset CHECK_LIVE_TEST_DOWN CHECK_LIVE_TEST_DNS CHECK_LIVE_TEST_DIFFER CHECK_LIVE_TEST_MACHINES
+unset LAYERX_RAMP_CUSTOMER_TOKEN LAYERX_RAMP_OPERATOR_URL LAYERX_RAMP_OPERATOR_TOKEN LAYERX_RAMP_ON_QUOTE_ID
+unset LAYERX_RAMP_OFF_QUOTE_ID LAYERX_RAMP_OFF_GRANT_JSON LAYERX_RAMP_ON_ACCOUNT_SEQUENCE LAYERX_RAMP_OFF_RECEIVER_SEQUENCE
+
 # The fleet script shares the host map and the ssh helpers, so its own test
 # runs as the last case, with this test's stand-ins off the PATH.
 status=0

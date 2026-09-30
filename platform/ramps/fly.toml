@@ -1,0 +1,131 @@
+# The reference ramp at ramp.paxeer.network: layerx-reference-ramp of
+# platform/ramps/reference on one machine, because its order journal under
+# /data/ramp has one writer. The fly target of docker/ramps runs
+# platform/ramps/fly-init.sh as root: it copies the [[files]] secrets below to
+# /run/secrets as uid 4020 with mode 0600, renders the ramp config from this
+# env plus the app's secrets and starts the ramp under uid 4020 on the plain
+# listener behind the http_service. The owner inputs, imported as Fly secrets
+# on standard input and never printed: RAMP_OPERATOR_PRINCIPAL_ID,
+# RAMP_ACTOR_DID, RAMP_LAYERX_SIGNER_KEY_HANDLE, RAMP_LAYERX_SIGNER_PUBLIC_KEY,
+# RAMP_PAXEER_SIGNER_KEY_HANDLE, RAMP_COMPLIANCE_ENDPOINT,
+# RAMP_COMPLIANCE_PUBLIC_KEY, RAMP_PROVIDER_ENDPOINT,
+# RAMP_PROVIDER_CALLBACK_PUBLIC_KEY, RAMP_CUSTODY_ENDPOINT,
+# RAMP_WALLET_ADDRESS, RAMP_VAULT_ID, RAMP_SIGNER_ENDPOINT,
+# RAMP_GATEWAY_ENDPOINT, RAMP_NETWORK_ID, RAMP_SEQUENCER_ID,
+# RAMP_SEQUENCER_PUBLIC_KEY, RAMP_SEQUENCER_FIRST_BATCH,
+# RAMP_SEQUENCER_LAST_BATCH and RAMP_RPC_NAMES (two serving RPC names of
+# tools/bringup/search-front.sh names); the init refuses to start while any
+# is missing. The image is built from the repository root and deployed with
+# --image (flyctl resolves [build] paths against this directory).
+app = "paxeer-ramp"
+primary_region = "ams"
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[build]
+  dockerfile = "../../docker/ramps/Dockerfile"
+  build-target = "fly"
+
+[deploy]
+  strategy = "immediate"
+
+[env]
+  RAMP_LISTEN = "[::]:8080"
+  RAMP_WORKER_ID = "paxeer-ramp-1"
+  RAMP_LEASE_SECONDS = "60"
+  RAMP_RECONCILE_SECONDS = "5"
+  RAMP_CLIENT_TIMEOUT_SECONDS = "8"
+  RAMP_IDENTITY_ENDPOINT = "https://paxeer-identity.internal:9443"
+  RAMP_IDENTITY_AUDIENCE = "layerx-ramp"
+  RAMP_RECEIPT_AUTHORITY_ENDPOINT = "https://paxeer-human-service.internal:9445"
+  RAMP_PROTOCOL_VERSION = "2"
+  RAMP_FEE_LIMIT = "1000"
+  RAMP_RPC_CHAIN_ID = "125"
+  RAMP_RPC_MINIMUM_AGREEMENT = "2"
+  RAMP_REQUIRED_CONFIRMATIONS = "12"
+  RAMP_POLL_CADENCE_SECONDS = "5"
+  RAMP_DELAYED_AFTER_POLLS = "12"
+
+[[files]]
+  guest_path = "/run/ramp-source/quotes.json"
+  secret_name = "RAMP_QUOTES"
+
+[[files]]
+  guest_path = "/run/ramp-source/outbound-ca.pem"
+  secret_name = "RAMP_CLIENT_CA_PEM"
+
+[[files]]
+  guest_path = "/run/ramp-source/outbound-identity.p12"
+  secret_name = "RAMP_CLIENT_P12"
+
+[[files]]
+  guest_path = "/run/ramp-source/outbound-identity-password"
+  secret_name = "RAMP_CLIENT_PASSWORD"
+
+[[files]]
+  guest_path = "/run/ramp-source/paxeer-rpc-ca.der"
+  secret_name = "RAMP_RPC_TRUST_ANCHOR_DER"
+
+[[files]]
+  guest_path = "/run/ramp-source/identity-token"
+  secret_name = "RAMP_IDENTITY_TOKEN"
+
+[[files]]
+  guest_path = "/run/ramp-source/compliance-token"
+  secret_name = "RAMP_COMPLIANCE_TOKEN"
+
+[[files]]
+  guest_path = "/run/ramp-source/provider-token"
+  secret_name = "RAMP_PROVIDER_CREDENTIAL"
+
+[[files]]
+  guest_path = "/run/ramp-source/gateway-key"
+  secret_name = "RAMP_GATEWAY_KEY"
+
+[[files]]
+  guest_path = "/run/ramp-source/receipt-authority-token"
+  secret_name = "RAMP_AUTHORITY_TOKEN"
+
+[[files]]
+  guest_path = "/run/ramp-source/kms-token"
+  secret_name = "RAMP_SIGNER_TOKEN"
+
+[[files]]
+  guest_path = "/run/ramp-source/paxeer-custody-token"
+  secret_name = "RAMP_CUSTODY_CREDENTIAL"
+
+[[files]]
+  guest_path = "/run/ramp-source/operator-control-token"
+  secret_name = "RAMP_OPERATOR_CONTROL_TOKEN"
+
+[[mounts]]
+  source = "ramp_data"
+  destination = "/data"
+  initial_size = "20gb"
+  snapshot_retention = 14
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "connections"
+    soft_limit = 100
+    hard_limit = 128
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "30s"
+    method = "GET"
+    path = "/readyz"
+    protocol = "http"
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "1gb"
+  cpus = 2
+  cpu_kind = "shared"

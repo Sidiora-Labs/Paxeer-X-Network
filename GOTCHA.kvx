@@ -1421,3 +1421,15 @@ area    = "bringup"
 symptom = "A check-live subcommand exits with 'unbound variable' at the very end after all its lines printed."
 cause   = "An EXIT trap set inside a function with a single-quoted reference to a local variable runs after the function's locals are gone, and set -u trips on it."
 do      = "Expand the path into the trap when it is set (double quotes, shellcheck SC2064 disabled) as the other probes of the file do."
+
+[gotcha.234]
+area    = "ramp"
+symptom = "A ramp config pointing one upstream at a public certificate and another at the internal CA cannot work."
+cause   = "The ramp's MutualTlsClient disables built-in roots and trusts exactly the one client_tls ca_pem for every upstream, with one client identity."
+do      = "Put every ramp upstream behind certificates of one CA before rendering its config."
+
+[gotcha.235]
+area    = "fly"
+symptom = "A service dropped to its uid cannot open its config under a /run directory the root init created."
+cause   = "mkdir -p under umask 077 leaves the parent directory root 0700, so the service uid cannot traverse it."
+do      = "chmod 0711 each parent directory the init creates before dropping privileges."

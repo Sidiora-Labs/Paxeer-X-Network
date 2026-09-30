@@ -1055,3 +1055,19 @@ symbol     = "check_internal"
 observed   = "timeout 10m tools/bringup/check-live.sh internal exited 1 (log .logs/verify.log): the router's served chain ends at ISRG Root X1, but the internal and internal Redis apps do not exist yet, so the public-ip reads, the payments and programs pin reads and the five readiness routes from the kernel machine all fail."
 assumption = "The deploy side runs the handoff steps (build, volumes, Redis secrets, both deploys with no public IPs, the five internal certificates) once tasks 1.5, 2.2 and 3.5 are live, then reruns the gate; the human TLS listener port 9449 is the coordinator's ruling pending the design block."
 severity   = "external"
+
+[observation.4.10.1]
+task       = "4.10"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_ramp"
+observed   = "timeout 15m tools/bringup/check-live.sh ramp exited 2 (log .logs/verify.log) on LAYERX_RAMP_CUSTOMER_TOKEN unset: the journey's provider inputs are not supplied and the app is not deployed."
+assumption = "The deploy side supplies the blocked_on inputs and the journey variables of the handoff, deploys, registers the name on the edge and reruns the gate."
+severity   = "external"
+
+[observation.4.10.2]
+task       = "4.10"
+file       = "platform/ramps/toolkit/src/clients.rs"
+symbol     = "MutualTlsClient::new"
+observed   = "The ramp's outbound client trusts one CA PEM with built-in roots disabled and presents one client identity to identity, receipt authority, gateway, signer, compliance, provider and custody, but the gateway serves only a plain listener behind the router's public certificate and tools/bringup/ca.sh has no ramp client row."
+assumption = "None taken: RAMP_GATEWAY_ENDPOINT and RAMP_CLIENT_CA_PEM stay named inputs; the owner decides the gateway endpoint under the internal CA and whether the owner's upstreams chain to it, and a ramp client row is added to ca.sh."
+severity   = "blocker"
