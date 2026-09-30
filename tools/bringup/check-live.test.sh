@@ -1445,6 +1445,96 @@ CHECK_LIVE_TEST_DOWN="walletfx" CHECK_LIVE_GATEWAY_TOKEN="$CHECK_LIVE_TEST_WALLE
 rm "$fx/spec/paxeer-x-bringup/spec.kvx"
 unset CHECK_LIVE_TEST_MACHINES
 
+# retire.sh container mode: stand-ins for curl and docker answer the public
+# name as the gateway (or as the old proxy) and keep one container's state.
+mkdir -p "$work/retire/bin" "$work/retire/state"
+cat >"$work/retire/bin/curl" <<'SH'
+#!/usr/bin/env bash
+set -eu
+headers="" body=""
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+	-D) headers="$2"; shift 2 ;;
+	-o) body="$2"; shift 2 ;;
+	*) shift ;;
+	esac
+done
+printf 'HTTP/1.1 200 OK\r\nx-served-by: %s\r\n\r\n' "${RETIRE_TEST_SERVED:-paxeer-wallet-gateway}" >"$headers"
+printf '{"ready":true}' >"$body"
+printf '200'
+SH
+cat >"$work/retire/bin/docker" <<'SH'
+#!/usr/bin/env bash
+set -eu
+printf 'docker %s\n' "$*" >>"$CHECK_LIVE_TEST_CALLS"
+state="$RETIRE_TEST_STATE"
+name="${!#}"
+[ "$name" = legacy-wallet ] || exit 1
+case "$1" in
+inspect)
+	case "$3" in
+	'{{.Id}}') echo 0123456789abcdef ;;
+	*) cat "$state" ;;
+	esac
+	;;
+update) read -r running _ <"$state"; echo "$running no" >"$state" ;;
+stop) read -r _ policy <"$state"; echo "false $policy" >"$state" ;;
+*) exit 1 ;;
+esac
+SH
+chmod +x "$work/retire/bin/curl" "$work/retire/bin/docker"
+export RETIRE_TEST_STATE="$work/retire/container"
+echo "$(($(date -u +%s) - 120)) paxeer-wallet-gateway.fly.dev" >"$work/retire/state/applied-at"
+retire="$root/human/wallet/deploy/cutover/retire.sh"
+
+echo "true unless-stopped" >"$RETIRE_TEST_STATE"
+CUTOVER_CONTAINER=legacy-wallet CUTOVER_COMPOSE_DIR="$work/retire" CUTOVER_PUBLIC_HOST=walletfx.example.com \
+	CUTOVER_STATE_DIR="$work/retire/state" CUTOVER_SOAK_SECONDS=60 PATH="$work/retire/bin:$PATH" \
+	CHECK_LIVE_TEST_PROGRAM="$retire" expect retire_container_and_compose_refused - 2 -- \
+	"retire: set exactly one of CUTOVER_CONTAINER and CUTOVER_COMPOSE_DIR"
+
+CUTOVER_PUBLIC_HOST=walletfx.example.com CUTOVER_STATE_DIR="$work/retire/state" CUTOVER_SOAK_SECONDS=60 \
+	PATH="$work/retire/bin:$PATH" CHECK_LIVE_TEST_PROGRAM="$retire" expect retire_neither_mode_refused - 2 -- \
+	"retire: set exactly one of CUTOVER_CONTAINER and CUTOVER_COMPOSE_DIR"
+
+RETIRE_TEST_SERVED=old-proxy CUTOVER_CONTAINER=legacy-wallet CUTOVER_PUBLIC_HOST=walletfx.example.com \
+	CUTOVER_STATE_DIR="$work/retire/state" CUTOVER_SOAK_SECONDS=60 PATH="$work/retire/bin:$PATH" \
+	CHECK_LIVE_TEST_PROGRAM="$retire" expect retire_container_not_served_keeps_it - 1 -- \
+	"pass soak" \
+	"fail served_before /healthz 200 old-proxy true" \
+	"retire: the public hostname is not served by the gateway; nothing stopped"
+if grep -qE '^docker (update|stop) ' "$CHECK_LIVE_TEST_CALLS" || [ "$(cat "$RETIRE_TEST_STATE")" != "true unless-stopped" ]; then
+	echo "FAIL retire_container_not_served_touches_nothing: the container was changed"
+	failures=$((failures + 1))
+else
+	echo "ok   retire_container_not_served_touches_nothing"
+fi
+
+CUTOVER_CONTAINER=legacy-wallet CUTOVER_PUBLIC_HOST=walletfx.example.com CUTOVER_STATE_DIR="$work/retire/state" \
+	CUTOVER_SOAK_SECONDS=60 PATH="$work/retire/bin:$PATH" CHECK_LIVE_TEST_PROGRAM="$retire" \
+	expect retire_container_passing - 0 -- \
+	"pass soak" \
+	"pass served_before /healthz 200 paxeer-wallet-gateway true" \
+	"pass served_before /readyz 200 paxeer-wallet-gateway true" \
+	"pass retired container=legacy-wallet running=false restart=no" \
+	"pass served_after /readyz 200 paxeer-wallet-gateway true" \
+	"retire: retired container legacy-wallet"
+if [ "$(grep -E '^docker (update|stop) ' "$CHECK_LIVE_TEST_CALLS" | tr '\n' ';')" = "docker update --restart=no legacy-wallet;docker stop legacy-wallet;" ]; then
+	echo "ok   retire_container_clears_restart_then_stops"
+else
+	echo "FAIL retire_container_clears_restart_then_stops: want docker update --restart=no then docker stop"
+	cat "$CHECK_LIVE_TEST_CALLS"
+	failures=$((failures + 1))
+fi
+
+echo "true unless-stopped" >"$RETIRE_TEST_STATE"
+echo "$(date -u +%s) paxeer-wallet-gateway.fly.dev" >"$work/retire/state/applied-at"
+CUTOVER_CONTAINER=legacy-wallet CUTOVER_PUBLIC_HOST=walletfx.example.com CUTOVER_STATE_DIR="$work/retire/state" \
+	CUTOVER_SOAK_SECONDS=600 PATH="$work/retire/bin:$PATH" CHECK_LIVE_TEST_PROGRAM="$retire" \
+	expect retire_container_soak_not_over - 1 -- \
+	"of the 600s soak"
+unset RETIRE_TEST_STATE
+
 # mirrors: a loopback stand-in for the publisher's status listener answers
 # /readyz with the code and body its arguments give, and a stand-in for
 # layerx-mirror-verify answers as the verifier does for its config and the

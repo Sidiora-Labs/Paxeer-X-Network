@@ -1349,7 +1349,7 @@ task       = "4.1"
 file       = "tools/bringup/check-live.sh"
 symbol     = "check_wallet"
 observed   = "By the owner's correction the legacy wallet runs as a Docker deployment on the legacy wallet host, not on Railway, so the Railway paxport inference of the wallet endpoint and the handoff's railway link step were the wrong target; wallet_endpoint is set to wallet-api.paxeer.network and is the only source, an unset or non-host value failing as source=spec name=unset."
-assumption = "The PWA rows of [decision.public_names] and tasks outside 4.1 that still name the Railway service are outside this amendment and are left as they are."
+assumption = "The PWA rows of [decision.public_names], ac_6 and task 3.7 stay as they are while the owner rules on PWA hosting. The legacy wallet is one standalone Docker container (frontend and proxy) with its state at a backend origin, so host_roles and do_3 are rewritten to it and retire.sh gains a container mode beside its unchanged Compose mode."
 
 [observation.4.1.7]
 task       = "4.1"
