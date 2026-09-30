@@ -1404,7 +1404,7 @@ check_edge() {
 # cancelled. One line per check.
 check_ci() {
 	local toml=tools/flyci/controller/fly.toml workflow=runner-canary.yml wait=1500
-	local app label answer n_machines n_started variable branch since run attempt status conclusion runner jobs failures=0
+	local app label answer n_machines n_started variable branch since run attempt status conclusion head_sha runner jobs failures=0
 	if ! command -v gh >/dev/null 2>&1 || ! command -v flyctl >/dev/null 2>&1; then
 		echo "check-live: gh and flyctl are required" >&2
 		exit 2
@@ -1454,15 +1454,17 @@ print(len(ms), len([m for m in ms if m.get("state") == "started"]))
 		finish $((failures + 1))
 	fi
 	(cd "$repo_root" && timeout "$wait" gh run watch "$run" --interval 15 >/dev/null 2>&1) || true
-	answer="$(cd "$repo_root" && timeout "$timeout" gh run view "$run" --json status,conclusion,jobs --jq '[.status, (.conclusion | if . == "" then "none" else . end), ([.jobs[] | select((.runnerName // "") | startswith("fly-")) | select(.conclusion == "success") | .runnerName] | first // "none"), ([.jobs[] | (.runnerName // "") | if . == "" then "none" else gsub(" "; "_") end] | join(","))] | join(" ")' 2>/dev/null)" || answer=""
-	read -r status conclusion runner jobs <<<"${answer:-none none none none}"
+	answer="$(cd "$repo_root" && timeout "$timeout" gh run view "$run" --json status,conclusion,headSha --jq '[.status, (.conclusion | if . == "" then "none" else . end), (.headSha | if . == "" then "none" else . end)] | join(" ")' 2>/dev/null)" || answer=""
+	read -r status conclusion head_sha <<<"${answer:-none none none}"
+	answer="$(cd "$repo_root" && timeout "$timeout" gh api "repos/{owner}/{repo}/actions/runs/$run/jobs?per_page=100" --paginate --jq '[([.jobs[] | select((.runner_name // "") | startswith("fly-")) | select(.conclusion == "success") | .runner_name] | first // "none"), ([.jobs[] | "\(.name)=\(.runner_name // "none"):\(.conclusion // "none")" | gsub(" "; "_")] | join(",") | if . == "" then "none" else . end)] | join(" ")' 2>/dev/null)" || answer=""
+	read -r runner jobs <<<"${answer:-none none}"
 	if [ "$status" != completed ]; then
 		(cd "$repo_root" && timeout "$timeout" gh run cancel "$run" >/dev/null 2>&1) || true
 	fi
 	if [ "$status" = completed ] && [ "$conclusion" = success ] && [ "$runner" != none ]; then
-		echo "pass canary workflow=$workflow branch=$branch run=$run conclusion=success runner=$runner"
+		echo "pass canary workflow=$workflow branch=$branch run=$run head_sha=$head_sha conclusion=success runner=$runner"
 	else
-		echo "fail canary workflow=$workflow branch=$branch run=$run status=$status conclusion=$conclusion runners=${jobs:-none}"
+		echo "fail canary workflow=$workflow branch=$branch run=$run head_sha=$head_sha status=$status conclusion=$conclusion runners=${jobs:-none}"
 		failures=$((failures + 1))
 	fi
 	finish "$failures"

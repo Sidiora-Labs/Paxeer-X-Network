@@ -1613,3 +1613,9 @@ area    = "bringup"
 symptom = "Two check-live harness runs on one box fail cases at random, the flyctl and curl stand-ins and the CA cases among them."
 cause   = "Concurrent runs on one box share host state the stand-ins and the CA cases rely on and disturb each other."
 do      = "The harness takes flock on /run/lock/check-live-harness for its whole run; a second run waits instead of racing, so never bypass the lock."
+
+[gotcha.266]
+area    = "bringup"
+symptom = "A check that asserts which runner ran a workflow job always reads runner none, even when the expected runner completed the job."
+cause   = "gh run view --json jobs exports no runner field (only completedAt, conclusion, databaseId, name, startedAt, status, steps, url), so a runnerName select never matches."
+do      = "Read the jobs with gh api repos/{owner}/{repo}/actions/runs/<run>/jobs and use .jobs[].runner_name when a check must assert which runner ran a job."

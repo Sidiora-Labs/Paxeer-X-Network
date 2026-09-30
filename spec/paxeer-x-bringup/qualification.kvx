@@ -1447,3 +1447,11 @@ symbol     = "check_kernel_node"
 observed   = "bash tools/bringup/check-live.test.sh exit 1 (.logs/harness.log): check_live_kernel_node_no_kernel_image passes, check_live_kernel_node_passing and _one_failing read every value absent after one repair cycle; 21 other cases fail identically on the unmodified tree (rpc-nodes, rpc-placement, edge, agent-public, gas, internal) and are unrelated."
 assumption = "The kernel-node fixture read times out or fails inside the flyctl stand-in; left for the next cycle rather than weakened."
 severity   = "warning"
+
+[observation.4.13.3]
+revision   = "6aae5eeae3eeb7234750d209ff14e1c0cfc4b288 plus this correction"
+command    = "gh api \"repos/{owner}/{repo}/actions/runs/36780596112/jobs?per_page=100\" --paginate --jq <the check_ci jobs expression>"
+exit_code  = 0
+log_path   = ".logs/4.13-fix-gh-api.log"
+observed   = "gh run view job JSON carries no runner identity on the installed gh, so the canary runner assertion could not pass; corrected to the workflow-jobs REST API and pinned head_sha"
+assumption = "the Fly runner registers with a name starting fly-"
