@@ -666,3 +666,34 @@ symbol     = "URL, edges"
 observed   = "The rename ruling cannot be applied: LAYERX_GATEWAY_PAXEER_RPC_URLS holds a JSON array, which the checker's URL pattern (anchored at a scheme) never matches, so check() emits no edge at all under the new env name; even parsed, its public hosts would be offcluster, never ok, so any renamed RESOLVED_EDGES line stays named-but-absent."
 assumption = "Satisfying the suite needs either dropping the line (ruled out) or teaching the checker to read JSON URL lists (outside this task and the ruling); no edit made and the verify_cmd not rerun, since an unchanged rerun repeats observation 1.3.5."
 severity   = "blocker"
+
+[observation.1.9.1]
+task       = "1.9"
+file       = "platform/hosted/authority/src/main.rs"
+symbol     = "lookup_receipt"
+observed   = "Commit 5d3b3d31f moved LNI to minor 6, where every receipt-lookup selector carries a trailing wait byte (0 immediate, 1 published, 2 durable), and updated the daemon, the SDK client and the core boundary but not the receipt authority, which still sent the bare 33-byte selector and got class 1, result -105; the authority now appends the 0 byte at minor 6 as the core boundary does, and real_node.rs:1515 passes."
+assumption = "The daemon, the SDK client and the core boundary fix the contract, so only the authority side changed; the envelope check is untouched; severity medium, resolved."
+
+[observation.1.9.2]
+task       = "1.9"
+file       = "platform/hosted/authority/tests/real_node.rs"
+symbol     = "real_node_authority_serves_verified_facts_and_reflects_replica_loss"
+observed   = "With the lookup answered, real_node.rs:1543 asserts the by-activity body has ten keys while by_activity in platform/hosted/authority/src/main.rs returns eleven, protocol_network_id added by commit abc07d9ca; timeout 30m make layerxd test-daemon-finality-authority exits 2, log .logs/verify.log."
+assumption = "Another pre-existing code-versus-assertion conflict of the same shape as observation 1.2.2, hidden until the lookup succeeded; both sides left as written for a ruling on whether the readyz ruling extends to the by-activity body; task stays implemented; severity medium."
+resolved   = "Leader ruling: the readyz ruling covers the by-activity body; the test asserts all eleven keys, protocol_network_id included; see gate.1.9.1."
+
+[gate.1.9.1]
+task      = "1.9"
+revision  = "c9c4144f8 plus the change committed with this entry"
+command   = "timeout 30m make layerxd test-daemon-finality-authority"
+exit_code = 0
+log_path  = ".logs/verify.log"
+observed  = "Under the leader ruling that protocol_network_id belongs to the by-activity body, real_node.rs asserts all eleven keys by name and protocol_network_id against the chain's value; the recorded-fixture replay, the JSON test and both real_node_authority_serves_verified_facts_and_reflects_replica_loss runs pass against the bound authority, so observation 1.9.2 is resolved and task 1.2 closes on this record; cg spec done timed out on the busy graph index after its own passing run of the gate, so the status was set by hand."
+
+[gate.1.2.1]
+task       = "1.2"
+revision   = "c9c4144f8 plus the change committed with this entry"
+command    = "timeout 30m make layerxd test-daemon-finality-authority"
+exit_code  = 0
+log_path   = ".logs/verify.log"
+observed   = "The same gate as task 1.9, which is task 1.2's verify_cmd, passed at this revision; task 1.2 closes on gate.1.9.1 as the spec's task 1.9 says."

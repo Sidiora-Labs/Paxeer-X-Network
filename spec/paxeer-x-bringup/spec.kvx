@@ -350,7 +350,7 @@ reqs       = ["5.1"]
 
 [task.1.2]
 title      = "Bind a real finality-authority verifier in layerxd so the sequencer bootstraps against the chain"
-status     = "implemented"
+status     = "done"
 wave       = 1
 requires   = ["1.1"]
 supersedes = ["layerx-beta 6.10"]
@@ -455,7 +455,7 @@ reqs       = ["5.1"]
 
 [task.1.9]
 title = "Make the authority's authorized-batch lookup over the node interface and layerxd's envelope parsing agree"
-status = "pending"
+status = "done"
 wave = 1
 requires = []
 verify_cmd = "timeout 30m make layerxd test-daemon-finality-authority"

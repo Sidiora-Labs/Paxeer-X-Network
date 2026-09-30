@@ -1217,3 +1217,9 @@ area    = "platform"
 symptom = "A topology regression entry for an env edge cannot be renamed when the manifest variable changes from one URL to a JSON list of URLs."
 cause   = "topology-check.sh matches each env value against one scheme-anchored URL pattern, so a JSON array yields no edge, and a public host would be offcluster rather than ok."
 do      = "Before renaming a named edge, confirm check() emits it on the merged manifest; a list-valued or public-host variable needs a checker change or a ruling, not a renamed line."
+
+[gotcha.200]
+area    = "lni"
+symptom = "A hosted service's receipt lookup is refused with class 1, result -105 (malformed envelope) although its selector is well formed for LNI minor 5."
+cause   = "At LNI minor 6 the daemon requires a trailing wait byte on every receipt-lookup selector (0 immediate, 1 published, 2 durable), and a caller that echoes the node's interface version but builds a minor-5 selector omits it."
+do      = "When a caller echoes the node's interface version, build the selector for that version: append 0 for an immediate lookup at minor 6 or later, as platform/hosted/core and the SDK client's receipt lookup do."
