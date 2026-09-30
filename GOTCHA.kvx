@@ -1325,3 +1325,9 @@ area    = "chain"
 symptom = "A script that must list every asset of the custody precompile's asset map over JSON-RPC finds no view that enumerates it."
 cause   = "The layerxcustody precompile answers getAsset, assetByPointer and nativeAssetId only, and the module registers no query route; the map is keyed by id, pointer and denom."
 do      = "Get the pointer list from an authoritative source and look each one up with assetByPointer, PAX through nativeAssetId; never treat a hand-kept list as the complete map without a ruling."
+
+[gotcha.218]
+area    = "bringup"
+symptom = "A port copied from a Kubernetes manifest's upstream URL collides with another listener once the pod's containers share one Fly machine."
+cause   = "Manifest URLs carry Service ports that map to distinct pods or containerPorts; in the one-machine kernel app core already holds 9443 and the first Paxeer boundary holds 9447."
+do      = "Take every in-machine port from docker/kernel/init.sh and the kernel toml, and treat a Service port in a manifest URL as unfixed until the spec names it."

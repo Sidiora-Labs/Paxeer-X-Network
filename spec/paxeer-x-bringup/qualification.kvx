@@ -865,3 +865,11 @@ symbol     = "kernel_genesis"
 observed   = "do_1 puts the sequencer key under /data/layerx/node, while bootstrap.sh and supervisor.sh, which the init reuses, refuse a sequencer key inside the node data directory, and task 1.5 has not yet fixed the init's volume layout (data directory, key and treasury material paths) that the script must write into."
 assumption = "The key sits beside the data directory under the custody path once task 1.5 or the owner fixes the layout; the relaxation of the bootstrap check is not made."
 severity   = "blocker"
+
+[observation.3.11.1]
+task       = "3.11"
+file       = "platform/hosted/internal/fly.toml"
+symbol     = "check_internal"
+observed   = "The journeys and approvals LAYERX_EVENTS_UPSTREAM_URL needs the port of the human service TLS listener in the kernel app, which task 3.5 (pending) adds without fixing a port; the manifest's 9443 is a Service port that the kernel machine gives to core, and the node pod's 9447 belongs to the first Paxeer boundary in docker/kernel/init.sh."
+assumption = "The owner or task 3.5 fixes the listener port (and its LAYERX_HUMAN_BIND on [::]) before the internal app is written; nothing is guessed and no in-tree file of this task is written until then."
+severity   = "blocker"
