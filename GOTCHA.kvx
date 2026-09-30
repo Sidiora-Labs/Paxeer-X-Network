@@ -1259,3 +1259,15 @@ area = "nginx"
 symptom = "Registering an HTTP proxy name reports protocol options redefined on existing shared TLS listeners, although the reload and live gate succeed."
 cause = "Enabled TLS sites declare different protocol options on the shared listen socket."
 do = "Record the warnings and preserve unrelated sites; qualify the registered name with its declared live gate and scope any listener repair separately."
+
+[gotcha.207]
+area    = "check-live"
+symptom = "A live authenticated plan with the golden intent.plan request body is refused although the bearer is admitted."
+cause   = "The golden body is a schema fixture: its asset_id is a placeholder the planner refuses unless it equals the principal's balance asset, its destination is a fixture account and its deadline has already passed."
+do      = "Take the golden body and set asset_id, destination.account and a deadline ahead of now at run time from named inputs; never send the fixture body to a live service expecting a plan."
+
+[gotcha.208]
+area    = "spec-tooling"
+symptom = "cg spec implemented refuses a task whose touched data file changed in the worktree, reporting no matching change, while the graph database is busy with another lane's index."
+cause   = "With the refresh skipped the check reads the last completed index, which knows nothing of uncommitted edits to files it does not parse."
+do      = "Treat the refusal like gotcha 104: record it, set the status line by hand, remove any spec.kvx.lock and let the manager re-run the tool after the merge."
