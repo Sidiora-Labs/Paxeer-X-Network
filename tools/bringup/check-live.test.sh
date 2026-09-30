@@ -645,9 +645,12 @@ expect check_live_rpc_placement_failing "$work/hosts-placement-bad.env" 1 rpc-pl
 unset CHECK_LIVE_TEST_LAG CHECK_LIVE_TEST_DNS
 
 # A local hpx registry stand-in: a static tree served on a loopback port
-# written to a file, with a published-looking release under good/ and a
-# tampered one under bad/ (unbound source revision, one artifact rewritten
-# after its manifest line, no /api/nodes).
+# written to a file, with a published-looking release and landing page under
+# good/, which answers with the Fly edge's fly-request-id header as the app
+# does, the same release under local/ without that header, as the registry on
+# the edge host answers, and a tampered one under bad/ (unbound source
+# revision, one artifact rewritten after its manifest line, no /api/nodes, a
+# directory listing in place of the landing page).
 cat >"$work/responder.py" <<'PY'
 import functools
 import http.server
@@ -659,6 +662,11 @@ root, port_file = sys.argv[1], sys.argv[2]
 class Quiet(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *args):
         pass
+
+    def end_headers(self):
+        if self.path.startswith("/good/"):
+            self.send_header("Fly-Request-Id", "01FIXTURE-ams")
+        super().end_headers()
 
 
 server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Quiet, directory=root))
@@ -687,6 +695,8 @@ release() {
 }
 
 release "$work/hpx/good"
+printf '<title>HPX — HyperPax Node Network</title>\n' >"$work/hpx/good/index.html"
+cp -r "$work/hpx/good" "$work/hpx/local"
 release "$work/hpx/bad"
 printf '{"ok":true,"chain_id":"hyperpax_125-1","source_revision":"development"}\n' >"$work/hpx/bad/healthz"
 printf 'rewritten after the manifest\n' >"$work/hpx/bad/paxd"
@@ -704,17 +714,36 @@ if [ ! -s "$work/port" ]; then
 fi
 origin="http://127.0.0.1:$(cat "$work/port")"
 
-CHECK_LIVE_HPX_ORIGIN="$origin/good" expect check_live_hpx_passing "$work/hosts-good.env" 0 hpx -- \
+hpx_app="$(sed -n 's/^app = "\(.*\)"$/\1/p' "$root/hpx/hosting/fly.toml")"
+
+CHECK_LIVE_HPX_ORIGIN="$origin/good" CHECK_LIVE_HPX_APP_ORIGIN="$origin/good" expect check_live_hpx_passing "$work/hosts-good.env" 0 hpx -- \
 	"pass healthz http=200 ok=true chain_id=hyperpax_125-1 source_revision=$(printf 'a%.0s' $(seq 40))" \
 	"pass checksums verified=5/5" \
 	"pass api-nodes http=200 chain_id=hyperpax_125-1 count=1" \
+	"pass app-healthz http=200 ok=true chain_id=hyperpax_125-1 source_revision=$(printf 'a%.0s' $(seq 40))" \
+	"pass app-checksums verified=5/5" \
+	"pass app-api-nodes http=200 chain_id=hyperpax_125-1 count=1" \
+	"pass landing http=200" \
+	"pass served-by app=$hpx_app fly-request-id=present healthz=match" \
 	"check-live: all checks passed"
 
-CHECK_LIVE_HPX_ORIGIN="$origin/bad" expect check_live_hpx_failing "$work/hosts-good.env" 1 hpx -- \
+CHECK_LIVE_HPX_ORIGIN="$origin/bad" CHECK_LIVE_HPX_APP_ORIGIN="$origin/bad" expect check_live_hpx_failing "$work/hosts-good.env" 1 hpx -- \
 	"fail healthz http=200 ok=true chain_id=hyperpax_125-1 source_revision=development" \
 	"fail checksums verified=4/5 first=paxd" \
 	"fail api-nodes http=404" \
-	"check-live: 3 check(s) failed"
+	"fail app-healthz http=200 ok=true chain_id=hyperpax_125-1 source_revision=development" \
+	"fail app-checksums verified=4/5 first=paxd" \
+	"fail app-api-nodes http=404" \
+	"fail landing http=200" \
+	"fail served-by app=$hpx_app fly-request-id=absent healthz=match" \
+	"check-live: 8 check(s) failed"
+
+CHECK_LIVE_HPX_ORIGIN="$origin/local" CHECK_LIVE_HPX_APP_ORIGIN="$origin/good" expect check_live_hpx_served_locally "$work/hosts-good.env" 1 hpx -- \
+	"pass healthz http=200" \
+	"pass app-checksums verified=5/5" \
+	"pass landing http=200" \
+	"fail served-by app=$hpx_app fly-request-id=absent healthz=match" \
+	"check-live: 1 check(s) failed"
 
 expect check_live_hpx_hosts_file_lacks_role "$work/hosts-missing.env" 2 hpx -- \
 	"check-live: BRINGUP_HOSTS_FILE lacks ARCHIVE_HOST"

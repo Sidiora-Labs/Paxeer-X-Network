@@ -972,7 +972,7 @@ reqs       = ["20.1", "20.2"]
 
 [task.4.21]
 title      = "Serve the hpx registry at node.hyperpaxeer.com from a Fly app and retire it from the hpx host"
-status     = "pending"
+status     = "implemented"
 wave       = 4
 requires   = ["4.14", "0.5"]
 blocked_on = "the CNAME record node.hyperpaxeer.com in the hyperpaxeer.com zone pointing at the fly.dev name of the app that hpx/hosting/fly.toml declares, in place of its current record, added by the owner"

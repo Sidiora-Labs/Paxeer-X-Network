@@ -546,3 +546,35 @@ symbol     = "split_clients"
 observed   = "Behind the edge nginx the Fly proxy sees the edge host as the client, so Fly-Client-IP is the same for every client and split_clients sends every client to one serving name; stickiness holds but the spread across serving names is lost."
 assumption = "Task 0.9 or a follow-up must carry the client address across the edge hop (the edge's X-Forwarded-For or a header the front hashes) before the front spreads load; recorded, not changed here."
 severity   = "note"
+
+[observation.4.21.1]
+task       = "4.21"
+file       = "hpx/hosting/fly.toml"
+symbol     = "flyctl deploy"
+observed   = "The app, its four staged secrets (register token, seed peers, state-sync RPC and servers, names only) and its hpx_data volume were created and the image built, but the deploy by local image was refused once by the permission system as a production deploy, so the volume was not filled and checksums.txt was not verified on the machine; flyctl certs add was tried once before the owner ruled it out and was refused too."
+assumption = "The owner runs the ordered deploy, stream and checksum commands of the private handoff for this task; the edge nginx of task 0.9 proxies node.hyperpaxeer.com to the app's fly.dev name, so no certificate or CNAME is needed."
+severity   = "blocker"
+
+[observation.4.21.2]
+task       = "4.21"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_hpx"
+observed   = "By the owner ruling the explicit-CNAME and edge-host checks of do_4 became the app- checks at the fly.dev name and a served-by check (fly-request-id on the name's answer and a /healthz equal to the app's); the gate exits 1 with healthz, checksums 18/18, api-nodes and landing passing and app-healthz, app-checksums, app-api-nodes (the fly.dev name does not resolve before the first deploy) and served-by failing, log .logs/verify.log; do_3 was not run, by the same ruling."
+assumption = "The app- lines pass after the owner's deploy and the served-by line after task 0.9 proxies the name to the app; the spec text of do_3 and do_4 still names the CNAME and awaits the manager's edit."
+severity   = "blocker"
+
+[observation.4.21.3]
+task       = "4.21"
+file       = "hpx/README.md"
+symbol     = "check_hpx"
+observed   = "cg spec implemented refused the task: hpx/README.md is unchanged because its documentation step belongs to do_3, which the owner ruling defers, and the graph defines no shell symbol check_hpx; the status line was set to implemented by hand."
+assumption = "The README step lands with do_3 once the name is served by the app."
+severity   = "note"
+
+[observation.4.21.4]
+task       = "4.21"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_ca"
+observed   = "shellcheck -s bash reports SC2034 (eku unused) in the read loop of check_ca at the base revision, unrelated to this task."
+assumption = "Left as found; the owner of check_ca resolves it."
+severity   = "note"

@@ -1,0 +1,55 @@
+# The hpx registry at node.hyperpaxeer.com: nginx and the registry of
+# docker/hpx-registry on one machine, because the node directory under
+# /srv/hpx/data has one writer. Its volume at /srv/hpx holds the release
+# artifacts under /srv/hpx/artifacts and that directory. HPX_REGISTER_TOKEN
+# and the seed and state-sync settings are secrets imported from the registry
+# env file of the host that served it before; the image is built from the
+# repository root and deployed with --image (flyctl resolves [build] paths
+# against this directory).
+app = "paxeer-hpx-registry"
+primary_region = "ams"
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[build]
+  dockerfile = "../../docker/hpx-registry/Dockerfile"
+
+[deploy]
+  strategy = "immediate"
+
+[env]
+  HPX_ADDR = "127.0.0.1:8099"
+  HPX_ARTIFACTS_DIR = "/srv/hpx/artifacts/current"
+  HPX_DATA_DIR = "/srv/hpx/data"
+  HPX_CHAIN_ID = "hyperpax_125-1"
+
+[[mounts]]
+  source = "hpx_data"
+  destination = "/srv/hpx"
+  initial_size = "5gb"
+  snapshot_retention = 14
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "10s"
+    grace_period = "30s"
+    method = "GET"
+    path = "/healthz"
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "1gb"
+  cpus = 2
+  cpu_kind = "shared"

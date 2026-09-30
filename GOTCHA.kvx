@@ -1157,3 +1157,15 @@ area    = "nginx"
 symptom = "An nginx listen [::]:PORT line in a container answers only IPv6 clients."
 cause   = "nginx sets ipv6only=on for an IPv6 wildcard listen by default."
 do      = "Write listen [::]:PORT ipv6only=off when one line must accept both families, as the Fly proxy and a local IPv4 check need."
+
+[gotcha.190]
+area    = "containers"
+symptom = "Alpine's nginx package serves its own default page on port 80 beside a new vhost, and files fetched with ADD from a URL land with mode 0600, unreadable to the nginx workers."
+cause   = "The package ships /etc/nginx/http.d/default.conf, and remote ADD sources get owner-only permissions."
+do      = "Remove http.d/default.conf in the image and fetch checksum-bound files with curl and sha256sum -c in a build stage, copying them in with COPY --from, as docker/hpx-registry/Dockerfile does for the landing fonts."
+
+[gotcha.191]
+area    = "bringup-probe"
+symptom = "A check that a public name has moved to a Fly app cannot rely on DNS when the name keeps resolving to the edge host and the edge proxies it to the app."
+cause   = "Behind an edge proxy the record never changes, so a CNAME or address check cannot tell the edge-local service from the proxied app."
+do      = "Compare the name's answer with the app's answer at its fly.dev name and require the fly-request-id header the Fly edge adds, which nginx passes through from its upstream."

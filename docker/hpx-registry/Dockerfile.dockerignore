@@ -1,3 +1,8 @@
 *
 !hpx/registry/go.mod
 !hpx/registry/main.go
+!hpx/hosting/fonts.sha256
+!hpx/hosting/index.html
+!hpx/hosting/nginx-fly.conf
+!assets/PaxeerLogo.png
+!docker/hpx-registry/entrypoint.sh
