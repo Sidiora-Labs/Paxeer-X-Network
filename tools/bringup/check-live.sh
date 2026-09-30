@@ -116,8 +116,8 @@ explorer  reads the deployed explorer at CHECK_LIVE_EXPLORER_ORIGIN, by default
 
 Environment:
   BRINGUP_HOSTS_FILE   private env file assigning EDGE_HOST, ARCHIVE_HOST,
-                       VALIDATOR_HOSTS, RPC_HOSTS, HPX_HOST and
-                       OLD_WALLET_HOST; each value is one ssh destination or,
+                       VALIDATOR_HOSTS, RPC_HOSTS and OLD_WALLET_HOST;
+                       each value is one ssh destination or,
                        for the plural roles, a space-separated list of them
   CHECK_LIVE_HPX_ORIGIN  origin of the hpx registry, default
                        https://node.hyperpaxeer.com
@@ -145,7 +145,7 @@ ca_dir="${LAYERX_CA_DIR:-/etc/layerx/ca}"
 fly_tls_dir="${LAYERX_FLY_TLS_DIR:-/data/tls}"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-roles=(EDGE_HOST ARCHIVE_HOST VALIDATOR_HOSTS RPC_HOSTS HPX_HOST OLD_WALLET_HOST)
+roles=(EDGE_HOST ARCHIVE_HOST VALIDATOR_HOSTS RPC_HOSTS OLD_WALLET_HOST)
 
 # The sixteen public RPC names of docs/site/docs/reference/public-rpc.md.
 rpc_names=(api{1..16}.mainnet-beta.paxeer.network)

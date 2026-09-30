@@ -772,3 +772,11 @@ command = "systemctl stop hpx-registry.service; systemctl disable hpx-registry.s
 exit_code = 0
 log_path = ".logs/4.21-retirement.log"
 observed = "Old unit is inactive and not found; reviewed originals absent, environment mode preserved and artifacts/data untouched. Serving gate already passed; task remains in_progress pending host-role fixture and README completion."
+
+[observation.4.21.5]
+task = "4.21"
+file = "hpx/hosting/deploy.sh, hpx/hosting/nginx.conf, hpx/hosting/nginx-http.conf"
+symbol = "deploy.sh"
+observed = "The local systemd and nginx deployment of the registry stays in the tree although the name is served by the Fly app and the README no longer points to it."
+assumption = "Retiring or repurposing the local deployment files is outside do_3's touches and needs an owner decision; nothing was removed."
+severity = "low"

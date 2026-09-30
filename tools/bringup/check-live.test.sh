@@ -231,7 +231,6 @@ EDGE_HOST=up-edge
 ARCHIVE_HOST=up-archive
 VALIDATOR_HOSTS="up-validator-a up-validator-b"
 RPC_HOSTS="up-rpc-1 up-rpc-2 up-rpc-3"
-HPX_HOST=up-hpx
 OLD_WALLET_HOST=up-old-wallet
 ENV
 
@@ -240,7 +239,6 @@ EDGE_HOST=up-edge
 ARCHIVE_HOST=up-archive
 VALIDATOR_HOSTS="up-validator-a up-validator-b"
 RPC_HOSTS="up-rpc-1 down-rpc-2 up-rpc-3"
-HPX_HOST=up-hpx
 OLD_WALLET_HOST=down-old-wallet
 ENV
 
@@ -249,15 +247,13 @@ EDGE_HOST=up-edge
 ARCHIVE_HOST=up-archive
 VALIDATOR_HOSTS="up-validator-a up-validator-b"
 RPC_HOSTS="up-rpc-1 up-rpc-2 up-rpc-3"
-HPX_HOST=hang-hpx
-OLD_WALLET_HOST=up-old-wallet
+OLD_WALLET_HOST=hang-old-wallet
 ENV
 
 cat >"$work/hosts-missing.env" <<'ENV'
 EDGE_HOST=up-edge
 VALIDATOR_HOSTS="up-validator-a up-validator-b"
 RPC_HOSTS="up-rpc-1 up-rpc-2 up-rpc-3"
-HPX_HOST=up-hpx
 OLD_WALLET_HOST=up-old-wallet
 ENV
 
@@ -266,7 +262,6 @@ EDGE_HOST=up-edge
 ARCHIVE_HOST=up-archive
 VALIDATOR_HOSTS="up-validator-a up-validator-b"
 RPC_HOSTS="up-rpc-1 up-rpc-2 up-rpc-3 up-rpc-4 up-rpc-5 up-rpc-6 up-rpc-7 up-rpc-8 up-rpc-9 up-rpc-10 up-rpc-11 up-rpc-12 up-rpc-13 up-rpc-14 up-rpc-15 up-rpc-16"
-HPX_HOST=up-hpx
 OLD_WALLET_HOST=up-old-wallet
 ENV
 
@@ -275,7 +270,6 @@ EDGE_HOST=up-edge
 ARCHIVE_HOST=up-archive
 VALIDATOR_HOSTS="up-validator-a up-validator-b"
 RPC_HOSTS="up-rpc-1 up-rpc-2 up-rpc-3 up-rpc-4 up-rpc-5 up-rpc-6 up-rpc-7 up-rpc-8 up-rpc-9-fresh up-rpc-10-dead up-rpc-11 up-rpc-13 up-rpc-14 up-rpc-15 down-rpc-16"
-HPX_HOST=up-hpx
 OLD_WALLET_HOST=up-old-wallet
 ENV
 
@@ -284,7 +278,6 @@ EDGE_HOST=up-edge
 ARCHIVE_HOST=up-archive
 VALIDATOR_HOSTS="up-validator-a-node up-validator-b-web down-validator-c"
 RPC_HOSTS="up-validator-a-node up-rpc-2 up-rpc-3 up-rpc-4 up-rpc-5 up-rpc-6 up-rpc-7 up-rpc-8 up-rpc-9 up-rpc-10 up-rpc-11 up-rpc-12 up-rpc-13 up-rpc-14 up-rpc-15"
-HPX_HOST=up-hpx
 OLD_WALLET_HOST=up-old-wallet
 ENV
 
@@ -365,15 +358,14 @@ expect check_live_hosts_passing "$work/hosts-good.env" 0 hosts -- \
 	"pass ARCHIVE_HOST reachable=1/1" \
 	"pass VALIDATOR_HOSTS reachable=2/2" \
 	"pass RPC_HOSTS reachable=3/3" \
-	"pass HPX_HOST reachable=1/1" \
 	"pass OLD_WALLET_HOST reachable=1/1" \
 	"check-live: all checks passed"
 
-if [ "$(wc -l <"$CHECK_LIVE_TEST_CALLS")" -eq 9 ] && [ "$(sort -u "$CHECK_LIVE_TEST_CALLS" | wc -l)" -eq 9 ] &&
+if [ "$(wc -l <"$CHECK_LIVE_TEST_CALLS")" -eq 8 ] && [ "$(sort -u "$CHECK_LIVE_TEST_CALLS" | wc -l)" -eq 8 ] &&
 	! grep -qvE '^(up|down|hang)-[a-z0-9-]+ true$' "$CHECK_LIVE_TEST_CALLS"; then
 	echo "ok   check_live_hosts_one_ssh_true_per_destination"
 else
-	echo "FAIL check_live_hosts_one_ssh_true_per_destination: want nine distinct 'destination true' calls"
+	echo "FAIL check_live_hosts_one_ssh_true_per_destination: want eight distinct 'destination true' calls"
 	cat "$CHECK_LIVE_TEST_CALLS"
 	failures=$((failures + 1))
 fi
@@ -382,13 +374,12 @@ expect check_live_hosts_failing "$work/hosts-down.env" 1 hosts -- \
 	"pass EDGE_HOST reachable=1/1" \
 	"pass VALIDATOR_HOSTS reachable=2/2" \
 	"fail RPC_HOSTS reachable=2/3 ssh=255" \
-	"pass HPX_HOST reachable=1/1" \
 	"fail OLD_WALLET_HOST reachable=0/1 ssh=255" \
 	"check-live: 2 check(s) failed"
 
 CHECK_LIVE_TEST_TIMEOUT=1 expect check_live_hosts_timeout "$work/hosts-hang.env" 1 hosts -- \
 	"pass RPC_HOSTS reachable=3/3" \
-	"fail HPX_HOST reachable=0/1 ssh=124" \
+	"fail OLD_WALLET_HOST reachable=0/1 ssh=124" \
 	"check-live: 1 check(s) failed"
 
 # The CA cases run both scripts from a fixture tree whose tomls stand in for

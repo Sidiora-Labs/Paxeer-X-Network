@@ -1259,3 +1259,9 @@ area = "nginx"
 symptom = "Registering an HTTP proxy name reports protocol options redefined on existing shared TLS listeners, although the reload and live gate succeed."
 cause = "Enabled TLS sites declare different protocol options on the shared listen socket."
 do = "Record the warnings and preserve unrelated sites; qualify the registered name with its declared live gate and scope any listener repair separately."
+
+[gotcha.207]
+area    = "bringup"
+symptom = "Dropping a role from the check-live host map breaks the hosts timeout case and the one-ssh-per-destination count, not only the fixture lines."
+cause   = "The hang fixture put its only hanging destination on the dropped role, and the harness counts the distinct ssh destinations of the good map."
+do      = "Move the hanging destination to a remaining single-destination role and recount the good map's destinations when a role leaves the map."
