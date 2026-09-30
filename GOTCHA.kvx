@@ -1169,3 +1169,15 @@ area    = "bringup-probe"
 symptom = "A check that a public name has moved to a Fly app cannot rely on DNS when the name keeps resolving to the edge host and the edge proxies it to the app."
 cause   = "Behind an edge proxy the record never changes, so a CNAME or address check cannot tell the edge-local service from the proxied app."
 do      = "Compare the name's answer with the app's answer at its fly.dev name and require the fly-request-id header the Fly edge adds, which nginx passes through from its upstream."
+
+[gotcha.192]
+area    = "tests"
+symptom = "The movement provider exits 1 at startup with only its generic refusal line when a test passes a repeated-byte PAXEER_CHECKPOINT_AUTHORITY such as 0x5a5a…."
+cause   = "DepositProofVerifier::new decodes the value as an Ed25519 verifying key and refuses bytes that are not a curve point, and main collapses every startup error into one line."
+do      = "Give fixtures a real verifying key from ed25519_dalek::SigningKey::from_bytes on a random seed, and trace the child with strace -f when the refusal line gives no reason."
+
+[gotcha.193]
+area    = "platform"
+symptom = "The topology regression suite fails with a named-but-absent edge after two lanes merge in either order."
+cause   = "One lane named a manifest edge in topology-regressions.py while another lane replaced that manifest variable, and neither saw the other's change."
+do      = "After merging a lane that edits a manifest env edge, rerun the topology check on the merged revision before closing tasks that depend on it."

@@ -578,3 +578,11 @@ symbol     = "check_ca"
 observed   = "shellcheck -s bash reports SC2034 (eku unused) in the read loop of check_ca at the base revision, unrelated to this task."
 assumption = "Left as found; the owner of check_ca resolves it."
 severity   = "note"
+
+[observation.1.3.5]
+task       = "1.3"
+file       = "platform/hosted/tests/topology-regressions.py"
+symbol     = "COMPLETE_EDGES"
+observed   = "The movement probe tests now pass alone (the fixture's checkpoint authority was not an Ed25519 point), but the verify_cmd exits 2 at the topology regression suite: the gateway edge to paxeer-boundary:9443 through LAYERX_GATEWAY_PAXEER_RPC_URL is named but absent, because the merged gateway-failover task replaced that variable with LAYERX_GATEWAY_PAXEER_RPC_URLS on public names; escrow and the provider probe targets did not run in the gate."
+assumption = "Cross-task contradiction between the regression list's named edge and the gateway manifest, outside this task's touches; recorded, not repaired, pending a ruling on which side owns the edge list."
+severity   = "blocker"

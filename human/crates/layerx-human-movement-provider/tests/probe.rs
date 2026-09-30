@@ -205,6 +205,21 @@ fn tls_origin(directory: &Path, host: &str, chain: u16) -> Result<(Process, u16)
     Ok((front, port))
 }
 
+/// A real Ed25519 verifying key, since the deposit-proof verifier refuses
+/// bytes that are not a point on the curve.
+fn checkpoint_authority() -> Result<String> {
+    let mut seed = [0; 32];
+    getrandom::fill(&mut seed).map_err(|error| error.to_string())?;
+    let key = ed25519_dalek::SigningKey::from_bytes(&seed).verifying_key();
+    Ok(format!(
+        "0x{}",
+        key.as_bytes()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    ))
+}
+
 fn probe(socket: &Path) -> Result<Output> {
     Ok(Command::new(BINARY)
         .arg("probe")
@@ -299,10 +314,7 @@ fn probe_exits_zero_only_on_the_serving_providers_healthy_answer() -> Result {
                     ("REMINDER_INTERVAL_SECONDS", "60".to_owned()),
                     ("POLL_SECONDS", "1".to_owned()),
                     ("DELAYED_AFTER_POLLS", "2".to_owned()),
-                    (
-                        "PAXEER_CHECKPOINT_AUTHORITY",
-                        format!("0x{}", "5a".repeat(32)),
-                    ),
+                    ("PAXEER_CHECKPOINT_AUTHORITY", checkpoint_authority()?),
                     ("CUSTODY_REFERENCE", format!("0x{}", "09".repeat(32))),
                     ("NETWORK_ID", "77".to_owned()),
                 ]
@@ -311,7 +323,7 @@ fn probe_exits_zero_only_on_the_serving_providers_healthy_answer() -> Result {
             )
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .spawn()?,
     );
     let mut bound = false;
@@ -320,10 +332,13 @@ fn probe_exits_zero_only_on_the_serving_providers_healthy_answer() -> Result {
             bound = true;
             break;
         }
-        assert!(
-            provider.0.try_wait()?.is_none(),
-            "movement provider exited before binding"
-        );
+        if let Some(status) = provider.0.try_wait()? {
+            let mut stderr = String::new();
+            if let Some(mut pipe) = provider.0.stderr.take() {
+                std::io::Read::read_to_string(&mut pipe, &mut stderr)?;
+            }
+            panic!("movement provider exited before binding with {status}: {stderr}");
+        }
         thread::sleep(Duration::from_millis(50));
     }
     assert!(bound, "movement provider never bound its socket");
