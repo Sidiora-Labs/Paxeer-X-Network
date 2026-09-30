@@ -30,6 +30,7 @@ RESOLVED_EDGES = (
     'Deployment layerx-testnet/layerx-gateway -> layerx-program-registry.layerx-testnet.svc.cluster.local:9420 [env LAYERX_GATEWAY_PROGRAM_REGISTRY_URL]',
     'Deployment layerx-testnet/layerx-gateway -> layerx-faucet-public.layerx-testnet.svc.cluster.local:443 [env LAYERX_GATEWAY_FAUCET_URL]',
     'Deployment layerx-testnet/layerx-gateway -> layerx-gateway-redis.layerx-testnet.svc.cluster.local:6379 [env LAYERX_GATEWAY_REDIS_URL]',
+    'Deployment layerx-testnet/layerx-gateway -> paxeer-boundary.layerx-testnet.svc.cluster.local:9443 [env LAYERX_GATEWAY_PAXEER_RPC_URL]',
     'StatefulSet layerx-testnet/layerx-program-registry -> layerx-agent-boundary.layerx-testnet.svc.cluster.local:9443 [env LAYERX_REGISTRY_NODE_ENDPOINT]',
     'StatefulSet layerx-testnet/layerx-program-registry -> layerx-receipt-authority.layerx-testnet.svc.cluster.local:9443 [env LAYERX_REGISTRY_RECEIPT_AUTHORITY_ENDPOINT]',
     'StatefulSet layerx-testnet/layerx-program-registry -> layerx-agent-boundary.layerx-testnet.svc.cluster.local:9443 [env LAYERX_EXPLORER_NODE_ENDPOINT]',
@@ -200,6 +201,21 @@ for parser in ('load_pyyaml', 'load_builtin'):
         result = failures(topology)
         assert len(result) > len(HUMAN_EDGES) and any(expected in row[2] for row in result), (change, result)
         print('PASS refusal:', parser, change)
+
+for parser in ('load_pyyaml', 'load_builtin'):
+    topology = load(parser)
+    node_workload = next(w for w in topology.workloads if w['name'] == 'layerx-node')
+    handover = [i for i, (name, _) in enumerate(node_workload['env']) if name == 'LAYERX_NODE_HANDOVER_AUTHORITY_PUBLIC_KEY']
+    assert len(handover) == 1 and node_workload['env'][handover[0]][1][3] is True, (parser, node_workload['env'])
+    assert 'handover-authority' not in topology.configmaps[('layerx-testnet', 'layerx-node-config')], parser
+    module['check'](topology)
+    assert not any('HANDOVER_AUTHORITY' in problem for problem in topology.problems), (parser, topology.problems)
+    topology.problems = []
+    name, reference = node_workload['env'][handover[0]]
+    node_workload['env'][handover[0]] = (name, reference[:3] + (False,))
+    list(topology.resolved_env(node_workload))
+    assert any('LAYERX_NODE_HANDOVER_AUTHORITY_PUBLIC_KEY references key handover-authority missing from ConfigMap layerx-node-config' in problem for problem in topology.problems), (parser, topology.problems)
+    print('PASS optional ConfigMap key reference absent from its ConfigMap is unset, a required one is refused:', parser)
 
 topology = module['Topology']()
 for document in module['load_pyyaml']((ROOT / 'platform/hosted/node/deployment.yaml').read_text()):
