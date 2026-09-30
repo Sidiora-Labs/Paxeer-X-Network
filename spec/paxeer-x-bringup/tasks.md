@@ -50,7 +50,7 @@
     - Make the guarantor (guarantor.sh, cmd/layerx-guarantor/settlement.py) submit certificates and checkpoints to the anchor precompile's submitCheckpoint and finalize and read statusOf, using the ABI under precompiles/, and delete the call to platform/hosted/paxeer/deploy-contracts.sh from platform/hosted/tests/beta-cluster.sh while keeping the script for private networks.
     - Extend platform/hosted/node/tests/node-test.sh with a precompile settlement case against the loopback RPC of a synced node when LAYERX_NODE_PAXEER_RPC_URL is set, refusing to run against anvil.
     - _Requirements: 5.1_
-  - [ ] 1.2 Bind a real finality-authority verifier in layerxd so the sequencer bootstraps against the chain
+  - [ ] 1.2 Bind a real finality-authority verifier in layerxd so the sequencer bootstraps against the chain — **Implemented - qualification pending**
     - Bind the finality-authority verifier in cmd/layerxd to the anchor precompile's certificate rules: the certificate threshold, the bonded guarantor set and the finalized checkpoint read from 0x0000000000000000000000000000000000001014 over the loopback JSON-RPC named by LAYERX_NODE_PAXEER_RPC_URL, so the sequencer bootstraps under a real authority and refuses to start without one.
     - Make tests/daemon/lxp_test_finality_authority drive the bound verifier through a recorded JSON-RPC fixture captured from the live chain under tests/daemon/fixtures/finality-authority/ and, when LAYERX_NODE_PAXEER_RPC_URL is set, through the loopback RPC itself; no anvil, no stub verifier.
     - _Requirements: 5.2, 5.3_

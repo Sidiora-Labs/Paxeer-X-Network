@@ -5645,14 +5645,14 @@ static lxp_result open_process(lxp_daemon_process *process,
     }
     if (status == LXP_OK) stage = "finality authority";
     if (status == LXP_OK)
-        status = lxp_daemon_finality_authority_init(
+        status = lxp_finality_authority_bind(
             &process->finality_authority, &process->evidence_store);
     if (status == LXP_OK)
         status = lxp_daemon_evidence_open_history(
             &process->evidence_store, &process->evidence_log,
             process->network_id, &process->sequencer_authorization,
             genesis_settlement_anchor, true,
-            lxp_daemon_finality_authority_verify,
+            lxp_finality_authority_verify,
             &process->finality_authority, &process->owner_scratch, process->handover_chain);
     if (status == LXP_OK)
         process->evidence_store.availability_log = &process->availability_log;

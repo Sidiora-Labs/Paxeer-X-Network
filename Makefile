@@ -2078,7 +2078,7 @@ $(BUILD_DIR)/tests/lxp_test_finality_json: tests/daemon/lxp_test_finality_json.c
 
 test-daemon-finality-authority: $(BUILD_DIR)/tests/lxp_test_daemon_finality_authority $(BUILD_DIR)/tests/lxp_test_finality_json layerxd layerx-genesis-build
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_finality_json
-	PATH="/root/.foundry/bin:$$PATH" bash tests/daemon/finality-authority-chain.sh $(BUILD_DIR)/tests/lxp_test_daemon_finality_authority
+	bash tests/daemon/finality-authority-chain.sh $(BUILD_DIR)/tests/lxp_test_daemon_finality_authority
 	bash tests/daemon/bootstrap-send.sh
 
 test-storage-order:

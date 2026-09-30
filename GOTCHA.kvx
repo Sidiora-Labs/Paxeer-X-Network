@@ -1049,3 +1049,15 @@ area    = "human"
 symptom = "The movement provider's probe cannot reach a healthy answer from a plain local chain emulator when the provider runs from its environment."
 cause   = "The environment-configured provider requires at least two pinned-TLS origins on distinct hosts with agreement two and a configured execution authority before it answers Ready."
 do      = "In a binary-level test, front the local chain with TLS listeners on two loopback addresses (127.0.0.1 and 127.0.0.2) under one CA-signed certificate carrying both IP SANs, pass that CA as PAXEER_CA_DER, and give every file the provider reads mode 0600 and a single link."
+
+[gotcha.172]
+area    = "tests"
+symptom = "A gate that must replay a recorded fixture captured from the live chain cannot be qualified by a worker that has no route to the chain's JSON-RPC."
+cause   = "Workers may not read production endpoints, and a hand-written fixture would be a fake."
+do      = "Ship the capture mode with the test, record the missing capture as an observation, and dispatch the capture step to someone with loopback access to a synced node before the rerun."
+
+[gotcha.173]
+area    = "tests"
+symptom = "The lxp_test_daemon_finality_authority binary looks free to rewrite, but its prepare and emit modes feed the handover, guarantor and availability chain scripts."
+cause   = "Several tests/daemon Python drivers call that binary directly with their own arguments."
+do      = "Add new modes beside the existing ones and grep tests/daemon for the binary's name before changing its command line."
