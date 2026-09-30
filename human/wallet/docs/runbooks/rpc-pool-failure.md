@@ -12,7 +12,7 @@ endpoints serve requests, with failover between them. Balance and chain reads
 in `src/chainReads.ts` and `src/chain.ts` still use the single
 `HYPERPAXEER_RPC_URL` (observation 2.2.1). The attestors read binding nonces
 through `ATTESTOR_RPC_URL`, and the shared endpoint relays `eth_` methods to
-`LAYERX_GATEWAY_PAXEER_RPC_URL`.
+the first answering name of `LAYERX_GATEWAY_PAXEER_RPC_URLS`.
 
 ## Trigger
 

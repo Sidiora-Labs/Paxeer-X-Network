@@ -30,9 +30,14 @@ that the request cannot supply.
 # Single network endpoint
 
 `POST /rpc` also carries the Paxeer EVM. `eth_*`, `net_*` and `web3_*` relay
-byte-for-byte to the Paxeer boundary named by `LAYERX_GATEWAY_PAXEER_RPC_URL`
-(`https://paxeer-boundary.layerx-testnet.svc.cluster.local:9443` in the
-cluster), which fronts the chain's `paxd` RPC. `eth_sendRawTransaction` is
+byte-for-byte to the Paxeer RPC names of `LAYERX_GATEWAY_PAXEER_RPC_URLS`, a
+JSON array of two to eight distinct `https` URLs (for example
+`["https://api1.mainnet-beta.paxeer.network","https://api2.mainnet-beta.paxeer.network"]`),
+each fronting the chain's `paxd` RPC. A call tries the names in order and
+answers from the first that answers 200 without a transport failure; each
+skipped name is logged as `paxeer_endpoint_failed`. `paxeer_chain` reports
+ready while any one name answers. An empty, single, non-`https`, duplicated or
+nine-entry array refuses startup. `eth_sendRawTransaction` is
 relayed like any other method: an already signed transaction reaches Paxeer
 through this endpoint. The node never signs for a caller, so `eth_accounts`,
 `eth_coinbase`, `eth_sendTransaction`, `eth_sign`, `eth_signTransaction`,

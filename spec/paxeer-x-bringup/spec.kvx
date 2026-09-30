@@ -526,7 +526,7 @@ reqs       = ["19.1", "19.2", "19.3"]
 
 [task.2.8]
 title      = "Give the gateway failover across several Paxeer RPC names"
-status     = "pending"
+status     = "done"
 wave       = 2
 requires   = []
 do_1       = "Replace the single LAYERX_GATEWAY_PAXEER_RPC_URL of platform/hosted/gateway/src/paxeer.rs by LAYERX_GATEWAY_PAXEER_RPC_URLS, a JSON array of two to eight https URLs parsed and refused as the human service parses LAYERX_HUMAN_PAXEER_RPC_URLS, held as the paxeer endpoints of platform/hosted/gateway/src/main.rs; a relayed call tries the URLs in order and answers from the first that answers 200 without a transport failure, and the paxeer_chain status reports up while any one answers."
