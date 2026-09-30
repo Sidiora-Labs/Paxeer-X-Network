@@ -126,7 +126,7 @@ Genesis for the anchor module is written by `platform/hosted/paxeer/anchor-genes
 ## The single network endpoint
 
 One endpoint serves the whole network: the hosted gateway at
-`https://api.mainnet-beta.router.paxeer.network/rpc`, the router URL. It is
+`https://api-mainnet-beta.paxeer.network/rpc`, the router URL. It is
 the only unified endpoint; the sixteen numbered names in
 [Public RPC endpoints](../reference/public-rpc.md) serve the EVM domain alone.
 A caller does not choose a chain — the method name decides the domain. The

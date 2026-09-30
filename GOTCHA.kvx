@@ -1067,3 +1067,15 @@ area    = "bringup-probe"
 symptom = "A placement probe that compares a public name's DNS answer with the host map needs a resolver it can fake in the fixture test without the network."
 cause   = "check-live.sh has no DNS helper; getent is the only resolver it can call, and the fixture destinations are not addresses."
 do      = "Resolve with getent ahosts, compare against the destination with any user@ prefix stripped, and put a getent stand-in on the test PATH that maps apiN to fixture destinations."
+
+[gotcha.175]
+area    = "tools"
+symptom = "tools/bringup/docs-names.sh stopped with 'cannot read the router' after the spec renamed the router, and 'sh docs-names.sh' fails on set -o pipefail."
+cause   = "The script compared the parsed allowed list against a literal router name, and it is a bash script run through dash when invoked with sh."
+do      = "Derive every checked name from the spec key that holds it, and run the bringup scripts through their shebang or bash."
+
+[gotcha.176]
+area    = "names"
+symptom = "Renaming developers.paxeer.network before api.developers.paxeer.network yields api.dev.paxeer.network instead of api-dev.paxeer.network."
+cause   = "The rename gate matches substrings, so longer names that contain a shorter old name are rewritten by the shorter rule first."
+do      = "Apply the rewrite rules longest name first in one sed pass."

@@ -70,5 +70,5 @@ take one URL can use `wss://api1.mainnet-beta.paxeer.network`.
 The unsupported subset of the EVM JSON-RPC surface is listed in
 [EVM JSON-RPC differences](https://github.com/Sidiora-Labs/Paxeer-X-Network/blob/main/docs/evm_jsonrpc_unsupported.md) and the
 unified interface is the router URL
-[`https://api.mainnet-beta.router.paxeer.network`](https://api.mainnet-beta.router.paxeer.network),
+[`https://api-mainnet-beta.paxeer.network`](https://api-mainnet-beta.paxeer.network),
 described in [Unified network](../overview/unified-network.md).
