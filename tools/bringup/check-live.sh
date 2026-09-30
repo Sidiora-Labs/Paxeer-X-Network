@@ -114,6 +114,25 @@ explorer  reads the deployed explorer at CHECK_LIVE_EXPLORER_ORIGIN, by default
              missing_block_ranges
           Exits 0 only when every check passes.
 
+bridge    runs bridge/deploy/checklist.sh for every chain under bridge/evm/chains
+          and bridge/solana/chains against PAXEER_BRIDGE_RECORDS_DIR/<chain>.json,
+          then reads a machine of the app of interop/deploy/bridge-relayer/fly.toml
+          through flyctl ssh console, one line per check:
+  checklist  "pass checklist chain=<chain> exit=0", or "fail checklist
+             chain=<chain> record=absent" or "fail checklist chain=<chain>
+             exit=<n> <last output line, URLs as <url>>"
+  processes  "pass processes app=<app> relayer=running signer=running" when
+             layerx-bridge-relayer and layerx-mirror-signer both run
+  bridge-in  "pass bridge-in app=<app> item=in:<chain id>:<tx>:<log>
+             outcome=included" when the journal on the volume records a
+             deposit as observed and as completed by the relayer's own
+             included bridgeIn transaction; "fail bridge-in app=<app>
+             journal=absent|journal=present included=none" otherwise
+          Exits 0 only when every check passes; 2 when
+          PAXEER_BRIDGE_RECORDS_DIR is unset. The checklist's own inputs
+          (each chain's RPC variable, PAXEER_BRIDGE_PAXEER_RPC_URL,
+          PAXEER_BRIDGE_GOVERNANCE_AUTHORITY) pass through the environment.
+
 Environment:
   BRINGUP_HOSTS_FILE   private env file assigning EDGE_HOST, ARCHIVE_HOST,
                        VALIDATOR_HOSTS, RPC_HOSTS and OLD_WALLET_HOST;
@@ -2017,6 +2036,109 @@ check_internal() {
 	finish "$failures"
 }
 
+# bridge_machine_script: runs inside the bridge relayer machine under sh -s
+# with journal set to the relayer's journal path. Prints "@@relayer" and
+# "@@signer" with running or none, from the executables of /proc, then
+# "@@journal absent" or "@@journal present" and, for the first inbound item
+# the journal records as observed and as completed by this relayer's included
+# bridgeIn transaction, "@@bridge-in <item>".
+# shellcheck disable=SC2016
+bridge_machine_script='relayer=none
+signer=none
+for d in /proc/[0-9]*; do
+	case "$(readlink "$d/exe" 2>/dev/null)" in
+	*/layerx-bridge-relayer) relayer=running ;;
+	*/layerx-mirror-signer) signer=running ;;
+	esac
+done
+echo "@@relayer $relayer"
+echo "@@signer $signer"
+if [ ! -r "$journal" ]; then
+	echo "@@journal absent"
+	exit 0
+fi
+echo "@@journal present"
+sed -n "s/^{\"kind\":\"completed\",\"item\":\"\(in:[^\"]*\)\",\"completion\":{\"outcome\":\"included\".*/\1/p" "$journal" | while read -r item; do
+	if grep -qF "{\"kind\":\"observed\",\"item\":\"$item\"," "$journal"; then
+		echo "@@bridge-in $item"
+		break
+	fi
+done'
+
+# check_bridge: bridge/deploy/checklist.sh exits 0 for every chain under
+# bridge/evm/chains and bridge/solana/chains against the deployment record
+# PAXEER_BRIDGE_RECORDS_DIR/<chain>.json, each run bounded by ten times
+# CHECK_LIVE_TIMEOUT; a machine of the app of
+# interop/deploy/bridge-relayer/fly.toml runs both the relayer and its bridge
+# signer; and the relayer's journal on the volume records one observed deposit
+# completed by its own included bridgeIn transaction. One line per check; a
+# failing checklist line carries its last output line with every URL replaced
+# by <url>.
+check_bridge() {
+	local toml=interop/deploy/bridge-relayer/fly.toml journal=/data/relayer/journal.jsonl
+	local app dir chain record out status reply relayer signer item failures=0
+	local -a chains=()
+	if [ -z "${PAXEER_BRIDGE_RECORDS_DIR:-}" ]; then
+		echo "check-live: PAXEER_BRIDGE_RECORDS_DIR is unset" >&2
+		exit 2
+	fi
+	if ! command -v flyctl >/dev/null 2>&1; then
+		echo "check-live: flyctl is required" >&2
+		exit 2
+	fi
+	for dir in "$repo_root"/bridge/evm/chains/*/ "$repo_root"/bridge/solana/chains/*/; do
+		[ -d "$dir" ] && chains+=("$(basename "$dir")")
+	done
+	if [ "${#chains[@]}" -eq 0 ]; then
+		echo "fail checklist chains=none"
+		failures=$((failures + 1))
+	fi
+	for chain in ${chains[@]+"${chains[@]}"}; do
+		record="$PAXEER_BRIDGE_RECORDS_DIR/$chain.json"
+		if [ ! -r "$record" ]; then
+			echo "fail checklist chain=$chain record=absent"
+			failures=$((failures + 1))
+			continue
+		fi
+		status=0
+		out="$(PAXEER_BRIDGE_DEPLOYMENT_RECORD="$record" timeout "$((timeout * 10))" "$repo_root/bridge/deploy/checklist.sh" "$chain" 2>&1 </dev/null)" || status=$?
+		if [ "$status" -eq 0 ]; then
+			echo "pass checklist chain=$chain exit=0"
+		else
+			echo "fail checklist chain=$chain exit=$status $(printf '%s\n' "$out" | tail -n 1 | sed -E 's#[A-Za-z][A-Za-z0-9+.-]*://[^[:space:]]*#<url>#g' | cut -c1-160)"
+			failures=$((failures + 1))
+		fi
+	done
+
+	if ! app="$(fly_app "$toml")"; then
+		echo "fail bridge toml=absent"
+		finish $((failures + 1))
+	fi
+	reply="$(fly_ssh "$app" - "journal=$journal sh -s" <<<"$bridge_machine_script")" || reply=""
+	relayer="$(sed -n 's/^@@relayer //p' <<<"$reply" | head -n 1)"
+	signer="$(sed -n 's/^@@signer //p' <<<"$reply" | head -n 1)"
+	if [ -z "$relayer" ]; then
+		echo "fail processes app=$app machine=unreachable"
+		finish $((failures + 1))
+	elif [ "$relayer" = running ] && [ "$signer" = running ]; then
+		echo "pass processes app=$app relayer=running signer=running"
+	else
+		echo "fail processes app=$app relayer=$relayer signer=${signer:-none}"
+		failures=$((failures + 1))
+	fi
+	item="$(sed -n 's/^@@bridge-in //p' <<<"$reply" | head -n 1)"
+	if [ -n "$item" ]; then
+		echo "pass bridge-in app=$app item=$item outcome=included"
+	elif grep -qx '@@journal present' <<<"$reply"; then
+		echo "fail bridge-in app=$app journal=present included=none"
+		failures=$((failures + 1))
+	else
+		echo "fail bridge-in app=$app journal=absent"
+		failures=$((failures + 1))
+	fi
+	finish "$failures"
+}
+
 # Sourced by tools/bringup/ca.sh for the Fly helpers and the CA settings: the
 # probe's own dispatch below runs only when this file is executed.
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
@@ -2109,6 +2231,7 @@ paxeer-boundary) ;;
 agent-public) ;;
 gas) ;;
 internal) ;;
+bridge) ;;
 *)
 	usage >&2
 	exit 2

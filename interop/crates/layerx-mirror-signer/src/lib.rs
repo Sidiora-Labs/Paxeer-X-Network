@@ -1,10 +1,14 @@
-//! Reference remote signer for the `LayerX` mirror publisher.
+//! Reference remote signer for the `LayerX` mirror publisher and the bridge
+//! relayer.
 //!
-//! Serves `interop/deploy/mirror/signer-protocol.md` over a Unix domain socket
-//! for the two publisher identities the mirror holds: a recoverable low-S
-//! secp256k1 key for Ethereum and an Ed25519 key for Solana. Each handle is
-//! bound to one algorithm and one policy domain, so a request that carries the
-//! wrong handle, algorithm or domain is refused rather than signed.
+//! Serves `interop/deploy/mirror/signer-protocol.md` over a Unix domain socket.
+//! In mirror mode it holds the two publisher identities the mirror holds: a
+//! recoverable low-S secp256k1 key for Ethereum and an Ed25519 key for Solana,
+//! each handle bound to one algorithm and one policy domain. In bridge mode it
+//! holds the keys a bridge key manifest lists, each handle bound to one
+//! algorithm and its own list of bridge policy domains. Either way a request
+//! that carries the wrong handle, algorithm or domain is refused rather than
+//! signed.
 
 use std::fmt;
 use std::fs;
@@ -44,6 +48,27 @@ pub const SOLANA_KEY_FILE_VARIABLE: &str = "LAYERX_MIRROR_SIGNER_SOLANA_KEY_FILE
 pub const ETHEREUM_KEY_HANDLE_VARIABLE: &str = "LAYERX_MIRROR_SIGNER_ETHEREUM_KEY_HANDLE";
 /// Environment variable naming the handle the Solana key answers to.
 pub const SOLANA_KEY_HANDLE_VARIABLE: &str = "LAYERX_MIRROR_SIGNER_SOLANA_KEY_HANDLE";
+/// Policy domain of the bridge attestor's signatures over inbound deposits.
+pub const BRIDGE_ATTEST_INBOUND_DOMAIN: &[u8] = b"LayerX/bridge/attest-inbound/v1";
+/// Policy domain of the bridge attestor's signatures over outbound burns.
+pub const BRIDGE_ATTEST_OUTBOUND_DOMAIN: &[u8] = b"LayerX/bridge/attest-outbound/v1";
+/// Policy domain of the relayer's EIP-1559 `bridgeIn` transactions on Paxeer.
+pub const BRIDGE_PAXEER_TRANSACTION_DOMAIN: &[u8] = b"LayerX/bridge/paxeer-eip1559/v1";
+/// Policy domain of the relayer's EIP-1559 `release` transactions.
+pub const BRIDGE_ETHEREUM_TRANSACTION_DOMAIN: &[u8] = b"LayerX/bridge/ethereum-eip1559/v1";
+/// Policy domain of the relayer's Solana release transaction messages.
+pub const BRIDGE_SOLANA_TRANSACTION_DOMAIN: &[u8] = b"LayerX/bridge/solana-tx/v1";
+/// Socket the co-located bridge relayer reaches the signer through.
+pub const DEFAULT_BRIDGE_SOCKET: &str = "/run/bridge-signer/signer.sock";
+/// Bridge key manifest the bridge relayer image carries.
+pub const DEFAULT_BRIDGE_KEYS_FILE: &str = "/etc/layerx/bridge-signer/keys.json";
+/// Environment variable naming the socket the bridge signer publishes.
+pub const BRIDGE_SOCKET_VARIABLE: &str = "LAYERX_BRIDGE_SIGNER_SOCKET";
+/// Environment variable naming the bridge key manifest.
+pub const BRIDGE_KEYS_FILE_VARIABLE: &str = "LAYERX_BRIDGE_SIGNER_KEYS_FILE";
+/// Command line of bridge mode. Both options also have an environment
+/// variable and a container default.
+pub const BRIDGE_USAGE: &str = "usage: layerx-mirror-signer bridge [--socket PATH] [--keys PATH]";
 /// Command line the binary accepts. Every option also has an environment
 /// variable, and every option has a container default, so the deployed signer
 /// runs with no arguments at all.
@@ -58,6 +83,34 @@ const MAX_HANDLE_BYTES: usize = 256;
 const MAX_DOMAIN_BYTES: usize = 128;
 const MAX_MESSAGE_BYTES: usize = 4096;
 const MAX_KEY_FILE_BYTES: u64 = 4096;
+const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
+const MAX_BRIDGE_KEYS: usize = 64;
+/// Every bridge policy domain, the algorithm it is signed under and whether it
+/// is an attestation domain. A handle carries attestation domains only or
+/// transaction domains only, so the attestor key never pays fees.
+const BRIDGE_DOMAINS: [(&[u8], u8, bool); 5] = [
+    (
+        BRIDGE_ATTEST_INBOUND_DOMAIN,
+        ALGORITHM_SECP256K1_RECOVERABLE,
+        true,
+    ),
+    (
+        BRIDGE_ATTEST_OUTBOUND_DOMAIN,
+        ALGORITHM_SECP256K1_RECOVERABLE,
+        true,
+    ),
+    (
+        BRIDGE_PAXEER_TRANSACTION_DOMAIN,
+        ALGORITHM_SECP256K1_RECOVERABLE,
+        false,
+    ),
+    (
+        BRIDGE_ETHEREUM_TRANSACTION_DOMAIN,
+        ALGORITHM_SECP256K1_RECOVERABLE,
+        false,
+    ),
+    (BRIDGE_SOLANA_TRANSACTION_DOMAIN, ALGORITHM_ED25519, false),
+];
 const MAX_REQUEST_BYTES: usize =
     4 + 2 + 1 + 2 + MAX_HANDLE_BYTES + 2 + MAX_DOMAIN_BYTES + 32 + 4 + MAX_MESSAGE_BYTES;
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
@@ -79,6 +132,14 @@ pub enum StartupError {
         /// What the signer observed.
         reason: String,
     },
+    /// The bridge key manifest is unreadable or does not bind every handle to
+    /// one key and its own bridge policy domains.
+    Manifest {
+        /// Manifest file the refusal is about.
+        path: PathBuf,
+        /// What the signer observed.
+        reason: String,
+    },
     /// The listening socket could not be published with owner and group access.
     Socket {
         /// Socket path the refusal is about.
@@ -94,6 +155,9 @@ impl fmt::Display for StartupError {
             Self::Usage(reason) => write!(formatter, "{reason}\n{USAGE}"),
             Self::KeyMaterial { path, reason } => {
                 write!(formatter, "key material {}: {reason}", path.display())
+            }
+            Self::Manifest { path, reason } => {
+                write!(formatter, "key manifest {}: {reason}", path.display())
             }
             Self::Socket { path, reason } => {
                 write!(formatter, "socket {}: {reason}", path.display())
@@ -184,10 +248,7 @@ impl Options {
             }
         }
         for handle in [&options.ethereum_key_handle, &options.solana_key_handle] {
-            if handle.is_empty()
-                || handle.len() > MAX_HANDLE_BYTES
-                || handle.as_bytes().contains(&0)
-            {
+            if !valid_handle(handle) {
                 return Err(StartupError::Usage(format!(
                     "key handle {handle:?} is empty, longer than {MAX_HANDLE_BYTES} bytes or carries a NUL"
                 )));
@@ -197,6 +258,65 @@ impl Options {
             return Err(StartupError::Usage(
                 "the Ethereum and Solana key handles must differ".to_owned(),
             ));
+        }
+        Ok(options)
+    }
+}
+
+fn valid_handle(handle: &str) -> bool {
+    !handle.is_empty() && handle.len() <= MAX_HANDLE_BYTES && !handle.as_bytes().contains(&0)
+}
+
+/// Where the bridge signer listens and which manifest lists its keys.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BridgeOptions {
+    /// Unix domain socket the bridge relayer connects to.
+    pub socket: PathBuf,
+    /// Bridge key manifest: `{"keys": [{"handle", "algorithm", "key_file",
+    /// "domains"}]}` with algorithm `secp256k1` (a key file of 32 hexadecimal
+    /// bytes) or `ed25519` (a 64-byte `solana-keygen` keypair file).
+    pub keys_file: PathBuf,
+}
+
+impl Default for BridgeOptions {
+    fn default() -> Self {
+        Self {
+            socket: PathBuf::from(DEFAULT_BRIDGE_SOCKET),
+            keys_file: PathBuf::from(DEFAULT_BRIDGE_KEYS_FILE),
+        }
+    }
+}
+
+impl BridgeOptions {
+    /// Parses the bridge-mode command line, the words after `bridge`, over
+    /// the deployment environment and the container defaults.
+    ///
+    /// # Errors
+    /// Returns an error for an unknown flag or a flag without a value.
+    pub fn parse<I: IntoIterator<Item = String>>(arguments: I) -> Result<Self, StartupError> {
+        let mut options = Self::default();
+        if let Some(value) = environment(BRIDGE_SOCKET_VARIABLE) {
+            options.socket = PathBuf::from(value);
+        }
+        if let Some(value) = environment(BRIDGE_KEYS_FILE_VARIABLE) {
+            options.keys_file = PathBuf::from(value);
+        }
+        let mut arguments = arguments.into_iter();
+        while let Some(argument) = arguments.next() {
+            let Some(value) = arguments.next() else {
+                return Err(StartupError::Usage(format!(
+                    "{argument} takes a value\n{BRIDGE_USAGE}"
+                )));
+            };
+            match argument.as_str() {
+                "--socket" => options.socket = PathBuf::from(value),
+                "--keys" => options.keys_file = PathBuf::from(value),
+                other => {
+                    return Err(StartupError::Usage(format!(
+                        "unknown argument {other}\n{BRIDGE_USAGE}"
+                    )));
+                }
+            }
         }
         Ok(options)
     }
@@ -218,7 +338,7 @@ impl ChainKey {
 
 struct KeyPolicy {
     handle: String,
-    domain: &'static [u8],
+    domains: Vec<&'static [u8]>,
     key: ChainKey,
 }
 
@@ -308,15 +428,135 @@ impl SignerService {
         let ethereum = load_secp256k1(&options.ethereum_key_file)?;
         let mut keys = vec![KeyPolicy {
             handle: options.ethereum_key_handle.clone(),
-            domain: ETHEREUM_POLICY_DOMAIN,
+            domains: vec![ETHEREUM_POLICY_DOMAIN],
             key: ChainKey::Secp256k1(Box::new(ethereum)),
         }];
         if options.solana_keypair_file.exists() {
             let solana = load_ed25519(&options.solana_keypair_file)?;
             keys.push(KeyPolicy {
                 handle: options.solana_key_handle.clone(),
-                domain: SOLANA_POLICY_DOMAIN,
+                domains: vec![SOLANA_POLICY_DOMAIN],
                 key: ChainKey::Ed25519(Box::new(solana)),
+            });
+        }
+        Ok(Self { keys })
+    }
+
+    /// Loads every key the bridge key manifest lists and binds each handle to
+    /// its algorithm and its own bridge policy domains.
+    ///
+    /// # Errors
+    /// Returns an error when the manifest is unreadable, larger than 64 KiB,
+    /// carries an unknown or missing field, lists no key or more than 64, a
+    /// handle twice or a handle the protocol cannot carry, an algorithm other
+    /// than `secp256k1` or `ed25519`, a relative key file, no domain, a domain
+    /// twice, a domain outside the bridge domains or signed under another
+    /// algorithm, or attestation and transaction domains on one handle; and
+    /// when any key file is refused as in mirror mode.
+    pub fn load_bridge(options: &BridgeOptions) -> Result<Self, StartupError> {
+        let path = &options.keys_file;
+        let refuse = |reason: String| StartupError::Manifest {
+            path: path.clone(),
+            reason,
+        };
+        let metadata =
+            fs::metadata(path).map_err(|error| refuse(format!("is unreadable: {error}")))?;
+        if !metadata.is_file() || metadata.len() > MAX_MANIFEST_BYTES {
+            return Err(refuse(format!(
+                "is not a regular file of at most {MAX_MANIFEST_BYTES} bytes"
+            )));
+        }
+        let text =
+            fs::read_to_string(path).map_err(|error| refuse(format!("cannot be read: {error}")))?;
+        let document: serde_json::Value =
+            serde_json::from_str(&text).map_err(|error| refuse(format!("is not JSON: {error}")))?;
+        let Some(root) = document.as_object().filter(|root| root.len() == 1) else {
+            return Err(refuse("must be an object holding keys only".to_owned()));
+        };
+        let Some(entries) = root.get("keys").and_then(serde_json::Value::as_array) else {
+            return Err(refuse("must be an object holding keys only".to_owned()));
+        };
+        if entries.is_empty() || entries.len() > MAX_BRIDGE_KEYS {
+            return Err(refuse(format!("must list 1 to {MAX_BRIDGE_KEYS} keys")));
+        }
+        let mut keys: Vec<KeyPolicy> = Vec::with_capacity(entries.len());
+        for (index, entry) in entries.iter().enumerate() {
+            let refuse_entry = |reason: &str| refuse(format!("keys[{index}] {reason}"));
+            let Some(fields) = entry.as_object().filter(|fields| fields.len() == 4) else {
+                return Err(refuse_entry(
+                    "must hold exactly handle, algorithm, key_file and domains",
+                ));
+            };
+            let text_field = |name: &str| fields.get(name).and_then(serde_json::Value::as_str);
+            let (Some(handle), Some(algorithm), Some(key_file), Some(domains)) = (
+                text_field("handle"),
+                text_field("algorithm"),
+                text_field("key_file"),
+                fields.get("domains").and_then(serde_json::Value::as_array),
+            ) else {
+                return Err(refuse_entry(
+                    "must hold exactly handle, algorithm, key_file and domains",
+                ));
+            };
+            if !valid_handle(handle) || keys.iter().any(|policy| policy.handle == handle) {
+                return Err(refuse_entry(
+                    "has an empty, oversized, NUL-carrying or repeated handle",
+                ));
+            }
+            let algorithm = match algorithm {
+                "secp256k1" => ALGORITHM_SECP256K1_RECOVERABLE,
+                "ed25519" => ALGORITHM_ED25519,
+                _ => {
+                    return Err(refuse_entry(
+                        "names an algorithm other than secp256k1 or ed25519",
+                    ))
+                }
+            };
+            let key_file = Path::new(key_file);
+            if !key_file.is_absolute() {
+                return Err(refuse_entry("names a relative key file"));
+            }
+            if domains.is_empty() {
+                return Err(refuse_entry("lists no domain"));
+            }
+            let mut bound: Vec<&'static [u8]> = Vec::with_capacity(domains.len());
+            let mut attestation = None;
+            for domain in domains {
+                let Some((known, domain_algorithm, is_attestation)) = domain
+                    .as_str()
+                    .and_then(|domain| {
+                        BRIDGE_DOMAINS
+                            .iter()
+                            .find(|(known, _, _)| *known == domain.as_bytes())
+                    })
+                    .copied()
+                else {
+                    return Err(refuse_entry("lists a domain that is not a bridge domain"));
+                };
+                if domain_algorithm != algorithm {
+                    return Err(refuse_entry(
+                        "lists a domain signed under another algorithm",
+                    ));
+                }
+                if bound.contains(&known) {
+                    return Err(refuse_entry("lists a domain twice"));
+                }
+                if *attestation.get_or_insert(is_attestation) != is_attestation {
+                    return Err(refuse_entry(
+                        "mixes attestation and transaction domains on one handle",
+                    ));
+                }
+                bound.push(known);
+            }
+            let key = if algorithm == ALGORITHM_ED25519 {
+                ChainKey::Ed25519(Box::new(load_ed25519(key_file)?))
+            } else {
+                ChainKey::Secp256k1(Box::new(load_secp256k1(key_file)?))
+            };
+            keys.push(KeyPolicy {
+                handle: handle.to_owned(),
+                domains: bound,
+                key,
             });
         }
         Ok(Self { keys })
@@ -345,7 +585,12 @@ impl SignerService {
             .keys
             .iter()
             .find(|policy| policy.handle == request.handle)?;
-        if policy.key.algorithm() != request.algorithm || policy.domain != request.domain {
+        if policy.key.algorithm() != request.algorithm
+            || !policy
+                .domains
+                .iter()
+                .any(|domain| *domain == request.domain)
+        {
             return None;
         }
         match &policy.key {
@@ -419,8 +664,20 @@ impl SignerListener {
     /// is missing, the path is occupied by something other than a socket, or
     /// the socket cannot be published with `0660` access.
     pub fn bind(options: &Options) -> Result<Self, StartupError> {
-        let service = SignerService::load(options)?;
-        let socket = options.socket.clone();
+        Self::publish(SignerService::load(options)?, options.socket.clone())
+    }
+
+    /// Loads the keys of the bridge key manifest and publishes the socket as
+    /// [`SignerListener::bind`] does.
+    ///
+    /// # Errors
+    /// Returns an error when the manifest or a key is refused or the socket
+    /// cannot be published, as for [`SignerListener::bind`].
+    pub fn bind_bridge(options: &BridgeOptions) -> Result<Self, StartupError> {
+        Self::publish(SignerService::load_bridge(options)?, options.socket.clone())
+    }
+
+    fn publish(service: SignerService, socket: PathBuf) -> Result<Self, StartupError> {
         let refuse = |reason: String| StartupError::Socket {
             path: socket.clone(),
             reason,

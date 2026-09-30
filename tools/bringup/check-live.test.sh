@@ -7,6 +7,7 @@ work="$(mktemp -d)"
 responder_pid=""
 agentd_pid=""
 internal_pids=""
+bridge_pids=""
 
 cleanup() {
 	for pid in $internal_pids; do
@@ -20,6 +21,12 @@ cleanup() {
 	if [ -n "$agentd_pid" ]; then
 		kill "$agentd_pid" 2>/dev/null || true
 		wait "$agentd_pid" 2>/dev/null || true
+	fi
+	if [ -n "$bridge_pids" ]; then
+		# shellcheck disable=SC2086
+		kill $bridge_pids 2>/dev/null || true
+		# shellcheck disable=SC2086
+		wait $bridge_pids 2>/dev/null || true
 	fi
 	rm -rf "$work"
 }
@@ -1196,6 +1203,83 @@ CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_internal_router_unreadab
 	"fail upstream-ca group=payments url=https://api-mainnet-beta.paxeer.network pin=ISRG-Root-X1 served=unreadable" \
 	"check-live: 3 check(s) failed"
 unset CHECK_LIVE_ROUTER_CONNECT
+
+# The bridge cases read the relayer app's fixture machine: the fixture tree
+# carries two chains and a checklist stand-in that passes a record holding
+# "match" and otherwise fails naming an RPC URL, as the checklist's errors
+# can; copies of sleep named layerx-bridge-relayer and layerx-mirror-signer
+# stand in for the two running processes, and the volume holds the journal.
+bridge="$(fx_app interop/deploy/bridge-relayer/fly.toml)"
+mkdir -p "$fx/interop/deploy/bridge-relayer" "$fx/bridge/deploy" "$fx/bridge/evm/chains/base" "$fx/bridge/solana/chains/solana" \
+	"$work/bridge/records" "$work/bridge/bin" "$work/fly/$bridge/app/data/relayer"
+printf 'app = "%s"\n' "$bridge" >"$fx/interop/deploy/bridge-relayer/fly.toml"
+cat >"$fx/bridge/deploy/checklist.sh" <<'SH'
+#!/usr/bin/env bash
+set -eu
+if grep -q match "$PAXEER_BRIDGE_DEPLOYMENT_RECORD"; then
+	echo "checklist: $1 every value matches"
+	exit 0
+fi
+echo "checklist: error: $1 vault owner read through https://fixture-rpc.invalid/secret-key differs" >&2
+exit 1
+SH
+chmod +x "$fx/bridge/deploy/checklist.sh"
+cp "$(command -v sleep)" "$work/bridge/bin/layerx-bridge-relayer"
+cp "$(command -v sleep)" "$work/bridge/bin/layerx-mirror-signer"
+printf '{"chain":"base","match":true}\n' >"$work/bridge/records/base.json"
+bridge_item="in:8453:0x$(printf 'ab%.0s' {1..32}):7"
+
+expect check_live_bridge_records_unset "$work/hosts-good.env" 2 bridge -- \
+	"check-live: PAXEER_BRIDGE_RECORDS_DIR is unset"
+
+PAXEER_BRIDGE_RECORDS_DIR="$work/bridge/records" CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_bridge_nothing_running "$work/hosts-good.env" 1 bridge -- \
+	"pass checklist chain=base exit=0" \
+	"fail checklist chain=solana record=absent" \
+	"fail processes app=$bridge relayer=none signer=none" \
+	"fail bridge-in app=$bridge journal=absent" \
+	"check-live: 3 check(s) failed"
+
+"$work/bridge/bin/layerx-bridge-relayer" 600 &
+bridge_pids="$!"
+"$work/bridge/bin/layerx-mirror-signer" 600 &
+bridge_pids="$bridge_pids $!"
+printf '{"chain":"solana","vault":"differs"}\n' >"$work/bridge/records/solana.json"
+printf '%s\n' \
+	"{\"kind\":\"observed\",\"item\":\"$bridge_item\",\"observation\":{}}" \
+	"{\"kind\":\"completed\",\"item\":\"$bridge_item\",\"completion\":{\"outcome\":\"already_bridged\"}}" \
+	>"$work/fly/$bridge/app/data/relayer/journal.jsonl"
+PAXEER_BRIDGE_RECORDS_DIR="$work/bridge/records" CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_bridge_not_bridged "$work/hosts-good.env" 1 bridge -- \
+	"pass checklist chain=base exit=0" \
+	"fail checklist chain=solana exit=1 checklist: error: solana vault owner read through <url> differs" \
+	"pass processes app=$bridge relayer=running signer=running" \
+	"fail bridge-in app=$bridge journal=present included=none" \
+	"check-live: 2 check(s) failed"
+
+printf '{"chain":"solana","match":true}\n' >"$work/bridge/records/solana.json"
+printf '%s\n' \
+	"{\"kind\":\"observed\",\"item\":\"$bridge_item\",\"observation\":{}}" \
+	"{\"kind\":\"signed\",\"item\":\"$bridge_item\",\"signature\":\"0x00\"}" \
+	"{\"kind\":\"submitted\",\"item\":\"$bridge_item\",\"submitter\":\"0x00\",\"nonce\":0,\"tx_hash\":\"0x00\",\"raw\":\"0x00\"}" \
+	"{\"kind\":\"completed\",\"item\":\"$bridge_item\",\"completion\":{\"outcome\":\"included\",\"tx_hash\":\"0x00\",\"block_number\":1}}" \
+	>"$work/fly/$bridge/app/data/relayer/journal.jsonl"
+PAXEER_BRIDGE_RECORDS_DIR="$work/bridge/records" CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_bridge_passing "$work/hosts-good.env" 0 bridge -- \
+	"pass checklist chain=base exit=0" \
+	"pass checklist chain=solana exit=0" \
+	"pass processes app=$bridge relayer=running signer=running" \
+	"pass bridge-in app=$bridge item=$bridge_item outcome=included" \
+	"check-live: all checks passed"
+if [ "$(grep -c "^$bridge [a-z]* ssh console " "$CHECK_LIVE_TEST_CALLS")" -eq 1 ] && grep -qF "$bridge app ssh console sh -c 'journal=/data/relayer/journal.jsonl sh -s'" "$CHECK_LIVE_TEST_CALLS"; then
+	echo "ok   check_live_bridge_reads_the_relayer_machine_journal"
+else
+	echo "FAIL check_live_bridge_reads_the_relayer_machine_journal: want one sh -s call on $bridge naming the volume journal"
+	cat "$CHECK_LIVE_TEST_CALLS"
+	failures=$((failures + 1))
+fi
+# shellcheck disable=SC2086
+kill $bridge_pids 2>/dev/null || true
+# shellcheck disable=SC2086
+wait $bridge_pids 2>/dev/null || true
+bridge_pids=""
 
 # The fleet script shares the host map and the ssh helpers, so its own test
 # runs as the last case, with this test's stand-ins off the PATH.
