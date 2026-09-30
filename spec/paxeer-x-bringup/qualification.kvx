@@ -1589,3 +1589,11 @@ symbol     = "task.2.1"
 observed   = "cg spec start 2.1 exited 1 because in-progress task 4.2 also claims tools/bringup/check-live.sh, and cg spec implemented 2.1 exited 1 with the graph database busy and symbol check_kernel_boundaries not defined in the graph."
 assumption = "Shell functions are not graph symbols, so the status line was set to implemented by hand without forcing either command."
 severity   = "note"
+
+[observation.1.5.9]
+task       = "1.5"
+file       = "docker/kernel/init.sh"
+symbol     = "treasury-signer wait"
+observed   = "The treasury-signer service waits on publication/binding-policy.json, which only the genesis step of tools/bringup/kernel-genesis.sh produces after the kernel app runs; the init's genesis_files list (metadata.lxgb, sequencer.key, asset-id, replica-id) does not name it or publication/authorization.json, although kernel-genesis.sh lists both as genesis files, so the kernel-app gate reports the wait as a failure instead of waiting-genesis until that step has run."
+assumption = "The genesis step follows the cutover on the same machine; the two publication files belong in the init's genesis_files list so the gate passes the wait as waiting-genesis before the genesis step, which a kernel init correction supplies."
+severity   = "warning"
