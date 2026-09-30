@@ -868,8 +868,8 @@ severity   = "blocker"
 
 [observation.3.11.1]
 task       = "3.11"
-file       = "platform/hosted/internal/fly.toml"
+file       = "tools/bringup/check-live.sh"
 symbol     = "check_internal"
-observed   = "The journeys and approvals LAYERX_EVENTS_UPSTREAM_URL needs the port of the human service TLS listener in the kernel app, which task 3.5 (pending) adds without fixing a port; the manifest's 9443 is a Service port that the kernel machine gives to core, and the node pod's 9447 belongs to the first Paxeer boundary in docker/kernel/init.sh."
-assumption = "The owner or task 3.5 fixes the listener port (and its LAYERX_HUMAN_BIND on [::]) before the internal app is written; nothing is guessed and no in-tree file of this task is written until then."
-severity   = "blocker"
+observed   = "timeout 10m tools/bringup/check-live.sh internal exited 1 (log .logs/verify.log): the router's served chain ends at ISRG Root X1, but the internal and internal Redis apps do not exist yet, so the public-ip reads, the payments and programs pin reads and the five readiness routes from the kernel machine all fail."
+assumption = "The deploy side runs the handoff steps (build, volumes, Redis secrets, both deploys with no public IPs, the five internal certificates) once tasks 1.5, 2.2 and 3.5 are live, then reruns the gate; the human TLS listener port 9449 is the coordinator's ruling pending the design block."
+severity   = "external"
