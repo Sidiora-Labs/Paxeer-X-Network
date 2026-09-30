@@ -1891,6 +1891,132 @@ sys.exit(0 if status == 1 and paid == amount else 1)
 	finish "$failures"
 }
 
+# check_internal: the internal app of platform/hosted/internal/fly.toml and
+# the internal Redis app of platform/hosted/internal/redis.toml hold no public
+# IP; the router's served chain at api-mainnet-beta.paxeer.network ends at
+# ISRG Root X1 or ISRG Root X2, reported as root=X1|X2; inside the payments
+# and programs machines the running layerx-event-source of that kind has the
+# router as LAYERX_EVENTS_UPSTREAM_URL and as LAYERX_EVENTS_UPSTREAM_CA_DER a
+# self-signed root of that same name that verifies the served chain; from the
+# kernel machine of human/wallet/deploy/human.toml the five /readyz routes at
+# their <group>.process.<app>.internal names answer ready over mTLS with the
+# human-event-client identity tools/bringup/ca.sh left on the kernel volume.
+# CHECK_LIVE_ROUTER_CONNECT (host:port, default the router name on 443) is
+# where the served chain is read. One line per check.
+# shellcheck disable=SC2016
+internal_pin_script='pid=
+for d in /proc/[0-9]*; do
+	case "$(readlink "$d/exe" 2>/dev/null)" in
+	*/layerx-event-source)
+		if tr "\000" "\n" <"$d/environ" 2>/dev/null | grep -qx "LAYERX_EVENTS_KIND=$kind"; then
+			pid=$d
+			break
+		fi
+		;;
+	esac
+done
+if [ -z "$pid" ]; then
+	echo "@@process none"
+	exit 0
+fi
+env_of() { tr "\000" "\n" <"$pid/environ" | sed -n "s/^$1=//p" | head -n 1; }
+echo "@@url $(env_of LAYERX_EVENTS_UPSTREAM_URL)"
+echo "@@pin $(base64 <"$(env_of LAYERX_EVENTS_UPSTREAM_CA_DER)" 2>/dev/null | tr -d "\n")"'
+# shellcheck disable=SC2016
+internal_ready_script='for group in kms journeys payments approvals programs; do
+	status=0
+	answer=$(curl -sS -m "$limit" --cacert "$tls/ca.pem" --cert "$tls/cert.pem" --key "$tls/key.pem" -w "\n%{http_code}" "https://$group.process.$app.internal:9443/readyz" 2>&1) || status=$?
+	echo "@@$group $status $(printf "%s" "$answer" | tail -n 1) $(printf "%s" "$answer" | head -n 1 | tr -d " " | cut -c1-120)"
+done'
+check_internal() {
+	local router=api-mainnet-beta.paxeer.network
+	local connect="${CHECK_LIVE_ROUTER_CONNECT:-api-mainnet-beta.paxeer.network:443}"
+	local app redis_app kernel name="" answer w root="" group reply url pin subject line status code body failures=0
+	if ! command -v flyctl >/dev/null 2>&1; then
+		echo "check-live: flyctl is required" >&2
+		exit 2
+	fi
+	if ! app="$(fly_app platform/hosted/internal/fly.toml)" || ! redis_app="$(fly_app platform/hosted/internal/redis.toml)" ||
+		! kernel="$(fly_app human/wallet/deploy/human.toml)"; then
+		echo "fail internal toml=absent"
+		finish 1
+	fi
+	for name in "$app" "$redis_app"; do
+		answer="$(timeout "$timeout" flyctl ips list --app "$name" --json 2>/dev/null | python3 -c 'import json, sys; print(len(json.load(sys.stdin) or []))' 2>/dev/null)" || answer=none
+		if [ "$answer" = 0 ]; then
+			echo "pass public-ips app=$name count=0"
+		else
+			echo "fail public-ips app=$name count=${answer:-none}"
+			failures=$((failures + 1))
+		fi
+	done
+
+	name=""
+	w="$(mktemp -d)"
+	# shellcheck disable=SC2064
+	trap "rm -rf '$w'" EXIT
+	timeout "$timeout" openssl s_client -connect "$connect" -servername "$router" -showcerts </dev/null 2>/dev/null |
+		awk -v dir="$w" '/-BEGIN CERTIFICATE-/ { n++; in_cert = 1 } in_cert { print >(dir "/served-" n ".pem") } /-END CERTIFICATE-/ { in_cert = 0; close(dir "/served-" n ".pem") }' || true
+	if [ -s "$w/served-1.pem" ]; then
+		cat "$w"/served-[2-9].pem >"$w/untrusted.pem" 2>/dev/null || : >"$w/untrusted.pem"
+		# shellcheck disable=SC2012
+		name="$(openssl x509 -in "$(ls "$w"/served-*.pem | sort -V | tail -n 1)" -noout -issuer -nameopt sep_multiline,utf8 | sed -n 's/^ *CN=//p')"
+		case "$name" in
+		"ISRG Root X1") root=X1 ;;
+		"ISRG Root X2") root=X2 ;;
+		esac
+	fi
+	if [ -n "$root" ]; then
+		echo "pass router-root host=$router root=$root"
+	else
+		[ -n "$name" ] && name=other || name=unreadable
+		echo "fail router-root host=$router root=$name"
+		failures=$((failures + 1))
+	fi
+
+	for group in payments programs; do
+		reply="$(printf '%s\n' "$internal_pin_script" | fly_ssh "$app" "$group" "kind=$group sh -s")" || reply=""
+		url="$(sed -n 's/^@@url //p' <<<"$reply" | head -n 1)"
+		pin="$(sed -n 's/^@@pin //p' <<<"$reply" | head -n 1)"
+		if [ -z "$url" ]; then
+			echo "fail upstream-ca group=$group process=$(sed -n 's/^@@process //p' <<<"$reply" | head -n 1 | grep . || echo unreachable)"
+			failures=$((failures + 1))
+			continue
+		fi
+		subject=""
+		status=1
+		if [ -n "$pin" ] && base64 -d <<<"$pin" 2>/dev/null | openssl x509 -inform DER -out "$w/pin-$group.pem" 2>/dev/null; then
+			subject="$(openssl x509 -in "$w/pin-$group.pem" -noout -subject -nameopt sep_multiline,utf8 | sed -n 's/^ *CN=//p')"
+			if [ -n "$root" ] && [ "$subject" = "ISRG Root $root" ] &&
+				[ "$subject" = "$(openssl x509 -in "$w/pin-$group.pem" -noout -issuer -nameopt sep_multiline,utf8 | sed -n 's/^ *CN=//p')" ] &&
+				openssl verify -CAfile "$w/pin-$group.pem" -untrusted "$w/untrusted.pem" -verify_hostname "$router" "$w/served-1.pem" >/dev/null 2>&1; then
+				status=0
+			fi
+		fi
+		if [ "$url" = "https://$router" ] && [ "$status" -eq 0 ]; then
+			echo "pass upstream-ca group=$group url=$url root=$root verifies=yes"
+		else
+			subject="${subject:-unreadable}"
+			echo "fail upstream-ca group=$group url=$url pin=${subject// /-} served=${root:-unreadable}"
+			failures=$((failures + 1))
+		fi
+	done
+
+	reply="$(printf '%s\n' "$internal_ready_script" | fly_ssh "$kernel" - "tls=$fly_tls_dir/human-event-client app=$app limit=$timeout sh -s")" || reply=""
+	for group in kms journeys payments approvals programs; do
+		url="https://$group.process.$app.internal:9443/readyz"
+		line="$(sed -n "s/^@@$group //p" <<<"$reply" | head -n 1)"
+		read -r status code body <<<"${line:-none none}"
+		if [ "$status" = 0 ] && [ "$code" = 200 ] && [[ "$body" == *'"ready":true'* ]]; then
+			echo "pass readiness group=$group url=$url from=$kernel http=200 ready=true"
+		else
+			echo "fail readiness group=$group url=$url from=$kernel curl=${status:-none} http=${code:-none}"
+			failures=$((failures + 1))
+		fi
+	done
+	finish "$failures"
+}
+
 # Sourced by tools/bringup/ca.sh for the Fly helpers and the CA settings: the
 # probe's own dispatch below runs only when this file is executed.
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
@@ -1982,6 +2108,7 @@ human-session) ;;
 paxeer-boundary) ;;
 agent-public) ;;
 gas) ;;
+internal) ;;
 *)
 	usage >&2
 	exit 2
