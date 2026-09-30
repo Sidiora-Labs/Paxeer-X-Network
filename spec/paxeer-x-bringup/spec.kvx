@@ -510,7 +510,7 @@ reqs       = ["9.1"]
 
 [task.2.6]
 title      = "Run the program registry with its builder rootfs as a Fly app at index.paxeer.network"
-status     = "in_progress"
+status     = "pending"
 wave       = 2
 requires   = ["2.2", "2.4", "0.9"]
 do_1       = "Write platform/hosted/registry/fly.toml for a new Fly app built from docker/platform-registry with the builder rootfs of builder-environment/build-env.sh: one machine with a volume, and docker/platform-registry/init.sh as a root entrypoint that performs what node-provision-build-boundary.sh does without systemd (the cgroup v2 subtree, bubblewrap and the loop-mounted ext4 quota images) before starting the registry under its user with LAYERX_REGISTRY_BUILDER_* pointing at the rootfs."
