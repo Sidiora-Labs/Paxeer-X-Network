@@ -1439,3 +1439,9 @@ area    = "bringup"
 symptom = "A check-live harness case that wants a checklist failure passes the fixture record check instead."
 cause   = "The fixture checklist matched a substring (match) that the failing record's value (mismatch) also contained."
 do      = "Pick fixture marker words that no failing fixture value contains."
+
+[gotcha.237]
+area    = "bringup"
+symptom = "A check-live subcommand exits 2 with no output in the harness fixture tree."
+cause   = "It read an optional spec value with sed from a file the fixture tree does not carry, and under set -euo pipefail the failed read ended the script before any check line printed."
+do      = "Guard an optional read with an explicit fallback such as || name=\"\" so an absent file falls through to the next source."

@@ -702,7 +702,7 @@ status  = "pending"
 
 [task.4.1]
 title      = "Complete the wallet move and serve the public wallet endpoint from the Fly wallet gateway"
-status     = "pending"
+status     = "implemented"
 wave       = 4
 requires   = ["0.5", "0.9"]
 blocked_on = "the owner's sealing of the old master key for step 12; and, only when the public wallet endpoint name of [decision.public_names] wallet_endpoint is not under paxeer.network, the owner's one move of its existing record to the edge host"
