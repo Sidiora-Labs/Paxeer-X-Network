@@ -1247,3 +1247,9 @@ area    = "node"
 symptom = "The human web e2e unit tests look unrunnable in a fresh checkout because human/apps/web has no node_modules."
 cause   = "The package test script lists many files, some importing installed packages, while harness.test.ts imports only node builtins and a local .ts module."
 do      = "Run node --test e2e/harness.test.ts directly from human/apps/web; Node 22 strips the TypeScript types itself, no install needed."
+
+[gotcha.205]
+area    = "ci"
+symptom = "The runner canary dispatched while CI_LINUX_RUNNER is unset runs on a hosted runner and fails at its lld step, and the API reports an empty runner name for that job."
+cause   = "The routing expression falls back to the hosted image, which lacks ld.lld, and completed hosted jobs carry no runnerName in the jobs listing."
+do      = "Read a hosted canary failure as the variable being unset, not as a runner image fault; judge the Fly runner only from a run whose job names a fly- runner."
