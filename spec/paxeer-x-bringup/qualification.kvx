@@ -765,3 +765,10 @@ exit_code = 0
 log_path = ".logs/0.9-edge-register.log"
 observed = "Nginx reload reported protocol options redefined on existing sites. The live edge gate passed. No unrelated site was repaired."
 assumption = "Warnings belong to existing listener configuration and need a separately scoped task if repair is required."
+
+[observation.4.21.runtime_retirement]
+revision = "12d05f76b940b21ffd1476bdc7c29026950bd1a3"
+command = "systemctl stop hpx-registry.service; systemctl disable hpx-registry.service; rename reviewed unit, legacy vhost and environment into private rollback archive; systemctl daemon-reload"
+exit_code = 0
+log_path = ".logs/4.21-retirement.log"
+observed = "Old unit is inactive and not found; reviewed originals absent, environment mode preserved and artifacts/data untouched. Serving gate already passed; task remains in_progress pending host-role fixture and README completion."
