@@ -2314,6 +2314,88 @@ print(len(ms), len(started), len(data))
 	finish "$failures"
 }
 
+# check_mirrors: inside the kernel machine of human/wallet/deploy/human.toml
+# the mirror publisher's status listener, CHECK_LIVE_MIRRORS_STATUS
+# (host:port, default 127.0.0.1:9456, the status_listen docker/kernel/init.sh
+# runs it on), answers GET /readyz 200 ready; the verifier config
+# CHECK_LIVE_MIRRORS_VERIFY_CONFIG names the Ethereum and the Solana mirror
+# as sources, with their RPC endpoints, CA and bearer files; and
+# layerx-mirror-verify (CHECK_LIVE_MIRRORS_VERIFY_BIN, default the one on
+# PATH) verifies the receipt of CHECK_LIVE_MIRRORS_REQUEST from the mirrors
+# alone, with LAYERX_NODE_URL, LAYERX_GATEWAY_URL and
+# LAYERX_EXPLORER_API_ORIGIN removed from its environment, bounded by
+# CHECK_LIVE_MIRRORS_VERIFY_TIMEOUT seconds (default 300). One line per check.
+check_mirrors() {
+	local status="${CHECK_LIVE_MIRRORS_STATUS:-127.0.0.1:9456}"
+	local verify="${CHECK_LIVE_MIRRORS_VERIFY_BIN:-layerx-mirror-verify}"
+	local limit="${CHECK_LIVE_MIRRORS_VERIFY_TIMEOUT:-300}"
+	local name app reply rc code body answer eth sol failures=0
+	# shellcheck disable=SC2016 # the script expands on the machine
+	local script='rc=0
+body=$(curl -sS -m "$limit" -w "\n%{http_code}" "http://$status/readyz" 2>/dev/null) || rc=$?
+echo "@@readyz $rc $(printf "%s" "$body" | tail -n 1) $(printf "%s" "$body" | head -n 1 | tr -d " " | cut -c1-120)"'
+	for name in CHECK_LIVE_MIRRORS_VERIFY_CONFIG CHECK_LIVE_MIRRORS_REQUEST; do
+		if [ -z "${!name:-}" ]; then
+			echo "check-live: $name is unset" >&2
+			exit 2
+		elif [ ! -r "${!name}" ]; then
+			echo "check-live: $name does not name a readable file" >&2
+			exit 2
+		fi
+	done
+	for name in flyctl "$verify"; do
+		if ! command -v "$name" >/dev/null 2>&1; then
+			echo "check-live: $name is required" >&2
+			exit 2
+		fi
+	done
+	if ! app="$(fly_app human/wallet/deploy/human.toml)"; then
+		echo "fail mirrors toml=absent"
+		finish 1
+	fi
+
+	reply="$(printf '%s\n' "$script" | fly_ssh "$app" - "status=$status limit=$timeout sh -s")" || reply=""
+	read -r rc code body <<<"$(sed -n 's/^@@readyz //p' <<<"$reply" | head -n 1)"
+	if [ "${rc:-}" = 0 ] && [ "${code:-}" = 200 ] && [[ "${body:-}" == *'"ready":true'* ]]; then
+		echo "pass mirror-readyz app=$app listen=$status http=200 ready=true"
+	else
+		echo "fail mirror-readyz app=$app listen=$status curl=${rc:-none} http=${code:-none}"
+		failures=$((failures + 1))
+	fi
+
+	answer="$(python3 -c '
+import json, sys
+kinds = [s.get("kind") for s in json.load(open(sys.argv[1])).get("sources", [])]
+print(kinds.count("ethereum"), kinds.count("solana"))
+' "$CHECK_LIVE_MIRRORS_VERIFY_CONFIG" 2>/dev/null)" || answer=""
+	read -r eth sol <<<"${answer:-none none}"
+	if [ "$eth" != none ] && [ "$eth" -ge 1 ] && [ "$sol" -ge 1 ]; then
+		echo "pass mirror-sources ethereum=$eth solana=$sol"
+	else
+		echo "fail mirror-sources ethereum=$eth solana=$sol"
+		failures=$((failures + 1))
+	fi
+
+	answer="$(env -u LAYERX_NODE_URL -u LAYERX_GATEWAY_URL -u LAYERX_EXPLORER_API_ORIGIN \
+		timeout "$limit" "$verify" "$CHECK_LIVE_MIRRORS_VERIFY_CONFIG" <"$CHECK_LIVE_MIRRORS_REQUEST" 2>/dev/null)" || true
+	answer="$(python3 -c '
+import json, sys
+try:
+    r = json.loads(sys.stdin.read())
+except ValueError:
+    print("fail error=unreadable")
+    sys.exit(0)
+v = r.get("verification") or {}
+if r.get("ok") is True and v.get("provenance") == "Canonical" and v.get("sourceId"):
+    print("pass source=%s batch=%s provenance=Canonical level=%s" % (v["sourceId"], v.get("batchNumber"), v.get("level")))
+else:
+    print("fail error=%s provenance=%s" % (r.get("error", "none"), v.get("provenance", "none")))
+' <<<"$answer")"
+	echo "${answer%% *} mirror-verify ${answer#* }"
+	[ "${answer%% *}" = pass ] || failures=$((failures + 1))
+	finish "$failures"
+}
+
 mode="${1:-}"
 case "$mode" in
 -h | --help)
@@ -2335,6 +2417,7 @@ gas) ;;
 internal) ;;
 bridge) ;;
 wallet) ;;
+mirrors) ;;
 *)
 	usage >&2
 	exit 2
