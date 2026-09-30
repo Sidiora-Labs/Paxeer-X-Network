@@ -1253,3 +1253,9 @@ area    = "ci"
 symptom = "The runner canary dispatched while CI_LINUX_RUNNER is unset runs on a hosted runner and fails at its lld step, and the API reports an empty runner name for that job."
 cause   = "The routing expression falls back to the hosted image, which lacks ld.lld, and completed hosted jobs carry no runnerName in the jobs listing."
 do      = "Read a hosted canary failure as the variable being unset, not as a runner image fault; judge the Fly runner only from a run whose job names a fly- runner."
+
+[gotcha.206]
+area    = "kernel"
+symptom = "A task says layerxctl read-state shows balances and that the loopback replica serves the batch document carrying an activity, and neither is true."
+cause   = "layerxctl read-state answers only the actor's account sequence, state root and epoch; the authority replica serves only batch evidence by batch id and receipt digest; balances and receipt lookups live in the node test probe, and the activities[] batch document is the relay archive's /v1/history/batches/N."
+do      = "Before writing a value-loop probe, pick the real read path (probe balance, LNI receipt lookup, relay archive history) and get it into the task text; do not grep a layerxctl output for a balance."

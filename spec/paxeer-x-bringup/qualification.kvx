@@ -745,3 +745,19 @@ symbol     = "check_ci"
 observed   = "cg spec implemented 4.13 exited 75 with the graph database busy and symbol check_ci not defined in the graph; both fly.toml files already carry the real app names and the controller's env by name, so they needed no change."
 assumption = "Shell functions are not graph symbols, so the status line was set to implemented by hand; the controller's three secrets are set by name through flyctl secrets import, never in the toml."
 severity   = "note"
+
+[observation.1.6.1]
+task       = "1.6"
+file       = "spec/paxeer-x-bringup/spec.kvx"
+symbol     = "value_loop"
+observed   = "cg spec start 1.6 exited 1 on the unmet require 1.4, and the spec and tree fix neither the two funded accounts of do_1 nor where the sender's signing seed lives in the kernel machine: a fresh genesis funds no account (only a custody credit opens one), task 1.4 makes only the genesis and the sequencer key, and the pod's treasury key is a cluster secret the Fly kernel app has no custody path for."
+assumption = "Status set to in_progress by hand and no code written, per the owner's one-try-then-ask rule; the task resumes once the owner names the two accounts, how the sender is funded on chain 125 and where its seed or signer sits in the machine."
+severity   = "blocker"
+
+[observation.1.6.2]
+task       = "1.6"
+file       = "cmd/layerxctl/src/main.rs, cmd/layerxd/lxp_daemon_authority_replica.c"
+symbol     = "value_loop"
+observed   = "layerxctl read-state prints the actor's account sequence and state root, not balances, and has no receipt lookup; the authority replica on loopback 9402 serves only /v1/batches/<batch_id>/receipt-authority?receipt_digest=, while the batch document with activities[] is /v1/history/batches/N of the relay archive, which the kernel pod does not run; balance and receipt-by-activity reads exist only in the node test probe."
+assumption = "do_1 needs a ruling on the interface: extend layerxctl (outside this task's touches) with balance and receipt-lookup reads, ship layerx-node-probe in the kernel image of task 1.5, or read the batch from the relay archive origin."
+severity   = "blocker"
