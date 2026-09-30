@@ -1907,6 +1907,146 @@ CHECK_LIVE_TEST_INDEXER_HEALTH=down CHECK_LIVE_TEST_COMET_GET=200 CHECK_LIVE_IND
 	"check-live: 7 check(s) failed"
 unset CHECK_LIVE_TEST_IPS CHECK_LIVE_TEST_MACHINES CHECK_LIVE_INDEXER_ACCOUNT CHECK_LIVE_INDEXER_CONNECT CHECK_LIVE_TEST_OUTER_CURL CHECK_LIVE_TEST_LAYERX
 
+# The developers cases put a curl stand-in for the three developer names in
+# front of the one above: /healthz answers ready unless the name is in
+# CHECK_LIVE_TEST_DEV_DOWN, the webhooks routes want the bearer of the token
+# file in the --config file, registration wants the Idempotency-Key and the
+# receiver URL, and deliveries answers CHECK_LIVE_TEST_DEV_DELIVERIES. Each
+# fixture app lists its machines from its own machines.json.
+mkdir -p "$work/devbin" "$fx/platform/hosted/dashboard/web"
+printf 'app = "%s"\n' "$(fx_app platform/hosted/dashboard/web/fly.toml)" >"$fx/platform/hosted/dashboard/web/fly.toml"
+dashboard="$(fx_app platform/hosted/dashboard/fly.toml)"
+dashboard_web="$(fx_app platform/hosted/dashboard/web/fly.toml)"
+cat >"$work/devbin/curl" <<'SH'
+#!/usr/bin/env bash
+set -eu
+url=""
+for arg in "$@"; do
+	case "$arg" in
+	https://*) url="$arg" ;;
+	esac
+done
+case "$url" in
+https://hooks.paxeer.network/* | https://api-dev.paxeer.network/* | https://dev.paxeer.network/*) ;;
+*) exec "$CHECK_LIVE_TEST_BIN/curl" "$@" ;;
+esac
+name="${url#https://}"
+name="${name%%.*}"
+printf '%s curl %s\n' "$name" "${url#https://*/}" >>"$CHECK_LIVE_TEST_CALLS"
+out=/dev/stdout
+conf=""
+data=""
+wout=""
+idem=""
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+	--output) out="$2" ;;
+	--config) conf="$2" ;;
+	--data-binary) data="${2#@}" ;;
+	--write-out) wout="$2" ;;
+	--header) case "$2" in Idempotency-Key:*) idem="$2" ;; esac ;;
+	esac
+	shift
+done
+case " ${CHECK_LIVE_TEST_DEV_DOWN:-} " in
+*" $name "*)
+	[ -z "$wout" ] || printf '000'
+	exit 7
+	;;
+esac
+code=401
+body='{"error":"unauthorized"}'
+case "$url" in
+*/healthz)
+	code=200
+	body='{"ready":true}'
+	;;
+https://dev.paxeer.network/)
+	code=200
+	body='<!doctype html>'
+	;;
+*/v1/webhooks/*)
+	if [ -n "$conf" ] && grep -qxF "header = \"Authorization: Bearer $CHECK_LIVE_TEST_DEV_BEARER\"" "$conf"; then
+		case "$url:$data" in
+		*/endpoints:?*)
+			code=400
+			body='{"error":"idempotency_key_required"}'
+			if [ "$idem" = "Idempotency-Key: check-live-developers" ] &&
+				python3 -c 'import json, sys; b = json.load(open(sys.argv[1])); sys.exit(0 if b["url"] == sys.argv[2] and len(b["kinds"]) == 4 else 1)' "$data" "$CHECK_LIVE_DEVELOPERS_RECEIVER"; then
+				code=201
+				body='{"endpoint":"ep_fixture","key_id":"key_fixture"}'
+			fi
+			;;
+		*/endpoints:)
+			code=200
+			body='[{"endpoint":"ep_fixture","url":"fixture"}]'
+			;;
+		*/deliveries:)
+			code=200
+			body="${CHECK_LIVE_TEST_DEV_DELIVERIES:-[]}"
+			;;
+		esac
+	fi
+	;;
+esac
+printf '%s' "$body" >"$out"
+[ -z "$wout" ] || printf '%s' "$code"
+SH
+chmod +x "$work/devbin/curl"
+dev_machines() {
+	python3 -c '
+import json, sys
+print(json.dumps([{"state": "started", "region": r, "config": {"metadata": {"fly_process_group": g}}} for g, r in (a.split(":") for a in sys.argv[1:])]))
+' "$@"
+}
+for app in "$webhooks" "$dashboard" "$dashboard_web"; do mkdir -p "$fly/$app"; done
+dev_machines public:ams public:fra ingress:ams ingress:fra >"$fly/$webhooks/machines.json"
+dev_machines app:ams app:fra >"$fly/$dashboard/machines.json"
+dev_machines app:ams app:fra app:fra >"$fly/$dashboard_web/machines.json"
+printf 'fixture-session-token\n' >"$work/dev-token"
+export CHECK_LIVE_TEST_BIN="$work/bin" CHECK_LIVE_TEST_DEV_BEARER=fixture-session-token CHECK_LIVE_DEVELOPERS_RECEIVER=https://receiver.example.test/hook
+unset CHECK_LIVE_TEST_MACHINES
+
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_developers_without_a_token "$work/hosts-good.env" 2 developers -- \
+	"check-live: CHECK_LIVE_DEVELOPERS_TOKEN_FILE does not name a readable file"
+
+export CHECK_LIVE_DEVELOPERS_TOKEN_FILE="$work/dev-token"
+CHECK_LIVE_TEST_DEV_DELIVERIES='[{"delivery":"dl_fixture","endpoint":"ep_fixture","event":"ev_fixture","kind":"payment","state":{"state":"delivered"}}]' \
+	PATH="$work/devbin:$PATH" CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_developers_passing "$work/hosts-good.env" 0 developers -- \
+	"pass machines app=$webhooks group=public started=2 regions=ams,fra" \
+	"pass machines app=$webhooks group=ingress started=2 regions=ams,fra" \
+	"pass machines app=$dashboard group=app started=2 regions=ams,fra" \
+	"pass machines app=$dashboard_web group=app started=3 regions=ams,fra" \
+	"pass readiness url=https://hooks.paxeer.network/healthz http=200" \
+	"pass readiness url=https://api-dev.paxeer.network/healthz http=200" \
+	"pass readiness url=https://dev.paxeer.network/ http=200" \
+	"pass subscription endpoint=ep_fixture registered=201 listed=yes" \
+	"pass delivery endpoint=ep_fixture kind=payment delivery=dl_fixture state=delivered" \
+	"check-live: all checks passed"
+if ! grep -q fixture-session-token "$CHECK_LIVE_TEST_CALLS"; then
+	echo "ok   check_live_developers_never_prints_the_token"
+else
+	echo "FAIL check_live_developers_never_prints_the_token: the session token reached the recorded calls"
+	failures=$((failures + 1))
+fi
+
+dev_machines public:ams public:ams ingress:fra >"$fly/$webhooks/machines.json"
+CHECK_LIVE_TEST_DEV_DOWN="api-dev" CHECK_LIVE_TEST_DEV_DELIVERIES='[{"delivery":"dl_fixture","endpoint":"ep_fixture","event":"ev_fixture","kind":"payment","state":{"state":"pending"}}]' \
+	CHECK_LIVE_DEVELOPERS_DELIVERY_ATTEMPTS=1 PATH="$work/devbin:$PATH" CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_developers_failing "$work/hosts-good.env" 1 developers -- \
+	"fail machines app=$webhooks group=public started=2 regions=ams" \
+	"fail machines app=$webhooks group=ingress started=1 regions=fra" \
+	"pass machines app=$dashboard group=app started=2 regions=ams,fra" \
+	"fail readiness url=https://api-dev.paxeer.network/healthz http=000" \
+	"pass subscription endpoint=ep_fixture registered=201 listed=yes" \
+	"fail delivery endpoint=ep_fixture state=none-delivered attempts=1 http=200" \
+	"check-live: 4 check(s) failed"
+
+CHECK_LIVE_TEST_DEV_BEARER=another-token CHECK_LIVE_DEVELOPERS_DELIVERY_ATTEMPTS=1 PATH="$work/devbin:$PATH" CHECK_LIVE_TEST_PROGRAM="$fx_checker" \
+	expect check_live_developers_refused_session "$work/hosts-good.env" 1 developers -- \
+	"fail subscription url=https://hooks.paxeer.network/v1/webhooks/endpoints http=401" \
+	"check-live: 3 check(s) failed"
+unset CHECK_LIVE_TEST_BIN CHECK_LIVE_TEST_DEV_BEARER CHECK_LIVE_DEVELOPERS_RECEIVER CHECK_LIVE_DEVELOPERS_TOKEN_FILE
+
 # The fleet script shares the host map and the ssh helpers, so its own test
 # runs as the last case, with this test's stand-ins off the PATH.
 status=0

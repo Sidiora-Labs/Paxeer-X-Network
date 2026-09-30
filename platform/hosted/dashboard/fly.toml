@@ -1,0 +1,96 @@
+app = "paxeer-dashboard"
+primary_region = "ams"
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[build]
+  dockerfile = "../../../docker/platform-dashboard/Dockerfile"
+
+[deploy]
+  strategy = "rolling"
+
+# The dashboard API on its plain listener behind the http_service, at least two
+# machines in ams and fra. It reads the webhooks store in the internal Redis
+# and the router's key and usage store in the router's Redis, both over TLS
+# under the internal CA, and authenticates sessions at the identity app.
+[env]
+  LAYERX_WEBHOOKS_REDIS_URL = "rediss://paxeer-internal-redis.internal:6379"
+  LAYERX_WEBHOOKS_LEASE_SECONDS = "120"
+  LAYERX_WEBHOOKS_INTERNAL_CA_DER = "/run/layerx/ca/internal.der"
+  LAYERX_WEBHOOKS_REDIS_USERNAME_FILE = "/run/layerx/redis/username"
+  LAYERX_WEBHOOKS_REDIS_PASSWORD_FILE = "/run/layerx/redis/password"
+  LAYERX_DASHBOARD_LISTEN = "[::]:9445"
+  LAYERX_DASHBOARD_LISTENER = "plain"
+  LAYERX_DASHBOARD_GATEWAY_REDIS_URL = "rediss://paxeer-shared-endpoint-redis.internal:6379"
+  LAYERX_DASHBOARD_REDIS_CA_DER = "/run/layerx/ca/internal.der"
+  LAYERX_DASHBOARD_INTERNAL_CA_DER = "/run/layerx/ca/internal.der"
+  LAYERX_DASHBOARD_GATEWAY_REDIS_USERNAME_FILE = "/run/layerx/dashboard-redis/username"
+  LAYERX_DASHBOARD_GATEWAY_REDIS_PASSWORD_FILE = "/run/layerx/dashboard-redis/password"
+  LAYERX_DASHBOARD_IDENTITY_URL = "https://paxeer-identity.internal:9443"
+  LAYERX_DASHBOARD_IDENTITY_TOKEN_FILE = "/run/layerx/tokens/identity"
+  LAYERX_DASHBOARD_CLIENT_IDENTITY_PKCS12 = "/run/layerx/client/identity.p12"
+  LAYERX_DASHBOARD_CLIENT_IDENTITY_PASSWORD_FILE = "/run/layerx/client/password"
+
+# The client identity of tools/bringup/ca.sh issue dashboard-client, whose CA
+# DER is the internal CA root.
+[[files]]
+  guest_path = "/run/layerx/client/cert.pem"
+  secret_name = "DASHBOARD_CLIENT_CERT"
+
+[[files]]
+  guest_path = "/run/layerx/client/identity.p12"
+  secret_name = "DASHBOARD_CLIENT_P12"
+
+[[files]]
+  guest_path = "/run/layerx/client/password"
+  secret_name = "DASHBOARD_CLIENT_PASSWORD"
+
+[[files]]
+  guest_path = "/run/layerx/ca/internal.der"
+  secret_name = "DASHBOARD_CLIENT_CA_DER"
+
+[[files]]
+  guest_path = "/run/layerx/redis/username"
+  secret_name = "DASHBOARD_WEBHOOKS_REDIS_USERNAME"
+
+[[files]]
+  guest_path = "/run/layerx/redis/password"
+  secret_name = "DASHBOARD_WEBHOOKS_REDIS_PASSWORD"
+
+[[files]]
+  guest_path = "/run/layerx/dashboard-redis/username"
+  secret_name = "DASHBOARD_GATEWAY_REDIS_USERNAME"
+
+[[files]]
+  guest_path = "/run/layerx/dashboard-redis/password"
+  secret_name = "DASHBOARD_GATEWAY_REDIS_PASSWORD"
+
+[[files]]
+  guest_path = "/run/layerx/tokens/identity"
+  secret_name = "DASHBOARD_IDENTITY_TOKEN"
+
+[http_service]
+  internal_port = 9445
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 2
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "30s"
+    method = "GET"
+    path = "/healthz"
+    protocol = "http"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  cpus = 1
+  cpu_kind = "shared"
