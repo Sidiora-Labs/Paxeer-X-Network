@@ -88,7 +88,7 @@ Rules that hold for every step:
   ```sh
   (cd human/wallet/attestor && go build -o <attestor-binary-path> ./cmd/attestor)
   read -rs CEREMONY_SOURCE_DATABASE_URL && export CEREMONY_SOURCE_DATABASE_URL
-  export CEREMONY_GATEWAY_MIGRATIONS_DIR=human/wallet/gateway/migrations
+  export CEREMONY_GATEWAY_MIGRATIONS_DIR="$(pwd -P)/human/wallet/gateway/migrations"
   export CEREMONY_REHEARSAL_ADMIN_URL=<local-admin-connection>
   export CEREMONY_ATTESTOR_BIN=<attestor-binary-path>
   export CEREMONY_ARCHIVE_PATH=<rehearsal-archive-path>
@@ -104,13 +104,15 @@ Rules that hold for every step:
   migrations of `CEREMONY_GATEWAY_MIGRATIONS_DIR` and drops it afterwards,
   archives the funded rows, starts five daemons, and imports, refreshes,
   test-signs and recovers every standard and agent wallet.
-- Readiness check: exit 0 and one report line
-  `wallets=<w> eligible=<e> funded_archived=<f> already_migrated=<m> read=<e> verified=<e> imported=<e> refreshed=<e> test_signed=<e> matched=<e>`
-  with every count after `eligible` equal to it. A single mismatch exits
-  non-zero, stops the checklist and is recorded; it is never worked around.
-  `--report-only-counts` keeps the output to that counts line, the form the
-  verify commands of tasks 5.2 and 5.4 read.
-- Evidence: the report line as the rehearsal gate record.
+- Readiness check: exit 0 and the report
+  `wallets=<w> eligible=<e> funded_archived=<f> already_migrated=<m> read=<e> verified=<e> imported=<e> refreshed=<e> test_signed=<e> matched=<e>`,
+  then `tables=<t> rows=<r> ledger_before=<l> applied_after=<a>`, then one
+  `table=<name> source_rows=<n> target_rows=<n>` line per copied table; every
+  count after `eligible` equals it and every table's `source_rows` equals its
+  `target_rows`. A single mismatch exits non-zero, stops the checklist and is
+  recorded; it is never worked around. `--report-only-counts` keeps the table
+  lines to counts, without the digests of the full report.
+- Evidence: the report lines as the rehearsal gate record.
 - Rollback: none needed; nothing outside the operator machine changed.
   Afterwards remove the rehearsal archive: `rm <rehearsal-archive-path>`.
 
@@ -127,7 +129,7 @@ Rules that hold for every step:
   ```sh
   read -rs <source-connection-variable> && export <source-connection-variable>
   export CEREMONY_DATABASE_URL=<gateway-wallet-database-connection>
-  export CEREMONY_GATEWAY_MIGRATIONS_DIR=human/wallet/gateway/migrations
+  export CEREMONY_GATEWAY_MIGRATIONS_DIR="$(pwd -P)/human/wallet/gateway/migrations"
   (cd human/wallet/ceremony && go run ./cmd/ceremony move)
   (cd human/wallet/ceremony && go run ./cmd/ceremony plan)
   ```
