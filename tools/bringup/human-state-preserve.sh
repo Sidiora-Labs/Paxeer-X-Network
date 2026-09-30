@@ -8,6 +8,7 @@ set -euo pipefail
 usage() {
 	cat <<'EOF'
 usage: tools/bringup/human-state-preserve.sh export <dir> | import <dir> | verify <dir>
+       tools/bringup/human-state-preserve.sh restore <dir> <machine>
 
 Carries the retained state and its matching cryptographic material from the
 writable root of the volumeless machine of the kernel app
@@ -46,6 +47,25 @@ import <dir>  on the only started machine, the new one with /data, before the
               then runs verify.
 verify <dir>  on the only started machine: every manifest file has its sha256
               under /data and every human-state directory has its owner.
+restore <dir> <machine>
+              the rollback: puts the export back at the old machine's own
+              paths (the map above inverted) on <machine>, a clone of the old
+              machine (old image and env) that must be the app's only started
+              machine and carries one volume; the phase follows that volume's
+              mount path in the machine config. At
+              /var/lib/layerx/human-restore: refuses when the volume holds
+              anything but lost+found, unpacks human-state/components there
+              with the old owners and modes and checks its manifest digests.
+              At /var/lib/layerx/human (the mount moved there by a machine
+              update, which restarts the old service on it): checks those
+              digests again, the old service's /livez on its bind port (8080
+              when LAYERX_HUMAN_BIND is unset), refuses when any other carried
+              file already exists at its old path, unpacks the rest onto the
+              root at /data and /run/human-material and checks every manifest
+              digest at its old path. The volume keeps the service's state
+              roots across stops; the root copies are reset by a stop as they
+              were on the old machine, and a rerun of this phase after a stop
+              puts them back.
 
 Prints file counts and pass lines, refusals on stderr, never a key or a state
 byte. CHECK_LIVE_TIMEOUT bounds each flyctl call; set it to cover the transfer.
@@ -110,6 +130,48 @@ own 4020 components identity security movement
 own 4021 agent authority
 own 4026 kms'
 
+# The old machine's path of a manifest path: the export's map inverted.
+# shellcheck disable=SC2016
+old_map='old() {
+	case "$1" in
+	human-state/components/*) echo "/var/lib/layerx/human/${1#human-state/components/}" ;;
+	layerx/keys/human-material/*) echo "/run/human-material/${1#layerx/keys/human-material/}" ;;
+	*) echo "/data/$1" ;;
+	esac
+}'
+
+# shellcheck disable=SC2016
+stage_absent_cmd='cd /var/lib/layerx/human-restore/ || exit 3
+test -z "$(ls -A | grep -vx lost+found)" || exit 4'
+
+# shellcheck disable=SC2016
+stage_cmd='cd /var/lib/layerx/ && tar -xpf - --transform "s,^human-state/components\(/\|$\),human-restore\1," human-state/components'
+
+# shellcheck disable=SC2016
+stage_verify_cmd='cd /var/lib/layerx/human-restore/ || exit 3
+sha256sum --quiet -c - >/dev/null 2>&1 || exit 5'
+
+# shellcheck disable=SC2016
+old_verify_cmd="$old_map"'
+while read -r h f; do printf "%s  %s\n" "$h" "$(old "$f")"; done | sha256sum --quiet -c - >/dev/null 2>&1 || exit 5'
+
+# shellcheck disable=SC2016
+old_absent_cmd="$old_map"'
+while read -r h f; do ! test -e "$(old "$f")" || exit 4; done'
+
+# shellcheck disable=SC2016
+livez_cmd='p=${LAYERX_HUMAN_BIND##*:}
+curl -fsS -o /dev/null --max-time 5 "http://127.0.0.1:${p:-8080}/livez"'
+
+# shellcheck disable=SC2016
+root_cmd='t=$(mktemp -d) || exit 1
+tar -xpf - -C "$t" --exclude=human-state/components || exit 1
+if test -d "$t/layerx/keys/human-material"; then
+	mkdir -p /run/human-material && cp -a "$t/layerx/keys/human-material/." /run/human-material/ && rm -rf "$t/layerx/keys/human-material" || exit 1
+fi
+for m in human-state layerx tls; do ! test -d "$t/$m" || { mkdir -p /data/ && cp -a "$t/$m" /data/; } || exit 1; done
+rm -rf "$t"'
+
 refuse() {
 	echo "human-state-preserve: $*" >&2
 	exit 1
@@ -172,6 +234,77 @@ do_verify() {
 	esac
 }
 
+# restore_phase <app> <machine>: prints stage or old when <machine> is the
+# only started machine of the app and its one volume is mounted at the stage
+# path or the old path, a refusal reason otherwise.
+restore_phase() {
+	timeout "$timeout" flyctl machines list --app "$1" --json 2>/dev/null | python3 -c '
+import json
+import sys
+
+try:
+    doc = json.load(sys.stdin)
+except ValueError:
+    print("machines=unreadable")
+    sys.exit(0)
+started = [m.get("id", "") for m in doc if m.get("state") == "started"]
+if started != [sys.argv[1]]:
+    print("started=" + (",".join(started) or "none"))
+    sys.exit(0)
+machine = next(m for m in doc if m.get("id") == sys.argv[1])
+paths = ",".join(x.get("path", "") for x in (machine.get("config") or {}).get("mounts") or [])
+print({"/var/lib/layerx/human-restore": "stage", "/var/lib/layerx/human": "old"}.get(paths, "mounts=" + (paths or "none")))
+' "$2"
+}
+
+do_restore() {
+	local dir=$1 machine=$2 app phase rc=0 files parts rest
+	check_tar "$dir" || refuse "$dir/state.tar does not match $dir/manifest.sha256"
+	app="$(fly_app "$toml")" || refuse "$toml names no app"
+	phase="$(restore_phase "$app" "$machine")"
+	files="$(grep -c . "$dir/manifest.sha256")"
+	parts="$(sed -n 's,^\([0-9a-f]*\)  human-state/components/,\1  ,p' "$dir/manifest.sha256")"
+	rest="$(grep -v '^[0-9a-f]*  human-state/components/' "$dir/manifest.sha256" || true)"
+	case "$phase" in
+	stage)
+		fly_ssh "$app" - "$stage_absent_cmd" </dev/null >/dev/null || rc=$?
+		case "$rc" in
+		0) ;;
+		3) refuse "the stage path /var/lib/layerx/human-restore is absent on $machine" ;;
+		4) refuse "the volume of $machine already holds state; nothing was overwritten" ;;
+		*) refuse "the pre-restore check on $machine failed with status $rc" ;;
+		esac
+		if [ -n "$parts" ]; then
+			fly_ssh "$app" - "$stage_cmd" <"$dir/state.tar" >/dev/null || refuse "staging on $machine failed with status $?"
+			fly_ssh "$app" - "$stage_verify_cmd" <<<"$parts" >/dev/null || refuse "a staged file on $machine differs from $dir/manifest.sha256 or is missing"
+		fi
+		echo "pass restore-stage app=$app machine=$machine files=$(grep -c . <<<"$parts") sha256=match"
+		;;
+	old)
+		if [ -n "$parts" ]; then
+			fly_ssh "$app" - "$old_verify_cmd" <<<"$(grep '^[0-9a-f]*  human-state/components/' "$dir/manifest.sha256")" >/dev/null ||
+				refuse "a file of the volume of $machine differs from $dir/manifest.sha256 or is missing"
+		fi
+		echo "pass restore-volume app=$app machine=$machine files=$(grep -c . <<<"$parts") sha256=match"
+		fly_ssh "$app" - "$livez_cmd" </dev/null >/dev/null || refuse "the old service on $machine does not answer /livez"
+		echo "pass livez app=$app machine=$machine http=200"
+		if [ -n "$rest" ]; then
+			fly_ssh "$app" - "$old_absent_cmd" <<<"$rest" >/dev/null || rc=$?
+			case "$rc" in
+			0) ;;
+			4) refuse "a carried file already exists at its old path on $machine; nothing was overwritten" ;;
+			*) refuse "the pre-restore check on $machine failed with status $rc" ;;
+			esac
+			fly_ssh "$app" - "$root_cmd" <"$dir/state.tar" >/dev/null || refuse "restoring the root of $machine failed with status $?"
+		fi
+		fly_ssh "$app" - "$old_verify_cmd" <"$dir/manifest.sha256" >/dev/null ||
+			refuse "a file on $machine differs from $dir/manifest.sha256 at its old path or is missing"
+		echo "pass restore app=$app machine=$machine files=$files sha256=match"
+		;;
+	*) refuse "$machine is not a restore target of $app ($phase); it must be the only started machine with one volume at /var/lib/layerx/human-restore or /var/lib/layerx/human" ;;
+	esac
+}
+
 do_import() {
 	local dir=$1 app rc=0
 	check_tar "$dir" || refuse "$dir/state.tar does not match $dir/manifest.sha256"
@@ -188,12 +321,8 @@ do_import() {
 	do_verify "$dir"
 }
 
-if [ "$#" -ne 2 ]; then
-	usage >&2
-	exit 2
-fi
-case "$1" in
-export | import | verify) ;;
+case "$#:${1:-}" in
+2:export | 2:import | 2:verify | 3:restore) ;;
 *)
 	usage >&2
 	exit 2
@@ -211,4 +340,4 @@ if [ "$1" != export ]; then
 		refuse "$dir holds no export"
 	fi
 fi
-"do_$1" "$dir"
+"do_$1" "$dir" ${3+"$3"}
