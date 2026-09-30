@@ -14,7 +14,7 @@
 feature   = "paxeer-x-bringup"
 title     = "Bring every LayerX system of Paxeer X Network live on Fly and on the chain hosts"
 kind      = "product-feature-specification"
-version        = "1.5.4"
+version        = "1.5.5"
 status    = "in_progress"
 language  = "Rust (platform/, human/, agent/, interop/ crates), C (cmd/layerxd, src/), Go (hpx/registry, tools/flyci, bridge/deploy), POSIX shell for the probe, the Fly inits and the host scripts, Fly toml for the app definitions, Python where the hosted pod definitions already use it"
 repo_root = "platform/hosted/ (the pod definitions, entrypoints and env contracts every Fly app reuses, with each new fly.toml beside its definition); docker/ (one directory per service image, docker/kernel for the kernel app); human/wallet/deploy/ (the Fly toml files of the wallet fleet, including the router and the kernel app); tools/bringup/ (the host-map contract, the internal CA and the live probe); cmd/layerxd and src/ (the kernel); human/crates/ (the human graph); agent/crates/ (agentd and MCP); interop/ (interop gateway, mirrors, x-websearch, bridge relayer, gas station); explorer/ (the explorer fork); docs/site and docs/wiki (the public names); spec/paxeer-x-bringup/ (this feature and its qualification log)"
@@ -65,6 +65,7 @@ script   = "tools/bringup/check-live.sh <subcommand> follows tools/wallet/check-
 subcommands = "hosts, ca, search-front, validators, kernel-app, kernel-node, kernel-value-loop, paxeer-boundary, kernel-boundaries, router, identity, internal, registry, human, agent, human-session, wallet, search, xweb-attest, xweb-attestors, archive-node, explorer, developers, relay, interop, interop-adapters, mirrors, ramp, gas, bridge, ci, hpx, rpc-nodes, rpc-placement, indexer, agent-public, names"
 
 [design.fly]
+kernel_ports = "Inside the kernel machine: 9401 the node endpoint, 9443 platform core, 9444 its admin plane, 9445 the receipt authority, 9446 the agent boundary, 9447 and 9448 the two Paxeer boundaries, 9449 the human service TLS listener under the internal CA for the journeys and approvals event sources, 9450 the kms on loopback, 9451 and 9452 the guarantors, 9453 the program listener, 9454 agentd; a new listener takes the next free port of this map."
 layout   = "Each Fly app has a fly.toml beside its pod definition, or under human/wallet/deploy for the apps of the wallet fleet, and builds from its docker/ directory. Its env carries exactly the env names the pod definition declares with listen values on [::]; its secrets are [[files]] entries with a secret_name; a single-writer app mounts one volume at /data, except the hpx registry, whose image serves its node directory from /srv/hpx and mounts its volume there; a public name is an http_service on a plain listener or, for an mTLS surface, a [[services]] TCP passthrough. The kernel app's image docker/kernel is the union of docker/platform-node, platform-core, platform-authority, platform-agent-boundary, interop-mirror and human-service plus layerx-mcp on a Debian base with socat and util-linux; its init docker/kernel/init.sh replays the init containers of platform/hosted/node/deployment.yaml and then supervises every container command of that pod under its uid (4020, 4021, 4026); its volume holds /data/layerx and /data/human-state; its machine is a performance class with at least four CPUs and 16GB in the region nearest the RPC nodes by measured round trip."
 
 [documentation]
@@ -983,7 +984,7 @@ reqs       = ["20.1", "20.2"]
 
 [task.4.21]
 title      = "Serve the hpx registry at node.hyperpaxeer.com from a Fly app and retire it from the hpx host"
-status     = "implemented"
+status     = "done"
 wave       = 4
 requires   = ["4.14", "0.5", "0.9"]
 do_1       = "Extend docker/hpx-registry/Dockerfile and its Dockerfile.dockerignore with nginx, the landing page, logo and fonts of hpx/hosting and hpx/hosting/nginx-fly.conf, which carries the locations and the /api/register rate limit of hpx/hosting/nginx.conf on a plain listener on [::]:8080 with real_ip_header Fly-Client-IP and X-Forwarded-For set to that address, and add docker/hpx-registry/entrypoint.sh as a root init that starts nginx and the registry on loopback under its user and exits when either exits."
@@ -995,6 +996,11 @@ symbols    = ["check_hpx"]
 touches    = ["docker/hpx-registry/Dockerfile", "docker/hpx-registry/Dockerfile.dockerignore", "docker/hpx-registry/entrypoint.sh", "hpx/hosting/nginx-fly.conf", "hpx/hosting/fly.toml", "hpx/README.md", "tools/bringup/check-live.sh", "tools/bringup/check-live.test.sh", "tools/bringup/sync-fleet.test.sh"]
 tests      = ["tools/bringup/check-live.test.sh", "tools/bringup/sync-fleet.test.sh"]
 reqs       = ["18.4"]
+revision = "12d05f76b940b21ffd1476bdc7c29026950bd1a3"
+command = "BRINGUP_HOSTS_FILE=/root/lx-ops/bringup-2026-09-29/hosts.env timeout 10m tools/bringup/check-live.sh hpx"
+exit_code = 0
+log_path = ".logs/4.21-hpx-live.log"
+
 
 [task.4.22]
 title      = "Move the public full node off the validator host onto its own server"

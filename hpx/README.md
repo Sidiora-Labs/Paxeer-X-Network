@@ -34,7 +34,12 @@ Set `HPX_MIRROR` only when operating an explicitly trusted alternate mirror.
 
 ## Publish artifacts
 
-Run from this monorepo after a new `paxd` or chain configuration is ready:
+The public origin is served by the Fly app `paxeer-hpx-registry` of
+`hpx/hosting/fly.toml`. Its volume at `/srv/hpx` holds the release artifacts
+under `/srv/hpx/artifacts` and the node directory under `/srv/hpx/data`.
+
+Assemble a release from this monorepo after a new `paxd` or chain
+configuration is ready:
 
 ```bash
 sudo hpx/publish.sh
@@ -48,13 +53,29 @@ Defaults:
 - release identity: `version.json`
 - live chain configuration: `/root/.paxeer/config`, overridable with `SRC_CFG`
   or `HPX_RUNTIME_CONFIG_DIR`
-- publication root: `/srv/hpx/artifacts`, overridable with
+- assembly root: `/srv/hpx/artifacts`, overridable with
   `HPX_ARTIFACTS_ROOT`
 
 The publisher requires the binary, all six x86-64 and AArch64 native libraries,
 genesis, both configuration files and all lifecycle scripts. It stages them in
 `releases/<release-id>`, writes a sorted SHA-256 manifest, then atomically moves
-the `current` symlink. A failed staging run never changes the served release.
+the local `current` symlink. A failed staging run never changes a release.
+
+Stream the assembled release into the app's volume through `flyctl ssh
+console`, verify it inside the machine, then atomically move the served
+`current` symlink to it:
+
+```bash
+root="${HPX_ARTIFACTS_ROOT:-/srv/hpx/artifacts}"
+rel=$(readlink "$root/current")
+tar -C "$root" -cf - "$rel" | \
+  flyctl ssh console --app paxeer-hpx-registry --command "tar -C /srv/hpx/artifacts -xf -"
+flyctl ssh console --app paxeer-hpx-registry --command \
+  "sh -c 'cd /srv/hpx/artifacts/$rel && sha256sum -c checksums.txt && ln -s $rel /srv/hpx/artifacts/.current.new && mv -Tf /srv/hpx/artifacts/.current.new /srv/hpx/artifacts/current'"
+```
+
+A release whose checksums do not verify never moves `current`, so the served
+release stays unchanged.
 
 ## Publish the registry runtime
 
@@ -63,19 +84,23 @@ Changes under `hpx/registry` trigger the repository workflow
 GitHub release assets and publishes the same source as a multi-architecture GHCR
 image. Generated registry executables are never committed.
 
-After the workflow publishes the revision, deploy it on the host that serves the
-public origin:
+The Fly app runs the image of `docker/hpx-registry`: nginx on `[::]:8080` with
+`hpx/hosting/nginx-fly.conf`, which serves the landing page, overwrites
+forwarded-address headers from `Fly-Client-IP` and rate-limits registration,
+in front of the registry on loopback under its own user. Build the image from
+the repository root and deploy it to the app's one machine:
 
 ```bash
-sudo hpx/hosting/deploy.sh
+flyctl deploy -c hpx/hosting/fly.toml --app paxeer-hpx-registry \
+  --image <image> --ha=false -y
 ```
 
-The deployment installs the checksum-verified release executable as an
-unprivileged, loopback-only systemd service, persists registry state at
-`/srv/hpx/data/registry.json`, obtains the `node.hyperpaxeer.com` certificate and
-enables the Nginx reverse proxy. Set `LETSENCRYPT_EMAIL` to attach an email to the
-certificate registration. Registration is public by default; set
-`HPX_REGISTER_TOKEN` before deployment to require `X-HPX-Token`.
+The registry persists its state at `/srv/hpx/data/registry.json` on the
+volume, and Fly checks `/healthz`. `HPX_REGISTER_TOKEN` is a Fly secret of the
+app; when it is set, registration requires `X-HPX-Token`. The edge proxies
+`node.hyperpaxeer.com` to `https://paxeer-hpx-registry.fly.dev` through
+`tools/bringup/edge.sh`, and `tools/bringup/check-live.sh hpx` checks that the
+name is served by the app.
 
 ## Public surface
 

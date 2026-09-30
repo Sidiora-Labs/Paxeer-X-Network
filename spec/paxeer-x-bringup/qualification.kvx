@@ -841,3 +841,129 @@ revision = "26b211c9ccba18c31c51a4bae828cf17e185902e"
 command = "BRINGUP_HOSTS_FILE=/root/lx-ops/bringup-2026-09-29/hosts.env timeout 10m tools/bringup/check-live.sh search-front"
 exit_code = 0
 log_path = ".logs/0.3-search-front-live.log"
+
+[observation.1.4.1]
+task       = "1.4"
+file       = "tools/bringup/kernel-genesis.sh"
+symbol     = "kernel_genesis"
+observed   = "cg spec start 1.4 refused with unmet requires 1.5 and 1.7, so the status was set to in_progress by hand; the kernel network id is not fixed by the spec or the tree: the node pod's ConfigMap carries the private testnet id 402, and the chain's custody params hold the network id and the sequencer authorizations the new sequencer key must match, which no precompile view exposes over the JSON-RPC relay."
+assumption = "The owner names the mainnet kernel network id before the script is written; nothing is guessed."
+severity   = "blocker"
+
+[observation.1.4.2]
+task       = "1.4"
+file       = "tools/bringup/kernel-genesis.sh"
+symbol     = "kernel_genesis"
+observed   = "The custody precompile at 0x...1013 exposes getAsset, assetByPointer and nativeAssetId but no enumeration, and the module registers no query route, so the asset map cannot be listed through the relay; only the SID pointer is fixed in the tree, USDL appears only in the retired Solidity path and USDC has two different addresses in the wallet app."
+assumption = "The owner either names the pointer of every mapped asset on chain 125 (SID, USDC, USDL and any other) for assetByPointer lookups with PAX from nativeAssetId, or rules an enumeration view into the precompile; nothing is guessed."
+severity   = "blocker"
+
+[observation.1.4.3]
+task       = "1.4"
+file       = "platform/hosted/node/bootstrap.sh"
+symbol     = "kernel_genesis"
+observed   = "do_1 puts the sequencer key under /data/layerx/node, while bootstrap.sh and supervisor.sh, which the init reuses, refuse a sequencer key inside the node data directory, and task 1.5 has not yet fixed the init's volume layout (data directory, key and treasury material paths) that the script must write into."
+assumption = "The key sits beside the data directory under the custody path once task 1.5 or the owner fixes the layout; the relaxation of the bootstrap check is not made."
+severity   = "blocker"
+
+[observation.1.6.1]
+task       = "1.6"
+file       = "spec/paxeer-x-bringup/spec.kvx"
+symbol     = "value_loop"
+observed   = "cg spec start 1.6 exited 1 on the unmet require 1.4, and the spec and tree fix neither the two funded accounts of do_1 nor where the sender's signing seed lives in the kernel machine: a fresh genesis funds no account (only a custody credit opens one), task 1.4 makes only the genesis and the sequencer key, and the pod's treasury key is a cluster secret the Fly kernel app has no custody path for."
+assumption = "Status set to in_progress by hand and no code written, per the owner's one-try-then-ask rule; the task resumes once the owner names the two accounts, how the sender is funded on chain 125 and where its seed or signer sits in the machine."
+severity   = "blocker"
+
+[observation.1.6.2]
+task       = "1.6"
+file       = "cmd/layerxctl/src/main.rs, cmd/layerxd/lxp_daemon_authority_replica.c"
+symbol     = "value_loop"
+observed   = "layerxctl read-state prints the actor's account sequence and state root, not balances, and has no receipt lookup; the authority replica on loopback 9402 serves only /v1/batches/<batch_id>/receipt-authority?receipt_digest=, while the batch document with activities[] is /v1/history/batches/N of the relay archive, which the kernel pod does not run; balance and receipt-by-activity reads exist only in the node test probe."
+assumption = "do_1 needs a ruling on the interface: extend layerxctl (outside this task's touches) with balance and receipt-lookup reads, ship layerx-node-probe in the kernel image of task 1.5, or read the batch from the relay archive origin."
+severity   = "blocker"
+
+[observation.2.6.1]
+task       = "2.6"
+file       = "platform/hosted/registry/src/event_producer.rs"
+symbol     = "ProgramOutbox::start"
+observed   = "The registry calls Client::from_environment(&[\"program\"]) at startup, so it refuses to start without the LAYERX_EVENTS_PROGRAM_UPSTREAM_* and LAYERX_EVENTS_WEBHOOKS_UPSTREAM_* groups, which task 4.5 adds later against the internal and webhooks apps that no task has created and whose app names the spec does not fix."
+assumption = "None taken: either the registry uses the optional from_environment_if_configured path as other producers do, or task 2.6 carries both groups now with named upstream apps; the owner decides, and the task stays in_progress with no code written."
+severity   = "blocker"
+
+[observation.2.6.2]
+task       = "2.6"
+file       = "platform/hosted/node/deployment.yaml"
+symbol     = "LAYERX_REGISTRY_NODE_AUTHORIZATION"
+observed   = "The registry's node and receipt authority bearer values, its receipt authority replica id and its sequencer trust history file come from the kernel side, whose Fly paths the spec and the tree do not fix, because the kernel app's init that would place the registry-authority and registry-component tokens is not in the tree."
+assumption = "None taken: the owner names where the kernel app keeps those four values, or whether task 2.6 generates them and imports them into both apps."
+severity   = "blocker"
+
+[observation.3.6.1]
+task       = "3.6"
+file       = "agent/crates/layerx-agentd/src/enrolment.rs, agent/crates/layerx-mcp/src/bin/layerx-mcp.rs"
+symbol     = "BindingPublisher::document, mcp_enrol"
+observed   = "The full-mode daemon publishes binding.json with the twelve base keys only, while the layerx-mcp binary refuses a binding without a listener section (the binding document declares no protocol socket), and no code outside the task's touches writes that section."
+assumption = "Not guessed: either mcp-enrol.sh writes a second document for layerx-mcp that adds listener (and web) beside the daemon's, or the daemon's publisher gains listener inputs in agent/crates/layerx-agentd, which is outside this task's touches; owner or manager ruling needed."
+severity   = "blocker"
+
+[observation.3.6.2]
+task       = "3.6"
+file       = "agent/crates/layerx-mcp/src/binding.rs, platform/cli/src/mcp.rs"
+symbol     = "Binding::attach_web, WebPayer"
+observed   = "A session carrying the write:web scopes opens only with a web section and an attached WebAuthority; neither layerx-mcp nor layerx mcp serve calls attach_web and the tree has no production WebPayer, so tools/list can never list the web tools that req 11.3 requires."
+assumption = "Which account signs the 402LXP grants and sends, which task implements the production payer and attaches it, and the web section values (sidecar endpoint, network, sequencer public key, approval threshold) are not fixed by the spec or the tree."
+severity   = "blocker"
+
+[observation.3.6.3]
+task       = "3.6"
+file       = "docker/kernel/init.sh"
+symbol     = "mcp_enrol"
+observed   = "docker/kernel/init.sh does not exist on the feature branch; task 1.5 writes it and its process supervision interface on a parallel build lane, so the agentd, socat and layerx-mcp lines of do_1 and do_2 have no supervisor to join."
+assumption = "Build 3.6's init lines on top of task 1.5's merged init rather than writing a second init."
+severity   = "blocker"
+
+[observation.3.6.4]
+task       = "3.6"
+file       = "platform/hosted/human/material.py"
+symbol     = "mcp_enrolment"
+observed   = "The daemon's full-mode MCP enrolment requires LAYERX_AGENT_MCP_AGENT_DID (resolved through the human authority), SCOPES, ACTIVITY_TYPES, LIMIT_*, EXPIRY_SEQUENCE, CORE_SEQUENCE, POLICY_VERSION, OPENING_CLIENT and PEER_UID; the spec fixes only the binding root /data/layerx/mcp."
+assumption = "Which agent DID and tenant the MCP session binds, its scopes, activity types, limit and expiry need a ruling before material.py can write them without a placeholder."
+severity   = "blocker"
+
+[observation.3.9.1]
+task       = "3.9"
+file       = "agent/crates/layerx-agentd/src/main.rs"
+symbol     = "serve"
+observed   = "tenant::resolve authorizes only a session Token authenticated from a SessionCredential (tenant, session_id, 32-byte token_id, generation), while HttpProductionTransport sends the envelope with one Authorization: Bearer value and the program listener checks the daemon program bearer; neither the agent-api schema nor the tree defines how an /rpc caller presents its session credential, and tenant::Surface has no variant for an HTTP SDK or JVM caller."
+assumption = "Nothing was implemented; the task stays in_progress until the owner fixes the /rpc credential (encoding and header) and the Surface value, then the whole task is built in one pass."
+severity   = "blocker"
+
+[observation.4.21.runtime_retirement]
+revision = "12d05f76b940b21ffd1476bdc7c29026950bd1a3"
+command = "systemctl stop hpx-registry.service; systemctl disable hpx-registry.service; rename reviewed unit, legacy vhost and environment into private rollback archive; systemctl daemon-reload"
+exit_code = 0
+log_path = ".logs/4.21-retirement.log"
+observed = "Old unit is inactive and not found; reviewed originals absent, environment mode preserved and artifacts/data untouched. Serving gate already passed; task remains in_progress pending host-role fixture and README completion."
+
+[observation.4.21.5]
+task = "4.21"
+file = "hpx/hosting/deploy.sh, hpx/hosting/nginx.conf, hpx/hosting/nginx-http.conf"
+symbol = "deploy.sh"
+observed = "The local systemd and nginx deployment of the registry stays in the tree although the name is served by the Fly app and the README no longer points to it."
+assumption = "Retiring or repurposing the local deployment files is outside do_3's touches and needs an owner decision; nothing was removed."
+severity = "low"
+
+[gate.4.21.final]
+revision = "e7badb10d66a221f7d0d8da99a4f56d842244464"
+command = "BRINGUP_HOSTS_FILE=/root/lx-ops/bringup-2026-09-29/hosts.env timeout 10m tools/bringup/check-live.sh hpx"
+exit_code = 0
+log_path = ".logs/4.21-final-hpx-live.log"
+observed = "Final changed-source gate passed after host-role, fixture and release-streaming documentation completion; earlier serving and runtime-retirement evidence retained."
+
+[observation.4.16-src.1]
+task       = "4.16"
+file       = "tools/bringup/sync-fleet.sh"
+symbol     = "resync_target"
+observed   = "resync installs its pinned release over any target whose binary differs, so after a rollout of a newer paxd a later resync would put the older pinned binary back on the resynced host."
+assumption = "The pin stays as the brief requires and rollout never uses it; the pin must be moved to the rolled-out sha256 by a ruled follow-up before the next resync."
+severity   = "major"
