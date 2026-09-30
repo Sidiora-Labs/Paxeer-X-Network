@@ -63,7 +63,7 @@ struct Config {
     listener: Listener,
     client: Client,
     kernel: Option<Kernel>,
-    paxeer: Option<Endpoint>,
+    paxeer: Option<Vec<Endpoint>>,
     capabilities: capabilities::Cache,
     indexer: Option<history::Indexer>,
     registration_token: Option<Zeroizing<String>>,

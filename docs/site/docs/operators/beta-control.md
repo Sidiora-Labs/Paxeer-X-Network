@@ -1,5 +1,10 @@
 # Hosted control
 
+Private-network only. Testnet control has no public name on Paxeer X Network and is
+run only inside a private or disposable network; public accounts are funded
+through [custody credit](../human/custody.md) submitted to the router.
+
+
 `layerx-testnet-control` is the public status, parameter, and journey
 admission surface for hosted LayerX Network, and the private funding/reset
 proxy (`platform/hosted/testnet/README.md:3`;
@@ -30,7 +35,7 @@ admin listen is `0.0.0.0:9444`
 Service `layerx-testnet-admin` is ClusterIP port `443` targeting
 `admin-tls` `9444`
 (`platform/hosted/testnet/deployment.yaml:116-124`). Ingress
-`layerx-testnet-public` host `beta.paxeer.network` path `/`
+`layerx-testnet-public` carries the retired public control host, path `/`,
 uses backend protocol HTTPS
 (`platform/hosted/testnet/deployment.yaml:183-198`). Bring-up
 port-forwards `19443:443` and exports `LAYERX_TESTNET_URL`
@@ -38,7 +43,7 @@ port-forwards `19443:443` and exports `LAYERX_TESTNET_URL`
 `platform/hosted/tests/beta-cluster.sh:1114`;
 `platform/hosted/tests/beta-cluster.sh:1258`;
 `platform/hosted/tests/beta-cluster.sh:1278`). Library
-`platform_testnet` names `https://beta.paxeer.network`
+`platform_testnet` still carries that retired origin
 (`platform/hosted/testnet/src/lib.rs:75`).
 
 This page covers that binary, both listeners, journey probes, and the

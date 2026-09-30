@@ -290,7 +290,7 @@ log_path   = ".logs/verify.log"
 
 [task.0.5]
 title      = "Retarget the host map, the CA service list and the fleet script from host roles to Fly apps"
-status     = "pending"
+status     = "done"
 wave       = 0
 requires   = ["0.1"]
 do_1       = "In tools/bringup/check-live.sh make the roles EDGE_HOST, ARCHIVE_HOST, VALIDATOR_HOSTS, RPC_HOSTS, HPX_HOST and OLD_WALLET_HOST, update the usage text and the hosts subcommand, and add the helpers every Fly check uses: the app name read from the app line of a toml and a command run inside the app's machine through flyctl ssh console, bounded by CHECK_LIVE_TIMEOUT; these six roles replace the eight roles that task 0.1 introduced; move the fixtures of tools/bringup/check-live.test.sh and tools/bringup/sync-fleet.test.sh to the six roles and make check-live.test.sh run sync-fleet.test.sh as its last case, so the one verify_cmd covers both."
@@ -317,7 +317,7 @@ reqs       = ["1.2"]
 
 [task.0.7]
 title      = "Rewrite the user-facing pages so no retired or unserved name is promised and accounts are funded through custody credit"
-status     = "pending"
+status     = "implemented"
 wave       = 0
 requires   = ["0.4"]
 do_1       = "Rewrite docs/site/docs/overview/getting-started.md, docs/site/docs/overview/quickstart.md, docs/site/docs/overview/payments.md and docs/site/docs/platform/index.md, and their wiki copies docs/wiki/Getting-Started-Beta.md, docs/wiki/Quickstart.md and docs/wiki/PaymentsQuickstart.md, so an account is funded through the custody-credit path at the router URL instead of FAUCET_URL, and no page names faucet.paxeer.network, beta.paxeer.network, status.paxeer.network or docs.paxeer.network."
@@ -350,7 +350,7 @@ reqs       = ["5.1"]
 
 [task.1.2]
 title      = "Bind a real finality-authority verifier in layerxd so the sequencer bootstraps against the chain"
-status     = "pending"
+status     = "implemented"
 wave       = 1
 requires   = ["1.1"]
 supersedes = ["layerx-beta 6.10"]
@@ -364,7 +364,7 @@ reqs       = ["5.2", "5.3"]
 
 [task.1.3]
 title      = "Fix the seven bare-host abort points of the kernel bring-up"
-status     = "pending"
+status     = "implemented"
 wave       = 1
 requires   = ["1.1"]
 do_1       = "Generate the LXGB v2 genesis metadata in platform/hosted/node/bootstrap.sh before the node starts and fail with a clear message when it is absent, instead of relying on a volume that was never applied."
@@ -526,7 +526,7 @@ reqs       = ["19.1", "19.2", "19.3"]
 
 [task.2.8]
 title      = "Give the gateway failover across several Paxeer RPC names"
-status     = "pending"
+status     = "done"
 wave       = 2
 requires   = []
 do_1       = "Replace the single LAYERX_GATEWAY_PAXEER_RPC_URL of platform/hosted/gateway/src/paxeer.rs by LAYERX_GATEWAY_PAXEER_RPC_URLS, a JSON array of two to eight https URLs parsed and refused as the human service parses LAYERX_HUMAN_PAXEER_RPC_URLS, held as the paxeer endpoints of platform/hosted/gateway/src/main.rs; a relayed call tries the URLs in order and answers from the first that answers 200 without a transport failure, and the paxeer_chain status reports up while any one answers."
@@ -732,7 +732,7 @@ reqs       = ["14.1"]
 
 [task.4.4]
 title      = "Complete the deployed explorer fork: archive RPC, history copy and the probe through paxscan.io"
-status     = "pending"
+status     = "implemented"
 wave       = 4
 requires   = ["4.3"]
 do_1       = "Identify the explorer services from the NEXT_PUBLIC_API_HOST of the envs.js that https://paxscan.io serves through our explorer proxy host: the Explorer Backend and Explorer Frontend services of the Railway project paxeer-x-explorer-dev, their Postgres, its production database explorer_10_2_6 and its legacy database railway; the Railway project paxscan is read-only and is touched only as the copy source for the range from the legacy database's ceiling up to the archive node's first retained block. On the Explorer Backend set as service variables ETHEREUM_JSONRPC_HTTP_URL, ETHEREUM_JSONRPC_TRACE_URL and ETH_CALL_URL to the archive host's public RPC name over https, ETHEREUM_JSONRPC_WS_URL to that name over wss, ETHEREUM_JSONRPC_FALLBACK_HTTP_URL to another serving RPC name, and FIRST_BLOCK and TRACE_FIRST_BLOCK to the archive node's first retained block, keeping CHAIN_TYPE paxeer_x and ETHEREUM_JSONRPC_VARIANT paxeer_x; on the Explorer Frontend set NEXT_PUBLIC_NETWORK_RPC_URL to the archive host's public RPC name; no other variable changes, nothing else is redeployed and no DNS record changes; record these production values in the variable table of explorer/deploy/railway/README.md; confirm after the backend restarts on its new variables that it indexes a block below the pruned nodes' first retained height."

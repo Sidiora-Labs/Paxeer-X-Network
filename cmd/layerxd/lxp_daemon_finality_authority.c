@@ -353,21 +353,50 @@ static int decimal_environment(const char *name, uint64_t maximum, uint64_t *out
     *out = value;
     return 0;
 }
+static int loopback_url(const char *url, uint64_t *port)
+{
+    static const char prefix[] = "http://127.0.0.1:";
+    const char *cursor;
+    uint64_t value = 0U;
+    if (url == NULL || strncmp(url, prefix, sizeof(prefix) - 1U) != 0) return -1;
+    cursor = url + sizeof(prefix) - 1U;
+    if (*cursor < '1' || *cursor > '9') return -1;
+    while (*cursor >= '0' && *cursor <= '9') {
+        value = value * 10U + (uint64_t)(*cursor++ - '0');
+        if (value > UINT16_MAX) return -1;
+    }
+    if (*cursor == '/') ++cursor;
+    if (*cursor != '\0') return -1;
+    *port = value;
+    return 0;
+}
+static int anchor_pin(const char *text, uint8_t out[20])
+{
+    return text != NULL && hex_bytes(text, strlen(text), out, 20U) == 0 &&
+        lxp_ct_memcmp(out, lxp_paxeer_anchor_address, 20U) == 0 ? 0 : -1;
+}
 lxp_result lxp_daemon_finality_authority_init_pins(lxp_daemon_finality_authority *authority)
 {
+    const char *url = getenv("LAYERX_NODE_PAXEER_RPC_URL");
     const char *address = getenv("LAYERX_NODE_PAXEER_RPC_ADDRESS");
+    const char *pinned_port = getenv("LAYERX_NODE_PAXEER_RPC_PORT");
     const char *settlement = getenv("LAYERX_NODE_SETTLEMENT_CONTRACT");
     const char *registry = getenv("LAYERX_NODE_CHECKPOINT_REGISTRY");
-    uint64_t port;
+    uint64_t port, pinned;
     if (authority == NULL) return LXP_ERR_NON_CANONICAL;
     (void)memset(authority, 0, sizeof(*authority));
-    if (address == NULL || strcmp(address, "127.0.0.1") != 0 || settlement == NULL || registry == NULL ||
-        decimal_environment("LAYERX_NODE_PAXEER_CHAIN_ID", UINT64_MAX, &authority->paxeer_chain_id) != 0 ||
+    if (decimal_environment("LAYERX_NODE_PAXEER_CHAIN_ID", UINT64_MAX, &authority->paxeer_chain_id) != 0) return LXP_ERR_NON_CANONICAL;
+    if (url != NULL && *url != '\0') {
+        if (loopback_url(url, &port) != 0 || (address != NULL && strcmp(address, "127.0.0.1") != 0) ||
+            (pinned_port != NULL && (decimal_environment("LAYERX_NODE_PAXEER_RPC_PORT", UINT16_MAX, &pinned) != 0 || pinned != port)) ||
+            (settlement != NULL && anchor_pin(settlement, authority->settlement_contract) != 0) ||
+            (registry != NULL && anchor_pin(registry, authority->checkpoint_registry) != 0)) return LXP_ERR_NON_CANONICAL;
+        (void)memcpy(authority->settlement_contract, lxp_paxeer_anchor_address, 20U);
+        (void)memcpy(authority->checkpoint_registry, lxp_paxeer_anchor_address, 20U);
+    } else if (address == NULL || strcmp(address, "127.0.0.1") != 0 ||
         decimal_environment("LAYERX_NODE_PAXEER_RPC_PORT", UINT16_MAX, &port) != 0 ||
-        hex_bytes(settlement, strlen(settlement), authority->settlement_contract, 20U) != 0 ||
-        hex_bytes(registry, strlen(registry), authority->checkpoint_registry, 20U) != 0 ||
-        lxp_ct_memcmp(authority->settlement_contract, lxp_paxeer_anchor_address, 20U) != 0 ||
-        lxp_ct_memcmp(authority->checkpoint_registry, lxp_paxeer_anchor_address, 20U) != 0) return LXP_ERR_NON_CANONICAL;
+        anchor_pin(settlement, authority->settlement_contract) != 0 ||
+        anchor_pin(registry, authority->checkpoint_registry) != 0) return LXP_ERR_NON_CANONICAL;
     authority->rpc_port = (uint16_t)port;
     return LXP_OK;
 }
@@ -466,17 +495,87 @@ static int submitted_event(const json_document *doc, const json_token *receipt, 
     }
     return matches == 1U;
 }
-static lxp_result anchor_call(const lxp_daemon_finality_authority *authority, const char *signature, uint64_t batch_number, char *response, json_document *doc, const json_token **result)
+static lxp_result anchor_read(const lxp_daemon_finality_authority *authority, const char *signature, const uint8_t *argument, char *response, json_document *doc, const json_token **result)
 {
     uint8_t calldata[36];
     char address[43], data[75], params[192];
+    size_t length = argument == NULL ? 4U : 36U;
     lxp_result status = lxp_paxeer_abi_selector(signature, calldata);
     if (status != LXP_OK) return status;
-    abi_u64(calldata + 4U, batch_number);
+    if (argument != NULL) (void)memcpy(calldata + 4U, argument, 32U);
     encode_hex(lxp_paxeer_anchor_address, 20U, address);
-    encode_hex(calldata, sizeof(calldata), data);
+    encode_hex(calldata, length, data);
     (void)snprintf(params, sizeof(params), "[{\"to\":\"%s\",\"data\":\"%s\"},\"latest\"]", address, data);
     return rpc(authority, "eth_call", params, response, doc, result);
+}
+static lxp_result anchor_call(const lxp_daemon_finality_authority *authority, const char *signature, uint64_t batch_number, char *response, json_document *doc, const json_token **result)
+{
+    uint8_t word[32];
+    abi_u64(word, batch_number);
+    return anchor_read(authority, signature, word, response, doc, result);
+}
+static int result_words(const json_token *result, uint8_t *out, size_t capacity, size_t *words)
+{
+    if (result == NULL || result->kind != '"' || result->length < 66U || (result->length - 2U) % 64U != 0U ||
+        (result->length - 2U) / 64U > capacity) return -1;
+    *words = (result->length - 2U) / 64U;
+    return hex_bytes(result->text, result->length, out, *words * 32U);
+}
+enum { GUARANTOR_WORDS = 7 };
+static lxp_result anchor_guarantor(const lxp_daemon_finality_authority *authority, const uint8_t guarantor_id[32], const uint8_t *signer, char *response, json_document *doc)
+{
+    uint8_t record[GUARANTOR_WORDS * 32U];
+    const json_token *result = NULL;
+    size_t words = 0U;
+    uint64_t eligible;
+    lxp_result status = anchor_read(authority, LXP_DAEMON_ANCHOR_GUARANTOR, guarantor_id, response, doc, &result);
+    if (status != LXP_OK) return status;
+    if (result_words(result, record, GUARANTOR_WORDS, &words) != 0 || words != GUARANTOR_WORDS ||
+        lxp_ct_is_zero(guarantor_id, 32U) || lxp_ct_memcmp(record, guarantor_id, 32U) != 0 ||
+        !lxp_ct_is_zero(record + 32U, 12U) || lxp_ct_is_zero(record + 44U, 20U) ||
+        abi_word_u64(record + 192U, &eligible) != 0 || eligible > 1U) return LXP_ERR_CONTEXT_MISMATCH;
+    if (signer != NULL && (eligible != 1U || lxp_ct_memcmp(record + 44U, signer, 20U) != 0)) return LXP_ERR_CONTEXT_MISMATCH;
+    return LXP_OK;
+}
+lxp_result lxp_finality_authority_bind(lxp_daemon_finality_authority *authority, lxp_daemon_evidence_store *store)
+{
+    uint8_t words[(2U + LXP_MAX_GUARANTOR_ATTESTATIONS) * 32U];
+    char *response;
+    json_document doc;
+    const json_token *result = NULL;
+    uint64_t value, exists = 0U, batch = 0U, length = 0U;
+    size_t count = 0U, i;
+    lxp_result status = lxp_daemon_finality_authority_init(authority, store);
+    if (status != LXP_OK) return status;
+    response = malloc(RPC_CAPACITY);
+    doc.tokens = calloc(TOKEN_CAPACITY, sizeof(*doc.tokens));
+    if (response == NULL || doc.tokens == NULL) status = LXP_ERR_IO;
+    if (status == LXP_OK) status = rpc(authority, "eth_chainId", "[]", response, &doc, &result);
+    if (status == LXP_OK && (quantity(result, &value) != 0 || value != authority->paxeer_chain_id)) status = LXP_ERR_CONTEXT_MISMATCH;
+    if (status == LXP_OK) status = anchor_read(authority, LXP_DAEMON_ANCHOR_THRESHOLD, NULL, response, &doc, &result);
+    if (status == LXP_OK && (result_words(result, words, 1U, &count) != 0 || count != 1U || abi_word_u64(words, &value) != 0 ||
+        value == 0U || value > LXP_MAX_GUARANTOR_ATTESTATIONS)) status = LXP_ERR_ATTESTATION_THRESHOLD;
+    if (status == LXP_OK) authority->threshold = (uint32_t)value;
+    if (status == LXP_OK) status = anchor_read(authority, LXP_DAEMON_ANCHOR_LATEST_FINALIZED, NULL, response, &doc, &result);
+    if (status == LXP_OK && (result_words(result, words, 2U, &count) != 0 || count != 2U || abi_word_u64(words, &batch) != 0 ||
+        abi_word_u64(words + 32U, &exists) != 0 || exists > 1U || (exists == 0U && batch != 0U) || (exists == 1U && batch == 0U))) status = LXP_ERR_CONTEXT_MISMATCH;
+    if (status == LXP_OK && exists == 1U) {
+        status = anchor_call(authority, LXP_DAEMON_ANCHOR_CHECKPOINT_GUARANTORS, batch, response, &doc, &result);
+        if (status == LXP_OK && (result_words(result, words, 2U + LXP_MAX_GUARANTOR_ATTESTATIONS, &count) != 0 || count < 2U ||
+            abi_word_u64(words, &value) != 0 || value != 32U || abi_word_u64(words + 32U, &length) != 0 ||
+            length != count - 2U || length < authority->threshold)) status = LXP_ERR_ATTESTATION_THRESHOLD;
+        for (i = 0U; status == LXP_OK && i < length; ++i)
+            status = anchor_guarantor(authority, words + (2U + i) * 32U, NULL, response, &doc);
+    }
+    if (status == LXP_OK) {
+        authority->finalized_exists = exists == 1U;
+        authority->finalized_batch = batch;
+        authority->finalized_guarantor_count = (size_t)length;
+    } else {
+        (void)memset(authority, 0, sizeof(*authority));
+    }
+    free(doc.tokens); free(response);
+    return status;
 }
 lxp_result lxp_daemon_finality_authority_ladder(const lxp_daemon_finality_authority *authority, uint64_t batch_number, lxp_daemon_anchor_ladder *ladder)
 {
@@ -560,6 +659,30 @@ lxp_result lxp_daemon_finality_authority_verify(void *context,
     return lxp_daemon_finality_authority_verify_explicit(authority,
         &authority->store->registry.finalisation, certificate, bonded_set,
         requirements, registration);
+}
+
+lxp_result lxp_finality_authority_verify(void *context,
+    const lxp_guarantor_cert *certificate, const lxp_guarantor_set *bonded_set,
+    const lxp_finalisation_requirements *requirements,
+    const lxp_daemon_settlement_registration_evidence *registration)
+{
+    const lxp_daemon_finality_authority *authority = context;
+    char *response;
+    json_document doc;
+    lxp_result status;
+    size_t i;
+    if (authority == NULL || authority->store == NULL || authority->threshold == 0U || certificate == NULL) return LXP_ERR_NON_CANONICAL;
+    if (certificate->attestation_count < authority->threshold) return LXP_ERR_ATTESTATION_THRESHOLD;
+    status = lxp_daemon_finality_authority_verify(context, certificate, bonded_set, requirements, registration);
+    if (status != LXP_OK) return status;
+    response = malloc(RPC_CAPACITY);
+    doc.tokens = calloc(TOKEN_CAPACITY, sizeof(*doc.tokens));
+    if (response == NULL || doc.tokens == NULL) status = LXP_ERR_IO;
+    for (i = 0U; status == LXP_OK && i < certificate->attestation_count; ++i)
+        status = anchor_guarantor(authority, certificate->attestations[i].guarantor_id,
+            certificate->attestations[i].signer, response, &doc);
+    free(doc.tokens); free(response);
+    return status;
 }
 
 typedef struct handover_finality_context {

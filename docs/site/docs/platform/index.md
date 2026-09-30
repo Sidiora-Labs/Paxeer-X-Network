@@ -13,7 +13,7 @@ This section covers hosted developer surfaces that exist in
 | --- | --- |
 | Public JSON-RPC (`POST /rpc`, `GET /rpc/ws`) | [Gateway RPC](gateway-rpc.md) |
 | Hosted gateway binary and `/v1` routes | [Hosted gateway](hosted-gateway.md) |
-| Faucet claims | [Faucet](faucet.md) |
+| Private-network faucet (no public name) | [Faucet](faucet.md) |
 | Program registry | [Registry](registry.md) |
 | Webhooks | [Webhooks](webhooks.md) |
 | Sequencer pod and colocated boundaries | [Hosted node](hosted-node.md) |
@@ -25,9 +25,9 @@ This section covers hosted developer surfaces that exist in
 | Developer CLI | [CLI](cli.md) |
 | Public relay / archive nodes | [Relay and archive](relay-archive.md) |
 
-Public origins named in the wiki are
-`https://api.mainnet-beta.router.paxeer.network/rpc` and
-`https://faucet.paxeer.network`
+The public origin named in the wiki is the router,
+`https://api.mainnet-beta.router.paxeer.network/rpc`; accounts are funded
+through custody credit submitted to it, and there is no public faucet
 ([Getting started](../overview/getting-started.md)).
 Access still requires credentials and an independently supplied verification
 policy.

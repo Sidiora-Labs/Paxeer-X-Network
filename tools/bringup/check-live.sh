@@ -3,11 +3,14 @@ set -euo pipefail
 
 usage() {
 	cat <<'EOF'
-usage: tools/bringup/check-live.sh hosts|rpc-nodes|archive-node|ca|hpx
+usage: tools/bringup/check-live.sh hosts|rpc-nodes|archive-node|ca|hpx|explorer
 
 Checks one system of the Paxeer X Network bring-up against its live answers.
 Every subcommand reads the operator's private host map from the file named
-by BRINGUP_HOSTS_FILE and never prints a value from it.
+by BRINGUP_HOSTS_FILE and never prints a value from it; explorer needs no
+host map. A check of a Fly app reads the app's name from the app line of
+its toml and runs its command inside a machine of the app through flyctl
+ssh console, bounded by CHECK_LIVE_TIMEOUT.
 
 hosts     runs ssh true against every destination of every role of the host
           map and prints one line per role:
@@ -46,21 +49,26 @@ archive-node  reads the archive host's retention keys, paxd unit state and
              pruned public nodes retain
           Exits 0 only when all three pass.
 
-ca        reads the internal CA under LAYERX_CA_DIR on this host and, over
-          ssh, the certificate tools/bringup/ca.sh issue placed under
-          LAYERX_ETC_DIR/<service>/tls on the host of every service that
-          tools/bringup/ca.sh services lists, one line each:
+ca        reads the internal CA under LAYERX_CA_DIR on this host and, through
+          flyctl ssh console, the certificate of every service that
+          tools/bringup/ca.sh services lists, inside a machine of the Fly app
+          whose toml the service's row names (of the row's process group when
+          it names one): LAYERX_FLY_TLS_DIR/<service>/cert.pem on the volume
+          for a volume row, the guest path of the toml's [[files]] entry
+          <PREFIX>_CERT for a row whose custody is the secret prefix PREFIX.
+          One line each:
   ca      "pass ca ca expires_in=<days>d" when the CA certificate is readable
           and more than thirty days from expiry
-  <service>@<ROLE>
-          "pass <service>@<ROLE> chain=ok san=<m>/<m> expires_in=<days>d"
+  <service>
+          "pass <service> app=<app> chain=ok san=<m>/<m> expires_in=<days>d"
           when the certificate chains to the CA, carries every SAN the
-          service list declares plus the host's own address, and is more
-          than thirty days from expiry; "fail <service>@<ROLE> cert=absent"
-          when the host holds none; otherwise "fail" with chain=untrusted,
-          san=<n>/<m> missing=<names> (the host's address written as host)
-          or the expiry as observed. A plural role numbers its destinations
-          as <service>@<ROLE>[n].
+          service list declares with <app> read as the app's name, and is
+          more than thirty days from expiry; "fail <service> toml=absent"
+          when the toml or its app line is missing; "fail <service>
+          app=<app> cert=unmounted" when the toml mounts no <PREFIX>_CERT;
+          "fail <service> app=<app> cert=absent" when the machine holds none;
+          otherwise "fail" with chain=untrusted, san=<n>/<m> missing=<names>
+          or the expiry as observed.
           Exits 0 only when the CA and every certificate pass.
 
 hpx       reads the hpx registry at CHECK_LIVE_HPX_ORIGIN, by default
@@ -75,19 +83,46 @@ hpx       reads the hpx registry at CHECK_LIVE_HPX_ORIGIN, by default
              and a nodes list whose length is count
           Exits 0 only when all three checks pass.
 
+explorer  reads the deployed explorer at CHECK_LIVE_EXPLORER_ORIGIN, by default
+          https://paxscan.io, its envs.js, its backend and its databases, and
+          asks the sixteen public RPC names for their head and the lowest
+          block they serve, one line per check:
+  frontend   the origin answers 200 and the NEXT_PUBLIC_NETWORK_RPC_URL of its
+             /assets/envs.js is https://<one of the sixteen public names>
+  archive    that name serves a lower first block than every other name
+             within ten blocks of the head (the pruned floor)
+  backend    GET /api/health and /api/v2/stats at the NEXT_PUBLIC_API_HOST of
+             envs.js answer 200, one line each, and GET
+             /api/v2/blocks/<the archive name's first block> answers 200
+  history    over EXPLORER_DATABASE_URL, EXPLORER_LEGACY_DATABASE_URL and
+             PAXSCAN_DATABASE_PUBLIC_URL: the consensus blocks the explorer
+             database holds from its first block up to the archive name's
+             first block equal the legacy database's from that block up to
+             its ceiling plus the paxscan database's above the ceiling
+  missing-ranges
+             every missing_block_ranges row of the explorer database at or
+             above its first block lies inside the union of the two sources'
+             missing_block_ranges
+          Exits 0 only when every check passes.
+
 Environment:
-  BRINGUP_HOSTS_FILE   private env file assigning EDGE_HOST, KERNEL_HOST,
-                       PLATFORM_HOST, EXPLORER_HOST, ARCHIVE_HOST,
-                       VALIDATOR_HOSTS, RPC_HOSTS and HPX_HOST; each value is
-                       one ssh destination or, for the plural roles, a
-                       space-separated list of them
+  BRINGUP_HOSTS_FILE   private env file assigning EDGE_HOST, ARCHIVE_HOST,
+                       VALIDATOR_HOSTS, RPC_HOSTS, HPX_HOST and
+                       OLD_WALLET_HOST; each value is one ssh destination or,
+                       for the plural roles, a space-separated list of them
   CHECK_LIVE_HPX_ORIGIN  origin of the hpx registry, default
                        https://node.hyperpaxeer.com
-  CHECK_LIVE_TIMEOUT   seconds per request, default 30
+  CHECK_LIVE_EXPLORER_ORIGIN  origin of the explorer frontend, default
+                       https://paxscan.io
+  EXPLORER_DATABASE_URL, EXPLORER_LEGACY_DATABASE_URL,
+  PAXSCAN_DATABASE_PUBLIC_URL  read-only connection strings of the explorer's
+                       production database, its legacy database and the
+                       paxscan copy source; never printed
+  CHECK_LIVE_TIMEOUT   seconds per request, ssh or flyctl call, default 30
   LAYERX_CA_DIR        the internal CA directory on this host, default
                        /etc/layerx/ca
-  LAYERX_ETC_DIR       the service directory root on every host, default
-                       /etc/layerx
+  LAYERX_FLY_TLS_DIR   the certificate directory root on the volume of a
+                       Fly app, default /data/tls
 
 Exits 1 when any check fails, 2 on a usage error, an unset BRINGUP_HOSTS_FILE
 or a host map lacking a role.
@@ -96,9 +131,10 @@ EOF
 
 timeout="${CHECK_LIVE_TIMEOUT:-30}"
 ca_dir="${LAYERX_CA_DIR:-/etc/layerx/ca}"
-etc_dir="${LAYERX_ETC_DIR:-/etc/layerx}"
+fly_tls_dir="${LAYERX_FLY_TLS_DIR:-/data/tls}"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-roles=(EDGE_HOST KERNEL_HOST PLATFORM_HOST EXPLORER_HOST ARCHIVE_HOST VALIDATOR_HOSTS RPC_HOSTS HPX_HOST)
+roles=(EDGE_HOST ARCHIVE_HOST VALIDATOR_HOSTS RPC_HOSTS HPX_HOST OLD_WALLET_HOST)
 
 # The sixteen public RPC names of docs/site/docs/reference/public-rpc.md.
 rpc_names=(api{1..16}.mainnet-beta.paxeer.network)
@@ -149,28 +185,48 @@ ssh_read() {
 	timeout "$timeout" ssh -n -o BatchMode=yes -- "$1" "$2" 2>/dev/null
 }
 
-# address_san <destination>: the SAN a server certificate carries for the
-# destination's own address: IP: for an address, DNS: for a name.
-address_san() {
-	local host="${1##*@}"
-	host="${host#[}"
-	host="${host%]}"
-	case "$host" in
-	*[!0-9.:]*) printf 'DNS:%s' "$host" ;;
-	*) printf 'IP:%s' "$host" ;;
-	esac
+# fly_app <toml>: prints the Fly app name from the app line of the toml, a
+# path relative to the repository root; status 1 when the file or its app
+# line is missing.
+fly_app() {
+	local app
+	app="$(sed -n 's/^app[[:space:]]*=[[:space:]]*"\([a-z0-9-]*\)"[[:space:]]*$/\1/p' "$repo_root/$1" 2>/dev/null | head -n 1)"
+	[ -n "$app" ] && printf '%s' "$app"
 }
 
-# expected_sans <eku> <sans> <destination>: the comma-separated SAN list the
-# certificate of a service must carry: the declared list ("-" for none) plus
-# the destination's own address for a server certificate.
-expected_sans() {
-	local sans="$2"
-	[ "$sans" != - ] || sans=""
-	case "$1" in
-	*serverAuth*) sans="${sans:+$sans,}$(address_san "$3")" ;;
-	esac
-	printf '%s' "$sans"
+# fly_ssh <app> <process group or -> <command>: runs the command under sh
+# inside a machine of the app, of the process group unless it is -, through
+# flyctl ssh console, bounded by CHECK_LIVE_TIMEOUT. stdin passes through and
+# stdout is the result; stderr is dropped because flyctl names the machine's
+# private address on it. The command carries no single quote.
+fly_ssh() {
+	local group=()
+	[ "$2" = - ] || group=(--process-group "$2")
+	timeout "$timeout" flyctl ssh console --quiet --app "$1" ${group[@]+"${group[@]}"} --command "sh -c '$3'" 2>/dev/null
+}
+
+# fly_guest_path <toml> <secret name>: prints the guest path of the toml's
+# [[files]] entry that mounts the secret; status 1 when none does.
+fly_guest_path() {
+	python3 - "$repo_root/$1" "$2" 2>/dev/null <<'PY'
+import sys
+import tomllib
+
+with open(sys.argv[1], "rb") as handle:
+    doc = tomllib.load(handle)
+for entry in doc.get("files", []):
+    if entry.get("secret_name") == sys.argv[2] and entry.get("guest_path"):
+        print(entry["guest_path"])
+        sys.exit(0)
+sys.exit(1)
+PY
+}
+
+# app_sans <sans> <app>: the comma-separated SAN list a certificate of the
+# app carries: the declared list ("-" for none) with <app> read as the app's
+# name.
+app_sans() {
+	[ "$1" = - ] || printf '%s' "${1//<app>/$2}"
 }
 
 # days_left: whole days from now until the notAfter of the PEM certificate on
@@ -418,7 +474,7 @@ check_archive_node() {
 }
 
 check_ca() {
-	local table service role eku sans dests dest i label cert chain
+	local table service toml group custody eku sans app path cert chain
 	local want got san missing n m days line failures=0
 	if [ ! -r "$ca_dir/ca.pem" ]; then
 		echo "fail ca ca cert=absent"
@@ -432,43 +488,48 @@ check_ca() {
 		failures=$((failures + 1))
 	fi
 	table="$("$(dirname "${BASH_SOURCE[0]}")/ca.sh" services)"
-	while read -r service role _ eku sans; do
-		read -r -a dests <<<"${!role}"
-		for i in "${!dests[@]}"; do
-			dest="${dests[$i]}"
-			label="$service@$role"
-			[ "${#dests[@]}" -eq 1 ] || label="${label}[$((i + 1))]"
-			if ! cert="$(ssh_read "$dest" "cat '$etc_dir/$service/tls/cert.pem'")" || [ -z "$cert" ]; then
-				echo "fail $label cert=absent"
-				failures=$((failures + 1))
-				continue
-			fi
-			chain=ok
-			openssl verify -CAfile "$ca_dir/ca.pem" <<<"$cert" >/dev/null 2>&1 || chain=untrusted
-			want="$(expected_sans "$eku" "$sans" "$dest")"
-			got="$(openssl x509 -noout -ext subjectAltName <<<"$cert" 2>/dev/null | tail -n +2 | sed 's/IP Address:/IP:/g; s/, /,/g; s/^ *//')"
-			missing=""
-			n=0
-			m=0
-			while read -r -d, san; do
-				[ -n "$san" ] || continue
-				m=$((m + 1))
-				if [[ ",$got," == *",$san,"* ]]; then
-					n=$((n + 1))
-				else
-					[ "$san" != "$(address_san "$dest")" ] || san=host
-					missing="${missing:+$missing,}$san"
-				fi
-			done <<<"${want:+$want,}"
-			days="$(days_left <<<"$cert")"
-			line="$label chain=$chain san=$n/$m${missing:+ missing=$missing} expires_in=${days}d"
-			if [ "$chain" = ok ] && [ -z "$missing" ] && [ "$days" -gt 30 ]; then
-				echo "pass $line"
+	while read -r service toml group custody _ eku sans; do
+		if ! app="$(fly_app "$toml")"; then
+			echo "fail $service toml=absent"
+			failures=$((failures + 1))
+			continue
+		fi
+		if [ "$custody" = volume ]; then
+			path="$fly_tls_dir/$service/cert.pem"
+		elif ! path="$(fly_guest_path "$toml" "${custody}_CERT")"; then
+			echo "fail $service app=$app cert=unmounted"
+			failures=$((failures + 1))
+			continue
+		fi
+		if ! cert="$(fly_ssh "$app" "$group" "cat $path" </dev/null)" || [ -z "$cert" ]; then
+			echo "fail $service app=$app cert=absent"
+			failures=$((failures + 1))
+			continue
+		fi
+		chain=ok
+		openssl verify -CAfile "$ca_dir/ca.pem" <<<"$cert" >/dev/null 2>&1 || chain=untrusted
+		want="$(app_sans "$sans" "$app")"
+		got="$(openssl x509 -noout -ext subjectAltName <<<"$cert" 2>/dev/null | tail -n +2 | sed 's/IP Address:/IP:/g; s/, /,/g; s/^ *//')"
+		missing=""
+		n=0
+		m=0
+		while read -r -d, san; do
+			[ -n "$san" ] || continue
+			m=$((m + 1))
+			if [[ ",$got," == *",$san,"* ]]; then
+				n=$((n + 1))
 			else
-				echo "fail $line"
-				failures=$((failures + 1))
+				missing="${missing:+$missing,}$san"
 			fi
-		done
+		done <<<"${want:+$want,}"
+		days="$(days_left <<<"$cert")"
+		line="$service app=$app chain=$chain san=$n/$m${missing:+ missing=$missing} expires_in=${days}d"
+		if [ "$chain" = ok ] && [ -z "$missing" ] && [ "$days" -gt 30 ]; then
+			echo "pass $line"
+		else
+			echo "fail $line"
+			failures=$((failures + 1))
+		fi
 	done <<<"$table"
 	finish "$failures"
 }
@@ -596,7 +657,204 @@ print(("pass " if ok else "fail ") + "http=" + code + " chain_id=" + str(chain) 
 	finish "$failures"
 }
 
-# Sourced by tools/bringup/ca.sh for the host map and the ssh helpers: the
+# earliest <name>: asks https://<name> for block 1 and prints the lowest
+# height the node still serves: 1 when block 1 answers, the height its pruning
+# error names otherwise, nothing when neither can be read.
+earliest() {
+	curl -sS --max-time "$timeout" -H 'content-type: application/json' \
+		--data '{"jsonrpc":"2.0","id":1,"method":"eth_getBlockByNumber","params":["0x1",false]}' \
+		"https://$1" 2>/dev/null | python3 -c '
+import json
+import re
+import sys
+
+try:
+    doc = json.loads(sys.stdin.read())
+except ValueError:
+    sys.exit(0)
+if not isinstance(doc, dict):
+    sys.exit(0)
+if isinstance(doc.get("result"), dict):
+    print(1)
+    sys.exit(0)
+error = doc.get("error")
+match = re.search(r"earliest available height (\d+)", str(error.get("message", "")) if isinstance(error, dict) else "")
+if match:
+    print(match.group(1))
+'
+}
+
+# http_code <url>: prints the HTTP status of one GET bounded by
+# CHECK_LIVE_TIMEOUT, or "transport" when no answer arrived.
+http_code() {
+	curl -sS --max-time "$timeout" -o /dev/null -w '%{http_code}' "$1" 2>/dev/null || echo transport
+}
+
+# sql <variable> <query>: runs one read-only query against the database whose
+# connection string the named variable holds and prints the unaligned rows;
+# never prints the connection string or psql's diagnostics.
+sql() {
+	PGCONNECT_TIMEOUT="$timeout" psql -X -At -F ' ' -v ON_ERROR_STOP=1 -d "${!1}" -c "$2" 2>/dev/null
+}
+
+# ranges_inside: reads "dst" and "src" lines of "<kind> <a> <b>" block ranges
+# on stdin and prints "inside" when every dst range lies inside the union of
+# the src ranges, or the first dst range that does not.
+ranges_inside='
+import sys
+
+dst, src = [], []
+for line in sys.stdin:
+    parts = line.split()
+    if parts and parts[0] == "error":
+        print("error " + " ".join(parts[1:]))
+        sys.exit(0)
+    if len(parts) != 3:
+        continue
+    lo, hi = sorted((int(parts[1]), int(parts[2])))
+    (dst if parts[0] == "dst" else src).append((lo, hi))
+merged = []
+for lo, hi in sorted(src):
+    if merged and lo <= merged[-1][1] + 1:
+        merged[-1] = (merged[-1][0], max(merged[-1][1], hi))
+    else:
+        merged.append((lo, hi))
+for lo, hi in sorted(dst):
+    if not any(a <= lo and hi <= b for a, b in merged):
+        print("outside %d-%d" % (lo, hi))
+        sys.exit(0)
+print("inside")
+'
+
+check_explorer() {
+	local origin="${CHECK_LIVE_EXPLORER_ORIGIN:-https://paxscan.io}" failures=0
+	local dir i verdict value n head=0 floor="" code envs api rpc_url name="" archive_low="" var missing=""
+	local first ceiling dst legacy paxscan answer
+	origin="${origin%/}"
+
+	dir="$(mktemp -d)"
+	trap 'rm -rf "$dir"' EXIT
+	for i in "${!rpc_names[@]}"; do
+		rpc "${rpc_names[$i]}" eth_blockNumber '[]' >"$dir/head.$i" &
+		earliest "${rpc_names[$i]}" >"$dir/low.$i" &
+	done
+	wait
+	for i in "${!rpc_names[@]}"; do
+		read -r verdict value <"$dir/head.$i" || true
+		n="$(hex_to_dec "${value:-}")"
+		if [ "$verdict" = result ] && [ -n "$n" ] && [ "$n" -gt "$head" ]; then
+			head=$n
+		fi
+		echo "$n" >"$dir/n.$i"
+	done
+
+	code="$(http_code "$origin")"
+	envs="$(curl -sS --max-time "$timeout" "$origin/assets/envs.js" 2>/dev/null)" || envs=""
+	read -r api rpc_url <<<"$(printf '%s' "$envs" | python3 -c '
+import re
+import sys
+
+text = sys.stdin.read()
+def get(key):
+    match = re.search(key + r"\s*:\s*\"([^\"]*)\"", text)
+    return match.group(1) if match else ""
+host = get("NEXT_PUBLIC_API_HOST")
+proto = get("NEXT_PUBLIC_API_PROTOCOL") or "https"
+print((proto + "://" + host if host else "none") + " " + (get("NEXT_PUBLIC_NETWORK_RPC_URL") or "none"))
+')" || true
+	for i in "${!rpc_names[@]}"; do
+		if [ "${rpc_url%/}" = "https://${rpc_names[$i]}" ]; then
+			name="${rpc_names[$i]}"
+			archive_low="$(cat "$dir/low.$i")"
+		fi
+	done
+	if [ "$code" = 200 ] && [ -n "$name" ]; then
+		echo "pass frontend $origin http=200 rpc=$name"
+	else
+		echo "fail frontend $origin http=$code rpc=${rpc_url:-none}"
+		failures=$((failures + 1))
+	fi
+
+	# The pruned floor: the lowest height any other name at the head serves.
+	for i in "${!rpc_names[@]}"; do
+		n="$(cat "$dir/n.$i")"
+		value="$(cat "$dir/low.$i")"
+		if [ "${rpc_names[$i]}" != "$name" ] && [ -n "$n" ] && [ -n "$value" ] && [ $((head - n)) -le 10 ]; then
+			if [ -z "$floor" ] || [ "$value" -lt "$floor" ]; then
+				floor=$value
+			fi
+		fi
+	done
+	if [ -n "$archive_low" ] && [ -n "$floor" ] && [ "$archive_low" -lt "$floor" ]; then
+		echo "pass archive $name first_retained=$archive_low pruned_floor=$floor"
+	else
+		echo "fail archive ${name:-none} first_retained=${archive_low:-none} pruned_floor=${floor:-none}"
+		failures=$((failures + 1))
+	fi
+
+	for value in /api/health /api/v2/stats; do
+		code="none"
+		[ "$api" = none ] || code="$(http_code "$api$value")"
+		if [ "$code" = 200 ]; then
+			echo "pass backend $value http=200"
+		else
+			echo "fail backend $value http=$code"
+			failures=$((failures + 1))
+		fi
+	done
+
+	code="none"
+	if [ "$api" != none ] && [ -n "$archive_low" ]; then
+		code="$(http_code "$api/api/v2/blocks/$archive_low")"
+	fi
+	if [ "$code" = 200 ]; then
+		echo "pass backend block=$archive_low below pruned_floor=$floor"
+	else
+		echo "fail backend block=${archive_low:-none} http=$code"
+		failures=$((failures + 1))
+	fi
+
+	for var in EXPLORER_DATABASE_URL EXPLORER_LEGACY_DATABASE_URL PAXSCAN_DATABASE_PUBLIC_URL; do
+		[ -n "${!var:-}" ] || missing="$missing${missing:+,}$var"
+	done
+	if [ -n "$missing" ] || [ -z "$archive_low" ]; then
+		echo "fail history unset=${missing:-none} first_retained=${archive_low:-none}"
+		finish $((failures + 2))
+	fi
+
+	first="$(sql EXPLORER_DATABASE_URL 'SELECT min(number) FROM blocks WHERE consensus')" || first=""
+	ceiling="$(sql EXPLORER_LEGACY_DATABASE_URL 'SELECT max(number) FROM blocks WHERE consensus')" || ceiling=""
+	if ! [[ "$first" =~ ^[0-9]+$ && "$ceiling" =~ ^[0-9]+$ ]]; then
+		echo "fail history first=${first:-none} legacy_ceiling=${ceiling:-none}"
+		finish $((failures + 2))
+	fi
+	dst="$(sql EXPLORER_DATABASE_URL "SELECT count(*) FROM blocks WHERE consensus AND number BETWEEN $first AND $((archive_low - 1))")" || dst=""
+	legacy="$(sql EXPLORER_LEGACY_DATABASE_URL "SELECT count(*) FROM blocks WHERE consensus AND number BETWEEN $first AND $ceiling")" || legacy=""
+	paxscan="$(sql PAXSCAN_DATABASE_PUBLIC_URL "SELECT count(*) FROM blocks WHERE consensus AND number > $ceiling AND number < $archive_low")" || paxscan=""
+	if [[ "$dst" =~ ^[0-9]+$ && "$legacy" =~ ^[0-9]+$ && "$paxscan" =~ ^[0-9]+$ ]] && [ "$dst" -eq $((legacy + paxscan)) ]; then
+		echo "pass history blocks=$dst from=$first legacy=$legacy paxscan=$paxscan ceiling=$ceiling"
+	else
+		echo "fail history blocks=${dst:-none} from=$first legacy=${legacy:-none} paxscan=${paxscan:-none} ceiling=$ceiling"
+		failures=$((failures + 1))
+	fi
+
+	answer="$(
+		{
+			sql EXPLORER_DATABASE_URL "SELECT 'dst', from_number, to_number FROM missing_block_ranges WHERE greatest(from_number, to_number) >= $first" || echo "error explorer-database"
+			sql EXPLORER_LEGACY_DATABASE_URL "SELECT 'src', from_number, to_number FROM missing_block_ranges" || echo "error legacy-database"
+			sql PAXSCAN_DATABASE_PUBLIC_URL "SELECT 'src', from_number, to_number FROM missing_block_ranges" || echo "error paxscan-database"
+		} | python3 -c "$ranges_inside"
+	)"
+	if [ "$answer" = inside ]; then
+		echo "pass missing-ranges inside-source-lost from=$first"
+	else
+		echo "fail missing-ranges $answer from=$first"
+		failures=$((failures + 1))
+	fi
+	finish "$failures"
+}
+
+# Sourced by tools/bringup/ca.sh for the Fly helpers and the CA settings: the
 # probe's own dispatch below runs only when this file is executed.
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
 
@@ -606,7 +864,7 @@ case "$mode" in
 	usage
 	exit 0
 	;;
-hosts | rpc-nodes | archive-node | ca | hpx) ;;
+hosts | rpc-nodes | archive-node | ca | hpx | explorer) ;;
 *)
 	usage >&2
 	exit 2
@@ -618,12 +876,15 @@ if [ "$#" -ne 1 ]; then
 	exit 2
 fi
 
-for tool in ssh timeout curl python3 openssl sha256sum; do
+tools=(ssh timeout curl python3 openssl sha256sum)
+[ "$mode" != explorer ] || tools=(curl python3 psql)
+[ "$mode" != ca ] || tools+=(flyctl)
+for tool in "${tools[@]}"; do
 	if ! command -v "$tool" >/dev/null 2>&1; then
 		echo "check-live: $tool is required" >&2
 		exit 2
 	fi
 done
 
-load_hosts
+[ "$mode" = explorer ] || load_hosts
 "check_${mode//-/_}"

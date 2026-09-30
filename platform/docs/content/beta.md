@@ -3,6 +3,11 @@
 
 # LayerX Network beta contract
 
+Private-network only. The beta control, faucet and status surfaces below have
+no public name on Paxeer X Network; the hostnames this contract records are
+the retired values its sources still carry. Public accounts are funded
+through custody credit submitted to the router.
+
 This is the canonical LayerX Network beta contract. It is the only statement of the surfaces and journeys the beta supports, the beta endpoints and hostnames, the network id, the wire protocol version, the beta CA, the artifact set, the evidence rung each surface must reach and has reached, the unknown-state behaviour, the external dependencies with their beta counterparts and the beta-versus-production differences. `tools/ci/beta-contract-check.sh` checks the install docs, the hosted manifests, the release manifest, the release workflow, the hosted status surface and the docs content index against this document, and then runs `tools/ci/beta-report.sh --check` so the rendered go/no-go report is checked against it too; any disagreement fails the build.
 
 **This beta is not ready.** The readiness claim below is `false` and stays `false` until every surface has reached its required rung through an executed gate recorded in `spec/layerx-beta/qualification.kvx` and every contradiction listed here has been resolved in its source.

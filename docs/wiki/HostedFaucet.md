@@ -1,5 +1,10 @@
 # Hosted faucet
 
+Private-network only. The faucet has no public name on Paxeer X Network and is
+run only inside a private or disposable network; public accounts are funded
+through [custody credit](Custody.md) submitted to the router.
+
+
 An exact successful claim and the resulting JSON-RPC payment flow are in
 [Public payment API](PublicAPI.md).
 
@@ -39,7 +44,7 @@ exposes Service `layerx-faucet-public` port `443` to container `9443`
 `platform/hosted/testnet/deployment.yaml:174-181`). That Service is
 `type: LoadBalancer` with `externalTrafficPolicy: Local`. Beta-cluster
 render appends Ingress `layerx-faucet-public` host
-`faucet.paxeer.network` (override `LAYERX_BETA_FAUCET_HOST`)
+the retired public faucet host (override `LAYERX_BETA_FAUCET_HOST`)
 path `/` backend that Service
 (`platform/hosted/tests/beta-cluster.sh:74`;
 `platform/hosted/tests/beta-cluster.sh:837-854`). Bring-up
@@ -48,8 +53,7 @@ port-forwards `19445:443` and exports `LAYERX_FAUCET_URL`
 `platform/hosted/tests/beta-cluster.sh:1116`;
 `platform/hosted/tests/beta-cluster.sh:1260`;
 `platform/hosted/tests/beta-cluster.sh:1280`). Library
-`platform_testnet` names the same faucet origin
-`https://faucet.paxeer.network`
+`platform_testnet` still carries that retired origin
 (`platform/hosted/testnet/src/lib.rs:77`). The source Deployment has
 no Ingress object; the cluster apply path adds one. Those two
 manifests differ.

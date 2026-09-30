@@ -349,3 +349,78 @@ command   = "timeout 30m make layerxd platform-test-node"
 exit_code = 0
 log_path  = ".logs/verify.log"
 observed  = "Per the ruling the checkpoint-emptiness proxy after the reset is replaced by proof that the checkpoint directory object was replaced and that the admission journal, which held generation-1 admissions, is back to its 32-byte superblock; the node test passes the custody credit, DID listing, SEND, reset and generation-2 checks at the first run."
+
+[gate.2.8.1]
+task      = "2.8"
+revision  = "9296a0d2c40024e02afe7a12f57177cb27183bc6 plus the change committed with this entry"
+command   = "timeout 30m tools/runtime/run-with-clock.sh cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --test paxeer_failover"
+exit_code = 0
+log_path  = ".logs/verify.log"
+observed  = "Both tests pass at the first run: the real gateway binary answers from the second RPC name when the first answers 502 or refuses the connection, reports paxeer_chain ready while one answers and unavailable only when both fail, and refuses an empty, single, nine-entry or non-https array at startup."
+
+[observation.0.7.1]
+revision   = "9296a0d2c plus the change committed with this entry"
+command    = "timeout 5m tools/bringup/docs-names.sh"
+exit_code  = 1
+log_path   = ".logs/verify.log"
+observed   = "Every site, wiki, README and SDK page passes; the check fails only on beta.paxeer.network, faucet.paxeer.network and status.paxeer.network in platform/docs/beta-environment.md and platform/docs/content/beta.md, which now carry the private-network banner but keep those names because tools/ci/beta-contract-check.sh requires both pages to repeat the endpoint values of platform/hosted/testnet/src/lib.rs, .github/workflows/platform.yml and platform/hosted/testnet/deployment.yaml, including the faucet claims origin and the status host of the reset calendar."
+assumption = "Removing the names breaks the beta contract check and changing its sources is outside task 0.7, so both checks stay as written; a ruling is needed on whether the retired testnet sources drop those names (with the contract check and its contradictions table updated) or the beta contract pages leave the docs-names scope, and FAUCET_URL is read as the whole identifier so the private-network LAYERX_FAUCET_URL of the disposable cluster stays documented."
+
+[observation.4.4.1]
+task       = "4.4"
+file       = "explorer/deploy/railway/README.md"
+symbol     = "railway variables, copy-blockscout-11-to-10.sh"
+observed   = "The permission system refused reading the explorer project's Railway variables as credential materialization, setting the backend's RPC, FIRST_BLOCK and TRACE_FIRST_BLOCK variables as a production deploy, and writing the production RPC values into the README as sensitive detail; the frontend variable and the history copy, which needs the Postgres connection strings, were therefore not attempted."
+assumption = "The owner runs the ordered commands in the private handoff for this task, then the probe with the three database variables exported; the archive's first retained block is 25534609."
+severity   = "blocker"
+
+[observation.4.4.2]
+task       = "4.4"
+file       = "explorer/backend/config/config_helper.exs"
+symbol     = "define_urls_vars(:eth_call)"
+observed   = "The task names ETH_CALL_URL but the backend reads ETHEREUM_JSONRPC_ETH_CALL_URL, the name the README table already lists; the handoff sets that name."
+assumption = "ETH_CALL_URL in the do line is shorthand for the backend's variable."
+severity   = "note"
+
+[observation.4.4.3]
+revision   = "9296a0d2c40024e02afe7a12f57177cb27183bc6 plus the lane's probe change committed with this record"
+command    = "timeout 20m tools/bringup/check-live.sh explorer"
+exit_code  = 1
+log_path   = ".logs/verify.log"
+observed   = "paxscan.io answers 200 and the backend's /api/health and /api/v2/stats answer 200, but envs.js still names a raw node address as NEXT_PUBLIC_NETWORK_RPC_URL, so no archive name, no indexed block below the pruned floor and, with the database variables unset, no history or missing-range check could pass."
+assumption = "The failures follow only from the refused remote steps of observation 4.4.1; no repair in the probe can clear them."
+
+[gate.0.5.1]
+task      = "0.5"
+revision  = "9296a0d2c with the task change in the working tree"
+command   = "timeout 10m tools/bringup/check-live.test.sh"
+exit_code = 0
+log_path  = ".logs/verify.log"
+observed  = "All 37 cases passed at the first run: the six-role host map, Fly issuance on a volume and as staged secrets with every row's .internal or process-group name, the ca probe passing and failing seven ways through the flyctl stand-in, and sync-fleet.test.sh as the last case."
+
+[observation.1.3.1]
+task       = "1.3"
+revision   = "9296a0d2c plus the change committed with this entry"
+command    = "timeout 30m tools/runtime/run-with-clock.sh make platform-hosted-topology-check programs-reference-escrow human-test-provider-probe"
+exit_code  = 2
+log_path   = ".logs/verify.log"
+observed   = "The first target failed before programs-reference-escrow and the probe tests ran: the topology check reports LAYERX_NODE_HANDOVER_AUTHORITY_PUBLIC_KEY of the node StatefulSet as unresolvable because layerx-node-config has no handover-authority key, although the manifest marks that configMapKeyRef optional: true; neither file is touched by this task."
+assumption = "Pre-existing conflict between the checker, which does not honour optional keys, and the manifest line the settlement task added; changing either is a ruling outside this task, so it is recorded, not repaired, and the task stays implemented, not qualified."
+severity   = "blocker"
+
+[observation.1.3.2]
+task       = "1.3"
+file       = "platform/hosted/tests/beta-cluster.sh"
+symbol     = "builder_release_publish, CANDIDATE_ABI_MODULE, probe"
+observed   = "At this revision six of the seven listed abort points were already closed: the three providers already serve a probe subcommand (identity with tests/probe.rs), the receipt-authority SANs carry localhost and 127.0.0.1 in beta-cluster.sh and ca.sh, provision.sh passes the work directory's registry-journal, require_builder_environment fails on a missing directory, and the SDK and runtime candidate ABI module are both the v2 name; only the genesis metadata still depended on an unapplied volume."
+assumption = "The unchanged files in the touches list (the three main.rs, identity tests/probe.rs, native_manifest.py, provision.sh, beta-cluster.sh, ca.sh, lint/src/lib.rs) needed no edit; the task added bootstrap's write_genesis_metadata, the security and movement probe tests against a real serving provider, and the Makefile target."
+severity   = "note"
+
+[observation.1.2.1]
+task       = "1.2"
+revision   = "9296a0d2c plus the change committed with this entry"
+command    = "timeout 30m make layerxd test-daemon-finality-authority"
+exit_code  = 2
+log_path   = ".logs/verify.log"
+observed   = "layerxd and both test binaries build under -Werror and lxp_test_finality_json passes; finality-authority-chain.py then stops because tests/daemon/fixtures/finality-authority/rpc.json does not exist, and the worker environment could not reach the chain's JSON-RPC to capture it."
+assumption = "Only a capture from the live chain is acceptable, so none was written by hand; an operator runs 'LAYERX_NODE_PAXEER_RPC_URL=http://127.0.0.1:<port> python3 tests/daemon/finality-authority-chain.py --capture' on a synced node, commits rpc.json and reruns the gate; the task stays in_progress."

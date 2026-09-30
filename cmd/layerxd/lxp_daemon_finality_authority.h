@@ -9,10 +9,18 @@ typedef struct lxp_daemon_finality_authority {
     uint8_t settlement_contract[20];
     uint8_t checkpoint_registry[20];
     uint16_t rpc_port;
+    uint32_t threshold;
+    uint64_t finalized_batch;
+    bool finalized_exists;
+    size_t finalized_guarantor_count;
 } lxp_daemon_finality_authority;
 
 #define LXP_DAEMON_ANCHOR_STATUS_OF "statusOf(uint64)"
 #define LXP_DAEMON_ANCHOR_CHECKPOINT "checkpoint(uint64)"
+#define LXP_DAEMON_ANCHOR_THRESHOLD "threshold()"
+#define LXP_DAEMON_ANCHOR_LATEST_FINALIZED "latestFinalized()"
+#define LXP_DAEMON_ANCHOR_CHECKPOINT_GUARANTORS "checkpointGuarantors(uint64)"
+#define LXP_DAEMON_ANCHOR_GUARANTOR "guarantor(bytes32)"
 
 typedef enum lxp_daemon_http_parse {
     LXP_DAEMON_HTTP_MALFORMED = -1,
@@ -45,6 +53,14 @@ lxp_result lxp_daemon_finality_authority_init(
     lxp_daemon_evidence_store *store);
 lxp_result lxp_daemon_finality_authority_init_pins(
     lxp_daemon_finality_authority *authority);
+lxp_result lxp_finality_authority_bind(
+    lxp_daemon_finality_authority *authority,
+    lxp_daemon_evidence_store *store);
+lxp_result lxp_finality_authority_verify(
+    void *context, const lxp_guarantor_cert *certificate,
+    const lxp_guarantor_set *bonded_set,
+    const lxp_finalisation_requirements *requirements,
+    const lxp_daemon_settlement_registration_evidence *registration);
 lxp_result lxp_daemon_finality_authority_verify(
     void *context, const lxp_guarantor_cert *certificate,
     const lxp_guarantor_set *bonded_set,
