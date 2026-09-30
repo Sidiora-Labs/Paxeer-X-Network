@@ -1052,6 +1052,89 @@ print(len(ms), len(started), len(mounts))
 	finish "$failures"
 }
 
+# check_search_front: search.paxeer.network answers /healthz 200 over a
+# certificate valid for the name, through the edge host that proxies it to the
+# app of interop/deploy/search-front/fly.toml; the app runs
+# at least two started machines in two regions; the upstream list a machine
+# mounts equals the serving RPC names of tools/bringup/search-front.sh names
+# and holds no validator host's apiN name; two requests from this address get
+# the same X-Search-Node, one of those names. One line per check.
+check_search_front() {
+	local host=search.paxeer.network toml=interop/deploy/search-front/fly.toml
+	local app status headers code machines listing mounted expected validators listed first second failures=0
+	if ! command -v flyctl >/dev/null 2>&1; then
+		echo "check-live: flyctl is required" >&2
+		exit 2
+	fi
+	if ! app="$(fly_app "$toml")"; then
+		echo "fail search-front toml=absent"
+		finish 1
+	fi
+
+	status=0
+	headers="$(curl -sS --max-time "$timeout" -D - -o /dev/null "https://$host/healthz" 2>&1)" || status=$?
+	code="$(sed -n '1s/^HTTP\/[0-9.]* \([0-9]*\).*/\1/p' <<<"$headers")"
+	if [ "$status" -ne 0 ]; then
+		echo "fail healthz https://$host/healthz transport $(printf '%s' "$headers" | tr '\n' ' ' | cut -c1-160)"
+		failures=$((failures + 1))
+	elif [ "$code" = 200 ]; then
+		echo "pass healthz https://$host/healthz http=200 tls=verified"
+	else
+		echo "fail healthz https://$host/healthz http=${code:-none} tls=verified"
+		failures=$((failures + 1))
+	fi
+
+	machines="$(timeout "$timeout" flyctl machines list --app "$app" --json 2>/dev/null | python3 -c '
+import json
+import sys
+
+try:
+    doc = json.load(sys.stdin)
+except ValueError:
+    print("fail machines=unreadable")
+    sys.exit(0)
+started = [m for m in doc if m.get("state") == "started"]
+regions = sorted({m.get("region", "") for m in started})
+ok = len(started) >= 2 and len(regions) >= 2
+print(("pass" if ok else "fail") + " machines started=%d regions=%s" % (len(started), ",".join(regions) or "none"))
+')" || machines="fail machines=unreadable"
+	echo "${machines%% *} ${machines#* } app=$app"
+	[ "${machines%% *}" = pass ] || failures=$((failures + 1))
+
+	if ! listing="$("$(dirname "${BASH_SOURCE[0]}")/search-front.sh" names 2>&1)"; then
+		echo "fail upstreams names=unreadable $(printf '%s' "$listing" | tr '\n' ' ' | cut -c1-160)"
+		failures=$((failures + 1))
+		expected=""
+	else
+		expected="$(sed -n 's/^serve //p' <<<"$listing" | sort)"
+		validators="$(sed -n 's/^validator //p' <<<"$listing" | sort)"
+		mounted="$(fly_ssh "$app" - "cat /etc/nginx/search/upstreams.conf" </dev/null)" || mounted=""
+		listed="$(sed -n 's/^[[:space:]]*\([0-9.]*%\|\*\)[[:space:]]\{1,\}\([a-z0-9.-]*\);.*/\2/p' <<<"$mounted" | sort)"
+		first="$(comm -23 <(printf '%s\n' "$expected") <(printf '%s\n' "$listed") | grep -c . || true)"
+		second="$(comm -13 <(printf '%s\n' "$expected") <(printf '%s\n' "$listed") | grep -c . || true)"
+		code="$(comm -12 <(printf '%s\n' "$validators") <(printf '%s\n' "$listed") | grep -c . || true)"
+		if [ -z "$mounted" ]; then
+			echo "fail upstreams app=$app list=unreadable"
+			failures=$((failures + 1))
+		elif [ "$first" -eq 0 ] && [ "$second" -eq 0 ] && [ "$code" -eq 0 ]; then
+			echo "pass upstreams listed=$(grep -c . <<<"$listed")/$(grep -c . <<<"$expected") validator=0"
+		else
+			echo "fail upstreams missing=$first extra=$second validator=$code"
+			failures=$((failures + 1))
+		fi
+	fi
+
+	first="$(curl -sS --max-time "$timeout" -D - -o /dev/null "https://$host/xweb/health" 2>/dev/null | sed -n 's/^x-search-node:[[:space:]]*//Ip' | tr -d '\r')" || first=""
+	second="$(curl -sS --max-time "$timeout" -D - -o /dev/null "https://$host/xweb/health" 2>/dev/null | sed -n 's/^x-search-node:[[:space:]]*//Ip' | tr -d '\r')" || second=""
+	if [ -n "$first" ] && [ "$first" = "$second" ] && grep -qxF "$first" <<<"$expected"; then
+		echo "pass sticky node=$first requests=2"
+	else
+		echo "fail sticky first=${first:-none} second=${second:-none}"
+		failures=$((failures + 1))
+	fi
+	finish "$failures"
+}
+
 # Sourced by tools/bringup/ca.sh for the Fly helpers and the CA settings: the
 # probe's own dispatch below runs only when this file is executed.
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
@@ -1066,6 +1149,7 @@ hosts | rpc-nodes | archive-node | ca | hpx | explorer) ;;
 rpc-placement) ;;
 validators) ;;
 identity) ;;
+search-front) ;;
 *)
 	usage >&2
 	exit 2

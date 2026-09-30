@@ -1145,3 +1145,15 @@ area    = "human"
 symptom = "A provider probe test fails with only 'provider exited before binding' and no reason."
 cause   = "The test spawns the provider binary without surfacing its stderr when the child exits before its socket appears."
 do      = "When a spawned provider exits early in a binary-level test, include the child's exit status and captured stderr in the panic message so one run is enough to diagnose it."
+
+[gotcha.188]
+area    = "nginx"
+symptom = "nginx -t refuses a split_clients block whose body is an include line with invalid percent value include."
+cause   = "split_clients parses every line of its block as a percent and a value and does not honour include inside the block."
+do      = "Render the whole split_clients block into the included file and include that file at http level; an empty block is accepted and leaves the variable empty."
+
+[gotcha.189]
+area    = "nginx"
+symptom = "An nginx listen [::]:PORT line in a container answers only IPv6 clients."
+cause   = "nginx sets ipv6only=on for an IPv6 wildcard listen by default."
+do      = "Write listen [::]:PORT ipv6only=off when one line must accept both families, as the Fly proxy and a local IPv4 check need."

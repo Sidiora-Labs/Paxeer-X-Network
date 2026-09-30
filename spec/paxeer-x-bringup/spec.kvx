@@ -257,7 +257,7 @@ reqs       = ["2.1", "2.2", "2.3"]
 
 [task.0.3]
 title      = "Serve search.paxeer.network from a Fly nginx app that keeps each client on one serving RPC node"
-status     = "pending"
+status     = "implemented"
 wave       = 0
 requires   = ["0.5"]
 blocked_on = "The owner's explicit DNS record search.paxeer.network CNAME to the fly.dev name of the app of interop/deploy/search-front/fly.toml, which wins over the *.paxeer.network wildcard."

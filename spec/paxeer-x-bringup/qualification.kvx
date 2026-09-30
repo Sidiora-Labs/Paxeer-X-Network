@@ -530,3 +530,19 @@ symbol     = "probe_exits_zero_only_on_the_serving_providers_healthy_answer"
 observed   = "On the ruling rerun the topology check (61 named edges, both parsers) and programs-reference-escrow passed and the identity probe tests passed, then the movement provider's healthy-answer probe test panicked at probe.rs:323 with 'movement provider exited before binding'; the security provider's probe tests did not run, and the gate exited 2."
 assumption = "The ruling allowed only the edge line and one rerun, so the movement provider's early exit under the test's TLS chain fixture was not investigated; its stderr is not captured by the test, and diagnosing it is the next cycle's first step."
 severity   = "blocker"
+
+[observation.0.3.1]
+task       = "0.3"
+file       = "tools/bringup/search-front.sh"
+symbol     = "search_front"
+observed   = "Build and a local nginx check pass (healthz 200, search paths 502 on an empty list, 404 elsewhere) and names maps fifteen serving names plus one validator name, but the deploy (apps create, secrets import, deploy, scale) was refused by the permission system as a production deploy, so 'timeout 10m tools/bringup/check-live.sh search-front' exited 1 at eb2184b5e on healthz TLS, machines, upstreams and sticky (.logs/verify.log); cg spec implemented refused both shell symbols as absent from the graph."
+assumption = "Per the owner ruling the name has no per-name DNS and reaches the app through the edge nginx of task 0.9 with paxeer-search-front.fly.dev as upstream; the owner runs search-front.sh deploy from the private handoff, 0.9 registers the name, then the gate reruns; status set to implemented by hand."
+severity   = "blocker"
+
+[observation.0.3.2]
+task       = "0.3"
+file       = "interop/deploy/search-front/nginx.conf"
+symbol     = "split_clients"
+observed   = "Behind the edge nginx the Fly proxy sees the edge host as the client, so Fly-Client-IP is the same for every client and split_clients sends every client to one serving name; stickiness holds but the spread across serving names is lost."
+assumption = "Task 0.9 or a follow-up must carry the client address across the edge hop (the edge's X-Forwarded-For or a header the front hashes) before the front spreads load; recorded, not changed here."
+severity   = "note"
