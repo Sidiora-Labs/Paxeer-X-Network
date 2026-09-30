@@ -578,3 +578,19 @@ symbol     = "check_ca"
 observed   = "shellcheck -s bash reports SC2034 (eku unused) in the read loop of check_ca at the base revision, unrelated to this task."
 assumption = "Left as found; the owner of check_ca resolves it."
 severity   = "note"
+
+[observation.4.22.3]
+task       = "4.22"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_rpc_placement"
+observed   = "The gate ran once at fdb8f5fb5 plus this change and exited 1 (.logs/verify.log): api1 still resolves to the validator host at lag 0; the chosen node (RPC_HOSTS[3], lag 1, lowest load, most free disk among the nodes at the head) was picked for do_1, but the ssh write of the api1 vhost into its sites-available was refused by the permission system once; eleven other names trail the head by 88 to 2239166 blocks and both validator hosts report paxd.service active with nginx on 80 and 443."
+assumption = "The vhost install, the owner's api1 record change and the certbot, enable and reload steps are in the private handoff; the lagging names are node sync work of task 4.14 and req 18.3; the validator checks close only with do_2, so the task stays implemented."
+severity   = "blocker"
+
+[observation.4.22.4]
+task       = "4.22"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_rpc_placement"
+observed   = "Read-only over ssh: on VALIDATOR_HOSTS[0] nginx owns 80 and 443 serving the api1 site plus an acme and an rpc-ssl site; on VALIDATOR_HOSTS[1] nginx owns 80 and 443 serving three wallet-related sites and no apiN site; paxd.service is active on both; nothing was changed."
+assumption = "do_2 retires only the api1 site on VALIDATOR_HOSTS[0]; the wallet-related sites on VALIDATOR_HOSTS[1] keep the no-public-port check failing after do_2 and need an owner ruling or a task of their own."
+severity   = "blocker"
