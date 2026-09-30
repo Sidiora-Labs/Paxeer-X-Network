@@ -729,3 +729,19 @@ symbol     = "human_web_origin"
 observed   = "cg spec done 0.10 reran the verify_cmd, then refused (exit 75) with the graph database busy and symbol human_web_origin not defined in the graph; no code symbol of that name exists, the origin lives in manifest values and shell variables."
 assumption = "Per the task's own instruction the status was set to done by hand after the genuine pass recorded in gate.0.10.1, and the gate was not rerun."
 severity   = "note"
+
+[observation.4.13.1]
+task       = "4.13"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_ci"
+observed   = "timeout 30m tools/bringup/check-live.sh ci exited 1 at f677c1cca plus this task's change (log .logs/verify.log): the controller app has no machine, CI_LINUX_RUNNER is unset, and the dispatched canary ran on a hosted runner and failed at its lld step, so no job ran on a fly- runner."
+assumption = "The runner image, deploy token, controller secrets, controller deploy and repository variable of do_1 need the owner's fine-grained GitHub token; the exact commands are in the owner handoff, and the gate reruns once they have run."
+severity   = "blocker"
+
+[observation.4.13.2]
+task       = "4.13"
+file       = "tools/flyci/controller/fly.toml, tools/flyci/runner/fly.toml"
+symbol     = "check_ci"
+observed   = "cg spec implemented 4.13 exited 75 with the graph database busy and symbol check_ci not defined in the graph; both fly.toml files already carry the real app names and the controller's env by name, so they needed no change."
+assumption = "Shell functions are not graph symbols, so the status line was set to implemented by hand; the controller's three secrets are set by name through flyctl secrets import, never in the toml."
+severity   = "note"
