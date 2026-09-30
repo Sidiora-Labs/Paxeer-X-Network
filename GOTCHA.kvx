@@ -1667,3 +1667,33 @@ area    = "bringup"
 symptom = "A check-live harness run inside a capped tool call ends with exit 143 and an empty log, never having run a case."
 cause   = "The harness waits on its flock while another lane's run holds it, and the caller's timeout kills it during the wait."
 do      = "Run the harness in the background or with no outer timeout shorter than a full queued run; an empty log with exit 143 is no gate result."
+
+[gotcha.275]
+area    = "spec-tooling"
+symptom = "cg spec start refuses a task with unmet requires and exits 1, although the worker was told to build it against the spec before its prerequisites land."
+cause   = "start checks that every requires task is done and offers only --force."
+do      = "Set the status line to in_progress by hand, record the refusal once in the qualification log, and do not force."
+
+[gotcha.276]
+area    = "test"
+symptom = "The flyctl stand-in of check-live.test.sh exits 98 on a call that passes --json, so a new probe that lists machines reads nothing."
+cause   = "The stand-in parses only the flags earlier probes used and treats any other flag as an error."
+do      = "Teach the stand-in the new flag and subcommand in the same change that adds the probe, answering from a fixture file."
+
+[gotcha.277]
+area    = "test"
+symptom = "After a merge, fixture cases that wrote machine JSON to a file named by CHECK_LIVE_TEST_MACHINES made other flyctl cases read a path instead of JSON."
+cause   = "The feature's flyctl stand-in prints CHECK_LIVE_TEST_MACHINES as the JSON itself and falls back to the app's machines.json only when the variable is empty."
+do      = "Export the JSON inline for the cases that need it and unset it afterwards; never export CHECK_LIVE_TEST_MACHINES as a file path."
+
+[gotcha.278]
+area    = "kernel-init"
+symptom = "A boundary that runs as the node's second uid cannot read the sequencer seed to derive the sequencer public key it must present."
+cause   = "The seed is 0600 to the node uid; the pod used to mount the public key from a secret instead."
+do      = "Derive the public key in the root prepare step of docker/kernel/init.sh into the run directory, the same way kernel-genesis.sh derives it."
+
+[gotcha.279]
+area    = "test"
+symptom = "A single check-live.test.sh run hung in check_live_hosts_timeout until an outer timeout killed it, after eleven passing cases."
+cause   = "Not investigated under the one-try rule; the case drives a hanging ssh stand-in under CHECK_LIVE_TEST_TIMEOUT=1."
+do      = "Bound the harness with an outer timeout and read the last ok line in the log to locate the hanging case before blaming the change under test."

@@ -190,6 +190,9 @@ chmod +x "$work/bin/flyctl"
 
 # A local curl stand-in: answers eth_blockNumber for the public names, at the
 # fixed head minus the lag CHECK_LIVE_TEST_LAG ("apiN:blocks ...") assigns,
+# answers a readiness request to an app's .internal name with the body and
+# the -w status code, 503 for the ports CHECK_LIVE_TEST_BOUNDARY_DOWN lists
+# and 000 when no readable --cert client identity is presented,
 # fails to connect for the names in CHECK_LIVE_TEST_DOWN, and hands any
 # request without a public https name to the real curl, so the hpx cases
 # reach the loopback registry stand-in below. The machine name answers as the
@@ -384,6 +387,26 @@ https://*.process.*.internal:9443/*)
 	fi
 	printf '{"ready":true}'
 	[ -z "$wout" ] || printf '%b' "${wout//%\{http_code\}/200}"
+	exit 0
+	;;
+esac
+case "$url" in
+https://*.internal:*/readyz)
+	cert=""
+	while [ "$#" -gt 0 ]; do
+		[ "$1" != --cert ] || cert="${2:-}"
+		shift
+	done
+	if [ ! -r "$cert" ]; then
+		printf ' 000'
+		exit 58
+	fi
+	port="${url##*:}"
+	port="${port%%/*}"
+	case " ${CHECK_LIVE_TEST_BOUNDARY_DOWN:-} " in
+	*" $port "*) printf '{"ready":false,"error":"replica_unavailable"} 503' ;;
+	*) printf '{"ready":true,"network_id":"fixture","wire_version":"1"} 200' ;;
+	esac
 	exit 0
 	;;
 esac
@@ -836,6 +859,44 @@ CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_ca_failing "$work/hosts-
 	"fail interop-client app=$interop cert=unmounted" \
 	"pass developer app=$webhooks chain=ok san=4/4 expires_in=39" \
 	"check-live: 7 check(s) failed"
+
+# The kernel boundary cases reach the kernel fixture app, whose volume holds
+# the agentd-client identity issued above, through the flyctl stand-in.
+export CHECK_LIVE_TEST_MACHINES='[{"state":"started","config":{"services":[{"internal_port":8080}]}}]'
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_kernel_boundaries_passing "$work/hosts-good.env" 0 kernel-boundaries -- \
+	"pass public-services app=$kernel machines=1 ports=8080 boundaries=none" \
+	"pass core app=$kernel url=https://$kernel.internal:9443/readyz identity=agentd-client http=200 ready=true" \
+	"pass core-admin app=$kernel url=https://$kernel.internal:9444/readyz identity=agentd-client http=200 ready=true" \
+	"pass receipt-authority app=$kernel url=https://$kernel.internal:9445/readyz identity=agentd-client http=200 ready=true" \
+	"pass agent-boundary app=$kernel url=https://$kernel.internal:9446/readyz identity=agentd-client http=200 ready=true" \
+	"check-live: all checks passed"
+
+if [ "$(grep -c "^$kernel app ssh console " "$CHECK_LIVE_TEST_CALLS")" -eq 1 ] && [ "$(grep -c "^$kernel app machines list" "$CHECK_LIVE_TEST_CALLS")" -eq 1 ] &&
+	[ "$(grep -c "^$kernel curl$" "$CHECK_LIVE_TEST_CALLS")" -eq 4 ]; then
+	echo "ok   check_live_kernel_boundaries_one_machine_call"
+else
+	echo "FAIL check_live_kernel_boundaries_one_machine_call: want one machines list, one ssh console call into the kernel app and four readiness requests"
+	cat "$CHECK_LIVE_TEST_CALLS"
+	failures=$((failures + 1))
+fi
+
+export CHECK_LIVE_TEST_MACHINES='[{"state":"started","config":{"services":[{"internal_port":8080},{"internal_port":9445}]}}]'
+CHECK_LIVE_TEST_BOUNDARY_DOWN="9446" CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_kernel_boundaries_failing "$work/hosts-good.env" 1 kernel-boundaries -- \
+	"fail public-services app=$kernel machines=1 ports=8080,9445 boundaries=9445" \
+	"pass core app=$kernel url=https://$kernel.internal:9443/readyz identity=agentd-client http=200 ready=true" \
+	"pass receipt-authority app=$kernel url=https://$kernel.internal:9445/readyz identity=agentd-client http=200 ready=true" \
+	"fail agent-boundary app=$kernel url=https://$kernel.internal:9446/readyz identity=agentd-client http=503" \
+	"check-live: 2 check(s) failed"
+
+export CHECK_LIVE_TEST_MACHINES='[{"state":"started","config":{"services":[{"internal_port":8080}]}}]'
+mv "$fly/$kernel/app/data/tls/agentd-client/cert.pem" "$work/agentd-client.pem"
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_kernel_boundaries_without_the_client_identity "$work/hosts-good.env" 1 kernel-boundaries -- \
+	"pass public-services app=$kernel machines=1 ports=8080 boundaries=none" \
+	"fail core app=$kernel url=https://$kernel.internal:9443/readyz identity=agentd-client http=000" \
+	"fail agent-boundary app=$kernel url=https://$kernel.internal:9446/readyz identity=agentd-client http=000" \
+	"check-live: 4 check(s) failed"
+mv "$work/agentd-client.pem" "$fly/$kernel/app/data/tls/agentd-client/cert.pem"
+unset CHECK_LIVE_TEST_MACHINES
 
 expect check_live_rpc_nodes_passing "$work/hosts-rpc-good.env" 0 rpc-nodes -- \
 	"pass api1 head=26400000 lag=0 unit=active active=7200s" \

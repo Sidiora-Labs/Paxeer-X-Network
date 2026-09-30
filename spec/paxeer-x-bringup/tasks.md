@@ -110,7 +110,7 @@
 ## Wave 2 - Kernel boundaries, router and platform apps
 
 - [ ] 2. Serve the kernel's boundaries, turn the endpoint app into the router, bring identity and the registry up on Fly and give the public services a plain listener
-  - [ ] 2.1 Run the core boundary, the receipt authority and the agent boundary over TLS in the kernel machine
+  - [ ] 2.1 Run the core boundary, the receipt authority and the agent boundary over TLS in the kernel machine — **Implemented - qualification pending**
     - Run layerx-platform-core (9443 and its admin plane 9444), layerx-receipt-authority (9445, bound to the replica on loopback, the identity binding socket and the runtime clock) and layerx-agent-boundary (9446, bound to the LNI socket) under docker/kernel/init.sh from their platform/hosted definitions and docker/platform-* entrypoints, listening on [::] for the private network, each with its certificate issued through tools/bringup/ca.sh carrying the kernel app's .internal name.
     - Add the kernel-boundaries subcommand: inside the kernel machine each readiness route answers ready over TLS under the internal CA at the kernel app's .internal name with a client identity the kernel app already holds, and none of the three ports is a public service of the kernel app; the router's readiness in task 2.2 proves the same routes from another app.
     - _Requirements: 7.1_
