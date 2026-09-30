@@ -1253,3 +1253,15 @@ area    = "ci"
 symptom = "The runner canary dispatched while CI_LINUX_RUNNER is unset runs on a hosted runner and fails at its lld step, and the API reports an empty runner name for that job."
 cause   = "The routing expression falls back to the hosted image, which lacks ld.lld, and completed hosted jobs carry no runnerName in the jobs listing."
 do      = "Read a hosted canary failure as the variable being unset, not as a runner image fault; judge the Fly runner only from a run whose job names a fly- runner."
+
+[gotcha.206]
+area    = "check-live"
+symptom = "A live authenticated plan with the golden intent.plan request body is refused although the bearer is admitted."
+cause   = "The golden body is a schema fixture: its asset_id is a placeholder the planner refuses unless it equals the principal's balance asset, its destination is a fixture account and its deadline has already passed."
+do      = "Take the golden body and set asset_id, destination.account and a deadline ahead of now at run time from named inputs; never send the fixture body to a live service expecting a plan."
+
+[gotcha.207]
+area    = "spec-tooling"
+symptom = "cg spec implemented refuses a task whose touched data file changed in the worktree, reporting no matching change, while the graph database is busy with another lane's index."
+cause   = "With the refresh skipped the check reads the last completed index, which knows nothing of uncommitted edits to files it does not parse."
+do      = "Treat the refusal like gotcha 104: record it, set the status line by hand, remove any spec.kvx.lock and let the manager re-run the tool after the merge."

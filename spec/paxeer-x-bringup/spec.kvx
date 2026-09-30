@@ -637,7 +637,7 @@ reqs       = ["11.1", "11.2", "11.3"]
 
 [task.3.7]
 title      = "Point the wallet PWA at api-hull.paxeer.network and prove the authenticated human-api path"
-status     = "pending"
+status     = "implemented"
 wave       = 3
 requires   = ["3.5", "3.6"]
 supersedes = ["paxeer-x-wallet 6.5"]
