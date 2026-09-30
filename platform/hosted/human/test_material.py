@@ -96,9 +96,9 @@ class MaterialTests(unittest.TestCase):
 
     def test_passkey_relying_party_follows_the_deployed_web_origin(self):
         self.assertEqual(material.passkey_relying_party(''),
-                         ('app.paxeer.network', 'https://app.paxeer.network'))
-        self.assertEqual(material.passkey_relying_party('https://paxportwallet.com'),
                          ('paxportwallet.com', 'https://paxportwallet.com'))
+        self.assertEqual(material.passkey_relying_party('https://app.paxeer.network'),
+                         ('app.paxeer.network', 'https://app.paxeer.network'))
         for refused in ('http://app.paxeer.network', 'https://localhost:19457',
                         'https://127.0.0.1', 'https://app.paxeer.network/',
                         'https://Human.Testnet.Layerx.Network', 'https://app.paxeer.network?a=1'):

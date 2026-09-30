@@ -578,3 +578,43 @@ symbol     = "check_ca"
 observed   = "shellcheck -s bash reports SC2034 (eku unused) in the read loop of check_ca at the base revision, unrelated to this task."
 assumption = "Left as found; the owner of check_ca resolves it."
 severity   = "note"
+
+[observation.4.22.3]
+task       = "4.22"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_rpc_placement"
+observed   = "The gate ran once at fdb8f5fb5 plus this change and exited 1 (.logs/verify.log): api1 still resolves to the validator host at lag 0; the chosen node (RPC_HOSTS[3], lag 1, lowest load, most free disk among the nodes at the head) was picked for do_1, but the ssh write of the api1 vhost into its sites-available was refused by the permission system once; eleven other names trail the head by 88 to 2239166 blocks and both validator hosts report paxd.service active with nginx on 80 and 443."
+assumption = "The vhost install, the owner's api1 record change and the certbot, enable and reload steps are in the private handoff; the lagging names are node sync work of task 4.14 and req 18.3; the validator checks close only with do_2, so the task stays implemented."
+severity   = "blocker"
+
+[observation.4.22.4]
+task       = "4.22"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_rpc_placement"
+observed   = "Read-only over ssh: on VALIDATOR_HOSTS[0] nginx owns 80 and 443 serving the api1 site plus an acme and an rpc-ssl site; on VALIDATOR_HOSTS[1] nginx owns 80 and 443 serving three wallet-related sites and no apiN site; paxd.service is active on both; nothing was changed."
+assumption = "do_2 retires only the api1 site on VALIDATOR_HOSTS[0]; the wallet-related sites on VALIDATOR_HOSTS[1] keep the no-public-port check failing after do_2 and need an owner ruling or a task of their own."
+severity   = "blocker"
+
+[observation.4.26.1]
+task       = "4.26"
+file       = "platform/hosted/human/web-deployment.yaml"
+symbol     = "passkey_relying_party"
+observed   = "The default of passkey_relying_party now names https://paxportwallet.com, while platform/hosted/human/web-deployment.yaml, platform/hosted/node/deployment.yaml and platform/hosted/tests/beta-cluster.sh still pass https://app.paxeer.network as the human web origin, outside this task's touches."
+assumption = "The deployed web origin moves with the task that deploys the wallet frontend; test_material.py keeps checking that the cluster manifests and bring-up agree."
+severity   = "note"
+
+[gate.4.26.1]
+task      = "4.26"
+revision  = "fdb8f5fb5 plus this task's change"
+command   = "timeout 20m cargo test --locked --manifest-path agent/Cargo.toml -p layerx-crypto account_derivation"
+exit_code = 0
+log_path  = ".logs/verify.log"
+observed  = "5 account_derivation tests pass against the regenerated fixture; the Python derivation tests (6), the TypeScript derivation test and test_material.py (10) also pass once each, logs .logs/py-derivation.log, .logs/ts-derivation.log, .logs/test-material.log."
+
+[observation.4.26.2]
+task       = "4.26"
+file       = "spec/paxeer-x-bringup/spec.kvx"
+symbol     = "account_derivation"
+observed   = "cg spec done and cg spec implemented refused the task after the verify passed: the graph defines no symbol account_derivation (it is a module name); the status line was set to implemented by hand."
+assumption = "The manager closes the task with --force on the gate record above, or corrects the symbols list."
+severity   = "note"

@@ -31,7 +31,7 @@ pub const LAYERX_COIN_TYPE: u32 = 19_544;
 /// BIP-44 coin type of every EVM account.
 pub const EVM_COIN_TYPE: u32 = 60;
 /// The origin the published wallet message names.
-pub const CANONICAL_ORIGIN: &str = "https://app.paxeer.network";
+pub const CANONICAL_ORIGIN: &str = "https://paxportwallet.com";
 /// EIP-712 domain name of the wallet message.
 pub const DOMAIN_NAME: &str = "Paxeer X Network";
 /// EIP-712 domain version of the wallet message.
@@ -728,7 +728,8 @@ mod tests {
         let chain_id = number(&fixture, "chain_id")?;
         let wallet = &fixture["wallet_signature"];
         let address = <[u8; 20]>::try_from(bytes(text(wallet, "evm_address")?)?.as_slice())?;
-        let signer = EvmSigningKey::from_slice(&bytes(text(wallet, "private_key")?)?)?;
+        let signer = EvmSigningKey::from_slice(&bytes(text(wallet, "private_key")?)?)
+            .map_err(|error| error.to_string())?;
         for vector in list(wallet, "vectors")? {
             let index = u32::try_from(number(vector, "index")?)?;
             let request = KeyDerivationRequest::new(chain_id, address, index)?;
@@ -738,7 +739,9 @@ mod tests {
                 hexadecimal(&request.signing_hash()),
                 text(vector, "eip712_hash")?
             );
-            let (signature, recovery) = signer.sign_prehash_recoverable(&request.signing_hash())?;
+            let (signature, recovery) = signer
+                .sign_prehash_recoverable(&request.signing_hash())
+                .map_err(|error| error.to_string())?;
             let mut produced = signature.to_bytes().to_vec();
             produced.push(27 + recovery.to_byte());
             assert_eq!(hexadecimal(&produced), text(vector, "signature")?);

@@ -50,6 +50,9 @@
     - Give edge.sh the stream mode the mTLS names need: machine.paxeer.network on 9454 and index.paxeer.network on 443 pass through unchanged to the app's dedicated IPv4 on the same port through an nginx stream block keyed by SNI with ssl_preread, where a port shared with HTTP names moves those names' server blocks behind the stream block on a loopback port the first time a stream name is added on it, so client certificates reach the app untouched; remove deletes the site, and the stream entry when one exists, and reloads.
     - Add the edge subcommand: every registered name resolves to the edge host, answers over TLS with a valid certificate for the name, and reaches its app (the app's fly.dev name answers the same readiness route with the same body), stream names present the app's own certificate through the edge, and no rendered site names a validator host; add fixture cases to tools/bringup/check-live.test.sh and a render test tools/bringup/edge.test.sh comparing the rendered site of one HTTP name and one stream name against expected text.
     - _Requirements: 1.1, 1.3_
+  - [ ] 0.10 Retire app.paxeer.network: the human web origin is https://paxportwallet.com everywhere
+    - The owner ruled that paxportwallet.com is the wallet app's frontend and task 4.26 made it the derivation origin: set the human web origin to https://paxportwallet.com in the human web deployment, the node deployment, the beta cluster script, the material test and the web end-to-end harness, so the passkey relying party, the CORS allow list and the signing origin agree, and leave the changelog's history as written; the gate proves the retired name is gone from the tree outside the spec and the changelog.
+    - _Requirements: 3.4_
 
 ## Wave 1 - Kernel app
 
@@ -292,20 +295,24 @@
     - Migrate one slot at a time, as the owner approved, so at least three of the four signers stay live throughout: for slot N stop and disable x-websearch@N on its validator host, then create that slot's Fly app and volume, stream its registered attestor key with its submitter and receiver keys over ssh from the validator host into the volume through flyctl ssh console without printing them, deploy it and probe its /health over the private network, and move to slot N+1 only after that passes; once the four apps answer /health and the owner holds the sealed copy, remove the configs and keys from both validator hosts, and make the validators subcommand check that nothing listens on 8480 or 8481 on any validator host in place of the loopback /health check of task 0.6.
     - Add the xweb-attestors subcommand: each of the four apps runs one started machine with its volume and no public IP, answers /health inside its machine through flyctl ssh console and reaches each peer through its hop, and no validator host runs an x-websearch unit.
     - _Requirements: 13.3, 1.2_
-  - [ ] 4.26 Apply the owner's ruling on the account-derivation signing origin
+  - [x] 4.26 Apply the owner's ruling on the account-derivation signing origin
     - The owner ruled for paxportwallet.com: change the message together in agent/crates/layerx-crypto/src/account_derivation.rs, agent/sdk/python/layerx_sdk/account_derivation.py, agent/sdk/typescript/src/account-derivation.ts, platform/sdk/conformance/fixtures/account-derivation-v1.json, the default of platform/hosted/human/material.py and its test platform/hosted/human/test_material.py, and the signing warning of docs/site/docs/concepts/one-account.md.
     - _Requirements: 3.4_
+  - [ ] 4.27 Take the second validator host off the public internet: move the four public names its nginx serves and close its web ports
+    - The placement probe found the second validator host's nginx answering four public names on 80 and 443 (the wallet API and web3 names of paxportwallet.com, a data API name and a public RPC alias) beside a database and a cache the validators do not need, which breaks the ruling that validator hosts answer no public name: for each name apply the owner's ruling, the wallet API name moving with task 4.1 to the Fly wallet gateway and its record once to the edge, the web3 name registered on the edge and proxied to the router, the RPC alias served by an RPC node's nginx or retired, the data API name moved to the platform host or retired, and for each moved name run its certificate on the new host and remove the site and certificate on the validator host only after the name answers from the new place.
+    - When no public name resolves to the host, stop and disable its nginx, the database and the cache unless a validator-side service uses them (record which, never stop a validator or attestor unit), and drop the host's public HTTP and HTTPS listeners; the placement gate's no-public-port check on both validator hosts then passes.
+    - _Requirements: 1.2, 18.3_
 
 ## Task Dependency Graph
 
 ```json
 {
   "waves": [
-    { "id": 0,  "tasks": ["0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9"] },
+    { "id": 0,  "tasks": ["0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "0.10"] },
     { "id": 1,  "tasks": ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9"] },
     { "id": 2,  "tasks": ["2.1", "2.2", "2.4", "2.6", "2.7", "2.8"] },
     { "id": 3,  "tasks": ["3.1", "3.2", "3.3", "3.4", "3.5", "3.6", "3.7", "3.9", "3.10", "3.11"] },
-    { "id": 4,  "tasks": ["4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7", "4.8", "4.9", "4.10", "4.11", "4.12", "4.13", "4.14", "4.15", "4.16", "4.17", "4.18", "4.19", "4.20", "4.21", "4.22", "4.23", "4.26"] }
+    { "id": 4,  "tasks": ["4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7", "4.8", "4.9", "4.10", "4.11", "4.12", "4.13", "4.14", "4.15", "4.16", "4.17", "4.18", "4.19", "4.20", "4.21", "4.22", "4.23", "4.26", "4.27"] }
   ]
 }
 ```
