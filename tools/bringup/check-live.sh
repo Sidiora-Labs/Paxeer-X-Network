@@ -3295,6 +3295,124 @@ check_search() {
 	finish "$failures"
 }
 
+# check_registry: the app of platform/hosted/registry/fly.toml runs one
+# started machine with its volume and holds a dedicated IPv4 for the edge's
+# passthrough; from the kernel machine of human/wallet/deploy/human.toml,
+# https://index.paxeer.network/healthz refuses a request without a client
+# certificate and answers 200 ready to one with the kernel's internal-CA
+# client identity; the router's lx_getProgramEvents returns, on the reference
+# escrow's event topic, an event of the program CHECK_LIVE_REGISTRY_PROGRAM_ID
+# names (the deploy step records it); and the router's /readyz reports
+# program_registry ready. The router is CHECK_LIVE_ROUTER_URL, default
+# https://api-mainnet-beta.paxeer.network. One line per check.
+check_registry() {
+	local toml=platform/hosted/registry/fly.toml url=https://index.paxeer.network/healthz
+	local router="${CHECK_LIVE_ROUTER_URL:-https://api-mainnet-beta.paxeer.network}"
+	local topic=6c782e7265662e657363726f772e637573746f6479 program="${CHECK_LIVE_REGISTRY_PROGRAM_ID:-}"
+	local app kernel answer reply line status code body anonymous from page failures=0
+	# shellcheck disable=SC2016
+	local script='status=0
+answer=$(curl -sS -m "$limit" --cacert "$tls/ca.pem" --cert "$tls/cert.pem" --key "$tls/key.pem" -w "\n%{http_code}" "$url" 2>&1) || status=$?
+echo "@@healthz $status $(printf "%s" "$answer" | tail -n 1) $(printf "%s" "$answer" | head -n 1 | tr -d " " | cut -c1-120)"
+status=0
+curl -sS -m "$limit" --cacert "$tls/ca.pem" -o /dev/null "$url" 2>/dev/null || status=$?
+echo "@@anonymous $status"'
+	if ! command -v flyctl >/dev/null 2>&1; then
+		echo "check-live: flyctl is required" >&2
+		exit 2
+	fi
+	if ! app="$(fly_app "$toml")" || ! kernel="$(fly_app human/wallet/deploy/human.toml)"; then
+		echo "fail registry toml=absent"
+		finish 1
+	fi
+
+	answer="$(timeout "$timeout" flyctl machines list --app "$app" --json 2>/dev/null | python3 -c '
+import json, sys
+ms = json.load(sys.stdin)
+started = [m for m in ms if m.get("state") == "started"]
+mounts = [x for m in ms for x in (m.get("config") or {}).get("mounts") or [] if x.get("path") == "/data"]
+print(len(ms), len(started), len(mounts))
+' 2>/dev/null)" || answer=""
+	read -r status code body <<<"${answer:-none none none}"
+	if [ "$status" = 1 ] && [ "$code" = 1 ] && [ "$body" = 1 ]; then
+		echo "pass machines app=$app machines=1 started=1 volumes=1"
+	else
+		echo "fail machines app=$app machines=$status started=$code volumes=$body"
+		failures=$((failures + 1))
+	fi
+
+	answer="$(timeout "$timeout" flyctl ips list --app "$app" --json 2>/dev/null | python3 -c 'import json, sys; print(sum(1 for ip in json.load(sys.stdin) or [] if ip.get("Type") == "v4"))' 2>/dev/null)" || answer=none
+	if [ "$answer" = 1 ]; then
+		echo "pass dedicated-ipv4 app=$app count=1"
+	else
+		echo "fail dedicated-ipv4 app=$app count=${answer:-none}"
+		failures=$((failures + 1))
+	fi
+
+	reply="$(printf '%s\n' "$script" | fly_ssh "$kernel" - "tls=$fly_tls_dir/human-event-client url=$url limit=$timeout sh -s")" || reply=""
+	line="$(sed -n 's/^@@healthz //p' <<<"$reply" | head -n 1)"
+	anonymous="$(sed -n 's/^@@anonymous //p' <<<"$reply" | head -n 1)"
+	read -r status code body <<<"${line:-none none}"
+	if [ "$status" = 0 ] && [ "$code" = 200 ] && [[ "$body" == *'"status":"ready"'* ]] && [ -n "$anonymous" ] && [ "$anonymous" != 0 ]; then
+		echo "pass healthz url=$url from=$kernel http=200 status=ready anonymous=refused"
+	else
+		[ "${anonymous:-none}" != 0 ] || anonymous=admitted
+		echo "fail healthz url=$url from=$kernel curl=${status:-none} http=${code:-none} anonymous=${anonymous:-none}"
+		failures=$((failures + 1))
+	fi
+
+	if [[ ! "$program" =~ ^[0-9a-f]{64}$ ]]; then
+		echo "fail program-events program=unset want=CHECK_LIVE_REGISTRY_PROGRAM_ID"
+		failures=$((failures + 1))
+	else
+		from=0
+		answer=""
+		for page in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
+			answer="$(curl -sS -m "$timeout" -H "content-type: application/json" \
+				-d "{\"jsonrpc\":\"2.0\",\"id\":$page,\"method\":\"lx_getProgramEvents\",\"params\":[{\"topic\":\"$topic\",\"from_sequence\":$from,\"limit\":256}]}" \
+				"$router/rpc" 2>/dev/null | python3 -c '
+import json, sys
+reply = json.load(sys.stdin)
+if "result" not in reply:
+    print("error", (reply.get("error") or {}).get("code", "none"))
+    sys.exit()
+result = reply["result"]
+found = [e["sequence"] for e in result["events"] if e["program_id"] == sys.argv[1]]
+if found:
+    print("found", found[0])
+elif result["events"] and result["next_sequence"] > int(sys.argv[2]):
+    print("next", result["next_sequence"])
+else:
+    print("end", result["next_sequence"])
+' "$program" "$from" 2>/dev/null)" || answer=""
+			[ "${answer%% *}" = next ] || break
+			from="${answer#next }"
+		done
+		case "${answer:-none}" in
+		found\ *) echo "pass program-events program=$program sequence=${answer#found }" ;;
+		end\ *)
+			echo "fail program-events program=$program events=none next_sequence=${answer#end }"
+			failures=$((failures + 1))
+			;;
+		*)
+			echo "fail program-events program=$program answer=${answer:-none}"
+			failures=$((failures + 1))
+			;;
+		esac
+	fi
+
+	answer="$(curl -sS -m "$timeout" -w "\n%{http_code}" "$router/readyz" 2>/dev/null)" || answer=""
+	code="$(tail -n 1 <<<"$answer")"
+	body="$(python3 -c 'import json, sys; print(json.loads(sys.argv[1])["components"]["program_registry"])' "$(head -n 1 <<<"$answer")" 2>/dev/null)" || body=none
+	if [ "$body" = ready ]; then
+		echo "pass router-readyz url=$router/readyz http=$code program_registry=ready"
+	else
+		echo "fail router-readyz url=$router/readyz http=${code:-none} program_registry=${body:-none}"
+		failures=$((failures + 1))
+	fi
+	finish "$failures"
+}
+
 mode="${1:-}"
 case "$mode" in
 -h | --help)
@@ -3323,6 +3441,7 @@ indexer) ;;
 developers) ;;
 router) ;;
 search) ;;
+registry) ;;
 *)
 	usage >&2
 	exit 2

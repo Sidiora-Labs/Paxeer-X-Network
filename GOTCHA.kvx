@@ -1535,3 +1535,21 @@ area    = "bringup"
 symptom = "A new check-live subcommand needs its own curl answers in the harness, but lanes may only append cases at the end of check-live.test.sh."
 cause   = "The harness's curl stand-in is written once near the top and answers every https URL with its own fixtures."
 do      = "Write a second curl stand-in in a directory of its own in the appended cases that answers the new paths and execs the harness's stand-in for everything else, and run those cases with that directory first on PATH."
+
+[gotcha.253]
+area    = "bringup"
+symptom = "A Dockerfile COPY of an init script under docker/ fails with file not found although the file is in the tree."
+cause   = "The per-Dockerfile .dockerignore excludes the whole docker directory, so only paths it re-includes with a ! line reach the build context."
+do      = "Add a !docker/<image>/<file> line to that Dockerfile's .dockerignore for every file under docker/ the image copies."
+
+[gotcha.254]
+area    = "bringup"
+symptom = "A harness curl wrapper case sees its next @@ marker line glued to a JSON body and the sed parse finds nothing."
+cause   = "The wrapper ignored -o and wrote the body to standard output, which real curl sends to the -o file."
+do      = "Honour -o (and -w) in every curl stand-in exactly as real curl does before asserting on marker lines."
+
+[gotcha.255]
+area    = "bringup"
+symptom = "A whole block of live-check harness cases fails at once with head=none or transport-style lines."
+cause   = "A merge left a branch of the shared curl stand-in without its closing lines, so the stand-in script is a bash syntax error and every curl through it fails."
+do      = "Run bash -n on the extracted stand-in heredoc after resolving a harness merge before reading individual case failures."
