@@ -829,3 +829,15 @@ symbol     = "check_agent_public"
 observed   = "cg spec implemented 3.10 exited 1 with the graph database busy and symbol check_agent_public not defined in the graph, while both touched files passed its checks."
 assumption = "Shell functions are not graph symbols, so the status line was set to implemented by hand; the feature manager rules on the graph gate."
 severity   = "note"
+
+[gate.0.3.live_deploy]
+revision = "26b211c9ccba18c31c51a4bae828cf17e185902e"
+command = "BRINGUP_HOSTS_FILE=/root/lx-ops/bringup-2026-09-29/hosts.env timeout 15m tools/bringup/search-front.sh deploy"
+exit_code = 0
+log_path = ".logs/0.3-deploy.private.log"
+
+[gate.0.3.live_search_front]
+revision = "26b211c9ccba18c31c51a4bae828cf17e185902e"
+command = "BRINGUP_HOSTS_FILE=/root/lx-ops/bringup-2026-09-29/hosts.env timeout 10m tools/bringup/check-live.sh search-front"
+exit_code = 0
+log_path = ".logs/0.3-search-front-live.log"
