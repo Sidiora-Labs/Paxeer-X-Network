@@ -479,3 +479,19 @@ command   = "timeout 30m make platform-test-plain-listeners"
 exit_code = 0
 log_path  = ".logs/verify.log"
 observed  = "Dashboard, webhooks, reference ramp and interop each pass three listener tests and the relay archive passes plain, tls, default and refusal paths; the first run hung in the relay test's eager stderr read, repaired once, and cg spec done timed out on the graph lock so the status was set by hand."
+
+[gate.2.4.1]
+task      = "2.4"
+revision  = "eb2184b5e with the task change in the working tree"
+command   = "timeout 10m tools/bringup/check-live.sh identity"
+exit_code = 0
+log_path  = ".logs/verify.log"
+observed  = "One started machine with one volume, no public IP, and readiness answering 200 ready over TLS under the internal CA at the app's .internal name from a machine of the human app; format step was bash -n, sh -n and shellcheck (no shfmt), build was the fly target of docker/platform-identity/Dockerfile; two repair cycles: the init now makes the certificate root traversable for uid 4020, and the machine left stopped by the crash loop was started after the redeploy."
+
+[observation.2.4.1]
+task       = "2.4"
+file       = "tools/bringup/check-live.test.sh"
+symbol     = "check_identity"
+observed   = "The task lists check-live.test.sh as its test, but the lane scope allows only one function and one case-arm in check-live.sh and parallel lanes extend the same test file, so no identity fixture case was added."
+assumption = "The feature manager adds the identity fixture case with a flyctl stand-in answering machines list, ips list and ssh console once the wave's probe lanes are merged."
+severity   = "low"

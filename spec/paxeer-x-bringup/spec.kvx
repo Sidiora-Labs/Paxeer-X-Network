@@ -484,7 +484,7 @@ reqs       = ["8.1", "8.2", "8.3"]
 
 [task.2.4]
 title      = "Run the identity service as a private Fly app"
-status     = "pending"
+status     = "done"
 wave       = 2
 requires   = ["0.5"]
 do_1       = "Write platform/hosted/identity/fly.toml for a new Fly app built from docker/platform-identity with the env of the platform/hosted/identity definition: one machine with a volume for its state, LAYERX_IDENTITY_LISTEN on [::] for the private network, no public service and no public IP, its signing material generated inside the machine on the volume and its certificate issued through tools/bringup/ca.sh; deploy it."

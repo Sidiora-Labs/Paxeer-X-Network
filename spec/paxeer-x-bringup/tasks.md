@@ -104,7 +104,7 @@
     - Add the router subcommand: through the router URL eth_chainId 0x7d, px_getNetwork kernel.available true, lx_getAccount answering a read for a bound account and /readyz with every configured backend up, and the Redis round trip reported from a machine in each region; then the wallet gateway's /readyz reporting its rpc pool up with the router URL first in its RPC_URLS.
     - Only after the router checks of do_4 pass: set HYPERPAXEER_RPC_URL to https://api-mainnet-beta.paxeer.network and RPC_URLS to the router URL followed by the serving RPC names on the wallet gateway app of human/wallet/deploy/gateway.toml with flyctl secrets import on standard input from the operator host, which restarts its machines, update both lines of human/wallet/deploy/env to say so, and set the wallet PWA's NEXT_PUBLIC_PAXEER_RPC_URL on Railway to the router URL and redeploy the PWA.
     - _Requirements: 8.1, 8.2, 8.3_
-  - [ ] 2.4 Run the identity service as a private Fly app
+  - [x] 2.4 Run the identity service as a private Fly app
     - Write platform/hosted/identity/fly.toml for a new Fly app built from docker/platform-identity with the env of the platform/hosted/identity definition: one machine with a volume for its state, LAYERX_IDENTITY_LISTEN on [::] for the private network, no public service and no public IP, its signing material generated inside the machine on the volume and its certificate issued through tools/bringup/ca.sh; deploy it.
     - Add the identity subcommand: from a machine of another app in the organisation readiness answers ready over TLS under the internal CA at the identity app's .internal name, and the app holds no public IP.
     - _Requirements: 9.1_
