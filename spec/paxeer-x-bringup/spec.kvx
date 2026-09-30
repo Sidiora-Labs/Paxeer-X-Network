@@ -454,7 +454,7 @@ reqs       = ["5.1"]
 
 [task.1.9]
 title = "Make the authority's authorized-batch lookup over the node interface and layerxd's envelope parsing agree"
-status = "pending"
+status = "implemented"
 wave = 1
 requires = []
 verify_cmd = "timeout 30m make layerxd test-daemon-finality-authority"

@@ -580,11 +580,13 @@ fn lookup_receipt(config: &Config, activity_id: [u8; 32], wait_publication: bool
     {
         return ReceiptSource::KeyMismatch;
     }
-    let mut selector = Vec::with_capacity(33);
+    let mut selector = Vec::with_capacity(34);
     selector.push(1);
     selector.extend_from_slice(&activity_id);
     if wait_publication {
         selector.push(1);
+    } else if handshake.node().interface_version.minor >= Version::V1_6.minor {
+        selector.push(0);
     }
     let Ok(correlation_id) = trust::correlation(1) else {
         return ReceiptSource::Unavailable("LNI correlation exhausted".to_owned());

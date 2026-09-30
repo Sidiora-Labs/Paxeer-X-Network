@@ -578,3 +578,17 @@ symbol     = "check_ca"
 observed   = "shellcheck -s bash reports SC2034 (eku unused) in the read loop of check_ca at the base revision, unrelated to this task."
 assumption = "Left as found; the owner of check_ca resolves it."
 severity   = "note"
+
+[observation.1.9.1]
+task       = "1.9"
+file       = "platform/hosted/authority/src/main.rs"
+symbol     = "lookup_receipt"
+observed   = "Commit 5d3b3d31f moved LNI to minor 6, where every receipt-lookup selector carries a trailing wait byte (0 immediate, 1 published, 2 durable), and updated the daemon, the SDK client and the core boundary but not the receipt authority, which still sent the bare 33-byte selector and got class 1, result -105; the authority now appends the 0 byte at minor 6 as the core boundary does, and real_node.rs:1515 passes."
+assumption = "The daemon, the SDK client and the core boundary fix the contract, so only the authority side changed; the envelope check is untouched; severity medium, resolved."
+
+[observation.1.9.2]
+task       = "1.9"
+file       = "platform/hosted/authority/tests/real_node.rs"
+symbol     = "real_node_authority_serves_verified_facts_and_reflects_replica_loss"
+observed   = "With the lookup answered, real_node.rs:1543 asserts the by-activity body has ten keys while by_activity in platform/hosted/authority/src/main.rs returns eleven, protocol_network_id added by commit abc07d9ca; timeout 30m make layerxd test-daemon-finality-authority exits 2, log .logs/verify.log."
+assumption = "Another pre-existing code-versus-assertion conflict of the same shape as observation 1.2.2, hidden until the lookup succeeded; both sides left as written for a ruling on whether the readyz ruling extends to the by-activity body; task stays implemented; severity medium."
