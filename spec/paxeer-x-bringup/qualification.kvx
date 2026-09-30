@@ -745,3 +745,23 @@ symbol     = "check_ci"
 observed   = "cg spec implemented 4.13 exited 75 with the graph database busy and symbol check_ci not defined in the graph; both fly.toml files already carry the real app names and the controller's env by name, so they needed no change."
 assumption = "Shell functions are not graph symbols, so the status line was set to implemented by hand; the controller's three secrets are set by name through flyctl secrets import, never in the toml."
 severity   = "note"
+
+[gate.0.9.live_registration]
+revision = "3df583333c69b96d90174806635ae6be55d3f094"
+command = "BRINGUP_HOSTS_FILE=/root/lx-ops/bringup-2026-09-29/hosts.env tools/bringup/edge.sh add api-mainnet-beta.paxeer.network paxeer-shared-endpoint"
+exit_code = 0
+log_path = ".logs/0.9-edge-register.log"
+
+[gate.0.9.live_edge]
+revision = "3df583333c69b96d90174806635ae6be55d3f094"
+command = "BRINGUP_HOSTS_FILE=/root/lx-ops/bringup-2026-09-29/hosts.env timeout 10m tools/bringup/check-live.sh edge"
+exit_code = 0
+log_path = ".logs/0.9-edge-live.log"
+
+[observation.0.9.reload_warnings]
+revision = "3df583333c69b96d90174806635ae6be55d3f094"
+command = "tools/bringup/edge.sh add"
+exit_code = 0
+log_path = ".logs/0.9-edge-register.log"
+observed = "Nginx reload reported protocol options redefined on existing sites. The live edge gate passed. No unrelated site was repaired."
+assumption = "Warnings belong to existing listener configuration and need a separately scoped task if repair is required."
