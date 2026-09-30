@@ -224,7 +224,7 @@
     - Render the config with interop/deploy/gateway/render.py --check against the router, the receipt authority at the kernel app's .internal name, the router's Redis and the internal CA, and write platform/hosted/interop/fly.toml for a new Fly app from docker/interop-gateway with the LAYERX_INTEROP_* env on its plain listener, at least two machines in two regions, and the client identity issued through tools/bringup/ca.sh and imported as Fly secrets; deploy it, register interchain.paxeer.network on the edge with tools/bringup/edge.sh add interchain.paxeer.network <app>.
     - Add the interop subcommand: /readyz at the name and one x402 exact-scheme PAYMENT-REQUIRED to PAYMENT-RESPONSE round trip against the deployed app.
     - _Requirements: 16.2_
-  - [ ] 4.8 Enable the AP2, Visa TAP and fiat adapters of the interop gateway
+  - [ ] 4.8 Enable the AP2, Visa TAP and fiat adapters of the interop gateway — **Implemented - qualification pending**
     - Re-render the interop config with the AP2, Visa TAP and fiat sections filled from the supplied inputs imported as Fly secrets of the interop app, redeploy it, and run the mandates, visa-tap and ramps-sandbox conformance legs against the deployed app.
     - Add the interop-adapters subcommand that runs the mandates, visa-tap and ramps-sandbox conformance legs of interop-test-mandates, interop-test-visa-tap and interop-test-ramps-sandbox against https://interchain.paxeer.network and passes only when all three pass.
     - _Requirements: 16.3_

@@ -10,7 +10,10 @@
 # tools/bringup/ca.sh issue interop-client (the CA DER is the outbound root of
 # the receipt authority and Redis; the router's public chain verifies against
 # the image's system roots); INTEROP_CONFIG, the document
-# interop/deploy/gateway/render.py renders, and INTEROP_MODULE_REGISTRY, the
+# interop/deploy/gateway/render.py renders, its AP2, Visa TAP and fiat roots
+# from the owner inputs LAYERX_BETA_INTEROP_AP2_KEYS, _AP2_ASSETS,
+# _VISA_AGENTS, _VISA_TARGETS and _FIAT_PROVIDERS, each also staged as a
+# secret of this app under its own name, and INTEROP_MODULE_REGISTRY, the
 # modules of the router's registry; INTEROP_AUTHORITY_TOKEN and the four
 # INTEROP_SEQUENCER_* pins, the values the router holds; INTEROP_REDIS_USERNAME
 # and INTEROP_REDIS_PASSWORD, the ACL user of the router's Redis; and the

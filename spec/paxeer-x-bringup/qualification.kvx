@@ -1391,3 +1391,11 @@ symbol     = "curl stand-in"
 observed   = "At the feature head the harness failed 25 cases because a merge dropped the exit 0 and fi closing the gas block of the curl stand-in, so every stubbed curl call was a syntax error; the two lines were restored as the lane 4.9 revision had them, and the harness then passed."
 assumption = "The restore is the merge repair only; no case was changed to pass."
 severity   = "warning"
+
+[observation.4.8.1]
+task       = "4.8"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_interop_adapters"
+observed   = "timeout 30m tools/bringup/check-live.sh interop-adapters exited 2 (log .logs/verify.log) at its first unset input, LAYERX_RAMP_URL; the AP2, Visa TAP and fiat roots, the ramp journey inputs and the adapters' deployment are owner and deploy-side inputs; the harness passes every interop-adapters case (log .logs/harness.log)."
+assumption = "The deploy side runs the 4.8 handoff (import the five LAYERX_BETA_INTEROP_* inputs as secrets of the interop app, re-render, redeploy) once task 4.7 is live and task 4.10 serves the ramp, then reruns the gate."
+severity   = "external"
