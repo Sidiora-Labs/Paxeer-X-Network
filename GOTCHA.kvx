@@ -1061,3 +1061,15 @@ area    = "tests"
 symptom = "The lxp_test_daemon_finality_authority binary looks free to rewrite, but its prepare and emit modes feed the handover, guarantor and availability chain scripts."
 cause   = "Several tests/daemon Python drivers call that binary directly with their own arguments."
 do      = "Add new modes beside the existing ones and grep tests/daemon for the binary's name before changing its command line."
+
+[gotcha.174]
+area    = "ops-shell"
+symptom = "A probe that treats curl exit 7 with 'refused' in its error text as a closed port fails on ports that are genuinely refused with a tcp reset."
+cause   = "Current curl prints 'Could not connect to server' for a refusal and an unreachable host alike, both as exit 7."
+do      = "Tell a refusal from an unreachable host with a bare connect through bash's /dev/tcp under timeout, whose error carries the system's 'Connection refused' text."
+
+[gotcha.175]
+area    = "ops-shell"
+symptom = "A sed range from a shell function's first line to the next line starting with } stops inside the function."
+cause   = "A here-document inside the function (an nft ruleset, for one) holds its own closing brace at column zero."
+do      = "Extract such functions up to a marker comment that follows them, or source the script behind a guard instead of cutting it with sed."

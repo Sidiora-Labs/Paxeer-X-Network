@@ -854,6 +854,64 @@ print((proto + "://" + host if host else "none") + " " + (get("NEXT_PUBLIC_NETWO
 	finish "$failures"
 }
 
+# check_validators: from this host the attestor ports 8480 and 8481 of every
+# VALIDATOR_HOSTS destination refuse the connection (a tcp reset, not a
+# timeout); over ssh each attestor answers /health with 200 on loopback, and
+# each validator host reaches every other one's attestor ports with 200. One
+# line per check, naming hosts by their index only:
+#   "pass VALIDATOR_HOSTS[k] remote-<port>=refused" or "=open|timeout|unreachable"
+#   "pass VALIDATOR_HOSTS[k] loopback-<port> health=200"
+#   "pass VALIDATOR_HOSTS[k] peer-VALIDATOR_HOSTS[j]-<port> health=200"
+# with fail and the observed code (ssh=<exit> when the host did not answer).
+check_validators() {
+	local -a dests addrs
+	local k j port err status code line target failures=0
+	read -r -a dests <<<"$VALIDATOR_HOSTS"
+	for k in "${!dests[@]}"; do
+		addrs[k]="$(ssh -G -- "${dests[$k]}" 2>/dev/null | awk '$1 == "hostname" { print $2; exit }')"
+	done
+	for k in "${!dests[@]}"; do
+		for port in 8480 8481; do
+			status=0
+			# A bare connect through bash's /dev/tcp, because only its error
+			# text (the system's ECONNREFUSED message) tells a tcp reset from
+			# an unreachable host; curl reports both as exit 7.
+			# shellcheck disable=SC2016
+			err="$(timeout "$timeout" bash -c 'exec 3<>"/dev/tcp/$1/$2"' - "${addrs[k]}" "$port" 2>&1)" || status=$?
+			case "$status:$err" in
+			0:*) line="fail VALIDATOR_HOSTS[$k] remote-$port=open" ;;
+			124:*) line="fail VALIDATOR_HOSTS[$k] remote-$port=timeout" ;;
+			*"Connection refused"*) line="pass VALIDATOR_HOSTS[$k] remote-$port=refused" ;;
+			*) line="fail VALIDATOR_HOSTS[$k] remote-$port=unreachable" ;;
+			esac
+			echo "$line"
+			[ "${line%% *}" = pass ] || failures=$((failures + 1))
+		done
+		for port in 8480 8481; do
+			for j in "${!dests[@]}"; do
+				target="${addrs[j]}"
+				line="peer-VALIDATOR_HOSTS[$j]-$port"
+				if [ "$j" -eq "$k" ]; then
+					target=127.0.0.1
+					line="loopback-$port"
+				fi
+				status=0
+				code="$(ssh_read "${dests[$k]}" "curl -s -o /dev/null -w %{http_code} -m $timeout http://$target:$port/health")" || status=$?
+				if [ "$code" = 200 ]; then
+					echo "pass VALIDATOR_HOSTS[$k] $line health=200"
+				elif [ "$status" -eq 255 ] || [ "$status" -eq 124 ]; then
+					echo "fail VALIDATOR_HOSTS[$k] $line ssh=$status"
+					failures=$((failures + 1))
+				else
+					echo "fail VALIDATOR_HOSTS[$k] $line health=${code:-none}"
+					failures=$((failures + 1))
+				fi
+			done
+		done
+	done
+	finish "$failures"
+}
+
 # Sourced by tools/bringup/ca.sh for the Fly helpers and the CA settings: the
 # probe's own dispatch below runs only when this file is executed.
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
@@ -865,6 +923,7 @@ case "$mode" in
 	exit 0
 	;;
 hosts | rpc-nodes | archive-node | ca | hpx | explorer) ;;
+validators) ;;
 *)
 	usage >&2
 	exit 2
