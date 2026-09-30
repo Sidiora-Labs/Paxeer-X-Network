@@ -845,15 +845,31 @@ log_path = ".logs/0.3-search-front-live.log"
 [observation.4.12.1]
 task       = "4.12"
 file       = "interop/crates/layerx-mirror-signer/src/lib.rs"
-symbol     = "SignerService::load"
-observed   = "The only signer daemon in the tree serves one secp256k1 handle bound to LayerX/mirror/ethereum-eip1559/v1 and one ed25519 handle bound to LayerX/mirror/solana-transaction/v1, while the relayer needs an attestor handle under LayerX/bridge/attest-inbound/v1 and attest-outbound/v1, a Paxeer submitter under LayerX/bridge/paxeer-eip1559/v1, chain submitters under LayerX/bridge/ethereum-eip1559/v1 and a fee payer under LayerX/bridge/solana-tx/v1, each distinct from the attestor handle; the spec fixes no signer key set, option shape or crate for that, so the Dockerfile, entrypoint and fly.toml cannot name the signer's keys and arguments."
-assumption = "The owner or manager rules where the bridge key set is served (a bridge mode of layerx-mirror-signer with a per-handle domain list, or another signer) and whether the chain submitters share one key; the task resumes on that ruling and nothing was written ahead of it."
-severity   = "blocker"
+symbol     = "SignerService::load_bridge"
+observed   = "The crate is touched beyond the task's touches list because it blocked the task: the signer served only the two mirror handles, so a bridge mode was added (layerx-mirror-signer bridge, a key manifest binding each handle to one key type and its own bridge domain list, refusing any unlisted domain) with mirror mode and its handles unchanged; cargo check -p layerx-mirror-signer --tests exited 0, and cargo test runs first on the deploy side's builder."
+assumption = "Ruled: complete the fixed signer rather than swap it; one submitter handle and key per EVM chain plus the Paxeer submitter."
+severity   = "note"
 
 [observation.4.12.2]
 task       = "4.12"
 file       = "spec/paxeer-x-bringup/spec.kvx"
 symbol     = "task.4.12"
-observed   = "cg spec start 4.12 exited 1 on the unmet requires 2.2."
-assumption = "The status line was set to in_progress by hand for the build side, as the brief allows."
+observed   = "cg spec start 4.12 exited 1 on the unmet requires 2.2, and cg spec implemented 4.12 made no change within 60 seconds (timeout exit 124)."
+assumption = "Both status lines (in_progress, then implemented) were set by hand for the build side, as the brief allows."
 severity   = "note"
+
+[observation.4.12.3]
+task       = "4.12"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_bridge"
+observed   = "rev 3d5d614c3; BRINGUP_HOSTS_FILE=<host map> timeout 20m tools/bringup/check-live.sh bridge exited 2 (log .logs/verify.log): PAXEER_BRIDGE_RECORDS_DIR is unset, since no vault, program or relayer app is deployed yet."
+assumption = "The deploy side runs the handoff and reruns the gate with the deployment records directory exported."
+severity   = "blocker"
+
+[observation.4.12.4]
+task       = "4.12"
+file       = "interop/crates/layerx-bridge-relayer/src/cosign.rs"
+symbol     = "CosignDirectory"
+observed   = "Every configured vault verifies 3 of 5 attestor signatures, while one relayer holds one attestor key and reads the others from its cosign directory; the spec fixes no operator or transport for the other four attestors' signatures."
+assumption = "The owner rules who runs attestors 2 to 5 and how their signatures reach the relayer's cosign directory; until then no deposit reaches bridgeIn."
+severity   = "blocker"

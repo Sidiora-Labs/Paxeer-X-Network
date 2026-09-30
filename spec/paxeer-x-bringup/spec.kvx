@@ -859,7 +859,7 @@ reqs       = ["17.1"]
 
 [task.4.12]
 title      = "Deploy the bridge and run the relayer with its remote signer as a Fly app"
-status     = "in_progress"
+status     = "implemented"
 wave       = 4
 requires   = ["2.2"]
 blocked_on = "per EVM chain the owner multisig address, RPC URL, funded deployer key and explorer verification key; the five bridge attestor secp256k1 addresses and threshold; per-asset caps; the Solana publisher and funded owner keypairs; and a governance proposer key with deposit on chain 125"
