@@ -349,3 +349,12 @@ command   = "timeout 30m make layerxd platform-test-node"
 exit_code = 0
 log_path  = ".logs/verify.log"
 observed  = "Per the ruling the checkpoint-emptiness proxy after the reset is replaced by proof that the checkpoint directory object was replaced and that the admission journal, which held generation-1 admissions, is back to its 32-byte superblock; the node test passes the custody credit, DID listing, SEND, reset and generation-2 checks at the first run."
+
+[observation.1.2.1]
+task       = "1.2"
+revision   = "9296a0d2c plus the change committed with this entry"
+command    = "timeout 30m make layerxd test-daemon-finality-authority"
+exit_code  = 2
+log_path   = ".logs/verify.log"
+observed   = "layerxd and both test binaries build under -Werror and lxp_test_finality_json passes; finality-authority-chain.py then stops because tests/daemon/fixtures/finality-authority/rpc.json does not exist, and the worker environment could not reach the chain's JSON-RPC to capture it."
+assumption = "Only a capture from the live chain is acceptable, so none was written by hand; an operator runs 'LAYERX_NODE_PAXEER_RPC_URL=http://127.0.0.1:<port> python3 tests/daemon/finality-authority-chain.py --capture' on a synced node, commits rpc.json and reruns the gate; the task stays in_progress."

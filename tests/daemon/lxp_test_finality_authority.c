@@ -2,6 +2,7 @@
 #include "lxp_daemon_finality_authority.h"
 #include "../../cmd/layerx-guarantor/producer.h"
 #include "layerx/lxp_crypto.h"
+#include "layerx/lxp_paxeer.h"
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -259,6 +260,26 @@ int main(int argc, char **argv)
     lxp_daemon_finality_authority authority;
     lxp_daemon_settlement_registration_evidence original;
     int failed = 0;
+    if (argc == 2 && strcmp(argv[1], "bind") == 0) {
+        lxp_daemon_finality_authority unbound;
+        lxp_result status = lxp_finality_authority_bind(&authority, &store);
+        if (status != LXP_OK) {
+            (void)fprintf(stderr, "finality authority bind refused: %d\n", (int)status);
+            return 3;
+        }
+        (void)memset(&unbound, 0, sizeof(unbound));
+        if (authority.store != &store || authority.threshold == 0U || authority.rpc_port == 0U ||
+            authority.finalized_exists != (authority.finalized_batch != 0U) ||
+            (authority.finalized_exists && authority.finalized_guarantor_count < authority.threshold) ||
+            lxp_ct_memcmp(authority.settlement_contract, lxp_paxeer_anchor_address, 20U) != 0 ||
+            certificate.attestation_count != 0U ||
+            lxp_finality_authority_verify(&authority, &certificate, &bonded_set, &requirements, &registration) != LXP_ERR_ATTESTATION_THRESHOLD ||
+            lxp_finality_authority_verify(&unbound, &certificate, &bonded_set, &requirements, &registration) != LXP_ERR_NON_CANONICAL) FAIL();
+        (void)printf("{\"chain_id\":%" PRIu64 ",\"threshold\":%" PRIu32 ",\"finalized_exists\":%s,\"finalized_batch\":%" PRIu64 ",\"finalized_guarantors\":%zu}\n",
+            authority.paxeer_chain_id, authority.threshold, authority.finalized_exists ? "true" : "false",
+            authority.finalized_batch, authority.finalized_guarantor_count);
+        return 0;
+    }
     if (log_bootstrap() != 0 || fixture(&authority) != 0) FAIL();
     if (argc == 2 && strcmp(argv[1], "prepare") == 0) { prepare(); return 0; }
     if (argc == 3 && strcmp(argv[1], "prepare") == 0) {
