@@ -623,7 +623,7 @@ reqs       = ["10.4"]
 
 [task.3.6]
 title      = "Bring agentd in full mode and the MCP server live in the kernel machine with a client"
-status     = "pending"
+status     = "in_progress"
 wave       = 3
 requires   = ["3.5", "2.6"]
 do_1       = "Make platform/hosted/human/material.py write the agent inputs of one full-mode daemon: LAYERX_AGENT_MODE full, which serves the human-owner listener, the program listener and the MCP binding in one process, LAYERX_AGENT_PROGRAM_PROBE_ID the reference escrow program task 2.6 deploys, the LAYERX_AGENT_MCP_* inputs with the binding root /data/layerx/mcp, and both authority endpoints at the receipt authority in the same machine; run layerx-runtime-clock -- layerx-agentd under docker/kernel/init.sh with the LAYERX_AGENT_HUMAN_* set at the node LNI and the human authority, bearer and session material generated inside the machine under /data/human-state/agent, and the agentd boundary's socat mTLS surface on [::]:9454 fronting the full-mode program listener inside the machine; add every new [env] name of human/wallet/deploy/human.toml to human/wallet/deploy/env with one line each."

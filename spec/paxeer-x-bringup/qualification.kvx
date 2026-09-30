@@ -745,3 +745,35 @@ symbol     = "check_ci"
 observed   = "cg spec implemented 4.13 exited 75 with the graph database busy and symbol check_ci not defined in the graph; both fly.toml files already carry the real app names and the controller's env by name, so they needed no change."
 assumption = "Shell functions are not graph symbols, so the status line was set to implemented by hand; the controller's three secrets are set by name through flyctl secrets import, never in the toml."
 severity   = "note"
+
+[observation.3.6.1]
+task       = "3.6"
+file       = "agent/crates/layerx-agentd/src/enrolment.rs, agent/crates/layerx-mcp/src/bin/layerx-mcp.rs"
+symbol     = "BindingPublisher::document, mcp_enrol"
+observed   = "The full-mode daemon publishes binding.json with the twelve base keys only, while the layerx-mcp binary refuses a binding without a listener section (the binding document declares no protocol socket), and no code outside the task's touches writes that section."
+assumption = "Not guessed: either mcp-enrol.sh writes a second document for layerx-mcp that adds listener (and web) beside the daemon's, or the daemon's publisher gains listener inputs in agent/crates/layerx-agentd, which is outside this task's touches; owner or manager ruling needed."
+severity   = "blocker"
+
+[observation.3.6.2]
+task       = "3.6"
+file       = "agent/crates/layerx-mcp/src/binding.rs, platform/cli/src/mcp.rs"
+symbol     = "Binding::attach_web, WebPayer"
+observed   = "A session carrying the write:web scopes opens only with a web section and an attached WebAuthority; neither layerx-mcp nor layerx mcp serve calls attach_web and the tree has no production WebPayer, so tools/list can never list the web tools that req 11.3 requires."
+assumption = "Which account signs the 402LXP grants and sends, which task implements the production payer and attaches it, and the web section values (sidecar endpoint, network, sequencer public key, approval threshold) are not fixed by the spec or the tree."
+severity   = "blocker"
+
+[observation.3.6.3]
+task       = "3.6"
+file       = "docker/kernel/init.sh"
+symbol     = "mcp_enrol"
+observed   = "docker/kernel/init.sh does not exist on the feature branch; task 1.5 writes it and its process supervision interface on a parallel build lane, so the agentd, socat and layerx-mcp lines of do_1 and do_2 have no supervisor to join."
+assumption = "Build 3.6's init lines on top of task 1.5's merged init rather than writing a second init."
+severity   = "blocker"
+
+[observation.3.6.4]
+task       = "3.6"
+file       = "platform/hosted/human/material.py"
+symbol     = "mcp_enrolment"
+observed   = "The daemon's full-mode MCP enrolment requires LAYERX_AGENT_MCP_AGENT_DID (resolved through the human authority), SCOPES, ACTIVITY_TYPES, LIMIT_*, EXPIRY_SEQUENCE, CORE_SEQUENCE, POLICY_VERSION, OPENING_CLIENT and PEER_UID; the spec fixes only the binding root /data/layerx/mcp."
+assumption = "Which agent DID and tenant the MCP session binds, its scopes, activity types, limit and expiry need a ruling before material.py can write them without a placeholder."
+severity   = "blocker"

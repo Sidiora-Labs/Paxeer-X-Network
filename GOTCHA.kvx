@@ -1253,3 +1253,15 @@ area    = "ci"
 symptom = "The runner canary dispatched while CI_LINUX_RUNNER is unset runs on a hosted runner and fails at its lld step, and the API reports an empty runner name for that job."
 cause   = "The routing expression falls back to the hosted image, which lacks ld.lld, and completed hosted jobs carry no runnerName in the jobs listing."
 do      = "Read a hosted canary failure as the variable being unset, not as a runner image fault; judge the Fly runner only from a run whose job names a fly- runner."
+
+[gotcha.206]
+area    = "spec-tooling"
+symptom = "cg spec start on a build-side lane exits 1 with unmet requires and leaves the task pending."
+cause   = "start checks that every required task is done, and build-side lanes are cut before their prerequisites land."
+do      = "Set the status line to in_progress by hand, never with --force, and delete spec/<feature>/spec.kvx.lock."
+
+[gotcha.207]
+area    = "agent"
+symptom = "layerx-mcp exits with the binding document declares no protocol socket against the binding the full-mode daemon published."
+cause   = "The daemon's binding publisher writes only the base keys, while the binary requires a listener section and a web-scoped session also requires a web section plus an attached web payer that no served path attaches."
+do      = "Plan the listener and web sections and the production web payer before promising an MCP socket or the web tools; the stdio CLI ignores listener but still refuses web scopes."
