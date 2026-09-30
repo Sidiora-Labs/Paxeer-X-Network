@@ -773,3 +773,35 @@ symbol = "check_human_session"
 observed = "The verify_cmd ran once and exited 1: the harness tools/wallet/check-live.test.sh passed, and the human-session gate refused with exit 2 because CHECK_LIVE_HUMAN_ASSERTION, CHECK_LIVE_HUMAN_ASSET and CHECK_LIVE_HUMAN_DESTINATION are unset and api-hull.paxeer.network is not yet served by the kernel app of tasks 3.5 and 3.6; log .logs/verify.log."
 assumption = "A live plan needs a funded, provisioned test identity's wallet assertion, the kernel's native asset id and a destination account, which the tree cannot fix, and the golden body's fixture asset and past deadline are replaced at run time; the owner supplies the three inputs and the deploy fleet runs the PWA redeploy of the handoff before the gate is rerun."
 severity = "high"
+
+[observation.1.7.1]
+task       = "1.7"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_paxeer_boundary"
+observed   = "timeout 10m tools/bringup/check-live.sh paxeer-boundary exited 1 at 3df583333 plus this task's change (log .logs/verify.log): the live kernel machine runs no layerx-paxeer-boundary process and no hop, so count=0 and no hop names."
+assumption = "The kernel image and deploy of task 1.5, the two RPC names in the kernel env and the two certificate issues are deploy steps in the handoff; the gate reruns once they have run."
+severity   = "blocker"
+
+[observation.1.7.2]
+task       = "1.7"
+file       = "docker/kernel/init.sh"
+symbol     = "start_paxeer"
+observed   = "The file does not exist on the feature branch; tasks 1.5 and 2.1 create or edit it in parallel lanes; cg spec start 1.7 refused on the unmet require 1.5 and cg spec implemented 1.7 exited 75 (graph busy, shell symbol not in the graph), so both status changes were made by hand."
+assumption = "The merge takes the union of the three lanes' init.sh; this lane adds run_as, tls_ready, supervise and start_paxeer, and the kernel image must carry layerx-paxeer-boundary, socat, curl, ca-certificates and setpriv."
+severity   = "warning"
+
+[observation.1.7.3]
+task       = "1.7"
+file       = "human/wallet/deploy/human.toml"
+symbol     = "LAYERX_KERNEL_PAXEER_RPC_NAMES"
+observed   = "The two serving RPC names the boundaries front are not fixed by the spec; init.sh reads them from LAYERX_KERNEL_PAXEER_RPC_NAMES and exits 1 unless it holds two different public RPC names."
+assumption = "They are chosen at deploy time as two serve names of search-front.sh names that pass rpc-nodes, and set in human.toml [env] and human/wallet/deploy/env, which are task 1.5's files."
+severity   = "warning"
+
+[gate.1.7.1]
+task      = "1.7"
+revision  = "3df583333 plus this task's change"
+command   = "curl -sS -H 'Host: 127.0.0.1:18546' -d eth_chainId https://apiN.mainnet-beta.paxeer.network/ for N in 1..16"
+exit_code = 0
+log_path  = "none (read-only probe, no log kept)"
+observed  = "All sixteen names answered result 0x7d with HTTP 200 for a loopback Host header, so do_2 needs no vhost change; tools/bringup/check-live.test.sh passed all cases (.logs/test.log), format step was bash -n and shellcheck."

@@ -797,6 +797,21 @@ expect check_live_edge_failing "$work/hosts-good.env" 1 edge -- \
 	"check-live: 5 check(s) failed"
 unset CHECK_LIVE_TEST_DNS CHECK_LIVE_TEST_DIFFER
 
+# The paxeer-boundary case reads the kernel machine through the flyctl
+# stand-in, which runs no layerx-paxeer-boundary process and no hop, and the
+# fixture repo carries no search-front.sh to list the serving names.
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_paxeer_boundary_failing "$work/hosts-good.env" 1 paxeer-boundary -- \
+	"fail boundaries app=$kernel count=0" \
+	"fail hops names=unreadable" \
+	"check-live: 2 check(s) failed"
+if [ "$(grep -c "^$kernel [a-z]* ssh console " "$CHECK_LIVE_TEST_CALLS")" -eq 1 ] && grep -qF "$kernel app ssh console sh -c 'sh -s'" "$CHECK_LIVE_TEST_CALLS" && grep -q "^CA='-----BEGIN CERTIFICATE-----" "$CHECK_LIVE_TEST_STDIN"; then
+	echo "ok   check_live_paxeer_boundary_reads_the_kernel_machine_once"
+else
+	echo "FAIL check_live_paxeer_boundary_reads_the_kernel_machine_once: want one sh -s call on $kernel carrying the internal CA"
+	cat "$CHECK_LIVE_TEST_CALLS"
+	failures=$((failures + 1))
+fi
+
 # The fleet script shares the host map and the ssh helpers, so its own test
 # runs as the last case, with this test's stand-ins off the PATH.
 status=0
