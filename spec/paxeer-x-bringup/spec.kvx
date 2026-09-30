@@ -1062,7 +1062,7 @@ do_2 = "Confirm tools/bringup/docs-names.sh still derives its allowed list from 
 
 [task.0.9]
 title = "Serve every public name on the edge host through the wildcard, proxied to its Fly app, with no per-name DNS record"
-status = "implemented"
+status = "in_progress"
 wave = 0
 requires = ["0.5"]
 verify_cmd = "timeout 10m tools/bringup/check-live.sh edge"
@@ -1073,6 +1073,10 @@ reqs = ["1.1", "1.3"]
 do_1 = "Write tools/bringup/edge.sh with add <name> <app> [<port> stream] and remove <name>, run on the edge host where the *.paxeer.network wildcard lands: add renders one nginx site per public name under /etc/nginx/sites-available named after the name, with the certbot certificate for the name issued by edge.sh over HTTP-01 through the wildcard when absent and renewed by certbot's timer, proxy_pass https://<app>.fly.dev with proxy_set_header Host <app>.fly.dev, X-Forwarded-Host the public name, X-Forwarded-For and X-Forwarded-Proto set, the Upgrade and Connection headers passed for websockets, proxy_ssl_server_name on, proxy_ssl_verify on against the system roots and a resolver with a short validity so the fly.dev address may change, every other request and response header unchanged; it enables the site, runs nginx -t and reloads, is idempotent, changes no site it did not render (the sixteen RPC names stay on their nodes, paxscan.io on its proxy host, node.hyperpaxeer.com on its existing site until task 4.21 registers it), and prints one line per name without an address."
 do_2 = "Give edge.sh the stream mode the mTLS names need: machine.paxeer.network on 9454 and index.paxeer.network on 443 pass through unchanged to the app's dedicated IPv4 on the same port through an nginx stream block keyed by SNI with ssl_preread, where a port shared with HTTP names moves those names' server blocks behind the stream block on a loopback port the first time a stream name is added on it, so client certificates reach the app untouched; remove deletes the site, and the stream entry when one exists, and reloads."
 do_3 = "Add the edge subcommand: every registered name resolves to the edge host, answers over TLS with a valid certificate for the name, and reaches its app (the app's fly.dev name answers the same readiness route with the same body), stream names present the app's own certificate through the edge, and no rendered site names a validator host; add fixture cases to tools/bringup/check-live.test.sh and a render test tools/bringup/edge.test.sh comparing the rendered site of one HTTP name and one stream name against expected text."
+revision = "3df583333c69b96d90174806635ae6be55d3f094"
+command = "BRINGUP_HOSTS_FILE=/root/lx-ops/bringup-2026-09-29/hosts.env timeout 10m tools/bringup/check-live.sh edge"
+exit_code = 0
+log_path = ".logs/0.9-edge-live.log"
 
 [task.0.10]
 title = "Retire app.paxeer.network: the human web origin is https://paxportwallet.com everywhere"
