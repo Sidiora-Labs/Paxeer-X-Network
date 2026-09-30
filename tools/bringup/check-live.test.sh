@@ -797,6 +797,99 @@ expect check_live_edge_failing "$work/hosts-good.env" 1 edge -- \
 	"check-live: 5 check(s) failed"
 unset CHECK_LIVE_TEST_DNS CHECK_LIVE_TEST_DIFFER
 
+# A local human service stand-in on a loopback port: under good/ it answers
+# the wallet checks, /readyz ready and a registration ceremony naming
+# paxportwallet.com as rp.id; under bad/ /readyz is 503 not ready and the
+# ceremony names another relying party. It replaces the hpx responder.
+kill "$responder_pid" 2>/dev/null || true
+wait "$responder_pid" 2>/dev/null || true
+cat >"$work/human.py" <<'PY'
+import base64
+import http.server
+import json
+import sys
+
+port_file = sys.argv[1]
+
+
+class Human(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
+
+    def answer(self, code, doc, headers=()):
+        body = json.dumps(doc).encode()
+        self.send_response(code)
+        self.send_header("content-type", "application/json")
+        self.send_header("content-length", str(len(body)))
+        for name, value in headers:
+            self.send_header(name, value)
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_OPTIONS(self):
+        self.answer(204, {}, [("access-control-allow-origin", self.headers.get("origin", ""))])
+
+    def do_GET(self):
+        good = self.path.startswith("/good/")
+        if self.path.endswith("/livez"):
+            self.answer(200, {"ok": True, "result": {"live": True, "service": "layerx-human-service"}, "trace": "trc_fixture"})
+        elif self.path.endswith("/readyz"):
+            self.answer(200 if good else 503, {"ok": True, "result": {"ready": good}, "trace": "trc_fixture"})
+        else:
+            self.answer(404, {"ok": False})
+
+    def do_POST(self):
+        good = self.path.startswith("/good/")
+        self.rfile.read(int(self.headers.get("content-length", "0")))
+        if self.path.endswith("/v1/intents/plan"):
+            self.answer(401, {"ok": False, "error": {"code": "unauthenticated"}, "trace": "trc_fixture"})
+        elif self.path.endswith("/v1/accounts") and self.headers.get("idempotency-key"):
+            self.answer(201, {"ok": True, "result": {"account_id": "act_fixture"}, "trace": "trc_fixture"})
+        elif self.path.endswith("/v1/passkeys/registrations"):
+            rp = "paxportwallet.com" if good else "app.paxeer.network"
+            ceremony = base64.urlsafe_b64encode(json.dumps({"rp": {"id": rp, "name": "LayerX Human"}, "challenge": "Zml4dHVyZQ"}).encode()).decode().rstrip("=")
+            self.answer(201, {"ok": True, "result": {"registration_id": "reg_fixture", "ceremony": ceremony}, "trace": "trc_fixture"})
+        else:
+            self.answer(404, {"ok": False})
+
+
+server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Human)
+with open(port_file, "w") as handle:
+    handle.write(str(server.server_address[1]))
+server.serve_forever()
+PY
+rm -f "$work/port"
+python3 "$work/human.py" "$work/port" 2>/dev/null &
+responder_pid=$!
+for _ in $(seq 50); do
+	[ -s "$work/port" ] && break
+	sleep 0.1
+done
+if [ ! -s "$work/port" ]; then
+	echo "check-live.test: the human responder did not start" >&2
+	exit 2
+fi
+origin="http://127.0.0.1:$(cat "$work/port")"
+
+CHECK_LIVE_HUMAN_BASE="$origin/good" CHECK_LIVE_HUMAN_PROBE_EMAIL=probe@example.com expect check_live_human_passing "$work/hosts-good.env" 0 human -- \
+	"pass live http=200 live=true service=layerx-human-service" \
+	"pass preflight http=204 allow-origin=https://paxportwallet.com" \
+	"pass plan http=401 code=unauthenticated trace=present" \
+	"pass readyz http=200 ready=true" \
+	"pass rp-id http=201 rp.id=paxportwallet.com" \
+	"check-live: all checks passed"
+
+CHECK_LIVE_HUMAN_BASE="$origin/bad" CHECK_LIVE_HUMAN_PROBE_EMAIL=probe@example.com expect check_live_human_failing "$work/hosts-good.env" 1 human -- \
+	"pass live http=200" \
+	"fail readyz http=503" \
+	"fail rp-id http=201 rp.id=app.paxeer.network want=paxportwallet.com" \
+	"check-live: 2 check(s) failed"
+
+CHECK_LIVE_HUMAN_BASE="$origin/good" expect check_live_human_no_probe_email "$work/hosts-good.env" 1 human -- \
+	"pass readyz http=200 ready=true" \
+	"fail rp-id email=unset" \
+	"check-live: 1 check(s) failed"
+
 # The fleet script shares the host map and the ssh helpers, so its own test
 # runs as the last case, with this test's stand-ins off the PATH.
 status=0

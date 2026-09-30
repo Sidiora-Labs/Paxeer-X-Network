@@ -609,7 +609,7 @@ reqs       = ["10.5"]
 
 [task.3.5]
 title      = "Run the human graph inside the kernel machine and serve it at api-hull.paxeer.network"
-status     = "pending"
+status     = "in_progress"
 wave       = 3
 requires   = ["3.3", "3.4", "2.1", "2.2", "1.7", "0.9"]
 do_1       = "Run identity, security, movement, components and the onboarding roles under docker/kernel/init.sh through docker/human-service/entrypoint.sh with the README's uid split (4020, 4021, 4026), sockets under /run/layerx/human, materials generated inside the machine by platform/hosted/human/material.py under /data/human-state with https://paxportwallet.com as its web origin argument, so the passkey relying party id is paxportwallet.com, the movement provider at the two Paxeer boundaries with minimum agreement 2, the components at the router's px_ reads and the custody precompile, and the five Fly attestors at their apps' .internal names at protocol 3 with threshold three."

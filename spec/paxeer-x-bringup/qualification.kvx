@@ -745,3 +745,27 @@ symbol     = "check_ci"
 observed   = "cg spec implemented 4.13 exited 75 with the graph database busy and symbol check_ci not defined in the graph; both fly.toml files already carry the real app names and the controller's env by name, so they needed no change."
 assumption = "Shell functions are not graph symbols, so the status line was set to implemented by hand; the controller's three secrets are set by name through flyctl secrets import, never in the toml."
 severity   = "note"
+
+[observation.3.5.1]
+task       = "3.5"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_human"
+observed   = "timeout 10m tools/bringup/check-live.sh human exited 1 at 3df583333 plus this task's change (log .logs/verify.log): api-hull.paxeer.network answers with a certificate that does not carry the name (curl exit 60) on live, preflight, plan and readyz, and rp-id reports email=unset."
+assumption = "The name is not yet registered on the edge and the kernel app does not yet run the human graph; the gate reruns after the ordered deploy steps of the owner handoff."
+severity   = "blocker"
+
+[observation.3.5.2]
+task       = "3.5"
+file       = "docker/kernel/init.sh, human/wallet/deploy/human.toml"
+symbol     = "-"
+observed   = "docker/kernel/init.sh does not exist at the base revision: task 1.5, which writes it and makes human.toml the kernel app's toml, is pending, and the movement provider's two Paxeer origins are task 1.7's, also pending; cg spec start refused with unmet requires 2.1 2.2 1.7, so the status was set by hand."
+assumption = "Writing the human roles into init.sh needs 1.5's supervisor contract (how a process, its uid, its restart and its certificate gate are declared) and 1.7's boundary endpoints; neither is fixed by the spec or the tree, so do_1 and do_2 wait for them and the task stays in_progress."
+severity   = "blocker"
+
+[observation.3.5.3]
+task       = "3.5"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_human"
+observed   = "The passkey registration options need an account: account.create requires an email and display name, and the spec names no probe identity, so the rp-id check reads CHECK_LIVE_HUMAN_PROBE_EMAIL and fails with email=unset without it."
+assumption = "The owner names the probe mailbox; the probe derives its idempotency key from it so every run converges on one account."
+severity   = "blocker"
