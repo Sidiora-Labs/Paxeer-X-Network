@@ -6,7 +6,7 @@ receipt-backed test payments
 (`platform/hosted/dashboard/src/main.rs`;
 `platform/hosted/dashboard/src/model.rs`). The crate is
 `layerx-platform-dashboard`. A companion Next.js process,
-`layerx-dashboard-web`, is the browser UI on the same Ingress.
+`layerx-dashboard-web`, is the browser UI, served as its own Fly app.
 
 It does not accept writes. Every path except `GET /healthz` requires a
 developer session. Protocol facts that the dashboard renders carry the
@@ -22,17 +22,30 @@ Webhook registration and delivery live on
 
 ## Deployment
 
-The checked-in Ingress `layerx-developer` host is
-`dev.paxeer.network` (`platform/hosted/webhooks/deployment.yaml`).
-Path `/v1/dashboard` goes to the dashboard API over HTTPS; path `/` goes
-to the web UI. Body size on that Ingress is `512k`. On the bare-host
-deployment the edge serves the web UI at `dev.paxeer.network`, the
-dashboard API at `api-dev.paxeer.network` and webhooks at
-`hooks.paxeer.network`.
+Three Fly apps serve the developer surface, each with at least two
+machines across `ams` and `fra`:
+
+- `paxeer-dashboard-web` (`platform/hosted/dashboard/web/fly.toml`,
+  image `docker/platform-dashboard-web`) is the browser UI on port
+  `3000`. It rewrites `/v1/dashboard/*` to
+  `http://paxeer-dashboard.internal:9445`
+  (`platform/hosted/dashboard/web/next.config.ts`).
+- `paxeer-dashboard` (`platform/hosted/dashboard/fly.toml`, image
+  `docker/platform-dashboard`) is the dashboard API. It listens in plain
+  HTTP on `[::]:9445` (`LAYERX_DASHBOARD_LISTENER=plain`). It reads
+  webhook state from `paxeer-internal-redis` and the gateway request log
+  from `paxeer-shared-endpoint-redis`.
+- `paxeer-webhooks` (`platform/hosted/webhooks/fly.toml`) serves
+  webhooks; see [Hosted webhooks](HostedWebhooks.md).
+
+The edge proxies each name through the wildcard name with a certbot
+certificate: `dev.paxeer.network` to `paxeer-dashboard-web`,
+`api-dev.paxeer.network` to `paxeer-dashboard` and
+`hooks.paxeer.network` to `paxeer-webhooks`.
 
 The API listens on `LAYERX_DASHBOARD_LISTEN`, default
 `0.0.0.0:9445` (`platform/hosted/dashboard/src/main.rs`). At most 256
-connections are live. Inbound TLS uses
+connections are live. The `tls` listener uses
 `LAYERX_DASHBOARD_TLS_CERT_DER` and `LAYERX_DASHBOARD_TLS_KEY_DER`.
 
 ---

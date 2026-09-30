@@ -2090,6 +2090,122 @@ print(len(ms), len(started), len(data))
 	finish "$failures"
 }
 
+# check_developers: the three developer apps each run started machines in ams
+# and fra, per process group for the webhooks app; hooks, api-dev and dev
+# answer ready over the edge; a subscription for CHECK_LIVE_DEVELOPERS_RECEIVER
+# registers under the session of CHECK_LIVE_DEVELOPERS_TOKEN_FILE and lists
+# back; and one producer event is delivered to it within
+# CHECK_LIVE_DEVELOPERS_DELIVERY_ATTEMPTS reads five seconds apart. The token
+# travels only in a curl config file and is never printed. One line per check.
+check_developers() {
+	local hooks=https://hooks.paxeer.network api=https://api-dev.paxeer.network web=https://dev.paxeer.network
+	local token_file="${CHECK_LIVE_DEVELOPERS_TOKEN_FILE:-}" receiver="${CHECK_LIVE_DEVELOPERS_RECEIVER:-}"
+	local attempts="${CHECK_LIVE_DEVELOPERS_DELIVERY_ATTEMPTS:-36}"
+	local toml app groups answer group started regions url want code body w endpoint="" n failures=0
+	if ! command -v flyctl >/dev/null 2>&1; then
+		echo "check-live: flyctl is required" >&2
+		exit 2
+	fi
+	if [ -z "$token_file" ] || [ ! -r "$token_file" ]; then
+		echo "check-live: CHECK_LIVE_DEVELOPERS_TOKEN_FILE does not name a readable file" >&2
+		exit 2
+	fi
+	if [[ "$receiver" != https://?* ]]; then
+		echo "check-live: CHECK_LIVE_DEVELOPERS_RECEIVER is not an https URL" >&2
+		exit 2
+	fi
+	if ! [[ "$attempts" =~ ^[1-9][0-9]{0,2}$ ]]; then
+		echo "check-live: CHECK_LIVE_DEVELOPERS_DELIVERY_ATTEMPTS is not a count from 1 to 999" >&2
+		exit 2
+	fi
+
+	for toml in platform/hosted/webhooks/fly.toml platform/hosted/dashboard/fly.toml platform/hosted/dashboard/web/fly.toml; do
+		if ! app="$(fly_app "$toml")"; then
+			echo "fail machines toml=$toml status=absent"
+			failures=$((failures + 1))
+			continue
+		fi
+		groups=app
+		[ "$toml" != platform/hosted/webhooks/fly.toml ] || groups="public ingress"
+		# shellcheck disable=SC2086 # groups is a word list
+		answer="$(timeout "$timeout" flyctl machines list --app "$app" --json 2>/dev/null | python3 -c '
+import json, sys
+ms = json.load(sys.stdin) or []
+for group in sys.argv[1:]:
+    regions = [m.get("region") or "-" for m in ms if m.get("state") == "started" and ((m.get("config") or {}).get("metadata") or {}).get("fly_process_group", "app") == group]
+    print(group, len(regions), ",".join(sorted(set(regions))) or "-")
+' $groups 2>/dev/null)" || answer=""
+		for group in $groups; do
+			read -r started regions <<<"$(sed -n "s/^$group //p" <<<"$answer" | head -n 1)"
+			if [ "${started:-0}" -ge 2 ] && [[ ",$regions," == *,ams,* ]] && [[ ",$regions," == *,fra,* ]]; then
+				echo "pass machines app=$app group=$group started=$started regions=$regions"
+			else
+				echo "fail machines app=$app group=$group started=${started:-none} regions=${regions:-none}"
+				failures=$((failures + 1))
+			fi
+		done
+	done
+
+	w="$(mktemp -d)"
+	# shellcheck disable=SC2064
+	trap "rm -rf '$w'" EXIT
+	for url in "$hooks/healthz" "$api/healthz" "$web/"; do
+		code="$(curl -sS --max-time "$timeout" --output "$w/body" --write-out '%{http_code}' "$url" 2>/dev/null)" || code="${code:-none}"
+		body="$(cat "$w/body" 2>/dev/null || true)"
+		want=200
+		if [ "$code" = "$want" ] && { [ "$url" = "$web/" ] || [[ "$body" == *'"ready":true'* ]]; }; then
+			echo "pass readiness url=$url http=200"
+		else
+			echo "fail readiness url=$url http=$code"
+			failures=$((failures + 1))
+		fi
+	done
+
+	(
+		umask 077
+		printf 'header = "Authorization: Bearer %s"\n' "$(tr -d '\r\n' <"$token_file")" >"$w/auth"
+	)
+	python3 -c 'import json, sys; print(json.dumps({"url": sys.argv[1], "kinds": ["journey", "payment", "approval", "program"], "minimum_verification": "unverified"}))' "$receiver" >"$w/register"
+	code="$(curl -sS --max-time "$timeout" --config "$w/auth" --header 'Content-Type: application/json' --header 'Idempotency-Key: check-live-developers' \
+		--data-binary "@$w/register" --output "$w/body" --write-out '%{http_code}' "$hooks/v1/webhooks/endpoints" 2>/dev/null)" || code="${code:-none}"
+	[ "$code" != 201 ] || endpoint="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["endpoint"])' "$w/body" 2>/dev/null)" || endpoint=""
+	if [ -z "$endpoint" ]; then
+		echo "fail subscription url=$hooks/v1/webhooks/endpoints http=$code"
+		failures=$((failures + 1))
+		finish "$failures"
+	fi
+	code="$(curl -sS --max-time "$timeout" --config "$w/auth" --output "$w/body" --write-out '%{http_code}' "$hooks/v1/webhooks/endpoints" 2>/dev/null)" || code="${code:-none}"
+	if [ "$code" = 200 ] && python3 -c 'import json, sys; sys.exit(0 if any(e.get("endpoint") == sys.argv[2] for e in json.load(open(sys.argv[1]))) else 1)' "$w/body" "$endpoint" 2>/dev/null; then
+		echo "pass subscription endpoint=$endpoint registered=201 listed=yes"
+	else
+		echo "fail subscription endpoint=$endpoint registered=201 listed=no http=$code"
+		failures=$((failures + 1))
+	fi
+
+	answer=""
+	for n in $(seq "$attempts"); do
+		[ "$n" -eq 1 ] || sleep 5
+		code="$(curl -sS --max-time "$timeout" --config "$w/auth" --output "$w/body" --write-out '%{http_code}' "$hooks/v1/webhooks/deliveries" 2>/dev/null)" || code="${code:-none}"
+		[ "$code" = 200 ] || continue
+		answer="$(python3 -c '
+import json, sys
+for d in json.load(open(sys.argv[1])):
+    if d.get("endpoint") == sys.argv[2] and (d.get("state") or {}).get("state") == "delivered":
+        print(d.get("kind", "-"), d.get("delivery", "-"))
+        break
+' "$w/body" "$endpoint" 2>/dev/null)" || answer=""
+		[ -z "$answer" ] || break
+	done
+	if [ -n "$answer" ]; then
+		read -r group n <<<"$answer"
+		echo "pass delivery endpoint=$endpoint kind=$group delivery=$n state=delivered"
+	else
+		echo "fail delivery endpoint=$endpoint state=none-delivered attempts=$attempts http=$code"
+		failures=$((failures + 1))
+	fi
+	finish "$failures"
+}
+
 mode="${1:-}"
 case "$mode" in
 -h | --help)
@@ -2109,6 +2225,7 @@ paxeer-boundary) ;;
 agent-public) ;;
 gas) ;;
 internal) ;;
+developers) ;;
 *)
 	usage >&2
 	exit 2

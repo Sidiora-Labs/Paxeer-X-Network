@@ -3,8 +3,14 @@ WORKDIR /src
 COPY . .
 RUN cargo build --manifest-path platform/Cargo.toml --locked --release -p layerx-platform-webhooks --bin layerx-webhooks
 
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim AS base
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libssl3 && rm -rf /var/lib/apt/lists/*
 COPY --from=build /src/platform/target/release/layerx-webhooks /usr/local/bin/layerx-webhooks
+
+FROM base AS fly
+COPY --chmod=0555 platform/hosted/webhooks/fly-init.sh /usr/local/bin/webhooks-fly-init
+ENTRYPOINT ["/usr/local/bin/webhooks-fly-init"]
+
+FROM base
 USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/layerx-webhooks"]

@@ -1055,3 +1055,43 @@ symbol     = "check_internal"
 observed   = "timeout 10m tools/bringup/check-live.sh internal exited 1 (log .logs/verify.log): the router's served chain ends at ISRG Root X1, but the internal and internal Redis apps do not exist yet, so the public-ip reads, the payments and programs pin reads and the five readiness routes from the kernel machine all fail."
 assumption = "The deploy side runs the handoff steps (build, volumes, Redis secrets, both deploys with no public IPs, the five internal certificates) once tasks 1.5, 2.2 and 3.5 are live, then reruns the gate; the human TLS listener port 9449 is the coordinator's ruling pending the design block."
 severity   = "external"
+
+[observation.4.5.1]
+task       = "4.5"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_developers"
+observed   = "timeout 10m tools/bringup/check-live.sh developers exited 2 (log .logs/verify.log): no developer session token file and no receiver URL exist yet, and the three developer apps are not deployed."
+assumption = "The deploy side runs the handoff steps, then reruns the gate with CHECK_LIVE_DEVELOPERS_TOKEN_FILE and CHECK_LIVE_DEVELOPERS_RECEIVER from the owner and one producer event caused for that developer."
+severity   = "external"
+
+[observation.4.5.2]
+task       = "4.5"
+file       = "docker/kernel/init.sh"
+symbol     = "human-entrypoint components"
+observed   = "The kernel init does not start the journey and approval producer process, so the JOURNEY, APPROVAL and WEBHOOKS producer groups of human.toml take effect only once the human graph task starts it, and its uid needs read access to the human-event-client identity on the volume."
+assumption = "The human graph task adds the process under the kernel init and grants that read."
+severity   = "warning"
+
+[observation.4.5.3]
+task       = "4.5"
+file       = "platform/hosted/webhooks/src/main.rs"
+symbol     = "LAYERX_WEBHOOKS_PUBLIC_CA_DER"
+observed   = "Outbound deliveries verify receivers against one public root DER, so a receiver whose chain ends at another root fails its deliveries; the public listener also serves the token-guarded internal routes."
+assumption = "The ISRG Root X1 DER is staged as the one root; a root bundle and a split of the internal routes off the public group belong to a webhooks code task."
+severity   = "warning"
+
+[observation.4.5.4]
+task       = "4.5"
+file       = "platform/hosted/webhooks/fly.toml"
+symbol     = "WEBHOOKS_AUTHORITY_TOKEN, WEBHOOKS_COMPONENT_TOKEN, WEBHOOKS_SEQUENCER_*"
+observed   = "The receipt authority, agent boundary and sequencer values for the webhooks caller come from the kernel app, whose paths for them are the same open custody question as task 2.2; the network id is an owner input."
+assumption = "The deploy side pipes them machine to machine from the paths the kernel task records; the ingress URL on port 443 without a port matches the registry lane's producer group."
+severity   = "external"
+
+[observation.4.5.5]
+task       = "4.5"
+file       = "tools/bringup/check-live.test.sh"
+symbol     = "ca_issue_every_service"
+observed   = "The new dashboard-client row of ca.sh raises the fixed service count of this case from 26 to 27; other lanes adding rows in the same wave change the same number."
+assumption = "The manager sets the count to the merged number of ca.sh rows on merge."
+severity   = "warning"

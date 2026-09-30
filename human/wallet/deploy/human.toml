@@ -20,10 +20,41 @@ kill_timeout = "60s"
   LAYERX_HUMAN_MAX_BODY_BYTES = "1048576"
   LAYERX_HUMAN_MAX_CONNECTIONS = "1024"
   LAYERX_HUMAN_IO_DEADLINE_SECONDS = "15"
+  LAYERX_EVENTS_JOURNEY_UPSTREAM_URL = "https://journeys.process.paxeer-internal.internal:9443"
+  LAYERX_EVENTS_JOURNEY_UPSTREAM_CA_DER = "/data/tls/human-event-client/ca.der"
+  LAYERX_EVENTS_JOURNEY_UPSTREAM_TOKEN_FILE = "/run/secrets/events-journey-token"
+  LAYERX_EVENTS_JOURNEY_UPSTREAM_CLIENT_IDENTITY_PKCS12 = "/data/tls/human-event-client/identity.p12"
+  LAYERX_EVENTS_JOURNEY_UPSTREAM_CLIENT_IDENTITY_PASSWORD_FILE = "/data/tls/human-event-client/password"
+  LAYERX_EVENTS_APPROVAL_UPSTREAM_URL = "https://approvals.process.paxeer-internal.internal:9443"
+  LAYERX_EVENTS_APPROVAL_UPSTREAM_CA_DER = "/data/tls/human-event-client/ca.der"
+  LAYERX_EVENTS_APPROVAL_UPSTREAM_TOKEN_FILE = "/run/secrets/events-approval-token"
+  LAYERX_EVENTS_APPROVAL_UPSTREAM_CLIENT_IDENTITY_PKCS12 = "/data/tls/human-event-client/identity.p12"
+  LAYERX_EVENTS_APPROVAL_UPSTREAM_CLIENT_IDENTITY_PASSWORD_FILE = "/data/tls/human-event-client/password"
+  LAYERX_EVENTS_WEBHOOKS_UPSTREAM_URL = "https://ingress.process.paxeer-webhooks.internal"
+  LAYERX_EVENTS_WEBHOOKS_UPSTREAM_CA_DER = "/data/tls/human-event-client/ca.der"
+  LAYERX_EVENTS_WEBHOOKS_UPSTREAM_TOKEN_FILE = "/run/secrets/events-webhooks-token"
+  LAYERX_EVENTS_WEBHOOKS_UPSTREAM_CLIENT_IDENTITY_PKCS12 = "/data/tls/human-event-client/identity.p12"
+  LAYERX_EVENTS_WEBHOOKS_UPSTREAM_CLIENT_IDENTITY_PASSWORD_FILE = "/data/tls/human-event-client/password"
 
 [[files]]
   guest_path = "/etc/layerx/trust/ca.crt"
   secret_name = "LAYERX_INTERNAL_CA_ROOT"
+
+# The journey and approval event producers of the human components: their
+# client identity and internal CA root are the human-event-client identity
+# tools/bringup/ca.sh issues on the volume; the producer tokens of the two event
+# sources and the webhooks source trigger token are Fly secrets.
+[[files]]
+  guest_path = "/run/secrets/events-journey-token"
+  secret_name = "HUMAN_EVENTS_JOURNEY_TOKEN"
+
+[[files]]
+  guest_path = "/run/secrets/events-approval-token"
+  secret_name = "HUMAN_EVENTS_APPROVAL_TOKEN"
+
+[[files]]
+  guest_path = "/run/secrets/events-webhooks-token"
+  secret_name = "HUMAN_EVENTS_WEBHOOKS_TOKEN"
 
 [[mounts]]
   source = "kernel_data"
