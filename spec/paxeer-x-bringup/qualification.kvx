@@ -745,3 +745,27 @@ symbol     = "check_ci"
 observed   = "cg spec implemented 4.13 exited 75 with the graph database busy and symbol check_ci not defined in the graph; both fly.toml files already carry the real app names and the controller's env by name, so they needed no change."
 assumption = "Shell functions are not graph symbols, so the status line was set to implemented by hand; the controller's three secrets are set by name through flyctl secrets import, never in the toml."
 severity   = "note"
+
+[observation.2.1.1]
+task       = "2.1"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_kernel_boundaries"
+observed   = "timeout 10m tools/bringup/check-live.sh kernel-boundaries exited 1 at 3df583333 plus this task's change (log .logs/verify.log): the kernel app exposes no boundary port as a service, and all four readiness requests from inside its machine answered http=000 because no boundary runs there yet."
+assumption = "The live upstream is missing until the kernel image, its init and the certificates of the three boundaries are deployed; the fixture cases of check-live.test.sh pass."
+severity   = "blocker"
+
+[observation.2.1.2]
+task       = "2.1"
+file       = "docker/kernel/init.sh"
+symbol     = "check_kernel_boundaries"
+observed   = "docker/kernel/init.sh does not exist on the feature branch because task 1.5, which writes it with its supervision loop, is still pending, and neither the spec nor the tree says where the bearer tokens, sequencer public key and human authority configuration that the three boundary commands read (program, replica, backend-admin, gateway, registry and webhooks component and authority tokens, tenant, principal, core clock horizon, principal policy and module registry) come from inside the kernel machine."
+assumption = "do_1 is not written; the task stays in_progress until the owner rules on the token custody and task 1.5 lands its init, instead of guessing either interface."
+severity   = "blocker"
+
+[observation.2.1.3]
+task       = "2.1"
+file       = "spec/paxeer-x-bringup/spec.kvx"
+symbol     = "task.2.1"
+observed   = "cg spec start 2.1 exited 1 with unmet requires 1.4, since tasks 1.4 and 1.5 are pending."
+assumption = "The status line was set to in_progress by hand to build the probe side against the spec, without forcing the tool."
+severity   = "note"

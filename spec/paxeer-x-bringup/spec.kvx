@@ -468,7 +468,7 @@ do_2 = "The gate is task 1.2's whole target: the recorded-fixture replay, the JS
 
 [task.2.1]
 title      = "Run the core boundary, the receipt authority and the agent boundary over TLS in the kernel machine"
-status     = "pending"
+status     = "in_progress"
 wave       = 2
 requires   = ["1.4", "0.5"]
 do_1       = "Run layerx-platform-core (9443 and its admin plane 9444), layerx-receipt-authority (9445, bound to the replica on loopback, the identity binding socket and the runtime clock) and layerx-agent-boundary (9446, bound to the LNI socket) under docker/kernel/init.sh from their platform/hosted definitions and docker/platform-* entrypoints, listening on [::] for the private network, each with its certificate issued through tools/bringup/ca.sh carrying the kernel app's .internal name."

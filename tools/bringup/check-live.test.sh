@@ -90,8 +90,9 @@ exit 97
 SH
 chmod +x "$work/bin/ssh"
 
-# A local flyctl stand-in: answers ssh console and secrets import for the
-# fixture apps (fx-*) only, records every call, and gives each app a secrets
+# A local flyctl stand-in: answers ssh console, secrets import and machines
+# list (from CHECK_LIVE_TEST_MACHINES) for the fixture apps (fx-*) only,
+# records every call, and gives each app a secrets
 # directory for /run/secrets and each process group of it a volume of its own
 # for /data, so every fixture machine keeps its own files. ssh console runs
 # its command on this box and records its stdin; secrets import wants
@@ -124,7 +125,7 @@ while [ "$#" -gt 0 ]; do
 		stage=1
 		shift
 		;;
-	--quiet) shift ;;
+	--quiet | --json) shift ;;
 	*) exit 98 ;;
 	esac
 done
@@ -152,6 +153,7 @@ case "$sub" in
 		printf '%s %s\n' "$app" "${line%%=*}" >>"$CHECK_LIVE_TEST_IMPORTS"
 	done
 	;;
+"machines list") cat "$CHECK_LIVE_TEST_MACHINES" ;;
 *) exit 96 ;;
 esac
 SH
@@ -159,6 +161,9 @@ chmod +x "$work/bin/flyctl"
 
 # A local curl stand-in: answers eth_blockNumber for the public names, at the
 # fixed head minus the lag CHECK_LIVE_TEST_LAG ("apiN:blocks ...") assigns,
+# answers a readiness request to an app's .internal name with the body and
+# the -w status code, 503 for the ports CHECK_LIVE_TEST_BOUNDARY_DOWN lists
+# and 000 when no readable --cert client identity is presented,
 # fails to connect for the names in CHECK_LIVE_TEST_DOWN, and hands any
 # request without a public https name to the real curl, so the hpx cases
 # reach the loopback registry stand-in below.
@@ -177,6 +182,26 @@ name="${name%%.*}"
 printf '%s curl\n' "$name" >>"$CHECK_LIVE_TEST_CALLS"
 case " ${CHECK_LIVE_TEST_DOWN:-} " in
 *" $name "*) exit 7 ;;
+esac
+case "$url" in
+https://*.internal:*/readyz)
+	cert=""
+	while [ "$#" -gt 0 ]; do
+		[ "$1" != --cert ] || cert="${2:-}"
+		shift
+	done
+	if [ ! -r "$cert" ]; then
+		printf ' 000'
+		exit 58
+	fi
+	port="${url##*:}"
+	port="${port%%/*}"
+	case " ${CHECK_LIVE_TEST_BOUNDARY_DOWN:-} " in
+	*" $port "*) printf '{"ready":false,"error":"replica_unavailable"} 503' ;;
+	*) printf '{"ready":true,"network_id":"fixture","wire_version":"1"} 200' ;;
+	esac
+	exit 0
+	;;
 esac
 case "$url" in
 https://*/?*)
@@ -224,6 +249,7 @@ export CHECK_LIVE_TEST_REAL_CURL="$real_curl"
 export CHECK_LIVE_TEST_FLY="$work/fly"
 export CHECK_LIVE_TEST_IMPORTS="$work/imports"
 export CHECK_LIVE_TEST_EDGE="$work/edge-manifest"
+export CHECK_LIVE_TEST_MACHINES="$work/machines.json"
 export LAYERX_CA_DIR="$work/ca"
 
 cat >"$work/hosts-good.env" <<'ENV'
@@ -608,6 +634,43 @@ CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_ca_failing "$work/hosts-
 	"fail interop-client app=$interop cert=unmounted" \
 	"pass developer app=$webhooks chain=ok san=4/4 expires_in=39" \
 	"check-live: 7 check(s) failed"
+
+# The kernel boundary cases reach the kernel fixture app, whose volume holds
+# the agentd-client identity issued above, through the flyctl stand-in.
+printf '[{"state":"started","config":{"services":[{"internal_port":8080}]}}]\n' >"$CHECK_LIVE_TEST_MACHINES"
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_kernel_boundaries_passing "$work/hosts-good.env" 0 kernel-boundaries -- \
+	"pass public-services app=$kernel machines=1 ports=8080 boundaries=none" \
+	"pass core app=$kernel url=https://$kernel.internal:9443/readyz identity=agentd-client http=200 ready=true" \
+	"pass core-admin app=$kernel url=https://$kernel.internal:9444/readyz identity=agentd-client http=200 ready=true" \
+	"pass receipt-authority app=$kernel url=https://$kernel.internal:9445/readyz identity=agentd-client http=200 ready=true" \
+	"pass agent-boundary app=$kernel url=https://$kernel.internal:9446/readyz identity=agentd-client http=200 ready=true" \
+	"check-live: all checks passed"
+
+if [ "$(grep -c "^$kernel app ssh console " "$CHECK_LIVE_TEST_CALLS")" -eq 1 ] && [ "$(grep -c "^$kernel app machines list" "$CHECK_LIVE_TEST_CALLS")" -eq 1 ] &&
+	[ "$(grep -c "^$kernel curl$" "$CHECK_LIVE_TEST_CALLS")" -eq 4 ]; then
+	echo "ok   check_live_kernel_boundaries_one_machine_call"
+else
+	echo "FAIL check_live_kernel_boundaries_one_machine_call: want one machines list, one ssh console call into the kernel app and four readiness requests"
+	cat "$CHECK_LIVE_TEST_CALLS"
+	failures=$((failures + 1))
+fi
+
+printf '[{"state":"started","config":{"services":[{"internal_port":8080},{"internal_port":9445}]}}]\n' >"$CHECK_LIVE_TEST_MACHINES"
+CHECK_LIVE_TEST_BOUNDARY_DOWN="9446" CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_kernel_boundaries_failing "$work/hosts-good.env" 1 kernel-boundaries -- \
+	"fail public-services app=$kernel machines=1 ports=8080,9445 boundaries=9445" \
+	"pass core app=$kernel url=https://$kernel.internal:9443/readyz identity=agentd-client http=200 ready=true" \
+	"pass receipt-authority app=$kernel url=https://$kernel.internal:9445/readyz identity=agentd-client http=200 ready=true" \
+	"fail agent-boundary app=$kernel url=https://$kernel.internal:9446/readyz identity=agentd-client http=503" \
+	"check-live: 2 check(s) failed"
+
+printf '[{"state":"started","config":{"services":[{"internal_port":8080}]}}]\n' >"$CHECK_LIVE_TEST_MACHINES"
+mv "$fly/$kernel/app/data/tls/agentd-client/cert.pem" "$work/agentd-client.pem"
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_kernel_boundaries_without_the_client_identity "$work/hosts-good.env" 1 kernel-boundaries -- \
+	"pass public-services app=$kernel machines=1 ports=8080 boundaries=none" \
+	"fail core app=$kernel url=https://$kernel.internal:9443/readyz identity=agentd-client http=000" \
+	"fail agent-boundary app=$kernel url=https://$kernel.internal:9446/readyz identity=agentd-client http=000" \
+	"check-live: 4 check(s) failed"
+mv "$work/agentd-client.pem" "$fly/$kernel/app/data/tls/agentd-client/cert.pem"
 
 expect check_live_rpc_nodes_passing "$work/hosts-rpc-good.env" 0 rpc-nodes -- \
 	"pass api1 head=26400000 lag=0 unit=active active=7200s" \

@@ -1374,6 +1374,60 @@ print(len(ms), len([m for m in ms if m.get("state") == "started"]))
 	finish "$failures"
 }
 
+# check_kernel_boundaries: inside the machine of the kernel app of
+# human/wallet/deploy/human.toml, the core boundary (9443), its admin plane
+# (9444), the receipt authority (9445) and the agent boundary (9446) each
+# answer /readyz 200 with "ready":true over TLS verified under the internal CA
+# at the app's .internal name, presenting the agentd-client identity that
+# tools/bringup/ca.sh issued to the app's volume; and no service of any
+# machine of the app exposes one of those ports. One line per check.
+check_kernel_boundaries() {
+	local app answer n_machines ports exposed port name line code body attempt failures=0
+	local -A names=([9443]=core [9444]=core-admin [9445]=receipt-authority [9446]=agent-boundary)
+	if ! app="$(fly_app human/wallet/deploy/human.toml)"; then
+		echo "fail kernel-boundaries toml=absent"
+		finish 1
+	fi
+	answer="$(timeout "$timeout" flyctl machines list --app "$app" --json 2>/dev/null | python3 -c '
+import json, sys
+ms = json.load(sys.stdin)
+ports = sorted({s.get("internal_port") for m in ms for s in (m.get("config") or {}).get("services") or [] if s.get("internal_port")})
+print(len(ms), ",".join(str(p) for p in ports) or "none")
+' 2>/dev/null)" || answer=""
+	read -r n_machines ports <<<"${answer:-none none}"
+	exposed=""
+	for port in 9443 9444 9445 9446; do
+		[[ ",$ports," != *",$port,"* ]] || exposed="${exposed:+$exposed,}$port"
+	done
+	if [ "$n_machines" != none ] && [ "$n_machines" -gt 0 ] && [ -z "$exposed" ]; then
+		echo "pass public-services app=$app machines=$n_machines ports=$ports boundaries=none"
+	else
+		echo "fail public-services app=$app machines=$n_machines ports=$ports boundaries=${exposed:-none}"
+		failures=$((failures + 1))
+	fi
+	answer=""
+	for attempt in 1 2; do
+		answer="$(fly_ssh "$app" - "d=$fly_tls_dir/agentd-client; for p in 9443 9444 9445 9446; do printf \"%s \" \$p; curl -sS -m $timeout --cacert \$d/ca.pem --cert \$d/cert.pem --key \$d/key.pem -w \" %{http_code}\" https://$app.internal:\$p/readyz 2>/dev/null | tr -d \"\\n\"; echo; done")" || true
+		[ "$(grep -c ' 200$' <<<"$answer")" != 4 ] || break
+		[ "$attempt" = 2 ] || sleep 10
+	done
+	for port in 9443 9444 9445 9446; do
+		name="${names[$port]}"
+		line="$(grep -m 1 "^$port " <<<"$answer")" || line="$port "
+		line="${line#"$port "}"
+		code="${line##* }"
+		body="${line% *}"
+		[[ "$code" =~ ^[0-9]{3}$ ]] || code=none
+		if [ "$code" = 200 ] && [[ "$body" == *'"ready":true'* ]]; then
+			echo "pass $name app=$app url=https://$app.internal:$port/readyz identity=agentd-client http=200 ready=true"
+		else
+			echo "fail $name app=$app url=https://$app.internal:$port/readyz identity=agentd-client http=$code"
+			failures=$((failures + 1))
+		fi
+	done
+	finish "$failures"
+}
+
 # Sourced by tools/bringup/ca.sh for the Fly helpers and the CA settings: the
 # probe's own dispatch below runs only when this file is executed.
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
@@ -1391,6 +1445,7 @@ identity) ;;
 search-front) ;;
 edge) ;;
 ci) ;;
+kernel-boundaries) ;;
 *)
 	usage >&2
 	exit 2

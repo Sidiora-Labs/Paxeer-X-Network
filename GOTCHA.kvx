@@ -1253,3 +1253,15 @@ area    = "ci"
 symptom = "The runner canary dispatched while CI_LINUX_RUNNER is unset runs on a hosted runner and fails at its lld step, and the API reports an empty runner name for that job."
 cause   = "The routing expression falls back to the hosted image, which lacks ld.lld, and completed hosted jobs carry no runnerName in the jobs listing."
 do      = "Read a hosted canary failure as the variable being unset, not as a runner image fault; judge the Fly runner only from a run whose job names a fly- runner."
+
+[gotcha.206]
+area    = "spec-tooling"
+symptom = "cg spec start refuses a task with unmet requires and exits 1, although the worker was told to build it against the spec before its prerequisites land."
+cause   = "start checks that every requires task is done and offers only --force."
+do      = "Set the status line to in_progress by hand, record the refusal once in the qualification log, and do not force."
+
+[gotcha.207]
+area    = "test"
+symptom = "The flyctl stand-in of check-live.test.sh exits 98 on a call that passes --json, so a new probe that lists machines reads nothing."
+cause   = "The stand-in parses only the flags earlier probes used and treats any other flag as an error."
+do      = "Teach the stand-in the new flag and subcommand in the same change that adds the probe, answering from a fixture file."
