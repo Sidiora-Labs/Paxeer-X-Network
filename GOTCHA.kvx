@@ -1511,3 +1511,21 @@ area    = "bringup"
 symptom = "A new ca.sh row fails check-live ca and the every-service count of check-live.test.sh."
 cause   = "check_ca wants a [[files]] entry that mounts <PREFIX>_CERT in the row's toml, and the harness pins the number of rows."
 do      = "Mount <PREFIX>_CERT in the toml with the row and raise the pinned row count in the same change."
+
+[gotcha.249]
+area    = "gateway"
+symptom = "A plan leaves LAYERX_GATEWAY_PROGRAM_REGISTRY_URL unset in kernel mode expecting program_registry to report not_configured, but the gateway would refuse to start."
+cause   = "configured_kernel requires the registry URL and its token file whenever LAYERX_GATEWAY_COMPONENT_URL is set; not_configured appears only when the whole kernel is unset."
+do      = "Treat the registry as mandatory in kernel mode until the gateway makes it optional; readiness is 200 only when every configured backend is ready."
+
+[gotcha.250]
+area    = "flyctl"
+symptom = "JSON read from a Fly machine through flyctl ssh console fails to parse although the command printed valid JSON."
+cause   = "flyctl writes its machine-selection notice to stdout ahead of the command's output when no machine is named."
+do      = "Keep only the last line of the output (tail -n 1), as the identity check does, and print the JSON without a trailing newline or on one line."
+
+[gotcha.251]
+area    = "check-live"
+symptom = "After a merge of check-live.test.sh most cases fail with head=none or empty answers although no probe changed."
+cause   = "A merge dropped the closing exit 0 and fi of one curl stand-in block, so the heredoc stand-in no longer parses and every curl call fails."
+do      = "After resolving a merge of the harness, run bash -n over each heredoc stand-in (ssh, flyctl, curl, node, getent) before the full harness."
