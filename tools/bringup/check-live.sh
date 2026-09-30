@@ -114,6 +114,24 @@ explorer  reads the deployed explorer at CHECK_LIVE_EXPLORER_ORIGIN, by default
              missing_block_ranges
           Exits 0 only when every check passes.
 
+wallet    finds the public wallet endpoint name: the wallet_endpoint value of
+          [decision.public_names] in spec/paxeer-x-bringup/spec.kvx when it is
+          a bare hostname, otherwise the host of NEXT_PUBLIC_PAXEER_WALLET_API
+          that railway variable list --service paxport --kv reads from the
+          Railway project linked at the checkout root. Then runs the wallet
+          gates of tools/wallet/check-live.sh and prints their check lines:
+  endpoint   "pass endpoint name=<host> source=spec|railway", or "fail
+             endpoint source=railway api=unset|unusable" when the variable is
+             missing or not an https URL, in which case cutover is skipped
+  cutover    the served_by and readiness lines of its cutover mode with
+             CHECK_LIVE_CUTOVER_HOST set to that name
+  gateway    the readiness and me lines of its gateway mode with
+             CHECK_LIVE_GATEWAY_BASE https://<app>.fly.dev for the app of
+             human/wallet/deploy/gateway.toml
+  machines   "pass machines started=<n> regions=<list> app=<app>" when the
+             app runs at least two started machines in at least two regions
+          Exits 0 only when every check passes; a failing gate counts once.
+
 Environment:
   BRINGUP_HOSTS_FILE   private env file assigning EDGE_HOST, ARCHIVE_HOST,
                        VALIDATOR_HOSTS, RPC_HOSTS, HPX_HOST and
@@ -129,6 +147,8 @@ Environment:
   PAXSCAN_DATABASE_PUBLIC_URL  read-only connection strings of the explorer's
                        production database, its legacy database and the
                        paxscan copy source; never printed
+  CHECK_LIVE_GATEWAY_TOKEN  access token of a provisioned test identity of
+                       the wallet gateway, required by wallet; never printed
   CHECK_LIVE_TIMEOUT   seconds per request, ssh or flyctl call, default 30
   LAYERX_CA_DIR        the internal CA directory on this host, default
                        /etc/layerx/ca
@@ -246,6 +266,30 @@ days_left() {
 	local end
 	end="$(openssl x509 -noout -enddate | cut -d= -f2)"
 	echo $((($(date -d "$end" +%s) - $(date +%s)) / 86400))
+}
+
+# fly_regions <app>: prints "pass machines started=<n> regions=<list>
+# app=<app>" when the app runs at least two started machines in at least two
+# regions, the fail line with the observed values (or machines=unreadable)
+# and status 1 otherwise.
+fly_regions() {
+	local machines
+	machines="$(timeout "$timeout" flyctl machines list --app "$1" --json 2>/dev/null | python3 -c '
+import json
+import sys
+
+try:
+    doc = json.load(sys.stdin)
+except ValueError:
+    print("fail machines=unreadable")
+    sys.exit(0)
+started = [m for m in doc if m.get("state") == "started"]
+regions = sorted({m.get("region", "") for m in started})
+ok = len(started) >= 2 and len(regions) >= 2
+print(("pass" if ok else "fail") + " machines started=%d regions=%s" % (len(started), ",".join(regions) or "none"))
+')" || machines="fail machines=unreadable"
+	echo "${machines%% *} ${machines#* } app=$1"
+	[ "${machines%% *}" = pass ]
 }
 
 rpc_domain="mainnet-beta.paxeer.network"
@@ -1119,7 +1163,7 @@ print(len(ms), len(started), len(mounts))
 # the same X-Search-Node, one of those names. One line per check.
 check_search_front() {
 	local host=search.paxeer.network toml=interop/deploy/search-front/fly.toml
-	local app status headers code machines listing mounted expected validators listed first second failures=0
+	local app status headers code listing mounted expected validators listed first second failures=0
 	if ! command -v flyctl >/dev/null 2>&1; then
 		echo "check-live: flyctl is required" >&2
 		exit 2
@@ -1142,22 +1186,7 @@ check_search_front() {
 		failures=$((failures + 1))
 	fi
 
-	machines="$(timeout "$timeout" flyctl machines list --app "$app" --json 2>/dev/null | python3 -c '
-import json
-import sys
-
-try:
-    doc = json.load(sys.stdin)
-except ValueError:
-    print("fail machines=unreadable")
-    sys.exit(0)
-started = [m for m in doc if m.get("state") == "started"]
-regions = sorted({m.get("region", "") for m in started})
-ok = len(started) >= 2 and len(regions) >= 2
-print(("pass" if ok else "fail") + " machines started=%d regions=%s" % (len(started), ",".join(regions) or "none"))
-')" || machines="fail machines=unreadable"
-	echo "${machines%% *} ${machines#* } app=$app"
-	[ "${machines%% *}" = pass ] || failures=$((failures + 1))
+	fly_regions "$app" || failures=$((failures + 1))
 
 	if ! listing="$("$(dirname "${BASH_SOURCE[0]}")/search-front.sh" names 2>&1)"; then
 		echo "fail upstreams names=unreadable $(printf '%s' "$listing" | tr '\n' ' ' | cut -c1-160)"
@@ -1666,6 +1695,79 @@ check_agent_public() {
 	finish "$failures"
 }
 
+# check_wallet: the public wallet endpoint name is the wallet_endpoint of
+# [decision.public_names] in the spec when that value is a bare hostname,
+# otherwise the host of NEXT_PUBLIC_PAXEER_WALLET_API of the wallet PWA,
+# service paxport of the Railway project linked at the checkout root. The
+# wallet feature's cutover gate reads that name, its gateway gate reads the
+# wallet gateway app of human/wallet/deploy/gateway.toml at its fly.dev name
+# with CHECK_LIVE_GATEWAY_TOKEN passed through, and the app runs started
+# machines in two regions. The gates' check lines are printed as they come
+# without their summary lines, and a failing gate counts as one failure.
+check_wallet() {
+	local toml=human/wallet/deploy/gateway.toml spec=spec/paxeer-x-bringup/spec.kvx
+	local app name source api="" output status failures=0
+	local host_re='^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+(:[0-9]{1,5})?$'
+	if [ -z "${CHECK_LIVE_GATEWAY_TOKEN:-}" ]; then
+		echo "check-live: CHECK_LIVE_GATEWAY_TOKEN is required; it is the access token of a provisioned test identity of the wallet gateway" >&2
+		exit 2
+	fi
+	if ! command -v flyctl >/dev/null 2>&1; then
+		echo "check-live: flyctl is required" >&2
+		exit 2
+	fi
+	if ! app="$(fly_app "$toml")"; then
+		echo "fail wallet toml=absent"
+		finish 1
+	fi
+
+	source=spec
+	name="$(sed -n '/^\[decision\.public_names\]$/,/^\[/s/^wallet_endpoint[[:space:]]*=[[:space:]]*"\(.*\)"[[:space:]]*$/\1/p' "$repo_root/$spec" 2>/dev/null | head -n 1)" || name=""
+	if ! grep -Eq "$host_re" <<<"$name"; then
+		source=railway
+		if ! command -v railway >/dev/null 2>&1; then
+			echo "check-live: railway is required to read NEXT_PUBLIC_PAXEER_WALLET_API while the spec names no wallet endpoint" >&2
+			exit 2
+		fi
+		api="$(cd "$repo_root" && timeout "$timeout" railway variable list --service paxport --kv 2>/dev/null | sed -n 's/^NEXT_PUBLIC_PAXEER_WALLET_API=//p' | head -n 1)" || api=""
+		name="$(python3 -c '
+import sys
+from urllib.parse import urlsplit
+
+try:
+    parts = urlsplit(sys.argv[1].strip())
+    port = parts.port
+except ValueError:
+    sys.exit(1)
+if parts.scheme != "https" or not parts.hostname:
+    sys.exit(1)
+print(parts.hostname + (":%d" % port if port else ""))
+' "$api" 2>/dev/null)" || name=""
+	fi
+	if grep -Eq "$host_re" <<<"$name"; then
+		echo "pass endpoint name=$name source=$source"
+		status=0
+		output="$(CHECK_LIVE_CUTOVER_HOST="$name" "$repo_root/tools/wallet/check-live.sh" cutover 2>&1)" || status=$?
+		grep -Ev '^check-live: (all checks passed|[0-9]+ check\(s\) failed)$' <<<"$output" || true
+		[ "$status" -eq 0 ] || failures=$((failures + 1))
+	else
+		if [ -n "$api" ]; then
+			echo "fail endpoint source=$source api=unusable"
+		else
+			echo "fail endpoint source=$source api=unset"
+		fi
+		failures=$((failures + 1))
+	fi
+
+	status=0
+	output="$(CHECK_LIVE_GATEWAY_BASE="https://$app.fly.dev" "$repo_root/tools/wallet/check-live.sh" gateway 2>&1)" || status=$?
+	grep -Ev '^check-live: (all checks passed|[0-9]+ check\(s\) failed)$' <<<"$output" || true
+	[ "$status" -eq 0 ] || failures=$((failures + 1))
+
+	fly_regions "$app" || failures=$((failures + 1))
+	finish "$failures"
+}
+
 # Sourced by tools/bringup/ca.sh for the Fly helpers and the CA settings: the
 # probe's own dispatch below runs only when this file is executed.
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
@@ -1686,6 +1788,7 @@ ci) ;;
 human-session) ;;
 paxeer-boundary) ;;
 agent-public) ;;
+wallet) ;;
 *)
 	usage >&2
 	exit 2

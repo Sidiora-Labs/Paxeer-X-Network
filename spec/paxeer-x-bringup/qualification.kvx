@@ -841,3 +841,27 @@ revision = "26b211c9ccba18c31c51a4bae828cf17e185902e"
 command = "BRINGUP_HOSTS_FILE=/root/lx-ops/bringup-2026-09-29/hosts.env timeout 10m tools/bringup/check-live.sh search-front"
 exit_code = 0
 log_path = ".logs/0.3-search-front-live.log"
+
+[observation.4.1.1]
+task       = "4.1"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_wallet"
+observed   = "timeout 10m tools/bringup/check-live.sh wallet exited 2 at base revision 71bc925fd with CHECK_LIVE_GATEWAY_TOKEN unset (log .logs/verify.log); the gateway is not yet in two regions nor behind the edge, and the build gate bash tools/bringup/check-live.test.sh exited 0."
+assumption = "The live gate runs on the deploy side after steps 1 to 10 of the handoff with the gateway test-identity token supplied."
+severity   = "blocker"
+
+[observation.4.1.2]
+task       = "4.1"
+file       = "spec/paxeer-x-bringup/spec.kvx"
+symbol     = "decision.public_names.wallet_endpoint"
+observed   = "wallet_endpoint names no host, so check_wallet takes the name from NEXT_PUBLIC_PAXEER_WALLET_API of the Railway service paxport at run time."
+assumption = "The public wallet endpoint name is an open owner decision; once the value is a bare hostname the probe reads it from the spec instead."
+severity   = "note"
+
+[observation.4.1.3]
+task       = "4.1"
+file       = "tools/bringup/check-live.sh"
+symbol     = "roles"
+observed   = "do_3 drops OLD_WALLET_HOST from the probe roles and fixtures only after the old service is retired, and steps 11 to 13 still address that host."
+assumption = "The drop is a follow-up tree change after step 13 runs, listed in the deploy handoff; the role stays until then."
+severity   = "note"

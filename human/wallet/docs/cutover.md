@@ -9,8 +9,9 @@ recorded. A failed readiness check stops the checklist at that step.
 
 Rules that hold for every step:
 
-- The current wallet host is read-only except for its proxy configuration in
-  step 10. The production data is read from it read-only.
+- The current wallet host is read-only except for the applied-at record of
+  step 10 and the retirement of steps 11 and 13. The production data is read
+  from it read-only.
 - Secrets enter only through environment variable names typed into the
   operator's shell or set on the platform; nothing is written to a file, a
   log or this repository. Secret values appear here only as angle-bracket
@@ -80,25 +81,27 @@ Rules that hold for every step:
 
 ## 4. Rehearsal record
 
-- Action: take a read-only copy of the production wallet data from the
-  current wallet host into a custom-format dump on an operator machine, and
-  rehearse the whole migration against it with five locally started daemons
-  (task 5.2).
+- Action: rehearse the whole migration on an operator machine against a copy
+  of the production wallet data, read through the read-only role of the
+  current service's database, with five locally started daemons (task 5.2).
 
   ```sh
-  pg_dump --format=custom --no-owner --no-privileges --file <dump-path> <read-only-connection>
   (cd human/wallet/attestor && go build -o <attestor-binary-path> ./cmd/attestor)
-  export CEREMONY_REHEARSAL_DUMP=<dump-path>
+  read -rs CEREMONY_SOURCE_DATABASE_URL && export CEREMONY_SOURCE_DATABASE_URL
+  export CEREMONY_GATEWAY_MIGRATIONS_DIR=human/wallet/gateway/migrations
   export CEREMONY_REHEARSAL_ADMIN_URL=<local-admin-connection>
   export CEREMONY_ATTESTOR_BIN=<attestor-binary-path>
-  export CEREMONY_PG_BIN_DIR=<postgres-bin-dir>
   export CEREMONY_ARCHIVE_PATH=<rehearsal-archive-path>
   read -rs CEREMONY_ARCHIVE_PASSPHRASE && export CEREMONY_ARCHIVE_PASSPHRASE
   read -rs CEREMONY_MASTER_KEY && export CEREMONY_MASTER_KEY
   (cd human/wallet/ceremony && go run ./cmd/ceremony rehearse --report-only-counts)
   ```
 
-  The tool restores the dump into a temporary database it drops afterwards,
+  `CEREMONY_SOURCE_DATABASE_URL` is the read-only connection to the current
+  service's database; the tool refuses a role that can write. The tool
+  creates a temporary database through `CEREMONY_REHEARSAL_ADMIN_URL`, copies
+  the source into it in one read-only snapshot, applies the gateway
+  migrations of `CEREMONY_GATEWAY_MIGRATIONS_DIR` and drops it afterwards,
   archives the funded rows, starts five daemons, and imports, refreshes,
   test-signs and recovers every standard and agent wallet.
 - Readiness check: exit 0 and one report line
@@ -109,8 +112,7 @@ Rules that hold for every step:
   verify commands of tasks 5.2 and 5.4 read.
 - Evidence: the report line as the rehearsal gate record.
 - Rollback: none needed; nothing outside the operator machine changed.
-  Afterwards remove the dump and the rehearsal archive:
-  `rm <dump-path> <rehearsal-archive-path>`.
+  Afterwards remove the rehearsal archive: `rm <rehearsal-archive-path>`.
 
 ## 5. Live preconditions
 
@@ -252,28 +254,40 @@ Rules that hold for every step:
   cursor starts over, so the run after `move --delta` reaches the new rows.
   Record the totals as a gate record.
 
-## 10. Endpoint cutover through the current host's proxy
+## 10. Endpoint served from the Fly wallet gateway behind the edge
 
-- Action: the wallet endpoint's DNS stays at its provider; the current host
-  proxies the endpoint hostname to `paxeer-wallet-gateway` with the original
-  host and client address headers preserved. Task 5.3 lands the proxy
-  configuration, a preflight script, an apply script run on the current host
-  and a retire script under `human/wallet/deploy/cutover/`, the gateway's
-  response header that names it, and the cutover mode of check-live. Run the
-  preflight, then the apply script on the current host, then:
+- Action: run `paxeer-wallet-gateway` in a second region beside its machines
+  in `ams`, then register the public wallet endpoint name on the edge host,
+  which proxies it to the gateway's platform name
+  (`tools/bringup/edge.sh`). A name under `paxeer.network` reaches the edge
+  through the wildcard; any other name reaches it after the owner's one move
+  of its existing record to the edge host. From the operator host, with
+  `BRINGUP_HOSTS_FILE` set:
 
   ```sh
-  tools/wallet/check-live.sh cutover
+  flyctl scale count 1 --region <second-region> --app paxeer-wallet-gateway -y
+  flyctl machines list --app paxeer-wallet-gateway
+  tools/bringup/edge.sh add <public-wallet-host> paxeer-wallet-gateway
+  CHECK_LIVE_CUTOVER_HOST=<public-wallet-host> tools/wallet/check-live.sh cutover
   ```
 
-- Readiness check: the preflight passes before the apply; after it, the
-  cutover mode confirms the public hostname, taken from its environment
-  variable, is served by the new gateway through the naming header.
-- Evidence: the cutover gate record of task 5.3.
-- Rollback: restore the proxy configuration the current host served before
-  the apply and reload its proxy; the old service then serves the endpoint
-  again, and every migrated wallet still signs through the attestors when the
-  new gateway is used.
+  Once the cutover mode passes, the edge serves the name from the gateway;
+  record that moment on the current host in the format `apply.sh` writes,
+  which the retire script of step 13 reads for its soak:
+
+  ```sh
+  printf '%s %s\n' "<edge-serving-epoch-seconds>" paxeer-wallet-gateway.fly.dev >"$CUTOVER_STATE_DIR/applied-at"
+  ```
+
+- Readiness check: `flyctl machines list` shows started machines in `ams`
+  and the second region; the cutover mode confirms the public hostname is
+  served by the new gateway through the naming header;
+  `tools/bringup/check-live.sh wallet` passes.
+- Evidence: the wallet gate record of the bring-up feature.
+- Rollback: `tools/bringup/edge.sh remove <public-wallet-host>`, and move the
+  name's record back when it was moved; the old service then serves the
+  endpoint again, and every migrated wallet still signs through the attestors
+  when the new gateway is used.
 
 ## 11. Old service read-only
 
