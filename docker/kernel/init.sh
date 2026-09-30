@@ -10,13 +10,16 @@
 # Volume layout (/data):
 #   /data/layerx/node         layerxd --data-dir; never holds a key, the genesis
 #                             metadata or the run directory (bootstrap.sh refuses them)
-#   /data/layerx/keys         every key: sequencer.key and treasury.key, tokens/,
+#   /data/layerx/keys         every key: sequencer.key and treasury.key, tokens/
+#                             (program, replica, backend-admin, gateway-component,
+#                             gateway-authority, webhooks-component, webhooks-authority),
 #                             checkpoint-authority/key.pem, checkpoint-submitter/key,
 #                             publication/, human-authority/
 #   /data/layerx/genesis      metadata.lxgb of tools/bringup/kernel-genesis.sh
 #   /data/layerx/guarantor-*  the pod's guarantor storage
 #   /data/layerx/settlement   settlement.env and checkpoint-settlement.json
 #   /data/layerx/mirror       the mirror publisher's state directory
+#   /data/layerx/core, /data/layerx/agent-boundary  the boundaries' state
 #   /data/human-state         the pod's human-state volume
 #   /data/tls/<service>       identities of tools/bringup/ca.sh issue <service>
 set -euo pipefail
@@ -158,6 +161,17 @@ install -m 0444 /etc/layerx/trust/ca.crt "$run/trust/ca.crt"
 fresh "$keys/treasury.key" 4020:4020 0400 openssl rand -hex 32
 fresh "$keys/tokens/program-token" 4020:4020 0440 openssl rand -hex 32
 fresh "$keys/tokens/replica-token" 4020:4020 0440 openssl rand -hex 32
+# The bearers of the core boundary, the receipt authority and the agent
+# boundary that the pod mounted from secrets: the core admin plane, the
+# router's component and authority bearers, the webhooks component and
+# authority bearers, and the human agent's authority token. The owner receives
+# these locations only; the router and webhooks deploy steps import each from
+# here.
+for token in backend-admin gateway-component gateway-authority webhooks-component webhooks-authority; do
+	fresh "$keys/tokens/$token" 4020:4020 0440 openssl rand -hex 32
+done
+fresh "$keys/human-authority/authority-token" 0:0 0600 openssl rand -hex 32
+install -d -o 4021 -g 4020 -m 0700 "$layerx/core" "$layerx/agent-boundary"
 fresh "$keys/checkpoint-submitter/key" 4021:4020 0400 evm_key
 
 # The registry's two bearers, Fly secrets of this app and of the registry app
@@ -205,6 +219,7 @@ human_authority_material() {
 	install -o 4021 -g 4020 -m 0600 "$input/authority-token" "$material/human-agent.token"
 	install -o 4021 -g 4020 -m 0600 "$input/principal-policy.json" "$material/principal-policy.json"
 	install -o 4021 -g 4020 -m 0600 "$input/registry.json" "$material/registry.json"
+	install -o 4021 -g 4020 -m 0600 "$input/authority.json" "$material/authority.json"
 	if [ -e "$input/genesis-handover-trust.lxt" ] || [ -e "$input/handover-finality.conf" ]; then
 		install -o 4021 -g 4020 -m 0600 "$input/genesis-handover-trust.lxt" "$material/genesis-handover-trust.lxt"
 		install -o 4021 -g 4020 -m 0600 "$input/handover-finality.conf" "$material/handover-finality.conf"
@@ -305,7 +320,7 @@ guarantor_prepare() {
 
 human_authority_ready() {
 	while missing "$keys/human-authority/authority-token" "$keys/human-authority/principal-policy.json" \
-		"$keys/human-authority/registry.json" >/dev/null; do
+		"$keys/human-authority/registry.json" "$keys/human-authority/authority.json" >/dev/null; do
 		sleep 5
 	done
 	human_authority_material
@@ -419,6 +434,131 @@ guarantor 1 9451 9452
 guarantor 2 9452 9451
 
 start_paxeer
+
+# The core-boundary, receipt-authority and agent-boundary containers of the
+# pod, each on [::] for the private network with the identity tools/bringup/
+# ca.sh issued on the volume under its row (pending-core, pending-core-admin,
+# receipt-authority, agent-boundary), verifying clients under the internal CA.
+# No service of the app's toml exposes 9443 to 9446. LAYERX_NODE_NETWORK_NAME,
+# set on the app, is the network name the router's LAYERX_GATEWAY_NETWORK_ID
+# expects from these backends.
+authority_material=/run/authority-private/material
+
+network_name() {
+	[ -n "${LAYERX_NODE_NETWORK_NAME:-}" ] || {
+		log "LAYERX_NODE_NETWORK_NAME is unset; the receipt authority and the agent boundary wait for it"
+		return 1
+	}
+}
+
+core_boundary_prepare() {
+	tls_for pending-core 4021 && tls_for pending-core-admin 4021
+}
+
+# The sequencer public key the pod mounted as gateway-authority/
+# sequencer-public-key, derived from the sequencer seed as kernel-genesis.sh
+# derives it.
+receipt_authority_prepare() {
+	network_name && tls_for receipt-authority 4021 || return 1
+	python3 -c 'import sys; sys.stdout.buffer.write(bytes.fromhex("302e020100300506032b657004220420" + sys.argv[1]))' \
+		"$(tr -d ' \r\n' <"$keys/sequencer.key")" | openssl pkey -inform DER -pubout -outform DER | tail -c 32 |
+		od -An -tx1 | tr -d ' \n' >"$run/node/sequencer-public-key.new" || return 1
+	[[ $(cat "$run/node/sequencer-public-key.new") =~ ^[0-9a-f]{64}$ ]] || return 1
+	chmod 0444 "$run/node/sequencer-public-key.new"
+	mv "$run/node/sequencer-public-key.new" "$run/node/sequencer-public-key"
+}
+
+agent_boundary_prepare() {
+	network_name && tls_for agent-boundary 4021
+}
+
+# shellcheck disable=SC2016 # core.env is read when the service starts
+service core-boundary 4021 \
+	"$run/node/core.env $tls/pending-core/cert.der $tls/pending-core/key.der $tls/pending-core/ca.der $tls/pending-core-admin/cert.der $tls/pending-core-admin/key.der" \
+	core_boundary_prepare - -- \
+	env \
+	"LAYERX_CORE_LISTEN=[::]:9443" \
+	"LAYERX_CORE_ADMIN_LISTEN=[::]:9444" \
+	LAYERX_CORE_NETWORK_ID="$LAYERX_NODE_NETWORK_ID" \
+	LAYERX_CORE_TLS_CERT_DER="$tls/pending-core/cert.der" \
+	LAYERX_CORE_TLS_KEY_DER="$tls/pending-core/key.der" \
+	LAYERX_CORE_ADMIN_TLS_CERT_DER="$tls/pending-core-admin/cert.der" \
+	LAYERX_CORE_ADMIN_TLS_KEY_DER="$tls/pending-core-admin/key.der" \
+	LAYERX_CORE_CLIENT_CA_DER="$tls/pending-core/ca.der" \
+	LAYERX_CORE_LNI_SOCKET="$run/node/layerxd.lni.sock" \
+	LAYERX_CORE_SUPERVISOR_SOCKET="$run/node/supervisor.sock" \
+	LAYERX_CORE_NODE_URL=http://127.0.0.1:9401 \
+	LAYERX_CORE_NODE_BEARER_TOKEN_FILE="$keys/tokens/program-token" \
+	LAYERX_CORE_REPLICA_URL=http://127.0.0.1:9402 \
+	LAYERX_CORE_REPLICA_BEARER_TOKEN_FILE="$keys/tokens/replica-token" \
+	LAYERX_CORE_ADMIN_TOKEN_FILE="$keys/tokens/backend-admin" \
+	LAYERX_CORE_RECEIPT_EVENTS_TOKEN_FILE="$keys/tokens/gateway-component" \
+	LAYERX_CORE_STATE_DIR="$layerx/core" \
+	/bin/sh -ec 'set -a; . '"$run"'/node/core.env; set +a
+: "${LAYERX_CORE_SEQUENCER_ID:?generated sequencer identity is required}"
+: "${LAYERX_CORE_TREASURY_ASSET:?generated treasury asset is required}"
+: "${LAYERX_CORE_TREASURY_SIGNER_SOCKET:?treasury signer socket is required}"
+exec /usr/local/bin/layerx-core-boundary'
+
+# The receipt authority enters the runtime clock itself, as its container did.
+# shellcheck disable=SC2016 # core.env and the material are read when the service starts
+service receipt-authority 4021 \
+	"$genesis_files $run/node/core.env $run/node/layerxd.lni.sock $tls/receipt-authority/cert.der $tls/receipt-authority/key.der $tls/receipt-authority/ca.der $run/registry-authority/token $authority_material/human-agent.token $authority_material/principal-policy.json $authority_material/registry.json $authority_material/authority.json" \
+	receipt_authority_prepare - -- \
+	env \
+	"LAYERX_AUTHORITY_LISTEN=[::]:9445" \
+	LAYERX_AUTHORITY_PROTOCOL_NETWORK_ID="$LAYERX_NODE_NETWORK_ID" \
+	LAYERX_AUTHORITY_TLS_CERT_DER="$tls/receipt-authority/cert.der" \
+	LAYERX_AUTHORITY_TLS_KEY_DER="$tls/receipt-authority/key.der" \
+	LAYERX_AUTHORITY_CLIENT_CA_DER="$tls/receipt-authority/ca.der" \
+	LAYERX_AUTHORITY_HUMAN_AGENT_TOKEN_FILE="$authority_material/human-agent.token" \
+	LAYERX_AUTHORITY_IDENTITY_BINDING_SOCKET="$run/human/identity-binding.sock" \
+	LAYERX_AUTHORITY_IDENTITY_BINDING_UID=4020 \
+	LAYERX_AUTHORITY_IDENTITY_BINDING_GID=4020 \
+	LAYERX_AUTHORITY_PRINCIPAL_POLICY_FILE="$authority_material/principal-policy.json" \
+	LAYERX_AUTHORITY_MODULE_REGISTRY_FILE="$authority_material/registry.json" \
+	LAYERX_AUTHORITY_STATE_ROOT="$human_state/authority" \
+	LAYERX_AUTHORITY_TOKEN_FILES="$keys/tokens/gateway-authority:$run/registry-authority/token:$keys/tokens/webhooks-authority" \
+	LAYERX_AUTHORITY_REPLICA_URL=http://127.0.0.1:9402 \
+	LAYERX_AUTHORITY_REPLICA_BEARER_TOKEN_FILE="$keys/tokens/replica-token" \
+	LAYERX_AUTHORITY_LNI_SOCKET="$run/node/layerxd.lni.sock" \
+	LAYERX_AUTHORITY_FIRST_BATCH=1 \
+	LAYERX_AUTHORITY_LAST_BATCH=18446744073709551615 \
+	/bin/sh -ec 'set -a; . '"$run"'/node/core.env; set +a
+: "${LAYERX_CORE_SEQUENCER_ID:?generated sequencer identity is required}"
+m='"$authority_material"'
+LAYERX_AUTHORITY_NETWORK_ID=$LAYERX_NODE_NETWORK_NAME
+LAYERX_AUTHORITY_SEQUENCER_ID=$LAYERX_CORE_SEQUENCER_ID
+LAYERX_AUTHORITY_SEQUENCER_PUBLIC_KEY=$(tr -d "\r\n" <'"$run"'/node/sequencer-public-key)
+LAYERX_AUTHORITY_REPLICA_ID=$(cat '"$genesis"'/replica-id)
+LAYERX_AUTHORITY_HUMAN_AGENT_TENANT=$(jq -er .tenant "$m/authority.json")
+LAYERX_AUTHORITY_HUMAN_AGENT_PRINCIPAL=$(jq -er .principal "$m/authority.json")
+LAYERX_AUTHORITY_CORE_CLOCK_HORIZON=$(jq -er ".\"core-clock-horizon\"" "$m/authority.json")
+export LAYERX_AUTHORITY_NETWORK_ID LAYERX_AUTHORITY_SEQUENCER_ID LAYERX_AUTHORITY_SEQUENCER_PUBLIC_KEY LAYERX_AUTHORITY_REPLICA_ID \
+	LAYERX_AUTHORITY_HUMAN_AGENT_TENANT LAYERX_AUTHORITY_HUMAN_AGENT_PRINCIPAL LAYERX_AUTHORITY_CORE_CLOCK_HORIZON
+if [ -e "$m/genesis-handover-trust.lxt" ]; then
+	export LAYERX_AUTHORITY_GENESIS_TRUST="$m/genesis-handover-trust.lxt" LAYERX_AUTHORITY_HANDOVER_FINALITY="$m/handover-finality.conf"
+fi
+exec /usr/local/bin/layerx-runtime-clock --runtime-dir '"$run"'/human/authority-clock -- /usr/local/bin/layerx-receipt-authority'
+
+# shellcheck disable=SC2016 # the network name is read when the service starts
+service agent-boundary 4021 \
+	"$run/node/layerxd.lni.sock $tls/agent-boundary/cert.der $tls/agent-boundary/key.der $tls/agent-boundary/ca.der $run/registry-component/token" \
+	agent_boundary_prepare - -- \
+	env \
+	"LAYERX_AGENT_BOUNDARY_LISTEN=[::]:9446" \
+	LAYERX_AGENT_BOUNDARY_PROTOCOL_NETWORK_ID="$LAYERX_NODE_NETWORK_ID" \
+	LAYERX_AGENT_BOUNDARY_TLS_CERT_DER="$tls/agent-boundary/cert.der" \
+	LAYERX_AGENT_BOUNDARY_TLS_KEY_DER="$tls/agent-boundary/key.der" \
+	LAYERX_AGENT_BOUNDARY_CLIENT_CA_DER="$tls/agent-boundary/ca.der" \
+	LAYERX_AGENT_BOUNDARY_GATEWAY_TOKEN_FILE="$keys/tokens/gateway-component" \
+	LAYERX_AGENT_BOUNDARY_WEBHOOK_TOKEN_FILE="$keys/tokens/webhooks-component" \
+	LAYERX_AGENT_BOUNDARY_REGISTRY_TOKEN_FILE="$run/registry-component/token" \
+	LAYERX_AGENT_BOUNDARY_LNI_SOCKET="$run/node/layerxd.lni.sock" \
+	LAYERX_AGENT_BOUNDARY_NODE_URL=http://127.0.0.1:9401 \
+	LAYERX_AGENT_BOUNDARY_NODE_BEARER_TOKEN_FILE="$keys/tokens/program-token" \
+	LAYERX_AGENT_BOUNDARY_STATE_DIR="$layerx/agent-boundary" \
+	/bin/sh -ec 'LAYERX_AGENT_BOUNDARY_NETWORK_ID="$LAYERX_NODE_NETWORK_NAME" exec /usr/local/bin/layerx-agent-boundary'
 
 service human 4020 "" - - -- /usr/local/bin/human-entrypoint service
 

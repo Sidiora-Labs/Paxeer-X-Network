@@ -1541,3 +1541,51 @@ symbol     = "check_xweb_attestors"
 observed   = "timeout 15m tools/bringup/check-live.sh xweb-attestors exit 1 (.logs/verify.log): the four attestor apps do not exist yet (machines, public-ips, health and hop read none) and both validator hosts still run two x-websearch units each."
 assumption = "Deploy-side precondition: the gate passes once the handoff's slot-by-slot migration runs; the validator-host removal waits on the owner's sealed offline copy of the four attestor keys."
 severity   = "info"
+
+[observation.2.1.1]
+task       = "2.1"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_kernel_boundaries"
+observed   = "timeout 10m tools/bringup/check-live.sh kernel-boundaries exited 1 at 3df583333 plus this task's change (log .logs/verify.log): the kernel app exposes no boundary port as a service, and all four readiness requests from inside its machine answered http=000 because no boundary runs there yet."
+assumption = "The live upstream is missing until the kernel image, its init and the certificates of the three boundaries are deployed; the fixture cases of check-live.test.sh pass."
+severity   = "blocker"
+
+[observation.2.1.2]
+task       = "2.1"
+file       = "docker/kernel/init.sh"
+symbol     = "check_kernel_boundaries"
+observed   = "docker/kernel/init.sh does not exist on the feature branch because task 1.5, which writes it with its supervision loop, is still pending, and neither the spec nor the tree says where the bearer tokens, sequencer public key and human authority configuration that the three boundary commands read (program, replica, backend-admin, gateway, registry and webhooks component and authority tokens, tenant, principal, core clock horizon, principal policy and module registry) come from inside the kernel machine."
+assumption = "do_1 is not written; the task stays in_progress until the owner rules on the token custody and task 1.5 lands its init, instead of guessing either interface."
+severity   = "blocker"
+
+[observation.2.1.3]
+task       = "2.1"
+file       = "spec/paxeer-x-bringup/spec.kvx"
+symbol     = "task.2.1"
+observed   = "cg spec start 2.1 exited 1 with unmet requires 1.4, since tasks 1.4 and 1.5 are pending."
+assumption = "The status line was set to in_progress by hand to build the probe side against the spec, without forcing the tool."
+severity   = "note"
+
+[observation.2.1.4]
+task       = "2.1"
+file       = "docker/kernel/init.sh"
+symbol     = "check_kernel_boundaries"
+observed   = "timeout 10m tools/bringup/check-live.sh kernel-boundaries exited 1 (.logs/verify.log): public-services passes with ports=8080 only, and all four readiness routes answer http=000 because the kernel app still runs its volumeless pre-kernel machine, not the docker/kernel image whose init now starts the core boundary, the receipt authority and the agent boundary."
+assumption = "The gate passes once the kernel image is deployed with its volume, the four boundary identities are issued through ca.sh, LAYERX_NODE_NETWORK_NAME is set, the registry bearers of task 2.6 are imported and the human authority material (principal-policy.json, registry.json, authority.json) is on the volume."
+severity   = "blocker"
+
+[observation.2.1.5]
+task       = "2.1"
+file       = "tools/bringup/check-live.test.sh"
+symbol     = "check_live_hosts_timeout"
+observed   = "timeout 30m bash tools/bringup/check-live.test.sh exited 143 (.logs/harness.log): eleven cases passed, then the run hung in check_live_hosts_timeout, the hosts case with the hanging ssh stand-in, until the outer timeout killed it; no kernel-boundaries case was reached."
+assumption = "The hang sits in the hosts timeout case this task does not touch; it was not rerun under the one-try rule."
+severity   = "warning"
+
+[observation.2.1.6]
+task       = "2.1"
+file       = "spec/paxeer-x-bringup/spec.kvx"
+symbol     = "task.2.1"
+observed   = "cg spec start 2.1 exited 1 because in-progress task 4.2 also claims tools/bringup/check-live.sh, and cg spec implemented 2.1 exited 1 with the graph database busy and symbol check_kernel_boundaries not defined in the graph."
+assumption = "Shell functions are not graph symbols, so the status line was set to implemented by hand without forcing either command."
+severity   = "note"
