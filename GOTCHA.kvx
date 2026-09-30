@@ -1403,3 +1403,21 @@ area    = "gas-station"
 symptom = "The station refuses its configuration when max_rate_age is set to a paymaster refresh interval of more than five minutes."
 cause   = "The station config bounds max_rate_age to 1..300 seconds, independent of the contract's maximumAge."
 do      = "Keep the owner's setRate refresh interval at most 300 seconds, or change the station bound in its own task first."
+
+[gotcha.231]
+area    = "bringup"
+symptom = "A port copied from a Kubernetes manifest's upstream URL collides with another listener once the pod's containers share one Fly machine."
+cause   = "Manifest URLs carry Service ports that map to distinct pods or containerPorts; in the one-machine kernel app core already holds 9443 and the first Paxeer boundary holds 9447."
+do      = "Take every in-machine port from docker/kernel/init.sh and the kernel toml, and treat a Service port in a manifest URL as unfixed until the spec names it."
+
+[gotcha.232]
+area    = "bringup"
+symptom = "A probe that splits openssl s_client -showcerts output into one file per certificate gets an unreadable second certificate."
+cause   = "The awk split kept printing the text between certificates after close(), and a print to a closed file reopens and truncates it."
+do      = "Print only between BEGIN and END CERTIFICATE lines with an in-certificate flag, and close the file at the END line."
+
+[gotcha.233]
+area    = "bringup"
+symptom = "A check-live subcommand exits with 'unbound variable' at the very end after all its lines printed."
+cause   = "An EXIT trap set inside a function with a single-quoted reference to a local variable runs after the function's locals are gone, and set -u trips on it."
+do      = "Expand the path into the trap when it is set (double quotes, shellcheck SC2064 disabled) as the other probes of the file do."

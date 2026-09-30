@@ -6,8 +6,13 @@ checker="$root/tools/bringup/check-live.sh"
 work="$(mktemp -d)"
 responder_pid=""
 agentd_pid=""
+internal_pids=""
 
 cleanup() {
+	for pid in $internal_pids; do
+		kill "$pid" 2>/dev/null || true
+		wait "$pid" 2>/dev/null || true
+	done
 	if [ -n "$responder_pid" ]; then
 		kill "$responder_pid" 2>/dev/null || true
 		wait "$responder_pid" 2>/dev/null || true
@@ -179,6 +184,8 @@ chmod +x "$work/bin/flyctl"
 # CHECK_LIVE_TEST_AGENT_RPC_CODE and CHECK_LIVE_TEST_AGENT_RPC.
 # With CHECK_LIVE_TEST_GAS set, the chain name and the router's /rpc answer
 # from the files of that directory, as the gas cases below describe.
+# CHECK_LIVE_TEST_AGENT_RPC_CODE and CHECK_LIVE_TEST_AGENT_RPC. A process-group
+# .internal name answers /readyz ready to a request with a client certificate.
 cat >"$work/bin/curl" <<'SH'
 #!/usr/bin/env bash
 set -eu
@@ -266,6 +273,26 @@ if [ "$name" = machine ]; then
 	[ -z "$wout" ] || printf '%s' "$code"
 	exit 0
 fi
+case "$url" in
+https://*.process.*.internal:9443/*)
+	wout=""
+	cert=0
+	while [ "$#" -gt 0 ]; do
+		case "$1" in
+		-w | --write-out) wout="$2" ;;
+		--cert) cert=1 ;;
+		esac
+		shift
+	done
+	if [ "$cert" -eq 0 ]; then
+		echo "curl: (56) OpenSSL SSL_read: tlsv13 alert certificate required" >&2
+		exit 56
+	fi
+	printf '{"ready":true}'
+	[ -z "$wout" ] || printf '%b' "${wout//%\{http_code\}/200}"
+	exit 0
+	;;
+esac
 case "$url" in
 https://*/?*)
 	body='{"status":"ready"}'
@@ -1081,6 +1108,95 @@ CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_gas_undelegated "$work/h
 	"fail delegation account=$gas_account code=0x want=0xef0100${gas_paymaster#0x}" \
 	"check-live: 2 check(s) failed"
 unset CHECK_LIVE_TEST_GAS CHECK_LIVE_TEST_MACHINES CHECK_LIVE_GAS_ACCOUNT_KEYSTORE CHECK_LIVE_GAS_ACCOUNT_PASSWORD_FILE CHECK_LIVE_GAS_MAX_TOKEN_AMOUNT CHECK_LIVE_GAS_RECEIPT_ATTEMPTS
+
+# The internal cases serve a fixture chain for the router name from a local
+# openssl s_server whose last issuer is a fixture root named ISRG Root X1, run
+# copies of sleep named layerx-event-source with the payments and programs
+# environment for the pin reads, and read the five process-group names from
+# the kernel app's fixture machine, whose volume holds the human-event-client
+# identity from the ca cases.
+chain="$work/router-chain"
+mkdir -p "$chain" "$work/internal"
+for n in X1 X2; do
+	openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 30 -subj "/O=Internet Security Research Group/CN=ISRG Root $n" \
+		-addext 'basicConstraints=critical,CA:TRUE' -addext 'keyUsage=critical,keyCertSign,cRLSign' \
+		-keyout "$chain/root-$n.key" -out "$chain/root-$n.pem" 2>/dev/null
+	openssl x509 -in "$chain/root-$n.pem" -outform DER -out "$chain/root-$n.der"
+done
+openssl req -new -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -subj "/O=Fixture/CN=Fixture E1" -keyout "$chain/inter.key" -out "$chain/inter.csr" 2>/dev/null
+printf 'basicConstraints=critical,CA:TRUE,pathlen:0\nkeyUsage=critical,keyCertSign,cRLSign\n' >"$chain/inter.ext"
+openssl x509 -req -in "$chain/inter.csr" -CA "$chain/root-X1.pem" -CAkey "$chain/root-X1.key" -CAcreateserial -days 30 -extfile "$chain/inter.ext" -out "$chain/inter.pem" 2>/dev/null
+openssl req -new -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -subj "/CN=api-mainnet-beta.paxeer.network" -keyout "$chain/leaf.key" -out "$chain/leaf.csr" 2>/dev/null
+printf 'subjectAltName=DNS:api-mainnet-beta.paxeer.network\nextendedKeyUsage=serverAuth\n' >"$chain/leaf.ext"
+openssl x509 -req -in "$chain/leaf.csr" -CA "$chain/inter.pem" -CAkey "$chain/inter.key" -CAcreateserial -days 30 -extfile "$chain/leaf.ext" -out "$chain/leaf.pem" 2>/dev/null
+router_port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
+openssl s_server -quiet -accept "127.0.0.1:$router_port" -cert "$chain/leaf.pem" -key "$chain/leaf.key" -cert_chain "$chain/inter.pem" </dev/null >/dev/null 2>&1 &
+internal_pids="$!"
+for _ in $(seq 50); do
+	(: <"/dev/tcp/127.0.0.1/$router_port") 2>/dev/null && break
+	sleep 0.1
+done
+export CHECK_LIVE_ROUTER_CONNECT="127.0.0.1:$router_port"
+
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_internal_nothing_running "$work/hosts-good.env" 1 internal -- \
+	"pass public-ips app=$internal count=0" \
+	"pass public-ips app=$(fx_app platform/hosted/internal/redis.toml) count=0" \
+	"pass router-root host=api-mainnet-beta.paxeer.network root=X1" \
+	"fail upstream-ca group=payments process=none" \
+	"fail upstream-ca group=programs process=none" \
+	"pass readiness group=kms url=https://kms.process.$internal.internal:9443/readyz from=$kernel http=200 ready=true" \
+	"check-live: 2 check(s) failed"
+
+cp "$(command -v sleep)" "$work/internal/layerx-event-source"
+for group in payments programs; do
+	LAYERX_EVENTS_KIND="$group" LAYERX_EVENTS_UPSTREAM_URL=https://api-mainnet-beta.paxeer.network LAYERX_EVENTS_UPSTREAM_CA_DER="$chain/root-X1.der" \
+		"$work/internal/layerx-event-source" 600 &
+	internal_pids="$internal_pids $!"
+done
+: >"$CHECK_LIVE_TEST_STDIN"
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_internal_passing "$work/hosts-good.env" 0 internal -- \
+	"pass router-root host=api-mainnet-beta.paxeer.network root=X1" \
+	"pass upstream-ca group=payments url=https://api-mainnet-beta.paxeer.network root=X1 verifies=yes" \
+	"pass upstream-ca group=programs url=https://api-mainnet-beta.paxeer.network root=X1 verifies=yes" \
+	"pass readiness group=kms url=https://kms.process.$internal.internal:9443/readyz from=$kernel http=200 ready=true" \
+	"pass readiness group=journeys url=https://journeys.process.$internal.internal:9443/readyz from=$kernel http=200 ready=true" \
+	"pass readiness group=payments url=https://payments.process.$internal.internal:9443/readyz from=$kernel http=200 ready=true" \
+	"pass readiness group=approvals url=https://approvals.process.$internal.internal:9443/readyz from=$kernel http=200 ready=true" \
+	"pass readiness group=programs url=https://programs.process.$internal.internal:9443/readyz from=$kernel http=200 ready=true" \
+	"check-live: all checks passed"
+if [ "$(grep -c "^$kernel app ssh console sh -c 'tls=/data/tls/human-event-client app=$internal limit=5 sh -s'$" "$CHECK_LIVE_TEST_CALLS")" -eq 1 ] &&
+	[ "$(grep -c "^$internal payments ssh console sh -c 'kind=payments sh -s'$" "$CHECK_LIVE_TEST_CALLS")" -eq 1 ] &&
+	[ "$(grep -c "^$internal programs ssh console sh -c 'kind=programs sh -s'$" "$CHECK_LIVE_TEST_CALLS")" -eq 1 ] &&
+	! grep -q 'PRIVATE KEY' "$CHECK_LIVE_TEST_STDIN"; then
+	echo "ok   check_live_internal_reads_each_machine_once"
+else
+	echo "FAIL check_live_internal_reads_each_machine_once: want one sh -s call on $kernel with the event client identity path and one on each pinned group, and no key on the console input"
+	cat "$CHECK_LIVE_TEST_CALLS"
+	failures=$((failures + 1))
+fi
+
+kill "${internal_pids##* }" 2>/dev/null || true
+wait "${internal_pids##* }" 2>/dev/null || true
+LAYERX_EVENTS_KIND=programs LAYERX_EVENTS_UPSTREAM_URL=https://api-mainnet-beta.paxeer.network LAYERX_EVENTS_UPSTREAM_CA_DER="$chain/root-X2.der" \
+	"$work/internal/layerx-event-source" 600 &
+internal_pids="$internal_pids $!"
+export CHECK_LIVE_TEST_IPS='[{"Type":"v6"}]'
+CHECK_LIVE_TEST_DOWN="approvals" CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_internal_failing "$work/hosts-good.env" 1 internal -- \
+	"fail public-ips app=$internal count=1" \
+	"fail public-ips app=$(fx_app platform/hosted/internal/redis.toml) count=1" \
+	"pass upstream-ca group=payments url=https://api-mainnet-beta.paxeer.network root=X1 verifies=yes" \
+	"fail upstream-ca group=programs url=https://api-mainnet-beta.paxeer.network pin=ISRG-Root-X2 served=X1" \
+	"fail readiness group=approvals url=https://approvals.process.$internal.internal:9443/readyz from=$kernel curl=7" \
+	"pass readiness group=kms url=https://kms.process.$internal.internal:9443/readyz from=$kernel http=200 ready=true" \
+	"check-live: 4 check(s) failed"
+unset CHECK_LIVE_TEST_IPS
+
+export CHECK_LIVE_ROUTER_CONNECT="127.0.0.1:1"
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_internal_router_unreadable "$work/hosts-good.env" 1 internal -- \
+	"fail router-root host=api-mainnet-beta.paxeer.network root=unreadable" \
+	"fail upstream-ca group=payments url=https://api-mainnet-beta.paxeer.network pin=ISRG-Root-X1 served=unreadable" \
+	"check-live: 3 check(s) failed"
+unset CHECK_LIVE_ROUTER_CONNECT
 
 # The fleet script shares the host map and the ssh helpers, so its own test
 # runs as the last case, with this test's stand-ins off the PATH.
