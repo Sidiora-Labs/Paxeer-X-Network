@@ -713,3 +713,19 @@ symbol     = "write_genesis_metadata, builder_release_publish, CANDIDATE_ABI_MOD
 observed   = "cg spec done 1.3 reran the verify_cmd to a pass, then refused (exit 75) because the graph database was busy and those three symbols, two shell functions and one Rust constant, are not in the last completed index."
 assumption = "The refusal concerns the graph index, not the task; per the existing gotcha the status was set to done by hand after the genuine pass recorded in gate.1.3.1, and the gate was not rerun."
 severity   = "note"
+
+[observation.4.13.1]
+task       = "4.13"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_ci"
+observed   = "timeout 30m tools/bringup/check-live.sh ci exited 1 at f677c1cca plus this task's change (log .logs/verify.log): the controller app has no machine, CI_LINUX_RUNNER is unset, and the dispatched canary ran on a hosted runner and failed at its lld step, so no job ran on a fly- runner."
+assumption = "The runner image, deploy token, controller secrets, controller deploy and repository variable of do_1 need the owner's fine-grained GitHub token; the exact commands are in the owner handoff, and the gate reruns once they have run."
+severity   = "blocker"
+
+[observation.4.13.2]
+task       = "4.13"
+file       = "tools/flyci/controller/fly.toml, tools/flyci/runner/fly.toml"
+symbol     = "check_ci"
+observed   = "cg spec implemented 4.13 exited 75 with the graph database busy and symbol check_ci not defined in the graph; both fly.toml files already carry the real app names and the controller's env by name, so they needed no change."
+assumption = "Shell functions are not graph symbols, so the status line was set to implemented by hand; the controller's three secrets are set by name through flyctl secrets import, never in the toml."
+severity   = "note"

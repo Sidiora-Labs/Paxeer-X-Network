@@ -245,7 +245,7 @@
     - Fill the nine chain configs and bridge/deploy/attestors.json from the supplied inputs, run deploy-evm-chain.sh and verify-evm-chain.sh per chain and deploy-solana-program.sh, generate and submit the governance proposals, and run bridge/deploy/checklist.sh.
     - Write docker/bridge-relayer/Dockerfile with layerx-bridge-relayer and layerx-mirror-signer and its entrypoint docker/bridge-relayer/entrypoint.sh that runs both and exits when either exits, and interop/deploy/bridge-relayer/fly.toml: one machine with a volume, the relayer dialing the signer over a unix socket in the machine, the relayer config and the attestor key handles imported as Fly secrets; deploy it and add the bridge subcommand: checklist exit 0 and one observed deposit journaled as bridgeIn.
     - _Requirements: 17.2_
-  - [ ] 4.13 Deploy the CI runner image and controller on Fly and prove the canary
+  - [-] 4.13 Deploy the CI runner image and controller on Fly and prove the canary
     - Build and push the runner image, create the runner deploy token, set GITHUB_TOKEN, FLY_API_TOKEN and RUNNER_IMAGE on the controller app, deploy the controller, and set the repository variable CI_LINUX_RUNNER to fly-linux.
     - Add the ci subcommand: it dispatches runner-canary.yml on the repository's default branch, waits for that run and passes only when the run succeeds with a job on a runner whose name starts with fly-.
     - _Requirements: 18.1_

@@ -1302,6 +1302,78 @@ check_edge() {
 	finish "$failures"
 }
 
+# check_ci: the CI controller app of tools/flyci/controller/fly.toml runs one
+# started machine, the repository variable CI_LINUX_RUNNER is the runner label
+# the controller serves, and runner-canary.yml dispatched on the default
+# branch completes with conclusion success and a successful job on a runner
+# whose name starts with fly-. A run still unfinished after the wait is
+# cancelled. One line per check.
+check_ci() {
+	local toml=tools/flyci/controller/fly.toml workflow=runner-canary.yml wait=1500
+	local app label answer n_machines n_started variable branch since run attempt status conclusion runner jobs failures=0
+	if ! command -v gh >/dev/null 2>&1 || ! command -v flyctl >/dev/null 2>&1; then
+		echo "check-live: gh and flyctl are required" >&2
+		exit 2
+	fi
+	if ! app="$(fly_app "$toml")"; then
+		echo "fail ci toml=absent"
+		finish 1
+	fi
+	label="$(sed -n 's/^[[:space:]]*RUNNER_LABELS[[:space:]]*=[[:space:]]*"\([^",]*\).*"[[:space:]]*$/\1/p' "$repo_root/$toml" | head -n 1)"
+	answer="$(timeout "$timeout" flyctl machines list --app "$app" --json 2>/dev/null | python3 -c '
+import json, sys
+ms = json.load(sys.stdin)
+print(len(ms), len([m for m in ms if m.get("state") == "started"]))
+' 2>/dev/null)" || answer=""
+	read -r n_machines n_started <<<"${answer:-none none}"
+	if [ "$n_started" = 1 ]; then
+		echo "pass controller app=$app machines=$n_machines started=1"
+	else
+		echo "fail controller app=$app machines=$n_machines started=$n_started"
+		failures=$((failures + 1))
+	fi
+	variable="$(cd "$repo_root" && timeout "$timeout" gh variable get CI_LINUX_RUNNER 2>/dev/null)" || variable=""
+	if [ -n "$label" ] && [ "$variable" = "$label" ]; then
+		echo "pass variable CI_LINUX_RUNNER=$variable"
+	else
+		echo "fail variable CI_LINUX_RUNNER=${variable:-unset} want=${label:-none}"
+		failures=$((failures + 1))
+	fi
+	branch="$(cd "$repo_root" && timeout "$timeout" gh repo view --json defaultBranchRef --jq .defaultBranchRef.name 2>/dev/null)" || branch=""
+	if [ -z "$branch" ]; then
+		echo "fail canary workflow=$workflow branch=none"
+		finish $((failures + 1))
+	fi
+	since="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+	if ! (cd "$repo_root" && timeout "$timeout" gh workflow run "$workflow" --ref "$branch" >/dev/null 2>&1); then
+		echo "fail canary workflow=$workflow branch=$branch dispatch=refused"
+		finish $((failures + 1))
+	fi
+	run=""
+	for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+		sleep 5
+		run="$(cd "$repo_root" && timeout "$timeout" gh run list --workflow "$workflow" --branch "$branch" --event workflow_dispatch --limit 10 --json databaseId,createdAt --jq "[.[] | select(.createdAt >= \"$since\")] | last | .databaseId // empty" 2>/dev/null)" || run=""
+		[ -z "$run" ] || break
+	done
+	if [ -z "$run" ]; then
+		echo "fail canary workflow=$workflow branch=$branch run=none"
+		finish $((failures + 1))
+	fi
+	(cd "$repo_root" && timeout "$wait" gh run watch "$run" --interval 15 >/dev/null 2>&1) || true
+	answer="$(cd "$repo_root" && timeout "$timeout" gh run view "$run" --json status,conclusion,jobs --jq '[.status, (.conclusion | if . == "" then "none" else . end), ([.jobs[] | select((.runnerName // "") | startswith("fly-")) | select(.conclusion == "success") | .runnerName] | first // "none"), ([.jobs[] | (.runnerName // "") | if . == "" then "none" else gsub(" "; "_") end] | join(","))] | join(" ")' 2>/dev/null)" || answer=""
+	read -r status conclusion runner jobs <<<"${answer:-none none none none}"
+	if [ "$status" != completed ]; then
+		(cd "$repo_root" && timeout "$timeout" gh run cancel "$run" >/dev/null 2>&1) || true
+	fi
+	if [ "$status" = completed ] && [ "$conclusion" = success ] && [ "$runner" != none ]; then
+		echo "pass canary workflow=$workflow branch=$branch run=$run conclusion=success runner=$runner"
+	else
+		echo "fail canary workflow=$workflow branch=$branch run=$run status=$status conclusion=$conclusion runners=${jobs:-none}"
+		failures=$((failures + 1))
+	fi
+	finish "$failures"
+}
+
 # Sourced by tools/bringup/ca.sh for the Fly helpers and the CA settings: the
 # probe's own dispatch below runs only when this file is executed.
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
@@ -1318,6 +1390,7 @@ validators) ;;
 identity) ;;
 search-front) ;;
 edge) ;;
+ci) ;;
 *)
 	usage >&2
 	exit 2
