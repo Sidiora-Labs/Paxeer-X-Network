@@ -11,6 +11,14 @@ const config: NextConfig = {
   turbopack: {
     root: repositoryRoot,
   },
+  async rewrites() {
+    return [
+      {
+        source: "/v1/dashboard/:path*",
+        destination: "http://paxeer-dashboard.internal:9445/v1/dashboard/:path*",
+      },
+    ];
+  },
 };
 
 export default config;

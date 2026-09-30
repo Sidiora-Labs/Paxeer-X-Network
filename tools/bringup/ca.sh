@@ -52,6 +52,7 @@ Environment:
 
 Exits 1 when the CA is missing, already present on init, a toml names no
 app, or a Fly step fails; 2 on a usage error or an unknown service.
+dashboard-client platform/hosted/dashboard/fly.toml - DASHBOARD_CLIENT layerx-dashboard clientAuth -
 EOF
 }
 

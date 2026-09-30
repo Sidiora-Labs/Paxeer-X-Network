@@ -1493,3 +1493,21 @@ area    = "bringup"
 symptom = "Probe cases that find a stand-in process by executable name under /proc pass alone and fail when several copies of check-live.test.sh run at once."
 cause   = "Each copy starts its own layerx-event-source or agentd stand-in, and every copy's /proc scan sees the other copies' processes with their environment."
 do      = "Run the harness alone before reading those cases, or give a new stand-in an executable name no other case uses; a flyctl machine run one-off also skips fly.toml [env], so pass the static env with --env from the toml."
+
+[gotcha.246]
+area    = "bringup"
+symptom = "cg spec start refuses a task whose requires are not done yet although the wave builds against the design blocks."
+cause   = "cg checks the requires list before it moves a task to in_progress."
+do      = "Set the status to in_progress by hand in spec.kvx and remove spec.kvx.lock, as the build-side wave rule allows."
+
+[gotcha.247]
+area    = "bringup"
+symptom = "A Fly app with two process groups needs a plain listener in one group and a TLS listener in the other, but the service refuses the plain mode when any TLS variable is set."
+cause   = "Fly [env] is shared by every process group, and the plain listener rejects the TLS certificate variables."
+do      = "Set the per-group listener variables in a small init that the group's process command names, and keep them out of [env]."
+
+[gotcha.248]
+area    = "bringup"
+symptom = "A new ca.sh row fails check-live ca and the every-service count of check-live.test.sh."
+cause   = "check_ca wants a [[files]] entry that mounts <PREFIX>_CERT in the row's toml, and the harness pins the number of rows."
+do      = "Mount <PREFIX>_CERT in the toml with the row and raise the pinned row count in the same change."

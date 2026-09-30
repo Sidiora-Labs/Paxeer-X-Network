@@ -319,3 +319,34 @@ LAYERX_HUMAN_RETENTION_NOTIFICATIONS_SECONDS - retention of delivered notificati
 LAYERX_HUMAN_RETENTION_AUDIT_SECONDS - retention of audit records in seconds
 LAYERX_HUMAN_RETENTION_TELEMETRY_SECONDS - retention of telemetry in seconds
 LAYERX_HUMAN_RETENTION_CACHE_SECONDS - retention of cached reads in seconds
+# event producers
+LAYERX_EVENTS_PAYMENT_UPSTREAM_URL - https origin of the payments event source the router's payment producer posts to, https://payments.process.paxeer-internal.internal:9443
+LAYERX_EVENTS_PAYMENT_UPSTREAM_CA_DER - path to the DER internal CA root that authenticates the payments event source
+LAYERX_EVENTS_PAYMENT_UPSTREAM_TOKEN_FILE - path to the producer token of the payments event source
+LAYERX_EVENTS_PAYMENT_UPSTREAM_CLIENT_IDENTITY_PKCS12 - path to the PKCS12 client identity the payment producer presents
+LAYERX_EVENTS_PAYMENT_UPSTREAM_CLIENT_IDENTITY_PASSWORD_FILE - path to the password of that PKCS12 client identity
+LAYERX_EVENTS_JOURNEY_UPSTREAM_URL - https origin of the journeys event source the human components' journey producer posts to, https://journeys.process.paxeer-internal.internal:9443
+LAYERX_EVENTS_JOURNEY_UPSTREAM_CA_DER - path to the DER internal CA root that authenticates the journeys event source
+LAYERX_EVENTS_JOURNEY_UPSTREAM_TOKEN_FILE - path to the producer token of the journeys event source
+LAYERX_EVENTS_JOURNEY_UPSTREAM_CLIENT_IDENTITY_PKCS12 - path to the PKCS12 client identity the journey producer presents
+LAYERX_EVENTS_JOURNEY_UPSTREAM_CLIENT_IDENTITY_PASSWORD_FILE - path to the password of that PKCS12 client identity
+LAYERX_EVENTS_APPROVAL_UPSTREAM_URL - https origin of the approvals event source the human components' approval producer posts to, https://approvals.process.paxeer-internal.internal:9443
+LAYERX_EVENTS_APPROVAL_UPSTREAM_CA_DER - path to the DER internal CA root that authenticates the approvals event source
+LAYERX_EVENTS_APPROVAL_UPSTREAM_TOKEN_FILE - path to the producer token of the approvals event source
+LAYERX_EVENTS_APPROVAL_UPSTREAM_CLIENT_IDENTITY_PKCS12 - path to the PKCS12 client identity the approval producer presents
+LAYERX_EVENTS_APPROVAL_UPSTREAM_CLIENT_IDENTITY_PASSWORD_FILE - path to the password of that PKCS12 client identity
+LAYERX_EVENTS_WEBHOOKS_UPSTREAM_URL - https origin of the webhooks ingress every producer notifies, https://ingress.process.paxeer-webhooks.internal
+LAYERX_EVENTS_WEBHOOKS_UPSTREAM_CA_DER - path to the DER internal CA root that authenticates the webhooks ingress
+LAYERX_EVENTS_WEBHOOKS_UPSTREAM_TOKEN_FILE - path to the webhooks source trigger token
+LAYERX_EVENTS_WEBHOOKS_UPSTREAM_CLIENT_IDENTITY_PKCS12 - path to the PKCS12 client identity presented to the webhooks ingress
+LAYERX_EVENTS_WEBHOOKS_UPSTREAM_CLIENT_IDENTITY_PASSWORD_FILE - path to the password of that PKCS12 client identity
+ENDPOINT_CLIENT_P12 - platform secret holding the gateway-client PKCS12 identity of tools/bringup/ca.sh, written to the file named by the router's LAYERX_EVENTS_PAYMENT_UPSTREAM_CLIENT_IDENTITY_PKCS12 and LAYERX_EVENTS_WEBHOOKS_UPSTREAM_CLIENT_IDENTITY_PKCS12
+ENDPOINT_CLIENT_PASSWORD - platform secret holding the password of ENDPOINT_CLIENT_P12, written to the file named by the router's two producer password variables
+ENDPOINT_EVENTS_PAYMENT_TOKEN - platform secret holding the producer token of the payments event source, written to the file named by LAYERX_EVENTS_PAYMENT_UPSTREAM_TOKEN_FILE
+ENDPOINT_EVENTS_WEBHOOKS_TOKEN - platform secret holding the webhooks source trigger token, written to the file named by the router's LAYERX_EVENTS_WEBHOOKS_UPSTREAM_TOKEN_FILE
+HUMAN_EVENTS_JOURNEY_TOKEN - platform secret holding the producer token of the journeys event source, written to the file named by LAYERX_EVENTS_JOURNEY_UPSTREAM_TOKEN_FILE
+HUMAN_EVENTS_APPROVAL_TOKEN - platform secret holding the producer token of the approvals event source, written to the file named by LAYERX_EVENTS_APPROVAL_UPSTREAM_TOKEN_FILE
+HUMAN_EVENTS_WEBHOOKS_TOKEN - platform secret holding the webhooks source trigger token, written to the file named by the kernel app's LAYERX_EVENTS_WEBHOOKS_UPSTREAM_TOKEN_FILE
+CHECK_LIVE_DEVELOPERS_TOKEN_FILE - file holding the bearer session token of a developer principal that tools/bringup/check-live.sh developers registers a webhook endpoint with and reads deliveries as
+CHECK_LIVE_DEVELOPERS_RECEIVER - https URL of the receiver the check's webhook endpoint delivers to; it must answer 2xx to a delivery
+CHECK_LIVE_DEVELOPERS_DELIVERY_ATTEMPTS - reads of the deliveries list, five seconds apart, the check waits for a delivered producer event, default 36
