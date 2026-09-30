@@ -10,6 +10,7 @@ kill_timeout = "60s"
   strategy = "immediate"
 
 [env]
+  LAYERX_NODE_NETWORK_ID = "125"
   LAYERX_HUMAN_LISTENER = "plain"
   LAYERX_HUMAN_BIND = "[::]:8080"
   LAYERX_HUMAN_COMPONENT_SOCKET = "/run/layerx/human/components.sock"

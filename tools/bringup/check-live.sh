@@ -2314,6 +2314,75 @@ print(len(ms), len(started), len(data))
 	finish "$failures"
 }
 
+check_kernel_node() {
+	local app answer key value genesis="" network="" public="" core="" status="" lni="" head="" failures=0
+	local -A clocks=()
+	if ! command -v flyctl >/dev/null 2>&1; then
+		echo "check-live: flyctl is required" >&2
+		exit 2
+	fi
+	if ! app="$(fly_app human/wallet/deploy/human.toml)"; then
+		echo "fail kernel-node toml=absent"
+		finish 1
+	fi
+	# shellcheck disable=SC2016 # the command expands on the machine
+	answer="$(fly_ssh "$app" - 'n=/data/layerx/node; r=/run/layerx/node; t="Authorization: Bearer $(cat /data/layerx/keys/tokens/replica-token)"; echo genesis $(sha256sum $n/genesis/genesis.manifest | cut -d" " -f1); echo network $(curl -fsS -m 10 -H "$t" http://127.0.0.1:9402/v1/sync/network | jq -c .); echo public $(cat $n/*.env | sed -n "s/^LAYERX_NODE_SEQUENCER_PUBLIC_KEY=//p" | head -1); echo core $(sed -n "s/^LAYERX_CORE_SEQUENCER_ID=//p" $r/core.env); echo status $(printf "status\n" | socat -t 5 - UNIX-CONNECT:$r/supervisor.sock | jq -c .); [ -S $r/layerxd.lni.sock ] && echo lni socket; echo head $(curl -fsS -m 10 -H "$t" http://127.0.0.1:9402/v1/sync/head | jq -c .); for s in treasury-signer layerxd layerxd-authority guarantor-1 guarantor-2; do p=; read -r u st p </run/layerx/init/$s 2>/dev/null; echo clock $s $(tr "\000" " " </proc/${p:-0}/cmdline 2>/dev/null | cut -d" " -f1); done' 2>/dev/null)" || answer=""
+	while read -r key value; do
+		case "$key" in
+		genesis) genesis=$value ;;
+		network) network=$value ;;
+		public) public=$value ;;
+		core) core=$value ;;
+		status) status=$value ;;
+		lni) lni=$value ;;
+		head) head=$value ;;
+		clock) clocks[${value%% *}]=${value#* } ;;
+		esac
+	done <<<"$answer"
+	value="$(python3 -c 'import json, sys; print(json.loads(sys.argv[1]).get("genesis_sha256", "none"))' "$network" 2>/dev/null)" || value=none
+	if [[ $genesis =~ ^[0-9a-f]{64}$ ]] && [ "$value" = "$genesis" ]; then
+		echo "pass genesis app=$app sha256=$genesis replica=match"
+	else
+		echo "fail genesis app=$app sha256=${genesis:-absent} replica=$value"
+		failures=$((failures + 1))
+	fi
+	value="$(printf 'layerx-sequencer:%s' "$public" | sha256sum | cut -d' ' -f1)"
+	if [[ $public =~ ^[0-9a-f]{64}$ ]] && [ "$value" = "$core" ]; then
+		echo "pass sequencer public=$public core=match"
+	else
+		echo "fail sequencer public=${public:-absent} core=${core:-absent}"
+		failures=$((failures + 1))
+	fi
+	if [ "$(python3 -c 'import json, sys; print(json.loads(sys.argv[1]).get("state"))' "$status" 2>/dev/null)" = running ]; then
+		echo "pass supervisor state=running"
+	else
+		echo "fail supervisor status=${status:-absent}"
+		failures=$((failures + 1))
+	fi
+	if [ "$lni" = socket ]; then
+		echo "pass lni socket=present"
+	else
+		echo "fail lni socket=absent"
+		failures=$((failures + 1))
+	fi
+	if [ -n "$head" ] && python3 -c 'import json, sys; json.loads(sys.argv[1])["head"]' "$head" 2>/dev/null; then
+		echo "pass replica head=$head"
+	else
+		echo "fail replica head=${head:-absent}"
+		failures=$((failures + 1))
+	fi
+	for key in treasury-signer layerxd layerxd-authority guarantor-1 guarantor-2; do
+		value=${clocks[$key]:-absent}
+		if [ "${value##*/}" = layerx-runtime-clock ]; then
+			echo "pass clock $key"
+		else
+			echo "fail clock $key exec=$value"
+			failures=$((failures + 1))
+		fi
+	done
+	finish "$failures"
+}
+
 mode="${1:-}"
 case "$mode" in
 -h | --help)
@@ -2325,6 +2394,7 @@ rpc-placement) ;;
 validators) ;;
 identity) ;;
 kernel-app) ;;
+kernel-node) ;;
 search-front) ;;
 edge) ;;
 ci) ;;

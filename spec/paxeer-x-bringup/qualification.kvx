@@ -1127,3 +1127,19 @@ symbol     = "COPY docker/gas-station/init.sh"
 observed   = "The dockerignore excluded the docker tree, so the runtime stage's COPY of the station init had no source; the deploy side's read-only build plan found it before any build ran."
 assumption = "Fixed on the feature with an exception line for the init and an explicit util-linux in the runtime stage; the image is built once on the deploy side's builder from the corrected revision."
 severity   = "high"
+
+[observation.1.4.4]
+task       = "1.4"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_kernel_node"
+observed   = "timeout 15m tools/bringup/check-live.sh kernel-node exited 1 with ten fail lines: the kernel app does not yet run the kernel image, so no genesis, supervisor, LNI socket or replica exists (log .logs/verify.log)."
+assumption = "The deploy of the kernel image (tasks 1.5 and 1.7) precedes kernel-genesis.sh; the gate is rerun after it."
+severity   = "blocker"
+
+[observation.1.4.5]
+task       = "1.4"
+file       = "tools/bringup/kernel-genesis.sh"
+symbol     = "kernel_genesis"
+observed   = "The custody asset map on chain 125 is empty: eth_call 0x...1013 nativeAssetId() answers bytes32 zero, assetByPointer(0x21f7b20a555199fa73A238B1a91FD0f549068fEe) answers bytes32 zero, getAsset(zero) answers an empty record and depositRootAuthority() answers zero; no USDC or USDL pointer on chain 125 is fixed in the tree."
+assumption = "The script refuses with that exact call until governance registers the assets with MsgSetAsset; the USDC and USDL pointers come from that registration; the guarantor's publication authorization.json needs the deposit root authority the chain does not hold yet."
+severity   = "blocker"

@@ -29,15 +29,15 @@ human_state=/data/human-state
 tls=${LAYERX_FLY_TLS_DIR:-/data/tls}
 run=/run/layerx
 status=$run/init
-genesis_files="$genesis/metadata.lxgb $keys/sequencer.key"
+genesis_files="$genesis/metadata.lxgb $keys/sequencer.key $genesis/asset-id $genesis/replica-id"
 
 # The layerx-node-config ConfigMap of the pod, and the precompile addresses of
-# its layerxd container; the network id is the owner's (the testnet ConfigMap
-# carries 402).
-: "${LAYERX_NODE_NETWORK_ID:?the kernel network id is an owner input staged as a Fly secret}"
+# its layerxd container. The network id is kernel_network_id of the spec's
+# [design.fly], set in the app env; the asset id (the PAX record of the custody
+# asset map) and the replica id are the ones tools/bringup/kernel-genesis.sh
+# wrote beside the genesis metadata.
+: "${LAYERX_NODE_NETWORK_ID:?the kernel network id is set in the app env}"
 export LAYERX_NODE_NETWORK_ID
-export LAYERX_NODE_ASSET_ID=b5a32b12029f8ddfb905f90f280f664b46390de0fc62770fc197dd87b18cd898
-export LAYERX_NODE_REPLICA_ID=6c61796572782d626574612d726563656970742d617574686f726974792d3031
 export LAYERX_NODE_PAXEER_RELAY_PORT=18545
 export LAYERX_NODE_PAXEER_CHAIN_ID=125
 export LAYERX_NODE_PAXEER_RPC_URL=http://127.0.0.1:$LAYERX_NODE_PAXEER_RELAY_PORT
@@ -311,14 +311,29 @@ service treasury-signer 4020 "$keys/treasury.key $keys/publication/binding-polic
 	--public-key-file "$run/node/treasury-public-key" \
 	--binding-policy "$run/publication/binding-policy.json"
 
-service layerxd 4020 "$genesis_files" - clock -- \
-	/opt/layerx/supervisor.sh --role sequencer --data-dir "$node_data" --run-dir "$run/node" -- \
+# kernel_ids: the generated asset and replica ids, refused when either is not
+# 64 hex characters or is the old beta constant.
+kernel_ids() {
+	local id
+	for id in "$(cat "$genesis/asset-id")" "$(cat "$genesis/replica-id")"; do
+		case "$id" in
+		b5a32b12029f8ddfb905f90f280f664b46390de0fc62770fc197dd87b18cd898 | 6c61796572782d626574612d726563656970742d617574686f726974792d3031)
+			log "the genesis ids hold the old beta constant $id; run kernel-genesis.sh rotate"
+			return 1
+			;;
+		esac
+		[[ $id =~ ^[0-9a-f]{64}$ ]] || return 1
+	done
+}
+
+# shellcheck disable=SC2016 # the ids expand when the service starts
+service layerxd 4020 "$genesis_files" kernel_ids clock -- \
+	/bin/sh -c 'exec /opt/layerx/supervisor.sh "$@" --asset "$(cat '"$genesis"'/asset-id)" --replica-id "$(cat '"$genesis"'/replica-id)"' layerxd \
+	--role sequencer --data-dir "$node_data" --run-dir "$run/node" -- \
 	--network-id "$LAYERX_NODE_NETWORK_ID" \
-	--asset "$LAYERX_NODE_ASSET_ID" \
 	--genesis-metadata "$genesis/metadata.lxgb" \
 	--withdrawal-fee 0 \
 	--module-fees /opt/layerx/genesis-module-fees.json \
-	--replica-id "$LAYERX_NODE_REPLICA_ID" \
 	--sequencer-key "$keys/sequencer.key" \
 	--treasury-signer-socket "$run/node/treasury-signer.sock" \
 	--program-token-file "$keys/tokens/program-token" \

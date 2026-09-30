@@ -1451,3 +1451,21 @@ area    = "bringup"
 symptom = "A service image build fails at the runtime stage COPY of its own init under docker/<service>/."
 cause   = "The image's Dockerfile.dockerignore excludes the whole docker tree, so the init it copies is not in the build context."
 do      = "Add an exception line for that file after the docker exclusion, and declare util-linux in a runtime stage that drops privileges with setpriv instead of relying on the base image."
+
+[gotcha.239]
+area    = "bringup"
+symptom = "A task hunts for a platform/deploy tree to find the node bootstrap and loses time."
+cause   = "There is no platform/deploy tree; the node bootstrap is platform/hosted/node/bootstrap.sh beside supervisor.sh and the pod definition."
+do      = "Open platform/hosted/node/ directly for the bootstrap, the supervisor and the genesis inputs."
+
+[gotcha.240]
+area    = "bringup"
+symptom = "A kernel genesis that reads its asset records from the custody precompile finds nothing to read."
+cause   = "The custody precompile has no enumeration view and an unregistered asset answers bytes32 zero from nativeAssetId and assetByPointer instead of reverting."
+do      = "Treat a zero asset id as an absent record and refuse with the exact call; register assets through MsgSetAsset before generating the genesis."
+
+[gotcha.241]
+area    = "bringup"
+symptom = "A remote /proc/$pid/cmdline read reports the kernel boot line instead of a process."
+cause   = "With an empty pid the path collapses to /proc//cmdline, which is /proc/cmdline."
+do      = "Default the pid (/proc/${p:-0}/cmdline) so an absent process reads as absent."
