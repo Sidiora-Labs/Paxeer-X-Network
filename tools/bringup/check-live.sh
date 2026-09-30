@@ -1374,6 +1374,126 @@ print(len(ms), len([m for m in ms if m.get("state") == "started"]))
 	finish "$failures"
 }
 
+# check_agent_public: the agentd mTLS surface of the kernel app of
+# human/wallet/deploy/human.toml at https://machine.paxeer.network:9454, the
+# name the edge host passes through unchanged to the app's dedicated IPv4.
+# The app holds a dedicated IPv4; inside a machine of the app, the running
+# layerx-agentd's program bearer and probe program are read from its own
+# environment, and platform/hosted/agentd/probe.sh runs against the public
+# name with the agentd-client identity tools/bringup/ca.sh left on the
+# volume and the internal CA root beside it; then one program.discover read
+# envelope posted to /rpc must answer 200 with request_id, value and
+# verification_status. The identity and the bearer never leave the machine.
+# One line per check.
+# shellcheck disable=SC2016
+agent_public_head='umask 077
+w=$(mktemp -d) || exit 1
+trap "rm -rf $w" EXIT
+cat >"$w/probe.sh" <<"LXPROBE"'
+# shellcheck disable=SC2016
+agent_public_tail='pid=
+for d in /proc/[0-9]*; do
+	case "$(readlink "$d/exe" 2>/dev/null)" in
+	*/layerx-agentd)
+		pid=$d
+		break
+		;;
+	esac
+done
+if [ -z "$pid" ]; then
+	echo "@@agentd none"
+	exit 0
+fi
+echo "@@agentd found"
+env_of() { tr "\000" "\n" <"$pid/environ" | sed -n "s/^$1=//p" | head -n 1; }
+env_of LAYERX_AGENT_PROGRAM_BEARER_TOKEN >"$w/bearer"
+program=$(env_of LAYERX_AGENT_PROGRAM_PROBE_ID)
+status=0
+sh "$w/probe.sh" --url "$url" --ca "$tls/ca.pem" --client-cert "$tls/cert.pem" --client-key "$tls/key.pem" --bearer-file "$w/bearer" >"$w/probe.out" 2>&1 </dev/null || status=$?
+echo "@@probe $status"
+head -n 3 "$w/probe.out"
+printf "header = \"Authorization: Bearer %s\"\n" "$(cat "$w/bearer")" >"$w/bearer.conf"
+printf "{\"operation\":\"program.discover\",\"request\":{\"program_id\":\"%s\",\"requested_verification_level\":\"sequencer-signed\"}}" "$program" >"$w/rpc.json"
+status=0
+code=$(curl --silent --show-error --max-time "$limit" --output "$w/rpc.out" --write-out "%{http_code}" --cacert "$tls/ca.pem" --cert "$tls/cert.pem" --key "$tls/key.pem" --config "$w/bearer.conf" -H "Content-Type: application/json" --data-binary "@$w/rpc.json" "$url/rpc" 2>"$w/rpc.err" </dev/null) || status=$?
+echo "@@rpc $status ${code:-none}"
+if [ "$status" -eq 0 ]; then head -c 65536 "$w/rpc.out"; else head -n 1 "$w/rpc.err"; fi
+echo'
+agent_public_py='
+import json
+import sys
+
+try:
+    doc = json.loads(sys.stdin.read())
+except ValueError:
+    doc = None
+if not isinstance(doc, dict):
+    print("body=unreadable")
+    sys.exit(1)
+request_id = doc.get("request_id")
+status = doc.get("verification_status")
+state = status.get("state") if isinstance(status, dict) else None
+ok = isinstance(request_id, str) and request_id != "" and doc.get("value") is not None and isinstance(state, str) and state != ""
+print("request_id=%s value=%s verification_status=%s" % (
+    "present" if isinstance(request_id, str) and request_id else "absent",
+    "present" if doc.get("value") is not None else "absent",
+    state if isinstance(state, str) and state else "absent"))
+sys.exit(0 if ok else 1)
+'
+check_agent_public() {
+	local toml=human/wallet/deploy/human.toml url=https://machine.paxeer.network:9454
+	local app answer reply agentd probe_status probe_out rpc_line rpc_status rpc_code rpc_body shape status failures=0
+	if ! command -v flyctl >/dev/null 2>&1; then
+		echo "check-live: flyctl is required" >&2
+		exit 2
+	fi
+	if ! app="$(fly_app "$toml")"; then
+		echo "fail agent-public toml=absent"
+		finish 1
+	fi
+	answer="$(timeout "$timeout" flyctl ips list --app "$app" --json 2>/dev/null | python3 -c 'import json, sys; print(len([i for i in json.load(sys.stdin) or [] if i.get("Type") == "v4"]))' 2>/dev/null)" || answer=""
+	if [ -n "$answer" ] && [ "$answer" -ge 1 ]; then
+		echo "pass ipv4 app=$app dedicated=$answer"
+	else
+		echo "fail ipv4 app=$app dedicated=${answer:-unreadable}"
+		failures=$((failures + 1))
+	fi
+	reply="$({
+		printf '%s\n' "$agent_public_head"
+		cat "$repo_root/platform/hosted/agentd/probe.sh"
+		printf '%s\n' LXPROBE "$agent_public_tail"
+	} | fly_ssh "$app" - "tls=$fly_tls_dir/agentd-client url=$url limit=$timeout sh -s")" || reply=""
+	agentd="$(sed -n 's/^@@agentd //p' <<<"$reply" | head -n 1)"
+	if [ "$agentd" != found ]; then
+		echo "fail agentd app=$app process=${agentd:-unreachable}"
+		finish $((failures + 1))
+	fi
+	echo "pass agentd app=$app process=found"
+	probe_status="$(sed -n 's/^@@probe //p' <<<"$reply" | head -n 1)"
+	probe_out="$(sed -n '/^@@probe /,/^@@rpc /{/^@@/d;p}' <<<"$reply" | tr '\n' ' ' | cut -c1-200)"
+	if [ "$probe_status" = 0 ]; then
+		echo "pass probe $url ready=true bearer=enforced client-cert=enforced"
+	else
+		echo "fail probe $url exit=${probe_status:-none} ${probe_out% }"
+		failures=$((failures + 1))
+	fi
+	rpc_line="$(sed -n 's/^@@rpc //p' <<<"$reply" | head -n 1)"
+	read -r rpc_status rpc_code <<<"${rpc_line:-none none}"
+	rpc_body="$(sed -n '/^@@rpc /,$p' <<<"$reply" | sed '1d')"
+	if [ "$rpc_status" != 0 ]; then
+		echo "fail rpc $url/rpc operation=program.discover transport=curl-$rpc_status $(printf '%s' "$rpc_body" | tr '\n' ' ' | cut -c1-160)"
+		finish $((failures + 1))
+	fi
+	shape="$(python3 -c "$agent_public_py" <<<"$rpc_body")" && status=0 || status=$?
+	if [ "$status" -eq 0 ] && [ "$rpc_code" = 200 ]; then
+		echo "pass rpc $url/rpc operation=program.discover http=200 $shape"
+	else
+		echo "fail rpc $url/rpc operation=program.discover http=$rpc_code $shape"
+		failures=$((failures + 1))
+	fi
+	finish "$failures"
+}
+
 # Sourced by tools/bringup/ca.sh for the Fly helpers and the CA settings: the
 # probe's own dispatch below runs only when this file is executed.
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
@@ -1391,6 +1511,7 @@ identity) ;;
 search-front) ;;
 edge) ;;
 ci) ;;
+agent-public) ;;
 *)
 	usage >&2
 	exit 2

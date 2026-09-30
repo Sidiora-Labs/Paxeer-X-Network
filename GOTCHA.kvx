@@ -1253,3 +1253,15 @@ area    = "ci"
 symptom = "The runner canary dispatched while CI_LINUX_RUNNER is unset runs on a hosted runner and fails at its lld step, and the API reports an empty runner name for that job."
 cause   = "The routing expression falls back to the hosted image, which lacks ld.lld, and completed hosted jobs carry no runnerName in the jobs listing."
 do      = "Read a hosted canary failure as the variable being unset, not as a runner image fault; judge the Fly runner only from a run whose job names a fly- runner."
+
+[gotcha.206]
+area    = "bringup-probe"
+symptom = "A live probe needs a daemon's bearer inside a Fly machine, but no task has fixed the file path the bearer is materialised to."
+cause   = "The daemon takes the bearer as an environment variable and the init that sets it is written by another task."
+do      = "Read the running daemon's own /proc/<pid>/environ inside the machine (found by its exe name) and keep the bearer in a 0600 temporary file there; never pass it through the ssh console input or the local command line."
+
+[gotcha.207]
+area    = "test"
+symptom = "A fixture test needs a running process that a probe finds by its executable name and whose environment it reads."
+cause   = "The probe matches /proc/<pid>/exe, which a shell function or alias cannot fake."
+do      = "Copy sleep under the expected executable name, start it with the environment the probe reads, and kill it in the test's cleanup trap."

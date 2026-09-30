@@ -38,6 +38,21 @@ kill_timeout = "30s"
     path = "/livez"
     protocol = "http"
 
+[[services]]
+  internal_port = 9454
+  protocol = "tcp"
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [[services.ports]]
+    port = 9454
+
+  [[services.tcp_checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "30s"
+
 [[vm]]
   size = "shared-cpu-2x"
   memory = "2gb"

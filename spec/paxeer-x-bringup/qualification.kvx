@@ -745,3 +745,27 @@ symbol     = "check_ci"
 observed   = "cg spec implemented 4.13 exited 75 with the graph database busy and symbol check_ci not defined in the graph; both fly.toml files already carry the real app names and the controller's env by name, so they needed no change."
 assumption = "Shell functions are not graph symbols, so the status line was set to implemented by hand; the controller's three secrets are set by name through flyctl secrets import, never in the toml."
 severity   = "note"
+
+[observation.3.10.1]
+task       = "3.10"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_agent_public"
+observed   = "timeout 10m tools/bringup/check-live.sh agent-public exited 1 at 3df583333 plus this task's change (log .logs/verify.log): the kernel app holds no dedicated IPv4 and no layerx-agentd runs in its machine; the fixture cases of tools/bringup/check-live.test.sh pass (log .logs/test.log)."
+assumption = "The live upstream needs tasks 3.6 and 3.9 deployed, the agentd and agentd-client identities issued, the IPv4 allocated, the app redeployed and the name registered on the edge; the ordered commands are in the deploy handoff and the gate reruns after them."
+severity   = "blocker"
+
+[observation.3.10.2]
+task       = "3.10"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_agent_public"
+observed   = "The read envelope is program.discover of the daemon's LAYERX_AGENT_PROGRAM_PROBE_ID with requested_verification_level sequencer-signed, the only agent-plane read whose request fields the tree fixes (the gateway's ProgramSelectorBody and the JVM SDK's validation); the bearer and probe program are read from the running layerx-agentd's own environment inside the machine because task 3.6 has not fixed a file path for them."
+assumption = "Task 3.9 serves program.discover through POST /rpc as its do_1 says for program reads; if it rules another read for this gate, only the envelope line of check_agent_public changes."
+severity   = "note"
+
+[observation.3.10.3]
+task       = "3.10"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_agent_public"
+observed   = "cg spec implemented 3.10 exited 1 with the graph database busy and symbol check_agent_public not defined in the graph, while both touched files passed its checks."
+assumption = "Shell functions are not graph symbols, so the status line was set to implemented by hand; the feature manager rules on the graph gate."
+severity   = "note"
