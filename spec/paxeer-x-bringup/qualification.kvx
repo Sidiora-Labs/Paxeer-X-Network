@@ -349,3 +349,11 @@ command   = "timeout 30m make layerxd platform-test-node"
 exit_code = 0
 log_path  = ".logs/verify.log"
 observed  = "Per the ruling the checkpoint-emptiness proxy after the reset is replaced by proof that the checkpoint directory object was replaced and that the admission journal, which held generation-1 admissions, is back to its 32-byte superblock; the node test passes the custody credit, DID listing, SEND, reset and generation-2 checks at the first run."
+
+[gate.0.5.1]
+task      = "0.5"
+revision  = "9296a0d2c with the task change in the working tree"
+command   = "timeout 10m tools/bringup/check-live.test.sh"
+exit_code = 0
+log_path  = ".logs/verify.log"
+observed  = "All 37 cases passed at the first run: the six-role host map, Fly issuance on a volume and as staged secrets with every row's .internal or process-group name, the ca probe passing and failing seven ways through the flyctl stand-in, and sync-fleet.test.sh as the last case."

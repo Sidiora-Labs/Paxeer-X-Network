@@ -971,3 +971,21 @@ area    = "tests"
 symptom = "An inode comparison meant to prove a reset replaced a directory can pass or fail by chance."
 cause   = "Once the old directory is removed ext4 may reuse its inode number for the recreated directory, just as it does for files."
 do      = "Hold an fd on the old directory across the reset (exec {FD}<dir) before comparing inode numbers, then close it."
+
+[gotcha.159]
+area    = "tooling"
+symptom = "Writing a test file through a bash heredoc is refused by the session's removal safety check when the file's content holds rm \"$dir/$name/...\"."
+cause   = "The check scans the whole command text, heredoc bodies included, and treats an rm target built from possibly empty variables as a root removal."
+do      = "Write every rm target in scripts as \"${dir:?}/${name:?}/...\" so an empty variable stops the shell; that form also passes the check."
+
+[gotcha.160]
+area    = "tooling"
+symptom = "The qualification step 'format touched files' cannot run for shell scripts on the build box."
+cause   = "shfmt is not installed and the repository pins no shell formatter."
+do      = "Keep the existing tab style by hand, run bash -n on every touched script as the format step, and say so in the gate record."
+
+[gotcha.161]
+area    = "test"
+symptom = "A test that runs another fixture test inside it can hand the inner test its own PATH stand-ins as the real tools."
+cause   = "The inner test records command -v curl (and rsync, sha256sum, df) as the real binaries before prepending its own stand-ins."
+do      = "Save PATH before installing stand-ins and run the nested test with PATH set back to that saved value."
