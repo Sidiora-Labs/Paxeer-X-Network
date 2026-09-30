@@ -1421,3 +1421,9 @@ area    = "bringup"
 symptom = "A check-live subcommand exits with 'unbound variable' at the very end after all its lines printed."
 cause   = "An EXIT trap set inside a function with a single-quoted reference to a local variable runs after the function's locals are gone, and set -u trips on it."
 do      = "Expand the path into the trap when it is set (double quotes, shellcheck SC2064 disabled) as the other probes of the file do."
+
+[gotcha.234]
+area    = "bringup"
+symptom = "An x402 round trip against the interop gateway would fail to reach the public router URL once the gateway's outbound CA points at the internal CA."
+cause   = "It looked as if LAYERX_INTEROP_OUTBOUND_CA_DER replaced the trust store, but the service adds that one DER to native-tls on top of the system roots."
+do      = "Point the interop outbound CA at the internal CA DER alone: it verifies the receipt authority and Redis, while the router's public chain verifies through the image's ca-certificates bundle."

@@ -2090,6 +2090,212 @@ print(len(ms), len(started), len(data))
 	finish "$failures"
 }
 
+# check_interop: the interop gateway app of platform/hosted/interop/fly.toml
+# runs at least two started machines in at least two regions; /readyz at
+# CHECK_LIVE_INTEROP_ORIGIN (default https://interchain.paxeer.network)
+# answers ready with every component ready; then one x402 exact-scheme round
+# trip over the http transport as the payer: the facilitator's supported
+# network, a seller offer answered with its PAYMENT-REQUIRED header, the
+# payer's transfer to agent:<CHECK_LIVE_INTEROP_PAYEE_DID>:main of
+# CHECK_LIVE_INTEROP_AMOUNT (default 1) base units of the kernel asset of
+# platform/hosted/node/bootstrap.sh signed by CHECK_LIVE_INTEROP_ENCODER (the
+# built hosted-send example of platform/cli) from the account state the router
+# at CHECK_LIVE_INTEROP_RPC (default https://api-mainnet-beta.paxeer.network/rpc)
+# reports, the buyer's PAYMENT-SIGNATURE and the settlement whose
+# PAYMENT-RESPONSE carries success, the lxp:<activity id> transaction and the
+# receipt. CHECK_LIVE_INTEROP_API_KEY_FILE holds the payer's signer-bound
+# router key <id>:<secret> and CHECK_LIVE_INTEROP_PAYER_KEY_FILE its ed25519
+# key (PEM or 32 raw bytes); neither is printed or leaves this host except
+# the key as the Authorization header. One line per check.
+check_interop() {
+	local toml=platform/hosted/interop/fly.toml name app answer n_started n_regions regions origin rpc_url amount network_id w status verdict failures=0
+	for name in CHECK_LIVE_INTEROP_API_KEY_FILE CHECK_LIVE_INTEROP_PAYER_KEY_FILE CHECK_LIVE_INTEROP_PAYEE_DID CHECK_LIVE_INTEROP_ENCODER; do
+		if [ -z "${!name:-}" ]; then
+			echo "check-live: $name is unset" >&2
+			exit 2
+		fi
+	done
+	amount="${CHECK_LIVE_INTEROP_AMOUNT:-1}"
+	if ! [[ "$amount" =~ ^[1-9][0-9]*$ ]]; then
+		echo "check-live: CHECK_LIVE_INTEROP_AMOUNT is not a positive integer" >&2
+		exit 2
+	fi
+	origin="${CHECK_LIVE_INTEROP_ORIGIN:-https://interchain.paxeer.network}"
+	rpc_url="${CHECK_LIVE_INTEROP_RPC:-https://api-mainnet-beta.paxeer.network/rpc}"
+	if ! app="$(fly_app "$toml")"; then
+		echo "fail interop toml=absent"
+		finish 1
+	fi
+	answer="$(timeout "$timeout" flyctl machines list --app "$app" --json 2>/dev/null | python3 -c '
+import json, sys
+started = [m for m in json.load(sys.stdin) if m.get("state") == "started"]
+regions = sorted({m.get("region", "") for m in started} - {""})
+print(len(started), len(regions), ",".join(regions) or "none")
+' 2>/dev/null)" || answer=""
+	read -r n_started n_regions regions <<<"${answer:-none none none}"
+	if [[ "$n_started" =~ ^[0-9]+$ ]] && [ "$n_started" -ge 2 ] && [ "$n_regions" -ge 2 ]; then
+		echo "pass machines app=$app started=$n_started regions=$regions"
+	else
+		echo "fail machines app=$app started=$n_started regions=$regions"
+		failures=$((failures + 1))
+	fi
+
+	w="$(mktemp -d)"
+	# shellcheck disable=SC2064 # the path expands now, the locals are gone at exit
+	trap "rm -rf '$w'" EXIT
+	status="$(curl -sS -m "$timeout" -o "$w/readyz" -w '%{http_code}' "$origin/readyz" 2>/dev/null)" || status=""
+	answer="$(python3 -c '
+import json, sys
+try:
+    doc = json.load(open(sys.argv[1]))
+    components = doc["components"]
+except Exception:
+    print("body=unreadable")
+    sys.exit(1)
+ready = [k for k, v in sorted(components.items()) if v == "ready"]
+waiting = [k for k, v in sorted(components.items()) if v != "ready"]
+print("status=%s components=%d/%d%s" % (doc.get("status"), len(ready), len(components), " not_ready=" + ",".join(waiting) if waiting else ""))
+sys.exit(0 if doc.get("status") == "ready" and components and not waiting else 1)
+' "$w/readyz" 2>/dev/null)" && verdict=pass || verdict=fail
+	[ "$status" = 200 ] || verdict=fail
+	echo "$verdict readyz $origin/readyz http=${status:-none} $answer"
+	[ "$verdict" = pass ] || failures=$((failures + 1))
+
+	network_id="$(fly_ssh "$app" - "printenv LAYERX_INTEROP_PROTOCOL_NETWORK_ID" </dev/null | tr -d '\r\n')" || network_id=""
+	if ! [[ "$network_id" =~ ^[1-9][0-9]*$ ]]; then
+		echo "fail network app=$app protocol_network_id=${network_id:-unreadable}"
+		finish $((failures + 1))
+	fi
+	python3 - "$origin" "$rpc_url" "$CHECK_LIVE_INTEROP_API_KEY_FILE" "$CHECK_LIVE_INTEROP_PAYER_KEY_FILE" \
+		"$CHECK_LIVE_INTEROP_PAYEE_DID" "$CHECK_LIVE_INTEROP_ENCODER" "$amount" "$network_id" "$timeout" \
+		"$repo_root/platform/hosted/node/bootstrap.sh" <<'PY' || failures=$((failures + $?))
+import json, os, re, subprocess, sys, time, urllib.error, urllib.request
+
+origin, rpc_url, key_file, payer_file, payee, encoder, amount, network_id, limit, bootstrap = sys.argv[1:]
+limit = int(limit)
+
+
+def stop(line):
+    print("fail " + line)
+    sys.exit(1)
+
+
+try:
+    facts = dict(re.findall(r'^(ASSET_ID|ASSET_CURRENCY)="?([0-9A-Za-z]+)"?$', open(bootstrap).read(), re.M))
+    asset, currency = facts["ASSET_ID"].lower(), facts["ASSET_CURRENCY"]
+except Exception:
+    stop("asset bootstrap=unreadable")
+try:
+    authorization = "LayerX-Key " + open(key_file).read().strip()
+    raw = open(payer_file, "rb").read()
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat, load_pem_private_key
+    signer = Ed25519PrivateKey.from_private_bytes(raw) if len(raw) == 32 else load_pem_private_key(raw, password=None)
+    seed = signer.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()).hex()
+    payer = "did:layerx:" + signer.public_key().public_bytes_raw().hex()
+except Exception:
+    stop("payer key=unreadable")
+
+
+def call(method, url, body=None, idempotency=None):
+    headers = {"authorization": authorization}
+    data = None
+    if body is not None:
+        data = json.dumps(body).encode()
+        headers["content-type"] = "application/json"
+    if idempotency:
+        headers["idempotency-key"] = idempotency
+    request = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(request, timeout=limit) as response:
+            return response.status, json.load(response)
+    except urllib.error.HTTPError as error:
+        try:
+            return error.code, json.load(error)
+        except Exception:
+            return error.code, None
+    except Exception:
+        return None, None
+
+
+def rpc(method, params):
+    status, doc = call("POST", rpc_url, {"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
+    if status != 200 or not isinstance(doc, dict) or "result" not in doc:
+        stop("rpc %s http=%s error=%s" % (method, status, (doc or {}).get("error", {}).get("code", "none") if isinstance(doc, dict) else "none"))
+    return doc["result"]
+
+
+def main_account(did):
+    names = ["agent:%s:main" % did]
+    for record in rpc("lx_getBalances", [did]).get("accounts", []):
+        if record.get("asset_id") == asset and record.get("name") in names:
+            return record
+    stop("account did=%s asset=%s main=absent" % (did, asset))
+
+
+status, doc = call("GET", origin + "/v1/http/x402/supported")
+kinds = [k for k in ((doc or {}).get("result") or {}).get("supported", {}).get("kinds", []) if k.get("scheme") == "exact"]
+if status != 200 or not kinds:
+    stop("supported %s/v1/http/x402/supported http=%s exact=absent" % (origin, status))
+network = kinds[0]["network"]
+print("pass supported %s/v1/http/x402/supported http=200 scheme=exact network=%s" % (origin, network))
+
+payee_record = main_account(payee)
+source = main_account(payer)
+requirements = {"scheme": "exact", "network": network, "amount": amount, "asset": asset,
+                "payTo": payee_record["account_id"], "maxTimeoutSeconds": 120,
+                "extra": {"layerx": {"commitment": "executed", "account": payee_record["name"], "currency": currency}}}
+offer = {"x402Version": 2, "resource": {"url": origin + "/readyz"}, "accepts": [requirements]}
+status, doc = call("POST", origin + "/v1/http/x402/seller/offer", offer, os.urandom(16).hex())
+result = (doc or {}).get("result") or {}
+if status != 200 or result.get("status") != 402 or not result.get("payment_required_header"):
+    stop("offer %s/v1/http/x402/seller/offer http=%s status=%s PAYMENT-REQUIRED=%s" % (
+        origin, status, result.get("status", "none"), "present" if result.get("payment_required_header") else "absent"))
+print("pass offer %s/v1/http/x402/seller/offer http=200 status=402 PAYMENT-REQUIRED=present" % origin)
+
+account = rpc("lx_getAccount", [source["account_id"]])
+identity = rpc("lx_getSequence", [payer, "identity"])
+now = time.time_ns() // 1_000_000
+idempotency = os.urandom(32).hex()
+signing = {"seed": seed, "actor": payer, "from": source["account_id"], "to": payee_record["account_id"],
+           "from_name": source["name"], "to_name": payee_record["name"], "asset": asset, "amount": amount,
+           "source_sequence": int(account["next_sequence"]), "identity_sequence": int(identity["next_sequence"]),
+           "network_id": int(network_id), "not_before": now - 1000, "not_after": now + 120000,
+           "idempotency_key": idempotency}
+signed = subprocess.run([encoder], input=json.dumps(signing).encode(), stdout=subprocess.PIPE,
+                        stderr=subprocess.DEVNULL, check=False)
+try:
+    signed = json.loads(signed.stdout)
+    canonical, activity = signed["canonical"], signed["activity_id"]
+except Exception:
+    stop("sign encoder=refused")
+
+build = {"payment_required": result["payment_required"],
+         "scheme_payload": {"layerxActivity": canonical, "layerxIdempotencyKey": idempotency}}
+status, doc = call("POST", origin + "/v1/http/x402/buyer/build", build, os.urandom(16).hex())
+built = (doc or {}).get("result") or {}
+if status != 200 or not built.get("payment_header") or not isinstance(built.get("payment_payload"), dict):
+    stop("build %s/v1/http/x402/buyer/build http=%s error=%s" % (origin, status, ((doc or {}).get("error") or {}).get("code", "none")))
+print("pass build %s/v1/http/x402/buyer/build http=200 PAYMENT-SIGNATURE=present" % origin)
+
+settle = {"x402Version": 2, "paymentPayload": built["payment_payload"], "paymentRequirements": requirements}
+status, doc = call("POST", origin + "/v1/http/x402/settle", settle, os.urandom(16).hex())
+deadline = time.monotonic() + 120
+while status == 202 and (doc or {}).get("operation") and time.monotonic() < deadline:
+    time.sleep(2)
+    status, doc = call("GET", origin + "/v1/operations/" + doc["operation"])
+settled = (doc or {}).get("result") or {}
+receipt = ((settled.get("extensions") or {}).get("layerx") or {}).get("receipt")
+line = "settle %s/v1/http/x402/settle http=%s success=%s transaction=%s receipt=%s" % (
+    origin, status, str(settled.get("success", "none")).lower(), settled.get("transaction", "none"),
+    "present" if receipt else "absent")
+if status != 200 or settled.get("success") is not True or settled.get("transaction") != "lxp:" + activity or not receipt:
+    stop(line + " want=lxp:" + activity)
+print("pass " + line)
+PY
+	finish "$failures"
+}
+
 mode="${1:-}"
 case "$mode" in
 -h | --help)
@@ -2109,6 +2315,7 @@ paxeer-boundary) ;;
 agent-public) ;;
 gas) ;;
 internal) ;;
+interop) ;;
 *)
 	usage >&2
 	exit 2
