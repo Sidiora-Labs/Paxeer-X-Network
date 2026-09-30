@@ -43,6 +43,20 @@
 //! front of the process. Request bodies and read time are capped, and neither
 //! a response nor a log line carries key material, a credential or a signed
 //! transaction byte.
+//!
+//! `paxeer-gas-station rate --config PATH --journal PATH --rate-file PATH`
+//! runs the rate publisher. Its configuration is the station configuration
+//! without `listen` and `gas_limit`, plus `max_priority_fee_per_gas`,
+//! `rate_owner_key_env` (the env variable holding the paymaster owner's key,
+//! never the sponsor's), `rate_cadence_seconds` (strictly below
+//! `max_rate_age`), `rate_gas_budget_per_day` (gas units per chain day) and
+//! `rate_balance_floor` (PAX base units). Every cadence it reads the owner's
+//! rate file (`rate`, `set_at`, optional `not_after`, integer TOML keys),
+//! signs `setRate` from the owner key, journals the publication, broadcasts it
+//! and journals its receipt, with its own journal file. A missing, malformed,
+//! zero, not yet set or expired rate file, an exhausted daily budget or an
+//! owner balance below the floor refuses the publication and logs the reason,
+//! so the paymaster's rate ages until `currentRate` reverts with `StaleRate`.
 
 pub mod journal;
 pub mod rpc;
@@ -54,6 +68,7 @@ pub mod config;
 pub mod policy;
 pub mod price;
 pub mod quote;
+pub mod rate;
 pub mod signer;
 
 use config::{ConfigError, StationConfig};

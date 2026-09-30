@@ -8,8 +8,20 @@
 # (GAS_STATION_MARGIN_BPS, GAS_STATION_PER_QUOTE_LIMIT,
 # GAS_STATION_PER_ACCOUNT_LIMIT, GAS_STATION_PER_INTERVAL_LIMIT,
 # GAS_STATION_INTERVAL_SECONDS, GAS_STATION_BALANCE_FLOOR,
-# GAS_STATION_GAS_LIMIT, GAS_STATION_MAX_PRIORITY_FEE_PER_GAS); the init
-# refuses to start while any is missing. The image is built from the
+# GAS_STATION_GAS_LIMIT, GAS_STATION_MAX_PRIORITY_FEE_PER_GAS), plus the rate
+# publisher's GAS_STATION_RATE_OWNER_KEY (the paymaster owner's key, never the
+# sponsor key), GAS_STATION_RATE_GAS_BUDGET_PER_DAY (gas units per chain day)
+# and GAS_STATION_RATE_BALANCE_FLOOR (PAX base units), with the fee per gas
+# ceiling of a publication in wei, GAS_STATION_RATE_MAX_FEE_PER_GAS, set in
+# [env] below; the init refuses to start while any is missing. The machine runs two processes over the one
+# volume: the station, unchanged, and the rate publisher
+# (paxeer-gas-station rate), which signs setRate from the owner key every
+# GAS_STATION_RATE_CADENCE_SECONDS, strictly below max_rate_age, from the
+# owner's rate file /data/gas-station/rate.toml and journals each
+# publication in /data/gas-station/rate.jsonl. They share the volume and the
+# single writer of each journal, so they run under the init of the one
+# machine rather than as Fly process groups, which each get their own machines
+# and volumes. The image is built from the
 # repository root and deployed with --image (flyctl resolves [build] paths
 # against this directory).
 app = "paxeer-gas-station"
@@ -31,6 +43,8 @@ kill_timeout = "30s"
   GAS_STATION_DECIMALS = "6"
   GAS_STATION_SPREAD_BPS = "500"
   GAS_STATION_RELAYER_KEY_ENV = "GAS_STATION_RELAYER_KEY"
+  GAS_STATION_RATE_CADENCE_SECONDS = "120"
+  GAS_STATION_RATE_MAX_FEE_PER_GAS = "2000000000"
 
 [[mounts]]
   source = "gas_station_data"

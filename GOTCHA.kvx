@@ -1619,3 +1619,21 @@ area    = "bringup"
 symptom = "A Fly command under the check-live harness tests the real box instead of the fixture machine, for example test -d /data or a path under /var/lib."
 cause   = "The flyctl ssh console stand-in rewrites only the prefixes it knows, each with its trailing slash, so /data without a slash and any unlisted root reach the real filesystem."
 do      = "Write machine paths with the trailing slash (/data/, cd /data/) and add a rewrite line to the stand-in for each new machine root a command reads; never match processes by an exe path outside a rewritten root, or the harness can signal real processes on the box."
+
+[gotcha.267]
+area    = "fly"
+symptom = "A second [processes] entry in fly.toml meant to run beside a service on its volume starts on a machine of its own without that volume."
+cause   = "Fly gives every process group its own machines, and a volume attaches to exactly one machine."
+do      = "Run a helper that must share a service's volume as a second process under the machine's init (start both, wait -n, stop the other, exit with the status) instead of as a process group."
+
+[gotcha.268]
+area    = "contracts"
+symptom = "forge build --config-path foundry.paxeer.toml panics with the config-path must be a path to a foundry.toml file."
+cause   = "forge accepts --config-path only for a file named foundry.toml; contracts/lib is also absent until contracts/bootstrap-libs.sh fetches the pinned libraries."
+do      = "Run bash contracts/bootstrap-libs.sh, then build and create from the repository root with FOUNDRY_CONFIG=foundry.paxeer.toml."
+
+[gotcha.269]
+area    = "gas-station"
+symptom = "A u128 field added to a journal record serialises but every journal reopen fails with Corrupt."
+cause   = "Entry is an internally tagged serde enum, which buffers fields through serde's Content and cannot carry a u128 number."
+do      = "Put #[serde(with = \"crate::tx::fee_amount\")] on every u128 journal field so it travels as a decimal string, as Fees does."
