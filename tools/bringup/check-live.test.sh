@@ -165,9 +165,8 @@ case "$sub" in
 	;;
 "ips list") printf '%s\n' "${CHECK_LIVE_TEST_IPS:-[]}" ;;
 "machines list")
-	cat "$root/machines.json"
+	if [ -n "${CHECK_LIVE_TEST_MACHINES:-}" ]; then printf '%s\n' "$CHECK_LIVE_TEST_MACHINES"; else cat "$root/machines.json"; fi
 	;;
-"machines list") printf '%s\n' "${CHECK_LIVE_TEST_MACHINES:-[]}" ;;
 *) exit 96 ;;
 esac
 SH
