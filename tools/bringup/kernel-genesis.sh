@@ -19,6 +19,9 @@
 #       the init reads. The init then runs bootstrap.sh, whose
 #       layerx-genesis-build signs the manifest under /data/layerx/node; this
 #       step waits for it and prints the digests and the asset ids.
+#       Precondition: every registered asset id is the derivation
+#       sha256("layerx-asset:125:<SYMBOL>"); the step B proposer chooses the id
+#       and this step refuses a registered id that differs from it.
 #
 # Nothing secret is printed. rotate discards the kernel keys, the genesis
 # outputs and the node data.
@@ -124,6 +127,12 @@ else:
 ' "$2"
 }
 
+# asset_id <SYMBOL>: the asset id step B registers for the symbol,
+# sha256("layerx-asset:125:<SYMBOL>").
+asset_id() {
+	printf 'layerx-asset:125:%s' "$1" | sha256sum | cut -d' ' -f1
+}
+
 genesis_step() {
 	local argument file symbol pointer id onchain decimals pax manifest record
 	local -A pointers=()
@@ -153,6 +162,8 @@ genesis_step() {
 	if ! [[ $pax =~ ^[0-9a-f]{64}$ ]] || [ "$pax" = "$(word 0)" ]; then
 		fail "custody asset map has no PAX record: eth_call $custody nativeAssetId() answered 0x$pax"
 	fi
+	[ "$pax" = "$(asset_id PAX)" ] ||
+		fail "the PAX asset id 0x$pax is not sha256(\"layerx-asset:125:PAX\") 0x$(asset_id PAX)"
 	records+=("$pax:PAX:18")
 	for symbol in "${!pointers[@]}"; do
 		pointer=${pointers[$symbol]}
@@ -160,6 +171,8 @@ genesis_step() {
 		id=${id#0x}
 		[ "$id" != "$(word 0)" ] ||
 			fail "custody asset map has no $symbol record: eth_call $custody assetByPointer($pointer) answered 0x$id"
+		[ "$id" = "$(asset_id "$symbol")" ] ||
+			fail "the $symbol asset id 0x$id is not sha256(\"layerx-asset:125:$symbol\") 0x$(asset_id "$symbol")"
 		onchain=$(erc20 "$pointer" 95d89b41) || fail "symbol() of $pointer failed"
 		[ "$onchain" = "$symbol" ] || fail "$pointer is $onchain, not $symbol"
 		decimals=$(erc20 "$pointer" 313ce567) || fail "decimals() of $pointer failed"

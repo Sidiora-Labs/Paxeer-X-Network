@@ -1469,3 +1469,9 @@ area    = "bringup"
 symptom = "A remote /proc/$pid/cmdline read reports the kernel boot line instead of a process."
 cause   = "With an empty pid the path collapses to /proc//cmdline, which is /proc/cmdline."
 do      = "Default the pid (/proc/${p:-0}/cmdline) so an absent process reads as absent."
+
+[gotcha.242]
+area    = "bringup"
+symptom = "A check-live read through fly_ssh reports every machine value absent in the harness although the fixture files are in place."
+cause   = "The fly_ssh call left stdin open, so the flyctl stand-in's tee (and a real ssh console) waited on it until the timeout, and the timeout status discarded the answer; a merge had also dropped the exit and fi closing the gas block of the curl stand-in, so every curl call inside the harness failed to parse."
+do      = "Give every fly_ssh call that sends no script </dev/null, and run bash -n on the harness stand-ins after a merge."

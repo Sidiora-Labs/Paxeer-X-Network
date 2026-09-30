@@ -2275,7 +2275,7 @@ print(len(ms), len(started), len(data))
 		finish $((failures + 1))
 	fi
 	# shellcheck disable=SC2016 # the command expands on the machine
-	answer="$(fly_ssh "$app" - 'cd /run/layerx/init/ && p=$(cat pid) && echo init init 0 $(stat -c %u /proc/$p 2>/dev/null || echo -) $(tr "\000" " " </proc/$p/cmdline 2>/dev/null) && for f in *; do [ "$f" != pid ] || continue; read -r u s d <"$f"; a=-; [ "$s" != running ] || a=$(stat -c %u /proc/$d 2>/dev/null || echo -); echo svc "$f" $u $s $d $a; done')" || answer=""
+	answer="$(fly_ssh "$app" - 'cd /run/layerx/init/ && p=$(cat pid) && echo init init 0 $(stat -c %u /proc/$p 2>/dev/null || echo -) $(tr "\000" " " </proc/$p/cmdline 2>/dev/null) && for f in *; do [ "$f" != pid ] || continue; read -r u s d <"$f"; a=-; [ "$s" != running ] || a=$(stat -c %u /proc/$d 2>/dev/null || echo -); echo svc "$f" $u $s $d $a; done' </dev/null)" || answer=""
 	if ! grep -q '^init ' <<<"$answer"; then
 		echo "fail init app=$app status=absent"
 		finish $((failures + 1))
@@ -2326,7 +2326,7 @@ check_kernel_node() {
 		finish 1
 	fi
 	# shellcheck disable=SC2016 # the command expands on the machine
-	answer="$(fly_ssh "$app" - 'n=/data/layerx/node; r=/run/layerx/node; e=$n/replica.env; u=http://127.0.0.1:$(sed -n "s/^LAYERX_AUTHORITY_PORT=//p" $e); t="Authorization: Bearer $(sed -n "s/^LAYERX_AUTHORITY_BEARER_TOKEN=//p" $e)"; echo genesis $(sha256sum $n/genesis/genesis.manifest | cut -d" " -f1); echo network $(curl -fsS -m 10 -H "$t" $u/v1/sync/network | jq -c .); echo public $(cat $n/*.env | sed -n "s/^LAYERX_NODE_SEQUENCER_PUBLIC_KEY=//p" | head -1); echo core $(sed -n "s/^LAYERX_CORE_SEQUENCER_ID=//p" $r/core.env); echo status $(printf "status\n" | socat -t 5 - UNIX-CONNECT:$r/supervisor.sock | jq -c .); [ -S $r/layerxd.lni.sock ] && echo lni socket; echo head $(curl -fsS -m 10 -H "$t" $u/v1/sync/head | jq -c .); for s in treasury-signer layerxd layerxd-authority guarantor-1 guarantor-2; do p=; read -r u st p </run/layerx/init/$s 2>/dev/null; echo clock $s $(tr "\000" " " </proc/${p:-0}/cmdline 2>/dev/null | cut -d" " -f1); done' 2>/dev/null)" || answer=""
+	answer="$(fly_ssh "$app" - 'n=/data/layerx/node; r=/run/layerx/node; e=$n/replica.env; u=http://127.0.0.1:$(sed -n "s/^LAYERX_AUTHORITY_PORT=//p" $e); t="Authorization: Bearer $(sed -n "s/^LAYERX_AUTHORITY_BEARER_TOKEN=//p" $e)"; echo genesis $(sha256sum $n/genesis/genesis.manifest | cut -d" " -f1); echo network $(curl -fsS -m 10 -H "$t" $u/v1/sync/network | jq -c .); echo public $(cat $n/*.env | sed -n "s/^LAYERX_NODE_SEQUENCER_PUBLIC_KEY=//p" | head -1); echo core $(sed -n "s/^LAYERX_CORE_SEQUENCER_ID=//p" $r/core.env); echo status $(printf "status\n" | socat -t 5 - UNIX-CONNECT:$r/supervisor.sock | jq -c .); [ -S $r/layerxd.lni.sock ] && echo lni socket; echo head $(curl -fsS -m 10 -H "$t" $u/v1/sync/head | jq -c .); for s in treasury-signer layerxd layerxd-authority guarantor-1 guarantor-2; do p=; read -r u st p </run/layerx/init/$s 2>/dev/null; echo clock $s $(tr "\000" " " </proc/${p:-0}/cmdline 2>/dev/null | cut -d" " -f1); done' </dev/null 2>/dev/null)" || answer=""
 	while read -r key value; do
 		case "$key" in
 		genesis) genesis=$value ;;

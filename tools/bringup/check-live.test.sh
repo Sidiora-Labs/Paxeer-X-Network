@@ -253,6 +253,8 @@ m = r["method"]
 print(m + "-" + r["params"][0]["data"] if m == "eth_call" else m)
 ' "$data")"
 	printf '{"jsonrpc":"2.0","id":1,"result":%s}\n' "$(cat "$CHECK_LIVE_TEST_GAS/$file" 2>/dev/null || echo null)"
+	exit 0
+fi
 if [ "$name" = walletfx ] || [ "$name" = fx-human-wallet-deploy-gateway ]; then
 	out=""
 	dump=""

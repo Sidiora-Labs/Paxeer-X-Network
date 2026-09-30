@@ -1149,7 +1149,7 @@ task       = "1.4"
 file       = "modules/layerxcustody/module.go, sdk/x/gov/keeper/msg_server.go"
 symbol     = "custody_governance"
 observed   = "Step B has no governance path: the custody authority defaults to the gov module account, gov SubmitProposal executes only legacy content (msg.GetContent), and layerxcustody registers no proposal content type, handler or tx CLI (GetTxCmd returns nil), so no proposal document the chain accepts can carry MsgSetAsset or MsgUpdateParams; tools/bringup/custody-governance.sh is therefore not written."
-assumption = "A chain task adds a custody proposal content type with its gov handler and submit-proposal subcommand (as layerxbridge-proposal did), shipped by a chain upgrade, before step B can run."
+assumption = "A chain task adds a custody proposal content type with its gov handler and submit-proposal subcommand (as layerxbridge-proposal did), shipped by a chain upgrade, before step B can run. The custody proposal type ships as chain task 1.10 of this spec."
 severity   = "blocker"
 
 [observation.1.4.7]
