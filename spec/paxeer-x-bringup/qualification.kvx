@@ -1511,3 +1511,11 @@ symbol     = "daemon_build"
 observed   = "The task build target matched no package, so the daemon was built once afterwards from the lane revision: go build ./daemon/paxd, exit 0, 16 s, binary 153501752 bytes; log .logs/1.10-paxd-build.log on the lane."
 assumption = "The app wiring and the v6.11 upgrade handler compile into the daemon; the chain upgrade rollout is the deploy side step named in the handoff."
 severity   = "info"
+
+[observation.4.13.3]
+revision   = "6aae5eeae3eeb7234750d209ff14e1c0cfc4b288 plus this correction"
+command    = "gh api \"repos/{owner}/{repo}/actions/runs/36780596112/jobs?per_page=100\" --paginate --jq <the check_ci jobs expression>"
+exit_code  = 0
+log_path   = ".logs/4.13-fix-gh-api.log"
+observed   = "gh run view job JSON carries no runner identity on the installed gh, so the canary runner assertion could not pass; corrected to the workflow-jobs REST API and pinned head_sha"
+assumption = "the Fly runner registers with a name starting fly-"
