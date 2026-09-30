@@ -79,14 +79,14 @@ def write_settlement(work, chain, bond, registry):
         f'LAYERX_NODE_PAXEER_RPC_PORT={chain.port}\n')
 
 
-def custody_genesis(work):
+def custody_genesis(work, network_id=NETWORK_ID, sequencer_seed=SEQUENCER_SEED):
     """The layerxcustody genesis section the native custody module is initialised from.
 
     The module maps no asset and admits no deposit without it, and it refuses every deposit-root
     registration while the authority parameter is empty, so the Ed25519 key that would have to
     sign one exists before the chain does and its private half stays in the work directory.
     """
-    sequencer = Ed25519PrivateKey.from_private_bytes(SEQUENCER_SEED).public_key().public_bytes(
+    sequencer = Ed25519PrivateKey.from_private_bytes(sequencer_seed).public_key().public_bytes(
         Encoding.Raw, PublicFormat.Raw)
     identifier = hashlib.sha256(b'layerx-sequencer:' + sequencer.hex().encode()).hexdigest()
     authority = Ed25519PrivateKey.generate()
@@ -94,7 +94,7 @@ def custody_genesis(work):
               authority.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()))
     genesis = work / 'custody-genesis.json'
     run(sys.executable, 'platform/hosted/paxeer/custody-genesis.py',
-        '--network-id', str(NETWORK_ID), '--sequencer-id', '0x' + identifier,
+        '--network-id', str(network_id), '--sequencer-id', '0x' + identifier,
         '--sequencer-public-key', '0x' + sequencer.hex(),
         '--deposit-root-authority',
         '0x' + authority.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex(),
@@ -140,19 +140,30 @@ def main():
     modes.add_argument('--native-onboarding', action='store_true')
     modes.add_argument('--owner-rotation', action='store_true')
     modes.add_argument('--paid-withdrawal', action='store_true')
+    # Export stops before program-admission.sh: DIRECTORY receives the custody profile the node's
+    # genesis is built from and the first credit signed by the beneficiary seed, for a node the
+    # caller bootstraps itself with that sequencer seed and network id.
+    modes.add_argument('--export', metavar='DIRECTORY')
+    parser.add_argument('--network-id', type=int, default=NETWORK_ID)
+    parser.add_argument('--sequencer-key')
+    parser.add_argument('--beneficiary-key')
     args = parser.parse_args()
+    assert (args.export is not None) == (args.sequencer_key is not None) == (args.beneficiary_key is not None), \
+        '--export, --sequencer-key and --beneficiary-key go together'
+    assert args.export is not None or args.network_id == NETWORK_ID, '--network-id needs --export'
     build = (ROOT / args.build_dir).resolve()
     mode = ('--owner-rotation' if args.owner_rotation else
             '--native-onboarding' if args.native_onboarding else
             '--handover' if args.handover else
             '--module-maintenance' if args.module_maintenance else
             '--metered-allowance' if args.metered_allowance else
-            '--paid-withdrawal' if args.paid_withdrawal else '--withdraw')
+            '--paid-withdrawal' if args.paid_withdrawal else
+            '--export' if args.export is not None else '--withdraw')
     programs_handover = args.handover and bool(os.environ.get('LAYERX_TEST_HANDOVER_PROGRAM_CONSUMER_BIN'))
     amount = 1000000000 if (args.metered_allowance or args.native_onboarding or
                            args.owner_rotation or programs_handover) else 1000000
     assert os.environ.get('LAYERX_TEST_SETTLEMENT_PUBLICATION') != '1' or mode == '--withdraw'
-    logs = ROOT / 'qual-logs/set1'
+    logs = Path(args.export) if args.export is not None else ROOT / 'qual-logs/set1'
     logs.mkdir(parents=True, exist_ok=True)
     evidence = Path(tempfile.mkdtemp(prefix='e-daemon-custody-', dir=logs))
     with tempfile.TemporaryDirectory(prefix='lxp-daemon-custody-', dir='/tmp') as directory:
@@ -160,7 +171,9 @@ def main():
         work.chmod(0o755)
         print('withdraw custody evidence:', evidence, flush=True)
         try:
-            seed = bytes([0x11]) * 32
+            seed = Path(args.beneficiary_key).read_bytes() if args.export is not None else bytes([0x11]) * 32
+            sequencer_seed = Path(args.sequencer_key).read_bytes() if args.export is not None else SEQUENCER_SEED
+            assert len(seed) == 32 and len(sequencer_seed) == 32, 'seeds are 32 bytes'
             public = Ed25519PrivateKey.from_private_bytes(seed).public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
             did = 'did:layerx:' + public.hex()
             name = ('agent:' + did + ':main').encode()
@@ -188,7 +201,7 @@ def main():
                 run('make', 'custody-proof-build', 'BUILD_DIR='+str(build), 'PAXEER_GO_JOBS='+str(threads), env=proof_env)
             assert proof_binary.is_file(), 'explicit custody proof executable unavailable'
             os.environ['LAYERX_CUSTODY_PROOF_BIN'] = str(proof_binary)
-            with owned_chain(work, artifacts, custody_genesis(work)) as first:
+            with owned_chain(work, artifacts, custody_genesis(work, args.network_id, sequencer_seed)) as first:
                 custody = deposit(first, beneficiary, amount)
                 (work / 'custody.json').write_text(json.dumps(custody, sort_keys=True) + '\n')
                 with boundaries(work, first, boundary_binary) as (origins, ca, identity):
@@ -197,10 +210,10 @@ def main():
                     pair = ['--rpc', origins[0], '--rpc', origins[1], '--ca-bundle', str(ca), '--disposable-identity', str(identity),
                             '--comet-rpc', comet]
                     run(sys.executable, 'tests/bridge/custody_credit.py', 'profile', *pair, '--chain-id', '125',
-                        '--network-id', '77', '--vault', custody['vault'], '--runtime-sha256', custody['runtime_sha256'],
+                        '--network-id', str(args.network_id), '--vault', custody['vault'], '--runtime-sha256', custody['runtime_sha256'],
                         '--asset', '0x' + ASSET, '--trusted-height', '1', '--trusting-period-seconds', '1209600', '--output', work / 'profile')
                     run(sys.executable, 'tests/bridge/custody_credit.py', 'attest', *pair, '--profile', work / 'profile',
-                        '--network-id', '77', '--transaction', custody['transaction'], '--beneficiary', '0x' + beneficiary,
+                        '--network-id', str(args.network_id), '--transaction', custody['transaction'], '--beneficiary', '0x' + beneficiary,
                         '--beneficiary-key', '0x' + public.hex(), '--expected-amount', str(amount),
                         '--output', work / 'credit')
                     if os.environ.get('LAYERX_CUSTODY_FIXTURE_DIR'):
@@ -212,22 +225,32 @@ def main():
                     run(build / 'tests/bridge/sign-credit', work / 'profile', work / 'credit', did, work / 'actor',
                         '0', str(int(time.time() * 1000)), work / 'activity')
                     (work / 'activity').chmod(0o644)
-                    env = os.environ | {'LAYERX_TEST_WITHDRAW_PROFILE': str(work / 'profile'),
-                        'LAYERX_TEST_WITHDRAW_CREDIT': str(work / 'activity'), 'LAYERX_TEST_WITHDRAW_RPC': first.url,
-                        'LAYERX_TEST_ADMISSION_LOG_DIR': str(work), 'LAYERX_TEST_PYTHON': sys.executable,
-                        'LAYERX_TEST_CUSTODY_ARTIFACTS': str(artifacts), 'LAYERX_TEST_CUSTODY_FILE': str(work / 'custody.json'),
-                        'LAYERX_TEST_CUSTODY_CHAIN_FILE': str(first.identity_path), 'LAYERX_TEST_CUSTODY_BUILD_DIR': str(build)}
-                    if os.environ.get('LAYERX_TEST_SETTLEMENT_PUBLICATION') == '1':
-                        module = runpy.run_path(str(ROOT / 'tests/daemon/guarantor-publication-chain.py'))
-                        module['drive'](work, env, first.url)
+                    if args.export is not None:
+                        for source, name in ((work/'profile', 'custody.profile'), (work/'activity', 'custody.activity'),
+                                             (work/'custody.json', 'custody.json')):
+                            with (Path(args.export)/name).open('xb') as output:
+                                output.write(source.read_bytes())
+                            (Path(args.export)/name).chmod(0o644)
                     else:
-                        run('bash', 'tests/daemon/program-admission.sh', build, mode, env=env)
+                        env = os.environ | {'LAYERX_TEST_WITHDRAW_PROFILE': str(work / 'profile'),
+                            'LAYERX_TEST_WITHDRAW_CREDIT': str(work / 'activity'), 'LAYERX_TEST_WITHDRAW_RPC': first.url,
+                            'LAYERX_TEST_ADMISSION_LOG_DIR': str(work), 'LAYERX_TEST_PYTHON': sys.executable,
+                            'LAYERX_TEST_CUSTODY_ARTIFACTS': str(artifacts), 'LAYERX_TEST_CUSTODY_FILE': str(work / 'custody.json'),
+                            'LAYERX_TEST_CUSTODY_CHAIN_FILE': str(first.identity_path), 'LAYERX_TEST_CUSTODY_BUILD_DIR': str(build)}
+                        if os.environ.get('LAYERX_TEST_SETTLEMENT_PUBLICATION') == '1':
+                            module = runpy.run_path(str(ROOT / 'tests/daemon/guarantor-publication-chain.py'))
+                            module['drive'](work, env, first.url)
+                        else:
+                            run('bash', 'tests/daemon/program-admission.sh', build, mode, env=env)
         finally:
             for path in work.rglob('*'):
                 if path.is_fifo() or path.is_socket():
                     path.unlink()
             retain_public_evidence(work, evidence)
-    print(f'custody-funded {mode.removeprefix("--")} execution and crash replay passed')
+    if args.export is not None:
+        print(f'custody deposit and signed first credit for {did} exported to {args.export}')
+    else:
+        print(f'custody-funded {mode.removeprefix("--")} execution and crash replay passed')
 
 
 if __name__ == '__main__':

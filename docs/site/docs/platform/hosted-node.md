@@ -694,9 +694,10 @@ reset can bootstrap again from it, and passes `--asset` and
   submit is byte-identical
   (`platform/hosted/node/tests/node-test.sh:185-201`)
 - supervisor `status` is `running` generation `1`; `reset`
-  rebuilds genesis (new manifest inode, empty checkpoints)
-  and generation `2`
-  (`platform/hosted/node/tests/node-test.sh:203-225`)
+  rebuilds genesis (new manifest inode, a new checkpoint
+  directory whose admission journal is back to its 32-byte
+  superblock) and generation `2`
+  (`platform/hosted/node/tests/node-test.sh:420-446`)
 - stopping the supervisors removes `supervisor.sock` and
   leaves no `layerxd` processes
   (`platform/hosted/node/tests/node-test.sh:227-238`)

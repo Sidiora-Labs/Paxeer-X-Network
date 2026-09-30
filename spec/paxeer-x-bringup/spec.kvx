@@ -440,15 +440,15 @@ title   = "Serve the kernel's boundaries, turn the endpoint app into the router,
 status  = "pending"
 
 [task.1.8]
-title      = "Make the node test's treasury balance read resolve under the kernel's account namespace"
-status     = "pending"
+title      = "Make the node test credit the treasury through the first-credit path so the operator SEND is admitted"
+status     = "done"
 wave       = 1
 requires   = ["1.1"]
-do_1       = "Find why the probe's balance read of the treasury account that bootstrap.sh writes into node.env is refused by the kernel with LXP_ERR_UNKNOWN_ACCOUNT_NAMESPACE, the namespace byte of the account id, since the EVM account and identity were derived from one secret, and fix the root cause where the treasury account id is derived or registered: the probe's balance path, bootstrap.sh's treasury derivation or the sequencer's namespace registration, never by relaxing the kernel check or the test's assertion."
+do_1       = "The kernel opens agent:<did>:main on its first credit and genesis stays untouched: before any credit the treasury read expects the typed -208 refusal and an empty DID listing (expect_treasury_unopened), then the node test funds the treasury through the zero-fee custody credit the kernel already tests, reusing tests/daemon/withdraw-custody.py rather than re-implementing it: give that script an export mode that builds the custody profile and the signed credit activity for a given beneficiary seed and stops before program-admission.sh, have node-test.sh run it for the treasury seed before the supervisors start, pass the profile to bootstrap through the sequencer supervisor's trailing arguments as --custody-profile, submit the credit through layerxctl as the treasury, wait until the read shows the credited balance and the treasury DID lists the opened main account, then run the operator SEND exactly as written and, since the reset rebuilds genesis, expect the unopened refusal again after it. The fixture needs eth_account under BRIDGE_PYTHON, the sign-credit, layerx-custody-proof and layerx-paxeer-boundary binaries, forge artifacts and a local paxd chain, and it reads CARGO_TARGET_DIR while the layerxctl target needs it unset, so platform-test-node must gain those prerequisites and the fixture step its own target directory; never by relaxing the kernel check or the test's assertions."
 do_2       = "Keep every step of node-test.sh as written and make the whole target pass; add the derivation case to the probe's or bootstrap's existing tests where one exists."
 verify_cmd = "timeout 30m make layerxd platform-test-node"
-symbols    = ["balance"]
-touches    = ["platform/hosted/node/tests/probe/src/main.rs", "platform/hosted/node/bootstrap.sh", "platform/hosted/node/tests/node-test.sh"]
+symbols    = ["balance", "did_accounts", "expect_treasury_unopened", "main"]
+touches    = ["platform/hosted/node/tests/probe/src/main.rs", "platform/hosted/node/tests/node-test.sh", "platform/Makefile.inc", "tests/daemon/withdraw-custody.py"]
 tests      = ["platform/hosted/node/tests/node-test.sh"]
 reqs       = ["5.1"]
 
