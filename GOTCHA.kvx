@@ -1697,3 +1697,45 @@ area    = "test"
 symptom = "A single check-live.test.sh run hung in check_live_hosts_timeout until an outer timeout killed it, after eleven passing cases."
 cause   = "Not investigated under the one-try rule; the case drives a hanging ssh stand-in under CHECK_LIVE_TEST_TIMEOUT=1."
 do      = "Bound the harness with an outer timeout and read the last ok line in the log to locate the hanging case before blaming the change under test."
+
+[gotcha.280]
+area    = "check-live"
+symptom = "Wrapping tools/bringup/check-live.test.sh in another lock on the same lock file hangs and no case runs."
+cause   = "The harness takes its own exclusive lock on that file, so an outer lock on it deadlocks the run."
+do      = "Run the harness without an outer lock on its lock file; it serialises itself."
+
+[gotcha.281]
+area    = "spec"
+symptom = "cg spec <subcommand> --help reports an unknown task instead of printing help."
+cause   = "The task subcommands read --help as a task id."
+do      = "Use cg spec --help for the subcommand list and never pass --help to a task subcommand."
+
+[gotcha.282]
+area    = "spec"
+symptom = "Reopening an implemented task is refused."
+cause   = "cg spec start moves an implemented task back to in_progress only with --force."
+do      = "Reopen with cg spec start --force; completion is never forced."
+
+[gotcha.283]
+area    = "bringup"
+symptom = "A scan for a symbol under a guessed path exits 2 and the result is taken as absence."
+cause   = "The guessed file does not exist, so the scan proves nothing about the symbol."
+do      = "Discover the real file names with git ls-files before scanning a tree for a symbol."
+
+[gotcha.284]
+area    = "bringup"
+symptom = "A deploy handoff written under the repository ends up staged with the task's change."
+cause   = "Handoffs carry operator detail that belongs to the private operations record, not to the tracked tree."
+do      = "Write deploy handoffs in the private operations directory beside the checkout, never under the repository."
+
+[gotcha.285]
+area    = "check-live"
+symptom = "check-live.sh ci reports fail canary with branch=none and dispatches nothing."
+cause   = "The gate resolves the default branch with gh repo view, which reads the repository from the checkout's git remotes; a source snapshot without git metadata has none."
+do      = "Run the CI live gate from a git checkout that has the origin remote."
+
+[gotcha.286]
+area    = "spec"
+symptom = "cg spec lint rejects a requires cycle after a dependency was added to make a gate's order explicit."
+cause   = "The requires followed which gate could pass first instead of where the task's commands run; a step that runs inside another task's machine depends on that task."
+do      = "Make requires follow where commands run, and record a gate that cannot pass before a later step as a qualification observation, never as a reversed requires."
