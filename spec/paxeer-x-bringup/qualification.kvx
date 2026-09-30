@@ -666,3 +666,19 @@ symbol     = "URL, edges"
 observed   = "The rename ruling cannot be applied: LAYERX_GATEWAY_PAXEER_RPC_URLS holds a JSON array, which the checker's URL pattern (anchored at a scheme) never matches, so check() emits no edge at all under the new env name; even parsed, its public hosts would be offcluster, never ok, so any renamed RESOLVED_EDGES line stays named-but-absent."
 assumption = "Satisfying the suite needs either dropping the line (ruled out) or teaching the checker to read JSON URL lists (outside this task and the ruling); no edit made and the verify_cmd not rerun, since an unchanged rerun repeats observation 1.3.5."
 severity   = "blocker"
+
+[gate.1.3.1]
+task      = "1.3"
+revision  = "5f981872a plus this task's change"
+command   = "timeout 30m tools/runtime/run-with-clock.sh make platform-hosted-topology-check programs-reference-escrow human-test-provider-probe"
+exit_code = 0
+log_path  = ".logs/verify.log"
+observed  = "The checker reads the gateway's JSON RPC URL list as two offcluster edges (63 edges, failed=0, both parsers), the regression suite resolves the 62 named edges, escrow builds and the identity, security and movement probe tests pass 2 of 2 each; format step was bash -n and py_compile."
+
+[observation.1.3.7]
+task       = "1.3"
+file       = "spec/paxeer-x-bringup/spec.kvx"
+symbol     = "write_genesis_metadata, builder_release_publish, CANDIDATE_ABI_MODULE"
+observed   = "cg spec done 1.3 reran the verify_cmd to a pass, then refused (exit 75) because the graph database was busy and those three symbols, two shell functions and one Rust constant, are not in the last completed index."
+assumption = "The refusal concerns the graph index, not the task; per the existing gotcha the status was set to done by hand after the genuine pass recorded in gate.1.3.1, and the gate was not rerun."
+severity   = "note"

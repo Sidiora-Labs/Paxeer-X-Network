@@ -1217,3 +1217,9 @@ area    = "platform"
 symptom = "A topology regression entry for an env edge cannot be renamed when the manifest variable changes from one URL to a JSON list of URLs."
 cause   = "topology-check.sh matches each env value against one scheme-anchored URL pattern, so a JSON array yields no edge, and a public host would be offcluster rather than ok."
 do      = "Before renaming a named edge, confirm check() emits it on the merged manifest; a list-valued or public-host variable needs a checker change or a ruling, not a renamed line."
+
+[gotcha.200]
+area    = "platform"
+symptom = "A regression suite that compares only rows labelled ok cannot name an edge the topology checker labels offcluster."
+cause   = "named() filtered rows by one exact status, so a listed public-host edge was named but absent even once the checker emitted it."
+do      = "Compare resolved lists against the set of statuses that count as resolved (ok and offcluster) and keep the per-policy refusal counts on that same set."
