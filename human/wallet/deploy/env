@@ -30,14 +30,14 @@ LAYERX_GATEWAY_AUTHORITY_TOKEN_FILE - path to the receipt authority bearer token
 LAYERX_GATEWAY_IDENTITY_URL - identity service base URL, the identity app's .internal name on 9443 in human/wallet/deploy/endpoint.toml
 LAYERX_GATEWAY_IDENTITY_TOKEN_FILE - path to the identity service bearer token
 LAYERX_GATEWAY_IDENTITY_PROVISIONING_TOKEN_FILE - path to the identity provisioning token used by registration
-LAYERX_GATEWAY_PROGRAM_REGISTRY_URL - program registry base URL, set as a platform secret
+LAYERX_GATEWAY_PROGRAM_REGISTRY_URL - program registry base URL, the registry app's .internal name on 9420 in human/wallet/deploy/endpoint.toml; configured_kernel requires it in kernel mode
 LAYERX_GATEWAY_PROGRAM_REGISTRY_TOKEN_FILE - path to the program registry bearer token
 LAYERX_GATEWAY_PUBLIC_CORE_URL - public core read base URL, the kernel app's .internal name on 9443 in human/wallet/deploy/endpoint.toml; px_getNetwork reports kernel.available only when it is set
-LAYERX_GATEWAY_PAXEER_RPC_URLS - JSON array of two to eight chain RPC https urls tried in order for eth_ relay, optional, set as a platform secret
+LAYERX_GATEWAY_PAXEER_RPC_URLS - JSON array of two to eight chain RPC https urls tried in order for eth_ relay, optional, set as a Fly secret of the endpoint app to two serving RPC names of tools/bringup/search-front.sh names
 LAYERX_GATEWAY_INDEXER_URL - indexer base URL for unified history, optional, set as a platform secret
 LAYERX_GATEWAY_FAUCET_URL - faucet service base URL, optional, set as a platform secret
 LAYERX_GATEWAY_FAUCET_SERVICE_TOKEN_FILE - path to the faucet service token
-LAYERX_GATEWAY_REDIS_URL - Redis URL of the endpoint's shared store, set as a platform secret
+LAYERX_GATEWAY_REDIS_URL - Redis URL of the endpoint's shared store, rediss:// at the Redis app's .internal name, set as a platform secret
 LAYERX_GATEWAY_REDIS_USERNAME_FILE - path to the Redis username
 LAYERX_GATEWAY_REDIS_PASSWORD_FILE - path to the Redis password
 LAYERX_GATEWAY_SEQUENCER_PUBLIC_KEY_FILE - path to the trusted sequencer public key
@@ -157,6 +157,12 @@ NEXT_PUBLIC_SITE_URL - public origin of the demo used for page metadata
 NEXT_PUBLIC_PAXEER_ATTESTOR_URL - attestor base URL the wallet app service worker treats as network-only; unset when browsers never reach the attestors
 CHECK_LIVE_GATEWAY_BASE - base URL of a deployed wallet gateway checked by tools/wallet/check-live.sh gateway
 CHECK_LIVE_GATEWAY_TOKEN - access token of a provisioned test identity that tools/wallet/check-live.sh gateway reads /v1/wallet/me with
+NEXT_PUBLIC_PAXEER_HUMAN_API - human service base URL the wallet app plans and submits intents against, https://api-hull.paxeer.network on the paxport service
+CHECK_LIVE_HUMAN_BASE - base URL of a deployed human service checked by tools/wallet/check-live.sh human and human-session
+CHECK_LIVE_HUMAN_ORIGIN - https origin of the wallet app that tools/wallet/check-live.sh human and human-session call the human service from
+CHECK_LIVE_HUMAN_ASSERTION - wallet identity assertion of a provisioned, funded test identity that tools/wallet/check-live.sh human-session sends as the plan's bearer
+CHECK_LIVE_HUMAN_ASSET - 64-hex asset id of the kernel's native asset that tools/wallet/check-live.sh human-session plans the golden intent in
+CHECK_LIVE_HUMAN_DESTINATION - kernel account the golden intent of tools/wallet/check-live.sh human-session pays
 # gateway
 ATTESTOR_ENDPOINTS - comma-separated https base URLs of the five attestor nodes the gateway signs through
 ATTESTOR_CLIENT_CERT_FILE - path to the gateway's mutual TLS client certificate presented to the attestors

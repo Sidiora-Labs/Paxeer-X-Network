@@ -17,12 +17,14 @@ kill_timeout = "30s"
   LAYERX_GATEWAY_AUTHORITY_URL = "https://paxeer-human-service.internal:9445"
   LAYERX_GATEWAY_PUBLIC_CORE_URL = "https://paxeer-human-service.internal:9443"
   LAYERX_GATEWAY_IDENTITY_URL = "https://paxeer-identity.internal:9443"
+  LAYERX_GATEWAY_PROGRAM_REGISTRY_URL = "https://paxeer-registry.internal:9420"
   LAYERX_GATEWAY_CLIENT_IDENTITY_PKCS12 = "/run/secrets/client.p12"
   LAYERX_GATEWAY_CLIENT_IDENTITY_PASSWORD_FILE = "/run/secrets/client-password"
   LAYERX_GATEWAY_COMPONENT_TOKEN_FILE = "/run/secrets/component-token"
   LAYERX_GATEWAY_AUTHORITY_TOKEN_FILE = "/run/secrets/authority-token"
   LAYERX_GATEWAY_IDENTITY_TOKEN_FILE = "/run/secrets/identity-token"
   LAYERX_GATEWAY_IDENTITY_PROVISIONING_TOKEN_FILE = "/run/secrets/identity-provisioning-token"
+  LAYERX_GATEWAY_PROGRAM_REGISTRY_TOKEN_FILE = "/run/secrets/program-registry-token"
   LAYERX_GATEWAY_SEQUENCER_PUBLIC_KEY_FILE = "/run/secrets/sequencer-public-key"
   LAYERX_GATEWAY_SEQUENCER_ID_FILE = "/run/secrets/sequencer-id"
   LAYERX_GATEWAY_SEQUENCER_FIRST_BATCH_FILE = "/run/secrets/sequencer-first-batch"
@@ -69,6 +71,10 @@ kill_timeout = "30s"
 [[files]]
   guest_path = "/run/secrets/identity-provisioning-token"
   secret_name = "ENDPOINT_IDENTITY_PROVISIONING_TOKEN"
+
+[[files]]
+  guest_path = "/run/secrets/program-registry-token"
+  secret_name = "ENDPOINT_PROGRAM_REGISTRY_TOKEN"
 
 [[files]]
   guest_path = "/run/secrets/sequencer-public-key"

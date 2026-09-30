@@ -746,6 +746,380 @@ observed   = "cg spec implemented 4.13 exited 75 with the graph database busy an
 assumption = "Shell functions are not graph symbols, so the status line was set to implemented by hand; the controller's three secrets are set by name through flyctl secrets import, never in the toml."
 severity   = "note"
 
+[gate.0.9.live_registration]
+revision = "3df583333c69b96d90174806635ae6be55d3f094"
+command = "BRINGUP_HOSTS_FILE=/root/lx-ops/bringup-2026-09-29/hosts.env tools/bringup/edge.sh add api-mainnet-beta.paxeer.network paxeer-shared-endpoint"
+exit_code = 0
+log_path = ".logs/0.9-edge-register.log"
+
+[gate.0.9.live_edge]
+revision = "3df583333c69b96d90174806635ae6be55d3f094"
+command = "BRINGUP_HOSTS_FILE=/root/lx-ops/bringup-2026-09-29/hosts.env timeout 10m tools/bringup/check-live.sh edge"
+exit_code = 0
+log_path = ".logs/0.9-edge-live.log"
+
+[observation.0.9.reload_warnings]
+revision = "3df583333c69b96d90174806635ae6be55d3f094"
+command = "tools/bringup/edge.sh add"
+exit_code = 0
+log_path = ".logs/0.9-edge-register.log"
+observed = "Nginx reload reported protocol options redefined on existing sites. The live edge gate passed. No unrelated site was repaired."
+assumption = "Warnings belong to existing listener configuration and need a separately scoped task if repair is required."
+
+[observation.3.7.1]
+task = "3.7"
+file = "tools/bringup/check-live.sh"
+symbol = "check_human_session"
+observed = "The verify_cmd ran once and exited 1: the harness tools/wallet/check-live.test.sh passed, and the human-session gate refused with exit 2 because CHECK_LIVE_HUMAN_ASSERTION, CHECK_LIVE_HUMAN_ASSET and CHECK_LIVE_HUMAN_DESTINATION are unset and api-hull.paxeer.network is not yet served by the kernel app of tasks 3.5 and 3.6; log .logs/verify.log."
+assumption = "A live plan needs a funded, provisioned test identity's wallet assertion, the kernel's native asset id and a destination account, which the tree cannot fix, and the golden body's fixture asset and past deadline are replaced at run time; the owner supplies the three inputs and the deploy fleet runs the PWA redeploy of the handoff before the gate is rerun."
+severity = "high"
+
+[observation.1.7.1]
+task       = "1.7"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_paxeer_boundary"
+observed   = "timeout 10m tools/bringup/check-live.sh paxeer-boundary exited 1 at 3df583333 plus this task's change (log .logs/verify.log): the live kernel machine runs no layerx-paxeer-boundary process and no hop, so count=0 and no hop names."
+assumption = "The kernel image and deploy of task 1.5, the two RPC names in the kernel env and the two certificate issues are deploy steps in the handoff; the gate reruns once they have run."
+severity   = "blocker"
+
+[observation.1.7.2]
+task       = "1.7"
+file       = "docker/kernel/init.sh"
+symbol     = "start_paxeer"
+observed   = "The file does not exist on the feature branch; tasks 1.5 and 2.1 create or edit it in parallel lanes; cg spec start 1.7 refused on the unmet require 1.5 and cg spec implemented 1.7 exited 75 (graph busy, shell symbol not in the graph), so both status changes were made by hand."
+assumption = "The merge takes the union of the three lanes' init.sh; this lane adds run_as, tls_ready, supervise and start_paxeer, and the kernel image must carry layerx-paxeer-boundary, socat, curl, ca-certificates and setpriv."
+severity   = "warning"
+
+[observation.1.7.3]
+task       = "1.7"
+file       = "human/wallet/deploy/human.toml"
+symbol     = "LAYERX_KERNEL_PAXEER_RPC_NAMES"
+observed   = "The two serving RPC names the boundaries front are not fixed by the spec; init.sh reads them from LAYERX_KERNEL_PAXEER_RPC_NAMES and exits 1 unless it holds two different public RPC names."
+assumption = "They are chosen at deploy time as two serve names of search-front.sh names that pass rpc-nodes, and set in human.toml [env] and human/wallet/deploy/env, which are task 1.5's files."
+severity   = "warning"
+
+[gate.1.7.1]
+task      = "1.7"
+revision  = "3df583333 plus this task's change"
+command   = "curl -sS -H 'Host: 127.0.0.1:18546' -d eth_chainId https://apiN.mainnet-beta.paxeer.network/ for N in 1..16"
+exit_code = 0
+log_path  = "none (read-only probe, no log kept)"
+observed  = "All sixteen names answered result 0x7d with HTTP 200 for a loopback Host header, so do_2 needs no vhost change; tools/bringup/check-live.test.sh passed all cases (.logs/test.log), format step was bash -n and shellcheck."
+
+[observation.3.10.1]
+task       = "3.10"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_agent_public"
+observed   = "timeout 10m tools/bringup/check-live.sh agent-public exited 1 at 3df583333 plus this task's change (log .logs/verify.log): the kernel app holds no dedicated IPv4 and no layerx-agentd runs in its machine; the fixture cases of tools/bringup/check-live.test.sh pass (log .logs/test.log)."
+assumption = "The live upstream needs tasks 3.6 and 3.9 deployed, the agentd and agentd-client identities issued, the IPv4 allocated, the app redeployed and the name registered on the edge; the ordered commands are in the deploy handoff and the gate reruns after them."
+severity   = "blocker"
+
+[observation.3.10.2]
+task       = "3.10"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_agent_public"
+observed   = "The read envelope is program.discover of the daemon's LAYERX_AGENT_PROGRAM_PROBE_ID with requested_verification_level sequencer-signed, the only agent-plane read whose request fields the tree fixes (the gateway's ProgramSelectorBody and the JVM SDK's validation); the bearer and probe program are read from the running layerx-agentd's own environment inside the machine because task 3.6 has not fixed a file path for them."
+assumption = "Task 3.9 serves program.discover through POST /rpc as its do_1 says for program reads; if it rules another read for this gate, only the envelope line of check_agent_public changes."
+severity   = "note"
+
+[observation.3.10.3]
+task       = "3.10"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_agent_public"
+observed   = "cg spec implemented 3.10 exited 1 with the graph database busy and symbol check_agent_public not defined in the graph, while both touched files passed its checks."
+assumption = "Shell functions are not graph symbols, so the status line was set to implemented by hand; the feature manager rules on the graph gate."
+severity   = "note"
+
+[gate.0.3.live_deploy]
+revision = "26b211c9ccba18c31c51a4bae828cf17e185902e"
+command = "BRINGUP_HOSTS_FILE=/root/lx-ops/bringup-2026-09-29/hosts.env timeout 15m tools/bringup/search-front.sh deploy"
+exit_code = 0
+log_path = ".logs/0.3-deploy.private.log"
+
+[gate.0.3.live_search_front]
+revision = "26b211c9ccba18c31c51a4bae828cf17e185902e"
+command = "BRINGUP_HOSTS_FILE=/root/lx-ops/bringup-2026-09-29/hosts.env timeout 10m tools/bringup/check-live.sh search-front"
+exit_code = 0
+log_path = ".logs/0.3-search-front-live.log"
+
+[observation.1.4.1]
+task       = "1.4"
+file       = "tools/bringup/kernel-genesis.sh"
+symbol     = "kernel_genesis"
+observed   = "cg spec start 1.4 refused with unmet requires 1.5 and 1.7, so the status was set to in_progress by hand; the kernel network id is not fixed by the spec or the tree: the node pod's ConfigMap carries the private testnet id 402, and the chain's custody params hold the network id and the sequencer authorizations the new sequencer key must match, which no precompile view exposes over the JSON-RPC relay."
+assumption = "The owner names the mainnet kernel network id before the script is written; nothing is guessed."
+severity   = "blocker"
+
+[observation.1.4.2]
+task       = "1.4"
+file       = "tools/bringup/kernel-genesis.sh"
+symbol     = "kernel_genesis"
+observed   = "The custody precompile at 0x...1013 exposes getAsset, assetByPointer and nativeAssetId but no enumeration, and the module registers no query route, so the asset map cannot be listed through the relay; only the SID pointer is fixed in the tree, USDL appears only in the retired Solidity path and USDC has two different addresses in the wallet app."
+assumption = "The owner either names the pointer of every mapped asset on chain 125 (SID, USDC, USDL and any other) for assetByPointer lookups with PAX from nativeAssetId, or rules an enumeration view into the precompile; nothing is guessed."
+severity   = "blocker"
+
+[observation.1.4.3]
+task       = "1.4"
+file       = "platform/hosted/node/bootstrap.sh"
+symbol     = "kernel_genesis"
+observed   = "do_1 puts the sequencer key under /data/layerx/node, while bootstrap.sh and supervisor.sh, which the init reuses, refuse a sequencer key inside the node data directory, and task 1.5 has not yet fixed the init's volume layout (data directory, key and treasury material paths) that the script must write into."
+assumption = "The key sits beside the data directory under the custody path once task 1.5 or the owner fixes the layout; the relaxation of the bootstrap check is not made."
+severity   = "blocker"
+
+[observation.1.6.1]
+task       = "1.6"
+file       = "spec/paxeer-x-bringup/spec.kvx"
+symbol     = "value_loop"
+observed   = "cg spec start 1.6 exited 1 on the unmet require 1.4, and the spec and tree fix neither the two funded accounts of do_1 nor where the sender's signing seed lives in the kernel machine: a fresh genesis funds no account (only a custody credit opens one), task 1.4 makes only the genesis and the sequencer key, and the pod's treasury key is a cluster secret the Fly kernel app has no custody path for."
+assumption = "Status set to in_progress by hand and no code written, per the owner's one-try-then-ask rule; the task resumes once the owner names the two accounts, how the sender is funded on chain 125 and where its seed or signer sits in the machine."
+severity   = "blocker"
+
+[observation.1.6.2]
+task       = "1.6"
+file       = "cmd/layerxctl/src/main.rs, cmd/layerxd/lxp_daemon_authority_replica.c"
+symbol     = "value_loop"
+observed   = "layerxctl read-state prints the actor's account sequence and state root, not balances, and has no receipt lookup; the authority replica on loopback 9402 serves only /v1/batches/<batch_id>/receipt-authority?receipt_digest=, while the batch document with activities[] is /v1/history/batches/N of the relay archive, which the kernel pod does not run; balance and receipt-by-activity reads exist only in the node test probe."
+assumption = "do_1 needs a ruling on the interface: extend layerxctl (outside this task's touches) with balance and receipt-lookup reads, ship layerx-node-probe in the kernel image of task 1.5, or read the batch from the relay archive origin."
+severity   = "blocker"
+
+[observation.2.6.1]
+task       = "2.6"
+file       = "platform/hosted/registry/src/event_producer.rs"
+symbol     = "ProgramOutbox::start"
+observed   = "The registry calls Client::from_environment(&[\"program\"]) at startup, so it refuses to start without the LAYERX_EVENTS_PROGRAM_UPSTREAM_* and LAYERX_EVENTS_WEBHOOKS_UPSTREAM_* groups, which task 4.5 adds later against the internal and webhooks apps that no task has created and whose app names the spec does not fix."
+assumption = "None taken: either the registry uses the optional from_environment_if_configured path as other producers do, or task 2.6 carries both groups now with named upstream apps; the owner decides, and the task stays in_progress with no code written."
+severity   = "blocker"
+
+[observation.2.6.2]
+task       = "2.6"
+file       = "platform/hosted/node/deployment.yaml"
+symbol     = "LAYERX_REGISTRY_NODE_AUTHORIZATION"
+observed   = "The registry's node and receipt authority bearer values, its receipt authority replica id and its sequencer trust history file come from the kernel side, whose Fly paths the spec and the tree do not fix, because the kernel app's init that would place the registry-authority and registry-component tokens is not in the tree."
+assumption = "None taken: the owner names where the kernel app keeps those four values, or whether task 2.6 generates them and imports them into both apps."
+severity   = "blocker"
+
+[observation.3.6.1]
+task       = "3.6"
+file       = "agent/crates/layerx-agentd/src/enrolment.rs, agent/crates/layerx-mcp/src/bin/layerx-mcp.rs"
+symbol     = "BindingPublisher::document, mcp_enrol"
+observed   = "The full-mode daemon publishes binding.json with the twelve base keys only, while the layerx-mcp binary refuses a binding without a listener section (the binding document declares no protocol socket), and no code outside the task's touches writes that section."
+assumption = "Not guessed: either mcp-enrol.sh writes a second document for layerx-mcp that adds listener (and web) beside the daemon's, or the daemon's publisher gains listener inputs in agent/crates/layerx-agentd, which is outside this task's touches; owner or manager ruling needed."
+severity   = "blocker"
+
+[observation.3.6.2]
+task       = "3.6"
+file       = "agent/crates/layerx-mcp/src/binding.rs, platform/cli/src/mcp.rs"
+symbol     = "Binding::attach_web, WebPayer"
+observed   = "A session carrying the write:web scopes opens only with a web section and an attached WebAuthority; neither layerx-mcp nor layerx mcp serve calls attach_web and the tree has no production WebPayer, so tools/list can never list the web tools that req 11.3 requires."
+assumption = "Which account signs the 402LXP grants and sends, which task implements the production payer and attaches it, and the web section values (sidecar endpoint, network, sequencer public key, approval threshold) are not fixed by the spec or the tree."
+severity   = "blocker"
+
+[observation.3.6.3]
+task       = "3.6"
+file       = "docker/kernel/init.sh"
+symbol     = "mcp_enrol"
+observed   = "docker/kernel/init.sh does not exist on the feature branch; task 1.5 writes it and its process supervision interface on a parallel build lane, so the agentd, socat and layerx-mcp lines of do_1 and do_2 have no supervisor to join."
+assumption = "Build 3.6's init lines on top of task 1.5's merged init rather than writing a second init."
+severity   = "blocker"
+
+[observation.3.6.4]
+task       = "3.6"
+file       = "platform/hosted/human/material.py"
+symbol     = "mcp_enrolment"
+observed   = "The daemon's full-mode MCP enrolment requires LAYERX_AGENT_MCP_AGENT_DID (resolved through the human authority), SCOPES, ACTIVITY_TYPES, LIMIT_*, EXPIRY_SEQUENCE, CORE_SEQUENCE, POLICY_VERSION, OPENING_CLIENT and PEER_UID; the spec fixes only the binding root /data/layerx/mcp."
+assumption = "Which agent DID and tenant the MCP session binds, its scopes, activity types, limit and expiry need a ruling before material.py can write them without a placeholder."
+severity   = "blocker"
+
+[observation.3.9.1]
+task       = "3.9"
+file       = "agent/crates/layerx-agentd/src/main.rs"
+symbol     = "serve"
+observed   = "tenant::resolve authorizes only a session Token authenticated from a SessionCredential (tenant, session_id, 32-byte token_id, generation), while HttpProductionTransport sends the envelope with one Authorization: Bearer value and the program listener checks the daemon program bearer; neither the agent-api schema nor the tree defines how an /rpc caller presents its session credential, and tenant::Surface has no variant for an HTTP SDK or JVM caller."
+assumption = "Nothing was implemented; the task stays in_progress until the owner fixes the /rpc credential (encoding and header) and the Surface value, then the whole task is built in one pass."
+severity   = "blocker"
+
+[observation.4.21.runtime_retirement]
+revision = "12d05f76b940b21ffd1476bdc7c29026950bd1a3"
+command = "systemctl stop hpx-registry.service; systemctl disable hpx-registry.service; rename reviewed unit, legacy vhost and environment into private rollback archive; systemctl daemon-reload"
+exit_code = 0
+log_path = ".logs/4.21-retirement.log"
+observed = "Old unit is inactive and not found; reviewed originals absent, environment mode preserved and artifacts/data untouched. Serving gate already passed; task remains in_progress pending host-role fixture and README completion."
+
+[observation.4.21.5]
+task = "4.21"
+file = "hpx/hosting/deploy.sh, hpx/hosting/nginx.conf, hpx/hosting/nginx-http.conf"
+symbol = "deploy.sh"
+observed = "The local systemd and nginx deployment of the registry stays in the tree although the name is served by the Fly app and the README no longer points to it."
+assumption = "Retiring or repurposing the local deployment files is outside do_3's touches and needs an owner decision; nothing was removed."
+severity = "low"
+
+[gate.4.21.final]
+revision = "e7badb10d66a221f7d0d8da99a4f56d842244464"
+command = "BRINGUP_HOSTS_FILE=/root/lx-ops/bringup-2026-09-29/hosts.env timeout 10m tools/bringup/check-live.sh hpx"
+exit_code = 0
+log_path = ".logs/4.21-final-hpx-live.log"
+observed = "Final changed-source gate passed after host-role, fixture and release-streaming documentation completion; earlier serving and runtime-retirement evidence retained."
+
+[observation.4.16-src.1]
+task       = "4.16"
+file       = "tools/bringup/sync-fleet.sh"
+symbol     = "resync_target"
+observed   = "resync installs its pinned release over any target whose binary differs, so after a rollout of a newer paxd a later resync would put the older pinned binary back on the resynced host."
+assumption = "The pin stays as the brief requires and rollout never uses it; the pin must be moved to the rolled-out sha256 by a ruled follow-up before the next resync."
+severity   = "major"
+
+[observation.1.5.1]
+task       = "1.5"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_kernel_app"
+observed   = "timeout 20m tools/bringup/check-live.sh kernel-app exited 1 at 3df583333 plus this task's change (log .logs/verify.log): the app runs one started machine with no volume at /data, the volumeless machine do_4 replaces."
+assumption = "The image push, CA root secret, volume, scale to zero, deploy and machine start are the deploy fleet's steps in the owner handoff; the gate reruns after them."
+severity   = "blocker"
+
+[observation.1.5.2]
+task       = "1.5"
+file       = "docker/kernel/init.sh"
+symbol     = "guarantor, treasury-signer"
+observed   = "The treasury signer waits on keys/publication/binding-policy.json, whose publication-policy.py treasury render needs a recipient address, and both guarantors wait on keys/checkpoint-authority/key.pem, the key the Paxeer custody genesis pins as depositRootAuthority; neither value is fixed by the spec or the tree."
+assumption = "The owner supplies both; the init never generates or guesses them, so kernel-app reports the signer as waiting until the policy is on the volume."
+severity   = "blocker"
+
+[observation.1.5.3]
+task       = "1.5"
+file       = "docker/kernel/init.sh, human/wallet/deploy/human.toml"
+symbol     = "task 1.4 do_1, [design.fly] layout"
+observed   = "Task 1.4 writes the sequencer key and metadata under /data/layerx/node, which bootstrap.sh refuses inside --data-dir, and [design] layout puts the pod env in [env] while check-deploy env-no-secrets refuses the 64-hex asset and replica ids."
+assumption = "The init keeps --data-dir /data/layerx/node, reads the key at /data/layerx/keys/sequencer.key and the metadata at /data/layerx/genesis/metadata.lxgb, and exports the pod ConfigMap values itself; task 1.4 writes to those paths."
+severity   = "warning"
+
+[observation.1.5.4]
+task       = "1.5"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_kernel_app"
+observed   = "kernel-app asserts do_5 only: one started machine with its volume at /data, the root init as entrypoint, and each recorded service running under its uid or waiting on the genesis; req 6.3's supervisor readiness, LNI socket, replica head and clock authority do not exist before the genesis."
+assumption = "Task 1.4's kernel-node subcommand asserts 6.3's readiness after kernel-genesis.sh; kernel-app does not claim it."
+severity   = "note"
+
+[observation.1.5.5]
+task       = "1.5"
+file       = "docker/kernel/init.sh"
+symbol     = "LAYERX_NODE_NETWORK_ID"
+observed   = "The kernel network id is not fixed for this network: the tree's testnet ConfigMap carries 402, and the asset and replica ids the init exports are that testnet ConfigMap's values."
+assumption = "The init requires LAYERX_NODE_NETWORK_ID from a staged Fly secret the owner sets; the asset and replica ids stay the tree's values until the owner rules otherwise."
+severity   = "blocker"
+
+[observation.4.11.1]
+task       = "4.11"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_gas"
+observed   = "The verify_cmd timeout 15m tools/bringup/check-live.sh gas exited 2 with check-live: CHECK_LIVE_GAS_ACCOUNT_KEYSTORE is unset, because no check account exists yet and the gas station app, its paymaster and its edge name are not deployed; the harness cases passed."
+assumption = "The deploy side runs the handoff steps, delegates and funds the check account, and reruns the gate with the CHECK_LIVE_GAS_* inputs set."
+severity   = "warning"
+
+[observation.4.11.2]
+task       = "4.11"
+file       = "docker/gas-station/init.sh"
+symbol     = "need"
+observed   = "The station config requires margin_bps, per_quote_limit, per_account_limit, per_interval_limit, interval_seconds, balance_floor, gas_limit and max_priority_fee_per_gas, and neither the spec nor the tree fixes their values."
+assumption = "None taken: the owner supplies the eight values, imported as GAS_STATION_* secrets, and the init refuses to start without them."
+severity   = "warning"
+
+[observation.4.11.3]
+task       = "4.11"
+file       = "interop/crates/layerx-gas-station/src/config.rs"
+symbol     = "max_rate_age"
+observed   = "The station refuses a max_rate_age outside 1..300 seconds, while do_1 and do_2 make both the contract's maximumAge and max_rate_age the owner's setRate refresh interval."
+assumption = "None taken: the owner's refresh interval must be at most 300 seconds, with setRate called at least that often, or the station bound changes in its own task."
+severity   = "warning"
+
+[observation.4.11.4]
+task       = "4.11"
+file       = "interop/crates/layerx-gas-station/src/station.rs"
+symbol     = "quote"
+observed   = "The station reads nonce() and usedQuoteNonces from the account itself, so an account not yet EIP-7702 delegated to the paymaster gets no quote, and a first-time user cannot be sponsored through /quote alone."
+assumption = "The gate's check account is delegated once in the handoff with a sponsor-paid authorization; first-time delegation for users is left to the wallet side."
+severity   = "warning"
+
+[observation.4.11.5]
+task       = "4.11"
+file       = "interop/deploy/gas-station/fly.toml"
+symbol     = "checks.listening"
+observed   = "The station serves only POST /quote and POST /submit and no GET route, so the app carries a tcp check and the edge gate has no http health path to probe for chain.paxeer.network."
+assumption = "The edge gate's route line for this name stays without a health path until the station gains a GET health route in its own task."
+severity   = "warning"
+
+[observation.3.11.1]
+task       = "3.11"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_internal"
+observed   = "timeout 10m tools/bringup/check-live.sh internal exited 1 (log .logs/verify.log): the router's served chain ends at ISRG Root X1, but the internal and internal Redis apps do not exist yet, so the public-ip reads, the payments and programs pin reads and the five readiness routes from the kernel machine all fail."
+assumption = "The deploy side runs the handoff steps (build, volumes, Redis secrets, both deploys with no public IPs, the five internal certificates) once tasks 1.5, 2.2 and 3.5 are live, then reruns the gate; the human TLS listener port 9449 is the coordinator's ruling pending the design block."
+severity   = "external"
+
+[observation.4.12.1]
+task       = "4.12"
+file       = "interop/crates/layerx-mirror-signer/src/lib.rs"
+symbol     = "SignerService::load_bridge"
+observed   = "The crate is touched beyond the task's touches list because it blocked the task: the signer served only the two mirror handles, so a bridge mode was added (layerx-mirror-signer bridge, a key manifest binding each handle to one key type and its own bridge domain list, refusing any unlisted domain) with mirror mode and its handles unchanged; cargo check -p layerx-mirror-signer --tests exited 0, and cargo test runs first on the deploy side's builder."
+assumption = "Ruled: complete the fixed signer rather than swap it; one submitter handle and key per EVM chain plus the Paxeer submitter."
+severity   = "note"
+
+[observation.4.12.2]
+task       = "4.12"
+file       = "spec/paxeer-x-bringup/spec.kvx"
+symbol     = "task.4.12"
+observed   = "cg spec start 4.12 exited 1 on the unmet requires 2.2, and cg spec implemented 4.12 made no change within 60 seconds (timeout exit 124)."
+assumption = "Both status lines (in_progress, then implemented) were set by hand for the build side, as the brief allows."
+severity   = "note"
+
+[observation.4.12.3]
+task       = "4.12"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_bridge"
+observed   = "rev 3d5d614c3; BRINGUP_HOSTS_FILE=<host map> timeout 20m tools/bringup/check-live.sh bridge exited 2 (log .logs/verify.log): PAXEER_BRIDGE_RECORDS_DIR is unset, since no vault, program or relayer app is deployed yet."
+assumption = "The deploy side runs the handoff and reruns the gate with the deployment records directory exported."
+severity   = "blocker"
+
+[observation.4.12.4]
+task       = "4.12"
+file       = "interop/crates/layerx-bridge-relayer/src/cosign.rs"
+symbol     = "CosignDirectory"
+observed   = "Every configured vault verifies 3 of 5 attestor signatures, while one relayer holds one attestor key and reads the others from its cosign directory; the spec fixes no operator or transport for the other four attestors' signatures."
+assumption = "The owner rules who runs attestors 2 to 5 and how their signatures reach the relayer's cosign directory; until then no deposit reaches bridgeIn."
+severity   = "blocker"
+
+[observation.4.1.1]
+task       = "4.1"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_wallet"
+observed   = "timeout 10m tools/bringup/check-live.sh wallet exited 2 at base revision 71bc925fd with CHECK_LIVE_GATEWAY_TOKEN unset (log .logs/verify.log); the gateway is not yet in two regions nor behind the edge, and the build gate bash tools/bringup/check-live.test.sh exited 0."
+assumption = "The live gate runs on the deploy side after steps 1 to 10 of the handoff with the gateway test-identity token supplied."
+severity   = "blocker"
+
+[observation.4.1.2]
+task       = "4.1"
+file       = "spec/paxeer-x-bringup/spec.kvx"
+symbol     = "decision.public_names.wallet_endpoint"
+observed   = "wallet_endpoint names no host, so check_wallet takes the name from NEXT_PUBLIC_PAXEER_WALLET_API of the Railway service paxport at run time."
+assumption = "The public wallet endpoint name is an open owner decision; once the value is a bare hostname the probe reads it from the spec instead."
+severity   = "note"
+
+[observation.4.1.3]
+task       = "4.1"
+file       = "tools/bringup/check-live.sh"
+symbol     = "roles"
+observed   = "do_3 drops OLD_WALLET_HOST from the probe roles and fixtures only after the old service is retired, and steps 11 to 13 still address that host."
+assumption = "The drop is a follow-up tree change after step 13 runs, listed in the deploy handoff; the role stays until then."
+severity   = "note"
+
+[observation.4.1.4]
+task       = "4.1"
+file       = "tools/bringup/check-live.test.sh"
+symbol     = "check-live.test"
+observed   = "One sanity run of the build gate after the handoff edits exited 1 with its output discarded; the next four runs at the same revision passed, and the qualifying run is .logs/build.log exit 0."
+assumption = "A harness case is intermittently flaky; the failing case was not captured and is not hunted by rerunning."
+severity   = "note"
+
 [observation.2.2.1]
 task       = "2.2"
 file       = "tools/bringup/check-live.sh"
@@ -769,3 +1143,19 @@ symbol     = "check_router"
 observed   = "The bound account lx_getAccount reads is fixed nowhere in the spec or the tree; the check reads it from CHECK_LIVE_ROUTER_ACCOUNT and fails with account=unset without it; shellcheck's SC2034 on eku in check_ca predates this task."
 assumption = "The owner names the account id; token and sequencer custody for the gateway's secrets follows the open question of task 2.1."
 severity   = "blocker"
+
+[observation.2.2.4]
+task       = "2.2"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_router"
+observed   = "timeout 10m tools/bringup/check-live.sh router exited 1 (log .logs/verify.log): eth_chainId and the ams readyz passed; kernel not_configured, account unset, one region and the wallet gateway's first RPC not the router failed, as the undeployed kernel mode leaves them; 2.2.2 and 2.2.3 are resolved by the feature manager's ruling (registry URL at the registry app, bound account by CHECK_LIVE_ROUTER_ACCOUNT)."
+assumption = "The deploy side runs handoff 2.2 after the registry app of task 2.6 is live, then the gate reruns once."
+severity   = "blocker"
+
+[observation.2.2.5]
+task       = "2.2"
+file       = "tools/bringup/check-live.test.sh"
+symbol     = "check_live_internal_passing"
+observed   = "On the merged feature the curl stand-in's gas block lacked its exit 0 and fi, so the stand-in did not parse and most cases failed; with that restored, the three check_live_internal cases fail on upstream-ca (served=X1 against the pin) and the two ca_issue /dev/shm cases fail while other lanes run the harness; the router cases pass."
+assumption = "The upstream-ca fixture drift belongs to the internal-services task and the /dev/shm cases are the recorded concurrency failure; neither is in this task's scope."
+severity   = "note"

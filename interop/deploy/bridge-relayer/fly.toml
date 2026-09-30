@@ -1,0 +1,70 @@
+app = "paxeer-bridge-relayer"
+primary_region = "ams"
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[build]
+  dockerfile = "docker/bridge-relayer/Dockerfile"
+
+[[files]]
+  guest_path = "/run/secrets/bridge/relayer.json"
+  secret_name = "BRIDGE_RELAYER_CONFIG"
+
+[[files]]
+  guest_path = "/run/secrets/bridge/rpc-tokens"
+  secret_name = "BRIDGE_RELAYER_RPC_TOKENS"
+
+[[files]]
+  guest_path = "/run/secrets/bridge/signer/attestor.key"
+  secret_name = "BRIDGE_SIGNER_ATTESTOR_KEY"
+
+[[files]]
+  guest_path = "/run/secrets/bridge/signer/paxeer-submitter.key"
+  secret_name = "BRIDGE_SIGNER_PAXEER_SUBMITTER_KEY"
+
+[[files]]
+  guest_path = "/run/secrets/bridge/signer/arbitrum-submitter.key"
+  secret_name = "BRIDGE_SIGNER_ARBITRUM_SUBMITTER_KEY"
+
+[[files]]
+  guest_path = "/run/secrets/bridge/signer/avalanche-submitter.key"
+  secret_name = "BRIDGE_SIGNER_AVALANCHE_SUBMITTER_KEY"
+
+[[files]]
+  guest_path = "/run/secrets/bridge/signer/base-submitter.key"
+  secret_name = "BRIDGE_SIGNER_BASE_SUBMITTER_KEY"
+
+[[files]]
+  guest_path = "/run/secrets/bridge/signer/bnb-submitter.key"
+  secret_name = "BRIDGE_SIGNER_BNB_SUBMITTER_KEY"
+
+[[files]]
+  guest_path = "/run/secrets/bridge/signer/ethereum-submitter.key"
+  secret_name = "BRIDGE_SIGNER_ETHEREUM_SUBMITTER_KEY"
+
+[[files]]
+  guest_path = "/run/secrets/bridge/signer/hyperevm-submitter.key"
+  secret_name = "BRIDGE_SIGNER_HYPEREVM_SUBMITTER_KEY"
+
+[[files]]
+  guest_path = "/run/secrets/bridge/signer/optimism-submitter.key"
+  secret_name = "BRIDGE_SIGNER_OPTIMISM_SUBMITTER_KEY"
+
+[[files]]
+  guest_path = "/run/secrets/bridge/signer/polygon-submitter.key"
+  secret_name = "BRIDGE_SIGNER_POLYGON_SUBMITTER_KEY"
+
+[[files]]
+  guest_path = "/run/secrets/bridge/signer/solana-fee-payer.json"
+  secret_name = "BRIDGE_SIGNER_SOLANA_FEE_PAYER_KEYPAIR"
+
+[[mounts]]
+  source = "bridge_relayer_data"
+  destination = "/data"
+  initial_size = "10gb"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  cpus = 1
+  cpu_kind = "shared"
