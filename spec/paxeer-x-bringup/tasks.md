@@ -232,7 +232,7 @@
     - Deploy the archive contract and the Solana program with interop/deploy/mirror/deploy-ethereum-mirror.sh and deploy-solana-mirror.sh from the supplied inputs, render the publisher config with render-config.py, import the inputs as Fly secrets of the kernel app, and run the mirror signer and publisher under docker/kernel/init.sh reading the LNI socket with the status listener on loopback.
     - Add the mirrors subcommand: the publisher's /readyz inside the kernel machine and layerx-mirror-verify verifying one receipt from the mirror alone.
     - _Requirements: 16.4_
-  - [ ] 4.10 Run the reference ramp at ramp.paxeer.network
+  - [ ] 4.10 Run the reference ramp at ramp.paxeer.network — **Implemented - qualification pending**
     - Write platform/ramps/fly.toml for a new Fly app from docker/ramps: one machine with a volume for the journal, the ramp config from the supplied inputs imported as Fly secrets with rpc_chain_id 125 and two serving RPC names, and the plain listener behind the http_service; deploy it, register ramp.paxeer.network on the edge with tools/bringup/edge.sh add ramp.paxeer.network <app>.
     - Add the ramp subcommand: ramp.paxeer.network is registered on the edge and proxied to the app's fly.dev name, /readyz answers at the name under the edge's certificate and platform/ramps/sandbox-journey.sh records done.
     - _Requirements: 16.5_

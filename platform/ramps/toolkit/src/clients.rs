@@ -158,7 +158,10 @@ impl MutualTlsClient {
         if ca_bytes.is_empty() || ca_bytes.len() > MAX_CA_BYTES {
             return Err(RampError::Configuration);
         }
-        let ca = Certificate::from_pem(&ca_bytes).map_err(|_| RampError::Configuration)?;
+        let roots = Certificate::stack_from_pem(&ca_bytes).map_err(|_| RampError::Configuration)?;
+        if roots.is_empty() {
+            return Err(RampError::Configuration);
+        }
         let identity_bytes = files.identity_pkcs12.read()?;
         let password_bytes = files.identity_password.read()?;
         let password = std::str::from_utf8(&password_bytes)
@@ -166,9 +169,12 @@ impl MutualTlsClient {
             .trim_end_matches(['\r', '\n']);
         let identity = Identity::from_pkcs12(&identity_bytes, password)
             .map_err(|_| RampError::Configuration)?;
-        let connector = TlsConnector::builder()
-            .disable_built_in_roots(true)
-            .add_root_certificate(ca)
+        let mut builder = TlsConnector::builder();
+        builder.disable_built_in_roots(true);
+        for root in roots {
+            builder.add_root_certificate(root);
+        }
+        let connector = builder
             .identity(identity)
             .min_protocol_version(Some(native_tls::Protocol::Tlsv12))
             .build()
@@ -1982,5 +1988,130 @@ mod gateway_receipt_envelope_tests {
             assert!(read(&changed, &activity).is_err(), "{name}");
         }
         assert!(read(&document, &activity).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod ca_bundle_tests {
+    use super::*;
+    use native_tls::TlsAcceptor;
+    use std::net::TcpListener;
+    use std::os::unix::fs::PermissionsExt as _;
+    use std::process::Command;
+
+    fn openssl(dir: &Path, args: &[&str]) {
+        let status = Command::new("openssl")
+            .args(args)
+            .current_dir(dir)
+            .status()
+            .expect("openssl");
+        assert!(status.success(), "openssl {args:?}");
+    }
+
+    fn self_signed(dir: &Path, name: &str) {
+        openssl(
+            dir,
+            &[
+                "req",
+                "-x509",
+                "-newkey",
+                "rsa:2048",
+                "-nodes",
+                "-days",
+                "2",
+                "-subj",
+                &format!("/CN={name}"),
+                "-addext",
+                "subjectAltName=DNS:localhost",
+                "-addext",
+                "basicConstraints=critical,CA:TRUE",
+                "-keyout",
+                &format!("{name}.key"),
+                "-out",
+                &format!("{name}.pem"),
+            ],
+        );
+        openssl(
+            dir,
+            &[
+                "pkcs12",
+                "-export",
+                "-inkey",
+                &format!("{name}.key"),
+                "-in",
+                &format!("{name}.pem"),
+                "-passout",
+                "pass:bundle",
+                "-out",
+                &format!("{name}.p12"),
+            ],
+        );
+    }
+
+    fn private(path: &Path, bytes: &[u8]) {
+        fs::write(path, bytes).expect("write");
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600)).expect("chmod");
+    }
+
+    fn handshake(dir: &Path, ca_pem: &Path) -> bool {
+        let files = MutualTlsFiles {
+            ca_pem: ca_pem.to_path_buf(),
+            identity_pkcs12: SecretFile::new(dir.join("client.p12")).expect("identity"),
+            identity_password: SecretFile::new(dir.join("password")).expect("password"),
+        };
+        let client = MutualTlsClient::new(&files, Duration::from_secs(5)).expect("client");
+        let server = fs::read(dir.join("second.p12")).expect("server identity");
+        let acceptor =
+            TlsAcceptor::new(Identity::from_pkcs12(&server, "bundle").expect("identity"))
+                .expect("acceptor");
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let address = listener.local_addr().expect("address");
+        let accept = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("accept");
+            let _ = acceptor.accept(stream);
+        });
+        let stream = TcpStream::connect(address).expect("connect");
+        let connected = client.connector.connect("localhost", stream).is_ok();
+        accept.join().expect("server");
+        connected
+    }
+
+    #[test]
+    fn every_root_of_the_ca_bundle_is_trusted() {
+        let dir =
+            std::env::temp_dir().join(format!("layerx-ramp-ca-bundle-{}", std::process::id()));
+        fs::create_dir_all(&dir).expect("dir");
+        for name in ["first", "second", "client"] {
+            self_signed(&dir, name);
+        }
+        private(
+            &dir.join("client.p12"),
+            &fs::read(dir.join("client.p12")).expect("p12"),
+        );
+        private(&dir.join("password"), b"bundle\n");
+        let first = fs::read(dir.join("first.pem")).expect("first");
+        let second = fs::read(dir.join("second.pem")).expect("second");
+        let only_first = dir.join("only-first.pem");
+        fs::write(&only_first, &first).expect("write");
+        let bundle = dir.join("bundle.pem");
+        fs::write(&bundle, [first.as_slice(), second.as_slice()].concat()).expect("write");
+        let empty = dir.join("empty.pem");
+        fs::write(&empty, b"no certificate here\n").expect("write");
+
+        assert!(
+            !handshake(&dir, &only_first),
+            "a root outside the file must not verify"
+        );
+        assert!(
+            handshake(&dir, &bundle),
+            "the second root of the bundle must verify"
+        );
+        let files = MutualTlsFiles {
+            ca_pem: empty,
+            identity_pkcs12: SecretFile::new(dir.join("client.p12")).expect("identity"),
+            identity_password: SecretFile::new(dir.join("password")).expect("password"),
+        };
+        assert!(MutualTlsClient::new(&files, Duration::from_secs(5)).is_err());
+        let _ = fs::remove_dir_all(&dir);
     }
 }

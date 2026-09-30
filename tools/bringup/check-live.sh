@@ -2602,6 +2602,115 @@ PY
 	finish "$failures"
 }
 
+# check_ramp: the reference ramp app of platform/ramps/fly.toml runs one
+# started machine with one volume; ramp.paxeer.network is registered on the
+# edge host as an http site of that app, resolves to the edge host and
+# answers /readyz 200 under a publicly verified certificate with Fly's
+# request id and the body the app's fly.dev name answers; and
+# platform/ramps/sandbox-journey.sh against the name records done for one
+# on-ramp and one off-ramp order. The journey's inputs are its own variables
+# (LAYERX_RAMP_CUSTOMER_TOKEN, LAYERX_RAMP_OPERATOR_URL,
+# LAYERX_RAMP_OPERATOR_TOKEN, LAYERX_RAMP_ON_QUOTE_ID,
+# LAYERX_RAMP_OFF_QUOTE_ID, LAYERX_RAMP_OFF_GRANT_JSON,
+# LAYERX_RAMP_ON_ACCOUNT_SEQUENCE, LAYERX_RAMP_OFF_RECEIVER_SEQUENCE);
+# LAYERX_RAMP_CA_PEM defaults to the system CA file. One line per check,
+# never printing a token or an address.
+check_ramp() {
+	local toml=platform/ramps/fly.toml ramp_name=ramp.paxeer.network name app answer n_machines n_started n_mounts
+	local reply status=0 manifest line edge_addrs addrs at out headers body code fly_id app_body v failures=0
+	for name in LAYERX_RAMP_CUSTOMER_TOKEN LAYERX_RAMP_OPERATOR_URL LAYERX_RAMP_OPERATOR_TOKEN LAYERX_RAMP_ON_QUOTE_ID \
+		LAYERX_RAMP_OFF_QUOTE_ID LAYERX_RAMP_OFF_GRANT_JSON LAYERX_RAMP_ON_ACCOUNT_SEQUENCE LAYERX_RAMP_OFF_RECEIVER_SEQUENCE; do
+		if [ -z "${!name:-}" ]; then
+			echo "check-live: $name is unset" >&2
+			exit 2
+		fi
+	done
+	for name in flyctl jq; do
+		if ! command -v "$name" >/dev/null 2>&1; then
+			echo "check-live: $name is required" >&2
+			exit 2
+		fi
+	done
+	if ! app="$(fly_app "$toml")"; then
+		echo "fail ramp toml=absent"
+		finish 1
+	fi
+	answer="$(timeout "$timeout" flyctl machines list --app "$app" --json 2>/dev/null | python3 -c '
+import json, sys
+ms = json.load(sys.stdin)
+started = [m for m in ms if m.get("state") == "started"]
+mounts = [x.get("volume", "") for m in ms for x in (m.get("config") or {}).get("mounts") or []]
+print(len(ms), len(started), len(mounts))
+' 2>/dev/null)" || answer=""
+	read -r n_machines n_started n_mounts <<<"${answer:-none none none}"
+	if [ "$n_machines" = 1 ] && [ "$n_started" = 1 ] && [ "$n_mounts" = 1 ]; then
+		echo "pass machines app=$app machines=1 started=1 volumes=1"
+	else
+		echo "fail machines app=$app machines=$n_machines started=$n_started volumes=$n_mounts"
+		failures=$((failures + 1))
+	fi
+
+	reply="$(ssh_read "$EDGE_HOST" "$edge_cmd")" || status=$?
+	manifest="$(grep -E '^[a-z0-9.-]+ (http|stream) [a-z0-9-]+ [0-9]+$' <<<"${reply%%@@sites*}" || true)"
+	line="$(awk -v n="$ramp_name" '$1 == n' <<<"$manifest" | head -n 1)"
+	edge_addrs="$(getent ahosts "${EDGE_HOST#*@}" 2>/dev/null | awk '{print $1}' | sort -u)"
+	addrs="$(getent ahosts "$ramp_name" 2>/dev/null | awk '{print $1}' | sort -u)"
+	at=no
+	if [ -n "$addrs" ] && [ -n "$edge_addrs" ] && [ -z "$(comm -23 <(printf '%s\n' "$addrs") <(printf '%s\n' "$edge_addrs"))" ]; then
+		at=yes
+	fi
+	if [ "$status" -ne 0 ] || [[ "$reply" != *@@sites* ]]; then
+		echo "fail edge $ramp_name manifest ssh=$status"
+		failures=$((failures + 1))
+	elif [ "$line" = "$ramp_name http $app 443" ] && [ "$at" = yes ]; then
+		echo "pass edge $ramp_name mode=http app=$app edge=yes"
+	else
+		read -r _ v name _ <<<"${line:-none none none}"
+		echo "fail edge $ramp_name mode=$v app=$name want=$app edge=$at"
+		failures=$((failures + 1))
+	fi
+
+	status=0
+	out="$(curl -sS --max-time "$timeout" -D - "https://$ramp_name/readyz" 2>&1)" || status=$?
+	code=none
+	fly_id=absent
+	body=""
+	if [ "$status" -eq 0 ]; then
+		headers="${out%%$'\r\n\r\n'*}"
+		body="${out#*$'\r\n\r\n'}"
+		code="$(sed -n '1s/^HTTP\/[0-9.]* \([0-9]*\).*/\1/p' <<<"$headers")"
+		if grep -qiE '^fly-request-id: *[^[:space:]]' <<<"$headers"; then
+			fly_id=present
+		fi
+	fi
+	app_body="$(curl -sS --max-time "$timeout" -D - "https://$app.fly.dev/readyz" 2>/dev/null)" || app_body=""
+	app_body="${app_body#*$'\r\n\r\n'}"
+	v=differ
+	if [ -n "$body" ] && [ "$body" = "$app_body" ]; then
+		v=match
+	fi
+	if [ "$status" -ne 0 ]; then
+		echo "fail readyz https://$ramp_name/readyz curl=$status"
+		failures=$((failures + 1))
+	elif [ "$code" = 200 ] && [ "$fly_id" = present ] && [ "$v" = match ]; then
+		echo "pass readyz https://$ramp_name/readyz tls=verified http=200 fly-request-id=present body=match"
+	else
+		echo "fail readyz https://$ramp_name/readyz tls=verified http=${code:-none} fly-request-id=$fly_id body=$v"
+		failures=$((failures + 1))
+	fi
+
+	status=0
+	LAYERX_RAMP_URL="https://$ramp_name" LAYERX_RAMP_CA_PEM="${LAYERX_RAMP_CA_PEM:-/etc/ssl/certs/ca-certificates.crt}" \
+		timeout 10m sh "$repo_root/platform/ramps/sandbox-journey.sh" >/dev/null 2>&1 || status=$?
+	if [ "$status" -eq 0 ]; then
+		echo "pass journey https://$ramp_name on-ramp=done off-ramp=done"
+	else
+		echo "fail journey https://$ramp_name exit=$status"
+		failures=$((failures + 1))
+	fi
+	finish "$failures"
+}
+
 mode="${1:-}"
 case "$mode" in
 -h | --help)
@@ -2625,6 +2734,7 @@ bridge) ;;
 wallet) ;;
 mirrors) ;;
 interop) ;;
+ramp) ;;
 *)
 	usage >&2
 	exit 2
