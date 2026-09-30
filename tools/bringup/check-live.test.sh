@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+mkdir -p /run/lock
+exec 9>/run/lock/check-live-harness
+flock 9
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 checker="$root/tools/bringup/check-live.sh"
