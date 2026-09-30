@@ -85,7 +85,7 @@
     - The existing machine of the app is a volumeless machine in ams, and a deploy does not attach a new volume to it: create the volume in ams, export the old machine's writable-root state with tools/bringup/human-state-preserve.sh export and stop that machine as the rollback, clone it onto the volume, import and verify the state there before the kernel init first runs, deploy with the [mounts] section excluding the old machine, and destroy the old machine only after the pre-destroy checks pass, after which the kernel-app gate runs; the app name, and so the edge's upstream for api-hull.paxeer.network, is unchanged.
     - Add the kernel-app subcommand: the app has exactly one started machine with its volume mounted at /data, the init runs as the entrypoint, and every process of the pod not waiting on the genesis runs under its uid.
     - _Requirements: 6.3_
-  - [ ] 1.6 Prove the value loop through layerxctl: a SEND over the LNI, batch evidence at the replica and a checkpoint on chain
+  - [ ] 1.6 Prove the value loop through layerxctl: a SEND over the LNI, batch evidence at the replica and a checkpoint on chain — **Implemented - qualification pending**
     - Write tools/bringup/value-loop.sh that runs inside the kernel app's machine through flyctl ssh console: layerxctl submit of one SEND between two funded accounts over the LNI, layerxctl read-state showing the new balances, the replica's batch document carrying the activity, and eth_call statusOf on the anchor precompile returning submitted or final for a checkpoint at or after that batch.
     - Add the kernel-value-loop subcommand that runs the script in the machine and reports the activity digest, the batch number and the checkpoint status.
     - _Requirements: 6.4_

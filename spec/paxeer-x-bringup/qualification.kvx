@@ -1597,3 +1597,51 @@ symbol     = "treasury-signer wait"
 observed   = "The treasury-signer service waits on publication/binding-policy.json, which only the genesis step of tools/bringup/kernel-genesis.sh produces after the kernel app runs; the init's genesis_files list (metadata.lxgb, sequencer.key, asset-id, replica-id) does not name it or publication/authorization.json, although kernel-genesis.sh lists both as genesis files, so the kernel-app gate reports the wait as a failure instead of waiting-genesis until that step has run."
 assumption = "The genesis step follows the cutover on the same machine; the two publication files belong in the init's genesis_files list so the gate passes the wait as waiting-genesis before the genesis step, which a kernel init correction supplies."
 severity   = "warning"
+
+[observation.1.6.3]
+task       = "1.6"
+file       = "platform/hosted/node/bootstrap.sh, tools/bringup/kernel-genesis.sh, docker/kernel/init.sh"
+symbol     = "value_loop"
+observed   = "cg spec start 1.6 refused (task 4.2 also claims tools/bringup/check-live.sh), so the status was set to in_progress by hand; the ruled funding path is the first credit of task 1.8, which only admits a credit whose custody profile was passed to bootstrap as --custody-profile when the genesis was built, while kernel-genesis.sh and the init build the live genesis without any custody profile, so once step C runs the treasury can never be credited through that path without rebuilding the genesis."
+assumption = "Owner or manager rules one of: kernel-genesis.sh genesis takes a custody profile made from a live deposit to 0x...1013 on chain 125 (a funded EVM depositor key is then an owner input), or another opening credit; no code written, per the one-try-then-ask rule."
+severity   = "blocker"
+
+[observation.1.6.4]
+task       = "1.6"
+file       = "docker/kernel/Dockerfile, docker/kernel/init.sh"
+symbol     = "check_kernel_value_loop"
+observed   = "The loop's readers and signers are not in the kernel image: SEND construction and balance reads exist only in layerx-node-probe (write-send, balance, did-accounts), the credit signer is build/tests/bridge/sign-credit driven by tests/daemon/withdraw-custody.py against an owned paxd chain, and the only activity-to-batch reader is /v1/authorized-batches/by-activity of layerx-receipt-authority, which the init does not run until task 2.1; the ruling on observation 1.6.2 did not name the read interface."
+assumption = "Intended shape once ruled: the image (task 1.5 touches) carries layerx-node-probe and sign-credit, value-loop.sh generates the two seeds under /data/layerx/keys, credits the treasury, treasury SENDs to A, A SENDs to B, balances via probe balance, batch via the receipt authority by-activity route after task 2.1, statusOf on 0x...1014; the subcommand stops on the absent genesis ids file or publication policy with one precondition line."
+severity   = "blocker"
+
+[observation.1.6.5]
+task       = "1.6"
+file       = "spec/paxeer-x-bringup/spec.kvx, docker/kernel/Dockerfile, tools/bringup/kernel-genesis.sh, docker/kernel/init.sh"
+symbol     = "value_loop"
+observed   = "Rulings on 1.6.3 and 1.6.4 applied: requires gains 2.1 and the batch is read through /v1/authorized-batches/by-activity with a receipt-authority precondition; the image builds layerx-node-probe and sign-credit; kernel-genesis.sh genesis takes COMET=HOST and writes the PAX custody profile from layerx-custody-proof light-profile against the chain, which the init's bootstrap line passes as --custody-profile."
+assumption = "The profile is a light-client profile that needs no deposit; the opening credit itself needs one, so the deposit transaction is the named deploy input DEPOSIT_TX (owner item D6)."
+severity   = "info"
+
+[observation.1.6.6]
+task       = "1.6"
+file       = "docker/kernel/Dockerfile.dockerignore, tools/bringup/kernel-genesis.sh"
+symbol     = "value_loop"
+observed   = "layerx-custody-proof, which both kernel-genesis.sh genesis (light-profile) and value-loop.sh (light-credit) call inside the machine, is a Go binary whose trees (daemon, custodyproof, consensus, sdk, storage, engine, modules) the kernel image's dockerignore excludes and whose build stage is Rust-only; the ruling limits the Dockerfile change to the probe and the credit signer, so the image does not carry it and both scripts stop with a named line while it is absent."
+assumption = "A follow-up adds a Go build stage (the pinned golang image of docker/layerx/Dockerfile, make custody-proof-build) and the dockerignore exceptions for its trees to the kernel image; until then step C of the genesis order cannot run."
+severity   = "blocker"
+
+[observation.1.6.7]
+task       = "1.6"
+file       = "tools/bringup/value-loop.sh, tools/bringup/check-live.test.sh"
+symbol     = "value_loop"
+observed   = "Build (make build/tests/bridge/sign-credit, cargo build of the node probe) exit 0 in .logs/build.log; verify_cmd exit 1 in .logs/verify.log, the machine answered and stopped on its own line: fail precondition genesis-ids /data/layerx/genesis/asset-id absent; run kernel-genesis.sh genesis (step C) first; harness exit 1 in .logs/harness.log with 2 FAIL (kernel_value_loop_passing and _one_failing): the credit step answers deposit asset or beneficiary differs."
+assumption = "value-loop.sh unpacks the receipt check's arguments as custody, topic, beneficiary, asset while it passes asset before the sender main id, so a correct deposit is refused and the one-failing case never reaches its SEND; one-attempt rule, not repaired: swap the unpacked names, then rerun the harness once."
+severity   = "blocker"
+
+[observation.1.6.8]
+task       = "1.6"
+file       = "tools/bringup/value-loop.sh, docker/kernel/Dockerfile, docker/kernel/Dockerfile.dockerignore"
+symbol     = "value_loop"
+observed   = "Repair once on 783271723: the receipt check unpacks custody, topic, asset, beneficiary in the caller's order, and the kernel image gains a custody-proof stage on the pinned golang:1.25.6-bookworm image of docker/layerx/Dockerfile running make custody-proof-build into /usr/local/bin/layerx-custody-proof, with the dockerignore opening consensus, custodyproof, sdk, storage, daemon/layerx-custody-proof, engine/deps/store, modules/evm/config and modules/layerxcustody/types; bash -n exit 0, docker buildx build --check exit 0 in .logs/1.6-repair-dockerfile-check.log, bash tools/bringup/check-live.test.sh exit 0 in .logs/1.6-repair-harness.log (131 ok, all five value-loop cases)."
+assumption = "the deploy side builds the kernel image once from the merged revision, so the Go stage is qualified by that build, not here"
+severity   = "info"

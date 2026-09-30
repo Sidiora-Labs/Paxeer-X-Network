@@ -27,6 +27,16 @@ RUN cargo build --locked --release --manifest-path agent/Cargo.toml -p layerx-ag
 RUN cargo build --locked --release --manifest-path human/Cargo.toml -p layerx-human-identity-provider -p layerx-human-security-provider -p layerx-human-movement-provider --bins
 # The relay archive origin of docker/kernel/init.sh (task 4.6): its codec.
 RUN make LXP_REVISION="$LXP_REVISION" layerx-archive-codec && test -x build/bin/layerx-archive-codec
+# The value loop of tools/bringup/value-loop.sh (task 1.6): the node probe and the credit signer.
+RUN make LXP_REVISION="$LXP_REVISION" build/tests/bridge/sign-credit && test -x build/tests/bridge/sign-credit
+RUN cargo build --locked --release --manifest-path platform/hosted/node/tests/probe/Cargo.toml
+
+# The light credit of tools/bringup/value-loop.sh and the light profile of
+# tools/bringup/kernel-genesis.sh (task 1.6): the Go custody proof tool.
+FROM docker.io/golang:1.25.6-bookworm@sha256:2f768d462dbffbb0f0b3a5171009f162945b086f326e0b2a8fd5d29c3219ff14 AS custody-proof
+WORKDIR /src
+COPY . .
+RUN make custody-proof-build && test -x build/bin/layerx-custody-proof
 
 FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -79,5 +89,9 @@ COPY --from=build /src/platform/relay_archive/__init__.py /src/platform/relay_ar
      /src/platform/relay_archive/store.py /src/platform/relay_archive/protocol.py \
      /src/platform/relay_archive/forward.py /src/platform/relay_archive/peers.py /opt/layerx/relay_archive/
 COPY --from=build --chmod=0555 /src/platform/relay_archive/install.sh /opt/layerx/relay_archive/install.sh
+# The value loop of tools/bringup/value-loop.sh (task 1.6).
+COPY --from=build /src/platform/hosted/node/tests/probe/target/release/layerx-node-probe \
+     /src/build/tests/bridge/sign-credit /usr/local/bin/
+COPY --from=custody-proof /src/build/bin/layerx-custody-proof /usr/local/bin/layerx-custody-proof
 COPY --chmod=0555 docker/kernel/init.sh /usr/local/bin/kernel-init
 ENTRYPOINT ["/usr/local/bin/kernel-init"]

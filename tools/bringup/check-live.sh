@@ -149,6 +149,31 @@ wallet    reads the public wallet endpoint name from the wallet_endpoint
              app runs at least two started machines in at least two regions
           Exits 0 only when every check passes; a failing gate counts once.
 
+kernel-value-loop pipes tools/bringup/value-loop.sh into a machine of the
+          app of human/wallet/deploy/human.toml and prints one line per step:
+  precondition "fail precondition <name> <detail>" when a genesis output
+             (genesis-ids, custody-profile, publication-policy), the
+             sequencer's LNI socket (kernel-node), the receipt authority, a
+             kernel image binary (image) or the opening deposit (deposit-tx)
+             is absent; no other line follows
+  asset      "pass asset PAX id=<hex>" when the genesis asset id equals the
+             custody precompile's nativeAssetId()
+  account    "pass account sender|recipient did=<did> main=<id>"
+  credit     "pass credit deposit=<hash> amount=<n>" when the sender was
+             opened by the first-credit path from DEPOSIT_TX
+  activity   "pass activity id=<hex>" for the SEND sealed by the sequencer
+  balance    "pass balance sender|recipient <json>"
+  batch      "pass batch id=<hex> sealed=<n>" when the receipt authority's
+             /v1/authorized-batches/by-activity answers for the SEND
+  checkpoint "pass checkpoint batch=<n> status=submitted|final" when the
+             anchor precompile's statusOf answers 1 or 2 for a sealed batch at
+             or after it; a failing step prints its fail line and stops
+          CHECK_LIVE_VALUE_LOOP_DEPOSIT_TX names the owner's deposit
+          transaction for the sender's opening credit and
+          CHECK_LIVE_VALUE_LOOP_CHECKPOINT_SECONDS bounds the checkpoint wait,
+          default 600; the whole run is bounded by
+          CHECK_LIVE_VALUE_LOOP_TIMEOUT, default 840.
+
 Environment:
   BRINGUP_HOSTS_FILE   private env file assigning EDGE_HOST, ARCHIVE_HOST,
                        VALIDATOR_HOSTS, RPC_HOSTS and OLD_WALLET_HOST;
@@ -3774,6 +3799,49 @@ print(len(ms), len(started), len(mounts))
 	finish "$failures"
 }
 
+check_kernel_value_loop() {
+	local app key value answer status=0 failures=0
+	local -a arguments=()
+	if ! command -v flyctl >/dev/null 2>&1; then
+		echo "check-live: flyctl is required" >&2
+		exit 2
+	fi
+	if ! app="$(fly_app human/wallet/deploy/human.toml)"; then
+		echo "fail kernel-value-loop toml=absent"
+		finish 1
+	fi
+	[ -z "${CHECK_LIVE_VALUE_LOOP_DEPOSIT_TX:-}" ] || arguments+=("DEPOSIT_TX=$CHECK_LIVE_VALUE_LOOP_DEPOSIT_TX")
+	[ -z "${CHECK_LIVE_VALUE_LOOP_CHECKPOINT_SECONDS:-}" ] || arguments+=("CHECKPOINT_SECONDS=$CHECK_LIVE_VALUE_LOOP_CHECKPOINT_SECONDS")
+	answer="$(timeout "${CHECK_LIVE_VALUE_LOOP_TIMEOUT:-840}" flyctl ssh console --quiet --app "$app" \
+		--command "sh -c 'LAYERX_KERNEL_DATA=/data/layerx/ LAYERX_KERNEL_RUN=/run/layerx/ LAYERX_KERNEL_TLS=/data/tls/ bash -s -- ${arguments[*]}'" \
+		<"$repo_root/tools/bringup/value-loop.sh" 2>/dev/null)" || status=$?
+	while read -r key value; do
+		case "$key" in
+		precondition)
+			echo "fail precondition $value"
+			finish 1
+			;;
+		asset | account | credit | activity | balance | batch | checkpoint)
+			if [ "$status" -ne 1 ] || [ "$key $value" != "$(tail -n 1 <<<"$answer")" ]; then
+				echo "pass $key $value"
+			else
+				echo "fail $key $value"
+				failures=$((failures + 1))
+			fi
+			;;
+		esac
+	done <<<"$answer"
+	if [ "$status" -ne 0 ] && [ "$failures" -eq 0 ]; then
+		echo "fail kernel-value-loop app=$app exit=$status"
+		failures=1
+	fi
+	if [ "$status" -eq 0 ] && ! grep -q '^checkpoint ' <<<"$answer"; then
+		echo "fail checkpoint status=absent"
+		failures=1
+	fi
+	finish "$failures"
+}
+
 mode="${1:-}"
 case "$mode" in
 -h | --help)
@@ -3786,6 +3854,7 @@ validators) ;;
 identity) ;;
 kernel-app) ;;
 kernel-node) ;;
+kernel-value-loop) ;;
 search-front) ;;
 edge) ;;
 ci) ;;
