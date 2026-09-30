@@ -854,6 +854,64 @@ print((proto + "://" + host if host else "none") + " " + (get("NEXT_PUBLIC_NETWO
 	finish "$failures"
 }
 
+# check_identity: the identity app of platform/hosted/identity/fly.toml runs
+# one started machine with a volume, holds no public IP, and answers
+# readiness over TLS under the internal CA at its .internal name when asked
+# from a machine of the human app of human/wallet/deploy/human.toml, which
+# gets only the CA certificate on stdin.
+check_identity() {
+	local app from answer url code body attempt n_machines n_started n_mounts failures=0
+	if ! app="$(fly_app platform/hosted/identity/fly.toml)"; then
+		echo "fail identity toml=absent"
+		finish 1
+	fi
+	answer="$(timeout "$timeout" flyctl machines list --app "$app" --json 2>/dev/null | python3 -c '
+import json, sys
+ms = json.load(sys.stdin)
+started = [m for m in ms if m.get("state") == "started"]
+mounts = [x.get("volume", "") for m in ms for x in (m.get("config") or {}).get("mounts") or []]
+print(len(ms), len(started), len(mounts))
+' 2>/dev/null)" || answer=""
+	read -r n_machines n_started n_mounts <<<"${answer:-none none none}"
+	if [ "$n_machines" = 1 ] && [ "$n_started" = 1 ] && [ "$n_mounts" = 1 ]; then
+		echo "pass machines app=$app machines=1 started=1 volumes=1"
+	else
+		echo "fail machines app=$app machines=$n_machines started=$n_started volumes=$n_mounts"
+		failures=$((failures + 1))
+	fi
+	answer="$(timeout "$timeout" flyctl ips list --app "$app" --json 2>/dev/null | python3 -c 'import json, sys; print(len(json.load(sys.stdin) or []))' 2>/dev/null)" || answer=none
+	if [ "$answer" = 0 ]; then
+		echo "pass public-ips app=$app count=0"
+	else
+		echo "fail public-ips app=$app count=${answer:-none}"
+		failures=$((failures + 1))
+	fi
+	url="https://$app.internal:9443/readyz"
+	if ! from="$(fly_app human/wallet/deploy/human.toml)"; then
+		echo "fail readiness app=$app from=absent"
+		finish $((failures + 1))
+	fi
+	if [ ! -r "$ca_dir/ca.pem" ]; then
+		echo "fail readiness app=$app ca=absent"
+		finish $((failures + 1))
+	fi
+	answer=""
+	for attempt in 1 2; do
+		answer="$(fly_ssh "$from" - "cat >/tmp/identity-ca.pem && curl -sS -m $timeout --cacert /tmp/identity-ca.pem -w \" %{http_code}\" $url; rm -f /tmp/identity-ca.pem" <"$ca_dir/ca.pem" | tail -n 1)" || true
+		[ "${answer##* }" != 200 ] || break
+		[ "$attempt" = 2 ] || sleep 10
+	done
+	code="${answer##* }"
+	body="${answer% *}"
+	if [ "$code" = 200 ] && [[ "$body" == *'"status":"ready"'* ]]; then
+		echo "pass readiness app=$app from=$from url=$url http=200 status=ready"
+	else
+		echo "fail readiness app=$app from=$from url=$url http=${code:-none}"
+		failures=$((failures + 1))
+	fi
+	finish "$failures"
+}
+
 # Sourced by tools/bringup/ca.sh for the Fly helpers and the CA settings: the
 # probe's own dispatch below runs only when this file is executed.
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
@@ -865,6 +923,7 @@ case "$mode" in
 	exit 0
 	;;
 hosts | rpc-nodes | archive-node | ca | hpx | explorer) ;;
+identity) ;;
 *)
 	usage >&2
 	exit 2

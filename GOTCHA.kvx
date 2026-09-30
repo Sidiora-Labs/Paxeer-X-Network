@@ -1061,3 +1061,21 @@ area    = "tests"
 symptom = "The lxp_test_daemon_finality_authority binary looks free to rewrite, but its prepare and emit modes feed the handover, guarantor and availability chain scripts."
 cause   = "Several tests/daemon Python drivers call that binary directly with their own arguments."
 do      = "Add new modes beside the existing ones and grep tests/daemon for the binary's name before changing its command line."
+
+[gotcha.174]
+area    = "fly"
+symptom = "A service started under setpriv as its own uid exits with Permission denied reading its TLS key although the key directory was chowned to that uid."
+cause   = "tools/bringup/ca.sh creates the certificate root on the volume through flyctl ssh console as root under umask 077, so the parent directory is root 0700 and the service uid cannot traverse it."
+do      = "In the app's root init, chown the service's own certificate directory and chmod 0711 its parent before dropping privileges."
+
+[gotcha.175]
+area    = "fly"
+symptom = "A machine that crash-looped before a fixed redeploy stays stopped after the redeploy and every probe reports started=0."
+cause   = "The crash loop hits the max restart count of ten, and a deploy does not start a machine that was stopped before it (gotcha 65)."
+do      = "After redeploying a fix over a crash loop, run flyctl machine start on the machine and read its log for the listening line before probing."
+
+[gotcha.176]
+area    = "fly"
+symptom = "A non-root image cannot read files that ca.sh wrote to its volume, and fly.toml offers no way to run the machine's process as root."
+cause   = "Fly init honours the image USER, while ca.sh writes key material as root through ssh console."
+do      = "Give the Dockerfile a separate fly target without USER whose root init prepares the volume and execs the binary under setpriv, and keep the default last stage unchanged for other runtimes."

@@ -424,3 +424,19 @@ exit_code  = 2
 log_path   = ".logs/verify.log"
 observed   = "layerxd and both test binaries build under -Werror and lxp_test_finality_json passes; finality-authority-chain.py then stops because tests/daemon/fixtures/finality-authority/rpc.json does not exist, and the worker environment could not reach the chain's JSON-RPC to capture it."
 assumption = "Only a capture from the live chain is acceptable, so none was written by hand; an operator runs 'LAYERX_NODE_PAXEER_RPC_URL=http://127.0.0.1:<port> python3 tests/daemon/finality-authority-chain.py --capture' on a synced node, commits rpc.json and reruns the gate; the task stays in_progress."
+
+[gate.2.4.1]
+task      = "2.4"
+revision  = "eb2184b5e with the task change in the working tree"
+command   = "timeout 10m tools/bringup/check-live.sh identity"
+exit_code = 0
+log_path  = ".logs/verify.log"
+observed  = "One started machine with one volume, no public IP, and readiness answering 200 ready over TLS under the internal CA at the app's .internal name from a machine of the human app; format step was bash -n, sh -n and shellcheck (no shfmt), build was the fly target of docker/platform-identity/Dockerfile; two repair cycles: the init now makes the certificate root traversable for uid 4020, and the machine left stopped by the crash loop was started after the redeploy."
+
+[observation.2.4.1]
+task       = "2.4"
+file       = "tools/bringup/check-live.test.sh"
+symbol     = "check_identity"
+observed   = "The task lists check-live.test.sh as its test, but the lane scope allows only one function and one case-arm in check-live.sh and parallel lanes extend the same test file, so no identity fixture case was added."
+assumption = "The feature manager adds the identity fixture case with a flyctl stand-in answering machines list, ips list and ssh console once the wave's probe lanes are merged."
+severity   = "low"
