@@ -1376,6 +1376,14 @@ observed   = "lx_getProgramEvents reads events a program emits; the reference es
 assumption = "None taken for the call: the gate reads that topic for the deployed program's id, and the handoff's step 11 waits for the owner to name the open call."
 severity   = "blocker"
 
+[observation.2.6.6]
+task       = "2.6"
+file       = "human/wallet/deploy/endpoint.toml"
+symbol     = "LAYERX_GATEWAY_PROGRAM_REGISTRY_TOKEN_FILE"
+observed   = "A merge left the program registry token env key and its [[files]] entry twice, tomllib refused the manifest, the edge check printed route=unknown for the router name and two edge cases failed; with the second copies removed every tracked toml under human, platform, interop, explorer and docker parses and bash tools/bringup/check-live.test.sh exited 0 with no FAIL line (log .logs/harness-w351.log)."
+assumption = "Merge repair only; the first copies are kept unchanged and no case was changed to pass."
+severity   = "warning"
+
 [observation.4.22.5]
 task       = "4.22"
 file       = "tools/bringup/check-live.sh"

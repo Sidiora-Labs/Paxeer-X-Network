@@ -41,7 +41,6 @@ kill_timeout = "30s"
   LAYERX_GATEWAY_SEQUENCER_LAST_BATCH_FILE = "/run/secrets/sequencer-last-batch"
   LAYERX_GATEWAY_KEY_PROVISIONING_KEY_FILE = "/run/secrets/key-provisioning-key"
   LAYERX_GATEWAY_MODULE_REGISTRY_FILE = "/run/secrets/module-registry.json"
-  LAYERX_GATEWAY_PROGRAM_REGISTRY_TOKEN_FILE = "/run/secrets/program-registry-token"
 
 [[files]]
   guest_path = "/run/secrets/ca.crt.der"
@@ -129,10 +128,6 @@ kill_timeout = "30s"
 [[files]]
   guest_path = "/run/secrets/module-registry.json"
   secret_name = "ENDPOINT_MODULE_REGISTRY"
-
-[[files]]
-  guest_path = "/run/secrets/program-registry-token"
-  secret_name = "ENDPOINT_PROGRAM_REGISTRY_TOKEN"
 
 [http_service]
   internal_port = 9443
