@@ -1295,3 +1295,15 @@ area    = "rpc"
 symptom = "The public RPC names answer a request whose Host header is a loopback address and port."
 cause   = "Their nginx serves by SNI and does not reject an unmatched Host header."
 do      = "A loopback socat hop to port 443 with the name as SNI needs no vhost change for a boundary that sends Host 127.0.0.1:PORT."
+
+[gotcha.213]
+area    = "bringup-probe"
+symptom = "A live probe needs a daemon's bearer inside a Fly machine, but no task has fixed the file path the bearer is materialised to."
+cause   = "The daemon takes the bearer as an environment variable and the init that sets it is written by another task."
+do      = "Read the running daemon's own /proc/<pid>/environ inside the machine (found by its exe name) and keep the bearer in a 0600 temporary file there; never pass it through the ssh console input or the local command line."
+
+[gotcha.214]
+area    = "test"
+symptom = "A fixture test needs a running process that a probe finds by its executable name and whose environment it reads."
+cause   = "The probe matches /proc/<pid>/exe, which a shell function or alias cannot fake."
+do      = "Copy sleep under the expected executable name, start it with the environment the probe reads, and kill it in the test's cleanup trap."
