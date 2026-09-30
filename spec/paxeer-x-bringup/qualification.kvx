@@ -424,3 +424,157 @@ exit_code  = 2
 log_path   = ".logs/verify.log"
 observed   = "layerxd and both test binaries build under -Werror and lxp_test_finality_json passes; finality-authority-chain.py then stops because tests/daemon/fixtures/finality-authority/rpc.json does not exist, and the worker environment could not reach the chain's JSON-RPC to capture it."
 assumption = "Only a capture from the live chain is acceptable, so none was written by hand; an operator runs 'LAYERX_NODE_PAXEER_RPC_URL=http://127.0.0.1:<port> python3 tests/daemon/finality-authority-chain.py --capture' on a synced node, commits rpc.json and reruns the gate; the task stays in_progress."
+
+[observation.4.22.1]
+task       = "4.22"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_rpc_placement"
+observed   = "The gate ran once at eb2184b5e plus this change and exited 1 (.logs/verify.log): api1 resolves to RPC_HOSTS[0], which is a validator host; both validator hosts report paxd.service active and listen on 80 and 443; nine names trail the highest answer by 200 to 2222081 blocks; the fixture cases of check-live.test.sh pass."
+assumption = "do_1 and do_2 need the owner's new full-node server in RPC_HOSTS and the owner's move of the api1 DNS record; paxd.service is taken as the full-node unit on a validator host, and the lagging names are the node sync work of task 4.14 and req 18.3, so the task stays implemented until the move and the rerun."
+severity   = "blocker"
+
+[observation.4.22.2]
+task       = "4.22"
+file       = "spec/paxeer-x-bringup/spec.kvx"
+symbol     = "check_rpc_placement"
+observed   = "cg spec implemented 4.22 exited 75: the graph was busy and its symbol check does not define the shell function check_rpc_placement."
+assumption = "The known shell-symbol gap of gotcha 104; the status line was set to implemented by hand and the manager may re-run the tool."
+severity   = "note"
+
+[gate.0.8.1]
+task      = "0.8"
+revision  = "eb2184b5e plus the change committed with this entry"
+command   = "timeout 5m sh -c '! git grep -nE \"api\\.mainnet-beta\\.router\\.paxeer\\.network|human\\.paxeer\\.network|agent\\.paxeer\\.network|registry\\.paxeer\\.network|developers\\.paxeer\\.network|webhooks\\.paxeer\\.network|interop\\.paxeer\\.network|gas\\.paxeer\\.network\" -- . \":!spec/\" \":!GOTCHA.kvx\"'"
+exit_code = 0
+log_path  = ".logs/verify.log"
+observed  = "No superseded public name remains in tracked files outside spec/ and the gotcha ledger after the rewrite of 44 files; the sixteen RPC names are unchanged."
+
+[observation.0.8.1]
+task       = "0.8"
+file       = "tools/bringup/docs-names.sh"
+symbol     = "allowed, router"
+observed   = "After the rewrite docs-names.sh (log .logs/docs-names.log) exits 1 only on beta.paxeer.network, faucet.paxeer.network and status.paxeer.network in platform/docs/beta-environment.md and platform/docs/content/beta.md; its router check had named the superseded router literally, so it now reads the router key of [decision.public_names] instead."
+assumption = "The two beta contract pages are the finding already recorded by task 0.7 and await an owner ruling; the scope of the script is unchanged."
+severity   = "note"
+
+[gate.0.6.1]
+task      = "0.6"
+revision  = "eb2184b5e with the task change in the working tree"
+command   = "timeout 10m tools/bringup/check-live.sh validators"
+exit_code = 0
+log_path  = ".logs/verify.log"
+observed  = "Twelve checks passed after one repair cycle: 8480 and 8481 refused with a reset from the operator host on both validator hosts, each attestor answers /health 200 on loopback, and each host reaches its peer's two attestor ports with 200; the first run failed only because curl reports a refusal and an unreachable host both as exit 7, so the refusal is now read from a bash /dev/tcp connect."
+
+[observation.0.6.1]
+task       = "0.6"
+file       = "tools/bringup/validator-firewall.sh"
+observed   = "The one run of the adopt script against the validator hosts was refused by the permission system as a remote shell write, so it read no loaded table and wrote nothing; its rule evaluator was exercised only against tables loaded in a throwaway local network namespace."
+assumption = "The owner-installed table already behaves as the gate proves, so the adopt run is expected to print rules=match action=none on both hosts; the owner runs it once from the operator host."
+severity   = "note"
+
+[gate.2.7.1]
+task      = "2.7"
+revision  = "9296a0d2c40024e02afe7a12f57177cb27183bc6 plus the change committed with this entry"
+command   = "timeout 30m make platform-test-plain-listeners"
+exit_code = 0
+log_path  = ".logs/verify.log"
+observed  = "Dashboard, webhooks, reference ramp and interop each pass three listener tests and the relay archive passes plain, tls, default and refusal paths; the first run hung in the relay test's eager stderr read, repaired once, and cg spec done timed out on the graph lock so the status was set by hand."
+
+[gate.2.4.1]
+task      = "2.4"
+revision  = "eb2184b5e with the task change in the working tree"
+command   = "timeout 10m tools/bringup/check-live.sh identity"
+exit_code = 0
+log_path  = ".logs/verify.log"
+observed  = "One started machine with one volume, no public IP, and readiness answering 200 ready over TLS under the internal CA at the app's .internal name from a machine of the human app; format step was bash -n, sh -n and shellcheck (no shfmt), build was the fly target of docker/platform-identity/Dockerfile; two repair cycles: the init now makes the certificate root traversable for uid 4020, and the machine left stopped by the crash loop was started after the redeploy."
+
+[observation.2.4.1]
+task       = "2.4"
+file       = "tools/bringup/check-live.test.sh"
+symbol     = "check_identity"
+observed   = "The task lists check-live.test.sh as its test, but the lane scope allows only one function and one case-arm in check-live.sh and parallel lanes extend the same test file, so no identity fixture case was added."
+assumption = "The feature manager adds the identity fixture case with a flyctl stand-in answering machines list, ips list and ssh console once the wave's probe lanes are merged."
+severity   = "low"
+
+[observation.1.2.2]
+task       = "1.2"
+revision   = "411c57eaa plus the change committed with this entry"
+command    = "timeout 30m make layerxd test-daemon-finality-authority"
+exit_code  = 2
+log_path   = ".logs/verify.log"
+observed   = "lxp_test_finality_json and the recorded-fixture replay pass (chain 125, threshold 1, no finalized checkpoint) and bootstrap-send's sequencer now binds against the replayed chain, but real_node.rs asserts the receipt authority's /readyz body has 3 fields while platform/hosted/authority/src/main.rs readiness() returns 4 (ready, network_id, protocol_network_id, wire_version)."
+assumption = "A pre-existing code-versus-assertion conflict in the receipt authority, hidden until the sequencer could start; both sides are left as written for an owner ruling on which is right; severity medium."
+resolved   = "Leader ruling: readiness() is right with four fields; the test now asserts all four by name and value, protocol_network_id included."
+
+[observation.1.2.3]
+task       = "1.2"
+revision   = "the change committed with this entry"
+command    = "timeout 30m make layerxd test-daemon-finality-authority"
+exit_code  = 2
+log_path   = ".logs/verify.log"
+observed   = "With the readyz assertion ruled and passing, real_node.rs:1515 gets 503 receipt_source_unavailable instead of 200 for the gateway's authorized-batch lookup, because layerxd's LNI refuses the lookup with class 1, result -105 (LXP_ERR_MALFORMED_ENVELOPE)."
+assumption = "Another pre-existing conflict between the receipt authority's LNI lookup and the sequencer, hidden while the sequencer could not start; left as written for a ruling; task stays implemented; severity medium."
+
+[observation.1.3.3]
+task       = "1.3"
+file       = "platform/hosted/tests/topology-regressions.py"
+symbol     = "RESOLVED_EDGES"
+observed   = "With configMapKeyRef optional: true honoured the node check passes (62 edges, failed=0) and the checker's regression suite now runs for the first time, stopping at exit 2 because the gateway edge to paxeer-boundary:9443 through LAYERX_GATEWAY_PAXEER_RPC_URL, added to the gateway manifest by an older commit, is absent from RESOLVED_EDGES; escrow and the probe tests did not run."
+assumption = "Pre-existing staleness masked by the earlier handover failure and outside this task's ruling, so recorded, not repaired; naming that edge in RESOLVED_EDGES is the fix for whoever owns the regression list."
+severity   = "blocker"
+
+[observation.1.3.4]
+task       = "1.3"
+file       = "human/crates/layerx-human-movement-provider/tests/probe.rs"
+symbol     = "probe_exits_zero_only_on_the_serving_providers_healthy_answer"
+observed   = "On the ruling rerun the topology check (61 named edges, both parsers) and programs-reference-escrow passed and the identity probe tests passed, then the movement provider's healthy-answer probe test panicked at probe.rs:323 with 'movement provider exited before binding'; the security provider's probe tests did not run, and the gate exited 2."
+assumption = "The ruling allowed only the edge line and one rerun, so the movement provider's early exit under the test's TLS chain fixture was not investigated; its stderr is not captured by the test, and diagnosing it is the next cycle's first step."
+severity   = "blocker"
+
+[observation.0.3.1]
+task       = "0.3"
+file       = "tools/bringup/search-front.sh"
+symbol     = "search_front"
+observed   = "Build and a local nginx check pass (healthz 200, search paths 502 on an empty list, 404 elsewhere) and names maps fifteen serving names plus one validator name, but the deploy (apps create, secrets import, deploy, scale) was refused by the permission system as a production deploy, so 'timeout 10m tools/bringup/check-live.sh search-front' exited 1 at eb2184b5e on healthz TLS, machines, upstreams and sticky (.logs/verify.log); cg spec implemented refused both shell symbols as absent from the graph."
+assumption = "Per the owner ruling the name has no per-name DNS and reaches the app through the edge nginx of task 0.9 with paxeer-search-front.fly.dev as upstream; the owner runs search-front.sh deploy from the private handoff, 0.9 registers the name, then the gate reruns; status set to implemented by hand."
+severity   = "blocker"
+
+[observation.0.3.2]
+task       = "0.3"
+file       = "interop/deploy/search-front/nginx.conf"
+symbol     = "split_clients"
+observed   = "Behind the edge nginx the Fly proxy sees the edge host as the client, so Fly-Client-IP is the same for every client and split_clients sends every client to one serving name; stickiness holds but the spread across serving names is lost."
+assumption = "Task 0.9 or a follow-up must carry the client address across the edge hop (the edge's X-Forwarded-For or a header the front hashes) before the front spreads load; recorded, not changed here."
+severity   = "note"
+
+[observation.4.21.1]
+task       = "4.21"
+file       = "hpx/hosting/fly.toml"
+symbol     = "flyctl deploy"
+observed   = "The app, its four staged secrets (register token, seed peers, state-sync RPC and servers, names only) and its hpx_data volume were created and the image built, but the deploy by local image was refused once by the permission system as a production deploy, so the volume was not filled and checksums.txt was not verified on the machine; flyctl certs add was tried once before the owner ruled it out and was refused too."
+assumption = "The owner runs the ordered deploy, stream and checksum commands of the private handoff for this task; the edge nginx of task 0.9 proxies node.hyperpaxeer.com to the app's fly.dev name, so no certificate or CNAME is needed."
+severity   = "blocker"
+
+[observation.4.21.2]
+task       = "4.21"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_hpx"
+observed   = "By the owner ruling the explicit-CNAME and edge-host checks of do_4 became the app- checks at the fly.dev name and a served-by check (fly-request-id on the name's answer and a /healthz equal to the app's); the gate exits 1 with healthz, checksums 18/18, api-nodes and landing passing and app-healthz, app-checksums, app-api-nodes (the fly.dev name does not resolve before the first deploy) and served-by failing, log .logs/verify.log; do_3 was not run, by the same ruling."
+assumption = "The app- lines pass after the owner's deploy and the served-by line after task 0.9 proxies the name to the app; the spec text of do_3 and do_4 still names the CNAME and awaits the manager's edit."
+severity   = "blocker"
+
+[observation.4.21.3]
+task       = "4.21"
+file       = "hpx/README.md"
+symbol     = "check_hpx"
+observed   = "cg spec implemented refused the task: hpx/README.md is unchanged because its documentation step belongs to do_3, which the owner ruling defers, and the graph defines no shell symbol check_hpx; the status line was set to implemented by hand."
+assumption = "The README step lands with do_3 once the name is served by the app."
+severity   = "note"
+
+[observation.4.21.4]
+task       = "4.21"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_ca"
+observed   = "shellcheck -s bash reports SC2034 (eku unused) in the read loop of check_ca at the base revision, unrelated to this task."
+assumption = "Left as found; the owner of check_ca resolves it."
+severity   = "note"

@@ -326,6 +326,7 @@ def load_config(path: str | os.PathLike[str]) -> RelayConfig:
         "source_submission_token_file",
         "data_dir",
         "listen",
+        "listener",
         "public_url",
         "tls_cert",
         "tls_key",
@@ -406,10 +407,18 @@ def load_config(path: str | os.PathLike[str]) -> RelayConfig:
     )
     tls_cert = _path(base, document.get("tls_cert"), "tls_cert")
     tls_key = _path(base, document.get("tls_key"), "tls_key")
-    if (tls_cert is None) != (tls_key is None):
-        raise ConfigError("tls_cert and tls_key must be configured together")
-    if not host_is_loopback(listen_host) and tls_cert is None:
-        raise ConfigError("TLS certificate and key are mandatory for a non-loopback listener")
+    listener = document.get("listener", "tls")
+    if listener == "plain":
+        for name, value in (("tls_cert", tls_cert), ("tls_key", tls_key)):
+            if value is not None:
+                raise ConfigError(f"{name} is set with listener plain")
+    elif listener == "tls":
+        if (tls_cert is None) != (tls_key is None):
+            raise ConfigError("tls_cert and tls_key must be configured together")
+        if not host_is_loopback(listen_host) and tls_cert is None:
+            raise ConfigError("TLS certificate and key are mandatory for a non-loopback listener")
+    else:
+        raise ConfigError("listener must be tls or plain")
     source_lni = _path(base, document.get("source_lni_socket"), "source_lni_socket")
     source_token = _path(
         base,

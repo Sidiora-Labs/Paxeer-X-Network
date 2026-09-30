@@ -26,8 +26,8 @@ real_path="$PATH"
 
 # A local ssh stand-in ahead of the real one on PATH: it answers for the
 # fixture destinations only, refuses to run without BatchMode, records every
-# call, and answers true and the rpc-nodes unit inspection; any other command
-# is refused.
+# call, and answers true, the rpc-nodes unit inspection and the rpc-placement
+# validator inspection; any other command is refused.
 mkdir -p "$work/bin"
 cat >"$work/bin/ssh" <<'SH'
 #!/usr/bin/env bash
@@ -62,6 +62,14 @@ hang-*) exec sleep 5 ;;
 esac
 case "$command" in
 true) exit 0 ;;
+*"ss -Hltn"*)
+	case "$dest" in
+	up-validator-*-node) echo "active none" ;;
+	up-validator-*-web) echo "inactive 80,443" ;;
+	*) echo "inactive none" ;;
+	esac
+	exit 0
+	;;
 *systemctl*)
 	n="${dest#*-rpc-}"
 	n="${n%%-*}"
@@ -176,6 +184,25 @@ esac
 printf '{"jsonrpc":"2.0","id":1,"result":"0x%x"}\n' "$((26400000 - lag))"
 SH
 chmod +x "$work/bin/curl"
+# A local getent stand-in: resolves each public name apiN to the fixture
+# destination up-rpc-N unless CHECK_LIVE_TEST_DNS ("apiN:destination ...")
+# assigns another, where - resolves to nothing.
+cat >"$work/bin/getent" <<'SH'
+#!/usr/bin/env bash
+set -eu
+[ "${1:-}" = ahosts ] || exit 2
+name="${2%%.*}"
+addr="up-rpc-${name#api}"
+case " ${CHECK_LIVE_TEST_DNS:-} " in
+*" $name:"*)
+	addr="${CHECK_LIVE_TEST_DNS##*"$name:"}"
+	addr="${addr%% *}"
+	;;
+esac
+[ "$addr" != - ] || exit 2
+printf '%s STREAM %s\n' "$addr" "$2"
+SH
+chmod +x "$work/bin/getent"
 export PATH="$work/bin:$PATH"
 export CHECK_LIVE_TEST_CALLS="$work/calls"
 export CHECK_LIVE_TEST_STDIN="$work/stdin"
@@ -233,6 +260,15 @@ EDGE_HOST=up-edge
 ARCHIVE_HOST=up-archive
 VALIDATOR_HOSTS="up-validator-a up-validator-b"
 RPC_HOSTS="up-rpc-1 up-rpc-2 up-rpc-3 up-rpc-4 up-rpc-5 up-rpc-6 up-rpc-7 up-rpc-8 up-rpc-9-fresh up-rpc-10-dead up-rpc-11 up-rpc-13 up-rpc-14 up-rpc-15 down-rpc-16"
+HPX_HOST=up-hpx
+OLD_WALLET_HOST=up-old-wallet
+ENV
+
+cat >"$work/hosts-placement-bad.env" <<'ENV'
+EDGE_HOST=up-edge
+ARCHIVE_HOST=up-archive
+VALIDATOR_HOSTS="up-validator-a-node up-validator-b-web down-validator-c"
+RPC_HOSTS="up-validator-a-node up-rpc-2 up-rpc-3 up-rpc-4 up-rpc-5 up-rpc-6 up-rpc-7 up-rpc-8 up-rpc-9 up-rpc-10 up-rpc-11 up-rpc-12 up-rpc-13 up-rpc-14 up-rpc-15"
 HPX_HOST=up-hpx
 OLD_WALLET_HOST=up-old-wallet
 ENV
@@ -587,10 +623,34 @@ expect check_live_rpc_nodes_failing "$work/hosts-rpc-bad.env" 1 rpc-nodes -- \
 	"check-live: 7 check(s) failed"
 unset CHECK_LIVE_TEST_LAG CHECK_LIVE_TEST_DOWN
 
+expect check_live_rpc_placement_passing "$work/hosts-rpc-good.env" 0 rpc-placement -- \
+	"pass api1 host=RPC_HOSTS[0] validator=no head=26400000 lag=0" \
+	"pass api16 host=RPC_HOSTS[15] validator=no head=26400000 lag=0" \
+	"pass VALIDATOR_HOSTS[0] paxd=inactive listen=none" \
+	"pass VALIDATOR_HOSTS[1] paxd=inactive listen=none" \
+	"check-live: all checks passed"
+
+export CHECK_LIVE_TEST_LAG="api7:11" CHECK_LIVE_TEST_DNS="api1:up-validator-a-node api4:- api5:up-validator-b-web"
+expect check_live_rpc_placement_failing "$work/hosts-placement-bad.env" 1 rpc-placement -- \
+	"fail api1 host=RPC_HOSTS[0] validator=yes head=26400000 lag=0" \
+	"pass api2 host=RPC_HOSTS[1] validator=no head=26400000 lag=0" \
+	"fail api4 host=none validator=no head=26400000 lag=0" \
+	"fail api5 host=VALIDATOR_HOSTS[1] validator=yes head=26400000 lag=0" \
+	"fail api7 host=RPC_HOSTS[6] validator=no head=26399989 lag=11" \
+	"fail api16 host=none validator=no head=26400000 lag=0" \
+	"fail VALIDATOR_HOSTS[0] paxd=active listen=none" \
+	"fail VALIDATOR_HOSTS[1] paxd=inactive listen=80,443" \
+	"fail VALIDATOR_HOSTS[2] ssh=255" \
+	"check-live: 8 check(s) failed"
+unset CHECK_LIVE_TEST_LAG CHECK_LIVE_TEST_DNS
+
 # A local hpx registry stand-in: a static tree served on a loopback port
-# written to a file, with a published-looking release under good/ and a
-# tampered one under bad/ (unbound source revision, one artifact rewritten
-# after its manifest line, no /api/nodes).
+# written to a file, with a published-looking release and landing page under
+# good/, which answers with the Fly edge's fly-request-id header as the app
+# does, the same release under local/ without that header, as the registry on
+# the edge host answers, and a tampered one under bad/ (unbound source
+# revision, one artifact rewritten after its manifest line, no /api/nodes, a
+# directory listing in place of the landing page).
 cat >"$work/responder.py" <<'PY'
 import functools
 import http.server
@@ -602,6 +662,11 @@ root, port_file = sys.argv[1], sys.argv[2]
 class Quiet(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *args):
         pass
+
+    def end_headers(self):
+        if self.path.startswith("/good/"):
+            self.send_header("Fly-Request-Id", "01FIXTURE-ams")
+        super().end_headers()
 
 
 server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Quiet, directory=root))
@@ -630,6 +695,8 @@ release() {
 }
 
 release "$work/hpx/good"
+printf '<title>HPX — HyperPax Node Network</title>\n' >"$work/hpx/good/index.html"
+cp -r "$work/hpx/good" "$work/hpx/local"
 release "$work/hpx/bad"
 printf '{"ok":true,"chain_id":"hyperpax_125-1","source_revision":"development"}\n' >"$work/hpx/bad/healthz"
 printf 'rewritten after the manifest\n' >"$work/hpx/bad/paxd"
@@ -647,17 +714,36 @@ if [ ! -s "$work/port" ]; then
 fi
 origin="http://127.0.0.1:$(cat "$work/port")"
 
-CHECK_LIVE_HPX_ORIGIN="$origin/good" expect check_live_hpx_passing "$work/hosts-good.env" 0 hpx -- \
+hpx_app="$(sed -n 's/^app = "\(.*\)"$/\1/p' "$root/hpx/hosting/fly.toml")"
+
+CHECK_LIVE_HPX_ORIGIN="$origin/good" CHECK_LIVE_HPX_APP_ORIGIN="$origin/good" expect check_live_hpx_passing "$work/hosts-good.env" 0 hpx -- \
 	"pass healthz http=200 ok=true chain_id=hyperpax_125-1 source_revision=$(printf 'a%.0s' $(seq 40))" \
 	"pass checksums verified=5/5" \
 	"pass api-nodes http=200 chain_id=hyperpax_125-1 count=1" \
+	"pass app-healthz http=200 ok=true chain_id=hyperpax_125-1 source_revision=$(printf 'a%.0s' $(seq 40))" \
+	"pass app-checksums verified=5/5" \
+	"pass app-api-nodes http=200 chain_id=hyperpax_125-1 count=1" \
+	"pass landing http=200" \
+	"pass served-by app=$hpx_app fly-request-id=present healthz=match" \
 	"check-live: all checks passed"
 
-CHECK_LIVE_HPX_ORIGIN="$origin/bad" expect check_live_hpx_failing "$work/hosts-good.env" 1 hpx -- \
+CHECK_LIVE_HPX_ORIGIN="$origin/bad" CHECK_LIVE_HPX_APP_ORIGIN="$origin/bad" expect check_live_hpx_failing "$work/hosts-good.env" 1 hpx -- \
 	"fail healthz http=200 ok=true chain_id=hyperpax_125-1 source_revision=development" \
 	"fail checksums verified=4/5 first=paxd" \
 	"fail api-nodes http=404" \
-	"check-live: 3 check(s) failed"
+	"fail app-healthz http=200 ok=true chain_id=hyperpax_125-1 source_revision=development" \
+	"fail app-checksums verified=4/5 first=paxd" \
+	"fail app-api-nodes http=404" \
+	"fail landing http=200" \
+	"fail served-by app=$hpx_app fly-request-id=absent healthz=match" \
+	"check-live: 8 check(s) failed"
+
+CHECK_LIVE_HPX_ORIGIN="$origin/local" CHECK_LIVE_HPX_APP_ORIGIN="$origin/good" expect check_live_hpx_served_locally "$work/hosts-good.env" 1 hpx -- \
+	"pass healthz http=200" \
+	"pass app-checksums verified=5/5" \
+	"pass landing http=200" \
+	"fail served-by app=$hpx_app fly-request-id=absent healthz=match" \
+	"check-live: 1 check(s) failed"
 
 expect check_live_hpx_hosts_file_lacks_role "$work/hosts-missing.env" 2 hpx -- \
 	"check-live: BRINGUP_HOSTS_FILE lacks ARCHIVE_HOST"

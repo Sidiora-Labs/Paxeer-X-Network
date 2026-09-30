@@ -211,8 +211,8 @@ current identity sequence through `lx_getSequence`. The examples read
 [402LXP transport](../interop/x402.md) for the offer, grant and commitment
 contracts.
 
-The public hosted equivalents are `https://api.mainnet-beta.router.paxeer.network/rpc` and
-`wss://api.mainnet-beta.router.paxeer.network/rpc/ws`. There is no public
+The public hosted equivalents are `https://api-mainnet-beta.paxeer.network/rpc` and
+`wss://api-mainnet-beta.paxeer.network/rpc/ws`. There is no public
 faucet: a public account is funded through
 [custody credit](../human/custody.md) submitted to that router. See
 [Getting started](getting-started.md) for the public
@@ -299,7 +299,7 @@ On the public network there is no faucet. An account is funded through the
 custody-credit path: a deposit into the custody precompile
 `0x0000000000000000000000000000000000001013` on Paxeer chain `125`, then the
 signed credit activity submitted with `lx_sendActivity` at
-`https://api.mainnet-beta.router.paxeer.network/rpc`; the commands are in
+`https://api-mainnet-beta.paxeer.network/rpc`; the commands are in
 [Getting started](getting-started.md#wallet-and-funding) and every input is on
 [Custody credit](../human/custody.md).
 

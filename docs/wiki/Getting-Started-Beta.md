@@ -6,7 +6,7 @@ and independently supplied verification policy.
 ## Endpoints and trust
 
 ```sh
-export RPC_URL=https://api.mainnet-beta.router.paxeer.network/rpc
+export RPC_URL=https://api-mainnet-beta.paxeer.network/rpc
 ```
 
 Store a gateway `LayerX-Key` credential under the CLI alias `beta`, keep it out of

@@ -1061,3 +1061,111 @@ area    = "tests"
 symptom = "The lxp_test_daemon_finality_authority binary looks free to rewrite, but its prepare and emit modes feed the handover, guarantor and availability chain scripts."
 cause   = "Several tests/daemon Python drivers call that binary directly with their own arguments."
 do      = "Add new modes beside the existing ones and grep tests/daemon for the binary's name before changing its command line."
+
+[gotcha.174]
+area    = "bringup-probe"
+symptom = "A placement probe that compares a public name's DNS answer with the host map needs a resolver it can fake in the fixture test without the network."
+cause   = "check-live.sh has no DNS helper; getent is the only resolver it can call, and the fixture destinations are not addresses."
+do      = "Resolve with getent ahosts, compare against the destination with any user@ prefix stripped, and put a getent stand-in on the test PATH that maps apiN to fixture destinations."
+
+[gotcha.175]
+area    = "tools"
+symptom = "tools/bringup/docs-names.sh stopped with 'cannot read the router' after the spec renamed the router, and 'sh docs-names.sh' fails on set -o pipefail."
+cause   = "The script compared the parsed allowed list against a literal router name, and it is a bash script run through dash when invoked with sh."
+do      = "Derive every checked name from the spec key that holds it, and run the bringup scripts through their shebang or bash."
+
+[gotcha.176]
+area    = "names"
+symptom = "Renaming developers.paxeer.network before api.developers.paxeer.network yields api.dev.paxeer.network instead of api-dev.paxeer.network."
+cause   = "The rename gate matches substrings, so longer names that contain a shorter old name are rewritten by the shorter rule first."
+do      = "Apply the rewrite rules longest name first in one sed pass."
+
+[gotcha.177]
+area    = "ops-shell"
+symptom = "A probe that treats curl exit 7 with 'refused' in its error text as a closed port fails on ports that are genuinely refused with a tcp reset."
+cause   = "Current curl prints 'Could not connect to server' for a refusal and an unreachable host alike, both as exit 7."
+do      = "Tell a refusal from an unreachable host with a bare connect through bash's /dev/tcp under timeout, whose error carries the system's 'Connection refused' text."
+
+[gotcha.178]
+area    = "ops-shell"
+symptom = "A sed range from a shell function's first line to the next line starting with } stops inside the function."
+cause   = "A here-document inside the function (an nft ruleset, for one) holds its own closing brace at column zero."
+do      = "Extract such functions up to a marker comment that follows them, or source the script behind a guard instead of cutting it with sed."
+
+[gotcha.179]
+area    = "tests"
+symptom = "A Python readiness poll hangs forever instead of timing out while the service it polls is healthy."
+cause   = "The assertion message was built eagerly with process.stderr.read(), which blocks until the child closes stderr, so the loop never reached its deadline."
+do      = "Read a child's piped stderr only after poll() reports it exited; never inside an always-evaluated assertion message."
+
+[gotcha.180]
+area    = "fly"
+symptom = "A service started under setpriv as its own uid exits with Permission denied reading its TLS key although the key directory was chowned to that uid."
+cause   = "tools/bringup/ca.sh creates the certificate root on the volume through flyctl ssh console as root under umask 077, so the parent directory is root 0700 and the service uid cannot traverse it."
+do      = "In the app's root init, chown the service's own certificate directory and chmod 0711 its parent before dropping privileges."
+
+[gotcha.181]
+area    = "fly"
+symptom = "A machine that crash-looped before a fixed redeploy stays stopped after the redeploy and every probe reports started=0."
+cause   = "The crash loop hits the max restart count of ten, and a deploy does not start a machine that was stopped before it (gotcha 65)."
+do      = "After redeploying a fix over a crash loop, run flyctl machine start on the machine and read its log for the listening line before probing."
+
+[gotcha.182]
+area    = "fly"
+symptom = "A non-root image cannot read files that ca.sh wrote to its volume, and fly.toml offers no way to run the machine's process as root."
+cause   = "Fly init honours the image USER, while ca.sh writes key material as root through ssh console."
+do      = "Give the Dockerfile a separate fly target without USER whose root init prepares the volume and execs the binary under setpriv, and keep the default last stage unchanged for other runtimes."
+
+[gotcha.183]
+area    = "tests"
+symptom = "Once layerxd binds its finality authority at startup, every test that launches the sequencer with invented settlement and registry addresses and an unused RPC port exits with result -3."
+cause   = "The bind requires both pins to be the anchor precompile and a loopback JSON-RPC that answers the chain id, threshold and finalized-checkpoint calls."
+do      = "Point those tests at LAYERX_NODE_PAXEER_RPC_URL served by a replay of tests/daemon/fixtures/finality-authority/rpc.json with its chain id, and drop the invented pins."
+
+[gotcha.184]
+area    = "tests"
+symptom = "The real-node authority test fails on a /readyz field count right after the sequencer starts."
+cause   = "readiness() gained protocol_network_id, but the test still asserts three fields; the failure stayed hidden while the sequencer could not start."
+do      = "Treat it as a recorded code-versus-assertion conflict awaiting a ruling, not as a finality-authority failure."
+
+[gotcha.185]
+area    = "tests"
+symptom = "The real-node authority test fails in stages: after one stale assertion is fixed, the gateway's authorized-batch lookup returns 503 receipt_source_unavailable."
+cause   = "The sequencer did not start in this test for a long time, so several later checks were never run; layerxd's LNI now refuses the authority's lookup with -105 (malformed envelope)."
+do      = "Expect more hidden failures further down this test; record each one with its line and result code instead of reading it as a finality-authority failure."
+
+[gotcha.186]
+area    = "platform"
+symptom = "Fixing the first failure of the topology check exposes a second, unrelated failure in its regression suite."
+cause   = "topology-check.sh runs topology-regressions.py only after the main check passes, so any main-check failure hides staleness in the regression suite's named edge lists."
+do      = "When a manifest gains an env edge, add it to the matching named edge list in topology-regressions.py in the same change, and expect a first green main check to surface regression-suite drift."
+
+[gotcha.187]
+area    = "human"
+symptom = "A provider probe test fails with only 'provider exited before binding' and no reason."
+cause   = "The test spawns the provider binary without surfacing its stderr when the child exits before its socket appears."
+do      = "When a spawned provider exits early in a binary-level test, include the child's exit status and captured stderr in the panic message so one run is enough to diagnose it."
+
+[gotcha.188]
+area    = "nginx"
+symptom = "nginx -t refuses a split_clients block whose body is an include line with invalid percent value include."
+cause   = "split_clients parses every line of its block as a percent and a value and does not honour include inside the block."
+do      = "Render the whole split_clients block into the included file and include that file at http level; an empty block is accepted and leaves the variable empty."
+
+[gotcha.189]
+area    = "nginx"
+symptom = "An nginx listen [::]:PORT line in a container answers only IPv6 clients."
+cause   = "nginx sets ipv6only=on for an IPv6 wildcard listen by default."
+do      = "Write listen [::]:PORT ipv6only=off when one line must accept both families, as the Fly proxy and a local IPv4 check need."
+
+[gotcha.190]
+area    = "containers"
+symptom = "Alpine's nginx package serves its own default page on port 80 beside a new vhost, and files fetched with ADD from a URL land with mode 0600, unreadable to the nginx workers."
+cause   = "The package ships /etc/nginx/http.d/default.conf, and remote ADD sources get owner-only permissions."
+do      = "Remove http.d/default.conf in the image and fetch checksum-bound files with curl and sha256sum -c in a build stage, copying them in with COPY --from, as docker/hpx-registry/Dockerfile does for the landing fonts."
+
+[gotcha.191]
+area    = "bringup-probe"
+symptom = "A check that a public name has moved to a Fly app cannot rely on DNS when the name keeps resolving to the edge host and the edge proxies it to the app."
+cause   = "Behind an edge proxy the record never changes, so a CNAME or address check cannot tell the edge-local service from the proxied app."
+do      = "Compare the name's answer with the app's answer at its fly.dev name and require the fly-request-id header the Fly edge adds, which nginx passes through from its upstream."

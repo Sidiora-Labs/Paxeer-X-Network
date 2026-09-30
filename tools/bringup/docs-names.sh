@@ -29,7 +29,8 @@ allowed=$({
 } | grep -oiE "(api[0-9]+\.\.)?$host_re" | tr '[:upper:]' '[:lower:]' | expand | sort -u)
 
 rpc_count=$(grep -cE '^api([1-9]|1[0-6])\.mainnet-beta\.paxeer\.network$' <<<"$allowed" || true)
-if [[ $rpc_count -ne 16 ]] || ! grep -qx 'api\.mainnet-beta\.router\.paxeer\.network' <<<"$allowed"; then
+router=$(section decision.public_names | grep -E '^router ' | grep -oiE "$host_re" | head -n 1 || true)
+if [[ $rpc_count -ne 16 || -z $router ]]; then
 	echo "docs-names: cannot read the router and the sixteen RPC names from [decision.public_names] of $spec" >&2
 	exit 1
 fi

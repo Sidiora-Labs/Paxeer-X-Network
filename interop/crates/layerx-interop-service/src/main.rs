@@ -3,7 +3,7 @@ mod server;
 
 use layerx_platform_gateway::http;
 use rustls::{ServerConnection, StreamOwned};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -27,12 +27,23 @@ fn serve(config: &Arc<config::Config>, tcp: TcpStream) -> Result<(), String> {
         .map_err(|error| error.to_string())?;
     tcp.set_write_timeout(Some(Duration::from_secs(10)))
         .map_err(|error| error.to_string())?;
-    let connection =
-        ServerConnection::new(Arc::clone(&config.tls)).map_err(|error| error.to_string())?;
-    let mut stream = StreamOwned::new(connection, tcp);
-    let Ok(request) = http::read_request(&mut stream, MAX_REQUEST) else {
+    match &config.listener {
+        config::Listener::Tls(tls) => {
+            let connection =
+                ServerConnection::new(Arc::clone(tls)).map_err(|error| error.to_string())?;
+            exchange(config, &mut StreamOwned::new(connection, tcp))
+        }
+        config::Listener::Plain => {
+            let mut stream = tcp;
+            exchange(config, &mut stream)
+        }
+    }
+}
+
+fn exchange<S: Read + Write>(config: &Arc<config::Config>, stream: &mut S) -> Result<(), String> {
+    let Ok(request) = http::read_request(stream, MAX_REQUEST) else {
         return http::write_response(
-            &mut stream,
+            stream,
             &http::OutgoingResponse {
                 status: 400,
                 body: b"{\"ok\":false,\"error\":{\"code\":\"invalid_http_request\"}}".to_vec(),
@@ -40,7 +51,7 @@ fn serve(config: &Arc<config::Config>, tcp: TcpStream) -> Result<(), String> {
             },
         );
     };
-    http::write_response(&mut stream, &server::route(config, &request))
+    http::write_response(stream, &server::route(config, &request))
 }
 
 fn run() -> Result<(), String> {

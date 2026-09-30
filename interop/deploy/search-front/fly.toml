@@ -1,0 +1,37 @@
+app = "paxeer-search-front"
+primary_region = "ams"
+kill_signal = "SIGQUIT"
+kill_timeout = "30s"
+
+[build]
+  dockerfile = "docker/search-front/Dockerfile"
+
+[[files]]
+  guest_path = "/etc/nginx/search/upstreams.conf"
+  secret_name = "SEARCH_FRONT_UPSTREAMS"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 2
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 1000
+    hard_limit = 1200
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/healthz"
+    protocol = "http"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  cpus = 1
+  cpu_kind = "shared"

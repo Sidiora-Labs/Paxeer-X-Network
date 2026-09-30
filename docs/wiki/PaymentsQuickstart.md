@@ -17,7 +17,7 @@ For a shorter environment checklist, start with
 The published router origin is:
 
 ```sh
-export RPC_URL=https://api.mainnet-beta.router.paxeer.network/rpc
+export RPC_URL=https://api-mainnet-beta.paxeer.network/rpc
 ```
 
 You also need:

@@ -48,10 +48,10 @@ Deployment `layerx-webhooks` has three replicas, listens on
 `0.0.0.0:9444`, exposes Service port `443` to container `9444`, PDB
 `minAvailable` `2`
 (`platform/hosted/webhooks/deployment.yaml:6, 61, 74, 195-198, 250-251`).
-Ingress `layerx-developer` host `developers.paxeer.network` path
+Ingress `layerx-developer` host `dev.paxeer.network` path
 `/v1/webhooks` uses backend protocol HTTPS and body size `512k`
 (`platform/hosted/webhooks/deployment.yaml:217-232`); the bare-host edge
-serves it at `webhooks.paxeer.network`. NetworkPolicy
+serves it at `hooks.paxeer.network`. NetworkPolicy
 ingress admits `ingress-nginx` and namespaces labeled
 `layerx.internal-events: "true"` on TCP `9444`; egress is UDP `53`,
 TCP `443`, and TCP `6379`

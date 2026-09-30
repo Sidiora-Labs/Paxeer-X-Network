@@ -72,7 +72,9 @@ ca        reads the internal CA under LAYERX_CA_DIR on this host and, through
           Exits 0 only when the CA and every certificate pass.
 
 hpx       reads the hpx registry at CHECK_LIVE_HPX_ORIGIN, by default
-          https://node.hyperpaxeer.com, and prints one line per check:
+          https://node.hyperpaxeer.com, and at CHECK_LIVE_HPX_APP_ORIGIN, by
+          default https://<app>.fly.dev for the app of hpx/hosting/fly.toml,
+          and prints one line per check; the app's lines carry the app- prefix:
   healthz    GET <origin>/healthz answers 200 with ok true, chain_id
              hyperpax_125-1 and a forty-hex source_revision
   checksums  GET <origin>/checksums.txt lists "<sha256>  <path>" lines and
@@ -81,7 +83,14 @@ hpx       reads the hpx registry at CHECK_LIVE_HPX_ORIGIN, by default
              verified=<k>/<n> first=<path>" naming the first mismatch
   api-nodes  GET <origin>/api/nodes answers 200 with chain_id hyperpax_125-1
              and a nodes list whose length is count
-          Exits 0 only when all three checks pass.
+  landing    GET <origin>/ answers 200 with the landing page of
+             hpx/hosting/index.html
+  served-by  the public origin's /healthz carries the Fly edge's
+             fly-request-id header and equals the app's /healthz, so the name
+             is served by the app and not by the registry on the edge host;
+             "fail served-by app=<app> fly-request-id=<present|absent>
+             healthz=<match|differ>" otherwise
+          Exits 0 only when all eight checks pass.
 
 explorer  reads the deployed explorer at CHECK_LIVE_EXPLORER_ORIGIN, by default
           https://paxscan.io, its envs.js, its backend and its databases, and
@@ -112,6 +121,8 @@ Environment:
                        for the plural roles, a space-separated list of them
   CHECK_LIVE_HPX_ORIGIN  origin of the hpx registry, default
                        https://node.hyperpaxeer.com
+  CHECK_LIVE_HPX_APP_ORIGIN  origin of the hpx registry's Fly app, default
+                       https://<app>.fly.dev
   CHECK_LIVE_EXPLORER_ORIGIN  origin of the explorer frontend, default
                        https://paxscan.io
   EXPLORER_DATABASE_URL, EXPLORER_LEGACY_DATABASE_URL,
@@ -328,6 +339,88 @@ check_rpc_nodes() {
 	finish "$failures"
 }
 
+# The read-only inspection rpc-placement runs on a validator host: the
+# ActiveState of the full-node unit paxd.service (never a validator unit) and
+# the HTTP and HTTPS ports it listens on beyond loopback, one line, no address.
+# shellcheck disable=SC2016
+placement_cmd='s=$(systemctl is-active paxd.service 2>/dev/null); p=$(ss -Hltn 2>/dev/null | awk "{print \$4}" | grep -Ev "^(127\.|\[::1\]:|::1:)" | sed -n "s/.*:\(80\|443\)$/\1/p" | sort -u | paste -sd, -); echo "${s:-inactive} ${p:-none}"'
+
+# check_rpc_placement: each public RPC name resolves to an RPC_HOSTS
+# destination outside VALIDATOR_HOSTS and answers within ten blocks of the
+# highest answer, and no validator host runs the full-node unit or listens on
+# a public HTTP or HTTPS port. Destinations are named by role and index only.
+check_rpc_placement() {
+	local -a rpcs validators heads addrs
+	local k j n name head lag at validator ok polls status reply state ports top=0 failures=0
+	read -r -a rpcs <<<"$RPC_HOSTS"
+	read -r -a validators <<<"$VALIDATOR_HOSTS"
+	polls="$(mktemp -d)"
+	trap 'rm -rf "$polls"' EXIT
+	for n in $(seq 1 "$rpc_name_count"); do
+		rpc_head "api$n" >"$polls/$n" 2>/dev/null &
+	done
+	wait
+	for n in $(seq 1 "$rpc_name_count"); do
+		heads[n]="$(cat "$polls/$n")"
+		if [ -n "${heads[n]}" ] && [ "${heads[n]}" -gt "$top" ]; then
+			top="${heads[n]}"
+		fi
+	done
+	for n in $(seq 1 "$rpc_name_count"); do
+		name="api$n"
+		mapfile -t addrs < <(getent ahosts "$name.$rpc_domain" 2>/dev/null | awk '{print $1}' | sort -u)
+		at=none
+		validator=no
+		for k in "${!rpcs[@]}"; do
+			if printf '%s\n' "${addrs[@]}" | grep -qxF -- "${rpcs[$k]#*@}"; then
+				at="RPC_HOSTS[$k]"
+				break
+			fi
+		done
+		for j in "${!validators[@]}"; do
+			if printf '%s\n' "${addrs[@]}" | grep -qxF -- "${validators[$j]#*@}"; then
+				validator=yes
+				[ "$at" != none ] || at="VALIDATOR_HOSTS[$j]"
+				break
+			fi
+		done
+		head="${heads[n]}"
+		ok=1
+		if [ -n "$head" ]; then
+			lag=$((top - head))
+			[ "$lag" -le "$rpc_max_lag" ] || ok=0
+		else
+			head=none
+			lag=none
+			ok=0
+		fi
+		[ "$at" != none ] && [ "$validator" = no ] && [ "${at%%\[*}" = RPC_HOSTS ] || ok=0
+		if [ "$ok" -eq 1 ]; then
+			echo "pass $name host=$at validator=$validator head=$head lag=$lag"
+		else
+			echo "fail $name host=$at validator=$validator head=$head lag=$lag"
+			failures=$((failures + 1))
+		fi
+	done
+	for j in "${!validators[@]}"; do
+		status=0
+		reply="$(ssh_read "${validators[$j]}" "$placement_cmd")" || status=$?
+		if [ "$status" -ne 0 ] || [ -z "$reply" ]; then
+			echo "fail VALIDATOR_HOSTS[$j] ssh=$status"
+			failures=$((failures + 1))
+			continue
+		fi
+		read -r state ports <<<"$reply"
+		if [ "$state" = inactive ] && [ "$ports" = none ]; then
+			echo "pass VALIDATOR_HOSTS[$j] paxd=$state listen=$ports"
+		else
+			echo "fail VALIDATOR_HOSTS[$j] paxd=$state listen=$ports"
+			failures=$((failures + 1))
+		fi
+	done
+	finish "$failures"
+}
+
 check_hosts() {
 	local role dest dests total answered first status failures=0
 	for role in "${roles[@]}"; do
@@ -534,21 +627,32 @@ check_ca() {
 	finish "$failures"
 }
 
-# check_hpx: reads the hpx registry at its public origin: /healthz with the
-# chain id and the source revision, checksums.txt verified against every
-# served artifact it lists, and /api/nodes answering.
+# check_hpx: reads the hpx registry at its public origin and at the fly.dev
+# name of the Fly app of hpx/hosting/fly.toml: at both, /healthz with the chain
+# id and the source revision, checksums.txt verified against every served
+# artifact it lists and /api/nodes answering; the landing page at the public
+# origin; and the public origin served by the app: its /healthz carries the
+# Fly edge's fly-request-id header and matches the app's /healthz.
 check_hpx() {
 	local origin="${CHECK_LIVE_HPX_ORIGIN:-https://node.hyperpaxeer.com}" failures=0
-	local status body verdict manifest line sum path served total=0 verified=0 first=""
+	local status body verdict manifest line sum path served total verified first
 	local entry='^([0-9a-f]{64})  ([A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*)$'
+	local app app_origin base prefix code name_health app_health fly_id
 	origin="${origin%/}"
+	app="$(fly_app hpx/hosting/fly.toml)" || app=absent
+	app_origin="${CHECK_LIVE_HPX_APP_ORIGIN:-https://$app.fly.dev}"
+	app_origin="${app_origin%/}"
 
-	status=0
-	body="$(curl -sS --max-time "$timeout" -w '\n%{http_code}' "$origin/healthz" 2>&1)" || status=$?
-	if [ "$status" -ne 0 ]; then
-		verdict="fail transport $(printf '%s' "$body" | tr '\n' ' ' | cut -c1-200)"
-	else
-		verdict="$(printf '%s' "$body" | python3 -c '
+	for prefix in "" app-; do
+		base="$origin"
+		[ -z "$prefix" ] || base="$app_origin"
+
+		status=0
+		body="$(curl -sS --max-time "$timeout" -w '\n%{http_code}' "$base/healthz" 2>&1)" || status=$?
+		if [ "$status" -ne 0 ]; then
+			verdict="fail transport $(printf '%s' "$body" | tr '\n' ' ' | cut -c1-200)"
+		else
+			verdict="$(printf '%s' "$body" | python3 -c '
 import json
 import re
 import sys
@@ -575,52 +679,55 @@ ok = (
 print(("pass " if ok else "fail ") + "http=" + code + " ok=" + str(doc.get("ok") is True).lower()
       + " chain_id=" + str(chain) + " source_revision=" + str(rev))
 ')"
-	fi
-	case "$verdict" in
-	pass\ *) echo "pass healthz ${verdict#pass }" ;;
-	*)
-		echo "fail healthz ${verdict#fail }"
-		failures=$((failures + 1))
-		;;
-	esac
-
-	status=0
-	manifest="$(curl -sS --max-time "$timeout" "$origin/checksums.txt" 2>&1)" || status=$?
-	if [ "$status" -ne 0 ]; then
-		echo "fail checksums transport $(printf '%s' "$manifest" | tr '\n' ' ' | cut -c1-200)"
-		failures=$((failures + 1))
-	else
-		while IFS= read -r line; do
-			[ -n "$line" ] || continue
-			total=$((total + 1))
-			if [[ "$line" =~ $entry ]]; then
-				sum="${BASH_REMATCH[1]}"
-				path="${BASH_REMATCH[2]}"
-				status=0
-				served="$(curl -sS --max-time "$timeout" "$origin/$path" 2>/dev/null | sha256sum | cut -d' ' -f1)" || status=$?
-				if [ "$status" -eq 0 ] && [ "$served" = "$sum" ]; then
-					verified=$((verified + 1))
-				else
-					first="${first:-$path}"
-				fi
-			else
-				first="${first:-malformed:$(printf '%s' "$line" | cut -c1-80)}"
-			fi
-		done <<<"$manifest"
-		if [ "$total" -gt 0 ] && [ "$verified" -eq "$total" ]; then
-			echo "pass checksums verified=$verified/$total"
-		else
-			echo "fail checksums verified=$verified/$total first=${first:-empty-manifest}"
-			failures=$((failures + 1))
 		fi
-	fi
+		case "$verdict" in
+		pass\ *) echo "pass ${prefix}healthz ${verdict#pass }" ;;
+		*)
+			echo "fail ${prefix}healthz ${verdict#fail }"
+			failures=$((failures + 1))
+			;;
+		esac
 
-	status=0
-	body="$(curl -sS --max-time "$timeout" -w '\n%{http_code}' "$origin/api/nodes" 2>&1)" || status=$?
-	if [ "$status" -ne 0 ]; then
-		verdict="fail transport $(printf '%s' "$body" | tr '\n' ' ' | cut -c1-200)"
-	else
-		verdict="$(printf '%s' "$body" | python3 -c '
+		total=0
+		verified=0
+		first=""
+		status=0
+		manifest="$(curl -sS --max-time "$timeout" "$base/checksums.txt" 2>&1)" || status=$?
+		if [ "$status" -ne 0 ]; then
+			echo "fail ${prefix}checksums transport $(printf '%s' "$manifest" | tr '\n' ' ' | cut -c1-200)"
+			failures=$((failures + 1))
+		else
+			while IFS= read -r line; do
+				[ -n "$line" ] || continue
+				total=$((total + 1))
+				if [[ "$line" =~ $entry ]]; then
+					sum="${BASH_REMATCH[1]}"
+					path="${BASH_REMATCH[2]}"
+					status=0
+					served="$(curl -sS --max-time "$timeout" "$base/$path" 2>/dev/null | sha256sum | cut -d' ' -f1)" || status=$?
+					if [ "$status" -eq 0 ] && [ "$served" = "$sum" ]; then
+						verified=$((verified + 1))
+					else
+						first="${first:-$path}"
+					fi
+				else
+					first="${first:-malformed:$(printf '%s' "$line" | cut -c1-80)}"
+				fi
+			done <<<"$manifest"
+			if [ "$total" -gt 0 ] && [ "$verified" -eq "$total" ]; then
+				echo "pass ${prefix}checksums verified=$verified/$total"
+			else
+				echo "fail ${prefix}checksums verified=$verified/$total first=${first:-empty-manifest}"
+				failures=$((failures + 1))
+			fi
+		fi
+
+		status=0
+		body="$(curl -sS --max-time "$timeout" -w '\n%{http_code}' "$base/api/nodes" 2>&1)" || status=$?
+		if [ "$status" -ne 0 ]; then
+			verdict="fail transport $(printf '%s' "$body" | tr '\n' ' ' | cut -c1-200)"
+		else
+			verdict="$(printf '%s' "$body" | python3 -c '
 import json
 import sys
 
@@ -646,14 +753,47 @@ ok = (
 )
 print(("pass " if ok else "fail ") + "http=" + code + " chain_id=" + str(chain) + " count=" + str(count))
 ')"
-	fi
-	case "$verdict" in
-	pass\ *) echo "pass api-nodes ${verdict#pass }" ;;
-	*)
-		echo "fail api-nodes ${verdict#fail }"
+		fi
+		case "$verdict" in
+		pass\ *) echo "pass ${prefix}api-nodes ${verdict#pass }" ;;
+		*)
+			echo "fail ${prefix}api-nodes ${verdict#fail }"
+			failures=$((failures + 1))
+			;;
+		esac
+	done
+
+	status=0
+	body="$(curl -sS --max-time "$timeout" -w '\n%{http_code}' "$origin/" 2>&1)" || status=$?
+	code="${body##*$'\n'}"
+	if [ "$status" -ne 0 ]; then
+		echo "fail landing transport $(printf '%s' "$body" | tr '\n' ' ' | cut -c1-200)"
 		failures=$((failures + 1))
-		;;
-	esac
+	elif [ "$code" = 200 ] && grep -qF '<title>HPX — HyperPax Node Network</title>' <<<"$body"; then
+		echo "pass landing http=200"
+	else
+		echo "fail landing http=$code"
+		failures=$((failures + 1))
+	fi
+
+	# The public name is served by the app when its answer passed the Fly edge
+	# (fly-request-id) and equals the app's own answer; the registry on the
+	# edge host answers without that header.
+	name_health="$(curl -sS --max-time "$timeout" -D - "$origin/healthz" 2>/dev/null)" || name_health=""
+	fly_id=absent
+	grep -qiE '^fly-request-id: *[^[:space:]]' <<<"$name_health" && fly_id=present
+	name_health="${name_health#*$'\r\n\r\n'}"
+	app_health="$(curl -sS --max-time "$timeout" "$app_origin/healthz" 2>/dev/null)" || app_health=""
+	if [ "$fly_id" = present ] && [ -n "$app_health" ] && [ "$name_health" = "$app_health" ]; then
+		echo "pass served-by app=$app fly-request-id=present healthz=match"
+	else
+		code=differ
+		if [ -n "$app_health" ] && [ "$name_health" = "$app_health" ]; then
+			code=match
+		fi
+		echo "fail served-by app=$app fly-request-id=$fly_id healthz=$code"
+		failures=$((failures + 1))
+	fi
 	finish "$failures"
 }
 
@@ -854,6 +994,205 @@ print((proto + "://" + host if host else "none") + " " + (get("NEXT_PUBLIC_NETWO
 	finish "$failures"
 }
 
+# check_validators: from this host the attestor ports 8480 and 8481 of every
+# VALIDATOR_HOSTS destination refuse the connection (a tcp reset, not a
+# timeout); over ssh each attestor answers /health with 200 on loopback, and
+# each validator host reaches every other one's attestor ports with 200. One
+# line per check, naming hosts by their index only:
+#   "pass VALIDATOR_HOSTS[k] remote-<port>=refused" or "=open|timeout|unreachable"
+#   "pass VALIDATOR_HOSTS[k] loopback-<port> health=200"
+#   "pass VALIDATOR_HOSTS[k] peer-VALIDATOR_HOSTS[j]-<port> health=200"
+# with fail and the observed code (ssh=<exit> when the host did not answer).
+check_validators() {
+	local -a dests addrs
+	local k j port err status code line target failures=0
+	read -r -a dests <<<"$VALIDATOR_HOSTS"
+	for k in "${!dests[@]}"; do
+		addrs[k]="$(ssh -G -- "${dests[$k]}" 2>/dev/null | awk '$1 == "hostname" { print $2; exit }')"
+	done
+	for k in "${!dests[@]}"; do
+		for port in 8480 8481; do
+			status=0
+			# A bare connect through bash's /dev/tcp, because only its error
+			# text (the system's ECONNREFUSED message) tells a tcp reset from
+			# an unreachable host; curl reports both as exit 7.
+			# shellcheck disable=SC2016
+			err="$(timeout "$timeout" bash -c 'exec 3<>"/dev/tcp/$1/$2"' - "${addrs[k]}" "$port" 2>&1)" || status=$?
+			case "$status:$err" in
+			0:*) line="fail VALIDATOR_HOSTS[$k] remote-$port=open" ;;
+			124:*) line="fail VALIDATOR_HOSTS[$k] remote-$port=timeout" ;;
+			*"Connection refused"*) line="pass VALIDATOR_HOSTS[$k] remote-$port=refused" ;;
+			*) line="fail VALIDATOR_HOSTS[$k] remote-$port=unreachable" ;;
+			esac
+			echo "$line"
+			[ "${line%% *}" = pass ] || failures=$((failures + 1))
+		done
+		for port in 8480 8481; do
+			for j in "${!dests[@]}"; do
+				target="${addrs[j]}"
+				line="peer-VALIDATOR_HOSTS[$j]-$port"
+				if [ "$j" -eq "$k" ]; then
+					target=127.0.0.1
+					line="loopback-$port"
+				fi
+				status=0
+				code="$(ssh_read "${dests[$k]}" "curl -s -o /dev/null -w %{http_code} -m $timeout http://$target:$port/health")" || status=$?
+				if [ "$code" = 200 ]; then
+					echo "pass VALIDATOR_HOSTS[$k] $line health=200"
+				elif [ "$status" -eq 255 ] || [ "$status" -eq 124 ]; then
+					echo "fail VALIDATOR_HOSTS[$k] $line ssh=$status"
+					failures=$((failures + 1))
+				else
+					echo "fail VALIDATOR_HOSTS[$k] $line health=${code:-none}"
+					failures=$((failures + 1))
+				fi
+			done
+		done
+	done
+	finish "$failures"
+}
+
+# check_identity: the identity app of platform/hosted/identity/fly.toml runs
+# one started machine with a volume, holds no public IP, and answers
+# readiness over TLS under the internal CA at its .internal name when asked
+# from a machine of the human app of human/wallet/deploy/human.toml, which
+# gets only the CA certificate on stdin.
+check_identity() {
+	local app from answer url code body attempt n_machines n_started n_mounts failures=0
+	if ! app="$(fly_app platform/hosted/identity/fly.toml)"; then
+		echo "fail identity toml=absent"
+		finish 1
+	fi
+	answer="$(timeout "$timeout" flyctl machines list --app "$app" --json 2>/dev/null | python3 -c '
+import json, sys
+ms = json.load(sys.stdin)
+started = [m for m in ms if m.get("state") == "started"]
+mounts = [x.get("volume", "") for m in ms for x in (m.get("config") or {}).get("mounts") or []]
+print(len(ms), len(started), len(mounts))
+' 2>/dev/null)" || answer=""
+	read -r n_machines n_started n_mounts <<<"${answer:-none none none}"
+	if [ "$n_machines" = 1 ] && [ "$n_started" = 1 ] && [ "$n_mounts" = 1 ]; then
+		echo "pass machines app=$app machines=1 started=1 volumes=1"
+	else
+		echo "fail machines app=$app machines=$n_machines started=$n_started volumes=$n_mounts"
+		failures=$((failures + 1))
+	fi
+	answer="$(timeout "$timeout" flyctl ips list --app "$app" --json 2>/dev/null | python3 -c 'import json, sys; print(len(json.load(sys.stdin) or []))' 2>/dev/null)" || answer=none
+	if [ "$answer" = 0 ]; then
+		echo "pass public-ips app=$app count=0"
+	else
+		echo "fail public-ips app=$app count=${answer:-none}"
+		failures=$((failures + 1))
+	fi
+	url="https://$app.internal:9443/readyz"
+	if ! from="$(fly_app human/wallet/deploy/human.toml)"; then
+		echo "fail readiness app=$app from=absent"
+		finish $((failures + 1))
+	fi
+	if [ ! -r "$ca_dir/ca.pem" ]; then
+		echo "fail readiness app=$app ca=absent"
+		finish $((failures + 1))
+	fi
+	answer=""
+	for attempt in 1 2; do
+		answer="$(fly_ssh "$from" - "cat >/tmp/identity-ca.pem && curl -sS -m $timeout --cacert /tmp/identity-ca.pem -w \" %{http_code}\" $url; rm -f /tmp/identity-ca.pem" <"$ca_dir/ca.pem" | tail -n 1)" || true
+		[ "${answer##* }" != 200 ] || break
+		[ "$attempt" = 2 ] || sleep 10
+	done
+	code="${answer##* }"
+	body="${answer% *}"
+	if [ "$code" = 200 ] && [[ "$body" == *'"status":"ready"'* ]]; then
+		echo "pass readiness app=$app from=$from url=$url http=200 status=ready"
+	else
+		echo "fail readiness app=$app from=$from url=$url http=${code:-none}"
+		failures=$((failures + 1))
+	fi
+	finish "$failures"
+}
+
+# check_search_front: search.paxeer.network answers /healthz 200 over a
+# certificate valid for the name, through the edge host that proxies it to the
+# app of interop/deploy/search-front/fly.toml; the app runs
+# at least two started machines in two regions; the upstream list a machine
+# mounts equals the serving RPC names of tools/bringup/search-front.sh names
+# and holds no validator host's apiN name; two requests from this address get
+# the same X-Search-Node, one of those names. One line per check.
+check_search_front() {
+	local host=search.paxeer.network toml=interop/deploy/search-front/fly.toml
+	local app status headers code machines listing mounted expected validators listed first second failures=0
+	if ! command -v flyctl >/dev/null 2>&1; then
+		echo "check-live: flyctl is required" >&2
+		exit 2
+	fi
+	if ! app="$(fly_app "$toml")"; then
+		echo "fail search-front toml=absent"
+		finish 1
+	fi
+
+	status=0
+	headers="$(curl -sS --max-time "$timeout" -D - -o /dev/null "https://$host/healthz" 2>&1)" || status=$?
+	code="$(sed -n '1s/^HTTP\/[0-9.]* \([0-9]*\).*/\1/p' <<<"$headers")"
+	if [ "$status" -ne 0 ]; then
+		echo "fail healthz https://$host/healthz transport $(printf '%s' "$headers" | tr '\n' ' ' | cut -c1-160)"
+		failures=$((failures + 1))
+	elif [ "$code" = 200 ]; then
+		echo "pass healthz https://$host/healthz http=200 tls=verified"
+	else
+		echo "fail healthz https://$host/healthz http=${code:-none} tls=verified"
+		failures=$((failures + 1))
+	fi
+
+	machines="$(timeout "$timeout" flyctl machines list --app "$app" --json 2>/dev/null | python3 -c '
+import json
+import sys
+
+try:
+    doc = json.load(sys.stdin)
+except ValueError:
+    print("fail machines=unreadable")
+    sys.exit(0)
+started = [m for m in doc if m.get("state") == "started"]
+regions = sorted({m.get("region", "") for m in started})
+ok = len(started) >= 2 and len(regions) >= 2
+print(("pass" if ok else "fail") + " machines started=%d regions=%s" % (len(started), ",".join(regions) or "none"))
+')" || machines="fail machines=unreadable"
+	echo "${machines%% *} ${machines#* } app=$app"
+	[ "${machines%% *}" = pass ] || failures=$((failures + 1))
+
+	if ! listing="$("$(dirname "${BASH_SOURCE[0]}")/search-front.sh" names 2>&1)"; then
+		echo "fail upstreams names=unreadable $(printf '%s' "$listing" | tr '\n' ' ' | cut -c1-160)"
+		failures=$((failures + 1))
+		expected=""
+	else
+		expected="$(sed -n 's/^serve //p' <<<"$listing" | sort)"
+		validators="$(sed -n 's/^validator //p' <<<"$listing" | sort)"
+		mounted="$(fly_ssh "$app" - "cat /etc/nginx/search/upstreams.conf" </dev/null)" || mounted=""
+		listed="$(sed -n 's/^[[:space:]]*\([0-9.]*%\|\*\)[[:space:]]\{1,\}\([a-z0-9.-]*\);.*/\2/p' <<<"$mounted" | sort)"
+		first="$(comm -23 <(printf '%s\n' "$expected") <(printf '%s\n' "$listed") | grep -c . || true)"
+		second="$(comm -13 <(printf '%s\n' "$expected") <(printf '%s\n' "$listed") | grep -c . || true)"
+		code="$(comm -12 <(printf '%s\n' "$validators") <(printf '%s\n' "$listed") | grep -c . || true)"
+		if [ -z "$mounted" ]; then
+			echo "fail upstreams app=$app list=unreadable"
+			failures=$((failures + 1))
+		elif [ "$first" -eq 0 ] && [ "$second" -eq 0 ] && [ "$code" -eq 0 ]; then
+			echo "pass upstreams listed=$(grep -c . <<<"$listed")/$(grep -c . <<<"$expected") validator=0"
+		else
+			echo "fail upstreams missing=$first extra=$second validator=$code"
+			failures=$((failures + 1))
+		fi
+	fi
+
+	first="$(curl -sS --max-time "$timeout" -D - -o /dev/null "https://$host/xweb/health" 2>/dev/null | sed -n 's/^x-search-node:[[:space:]]*//Ip' | tr -d '\r')" || first=""
+	second="$(curl -sS --max-time "$timeout" -D - -o /dev/null "https://$host/xweb/health" 2>/dev/null | sed -n 's/^x-search-node:[[:space:]]*//Ip' | tr -d '\r')" || second=""
+	if [ -n "$first" ] && [ "$first" = "$second" ] && grep -qxF "$first" <<<"$expected"; then
+		echo "pass sticky node=$first requests=2"
+	else
+		echo "fail sticky first=${first:-none} second=${second:-none}"
+		failures=$((failures + 1))
+	fi
+	finish "$failures"
+}
+
 # Sourced by tools/bringup/ca.sh for the Fly helpers and the CA settings: the
 # probe's own dispatch below runs only when this file is executed.
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
@@ -865,6 +1204,10 @@ case "$mode" in
 	exit 0
 	;;
 hosts | rpc-nodes | archive-node | ca | hpx | explorer) ;;
+rpc-placement) ;;
+validators) ;;
+identity) ;;
+search-front) ;;
 *)
 	usage >&2
 	exit 2

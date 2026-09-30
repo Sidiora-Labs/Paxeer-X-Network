@@ -37,7 +37,7 @@ const MAX_AP2_ASSET_BINDINGS: usize = 256;
 
 pub struct Config {
     pub listen: SocketAddr,
-    pub tls: Arc<ServerConfig>,
+    pub listener: Listener,
     pub client: Client,
     pub hosted_gateway: Endpoint,
     pub receipt_authority: Endpoint,
@@ -53,6 +53,11 @@ pub struct Config {
     pub tap_clock_skew_seconds: u64,
     pub idempotency_seconds: u64,
     pub manifest: RuntimeManifest,
+}
+
+pub enum Listener {
+    Tls(Arc<ServerConfig>),
+    Plain,
 }
 
 #[derive(Clone)]
@@ -252,7 +257,7 @@ pub fn load() -> Result<Config, String> {
             .map_err(|_| "LAYERX_INTEROP_LISTEN is required".to_owned())?
             .parse::<SocketAddr>()
             .map_err(|_| "interop listen address is invalid".to_owned())?,
-        tls: tls_config()?,
+        listener: listener_config()?,
         client: Client::new(outbound_ca.clone(), identity),
         hosted_gateway: Endpoint::parse(
             &env::var("LAYERX_INTEROP_HOSTED_GATEWAY_URL")
@@ -585,10 +590,29 @@ fn valid_transport_version(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
 }
 
-fn tls_config() -> Result<Arc<ServerConfig>, String> {
+const LISTENER_CERTIFICATE_VARIABLES: [&str; 2] =
+    ["LAYERX_INTEROP_TLS_CERT_DER", "LAYERX_INTEROP_TLS_KEY_DER"];
+
+fn listener_config() -> Result<Listener, String> {
     rustls::crypto::ring::default_provider()
         .install_default()
         .map_err(|_| "failed to install TLS crypto provider".to_owned())?;
+    match env::var("LAYERX_INTEROP_LISTENER") {
+        Err(env::VarError::NotPresent) => tls_config().map(Listener::Tls),
+        Ok(mode) if mode == "tls" => tls_config().map(Listener::Tls),
+        Ok(mode) if mode == "plain" => LISTENER_CERTIFICATE_VARIABLES
+            .iter()
+            .find(|variable| env::var_os(variable).is_some())
+            .map_or(Ok(Listener::Plain), |variable| {
+                Err(format!(
+                    "{variable} is set with LAYERX_INTEROP_LISTENER plain"
+                ))
+            }),
+        _ => Err("LAYERX_INTEROP_LISTENER must be tls or plain".to_owned()),
+    }
+}
+
+fn tls_config() -> Result<Arc<ServerConfig>, String> {
     let cert = CertificateDer::from(read_file("LAYERX_INTEROP_TLS_CERT_DER", 64 * 1024)?);
     let key = PrivateKeyDer::from(PrivatePkcs8KeyDer::from(read_file(
         "LAYERX_INTEROP_TLS_KEY_DER",
