@@ -1055,3 +1055,19 @@ symbol     = "check_internal"
 observed   = "timeout 10m tools/bringup/check-live.sh internal exited 1 (log .logs/verify.log): the router's served chain ends at ISRG Root X1, but the internal and internal Redis apps do not exist yet, so the public-ip reads, the payments and programs pin reads and the five readiness routes from the kernel machine all fail."
 assumption = "The deploy side runs the handoff steps (build, volumes, Redis secrets, both deploys with no public IPs, the five internal certificates) once tasks 1.5, 2.2 and 3.5 are live, then reruns the gate; the human TLS listener port 9449 is the coordinator's ruling pending the design block."
 severity   = "external"
+
+[observation.4.20.1]
+task       = "4.20"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_indexer"
+observed   = "timeout 15m tools/bringup/check-live.sh indexer exited 2 (log .logs/verify.log): CHECK_LIVE_INDEXER_ACCOUNT is unset, and the indexer app, the CometBFT location and the router's LAYERX_GATEWAY_INDEXER_URL do not exist yet."
+assumption = "The deploy side runs the handoff steps once the owner approves the archive CometBFT location and names the known account, then reruns the gate."
+severity   = "external"
+
+[observation.4.20.2]
+task       = "4.20"
+file       = "tools/bringup/check-live.test.sh"
+symbol     = "check_live_internal_passing"
+observed   = "bash tools/bringup/check-live.test.sh exited 1 with the five indexer cases passing: the two ca_issue /dev/shm cases, check_live_agent_public_no_daemon and the four internal cases failed while other copies of the harness ran at the same moment, whose layerx-event-source and agentd stand-in processes the /proc scans by executable name also see."
+assumption = "Run alone the harness passes these cases; the process scans stay as written."
+severity   = "unrelated"

@@ -2090,6 +2090,217 @@ print(len(ms), len(started), len(data))
 	finish "$failures"
 }
 
+# check_indexer: the indexer app of platform/hosted/indexer/fly.toml has no
+# public IP and runs exactly one machine, started, with its volume at /data;
+# inside it the layerx-indexer process answers /healthz over TLS at its
+# .internal name to the internal CA tools/bringup/ca.sh left on the volume;
+# its EVM URL is the archive node's public RPC name (the name rpc_unit reads
+# behind ARCHIVE_HOST), its CometBFT URL that name's /comet location and its
+# relay URL https://archive.paxeer.network, each pinned to a self-signed ISRG
+# Root X1 that verifies the chain the name serves (read at
+# CHECK_LIVE_INDEXER_CONNECT, host:port, default the name on 443); the
+# location answers a POSTed status and refuses a GET, and the indexer's start
+# block is the node's first retained block; the Paxeer backfill cursor sits at
+# the cutover the init kept and the live cursor at or past it; and through
+# the router px_getUnifiedHistory, lx_getHistory and px_getHistory answer
+# items for CHECK_LIVE_INDEXER_ACCOUNT, a 0x EVM address with history on both
+# sides. One line per check.
+check_indexer() {
+	local router_url=https://api-mainnet-beta.paxeer.network/rpc relay_url=https://archive.paxeer.network
+	local account="${CHECK_LIVE_INDEXER_ACCOUNT:-}" app answer n_machines n_started n_data unit w reply line side want url pin host
+	local subject status code earliest start cutover backfilled live listen method params layerx="" failures=0
+	local script
+	if ! [[ "$account" =~ ^0x[0-9a-fA-F]{40}$ ]]; then
+		echo "check-live: CHECK_LIVE_INDEXER_ACCOUNT must be a 0x EVM address with indexed history" >&2
+		exit 2
+	fi
+	if ! command -v flyctl >/dev/null 2>&1; then
+		echo "check-live: flyctl is required" >&2
+		exit 2
+	fi
+	if ! app="$(fly_app platform/hosted/indexer/fly.toml)"; then
+		echo "fail indexer toml=absent"
+		finish 1
+	fi
+	answer="$(timeout "$timeout" flyctl ips list --app "$app" --json 2>/dev/null | python3 -c 'import json, sys; print(len(json.load(sys.stdin) or []))' 2>/dev/null)" || answer=none
+	if [ "$answer" = 0 ]; then
+		echo "pass public-ips app=$app count=0"
+	else
+		echo "fail public-ips app=$app count=${answer:-none}"
+		failures=$((failures + 1))
+	fi
+	answer="$(timeout "$timeout" flyctl machines list --app "$app" --json 2>/dev/null | python3 -c '
+import json, sys
+ms = json.load(sys.stdin)
+started = [m for m in ms if m.get("state") == "started"]
+data = [x for m in started for x in (m.get("config") or {}).get("mounts") or [] if x.get("path") == "/data" and x.get("volume")]
+print(len(ms), len(started), len(data))
+' 2>/dev/null)" || answer=""
+	read -r n_machines n_started n_data <<<"${answer:-none none none}"
+	if [ "$n_machines" = 1 ] && [ "$n_started" = 1 ] && [ "$n_data" = 1 ]; then
+		echo "pass machines app=$app machines=1 started=1 volume=/data"
+	else
+		echo "fail machines app=$app machines=$n_machines started=$n_started volume-at-data=$n_data"
+		failures=$((failures + 1))
+	fi
+
+	read -r unit _ <<<"$(rpc_unit "$ARCHIVE_HOST" || true)"
+	if [[ "${unit:-}" =~ ^api[0-9]+$ ]]; then
+		echo "pass archive-name name=$unit.$rpc_domain"
+	else
+		echo "fail archive-name role=ARCHIVE_HOST name=none"
+		failures=$((failures + 1))
+		unit=""
+	fi
+
+	# shellcheck disable=SC2016 # the script expands on the machine
+	script='pid=
+for d in /proc/[0-9]*; do
+	case "$(readlink "$d/exe" 2>/dev/null)" in
+	*/layerx-indexer)
+		pid=$d
+		break
+		;;
+	esac
+done
+if [ -z "$pid" ]; then
+	echo "@@process none"
+	exit 0
+fi
+env_of() { tr "\000" "\n" <"$pid/environ" | sed -n "s/^$1=//p" | head -n 1; }
+for side in EVM COMET RELAY; do
+	echo "@@$side $(env_of "LAYERX_INDEXER_${side}_URL") $(base64 <"$(env_of "LAYERX_INDEXER_${side}_CA_DER")" 2>/dev/null | tr -d "\n")"
+done
+db=$(env_of LAYERX_INDEXER_DB)
+listen=$(env_of LAYERX_INDEXER_LISTEN)
+echo "@@start $(env_of LAYERX_INDEXER_START_BLOCK)"
+echo "@@listen $listen"
+status=0
+answer=$(curl -sS -m "$limit" --cacert "$tls/ca.pem" -w "\n%{http_code}" "https://$app.internal:${listen##*:}/healthz" 2>&1) || status=$?
+echo "@@health $status $(printf "%s" "$answer" | tail -n 1) $(printf "%s" "$answer" | head -n 1 | tr -d " " | cut -c1-120)"
+echo "@@cutover $(cat "$(dirname "$db")/cutover-height" 2>/dev/null)"
+echo "@@cursors $(sqlite3 -readonly -separator " " "$db" "SELECT (SELECT position FROM backfill_cursors WHERE chain = '\''paxeer'\''), (SELECT position FROM cursors WHERE chain = '\''paxeer'\'');" 2>/dev/null)"'
+	reply="$(printf '%s\n' "$script" | fly_ssh "$app" - "tls=$fly_tls_dir/indexer app=$app limit=$timeout sh -s")" || reply=""
+	if [ -z "$reply" ] || grep -q '^@@process none' <<<"$reply"; then
+		[ -n "$reply" ] && answer=none || answer=unreachable
+		echo "fail indexer app=$app process=$answer"
+		finish $((failures + 1))
+	fi
+
+	listen="$(sed -n 's/^@@listen //p' <<<"$reply" | head -n 1)"
+	read -r status code answer <<<"$(sed -n 's/^@@health //p' <<<"$reply" | head -n 1)"
+	if [[ "$listen" == "[::]:"* ]] && [ "$status" = 0 ] && [ "$code" = 200 ] && [[ "$answer" == *'"status":"ok"'* ]]; then
+		echo "pass listener url=https://$app.internal:${listen##*:}/healthz listen=$listen tls=internal-ca http=200"
+	else
+		echo "fail listener app=$app listen=${listen:-none} curl=${status:-none} http=${code:-none}"
+		failures=$((failures + 1))
+	fi
+
+	w="$(mktemp -d)"
+	# shellcheck disable=SC2064
+	trap "rm -rf '$w'" EXIT
+	for side in EVM COMET RELAY; do
+		case "$side" in
+		EVM) want="https://$unit.$rpc_domain" ;;
+		COMET) want="https://$unit.$rpc_domain/comet" ;;
+		RELAY) want="$relay_url" ;;
+		esac
+		read -r url pin <<<"$(sed -n "s/^@@$side //p" <<<"$reply" | head -n 1)"
+		host="${url#https://}"
+		host="${host%%/*}"
+		if [ -n "$host" ] && [ ! -e "$w/$host-1.pem" ]; then
+			timeout "$timeout" openssl s_client -connect "${CHECK_LIVE_INDEXER_CONNECT:-$host:443}" -servername "$host" -showcerts </dev/null 2>/dev/null |
+				awk -v out="$w/$host" '/-BEGIN CERTIFICATE-/ { n++; in_cert = 1 } in_cert { print >(out "-" n ".pem") } /-END CERTIFICATE-/ { in_cert = 0; close(out "-" n ".pem") }' || true
+			cat "$w/$host"-[2-9].pem >"$w/$host-untrusted.pem" 2>/dev/null || : >"$w/$host-untrusted.pem"
+		fi
+		subject=unreadable
+		status=1
+		if [ -n "$pin" ] && base64 -d <<<"$pin" 2>/dev/null | openssl x509 -inform DER -out "$w/pin-$side.pem" 2>/dev/null; then
+			subject="$(openssl x509 -in "$w/pin-$side.pem" -noout -subject -nameopt sep_multiline,utf8 | sed -n 's/^ *CN=//p')"
+			if [ "$subject" = "ISRG Root X1" ] &&
+				[ "$subject" = "$(openssl x509 -in "$w/pin-$side.pem" -noout -issuer -nameopt sep_multiline,utf8 | sed -n 's/^ *CN=//p')" ] &&
+				[ -s "$w/$host-1.pem" ] &&
+				openssl verify -CAfile "$w/pin-$side.pem" -untrusted "$w/$host-untrusted.pem" -verify_hostname "$host" "$w/$host-1.pem" >/dev/null 2>&1; then
+				status=0
+			fi
+		fi
+		if [ -n "$unit" ] && [ "$url" = "$want" ] && [ "$status" -eq 0 ]; then
+			echo "pass upstream-ca side=${side,,} url=$url root=X1 verifies=yes"
+		else
+			echo "fail upstream-ca side=${side,,} url=${url:-none} want=$want pin=${subject// /-} verifies=no"
+			failures=$((failures + 1))
+		fi
+	done
+
+	earliest=""
+	if [ -n "$unit" ]; then
+		code="$(curl -sS -m "$timeout" -o "$w/comet.json" -w '%{http_code}' -H 'content-type: application/json' \
+			--data '{"jsonrpc":"2.0","id":1,"method":"status","params":{}}' "https://$unit.$rpc_domain/comet" 2>/dev/null)" || code=none
+		earliest="$(python3 -c '
+import json, sys
+doc = json.load(open(sys.argv[1]))
+value = str(((doc.get("result") or doc).get("sync_info") or {}).get("earliest_block_height", ""))
+print(value if value.isdigit() else "")
+' "$w/comet.json" 2>/dev/null)" || earliest=""
+		status="$(curl -sS -m "$timeout" -o /dev/null -w '%{http_code}' "https://$unit.$rpc_domain/comet" 2>/dev/null)" || status=none
+		if [ "$code" = 200 ] && [ -n "$earliest" ] && [ "$status" = 403 ]; then
+			echo "pass comet-location url=https://$unit.$rpc_domain/comet post=200 get=403 earliest=$earliest"
+		else
+			echo "fail comet-location url=https://$unit.$rpc_domain/comet post=$code get=$status earliest=${earliest:-none}"
+			failures=$((failures + 1))
+		fi
+	fi
+	start="$(sed -n 's/^@@start //p' <<<"$reply" | head -n 1)"
+	if [ -n "$earliest" ] && [ "$start" = "$earliest" ]; then
+		echo "pass start-block block=$start earliest=$earliest"
+	else
+		echo "fail start-block block=${start:-none} earliest=${earliest:-none}"
+		failures=$((failures + 1))
+	fi
+
+	cutover="$(sed -n 's/^@@cutover //p' <<<"$reply" | head -n 1)"
+	read -r backfilled live <<<"$(sed -n 's/^@@cursors //p' <<<"$reply" | head -n 1)"
+	if [[ "$cutover" =~ ^[0-9]+$ ]] && [ "${backfilled:-}" = "$cutover" ] && [[ "${live:-}" =~ ^[0-9]+$ ]] && [ "$live" -ge "$cutover" ]; then
+		echo "pass backfill chain=paxeer cutover=$cutover backfill=$backfilled live=$live"
+	else
+		echo "fail backfill chain=paxeer cutover=${cutover:-none} backfill=${backfilled:-none} live=${live:-none}"
+		failures=$((failures + 1))
+	fi
+
+	for method in px_getUnifiedHistory lx_getHistory px_getHistory; do
+		params="[\"$account\"]"
+		[ "$method" != lx_getHistory ] || params="[\"$layerx\"]"
+		if [ "$method" = lx_getHistory ] && [ -z "$layerx" ]; then
+			echo "fail history method=$method account=none via=px_getUnifiedHistory"
+			failures=$((failures + 1))
+			continue
+		fi
+		code="$(curl -sS -m "$timeout" -o "$w/history.json" -w '%{http_code}' -H 'content-type: application/json' \
+			--data "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"$method\",\"params\":$params}" "$router_url" 2>/dev/null)" || code=none
+		read -r answer line <<<"$(python3 -c '
+import json, sys
+doc = json.load(open(sys.argv[1]))
+result = doc.get("result")
+if not isinstance(result, dict):
+    error = doc.get("error") or {}
+    print("error", ((error.get("data") or {}).get("code") or error.get("message") or "no-result").replace(" ", "-"))
+    sys.exit(0)
+sides = [a.get("account") for a in result.get("accounts") or [] if a.get("side") == "layerx"]
+print(len(result.get("items") or []), sides[0] if sides else "-")
+' "$w/history.json" 2>/dev/null)"
+		if [ "$code" = 200 ] && [[ "${answer:-}" =~ ^[0-9]+$ ]] && [ "$answer" -gt 0 ]; then
+			echo "pass history method=$method account=${params:2:-2} items=$answer"
+		else
+			echo "fail history method=$method account=${params:2:-2} http=$code answer=${answer:-none}${line:+ $line}"
+			failures=$((failures + 1))
+		fi
+		if [ "$method" = px_getUnifiedHistory ] && [[ "${answer:-}" =~ ^[0-9]+$ ]] && [ "${line:--}" != - ]; then
+			layerx="$line"
+		fi
+	done
+	finish "$failures"
+}
+
 mode="${1:-}"
 case "$mode" in
 -h | --help)
@@ -2109,6 +2320,7 @@ paxeer-boundary) ;;
 agent-public) ;;
 gas) ;;
 internal) ;;
+indexer) ;;
 *)
 	usage >&2
 	exit 2

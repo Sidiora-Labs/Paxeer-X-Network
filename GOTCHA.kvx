@@ -1421,3 +1421,9 @@ area    = "bringup"
 symptom = "A check-live subcommand exits with 'unbound variable' at the very end after all its lines printed."
 cause   = "An EXIT trap set inside a function with a single-quoted reference to a local variable runs after the function's locals are gone, and set -u trips on it."
 do      = "Expand the path into the trap when it is set (double quotes, shellcheck SC2064 disabled) as the other probes of the file do."
+
+[gotcha.234]
+area    = "bringup"
+symptom = "Probe cases that find a stand-in process by executable name under /proc pass alone and fail when several copies of check-live.test.sh run at once."
+cause   = "Each copy starts its own layerx-event-source or agentd stand-in, and every copy's /proc scan sees the other copies' processes with their environment."
+do      = "Run the harness alone before reading those cases, or give a new stand-in an executable name no other case uses; a flyctl machine run one-off also skips fly.toml [env], so pass the static env with --env from the toml."
