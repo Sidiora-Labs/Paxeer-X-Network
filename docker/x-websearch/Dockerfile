@@ -7,6 +7,18 @@ ENV CARGO_BUILD_JOBS=4 CARGO_TARGET_DIR=/src/.x-websearch-target
 COPY . .
 RUN cargo build --locked --manifest-path interop/Cargo.toml --release --package x-websearch --bin x-websearch
 
+FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171 AS fly
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends ca-certificates libssl3 socat \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system --gid 65532 x-websearch \
+    && useradd --system --uid 65532 --gid 65532 --home-dir /nonexistent --shell /usr/sbin/nologin x-websearch
+COPY --from=build /src/.x-websearch-target/release/x-websearch /usr/local/bin/x-websearch
+COPY docker/x-websearch/entrypoint.sh /usr/local/bin/x-websearch-fly-init
+EXPOSE 8480
+ENTRYPOINT ["/usr/local/bin/x-websearch-fly-init"]
+CMD ["--config", "/data/config.json"]
+
 FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends ca-certificates libssl3 \

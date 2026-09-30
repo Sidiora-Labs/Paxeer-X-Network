@@ -1037,7 +1037,7 @@ reqs       = ["1.2", "18.3"]
 
 [task.4.23]
 title      = "Run the four x-websearch attestors as private Fly apps and remove them from the validator hosts"
-status     = "pending"
+status     = "implemented"
 wave       = 4
 requires   = ["4.2", "0.6"]
 blocked_on = "the owner's sealed offline copy of the four registered attestor keys with their submitter and receiver keys, before the validator-host copies are removed; the owner approved the move itself, one slot at a time"
