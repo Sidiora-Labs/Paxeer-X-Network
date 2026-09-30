@@ -1319,3 +1319,9 @@ area    = "bringup"
 symptom = "A read-only comparison of a public RPC name's resolution against the host-map roles exits 1 before it compares anything."
 cause   = "The comparison read the scalar role list of the host map with array syntax, so the roles came back empty."
 do      = "Read the roles the way tools/bringup/check-live.sh reads them, read -r -a from the scalar role list, before comparing a name against them."
+
+[gotcha.217]
+area    = "chain"
+symptom = "A script that must list every asset of the custody precompile's asset map over JSON-RPC finds no view that enumerates it."
+cause   = "The layerxcustody precompile answers getAsset, assetByPointer and nativeAssetId only, and the module registers no query route; the map is keyed by id, pointer and denom."
+do      = "Get the pointer list from an authoritative source and look each one up with assetByPointer, PAX through nativeAssetId; never treat a hand-kept list as the complete map without a ruling."

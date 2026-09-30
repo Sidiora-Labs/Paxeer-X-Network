@@ -841,3 +841,27 @@ revision = "26b211c9ccba18c31c51a4bae828cf17e185902e"
 command = "BRINGUP_HOSTS_FILE=/root/lx-ops/bringup-2026-09-29/hosts.env timeout 10m tools/bringup/check-live.sh search-front"
 exit_code = 0
 log_path = ".logs/0.3-search-front-live.log"
+
+[observation.1.4.1]
+task       = "1.4"
+file       = "tools/bringup/kernel-genesis.sh"
+symbol     = "kernel_genesis"
+observed   = "cg spec start 1.4 refused with unmet requires 1.5 and 1.7, so the status was set to in_progress by hand; the kernel network id is not fixed by the spec or the tree: the node pod's ConfigMap carries the private testnet id 402, and the chain's custody params hold the network id and the sequencer authorizations the new sequencer key must match, which no precompile view exposes over the JSON-RPC relay."
+assumption = "The owner names the mainnet kernel network id before the script is written; nothing is guessed."
+severity   = "blocker"
+
+[observation.1.4.2]
+task       = "1.4"
+file       = "tools/bringup/kernel-genesis.sh"
+symbol     = "kernel_genesis"
+observed   = "The custody precompile at 0x...1013 exposes getAsset, assetByPointer and nativeAssetId but no enumeration, and the module registers no query route, so the asset map cannot be listed through the relay; only the SID pointer is fixed in the tree, USDL appears only in the retired Solidity path and USDC has two different addresses in the wallet app."
+assumption = "The owner either names the pointer of every mapped asset on chain 125 (SID, USDC, USDL and any other) for assetByPointer lookups with PAX from nativeAssetId, or rules an enumeration view into the precompile; nothing is guessed."
+severity   = "blocker"
+
+[observation.1.4.3]
+task       = "1.4"
+file       = "platform/hosted/node/bootstrap.sh"
+symbol     = "kernel_genesis"
+observed   = "do_1 puts the sequencer key under /data/layerx/node, while bootstrap.sh and supervisor.sh, which the init reuses, refuse a sequencer key inside the node data directory, and task 1.5 has not yet fixed the init's volume layout (data directory, key and treasury material paths) that the script must write into."
+assumption = "The key sits beside the data directory under the custody path once task 1.5 or the owner fixes the layout; the relaxation of the bootstrap check is not made."
+severity   = "blocker"
