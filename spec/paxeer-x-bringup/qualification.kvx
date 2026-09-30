@@ -365,3 +365,27 @@ exit_code  = 1
 log_path   = ".logs/verify.log"
 observed   = "Every site, wiki, README and SDK page passes; the check fails only on beta.paxeer.network, faucet.paxeer.network and status.paxeer.network in platform/docs/beta-environment.md and platform/docs/content/beta.md, which now carry the private-network banner but keep those names because tools/ci/beta-contract-check.sh requires both pages to repeat the endpoint values of platform/hosted/testnet/src/lib.rs, .github/workflows/platform.yml and platform/hosted/testnet/deployment.yaml, including the faucet claims origin and the status host of the reset calendar."
 assumption = "Removing the names breaks the beta contract check and changing its sources is outside task 0.7, so both checks stay as written; a ruling is needed on whether the retired testnet sources drop those names (with the contract check and its contradictions table updated) or the beta contract pages leave the docs-names scope, and FAUCET_URL is read as the whole identifier so the private-network LAYERX_FAUCET_URL of the disposable cluster stays documented."
+
+[observation.4.4.1]
+task       = "4.4"
+file       = "explorer/deploy/railway/README.md"
+symbol     = "railway variables, copy-blockscout-11-to-10.sh"
+observed   = "The permission system refused reading the explorer project's Railway variables as credential materialization, setting the backend's RPC, FIRST_BLOCK and TRACE_FIRST_BLOCK variables as a production deploy, and writing the production RPC values into the README as sensitive detail; the frontend variable and the history copy, which needs the Postgres connection strings, were therefore not attempted."
+assumption = "The owner runs the ordered commands in the private handoff for this task, then the probe with the three database variables exported; the archive's first retained block is 25534609."
+severity   = "blocker"
+
+[observation.4.4.2]
+task       = "4.4"
+file       = "explorer/backend/config/config_helper.exs"
+symbol     = "define_urls_vars(:eth_call)"
+observed   = "The task names ETH_CALL_URL but the backend reads ETHEREUM_JSONRPC_ETH_CALL_URL, the name the README table already lists; the handoff sets that name."
+assumption = "ETH_CALL_URL in the do line is shorthand for the backend's variable."
+severity   = "note"
+
+[observation.4.4.3]
+revision   = "9296a0d2c40024e02afe7a12f57177cb27183bc6 plus the lane's probe change committed with this record"
+command    = "timeout 20m tools/bringup/check-live.sh explorer"
+exit_code  = 1
+log_path   = ".logs/verify.log"
+observed   = "paxscan.io answers 200 and the backend's /api/health and /api/v2/stats answer 200, but envs.js still names a raw node address as NEXT_PUBLIC_NETWORK_RPC_URL, so no archive name, no indexed block below the pruned floor and, with the database variables unset, no history or missing-range check could pass."
+assumption = "The failures follow only from the refused remote steps of observation 4.4.1; no repair in the probe can clear them."
