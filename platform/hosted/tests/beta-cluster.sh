@@ -87,10 +87,10 @@
 #   LAYERX_BETA_GATEWAY_PORT            (defaults 19443, 19444, 19445)
 #   LAYERX_BETA_FAUCET_PORT
 #   LAYERX_BETA_HUMAN_WEB_PORT          443 (default) or empty. The browser origin of the human web application
-#                                       is https://app.paxeer.network and carries no port, so the
+#                                       is https://paxportwallet.com and carries no port, so the
 #                                       passkey ceremony configuration, the human service allowed origin and
 #                                       human/apps/web/e2e/software-authenticator.ts only accept it on 443, and
-#                                       the owner adds `127.0.0.1 app.paxeer.network` to /etc/hosts and
+#                                       the owner adds `127.0.0.1 paxportwallet.com` to /etc/hosts and
 #                                       trusts the beta internal CA. Set it empty on a host where
 #                                       human/apps/web/e2e/run-production-browser.sh serves that same origin from
 #                                       its own authbind listener, which leaves the forward and its readiness
@@ -232,7 +232,7 @@ CLUSTER_NAME=${LAYERX_BETA_CLUSTER_NAME:-layerx-beta}
 FAUCET_HOST=${LAYERX_BETA_FAUCET_HOST:-faucet.paxeer.network}
 DEVELOPER_HOST=${LAYERX_BETA_DEVELOPER_HOST:-dev.paxeer.network}
 RELAY_HOST=${LAYERX_BETA_RELAY_HOST:-archive.paxeer.network}
-HUMAN_WEB_HOST=app.paxeer.network
+HUMAN_WEB_HOST=paxportwallet.com
 TESTNET_HOST=beta.paxeer.network
 GATEWAY_HOST=api-mainnet-beta.paxeer.network
 KIND_CNI=${LAYERX_BETA_KIND_CNI:-calico}
@@ -646,9 +646,9 @@ ca_generate() {
     issue_cert gateway layerx-gateway serverAuth \
         "DNS:layerx-gateway.$svc,DNS:layerx-gateway.$TESTNET_NAMESPACE.svc,DNS:layerx-gateway,DNS:$GATEWAY_HOST,DNS:localhost,IP:127.0.0.1"
     issue_cert human layerx-human serverAuth \
-        "DNS:layerx-human.$svc,DNS:layerx-human.$TESTNET_NAMESPACE.svc,DNS:layerx-human,DNS:app.paxeer.network,DNS:localhost,IP:127.0.0.1"
+        "DNS:layerx-human.$svc,DNS:layerx-human.$TESTNET_NAMESPACE.svc,DNS:layerx-human,DNS:paxportwallet.com,DNS:localhost,IP:127.0.0.1"
     issue_cert human-web layerx-human-web serverAuth \
-        "DNS:layerx-human-web.$svc,DNS:layerx-human-web.$TESTNET_NAMESPACE.svc,DNS:layerx-human-web,DNS:app.paxeer.network,DNS:localhost,IP:127.0.0.1"
+        "DNS:layerx-human-web.$svc,DNS:layerx-human-web.$TESTNET_NAMESPACE.svc,DNS:layerx-human-web,DNS:paxportwallet.com,DNS:localhost,IP:127.0.0.1"
     issue_cert explorer-index layerx-explorer-index serverAuth \
         "DNS:layerx-explorer-index.$svc,DNS:layerx-explorer-index.$TESTNET_NAMESPACE.svc,DNS:layerx-explorer-index,DNS:localhost,IP:127.0.0.1"
     issue_cert faucet layerx-faucet serverAuth \

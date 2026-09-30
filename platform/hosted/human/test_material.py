@@ -97,11 +97,11 @@ class MaterialTests(unittest.TestCase):
     def test_passkey_relying_party_follows_the_deployed_web_origin(self):
         self.assertEqual(material.passkey_relying_party(''),
                          ('paxportwallet.com', 'https://paxportwallet.com'))
-        self.assertEqual(material.passkey_relying_party('https://app.paxeer.network'),
-                         ('app.paxeer.network', 'https://app.paxeer.network'))
-        for refused in ('http://app.paxeer.network', 'https://localhost:19457',
-                        'https://127.0.0.1', 'https://app.paxeer.network/',
-                        'https://Human.Testnet.Layerx.Network', 'https://app.paxeer.network?a=1'):
+        self.assertEqual(material.passkey_relying_party('https://paxportwallet.com'),
+                         ('paxportwallet.com', 'https://paxportwallet.com'))
+        for refused in ('http://paxportwallet.com', 'https://localhost:19457',
+                        'https://127.0.0.1', 'https://paxportwallet.com/',
+                        'https://Human.Testnet.Layerx.Network', 'https://paxportwallet.com?a=1'):
             with self.assertRaises(ValueError):
                 material.passkey_relying_party(refused)
         with tempfile.TemporaryDirectory() as directory:
@@ -118,14 +118,14 @@ class MaterialTests(unittest.TestCase):
     def test_bring_up_publishes_the_web_origin_the_ceremony_configuration_uses(self):
         cluster = (ROOT / 'platform/hosted/tests/beta-cluster.sh').read_text()
         material_source = (ROOT / 'platform/hosted/human/material.sh').read_text()
-        self.assertIn('HUMAN_WEB_HOST=app.paxeer.network\n', cluster)
+        self.assertIn('HUMAN_WEB_HOST=paxportwallet.com\n', cluster)
         self.assertIn('HUMAN_WEB_URL="https://$HUMAN_WEB_HOST"\n', cluster)
         self.assertIn('"$LAYERX_BETA_HUMAN_POLICY_FILE" "${HUMAN_WEB_URL:-}"\n', material_source)
         node = yaml.safe_load_all((ROOT / 'platform/hosted/node/deployment.yaml').read_text())
         human = next(c for d in node if d['kind'] == 'StatefulSet'
                      for c in d['spec']['template']['spec']['containers'] if c['name'] == 'human')
         origin = next(e['value'] for e in human['env'] if e['name'] == 'LAYERX_HUMAN_WEB_ORIGIN')
-        self.assertEqual(origin, 'https://app.paxeer.network')
+        self.assertEqual(origin, 'https://paxportwallet.com')
         web = next(c for d in yaml.safe_load_all((ROOT / 'platform/hosted/human/web-deployment.yaml').read_text())
                    if d['kind'] == 'Deployment'
                    for c in d['spec']['template']['spec']['containers'] if c['name'] == 'web')

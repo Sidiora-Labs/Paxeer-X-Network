@@ -14,7 +14,7 @@
 feature   = "paxeer-x-bringup"
 title     = "Bring every LayerX system of Paxeer X Network live on Fly and on the chain hosts"
 kind      = "product-feature-specification"
-version        = "1.5.3"
+version        = "1.5.4"
 status    = "in_progress"
 language  = "Rust (platform/, human/, agent/, interop/ crates), C (cmd/layerxd, src/), Go (hpx/registry, tools/flyci, bridge/deploy), POSIX shell for the probe, the Fly inits and the host scripts, Fly toml for the app definitions, Python where the hosted pod definitions already use it"
 repo_root = "platform/hosted/ (the pod definitions, entrypoints and env contracts every Fly app reuses, with each new fly.toml beside its definition); docker/ (one directory per service image, docker/kernel for the kernel app); human/wallet/deploy/ (the Fly toml files of the wallet fleet, including the router and the kernel app); tools/bringup/ (the host-map contract, the internal CA and the live probe); cmd/layerxd and src/ (the kernel); human/crates/ (the human graph); agent/crates/ (agentd and MCP); interop/ (interop gateway, mirrors, x-websearch, bridge relayer, gas station); explorer/ (the explorer fork); docs/site and docs/wiki (the public names); spec/paxeer-x-bringup/ (this feature and its qualification log)"
@@ -1076,12 +1076,12 @@ do_3 = "Add the edge subcommand: every registered name resolves to the edge host
 
 [task.0.10]
 title = "Retire app.paxeer.network: the human web origin is https://paxportwallet.com everywhere"
-status = "pending"
+status = "done"
 wave = 0
 requires = ["4.26"]
 verify_cmd = "timeout 5m sh -c '! git grep -nE \"app\\.paxeer\\.network\" -- . \":!spec/\" \":!CHANGELOG.md\"'"
 symbols = ["human_web_origin"]
-touches = ["platform/hosted/human/web-deployment.yaml", "platform/hosted/node/deployment.yaml", "platform/hosted/tests/beta-cluster.sh", "platform/hosted/human/test_material.py", "human/apps/web/e2e/harness.test.ts"]
+touches = ["platform/hosted/human/web-deployment.yaml", "platform/hosted/node/deployment.yaml", "platform/hosted/tests/beta-cluster.sh", "platform/hosted/human/test_material.py", "human/apps/web/e2e/harness.test.ts", ".github/workflows/human.yml"]
 tests = ["platform/hosted/human/test_material.py"]
 reqs = ["3.4"]
 do_1 = "The owner ruled that paxportwallet.com is the wallet app's frontend and task 4.26 made it the derivation origin: set the human web origin to https://paxportwallet.com in the human web deployment, the node deployment, the beta cluster script, the material test and the web end-to-end harness, so the passkey relying party, the CORS allow list and the signing origin agree, and leave the changelog's history as written; the gate proves the retired name is gone from the tree outside the spec and the changelog."
