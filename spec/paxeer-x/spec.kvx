@@ -22773,7 +22773,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.23.1]
 title = "Navigate the complete server-paginated unified account history"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -22782,7 +22782,7 @@ do_1 = "Preserve next_page in the controller/view response and extend the fronte
 do_2 = "Replace ActivityList local-only pagination with server continuation controls, retaining accessible loading/refusal states."
 do_3 = "Implement tools/explorer/tests/paxeer-x-data-boundary.py --case unified-pagination using the real backend database/API and browser page with an actual multi-page account, including reload and concurrent insertion."
 do_4 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["explorer/backend/apps/block_scout_web/lib/block_scout_web/controllers/api/v2/paxeer_x/unified_account_controller.ex", "explorer/backend/apps/block_scout_web/lib/block_scout_web/views/api/v2/paxeer_x/unified_account_view.ex", "explorer/frontend/lib/api/services/general/paxeerX.ts", "explorer/frontend/types/api/paxeerX.ts", "explorer/frontend/ui/pages/PaxeerXAccount.tsx", "explorer/frontend/ui/paxeerX/account/ActivityList.tsx", "tools/explorer/tests/paxeer-x-data-boundary.py"]
+touches = ["explorer/backend/apps/block_scout_web/lib/block_scout_web/controllers/api/v2/paxeer_x/unified_account_controller.ex", "explorer/backend/apps/block_scout_web/lib/block_scout_web/views/api/v2/paxeer_x/unified_account_view.ex", "explorer/frontend/lib/api/services/general/paxeerX.ts", "explorer/frontend/types/api/paxeerX.ts", "explorer/frontend/ui/pages/PaxeerXAccount.tsx", "explorer/frontend/ui/paxeerX/account/ActivityList.tsx", "tools/explorer/tests/paxeer-x-data-boundary.py", "explorer/backend/apps/explorer/lib/explorer/chain/paxeer_x/unified_account.ex", "explorer/backend/apps/block_scout_web/lib/block_scout_web/schemas/api/v2/paxeer_x/unified_account.ex", "explorer/backend/apps/block_scout_web/lib/block_scout_web/schemas/api/v2/paxeer_x/unified_account/activity_item.ex", "explorer/frontend/ui/paxeerX/account/placeholderData.ts", "explorer/backend/apps/block_scout_web/test/block_scout_web/controllers/api/v2/paxeer_x/unified_account_controller_test.exs", "explorer/frontend/mocks/paxeerX/unifiedAccount.ts"]
 verify_cmd = "timeout 15m python3 tools/explorer/tests/paxeer-x-data-boundary.py --case unified-pagination"
 gate_kind = "planned"
 max_builds = 1
@@ -31370,7 +31370,7 @@ verify_cmd = "timeout 20m python3 tests/daemon/paxeer_x_runtime_fixture_test.py"
 completion_policy = "Only genuine reusable daemon lifecycle and restart evidence is qualified; downstream module behavior and complete Human readiness remain separate."
 
 [task.4.1.1]
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -31433,7 +31433,7 @@ do_4 = "Verify each 200 document by reusing the public layerx-platform-authority
 do_5 = "Expose a per-receipt API only (one canonical receipt -> one verified facts value or one typed refusal) so a batch of several assets or a maintained batch is verified receipt by receipt; provide no batch-level helper that reuses one AuthorizedBatch."
 do_6 = "Add the path dependency layerx-platform-authority = { path = \"../../../platform/hosted/authority\" } to human/crates/layerx-explorer-index/Cargo.toml and the human/Cargo.lock update from one unlocked cargo resolution, after which every build and the gate use --locked; declare pub mod receipt_authority in src/lib.rs and change nothing else in lib.rs."
 do_7 = "Create the focused receipt_authority_reader integration test using actual source-bound kernel sequencer, independent replica and receipt-authority TLS processes against a real isolated chain with production anchor configuration. Consume the shared real daemon fixture or its canonical production producers; no recorded RPC response server. Submit actual signed operations in two assets and drive a maintained batch. Verify each receipt with its own asset and unchanged canonical proof verifier. Refuse wrong replica identity, excluded history signer, mutated real proof/digest/batch, missing or wrong bearer and stopped replica without returning facts. Fail rather than skip when a real prerequisite is missing."
-do_8 = "Build the explorer integration test target and actual authority binary once in the explicit build phase, then run the source-bound prebuilt test via the declared Python gate. Reuse source-compatible native artifacts and real isolated fixture; no cargo or native compilation during verification. Cover all owned reader acceptance including real refusal/outage paths."
+do_8 = "Build the explorer integration test target and actual authority binary once in the explicit build phase. When supplied native artifacts are not source-compatible, include the existing canonical foundation artifact producer at this same clean candidate in that one build recipe. Run the source-bound prebuilt test via the declared Python gate without compiling during verification. Cover all owned reader acceptance including real refusal and outage paths."
 never_1 = "Never call /v1/agent/authorized-batch, /v1/authorized-batches/by-activity, /internal/v1/activities or any tenant- or principal-scoped route, and never accept the agent-boundary registry-plane relay of /v1/batches/*/receipt-authority as the independent source."
 never_2 = "Never learn the replica id or sequencer key from the response, and never use one static key for every batch across a rotation."
 never_3 = "Never build one AuthorizedBatch for a whole batch, relax the asset or root equality in verify_outcome, or add a weaker parallel proof implementation inside the explorer crate."
