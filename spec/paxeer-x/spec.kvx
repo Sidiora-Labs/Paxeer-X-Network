@@ -21859,7 +21859,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.2]
 title = "Bound Supabase JWKS cache freshness and signing-key removal"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]

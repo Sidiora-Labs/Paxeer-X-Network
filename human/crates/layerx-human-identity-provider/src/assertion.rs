@@ -14,7 +14,7 @@ const MAX_TOKEN_BYTES: usize = 16 * 1024;
 const MAX_KEY_SET_BYTES: u64 = 256 * 1024;
 const MAX_KEYS: usize = 64;
 const MAX_CLOCK_SKEW_SECONDS: u64 = 300;
-const MAX_REFRESH_INTERVAL_SECONDS: u64 = 86_400;
+const MAX_KEY_SET_LIFETIME_SECONDS: u64 = 3_600;
 const DEFAULT_CLOCK_SKEW_SECONDS: u64 = 60;
 const DEFAULT_REFRESH_INTERVAL_SECONDS: u64 = 300;
 pub(crate) const MAX_ISSUER_BYTES: usize = 1024;
@@ -33,6 +33,8 @@ pub struct AssertionConfig {
     pub issuer: String,
     pub audience: String,
     pub clock_skew_seconds: u64,
+    /// The freshness lifetime of a successfully fetched key set and the minimum
+    /// spacing between key set fetch attempts, at most one hour.
     pub refresh_interval_seconds: u64,
 }
 
@@ -93,7 +95,7 @@ impl AssertionConfig {
         validate_url(&self.jwks_url)?;
         if self.clock_skew_seconds > MAX_CLOCK_SKEW_SECONDS
             || self.refresh_interval_seconds == 0
-            || self.refresh_interval_seconds > MAX_REFRESH_INTERVAL_SECONDS
+            || self.refresh_interval_seconds > MAX_KEY_SET_LIFETIME_SECONDS
         {
             return Err(invalid("invalid assertion time bounds"));
         }
@@ -222,10 +224,21 @@ impl VerifiedAssertion {
 #[derive(Default)]
 struct KeyCache {
     keys: HashMap<String, (Algorithm, DecodingKey)>,
+    fetched: Option<Instant>,
     attempted: Option<Instant>,
 }
 
 impl KeyCache {
+    fn expire(&mut self, lifetime: Duration) {
+        if self
+            .fetched
+            .is_some_and(|fetched| fetched.elapsed() >= lifetime)
+        {
+            self.keys.clear();
+            self.fetched = None;
+        }
+    }
+
     fn find(&self, key_id: &str, algorithm: Algorithm) -> Option<DecodingKey> {
         self.keys
             .get(key_id)
@@ -235,6 +248,11 @@ impl KeyCache {
 }
 
 /// Verifies RS256 and ES256 bearer tokens against a JWKS cached by key id.
+///
+/// A fetched key set is used only for the refresh interval after the fetch that
+/// produced it; an expired set is dropped before any token is accepted, and fetches,
+/// whether for an unknown key id or an expired set, start at most once per interval
+/// and one at a time, so a failing key set endpoint refuses rather than extends keys.
 pub struct AssertionVerifier {
     config: AssertionConfig,
     agent: ureq::Agent,
@@ -322,18 +340,25 @@ impl AssertionVerifier {
             .cache
             .lock()
             .map_err(|_| io::Error::other("assertion key cache poisoned"))?;
+        let interval = Duration::from_secs(self.config.refresh_interval_seconds);
+        cache.expire(interval);
         if let Some(key) = cache.find(key_id, algorithm) {
             return Ok(key);
         }
-        let interval = Duration::from_secs(self.config.refresh_interval_seconds);
         if cache
             .attempted
             .is_some_and(|attempted| attempted.elapsed() < interval)
         {
-            return Err(invalid("unknown assertion key"));
+            return Err(if cache.fetched.is_some() {
+                invalid("unknown assertion key")
+            } else {
+                io::Error::other("assertion key set unavailable")
+            });
         }
-        cache.attempted = Some(Instant::now());
+        let started = Instant::now();
+        cache.attempted = Some(started);
         cache.keys = self.fetch()?;
+        cache.fetched = Some(started);
         cache
             .find(key_id, algorithm)
             .ok_or_else(|| invalid("unknown assertion key"))

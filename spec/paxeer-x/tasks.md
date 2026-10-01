@@ -294,7 +294,7 @@
     - Add the new bounded harness tools/qualification/paxeer-x/identity-assertion-binding.py to exercise this task through the named production interfaces, including the stated refusal and recovery cases, with explicit prerequisite checks and nonzero exit on any unmet acceptance. Use supplied prebuilt executables and isolated retained state; do not hide a rebuild or invoke a release-wide suite.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 137_
-  - [-] 11.2 Bound Supabase JWKS cache freshness and signing-key removal
+  - [x] 11.2 Bound Supabase JWKS cache freshness and signing-key removal
     - Separate successful JWKS fetch age from refresh-attempt throttling in AssertionVerifier.
     - Define an explicit maximum fresh-cache lifetime and failure/refusal behavior; preserve complete configuration validation and bounded transport.
     - Extend the assertion test target with known-kid removal/replacement, refresh outage and simultaneous-request cases.
