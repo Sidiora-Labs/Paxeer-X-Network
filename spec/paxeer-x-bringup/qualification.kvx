@@ -1756,3 +1756,27 @@ symbol     = "check_human"
 observed   = "The passkey registration options need an account: account.create requires an email and display name, and the spec names no probe identity, so the rp-id check reads CHECK_LIVE_HUMAN_PROBE_EMAIL and fails with email=unset without it."
 assumption = "The owner names the probe mailbox; the probe derives its idempotency key from it so every run converges on one account."
 severity   = "blocker"
+
+[observation.3.5.5]
+task       = "3.5"
+file       = "docker/human-service/entrypoint.sh, human/crates/layerx-human-service/src/server/production_components.rs"
+symbol     = "copy_material"
+observed   = "entrypoint.sh:20-21 makes the components role copy kms-client.der and kms-client-key.der with test -s before exec, while production_components.rs:286-290 reads no KMS group when LAYERX_HUMAN_ATTESTOR_NODES is set; no generator in the tree issues a human KMS client certificate, so init.sh waits the components on /data/tls/human-kms-client/cert.der and key.der."
+assumption = "The entrypoint drops the KMS copies for attestor custody, or a CA row issues human-kms-client; neither file is in this task's set, and the movement role's kms-executor pair (entrypoint.sh:72) waits the same way on /data/tls/human-kms-executor."
+severity   = "blocker"
+
+[observation.3.5.6]
+task       = "3.5"
+file       = "tools/bringup/ca.sh, human/wallet/deploy/attestor-1.toml"
+symbol     = "ca_services"
+observed   = "The five attestor apps paxeer-attestor-1 to 5 (attestor-1..5.toml, node ids 1 to 5, API on 8443 as gateway.toml ATTESTOR_ENDPOINTS names) are the components' attestor table with signers 1,2,3,4,5 at protocol 3; the loader parses each node as a socket address (production_components.rs:6045-6048), so the init resolves each .internal name; ca.sh lists no attestor client row, so the components wait on /data/tls/human-attestor-client/ca.der, cert.der and key.der."
+assumption = "The deploy side adds a human-attestor-client row under the attestor fleet's CA and issues it on the kernel volume; the init then projects it."
+severity   = "blocker"
+
+[observation.3.5.7]
+task       = "3.5"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_human"
+observed   = "13b25d9bf plus this task's change | BRINGUP_HOSTS_FILE=<private hosts file> timeout 10m tools/bringup/check-live.sh human | exit 1 | .logs/3.5-human-live-2.log: api-hull.paxeer.network answers with a certificate that does not carry the name (curl exit 60) on live, preflight and plan, readyz http=none, rp-id email=unset; the first run without the hosts file exited 2 (.logs/3.5-human-live.log)."
+assumption = "The kernel app is redeployed with this init, the edge registers api-hull.paxeer.network, the policy, attestor client, KMS client, trust history and fee bound inputs are placed, and the owner names the probe mailbox; the gate reruns then."
+severity   = "blocker"

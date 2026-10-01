@@ -1206,6 +1206,7 @@ sleep 300 &
 kernel_service_pid=$!
 echo "$kernel_init_pid" >"$kinit/pid"
 echo "$me running $kernel_service_pid" >"$kinit/human"
+echo "$me running $kernel_service_pid" >"$kinit/human-tls"
 echo "4020 waiting genesis" >"$kinit/layerxd"
 printf '[{"state":"started","config":{"mounts":[{"volume":"vol_kernel","path":"/data"}]}}]' \
 	>"$CHECK_LIVE_TEST_FLY/$kernel/machines.json"
@@ -1213,14 +1214,17 @@ CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_kernel_app_passing "$wor
 	"pass machines app=$kernel machines=1 started=1 volume=/data" \
 	"pass init app=$kernel uid=0 entrypoint=kernel-init" \
 	"pass service human uid=$me state=running" \
+	"pass service human-tls uid=$me state=running" \
 	"pass service layerxd uid=4020 state=waiting-genesis" \
 	"check-live: all checks passed"
 echo "4020 running $kernel_service_pid" >"$kinit/human"
 echo "4020 waiting /data/layerx/keys/publication/binding-policy.json" >"$kinit/treasury-signer"
+echo "4020 waiting /data/tls/human-attestor-client/ca.der" >"$kinit/human-components"
 CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_kernel_app_failing "$work/hosts-good.env" 1 kernel-app -- \
 	"fail service human uid=$me want=4020 state=running" \
+	"fail service human-components uid=4020 state=waiting on=/data/tls/human-attestor-client/ca.der" \
 	"fail service treasury-signer uid=4020 state=waiting on=/data/layerx/keys/publication/binding-policy.json" \
-	"check-live: 2 check(s) failed"
+	"check-live: 3 check(s) failed"
 printf '[{"state":"started","config":{"mounts":[]}},{"state":"stopped","config":{}}]' \
 	>"$CHECK_LIVE_TEST_FLY/$kernel/machines.json"
 CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_kernel_app_volumeless "$work/hosts-good.env" 1 kernel-app -- \
