@@ -21225,7 +21225,7 @@ ac_3 = "Bounded evidence validation verifies trusted completed jobs, actual dura
 
 [task.0.1]
 title = "Identify the integrated product candidate and deployed subsystem inventory"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []

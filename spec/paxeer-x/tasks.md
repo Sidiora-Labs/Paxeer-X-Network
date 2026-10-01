@@ -4,7 +4,7 @@
 
 ## Tasks
 
-  - [ ] 0.1 Identify the integrated product candidate and deployed subsystem inventory
+  - [x] 0.1 Identify the integrated product candidate and deployed subsystem inventory
     - Produce a restricted candidate manifest binding current source, branch-only candidate changes, images, supported ABIs, deployment configuration, authority identities and data versions; integrate only required source changes with their exact dependencies.
     - Read actual configured Fly applications, machines, releases and images and the existing Docker-hosted wallet/explorer endpoints before deciding deployment actions; record preserves, required changes and unavailable evidence without treating source as runtime proof.
     - Record every service catalogue entry, route, operational dependency, provider/foreign-chain configuration and required funded account by secure reference. Keep existing Paxeer node/validator operation and api1..api16 records as the foundation.
