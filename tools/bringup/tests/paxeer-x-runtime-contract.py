@@ -592,9 +592,11 @@ PY_CHECK
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--case', required=True, choices=['role-directories', 'role-directory-prerequisite'])
+    parser.add_argument('--case', required=True, choices=['role-directories', 'role-directory-prerequisite', 'fixture-foundation'])
     arguments = parser.parse_args()
     os.umask(0o077)
+    if arguments.case == 'fixture-foundation':
+        os.execv(sys.executable, [sys.executable, str(ROOT / 'tools/bringup/tests/paxeer-x-fixture-foundation.py')])
     if arguments.case == 'role-directories':
         suite = unittest.defaultTestLoader.loadTestsFromTestCase(RoleDirectories)
     else:
