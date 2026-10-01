@@ -43,6 +43,27 @@ image_build_args() {
     esac
 }
 
+paxd_build_plan() {
+    local node_ref node_recipe paxd_ref paxd_recipe
+    read -r node_ref node_recipe < <(image_source paxd-node)
+    read -r paxd_ref paxd_recipe < <(image_source paxd)
+    python3 - "$node_recipe" "$paxd_recipe" "${REVISION:?source revision required}" <<'PYTHON'
+import json
+import re
+import sys
+node, paxd, revision = sys.argv[1:]
+if not re.fullmatch(r"[0-9a-f]{40}", revision):
+    raise ValueError("immutable source revision required")
+print(json.dumps({"target": {
+    "paxd-node": {"context": ".", "dockerfile": node,
+                  "args": {"PAX_CHAIN_REF": revision}},
+    "paxd": {"context": ".", "dockerfile": paxd,
+             "contexts": {"paxd-base": "target:paxd-node"},
+             "args": {"PAXD_IMAGE": "paxd-base"}}
+}}))
+PYTHON
+}
+
 registry_manifest_digest() {
     jq -er '
         def image_manifest:
