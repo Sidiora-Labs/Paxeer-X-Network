@@ -82,11 +82,13 @@ if (process.argv.includes('--build-entry')) {
         await clickId('onboarding-import-with-srp-button');
         const phrase = extensionPage.getByTestId('srp-input-import__srp-note');
         await phrase.waitFor({ state: 'visible', timeout: 30000 });
-        await phrase.evaluate((element, value) => {
-            const clipboardData = new DataTransfer();
-            clipboardData.setData('text', value);
-            element.dispatchEvent(new ClipboardEvent('paste', { clipboardData, bubbles: true }));
-        }, fresh.mnemonic.phrase);
+        const words = fresh.mnemonic.phrase.split(' ');
+        for (let index = 0; index < words.length; index++) {
+            const field = index === 0 ? phrase : extensionPage.getByTestId(`import-srp__srp-word-${index}`);
+            await field.click({ timeout: 20000 });
+            await extensionPage.keyboard.insertText(words[index]);
+            if (index + 1 < words.length) await extensionPage.keyboard.press('Space');
+        }
         await clickId('import-srp-confirm');
         await extensionPage.getByTestId('create-password-new-input').fill(password);
         await extensionPage.getByTestId('create-password-confirm-input').fill(password);
