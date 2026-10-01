@@ -155,6 +155,33 @@ impl From<ReleaseError> for RelayerError {
     }
 }
 
+impl RelayerError {
+    /// Whether the failure belongs to one item and its destination (its RPC,
+    /// receipt, signer or transaction) rather than to the shared journal or
+    /// configuration, which stay fatal for the whole pass.
+    #[must_use]
+    pub const fn is_item_scoped(&self) -> bool {
+        matches!(
+            self,
+            Self::Rpc(_)
+                | Self::Abi(_)
+                | Self::Key(_)
+                | Self::NotAttestor
+                | Self::GasLimit { .. }
+                | Self::Release(_)
+        )
+    }
+}
+
+/// An outbound item the last pass could not advance: its journal key, its
+/// destination chain and the destination-specific failure.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ItemFailure {
+    pub item: String,
+    pub chain_id: u64,
+    pub error: RelayerError,
+}
+
 /// Fee and gas bounds for transactions on one destination chain.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct GasPolicy {
@@ -383,6 +410,7 @@ pub struct Relayer {
     max_submissions: u32,
     solana: Option<SolanaLink>,
     release: Option<SolanaRelease>,
+    failures: Vec<ItemFailure>,
 }
 
 fn malformed() -> RelayerError {
@@ -526,12 +554,20 @@ impl Relayer {
             max_submissions,
             solana,
             release,
+            failures: Vec::new(),
         })
     }
 
     #[must_use]
     pub const fn journal(&self) -> &Journal {
         &self.journal
+    }
+
+    /// The outbound items the last outbound pass could not advance, each
+    /// with its destination and failure.
+    #[must_use]
+    pub fn failures(&self) -> &[ItemFailure] {
+        &self.failures
     }
 
     /// One pass of every loop: inbound for each chain, inbound from Solana
@@ -654,29 +690,57 @@ impl Relayer {
     /// Solana releases are configured, burns to Solana through the custody
     /// program's release.
     ///
+    /// Each item is attempted at most once per pass. A destination-specific
+    /// failure (RPC, receipt, signer or transaction) is recorded in
+    /// [`Self::failures`] with the item and its destination; that
+    /// destination's later items wait for the next pass so its submitter's
+    /// nonce order is kept, while every other destination still advances.
+    ///
     /// # Errors
     ///
-    /// Returns the first RPC, decoding, signing or journal failure; the pass
-    /// is retried from the journal on the next call.
+    /// Returns a failure of the shared Paxeer scan, the journal or the
+    /// configuration; the pass is retried from the journal on the next call.
     pub fn outbound_step(&mut self) -> Result<StepReport, RelayerError> {
+        self.failures.clear();
         let mut report = StepReport {
             observed: self.scan_outbound()?,
             ..StepReport::default()
         };
+        let releases = self.release.is_some();
         let keys = self.open_items(|observation| {
-            matches!(observation, Observation::Outbound { chain_id, .. } if *chain_id != SOLANA_CHAIN_ID)
+            matches!(observation, Observation::Outbound { chain_id, .. } if releases || *chain_id != SOLANA_CHAIN_ID)
         });
+        let mut blocked = BTreeSet::new();
         for key in keys {
-            let progress = self.advance(&key)?;
-            report.count(&progress);
-        }
-        if self.release.is_some() {
-            let keys = self.open_items(|observation| {
-                matches!(observation, Observation::Outbound { chain_id, .. } if *chain_id == SOLANA_CHAIN_ID)
-            });
-            for key in keys {
-                let progress = self.release(&key)?;
-                report.count(&progress);
+            let Some(Observation::Outbound { chain_id, .. }) = self
+                .journal
+                .state()
+                .items
+                .get(&key)
+                .map(|item| item.observation)
+            else {
+                continue;
+            };
+            if blocked.contains(&chain_id) {
+                report.count(&Progress::Waiting);
+                continue;
+            }
+            let result = if chain_id == SOLANA_CHAIN_ID {
+                self.release(&key)
+            } else {
+                self.advance(&key)
+            };
+            match result {
+                Ok(progress) => report.count(&progress),
+                Err(error) if error.is_item_scoped() => {
+                    blocked.insert(chain_id);
+                    self.failures.push(ItemFailure {
+                        item: key,
+                        chain_id,
+                        error,
+                    });
+                }
+                Err(error) => return Err(error),
             }
         }
         Ok(report)
