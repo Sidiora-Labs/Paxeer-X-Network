@@ -71,7 +71,7 @@ def worker(directory, serializer=False):
         with tests_log.open('a') as log:
             log.write(result.stdout + result.stderr)
         require(result.returncode == 0 and '1 passed; 0 failed; 0 ignored' in result.stdout, 'actual Rust contract failed: ' + test)
-        matches = re.findall(r'^PAXEER_X_(?:LNI|AUTHORITY)_CASES=(\d+)$', result.stdout, re.M)
+        matches = re.findall(r'\bPAXEER_X_(?:LNI|AUTHORITY)_CASES=(\d+)$', result.stdout, re.M)
         require(len(matches) == 1 and int(matches[0]) > 0, 'actual case accounting')
         count += int(matches[0])
         print('PAXEER_X_PROGRESS cases=' + str(count), flush=True)
