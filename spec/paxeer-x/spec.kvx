@@ -31500,3 +31500,39 @@ time_limit_minutes = 30
 stop_condition = "Stop after the focused dispatcher gate or at the time limit. Preserve any unrelated failure without widening scope."
 completion_policy = "Historical replay fixture qualification only; no compatibility golden, arbitration or production certification."
 evidence_policy = "Keep source-bound build and gate records private; publish only technical changes."
+
+[req.189.1]
+title = "Authenticated durable delivery of bridge cosign shares"
+ac_1 = "Three real independent transport processes exchange actual signatures through production publish/collect/assemble paths. Two shares remain below a three-signature threshold; three distinct valid shares satisfy it."
+ac_2 = "Mutual TLS1.3, hostname verification and unique pinned SPKI-to-attestor mappings authenticate both endpoints. Foreign CA, unpinned client, incorrect server pin, wrong recipient or signer, invalid signature or digest are refused without share or acknowledgement writes."
+ac_3 = "Bounded length-delimited framing rejects truncation, oversize, malformed magic/version and surplus frame data. Ciphertext modification causes TLS refusal without durable changes."
+ac_4 = "Identical delivery is idempotent; a conflicting signature never overwrites existing bytes. Shares and delivery metadata survive actual process termination and restart on the same disk."
+ac_5 = "Acknowledgements follow authenticated Stored or AlreadyHeld only. Unavailable peers retry after restart; conflicts are durable and explicit. Bounded fair sweeps reach entries beyond the first page. Peer pin changes cannot inherit previous identity acknowledgements."
+ac_6 = "Peer, connection, frame, timeout and sweep bounds are finite and validated. Shared directories hold signatures and public delivery metadata only; private keys stay outside them."
+ac_7 = "Explicitly enabled transport refuses absent or invalid configuration. Container source builds and installs the actual transport binary and supervises its lifetime and shutdown. Missing configured transport never silently becomes standalone mode."
+ac_8 = "Generated fixture keys and placeholder rosters do not establish production membership. Production certificate issuance, network exposure and deployment remain separate."
+
+[task.21.6]
+title = "Deliver bridge cosign shares over authenticated durable transport"
+status = "in_progress"
+mode = "BUILD"
+wave = 3
+requires = ["0.2", "21.2"]
+reqs = ["189.1"]
+do_1 = "Implement layerx-bridge-cosign to push own-attestor share files and admit peer shares through the existing CosignDirectory filesystem contract. Leave relayer.rs, main.rs and their configuration schema unchanged."
+do_2 = "Reuse the existing TLS connector with a visibility-only change where appropriate. Require mutual TLS1.3, hostname verification and SHA256 DER SubjectPublicKeyInfo pins on both ends. Frame: four-byte big-endian length prefix equal to143, followed by LXSH magic(4), version1 u16(2), recipient(20), digest(32), signer(20), signature(65). Bound reads; reject other lengths and malformed or surplus data without an EOF-before-reply deadlock."
+do_3 = "Store received signatures without overwrite using atomic writes and directory synchronization. Persist acknowledgement and terminal conflict keyed by peer attestor plus pin, digest and own-share identity. Retry unacknowledged delivery after restart. Sweep at most256 entries with a fair continuation cursor; do not automatically remove evidence."
+do_4 = "Enable through the explicit LAYERX_BRIDGE_COSIGN_TRANSPORT_CONFIG path variable. A configured missing, unreadable or invalid file is fatal; only an absent enablement variable retains the existing standalone arrangement. Validate finite bounds and private-key permissions. Add actual binary build/copy stages and process supervision to the container sources."
+do_5 = "Use three real child processes, ephemeral actual signing keys and TLS material, production publish/collect/assemble paths, hostile wire inputs, a byte-flipping relay and actual kill/restart on unchanged directories. Cover every requirement, including restart retry, durable conflict, changed-pin acknowledgement isolation and beyond-first-page fairness. No mocked service, fabricated quorum or skipped prerequisite."
+do_6 = "Complete implementation before one explicit build of transport and integration test targets plus entrypoint syntax, followed by the single declared gate. Limit dependency changes to required transport edges. Container source qualification does not claim an image build or deployment."
+touches = ["interop/crates/layerx-mirror/src/signer.rs", "interop/crates/layerx-bridge-relayer/Cargo.toml", "interop/crates/layerx-bridge-relayer/src/cosign.rs", "interop/crates/layerx-bridge-relayer/src/bin/cosign.rs", "interop/crates/layerx-bridge-relayer/tests/cosign_transport.rs", "docker/bridge-relayer/entrypoint.sh", "docker/bridge-relayer/Dockerfile", "interop/Cargo.lock"]
+planned_paths = ["interop/crates/layerx-bridge-relayer/src/bin/cosign.rs", "interop/crates/layerx-bridge-relayer/tests/cosign_transport.rs"]
+verify_cmd = "timeout 15m cargo test --locked --manifest-path interop/Cargo.toml -p layerx-bridge-relayer --test cosign_transport"
+gate_kind = "planned-prerequisite"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at the gate result, need outside declared files, two failed repairs or time limit. Preserve assertions and admission rules."
+completion_policy = "Transport primitive only; complete operator and deployment acceptance for21.4 remains required."
+evidence_policy = "Publish technical source only; retain raw logs, private material and operator inventories outside the repository."

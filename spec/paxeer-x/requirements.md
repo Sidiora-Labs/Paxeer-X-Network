@@ -954,6 +954,19 @@
 3. Share delivery rejects wrong-digest, unknown, duplicate and malformed shares; insufficient quorum stays waiting without submitting a partial authorization.
 4. Loss or restart of one operator preserves published valid shares and once-only completion; private keys never enter relayer configuration or shared storage.
 
+## Requirement 189.1: Authenticated durable delivery of bridge cosign shares
+
+### Acceptance Criteria
+
+1. Three real independent transport processes exchange actual signatures through production publish/collect/assemble paths. Two shares remain below a three-signature threshold; three distinct valid shares satisfy it.
+2. Mutual TLS1.3, hostname verification and unique pinned SPKI-to-attestor mappings authenticate both endpoints. Foreign CA, unpinned client, incorrect server pin, wrong recipient or signer, invalid signature or digest are refused without share or acknowledgement writes.
+3. Bounded length-delimited framing rejects truncation, oversize, malformed magic/version and surplus frame data. Ciphertext modification causes TLS refusal without durable changes.
+4. Identical delivery is idempotent; a conflicting signature never overwrites existing bytes. Shares and delivery metadata survive actual process termination and restart on the same disk.
+5. Acknowledgements follow authenticated Stored or AlreadyHeld only. Unavailable peers retry after restart; conflicts are durable and explicit. Bounded fair sweeps reach entries beyond the first page. Peer pin changes cannot inherit previous identity acknowledgements.
+6. Peer, connection, frame, timeout and sweep bounds are finite and validated. Shared directories hold signatures and public delivery metadata only; private keys stay outside them.
+7. Explicitly enabled transport refuses absent or invalid configuration. Container source builds and installs the actual transport binary and supervises its lifetime and shutdown. Missing configured transport never silently becomes standalone mode.
+8. Generated fixture keys and placeholder rosters do not establish production membership. Production certificate issuance, network exposure and deployment remain separate.
+
 ## Requirement 190: Publish an executable Solana relayer configuration contract
 
 ### Acceptance Criteria
