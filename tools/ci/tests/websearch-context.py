@@ -5,6 +5,7 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import shlex
+import shutil
 import stat
 import subprocess
 import sys
@@ -245,6 +246,8 @@ def main():
     with tempfile.TemporaryDirectory(prefix="websearch-context-", dir=evidence) as scratch:
         scratch = Path(scratch)
         archive = scratch / "context.tar"
+        context = scratch / "source"
+        context.mkdir(mode=0o700)
         entries = sorted(available | {DOCKERFILE, IGNORE})
         with tarfile.open(archive, "w") as output:
             for name in entries:
@@ -252,13 +255,17 @@ def main():
                 require(path.is_file() and not path.is_symlink(), "non-regular context input: " + name)
                 relative(path)
                 output.add(path, arcname=name, recursive=False)
+                destination = context / name
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(path, destination)
+                os.chmod(destination, path.stat().st_mode & 0o777)
         with archive.open("rb") as stream:
             context_sha = hashlib.file_digest(stream, "sha256").hexdigest()
         iid = scratch / "image-id"
         argv = wrapper + [docker, "build", "--progress=plain", "--target", "x-websearch",
                           "--file", DOCKERFILE, "--build-arg", "CARGO_BUILD_JOBS=" + jobs,
                           "--label", "org.opencontainers.image.revision=" + revision,
-                          "--iidfile", str(iid), "-"]
+                          "--iidfile", str(iid), str(context)]
         print("build-command: " + shlex.join(argv), flush=True)
         record = {"revision": revision, "tree": tree, "context_sha256": context_sha,
                   "manifests": manifests, "input_count": len(entries), "command": argv,
@@ -266,8 +273,8 @@ def main():
         destination = evidence / ("websearch-" + revision + ".json")
         require(not destination.exists(), "evidence already exists for this revision")
         environment = dict(os.environ, DOCKER_BUILDKIT="1")
-        with archive.open("rb") as stream:
-            result = subprocess.run(argv, cwd=ROOT, stdin=stream, env=environment, check=False)
+        result = subprocess.run(argv, cwd=ROOT, stdin=subprocess.DEVNULL,
+                                env=environment, check=False)
         record["exit_code"] = result.returncode
         if result.returncode == 0 and iid.is_file():
             record["image_id"] = iid.read_text().strip()
