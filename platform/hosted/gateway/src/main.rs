@@ -6170,3 +6170,40 @@ mod authority_readiness_contract_tests {
         println!("PAXEER_X_AUTHORITY_CASES={count}");
     }
 }
+
+#[cfg(test)]
+mod authority_lni_compatibility_tests {
+    use super::*;
+    #[test]
+    fn authenticated_lni_preserves_the_strict_four_field_contract() {
+        let case: serde_json::Value = serde_json::from_slice(
+            &fs::read(env::var("PAXEER_X_AUTHORITY_CONTRACT_CASE").expect("actual case"))
+                .expect("case file"),
+        )
+        .expect("case JSON");
+        let original: serde_json::Value = serde_json::from_slice(
+            &fs::read(case["response_file"].as_str().expect("response path"))
+                .expect("actual serializer body"),
+        )
+        .expect("actual JSON");
+        assert_eq!(original.as_object().expect("object").len(), 4);
+        let decode = |value: &serde_json::Value| {
+            decode_authority_readiness(
+                200,
+                "application/json",
+                &serde_json::to_vec(value).expect("JSON"),
+                case["network_id"].as_str().expect("label"),
+                case["protocol_network_id"].as_u64().expect("network") as u32,
+                case["wire_version"].as_str().expect("wire"),
+            )
+        };
+        assert_eq!(decode(&original), Ok(()));
+        let mut false_ready = original.clone();
+        false_ready["ready"] = serde_json::json!(false);
+        assert_eq!(decode(&false_ready), Err(AuthorityUnready::Unavailable));
+        let mut unexpected = original;
+        unexpected["dependencies"] = serde_json::json!({});
+        assert_eq!(decode(&unexpected), Err(AuthorityUnready::InvalidSchema));
+        println!("PAXEER_X_LNI_CASES=3");
+    }
+}
