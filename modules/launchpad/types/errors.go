@@ -30,4 +30,7 @@ var (
 	ErrInvalidGenesis          = sdkerrors.Register(ModuleName, 24, "invalid launchpad genesis")
 	ErrHoldingHistory          = sdkerrors.Register(ModuleName, 25, "invalid holding history")
 	ErrUnsupportedHoldingEpoch = sdkerrors.Register(ModuleName, 26, "holding history does not cover epoch")
+	ErrInvalidAirdropEpoch     = sdkerrors.Register(ModuleName, 27, "airdrop epoch not opened")
+	ErrLegacyAirdropEpoch      = sdkerrors.Register(ModuleName, 28, "airdrop epoch has no entitlement basis")
+	ErrAirdropBasis            = sdkerrors.Register(ModuleName, 29, "invalid airdrop entitlement basis")
 )

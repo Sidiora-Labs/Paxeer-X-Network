@@ -110,7 +110,7 @@
     - Add the designated new harness tests/modules/paxeer_x_escrow_replay_binding.py using real production code and durable stores; invoke prebuilt task targets, fail on any missing prerequisite, and emit revision, exact command, exit code and private evidence path. Do not substitute mocks or synthetic success responses.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 110_
-  - [-] 4.1 Distribute launchpad airdrops from immutable epoch entitlements
+  - [x] 4.1 Distribute launchpad airdrops from immutable epoch entitlements
     - Consume the qualified bounded holder-history primitive from4.1.1. Bind per-epoch supply, funding, payout denomination and boundary identity atomically with opening that history; calculate each holder entitlement from its immutable epoch balance with checked arithmetic and unchanged per-epoch rounding.
     - Update ExecuteAirdrop/ClaimAirdrop and keeper storage to calculate from that basis and commit payment/claim marker together; preserve current public precompile authorization.
     - Add real bank keeper integration with multiple holders, transfer-after-claim, mint/burn, failed payout rollback, duplicate request and committed-store reload.

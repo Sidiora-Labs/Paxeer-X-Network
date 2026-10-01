@@ -21560,7 +21560,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.1]
 title = "Distribute launchpad airdrops from immutable epoch entitlements"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["0.2", "4.1.1"]

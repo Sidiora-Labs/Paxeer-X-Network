@@ -1,6 +1,7 @@
 package keeper
 
 import (
+	"fmt"
 	"strconv"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -116,7 +117,9 @@ func (k *Keeper) ExecuteBurn(ctx sdk.Context, caller sdk.AccAddress, denom strin
 }
 
 // ExecuteAirdrop is FeesRouter.executeAirdrop: the AIRDROP strategy opens a
-// new epoch holding the accumulated fees for token holders to claim.
+// new epoch holding the accumulated fees for token holders to claim. The
+// epoch's holder history, supply and payout denomination are fixed in the
+// same write set, so later mints, burns and transfers cannot change it.
 func (k *Keeper) ExecuteAirdrop(ctx sdk.Context, caller sdk.AccAddress, denom string) (sdk.Int, error) {
 	market, err := k.requireStrategy(ctx, caller, denom, types.FeeStrategyAirdrop)
 	if err != nil {
@@ -126,10 +129,21 @@ func (k *Keeper) ExecuteAirdrop(ctx sdk.Context, caller sdk.AccAddress, denom st
 	if err != nil {
 		return sdk.Int{}, err
 	}
+	supply := k.bankKeeper.GetSupply(ctx, denom).Amount
+	if !supply.IsPositive() {
+		return sdk.Int{}, types.ErrZeroAmount
+	}
+	cacheCtx, write := ctx.CacheContext()
 	market.AirdropEpoch++
 	market.AirdropBalance = market.AirdropBalance.Add(amount)
-	k.setMarket(ctx, market)
-	k.setAirdropEpochAmount(ctx, denom, market.AirdropEpoch, amount)
+	k.setMarket(cacheCtx, market)
+	k.setAirdropEpochAmount(cacheCtx, denom, market.AirdropEpoch, amount)
+	if err := k.OpenHoldingHistory(cacheCtx, denom, market.AirdropEpoch); err != nil {
+		return sdk.Int{}, err
+	}
+	k.setAirdropBasis(cacheCtx, types.AirdropEpochBasis{Denom: denom, Epoch: market.AirdropEpoch, Supply: supply,
+		PayoutDenom: k.GetParams(ctx).QuoteDenom, Height: ctx.BlockHeight(), Paid: sdk.ZeroInt()})
+	write()
 	ctx.EventManager().EmitEvent(sdk.NewEvent(types.EventTypeAirdropTriggered,
 		sdk.NewAttribute(types.AttributeKeyDenom, denom),
 		sdk.NewAttribute(types.AttributeKeyAmount, amount.String()),
@@ -137,46 +151,94 @@ func (k *Keeper) ExecuteAirdrop(ctx sdk.Context, caller sdk.AccAddress, denom st
 	return amount, nil
 }
 
-// ClaimAirdrop is FeeAccumulator.claimAirdrop: any holder takes
-// epochAmount*balance/totalSupply of the current epoch once.
+// ClaimAirdrop is FeeAccumulator.claimAirdrop: any holder takes its
+// entitlement of the current epoch once.
 func (k *Keeper) ClaimAirdrop(ctx sdk.Context, holder sdk.AccAddress, denom string) (sdk.Int, error) {
 	market, err := k.mustMarket(ctx, denom)
 	if err != nil {
 		return sdk.Int{}, err
 	}
-	epoch := market.AirdropEpoch
-	if epoch == 0 {
+	if market.AirdropEpoch == 0 {
 		return sdk.Int{}, types.ErrAirdropNotTriggered
+	}
+	return k.ClaimAirdropForEpoch(ctx, holder, denom, market.AirdropEpoch)
+}
+
+// AirdropEntitlement is floor(epochAmount*balance/supply) over holder's
+// balance and the supply at epoch's boundary.
+func (k *Keeper) AirdropEntitlement(ctx sdk.Context, holder sdk.AccAddress, denom string, epoch uint64) (sdk.Int, types.AirdropEpochBasis, error) {
+	market, err := k.mustMarket(ctx, denom)
+	if err != nil {
+		return sdk.Int{}, types.AirdropEpochBasis{}, err
+	}
+	if epoch == 0 || epoch > market.AirdropEpoch {
+		return sdk.Int{}, types.AirdropEpochBasis{}, fmt.Errorf("%w: %s/%d", types.ErrInvalidAirdropEpoch, denom, epoch)
+	}
+	basis, found, err := k.GetAirdropBasis(ctx, denom, epoch)
+	if err != nil {
+		return sdk.Int{}, types.AirdropEpochBasis{}, err
+	}
+	if !found {
+		return sdk.Int{}, types.AirdropEpochBasis{}, fmt.Errorf("%w: %s/%d", types.ErrLegacyAirdropEpoch, denom, epoch)
+	}
+	epochAmount := k.GetAirdropEpochAmount(ctx, denom, epoch)
+	if !epochAmount.IsPositive() {
+		return sdk.Int{}, types.AirdropEpochBasis{}, types.ErrNoFeesAccumulated
+	}
+	balance, err := k.EpochBalance(ctx, denom, holder, epoch)
+	if err != nil {
+		return sdk.Int{}, types.AirdropEpochBasis{}, err
+	}
+	if !balance.IsPositive() {
+		return sdk.Int{}, types.AirdropEpochBasis{}, types.ErrZeroAmount
+	}
+	product, err := types.MulDiv(epochAmount.BigInt(), balance.BigInt(), basis.Supply.BigInt())
+	if err != nil {
+		return sdk.Int{}, types.AirdropEpochBasis{}, err
+	}
+	amount := sdk.NewIntFromBigInt(product)
+	if !amount.IsPositive() {
+		return sdk.Int{}, types.AirdropEpochBasis{}, types.ErrZeroAmount
+	}
+	if basis.Paid.Add(amount).GT(epochAmount) {
+		return sdk.Int{}, types.AirdropEpochBasis{}, types.ErrOverflow
+	}
+	return amount, basis, nil
+}
+
+// ClaimAirdropForEpoch pays holder its entitlement of one opened epoch. The
+// claim marker, paid total, market balance and payment commit together or
+// not at all.
+func (k *Keeper) ClaimAirdropForEpoch(ctx sdk.Context, holder sdk.AccAddress, denom string, epoch uint64) (sdk.Int, error) {
+	market, err := k.mustMarket(ctx, denom)
+	if err != nil {
+		return sdk.Int{}, err
+	}
+	if epoch == 0 || epoch > market.AirdropEpoch {
+		return sdk.Int{}, fmt.Errorf("%w: %s/%d", types.ErrInvalidAirdropEpoch, denom, epoch)
 	}
 	if k.HasClaimedAirdrop(ctx, denom, holder, epoch) {
 		return sdk.Int{}, types.ErrAlreadyClaimed
 	}
-	epochAmount := k.GetAirdropEpochAmount(ctx, denom, epoch)
-	if !epochAmount.IsPositive() {
-		return sdk.Int{}, types.ErrNoFeesAccumulated
-	}
-	balance := k.bankKeeper.GetBalance(ctx, holder, denom).Amount
-	supply := k.bankKeeper.GetSupply(ctx, denom).Amount
-	if !balance.IsPositive() || !supply.IsPositive() {
-		return sdk.Int{}, types.ErrZeroAmount
-	}
-	product, err := types.MulDiv(epochAmount.BigInt(), balance.BigInt(), supply.BigInt())
+	amount, basis, err := k.AirdropEntitlement(ctx, holder, denom, epoch)
 	if err != nil {
 		return sdk.Int{}, err
-	}
-	amount := sdk.NewIntFromBigInt(product)
-	if !amount.IsPositive() {
-		return sdk.Int{}, types.ErrZeroAmount
 	}
 	if amount.GT(market.AirdropBalance) {
 		return sdk.Int{}, types.ErrOverflow
 	}
-	k.setAirdropClaimed(ctx, denom, holder, epoch)
+	cacheCtx, write := ctx.CacheContext()
+	k.setAirdropClaimed(cacheCtx, denom, holder, epoch)
+	basis.Paid = basis.Paid.Add(amount)
+	k.setAirdropBasis(cacheCtx, basis)
 	market.AirdropBalance = market.AirdropBalance.Sub(amount)
-	k.setMarket(ctx, market)
-	if err := k.payQuote(ctx, holder, amount); err != nil {
+	k.setMarket(cacheCtx, market)
+	if err := k.bankKeeper.SendCoins(cacheCtx, k.ModuleAddress(), holder,
+		sdk.NewCoins(sdk.NewCoin(basis.PayoutDenom, amount))); err != nil {
 		return sdk.Int{}, err
 	}
+	write()
+	ctx.EventManager().EmitEvents(cacheCtx.EventManager().Events())
 	ctx.EventManager().EmitEvent(sdk.NewEvent(types.EventTypeAirdropClaimed,
 		sdk.NewAttribute(types.AttributeKeyDenom, denom),
 		sdk.NewAttribute(types.AttributeKeyHolder, holder.String()),

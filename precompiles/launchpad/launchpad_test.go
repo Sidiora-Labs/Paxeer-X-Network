@@ -373,3 +373,36 @@ func TestRejectsDelegatecallStaticcallWritesAndValue(t *testing.T) {
 	require.Equal(t, big.NewInt(1), h.view(launchpad.GetMarketCountMethod)[0])
 	require.True(t, h.market(token).RealQuoteBalance.Sign() == 0, "no rejected call moved funds")
 }
+
+func TestClaimAirdropForEpochThroughThePrecompile(t *testing.T) {
+	h := newHarness(t)
+	token, denom := h.create()
+	_, trader := h.fund(4_000_000_000)
+	strangerAcc, stranger := h.fund(0)
+	h.call(h.caller, launchpad.SetFeeStrategyMethod, token, uint8(types.FeeStrategyAirdrop))
+	require.Contains(t, h.reverts(trader, launchpad.ClaimAirdropForEpochMethod, token, uint64(1)), "not opened")
+	h.call(trader, launchpad.BuyMethod, token, big.NewInt(333_333_334), big.NewInt(0), trader, deadline)
+	require.Equal(t, big.NewInt(9_000_000), h.call(h.caller, launchpad.ExecuteAirdropMethod, token)[0])
+	traderAcc := testkeeper.EVMTestApp.EvmKeeper.GetPaxAddressOrDefault(h.stateDB.Ctx(), trader)
+	holding := h.balance(traderAcc, denom).BigInt()
+	supply := testkeeper.EVMTestApp.BankKeeper.GetSupply(h.stateDB.Ctx(), denom).Amount.BigInt()
+	want1 := new(big.Int).Quo(new(big.Int).Mul(big.NewInt(9_000_000), holding), supply)
+
+	// After the boundary the trader moves its whole holding to the stranger
+	// and a second epoch opens; epoch 1 still pays the trader, never the stranger.
+	require.NoError(t, testkeeper.EVMTestApp.BankKeeper.SendCoins(h.stateDB.Ctx(), traderAcc, strangerAcc,
+		sdk.NewCoins(sdk.NewCoin(denom, sdk.NewIntFromBigInt(holding)))))
+	h.call(trader, launchpad.BuyMethod, token, big.NewInt(333_333_334), big.NewInt(0), trader, deadline)
+	require.Equal(t, big.NewInt(9_000_000), h.call(h.caller, launchpad.ExecuteAirdropMethod, token)[0])
+	require.Contains(t, h.reverts(trader, launchpad.ClaimAirdropForEpochMethod, token, uint64(0)), "not opened")
+	require.Contains(t, h.reverts(trader, launchpad.ClaimAirdropForEpochMethod, token, uint64(3)), "not opened")
+	require.Contains(t, h.reverts(stranger, launchpad.ClaimAirdropForEpochMethod, token, uint64(1)), "zero amount")
+	require.Equal(t, want1, h.call(trader, launchpad.ClaimAirdropForEpochMethod, token, uint64(1))[0])
+	require.Contains(t, h.reverts(trader, launchpad.ClaimAirdropForEpochMethod, token, uint64(1)), "already claimed")
+	claimed := h.logs("AirdropClaimed(address,address,uint256,uint256)")
+	require.Len(t, claimed, 1)
+	require.Equal(t, big.NewInt(1), word(claimed[0].Data, 1))
+	require.Equal(t, uint64(3000+16*64+5000*4), h.precompile.RequiredGas(h.input(launchpad.ClaimAirdropForEpochMethod, token, uint64(1))))
+	message, broken := launchpadkeeper.SolvencyInvariant(h.keeper)(h.stateDB.Ctx())
+	require.False(t, broken, message)
+}
