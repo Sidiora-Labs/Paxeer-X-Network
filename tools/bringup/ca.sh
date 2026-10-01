@@ -9,6 +9,7 @@ set -euo pipefail
 usage() {
 	cat <<'EOF'
 usage: tools/bringup/ca.sh init | issue <service> | services
+       tools/bringup/ca.sh issue-local <local service> --output-dir <dir> | local-services
 
 The internal CA of the Paxeer X Network bring-up. Runs on the edge host, the
 operator host that holds the CA key and the Fly login.
@@ -42,7 +43,28 @@ issue <service>
 services  prints the service list, one per line: service, Fly app toml,
           process group ("-" for the whole app), custody ("volume" or the
           secret prefix), common name, extended key usage, SAN list ("-" for
-          a client identity).
+          a client identity without one). The event producers of the
+          webhooks ingress carry the producer role URI SAN
+          urn:layerx:webhooks:role:producer.
+
+issue-local <local service> --output-dir <dir>
+          issues one fixed local identity of local-services on this host,
+          never through Fly: the identity, role, extended key usage and SAN
+          list are the row's and nothing else is accepted. <dir> is an
+          absolute path that must not exist, whose components are no
+          symbolic links, whose parent is a directory owned by the caller
+          or root and writable by neither group nor others, and which
+          neither lies in LAYERX_CA_DIR nor contains it. The key, the
+          request and the derived files are made in a mode 0700 staging
+          directory beside <dir>, verified against the CA, and the staging
+          directory is renamed to <dir> without replacing anything, with
+          mode 0700 and every file 0600. No key is printed. Prints one line:
+          "issued <service> custody=local fingerprint=<sha256>
+          expires_in=<days>d".
+
+local-services
+          prints the local identity list in the columns of services, with
+          "-" for the toml and the process group and "local" for custody.
 
 Environment:
   CHECK_LIVE_TIMEOUT   seconds per flyctl call, default 30
@@ -84,11 +106,11 @@ paxeer-boundary-loopback human/wallet/deploy/human.toml - volume paxeer-boundary
 paxeer-boundary-public human/wallet/deploy/human.toml - volume paxeer-observer-boundary serverAuth DNS:paxeer-observer-boundary,DNS:paxeer-boundary-public,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
 guarantor human/wallet/deploy/human.toml - volume layerx-guarantor serverAuth,clientAuth DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
 human human/wallet/deploy/human.toml - volume layerx-human serverAuth DNS:layerx-human,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
-human-event-client human/wallet/deploy/human.toml - volume layerx-human-events clientAuth -
+human-event-client human/wallet/deploy/human.toml - volume layerx-human-events clientAuth URI:urn:layerx:webhooks:role:producer
 human-attestor-client human/wallet/deploy/human.toml - volume layerx-human-components clientAuth -
 relay-archive human/wallet/deploy/human.toml - volume layerx-relay-archive serverAuth DNS:layerx-relay-archive,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
 gateway-redis human/wallet/deploy/redis.toml - REDIS_TLS layerx-gateway-redis serverAuth DNS:layerx-gateway-redis,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
-gateway-client human/wallet/deploy/endpoint.toml - ENDPOINT_CLIENT layerx-gateway clientAuth -
+gateway-client human/wallet/deploy/endpoint.toml - ENDPOINT_CLIENT layerx-gateway clientAuth URI:urn:layerx:webhooks:role:producer
 identity platform/hosted/identity/fly.toml - volume layerx-identity serverAuth DNS:layerx-identity,DNS:identity,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
 internal-kms platform/hosted/internal/fly.toml kms volume kms serverAuth DNS:kms,DNS:kms.process.<app>.internal,DNS:localhost,IP:127.0.0.1
 internal-journeys platform/hosted/internal/fly.toml journeys volume journeys serverAuth DNS:journeys,DNS:journeys.process.<app>.internal,DNS:localhost,IP:127.0.0.1
@@ -97,13 +119,22 @@ internal-approvals platform/hosted/internal/fly.toml approvals volume approvals 
 internal-programs platform/hosted/internal/fly.toml programs volume programs serverAuth DNS:programs,DNS:programs.process.<app>.internal,DNS:localhost,IP:127.0.0.1
 internal-redis platform/hosted/internal/redis.toml - REDIS_TLS redis serverAuth DNS:redis,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
 registry platform/hosted/registry/fly.toml - volume layerx-program-registry serverAuth DNS:layerx-program-registry,DNS:index.paxeer.network,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
-registry-event-client platform/hosted/registry/fly.toml - volume layerx-registry-events clientAuth -
+registry-event-client platform/hosted/registry/fly.toml - volume layerx-registry-events clientAuth URI:urn:layerx:webhooks:role:producer
 indexer platform/hosted/indexer/fly.toml - volume layerx-indexer serverAuth DNS:layerx-indexer,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
 interop-client platform/hosted/interop/fly.toml - INTEROP_CLIENT layerx-interop-gateway clientAuth -
 developer platform/hosted/webhooks/fly.toml ingress WEBHOOKS_INGRESS_TLS layerx-developer serverAuth DNS:layerx-webhooks,DNS:ingress.process.<app>.internal,DNS:localhost,IP:127.0.0.1
 developer-client platform/hosted/webhooks/fly.toml - WEBHOOKS_CLIENT layerx-developer clientAuth -
 dashboard-client platform/hosted/dashboard/fly.toml - DASHBOARD_CLIENT layerx-dashboard clientAuth -
 ramp-client platform/ramps/fly.toml - RAMP_CLIENT layerx-reference-ramp clientAuth DNS:<app>.internal
+EOF
+}
+
+# local_services: identities issue-local makes on the operator host for an
+# operator holding them by hand; they are never part of a Fly app, so they
+# stay out of ca_services and every Fly mount.
+local_services() {
+	cat <<'EOF'
+webhook-operator-client - - local layerx-webhooks-operator clientAuth URI:urn:layerx:webhooks:role:operator
 EOF
 }
 
@@ -234,13 +265,117 @@ ca_issue() {
 	echo "issued $service app=$app custody=$custody fingerprint=$(openssl x509 -in "$work/cert.pem" -noout -fingerprint -sha256 | cut -d= -f2) expires_in=$(days_left <"$work/cert.pem")d"
 }
 
+# local_refuse <message>: refuses an issue-local destination or bundle.
+local_refuse() {
+	echo "ca: issue-local: $1" >&2
+	exit 1
+}
+
+# local_destination <dir>: checks the issue-local destination before anything
+# is generated and prints its parent.
+local_destination() {
+	local dir="$1" component prefix="" parent mode owner ca_real components
+	case "$dir" in
+	/*) ;;
+	*) local_refuse "the output directory must be an absolute path" ;;
+	esac
+	IFS=/ read -r -a components <<<"${dir#/}"
+	[ "${#components[@]}" -gt 0 ] || local_refuse "the output directory must not be /"
+	for component in "${components[@]}"; do
+		case "$component" in
+		"" | . | ..) local_refuse "the output directory must be a normalized path" ;;
+		esac
+		prefix="$prefix/$component"
+		if [ -L "$prefix" ]; then
+			local_refuse "$prefix is a symbolic link"
+		fi
+	done
+	[ "$prefix" = "$dir" ] || local_refuse "the output directory must be a normalized path"
+	if [ -e "$dir" ]; then
+		local_refuse "$dir already exists"
+	fi
+	parent="${dir%/*}"
+	parent="${parent:-/}"
+	[ -d "$parent" ] || local_refuse "the parent $parent is not a directory"
+	owner="$(stat -c %u "$parent")"
+	mode="$(stat -c %a "$parent")"
+	if [ "$owner" != 0 ] && [ "$owner" != "$(id -u)" ]; then
+		local_refuse "the parent $parent is owned by uid $owner"
+	fi
+	if (((8#$mode & 8#022) != 0)); then
+		local_refuse "the parent $parent has mode $mode, writable by group or others"
+	fi
+	ca_real="$(realpath -m -- "$ca_dir")"
+	case "$dir/" in
+	"$ca_real"/*) local_refuse "$dir lies in the CA directory" ;;
+	esac
+	case "$ca_real/" in
+	"$dir"/*) local_refuse "$dir contains the CA directory" ;;
+	esac
+	printf '%s' "$parent"
+}
+
+ca_issue_local() {
+	local service="$1" dir="$2" line cn eku sans parent file count
+	line="$(local_services | awk -v s="$service" '$1 == s')"
+	if [ -z "$line" ]; then
+		echo "ca: unknown local service $service; see tools/bringup/ca.sh local-services" >&2
+		exit 2
+	fi
+	read -r _ _ _ _ cn eku sans <<<"$line"
+	if [ ! -r "$ca_dir/ca.key" ] || [ ! -r "$ca_dir/ca.pem" ]; then
+		echo "ca: no CA under $ca_dir; run tools/bringup/ca.sh init on the edge host" >&2
+		exit 1
+	fi
+	parent="$(local_destination "$dir")"
+	work="$(umask 077 && mktemp -d -p "$parent" ".ca-issue-local.XXXXXXXX")"
+	trap 'rm -rf "$work"' EXIT
+	chmod 0700 "$work"
+	(
+		umask 077
+		cd "$work"
+		openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out key.pem 2>/dev/null
+		openssl req -new -key key.pem -subj "/O=$subject_org/CN=$cn" -out csr.pem
+	)
+	sign "$service" "$eku" "$sans"
+	(
+		umask 077
+		cd "$work"
+		cp "$ca_dir/ca.pem" ca.pem
+		sh -c "$(derive_cmd "$cn")"
+		rm -f csr.pem ext.cnf
+	)
+	openssl verify -purpose sslclient -CAfile "$work/ca.pem" "$work/cert.pem" >/dev/null 2>&1 ||
+		local_refuse "the issued certificate does not verify against the CA"
+	[ "$(openssl x509 -in "$work/cert.pem" -noout -pubkey)" = "$(openssl pkey -in "$work/key.pem" -pubout 2>/dev/null)" ] ||
+		local_refuse "the issued certificate does not match its key"
+	[ "$(openssl x509 -in "$work/cert.pem" -noout -ext subjectAltName 2>/dev/null | tail -n +2 | sed 's/^ *//')" = "$sans" ] ||
+		local_refuse "the issued certificate does not carry exactly $sans"
+	count=0
+	for file in $identity_files; do
+		{ [ -f "$work/${file%%:*}" ] && [ ! -L "$work/${file%%:*}" ]; } ||
+			local_refuse "the bundle lacks ${file%%:*}"
+		chmod 0600 "$work/${file%%:*}"
+		count=$((count + 1))
+	done
+	[ "$(find "$work" -mindepth 1 | wc -l)" -eq "$count" ] ||
+		local_refuse "the bundle holds files beyond the identity"
+	chmod 0700 "$work"
+	{ [ ! -e "$dir" ] && [ ! -L "$dir" ]; } || local_refuse "$dir appeared during issuance"
+	# A rename replaces at most an empty directory, so no material is ever
+	# overwritten.
+	mv -T -- "$work" "$dir" || local_refuse "the bundle could not be published to $dir"
+	trap - EXIT
+	echo "issued $service custody=local fingerprint=$(openssl x509 -in "$dir/cert.pem" -noout -fingerprint -sha256 | cut -d= -f2) expires_in=$(days_left <"$dir/cert.pem")d"
+}
+
 mode="${1:-}"
 case "$mode" in
 -h | --help)
 	usage
 	exit 0
 	;;
-init | services)
+init | services | local-services)
 	[ "$#" -eq 1 ] || {
 		usage >&2
 		exit 2
@@ -252,6 +387,12 @@ issue)
 		exit 2
 	}
 	;;
+issue-local)
+	{ [ "$#" -eq 4 ] && [ "$3" = --output-dir ]; } || {
+		usage >&2
+		exit 2
+	}
+	;;
 *)
 	usage >&2
 	exit 2
@@ -259,6 +400,7 @@ issue)
 esac
 
 tools=(openssl awk)
+[ "$mode" != issue-local ] || tools+=(stat realpath mktemp find)
 [ "$mode" != issue ] || tools+=(timeout flyctl base64)
 for tool in "${tools[@]}"; do
 	if ! command -v "$tool" >/dev/null 2>&1; then
@@ -270,5 +412,7 @@ done
 case "$mode" in
 init) ca_init ;;
 services) ca_services ;;
+local-services) local_services ;;
 issue) ca_issue "$2" ;;
+issue-local) ca_issue_local "$2" "$4" ;;
 esac
