@@ -166,6 +166,10 @@ func (k Keeper) BridgeOut(ctx sdk.Context, sender common.Address, chainID uint64
 	if amount.GT(inFlight) {
 		return BridgeOutResult{}, types.ErrInvalidRequest.Wrap("amount exceeds the bridged supply")
 	}
+	limits, found := k.GetCap(ctx, asset.Denom)
+	if !found || limits.MaxPerTx.IsNil() || amount.GT(limits.MaxPerTx) {
+		return BridgeOutResult{}, types.ErrCapExceeded.Wrap("over the per-transaction release cap")
+	}
 
 	cached, write := ctx.CacheContext()
 	coin := sdk.NewCoin(asset.Denom, amount)

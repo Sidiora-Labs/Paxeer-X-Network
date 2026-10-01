@@ -187,6 +187,20 @@ cast call 0x0000000000000000000000000000000000001016 'isPaused()(bool)' --rpc-ur
 
 Any disagreement, any placeholder still in place, an unregistered or uncapped native coin, a paused vault, program or precompile, or a chain the Paxeer side does not report as registered keeps the bridge closed.
 
+## Outbound admission and coordinated cap changes
+
+For each registered chain and asset, Paxeer's `max_per_tx` admission cap must be no greater than the active foreign release cap, in the same asset base units. `BridgeOut` checks that registered cap before debiting or burning, changing in-flight supply, issuing a nonce or emitting the burn. A missing or zero cap admits no positive burn. Deposits that individually fit the cap do not permit their combined balance to be burned above it; an amount exactly at the cap is admissible when the other checks pass. Reading and reconciling both caps is an owner/governance opening condition, not an automatic cross-chain update.
+
+The cap-change contract is ordered:
+
+1. Before a decrease, governance pauses Paxeer bridge admission. Wait for that pause to finalize and inventory every finalized burn through the pause height, keyed by chain, Paxeer transaction hash and outbound nonce, with its original asset, recipient and amount. Reconcile each item with the relayer journal and the foreign nullifier. Keep the foreign release path open at its existing cap while these pending obligations drain.
+2. Governance lowers the Paxeer cap to the proposed value first. The foreign owner must not lower the release cap below any already-authorized, unresolved burn. Complete those releases under the old foreign cap and record their finalized release and consumed nullifier before lowering the foreign cap. If an obligation cannot be resolved, retain the old foreign cap and keep admission paused; a cap change never cancels it.
+3. After the foreign decrease finalizes, read both values back and confirm `Paxeer max_per_tx <= foreign release cap`. Governance may then unpause admission. For an increase, the foreign owner raises and finalizes the release cap first; governance raises the Paxeer cap only after readback confirms the same inequality. Pauses and cap updates retain the existing owner and governance authority checks.
+
+An existing burn blocked by a prematurely reduced cap needs an explicit operator-visible resolution record linked to the immutable journal item, not a replacement attestation. Record `cap-blocked` with the original amount, active foreign cap, failed transaction or observation, responsible owner and intended corrective cap action. Keep its resolution visible as `awaiting-owner-cap-restoration`, then `release-submitted`, and only `released` after finalized foreign evidence and the once-only nullifier confirm payment. These are required coordination-record states; they do not add or rename relayer journal variants. The journal already retains submitted, reverted/dropped or failed releases and completed releases in `interop/crates/layerx-bridge-relayer/src/journal.rs`; preserve those records across restart and link them to the resolution record. Never report a failed or merely submitted release as paid.
+
+The owner may restore enough release capacity to settle the original authorized amount, then repeat the coordinated decrease. Do not rewrite the amount, split one burn into multiple attestations, reset its nonce, discard its pending record, or bypass its nullifier. `bridge/evm/src/PaxeerXVault.sol::release` and `bridge/solana/src/release.rs` with `state.rs::Asset::withdraw` continue enforcing the release cap, available custody, fixed attested amount and once-only burn identity. A transport retry may carry the same attestation in a replacement transaction under the existing retry rules; it cannot change the economic obligation.
+
 ## The Sidiora pair on Solana
 
 An inbound SID deposit from Solana resolves to the `usid` denom only if the Paxeer side records the pair (`91600046870081`, `0x21f7b20a555199fa73A238B1a91FD0f549068fEe`) against `usid` before any cap is set for it.

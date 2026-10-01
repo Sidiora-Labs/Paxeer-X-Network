@@ -22559,7 +22559,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.21.2]
 title = "Bind outbound burn admission to the enforceable release amount"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -31271,7 +31271,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 planned_paths = ["tools/bringup/tests/paxeer-x-runtime-contract.py", "tools/paxeer-x/gates/24.12.sh"]
 
 [task.24.13]
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -31295,7 +31295,7 @@ verify_cmd = "timeout 10m python3 tools/bringup/tests/foundation-artifacts.py --
 completion_policy = "Only source-bound executable production and artifact integrity are qualified. No runtime readiness, deployment, real dependency operation or full Human completion is inferred."
 
 [task.14.8]
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]

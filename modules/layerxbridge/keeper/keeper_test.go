@@ -731,3 +731,102 @@ func TestProposalHandlerRegistersTheSidioraPairAheadOfItsCap(t *testing.T) {
 	require.True(t, limit.MaxPerTx.Equal(sdk.NewInt(1000)))
 	require.Len(t, s.events(types.EventSidioraPair), 1)
 }
+
+func TestBridgeOutReleaseCapBoundary(t *testing.T) {
+	s := newSuite(t, true)
+	for _, index := range []uint64{71, 72} {
+		in := deposit(index, 700)
+		_, err := s.k.BridgeIn(s.ctx, in, s.signed(in, s.attestors[0], s.attestors[1]))
+		require.NoError(t, err)
+		require.True(t, s.k.IsNullified(s.ctx, in.Nullifier()))
+	}
+	require.Equal(t, sdk.NewInt(1400), s.balance(recipient))
+	require.Equal(t, sdk.NewInt(1400), s.app.BankKeeper.GetSupply(s.ctx, s.denom).Amount)
+	remote := types.Address20{0x33}
+	assertRefused := func(t *testing.T, k keeper.Keeper, ctx sdk.Context, amount *big.Int, want error) {
+		t.Helper()
+		state := k.ExportGenesis(ctx)
+		from := s.app.EvmKeeper.GetPaxAddressOrDefault(ctx, recipient)
+		balance := s.app.BankKeeper.GetBalance(ctx, from, s.denom)
+		moduleBalance := s.app.BankKeeper.GetBalance(ctx, k.ModuleAddress(), s.denom)
+		supply := s.app.BankKeeper.GetSupply(ctx, s.denom)
+		events := append(sdk.Events(nil), ctx.EventManager().Events()...)
+		result, err := k.BridgeOut(ctx, recipient, chainID, asset, amount, remote)
+		require.ErrorIs(t, err, want)
+		require.Equal(t, keeper.BridgeOutResult{}, result)
+		require.Equal(t, state, k.ExportGenesis(ctx))
+		require.Equal(t, balance, s.app.BankKeeper.GetBalance(ctx, from, s.denom))
+		require.Equal(t, moduleBalance, s.app.BankKeeper.GetBalance(ctx, k.ModuleAddress(), s.denom))
+		require.Equal(t, supply, s.app.BankKeeper.GetSupply(ctx, s.denom))
+		require.Equal(t, events, ctx.EventManager().Events())
+	}
+	for _, test := range []struct {
+		name   string
+		amount *big.Int
+		want   error
+	}{
+		{"nil", nil, types.ErrInvalidRequest},
+		{"zero", big.NewInt(0), types.ErrInvalidRequest},
+		{"negative", big.NewInt(-1), types.ErrInvalidRequest},
+		{"uint255-bound", new(big.Int).Lsh(big.NewInt(1), 255), types.ErrInvalidRequest},
+		{"over-supply", big.NewInt(1401), types.ErrInvalidRequest},
+		{"aggregated-deposits", big.NewInt(1400), types.ErrCapExceeded},
+		{"cap-plus-one", big.NewInt(1001), types.ErrCapExceeded},
+	} {
+		t.Run(test.name, func(t *testing.T) { assertRefused(t, s.k, s.ctx, test.amount, test.want) })
+	}
+	t.Run("zero-cap", func(t *testing.T) {
+		s.setCap(1500, 0)
+		assertRefused(t, s.k, s.ctx, big.NewInt(1), types.ErrCapExceeded)
+		s.setCap(1500, 1000)
+	})
+	t.Run("owner-control", func(t *testing.T) {
+		before := s.k.ExportGenesis(s.ctx)
+		err := s.k.SetCap(s.ctx, types.MsgSetCap{Authority: sdk.AccAddress(recipient.Bytes()).String(), ChainID: chainID, Asset: asset, MaxInFlight: sdk.NewInt(1500), MaxPerTx: sdk.NewInt(1400)})
+		require.ErrorIs(t, err, types.ErrUnauthorized)
+		require.Equal(t, before, s.k.ExportGenesis(s.ctx))
+		assertRefused(t, s.k, s.ctx, big.NewInt(1400), types.ErrCapExceeded)
+	})
+	t.Run("exact-cap", func(t *testing.T) {
+		result, err := s.k.BridgeOut(s.ctx, recipient, chainID, asset, big.NewInt(1000), remote)
+		require.NoError(t, err)
+		require.Equal(t, keeper.BridgeOutResult{Denom: s.denom, Nonce: 1}, result)
+		require.Equal(t, sdk.NewInt(400), s.balance(recipient))
+		require.Equal(t, sdk.NewInt(400), s.app.BankKeeper.GetSupply(s.ctx, s.denom).Amount)
+		require.Equal(t, sdk.NewInt(400), s.k.InFlight(s.ctx, s.denom))
+		require.True(t, s.app.BankKeeper.GetBalance(s.ctx, s.k.ModuleAddress(), s.denom).Amount.IsZero())
+		emitted := s.events(types.EventBridgeOut)
+		require.Len(t, emitted, 1)
+		require.Equal(t, "1000", attribute(emitted[0], types.AttributeAmount))
+		require.Equal(t, "1", attribute(emitted[0], types.AttributeNonce))
+		require.Equal(t, remote.Hex(), attribute(emitted[0], types.AttributeRecipient))
+	})
+	t.Run("active-cap-reduction", func(t *testing.T) {
+		authorized := append([]sdk.Event(nil), s.events(types.EventBridgeOut)...)
+		s.setCap(1500, 300)
+		assertRefused(t, s.k, s.ctx, big.NewInt(400), types.ErrCapExceeded)
+		require.Equal(t, authorized, s.events(types.EventBridgeOut))
+		require.Equal(t, uint64(1), s.k.OutboundNonce(s.ctx, chainID))
+		result, err := s.k.BridgeOut(s.ctx, recipient, chainID, asset, big.NewInt(300), remote)
+		require.NoError(t, err)
+		require.Equal(t, uint64(2), result.Nonce)
+		require.Equal(t, sdk.NewInt(100), s.balance(recipient))
+		require.Equal(t, sdk.NewInt(100), s.app.BankKeeper.GetSupply(s.ctx, s.denom).Amount)
+		require.Equal(t, sdk.NewInt(100), s.k.InFlight(s.ctx, s.denom))
+		events := s.events(types.EventBridgeOut)
+		require.Len(t, events, 2)
+		require.Equal(t, authorized[0], events[0])
+		require.Equal(t, "300", attribute(events[1], types.AttributeAmount))
+		require.Equal(t, "2", attribute(events[1], types.AttributeNonce))
+	})
+	t.Run("missing-registered-cap", func(t *testing.T) {
+		exported := s.k.ExportGenesis(s.ctx)
+		exported.Caps = nil
+		require.NoError(t, exported.Validate())
+		fresh, ctx := bridgetestutil.NewKeeper(s.app, s.ctx)
+		fresh.InitGenesis(ctx, exported)
+		_, found := fresh.GetCap(ctx, s.denom)
+		require.False(t, found)
+		assertRefused(t, fresh, ctx, big.NewInt(1), types.ErrCapExceeded)
+	})
+}

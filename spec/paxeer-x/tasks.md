@@ -425,7 +425,7 @@
     - Add the new bounded harness tools/qualification/paxeer-x/wallet-supported-demo.py to exercise this task through the named production interfaces, including the stated refusal and recovery cases, with explicit prerequisite checks and nonzero exit on any unmet acceptance. Use supplied prebuilt executables and isolated retained state; do not hide a rebuild or invoke a release-wide suite.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 156_
-  - [ ] 14.8 Provide a genuine injected-wallet fixture and baseline reproduction
+  - [-] 14.8 Provide a genuine injected-wallet fixture and baseline reproduction
     - Provision a pinned official wallet extension in a disposable protected persistent browser profile, the repository-pinned browser automation runtime and two real isolated loopback EVM chains with chain identifiers125 and126. Verify ordinary dependency provenance; never use production wallet keys, funds, providers or authentication sessions.
     - Build a narrow browser entry importing the actual WalletProvider, session, wallet SDK and confirmation components, or the complete production wallet application. Preserve the production provider and signing paths; no intercepted RPC results, emitted fake provider events, replaced request method or fixture gateway responses.
     - Drive real extension discovery, account connection, rejection, network change, lock/disconnect, reconnect and controlled isolated-chain receipt observation. Missing embedded authentication configuration must remain an actual tested configuration. Record whether the suspected baseline wrong-chain path occurs before14.2 implementation without asserting an exploit from source alone.
@@ -643,7 +643,7 @@
     - Keep the relayer and keeper refusals and immutable attestation encoding; document the affected-deposit handling boundary in the existing bridge runbook.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 186_
-  - [-] 21.2 Bind outbound burn admission to the enforceable release amount
+  - [x] 21.2 Bind outbound burn admission to the enforceable release amount
     - Check the registered asset cap in Keeper.BridgeOut before its cached economic mutation.
     - Add TestBridgeOutReleaseCapBoundary to the keeper tests using the real keeper, bank and tokenfactory paths, covering aggregated deposits, exact cap and unchanged refusal state.
     - Specify coordinated cap reductions and pending-burn handling in bridge/README.md using the existing release checks as the boundary; retain owner/governance controls.
@@ -797,7 +797,7 @@
     - Implement --case kms-service-prerequisite with real KMS process and genuine mTLS clients: service startup and retained state identity; wrong CA/server/client-role refusal; existing allowed authorized operation with actual provider contract. Do not fake movement or advertise new readiness before12.4.
     - Keep original movement assembly and movement-kms gates untouched under12.2/24.3;12.4 owns the restricted authenticated non-mutating readiness protocol and its loss/recovery behavior.
     - _Requirements: 141.1, 141.2, 202.1, 202.2_
-  - [ ] 24.13 Build source-bound executable inputs for isolated runtime qualification
+  - [-] 24.13 Build source-bound executable inputs for isolated runtime qualification
     - Provide one explicit build recipe for the actual Paxeer daemon, wallet attestor, kernel daemon, genesis builder, module registry generator and custody proof producer. Reuse the canonical source packages and Makefile targets without changing dependency versions or build assertions.
     - Build from an identified clean source revision into a protected caller-selected directory. Bind every executable to its source revision, tree, relevant source paths and SHA-256 digest; refuse stale, missing, non-executable, mismatched or unproven external binaries. No credential material is collected.
     - Emit the version1 foundation artifact manifest consumed by24.11, with source_revision, source_tree and artifacts keyed by executable name, each containing absolute path, sha256 and source_revision. Source compatibility across harness-only revisions requires exact relevant source equality.
