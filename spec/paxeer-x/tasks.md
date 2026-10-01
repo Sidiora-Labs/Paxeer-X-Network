@@ -667,7 +667,7 @@
     - Connect receipt APIs to the new projection and create tools/explorer/tests/paxeer-x-data-boundary.py with --case kernel-receipts, driving real kernel/relay output through the production worker, database and HTTP API, including restart and tamper refusal.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 191_
-  - [-] 22.2 Restore canonical asset and account projections during rollback
+  - [x] 22.2 Restore canonical asset and account projections during rollback
     - Version observed metadata and discovery records by indexed unit or deterministically recompute them from surviving canonical units in Store::rollback.
     - Keep configuration-owned pointer/asset entries outside rollback-owned observations.
     - Create platform/hosted/indexer/tests/rollback_projection.rs using the real SQLite store with a supply-bearing orphan, replacement without supply change, database reopen and finalized-bound refusal.
