@@ -31514,7 +31514,7 @@ ac_8 = "Generated fixture keys and placeholder rosters do not establish producti
 
 [task.21.6]
 title = "Deliver bridge cosign shares over authenticated durable transport"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["0.2", "21.2"]

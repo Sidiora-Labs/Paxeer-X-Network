@@ -687,7 +687,7 @@
     - Create interop/crates/layerx-bridge-relayer/tests/operator_config.rs that loads a fully specified test identity instance of the documented template through RelayerConfig and covers each refusal without live chain calls.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 190_
-  - [-] 21.6 Deliver bridge cosign shares over authenticated durable transport
+  - [x] 21.6 Deliver bridge cosign shares over authenticated durable transport
     - Implement layerx-bridge-cosign to push own-attestor share files and admit peer shares through the existing CosignDirectory filesystem contract. Leave relayer.rs, main.rs and their configuration schema unchanged.
     - Reuse the existing TLS connector with a visibility-only change where appropriate. Require mutual TLS1.3, hostname verification and SHA256 DER SubjectPublicKeyInfo pins on both ends. Frame: four-byte big-endian length prefix equal to143, followed by LXSH magic(4), version1 u16(2), recipient(20), digest(32), signer(20), signature(65). Bound reads; reject other lengths and malformed or surplus data without an EOF-before-reply deadlock.
     - Store received signatures without overwrite using atomic writes and directory synchronization. Persist acknowledgement and terminal conflict keyed by peer attestor plus pin, digest and own-share identity. Retry unacknowledged delivery after restart. Sweep at most256 entries with a fair continuation cursor; do not automatically remove evidence.
