@@ -1005,9 +1005,9 @@ append_paxeer_steps() {
 
 append_specgen_steps() {
   case "$1" in
-    INSTALL) add_step specgen INSTALL "Download specification generator modules" "spec/specgen" "go" "go mod download" ;;
-    BUILD) add_step specgen BUILD "Build the specification generator" "spec/specgen" "go" "go build ./..." ;;
-    TEST) add_step specgen TEST "Test the specification generator" "spec/specgen" "go" "go test ./..." ;;
+    INSTALL) add_step specgen INSTALL "Download specification generator modules" "." "go" "go mod download" ;;
+    BUILD) add_step specgen BUILD "Build the specification generator" "." "go" "go build ./tools/specgen" ;;
+    TEST) add_step specgen TEST "Test the specification generator" "." "go" "go test ./tools/specgen" ;;
   esac
 }
 
