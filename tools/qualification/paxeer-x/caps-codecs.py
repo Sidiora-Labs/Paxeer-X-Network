@@ -26,13 +26,15 @@ def main():
             actual = hashlib.file_digest(file, 'sha256').hexdigest()
         if actual != artifact['sha256']:
             raise RuntimeError('prebuilt executable digest mismatch')
+        if not os.access(artifact['path'], os.X_OK):
+            raise RuntimeError('prebuilt input is not executable')
     vectors = output / 'native-vectors.json'
     with vectors.open('w') as target:
         subprocess.run([manifest['artifacts']['native']['path']], cwd=ROOT, stdout=target, check=True, timeout=60)
     native = json.loads(vectors.read_text())
     if native.get('producer') != 'native-budget-codec-and-grant-save':
         raise RuntimeError('unexpected native producer contract')
-    env = dict(os.environ, LAYERX_CAPS_VECTORS=str(vectors), LAYERX_TEST_NATIVE_BIN_DIR=str(output / 'native-bin'))
+    env = dict(os.environ, LAYERX_CAPS_VECTORS=str(vectors), LAYERX_TEST_NATIVE_BIN_DIR=str(Path(manifest['authority_binaries']['layerxd']['path']).parent))
     counts = {}
     for name in ['client', 'agentd']:
         result = subprocess.run([manifest['artifacts'][name]['path'], '--test-threads=1'], cwd=ROOT / 'agent', env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=600)
