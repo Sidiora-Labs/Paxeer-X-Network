@@ -259,8 +259,11 @@ impl Fixture {
     }
 
     fn spawn(&self, state_dir: &Path) -> Server {
-        let mut child = self
-            .command(state_dir)
+        self.spawn_with(self.command(state_dir), state_dir)
+    }
+
+    fn spawn_with(&self, mut command: Command, state_dir: &Path) -> Server {
+        let mut child = command
             .spawn()
             .unwrap_or_else(|error| panic!("spawn: {error}"));
         let stderr = child.stderr.take().unwrap_or_else(|| panic!("stderr pipe"));
@@ -1444,4 +1447,273 @@ fn registry_client_resolves(fixture: &Fixture, server: &Server, key: &str, expec
     );
     assert_eq!(client.resolve(key).as_deref(), Ok(expected));
     assert!(client.resolve("unknown-publication-key").is_err());
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn session_capacity_excludes_expired_after_restart() {
+    use layerx_platform_identity::store::{
+        Principal, Store, MAX_RETAINED_SESSIONS_PER_PRINCIPAL, MAX_SESSIONS_PER_PRINCIPAL,
+        SESSION_HISTORY_CAPACITY_REACHED,
+    };
+
+    let fixture = fixture("session-capacity");
+    let state = fixture.root.join("state");
+    let server = fixture.spawn(&state);
+    let (original_id, original_token, _) = provision(&fixture, &server);
+    drop(server);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_else(|error| panic!("time: {error}"))
+        .as_secs();
+    let mut store = Store::open(&state).unwrap_or_else(|error| panic!("store: {error}"));
+    let template = store.session(&original_id).unwrap().clone();
+    store.revoke_session(&original_id, now).unwrap();
+    for index in 0..MAX_SESSIONS_PER_PRINCIPAL {
+        let mut expired = template.clone();
+        expired.session_id = format!("{index:032x}");
+        expired.issued_at = now.saturating_sub(1);
+        expired.expires_at = now;
+        store.put_session(expired, now).unwrap();
+    }
+    let mut equality = template.clone();
+    equality.session_id = format!("{:032x}", MAX_SESSIONS_PER_PRINCIPAL);
+    equality.issued_at = now;
+    equality.expires_at = now + 3600;
+    store.put_session(equality.clone(), now).unwrap();
+    assert!(store.put_session(equality, now).is_err());
+    drop(store);
+
+    let server = fixture.spawn(&state);
+    assert_inactive(&fixture, &server, &original_token);
+    let expired_token = format!("ses_{:032x}.{}", 0, &original_token[37..]);
+    assert_inactive(&fixture, &server, &expired_token);
+    let minted = create_session(&fixture, &server, &serde_json::json!({"sub": SUB}));
+    assert_eq!(minted.status, 200, "expired sessions release capacity");
+    let minted = json(&minted);
+    let minted_id = minted["session_id"].as_str().unwrap().to_owned();
+    let minted_token = minted["token"].as_str().unwrap().to_owned();
+    let wrong_tenant = create_session(
+        &fixture,
+        &server,
+        &serde_json::json!({"sub": SUB, "tenant": "other"}),
+    );
+    assert_eq!(wrong_tenant.status, 404);
+    drop(server);
+
+    let mut store = Store::open(&state).unwrap();
+    let active_template = store.session(&minted_id).unwrap().clone();
+    for index in 2..MAX_SESSIONS_PER_PRINCIPAL {
+        let mut live = active_template.clone();
+        live.session_id = format!("{:032x}", 10_000 + index);
+        store.put_session(live, now).unwrap();
+    }
+    let mut refused = active_template.clone();
+    refused.session_id = format!("{:032x}", 30_000);
+    assert_eq!(
+        store.put_session(refused, now).unwrap_err(),
+        "principal session bound reached"
+    );
+    let other = Principal {
+        tenant: "other".to_owned(),
+        sub: BRAVO_SUB.to_owned(),
+        allowed_signer_public_keys: vec![OTHER_SIGNER_KEY.to_owned()],
+        account: None,
+        audiences: vec![],
+    };
+    store.put_principal(other.clone()).unwrap();
+    let mut crossed = active_template.clone();
+    crossed.session_id = format!("{:032x}", 30_001);
+    crossed.tenant.clone_from(&other.tenant);
+    assert_eq!(
+        store.put_session(crossed, now).unwrap_err(),
+        "session principal is unknown"
+    );
+    drop(store);
+
+    let server = fixture.spawn(&state);
+    let saturated = create_session(&fixture, &server, &serde_json::json!({"sub": SUB}));
+    assert_eq!(saturated.status, 429);
+    assert_eq!(json(&saturated)["error"]["code"], "session_bound_reached");
+    let other_session = create_session(
+        &fixture,
+        &server,
+        &serde_json::json!({"sub": BRAVO_SUB, "tenant": "other"}),
+    );
+    assert_eq!(
+        other_session.status, 200,
+        "another tenant has its own limit"
+    );
+    let other_token = json(&other_session)["token"].as_str().unwrap().to_owned();
+    let revoked = fixture.request(
+        &server,
+        "DELETE",
+        &format!("/v1/sessions/{minted_id}"),
+        Some(&token_for("provisioning")),
+        None,
+    );
+    assert_eq!(revoked.status, 200);
+    let revoked_at = json(&revoked)["revoked_at"].as_u64().unwrap();
+    let replacement = create_session(&fixture, &server, &serde_json::json!({"sub": SUB}));
+    assert_eq!(replacement.status, 200, "revocation releases one live slot");
+    let replacement_token = json(&replacement)["token"].as_str().unwrap().to_owned();
+    drop(server);
+    let server = fixture.spawn(&state);
+    assert_inactive(&fixture, &server, &original_token);
+    assert_inactive(&fixture, &server, &expired_token);
+    assert_inactive(&fixture, &server, &minted_token);
+    let active = introspect(
+        &fixture,
+        &server,
+        "gateway",
+        "/v1/introspect",
+        &replacement_token,
+    );
+    assert_eq!(json(&active)["active"], true);
+    assert_eq!(json(&active)["sub"], SUB);
+    let other_active = introspect(&fixture, &server, "gateway", "/v1/introspect", &other_token);
+    assert_eq!(json(&other_active)["sub"], BRAVO_SUB);
+    assert_eq!(
+        json(&other_active)["allowed_signer_public_keys"][0],
+        OTHER_SIGNER_KEY
+    );
+    assert_eq!(
+        create_session(&fixture, &server, &serde_json::json!({"sub": SUB})).status,
+        429
+    );
+    drop(server);
+
+    let history_state = fixture.root.join("history");
+    let mut history = Store::open(&history_state).unwrap();
+    let principal = Principal {
+        tenant: template.tenant.clone(),
+        sub: template.principal.clone(),
+        allowed_signer_public_keys: vec![SIGNER_KEY.to_owned()],
+        account: Some(ACCOUNT.to_owned()),
+        audiences: vec!["ramp-reference".to_owned()],
+    };
+    history.put_principal(principal).unwrap();
+    for index in 0..MAX_RETAINED_SESSIONS_PER_PRINCIPAL {
+        let mut expired = template.clone();
+        expired.session_id = format!("{index:032x}");
+        expired.expires_at = now;
+        history.put_session(expired, now).unwrap();
+    }
+    let history_id = format!("{:032x}", 0);
+    history.revoke_session(&history_id, now).unwrap();
+    let mut overflow = template.clone();
+    overflow.session_id = format!("{:032x}", MAX_RETAINED_SESSIONS_PER_PRINCIPAL);
+    assert_eq!(
+        history.put_session(overflow.clone(), now).unwrap_err(),
+        SESSION_HISTORY_CAPACITY_REACHED
+    );
+    drop(history);
+    let history_server = fixture.spawn(&history_state);
+    let history_full = create_session(&fixture, &history_server, &serde_json::json!({"sub": SUB}));
+    assert_eq!(history_full.status, 429);
+    assert_eq!(
+        json(&history_full)["error"]["code"],
+        "session_history_capacity_reached"
+    );
+    assert_eq!(json(&history_full)["error"]["retry"], "never");
+    drop(history_server);
+    let mut history = Store::open(&history_state).unwrap();
+    for index in 0..MAX_RETAINED_SESSIONS_PER_PRINCIPAL {
+        let retained = history.session(&format!("{index:032x}")).unwrap();
+        assert_eq!(retained.tenant, template.tenant);
+        assert_eq!(retained.principal, template.principal);
+        assert_eq!(retained.expires_at, now);
+    }
+    assert_eq!(history.session(&history_id).unwrap().revoked_at, Some(now));
+    assert_eq!(
+        history.put_session(overflow, now).unwrap_err(),
+        SESSION_HISTORY_CAPACITY_REACHED
+    );
+    drop(history);
+    let store = Store::open(&state).unwrap();
+    assert_eq!(
+        store.session(&minted_id).unwrap().revoked_at,
+        Some(revoked_at)
+    );
+    assert_eq!(store.session(&original_id).unwrap().revoked_at, Some(now));
+    drop(store);
+
+    fs::create_dir(state.join("snapshot.json.tmp")).unwrap();
+    assert!(
+        Store::open(&state).is_err(),
+        "failed compaction must not publish success"
+    );
+    fs::remove_dir(state.join("snapshot.json.tmp")).unwrap();
+    let store = Store::open(&state).unwrap();
+    assert_eq!(
+        store.session(&minted_id).unwrap().revoked_at,
+        Some(revoked_at)
+    );
+    drop(store);
+
+    let limited_state = fixture.root.join("write-failure");
+    let configured = fixture.command(&limited_state);
+    let mut limited = Command::new("sh");
+    limited.env_clear();
+    for (name, value) in configured.get_envs() {
+        if let Some(value) = value {
+            limited.env(name, value);
+        }
+    }
+    limited
+        .arg("-c")
+        .arg("trap '' XFSZ; ulimit -f 1; exec \"$0\"")
+        .arg(env!("CARGO_BIN_EXE_layerx-identity"))
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+    let server = fixture.spawn_with(limited, &limited_state);
+    let principal = create_principal(
+        &fixture,
+        &server,
+        &serde_json::json!({"tenant":"beta", "sub":SUB, "allowed_signer_public_keys":[]}),
+    );
+    assert_eq!(principal.status, 200);
+    let mut accepted = Vec::new();
+    let mut failed = false;
+    for _ in 0..8 {
+        let response = create_session(&fixture, &server, &serde_json::json!({"sub": SUB}));
+        if response.status == 503 {
+            assert_eq!(json(&response)["error"]["code"], "store_unavailable");
+            failed = true;
+            break;
+        }
+        assert_eq!(response.status, 200);
+        accepted.push(json(&response)["token"].as_str().unwrap().to_owned());
+    }
+    assert!(
+        failed,
+        "real file-size exhaustion must refuse the journal append"
+    );
+    assert_eq!(
+        fixture
+            .request(&server, "GET", "/readyz", None, None)
+            .status,
+        503
+    );
+    assert_eq!(
+        create_session(&fixture, &server, &serde_json::json!({"sub": SUB})).status,
+        503
+    );
+    drop(server);
+    let server = fixture.spawn(&limited_state);
+    for token in accepted {
+        assert_eq!(
+            json(&introspect(
+                &fixture,
+                &server,
+                "gateway",
+                "/v1/introspect",
+                &token
+            ))["active"],
+            true
+        );
+    }
+    let recovered = create_session(&fixture, &server, &serde_json::json!({"sub": SUB}));
+    assert_eq!(recovered.status, 200);
 }
