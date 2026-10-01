@@ -1,6 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { observeTransfer, submittedTransfer, type TransferIdentity, type TransferObservation, type TransferTruth } from '@paxeer/wallet';
+import { StatusLadder } from '@/account/StatusLadder';
+import { getActiveRpcUrl } from '@/lib/constants';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SvgIcon } from '@/components/ui/SvgIcon';
 import { openExternalUrl } from '@/lib/security/navigation';
@@ -12,7 +15,7 @@ interface TransferSuccessProps {
   toLabel: string;
   toAmount?: string;
   toSymbol?: string;
-  txHash: string;
+  transfer: TransferIdentity;
   explorerUrl?: string;
   onExplorerView?: () => void;
   onDone: () => void;
@@ -75,6 +78,89 @@ function AnimatedCheckmark({ size = 80 }: { size?: number }) {
   );
 }
 
+const OBSERVATION_INTERVAL_MS = 2000;
+const OBSERVATION_KEY = 'paxeer.wallet.transferObservation';
+
+const TRUTH_TITLES: Readonly<Record<TransferTruth, string>> = {
+  submitted: 'Transfer Submitted',
+  pending: 'Transfer Pending',
+  unknown: 'Transfer Status Unknown',
+  replaced: 'Transfer Replaced',
+  reverted: 'Transfer Reverted',
+  included: 'Transfer Included',
+};
+
+function storageKey(identity: TransferIdentity): string {
+  return `${OBSERVATION_KEY}:${identity.chainId}:${identity.hash.toLowerCase()}`;
+}
+
+function recoverObservation(identity: TransferIdentity): TransferObservation {
+  try {
+    const raw = window.localStorage.getItem(storageKey(identity));
+    if (raw) {
+      const stored = JSON.parse(raw) as TransferObservation;
+      if (stored.identity?.hash?.toLowerCase() === identity.hash.toLowerCase() && stored.identity.chainId === identity.chainId) {
+        return { ...stored, identity };
+      }
+    }
+  } catch {
+    // unreadable storage: observation restarts from the submitted identity
+  }
+  return submittedTransfer(identity);
+}
+
+async function rpcRequest(method: string, params: readonly unknown[]): Promise<unknown> {
+  const response = await fetch(getActiveRpcUrl(), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+  });
+  if (!response.ok) throw new Error(`RPC answered HTTP ${response.status}`);
+  const body = (await response.json()) as { result?: unknown; error?: { message?: string } };
+  if (body.error) throw new Error(body.error.message || `RPC ${method} failed`);
+  return body.result ?? null;
+}
+
+export function useTransferObservation(identity: TransferIdentity): { observation: TransferObservation; error: string } {
+  const [observation, setObservation] = useState<TransferObservation>(() => submittedTransfer(identity));
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let current = recoverObservation(identity);
+    setObservation(current);
+    const explorerStatusUrl = process.env.NEXT_PUBLIC_EXPLORER_STATUS_URL;
+    const tick = async () => {
+      try {
+        const next = await observeTransfer(rpcRequest, current, explorerStatusUrl ? { url: explorerStatusUrl } : undefined);
+        if (cancelled) return;
+        current = next;
+        setObservation(next);
+        setError('');
+        try {
+          window.localStorage.setItem(storageKey(identity), JSON.stringify(next));
+        } catch {
+          // storage unavailable: evidence stays in memory for this session
+        }
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : 'The transaction status could not be read');
+      }
+      const final = current.steps.some((step) => step.rung === 'final');
+      if (!cancelled && !final && current.truth !== 'reverted' && current.truth !== 'replaced') {
+        timer = setTimeout(tick, OBSERVATION_INTERVAL_MS);
+      }
+    };
+    void tick();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [identity.hash, identity.chainId]);
+
+  return { observation, error };
+}
+
 export function TransferSuccess({
   fromLabel,
   fromAmount,
@@ -82,17 +168,16 @@ export function TransferSuccess({
   toLabel,
   toAmount,
   toSymbol,
-  txHash,
+  transfer,
   explorerUrl,
   onExplorerView,
   onDone,
 }: TransferSuccessProps) {
-  const [phase, setPhase] = useState<'processing' | 'completed'>('processing');
-
-  useEffect(() => {
-    const timer = setTimeout(() => setPhase('completed'), 1400);
-    return () => clearTimeout(timer);
-  }, []);
+  const { observation, error } = useTransferObservation(transfer);
+  const txHash = transfer.hash;
+  const final = observation.truth === 'included' && observation.steps.some((step) => step.rung === 'final');
+  const phase: 'processing' | 'completed' = final ? 'completed' : 'processing';
+  const settled = final || observation.truth === 'reverted' || observation.truth === 'replaced' || observation.truth === 'included';
 
   const shortHash = txHash.length > 16
     ? `${txHash.slice(0, 10)}...${txHash.slice(-8)}`
@@ -149,14 +234,15 @@ export function TransferSuccess({
         {/* Title */}
         <AnimatePresence mode="wait">
           <motion.h2
-            key={phase}
+            key={observation.truth}
+            data-truth={observation.truth}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.4 }}
             className="text-lg font-bold mb-1"
           >
-            {phase === 'completed' ? 'Transfer Completed' : 'Transfer in Progress'}
+            {final ? 'Transfer Completed' : TRUTH_TITLES[observation.truth]}
           </motion.h2>
         </AnimatePresence>
 
@@ -167,11 +253,16 @@ export function TransferSuccess({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -5 }}
             transition={{ duration: 0.3 }}
-            className="text-xs text-emerald-400 mb-5"
+            className={`text-xs mb-5 ${observation.truth === 'reverted' ? 'text-red-400' : 'text-emerald-400'}`}
           >
-            {phase === 'completed' ? shortHash : 'Processing...'}
+            {shortHash}
           </motion.p>
         </AnimatePresence>
+
+        <div className="w-full mb-4">
+          <StatusLadder steps={observation.steps} />
+          {error && <p role="alert" className="mt-2 text-[11px] text-pax-muted">{error}</p>}
+        </div>
 
         {/* Transfer card */}
         <motion.div
@@ -231,7 +322,7 @@ export function TransferSuccess({
 
         {/* Actions (appear after completed) */}
         <AnimatePresence>
-          {phase === 'completed' && (
+          {settled && (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}

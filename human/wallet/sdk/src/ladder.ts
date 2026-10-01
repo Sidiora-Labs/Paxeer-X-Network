@@ -2,7 +2,7 @@ import { isRecord } from './rpc.js';
 import type { AnchorStatusName, ExplorerRung, ExplorerTransactionStatus, JourneyState } from './types.js';
 
 export type LadderRung = 'instant' | 'sealed' | 'final';
-export type LadderSource = 'explorer' | 'journey' | 'anchor';
+export type LadderSource = 'receipt' | 'explorer' | 'journey' | 'anchor';
 
 export interface LadderStep {
   rung: LadderRung | null;
@@ -109,4 +109,79 @@ export async function readExplorerStatus(
   });
   if (!response.ok) throw new Error(`explorer status answered HTTP ${response.status}`);
   return decodeExplorerStatus(await response.json());
+}
+
+export type TransferTruth = 'submitted' | 'pending' | 'unknown' | 'replaced' | 'reverted' | 'included';
+
+export interface TransferIdentity {
+  hash: string;
+  chainId: number;
+}
+
+export interface TransferObservation {
+  identity: TransferIdentity;
+  truth: TransferTruth;
+  steps: readonly LadderStep[];
+  blockNumber: number | null;
+  sender?: string;
+  nonce?: number;
+}
+
+export type TransferRpc = (method: string, params: readonly unknown[]) => Promise<unknown>;
+
+function quantity(value: unknown, what: string): number {
+  if (typeof value !== 'string' || !/^0x[0-9a-fA-F]+$/.test(value)) throw new TypeError(`malformed ${what}`);
+  return Number.parseInt(value, 16);
+}
+
+export function submittedTransfer(identity: TransferIdentity): TransferObservation {
+  if (!/^0x[0-9a-fA-F]{64}$/.test(identity.hash)) throw new RangeError('transaction hash must be 32 bytes of hex');
+  if (!Number.isInteger(identity.chainId) || identity.chainId <= 0) throw new RangeError('chain id must be a positive integer');
+  return { identity, truth: 'submitted', steps: [], blockNumber: null };
+}
+
+export async function observeTransfer(
+  rpc: TransferRpc,
+  previous: TransferObservation,
+  explorer?: { url: string; fetchImpl?: typeof fetch },
+): Promise<TransferObservation> {
+  const { identity } = previous;
+  const chainId = quantity(await rpc('eth_chainId', []), 'eth_chainId');
+  if (chainId !== identity.chainId) throw new Error(`connected to chain ${chainId}, transfer was submitted on chain ${identity.chainId}`);
+  const receipt = await rpc('eth_getTransactionReceipt', [identity.hash]);
+  if (isRecord(receipt)) {
+    const blockNumber = quantity(receipt.blockNumber, 'receipt blockNumber');
+    if (receipt.status !== '0x1') return { identity, truth: 'reverted', steps: [], blockNumber };
+    const steps: LadderStep[] = [{ rung: 'instant', source: 'receipt', state: 'success' }];
+    if (explorer) {
+      const status = await readExplorerStatus(explorer.url, identity.hash, explorer.fetchImpl);
+      steps.push(statusLadder.fromExplorer(status));
+    }
+    return { identity, truth: 'included', steps: mergeSteps(previous.steps, steps), blockNumber };
+  }
+  if (previous.truth === 'included' || previous.truth === 'reverted') {
+    return { ...previous, truth: 'unknown' };
+  }
+  const tx = await rpc('eth_getTransactionByHash', [identity.hash]);
+  const known = isRecord(tx) && typeof tx.from === 'string' && typeof tx.nonce === 'string'
+    ? { sender: tx.from, nonce: quantity(tx.nonce, 'transaction nonce') }
+    : previous.sender !== undefined && previous.nonce !== undefined
+      ? { sender: previous.sender, nonce: previous.nonce }
+      : null;
+  if (known !== null) {
+    const confirmed = quantity(await rpc('eth_getTransactionCount', [known.sender, 'latest']), 'account nonce');
+    if (confirmed > known.nonce) return { identity, truth: 'replaced', steps: [], blockNumber: null, ...known };
+  }
+  if (!isRecord(tx)) {
+    return { identity, truth: previous.truth === 'submitted' ? 'submitted' : 'unknown', steps: previous.steps, blockNumber: null, ...(known ?? {}) };
+  }
+  return { identity, truth: 'pending', steps: previous.steps, blockNumber: null, ...(known ?? {}) };
+}
+
+function mergeSteps(previous: readonly LadderStep[], next: readonly LadderStep[]): LadderStep[] {
+  const merged = [...next];
+  for (const step of previous) {
+    if (!merged.some((candidate) => candidate.source === step.source && rank(candidate.rung) >= rank(step.rung))) merged.push(step);
+  }
+  return merged;
 }

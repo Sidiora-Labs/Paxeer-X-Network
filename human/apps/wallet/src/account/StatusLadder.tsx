@@ -8,6 +8,7 @@ import { errorMessage, useAsync } from './hooks';
 
 const RUNG_LABELS: Readonly<Record<LadderRung, string>> = { instant: 'Instant', sealed: 'Sealed', final: 'Final' };
 const SOURCE_LABELS: Readonly<Record<LadderSource, string>> = {
+    receipt: 'receipt',
     explorer: 'explorer',
     journey: 'journey',
     anchor: 'anchor',

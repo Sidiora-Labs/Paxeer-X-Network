@@ -9,7 +9,9 @@
  * portfolio screen can subtract immediately on the next mount.
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { submittedTransfer, type TransferIdentity } from '@paxeer/wallet';
+import { PAXEER_CONFIG } from '@/lib/constants';
 import { useWalletActions } from '@/providers/WalletProvider';
 import { storePendingSend } from '@/lib/optimistic';
 import { saveRecentRecipient } from '@/lib/recentRecipients';
@@ -26,6 +28,8 @@ export interface UseSendFormResult {
     loading: boolean;
     error: string;
     txHash: string;
+    transfer: TransferIdentity | null;
+    clearTransfer: () => void;
     confirmOpen: boolean;
 
     setTo: (value: string) => void;
@@ -56,6 +60,22 @@ const computePortion = (
     }
 };
 
+export const SUBMITTED_TRANSFER_KEY = 'paxeer.wallet.submittedTransfer';
+
+function readSubmittedTransfer(): { identity: TransferIdentity; to: string; amount: string } | null {
+    try {
+        const raw = window.localStorage.getItem(SUBMITTED_TRANSFER_KEY);
+        if (!raw) return null;
+        const value = JSON.parse(raw) as { hash?: unknown; chainId?: unknown; to?: unknown; amount?: unknown };
+        if (typeof value.hash !== 'string' || typeof value.chainId !== 'number') return null;
+        const identity = submittedTransfer({ hash: value.hash, chainId: value.chainId }).identity;
+        if (identity.chainId !== PAXEER_CONFIG.chainId) return null;
+        return { identity, to: typeof value.to === 'string' ? value.to : '', amount: typeof value.amount === 'string' ? value.amount : '' };
+    } catch {
+        return null;
+    }
+}
+
 export function useSendForm(): UseSendFormResult {
     const { send } = useWalletActions();
 
@@ -63,7 +83,25 @@ export function useSendForm(): UseSendFormResult {
     const [amount, setAmount] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
-    const [txHash, setTxHash] = useState('');
+    const [transfer, setTransfer] = useState<TransferIdentity | null>(null);
+    const txHash = transfer?.hash ?? '';
+
+    useEffect(() => {
+        const recovered = readSubmittedTransfer();
+        if (!recovered) return;
+        setTransfer(recovered.identity);
+        setTo(recovered.to);
+        setAmount(recovered.amount);
+    }, []);
+
+    const clearTransfer = useCallback(() => {
+        try {
+            window.localStorage.removeItem(SUBMITTED_TRANSFER_KEY);
+        } catch {
+            // storage unavailable: the in-memory identity is still cleared
+        }
+        setTransfer(null);
+    }, []);
     const [confirmOpen, setConfirmOpen] = useState(false);
 
     const applyPercentage = useCallback((pct: number, token: SendableToken | null) => {
@@ -116,7 +154,13 @@ export function useSendForm(): UseSendFormResult {
                     tokenAddress: token.address,
                     decimals: token.decimals,
                 });
-                setTxHash(hash);
+                const identity = submittedTransfer({ hash, chainId: PAXEER_CONFIG.chainId }).identity;
+                try {
+                    window.localStorage.setItem(SUBMITTED_TRANSFER_KEY, JSON.stringify({ ...identity, to: recipient, amount }));
+                } catch {
+                    // storage unavailable: observation continues for this session only
+                }
+                setTransfer(identity);
                 saveRecentRecipient(recipient);
                 storePendingSend({
                     tokenAddress: token.address,
@@ -142,6 +186,8 @@ export function useSendForm(): UseSendFormResult {
         loading,
         error,
         txHash,
+        transfer,
+        clearTransfer,
         confirmOpen,
         setTo,
         setAmount,
