@@ -23083,7 +23083,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.103.6.2]
 title = "Implement the layerx-pending-core boundary and its admin plane"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -23094,7 +23094,7 @@ do_3 = "Back the core listener with layerx-client over the LNI socket named by L
 do_4 = "Back the admin listener with LAYERX_CORE_ADMIN_TOKEN_FILE, LAYERX_CORE_TREASURY_KEY_FILE and the supervisor socket LAYERX_CORE_SUPERVISOR_SOCKET: POST /admin/v1/testnet/fund validates {funding_id, did, public_key, amount}, resolves the account, builds and signs a SEND from the treasury with layerx-intents and layerx-crypto, submits it over the LNI, answers 200 {funding_id, state: funded, transaction_id} from the receipt and 4xx with a typed code for admin refusals caused by the request; durable-storage faults (journal write or lock failure) answer 503 with no state change; POST /admin/v1/testnet/reset with body {} sends reset to the supervisor and answers 200 {state: reset, reset_id}; both require Idempotency-Key and return the first outcome for a repeated key from a durable idempotency journal under LAYERX_CORE_STATE_DIR."
 do_5 = "Write tests under platform/hosted/core/tests that start a real layerxd and replica from build/bin through platform/hosted/node/bootstrap.sh, drive every route over TLS with the beta CA shape, prove funding produces a receipt-verified balance, prove the repeated Idempotency-Key does not move value twice, prove /readyz is 503 while the daemon is down, and add platform/hosted/core/Dockerfile from the faucet template."
 do_6 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["platform/hosted/core", "platform/Cargo.toml", "platform/Cargo.lock", "platform/hosted/node/bootstrap.sh", "tools/paxeer-x/gates/103.6.2.sh"]
+touches = ["platform/hosted/core", "tools/paxeer-x/gates/103.6.2.sh"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 103.6.2"
 gate_kind = "planned-adapter"
 max_builds = 1
@@ -23110,6 +23110,9 @@ completion_policy = "Existing implementation is preserved; current candidate qua
 planned_paths = ["tools/paxeer-x/gates/103.6.2.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+source_scope = "Reuse the existing core crate and canonical docker/platform-core/Dockerfile; no duplicate service or Docker recipe. Shared Cargo manifests, lockfile, bootstrap producer and Docker recipe are read-only. Preserve full real TLS, admin funding, reset, durability, refusal and strict all-target lint coverage. Missing producer or shared-source changes require a separately scoped prerequisite."
+readiness_obligation = "Requirements 1053.3 and 1053.4 remain required in full under RELEASE task 103.3.7 and candidate-bound runtime assembly task 70.8. This component task proves only the core contribution; it cannot discharge per-journey or global readiness."
 
 [task.103.6.3]
 title = "Implement the layerx-receipt-authority service over the independent replica"
