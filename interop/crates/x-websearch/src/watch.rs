@@ -1,6 +1,8 @@
+use std::collections::BTreeMap;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha3::{Digest as _, Keccak256};
 
@@ -22,6 +24,11 @@ pub const MAX_BLOCK_RANGE: u64 = 1_000;
 pub const MAX_PAYLOAD_BYTES: usize = 65_536;
 
 const CURSOR_FILE: &str = "cursor";
+
+const PENDING_FILE: &str = "pending.json";
+
+/// The attempts a retryable request gets before it is durably refused.
+pub const MAX_ATTEMPTS: u32 = 8;
 
 /// keccak256 of `bytes`.
 #[must_use]
@@ -82,6 +89,8 @@ pub enum EvmError {
     ForeignLog,
     /// The watcher's cursor could not be read or written.
     Cursor,
+    /// The pending-work journal could not be written.
+    Journal,
 }
 
 impl std::fmt::Display for EvmError {
@@ -93,6 +102,7 @@ impl std::fmt::Display for EvmError {
             Self::Malformed => f.write_str("evm answer malformed"),
             Self::ForeignLog => f.write_str("log is not an xweb request"),
             Self::Cursor => f.write_str("watch cursor unreadable or unwritable"),
+            Self::Journal => f.write_str("watch pending-work journal not written"),
         }
     }
 }
@@ -160,8 +170,20 @@ impl EvmRpc {
     }
 }
 
+/// Where a journalled request stands against the chain at the watcher's
+/// confirmation depth.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Canonical {
+    /// Its block is not yet past the confirmation depth.
+    NotFinal,
+    /// Its exact log is still in its block past the confirmation depth.
+    Present,
+    /// Its block is past the confirmation depth and no longer holds the log.
+    Absent,
+}
+
 /// One `XWebRequested` log, decoded.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct WebRequest {
     pub request_id: u64,
     pub requester: [u8; 20],
@@ -280,6 +302,18 @@ pub struct RequestWatcher {
     cursor_path: PathBuf,
     next_block: Option<u64>,
     last_head: u64,
+    pending_path: PathBuf,
+    pending: BTreeMap<u64, Pending>,
+}
+
+/// A confirmed request the watcher committed to before moving its cursor.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Pending {
+    pub request: WebRequest,
+    /// Failed retryable attempts so far.
+    pub attempts: u32,
+    /// The durable terminal refusal, once there is one.
+    pub refused: Option<String>,
 }
 
 impl RequestWatcher {
@@ -304,12 +338,24 @@ impl RequestWatcher {
             Err(error) if error.kind() == io::ErrorKind::NotFound => None,
             Err(error) => return Err(error),
         };
+        let pending_path = state_dir.join(PENDING_FILE);
+        let pending = match std::fs::read(&pending_path) {
+            Ok(bytes) => serde_json::from_slice::<Vec<Pending>>(&bytes)
+                .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "watch journal malformed"))?
+                .into_iter()
+                .map(|entry| (entry.request.request_id, entry))
+                .collect(),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => BTreeMap::new(),
+            Err(error) => return Err(error),
+        };
         Ok(Self {
             rpc,
             confirmations: u64::from(confirmations),
             cursor_path,
             next_block: stored.or(start),
             last_head: 0,
+            pending_path,
+            pending,
         })
     }
 
@@ -325,6 +371,94 @@ impl RequestWatcher {
         self.last_head
     }
 
+    /// Every request held in the journal, refused ones included, ascending.
+    #[must_use]
+    pub fn journal(&self) -> Vec<Pending> {
+        self.pending.values().cloned().collect()
+    }
+
+    /// The journalled requests still to be worked, ascending.
+    #[must_use]
+    pub fn work(&self) -> Vec<WebRequest> {
+        self.pending
+            .values()
+            .filter(|entry| entry.refused.is_none())
+            .map(|entry| entry.request.clone())
+            .collect()
+    }
+
+    /// Records a failed attempt. A terminal failure, or the last retryable
+    /// one, becomes a durable refusal. Returns whether it is now refused.
+    ///
+    /// # Errors
+    /// Returns the error writing the journal.
+    pub fn fail(
+        &mut self,
+        request_id: u64,
+        terminal: bool,
+        reason: &str,
+    ) -> Result<bool, EvmError> {
+        let Some(entry) = self.pending.get_mut(&request_id) else {
+            return Ok(false);
+        };
+        entry.attempts = entry.attempts.saturating_add(1);
+        if terminal || entry.attempts >= MAX_ATTEMPTS {
+            entry.refused = Some(reason.to_owned());
+        }
+        let refused = entry.refused.is_some();
+        self.store_pending()?;
+        Ok(refused)
+    }
+
+    /// Drops a request whose on-chain state is closed.
+    ///
+    /// # Errors
+    /// Returns the error writing the journal.
+    pub fn retire(&mut self, request_id: u64) -> Result<(), EvmError> {
+        if self.pending.remove(&request_id).is_some() {
+            self.store_pending()?;
+        }
+        Ok(())
+    }
+
+    /// Re-reads the request's block at the current head and reports
+    /// whether its exact log is still canonical past the confirmation depth.
+    ///
+    /// # Errors
+    /// Returns the endpoint's error and a malformed or foreign log.
+    pub fn canonical(&mut self, request: &WebRequest) -> Result<Canonical, EvmError> {
+        let head = self.rpc.block_number()?;
+        self.last_head = head;
+        if head < request.block_number.saturating_add(self.confirmations) {
+            return Ok(Canonical::NotFinal);
+        }
+        let logs = self.rpc.call(
+            "eth_getLogs",
+            &json!([{
+                "address": hex0x(&XWEB_PRECOMPILE),
+                "fromBlock": quantity(u128::from(request.block_number)),
+                "toBlock": quantity(u128::from(request.block_number)),
+                "topics": [hex0x(&requested_topic())],
+            }]),
+        )?;
+        for log in logs.as_array().ok_or(EvmError::Malformed)? {
+            if decode_requested(log)? == *request {
+                return Ok(Canonical::Present);
+            }
+        }
+        Ok(Canonical::Absent)
+    }
+
+    fn store_pending(&self) -> Result<(), EvmError> {
+        let entries: Vec<&Pending> = self.pending.values().collect();
+        let bytes = serde_json::to_vec(&entries).map_err(|_| EvmError::Journal)?;
+        let temporary = self.pending_path.with_extension("tmp");
+        std::fs::write(&temporary, bytes)
+            .and_then(|()| std::fs::File::open(&temporary)?.sync_all())
+            .and_then(|()| std::fs::rename(&temporary, &self.pending_path))
+            .map_err(|_| EvmError::Journal)
+    }
+
     fn store_cursor(&self, next: u64) -> Result<(), EvmError> {
         let temporary = self.cursor_path.with_extension("tmp");
         std::fs::write(&temporary, next.to_string())
@@ -335,7 +469,8 @@ impl RequestWatcher {
 
     /// Reads the confirmed blocks after the cursor, at most
     /// [`MAX_BLOCK_RANGE`] of them, and returns their requests in log order.
-    /// The cursor moves only after every log in the range decoded.
+    /// The cursor moves only after every log in the range decoded and every
+    /// request in it is durably journalled.
     ///
     /// # Errors
     /// Returns the endpoint's error, a malformed or foreign log and a cursor
@@ -371,6 +506,23 @@ impl RequestWatcher {
             .any(|request| request.block_number < from || request.block_number > to)
         {
             return Err(EvmError::Malformed);
+        }
+        let mut added = false;
+        for request in &requests {
+            if !self.pending.contains_key(&request.request_id) {
+                self.pending.insert(
+                    request.request_id,
+                    Pending {
+                        request: request.clone(),
+                        attempts: 0,
+                        refused: None,
+                    },
+                );
+                added = true;
+            }
+        }
+        if added {
+            self.store_pending()?;
         }
         let next = to + 1;
         self.store_cursor(next)?;

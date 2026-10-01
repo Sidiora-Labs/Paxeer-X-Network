@@ -19,7 +19,7 @@ use x_websearch::keys::ATTESTOR_KEY_FILE;
 use x_websearch::payment::{system_clock, PaymentGate};
 use x_websearch::server::Stopper;
 use x_websearch::submit::{self, Outcome, Submitter};
-use x_websearch::watch::{EvmRpc, RequestWatcher};
+use x_websearch::watch::{Canonical, EvmRpc, RequestWatcher, WebRequest};
 use x_websearch::{search, Config, KeyFiles, Keys, Limits, RouteTable, Server};
 
 /// How long after the start of one attestation round the next one starts.
@@ -200,6 +200,7 @@ fn pipeline(
                 config.evm.chain_id,
                 &config.data_dir.join("submit"),
             )
+            .map(|submitter| submitter.with_confirmations(u64::from(config.evm.confirmations)))
         })
         .transpose()
         .map_err(|error| format!("data_dir: {error}"))?;
@@ -215,21 +216,42 @@ fn pipeline(
 /// One attestation round: answer the newly confirmed requests, drop the
 /// timed-out ones, exchange signatures and submit or settle each request.
 fn attest_round(pipeline: &mut Pipeline) {
-    match pipeline.watcher.poll() {
-        Ok(requests) => {
-            for request in requests {
-                match pipeline.attestor.attest(&request) {
-                    Ok(answer) => pipeline.exchange.record(answer),
-                    Err(error) => eprintln!(
-                        "x-websearch could not answer request {}: {error}",
-                        request.request_id
-                    ),
+    if let Err(error) = pipeline.watcher.poll() {
+        eprintln!("x-websearch request watch failed: {error}");
+    }
+    let head = pipeline.watcher.last_head();
+    for request in pipeline.watcher.work() {
+        let request_id = request.request_id;
+        if request.timeout_height < head {
+            retire_closed(pipeline, request_id);
+            continue;
+        }
+        if pipeline.exchange.answer(request_id).is_some() {
+            continue;
+        }
+        if !still_canonical(pipeline, &request) {
+            continue;
+        }
+        match pipeline.attestor.attest(&request) {
+            Ok(answer) => pipeline.exchange.record(answer),
+            Err(error) => {
+                match pipeline
+                    .watcher
+                    .fail(request_id, error.is_terminal(), &error.to_string())
+                {
+                    Ok(true) => eprintln!("x-websearch refused request {request_id}: {error}"),
+                    Ok(false) => eprintln!("x-websearch will retry request {request_id}: {error}"),
+                    Err(journal) => eprintln!("x-websearch request {request_id}: {journal}"),
                 }
             }
         }
-        Err(error) => eprintln!("x-websearch request watch failed: {error}"),
     }
-    pipeline.exchange.expire(pipeline.watcher.last_head());
+    for entry in pipeline.watcher.journal() {
+        if entry.refused.is_some() {
+            retire_closed(pipeline, entry.request.request_id);
+        }
+    }
+    pipeline.exchange.expire(head);
     let set = match submit::attestor_set(&pipeline.rpc) {
         Ok(set) => set,
         Err(error) => {
@@ -237,7 +259,18 @@ fn attest_round(pipeline: &mut Pipeline) {
             return;
         }
     };
+    let journal = pipeline.watcher.journal();
     for request_id in pipeline.exchange.pending() {
+        // ponytail: one eth_getLogs per pending request per round; batch by
+        // block if the pending set grows large.
+        if let Some(entry) = journal
+            .iter()
+            .find(|entry| entry.request.request_id == request_id)
+        {
+            if !still_canonical(pipeline, &entry.request) {
+                continue;
+            }
+        }
         let held = pipeline.exchange.collect(request_id, &set);
         let settled = match &pipeline.submitter {
             Some(submitter) => settle(submitter, &pipeline.exchange, request_id, &set),
@@ -246,12 +279,56 @@ fn attest_round(pipeline: &mut Pipeline) {
                 .map_err(|error| error.to_string()),
         };
         match settled {
-            Ok(true) => pipeline.exchange.forget(request_id),
+            Ok(true) => {
+                pipeline.exchange.forget(request_id);
+                if let Err(error) = pipeline.watcher.retire(request_id) {
+                    eprintln!("x-websearch request {request_id}: {error}");
+                }
+            }
             Ok(false) => {}
             Err(error) => {
                 eprintln!("x-websearch request {request_id} with {held} signatures: {error}");
             }
         }
+    }
+}
+
+/// Re-validates a journalled request against the current head before any
+/// further work or economic action. A request whose log is gone from its
+/// block past the confirmation depth was reorged out: it is forgotten and
+/// retired. `true` means the request may proceed.
+fn still_canonical(pipeline: &mut Pipeline, request: &WebRequest) -> bool {
+    let request_id = request.request_id;
+    match pipeline.watcher.canonical(request) {
+        Ok(Canonical::Present) => true,
+        Ok(Canonical::NotFinal) => false,
+        Ok(Canonical::Absent) => {
+            eprintln!("x-websearch request {request_id} is no longer canonical; retiring it");
+            pipeline.exchange.forget(request_id);
+            if let Err(error) = pipeline.watcher.retire(request_id) {
+                eprintln!("x-websearch request {request_id}: {error}");
+            }
+            false
+        }
+        Err(error) => {
+            eprintln!("x-websearch request {request_id} canonical check: {error}");
+            false
+        }
+    }
+}
+
+/// Drops a journalled request from the watcher once the chain closed it,
+/// fulfilled or refunded; an open one stays journalled.
+fn retire_closed(pipeline: &mut Pipeline, request_id: u64) {
+    match submit::request_status(&pipeline.rpc, request_id) {
+        Ok(status) if status != submit::STATUS_PENDING => {
+            pipeline.exchange.forget(request_id);
+            if let Err(error) = pipeline.watcher.retire(request_id) {
+                eprintln!("x-websearch request {request_id}: {error}");
+            }
+        }
+        Ok(_) => {}
+        Err(error) => eprintln!("x-websearch request {request_id} status: {error}"),
     }
 }
 

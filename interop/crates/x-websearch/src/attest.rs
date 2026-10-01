@@ -42,6 +42,7 @@ pub const MAX_RECORD_BYTES: usize = 4_096;
 const PEER_CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 const PEER_TOTAL_TIMEOUT: Duration = Duration::from_secs(10);
 const DISCARD_LOG: &str = "discarded.jsonl";
+const ANSWERS_DIR: &str = "answers";
 
 /// What attestors sign for one request's answer, laid out byte for byte as
 /// `modules/xweb/ATTESTATION.md` specifies.
@@ -237,6 +238,17 @@ pub enum AttestError {
     /// The api request names another attestor under the single level, so
     /// this sidecar does not sign it.
     NotNamed([u8; 20]),
+}
+
+impl AttestError {
+    /// Whether retrying the same request can never succeed.
+    #[must_use]
+    pub const fn is_terminal(&self) -> bool {
+        matches!(
+            self,
+            Self::UnknownKind(_) | Self::Payload | Self::TooLong | Self::NotNamed(_)
+        )
+    }
 }
 
 impl std::fmt::Display for AttestError {
@@ -551,6 +563,95 @@ struct Collected {
     signatures: BTreeMap<[u8; 20], [u8; SIGNATURE_LENGTH]>,
 }
 
+impl Collected {
+    fn to_json(&self) -> Value {
+        let answer = &self.answer;
+        let attestation = &answer.attestation;
+        json!({
+            "origin": attestation.origin,
+            "network_id": hex0x(&attestation.network_id),
+            "requester": hex0x(&attestation.requester),
+            "request_id": attestation.request_id,
+            "kind": attestation.kind,
+            "payload_hash": hex0x(&attestation.payload_hash),
+            "content_digest": hex0x(&attestation.content_digest),
+            "response_hash": hex0x(&attestation.response_hash),
+            "full_length": attestation.full_length,
+            "level": match answer.level {
+                Level::Majority => Value::Null,
+                Level::Single(named) => json!(hex0x(&named)),
+            },
+            "response": hex0x(&answer.response),
+            "callback_gas": answer.callback_gas,
+            "timeout_height": answer.timeout_height,
+            "digest": hex0x(&answer.digest),
+            "signer": hex0x(&answer.signer),
+            "signature": hex0x(&answer.signature),
+            "signatures": self
+                .signatures
+                .iter()
+                .map(|(signer, signature)| json!([hex0x(signer), hex0x(signature)]))
+                .collect::<Vec<_>>(),
+        })
+    }
+
+    /// Reads a retained answer back, re-deriving its digest and recovering
+    /// every signature it holds over that digest. Anything that does not
+    /// check out is refused as a whole.
+    fn from_json(value: &Value) -> Option<Self> {
+        let object = value.as_object()?;
+        let number = |key: &str| object.get(key).and_then(Value::as_u64);
+        let attestation = Attestation {
+            origin: u8::try_from(number("origin")?).ok()?,
+            network_id: fixed(object.get("network_id"))?,
+            requester: fixed(object.get("requester"))?,
+            request_id: number("request_id")?,
+            kind: u8::try_from(number("kind")?).ok()?,
+            payload_hash: fixed(object.get("payload_hash"))?,
+            content_digest: fixed(object.get("content_digest"))?,
+            response_hash: fixed(object.get("response_hash"))?,
+            full_length: u32::try_from(number("full_length")?).ok()?,
+        };
+        let level = match object.get("level")? {
+            Value::Null => Level::Majority,
+            named => Level::Single(fixed(Some(named))?),
+        };
+        let answer = Answer {
+            attestation,
+            level,
+            response: unhex0x(object.get("response")?.as_str()?)?,
+            callback_gas: number("callback_gas")?,
+            timeout_height: number("timeout_height")?,
+            digest: fixed(object.get("digest"))?,
+            signer: fixed(object.get("signer"))?,
+            signature: fixed(object.get("signature"))?,
+        };
+        if attestation.digest() != answer.digest
+            || keccak(&answer.response) != attestation.response_hash
+            || recover_signer(&answer.digest, &answer.signature).ok()? != answer.signer
+        {
+            return None;
+        }
+        let mut signatures = BTreeMap::new();
+        for pair in object.get("signatures")?.as_array()? {
+            let [signer, signature] = pair.as_array()?.as_slice() else {
+                return None;
+            };
+            let signer: [u8; 20] = fixed(Some(signer))?;
+            let signature: [u8; SIGNATURE_LENGTH] = fixed(Some(signature))?;
+            if recover_signer(&answer.digest, &signature).ok()? != signer
+                || signatures.insert(signer, signature).is_some()
+            {
+                return None;
+            }
+        }
+        if signatures.get(&answer.signer) != Some(&answer.signature) {
+            return None;
+        }
+        Some(Self { answer, signatures })
+    }
+}
+
 /// A parsed attestation record.
 struct Record {
     request_id: u64,
@@ -602,14 +703,18 @@ pub struct SignatureExchange {
     answers: Mutex<BTreeMap<u64, Collected>>,
     discarded: Mutex<Vec<Discarded>>,
     log_path: PathBuf,
+    answers_dir: PathBuf,
 }
 
 impl SignatureExchange {
-    /// Opens the exchange with its discard log under `state_dir`.
+    /// Opens the exchange with its discard log under `state_dir` and
+    /// restores every answer and peer signature retained there, so a
+    /// restart keeps the partial signature progress it had.
     ///
     /// # Errors
-    /// Refuses a peer that is not an http or https URL with no query and
-    /// returns the error creating the directory.
+    /// Refuses a peer that is not an http or https URL with no query and a
+    /// retained answer that does not check out, and returns the error
+    /// creating or reading the directory.
     pub fn open(state_dir: &Path, peers: &[String]) -> io::Result<Self> {
         let peers = peers
             .iter()
@@ -622,15 +727,66 @@ impl SignatureExchange {
             })
             .collect::<io::Result<Vec<_>>>()?;
         std::fs::create_dir_all(state_dir)?;
+        let answers_dir = state_dir.join(ANSWERS_DIR);
+        std::fs::create_dir_all(&answers_dir)?;
+        let refused = || io::Error::new(io::ErrorKind::InvalidData, "retained answer refused");
+        let mut answers = BTreeMap::new();
+        for entry in std::fs::read_dir(&answers_dir)? {
+            let path = entry?.path();
+            if path.extension().and_then(|extension| extension.to_str()) != Some("json") {
+                continue;
+            }
+            let value: Value =
+                serde_json::from_slice(&std::fs::read(&path)?).map_err(|_| refused())?;
+            let collected = Collected::from_json(&value).ok_or_else(refused)?;
+            let request_id = collected.answer.request_id();
+            if path.file_stem().and_then(|stem| stem.to_str()) != Some(&request_id.to_string()) {
+                return Err(refused());
+            }
+            answers.insert(request_id, collected);
+        }
         let client = HttpClient::new(PEER_CONNECT_TIMEOUT)
             .map_err(|error| io::Error::other(error.code()))?;
         Ok(Self {
             peers,
             client,
-            answers: Mutex::new(BTreeMap::new()),
+            answers: Mutex::new(answers),
             discarded: Mutex::new(Vec::new()),
             log_path: state_dir.join(DISCARD_LOG),
+            answers_dir,
         })
+    }
+
+    fn answer_path(&self, request_id: u64) -> PathBuf {
+        self.answers_dir.join(format!("{request_id}.json"))
+    }
+
+    /// Writes a request's answer and signatures atomically before the
+    /// exchange relies on them.
+    fn retain(&self, collected: &Collected) {
+        let path = self.answer_path(collected.answer.request_id());
+        let temporary = path.with_extension("tmp");
+        let written = std::fs::write(&temporary, collected.to_json().to_string())
+            .and_then(|()| std::fs::File::open(&temporary)?.sync_all())
+            .and_then(|()| std::fs::rename(&temporary, &path));
+        if let Err(error) = written {
+            eprintln!(
+                "x-websearch could not retain the answer to request {}: {error}",
+                collected.answer.request_id()
+            );
+        }
+    }
+
+    fn release(&self, request_id: u64) {
+        match std::fs::remove_file(self.answer_path(request_id)) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => {
+                eprintln!(
+                    "x-websearch could not release the answer to request {request_id}: {error}"
+                );
+            }
+        }
     }
 
     /// The file every discarded signature is appended to.
@@ -643,15 +799,19 @@ impl SignatureExchange {
         self.answers.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Keeps this sidecar's own answer and its own signature. An answer
-    /// already held for the request is kept as it is.
+    /// Keeps this sidecar's own answer and its own signature, durably. An
+    /// answer already held for the request is kept as it is.
     pub fn record(&self, answer: Answer) {
-        self.answers()
-            .entry(answer.request_id())
-            .or_insert_with(|| Collected {
-                signatures: BTreeMap::from([(answer.signer, answer.signature)]),
-                answer,
-            });
+        let mut answers = self.answers();
+        if answers.contains_key(&answer.request_id()) {
+            return;
+        }
+        let collected = Collected {
+            signatures: BTreeMap::from([(answer.signer, answer.signature)]),
+            answer,
+        };
+        self.retain(&collected);
+        answers.insert(collected.answer.request_id(), collected);
     }
 
     /// This sidecar's answer to a request.
@@ -670,13 +830,24 @@ impl SignatureExchange {
 
     /// Drops the answer and signatures for a request.
     pub fn forget(&self, request_id: u64) {
-        self.answers().remove(&request_id);
+        if self.answers().remove(&request_id).is_some() {
+            self.release(request_id);
+        }
     }
 
     /// Drops every answer whose request timed out before `height`.
     pub fn expire(&self, height: u64) {
-        self.answers()
-            .retain(|_, collected| collected.answer.timeout_height >= height);
+        let mut expired = Vec::new();
+        self.answers().retain(|request_id, collected| {
+            let keep = collected.answer.timeout_height >= height;
+            if !keep {
+                expired.push(*request_id);
+            }
+            keep
+        });
+        for request_id in expired {
+            self.release(request_id);
+        }
     }
 
     /// Every signature discarded so far, in the order it was discarded.
@@ -750,10 +921,13 @@ impl SignatureExchange {
         };
         match verdict {
             Ok(signer) => {
-                if let (Some(collected), Some(record)) =
-                    (self.answers().get_mut(&request_id), parsed)
-                {
-                    collected.signatures.insert(signer, record.signature);
+                let mut answers = self.answers();
+                if let (Some(collected), Some(record)) = (answers.get_mut(&request_id), parsed) {
+                    if collected.signatures.insert(signer, record.signature)
+                        != Some(record.signature)
+                    {
+                        self.retain(collected);
+                    }
                 }
                 Ok(Some(signer))
             }
