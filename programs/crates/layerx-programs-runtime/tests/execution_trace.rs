@@ -3,9 +3,15 @@ use layerx_programs_runtime::test_support::{
     unsigned_leb, OP_CALL, OP_DROP, OP_END, OP_I32_ADD, OP_I32_CONST, OP_LOCAL_GET, TYPE_I32,
 };
 use layerx_programs_runtime::{
+    ArbitrationStepCommitment, ExecutionTrace, StepCommitment, ARBITRATION_STEP_COMMITMENT_DOMAIN,
+    STEP_COMMITMENT_DOMAIN,
+};
+use layerx_programs_runtime::{
     ExecutionError, ExecutionFault, Executor, FeeSchedule, ResourceBudget, TracePolicy,
     ValidatedModule, WasmEngine, WasmValue,
 };
+
+use sha2::{Digest, Sha256};
 
 const STATE_RICH_TRACED_CPU_FUEL: u64 = 10_654_360;
 const TRACE_TEST_CPU_HEADROOM: u64 = STATE_RICH_TRACED_CPU_FUEL * 2;
@@ -379,4 +385,197 @@ fn receipt_commitment_bound_refuses_an_incomplete_chain() {
         }
         other => panic!("bounded trace returned partial evidence: {other:?}"),
     }
+}
+
+/// Golden vectors for the frozen v1 state/trace and v2 arbitration
+/// state/commitment/trace encodings of `traced_state_rich_call` (module
+/// `state_rich_module`, entry `run`, input `I32(7)`, `TracePolicy::new(3, 256)`).
+/// Provenance: produced by `ExecutionState::canonical_bytes`,
+/// `StepCommitment::from_state`, `ExecutionTrace::canonical_bytes`,
+/// `ArbitrationExecutionState::canonical_bytes`,
+/// `ArbitrationStepCommitment::from_state`,
+/// `ExecutionTrace::canonical_arbitration_bytes` and
+/// `TracedExecutionRecord::canonical_evidence` at revision 742131dda with every
+/// production encoder unchanged; digests are SHA-256 of the exact bytes.
+struct EncodingVector {
+    length: usize,
+    sha256: &'static str,
+}
+
+const V1_FIRST_STATE: EncodingVector = EncodingVector {
+    length: 65_819,
+    sha256: "c99ddaec30aff416fc76c53fccffbe367abb6f83a217aa103074368229b4cc3e",
+};
+const V1_LAST_STATE: EncodingVector = EncodingVector {
+    length: 131_335,
+    sha256: "fdc202fa257b432adcc451c9ceb39d76c716a8717dfc014d17f344fd22052ceb",
+};
+const V1_TRACE: EncodingVector = EncodingVector {
+    length: 1_698,
+    sha256: "cd2458a964eec9ee06a8a39e635e95897cfef83b42af1fabe4759ffd0cf1702f",
+};
+const V1_TRACE_PREFIX: &str = "000100000000000000030000010000000020";
+const V2_FIRST_STATE: EncodingVector = EncodingVector {
+    length: 131_682,
+    sha256: "626efdd7f844f767b7941f69fc66f3619f2e5fd008c68bf84824adbe2f432ff3",
+};
+const V2_LAST_STATE: EncodingVector = EncodingVector {
+    length: 262_734,
+    sha256: "ee3e85ca7d94e65210c4a069ba2ed5c42be844cc251a9f704f885969e54f7e96",
+};
+const V2_TRACE: EncodingVector = EncodingVector {
+    length: 3_452,
+    sha256: "06aeb50b0c188b04c4139c1f7d7d0fc282d311524960cde6092ce272d69bd5b7",
+};
+const TRACED_EVIDENCE: EncodingVector = EncodingVector {
+    length: 7_059,
+    sha256: "7a60515c8ccb89b0d9ee7cec7cb9393e1d296eb6ee43ef70fc77ab8c59150a3f",
+};
+const MODULE_CODE_HASH: &str = "2ccd158cb5eed8b5fbe9438bd4704faf6d107be34f5859f6593faac71b0753e2";
+const INPUT_DIGEST: &str = "bce001aa0a14abd3729d4e4dbc4019c0e27c77127296eb4d4c8d9af21c238b59";
+
+fn assert_vector(name: &str, bytes: &[u8], expected: &EncodingVector) {
+    assert_eq!(bytes.len(), expected.length, "{name} length");
+    assert_eq!(
+        hex::encode(Sha256::digest(bytes)),
+        expected.sha256,
+        "{name} digest"
+    );
+}
+
+fn assert_v1_commitment(
+    commitment: StepCommitment,
+    state: &[u8],
+    step_index: u64,
+    digest: &str,
+    fuel: u64,
+) {
+    let mut hasher = Sha256::new();
+    hasher.update(STEP_COMMITMENT_DOMAIN);
+    hasher.update(state);
+    let recomputed: [u8; 32] = hasher.finalize().into();
+    assert_eq!(commitment.digest, recomputed);
+    assert_eq!(commitment.step_index, step_index);
+    assert_eq!(hex::encode(commitment.digest), digest);
+    assert_eq!(
+        usize::try_from(commitment.encoded_state_bytes).ok(),
+        Some(state.len())
+    );
+    assert_eq!(commitment.commitment_fuel, fuel);
+}
+
+fn assert_v2_commitment(
+    commitment: ArbitrationStepCommitment,
+    state: &[u8],
+    step_index: u64,
+    digest: &str,
+    fuel: u64,
+) {
+    let mut hasher = Sha256::new();
+    hasher.update(ARBITRATION_STEP_COMMITMENT_DOMAIN);
+    hasher.update(state);
+    let recomputed: [u8; 32] = hasher.finalize().into();
+    assert_eq!(commitment.version, 2);
+    assert_eq!(commitment.digest, recomputed);
+    assert_eq!(commitment.step_index, step_index);
+    assert_eq!(hex::encode(commitment.digest), digest);
+    assert_eq!(
+        usize::try_from(commitment.encoded_state_bytes).ok(),
+        Some(state.len())
+    );
+    assert_eq!(commitment.commitment_fuel, fuel);
+}
+
+#[test]
+fn legacy_v1_and_v2_encodings_match_pinned_golden_vectors() {
+    let record = traced_state_rich_call();
+    let trace = &record.trace;
+    assert_eq!(trace.steps().len(), 16);
+    assert_eq!(trace.commitments().len(), 32);
+    assert_eq!(trace.arbitration_steps().len(), 16);
+    assert_eq!(trace.arbitration_commitments().len(), 32);
+    assert_eq!(trace.total_commitment_fuel(), 3_550_082);
+    assert_eq!(trace.total_state_bytes(), 3_549_086);
+    assert_eq!(trace.total_arbitration_commitment_fuel(), 7_103_234);
+    assert_eq!(trace.total_arbitration_state_bytes(), 7_098_494);
+
+    let encode_v1 = |state: &layerx_programs_runtime::ExecutionState| {
+        state
+            .canonical_bytes()
+            .unwrap_or_else(|error| panic!("v1 state encoding refused: {error}"))
+    };
+    let first_steps = &trace.steps()[0];
+    let last_steps = &trace.steps()[trace.steps().len() - 1];
+    let v1_first = encode_v1(&first_steps.pre_state);
+    let v1_last = encode_v1(&last_steps.post_state);
+    assert_vector("v1 first state", &v1_first, &V1_FIRST_STATE);
+    assert_vector("v1 last state", &v1_last, &V1_LAST_STATE);
+    assert_v1_commitment(
+        trace.commitments()[0],
+        &v1_first,
+        0,
+        "dd7e2c64cb0f5d7ed9a607e62c40453c43b3596dd5360f20ed8e9b8a91d262aa",
+        65_851,
+    );
+    assert_v1_commitment(
+        trace.commitments()[31],
+        &v1_last,
+        46,
+        "b684caba2d3954f5533433f2e98181b7a4b2e3e0549119b0ff395be9ac8e8b6d",
+        131_367,
+    );
+    let v1_trace = trace
+        .canonical_bytes()
+        .unwrap_or_else(|error| panic!("v1 trace encoding refused: {error}"));
+    assert_vector("v1 trace", &v1_trace, &V1_TRACE);
+    assert_eq!(hex::encode(&v1_trace[..18]), V1_TRACE_PREFIX);
+
+    let encode_v2 = |state: &layerx_programs_runtime::ArbitrationExecutionState| {
+        state
+            .canonical_bytes()
+            .unwrap_or_else(|error| panic!("v2 state encoding refused: {error}"))
+    };
+    let first_arbitration = &trace.arbitration_steps()[0];
+    let last_arbitration = &trace.arbitration_steps()[trace.arbitration_steps().len() - 1];
+    assert_eq!(
+        hex::encode(first_arbitration.pre_state.identity.module_code_hash),
+        MODULE_CODE_HASH
+    );
+    assert_eq!(
+        hex::encode(first_arbitration.pre_state.identity.input_digest),
+        INPUT_DIGEST
+    );
+    assert_eq!(first_arbitration.pre_state.engine_state.len(), 65_597);
+    assert_eq!(first_arbitration.pre_state.host_state_bytes, 39);
+    let v2_first = encode_v2(&first_arbitration.pre_state);
+    let v2_last = encode_v2(&last_arbitration.post_state);
+    assert_vector("v2 first state", &v2_first, &V2_FIRST_STATE);
+    assert_vector("v2 last state", &v2_last, &V2_LAST_STATE);
+    assert_v2_commitment(
+        trace.arbitration_commitments()[0],
+        &v2_first,
+        0,
+        "08e8ae5225691dfc372821b8c2543c1dcc932ee1b61e2ceb4590960fadc87a49",
+        131_831,
+    );
+    assert_v2_commitment(
+        trace.arbitration_commitments()[31],
+        &v2_last,
+        46,
+        "cc98c0dad8e9ec39a8614e856ee5d6d917219c04e02e84bf8d1d907d64e026ee",
+        262_883,
+    );
+    let v2_trace = trace
+        .canonical_arbitration_bytes()
+        .unwrap_or_else(|error| panic!("v2 trace encoding refused: {error}"));
+    assert_vector("v2 trace", &v2_trace, &V2_TRACE);
+    assert_eq!(&v2_trace[..2], &2_u16.to_be_bytes());
+    assert_eq!(&v2_trace[6..6 + v1_trace.len()], v1_trace.as_slice());
+    ExecutionTrace::verify_canonical_arbitration_bytes(&v2_trace)
+        .unwrap_or_else(|error| panic!("pinned v2 trace refused: {error}"));
+
+    let evidence = record
+        .canonical_evidence()
+        .unwrap_or_else(|error| panic!("traced evidence refused: {error}"));
+    assert_vector("traced evidence", &evidence, &TRACED_EVIDENCE);
 }
