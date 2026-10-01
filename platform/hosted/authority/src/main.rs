@@ -1378,17 +1378,21 @@ mod lni_readiness_tests {
 
     #[test]
     fn actual_node_info_refuses_incompatible_receipt_admission() {
-        let bytes =
-            fs::read(env::var("PAXEER_X_LNI_CAPTURE").expect("actual LNI capture required"))
-                .expect("actual capture file");
-        let node = decode_node_info(&bytes).expect("production NodeInfo decoder");
+        let bytes = fs::read(
+            env::var("PAXEER_X_LNI_CAPTURE")
+                .unwrap_or_else(|error| panic!("{error:?}: {}", "actual LNI capture required")),
+        )
+        .unwrap_or_else(|error| panic!("{error:?}: {}", "actual capture file"));
+        let node = decode_node_info(&bytes)
+            .unwrap_or_else(|error| panic!("{error:?}: {}", "production NodeInfo decoder"));
         let expected = HandshakeConfig {
             built_interface_version: Version::V1_5,
             expected_protocol_version: PROTOCOL_VERSION,
             expected_network_id: node.network_id,
         };
         let key = node.authorised_sequencer_key;
-        let accepted = validate(node.clone(), &expected, None).expect("actual handshake identity");
+        let accepted = validate(node.clone(), &expected, None)
+            .unwrap_or_else(|error| panic!("{error:?}: {}", "actual handshake identity"));
         assert_eq!(
             validate_receipt_handshake(&accepted, Some(key), true),
             Ok(())
@@ -1417,8 +1421,12 @@ mod lni_readiness_tests {
         count += 1;
         let mut wrong = node.clone();
         wrong.advertised_capabilities.clear();
-        let handshake = validate(wrong, &expected, None)
-            .expect("same actual identity without receipt capability");
+        let handshake = validate(wrong, &expected, None).unwrap_or_else(|error| {
+            panic!(
+                "{error:?}: {}",
+                "same actual identity without receipt capability"
+            )
+        });
         assert_eq!(
             validate_receipt_handshake(&handshake, Some(key), true),
             Err(DependencyReason::CapabilityMissing)
@@ -1426,7 +1434,8 @@ mod lni_readiness_tests {
         count += 1;
         let mut wrong = node.clone();
         wrong.interface_version.minor = 4;
-        let handshake = validate(wrong, &expected, None).expect("compatible major");
+        let handshake = validate(wrong, &expected, None)
+            .unwrap_or_else(|error| panic!("{error:?}: {}", "compatible major"));
         assert_eq!(
             validate_receipt_handshake(&handshake, Some(key), true),
             Err(DependencyReason::ProtocolIncompatible)

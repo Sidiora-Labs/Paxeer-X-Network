@@ -972,14 +972,25 @@ fn start_cluster(with_sequencer: bool) -> Cluster {
     start_cluster_with_lni(with_sequencer, None)
 }
 
+#[allow(clippy::too_many_lines)]
 fn start_cluster_with_lni(with_sequencer: bool, live_lni: Option<&serde_json::Value>) -> Cluster {
     let fixture_network_id = live_lni.map_or(NETWORK_ID, |lni| {
-        u32::try_from(lni["network_id"].as_u64().expect("real LNI network")).expect("network width")
+        u32::try_from(
+            lni["network_id"]
+                .as_u64()
+                .unwrap_or_else(|| panic!("real LNI network")),
+        )
+        .unwrap_or_else(|error| panic!("{error:?}: {}", "network width"))
     });
     if let Some(lni) = live_lni {
         assert!(!with_sequencer);
         assert_eq!(lni["network_id"], serde_json::json!(fixture_network_id));
-        assert!(Path::new(lni["node_socket"].as_str().expect("real LNI path")).is_absolute());
+        assert!(Path::new(
+            lni["node_socket"]
+                .as_str()
+                .unwrap_or_else(|| panic!("real LNI path"))
+        )
+        .is_absolute());
     }
     let identity = identity();
     let repository = repository_root();
@@ -1028,14 +1039,22 @@ fn start_cluster_with_lni(with_sequencer: bool, live_lni: Option<&serde_json::Va
         || sequencer_signing.verifying_key().to_bytes(),
         |lni| {
             must(
-                hex::decode32(lni["sequencer_public_key"].as_str().expect("real LNI key")),
+                hex::decode32(
+                    lni["sequencer_public_key"]
+                        .as_str()
+                        .unwrap_or_else(|| panic!("real LNI key")),
+                ),
                 "real LNI key",
             )
         },
     );
     let sequencer_id = live_lni.map_or_else(random32, |lni| {
         must(
-            hex::decode32(lni["sequencer_id"].as_str().expect("real sequencer id")),
+            hex::decode32(
+                lni["sequencer_id"]
+                    .as_str()
+                    .unwrap_or_else(|| panic!("real sequencer id")),
+            ),
             "real sequencer id",
         )
     });
@@ -1141,7 +1160,13 @@ fn start_cluster_with_lni(with_sequencer: bool, live_lni: Option<&serde_json::Va
     chown_tree(&run_dir, identity.daemon_uid, identity.client_gid);
     let socket = live_lni.map_or_else(
         || run_dir.join("layerxd.sock"),
-        |lni| PathBuf::from(lni["node_socket"].as_str().expect("real LNI socket")),
+        |lni| {
+            PathBuf::from(
+                lni["node_socket"]
+                    .as_str()
+                    .unwrap_or_else(|| panic!("real LNI socket")),
+            )
+        },
     );
     let text = |path: PathBuf| path.to_string_lossy().into_owned();
     let mut node_env = BTreeMap::new();
@@ -2090,18 +2115,26 @@ fn real_replica_readiness_relay_and_refusals_without_sequencer() {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn router_authority_readiness_schema_restart_contract() {
-    let lni_path = std::env::var("PAXEER_X_AUTHORITY_READY_LNI_FIXTURE")
-        .expect("a real authenticated LNI fixture is required by authority readiness");
+    let lni_path = std::env::var("PAXEER_X_AUTHORITY_READY_LNI_FIXTURE").unwrap_or_else(|error| {
+        panic!(
+            "{error:?}: {}",
+            "a real authenticated LNI fixture is required by authority readiness"
+        )
+    });
     let live_lni: serde_json::Value = must(
         serde_json::from_slice(&must(fs::read(lni_path), "real LNI fixture")),
         "real LNI fixture JSON",
     );
-    let fixture_network_id =
-        u32::try_from(live_lni["network_id"].as_u64().expect("real LNI network"))
-            .expect("network width");
-    let gateway_tests =
-        std::env::var_os("PAXEER_X_GATEWAY_TEST_BIN").expect("prebuilt gateway test binary");
+    let fixture_network_id = u32::try_from(
+        live_lni["network_id"]
+            .as_u64()
+            .unwrap_or_else(|| panic!("real LNI network")),
+    )
+    .unwrap_or_else(|error| panic!("{error:?}: {}", "network width"));
+    let gateway_tests = std::env::var_os("PAXEER_X_GATEWAY_TEST_BIN")
+        .unwrap_or_else(|| panic!("prebuilt gateway test binary"));
     let mut cluster = start_cluster_with_lni(false, Some(&live_lni));
     assert!(cluster.sequencer.is_none());
     eprintln!("retained_state={}", cluster.root.display());
@@ -2195,9 +2228,9 @@ fn router_authority_readiness_schema_restart_contract() {
         let observed: u64 = stdout
             .lines()
             .find_map(|line| line.strip_prefix("PAXEER_X_AUTHORITY_CASES="))
-            .expect("actual assertion count")
+            .unwrap_or_else(|| panic!("actual assertion count"))
             .parse()
-            .expect("count");
+            .unwrap_or_else(|error| panic!("{error:?}: {}", "count"));
         assert!(observed > 0);
         count += observed;
     };
@@ -2325,21 +2358,23 @@ fn router_authority_readiness_schema_restart_contract() {
 
 #[test]
 fn authority_lni_readiness_case() {
-    let path = std::env::var("PAXEER_X_AUTHORITY_LNI_CASE").expect("real isolated case required");
+    let path = std::env::var("PAXEER_X_AUTHORITY_LNI_CASE")
+        .unwrap_or_else(|error| panic!("{error:?}: {}", "real isolated case required"));
     let case: serde_json::Value = must(
         serde_json::from_slice(&must(fs::read(path), "case")),
         "case JSON",
     );
     let certificate = must(
         Certificate::from_der(&must(
-            fs::read(case["ca_der"].as_str().expect("CA")),
+            fs::read(case["ca_der"].as_str().unwrap_or_else(|| panic!("CA"))),
             "CA file",
         )),
         "CA DER",
     );
     let start = Instant::now();
     let answer = https_get(
-        case["port"].as_u64().expect("port") as u16,
+        u16::try_from(case["port"].as_u64().unwrap_or_else(|| panic!("port")))
+            .unwrap_or_else(|error| panic!("{error:?}: port width")),
         &certificate,
         "/readyz",
         None,
@@ -2349,10 +2384,17 @@ fn authority_lni_readiness_case() {
         "readiness exceeded two-second deadline plus TLS/scheduling allowance"
     );
     let body = json(&answer);
-    let ready = case["ready"].as_bool().expect("ready expectation");
+    let ready = case["ready"]
+        .as_bool()
+        .unwrap_or_else(|| panic!("ready expectation"));
     assert_eq!(answer.status, if ready { 200 } else { 503 });
     assert_eq!(body["ready"], serde_json::json!(ready));
-    assert_eq!(body.as_object().expect("readiness object").len(), 4);
+    assert_eq!(
+        body.as_object()
+            .unwrap_or_else(|| panic!("readiness object"))
+            .len(),
+        4
+    );
     for (field, header) in [
         ("replica_ready", "x-layerx-authority-replica"),
         ("lni_ready", "x-layerx-authority-lni"),
@@ -2382,13 +2424,22 @@ fn authority_lni_readiness_case() {
                 &HandshakeConfig {
                     built_interface_version: Version::V1_5,
                     expected_protocol_version: PROTOCOL_VERSION,
-                    expected_network_id: case["network_id"].as_u64().expect("network") as u32,
+                    expected_network_id: u32::try_from(
+                        case["network_id"]
+                            .as_u64()
+                            .unwrap_or_else(|| panic!("network")),
+                    )
+                    .unwrap_or_else(|error| panic!("{error:?}: network width")),
                 },
                 None,
             ),
             "real LNI handshake",
         );
-        let capture = PathBuf::from(case["capture"].as_str().expect("capture"));
+        let capture = PathBuf::from(
+            case["capture"]
+                .as_str()
+                .unwrap_or_else(|| panic!("capture")),
+        );
         let encoded = must(
             layerx_client::lni::handshake::encode_node_info(handshake.node()),
             "production NodeInfo serializer",
