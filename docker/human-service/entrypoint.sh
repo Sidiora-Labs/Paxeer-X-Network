@@ -61,6 +61,15 @@ case "$role" in
             copy_material handover-finality.conf
         fi
         copy_material session-operator
+        copy_material trust-history
+        test -d /run/human-material/journal
+        mkdir -p "$private/journal"
+        chmod 0700 "$private/journal"
+        for record in /run/human-material/journal/*; do
+            [ -e "$record" ] || continue
+            test -s "$record"
+            install -m 0600 "$record" "$private/journal/${record##*/}"
+        done
         export LAYERX_AGENT_HUMAN_AUTHORITY_BEARER="$(cat /run/human-material/authority-token)"
         export LAYERX_AGENT_PROGRAM_BEARER_TOKEN="$(cat /run/human-material/program-token)"
         printf 'header = "Authorization: Bearer %s"\n' "$LAYERX_AGENT_PROGRAM_BEARER_TOKEN" > "$private/probe.conf"
