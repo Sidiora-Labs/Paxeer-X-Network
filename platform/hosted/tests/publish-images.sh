@@ -7,6 +7,8 @@
 # usage: publish-images.sh <mode> [options] [build-image-inventory]
 #
 # modes
+#   --source-policy   require the requested source to equal the workflow event SHA
+#                     before building or publishing any candidate artifacts
 #   --check           validate the local build inventory only: no SBOM, no
 #                     registry access, no tags and no pushes
 #   --dry-run         resolve the release binding, generate the SBOM of every
@@ -82,7 +84,7 @@ parse_arguments() {
     local positional=0
     while [ "$#" -gt 0 ]; do
         case $1 in
-        --check | --dry-run | --self-test)
+        --check | --dry-run | --self-test | --source-policy)
             [ -z "$MODE" ] || fail "only one mode may be given"
             MODE=${1#--}
             shift
@@ -187,6 +189,19 @@ resolve_release_binding() {
         || fail "the images were built from $PUBLISH_TAG, not from the $RELEASE_KIND commit $RELEASE_COMMIT"
 }
 
+require_event_source() {
+    local candidate=$1 event_sha=$2
+    [[ $candidate =~ ^[0-9a-f]{40}$ ]] || fail "publication candidate must be a full lowercase 40-hex commit"
+    [[ $event_sha =~ ^[0-9a-f]{40}$ ]] || fail "GITHUB_SHA must be a full lowercase 40-hex event commit"
+    [ "$candidate" = "$event_sha" ] \
+        || fail "candidate $candidate differs from workflow event $event_sha; select that candidate as the dispatch ref before publication"
+}
+
+mode_source_policy() {
+    require_event_source "${LAYERX_PUBLISH_REVISION:-}" "${GITHUB_SHA:-}"
+    printf 'publish-images: accepted event-bound source %s\n' "$GITHUB_SHA"
+}
+
 require_gated_publication() {
     [ "${GITHUB_ACTIONS:-}" = true ] || fail "the beta images are published only from the gated $PUBLISH_WORKFLOW job"
     [ -n "${GITHUB_REPOSITORY:-}" ] || fail "GITHUB_REPOSITORY is unset: the publication cannot bind the signer identity"
@@ -196,6 +211,7 @@ require_gated_publication() {
         || fail "the test gate passed on $LAYERX_PUBLISH_GATE_REVISION, not on the published revision $RELEASE_COMMIT"
     [ "$BUILD_REVISION" = "$PUBLISH_TAG" ] \
         || fail "the images were built from a modified tree ($BUILD_REVISION); only a clean checkout of the release revision is published"
+    require_event_source "$RELEASE_COMMIT" "${GITHUB_SHA:-}"
     [ "$RELEASE_KIND" != candidate ] || require_candidate_on_default_branch
 }
 
@@ -263,6 +279,8 @@ write_publication_record() {
         printf 'release_kind=%s\n' "$RELEASE_KIND"
         printf 'release_name=%s\n' "$RELEASE_NAME"
         printf 'release_commit=%s\n' "$RELEASE_COMMIT"
+        printf 'event_commit=%s\n' "${GITHUB_SHA:-}"
+        printf 'source_policy=event-equals-candidate\n'
         printf 'build_revision=%s\n' "$BUILD_REVISION"
         printf 'publish_tag=%s\n' "$PUBLISH_TAG"
         printf 'moving_tag=%s\n' "$MOVING_TAG"
@@ -338,6 +356,33 @@ read_digests() {
     [ "$count" -eq "${#IMAGE_NAMES[@]}" ] || fail "the publication digest record must cover every beta image"
 }
 
+verify_provenance() {
+    [ "$#" -eq 7 ] || [ "$#" -eq 9 ] || fail "provenance verification needs an artifact, subject, digest, repository, signer, source and output; offline verification also needs a bundle and trusted root"
+    local artifact=$1 subject=$2 digest=$3 repository=$4 signer=$5 source=$6 output=$7
+    local -a offline=()
+    rm -f -- "$output" "$output.pending"
+    [[ $source =~ ^[0-9a-f]{40}$ ]] || fail "invalid provenance source commit"
+    [[ $digest =~ ^sha256:[0-9a-f]{64}$ ]] || fail "invalid provenance subject digest"
+    if [ "$#" -eq 9 ]; then
+        [[ $artifact != oci://* ]] || fail "registry provenance uses the standard trust roots"
+        [ -f "$8" ] && [ -f "$9" ] || fail "offline provenance requires a bundle and trusted root"
+        offline=(--bundle "$8" --custom-trusted-root "$9")
+    fi
+    gh attestation verify "$artifact" \
+        --repo "$repository" \
+        --signer-workflow "$signer" \
+        --cert-oidc-issuer "$OIDC_ISSUER" \
+        --predicate-type "$PROVENANCE_PREDICATE_TYPE" \
+        --source-digest "$source" \
+        --format json "${offline[@]}" > "$output.pending" \
+        || fail "no build provenance by $signer at $source for $subject@$digest"
+    jq -e --arg subject "$subject" --arg digest "${digest#sha256:}" '
+        any(.[]; any(.verificationResult.statement.subject[]?; .name == $subject and .digest.sha256 == $digest))
+    ' "$output.pending" >/dev/null \
+        || fail "the build provenance does not name the published subject and digest"
+    mv -- "$output.pending" "$output"
+}
+
 verify_published() {
     local identity name target digest sbom attested built
     identity=$(signer_identity_regexp)
@@ -366,17 +411,9 @@ verify_published() {
         built=$(jq -S -c '[.packages[] | {name, versionInfo}] | sort' "$sbom")
         [ "$attested" = "$built" ] \
             || fail "the published SBOM attestation of $name does not describe the SBOM this build produced"
-        gh attestation verify "oci://$target@$digest" \
-            --repo "$GITHUB_REPOSITORY" \
-            --signer-workflow "$GITHUB_REPOSITORY/$PUBLISH_WORKFLOW" \
-            --predicate-type "$PROVENANCE_PREDICATE_TYPE" \
-            --source-digest "$RELEASE_COMMIT" \
-            --format json > "$OUTPUT_DIR/$name.provenance.json" \
-            || fail "no build provenance by $PUBLISH_WORKFLOW at $RELEASE_COMMIT for $target@$digest"
-        jq -e --arg subject "$target" --arg digest "${digest#sha256:}" '
-            any(.[]; any(.verificationResult.statement.subject[]?; .name == $subject and .digest.sha256 == $digest))
-        ' "$OUTPUT_DIR/$name.provenance.json" >/dev/null \
-            || fail "the build provenance of $name does not name the published digest"
+        verify_provenance "oci://$target@$digest" "$target" "$digest" \
+            "$GITHUB_REPOSITORY" "$GITHUB_REPOSITORY/$PUBLISH_WORKFLOW" "$RELEASE_COMMIT" \
+            "$OUTPUT_DIR/$name.provenance.json"
         log "verified the signature, the SBOM attestation and the build provenance of $target@$digest"
     done
 }
@@ -586,6 +623,7 @@ mode_self_test() {
 publish_images() {
     parse_arguments "$@"
     case $MODE in
+    source-policy) mode_source_policy ;;
     check) mode_check ;;
     dry-run) mode_dry_run ;;
     push) mode_push ;;
