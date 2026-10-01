@@ -1,0 +1,27 @@
+syntax = "proto3";
+package paxprotocol.paxchain.launchpad;
+import "gogoproto/gogo.proto";
+option go_package = "github.com/sidiora-labs/paxeer-network/modules/launchpad/types";
+service Msg { rpc UpdateParams(MsgUpdateParams) returns (MsgUpdateParamsResponse); }
+message Params {
+  option (gogoproto.typedecl) = false;
+  option (gogoproto.goproto_getters) = false;
+  option (gogoproto.goproto_stringer) = false;
+  string quote_denom = 1 [(gogoproto.customname) = "QuoteDenom"];
+  string virtual_quote_default = 2 [(gogoproto.customname) = "VirtualQuoteDefault", (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Int", (gogoproto.nullable) = false];
+  string virtual_token_default = 3 [(gogoproto.customname) = "VirtualTokenDefault", (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Int", (gogoproto.nullable) = false];
+  uint64 min_fee_bps = 4 [(gogoproto.customname) = "MinFeeBps"];
+  uint64 max_fee_bps = 5 [(gogoproto.customname) = "MaxFeeBps"];
+  uint64 base_fee_bps = 6 [(gogoproto.customname) = "BaseFeeBps"];
+  uint64 protocol_fee_bps = 7 [(gogoproto.customname) = "ProtocolFeeBps"];
+  uint64 fee_decay_rate = 8 [(gogoproto.customname) = "FeeDecayRate"];
+  uint64 volatility_weight = 9 [(gogoproto.customname) = "VolatilityWeight"];
+  uint64 concentration_weight = 10 [(gogoproto.customname) = "ConcentrationWeight"];
+  string creation_fee = 11 [(gogoproto.customname) = "CreationFee", (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Int", (gogoproto.nullable) = false];
+}
+message MsgUpdateParams {
+  option (gogoproto.goproto_stringer) = false;
+  string authority = 1;
+  Params params = 2 [(gogoproto.nullable) = false];
+}
+message MsgUpdateParamsResponse {}
