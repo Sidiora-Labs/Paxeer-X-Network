@@ -978,8 +978,12 @@ fn start_cluster(with_sequencer: bool) -> Cluster {
     let genesis = build_genesis(&root, &builder);
     let daemon_binary = root.join("layerxd");
     must(
-        fs::hard_link(&layerxd, &daemon_binary),
-        "link layerxd into the harness root",
+        fs::copy(&layerxd, &daemon_binary),
+        "copy layerxd into the harness root",
+    );
+    must(
+        fs::set_permissions(&daemon_binary, fs::Permissions::from_mode(0o755)),
+        "allow the isolated replica uid to execute its private copy",
     );
     let layerxd = daemon_binary;
     let migrations = root.join("migrations");
