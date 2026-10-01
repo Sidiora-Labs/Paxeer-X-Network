@@ -21994,7 +21994,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.5]
 title = "Assemble and relocate canonical owner policy and deployment evidence"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -22676,7 +22676,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.22.1]
 title = "Feed public receipt routes from verified kernel receipt provenance"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -22748,7 +22748,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.22.5]
 title = "Run the standalone explorer receipt ingestion lifecycle"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -22848,7 +22848,7 @@ title = "Create isolated Human role runtime directories before privilege drop"
 status = "pending"
 mode = "BUILD"
 wave = 9
-requires = ["0.2", "24.10", "24.11", "24.8", "24.2", "12.3", "12.2", "24.3"]
+requires = ["0.2", "24.10", "24.11", "24.8", "24.2", "12.3", "12.2", "24.3", "22.8"]
 reqs = ["200"]
 do_1 = "Reuse the existing protected directory initializer from24.10 and integrate24.8,24.2,12.3,24.12,12.4,12.2 and24.3 into one selected candidate. Preserve the complete service UID roster and requirement200."
 do_2 = "Preserve entrypoint private path behavior and least-privilege mounts."
@@ -22869,6 +22869,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 do_5 = "Complete the real fixture envelope from24.11 dependency foundation,24.8 authenticated registry handoff,24.2 owner/native/naming/registry/journal/policy/authority generation,12.3 custody profile and12.2/24.3 KMS/movement integration. Produce provenance.json,data/,secrets/,trust/ca.crt and environment.json through these actual producers; enroll event principals and install matching endpoint credentials. Bind the selected image digest, revision and init/entrypoint bytes before running the unchanged complete role-directories startup/refusal/restart gate."
 completion_policy = "Task24.1 retains every requirement200 criterion and the unchanged full role-directories gate. Directory prerequisite evidence, process existence, partial rosters and missing-fixture refusals do not establish complete role startup or durable-state restart. No criterion or original gate is waived."
+do_6 = "Integrate the scoped evidence-read credential from22.8: mint a separate protected explorer-evidence-read token, install it as4021:4020 mode0600 in receipt-authority material, add it to declared runtime inputs and set LAYERX_AUTHORITY_EVIDENCE_READ_TOKEN_FILE. Preserve general authority token route sets. Exercise ownership, collision, forbidden-route and restart refusals through real processes; never deploy an explorer using the registry all-route bearer."
 
 [task.24.6]
 title = "Recover precisely quiesced Human processes after export refusal"
@@ -24444,8 +24445,8 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.108.0.7]
 title = "Rewrite the user-facing pages so no retired or unserved name is promised and accounts are funded through custody credit"
-status = "pending"
-mode = "QUALIFY"
+status = "in_progress"
+mode = "BUILD"
 wave = 2
 requires = ["0.2"]
 reqs = ["1159.4"]
@@ -24457,7 +24458,7 @@ do_5 = "Provide this task selector in tools/paxeer-x/gates and execute the full 
 touches = ["docs/site/docs/overview/getting-started.md", "docs/site/docs/overview/quickstart.md", "docs/site/docs/overview/payments.md", "docs/site/docs/platform/index.md", "docs/site/docs/platform/faucet.md", "docs/site/docs/operators/beta-control.md", "docs/wiki/Getting-Started-Beta.md", "docs/wiki/Quickstart.md", "docs/wiki/PaymentsQuickstart.md", "docs/wiki/HostedFaucet.md", "docs/wiki/HostedBetaControl.md", "platform/docs/beta-environment.md", "platform/docs/content/beta.md", "platform/docs/beta-resets.ics", "platform/sdk/jvm/src/main/java/com/sidiora/layerx/sdk/package-info.java", "tools/bringup/docs-names.sh", "tools/paxeer-x/gates/108.0.7.sh"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 108.0.7"
 gate_kind = "planned-adapter"
-max_builds = 0
+max_builds = 1
 max_verify_runs = 1
 max_repair_cycles = 2
 time_limit_minutes = 30
@@ -24470,6 +24471,8 @@ completion_policy = "Existing implementation is preserved; current candidate qua
 planned_paths = ["tools/paxeer-x/gates/108.0.7.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+build_cmd = "bash -n tools/bringup/docs-names.sh tools/paxeer-x/gates/108.0.7.sh"
+declared_build_targets = ["syntax validation of the scoped documentation gate scripts"]
 
 [task.108.0.11]
 title = "Create the internal event-source and webhooks apps and stage the kernel's event tokens"
@@ -31708,3 +31711,89 @@ deployment_profile = "product"
 planned_paths = ["tests/modules/test_oracle_transport.c", "tests/daemon/lxp_test_oracle_transport_client.c", "tests/qualification/paxeer_x_oracle_transport.py"]
 path_policy = "Existing source remains in place; planned files are explicit task deliverables. No duplicate production oracle implementation or shared-client edits."
 evidence_policy = "Keep generated keys, artifact manifests and raw qualification evidence in protected storage outside the repository; publish portable technical implementation only."
+
+[req.445]
+title = "Produce complete immutable native budget and payer-grant discovery evidence"
+ac_1 = "The credentialed native LNI read boundary SHALL expose a source-controlled versioned caps-discovery operation and real Rust consumer. Its schema, node capability advertisement, dispatch and client capability checks SHALL agree; unsupported peers refuse explicitly. This operation is a native read prerequisite, not wallet authentication or a public HTTP/RPC endpoint."
+ac_2 = "The producer SHALL capture every canonical budget: record in the Budget module and grant: record in the Asset module at one committed root. It SHALL use existing canonical14.9 decoders on the consumer and retain all fields and original validation. It SHALL NOT equate a grant signature, known-ID inclusion or server-filtered owner list with complete state discovery."
+ac_3 = "The discovery evidence SHALL prove canonical prefix membership AND completeness: strict key ordering, every consecutive prefix position and authenticated immediate lower/upper boundaries or canonical tree edges. Missing first, middle or last records, duplicates, reordered leaves and omitted owned records among foreign records SHALL fail. Boundary keys, positions, roots and selectors SHALL themselves be authenticated."
+ac_4 = "A confirmed-empty prefix SHALL require authenticated adjacent bounds in a nonempty module or authenticated composite inclusion of the canonical empty module root. Empty vectors, counts, absent keys and unverified end markers SHALL never prove absence. The verifier SHALL reject count/index manipulation and odd-node duplicate-padding ambiguity without changing native root construction or accepting unauthenticated boundary-key labels."
+ac_5 = "All prefix, boundary and account witnesses SHALL bind the same protocol/network, module, committed root, signed batch/header and requested observation/verification level. Existing genesis/historical authority, finality, threshold, freshness and selector checks SHALL remain unchanged. Missing, stale or insufficient evidence SHALL refuse rather than downgrade or return empty."
+ac_6 = "The native producer SHALL acquire the existing read lock, capture a complete bounded immutable discovery object with all required records/account/boundary/authority material from one committed root, and release the lock before serving its pages. Later kernel mutations SHALL NOT change this object. Re-reading the live kernel between pages and silently switching roots are forbidden."
+ac_7 = "Pagination SHALL enforce byte/item, retained-memory, active-object and lifetime bounds derived from existing canonical limits. Cursors SHALL bind connection or authenticated native peer, snapshot identity, exact root/network, selection and next canonical position; every accepted page makes progress and every prefix is exhausted explicitly. Cross-root, foreign-object, wrong-selection, skipped, duplicate and malformed cursors SHALL refuse. Expiry, disconnect and process restart destroy retained objects and require an explicit new snapshot; no cursor silently resumes against replacement state."
+ac_8 = "The client SHALL not expose complete or confirmed-empty caps until both prefix chains and required account evidence are verified. Partial pages remain explicitly incomplete. A fresh request after mutation or restart SHALL obtain fresh evidence rather than reuse a completed stale object."
+ac_9 = "Budget.owner and Grant.from SHALL be treated as canonical ACCOUNT IDs. For every record needed to classify the requested native DID/account, canonical account witnesses at the same root SHALL establish actual ownership using existing account identity/name rules. Budget-account and version2 source-account relations SHALL remain exact. Missing or invalid ownership evidence, foreign accounts, cross-chain values and misleading account-name prefixes SHALL refuse; a caller-supplied DID is a selector, not an authenticated wallet principal."
+ac_10 = "The private producer/consumer SHALL verify complete prefixes before returning account-filtered caps. It SHALL preserve foreign records needed for completeness only within the private native read boundary and SHALL not add a browser/public route. Delegated, receiver and owner roles SHALL not be silently conflated."
+ac_11 = "Real production native budget/grant mutations SHALL create populated, mixed-owner, prefix-empty and empty-module fixtures; independent Rust verification SHALL exercise exact canonical bytes, current and retained snapshots, membership/nonmembership and account classification. Handwritten success responses, mock services, permissive finality fixtures and unreachable-port substitutes are forbidden."
+ac_12 = "Negative coverage SHALL include all omission/order/boundary/empty/root/count/padding attacks; wrong network/authority/term/rank; malformed exact budget/grant encodings; foreign/invalid account evidence; cursor replay/gap/no-progress/oversize/expiry/disconnect/restart; snapshot-memory exhaustion; and mutation/revocation/period rollover during traversal. Every required case SHALL execute or the gate fails with an explicit missing prerequisite."
+ac_13 = "The single focused gate SHALL consume source-bound prebuilt native and Rust artifacts with declared fixture identities and independently report case counts, nonzero failures, source revision and retained evidence. It SHALL not build, invoke release-wide suites, contact production or convert skipped cases into success."
+ac_14 = "No committed state/root/snapshot format, kernel lifecycle, existing decoder/proof bound, finality implementation, shared bootstrap, receipt-authority crate, agentd main or shared identity/event fixture SHALL be edited. A necessary change outside the declared paths is an ownership conflict to resolve before implementation, not permission to widen scope."
+
+[task.14.10]
+title = "Implement native complete caps snapshots and verified client pagination"
+status = "in_progress"
+mode = "BUILD"
+wave = 3
+requires = ["0.2", "14.9"]
+reqs = ["445"]
+do_1 = "Declare caps-discovery in the existing LNI schema and production client schema, with an additive negotiated capability and exact request/response/cursor formats. At this proposal baseline tags1..41 and minor1.7 are used; reserve the actual next additive revision/tags against the dispatch candidate before editing. Do not invent an unregistered endpoint or reinterpret existing tags."
+do_2 = "Implement the native producer in lxp_daemon_lni_caps.h, included and dispatched by lxp_daemon_lni.c. Reuse lxp_state_proof_build, lxp_state_root_proof, lxp_state_subtree_root and established read-lock/signed-header paths. Capture immutable bounded per-connection objects and release them on every error, expiry, disconnect and shutdown path; retain no mutable kernel pointers after unlock."
+do_3 = "Implement canonical prefix membership/nonmembership and complete-page-chain verification in new state_range and caps evidence modules. Reuse StateWitness and existing authority/history verification, with explicit lower/upper/empty-module proof cases and odd-tree/count ambiguity rejection. Preserve native root bytes and all existing proof checks."
+do_4 = "Implement the real layerx-client caps consumer using ProtocolBudgetRecord and CommittedGrant. Verify both complete prefixes and same-root canonical account ownership before filtering; retain exact cap/trailer/source-account fields and observation metadata. Expose explicit incomplete/complete/empty/refused/unavailable outcomes and immutable cursor identity without wallet-principal authentication claims."
+do_5 = "Implement dedicated native producer and Rust integration cases plus a dedicated caps fixture driver. Use owned isolated genuine chain/sequencer/authority state and source-bound prebuilt fixture executables; configure account-owned and foreign records with real protocol actions. Reuse existing passed fixture/artifact interfaces read-only, never edit shared bootstrap or another task fixture."
+do_6 = "Finish all implementation and acceptance cases before qualification. Perform one bounded build recipe for the declared targets, then the one verify_cmd; allow at most two task-scoped repair cycles, never repeat an unchanged passing gate. Stop at30minutes or first external ownership/interface prerequisite with exact evidence and leave task incomplete."
+touches = ["cmd/layerxd/lxp_daemon_lni_caps.h", "cmd/layerxd/lxp_daemon_lni.c", "agent/schema/lni/v1.kvx", "agent/crates/layerx-client/src/lni/schema.rs", "agent/crates/layerx-proof/src/state_range.rs", "agent/crates/layerx-proof/src/lib.rs", "agent/crates/layerx-client/src/caps.rs", "agent/crates/layerx-client/src/evidence/caps.rs", "agent/crates/layerx-client/src/evidence.rs", "agent/crates/layerx-client/src/lib.rs", "agent/crates/layerx-client/tests/caps_discovery.rs", "tests/qualification/lxp_wallet_caps_discovery.c", "tools/qualification/paxeer-x/build-caps-discovery.sh", "tools/qualification/paxeer-x/caps-discovery.py", "tools/qualification/paxeer-x/fixtures/caps_fixture.py", "tools/paxeer-x/gates/14.10.sh"]
+planned_paths = ["cmd/layerxd/lxp_daemon_lni_caps.h", "agent/crates/layerx-proof/src/state_range.rs", "agent/crates/layerx-client/src/caps.rs", "agent/crates/layerx-client/src/evidence/caps.rs", "agent/crates/layerx-client/tests/caps_discovery.rs", "tests/qualification/lxp_wallet_caps_discovery.c", "tools/qualification/paxeer-x/build-caps-discovery.sh", "tools/qualification/paxeer-x/caps-discovery.py", "tools/qualification/paxeer-x/fixtures/caps_fixture.py", "tools/paxeer-x/gates/14.10.sh"]
+declared_build_targets = ["native layerxd with caps-discovery dispatch", "native tests/qualification/lxp_wallet_caps_discovery.c production fixture executable", "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-client --test caps_discovery --no-run"]
+build_cmd = "timeout 15m bash tools/qualification/paxeer-x/build-caps-discovery.sh"
+verify_cmd = "timeout 15m python3 tools/qualification/paxeer-x/caps-discovery.py"
+gate_kind = "planned-native-serving-prerequisite"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result,30minute cap or actual source/interface ownership conflict. Preserve exact revision, command, exit code, case counts and private log paths. No weakening, fake data, incomplete-case success or claim of wallet14.4 completion."
+completion_policy = "Native immutable complete discovery and client verification only. Authenticated gateway and identity-binding integration and wallet14.4 remain separate. Do not claim a new native DID selector authenticates a wallet principal."
+evidence_policy = "Keep operational material and raw qualification evidence private; publish only reviewed source/spec."
+
+[req.446]
+title = "Isolate explorer receipt-evidence authority credentials"
+ac_1 = "The optional dedicated evidence-read token is loaded only from an absolute canonical protected file owned by the service UID, with mode0600-equivalent restrictions, bounded printable non-whitespace bytes, and constant-time refusal of collisions with every general, replica and human-agent bearer."
+ac_2 = "The dedicated token authorizes only GET per-receipt authority evidence. It must refuse by-activity, wait-by-activity, internal activity and human-agent routes. Existing bearer route sets, response bytes and typed404/400/503/405 behavior remain unchanged."
+ac_3 = "Real sequencer, independent replica and TLS authority processes prove allowed evidence equality, all prohibited routes, missing and malformed inputs, unavailable replica and actual startup refusals for token collisions, weak permissions, symlinks and invalid token lengths. No mock replies or fabricated authority documents are permitted."
+ac_4 = "Kubernetes source provisioning mints a separate explorer token, copies it to a protected authority-owned file and supplies only that token to the explorer. The registry retains its existing token. Credentials remain outside source and logs; source qualification is distinct from deployment."
+ac_5 = "Kernel provisioning must mint and install the same scoped credential contract before runtime closure in task24.1. Authority-only qualification cannot establish kernel provisioning or the complete explorer ingestion lifecycle."
+
+[task.22.8]
+title = "Restrict explorer evidence credentials to per-receipt authority reads"
+status = "in_progress"
+mode = "BUILD"
+wave = 3
+requires = ["0.2", "15.1", "15.4", "22.7"]
+reqs = ["195", "446"]
+do_1 = "In platform/hosted/authority/src/main.rs add optional LAYERX_AUTHORITY_EVIDENCE_READ_TOKEN_FILE: when set, read it with the existing protected::read (bounded 4096, absolute canonical, owner = process uid, mode & 077 == 0), require 32..4096 printable bytes without whitespace, and refuse startup if it equals any LAYERX_AUTHORITY_TOKEN_FILES token, the replica bearer or the human agent token (constant-time compares). When unset, behaviour and configuration are byte-for-byte unchanged. Store it as Option<Zeroizing<Vec<u8>>> in Config; add one USAGE line."
+do_2 = "In route (main.rs:1211-1221) admit a request on /v1/batches/{batch_id}/receipt-authority when authenticate() accepts it OR the bearer equals the evidence-read token (constant time). Leave authenticate() and every other branch unchanged, so the evidence-read token is refused with the existing 401 identity_required on /v1/authorized-batches/by-activity/*, /v1/authorized-batches/wait-by-activity/*, /internal/v1/activities/*/authority and /v1/agent/* (human::route compares only its own token). Non-GET stays 405; missing/malformed query stays 400; relay semantics (200/404 pass-through, 503 replica_unavailable) unchanged."
+do_3 = "In platform/hosted/authority/tests/real_node.rs extend start_cluster's token directory (:1319-1364) with an evidence-read.token file (0600, owned by the test uid) passed as LAYERX_AUTHORITY_EVIDENCE_READ_TOKEN_FILE, and add one #[test] using start_cluster(true) with a real signed submit: evidence token gets 200 with the same bytes the registry token gets on the real batch's receipt-authority path, 404 on an unknown batch, 400 without receipt_digest, 503 after the real replica is stopped; the same token gets 401 on by-activity, wait-by-activity, internal activity authority and /v1/agent/* for the real activity; registry/gateway tokens still get 200 on all their existing routes (no narrowing). Add real startup refusals of the actual binary: evidence token equal to a general token, group/world-readable file, symlinked path, empty/short token. Print one PAXEER_X_GATE tests=<n> skipped=0 line."
+do_4 = "Create tools/qualification/paxeer-x/authority-evidence-read.py on the router-authority-schema.py pattern (:50-100): root, clean source, source-bound PAXEER_X_AUTHORITY_BUILD_MANIFEST (authority + authority_tests artifacts, sha256), PAXEER_X_FOUNDATION_ARTIFACT_MANIFEST native layerxd/layerx-genesis-build, then run the prebuilt real_node test binary filtered to the new test with LAYERX_TEST_NATIVE_BIN_DIR and PAXEER_X_AUTHORITY_BIN; require '1 passed; 0 failed' and exactly one positive marker; nonzero on any missing prerequisite. Create tools/paxeer-x/gates/22.8.sh exec adapter."
+do_5 = "Provision the k8s explorer runtime (the only place the explorer runs): beta-cluster.sh mints explorer-authority-evidence.token next to :978 and adds key authority-evidence-token to the layerx-explorer-index secret (:1274-1275); node/deployment.yaml human-authority-material init container (:128-147) installs it 0600 as uid 4021 into /run/authority-private/material/evidence-read.token from a new read-only secret projection of layerx-explorer-index key authority-evidence-token, and the authority container gets LAYERX_AUTHORITY_EVIDENCE_READ_TOKEN_FILE=/run/authority-private/material/evidence-read.token (next to :434); registry/deployment.yaml:137 explorer-index LAYERX_EXPLORER_AUTHORITY_BEARER_TOKEN switches to secretKeyRef layerx-explorer-index key authority-evidence-token. Registry container :85 and LAYERX_AUTHORITY_TOKEN_FILES :446 unchanged."
+do_7 = "Complete implementation, then build the authority binary and real_node test binary with locked dependencies, syntax-check the touched provisioning script, and run the single focused verify_cmd using source-bound native artifacts. Keep existing authority and gateway qualification gates unchanged."
+never_1 = "Never add a token, flag or wildcard that grants every authority route; the evidence-read token is accepted on exactly one path prefix/suffix pair."
+never_2 = "Never widen or narrow existing tokens: LAYERX_AUTHORITY_TOKEN_FILES semantics, the registry/gateway/webhooks bearers, the human agent token and the replica bearer keep their exact current route sets; do not move the registry off its token."
+never_3 = "Never use mocks, recorded HTTP responses, fabricated authority documents or a fake authority/replica; real binary over TLS with real replica and signed operations only."
+never_4 = "Never print, log, hash or persist token values; never place the token in an env value of the authority; never copy .env, keyring or credential values into evidence."
+never_5 = "Never edit human/crates/layerx-explorer-index (22.5 owns main.rs/lib.rs/query.rs; 22.7 owns receipt_authority.rs), agent/crates, platform/hosted/registry/src or the relay function."
+never_6 = "Never relax an existing real_node assertion, skip a test, or change refusal codes; never deploy, apply manifests or touch Fly secrets."
+touches = ["platform/hosted/authority/src/main.rs", "platform/hosted/authority/tests/real_node.rs", "platform/hosted/node/deployment.yaml", "platform/hosted/registry/deployment.yaml", "platform/hosted/tests/beta-cluster.sh", "tools/qualification/paxeer-x/authority-evidence-read.py", "tools/paxeer-x/gates/22.8.sh"]
+planned_paths = ["tools/qualification/paxeer-x/authority-evidence-read.py", "tools/paxeer-x/gates/22.8.sh"]
+build_targets = "cargo build --locked --manifest-path platform/Cargo.toml -p layerx-platform-authority --bin layerx-receipt-authority; cargo test --locked --no-run --manifest-path platform/Cargo.toml -p layerx-platform-authority --test real_node; native layerxd + layerx-genesis-build from the existing foundation artifact producer (tools/bringup/tests/foundation-artifacts.py --build) only if no source-compatible manifest is supplied"
+verify_cmd = "timeout 15m python3 tools/qualification/paxeer-x/authority-evidence-read.py"
+gate_kind = "planned-prerequisite"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at the gate result, thirty-minute cap, second failed task-scoped repair, or a missing interface outside the declared source. Record exact revision, command, exit code and private logs; retain all refusals and original checks."
+deployment_profile = "product"
+completion_policy = "Qualifies authority credential isolation and source-level Kubernetes provisioning. Kernel token provisioning is required by task24.1; deployed route and role qualification and the complete task22.5 lifecycle remain separate and mandatory."
+path_policy = "Modify existing paths in place and create the two declared gate files. Kernel initialization is outside this task."
+evidence_policy = "Retain credentials, build manifests and raw gate logs in access-controlled storage; publish only technical source."
