@@ -37,6 +37,7 @@ SIGNER_SOCKET = "/run/mirror-signer/signer.sock"
 ETHEREUM_KEY_HANDLE = "mirror/ethereum/beta"
 SOLANA_KEY_HANDLE = "mirror/solana/beta"
 POLL_INTERVAL_MS = 5000
+CHECKPOINT_FRESHNESS_BUDGET_BATCHES = 64
 FRAME_BYTES = 67108864
 ARCHIVE_CHUNKS = 65536
 
@@ -202,6 +203,7 @@ def main(argv):
         "state_directory": absolute(arguments.state_directory, "--state-directory"),
         "first_batch_number": arguments.first_batch_number,
         "poll_interval_ms": POLL_INTERVAL_MS,
+        "checkpoint_freshness_budget_batches": CHECKPOINT_FRESHNESS_BUDGET_BATCHES,
         "status_listen": arguments.status_listen,
         "node": {
             "socket": absolute(arguments.lni_socket, "--lni-socket"),
@@ -267,6 +269,19 @@ def main(argv):
                 "solana",
             ),
         }
+        ethereum_rpc = config["ethereum"]["rpc"]["endpoints"]
+        solana_rpc = config["solana"]["rpc"]["endpoints"]
+        shared_backends = {item["independent_backend"] for item in ethereum_rpc} & {
+            item["independent_backend"] for item in solana_rpc
+        }
+        shared_origins = {item["url"].split("/", 3)[2].lower() for item in ethereum_rpc} & {
+            item["url"].split("/", 3)[2].lower() for item in solana_rpc
+        }
+        if shared_backends or shared_origins:
+            refuse(
+                "the Ethereum and Solana mirrors need independent RPC trust; shared %s"
+                % ", ".join(sorted(shared_backends | shared_origins))
+            )
     output = pathlib.Path(arguments.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     with open(output, "w", encoding="utf-8") as handle:

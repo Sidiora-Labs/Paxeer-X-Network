@@ -2,21 +2,28 @@
 
 use std::path::PathBuf;
 
+use layerx_agent_api::read::{
+    BatchRef, CheckpointRef, CheckpointValue, Freshness, RelativeTo, VerifiedRead,
+};
+use layerx_agent_api::verify::Level;
+use layerx_agent_api::{prepare::CanonicalBytes, Sequence};
 use layerx_client::availability::{
     fetch, AvailabilityResult, AvailabilitySelector, FetchContext, FetchError, FetchOutcome,
     Provider, ProviderSet, RetrievalLimits,
 };
-use layerx_client::lni::handshake::{perform, HandshakeConfig, HandshakeError};
+use layerx_client::evidence::{checkpoint, CheckpointSelector, EvidenceContext, EvidenceError};
+use layerx_client::lni::handshake::{perform, Handshake, HandshakeConfig, HandshakeError};
 use layerx_client::lni::schema::{
     decode_envelope, encode_envelope, Capability, Envelope, SchemaError,
 };
 use layerx_client::lni::transport::{ConnectionGate, FrameTransport, Limits, TransportError, Uds};
 use layerx_crypto::ed25519;
 use layerx_proof::availability::RootCommitments;
+use layerx_proof::checkpoint::{CheckpointError, ThresholdReport};
 use layerx_wire::hash::batch_header_digest;
 use layerx_wire::receipt::{decode_batch_header, encode_batch_header};
 
-use crate::{BatchAuthorization, NodeBatch, NodeHead};
+use crate::{BatchAuthorization, CheckpointCoordinate, NodeBatch, NodeCheckpoint, NodeHead};
 
 const BATCH_HEADER_REQUEST_TAG: u16 = 12;
 const BATCH_HEADER_RESPONSE_TAG: u16 = 13;
@@ -37,11 +44,125 @@ pub struct NodeSourceConfig {
 pub struct AcquiredBatch {
     pub batch: NodeBatch,
     pub availability: AvailabilityResult,
+    /// Head coordinates. The finalised checkpoint coordinate is present only
+    /// when its certificate verified through the same authenticated session.
     pub head: NodeHead,
-    /// The handshake carries a checkpoint identifier but not its batch
-    /// coordinate. A non-zero value remains visible so runtime readiness never
-    /// represents checkpoint mirroring as current without certificate proof.
-    pub uncoordinated_checkpoint_id: Option<[u8; 32]>,
+    pub checkpoint: CheckpointAcquisition,
+}
+
+/// Certificate-verified checkpoint material for `Archive::from_node`.
+pub struct AcquiredCheckpoint {
+    read: VerifiedRead<CheckpointValue>,
+    report: ThresholdReport,
+    coordinate: CheckpointCoordinate,
+}
+
+impl AcquiredCheckpoint {
+    #[must_use]
+    pub const fn material(&self) -> NodeCheckpoint<'_> {
+        NodeCheckpoint::verified(&self.read, &self.report)
+    }
+
+    #[must_use]
+    pub const fn coordinate(&self) -> CheckpointCoordinate {
+        self.coordinate
+    }
+}
+
+/// Outcome of the checkpoint read that accompanies every batch acquisition.
+/// A bare handshake identifier is never promoted to a finalised coordinate.
+pub enum CheckpointAcquisition {
+    /// The node reports no finalised checkpoint.
+    NodeHasNoCheckpoint,
+    Verified(Box<AcquiredCheckpoint>),
+    Refused {
+        checkpoint_id: [u8; 32],
+        refusal: CheckpointRefusal,
+    },
+}
+
+impl CheckpointAcquisition {
+    /// The finalised coordinate, present only for verified evidence.
+    #[must_use]
+    pub fn coordinate(&self) -> Option<CheckpointCoordinate> {
+        match self {
+            Self::Verified(verified) => Some(verified.coordinate),
+            Self::NodeHasNoCheckpoint | Self::Refused { .. } => None,
+        }
+    }
+}
+
+/// Exact reason an advertised checkpoint did not count as finalised.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CheckpointRefusal {
+    CapabilityMissing,
+    Unavailable,
+    SelectorMismatch,
+    DomainMismatch,
+    SignerMembership,
+    Threshold,
+    Signature,
+    CertificateMismatch,
+    Settlement,
+    HeadBehindCheckpoint,
+    Transport,
+    CoreRefusal,
+    Malformed,
+}
+
+impl CheckpointRefusal {
+    #[must_use]
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::CapabilityMissing => "checkpoint_capability_missing",
+            Self::Unavailable => "checkpoint_unavailable",
+            Self::SelectorMismatch => "checkpoint_selector_mismatch",
+            Self::DomainMismatch => "checkpoint_domain_mismatch",
+            Self::SignerMembership => "checkpoint_signer_membership",
+            Self::Threshold => "checkpoint_threshold",
+            Self::Signature => "checkpoint_signature",
+            Self::CertificateMismatch => "checkpoint_certificate_mismatch",
+            Self::Settlement => "checkpoint_settlement",
+            Self::HeadBehindCheckpoint => "checkpoint_head_behind",
+            Self::Transport => "checkpoint_transport",
+            Self::CoreRefusal => "checkpoint_core_refusal",
+            Self::Malformed => "checkpoint_malformed",
+        }
+    }
+
+    /// Classifies a checkpoint read failure without discarding its kind.
+    #[must_use]
+    pub const fn from_evidence(error: &EvidenceError) -> Self {
+        match error {
+            EvidenceError::Unavailable => Self::Unavailable,
+            EvidenceError::SelectorMismatch => Self::SelectorMismatch,
+            EvidenceError::NetworkMismatch | EvidenceError::SequencerMismatch => {
+                Self::DomainMismatch
+            }
+            EvidenceError::BondedSet
+            | EvidenceError::Checkpoint(
+                CheckpointError::SignerMembership(_) | CheckpointError::DuplicateSigner(_),
+            ) => Self::SignerMembership,
+            EvidenceError::Requirements
+            | EvidenceError::Checkpoint(CheckpointError::Threshold { .. }) => Self::Threshold,
+            EvidenceError::Checkpoint(CheckpointError::Signature(_)) => Self::Signature,
+            EvidenceError::Registration
+            | EvidenceError::Settlement
+            | EvidenceError::Checkpoint(
+                CheckpointError::Settlement | CheckpointError::Configuration(_),
+            ) => Self::Settlement,
+            EvidenceError::Checkpoint(_) => Self::CertificateMismatch,
+            EvidenceError::Transport(_) | EvidenceError::Envelope(_) => Self::Transport,
+            EvidenceError::CoreRefusal { .. } => Self::CoreRefusal,
+            EvidenceError::UnexpectedResponse
+            | EvidenceError::Malformed
+            | EvidenceError::Activity
+            | EvidenceError::Receipt
+            | EvidenceError::Merkle(_)
+            | EvidenceError::Inclusion(_)
+            | EvidenceError::Account(_) => Self::Malformed,
+        }
+    }
 }
 
 /// Exact failure while acquiring core evidence. Partial bytes are never
@@ -190,16 +311,15 @@ impl LniArchiveSource {
         let FetchOutcome::Complete(availability) = outcome else {
             return Err(NodeSourceError::AvailabilityPartial);
         };
-        let checkpoint_id = (handshake.node().latest_finalised_checkpoint != [0; 32])
-            .then_some(handshake.node().latest_finalised_checkpoint);
+        let checkpoint = acquire_checkpoint(&mut transport, &handshake, self.next_correlation()?);
         Ok(AcquiredBatch {
             batch: NodeBatch::authenticated(reproduced, authorization),
             availability: *availability,
             head: NodeHead {
                 latest_sealed_batch: handshake.node().latest_sealed_batch,
-                latest_finalised_checkpoint: None,
+                latest_finalised_checkpoint: checkpoint.coordinate(),
             },
-            uncoordinated_checkpoint_id: checkpoint_id,
+            checkpoint,
         })
     }
 
@@ -211,6 +331,106 @@ impl LniArchiveSource {
             .ok_or(NodeSourceError::BatchSelector)?;
         Ok(current)
     }
+}
+
+/// Resolves the handshake-advertised checkpoint on the same session.
+fn acquire_checkpoint(
+    transport: &mut Uds,
+    handshake: &Handshake,
+    correlation_id: u64,
+) -> CheckpointAcquisition {
+    let node = handshake.node();
+    let advertised = node.latest_finalised_checkpoint;
+    if advertised == [0; 32] {
+        return CheckpointAcquisition::NodeHasNoCheckpoint;
+    }
+    if !handshake.capabilities().contains(Capability::Checkpoint) {
+        return CheckpointAcquisition::Refused {
+            checkpoint_id: advertised,
+            refusal: CheckpointRefusal::CapabilityMissing,
+        };
+    }
+    let context = EvidenceContext {
+        interface_version: node.interface_version,
+        correlation_id,
+        expected_protocol_version: node.protocol_version,
+        expected_network_id: node.network_id,
+        handshake_sequencer_key: node.authorised_sequencer_key,
+    };
+    verified_checkpoint(transport, advertised, context, node.latest_sealed_batch)
+}
+
+/// Reads the advertised checkpoint by identifier and keeps it only when the
+/// certificate, bonded-set context, threshold, domain and head coordinate all
+/// verify.
+fn verified_checkpoint(
+    transport: &mut Uds,
+    advertised: [u8; 32],
+    context: EvidenceContext,
+    latest_sealed_batch: u64,
+) -> CheckpointAcquisition {
+    let refused = |refusal| CheckpointAcquisition::Refused {
+        checkpoint_id: advertised,
+        refusal,
+    };
+    let verified = match checkpoint(
+        transport,
+        CheckpointSelector::Identifier(advertised),
+        context,
+    ) {
+        Ok(verified) => verified,
+        Err(error) => return refused(CheckpointRefusal::from_evidence(&error)),
+    };
+    let report = verified.report().clone();
+    if report.evidence().checkpoint_id() != Some(advertised)
+        || report.network_id() != context.expected_network_id
+        || report.protocol_version() != context.expected_protocol_version
+    {
+        return refused(CheckpointRefusal::SelectorMismatch);
+    }
+    if report.batch_number() > latest_sealed_batch {
+        return refused(CheckpointRefusal::HeadBehindCheckpoint);
+    }
+    let Ok(bytes) = CanonicalBytes::new(verified.checkpoint_bytes().to_vec()) else {
+        return refused(CheckpointRefusal::Malformed);
+    };
+    let (Ok(batch_reference), Ok(checkpoint_reference)) = (
+        BatchRef::new(latest_sealed_batch.to_string()),
+        CheckpointRef::new(hex(&advertised)),
+    ) else {
+        return refused(CheckpointRefusal::Malformed);
+    };
+    let freshness = Freshness {
+        chain_head: Sequence(report.last_sequence()),
+        latest_sealed_batch: batch_reference,
+        latest_finalised_checkpoint: checkpoint_reference.clone(),
+        value_sequence: Sequence(report.last_sequence()),
+        relative_to: RelativeTo::Checkpoint(checkpoint_reference),
+    };
+    let coordinate = CheckpointCoordinate {
+        batch_number: report.batch_number(),
+        checkpoint_id: advertised,
+    };
+    CheckpointAcquisition::Verified(Box::new(AcquiredCheckpoint {
+        read: VerifiedRead::new(
+            CheckpointValue(bytes),
+            Level::CheckpointFinalised,
+            freshness,
+        ),
+        report,
+        coordinate,
+    }))
+}
+
+fn hex(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+    bytes.iter().fold(
+        String::with_capacity(bytes.len() * 2),
+        |mut output, byte| {
+            let _ = write!(output, "{byte:02x}");
+            output
+        },
+    )
 }
 
 fn decode_batch_proof(bytes: &[u8]) -> Result<BatchAuthorization, NodeSourceError> {
