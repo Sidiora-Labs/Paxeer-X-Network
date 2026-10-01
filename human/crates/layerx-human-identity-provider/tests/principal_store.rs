@@ -1,12 +1,27 @@
-use layerx_human_identity_provider::{Policy, Server, State};
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine as _;
+use layerx_human_identity_provider::{AssertionConfig, AssertionVerifier, Policy, Server, State};
+use layerx_human_service::server::production_auth::{
+    authorize_bearer_execution, AuthDiscoveryIndex, AuthorizationDisclosure, IndexAuthenticationKey,
+};
+use layerx_human_service::server::schema::ApiSchema;
+use layerx_human_service::server::{
+    IdentityDispatchError, IdentityProviderConfig, RemoteIdentityProvider,
+};
 use layerx_human_service::store::{
     AgentTenantId, PrincipalId, PrincipalStore, PrincipalTenancyAuthority, RetentionPeriod,
     RetentionPolicy, RowKey, StoreError, Table, TenancyDigest, TenancyMap,
 };
 use layerx_identity_binding::{Client, Config};
+use layerx_types::clock::Clock as _;
+use p256::ecdsa::signature::Signer as _;
+use p256::ecdsa::{Signature, SigningKey};
+use serde_json::{json, Value};
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::fs;
 use std::io::{Read as _, Write as _};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::os::unix::fs::{symlink, PermissionsExt as _};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
@@ -18,6 +33,174 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 type Result<T = ()> = std::result::Result<T, Box<dyn Error>>;
+
+const ISSUER: &str = "https://identity.example.test/auth/v1";
+const AUDIENCE: &str = "authenticated";
+const TENANT: &str = "human-provider";
+const BINDING_TYPE: &str = "layerx-wallet-binding+jwt";
+const WALLET_DID: &str =
+    "did:layerx:3f1c0a9e5b7d2468ace013579bdf2468ace013579bdf2468ace013579bdf2468";
+const OTHER_DID: &str =
+    "did:layerx:9a8b7c6d5e4f30211203f4e5d6c7b8a99a8b7c6d5e4f30211203f4e5d6c7b8a9";
+
+struct KeySetServer {
+    address: SocketAddr,
+    shutdown: Arc<AtomicBool>,
+    worker: Option<JoinHandle<()>>,
+}
+
+impl KeySetServer {
+    fn serve(keys: &[Value]) -> Result<Self> {
+        let listener = TcpListener::bind("127.0.0.1:0")?;
+        let address = listener.local_addr()?;
+        let body = json!({ "keys": keys }).to_string();
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let stop = Arc::clone(&shutdown);
+        let worker = thread::spawn(move || {
+            for stream in listener.incoming() {
+                if stop.load(Ordering::Acquire) {
+                    break;
+                }
+                if let Ok(mut stream) = stream {
+                    let _ = respond(&mut stream, &body);
+                }
+            }
+        });
+        Ok(Self {
+            address,
+            shutdown,
+            worker: Some(worker),
+        })
+    }
+
+    fn url(&self) -> String {
+        format!("http://{}/auth/v1/.well-known/jwks.json", self.address)
+    }
+}
+
+impl Drop for KeySetServer {
+    fn drop(&mut self) {
+        self.shutdown.store(true, Ordering::Release);
+        let _ = TcpStream::connect(self.address);
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+
+fn respond(stream: &mut TcpStream, body: &str) -> Result {
+    stream.set_read_timeout(Some(Duration::from_secs(5)))?;
+    let mut request = Vec::new();
+    let mut buffer = [0u8; 1024];
+    while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+        let read = stream.read(&mut buffer)?;
+        if read == 0 || request.len() > 16 * 1024 {
+            return Ok(());
+        }
+        request.extend_from_slice(&buffer[..read]);
+    }
+    if !request.starts_with(b"GET /auth/v1/.well-known/jwks.json ") {
+        stream.write_all(
+            b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+        )?;
+        return Ok(());
+    }
+    write!(
+        stream,
+        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        body.len(),
+        body
+    )?;
+    stream.flush()?;
+    Ok(())
+}
+
+struct Signer(SigningKey);
+
+impl Signer {
+    fn generate() -> Result<Self> {
+        loop {
+            let mut scalar = [0u8; 32];
+            getrandom::fill(&mut scalar)?;
+            if let Ok(key) = SigningKey::from_slice(&scalar) {
+                return Ok(Self(key));
+            }
+        }
+    }
+
+    fn jwk(&self, key_id: &str) -> Result<Value> {
+        let point = self.0.verifying_key().to_encoded_point(false);
+        Ok(json!({
+            "kty": "EC", "crv": "P-256", "kid": key_id, "use": "sig", "alg": "ES256",
+            "x": URL_SAFE_NO_PAD.encode(point.x().ok_or("missing x")?),
+            "y": URL_SAFE_NO_PAD.encode(point.y().ok_or("missing y")?),
+        }))
+    }
+
+    fn sec1_hex(&self) -> String {
+        self.0
+            .verifying_key()
+            .to_encoded_point(false)
+            .as_bytes()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
+    }
+
+    fn mint(&self, header: &Value, claims: &Value) -> String {
+        let input = format!(
+            "{}.{}",
+            URL_SAFE_NO_PAD.encode(header.to_string()),
+            URL_SAFE_NO_PAD.encode(claims.to_string())
+        );
+        let signature: Signature = self.0.sign(input.as_bytes());
+        format!("{input}.{}", URL_SAFE_NO_PAD.encode(signature.to_bytes()))
+    }
+
+    fn assertion(&self, subject: &str, now: u64) -> String {
+        self.mint(
+            &json!({"alg": "ES256", "typ": "JWT", "kid": "supabase-1"}),
+            &json!({"iss": ISSUER, "sub": subject, "aud": AUDIENCE, "exp": now + 3600,
+                "iat": now, "nbf": now - 5, "role": "authenticated"}),
+        )
+    }
+
+    fn binding(&self, subject: &str, did: &str, tenant: &str) -> String {
+        self.mint(
+            &json!({"alg": "ES256", "typ": BINDING_TYPE}),
+            &json!({"iss": ISSUER, "sub": subject, "did": did, "tenant": tenant}),
+        )
+    }
+}
+
+fn authority_now() -> Result<u64> {
+    Ok(
+        layerx_client::runtime_clock::RuntimeClock::from_environment()?
+            .sample(Duration::from_secs(1))?
+            .unix_seconds(),
+    )
+}
+
+fn verifier(keys: &KeySetServer, producer: &Signer) -> Result<AssertionVerifier> {
+    Ok(AssertionVerifier::new(AssertionConfig {
+        jwks_url: keys.url(),
+        issuer: ISSUER.to_owned(),
+        audience: AUDIENCE.to_owned(),
+        clock_skew_seconds: 30,
+        refresh_interval_seconds: 300,
+    })?
+    .with_binding_producer_key(&producer.sec1_hex())?)
+}
+
+fn identity(root: &Path, peer_gid: u32) -> Result<RemoteIdentityProvider> {
+    Ok(RemoteIdentityProvider::new(IdentityProviderConfig {
+        socket: root.join("identity.sock"),
+        deadline: Duration::from_secs(1),
+        maximum_frame_bytes: 65_536,
+        peer_uid: rustix::process::geteuid().as_raw(),
+        peer_gid,
+    })?)
+}
 
 #[derive(Debug)]
 struct Authority(Client);
@@ -37,8 +220,12 @@ struct Running {
 }
 impl Running {
     fn start(root: &Path) -> Result<Self> {
+        Self::start_with(root, None)
+    }
+
+    fn start_with(root: &Path, assertion: Option<AssertionVerifier>) -> Result<Self> {
         let uid = rustix::process::geteuid().as_raw();
-        let state = State::open(
+        let mut state = State::open(
             &root.join("identity"),
             Policy {
                 root: [0x43; 32],
@@ -46,6 +233,9 @@ impl Running {
                 delay_seconds: 86_400,
             },
         )?;
+        if let Some(verifier) = assertion {
+            state.enable_assertion(verifier)?;
+        }
         let server = Server::bind(
             &root.join("identity.sock"),
             state,
@@ -113,10 +303,14 @@ fn provision(root: &Path, email: &str, idempotency: &str) -> Result<PrincipalId>
 }
 
 fn client(root: &Path) -> Result<Client> {
+    tenant_client(root, TENANT)
+}
+
+fn tenant_client(root: &Path, tenant: &str) -> Result<Client> {
     Ok(Client::new(
         Config {
             socket: root.join("binding.sock"),
-            tenant: "human-provider".into(),
+            tenant: tenant.into(),
             peer_uid: rustix::process::geteuid().as_raw(),
             peer_gid: rustix::process::getegid().as_raw(),
             deadline: Duration::from_secs(1),
@@ -245,6 +439,184 @@ fn actual_provider_refuses_static_conflicts_and_durable_binding_replacement() ->
     assert!(open(&store_root, digest, client).is_err());
     assert!(!missing.exists());
     assert!(binding.is_symlink());
+    running.stop()?;
+    Ok(())
+}
+
+fn refused(result: std::result::Result<impl std::fmt::Debug, IdentityDispatchError>) -> bool {
+    matches!(result, Err(IdentityDispatchError::ProviderRefused))
+}
+
+#[test]
+fn assertion_subject_resolves_one_durable_wallet_principal_and_tenant_across_restart() -> Result {
+    let directory = tempfile::Builder::new()
+        .permissions(fs::Permissions::from_mode(0o700))
+        .tempdir()?;
+    let root = directory.path();
+    let supabase = Signer::generate()?;
+    let producer = Signer::generate()?;
+    let forger = Signer::generate()?;
+    let keys = KeySetServer::serve(&[supabase.jwk("supabase-1")?])?;
+    let running = Running::start_with(root, Some(verifier(&keys, &producer)?))?;
+    let now = authority_now()?;
+    let egid = rustix::process::getegid().as_raw();
+    let identity = identity(root, egid)?;
+    let client = client(root)?;
+    let store_root = root.join("store");
+    let digest = TenancyMap::new([])?.install(&store_root)?;
+    let mut store = open(&store_root, digest, client.clone())?;
+    let alice_token = supabase.assertion("supabase-user-a", now);
+
+    let pending = identity.resolve_assertion(&alice_token)?;
+    assert!(pending.binding_pending());
+    assert!(client.lookup(pending.principal.as_str()).is_err());
+    assert!(store.principal(&pending.principal).is_err());
+
+    let alice_binding = producer.binding("supabase-user-a", WALLET_DID, TENANT);
+    for offered in [
+        forger.binding("supabase-user-a", WALLET_DID, TENANT),
+        producer.binding("supabase-user-b", WALLET_DID, TENANT),
+        producer.binding("supabase-user-a", WALLET_DID, "other-tenant"),
+        WALLET_DID.to_owned(),
+    ] {
+        assert!(refused(
+            identity.resolve_assertion_with_binding(&alice_token, Some(&offered))
+        ));
+    }
+    let unverified = forger.assertion("supabase-user-a", now);
+    assert!(refused(identity.resolve_assertion_with_binding(
+        &unverified,
+        Some(&alice_binding)
+    )));
+    assert_eq!(identity.resolve_assertion(&alice_token)?, pending);
+
+    let alice = identity.resolve_assertion_with_binding(&alice_token, Some(&alice_binding))?;
+    assert_eq!(alice.principal, pending.principal);
+    assert_eq!(alice.did.as_deref(), Some(WALLET_DID));
+    assert_eq!(identity.resolve_assertion(&alice_token)?, alice);
+    assert_eq!(
+        identity.resolve_assertion_with_binding(&alice_token, Some(&alice_binding))?,
+        alice
+    );
+    assert!(refused(identity.resolve_assertion_with_binding(
+        &alice_token,
+        Some(&producer.binding("supabase-user-a", OTHER_DID, TENANT))
+    )));
+
+    let bob_token = supabase.assertion("supabase-user-b", now);
+    assert!(refused(identity.resolve_assertion_with_binding(
+        &bob_token,
+        Some(&producer.binding("supabase-user-b", WALLET_DID, TENANT))
+    )));
+    let bob = identity.resolve_assertion_with_binding(
+        &bob_token,
+        Some(&producer.binding("supabase-user-b", OTHER_DID, TENANT)),
+    )?;
+    assert_ne!(bob.principal, alice.principal);
+    assert_eq!(bob.did.as_deref(), Some(OTHER_DID));
+    let carol = provision(root, "carol@example.com", "carol")?;
+    assert!(carol != alice.principal && carol != bob.principal);
+
+    let binding = client.lookup(alice.principal.as_str())?;
+    assert_eq!(binding.did().as_bytes(), WALLET_DID.as_bytes());
+    assert_eq!(binding.tenant(), TENANT);
+    let key = RowKey::new("record")?;
+    {
+        let mut scope = store.principal(&alice.principal)?;
+        assert_eq!(scope.tenant().as_str(), binding.agent_tenant());
+        scope.put(Table::Journeys, key.clone(), 1, b"alice".to_vec())?;
+    }
+    {
+        let scope = store.principal(&bob.principal)?;
+        assert!(scope.get(Table::Journeys, &key).is_none());
+        assert_ne!(scope.tenant().as_str(), binding.agent_tenant());
+    }
+    assert_ne!(
+        store.principal(&carol)?.tenant().as_str(),
+        binding.agent_tenant()
+    );
+
+    let index = AuthDiscoveryIndex::open(
+        root.join("auth-index"),
+        IndexAuthenticationKey::new([0x5a; 32]).map_err(|_| "index key refused")?,
+    )
+    .map_err(|_| "index refused")?;
+    let schema = ApiSchema::v1().map_err(|_| "schema refused")?;
+    let operation = schema
+        .operation("intent.plan")
+        .ok_or("intent.plan missing")?;
+    let body = json!({"amount": "1"});
+    let path_parameters = BTreeMap::new();
+    let disclosure = || AuthorizationDisclosure {
+        operation,
+        destination: "/v1/intents/plan",
+        path_parameters: &path_parameters,
+        body: &body,
+        idempotency_key: None,
+        trace: "trace-identity-binding",
+    };
+    let capability = authorize_bearer_execution(
+        &mut store,
+        &index,
+        &alice.principal,
+        &alice_token,
+        disclosure(),
+        now,
+        30,
+    )
+    .map_err(|_| "bearer capability refused")?;
+    assert_eq!(capability.principal(), &alice.principal);
+    assert_eq!(capability.tenant().as_str(), binding.agent_tenant());
+    assert_eq!(capability.operation(), "intent.plan");
+    let context = capability
+        .into_context()
+        .map_err(|_| "capability context refused")?;
+    assert_eq!(context.principal, alice.principal);
+    assert_eq!(context.tenant.as_str(), binding.agent_tenant());
+    let dave = identity.resolve_assertion(&supabase.assertion("supabase-user-d", now))?;
+    assert!(dave.binding_pending());
+    assert!(authorize_bearer_execution(
+        &mut store,
+        &index,
+        &dave.principal,
+        &alice_token,
+        disclosure(),
+        now,
+        30,
+    )
+    .is_err());
+
+    assert!(tenant_client(root, "other-tenant")?
+        .lookup(alice.principal.as_str())
+        .is_err());
+    assert!(matches!(
+        identity(root, egid.wrapping_add(1))?.resolve_assertion(&alice_token),
+        Err(IdentityDispatchError::ProviderAuthentication)
+    ));
+
+    drop(store);
+    running.stop()?;
+    assert!(identity.resolve_assertion(&alice_token).is_err());
+    let running = Running::start_with(root, Some(verifier(&keys, &producer)?))?;
+    assert_eq!(identity.resolve_assertion(&alice_token)?, alice);
+    assert_eq!(identity.resolve_assertion(&bob_token)?, bob);
+    assert!(identity
+        .resolve_assertion(&supabase.assertion("supabase-user-d", now))?
+        .binding_pending());
+    let mut store = open(&store_root, digest, client.clone())?;
+    assert_eq!(
+        store
+            .principal(&alice.principal)?
+            .get(Table::Journeys, &key)
+            .ok_or("alice row")?
+            .bytes(),
+        b"alice"
+    );
+    assert_eq!(
+        client.lookup(alice.principal.as_str())?.agent_tenant(),
+        binding.agent_tenant()
+    );
+    assert!(store.principal(&dave.principal).is_err());
     running.stop()?;
     Ok(())
 }

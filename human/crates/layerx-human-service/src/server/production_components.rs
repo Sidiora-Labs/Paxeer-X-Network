@@ -732,10 +732,15 @@ impl HumanApiComponents for ProductionComponents {
         trace: &str,
     ) -> Result<PrincipalContext, ApiFailure> {
         let now = self.now()?;
+        let binding = credentials
+            .body
+            .get("wallet_binding")
+            .and_then(serde_json::Value::as_str);
         let account = self
             .identity
-            .resolve_assertion(credentials.assertion)
+            .resolve_assertion_with_binding(credentials.assertion, binding)
             .map_err(|error| bearer_failure(&error))?;
+        let did = account.did.clone().ok_or_else(ApiFailure::forbidden)?;
         let mut store = self.store.lock().map_err(|_| ApiFailure::unavailable())?;
         let capability = authorize_bearer_execution(
             &mut store,
@@ -759,13 +764,10 @@ impl HumanApiComponents for ProductionComponents {
         {
             return Err(ApiFailure::forbidden());
         }
-        let context = capability
+        capability
             .into_context()?
-            .with_assertion(credentials.assertion.to_owned())?;
-        match account.did {
-            Some(did) => context.with_did(did),
-            None => Ok(context),
-        }
+            .with_assertion(credentials.assertion.to_owned())?
+            .with_did(did)
     }
 
     fn execute(&self, request: ScopedRequest<'_>) -> Result<BackendResponse, ApiFailure> {
