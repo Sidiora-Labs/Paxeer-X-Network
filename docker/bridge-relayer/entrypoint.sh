@@ -44,6 +44,12 @@ if [ -n "${LAYERX_BRIDGE_COSIGN_TRANSPORT_CONFIG+set}" ]; then
 		exit 1
 	fi
 	install -d -o 4102 -g 4102 -m 0700 /data/cosign-delivery
+	for file in "$secrets"/cosign/*; do
+		chown 4102:4102 "$file"
+		chmod 0400 "$file"
+	done
+	chown 4102:4102 "$secrets/cosign"
+	chmod 0500 "$secrets/cosign"
 fi
 install -d -o 4101 -g 4100 -m 0750 /run/bridge-signer
 
