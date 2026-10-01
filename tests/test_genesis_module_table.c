@@ -656,8 +656,53 @@ static int check_allowance_policy(void)
     return 0;
 }
 
+static int check_oracle_transport_registration(void)
+{
+    lxp_genesis_manifest manifest;
+    lxp_genesis_module_plan plan;
+    uint8_t key[32];
+    REQUIRE(lxp_genesis_module_enable_key(LXP_MODULE_PERPS, key) == LXP_OK);
+    draft_manifest(&manifest, key, 1U);
+    manifest.parameters[2].module_id = LXP_MODULE_GOVERNANCE;
+    memcpy(manifest.parameters[2].key, LXP_PERPS_ORACLE_TRANSPORT_PARAMETER,
+        sizeof(LXP_PERPS_ORACLE_TRANSPORT_PARAMETER));
+    manifest.parameters[2].value[31] = 1U;
+    manifest.parameter_count = 3U;
+    REQUIRE(lxp_genesis_module_plan_resolve(&manifest, &plan) == LXP_OK);
+    bool found = false;
+    for (size_t i = 0U; i < plan.count; ++i)
+        if (plan.modules[i]->module_id == LXP_MODULE_PERPS) {
+            REQUIRE(plan.modules[i]->abi_version == 2U); found = true;
+        }
+    REQUIRE(found);
+    manifest.parameter_count = 2U;
+    REQUIRE(lxp_genesis_module_plan_resolve(&manifest, &plan) == LXP_OK);
+    for (size_t i = 0U; i < plan.count; ++i)
+        if (plan.modules[i]->module_id == LXP_MODULE_PERPS) REQUIRE(plan.modules[i]->abi_version == 1U);
+    manifest.parameter_count = 3U;
+    manifest.parameters[2].value[31] = 0U;
+    REQUIRE(lxp_genesis_module_plan_resolve(&manifest, &plan) != LXP_OK);
+    manifest.parameters[2].value[31] = 2U;
+    REQUIRE(lxp_genesis_module_plan_resolve(&manifest, &plan) != LXP_OK);
+    manifest.parameters[2].value[31] = 1U; manifest.parameters[2].value[0] = 1U;
+    REQUIRE(lxp_genesis_module_plan_resolve(&manifest, &plan) != LXP_OK);
+    manifest.parameters[2].value[0] = 0U; manifest.parameters[2].module_id = LXP_MODULE_PERPS;
+    REQUIRE(lxp_genesis_module_plan_resolve(&manifest, &plan) != LXP_OK);
+    manifest.parameters[2].module_id = LXP_MODULE_GOVERNANCE; manifest.parameters[2].key[31] = 1U;
+    REQUIRE(lxp_genesis_module_plan_resolve(&manifest, &plan) != LXP_OK);
+    manifest.parameters[2].key[31] = 0U; manifest.protocol_version = 2U;
+    REQUIRE(lxp_genesis_module_plan_resolve(&manifest, &plan) != LXP_OK);
+    manifest.protocol_version = 3U; manifest.parameters[0].value[31] = 0U;
+    REQUIRE(lxp_genesis_module_plan_resolve(&manifest, &plan) != LXP_OK);
+    manifest.parameters[0].value[31] = 1U; manifest.parameters[3] = manifest.parameters[2];
+    manifest.parameter_count = 4U;
+    REQUIRE(lxp_genesis_module_plan_resolve(&manifest, &plan) != LXP_OK);
+    return 0;
+}
+
 int main(void)
 {
+    REQUIRE(check_oracle_transport_registration() == 0);
     REQUIRE(check_table() == 0);
     REQUIRE(check_defaults() == 0);
     REQUIRE(check_handover_registration() == 0);

@@ -1,6 +1,8 @@
 #ifndef LAYERX_LXP_GENESIS_H
 #define LAYERX_LXP_GENESIS_H
 
+#define LXP_PERPS_ORACLE_TRANSPORT_PARAMETER "perps-oracle-transport"
+
 #include "layerx/lxp_codec.h"
 #include "layerx/lxp_module.h"
 

@@ -226,6 +226,7 @@ MODULE_FEES=""
 GENESIS_MODULES=()
 HANDOVER_AUTHORITY=""
 HANDOVER_PARAMETER_COUNT=0
+ORACLE_TRANSPORT_PARAMETER_COUNT=0
 SETTLEMENT_ENV=""
 SETTLEMENT_DOCUMENT=${LAYERX_PAXEER_SETTLEMENT_JSON:-}
 FORCE=0
@@ -256,6 +257,9 @@ while [ $# -gt 0 ]; do
             [ "$HANDOVER_PARAMETER_COUNT" -eq 0 ] || fail "--handover-authority repeats"
             HANDOVER_PARAMETER_COUNT=1
             HANDOVER_AUTHORITY=${2,,}; shift 2 ;;
+        --perps-oracle-transport)
+            [ "$ORACLE_TRANSPORT_PARAMETER_COUNT" -eq 0 ] && [ "${2:-}" = 1 ] || fail "--perps-oracle-transport requires one value of 1"
+            ORACLE_TRANSPORT_PARAMETER_COUNT=1; shift 2 ;;
         --withdrawal-fee) WITHDRAWAL_FEE=$2; shift 2 ;;
         --module-fees) MODULE_FEES=$2; shift 2 ;;
         --treasury-balance) TREASURY_BALANCE=$2; shift 2 ;;
@@ -415,7 +419,12 @@ if [ -z "$SETTLEMENT_DOCUMENT" ]; then
 fi
 GUARANTOR_COUNT=$(jq -er '.finality_policy.certificate_threshold | select(type == "number" and . == floor and . >= 1 and . <= 32)' "$SETTLEMENT_DOCUMENT") \
     || fail "certificate threshold must be an integer in 1..32 (LXP_GENESIS_MAX_GUARANTORS)"
-GENESIS_METADATA_MAX_BYTES=$((16384 - 314 - 81 * GUARANTOR_COUNT - 66 * (${#GENESIS_MODULES[@]} + HANDOVER_PARAMETER_COUNT)))
+if [ "$ORACLE_TRANSPORT_PARAMETER_COUNT" -eq 1 ] && [ "${#GENESIS_MODULES[@]}" -gt 0 ]; then
+    perps_selected=0
+    for module in "${GENESIS_MODULES[@]}"; do [ "$module" != perps ] || perps_selected=1; done
+    [ "$perps_selected" -eq 1 ] || fail "oracle transport requires enabled perps module"
+fi
+GENESIS_METADATA_MAX_BYTES=$((16384 - 380 - 81 * GUARANTOR_COUNT - 66 * (${#GENESIS_MODULES[@]} + HANDOVER_PARAMETER_COUNT + ORACLE_TRANSPORT_PARAMETER_COUNT)))
 check_genesis_metadata_bounds() {
     [ -f "$GENESIS_METADATA" ] && [ ! -L "$GENESIS_METADATA" ] && [ -s "$GENESIS_METADATA" ] \
         || fail "the LXGB v2 genesis metadata is absent: $GENESIS_METADATA"
@@ -633,7 +642,7 @@ REQUEST="$DATA_DIR/work/genesis-request.lxgb"
     hex_to_bin "$(be_hex 3 2)"
     hex_to_bin "$(be_hex "$NETWORK_ID" 4)"
     hex_to_bin "$(be_hex "$GENESIS_TIMESTAMP_MS" 8)"
-    hex_to_bin "$(be_hex "$((2 + ${#GENESIS_MODULES[@]} + HANDOVER_PARAMETER_COUNT))" 2)"
+    hex_to_bin "$(be_hex "$((2 + ${#GENESIS_MODULES[@]} + HANDOVER_PARAMETER_COUNT + ORACLE_TRANSPORT_PARAMETER_COUNT))" 2)"
     if [ "$HANDOVER_PARAMETER_COUNT" -eq 1 ]; then
         handover_key=$(printf 'handover-authority' | bin_to_hex)
         handover_key="$handover_key$(printf '0%.0s' $(seq 1 $((64 - ${#handover_key}))))"
@@ -654,6 +663,13 @@ REQUEST="$DATA_DIR/work/genesis-request.lxgb"
     hex_to_bin "$(be_hex 7 2)"
     hex_to_bin "$PARAMETER_KEY"
     hex_to_bin "$PARAMETER_VALUE"
+    if [ "$ORACLE_TRANSPORT_PARAMETER_COUNT" -eq 1 ]; then
+        oracle_key=$(printf 'perps-oracle-transport' | bin_to_hex)
+        oracle_key="$oracle_key$(printf '0%.0s' $(seq 1 $((64 - ${#oracle_key}))))"
+        hex_to_bin "$(be_hex 7 2)"
+        hex_to_bin "$oracle_key"
+        hex_to_bin "$PARAMETER_VALUE"
+    fi
     hex_to_bin "$(be_hex "$GUARANTOR_COUNT" 2)"
     for entry in "${GUARANTOR_ENTRIES[@]}"; do
         hex_to_bin "${entry%% *}"
@@ -670,7 +686,7 @@ REQUEST="$DATA_DIR/work/genesis-request.lxgb"
     for demand in 100 1 1 10 1 1000; do hex_to_bin "$(be_hex "$demand" 8)"; done
     cat "$GENESIS_METADATA"
 } > "$REQUEST"
-[ "$(stat -c %s "$REQUEST")" -eq "$((380 + 81 * GUARANTOR_COUNT + 66 * (${#GENESIS_MODULES[@]} + HANDOVER_PARAMETER_COUNT) + $(stat -c %s "$GENESIS_METADATA")))" ] || fail "genesis request has an unexpected length"
+[ "$(stat -c %s "$REQUEST")" -eq "$((380 + 81 * GUARANTOR_COUNT + 66 * (${#GENESIS_MODULES[@]} + HANDOVER_PARAMETER_COUNT + ORACLE_TRANSPORT_PARAMETER_COUNT) + $(stat -c %s "$GENESIS_METADATA")))" ] || fail "genesis request has an unexpected length"
 
 SIGNER_KEY="$DATA_DIR/work/genesis-signer.key"
 hex_to_bin "$SEQUENCER_PRIVATE" > "$SIGNER_KEY"

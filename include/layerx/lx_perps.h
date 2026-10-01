@@ -268,6 +268,7 @@ typedef struct lx_perps_oracle_command {
     uint64_t source_identifier;
     uint8_t oracle_public_key[32];
     uint8_t signature[64];
+    uint8_t transport_version;
 } lx_perps_oracle_command;
 
 typedef struct lx_perps_order_command {
@@ -329,6 +330,9 @@ typedef lxp_result (*lx_perps_position_visit_fn)(
     const lx_perps_position *position, void *user);
 
 const lxp_module_iface *lx_perps_module_iface(void);
+const lxp_module_iface *lx_perps_oracle_transport_module_iface(void);
+lxp_result lx_perps_oracle_transport_decode(const uint8_t *bytes, size_t length,
+    lx_perps_oracle_command *command);
 lxp_result lx_perps_market_encode(const lx_perps_market *market,
                                   uint8_t bytes[LX_PERPS_MARKET_BYTES]);
 lxp_result lx_perps_market_decode(

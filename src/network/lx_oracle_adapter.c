@@ -115,6 +115,66 @@ lxp_result lx_oracle_activity_encode(
     return lxp_activity_encode(&activity, arena, encoded);
 }
 
+lxp_result lx_oracle_transport_encode(const lx_oracle_observation *observation,
+    uint8_t bytes[LX_ORACLE_TRANSPORT_BYTES])
+{
+    size_t length;
+    if (observation == NULL || bytes == NULL) return LXP_ERR_NON_CANONICAL;
+    lxp_result status = lx_oracle_observation_encode(observation, bytes + 1U,
+        LX_ORACLE_OBSERVATION_BYTES, &length);
+    if (status != LXP_OK) return status;
+    bytes[0] = LX_ORACLE_TRANSPORT_VERSION;
+    memcpy(bytes + 73U, observation->signature, 64U);
+    return LXP_OK;
+}
+
+lxp_result lx_oracle_activity_encode_signed(const lx_oracle_observation *observation,
+    const lx_oracle_adapter_config *config, lxp_arena *arena, lxp_byte_span *encoded)
+{
+    lxp_activity activity = {0};
+    uint8_t payload[LX_ORACLE_TRANSPORT_BYTES], signature[64], digest[32], public_key[32];
+    size_t public_length = sizeof(public_key), signature_length = sizeof(signature);
+    if (observation == NULL || config == NULL || arena == NULL || encoded == NULL ||
+        config->protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT ||
+        config->transport_version != LX_ORACLE_TRANSPORT_VERSION ||
+        config->network_id == 0U || config->actor_did == NULL ||
+        config->actor_did_length == 0U || config->actor_did_length > LXP_MAX_DID_LENGTH ||
+        config->not_before == 0U || config->not_after < config->not_before ||
+        config->not_after - config->not_before > UINT64_C(300000) ||
+        lxp_u128_is_zero(config->fee_limit)) return LXP_ERR_NON_CANONICAL;
+    lxp_result status = lx_oracle_transport_encode(observation, payload);
+    EVP_PKEY *key = EVP_PKEY_new_raw_private_key(EVP_PKEY_ED25519, NULL,
+        config->oracle_private_key, 32U);
+    EVP_MD_CTX *context = EVP_MD_CTX_new();
+    if (status == LXP_OK && (key == NULL || context == NULL ||
+        EVP_PKEY_get_raw_public_key(key, public_key, &public_length) != 1 ||
+        public_length != 32U || memcmp(public_key, observation->oracle_public_key, 32U) != 0))
+        status = LXP_ERR_BAD_SIGNATURE;
+    activity.protocol_version = config->protocol_version;
+    activity.network_id = config->network_id;
+    activity.activity_type = LX_ORACLE_PUSH_ACTIVITY;
+    activity.actor_did = (lxp_byte_span){config->actor_did, config->actor_did_length};
+    activity.authority = (lxp_byte_span){public_key, 32U};
+    activity.account_sequence = config->next_account_sequence;
+    activity.timestamp_bound.not_before = config->not_before;
+    activity.timestamp_bound.not_after = config->not_after;
+    activity.fee_limit = config->fee_limit;
+    activity.payload = (lxp_byte_span){payload, sizeof(payload)};
+    if (status == LXP_OK) status = lxp_hash_context_value(payload, sizeof(payload), activity.idempotency_key);
+    if (status == LXP_OK) status = lxp_hash_payload(payload, sizeof(payload), activity.payload_hash);
+    if (status == LXP_OK) status = lxp_activity_signing_preimage(&activity, digest);
+    if (status == LXP_OK && (EVP_DigestSignInit(context, NULL, NULL, NULL, key) != 1 ||
+        EVP_DigestSign(context, signature, &signature_length, digest, sizeof(digest)) != 1 ||
+        signature_length != 64U)) status = LXP_ERR_BAD_SIGNATURE;
+    activity.signature = (lxp_byte_span){signature, sizeof(signature)};
+    if (status == LXP_OK) status = lxp_activity_encode(&activity, arena, encoded);
+    EVP_MD_CTX_free(context);
+    EVP_PKEY_free(key);
+    lxp_secure_zero(digest, sizeof(digest));
+    lxp_secure_zero(signature, sizeof(signature));
+    return status;
+}
+
 lxp_result lx_oracle_adapter_run(lx_oracle_adapter_config *config,
                                  size_t *submitted)
 {
@@ -122,9 +182,11 @@ lxp_result lx_oracle_adapter_run(lx_oracle_adapter_config *config,
     if (config == NULL || submitted == NULL ||
         config->poll_crossverse == NULL || config->submit_activity == NULL ||
         config->actor_did == NULL || config->actor_did_length == 0U ||
-        config->maximum_observations == 0U)
+        config->maximum_observations == 0U ||
+        config->next_account_sequence == UINT64_MAX)
         return LXP_ERR_NON_CANONICAL;
     while (count < config->maximum_observations) {
+        if (config->next_account_sequence == UINT64_MAX) return LXP_ERR_SEQUENCE_EXHAUSTED;
         lx_oracle_observation observation;
         uint8_t arena_bytes[LXP_MAX_ACTIVITY_BYTES];
         lxp_arena arena;
@@ -142,15 +204,14 @@ lxp_result lx_oracle_adapter_run(lx_oracle_adapter_config *config,
             status = lxp_arena_init(&arena, arena_bytes,
                                     sizeof(arena_bytes));
         if (status == LXP_OK)
-            status = lx_oracle_activity_encode(
-                &observation, config->network_id, config->actor_did,
-                config->actor_did_length, config->next_account_sequence,
-                config->fee_limit, &arena, &activity);
+            status = lx_oracle_activity_encode_signed(&observation, config,
+                                                       &arena, &activity);
         if (status == LXP_OK)
             status = config->submit_activity(config->submit_context,
                                               activity.bytes,
                                               activity.length);
         if (status != LXP_OK) return status;
+        if (config->next_account_sequence == UINT64_MAX) return LXP_ERR_SEQUENCE_EXHAUSTED;
         ++config->next_account_sequence;
         ++count;
     }
