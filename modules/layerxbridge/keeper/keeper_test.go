@@ -802,7 +802,7 @@ func TestBridgeOutReleaseCapBoundary(t *testing.T) {
 		require.Equal(t, remote.Hex(), attribute(emitted[0], types.AttributeRecipient))
 	})
 	t.Run("active-cap-reduction", func(t *testing.T) {
-		authorized := append(sdk.Events(nil), s.events(types.EventBridgeOut)...)
+		authorized := append([]sdk.Event(nil), s.events(types.EventBridgeOut)...)
 		s.setCap(1500, 300)
 		assertRefused(t, s.k, s.ctx, big.NewInt(400), types.ErrCapExceeded)
 		require.Equal(t, authorized, s.events(types.EventBridgeOut))
