@@ -1925,3 +1925,9 @@ area    = "spec-workflow"
 symptom = "cg spec implemented runs past a two-minute timeout and is terminated without changing the task status."
 cause   = "The records command can run long in a lane with a large spec."
 do      = "Set the status to implemented in spec.kvx by hand, then render once, and say so in the report."
+
+[gotcha.318]
+area    = "human-material"
+symptom = "A search for the sequencer trust history across human/crates and platform finds only readers and test fixtures."
+cause   = "The one writer of the LayerX/sequencer-trust-history/v1 encoding is encode_trust_history in platform/hosted/tests/beta-cluster.sh; the kernel and registry inits only wait on the file."
+do      = "Search for the encoding header and encode_trust_history, not the path, before naming a producer."
