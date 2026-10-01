@@ -819,9 +819,10 @@ else
 	failures=$((failures + 1))
 fi
 
-CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_ca_passing "$work/hosts-good.env" 0 ca -- \
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" LAYERX_ATTESTOR_CA_DIR="$work/attestor-ca" expect check_live_ca_passing "$work/hosts-good.env" 0 ca -- \
 	"pass ca ca expires_in=36" \
 	"pass receipt-authority app=$kernel chain=ok san=5/5 expires_in=39" \
+	"pass human-attestor-client app=$kernel chain=ok san=0/0 expires_in=39" \
 	"pass agentd-client app=$kernel chain=ok san=0/0 expires_in=39" \
 	"pass agentd app=$kernel chain=ok san=5/5 expires_in=39" \
 	"pass internal-kms app=$internal chain=ok san=4/4 expires_in=39" \
@@ -869,8 +870,9 @@ CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_ca_failing "$work/hosts-
 	"fail registry toml=absent" \
 	"fail registry-event-client toml=absent" \
 	"fail interop-client app=$interop cert=unmounted" \
+	"fail human-attestor-client app=$kernel attestor_ca=absent LAYERX_ATTESTOR_CA_DIR=unset" \
 	"pass developer app=$webhooks chain=ok san=4/4 expires_in=39" \
-	"check-live: 7 check(s) failed"
+	"check-live: 8 check(s) failed"
 
 # The kernel boundary cases reach the kernel fixture app, whose volume holds
 # the agentd-client identity issued above, through the flyctl stand-in.
