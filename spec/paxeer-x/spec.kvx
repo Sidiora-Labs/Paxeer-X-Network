@@ -21562,8 +21562,8 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 title = "Distribute launchpad airdrops from immutable epoch entitlements"
 status = "in_progress"
 mode = "BUILD"
-wave = 2
-requires = ["0.2"]
+wave = 3
+requires = ["0.2", "4.1.1"]
 reqs = ["111"]
 do_1 = "Choose and implement immutable epoch entitlement representation with bounded state construction and query cost; bind supply and holder eligibility to the same explicit epoch boundary."
 do_2 = "Update ExecuteAirdrop/ClaimAirdrop and keeper storage to calculate from that basis and commit payment/claim marker together; preserve current public precompile authorization."
@@ -22054,7 +22054,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.14.1]
 title = "Render transfer completion from verified transaction evidence"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -22629,7 +22629,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.21.4]
 title = "Provide the approved bridge attestor quorum with durable share delivery"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -22749,7 +22749,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.22.6]
 title = "Publish explicit index stability and settlement verification levels"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -24354,7 +24354,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.106.4.6]
 title = "Replay the v6.10 plan over a copy of a post-activation state"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -31343,3 +31343,53 @@ touches = ["tools/qualification/paxeer-x/wallet-injected-fixture.py", "tools/qua
 planned_paths = ["tools/qualification/paxeer-x/wallet-injected-fixture.py", "tools/qualification/paxeer-x/wallet-injected-fixture.mjs", "tools/qualification/paxeer-x/wallet-injected-entry.tsx", "tools/paxeer-x/gates/14.8.sh"]
 verify_cmd = "timeout 15m python3 tools/qualification/paxeer-x/wallet-injected-fixture.py --verify-baseline"
 completion_policy = "Qualifies fixture readiness and observed baseline behavior only. Task14.2 retains every chain-admission, stale confirmation, reconnect and no-other-chain-broadcast criterion and its unchanged final gate."
+
+[task.24.14]
+status = "in_progress"
+mode = "BUILD"
+wave = 2
+requires = ["0.2"]
+gate_kind = "planned-prerequisite"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+deployment_profile = "product"
+stop_condition = "Stop at the bounded gate result or time limit. Preserve source, exact command, exit code and private evidence. Missing real dependencies never establish completion."
+evidence_policy = "Publish portable technical source only. Keep generated credentials, runtime state and qualification evidence in restricted storage outside the repository."
+title = "Provide a real daemon restart fixture for native lifecycle qualification"
+reqs = ["108.4", "110.4", "112.4"]
+do_1 = "Create a reusable isolated fixture using the production chain125 genesis initializer, configured anchor and custody genesis, real source-bound Paxeer daemon, kernel genesis builder and kernel daemon. Consume protected artifact manifests; refuse mismatched revisions or missing executables. Never use a closed-port chain URL, emulated RPC or a captured chain response server."
+do_2 = "Use production bootstrap and sequencer environment generation to start a real sequencer and independent replica against the actual isolated chain. Preserve finality admission, threshold checks and signed genesis validation. Keep generated keys, runtime identities and credentials inside a protected disposable directory."
+do_3 = "Expose a bounded Python lifecycle interface and a private versioned fixture manifest for downstream signed-Activity drivers: start, readiness, graceful stop, owned-process kill, restart from the same durable directories, replica catch-up and cleanup. A restart must start fresh processes and consume the existing store without copying in-memory module state into it."
+do_4 = "Implement a focused real-process contract proving chain identity and progress, actual kernel admission/readiness, a canonical signed transaction and retained receipt/state after stop/start, replica catch-up, wrong network refusal, missing or mismatched artifact refusal and cleanup limited to owned processes. Reuse real native clients or build one bounded client explicitly in the single build phase; no hidden build during verification."
+do_5 = "The fixture enables but does not complete the downstream budget, escrow, exchange or archive tasks. Those tasks retain every original acceptance criterion and their complete verification commands."
+touches = ["tests/daemon/paxeer_x_runtime_fixture.py", "tests/daemon/paxeer_x_runtime_fixture_test.py", "tests/daemon/lxp_test_runtime_fixture.c", "tools/paxeer-x/gates/24.14.sh"]
+planned_paths = ["tests/daemon/paxeer_x_runtime_fixture.py", "tests/daemon/paxeer_x_runtime_fixture_test.py", "tests/daemon/lxp_test_runtime_fixture.c", "tools/paxeer-x/gates/24.14.sh"]
+verify_cmd = "timeout 20m python3 tests/daemon/paxeer_x_runtime_fixture_test.py"
+completion_policy = "Only genuine reusable daemon lifecycle and restart evidence is qualified; downstream module behavior and complete Human readiness remain separate."
+
+[task.4.1.1]
+status = "pending"
+mode = "BUILD"
+wave = 2
+requires = ["0.2"]
+gate_kind = "planned-prerequisite"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+deployment_profile = "product"
+stop_condition = "Stop at the bounded gate result or time limit. Preserve source, exact command, exit code and private evidence. Missing real dependencies never establish completion."
+evidence_policy = "Publish portable technical source only. Keep generated credentials, runtime state and qualification evidence in restricted storage outside the repository."
+title = "Record bounded holder balance history at airdrop epoch boundaries"
+reqs = ["111.1", "111.2", "111.3", "111.4"]
+do_1 = "Add shared pointer-backed balance-change hook registration to both bank keepers, called before each validated setBalance write. Existing keeper copies must observe later registration. Reject empty, duplicate or nil registrations. Preserve store-mode selection, recipient checks, deferred-store behavior and existing bank assertions."
+do_2 = "Register a launchpad hook in the application after keeper construction. For active launched-token histories, record the old holder balance once per epoch in append-only persistent count-indexed checkpoints. Never scan holders or catch up over skipped epochs. Keep histories unopened until the full airdrop transition explicitly opens them."
+do_3 = "Add versioned history markers and checked epoch progression, immutable checkpoints and a bounded binary-search EpochBalance lookup. Refuse missing history, unsupported epochs, malformed or out-of-order entries and overflow. No live-balance fallback is allowed outside the proven history interval."
+do_4 = "Run hook reads and writes with the original metered transaction context. Do not replace gas meters with infinite meters, relax existing gas assertions or imply that state-changing activation is safe without its separately coordinated release. The full airdrop task owns activation, genesis preservation and payout semantics."
+do_5 = "Test through both real application bank keepers and keeper copies created before registration: transfers, mint, burn, zeroed senders, fresh recipients, skipped epochs, repeated mutations, rejected transfers, discarded cache transactions, duplicate registration and bounded lookup. Preserve exact historical balances and atomic rollback; no doubles."
+touches = ["sdk/x/bank/keeper/send.go", "engine/deps/xbank/keeper/send.go", "modules/launchpad/keeper/history.go", "modules/launchpad/types/keys.go", "modules/launchpad/types/errors.go", "node/app.go", "modules/launchpad/keeper/history_test.go", "tools/paxeer-x/gates/4.1.1.sh"]
+planned_paths = ["modules/launchpad/keeper/history.go", "modules/launchpad/keeper/history_test.go", "tools/paxeer-x/gates/4.1.1.sh"]
+verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 4.1.1"
+completion_policy = "Qualifies the history primitive only. Full airdrop entitlement, immutable funding/supply basis, additive older-epoch claims, genesis, conservation and durable payout remain task4.1."
