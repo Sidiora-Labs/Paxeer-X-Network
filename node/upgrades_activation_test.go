@@ -3,10 +3,12 @@ package app
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/sidiora-labs/paxeer-network/consensus/config"
 	launchpadtypes "github.com/sidiora-labs/paxeer-network/modules/launchpad/types"
 	layerxanchortypes "github.com/sidiora-labs/paxeer-network/modules/layerxanchor/types"
 	layerxbridgetypes "github.com/sidiora-labs/paxeer-network/modules/layerxbridge/types"
@@ -20,7 +22,12 @@ import (
 	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 	upgradetypes "github.com/sidiora-labs/paxeer-network/sdk/x/upgrade/types"
 	"github.com/sidiora-labs/paxeer-network/storage/common/keys"
+	scconfig "github.com/sidiora-labs/paxeer-network/storage/config"
+	storageproto "github.com/sidiora-labs/paxeer-network/storage/proto"
+	"github.com/sidiora-labs/paxeer-network/storage/state_db/sc/composite"
+	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm"
 	"github.com/stretchr/testify/require"
+	dbm "github.com/tendermint/tm-db"
 	"golang.org/x/mod/semver"
 )
 
@@ -259,6 +266,11 @@ func TestActivationAppliesThePlanInTheBlockTheUpgradeInfoNames(t *testing.T) {
 	a, ctx := testWrapper.App, testWrapper.Ctx
 	rewindBeforeActivation(t, a, ctx)
 	require.Empty(t, a.unmountedActivationStores())
+	reporter, ok := a.CommitMultiStore().(pendingStoreReporter)
+	require.True(t, ok)
+	for _, name := range activationStoreUpgrades().Added {
+		require.False(t, reporter.IsPendingStore(name), name)
+	}
 
 	const height = int64(42)
 	writeActivationUpgradeInfo(t, a, height)
@@ -381,6 +393,78 @@ func TestActivationStopsTheBlockTheStoreLoaderMountedNoActivationStoresFor(t *te
 	// The block wrote nothing: no plan, no done height, no module and no store entry.
 	require.Zero(t, a.UpgradeKeeper.GetDoneHeight(at, ActivationUpgrade))
 	require.Equal(t, before, a.UpgradeKeeper.GetModuleVersionMap(at))
+	require.False(t, a.activationModulesPresent(at))
+	_, found := a.UpgradeKeeper.GetUpgradePlan(at)
+	require.False(t, found)
+	for _, name := range activationStoreUpgrades().Added {
+		iter := at.KVStore(a.GetKey(name)).Iterator(nil, nil)
+		require.False(t, iter.Valid(), name)
+		require.NoError(t, iter.Close())
+	}
+}
+
+func TestActivationStopsTheBlockWhoseStateCommitmentStoreServesAPlanStoreAsPending(t *testing.T) {
+	valPub := secp256k1.GenPrivKey().PubKey()
+	testWrapper := NewTestWrapper(t, time.Now().UTC(), valPub, true)
+	before, ctx := testWrapper.App, testWrapper.Ctx
+	rewindBeforeActivation(t, before, ctx)
+	infoPath, err := before.UpgradeKeeper.GetUpgradeInfoPath()
+	require.NoError(t, err)
+	home := filepath.Dir(filepath.Dir(infoPath))
+
+	// The rewound chain commits and the process stops.
+	before.SetDeliverStateToCommit()
+	before.WriteState().Commit(true)
+	require.NoError(t, before.Close())
+
+	// The state then loses the web store's tree, as a state that predates the
+	// store carries none, while the binary that next opens it still mounts it.
+	sc, err := composite.NewCompositeCommitStore(t.Context(), home, scconfig.DefaultStateCommitConfig())
+	require.NoError(t, err)
+	require.NoError(t, sc.Initialize(keys.MemIAVLStoreKeys))
+	_, err = sc.LoadVersion(0, false)
+	require.NoError(t, err)
+	require.NoError(t, sc.ApplyUpgrades([]*storageproto.TreeNameUpgrade{{Name: xwebtypes.StoreKey, Delete: true}}))
+	_, err = sc.Commit()
+	require.NoError(t, err)
+	require.NoError(t, sc.Close())
+
+	// A process the upgrade store loader never ran in mounts every store, and its
+	// state-commitment store serves the web store through the pending placeholder.
+	a := New(dbm.NewMemDB(), nil, true, map[int64]bool{}, home, 1, true, config.TestConfig(), MakeEncodingConfig(),
+		wasm.EnableAllProposals, TestAppOpts{}, EmptyWasmOpts, nil)
+	t.Cleanup(func() { _ = a.Close() })
+	key := a.GetKey(xwebtypes.StoreKey)
+	require.NotNil(t, key)
+	require.NotNil(t, a.CommitMultiStore().GetCommitKVStore(key))
+	reporter, ok := a.CommitMultiStore().(pendingStoreReporter)
+	require.True(t, ok)
+	require.True(t, reporter.IsPendingStore(xwebtypes.StoreKey))
+	require.Equal(t, []string{xwebtypes.StoreKey}, a.unmountedActivationStores())
+
+	height := a.LastBlockHeight() + 1
+	writeActivationUpgradeInfo(t, a, height)
+	at := ctx.WithMultiStore(a.CommitMultiStore().CacheMultiStore()).WithBlockHeight(height)
+	recordPreviousProposer(a, at, valPub)
+	versions := a.UpgradeKeeper.GetModuleVersionMap(at)
+	for _, name := range activationModules() {
+		require.NotContains(t, versions, name)
+	}
+
+	recovered := func() (value any) {
+		defer func() { value = recover() }()
+		a.BeginBlock(at, height, nil, nil, false)
+		return nil
+	}()
+
+	require.NotNil(t, recovered)
+	message := fmt.Sprint(recovered)
+	require.Contains(t, message, "the store loader did not add the activation stores "+xwebtypes.StoreKey+":")
+	require.Contains(t, message, "the upgrade info height must equal the last committed height plus one when the process starts")
+
+	// The block wrote nothing: no plan, no done height, no module and no store entry.
+	require.Zero(t, a.UpgradeKeeper.GetDoneHeight(at, ActivationUpgrade))
+	require.Equal(t, versions, a.UpgradeKeeper.GetModuleVersionMap(at))
 	require.False(t, a.activationModulesPresent(at))
 	_, found := a.UpgradeKeeper.GetUpgradePlan(at)
 	require.False(t, found)

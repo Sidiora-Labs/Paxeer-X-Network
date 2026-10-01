@@ -431,14 +431,14 @@
     - Drive real extension discovery, account connection, rejection, network change, lock/disconnect, reconnect and controlled isolated-chain receipt observation. Missing embedded authentication configuration must remain an actual tested configuration. Record whether the suspected baseline wrong-chain path occurs before14.2 implementation without asserting an exploit from source alone.
     - Publish private source-bound fixture readiness and baseline reproduction records without seeds, keys or profile contents. Keep the fixture executable and configurable for all14.2 acceptance cases, preserving the original complete14.2 verification command and requirements.
     - _Requirements: 151.1, 151.2, 151.3, 151.4_
-  - [ ] 15.1 Validate the authority’s explicit readiness contract at the router
+  - [-] 15.1 Validate the authority’s explicit readiness contract at the router
     - Define a dependency-specific authority readiness response type and explicit network identity comparison.
     - Align producer and consumer schemas and extend the actual serializer/decoder boundary test instead of deleting deny_unknown_fields.
     - Add healthy, false-ready, numeric network mismatch, malformed and restart contract cases.
     - Add the new bounded harness tools/qualification/paxeer-x/router-authority-schema.py to exercise this task through the named production interfaces, including the stated refusal and recovery cases, with explicit prerequisite checks and nonzero exit on any unmet acceptance. Use supplied prebuilt executables and isolated retained state; do not hide a rebuild or invoke a release-wide suite.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 157_
-  - [ ] 15.2 Preserve resolvable identities alongside native account references
+  - [-] 15.2 Preserve resolvable identities alongside native account references
     - Separate lookup-selector and native-account-reference types in layerx-network-gateway and preserve the original resolvable key in ResolvedIdentities.
     - Update consumers and OpenRPC parameter declarations to prevent the canonical native ID from being sent to the DID precompile path.
     - Add repeat-lookup, collision/ambiguous-hex and unavailable-binding cases against the real resolver; keep private explorer compatibility scoped privately.
@@ -2309,7 +2309,7 @@
       - Write the tests: each module's keeper test passes MsgUpdateParams through its msgServer on the real keeper and asserts the stored parameters afterwards and the error another authority returns; the proposal test in modules/layerxgov gains a proposal carrying both messages and asserts it validates and returns them in order.
       - Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector.
       - _Requirements: 1141.1, 1141.5_
-    - [-] 106.4.5 Read a pending placeholder as a store the plan is still to mount
+    - [x] 106.4.5 Read a pending placeholder as a store the plan is still to mount
       - Reconcile the retained capability against the current candidate and explicit resolution sections. Reuse conforming implementation; complete only unmet criteria. Resolve historical paths against the current source without narrowing the capability or repeating operational transitions already completed.
       - In node/upgrades.go extend the check that names the plan's stores the commit multistore carries: a store the state-commitment store serves through the pending placeholder of storage/state_db/sc/composite counts as one the plan's store upgrades are still to mount, asked through the interface that store implements and skipped on a commit multistore that does not implement it.
       - Keep the message and the behaviour of the apply step exactly as they are: the block whose plan is due names every store still to be mounted and writes no state, and a process whose stores are all mounted applies the plan as before.

@@ -22129,7 +22129,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.15.1]
 title = "Validate the authority’s explicit readiness contract at the router"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -22139,7 +22139,7 @@ do_2 = "Align producer and consumer schemas and extend the actual serializer/dec
 do_3 = "Add healthy, false-ready, numeric network mismatch, malformed and restart contract cases."
 do_4 = "Add the new bounded harness tools/qualification/paxeer-x/router-authority-schema.py to exercise this task through the named production interfaces, including the stated refusal and recovery cases, with explicit prerequisite checks and nonzero exit on any unmet acceptance. Use supplied prebuilt executables and isolated retained state; do not hide a rebuild or invoke a release-wide suite."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["platform/hosted/gateway/src/main.rs", "platform/hosted/authority/src/main.rs", "platform/hosted/authority/tests/real_node.rs", "human/wallet/deploy/endpoint.toml", "tools/qualification/paxeer-x/router-authority-schema.py"]
+touches = ["platform/hosted/gateway/src/main.rs", "platform/hosted/authority/src/main.rs", "platform/hosted/authority/tests/real_node.rs", "human/wallet/deploy/endpoint.toml", "tools/qualification/paxeer-x/router-authority-schema.py", "tools/paxeer-x/gates/15.1.sh"]
 verify_cmd = "timeout 15m python3 tools/qualification/paxeer-x/router-authority-schema.py"
 gate_kind = "planned"
 max_builds = 1
@@ -22154,7 +22154,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.15.2]
 title = "Preserve resolvable identities alongside native account references"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -22164,7 +22164,7 @@ do_2 = "Update consumers and OpenRPC parameter declarations to prevent the canon
 do_3 = "Add repeat-lookup, collision/ambiguous-hex and unavailable-binding cases against the real resolver; keep private explorer compatibility scoped privately."
 do_4 = "Add the new bounded harness tools/qualification/paxeer-x/unified-account-identity.py to exercise this task through the named production interfaces, including the stated refusal and recovery cases, with explicit prerequisite checks and nonzero exit on any unmet acceptance. Use supplied prebuilt executables and isolated retained state; do not hide a rebuild or invoke a release-wide suite."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["human/crates/layerx-network-gateway/src/lib.rs", "human/crates/layerx-explorer-index/src/unified.rs", "platform/hosted/gateway/openrpc.json", "platform/hosted/gateway/src/paxeer.rs", "precompiles/addr/addr.go", "modules/evm/types/layerx_binding.go", "modules/evm/keeper/layerx_binding.go", "tools/qualification/paxeer-x/unified-account-identity.py"]
+touches = ["human/crates/layerx-network-gateway/src/lib.rs", "human/crates/layerx-explorer-index/src/unified.rs", "platform/hosted/gateway/openrpc.json", "platform/hosted/gateway/src/paxeer.rs", "precompiles/addr/addr.go", "modules/evm/types/layerx_binding.go", "modules/evm/keeper/layerx_binding.go", "tools/qualification/paxeer-x/unified-account-identity.py", "tools/paxeer-x/gates/15.2.sh", "human/crates/layerx-human-service/src/journeys/observed.rs"]
 verify_cmd = "timeout 15m python3 tools/qualification/paxeer-x/unified-account-identity.py"
 gate_kind = "planned"
 max_builds = 1
@@ -24325,7 +24325,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.106.4.5]
 title = "Read a pending placeholder as a store the plan is still to mount"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -24335,7 +24335,7 @@ do_2 = "In node/upgrades.go extend the check that names the plan's stores the co
 do_3 = "Keep the message and the behaviour of the apply step exactly as they are: the block whose plan is due names every store still to be mounted and writes no state, and a process whose stores are all mounted applies the plan as before."
 do_4 = "Extend node/upgrades_activation_test.go with the case on the real application: a process whose state-commitment store serves one of the plan's stores through the pending placeholder stops the block naming that store and writes nothing, and one whose stores all carry trees applies the plan."
 do_5 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["node/upgrades.go", "node/upgrades_activation_test.go", "tools/paxeer-x/gates/106.4.5.sh"]
+touches = ["node/upgrades.go", "node/upgrades_activation_test.go", "tools/paxeer-x/gates/106.4.5.sh", "sdk/storev2/rootmulti/store.go"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 106.4.5"
 gate_kind = "planned-adapter"
 max_builds = 1
