@@ -14,7 +14,8 @@ use layerx_types::amount::Amount;
 use layerx_types::ids::{AssetId, CheckpointId, IdempotencyKey};
 use layerx_types::intent::EvmAddress;
 use layerx_types::payload::{
-    ActivityType, ModuleId, ModuleRegistration, ModuleRegistry, PerpsPayload, TradeSide,
+    ActivityType, ModuleId, ModuleRegistration, ModuleRegistry, PerpsPayload, PerpsTimeInForce,
+    TradeSide,
 };
 
 const CREDIT: &[u8] =
@@ -325,8 +326,41 @@ fn exchange_order_routes_to_the_kernel_perps_order_bytes() {
             side: TradeSide::Sell,
             price: (1_u128 << 64) | 2,
             quantity: 5000,
+            time_in_force: PerpsTimeInForce::GoodTillCancelled,
         }
     );
+}
+
+#[test]
+fn exchange_order_carries_every_time_in_force_distinctly() {
+    let registry = perps_registry();
+    let gtc = vector_bytes("perps_order_place");
+    let cases = [
+        (1_u8, PerpsTimeInForce::ImmediateOrCancel),
+        (2, PerpsTimeInForce::FillOrKill),
+        (3, PerpsTimeInForce::PostOnly),
+    ];
+    for (byte, expected) in cases {
+        let (topics, body) = order_log_topics(byte);
+        let log = EvmLog {
+            address: EXCHANGE_PRECOMPILE,
+            topics: &topics,
+            data: &body,
+        };
+        let intent = checked(route(&log, market_binding()));
+        let compiled = checked(compile(&intent, &registry));
+        let bytes = compiled.payload().as_bytes();
+        assert_eq!(bytes.len(), 130);
+        assert_eq!(&bytes[..129], &gtc[..]);
+        assert_eq!(bytes[129], byte);
+        checked(DisclosureCheck::verify(&intent, &compiled));
+        let PerpsPayload::OrderPlace { time_in_force, .. } =
+            checked(PerpsPayload::from_payload(compiled.payload()))
+        else {
+            panic!("order payload");
+        };
+        assert_eq!(time_in_force, expected);
+    }
 }
 
 #[test]
@@ -409,14 +443,14 @@ fn direct_perps_intents_compile_every_kernel_vector() {
 
 #[test]
 fn exchange_order_refuses_what_perps_cannot_carry() {
-    let (topics, body) = order_log_topics(1);
+    let (topics, body) = order_log_topics(4);
     let log = EvmLog {
         address: EXCHANGE_PRECOMPILE,
         topics: &topics,
         data: &body,
     };
     let Err(RouteError::Intent(error)) = route(&log, market_binding()) else {
-        panic!("IOC order routed");
+        panic!("unknown time in force routed");
     };
     assert_eq!(error.field, IntentField::TimeInForce);
     let (topics, body) = order_log_topics(0);

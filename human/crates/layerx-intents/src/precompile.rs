@@ -1,6 +1,6 @@
 //! Paxeer precompile event decoding and routing into `LayerX` intents.
 
-use layerx_types::payload::{PerpsPayload, TradeSide};
+use layerx_types::payload::{PerpsPayload, PerpsTimeInForce, TradeSide};
 
 pub use crate::keccak::keccak256;
 use crate::{
@@ -702,8 +702,8 @@ impl ExchangeOrder {
     ///
     /// # Errors
     ///
-    /// Refuses a side outside buy/sell, any time in force other than GTC
-    /// (perps orders rest until cancelled), zero or over-wide values.
+    /// Refuses a side outside buy/sell, a time in force outside
+    /// GTC/IOC/FOK/post-only, zero or over-wide values.
     pub fn new(event: OrderPlaced, owner_account_id: [u8; 32]) -> Result<Self, IntentError> {
         let side = match event.side {
             1 => TradeSide::Buy,
@@ -715,12 +715,12 @@ impl ExchangeOrder {
                 })
             }
         };
-        if event.time_in_force != 0 {
+        let Ok(time_in_force) = PerpsTimeInForce::from_byte(event.time_in_force) else {
             return Err(IntentError {
                 field: IntentField::TimeInForce,
                 reason: IntentErrorReason::InvalidRange,
             });
-        }
+        };
         nonzero(&event.market_id, IntentField::Market)?;
         nonzero(&event.intent_id, IntentField::Order)?;
         nonzero(&owner_account_id, IntentField::Account)?;
@@ -731,6 +731,7 @@ impl ExchangeOrder {
             side,
             price: amount(&event.price)?,
             quantity: amount(&event.quantity)?,
+            time_in_force,
         })?;
         Ok(Self { event, payload })
     }
