@@ -22894,7 +22894,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.25.2]
 title = "Bind ephemeral runner cleanup to actual job assignment"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -24264,7 +24264,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.106.4.2]
 title = "One governance proposal that carries any fork module's authority message"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 3
 requires = ["0.2", "106.4.9"]

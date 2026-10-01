@@ -24,6 +24,8 @@ const (
 var testNow = time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
 
 type ghJob struct {
+	RunnerID    int64
+	RunnerName  string
 	ID          int64
 	RunID       int64
 	Status      string
@@ -119,6 +121,13 @@ func (s *githubServer) serve(w http.ResponseWriter, r *http.Request) {
 				"completed_at": nil,
 				"name":         fmt.Sprintf("job-%d", job.ID),
 				"runner_name":  nil,
+				"runner_id":    nil,
+			}
+			if job.RunnerID > 0 {
+				entry["runner_id"] = job.RunnerID
+			}
+			if job.RunnerName != "" {
+				entry["runner_name"] = job.RunnerName
 			}
 			if job.Conclusion != "" {
 				entry["conclusion"] = job.Conclusion

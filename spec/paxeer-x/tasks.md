@@ -775,7 +775,7 @@
     - Create tools/ci/tests/focused-source-identity.py using real temporary Git worktrees and the production qualifier/ledger/report commands; prove clean pass eligibility, dirty passing exclusion, revision mismatch and mid-run mutation refusal.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 209_
-  - [-] 25.2 Bind ephemeral runner cleanup to actual job assignment
+  - [x] 25.2 Bind ephemeral runner cleanup to actual job assignment
     - Reproduce the crossed-assignment scenario and determine the supported GitHub runner/job association fields before selecting the cleanup rule.
     - Carry runner identity and assignment through github.go/jobIndex and reconcile.destroyReason; retain conservative behavior when association is unavailable.
     - Extend reconcile_test.go with TestReconcileActualAssignment cases using the real clients/reconciler and documented captured API shapes, including crossed, completed, unknown and unmanaged machines; reserve live scheduler behavior for authorized integrated qualification.
@@ -2256,7 +2256,7 @@
       - Declare general availability only after the canary shows no reserve discrepancy, no unrecoverable crash, no missed checkpoint deadline and no receipt failing independent verification.
       - Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector.
       - _Requirements: 1137.13, 1137.14, 1137.15, 1115.10, 1116.2_
-    - [ ] 106.4.2 One governance proposal that carries any fork module's authority message
+    - [-] 106.4.2 One governance proposal that carries any fork module's authority message
       - Reconcile the retained capability against the current candidate and explicit resolution sections. Reuse conforming implementation; complete only unmet criteria. Resolve historical paths against the current source without narrowing the capability or repeating operational transitions already completed.
       - Declare the proposal in api/layerxgov/proposal.proto after api/layerxbridge/proposal.proto: a LayerXProposal message carrying a title, a description and a repeated google.protobuf.Any of the messages it executes, and generate modules/layerxgov/types/proposal.pb.go.
       - Write modules/layerxgov/types/keys.go with the module name and the router key, and modules/layerxgov/types/proposal.go implementing govtypes.Content and cdctypes.UnpackInterfacesMessage on the generated type: the proposal type constant, its registration with the governance proposal type registry, the amino registration of the content and of every message it may carry, a constructor that packs messages under their type URLs, GetMessages, UnpackInterfaces and String.
