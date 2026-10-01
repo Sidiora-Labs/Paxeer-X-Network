@@ -146,6 +146,7 @@ platform-test-node: test-layerxctl layerx-handover layerx-genesis-build $(BUILD_
 	bash -n platform/hosted/node/bootstrap.sh platform/hosted/node/supervisor.sh platform/hosted/node/sequencer-env.sh platform/hosted/node/tests/node-test.sh
 	PLATFORM_CARGO="$(PLATFORM_CARGO)" BRIDGE_PYTHON="$(BRIDGE_PYTHON)" PAXD="$(abspath build/paxd)" bash platform/hosted/node/tests/node-test.sh
 	python3 platform/hosted/node/tests/sequencer-seed-test.py
+	python3 platform/hosted/node/tests/bootstrap-test.py
 
 platform-test-core:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(PLATFORM_CARGO) test --offline --manifest-path $(PLATFORM_MANIFEST) --locked -p layerx-platform-core

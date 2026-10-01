@@ -415,7 +415,7 @@ if [ -z "$SETTLEMENT_DOCUMENT" ]; then
 fi
 GUARANTOR_COUNT=$(jq -er '.finality_policy.certificate_threshold | select(type == "number" and . == floor and . >= 1 and . <= 32)' "$SETTLEMENT_DOCUMENT") \
     || fail "certificate threshold must be an integer in 1..32 (LXP_GENESIS_MAX_GUARANTORS)"
-GENESIS_METADATA_MAX_BYTES=$((16384 - 314 - 81 * GUARANTOR_COUNT - 66 * (${#GENESIS_MODULES[@]} + HANDOVER_PARAMETER_COUNT)))
+GENESIS_METADATA_MAX_BYTES=$((16384 - 380 - 81 * GUARANTOR_COUNT - 66 * (${#GENESIS_MODULES[@]} + HANDOVER_PARAMETER_COUNT)))
 check_genesis_metadata_bounds() {
     [ -f "$GENESIS_METADATA" ] && [ ! -L "$GENESIS_METADATA" ] && [ -s "$GENESIS_METADATA" ] \
         || fail "the LXGB v2 genesis metadata is absent: $GENESIS_METADATA"
