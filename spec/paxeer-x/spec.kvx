@@ -31418,3 +31418,39 @@ stop_condition = "Stop at the declared gate result or time limit; keep exact sou
 deployment_profile = "product"
 completion_policy = "Canonical codec and consumer compatibility only; no authenticated read, state proof, wallet readiness or runtime certification."
 evidence_policy = "Keep operational inputs and raw qualification evidence private; publish portable technical source only."
+
+[task.22.7]
+title = "Verify independent per-receipt authority evidence in the explorer reader"
+status = "in_progress"
+mode = "BUILD"
+wave = 3
+requires = ["0.2", "15.1"]
+reqs = ["195"]
+do_1 = "Add human/crates/layerx-explorer-index/src/receipt_authority.rs with a bounded HTTPS reader for GET /v1/batches/{batch_id}/receipt-authority?receipt_digest={digest}: rustls/private-CA trust from DER exactly as the existing explorer authority CA path, one bearer token, fixed connect/read timeouts and a maximum response size, no tenant, principal, activity or signed-activity parameter, and a refusal if the authority endpoint equals the node endpoint."
+do_2 = "Derive batch_id and receipt_digest only through layerx_platform_authority::receipt_locator on canonical receipt bytes; never accept a batch id or digest supplied by a caller alongside the bytes."
+do_3 = "Map responses to typed outcomes without collapsing them: 200 -> evidence to verify; 404 -> NotYetAuthorised; 503 or transport failure -> Unavailable; 400, any other status, oversized or non-JSON body -> Malformed; every non-verified outcome carries no facts."
+do_4 = "Verify each 200 document by reusing the public layerx-platform-authority verifier: select the SequencerAuthorization from a caller-supplied layerx_client::handover::SequencerHistory by the receipt's global sequence, verify the signed header against that history, then parse_replica_evidence with the locally pinned replica id and that key, then authorized_batch_by_activity; return its AuthorityFacts unchanged as the receipt-specific verified authority."
+do_5 = "Expose a per-receipt API only (one canonical receipt -> one verified facts value or one typed refusal) so a batch of several assets or a maintained batch is verified receipt by receipt; provide no batch-level helper that reuses one AuthorizedBatch."
+do_6 = "Add the path dependency layerx-platform-authority = { path = \"../../../platform/hosted/authority\" } to human/crates/layerx-explorer-index/Cargo.toml and the human/Cargo.lock update from one unlocked cargo resolution, after which every build and the gate use --locked; declare pub mod receipt_authority in src/lib.rs and change nothing else in lib.rs."
+do_7 = "Create the focused receipt_authority_reader integration test using actual source-bound kernel sequencer, independent replica and receipt-authority TLS processes against a real isolated chain with production anchor configuration. Consume the shared real daemon fixture or its canonical production producers; no recorded RPC response server. Submit actual signed operations in two assets and drive a maintained batch. Verify each receipt with its own asset and unchanged canonical proof verifier. Refuse wrong replica identity, excluded history signer, mutated real proof/digest/batch, missing or wrong bearer and stopped replica without returning facts. Fail rather than skip when a real prerequisite is missing."
+do_8 = "Build the explorer integration test target and actual authority binary once in the explicit build phase, then run the source-bound prebuilt test via the declared Python gate. Reuse source-compatible native artifacts and real isolated fixture; no cargo or native compilation during verification. Cover all owned reader acceptance including real refusal/outage paths."
+never_1 = "Never call /v1/agent/authorized-batch, /v1/authorized-batches/by-activity, /internal/v1/activities or any tenant- or principal-scoped route, and never accept the agent-boundary registry-plane relay of /v1/batches/*/receipt-authority as the independent source."
+never_2 = "Never learn the replica id or sequencer key from the response, and never use one static key for every batch across a rotation."
+never_3 = "Never build one AuthorizedBatch for a whole batch, relax the asset or root equality in verify_outcome, or add a weaker parallel proof implementation inside the explorer crate."
+never_4 = "Never treat 404, 503 or a malformed answer as verified or as complete-empty, and never retry inside the reader; retry and backoff belong to the 22.5 lifecycle."
+never_5 = "Never add a reverse dependency from layerx-client to layerx-platform-authority and never edit platform/hosted/authority, agent/crates, docker or deployment files in this task."
+never_6 = "Never use mocked services, recorded RPC response servers, hand-written authority documents or fabricated receipts. Negative proof inputs may mutate actual produced evidence and must exercise the unchanged verifier."
+never_7 = "Never print, log or persist the bearer token, and never wire this reader into main.rs, query.rs or ingest_receipt_authority; that integration is 22.5."
+touches = ["human/crates/layerx-explorer-index/src/receipt_authority.rs", "human/crates/layerx-explorer-index/src/lib.rs", "human/crates/layerx-explorer-index/Cargo.toml", "human/Cargo.lock", "human/crates/layerx-explorer-index/tests/receipt_authority_reader.rs", "tools/paxeer-x/gates/22.7.sh", "tools/qualification/paxeer-x/explorer-receipt-reader.py"]
+verify_cmd = "timeout 20m python3 tools/qualification/paxeer-x/explorer-receipt-reader.py"
+gate_kind = "planned-prerequisite"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+deployment_profile = "product"
+planned_paths = ["human/crates/layerx-explorer-index/src/receipt_authority.rs", "human/crates/layerx-explorer-index/tests/receipt_authority_reader.rs", "tools/paxeer-x/gates/22.7.sh", "tools/qualification/paxeer-x/explorer-receipt-reader.py"]
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+completion_policy = "Qualifies only the independent per-receipt reader and trust boundary. Scoped production entitlement/provisioning and the complete22.5 lifecycle, rollback, checkpoint, availability and durability gate remain required."
