@@ -1,6 +1,7 @@
 use layerx_gas_station::config::ServiceConfig;
 use layerx_gas_station::journal::Journal;
 use layerx_gas_station::price::PaymasterRateSource;
+use layerx_gas_station::rate::{PublisherConfig, RatePublisher, RateRefusal, DAY_SECONDS};
 use layerx_gas_station::rpc::{ConfiguredRpc, HttpsExchange};
 use layerx_gas_station::service::{serve, Limits, Service};
 use layerx_gas_station::signer::LocalSigner;
@@ -10,7 +11,7 @@ use std::io::{self, Write};
 use std::net::{SocketAddr, TcpListener};
 use std::path::PathBuf;
 use std::process::ExitCode;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Eq, PartialEq)]
 struct Arguments {
@@ -33,6 +34,104 @@ fn arguments(arguments: impl IntoIterator<Item = OsString>) -> Option<Arguments>
     })
 }
 
+#[derive(Debug, Eq, PartialEq)]
+struct RateArguments {
+    config: PathBuf,
+    journal: PathBuf,
+    rate_file: PathBuf,
+}
+
+fn rate_arguments(arguments: impl IntoIterator<Item = OsString>) -> Option<RateArguments> {
+    let mut arguments = arguments.into_iter();
+    let mut value = |flag: &str| {
+        let (name, value) = (arguments.next()?, arguments.next()?);
+        (name == flag && !value.is_empty()).then(|| PathBuf::from(value))
+    };
+    let parsed = RateArguments {
+        config: value("--config")?,
+        journal: value("--journal")?,
+        rate_file: value("--rate-file")?,
+    };
+    arguments.next().is_none().then_some(parsed)
+}
+
+fn run_rate(arguments: &RateArguments) -> ExitCode {
+    let config = match PublisherConfig::load(&arguments.config) {
+        Ok(config) => config,
+        Err(error) => {
+            eprintln!("{error}");
+            return ExitCode::from(2);
+        }
+    };
+    let signer = match LocalSigner::from_env(&config.owner_key_env) {
+        Ok(signer) => signer,
+        Err(error) => {
+            eprintln!("{error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let rpc = match ConfiguredRpc::new(&config.station, HttpsExchange) {
+        Ok(rpc) => rpc,
+        Err(error) => {
+            eprintln!("{error}");
+            return ExitCode::from(2);
+        }
+    };
+    let journal = match Journal::open(&arguments.journal) {
+        Ok(journal) => journal,
+        Err(error) => {
+            eprintln!("{error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let daily_wei = config.daily_wei_ceiling().unwrap_or(u128::MAX);
+    let mut publisher =
+        match RatePublisher::new(config, signer, rpc, journal, Duration::from_secs(2)) {
+            Ok(publisher) => publisher,
+            Err(error) => {
+                eprintln!("{error}");
+                return ExitCode::FAILURE;
+            }
+        };
+    let cadence = publisher.cadence();
+    println!(
+        "Paxeer X Network rate publisher publishing every {cadence} s, at most {daily_wei} wei per chain day"
+    );
+    loop {
+        let wait = match publisher.publish(&arguments.rate_file) {
+            Ok(publication) => {
+                let state = publisher.journal().state();
+                let day = publication.signed_at / DAY_SECONDS;
+                println!(
+                    "rate published nonce={} hash={} rate={} cost_wei={} spent_wei={} spent_gas={} reserved_wei={} daily_wei_max={daily_wei}",
+                    publication.nonce,
+                    layerx_gas_station::rpc::hex(&publication.hash),
+                    u128::from_be_bytes(publication.rate[16..].try_into().unwrap_or([0; 16])),
+                    state
+                        .publications
+                        .get(&publication.hash)
+                        .and_then(|(_, settled)| *settled)
+                        .map_or(0, |settled| settled.cost_wei),
+                    state.publication_wei(day),
+                    state.publication_gas(day),
+                    state.reserved_wei(),
+                );
+                cadence
+            }
+            Err(RateRefusal::Unchanged { age }) => cadence.saturating_sub(age).max(1),
+            Err(error @ RateRefusal::Journal(_)) => {
+                eprintln!("{error}");
+                return ExitCode::FAILURE;
+            }
+            Err(error) => {
+                eprintln!("{error}");
+                cadence
+            }
+        };
+        std::thread::sleep(Duration::from_secs(wait));
+    }
+}
+
 fn unix_time() -> Option<u64> {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -41,6 +140,16 @@ fn unix_time() -> Option<u64> {
 }
 
 fn main() -> ExitCode {
+    if std::env::args_os().nth(1).is_some_and(|a| a == "rate") {
+        let Some(arguments) = rate_arguments(std::env::args_os().skip(2)) else {
+            eprintln!("Paxeer X Network rate publisher");
+            eprintln!(
+                "usage: paxeer-gas-station rate --config PATH --journal PATH --rate-file PATH"
+            );
+            return ExitCode::from(2);
+        };
+        return run_rate(&arguments);
+    }
     let Some(arguments) = arguments(std::env::args_os().skip(1)) else {
         eprintln!("Paxeer X Network gas station");
         eprintln!("usage: paxeer-gas-station --config PATH --journal PATH");
@@ -177,6 +286,59 @@ mod tests {
             ],
         ] {
             assert_eq!(arguments(args.into_iter().map(OsString::from)), None);
+        }
+    }
+
+    #[test]
+    fn exact_rate_arguments_required() {
+        assert_eq!(
+            rate_arguments(
+                [
+                    "--config",
+                    "rate.json",
+                    "--journal",
+                    "rate.jsonl",
+                    "--rate-file",
+                    "rate.toml"
+                ]
+                .map(OsString::from)
+            ),
+            Some(RateArguments {
+                config: PathBuf::from("rate.json"),
+                journal: PathBuf::from("rate.jsonl"),
+                rate_file: PathBuf::from("rate.toml"),
+            })
+        );
+        for args in [
+            vec![],
+            vec!["--config", "rate.json", "--journal", "rate.jsonl"],
+            vec![
+                "--journal",
+                "rate.jsonl",
+                "--config",
+                "rate.json",
+                "--rate-file",
+                "rate.toml",
+            ],
+            vec![
+                "--config",
+                "rate.json",
+                "--journal",
+                "rate.jsonl",
+                "--rate-file",
+                "",
+            ],
+            vec![
+                "--config",
+                "rate.json",
+                "--journal",
+                "rate.jsonl",
+                "--rate-file",
+                "rate.toml",
+                "extra",
+            ],
+        ] {
+            assert_eq!(rate_arguments(args.into_iter().map(OsString::from)), None);
         }
     }
 

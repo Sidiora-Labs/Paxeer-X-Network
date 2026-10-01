@@ -1,6 +1,9 @@
 use std::collections::BTreeMap;
+use std::fs::File;
+use std::io::{ErrorKind, Read};
 use std::path::Path;
 use std::sync::Mutex;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -9,7 +12,8 @@ use zeroize::Zeroizing;
 use crate::http::{json, ok, refusal, Request, Response};
 use crate::journal::Journal;
 use crate::secret::{
-    hex, sha256_hex, unhex, unix_seconds, valid_hex, valid_identifier, valid_principal,
+    hex, read_secret_file, sha256_hex, unhex, unix_seconds, valid_hex, valid_identifier,
+    valid_principal,
 };
 use crate::tls::Upstream;
 
@@ -209,6 +213,63 @@ impl Store {
         self.index(record.clone());
         Ok(record)
     }
+}
+
+/// Interval between reads of a credential map that names no principal yet.
+pub const PRINCIPAL_POLL: Duration = Duration::from_secs(3);
+
+/// Reads the source principal set from the credential map at `path`, a JSON
+/// object of principal to credential file. Returns `None` while the map is
+/// absent or empty, so the caller waits instead of opening the source.
+/// # Errors
+/// Refuses an unreadable, oversized or malformed map, an invalid principal and
+/// an unreadable credential.
+pub fn await_principals(
+    path: &Path,
+) -> Result<Option<BTreeMap<String, Zeroizing<String>>>, String> {
+    let mut bytes = Vec::new();
+    match File::open(path) {
+        Ok(file) => file
+            .take(1_048_577)
+            .read_to_end(&mut bytes)
+            .map_err(|error| error.to_string())?,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.to_string()),
+    };
+    if bytes.len() > 1_048_576 {
+        return Err("credential map exceeds bound".to_owned());
+    }
+    let paths: BTreeMap<String, String> =
+        serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
+    if paths.is_empty() {
+        return Ok(None);
+    }
+    if paths.len() > 10_000 || paths.keys().any(|principal| !valid_principal(principal)) {
+        return Err("invalid source principal set".to_owned());
+    }
+    paths
+        .into_iter()
+        .map(|(principal, path)| {
+            read_secret_file(Path::new(&path)).map(|credential| (principal, credential))
+        })
+        .collect::<Result<_, _>>()
+        .map(Some)
+}
+
+/// Answers a source that is still waiting for its principal set: alive, not
+/// ready, and refusing every other route until the set arrives.
+#[must_use]
+pub fn waiting_principals(request: &Request) -> Response {
+    if request.method == "GET" && request.path == "/livez" {
+        return ok("{\"alive\":true}".to_owned());
+    }
+    if request.method == "GET" && request.path == "/readyz" {
+        return json(
+            503,
+            &serde_json::json!({"ready":false,"state":"waiting-principals"}),
+        );
+    }
+    refusal(503, "waiting_principals", Some(PRINCIPAL_POLL.as_secs()))
 }
 
 pub struct Service {
@@ -659,6 +720,61 @@ mod tests {
         )
         .is_err());
         drop(store);
+        std::fs::remove_dir_all(directory).unwrap_or_else(|error| panic!("{error}"));
+    }
+
+    #[test]
+    fn principals_wait_until_the_credential_map_names_one() {
+        let directory =
+            std::env::temp_dir().join(format!("layerx-principals-wait-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap_or_else(|error| panic!("{error}"));
+        let map = directory.join("credentials.json");
+        assert_eq!(await_principals(&map), Ok(None));
+        std::fs::write(&map, "{}\n").unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(await_principals(&map), Ok(None));
+        let credential = directory.join("principal-one");
+        std::fs::write(&credential, "credential-one\n").unwrap_or_else(|error| panic!("{error}"));
+        std::fs::write(
+            &map,
+            serde_json::json!({ "principal-one": credential.display().to_string() }).to_string(),
+        )
+        .unwrap_or_else(|error| panic!("{error}"));
+        let principals = await_principals(&map)
+            .unwrap_or_else(|error| panic!("{error}"))
+            .unwrap_or_else(|| panic!("principal set still waiting"));
+        assert_eq!(principals.len(), 1);
+        assert_eq!(principals["principal-one"].as_str(), "credential-one");
+        std::fs::remove_dir_all(directory).unwrap_or_else(|error| panic!("{error}"));
+    }
+
+    #[test]
+    fn principals_refuse_a_malformed_credential_map() {
+        let directory =
+            std::env::temp_dir().join(format!("layerx-principals-refuse-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap_or_else(|error| panic!("{error}"));
+        let map = directory.join("credentials.json");
+        std::fs::write(&map, "{\"principal-one\":").unwrap_or_else(|error| panic!("{error}"));
+        assert!(await_principals(&map).is_err());
+        let credential = directory.join("principal-one");
+        std::fs::write(&credential, "credential-one\n").unwrap_or_else(|error| panic!("{error}"));
+        std::fs::write(
+            &map,
+            serde_json::json!({ "Principal One": credential.display().to_string() }).to_string(),
+        )
+        .unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(
+            await_principals(&map),
+            Err("invalid source principal set".to_owned())
+        );
+        std::fs::write(
+            &map,
+            serde_json::json!({ "principal-one": directory.join("absent").display().to_string() })
+                .to_string(),
+        )
+        .unwrap_or_else(|error| panic!("{error}"));
+        assert!(await_principals(&map).is_err());
         std::fs::remove_dir_all(directory).unwrap_or_else(|error| panic!("{error}"));
     }
 }

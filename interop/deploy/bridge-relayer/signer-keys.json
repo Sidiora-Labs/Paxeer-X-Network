@@ -1,0 +1,93 @@
+{
+  "keys": [
+    {
+      "handle": "bridge/attestor",
+      "algorithm": "secp256k1",
+      "key_file": "/run/secrets/bridge/signer/attestor.key",
+      "domains": [
+        "LayerX/bridge/attest-inbound/v1",
+        "LayerX/bridge/attest-outbound/v1"
+      ]
+    },
+    {
+      "handle": "bridge/submitter/paxeer",
+      "algorithm": "secp256k1",
+      "key_file": "/run/secrets/bridge/signer/paxeer-submitter.key",
+      "domains": [
+        "LayerX/bridge/paxeer-eip1559/v1"
+      ]
+    },
+    {
+      "handle": "bridge/submitter/arbitrum",
+      "algorithm": "secp256k1",
+      "key_file": "/run/secrets/bridge/signer/arbitrum-submitter.key",
+      "domains": [
+        "LayerX/bridge/ethereum-eip1559/v1"
+      ]
+    },
+    {
+      "handle": "bridge/submitter/avalanche",
+      "algorithm": "secp256k1",
+      "key_file": "/run/secrets/bridge/signer/avalanche-submitter.key",
+      "domains": [
+        "LayerX/bridge/ethereum-eip1559/v1"
+      ]
+    },
+    {
+      "handle": "bridge/submitter/base",
+      "algorithm": "secp256k1",
+      "key_file": "/run/secrets/bridge/signer/base-submitter.key",
+      "domains": [
+        "LayerX/bridge/ethereum-eip1559/v1"
+      ]
+    },
+    {
+      "handle": "bridge/submitter/bnb",
+      "algorithm": "secp256k1",
+      "key_file": "/run/secrets/bridge/signer/bnb-submitter.key",
+      "domains": [
+        "LayerX/bridge/ethereum-eip1559/v1"
+      ]
+    },
+    {
+      "handle": "bridge/submitter/ethereum",
+      "algorithm": "secp256k1",
+      "key_file": "/run/secrets/bridge/signer/ethereum-submitter.key",
+      "domains": [
+        "LayerX/bridge/ethereum-eip1559/v1"
+      ]
+    },
+    {
+      "handle": "bridge/submitter/hyperevm",
+      "algorithm": "secp256k1",
+      "key_file": "/run/secrets/bridge/signer/hyperevm-submitter.key",
+      "domains": [
+        "LayerX/bridge/ethereum-eip1559/v1"
+      ]
+    },
+    {
+      "handle": "bridge/submitter/optimism",
+      "algorithm": "secp256k1",
+      "key_file": "/run/secrets/bridge/signer/optimism-submitter.key",
+      "domains": [
+        "LayerX/bridge/ethereum-eip1559/v1"
+      ]
+    },
+    {
+      "handle": "bridge/submitter/polygon",
+      "algorithm": "secp256k1",
+      "key_file": "/run/secrets/bridge/signer/polygon-submitter.key",
+      "domains": [
+        "LayerX/bridge/ethereum-eip1559/v1"
+      ]
+    },
+    {
+      "handle": "bridge/fee-payer/solana",
+      "algorithm": "ed25519",
+      "key_file": "/run/secrets/bridge/signer/solana-fee-payer.json",
+      "domains": [
+        "LayerX/bridge/solana-tx/v1"
+      ]
+    }
+  ]
+}

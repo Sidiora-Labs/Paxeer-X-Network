@@ -22,6 +22,7 @@ consensus
 custodyproof
 daemon
 docker
+!docker/platform-registry/init.sh
 engine
 example
 hpx

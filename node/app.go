@@ -908,7 +908,8 @@ func New(
 		AddRoute(minttypes.RouterKey, mint.NewProposalHandler(app.MintKeeper)).
 		AddRoute(tokenfactorytypes.RouterKey, tokenfactorymodule.NewProposalHandler(app.TokenFactoryKeeper)).
 		AddRoute(evmtypes.RouterKey, evm.NewProposalHandler(app.EvmKeeper)).
-		AddRoute(layerxbridgetypes.RouterKey, layerxbridgemodule.NewProposalHandler(app.LayerXBridgeKeeper))
+		AddRoute(layerxbridgetypes.RouterKey, layerxbridgemodule.NewProposalHandler(app.LayerXBridgeKeeper)).
+		AddRoute(layerxcustodytypes.RouterKey, layerxcustodymodule.NewProposalHandler(app.LayerXCustodyKeeper))
 	if len(enabledProposals) != 0 {
 		govRouter.AddRoute(wasm.RouterKey, wasm.NewWasmProposalHandler(app.WasmKeeper, enabledProposals))
 	}

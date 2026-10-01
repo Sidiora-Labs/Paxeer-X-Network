@@ -1,0 +1,30 @@
+app = "paxeer-xweb-attestor-2"
+primary_region = "ams"
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[build]
+  dockerfile = "../../../docker/x-websearch/Dockerfile"
+  build-target = "fly"
+
+[deploy]
+  strategy = "immediate"
+
+[env]
+  X_WEBSEARCH_ATTESTOR_KEY_FILE = "/data/keys/attestor.key"
+  X_WEBSEARCH_SUBMITTER_KEY_FILE = "/data/keys/submitter.key"
+  X_WEBSEARCH_RECEIVER_KEY_FILE = "/data/keys/receiver.key"
+  XWEB_HOPS = "8491=paxeer-xweb-attestor-1.internal 8493=paxeer-xweb-attestor-3.internal 8494=paxeer-xweb-attestor-4.internal"
+
+[[mounts]]
+  source = "xweb_attestor_2_data"
+  destination = "/data"
+  initial_size = "1gb"
+  scheduled_snapshots = true
+  snapshot_retention = 14
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"
+  cpus = 1
+  cpu_kind = "shared"

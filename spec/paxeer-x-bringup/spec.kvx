@@ -6,15 +6,15 @@
 # them and on one machine with a volume where it has a single writer. Our own
 # servers keep only what holds chain data: the sixteen public RPC nodes, the
 # archive node and the private validators; the edge host is the operator host
-# and keeps the internal CA key. The explorer fork runs on Railway, and paxscan.io
-# reaches it through our own nginx proxy. Hosts are named by role
+# and keeps the internal CA key. The explorer fork runs on Railway; the paxscan.io
+# serving route is unverified. Hosts are named by role
 # only; the operator's private host map is the file named by BRINGUP_HOSTS_FILE.
 
 [meta]
 feature   = "paxeer-x-bringup"
 title     = "Bring every LayerX system of Paxeer X Network live on Fly and on the chain hosts"
 kind      = "product-feature-specification"
-version        = "1.5.4"
+version        = "1.5.7"
 status    = "in_progress"
 language  = "Rust (platform/, human/, agent/, interop/ crates), C (cmd/layerxd, src/), Go (hpx/registry, tools/flyci, bridge/deploy), POSIX shell for the probe, the Fly inits and the host scripts, Fly toml for the app definitions, Python where the hosted pod definitions already use it"
 repo_root = "platform/hosted/ (the pod definitions, entrypoints and env contracts every Fly app reuses, with each new fly.toml beside its definition); docker/ (one directory per service image, docker/kernel for the kernel app); human/wallet/deploy/ (the Fly toml files of the wallet fleet, including the router and the kernel app); tools/bringup/ (the host-map contract, the internal CA and the live probe); cmd/layerxd and src/ (the kernel); human/crates/ (the human graph); agent/crates/ (agentd and MCP); interop/ (interop gateway, mirrors, x-websearch, bridge relayer, gas station); explorer/ (the explorer fork); docs/site and docs/wiki (the public names); spec/paxeer-x-bringup/ (this feature and its qualification log)"
@@ -24,36 +24,38 @@ intro     = "Every LayerX system that the surveys found ready, blocked or incomp
 retired          = "Off every task list, code kept for private networks: testnet control and the faucet (platform/hosted/testnet, platform/hosted/faucet), the Solidity settlement path (platform/hosted/paxeer/init-chain.sh, deploy-contracts.sh, the anvil-based forge tests and the contracts/ deployment scripts), the old human web application (human/apps/web) and the explorer-index crate (human/crates/layerx-explorer-index). Nothing else is turned off; an incomplete system is completed."
 router_url       = "The unified LayerX plus Paxeer interface, the hosted gateway of platform/hosted/gateway run by the existing Fly endpoint app of human/wallet/deploy/endpoint.toml, is served only at https://api-mainnet-beta.paxeer.network. Every document, example, manifest and config that says api.paxeer.network is rewritten to that URL. The sixteen public RPC names api1 to api16.mainnet-beta.paxeer.network stay exactly as docs/site/docs/reference/public-rpc.md lists them. The endpoint app's fly.dev name exists only as the edge's upstream for the router name and is never published, documented or configured as an endpoint."
 placement        = "Whatever can run on Fly runs on Fly, in the organisation of the wallet fleet, and a service that gains from several machines runs on several. Stateless services run on at least two machines in two regions: the router, the wallet gateway, the search front, the dashboard web and API, both process groups of webhooks, the interop gateway and the relay archive, whose machines each keep their own volume and sync from the origin. A service with a single writer runs on one machine with a volume, because parallel machines would race its journal, its nonce or its state directory: the identity service, the internal kms and each event source, the internal Redis, the router's Redis, the program registry, the indexer, the reference ramp, the gas station, the bridge relayer, the hpx registry, whose node directory has one writer, and each x-websearch attestor, whose attestor key signs as one registered signer. The router's Redis stays one machine in the router's primary region because Redis has one writer and the gateway keeps its idempotency and session keys in it; the router's machines in the second region cross regions for those keys, and the router probe reports that round trip from each region. The kernel pod runs as one app with exactly one machine and one volume, because its sequencer, replica, boundaries, human graph, agentd and MCP talk over unix sockets under peer-uid checks that cannot cross machines; the human graph therefore cannot be split from it, and the existing human service app becomes the kernel app. Our servers keep only what holds or fronts chain data."
-host_roles       = "edge host: the operator host; it holds the internal CA key and the Fly and Railway operator logins, is the landing point of the *.paxeer.network wildcard, so every public name without an explicit record reaches it, and its nginx with certbot serves each Fly-served name of [decision.public_names] by proxying to the app's fly.dev name through the sites tools/bringup/edge.sh renders (task 0.9), the hpx registry at node.hyperpaxeer.com until task 4.21 fills the Fly app and that name proxied to the app after it, the hpx host role naming the same host until then. explorer proxy host: a server of ours whose nginx answers paxscan.io and forwards to the frontend service of the Railway explorer project; no task of this feature changes it. old wallet host: the old wallet service with its Compose database and Caddy proxy, named by the OLD_WALLET_HOST role of the host map until task 4.1 retires the service. archive host: the full node with min-retain-blocks 0 behind one of the sixteen public RPC names and the explorer's primary upstream. validator hosts: the private validators only; no public name, certificate SAN, Fly upstream, boundary hop, RPC setting or public-facing command names them, and the only access is private ssh from the operator host in tasks 0.6, 4.22 and 4.23; task 4.22 moves the public full node that one validator host still runs to its own server, and task 4.23 moves the four x-websearch attestor sidecars they still run to Fly one slot at a time, their attestor ports open meanwhile only to loopback and to the other validator host. RPC hosts: the sixteen public RPC nodes with nginx and certbot. The serving RPC names are the apiN names of the RPC_HOSTS destinations that are not VALIDATOR_HOSTS, each destination mapped to its apiN name through its nginx site as rpc_unit of tools/bringup/check-live.sh reads it, all sixteen once task 4.22 is done; each serving node also serves paid search from a loopback x-websearch sidecar, and every RPC setting of this feature names a serving RPC name. No host of ours runs the kernel, the platform services, the search front or the explorer; the explorer proxy host only forwards paxscan.io."
+host_roles       = "edge host: the operator host; it holds the internal CA key and the Fly and Railway operator logins, is the landing point of the *.paxeer.network wildcard, so every public name without an explicit record reaches it, and its nginx with certbot serves each Fly-served name of [decision.public_names] by proxying to the app's fly.dev name through the sites tools/bringup/edge.sh renders (task 0.9), the hpx registry at node.hyperpaxeer.com until task 4.21 fills the Fly app and that name proxied to the app after it, the hpx host role naming the same host until then. explorer proxy host: unverified, owner unknown: an nginx whose host ownership is not established answers paxscan.io and forwards to a Railway service; which Railway project serves it is unverified; no task of this feature changes it. old wallet host: the legacy wallet host named by the OLD_WALLET_HOST role of the host map, whose legacy wallet state lives at the backend origin the deploy side's discovery packet names; the host runs the database container paxeer-wallet-db and the Caddy container paxeer-wallet-caddy (Compose unverified), and the frontend-to-backend mapping of the legacy wallet is unverified; the role stays until task 4.1 retires the container. archive host: the full node with min-retain-blocks 0 behind one of the sixteen public RPC names and the explorer's primary upstream. validator hosts: the private validators only; no public name, certificate SAN, Fly upstream, boundary hop, RPC setting or public-facing command names them, and the only access is private ssh from the operator host in tasks 0.6, 4.22 and 4.23; task 4.23 moves the four x-websearch attestor sidecars they still run to Fly one slot at a time, their attestor ports open meanwhile only to loopback and to the other validator host. RPC hosts: the sixteen public RPC nodes with nginx and certbot. The serving RPC names are the apiN names of the RPC_HOSTS destinations that are not VALIDATOR_HOSTS, each destination mapped to its apiN name through its nginx site as rpc_unit of tools/bringup/check-live.sh reads it, all sixteen once task 4.22 is done; each serving node also serves paid search from a loopback x-websearch sidecar, and every RPC setting of this feature names a serving RPC name. No host of ours runs the kernel, the platform services, the search front or the explorer; the explorer proxy host only forwards paxscan.io."
 private_network  = "Fly apps of the organisation reach each other at <app>.internal over the private network, which resolves to IPv6 only, so every listen value and socat bind of a Fly app is [::]:PORT and every internal-CA certificate of a Fly app carries its app's .internal name. A service that runs as one process group of an app with several groups is reached at <group>.process.<app>.internal, because the app's .internal name resolves to the machines of every group, and its certificate carries that name. A Fly app reaches our servers only through their public TLS names. A public name served by Fly is an http_service on a plain listener behind a Fly certificate, except an mTLS surface, which is a TCP passthrough service on a dedicated IPv4 because the client certificate is checked in the backend."
-edge_server      = "nginx with certbot, already installed on each RPC node, serves the sixteen RPC names on their nodes; on the edge host, which the hpx host role also names, nginx with certbot serves node.hyperpaxeer.com until task 4.21 and serves every Fly-served name that reaches it through the *.paxeer.network wildcard with a certbot certificate, proxying to the app's fly.dev name through the sites tools/bringup/edge.sh renders (task 0.9); no Caddy vhost is added and no flyctl certs add runs: the Fly apps answer at their fly.dev names only, search.paxeer.network on the search front app included, and the public wallet endpoint name and node.hyperpaxeer.com once tasks 4.1 and 4.21 move them behind the edge. The Caddy proxy of human/wallet/deploy/cutover on the old wallet host is not the endpoint's future: task 4.1 serves the name from the wallet gateway app and removes the wallet site from that proxy."
+edge_server      = "nginx with certbot, already installed on each RPC node, serves the sixteen RPC names on their nodes; on the edge host, which the hpx host role also names, nginx with certbot serves node.hyperpaxeer.com until task 4.21 and serves every Fly-served name that reaches it through the *.paxeer.network wildcard with a certbot certificate, proxying to the app's fly.dev name through the sites tools/bringup/edge.sh renders (task 0.9); no Caddy vhost is added and no flyctl certs add runs: the Fly apps answer at their fly.dev names only, search.paxeer.network on the search front app included, and the public wallet endpoint name and node.hyperpaxeer.com once tasks 4.1 and 4.21 move them behind the edge. The Caddy container paxeer-wallet-caddy on the old wallet host (serving route unverified) is not the endpoint's future: task 4.1 serves the name from the wallet gateway app and removes the wallet site from that proxy."
 supervision      = "Fly Machines run and restart every Fly app. The kernel app runs its processes under a root init in its image that starts each under its uid and restarts one that exits; the bridge relayer, the hpx registry and each x-websearch attestor run their processes under an entrypoint that exits when any of them exits, so Fly Machines restart the machine; Fly process groups become separate machines that cannot share unix sockets. Every single-machine app with state takes daily volume snapshots with retention, and every machine of the relay archive app in both regions holds the kernel's genesis, snapshot and batches verified under the sequencer key. systemd on our servers supervises only the chain nodes, the serving x-websearch sidecars and nginx. The runtime clock wraps every binary the pod definitions wrap."
 key_custody      = "Secrets and key material are generated where they are used and never printed, copied into the repository or into the ops directory. A single-machine Fly app generates each key and its signing request inside its machine on its volume; tools/bringup/ca.sh fetches the request through flyctl ssh console, signs it on the edge host and writes the certificate back to the volume the same way, only the CA roots it verifies against reach it as Fly secrets mounted through [[files]], and its init starts a TLS listener only once that listener's certificate is on the volume. An app with several machines gets its keys as Fly secrets: the task's script generates them in a tmpfs directory on the edge host, which is the operator host holding the Fly and Railway operator logins, pipes them into flyctl secrets import on standard input, then removes the directory. A key on our servers is generated on the host that uses it. Each task records the custody path for the owner in its do lines. The internal CA key lives on the edge host only."
 internal_ca      = "The internal CA of tools/bringup/ca.sh keeps its consumers on Fly: the core, receipt authority and agent boundary client CAs, the kms and event source client CAs, the registry client CA, the agentd socat verify, the guarantor peer TLS, the Redis TLS of the router's Redis and of the internal Redis, the relay archive origin in the kernel app, the webhooks ingress that the event producers of the router, the registry and the human service dial over https with their client identities, the indexer and the gateway's mandatory outbound CA all verify against it. It is kept and its certificates carry the .internal names of the apps. A certificate carries a public name only for the two TCP passthrough surfaces, index.paxeer.network and machine.paxeer.network, because every other public name is terminated by a Fly certificate or by certbot. The x-websearch row is removed because the binary serves no TLS, the developer row becomes the webhooks ingress certificate, an internal-redis row is added, every client row is kept, and the server rows of the gateway, the interop gateway, the ramp and the gas station are removed because each serves only a plain listener behind the Fly edge and no client dials their TLS."
 search           = "Paid search is served by x-websearch sidecars on the serving RPC nodes of host_roles. By the owner's product ruling the web search sidecar is a node sidecar: each serving RPC node runs it beside its own node over loopback, holds its own receiver key and settles its own paid requests through the router, so the node operator is the party paid; it is part of the node role, not a platform service, and the many-servers rule is met by serving from every public RPC node whose host is not a validator host. Each sidecar is routed by an nginx snippet inside its apiN vhost for /search, /fetch, /content/ and /xweb/health. search.paxeer.network is served by the search front, an nginx Fly app on at least two machines in two regions whose split_clients on the Fly-Client-IP header picks the same serving node for a client address on every machine, because the 402 answer and the paid retry must reach the receiver that priced the request; the https://apiN.mainnet-beta.paxeer.network/search URL of every serving node is the redundant path a client uses directly. The four attestor sidecars fetch the URL of every on-chain fetch request, so they run as four private Fly apps, one per registered attestor key, once the owner approves moving the keys in task 4.23, and serve on-chain attestation and the kernel relay only; their peers setting admits https or loopback http only, so each reaches its peers through loopback socat hops to the peers' .internal names."
-cutover          = "No Fly app moves to our servers and none is stopped: the existing endpoint app becomes the router, the existing human service app becomes the kernel app and serves api-hull.paxeer.network, the wallet gateway and the wallet PWA are repointed at the router URL, and the public wallet endpoint name moves from the old wallet host's Caddy proxy to a Fly certificate on the wallet gateway app. Fly keeps the five attestors and the wallet gateway; Railway keeps the explorer and the wallet PWA. The wallet ops app, one alpine machine with no toml, runs no service: it holds the operator and gateway client identities of the attestor fleet as its secrets, the move runbook materialises from it through flyctl ssh console the identities that the ceremony and tools/wallet/check-live.sh use, and it is kept as that custody store."
+cutover          = "No Fly app moves to our servers and none is stopped: the existing endpoint app becomes the router, the existing human service app becomes the kernel app and serves api-hull.paxeer.network, the wallet gateway and the wallet PWA are repointed at the router URL, and the public wallet endpoint name moves from the old wallet host's Caddy proxy to a Fly certificate on the wallet gateway app. Fly keeps the wallet attestors, their count unverified (five deployed against the owner's four, unresolved), and the wallet gateway; Railway keeps the explorer; the legacy wallet frontend stays on its owner host as a Docker UI (owner ruling). The wallet ops app, one alpine machine with no toml, runs no service: it holds the operator and gateway client identities of the attestor fleet as its secrets, the move runbook materialises from it through flyctl ssh console the identities that the ceremony and tools/wallet/check-live.sh use, and it is kept as that custody store."
 no_placeholders  = "No config, unit or document carries a placeholder value. When the only missing piece of a task is something the owner alone can produce, the task carries blocked_on = the exact input, its do lines and verify_cmd are real, and the task is worked the moment the input arrives; it is never marked done, weakened or removed while blocked."
 host_map         = "BRINGUP_HOSTS_FILE names a private env file with EDGE_HOST, ARCHIVE_HOST, VALIDATOR_HOSTS and RPC_HOSTS, HPX_HOST until task 4.21 serves the hpx registry from Fly and OLD_WALLET_HOST until task 4.1 retires the old wallet service, each an ssh destination the operator can reach or, for the plural roles, a space-separated list of them. tools/bringup/check-live.sh sources it and never prints it; a Fly check reads the app name from the app's toml and reaches its machines through flyctl ssh console; no spec file, unit, toml or document contains a host address."
+retained_rpc     = "By owner ruling (\"leave api1 as is\") the public RPC names that the RETAINED_ON_VALIDATOR key of the private host map lists stay on the validator host that serves them today: no DNS change, no certificate, no retirement of that full node and no change to the shared binary there; the rpc-placement check reports each as retained and the rollout of task 4.16 skips its host."
 public_roots     = "A Fly app that verifies a public certbot certificate with a single-root verifier, the event producers' upstream CA of platform/hosted/internal/src/tls.rs and the indexer's endpoint CA DER, pins ISRG Root X1, because each takes exactly one DER root per upstream and every certbot chain of our RPC names ends at that root; the probe of each such consumer checks that the upstream's chain ends at ISRG Root X1; the router's Fly certificate can be served on a chain ending at ISRG Root X2, so a consumer of the router pins whichever of the two roots ends the chain the router serves, and its probe accepts either and checks the pin matches. A consumer that reads a PEM bundle, the relay archive's ca_file, carries ISRG Root X1 and ISRG Root X2 beside the internal CA root."
 derivation_message = "The account-derivation message of agent/crates/layerx-crypto/src/account_derivation.rs, the SDKs, the conformance fixture and material.py names app.paxeer.network as the signing origin; that name is part of every derived account and is not a served name. Changing it changes every derived account, so task 4.26 carries the owner's ruling as its blocked_on: either the message and every copy of it name paxportwallet.com together, or app.paxeer.network is served as a redirect to paxportwallet.com under a Fly certificate. The owner ruled for paxportwallet.com: the message and every copy of it name paxportwallet.com, and task 4.26 applies that ruling."
 
 [decision.public_names]
 title = "Public names, each with its serving platform and its DNS shape, all under paxeer.network unless the owner named the host"
 router       = "api-mainnet-beta.paxeer.network -> Fly: the gateway of the existing endpoint app of human/wallet/deploy/endpoint.toml on its plain http_service at its fly.dev name. DNS: none; the *.paxeer.network wildcard lands on the edge host, whose nginx serves the name with a certbot certificate and proxies it to that app's fly.dev name (task 0.9)."
-rpc          = "api1..api16.mainnet-beta.paxeer.network -> our sixteen RPC nodes with nginx and certbot, unchanged; each serving RPC name of [decision] host_roles also routes /search, /fetch, /content/ and /xweb/health to its loopback x-websearch sidecar. DNS: the existing explicit records, unchanged except the one record task 4.22 moves off a validator host to an existing RPC node, the owner's one DNS change."
+rpc          = "api1..api16.mainnet-beta.paxeer.network -> our sixteen RPC nodes with nginx and certbot, unchanged; each serving RPC name of [decision] host_roles also routes /search, /fetch, /content/ and /xweb/health to its loopback x-websearch sidecar. DNS: the existing explicit records, unchanged; api1 stays on the validator host that serves it (owner ruling)."
 human        = "api-hull.paxeer.network -> Fly: the human service in the kernel app of human/wallet/deploy/human.toml on its plain 8080 http_service with a Fly certificate. DNS: none; the *.paxeer.network wildcard lands on the edge host, whose nginx serves the name with a certbot certificate and proxies it to that app's fly.dev name (task 0.9)."
-agent        = "machine.paxeer.network port 9454 -> Fly: the agentd mTLS surface of the kernel app through a TCP passthrough service on the app's dedicated IPv4. DNS: none; the wildcard lands on the edge host, whose nginx stream block passes port 9454 through unchanged to that IPv4 (task 0.9)."
+agent        = "machine.paxeer.network port 9454 -> Fly: the agentd mTLS surface of the kernel app through a TCP passthrough service on the app's dedicated IPv4; unverified: no tracked manifest, not serving. DNS: none; the wildcard lands on the edge host, whose nginx stream block passes port 9454 through unchanged to that IPv4 (task 0.9)."
 identity     = "No public name: every caller of the identity service is a Fly app, and it answers at its app's .internal name on the private network."
 registry     = "index.paxeer.network port 443 -> Fly: the program registry app of platform/hosted/registry/fly.toml through a TCP passthrough service on the app's dedicated IPv4, presenting its internal-CA server certificate to mTLS clients. DNS: none; the wildcard lands on the edge host, whose nginx stream block passes port 443 through unchanged by SNI to that IPv4 (task 0.9)."
-developers   = "dev.paxeer.network -> Fly: the dashboard web app of platform/hosted/dashboard/web/fly.toml; api-dev.paxeer.network -> Fly: the dashboard API app of platform/hosted/dashboard/fly.toml; hooks.paxeer.network -> Fly: the webhooks app of platform/hosted/webhooks/fly.toml; each on a plain http_service at its fly.dev name. DNS: none; each name lands on the edge host through the wildcard and is proxied to its app's fly.dev name (task 0.9)."
-archive      = "archive.paxeer.network -> Fly: the relay archive app of platform/relay_archive/fly.toml on its plain http_service at its fly.dev name. DNS: none; the *.paxeer.network wildcard lands on the edge host, whose nginx serves the name with a certbot certificate and proxies it to that app's fly.dev name (task 0.9)."
+developers   = "dev.paxeer.network -> Fly: the dashboard web app of platform/hosted/dashboard/web/fly.toml; api-dev.paxeer.network -> Fly: the dashboard API app of platform/hosted/dashboard/fly.toml (unverified: no tracked manifest, not serving); hooks.paxeer.network -> Fly: the webhooks app of platform/hosted/webhooks/fly.toml (unverified: no tracked manifest, not serving); each on a plain http_service at its fly.dev name. DNS: none; each name lands on the edge host through the wildcard and is proxied to its app's fly.dev name (task 0.9)."
+archive      = "archive.paxeer.network -> Fly: a relay archive Fly app whose manifest is not yet tracked, on its plain http_service at its fly.dev name. DNS: none; the *.paxeer.network wildcard lands on the edge host, whose nginx serves the name with a certbot certificate and proxies it to that app's fly.dev name (task 0.9)."
 interop      = "interchain.paxeer.network -> Fly: the interop gateway app of platform/hosted/interop/fly.toml on its plain http_service at its fly.dev name (x402, AP2, UCP, Visa TAP, fiat, http, mcp, a2a). DNS: none; the *.paxeer.network wildcard lands on the edge host, whose nginx serves the name with a certbot certificate and proxies it to that app's fly.dev name (task 0.9)."
 gas          = "chain.paxeer.network -> Fly: the gas station app of interop/deploy/gas-station/fly.toml on its plain http_service at its fly.dev name (Sidiora-priced sponsored gas). DNS: none; the *.paxeer.network wildcard lands on the edge host, whose nginx serves the name with a certbot certificate and proxies it to that app's fly.dev name (task 0.9)."
 search       = "search.paxeer.network -> Fly: the search front app of interop/deploy/search-front/fly.toml, nginx on a plain http_service at its fly.dev name, one client kept on one serving node by client address, proxying over verified TLS to the serving RPC names, whose nginx routes the search paths to their sidecars. DNS: none; the *.paxeer.network wildcard lands on the edge host, whose nginx serves the name with a certbot certificate and proxies it to that app's fly.dev name (task 0.9)."
 ramp         = "ramp.paxeer.network -> Fly: the reference ramp app of platform/ramps/fly.toml on its plain http_service at its fly.dev name. DNS: none; the *.paxeer.network wildcard lands on the edge host, whose nginx serves the name with a certbot certificate and proxies it to that app's fly.dev name (task 0.9)."
-explorer     = "paxscan.io -> our explorer proxy host of [decision] host_roles, whose nginx forwards to the Explorer Frontend service of the Railway project paxeer-x-explorer-dev; that frontend's API host is the project's Explorer Backend service with its Postgres. DNS: as deployed, unchanged; the proxy keeps answering the name, and no explorer.paxeer.network name is served. The owner allowed exactly one redeploy of the backend and frontend services to apply the archive settings of task 4.4."
-wallet       = "paxportwallet.com -> Railway: the wallet PWA, the service paxport of the Railway project honest-spontaneity. DNS: as deployed, unchanged. The five attestors stay on Fly on the private network."
-wallet_endpoint = "The public wallet endpoint name, the host of the wallet PWA's NEXT_PUBLIC_PAXEER_WALLET_API on Railway -> Fly: the wallet gateway app of human/wallet/deploy/gateway.toml on its http_service at its fly.dev name from task 4.1. DNS: when the name is under paxeer.network, none, the wildcard lands on the edge host which proxies it to the gateway app (task 0.9); otherwise its existing record moves once to the edge host, the owner's single DNS change for the wallet, and the edge proxies it the same way; no record ever points at Fly."
+wallet       = "wallet-api.paxeer.network -> Fly: the wallet endpoint of the wallet gateway app of human/wallet/deploy/gateway.toml on its plain http_service at its fly.dev name, the public wallet endpoint name task 4.1 moves off the old wallet host; unverified: planned, no tracked manifest, not serving. DNS: none; the *.paxeer.network wildcard lands on the edge host, whose nginx serves the name with a certbot certificate and proxies it to that app's fly.dev name (task 0.9)."
+explorer     = "paxscan.io -> nginx on a host of unestablished ownership that forwards to a Railway service; which Railway project serves it is unverified. DNS: as deployed, unchanged."
+wallet       = "paxportwallet.com -> the owner's current wallet frontend host: Docker container paxport-wallet behind nginx, UI only; Supabase authenticates; Fly wallet attestors sign. DNS: as deployed, unchanged. New PWA hosting: owner ruling pending."
+wallet_endpoint = "wallet-api.paxeer.network"
 hpx          = "node.hyperpaxeer.com -> Fly: the hpx registry app of hpx/hosting/fly.toml on its http_service at its fly.dev name from task 4.21; until that task runs, the hpx registry on the hpx host with nginx and certbot. DNS: none; node.hyperpaxeer.com already resolves to the edge host, whose nginx proxies it to the app's fly.dev name once task 4.21 fills the app (task 0.9), the local registry serving until then."
 kernel_private = "The chain archive node's peer side, the validators, the sequencer, the replica, the core boundary, the receipt authority, the Paxeer boundaries, the identity service, the internal kms, the event sources, both Redis apps, the indexer, the mirror publisher, the bridge relayer and the four x-websearch attestor apps get no public name; Fly apps reach them at <app>.internal over the private network, and no public name, certificate SAN, Fly upstream or owner command targets a validator host."
 
@@ -65,6 +67,9 @@ script   = "tools/bringup/check-live.sh <subcommand> follows tools/wallet/check-
 subcommands = "hosts, ca, search-front, validators, kernel-app, kernel-node, kernel-value-loop, paxeer-boundary, kernel-boundaries, router, identity, internal, registry, human, agent, human-session, wallet, search, xweb-attest, xweb-attestors, archive-node, explorer, developers, relay, interop, interop-adapters, mirrors, ramp, gas, bridge, ci, hpx, rpc-nodes, rpc-placement, indexer, agent-public, names"
 
 [design.fly]
+app_names    = "One Fly app per service, named after the wallet fleet's pattern: router paxeer-shared-endpoint with its Redis paxeer-shared-endpoint-redis, kernel app paxeer-human-service, identity paxeer-identity, internal services paxeer-internal (process groups kms, journeys, payments, approvals and programs, each event source reached at <group>.process.paxeer-internal.internal) with its Redis paxeer-internal-redis, program registry paxeer-registry, indexer paxeer-indexer, webhooks paxeer-webhooks (process groups public and ingress), dashboard API paxeer-dashboard, dashboard web paxeer-dashboard-web, relay archive paxeer-relay-archive, interop gateway paxeer-interop, reference ramp paxeer-ramp, gas station paxeer-gas-station, bridge relayer paxeer-bridge-relayer, hpx registry paxeer-hpx-registry, search front paxeer-search-front and the x-websearch attestors paxeer-xweb-attestor-1 to paxeer-xweb-attestor-4, distinct from the wallet attestor apps paxeer-attestor-1 to -5 (count against the owner's four unresolved); primary region ams, second region fra."
+kernel_network_id = "125: the kernel network id equals the Paxeer chain id so the kernel and its settlement chain share one number, and differs from the private testnet id 402; NetworkId is a nonzero u32 and bootstrap.sh accepts 1..4294967295. The kernel app env LAYERX_NODE_NETWORK_ID carries it, docker/kernel/init.sh and tools/bringup/kernel-genesis.sh read it from there."
+kernel_ports = "Inside the kernel machine: 9401 the node endpoint, 9443 platform core, 9444 its admin plane, 9445 the receipt authority, 9446 the agent boundary, 9447 and 9448 the two Paxeer boundaries, 9449 the human service TLS listener under the internal CA for the journeys and approvals event sources, 9450 the kms on loopback, 9451 and 9452 the guarantors, 9453 the program listener, 9454 agentd; a new listener takes the next free port of this map. Reserved beyond the running set: 9455 the relay archive origin hop on the private network, 9456 the mirror publisher status listener on loopback; a new listener takes the next free port after 9456."
 layout   = "Each Fly app has a fly.toml beside its pod definition, or under human/wallet/deploy for the apps of the wallet fleet, and builds from its docker/ directory. Its env carries exactly the env names the pod definition declares with listen values on [::]; its secrets are [[files]] entries with a secret_name; a single-writer app mounts one volume at /data, except the hpx registry, whose image serves its node directory from /srv/hpx and mounts its volume there; a public name is an http_service on a plain listener or, for an mTLS surface, a [[services]] TCP passthrough. The kernel app's image docker/kernel is the union of docker/platform-node, platform-core, platform-authority, platform-agent-boundary, interop-mirror and human-service plus layerx-mcp on a Debian base with socat and util-linux; its init docker/kernel/init.sh replays the init containers of platform/hosted/node/deployment.yaml and then supervises every container command of that pod under its uid (4020, 4021, 4026); its volume holds /data/layerx and /data/human-state; its machine is a performance class with at least four CPUs and 16GB in the region nearest the RPC nodes by measured round trip."
 
 [documentation]
@@ -131,7 +136,7 @@ title = "Gateway at the router URL"
 story = "As any client, https://api-mainnet-beta.paxeer.network answers eth_, lx_ and px_ methods from one endpoint with the kernel available."
 ac_1  = "WHEN the existing endpoint app runs the gateway THE gateway SHALL be in kernel mode with core_agent_boundary and independent_receipt_authority at the kernel app's .internal name over mTLS, its Redis the existing Redis app, its Paxeer RPC at least two serving RPC names tried in order, on at least two machines in two regions, and its readiness SHALL report every configured backend up."
 ac_2  = "WHEN tools/bringup/check-live.sh router runs THE probe SHALL see eth_chainId 0x7d, px_getNetwork with kernel.available true and lx_getAccount answering a read for a bound account, all through the router URL."
-ac_3  = "WHEN the router passes its probe THE wallet gateway's RPC_URLS SHALL name the router URL first followed by serving RPC names, the wallet PWA SHALL name the router URL as its RPC endpoint and the wallet gateway's readiness SHALL report its rpc pool up."
+ac_3  = "WHEN the router passes its probe THE wallet gateway's RPC_URLS SHALL name the router URL first followed by serving RPC names, the wallet PWA SHALL name the router URL as its RPC endpoint (unverified: PWA host pending owner ruling) and the wallet gateway's readiness SHALL report its rpc pool up."
 ac_4  = "WHEN LAYERX_GATEWAY_PAXEER_RPC_URLS names two to eight https URLs and the first fails at transport or answers other than 200 THE gateway SHALL answer from the next, and its Paxeer status SHALL report up while any one answers."
 
 [req.9]
@@ -143,13 +148,13 @@ ac_3  = "WHEN the program registry app and its builder rootfs run on one machine
 
 [req.10]
 title = "Human graph in the kernel app for the wallet identity"
-story = "As a wallet user signed in with the Supabase identity, the human service admits my assertion, resolves my principal and signs through the five attestors."
+story = "As a wallet user signed in with the Supabase identity, the human service admits my assertion, resolves my principal and signs through the wallet attestors (count unresolved)."
 ac_1  = "WHEN the identity provider receives LXIP operation 4 with an assertion THE provider SHALL verify it against the configured JWKS and return the principal and did:layerx identity, and THE provider's serve command SHALL wire the assertion configuration at startup."
 ac_2  = "WHEN a wallet-facing operation arrives with an Authorization bearer from a listed origin THE human service SHALL admit the assertion through operation 4, keep the passkey cookie path unchanged, and pass the same assertion to admit_assertion for attestor signing."
-ac_3  = "WHEN LAYERX_HUMAN_ATTESTOR_NODES is set THE components loader SHALL accept an absent LAYERX_HUMAN_KMS group, use the five attestors at protocol 3 with threshold three, and refuse to start only when neither custody backend is complete."
+ac_3  = "WHEN LAYERX_HUMAN_ATTESTOR_NODES is set THE components loader SHALL accept an absent LAYERX_HUMAN_KMS group, use the five attestors at protocol 3 with threshold three (unverified: five-vs-four attestors, threshold unresolved), and refuse to start only when neither custody backend is complete."
 ac_4  = "WHEN the identity, security, movement, components, service and onboarding processes run in the kernel machine under their uids THE service SHALL answer /livez and /readyz ready at api-hull.paxeer.network through the Fly edge, admitting https://paxportwallet.com as its web origin and its passkey relying party id paxportwallet.com, and a second service process SHALL serve the event sources over TLS under the internal CA on the private network."
 ac_5  = "WHEN every HTTP route the wallet SDK calls is compared with the routes the human service serves THE service SHALL serve each one with the schema the SDK expects."
-ac_6  = "WHEN the wallet PWA on Railway carries NEXT_PUBLIC_PAXEER_HUMAN_API=https://api-hull.paxeer.network THE check-live human-session gate of the wallet feature SHALL pass against that name."
+ac_6  = "WHEN the wallet PWA at paxportwallet.com on its ruled host carries NEXT_PUBLIC_PAXEER_HUMAN_API=https://api-hull.paxeer.network THE check-live human-session gate of the wallet feature SHALL pass against that name."
 
 [req.11]
 title = "Agent daemon and MCP live"
@@ -257,7 +262,7 @@ reqs       = ["2.1", "2.2", "2.3"]
 
 [task.0.3]
 title      = "Serve search.paxeer.network from a Fly nginx app that keeps each client on one serving RPC node"
-status     = "implemented"
+status     = "done"
 wave       = 0
 requires   = ["0.5", "0.9"]
 do_1       = "Write docker/search-front/Dockerfile and Dockerfile.dockerignore on the nginx stable image with interop/deploy/search-front/nginx.conf: listen [::]:8080 plain; a split_clients map on $http_fly_client_ip over an upstream name list that nginx includes from a file mounted as a Fly [[files]] secret, so every machine picks the same serving node for one client; proxy_pass over HTTPS to the chosen name with proxy_set_header Host $proxy_host so the apiN vhost matches, proxy_ssl_server_name on, proxy_ssl_verify on against the image's system roots and resolver [fdaa::3] valid=30s for dynamic upstream resolution; the other request and response headers passed through unchanged plus add_header X-Search-Node $xweb_node always, naming the chosen serving name, so the header also rides 4xx and 5xx answers; /healthz answered locally; 502 while no node serves search."
@@ -268,6 +273,10 @@ symbols    = ["search_front", "check_search_front"]
 touches    = ["docker/search-front/Dockerfile", "docker/search-front/Dockerfile.dockerignore", "interop/deploy/search-front/nginx.conf", "interop/deploy/search-front/fly.toml", "tools/bringup/search-front.sh", "tools/bringup/check-live.sh"]
 tests      = ["tools/bringup/check-live.test.sh"]
 reqs       = ["1.1", "1.3"]
+revision = "26b211c9ccba18c31c51a4bae828cf17e185902e"
+command = "BRINGUP_HOSTS_FILE=<private hosts file> timeout 10m tools/bringup/check-live.sh search-front"
+exit_code = 0
+log_path = ".logs/0.3-search-front-live.log"
 
 [task.0.4]
 title      = "Replace api.paxeer.network by the router URL and every layerx.example host by its public name"
@@ -380,50 +389,51 @@ reqs       = ["6.1"]
 
 [task.1.4]
 title      = "Generate the genesis manifest and the sequencer key inside the kernel machine, start the sequencer and hand custody to the owner"
-status     = "pending"
+status     = "implemented"
 wave       = 1
 requires   = ["1.2", "1.3", "1.5", "1.7"]
+blocked_on = "ASSET_POINTER_USDC and ASSET_POINTER_USDL, the chain-125 token addresses the owner supplies; the governance registration of the custody asset map and deposit root authority (observations 1.4.5, 1.4.6)"
 do_1       = "Write tools/bringup/kernel-genesis.sh that runs inside the kernel app's machine through flyctl ssh console: build the genesis manifest with layerx-genesis-build from platform/hosted/node/genesis-modules.conf and genesis-module-fees.json with the anchor point read from the chain through the pod's paxeer relay and an LXGB v2 genesis metadata file passed as --genesis-metadata that carries one canonical Asset record for each asset of the custody precompile's asset map on chain 125, SID, PAX, USDC and USDL among them, read from the chain at run time, generate the sequencer key through the pod's signer material contract, write everything under /data/layerx/node on the app's volume with mode 0600 owned by the node user, and print only the genesis digest, the sequencer public key and the registered asset ids."
 do_2       = "Record /data/layerx/node on the kernel app's volume as the custody path: the script prints the owner handoff line naming that path and the two digests, refuses to run twice without an explicit rotate argument, and lets the init start layerxd, the authority replica and the guarantor on the new genesis."
 do_3       = "Add the kernel-node subcommand: the genesis digest under /data/layerx/node matches the replica's /v1/sync/network document, the public key matches core.env, supervisor.sock reports ready, the LNI socket exists, the replica answers its head on loopback and every process runs under the clock authority."
 verify_cmd = "timeout 15m tools/bringup/check-live.sh kernel-node"
 symbols    = ["kernel_genesis", "check_kernel_node"]
-touches    = ["tools/bringup/kernel-genesis.sh", "tools/bringup/check-live.sh"]
+touches    = ["tools/bringup/kernel-genesis.sh", "tools/bringup/custody-governance.sh", "tools/bringup/check-live.sh", "docker/kernel/init.sh"]
 tests      = ["tools/bringup/check-live.test.sh"]
 reqs       = ["6.2", "6.3"]
 
 [task.1.5]
 title      = "Build the kernel image and run the kernel pod as one Fly app with one machine and one volume"
-status     = "pending"
+status     = "implemented"
 wave       = 1
-requires   = ["1.3", "0.5"]
+requires   = ["1.3", "0.5", "0.11"]
 do_1       = "Write docker/kernel/Dockerfile and docker/kernel/Dockerfile.dockerignore as the union of docker/platform-node, platform-core, platform-authority, platform-agent-boundary, interop-mirror and human-service plus layerx-mcp from agent/crates/layerx-mcp on a Debian base with socat and util-linux, reusing each image's build stages and entrypoints."
 do_2       = "Write docker/kernel/init.sh as the root entrypoint: replay the init containers of platform/hosted/node/deployment.yaml (guarantor storage, checkpoint authority, publication policy, human directories and human authority material) on the volume, mount tmpfs for /run/layerx, the private directories and /tmp, then start every long-running container command of that pod under its uid through setpriv and restart one that exits, starting a TLS listener only once its certificate is on the volume; every listen value and socat bind is [::] for the private network."
 do_3       = "Make human/wallet/deploy/human.toml the kernel app's toml: build docker/kernel/Dockerfile, one machine of a performance class with at least four CPUs and 16GB in the region nearest the RPC nodes by measured round trip, one volume mounted at /data holding /data/layerx and /data/human-state with daily snapshots and retention, only the CA roots as [[files]] secret_name entries while every private key and signing request is generated inside the machine on the volume and tools/bringup/ca.sh writes each certificate back to the volume, and the existing plain 8080 http_service with LAYERX_HUMAN_LISTENER plain and LAYERX_HUMAN_BIND [::]:8080 from the first deploy; add every new [env] name of the toml to human/wallet/deploy/env with one line each so tools/wallet/check-deploy.sh keeps passing."
-do_4       = "The existing machine of the app is a volumeless machine in ams, and a deploy does not attach a new volume to it: create the volume in ams, the machine's region, then run flyctl scale count 0 for the app so the volumeless machine is destroyed, and deploy with the [mounts] section so flyctl creates the one machine on that volume; the app name, and so the edge's upstream for api-hull.paxeer.network, is unchanged."
+do_4       = "The existing machine of the app is a volumeless machine in ams, and a deploy does not attach a new volume to it: create the volume in ams, export the old machine's writable-root state with tools/bringup/human-state-preserve.sh export and stop that machine as the rollback, clone it onto the volume, import and verify the state there before the kernel init first runs, deploy with the [mounts] section excluding the old machine, and destroy the old machine only after the pre-destroy checks pass, after which the kernel-app gate runs; the app name, and so the edge's upstream for api-hull.paxeer.network, is unchanged."
 do_5       = "Add the kernel-app subcommand: the app has exactly one started machine with its volume mounted at /data, the init runs as the entrypoint, and every process of the pod not waiting on the genesis runs under its uid."
 verify_cmd = "timeout 20m tools/bringup/check-live.sh kernel-app"
 symbols    = ["check_kernel_app"]
-touches    = ["docker/kernel/Dockerfile", "docker/kernel/Dockerfile.dockerignore", "docker/kernel/init.sh", "human/wallet/deploy/human.toml", "human/wallet/deploy/env", "tools/bringup/check-live.sh"]
+touches    = ["docker/kernel/Dockerfile", "docker/kernel/Dockerfile.dockerignore", "docker/kernel/init.sh", "human/wallet/deploy/human.toml", "human/wallet/deploy/env", "tools/bringup/check-live.sh", "tools/bringup/human-state-preserve.sh"]
 tests      = ["tools/bringup/check-live.test.sh"]
 reqs       = ["6.3"]
 
 [task.1.6]
 title      = "Prove the value loop through layerxctl: a SEND over the LNI, batch evidence at the replica and a checkpoint on chain"
-status     = "pending"
+status     = "implemented"
 wave       = 1
-requires   = ["1.4"]
+requires   = ["1.4", "2.1"]
 do_1       = "Write tools/bringup/value-loop.sh that runs inside the kernel app's machine through flyctl ssh console: layerxctl submit of one SEND between two funded accounts over the LNI, layerxctl read-state showing the new balances, the replica's batch document carrying the activity, and eth_call statusOf on the anchor precompile returning submitted or final for a checkpoint at or after that batch."
 do_2       = "Add the kernel-value-loop subcommand that runs the script in the machine and reports the activity digest, the batch number and the checkpoint status."
 verify_cmd = "timeout 15m tools/bringup/check-live.sh kernel-value-loop"
 symbols    = ["value_loop", "check_kernel_value_loop"]
-touches    = ["tools/bringup/value-loop.sh", "tools/bringup/check-live.sh"]
+touches    = ["tools/bringup/value-loop.sh", "tools/bringup/check-live.sh", "docker/kernel/Dockerfile", "tools/bringup/kernel-genesis.sh", "docker/kernel/init.sh"]
 tests      = ["tools/bringup/check-live.test.sh"]
 reqs       = ["6.4"]
 
 [task.1.7]
 title      = "Run two Paxeer boundaries in the kernel machine, each fronting a different serving RPC name"
-status     = "pending"
+status     = "implemented"
 wave       = 1
 requires   = ["1.5", "0.5"]
 do_1       = "Run two Paxeer boundary processes under docker/kernel/init.sh, fronting two different serving RPC names of [decision] host_roles that the rpc-nodes subcommand shows within ten blocks of the head, never the name served from a validator host, each through its own loopback socat hop to port 443 of its name with the system CA file and the name as SNI, with LAYERX_PAXEER_CHAIN_ID 125 and TLS under the internal CA with the loopback SANs issued through tools/bringup/ca.sh; the pod's paxeer relay dials the first."
@@ -466,9 +476,37 @@ reqs = ["5.2", "5.3"]
 do_1 = "With the finality authority bound (task 1.2), the authority's lookup for /v1/authorized-batches/by-activity over the node interface is refused by layerxd as a malformed envelope, so the gateway sees receipt_source_unavailable: read the request the authority builds and the envelope layerxd parses, find which side departed from the wire contract the daemon tests and the SDK conformance fixtures fix, and change that side only, never both and never by relaxing the envelope check; record the departure as one observation naming the introducing commit when the history shows it."
 do_2 = "The gate is task 1.2's whole target: the recorded-fixture replay, the JSON test and bootstrap-send.sh's real_node_authority_serves_verified_facts_and_reflects_replica_loss all pass against the bound authority; when it passes, task 1.2 closes on the same gate record at the same revision."
 
+[task.1.10]
+title = "Give the custody module a governance proposal type, handler and submit-proposal command so the asset map and the deposit root authority can be set on chain 125"
+status = "implemented"
+wave = 1
+requires = []
+verify_cmd = "go test ./modules/layerxcustody/..."
+symbols = ["CustodyProposal", "NewProposalHandler", "NewSubmitCustodyProposalMsg", "V611Upgrade"]
+touches = ["api/layerxcustody/proposal.proto", "modules/layerxcustody/types/proposal.pb.go", "modules/layerxcustody/types/proposal.go", "modules/layerxcustody/types/codec.go", "modules/layerxcustody/handler.go", "modules/layerxcustody/handler_test.go", "modules/layerxcustody/client/cli/tx.go", "modules/layerxcustody/module.go", "node/app.go", "node/upgrades.go"]
+tests = ["modules/layerxcustody/handler_test.go"]
+reqs = ["6.2"]
+do_1 = "Follow the layerxbridge pattern: CustodyProposal (title, description, messages as Any) in the custody proto package generated through the repository's buf template, registered as governance content, with NewProposalHandler executing MsgUpdateParams, MsgSetAsset, MsgRegisterCheckpoint, MsgSetEmergency and MsgCancelClaim through the keeper's Msg service; ValidateBasic refuses an empty list, a non-custody message and an authority other than the governance module account."
+do_2 = "paxd tx layerxcustody submit-proposal custody <file.json> reads title, description, deposit and messages and is signed by the proposer; the handler is on the governance router beside the bridge handler and the plan v6.11 gates the new content and messages, its height an owner input named in the deploy handoff."
+
+[task.1.11]
+title      = "Restore the preserved human state into the old service shape after the kernel cutover"
+status     = "implemented"
+wave       = 1
+requires   = ["1.5"]
+do_1       = "Add the restore <dir> <machine> subcommand to tools/bringup/human-state-preserve.sh: it rechecks state.tar against manifest.sha256, requires <machine> to be the app's only started machine with one volume, and puts every exported source back at the old machine's path by the export map inverted (human-state/components to /var/lib/layerx/human, layerx/keys/human-material to /run/human-material, the rest under /data) with the tar's owners and modes; every file is checked against the manifest digest at its old path and the old service's /livez answers 200 on its bind port before the rollback counts as verified."
+do_2       = "The old shape comes back as a clone of the old machine (old image and env, the export guarantees its state roots lie under /var/lib/layerx/human) with a new volume: restore stages the components onto the volume while it is mounted at /var/lib/layerx/human-restore and refuses a volume holding anything but lost+found; flyctl machine update --mount-point /var/lib/layerx/human restarts the old service on it, so the state roots persist across every later stop; the second restore run checks the volume, /livez, and puts the remaining sources back onto the root as the old machine held them, reapplied by a rerun after any stop."
+do_3       = "Operator sequence of rollback R1 in the deploy handoff: stop the kernel machine, create the rollback volume in the old machine's region, clone the old machine with the volume at the stage path, restore (stage), move the mount with a machine update, restore again; rollback verified is pass restore app=<app> machine=<machine> files=<n> sha256=match after pass livez, with the old and kernel machines and kernel_data left stopped and PRESERVE_DIR kept."
+do_4       = "Fixture cases in tools/bringup/check-live.test.sh restore the preservation cases' export onto a fixture clone: the stage mapping and mode, the old-path mapping of every source, the livez refusal writing nothing, and the refusals for a missing export, a manifest mismatch, a kernel or second started machine, a stage volume or old path already holding state and a changed volume file."
+verify_cmd = "timeout 15m bash tools/bringup/check-live.test.sh"
+symbols    = ["do_restore", "restore_phase"]
+touches    = ["tools/bringup/human-state-preserve.sh", "tools/bringup/check-live.test.sh"]
+tests      = ["tools/bringup/check-live.test.sh"]
+reqs       = ["6.3"]
+
 [task.2.1]
 title      = "Run the core boundary, the receipt authority and the agent boundary over TLS in the kernel machine"
-status     = "pending"
+status     = "implemented"
 wave       = 2
 requires   = ["1.4", "0.5"]
 do_1       = "Run layerx-platform-core (9443 and its admin plane 9444), layerx-receipt-authority (9445, bound to the replica on loopback, the identity binding socket and the runtime clock) and layerx-agent-boundary (9446, bound to the LNI socket) under docker/kernel/init.sh from their platform/hosted definitions and docker/platform-* entrypoints, listening on [::] for the private network, each with its certificate issued through tools/bringup/ca.sh carrying the kernel app's .internal name."
@@ -481,14 +519,14 @@ reqs       = ["7.1"]
 
 [task.2.2]
 title      = "Run the gateway in kernel mode on the existing endpoint app, served only at the router URL"
-status     = "pending"
+status     = "implemented"
 wave       = 2
 requires   = ["2.1", "2.4", "2.8", "0.9"]
 do_1       = "Switch the Redis certificate and the gateway's outbound root in one deploy window, because the gateway takes one outbound DER root and cannot verify Redis between two deploys: when the served chain of the Redis app of human/wallet/deploy/redis.toml does not end at the internal CA root, issue its certificate through the gateway-redis row of tools/bringup/ca.sh with the Redis app's .internal name by the several-machine path of ca_issue, because the Redis image reads its key from a [[files]] secret, and stage REDIS_TLS_CERT, REDIS_TLS_KEY and REDIS_TLS_CA with flyctl secrets import --stage; then import ENDPOINT_OUTBOUND_CA as the internal CA root on the endpoint app, deploy the Redis app on its new certificate and at once deploy the endpoint app of do_2, so the gateway's one outbound root serves both Redis and the kernel backends."
-do_2       = "Make human/wallet/deploy/endpoint.toml run the gateway in kernel mode on its plain listener: core_agent_boundary and independent_receipt_authority at the kernel app's .internal name over mTLS with the client identity issued through the gateway-client row of tools/bringup/ca.sh and imported as Fly secrets, ENDPOINT_OUTBOUND_CA the internal CA root, LAYERX_GATEWAY_PAXEER_RPC_URLS naming at least two serving RPC names that the rpc-nodes subcommand shows at the head, the existing Redis app, and at least two machines in two regions, with LAYERX_GATEWAY_PROGRAM_REGISTRY_URL left unset so that backend reports not_configured until task 2.6 sets it; add every new [env] name to human/wallet/deploy/env with one line each and deploy it."
+do_2       = "Make human/wallet/deploy/endpoint.toml run the gateway in kernel mode on its plain listener: core_agent_boundary and independent_receipt_authority at the kernel app's .internal name over mTLS with the client identity issued through the gateway-client row of tools/bringup/ca.sh and imported as Fly secrets, ENDPOINT_OUTBOUND_CA the internal CA root, LAYERX_GATEWAY_PAXEER_RPC_URLS naming at least two serving RPC names that the rpc-nodes subcommand shows at the head, the existing Redis app, and at least two machines in two regions, with LAYERX_GATEWAY_PROGRAM_REGISTRY_URL the registry app's .internal name on port 9420 and LAYERX_GATEWAY_PROGRAM_REGISTRY_TOKEN_FILE the [[files]] token task 2.6 imports, because the gateway's kernel mode requires the registry whenever the component URL is set, so the router's kernel-mode deploy follows the registry app of task 2.6 in the deploy order; add every new [env] name to human/wallet/deploy/env with one line each and deploy it."
 do_3       = "Register the router URL on the edge with tools/bringup/edge.sh add api-mainnet-beta.paxeer.network <app>; the app's fly.dev name is the edge's upstream only and is written nowhere else."
 do_4       = "Add the router subcommand: through the router URL eth_chainId 0x7d, px_getNetwork kernel.available true, lx_getAccount answering a read for a bound account and /readyz with every configured backend up, and the Redis round trip reported from a machine in each region; then the wallet gateway's /readyz reporting its rpc pool up with the router URL first in its RPC_URLS."
-do_5       = "Only after the router checks of do_4 pass: set HYPERPAXEER_RPC_URL to https://api-mainnet-beta.paxeer.network and RPC_URLS to the router URL followed by the serving RPC names on the wallet gateway app of human/wallet/deploy/gateway.toml with flyctl secrets import on standard input from the operator host, which restarts its machines, update both lines of human/wallet/deploy/env to say so, and set the wallet PWA's NEXT_PUBLIC_PAXEER_RPC_URL on Railway to the router URL and redeploy the PWA."
+do_5       = "Only after the router checks of do_4 pass: set HYPERPAXEER_RPC_URL to https://api-mainnet-beta.paxeer.network and RPC_URLS to the router URL followed by the serving RPC names on the wallet gateway app of human/wallet/deploy/gateway.toml with flyctl secrets import on standard input from the operator host, which restarts its machines, and update both lines of human/wallet/deploy/env to say so."
 verify_cmd = "timeout 10m tools/bringup/check-live.sh router"
 symbols    = ["check_router"]
 touches    = ["human/wallet/deploy/endpoint.toml", "human/wallet/deploy/env", "tools/bringup/check-live.sh"]
@@ -510,9 +548,9 @@ reqs       = ["9.1"]
 
 [task.2.6]
 title      = "Run the program registry with its builder rootfs as a Fly app at index.paxeer.network"
-status     = "pending"
+status     = "implemented"
 wave       = 2
-requires   = ["2.2", "2.4", "0.9"]
+requires   = ["2.2", "2.4", "0.9", "0.11"]
 do_1       = "Write platform/hosted/registry/fly.toml for a new Fly app built from docker/platform-registry with the builder rootfs of builder-environment/build-env.sh: one machine with a volume, and docker/platform-registry/init.sh as a root entrypoint that performs what node-provision-build-boundary.sh does without systemd (the cgroup v2 subtree, bubblewrap and the loop-mounted ext4 quota images) before starting the registry under its user with LAYERX_REGISTRY_BUILDER_* pointing at the rootfs."
 do_2       = "Serve the ingress 9420 over mTLS on [::] for the private network and as a TCP passthrough service on public port 443 on a dedicated IPv4 of the app, with the server certificate issued through tools/bringup/ca.sh carrying index.paxeer.network and the app's .internal name; deploy it and register index.paxeer.network on the edge with tools/bringup/edge.sh add index.paxeer.network <app> 443 stream, which passes the TLS session through by SNI to the app's dedicated IPv4."
 do_3       = "Point the router at the registry: import LAYERX_GATEWAY_PROGRAM_REGISTRY_URL at the registry app's .internal name on port 9420 and ENDPOINT_PROGRAM_REGISTRY_TOKEN as Fly secrets of the endpoint app on standard input from the operator host, add the [[files]] entry for the token and LAYERX_GATEWAY_PROGRAM_REGISTRY_TOKEN_FILE to human/wallet/deploy/endpoint.toml, reusing the gateway's client identity and outbound root from task 2.2, and redeploy the router."
@@ -586,7 +624,7 @@ title      = "Make the KMS group optional under attestor custody in the componen
 status     = "done"
 wave       = 3
 requires   = ["3.2"]
-do_1       = "In production_components.rs require the LAYERX_HUMAN_KMS_* group only when LAYERX_HUMAN_ATTESTOR_NODES is unset; under attestor custody use the five Fly attestors with LAYERX_HUMAN_ATTESTOR_SIGNERS of at least three, protocol 3, the human-service client leaf chained to the attestor CA, and wire admit_assertion into the sign path."
+do_1       = "In production_components.rs require the LAYERX_HUMAN_KMS_* group only when LAYERX_HUMAN_ATTESTOR_NODES is unset; under attestor custody use the Fly wallet attestors (count unresolved) with LAYERX_HUMAN_ATTESTOR_SIGNERS of at least three, protocol 3, the human-service client leaf chained to the attestor CA, and wire admit_assertion into the sign path."
 do_2       = "Extend tests/wallet_identity_e2e.rs so it runs with no KMS variables set and proves the attestor-only path end to end."
 verify_cmd = "timeout 30m tools/runtime/run-with-clock.sh sh -c 'cd human && cargo test -p layerx-human-service --test wallet_identity_e2e'"
 symbols    = ["ProductionComponentsConfig::from_environment", "AttestorKms::admit_assertion"]
@@ -611,8 +649,8 @@ reqs       = ["10.5"]
 title      = "Run the human graph inside the kernel machine and serve it at api-hull.paxeer.network"
 status     = "in_progress"
 wave       = 3
-requires   = ["3.3", "3.4", "2.1", "2.2", "1.7", "0.9"]
-do_1       = "Run identity, security, movement, components and the onboarding roles under docker/kernel/init.sh through docker/human-service/entrypoint.sh with the README's uid split (4020, 4021, 4026), sockets under /run/layerx/human, materials generated inside the machine by platform/hosted/human/material.py under /data/human-state with https://paxportwallet.com as its web origin argument, so the passkey relying party id is paxportwallet.com, the movement provider at the two Paxeer boundaries with minimum agreement 2, the components at the router's px_ reads and the custody precompile, and the five Fly attestors at their apps' .internal names at protocol 3 with threshold three."
+requires   = ["3.3", "3.4", "2.1", "2.2", "1.7", "0.9", "0.11"]
+do_1       = "Run identity, security, movement, components and the onboarding roles under docker/kernel/init.sh through docker/human-service/entrypoint.sh with the README's uid split (4020, 4021, 4026), sockets under /run/layerx/human, materials generated inside the machine by platform/hosted/human/material.py under /data/human-state with https://paxportwallet.com as its web origin argument, so the passkey relying party id is paxportwallet.com, the movement provider at the two Paxeer boundaries with minimum agreement 2, the components at the router's px_ reads and the custody precompile, and the five Fly attestors at their apps' .internal names at protocol 3 with threshold three (unverified: attestor count five-vs-four unresolved)."
 do_2       = "Run two human service processes on the one components socket: the plain listener on [::]:8080 behind the app's http_service with CORS for https://paxportwallet.com, and a TLS listener under the internal CA on [::] for the journeys and approvals event sources over the private network; add every new [env] name of human/wallet/deploy/human.toml to human/wallet/deploy/env with one line each; register api-hull.paxeer.network on the edge with tools/bringup/edge.sh add api-hull.paxeer.network <app>."
 do_3       = "Add the human subcommand that runs tools/wallet/check-live.sh human with CHECK_LIVE_HUMAN_BASE=https://api-hull.paxeer.network and CHECK_LIVE_HUMAN_ORIGIN=https://paxportwallet.com, then checks /readyz ready and that the passkey registration options name rp.id paxportwallet.com."
 verify_cmd = "timeout 10m tools/bringup/check-live.sh human"
@@ -637,11 +675,11 @@ reqs       = ["11.1", "11.2", "11.3"]
 
 [task.3.7]
 title      = "Point the wallet PWA at api-hull.paxeer.network and prove the authenticated human-api path"
-status     = "pending"
+status     = "implemented"
 wave       = 3
 requires   = ["3.5", "3.6"]
 supersedes = ["paxeer-x-wallet 6.5"]
-do_1       = "Set NEXT_PUBLIC_PAXEER_HUMAN_API=https://api-hull.paxeer.network on the service paxport of the Railway project honest-spontaneity, the wallet PWA served at paxportwallet.com, and redeploy the PWA; no DNS change."
+do_1       = "Blocked on the owner's PWA hosting ruling; no Railway action (owner ruling)."
 do_2       = "Add the human-session subcommand that runs tools/wallet/check-live.test.sh and then the wallet feature's human-session gate, tools/wallet/check-live.sh human-session with CHECK_LIVE_HUMAN_BASE=https://api-hull.paxeer.network and CHECK_LIVE_HUMAN_ORIGIN=https://paxportwallet.com, as this task's proof."
 verify_cmd = "timeout 10m tools/bringup/check-live.sh human-session"
 symbols    = ["check_human_session"]
@@ -665,7 +703,7 @@ reqs       = ["11.4"]
 
 [task.3.10]
 title      = "Publish agentd's mTLS surface at machine.paxeer.network through a TCP passthrough of the kernel app"
-status     = "pending"
+status     = "implemented"
 wave       = 3
 requires   = ["3.6", "3.9", "0.9"]
 do_1       = "Give human/wallet/deploy/human.toml a [[services]] TCP passthrough on public port 9454 to the agentd boundary's [::]:9454 inside the machine, allocate a dedicated IPv4 for the app with flyctl ips allocate-v4, deploy it and register machine.paxeer.network on the edge with tools/bringup/edge.sh add machine.paxeer.network <app> 9454 stream, which passes port 9454 through unchanged to that IPv4."
@@ -678,9 +716,9 @@ reqs       = ["11.1", "11.4", "1.1"]
 
 [task.3.11]
 title      = "Run the internal kms, the four event sources and the internal Redis as private Fly apps"
-status     = "pending"
+status     = "implemented"
 wave       = 3
-requires   = ["2.4", "2.2", "3.5"]
+requires   = ["2.4", "2.2", "3.5", "0.11", "0.12"]
 do_1       = "Write platform/hosted/internal/fly.toml for a new Fly app built from docker/platform-internal with one process group each for the kms and the journeys, payments, approvals and programs event sources, every group one machine with its own volume for its state directory, mandatory mTLS under the internal CA on [::] for the private network with each group's certificate carrying its <group>.process.<app>.internal name, and key material generated inside each machine; the event sources point at their upstreams as platform/hosted/internal/deployment.yaml declares them: journeys and approvals at the human service's TLS listener at the kernel app's .internal name with the internal CA root as LAYERX_EVENTS_UPSTREAM_CA_DER, payments and programs at https://api-mainnet-beta.paxeer.network with the ISRG root that ends the router's served chain as LAYERX_EVENTS_UPSTREAM_CA_DER as [decision] public_roots sets it, because the router serves TLS only at its public name under its Fly certificate; the internal subcommand accepts the router's served chain when it ends at ISRG Root X1 or ISRG Root X2, reports which, and checks that the LAYERX_EVENTS_UPSTREAM_CA_DER of payments and programs is that same root, which the task sets from the served chain."
 do_2       = "Write platform/hosted/internal/redis.toml for the internal Redis app, one machine with a volume and TLS under the internal CA, after human/wallet/deploy/redis.toml, its certificate issued through the internal-redis row of tools/bringup/ca.sh by the several-machine path of ca_issue because the Redis image reads its key from a [[files]] secret; deploy both apps."
 do_3       = "Add the internal subcommand: the five readiness routes answer ready over mTLS at their <group>.process.<app>.internal names from the kernel machine with the human service's event client identity, and neither app holds a public IP."
@@ -697,23 +735,23 @@ status  = "pending"
 
 [task.4.1]
 title      = "Complete the wallet move and serve the public wallet endpoint from the Fly wallet gateway"
-status     = "pending"
+status     = "implemented"
 wave       = 4
 requires   = ["0.5", "0.9"]
-blocked_on = "the owner's sealing of the old master key for step 12; and, only when the public wallet endpoint name of [decision.public_names] wallet_endpoint is not under paxeer.network, the owner's one move of its existing record to the edge host"
-do_1       = "Run steps 1 through 9 of human/wallet/docs/cutover.md from the operator host, with the flyctl proxy tunnels to the five attestor apps on the operator host open through step 8."
+blocked_on = "the owner's sealing of the old master key for step 12; and, only when the public wallet endpoint name of [decision.public_names] wallet_endpoint is not under paxeer.network, the owner's one move of its existing record to the edge host; the frontend-to-backend mapping of the legacy wallet is unverified"
+do_1       = "Run steps 1 through 9 of human/wallet/docs/cutover.md from the operator host, with the flyctl proxy tunnels to the wallet attestor apps (count unresolved) on the operator host open through step 8."
 do_2       = "In place of step 10's proxy rewrite, scale the wallet gateway app of human/wallet/deploy/gateway.toml to a second region with at least one started machine there beside its machines in ams, register the public wallet endpoint name on the edge with tools/bringup/edge.sh add <name> <gateway app>; once the name reaches the edge, through the wildcard or after the owner's one record move when the name is not under paxeer.network, and tools/wallet/check-live.sh cutover passes against the name, the public wallet endpoint name is answered only by the Fly wallet gateway behind the edge, and write CUTOVER_STATE_DIR/applied-at in the format human/wallet/deploy/cutover/apply.sh writes, holding the time the edge began serving it."
-do_3       = "Run step 11 on OLD_WALLET_HOST, making the old service's database role read-only through the admin access of that host's Compose database service; step 12, the owner's sealing of the old master key; and step 13, human/wallet/deploy/cutover/retire.sh on OLD_WALLET_HOST with CUTOVER_PUBLIC_HOST the public wallet endpoint name, CUTOVER_COMPOSE_DIR, CUTOVER_PROXY_SERVICE, CUTOVER_STATE_DIR and CUTOVER_SOAK_SECONDS as the runbook sets them and CUTOVER_RETIRE_SERVICES the old api service, once CUTOVER_SOAK_SECONDS have passed; retire.sh's check sees the name answered by the Fly wallet gateway with its x-served-by header, and after it runs the Fly wallet gateway alone answers the name; then remove the wallet site from the old host's proxy, retiring the proxy only when it serves no other site, and drop OLD_WALLET_HOST from the host-map roles of tools/bringup/check-live.sh and from the fixtures of tools/bringup/check-live.test.sh."
-do_4       = "Add the wallet subcommand that runs tools/wallet/check-live.sh cutover with CHECK_LIVE_CUTOVER_HOST the public wallet endpoint name of [decision.public_names] wallet_endpoint, read from the wallet PWA's NEXT_PUBLIC_PAXEER_WALLET_API, and tools/wallet/check-live.sh gateway against the Fly wallet gateway, and checks that the wallet gateway app runs started machines in two regions."
+do_3       = "Run step 11, making the database at the backend origin that the deploy side's discovery packet names read-only through its admin access; step 12, the owner's sealing of the old master key; and step 13, once CUTOVER_SOAK_SECONDS have passed and only once the new PWA origin serves, because stopping the legacy container also removes the old PWA: human/wallet/deploy/cutover/retire.sh in container mode on OLD_WALLET_HOST with CUTOVER_CONTAINER the legacy wallet container, CUTOVER_PUBLIC_HOST the public wallet endpoint name, CUTOVER_STATE_DIR and CUTOVER_SOAK_SECONDS as the runbook sets them; retire.sh's check sees the name answered by the Fly wallet gateway with its x-served-by header, and after it clears the container's restart policy and stops it the Fly wallet gateway alone answers the name; then drop OLD_WALLET_HOST from the host-map roles of tools/bringup/check-live.sh and from the fixtures of tools/bringup/check-live.test.sh."
+do_4       = "Add the wallet subcommand that runs tools/wallet/check-live.sh cutover with CHECK_LIVE_CUTOVER_HOST the public wallet endpoint name of [decision.public_names] wallet_endpoint, and tools/wallet/check-live.sh gateway against the Fly wallet gateway, and checks that the wallet gateway app runs started machines in two regions."
 verify_cmd = "timeout 10m tools/bringup/check-live.sh wallet"
 symbols    = ["check_wallet"]
-touches    = ["tools/bringup/check-live.sh", "tools/bringup/check-live.test.sh"]
+touches    = ["tools/bringup/check-live.sh", "tools/bringup/check-live.test.sh", "human/wallet/deploy/cutover/retire.sh"]
 tests      = ["tools/wallet/check-live.test.sh"]
 reqs       = ["12.1"]
 
 [task.4.2]
 title      = "Serve paid web search from sidecars on the serving RPC nodes, settled through the router"
-status     = "pending"
+status     = "in_progress"
 wave       = 4
 requires   = ["2.2", "1.6", "0.3"]
 blocked_on = "the owner's PAX price in US dollars, from which the four per-request prices of 0.001 US dollars are set in base units: USDC and USDL at 0.001, PAX at 0.001 divided by that price, and SID at that PAX amount times the owner-set rate of 3.114 SID per PAX; and the owner's PAX deposit that funds the payer account through custody credit"
@@ -756,9 +794,9 @@ reqs       = ["14.2", "14.3"]
 
 [task.4.5]
 title      = "Run webhooks, the dashboard API and the dashboard web as Fly apps at their names and turn the event producers on"
-status     = "pending"
+status     = "implemented"
 wave       = 4
-requires   = ["3.11", "2.2", "2.6", "2.7", "0.9"]
+requires   = ["3.11", "2.2", "2.6", "2.7", "0.9", "0.11"]
 do_1       = "Write platform/hosted/webhooks/fly.toml from docker/platform-webhooks with two process groups whose commands set LAYERX_WEBHOOKS_LISTENER: public, plain behind the http_service, and ingress, TLS on [::] under the internal CA with the certificate of the developer row of tools/bringup/ca.sh at ingress.process.<app>.internal imported as Fly secrets; each group at least two machines in two regions, INSTANCE_ID from FLY_MACHINE_ID; write platform/hosted/dashboard/fly.toml from docker/platform-dashboard on its plain listener and platform/hosted/dashboard/web/fly.toml from docker/platform-dashboard-web with its /v1/dashboard rewrite in next.config.ts aimed at the dashboard API app over the private network, each at least two machines in two regions; webhooks and the dashboard API dial the internal Redis app of platform/hosted/internal/redis.toml as LAYERX_WEBHOOKS_REDIS_URL, the dashboard API also dials the router's Redis as LAYERX_DASHBOARD_GATEWAY_REDIS_URL, and all dial identity, the internal event sources, the receipt authority and the agent boundary over the private network with client identities imported as Fly secrets."
 do_2       = "Turn the event producers on: give the router of human/wallet/deploy/endpoint.toml the LAYERX_EVENTS_PAYMENT_UPSTREAM_* group, the registry of platform/hosted/registry/fly.toml the LAYERX_EVENTS_PROGRAM_UPSTREAM_* group and the human service of human/wallet/deploy/human.toml the LAYERX_EVENTS_JOURNEY_UPSTREAM_* and LAYERX_EVENTS_APPROVAL_UPSTREAM_* groups at their <group>.process.<app>.internal event sources, and all three the LAYERX_EVENTS_WEBHOOKS_UPSTREAM_* group at https://ingress.process.<app>.internal of the webhooks app, each with the internal CA root as its CA DER and its client identity, token and password files imported as Fly secrets; add every new name to human/wallet/deploy/env with one line each and redeploy the three."
 do_3       = "Rewrite the serving sections of docs/wiki/HostedDashboard.md, docs/wiki/HostedWebhooks.md and docs/site/docs/platform/webhooks.md from the layerx-developer ingress to the three Fly apps and their fly.toml paths, each name with its Fly certificate."
@@ -785,7 +823,7 @@ reqs       = ["16.1", "6.5"]
 
 [task.4.7]
 title      = "Run the interop gateway at interchain.paxeer.network with the x402, UCP, http, mcp and a2a transports"
-status     = "pending"
+status     = "implemented"
 wave       = 4
 requires   = ["2.2", "2.1", "2.7", "0.9"]
 do_1       = "Render the config with interop/deploy/gateway/render.py --check against the router, the receipt authority at the kernel app's .internal name, the router's Redis and the internal CA, and write platform/hosted/interop/fly.toml for a new Fly app from docker/interop-gateway with the LAYERX_INTEROP_* env on its plain listener, at least two machines in two regions, and the client identity issued through tools/bringup/ca.sh and imported as Fly secrets; deploy it, register interchain.paxeer.network on the edge with tools/bringup/edge.sh add interchain.paxeer.network <app>."
@@ -798,7 +836,7 @@ reqs       = ["16.2"]
 
 [task.4.8]
 title      = "Enable the AP2, Visa TAP and fiat adapters of the interop gateway"
-status     = "pending"
+status     = "implemented"
 wave       = 4
 requires   = ["4.7"]
 blocked_on = "the AP2 signing keys and asset list, the Visa TAP agent and target identities, and the fiat provider credentials for the interop gateway"
@@ -812,7 +850,7 @@ reqs       = ["16.3"]
 
 [task.4.9]
 title      = "Publish and verify the Ethereum and Solana mirrors from the kernel machine"
-status     = "pending"
+status     = "implemented"
 wave       = 4
 requires   = ["1.4"]
 blocked_on = "per mirror chain three independent RPC endpoints with CA and bearer files, a funded deployer key, and the Ethereum secp256k1 and Solana ed25519 publisher keys"
@@ -826,7 +864,7 @@ reqs       = ["16.4"]
 
 [task.4.10]
 title      = "Run the reference ramp at ramp.paxeer.network"
-status     = "pending"
+status     = "implemented"
 wave       = 4
 requires   = ["2.2", "2.4", "2.7", "0.9"]
 blocked_on = "the provider sandbox endpoint and credential, the compliance decision service endpoint and public key, KMS non-exporting Ed25519 handles for the LayerX and Paxeer signers, the Paxeer custody-owner broadcast API, the operator wallet and vault ids and the quote catalogue"
@@ -834,31 +872,31 @@ do_1       = "Write platform/ramps/fly.toml for a new Fly app from docker/ramps:
 do_2       = "Add the ramp subcommand: ramp.paxeer.network is registered on the edge and proxied to the app's fly.dev name, /readyz answers at the name under the edge's certificate and platform/ramps/sandbox-journey.sh records done."
 verify_cmd = "timeout 15m tools/bringup/check-live.sh ramp"
 symbols    = ["check_ramp"]
-touches    = ["platform/ramps/fly.toml", "tools/bringup/check-live.sh"]
+touches    = ["platform/ramps/fly.toml", "tools/bringup/check-live.sh", "platform/ramps/toolkit/src/clients.rs", "tools/bringup/ca.sh"]
 tests      = ["tools/bringup/check-live.test.sh"]
 reqs       = ["16.5"]
 
 [task.4.11]
 title      = "Run the gas station at chain.paxeer.network"
-status     = "pending"
+status     = "implemented"
 wave       = 4
 requires   = ["2.2", "0.9"]
-blocked_on = "the owner's address for initialOwner of the paymaster; and the interval within which the owner refreshes the paymaster rate with setRate, used as maximumAge and max_rate_age"
+blocked_on = "none from the owner: initialOwner is the deploy-side paymaster owner identity, refresh interval 300 s (lead-set)"
 do_1       = "Deploy the sponsored-batch paymaster from the operator host with forge create of contracts/src/BatchCallAndSponsor.sol:BatchCallAndSponsor against https://api-mainnet-beta.paxeer.network with the sponsor account's --keystore, the constructor arguments the owner's initialOwner, initialRate the owner-set 3.114 SID per PAX in SID base units per whole PAX as currentRate applies it against PAX_BASE_UNITS, and maximumAge the owner's refresh interval; record the deployed address as the paymaster of the gas station config."
 do_2       = "Write docker/gas-station/Dockerfile building paxeer-gas-station from interop/crates/layerx-gas-station, and interop/deploy/gas-station/fly.toml: one machine with a volume for its journal, its config with chain_id 125, endpoints the router URL followed by two serving RPC names, the recorded paymaster, the SID token, max_rate_age the owner's refresh interval and relayer_key_env naming the env var that holds the sponsor key, that key set through flyctl secrets import on standard input from the operator host without printing it, and its listen on [::] behind the http_service; deploy it, register chain.paxeer.network on the edge with tools/bringup/edge.sh add chain.paxeer.network <app>."
 do_3       = "Add the gas subcommand: POST /quote at the name answers 200 with a quote at the paymaster's current rate, and one /submit of a sponsored batch completes with a SID transfer to the sponsor."
 verify_cmd = "timeout 15m tools/bringup/check-live.sh gas"
 symbols    = ["check_gas"]
-touches    = ["docker/gas-station/Dockerfile", "interop/deploy/gas-station/fly.toml", "tools/bringup/check-live.sh"]
-tests      = ["tools/bringup/check-live.test.sh"]
+touches    = ["docker/gas-station/Dockerfile", "docker/gas-station/init.sh", "interop/deploy/gas-station/fly.toml", "tools/bringup/check-live.sh", "interop/crates/layerx-gas-station/src/rate.rs", "interop/crates/layerx-gas-station/src/main.rs", "interop/crates/layerx-gas-station/src/lib.rs", "interop/crates/layerx-gas-station/src/journal.rs", "interop/crates/layerx-gas-station/src/tx.rs", "interop/crates/layerx-gas-station/src/signer.rs", "interop/crates/layerx-gas-station/src/config.rs"]
+tests      = ["tools/bringup/check-live.test.sh", "interop/crates/layerx-gas-station/tests/rate.rs"]
 reqs       = ["17.1"]
 
 [task.4.12]
 title      = "Deploy the bridge and run the relayer with its remote signer as a Fly app"
-status     = "pending"
+status     = "implemented"
 wave       = 4
 requires   = ["2.2"]
-blocked_on = "per EVM chain the owner multisig address, RPC URL, funded deployer key and explorer verification key; the five bridge attestor secp256k1 addresses and threshold; per-asset caps; the Solana publisher and funded owner keypairs; and a governance proposer key with deposit on chain 125"
+blocked_on = "per EVM chain the owner multisig address, RPC URL, funded deployer key and explorer verification key; per-asset caps; the Solana publisher and funded owner keypairs; and a governance proposer key with deposit on chain 125"
 do_1       = "Fill the nine chain configs and bridge/deploy/attestors.json from the supplied inputs, run deploy-evm-chain.sh and verify-evm-chain.sh per chain and deploy-solana-program.sh, generate and submit the governance proposals, and run bridge/deploy/checklist.sh."
 do_2       = "Write docker/bridge-relayer/Dockerfile with layerx-bridge-relayer and layerx-mirror-signer and its entrypoint docker/bridge-relayer/entrypoint.sh that runs both and exits when either exits, and interop/deploy/bridge-relayer/fly.toml: one machine with a volume, the relayer dialing the signer over a unix socket in the machine, the relayer config and the attestor key handles imported as Fly secrets; deploy it and add the bridge subcommand: checklist exit 0 and one observed deposit journaled as bridgeIn."
 verify_cmd = "timeout 20m tools/bringup/check-live.sh bridge"
@@ -873,8 +911,8 @@ status     = "implemented"
 wave       = 4
 requires   = []
 supersedes = ["paxeer-x-ci 2.1"]
-blocked_on = "a fine-grained GitHub token with Actions read and Administration read and write on the repository for the CI controller"
-do_1       = "Build and push the runner image, create the runner deploy token, set GITHUB_TOKEN, FLY_API_TOKEN and RUNNER_IMAGE on the controller app, deploy the controller, and set the repository variable CI_LINUX_RUNNER to fly-linux."
+blocked_on = "none: existing repository admin auth"
+do_1       = "Use the published runner image of d6d11b808, create the runner deploy token, set GITHUB_TOKEN, FLY_API_TOKEN and RUNNER_IMAGE on the controller app, deploy the controller, and set the repository variable CI_LINUX_RUNNER to fly-linux."
 do_2       = "Add the ci subcommand: it dispatches runner-canary.yml on the repository's default branch, waits for that run and passes only when the run succeeds with a job on a runner whose name starts with fly-."
 verify_cmd = "timeout 30m tools/bringup/check-live.sh ci"
 symbols    = ["check_ci"]
@@ -914,7 +952,7 @@ status     = "implemented"
 wave       = 4
 requires   = []
 do_1       = "In consensus/internal/blocksync/reactor.go change autoRestartIfBehind so a node past blocks-behind-threshold is left alone only while its distance behind the highest peer is shrinking between two checks; a node that advances at chain speed with a constant or growing gap restarts into block sync after the cooldown, a node already in block sync is still skipped, and the log line names the previous and current distance; add the unit test in the blocksync package covering the shrinking, constant and growing gap cases through the real syncController."
-do_2       = "Build paxd from the merged revision, stage it on every RPC_HOSTS destination beside the live binary with its checksum verified, swap and restart one full-node unit at a time waiting for each to return within ten blocks of the head before the next, never touching a validator unit, and record the binary checksum every host now runs."
+do_2       = "Build paxd from the merged revision, skip every RPC_HOSTS destination that is in VALIDATOR_HOSTS or BRINGUP_NEVER_PLACE or that a RETAINED_ON_VALIDATOR name resolves to, printing \"skipped <name>: retained on a validator host by owner ruling\" for a retained one, stage it on every other destination beside the live binary with its checksum verified, swap and restart one full-node unit at a time waiting for each to return within ten blocks of the head before the next, never staging on a validator host, and record the binary checksum every rolled host runs and each skipped host as not rolled."
 verify_cmd = "timeout 20m go test -C consensus ./internal/blocksync/ -run TestAutoRestartIfBehind -count=1"
 symbols    = ["autoRestartIfBehind"]
 touches    = ["consensus/internal/blocksync/reactor.go", "consensus/internal/blocksync/reactor_test.go", "tools/bringup/sync-fleet.sh"]
@@ -963,7 +1001,7 @@ reqs       = ["1.1", "1.2"]
 
 [task.4.20]
 title      = "Run the indexer as a private Fly app behind the router's history methods"
-status     = "pending"
+status     = "implemented"
 wave       = 4
 requires   = ["2.2", "4.4", "4.6"]
 blocked_on = "the owner's approval of exposing the archive node's CometBFT RPC read-only on its public RPC name: a location on that name's nginx vhost that accepts only POST and proxies to the node's loopback CometBFT RPC, with the node's unsafe routes off and an nginx request rate limit"
@@ -973,13 +1011,13 @@ do_3       = "Import LAYERX_GATEWAY_INDEXER_URL, the indexer's https .internal n
 do_4       = "Add the indexer subcommand: inside the indexer machine its listener answers over TLS under the internal CA, the app holds no public IP, its backfill cursor has reached the cutover, and through the router URL lx_getHistory, px_getHistory and px_getUnifiedHistory each answer a known account's history."
 verify_cmd = "timeout 15m tools/bringup/check-live.sh indexer"
 symbols    = ["check_indexer"]
-touches    = ["docker/platform-indexer/Dockerfile", "docker/platform-indexer/Dockerfile.dockerignore", "platform/hosted/indexer/fly.toml", "tools/bringup/ca.sh", "tools/bringup/check-live.sh"]
+touches    = ["docker/platform-indexer/Dockerfile", "docker/platform-indexer/Dockerfile.dockerignore", "platform/hosted/indexer/fly.toml", "platform/hosted/indexer/fly-init.sh", "tools/bringup/archive-comet-zone.conf", "tools/bringup/archive-comet-location.conf", "tools/bringup/ca.sh", "tools/bringup/check-live.sh"]
 tests      = ["tools/bringup/check-live.test.sh"]
 reqs       = ["20.1", "20.2"]
 
 [task.4.21]
 title      = "Serve the hpx registry at node.hyperpaxeer.com from a Fly app and retire it from the hpx host"
-status     = "implemented"
+status     = "done"
 wave       = 4
 requires   = ["4.14", "0.5", "0.9"]
 do_1       = "Extend docker/hpx-registry/Dockerfile and its Dockerfile.dockerignore with nginx, the landing page, logo and fonts of hpx/hosting and hpx/hosting/nginx-fly.conf, which carries the locations and the /api/register rate limit of hpx/hosting/nginx.conf on a plain listener on [::]:8080 with real_ip_header Fly-Client-IP and X-Forwarded-For set to that address, and add docker/hpx-registry/entrypoint.sh as a root init that starts nginx and the registry on loopback under its user and exits when either exits."
@@ -991,16 +1029,21 @@ symbols    = ["check_hpx"]
 touches    = ["docker/hpx-registry/Dockerfile", "docker/hpx-registry/Dockerfile.dockerignore", "docker/hpx-registry/entrypoint.sh", "hpx/hosting/nginx-fly.conf", "hpx/hosting/fly.toml", "hpx/README.md", "tools/bringup/check-live.sh", "tools/bringup/check-live.test.sh", "tools/bringup/sync-fleet.test.sh"]
 tests      = ["tools/bringup/check-live.test.sh", "tools/bringup/sync-fleet.test.sh"]
 reqs       = ["18.4"]
+revision = "e7badb10d66a221f7d0d8da99a4f56d842244464"
+command = "BRINGUP_HOSTS_FILE=<private hosts file> timeout 10m tools/bringup/check-live.sh hpx"
+exit_code = 0
+log_path = ".logs/4.21-final-hpx-live.log"
+
 
 [task.4.22]
 title      = "Move the public full node off the validator host onto its own server"
 status     = "implemented"
 wave       = 4
 requires   = ["0.5", "4.14"]
-blocked_on = "the owner's move of the DNS record of the apiN name that a validator host serves today to the address of the existing RPC node the task chooses, the owner's one DNS change, given in the private handoff"
-do_1       = "The owner ruled that the existing nodes carry the name: choose among the RPC_HOSTS destinations not in VALIDATOR_HOSTS the node at the head with the most headroom that is not the archive host, install there beside its own apiN vhost the vhost of the apiN name the validator host serves today, and write the node's address for the record only in the private handoff; once the owner's record resolves to that node, run certbot for the name there, check nginx -t and reload."
-do_2       = "Once the name answers eth_blockNumber within ten blocks of the head from the chosen node, stop and disable the full-node unit on the validator host, never a validator unit, remove its apiN nginx site and certificate there, and drop the validator host from RPC_HOSTS in the host map; when task 4.2 has already run, render and install the serving search sidecar of task 4.2 on the chosen node if it does not carry one, as for every serving RPC name."
-do_3       = "Add the rpc-placement subcommand: each of the sixteen public RPC names resolves to an RPC_HOSTS destination that is not in VALIDATOR_HOSTS and answers eth_blockNumber within ten blocks of the highest answer, and over ssh no validator host runs a full-node unit or listens on a public HTTP or HTTPS port, never printing an address."
+blocked_on = "Owner ruling: \"leave api1 as is\"; the move is withdrawn."
+do_1       = "Withdrawn by owner ruling: the name stays on the host that serves it today; the vhost staged on the chosen node remains inert, with no DNS change and no certificate."
+do_2       = "Withdrawn by owner ruling: the full node on the validator host is not retired, its nginx site, certificate and binary stay, and RPC_HOSTS keeps it."
+do_3       = "Add the rpc-placement subcommand: each of the sixteen public RPC names resolves to an RPC_HOSTS destination and answers eth_blockNumber within ten blocks of the highest answer; a name listed in RETAINED_ON_VALIDATOR whose destination is a validator host prints \"retained <name>: on a validator host by owner ruling\" and does not fail, while any other name on a validator host fails; over ssh no validator host runs a full-node unit or listens on a public HTTP or HTTPS port, except that the retained host's full-node unit and its listeners for the retained names' nginx sites are printed as retained; never printing an address."
 verify_cmd = "timeout 10m tools/bringup/check-live.sh rpc-placement"
 symbols    = ["check_rpc_placement"]
 touches    = ["tools/bringup/check-live.sh"]
@@ -1009,7 +1052,7 @@ reqs       = ["1.2", "18.3"]
 
 [task.4.23]
 title      = "Run the four x-websearch attestors as private Fly apps and remove them from the validator hosts"
-status     = "pending"
+status     = "implemented"
 wave       = 4
 requires   = ["4.2", "0.6"]
 blocked_on = "the owner's sealed offline copy of the four registered attestor keys with their submitter and receiver keys, before the validator-host copies are removed; the owner approved the move itself, one slot at a time"
@@ -1062,7 +1105,7 @@ do_2 = "Confirm tools/bringup/docs-names.sh still derives its allowed list from 
 
 [task.0.9]
 title = "Serve every public name on the edge host through the wildcard, proxied to its Fly app, with no per-name DNS record"
-status = "implemented"
+status = "done"
 wave = 0
 requires = ["0.5"]
 verify_cmd = "timeout 10m tools/bringup/check-live.sh edge"
@@ -1073,6 +1116,10 @@ reqs = ["1.1", "1.3"]
 do_1 = "Write tools/bringup/edge.sh with add <name> <app> [<port> stream] and remove <name>, run on the edge host where the *.paxeer.network wildcard lands: add renders one nginx site per public name under /etc/nginx/sites-available named after the name, with the certbot certificate for the name issued by edge.sh over HTTP-01 through the wildcard when absent and renewed by certbot's timer, proxy_pass https://<app>.fly.dev with proxy_set_header Host <app>.fly.dev, X-Forwarded-Host the public name, X-Forwarded-For and X-Forwarded-Proto set, the Upgrade and Connection headers passed for websockets, proxy_ssl_server_name on, proxy_ssl_verify on against the system roots and a resolver with a short validity so the fly.dev address may change, every other request and response header unchanged; it enables the site, runs nginx -t and reloads, is idempotent, changes no site it did not render (the sixteen RPC names stay on their nodes, paxscan.io on its proxy host, node.hyperpaxeer.com on its existing site until task 4.21 registers it), and prints one line per name without an address."
 do_2 = "Give edge.sh the stream mode the mTLS names need: machine.paxeer.network on 9454 and index.paxeer.network on 443 pass through unchanged to the app's dedicated IPv4 on the same port through an nginx stream block keyed by SNI with ssl_preread, where a port shared with HTTP names moves those names' server blocks behind the stream block on a loopback port the first time a stream name is added on it, so client certificates reach the app untouched; remove deletes the site, and the stream entry when one exists, and reloads."
 do_3 = "Add the edge subcommand: every registered name resolves to the edge host, answers over TLS with a valid certificate for the name, and reaches its app (the app's fly.dev name answers the same readiness route with the same body), stream names present the app's own certificate through the edge, and no rendered site names a validator host; add fixture cases to tools/bringup/check-live.test.sh and a render test tools/bringup/edge.test.sh comparing the rendered site of one HTTP name and one stream name against expected text."
+revision = "3df583333c69b96d90174806635ae6be55d3f094"
+command = "BRINGUP_HOSTS_FILE=<private hosts file> timeout 10m tools/bringup/check-live.sh edge"
+exit_code = 0
+log_path = ".logs/0.9-edge-live.log"
 
 [task.0.10]
 title = "Retire app.paxeer.network: the human web origin is https://paxportwallet.com everywhere"
@@ -1085,3 +1132,30 @@ touches = ["platform/hosted/human/web-deployment.yaml", "platform/hosted/node/de
 tests = ["platform/hosted/human/test_material.py"]
 reqs = ["3.4"]
 do_1 = "The owner ruled that paxportwallet.com is the wallet app's frontend and task 4.26 made it the derivation origin: set the human web origin to https://paxportwallet.com in the human web deployment, the node deployment, the beta cluster script, the material test and the web end-to-end harness, so the passkey relying party, the CORS allow list and the signing origin agree, and leave the changelog's history as written; the gate proves the retired name is gone from the tree outside the spec and the changelog."
+
+[task.0.11]
+title = "Create the internal event-source and webhooks apps and stage the kernel's event tokens"
+status = "implemented"
+wave = 0
+requires = ["0.5"]
+verify_cmd = "timeout 10m tools/bringup/check-live.sh events-upstream"
+symbols = ["check_events_upstream"]
+touches = ["tools/bringup/check-live.sh", "tools/bringup/check-live.test.sh"]
+tests = ["tools/bringup/check-live.test.sh"]
+reqs = ["6.3", "9.2"]
+do_1 = "Create the paxeer-internal app with its journeys and approvals process groups on their own volumes from platform/hosted/internal/fly.toml and deploy it, so each group's init (platform/hosted/internal/fly-init.sh) writes its /data/run/producer-token on first boot before any kernel contact; create the paxeer-webhooks app from platform/hosted/webhooks/fly.toml and the paxeer-registry app from platform/hosted/registry/fly.toml with flyctl apps create only, no machines and no deploy."
+do_2 = "Generate the webhooks trigger token once in a tmpfs directory on the operator host and stage it in one step to all four consumers, each through flyctl secrets import --stage on stdin: WEBHOOKS_SOURCE_TRIGGER_TOKEN on paxeer-webhooks, ENDPOINT_EVENTS_WEBHOOKS_TOKEN on paxeer-shared-endpoint, HUMAN_EVENTS_WEBHOOKS_TOKEN on paxeer-human-service and REGISTRY_WEBHOOKS_EVENTS_TOKEN on paxeer-registry, deleting the tmpfs directory in the same step so no trigger file is retained; copy the journeys and approvals producer tokens from their machines into HUMAN_EVENTS_JOURNEY_TOKEN and HUMAN_EVENTS_APPROVAL_TOKEN on paxeer-human-service through flyctl ssh console piped into flyctl secrets import --stage, never printed."
+do_3 = "Add the events-upstream subcommand to tools/bringup/check-live.sh: flyctl secrets list --app paxeer-human-service --json names HUMAN_EVENTS_JOURNEY_TOKEN, HUMAN_EVENTS_APPROVAL_TOKEN and HUMAN_EVENTS_WEBHOOKS_TOKEN; the journeys and approvals machines of paxeer-internal each hold a non-empty /data/run/producer-token read as a byte count through flyctl ssh console; paxeer-webhooks and paxeer-registry exist; each of paxeer-webhooks, paxeer-shared-endpoint, paxeer-human-service and paxeer-registry lists its trigger secret name; the subcommand prints names and counts only, never a value; add one fixture case to tools/bringup/check-live.test.sh."
+
+[task.0.12]
+title = "Make each internal event source wait for its principal set instead of exiting"
+status = "done"
+wave = 0
+requires = ["0.5"]
+verify_cmd = "timeout 20m cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-internal principals"
+symbols = ["run", "await_principals"]
+touches = ["platform/hosted/internal/src/bin/layerx-event-source.rs", "platform/hosted/internal/src/events.rs"]
+tests = ["platform/hosted/internal/src/events.rs"]
+reqs = ["9.2"]
+do_1 = "platform/hosted/internal/fly-init.sh writes credentials.json as {} for journeys and approvals, and Service::open in platform/hosted/internal/src/events.rs refuses an empty principal set, so layerx-event-source (the binary docker/platform-internal/Dockerfile builds) exits once its TLS identity exists; in its startup path, run in platform/hosted/internal/src/bin/layerx-event-source.rs, before Service::open is called, poll the credentials file through an await_principals function in events.rs until it parses with at least one principal, reporting waiting-principals on the readiness route meanwhile; Service::open keeps refusing an empty or malformed principal set exactly as now, and the change touches the internal image's crate only, never docker/kernel or the kernel image."
+do_2 = "Add one unit test of the wait (an empty principal set reports waiting-principals and the wait ends once the file holds a principal) and one of the still-refused malformed credentials file to the existing test module of platform/hosted/internal/src/events.rs, both named so the principals filter selects them."

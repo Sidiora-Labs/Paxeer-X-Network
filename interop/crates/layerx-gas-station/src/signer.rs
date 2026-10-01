@@ -31,9 +31,13 @@ impl LocalSigner {
     /// Refuses an absent or invalid key from the configuration's named environment variable.
     pub fn from_config(config: &StationConfig) -> Result<Self, SignerError> {
         config.validate().map_err(|_| SignerError::KeySource)?;
-        let secret = Zeroizing::new(
-            std::env::var(&config.relayer_key_env).map_err(|_| SignerError::KeySource)?,
-        );
+        Self::from_env(&config.relayer_key_env)
+    }
+
+    /// # Errors
+    /// Refuses an absent or invalid key in the named environment variable.
+    pub fn from_env(name: &str) -> Result<Self, SignerError> {
+        let secret = Zeroizing::new(std::env::var(name).map_err(|_| SignerError::KeySource)?);
         Self::decode(&secret)
     }
 
