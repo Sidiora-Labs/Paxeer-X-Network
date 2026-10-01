@@ -12,7 +12,7 @@
 
 enum {
     LXP_STATE_MAX_CELLS = 512,
-    LXP_STATE_MAX_IDEMPOTENCY = 512,
+    LXP_STATE_MAX_IDEMPOTENCY = 8192,
     LXP_STATE_MAX_RECEIPT_BYTES = 4096
 };
 
@@ -33,7 +33,7 @@ struct lx_account_registry;
 typedef struct lxp_state_store {
     lxp_state_cell cells[LXP_STATE_MAX_CELLS];
     size_t count;
-    lxp_idempotency_key_state idempotency[LXP_STATE_MAX_IDEMPOTENCY];
+    lxp_idempotency_key_state *idempotency;
     size_t idempotency_count;
     uint64_t next_sequence;
     struct lx_account_registry *accounts;
@@ -118,6 +118,7 @@ lxp_result lxp_idempotency_record(lxp_state_journal *journal,
                                   const uint8_t idempotency_key[32],
                                   const uint8_t *receipt,
                                   size_t receipt_length);
+lxp_result lxp_idempotency_reserve(lxp_state_store *store);
 lxp_result lxp_idempotency_can_commit(const lxp_state_journal *journal);
 void lxp_idempotency_commit_staged(lxp_state_journal *journal);
 

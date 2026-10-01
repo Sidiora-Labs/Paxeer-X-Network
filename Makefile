@@ -2162,9 +2162,10 @@ test-admission: $(BUILD_DIR)/tests/lxp_test_admission
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_admission
 
 $(BUILD_DIR)/tests/lxp_test_idempotency: tests/state/lxp_test_idempotency.c \
-		$(LIBRARY)
+		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
+		$(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
 
 test-idempotency: $(BUILD_DIR)/tests/lxp_test_idempotency
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_idempotency

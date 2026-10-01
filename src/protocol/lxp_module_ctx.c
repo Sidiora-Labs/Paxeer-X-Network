@@ -1254,6 +1254,8 @@ static lxp_result preview_apply_journal(const lxp_state_journal *journal,
         if (journal->staged_idempotency.receipt_length >
             LXP_STATE_MAX_RECEIPT_BYTES)
             return LXP_FATAL_INVARIANT;
+        status = lxp_idempotency_reserve(preview);
+        if (status != LXP_OK) return status;
         preview->idempotency[preview->idempotency_count++] =
             journal->staged_idempotency;
     }
@@ -1298,10 +1300,18 @@ lxp_result lxp_module_ctx_preview_state_root(
     preview_state->count = journal->store->count;
     (void)memcpy(preview_state->cells, journal->store->cells,
                  sizeof(preview_state->cells));
-    preview_state->idempotency_count = journal->store->idempotency_count;
-    (void)memcpy(preview_state->idempotency, journal->store->idempotency,
-                 sizeof(preview_state->idempotency));
-    if (journal->store->accounts != NULL) {
+    if (journal->store->idempotency_count != 0U) {
+        status = lxp_idempotency_reserve(preview_state);
+        if (status == LXP_OK) {
+            (void)memcpy(preview_state->idempotency,
+                         journal->store->idempotency,
+                         journal->store->idempotency_count *
+                             sizeof(preview_state->idempotency[0]));
+            preview_state->idempotency_count =
+                journal->store->idempotency_count;
+        }
+    }
+    if (status == LXP_OK && journal->store->accounts != NULL) {
         preview_accounts = (lx_account_registry *)malloc(
             sizeof(*preview_accounts));
         if (preview_accounts == NULL)
@@ -1310,7 +1320,7 @@ lxp_result lxp_module_ctx_preview_state_root(
             (void)memset(preview_accounts, 0, sizeof(*preview_accounts));
             status = account_registry_preview(ctx, preview_accounts);
         }
-    } else if (ctx->staged_account_count != 0U) {
+    } else if (status == LXP_OK && ctx->staged_account_count != 0U) {
         status = LXP_FATAL_INVARIANT;
     }
     preview_state->accounts = preview_accounts;

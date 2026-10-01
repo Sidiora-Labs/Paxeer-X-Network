@@ -8,12 +8,7 @@
 #include <string.h>
 
 enum {
-    LXP_LEGACY_LAST_MODULE_ID = 8,
-    LXP_STATE_MAX_LEAVES = LXP_STATE_MAX_CELLS +
-                           LXP_STATE_MAX_IDEMPOTENCY +
-                           LXP_KERNEL_MAX_MODULE_REGISTRATIONS +
-                           LXP_KERNEL_MAX_MODULE_KV +
-                           LXP_KERNEL_MAX_BLOBS + 2
+    LXP_LEGACY_LAST_MODULE_ID = 8
 };
 
 static lxp_result kernel_state_validate(const lxp_kernel *kernel)
@@ -112,21 +107,40 @@ static int bytes_compare(const uint8_t *left, size_t left_length,
     return left_length < right_length ? -1 : left_length != right_length;
 }
 
-static void leaves_sort(state_leaf *leaves, size_t count)
+static lxp_result leaves_sort(state_leaf *leaves, size_t count)
 {
-    size_t i;
-    for (i = 1U; i < count; ++i) {
-        state_leaf value = leaves[i];
-        size_t position = i;
-        while (position != 0U &&
-               bytes_compare(value.key, value.key_length,
-                             leaves[position - 1U].key,
-                             leaves[position - 1U].key_length) < 0) {
-            leaves[position] = leaves[position - 1U];
-            --position;
+    state_leaf *scratch;
+    state_leaf *source = leaves;
+    state_leaf *target;
+    size_t width;
+    if (count < 2U) return LXP_OK;
+    if (count > SIZE_MAX / sizeof(*scratch)) return LXP_ERR_LENGTH_LIMIT;
+    scratch = (state_leaf *)malloc(count * sizeof(*scratch));
+    if (scratch == NULL) return LXP_ERR_ARENA_EXHAUSTED;
+    target = scratch;
+    for (width = 1U; width < count; width *= 2U) {
+        size_t start;
+        for (start = 0U; start < count; start += 2U * width) {
+            size_t middle = start + width < count ? start + width : count;
+            size_t end = middle + width < count ? middle + width : count;
+            size_t left = start;
+            size_t right = middle;
+            size_t out = start;
+            while (left < middle && right < end)
+                target[out++] = bytes_compare(
+                    source[right].key, source[right].key_length,
+                    source[left].key, source[left].key_length) < 0 ?
+                    source[right++] : source[left++];
+            while (left < middle) target[out++] = source[left++];
+            while (right < end) target[out++] = source[right++];
         }
-        leaves[position] = value;
+        target = source;
+        source = source == leaves ? scratch : leaves;
     }
+    if (source != leaves)
+        (void)memcpy(leaves, source, count * sizeof(*leaves));
+    free(scratch);
+    return LXP_OK;
 }
 
 static lxp_result state_node_hash(const uint8_t left[32],
@@ -146,7 +160,8 @@ static lxp_result leaves_root(state_leaf *leaves, size_t count,
     lxp_result status;
     if (count == 0U)
         return lxp_hash_domain(LXP_DOMAIN_STATE_LEAF, NULL, 0U, root);
-    leaves_sort(leaves, count);
+    status = leaves_sort(leaves, count);
+    if (status != LXP_OK) return status;
     while (level_count > 1U) {
         size_t next_count = (level_count + 1U) / 2U;
         for (i = 0U; i < next_count; ++i) {
@@ -173,7 +188,8 @@ static lxp_result leaves_proof(state_leaf *leaves, size_t count,
     if (leaves == NULL || key == NULL || root == NULL || proof == NULL ||
         count == 0U || count > UINT32_MAX)
         return LXP_ERR_NON_CANONICAL;
-    leaves_sort(leaves, count);
+    status = leaves_sort(leaves, count);
+    if (status != LXP_OK) return status;
     for (index = 0U; index < count; ++index)
         if (bytes_compare(leaves[index].key, leaves[index].key_length,
                           key, key_length) == 0)
@@ -409,7 +425,11 @@ lxp_result lx_account_registry_proofs(
         }
         leaves[index].original_index = index;
     }
-    leaves_sort(leaves, count);
+    status = leaves_sort(leaves, count);
+    if (status != LXP_OK) {
+        free(leaves);
+        return status;
+    }
     level_counts[0] = count;
     levels[0] = (uint8_t *)calloc(count, 32U);
     if (levels[0] == NULL) {
@@ -610,27 +630,33 @@ static lxp_result universal_leaves(const lxp_kernel *kernel,
                     value, 8U);
 }
 
-static lxp_result state_subtree_root(
-    const lxp_kernel *kernel, uint16_t module_id,
-    const uint8_t account_root_override[32], uint8_t root[32])
+static lxp_result state_leaves_allocate(const lxp_kernel *kernel,
+                                        uint16_t module_id,
+                                        state_leaf **leaves)
 {
-    state_leaf leaves[LXP_STATE_MAX_LEAVES];
-    size_t count = 0U;
+    size_t capacity = module_id == 0U ?
+        kernel->state->count + kernel->state->idempotency_count +
+            kernel->module_count + 2U :
+        kernel->module_kv_count + kernel->blob_count;
+    *leaves = (state_leaf *)malloc(
+        (capacity == 0U ? 1U : capacity) * sizeof(**leaves));
+    return *leaves == NULL ? LXP_ERR_ARENA_EXHAUSTED : LXP_OK;
+}
+
+static lxp_result state_subtree_leaves(
+    const lxp_kernel *kernel, uint16_t module_id,
+    const uint8_t account_root_override[32], state_leaf *leaves,
+    size_t *count)
+{
     size_t i;
     lxp_result status;
-    if (kernel == NULL || root == NULL || module_id >
-        LXP_MODULE_RESERVED_COUNT) return LXP_ERR_NON_CANONICAL;
-    status = kernel_state_validate(kernel);
-    if (status != LXP_OK) return status;
-    if (module_id == 0U) {
-        status = universal_leaves(
-            kernel, account_root_override, leaves, &count);
-        return status == LXP_OK ? leaves_root(leaves, count, root) : status;
-    }
+    if (module_id == 0U)
+        return universal_leaves(kernel, account_root_override, leaves, count);
+    *count = 0U;
     for (i = 0U; i < kernel->module_kv_count; ++i) {
         const lxp_module_kv_entry *entry = &kernel->module_kv[i];
         if (entry->module_id != module_id) continue;
-        status = leaf_set(&leaves[count++], entry->key, entry->key_length,
+        status = leaf_set(&leaves[(*count)++], entry->key, entry->key_length,
                           entry->value, entry->value_length);
         if (status != LXP_OK) return status;
     }
@@ -640,11 +666,31 @@ static lxp_result state_subtree_root(
         if (blob->module_id != module_id) continue;
         key[0] = 0xffU;
         (void)memcpy(key + sizeof(key) - 32U, blob->key, 32U);
-        status = leaf_set(&leaves[count++], key, sizeof(key), blob->bytes,
+        status = leaf_set(&leaves[(*count)++], key, sizeof(key), blob->bytes,
                           blob->length);
         if (status != LXP_OK) return status;
     }
-    return leaves_root(leaves, count, root);
+    return LXP_OK;
+}
+
+static lxp_result state_subtree_root(
+    const lxp_kernel *kernel, uint16_t module_id,
+    const uint8_t account_root_override[32], uint8_t root[32])
+{
+    state_leaf *leaves;
+    size_t count = 0U;
+    lxp_result status;
+    if (kernel == NULL || root == NULL || module_id >
+        LXP_MODULE_RESERVED_COUNT) return LXP_ERR_NON_CANONICAL;
+    status = kernel_state_validate(kernel);
+    if (status != LXP_OK) return status;
+    status = state_leaves_allocate(kernel, module_id, &leaves);
+    if (status != LXP_OK) return status;
+    status = state_subtree_leaves(kernel, module_id, account_root_override,
+                                  leaves, &count);
+    if (status == LXP_OK) status = leaves_root(leaves, count, root);
+    free(leaves);
+    return status;
 }
 
 lxp_result lxp_state_subtree_root(const lxp_kernel *kernel,
@@ -666,38 +712,21 @@ lxp_result lxp_state_subtree_proof(
     const lxp_kernel *kernel, uint16_t module_id, const uint8_t *key,
     size_t key_length, uint8_t root[32], lxp_state_proof *proof)
 {
-    state_leaf leaves[LXP_STATE_MAX_LEAVES];
+    state_leaf *leaves;
     size_t count = 0U;
-    size_t index;
     lxp_result status;
     if (kernel == NULL || key == NULL || root == NULL || proof == NULL ||
         module_id > LXP_MODULE_RESERVED_COUNT)
         return LXP_ERR_NON_CANONICAL;
     status = kernel_state_validate(kernel);
     if (status != LXP_OK) return status;
-    if (module_id == 0U) {
-        status = universal_leaves(kernel, NULL, leaves, &count);
-        return status == LXP_OK ?
-            leaves_proof(leaves, count, key, key_length, root, proof) : status;
-    }
-    for (index = 0U; index < kernel->module_kv_count; ++index) {
-        const lxp_module_kv_entry *entry = &kernel->module_kv[index];
-        if (entry->module_id != module_id) continue;
-        status = leaf_set(&leaves[count++], entry->key, entry->key_length,
-                          entry->value, entry->value_length);
-        if (status != LXP_OK) return status;
-    }
-    for (index = 0U; index < kernel->blob_count; ++index) {
-        const lxp_module_blob *blob = &kernel->blobs[index];
-        uint8_t blob_key[LXP_MODULE_MAX_KEY_BYTES + 1U] = { 0 };
-        if (blob->module_id != module_id) continue;
-        blob_key[0] = 0xffU;
-        (void)memcpy(blob_key + sizeof(blob_key) - 32U, blob->key, 32U);
-        status = leaf_set(&leaves[count++], blob_key, sizeof(blob_key),
-                          blob->bytes, blob->length);
-        if (status != LXP_OK) return status;
-    }
-    return leaves_proof(leaves, count, key, key_length, root, proof);
+    status = state_leaves_allocate(kernel, module_id, &leaves);
+    if (status != LXP_OK) return status;
+    status = state_subtree_leaves(kernel, module_id, NULL, leaves, &count);
+    if (status == LXP_OK)
+        status = leaves_proof(leaves, count, key, key_length, root, proof);
+    free(leaves);
+    return status;
 }
 
 lxp_result lxp_state_supply_check(const lxp_kernel *kernel)

@@ -2,6 +2,7 @@
 
 #include "layerx/lxp_hash.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 static lxp_result key_hash(const uint8_t *actor_did, size_t actor_did_length,
@@ -80,6 +81,15 @@ lxp_result lxp_idempotency_record(lxp_state_journal *journal,
                      receipt_length);
     journal->has_idempotency = true;
     return LXP_OK;
+}
+
+lxp_result lxp_idempotency_reserve(lxp_state_store *store)
+{
+    if (store == NULL) return LXP_ERR_NON_CANONICAL;
+    if (store->idempotency != NULL) return LXP_OK;
+    store->idempotency = (lxp_idempotency_key_state *)calloc(
+        LXP_STATE_MAX_IDEMPOTENCY, sizeof(*store->idempotency));
+    return store->idempotency == NULL ? LXP_ERR_ARENA_EXHAUSTED : LXP_OK;
 }
 
 lxp_result lxp_idempotency_can_commit(const lxp_state_journal *journal)

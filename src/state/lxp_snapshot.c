@@ -860,6 +860,8 @@ static lxp_result snapshot_load(
     if (status == LXP_OK) status = lxp_codec_read_u32(&reader, &count);
     if (status == LXP_OK && count > LXP_STATE_MAX_IDEMPOTENCY)
         status = LXP_ERR_LENGTH_LIMIT;
+    if (status == LXP_OK && count != 0U)
+        status = lxp_idempotency_reserve(state);
     for (i = 0U; status == LXP_OK && i < count; ++i) {
         lxp_byte_span receipt;
         status = read_fixed(&reader, state->idempotency[i].key_hash, 32U);
@@ -1088,6 +1090,8 @@ static lxp_result snapshot_load(
     if (status == LXP_OK && live_accounts != NULL &&
         snapshot_version == (uint16_t)LXP_PROTOCOL_VERSION_OCCUPANCY)
         status = lx_account_registry_reserve(live_accounts, accounts->count);
+    if (status == LXP_OK && state->idempotency_count != 0U)
+        status = lxp_idempotency_reserve(kernel->state);
     if (status == LXP_OK) {
         for (i = 0U; i < kernel->blob_count; ++i)
             free(kernel->blobs[i].bytes);
@@ -1113,9 +1117,11 @@ static lxp_result snapshot_load(
         kernel->state->count = state->count;
         (void)memcpy(kernel->state->cells, state->cells,
                      state->count * sizeof(state->cells[0]));
+        if (state->idempotency_count != 0U)
+            (void)memcpy(kernel->state->idempotency, state->idempotency,
+                         state->idempotency_count *
+                             sizeof(state->idempotency[0]));
         kernel->state->idempotency_count = state->idempotency_count;
-        (void)memcpy(kernel->state->idempotency, state->idempotency,
-                     state->idempotency_count * sizeof(state->idempotency[0]));
         kernel->state->next_sequence = state->next_sequence;
         (void)memcpy(kernel->modules, candidate->modules,
                      candidate->module_count * sizeof(candidate->modules[0]));
@@ -1133,6 +1139,7 @@ static lxp_result snapshot_load(
     lx_account_registry_release(source_accounts);
     free(accounts);
     free(source_accounts);
+    free(state->idempotency);
     free(state);
     free(candidate);
     return status;
