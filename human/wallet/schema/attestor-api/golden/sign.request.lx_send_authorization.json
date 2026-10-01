@@ -7,5 +7,32 @@
     "node-2",
     "node-3"
   ],
-  "activity": "000377777777777777777777777777777777"
+  "activity": "000377777777777777777777777777777777",
+  "disclosure": {
+    "account": "8181818181818181818181818181818181818181818181818181818181818181",
+    "module": "asset",
+    "operation": 5,
+    "amounts": [
+      {
+        "asset": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+        "amount": "5000000"
+      }
+    ],
+    "destinations": [
+      "1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e"
+    ],
+    "sequence": "1",
+    "not_before": "1800000000",
+    "not_after": "1900000000"
+  },
+  "approval": {
+    "version": 1,
+    "principal": "user-0001",
+    "key_id": "key-ed",
+    "network_id": 125,
+    "protocol_version": 3,
+    "session_id": "session-send-authorization",
+    "activity_digest": "6666666666666666666666666666666666666666666666666666666666666666",
+    "expires_at": "1900000000"
+  }
 }

@@ -6132,7 +6132,9 @@ fn attestor_kms_failure(error: &layerx_human_kms::attestor::AttestorError) -> Km
         AttestorError::Refused { .. } => error
             .refusal_code()
             .map_or(KmsError::Refused, attestor_refusal),
-        AttestorError::Disclosure(_) | AttestorError::WrongNetwork { .. } => KmsError::Refused,
+        AttestorError::Disclosure(_)
+        | AttestorError::WrongNetwork { .. }
+        | AttestorError::UnsupportedActivity { .. } => KmsError::Refused,
         AttestorError::Timeout { .. } => KmsError::Timeout,
         AttestorError::Unavailable { .. } => KmsError::Unavailable,
         AttestorError::Authentication { .. } => KmsError::Authentication,
@@ -6147,6 +6149,7 @@ fn attestor_custody_failure(error: layerx_human_kms::attestor::AttestorError) ->
     match error {
         AttestorError::Disclosure(error) => CustodyError::Sign(error),
         AttestorError::WrongNetwork { .. } => CustodyError::InvalidNetwork,
+        AttestorError::UnsupportedActivity { .. } => CustodyError::Kms(KmsError::Refused),
         other => CustodyError::Kms(attestor_kms_failure(&other)),
     }
 }
@@ -6429,10 +6432,24 @@ impl AttestorKms {
             not_before: authorization.not_before,
             not_after: authorization.not_after,
         };
+        // The approval binding comes from the authorized plan and the stored key owner: both
+        // signing stages carry the same principal and expiry and their own boundary session.
+        let authorization_session = layerx_human_kms::attestor::new_session_id("authorization")
+            .map_err(|error| attestor_kms_failure(&error))?;
+        let activity_session = layerx_human_kms::attestor::new_session_id("activity")
+            .map_err(|error| attestor_kms_failure(&error))?;
+        let approval = layerx_human_kms::attestor::SendApproval {
+            principal: &owner,
+            authorization_session: &authorization_session,
+            activity_session: &activity_session,
+            expires_at: authorization.expires_at.min(authorization.not_after),
+        };
         let signed = self
             .signer(&key_id, public_key, binding.network_id())
             .and_then(|signer| {
-                signer.sign_send(&debit, &options, || Ok(assertion.as_str().to_owned()))
+                signer.sign_send(&debit, &options, &approval, || {
+                    Ok(assertion.as_str().to_owned())
+                })
             })
             .map_err(|error| {
                 self.refused(&error);
@@ -6499,11 +6516,19 @@ impl AttestorKms {
         let signer = self
             .signer(&key_id, public_key, binding.network_id())
             .map_err(attestor_custody_failure)?;
+        let session = layerx_human_kms::attestor::new_session_id("activity")
+            .map_err(attestor_custody_failure)?;
+        let approval = layerx_human_kms::attestor::Approval {
+            principal: &owner,
+            session_id: &session,
+            expires_at: request.disclosure().expiry.not_after,
+        };
         let signature = signer
             .sign_activity(
                 request.canonical_bytes(),
                 request.disclosure(),
                 request.registry(),
+                &approval,
                 &assertion,
             )
             .map_err(|error| {
