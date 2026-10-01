@@ -167,6 +167,9 @@ import (
 	layerxexchangemodule "github.com/sidiora-labs/paxeer-network/modules/layerxexchange"
 	layerxexchangekeeper "github.com/sidiora-labs/paxeer-network/modules/layerxexchange/keeper"
 	layerxexchangetypes "github.com/sidiora-labs/paxeer-network/modules/layerxexchange/types"
+	layerxgov "github.com/sidiora-labs/paxeer-network/modules/layerxgov"
+	layerxgovclient "github.com/sidiora-labs/paxeer-network/modules/layerxgov/client/cli"
+	layerxgovtypes "github.com/sidiora-labs/paxeer-network/modules/layerxgov/types"
 	"github.com/sidiora-labs/paxeer-network/modules/mint"
 	mintclient "github.com/sidiora-labs/paxeer-network/modules/mint/client/cli"
 	mintkeeper "github.com/sidiora-labs/paxeer-network/modules/mint/keeper"
@@ -214,6 +217,7 @@ func getGovProposalHandlers() []govclient.ProposalHandler {
 		ibcclientclient.UpgradeProposalHandler,
 		mintclient.UpdateMinterHandler,
 		layerxbridgeclient.BridgeProposalHandler,
+		layerxgovclient.LayerXProposalHandler,
 		// this line is used by starport scaffolding # stargate/app/govProposalHandler
 	)
 
@@ -245,7 +249,7 @@ var (
 		staking.AppModuleBasic{},
 		mint.AppModuleBasic{},
 		distr.AppModuleBasic{},
-		gov.NewAppModuleBasic(getGovProposalHandlers()...),
+		layerXGovernanceBasic{gov.NewAppModuleBasic(getGovProposalHandlers()...)},
 		params.AppModuleBasic{},
 		slashing.AppModuleBasic{},
 		feegrantmodule.AppModuleBasic{},
@@ -909,6 +913,7 @@ func New(
 		AddRoute(tokenfactorytypes.RouterKey, tokenfactorymodule.NewProposalHandler(app.TokenFactoryKeeper)).
 		AddRoute(evmtypes.RouterKey, evm.NewProposalHandler(app.EvmKeeper)).
 		AddRoute(layerxbridgetypes.RouterKey, layerxbridgemodule.NewProposalHandler(app.LayerXBridgeKeeper)).
+		AddRoute(layerxgovtypes.RouterKey, layerxgov.NewProposalHandler(app.MsgServiceRouter())).
 		AddRoute(layerxcustodytypes.RouterKey, layerxcustodymodule.NewProposalHandler(app.LayerXCustodyKeeper))
 	if len(enabledProposals) != 0 {
 		govRouter.AddRoute(wasm.RouterKey, wasm.NewWasmProposalHandler(app.WasmKeeper, enabledProposals))
@@ -3559,4 +3564,15 @@ func (s *gigaFeeTokenStateDB) credit(addr sdk.AccAddress, amount *uint256.Int, r
 func init() {
 	// override max wasm size to 2MB
 	wasmtypes.MaxWasmSize = 2 * 1024 * 1024
+}
+
+type layerXGovernanceBasic struct{ gov.AppModuleBasic }
+
+func (b layerXGovernanceBasic) RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) {
+	b.AppModuleBasic.RegisterLegacyAminoCodec(cdc)
+	layerxgovtypes.RegisterCodec(cdc)
+}
+func (b layerXGovernanceBasic) RegisterInterfaces(registry types.InterfaceRegistry) {
+	b.AppModuleBasic.RegisterInterfaces(registry)
+	layerxgovtypes.RegisterInterfaces(registry)
 }
