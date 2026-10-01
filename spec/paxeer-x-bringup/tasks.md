@@ -53,6 +53,15 @@
   - [x] 0.10 Retire app.paxeer.network: the human web origin is https://paxportwallet.com everywhere
     - The owner ruled that paxportwallet.com is the wallet app's frontend and task 4.26 made it the derivation origin: set the human web origin to https://paxportwallet.com in the human web deployment, the node deployment, the beta cluster script, the material test and the web end-to-end harness, so the passkey relying party, the CORS allow list and the signing origin agree, and leave the changelog's history as written; the gate proves the retired name is gone from the tree outside the spec and the changelog.
     - _Requirements: 3.4_
+  - [ ] 0.11 Create the internal event-source and webhooks apps and stage the kernel's event tokens
+    - Create the paxeer-internal app with its journeys and approvals process groups on their own volumes from platform/hosted/internal/fly.toml and deploy it, so each group's init (platform/hosted/internal/fly-init.sh) writes its /data/run/producer-token on first boot before any kernel contact; create the paxeer-webhooks app from platform/hosted/webhooks/fly.toml and the paxeer-registry app from platform/hosted/registry/fly.toml with flyctl apps create only, no machines and no deploy.
+    - Generate the webhooks trigger token once in a tmpfs directory on the operator host and stage it in one step to all four consumers, each through flyctl secrets import --stage on stdin: WEBHOOKS_SOURCE_TRIGGER_TOKEN on paxeer-webhooks, ENDPOINT_EVENTS_WEBHOOKS_TOKEN on paxeer-shared-endpoint, HUMAN_EVENTS_WEBHOOKS_TOKEN on paxeer-human-service and REGISTRY_WEBHOOKS_EVENTS_TOKEN on paxeer-registry, deleting the tmpfs directory in the same step so no trigger file is retained; copy the journeys and approvals producer tokens from their machines into HUMAN_EVENTS_JOURNEY_TOKEN and HUMAN_EVENTS_APPROVAL_TOKEN on paxeer-human-service through flyctl ssh console piped into flyctl secrets import --stage, never printed.
+    - Add the events-upstream subcommand to tools/bringup/check-live.sh: flyctl secrets list --app paxeer-human-service --json names HUMAN_EVENTS_JOURNEY_TOKEN, HUMAN_EVENTS_APPROVAL_TOKEN and HUMAN_EVENTS_WEBHOOKS_TOKEN; the journeys and approvals machines of paxeer-internal each hold a non-empty /data/run/producer-token read as a byte count through flyctl ssh console; paxeer-webhooks and paxeer-registry exist; each of paxeer-webhooks, paxeer-shared-endpoint, paxeer-human-service and paxeer-registry lists its trigger secret name; the subcommand prints names and counts only, never a value; add one fixture case to tools/bringup/check-live.test.sh.
+    - _Requirements: 6.3, 9.2_
+  - [ ] 0.12 Make each internal event source wait for its principal set instead of exiting
+    - platform/hosted/internal/fly-init.sh writes credentials.json as {} for journeys and approvals, and Service::open in platform/hosted/internal/src/events.rs refuses an empty principal set, so layerx-event-source (the binary docker/platform-internal/Dockerfile builds) exits once its TLS identity exists; in its startup path, run in platform/hosted/internal/src/bin/layerx-event-source.rs, before Service::open is called, poll the credentials file through an await_principals function in events.rs until it parses with at least one principal, reporting waiting-principals on the readiness route meanwhile; Service::open keeps refusing an empty or malformed principal set exactly as now, and the change touches the internal image's crate only, never docker/kernel or the kernel image.
+    - Add one unit test of the wait (an empty principal set reports waiting-principals and the wait ends once the file holds a principal) and one of the still-refused malformed credentials file to the existing test module of platform/hosted/internal/src/events.rs, both named so the principals filter selects them.
+    - _Requirements: 9.2_
 
 ## Wave 1 - Kernel app
 
@@ -319,7 +328,7 @@
 ```json
 {
   "waves": [
-    { "id": 0,  "tasks": ["0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "0.10"] },
+    { "id": 0,  "tasks": ["0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "0.10", "0.11", "0.12"] },
     { "id": 1,  "tasks": ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "1.10", "1.11"] },
     { "id": 2,  "tasks": ["2.1", "2.2", "2.4", "2.6", "2.7", "2.8"] },
     { "id": 3,  "tasks": ["3.1", "3.2", "3.3", "3.4", "3.5", "3.6", "3.7", "3.9", "3.10", "3.11"] },
