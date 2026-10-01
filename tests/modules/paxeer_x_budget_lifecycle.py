@@ -173,12 +173,12 @@ def runtime_worker(directory):
         activities = directory / 'activities'; activities.mkdir(mode=0o700)
         def invoke(operation, amount=0, expected=0, replay=None, source_sequence=1):
             nonlocal sequence, bob_sequence
-            unauthorized = operation.startswith('unauthorized')
+            unauthorized = operation.startswith('unauthorized') or operation == 'credit-bob'
             seq = bob_sequence if unauthorized else sequence
             wire = replay or activities / (operation + '-' + str(seq))
             command = [str(TARGET / 'budget-client'), str(directory / 'run/layerxd.lni.sock'), str(directory / 'salt'),
                        'replay' if replay else operation, str(seq), str(amount), str(wire), str(expected)]
-            env = runtime.env | {'PAXEER_X_FIXTURE_KEYS': str(directory / 'keys'), 'BUDGET_SOURCE_SEQUENCE': str(source_sequence)}
+            env = runtime.env | {'PAXEER_X_FIXTURE_KEYS': str(directory / 'keys'), 'BUDGET_SOURCE_SEQUENCE': str(source_sequence), 'BUDGET_CREDIT_PROFILE': str(directory / 'custody.profile'), 'BUDGET_CREDIT_FILE': str(directory / (operation + '.credit'))}
             completed = subprocess.run(command, env=env, capture_output=True, timeout=45)
             label = ('replay-' if replay else '') + operation + '-' + str(seq)
             (directory / (label + '.log')).write_bytes(completed.stdout + completed.stderr)
@@ -208,7 +208,32 @@ def runtime_worker(directory):
             invoke(operation, amount, expected)
             after = state()
             fixture.require(before == after, operation + ' changed economic state')
-            cases.append('runtime-' + operation)
+            cases.append('runtime-' + operation + '-' + str(expected))
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+        for actor, operation in [('treasury', 'credit-owner'), ('bob', 'credit-bob')]:
+            public = Ed25519PrivateKey.from_private_bytes((directory / ('keys/' + actor + '.seed')).read_bytes()).public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+            did = ('did:layerx:' + public.hex()).encode()
+            account_name = b'agent:' + did + b':main'
+            beneficiary = hashlib.sha256(b'LX:ACCOUNT:v1' + len(account_name).to_bytes(4, 'big') + account_name).digest()
+            amount = 1000000
+            runtime.produce(operation + '-deposit', ['python3', fixture.ROOT / 'platform/hosted/paxeer/evm.py', 'send',
+                '--rpc', runtime.rpc_url, '--chain', '125', '--key-file', directory / 'keys/deployer.key', '--value', str(amount * 10**12),
+                '0x0000000000000000000000000000000000001013', 'deposit(bytes32)', '0x' + beneficiary.hex()])
+            deposited = json.loads((directory / (operation + '-deposit.log')).read_text())
+            fixture.require(int(deposited['status'], 16) == 1, 'real fee deposit reverted')
+            logs = [entry for entry in deposited['logs'] if entry['address'].lower() == '0x0000000000000000000000000000000000001013' and len(entry['topics']) == 4]
+            fixture.require(len(logs) == 1, 'exactly one native custody deposit')
+            entry = logs[0]; data = bytes.fromhex(entry['data'].removeprefix('0x'))
+            fixture.require(entry['topics'][2].removeprefix('0x').lower() == fixture.ASSET and data[:32] == beneficiary and int.from_bytes(data[32:64], 'big') == amount, 'custody deposit identity/amount')
+            runtime.wait(lambda: int(runtime.rpc('eth_blockNumber'), 16) >= int(deposited['blockNumber'], 16) + 2)
+            runtime.produce(operation + '-proof', [runtime.binary('layerx-custody-proof'), 'light-credit',
+                '--rpc', 'http://127.0.0.1:' + str(runtime.ports[2]), '--profile', directory / 'custody.profile',
+                '--deposit-id', entry['topics'][1], '--owner-key', '0x' + public.hex(), '--output', directory / (operation + '.credit')])
+            credit = (directory / (operation + '.credit')).read_bytes()
+            fixture.require(len(credit) > 363 and credit[:5] == b'LXDC3' and credit[43:75] == bytes.fromhex(entry['topics'][1][2:]) and credit[75:107].hex() == fixture.ASSET and credit[107:139] == beneficiary and credit[139:171] == public and int.from_bytes(credit[191:207], 'big') == amount, 'native credit proof differs from real deposit')
+            invoke(operation)
+        cases.append('runtime-real-native-fee-funding')
         initial_snapshots = set((directory / 'node/checkpoints').glob('*.lxs'))
         invoke('create', 300)
         invoke('spend', 120)

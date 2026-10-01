@@ -179,6 +179,7 @@ static int verify_replica(const char *directory)
 
 
 #include "layerx/lx_budget.h"
+#include "layerx/lxp_bridge_credit.h"
 #include "layerx/lxp_state_proof.h"
 
 static int budget_read(int fd, uint16_t module, const uint8_t *key, size_t key_length, const char *label)
@@ -223,10 +224,75 @@ static int budget_read(int fd, uint16_t module, const uint8_t *key, size_t key_l
     free(witness); release_envelope(&response); return 0;
 }
 
+static int build_budget_activity(const signer *key, uint64_t account_sequence,
+                          uint32_t activity_type, uint64_t timestamp, const uint8_t *payload, size_t payload_length, uint8_t *output,
+                          size_t capacity, size_t *length)
+{
+    uint8_t *arena_storage;
+    lxp_activity activity;
+    lxp_arena arena;
+    lxp_byte_span encoded;
+    uint8_t preimage[32];
+    uint8_t signature[64];
+    size_t index;
+    (void)memset(&activity, 0, sizeof(activity));
+    activity.protocol_version = LXP_PROTOCOL_VERSION_STATE_COMMITMENT;
+    activity.network_id = NETWORK_ID;
+    activity.activity_type = activity_type;
+    activity.actor_did = (lxp_byte_span){
+        REGISTERED_DID, sizeof(REGISTERED_DID) - 1U};
+    activity.authority = (lxp_byte_span){key->public_key, 32U};
+    activity.account_sequence = account_sequence;
+    {
+        struct timespec now;
+        if (clock_gettime(CLOCK_REALTIME, &now) != 0) return 1;
+        activity.timestamp_bound.not_before = timestamp != 0U ? timestamp : (uint64_t)now.tv_sec * 1000U;
+        activity.timestamp_bound.not_after = activity.timestamp_bound.not_before + 300000U;
+    }
+    for (index = 0U; index < 8U; ++index)
+        activity.idempotency_key[index] =
+            (uint8_t)(account_sequence >> ((7U - index) * 8U));
+    activity.idempotency_key[31] = 0xa5U;
+    activity.fee_limit = (lxp_u128){0U, activity_type == LXP_BRIDGE_CREDIT ? 0U : 10000U};
+    if (activity_type == LXP_BRIDGE_CREDIT) {
+        lxp_bridge_credit credit;
+        lxp_bridge_profile profile;
+        FILE *file = fopen(getenv("BUDGET_CREDIT_PROFILE"), "rb");
+        REQUIRE(file != NULL && fread(profile.bytes, 1U, sizeof(profile.bytes), file) == sizeof(profile.bytes));
+        REQUIRE(fgetc(file) == EOF && fclose(file) == 0);
+        REQUIRE(lxp_bridge_credit_parse(payload, payload_length, &credit) == LXP_OK);
+        uint64_t seconds = load_u64(credit.proof + 29U);
+        REQUIRE(seconds <= UINT64_MAX / 1000U);
+        REQUIRE(lxp_bridge_credit_verify(&profile, &credit, NETWORK_ID, 3U, NULL,
+            seconds * 1000U, activity.idempotency_key, NULL) == LXP_OK);
+    }
+    activity.payload = (lxp_byte_span){payload, payload_length};
+    if (lxp_hash_payload(payload, payload_length, activity.payload_hash) !=
+            LXP_OK ||
+        lxp_activity_signing_preimage(&activity, preimage) != LXP_OK ||
+        sign_raw(key, preimage, sizeof(preimage), signature) != 0)
+        return 1;
+    activity.signature = (lxp_byte_span){signature, sizeof(signature)};
+    arena_storage = (uint8_t *)malloc(LXP_MAX_ACTIVITY_BYTES);
+    if (arena_storage == NULL) return 1;
+    if (lxp_arena_init(&arena, arena_storage, LXP_MAX_ACTIVITY_BYTES) !=
+            LXP_OK ||
+        lxp_activity_encode(&activity, &arena, &encoded) != LXP_OK ||
+        encoded.length > capacity) {
+        free(arena_storage);
+        return 1;
+    }
+    (void)memcpy(output, encoded.bytes, encoded.length);
+    *length = encoded.length;
+    free(arena_storage);
+    return 0;
+}
+
 static int budget_submit(int fd, const signer *actor, uint64_t sequence, uint32_t type,
     const uint8_t *payload, size_t payload_length, const char *path, bool replay, int expected)
 {
-    uint8_t encoded[ACTIVITY_CAPACITY], id[32], query[33] = {1U};
+    static uint8_t encoded[LXP_MAX_ACTIVITY_BYTES];
+    uint8_t id[32], query[33] = {1U};
     size_t length;
     FILE *file;
     if (replay) {
@@ -234,7 +300,7 @@ static int budget_submit(int fd, const signer *actor, uint64_t sequence, uint32_
         length = fread(encoded, 1U, sizeof(encoded), file);
         REQUIRE(length > 0U && fgetc(file) == EOF && fclose(file) == 0);
     } else {
-        REQUIRE(build_activity(actor, sequence, type, 0U, payload, payload_length, encoded, sizeof(encoded), &length) == 0);
+        REQUIRE(build_budget_activity(actor, sequence, type, 0U, payload, payload_length, encoded, sizeof(encoded), &length) == 0);
         file = fopen(path, "wx"); REQUIRE(file != NULL);
         REQUIRE(fwrite(encoded, 1U, length, file) == length && fclose(file) == 0);
     }
@@ -297,9 +363,15 @@ int main(int argc, char **argv)
         REQUIRE(close(fd)==0); return 0;
     }
     uint64_t sequence=strtoull(argv[4],NULL,10), amount=strtoull(argv[5],NULL,10);
-    uint8_t payload[512]={0U,1U}; memcpy(payload+2,object,32);
+    static uint8_t payload[LXP_MAX_PAYLOAD_BYTES]={0U,1U}; memcpy(payload+2,object,32);
     uint32_t type=LX_BUDGET_DEFUND; size_t length=LX_BUDGET_DEFUND_PAYLOAD_BYTES;
-    if (strncmp(argv[3],"create",6)==0) {
+    if (strncmp(argv[3], "credit-", 7U) == 0) {
+        type = LXP_BRIDGE_CREDIT;
+        FILE *credit_file = fopen(getenv("BUDGET_CREDIT_FILE"), "rb");
+        REQUIRE(credit_file != NULL);
+        length = fread(payload, 1U, sizeof(payload), credit_file);
+        REQUIRE(length > 363U && fgetc(credit_file) == EOF && fclose(credit_file) == 0);
+    } else if (strncmp(argv[3],"create",6)==0) {
         type=LX_BUDGET_CREATE; length=LX_BUDGET_CREATE_V2_PAYLOAD_BYTES; payload[1]=2U;
         memcpy(payload+34,budget,32); memcpy(payload+66,asset,32); payload[98]=0x55U;
         REQUIRE(lxp_u128_to_be((lxp_u128){0,200},payload+130)==LXP_OK);
@@ -319,7 +391,7 @@ int main(int argc, char **argv)
     } else {
         REQUIRE(lxp_u128_to_be((lxp_u128){strcmp(argv[3],"overflow")==0?UINT64_MAX:0U,amount},payload+34)==LXP_OK);
     }
-    bool unauthorized=strncmp(argv[3],"unauthorized",12)==0;
+    bool unauthorized=strncmp(argv[3],"unauthorized",12)==0 || strcmp(argv[3],"credit-bob")==0;
     memcpy(REGISTERED_DID,unauthorized?bob_did:did,76);
     REQUIRE(budget_submit(fd,unauthorized?&bob:&owner,sequence,type,payload,length,argv[6],strcmp(argv[3],"replay")==0,atoi(argv[7]))==0);
     REQUIRE(close(fd)==0); return 0;
