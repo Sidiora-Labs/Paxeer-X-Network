@@ -757,7 +757,7 @@ reqs       = ["10.4"]
 
 [task.3.14]
 title      = "Give the owner daemon its trust history and deployment journal"
-status     = "pending"
+status     = "implemented"
 wave       = 3
 requires   = ["3.5", "3.13"]
 do_1       = "layerx-agentd (agent/crates/layerx-agentd/src/main.rs) requires LAYERX_AGENT_SEQUENCER_TRUST_HISTORY and LAYERX_AGENT_DEPLOYMENT_JOURNAL, which platform/hosted/human/material.py writes into agent-config as /run/human-private/agent/trust-history and /run/human-private/agent/journal; in human_owner_prepare of docker/kernel/init.sh project $human_state/trust-history as trust-history and the material's journal directory $human_out/journal as journal, and add the trust history to the human-owner wait list."

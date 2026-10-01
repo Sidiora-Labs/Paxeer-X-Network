@@ -724,7 +724,7 @@ fresh "$keys/human-authority/session-operator" 0:0 0600 openssl rand -hex 32
 human_owner_prepare() {
 	human_project human-owner 4021 "$human_out/agent-config:env" "$tls/receipt-authority/ca.der:ca.der" \
 		"$keys/human-authority/session-operator:session-operator" "$keys/human-authority/authority-token:authority-token" \
-		"$keys/tokens/program-token:program-token"
+		"$keys/tokens/program-token:program-token" "$human_state/trust-history:trust-history" "$human_out/journal:journal"
 }
 
 human_tls_prepare() {
@@ -790,7 +790,7 @@ human_root=$human_state/movement service human-movement 4020 \
 	/usr/local/bin/human-entrypoint movement
 
 human_root=$human_state/agent service human-owner 4021 \
-	"$genesis_files $human_policy $tls/receipt-authority/ca.der $keys/human-authority/authority-token" \
+	"$genesis_files $human_policy $tls/receipt-authority/ca.der $keys/human-authority/authority-token $human_state/trust-history" \
 	human_owner_prepare - -- \
 	/bin/sh -ec "$human_env" sh env \
 	LAYERX_AGENT_HUMAN_AUTHORITY_ENDPOINT=https://localhost:9445 \

@@ -1868,3 +1868,19 @@ symbol     = "check_kernel_app"
 observed   = "The verify_cmd refused at this pin with fail machines app=paxeer-human-service machines=1 started=1 volume-at-data=0 (.logs/3.13-live.log, exit 1); the kernel app is not yet redeployed with its volume, the expected outcome before the deploy."
 assumption = "The kernel app redeploy with the volume at /data lets the gate proceed and the human-security role start on the produced history."
 severity   = "warning"
+
+[observation.3.14.1]
+task       = "3.14"
+file       = "platform/hosted/human/material.py"
+symbol     = "journal_directory"
+observed   = "layerx-agentd load_registry (agent/crates/layerx-agentd/src/main.rs:554) only reads the deployment journal, the .admission proofs and their .deployment records verified against the sequencer trust history; its one producer is material.py (lines 301-322), which copies the paired records of the operator policy's journal_directory into the material's journal directory and refuses an empty or unpaired one, so human_owner_prepare projects that directory and the trust_history step's file rather than encoding a second history."
+assumption = "The operator policy at human-policy/policy.json names a journal_directory holding the kernel's admitted deployments before the human material is generated."
+severity   = "note"
+
+[observation.3.14.2]
+task       = "3.14"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_kernel_app"
+observed   = "The verify_cmd refused at this pin with fail machines app=paxeer-human-service machines=1 started=1 volume-at-data=0 (.logs/3.14-live.log, exit 1); the kernel app is not yet redeployed with its volume, the expected outcome before the deploy."
+assumption = "The kernel app redeploy with the volume at /data lets the gate proceed and the human-owner role start on the projected history and journal."
+severity   = "warning"
