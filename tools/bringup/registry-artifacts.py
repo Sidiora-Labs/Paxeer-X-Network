@@ -226,6 +226,9 @@ def prepare(manifest_path, directory):
              'source': manifest['source'], 'quota_root': str(directory / 'quota'),
              'phase': 'allocating', 'containers': [], 'jobs': [], 'mount': None}
     write_json(directory / 'lifecycle.json', state)
+    quota_root = directory / 'quota'
+    quota_root.mkdir(mode=0o711)
+    quota_root.chmod(0o711)
     with locked(directory):
         environment = {'PATH': os.environ.get('PATH', os.defpath), 'LANG': 'C.UTF-8'}
         environment.update(LAYERX_REGISTRY_NODE_QUOTA_ROOT=state['quota_root'],
@@ -273,7 +276,7 @@ def delegate(path, pid):
     workers = path / 'workers'
     workers.mkdir()
     (workers / 'cgroup.subtree_control').write_text('+cpu +memory +pids +io')
-    for entry in [workers, workers / 'cgroup.procs', workers / 'cgroup.threads', workers / 'cgroup.subtree_control']:
+    for entry in [path / 'cgroup.procs', workers, workers / 'cgroup.procs', workers / 'cgroup.threads', workers / 'cgroup.subtree_control']:
         os.chown(entry, 4030, 4030)
     return workers
 
