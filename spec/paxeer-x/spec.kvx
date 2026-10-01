@@ -23091,7 +23091,7 @@ title = "Implement the layerx-pending-core boundary and its admin plane"
 status = "in_progress"
 mode = "BUILD"
 wave = 2
-requires = ["0.2"]
+requires = ["0.2", "24.19"]
 reqs = ["1060.2", "1060.3", "1053.3", "1053.4"]
 do_1 = "Reconcile the retained capability against the current candidate and explicit resolution sections. Reuse conforming implementation; complete only unmet criteria. Resolve historical paths against the current source without narrowing the capability or repeating operational transitions already completed."
 do_2 = "Add the crate platform/hosted/core (package layerx-platform-core, binary layerx-core-boundary) in the hosted house style - std TcpListener, rustls server TLS from DER cert and PKCS#8 DER key, hand-framed HTTP/1.1, no tokio - opening two listeners: LAYERX_CORE_LISTEN (default 0.0.0.0:9443) and LAYERX_CORE_ADMIN_LISTEN (default 0.0.0.0:9444), each with its own certificate, the core listener accepting an optional client certificate chaining to LAYERX_CORE_CLIENT_CA_DER."
@@ -31797,3 +31797,101 @@ deployment_profile = "product"
 completion_policy = "Qualifies authority credential isolation and source-level Kubernetes provisioning. Kernel token provisioning is required by task24.1; deployed route and role qualification and the complete task22.5 lifecycle remain separate and mandatory."
 path_policy = "Modify existing paths in place and create the two declared gate files. Kernel initialization is outside this task."
 evidence_policy = "Retain credentials, build manifests and raw gate logs in access-controlled storage; publish only technical source."
+
+[req.216]
+title = "Durable caller-bound supervisor reset identity and recovery"
+ac_1 = "Add a bounded versioned reset request with caller-supplied stable reset_id, request digest and network binding, plus read-only status by reset_id on the existing private Unix socket. Reject conflicting reuse, malformed identities, wrong network and unauthorized peers without mutation. No public endpoint or widened trust boundary."
+ac_2 = "Persist admitted operation identity, target generation, one chosen genesis timestamp, canonical producer-input bindings and eventual original response in an owned fsync-backed state directory outside both discarded DATA_DIR and ephemeral RUN_DIR. Completed outcomes survive handler/supervisor/core restart and removal of RUN_DIR; successful responses do not delete them. Never persist raw credentials."
+ac_3 = "Serialize duplicate callers onto the same admitted operation. A repeated completed identity returns the identical original reset_id/result without stopping daemons, deleting post-reset data, rebuilding genesis or advancing generation. Recovery reconciles durable phases before daemon startup and never blindly repeats an already completed reset."
+ac_4 = "Use the actual existing bootstrap and native daemons unchanged. Freeze --genesis-timestamp-ms and canonical input identities at admission; interrupted recovery cannot select new time, metadata, fee parameters or authority. Distinguish recoverable incomplete operation from completed outcome; never fabricate completion from a live port."
+ac_5 = "The actual-process gate covers first reset, concurrent/repeated identities, conflicting reuse, lost response, SIGKILL/restart, ephemeral RUN_DIR recreation, corrupt or unwritable durable records and preservation of original canonical rebuilt genesis. This prerequisite qualifies stable identity and recoverable state only; it does not discharge req1060.3 universal503/no-effect or authorize a destructive retry after an ambiguous activation. Ambiguous activation must remain explicit and block full core qualification."
+
+[req.217]
+title = "Preserve authoritative funding receipts across destructive node reset"
+ac_1 = "Persist the full existing idempotency/request binding and exact signed SEND canonical bytes before native admission. Recovery uses the same activity identity and unchanged authoritative receipt verification; it never re-signs using a fresh sequence, validity window or idempotency value. Preserve every current response and refusal assertion."
+ac_2 = "Before any destructive reset is admitted, enumerate every relevant durable funding intent under the existing admin serialization lock and resolve its authoritative outcome. Verify the original receipt, activity, network, asset, authorized signer and result using the existing production verification path; retain exact verified bytes and request/activity binding in durable core storage outside DATA_DIR. An unavailable, inconsistent, oversized, corrupt or unwritable required archive refuses reset before supervisor contact and before any economic state change."
+ac_3 = "The receipt archive is a durable replay authority, not an invented outcome or an unverified response cache. After actual node and replica state are reset or restarted, a repeated funding key returns its original verified outcome without contacting an erased generation to re-execute the SEND. Preserve terminal refusals and conflicts and all receipt/finality checks."
+ac_4 = "Use actual custody-funded treasury and recipient, real SEND, native receipt/balance proofs and real supervisor reset. Prove same-key replay before/after core restart and after node reset, no second economic effect, and real archive storage/read failure with no reset effect. No fake receipt source, mocked reset server or recorded-chain substitute."
+ac_5 = "This independently implementable core path preserves evidence before reset; it does not alone solve post-effect final-journal failure or transactional reset activation. Keep task103.6.2 unqualified until req218 and its original full gate pass."
+
+[req.218]
+title = "Complete reset activation and remove mandatory post-effect outcome writes"
+ac_1 = "Integrate stable supervisor identities and verified receipt preservation without changing any current assertion, response contract, native authority, receipt/finality check or storage bound. Every required storage operation that can yield503 must precede the associated irreversible economic/reset effect;503 leaves economic state unchanged. Do not reinterpret202/422/503 or substitute a dropped connection."
+ac_2 = "Prepare the reset generation through the original canonical bootstrap/genesis builder while retaining the previous live generation until a validated durable activation decision is ready. Freeze the admitted timestamp and exact canonical inputs. Define secure prepare, activate and rollback/recovery operations that do not require a new successful durable write after irreversible activation to identify the original outcome. If that cannot be achieved with the leased production interfaces, stop unqualified; never replace actual reset with a marker-only operation."
+ac_3 = "The stable caller identity, durable activation authority and existing real native state establish exactly which generation was committed. Recovery at every crash boundary either retains the previous economic generation or resumes the same admitted transition; it never clears a subsequently active generation or returns another reset_id. Successful reset still stops both daemons, discards the old node state through the real producer, rebuilds canonical genesis and restarts both."
+ac_4 = "For SEND, eliminate a mandatory post-effect core outcome-journal write only after proving that the durable exact intent plus unchanged authoritative receipt recovery and pre-reset receipt preservation reconstruct the original result for the entire idempotency lifetime. Do not ignore a required failed write or infer funded state from admission, HTTP200 or account balance alone."
+ac_5 = "One actual-process gate exercises the complete first-reset, real funded SEND, response-loss, crash-at-admission/prepare/activation/completion, persistent/ephemeral restart, actual filesystem failure, same-key conflict/replay and receipt preservation contract. Retain all original core tests and strict all-target Clippy coverage in the full task103.6.2 gate; this prerequisite supplies the missing interface and does not waive that original gate or release readiness."
+
+[task.24.17]
+title = "Persist stable supervisor reset identities and original outcomes"
+status = "in_progress"
+mode = "BUILD"
+wave = 3
+requires = ["0.2", "24.16"]
+reqs = ["216"]
+do_1 = "Implement versioned reset admission and identity lookup in the real supervisor with a bounded durable state helper. Bind caller identity to request/network and preserve original outcomes outside discarded data and ephemeral run state. Keep existing private socket permissions and bounded parsing."
+do_2 = "Reconcile durable phase/generation state before starting real daemons; recover admitted operations with the same frozen timestamp and canonical bootstrap inputs. Refuse ambiguous destructive recovery rather than guessing that a reset did or did not occur. Preserve the existing unversioned protocol during this prerequisite so the pending core consumer is not silently broken; its retirement is owned by24.19."
+do_3 = "Package the helper in the canonical node image and select a protected durable supervisor-state directory on the existing persistent volume outside DATA_DIR and RUN_DIR. Reuse the existing volume and preserve deployment.yaml unchanged. If existing volume semantics cannot support the required durability, record the precise missing interface before qualification. No bootstrap, native consensus, core or shared-manifest edits."
+do_4 = "Run the single focused gate against prebuilt actual native processes and the unchanged canonical bootstrap. When the protected bootstrap producer is unavailable, implement all source and retain a concrete unqualified prerequisite; do not alter it or replace it with a fixture."
+touches = ["platform/hosted/node/supervisor.sh", "platform/hosted/node/reset_state.py", "platform/hosted/node/tests/test_reset_state.py", "platform/hosted/node/tests/reset_recovery.py", "docker/platform-node/Dockerfile", "tools/paxeer-x/gates/24.17.sh"]
+planned_paths = ["platform/hosted/node/reset_state.py", "platform/hosted/node/tests/test_reset_state.py", "platform/hosted/node/tests/reset_recovery.py", "tools/paxeer-x/gates/24.17.sh"]
+build_cmd = "make -j5 LXP_REVISION=\"$REVISION\" PAXEER_GO_JOBS=5 layerxd layerx-genesis-build layerx-handover && bash tools/paxeer-x/gates/24.16.sh build"
+verify_cmd = "timeout 15m python3 platform/hosted/node/tests/reset_recovery.py"
+gate_kind = "planned-prerequisite"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the focused gate result, original30-minute deadline, second relevant failed repair or missing leased production interface. Preserve all assertions and record exact source, command, exit and private log."
+completion_policy = "Only the assigned production durability prerequisite is credited. Req1060.3 and task103.6.2 retain their entire original contract and gate; no release or deployment credit."
+path_policy = "Exact declared paths only; protect4.4 bootstrap lease until qualified publication. Root claims and integrates. No shared Cargo manifest, native consensus, fixture-authority or existing assertion weakening."
+evidence_policy = "Private source-bound artifacts, generated identities and raw logs outside the repository; no credential collection or public operational records."
+
+[task.24.18]
+title = "Retain verified SEND outcomes before node reset"
+status = "in_progress"
+mode = "BUILD"
+wave = 3
+requires = ["0.2", "24.16"]
+reqs = ["217"]
+do_1 = "Extend the existing core source with a bounded durable verified-receipt archive and reset admission barrier; retain exact request, canonical SEND and activity binding. Keep every existing storage refusal and pending-intent preflight check."
+do_2 = "Archive and fsync every required authoritative outcome before invoking any destructive supervisor reset. Resolve ambiguity through the existing native receipt authority; absence or inconsistency blocks reset. Recover original funding results from verified retained evidence after actual reset without submitting another SEND."
+do_3 = "Preserve every existing test and response assertion. Add actual funded SEND/reset/replay and real archive storage-failure cases using the genuine source-bound custody/native fixture. Do not change supervisor or bootstrap; the current private reset transport is consumed unchanged until24.19 integrates the new protocol."
+touches = ["platform/hosted/core/src/main.rs", "platform/hosted/core/tests/boundary.rs", "platform/hosted/core/tests/core_chain.py", "platform/hosted/core/tests/receipt_retention.py", "tools/paxeer-x/gates/24.18.sh"]
+planned_paths = ["platform/hosted/core/tests/receipt_retention.py", "tools/paxeer-x/gates/24.18.sh"]
+build_cmd = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core --no-run --message-format=json && make -j5 LXP_REVISION=\"$REVISION\" PAXEER_GO_JOBS=5 layerxd layerx-genesis-build layerx-handover && bash tools/paxeer-x/gates/24.16.sh build"
+verify_cmd = "timeout 15m python3 platform/hosted/core/tests/receipt_retention.py"
+gate_kind = "planned-prerequisite"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the focused gate result, original30-minute deadline, second relevant failed repair or missing leased production interface. Preserve all assertions and record exact source, command, exit and private log."
+completion_policy = "Only the assigned production durability prerequisite is credited. Req1060.3 and task103.6.2 retain their entire original contract and gate; no release or deployment credit."
+path_policy = "Exact declared paths only; protect4.4 bootstrap lease until qualified publication. Root claims and integrates. No shared Cargo manifest, native consensus, fixture-authority or existing assertion weakening."
+evidence_policy = "Private source-bound artifacts, generated identities and raw logs outside the repository; no credential collection or public operational records."
+
+[task.24.19]
+title = "Commit replay-safe reset activation without post-effect journal dependency"
+status = "pending"
+mode = "BUILD"
+wave = 4
+requires = ["24.17", "24.18", "4.4"]
+reqs = ["218"]
+do_1 = "After4.4 is qualified and published, add secure generation staging/activation/rollback through the actual bootstrap and data-directory producer. Keep all original genesis, fee, module, path and authority assertions. Do not hold or modify bootstrap while4.4 is active."
+do_2 = "Bind a durable activation decision to the original caller reset identity and staged canonical generation. Preserve the prior live generation until the required durability checks succeed; prove exact recovery at all effect boundaries. Do not claim universal503/no-effect if any mandatory post-effect write can still fail."
+do_3 = "Wire core reset to stable supervisor admission/status and recover the original outcome. Require the verified receipt-preservation barrier before activation. Remove dependence on a post-effect core journal append only when the durable intent, authoritative receipt and reset activation records fully reconstruct the original response."
+do_4 = "Execute the complete actual-process crash/storage-fault/replay gate without mocked nodes, supervisors or receipts. Preserve task103.6.2 original full core suite and strict all-target Clippy as its separate required completion gate; do not mark103.6.2 complete from this prerequisite."
+touches = ["platform/hosted/node/supervisor.sh", "platform/hosted/node/reset_state.py", "platform/hosted/node/data_directory.py", "platform/hosted/node/bootstrap.sh", "platform/hosted/node/tests/test_data_directory.py", "platform/hosted/node/tests/reset_recovery.py", "platform/hosted/core/src/main.rs", "platform/hosted/core/tests/boundary.rs", "tools/qualification/paxeer-x/supervisor-reset-recovery.py", "tools/paxeer-x/gates/24.19.sh"]
+planned_paths = ["tools/qualification/paxeer-x/supervisor-reset-recovery.py", "tools/paxeer-x/gates/24.19.sh"]
+build_cmd = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core --no-run --message-format=json && make -j5 LXP_REVISION=\"$REVISION\" PAXEER_GO_JOBS=5 layerxd layerx-genesis-build layerx-handover && bash tools/paxeer-x/gates/24.16.sh build"
+verify_cmd = "timeout 15m python3 tools/qualification/paxeer-x/supervisor-reset-recovery.py"
+gate_kind = "planned-prerequisite"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the focused gate result, original30-minute deadline, second relevant failed repair or missing leased production interface. Preserve all assertions and record exact source, command, exit and private log."
+completion_policy = "Only the assigned production durability prerequisite is credited. Req1060.3 and task103.6.2 retain their entire original contract and gate; no release or deployment credit."
+path_policy = "Exact declared paths only; protect4.4 bootstrap lease until qualified publication. Root claims and integrates. No shared Cargo manifest, native consensus, fixture-authority or existing assertion weakening."
+evidence_policy = "Private source-bound artifacts, generated identities and raw logs outside the repository; no credential collection or public operational records."
