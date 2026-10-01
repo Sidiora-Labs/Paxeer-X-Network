@@ -170,13 +170,37 @@ lxp_result lx_escrow_result_encode(const lx_escrow_economic_result *result,
     return LXP_OK;
 }
 
+lxp_result lx_escrow_result_encode_v2(
+    const lx_escrow_economic_result *result,
+    uint8_t bytes[LX_ESCROW_RESULT_V2_BYTES])
+{
+    lxp_result status;
+    if (result == NULL || bytes == NULL || !result->context_bound ||
+        lxp_ct_is_zero(result->context_digest, 32U))
+        return LXP_ERR_NON_CANONICAL;
+    status = lx_escrow_result_encode(result, bytes);
+    if (status != LXP_OK) return status;
+    bytes[LX_ESCROW_RESULT_BYTES] = (uint8_t)LX_ESCROW_RESULT_CONTEXT_VERSION;
+    (void)memcpy(bytes + LX_ESCROW_RESULT_BYTES + 1U, result->context_digest,
+                 32U);
+    return LXP_OK;
+}
+
+/* Accepts the legacy 243-byte projection (context unbound) and the versioned
+ * record that appends a version byte and the authorized context digest. */
 lxp_result lx_escrow_result_decode(const uint8_t *bytes, size_t length,
                                    lx_escrow_economic_result *result)
 {
     uint16_t ordinal;
     lxp_result status;
     if (bytes == NULL || result == NULL ||
-        length != (size_t)LX_ESCROW_RESULT_BYTES)
+        (length != (size_t)LX_ESCROW_RESULT_BYTES &&
+         length != (size_t)LX_ESCROW_RESULT_V2_BYTES))
+        return LXP_ERR_NON_CANONICAL;
+    if (length == (size_t)LX_ESCROW_RESULT_V2_BYTES &&
+        (bytes[LX_ESCROW_RESULT_BYTES] !=
+             (uint8_t)LX_ESCROW_RESULT_CONTEXT_VERSION ||
+         lxp_ct_is_zero(bytes + LX_ESCROW_RESULT_BYTES + 1U, 32U)))
         return LXP_ERR_NON_CANONICAL;
     ordinal = (uint16_t)(((uint16_t)bytes[32] << 8U) | (uint16_t)bytes[33]);
     if (ordinal == 0U || ordinal > 7U ||
@@ -202,6 +226,11 @@ lxp_result lx_escrow_result_decode(const uint8_t *bytes, size_t length,
     (void)memcpy(result->transfer_set_root, bytes + 195U, 32U);
     result->global_sequence = lx_escrow_read_u64(bytes + 227U);
     result->timestamp = lx_escrow_read_u64(bytes + 235U);
+    if (length == (size_t)LX_ESCROW_RESULT_V2_BYTES) {
+        result->context_bound = true;
+        (void)memcpy(result->context_digest,
+                     bytes + LX_ESCROW_RESULT_BYTES + 1U, 32U);
+    }
     return LXP_OK;
 }
 
@@ -319,16 +348,15 @@ void lx_escrow_receipt_from_result(const lx_escrow_economic_result *result,
     (void)memcpy(receipt->transfer_set_root, result->transfer_set_root, 32U);
 }
 
-lxp_result lx_escrow_receipt_replay(lxp_module_ctx *ctx,
-                                    const uint8_t key[32],
-                                    lxp_receipt *receipt, bool *found)
+lxp_result lx_escrow_result_lookup(lxp_module_ctx *ctx, const uint8_t key[32],
+                                   lx_escrow_economic_result *result,
+                                   bool *found)
 {
     uint8_t storage_key[LX_ESCROW_RESULT_KEY_BYTES];
-    lx_escrow_economic_result result;
     const uint8_t *value;
     size_t length;
     lxp_result status;
-    if (ctx == NULL || key == NULL || receipt == NULL || found == NULL)
+    if (ctx == NULL || key == NULL || result == NULL || found == NULL)
         return LXP_ERR_NON_CANONICAL;
     *found = false;
     status = lx_escrow_result_key(key, storage_key);
@@ -337,8 +365,96 @@ lxp_result lx_escrow_receipt_replay(lxp_module_ctx *ctx,
                             &length);
     if (status == LXP_ERR_UNKNOWN_FIELD) return LXP_OK;
     if (status != LXP_OK) return status;
-    status = lx_escrow_result_decode(value, length, &result);
+    status = lx_escrow_result_decode(value, length, result);
     if (status != LXP_OK) return status;
+    *found = true;
+    return LXP_OK;
+}
+
+lxp_result lx_escrow_receipt_replay(lxp_module_ctx *ctx,
+                                    const uint8_t key[32],
+                                    lxp_receipt *receipt, bool *found)
+{
+    lx_escrow_economic_result result;
+    lxp_result status;
+    if (receipt == NULL) return LXP_ERR_NON_CANONICAL;
+    status = lx_escrow_result_lookup(ctx, key, &result, found);
+    if (status != LXP_OK || !*found) return status;
+    lx_escrow_receipt_from_result(&result, receipt);
+    return LXP_OK;
+}
+
+lxp_result lx_escrow_context_digest(const uint8_t escrow_id[32],
+                                    uint16_t ordinal,
+                                    const lxp_authority_resolved *authority,
+                                    lxp_u128 amount,
+                                    const uint8_t recipient[32],
+                                    uint32_t basis_points,
+                                    uint8_t digest[32])
+{
+    static const uint8_t tag[16] = {
+        'e', 's', 'c', 'r', 'o', 'w', '-', 'r', 'e', 'p', 'l', 'a', 'y', '-',
+        'v', '2'
+    };
+    uint8_t input[16U + 32U + 2U + 1U + 32U + 32U + 16U + 32U + 4U];
+    size_t offset = 0U;
+    lxp_result status;
+    if (escrow_id == NULL || recipient == NULL || digest == NULL ||
+        ordinal == 0U || ordinal > 7U || lxp_ct_is_zero(escrow_id, 32U))
+        return LXP_ERR_NON_CANONICAL;
+    (void)memset(input, 0, sizeof(input));
+    (void)memcpy(input, tag, sizeof(tag));
+    offset += sizeof(tag);
+    (void)memcpy(input + offset, escrow_id, 32U);
+    offset += 32U;
+    input[offset++] = (uint8_t)(ordinal >> 8U);
+    input[offset++] = (uint8_t)(ordinal & 0xffU);
+    /* The permissionless expiry transition carries no actor context. */
+    if (authority != NULL) {
+        input[offset] = (uint8_t)authority->kind;
+        (void)memcpy(input + offset + 1U, authority->actor, 32U);
+        (void)memcpy(input + offset + 33U, authority->principal, 32U);
+    }
+    offset += 65U;
+    status = lxp_u128_to_be(amount, input + offset);
+    if (status != LXP_OK) return status;
+    offset += 16U;
+    (void)memcpy(input + offset, recipient, 32U);
+    offset += 32U;
+    input[offset++] = (uint8_t)(basis_points >> 24U);
+    input[offset++] = (uint8_t)(basis_points >> 16U);
+    input[offset++] = (uint8_t)(basis_points >> 8U);
+    input[offset++] = (uint8_t)basis_points;
+    if (offset != sizeof(input)) return LXP_FATAL_INVARIANT;
+    return lxp_hash_domain(LXP_DOMAIN_CONTEXT_HASH, input, sizeof(input),
+                           digest);
+}
+
+lxp_result lx_escrow_receipt_replay_bound(lxp_module_ctx *ctx,
+                                          const uint8_t key[32],
+                                          const uint8_t escrow_id[32],
+                                          uint16_t ordinal,
+                                          const uint8_t context_digest[32],
+                                          bool legacy_authorized,
+                                          lxp_receipt *receipt, bool *found)
+{
+    lx_escrow_economic_result result;
+    lxp_result status;
+    if (escrow_id == NULL || context_digest == NULL || receipt == NULL ||
+        found == NULL)
+        return LXP_ERR_NON_CANONICAL;
+    status = lx_escrow_result_lookup(ctx, key, &result, found);
+    if (status != LXP_OK || !*found) return status;
+    *found = false;
+    if (memcmp(result.escrow_id, escrow_id, 32U) != 0 ||
+        result.ordinal != ordinal)
+        return LXP_ERR_CONTEXT_MISMATCH;
+    if (result.context_bound) {
+        if (lxp_ct_memcmp(result.context_digest, context_digest, 32U) != 0)
+            return LXP_ERR_CONTEXT_MISMATCH;
+    } else if (!legacy_authorized) {
+        return LXP_ERR_CONTEXT_MISMATCH;
+    }
     lx_escrow_receipt_from_result(&result, receipt);
     *found = true;
     return LXP_OK;
@@ -349,7 +465,7 @@ lxp_result lx_escrow_receipt_record(lxp_module_ctx *ctx,
                                     const lx_escrow_economic_result *result)
 {
     uint8_t storage_key[LX_ESCROW_RESULT_KEY_BYTES];
-    uint8_t bytes[LX_ESCROW_RESULT_BYTES];
+    uint8_t bytes[LX_ESCROW_RESULT_V2_BYTES];
     const uint8_t *existing;
     size_t existing_length;
     lxp_result status;
@@ -357,7 +473,7 @@ lxp_result lx_escrow_receipt_record(lxp_module_ctx *ctx,
         return LXP_ERR_NON_CANONICAL;
     status = lx_escrow_result_key(key, storage_key);
     if (status != LXP_OK) return status;
-    status = lx_escrow_result_encode(result, bytes);
+    status = lx_escrow_result_encode_v2(result, bytes);
     if (status != LXP_OK) return status;
     status = lxp_ctx_kv_get(ctx, storage_key, sizeof(storage_key), &existing,
                             &existing_length);
@@ -485,18 +601,20 @@ lxp_result lx_escrow_settle(lxp_module_ctx *ctx,
     return lxp_ctx_emit_transfer_set(ctx, &set, receipt);
 }
 
-lxp_result lx_escrow_commit_result(lxp_module_ctx *ctx,
-                                   const lx_escrow_record *record,
-                                   const uint8_t idempotency_key[32],
-                                   const lx_escrow_settlement *settlement,
-                                   uint16_t ordinal, lxp_receipt *receipt)
+lxp_result lx_escrow_commit_bound_result(
+    lxp_module_ctx *ctx, const lx_escrow_record *record,
+    const uint8_t idempotency_key[32],
+    const struct lx_escrow_settlement *settlement,
+    uint16_t ordinal, const uint8_t context_digest[32], lxp_receipt *receipt)
 {
     lx_escrow_economic_result result;
     lxp_result status;
     if (ctx == NULL || record == NULL || idempotency_key == NULL ||
-        settlement == NULL || receipt == NULL)
+        settlement == NULL || context_digest == NULL || receipt == NULL)
         return LXP_ERR_NON_CANONICAL;
     (void)memset(&result, 0, sizeof(result));
+    result.context_bound = true;
+    (void)memcpy(result.context_digest, context_digest, 32U);
     (void)memcpy(result.escrow_id, record->escrow_id, 32U);
     result.ordinal = ordinal;
     result.state_after = record->state;
@@ -518,4 +636,26 @@ lxp_result lx_escrow_commit_result(lxp_module_ctx *ctx,
     if (status != LXP_OK) return status;
     lx_escrow_receipt_from_result(&result, receipt);
     return LXP_OK;
+}
+
+/* Hold opening records its result under the hold identifier itself; its
+ * context is the hold, the operation, the locked amount and the funded
+ * escrow account. */
+lxp_result lx_escrow_commit_result(lxp_module_ctx *ctx,
+                                   const lx_escrow_record *record,
+                                   const uint8_t idempotency_key[32],
+                                   const lx_escrow_settlement *settlement,
+                                   uint16_t ordinal, lxp_receipt *receipt)
+{
+    uint8_t context_digest[32];
+    lxp_result status;
+    if (record == NULL || settlement == NULL || settlement->to == NULL)
+        return LXP_ERR_NON_CANONICAL;
+    status = lx_escrow_context_digest(record->escrow_id, ordinal, NULL,
+                                      settlement->amount, settlement->to->id,
+                                      0U, context_digest);
+    if (status != LXP_OK) return status;
+    return lx_escrow_commit_bound_result(ctx, record, idempotency_key,
+                                         settlement, ordinal, context_digest,
+                                         receipt);
 }
