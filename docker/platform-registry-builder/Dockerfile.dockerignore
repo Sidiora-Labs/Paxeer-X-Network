@@ -1,0 +1,12 @@
+**
+!Dockerfile
+!Dockerfile.dockerignore
+!package.json
+!package-lock.json
+!rust-downloads.lock
+!install-rust.sh
+!cargo-config.toml
+!layerx-rustc
+!layerx-build
+!vendor/
+!vendor/**
