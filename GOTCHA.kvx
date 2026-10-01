@@ -1943,3 +1943,9 @@ area    = "bringup-ca"
 symptom = "A per-row CA rule in check-live ca drifts from ca.sh when the attestor row names are copied into the checker."
 cause   = "ca.sh holds the attestor row list as the attestor_services variable, not as a column of the services table."
 do      = "Read attestor_services out of ca.sh in the checker, and pass LAYERX_ATTESTOR_CA_DIR to every check-live ca run, since an unset directory fails the attestor row."
+
+[gotcha.321]
+area    = "human-material"
+symptom = "A trust history projected root:4020 0440 looks unreadable to the security provider, whose readers refuse any group or other permission bit."
+cause   = "from_protected_history refuses mode & 0o077 and Store::open's protected_read wants 0600 owned by the reader, but the human entrypoint copies trust-history into /run/human-private/security as 0600 under the role's uid before the provider starts."
+do      = "Check the provider's path against the entrypoint's private copy, not the projected material, before changing the history's mode."

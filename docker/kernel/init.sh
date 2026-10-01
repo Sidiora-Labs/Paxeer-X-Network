@@ -676,6 +676,38 @@ human_identity_prepare() {
 			"$human_material/human-identity/env/LAYERX_HUMAN_IDENTITY_PROVIDER_BINDING_TENANT"
 }
 
+# trust_history: the sequencer trust history the security provider and the
+# registry read, in the LayerX/sequencer-trust-history/v1 encoding of
+# encode_trust_history in platform/hosted/tests/beta-cluster.sh: one current
+# protocol 3, epoch 1 entry of the network id, the sequencer id layerxd
+# publishes in core.env and the public key receipt_authority_prepare derives
+# from the sequencer seed. Written once; an existing history is never rewritten.
+trust_history() {
+	local history=$human_state/trust-history id key
+	while missing "$run/node/core.env" "$run/node/sequencer-public-key" >/dev/null; do
+		sleep 5
+	done
+	[ -e "$history" ] && return 0
+	id=$(sed -n 's/^LAYERX_CORE_SEQUENCER_ID=//p' "$run/node/core.env")
+	key=$(tr -d ' \r\n' <"$run/node/sequencer-public-key")
+	[[ $id =~ ^[0-9a-f]{64}$ && $key =~ ^[0-9a-f]{64}$ ]] || {
+		log "core.env or sequencer-public-key does not hold a 64-hex sequencer identity; no trust history written"
+		return 1
+	}
+	python3 - "$history.new" "$id" "$key" "$LAYERX_NODE_NETWORK_ID" <<'PY' || return 1
+import struct, sys
+out, sequencer_id, public_key = sys.argv[1], bytes.fromhex(sys.argv[2]), bytes.fromhex(sys.argv[3])
+entry = struct.pack(">HIQ", 3, int(sys.argv[4]), 1) + sequencer_id + public_key + struct.pack(">QQBQ", 1, 1 << 40, 0, 0)
+assert len(entry) == 103
+with open(out, "wb") as handle:
+    handle.write(b"LayerX/sequencer-trust-history/v1\0" + struct.pack(">HH", 1, 0) + entry)
+PY
+	chown 0:4020 "$history.new"
+	chmod 0440 "$history.new"
+	mv "$history.new" "$history"
+	log "sequencer trust history written"
+}
+
 human_security_prepare() {
 	human_project human-security 4020 "$human_state/trust-history:trust-history"
 }
@@ -795,5 +827,6 @@ service mirror-publisher 4021 \
 	/usr/local/bin/layerx-mirror-publisher "$mirror_run/config.json"
 
 human_authority_ready &
+trust_history &
 
 wait
