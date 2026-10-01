@@ -31619,3 +31619,34 @@ completion_policy = "Qualifies actual source-bound registry build/isolation arti
 stop_condition = "Stop at the bounded gate result or original 30-minute task cap. Record exact revision, command, exit code and private logs. Missing production interfaces, skipped isolation checks, incomplete cleanup or missing real artifacts leave the task unqualified."
 path_policy = "Create the three declared reusable producer/test/adapter paths. Existing Dockerfiles, builder recipes, registry runtime/image helpers, quota provisioner and registry service implementations are read-only unless a concrete scoped amendment is agreed before editing."
 evidence_policy = "Keep artifact manifests, rootfs, image identities, mount/cgroup lifecycle records and raw evidence in caller-selected protected storage outside the repository. Publish only portable producer and test code; never read, print, copy or hash .env or credential values."
+
+[req.214]
+title = "Provide real custody-chain qualification adapters without replay-server dependencies"
+ac_1 = "Custody fixture helpers use the existing bounded no-redirect JSON-RPC transport and real ABI encoding against an owned chain125 process. Validate process identity, committed anchor block, selected signer and forbidden endpoints; absent or inconsistent identity never yields a usable fixture."
+ac_2 = "Preserve raw eth_call result semantics, locally signed transaction creation, caller-selected signers and value, expected revert behavior, receipt identity and bounded pending-receipt polling. Contract deployment uses actual constructor bytes and verifies resulting code; no unlocked-account or simulated-response substitute is permitted."
+ac_3 = "Preserve canonical USDL address, actual runtime equality, ownership and six decimals. Produce native custody and anchor genesis using the same selected network/sequencer identity, actual funded deployer and configured threshold. Preserve unchanged-repeat initialization and mismatched-timeout refusal without rewriting the original genesis."
+ac_4 = "The existing custody exporter consumes explicit prebuilt contract artifacts and produces actual authenticated custody profile, event-bound proof and signed native credit through real TLS boundaries and Comet verification. Preserve amount scaling, asset, beneficiary, signer, network, duplicate and refusal checks. Missing or incompatible artifacts fail; verification never hides compilation."
+ac_5 = "A focused actual-process gate exercises the complete adapter and exporter contract, including refusals and owned-resource cleanup. It does not discharge the separate node lifecycle, reset, bootstrap, image or historical publication suites."
+
+[task.24.16]
+title = "Repair real custody fixture transport and genesis integration"
+status = "in_progress"
+mode = "BUILD"
+wave = 3
+requires = ["0.2", "24.14"]
+reqs = ["214"]
+do_1 = "Remove accidental inheritance and helper lookups from the finality-authority replay contract. Compose custody_credit.Rpc and the existing bounded real subprocess encoder into explicit rpc, view, send and deploy methods in custody_chain.py. Preserve the existing signed transaction and owned-process validation contract."
+do_2 = "Produce both custody and anchor genesis with existing production generators before starting the owned chain. Bind the same real sequencer/network and authority identities; retain all actual USDL runtime/owner/decimals and initialization assertions. Reserve ports until the corresponding owned process starts and clean only owned resources."
+do_3 = "Update withdraw-custody.py only for the real helper interface and explicit prebuilt Solidity artifact input. Preserve every existing export and non-export operation and assertion. Build all required artifacts in the declared build phase, then reject missing or mismatched input instead of compiling during verification."
+do_4 = "Implement the focused custody-chain-contract.py against actual source-bound executables and production contract artifacts. Prove real chain identity, raw view semantics, successful and reverted signed transactions, signer/value selection, actual contract creation, full export through authenticated boundaries and cleanup. Never restore fake legacy globals or claim unrelated publication suites passed."
+touches = ["tests/daemon/custody_chain.py", "tests/daemon/withdraw-custody.py", "tests/daemon/custody-chain-contract.py", "tools/paxeer-x/gates/24.16.sh"]
+planned_paths = ["tests/daemon/custody-chain-contract.py", "tools/paxeer-x/gates/24.16.sh"]
+verify_cmd = "timeout 15m python3 tests/daemon/custody-chain-contract.py --build-dir build"
+gate_kind = "planned-prerequisite"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at the focused gate result, original 30-minute deadline, exhausted repairs or a required change outside declared paths. Preserve every failed attempt and existing assertion."
+completion_policy = "Actual custody fixture adapter and exporter qualification only; full node and runtime foundation gates remain independently required."
+evidence_policy = "Keep generated authority material, manifests and raw source-bound qualification evidence private. Publish portable technical source only."
