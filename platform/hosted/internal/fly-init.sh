@@ -4,7 +4,8 @@
 #   internal-fly-init kms
 #   internal-fly-init <kind> <upstream origin> internal|ISRG_Root_X1|ISRG_Root_X2
 # generates the group's tokens, the kms seal secret and the event source's
-# producer and credential files on the volume on first boot, waits until
+# producer file, enrollment key and signed empty enrollment snapshot on the
+# volume on first boot, waits until
 # tools/bringup/ca.sh issue internal-<group> has put the TLS identity on the
 # volume, writes the upstream root (the internal CA, or the named ISRG root of
 # the image's trust store) as DER, hands every file to uid 4020 and starts the
@@ -41,7 +42,15 @@ journeys | approvals | payments | programs)
 	esac
 	fresh "$run_dir/token"
 	fresh "$run_dir/producer-token"
-	[ -s "$run_dir/credentials.json" ] || printf '{}\n' >"$run_dir/credentials.json"
+	fresh "$run_dir/enrollment-key"
+	# The credential file is the versioned enrollment snapshot the source
+	# re-reads while it runs; start from the signed empty generation 0 and
+	# replace a pre-versioned empty map.
+	if [ ! -s "$run_dir/credentials.json" ] || [ "$(tr -d ' \n' <"$run_dir/credentials.json")" = '{}' ]; then
+		mac=$(printf 'layerx-enrollment-v1\n%s\n0\n' "$group" | openssl dgst -sha256 -mac HMAC -macopt "key:$(cat "$run_dir/enrollment-key")" -r | cut -d' ' -f1)
+		printf '{"version":1,"generation":0,"principals":[],"mac":"%s"}\n' "$mac" >"$run_dir/credentials.json.new"
+		mv "$run_dir/credentials.json.new" "$run_dir/credentials.json"
+	fi
 	# The human service produces journeys and approvals; the router and the
 	# registry produce payments and programs with a principal digest.
 	allow_digest=true
@@ -87,6 +96,7 @@ else
 	export LAYERX_EVENTS_UPSTREAM_CA_DER="$run_dir/upstream-ca.der"
 	export LAYERX_EVENTS_PRODUCERS_FILE="$run_dir/producers.json"
 	export LAYERX_EVENTS_CREDENTIALS_FILE="$run_dir/credentials.json"
+	export LAYERX_EVENTS_ENROLLMENT_KEY_FILE="$run_dir/enrollment-key"
 	binary=/usr/local/bin/layerx-event-source
 fi
 
