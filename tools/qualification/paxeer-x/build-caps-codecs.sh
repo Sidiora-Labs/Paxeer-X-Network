@@ -13,6 +13,9 @@ export CARGO_BUILD_JOBS=5
 [[ "$("$RUSTC" --version)" == 'rustc 1.91.1 '* ]]
 mkdir -p "$CAPS_BUILD_DIR"
 chmod 700 "$CAPS_BUILD_DIR"
+if [[ "${CAPS_BUILD_NATIVE:-0}" == 1 ]]; then
+    bash tools/bringup/build-foundation-artifacts.sh --output "$CAPS_NATIVE_BIN_DIR"
+fi
 python3 - <<'PY'
 import os,subprocess,pathlib,json,hashlib,shutil
 root=pathlib.Path.cwd(); source=pathlib.Path(os.environ['CAPS_NATIVE_SOURCE']); out=pathlib.Path(os.environ['CAPS_BUILD_DIR'])
