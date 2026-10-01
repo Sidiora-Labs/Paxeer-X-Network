@@ -1,3 +1,4 @@
+use layerx_types::payload::ModuleId;
 use sha2::{Digest as _, Sha256};
 
 const LEAF: &[u8] = b"LXP/v1/state-leaf\0";
@@ -5,6 +6,9 @@ const NODE: &[u8] = b"LXP/v1/state-node\0";
 const MAX_KEY: usize = 129;
 const MAX_VALUE: usize = 1_048_576;
 const MAX_DEPTH: usize = 32;
+const MAX_MODULE_ID: u16 = ModuleId::ALL[ModuleId::ALL.len() - 1] as u16;
+const MIN_COMPOSITE_LEAVES: u32 = ModuleId::Bridge as u32 + 1;
+const MAX_COMPOSITE_LEAVES: u32 = MAX_MODULE_ID as u32 + 1;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StateProofError {
@@ -44,7 +48,7 @@ impl StateWitness {
             return Err(StateProofError::Version);
         }
         let module_id = u16::from_be_bytes(reader.array()?);
-        if module_id > 9 {
+        if module_id != 0 && ModuleId::from_u16(module_id).is_err() {
             return Err(StateProofError::Module);
         }
         let key = reader.vector(MAX_KEY)?;
@@ -118,7 +122,10 @@ impl StateWitness {
     /// # Errors
     /// Refuses out-of-range modules, lengths, indices, depths and odd-node siblings.
     pub fn root(&self) -> Result<[u8; 32], StateProofError> {
-        if self.module_id > 9 || !(9..=10).contains(&self.leaf_count_b) {
+        if self.module_id != 0 && ModuleId::from_u16(self.module_id).is_err()
+            || !(MIN_COMPOSITE_LEAVES..=MAX_COMPOSITE_LEAVES).contains(&self.leaf_count_b)
+            || u32::from(self.module_id) >= self.leaf_count_b
+        {
             return Err(StateProofError::Module);
         }
         if self.key.is_empty() || self.key.len() > MAX_KEY || self.value.len() > MAX_VALUE {

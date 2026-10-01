@@ -24,6 +24,10 @@ layerx-wire.workspace = true
 layerx-program-sdk = { path = "../../../programs/sdk/rust" }
 ed25519-dalek = "=2.2.0"
 
+layerx-platform-authority = { path = "../../../platform/hosted/authority" }
+ureq = { version = "=3.4.0", default-features = false, features = ["rustls-no-provider", "_ring"] }
+zeroize.workspace = true
+
 [dev-dependencies]
 layerx-intents = { workspace = true, features = ["test-vectors"] }
 k256.workspace = true

@@ -964,6 +964,7 @@ dependencies = [
  "layerx-intents",
  "layerx-mirror",
  "layerx-network-gateway",
+ "layerx-platform-authority",
  "layerx-program-sdk",
  "layerx-programs-protocol-adapter",
  "layerx-programs-registry",
@@ -975,6 +976,8 @@ dependencies = [
  "serde_json",
  "sha2",
  "sha3",
+ "ureq",
+ "zeroize",
 ]
 
 [[package]]
@@ -1208,6 +1211,26 @@ dependencies = [
  "layerx-wire",
  "rustls",
  "sha3",
+]
+
+[[package]]
+name = "layerx-platform-authority"
+version = "0.1.0"
+dependencies = [
+ "layerx-client",
+ "layerx-crypto",
+ "layerx-identity-binding",
+ "layerx-paxeer-verifier",
+ "layerx-proof",
+ "layerx-types",
+ "layerx-wire",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2",
+ "signal-hook",
+ "subtle",
+ "zeroize",
 ]
 
 [[package]]

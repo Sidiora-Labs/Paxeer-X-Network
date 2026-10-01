@@ -31435,7 +31435,7 @@ fixture_contract = "Start or bind the genuine isolated Paxeer chain and settleme
 
 [task.22.7]
 title = "Verify independent per-receipt authority evidence in the explorer reader"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["0.2", "15.1"]
