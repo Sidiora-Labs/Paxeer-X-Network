@@ -21271,7 +21271,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.3]
 title = "Provide deterministic unified specification tooling"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -21463,7 +21463,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.1]
 title = "Dispatch budget partial defunding and revocation as canonical Activities"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -21488,7 +21488,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.2]
 title = "Bound metered stream accrual by deterministic stream lifetime"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -21498,7 +21498,7 @@ do_2 = "Pass timestamp context into the routed metered accrual path and enforce 
 do_3 = "Add real dispatched METER and settlement tests at end-1/end/end+1, after long restart, under cap/overflow/closed/paused conditions."
 do_4 = "Add the designated new harness tests/modules/paxeer_x_metered_end_boundary.py using real production code and durable stores; invoke prebuilt task targets, fail on any missing prerequisite, and emit revision, exact command, exit code and private evidence path. Do not substitute mocks or synthetic success responses."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["src/modules/stream/lx_stream_execution.h", "src/modules/stream/lx_stream_record.c", "src/modules/stream/lx_stream_open.c", "src/modules/stream/lx_stream_meter.c", "src/modules/stream/lx_stream_accrue.c", "tests/modules/test_stream_meter.c", "tests/modules/paxeer_x_metered_end_boundary.py", "tools/paxeer-x/gates/3.2.sh"]
+touches = ["src/modules/stream/lx_stream_execution.h", "src/modules/stream/lx_stream_record.c", "src/modules/stream/lx_stream_open.c", "src/modules/stream/lx_stream_meter.c", "src/modules/stream/lx_stream_accrue.c", "tests/modules/test_stream_meter.c", "tests/modules/paxeer_x_metered_end_boundary.py", "tools/paxeer-x/gates/3.2.sh", "Makefile"]
 verify_cmd = "timeout 1800s python3 tests/modules/paxeer_x_metered_end_boundary.py"
 gate_kind = "planned"
 max_builds = 1
@@ -21513,7 +21513,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.3]
 title = "Bind escrow replay success to the original authorized operation context"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -21538,7 +21538,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.1]
 title = "Distribute launchpad airdrops from immutable epoch entitlements"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -21563,7 +21563,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.2]
 title = "Carry advertised time-in-force semantics from exchange ingress to native matching"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -22057,7 +22057,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.14.2]
 title = "Pin injected wallet writes to the configured Paxeer chain"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -22067,7 +22067,7 @@ do_2 = "Centralize network admission, subscribe to chain/disconnect changes and 
 do_3 = "Add real provider/browser coverage for missing embedded config, switched chain, mid-confirmation switch and reconnect."
 do_4 = "Add the new bounded harness tools/qualification/paxeer-x/wallet-injected-chain.py to exercise this task through the named production interfaces, including the stated refusal and recovery cases, with explicit prerequisite checks and nonzero exit on any unmet acceptance. Use supplied prebuilt executables and isolated retained state; do not hide a rebuild or invoke a release-wide suite."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["human/apps/wallet/src/wallet/WalletProvider.tsx", "human/apps/wallet/src/wallet/session.ts", "human/wallet/sdk/src/wallet.ts", "human/apps/wallet/src/widgets/send/SendConfirmation.tsx", "human/apps/wallet/e2e/send.spec.ts", "tools/qualification/paxeer-x/wallet-injected-chain.py"]
+touches = ["human/apps/wallet/src/wallet/WalletProvider.tsx", "human/apps/wallet/src/wallet/session.ts", "human/wallet/sdk/src/wallet.ts", "human/apps/wallet/src/widgets/send/SendConfirmation.tsx", "human/apps/wallet/e2e/send.spec.ts", "tools/qualification/paxeer-x/wallet-injected-chain.py", "tools/paxeer-x/gates/14.2.sh"]
 verify_cmd = "timeout 15m python3 tools/qualification/paxeer-x/wallet-injected-chain.py"
 gate_kind = "planned"
 max_builds = 1
@@ -22082,7 +22082,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.14.4]
 title = "Display verified account-bound 402 budgets and allowance caps"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -22092,7 +22092,7 @@ do_2 = "Define the typed budget/grant decoder using the existing canonical servi
 do_3 = "Add real read-boundary cases for populated/empty/denied/unavailable state and account switching."
 do_4 = "Add the new bounded harness tools/qualification/paxeer-x/wallet-402-caps.py to exercise this task through the named production interfaces, including the stated refusal and recovery cases, with explicit prerequisite checks and nonzero exit on any unmet acceptance. Use supplied prebuilt executables and isolated retained state; do not hide a rebuild or invoke a release-wide suite."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["human/apps/wallet/src/surfaces/SurfacePage.tsx", "human/apps/wallet/src/surfaces/WebDataView.tsx", "human/apps/wallet/src/surfaces/useSurface.ts", "human/wallet/sdk/src/kernel.ts", "human/wallet/sdk/src/modules/web-data.ts", "tools/qualification/paxeer-x/wallet-402-caps.py"]
+touches = ["human/apps/wallet/src/surfaces/SurfacePage.tsx", "human/apps/wallet/src/surfaces/WebDataView.tsx", "human/apps/wallet/src/surfaces/useSurface.ts", "human/wallet/sdk/src/kernel.ts", "human/wallet/sdk/src/modules/web-data.ts", "tools/qualification/paxeer-x/wallet-402-caps.py", "tools/paxeer-x/gates/14.4.sh"]
 verify_cmd = "timeout 15m python3 tools/qualification/paxeer-x/wallet-402-caps.py"
 gate_kind = "planned"
 max_builds = 1
@@ -22559,7 +22559,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.21.2]
 title = "Bind outbound burn admission to the enforceable release amount"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -22568,7 +22568,7 @@ do_1 = "Check the registered asset cap in Keeper.BridgeOut before its cached eco
 do_2 = "Add TestBridgeOutReleaseCapBoundary to the keeper tests using the real keeper, bank and tokenfactory paths, covering aggregated deposits, exact cap and unchanged refusal state."
 do_3 = "Specify coordinated cap reductions and pending-burn handling in bridge/README.md using the existing release checks as the boundary; retain owner/governance controls."
 do_4 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["modules/layerxbridge/keeper/bridge.go", "modules/layerxbridge/keeper/keeper_test.go", "bridge/README.md"]
+touches = ["modules/layerxbridge/keeper/bridge.go", "modules/layerxbridge/keeper/keeper_test.go", "bridge/README.md", "tools/paxeer-x/gates/21.2.sh"]
 verify_cmd = "timeout 10m go test ./modules/layerxbridge/keeper -run '^TestBridgeOutReleaseCapBoundary$' -count=1"
 gate_kind = "planned"
 max_builds = 1
@@ -24299,7 +24299,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.106.4.5]
 title = "Read a pending placeholder as a store the plan is still to mount"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]

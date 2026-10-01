@@ -16,7 +16,7 @@
     - Provide per-task selector registration without implicit aggregate execution; each owning task adds its real focused behavior gate. Release scope deduplicates identical gate identities and preserves complete required coverage.
     - Prove refusal for unknown, absent, stale, dirty and mismatched evidence using the real dispatcher and evidence types.
     - _Requirements: 9, 11_
-  - [ ] 0.3 Provide deterministic unified specification tooling
+  - [-] 0.3 Provide deterministic unified specification tooling
     - Place the deterministic specification parser and renderer in tools/specgen and update its explicit root/configuration invocation so the active feature resolves to paxeer-x.
     - Generate only requested technical projections into their appropriate local profile; do not project operational notes, credentials or private evidence into tracked files.
     - Validate requirement references, task references, dependencies, waves, supported status values and the active feature pointer against the complete unified document.
@@ -89,35 +89,35 @@
     - Add the designated new harness tests/daemon/paxeer_x_finality_recordings.py using real production code and durable stores; invoke prebuilt task targets, fail on any missing prerequisite, and emit revision, exact command, exit code and private evidence path. Do not substitute mocks or synthetic success responses.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 107_
-  - [ ] 3.1 Dispatch budget partial defunding and revocation as canonical Activities
+  - [-] 3.1 Dispatch budget partial defunding and revocation as canonical Activities
     - Allocate versioned canonical operation identifiers/payloads for defund and revoke and extend lx_budget.h, module registration, validation, dispatch and codec coverage without reusing CLOSE ambiguously.
     - Connect existing financial helpers through lxp_module_ctx and authenticated transfer effects; persist record, allowance, revoked flag and revocation sequence in the same commit.
     - Add signed dispatched Activity cases for partial refund, revoke, unauthorized/stale/overdraw refusal, duplicates and durable restart, extending clients only through the canonical typed interface.
     - Add the designated new harness tests/modules/paxeer_x_budget_lifecycle.py using real production code and durable stores; invoke prebuilt task targets, fail on any missing prerequisite, and emit revision, exact command, exit code and private evidence path. Do not substitute mocks or synthetic success responses.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 108_
-  - [-] 3.2 Bound metered stream accrual by deterministic stream lifetime
+  - [x] 3.2 Bound metered stream accrual by deterministic stream lifetime
     - Define precise inclusive end-boundary and late-usage semantics in the canonical stream contract, based solely on replayable batch timestamp.
     - Pass timestamp context into the routed metered accrual path and enforce start/end before mutating reading or accrued totals, preserving cap and authority checks.
     - Add real dispatched METER and settlement tests at end-1/end/end+1, after long restart, under cap/overflow/closed/paused conditions.
     - Add the designated new harness tests/modules/paxeer_x_metered_end_boundary.py using real production code and durable stores; invoke prebuilt task targets, fail on any missing prerequisite, and emit revision, exact command, exit code and private evidence path. Do not substitute mocks or synthetic success responses.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 109_
-  - [ ] 3.3 Bind escrow replay success to the original authorized operation context
+  - [-] 3.3 Bind escrow replay success to the original authorized operation context
     - Extend the stored escrow replay record or its authenticated key to bind hold ID, ordinal and a canonical authorized request-context digest, with a compatible versioned migration.
     - Compare expected context before returning replay success in capture/release/resolution paths and derive replay events from the stored operation, not unvalidated new request fields.
     - Add routed tests using real holds/accounts, distinct outer keys and reused inner keys, including exact retry, changed amount/recipient, cross-hold, cross-operation and changed actor.
     - Add the designated new harness tests/modules/paxeer_x_escrow_replay_binding.py using real production code and durable stores; invoke prebuilt task targets, fail on any missing prerequisite, and emit revision, exact command, exit code and private evidence path. Do not substitute mocks or synthetic success responses.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 110_
-  - [ ] 4.1 Distribute launchpad airdrops from immutable epoch entitlements
+  - [-] 4.1 Distribute launchpad airdrops from immutable epoch entitlements
     - Choose and implement immutable epoch entitlement representation with bounded state construction and query cost; bind supply and holder eligibility to the same explicit epoch boundary.
     - Update ExecuteAirdrop/ClaimAirdrop and keeper storage to calculate from that basis and commit payment/claim marker together; preserve current public precompile authorization.
     - Add real bank keeper integration with multiple holders, transfer-after-claim, mint/burn, failed payout rollback, duplicate request and committed-store reload.
     - Add the designated new harness tests/qualification/paxeer_x_airdrop_entitlements.py using real production code and durable stores; invoke prebuilt task targets, fail on any missing prerequisite, and emit revision, exact command, exit code and private evidence path. Do not substitute mocks or synthetic success responses.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 111_
-  - [ ] 4.2 Carry advertised time-in-force semantics from exchange ingress to native matching
+  - [-] 4.2 Carry advertised time-in-force semantics from exchange ingress to native matching
     - Extend versioned PerpsPayload/codec and native order command to carry TIF; keep old payload history readable with its original GTC meaning.
     - Implement IOC/FOK/post-only in the native matcher with atomic FOK preflight/commit and correct residual disposition; admit only semantics supported by the selected protocol version.
     - Connect Go keeper/precompile event to Rust ExchangeOrder and C native dispatch through a real cross-language fixture/harness; verify all four semantic paths and crash boundaries.
@@ -383,7 +383,7 @@
     - Add the new bounded harness tools/qualification/paxeer-x/wallet-transfer-truth.py to exercise this task through the named production interfaces, including the stated refusal and recovery cases, with explicit prerequisite checks and nonzero exit on any unmet acceptance. Use supplied prebuilt executables and isolated retained state; do not hide a rebuild or invoke a release-wide suite.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 150_
-  - [ ] 14.2 Pin injected wallet writes to the configured Paxeer chain
+  - [-] 14.2 Pin injected wallet writes to the configured Paxeer chain
     - First reproduce the inferred wrong-chain path with an actual injected provider and record the causal boundary; resolve it without assuming an exploit occurred.
     - Centralize network admission, subscribe to chain/disconnect changes and revalidate immediately before send; propagate chainId through WalletInterface and transaction construction.
     - Add real provider/browser coverage for missing embedded config, switched chain, mid-confirmation switch and reconnect.
@@ -397,7 +397,7 @@
     - Add the new bounded harness tools/qualification/paxeer-x/wallet-sponsored-fees.py to exercise this task through the named production interfaces, including the stated refusal and recovery cases, with explicit prerequisite checks and nonzero exit on any unmet acceptance. Use supplied prebuilt executables and isolated retained state; do not hide a rebuild or invoke a release-wide suite.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 152_
-  - [ ] 14.4 Display verified account-bound 402 budgets and allowance caps
+  - [-] 14.4 Display verified account-bound 402 budgets and allowance caps
     - Replace constant grants=[] and budget=null with account-bound SDK/kernel data loading and explicit result states.
     - Define the typed budget/grant decoder using the existing canonical service output and preserve verification metadata and bounds.
     - Add real read-boundary cases for populated/empty/denied/unavailable state and account switching.
@@ -637,7 +637,7 @@
     - Keep the relayer and keeper refusals and immutable attestation encoding; document the affected-deposit handling boundary in the existing bridge runbook.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 186_
-  - [ ] 21.2 Bind outbound burn admission to the enforceable release amount
+  - [-] 21.2 Bind outbound burn admission to the enforceable release amount
     - Check the registered asset cap in Keeper.BridgeOut before its cached economic mutation.
     - Add TestBridgeOutReleaseCapBoundary to the keeper tests using the real keeper, bank and tokenfactory paths, covering aggregated deposits, exact cap and unchanged refusal state.
     - Specify coordinated cap reductions and pending-burn handling in bridge/README.md using the existing release checks as the boundary; retain owner/governance controls.
@@ -2297,7 +2297,7 @@
       - Write the tests: each module's keeper test passes MsgUpdateParams through its msgServer on the real keeper and asserts the stored parameters afterwards and the error another authority returns; the proposal test in modules/layerxgov gains a proposal carrying both messages and asserts it validates and returns them in order.
       - Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector.
       - _Requirements: 1141.1, 1141.5_
-    - [ ] 106.4.5 Read a pending placeholder as a store the plan is still to mount
+    - [-] 106.4.5 Read a pending placeholder as a store the plan is still to mount
       - Reconcile the retained capability against the current candidate and explicit resolution sections. Reuse conforming implementation; complete only unmet criteria. Resolve historical paths against the current source without narrowing the capability or repeating operational transitions already completed.
       - In node/upgrades.go extend the check that names the plan's stores the commit multistore carries: a store the state-commitment store serves through the pending placeholder of storage/state_db/sc/composite counts as one the plan's store upgrades are still to mount, asked through the interface that store implements and skipped on a commit multistore that does not implement it.
       - Keep the message and the behaviour of the apply step exactly as they are: the block whose plan is due names every store still to be mounted and writes no state, and a process whose stores are all mounted applies the plan as before.

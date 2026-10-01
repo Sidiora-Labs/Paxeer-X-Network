@@ -226,7 +226,13 @@ static lxp_result stream_execute_meter(
     lxp_result status = lx_stream_load(ctx, attestation->stream_id, &record);
     if (status != LXP_OK) return status;
     if (record.closed) return LXP_ERR_STREAM_CLOSED;
-    status = lx_stream_meter_execute(&record, attestation, &accrued);
+    status = lx_stream_meter_authority_check(&record, attestation);
+    if (status == LXP_OK)
+        status = stream_meter_window(&record, lxp_ctx_batch_timestamp_ms(ctx));
+    if (status == LXP_OK)
+        status = lx_stream_metered_accrue(&record,
+                                          attestation->cumulative_reading,
+                                          &accrued);
     if (status != LXP_OK) return status;
     status = lx_stream_save(ctx, &record);
     if (status != LXP_OK) return status;
