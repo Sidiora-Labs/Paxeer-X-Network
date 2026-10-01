@@ -21548,7 +21548,7 @@ do_2 = "Compare expected context before returning replay success in capture/rele
 do_3 = "Add routed tests using real holds/accounts, distinct outer keys and reused inner keys, including exact retry, changed amount/recipient, cross-hold, cross-operation and changed actor."
 do_4 = "Add the designated new harness tests/modules/paxeer_x_escrow_replay_binding.py using real production code and durable stores; invoke prebuilt task targets, fail on any missing prerequisite, and emit revision, exact command, exit code and private evidence path. Do not substitute mocks or synthetic success responses."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["src/modules/escrow/lx_escrow_state.c", "src/modules/escrow/lx_escrow_capture.c", "src/modules/escrow/lx_escrow_module.c", "tests/modules/test_escrow_capture.c", "src/protocol/lxp_kernel.c", "tests/modules/paxeer_x_escrow_replay_binding.py", "src/modules/escrow/lx_escrow_dispute.c", "src/modules/escrow/lx_escrow_timeout.c", "include/layerx/lx_escrow.h", "tests/modules/test_escrow_timeout.c", "tests/daemon/lxp_test_epoch_escrow_timeout.c"]
+touches = ["src/modules/escrow/lx_escrow_state.c", "src/modules/escrow/lx_escrow_capture.c", "src/modules/escrow/lx_escrow_module.c", "tests/modules/test_escrow_capture.c", "tests/modules/paxeer_x_escrow_replay_binding.py", "src/modules/escrow/lx_escrow_dispute.c", "src/modules/escrow/lx_escrow_timeout.c", "include/layerx/lx_escrow.h", "tests/modules/test_escrow_timeout.c", "tests/daemon/lxp_test_epoch_escrow_timeout.c", "tests/daemon/lxp_test_escrow_replay_client.c"]
 verify_cmd = "timeout 1800s python3 tests/modules/paxeer_x_escrow_replay_binding.py"
 gate_kind = "planned"
 max_builds = 1
@@ -21557,9 +21557,11 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 deployment_profile = "product"
-planned_paths = ["tests/modules/paxeer_x_escrow_replay_binding.py"]
+planned_paths = ["tests/modules/paxeer_x_escrow_replay_binding.py", "tests/daemon/lxp_test_escrow_replay_client.c"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+do_6 = "Use the existing RuntimeFixture lifecycle unchanged with the task-owned signed native driver tests/daemon/lxp_test_escrow_replay_client.c. Preserve every existing component assertion and add actual process restart, authenticated replica catch-up, original receipt and economic-state checks required by the acceptance criteria. Produce a fresh canonical six-executable bundle and client from clean committed task source before qualification; retain strict source and digest binding. Move compilation out of the gate into its explicit build phase and invoke prebuilt targets. Shared runtime fixture and common client sources remain read-only."
 
 [task.4.1]
 title = "Distribute launchpad airdrops from immutable epoch entitlements"
@@ -21601,7 +21603,7 @@ do_2 = "Implement IOC/FOK/post-only in the native matcher with atomic FOK prefli
 do_3 = "Connect Go keeper/precompile event to Rust ExchangeOrder and C native dispatch through a real cross-language fixture/harness; verify all four semantic paths and crash boundaries."
 do_4 = "Add the designated new harness tests/qualification/paxeer_x_exchange_tif.py using real production code and durable stores; invoke prebuilt task targets, fail on any missing prerequisite, and emit revision, exact command, exit code and private evidence path. Do not substitute mocks or synthetic success responses."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["modules/layerxexchange/keeper/intents.go", "modules/layerxexchange/types/state.go", "precompiles/layerxexchange/LayerXExchange.sol", "human/crates/layerx-intents/src/precompile.rs", "agent/crates/layerx-types/src/payload.rs", "include/layerx/lx_perps.h", "src/modules/perps/lx_perps_codec.h", "src/modules/perps/lx_perps_dispatch.c", "src/modules/perps/lx_perps_command.c", "src/modules/perps/lx_perps_book.c", "modules/layerxexchange/keeper/keeper_test.go", "tests/qualification/paxeer_x_exchange_tif.py", "human/crates/layerx-intents/tests/precompile_router.rs", "agent/crates/layerx-types/tests/trading_payload.rs"]
+touches = ["modules/layerxexchange/keeper/intents.go", "modules/layerxexchange/types/state.go", "precompiles/layerxexchange/LayerXExchange.sol", "human/crates/layerx-intents/src/precompile.rs", "agent/crates/layerx-types/src/payload.rs", "include/layerx/lx_perps.h", "src/modules/perps/lx_perps_codec.h", "src/modules/perps/lx_perps_dispatch.c", "src/modules/perps/lx_perps_command.c", "src/modules/perps/lx_perps_book.c", "modules/layerxexchange/keeper/keeper_test.go", "tests/qualification/paxeer_x_exchange_tif.py", "human/crates/layerx-intents/tests/precompile_router.rs", "agent/crates/layerx-types/tests/trading_payload.rs", "tests/daemon/lxp_test_exchange_tif_client.c"]
 verify_cmd = "timeout 1800s python3 tests/qualification/paxeer_x_exchange_tif.py"
 gate_kind = "planned"
 max_builds = 1
@@ -21610,9 +21612,11 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 deployment_profile = "product"
-planned_paths = ["tests/qualification/paxeer_x_exchange_tif.py"]
+planned_paths = ["tests/qualification/paxeer_x_exchange_tif.py", "tests/daemon/lxp_test_exchange_tif_client.c"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+do_6 = "Use the existing RuntimeFixture lifecycle unchanged with the task-owned signed native driver tests/daemon/lxp_test_exchange_tif_client.c. Preserve every existing component assertion and add actual process restart, authenticated replica catch-up, original receipt and economic-state checks required by the acceptance criteria. Produce a fresh canonical six-executable bundle and client from clean committed task source before qualification; retain strict source and digest binding. Move compilation out of the gate into its explicit build phase and invoke prebuilt targets. Shared runtime fixture and common client sources remain read-only."
 
 [task.4.3]
 title = "Apply launchpad parameter changes through authenticated governance dispatch"
