@@ -570,6 +570,17 @@ static int lifecycle_replica(int report, replica_result *out)
     CHECK(submit(&call, &effects, &result) == 0);
     LCASE("defund-zero", result == LXP_ERR_INVALID_AMOUNT && unchanged(before));
 
+    uint8_t overflow_payload[LX_BUDGET_DEFUND_PAYLOAD_BYTES + 1U];
+    (void)memcpy(overflow_payload, defund, sizeof(defund));
+    overflow_payload[sizeof(defund)] = 1U;
+    call.payload = overflow_payload;
+    call.payload_length = sizeof(overflow_payload);
+    CHECK(submit(&call, &effects, &result) == 0);
+    LCASE("defund-overflow-encoding", result == LXP_ERR_NON_CANONICAL && unchanged(before) &&
+          env.owner->balance.lo == 700U && env.budget_account->balance.lo == 180U);
+    call.payload = defund;
+    call.payload_length = sizeof(defund);
+
     /* CLOSE stays a distinct operation: a defund payload is not a CLOSE. */
     put_u128(defund + 34U, 0U, 150U);
     call.activity_type = LX_BUDGET_CLOSE;
