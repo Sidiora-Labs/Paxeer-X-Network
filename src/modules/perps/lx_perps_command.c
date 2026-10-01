@@ -124,17 +124,16 @@ lxp_result lx_perps_oracle_command_sign(lx_perps_oracle_command *command,
     return LXP_OK;
 }
 
-lxp_result lx_perps_order_command_encode(
-    const lx_perps_order_command *command,
-    uint8_t bytes[LX_PERPS_ORDER_PAYLOAD_BYTES])
+static lxp_result order_command_body_encode(
+    const lx_perps_order_command *command, uint8_t *bytes)
 {
     lxp_result status;
-    if (command == NULL || bytes == NULL ||
-        lxp_ct_is_zero(command->market_id, 32U) ||
+    if (lxp_ct_is_zero(command->market_id, 32U) ||
         lxp_ct_is_zero(command->order_id, 32U) ||
         lxp_ct_is_zero(command->owner_account_id, 32U) ||
         lxp_u128_is_zero(command->price) ||
-        lxp_u128_is_zero(command->quantity))
+        lxp_u128_is_zero(command->quantity) ||
+        !lx_perps_time_in_force_valid((uint8_t)command->time_in_force))
         return LXP_ERR_NON_CANONICAL;
     (void)memcpy(bytes, command->market_id, 32U);
     (void)memcpy(bytes + 32U, command->order_id, 32U);
@@ -146,14 +145,55 @@ lxp_result lx_perps_order_command_encode(
     return put_u128(bytes + 113U, command->quantity);
 }
 
+/* The 129-byte layout predates time in force and always means GTC. */
+lxp_result lx_perps_order_command_encode(
+    const lx_perps_order_command *command,
+    uint8_t bytes[LX_PERPS_ORDER_PAYLOAD_BYTES])
+{
+    if (command == NULL || bytes == NULL ||
+        command->time_in_force != LX_PERPS_TIF_GOOD_TILL_CANCELLED)
+        return LXP_ERR_NON_CANONICAL;
+    return order_command_body_encode(command, bytes);
+}
+
+/* GTC keeps the 129-byte layout; every other time in force appends one
+ * byte, so each value has exactly one encoding. */
+lxp_result lx_perps_order_command_encode_versioned(
+    const lx_perps_order_command *command, uint8_t *bytes, size_t capacity,
+    size_t *length)
+{
+    lxp_result status;
+    size_t needed;
+    if (command == NULL || bytes == NULL || length == NULL)
+        return LXP_ERR_NON_CANONICAL;
+    needed = command->time_in_force == LX_PERPS_TIF_GOOD_TILL_CANCELLED ?
+        (size_t)LX_PERPS_ORDER_PAYLOAD_BYTES :
+        (size_t)LX_PERPS_ORDER_PAYLOAD_TIF_BYTES;
+    if (capacity < needed) return LXP_ERR_LENGTH_LIMIT;
+    status = order_command_body_encode(command, bytes);
+    if (status != LXP_OK) return status;
+    if (needed == LX_PERPS_ORDER_PAYLOAD_TIF_BYTES)
+        bytes[LX_PERPS_ORDER_PAYLOAD_BYTES] = (uint8_t)command->time_in_force;
+    *length = needed;
+    return LXP_OK;
+}
+
 lxp_result lx_perps_order_command_decode(const uint8_t *bytes, size_t length,
                                          lx_perps_order_command *command)
 {
     lxp_result status;
     if (bytes == NULL || command == NULL ||
-        length != LX_PERPS_ORDER_PAYLOAD_BYTES)
+        (length != LX_PERPS_ORDER_PAYLOAD_BYTES &&
+         length != LX_PERPS_ORDER_PAYLOAD_TIF_BYTES))
         return LXP_ERR_NON_CANONICAL;
     (void)memset(command, 0, sizeof(*command));
+    command->time_in_force = LX_PERPS_TIF_GOOD_TILL_CANCELLED;
+    if (length == LX_PERPS_ORDER_PAYLOAD_TIF_BYTES) {
+        uint8_t tif = bytes[LX_PERPS_ORDER_PAYLOAD_BYTES];
+        if (tif == 0U || !lx_perps_time_in_force_valid(tif))
+            return LXP_ERR_NON_CANONICAL;
+        command->time_in_force = (lx_perps_time_in_force)tif;
+    }
     (void)memcpy(command->market_id, bytes, 32U);
     (void)memcpy(command->order_id, bytes + 32U, 32U);
     (void)memcpy(command->owner_account_id, bytes + 64U, 32U);

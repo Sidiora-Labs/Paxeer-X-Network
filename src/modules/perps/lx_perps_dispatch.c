@@ -1167,6 +1167,7 @@ static lxp_result execute_order_place(lxp_module_ctx *ctx,
     order.side = command->side;
     order.price = command->price;
     order.quantity = command->quantity;
+    order.time_in_force = command->time_in_force;
     for (;;) {
         const lx_perps_order *refused = NULL;
         *after = *remaining;
@@ -1201,6 +1202,17 @@ static lxp_result execute_order_place(lxp_module_ctx *ctx,
     status = book_persist(ctx, before, after);
     if (status == LXP_OK)
         status = refused_makers_emit(ctx, before, remaining);
+    /* IOC and FOK never rest; a terminal record keeps their identifier
+     * spent so a retried placement cannot execute twice. Book loads skip
+     * inactive orders. */
+    if (status == LXP_OK &&
+        (order.time_in_force == LX_PERPS_TIF_IMMEDIATE_OR_CANCEL ||
+         order.time_in_force == LX_PERPS_TIF_FILL_OR_KILL)) {
+        order.remaining = (lxp_u128){ 0U, 0U };
+        order.active = false;
+        order.global_sequence = lxp_ctx_global_sequence(ctx);
+        status = lx_perps_order_put(ctx, &order);
+    }
     if (status != LXP_OK) return status;
     tail[0] = (uint8_t)fill_count;
     status = lxp_u128_to_be(order.quantity, tail + 1U);

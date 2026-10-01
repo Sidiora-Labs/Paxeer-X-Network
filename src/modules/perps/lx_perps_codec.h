@@ -70,4 +70,9 @@ static inline bool lx_perps_side_valid(uint8_t byte)
     return byte == 1U || byte == 2U;
 }
 
+static inline bool lx_perps_time_in_force_valid(uint8_t byte)
+{
+    return byte <= 3U;
+}
+
 #endif

@@ -396,6 +396,38 @@ pub enum SpotTimeInForce {
     ImmediateOrCancel = 2,
 }
 
+/// A perps order's time in force. GTC keeps the original 129-byte
+/// `ORDER_PLACE` layout; every other value appends one byte.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[repr(u8)]
+pub enum PerpsTimeInForce {
+    /// Rests on the book until filled or cancelled.
+    GoodTillCancelled = 0,
+    /// Fills what it can immediately and cancels the rest.
+    ImmediateOrCancel = 1,
+    /// Fills the whole quantity immediately or changes nothing.
+    FillOrKill = 2,
+    /// Rests only; refused if it would cross.
+    PostOnly = 3,
+}
+
+impl PerpsTimeInForce {
+    /// Decodes a time-in-force byte without accepting extensions.
+    ///
+    /// # Errors
+    ///
+    /// Refuses any byte above 3.
+    pub const fn from_byte(byte: u8) -> Result<Self, TradingPayloadError> {
+        match byte {
+            0 => Ok(Self::GoodTillCancelled),
+            1 => Ok(Self::ImmediateOrCancel),
+            2 => Ok(Self::FillOrKill),
+            3 => Ok(Self::PostOnly),
+            _ => Err(TradingPayloadError::NonCanonical),
+        }
+    }
+}
+
 /// The full parameter set of a perps market creation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PerpsMarket {
@@ -611,6 +643,7 @@ pub enum PerpsPayload {
         side: TradeSide,
         price: u128,
         quantity: u128,
+        time_in_force: PerpsTimeInForce,
     },
     /// `0x00060005`: cancel an order.
     OrderCancel {
@@ -720,12 +753,16 @@ impl PerpsPayload {
                 side,
                 price,
                 quantity,
+                time_in_force,
             } => {
                 nonzero(&[*price, *quantity])?;
                 ids(&mut out, &[market_id, order_id, owner_account_id])?;
                 out.push(*side as u8);
                 out.extend_from_slice(&price.to_be_bytes());
                 out.extend_from_slice(&quantity.to_be_bytes());
+                if *time_in_force != PerpsTimeInForce::GoodTillCancelled {
+                    out.push(*time_in_force as u8);
+                }
             }
             Self::OrderCancel {
                 market_id,
@@ -798,6 +835,7 @@ impl PerpsPayload {
             1 => PERPS_MARKET_BYTES,
             2 => 33,
             3 => 72,
+            4 if bytes.len() == 130 => 130,
             4 => 129,
             5 | 8 => 64,
             6 => 145,
@@ -834,6 +872,16 @@ impl PerpsPayload {
                 side: TradeSide::from_byte(reader.u8()?)?,
                 price: reader.u128()?,
                 quantity: reader.u128()?,
+                time_in_force: if bytes.len() == 130 {
+                    match PerpsTimeInForce::from_byte(reader.u8()?)? {
+                        PerpsTimeInForce::GoodTillCancelled => {
+                            return Err(TradingPayloadError::NonCanonical)
+                        }
+                        value => value,
+                    }
+                } else {
+                    PerpsTimeInForce::GoodTillCancelled
+                },
             },
             5 => Self::OrderCancel {
                 market_id: reader.id()?,

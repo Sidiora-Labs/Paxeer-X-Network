@@ -291,6 +291,32 @@ func TestIntentsAreRecordedWithoutMovingFunds(t *testing.T) {
 	require.Equal(t, uint64(4), f.keeper.GetIntentCount(ctx))
 }
 
+func TestOrderTimeInForceIsRecordedDistinctlyBeforeAnyNonce(t *testing.T) {
+	f := newFixture(t)
+	ctx := f.fresh()
+	chainID := testkeeper.EVMTestApp.EvmKeeper.ChainID(ctx)
+	_, err := f.keeper.PlaceOrder(ctx, f.caller, marketID, types.SideBuy, sdk.NewInt(1), sdk.NewInt(1), 4)
+	require.ErrorIs(t, err, types.ErrInvalidIntent)
+	require.Equal(t, uint64(0), f.keeper.GetOwnerNonce(ctx, f.caller))
+	require.Equal(t, uint64(0), f.keeper.GetIntentCount(ctx))
+	require.Equal(t, 0, f.typedEvents(ctx, eventNamespace+"EventOrderPlaced"))
+	tifs := []uint8{types.TimeInForceGoodTillCancelled, types.TimeInForceImmediateOrCancel,
+		types.TimeInForceFillOrKill, types.TimeInForcePostOnly}
+	for i, tif := range tifs {
+		placed, err := f.keeper.PlaceOrder(ctx, f.caller, marketID, types.SideBuy, sdk.NewInt(30_000), sdk.NewInt(2), tif)
+		require.NoError(t, err)
+		require.Equal(t, uint64(i+1), placed.Nonce)
+		stored, found := f.keeper.GetIntent(ctx, types.IntentID(chainID, f.caller, types.IntentKind_INTENT_KIND_PLACE, placed.Nonce))
+		require.True(t, found)
+		require.Equal(t, uint32(tif), stored.TimeInForce)
+	}
+	_, err = f.keeper.PlaceOrder(ctx, f.caller, marketID, types.SideBuy, sdk.NewInt(1), sdk.NewInt(1), 0xff)
+	require.ErrorIs(t, err, types.ErrInvalidIntent)
+	require.Equal(t, uint64(4), f.keeper.GetOwnerNonce(ctx, f.caller))
+	require.Equal(t, uint64(4), f.keeper.GetIntentCount(ctx))
+	require.Equal(t, 4, f.typedEvents(ctx, eventNamespace+"EventOrderPlaced"))
+}
+
 func TestViewsProveFinalizedState(t *testing.T) {
 	f := newFixture(t)
 	exit := f.vectors["exit"][0]
