@@ -12,9 +12,54 @@ pub(crate) enum Error {
 }
 pub(crate) type Result<T> = std::result::Result<T, Error>;
 
+/// The explicit LXKP request contract. Every admitted version/operation pair
+/// names exactly one payload layout and one store handler; anything else is
+/// refused before dispatch.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Operation {
+    Probe,
+    Create,
+    Describe,
+    Rotate,
+    RotateIfCurrent,
+    Destroy,
+    Sign,
+    EvmWallet,
+    Evm,
+    AuthorizeSend,
+    AuthorizeRecipient,
+    ExportPrimary,
+}
+impl Operation {
+    fn from_wire(version: u16, operation: u8) -> Result<Self> {
+        Ok(match (version, operation) {
+            (1, 0) => Self::Probe,
+            (1, 1) => Self::Create,
+            (1, 2) => Self::Describe,
+            (1, 3) => Self::Rotate,
+            (2, 3) => Self::RotateIfCurrent,
+            (1, 4) => Self::Destroy,
+            (1, 5) => Self::Sign,
+            (3, 6) => Self::EvmWallet,
+            (3, 7..=10 | 12) => Self::Evm,
+            (3, 11) => Self::AuthorizeSend,
+            (4, 13) => Self::AuthorizeRecipient,
+            (5, 14) => Self::ExportPrimary,
+            _ => return Err(Error::Refused),
+        })
+    }
+    const fn carries_payload(self) -> bool {
+        matches!(
+            self,
+            Self::Evm | Self::AuthorizeSend | Self::AuthorizeRecipient
+        )
+    }
+}
+
 pub(crate) struct Request<'a> {
     pub version: u16,
     pub operation: u8,
+    pub kind: Operation,
     pub provider: &'a str,
     pub binding: [u8; 32],
     pub network: u32,
@@ -37,12 +82,7 @@ impl<'a> Request<'a> {
         }
         let version = u16::from_be_bytes(r.fixed()?);
         let operation = r.byte()?;
-        if !matches!(
-            (version, operation),
-            (1, 0..=5) | (2, 3) | (3, 6..=12) | (4, 13) | (5, 14)
-        ) {
-            return Err(Error::Refused);
-        }
+        let kind = Operation::from_wire(version, operation)?;
         let provider = std::str::from_utf8(r.blob(256)?).map_err(|_| Error::Refused)?;
         if provider.is_empty() || provider.contains('\0') {
             return Err(Error::Refused);
@@ -50,6 +90,7 @@ impl<'a> Request<'a> {
         let mut value = Self {
             version,
             operation,
+            kind,
             provider,
             binding: [0; 32],
             network: 0,
@@ -61,7 +102,7 @@ impl<'a> Request<'a> {
             disclosure: &[],
             evm: &[],
         };
-        if operation != 0 {
+        if kind != Operation::Probe {
             value.binding = r.fixed()?;
             value.network = u32::from_be_bytes(r.fixed()?);
             value.class = r.byte()?;
@@ -69,15 +110,15 @@ impl<'a> Request<'a> {
             if value.binding == [0; 32]
                 || value.network == 0
                 || !matches!(value.class, 1 | 2)
-                || (operation == 1) != value.reference.is_empty()
+                || (kind == Operation::Create) != value.reference.is_empty()
             {
                 return Err(Error::Refused);
             }
         }
-        if operation == 3 && version == 2 {
+        if kind == Operation::RotateIfCurrent {
             value.expected = Some(r.fixed()?);
         }
-        if operation == 5 {
+        if kind == Operation::Sign {
             value.digest = r.fixed()?;
             value.canonical = r.blob(MAX_FRAME)?;
             value.disclosure = r.blob(MAX_FRAME)?;
@@ -85,7 +126,7 @@ impl<'a> Request<'a> {
                 return Err(Error::Refused);
             }
         }
-        if operation >= 7 {
+        if kind.carries_payload() {
             value.evm = r.blob(MAX_FRAME)?;
         }
         if r.at != bytes.len() {

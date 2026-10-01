@@ -19,16 +19,15 @@ use super::{seal_refusal, CustodyError, EnvelopeKms, KeyClass, KeyEntropy, KmsEr
 const PROVIDER_REFERENCE_LIMIT: usize = 4096;
 const PROVIDER_FRAME_LIMIT: usize = 2_097_152;
 const PROVIDER_MAGIC: &[u8; 4] = b"LXKP";
-const PROVIDER_VERSION: u16 = 1;
-const EXPORT_VERSION: u16 = 5;
 const SIGNATURE_DOMAIN: &[u8] = b"LXP/v1/signature-preimage\0";
-const OP_PROBE: u8 = 0;
-const OP_CREATE: u8 = 1;
-const OP_DESCRIBE: u8 = 2;
-const OP_ROTATE: u8 = 3;
-const OP_DESTROY: u8 = 4;
-const OP_SIGN: u8 = 5;
-const OP_EXPORT: u8 = 14;
+const PROBE: Contract = Contract::new(1, 0);
+const CREATE: Contract = Contract::new(1, 1);
+const DESCRIBE: Contract = Contract::new(1, 2);
+const ROTATE: Contract = Contract::new(1, 3);
+const ROTATE_IF_CURRENT: Contract = Contract::new(2, 3);
+const DESTROY: Contract = Contract::new(1, 4);
+const SIGN: Contract = Contract::new(1, 5);
+const EXPORT: Contract = Contract::new(5, 14);
 const STATUS_OK: u8 = 0;
 const STATUS_REFUSED: u8 = 1;
 const STATUS_NOT_FOUND: u8 = 2;
@@ -36,6 +35,35 @@ const STATUS_CONFLICT: u8 = 3;
 const STATUS_UNAVAILABLE: u8 = 4;
 const STATUS_INTEGRITY: u8 = 5;
 const STATUS_SELF_CUSTODIED: u8 = 6;
+
+/// One LXKP request contract: the version and operation a request frame
+/// carries and its response must echo. Each pair matches exactly one payload
+/// layout in the provider's request decoder; no frame is re-versioned after
+/// encoding.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Contract {
+    version: u16,
+    operation: u8,
+}
+
+impl Contract {
+    const fn new(version: u16, operation: u8) -> Self {
+        Self { version, operation }
+    }
+
+    /// EVM custody contracts; operations 7 through 13 carry one payload blob.
+    const fn evm(operation: u8) -> Option<Self> {
+        match operation {
+            6..=12 => Some(Self::new(3, operation)),
+            13 => Some(Self::new(4, operation)),
+            _ => None,
+        }
+    }
+
+    const fn carries_payload(self) -> bool {
+        self.operation >= 7 && self.operation <= 13
+    }
+}
 
 /// Whether a custody provider may be selected by a production service.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -606,16 +634,7 @@ impl RemoteKmsProvider {
         })
     }
 
-    fn call(&self, operation: u8, request: &[u8]) -> Result<Vec<u8>, KmsError> {
-        self.call_version(operation, PROVIDER_VERSION, request)
-    }
-
-    fn call_version(
-        &self,
-        operation: u8,
-        version: u16,
-        request: &[u8],
-    ) -> Result<Vec<u8>, KmsError> {
+    fn call(&self, contract: Contract, request: &[u8]) -> Result<Vec<u8>, KmsError> {
         if request.len() > self.limits.maximum_frame_bytes {
             return Err(KmsError::InvalidConfiguration);
         }
@@ -634,17 +653,17 @@ impl RemoteKmsProvider {
         .map_err(map_transport)?;
         transport.send(request).map_err(map_transport)?;
         let response = transport.receive().map_err(map_transport)?;
-        decode_response(operation, version, &response)
+        decode_response(contract, &response)
     }
 
     fn key_operation(
         &self,
-        operation: u8,
+        contract: Contract,
         binding: &PrincipalKeyBinding,
         reference: Option<&ProviderKeyReference>,
     ) -> Result<ProviderKeyDescription, KmsError> {
-        let request = encode_key_request(operation, &self.provider_reference, binding, reference)?;
-        let response = self.call(operation, &request)?;
+        let request = encode_key_request(contract, &self.provider_reference, binding, reference)?;
+        let response = self.call(contract, &request)?;
         decode_description(&response, binding)
     }
 }
@@ -671,8 +690,8 @@ impl KmsProvider for RemoteKmsProvider {
     }
 
     fn probe(&self) -> Result<(), KmsError> {
-        let request = encode_header(OP_PROBE, &self.provider_reference)?;
-        let response = self.call(OP_PROBE, &request)?;
+        let request = encode_header(PROBE, &self.provider_reference)?;
+        let response = self.call(PROBE, &request)?;
         if response.is_empty() {
             Ok(())
         } else {
@@ -687,32 +706,24 @@ impl KmsProvider for RemoteKmsProvider {
         reference: &ProviderKeyReference,
         payload: &[u8],
     ) -> Result<Vec<u8>, KmsError> {
-        if !(6..=12).contains(&operation) && operation != 13 {
-            return Err(KmsError::Refused);
-        }
-        let mut frame = encode_key_request(
-            operation,
-            &self.provider_reference,
-            binding,
-            Some(reference),
-        )?;
-        let version = if operation == 13 { 4_u16 } else { 3_u16 };
-        frame[4..6].copy_from_slice(&version.to_be_bytes());
-        if operation >= 7 {
+        let contract = Contract::evm(operation).ok_or(KmsError::Refused)?;
+        let mut frame =
+            encode_key_request(contract, &self.provider_reference, binding, Some(reference))?;
+        if contract.carries_payload() {
             let mut writer = WireWriter::from_bytes(frame);
             writer.bytes(payload, PROVIDER_FRAME_LIMIT)?;
             frame = writer.finish();
         } else if !payload.is_empty() {
             return Err(KmsError::Refused);
         }
-        self.call_version(operation, version, &frame)
+        self.call(contract, &frame)
     }
 
     fn create_key(
         &self,
         binding: &PrincipalKeyBinding,
     ) -> Result<ProviderKeyDescription, KmsError> {
-        self.key_operation(OP_CREATE, binding, None)
+        self.key_operation(CREATE, binding, None)
     }
 
     fn describe_key(
@@ -720,7 +731,7 @@ impl KmsProvider for RemoteKmsProvider {
         binding: &PrincipalKeyBinding,
         reference: &ProviderKeyReference,
     ) -> Result<ProviderKeyDescription, KmsError> {
-        self.key_operation(OP_DESCRIBE, binding, Some(reference))
+        self.key_operation(DESCRIBE, binding, Some(reference))
     }
 
     fn rotate_key(
@@ -728,7 +739,7 @@ impl KmsProvider for RemoteKmsProvider {
         binding: &PrincipalKeyBinding,
         reference: &ProviderKeyReference,
     ) -> Result<ProviderKeyDescription, KmsError> {
-        self.key_operation(OP_ROTATE, binding, Some(reference))
+        self.key_operation(ROTATE, binding, Some(reference))
     }
 
     fn rotate_key_if_current(
@@ -738,14 +749,13 @@ impl KmsProvider for RemoteKmsProvider {
         expected_public_key: [u8; 32],
     ) -> Result<ProviderKeyDescription, KmsError> {
         let mut request = encode_key_request(
-            OP_ROTATE,
+            ROTATE_IF_CURRENT,
             &self.provider_reference,
             binding,
             Some(reference),
         )?;
-        request[4..6].copy_from_slice(&2_u16.to_be_bytes());
         request.extend_from_slice(&expected_public_key);
-        let response = self.call_version(OP_ROTATE, 2, &request)?;
+        let response = self.call(ROTATE_IF_CURRENT, &request)?;
         decode_description(&response, binding)
     }
 
@@ -754,14 +764,9 @@ impl KmsProvider for RemoteKmsProvider {
         binding: &PrincipalKeyBinding,
         reference: &ProviderKeyReference,
     ) -> Result<Zeroizing<[u8; 32]>, KmsError> {
-        let mut request = encode_key_request(
-            OP_EXPORT,
-            &self.provider_reference,
-            binding,
-            Some(reference),
-        )?;
-        request[4..6].copy_from_slice(&EXPORT_VERSION.to_be_bytes());
-        let response = Zeroizing::new(self.call_version(OP_EXPORT, EXPORT_VERSION, &request)?);
+        let request =
+            encode_key_request(EXPORT, &self.provider_reference, binding, Some(reference))?;
+        let response = Zeroizing::new(self.call(EXPORT, &request)?);
         let seed: [u8; 32] = response
             .as_slice()
             .try_into()
@@ -774,13 +779,9 @@ impl KmsProvider for RemoteKmsProvider {
         binding: &PrincipalKeyBinding,
         reference: &ProviderKeyReference,
     ) -> Result<(), KmsError> {
-        let request = encode_key_request(
-            OP_DESTROY,
-            &self.provider_reference,
-            binding,
-            Some(reference),
-        )?;
-        let response = self.call(OP_DESTROY, &request)?;
+        let request =
+            encode_key_request(DESTROY, &self.provider_reference, binding, Some(reference))?;
+        let response = self.call(DESTROY, &request)?;
         if response.is_empty() {
             Ok(())
         } else {
@@ -803,7 +804,7 @@ impl KmsProvider for RemoteKmsProvider {
                 request.canonical_bytes,
                 &validated,
             )?;
-            let response = self.call(OP_SIGN, &frame)?;
+            let response = self.call(SIGN, &frame)?;
             let signature: [u8; 64] = response
                 .as_slice()
                 .try_into()
@@ -950,22 +951,22 @@ impl KmsProvider for EnvelopeKms {
     }
 }
 
-fn encode_header(operation: u8, provider_reference: &str) -> Result<Vec<u8>, KmsError> {
+fn encode_header(contract: Contract, provider_reference: &str) -> Result<Vec<u8>, KmsError> {
     let mut writer = WireWriter::new();
     writer.fixed(PROVIDER_MAGIC)?;
-    writer.u16(PROVIDER_VERSION)?;
-    writer.u8(operation)?;
+    writer.u16(contract.version)?;
+    writer.u8(contract.operation)?;
     writer.bytes(provider_reference.as_bytes(), super::KEY_REFERENCE_LIMIT)?;
     Ok(writer.finish())
 }
 
 fn encode_key_request(
-    operation: u8,
+    contract: Contract,
     provider_reference: &str,
     binding: &PrincipalKeyBinding,
     reference: Option<&ProviderKeyReference>,
 ) -> Result<Vec<u8>, KmsError> {
-    let mut writer = WireWriter::from_bytes(encode_header(operation, provider_reference)?);
+    let mut writer = WireWriter::from_bytes(encode_header(contract, provider_reference)?);
     writer.fixed(&binding.digest)?;
     writer.u32(binding.network_id)?;
     writer.u8(binding.class.code())?;
@@ -983,7 +984,7 @@ fn encode_sign_request(
     canonical: &[u8],
     validated: &ValidatedSignRequest,
 ) -> Result<Vec<u8>, CustodyError> {
-    let mut writer = WireWriter::from_bytes(encode_header(OP_SIGN, provider_reference)?);
+    let mut writer = WireWriter::from_bytes(encode_header(SIGN, provider_reference)?);
     writer.fixed(&binding.digest)?;
     writer.u32(binding.network_id)?;
     writer.u8(binding.class.code())?;
@@ -1097,9 +1098,12 @@ fn encode_disclosure(disclosure: &Disclosure) -> Result<Vec<u8>, CustodyError> {
     Ok(writer.finish())
 }
 
-fn decode_response(operation: u8, version: u16, bytes: &[u8]) -> Result<Vec<u8>, KmsError> {
+fn decode_response(contract: Contract, bytes: &[u8]) -> Result<Vec<u8>, KmsError> {
     let mut reader = WireReader::new(bytes);
-    if reader.fixed(4)? != PROVIDER_MAGIC || reader.u16()? != version || reader.u8()? != operation {
+    if reader.fixed(4)? != PROVIDER_MAGIC
+        || reader.u16()? != contract.version
+        || reader.u8()? != contract.operation
+    {
         return Err(KmsError::InvalidResponse);
     }
     let status = reader.u8()?;
