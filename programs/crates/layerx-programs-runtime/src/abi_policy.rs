@@ -80,6 +80,24 @@ pub const fn capability_encoding(requested: u16) -> Result<CapabilityEncoding, A
     }
 }
 
+/// Selects the version-specific validator revision for an admitted ABI version.
+///
+/// Every module validation route, including interface admission, resolves its
+/// import validator through this binding instead of a local version switch.
+///
+/// # Errors
+///
+/// Returns a version refusal when the requested ABI is not admitted.
+pub const fn abi_revision(requested: u16) -> Result<AbiRevision, AbiVersionRefusal> {
+    match requested {
+        ABI_V1_VERSION => Ok(AbiRevision::V1),
+        ABI_V2_VERSION => Ok(AbiRevision::V2),
+        ABI_V3_VERSION => Ok(AbiRevision::V3),
+        ABI_V4_VERSION => Ok(AbiRevision::V4),
+        _ => Err(AbiVersionRefusal::Unsupported { requested }),
+    }
+}
+
 /// The ABI version a validated module's revision records.
 #[must_use]
 pub const fn abi_version(revision: AbiRevision) -> u16 {
@@ -94,7 +112,8 @@ pub const fn abi_version(revision: AbiRevision) -> u16 {
 #[cfg(test)]
 mod tests {
     use super::{
-        abi_version, admit_abi_version, capability_encoding, AbiVersionRefusal, CapabilityEncoding,
+        abi_revision, abi_version, admit_abi_version, capability_encoding, AbiVersionRefusal,
+        CapabilityEncoding,
     };
     use crate::AbiRevision;
 
@@ -115,6 +134,13 @@ mod tests {
             capability_encoding(5),
             Err(AbiVersionRefusal::Unsupported { requested: 5 })
         );
+        for requested in 0..=u16::from(u8::MAX) {
+            assert_eq!(
+                admit_abi_version(requested).is_ok(),
+                abi_revision(requested).is_ok(),
+                "ABI {requested} admission and validator revision disagree"
+            );
+        }
     }
 
     #[test]
@@ -127,6 +153,7 @@ mod tests {
         ] {
             let recorded = abi_version(revision);
             assert!(admit_abi_version(recorded).is_ok());
+            assert_eq!(abi_revision(recorded), Ok(revision));
             assert_eq!(
                 capability_encoding(recorded),
                 Ok(if matches!(revision, AbiRevision::V1) {
