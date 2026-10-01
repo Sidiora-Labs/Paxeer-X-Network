@@ -42,7 +42,7 @@ def run(argv, *, env=None, timeout=90, input=None, check=True):
     result = subprocess.run([str(x) for x in argv], input=input, capture_output=True,
                             env={**ENV, **(env or {})}, timeout=timeout)
     if check:
-        require(result.returncode == 0, Path(str(argv[0])).name + ' producer exit=' + str(result.returncode) + '; private stderr: ' + str(diagnostic))
+        require(result.returncode == 0, Path(str(argv[0])).name + ' producer exit=' + str(result.returncode))
     return result
 
 
