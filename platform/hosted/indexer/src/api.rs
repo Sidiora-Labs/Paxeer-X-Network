@@ -1,5 +1,8 @@
-//! The read API: `/healthz`, `/v1/history/{account}`, `/v1/assets` and
-//! `/v1/assets/{id}`, served over plain HTTP on loopback or over TLS.
+//! The read API: `/healthz`, `/v1/history/{account}`, `/v1/assets`,
+//! `/v1/assets/{id}` and `/v1/settlement/{activity_id}`, served over plain
+//! HTTP on loopback or over TLS. Transfer items and settlement documents
+//! publish local reversible-depth `stability` and LayerX `settlement`
+//! separately, each with its evidence source.
 
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -145,6 +148,21 @@ pub fn route(store: &Store, method: &str, target: &str) -> Response {
         return match store.asset(&asset) {
             Ok(Some(document)) => json(200, &json!({ "version": 1, "asset": document })),
             Ok(None) => refusal(404, "asset_not_found", None),
+            Err(error) => failure(&error),
+        };
+    }
+    if let Some(segment) = path.strip_prefix("/v1/settlement/") {
+        if query.is_some_and(|query| !query.is_empty()) {
+            return refusal(400, "unknown_query_parameter", None);
+        }
+        let activity = match identifier(segment) {
+            Ok(activity) if !activity.contains('/') => activity.to_ascii_lowercase(),
+            Ok(_) => return refusal(404, "not_found", None),
+            Err(response) => return response,
+        };
+        return match store.settlement(crate::layerx::CHAIN, &activity) {
+            Ok(Some(document)) => json(200, &json!({ "version": 1, "receipt": document })),
+            Ok(None) => refusal(404, "settlement_not_found", None),
             Err(error) => failure(&error),
         };
     }

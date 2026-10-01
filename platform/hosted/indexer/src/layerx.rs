@@ -1,15 +1,24 @@
 //! The LayerX half: follows a relay/archive node's synchronization head and
 //! reads each committed batch from `/v1/history/batches/N`, decoding every
 //! receipt with the frozen `layerx-wire` decoder into the 15-field activity
-//! receipt and the 21-field 402LXP receipt.
+//! receipt and the 21-field 402LXP receipt. Each transfer-bearing receipt
+//! is classified for settlement through [`verify_settlement`] when trust is
+//! configured; depth and ordering never enter that classification.
 
 use layerx_types::receipt::{ACTIVITY_RECEIPT_FIELDS, LXP_RECEIPT_FIELDS};
 use layerx_wire::receipt::{self as wire_receipt, ProtocolReceipt, Receipt};
 use serde_json::{json, Map, Value};
 
 use crate::codec::{hex, is_zero, unhex};
+use crate::config::SettlementTrust;
 use crate::follow::{walk_back, FollowPolicy, StepOutcome};
-use crate::store::{AssetRow, EventRow, Store, TransferRow, Unit};
+use crate::settlement::{
+    verify_settlement, SettlementInput, SettlementRefusal, VerifiedSettlement,
+};
+use crate::store::{
+    AssetRow, EventRow, SettlementRecord, Store, TransferRow, Unit, SETTLEMENT_EVIDENCE_ABSENT,
+    SETTLEMENT_EVIDENCE_MALFORMED, SETTLEMENT_OUTSIDE_AUTHORIZATION, SETTLEMENT_TRUST_UNCONFIGURED,
+};
 use crate::transport::Endpoint;
 use crate::IndexError;
 
@@ -377,11 +386,121 @@ fn decode_activity(
     Ok(())
 }
 
+/// Why a receipt was not verified.
+enum Unsettled {
+    Unavailable(&'static str),
+    Refused(SettlementRefusal),
+}
+
+fn evidence(value: &Value, field: &str) -> Result<Vec<u8>, Unsettled> {
+    match value.get(field) {
+        None | Some(Value::Null) => Err(Unsettled::Unavailable(SETTLEMENT_EVIDENCE_ABSENT)),
+        Some(Value::String(text)) => {
+            unhex(text).map_err(|_| Unsettled::Unavailable(SETTLEMENT_EVIDENCE_MALFORMED))
+        }
+        Some(_) => Err(Unsettled::Unavailable(SETTLEMENT_EVIDENCE_MALFORMED)),
+    }
+}
+
+/// Verifies one receipt of a relay batch document: the batch carries the
+/// canonical signed header (`signed_header_hex`; `header_hex` is only its
+/// 32-byte identity), its signature (`signature_hex`) and the CP1/CX1 checkpoint
+/// evidence (`checkpoint_hex`, `context_hex`); the activity carries the
+/// receipt (`receipt_hex`) and its encoded inclusion proof
+/// (`receipt_proof_hex`).
+fn settle_receipt(
+    document: &Value,
+    activity: &Value,
+    batch_number: u64,
+    trust: &SettlementTrust,
+) -> Result<VerifiedSettlement, Unsettled> {
+    let authorization = &trust.authorization;
+    if !(authorization.first_batch_number()..=authorization.last_batch_number())
+        .contains(&batch_number)
+    {
+        return Err(Unsettled::Unavailable(SETTLEMENT_OUTSIDE_AUTHORIZATION));
+    }
+    let header = evidence(document, "signed_header_hex")?;
+    let signature: [u8; 64] = evidence(document, "signature_hex")?
+        .try_into()
+        .map_err(|_| Unsettled::Unavailable(SETTLEMENT_EVIDENCE_MALFORMED))?;
+    let checkpoint = evidence(document, "checkpoint_hex")?;
+    let context = evidence(document, "context_hex")?;
+    let receipt = evidence(activity, "receipt_hex")?;
+    let receipt_proof = evidence(activity, "receipt_proof_hex")?;
+    let policy = trust.verifier.policy();
+    verify_settlement(&SettlementInput {
+        receipt: &receipt,
+        receipt_proof: &receipt_proof,
+        header: &header,
+        header_signature: &signature,
+        authorization,
+        batch_number,
+        checkpoint: &checkpoint,
+        context: &context,
+        protocol_version: policy.protocol_version,
+        network_id: policy.network_id,
+        verifier: Some(&trust.verifier),
+    })
+    .map_err(Unsettled::Refused)
+}
+
+/// Classifies the settlement of every transfer-bearing receipt of `unit`,
+/// decoded from the relay batch `document`. Without `trust`, or without the
+/// evidence fields, a receipt is unverified; a canonical refusal publishes
+/// its own level; only a [`VerifiedSettlement`] is verified.
+#[must_use]
+pub fn settle_batch(
+    document: &Value,
+    unit: &Unit,
+    trust: Option<&SettlementTrust>,
+) -> Vec<SettlementRecord> {
+    let activities = document.get("activities").and_then(Value::as_array);
+    let mut records: Vec<SettlementRecord> = Vec::new();
+    for transfer in &unit.transfers {
+        if records
+            .iter()
+            .any(|record| record.tx_id() == transfer.tx_id)
+        {
+            continue;
+        }
+        let activity = activities.and_then(|activities| {
+            activities.iter().find(|activity| {
+                activity
+                    .get("activity_id")
+                    .and_then(Value::as_str)
+                    .is_some_and(|id| id.eq_ignore_ascii_case(&transfer.tx_id))
+            })
+        });
+        // ponytail: one Paxeer publication lookup per receipt; share one per
+        // batch checkpoint if relay batches grow large.
+        let outcome = match (trust, activity) {
+            (None, _) => Err(Unsettled::Unavailable(SETTLEMENT_TRUST_UNCONFIGURED)),
+            (Some(_), None) => Err(Unsettled::Unavailable(SETTLEMENT_EVIDENCE_ABSENT)),
+            (Some(trust), Some(activity)) => {
+                settle_receipt(document, activity, unit.position, trust)
+            }
+        };
+        let tx_id = transfer.tx_id.clone();
+        records.push(match outcome {
+            Ok(settlement) => SettlementRecord::verified(tx_id, &settlement),
+            Err(Unsettled::Refused(refusal)) => {
+                SettlementRecord::refused(tx_id, transfer.height_or_seq, &refusal)
+            }
+            Err(Unsettled::Unavailable(reason)) => {
+                SettlementRecord::unavailable(tx_id, transfer.height_or_seq, reason)
+            }
+        });
+    }
+    records
+}
+
 /// Follows one relay/archive node.
 pub struct LayerXIngester {
     relay: Endpoint,
     policy: FollowPolicy,
     start_batch: Option<u64>,
+    settlement: Option<SettlementTrust>,
 }
 
 impl LayerXIngester {
@@ -391,7 +510,15 @@ impl LayerXIngester {
             relay,
             policy,
             start_batch,
+            settlement: None,
         }
+    }
+
+    /// Verifies receipt settlement against `trust` while ingesting.
+    #[must_use]
+    pub fn with_settlement(mut self, trust: Option<SettlementTrust>) -> Self {
+        self.settlement = trust;
+        self
     }
 
     fn batch(&self, number: u64) -> Result<Option<Value>, IndexError> {
@@ -469,7 +596,8 @@ impl LayerXIngester {
                     return self.reorg(store, previous.position, start);
                 }
             }
-            store.commit(&unit, self.policy.finality_depth)?;
+            let settlements = settle_batch(&document, &unit, self.settlement.as_ref());
+            store.commit_settled(&unit, self.policy.finality_depth, &settlements)?;
             units += 1;
         }
         Ok(StepOutcome::Advanced {

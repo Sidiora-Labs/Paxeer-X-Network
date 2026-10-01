@@ -1,9 +1,16 @@
 //! Environment configuration of the indexer service.
 
+use std::fs::File;
+use std::io::Read as _;
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::os::unix::fs::MetadataExt as _;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use layerx_client::handover::{decode_finality_policy, SequencerHistory};
+use layerx_paxeer_verifier::PaxeerCheckpointVerifier;
+use layerx_proof::inclusion::SequencerAuthorization;
+use layerx_wire::handover::{sequencer_id, GENESIS_TRUST_MAX_BYTES};
 use serde_json::json;
 
 use crate::abi::address_text;
@@ -55,6 +62,143 @@ pub struct LayerXSource {
     pub relay: Endpoint,
     pub start_batch: Option<u64>,
     pub policy: FollowPolicy,
+    /// Receipt settlement verification trust; `None` publishes every receipt
+    /// as settlement-unverified.
+    pub settlement: Option<SettlementTrust>,
+}
+
+/// The settlement trust variables. All six are set together or none is:
+/// - `LAYERX_INDEXER_GENESIS_TRUST`: absolute path of the protected genesis
+///   trust artifact (owner-only file) that pins the initial sequencer key;
+/// - `LAYERX_INDEXER_HANDOVER_FINALITY`: absolute path of the protected
+///   handover finality policy (Paxeer endpoint, registry, guarantor bond,
+///   protocol version, network, genesis root, confirmations);
+/// - `LAYERX_INDEXER_SEQUENCER_ID`: 32-byte hex sequencer id, derived from
+///   the public key;
+/// - `LAYERX_INDEXER_SEQUENCER_PUBLIC_KEY`: 32-byte hex genesis sequencer key;
+/// - `LAYERX_INDEXER_SEQUENCER_FIRST_BATCH` / `LAYERX_INDEXER_SEQUENCER_LAST_BATCH`:
+///   inclusive decimal batch range that key is authorised for.
+pub const SETTLEMENT_VARIABLES: [&str; 6] = [
+    "LAYERX_INDEXER_GENESIS_TRUST",
+    "LAYERX_INDEXER_HANDOVER_FINALITY",
+    "LAYERX_INDEXER_SEQUENCER_ID",
+    "LAYERX_INDEXER_SEQUENCER_PUBLIC_KEY",
+    "LAYERX_INDEXER_SEQUENCER_FIRST_BATCH",
+    "LAYERX_INDEXER_SEQUENCER_LAST_BATCH",
+];
+
+const FINALITY_POLICY_MAX_BYTES: u64 = 1_048_576;
+
+/// The pinned trust receipt settlement is verified against: the sequencer
+/// authorisation bound to the genesis trust artifact and the independent
+/// Paxeer publication verifier under the handover finality policy.
+#[derive(Clone, Debug)]
+pub struct SettlementTrust {
+    pub authorization: SequencerAuthorization,
+    pub verifier: PaxeerCheckpointVerifier,
+}
+
+impl SettlementTrust {
+    /// Reads the settlement trust through `lookup`; `None` when none of
+    /// [`SETTLEMENT_VARIABLES`] is set.
+    ///
+    /// # Errors
+    /// Refuses a partial set, malformed pins, an unprotected or unreadable
+    /// file, a policy the canonical decoder or verifier refuses, a sequencer
+    /// id that does not derive from the key, and a genesis artifact that does
+    /// not pin that key under the policy's network and genesis root.
+    pub fn from_lookup<F>(lookup: &F) -> Result<Option<Self>, IndexError>
+    where
+        F: Fn(&str) -> Option<String>,
+    {
+        let missing: Vec<&str> = SETTLEMENT_VARIABLES
+            .into_iter()
+            .filter(|name| lookup(name).is_none())
+            .collect();
+        if missing.len() == SETTLEMENT_VARIABLES.len() {
+            return Ok(None);
+        }
+        if !missing.is_empty() {
+            return Err(IndexError::Config(format!(
+                "settlement trust is incomplete: set {}",
+                missing.join(", ")
+            )));
+        }
+        let value = |name: &str| lookup(name).unwrap_or_default().trim().to_owned();
+        let authorization = SequencerAuthorization::from_config(
+            &value("LAYERX_INDEXER_SEQUENCER_ID"),
+            &value("LAYERX_INDEXER_SEQUENCER_PUBLIC_KEY"),
+            &value("LAYERX_INDEXER_SEQUENCER_FIRST_BATCH"),
+            &value("LAYERX_INDEXER_SEQUENCER_LAST_BATCH"),
+        )
+        .map_err(|field| IndexError::Config(format!("settlement {field} is malformed")))?;
+        let key = authorization.public_key();
+        if sequencer_id(&key).ok() != Some(authorization.sequencer_id()) {
+            return Err(IndexError::Config(
+                "LAYERX_INDEXER_SEQUENCER_ID does not derive from LAYERX_INDEXER_SEQUENCER_PUBLIC_KEY"
+                    .to_owned(),
+            ));
+        }
+        let policy_name = "LAYERX_INDEXER_HANDOVER_FINALITY";
+        let policy = decode_finality_policy(&protected_file(
+            policy_name,
+            &value(policy_name),
+            FINALITY_POLICY_MAX_BYTES,
+        )?)
+        .map_err(|_| IndexError::Config(format!("{policy_name} is not a finality policy")))?;
+        let genesis_name = "LAYERX_INDEXER_GENESIS_TRUST";
+        let genesis_limit = u64::try_from(GENESIS_TRUST_MAX_BYTES)
+            .map_err(|_| IndexError::Config(format!("{genesis_name} limit exceeds u64")))?;
+        let artifact = protected_file(genesis_name, &value(genesis_name), genesis_limit)?;
+        SequencerHistory::from_genesis_artifact(
+            &artifact,
+            policy.network_id,
+            policy.canonical_genesis_root,
+            key,
+        )
+        .map_err(|_| {
+            IndexError::Config(format!(
+                "{genesis_name} does not pin the sequencer key under {policy_name}"
+            ))
+        })?;
+        let verifier = PaxeerCheckpointVerifier::new(policy)
+            .map_err(|_| IndexError::Config(format!("{policy_name} is refused by the verifier")))?;
+        Ok(Some(Self {
+            authorization,
+            verifier,
+        }))
+    }
+}
+
+/// Reads trust material only from an absolute canonical regular file owned
+/// by this process's user with no group or other permission bits.
+fn protected_file(name: &str, path: &str, maximum: u64) -> Result<Vec<u8>, IndexError> {
+    let refuse = |why: &str| IndexError::Config(format!("{name} {path}: {why}"));
+    let path_ref = Path::new(path);
+    if !path_ref.is_absolute() || std::fs::canonicalize(path_ref).ok().as_deref() != Some(path_ref)
+    {
+        return Err(refuse("must be an absolute canonical path"));
+    }
+    let owner = std::fs::metadata("/proc/self")
+        .map_err(|error| refuse(&error.to_string()))?
+        .uid();
+    let file = File::open(path_ref).map_err(|error| refuse(&error.to_string()))?;
+    let metadata = file
+        .metadata()
+        .map_err(|error| refuse(&error.to_string()))?;
+    if !metadata.is_file() || metadata.uid() != owner || metadata.mode() & 0o077 != 0 {
+        return Err(refuse(
+            "must be a regular file owned by this user without group or other access",
+        ));
+    }
+    let mut bytes = Vec::new();
+    file.take(maximum.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .map_err(|error| refuse(&error.to_string()))?;
+    if !u64::try_from(bytes.len()).is_ok_and(|length| length <= maximum) {
+        return Err(refuse("exceeds its size limit"));
+    }
+    Ok(bytes)
 }
 
 /// The whole service configuration.
@@ -197,6 +341,19 @@ where
         .transpose()
 }
 
+fn attribute_encoding<F>(lookup: &F) -> Result<AttributeEncoding, IndexError>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    match lookup("LAYERX_INDEXER_COMET_ATTRIBUTES").as_deref() {
+        None | Some("base64") => Ok(AttributeEncoding::Base64),
+        Some("plain") => Ok(AttributeEncoding::Plain),
+        Some(other) => Err(IndexError::Config(format!(
+            "LAYERX_INDEXER_COMET_ATTRIBUTES {other} is neither base64 nor plain"
+        ))),
+    }
+}
+
 /// Parses `0xaddress=denom,...` into pointer asset registrations.
 ///
 /// # Errors
@@ -291,6 +448,7 @@ impl Config {
                     max_units_per_step,
                 })
             };
+        let settlement = SettlementTrust::from_lookup(lookup)?;
         let layerx = endpoint("LAYERX_INDEXER_RELAY_URL", "LAYERX_INDEXER_RELAY_CA_DER")?
             .map(|relay| -> Result<LayerXSource, IndexError> {
                 Ok(LayerXSource {
@@ -300,18 +458,11 @@ impl Config {
                         "LAYERX_INDEXER_BATCH_INTERVAL_MS",
                         DEFAULT_BATCH_INTERVAL_MS,
                     )?,
+                    settlement: settlement.clone(),
                 })
             })
             .transpose()?;
-        let encoding = match lookup("LAYERX_INDEXER_COMET_ATTRIBUTES").as_deref() {
-            None | Some("base64") => AttributeEncoding::Base64,
-            Some("plain") => AttributeEncoding::Plain,
-            Some(other) => {
-                return Err(IndexError::Config(format!(
-                    "LAYERX_INDEXER_COMET_ATTRIBUTES {other} is neither base64 nor plain"
-                )))
-            }
-        };
+        let encoding = attribute_encoding(lookup)?;
         let comet = endpoint("LAYERX_INDEXER_COMET_URL", "LAYERX_INDEXER_COMET_CA_DER")?;
         let paxeer = endpoint("LAYERX_INDEXER_EVM_URL", "LAYERX_INDEXER_EVM_CA_DER")?
             .map(|evm| -> Result<PaxeerSource, IndexError> {

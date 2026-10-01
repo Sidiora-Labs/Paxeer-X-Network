@@ -16,8 +16,11 @@ use std::sync::{Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, Connection, OptionalExtension as _, Row};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+use crate::codec::hex;
+use crate::settlement::{SettlementLevel, SettlementRefusal, VerifiedSettlement};
 use crate::IndexError;
 
 const SCHEMA: &str = "
@@ -113,6 +116,16 @@ CREATE TABLE IF NOT EXISTS chain_links(
     boundary INTEGER NOT NULL,
     PRIMARY KEY(chain, position)
 );
+CREATE TABLE IF NOT EXISTS settlements(
+    chain TEXT NOT NULL,
+    tx_id TEXT NOT NULL,
+    height_or_seq INTEGER NOT NULL,
+    level TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    source_json TEXT,
+    PRIMARY KEY(chain, tx_id)
+);
+CREATE INDEX IF NOT EXISTS settlements_position ON settlements(chain, height_or_seq);
 ";
 
 /// Evidence source of the published local stability level: the configured
@@ -124,6 +137,208 @@ pub const SETTLEMENT_UNVERIFIED: &str = "unverified";
 /// Why settlement is unverified: the index holds no verified checkpoint or
 /// anchor evidence bound to the receipt.
 pub const SETTLEMENT_UNAVAILABLE_REASON: &str = "no_verified_checkpoint_evidence";
+/// Evidence source of a verified settlement level: the receipt-bound
+/// checkpoint certificate independently published on Paxeer.
+pub const SETTLEMENT_SOURCE: &str = "paxeer_checkpoint_publication";
+/// Why a verified settlement was recorded.
+pub const SETTLEMENT_VERIFIED_REASON: &str = "receipt_bound_checkpoint_published";
+/// No settlement trust is configured, so no receipt can be verified.
+pub const SETTLEMENT_TRUST_UNCONFIGURED: &str = "settlement_trust_unconfigured";
+/// The source served no checkpoint, context or receipt proof for the receipt.
+pub const SETTLEMENT_EVIDENCE_ABSENT: &str = "settlement_evidence_absent";
+/// The source served settlement evidence that is not hex of the right size.
+pub const SETTLEMENT_EVIDENCE_MALFORMED: &str = "settlement_evidence_malformed";
+/// The batch lies outside the pinned sequencer authorisation range.
+pub const SETTLEMENT_OUTSIDE_AUTHORIZATION: &str = "batch_outside_pinned_authorization";
+/// A stored settlement record could not be read back; nothing is claimed.
+pub const SETTLEMENT_RECORD_UNREADABLE: &str = "settlement_record_unreadable";
+
+/// The stable label of the check that kept a receipt below verified.
+#[must_use]
+pub const fn settlement_reason(refusal: &SettlementRefusal) -> &'static str {
+    match refusal {
+        SettlementRefusal::Checkpoint(_) => "checkpoint_rejected",
+        SettlementRefusal::HeaderNotCheckpointed => "header_not_checkpointed",
+        SettlementRefusal::BatchMismatch { .. } => "batch_mismatch",
+        SettlementRefusal::ProofEncoding(_) => "receipt_proof_malformed",
+        SettlementRefusal::Inclusion(_) => "receipt_not_included",
+        SettlementRefusal::ReceiptDecode => "receipt_undecodable",
+        SettlementRefusal::ReceiptShape => "receipt_not_protocol",
+        SettlementRefusal::ProtocolVersion => "protocol_version_mismatch",
+        SettlementRefusal::SequenceRange => "sequence_outside_header",
+        SettlementRefusal::PublicationUnconfigured => "publication_verifier_unconfigured",
+        SettlementRefusal::Publication(_) => "publication_unestablished",
+        SettlementRefusal::PublicationBinding(_) => "publication_binding_mismatch",
+    }
+}
+
+/// One Paxeer block named by a verified settlement.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AnchorBlock {
+    pub number: String,
+    pub hash: String,
+    pub timestamp: String,
+}
+
+/// The checkpoint and anchor evidence a verified settlement rests on.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SettlementSource {
+    pub evidence: String,
+    pub checkpoint_id: String,
+    pub settlement_reference: String,
+    pub set_version: String,
+    pub batch_number: String,
+    pub global_sequence: String,
+    pub header_digest: String,
+    pub registration: AnchorBlock,
+    pub confirmed_head: AnchorBlock,
+}
+
+/// The settlement classification of one indexed receipt. A verified record
+/// can only be built from a [`VerifiedSettlement`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SettlementRecord {
+    tx_id: String,
+    height_or_seq: u64,
+    level: SettlementLevel,
+    reason: &'static str,
+    source: Option<SettlementSource>,
+}
+
+impl SettlementRecord {
+    /// Records a settlement every canonical check accepted, at the receipt's
+    /// own global sequence.
+    #[must_use]
+    pub fn verified(tx_id: String, settlement: &VerifiedSettlement) -> Self {
+        let anchor = |block: layerx_paxeer_verifier::BlockAnchor| AnchorBlock {
+            number: block.number.to_string(),
+            hash: hex(&block.hash),
+            timestamp: block.timestamp.to_string(),
+        };
+        Self {
+            tx_id,
+            height_or_seq: settlement.global_sequence(),
+            level: settlement.level(),
+            reason: SETTLEMENT_VERIFIED_REASON,
+            source: Some(SettlementSource {
+                evidence: SETTLEMENT_SOURCE.to_owned(),
+                checkpoint_id: hex(&settlement.checkpoint_id()),
+                settlement_reference: hex(settlement.settlement_reference()),
+                set_version: settlement.set_version().to_string(),
+                batch_number: settlement.batch_number().to_string(),
+                global_sequence: settlement.global_sequence().to_string(),
+                header_digest: hex(&settlement.header_digest()),
+                registration: anchor(settlement.registration()),
+                confirmed_head: anchor(settlement.confirmed_head()),
+            }),
+        }
+    }
+
+    /// Records the level a canonical refusal publishes.
+    #[must_use]
+    pub fn refused(tx_id: String, height_or_seq: u64, refusal: &SettlementRefusal) -> Self {
+        Self {
+            tx_id,
+            height_or_seq,
+            level: refusal.level(),
+            reason: settlement_reason(refusal),
+            source: None,
+        }
+    }
+
+    /// Records that no verification could run for the receipt.
+    #[must_use]
+    pub fn unavailable(tx_id: String, height_or_seq: u64, reason: &'static str) -> Self {
+        Self {
+            tx_id,
+            height_or_seq,
+            level: SettlementLevel::Unverified,
+            reason,
+            source: None,
+        }
+    }
+
+    #[must_use]
+    pub fn tx_id(&self) -> &str {
+        &self.tx_id
+    }
+
+    #[must_use]
+    pub const fn height_or_seq(&self) -> u64 {
+        self.height_or_seq
+    }
+
+    #[must_use]
+    pub const fn level(&self) -> SettlementLevel {
+        self.level
+    }
+
+    #[must_use]
+    pub const fn reason(&self) -> &'static str {
+        self.reason
+    }
+
+    #[must_use]
+    pub const fn source(&self) -> Option<&SettlementSource> {
+        self.source.as_ref()
+    }
+}
+
+fn stored_level(text: &str) -> Option<SettlementLevel> {
+    [
+        SettlementLevel::Unverified,
+        SettlementLevel::Invalid,
+        SettlementLevel::Verified,
+    ]
+    .into_iter()
+    .find(|level| level.as_str() == text)
+}
+
+/// The published settlement object for stored columns. A missing record is
+/// unverified; a verified record whose source cannot be read back is
+/// published as unverified, never as verified.
+fn settlement_document(level: Option<&str>, reason: Option<&str>, source: Option<&str>) -> Value {
+    let unverified = |reason: &str| json!({ "level": SettlementLevel::Unverified.as_str(), "source": Value::Null, "reason": reason });
+    let Some(level) = level else {
+        return unverified(SETTLEMENT_UNAVAILABLE_REASON);
+    };
+    match (stored_level(level), reason) {
+        (Some(SettlementLevel::Verified), Some(reason)) => source
+            .and_then(|text| serde_json::from_str::<SettlementSource>(text).ok())
+            .filter(|source| source.evidence == SETTLEMENT_SOURCE)
+            .map_or_else(
+                || unverified(SETTLEMENT_RECORD_UNREADABLE),
+                |source| json!({ "level": SettlementLevel::Verified.as_str(), "source": source, "reason": reason }),
+            ),
+        (Some(level), Some(reason)) => {
+            json!({ "level": level.as_str(), "source": Value::Null, "reason": reason })
+        }
+        _ => unverified(SETTLEMENT_RECORD_UNREADABLE),
+    }
+}
+
+/// Local reversible-depth stability of `position` on `chain`.
+fn stability_document(
+    chain: &str,
+    position: i64,
+    finality: &[(String, Option<i64>)],
+) -> (bool, Value) {
+    let boundary = finality
+        .iter()
+        .find(|(name, _)| name == chain)
+        .and_then(|(_, boundary)| *boundary);
+    let stable = boundary.is_some_and(|boundary| position <= boundary);
+    (
+        stable,
+        json!({
+            "level": if stable { "depth_stable" } else { "reversible" },
+            "source": STABILITY_SOURCE,
+            "finalized_boundary": boundary.map(|boundary| boundary.to_string()),
+        }),
+    )
+}
 
 /// One decoded transfer leg.
 #[derive(Clone, Debug, PartialEq)]
@@ -387,11 +602,27 @@ impl Store {
     /// # Errors
     /// Returns [`IndexError::Store`] on SQLite failure; nothing is written.
     pub fn commit(&self, unit: &Unit, finality_depth: u64) -> Result<(), IndexError> {
+        self.commit_settled(unit, finality_depth, &[])
+    }
+
+    /// Commits one unit as [`Store::commit`] does, together with the
+    /// settlement classification of its receipts, in the same transaction.
+    ///
+    /// # Errors
+    /// Returns [`IndexError::Integrity`] for a record outside the unit and
+    /// [`IndexError::Store`] on SQLite failure; nothing is written.
+    pub fn commit_settled(
+        &self,
+        unit: &Unit,
+        finality_depth: u64,
+        settlements: &[SettlementRecord],
+    ) -> Result<(), IndexError> {
         let mut connection = self.lock()?;
         let transaction = connection.transaction()?;
         let stamp = now();
         let (finalized, finalized_boundary) =
             Self::write_unit(&transaction, unit, finality_depth, stamp)?;
+        Self::write_settlements(&transaction, unit, settlements)?;
         Self::write_cursor(
             &transaction,
             &unit.chain,
@@ -403,6 +634,81 @@ impl Store {
         )?;
         transaction.commit()?;
         Ok(())
+    }
+
+    fn write_settlements(
+        transaction: &rusqlite::Transaction<'_>,
+        unit: &Unit,
+        settlements: &[SettlementRecord],
+    ) -> Result<(), IndexError> {
+        for record in settlements {
+            if record.height_or_seq > unit.boundary
+                || !unit
+                    .transfers
+                    .iter()
+                    .any(|transfer| transfer.tx_id == record.tx_id)
+            {
+                return Err(IndexError::Integrity(format!(
+                    "settlement of {} is outside {} unit {}",
+                    record.tx_id, unit.chain, unit.position
+                )));
+            }
+            let source = record
+                .source
+                .as_ref()
+                .map(serde_json::to_string)
+                .transpose()
+                .map_err(|error| IndexError::Store(error.to_string()))?;
+            transaction.execute(
+                "INSERT INTO settlements(chain, tx_id, height_or_seq, level, reason, source_json)
+                 VALUES(?1, ?2, ?3, ?4, ?5, ?6)
+                 ON CONFLICT(chain, tx_id) DO UPDATE SET height_or_seq = excluded.height_or_seq,
+                   level = excluded.level, reason = excluded.reason,
+                   source_json = excluded.source_json",
+                params![
+                    unit.chain,
+                    record.tx_id,
+                    signed(record.height_or_seq)?,
+                    record.level.as_str(),
+                    record.reason,
+                    source
+                ],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// The published stability and settlement of one receipt of `chain`.
+    ///
+    /// # Errors
+    /// Returns [`IndexError::Store`] on SQLite failure.
+    pub fn settlement(&self, chain: &str, tx_id: &str) -> Result<Option<Value>, IndexError> {
+        let connection = self.lock()?;
+        let finality = Self::finality(&connection)?;
+        let row = connection
+            .query_row(
+                "SELECT height_or_seq, level, reason, source_json FROM settlements
+                 WHERE chain = ?1 AND tx_id = ?2",
+                params![chain, tx_id],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, Option<String>>(3)?,
+                    ))
+                },
+            )
+            .optional()?;
+        Ok(row.map(|(position, level, reason, source)| {
+            json!({
+                "chain": chain,
+                "tx_id": tx_id,
+                "height_or_seq": position.to_string(),
+                "stability": stability_document(chain, position, &finality).1,
+                "settlement": settlement_document(Some(level.as_str()), Some(reason.as_str()), source.as_deref()),
+            })
+        }))
     }
 
     /// The backfill cursor of `chain`, when a backfill has committed
@@ -848,6 +1154,10 @@ impl Store {
                     params![chain, boundary],
                 )?;
                 transaction.execute(
+                    "DELETE FROM settlements WHERE chain = ?1 AND height_or_seq > ?2",
+                    params![chain, boundary],
+                )?;
+                transaction.execute(
                     "DELETE FROM chain_links WHERE chain = ?1 AND position > ?2",
                     params![chain, signed(fork)?],
                 )?;
@@ -861,6 +1171,7 @@ impl Store {
                 for statement in [
                     "DELETE FROM transfers WHERE chain = ?1",
                     "DELETE FROM events WHERE chain = ?1",
+                    "DELETE FROM settlements WHERE chain = ?1",
                     "DELETE FROM chain_links WHERE chain = ?1",
                     "DELETE FROM cursors WHERE chain = ?1",
                 ] {
@@ -939,11 +1250,13 @@ impl Store {
         let upper = cursor.map_or(Ok(i64::MAX), signed)?;
         let fetch = i64::try_from(limit.saturating_add(1)).unwrap_or(i64::MAX);
         let mut statement = connection.prepare(
-            "SELECT id, height_or_seq, chain, kind, direction, account, counterparty, asset, amount,
-                tx_id, ordinal, decoded_json
-             FROM transfers
-             WHERE account = ?1 AND id < ?2 AND (?3 IS NULL OR kind = ?3)
-             ORDER BY id DESC LIMIT ?4",
+            "SELECT t.id, t.height_or_seq, t.chain, t.kind, t.direction, t.account, t.counterparty,
+                t.asset, t.amount, t.tx_id, t.ordinal, t.decoded_json, s.level, s.reason,
+                s.source_json
+             FROM transfers t
+             LEFT JOIN settlements s ON s.chain = t.chain AND s.tx_id = t.tx_id
+             WHERE t.account = ?1 AND t.id < ?2 AND (?3 IS NULL OR t.kind = ?3)
+             ORDER BY t.id DESC LIMIT ?4",
         )?;
         let rows = statement
             .query_map(params![account, upper, kind, fetch], |row| {
@@ -965,12 +1278,11 @@ impl Store {
         let id: i64 = row.get(0).unwrap_or_default();
         let position: i64 = row.get(1).unwrap_or_default();
         let chain: String = row.get(2).unwrap_or_default();
-        let boundary = finality
-            .iter()
-            .find(|(name, _)| *name == chain)
-            .and_then(|(_, boundary)| *boundary);
-        let final_row = boundary.is_some_and(|boundary| position <= boundary);
+        let (final_row, stability) = stability_document(&chain, position, finality);
         let decoded: String = row.get(11).unwrap_or_default();
+        let level: Option<String> = row.get(12).unwrap_or_default();
+        let reason: Option<String> = row.get(13).unwrap_or_default();
+        let source: Option<String> = row.get(14).unwrap_or_default();
         (
             id,
             json!({
@@ -987,16 +1299,12 @@ impl Store {
                 "ordinal": row.get::<_, i64>(10).unwrap_or_default().to_string(),
                 "final": final_row,
                 "final_basis": STABILITY_SOURCE,
-                "stability": {
-                    "level": if final_row { "depth_stable" } else { "reversible" },
-                    "source": STABILITY_SOURCE,
-                    "finalized_boundary": boundary.map(|boundary| boundary.to_string()),
-                },
-                "settlement": {
-                    "level": SETTLEMENT_UNVERIFIED,
-                    "source": Value::Null,
-                    "reason": SETTLEMENT_UNAVAILABLE_REASON,
-                },
+                "stability": stability,
+                "settlement": settlement_document(
+                    level.as_deref(),
+                    reason.as_deref(),
+                    source.as_deref(),
+                ),
                 "decoded": parse_json(&decoded),
             }),
         )
@@ -1052,9 +1360,12 @@ impl Store {
         let connection = self.lock()?;
         let finality = Self::finality(&connection)?;
         let mut statement = connection.prepare(
-            "SELECT id, height_or_seq, chain, kind, direction, account, counterparty, asset, amount,
-                tx_id, ordinal, decoded_json
-             FROM transfers WHERE chain = ?1 ORDER BY id",
+            "SELECT t.id, t.height_or_seq, t.chain, t.kind, t.direction, t.account, t.counterparty,
+                t.asset, t.amount, t.tx_id, t.ordinal, t.decoded_json, s.level, s.reason,
+                s.source_json
+             FROM transfers t
+             LEFT JOIN settlements s ON s.chain = t.chain AND s.tx_id = t.tx_id
+             WHERE t.chain = ?1 ORDER BY t.id",
         )?;
         let rows = statement
             .query_map(params![chain], |row| {
