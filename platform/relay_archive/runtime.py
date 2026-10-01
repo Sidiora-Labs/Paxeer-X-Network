@@ -26,12 +26,19 @@ if __package__ in (None, ""):
         ConfigError,
         Endpoint,
         HEX_32,
+        HeadObservation,
         IntegrityError,
+        LOCAL_SOURCE,
         MissingBatch,
         NativeCodec,
+        OriginRefusal,
         ProtocolError,
+        RefusalCode,
         RelayArchiveError,
         RelayConfig,
+        SyncAttempt,
+        SyncOutcome,
+        SyncState,
         U64_MAX,
         canonical_json_bytes,
         load_config,
@@ -49,12 +56,19 @@ else:
         ConfigError,
         Endpoint,
         HEX_32,
+        HeadObservation,
         IntegrityError,
+        LOCAL_SOURCE,
         MissingBatch,
         NativeCodec,
+        OriginRefusal,
         ProtocolError,
+        RefusalCode,
         RelayArchiveError,
         RelayConfig,
+        SyncAttempt,
+        SyncOutcome,
+        SyncState,
         U64_MAX,
         canonical_json_bytes,
         load_config,
@@ -103,8 +117,7 @@ class RelayArchive:
         self._server: _BoundedServer | None = None
         self._sync_lock = threading.Lock()
         self._state_lock = threading.Lock()
-        self._last_sync_error: str | None = None
-        self._last_sync_at_ms: int | None = None
+        self._sync_state = SyncState(config.sync_mode, None, None)
         self._bootstrapped = False
         self.discovery = self._create_discovery()
 
@@ -137,12 +150,22 @@ class RelayArchive:
         except (TypeError, ValueError) as error:
             raise ConfigError(f"peer discovery configuration is invalid: {error}") from error
 
-    def _set_sync_state(self, error: str | None) -> None:
-        with self._state_lock:
-            self._last_sync_error = error
-            self._last_sync_at_ms = int(time.time() * 1000)
-
     def bootstrap(self) -> None:
+        self._bootstrap_identity()
+        state = self.store.load_sync_state(self.config.sync_mode)
+        observation = state.observation
+        if observation is not None and observation.head_batch is not None:
+            stored = self.store.batch(observation.head_batch, include_records=False)
+            if (
+                stored is None
+                or stored["batch_id"] != observation.head_batch_id
+                or stored["raw_sha256"] != observation.head_raw_sha256
+            ):
+                raise IntegrityError("persisted head observation conflicts with archived history")
+        with self._state_lock:
+            self._sync_state = state
+
+    def _bootstrap_identity(self) -> None:
         self.discovery.start()
         if self.store.has_bootstrap():
             manifest, snapshot = self.store.load_bootstrap()
@@ -259,121 +282,269 @@ class RelayArchive:
                 raise IntegrityError(f"synchronization origin changed pinned {field}")
         require_hex32(value.get("snapshot_sha256"), "snapshot_sha256")
 
+    def _origin_request(
+        self, endpoint: Endpoint, path: str, accept: str, maximum: int
+    ) -> Any:
+        try:
+            return self.http.request(
+                endpoint, "GET", path, headers={"Accept": accept}, maximum=maximum
+            )
+        except (RelayArchiveError, OSError) as error:
+            raise TransportError(f"synchronization origin is unreachable: {error}") from error
+
     def _get_json(self, endpoint: Endpoint, path: str, maximum: int) -> dict[str, Any]:
-        answer = self.http.request(
-            endpoint,
-            "GET",
-            path,
-            headers={"Accept": "application/json"},
-            maximum=maximum,
-        )
+        answer = self._origin_request(endpoint, path, "application/json", maximum)
         if answer.status != 200:
             raise TransportError(f"synchronization origin returned HTTP {answer.status}")
         media = answer.headers.get("content-type", "").split(";", 1)[0].strip().lower()
         if media != "application/json":
-            raise TransportError("synchronization origin returned a non-JSON document")
+            raise ProtocolError("synchronization origin returned a non-JSON document")
         try:
             value = json.loads(answer.body)
         except (UnicodeDecodeError, json.JSONDecodeError) as error:
-            raise TransportError("synchronization origin returned invalid JSON") from error
+            raise ProtocolError("synchronization origin returned invalid JSON") from error
         if not isinstance(value, dict):
-            raise TransportError("synchronization origin returned a non-object document")
+            raise ProtocolError("synchronization origin returned a non-object document")
         return value
 
-    def synchronize(self) -> int:
+    def synchronize(self) -> SyncAttempt:
         if not self._bootstrapped:
             raise IntegrityError("archive has not completed pinned bootstrap")
         with self._sync_lock:
-            try:
-                count = self._sync_local_source()
-                count += self._sync_remote_sources()
-                self._set_sync_state(None)
-                return count
-            except (RelayArchiveError, OSError) as error:
-                self._set_sync_state(str(error))
-                raise
+            refusals: list[OriginRefusal] = []
+            if self.config.sync_mode == "local":
+                outcome, count, observation, origins = self._sync_local_mode(refusals)
+            else:
+                count = 0
+                if self.config.source_log is not None:
+                    count, _current = self._sync_local_source(refusals)
+                outcome, remote_count, observation, origins = self._sync_remote_sources(refusals)
+                count += remote_count
+            attempt = SyncAttempt(_now_ms(), outcome, count, origins, tuple(refusals))
+            with self._state_lock:
+                previous = self._sync_state.observation
+                state = SyncState(
+                    self.config.sync_mode,
+                    attempt,
+                    observation if observation is not None else previous,
+                )
+                self._sync_state = state
+            self.store.save_sync_state(state)
+            return attempt
 
-    def _sync_local_source(self) -> int:
-        if self.config.source_log is None:
-            return 0
+    def _local_observation(self) -> HeadObservation:
+        head = self.store.head_document()
+        return HeadObservation(
+            _now_ms(),
+            LOCAL_SOURCE,
+            head["head_batch"],
+            head["head_batch_id"],
+            head["head_raw_sha256"],
+        )
+
+    def _sync_local_mode(
+        self, refusals: list[OriginRefusal]
+    ) -> tuple[SyncOutcome, int, HeadObservation | None, int]:
+        count, current = self._sync_local_source(refusals)
+        if current:
+            return SyncOutcome.CURRENT, count, self._local_observation(), 1
+        if any(refusal.code is RefusalCode.SOURCE_UNAVAILABLE for refusal in refusals):
+            return SyncOutcome.SOURCE_UNAVAILABLE, count, None, 1
+        return SyncOutcome.REFUSED, count, None, 1
+
+    def _sync_local_source(self, refusals: list[OriginRefusal]) -> tuple[int, bool]:
+        source = self.config.source_log
+        if source is None:
+            return 0, False
+        if not source.is_file():
+            refusals.append(
+                OriginRefusal(
+                    LOCAL_SOURCE,
+                    RefusalCode.SOURCE_UNAVAILABLE,
+                    "configured canonical source log is absent",
+                )
+            )
+            return 0, False
         count = 0
         while not self._stop.is_set():
             batch_number = self.store.next_batch()
             if batch_number > self.config.sequencer_last_batch:
-                break
+                return count, True
             try:
-                raw = self.codec.export(self.config.source_log, batch_number)
+                raw = self.codec.export(source, batch_number)
             except MissingBatch:
-                break
-            metadata = self.codec.verify(raw)
-            if metadata["batch_number"] != str(batch_number):
-                raise IntegrityError("native source exported an unexpected batch")
-            if self.store.ingest_batch(raw, metadata):
-                count += 1
-        return count
+                return count, True
+            except CodecError as error:
+                refusals.append(
+                    OriginRefusal(LOCAL_SOURCE, RefusalCode.SOURCE_UNAVAILABLE, str(error))
+                )
+                return count, False
+            try:
+                metadata = self._verify_batch(raw, batch_number)
+                if self.store.ingest_batch(raw, metadata):
+                    count += 1
+            except _Refused as refused:
+                refusals.append(OriginRefusal(LOCAL_SOURCE, refused.code, str(refused)))
+                return count, False
+            except IntegrityError as error:
+                refusals.append(OriginRefusal(LOCAL_SOURCE, RefusalCode.DISCONTINUITY, str(error)))
+                return count, False
+        return count, False
 
-    def _sync_remote_sources(self) -> int:
+    def _verify_batch(self, raw: bytes, batch_number: int) -> dict[str, Any]:
+        try:
+            metadata = self.codec.verify(raw)
+        except CodecError as error:
+            raise _Refused(RefusalCode.VERIFICATION_FAILED, str(error)) from error
+        except IntegrityError as error:
+            raise _Refused(RefusalCode.PIN_MISMATCH, str(error)) from error
+        except ProtocolError as error:
+            raise _Refused(RefusalCode.MALFORMED_BATCH, str(error)) from error
+        if metadata["batch_number"] != str(batch_number):
+            raise _Refused(
+                RefusalCode.DISCONTINUITY,
+                f"source supplied batch {metadata['batch_number']} for batch {batch_number}",
+            )
+        return metadata
+
+    def _probe_origin(
+        self, endpoint: Endpoint
+    ) -> tuple[int | None, str | None, str | None]:
+        try:
+            network = self._get_json(endpoint, "/v1/sync/network", 1_048_576)
+            self._validate_network_document(network)
+            head = self._get_json(endpoint, "/v1/sync/head", 1_048_576)
+            if (
+                head.get("version") != 1
+                or head.get("network_id") != self.config.network_id
+                or head.get("genesis_sha256") != self.config.genesis_sha256
+            ):
+                raise IntegrityError("synchronization head changed pinned identity")
+            raw_head = head.get("head_batch")
+            if raw_head is None:
+                if head.get("head_batch_id") is not None or head.get("head_raw_sha256") is not None:
+                    raise ProtocolError("empty synchronization head carries a batch identity")
+                return None, None, None
+            number = require_decimal(raw_head, "head_batch")
+            if not self.config.sequencer_first_batch <= number <= self.config.sequencer_last_batch:
+                raise IntegrityError("synchronization head is outside the pinned sequencer range")
+            return (
+                number,
+                require_hex32(head.get("head_batch_id"), "head_batch_id"),
+                require_hex32(head.get("head_raw_sha256"), "head_raw_sha256"),
+            )
+        except (TransportError, OSError) as error:
+            raise _Refused(RefusalCode.UNREACHABLE, str(error)) from error
+        except IntegrityError as error:
+            raise _Refused(RefusalCode.PIN_MISMATCH, str(error)) from error
+        except ProtocolError as error:
+            raise _Refused(RefusalCode.MALFORMED_HEAD, str(error)) from error
+
+    def _fetch_batch(self, endpoint: Endpoint, batch_number: int) -> bool:
+        try:
+            answer = self._origin_request(
+                endpoint,
+                f"/v1/sync/batches/{batch_number}",
+                "application/octet-stream",
+                self.config.max_batch_bytes,
+            )
+        except TransportError as error:
+            raise _Refused(RefusalCode.UNREACHABLE, str(error)) from error
+        if answer.status != 200:
+            raise _Refused(
+                RefusalCode.UNREACHABLE,
+                f"synchronization origin returned HTTP {answer.status} for batch {batch_number}",
+            )
+        digest = sha256_hex(answer.body)
+        advertised = answer.headers.get("x-content-sha256")
+        if advertised is not None and not hmac.compare_digest(advertised, digest):
+            raise _Refused(
+                RefusalCode.INTEGRITY_MISMATCH, "synchronization batch digest header is false"
+            )
+        metadata = self._verify_batch(answer.body, batch_number)
+        try:
+            return self.store.ingest_batch(answer.body, metadata)
+        except IntegrityError as error:
+            raise _Refused(RefusalCode.DISCONTINUITY, str(error)) from error
+
+    def _sync_remote_sources(
+        self, refusals: list[OriginRefusal]
+    ) -> tuple[SyncOutcome, int, HeadObservation | None, int]:
         count = 0
+        considered: set[str] = set()
         while not self._stop.is_set():
+            local = self.store.head_document()
+            local_head = None if local["head_batch"] is None else int(local["head_batch"])
             next_batch = self.store.next_batch()
-            candidates: list[tuple[Endpoint, int]] = []
-            for endpoint in self._sync_endpoints():
+            endpoints = self._sync_endpoints()
+            considered.update(endpoint.origin for endpoint in endpoints)
+            round_refusals: list[OriginRefusal] = []
+            equal: Endpoint | None = None
+            ahead: list[Endpoint] = []
+            for endpoint in endpoints:
                 try:
-                    network = self._get_json(endpoint, "/v1/sync/network", 1_048_576)
-                    self._validate_network_document(network)
-                    head = self._get_json(endpoint, "/v1/sync/head", 1_048_576)
-                    if (
-                        head.get("version") != 1
-                        or head.get("network_id") != self.config.network_id
-                        or head.get("genesis_sha256") != self.config.genesis_sha256
+                    number, batch_id, raw_sha = self._probe_origin(endpoint)
+                except _Refused as refused:
+                    round_refusals.append(OriginRefusal(endpoint.origin, refused.code, str(refused)))
+                    continue
+                if number == local_head:
+                    if number is None or (
+                        batch_id == local["head_batch_id"] and raw_sha == local["head_raw_sha256"]
                     ):
-                        raise IntegrityError("synchronization head changed pinned identity")
-                    raw_head = head.get("head_batch")
-                    if raw_head is None:
-                        continue
-                    head_number = require_decimal(raw_head, "head_batch")
-                    if head_number >= next_batch:
-                        candidates.append((endpoint, head_number))
-                except (RelayArchiveError, OSError):
-                    continue
-            if not candidates:
-                break
-            accepted = False
-            for endpoint, head_number in candidates:
-                if head_number < next_batch:
-                    continue
-                try:
-                    answer = self.http.request(
-                        endpoint,
-                        "GET",
-                        f"/v1/sync/batches/{next_batch}",
-                        headers={"Accept": "application/octet-stream"},
-                        maximum=self.config.max_batch_bytes,
+                        if equal is None:
+                            equal = endpoint
+                    else:
+                        round_refusals.append(
+                            OriginRefusal(
+                                endpoint.origin,
+                                RefusalCode.DISCONTINUITY,
+                                f"origin head batch {number} conflicts with archived history",
+                            )
+                        )
+                elif number is not None and (local_head is None or number > local_head):
+                    ahead.append(endpoint)
+                else:
+                    round_refusals.append(
+                        OriginRefusal(
+                            endpoint.origin,
+                            RefusalCode.ORIGIN_BEHIND,
+                            f"origin head batch {number} is behind archived batch {local_head}",
+                        )
                     )
-                    if answer.status != 200:
-                        continue
-                    digest = sha256_hex(answer.body)
-                    advertised = answer.headers.get("x-content-sha256")
-                    if advertised is not None and not hmac.compare_digest(advertised, digest):
-                        raise IntegrityError("synchronization batch digest header is false")
-                    metadata = self.codec.verify(answer.body)
-                    if metadata["batch_number"] != str(next_batch):
-                        raise IntegrityError("synchronization origin returned the wrong batch")
-                    if self.store.ingest_batch(answer.body, metadata):
+            accepted = False
+            for endpoint in ahead:
+                try:
+                    if self._fetch_batch(endpoint, next_batch):
                         count += 1
                     accepted = True
                     break
-                except (RelayArchiveError, OSError):
-                    continue
-            if not accepted:
-                raise IntegrityError(f"no origin supplied a valid contiguous batch {next_batch}")
-        return count
+                except _Refused as refused:
+                    round_refusals.append(OriginRefusal(endpoint.origin, refused.code, str(refused)))
+            if accepted:
+                continue
+            refusals.extend(round_refusals)
+            if equal is not None and not ahead:
+                observation = HeadObservation(
+                    _now_ms(),
+                    equal.origin,
+                    local["head_batch"],
+                    local["head_batch_id"],
+                    local["head_raw_sha256"],
+                )
+                return SyncOutcome.CURRENT, count, observation, len(considered)
+            codes = {refusal.code for refusal in round_refusals}
+            if codes - {RefusalCode.UNREACHABLE, RefusalCode.ORIGIN_BEHIND}:
+                return SyncOutcome.REFUSED, count, None, len(considered)
+            if RefusalCode.ORIGIN_BEHIND in codes:
+                return SyncOutcome.BEHIND, count, None, len(considered)
+            return SyncOutcome.UNAVAILABLE, count, None, len(considered)
+        return SyncOutcome.UNAVAILABLE, count, None, len(considered)
 
     def _sync_loop(self) -> None:
         while not self._stop.is_set():
             try:
                 self.synchronize()
-            except (RelayArchiveError, OSError):
+            except (RelayArchiveError, OSError, sqlite3.Error):
                 pass
             self._stop.wait(self.config.poll_interval_seconds)
 
@@ -389,17 +560,44 @@ class RelayArchive:
 
     def status(self) -> dict[str, Any]:
         with self._state_lock:
-            error = self._last_sync_error
-            last = self._last_sync_at_ms
-        return {
-            "ready": self._bootstrapped and error is None,
+            state = self._sync_state
+        now = _now_ms()
+        budget_ms = int(self.config.freshness_budget_seconds * 1000)
+        observation = state.observation
+        attempt = state.attempt
+        if observation is None:
+            freshness = "unobserved"
+        elif now - observation.at_ms <= budget_ms:
+            freshness = "fresh"
+        else:
+            freshness = "stale"
+        value: dict[str, Any] = {
+            "ready": self._bootstrapped and freshness == "fresh",
             "network_id": self.config.network_id,
-            "last_sync_at_ms": last,
-            "sync_error": error,
+            "mode": self.config.sync_mode,
+            "mode_configured": self.config.sync_mode_configured,
+            "freshness": freshness,
+            "freshness_budget_ms": budget_ms,
+            "observation_age_ms": None if observation is None else max(0, now - observation.at_ms),
+            "degraded": state.degraded,
+            "last_attempt": None if attempt is None else attempt.document(),
+            "last_observation": None if observation is None else observation.document(),
+            "progress": self.store.progress_document(),
+            "last_sync_at_ms": None if attempt is None else attempt.at_ms,
+            "sync_error": None
+            if not state.degraded
+            else ("never_attempted" if attempt is None else attempt.outcome.value),
             "role": "relay-archive",
             "executes_activities": False,
             "orders_activities": False,
         }
+        if self.config.sync_mode == "local":
+            assert self.config.source_log is not None
+            value["local_source"] = {
+                "present": self.config.source_log.is_file(),
+                "remote_origins_required": False,
+            }
+        return value
 
     def _submission_token_valid(self, authorization: str | None) -> bool:
         token_file = self.config.source_submission_token_file
@@ -1046,6 +1244,16 @@ class SubmissionConflict(RelayArchiveError):
     pass
 
 
+class _Refused(RelayArchiveError):
+    def __init__(self, code: RefusalCode, message: str):
+        super().__init__(message)
+        self.code = code
+
+
+def _now_ms() -> int:
+    return int(time.time() * 1000)
+
+
 class RequestError(RelayArchiveError):
     def __init__(self, status: int, code: str):
         super().__init__(code)
@@ -1092,8 +1300,14 @@ def main(argv: list[str] | None = None) -> int:
         config = load_config(arguments.config)
         runtime = RelayArchive(config)
         runtime.bootstrap()
-        runtime.synchronize()
+        attempt = runtime.synchronize()
         if arguments.once:
+            if attempt.outcome is not SyncOutcome.CURRENT:
+                print(
+                    f"layerx-relay-archive: synchronization {attempt.outcome.value}",
+                    file=sys.stderr,
+                )
+                return 1
             return 0
 
         def stop(_signum: int, _frame: Any) -> None:
