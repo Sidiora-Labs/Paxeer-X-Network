@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 
 	"github.com/sidiora-labs/paxeer-network/sdk/codec"
@@ -49,6 +50,16 @@ type SendKeeper interface {
 
 type RecipientChecker = func(ctx sdk.Context, recipient sdk.AccAddress) bool
 
+// BalanceChangeHook observes addr's balance of denom immediately before
+// setBalance replaces it. before reads the stored balance on ctx, so a hook
+// that ignores denom pays no gas for it. An error aborts the write.
+type BalanceChangeHook = func(ctx sdk.Context, addr sdk.AccAddress, denom string, before func() sdk.Int) error
+
+type namedBalanceChangeHook struct {
+	name string
+	hook BalanceChangeHook
+}
+
 var _ SendKeeper = (*BaseSendKeeper)(nil)
 var OneUhpxInWei sdk.Int = sdk.NewInt(1_000_000_000_000)
 
@@ -63,8 +74,9 @@ type BaseSendKeeper struct {
 	paramSpace paramtypes.Subspace
 
 	// list of addresses that are restricted from receiving transactions
-	blockedAddrs      map[string]bool
-	recipientCheckers *[]RecipientChecker
+	blockedAddrs       map[string]bool
+	recipientCheckers  *[]RecipientChecker
+	balanceChangeHooks *[]namedBalanceChangeHook
 }
 
 func NewBaseSendKeeper(
@@ -72,13 +84,14 @@ func NewBaseSendKeeper(
 ) BaseSendKeeper {
 
 	return BaseSendKeeper{
-		BaseViewKeeper:    NewBaseViewKeeper(cdc, storeKey, ak),
-		cdc:               cdc,
-		ak:                ak,
-		storeKey:          storeKey,
-		paramSpace:        paramSpace,
-		blockedAddrs:      blockedAddrs,
-		recipientCheckers: &[]RecipientChecker{},
+		BaseViewKeeper:     NewBaseViewKeeper(cdc, storeKey, ak),
+		cdc:                cdc,
+		ak:                 ak,
+		storeKey:           storeKey,
+		paramSpace:         paramSpace,
+		blockedAddrs:       blockedAddrs,
+		recipientCheckers:  &[]RecipientChecker{},
+		balanceChangeHooks: &[]namedBalanceChangeHook{},
 	}
 }
 
@@ -300,6 +313,16 @@ func (k BaseSendKeeper) setBalance(ctx sdk.Context, addr sdk.AccAddress, balance
 		return sdkerrors.Wrap(sdkerrors.ErrInvalidCoins, balance.String())
 	}
 
+	if k.balanceChangeHooks != nil {
+		for _, named := range *k.balanceChangeHooks {
+			if err := named.hook(ctx, addr, balance.Denom, func() sdk.Int {
+				return k.GetBalance(ctx, addr, balance.Denom).Amount
+			}); err != nil {
+				return err
+			}
+		}
+	}
+
 	accountStore := k.getAccountStore(ctx, addr)
 
 	// Bank invariants require to not store zero balances.
@@ -457,6 +480,24 @@ func (k BaseSendKeeper) SendCoinsAndWei(ctx sdk.Context, from sdk.AccAddress, to
 	write()
 	ctx.EventManager().EmitEvents(cacheCtx.EventManager().Events())
 	return nil
+}
+
+// RegisterBalanceChangeHook appends a construction-time hook run by every
+// keeper copy before each validated balance write, in registration order.
+// It panics on an empty name, a nil hook or a duplicate name.
+func (k BaseSendKeeper) RegisterBalanceChangeHook(name string, hook BalanceChangeHook) {
+	if name == "" {
+		panic("bank: balance change hook needs a name")
+	}
+	if hook == nil {
+		panic(fmt.Sprintf("bank: nil balance change hook %q", name))
+	}
+	for _, named := range *k.balanceChangeHooks {
+		if named.name == name {
+			panic(fmt.Sprintf("bank: duplicate balance change hook %q", name))
+		}
+	}
+	*k.balanceChangeHooks = append(*k.balanceChangeHooks, namedBalanceChangeHook{name: name, hook: hook})
 }
 
 func (k BaseSendKeeper) RegisterRecipientChecker(rc RecipientChecker) {

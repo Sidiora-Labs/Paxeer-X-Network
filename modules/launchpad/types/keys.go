@@ -42,6 +42,9 @@ var (
 	CreatorMarketPrefix    = []byte{0x13}
 	AirdropEpochPrefix     = []byte{0x20}
 	AirdropClaimPrefix     = []byte{0x21}
+	HoldingHistoryPrefix   = []byte{0x22}
+	HoldingCountPrefix     = []byte{0x23}
+	HoldingEntryPrefix     = []byte{0x24}
 )
 
 func join(prefix []byte, parts ...[]byte) []byte {
@@ -93,4 +96,19 @@ func ParseAirdropClaimKey(key []byte) (string, []byte, uint64, bool) {
 	}
 	holder := append([]byte(nil), rest[1:1+int(rest[0])]...)
 	return denom, holder, binary.BigEndian.Uint64(rest[1+int(rest[0]):]), true
+}
+
+// HoldingHistoryKey is a launched denom's versioned holding-history marker.
+func HoldingHistoryKey(denom string) []byte {
+	return join(HoldingHistoryPrefix, lengthPrefixed([]byte(denom)))
+}
+
+// HoldingCountKey is the number of balance checkpoints of one holder.
+func HoldingCountKey(denom string, holder []byte) []byte {
+	return join(HoldingCountPrefix, lengthPrefixed([]byte(denom)), lengthPrefixed(holder))
+}
+
+// HoldingEntryKey is one holder's checkpoint at a count index.
+func HoldingEntryKey(denom string, holder []byte, index uint64) []byte {
+	return join(HoldingEntryPrefix, lengthPrefixed([]byte(denom)), lengthPrefixed(holder), uint64Bytes(index))
 }
