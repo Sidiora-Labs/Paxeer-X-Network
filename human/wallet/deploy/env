@@ -269,6 +269,26 @@ LAYERX_HUMAN_MOVEMENT_PEER_UID - uid the movement provider socket must present
 LAYERX_HUMAN_MOVEMENT_PEER_GID - gid the movement provider socket must present
 LAYERX_HUMAN_MOVEMENT_MAX_FRAME_BYTES - largest frame exchanged with the movement provider
 LAYERX_HUMAN_MOVEMENT_DEADLINE_SECONDS - deadline of one movement provider call in seconds
+LAYERX_HUMAN_IDENTITY_PROVIDER_SOCKET - absolute path of the socket the identity provider serves the components on
+LAYERX_HUMAN_IDENTITY_PROVIDER_BINDING_SOCKET - absolute path of the socket the identity provider serves identity bindings on
+LAYERX_HUMAN_IDENTITY_PROVIDER_BINDING_TENANT - tenant the identity provider's binding calls are scoped to, the human authority tenant of the generated material
+LAYERX_HUMAN_IDENTITY_PROVIDER_BINDING_ALLOWED_UIDS - comma-separated uids allowed on the identity binding socket
+LAYERX_HUMAN_IDENTITY_PROVIDER_STATE_ROOT - directory of the identity provider's state
+LAYERX_HUMAN_IDENTITY_PROVIDER_ALLOWED_UID - uid allowed on the identity provider socket
+LAYERX_HUMAN_IDENTITY_PROVIDER_RECOVERY_POLICY_FILE - path of the recovery policy the identity provider enforces
+LAYERX_HUMAN_IDENTITY_PROVIDER_DEADLINE_SECONDS - deadline of one identity provider exchange in seconds
+LAYERX_HUMAN_SECURITY_PROVIDER_SOCKET - absolute path of the socket the security provider serves the components on
+LAYERX_HUMAN_SECURITY_PROVIDER_STATE_ROOT - directory of the security provider's state
+LAYERX_HUMAN_SECURITY_PROVIDER_ALLOWED_UID - uid allowed on the security provider socket
+LAYERX_HUMAN_SECURITY_PROVIDER_TRUST_HISTORY - path of the sequencer trust history the security provider verifies against
+LAYERX_HUMAN_SECURITY_PROVIDER_DEADLINE_SECONDS - deadline of one security provider exchange in seconds
+LAYERX_HUMAN_MOVEMENT_PROVIDER_SOCKET - absolute path of the socket the movement provider serves the components on
+LAYERX_HUMAN_MOVEMENT_PROVIDER_STATE_ROOT - directory of the movement provider's state
+LAYERX_HUMAN_MOVEMENT_PROVIDER_ALLOWED_UID - uid allowed on the movement provider socket
+LAYERX_HUMAN_MOVEMENT_PROVIDER_PAXEER_RPC_URLS - JSON array of the two Paxeer boundaries the movement provider reads, https://localhost:9447 and https://127.0.0.1:9448 inside the kernel machine
+LAYERX_HUMAN_MOVEMENT_PROVIDER_PAXEER_MINIMUM_AGREEMENT - Paxeer boundaries that must agree on a movement observation, two
+LAYERX_AGENT_HUMAN_AUTHORITY_ENDPOINT - https url of the receipt authority the human owner daemon reaches, https://localhost:9445 inside the kernel machine
+LAYERX_AGENT_AUTHORITY_ENDPOINT - https url of the receipt authority the owner daemon reads receipts from, https://localhost:9445 inside the kernel machine
 LAYERX_HUMAN_KMS - prefix of the remote KMS transport limits below
 LAYERX_HUMAN_KMS_PROVIDER_REFERENCE - reference of the KMS provider the custody keystore records
 LAYERX_HUMAN_KMS_ENDPOINT - socket address of the remote KMS

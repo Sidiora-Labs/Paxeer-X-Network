@@ -152,6 +152,12 @@ install -d -o 4020 -g 4020 -m 0700 "$human_state/components" "$human_state/ident
 	"$human_state/movement" "$human_state/movement/evidence"
 install -d -o 4021 -g 4020 -m 0700 "$human_state/agent" "$human_state/authority"
 install -d -o 4026 -g 4020 -m 0700 "$human_state/kms"
+# The per-role material of the pod's human-*-material secrets, projected by the
+# root prepare step of each role, and the mount points of service().
+human_material=$run/human-material
+install -d -o 0 -g 4020 -m 0751 "$human_material"
+install -d -m 0755 /run/human-material /var/lib/layerx/human
+install -d -o 0 -g 0 -m 0700 "$keys/human-policy"
 
 # The trust root of the [[files]] entry, where the pod mounted it.
 install -d -m 0755 "$run/trust"
@@ -250,8 +256,15 @@ missing() {
 # clock is "-" (a command that enters the clock itself), and restarts it when
 # it exits.
 service() {
-	local name=$1 uid=$2 waits=$3 prepare=$4 clock=$5 absent wrap=() pid rc
+	local name=$1 uid=$2 waits=$3 prepare=$4 clock=$5 absent wrap=() ns=() pid rc
 	shift 6
+	# human_root=<dir> before a call: the pod's per-role mounts, the role's
+	# projected material at /run/human-material and <dir> at
+	# /var/lib/layerx/human, in the service's own mount namespace.
+	# shellcheck disable=SC2016 # the arguments expand in the namespace's shell
+	[ -z "${human_root:-}" ] || ns=(unshare --mount --propagation private -- /bin/sh -ec \
+		'mount --bind "$1" /run/human-material && mount --bind "$2" /var/lib/layerx/human && shift 2 && exec "$@"' \
+		sh "$human_material/$name" "$human_root")
 	[ "$clock" = - ] || {
 		install -d -o "$uid" -g 4020 -m 0700 "$run/clock/$name"
 		wrap=(/usr/local/bin/layerx-runtime-clock --runtime-dir "$run/clock/$name" --)
@@ -273,7 +286,7 @@ service() {
 				sleep 5
 				continue
 			fi
-			setpriv --reuid="$uid" --regid=4020 --clear-groups --no-new-privs --pdeathsig TERM \
+			${ns[@]+"${ns[@]}"} setpriv --reuid="$uid" --regid=4020 --clear-groups --no-new-privs --pdeathsig TERM \
 				${wrap[@]+"${wrap[@]}"} "$@" &
 			pid=$!
 			echo "$uid running $pid" >"$status/$name"
@@ -561,7 +574,211 @@ service agent-boundary 4021 \
 	LAYERX_AGENT_BOUNDARY_STATE_DIR="$layerx/agent-boundary" \
 	/bin/sh -ec 'LAYERX_AGENT_BOUNDARY_NETWORK_ID="$LAYERX_NODE_NETWORK_NAME" exec /usr/local/bin/layerx-agent-boundary'
 
+# The human graph of the pod. human_material_generate runs
+# platform/hosted/human/material.py once, as the pod's provisioning did, with
+# the network and chain ids above and https://paxportwallet.com as the web
+# origin, so the passkey relying party id is paxportwallet.com. Its policy is
+# the one material.py --assemble writes from the deploy's evidence, placed at
+# $keys/human-policy/policy.json; the receipt authority replica id is the
+# genesis replica id. The output is kept under $human_state/material and never
+# regenerated.
+human_policy=$keys/human-policy/policy.json
+human_out=$human_state/material/human
+
+human_material_generate() {
+	local work=$human_state/material.new d
+	[ -d "$human_state/material" ] && return 0
+	rm -rf "$work"
+	install -d -o 0 -g 0 -m 0700 "$work" "$work/human"
+	for d in components kms config agent-config movement-config authority-config authority identity; do
+		install -d -o 0 -g 0 -m 0700 "$work/human/$d"
+	done
+	install -o 0 -g 0 -m 0600 "$genesis/replica-id" "$work/receipt-authority-replica-id"
+	install -o 0 -g 0 -m 0600 "$human_policy" "$work/policy.json"
+	python3 /usr/local/lib/layerx-human/material.py "$work/human" "$LAYERX_NODE_NETWORK_ID" \
+		"$LAYERX_NODE_PAXEER_CHAIN_ID" "$work/policy.json" https://paxportwallet.com || return 1
+	mv "$work" "$human_state/material"
+}
+
+# human_project <service> <uid> <source:name>...: the role's material
+# directory, readable by its uid only, with each source under its name; a
+# source directory becomes env/, one file per variable, which the role's
+# command exports before human-entrypoint.
+human_project() {
+	local dir=$human_material/$1 uid=$2 pair source name
+	shift 2
+	{ flock 9 && human_material_generate; } 9>"$human_state/material.lock" || return 1
+	install -d -o "$uid" -g 4020 -m 0500 "$dir"
+	for pair in "$@"; do
+		source=${pair%:*}
+		name=${pair##*:}
+		if [ -d "$source" ]; then
+			install -d -o "$uid" -g 4020 -m 0500 "$dir/$name"
+			find "$source" -maxdepth 1 -type f -exec install -o 0 -g 4020 -m 0440 -t "$dir/$name" {} + || return 1
+		else
+			install -o 0 -g 4020 -m 0440 "$source" "$dir/$name" || return 1
+		fi
+	done
+}
+
+# shellcheck disable=SC2016 # the variables expand in the role's shell
+human_env='for f in /run/human-material/env/*; do [ ! -f "$f" ] || export "${f##*/}=$(cat "$f")"; done; exec "$@"'
+
+# The two Paxeer boundaries of start_paxeer, as the pod's paxeer-boundary and
+# paxeer-observer-boundary services; both certificates carry localhost and
+# 127.0.0.1 under the internal CA.
+human_paxeer_urls='["https://localhost:9447","https://127.0.0.1:9448"]'
+human_paxeer_ca=$tls/paxeer-boundary-loopback/ca.der
+
+# The five attestor apps of human/wallet/deploy/attestor-1..5.toml, node id
+# N on paxeer-attestor-N, their API on 8443 as gateway.toml names it. The
+# components loader takes id=socket-address pairs, so the prepare resolves
+# each .internal name to its private address and the role reads the table from
+# its material.
+human_attestor_nodes() {
+	local n address nodes=
+	for n in 1 2 3 4 5; do
+		address="$(getent ahostsv6 "paxeer-attestor-$n.internal" | awk 'NR == 1 { print $1 }')"
+		[ -n "$address" ] || {
+			log "paxeer-attestor-$n.internal does not resolve; the human components wait for it"
+			return 1
+		}
+		nodes="$nodes${nodes:+,}$n=[$address]:8443"
+	done
+	printf '%s' "$nodes" >"$human_material/attestor-nodes.new"
+	mv "$human_material/attestor-nodes.new" "$human_material/attestor-nodes"
+}
+
+# The settlement fee bounds of the components have no generator in the tree;
+# the deploy imports them as Fly secrets of the app.
+human_evm_bounds() {
+	local name
+	for name in LAYERX_HUMAN_EVM_GAS_LIMIT LAYERX_HUMAN_EVM_MAX_FEE_PER_GAS LAYERX_HUMAN_EVM_MAX_PRIORITY_FEE_PER_GAS; do
+		[ -n "${!name:-}" ] || {
+			log "$name is unset; the human components wait for it"
+			return 1
+		}
+	done
+}
+
+human_components_prepare() {
+	human_evm_bounds && human_attestor_nodes && tls_for human-event-client 4020 &&
+		human_project human-components 4020 "$human_out/config:env" "$human_out/components/purpose-catalog.json:purpose-catalog.json" \
+			"$human_paxeer_ca:ca.der" "$tls/human-kms-client/cert.der:kms-client.der" "$tls/human-kms-client/key.der:kms-client-key.der" \
+			"$tls/human-attestor-client/ca.der:attestor-ca.der" "$tls/human-attestor-client/cert.der:attestor-client.der" \
+			"$tls/human-attestor-client/key.der:attestor-client-key.der" &&
+		install -o 0 -g 4020 -m 0440 "$human_material/attestor-nodes" "$human_material/human-components/env/LAYERX_HUMAN_ATTESTOR_NODES"
+}
+
+human_identity_prepare() {
+	human_project human-identity 4020 "$human_out/identity/recovery-policy.json:recovery-policy.json" &&
+		install -d -o 4020 -g 4020 -m 0500 "$human_material/human-identity/env" &&
+		install -o 0 -g 4020 -m 0440 "$human_out/authority-config/tenant" \
+			"$human_material/human-identity/env/LAYERX_HUMAN_IDENTITY_PROVIDER_BINDING_TENANT"
+}
+
+human_security_prepare() {
+	human_project human-security 4020 "$human_state/trust-history:trust-history"
+}
+
+human_movement_prepare() {
+	human_project human-movement 4020 "$human_out/movement-config:env" "$human_paxeer_ca:ca.der" \
+		"$tls/human-kms-executor/cert.der:kms-executor.der" "$tls/human-kms-executor/key.der:kms-executor-key.der"
+}
+
+# The owner's session operator secret, made once on the volume like the
+# other bearers.
+fresh "$keys/human-authority/session-operator" 0:0 0600 openssl rand -hex 32
+
+human_owner_prepare() {
+	human_project human-owner 4021 "$human_out/agent-config:env" "$tls/receipt-authority/ca.der:ca.der" \
+		"$keys/human-authority/session-operator:session-operator" "$keys/human-authority/authority-token:authority-token" \
+		"$keys/tokens/program-token:program-token"
+}
+
+human_tls_prepare() {
+	tls_for human 4020
+}
+
+human_root=$human_state/components service human-components 4020 \
+	"$genesis_files $human_policy $human_paxeer_ca $tls/human-event-client/identity.p12 $tls/human-kms-client/cert.der $tls/human-kms-client/key.der $tls/human-attestor-client/ca.der $tls/human-attestor-client/cert.der $tls/human-attestor-client/key.der /run/secrets/events-journey-token /run/secrets/events-approval-token /run/secrets/events-webhooks-token" \
+	human_components_prepare - -- \
+	/bin/sh -ec "$human_env" sh env \
+	LAYERX_HUMAN_PROTOCOL_VERSION=3 \
+	LAYERX_HUMAN_ATTESTOR_SIGNERS=1,2,3,4,5 \
+	LAYERX_HUMAN_ATTESTOR_ROOT_CERTIFICATE_DER=/run/human-material/attestor-ca.der \
+	LAYERX_HUMAN_ATTESTOR_CLIENT_CERTIFICATE_DER=/run/human-material/attestor-client.der \
+	LAYERX_HUMAN_ATTESTOR_CLIENT_PRIVATE_KEY_DER=/run/human-material/attestor-client-key.der \
+	LAYERX_HUMAN_ATTESTOR_DEADLINE_SECONDS=10 \
+	LAYERX_HUMAN_PAXEER_RPC_URL=https://localhost:9447 \
+	LAYERX_HUMAN_PAXEER_RPC_URLS="$human_paxeer_urls" \
+	LAYERX_HUMAN_PAXEER_MINIMUM_AGREEMENT=2 \
+	LAYERX_HUMAN_COMPONENT_ALLOWED_UID=4020 \
+	LAYERX_HUMAN_RECIPIENT_SOCKET="$run/human/recipient.sock" \
+	LAYERX_HUMAN_RECIPIENT_CALLER_UID=4021 \
+	LAYERX_HUMAN_RECIPIENT_CALLER_GID=4020 \
+	LAYERX_HUMAN_RECIPIENT_DEADLINE_SECONDS=10 \
+	LAYERX_HUMAN_COMPONENT_WORKERS=4 \
+	LAYERX_HUMAN_COMPONENT_QUEUE_CAPACITY=4 \
+	LAYERX_HUMAN_MAINTENANCE_INTERVAL_SECONDS=10 \
+	LAYERX_HUMAN_MAINTENANCE_MAXIMUM_ITEMS=100 \
+	LAYERX_HUMAN_STORE_ROOT=/var/lib/layerx/human/store \
+	LAYERX_HUMAN_CUSTODY_ROOT=/var/lib/layerx/human/custody \
+	LAYERX_HUMAN_AUTH_INDEX_ROOT=/var/lib/layerx/human/auth-index \
+	/usr/local/bin/human-entrypoint components
+
+human_root=$human_state/identity service human-identity 4020 "$genesis_files $human_policy" human_identity_prepare - -- \
+	/bin/sh -ec "$human_env" sh env \
+	LAYERX_HUMAN_IDENTITY_PROVIDER_SOCKET="$run/human/identity.sock" \
+	LAYERX_HUMAN_IDENTITY_PROVIDER_BINDING_SOCKET="$run/human/identity-binding.sock" \
+	LAYERX_HUMAN_IDENTITY_PROVIDER_BINDING_ALLOWED_UIDS=4020,4021 \
+	LAYERX_HUMAN_IDENTITY_PROVIDER_STATE_ROOT=/var/lib/layerx/human/identity \
+	LAYERX_HUMAN_IDENTITY_PROVIDER_ALLOWED_UID=4020 \
+	LAYERX_HUMAN_IDENTITY_PROVIDER_RECOVERY_POLICY_FILE=/run/human-private/identity/recovery-policy.json \
+	LAYERX_HUMAN_IDENTITY_PROVIDER_DEADLINE_SECONDS=5 \
+	/usr/local/bin/human-entrypoint identity
+
+human_root=$human_state/security service human-security 4020 "$human_state/trust-history" human_security_prepare - -- \
+	env \
+	LAYERX_HUMAN_SECURITY_PROVIDER_SOCKET="$run/human/security.sock" \
+	LAYERX_HUMAN_SECURITY_PROVIDER_STATE_ROOT=/var/lib/layerx/human/security \
+	LAYERX_HUMAN_SECURITY_PROVIDER_ALLOWED_UID=4020 \
+	LAYERX_HUMAN_SECURITY_PROVIDER_TRUST_HISTORY=/run/human-private/security/trust-history \
+	LAYERX_HUMAN_SECURITY_PROVIDER_DEADLINE_SECONDS=5 \
+	/usr/local/bin/human-entrypoint security
+
+human_root=$human_state/movement service human-movement 4020 \
+	"$genesis_files $human_policy $human_paxeer_ca $tls/human-kms-executor/cert.der $tls/human-kms-executor/key.der" \
+	human_movement_prepare - -- \
+	/bin/sh -ec "$human_env" sh env \
+	LAYERX_HUMAN_MOVEMENT_PROVIDER_SOCKET="$run/human/movement.sock" \
+	LAYERX_HUMAN_MOVEMENT_PROVIDER_STATE_ROOT=/var/lib/layerx/human/movement \
+	LAYERX_HUMAN_MOVEMENT_PROVIDER_ALLOWED_UID=4020 \
+	LAYERX_HUMAN_MOVEMENT_PROVIDER_PAXEER_RPC_URLS="$human_paxeer_urls" \
+	LAYERX_HUMAN_MOVEMENT_PROVIDER_PAXEER_MINIMUM_AGREEMENT=2 \
+	/usr/local/bin/human-entrypoint movement
+
+human_root=$human_state/agent service human-owner 4021 \
+	"$genesis_files $human_policy $tls/receipt-authority/ca.der $keys/human-authority/authority-token" \
+	human_owner_prepare - -- \
+	/bin/sh -ec "$human_env" sh env \
+	LAYERX_AGENT_HUMAN_AUTHORITY_ENDPOINT=https://localhost:9445 \
+	LAYERX_AGENT_AUTHORITY_ENDPOINT=https://localhost:9445 \
+	/usr/local/bin/human-entrypoint agent
+
+# The two human service processes on the one components socket: the plain
+# listener of the app's http_service on [::]:8080 from the app env, and the
+# TLS listener under the internal CA on [::]:9449 that the journeys and
+# approvals event sources of the internal app reach over the private network.
 service human 4020 "" - - -- /usr/local/bin/human-entrypoint service
+
+service human-tls 4020 "$tls/human/cert.der $tls/human/key.der" human_tls_prepare - -- \
+	env \
+	LAYERX_HUMAN_LISTENER=tls \
+	"LAYERX_HUMAN_BIND=[::]:9449" \
+	LAYERX_HUMAN_TLS_CERT_DER="$tls/human/cert.der" \
+	LAYERX_HUMAN_TLS_KEY_DER="$tls/human/key.der" \
+	/usr/local/bin/human-entrypoint service
 
 # The mirror-signer and mirror-publisher containers: the signer serves both
 # publisher keys on its socket, and the publisher reads the LNI socket and
