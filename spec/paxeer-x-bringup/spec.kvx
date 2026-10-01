@@ -1135,7 +1135,7 @@ do_1 = "The owner ruled that paxportwallet.com is the wallet app's frontend and 
 
 [task.0.11]
 title = "Create the internal event-source and webhooks apps and stage the kernel's event tokens"
-status = "pending"
+status = "implemented"
 wave = 0
 requires = ["0.5"]
 verify_cmd = "timeout 10m tools/bringup/check-live.sh events-upstream"

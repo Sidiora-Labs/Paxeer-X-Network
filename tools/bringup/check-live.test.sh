@@ -118,7 +118,9 @@ chmod +x "$work/bin/ssh"
 # for /data, so every fixture machine keeps its own files. ssh console runs
 # its command on this box and records its stdin; secrets import wants
 # --stage, decodes each NAME=base64 line into the app's secrets directory and
-# records only the names. machines list answers CHECK_LIVE_TEST_MACHINES.
+# records only the names. machines list answers CHECK_LIVE_TEST_MACHINES;
+# secrets list answers the names of the app's secrets directory and apps list
+# the fixture apps that have a directory.
 cat >"$work/bin/flyctl" <<'SH'
 #!/usr/bin/env bash
 set -eu
@@ -151,6 +153,10 @@ while [ "$#" -gt 0 ]; do
 	esac
 done
 printf '%s %s %s %s\n' "$app" "$group" "$sub" "$command" >>"$CHECK_LIVE_TEST_CALLS"
+if [ "$sub" = "apps list" ]; then
+	ls "$CHECK_LIVE_TEST_FLY" 2>/dev/null | python3 -c 'import json, sys; print(json.dumps([{"Name": n} for n in sys.stdin.read().split()]))'
+	exit 0
+fi
 case "$app" in
 fx-*) ;;
 *)
@@ -179,6 +185,7 @@ case "$sub" in
 	done
 	;;
 "ips list") printf '%s\n' "${CHECK_LIVE_TEST_IPS:-[]}" ;;
+"secrets list") ls "$root/secrets" 2>/dev/null | python3 -c 'import json, sys; print(json.dumps([{"Name": n, "Digest": "fx"} for n in sys.stdin.read().split()]))' ;;
 "machines list")
 	if [ -n "${CHECK_LIVE_TEST_MACHINES:-}" ]; then printf '%s\n' "$CHECK_LIVE_TEST_MACHINES"; else cat "$root/machines.json"; fi
 	;;
@@ -3198,6 +3205,37 @@ LAYERX_HUMAN_BIND="127.0.0.1:$livez_port" CHECK_LIVE_TEST_MACHINES="$rb_old" CHE
 kill "$livez_pid" 2>/dev/null || true
 wait "$livez_pid" 2>/dev/null || true
 export CHECK_LIVE_TEST_FLY="$fly"
+
+# The events-upstream case: the internal fixture app's journeys and
+# approvals volumes hold a producer token, the webhooks and registry fixture
+# apps exist, and the kernel, webhooks, endpoint and registry fixture apps
+# hold their event-token and trigger secrets. Taking any one away fails it,
+# and every value starts with up- so a printed value fails the no-destination
+# check.
+for group in journeys approvals; do
+	mkdir -p "$fly/$internal/$group/data/run"
+	printf 'up-token-%s' "$group" >"$fly/$internal/$group/data/run/producer-token"
+done
+for row in "$kernel HUMAN_EVENTS_JOURNEY_TOKEN HUMAN_EVENTS_APPROVAL_TOKEN HUMAN_EVENTS_WEBHOOKS_TOKEN" \
+	"$webhooks WEBHOOKS_SOURCE_TRIGGER_TOKEN" "$endpoint ENDPOINT_EVENTS_WEBHOOKS_TOKEN" "$registry REGISTRY_WEBHOOKS_EVENTS_TOKEN"; do
+	read -r app rest <<<"$row"
+	mkdir -p "$fly/$app/secrets"
+	for name in $rest; do
+		printf 'up-secret-%s' "$name" >"$fly/$app/secrets/$name"
+	done
+done
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_events_upstream_passing "$work/hosts-good.env" 0 events-upstream -- \
+	"pass producer-token app=$internal group=journeys bytes=17" \
+	"pass producer-token app=$internal group=approvals bytes=18" \
+	"pass app app=$webhooks exists=yes" \
+	"pass app app=$registry exists=yes" \
+	"pass secret app=$kernel name=HUMAN_EVENTS_JOURNEY_TOKEN listed=yes" \
+	"pass secret app=$kernel name=HUMAN_EVENTS_APPROVAL_TOKEN listed=yes" \
+	"pass secret app=$kernel name=HUMAN_EVENTS_WEBHOOKS_TOKEN listed=yes" \
+	"pass secret app=$webhooks name=WEBHOOKS_SOURCE_TRIGGER_TOKEN listed=yes" \
+	"pass secret app=$endpoint name=ENDPOINT_EVENTS_WEBHOOKS_TOKEN listed=yes" \
+	"pass secret app=$registry name=REGISTRY_WEBHOOKS_EVENTS_TOKEN listed=yes" \
+	"check-live: all checks passed"
 
 # The fleet script shares the host map and the ssh helpers, so its own test
 # runs as the last case, with this test's stand-ins off the PATH.
