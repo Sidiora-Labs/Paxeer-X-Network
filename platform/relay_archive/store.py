@@ -16,6 +16,7 @@ try:
         IntegrityError,
         ProtocolError,
         RelayConfig,
+        SyncState,
         U64_MAX,
         canonical_json_bytes,
         decode_hex,
@@ -27,6 +28,7 @@ except ImportError:
         IntegrityError,
         ProtocolError,
         RelayConfig,
+        SyncState,
         U64_MAX,
         canonical_json_bytes,
         decode_hex,
@@ -401,6 +403,55 @@ class ArchiveStore:
             "next_batch": next_batch,
         }
 
+    def progress_document(self) -> dict[str, Any]:
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                "SELECT batch_number FROM batches ORDER BY cursor DESC LIMIT 1"
+            ).fetchone()
+            next_batch = self._meta_text(connection, "next_batch")
+            at_ms = self._meta_text(connection, "progress_at_ms")
+        finally:
+            connection.close()
+        if next_batch is None:
+            raise IntegrityError("archive bootstrap is incomplete")
+        if at_ms is not None and not at_ms.isdigit():
+            raise IntegrityError("archive progress time is corrupt")
+        return {
+            "at_ms": None if at_ms is None else int(at_ms),
+            "head_batch": None if row is None else str(row["batch_number"]),
+            "next_batch": next_batch,
+        }
+
+    def load_sync_state(self, mode: str) -> SyncState:
+        connection = self._connect()
+        try:
+            raw = self._meta_get(connection, "sync_state_" + mode)
+        finally:
+            connection.close()
+        if raw is None:
+            return SyncState(mode, None, None)
+        try:
+            value = json.loads(raw)
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise IntegrityError("stored synchronization state is corrupt") from error
+        return SyncState.from_document(value, mode)
+
+    def save_sync_state(self, state: SyncState) -> None:
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            self._meta_put(
+                connection, "sync_state_" + state.mode, canonical_json_bytes(state.document())
+            )
+            connection.execute("COMMIT")
+        except Exception:
+            if connection.in_transaction:
+                connection.execute("ROLLBACK")
+            raise
+        finally:
+            connection.close()
+
     def ingest_batch(self, raw: bytes, metadata: Mapping[str, Any]) -> bool:
         batch_number = str(metadata["batch_number"])
         batch_value = require_decimal(batch_number, "batch.batch_number")
@@ -552,6 +603,7 @@ class ArchiveStore:
             self._meta_put(connection, "next_batch", str(batch_value + 1))
             self._meta_put(connection, "next_sequence", str(last_value + 1))
             self._meta_put(connection, "last_state_root", str(metadata["resulting_state_root"]))
+            self._meta_put(connection, "progress_at_ms", str(int(time.time() * 1000)))
             connection.execute("COMMIT")
             return True
         except sqlite3.IntegrityError as error:

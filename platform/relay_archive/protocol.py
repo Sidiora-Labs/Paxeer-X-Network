@@ -8,6 +8,7 @@ import re
 import socket
 import subprocess
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 from urllib.parse import SplitResult, urlsplit, urlunsplit
@@ -18,6 +19,9 @@ MAX_ACTIVITY_BYTES = 1_048_576
 MAX_BATCH_BYTES = 16_777_216
 HEX_32 = re.compile(r"^[0-9a-f]{64}$")
 DECIMAL = re.compile(r"^(0|[1-9][0-9]*)$")
+SYNC_MODES = ("remote", "local")
+DEFAULT_FRESHNESS_BUDGET_SECONDS = 30.0
+MAX_FRESHNESS_BUDGET_SECONDS = 86_400.0
 
 
 class RelayArchiveError(Exception):
@@ -99,6 +103,9 @@ class RelayConfig:
     max_concurrency: int
     allow_loopback_dev: bool
     peer_discovery: Mapping[str, Any]
+    sync_mode: str
+    sync_mode_configured: bool
+    freshness_budget_seconds: float
 
     @property
     def listen_is_loopback(self) -> bool:
@@ -113,6 +120,171 @@ class RelayConfig:
             "sequencer_public_key": self.sequencer_public_key,
             "public_url": self.public_url,
         }
+
+
+class SyncOutcome(Enum):
+    CURRENT = "current"
+    BEHIND = "behind"
+    REFUSED = "refused"
+    UNAVAILABLE = "unavailable"
+    SOURCE_UNAVAILABLE = "source_unavailable"
+
+
+class RefusalCode(Enum):
+    UNREACHABLE = "unreachable"
+    PIN_MISMATCH = "pin_mismatch"
+    MALFORMED_HEAD = "malformed_head"
+    MALFORMED_BATCH = "malformed_batch"
+    VERIFICATION_FAILED = "verification_failed"
+    INTEGRITY_MISMATCH = "integrity_mismatch"
+    DISCONTINUITY = "discontinuity"
+    ORIGIN_BEHIND = "origin_behind"
+    SOURCE_UNAVAILABLE = "source_unavailable"
+
+
+LOCAL_SOURCE = "local-source"
+
+
+@dataclass(frozen=True)
+class OriginRefusal:
+    origin: str
+    code: RefusalCode
+    message: str
+
+    def document(self) -> dict[str, Any]:
+        return {"origin": self.origin, "code": self.code.value, "message": self.message[:512]}
+
+    @classmethod
+    def from_document(cls, value: Any) -> "OriginRefusal":
+        if not isinstance(value, dict) or set(value) != {"origin", "code", "message"}:
+            raise IntegrityError("stored synchronization refusal is malformed")
+        origin, message = value["origin"], value["message"]
+        if not isinstance(origin, str) or not isinstance(message, str):
+            raise IntegrityError("stored synchronization refusal is malformed")
+        try:
+            code = RefusalCode(value["code"])
+        except ValueError as error:
+            raise IntegrityError("stored synchronization refusal code is unknown") from error
+        return cls(origin, code, message)
+
+
+@dataclass(frozen=True)
+class HeadObservation:
+    at_ms: int
+    source: str
+    head_batch: str | None
+    head_batch_id: str | None
+    head_raw_sha256: str | None
+
+    def document(self) -> dict[str, Any]:
+        return {
+            "at_ms": self.at_ms,
+            "source": self.source,
+            "head_batch": self.head_batch,
+            "head_batch_id": self.head_batch_id,
+            "head_raw_sha256": self.head_raw_sha256,
+        }
+
+    @classmethod
+    def from_document(cls, value: Any) -> "HeadObservation":
+        fields = {"at_ms", "source", "head_batch", "head_batch_id", "head_raw_sha256"}
+        if not isinstance(value, dict) or set(value) != fields:
+            raise IntegrityError("stored head observation is malformed")
+        at_ms, source = value["at_ms"], value["source"]
+        if isinstance(at_ms, bool) or not isinstance(at_ms, int) or at_ms <= 0:
+            raise IntegrityError("stored head observation time is invalid")
+        if not isinstance(source, str) or not source:
+            raise IntegrityError("stored head observation source is invalid")
+        head = value["head_batch"]
+        identifiers = (value["head_batch_id"], value["head_raw_sha256"])
+        try:
+            if head is None:
+                if identifiers != (None, None):
+                    raise IntegrityError("stored empty head observation carries a batch identity")
+            else:
+                require_decimal(head, "observation.head_batch")
+                require_hex32(identifiers[0], "observation.head_batch_id")
+                require_hex32(identifiers[1], "observation.head_raw_sha256")
+        except ProtocolError as error:
+            raise IntegrityError(f"stored head observation is invalid: {error}") from error
+        return cls(at_ms, source, head, identifiers[0], identifiers[1])
+
+
+@dataclass(frozen=True)
+class SyncAttempt:
+    at_ms: int
+    outcome: SyncOutcome
+    advanced_batches: int
+    origins: int
+    refusals: tuple[OriginRefusal, ...]
+
+    def document(self) -> dict[str, Any]:
+        return {
+            "at_ms": self.at_ms,
+            "outcome": self.outcome.value,
+            "advanced_batches": self.advanced_batches,
+            "origins": self.origins,
+            "refusals": [refusal.document() for refusal in self.refusals],
+        }
+
+    @classmethod
+    def from_document(cls, value: Any) -> "SyncAttempt":
+        fields = {"at_ms", "outcome", "advanced_batches", "origins", "refusals"}
+        if not isinstance(value, dict) or set(value) != fields:
+            raise IntegrityError("stored synchronization attempt is malformed")
+        for field in ("at_ms", "advanced_batches", "origins"):
+            number = value[field]
+            if isinstance(number, bool) or not isinstance(number, int) or number < 0:
+                raise IntegrityError(f"stored synchronization attempt {field} is invalid")
+        if not isinstance(value["refusals"], list):
+            raise IntegrityError("stored synchronization refusals are malformed")
+        try:
+            outcome = SyncOutcome(value["outcome"])
+        except ValueError as error:
+            raise IntegrityError("stored synchronization outcome is unknown") from error
+        return cls(
+            value["at_ms"],
+            outcome,
+            value["advanced_batches"],
+            value["origins"],
+            tuple(OriginRefusal.from_document(item) for item in value["refusals"]),
+        )
+
+
+@dataclass(frozen=True)
+class SyncState:
+    mode: str
+    attempt: SyncAttempt | None
+    observation: HeadObservation | None
+
+    @property
+    def degraded(self) -> bool:
+        return self.attempt is None or self.attempt.outcome is not SyncOutcome.CURRENT
+
+    def document(self) -> dict[str, Any]:
+        return {
+            "version": 1,
+            "mode": self.mode,
+            "attempt": None if self.attempt is None else self.attempt.document(),
+            "observation": None if self.observation is None else self.observation.document(),
+        }
+
+    @classmethod
+    def from_document(cls, value: Any, mode: str) -> "SyncState":
+        if (
+            not isinstance(value, dict)
+            or set(value) != {"version", "mode", "attempt", "observation"}
+            or value["version"] != 1
+            or value["mode"] != mode
+        ):
+            raise IntegrityError("stored synchronization state is malformed")
+        attempt = None if value["attempt"] is None else SyncAttempt.from_document(value["attempt"])
+        observation = (
+            None
+            if value["observation"] is None
+            else HeadObservation.from_document(value["observation"])
+        )
+        return cls(mode, attempt, observation)
 
 
 def canonical_json_bytes(value: Any) -> bytes:
@@ -344,6 +516,8 @@ def load_config(path: str | os.PathLike[str]) -> RelayConfig:
         "max_concurrency",
         "allow_loopback_dev",
         "peer_discovery",
+        "sync_mode",
+        "freshness_budget_seconds",
     }
     unknown = sorted(set(document) - allowed)
     if unknown:
@@ -441,6 +615,37 @@ def load_config(path: str | os.PathLike[str]) -> RelayConfig:
     default_page = _strict_int(
         document.get("history_page_limit", 100), "history_page_limit", 1, maximum_page
     )
+    source_log = _path(base, document.get("source_log"), "source_log")
+    poll_interval = _strict_float(
+        document.get("poll_interval_seconds", 2.0),
+        "poll_interval_seconds",
+        0.1,
+        300.0,
+    )
+    discovery_enabled = peer_discovery.get("enabled") is True
+    sync_mode_value = document.get("sync_mode")
+    if sync_mode_value is None:
+        sync_mode = "local" if source_log is not None and not upstreams else "remote"
+    elif sync_mode_value in SYNC_MODES:
+        sync_mode = sync_mode_value
+    else:
+        raise ConfigError("sync_mode must be remote or local")
+    if sync_mode_value == "local":
+        if source_log is None:
+            raise ConfigError("sync_mode local requires source_log")
+        if upstreams:
+            raise ConfigError("sync_mode local must not configure remote upstreams")
+    if sync_mode_value == "remote" and not upstreams and not discovery_enabled:
+        raise ConfigError("sync_mode remote requires upstreams or enabled peer discovery")
+    freshness_budget = _strict_float(
+        document.get(
+            "freshness_budget_seconds",
+            max(DEFAULT_FRESHNESS_BUDGET_SECONDS, 3.0 * poll_interval),
+        ),
+        "freshness_budget_seconds",
+        poll_interval,
+        MAX_FRESHNESS_BUDGET_SECONDS,
+    )
     return RelayConfig(
         config_path=config_path,
         network_id=network_id,
@@ -453,7 +658,7 @@ def load_config(path: str | os.PathLike[str]) -> RelayConfig:
         genesis_snapshot=snapshot,
         upstreams=upstreams,
         submission_upstreams=submissions,
-        source_log=_path(base, document.get("source_log"), "source_log"),
+        source_log=source_log,
         source_lni_socket=source_lni,
         source_submission_token_file=source_token,
         data_dir=data_dir,
@@ -464,12 +669,7 @@ def load_config(path: str | os.PathLike[str]) -> RelayConfig:
         tls_key=tls_key,
         ca_file=_path(base, document.get("ca_file"), "ca_file"),
         codec=codec,
-        poll_interval_seconds=_strict_float(
-            document.get("poll_interval_seconds", 2.0),
-            "poll_interval_seconds",
-            0.1,
-            300.0,
-        ),
+        poll_interval_seconds=poll_interval,
         request_timeout_seconds=_strict_float(
             document.get("request_timeout_seconds", 10.0),
             "request_timeout_seconds",
@@ -513,6 +713,9 @@ def load_config(path: str | os.PathLike[str]) -> RelayConfig:
         ),
         allow_loopback_dev=allow_loopback,
         peer_discovery=peer_discovery,
+        sync_mode=sync_mode,
+        sync_mode_configured=sync_mode_value is not None,
+        freshness_budget_seconds=freshness_budget,
     )
 
 
