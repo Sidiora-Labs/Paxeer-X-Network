@@ -275,3 +275,40 @@ lxp_result lx_budget_close_decode(const uint8_t *bytes, size_t length,
     *payload = value;
     return LXP_OK;
 }
+
+lxp_result lx_budget_defund_decode(const uint8_t *bytes, size_t length,
+                                   lx_budget_defund_payload *payload)
+{
+    lx_budget_defund_payload value;
+    lxp_result status;
+    if (bytes == NULL || payload == NULL ||
+        length != (size_t)LX_BUDGET_DEFUND_PAYLOAD_BYTES ||
+        bytes[0] != 0U || bytes[1] != 1U)
+        return LXP_ERR_NON_CANONICAL;
+    (void)memset(&value, 0, sizeof(value));
+    (void)memcpy(value.budget_id, bytes + 2U, 32U);
+    status = lxp_u128_from_be(bytes + 34U, &value.amount);
+    if (status != LXP_OK) return status;
+    if (lxp_ct_is_zero(value.budget_id, 32U)) return LXP_ERR_NON_CANONICAL;
+    if (lxp_u128_is_zero(value.amount)) return LXP_ERR_INVALID_AMOUNT;
+    *payload = value;
+    return LXP_OK;
+}
+
+lxp_result lx_budget_revoke_decode(const uint8_t *bytes, size_t length,
+                                   lx_budget_revoke_payload *payload)
+{
+    lx_budget_revoke_payload value;
+    if (bytes == NULL || payload == NULL ||
+        length != (size_t)LX_BUDGET_REVOKE_PAYLOAD_BYTES ||
+        bytes[0] != 0U || bytes[1] != 1U)
+        return LXP_ERR_NON_CANONICAL;
+    (void)memset(&value, 0, sizeof(value));
+    (void)memcpy(value.budget_id, bytes + 2U, 32U);
+    value.revocation_sequence = budget_u64_read(bytes + 34U);
+    if (lxp_ct_is_zero(value.budget_id, 32U) ||
+        value.revocation_sequence == 0U)
+        return LXP_ERR_NON_CANONICAL;
+    *payload = value;
+    return LXP_OK;
+}

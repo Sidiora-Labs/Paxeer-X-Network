@@ -59,34 +59,44 @@ static lxp_result emit_return(lxp_module_ctx *ctx,
     return lxp_ctx_emit_transfer_set(ctx, &set, receipt);
 }
 
+lxp_result lx_budget_defund_limit(const lx_budget_record *record,
+                                  lxp_u128 balance, lxp_u128 amount,
+                                  lxp_u128 *limit)
+{
+    lxp_u128 resulting;
+    lxp_u128 allowance;
+    lxp_result status;
+    if (record == NULL || limit == NULL) return LXP_ERR_NON_CANONICAL;
+    if (lxp_u128_is_zero(amount)) return LXP_ERR_INVALID_AMOUNT;
+    if (lxp_u128_cmp(amount, balance) > 0)
+        return LXP_ERR_INSUFFICIENT_BUDGET_FUNDS;
+    status = lxp_u128_sub(balance, amount, &resulting);
+    if (status != LXP_OK) return status;
+    status = lxp_u128_sub(record->per_period_limit,
+                          record->spent_this_period, &allowance);
+    if (status != LXP_OK) return LXP_FATAL_INVARIANT;
+    *limit = record->per_period_limit;
+    if (lxp_u128_cmp(allowance, resulting) > 0)
+        return lxp_u128_add(record->spent_this_period, resulting, limit);
+    return LXP_OK;
+}
+
 lxp_result lx_budget_defund_execute(lxp_module_ctx *ctx,
                                     const lx_budget_close_request *request,
                                     lxp_receipt *receipt)
 {
     lx_budget_record *record;
     lxp_u128 balance;
-    lxp_u128 resulting;
-    lxp_u128 allowance;
     lxp_u128 adjusted_limit;
     lxp_result status = validate(request, &record);
     if (status != LXP_OK) return status;
-    if (lxp_u128_is_zero(request->amount)) return LXP_ERR_INVALID_AMOUNT;
+    if (record->revoked) return LXP_ERR_BUDGET_REVOKED;
     status = lxp_state_balance_get(request->budget_account, record->asset_id,
                                    &balance);
     if (status != LXP_OK) return status;
-    if (lxp_u128_cmp(request->amount, balance) > 0)
-        return LXP_ERR_INSUFFICIENT_BUDGET_FUNDS;
-    status = lxp_u128_sub(balance, request->amount, &resulting);
+    status = lx_budget_defund_limit(record, balance, request->amount,
+                                    &adjusted_limit);
     if (status != LXP_OK) return status;
-    status = lxp_u128_sub(record->per_period_limit,
-                          record->spent_this_period, &allowance);
-    if (status != LXP_OK) return LXP_FATAL_INVARIANT;
-    adjusted_limit = record->per_period_limit;
-    if (lxp_u128_cmp(allowance, resulting) > 0) {
-        status = lxp_u128_add(record->spent_this_period, resulting,
-                              &adjusted_limit);
-        if (status != LXP_OK) return status;
-    }
     status = emit_return(ctx, request, request->amount, receipt);
     if (status != LXP_OK) return status;
     record->per_period_limit = adjusted_limit;
@@ -101,6 +111,7 @@ static lxp_result drain(lxp_module_ctx *ctx,
     lxp_u128 balance;
     lxp_result status = validate(request, &record);
     if (status != LXP_OK) return status;
+    if (revoke && record->revoked) return LXP_ERR_BUDGET_REVOKED;
     if (request->revocation_sequence <= record->revocation_sequence)
         return LXP_ERR_STALE_REVOCATION;
     status = lxp_state_balance_get(request->budget_account, record->asset_id,
