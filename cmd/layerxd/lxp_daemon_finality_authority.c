@@ -14,6 +14,11 @@
 #include <time.h>
 #include <unistd.h>
 
+lxp_result lxp_finality_authority_verify_history(void *context,
+    const lxp_guarantor_cert *certificate, const lxp_guarantor_set *bonded_set,
+    const lxp_finalisation_requirements *requirements,
+    const lxp_daemon_settlement_registration_evidence *registration);
+
 enum { RPC_CAPACITY = 262144, TOKEN_CAPACITY = 16384, RPC_TIMEOUT_MS = 5000 };
 enum { HEADER_LIMIT = 8192, CHUNK_SIZE_DIGITS = 16, TRAILER_LINE_LIMIT = 1024 };
 typedef struct json_token { const char *text; size_t length; size_t end; char kind; } json_token;
@@ -661,6 +666,85 @@ lxp_result lxp_daemon_finality_authority_verify(void *context,
         requirements, registration);
 }
 
+static int input_carries(const json_token *input, const uint8_t *bytes, size_t length)
+{
+    char needle[2U * 64U + 3U];
+    size_t offset;
+    if (input == NULL || input->kind != '"' || length > 64U || input->length < 2U || input->text[0] != '0' || input->text[1] != 'x') return 0;
+    encode_hex(bytes, length, needle);
+    for (offset = 2U; offset + length * 2U <= input->length; offset += 2U)
+        if (strncasecmp(input->text + offset, needle + 2U, length * 2U) == 0) return 1;
+    return 0;
+}
+/* The anchor records a checkpoint's guarantor ids only after it verified every
+ * attestation signature against the signer that was bonded and active at the
+ * submission block, and it finalizes only at the threshold of that block. The
+ * historical proof binds the certificate to that immutable record: the exact
+ * guarantor list, the submitting transaction carrying each attestation
+ * signature, and the canonical registration block hash. */
+static lxp_result anchor_history_bound(const lxp_daemon_finality_authority *authority,
+    const lxp_guarantor_cert *certificate,
+    const lxp_daemon_settlement_registration_evidence *registration,
+    char *response, json_document *doc)
+{
+    uint8_t words[(2U + LXP_MAX_GUARANTOR_ATTESTATIONS) * 32U], block_hash[32];
+    const json_token *result = NULL;
+    char transaction[67], params[192];
+    uint64_t value, length = 0U;
+    size_t count = 0U, i;
+    lxp_result status = anchor_call(authority, LXP_DAEMON_ANCHOR_CHECKPOINT_GUARANTORS,
+        certificate->checkpoint.header.batch_number, response, doc, &result);
+    if (status != LXP_OK) return status;
+    if (result_words(result, words, 2U + LXP_MAX_GUARANTOR_ATTESTATIONS, &count) != 0 || count < 2U ||
+        abi_word_u64(words, &value) != 0 || value != 32U || abi_word_u64(words + 32U, &length) != 0 ||
+        length != count - 2U || length != certificate->attestation_count) return LXP_ERR_CONTEXT_MISMATCH;
+    for (i = 0U; i < certificate->attestation_count; ++i)
+        if (lxp_ct_memcmp(words + (2U + i) * 32U, certificate->attestations[i].guarantor_id, 32U) != 0) return LXP_ERR_CONTEXT_MISMATCH;
+    encode_hex(registration->transaction_id, 32U, transaction);
+    (void)snprintf(params, sizeof(params), "[\"%s\"]", transaction);
+    status = rpc(authority, "eth_getTransactionByHash", params, response, doc, &result);
+    if (status != LXP_OK) return status;
+    if (result->kind != '{' || quantity(field(doc, result, "blockNumber"), &value) != 0 ||
+        value != registration->observed_block_number ||
+        !token_bytes(field(doc, result, "hash"), registration->transaction_id, 32U) ||
+        !token_bytes(field(doc, result, "to"), lxp_paxeer_anchor_address, 20U) ||
+        field(doc, result, "blockHash") == NULL || field(doc, result, "blockHash")->kind != '"' ||
+        hex_bytes(field(doc, result, "blockHash")->text, field(doc, result, "blockHash")->length, block_hash, 32U) != 0 ||
+        lxp_ct_is_zero(block_hash, 32U)) return LXP_ERR_CONTEXT_MISMATCH;
+    for (i = 0U; i < certificate->attestation_count; ++i)
+        if (!input_carries(field(doc, result, "input"), certificate->attestations[i].signature, 64U)) return LXP_ERR_CONTEXT_MISMATCH;
+    status = rpc(authority, "eth_getTransactionReceipt", params, response, doc, &result);
+    if (status != LXP_OK) return status;
+    if (result->kind != '{' || !token_bytes(field(doc, result, "blockHash"), block_hash, 32U)) return LXP_ERR_CONTEXT_MISMATCH;
+    (void)snprintf(params, sizeof(params), "[\"0x%llx\",false]", (unsigned long long)registration->observed_block_number);
+    status = rpc(authority, "eth_getBlockByNumber", params, response, doc, &result);
+    if (status != LXP_OK) return status;
+    if (result->kind != '{' || quantity(field(doc, result, "number"), &value) != 0 ||
+        value != registration->observed_block_number ||
+        !token_bytes(field(doc, result, "hash"), block_hash, 32U)) return LXP_ERR_CONTEXT_MISMATCH;
+    return LXP_OK;
+}
+
+lxp_result lxp_finality_authority_verify_history(void *context,
+    const lxp_guarantor_cert *certificate, const lxp_guarantor_set *bonded_set,
+    const lxp_finalisation_requirements *requirements,
+    const lxp_daemon_settlement_registration_evidence *registration)
+{
+    const lxp_daemon_finality_authority *authority = context;
+    char *response;
+    json_document doc;
+    lxp_result status;
+    if (authority == NULL || authority->store == NULL || certificate == NULL || registration == NULL) return LXP_ERR_NON_CANONICAL;
+    status = lxp_daemon_finality_authority_verify(context, certificate, bonded_set, requirements, registration);
+    if (status != LXP_OK) return status;
+    response = malloc(RPC_CAPACITY);
+    doc.tokens = calloc(TOKEN_CAPACITY, sizeof(*doc.tokens));
+    if (response == NULL || doc.tokens == NULL) status = LXP_ERR_IO;
+    if (status == LXP_OK) status = anchor_history_bound(authority, certificate, registration, response, &doc);
+    free(doc.tokens); free(response);
+    return status;
+}
+
 lxp_result lxp_finality_authority_verify(void *context,
     const lxp_guarantor_cert *certificate, const lxp_guarantor_set *bonded_set,
     const lxp_finalisation_requirements *requirements,
@@ -673,7 +757,7 @@ lxp_result lxp_finality_authority_verify(void *context,
     size_t i;
     if (authority == NULL || authority->store == NULL || authority->threshold == 0U || certificate == NULL) return LXP_ERR_NON_CANONICAL;
     if (certificate->attestation_count < authority->threshold) return LXP_ERR_ATTESTATION_THRESHOLD;
-    status = lxp_daemon_finality_authority_verify(context, certificate, bonded_set, requirements, registration);
+    status = lxp_finality_authority_verify_history(context, certificate, bonded_set, requirements, registration);
     if (status != LXP_OK) return status;
     response = malloc(RPC_CAPACITY);
     doc.tokens = calloc(TOKEN_CAPACITY, sizeof(*doc.tokens));

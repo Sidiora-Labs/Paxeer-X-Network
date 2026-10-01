@@ -11,6 +11,11 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+lxp_result lxp_finality_authority_verify_history(void *context,
+    const lxp_guarantor_cert *certificate, const lxp_guarantor_set *bonded_set,
+    const lxp_finalisation_requirements *requirements,
+    const lxp_daemon_settlement_registration_evidence *registration);
+
 #define FAIL() do { (void)fprintf(stderr, "fixture failure at line %d\n", __LINE__); return 1; } while (0)
 
 static uint8_t memory[512U * 1024U];
@@ -308,6 +313,19 @@ int main(int argc, char **argv)
             if (output == NULL || fwrite(bytes.bytes, 1U, bytes.length, output) != bytes.length ||
                 fclose(output) != 0) FAIL();
         }
+        return 0;
+    }
+    if (argc == 5 && strcmp(argv[1], "recover") == 0) {
+        lxp_finalisation_state before = store.registry.finalisation;
+        lxp_result history, admission;
+        if (attestations_file(argv[4], false) != 0 ||
+            decode(argv[2], registration.transaction_id, 32U) != 0) FAIL();
+        registration.observed_block_number = strtoull(argv[3], NULL, 10);
+        history = lxp_finality_authority_verify_history(&authority, &certificate, &bonded_set, &requirements, &registration);
+        authority.threshold = (uint32_t)certificate.threshold;
+        admission = lxp_finality_authority_verify(&authority, &certificate, &bonded_set, &requirements, &registration);
+        (void)printf("{\"history\":%d,\"admission\":%d,\"frontier_unchanged\":%s}\n", (int)history, (int)admission,
+            memcmp(&before, &store.registry.finalisation, sizeof(before)) == 0 ? "true" : "false");
         return 0;
     }
     if (argc != 6 || strcmp(argv[1], "verify") != 0 ||

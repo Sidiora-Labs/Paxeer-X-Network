@@ -19,6 +19,11 @@
 #include "lxp_daemon_batch_wal.h"
 #include "lxp_daemon_lni_internal.h"
 #include "lxp_daemon_finality_authority.h"
+
+lxp_result lxp_finality_authority_verify_history(void *context,
+    const lxp_guarantor_cert *certificate, const lxp_guarantor_set *bonded_set,
+    const lxp_finalisation_requirements *requirements,
+    const lxp_daemon_settlement_registration_evidence *registration);
 #include "lxp_daemon_handover_history.h"
 #include "lxp_daemon_modules.h"
 
@@ -5652,8 +5657,11 @@ static lxp_result open_process(lxp_daemon_process *process,
             &process->evidence_store, &process->evidence_log,
             process->network_id, &process->sequencer_authorization,
             genesis_settlement_anchor, true,
-            lxp_finality_authority_verify,
+            lxp_finality_authority_verify_history,
             &process->finality_authority, &process->owner_scratch, process->handover_chain);
+    if (status == LXP_OK &&
+        process->evidence_store.verify_finality_authority != NULL)
+        process->evidence_store.verify_finality_authority = lxp_finality_authority_verify;
     if (status == LXP_OK)
         process->evidence_store.availability_log = &process->availability_log;
     if (status == LXP_OK &&
