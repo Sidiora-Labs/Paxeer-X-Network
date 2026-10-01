@@ -1669,3 +1669,35 @@ symbol     = "service core-boundary, service agent-boundary"
 observed   = "core-boundary and agent-boundary waited first on layerxd's runtime outputs, which are absent until the genesis step, so the kernel-app gate failed them as plain waits; both wait lists now begin with the genesis outputs like the other layerxd-dependent services. Gate: 8bd5310c901846272d5d2d1a345561a592a0f3a6 | bash -n docker/kernel/init.sh | 0 | .logs/1.5-boundary-waits-shellcheck.log"
 assumption = "the kernel-app gate at task 1.5 time passes every service as running or waiting-genesis"
 severity   = "info"
+
+[observation.1.5.12]
+task       = "1.5"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_kernel_app"
+observed   = "The kernel machine needs the three HUMAN_EVENTS_* [[files]] secrets of human/wallet/deploy/human.toml at creation because the platform refuses to create a machine whose [[files]] secret is missing, while the tasks producing them (3.11 and 4.5) required the kernel; the kernel's human gateway (layerx-human-service, docker/kernel/init.sh:564) does not read them at start, the process that reads them eagerly is layerx-human-components (human/crates/layerx-human-service/src/bin/layerx-human-components.rs, ProductionComponents::open, HumanOutbox::start in production_components.rs), which the kernel init at this revision never launches."
+assumption = "the new wave-0 task 0.11 precedes 1.5, and the components launch belongs to task 3.5"
+severity   = "warning"
+
+[observation.1.5.13]
+task       = "1.5"
+file       = "docker/kernel/init.sh"
+symbol     = "service"
+observed   = "At this revision the init launches the human gateway only (service human, init.sh:564) among the human-entrypoint roles; the components, human-identity, human-security, human-movement, human-kms and human-owner containers of platform/hosted/node/deployment.yaml have no launch, no wait list and no status entry, so check_kernel_app enumerates none of them and task 1.5 do_2 is unmet for those roles. human-authority (deployment.yaml:928) is a secret volume, not a container; the process started at init.sh:505 with LAYERX_AUTHORITY_STATE_ROOT under human-state/authority is the receipt-authority container (deployment.yaml:412, state root at :445), so it is launched."
+assumption = "task 3.5 do_1 carries the identity, security, movement, components and onboarding (owner) roles and task 3.11 carries the kms as a private Fly app, so the kernel-app gate line for each is added by the task that launches it"
+severity   = "warning"
+
+[observation.3.5.1]
+task       = "3.5"
+file       = "docker/kernel/init.sh"
+symbol     = "service"
+observed   = "From the deploy lead's source read: at this revision init.sh launches only human-entrypoint service; the components role of docker/human-service/entrypoint.sh (layerx-human-components) has no launch, no wait list and no status entry, so check_kernel_app enumerates no components process and its pass says nothing about it."
+assumption = "task 3.5 do_1 adds the components launch, its wait and status entry and the kernel-app gate line for it"
+severity   = "warning"
+
+[observation.3.11.2]
+task       = "3.11"
+file       = "platform/hosted/internal/fly-init.sh"
+symbol     = "Service::open"
+observed   = "fly-init.sh writes credentials.json as {} for journeys and approvals and Service::open (platform/hosted/internal/src/events.rs) refuses an empty principal set, so layerx-event-source exits 1 once its TLS identity exists, independent of the kernel; no source line provisions principals on Fly."
+assumption = "the principal-wait task 0.12 completes it"
+severity   = "warning"

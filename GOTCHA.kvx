@@ -1811,3 +1811,21 @@ area    = "bringup"
 symptom = "A service whose wait list starts with another service's runtime output reports a plain wait before the genesis."
 cause   = "The wait label comes from the first absent path, and only genesis outputs read as waiting-genesis."
 do      = "Every layerxd-dependent service lists the genesis outputs first so the kernel-app gate reads waiting-genesis."
+
+[gotcha.299]
+area    = "bringup"
+symptom = "A service that needs material produced by a later deploy step exits, and the deploy order cannot be completed."
+cause   = "The service treats absent upstream material as a fatal error at start."
+do      = "Wait for the material and report that state on the readiness route, never exit."
+
+[gotcha.300]
+area    = "bringup"
+symptom = "A quiesce-then-export tool that refuses leaves the quiesced processes stopped."
+cause   = "The refusal path exits without resuming what the quiesce step stopped."
+do      = "Every refusal line in a handoff names the resume step."
+
+[gotcha.301]
+area    = "spec"
+symptom = "A spec task whose machine needs [[files]] secrets cannot be cut over in order."
+cause   = "The task does not require the tasks that produce those secrets, and the platform refuses a machine whose [[files]] secret is missing."
+do      = "Make the task require every task producing its [[files]] secrets."
