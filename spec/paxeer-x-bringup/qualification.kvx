@@ -1780,3 +1780,27 @@ symbol     = "check_human"
 observed   = "13b25d9bf plus this task's change | BRINGUP_HOSTS_FILE=<private hosts file> timeout 10m tools/bringup/check-live.sh human | exit 1 | .logs/3.5-human-live-2.log: api-hull.paxeer.network answers with a certificate that does not carry the name (curl exit 60) on live, preflight and plan, readyz http=none, rp-id email=unset; the first run without the hosts file exited 2 (.logs/3.5-human-live.log)."
 assumption = "The kernel app is redeployed with this init, the edge registers api-hull.paxeer.network, the policy, attestor client, KMS client, trust history and fee bound inputs are placed, and the owner names the probe mailbox; the gate reruns then."
 severity   = "blocker"
+
+[observation.3.5.8]
+task       = "3.5"
+file       = "docker/human-service/entrypoint.sh"
+symbol     = "copy_material (agent role)"
+observed   = "The agent role copies ca.der, session-operator and the handover pair but never trust-history or the journal directory, while layerx-agentd requires LAYERX_AGENT_SEQUENCER_TRUST_HISTORY and LAYERX_AGENT_DEPLOYMENT_JOURNAL, which material.py sets to /run/human-private/agent/trust-history and /run/human-private/agent/journal, and human_owner_prepare projects neither; check_kernel_app fails while the human-owner role waits or restarts on them."
+assumption = "Task 3.14 completes the agent role's material after task 3.13 produces the history."
+severity   = "blocker"
+
+[observation.3.5.9]
+task       = "3.5"
+file       = "docker/kernel/init.sh"
+symbol     = "service human, service human-tls"
+observed   = "Both human service processes run human-entrypoint service, whose private directory is the one /run/layerx/human/service-private; the runtime clock's Server::bind (platform/hosted/runtime-clock/src/server.rs) creates its own lxc-<random generation> directory and clock.sock under that root per process, and no other source names the path, so the two listeners share no socket or file; check_kernel_app fails while either of them waits."
+assumption = "Sharing the runtime root is correct as the clock source stands; no task is needed."
+severity   = "info"
+
+[observation.3.5.10]
+task       = "3.5"
+file       = "docker/kernel/init.sh"
+symbol     = "service human-security"
+observed   = "human-security waits on $human_state/trust-history, a path nothing in the tree writes; the only encoder is encode_trust_history in platform/hosted/tests/beta-cluster.sh, and the registry init reads a sequencer trust history from /data/kernel/trust-history; check_kernel_app fails while the human-security role waits."
+assumption = "The sequencer trust history the registry reads is the intended source; task 3.13 produces it in the kernel machine."
+severity   = "warning"
