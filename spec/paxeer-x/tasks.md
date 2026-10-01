@@ -468,7 +468,7 @@
     - Add the new bounded harness tools/qualification/paxeer-x/router-complete-readiness.py to exercise this task through the named production interfaces, including the stated refusal and recovery cases, with explicit prerequisite checks and nonzero exit on any unmet acceptance. Use supplied prebuilt executables and isolated retained state; do not hide a rebuild or invoke a release-wide suite.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 159_
-  - [ ] 15.4 Establish authenticated LNI receipt capability in authority readiness
+  - [-] 15.4 Establish authenticated LNI receipt capability in authority readiness
     - Factor the existing authenticated LNI handshake/capability validation into a reusable non-mutating probe.
     - Combine its result with replica_answers under one bounded readiness deadline and explicit per-dependency diagnostics.
     - Extend real-node authority coverage for healthy replica with missing/wrong LNI, empty replica, recovery and restart.
