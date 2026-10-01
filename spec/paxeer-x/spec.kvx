@@ -21663,7 +21663,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.1]
 title = "Bound every native sandbox decode before accessing payload fields"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -22894,7 +22894,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.25.2]
 title = "Bind ephemeral runner cleanup to actual job assignment"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -22903,7 +22903,7 @@ do_1 = "Reproduce the crossed-assignment scenario and determine the supported Gi
 do_2 = "Carry runner identity and assignment through github.go/jobIndex and reconcile.destroyReason; retain conservative behavior when association is unavailable."
 do_3 = "Extend reconcile_test.go with TestReconcileActualAssignment cases using the real clients/reconciler and documented captured API shapes, including crossed, completed, unknown and unmanaged machines; reserve live scheduler behavior for authorized integrated qualification."
 do_4 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["tools/flyci/controller/github.go", "tools/flyci/controller/reconcile.go", "tools/flyci/controller/reconcile_test.go"]
+touches = ["tools/flyci/controller/github.go", "tools/flyci/controller/reconcile.go", "tools/flyci/controller/reconcile_test.go", "tools/paxeer-x/gates/25.2.sh"]
 verify_cmd = "timeout 10m go test ./tools/flyci/controller -run '^TestReconcileActualAssignment' -count=1"
 gate_kind = "planned"
 max_builds = 1
@@ -22912,7 +22912,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 deployment_profile = "product"
-planned_paths = []
+planned_paths = ["tools/paxeer-x/gates/25.2.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
@@ -25550,7 +25550,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.25.3]
 title = "Bind manually published candidate artifacts to their accepted provenance source"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 3
 requires = ["0.2", "25.1"]
@@ -25559,7 +25559,7 @@ do_1 = "Reproduce the non-event-SHA dispatch contract and inspect the pinned att
 do_2 = "Implement the chosen equality policy or explicit candidate-bound attestation inputs in publish-images.yml and its verifier."
 do_3 = "Create platform/hosted/tests/candidate-provenance.py for the production source-policy and provenance-verifier boundary using actual signed attestation fixtures; cover matching SHA, differing SHA, wrong source and wrong image digest without publishing during the focused test."
 do_4 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = [".github/workflows/publish-images.yml", "platform/hosted/tests/publish-images.sh", "platform/hosted/tests/candidate-provenance.py"]
+touches = [".github/workflows/publish-images.yml", "platform/hosted/tests/publish-images.sh", "platform/hosted/tests/candidate-provenance.py", "tools/paxeer-x/gates/25.3.sh"]
 verify_cmd = "timeout 10m python3 platform/hosted/tests/candidate-provenance.py"
 gate_kind = "planned"
 max_builds = 1
@@ -25568,7 +25568,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 deployment_profile = "product"
-planned_paths = ["platform/hosted/tests/candidate-provenance.py"]
+planned_paths = ["platform/hosted/tests/candidate-provenance.py", "tools/paxeer-x/gates/25.3.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 

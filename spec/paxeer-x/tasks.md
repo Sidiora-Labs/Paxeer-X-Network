@@ -152,7 +152,7 @@
     - Add the designated new harness tests/daemon/paxeer_x_checkpoint_retry.py using real production code and durable stores; invoke prebuilt task targets, fail on any missing prerequisite, and emit revision, exact command, exit code and private evidence path. Do not substitute mocks or synthetic success responses.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 116_
-  - [-] 6.1 Bound every native sandbox decode before accessing payload fields
+  - [x] 6.1 Bound every native sandbox decode before accessing payload fields
     - Move minimum-length validation before copying the common lease identifier; apply checked cursor arithmetic throughout the three branches.
     - Add real registered-decoder cases for every truncated prefix, exact minimum, maximum admitted nested length and malformed nested call.
     - Author the new focused harness tools/qualification/paxeer-x/programs_sandbox_bounds.py to exercise these acceptance cases against real production implementations and types. It must fail on missing candidate artifacts, missing authority/configuration, skipped cases or unverifiable receipts; retain the exact candidate revision, command, case results and evidence paths. Use disposable qualification state and provisioned authority without printing secret values; no mocks, synthetic success or substitution of a library-only model for a named process boundary.
@@ -775,13 +775,13 @@
     - Create tools/ci/tests/focused-source-identity.py using real temporary Git worktrees and the production qualifier/ledger/report commands; prove clean pass eligibility, dirty passing exclusion, revision mismatch and mid-run mutation refusal.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 209_
-  - [ ] 25.2 Bind ephemeral runner cleanup to actual job assignment
+  - [-] 25.2 Bind ephemeral runner cleanup to actual job assignment
     - Reproduce the crossed-assignment scenario and determine the supported GitHub runner/job association fields before selecting the cleanup rule.
     - Carry runner identity and assignment through github.go/jobIndex and reconcile.destroyReason; retain conservative behavior when association is unavailable.
     - Extend reconcile_test.go with TestReconcileActualAssignment cases using the real clients/reconciler and documented captured API shapes, including crossed, completed, unknown and unmanaged machines; reserve live scheduler behavior for authorized integrated qualification.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 210_
-  - [ ] 25.3 Bind manually published candidate artifacts to their accepted provenance source
+  - [-] 25.3 Bind manually published candidate artifacts to their accepted provenance source
     - Reproduce the non-event-SHA dispatch contract and inspect the pinned attestation mechanism to establish its supported source binding.
     - Implement the chosen equality policy or explicit candidate-bound attestation inputs in publish-images.yml and its verifier.
     - Create platform/hosted/tests/candidate-provenance.py for the production source-policy and provenance-verifier boundary using actual signed attestation fixtures; cover matching SHA, differing SHA, wrong source and wrong image digest without publishing during the focused test.

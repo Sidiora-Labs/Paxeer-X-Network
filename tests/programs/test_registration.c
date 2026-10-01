@@ -2,7 +2,19 @@
 
 #include "layerx/lxp_kernel.h"
 
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+#if defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define SANDBOX_ADDRESS_SANITIZER 1
+#endif
+#endif
+#if defined(__SANITIZE_ADDRESS__)
+#define SANDBOX_ADDRESS_SANITIZER 1
+#endif
+
 
 static int registration_contract(void)
 {
@@ -170,8 +182,220 @@ static int exercise(uint16_t ordinal, size_t payload_length,
     return lxp_state_store_destroy(&store) == LXP_OK ? 0 : 1;
 }
 
-int main(void)
+#ifdef SANDBOX_ADDRESS_SANITIZER
+static void put_u16(uint8_t *bytes, uint16_t value)
 {
+    bytes[0] = (uint8_t)(value >> 8U);
+    bytes[1] = (uint8_t)value;
+}
+
+static void put_u32(uint8_t *bytes, uint32_t value)
+{
+    bytes[0] = (uint8_t)(value >> 24U);
+    bytes[1] = (uint8_t)(value >> 16U);
+    bytes[2] = (uint8_t)(value >> 8U);
+    bytes[3] = (uint8_t)value;
+}
+
+static int sandbox_case(const lxp_module_registration *registration,
+                        lxp_module_ctx *ctx, lxp_effect_buffer *effects,
+                        const char *name, const uint8_t *source, size_t length,
+                        lxp_result expected, size_t *count)
+{
+    uint8_t *payload = malloc(length == 0U ? 1U : length);
+    void *decoded = NULL;
+    lxp_result result;
+    if (payload == NULL || lxp_arena_reset(ctx->arena, 0U) != LXP_OK) {
+        free(payload);
+        return 1;
+    }
+    if (length != 0U) (void)memcpy(payload, source, length);
+    result = registration->iface->decode(ctx,
+        lxp_activity_type_ordinal(LX_PROGRAMS_SANDBOX), payload, length, &decoded);
+    free(payload);
+    if (result != expected || (result == LXP_OK) != (decoded != NULL) ||
+        ctx->staged_count != 0U || ctx->staged_account_count != 0U ||
+        ctx->staged_blob_count != 0U || ctx->identity_staged ||
+        effects->count != 0U || ctx->kernel->module_kv_count != 0U) {
+        (void)fprintf(stderr, "sandbox case %s abi=%u length=%zu: result=%d expected=%d\n",
+                      name, (unsigned)registration->abi_version, length,
+                      (int)result, (int)expected);
+        return 1;
+    }
+    ++*count;
+    (void)printf("SANDBOX_CASE {\"name\":\"%s\",\"abi\":%u,\"length\":%zu,"
+                 "\"result\":%d,\"expected\":%d,\"staged\":0,\"effects\":0}\n",
+                 name, (unsigned)registration->abi_version, length,
+                 (int)result, (int)expected);
+    return 0;
+}
+
+#endif
+
+static int sandbox_bounds(void)
+{
+#ifndef SANDBOX_ADDRESS_SANITIZER
+    (void)fprintf(stderr, "sandbox bounds requires AddressSanitizer\n");
+    return 1;
+#else
+    static const size_t fixed[] = {236U, 248U, 76U};
+    static const size_t protected_fields[] = {4U, 44U, 76U, 108U, 140U};
+    const size_t call_fixed = 50U + LX_PROGRAMS_CALL_BUDGET_FIELDS * 8U;
+    const size_t largest_call = call_fixed + LX_PROGRAMS_MAX_ENTRYPOINT_BYTES +
+        LX_PROGRAMS_MAX_CALLDATA_BYTES + UINT16_MAX +
+        LX_PROGRAMS_MAX_ACCESS_DECLARATION_BYTES;
+    const size_t capacity = 236U + largest_call + 1U;
+    uint8_t *payload = calloc(capacity, 1U);
+    uint8_t *arena_bytes = malloc(32U * 1024U * 1024U);
+    lxp_module_ctx *ctx = calloc(1U, sizeof(*ctx));
+    lxp_kernel *kernel = calloc(1U, sizeof(*kernel));
+    lxp_state_store store;
+    lxp_state_journal journal;
+    lxp_arena arena;
+    lxp_effect_buffer effects;
+    const lxp_module_registration *registration;
+    uint64_t parameters = 1U;
+    size_t count = 0U, abi, operation, length, index;
+    int failed = 1;
+    if (payload == NULL || arena_bytes == NULL || ctx == NULL || kernel == NULL)
+        goto cleanup;
+    if (lxp_state_store_init(&store, 0U) != LXP_OK) goto cleanup;
+    if (lxp_kernel_create(kernel, &store, &journal, &parameters, 0U) != LXP_OK ||
+        lxp_arena_init(&arena, arena_bytes, 32U * 1024U * 1024U) != LXP_OK ||
+        lxp_effect_buffer_init(&effects) != LXP_OK)
+        goto destroy;
+    for (abi = 3U; abi <= 4U; ++abi) {
+        const lxp_module_iface *iface = abi == 3U ?
+            programs_module_registration_v3() : programs_module_registration_v4();
+        if (lxp_kernel_set_epoch(kernel, (uint64_t)abi) != LXP_OK ||
+            lxp_kernel_register_module(kernel, iface) != LXP_OK ||
+            lxp_kernel_module_for_activity(kernel, LX_PROGRAMS_SANDBOX,
+                (uint64_t)abi, &registration) != LXP_OK ||
+            registration->iface != iface ||
+            lxp_module_ctx_init(ctx, kernel, LXP_MODULE_PROGRAMS, 1U,
+                (uint64_t)abi, 1U, UINT64_MAX, &arena, false) != LXP_OK ||
+            lxp_module_ctx_bind_effects(ctx, &effects) != LXP_OK)
+            goto destroy;
+#define CASE(name, size, result) do { \
+    if (sandbox_case(registration, ctx, &effects, (name), payload, \
+                     (size), (result), &count) != 0) goto destroy; \
+} while (0)
+        for (operation = 1U; operation <= 3U; ++operation) {
+            char name[32];
+            (void)memset(payload, 0, capacity);
+            payload[0] = 1U;
+            payload[1] = (uint8_t)operation;
+            (void)snprintf(name, sizeof(name), "prefix-%zu", operation);
+            for (length = 0U; length < fixed[operation - 1U]; ++length)
+                CASE(name, length, LXP_ERR_TRUNCATED);
+            CASE("fixed-minimum", fixed[operation - 1U],
+                 operation == 1U ? LXP_ERR_NON_CANONICAL :
+                 operation == 2U ? LXP_ERR_TRUNCATED : LXP_OK);
+            if (operation == 3U) {
+                CASE("activate-trailing", 77U, LXP_ERR_NON_CANONICAL);
+                (void)memset(payload + 4U, 0x25, 72U);
+                CASE("activate-canonical", 76U, LXP_OK);
+            }
+            for (index = 0U; index < 4U; ++index) {
+                const uint8_t saved = payload[index];
+                payload[index] = index < 2U ? UINT8_MAX : 1U;
+                CASE("invalid-header", fixed[operation - 1U], LXP_ERR_NON_CANONICAL);
+                payload[index] = saved;
+            }
+        }
+        (void)memset(payload, 0, capacity);
+        payload[0] = 1U; payload[1] = 1U;
+        for (index = 0U; index < sizeof(protected_fields) / sizeof(protected_fields[0]); ++index)
+            (void)memset(payload + protected_fields[index], 0x31, 32U);
+        put_u32(payload + 172U, 1U);
+        (void)memset(payload + 236U, 0x41, 32U);
+        put_u16(payload + 268U, 1U);
+        put_u16(payload + 270U, 1U);
+        payload[236U + call_fixed] = (uint8_t)'f';
+        put_u32(payload + 232U, (uint32_t)(call_fixed + 1U));
+        CASE("execute-canonical", 236U + call_fixed + 1U, LXP_OK);
+        CASE("execute-trailing", 236U + call_fixed + 2U, LXP_ERR_NON_CANONICAL);
+        for (length = 1U; length < call_fixed; ++length) {
+            put_u32(payload + 232U, (uint32_t)length);
+            CASE("nested-call-prefix", 236U + length, LXP_ERR_TRUNCATED);
+        }
+        put_u32(payload + 232U, (uint32_t)call_fixed);
+        CASE("nested-call-missing-entrypoint", 236U + call_fixed, LXP_ERR_NON_CANONICAL);
+        put_u32(payload + 232U, UINT32_MAX);
+        CASE("execute-length-overflow", 236U + call_fixed + 1U, LXP_ERR_NON_CANONICAL);
+        put_u32(payload + 232U, 0U);
+        CASE("execute-empty-call", 236U + call_fixed + 1U, LXP_ERR_NON_CANONICAL);
+        put_u32(payload + 232U, (uint32_t)(call_fixed + 1U));
+        for (index = 0U; index < sizeof(protected_fields) / sizeof(protected_fields[0]); ++index) {
+            (void)memset(payload + protected_fields[index], 0, 32U);
+            CASE("execute-zero-identifier", 236U + call_fixed + 1U, LXP_ERR_NON_CANONICAL);
+            (void)memset(payload + protected_fields[index], 0x31, 32U);
+        }
+        put_u32(payload + 172U, 0U);
+        CASE("execute-zero-fee-version", 236U + call_fixed + 1U, LXP_ERR_NON_CANONICAL);
+        put_u32(payload + 172U, 1U);
+        payload[236U + call_fixed] = (uint8_t)'!';
+        CASE("nested-call-invalid-entrypoint", 236U + call_fixed + 1U, LXP_ERR_NON_CANONICAL);
+        payload[236U + call_fixed] = (uint8_t)'f';
+        put_u32(payload + 272U, LX_PROGRAMS_MAX_CALLDATA_BYTES + 1U);
+        CASE("nested-call-over-limit", 236U + call_fixed + 1U, LXP_ERR_NON_CANONICAL);
+        put_u16(payload + 270U, LX_PROGRAMS_MAX_ENTRYPOINT_BYTES);
+        put_u32(payload + 272U, LX_PROGRAMS_MAX_CALLDATA_BYTES);
+        put_u16(payload + 276U, UINT16_MAX);
+        put_u32(payload + 278U, LX_PROGRAMS_MAX_ACCESS_DECLARATION_BYTES);
+        put_u32(payload + 282U, LX_PROGRAMS_MAX_RESPONSE_BYTES);
+        (void)memset(payload + 236U + call_fixed, 'f', LX_PROGRAMS_MAX_ENTRYPOINT_BYTES);
+        put_u32(payload + 232U, (uint32_t)largest_call);
+        CASE("execute-maximum-nested-fields", 236U + largest_call, LXP_OK);
+        (void)memset(payload, 0, capacity);
+        payload[0] = 1U; payload[1] = 2U;
+        put_u32(payload + 248U, 1U);
+        payload[252U] = 1U;
+        put_u32(payload + 253U, 146U);
+        (void)memset(payload + 257U, 0x41, 32U);
+        put_u16(payload + 289U, 1U);
+        CASE("fund-canonical", 403U, LXP_OK);
+        CASE("fund-trailing", 404U, LXP_ERR_NON_CANONICAL);
+        for (length = 248U; length < 252U; ++length)
+            CASE("fund-lifecycle-length-prefix", length, LXP_ERR_TRUNCATED);
+        CASE("fund-missing-lifecycle", 252U, LXP_ERR_NON_CANONICAL);
+        for (length = 253U; length < 257U; ++length)
+            CASE("fund-transfer-length-prefix", length, LXP_ERR_TRUNCATED);
+        for (length = 1U; length < 34U; ++length) {
+            put_u32(payload + 253U, (uint32_t)length);
+            CASE("nested-transfer-prefix", 257U + length, LXP_ERR_TRUNCATED);
+        }
+        put_u32(payload + 253U, 34U);
+        CASE("nested-transfer-missing-leg", 291U, LXP_ERR_NON_CANONICAL);
+        put_u32(payload + 253U, UINT32_MAX);
+        CASE("fund-transfer-overflow", 403U, LXP_ERR_NON_CANONICAL);
+        put_u32(payload + 248U, UINT32_MAX);
+        CASE("fund-lifecycle-overflow", 403U, LXP_ERR_NON_CANONICAL);
+        put_u32(payload + 248U, 0U);
+        CASE("fund-empty-lifecycle", 403U, LXP_ERR_NON_CANONICAL);
+        put_u32(payload + 248U, 1U);
+        put_u32(payload + 253U, 34U + LXP_MAX_TRANSFER_SET_LEGS * 112U);
+        put_u16(payload + 289U, LXP_MAX_TRANSFER_SET_LEGS);
+        CASE("fund-maximum-transfer", 257U + 34U + LXP_MAX_TRANSFER_SET_LEGS * 112U, LXP_OK);
+        put_u16(payload + 289U, LXP_MAX_TRANSFER_SET_LEGS + 1U);
+        CASE("fund-transfer-over-limit", 257U + 34U + LXP_MAX_TRANSFER_SET_LEGS * 112U, LXP_ERR_LENGTH_LIMIT);
+#undef CASE
+    }
+    (void)printf("SANDBOX_BOUNDS detector=address-sanitizer cases=%zu skipped=0\n", count);
+    failed = 0;
+destroy:
+    if (lxp_state_store_destroy(&store) != LXP_OK) failed = 1;
+cleanup:
+    free(kernel); free(ctx); free(arena_bytes); free(payload);
+    return failed;
+#endif
+}
+
+int main(int argc, char **argv)
+{
+    if (argc == 2 && strcmp(argv[1], "--sandbox-bounds") == 0)
+        return sandbox_bounds();
+    if (argc != 1) return 1;
     if (lxp_programs_abi_transition_validate(0U, LX_PROGRAMS_ABI_VERSION) != LXP_OK ||
         lxp_programs_abi_transition_validate(0U, LX_PROGRAMS_ACCOUNT_ABI_VERSION) != LXP_OK ||
         lxp_programs_abi_transition_validate(LX_PROGRAMS_ABI_VERSION,
