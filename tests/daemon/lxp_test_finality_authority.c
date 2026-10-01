@@ -244,6 +244,165 @@ static int attestations_file(const char *directory, bool writing)
     return 0;
 }
 
+static int read_file(const char *path, uint8_t **out, size_t *length, size_t limit)
+{
+    struct stat metadata;
+    FILE *input = fopen(path, "rb");
+    if (input == NULL || fstat(fileno(input), &metadata) != 0 || !S_ISREG(metadata.st_mode) ||
+        metadata.st_size <= 0 || (uint64_t)metadata.st_size > limit) { if (input != NULL) (void)fclose(input); FAIL(); }
+    *length = (size_t)metadata.st_size;
+    *out = malloc(*length);
+    if (*out == NULL || fread(*out, 1U, *length, input) != *length || fgetc(input) != EOF || fclose(input) != 0) FAIL();
+    return 0;
+}
+
+static int records(const char *path)
+{
+    lxp_log log;
+    lxp_log_record_header header;
+    uint64_t offset = 0U, valid_end = 0U, last = 0U, next = 0U;
+    uint8_t *body = malloc(LXP_DAEMON_FINALITY_REGISTER_MAX_BYTES + 65536U);
+    bool first = true;
+    if (body == NULL || lxp_log_open_readonly(&log, path) != LXP_OK) FAIL();
+    if (lxp_log_scan_tail(&log, &valid_end, &last, &next) != LXP_OK && valid_end == 0U) FAIL();
+    (void)printf("{\"valid_end\":%" PRIu64 ",\"records\":[", valid_end);
+    while (offset < valid_end) {
+        if (lxp_log_read(&log, offset, &header, body, LXP_DAEMON_FINALITY_REGISTER_MAX_BYTES + 65536U) != LXP_OK) FAIL();
+        (void)printf("%s{\"offset\":%" PRIu64 ",\"kind\":%u,\"evidence_kind\":%d,\"length\":%" PRIu32 ",\"sequence\":%" PRIu64 "}",
+            first ? "" : ",", offset, (unsigned)header.record_kind,
+            header.body_length >= 6U ? (int)body[5] : -1, header.body_length, header.global_sequence);
+        first = false;
+        offset += LXP_LOG_HEADER_BYTES + header.body_length;
+    }
+    (void)printf("]}\n");
+    free(body);
+    return lxp_log_close(&log) == LXP_OK && offset == valid_end ? 0 : 1;
+}
+
+static struct {
+    lxp_guarantor_cert certificate;
+    lxp_guarantor_set bonded_set;
+    lxp_finalisation_requirements requirements;
+    lxp_daemon_settlement_registration_evidence registration;
+    bool seen;
+} actual;
+
+static lxp_result capture_history(void *context, const lxp_guarantor_cert *candidate,
+    const lxp_guarantor_set *set, const lxp_finalisation_requirements *required,
+    const lxp_daemon_settlement_registration_evidence *registered)
+{
+    actual.certificate = *candidate;
+    actual.bonded_set = *set;
+    actual.requirements = *required;
+    actual.registration = *registered;
+    actual.seen = true;
+    return lxp_finality_authority_verify_history(context, candidate, set, required, registered);
+}
+
+static int refused(lxp_daemon_finality_authority *authority, const char *name, lxp_result expected)
+{
+    lxp_finalisation_state before = store.registry.finalisation;
+    lxp_result status = lxp_finality_authority_verify_history(authority, &certificate, &bonded_set,
+        &requirements, &registration);
+    if (status == LXP_OK || (expected != LXP_OK && status != expected) ||
+        memcmp(&before, &store.registry.finalisation, sizeof(before)) != 0) {
+        (void)fprintf(stderr, "%s: unexpected status %d or mutated frontier\n", name, (int)status);
+        FAIL();
+    }
+    (void)printf("%s refused status=%d\n", name, (int)status);
+    certificate = actual.certificate;
+    bonded_set = actual.bonded_set;
+    requirements = actual.requirements;
+    registration = actual.registration;
+    return 0;
+}
+
+/* Actual producer payloads: the guarantor's %020batch.checkpoint/.finality
+ * files and its <checkpoint-id>.header go through the production finality
+ * decoder and verifier against the live anchor. */
+static int actual_payload(const char *state, const char *batch, const char *checkpoint_hex, bool admit)
+{
+    lxp_daemon_finality_authority authority;
+    lxp_finalisation_state before;
+    lxp_batch_header header;
+    uint8_t checkpoint_id[32], *payload, *proof, *saved_header, *memory;
+    size_t payload_length, proof_length, header_length;
+    char path[4096];
+    lxp_arena arena;
+    lxp_result status;
+    int failed = 0;
+    if (decode(checkpoint_hex, checkpoint_id, 32U) != 0 ||
+        snprintf(path, sizeof(path), "%s/%020llu.checkpoint", state, strtoull(batch, NULL, 10)) >= (int)sizeof(path) ||
+        read_file(path, &payload, &payload_length, LXP_DAEMON_FINALITY_REGISTER_MAX_BYTES) != 0 ||
+        snprintf(path, sizeof(path), "%s/%020llu.finality", state, strtoull(batch, NULL, 10)) >= (int)sizeof(path) ||
+        read_file(path, &proof, &proof_length, LXP_DAEMON_FINALITY_REGISTER_MAX_BYTES) != 0 ||
+        snprintf(path, sizeof(path), "%s/%s.header", state, checkpoint_hex + (strncmp(checkpoint_hex, "0x", 2U) == 0 ? 2U : 0U)) >= (int)sizeof(path) ||
+        read_file(path, &saved_header, &header_length, LXP_BATCH_HEADER_ENCODED_SIZE + 64U) != 0 ||
+        header_length != LXP_BATCH_HEADER_ENCODED_SIZE + 64U ||
+        lxp_batch_header_decode(saved_header, LXP_BATCH_HEADER_ENCODED_SIZE, &header) != LXP_OK) FAIL();
+    status = lxp_finality_authority_bind(&authority, &store);
+    if (status != LXP_OK) { (void)fprintf(stderr, "finality authority bind refused: %d\n", (int)status); FAIL(); }
+    /* The trusted predecessor anchor is the settlement root the checkpoint extends. */
+    (void)memcpy(store.registry.finalisation.settlement_anchor, header.previous_state_root, 32U);
+    memory = malloc(4U * LXP_MAX_VALIDITY_PROOF_BYTES);
+    if (memory == NULL || lxp_arena_init(&arena, memory, 4U * LXP_MAX_VALIDITY_PROOF_BYTES) != LXP_OK) FAIL();
+    before = store.registry.finalisation;
+    status = lxp_daemon_finality_contents_verify(header.network_id, (lxp_byte_span){payload, payload_length},
+        (lxp_byte_span){proof, proof_length}, (lxp_byte_span){saved_header, LXP_BATCH_HEADER_ENCODED_SIZE},
+        checkpoint_id, capture_history, &authority, &arena);
+    if (status != LXP_OK || !actual.seen || memcmp(&before, &store.registry.finalisation, sizeof(before)) != 0) {
+        (void)fprintf(stderr, "historical recovery refused: %d\n", (int)status);
+        FAIL();
+    }
+    (void)printf("historical recovery passed set_version=%" PRIu64 " block=%" PRIu64 " guarantors=%zu threshold=%u\n",
+        actual.bonded_set.version, actual.registration.observed_block_number,
+        actual.certificate.attestation_count, (unsigned)actual.certificate.threshold);
+    status = lxp_daemon_finality_contents_verify(header.network_id, (lxp_byte_span){payload, payload_length},
+        (lxp_byte_span){proof, proof_length}, (lxp_byte_span){saved_header, LXP_BATCH_HEADER_ENCODED_SIZE},
+        checkpoint_id, lxp_finality_authority_verify, &authority, &arena);
+    if ((admit && status != LXP_OK) || (!admit && status == LXP_OK) ||
+        memcmp(&before, &store.registry.finalisation, sizeof(before)) != 0) {
+        (void)fprintf(stderr, "fresh admission: unexpected status %d\n", (int)status);
+        FAIL();
+    }
+    (void)printf("fresh admission %s status=%d\n", admit ? "passed" : "refused", (int)status);
+    certificate = actual.certificate;
+    bonded_set = actual.bonded_set;
+    requirements = actual.requirements;
+    registration = actual.registration;
+    ++registration.observed_block_number;
+    failed |= refused(&authority, "wrong block", LXP_OK);
+    --registration.observed_block_number;
+    failed |= refused(&authority, "earlier block", LXP_OK);
+    ++bonded_set.version;
+    failed |= refused(&authority, "wrong set version", LXP_ERR_CONTEXT_MISMATCH);
+    --bonded_set.version;
+    failed |= refused(&authority, "older set version", LXP_ERR_CONTEXT_MISMATCH);
+    bonded_set.records[0].public_key[32] ^= 1U;
+    failed |= refused(&authority, "wrong membership proof", LXP_OK);
+    certificate.attestation_count = 1U;
+    failed |= refused(&authority, "short signer list", LXP_OK);
+    ++registration.paxeer_chain_id;
+    failed |= refused(&authority, "wrong chain", LXP_ERR_CONTEXT_MISMATCH);
+    registration.settlement_contract[19] ^= 1U;
+    failed |= refused(&authority, "wrong anchor domain", LXP_ERR_CONTEXT_MISMATCH);
+    certificate.threshold = 1U;
+    requirements.threshold = 1U;
+    failed |= refused(&authority, "wrong certificate threshold", LXP_ERR_CONTEXT_MISMATCH);
+    certificate.attestations[0].signature[0] ^= 1U;
+    failed |= refused(&authority, "wrong certificate signature", LXP_OK);
+    registration.transaction_id[0] ^= 1U;
+    failed |= refused(&authority, "wrong receipt", LXP_OK);
+    certificate.checkpoint.header.resulting_state_root[0] ^= 1U;
+    failed |= refused(&authority, "wrong checkpoint root", LXP_OK);
+    registration.checkpoint_id[0] ^= 1U;
+    failed |= refused(&authority, "wrong checkpoint id", LXP_OK);
+    authority.rpc_port = 1U;
+    failed |= refused(&authority, "unavailable history", LXP_ERR_IO);
+    free(memory); free(saved_header); free(proof); free(payload);
+    return failed;
+}
+
 static int check(lxp_daemon_finality_authority *authority, const char *name,
                   bool success, bool unavailable)
 {
@@ -285,6 +444,10 @@ int main(int argc, char **argv)
             authority.finalized_batch, authority.finalized_guarantor_count);
         return 0;
     }
+    if (argc == 3 && strcmp(argv[1], "records") == 0) return records(argv[2]);
+    if (argc == 6 && strcmp(argv[1], "actual") == 0 &&
+        (strcmp(argv[5], "admit") == 0 || strcmp(argv[5], "refuse") == 0))
+        return actual_payload(argv[2], argv[3], argv[4], strcmp(argv[5], "admit") == 0);
     if (log_bootstrap() != 0 || fixture(&authority) != 0) FAIL();
     if (argc == 2 && strcmp(argv[1], "prepare") == 0) { prepare(); return 0; }
     if (argc == 3 && strcmp(argv[1], "prepare") == 0) {
