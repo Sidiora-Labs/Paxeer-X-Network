@@ -26529,7 +26529,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.111.6.12]
 title = "Move the explorer, interop, flyci, chain node and root container files under docker/ and update the workflows and compose files"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 3
 requires = ["0.2", "111.6.11"]
