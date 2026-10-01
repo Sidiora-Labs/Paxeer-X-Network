@@ -1980,6 +1980,10 @@ $(BUILD_DIR)/tests/lxp_test_terminal_rejection: \
 test-terminal-rejection: $(BUILD_DIR)/tests/lxp_test_terminal_rejection
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_terminal_rejection
 
+.PHONY: test-versioned-boundaries
+test-versioned-boundaries: $(BUILD_DIR)/tests/lxp_test_terminal_rejection
+	BUILD_DIR=$(BUILD_DIR) python3 tools/paxeer-x/tests/versioned_boundaries.py
+
 $(BUILD_DIR)/tests/lxp_test_batch_identity: \
 		tests/protocol/lxp_test_batch_identity.c \
 		cmd/layerxd/lxp_daemon_batch_wal.c \

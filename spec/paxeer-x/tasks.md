@@ -27,7 +27,7 @@
     - Retain existing product domains and RPC records as compatible aliases or upstreams; add required TLS/mTLS passthrough without downgrading certificate or client-identity checks.
     - Implement a routed contract gate exercising each catalogue class plus wrong-network, missing-dependency and unauthorized private-route refusals.
     - _Requirements: 1, 4, 5, 413, 438_
-  - [-] 0.5 Freeze versioned sequence, refusal and expiry boundary contracts
+  - [x] 0.5 Freeze versioned sequence, refusal and expiry boundary contracts
     - Inventory exact current protocol assertions and retained acceptance clauses for admission, terminal refusal, fees, replay and each expiry comparator.
     - Define an explicit versioned transition table and canonical vectors preserving historical authenticated outcomes. Where a new behavior is required, specify its explicit protocol migration and compatibility conditions before implementation; do not silently change either checks or semantics.
     - Implement the focused contract/vector gate using real native activity and receipt types. Record any still unresolved contradiction as blocking release.
@@ -771,7 +771,7 @@
     - Keep source identity and secret exclusions explicit; do not broaden into rebuilding chain or validator images.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 208_
-  - [ ] 24.10 Initialize protected Human role directories as a prerequisite to full runtime closure
+  - [-] 24.10 Initialize protected Human role directories as a prerequisite to full runtime closure
     - Reuse the existing protected directory initializer; limit this prerequisite to actual initialization and direct namespace/UID behavior.
     - Keep production init and entrypoint paths exact. Root creates the complete configured per-role0700 children owned by their declared UID/GID before privilege drop; reject symlinks and unexpected ownership without broadening permissions.
     - Implement a distinct --case role-directory-prerequisite that executes the actual initializer and real UID/mount namespaces, checks owner access and cross-role traversal/modification refusal, recreates ephemeral paths and preserves separately seeded durable bytes. No stand-in Human process is called a successful role startup.

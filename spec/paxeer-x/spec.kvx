@@ -21316,7 +21316,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.5]
 title = "Freeze versioned sequence, refusal and expiry boundary contracts"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -31195,7 +31195,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.24.10]
 title = "Initialize protected Human role directories as a prerequisite to full runtime closure"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
