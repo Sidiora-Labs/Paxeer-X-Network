@@ -64,6 +64,43 @@ print(json.dumps({"target": {
 PYTHON
 }
 
+paxd_check_recipe() {
+    local destination=$1
+    paxd_build_plan | python3 -c '
+import json
+from pathlib import Path
+import re
+import sys
+
+plan = json.load(sys.stdin)["target"]
+producer = plan["paxd-node"]
+consumer = plan["paxd"]
+if producer["context"] != "." or consumer["context"] != "." or consumer["contexts"] != {"paxd-base": "target:paxd-node"} or consumer["args"] != {"PAXD_IMAGE": "paxd-base"}:
+    raise ValueError("unexpected canonical Paxeer dependency")
+node_path = Path(producer["dockerfile"])
+paxd_path = Path(consumer["dockerfile"])
+node = node_path.read_text()
+paxd = paxd_path.read_text()
+header, separator, runtime = paxd.partition("\nFROM ${PAXD_IMAGE}\n")
+if not separator or not header.startswith("ARG PAXD_IMAGE=") or "\n" in header:
+    raise ValueError("Paxeer dependency declaration changed")
+stages = list(re.finditer(r"^FROM ([^\n]+)$", node, re.M))
+if not stages or " AS " in stages[-1].group(1).upper():
+    raise ValueError("Paxeer producer final stage changed")
+last = stages[-1]
+node = node[:last.end()] + " AS paxd-base" + node[last.end():]
+output = Path(sys.argv[1])
+output.write_text(header + "\n" + node.rstrip() + "\n\nFROM paxd-base\n" + runtime)
+ignored = Path(str(node_path) + ".dockerignore").read_text()
+expected = ["*", "!platform/hosted/paxeer/init-chain.sh", "!platform/hosted/paxeer/contracts/BetaUsdl.runtime.hex"]
+actual = Path(str(paxd_path) + ".dockerignore").read_text().splitlines()
+if actual != expected:
+    raise ValueError("Paxeer runtime input contract changed")
+exceptions = ["!platform/", "platform/**", "!platform/hosted/", "platform/hosted/**", "!platform/hosted/paxeer/", "platform/hosted/paxeer/**", "!platform/hosted/paxeer/init-chain.sh", "!platform/hosted/paxeer/contracts/", "platform/hosted/paxeer/contracts/**", "!platform/hosted/paxeer/contracts/BetaUsdl.runtime.hex"]
+Path(str(output) + ".dockerignore").write_text(ignored.rstrip() + "\n" + "\n".join(exceptions) + "\n")
+' "$destination"
+}
+
 registry_manifest_digest() {
     jq -er '
         def image_manifest:

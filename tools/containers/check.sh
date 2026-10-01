@@ -291,7 +291,9 @@ check_recipe() {
         source platform/hosted/tests/beta-images.sh
         local REVISION
         REVISION=$(git rev-parse HEAD)
-        paxd_build_plan | docker buildx bake --check --file - paxd
+        paxd_check_recipe "$LOG_DIR/paxd-check.Dockerfile" || return
+        copy_inputs "$LOG_DIR/paxd-check.Dockerfile" "$context" || return
+        docker build --check --build-arg "PAX_CHAIN_REF=$REVISION" -f "$LOG_DIR/paxd-check.Dockerfile" "$context"
     else
         docker build --check -f "$recipe" "$context"
     fi
