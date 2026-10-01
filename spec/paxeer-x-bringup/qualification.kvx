@@ -1701,3 +1701,19 @@ symbol     = "Service::open"
 observed   = "fly-init.sh writes credentials.json as {} for journeys and approvals and Service::open (platform/hosted/internal/src/events.rs) refuses an empty principal set, so layerx-event-source exits 1 once its TLS identity exists, independent of the kernel; no source line provisions principals on Fly."
 assumption = "the principal-wait task 0.12 completes it"
 severity   = "warning"
+
+[observation.0.11.1]
+task       = "0.11"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_events_upstream"
+observed   = "At base 998d1fce7 plus the lane change, BRINGUP_HOSTS_FILE=<private host map> timeout 10m tools/bringup/check-live.sh events-upstream exited 1 (log .logs/0.11-events-upstream-live.log): paxeer-webhooks and paxeer-registry exist, the journeys and approvals machines of paxeer-internal did not answer (fail producer-token app=paxeer-internal group=journeys bytes=unreachable), and none of the six event-token and trigger names is listed on its app (first refusing name line: fail secret app=paxeer-human-service name=HUMAN_EVENTS_JOURNEY_TOKEN listed=no); the fixture case check_live_events_upstream_passing passed in the harness run."
+assumption = "the deploy side has not yet deployed paxeer-internal or staged the trigger and producer tokens of do_1 and do_2, so the gate is rerun once that bootstrap has run"
+severity   = "warning"
+
+[observation.0.11.2]
+task       = "0.11"
+file       = "spec/paxeer-x-bringup/spec.kvx"
+symbol     = "task.0.11"
+observed   = "cg spec start 0.11 -f paxeer-x-bringup exited 1: 0.11 touches tools/bringup/check-live.sh, which in-progress task 4.2 also claims; the status line was set to in_progress by hand."
+assumption = "the shared probe file is appended to by both tasks without overlapping functions"
+severity   = "info"

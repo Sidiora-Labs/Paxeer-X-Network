@@ -1829,3 +1829,21 @@ area    = "spec"
 symptom = "A spec task whose machine needs [[files]] secrets cannot be cut over in order."
 cause   = "The task does not require the tasks that produce those secrets, and the platform refuses a machine whose [[files]] secret is missing."
 do      = "Make the task require every task producing its [[files]] secrets."
+
+[gotcha.302]
+area    = "check-live"
+symptom = "A check-live gate run without BRINGUP_HOSTS_FILE exits 2 before any Fly check, even for a subcommand that reads no host."
+cause   = "Every subcommand except explorer loads the private host map first."
+do      = "Run Fly-only gates with BRINGUP_HOSTS_FILE pointing at the private host map as the other gate records do."
+
+[gotcha.303]
+area    = "test"
+symptom = "A check-live probe that calls flyctl apps list or flyctl secrets list reads nothing from the harness's flyctl stand-in."
+cause   = "The stand-in refuses any call without an fx- app before it looks at the subcommand, and answers only the subcommands earlier probes used."
+do      = "Answer apps list before the app gate and add secrets list beside ips list, both from the fixture directories, in the change that adds the probe."
+
+[gotcha.304]
+area    = "test"
+symptom = "A harness case cannot assert that a probe never prints a secret value with the shared expect helper, which only checks lines that must appear."
+cause   = "expect has no absence assertion besides its no-destination pattern."
+do      = "Start every fixture secret value with up- so a printed value matches the no-destination pattern and fails the case."

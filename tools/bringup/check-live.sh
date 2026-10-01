@@ -3842,6 +3842,72 @@ check_kernel_value_loop() {
 	finish "$failures"
 }
 
+# check_events_upstream: the kernel app of human/wallet/deploy/human.toml
+# lists the three event-token names its [[files]] entries mount; the journeys
+# and approvals machines of the app of platform/hosted/internal/fly.toml each
+# hold a non-empty /data/run/producer-token, read as a byte count; the apps of
+# platform/hosted/webhooks/fly.toml and platform/hosted/registry/fly.toml
+# exist; and each webhooks trigger consumer lists its trigger name
+# (platform/hosted/webhooks/fly.toml, human/wallet/deploy/endpoint.toml,
+# human/wallet/deploy/human.toml, docker/platform-registry/init.sh). Prints
+# secret names and byte counts only, never a value. One line per check.
+check_events_upstream() {
+	local kernel internal webhooks endpoint registry group bytes apps name app listed row rest failures=0
+	local -a names=()
+	if ! command -v flyctl >/dev/null 2>&1; then
+		echo "check-live: flyctl is required" >&2
+		exit 2
+	fi
+	if ! kernel="$(fly_app human/wallet/deploy/human.toml)" || ! internal="$(fly_app platform/hosted/internal/fly.toml)" ||
+		! webhooks="$(fly_app platform/hosted/webhooks/fly.toml)" || ! endpoint="$(fly_app human/wallet/deploy/endpoint.toml)" ||
+		! registry="$(fly_app platform/hosted/registry/fly.toml)"; then
+		echo "fail events-upstream toml=absent"
+		finish 1
+	fi
+
+	for group in journeys approvals; do
+		bytes="$(fly_ssh "$internal" "$group" 'wc -c </data/run/producer-token 2>/dev/null || echo absent' </dev/null | tail -n 1 | tr -d ' ')" || bytes=""
+		if [[ "$bytes" =~ ^[0-9]+$ ]] && [ "$bytes" -gt 0 ]; then
+			echo "pass producer-token app=$internal group=$group bytes=$bytes"
+		else
+			echo "fail producer-token app=$internal group=$group bytes=${bytes:-unreachable}"
+			failures=$((failures + 1))
+		fi
+	done
+
+	apps="$(timeout "$timeout" flyctl apps list --json 2>/dev/null | python3 -c 'import json, sys; print(" ".join(a.get("Name") or a.get("name") or "" for a in json.load(sys.stdin) or []))' 2>/dev/null)" || apps=unreadable
+	for name in "$webhooks" "$registry"; do
+		if [ "$apps" = unreadable ]; then
+			echo "fail app app=$name exists=unreadable"
+			failures=$((failures + 1))
+		elif [[ " $apps " == *" $name "* ]]; then
+			echo "pass app app=$name exists=yes"
+		else
+			echo "fail app app=$name exists=no"
+			failures=$((failures + 1))
+		fi
+	done
+
+	for row in "$kernel HUMAN_EVENTS_JOURNEY_TOKEN HUMAN_EVENTS_APPROVAL_TOKEN HUMAN_EVENTS_WEBHOOKS_TOKEN" \
+		"$webhooks WEBHOOKS_SOURCE_TRIGGER_TOKEN" "$endpoint ENDPOINT_EVENTS_WEBHOOKS_TOKEN" "$registry REGISTRY_WEBHOOKS_EVENTS_TOKEN"; do
+		read -r app rest <<<"$row"
+		read -r -a names <<<"$rest"
+		listed="$(timeout "$timeout" flyctl secrets list --app "$app" --json 2>/dev/null | python3 -c 'import json, sys; print(" ".join(s.get("Name") or s.get("name") or "" for s in json.load(sys.stdin) or []))' 2>/dev/null)" || listed=unreadable
+		for name in "${names[@]}"; do
+			if [ "$listed" = unreadable ]; then
+				echo "fail secret app=$app name=$name listed=unreadable"
+				failures=$((failures + 1))
+			elif [[ " $listed " == *" $name "* ]]; then
+				echo "pass secret app=$app name=$name listed=yes"
+			else
+				echo "fail secret app=$app name=$name listed=no"
+				failures=$((failures + 1))
+			fi
+		done
+	done
+	finish "$failures"
+}
+
 mode="${1:-}"
 case "$mode" in
 -h | --help)
@@ -3876,6 +3942,7 @@ registry) ;;
 interop-adapters) ;;
 xweb-attestors) ;;
 kernel-boundaries) ;;
+events-upstream) ;;
 *)
 	usage >&2
 	exit 2
