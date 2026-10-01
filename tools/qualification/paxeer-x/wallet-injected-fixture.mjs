@@ -79,6 +79,7 @@ if (process.argv.includes('--build-entry')) {
         }
         stage = 'extension_import';
         await clickId('onboarding-import-wallet');
+        await clickId('onboarding-import-with-srp-button');
         const phrase = extensionPage.getByTestId('srp-input-import__srp-note');
         await phrase.waitFor({ state: 'visible', timeout: 30000 });
         await phrase.evaluate((element, value) => {
