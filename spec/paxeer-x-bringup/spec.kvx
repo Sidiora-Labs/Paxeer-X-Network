@@ -1149,7 +1149,7 @@ do_3 = "Add the events-upstream subcommand to tools/bringup/check-live.sh: flyct
 
 [task.0.12]
 title = "Make each internal event source wait for its principal set instead of exiting"
-status = "pending"
+status = "done"
 wave = 0
 requires = ["0.5"]
 verify_cmd = "timeout 20m cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-internal principals"

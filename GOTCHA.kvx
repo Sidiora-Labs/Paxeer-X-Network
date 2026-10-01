@@ -1829,3 +1829,21 @@ area    = "spec"
 symptom = "A spec task whose machine needs [[files]] secrets cannot be cut over in order."
 cause   = "The task does not require the tasks that produce those secrets, and the platform refuses a machine whose [[files]] secret is missing."
 do      = "Make the task require every task producing its [[files]] secrets."
+
+[gotcha.302]
+area    = "spec-tooling"
+symptom = "cg spec done refuses a task with symbol <name> not defined in the graph although the verify passed and the function exists in a file the task touched."
+cause   = "The graph refresh is skipped while another indexer holds the database, so the last completed index has not seen a function the task added to an existing file."
+do      = "Treat it as gotcha 141: set the status by hand after the genuine pass, say so in the commit line, and do not retry."
+
+[gotcha.303]
+area    = "spec-tooling"
+symptom = "The graph check of a task symbol named run passes while pointing at a function in an unrelated crate."
+cause   = "The check matches the bare symbol name anywhere in the graph, not inside the task's touched files."
+do      = "Do not read a passing symbol check as proof the task's own function exists; confirm it in the touched file."
+
+[gotcha.304]
+area    = "rust"
+symptom = "A server that must answer readiness before its state exists cannot hand the state to the handler it already passed to http::serve."
+cause   = "http::serve takes ownership of one handler closure and blocks for the life of the process."
+do      = "Give the closure an Arc<OnceLock<T>> filled by a worker thread and answer a waiting state while it is empty; no second listener and no lock on the hot path."
