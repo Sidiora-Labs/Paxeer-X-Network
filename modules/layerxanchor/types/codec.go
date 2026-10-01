@@ -70,3 +70,6 @@ func (a *Address20) Unmarshal(data []byte) error {
 	copy(a[:], data)
 	return nil
 }
+
+type Int = sdk.Int
+type Dec = sdk.Dec

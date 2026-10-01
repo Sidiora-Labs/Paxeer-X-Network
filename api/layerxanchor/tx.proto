@@ -10,18 +10,18 @@ message Params {
   string authority = 1 [(gogoproto.customname) = "Authority"];
   string bond_denom = 2 [(gogoproto.customname) = "BondDenom"];
   uint32 threshold = 3 [(gogoproto.customname) = "Threshold"];
-  string min_bond = 4 [(gogoproto.customname) = "MinBond", (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Int", (gogoproto.nullable) = false];
+  string min_bond = 4 [(gogoproto.customname) = "MinBond", (gogoproto.customtype) = "Int", (gogoproto.nullable) = false];
   uint64 unbonding_delay_seconds = 5 [(gogoproto.customname) = "UnbondingDelaySeconds"];
   uint64 challenge_window_seconds = 6 [(gogoproto.customname) = "ChallengeWindowSeconds"];
-  string challenge_bond = 7 [(gogoproto.customname) = "ChallengeBond", (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Int", (gogoproto.nullable) = false];
+  string challenge_bond = 7 [(gogoproto.customname) = "ChallengeBond", (gogoproto.customtype) = "Int", (gogoproto.nullable) = false];
   uint64 max_attestation_delay_ms = 8 [(gogoproto.customname) = "MaxAttestationDelayMs"];
   uint64 paxeer_chain_id = 9 [(gogoproto.customname) = "PaxeerChainID"];
   bytes settlement_contract = 10 [(gogoproto.customname) = "SettlementContract", (gogoproto.customtype) = "Address20", (gogoproto.nullable) = false];
   uint32 network_id = 11 [(gogoproto.customname) = "NetworkID"];
-  string slash_fraction_equivocation = 12 [(gogoproto.customname) = "SlashFractionEquivocation", (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Dec", (gogoproto.nullable) = false];
-  string slash_fraction_fraud = 13 [(gogoproto.customname) = "SlashFractionFraud", (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Dec", (gogoproto.nullable) = false];
-  string slash_fraction_availability = 14 [(gogoproto.customname) = "SlashFractionAvailability", (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Dec", (gogoproto.nullable) = false];
-  string reporter_share = 15 [(gogoproto.customname) = "ReporterShare", (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Dec", (gogoproto.nullable) = false];
+  string slash_fraction_equivocation = 12 [(gogoproto.customname) = "SlashFractionEquivocation", (gogoproto.customtype) = "Dec", (gogoproto.nullable) = false];
+  string slash_fraction_fraud = 13 [(gogoproto.customname) = "SlashFractionFraud", (gogoproto.customtype) = "Dec", (gogoproto.nullable) = false];
+  string slash_fraction_availability = 14 [(gogoproto.customname) = "SlashFractionAvailability", (gogoproto.customtype) = "Dec", (gogoproto.nullable) = false];
+  string reporter_share = 15 [(gogoproto.customname) = "ReporterShare", (gogoproto.customtype) = "Dec", (gogoproto.nullable) = false];
   string slash_destination = 16 [(gogoproto.customname) = "SlashDestination"];
   bool permissionless_registration = 17 [(gogoproto.customname) = "PermissionlessRegistration"];
 }

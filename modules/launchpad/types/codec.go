@@ -54,3 +54,5 @@ func jsonString(value interface{}) string {
 	}
 	return string(raw)
 }
+
+type Int = sdk.Int
