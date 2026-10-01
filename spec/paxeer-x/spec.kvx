@@ -21497,7 +21497,7 @@ do_2 = "Connect existing financial helpers through lxp_module_ctx and authentica
 do_3 = "Add signed dispatched Activity cases for partial refund, revoke, unauthorized/stale/overdraw refusal, duplicates and durable restart, extending clients only through the canonical typed interface."
 do_4 = "Add the designated new harness tests/modules/paxeer_x_budget_lifecycle.py using real production code and durable stores; invoke prebuilt task targets, fail on any missing prerequisite, and emit revision, exact command, exit code and private evidence path. Do not substitute mocks or synthetic success responses."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["include/layerx/lx_budget.h", "src/modules/budget/lx_budget_module.c", "src/modules/budget/lx_budget_close.c", "tests/modules/test_budget_close.c", "src/protocol/lxp_kernel.c", "tests/modules/paxeer_x_budget_lifecycle.py", "src/modules/budget/lx_budget_codec.c"]
+touches = ["include/layerx/lx_budget.h", "src/modules/budget/lx_budget_module.c", "src/modules/budget/lx_budget_close.c", "tests/modules/test_budget_close.c", "src/protocol/lxp_kernel.c", "tests/modules/paxeer_x_budget_lifecycle.py", "src/modules/budget/lx_budget_codec.c", "tests/daemon/lxp_test_budget_lifecycle.c"]
 verify_cmd = "timeout 1800s python3 tests/modules/paxeer_x_budget_lifecycle.py"
 gate_kind = "planned"
 max_builds = 1
@@ -21506,9 +21506,10 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 deployment_profile = "product"
-planned_paths = ["tests/modules/paxeer_x_budget_lifecycle.py"]
+planned_paths = ["tests/modules/paxeer_x_budget_lifecycle.py", "tests/daemon/lxp_test_budget_lifecycle.c"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+runtime_fixture_contract = "Retain all existing budget cases and add genuine daemon admission, production snapshot, graceful and forced same-disk restart, original receipt replay without a second economic effect, real period-boundary accounting and authenticated replica catch-up. Reuse the isolated runtime fixture without changing its assertions. Preserve module-level sequence refusals and test daemon idempotency through its actual protocol boundary."
 
 [task.3.2]
 title = "Bound metered stream accrual by deterministic stream lifetime"
