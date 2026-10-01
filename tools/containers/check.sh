@@ -47,7 +47,7 @@ paxeer|docker/paxeer/Dockerfile|platform/hosted/paxeer/Dockerfile|.
 paxeer|docker/paxeer/Dockerfile.paxd|platform/hosted/paxeer/Dockerfile.paxd|.
 paxeer|docker/paxeer/Dockerfile.paxd-node|platform/hosted/paxeer/Dockerfile.paxd-node|.
 platform-registry|docker/platform-registry/Dockerfile|platform/hosted/registry/Dockerfile|.
-platform-registry-builder|docker/platform-registry-builder/Dockerfile|platform/hosted/registry/builder-environment/Dockerfile|.
+platform-registry-builder|docker/platform-registry-builder/Dockerfile|platform/hosted/registry/builder-environment/Dockerfile|@registry-builder
 platform-testnet|docker/platform-testnet/Dockerfile|platform/hosted/testnet/Dockerfile|.
 platform-webhooks|docker/platform-webhooks/Dockerfile|platform/hosted/webhooks/Dockerfile|.
 ramps|docker/ramps/Dockerfile|platform/ramps/Dockerfile|.
@@ -168,6 +168,7 @@ fail() { printf 'containers-check: %s\n' "$1" >&2; failures=$((failures + 1)); }
 while IFS='|' read -r service new old _; do
     picked "$service" || continue
     tracked "$new" || fail "$service: $new is not tracked"
+    tracked "$new.dockerignore" || fail "$service: $new.dockerignore is not tracked"
     [ "$old" = "$new" ] || ! tracked "$old" || fail "$service: $old is still tracked beside $new"
 done < <(rows "$SERVICES")
 while IFS='|' read -r service new old; do
@@ -244,8 +245,62 @@ fi
 # (c) docker build --check from the declared context
 mkdir -p "$LOG_DIR"
 checked=()
+context_directory=
+cleanup_context() {
+    if [ -n "$context_directory" ]; then rm -rf -- "$context_directory"; fi
+}
+trap cleanup_context EXIT
+copy_inputs() {
+    python3 - "$1" "$2" <<'PYTHON'
+import glob
+import json
+from pathlib import Path
+import re
+import shlex
+import sys
+
+recipe, context = map(Path, sys.argv[1:])
+source = re.sub(r"\\\n[ \t]*", " ", recipe.read_text())
+for line in source.splitlines():
+    parts = line.strip().split(None, 1)
+    if len(parts) != 2 or parts[0].upper() not in ("COPY", "ADD"):
+        continue
+    rest = parts[1]
+    options = []
+    while rest.startswith("--"):
+        option, rest = rest.split(None, 1)
+        options.append(option)
+    if any(option.startswith("--from=") for option in options):
+        continue
+    paths = json.loads(rest) if rest.startswith("[") else shlex.split(rest)
+    if len(paths) < 2:
+        raise ValueError("COPY/ADD has no source and destination")
+    for name in paths[:-1]:
+        path = Path(name)
+        if path.is_absolute() or ".." in path.parts or "$" in name or "://" in name:
+            raise ValueError("COPY/ADD source cannot be resolved in the declared context")
+        matches = glob.glob(str(context / path))
+        if not matches or any(not Path(match).exists() for match in matches):
+            raise ValueError("missing COPY/ADD input: " + name)
+print("containers-check: COPY inputs present")
+PYTHON
+}
 while IFS='|' read -r service new _ context; do
     picked "$service" || continue
+    if [ "$context" = @registry-builder ]; then
+        context_directory=$(mktemp -d "${TMPDIR:-/tmp}/containers-builder.XXXXXX")
+        if ! platform/hosted/registry/builder-environment/build-env.sh --prepare-context "$context_directory/prepared" >"$LOG_DIR/registry-builder-context.log" 2>&1; then
+            cat "$LOG_DIR/registry-builder-context.log" >&2
+            fail "$service: canonical context preparation failed"
+            continue
+        fi
+        context="$context_directory/prepared/context"
+        expected_revision=$(git rev-parse HEAD)
+        if [ "$(cat "$context_directory/prepared/source-revision")" != "$expected_revision" ]; then
+            fail "$service: generated context source revision differs"
+            continue
+        fi
+    fi
     dir=$(dirname -- "$new")
     for dockerfile in "$dir"/Dockerfile*; do
         [ -f "$dockerfile" ] || continue
@@ -253,7 +308,19 @@ while IFS='|' read -r service new _ context; do
         in_list "$dockerfile" "${checked[@]+"${checked[@]}"}" && continue
         checked+=("$dockerfile")
         log=$LOG_DIR/$(printf '%s' "$dockerfile" | tr '/' '_').log
-        if docker build --check -f "$dockerfile" "$context" >"$log" 2>&1; then
+        recipe="$dockerfile"
+        if [ "$service" = platform-registry-builder ]; then
+            recipe="$context/Dockerfile"
+            if ! cmp -- "$dockerfile" "$recipe" || ! cmp -- "$dockerfile.dockerignore" "$recipe.dockerignore"; then
+                fail "$service: prepared recipe or ignore differs from source"
+                continue
+            fi
+        fi
+        if ! copy_inputs "$recipe" "$context" >"$log.inputs" 2>&1; then
+            cat "$log.inputs" >&2
+            fail "$service: COPY/ADD context inputs are incomplete"
+        fi
+        if docker build --check -f "$recipe" "$context" >"$log" 2>&1; then
             printf 'containers-check: %s check ok\n' "$dockerfile"
         else
             tail -n 20 "$log" >&2

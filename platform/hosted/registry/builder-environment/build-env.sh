@@ -10,16 +10,22 @@ git -C "$repo" diff --quiet "$revision" -- programs/vendor "$recipe_path" "$dock
     printf 'Commit builder inputs before constructing the source-bound environment\n' >&2
     exit 1
 }
+prepare_only=0
+if [ "${1:-}" = --prepare-context ]; then
+    prepare_only=1
+    shift
+fi
 if [ "$#" -ne 1 ] || [ -e "$1" ] || [ -L "$1" ]; then
-    printf 'usage: build-env.sh NEW_OUTPUT_DIRECTORY (must not exist)\n' >&2
+    printf 'usage: build-env.sh [--prepare-context] NEW_OUTPUT_DIRECTORY (must not exist)\n' >&2
     exit 64
 fi
-for tool in docker git tar python3; do command -v "$tool" >/dev/null; done
+for tool in git tar python3; do command -v "$tool" >/dev/null; done
+if [ "$prepare_only" = 0 ]; then command -v docker >/dev/null; fi
 mkdir -p -- "$(dirname -- "$1")"
 mkdir -- "$1"
 out=$(cd "$1" && pwd)
 context="$out/context"
-mkdir "$context" "$out/rootfs" "$out/source"
+mkdir "$context" "$out/source"
 container=
 cleanup() {
     if [ -n "$container" ]; then docker rm "$container" >/dev/null; fi
@@ -31,10 +37,18 @@ dockerfile="$out/source/$dockerfile_path/Dockerfile"
 python3 "$recipe/verify-vendor.py" "$out/source/programs/vendor" "$context/vendor"
 test -f "$dockerfile" && test ! -L "$dockerfile"
 cp -- "$dockerfile" "$context/Dockerfile"
+test -f "$dockerfile.dockerignore" && test ! -L "$dockerfile.dockerignore"
+cp -- "$dockerfile.dockerignore" "$context/Dockerfile.dockerignore"
 for name in package.json package-lock.json rust-downloads.lock install-rust.sh cargo-config.toml layerx-rustc layerx-build; do
     test -f "$recipe/$name" && test ! -L "$recipe/$name"
     cp -- "$recipe/$name" "$context/$name"
 done
+printf '%s\n' "$revision" > "$out/source-revision"
+if [ "$prepare_only" = 1 ]; then
+    printf 'Builder context: %s/context\n' "$out"
+    exit 0
+fi
+mkdir "$out/rootfs"
 docker build --platform linux/amd64 --iidfile "$out/image-id" --file "$context/Dockerfile" "$context"
 container=$(docker create "$(cat "$out/image-id")" /bin/true)
 docker export "$container" -o "$out/export.tar"
