@@ -47,6 +47,12 @@ services  prints the service list, one per line: service, Fly app toml,
 Environment:
   CHECK_LIVE_TIMEOUT   seconds per flyctl call, default 30
   LAYERX_CA_DIR        the CA directory, default /etc/layerx/ca
+  LAYERX_ATTESTOR_CA_DIR
+                       the directory holding ca.key and ca.pem of the
+                       attestors' gateway CA, the client authority that
+                       ATTESTOR_TLS_CA of paxeer-attestor-1 to 5 bundles with
+                       the node CA; issue signs the rows of attestor_services
+                       under it and never under the internal CA
   LAYERX_FLY_TLS_DIR   the certificate directory root on the volume of a Fly
                        app, default /data/tls
 
@@ -79,6 +85,7 @@ paxeer-boundary-public human/wallet/deploy/human.toml - volume paxeer-observer-b
 guarantor human/wallet/deploy/human.toml - volume layerx-guarantor serverAuth,clientAuth DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
 human human/wallet/deploy/human.toml - volume layerx-human serverAuth DNS:layerx-human,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
 human-event-client human/wallet/deploy/human.toml - volume layerx-human-events clientAuth -
+human-attestor-client human/wallet/deploy/human.toml - volume layerx-human-components clientAuth -
 relay-archive human/wallet/deploy/human.toml - volume layerx-relay-archive serverAuth DNS:layerx-relay-archive,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
 gateway-redis human/wallet/deploy/redis.toml - REDIS_TLS layerx-gateway-redis serverAuth DNS:layerx-gateway-redis,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
 gateway-client human/wallet/deploy/endpoint.toml - ENDPOINT_CLIENT layerx-gateway clientAuth -
@@ -99,6 +106,10 @@ dashboard-client platform/hosted/dashboard/fly.toml - DASHBOARD_CLIENT layerx-da
 ramp-client platform/ramps/fly.toml - RAMP_CLIENT layerx-reference-ramp clientAuth DNS:<app>.internal
 EOF
 }
+
+# attestor_services: the rows the attestors' gateway CA signs, because the
+# attestors admit keys.generate and sign only from a client chaining to it.
+attestor_services="human-attestor-client"
 
 # The files every issued identity consists of, as <file>:<secret suffix>.
 # derive_cmd turns key.pem, cert.pem and ca.pem into the rest; it carries no
@@ -192,6 +203,13 @@ ca_issue() {
 		exit 2
 	fi
 	read -r _ toml group custody cn eku sans <<<"$line"
+	if [[ " $attestor_services " == *" $service "* ]]; then
+		ca_dir="${LAYERX_ATTESTOR_CA_DIR:-}"
+		if [ -z "$ca_dir" ]; then
+			echo "ca: $service is issued under the attestors' gateway CA; set LAYERX_ATTESTOR_CA_DIR" >&2
+			exit 1
+		fi
+	fi
 	if [ ! -r "$ca_dir/ca.key" ] || [ ! -r "$ca_dir/ca.pem" ]; then
 		echo "ca: no CA under $ca_dir; run tools/bringup/ca.sh init on the edge host" >&2
 		exit 1

@@ -795,11 +795,16 @@ else
 fi
 
 want="$("$ca" services | wc -l)"
+LAYERX_CA_DIR="$work/attestor-ca" "$ca" init >/dev/null
 status=0
 output="$("$ca" services | while read -r service _; do
-	CHECK_LIVE_TIMEOUT=5 "$ca" issue "$service" </dev/null || exit 1
+	CHECK_LIVE_TIMEOUT=5 LAYERX_ATTESTOR_CA_DIR="$work/attestor-ca" "$ca" issue "$service" </dev/null || exit 1
 done 2>&1)" || status=$?
-if [ "$status" -eq 0 ] && [ "$(grep -c '^issued ' <<<"$output")" -eq "$want" ] && [ "$want" -eq 29 ] &&
+attestor_client="$fly/$kernel/app/data/tls/human-attestor-client"
+if [ "$status" -eq 0 ] && [ "$(grep -c '^issued ' <<<"$output")" -eq "$want" ] && [ "$want" -eq 30 ] &&
+	openssl verify -CAfile "$work/attestor-ca/ca.pem" "$attestor_client/cert.pem" >/dev/null 2>&1 &&
+	! openssl verify -CAfile "$work/ca/ca.pem" "$attestor_client/cert.pem" >/dev/null 2>&1 &&
+	cmp -s "$attestor_client/ca.der" "$work/attestor-ca/ca.der" && [ -s "$attestor_client/key.der" ] && [ -s "$attestor_client/cert.der" ] &&
 	! grep -q 'PRIVATE KEY' <<<"$output" &&
 	grep -q "DNS:kms.process.$internal.internal" <<<"$(openssl x509 -in "$fly/$internal/kms/data/tls/internal-kms/cert.pem" -noout -ext subjectAltName)" &&
 	grep -q "DNS:programs.process.$internal.internal" <<<"$(openssl x509 -in "$fly/$internal/programs/data/tls/internal-programs/cert.pem" -noout -ext subjectAltName)" &&
@@ -814,9 +819,10 @@ else
 	failures=$((failures + 1))
 fi
 
-CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_ca_passing "$work/hosts-good.env" 0 ca -- \
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" LAYERX_ATTESTOR_CA_DIR="$work/attestor-ca" expect check_live_ca_passing "$work/hosts-good.env" 0 ca -- \
 	"pass ca ca expires_in=36" \
 	"pass receipt-authority app=$kernel chain=ok san=5/5 expires_in=39" \
+	"pass human-attestor-client app=$kernel chain=ok san=0/0 expires_in=39" \
 	"pass agentd-client app=$kernel chain=ok san=0/0 expires_in=39" \
 	"pass agentd app=$kernel chain=ok san=5/5 expires_in=39" \
 	"pass internal-kms app=$internal chain=ok san=4/4 expires_in=39" \
@@ -864,8 +870,9 @@ CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_ca_failing "$work/hosts-
 	"fail registry toml=absent" \
 	"fail registry-event-client toml=absent" \
 	"fail interop-client app=$interop cert=unmounted" \
+	"fail human-attestor-client app=$kernel attestor_ca=absent LAYERX_ATTESTOR_CA_DIR=unset" \
 	"pass developer app=$webhooks chain=ok san=4/4 expires_in=39" \
-	"check-live: 7 check(s) failed"
+	"check-live: 8 check(s) failed"
 
 # The kernel boundary cases reach the kernel fixture app, whose volume holds
 # the agentd-client identity issued above, through the flyctl stand-in.

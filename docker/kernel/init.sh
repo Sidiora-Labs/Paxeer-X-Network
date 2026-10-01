@@ -664,8 +664,7 @@ human_evm_bounds() {
 human_components_prepare() {
 	human_evm_bounds && human_attestor_nodes && tls_for human-event-client 4020 &&
 		human_project human-components 4020 "$human_out/config:env" "$human_out/components/purpose-catalog.json:purpose-catalog.json" \
-			"$human_paxeer_ca:ca.der" "$tls/human-kms-client/cert.der:kms-client.der" "$tls/human-kms-client/key.der:kms-client-key.der" \
-			"$tls/human-attestor-client/ca.der:attestor-ca.der" "$tls/human-attestor-client/cert.der:attestor-client.der" \
+			"$human_paxeer_ca:ca.der" "$tls/human-attestor-client/ca.der:attestor-ca.der" "$tls/human-attestor-client/cert.der:attestor-client.der" \
 			"$tls/human-attestor-client/key.der:attestor-client-key.der" &&
 		install -o 0 -g 4020 -m 0440 "$human_material/attestor-nodes" "$human_material/human-components/env/LAYERX_HUMAN_ATTESTOR_NODES"
 }
@@ -701,14 +700,14 @@ human_tls_prepare() {
 }
 
 human_root=$human_state/components service human-components 4020 \
-	"$genesis_files $human_policy $human_paxeer_ca $tls/human-event-client/identity.p12 $tls/human-kms-client/cert.der $tls/human-kms-client/key.der $tls/human-attestor-client/ca.der $tls/human-attestor-client/cert.der $tls/human-attestor-client/key.der /run/secrets/events-journey-token /run/secrets/events-approval-token /run/secrets/events-webhooks-token" \
+	"$genesis_files $human_policy $human_paxeer_ca $tls/human-event-client/identity.p12 $tls/human-attestor-client/ca.der $tls/human-attestor-client/cert.der $tls/human-attestor-client/key.der /run/secrets/events-journey-token /run/secrets/events-approval-token /run/secrets/events-webhooks-token" \
 	human_components_prepare - -- \
 	/bin/sh -ec "$human_env" sh env \
 	LAYERX_HUMAN_PROTOCOL_VERSION=3 \
 	LAYERX_HUMAN_ATTESTOR_SIGNERS=1,2,3,4,5 \
-	LAYERX_HUMAN_ATTESTOR_ROOT_CERTIFICATE_DER=/run/human-material/attestor-ca.der \
-	LAYERX_HUMAN_ATTESTOR_CLIENT_CERTIFICATE_DER=/run/human-material/attestor-client.der \
-	LAYERX_HUMAN_ATTESTOR_CLIENT_PRIVATE_KEY_DER=/run/human-material/attestor-client-key.der \
+	LAYERX_HUMAN_ATTESTOR_ROOT_CERTIFICATE_DER=/run/human-private/components/attestor-ca.der \
+	LAYERX_HUMAN_ATTESTOR_CLIENT_CERTIFICATE_DER=/run/human-private/components/attestor-client.der \
+	LAYERX_HUMAN_ATTESTOR_CLIENT_PRIVATE_KEY_DER=/run/human-private/components/attestor-client-key.der \
 	LAYERX_HUMAN_ATTESTOR_DEADLINE_SECONDS=10 \
 	LAYERX_HUMAN_PAXEER_RPC_URL=https://localhost:9447 \
 	LAYERX_HUMAN_PAXEER_RPC_URLS="$human_paxeer_urls" \
