@@ -433,6 +433,7 @@ def namespace_worker(directory, artifact_file):
     run(['mount', '-t', 'tmpfs', '-o', 'mode=0755,nosuid,nodev', 'foundation-tmp', '/tmp'])
     namespace_root = Path('/tmp/paxeer-foundation')
     namespace_root.mkdir(mode=0o755)
+    namespace_root.chmod(0o755)
     source = namespace_root / 'source'
     source.mkdir(mode=0o755)
     run(['mount', '--bind', original_source, source])
