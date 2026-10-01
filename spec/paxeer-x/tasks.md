@@ -10,7 +10,7 @@
     - Record every service catalogue entry, route, operational dependency, provider/foreign-chain configuration and required funded account by secure reference. Keep existing Paxeer node/validator operation and api1..api16 records as the foundation.
     - Implement the candidate-manifest validator and real read-only inventory selector with bounded timeouts and secret-value redaction.
     - _Requirements: 2, 4, 5, 9, 413, 438_
-  - [-] 0.2 Provide strict task and release gate dispatch with private evidence
+  - [x] 0.2 Provide strict task and release gate dispatch with private evidence
     - Implement verify-task and release gate dispatchers that reject unknown selectors, missing executables, empty corpora, skipped requirements and fabricated evidence.
     - Bind each result to source cleanliness, source tree, image/configuration/input identities and the actual executed command. Store operational evidence outside tracked product documentation.
     - Provide per-task selector registration without implicit aggregate execution; each owning task adds its real focused behavior gate. Release scope deduplicates identical gate identities and preserves complete required coverage.

@@ -21248,7 +21248,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.2]
 title = "Provide strict task and release gate dispatch with private evidence"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["0.1"]
