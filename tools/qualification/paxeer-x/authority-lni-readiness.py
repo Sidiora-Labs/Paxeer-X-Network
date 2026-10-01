@@ -27,7 +27,7 @@ def command(args, **kwargs):
     return subprocess.run([str(value) for value in args], check=True, **kwargs)
 
 
-def inputs():
+def inputs(serializer=False):
     require(os.geteuid() == 0 and os.getegid() == 4020, 'real LNI admission requires UID0/GID4020')
     bundle = fixture.artifacts(os.environ['PAXEER_X_RUNTIME_ARTIFACTS'])
     client = fixture.client_artifact(os.environ['PAXEER_X_RUNTIME_CLIENT_MANIFEST'])
@@ -36,7 +36,7 @@ def inputs():
     built = json.loads(Path(path).read_text())
     revision = command(['git', '-C', ROOT, 'rev-parse', 'HEAD'], capture_output=True).stdout.decode().strip()
     require(built['source_revision'] == revision and built['build_exit'] == 0, 'build source or exit mismatch')
-    for name in ('authority', 'authority_tests', 'authority_unit', 'gateway_tests'):
+    for name in (('authority', 'authority_tests', 'gateway_tests') if serializer else ('authority', 'authority_tests', 'authority_unit', 'gateway_tests')):
         row = built['artifacts'][name]
         target = Path(row['path'])
         require(target.is_absolute() and target.is_file() and not target.is_symlink()
@@ -44,8 +44,8 @@ def inputs():
     return bundle, client, built
 
 
-def worker(directory):
-    bundle, client, built = inputs()
+def worker(directory, serializer=False):
+    bundle, client, built = inputs(serializer)
     for name in ('net', 'pid', 'mnt'):
         require(os.readlink('/proc/self/ns/' + name) != os.environ['PAXEER_X_PARENT_' + name.upper()], 'namespace isolation')
     command(['ip', 'link', 'set', 'lo', 'up'])
@@ -79,6 +79,24 @@ def worker(directory):
         runtime.generate()
         d = runtime.directory
         node = dict(line.split('=', 1) for line in (d / 'node/node.env').read_text().splitlines())
+        if serializer:
+            lni_path = d / 'serializer-lni.json'
+            fixture.write_json(lni_path, dict(network_id=fixture.NETWORK, node_socket=runtime.manifest['node_socket'],
+                sequencer_public_key=runtime.manifest['sequencer_public_key'], sequencer_id=node['LAYERX_NODE_SEQUENCER_ID']))
+            env = dict(os.environ, PAXEER_X_AUTHORITY_READY_LNI_FIXTURE=str(lni_path),
+                PAXEER_X_GATEWAY_TEST_BIN=built['artifacts']['gateway_tests']['path'],
+                PAXEER_X_AUTHORITY_BIN=built['artifacts']['authority']['path'],
+                LAYERX_TEST_NATIVE_BIN_DIR=str(Path(bundle['artifacts']['layerxd']['path']).parent),
+                PAXEER_X_AUTHORITY_RETAIN_STATE='1')
+            result = subprocess.run([built['artifacts']['authority_tests']['path'],
+                'router_authority_readiness_schema_restart_contract', '--exact', '--nocapture'],
+                env=env, capture_output=True, text=True, timeout=180)
+            tests_log.write_text(result.stdout + result.stderr)
+            print(result.stdout, end='', flush=True)
+            require(result.returncode == 0 and '1 passed; 0 failed' in result.stdout, 'real serializer contract')
+            markers = re.findall(r'^PAXEER_X_GATE tests=(\d+) skipped=0$', result.stdout, re.M)
+            require(len(markers) == 1 and int(markers[0]) > 0, 'serializer actual case accounting')
+            return
         genesis = fixture.digest(d / 'node/genesis/genesis.manifest')
         cert, key = d / 'authority.der', d / 'authority-key.der'
         with (d / 'tls-producer.log').open('wb') as log:
@@ -192,10 +210,11 @@ def worker(directory):
 
 def main():
     os.umask(0o077)
-    if len(sys.argv) == 3 and sys.argv[1] == '--worker':
-        worker(sys.argv[2])
+    if len(sys.argv) == 3 and sys.argv[1] in ('--worker', '--serializer-worker'):
+        worker(sys.argv[2], sys.argv[1] == '--serializer-worker')
         return 0
-    inputs()
+    serializer = len(sys.argv) == 2 and sys.argv[1] == '--serializer'
+    inputs(serializer)
     evidence = Path(os.environ['PAXEER_X_AUTHORITY_EVIDENCE'])
     evidence.mkdir(mode=0o700, parents=True, exist_ok=True)
     directory = Path(tempfile.mkdtemp(prefix='px-authority-lni-', dir='/var/tmp'))
@@ -207,13 +226,16 @@ def main():
     log_path = evidence / 'worker.log'
     with log_path.open('wb') as log:
         result = subprocess.run(['unshare', '--mount', '--net', '--pid', '--fork', '--kill-child=KILL', '--mount-proc', '--propagation', 'private',
-                                 sys.executable, str(Path(__file__).resolve()), '--worker', str(directory)],
+                                 sys.executable, str(Path(__file__).resolve()), '--serializer-worker' if serializer else '--worker', str(directory)],
                                 env=env, stdout=log, stderr=log, timeout=840)
     log = log_path.read_text()
     markers = re.findall(r'^PAXEER_X_GATE tests=(\d+) skipped=0$', log, re.M)
     progress = re.findall(r'^PAXEER_X_PROGRESS cases=(\d+)$', log, re.M)
     count = int(markers[0]) if len(markers) == 1 else int(progress[-1]) if progress else 0
-    print(f'PAXEER_X_GATE tests={count} skipped=0', flush=True)
+    if serializer:
+        print(log, end='', flush=True)
+    else:
+        print(f'PAXEER_X_GATE tests={count} skipped=0', flush=True)
     require(result.returncode == 0 and len(markers) == 1 and count > 0, 'worker failed; inspect private worker.log')
     return 0
 

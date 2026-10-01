@@ -973,9 +973,12 @@ fn start_cluster(with_sequencer: bool) -> Cluster {
 }
 
 fn start_cluster_with_lni(with_sequencer: bool, live_lni: Option<&serde_json::Value>) -> Cluster {
+    let fixture_network_id = live_lni.map_or(NETWORK_ID, |lni| {
+        u32::try_from(lni["network_id"].as_u64().expect("real LNI network")).expect("network width")
+    });
     if let Some(lni) = live_lni {
         assert!(!with_sequencer);
-        assert_eq!(lni["network_id"], serde_json::json!(NETWORK_ID));
+        assert_eq!(lni["network_id"], serde_json::json!(fixture_network_id));
         assert!(Path::new(lni["node_socket"].as_str().expect("real LNI path")).is_absolute());
     }
     let identity = identity();
@@ -1047,7 +1050,12 @@ fn start_cluster_with_lni(with_sequencer: bool, live_lni: Option<&serde_json::Va
     make_dir(&replica_dir, 0o700);
     write(
         &replica_dir.join("config.txt"),
-        node_config("replica").as_bytes(),
+        node_config("replica")
+            .replace(
+                &format!("network_id={NETWORK_ID}"),
+                &format!("network_id={fixture_network_id}"),
+            )
+            .as_bytes(),
         0o600,
     );
     preallocate_log(&replica_dir.join("replica.log"));
@@ -1359,7 +1367,7 @@ fn start_cluster_with_lni(with_sequencer: bool, live_lni: Option<&serde_json::Va
         .env("LAYERX_AUTHORITY_LNI_SOCKET", &socket)
         .env(
             "LAYERX_AUTHORITY_PROTOCOL_NETWORK_ID",
-            NETWORK_ID.to_string(),
+            fixture_network_id.to_string(),
         )
         .env("LAYERX_AUTHORITY_NETWORK_ID", NETWORK_NAME)
         .env(
@@ -2089,6 +2097,9 @@ fn router_authority_readiness_schema_restart_contract() {
         serde_json::from_slice(&must(fs::read(lni_path), "real LNI fixture")),
         "real LNI fixture JSON",
     );
+    let fixture_network_id =
+        u32::try_from(live_lni["network_id"].as_u64().expect("real LNI network"))
+            .expect("network width");
     let gateway_tests =
         std::env::var_os("PAXEER_X_GATEWAY_TEST_BIN").expect("prebuilt gateway test binary");
     let mut cluster = start_cluster_with_lni(false, Some(&live_lni));
@@ -2103,7 +2114,10 @@ fn router_authority_readiness_schema_restart_contract() {
     assert_eq!(response.status, 200);
     let body = json(&response);
     assert_eq!(body.as_object().map(serde_json::Map::len), Some(4));
-    assert_eq!(body["protocol_network_id"], serde_json::json!(NETWORK_ID));
+    assert_eq!(
+        body["protocol_network_id"],
+        serde_json::json!(fixture_network_id)
+    );
     let response_file = cluster.root.join("readiness-response.json");
     write(&response_file, &response.body, 0o600);
     let untrusted_pem = cluster.root.join("tls/untrusted.pem");
@@ -2192,7 +2206,7 @@ fn router_authority_readiness_schema_restart_contract() {
         &cluster,
         "ready",
         true,
-        NETWORK_ID,
+        fixture_network_id,
         NETWORK_NAME,
         &wire,
         true,
@@ -2201,7 +2215,7 @@ fn router_authority_readiness_schema_restart_contract() {
         &cluster,
         "identity_mismatch",
         false,
-        NETWORK_ID + 1,
+        fixture_network_id + 1,
         NETWORK_NAME,
         &wire,
         true,
@@ -2210,7 +2224,7 @@ fn router_authority_readiness_schema_restart_contract() {
         &cluster,
         "identity_mismatch",
         false,
-        NETWORK_ID,
+        fixture_network_id,
         "different",
         &wire,
         true,
@@ -2219,7 +2233,7 @@ fn router_authority_readiness_schema_restart_contract() {
         &cluster,
         "identity_mismatch",
         false,
-        NETWORK_ID,
+        fixture_network_id,
         NETWORK_NAME,
         "0",
         true,
@@ -2228,7 +2242,7 @@ fn router_authority_readiness_schema_restart_contract() {
         &cluster,
         "transport",
         false,
-        NETWORK_ID,
+        fixture_network_id,
         NETWORK_NAME,
         &wire,
         false,
@@ -2238,14 +2252,14 @@ fn router_authority_readiness_schema_restart_contract() {
         &cluster,
         "transport",
         false,
-        NETWORK_ID,
+        fixture_network_id,
         NETWORK_NAME,
         &wire,
         true,
     );
     cluster.authority_command.env(
         "LAYERX_AUTHORITY_PROTOCOL_NETWORK_ID",
-        (NETWORK_ID + 1).to_string(),
+        (fixture_network_id + 1).to_string(),
     );
     cluster.authority.child = must(
         cluster.authority_command.spawn(),
@@ -2260,7 +2274,7 @@ fn router_authority_readiness_schema_restart_contract() {
         &cluster,
         "identity_mismatch",
         false,
-        NETWORK_ID,
+        fixture_network_id,
         NETWORK_NAME,
         &wire,
         true,
@@ -2268,7 +2282,7 @@ fn router_authority_readiness_schema_restart_contract() {
     cluster.authority.stop();
     cluster.authority_command.env(
         "LAYERX_AUTHORITY_PROTOCOL_NETWORK_ID",
-        NETWORK_ID.to_string(),
+        fixture_network_id.to_string(),
     );
     cluster.authority.child = must(
         cluster.authority_command.spawn(),
@@ -2283,7 +2297,7 @@ fn router_authority_readiness_schema_restart_contract() {
         &cluster,
         "ready",
         false,
-        NETWORK_ID,
+        fixture_network_id,
         NETWORK_NAME,
         &wire,
         true,
@@ -2301,7 +2315,7 @@ fn router_authority_readiness_schema_restart_contract() {
         &cluster,
         "unavailable",
         false,
-        NETWORK_ID,
+        fixture_network_id,
         NETWORK_NAME,
         &wire,
         true,
