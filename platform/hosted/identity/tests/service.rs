@@ -259,10 +259,10 @@ impl Fixture {
     }
 
     fn spawn(&self, state_dir: &Path) -> Server {
-        self.spawn_with(self.command(state_dir), state_dir)
+        Self::spawn_with(self.command(state_dir), state_dir)
     }
 
-    fn spawn_with(&self, mut command: Command, state_dir: &Path) -> Server {
+    fn spawn_with(mut command: Command, state_dir: &Path) -> Server {
         let mut child = command
             .spawn()
             .unwrap_or_else(|error| panic!("spawn: {error}"));
@@ -1467,20 +1467,29 @@ fn session_capacity_excludes_expired_after_restart() {
         .unwrap_or_else(|error| panic!("time: {error}"))
         .as_secs();
     let mut store = Store::open(&state).unwrap_or_else(|error| panic!("store: {error}"));
-    let template = store.session(&original_id).unwrap().clone();
-    store.revoke_session(&original_id, now).unwrap();
+    let template = store
+        .session(&original_id)
+        .unwrap_or_else(|| panic!("original session"))
+        .clone();
+    store
+        .revoke_session(&original_id, now)
+        .unwrap_or_else(|error| panic!("revoke original session: {error}"));
     for index in 0..MAX_SESSIONS_PER_PRINCIPAL {
         let mut expired = template.clone();
         expired.session_id = format!("{index:032x}");
         expired.issued_at = now.saturating_sub(1);
         expired.expires_at = now;
-        store.put_session(expired, now).unwrap();
+        store
+            .put_session(expired, now)
+            .unwrap_or_else(|error| panic!("put expired session: {error}"));
     }
     let mut equality = template.clone();
-    equality.session_id = format!("{:032x}", MAX_SESSIONS_PER_PRINCIPAL);
+    equality.session_id = format!("{MAX_SESSIONS_PER_PRINCIPAL:032x}");
     equality.issued_at = now;
     equality.expires_at = now + 3600;
-    store.put_session(equality.clone(), now).unwrap();
+    store
+        .put_session(equality.clone(), now)
+        .unwrap_or_else(|error| panic!("put equality session: {error}"));
     assert!(store.put_session(equality, now).is_err());
     drop(store);
 
@@ -1491,8 +1500,14 @@ fn session_capacity_excludes_expired_after_restart() {
     let minted = create_session(&fixture, &server, &serde_json::json!({"sub": SUB}));
     assert_eq!(minted.status, 200, "expired sessions release capacity");
     let minted = json(&minted);
-    let minted_id = minted["session_id"].as_str().unwrap().to_owned();
-    let minted_token = minted["token"].as_str().unwrap().to_owned();
+    let minted_id = minted["session_id"]
+        .as_str()
+        .unwrap_or_else(|| panic!("minted session_id"))
+        .to_owned();
+    let minted_token = minted["token"]
+        .as_str()
+        .unwrap_or_else(|| panic!("minted token"))
+        .to_owned();
     let wrong_tenant = create_session(
         &fixture,
         &server,
@@ -1501,17 +1516,25 @@ fn session_capacity_excludes_expired_after_restart() {
     assert_eq!(wrong_tenant.status, 404);
     drop(server);
 
-    let mut store = Store::open(&state).unwrap();
-    let active_template = store.session(&minted_id).unwrap().clone();
+    let mut store = Store::open(&state).unwrap_or_else(|error| panic!("store: {error}"));
+    let active_template = store
+        .session(&minted_id)
+        .unwrap_or_else(|| panic!("minted session"))
+        .clone();
     for index in 2..MAX_SESSIONS_PER_PRINCIPAL {
         let mut live = active_template.clone();
         live.session_id = format!("{:032x}", 10_000 + index);
-        store.put_session(live, now).unwrap();
+        store
+            .put_session(live, now)
+            .unwrap_or_else(|error| panic!("put live session: {error}"));
     }
     let mut refused = active_template.clone();
     refused.session_id = format!("{:032x}", 30_000);
     assert_eq!(
-        store.put_session(refused, now).unwrap_err(),
+        store
+            .put_session(refused, now)
+            .err()
+            .unwrap_or_else(|| panic!("principal session bound must refuse")),
         "principal session bound reached"
     );
     let other = Principal {
@@ -1521,12 +1544,17 @@ fn session_capacity_excludes_expired_after_restart() {
         account: None,
         audiences: vec![],
     };
-    store.put_principal(other.clone()).unwrap();
+    store
+        .put_principal(other.clone())
+        .unwrap_or_else(|error| panic!("put other principal: {error}"));
     let mut crossed = active_template.clone();
     crossed.session_id = format!("{:032x}", 30_001);
     crossed.tenant.clone_from(&other.tenant);
     assert_eq!(
-        store.put_session(crossed, now).unwrap_err(),
+        store
+            .put_session(crossed, now)
+            .err()
+            .unwrap_or_else(|| panic!("unknown session principal must refuse")),
         "session principal is unknown"
     );
     drop(store);
@@ -1544,7 +1572,10 @@ fn session_capacity_excludes_expired_after_restart() {
         other_session.status, 200,
         "another tenant has its own limit"
     );
-    let other_token = json(&other_session)["token"].as_str().unwrap().to_owned();
+    let other_token = json(&other_session)["token"]
+        .as_str()
+        .unwrap_or_else(|| panic!("other token"))
+        .to_owned();
     let revoked = fixture.request(
         &server,
         "DELETE",
@@ -1553,10 +1584,15 @@ fn session_capacity_excludes_expired_after_restart() {
         None,
     );
     assert_eq!(revoked.status, 200);
-    let revoked_at = json(&revoked)["revoked_at"].as_u64().unwrap();
+    let revoked_at = json(&revoked)["revoked_at"]
+        .as_u64()
+        .unwrap_or_else(|| panic!("revoked_at"));
     let replacement = create_session(&fixture, &server, &serde_json::json!({"sub": SUB}));
     assert_eq!(replacement.status, 200, "revocation releases one live slot");
-    let replacement_token = json(&replacement)["token"].as_str().unwrap().to_owned();
+    let replacement_token = json(&replacement)["token"]
+        .as_str()
+        .unwrap_or_else(|| panic!("replacement token"))
+        .to_owned();
     drop(server);
     let server = fixture.spawn(&state);
     assert_inactive(&fixture, &server, &original_token);
@@ -1584,7 +1620,8 @@ fn session_capacity_excludes_expired_after_restart() {
     drop(server);
 
     let history_state = fixture.root.join("history");
-    let mut history = Store::open(&history_state).unwrap();
+    let mut history =
+        Store::open(&history_state).unwrap_or_else(|error| panic!("history store: {error}"));
     let principal = Principal {
         tenant: template.tenant.clone(),
         sub: template.principal.clone(),
@@ -1592,19 +1629,28 @@ fn session_capacity_excludes_expired_after_restart() {
         account: Some(ACCOUNT.to_owned()),
         audiences: vec!["ramp-reference".to_owned()],
     };
-    history.put_principal(principal).unwrap();
+    history
+        .put_principal(principal)
+        .unwrap_or_else(|error| panic!("put history principal: {error}"));
     for index in 0..MAX_RETAINED_SESSIONS_PER_PRINCIPAL {
         let mut expired = template.clone();
         expired.session_id = format!("{index:032x}");
         expired.expires_at = now;
-        history.put_session(expired, now).unwrap();
+        history
+            .put_session(expired, now)
+            .unwrap_or_else(|error| panic!("put history session: {error}"));
     }
     let history_id = format!("{:032x}", 0);
-    history.revoke_session(&history_id, now).unwrap();
+    history
+        .revoke_session(&history_id, now)
+        .unwrap_or_else(|error| panic!("revoke history session: {error}"));
     let mut overflow = template.clone();
-    overflow.session_id = format!("{:032x}", MAX_RETAINED_SESSIONS_PER_PRINCIPAL);
+    overflow.session_id = format!("{MAX_RETAINED_SESSIONS_PER_PRINCIPAL:032x}");
     assert_eq!(
-        history.put_session(overflow.clone(), now).unwrap_err(),
+        history
+            .put_session(overflow.clone(), now)
+            .err()
+            .unwrap_or_else(|| panic!("session history capacity must refuse")),
         SESSION_HISTORY_CAPACITY_REACHED
     );
     drop(history);
@@ -1617,36 +1663,62 @@ fn session_capacity_excludes_expired_after_restart() {
     );
     assert_eq!(json(&history_full)["error"]["retry"], "never");
     drop(history_server);
-    let mut history = Store::open(&history_state).unwrap();
+    let mut history =
+        Store::open(&history_state).unwrap_or_else(|error| panic!("history store: {error}"));
     for index in 0..MAX_RETAINED_SESSIONS_PER_PRINCIPAL {
-        let retained = history.session(&format!("{index:032x}")).unwrap();
+        let retained = history
+            .session(&format!("{index:032x}"))
+            .unwrap_or_else(|| panic!("retained session"));
         assert_eq!(retained.tenant, template.tenant);
         assert_eq!(retained.principal, template.principal);
         assert_eq!(retained.expires_at, now);
     }
-    assert_eq!(history.session(&history_id).unwrap().revoked_at, Some(now));
     assert_eq!(
-        history.put_session(overflow, now).unwrap_err(),
+        history
+            .session(&history_id)
+            .unwrap_or_else(|| panic!("history session"))
+            .revoked_at,
+        Some(now)
+    );
+    assert_eq!(
+        history
+            .put_session(overflow, now)
+            .err()
+            .unwrap_or_else(|| panic!("session history capacity must refuse")),
         SESSION_HISTORY_CAPACITY_REACHED
     );
     drop(history);
-    let store = Store::open(&state).unwrap();
+    let store = Store::open(&state).unwrap_or_else(|error| panic!("store: {error}"));
     assert_eq!(
-        store.session(&minted_id).unwrap().revoked_at,
+        store
+            .session(&minted_id)
+            .unwrap_or_else(|| panic!("minted session"))
+            .revoked_at,
         Some(revoked_at)
     );
-    assert_eq!(store.session(&original_id).unwrap().revoked_at, Some(now));
+    assert_eq!(
+        store
+            .session(&original_id)
+            .unwrap_or_else(|| panic!("original session"))
+            .revoked_at,
+        Some(now)
+    );
     drop(store);
 
-    fs::create_dir(state.join("snapshot.json.tmp")).unwrap();
+    fs::create_dir(state.join("snapshot.json.tmp"))
+        .unwrap_or_else(|error| panic!("create snapshot tmp dir: {error}"));
     assert!(
         Store::open(&state).is_err(),
         "failed compaction must not publish success"
     );
-    fs::remove_dir(state.join("snapshot.json.tmp")).unwrap();
-    let store = Store::open(&state).unwrap();
+    fs::remove_dir(state.join("snapshot.json.tmp"))
+        .unwrap_or_else(|error| panic!("remove snapshot tmp dir: {error}"));
+    let store = Store::open(&state).unwrap_or_else(|error| panic!("store: {error}"));
     assert_eq!(
-        store.session(&minted_id).unwrap().revoked_at,
+        store
+            .session(&minted_id)
+            .unwrap_or_else(|| panic!("minted session"))
+            .revoked_at,
         Some(revoked_at)
     );
     drop(store);
@@ -1667,7 +1739,7 @@ fn session_capacity_excludes_expired_after_restart() {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped());
-    let server = fixture.spawn_with(limited, &limited_state);
+    let server = Fixture::spawn_with(limited, &limited_state);
     let principal = create_principal(
         &fixture,
         &server,
@@ -1684,7 +1756,12 @@ fn session_capacity_excludes_expired_after_restart() {
             break;
         }
         assert_eq!(response.status, 200);
-        accepted.push(json(&response)["token"].as_str().unwrap().to_owned());
+        accepted.push(
+            json(&response)["token"]
+                .as_str()
+                .unwrap_or_else(|| panic!("accepted token"))
+                .to_owned(),
+        );
     }
     assert!(
         failed,
