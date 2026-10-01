@@ -21338,7 +21338,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.6]
 title = "Implement durable qualification dispatch and completed-evidence validation"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]

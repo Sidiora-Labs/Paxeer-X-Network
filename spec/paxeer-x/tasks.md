@@ -32,7 +32,7 @@
     - Define an explicit versioned transition table and canonical vectors preserving historical authenticated outcomes. Where a new behavior is required, specify its explicit protocol migration and compatibility conditions before implementation; do not silently change either checks or semantics.
     - Implement the focused contract/vector gate using real native activity and receipt types. Record any still unresolved contradiction as blocking release.
     - _Requirements: 13_
-  - [-] 0.6 Implement durable qualification dispatch and completed-evidence validation
+  - [x] 0.6 Implement durable qualification dispatch and completed-evidence validation
     - Implement a fail-closed manifest and durable logical-run registry for complete CI qualification jobs. Preserve original acceptance durations and all matrix cells; do not invent a shorter job timeout from the agent budget.
     - Integrate idempotent dispatch/reconciliation with the existing actual CI controller and workflow. Unknown acknowledgement is reconciled by durable request identity before any retry. Keep credentials in the controller and private evidence outside tracked source.
     - Implement the evidence subcommand with a 1500-second absolute deadline. It only reads and verifies completed trusted job/artifact evidence and never dispatches, builds or runs an application gate.

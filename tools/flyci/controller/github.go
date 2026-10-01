@@ -3,11 +3,17 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/rsa"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,6 +35,8 @@ type workflowRun struct {
 }
 
 type workflowJob struct {
+	RunnerID    int64      `json:"runner_id"`
+	RunnerName  string     `json:"runner_name"`
 	ID          int64      `json:"id"`
 	RunID       int64      `json:"run_id"`
 	Status      string     `json:"status"`
@@ -72,13 +80,14 @@ type cachedPage struct {
 }
 
 type githubClient struct {
-	baseURL    *url.URL
-	owner      string
-	repo       string
-	token      string
-	httpClient *http.Client
-	now        func() time.Time
-	sleep      func(context.Context, time.Duration) error
+	qualificationContract string
+	baseURL               *url.URL
+	owner                 string
+	repo                  string
+	token                 string
+	httpClient            *http.Client
+	now                   func() time.Time
+	sleep                 func(context.Context, time.Duration) error
 
 	mu           sync.Mutex
 	cache        map[string]*cachedPage
@@ -90,15 +99,26 @@ func newGitHubClient(cfg config, httpClient *http.Client) (*githubClient, error)
 	if err != nil {
 		return nil, fmt.Errorf("parse GITHUB_API_URL: %w", err)
 	}
+	guarded := *httpClient
+	guarded.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) > 3 || (base.Scheme == "https" && req.URL.Scheme != "https") || req.URL.User != nil {
+			return errors.New("unsafe provider redirect")
+		}
+		if req.URL.Host != base.Host {
+			req.Header.Del("Authorization")
+		}
+		return nil
+	}
 	return &githubClient{
-		baseURL:    base,
-		owner:      cfg.Owner,
-		repo:       cfg.Repo,
-		token:      cfg.GitHubToken,
-		httpClient: httpClient,
-		now:        time.Now,
-		sleep:      sleepContext,
-		cache:      make(map[string]*cachedPage),
+		qualificationContract: cfg.QualificationContract,
+		baseURL:               base,
+		owner:                 cfg.Owner,
+		repo:                  cfg.Repo,
+		token:                 cfg.GitHubToken,
+		httpClient:            &guarded,
+		now:                   time.Now,
+		sleep:                 sleepContext,
+		cache:                 make(map[string]*cachedPage),
 	}, nil
 }
 
@@ -362,4 +382,314 @@ func (c *githubClient) endPoll() {
 		}
 		page.used = false
 	}
+}
+
+type qualificationRun struct {
+	ID           int64  `json:"id"`
+	RunAttempt   int64  `json:"run_attempt"`
+	HeadSHA      string `json:"head_sha"`
+	DisplayTitle string `json:"display_title"`
+	Event        string `json:"event"`
+	Path         string `json:"path"`
+	Status       string `json:"status"`
+	Conclusion   string `json:"conclusion"`
+}
+
+func (c *githubClient) qGet(ctx context.Context, suffix string, query url.Values, out any) error {
+	resp, b, e := c.send(ctx, http.MethodGet, c.repoURL(suffix, query), nil, "")
+	if e != nil {
+		return e
+	}
+	if resp.StatusCode != http.StatusOK {
+		return errors.New("qualification provider read refused")
+	}
+	return json.Unmarshal(b, out)
+}
+func (c *githubClient) qSource(ctx context.Context, r qualificationRequest) error {
+	if !qDigest.MatchString(c.qualificationContract) || r.Manifest.ContractSHA256 != c.qualificationContract {
+		return errors.New("unapproved qualification contract")
+	}
+	var commit struct {
+		SHA    string `json:"sha"`
+		Commit struct {
+			Tree struct {
+				SHA string `json:"sha"`
+			} `json:"tree"`
+		} `json:"commit"`
+	}
+	if e := c.qGet(ctx, "/commits/"+r.Ref, nil, &commit); e != nil {
+		return e
+	}
+	if commit.SHA != r.Manifest.Revision || commit.Commit.Tree.SHA != r.Manifest.Tree {
+		return errors.New("immutable ref moved or candidate tree differs")
+	}
+	var content struct {
+		Content  string `json:"content"`
+		Encoding string `json:"encoding"`
+	}
+	if e := c.qGet(ctx, "/contents/.github/workflows/paxeer-x-qualification.yml", url.Values{"ref": {r.Manifest.Revision}}, &content); e != nil {
+		return e
+	}
+	b, e := base64.StdEncoding.DecodeString(strings.ReplaceAll(content.Content, "\n", ""))
+	if e != nil || content.Encoding != "base64" || qHash(b) != r.Manifest.WorkflowSHA256 {
+		return errors.New("workflow source mismatch")
+	}
+	return nil
+}
+func (c *githubClient) qDispatch(ctx context.Context, r qualificationRequest) error {
+	payload := qJSON(map[string]any{"ref": r.Ref, "inputs": map[string]string{"request_id": r.LogicalID, "request": base64.StdEncoding.EncodeToString(qCanonical(r))}})
+	if len(payload) > 60000 {
+		return errors.New("dispatch input too large")
+	}
+	req, e := http.NewRequestWithContext(ctx, http.MethodPost, c.repoURL("/actions/workflows/paxeer-x-qualification.yml/dispatches", nil), bytes.NewReader(payload))
+	if e != nil {
+		return e
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", githubAPIVersion)
+	resp, e := c.httpClient.Do(req)
+	if e != nil {
+		return errors.New("dispatch acknowledgement unknown")
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	if resp.StatusCode != 204 && resp.StatusCode != 200 {
+		return errors.New("dispatch acknowledgement not accepted")
+	}
+	return nil
+}
+func (c *githubClient) qFind(ctx context.Context, rec qualificationRecord) ([]qualificationRun, error) {
+	var runs []qualificationRun
+	first := c.repoURL("/actions/workflows/paxeer-x-qualification.yml/runs", url.Values{"event": {"workflow_dispatch"}, "head_sha": {rec.Request.Manifest.Revision}, "per_page": {"100"}})
+	e := c.getPages(ctx, first, func(b []byte) error {
+		var page struct {
+			Runs []qualificationRun `json:"workflow_runs"`
+		}
+		if e := json.Unmarshal(b, &page); e != nil {
+			return e
+		}
+		for _, run := range page.Runs {
+			if run.DisplayTitle == "paxeer-x-qualification/"+rec.Request.LogicalID && run.HeadSHA == rec.Request.Manifest.Revision && run.Event == "workflow_dispatch" && strings.Split(run.Path, "@")[0] == ".github/workflows/paxeer-x-qualification.yml" {
+				runs = append(runs, run)
+			}
+		}
+		return nil
+	})
+	return runs, e
+}
+func qLogEnvelope(log []byte, binding string) ([]byte, error) {
+	chunks := map[int]string{}
+	expectedTotal := 0
+	expectedDigest := ""
+	for _, line := range strings.Split(string(log), "\n") {
+		at := strings.Index(line, "PAXEER_X_ENCRYPTED_V1 ")
+		if at < 0 {
+			continue
+		}
+		fields := strings.Fields(line[at:])
+		if len(fields) != 6 || fields[1] != binding {
+			return nil, errors.New("unexpected encrypted log envelope")
+		}
+		index, e1 := strconv.Atoi(fields[2])
+		total, e2 := strconv.Atoi(fields[3])
+		if e1 != nil || e2 != nil || total < 1 || total > 256 || index < 0 || index >= total || !qDigest.MatchString(fields[4]) {
+			return nil, errors.New("invalid encrypted chunk")
+		}
+		if expectedTotal != 0 && (total != expectedTotal || fields[4] != expectedDigest) {
+			return nil, errors.New("conflicting encrypted envelopes")
+		}
+		if _, ok := chunks[index]; ok {
+			return nil, errors.New("duplicate encrypted chunk")
+		}
+		expectedTotal = total
+		expectedDigest = fields[4]
+		chunks[index] = fields[5]
+	}
+	if expectedTotal == 0 || len(chunks) != expectedTotal {
+		return nil, errors.New("missing or truncated encrypted envelope")
+	}
+	var encoded strings.Builder
+	for i := 0; i < expectedTotal; i++ {
+		encoded.WriteString(chunks[i])
+	}
+	b, e := base64.StdEncoding.DecodeString(encoded.String())
+	if e != nil || len(b) > qualificationLimit || qHash(b) != expectedDigest {
+		return nil, errors.New("encrypted envelope digest mismatch")
+	}
+	return b, nil
+}
+func (c *githubClient) qCollect(ctx context.Context, rec qualificationRecord, key *rsa.PrivateKey, signer ed25519.PrivateKey) (qualificationCompleted, error) {
+	out := qualificationCompleted{Schema: "paxeer-x.completed-qualification.v1", Request: rec.Request, RunID: rec.RunID, Attempt: rec.Attempt, Repository: c.owner + "/" + c.repo, Workflow: ".github/workflows/paxeer-x-qualification.yml", Status: "completed", Conclusion: "success", ObservedAt: time.Now().UTC(), Domain: "github-actions", ArchiveDigests: map[string]string{}}
+	var current qualificationRun
+	if e := c.qGet(ctx, "/actions/runs/"+strconv.FormatInt(rec.RunID, 10), nil, &current); e != nil {
+		return out, e
+	}
+	if current.ID != rec.RunID || current.RunAttempt != rec.Attempt || current.HeadSHA != rec.Request.Manifest.Revision || current.Status != "completed" || current.Conclusion != "success" || current.DisplayTitle != "paxeer-x-qualification/"+rec.Request.LogicalID {
+		return out, errors.New("run completion changed")
+	}
+	var jobs []qualificationJobProof
+	e := c.getPages(ctx, c.repoURL("/actions/runs/"+strconv.FormatInt(rec.RunID, 10)+"/attempts/"+strconv.FormatInt(rec.Attempt, 10)+"/jobs", url.Values{"per_page": {"100"}}), func(b []byte) error {
+		var page struct {
+			Jobs []qualificationJobProof `json:"jobs"`
+		}
+		if e := json.Unmarshal(b, &page); e != nil {
+			return e
+		}
+		jobs = append(jobs, page.Jobs...)
+		return nil
+	})
+	if e != nil {
+		return out, e
+	}
+	for _, cell := range rec.Request.Manifest.Cells {
+		var job qualificationJobProof
+		matches := 0
+		for _, j := range jobs {
+			if j.Name == "qualification-"+cell.ID {
+				job = j
+				matches++
+			}
+		}
+		if matches != 1 {
+			return out, errors.New("missing or duplicate matrix job")
+		}
+		expected := rec.Request.LogicalID + "-" + cell.ID + "-" + strconv.FormatInt(rec.Attempt, 10)
+		resp, b, e := c.send(ctx, http.MethodGet, c.repoURL("/actions/jobs/"+strconv.FormatInt(job.ID, 10)+"/logs", nil), nil, "")
+		if e != nil || resp.StatusCode != 200 {
+			return out, errors.New("completed job log download refused")
+		}
+		sealed, e := qLogEnvelope(b, expected)
+		if e != nil {
+			return out, e
+		}
+		var env qualificationEnvelope
+		if e = qStrict(sealed, &env); e != nil {
+			return out, e
+		}
+		plain, e := qOpen(env, expected, key)
+		if e != nil {
+			return out, e
+		}
+		var result qualificationResult
+		if e = qStrict(plain, &result); e != nil {
+			return out, e
+		}
+		if e = qValidateResult(rec.Request, result, rec.RunID, rec.Attempt, job); e != nil {
+			return out, e
+		}
+		out.Results = append(out.Results, result)
+		out.Jobs = append(out.Jobs, job)
+		out.ArchiveDigests[cell.ID] = qHash(sealed)
+	}
+	qSign(&out, signer)
+	return out, qValidateCompleted(out, signer.Public().(ed25519.PublicKey), "github-actions", time.Now().Add(time.Minute))
+}
+func (c *githubClient) qTick(ctx context.Context, registry *qualificationRegistry) error {
+	records, e := registry.list()
+	if e != nil {
+		return e
+	}
+	key, signer, e := qLoadKeys(registry.root)
+	if e != nil {
+		return e
+	}
+	for _, rec := range records {
+		switch rec.State {
+		case "prepared":
+			if e = c.qSource(ctx, rec.Request); e != nil {
+				return e
+			}
+			rec, e = registry.advance(rec.Request.LogicalID, "prepared", "dispatch_intent", 0, 0, "")
+			if e != nil {
+				return e
+			}
+			_ = c.qDispatch(ctx, rec.Request)
+			_, e = registry.advance(rec.Request.LogicalID, "dispatch_intent", "acknowledgement_unknown", 0, 0, "reconcile before any retry")
+			if e != nil {
+				return e
+			}
+		case "dispatch_intent":
+			_, e = registry.advance(rec.Request.LogicalID, rec.State, "acknowledgement_unknown", 0, 0, "recovered unresolved intent")
+			if e != nil {
+				return e
+			}
+		case "acknowledgement_unknown", "run_bound", "running":
+			runs, err := c.qFind(ctx, rec)
+			if err != nil {
+				return err
+			}
+			if len(runs) > 1 {
+				_, e = registry.advance(rec.Request.LogicalID, rec.State, "conflict", rec.RunID, rec.Attempt, "multiple request runs")
+				if e != nil {
+					return e
+				}
+				continue
+			}
+			if len(runs) == 0 {
+				continue
+			}
+			run := runs[0]
+			if rec.RunID != 0 && (rec.RunID != run.ID || rec.Attempt != run.RunAttempt) {
+				_, e = registry.advance(rec.Request.LogicalID, rec.State, "conflict", rec.RunID, rec.Attempt, "run attempt changed")
+				if e != nil {
+					return e
+				}
+				continue
+			}
+			if rec.State == "acknowledgement_unknown" {
+				_, e = registry.advance(rec.Request.LogicalID, rec.State, "run_bound", run.ID, run.RunAttempt, "")
+				if e != nil {
+					return e
+				}
+				continue
+			}
+			state := "running"
+			if run.Status == "completed" {
+				state = "terminal_failed"
+				if run.Conclusion == "success" {
+					state = "completed_uncollected"
+				}
+			}
+			if state != rec.State {
+				_, e = registry.advance(rec.Request.LogicalID, rec.State, state, run.ID, run.RunAttempt, "")
+				if e != nil {
+					return e
+				}
+			}
+		case "completed_uncollected":
+			path := filepath.Join(registry.root, rec.Request.LogicalID+".completed.json")
+			b, readErr := qRead(path)
+			if readErr == nil {
+				var existing qualificationCompleted
+				if e = qStrict(b, &existing); e != nil {
+					return e
+				}
+				if qHash(qCanonical(existing.Request)) != qHash(qCanonical(rec.Request)) || existing.RunID != rec.RunID || existing.Attempt != rec.Attempt {
+					return errors.New("retained completion identity mismatch")
+				}
+				if e = qValidateCompleted(existing, signer.Public().(ed25519.PublicKey), "github-actions", time.Now().Add(time.Minute)); e != nil {
+					return e
+				}
+			} else {
+				if !os.IsNotExist(readErr) {
+					return readErr
+				}
+				completed, err := c.qCollect(ctx, rec, key, signer)
+				if err != nil {
+					return err
+				}
+				b = qCanonical(completed)
+				if e = qWrite(path, b); e != nil {
+					return e
+				}
+			}
+			_, e = registry.advance(rec.Request.LogicalID, rec.State, "completed_validated", rec.RunID, rec.Attempt, qHash(b))
+			if e != nil {
+				return e
+			}
+		}
+	}
+	return nil
 }

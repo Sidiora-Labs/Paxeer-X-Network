@@ -1,0 +1,74 @@
+name: Paxeer X qualification
+run-name: paxeer-x-qualification/${{ inputs.request_id }}
+on:
+  workflow_dispatch:
+    inputs:
+      request_id:
+        required: true
+        type: string
+      request:
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: paxeer-x-qualification-${{ inputs.request_id }}
+  cancel-in-progress: false
+env:
+  PAXEER_X_REQUEST_ID: ${{ inputs.request_id }}
+  PAXEER_X_REQUEST: ${{ inputs.request }}
+  PAXEER_X_MAINLINE: refs/remotes/origin/main
+  PYTHONDONTWRITEBYTECODE: '1'
+jobs:
+  manifest:
+    environment: paxeer-x-qualification
+    runs-on: fly-linux
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    env:
+      PAXEER_X_CANDIDATE_JSON: ${{ secrets.PAXEER_X_CANDIDATE_JSON }}
+      PAXEER_X_CONTRACT_JSON: ${{ secrets.PAXEER_X_CONTRACT_JSON }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          matrix=$(python3 tools/qualification/paxeer_x_release.py workflow-plan)
+          printf 'matrix=%s\n' "$matrix" >> "$GITHUB_OUTPUT"
+  qualification:
+    needs: manifest
+    name: qualification-${{ matrix.id }}
+    environment: paxeer-x-qualification
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: ${{ matrix.timeout_minutes }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.manifest.outputs.matrix) }}
+    env:
+      PAXEER_X_CANDIDATE_JSON: ${{ secrets.PAXEER_X_CANDIDATE_JSON }}
+      PAXEER_X_CONTRACT_JSON: ${{ secrets.PAXEER_X_CONTRACT_JSON }}
+      PAXEER_X_CELL: ${{ matrix.id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Build the production evidence helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          go build -o "$RUNNER_TEMP/flyci-evidence" ./tools/flyci/controller > "$RUNNER_TEMP/qualification-build.log" 2>&1
+      - name: Execute the complete declared cell and encrypt evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          python3 tools/qualification/paxeer_x_release.py workflow-run \
+            --cell "$PAXEER_X_CELL" --controller-binary "$RUNNER_TEMP/flyci-evidence" \
+            --output "$RUNNER_TEMP/evidence.sealed.json"
