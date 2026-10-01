@@ -87,6 +87,7 @@ interface ILaunchpad {
     function executeBurn(address token) external returns (uint256 amount);
     function executeAirdrop(address token) external returns (uint256 amount);
     function claimAirdrop(address token) external returns (uint256 amount);
+    function claimAirdropForEpoch(address token, uint64 epoch) external returns (uint256 amount);
     function executeLpRewards(address token) external returns (uint256 amount);
     function pause(address token) external returns (bool);
     function unpause(address token) external returns (bool);

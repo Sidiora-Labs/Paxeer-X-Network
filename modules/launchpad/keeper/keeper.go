@@ -249,3 +249,26 @@ func (k *Keeper) HasClaimedAirdrop(ctx sdk.Context, denom string, holder sdk.Acc
 func (k *Keeper) setAirdropClaimed(ctx sdk.Context, denom string, holder sdk.AccAddress, epoch uint64) {
 	k.store(ctx).Set(types.AirdropClaimKey(denom, holder, epoch), []byte{1})
 }
+
+// GetAirdropBasis returns the entitlement basis of denom's airdrop epoch;
+// epochs opened before bases were recorded have none.
+func (k *Keeper) GetAirdropBasis(ctx sdk.Context, denom string, epoch uint64) (types.AirdropEpochBasis, bool, error) {
+	bz := k.store(ctx).Get(types.AirdropBasisKey(denom, epoch))
+	if bz == nil {
+		return types.AirdropEpochBasis{}, false, nil
+	}
+	var basis types.AirdropEpochBasis
+	if err := json.Unmarshal(bz, &basis); err != nil || basis.Denom != denom || basis.Epoch != epoch ||
+		basis.Supply.IsNil() || !basis.Supply.IsPositive() || basis.Paid.IsNil() || basis.Paid.IsNegative() {
+		return types.AirdropEpochBasis{}, false, fmt.Errorf("%w: %s/%d", types.ErrAirdropBasis, denom, epoch)
+	}
+	return basis, true, nil
+}
+
+func (k *Keeper) setAirdropBasis(ctx sdk.Context, basis types.AirdropEpochBasis) {
+	bz, err := json.Marshal(basis)
+	if err != nil {
+		panic(err)
+	}
+	k.store(ctx).Set(types.AirdropBasisKey(basis.Denom, basis.Epoch), bz)
+}

@@ -45,6 +45,7 @@ var (
 	HoldingHistoryPrefix   = []byte{0x22}
 	HoldingCountPrefix     = []byte{0x23}
 	HoldingEntryPrefix     = []byte{0x24}
+	AirdropBasisPrefix     = []byte{0x25}
 )
 
 func join(prefix []byte, parts ...[]byte) []byte {
@@ -111,4 +112,34 @@ func HoldingCountKey(denom string, holder []byte) []byte {
 // HoldingEntryKey is one holder's checkpoint at a count index.
 func HoldingEntryKey(denom string, holder []byte, index uint64) []byte {
 	return join(HoldingEntryPrefix, lengthPrefixed([]byte(denom)), lengthPrefixed(holder), uint64Bytes(index))
+}
+
+// AirdropBasisKey is the funding basis fixed when denom's airdrop epoch opened.
+func AirdropBasisKey(denom string, epoch uint64) []byte {
+	return join(AirdropBasisPrefix, lengthPrefixed([]byte(denom)), uint64Bytes(epoch))
+}
+
+// ParseHoldingHistoryKey returns the denom of a HoldingHistoryKey.
+func ParseHoldingHistoryKey(key []byte) (string, bool) {
+	rest := key[len(HoldingHistoryPrefix):]
+	if len(rest) < 1 || len(rest) != 1+int(rest[0]) {
+		return "", false
+	}
+	return string(rest[1:]), true
+}
+
+// ParseHoldingEntryKey splits a HoldingEntryKey into its denom, holder and
+// checkpoint index.
+func ParseHoldingEntryKey(key []byte) (string, []byte, uint64, bool) {
+	rest := key[len(HoldingEntryPrefix):]
+	if len(rest) < 1 || len(rest) < 1+int(rest[0]) {
+		return "", nil, 0, false
+	}
+	denom := string(rest[1 : 1+int(rest[0])])
+	rest = rest[1+int(rest[0]):]
+	if len(rest) < 1 || len(rest) != 1+int(rest[0])+8 {
+		return "", nil, 0, false
+	}
+	holder := append([]byte(nil), rest[1:1+int(rest[0])]...)
+	return denom, holder, binary.BigEndian.Uint64(rest[1+int(rest[0]):]), true
 }

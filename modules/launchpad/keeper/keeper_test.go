@@ -19,6 +19,8 @@ import (
 	"github.com/sidiora-labs/paxeer-network/modules/launchpad/keeper"
 	"github.com/sidiora-labs/paxeer-network/modules/launchpad/launchpadtest"
 	"github.com/sidiora-labs/paxeer-network/modules/launchpad/types"
+	tokenfactorykeeper "github.com/sidiora-labs/paxeer-network/modules/tokenfactory/keeper"
+	tokenfactorytypes "github.com/sidiora-labs/paxeer-network/modules/tokenfactory/types"
 	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 	authtypes "github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
 	govtypes "github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
@@ -661,4 +663,222 @@ func TestMsgUpdateParamsRefusals(t *testing.T) {
 	_, err := keeper.NewMsgServerImpl(k).UpdateParams(sdk.WrapSDKContext(ctx), nil)
 	require.Error(t, err)
 	require.Equal(t, before, k.GetParams(ctx))
+}
+
+// airdropPaid is the paid total recorded in an epoch's basis.
+func airdropPaid(t *testing.T, e *env, denom string, epoch uint64) sdk.Int {
+	t.Helper()
+	basis, found, err := e.k.GetAirdropBasis(e.ctx, denom, epoch)
+	require.NoError(t, err)
+	require.True(t, found)
+	return basis.Paid
+}
+
+func TestAirdropEntitlements(t *testing.T) {
+	app := testkeeper.EVMTestApp
+	bank := app.BankKeeper
+
+	t.Run("basis", func(t *testing.T) {
+		h := newHistoryEnv(t)
+		a := h.account(0)
+		h.swap(h.trader, h.denom, true, 1_000_000_000)
+		require.NoError(t, h.send(bank, h.trader, a, 700_000))
+		supply := bank.GetSupply(h.ctx, h.denom).Amount
+		epoch := h.nextEpoch()
+		basis, found, err := h.k.GetAirdropBasis(h.ctx, h.denom, epoch)
+		require.NoError(t, err)
+		require.True(t, found)
+		require.Equal(t, supply, basis.Supply)
+		require.Equal(t, quote, basis.PayoutDenom)
+		require.Equal(t, h.ctx.BlockHeight(), basis.Height)
+		require.True(t, basis.Paid.IsZero())
+		funded := h.k.GetAirdropEpochAmount(h.ctx, h.denom, epoch)
+		want := funded.Mul(i(700_000)).Quo(supply)
+		got, _, err := h.k.AirdropEntitlement(h.ctx, a, h.denom, epoch)
+		require.NoError(t, err)
+		require.Equal(t, want, got)
+	})
+
+	t.Run("transfer after claim", func(t *testing.T) {
+		h := newHistoryEnv(t)
+		a, b2, c := h.account(0), h.account(0), h.account(0)
+		h.swap(h.trader, h.denom, true, 1_000_000_000)
+		require.NoError(t, h.send(bank, h.trader, a, 600_000))
+		require.NoError(t, h.send(bank, h.trader, b2, 400_000))
+		epoch := h.nextEpoch()
+		funded := h.k.GetAirdropEpochAmount(h.ctx, h.denom, epoch)
+		supply := bank.GetSupply(h.ctx, h.denom).Amount
+		aShare, err := h.k.ClaimAirdrop(h.ctx, a, h.denom)
+		require.NoError(t, err)
+		require.Equal(t, funded.Mul(i(600_000)).Quo(supply), aShare)
+		require.NoError(t, h.send(bank, a, c, 600_000))
+		_, err = h.k.ClaimAirdrop(h.ctx, c, h.denom)
+		require.ErrorIs(t, err, types.ErrZeroAmount)
+		require.False(t, h.k.HasClaimedAirdrop(h.ctx, h.denom, c, epoch))
+		// Many transfers among the holders never raise anyone's entitlement.
+		for round := 0; round < 8; round++ {
+			require.NoError(t, h.send(bank, c, b2, 75_000))
+			require.NoError(t, h.send(bank, b2, a, 50_000))
+			require.NoError(t, h.send(bank, a, c, 50_000))
+		}
+		_, err = h.k.ClaimAirdrop(h.ctx, a, h.denom)
+		require.ErrorIs(t, err, types.ErrAlreadyClaimed)
+		_, err = h.k.ClaimAirdrop(h.ctx, c, h.denom)
+		require.ErrorIs(t, err, types.ErrZeroAmount)
+		bShare, err := h.k.ClaimAirdrop(h.ctx, b2, h.denom)
+		require.NoError(t, err)
+		require.Equal(t, funded.Mul(i(400_000)).Quo(supply), bShare)
+		traderShare, err := h.k.ClaimAirdrop(h.ctx, h.trader, h.denom)
+		require.NoError(t, err)
+		escrowShare, err := h.k.ClaimAirdrop(h.ctx, h.k.ModuleAddress(), h.denom)
+		require.NoError(t, err)
+		paid := aShare.Add(bShare).Add(traderShare).Add(escrowShare)
+		require.Equal(t, paid, airdropPaid(t, h.env, h.denom, epoch))
+		require.True(t, paid.LTE(funded))
+		require.Equal(t, funded.Sub(paid), h.market(h.denom).AirdropBalance)
+		h.solvent()
+	})
+
+	t.Run("mint burn after boundary", func(t *testing.T) {
+		h := newHistoryEnv(t)
+		a := h.account(0)
+		h.swap(h.trader, h.denom, true, 1_000_000_000)
+		require.NoError(t, h.send(bank, h.trader, a, 900_000))
+		epoch := h.nextEpoch()
+		before, _, err := h.k.AirdropEntitlement(h.ctx, a, h.denom, epoch)
+		require.NoError(t, err)
+		tf := tokenfactorykeeper.NewMsgServerImpl(app.TokenFactoryKeeper)
+		admin := h.k.ModuleAddress().String()
+		_, err = tf.Mint(sdk.WrapSDKContext(h.ctx), tokenfactorytypes.NewMsgMint(admin, sdk.NewCoin(h.denom, i(5_000_000))))
+		require.NoError(t, err)
+		_, err = tf.Burn(sdk.WrapSDKContext(h.ctx), tokenfactorytypes.NewMsgBurn(admin, sdk.NewCoin(h.denom, i(9_000_000))))
+		require.NoError(t, err)
+		require.NoError(t, h.send(bank, h.k.ModuleAddress(), a, 123_456))
+		require.NoError(t, h.send(bank, a, h.trader, 1_000))
+		after, _, err := h.k.AirdropEntitlement(h.ctx, a, h.denom, epoch)
+		require.NoError(t, err)
+		require.Equal(t, before, after)
+		got, err := h.k.ClaimAirdrop(h.ctx, a, h.denom)
+		require.NoError(t, err)
+		require.Equal(t, before, got)
+	})
+
+	t.Run("refusals are atomic", func(t *testing.T) {
+		h := newHistoryEnv(t)
+		a := h.account(0)
+		h.swap(h.trader, h.denom, true, 1_000_000_000)
+		require.NoError(t, h.send(bank, h.trader, a, 800_000))
+		_, err := h.k.ClaimAirdropForEpoch(h.ctx, a, h.denom, 1)
+		require.ErrorIs(t, err, types.ErrInvalidAirdropEpoch)
+		epoch := h.nextEpoch()
+		_, err = h.k.ClaimAirdropForEpoch(h.ctx, a, h.denom, 0)
+		require.ErrorIs(t, err, types.ErrInvalidAirdropEpoch)
+		_, err = h.k.ClaimAirdropForEpoch(h.ctx, a, h.denom, epoch+1)
+		require.ErrorIs(t, err, types.ErrInvalidAirdropEpoch)
+		_, err = h.k.ClaimAirdropForEpoch(h.ctx, a, "factory/unknown/lp9", epoch)
+		require.ErrorIs(t, err, types.ErrUnknownMarket)
+		want, _, err := h.k.AirdropEntitlement(h.ctx, a, h.denom, epoch)
+		require.NoError(t, err)
+
+		// The escrow cannot pay: the claim fails and consumes nothing.
+		escrow := h.k.ModuleAddress()
+		held := h.balance(escrow, quote)
+		sink := h.account(0)
+		require.NoError(t, bank.SendCoins(h.ctx, escrow, sink, sdk.NewCoins(sdk.NewCoin(quote, held))))
+		marketBefore := h.market(h.denom)
+		quoteBefore := h.balance(a, quote)
+		_, err = h.k.ClaimAirdropForEpoch(h.ctx, a, h.denom, epoch)
+		require.Error(t, err)
+		require.False(t, h.k.HasClaimedAirdrop(h.ctx, h.denom, a, epoch))
+		require.True(t, airdropPaid(t, h.env, h.denom, epoch).IsZero())
+		sameJSON(t, marketBefore, h.market(h.denom))
+		require.Equal(t, quoteBefore, h.balance(a, quote))
+		require.NoError(t, bank.SendCoins(h.ctx, sink, escrow, sdk.NewCoins(sdk.NewCoin(quote, held))))
+
+		got, err := h.k.ClaimAirdropForEpoch(h.ctx, a, h.denom, epoch)
+		require.NoError(t, err)
+		require.Equal(t, want, got)
+		require.Equal(t, quoteBefore.Add(want), h.balance(a, quote))
+		_, err = h.k.ClaimAirdropForEpoch(h.ctx, a, h.denom, epoch)
+		require.ErrorIs(t, err, types.ErrAlreadyClaimed)
+		require.Equal(t, want, airdropPaid(t, h.env, h.denom, epoch))
+	})
+
+	t.Run("older epoch", func(t *testing.T) {
+		h := newHistoryEnv(t)
+		a, b2 := h.account(0), h.account(0)
+		h.swap(h.trader, h.denom, true, 1_000_000_000)
+		require.NoError(t, h.send(bank, h.trader, a, 500_000))
+		first := h.nextEpoch()
+		want, _, err := h.k.AirdropEntitlement(h.ctx, a, h.denom, first)
+		require.NoError(t, err)
+		require.NoError(t, h.send(bank, a, b2, 500_000))
+		second := h.nextEpoch()
+		_, err = h.k.ClaimAirdrop(h.ctx, a, h.denom)
+		require.ErrorIs(t, err, types.ErrZeroAmount)
+		_, err = h.k.ClaimAirdropForEpoch(h.ctx, b2, h.denom, first)
+		require.ErrorIs(t, err, types.ErrZeroAmount)
+		got, err := h.k.ClaimAirdropForEpoch(h.ctx, a, h.denom, first)
+		require.NoError(t, err)
+		require.Equal(t, want, got)
+		bShare, err := h.k.ClaimAirdrop(h.ctx, b2, h.denom)
+		require.NoError(t, err)
+		require.True(t, bShare.IsPositive())
+		require.True(t, h.k.HasClaimedAirdrop(h.ctx, h.denom, b2, second))
+		h.solvent()
+	})
+
+	t.Run("genesis reload and legacy epochs", func(t *testing.T) {
+		h := newHistoryEnv(t)
+		a, b2 := h.account(0), h.account(0)
+		h.swap(h.trader, h.denom, true, 1_000_000_000)
+		require.NoError(t, h.send(bank, h.trader, a, 300_000))
+		epoch := h.nextEpoch()
+		aShare, err := h.k.ClaimAirdrop(h.ctx, a, h.denom)
+		require.NoError(t, err)
+		require.NoError(t, h.send(bank, a, b2, 300_000))
+		gs := h.k.ExportGenesis(h.ctx)
+		require.NoError(t, gs.Validate())
+		require.Len(t, gs.AirdropBases, 1)
+		require.Equal(t, aShare, gs.AirdropBases[0].Paid)
+		require.NotEmpty(t, gs.HoldingHistories)
+		require.NotEmpty(t, gs.HoldingCheckpoints)
+		bz, err := json.Marshal(gs)
+		require.NoError(t, err)
+		var reloaded types.GenesisState
+		require.NoError(t, json.Unmarshal(bz, &reloaded))
+		require.NoError(t, reloaded.Validate())
+
+		// Import into a fresh branch of the same application state.
+		cacheCtx, _ := h.ctx.CacheContext()
+		fresh, freshCtx := launchpadtest.NewKeeper(app, cacheCtx)
+		fresh.InitGenesis(freshCtx, reloaded)
+		sameJSON(t, gs, fresh.ExportGenesis(freshCtx))
+		require.True(t, fresh.HasClaimedAirdrop(freshCtx, h.denom, a, epoch))
+		_, err = fresh.ClaimAirdrop(freshCtx, b2, h.denom)
+		require.ErrorIs(t, err, types.ErrZeroAmount)
+		_, err = fresh.ClaimAirdrop(freshCtx, h.trader, h.denom)
+		require.NoError(t, err)
+
+		// A basis-less epoch keeps its funds and markers and refuses claims.
+		legacy := *gs
+		legacy.AirdropBases, legacy.HoldingHistories, legacy.HoldingCheckpoints = nil, nil, nil
+		require.NoError(t, legacy.Validate())
+		legacyCtx, _ := h.ctx.CacheContext()
+		old, oldCtx := launchpadtest.NewKeeper(app, legacyCtx)
+		old.InitGenesis(oldCtx, legacy)
+		market, found := old.GetMarket(oldCtx, h.denom)
+		require.True(t, found)
+		require.Equal(t, h.market(h.denom).AirdropBalance, market.AirdropBalance)
+		require.True(t, old.HasClaimedAirdrop(oldCtx, h.denom, a, epoch))
+		_, err = old.ClaimAirdrop(oldCtx, h.trader, h.denom)
+		require.ErrorIs(t, err, types.ErrLegacyAirdropEpoch)
+		require.False(t, old.HasClaimedAirdrop(oldCtx, h.denom, h.trader, epoch))
+		require.Equal(t, h.market(h.denom).AirdropBalance, func() sdk.Int { m, _ := old.GetMarket(oldCtx, h.denom); return m.AirdropBalance }())
+
+		bad := *gs
+		bad.AirdropBases = []types.AirdropEpochBasis{gs.AirdropBases[0]}
+		bad.AirdropBases[0].Paid = gs.AirdropEpochs[0].Amount.AddRaw(1)
+		require.ErrorIs(t, bad.Validate(), types.ErrInvalidGenesis)
+	})
 }

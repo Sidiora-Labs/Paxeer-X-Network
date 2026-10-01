@@ -43,29 +43,30 @@ import (
 )
 
 const (
-	CreateMarketMethod        = "createMarket"
-	BuyMethod                 = "buy"
-	SellMethod                = "sell"
-	SetFeeStrategyMethod      = "setFeeStrategy"
-	ClaimFeesMethod           = "claimFees"
-	ExecuteBurnMethod         = "executeBurn"
-	ExecuteAirdropMethod      = "executeAirdrop"
-	ClaimAirdropMethod        = "claimAirdrop"
-	ExecuteLpRewardsMethod    = "executeLpRewards"
-	PauseMethod               = "pause"
-	UnpauseMethod             = "unpause"
-	QuoteBuyMethod            = "quoteBuy"
-	QuoteSellMethod           = "quoteSell"
-	GetReservesMethod         = "getReserves"
-	GetPriceMethod            = "getPrice"
-	GetPriceSnapshotsMethod   = "getPriceSnapshots"
-	GetFeeBpsMethod           = "getFeeBps"
-	GetMarketMethod           = "getMarket"
-	GetMarketsMethod          = "getMarkets"
-	GetMarketsByCreatorMethod = "getMarketsByCreator"
-	GetMarketCountMethod      = "getMarketCount"
-	GetAccumulatedFeesMethod  = "getAccumulatedFees"
-	GetConfigMethod           = "getConfig"
+	CreateMarketMethod         = "createMarket"
+	BuyMethod                  = "buy"
+	SellMethod                 = "sell"
+	SetFeeStrategyMethod       = "setFeeStrategy"
+	ClaimFeesMethod            = "claimFees"
+	ExecuteBurnMethod          = "executeBurn"
+	ExecuteAirdropMethod       = "executeAirdrop"
+	ClaimAirdropMethod         = "claimAirdrop"
+	ClaimAirdropForEpochMethod = "claimAirdropForEpoch"
+	ExecuteLpRewardsMethod     = "executeLpRewards"
+	PauseMethod                = "pause"
+	UnpauseMethod              = "unpause"
+	QuoteBuyMethod             = "quoteBuy"
+	QuoteSellMethod            = "quoteSell"
+	GetReservesMethod          = "getReserves"
+	GetPriceMethod             = "getPrice"
+	GetPriceSnapshotsMethod    = "getPriceSnapshots"
+	GetFeeBpsMethod            = "getFeeBps"
+	GetMarketMethod            = "getMarket"
+	GetMarketsMethod           = "getMarkets"
+	GetMarketsByCreatorMethod  = "getMarketsByCreator"
+	GetMarketCountMethod       = "getMarketCount"
+	GetAccumulatedFeesMethod   = "getAccumulatedFees"
+	GetConfigMethod            = "getConfig"
 
 	MarketCreatedEvent      = "MarketCreated"
 	SwapEvent               = "Swap"
@@ -111,6 +112,7 @@ type Keeper interface {
 	ExecuteBurn(ctx sdk.Context, caller sdk.AccAddress, denom string) (sdk.Int, error)
 	ExecuteAirdrop(ctx sdk.Context, caller sdk.AccAddress, denom string) (sdk.Int, error)
 	ClaimAirdrop(ctx sdk.Context, holder sdk.AccAddress, denom string) (sdk.Int, error)
+	ClaimAirdropForEpoch(ctx sdk.Context, holder sdk.AccAddress, denom string, epoch uint64) (sdk.Int, error)
 	ExecuteLpRewards(ctx sdk.Context, caller sdk.AccAddress, denom string) (sdk.Int, error)
 	Pause(ctx sdk.Context, caller sdk.AccAddress, denom string) error
 	Unpause(ctx sdk.Context, caller sdk.AccAddress, denom string) error
@@ -201,7 +203,7 @@ func Writes(method string) uint64 {
 		return 6
 	case ClaimFeesMethod, ExecuteBurnMethod:
 		return 3
-	case ExecuteAirdropMethod, ClaimAirdropMethod:
+	case ExecuteAirdropMethod, ClaimAirdropMethod, ClaimAirdropForEpochMethod:
 		return 4
 	case SetFeeStrategyMethod, ExecuteLpRewardsMethod, PauseMethod, UnpauseMethod:
 		return 1
@@ -254,7 +256,7 @@ func (p PrecompileExecutor) Execute(ctx sdk.Context, method *abi.Method, caller 
 		return p.claimFees(ctx, method, caller, args, evm)
 	case ExecuteBurnMethod, ExecuteAirdropMethod, ExecuteLpRewardsMethod:
 		return p.executeStrategy(ctx, method, caller, args, evm)
-	case ClaimAirdropMethod:
+	case ClaimAirdropMethod, ClaimAirdropForEpochMethod:
 		return p.claimAirdrop(ctx, method, caller, args, evm)
 	case PauseMethod, UnpauseMethod:
 		return p.setPaused(ctx, method, caller, args, evm)
@@ -539,16 +541,27 @@ func (p PrecompileExecutor) executeStrategy(ctx sdk.Context, method *abi.Method,
 
 func (p PrecompileExecutor) claimAirdrop(ctx sdk.Context, method *abi.Method, caller common.Address,
 	args []interface{}, evm *vm.EVM) ([]byte, error) {
-	market, err := p.market(ctx, args, 1)
+	want := 1
+	if method.Name == ClaimAirdropForEpochMethod {
+		want = 2
+	}
+	market, err := p.market(ctx, args, want)
 	if err != nil {
 		return nil, err
 	}
-	amount, err := p.keeper.ClaimAirdrop(ctx, p.account(ctx, caller), market.Denom)
+	epoch := market.AirdropEpoch
+	var amount sdk.Int
+	if method.Name == ClaimAirdropForEpochMethod {
+		epoch = args[1].(uint64)
+		amount, err = p.keeper.ClaimAirdropForEpoch(ctx, p.account(ctx, caller), market.Denom, epoch)
+	} else {
+		amount, err = p.keeper.ClaimAirdrop(ctx, p.account(ctx, caller), market.Denom)
+	}
 	if err != nil {
 		return nil, err
 	}
 	if err := p.log(evm, AirdropClaimedEvent, []common.Hash{addressTopic(args[0].(common.Address)), addressTopic(caller)},
-		amount.BigInt(), new(big.Int).SetUint64(market.AirdropEpoch)); err != nil {
+		amount.BigInt(), new(big.Int).SetUint64(epoch)); err != nil {
 		return nil, err
 	}
 	return method.Outputs.Pack(amount.BigInt())
