@@ -2,6 +2,7 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../../.."
 : "${CAPS_BUILD_DIR:?private output directory required}"
+: "${CAPS_NATIVE_BIN_DIR:?compatible prebuilt layerxd and genesis builder directory required}"
 : "${CAPS_NATIVE_SOURCE:?source checkout of compatible prebuilt native libraries required}"
 : "${CARGO_TARGET_DIR:?unique task target directory required}"
 : "${CAPS_RUST_TOOLCHAIN:?explicit Rust1.91.1 toolchain directory required}"
@@ -12,15 +13,22 @@ export CARGO_BUILD_JOBS=5
 mkdir -p "$CAPS_BUILD_DIR"
 chmod 700 "$CAPS_BUILD_DIR"
 python3 - <<'PY'
-import os,subprocess,pathlib,json,hashlib
+import os,subprocess,pathlib,json,hashlib,shutil
 root=pathlib.Path.cwd(); source=pathlib.Path(os.environ['CAPS_NATIVE_SOURCE']); out=pathlib.Path(os.environ['CAPS_BUILD_DIR'])
 def git(where,*args):return subprocess.check_output(['git','-C',str(where),*args],text=True).strip()
 def sha(p):return hashlib.file_digest(open(p,'rb'),'sha256').hexdigest()
-for tree in ['src','include','programs']:
+for tree in ['src','include','programs','cmd','migrations','contracts/config']:
  if git(root,'rev-parse','HEAD:'+tree)!=git(source,'rev-parse','HEAD:'+tree):raise SystemExit('incompatible native source tree: '+tree)
  subprocess.run(['git','-C',str(source),'diff','--exit-code','HEAD','--',tree],check=True,stdout=subprocess.DEVNULL)
 paths=[source/'build/liblayerx.a',source/'programs/target/debug/liblayerx_programs_sandbox.a']
-provenance={'revision':git(root,'rev-parse','HEAD'),'native_revision':git(source,'rev-parse','HEAD'),'native_source_trees':{t:git(root,'rev-parse','HEAD:'+t) for t in ['src','include','programs']},'native_libraries':{str(p):sha(p) for p in paths},'rustc':subprocess.check_output([os.environ['RUSTC'],'--version'],text=True).strip()}
+provenance={'revision':git(root,'rev-parse','HEAD'),'native_revision':git(source,'rev-parse','HEAD'),'native_source_trees':{t:git(root,'rev-parse','HEAD:'+t) for t in ['src','include','programs','cmd','migrations','contracts/config']},'native_libraries':{str(p):sha(p) for p in paths},'rustc':subprocess.check_output([os.environ['RUSTC'],'--version'],text=True).strip()}
+native=out/'native-bin';native.mkdir(exist_ok=True)
+provenance['authority_binaries']={}
+for name in ['layerxd','layerx-genesis-build']:
+ original=pathlib.Path(os.environ['CAPS_NATIVE_BIN_DIR'])/name
+ target=native/name
+ shutil.copy2(original,target)
+ provenance['authority_binaries'][name]={'path':str(target),'sha256':sha(target)}
 (out/'native-source.json').write_text(json.dumps(provenance,indent=2)+'\n')
 PY
 cc -std=c17 -pedantic -Werror -Wall -Wextra -Wconversion -Wshadow -Wvla -fno-strict-aliasing -ffp-contract=off -O2 -ffunction-sections -fdata-sections -Iinclude -I"$CAPS_NATIVE_SOURCE/build/generated" tests/qualification/lxp_wallet_caps_vectors.c "$CAPS_NATIVE_SOURCE/build/liblayerx.a" "$CAPS_NATIVE_SOURCE/programs/target/debug/liblayerx_programs_sandbox.a" "$CAPS_NATIVE_SOURCE/build/liblayerx.a" -Wl,--gc-sections -lcrypto -pthread -ldl -lm -o "$CAPS_BUILD_DIR/lxp_wallet_caps_vectors"

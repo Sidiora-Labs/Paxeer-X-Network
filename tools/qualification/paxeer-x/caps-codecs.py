@@ -21,7 +21,7 @@ def main():
         if actual != expected:
             raise RuntimeError('prebuilt source tree mismatch: ' + tree)
         subprocess.run(['git', 'diff', '--exit-code', 'HEAD', '--', tree], cwd=ROOT, check=True)
-    for artifact in manifest['artifacts'].values():
+    for artifact in [*manifest['artifacts'].values(), *manifest['authority_binaries'].values()]:
         with open(artifact['path'], 'rb') as file:
             actual = hashlib.file_digest(file, 'sha256').hexdigest()
         if actual != artifact['sha256']:
@@ -32,7 +32,7 @@ def main():
     native = json.loads(vectors.read_text())
     if native.get('producer') != 'native-budget-codec-and-grant-save':
         raise RuntimeError('unexpected native producer contract')
-    env = dict(os.environ, LAYERX_CAPS_VECTORS=str(vectors))
+    env = dict(os.environ, LAYERX_CAPS_VECTORS=str(vectors), LAYERX_TEST_NATIVE_BIN_DIR=str(output / 'native-bin'))
     counts = {}
     for name in ['client', 'agentd']:
         result = subprocess.run([manifest['artifacts'][name]['path'], '--test-threads=1'], cwd=ROOT / 'agent', env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=600)
