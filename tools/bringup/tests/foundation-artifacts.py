@@ -185,10 +185,22 @@ def validate(manifest, directory, selected_revision=None):
 def build(destination):
     output_path(destination)
     revision, tree = clean_identity()
+    if not (ROOT / ".git").is_dir():
+        with tempfile.TemporaryDirectory(prefix=".foundation-source-", dir=destination.parent) as temporary:
+            checkout = Path(temporary)
+            command(["git", "clone", "--shared", "--no-checkout", "--", str(ROOT), str(checkout)])
+            command(["git", "-c", "core.hooksPath=/dev/null", "checkout", "--detach", revision], cwd=checkout)
+            cached = ROOT / "programs/target"
+            if cached.is_dir():
+                shutil.copytree(cached, checkout / "programs/target", symlinks=True)
+            command([sys.executable, str(checkout / "tools/bringup/tests/foundation-artifacts.py"),
+                     "--build", "--output", str(destination)], cwd=checkout)
+        require(clean_identity() == (revision, tree), "source changed during isolated build")
+        return
     tool, version = go_tool()
     pin, rust_paths, rust_version = rust_toolchain(revision)
     environment = dict(os.environ, PATH=os.pathsep.join((str(Path(tool).parent), str(Path(rust_paths["cargo"]).parent), os.environ.get("PATH", ""))),
-                       PAXEER_GO=tool, GOMAXPROCS="5", CARGO_BUILD_JOBS="5", GOFLAGS="-mod=readonly -p=5",
+                       PAXEER_GO=tool, GOMAXPROCS="5", CARGO_BUILD_JOBS="5", GOFLAGS="-mod=readonly -buildvcs=true -p=5",
                        RUSTUP_TOOLCHAIN=pin, RUSTC=rust_paths["rustc"], RUSTDOC=rust_paths["rustdoc"])
     stage = Path(tempfile.mkdtemp(prefix=".foundation-build-", dir=destination.parent))
     commands = [
@@ -200,6 +212,7 @@ def build(destination):
     manifest = {"version": 1, "source_revision": revision, "source_tree": tree,
                 "artifacts": {}, "runtime_libraries": [],
                 "build": {"exit_code": None, "commands": commands, "go_version": version,
+                          "source_checkout": str(ROOT), "git_directory": str(ROOT / ".git"),
                           "rustc_version": rust_version, "rust_toolchain": pin, "rust_tool_paths": rust_paths,
                           "cc_version": command([os.environ.get("CC", "cc"), "--version"], capture=True).stdout.splitlines()[0]}}
     try:
