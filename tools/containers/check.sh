@@ -8,7 +8,7 @@ usage: tools/containers/check.sh [service ...]
 Checks the container layout of the repository: every deployable service's
 Dockerfile lives under docker/<service>/ and is gone from its old place, no
 tracked file still names a moved Dockerfile by its old path, and every
-docker/<service>/Dockerfile* passes docker build --check from its build
+registered Dockerfile passes docker build --check from its build
 context. With service names only those services are checked; without them the
 whole layout is, and any tracked Dockerfile outside docker/ that is not on the
 out-of-scope list embedded below fails the check.
@@ -63,6 +63,12 @@ explorer-backend|docker/explorer-backend/oldUI.Dockerfile|explorer/backend/docke
 explorer-elixir-builder|docker/explorer-elixir-builder/Dockerfile|explorer/deploy/tools/Dockerfile.elixir-builder|.
 localnode|docker/localnode/Dockerfile|docker/localnode/Dockerfile|.
 rpcnode|docker/rpcnode/Dockerfile|docker/rpcnode/Dockerfile|.
+bridge-relayer|docker/bridge-relayer/Dockerfile|docker/bridge-relayer/Dockerfile|.
+gas-station|docker/gas-station/Dockerfile|docker/gas-station/Dockerfile|.
+human-service|docker/human-service/Dockerfile|docker/human-service/Dockerfile|.
+kernel|docker/kernel/Dockerfile|docker/kernel/Dockerfile|.
+platform-indexer|docker/platform-indexer/Dockerfile|docker/platform-indexer/Dockerfile|.
+search-front|docker/search-front/Dockerfile|docker/search-front/Dockerfile|.
 '
 
 # ignore files that moved with their Dockerfile: service|new path|old path
@@ -140,6 +146,35 @@ in_list() {
     return 1
 }
 
+reference_hits() {
+    python3 /dev/fd/3 "$1" 3<<'PYTHON'
+import sys
+
+accepted = {('tools/ci/tests/ci-recipe-contract.py', '93'): "            require('tools/flyci/runner/Dockerfile' not in "
+                                                 "command and 'tools/flyci/controller/Dockerfile' not in "
+                                                 "command, 'obsolete Dockerfile in ' + name)",
+ ('tools/ci/tests/ci-recipe-contract.py', '137'): "            ('capability.109.1.2', 'dockerfile', "
+                                                  "'tools/flyci/controller/Dockerfile'),",
+ ('tools/ci/tests/ci-recipe-contract.py', '138'): "            ('capability.109.1.1', 'build_command', "
+                                                  "'docker build tools/flyci/runner'),",
+ ('tools/ci/tests/ci-recipe-contract.py', '156'): '        for path, value in '
+                                                  "(('docker/flyci-runner/Dockerfile', 'COPY "
+                                                  "tools/flyci/absent-contract-input /runner\\n'), "
+                                                  "('docker/flyci-controller/Dockerfile', 'COPY ../go.mod "
+                                                  "/src\\n'), ('tools/flyci/controller/fly.toml', "
+                                                  '\'dockerfile = "tools/flyci/controller/Dockerfile"\')):'}
+for hit in sys.stdin:
+    parts = hit.rstrip("\n").split(":", 2)
+    if len(parts) == 3:
+        text = parts[2]
+        if sys.argv[1] == "build" and text.startswith(" "):
+            text = text[1:]
+        if accepted.get((parts[0], parts[1])) == text:
+            continue
+    sys.stdout.write(hit)
+PYTHON
+}
+
 known_services=()
 while IFS='|' read -r service _; do
     in_list "$service" "${known_services[@]+"${known_services[@]}"}" || known_services+=("$service")
@@ -210,6 +245,7 @@ if [ "${#stale[@]}" -gt 0 ]; then
     done
     if [ "${#grep_args[@]}" -gt 0 ]; then
         hits=$(git grep -n -F "${grep_args[@]}" -- . "${REFERENCE_EXEMPT[@]}" || true)
+        hits=$(printf '%s\n' "$hits" | reference_hits grep)
         if [ -n "$hits" ]; then
             printf '%s\n' "$hits" >&2
             fail "tracked files still name a moved Dockerfile by its old path"
@@ -236,6 +272,7 @@ if picked layerx; then
                 }
             }' "$file"
     done || true)
+    hits=$(printf '%s\n' "$hits" | reference_hits build)
     if [ -n "$hits" ]; then
         printf '%s\n' "$hits" >&2
         fail "docker build invocations without --file rely on a Dockerfile at the context root"
@@ -315,7 +352,7 @@ while IFS='|' read -r service new _ context; do
         fi
     fi
     dir=$(dirname -- "$new")
-    for dockerfile in "$dir"/Dockerfile*; do
+    for dockerfile in "$dir"/Dockerfile* "$dir"/*.Dockerfile; do
         [ -f "$dockerfile" ] || continue
         case "$dockerfile" in *.dockerignore) continue ;; esac
         in_list "$dockerfile" "${checked[@]+"${checked[@]}"}" && continue
