@@ -203,8 +203,8 @@ class Foundation:
                     ('identity', 'layerx-identity', 'serverAuth', 'DNS:layerx-identity,IP:127.0.0.1'),
                     ('registry', 'layerx-program-registry', 'serverAuth', 'DNS:layerx-program-registry,IP:127.0.0.1')):
                     script += 'issue_cert ' + ' '.join(map(shlex.quote, (name, cn, usage, san))) + '\n'
-                for name in ('human-event-client', 'registry-event-client'):
-                    script += 'issue_client_identity ' + name + ' layerx-' + name + '\n'
+                for name, common_name in (('human-event-client', 'layerx-human-events'), ('registry-event-client', 'layerx-registry-events')):
+                    script += 'issue_client_identity ' + name + ' ' + common_name + '\n'
                 script += "issue_server_identity human layerx-human 'DNS:layerx-human,IP:127.0.0.1'\n"
             else:
                 script += 'issue_client_identity operator foundation-operator\n'
