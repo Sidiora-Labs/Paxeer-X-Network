@@ -31,12 +31,14 @@ use crate::journal::{FileDeploymentJournal, QuarantinedUnit};
 use crate::mirror::{MirrorRefusal, SourceMirror};
 use crate::node_state::{HeadAuthority, NodeProgramStateSource, ProgramStateCursor};
 use crate::program_state::FileProgramStateJournal;
-use crate::verified::{VerifiedSource, VerifiedSourceStore};
+use crate::verified::{
+    Admission, JournalRefusal, LeaseRefusal, Publication, Reconciled, VerificationJournal,
+    VerificationLease, VerificationRecord, VerificationState, VerifiedSource, VerifiedSourceStore,
+};
 use crate::{Authorization, Config};
 
-const IDEMPOTENCY_DOMAIN: &[u8] = b"LayerX/platform/registry/idempotency/v1\0";
+const IDEMPOTENCY_DOMAIN: &[u8] = b"LayerX/platform/registry/idempotency/v2\0";
 const REQUEST_DOMAIN: &[u8] = b"LayerX/platform/registry/source-request/v1\0";
-const MAX_IDEMPOTENCY_RECORDS: usize = 4_096;
 const MAX_CHANGE_PAGES: usize = 1_024;
 const ROUTE_PREFIX: &str = "/v1/programs/registry/";
 
@@ -54,14 +56,6 @@ pub struct Request {
 pub struct Response {
     pub status: u16,
     pub body: String,
-}
-
-#[derive(Clone, Debug)]
-struct Completed {
-    request_digest: [u8; 32],
-    status: u16,
-    body: String,
-    at: u64,
 }
 
 /// The hosted registry. It owns the durable evidence the routes answer from
@@ -83,7 +77,8 @@ pub struct Registrar {
     interfaces: BTreeMap<(ProgramId, u32), ProgramInterface>,
     current_head: Option<AccountStateHead>,
     head_authority: Option<HeadAuthority>,
-    idempotency: BTreeMap<String, Completed>,
+    verification: VerificationJournal,
+    verification_reconciled: Reconciled,
     quarantined: Vec<QuarantinedUnit>,
 }
 
@@ -160,9 +155,11 @@ impl Registrar {
             interfaces: BTreeMap::new(),
             current_head: None,
             head_authority: None,
-            idempotency: BTreeMap::new(),
+            verification: VerificationJournal::open(config.journal.join("verification-requests"))?,
+            verification_reconciled: Reconciled::default(),
             quarantined: Vec::new(),
         };
+        registrar.verification_reconciled = registrar.verification.reconcile(now)?;
         registrar.rebuild()?;
         if health {
             registrar.node_state.current_head_or_pending(now)?;
@@ -203,6 +200,14 @@ impl Registrar {
     #[must_use]
     pub fn quarantined_units(&self) -> &[QuarantinedUnit] {
         &self.quarantined
+    }
+
+    /// Reports what reconciling the durable verification request journal
+    /// found when this registrar opened: live identities, corrupt records
+    /// kept as evidence and interrupted writes moved aside.
+    #[must_use]
+    pub const fn verification_reconciled(&self) -> &Reconciled {
+        &self.verification_reconciled
     }
 
     /// Answers one request at the supplied wall-clock millisecond.
@@ -306,7 +311,7 @@ impl Registrar {
                         "the registry request deadline expired",
                     )
                 } else {
-                    self.program_route(request, now)
+                    self.program_route(request, now, deadline)
                 }
             }
         }
@@ -419,7 +424,7 @@ impl Registrar {
         Ok(())
     }
 
-    fn program_route(&mut self, request: &Request, now: u64) -> Response {
+    fn program_route(&mut self, request: &Request, now: u64, deadline: Instant) -> Response {
         let Some(rest) = request.path.strip_prefix(ROUTE_PREFIX) else {
             return refusal(404, "not_found", "route does not exist");
         };
@@ -429,7 +434,7 @@ impl Registrar {
                 self.read_interface(program, now)
             }
             Some((program, "source")) if request.method == "POST" => {
-                self.verify(program, request, now)
+                self.verify(program, request, now, deadline)
             }
             None | Some((_, "interface" | "source")) => refusal(
                 405,
@@ -746,7 +751,13 @@ impl Registrar {
         }
     }
 
-    fn verify(&mut self, program: &str, request: &Request, now: u64) -> Response {
+    fn verify(
+        &mut self,
+        program: &str,
+        request: &Request,
+        now: u64,
+        deadline: Instant,
+    ) -> Response {
         let Some(program) = program_id(program) else {
             return refusal(
                 400,
@@ -779,43 +790,137 @@ impl Registrar {
             Ok(principal) => principal,
             Err(response) => return response,
         };
-        let scoped = scoped_key(program, key);
+        let scope = scoped_key(&principal, program, key);
         let digest = request_digest(program, &source_uri, &source_digest);
-        if let Some(record) = self.idempotency.get(&scoped) {
-            if record.request_digest != digest {
+        let lease = match self.verification.lease(deadline) {
+            Ok(lease) => lease,
+            Err(LeaseRefusal::Busy) => {
+                return refusal(
+                    503,
+                    "verification_pending",
+                    "another worker owns the verification request journal; retry with the same Idempotency-Key",
+                )
+            }
+            Err(LeaseRefusal::Unavailable(error)) => {
+                return refusal(503, "idempotency_store_unavailable", &error)
+            }
+        };
+        let record = match lease.admit(&scope, &principal, program, digest, now) {
+            Ok(Admission::Build(record)) => record,
+            Ok(Admission::Publish(record)) => return self.publish(&lease, record, now),
+            Ok(Admission::Replay(response)) => return response,
+            Ok(Admission::Conflict) => {
                 return refusal(
                     409,
                     "idempotency_conflict",
                     "idempotency key was already used for a different request",
-                );
+                )
             }
-            return Response {
-                status: record.status,
-                body: record.body.clone(),
-            };
-        }
-        let response = self.reproduce(program, &source_uri, source_digest);
-        if response.status == 200 {
-            let read = self.read(&hex::encode(&program.bytes()), now);
-            if read.status != 200 {
-                return read;
-            }
-            if self
-                .event_outbox
-                .enqueue_publication(&read.body, &principal, now)
-                .is_err()
-            {
+            Ok(Admission::QuotaExhausted) => {
                 return refusal(
                     503,
-                    "program_event_unavailable",
-                    "verified program publication could not be queued",
-                );
+                    "idempotency_quota_exhausted",
+                    "every retained verification request is still live; retry later",
+                )
             }
+            Err(refused) => return journal_refusal(&refused),
+        };
+        self.build_and_settle(
+            &lease,
+            record,
+            program,
+            &source_uri,
+            source_digest,
+            &principal,
+            now,
+        )
+    }
+
+    /// Runs the rebuild this lease owns and settles its durable outcome. A
+    /// 503 commits nothing and stays retryable; a verified rebuild commits its
+    /// publication before the response is acknowledged.
+    #[allow(clippy::too_many_arguments)]
+    fn build_and_settle(
+        &mut self,
+        lease: &VerificationLease,
+        mut record: VerificationRecord,
+        program: ProgramId,
+        source_uri: &str,
+        source_digest: [u8; 32],
+        principal: &str,
+        now: u64,
+    ) -> Response {
+        let response = self.reproduce(program, source_uri, source_digest);
+        if response.status == 503 {
+            return settled(
+                lease,
+                &mut record,
+                VerificationState::Retryable,
+                now,
+                response,
+            );
         }
-        if response.status != 503 {
-            self.remember(scoped, digest, &response, now);
+        if response.status != 200 {
+            let state = VerificationState::Completed {
+                response: response.clone(),
+            };
+            return settled(lease, &mut record, state, now, response);
         }
-        response
+        let read = self.read(&hex::encode(&program.bytes()), now);
+        if read.status != 200 {
+            return settled(lease, &mut record, VerificationState::Retryable, now, read);
+        }
+        let state = VerificationState::Persisted {
+            response,
+            publication: Publication {
+                body: read.body,
+                principal: principal.to_owned(),
+                occurred_at: now,
+            },
+        };
+        if let Err(refused) = lease.settle(&mut record, state, now) {
+            return journal_refusal(&refused);
+        }
+        self.publish(lease, record, now)
+    }
+
+    /// Queues the committed publication of a persisted verification, then
+    /// durably acknowledges its terminal response. The outbox deduplicates
+    /// the identical publication a recovery re-enqueues.
+    fn publish(
+        &self,
+        lease: &VerificationLease,
+        mut record: VerificationRecord,
+        now: u64,
+    ) -> Response {
+        let VerificationState::Persisted {
+            response,
+            publication,
+        } = record.state.clone()
+        else {
+            return journal_refusal(&JournalRefusal::Corrupt(
+                "publication recovery requires a persisted verification".to_owned(),
+            ));
+        };
+        if self
+            .event_outbox
+            .enqueue_publication(
+                &publication.body,
+                &publication.principal,
+                publication.occurred_at,
+            )
+            .is_err()
+        {
+            return refusal(
+                503,
+                "program_event_unavailable",
+                "verified program publication could not be queued; retry with the same Idempotency-Key",
+            );
+        }
+        let state = VerificationState::Completed {
+            response: response.clone(),
+        };
+        settled(lease, &mut record, state, now, response)
     }
 
     fn reproduce(&mut self, program: ProgramId, uri: &str, source_digest: [u8; 32]) -> Response {
@@ -856,34 +961,6 @@ impl Registrar {
             return refusal(503, "persistence_unavailable", &error);
         }
         verification_response(program, version, &build, status)
-    }
-
-    fn remember(
-        &mut self,
-        scoped: String,
-        request_digest: [u8; 32],
-        response: &Response,
-        now: u64,
-    ) {
-        if self.idempotency.len() >= MAX_IDEMPOTENCY_RECORDS {
-            let oldest = self
-                .idempotency
-                .iter()
-                .min_by_key(|(_, record)| record.at)
-                .map(|(key, _)| key.clone());
-            if let Some(key) = oldest {
-                self.idempotency.remove(&key);
-            }
-        }
-        self.idempotency.insert(
-            scoped,
-            Completed {
-                request_digest,
-                status: response.status,
-                body: response.body.clone(),
-                at: now,
-            },
-        );
     }
 
     fn ingest_deployment(&mut self, body: &[u8], deadline: Instant) -> Response {
@@ -1326,11 +1403,40 @@ fn valid_idempotency_key(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
 }
 
-fn scoped_key(program: ProgramId, key: &str) -> String {
-    let digest: [u8; 32] =
-        Sha256::digest([IDEMPOTENCY_DOMAIN, &program.bytes(), b"\0", key.as_bytes()].concat())
-            .into();
+fn scoped_key(principal: &str, program: ProgramId, key: &str) -> String {
+    let digest: [u8; 32] = Sha256::digest(
+        [
+            IDEMPOTENCY_DOMAIN,
+            principal.as_bytes(),
+            b"\0",
+            &program.bytes(),
+            b"\0",
+            key.as_bytes(),
+        ]
+        .concat(),
+    )
+    .into();
     hex::encode(&digest)
+}
+
+fn settled(
+    lease: &VerificationLease,
+    record: &mut VerificationRecord,
+    state: VerificationState,
+    now: u64,
+    response: Response,
+) -> Response {
+    match lease.settle(record, state, now) {
+        Ok(()) => response,
+        Err(refused) => journal_refusal(&refused),
+    }
+}
+
+fn journal_refusal(refused: &JournalRefusal) -> Response {
+    match refused {
+        JournalRefusal::Corrupt(defect) => refusal(503, "idempotency_record_corrupt", defect),
+        JournalRefusal::Unavailable(error) => refusal(503, "idempotency_store_unavailable", error),
+    }
 }
 
 fn request_digest(program: ProgramId, uri: &str, source_digest: &[u8; 32]) -> [u8; 32] {
