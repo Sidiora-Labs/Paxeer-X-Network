@@ -1949,3 +1949,9 @@ area    = "human-material"
 symptom = "A trust history projected root:4020 0440 looks unreadable to the security provider, whose readers refuse any group or other permission bit."
 cause   = "from_protected_history refuses mode & 0o077 and Store::open's protected_read wants 0600 owned by the reader, but the human entrypoint copies trust-history into /run/human-private/security as 0600 under the role's uid before the provider starts."
 do      = "Check the provider's path against the entrypoint's private copy, not the projected material, before changing the history's mode."
+
+[gotcha.322]
+area    = "human-entrypoint"
+symptom = "A POSIX sh loop over /run/human-material/journal/* under set -e fails test -s on the literal pattern when the directory is empty."
+cause   = "sh leaves an unmatched glob as the pattern itself, so the loop body runs once on a path that does not exist."
+do      = "Guard each iteration with [ -e \"$record\" ] || continue and check the directory itself with test -d before the loop."
