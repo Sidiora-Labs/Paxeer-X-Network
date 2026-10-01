@@ -285,6 +285,19 @@ for line in source.splitlines():
 print("containers-check: COPY inputs present")
 PYTHON
 }
+check_recipe() {
+    local recipe=$1 context=$2
+    if [ "$recipe" = docker/paxeer/Dockerfile.paxd ]; then
+        source platform/hosted/tests/beta-images.sh
+        local REVISION
+        REVISION=$(git rev-parse HEAD)
+        paxd_check_recipe "$LOG_DIR/paxd-check.Dockerfile" || return
+        copy_inputs "$LOG_DIR/paxd-check.Dockerfile" "$context" || return
+        docker build --check --build-arg "PAX_CHAIN_REF=$REVISION" -f "$LOG_DIR/paxd-check.Dockerfile" "$context"
+    else
+        docker build --check -f "$recipe" "$context"
+    fi
+}
 while IFS='|' read -r service new _ context; do
     picked "$service" || continue
     if [ "$context" = @registry-builder ]; then
@@ -320,7 +333,7 @@ while IFS='|' read -r service new _ context; do
             cat "$log.inputs" >&2
             fail "$service: COPY/ADD context inputs are incomplete"
         fi
-        if docker build --check -f "$recipe" "$context" >"$log" 2>&1; then
+        if check_recipe "$recipe" "$context" >"$log" 2>&1; then
             printf 'containers-check: %s check ok\n' "$dockerfile"
         else
             tail -n 20 "$log" >&2

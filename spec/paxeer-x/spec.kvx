@@ -24930,7 +24930,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.111.6.11]
 title = "Move the hosted platform, ramp, relay archive and hpx registry container files under docker/"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
