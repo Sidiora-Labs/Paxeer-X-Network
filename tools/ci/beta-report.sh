@@ -10,10 +10,11 @@ usage: tools/ci/beta-report.sh [--ledger PATH] [--contract PATH] [--spec PATH]
 Renders the LayerX beta go/no-go report (build/qualification/beta-report.md by default)
 from the executed-evidence ledger and the canonical beta contract, and prints a
 one-line summary on stdout. The exit status is 0 when the report is rendered,
-1 in --check mode when the report on disk or the contract disagrees with the
+1 in every mode for invalid source evidence, or in --check mode when the report or contract disagrees with the
 evidence, and 2 on usage or environment errors.
 
   --ledger PATH    evidence ledger (default spec/layerx-beta/qualification.kvx)
+  --evidence-root PATH private evidence directory outside source (required)
   --contract PATH  beta contract (default platform/docs/content/beta.md)
   --spec PATH      feature spec (default spec/layerx-beta/spec.kvx)
   --output PATH    report to write (default build/qualification/beta-report.md)
@@ -31,7 +32,8 @@ Evidence rules:
     raise a rung, never clear a stop condition and never change the decision;
     they are counted by severity as context for the owner (req 12.3).
   * Only a gate record whose revision is the release-candidate revision and
-    whose outcome is pass raises a rung, covers an acceptance criterion or
+    whose outcome is pass and whose typed source binding is release eligible
+    raises a rung, covers an acceptance criterion or
     clears a stop condition (decision.revision_binding). Records on any other
     revision are history and are listed as such; a record with outcome fail or
     blocked is listed and makes the decision no-go.
@@ -88,13 +90,18 @@ EOF
 }
 
 beta_report() {
-    local root ledger="" contract="" spec="" output="" revision="" mode=render
+    local root ledger="" contract="" spec="" output="" revision="" mode=render evidence_root="${PAXEER_X_EVIDENCE_DIR:-}"
     root=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
     while [ "$#" -gt 0 ]; do
         case $1 in
         --ledger)
             [ "$#" -ge 2 ] || { usage >&2; return 2; }
             ledger=$2
+            shift 2
+            ;;
+        --evidence-root)
+            [ "$#" -ge 2 ] || return 2
+            evidence_root=$2
             shift 2
             ;;
         --contract)
@@ -148,16 +155,19 @@ beta_report() {
         *) [ -f "$root/$path" ] || { echo "beta-report: not found: $path" >&2; return 2; } ;;
         esac
     done
-    python3 - "$root" "$ledger" "$contract" "$spec" "$output" "$revision" "$mode" <<'PY'
+    python3 - "$root" "$ledger" "$contract" "$spec" "$output" "$revision" "$mode" "$evidence_root" <<'PY'
 import hashlib
 import importlib.util
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
 root, ledger_arg, contract_arg, spec_arg, output_arg, revision_arg, mode = sys.argv[1:8]
 root = Path(root)
+evidence_root = sys.argv[8]
+sys.dont_write_bytecode = True
 
 RUNGS = (
     "source_present",
@@ -553,22 +563,31 @@ def split_list(value):
     return [unquote(item) if item.startswith('"') and item.endswith('"') else item for item in items]
 
 
-def parse_kvx(text):
+def parse_kvx(text, strict=False):
     records = []
     current = None
+    names = set()
     for line in text.splitlines():
         stripped = strip_comment(line).strip()
         if not stripped:
             continue
         if stripped.startswith("[") and stripped.endswith("]"):
-            current = (stripped[1:-1], {})
+            name = stripped[1:-1]
+            if strict and name in names:
+                violations.append("ledger: duplicate section")
+            names.add(name)
+            current = (name, {})
             records.append(current)
             continue
         if current is None or "=" not in stripped:
+            if strict:
+                violations.append("ledger: malformed record")
             continue
         key, _, value = stripped.partition("=")
         key = key.strip()
         value = value.strip()
+        if strict and (key in current[1] or "${" in value):
+            violations.append("ledger: duplicate key or nonliteral value")
         if value.startswith('"') and value.endswith('"') and len(value) >= 2:
             current[1][key] = unquote(value)
         elif value.startswith("[") and value.endswith("]"):
@@ -643,7 +662,7 @@ contract_path = root / contract_arg
 spec_path = root / spec_arg
 output_path = root / output_arg
 
-ledger_records = parse_kvx(read(ledger_path))
+ledger_records = parse_kvx(read(ledger_path), strict=True)
 spec_records = parse_kvx(read(spec_path))
 contract_sections = parse_contract(read(contract_path))
 
@@ -683,7 +702,7 @@ else:
         f"beta-report: release-candidate value {declared!r} from {declared_source} is not a 40-hex commit identifier"
     )
 
-gate_keys = ("task", "reqs", "revision", "command", "environment", "started_at", "outcome", "evidence", "note")
+gate_keys = ("task", "reqs", "revision", "command", "environment", "started_at", "outcome", "evidence", "source_evidence", "note")
 gates = []
 malformed = 0
 observation_severity = {}
@@ -691,8 +710,9 @@ observation_blockers_by_task = {}
 observations = 0
 for name, record in ledger_records:
     if name.startswith("gate."):
-        if any(key not in record for key in gate_keys):
+        if set(record) != set(gate_keys):
             malformed += 1
+            violations.append("ledger: gate fields invalid or source evidence missing")
             continue
         gates.append((name, record))
     elif name.startswith("observation."):
@@ -779,6 +799,10 @@ release_gates = []
 other_gates = []
 unmapped_targets = {}
 failed_or_blocked = []
+eligible_release_gates = []
+rejected_source = []
+source_bindings = []
+ledger_invalid = any(item.startswith("ledger:") for item in violations)
 
 for name, record in gates:
     revision = record.get("revision", "")
@@ -787,7 +811,20 @@ for name, record in gates:
         release_gates.append((name, record))
         if outcome != "pass":
             failed_or_blocked.append((name, record))
+        validation = subprocess.run(
+            ['bash', str(root / 'tools/ci/beta-ledger-check.sh'), '--source-validate',
+             '--root', str(root), '--evidence-root', evidence_root, '--candidate', release_candidate,
+             '--record', json.dumps(record)], capture_output=True, text=True, timeout=60)
+        try:
+            binding = json.loads(validation.stdout)
+        except ValueError:
+            binding = {'eligible': False}
+        if ledger_invalid or validation.returncode != 0 or binding.get('eligible') is not True:
+            rejected_source.append(name)
+            violations.append(f"source evidence: {name} excluded from release credit")
             continue
+        source_bindings.append([name, binding['sidecar_sha256'], binding['evidence_sha256']])
+        eligible_release_gates.append((name, record))
     else:
         other_gates.append((name, record))
         continue
@@ -912,7 +949,7 @@ for identifier, statement, targets, refs, extra in STOP_CONDITIONS:
 
 owner_decision = ""
 owner_decision_record = ""
-for name, record in release_gates:
+for name, record in eligible_release_gates:
     if record.get("task") == "5.4" and record.get("outcome") == "pass":
         note = record.get("note", "")
         if note.startswith("owner go decision:"):
@@ -920,6 +957,8 @@ for name, record in release_gates:
             owner_decision_record = name
 
 reasons = []
+if ledger_invalid or malformed or rejected_source:
+    reasons.append("source evidence is invalid or ineligible; affected records receive no release credit")
 if not release_candidate:
     reasons.append(
         "no release-candidate revision is declared, so no gate record is evidence "
@@ -1000,6 +1039,9 @@ lines.append(f"| feature_spec | {spec_arg} |")
 lines.append(f"| generator | {GENERATOR} |")
 lines.append(f"| gate_records_total | {len(gates)} |")
 lines.append(f"| gate_records_at_release_candidate | {len(release_gates)} |")
+lines.append(f"| eligible_release_gate_records | {len(eligible_release_gates)} |")
+lines.append(f"| source_ineligible_records | {len(rejected_source)} |")
+lines.append(f"| source_evidence_binding | sha256:{hashlib.sha256(json.dumps(source_bindings, sort_keys=True).encode()).hexdigest()} |")
 lines.append(f"| gate_records_not_passing_at_release_candidate | {len(failed_or_blocked)} |")
 lines.append(f"| gate_records_on_other_revisions | {len(other_gates)} |")
 lines.append(f"| surface_rows | {len(surfaces)} |")
@@ -1024,8 +1066,8 @@ lines.append("")
 lines.append("## Release-candidate binding")
 lines.append("")
 lines.append(
-    "Only a gate record whose revision is the release-candidate revision and whose outcome is `pass` "
-    "is evidence. Records on any other revision are history and are listed below unaggregated into any rung."
+    "Only passing records with validated clean start/end candidate identity, complete mutation observation "
+    "and matching retained evidence digests are release evidence. Records on any other revision are history and are listed below unaggregated into any rung."
 )
 lines.append("")
 lines.append("| Revision | Gate records | pass | fail | blocked | Counted as evidence |")
@@ -1035,7 +1077,7 @@ if release_candidate:
     failing = sum(1 for _, record in failed_or_blocked if record.get("outcome") == "fail")
     blocked = sum(1 for _, record in failed_or_blocked if record.get("outcome") == "blocked")
     lines.append(
-        f"| {release_candidate} | {len(release_gates)} | {passing} | {failing} | {blocked} | yes (release candidate) |"
+        f"| {release_candidate} | {len(release_gates)} | {passing} | {failing} | {blocked} | {len(eligible_release_gates)} eligible |"
     )
 for revision in sorted(revision_history):
     bucket = revision_history[revision]
@@ -1106,12 +1148,12 @@ lines.append("")
 lines.append("## Gate records on the release-candidate revision")
 lines.append("")
 if release_gates:
-    lines.append("| Record | Task | Command | Outcome | Requirements | Evidence |")
-    lines.append("| --- | --- | --- | --- | --- | --- |")
+    lines.append("| Record | Task | Command | Outcome | Release eligible | Requirements | Evidence |")
+    lines.append("| --- | --- | --- | --- | --- | --- | --- |")
     for name, record in release_gates:
         lines.append(
             f"| {name} | {cell(record.get('task', ''))} | `{cell(record.get('command', ''))}` "
-            f"| {cell(record.get('outcome', ''))} | {cell(', '.join(record.get('reqs', [])))} "
+            f"| {cell(record.get('outcome', ''))} | {'yes' if any(eligible_name == name for eligible_name, _ in eligible_release_gates) else 'no'} | {cell(', '.join(record.get('reqs', [])))} "
             f"| {cell(record.get('evidence', ''))} |"
         )
 else:
@@ -1195,7 +1237,7 @@ if mode == "stdout":
     print(summary, file=sys.stderr)
     for violation in violations:
         print(f"  {violation}", file=sys.stderr)
-    sys.exit(0)
+    sys.exit(1 if ledger_invalid or malformed or rejected_source else 0)
 
 if mode == "check":
     if not output_path.is_file():
@@ -1252,7 +1294,7 @@ print(summary)
 if violations:
     for violation in violations:
         print(f"  {violation}", file=sys.stderr)
-sys.exit(0)
+sys.exit(1 if ledger_invalid or malformed or rejected_source else 0)
 PY
 }
 

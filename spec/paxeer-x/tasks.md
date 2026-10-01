@@ -21,18 +21,18 @@
     - Generate only requested technical projections into their appropriate local profile; do not project operational notes, credentials or private evidence into tracked files.
     - Validate requirement references, task references, dependencies, waves, supported status values and the active feature pointer against the complete unified document.
     - _Requirements: 10, 11_
-  - [ ] 0.4 Serve the complete capability catalogue through the unified router
+  - [-] 0.4 Serve the complete capability catalogue through the unified router
     - Create an explicit route catalogue covering every service and all public feature methods, aliases and transports, including WebSocket subscriptions, Programs, Human/wallet, agents/MCP/A2A, search, sponsorship, bridge, interop and explorer history.
     - Wire authenticated upstreams, dependency readiness, bounded retries/timeouts, version/chain checks, CORS and errors without exposing private KMS, signer shares, admin or event publication surfaces.
     - Retain existing product domains and RPC records as compatible aliases or upstreams; add required TLS/mTLS passthrough without downgrading certificate or client-identity checks.
     - Implement a routed contract gate exercising each catalogue class plus wrong-network, missing-dependency and unauthorized private-route refusals.
     - _Requirements: 1, 4, 5, 413, 438_
-  - [ ] 0.5 Freeze versioned sequence, refusal and expiry boundary contracts
+  - [-] 0.5 Freeze versioned sequence, refusal and expiry boundary contracts
     - Inventory exact current protocol assertions and retained acceptance clauses for admission, terminal refusal, fees, replay and each expiry comparator.
     - Define an explicit versioned transition table and canonical vectors preserving historical authenticated outcomes. Where a new behavior is required, specify its explicit protocol migration and compatibility conditions before implementation; do not silently change either checks or semantics.
     - Implement the focused contract/vector gate using real native activity and receipt types. Record any still unresolved contradiction as blocking release.
     - _Requirements: 13_
-  - [ ] 0.6 Implement durable qualification dispatch and completed-evidence validation
+  - [-] 0.6 Implement durable qualification dispatch and completed-evidence validation
     - Implement a fail-closed manifest and durable logical-run registry for complete CI qualification jobs. Preserve original acceptance durations and all matrix cells; do not invent a shorter job timeout from the agent budget.
     - Integrate idempotent dispatch/reconciliation with the existing actual CI controller and workflow. Unknown acknowledgement is reconciled by durable request identity before any retry. Keep credentials in the controller and private evidence outside tracked source.
     - Implement the evidence subcommand with a 1500-second absolute deadline. It only reads and verifies completed trusted job/artifact evidence and never dispatches, builds or runs an application gate.
@@ -68,7 +68,7 @@
     - Add the designated new harness tests/daemon/paxeer_x_kernel_readiness.py using real production code and durable stores; invoke prebuilt task targets, fail on any missing prerequisite, and emit revision, exact command, exit code and private evidence path. Do not substitute mocks or synthetic success responses.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 104_
-  - [ ] 2.2 Verify recovered finality against authenticated historical membership
+  - [-] 2.2 Verify recovered finality against authenticated historical membership
     - Reproduce the current latest-eth_call dependency with real captured finalized history and a later membership change; distinguish finality recovery from new attestation admission.
     - Bind historical membership and threshold to an authenticated checkpoint/registration block or equivalent immutable native anchor evidence; persist the required context with versioned finality evidence.
     - Update callback and journal replay consumers to use historical context while retaining FINAL status, canonical certificate, settlement receipt/event and block-order checks.
@@ -96,7 +96,7 @@
     - Add the designated new harness tests/modules/paxeer_x_budget_lifecycle.py using real production code and durable stores; invoke prebuilt task targets, fail on any missing prerequisite, and emit revision, exact command, exit code and private evidence path. Do not substitute mocks or synthetic success responses.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 108_
-  - [ ] 3.2 Bound metered stream accrual by deterministic stream lifetime
+  - [-] 3.2 Bound metered stream accrual by deterministic stream lifetime
     - Define precise inclusive end-boundary and late-usage semantics in the canonical stream contract, based solely on replayable batch timestamp.
     - Pass timestamp context into the routed metered accrual path and enforce start/end before mutating reading or accrued totals, preserving cap and authority checks.
     - Add real dispatched METER and settlement tests at end-1/end/end+1, after long restart, under cap/overflow/closed/paused conditions.
@@ -152,7 +152,7 @@
     - Add the designated new harness tests/daemon/paxeer_x_checkpoint_retry.py using real production code and durable stores; invoke prebuilt task targets, fail on any missing prerequisite, and emit revision, exact command, exit code and private evidence path. Do not substitute mocks or synthetic success responses.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 116_
-  - [ ] 6.1 Bound every native sandbox decode before accessing payload fields
+  - [-] 6.1 Bound every native sandbox decode before accessing payload fields
     - Move minimum-length validation before copying the common lease identifier; apply checked cursor arithmetic throughout the three branches.
     - Add real registered-decoder cases for every truncated prefix, exact minimum, maximum admitted nested length and malformed nested call.
     - Author the new focused harness tools/qualification/paxeer-x/programs_sandbox_bounds.py to exercise these acceptance cases against real production implementations and types. It must fail on missing candidate artifacts, missing authority/configuration, skipped cases or unverifiable receipts; retain the exact candidate revision, command, case results and evidence paths. Use disposable qualification state and provisioned authority without printing secret values; no mocks, synthetic success or substitution of a library-only model for a named process boundary.
@@ -164,7 +164,7 @@
     - Author the new focused harness tools/qualification/paxeer-x/programs_native_migration.py to exercise these acceptance cases against real production implementations and types. It must fail on missing candidate artifacts, missing authority/configuration, skipped cases or unverifiable receipts; retain the exact candidate revision, command, case results and evidence paths. Use disposable qualification state and provisioned authority without printing secret values; no mocks, synthetic success or substitution of a library-only model for a named process boundary.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 118_
-  - [ ] 6.3 Admit canonical program interfaces consistently across supported guest ABIs
+  - [-] 6.3 Admit canonical program interfaces consistently across supported guest ABIs
     - Replace the bridge-local ABI1/2 switch with centrally governed versioned validation while retaining code/interface checks.
     - Add native interface-bearing Deploy/Upgrade/Call cases covering every supported ABI and all version/hash/capability mismatches.
     - Author the new focused harness tools/qualification/paxeer-x/programs_native_interfaces.py to exercise these acceptance cases against real production implementations and types. It must fail on missing candidate artifacts, missing authority/configuration, skipped cases or unverifiable receipts; retain the exact candidate revision, command, case results and evidence paths. Use disposable qualification state and provisioned authority without printing secret values; no mocks, synthetic success or substitution of a library-only model for a named process boundary.
@@ -224,7 +224,7 @@
     - Author the new focused harness tools/qualification/paxeer-x/mcp_binding_listener.py to exercise these acceptance cases against real production implementations and types. It must fail on missing candidate artifacts, missing authority/configuration, skipped cases or unverifiable receipts; retain the exact candidate revision, command, case results and evidence paths. Use disposable qualification state and provisioned authority without printing secret values; no mocks, synthetic success or substitution of a library-only model for a named process boundary.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 127_
-  - [ ] 8.3 Bound HTTP request time and isolate concurrent daemon clients
+  - [-] 8.3 Bound HTTP request time and isolate concurrent daemon clients
     - Separate acceptance/supervision from connection handling with explicit concurrency and queue bounds.
     - Apply one absolute deadline across request parsing and preserve per-I/O ceilings and existing header/body limits.
     - Use real concurrent clients that remain silent, trickle partial headers, exhaust admission and send legitimate authenticated requests; assert configured latency and resource bounds.
@@ -294,19 +294,19 @@
     - Add the new bounded harness tools/qualification/paxeer-x/identity-assertion-binding.py to exercise this task through the named production interfaces, including the stated refusal and recovery cases, with explicit prerequisite checks and nonzero exit on any unmet acceptance. Use supplied prebuilt executables and isolated retained state; do not hide a rebuild or invoke a release-wide suite.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 137_
-  - [ ] 11.2 Bound Supabase JWKS cache freshness and signing-key removal
+  - [-] 11.2 Bound Supabase JWKS cache freshness and signing-key removal
     - Separate successful JWKS fetch age from refresh-attempt throttling in AssertionVerifier.
     - Define an explicit maximum fresh-cache lifetime and failure/refusal behavior; preserve complete configuration validation and bounded transport.
     - Extend the assertion test target with known-kid removal/replacement, refresh outage and simultaneous-request cases.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 138_
-  - [ ] 11.3 Admit hosted sessions using the live unexpired session count
+  - [-] 11.3 Admit hosted sessions using the live unexpired session count
     - Pass authoritative time into live-session accounting and separate expiration from historical retention.
     - Define safe retained-session pruning/compaction with durable publication ordering, or bounded retention that does not consume live admission capacity.
     - Add a focused real service case for saturated expired/live populations, expiry equality, revocation and restart.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 139_
-  - [ ] 12.1 Complete the authenticated one-time Human KMS export transition
+  - [-] 12.1 Complete the authenticated one-time Human KMS export transition
     - Replace range-based operation decoding/dispatch with explicit versioned operation payload handling for export.
     - Preserve class, TLS admission, audit and durable erasure ordering and make the provider encoder and decoder share the same contract.
     - Extend the real remote-provider test with export, forbidden executor export, post-export signing refusal and restart.
@@ -355,7 +355,7 @@
     - Add the new bounded harness tools/qualification/paxeer-x/wallet-custody-routing.py to exercise this task through the named production interfaces, including the stated refusal and recovery cases, with explicit prerequisite checks and nonzero exit on any unmet acceptance. Use supplied prebuilt executables and isolated retained state; do not hide a rebuild or invoke a release-wide suite.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 146_
-  - [ ] 13.2 Bind attestor signatures to independently approved activity disclosure
+  - [-] 13.2 Bind attestor signatures to independently approved activity disclosure
     - Extend the attestor API schema and server request decoder with independently approved disclosure and authorization binding.
     - Propagate the original disclosure through Human KMS and every attestor client; compare it with the attestor decoder output before any signing round.
     - Add real HTTP negative and restart/replay cases for an otherwise valid in-policy activity that differs from the approved disclosure.
@@ -467,7 +467,7 @@
     - Create or extend the planned harness tools/qualification/paxeer-x/registry-contract.py with case guest-abi-discovery; exercise the real served binaries and production persistence paths against the candidate manifest, record exact assertions and nonzero refusals, and fail if required inputs, executions or cases are absent.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 162_
-  - [ ] 16.2 Preserve source-verification idempotency across isolated request workers
+  - [-] 16.2 Preserve source-verification idempotency across isolated request workers
     - Introduce a versioned durable verification request journal with principal/program/key scope, canonical digest, build ownership, attempt/recovery state and terminal response; define atomic transitions and retention.
     - Load and reconcile that journal when each Registrar worker opens, and replace transient-map-only admission/replay/conflict decisions with durable operations under the existing serialized boundary.
     - Bind completed source-verification persistence and publication outbox identity to recovery so a retry cannot create duplicate economic or event effects; keep503/pending semantics explicit.
@@ -488,7 +488,7 @@
     - Create or extend the planned harness tools/qualification/paxeer-x/registry-contract.py with case registry-readiness; exercise the real served binaries and production persistence paths against the candidate manifest, record exact assertions and nonzero refusals, and fail if required inputs, executions or cases are absent.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 165_
-  - [ ] 17.1 Separate public webhook APIs from authenticated private producer ingress
+  - [-] 17.1 Separate public webhook APIs from authenticated private producer ingress
     - Introduce explicit public/ingress process-role configuration and role-specific route registration, TLS requirements and credential loading.
     - Configure mandatory producer/operator peer authentication on ingress, verify certificate role authorization, and retain bearer verification and canonical event checks.
     - Update Fly startup/mounts and Kubernetes service/ingress wiring; cover direct public-path attempts, each peer/bearer combination, restart and rotation through real listeners.
@@ -540,7 +540,7 @@
     - Create or extend the planned harness tools/qualification/paxeer-x/interop-archive-contract.py with case mirror-checkpoint-acquisition; exercise the real served binaries and production persistence paths against the candidate manifest, record exact assertions and nonzero refusals, and fail if required inputs, executions or cases are absent.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 172_
-  - [ ] 18.3 Derive relay archive freshness from successful pinned origin observations
+  - [-] 18.3 Derive relay archive freshness from successful pinned origin observations
     - Add typed synchronization outcomes and persistent verified-observation metadata distinct from loop timestamps.
     - Update origin candidate selection, synchronize error handling and status/readyz to require a valid observation in remote mode and enforce configured age bounds.
     - Exercise total origin loss, wrong pins, equal-head success, discontinuity, offline restart and recovered continuity through the actual archive runtime and store.
@@ -603,7 +603,7 @@
     - Create or extend the planned harness tools/qualification/paxeer-x/gas-station-contract.py with case first-use-sponsorship; exercise the real served binaries and production persistence paths against the candidate manifest, record exact assertions and nonzero refusals, and fail if required inputs, executions or cases are absent.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 181_
-  - [ ] 20.2 Drive sponsored-transaction recovery autonomously from the durable journal
+  - [-] 20.2 Drive sponsored-transaction recovery autonomously from the durable journal
     - Add recovery enumeration and scheduling to main/serve with one journal writer, bounded deadlines/backoff and explicit startup readiness.
     - Integrate existing resume/replacement/cancellation primitives and expose status/retry by durable submission identity through service and SDK contracts.
     - Cover actual-binary restarts at journal/broadcast/finality boundaries and prove receipt, SID-transfer and sponsor-nonce outcomes before reporting completion.
@@ -631,7 +631,7 @@
     - Create or extend the planned harness tools/qualification/paxeer-x/gas-station-contract.py with case browser-sponsorship-origin; exercise the real served binaries and production persistence paths against the candidate manifest, record exact assertions and nonzero refusals, and fail if required inputs, executions or cases are absent.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 185_
-  - [ ] 21.1 Admit only mintable recipients before EVM custody moves
+  - [-] 21.1 Admit only mintable recipients before EVM custody moves
     - Add the canonical recipient predicate to PaxeerXVault._admitDeposit using the consumer rule in modules/layerxbridge/types/attestation.go.
     - Extend the real Foundry vault tests with test_DepositCanonicalRecipient cases for token/native success, both invalid encodings and unchanged economic state on refusal.
     - Keep the relayer and keeper refusals and immutable attestation encoding; document the affected-deposit handling boundary in the existing bridge runbook.
@@ -667,7 +667,7 @@
     - Connect receipt APIs to the new projection and create tools/explorer/tests/paxeer-x-data-boundary.py with --case kernel-receipts, driving real kernel/relay output through the production worker, database and HTTP API, including restart and tamper refusal.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 191_
-  - [ ] 22.2 Restore canonical asset and account projections during rollback
+  - [-] 22.2 Restore canonical asset and account projections during rollback
     - Version observed metadata and discovery records by indexed unit or deterministically recompute them from surviving canonical units in Store::rollback.
     - Keep configuration-owned pointer/asset entries outside rollback-owned observations.
     - Create platform/hosted/indexer/tests/rollback_projection.rs using the real SQLite store with a supply-bearing orphan, replacement without supply change, database reopen and finalized-bound refusal.
@@ -714,7 +714,7 @@
     - Implement tools/explorer/tests/paxeer-x-data-boundary.py --case receipt-refresh with a real receipt projection and browser session; advance genuine verification evidence while the page remains open and exercise disconnect/reconnect.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 199_
-  - [ ] 24.1 Create isolated Human role runtime directories before privilege drop
+  - [-] 24.1 Create isolated Human role runtime directories before privilege drop
     - Integrate protected role-directory initialization into the selected kernel init implementation and verify that it matches the actual service UID roster.
     - Preserve entrypoint private path behavior and least-privilege mounts.
     - Create tools/bringup/tests/paxeer-x-runtime-contract.py with --case role-directories, exercising real namespace/UID processes and restart on disposable volumes from the selected image.
@@ -763,13 +763,13 @@
     - Implement tools/bringup/tests/paxeer-x-runtime-contract.py --case registry-material with actual producer documents, authenticated transfer path and registry validation; cover mismatched/partial/replayed generations.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 207_
-  - [ ] 24.9 Include the complete websearch dependency closure in its image build context
+  - [-] 24.9 Include the complete websearch dependency closure in its image build context
     - Reconcile docker/layerx/Dockerfile.dockerignore with the actual interop x-websearch dependency closure or introduce an explicit source stage.
     - Create tools/ci/tests/websearch-context.py to compare the effective Docker context with the production Cargo path dependency graph and invoke one bounded build of the declared x-websearch stage on a clean candidate.
     - Keep source identity and secret exclusions explicit; do not broaden into rebuilding chain or validator images.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 208_
-  - [ ] 25.1 Credit release evidence only to an immutable clean candidate
+  - [x] 25.1 Credit release evidence only to an immutable clean candidate
     - Extend beta_qualify_focused to emit a typed source-identity sidecar for all focused evidence and retain a distinct development outcome/eligibility field.
     - Require this binding in beta-ledger-check.sh and beta-report.sh instead of relying on human-readable warnings.
     - Create tools/ci/tests/focused-source-identity.py using real temporary Git worktrees and the production qualifier/ledger/report commands; prove clean pass eligibility, dirty passing exclusion, revision mismatch and mid-run mutation refusal.
@@ -2021,7 +2021,7 @@
       - Add the sandbox capabilities to the enforced-by tables in the same shape as every other documented capability.
       - Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector.
       - _Requirements: 1104.8_
-    - [ ] 104.35.2 Verify a single execution step on-platform
+    - [-] 104.35.2 Verify a single execution step on-platform
       - Reconcile the retained capability against the current candidate and explicit resolution sections. Reuse conforming implementation; complete only unmet criteria. Resolve historical paths against the current source without narrowing the capability or repeating operational transitions already completed.
       - Implement a verifier taking a pre-state commitment, one instruction and a post-state commitment, and deciding whether the transition is correct, in bounded work independent of the length of the disputed execution.
       - Cover the whole permitted instruction set including every host call, with an unreachable instruction a refusal rather than a gap.
@@ -2290,7 +2290,7 @@
       - Keep run.sh's interface as it is - no argument generates the fixture and replays the latest plan, a data directory replays over a copy of it, a plan name chooses the plan - and record the harness's revision, command, exit code and log path.
       - Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector.
       - _Requirements: 1141.6, 1141.7, 1141.8, 1141.10_
-    - [ ] 106.4.9 Expose anchor and launchpad parameter messages through registered module services
+    - [-] 106.4.9 Expose anchor and launchpad parameter messages through registered module services
       - Implement only the schema, message-service and keeper-test prerequisites of capability.106.4.3. Task 106.4.3 retains the complete governance integration obligation and original verification coverage; completing this prerequisite does not complete that capability or the six-module requirement.
       - Declare api/layerxanchor/tx.proto and api/launchpad/tx.proto: each module's Params message with gogoproto.typedecl false so the generated code carries the parameter type the module's types package already declares, its sdk.Int, sdk.Dec and Address20 fields under their custom types, a MsgUpdateParams carrying an authority and those parameters, its response, and a Msg service with the one rpc; generate modules/layerxanchor/types/tx.pb.go and modules/launchpad/types/tx.pb.go.
       - Add each module's types/msgs.go with Route, Type, GetSigners, GetSignBytes and a ValidateBasic that checks the authority is a bech32 account and the parameters pass their own Validate, and types/codec.go with the amino and interface registrations, both after the bridge module's files.

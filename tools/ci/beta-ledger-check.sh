@@ -13,6 +13,8 @@ at least one violation exists, 2 on usage or environment errors, 0 otherwise.
   --ledger PATH   ledger to check (default spec/layerx-beta/qualification.kvx)
   --spec PATH     feature spec used to resolve tasks and acceptance criteria
                   (default spec/layerx-beta/spec.kvx)
+  --evidence-root PATH  private evidence directory outside source (required)
+  --candidate REV candidate revision (default current HEAD)
   --revisions     print only the distinct gate revisions, one per line
 
 Parsing rules (mirroring spec/specgen/kvx.go):
@@ -29,7 +31,7 @@ Parsing rules (mirroring spec/specgen/kvx.go):
 
 Gate records ([gate.<task>.<n>]) must satisfy:
   * keys task, reqs, revision, command, environment, started_at, outcome,
-    evidence and note are all present and no other key exists
+    evidence, source_evidence and note are all present and no other key exists
   * task equals the <task> part of the section name and [task.<task>] exists
     in the feature spec
   * reqs is a non-empty list of <req>.<ac> pairs, each resolving to key ac_<ac>
@@ -48,7 +50,9 @@ Gate records ([gate.<task>.<n>]) must satisfy:
   * environment is a non-empty string
   * started_at matches YYYY-MM-DDTHH:MM:SSZ
   * outcome is pass, fail or blocked; a blocked gate carries a non-empty note
-  * evidence is a relative path without .. segments that exists in the tree
+  * evidence and source_evidence resolve inside the explicit private evidence root;
+    typed clean start/end source, complete mutation observation, exact command binding
+    and immutable evidence digests are required for every format, including plain logs
   * every file named status.json or report.json that is the evidence path or
     lies below an evidence directory is a qualification runner document: a
     JSON object whose schema is layerx-qualification-status-v1 or
@@ -145,8 +149,486 @@ BEGIN { section = "" }
 }
 '
 
+source_evidence() {
+    python3 - "$@" <<'PY_SOURCE'
+import argparse
+import ctypes
+import datetime
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shlex
+import stat
+import struct
+import subprocess
+import sys
+import uuid
+
+SCHEMA = 'layerx-focused-source-evidence-v1'
+LIMIT = 16 * 1024 * 1024
+
+
+class EvidenceError(ValueError):
+    pass
+
+
+def need(value, message):
+    if not value:
+        raise EvidenceError(message)
+
+
+def canonical(value):
+    return json.dumps(value, sort_keys=True, separators=(',', ':')).encode()
+
+
+def sha(value):
+    return hashlib.sha256(value).hexdigest()
+
+
+def pairs(items):
+    result = {}
+    for key, value in items:
+        need(key not in result, 'duplicate JSON key')
+        result[key] = value
+    return result
+
+
+def secret_path(path):
+    name = Path(path).name.lower()
+    return (name in ('.env', '.env.local', '.env.production', '.env.development',
+                     'credentials', 'credentials.json', 'id_rsa', 'id_ed25519')
+            or name.endswith(('.key', '.pem')))
+
+
+def private_root(path, root):
+    path = Path(path).absolute()
+    need(path == path.resolve() and root != path and root not in path.parents,
+         'evidence root must be canonical and outside source')
+    info = path.stat()
+    need(stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid() and
+         info.st_mode & 0o077 == 0, 'evidence root must be owned and private')
+    return path
+
+
+def protected(path, base, directory=False):
+    path = Path(path)
+    path = path if path.is_absolute() else base / path
+    need(path == path.resolve() and base in path.parents, 'evidence escapes private root')
+    need(not secret_path(path), 'credential paths forbidden')
+    info = path.stat()
+    need(info.st_uid == os.geteuid() and info.st_mode & 0o077 == 0,
+         'evidence permissions invalid')
+    if directory:
+        need(stat.S_ISDIR(info.st_mode), 'evidence directory required')
+    else:
+        need(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and info.st_size <= LIMIT,
+             'bounded regular evidence file required')
+    return path
+
+
+def load(path, base):
+    return json.loads(protected(path, base).read_text(), object_pairs_hook=pairs)
+
+
+def atomic(path, value, replace=False):
+    temporary = path.with_name('.source-' + uuid.uuid4().hex + '.tmp')
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, 'wb') as stream:
+        stream.write(canonical(value) + b'\n')
+        stream.flush()
+        os.fsync(stream.fileno())
+    if replace:
+        os.replace(temporary, path)
+    else:
+        os.link(temporary, path)
+        temporary.unlink()
+
+
+def git(root, *args):
+    result = subprocess.run(['git', '--no-optional-locks', '-C', str(root), *args],
+                            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                            stderr=subprocess.DEVNULL, timeout=20)
+    need(result.returncode == 0, 'source inspection failed')
+    return result.stdout
+
+
+def source_paths(root, depth=0):
+    need(depth <= 8, 'submodule nesting exceeds inspection bound')
+    paths = set(p for p in git(root, 'ls-files', '-z', '--cached', '--others',
+                              '--exclude-standard').split(b'\0') if p)
+    for row in git(root, 'ls-files', '--stage', '-z').split(b'\0'):
+        if row.startswith(b'160000 ') and b'\t' in row:
+            name = row.split(b'\t', 1)[1]
+            directory = root / os.fsdecode(name)
+            if directory.is_dir() and not directory.is_symlink() and (directory / '.git').exists():
+                paths.update(name + b'/' + child for child in source_paths(directory, depth + 1))
+    return sorted(paths)
+
+
+def snapshot(root):
+    revision = git(root, 'rev-parse', 'HEAD').decode().strip()
+    tree = git(root, 'rev-parse', 'HEAD^{tree}').decode().strip()
+    paths = source_paths(root)
+    sensitive = [os.fsdecode(path) for path in paths if secret_path(os.fsdecode(path))]
+    args = ['status', '--porcelain=v2', '-z', '--untracked-files=all', '--ignore-submodules=none', '--', '.']
+    args.extend(':(exclude,literal)' + path for path in sensitive)
+    status_bytes = git(root, *args)
+    metadata = []
+    for name in paths:
+        path = root / os.fsdecode(name)
+        try:
+            info = path.lstat()
+            fields = [info.st_mode, info.st_size, info.st_mtime_ns, info.st_ctime_ns]
+        except FileNotFoundError:
+            fields = None
+        metadata.append([name.hex(), fields])
+    inspection = not sensitive
+    clean = not status_bytes and inspection
+    state_digest = sha(status_bytes)
+    metadata_digest = sha(canonical(metadata))
+    return {'revision': revision, 'tree': tree, 'clean': clean,
+            'source_identity': sha(revision.encode() + b'\0') if clean else
+                               sha(canonical([revision, state_digest, metadata_digest])),
+            'identity_algorithm': 'clean:git-commit-sha256-v1' if clean else
+                                  'dirty:git-status-metadata-sha256-v1',
+            'status_sha256': state_digest, 'metadata_sha256': metadata_digest,
+            'index_tree': 'status-sha256:' + state_digest, 'inspection_ok': inspection}
+
+
+class Monitor:
+    def __init__(self, root):
+        self.root = root
+        self.complete = True
+        self.changed = False
+        self.watches = {}
+        self.fd = -1
+        try:
+            libc = ctypes.CDLL(None, use_errno=True)
+            self.fd = libc.inotify_init1(os.O_NONBLOCK | os.O_CLOEXEC)
+            need(self.fd >= 0, 'mutation monitor unavailable')
+            directories = {root}
+            inspection_roots = {root}
+            for raw in source_paths(root):
+                path = root / os.fsdecode(raw)
+                if path.is_dir() and (path / '.git').exists():
+                    inspection_roots.add(path)
+                    directories.add(path)
+                parent = path.parent
+                while parent != root and root in parent.parents:
+                    directories.add(parent)
+                    parent = parent.parent
+            gitdirs = set()
+            for inspection_root in inspection_roots:
+                gitdir = Path(git(inspection_root, 'rev-parse', '--absolute-git-dir').decode().strip())
+                common = Path(git(inspection_root, 'rev-parse', '--path-format=absolute', '--git-common-dir').decode().strip())
+                gitdirs.update((gitdir, common))
+                for refs in (gitdir / 'refs', common / 'refs'):
+                    if refs.is_dir():
+                        gitdirs.add(refs)
+                        gitdirs.update(path for path in refs.rglob('*') if path.is_dir())
+            for directory in directories | gitdirs:
+                if directory.is_symlink():
+                    self.complete = False
+                    continue
+                watch = libc.inotify_add_watch(self.fd, os.fsencode(directory), 0x00000FCE)
+                need(watch >= 0, 'mutation watch unavailable')
+                self.watches[watch] = (directory, directory in gitdirs)
+        except (OSError, ValueError):
+            self.complete = False
+
+    def finish(self):
+        if self.fd >= 0:
+            try:
+                while True:
+                    data = os.read(self.fd, 65536)
+                    offset = 0
+                    while offset < len(data):
+                        watch, mask, cookie, size = struct.unpack_from('iIII', data, offset)
+                        name = os.fsdecode(data[offset + 16:offset + 16 + size].split(b'\0')[0])
+                        offset += 16 + size
+                        if mask & (0x4000 | 0x8000):
+                            self.complete = False
+                        item = self.watches.get(watch)
+                        if item is None:
+                            self.complete = False
+                            continue
+                        directory, internal = item
+                        if internal and directory.name != 'refs' and 'refs' not in directory.parts:
+                            if name not in ('HEAD', 'index', 'packed-refs', 'config'):
+                                continue
+                        if not internal:
+                            relative = str((directory / name).relative_to(self.root))
+                            ignored = subprocess.run(['git', '--no-optional-locks', '-C', str(self.root),
+                                                      'check-ignore', '-q', '--', relative],
+                                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                                     timeout=10).returncode
+                            if ignored == 0:
+                                continue
+                            if ignored not in (0, 1):
+                                self.complete = False
+                        self.changed = True
+            except BlockingIOError:
+                pass
+            except (OSError, subprocess.TimeoutExpired):
+                self.complete = False
+            finally:
+                os.close(self.fd)
+        return {'method': 'linux-inotify-source-and-git-v1',
+                'complete': self.complete, 'changed': self.changed}
+
+
+def evidence_digest(reference, base, sidecar):
+    path = Path(reference)
+    path = path if path.is_absolute() else base / path
+    if path.is_dir():
+        protected(path, base, True)
+        files = sorted(path.rglob('*'))
+        need(len(files) <= 10000, 'evidence directory exceeds bound')
+        rows = []
+        for file in files:
+            if file == sidecar:
+                continue
+            need(not file.is_symlink(), 'evidence symlink forbidden')
+            if file.is_dir():
+                protected(file, base, True)
+                continue
+            rows.append([str(file.relative_to(path)), sha(protected(file, base).read_bytes())])
+        digest = sha(canonical(rows))
+        kind = 'directory'
+    else:
+        files = [protected(path, base)]
+        digest = sha(files[0].read_bytes())
+        kind = 'file'
+    return {'reference': reference, 'kind': kind, 'sha256': digest}, files
+
+
+def reasons(record, candidate):
+    result = set()
+    start, end = record['source_start'], record['source_end']
+    if record['state'] != 'complete': result.add('incomplete')
+    if record['development_outcome'] != 'pass' or record['command_exit_status'] != 0:
+        result.add('blocked' if not record['executed'] else 'command_failed')
+    if not record['executed']: result.add('blocked')
+    if not start['inspection_ok'] or not end['inspection_ok']: result.add('source_inspection_failed')
+    if not start['clean']: result.add('dirty_start')
+    if not end['clean']: result.add('dirty_end')
+    if start['revision'] != end['revision']: result.add('revision_changed')
+    if start['revision'] != candidate or end['revision'] != candidate: result.add('candidate_mismatch')
+    if start != end or record['mutation_observation']['changed']: result.add('source_changed')
+    if not record['mutation_observation']['complete']: result.add('mutation_observation_incomplete')
+    return sorted(result)
+
+
+def validate(record, base, candidate, root):
+    need(re.fullmatch('[0-9a-f]{40}', candidate or ''), 'candidate revision required')
+    expected_tree = git(root, 'rev-parse', '--verify', candidate + '^{tree}').decode().strip()
+    sidecar = protected(record['source_evidence'], base)
+    value = load(sidecar, base)
+    fields = {'schema', 'run_id', 'state', 'command', 'argv', 'environment', 'started_at',
+              'finished_at', 'source_start', 'source_end', 'development_outcome',
+              'command_exit_status', 'executed', 'release_eligible', 'ineligibility_reasons',
+              'evidence', 'mutation_observation'}
+    need(isinstance(value, dict) and set(value) == fields and value['schema'] == SCHEMA, 'invalid source schema')
+    need(re.fullmatch('[0-9a-f]{32}', value['run_id']), 'invalid run identity')
+    need(value['state'] == 'complete', 'source evidence incomplete')
+    need(type(value['executed']) is bool and type(value['release_eligible']) is bool,
+         'invalid eligibility type')
+    need(type(value['command_exit_status']) is int and 0 <= value['command_exit_status'] <= 255,
+         'invalid command exit status')
+    need(value['development_outcome'] in ('pass', 'fail', 'blocked'), 'invalid development outcome')
+    need((value['development_outcome'] == 'pass') == (value['executed'] and value['command_exit_status'] == 0),
+         'command outcome mismatch')
+    for key in ('command', 'environment', 'started_at'):
+        need(isinstance(value[key], str) and value[key] and value[key] == record[key], 'source binding mismatch')
+    need(value['development_outcome'] == record['outcome'] and record['revision'] == candidate,
+         'candidate or outcome mismatch')
+    need(isinstance(value['argv'], list) and value['argv'] and
+         all(isinstance(word, str) for word in value['argv']) and
+         shlex.join(value['argv']) == value['command'], 'command argv mismatch')
+    for key in ('started_at', 'finished_at'):
+        need(isinstance(value[key], str) and re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z', value[key]),
+             'invalid timestamp')
+        datetime.datetime.strptime(value[key], '%Y-%m-%dT%H:%M:%SZ')
+    need(value['finished_at'] >= value['started_at'], 'reversed timestamps')
+    for key in ('source_start', 'source_end'):
+        source = value[key]
+        need(isinstance(source, dict) and set(source) == {'revision', 'tree', 'clean', 'source_identity',
+             'identity_algorithm', 'status_sha256', 'metadata_sha256', 'index_tree', 'inspection_ok'},
+             'invalid source snapshot')
+        need(type(source['clean']) is bool and type(source['inspection_ok']) is bool, 'invalid source flags')
+        for field in ('revision', 'tree'):
+            need(isinstance(source[field], str) and re.fullmatch('[0-9a-f]{40}', source[field]), 'invalid source object')
+        for field in ('source_identity', 'status_sha256', 'metadata_sha256'):
+            need(isinstance(source[field], str) and re.fullmatch('[0-9a-f]{64}', source[field]), 'invalid source digest')
+        need(source['index_tree'] == 'status-sha256:' + source['status_sha256'], 'invalid staged identity')
+        expected = 'clean:git-commit-sha256-v1' if source['clean'] else 'dirty:git-status-metadata-sha256-v1'
+        need(source['identity_algorithm'] == expected, 'invalid identity algorithm')
+        if source['clean']:
+            need(source['tree'] == expected_tree, 'candidate tree mismatch')
+            need(source['source_identity'] == sha(source['revision'].encode() + b'\0') and
+                 source['status_sha256'] == sha(b'') and source['inspection_ok'], 'invalid clean identity')
+    monitor = value['mutation_observation']
+    need(isinstance(monitor, dict) and set(monitor) == {'method', 'complete', 'changed'} and
+         monitor['method'] == 'linux-inotify-source-and-git-v1' and
+         type(monitor['complete']) is bool and type(monitor['changed']) is bool, 'invalid mutation observation')
+    actual, files = evidence_digest(record['evidence'], base, sidecar)
+    need(actual == value['evidence'], 'evidence digest or reference changed')
+    for path in files:
+        if path.name in ('status.json', 'report.json'):
+            nested = load(path, base)
+            expected = 'layerx-qualification-' + path.stem + '-v1'
+            need(nested.get('schema') == expected and nested.get('source_revision') == candidate and
+                 nested.get('source_identity') == sha(candidate.encode() + b'\0'), 'nested runner identity mismatch')
+    why = reasons(value, candidate)
+    need(value['ineligibility_reasons'] == why and value['release_eligible'] == (not why),
+         'eligibility declaration contradicts evidence')
+    return {'eligible': not why, 'reasons': why, 'sidecar_sha256': sha(sidecar.read_bytes()),
+            'evidence_sha256': actual['sha256']}
+
+
+def recipe(path, task):
+    sections = {}
+    section = None
+    for line in Path(path).read_text().splitlines():
+        match = re.fullmatch(r'\[([^]]+)\]\s*', line)
+        if match:
+            section = match[1]
+            need(section not in sections, 'duplicate recipe section')
+            sections[section] = {}
+        elif section and re.match(r'^[a-z_][a-z0-9_]*\s*=', line):
+            key, raw = line.split('=', 1)
+            sections[section][key.strip()] = raw.strip()
+    need('task.' + task in sections, 'task absent from selected spec')
+    block = sections['task.' + task]
+    commands = [json.loads(block['verify_cmd'])]
+    reqs = []
+    for req in json.loads(block['reqs']):
+        reqs.extend(req + '.' + key[3:] for key in sections['req.' + req] if re.fullmatch('ac_[0-9]+', key))
+    need(reqs, 'task has no acceptance criteria')
+    return commands, reqs
+
+
+def run(args, root, base):
+    expected, reqs = recipe(args.spec, args.task)
+    commands = args.commands
+    need(commands == expected, 'focused commands differ from selected task spec')
+    ledger = Path(args.ledger).absolute()
+    need(base in ledger.parents and ledger == ledger.resolve(), 'ledger must be inside private evidence root')
+    environment = 'python=' + sys.version.split()[0] + '; platform=' + sys.platform + '; machine=' + os.uname().machine
+    failure = False
+    for command in commands:
+        need(re.fullmatch(r'make(?: [A-Za-z0-9_-]+)+', command), 'expected plain make targets')
+        argv = shlex.split(command)
+        identifier = uuid.uuid4().hex
+        directory = base / identifier
+        directory.mkdir(mode=0o700)
+        log = directory / 'command.log' if args.evidence_kind == 'directory' else base / (identifier + '.log')
+        sidecar = directory / 'source-evidence.json' if args.evidence_kind == 'directory' else base / (identifier + '.log.source.json')
+        evidence = str(directory if args.evidence_kind == 'directory' else log)
+        monitor = Monitor(root)
+        start = snapshot(root)
+        now = lambda: datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+        value = {'schema': SCHEMA, 'run_id': identifier, 'state': 'running', 'command': command,
+                 'argv': argv, 'environment': environment, 'started_at': now(), 'finished_at': None,
+                 'source_start': start, 'source_end': None, 'development_outcome': 'blocked',
+                 'command_exit_status': 125, 'executed': False, 'release_eligible': False,
+                 'ineligibility_reasons': ['incomplete'], 'evidence': None,
+                 'mutation_observation': {'method': 'linux-inotify-source-and-git-v1',
+                                          'complete': False, 'changed': False}}
+        atomic(sidecar, value)
+        blocked = any(word in ('platform-beta-cluster-up', 'platform-hosted-smoke',
+                               'platform-beta-cluster-down') for word in argv)
+        with log.open('xb') as output:
+            if blocked:
+                output.write(b'Cluster operation requires separate owner authorization.\n')
+                code = 125
+            else:
+                os.environ['LAYERX_QUALIFICATION_ARTIFACT_DIR'] = str(directory)
+                try:
+                    process = subprocess.run(argv, cwd=root, stdout=output, stderr=subprocess.STDOUT,
+                                             stdin=subprocess.DEVNULL, timeout=args.timeout)
+                    code = process.returncode if process.returncode >= 0 else 128 - process.returncode
+                except subprocess.TimeoutExpired:
+                    code = 124
+        value.update(state='complete', finished_at=now(), source_end=snapshot(root),
+                     development_outcome='blocked' if blocked else 'pass' if code == 0 else 'fail',
+                     command_exit_status=code, executed=not blocked,
+                     mutation_observation=monitor.finish())
+        value['evidence'], unused = evidence_digest(evidence, base, sidecar)
+        value['ineligibility_reasons'] = reasons(value, start['revision'])
+        value['release_eligible'] = not value['ineligibility_reasons']
+        atomic(sidecar, value, True)
+        record = {'task': args.task, 'reqs': reqs, 'revision': start['revision'], 'command': command,
+                  'environment': environment, 'started_at': value['started_at'],
+                  'outcome': value['development_outcome'], 'evidence': evidence,
+                  'source_evidence': str(sidecar),
+                  'note': 'Owner authorization required' if blocked else
+                          'development outcome retained; release eligibility requires source evidence'}
+        with ledger.open('a+') as stream:
+            os.fchmod(stream.fileno(), 0o600)
+            fcntl.flock(stream, fcntl.LOCK_EX)
+            stream.seek(0)
+            ordinals = re.findall(r'^\[gate\.' + re.escape(args.task) + r'\.(\d+)\]$', stream.read(), re.M)
+            ordinal = max(map(int, ordinals), default=0) + 1
+            stream.write('\n[gate.' + args.task + '.' + str(ordinal) + ']\n')
+            for key, item in record.items():
+                stream.write(key + ' = ' + json.dumps(item) + '\n')
+            stream.flush()
+            os.fsync(stream.fileno())
+        print(json.dumps({'outcome': value['development_outcome'], 'command_exit_status': code,
+                          'release_eligible': value['release_eligible'], 'source_evidence': str(sidecar)}))
+        failure |= code != 0
+    return int(failure)
+
+
+parser = argparse.ArgumentParser(description='Typed focused source evidence; private inputs only, no credential values.')
+parser.add_argument('operation', choices=['run', 'validate', 'capture'])
+parser.add_argument('--root', required=True)
+parser.add_argument('--evidence-root', required=True)
+parser.add_argument('--candidate')
+parser.add_argument('--record')
+parser.add_argument('--ledger')
+parser.add_argument('--spec')
+parser.add_argument('--task')
+parser.add_argument('--timeout', type=int, default=600)
+parser.add_argument('--evidence-kind', choices=['file', 'directory'], default='file')
+parser.add_argument('commands', nargs='*')
+arguments = sys.argv[1:]
+trailing = []
+if '--' in arguments:
+    separator = arguments.index('--')
+    trailing = arguments[separator + 1:]
+    arguments = arguments[:separator]
+args = parser.parse_args(arguments)
+if trailing:
+    args.commands = trailing
+try:
+    root = Path(args.root).resolve()
+    base = private_root(args.evidence_root, root)
+    if args.operation == 'run':
+        need(args.ledger and args.spec and args.task and 1 <= args.timeout <= 1800, 'missing run inputs')
+        sys.exit(run(args, root, base))
+    elif args.operation == 'capture':
+        print(json.dumps(snapshot(root)))
+    else:
+        record = json.loads(args.record, object_pairs_hook=pairs)
+        result = validate(record, base, args.candidate, root)
+        print(json.dumps(result, sort_keys=True))
+        sys.exit(0 if result['eligible'] else 1)
+except EvidenceError as error:
+    print(json.dumps({'eligible': False, 'reasons': [str(error)]}))
+    sys.exit(1)
+except (OSError, ValueError, KeyError, TypeError, AttributeError, subprocess.TimeoutExpired):
+    print(json.dumps({'eligible': False, 'reasons': ['invalid_or_unavailable_source_evidence']}))
+    sys.exit(1)
+PY_SOURCE
+}
+
 beta_ledger_check() {
-    local root ledger="" spec="" revisions_only=0
+    local root ledger="" spec="" evidence_root="${PAXEER_X_EVIDENCE_DIR:-}" candidate="" revisions_only=0
     root=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
     while [ "$#" -gt 0 ]; do
         case $1 in
@@ -158,6 +640,11 @@ beta_ledger_check() {
         --spec)
             [ "$#" -ge 2 ] || { usage >&2; return 2; }
             spec=$2
+            shift 2
+            ;;
+        --evidence-root|--candidate)
+            [ "$#" -ge 2 ] || return 2
+            if [ "$1" = --candidate ]; then candidate=$2; else evidence_root=$2; fi
             shift 2
             ;;
         --revisions)
@@ -175,7 +662,9 @@ beta_ledger_check() {
         esac
     done
     ledger=${ledger:-$root/spec/layerx-beta/qualification.kvx}
-    spec=${spec:-$root/spec/layerx-beta/spec.kvx}
+    spec=${spec:-$root/spec/paxeer-x/spec.kvx}
+    candidate=${candidate:-$(git -C "$root" rev-parse HEAD)}
+    [ -n "$evidence_root" ] || { echo "beta-ledger-check: private --evidence-root required" >&2; return 2; }
     [ -f "$ledger" ] || { echo "beta-ledger-check: ledger not found: $ledger" >&2; return 2; }
     [ -f "$spec" ] || { echo "beta-ledger-check: feature spec not found: $spec" >&2; return 2; }
     command -v python3 >/dev/null 2>&1 || { echo "beta-ledger-check: python3 is required" >&2; return 2; }
@@ -325,7 +814,7 @@ if source_identity != identity:
 PY
     }
 
-    local gate_keys="task reqs revision command environment started_at outcome evidence note"
+    local gate_keys="task reqs revision command environment started_at outcome evidence source_evidence note"
     local observation_keys="task file symbol observed assumption severity"
     local record_task task_part req present line_ref
     for section in "${order[@]}"; do
@@ -388,24 +877,19 @@ PY
                 *) violations+=("$line_ref: [$section] outcome '${value[$section$'\037'outcome]}' is not pass, fail or blocked") ;;
                 esac
             fi
-            if [ -n "${value[$section$'\037'evidence]+x}" ]; then
-                val=${value[$section$'\037'evidence]}
-                if ! in_tree_path "$val" || [ ! -e "$root/$val" ]; then
-                    violations+=("$line_ref: [$section] evidence '$val' does not exist in the tree")
-                elif [ -n "${value[$section$'\037'revision]+x}" ] && [[ ${value[$section$'\037'revision]} =~ ^[0-9a-f]{40}$ ]]; then
-                    local document
-                    while IFS= read -r document; do
-                        while IFS= read -r line; do
-                            [ -z "$line" ] || violations+=("$line_ref: [$section] evidence $line")
-                        done < <(runner_document_violations "$document" "${value[$section$'\037'revision]}")
-                    done < <(
-                        if [ -d "$root/$val" ]; then
-                            find "$root/$val" -type f \( -name status.json -o -name report.json \) | sort
-                        else
-                            case ${val##*/} in status.json | report.json) printf '%s\n' "$root/$val" ;; esac
-                        fi
-                    )
-                fi
+            local record_json source_result
+            record_json=$(python3 - "${value[$section$'\037'revision]-}" \
+                "${value[$section$'\037'command]-}" "${value[$section$'\037'environment]-}" \
+                "${value[$section$'\037'started_at]-}" "${value[$section$'\037'outcome]-}" \
+                "${value[$section$'\037'evidence]-}" "${value[$section$'\037'source_evidence]-}" <<'PY'
+import json, sys
+print(json.dumps(dict(zip(('revision', 'command', 'environment', 'started_at', 'outcome',
+                          'evidence', 'source_evidence'), sys.argv[1:]))))
+PY
+            )
+            if ! source_result=$(source_evidence validate --root "$root" --evidence-root "$evidence_root" \
+                                 --candidate "$candidate" --record "$record_json"); then
+                violations+=("$line_ref: [$section] source evidence is not release eligible: $source_result")
             fi
         elif [[ $section =~ ^observation\.([0-9]+(\.[0-9]+)?)\.([0-9]+)$ ]]; then
             observations=$((observations + 1))
@@ -457,5 +941,11 @@ PY
 }
 
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
-    beta_ledger_check "$@"
+    if [[ ${1:-} == --source-* ]]; then
+        operation=${1#--source-}
+        shift
+        source_evidence "$operation" "$@"
+    else
+        beta_ledger_check "$@"
+    fi
 fi

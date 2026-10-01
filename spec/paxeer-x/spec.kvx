@@ -21293,7 +21293,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.4]
 title = "Serve the complete capability catalogue through the unified router"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -21302,7 +21302,7 @@ do_1 = "Create an explicit route catalogue covering every service and all public
 do_2 = "Wire authenticated upstreams, dependency readiness, bounded retries/timeouts, version/chain checks, CORS and errors without exposing private KMS, signer shares, admin or event publication surfaces."
 do_3 = "Retain existing product domains and RPC records as compatible aliases or upstreams; add required TLS/mTLS passthrough without downgrading certificate or client-identity checks."
 do_4 = "Implement a routed contract gate exercising each catalogue class plus wrong-network, missing-dependency and unauthorized private-route refusals."
-touches = ["platform/hosted/gateway/src/main.rs", "platform/hosted/gateway/src/http.rs", "platform/hosted/gateway/src/ws.rs", "platform/hosted/gateway/src/paxeer.rs", "platform/hosted/gateway/src/rpc.rs", "platform/hosted/gateway/openrpc.json", "platform/hosted/gateway/src/routes.rs", "human/wallet/gateway/src/index.ts", "human/wallet/sdk/src/endpoint.ts", "tools/paxeer-x/route-catalogue.json", "tools/paxeer-x/tests/routes_test.py"]
+touches = ["platform/hosted/gateway/src/main.rs", "platform/hosted/gateway/src/http.rs", "platform/hosted/gateway/src/ws.rs", "platform/hosted/gateway/src/paxeer.rs", "platform/hosted/gateway/src/rpc.rs", "platform/hosted/gateway/openrpc.json", "platform/hosted/gateway/src/routes.rs", "human/wallet/gateway/src/index.ts", "human/wallet/sdk/src/endpoint.ts", "tools/paxeer-x/route-catalogue.json", "tools/paxeer-x/tests/routes_test.py", "tools/paxeer-x/gates/0.4.sh", "interop/crates/layerx-interop-service/src/server.rs"]
 verify_cmd = "timeout 15m python3 tools/paxeer-x/tests/routes_test.py"
 gate_kind = "planned"
 max_builds = 1
@@ -21310,13 +21310,13 @@ max_verify_runs = 1
 max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
-planned_paths = ["tools/paxeer-x/route-catalogue.json", "tools/paxeer-x/tests/routes_test.py", "platform/hosted/gateway/src/routes.rs"]
+planned_paths = ["tools/paxeer-x/route-catalogue.json", "tools/paxeer-x/tests/routes_test.py", "platform/hosted/gateway/src/routes.rs", "tools/paxeer-x/gates/0.4.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
 [task.0.5]
 title = "Freeze versioned sequence, refusal and expiry boundary contracts"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -21324,7 +21324,7 @@ reqs = ["13"]
 do_1 = "Inventory exact current protocol assertions and retained acceptance clauses for admission, terminal refusal, fees, replay and each expiry comparator."
 do_2 = "Define an explicit versioned transition table and canonical vectors preserving historical authenticated outcomes. Where a new behavior is required, specify its explicit protocol migration and compatibility conditions before implementation; do not silently change either checks or semantics."
 do_3 = "Implement the focused contract/vector gate using real native activity and receipt types. Record any still unresolved contradiction as blocking release."
-touches = ["src/protocol/lxp_kernel.c", "src/state/lxp_authority.c", "tests/protocol/lxp_test_terminal_rejection.c", "tools/paxeer-x/tests/versioned_boundaries.py", "Makefile"]
+touches = ["src/protocol/lxp_kernel.c", "src/state/lxp_authority.c", "tests/protocol/lxp_test_terminal_rejection.c", "tools/paxeer-x/tests/versioned_boundaries.py", "Makefile", "tools/paxeer-x/gates/0.5.sh"]
 verify_cmd = "timeout 10m python3 tools/paxeer-x/tests/versioned_boundaries.py"
 gate_kind = "planned"
 max_builds = 1
@@ -21332,13 +21332,13 @@ max_verify_runs = 1
 max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
-planned_paths = ["tools/paxeer-x/tests/versioned_boundaries.py"]
+planned_paths = ["tools/paxeer-x/tests/versioned_boundaries.py", "tools/paxeer-x/gates/0.5.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
 [task.0.6]
 title = "Implement durable qualification dispatch and completed-evidence validation"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -21349,7 +21349,7 @@ do_3 = "Implement the evidence subcommand with a 1500-second absolute deadline. 
 do_4 = "Exercise the real registry and evidence types against missing cases, wrong candidate, too-short observed duration, stale/mutated artifacts, unknown dispatch and completed-success records in the declared focused harness."
 do_5 = "Wire qualification into the existing controller using explicitly mounted durable private state and a locally authorized control interface. Persist dispatch intent before the single remote dispatch attempt, reconcile uncertain acknowledgement by exact request and immutable workflow/source identity, and preserve full-duration qualification jobs against unrelated orphan-TTL cleanup. No implicit retry, ephemeral registry fallback or second controller is permitted."
 do_6 = "Provide a dedicated request-correlated qualification workflow with complete profile-derived cases and original duration thresholds. Keep credentials controller-confined and encrypt operational artifacts before public-repository artifact transport. Completed evidence requires independently authorized trust and provider-bound run/job/artifact identities; neither encryption alone nor locally constructed test records proves external execution. Source and focused component evidence must remain separate from deployment and live CI qualification."
-touches = ["tools/qualification/paxeer_x_release.py", "tools/paxeer-x/tests/durable_release_evidence.py", "tools/flyci/controller/qualification.go", "tools/flyci/controller/qualification_registry.go", "tools/flyci/controller/qualification_evidence.go", "tools/flyci/controller/qualification_control.go", "tools/flyci/controller/qualification_test.go", "tools/flyci/controller/github.go", "tools/flyci/controller/main.go", "tools/flyci/controller/config.go", "tools/flyci/controller/reconcile.go", "tools/flyci/controller/fly.toml", ".github/workflows/paxeer-x-qualification.yml"]
+touches = ["tools/qualification/paxeer_x_release.py", "tools/paxeer-x/tests/durable_release_evidence.py", "tools/flyci/controller/qualification.go", "tools/flyci/controller/qualification_registry.go", "tools/flyci/controller/qualification_evidence.go", "tools/flyci/controller/qualification_control.go", "tools/flyci/controller/qualification_test.go", "tools/flyci/controller/github.go", "tools/flyci/controller/main.go", "tools/flyci/controller/config.go", "tools/flyci/controller/reconcile.go", "tools/flyci/controller/fly.toml", ".github/workflows/paxeer-x-qualification.yml", "tools/paxeer-x/gates/0.6.sh"]
 verify_cmd = "timeout 10m python3 tools/paxeer-x/tests/durable_release_evidence.py"
 gate_kind = "planned"
 max_builds = 1
@@ -21357,7 +21357,7 @@ max_verify_runs = 1
 max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
-planned_paths = ["tools/qualification/paxeer_x_release.py", "tools/paxeer-x/tests/durable_release_evidence.py", "tools/flyci/controller/qualification.go", "tools/flyci/controller/qualification_registry.go", "tools/flyci/controller/qualification_evidence.go", "tools/flyci/controller/qualification_control.go", "tools/flyci/controller/qualification_test.go", ".github/workflows/paxeer-x-qualification.yml"]
+planned_paths = ["tools/qualification/paxeer_x_release.py", "tools/paxeer-x/tests/durable_release_evidence.py", "tools/flyci/controller/qualification.go", "tools/flyci/controller/qualification_registry.go", "tools/flyci/controller/qualification_evidence.go", "tools/flyci/controller/qualification_control.go", "tools/flyci/controller/qualification_test.go", ".github/workflows/paxeer-x-qualification.yml", "tools/paxeer-x/gates/0.6.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
@@ -21413,7 +21413,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.2]
 title = "Verify recovered finality against authenticated historical membership"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -21423,7 +21423,7 @@ do_2 = "Bind historical membership and threshold to an authenticated checkpoint/
 do_3 = "Update callback and journal replay consumers to use historical context while retaining FINAL status, canonical certificate, settlement receipt/event and block-order checks."
 do_4 = "Add the designated new harness tests/daemon/paxeer_x_historical_finality.py using real production code and durable stores; invoke prebuilt task targets, fail on any missing prerequisite, and emit revision, exact command, exit code and private evidence path. Do not substitute mocks or synthetic success responses."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["cmd/layerxd/lxp_daemon_finality_authority.c", "cmd/layerxd/lxp_daemon_evidence.c", "cmd/layerxd/lxp_daemon_process.c", "precompiles/layerxanchor/layerxanchor.go", "tests/daemon/lxp_test_finality_authority.c", "tests/daemon/paxeer_x_historical_finality.py"]
+touches = ["cmd/layerxd/lxp_daemon_finality_authority.c", "cmd/layerxd/lxp_daemon_evidence.c", "cmd/layerxd/lxp_daemon_process.c", "precompiles/layerxanchor/layerxanchor.go", "tests/daemon/lxp_test_finality_authority.c", "tests/daemon/paxeer_x_historical_finality.py", "tools/paxeer-x/gates/2.2.sh"]
 verify_cmd = "timeout 1800s python3 tests/daemon/paxeer_x_historical_finality.py"
 gate_kind = "planned"
 max_builds = 1
@@ -21432,7 +21432,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 deployment_profile = "product"
-planned_paths = ["tests/daemon/paxeer_x_historical_finality.py"]
+planned_paths = ["tests/daemon/paxeer_x_historical_finality.py", "tools/paxeer-x/gates/2.2.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
@@ -21488,7 +21488,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.2]
 title = "Bound metered stream accrual by deterministic stream lifetime"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -21498,7 +21498,7 @@ do_2 = "Pass timestamp context into the routed metered accrual path and enforce 
 do_3 = "Add real dispatched METER and settlement tests at end-1/end/end+1, after long restart, under cap/overflow/closed/paused conditions."
 do_4 = "Add the designated new harness tests/modules/paxeer_x_metered_end_boundary.py using real production code and durable stores; invoke prebuilt task targets, fail on any missing prerequisite, and emit revision, exact command, exit code and private evidence path. Do not substitute mocks or synthetic success responses."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["src/modules/stream/lx_stream_execution.h", "src/modules/stream/lx_stream_record.c", "src/modules/stream/lx_stream_open.c", "src/modules/stream/lx_stream_meter.c", "src/modules/stream/lx_stream_accrue.c", "tests/modules/test_stream_meter.c", "tests/modules/paxeer_x_metered_end_boundary.py"]
+touches = ["src/modules/stream/lx_stream_execution.h", "src/modules/stream/lx_stream_record.c", "src/modules/stream/lx_stream_open.c", "src/modules/stream/lx_stream_meter.c", "src/modules/stream/lx_stream_accrue.c", "tests/modules/test_stream_meter.c", "tests/modules/paxeer_x_metered_end_boundary.py", "tools/paxeer-x/gates/3.2.sh"]
 verify_cmd = "timeout 1800s python3 tests/modules/paxeer_x_metered_end_boundary.py"
 gate_kind = "planned"
 max_builds = 1
@@ -21507,7 +21507,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 deployment_profile = "product"
-planned_paths = ["tests/modules/paxeer_x_metered_end_boundary.py"]
+planned_paths = ["tests/modules/paxeer_x_metered_end_boundary.py", "tools/paxeer-x/gates/3.2.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
@@ -21663,7 +21663,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.1]
 title = "Bound every native sandbox decode before accessing payload fields"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -21672,7 +21672,7 @@ do_1 = "Move minimum-length validation before copying the common lease identifie
 do_2 = "Add real registered-decoder cases for every truncated prefix, exact minimum, maximum admitted nested length and malformed nested call."
 do_3 = "Author the new focused harness tools/qualification/paxeer-x/programs_sandbox_bounds.py to exercise these acceptance cases against real production implementations and types. It must fail on missing candidate artifacts, missing authority/configuration, skipped cases or unverifiable receipts; retain the exact candidate revision, command, case results and evidence paths. Use disposable qualification state and provisioned authority without printing secret values; no mocks, synthetic success or substitution of a library-only model for a named process boundary."
 do_4 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["src/modules/programs/sandbox.c", "src/modules/programs/registration.c", "include/layerx/programs.h", "tools/qualification/paxeer-x/programs_sandbox_bounds.py", "tests/programs/test_registration.c"]
+touches = ["src/modules/programs/sandbox.c", "src/modules/programs/registration.c", "include/layerx/programs.h", "tools/qualification/paxeer-x/programs_sandbox_bounds.py", "tests/programs/test_registration.c", "tools/paxeer-x/gates/6.1.sh"]
 verify_cmd = "timeout 30m python3 tools/qualification/paxeer-x/programs_sandbox_bounds.py"
 gate_kind = "planned"
 max_builds = 1
@@ -21681,13 +21681,13 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 deployment_profile = "product"
-planned_paths = ["tools/qualification/paxeer-x/programs_sandbox_bounds.py"]
+planned_paths = ["tools/qualification/paxeer-x/programs_sandbox_bounds.py", "tools/paxeer-x/gates/6.1.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
 [task.6.3]
 title = "Admit canonical program interfaces consistently across supported guest ABIs"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -21696,7 +21696,7 @@ do_1 = "Replace the bridge-local ABI1/2 switch with centrally governed versioned
 do_2 = "Add native interface-bearing Deploy/Upgrade/Call cases covering every supported ABI and all version/hash/capability mismatches."
 do_3 = "Author the new focused harness tools/qualification/paxeer-x/programs_native_interfaces.py to exercise these acceptance cases against real production implementations and types. It must fail on missing candidate artifacts, missing authority/configuration, skipped cases or unverifiable receipts; retain the exact candidate revision, command, case results and evidence paths. Use disposable qualification state and provisioned authority without printing secret values; no mocks, synthetic success or substitution of a library-only model for a named process boundary."
 do_4 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["programs/crates/layerx-programs-runtime/src/ffi_interface.rs", "programs/crates/layerx-programs-runtime/src/abi_policy.rs", "programs/crates/layerx-programs-runtime/src/engine.rs", "src/modules/programs/deploy.c", "programs/crates/layerx-programs-runtime/src/ffi_call.rs", "tools/qualification/paxeer-x/programs_native_interfaces.py"]
+touches = ["programs/crates/layerx-programs-runtime/src/ffi_interface.rs", "programs/crates/layerx-programs-runtime/src/abi_policy.rs", "programs/crates/layerx-programs-runtime/src/engine.rs", "src/modules/programs/deploy.c", "programs/crates/layerx-programs-runtime/src/ffi_call.rs", "tools/qualification/paxeer-x/programs_native_interfaces.py", "tools/paxeer-x/gates/6.3.sh"]
 verify_cmd = "timeout 30m python3 tools/qualification/paxeer-x/programs_native_interfaces.py"
 gate_kind = "planned"
 max_builds = 1
@@ -21705,7 +21705,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 deployment_profile = "product"
-planned_paths = ["tools/qualification/paxeer-x/programs_native_interfaces.py"]
+planned_paths = ["tools/qualification/paxeer-x/programs_native_interfaces.py", "tools/paxeer-x/gates/6.3.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
@@ -21809,7 +21809,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.3]
 title = "Bound HTTP request time and isolate concurrent daemon clients"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -21819,7 +21819,7 @@ do_2 = "Apply one absolute deadline across request parsing and preserve per-I/O 
 do_3 = "Use real concurrent clients that remain silent, trickle partial headers, exhaust admission and send legitimate authenticated requests; assert configured latency and resource bounds."
 do_4 = "Author the new focused harness tools/qualification/paxeer-x/agent_http_bounds.py to exercise these acceptance cases against real production implementations and types. It must fail on missing candidate artifacts, missing authority/configuration, skipped cases or unverifiable receipts; retain the exact candidate revision, command, case results and evidence paths. Use disposable qualification state and provisioned authority without printing secret values; no mocks, synthetic success or substitution of a library-only model for a named process boundary."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["agent/crates/layerx-agentd/src/main.rs", "platform/hosted/agentd/probe.sh", "tools/qualification/paxeer-x/agent_http_bounds.py"]
+touches = ["agent/crates/layerx-agentd/src/main.rs", "platform/hosted/agentd/probe.sh", "tools/qualification/paxeer-x/agent_http_bounds.py", "tools/paxeer-x/gates/8.3.sh"]
 verify_cmd = "timeout 30m python3 tools/qualification/paxeer-x/agent_http_bounds.py"
 gate_kind = "planned"
 max_builds = 1
@@ -21828,7 +21828,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 deployment_profile = "product"
-planned_paths = ["tools/qualification/paxeer-x/agent_http_bounds.py"]
+planned_paths = ["tools/qualification/paxeer-x/agent_http_bounds.py", "tools/paxeer-x/gates/8.3.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
@@ -21859,7 +21859,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.2]
 title = "Bound Supabase JWKS cache freshness and signing-key removal"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -21868,7 +21868,7 @@ do_1 = "Separate successful JWKS fetch age from refresh-attempt throttling in As
 do_2 = "Define an explicit maximum fresh-cache lifetime and failure/refusal behavior; preserve complete configuration validation and bounded transport."
 do_3 = "Extend the assertion test target with known-kid removal/replacement, refresh outage and simultaneous-request cases."
 do_4 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["human/crates/layerx-human-identity-provider/src/assertion.rs", "human/crates/layerx-human-identity-provider/tests/assertion.rs"]
+touches = ["human/crates/layerx-human-identity-provider/src/assertion.rs", "human/crates/layerx-human-identity-provider/tests/assertion.rs", "tools/paxeer-x/gates/11.2.sh"]
 verify_cmd = "timeout 15m tools/runtime/run-with-clock.sh sh -c 'cd human && cargo test -p layerx-human-identity-provider --test assertion'"
 gate_kind = "planned"
 max_builds = 1
@@ -21877,13 +21877,13 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 deployment_profile = "product"
-planned_paths = []
+planned_paths = ["tools/paxeer-x/gates/11.2.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
 [task.11.3]
 title = "Admit hosted sessions using the live unexpired session count"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -21892,7 +21892,7 @@ do_1 = "Pass authoritative time into live-session accounting and separate expira
 do_2 = "Define safe retained-session pruning/compaction with durable publication ordering, or bounded retention that does not consume live admission capacity."
 do_3 = "Add a focused real service case for saturated expired/live populations, expiry equality, revocation and restart."
 do_4 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["platform/hosted/identity/src/store.rs", "platform/hosted/identity/src/main.rs", "platform/hosted/identity/tests/service.rs"]
+touches = ["platform/hosted/identity/src/store.rs", "platform/hosted/identity/src/main.rs", "platform/hosted/identity/tests/service.rs", "tools/paxeer-x/gates/11.3.sh"]
 verify_cmd = "timeout 15m cargo test --manifest-path platform/Cargo.toml -p layerx-platform-identity --test service session_capacity_excludes_expired_after_restart -- --exact"
 gate_kind = "planned"
 max_builds = 1
@@ -21901,13 +21901,13 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 deployment_profile = "product"
-planned_paths = []
+planned_paths = ["tools/paxeer-x/gates/11.3.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
 [task.12.1]
 title = "Complete the authenticated one-time Human KMS export transition"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -21916,7 +21916,7 @@ do_1 = "Replace range-based operation decoding/dispatch with explicit versioned 
 do_2 = "Preserve class, TLS admission, audit and durable erasure ordering and make the provider encoder and decoder share the same contract."
 do_3 = "Extend the real remote-provider test with export, forbidden executor export, post-export signing refusal and restart."
 do_4 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["human/crates/layerx-human-kms/src/wire.rs", "human/crates/layerx-human-kms/src/store.rs", "human/crates/layerx-human-service/src/custody/provider.rs", "human/crates/layerx-human-kms/tests/provider.rs"]
+touches = ["human/crates/layerx-human-kms/src/wire.rs", "human/crates/layerx-human-kms/src/store.rs", "human/crates/layerx-human-service/src/custody/provider.rs", "human/crates/layerx-human-kms/tests/provider.rs", "tools/paxeer-x/gates/12.1.sh"]
 verify_cmd = "timeout 15m tools/runtime/run-with-clock.sh sh -c 'cd human && cargo test -p layerx-human-kms --test provider'"
 gate_kind = "planned"
 max_builds = 1
@@ -21925,7 +21925,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 deployment_profile = "product"
-planned_paths = []
+planned_paths = ["tools/paxeer-x/gates/12.1.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
@@ -22007,7 +22007,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.13.2]
 title = "Bind attestor signatures to independently approved activity disclosure"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -22017,7 +22017,7 @@ do_2 = "Propagate the original disclosure through Human KMS and every attestor c
 do_3 = "Add real HTTP negative and restart/replay cases for an otherwise valid in-policy activity that differs from the approved disclosure."
 do_4 = "Add the new bounded harness tools/qualification/paxeer-x/wallet-attestor-disclosure.py to exercise this task through the named production interfaces, including the stated refusal and recovery cases, with explicit prerequisite checks and nonzero exit on any unmet acceptance. Use supplied prebuilt executables and isolated retained state; do not hide a rebuild or invoke a release-wide suite."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["human/wallet/schema/attestor-api/v1.kvx", "human/wallet/attestor/internal/server/sign.go", "human/wallet/attestor/internal/policy/lx/lx.go", "human/crates/layerx-human-kms/src/attestor.rs", "human/wallet/gateway/src/attestor/client.ts", "human/wallet/attestor/internal/server/e2e_test.go", "tools/qualification/paxeer-x/wallet-attestor-disclosure.py"]
+touches = ["human/wallet/schema/attestor-api/v1.kvx", "human/wallet/attestor/internal/server/sign.go", "human/wallet/attestor/internal/policy/lx/lx.go", "human/crates/layerx-human-kms/src/attestor.rs", "human/wallet/gateway/src/attestor/client.ts", "human/wallet/attestor/internal/server/e2e_test.go", "tools/qualification/paxeer-x/wallet-attestor-disclosure.py", "tools/paxeer-x/gates/13.2.sh"]
 verify_cmd = "timeout 15m python3 tools/qualification/paxeer-x/wallet-attestor-disclosure.py"
 gate_kind = "planned"
 max_builds = 1
@@ -22026,7 +22026,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 deployment_profile = "product"
-planned_paths = ["tools/qualification/paxeer-x/wallet-attestor-disclosure.py"]
+planned_paths = ["tools/qualification/paxeer-x/wallet-attestor-disclosure.py", "tools/paxeer-x/gates/13.2.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
@@ -22207,7 +22207,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.16.2]
 title = "Preserve source-verification idempotency across isolated request workers"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -22217,7 +22217,7 @@ do_2 = "Load and reconcile that journal when each Registrar worker opens, and re
 do_3 = "Bind completed source-verification persistence and publication outbox identity to recovery so a retry cannot create duplicate economic or event effects; keep503/pending semantics explicit."
 do_4 = "Create or extend the planned harness tools/qualification/paxeer-x/registry-contract.py with case durable-verification-idempotency; exercise the real served binaries and production persistence paths against the candidate manifest, record exact assertions and nonzero refusals, and fail if required inputs, executions or cases are absent."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["platform/hosted/registry/src/main.rs", "platform/hosted/registry/src/routes.rs", "platform/hosted/registry/src/verified.rs", "platform/hosted/registry/src/event_producer.rs", "platform/hosted/registry/src/lib.rs", "tools/qualification/paxeer-x/registry-contract.py"]
+touches = ["platform/hosted/registry/src/main.rs", "platform/hosted/registry/src/routes.rs", "platform/hosted/registry/src/verified.rs", "platform/hosted/registry/src/event_producer.rs", "platform/hosted/registry/src/lib.rs", "tools/qualification/paxeer-x/registry-contract.py", "tools/paxeer-x/gates/16.2.sh"]
 verify_cmd = "timeout 20m python3 tools/qualification/paxeer-x/registry-contract.py --case durable-verification-idempotency --candidate-manifest \"$PAXEER_X_CANDIDATE_MANIFEST\""
 gate_kind = "planned"
 max_builds = 1
@@ -22226,13 +22226,13 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 deployment_profile = "product"
-planned_paths = ["tools/qualification/paxeer-x/registry-contract.py"]
+planned_paths = ["tools/qualification/paxeer-x/registry-contract.py", "tools/paxeer-x/gates/16.2.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
 [task.17.1]
 title = "Separate public webhook APIs from authenticated private producer ingress"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -22245,7 +22245,7 @@ do_5 = "Implement the declared focused gate through the real production types an
 do_6 = "Authorize verified client leaves by an exact URI SAN role: urn:layerx:webhooks:role:producer plus the source bearer permits only event publication; urn:layerx:webhooks:role:operator plus the distinct operator bearer permits only dispatch. Require clientAuth and exactly one recognized role marker. Reject missing, duplicate, contradictory, unknown, malformed or incompatible role markers; never infer a role from CN, headers, bearer alone or generic internal-CA membership. Use structural X.509 parsing and preserve all canonical event and persistence checks."
 do_7 = "Extend the existing internal-CA issuer with fixed webhook-operator-client local issuance: issue-local webhook-operator-client --output-dir <absolute-private-directory> and local-services discovery. Keep local identities outside the Fly services roster. Permit no caller-selected identity, role, EKU, SAN or CA override. Refuse existing destinations, symlink components, insecure parent ownership/modes and overlap with CA storage before generation. Publish a complete verified bundle atomically without overwrite from protected staging, with directory mode0700 and files0600; no Fly staging or operator private-key service mounts. Exercise real issuance and refusal paths in the focused harness without printing private material."
 do_8 = "Add the producer role SAN only to the existing human-event-client, gateway-client and registry-event-client issuance policies, retaining their identities, trust and bearer interfaces. Keep operator credentials separate. Reconcile retained Kubernetes producer issuance with the same role contract. Prove fail-closed coordinated certificate/token rotation and durable restart; roleless previous leaves must not gain a compatibility bypass."
-touches = ["platform/hosted/webhooks/src/main.rs", "platform/hosted/webhooks/src/trusted.rs", "platform/hosted/webhooks/fly.toml", "platform/hosted/webhooks/fly-init.sh", "platform/hosted/webhooks/deployment.yaml", "platform/hosted/internal/src/producer.rs", "tools/qualification/paxeer-x/event-delivery-contract.py", "tools/bringup/ca.sh", "platform/hosted/webhooks/Cargo.toml", "platform/Cargo.lock", "platform/hosted/webhooks/tests/plain_listener.rs", "platform/hosted/webhooks/tests/fault-injection.sh", "platform/hosted/tests/beta-cluster.sh"]
+touches = ["platform/hosted/webhooks/src/main.rs", "platform/hosted/webhooks/src/trusted.rs", "platform/hosted/webhooks/fly.toml", "platform/hosted/webhooks/fly-init.sh", "platform/hosted/webhooks/deployment.yaml", "platform/hosted/internal/src/producer.rs", "tools/qualification/paxeer-x/event-delivery-contract.py", "tools/bringup/ca.sh", "platform/hosted/webhooks/Cargo.toml", "platform/Cargo.lock", "platform/hosted/webhooks/tests/plain_listener.rs", "platform/hosted/webhooks/tests/fault-injection.sh", "platform/hosted/tests/beta-cluster.sh", "tools/paxeer-x/gates/17.1.sh"]
 verify_cmd = "timeout 20m python3 tools/qualification/paxeer-x/event-delivery-contract.py --case webhook-ingress-roles --candidate-manifest \"$PAXEER_X_CANDIDATE_MANIFEST\""
 gate_kind = "planned"
 max_builds = 1
@@ -22254,7 +22254,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 deployment_profile = "product"
-planned_paths = ["tools/qualification/paxeer-x/event-delivery-contract.py"]
+planned_paths = ["tools/qualification/paxeer-x/event-delivery-contract.py", "tools/paxeer-x/gates/17.1.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
@@ -22335,7 +22335,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.18.3]
 title = "Derive relay archive freshness from successful pinned origin observations"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -22345,7 +22345,7 @@ do_2 = "Update origin candidate selection, synchronize error handling and status
 do_3 = "Exercise total origin loss, wrong pins, equal-head success, discontinuity, offline restart and recovered continuity through the actual archive runtime and store."
 do_4 = "Create or extend the planned harness tools/qualification/paxeer-x/interop-archive-contract.py with case archive-origin-freshness; exercise the real served binaries and production persistence paths against the candidate manifest, record exact assertions and nonzero refusals, and fail if required inputs, executions or cases are absent."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["platform/relay_archive/runtime.py", "platform/relay_archive/protocol.py", "platform/relay_archive/store.py", "tools/qualification/paxeer-x/interop-archive-contract.py"]
+touches = ["platform/relay_archive/runtime.py", "platform/relay_archive/protocol.py", "platform/relay_archive/store.py", "tools/qualification/paxeer-x/interop-archive-contract.py", "tools/paxeer-x/gates/18.3.sh"]
 verify_cmd = "timeout 20m python3 tools/qualification/paxeer-x/interop-archive-contract.py --case archive-origin-freshness --candidate-manifest \"$PAXEER_X_CANDIDATE_MANIFEST\""
 gate_kind = "planned"
 max_builds = 1
@@ -22354,7 +22354,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 deployment_profile = "product"
-planned_paths = ["tools/qualification/paxeer-x/interop-archive-contract.py"]
+planned_paths = ["tools/qualification/paxeer-x/interop-archive-contract.py", "tools/paxeer-x/gates/18.3.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
@@ -22485,7 +22485,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.20.2]
 title = "Drive sponsored-transaction recovery autonomously from the durable journal"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -22495,7 +22495,7 @@ do_2 = "Integrate existing resume/replacement/cancellation primitives and expose
 do_3 = "Cover actual-binary restarts at journal/broadcast/finality boundaries and prove receipt, SID-transfer and sponsor-nonce outcomes before reporting completion."
 do_4 = "Create or extend the planned harness tools/qualification/paxeer-x/gas-station-contract.py with case station-autonomous-recovery; exercise the real served binaries and production persistence paths against the candidate manifest, record exact assertions and nonzero refusals, and fail if required inputs, executions or cases are absent."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["interop/crates/layerx-gas-station/src/main.rs", "interop/crates/layerx-gas-station/src/service.rs", "interop/crates/layerx-gas-station/src/station.rs", "interop/crates/layerx-gas-station/src/journal.rs", "interop/crates/layerx-gas-station/tests/station.rs", "agent/sdk/typescript/src/gas-station.ts", "tools/qualification/paxeer-x/gas-station-contract.py"]
+touches = ["interop/crates/layerx-gas-station/src/main.rs", "interop/crates/layerx-gas-station/src/service.rs", "interop/crates/layerx-gas-station/src/station.rs", "interop/crates/layerx-gas-station/src/journal.rs", "interop/crates/layerx-gas-station/tests/station.rs", "agent/sdk/typescript/src/gas-station.ts", "tools/qualification/paxeer-x/gas-station-contract.py", "tools/paxeer-x/gates/20.2.sh"]
 verify_cmd = "timeout 20m python3 tools/qualification/paxeer-x/gas-station-contract.py --case station-autonomous-recovery --candidate-manifest \"$PAXEER_X_CANDIDATE_MANIFEST\""
 gate_kind = "planned"
 max_builds = 1
@@ -22504,7 +22504,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 deployment_profile = "product"
-planned_paths = ["tools/qualification/paxeer-x/gas-station-contract.py"]
+planned_paths = ["tools/qualification/paxeer-x/gas-station-contract.py", "tools/paxeer-x/gates/20.2.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
@@ -22535,7 +22535,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.21.1]
 title = "Admit only mintable recipients before EVM custody moves"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -22544,7 +22544,7 @@ do_1 = "Add the canonical recipient predicate to PaxeerXVault._admitDeposit usin
 do_2 = "Extend the real Foundry vault tests with test_DepositCanonicalRecipient cases for token/native success, both invalid encodings and unchanged economic state on refusal."
 do_3 = "Keep the relayer and keeper refusals and immutable attestation encoding; document the affected-deposit handling boundary in the existing bridge runbook."
 do_4 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["bridge/evm/src/PaxeerXVault.sol", "bridge/evm/test/PaxeerXVault.t.sol", "bridge/README.md"]
+touches = ["bridge/evm/src/PaxeerXVault.sol", "bridge/evm/test/PaxeerXVault.t.sol", "bridge/README.md", "tools/paxeer-x/gates/21.1.sh"]
 verify_cmd = "timeout 10m forge test --root bridge/evm --match-test test_DepositCanonicalRecipient"
 gate_kind = "planned"
 max_builds = 1
@@ -22553,7 +22553,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 deployment_profile = "product"
-planned_paths = []
+planned_paths = ["tools/paxeer-x/gates/21.1.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
@@ -22655,7 +22655,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.22.2]
 title = "Restore canonical asset and account projections during rollback"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -22664,7 +22664,7 @@ do_1 = "Version observed metadata and discovery records by indexed unit or deter
 do_2 = "Keep configuration-owned pointer/asset entries outside rollback-owned observations."
 do_3 = "Create platform/hosted/indexer/tests/rollback_projection.rs using the real SQLite store with a supply-bearing orphan, replacement without supply change, database reopen and finalized-bound refusal."
 do_4 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["platform/hosted/indexer/src/store.rs", "platform/hosted/indexer/src/layerx.rs", "platform/hosted/indexer/tests/rollback_projection.rs"]
+touches = ["platform/hosted/indexer/src/store.rs", "platform/hosted/indexer/src/layerx.rs", "platform/hosted/indexer/tests/rollback_projection.rs", "tools/paxeer-x/gates/22.2.sh"]
 verify_cmd = "timeout 10m cargo test --locked --manifest-path platform/Cargo.toml -p layerx-indexer --test rollback_projection"
 gate_kind = "planned"
 max_builds = 1
@@ -22673,7 +22673,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 deployment_profile = "product"
-planned_paths = ["platform/hosted/indexer/tests/rollback_projection.rs"]
+planned_paths = ["platform/hosted/indexer/tests/rollback_projection.rs", "tools/paxeer-x/gates/22.2.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
@@ -22798,7 +22798,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.24.1]
 title = "Create isolated Human role runtime directories before privilege drop"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -22807,7 +22807,7 @@ do_1 = "Integrate protected role-directory initialization into the selected kern
 do_2 = "Preserve entrypoint private path behavior and least-privilege mounts."
 do_3 = "Create tools/bringup/tests/paxeer-x-runtime-contract.py with --case role-directories, exercising real namespace/UID processes and restart on disposable volumes from the selected image."
 do_4 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["docker/kernel/init.sh", "docker/human-service/entrypoint.sh", "tools/bringup/tests/paxeer-x-runtime-contract.py"]
+touches = ["docker/kernel/init.sh", "docker/human-service/entrypoint.sh", "tools/bringup/tests/paxeer-x-runtime-contract.py", "tools/paxeer-x/gates/24.1.sh"]
 verify_cmd = "timeout 15m python3 tools/bringup/tests/paxeer-x-runtime-contract.py --case role-directories"
 gate_kind = "planned"
 max_builds = 1
@@ -22816,7 +22816,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 deployment_profile = "product"
-planned_paths = ["tools/bringup/tests/paxeer-x-runtime-contract.py"]
+planned_paths = ["tools/bringup/tests/paxeer-x-runtime-contract.py", "tools/paxeer-x/gates/24.1.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
@@ -22846,7 +22846,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.24.9]
 title = "Include the complete websearch dependency closure in its image build context"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -22855,7 +22855,7 @@ do_1 = "Reconcile docker/layerx/Dockerfile.dockerignore with the actual interop 
 do_2 = "Create tools/ci/tests/websearch-context.py to compare the effective Docker context with the production Cargo path dependency graph and invoke one bounded build of the declared x-websearch stage on a clean candidate."
 do_3 = "Keep source identity and secret exclusions explicit; do not broaden into rebuilding chain or validator images."
 do_4 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["docker/layerx/Dockerfile", "docker/layerx/Dockerfile.dockerignore", "tools/ci/tests/websearch-context.py"]
+touches = ["docker/layerx/Dockerfile", "docker/layerx/Dockerfile.dockerignore", "tools/ci/tests/websearch-context.py", "tools/paxeer-x/gates/24.9.sh"]
 verify_cmd = "timeout 20m python3 tools/ci/tests/websearch-context.py"
 gate_kind = "planned"
 max_builds = 1
@@ -22864,13 +22864,13 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 deployment_profile = "product"
-planned_paths = ["tools/ci/tests/websearch-context.py"]
+planned_paths = ["tools/ci/tests/websearch-context.py", "tools/paxeer-x/gates/24.9.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
 [task.25.1]
 title = "Credit release evidence only to an immutable clean candidate"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -22879,7 +22879,7 @@ do_1 = "Extend beta_qualify_focused to emit a typed source-identity sidecar for 
 do_2 = "Require this binding in beta-ledger-check.sh and beta-report.sh instead of relying on human-readable warnings."
 do_3 = "Create tools/ci/tests/focused-source-identity.py using real temporary Git worktrees and the production qualifier/ledger/report commands; prove clean pass eligibility, dirty passing exclusion, revision mismatch and mid-run mutation refusal."
 do_4 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["tools/ci/beta-qualify.sh", "tools/ci/beta-ledger-check.sh", "tools/ci/beta-report.sh", "tools/ci/tests/focused-source-identity.py"]
+touches = ["tools/ci/beta-qualify.sh", "tools/ci/beta-ledger-check.sh", "tools/ci/beta-report.sh", "tools/ci/tests/focused-source-identity.py", "tools/paxeer-x/gates/25.1.sh"]
 verify_cmd = "timeout 10m python3 tools/ci/tests/focused-source-identity.py"
 gate_kind = "planned"
 max_builds = 1
@@ -22888,7 +22888,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 deployment_profile = "product"
-planned_paths = ["tools/ci/tests/focused-source-identity.py"]
+planned_paths = ["tools/ci/tests/focused-source-identity.py", "tools/paxeer-x/gates/25.1.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
@@ -24017,7 +24017,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.35.2]
 title = "Verify a single execution step on-platform"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -24234,7 +24234,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.106.4.9]
 title = "Expose anchor and launchpad parameter messages through registered module services"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
