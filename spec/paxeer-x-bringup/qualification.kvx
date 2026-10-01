@@ -1804,3 +1804,35 @@ symbol     = "service human-security"
 observed   = "human-security waits on $human_state/trust-history, a path nothing in the tree writes; the only encoder is encode_trust_history in platform/hosted/tests/beta-cluster.sh, and the registry init reads a sequencer trust history from /data/kernel/trust-history; check_kernel_app fails while the human-security role waits."
 assumption = "The sequencer trust history the registry reads is the intended source; task 3.13 produces it in the kernel machine."
 severity   = "warning"
+
+[observation.3.12.1]
+task       = "3.12"
+file       = "human/wallet/deploy/attestor-1.toml, human/wallet/docs/security-review.md, tools/bringup/ca.sh"
+symbol     = "ATTESTOR_TLS_CA"
+observed   = "The repository settles that ATTESTOR_TLS_CA is a bundle of the attestor node CA and the gateway CA (gotcha 55, wallet observation 4.1.5) and that keys.generate and sign admit only a client chaining to the gateway CA (security-review.md:221-222), a CA held with the operations application and not the internal CA ca.sh init makes; so the human-attestor-client row is signed under LAYERX_ATTESTOR_CA_DIR and issue refuses without it, and the volume's ca.der is that gateway CA."
+assumption = "The deploy lead supplies the gateway CA directory as LAYERX_ATTESTOR_CA_DIR on the issuing host; when the attestor servers are issued under the node CA rather than the gateway CA, LAYERX_HUMAN_ATTESTOR_ROOT_CERTIFICATE_DER needs the node CA, which the repository does not name."
+severity   = "blocker"
+
+[observation.3.12.2]
+task       = "3.12"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_ca"
+observed   = "check_ca verifies every ca.sh services row against the internal CA under LAYERX_CA_DIR, so the human-attestor-client row issued under the attestors' gateway CA reports chain=untrusted and the check_live_ca_passing and check_live_ca_failing fixture cases of check-live.test.sh fail (.logs/3.12-harness.log); check-live.sh is outside this task's files and neither the check nor the expectations were changed."
+assumption = "check_ca verifies the rows of ca.sh attestor_services against LAYERX_ATTESTOR_CA_DIR/ca.pem, in a task that owns check-live.sh."
+severity   = "blocker"
+
+[observation.3.12.3]
+task       = "3.12"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_kernel_app"
+observed   = "The verify_cmd refused at this pin with fail machines app=paxeer-human-service machines=1 started=1 volume-at-data=0 (.logs/3.12-live.log, exit 1); the kernel app is not yet redeployed with its volume, the expected outcome before the deploy."
+assumption = "The kernel app redeploy with the volume at /data and the human-attestor-client issue let the gate proceed."
+severity   = "warning"
+
+[observation.3.12.4]
+task       = "3.12"
+file       = "tools/bringup/check-live.test.sh"
+symbol     = "check_live_xweb_attestors_passing"
+observed   = "The three check_live_xweb_attestors cases failed with http=none on the second harness run and passed on the first at the same xweb code, so they are unrelated to this task's ca.sh row."
+assumption = "The xweb fixture listeners are contended by a concurrent run on the host; recorded, not chased."
+severity   = "note"

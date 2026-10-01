@@ -16,8 +16,14 @@ copy_material() {
 }
 case "$role" in
     components)
-        copy_material kms-client.der
-        copy_material kms-client-key.der
+        if [ -z "${LAYERX_HUMAN_ATTESTOR_NODES:-}" ]; then
+            copy_material kms-client.der
+            copy_material kms-client-key.der
+        else
+            copy_material attestor-ca.der
+            copy_material attestor-client.der
+            copy_material attestor-client-key.der
+        fi
         copy_material ca.der
         copy_material purpose-catalog.json
         exec /usr/local/bin/layerx-runtime-clock --runtime-dir "$private" -- /usr/local/bin/layerx-human-components "$@"

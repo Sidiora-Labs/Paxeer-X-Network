@@ -730,7 +730,7 @@ reqs       = ["9.2"]
 
 [task.3.12]
 title      = "Complete the attestor-custody material of the human components"
-status     = "pending"
+status     = "in_progress"
 wave       = 3
 requires   = ["3.5", "3.3"]
 do_1       = "Establish from the attestor fleet's deploy record which CA the ATTESTOR_TLS_CA secret of paxeer-attestor-1 to 5 holds (human/wallet/deploy/attestor-1.toml maps it to /run/secrets/ca.crt and human/wallet/deploy/env names it the CA bundle for peers and the gateway), because the components' attestor client leaf must chain to it as task 3.3 requires; then add a human-attestor-client row to ca_services in tools/bringup/ca.sh (human/wallet/deploy/human.toml, whole app, volume custody, clientAuth, no SAN) issued under that CA, so the issue path writes /data/tls/human-attestor-client/ca.der, cert.der and key.der on the kernel volume; when that CA is not the internal CA of ca.sh, the row issues under the attestor CA and never under a CA the attestors do not trust."
