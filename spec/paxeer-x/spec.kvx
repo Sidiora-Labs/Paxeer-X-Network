@@ -21883,7 +21883,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.3]
 title = "Admit hosted sessions using the live unexpired session count"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -22017,7 +22017,7 @@ do_2 = "Propagate the original disclosure through Human KMS and every attestor c
 do_3 = "Add real HTTP negative and restart/replay cases for an otherwise valid in-policy activity that differs from the approved disclosure."
 do_4 = "Add the new bounded harness tools/qualification/paxeer-x/wallet-attestor-disclosure.py to exercise this task through the named production interfaces, including the stated refusal and recovery cases, with explicit prerequisite checks and nonzero exit on any unmet acceptance. Use supplied prebuilt executables and isolated retained state; do not hide a rebuild or invoke a release-wide suite."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["human/wallet/schema/attestor-api/v1.kvx", "human/wallet/attestor/internal/server/sign.go", "human/wallet/attestor/internal/policy/lx/lx.go", "human/crates/layerx-human-kms/src/attestor.rs", "human/wallet/gateway/src/attestor/client.ts", "human/wallet/attestor/internal/server/e2e_test.go", "tools/qualification/paxeer-x/wallet-attestor-disclosure.py", "tools/paxeer-x/gates/13.2.sh"]
+touches = ["human/wallet/schema/attestor-api/v1.kvx", "human/wallet/attestor/internal/server/sign.go", "human/wallet/attestor/internal/policy/lx/lx.go", "human/crates/layerx-human-kms/src/attestor.rs", "human/wallet/gateway/src/attestor/client.ts", "human/wallet/attestor/internal/server/e2e_test.go", "tools/qualification/paxeer-x/wallet-attestor-disclosure.py", "tools/paxeer-x/gates/13.2.sh", "human/crates/layerx-human-service/src/server/production_components.rs"]
 verify_cmd = "timeout 15m python3 tools/qualification/paxeer-x/wallet-attestor-disclosure.py"
 gate_kind = "planned"
 max_builds = 1
@@ -22903,7 +22903,7 @@ do_1 = "Reproduce the crossed-assignment scenario and determine the supported Gi
 do_2 = "Carry runner identity and assignment through github.go/jobIndex and reconcile.destroyReason; retain conservative behavior when association is unavailable."
 do_3 = "Extend reconcile_test.go with TestReconcileActualAssignment cases using the real clients/reconciler and documented captured API shapes, including crossed, completed, unknown and unmanaged machines; reserve live scheduler behavior for authorized integrated qualification."
 do_4 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["tools/flyci/controller/github.go", "tools/flyci/controller/reconcile.go", "tools/flyci/controller/reconcile_test.go", "tools/paxeer-x/gates/25.2.sh"]
+touches = ["tools/flyci/controller/github.go", "tools/flyci/controller/reconcile.go", "tools/flyci/controller/reconcile_test.go", "tools/paxeer-x/gates/25.2.sh", "tools/flyci/controller/github_test.go"]
 verify_cmd = "timeout 10m go test ./tools/flyci/controller -run '^TestReconcileActualAssignment' -count=1"
 gate_kind = "planned"
 max_builds = 1

@@ -10,6 +10,8 @@ const JOURNAL_FILE: &str = "journal.log";
 const READY_MARKER_FILE: &str = "ready.marker";
 const MAX_RECORD_BYTES: usize = 64 * 1024;
 pub const MAX_SESSIONS_PER_PRINCIPAL: usize = 4096;
+pub const MAX_RETAINED_SESSIONS_PER_PRINCIPAL: usize = 16_384;
+pub const SESSION_HISTORY_CAPACITY_REACHED: &str = "principal session history capacity reached";
 pub const SUBJECT_TENANT_CONFLICT: &str = "principal subject belongs to another tenant";
 pub const PUBLICATION_KEY_BINDING_REFUSED: &str = "publication key binding refused";
 
@@ -176,13 +178,14 @@ impl State {
         Ok(())
     }
 
-    fn live_sessions(&self, tenant: &str, sub: &str) -> usize {
+    fn live_sessions(&self, tenant: &str, sub: &str, now: u64) -> usize {
         self.sessions
             .values()
             .filter(|existing| {
                 existing.tenant == tenant
                     && existing.principal == sub
                     && existing.revoked_at.is_none()
+                    && existing.expires_at > now
             })
             .count()
     }
@@ -289,7 +292,7 @@ impl Store {
 
     /// # Errors
     /// Refuses unknown principals, duplicate sessions, session bounds, or durable write failure.
-    pub fn put_session(&mut self, session: StoredSession) -> Result<(), String> {
+    pub fn put_session(&mut self, session: StoredSession, now: u64) -> Result<(), String> {
         if self
             .state
             .principal(&session.tenant, &session.principal)
@@ -302,10 +305,21 @@ impl Store {
         }
         if self
             .state
-            .live_sessions(&session.tenant, &session.principal)
+            .live_sessions(&session.tenant, &session.principal, now)
             >= MAX_SESSIONS_PER_PRINCIPAL
         {
             return Err("principal session bound reached".to_owned());
+        }
+        let retained = self
+            .state
+            .sessions
+            .values()
+            .filter(|existing| {
+                existing.tenant == session.tenant && existing.principal == session.principal
+            })
+            .count();
+        if retained >= MAX_RETAINED_SESSIONS_PER_PRINCIPAL {
+            return Err(SESSION_HISTORY_CAPACITY_REACHED.to_owned());
         }
         self.append(&Record::Session(session.clone()))?;
         self.state.insert_session(session)
@@ -519,10 +533,10 @@ mod tests {
                 .put_principal(principal("beta", "did:key:alpha"))
                 .unwrap_or_else(|error| panic!("principal: {error}"));
             store
-                .put_session(session("s1", "beta", "did:key:alpha", 100))
+                .put_session(session("s1", "beta", "did:key:alpha", 100), 0)
                 .unwrap_or_else(|error| panic!("session: {error}"));
             store
-                .put_session(session("s2", "beta", "did:key:alpha", 200))
+                .put_session(session("s2", "beta", "did:key:alpha", 200), 0)
                 .unwrap_or_else(|error| panic!("session: {error}"));
             assert_eq!(
                 store
@@ -634,16 +648,16 @@ mod tests {
             .put_principal(principal("bravo", "did:key:two"))
             .unwrap_or_else(|error| panic!("bravo principal: {error}"));
         assert!(store
-            .put_session(session("s1", "bravo", "did:key:one", 100))
+            .put_session(session("s1", "bravo", "did:key:one", 100), 0)
             .is_err());
         assert!(store
-            .put_session(session("s1", "alpha", "did:key:two", 100))
+            .put_session(session("s1", "alpha", "did:key:two", 100), 0)
             .is_err());
         store
-            .put_session(session("s1", "alpha", "did:key:one", 100))
+            .put_session(session("s1", "alpha", "did:key:one", 100), 0)
             .unwrap_or_else(|error| panic!("alpha session: {error}"));
         store
-            .put_session(session("s2", "bravo", "did:key:two", 100))
+            .put_session(session("s2", "bravo", "did:key:two", 100), 0)
             .unwrap_or_else(|error| panic!("bravo session: {error}"));
         assert_eq!(
             store.session("s1").map(|stored| stored.tenant.as_str()),
@@ -827,16 +841,16 @@ mod tests {
         let root = directory("bounds");
         let mut store = Store::open(&root).unwrap_or_else(|error| panic!("open: {error}"));
         assert!(store
-            .put_session(session("s1", "beta", "did:key:none", 1))
+            .put_session(session("s1", "beta", "did:key:none", 1), 0)
             .is_err());
         store
             .put_principal(principal("beta", "did:key:gamma"))
             .unwrap_or_else(|error| panic!("principal: {error}"));
         store
-            .put_session(session("s1", "beta", "did:key:gamma", 1))
+            .put_session(session("s1", "beta", "did:key:gamma", 1), 0)
             .unwrap_or_else(|error| panic!("session: {error}"));
         assert!(store
-            .put_session(session("s1", "beta", "did:key:gamma", 2))
+            .put_session(session("s1", "beta", "did:key:gamma", 2), 0)
             .is_err());
         store
             .probe_writable()

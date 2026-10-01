@@ -300,7 +300,7 @@
     - Extend the assertion test target with known-kid removal/replacement, refresh outage and simultaneous-request cases.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 138_
-  - [-] 11.3 Admit hosted sessions using the live unexpired session count
+  - [x] 11.3 Admit hosted sessions using the live unexpired session count
     - Pass authoritative time into live-session accounting and separate expiration from historical retention.
     - Define safe retained-session pruning/compaction with durable publication ordering, or bounded retention that does not consume live admission capacity.
     - Add a focused real service case for saturated expired/live populations, expiry equality, revocation and restart.

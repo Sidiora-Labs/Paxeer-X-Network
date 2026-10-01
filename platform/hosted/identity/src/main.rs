@@ -859,8 +859,10 @@ fn create_session(shared: &Shared, request: &Request) -> Response {
         revoked_at: None,
     };
     let expires_at = session.expires_at;
-    if let Err(error) = store.put_session(session) {
-        return if error.contains("bound") {
+    if let Err(error) = store.put_session(session, now) {
+        return if error == store::SESSION_HISTORY_CAPACITY_REACHED {
+            refusal(429, "session_history_capacity_reached", None)
+        } else if error.contains("bound") {
             refusal(429, "session_bound_reached", Some(60))
         } else {
             refusal(503, "store_unavailable", Some(5))
