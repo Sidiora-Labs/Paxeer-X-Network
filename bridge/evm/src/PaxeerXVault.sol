@@ -234,12 +234,21 @@ contract PaxeerXVault is Ownable2Step, ReentrancyGuard {
 
     function _admitDeposit(address asset, uint256 amount, bytes32 paxeerRecipient) private view {
         if (amount == 0) revert ZeroAmount();
-        if (paxeerRecipient == bytes32(0)) revert InvalidRecipient();
+        if (!_isCanonicalRecipient(paxeerRecipient)) revert InvalidRecipient();
         AssetCap memory cap = caps[asset];
         if (cap.total == 0) revert AssetNotEnabled(asset);
         if (amount > cap.perTx) revert PerTxCapExceeded(amount, cap.perTx);
         uint256 after_ = outstanding[asset] + amount;
         if (after_ > cap.total) revert TotalCapExceeded(after_, cap.total);
+    }
+
+    /// @dev Whether Paxeer can mint to `paxeerRecipient`: a nonzero EVM
+    /// address left-padded to 32 bytes, bytes32(uint256(uint160(address))).
+    /// It is the rule RecipientAddress in modules/layerxbridge/types applies
+    /// before Keeper.BridgeIn mints, so no deposit Paxeer would refuse can
+    /// lock funds here.
+    function _isCanonicalRecipient(bytes32 paxeerRecipient) private pure returns (bool) {
+        return uint256(paxeerRecipient) >> 160 == 0 && paxeerRecipient != bytes32(0);
     }
 
     function _recordDeposit(address asset, uint256 amount, bytes32 paxeerRecipient) private {

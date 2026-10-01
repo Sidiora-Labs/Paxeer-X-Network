@@ -10,6 +10,18 @@ import {BridgeAttestation} from "../src/BridgeAttestation.sol";
 import {CheatTest} from "./Vm.sol";
 import {TestToken} from "./TestToken.sol";
 
+/// @dev The log-recording cheatcodes the canonical recipient tests read.
+interface LogCheats {
+    struct Log {
+        bytes32[] topics;
+        bytes data;
+        address emitter;
+    }
+
+    function recordLogs() external;
+    function getRecordedLogs() external returns (Log[] memory);
+}
+
 contract PaxeerXVaultTest is CheatTest {
     address internal constant OWNER = address(0xB0B);
     address internal constant USER = address(0xA11CE);
@@ -804,6 +816,270 @@ contract PaxeerXVaultTest is CheatTest {
         vm.expectRevert(abi.encodeWithSelector(PaxeerXVault.NothingToRescue.selector, address(stray)));
         vm.prank(OWNER);
         vault.rescue(address(stray), RECIPIENT);
+    }
+
+    // ---- canonical recipients ----
+
+    struct Custody {
+        uint256 vaultToken;
+        uint256 userToken;
+        uint256 allowance;
+        uint256 vaultNative;
+        uint256 userNative;
+        uint256 outstandingToken;
+        uint256 outstandingNative;
+        uint256 nonce;
+    }
+
+    LogCheats internal constant logCheats = LogCheats(address(uint160(uint256(keccak256("hevm cheat code")))));
+    bytes32 internal constant BRIDGE_DEPOSIT_TOPIC = keccak256("BridgeDeposit(address,uint256,address,bytes32,uint64)");
+
+    function canonical(address a) internal pure returns (bytes32) {
+        return bytes32(uint256(uint160(a)));
+    }
+
+    function acceptedRecipients() internal pure returns (bytes32[3] memory r) {
+        r[0] = canonical(address(1));
+        r[1] = PAXEER_RECIPIENT;
+        r[2] = canonical(address(type(uint160).max));
+    }
+
+    /// @dev Both refused encodings: a nonzero high prefix over a valid address,
+    /// and a zero low address with and without a prefix.
+    function refusedRecipients() internal pure returns (bytes32[5] memory r) {
+        r[0] = bytes32(uint256(1) << 160) | PAXEER_RECIPIENT;
+        r[1] = bytes32(uint256(0xFF) << 248) | PAXEER_RECIPIENT;
+        r[2] = bytes32(type(uint256).max);
+        r[3] = bytes32(0);
+        r[4] = bytes32(uint256(1) << 255);
+    }
+
+    function custody() internal view returns (Custody memory c) {
+        c.vaultToken = token.balanceOf(address(vault));
+        c.userToken = token.balanceOf(USER);
+        c.allowance = token.allowance(USER, address(vault));
+        c.vaultNative = address(vault).balance;
+        c.userNative = USER.balance;
+        c.outstandingToken = vault.outstanding(address(token));
+        c.outstandingNative = vault.outstanding(NATIVE);
+        c.nonce = vault.depositNonce();
+    }
+
+    function assertCustodyUnchanged(Custody memory before) internal {
+        Custody memory now_ = custody();
+        assertEq(now_.vaultToken, before.vaultToken, "vault token balance moved");
+        assertEq(now_.userToken, before.userToken, "user token balance moved");
+        assertEq(now_.allowance, before.allowance, "allowance spent");
+        assertEq(now_.vaultNative, before.vaultNative, "vault native balance moved");
+        assertEq(now_.userNative, before.userNative, "user native balance moved");
+        assertEq(now_.outstandingToken, before.outstandingToken, "token outstanding moved");
+        assertEq(now_.outstandingNative, before.outstandingNative, "native outstanding moved");
+        assertEq(now_.nonce, before.nonce, "nonce consumed");
+        assertEq(logCheats.getRecordedLogs().length, 0, "refused deposit emitted");
+    }
+
+    /// @dev Reads the one BridgeDeposit the vault emitted and checks that the
+    /// recipient bytes in it are the deposited bytes, that the inbound digest
+    /// over those event bytes is the documented layout, and that the consumer
+    /// rule decodes them to the address they pad.
+    function assertDepositCarries(address asset, uint256 amount, bytes32 recipient, uint64 nonce) internal {
+        LogCheats.Log[] memory entries = logCheats.getRecordedLogs();
+        uint256 found;
+        bytes32 emitted;
+        for (uint256 i = 0; i < entries.length; ++i) {
+            LogCheats.Log memory entry = entries[i];
+            if (entry.emitter != address(vault)) continue;
+            assertEq(entry.topics.length, 4, "deposit topics");
+            assertEq(entry.topics[0], BRIDGE_DEPOSIT_TOPIC, "deposit topic");
+            assertEq(entry.topics[1], bytes32(uint256(uint160(asset))), "asset topic");
+            assertEq(entry.topics[2], bytes32(uint256(uint160(USER))), "sender topic");
+            assertEq(keccak256(entry.data), keccak256(abi.encode(amount, nonce)), "deposit data");
+            emitted = entry.topics[3];
+            ++found;
+        }
+        assertEq(found, 1, "one deposit event");
+        assertEq(emitted, recipient, "recipient bytes rewritten");
+        assertEq(uint256(emitted) >> 160, 0, "recipient prefix");
+        assertEq(canonical(address(uint160(uint256(emitted)))), recipient, "consumer decoding");
+        bytes32 txHash = keccak256(abi.encode("deposit", nonce));
+        assertEq(
+            vault.depositDigest(txHash, nonce, emitted, asset, amount),
+            keccak256(referenceInbound(block.chainid, address(vault), txHash, nonce, recipient, asset, amount)),
+            "inbound digest"
+        );
+    }
+
+    function test_DepositCanonicalRecipientTokenAccepted() public {
+        bytes32[3] memory recipients = acceptedRecipients();
+        for (uint256 i = 0; i < recipients.length; ++i) {
+            token.mint(USER, 10 ether);
+            vm.prank(USER);
+            token.approve(address(vault), 10 ether);
+            logCheats.recordLogs();
+            vm.prank(USER);
+            vault.deposit(address(token), 10 ether, recipients[i]);
+            assertDepositCarries(address(token), 10 ether, recipients[i], uint64(i));
+            assertEq(token.balanceOf(address(vault)), 10 ether * (i + 1), "vault balance");
+            assertEq(vault.outstanding(address(token)), 10 ether * (i + 1), "outstanding");
+            assertEq(vault.depositNonce(), i + 1, "nonce");
+        }
+    }
+
+    function test_DepositCanonicalRecipientNativeAccepted() public {
+        bytes32[3] memory recipients = acceptedRecipients();
+        vm.deal(USER, 30 ether);
+        for (uint256 i = 0; i < recipients.length; ++i) {
+            logCheats.recordLogs();
+            vm.prank(USER);
+            vault.depositNative{value: 10 ether}(recipients[i]);
+            assertDepositCarries(NATIVE, 10 ether, recipients[i], uint64(i));
+            assertEq(address(vault).balance, 10 ether * (i + 1), "vault eth");
+            assertEq(vault.outstanding(NATIVE), 10 ether * (i + 1), "outstanding");
+            assertEq(vault.depositNonce(), i + 1, "nonce");
+        }
+    }
+
+    function test_DepositCanonicalRecipientTokenRefusesInvalidEncodings() public {
+        depositToken(5 ether);
+        bytes32[5] memory recipients = refusedRecipients();
+        token.mint(USER, 10 ether);
+        vm.prank(USER);
+        token.approve(address(vault), 10 ether);
+        for (uint256 i = 0; i < recipients.length; ++i) {
+            Custody memory before = custody();
+            logCheats.recordLogs();
+            vm.expectRevert(PaxeerXVault.InvalidRecipient.selector);
+            vm.prank(USER);
+            vault.deposit(address(token), 10 ether, recipients[i]);
+            assertCustodyUnchanged(before);
+        }
+        assertEq(vault.outstanding(address(token)), 5 ether, "only the canonical deposit is locked");
+        assertEq(vault.depositNonce(), 1, "only the canonical deposit is numbered");
+    }
+
+    function test_DepositCanonicalRecipientNativeRefusesInvalidEncodings() public {
+        vm.deal(USER, 15 ether);
+        vm.prank(USER);
+        vault.depositNative{value: 5 ether}(PAXEER_RECIPIENT);
+        bytes32[5] memory recipients = refusedRecipients();
+        for (uint256 i = 0; i < recipients.length; ++i) {
+            Custody memory before = custody();
+            logCheats.recordLogs();
+            vm.expectRevert(PaxeerXVault.InvalidRecipient.selector);
+            vm.prank(USER);
+            vault.depositNative{value: 10 ether}(recipients[i]);
+            assertCustodyUnchanged(before);
+        }
+        assertEq(address(vault).balance, 5 ether, "only the canonical deposit is held");
+        assertEq(vault.outstanding(NATIVE), 5 ether, "only the canonical deposit is locked");
+        assertEq(vault.depositNonce(), 1, "only the canonical deposit is numbered");
+    }
+
+    function test_DepositCanonicalRecipientRefusesBeforeCustodyMoves() public {
+        // No allowance at all: the token pull would fail, so the recipient
+        // refusal can only come from admission ahead of any transfer.
+        token.mint(USER, 10 ether);
+        bytes32[5] memory recipients = refusedRecipients();
+        for (uint256 i = 0; i < recipients.length; ++i) {
+            Custody memory before = custody();
+            logCheats.recordLogs();
+            vm.expectRevert(PaxeerXVault.InvalidRecipient.selector);
+            vm.prank(USER);
+            vault.deposit(address(token), 10 ether, recipients[i]);
+            assertCustodyUnchanged(before);
+        }
+    }
+
+    function test_DepositCanonicalRecipientKeepsCustodyRules() public {
+        bytes32 badRecipient = refusedRecipients()[0];
+        vm.deal(USER, 2 ether);
+
+        // Pause still refuses first, for either encoding.
+        vm.prank(OWNER);
+        vault.pause();
+        vm.expectRevert(PaxeerXVault.WhenPaused.selector);
+        vm.prank(USER);
+        vault.depositNative{value: 1 ether}(PAXEER_RECIPIENT);
+        vm.expectRevert(PaxeerXVault.WhenPaused.selector);
+        vm.prank(USER);
+        vault.depositNative{value: 1 ether}(badRecipient);
+        vm.prank(OWNER);
+        vault.unpause();
+
+        // Zero amount and the caps still apply to canonical recipients.
+        vm.expectRevert(PaxeerXVault.ZeroAmount.selector);
+        vm.prank(USER);
+        vault.depositNative{value: 0}(PAXEER_RECIPIENT);
+        token.mint(USER, PER_TX + 1);
+        vm.prank(USER);
+        token.approve(address(vault), PER_TX + 1);
+        vm.expectRevert(abi.encodeWithSelector(PaxeerXVault.PerTxCapExceeded.selector, PER_TX + 1, PER_TX));
+        vm.prank(USER);
+        vault.deposit(address(token), PER_TX + 1, PAXEER_RECIPIENT);
+        vm.prank(USER);
+        token.approve(address(vault), 0);
+
+        // The exact balance delta still holds for a canonical recipient.
+        FeeOnTransferToken fee = new FeeOnTransferToken(100);
+        vm.prank(OWNER);
+        vault.setCap(address(fee), PER_TX, TOTAL);
+        fee.mint(USER, 10 ether);
+        vm.prank(USER);
+        fee.approve(address(vault), 10 ether);
+        vm.expectRevert(abi.encodeWithSelector(PaxeerXVault.TransferAmountMismatch.selector, 9.9 ether, 10 ether));
+        vm.prank(USER);
+        vault.deposit(address(fee), 10 ether, PAXEER_RECIPIENT);
+
+        // Threshold, replay and rescue still guard what a canonical deposit locked.
+        depositToken(60 ether);
+        bytes32 txHash = keccak256("canonical-burn");
+        uint256[] memory one = new uint256[](1);
+        one[0] = keys[1];
+        bytes[] memory weak = signSorted(one, vault.releaseDigest(txHash, 3, RECIPIENT, address(token), 25 ether));
+        vm.expectRevert(abi.encodeWithSelector(PaxeerXVault.BelowThreshold.selector, 1, 2));
+        vault.release(address(token), 25 ether, RECIPIENT, txHash, 3, weak);
+        bytes[] memory sigs = releaseSigs(txHash, 3, address(token), 25 ether);
+        vault.release(address(token), 25 ether, RECIPIENT, txHash, 3, sigs);
+        assertEq(token.balanceOf(RECIPIENT), 25 ether, "released");
+        bytes32 nullifier = vault.nullifierOf(txHash, 3);
+        vm.expectRevert(abi.encodeWithSelector(PaxeerXVault.NullifierUsed.selector, nullifier));
+        vault.release(address(token), 25 ether, RECIPIENT, txHash, 3, sigs);
+        vm.expectRevert(abi.encodeWithSelector(PaxeerXVault.OutstandingNotZero.selector, address(token), 35 ether));
+        vm.prank(OWNER);
+        vault.rescue(address(token), RECIPIENT);
+        assertEq(vault.outstanding(address(token)), 35 ether, "outstanding");
+        assertEq(token.balanceOf(address(vault)), 35 ether, "custody");
+    }
+
+    function test_DepositCanonicalRecipientFuzz(uint96 prefix, address low, bool native) public {
+        bytes32 recipient = bytes32((uint256(prefix) << 160) | uint160(low));
+        bool canonicalRecipient = prefix == 0 && low != address(0);
+        token.mint(USER, 1 ether);
+        vm.prank(USER);
+        token.approve(address(vault), 1 ether);
+        vm.deal(USER, 1 ether);
+        Custody memory before = custody();
+        logCheats.recordLogs();
+        if (!canonicalRecipient) vm.expectRevert(PaxeerXVault.InvalidRecipient.selector);
+        vm.prank(USER);
+        if (native) {
+            vault.depositNative{value: 1 ether}(recipient);
+        } else {
+            vault.deposit(address(token), 1 ether, recipient);
+        }
+        if (!canonicalRecipient) {
+            assertCustodyUnchanged(before);
+            return;
+        }
+        assertDepositCarries(native ? NATIVE : address(token), 1 ether, recipient, 0);
+        assertEq(vault.depositNonce(), 1, "nonce");
+        if (native) {
+            assertEq(vault.outstanding(NATIVE), 1 ether, "native outstanding");
+            assertEq(address(vault).balance, 1 ether, "native custody");
+        } else {
+            assertEq(vault.outstanding(address(token)), 1 ether, "token outstanding");
+            assertEq(token.balanceOf(address(vault)), 1 ether, "token custody");
+        }
     }
 }
 

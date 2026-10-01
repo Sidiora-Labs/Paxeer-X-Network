@@ -22535,7 +22535,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.21.1]
 title = "Admit only mintable recipients before EVM custody moves"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]

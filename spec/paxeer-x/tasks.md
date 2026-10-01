@@ -631,7 +631,7 @@
     - Create or extend the planned harness tools/qualification/paxeer-x/gas-station-contract.py with case browser-sponsorship-origin; exercise the real served binaries and production persistence paths against the candidate manifest, record exact assertions and nonzero refusals, and fail if required inputs, executions or cases are absent.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 185_
-  - [-] 21.1 Admit only mintable recipients before EVM custody moves
+  - [x] 21.1 Admit only mintable recipients before EVM custody moves
     - Add the canonical recipient predicate to PaxeerXVault._admitDeposit using the consumer rule in modules/layerxbridge/types/attestation.go.
     - Extend the real Foundry vault tests with test_DepositCanonicalRecipient cases for token/native success, both invalid encodings and unchanged economic state on refusal.
     - Keep the relayer and keeper refusals and immutable attestation encoding; document the affected-deposit handling boundary in the existing bridge runbook.
