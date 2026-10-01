@@ -1519,7 +1519,7 @@ try:
     print("completed success", candidate, runners[0], len(jobs))
 except (ValueError, KeyError, TypeError, AttributeError):
     sys.exit(1)
-'
+' "$@"
 }
 
 check_ci() {
