@@ -32,7 +32,7 @@ pub use reservations::{
 /// # Errors
 ///
 /// Returns `ProtocolStateSchemaUnavailable` after authenticating the included
-/// candidate state because core defines no canonical budget record/key schema.
+/// candidate state if it does not follow the canonical budget record schema.
 /// Receipt verification, activity binding, and replay rejection happen before
 /// that fail-closed result.
 pub fn reconcile(

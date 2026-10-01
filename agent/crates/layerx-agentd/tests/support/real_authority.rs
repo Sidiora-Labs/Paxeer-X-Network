@@ -1221,9 +1221,31 @@ fn node_storage_environment(
     let logs = &paths.logs;
     let text = |path: PathBuf| path.to_string_lossy().into_owned();
     let mut node_env = BTreeMap::new();
-    node_env.insert("LAYERX_NODE_PAXEER_CHAIN_ID", "31337".to_owned());
+    let chain_id = std::env::var("LAYERX_TEST_PAXEER_CHAIN_ID")
+        .expect("real isolated Paxeer chain id is required")
+        .parse::<u64>()
+        .expect("canonical Paxeer chain id");
+    let rpc_port = std::env::var("LAYERX_TEST_PAXEER_RPC_PORT")
+        .expect("real isolated Paxeer RPC port is required")
+        .parse::<u16>()
+        .expect("bounded Paxeer RPC port");
+    assert!(
+        chain_id != 0 && rpc_port != 0,
+        "real Paxeer endpoint required"
+    );
+    for name in [
+        "LAYERX_TEST_SETTLEMENT_CONTRACT",
+        "LAYERX_TEST_CHECKPOINT_REGISTRY",
+    ] {
+        assert_eq!(
+            std::env::var(name).expect("real isolated anchor binding is required"),
+            LAYERX_ANCHOR_ADDRESS,
+            "fixture must bind the production anchor precompile"
+        );
+    }
+    node_env.insert("LAYERX_NODE_PAXEER_CHAIN_ID", chain_id.to_string());
     node_env.insert("LAYERX_NODE_PAXEER_RPC_ADDRESS", "127.0.0.1".to_owned());
-    node_env.insert("LAYERX_NODE_PAXEER_RPC_PORT", free_port().to_string());
+    node_env.insert("LAYERX_NODE_PAXEER_RPC_PORT", rpc_port.to_string());
     node_env.insert(
         "LAYERX_NODE_SETTLEMENT_CONTRACT",
         LAYERX_ANCHOR_ADDRESS.to_owned(),

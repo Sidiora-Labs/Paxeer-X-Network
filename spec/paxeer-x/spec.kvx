@@ -31409,7 +31409,7 @@ completion_policy = "Qualifies the history primitive only. Full airdrop entitlem
 
 [task.14.9]
 title = "Share canonical budget and committed payer grant decoders across clients"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
