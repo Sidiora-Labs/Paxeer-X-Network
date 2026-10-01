@@ -137,7 +137,7 @@
     - Add the designated new harness tests/qualification/paxeer_x_exchange_tif.py using real production code and durable stores; invoke prebuilt task targets, fail on any missing prerequisite, and emit revision, exact command, exit code and private evidence path. Do not substitute mocks or synthetic success responses.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 112_
-  - [-] 4.3 Apply launchpad parameter changes through authenticated governance dispatch
+  - [x] 4.3 Apply launchpad parameter changes through authenticated governance dispatch
     - Inspect the launchpad governance dispatch route from tasks 106.4.2 and 106.4.3 against the actual module/app registry, accounting for existing genesis and v6.10 upgrade callers; complete only unmet requirement 113 criteria.
     - Reuse the canonical api/launchpad/tx.proto, generated MsgUpdateParams, interface/amino encoding and governance-authorized message server from task 106.4.9. Preserve its route through AppModule.RegisterServices and the app; complete only integration gaps without duplicate message definitions or a permissive precompile setter.
     - Add real app governance dispatch tests for proposal acceptance/rejection, caller authority, validation rollback and committed-state reload.

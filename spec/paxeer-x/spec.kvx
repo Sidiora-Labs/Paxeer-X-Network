@@ -21614,7 +21614,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.3]
 title = "Apply launchpad parameter changes through authenticated governance dispatch"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["0.2", "106.4.3"]
