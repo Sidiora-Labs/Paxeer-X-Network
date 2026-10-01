@@ -24267,7 +24267,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.106.4.2]
 title = "One governance proposal that carries any fork module's authority message"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["0.2", "106.4.9"]
