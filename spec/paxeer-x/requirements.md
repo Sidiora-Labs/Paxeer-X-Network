@@ -4733,6 +4733,7 @@
 
 1. THE hosted endpoint under platform/hosted/gateway SHALL start with the kernel backends unconfigured or unreachable, SHALL serve eth_ relay and the px_ joins that depend on chain state alone, SHALL answer kernel-dependent methods with a typed unavailable error naming the backend, and SHALL report per-backend readiness.
 2. THE deployment definitions under human/wallet/deploy SHALL describe the endpoint's application with its environment variable names and health check, and the endpoint SHALL be deployed from the repository image with px_resolveAccount and eth_chainId answering against the chain; the record is committed to the qualification log without hosts.
+3. Container source definitions reside in the canonical docker tree with matching ignore files and accurate referrers. Each recipe is checked using the same actual build context its producer supplies, including the verified generated registry builder context; no missing COPY input or existing check is bypassed. Source-layout qualification does not establish live endpoint deployment or API responses under ac_2.
 
 ## Requirement 1216: Release Gates, Runbooks and Review
 
