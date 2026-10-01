@@ -31539,7 +31539,7 @@ evidence_policy = "Publish technical source only; retain raw logs, private mater
 
 [task.4.1.2]
 title = "Preserve holder history primitive coverage with explicit legacy epoch fixtures"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["4.1", "4.1.1"]

@@ -36,12 +36,23 @@ func newHistoryEnv(t *testing.T) *historyEnv {
 	return h
 }
 
-// nextEpoch accrues fees with a real swap and triggers the next airdrop.
+// nextEpoch advances a validated legacy epoch without opening holding history.
 func (h *historyEnv) nextEpoch() uint64 {
 	h.t.Helper()
 	h.swap(h.trader, h.denom, true, 100_000_000)
-	_, err := h.k.ExecuteAirdrop(h.ctx, h.creator, h.denom)
+	genesis := h.k.ExportGenesis(h.ctx)
+	var epoch uint64
+	for index := range genesis.Markets {
+		if genesis.Markets[index].Denom == h.denom {
+			genesis.Markets[index].AirdropEpoch++
+			epoch = genesis.Markets[index].AirdropEpoch
+			break
+		}
+	}
+	require.NotZero(h.t, epoch)
+	err := genesis.Validate()
 	require.NoError(h.t, err)
+	h.k.InitGenesis(h.ctx, *genesis)
 	return h.market(h.denom).AirdropEpoch
 }
 
