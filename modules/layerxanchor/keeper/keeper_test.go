@@ -1,6 +1,15 @@
 package keeper_test
 
 import (
+	"bytes"
+	"github.com/gogo/protobuf/jsonpb"
+	"github.com/gogo/protobuf/proto"
+	moduleimpl "github.com/sidiora-labs/paxeer-network/modules/layerxanchor"
+	"github.com/sidiora-labs/paxeer-network/sdk/baseapp"
+	"github.com/sidiora-labs/paxeer-network/sdk/codec"
+	cdctypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
+	"github.com/sidiora-labs/paxeer-network/sdk/types/module"
+
 	"encoding/json"
 	"testing"
 	"time"
@@ -587,4 +596,160 @@ func TestDefaultGenesisIsValid(t *testing.T) {
 	bad = types.DefaultGenesis()
 	bad.HasLatestFinalized = true
 	require.Error(t, bad.Validate())
+}
+
+func parameterRouter(t *testing.T, k keeper.Keeper) (*baseapp.MsgServiceRouter, *codec.ProtoCodec) {
+	t.Helper()
+	registry := cdctypes.NewInterfaceRegistry()
+	sdk.RegisterInterfaces(registry)
+	moduleimpl.AppModuleBasic{}.RegisterInterfaces(registry)
+	cdc := codec.NewProtoCodec(registry)
+	router := baseapp.NewMsgServiceRouter()
+	router.SetInterfaceRegistry(registry)
+	moduleimpl.NewAppModule(k).RegisterServices(module.NewConfigurator(cdc, router, baseapp.NewGRPCQueryRouter()))
+	return router, cdc
+}
+func parameterRoute(t *testing.T, router *baseapp.MsgServiceRouter, cdc *codec.ProtoCodec, ctx sdk.Context, msg *types.MsgUpdateParams) error {
+	t.Helper()
+	raw, err := cdc.MarshalInterface(msg)
+	require.NoError(t, err)
+	var decoded sdk.Msg
+	require.NoError(t, cdc.UnmarshalInterface(raw, &decoded))
+	require.Equal(t, "/paxprotocol.paxchain.layerxanchor.MsgUpdateParams", sdk.MsgTypeURL(decoded))
+	raw2, err := cdc.MarshalInterface(decoded)
+	require.NoError(t, err)
+	require.Equal(t, raw, raw2)
+	handler := router.Handler(decoded)
+	require.NotNil(t, handler)
+	_, err = handler(ctx, decoded)
+	return err
+}
+func TestMsgUpdateParamsGovernanceRoute(t *testing.T) {
+	s := newSuite(t, nil)
+	k, ctx := s.k, s.ctx
+	authority := s.authority.String()
+	router, cdc := parameterRouter(t, k)
+	params := k.GetParams(ctx)
+	params.ReporterShare = sdk.NewDecWithPrec(2, 1)
+	params.PermissionlessRegistration = !params.PermissionlessRegistration
+	require.NoError(t, parameterRoute(t, router, cdc, ctx, &types.MsgUpdateParams{Authority: authority, Params: params}))
+	require.Equal(t, params, k.GetParams(ctx))
+	eventResult, eventErr := router.Handler(&types.MsgUpdateParams{})(ctx, &types.MsgUpdateParams{Authority: authority, Params: params})
+	require.NoError(t, eventErr)
+	events := eventResult.Events
+	require.NotEmpty(t, events)
+	require.Equal(t, types.EventParamsUpdated, events[len(events)-1].Type)
+	response, err := keeper.NewMsgServerImpl(k).UpdateParams(sdk.WrapSDKContext(ctx), &types.MsgUpdateParams{Authority: authority, Params: params})
+	require.NoError(t, err)
+	require.NotNil(t, response)
+}
+func TestMsgUpdateParamsCodecAndSigners(t *testing.T) {
+	s := newSuite(t, nil)
+	k, ctx := s.k, s.ctx
+	authority := s.authority.String()
+	_, cdc := parameterRouter(t, k)
+	msg := &types.MsgUpdateParams{Authority: authority, Params: k.GetParams(ctx)}
+	require.NoError(t, msg.ValidateBasic())
+	signer, err := sdk.AccAddressFromBech32(authority)
+	require.NoError(t, err)
+	require.Equal(t, []sdk.AccAddress{signer}, msg.GetSigners())
+	require.Equal(t, types.RouterKey, msg.Route())
+	require.Equal(t, types.TypeMsgUpdateParams, msg.Type())
+	require.Equal(t, sdk.MustSortJSON(types.ModuleCdc.MustMarshalJSON(msg)), msg.GetSignBytes())
+	raw, err := proto.Marshal(msg)
+	require.NoError(t, err)
+	var decoded types.MsgUpdateParams
+	require.NoError(t, proto.Unmarshal(raw, &decoded))
+	require.Equal(t, *msg, decoded)
+	raw, err = cdc.MarshalAsJSON(msg)
+	require.NoError(t, err)
+	require.NoError(t, cdc.UnmarshalAsJSON(raw, &decoded))
+	require.Equal(t, *msg, decoded)
+	amino := codec.NewLegacyAmino()
+	sdk.RegisterLegacyAminoCodec(amino)
+	moduleimpl.AppModuleBasic{}.RegisterLegacyAminoCodec(amino)
+	raw, err = amino.MarshalAsJSON(msg)
+	require.NoError(t, err)
+	require.NoError(t, amino.UnmarshalAsJSON(raw, &decoded))
+	require.Equal(t, *msg, decoded)
+	invalid := *msg
+	invalid.Params.SlashFractionAvailability = sdk.Dec{}
+	require.Error(t, invalid.ValidateBasic())
+	_, err = keeper.NewMsgServerImpl(k).UpdateParams(sdk.WrapSDKContext(ctx), &invalid)
+	require.Error(t, err)
+	require.Equal(t, msg.Params, k.GetParams(ctx))
+	preserved := msg.Params
+	require.Error(t, preserved.UnmarshalJSONPB(&jsonpb.Unmarshaler{}, []byte(`{"unknown_field":true}`)))
+	require.Equal(t, msg.Params, preserved)
+	raw, err = json.Marshal(msg.Params)
+	require.NoError(t, err)
+	require.Error(t, preserved.UnmarshalJSONPB(nil, append(raw, []byte(` {}`)...)))
+	require.Equal(t, msg.Params, preserved)
+	address := types.AnchorPrecompileAddress
+	saved := address
+	for _, length := range []int{0, 19, 21} {
+		require.Error(t, address.Unmarshal(make([]byte, length)))
+		require.Equal(t, saved, address)
+	}
+	_, err = address.MarshalTo(make([]byte, 19))
+	require.Error(t, err)
+	encoded, err := address.Marshal()
+	require.NoError(t, err)
+	require.Len(t, encoded, 20)
+	var other types.Address20
+	require.NoError(t, other.Unmarshal(encoded))
+	require.Equal(t, address, other)
+}
+func TestMsgUpdateParamsRefusals(t *testing.T) {
+	s := newSuite(t, nil)
+	k, ctx := s.k, s.ctx
+	authority := s.authority.String()
+	router, cdc := parameterRouter(t, k)
+	before := k.GetParams(ctx)
+	outsider := sdk.AccAddress(bytes.Repeat([]byte{0xfe}, 20)).String()
+	for _, caller := range []string{outsider, "invalid-bech32"} {
+		msg := &types.MsgUpdateParams{Authority: caller, Params: before}
+		require.Error(t, parameterRoute(t, router, cdc, ctx, msg))
+		_, err := keeper.NewMsgServerImpl(k).UpdateParams(sdk.WrapSDKContext(ctx), msg)
+		require.Error(t, err)
+		require.Equal(t, before, k.GetParams(ctx))
+		if caller == "invalid-bech32" {
+			require.Empty(t, msg.GetSigners())
+			require.Error(t, msg.ValidateBasic())
+		}
+	}
+	cases := []struct {
+		name   string
+		mutate func(*types.Params)
+	}{
+		{"authority", func(p *types.Params) { p.Authority = "invalid" }},
+		{"denom", func(p *types.Params) { p.BondDenom = "!" }},
+		{"threshold-zero", func(p *types.Params) { p.Threshold = 0 }},
+		{"threshold-high", func(p *types.Params) { p.Threshold = 33 }},
+		{"min-bond-nil", func(p *types.Params) { p.MinBond = sdk.Int{} }},
+		{"min-bond-zero", func(p *types.Params) { p.MinBond = sdk.ZeroInt() }},
+		{"challenge-bond-negative", func(p *types.Params) { p.ChallengeBond = sdk.NewInt(-1) }},
+		{"attestation-delay", func(p *types.Params) { p.MaxAttestationDelayMs = 0 }},
+		{"settlement", func(p *types.Params) { p.SettlementContract = types.Address20{} }},
+		{"equivocation", func(p *types.Params) { p.SlashFractionEquivocation = sdk.NewDec(2) }},
+		{"fraud", func(p *types.Params) { p.SlashFractionFraud = sdk.NewDec(-1) }},
+		{"availability", func(p *types.Params) { p.SlashFractionAvailability = sdk.NewDec(-1) }},
+		{"reporter", func(p *types.Params) { p.ReporterShare = sdk.NewDec(2) }},
+		{"destination", func(p *types.Params) { p.SlashDestination = "invalid" }},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			params := before
+			test.mutate(&params)
+			msg := &types.MsgUpdateParams{Authority: authority, Params: params}
+			require.Error(t, msg.ValidateBasic())
+			require.Error(t, parameterRoute(t, router, cdc, ctx, msg))
+			_, err := keeper.NewMsgServerImpl(k).UpdateParams(sdk.WrapSDKContext(ctx), msg)
+			require.Error(t, err)
+			require.Equal(t, before, k.GetParams(ctx))
+		})
+	}
+	_, err := keeper.NewMsgServerImpl(k).UpdateParams(sdk.WrapSDKContext(ctx), nil)
+	require.Error(t, err)
+	require.Equal(t, before, k.GetParams(ctx))
 }

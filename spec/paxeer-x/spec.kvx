@@ -24234,7 +24234,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.106.4.9]
 title = "Expose anchor and launchpad parameter messages through registered module services"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
