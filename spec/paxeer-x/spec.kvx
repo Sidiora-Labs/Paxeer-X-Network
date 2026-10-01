@@ -31413,7 +31413,7 @@ do_2 = "Add a committed payer-grant state type that embeds the existing verified
 do_3 = "Create cross-language contract cases from actual native budget and grant encoders and the real Rust decoders. Cover both budget versions, sorted delegate bounds, source-account semantics, u128/u64 extremes, malformed versions/lengths/booleans/order, key mismatch, corrupted grant identity/signature and every trailer field. Preserve existing budget reconciliation behavior and compile the affected production consumer."
 do_4 = "Use one explicit build recipe for the native vector producer, focused Rust test executable and affected agentd consumer. The verification command runs only the source-bound prebuilt artifacts and fails on missing or incompatible inputs; no fake records or hand-written success responses."
 do_5 = "This task implements reusable canonical record decoding only. It cannot label any record state-proven, prove absence or completeness, supply authentication, expose an endpoint or complete the wallet caps UI. Native range proofs, authenticated account binding and the full14.4 gate remain required."
-touches = ["agent/crates/layerx-client/src/budget.rs", "agent/crates/layerx-client/src/grants.rs", "agent/crates/layerx-client/src/lib.rs", "agent/crates/layerx-agentd/src/budget/reconcile.rs", "agent/crates/layerx-agentd/src/budget/mod.rs", "agent/crates/layerx-client/tests/committed_caps.rs", "tests/qualification/lxp_wallet_caps_vectors.c", "tools/qualification/paxeer-x/build-caps-codecs.sh", "tools/qualification/paxeer-x/caps-codecs.py", "tools/paxeer-x/gates/14.9.sh"]
+touches = ["agent/crates/layerx-client/src/budget.rs", "agent/crates/layerx-client/src/grants.rs", "agent/crates/layerx-client/src/lib.rs", "agent/crates/layerx-agentd/src/budget/reconcile.rs", "agent/crates/layerx-agentd/src/budget/mod.rs", "agent/crates/layerx-client/tests/committed_caps.rs", "tests/qualification/lxp_wallet_caps_vectors.c", "tools/qualification/paxeer-x/build-caps-codecs.sh", "tools/qualification/paxeer-x/caps-codecs.py", "tools/paxeer-x/gates/14.9.sh", "agent/crates/layerx-agentd/tests/support/real_authority.rs"]
 planned_paths = ["agent/crates/layerx-client/src/budget.rs", "agent/crates/layerx-client/src/grants.rs", "agent/crates/layerx-client/tests/committed_caps.rs", "tests/qualification/lxp_wallet_caps_vectors.c", "tools/qualification/paxeer-x/build-caps-codecs.sh", "tools/qualification/paxeer-x/caps-codecs.py", "tools/paxeer-x/gates/14.9.sh"]
 verify_cmd = "timeout 15m python3 tools/qualification/paxeer-x/caps-codecs.py"
 gate_kind = "planned-prerequisite"
@@ -31425,6 +31425,7 @@ stop_condition = "Stop at the declared gate result or time limit; keep exact sou
 deployment_profile = "product"
 completion_policy = "Canonical codec and consumer compatibility only; no authenticated read, state proof, wallet readiness or runtime certification."
 evidence_policy = "Keep operational inputs and raw qualification evidence private; publish portable technical source only."
+fixture_contract = "Start or bind the genuine isolated Paxeer chain and settlement-contract fixture before starting native authority consumers. Feed its exact RPC and chain identity through the cleared child environment; an unused port is not a chain fixture. Preserve every actual finality, threshold, latest-finalized, network and custody check, and every existing assertion. Use source-bound executables and retained owned state; never contact the operating network."
 
 [task.22.7]
 title = "Verify independent per-receipt authority evidence in the explorer reader"
@@ -31448,7 +31449,7 @@ never_4 = "Never treat 404, 503 or a malformed answer as verified or as complete
 never_5 = "Never add a reverse dependency from layerx-client to layerx-platform-authority and never edit platform/hosted/authority, agent/crates, docker or deployment files in this task."
 never_6 = "Never use mocked services, recorded RPC response servers, hand-written authority documents or fabricated receipts. Negative proof inputs may mutate actual produced evidence and must exercise the unchanged verifier."
 never_7 = "Never print, log or persist the bearer token, and never wire this reader into main.rs, query.rs or ingest_receipt_authority; that integration is 22.5."
-touches = ["human/crates/layerx-explorer-index/src/receipt_authority.rs", "human/crates/layerx-explorer-index/src/lib.rs", "human/crates/layerx-explorer-index/Cargo.toml", "human/Cargo.lock", "human/crates/layerx-explorer-index/tests/receipt_authority_reader.rs", "tools/paxeer-x/gates/22.7.sh", "tools/qualification/paxeer-x/explorer-receipt-reader.py"]
+touches = ["human/crates/layerx-explorer-index/src/receipt_authority.rs", "human/crates/layerx-explorer-index/src/lib.rs", "human/crates/layerx-explorer-index/Cargo.toml", "human/Cargo.lock", "human/crates/layerx-explorer-index/tests/receipt_authority_reader.rs", "tools/paxeer-x/gates/22.7.sh", "tools/qualification/paxeer-x/explorer-receipt-reader.py", "agent/crates/layerx-wire/src/handover.rs", "agent/crates/layerx-proof/src/state_witness.rs"]
 verify_cmd = "timeout 20m python3 tools/qualification/paxeer-x/explorer-receipt-reader.py"
 gate_kind = "planned-prerequisite"
 max_builds = 1
@@ -31461,6 +31462,7 @@ planned_paths = ["human/crates/layerx-explorer-index/src/receipt_authority.rs", 
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 completion_policy = "Qualifies only the independent per-receipt reader and trust boundary. Scoped production entitlement/provisioning and the complete22.5 lifecycle, rollback, checkpoint, availability and durability gate remain required."
+protocol_compatibility = "Decode the exact native registered-module domain using the existing closed ModuleId enumeration, including Spot and Web where registered. Derive the finite registry/composite limits from those canonical identities; require each module index to fit the actual composite leaf count. Retain legacy minimums and every canonical ordering, activity, key, root, hash, length and Merkle-path check. Existing refusal assertions remain unchanged; use actual native genesis/witness and malformed mutations in the existing reader target."
 
 [task.104.35.9]
 title = "Pin legacy runtime trace and commitment byte compatibility"
