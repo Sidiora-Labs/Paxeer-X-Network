@@ -56,7 +56,9 @@ ca        reads the internal CA under LAYERX_CA_DIR on this host and, through
           it names one): LAYERX_FLY_TLS_DIR/<service>/cert.pem on the volume
           for a volume row, the guest path of the toml's [[files]] entry
           <PREFIX>_CERT for a row whose custody is the secret prefix PREFIX.
-          One line each:
+          A row of ca.sh attestor_services is verified against the
+          attestors' gateway CA under LAYERX_ATTESTOR_CA_DIR instead of the
+          internal CA. One line each:
   ca      "pass ca ca expires_in=<days>d" when the CA certificate is readable
           and more than thirty days from expiry
   <service>
@@ -68,7 +70,9 @@ ca        reads the internal CA under LAYERX_CA_DIR on this host and, through
           app=<app> cert=unmounted" when the toml mounts no <PREFIX>_CERT;
           "fail <service> app=<app> cert=absent" when the machine holds none;
           otherwise "fail" with chain=untrusted, san=<n>/<m> missing=<names>
-          or the expiry as observed.
+          or the expiry as observed; "fail <service> app=<app>
+          attestor_ca=absent LAYERX_ATTESTOR_CA_DIR=<dir or unset>" for an
+          attestor_services row when that directory holds no ca.pem.
           Exits 0 only when the CA and every certificate pass.
 
 hpx       reads the hpx registry at CHECK_LIVE_HPX_ORIGIN, by default
@@ -196,6 +200,9 @@ Environment:
   CHECK_LIVE_TIMEOUT   seconds per request, ssh or flyctl call, default 30
   LAYERX_CA_DIR        the internal CA directory on this host, default
                        /etc/layerx/ca
+  LAYERX_ATTESTOR_CA_DIR
+                       the attestors' gateway CA directory on this host,
+                       required by ca for the rows of ca.sh attestor_services
   LAYERX_FLY_TLS_DIR   the certificate directory root on the volume of a
                        Fly app, default /data/tls
   CHECK_LIVE_GAS_ACCOUNT_KEYSTORE, CHECK_LIVE_GAS_ACCOUNT_PASSWORD_FILE
@@ -700,7 +707,7 @@ check_archive_node() {
 
 check_ca() {
 	local table service toml group custody eku sans app path cert chain
-	local want got san missing n m days line failures=0
+	local want got san missing n m days line failures=0 attestors trust
 	if [ ! -r "$ca_dir/ca.pem" ]; then
 		echo "fail ca ca cert=absent"
 		finish 1
@@ -713,11 +720,21 @@ check_ca() {
 		failures=$((failures + 1))
 	fi
 	table="$("$(dirname "${BASH_SOURCE[0]}")/ca.sh" services)"
+	attestors="$(sed -n 's/^attestor_services="\(.*\)"$/\1/p' "$(dirname "${BASH_SOURCE[0]}")/ca.sh")"
 	while read -r service toml group custody _ eku sans; do
 		if ! app="$(fly_app "$toml")"; then
 			echo "fail $service toml=absent"
 			failures=$((failures + 1))
 			continue
+		fi
+		trust="$ca_dir/ca.pem"
+		if [[ " $attestors " == *" $service "* ]]; then
+			trust="${LAYERX_ATTESTOR_CA_DIR:-}/ca.pem"
+			if [ -z "${LAYERX_ATTESTOR_CA_DIR:-}" ] || [ ! -r "$trust" ]; then
+				echo "fail $service app=$app attestor_ca=absent LAYERX_ATTESTOR_CA_DIR=${LAYERX_ATTESTOR_CA_DIR:-unset}"
+				failures=$((failures + 1))
+				continue
+			fi
 		fi
 		if [ "$custody" = volume ]; then
 			path="$fly_tls_dir/$service/cert.pem"
@@ -732,7 +749,7 @@ check_ca() {
 			continue
 		fi
 		chain=ok
-		openssl verify -CAfile "$ca_dir/ca.pem" <<<"$cert" >/dev/null 2>&1 || chain=untrusted
+		openssl verify -CAfile "$trust" <<<"$cert" >/dev/null 2>&1 || chain=untrusted
 		want="$(app_sans "$sans" "$app")"
 		got="$(openssl x509 -noout -ext subjectAltName <<<"$cert" 2>/dev/null | tail -n +2 | sed 's/IP Address:/IP:/g; s/, /,/g; s/^ *//')"
 		missing=""

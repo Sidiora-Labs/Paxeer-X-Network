@@ -1931,3 +1931,15 @@ area    = "human-material"
 symptom = "A search for the sequencer trust history across human/crates and platform finds only readers and test fixtures."
 cause   = "The one writer of the LayerX/sequencer-trust-history/v1 encoding is encode_trust_history in platform/hosted/tests/beta-cluster.sh; the kernel and registry inits only wait on the file."
 do      = "Search for the encoding header and encode_trust_history, not the path, before naming a producer."
+
+[gotcha.319]
+area    = "bringup-ca"
+symptom = "A client row added to ca.sh services for the wallet attestors fails check-live ca with chain=untrusted even when the issue succeeded."
+cause   = "The attestors admit keys.generate and sign only from the gateway CA in ATTESTOR_TLS_CA, while check_ca verifies every row against the internal CA."
+do      = "Issue attestor client rows under LAYERX_ATTESTOR_CA_DIR and verify them against that CA, never the internal CA."
+
+[gotcha.320]
+area    = "bringup-ca"
+symptom = "A per-row CA rule in check-live ca drifts from ca.sh when the attestor row names are copied into the checker."
+cause   = "ca.sh holds the attestor row list as the attestor_services variable, not as a column of the services table."
+do      = "Read attestor_services out of ca.sh in the checker, and pass LAYERX_ATTESTOR_CA_DIR to every check-live ca run, since an unset directory fails the attestor row."
