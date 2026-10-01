@@ -21,7 +21,7 @@ GO_PATHS = ("chain.mk", "go.mod", "go.sum", "admin", "consensus", "custodyproof"
             "precompiles", "ratelimiter", "rpc", "sdk", "storage", "store", "sync",
             "types", "utils", "wasm", "wasm-runtime", "wasmbinding", "tools/chain")
 NATIVE_PATHS = ("Makefile", "src", "include", "cmd", "programs", "agent",
-                "contracts/config/checkpoint-settlement.json")
+                "rust-toolchain.toml", "contracts/config/checkpoint-settlement.json")
 PATHS = {name: GO_PATHS if name in ("paxd", "layerx-custody-proof") else
          GO_PATHS + ("human/wallet/attestor",) if name == "attestor" else NATIVE_PATHS
          for name in NAMES}
@@ -122,6 +122,24 @@ def go_metadata(path, revision, tool):
     return output
 
 
+def rust_pin(revision):
+    source = git("show", revision + ":rust-toolchain.toml")
+    match = re.search(r'^channel\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"$', source, re.M)
+    require(match is not None, "exact Rust toolchain pin required")
+    return match.group(1)
+
+
+def rust_toolchain(revision):
+    pin = rust_pin(revision)
+    rustup = os.environ.get("PAXEER_RUSTUP") or shutil.which("rustup")
+    require(bool(rustup), "rustup with installed pinned toolchain required")
+    paths = {name: command([rustup, "which", "--toolchain", pin, name], capture=True).stdout.strip()
+             for name in ("cargo", "rustc", "rustdoc")}
+    version = command([paths["rustc"], "--version"], capture=True).stdout.strip()
+    require(version.startswith("rustc " + pin + " "), "Rust compiler differs from source pin")
+    return pin, paths, version
+
+
 def validate(manifest, directory, selected_revision=None):
     private_directory(directory)
     require(manifest.get("version") == 1, "unsupported manifest version")
@@ -156,6 +174,11 @@ def validate(manifest, directory, selected_revision=None):
         require(record.get("sha256") == sha256(path) == checksums[path.name], "runtime library digest mismatch")
     require(manifest.get("build", {}).get("exit_code") == 0 and
             manifest["build"].get("commands"), "missing successful build provenance")
+    pin = rust_pin(revision)
+    require(pin == rust_pin(selected_revision) and
+            manifest["build"].get("rust_toolchain") == pin and
+            manifest["build"].get("rustc_version", "").startswith("rustc " + pin + " "),
+            "build compiler differs from source pin")
     return manifest
 
 
@@ -163,19 +186,21 @@ def build(destination):
     output_path(destination)
     revision, tree = clean_identity()
     tool, version = go_tool()
-    environment = dict(os.environ, PATH=str(Path(tool).parent) + os.pathsep + os.environ.get("PATH", ""),
-                       PAXEER_GO=tool, GOMAXPROCS="5", CARGO_BUILD_JOBS="5", GOFLAGS="-mod=readonly -p=5")
+    pin, rust_paths, rust_version = rust_toolchain(revision)
+    environment = dict(os.environ, PATH=os.pathsep.join((str(Path(tool).parent), str(Path(rust_paths["cargo"]).parent), os.environ.get("PATH", ""))),
+                       PAXEER_GO=tool, GOMAXPROCS="5", CARGO_BUILD_JOBS="5", GOFLAGS="-mod=readonly -p=5",
+                       RUSTUP_TOOLCHAIN=pin, RUSTC=rust_paths["rustc"], RUSTDOC=rust_paths["rustdoc"])
     stage = Path(tempfile.mkdtemp(prefix=".foundation-build-", dir=destination.parent))
     commands = [
         ["make", "-f", "chain.mk", "build"],
         ["make", "-j5", "-B", "LXP_REVISION=" + revision, "PAXEER_GO=" + tool,
-         "PAXEER_GO_JOBS=5", "layerxd", "layerx-genesis-build", "layerx-module-registry", "custody-proof-build"],
+         "PAXEER_GO_JOBS=5", "PROGRAMS_CARGO=" + rust_paths["cargo"], "layerxd", "layerx-genesis-build", "layerx-module-registry", "custody-proof-build"],
         [tool, "build", "-trimpath", "-ldflags=-s -w", "-o", str(stage / "attestor"), "./cmd/attestor"],
     ]
     manifest = {"version": 1, "source_revision": revision, "source_tree": tree,
                 "artifacts": {}, "runtime_libraries": [],
                 "build": {"exit_code": None, "commands": commands, "go_version": version,
-                          "rustc_version": command(["rustc", "--version"], capture=True).stdout.strip(),
+                          "rustc_version": rust_version, "rust_toolchain": pin, "rust_tool_paths": rust_paths,
                           "cc_version": command([os.environ.get("CC", "cc"), "--version"], capture=True).stdout.splitlines()[0]}}
     try:
         for index, argv in enumerate(commands):
@@ -289,6 +314,8 @@ def verify(manifest_path, evidence):
             case("incomplete-manifest-refused", lambda: validate(wrong, clone, revision), True)
             wrong = copy.deepcopy(copied); wrong["build"]["exit_code"] = 1
             case("unproven-build-refused", lambda: validate(wrong, clone, revision), True)
+            wrong = copy.deepcopy(copied); wrong["build"]["rust_toolchain"] = "0.0.0"
+            case("wrong-compiler-refused", lambda: validate(wrong, clone, revision), True)
             case("existing-output-refused", lambda: output_path(clone), True)
             case("repository-output-refused", lambda: output_path(ROOT / "foundation-artifacts"), True)
             case("system-output-refused", lambda: output_path(Path("/usr/local/foundation-artifacts")), True)
