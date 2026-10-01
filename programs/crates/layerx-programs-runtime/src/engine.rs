@@ -177,21 +177,9 @@ impl WasmEngine {
         wasm: &[u8],
         schedule: crate::FuelSchedule,
     ) -> Result<ValidatedModule, ValidationRefusal> {
-        match abi_version {
-            crate::abi::manifest::ABI_V1_VERSION => {
-                validate::validate_module_metered(self, wasm, AbiRevision::V1, schedule)
-            }
-            crate::abi::manifest::ABI_V2_VERSION => {
-                validate::validate_module_metered(self, wasm, AbiRevision::V2, schedule)
-            }
-            crate::abi::manifest::ABI_V3_VERSION => {
-                validate::validate_module_metered(self, wasm, AbiRevision::V3, schedule)
-            }
-            crate::abi::manifest::ABI_V4_VERSION => {
-                validate::validate_module_metered(self, wasm, AbiRevision::V4, schedule)
-            }
-            _ => Err(ValidationRefusal::UnsupportedAbiVersion { abi_version }),
-        }
+        let revision = crate::abi_policy::abi_revision(abi_version)
+            .map_err(|_| ValidationRefusal::UnsupportedAbiVersion { abi_version })?;
+        validate::validate_module_metered(self, wasm, revision, schedule)
     }
 
     /// Returns the declared validation limits of this engine.

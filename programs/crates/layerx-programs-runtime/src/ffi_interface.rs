@@ -1,4 +1,6 @@
 use crate::abi::{EncodingConvention, TypeTag};
+use crate::abi_policy::{self, CapabilityEncoding};
+use crate::validate::ValidationRefusal;
 use crate::WasmEngine;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
@@ -207,7 +209,7 @@ fn decode(input: &[u8]) -> Result<Interface, i32> {
     let mut c = DOMAIN.len();
     let hash = take::<32>(input, &mut c)?;
     let abi = u16::from_be_bytes(take::<2>(input, &mut c)?);
-    if hash == [0; 32] || !matches!(abi, 1 | 2) {
+    if hash == [0; 32] || abi_policy::admit_abi_version(abi).is_err() {
         return Err(VERSION_UNSUPPORTED);
     }
     let n = count(input, &mut c)?;
@@ -225,7 +227,8 @@ fn decode(input: &[u8]) -> Result<Interface, i32> {
         for _ in 0..cn {
             let decoded = capability(input, &mut c)?;
             if decoded.first() == Some(&10)
-                && (abi != 2 || input.get(..DOMAIN.len()) != Some(DOMAIN_V2))
+                && (abi_policy::capability_encoding(abi) != Ok(CapabilityEncoding::V2)
+                    || input.get(..DOMAIN.len()) != Some(DOMAIN_V2))
             {
                 return Err(NON_CANONICAL);
             }
@@ -387,7 +390,7 @@ fn accepts_value(new: &ValueType, old: &ValueType) -> bool {
     }
 }
 fn widening(new: &Interface, old: &Interface) -> bool {
-    new.abi == old.abi
+    abi_policy::admit_abi_upgrade(old.abi, new.abi).is_ok()
         && old.entries.iter().all(|o| {
             new.entries
                 .iter()
@@ -441,12 +444,10 @@ pub extern "C" fn layerx_programs_interface_validate(
     let Ok(engine) = WasmEngine::declared() else {
         return NON_CANONICAL;
     };
-    let Ok(module) = (match abi {
-        1 => engine.validate(&wasm),
-        2 => engine.validate_v2(&wasm),
-        _ => return VERSION_UNSUPPORTED,
-    }) else {
-        return NON_CANONICAL;
+    let module = match engine.validate_versioned(abi, &wasm) {
+        Ok(module) => module,
+        Err(ValidationRefusal::UnsupportedAbiVersion { .. }) => return VERSION_UNSUPPORTED,
+        Err(_) => return NON_CANONICAL,
     };
     if interface.entries.iter().any(|e| {
         !module.supports_interface_entrypoint(&e.name)
