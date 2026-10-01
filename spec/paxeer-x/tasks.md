@@ -2157,7 +2157,7 @@
       - Provide only the bounded compatibility assertions needed before version3 implementation. Do not add a placeholder version selector, unsupported branch, reserved unauthenticated field or partial version3 implementation.
       - Complete the assertions before one explicit compile of the runtime library test and execution_trace test targets, then run the declared scoped command once. Existing unchanged expected vectors must not be edited after a disagreement; record the conflict.
       - _Requirements: 1105.3, 1105.4_
-    - [-] 104.35.10 Bind historical replay qualification to its explicit ABI revision
+    - [x] 104.35.10 Bind historical replay qualification to its explicit ABI revision
       - Set the v2 record input in dispatcher_keeps_v1_replay_stable_after_a_real_v2_revision_is_present to the existing ABI_V2_VERSION selected by ExecutorRevision::v2. The current ABI_VERSION must not select a historical replay fixture.
       - Preserve every existing assertion and refusal case, production revision registry, ABI constants, encoders, metering and replay implementation unchanged. This task corrects only the historical fixture input.
       - _Requirements: 1105.3, 1105.4_

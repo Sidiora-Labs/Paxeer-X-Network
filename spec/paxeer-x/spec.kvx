@@ -31483,7 +31483,7 @@ evidence_policy = "Publish technical implementation only; retain raw qualificati
 
 [task.104.35.10]
 title = "Bind historical replay qualification to its explicit ABI revision"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
