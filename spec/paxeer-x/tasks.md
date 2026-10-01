@@ -733,7 +733,7 @@
     - Implement tools/explorer/tests/paxeer-x-data-boundary.py --case unified-pagination using the real backend database/API and browser page with an actual multi-page account, including reload and concurrent insertion.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 197_
-  - [-] 23.2 Support the published bounded Programs event query in the CLI library
+  - [x] 23.2 Support the published bounded Programs event query in the CLI library
     - Add the program-event request branch and reuse or implement the precise published argument validation.
     - Refresh platform/cli/tests/fixtures/openrpc.json from the authoritative gateway file and extend the full strict method list.
     - Extend existing rpc tests with accepted/bounded/refused program-event cases and run the focused rpc module target.

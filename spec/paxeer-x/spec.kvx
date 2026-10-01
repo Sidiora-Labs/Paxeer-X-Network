@@ -22797,7 +22797,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.23.2]
 title = "Support the published bounded Programs event query in the CLI library"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]

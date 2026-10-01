@@ -3,6 +3,10 @@ use serde_json::{json, Value};
 
 use crate::http::Client;
 
+const PROGRAM_EVENTS_MAX_PAGE: u64 = 256;
+const PROGRAM_EVENT_MAX_TOPIC_BYTES: usize = 64;
+const PROGRAM_EVENT_MAX_DATA_BYTES: usize = 65_536;
+
 pub struct RpcClient {
     client: Client,
     url: String,
@@ -57,7 +61,11 @@ impl RpcClient {
                     .into(),
             );
         }
-        decode_response(method, &self.client.post("/rpc", &request, None)?)
+        let result = decode_response(method, &self.client.post("/rpc", &request, None)?)?;
+        if method == "lx_getProgramEvents" {
+            program_events_page(params, &result)?;
+        }
+        Ok(result)
     }
 
     /// # Errors
@@ -94,6 +102,9 @@ pub fn request(method: &str, params: &Value) -> Result<Value, String> {
             id32(id)?;
         }
         "lx_getSequence" => sequence_params(args)?,
+        "lx_getProgramEvents" => {
+            program_events_query(args)?;
+        }
         "lx_getBatchHeader" => {
             let [Value::String(number)] = args.as_slice() else {
                 return Err("lx_getBatchHeader requires one decimal string".into());
@@ -166,6 +177,81 @@ pub fn request(method: &str, params: &Value) -> Result<Value, String> {
         }
     }
     Ok(json!({"jsonrpc":"2.0","id":1,"method":method,"params":params}))
+}
+
+fn program_events_query(args: &[Value]) -> Result<(&str, u64, u64), String> {
+    let [Value::Object(query)] = args else {
+        return Err("lx_getProgramEvents requires one query object".into());
+    };
+    let topic = query
+        .get("topic")
+        .and_then(Value::as_str)
+        .filter(|topic| lowercase_hex_bytes(topic, 1, PROGRAM_EVENT_MAX_TOPIC_BYTES));
+    let from_sequence = query.get("from_sequence").and_then(Value::as_u64);
+    let limit = query
+        .get("limit")
+        .and_then(Value::as_u64)
+        .filter(|limit| (1..=PROGRAM_EVENTS_MAX_PAGE).contains(limit));
+    match (query.len(), topic, from_sequence, limit) {
+        (3, Some(topic), Some(from_sequence), Some(limit)) => Ok((topic, from_sequence, limit)),
+        _ => Err(format!(
+            "lx_getProgramEvents requires exactly topic (1 to {PROGRAM_EVENT_MAX_TOPIC_BYTES} \
+             lowercase hex bytes), from_sequence (u64) and limit (1 to {PROGRAM_EVENTS_MAX_PAGE})"
+        )),
+    }
+}
+
+/// # Errors
+/// Refuses a program event page that does not match the query it answers.
+pub fn program_events_page(params: &Value, result: &Value) -> Result<(), String> {
+    let args = params
+        .as_array()
+        .ok_or("RPC parameters must be positional")?;
+    let (topic, from_sequence, limit) = program_events_query(args)?;
+    let invalid = || "lx_getProgramEvents returned a page that does not match the query".to_owned();
+    let page = result
+        .as_object()
+        .filter(|page| page.len() == 2)
+        .ok_or_else(invalid)?;
+    let next = page
+        .get("next_sequence")
+        .and_then(Value::as_u64)
+        .filter(|next| *next >= from_sequence)
+        .ok_or_else(invalid)?;
+    let events = page
+        .get("events")
+        .and_then(Value::as_array)
+        .filter(|events| u64::try_from(events.len()).is_ok_and(|count| count <= limit))
+        .ok_or_else(invalid)?;
+    let mut previous = None;
+    for event in events {
+        let event = event
+            .as_object()
+            .filter(|event| event.len() == 4)
+            .ok_or_else(invalid)?;
+        let sequence = event
+            .get("sequence")
+            .and_then(Value::as_u64)
+            .filter(|sequence| (from_sequence..next).contains(sequence))
+            .filter(|sequence| previous.is_none_or(|previous| previous < *sequence))
+            .ok_or_else(invalid)?;
+        let program_id = event.get("program_id").and_then(Value::as_str);
+        let data = event.get("data").and_then(Value::as_str);
+        if !program_id.is_some_and(|id| lowercase_hex(id, 32) && id.bytes().any(|b| b != b'0'))
+            || event.get("topic").and_then(Value::as_str) != Some(topic)
+            || !data.is_some_and(|data| lowercase_hex_bytes(data, 0, PROGRAM_EVENT_MAX_DATA_BYTES))
+        {
+            return Err(invalid());
+        }
+        previous = Some(sequence);
+    }
+    Ok(())
+}
+
+fn lowercase_hex_bytes(value: &str, min: usize, max: usize) -> bool {
+    value.len().is_multiple_of(2)
+        && (min * 2..=max * 2).contains(&value.len())
+        && lowercase_hex(value, value.len() / 2)
 }
 
 fn asset_page_params(args: &[Value]) -> Result<(), String> {
@@ -413,6 +499,7 @@ mod tests {
                 "lx_listAssets",
                 "lx_getAsset",
                 "lx_estimateFee",
+                "lx_getProgramEvents",
                 "px_resolveAccount",
                 "px_getAccount",
                 "px_getBalances",
@@ -422,6 +509,7 @@ mod tests {
                 "px_getHistory",
                 "px_getUnifiedHistory",
                 "px_getCapabilities",
+                "px_getRouteCatalogue",
             ]
         );
         let description = |method: &str| -> Result<&str, String> {
@@ -488,6 +576,42 @@ mod tests {
         let fee_description = description("lx_estimateFee")?;
         assert!(fee_description.contains("Asset 1/2/3/4/5/6/7/8/10/11"));
         assert!(fee_description.contains("Programs 1/2/3/5/6/7"));
+        let events = entry("lx_getProgramEvents")?;
+        assert_eq!(events["paramStructure"], "by-position");
+        assert_eq!(events["params"][0]["name"], "query");
+        assert_eq!(events["params"][0]["required"], json!(true));
+        assert_eq!(events["params"][1], Value::Null);
+        let query = &events["params"][0]["schema"];
+        assert_eq!(query["additionalProperties"], json!(false));
+        assert_eq!(
+            query["required"],
+            json!(["topic", "from_sequence", "limit"])
+        );
+        assert_eq!(
+            query["properties"]["topic"]["pattern"],
+            format!("^([0-9a-f]{{2}}){{1,{PROGRAM_EVENT_MAX_TOPIC_BYTES}}}$")
+        );
+        assert_eq!(
+            query["properties"]["from_sequence"],
+            json!({"type":"integer","minimum":0,"maximum":u64::MAX})
+        );
+        assert_eq!(
+            query["properties"]["limit"],
+            json!({"type":"integer","minimum":1,"maximum":PROGRAM_EVENTS_MAX_PAGE})
+        );
+        let page = &events["result"]["schema"];
+        assert_eq!(page["required"], json!(["events", "next_sequence"]));
+        assert_eq!(
+            page["properties"]["events"]["maxItems"],
+            json!(PROGRAM_EVENTS_MAX_PAGE)
+        );
+        assert_eq!(
+            page["properties"]["events"]["items"]["properties"]["data"]["maxLength"],
+            json!(PROGRAM_EVENT_MAX_DATA_BYTES * 2)
+        );
+        let events_description = description("lx_getProgramEvents")?;
+        assert!(events_description.contains("returning at most limit events (1 to 256)"));
+        assert!(events_description.contains("Malformed or extra params return -32602"));
         let submission_description = description("lx_sendActivity")?;
         assert!(submission_description.contains("Asset ordinal 9 is reserved and refused"));
         assert!(submission_description
@@ -616,6 +740,126 @@ mod tests {
         ] {
             assert!(request(method, &args).is_err());
         }
+        Ok(())
+    }
+
+    #[test]
+    fn program_event_queries_are_bounded_before_transport() -> Result<(), String> {
+        let topic = "504158454552585f5745425f524551554553545f5631";
+        for params in [
+            json!([{"topic": topic, "from_sequence": 0, "limit": 1}]),
+            json!([{"limit": PROGRAM_EVENTS_MAX_PAGE, "from_sequence": u64::MAX, "topic": "ab".repeat(64)}]),
+            json!([{"topic": "00", "from_sequence": 40, "limit": 2}]),
+        ] {
+            assert_eq!(
+                request("lx_getProgramEvents", &params)?,
+                json!({"jsonrpc":"2.0","id":1,"method":"lx_getProgramEvents","params":params})
+            );
+        }
+        let client = RpcClient::new("http://127.0.0.1:1/rpc", None)?;
+        for params in [
+            json!([]),
+            json!({}),
+            json!({"topic": topic, "from_sequence": 0, "limit": 1}),
+            json!([{"topic": topic, "from_sequence": 0}]),
+            json!([{"topic": topic, "limit": 1}]),
+            json!([{"from_sequence": 0, "limit": 1}]),
+            json!([{"topic": topic, "from_sequence": 0, "limit": 0}]),
+            json!([{"topic": topic, "from_sequence": 0, "limit": PROGRAM_EVENTS_MAX_PAGE + 1}]),
+            json!([{"topic": topic, "from_sequence": -1, "limit": 1}]),
+            json!([{"topic": topic, "from_sequence": 1.5, "limit": 1}]),
+            json!([{"topic": topic, "from_sequence": "1", "limit": 1}]),
+            json!([{"topic": topic, "from_sequence": 0, "limit": "1"}]),
+            json!([{"topic": "", "from_sequence": 0, "limit": 1}]),
+            json!([{"topic": "ABCD", "from_sequence": 0, "limit": 1}]),
+            json!([{"topic": "abc", "from_sequence": 0, "limit": 1}]),
+            json!([{"topic": "+a", "from_sequence": 0, "limit": 1}]),
+            json!([{"topic": "../", "from_sequence": 0, "limit": 1}]),
+            json!([{"topic": 171, "from_sequence": 0, "limit": 1}]),
+            json!([{"topic": "ab".repeat(65), "from_sequence": 0, "limit": 1}]),
+            json!([{"topic": topic, "from_sequence": 0, "limit": 1, "extra": 1}]),
+            json!([{"topic": topic, "from_sequence": 0, "limit": 1}, 1]),
+            json!([topic, 0, 1]),
+        ] {
+            assert!(request("lx_getProgramEvents", &params).is_err(), "{params}");
+            let refused = client
+                .call("lx_getProgramEvents", &params)
+                .err()
+                .ok_or("malformed query reached transport")?;
+            assert!(
+                refused.starts_with("lx_getProgramEvents") || refused.starts_with("RPC parameters"),
+                "{refused}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn program_event_pages_decode_only_when_they_match_the_query() -> Result<(), String> {
+        let topic = "504158454552585f5745425f524551554553545f5631";
+        let query = json!([{"topic": topic, "from_sequence": 40, "limit": 2}]);
+        let event = |sequence: u64, topic: &str| json!({"sequence": sequence, "program_id": "ab".repeat(32), "topic": topic, "data": "01"});
+        let accepted = [
+            json!({"events": [event(40, topic), event(41, topic)], "next_sequence": 42}),
+            json!({"events": [event(41, topic)], "next_sequence": 44}),
+            json!({"events": [], "next_sequence": 40}),
+            json!({"events": [{"sequence": 43, "program_id": "ab".repeat(32), "topic": topic,
+                "data": "ab".repeat(PROGRAM_EVENT_MAX_DATA_BYTES)}], "next_sequence": 44}),
+        ];
+        for page in &accepted {
+            let response = json!({"jsonrpc":"2.0","id":1,"result":page});
+            let decoded = decode_response("lx_getProgramEvents", &response)?;
+            program_events_page(&query, &decoded)?;
+            assert_eq!(&decoded, page);
+        }
+        for refused in [
+            json!({"events": [event(40, topic), event(41, topic), event(42, topic)],
+                "next_sequence": 43}),
+            json!({"events": [], "next_sequence": 39}),
+            json!({"events": [event(44, topic)], "next_sequence": 44}),
+            json!({"events": [event(39, topic)], "next_sequence": 44}),
+            json!({"events": [event(42, topic), event(41, topic)], "next_sequence": 44}),
+            json!({"events": [event(41, topic), event(41, topic)], "next_sequence": 44}),
+            json!({"events": [event(41, "00")], "next_sequence": 44}),
+            json!({"events": [{"sequence": 41, "program_id": "00".repeat(32), "topic": topic,
+                "data": "01"}], "next_sequence": 44}),
+            json!({"events": [{"sequence": 41, "program_id": "AB".repeat(32), "topic": topic,
+                "data": "01"}], "next_sequence": 44}),
+            json!({"events": [{"sequence": 41, "program_id": "ab".repeat(32), "topic": topic,
+                "data": "0"}], "next_sequence": 44}),
+            json!({"events": [{"sequence": 41, "program_id": "ab".repeat(32), "topic": topic,
+                "data": "ab".repeat(PROGRAM_EVENT_MAX_DATA_BYTES + 1)}], "next_sequence": 44}),
+            json!({"events": [{"sequence": 41, "program_id": "ab".repeat(32), "topic": topic}],
+                "next_sequence": 44}),
+            json!({"events": [{"sequence": 41, "program_id": "ab".repeat(32), "topic": topic,
+                "data": "01", "extra": true}], "next_sequence": 44}),
+            json!({"events": [], "next_sequence": 44, "extra": true}),
+            json!({"events": {}, "next_sequence": 44}),
+            json!({"events": []}),
+            json!({"events": [], "next_sequence": "44"}),
+            json!([]),
+        ] {
+            assert!(program_events_page(&query, &refused).is_err(), "{refused}");
+        }
+        assert!(program_events_page(&json!([{"topic": topic}]), &accepted[0]).is_err());
+        assert!(decode_response(
+            "lx_getProgramEvents",
+            &json!({"jsonrpc":"2.0","id":1,"result":[]})
+        )
+        .is_err());
+        let unavailable = json!({"code":-32001,"message":"Read unavailable"});
+        assert_eq!(
+            serde_json::from_str::<Value>(
+                &decode_response(
+                    "lx_getProgramEvents",
+                    &json!({"jsonrpc":"2.0","id":1,"error":unavailable})
+                )
+                .err()
+                .ok_or("error lost")?
+            )
+            .map_err(|e| e.to_string())?,
+            json!({"code":-32001,"message":"Read unavailable","data":null})
+        );
         Ok(())
     }
 
