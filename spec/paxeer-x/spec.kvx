@@ -21565,12 +21565,12 @@ mode = "BUILD"
 wave = 3
 requires = ["0.2", "4.1.1"]
 reqs = ["111"]
-do_1 = "Choose and implement immutable epoch entitlement representation with bounded state construction and query cost; bind supply and holder eligibility to the same explicit epoch boundary."
+do_1 = "Consume the qualified bounded holder-history primitive from4.1.1. Bind per-epoch supply, funding, payout denomination and boundary identity atomically with opening that history; calculate each holder entitlement from its immutable epoch balance with checked arithmetic and unchanged per-epoch rounding."
 do_2 = "Update ExecuteAirdrop/ClaimAirdrop and keeper storage to calculate from that basis and commit payment/claim marker together; preserve current public precompile authorization."
 do_3 = "Add real bank keeper integration with multiple holders, transfer-after-claim, mint/burn, failed payout rollback, duplicate request and committed-store reload."
 do_4 = "Add the designated new harness tests/qualification/paxeer_x_airdrop_entitlements.py using real production code and durable stores; invoke prebuilt task targets, fail on any missing prerequisite, and emit revision, exact command, exit code and private evidence path. Do not substitute mocks or synthetic success responses."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["modules/launchpad/keeper/fees.go", "modules/launchpad/keeper/keeper.go", "modules/launchpad/types/keys.go", "modules/launchpad/keeper/keeper_test.go", "precompiles/launchpad/launchpad.go", "tests/qualification/paxeer_x_airdrop_entitlements.py"]
+touches = ["modules/launchpad/keeper/fees.go", "modules/launchpad/keeper/keeper.go", "modules/launchpad/types/keys.go", "modules/launchpad/keeper/keeper_test.go", "precompiles/launchpad/launchpad.go", "tests/qualification/paxeer_x_airdrop_entitlements.py", "modules/launchpad/types/genesis.go", "modules/launchpad/keeper/genesis.go", "modules/launchpad/types/errors.go", "precompiles/launchpad/Launchpad.sol", "precompiles/launchpad/abi.json", "precompiles/launchpad/launchpad_test.go", "node/launchpad_airdrop_test.go"]
 verify_cmd = "timeout 1800s python3 tests/qualification/paxeer_x_airdrop_entitlements.py"
 gate_kind = "planned"
 max_builds = 1
@@ -21579,9 +21579,12 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 deployment_profile = "product"
-planned_paths = ["tests/qualification/paxeer_x_airdrop_entitlements.py"]
+planned_paths = ["tests/qualification/paxeer_x_airdrop_entitlements.py", "node/launchpad_airdrop_test.go"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+do_6 = "Provide additive claimAirdropForEpoch(address,uint64) access to older unpaid epochs while preserving current selectors and authorization. Persist and validate the funding basis, paid totals, histories, checkpoints and claim markers across commit/reopen and genesis export/import. Preserve residual funds; never sweep, expire or reconstruct legacy entitlements from current balances. Basis-less legacy epochs explicitly refuse claims while retaining their original balances and records."
+do_7 = "Keep actual production upgrade activation and historical entitlement recovery separate from this source task. No production transaction, running-node restart or invented historical holder distribution is authorized. Preserve every original test assertion and complete the unchanged full task verification gate."
 
 [task.4.2]
 title = "Carry advertised time-in-force semantics from exchange ingress to native matching"
@@ -31457,7 +31460,7 @@ completion_policy = "Qualifies only the independent per-receipt reader and trust
 
 [task.104.35.9]
 title = "Pin legacy runtime trace and commitment byte compatibility"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]

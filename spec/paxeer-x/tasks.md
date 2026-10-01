@@ -111,11 +111,13 @@
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 110_
   - [-] 4.1 Distribute launchpad airdrops from immutable epoch entitlements
-    - Choose and implement immutable epoch entitlement representation with bounded state construction and query cost; bind supply and holder eligibility to the same explicit epoch boundary.
+    - Consume the qualified bounded holder-history primitive from4.1.1. Bind per-epoch supply, funding, payout denomination and boundary identity atomically with opening that history; calculate each holder entitlement from its immutable epoch balance with checked arithmetic and unchanged per-epoch rounding.
     - Update ExecuteAirdrop/ClaimAirdrop and keeper storage to calculate from that basis and commit payment/claim marker together; preserve current public precompile authorization.
     - Add real bank keeper integration with multiple holders, transfer-after-claim, mint/burn, failed payout rollback, duplicate request and committed-store reload.
     - Add the designated new harness tests/qualification/paxeer_x_airdrop_entitlements.py using real production code and durable stores; invoke prebuilt task targets, fail on any missing prerequisite, and emit revision, exact command, exit code and private evidence path. Do not substitute mocks or synthetic success responses.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
+    - Provide additive claimAirdropForEpoch(address,uint64) access to older unpaid epochs while preserving current selectors and authorization. Persist and validate the funding basis, paid totals, histories, checkpoints and claim markers across commit/reopen and genesis export/import. Preserve residual funds; never sweep, expire or reconstruct legacy entitlements from current balances. Basis-less legacy epochs explicitly refuse claims while retaining their original balances and records.
+    - Keep actual production upgrade activation and historical entitlement recovery separate from this source task. No production transaction, running-node restart or invented historical holder distribution is authorized. Preserve every original test assertion and complete the unchanged full task verification gate.
     - _Requirements: 111_
     - [x] 4.1.1 Record bounded holder balance history at airdrop epoch boundaries
       - Add shared pointer-backed balance-change hook registration to both bank keepers, called before each validated setBalance write. Existing keeper copies must observe later registration. Reject empty, duplicate or nil registrations. Preserve store-mode selection, recipient checks, deferred-store behavior and existing bank assertions.
@@ -2149,7 +2151,7 @@
       - Add the compute-market capabilities to the enforced-by tables in the same shape as every other documented capability.
       - Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector.
       - _Requirements: 1105.7_
-    - [ ] 104.35.9 Pin legacy runtime trace and commitment byte compatibility
+    - [-] 104.35.9 Pin legacy runtime trace and commitment byte compatibility
       - Add fixed canonical byte and digest vectors for current version1 state and trace and version2 arbitration state, commitment and trace encodings. Derive expected bytes from the unchanged canonical fixture definitions and encoders with retained source provenance; never derive expected constants from a modified encoder to make a gate pass.
       - Preserve all existing runtime tests and assertions, including the state-rich traced CPU fuel value10654360, full canonical-state assertions, trapped-execution refusal and commitment bounds. Keep every production encoder, observer, metering, executor, registry record, default version selection and charged fuel unchanged.
       - Provide only the bounded compatibility assertions needed before version3 implementation. Do not add a placeholder version selector, unsupported branch, reserved unauthenticated field or partial version3 implementation.
