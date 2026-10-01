@@ -56,7 +56,8 @@ def codec_gate(runtime):
         raise RuntimeError('actual isolated chain id mismatch')
     counts = {}
     for name in ['client', 'agentd']:
-        result = subprocess.run([manifest['artifacts'][name]['path'], '--test-threads=1'], cwd=ROOT / 'agent', env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=600)
+        credentials = {'group': 0, 'extra_groups': []} if name == 'agentd' else {}
+        result = subprocess.run([manifest['artifacts'][name]['path'], '--test-threads=1'], cwd=ROOT / 'agent', env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=600, **credentials)
         (output / (name + '-gate.log')).write_text(result.stdout)
         print(result.stdout, end='')
         if result.returncode:
