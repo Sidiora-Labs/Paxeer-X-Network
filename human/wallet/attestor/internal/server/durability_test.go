@@ -332,8 +332,9 @@ func programTransfer(t *testing.T, pub ed25519.PublicKey, sequence uint64, amoun
 
 func signKernel(t *testing.T, c *testCluster, keyID, session string, signers []string, unsigned []byte) []apiResult {
 	t.Helper()
+	disclosure, approval := approvedActivity(t, c, unsigned, keyID, session, testOwner)
 	return c.callAll(t, c.byID(signers...), PathSign, func(*testNode) any {
-		return SignRequest{SessionID: session, KeyID: keyID, Kind: KindLXActivity, Signers: signers, Activity: hex.EncodeToString(unsigned)}
+		return SignRequest{SessionID: session, KeyID: keyID, Kind: KindLXActivity, Signers: signers, Activity: hex.EncodeToString(unsigned), Disclosure: disclosure, Approval: approval}
 	}, c.idp.mint(t, c.idp.key, testOwner))
 }
 

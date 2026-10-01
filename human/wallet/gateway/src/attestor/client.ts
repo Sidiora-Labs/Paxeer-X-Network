@@ -113,9 +113,61 @@ export type SignPayload =
   | { kind: 'eip712'; typedData: string }
   | { kind: 'personal_message'; message: Hex }
   | { kind: 'eth_sign_digest'; digest: Hex; construction: ConstructionWire }
-  | { kind: 'lx_activity'; activity: Hex }
+  | { kind: 'lx_activity'; activity: Hex; disclosure: ActivityDisclosureWire; approval: ActivityApprovalWire }
   | { kind: 'lx_bind'; message: Hex }
   | { kind: 'lx_grant'; grant: GrantWire };
+
+// Every u128 amount and u64 sequence, bound and expiry travels as a canonical unsigned
+// base-10 string (no sign, exponent or leading zeros), identical to the attestor and KMS wire.
+export type DecimalWire = string;
+
+export interface ActivityDisclosureWire {
+  account: string;
+  module: string;
+  operation: number;
+  amounts: { asset: string; amount: DecimalWire }[];
+  destinations: string[];
+  sequence: DecimalWire;
+  not_before: DecimalWire;
+  not_after: DecimalWire;
+}
+
+export interface ActivityApprovalWire {
+  version: 1;
+  principal: string;
+  key_id: string;
+  network_id: number;
+  protocol_version: number;
+  session_id: string;
+  activity_digest: string;
+  expires_at: DecimalWire;
+}
+
+const CANONICAL_DECIMAL = /^(0|[1-9][0-9]*)$/;
+
+export function decimalWire(value: bigint, bits: 64 | 128): DecimalWire {
+  if (value < 0n || value >= 1n << BigInt(bits)) {
+    throw new AttestorSessionError('session_bad_request', `value is outside u${bits}`);
+  }
+  return value.toString(10);
+}
+
+function checkDecimal(label: string, value: unknown, bits: 64 | 128): void {
+  if (typeof value !== 'string' || !CANONICAL_DECIMAL.test(value) || BigInt(value) >= 1n << BigInt(bits)) {
+    throw new AttestorSessionError('session_bad_request', `${label} is not a canonical u${bits} decimal string`);
+  }
+}
+
+function checkApproved(disclosure: ActivityDisclosureWire, approval: ActivityApprovalWire): void {
+  disclosure.amounts.forEach((a, i) => checkDecimal(`disclosure amount ${i}`, a.amount, 128));
+  checkDecimal('disclosure sequence', disclosure.sequence, 64);
+  checkDecimal('disclosure not_before', disclosure.not_before, 64);
+  checkDecimal('disclosure not_after', disclosure.not_after, 64);
+  checkDecimal('approval expires_at', approval.expires_at, 64);
+  if (approval.version !== 1) {
+    throw new AttestorSessionError('session_bad_request', 'approval version is not 1');
+  }
+}
 
 export interface SignRequestWire {
   session_id: string;
@@ -129,6 +181,8 @@ export interface SignRequestWire {
   activity?: string;
   grant?: GrantWire;
   construction?: ConstructionWire;
+  disclosure?: ActivityDisclosureWire;
+  approval?: ActivityApprovalWire;
 }
 
 export interface SignResponseWire {
@@ -372,7 +426,11 @@ export function signRequestBody(sessionId: string, keyId: string, signers: strin
     case 'eth_sign_digest':
       return { ...base, digest: bareHex(payload.digest), construction: payload.construction };
     case 'lx_activity':
-      return { ...base, activity: bareHex(payload.activity) };
+      if (payload.approval.session_id !== sessionId || payload.approval.key_id !== keyId) {
+        throw new AttestorSessionError('session_bad_request', 'the approval binding names another session or key');
+      }
+      checkApproved(payload.disclosure, payload.approval);
+      return { ...base, activity: bareHex(payload.activity), disclosure: payload.disclosure, approval: payload.approval };
     case 'lx_grant':
       return { ...base, grant: payload.grant };
   }
@@ -483,7 +541,7 @@ export class AttestorClient {
     }
     const kind = input.payload.kind;
     const curve = KIND_CURVES[kind];
-    const sessionId = randomUUID();
+    const sessionId = input.payload.kind === 'lx_activity' ? input.payload.approval.session_id : randomUUID();
     const participants = members.map((m) => m.nodeId);
     const body = JSON.stringify(signRequestBody(sessionId, input.keyId, participants, input.payload));
     const headers = authorisationHeaders(input.authorisation);

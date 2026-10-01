@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"math/big"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 
@@ -80,6 +82,8 @@ type SignRequest struct {
 	Activity     string            `json:"activity,omitempty"`
 	Grant        *GrantJSON        `json:"grant,omitempty"`
 	Construction *ConstructionJSON `json:"construction,omitempty"`
+	Disclosure   *lx.Disclosure    `json:"disclosure,omitempty"`
+	Approval     *lx.Approval      `json:"approval,omitempty"`
 }
 
 type BatchCallJSON struct {
@@ -393,7 +397,7 @@ func (s *Server) doSign(r *http.Request, body []byte) (SignResponse, *Error) {
 	if requestCarriesVerification(req) {
 		return refuse(policyError(policy.CodeVerificationIsolated, "the verification message is signed only under "+KindOperatorVerification))
 	}
-	signed, view, policyKind, e := s.prepare(req, rec.PublicKey)
+	signed, view, policyKind, e := s.prepare(req, rec.PublicKey, subject)
 	if e != nil {
 		return refuse(e)
 	}
@@ -477,32 +481,40 @@ func (s *Server) evaluate(account, policyKind string, view any, ledger policy.Le
 	return s.opts.Policy.Evaluate(account, policy.Request{Kind: policyKind, View: view}, ledger)
 }
 
-func activityDisclosure(a *lxwire.Activity) (lx.Disclosure, *Error) {
-	effect, err := lx.DecodeEffect(a)
-	if err != nil {
-		return lx.Disclosure{}, policyError(policy.CodeDecodeError, err.Error())
+func refusal(err error) *Error {
+	var r *policy.Refusal
+	if errors.As(err, &r) {
+		return policyError(r.Code, r.Reason)
 	}
-	return disclosureFor(a, effect)
+	return policyError(policy.CodeDecodeError, err.Error())
 }
 
-func disclosureFor(a *lxwire.Activity, effect *lx.Effect) (lx.Disclosure, *Error) {
-	module, ok := lx.ModuleName(a.Type.Module())
-	if !ok {
-		return lx.Disclosure{}, policyError(lx.CodeUnknownModule, "activity names an unknown module")
+// approved binds a kernel signing request to the disclosure approved at the original
+// approval boundary: the approval must name exactly this principal, key, session, network,
+// protocol and signed digest and be unexpired, and the approved disclosure must equal the
+// effect this node decoded from the activity bytes itself. A request without both is an old
+// or partial shape and is refused; no disclosure is ever derived from the submitted bytes.
+func approved(req SignRequest, subject string, a *lxwire.Activity, digest [32]byte, effect *lx.Effect) (lx.Disclosure, *Error) {
+	if req.Disclosure == nil || req.Approval == nil {
+		return lx.Disclosure{}, policyError(lx.CodeDisclosureMissing, "kind "+req.Kind+" needs the approved disclosure and its approval binding")
 	}
-	return lx.Disclosure{
-		Account:      effect.Account,
-		Module:       module,
-		Operation:    a.Type.Ordinal(),
-		Amounts:      effect.Amounts,
-		Destinations: effect.Destinations,
-		Sequence:     a.AccountSequence,
-		NotBefore:    a.NotBefore,
-		NotAfter:     a.NotAfter,
-	}, nil
+	now := time.Now()
+	if now.Unix() < 0 || uint64(now.Unix()) < a.NotBefore || uint64(now.Unix()) > a.NotAfter {
+		return lx.Disclosure{}, policyError(lx.CodeOutsideValidity, fmt.Sprintf("activity is valid from %d to %d, now is %d", a.NotBefore, a.NotAfter, now.Unix()))
+	}
+	if err := req.Approval.Check(subject, req.KeyID, req.SessionID, a, digest, now); err != nil {
+		return lx.Disclosure{}, refusal(err)
+	}
+	if err := lx.MatchDisclosure(a, effect, req.Disclosure); err != nil {
+		return lx.Disclosure{}, refusal(err)
+	}
+	return *req.Disclosure, nil
 }
 
-func (s *Server) prepare(req SignRequest, pubBytes []byte) ([]byte, any, string, *Error) {
+func (s *Server) prepare(req SignRequest, pubBytes []byte, subject string) ([]byte, any, string, *Error) {
+	if req.Kind != KindLXActivity && req.Kind != KindLXSendAuth && (req.Disclosure != nil || req.Approval != nil) {
+		return nil, nil, "", newError(CodeSessionBadRequest, "disclosure and approval belong only to %s and %s", KindLXActivity, KindLXSendAuth)
+	}
 	switch req.Kind {
 	case KindEVMTransaction:
 		raw, e := decodeHex("transaction", req.Transaction)
@@ -556,7 +568,11 @@ func (s *Server) prepare(req SignRequest, pubBytes []byte) ([]byte, any, string,
 		if err != nil {
 			return nil, nil, "", policyError(policy.CodeDecodeError, err.Error())
 		}
-		disclosure, e := activityDisclosure(a)
+		effect, err := lx.DecodeEffect(a)
+		if err != nil {
+			return nil, nil, "", policyError(policy.CodeDecodeError, err.Error())
+		}
+		disclosure, e := approved(req, subject, a, pre, effect)
 		if e != nil {
 			return nil, nil, "", e
 		}
@@ -583,7 +599,7 @@ func (s *Server) prepare(req SignRequest, pubBytes []byte) ([]byte, any, string,
 		if err != nil {
 			return nil, nil, "", policyError(policy.CodeDecodeError, err.Error())
 		}
-		disclosure, e := disclosureFor(a, effect)
+		disclosure, e := approved(req, subject, a, digest, effect)
 		if e != nil {
 			return nil, nil, "", e
 		}

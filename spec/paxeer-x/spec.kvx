@@ -22039,7 +22039,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.13.2]
 title = "Bind attestor signatures to independently approved activity disclosure"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]

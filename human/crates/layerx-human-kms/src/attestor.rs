@@ -4,11 +4,14 @@ use std::net::SocketAddr;
 use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 
-use layerx_crypto::disclosure::{bind, Disclosure};
+use layerx_crypto::disclosure::{
+    bind, AmountRole, Counterparty, CounterpartyRole, DisclosedAmount, Disclosure,
+};
+use layerx_crypto::payments::Payment;
 use layerx_crypto::send::{encode_send_envelope, EnvelopeOptions, SendDebit};
 use layerx_crypto::signer::SignError;
 use layerx_intents::canonical::Domain;
-use layerx_types::payload::ModuleRegistry;
+use layerx_types::payload::{ModuleId, ModuleRegistry};
 use rustls::pki_types::CertificateDer;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -17,6 +20,7 @@ use zeroize::Zeroizing;
 pub const KIND_ACTIVITY: &str = "lx_activity";
 pub const KIND_SEND_AUTHORIZATION: &str = "lx_send_authorization";
 pub const MIN_SIGNERS: usize = 3;
+pub const APPROVAL_VERSION: u8 = 1;
 const PATH_SIGN: &str = "/v1/sign";
 const PATH_GENERATE: &str = "/v1/keys/generate";
 const PATH_HEALTH: &str = "/health";
@@ -31,6 +35,9 @@ pub enum AttestorError {
     WrongNetwork {
         expected: u32,
         actual: u32,
+    },
+    UnsupportedActivity {
+        activity_type: u32,
     },
     Refused {
         node: String,
@@ -66,6 +73,10 @@ impl fmt::Display for AttestorError {
             Self::WrongNetwork { expected, actual } => write!(
                 formatter,
                 "activity names network {actual} but the signer serves network {expected}"
+            ),
+            Self::UnsupportedActivity { activity_type } => write!(
+                formatter,
+                "activity type {activity_type} has no attestor disclosure contract"
             ),
             Self::Refused {
                 node,
@@ -519,6 +530,7 @@ impl AttestorSigner {
         canonical: &[u8],
         disclosure: &Disclosure,
         registry: &ModuleRegistry,
+        approval: &Approval<'_>,
         assertion: &str,
     ) -> Result<AttestorSignature, AttestorError> {
         validate_disclosure(canonical, disclosure, registry)?;
@@ -533,8 +545,18 @@ impl AttestorSigner {
         if assertion.is_empty() {
             return Err(AttestorError::Configuration("user assertion"));
         }
+        let approved = project(disclosure)?;
+        approval.check(disclosure.expiry.not_after)?;
         let digest = preimage(canonical);
-        self.request_signature(KIND_ACTIVITY, "activity", canonical, digest, assertion)
+        self.request_signature(
+            KIND_ACTIVITY,
+            canonical,
+            digest,
+            &approved,
+            approval,
+            activity.protocol_version(),
+            assertion,
+        )
     }
 
     /// Signs an asset send with the attestor-held owner key: the quorum first signs the owner
@@ -551,6 +573,7 @@ impl AttestorSigner {
         &self,
         debit: &SendDebit,
         options: &EnvelopeOptions<'_>,
+        approval: &SendApproval<'_>,
         mut assertion: impl FnMut() -> Result<String, AttestorError>,
     ) -> Result<SignedSend, AttestorError> {
         if debit.network_id != self.network {
@@ -586,15 +609,37 @@ impl AttestorSigner {
         .map_err(|_| AttestorError::Disclosure(SignError::InvalidDisclosure))?
         .digest();
         let placeholder = placeholder_envelope(&message, options)?;
+        // Stage one discloses the approved debit itself, never a decoding of the placeholder.
+        let approved = disclosure_wire(
+            debit.from,
+            "asset",
+            5,
+            vec![(debit.asset, debit.amount)],
+            vec![debit.to],
+            options.identity_sequence,
+            options.not_before,
+            options.not_after,
+        );
+        if approval.authorization_session == approval.activity_session {
+            return Err(AttestorError::Configuration("send approval sessions"));
+        }
+        let authorization_approval = Approval {
+            principal: approval.principal,
+            session_id: approval.authorization_session,
+            expires_at: approval.expires_at,
+        };
+        authorization_approval.check(options.not_after)?;
         let first = assertion()?;
         if first.is_empty() {
             return Err(AttestorError::Configuration("user assertion"));
         }
         let authorization = self.request_signature(
             KIND_SEND_AUTHORIZATION,
-            "authorization",
             &placeholder,
             digest,
+            &approved,
+            &authorization_approval,
+            debit.protocol_version,
             &first,
         )?;
         let payload = debit
@@ -602,11 +647,21 @@ impl AttestorSigner {
             .map_err(|error| AttestorError::Disclosure(SignError::from(error)))?;
         let envelope = encode_send_envelope(&payload, options)
             .map_err(|error| AttestorError::Disclosure(SignError::from(error)))?;
+        if project(&envelope.disclosure)? != approved {
+            return Err(AttestorError::Disclosure(SignError::DisclosureMismatch(
+                "send_semantics",
+            )));
+        }
         let second = assertion()?;
         let activity = self.sign_activity(
             &envelope.canonical,
             &envelope.disclosure,
             &envelope.registry,
+            &Approval {
+                principal: approval.principal,
+                session_id: approval.activity_session,
+                expires_at: approval.expires_at,
+            },
             &second,
         )?;
         Ok(SignedSend {
@@ -618,23 +673,36 @@ impl AttestorSigner {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn request_signature(
         &self,
         kind: &str,
-        label: &str,
         canonical: &[u8],
         digest: [u8; 32],
+        disclosure: &DisclosureWire,
+        approval: &Approval<'_>,
+        protocol_version: u16,
         assertion: &str,
     ) -> Result<AttestorSignature, AttestorError> {
-        let session = session_id(label)?;
         let activity_hex = encode_hex(canonical);
         let body = Zeroizing::new(
             serde_json::to_vec(&SignBody {
-                session_id: &session,
+                session_id: approval.session_id,
                 key_id: &self.key_id,
                 kind,
                 signers: &self.signers,
                 activity: &activity_hex,
+                disclosure,
+                approval: ApprovalWire {
+                    version: APPROVAL_VERSION,
+                    principal: approval.principal,
+                    key_id: &self.key_id,
+                    network_id: self.network,
+                    protocol_version,
+                    session_id: approval.session_id,
+                    activity_digest: encode_hex(&digest),
+                    expires_at: approval.expires_at.to_string(),
+                },
             })
             .map_err(|_| AttestorError::Configuration("sign request"))?,
         );
@@ -831,6 +899,178 @@ struct SignBody<'a> {
     kind: &'a str,
     signers: &'a [String],
     activity: &'a str,
+    disclosure: &'a DisclosureWire,
+    approval: ApprovalWire<'a>,
+}
+
+/// Wire form of the approved disclosure: every u128 amount and u64 sequence or bound is a
+/// canonical unsigned decimal string, the representation the attestor and gateway share.
+#[derive(Serialize, Clone, Debug, Eq, PartialEq)]
+struct DisclosureWire {
+    account: String,
+    module: &'static str,
+    operation: u16,
+    amounts: Vec<AmountWire>,
+    destinations: Vec<String>,
+    sequence: String,
+    not_before: String,
+    not_after: String,
+}
+
+#[derive(Serialize, Clone, Debug, Eq, PartialEq)]
+struct AmountWire {
+    asset: String,
+    amount: String,
+}
+
+#[derive(Serialize)]
+struct ApprovalWire<'a> {
+    version: u8,
+    principal: &'a str,
+    key_id: &'a str,
+    network_id: u32,
+    protocol_version: u16,
+    session_id: &'a str,
+    activity_digest: String,
+    expires_at: String,
+}
+
+/// Authorization binding handed over by the original approval boundary: the trusted
+/// principal that owns the key, the request session allocated there and the instant after
+/// which the approval is void, never later than the approved envelope `not_after`.
+#[derive(Clone, Copy, Debug)]
+pub struct Approval<'a> {
+    pub principal: &'a str,
+    pub session_id: &'a str,
+    pub expires_at: u64,
+}
+
+impl Approval<'_> {
+    fn check(&self, not_after: u64) -> Result<(), AttestorError> {
+        if !attestor_principal_valid(self.principal) || !valid_identifier(self.session_id) {
+            return Err(AttestorError::Configuration("approval binding"));
+        }
+        if self.expires_at > not_after {
+            return Err(AttestorError::Disclosure(SignError::DisclosureMismatch(
+                "approval_expiry",
+            )));
+        }
+        Ok(())
+    }
+}
+
+/// Approval boundary context for both SEND stages: one principal and expiry, and two
+/// distinct sessions for the owner authorization and the completed envelope.
+#[derive(Clone, Copy, Debug)]
+pub struct SendApproval<'a> {
+    pub principal: &'a str,
+    pub authorization_session: &'a str,
+    pub activity_session: &'a str,
+    pub expires_at: u64,
+}
+
+/// Allocates a request session at the approval boundary.
+///
+/// # Errors
+/// Refuses when the platform randomness source fails.
+pub fn new_session_id(label: &str) -> Result<String, AttestorError> {
+    session_id(label)
+}
+
+fn attestor_principal_valid(principal: &str) -> bool {
+    !principal.is_empty() && principal.len() <= 1_024 && !principal.chars().any(char::is_control)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn disclosure_wire(
+    account: [u8; 32],
+    module: &'static str,
+    operation: u16,
+    amounts: Vec<([u8; 32], u128)>,
+    destinations: Vec<[u8; 32]>,
+    sequence: u64,
+    not_before: u64,
+    not_after: u64,
+) -> DisclosureWire {
+    DisclosureWire {
+        account: encode_hex(&account),
+        module,
+        operation,
+        amounts: amounts
+            .into_iter()
+            .map(|(asset, amount)| AmountWire {
+                asset: encode_hex(&asset),
+                amount: amount.to_string(),
+            })
+            .collect(),
+        destinations: destinations.iter().map(|id| encode_hex(id)).collect(),
+        sequence: sequence.to_string(),
+        not_before: not_before.to_string(),
+        not_after: not_after.to_string(),
+    }
+}
+
+/// Projects an approved disclosure onto the attestor effect contract. Only asset send,
+/// budget fund, asset grant issue (the grant allowance) and program transfer (each leg with
+/// its own asset) have a contract; every other activity is refused, never approximated.
+fn project(d: &Disclosure) -> Result<DisclosureWire, AttestorError> {
+    let kind = d.activity_type;
+    let mismatch = || AttestorError::Disclosure(SignError::DisclosureMismatch("semantics"));
+    let wire = |account, module, amounts, destinations| {
+        disclosure_wire(
+            account,
+            module,
+            kind.ordinal(),
+            amounts,
+            destinations,
+            d.envelope_sequence(),
+            d.expiry.not_before,
+            d.expiry.not_after,
+        )
+    };
+    match (kind.module(), kind.ordinal(), &d.payment) {
+        (ModuleId::Asset, 5, None) | (ModuleId::Budget, 2, None) => {
+            let module = if kind.module() == ModuleId::Asset {
+                "asset"
+            } else {
+                "budget"
+            };
+            match (d.counterparties.as_slice(), d.amounts.as_slice()) {
+                (
+                    [Counterparty {
+                        role: CounterpartyRole::Payer,
+                        account: from,
+                    }, Counterparty {
+                        role: CounterpartyRole::Recipient,
+                        account: to,
+                    }],
+                    [DisclosedAmount {
+                        role: AmountRole::Transfer,
+                        value,
+                    }],
+                ) => Ok(wire(*from, module, vec![(d.asset, *value)], vec![*to])),
+                _ => Err(mismatch()),
+            }
+        }
+        (ModuleId::Asset, 7, Some(Payment::IssueGrant(grant))) => Ok(wire(
+            grant.from,
+            "asset",
+            vec![(grant.asset, grant.allowance)],
+            vec![grant.recipient],
+        )),
+        (ModuleId::Programs, 5, Some(Payment::ProgramTransfer { legs, .. })) => {
+            let first = legs.first().ok_or_else(mismatch)?;
+            Ok(wire(
+                first.from,
+                "programs",
+                legs.iter().map(|leg| (leg.asset, leg.amount)).collect(),
+                legs.iter().map(|leg| leg.to).collect(),
+            ))
+        }
+        _ => Err(AttestorError::UnsupportedActivity {
+            activity_type: kind.value(),
+        }),
+    }
 }
 
 #[derive(Deserialize)]

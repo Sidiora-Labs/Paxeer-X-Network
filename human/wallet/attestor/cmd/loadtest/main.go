@@ -558,12 +558,33 @@ func (lt *loadTester) kernelRequest(seq uint64) (server.SignRequest, func(server
 	if err != nil {
 		return server.SignRequest{}, nil, err
 	}
+	effect, err := lx.DecodeEffect(a)
+	if err != nil {
+		return server.SignRequest{}, nil, err
+	}
+	module, ok := lx.ModuleName(a.Type.Module())
+	if !ok {
+		return server.SignRequest{}, nil, fmt.Errorf("activity module %d is unknown", a.Type.Module())
+	}
+	session := lt.sessionID(seq)
+	disclosure := &lx.Disclosure{
+		Account: effect.Account, Module: module, Operation: a.Type.Ordinal(), Amounts: effect.Amounts,
+		Destinations: effect.Destinations, Sequence: a.AccountSequence, NotBefore: a.NotBefore, NotAfter: a.NotAfter,
+	}
+	approval := &lx.Approval{
+		Version: lx.ApprovalVersion, Principal: lt.cfg.subject, KeyID: lt.edKey, NetworkID: a.NetworkID,
+		ProtocolVersion: a.ProtocolVersion, SessionID: session, ActivityDigest: lx.ID(pre), ExpiresAt: a.NotAfter,
+	}
 	pub := ed25519.PublicKey(lt.edPublic[:])
 	verify := func(r server.SignResponse) bool {
 		sig, err := hex.DecodeString(r.Signature)
 		return err == nil && r.SignedBytes == hex.EncodeToString(pre[:]) && ed25519.Verify(pub, pre[:], sig)
 	}
-	return server.SignRequest{KeyID: lt.edKey, Kind: server.KindLXActivity, Activity: hex.EncodeToString(unsigned)}, verify, nil
+	return server.SignRequest{SessionID: session, KeyID: lt.edKey, Kind: server.KindLXActivity, Activity: hex.EncodeToString(unsigned), Disclosure: disclosure, Approval: approval}, verify, nil
+}
+
+func (lt *loadTester) sessionID(seq uint64) string {
+	return "loadtest-" + lt.runID + "-" + strconv.FormatUint(seq, 10)
 }
 
 func (lt *loadTester) session(ctx context.Context, seq uint64) outcome {
@@ -577,7 +598,7 @@ func (lt *loadTester) session(ctx context.Context, seq uint64) outcome {
 	if err != nil {
 		return outcome{curve: curve, class: "request_build_error"}
 	}
-	req.SessionID = "loadtest-" + lt.runID + "-" + strconv.FormatUint(seq, 10)
+	req.SessionID = lt.sessionID(seq)
 	for _, ep := range quorum {
 		req.Signers = append(req.Signers, ep.ID)
 	}

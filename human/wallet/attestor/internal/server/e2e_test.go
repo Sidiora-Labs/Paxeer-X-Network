@@ -646,6 +646,146 @@ func kernelActivityFor(t *testing.T, signer ed25519.PrivateKey, sequence uint64)
 	return unsigned, pre[:]
 }
 
+// approvedActivity plays the original approval boundary: it reviews the canonical activity
+// bytes and returns the structured disclosure it approved with its authorization binding.
+func approvedActivity(t *testing.T, c *testCluster, unsigned []byte, keyID, session, principal string) (*lx.Disclosure, *lx.Approval) {
+	t.Helper()
+	a, err := lxwire.DecodeUnsignedActivity(unsigned, c.registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	effect, err := lx.DecodeEffect(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	module, ok := lx.ModuleName(a.Type.Module())
+	if !ok {
+		t.Fatalf("activity module %d is unknown", a.Type.Module())
+	}
+	pre, err := lxwire.SignaturePreimage(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	disclosure := &lx.Disclosure{
+		Account: effect.Account, Module: module, Operation: a.Type.Ordinal(), Amounts: effect.Amounts,
+		Destinations: effect.Destinations, Sequence: a.AccountSequence, NotBefore: a.NotBefore, NotAfter: a.NotAfter,
+	}
+	approval := &lx.Approval{
+		Version: lx.ApprovalVersion, Principal: principal, KeyID: keyID, NetworkID: a.NetworkID,
+		ProtocolVersion: a.ProtocolVersion, SessionID: session, ActivityDigest: lx.ID(pre), ExpiresAt: a.NotAfter - 300,
+	}
+	return disclosure, approval
+}
+
+func expectPolicy(t *testing.T, label string, results []apiResult, policyCode string) {
+	t.Helper()
+	if len(results) == 0 {
+		t.Fatalf("%s: no results", label)
+	}
+	for _, r := range results {
+		if e := expectError(t, label, r, CodePolicyDenied); e.PolicyCode != policyCode {
+			t.Fatalf("%s: policy code %s (%s), want %s", label, e.PolicyCode, e.Message, policyCode)
+		}
+	}
+}
+
+func TestApprovedDisclosureBindsActivitySignatures(t *testing.T) {
+	c := newTestCluster(t, 5, true)
+	fresh := func() string { return c.idp.mint(t, c.idp.key, testOwner) }
+	seed := sha256.Sum256([]byte("approved disclosure ed25519 key"))
+	signer := ed25519.NewKeyFromSeed(seed[:])
+	pub := signer.Public().(ed25519.PublicKey)
+	scalar, err := dealer.Ed25519ScalarFromSeed(seed[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	importKey(t, c, "approved-lx", dealer.Ed25519, scalar, common.HexToAddress("0x4444444444444444444444444444444444444444").Hex())
+	signers := []string{"node-1", "node-2", "node-4"}
+	sign := func(req SignRequest, tok string) []apiResult {
+		req.Signers = signers
+		return c.callAll(t, c.byID(signers...), PathSign, func(*testNode) any { return req }, tok)
+	}
+	approvedBytes, preimage := kernelActivityFor(t, signer, 11)
+	substitute, _ := kernelActivityFor(t, signer, 12)
+	const session = "approved-activity"
+	request := func(activity []byte, d *lx.Disclosure, a *lx.Approval) SignRequest {
+		return SignRequest{SessionID: session, KeyID: "approved-lx", Kind: KindLXActivity, Activity: hex.EncodeToString(activity), Disclosure: d, Approval: a}
+	}
+	disclosure, approval := approvedActivity(t, c, approvedBytes, "approved-lx", session, testOwner)
+
+	expectPolicy(t, "old request shape without disclosure", sign(request(approvedBytes, nil, nil), fresh()), lx.CodeDisclosureMissing)
+	expectPolicy(t, "partial shape with disclosure only", sign(request(approvedBytes, disclosure, nil), fresh()), lx.CodeDisclosureMissing)
+	expectPolicy(t, "partial shape with approval only", sign(request(approvedBytes, nil, approval), fresh()), lx.CodeDisclosureMissing)
+	for _, r := range sign(SignRequest{SessionID: "bind-with-disclosure", KeyID: "approved-lx", Kind: KindLXBind, Message: hex.EncodeToString(lxwire.BindMessage(testChainID, common.HexToAddress("0x4444444444444444444444444444444444444444"), 1)), Disclosure: disclosure, Approval: approval}, fresh()) {
+		expectError(t, "disclosure on a non-activity kind", r, CodeSessionBadRequest)
+	}
+
+	expectPolicy(t, "in-policy substituted activity under the approved binding", sign(request(substitute, disclosure, approval), fresh()), lx.CodeApprovalMismatch)
+	_, substituteApproval := approvedActivity(t, c, substitute, "approved-lx", session, testOwner)
+	expectPolicy(t, "in-policy substituted activity against the approved disclosure", sign(request(substitute, disclosure, substituteApproval), fresh()), lx.CodeDisclosureMismatch)
+	altered := *disclosure
+	altered.Amounts = []lx.Amount{{Asset: disclosure.Amounts[0].Asset, Amount: big.NewInt(4_000_000)}}
+	expectPolicy(t, "approved disclosure with another amount", sign(request(approvedBytes, &altered, approval), fresh()), lx.CodeDisclosureMismatch)
+	redirected := *disclosure
+	redirected.Destinations = []lx.ID{disclosure.Account}
+	expectPolicy(t, "approved disclosure with another destination", sign(request(approvedBytes, &redirected, approval), fresh()), lx.CodeDisclosureMismatch)
+
+	moved := func(edit func(*lx.Approval)) *lx.Approval {
+		a := *approval
+		edit(&a)
+		return &a
+	}
+	for label, a := range map[string]*lx.Approval{
+		"approval for another principal":  moved(func(a *lx.Approval) { a.Principal = "user-9999" }),
+		"approval for another key":        moved(func(a *lx.Approval) { a.KeyID = "lx-key" }),
+		"approval for another session":    moved(func(a *lx.Approval) { a.SessionID = "approved-elsewhere" }),
+		"approval for another network":    moved(func(a *lx.Approval) { a.NetworkID++ }),
+		"approval for another protocol":   moved(func(a *lx.Approval) { a.ProtocolVersion-- }),
+		"approval of another digest":      moved(func(a *lx.Approval) { a.ActivityDigest[0] ^= 1 }),
+		"approval outliving the activity": moved(func(a *lx.Approval) { a.ExpiresAt = disclosure.NotAfter + 1 }),
+		"approval of an unknown version":  moved(func(a *lx.Approval) { a.Version = lx.ApprovalVersion + 1 }),
+	} {
+		expectPolicy(t, label, sign(request(approvedBytes, disclosure, a), fresh()), lx.CodeApprovalMismatch)
+	}
+	expired := moved(func(a *lx.Approval) { a.ExpiresAt = uint64(time.Now().Unix()) - 1 })
+	expectPolicy(t, "expired approval", sign(request(approvedBytes, disclosure, expired), fresh()), lx.CodeApprovalExpired)
+
+	token := fresh()
+	approved := request(approvedBytes, disclosure, approval)
+	for _, r := range decodeOK[SignResponse](t, "approved activity", sign(approved, token)) {
+		sig, _ := hex.DecodeString(r.Signature)
+		if r.SignedBytes != hex.EncodeToString(preimage) || !ed25519.Verify(pub, preimage, sig) {
+			t.Fatalf("%s: approved activity signature does not verify over the approved digest", r.NodeID)
+		}
+	}
+	for _, r := range sign(approved, token) {
+		expectError(t, "replayed approved request", r, CodeTokenInvalid)
+	}
+
+	restarted := c.restart(t, c.byID("node-2")[0])
+	replayed := c.call(t, restarted, PathSign, func() SignRequest { r := approved; r.Signers = signers; return r }(), token)
+	expectError(t, "replayed approved request after a restart", replayed, CodeTokenInvalid)
+	_, afterApproval := approvedActivity(t, c, substitute, "approved-lx", session, testOwner)
+	expectPolicy(t, "substitution after a restart", sign(request(substitute, disclosure, afterApproval), fresh()), lx.CodeDisclosureMismatch)
+
+	recoverySeed := sha256.Sum256([]byte("approved disclosure recovery key"))
+	recoverySigner := ed25519.NewKeyFromSeed(recoverySeed[:])
+	recoveryScalar, err := dealer.Ed25519ScalarFromSeed(recoverySeed[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	importKey(t, c, "approved-recovery", dealer.Ed25519, recoveryScalar, common.HexToAddress("0x5555555555555555555555555555555555555555").Hex())
+	recoveryBytes, recoveryPreimage := kernelActivityFor(t, recoverySigner, 1)
+	recoveryDisclosure, recoveryApproval := approvedActivity(t, c, recoveryBytes, "approved-recovery", "approved-recovery-session", testOwner)
+	recovered := SignRequest{SessionID: "approved-recovery-session", KeyID: "approved-recovery", Kind: KindLXActivity, Activity: hex.EncodeToString(recoveryBytes), Disclosure: recoveryDisclosure, Approval: recoveryApproval}
+	for _, r := range decodeOK[SignResponse](t, "approved activity after a restart", sign(recovered, fresh())) {
+		sig, _ := hex.DecodeString(r.Signature)
+		if !ed25519.Verify(recoverySigner.Public().(ed25519.PublicKey), recoveryPreimage, sig) {
+			t.Fatalf("%s: recovered signature does not verify", r.NodeID)
+		}
+	}
+}
+
 const mailTypedData = `{"types":{"EIP712Domain":[{"name":"name","type":"string"},{"name":"version","type":"string"},{"name":"chainId","type":"uint256"},{"name":"verifyingContract","type":"address"}],"Person":[{"name":"name","type":"string"},{"name":"wallet","type":"address"}],"Mail":[{"name":"from","type":"Person"},{"name":"to","type":"Person"},{"name":"contents","type":"string"}]},"primaryType":"Mail","domain":{"name":"Ether Mail","version":"1","chainId":125,"verifyingContract":"0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC"},"message":{"from":{"name":"Cow","wallet":"0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826"},"to":{"name":"Bob","wallet":"0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB"},"contents":"Hello, Bob!"}}`
 
 func TestFiveNodeEndToEnd(t *testing.T) {
@@ -791,7 +931,8 @@ func TestFiveNodeEndToEnd(t *testing.T) {
 	}
 
 	unsigned, preimage := kernelActivityFor(t, ed25519.NewKeyFromSeed(edSeed[:]), 1)
-	actResults := decodeOK[SignResponse](t, "activity", sign("sign-activity", SignRequest{KeyID: "lx-key", Kind: KindLXActivity, Activity: hex.EncodeToString(unsigned)}, fresh()))
+	actDisclosure, actApproval := approvedActivity(t, c, unsigned, "lx-key", "sign-activity", testOwner)
+	actResults := decodeOK[SignResponse](t, "activity", sign("sign-activity", SignRequest{KeyID: "lx-key", Kind: KindLXActivity, Activity: hex.EncodeToString(unsigned), Disclosure: actDisclosure, Approval: actApproval}, fresh()))
 	for _, r := range actResults {
 		sig, _ := hex.DecodeString(r.Signature)
 		if r.SignedBytes != hex.EncodeToString(preimage) || !ed25519.Verify(edPub, preimage, sig) {
@@ -843,7 +984,8 @@ func TestFiveNodeEndToEnd(t *testing.T) {
 	}
 	peerSeed := sha256.Sum256([]byte("attestor end-to-end foreign identity"))
 	foreign, _ := kernelActivityFor(t, ed25519.NewKeyFromSeed(peerSeed[:]), 3)
-	for _, r := range sign("sign-foreign-activity", SignRequest{KeyID: "lx-key", Kind: KindLXActivity, Activity: hex.EncodeToString(foreign)}, fresh()) {
+	foreignDisclosure, foreignApproval := approvedActivity(t, c, foreign, "lx-key", "sign-foreign-activity", testOwner)
+	for _, r := range sign("sign-foreign-activity", SignRequest{KeyID: "lx-key", Kind: KindLXActivity, Activity: hex.EncodeToString(foreign), Disclosure: foreignDisclosure, Approval: foreignApproval}, fresh()) {
 		e := expectError(t, "activity for another identity", r, CodePolicyDenied)
 		if e.PolicyCode != lx.CodeAuthorityMismatch {
 			t.Fatalf("activity for another identity: policy code %s", e.PolicyCode)

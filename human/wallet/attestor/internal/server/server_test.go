@@ -31,6 +31,7 @@ import (
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/config"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/health"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/lxwire"
+	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy/lx"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/store"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/transport"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/tss/dealer"
@@ -45,6 +46,12 @@ func goldenValues(t *testing.T) map[string]any {
 	ids := []string{"node-1", "node-2", "node-3", "node-4", "node-5"}
 	bundles := fixedBundles(t, ids)
 	recovery := uint8(1)
+	id := func(b byte) (out lx.ID) {
+		for i := range out {
+			out[i] = b
+		}
+		return out
+	}
 	return map[string]any{
 		"keys.generate.request":  GenerateRequest{SessionID: "session-generate", KeyID: "key-ed", Curve: "ed25519", Owner: "user-0001", Account: "0x1111111111111111111111111111111111111111"},
 		"keys.import.request":    ImportRequest{SessionID: "session-import", KeyID: "key-evm", Owner: "user-0001", Share: EncodeBundle(bundles[0])},
@@ -58,7 +65,10 @@ func goldenValues(t *testing.T) map[string]any {
 			From: strings.Repeat("81", 32), Recipient: strings.Repeat("1e", 32), Asset: strings.Repeat("0a", 32), PerDrawMaximum: "1000", Allowance: "50000",
 			Expiration: 1900000000, PurposeHash: strings.Repeat("64", 32),
 		}},
-		"sign.request.lx_send_authorization": SignRequest{SessionID: "session-send-authorization", KeyID: "key-ed", Kind: KindLXSendAuth, Signers: []string{"node-1", "node-2", "node-3"}, Activity: "0003" + strings.Repeat("77", 16)},
+		"sign.request.lx_send_authorization": SignRequest{SessionID: "session-send-authorization", KeyID: "key-ed", Kind: KindLXSendAuth, Signers: []string{"node-1", "node-2", "node-3"}, Activity: "0003" + strings.Repeat("77", 16),
+			Disclosure: &lx.Disclosure{Account: id(0x81), Module: "asset", Operation: 5, Amounts: []lx.Amount{{Asset: id(0x0a), Amount: big.NewInt(5_000_000)}}, Destinations: []lx.ID{id(0x1e)}, Sequence: 1, NotBefore: 1800000000, NotAfter: 1900000000},
+			Approval:   &lx.Approval{Version: lx.ApprovalVersion, Principal: "user-0001", KeyID: "key-ed", NetworkID: 125, ProtocolVersion: 3, SessionID: "session-send-authorization", ActivityDigest: id(0x66), ExpiresAt: 1900000000},
+		},
 		"sign.request.eth_sign_digest": SignRequest{SessionID: "session-authorization", KeyID: "key-evm", Kind: KindEthSignDigest, Signers: []string{"node-1", "node-3", "node-5"}, Digest: "0x" + strings.Repeat("66", 32), Construction: &ConstructionJSON{
 			Kind: "eip7702_authorization", ChainID: "125", Address: "0x2222222222222222222222222222222222222222", Nonce: "3",
 		}},

@@ -97,10 +97,36 @@ func (p *pendingSend) digest(t *testing.T) []byte {
 	return digest[:]
 }
 
-func authorizeSend(t *testing.T, c *testCluster, keyID, session string, signers []string, unsigned []byte) []apiResult {
+// approvedSend plays the approval boundary the way the KMS signer stages a send: it discloses
+// the approved debit itself (never a decoding of the placeholder) and binds the owner
+// authorization digest, the stored key owner and the debit expiry capped by not_after.
+func approvedSend(t *testing.T, p *pendingSend, keyID, session string) (*lx.Disclosure, *lx.Approval) {
 	t.Helper()
+	module, ok := lx.ModuleName(p.activity.Type.Module())
+	if !ok {
+		t.Fatalf("activity module %d is unknown", p.activity.Type.Module())
+	}
+	amount := p.send.Amount.Bytes()
+	disclosure := &lx.Disclosure{
+		Account: lx.ID(p.send.From), Module: module, Operation: p.activity.Type.Ordinal(),
+		Amounts:      []lx.Amount{{Asset: lx.ID(p.send.Asset), Amount: new(big.Int).SetBytes(amount[:])}},
+		Destinations: []lx.ID{lx.ID(p.send.To)}, Sequence: p.activity.AccountSequence, NotBefore: p.activity.NotBefore, NotAfter: p.activity.NotAfter,
+	}
+	var digest lx.ID
+	copy(digest[:], p.digest(t))
+	approval := &lx.Approval{
+		Version: lx.ApprovalVersion, Principal: testOwner, KeyID: keyID, NetworkID: p.activity.NetworkID,
+		ProtocolVersion: p.activity.ProtocolVersion, SessionID: session, ActivityDigest: digest, ExpiresAt: min(p.send.ExpiresAt, p.activity.NotAfter),
+	}
+	return disclosure, approval
+}
+
+func authorizeSend(t *testing.T, c *testCluster, keyID, session string, signers []string, p *pendingSend) []apiResult {
+	t.Helper()
+	unsigned := p.envelope(t)
+	disclosure, approval := approvedSend(t, p, keyID, session)
 	return c.callAll(t, c.byID(signers...), PathSign, func(*testNode) any {
-		return SignRequest{SessionID: session, KeyID: keyID, Kind: KindLXSendAuth, Signers: signers, Activity: hex.EncodeToString(unsigned)}
+		return SignRequest{SessionID: session, KeyID: keyID, Kind: KindLXSendAuth, Signers: signers, Activity: hex.EncodeToString(unsigned), Disclosure: disclosure, Approval: approval}
 	}, c.idp.mint(t, c.idp.key, testOwner))
 }
 
@@ -137,7 +163,7 @@ func TestSendAuthorizationSignedByTheHeldKeyCompletesAnAcceptedSend(t *testing.T
 	pending := newPendingSend(t, pub, nil, 1, 5_000_000, now-60, now+600)
 	placeholder := pending.envelope(t)
 	digest := pending.digest(t)
-	results := decodeOK[SignResponse](t, "a send authorization", authorizeSend(t, c, "send-lx", "authorize-1", signers, placeholder))
+	results := decodeOK[SignResponse](t, "a send authorization", authorizeSend(t, c, "send-lx", "authorize-1", signers, pending))
 	signature := results[0].Signature
 	for _, r := range results {
 		sig, _ := hex.DecodeString(r.Signature)
@@ -153,8 +179,14 @@ func TestSendAuthorizationSignedByTheHeldKeyCompletesAnAcceptedSend(t *testing.T
 			t.Fatalf("%s: an authorization alone counted %s", n.id, spent)
 		}
 	}
+	placeholderPre, err := lxwire.SignaturePreimage(pending.activity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	placeholderDisclosure, placeholderApproval := approvedSend(t, pending, "send-lx", "authorize-replayed")
+	placeholderApproval.ActivityDigest = lx.ID(placeholderPre)
 	for _, r := range c.callAll(t, c.byID(signers...), PathSign, func(*testNode) any {
-		return SignRequest{SessionID: "authorize-replayed", KeyID: "send-lx", Kind: KindLXActivity, Signers: signers, Activity: hex.EncodeToString(placeholder)}
+		return SignRequest{SessionID: "authorize-replayed", KeyID: "send-lx", Kind: KindLXActivity, Signers: signers, Activity: hex.EncodeToString(placeholder), Disclosure: placeholderDisclosure, Approval: placeholderApproval}
 	}, c.idp.mint(t, c.idp.key, testOwner)) {
 		if e := expectError(t, "an unsigned placeholder signed as an activity", r, CodePolicyDenied); e.PolicyCode != policy.CodeDecodeError {
 			t.Fatalf("an unsigned placeholder signed as an activity: %s", e.PolicyCode)
@@ -186,7 +218,7 @@ func TestSendAuthorizationSignedByTheHeldKeyCompletesAnAcceptedSend(t *testing.T
 		}
 	}
 
-	second := newPendingSend(t, pub, nil, 2, 5_000_000, now-60, now+600).envelope(t)
+	second := newPendingSend(t, pub, nil, 2, 5_000_000, now-60, now+600)
 	before := auditHeads(c, signers)
 	expectAuditedRefusal(t, c, "a second authorization past the daily cap", signers, before, authorizeSend(t, c, "send-lx", "authorize-2", signers, second), policy.CodeDailyCap)
 	auditLog := auditBytes(t, c, c.byID("node-1")[0])
@@ -210,31 +242,31 @@ func TestSendAuthorizationRefusals(t *testing.T) {
 	signed := newPendingSend(t, pub, nil, 4, 1_000, now-60, now+600)
 	signed.send.Signature[0] = 1
 	cases := []struct {
-		label    string
-		envelope []byte
-		code     string
+		label   string
+		pending *pendingSend
+		code    string
 	}{
-		{"a foreign debit account", newPendingSend(t, pub, &foreign, 1, 1_000, now-60, now+600).envelope(t), lx.CodeAccountNotOwned},
-		{"an expired validity window", newPendingSend(t, pub, nil, 2, 1_000, now-1200, now-600).envelope(t), lx.CodeOutsideValidity},
-		{"a window that has not opened", newPendingSend(t, pub, nil, 3, 1_000, now+600, now+1200).envelope(t), lx.CodeOutsideValidity},
-		{"a send that already carries a signature", signed.envelope(t), policy.CodeDecodeError},
-		{"an amount over the operation cap", newPendingSend(t, pub, nil, 5, 6_000_001, now-60, now+600).envelope(t), policy.CodeValueCap},
+		{"a foreign debit account", newPendingSend(t, pub, &foreign, 1, 1_000, now-60, now+600), lx.CodeAccountNotOwned},
+		{"an expired validity window", newPendingSend(t, pub, nil, 2, 1_000, now-1200, now-600), lx.CodeOutsideValidity},
+		{"a window that has not opened", newPendingSend(t, pub, nil, 3, 1_000, now+600, now+1200), lx.CodeOutsideValidity},
+		{"a send that already carries a signature", signed, policy.CodeDecodeError},
+		{"an amount over the operation cap", newPendingSend(t, pub, nil, 5, 6_000_001, now-60, now+600), policy.CodeValueCap},
 	}
 	for i, tc := range cases {
 		before := auditHeads(c, signers)
-		expectAuditedRefusal(t, c, tc.label, signers, before, authorizeSend(t, c, "refuse-lx", fmt.Sprintf("refuse-%d", i), signers, tc.envelope), tc.code)
+		expectAuditedRefusal(t, c, tc.label, signers, before, authorizeSend(t, c, "refuse-lx", fmt.Sprintf("refuse-%d", i), signers, tc.pending), tc.code)
 	}
 
 	pending := newPendingSend(t, pub, nil, 6, 1_000, now-60, now+600)
 	pending.activity.NetworkID = testChainID + 1
 	pending.send.NetworkID = testChainID + 1
 	before := auditHeads(c, signers)
-	expectAuditedRefusal(t, c, "a send on another chain", signers, before, authorizeSend(t, c, "refuse-lx", "refuse-chain", signers, pending.envelope(t)), policy.CodeChainMismatch)
+	expectAuditedRefusal(t, c, "a send on another chain", signers, before, authorizeSend(t, c, "refuse-lx", "refuse-chain", signers, pending), policy.CodeChainMismatch)
 
 	pending = newPendingSend(t, pub, nil, 7, 1_000, now-60, now+600)
 	pending.activity.ActorDID = []byte(lxwire.DIDFromKey(stranger))
 	before = auditHeads(c, signers)
-	expectAuditedRefusal(t, c, "an actor that is not the held key", signers, before, authorizeSend(t, c, "refuse-lx", "refuse-actor", signers, pending.envelope(t)), lx.CodeAuthorityMismatch)
+	expectAuditedRefusal(t, c, "an actor that is not the held key", signers, before, authorizeSend(t, c, "refuse-lx", "refuse-actor", signers, pending), lx.CodeAuthorityMismatch)
 
 	for _, n := range c.nodes {
 		if spent, _ := nodeLedger(t, n, account); spent.Sign() != 0 {

@@ -33,6 +33,9 @@ const (
 	CodeOperationNotAllowed = "operation_not_allowed"
 	CodeAuthorityMismatch   = "authority_mismatch"
 	CodeDisclosureMismatch  = "disclosure_mismatch"
+	CodeDisclosureMissing   = "disclosure_missing"
+	CodeApprovalMismatch    = "approval_mismatch"
+	CodeApprovalExpired     = "approval_expired"
 	CodeOutsideValidity     = "outside_validity"
 	CodeAccountNotOwned     = "account_not_owned"
 	CodeBindAddress         = "bind_address_mismatch"
@@ -122,6 +125,205 @@ type Disclosure struct {
 	Sequence     uint64   `json:"sequence"`
 	NotBefore    uint64   `json:"not_before"`
 	NotAfter     uint64   `json:"not_after"`
+}
+
+const ApprovalVersion = 1
+
+// Approval is the authorization binding minted at the original approval boundary next to the
+// approved disclosure: it names the principal, key, network, protocol, request session, the
+// exact digest the attestors sign and the instant after which the approval is void.
+type Approval struct {
+	Version         int    `json:"version"`
+	Principal       string `json:"principal"`
+	KeyID           string `json:"key_id"`
+	NetworkID       uint32 `json:"network_id"`
+	ProtocolVersion uint16 `json:"protocol_version"`
+	SessionID       string `json:"session_id"`
+	ActivityDigest  ID     `json:"activity_digest"`
+	ExpiresAt       uint64 `json:"expires_at"`
+}
+
+// Check refuses an approval that is not bound to exactly this principal, key, session,
+// activity network and protocol and signed digest, or that has expired or outlives the
+// activity's own validity.
+func (a *Approval) Check(principal, keyID, sessionID string, activity *lxwire.Activity, digest [32]byte, now time.Time) error {
+	if a == nil {
+		return refuse(CodeDisclosureMissing, "the request carries no approval binding")
+	}
+	mismatch := func(field string) error {
+		return refuse(CodeApprovalMismatch, "approval %s does not match the request", field)
+	}
+	switch {
+	case a.Version != ApprovalVersion:
+		return refuse(CodeApprovalMismatch, "approval version %d is not %d", a.Version, ApprovalVersion)
+	case a.Principal == "" || a.Principal != principal:
+		return mismatch("principal")
+	case a.KeyID != keyID:
+		return mismatch("key_id")
+	case a.SessionID != sessionID:
+		return mismatch("session_id")
+	case a.NetworkID != activity.NetworkID:
+		return mismatch("network_id")
+	case a.ProtocolVersion != activity.ProtocolVersion:
+		return mismatch("protocol_version")
+	case a.ActivityDigest != ID(digest):
+		return mismatch("activity_digest")
+	case a.ExpiresAt > activity.NotAfter:
+		return mismatch("expires_at")
+	case now.Unix() < 0 || uint64(now.Unix()) > a.ExpiresAt:
+		return refuse(CodeApprovalExpired, "approval expired at %d, now is %d", a.ExpiresAt, now.Unix())
+	}
+	return nil
+}
+
+// MatchDisclosure compares the approved disclosure with the effect this node decoded from the
+// activity bytes itself.
+func MatchDisclosure(activity *lxwire.Activity, effect *Effect, d *Disclosure) error {
+	if d == nil {
+		return refuse(CodeDisclosureMissing, "the request carries no approved disclosure")
+	}
+	module, ok := ModuleName(activity.Type.Module())
+	if !ok {
+		return refuse(CodeUnknownModule, "activity names an unknown module")
+	}
+	return matchDisclosure(activity, module, effect, *d)
+}
+
+// The disclosure and approval travel with one lossless canonical numeric representation:
+// every u128 amount and every u64 sequence, bound and expiry is an unsigned base-10 string
+// without sign, exponent or leading zeros ("0" for zero). JSON numbers are refused so no
+// client can round a value through a float.
+var maxU128 = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 128), big.NewInt(1))
+
+func canonicalDecimal(text string, max *big.Int) (*big.Int, error) {
+	if text == "" || (len(text) > 1 && text[0] == '0') || strings.TrimLeft(text, "0123456789") != "" {
+		return nil, fmt.Errorf("%q is not a canonical unsigned decimal string", text)
+	}
+	value, ok := new(big.Int).SetString(text, 10)
+	if !ok || value.Cmp(max) > 0 {
+		return nil, fmt.Errorf("%q is out of range", text)
+	}
+	return value, nil
+}
+
+var maxU64 = new(big.Int).SetUint64(^uint64(0))
+
+func decimalU64(text string) (uint64, error) {
+	value, err := canonicalDecimal(text, maxU64)
+	if err != nil {
+		return 0, err
+	}
+	return value.Uint64(), nil
+}
+
+func strictJSON(data []byte, into any) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(into); err != nil {
+		return err
+	}
+	if decoder.More() {
+		return errors.New("trailing data")
+	}
+	return nil
+}
+
+type amountWire struct {
+	Asset  *ID    `json:"asset"`
+	Amount string `json:"amount"`
+}
+
+type disclosureWire struct {
+	Account      *ID          `json:"account"`
+	Module       string       `json:"module"`
+	Operation    *uint16      `json:"operation"`
+	Amounts      []amountWire `json:"amounts"`
+	Destinations []ID         `json:"destinations"`
+	Sequence     string       `json:"sequence"`
+	NotBefore    string       `json:"not_before"`
+	NotAfter     string       `json:"not_after"`
+}
+
+func (d Disclosure) MarshalJSON() ([]byte, error) {
+	w := disclosureWire{Account: &d.Account, Module: d.Module, Operation: &d.Operation, Amounts: make([]amountWire, len(d.Amounts)), Destinations: d.Destinations,
+		Sequence: fmt.Sprint(d.Sequence), NotBefore: fmt.Sprint(d.NotBefore), NotAfter: fmt.Sprint(d.NotAfter)}
+	if w.Destinations == nil {
+		w.Destinations = []ID{}
+	}
+	for i, a := range d.Amounts {
+		if a.Amount == nil || a.Amount.Sign() < 0 || a.Amount.Cmp(maxU128) > 0 {
+			return nil, errors.New("disclosure amount is outside u128")
+		}
+		asset := a.Asset
+		w.Amounts[i] = amountWire{Asset: &asset, Amount: a.Amount.String()}
+	}
+	return json.Marshal(w)
+}
+
+func (d *Disclosure) UnmarshalJSON(data []byte) error {
+	var w disclosureWire
+	if err := strictJSON(data, &w); err != nil {
+		return fmt.Errorf("disclosure: %w", err)
+	}
+	if w.Account == nil || w.Module == "" || w.Operation == nil || w.Amounts == nil || w.Destinations == nil {
+		return errors.New("disclosure is missing a field")
+	}
+	out := Disclosure{Account: *w.Account, Module: w.Module, Operation: *w.Operation, Amounts: make([]Amount, len(w.Amounts)), Destinations: w.Destinations}
+	for i, a := range w.Amounts {
+		if a.Asset == nil {
+			return errors.New("disclosure amount is missing its asset")
+		}
+		value, err := canonicalDecimal(a.Amount, maxU128)
+		if err != nil {
+			return fmt.Errorf("disclosure amount: %w", err)
+		}
+		out.Amounts[i] = Amount{Asset: *a.Asset, Amount: value}
+	}
+	var err error
+	if out.Sequence, err = decimalU64(w.Sequence); err != nil {
+		return fmt.Errorf("disclosure sequence: %w", err)
+	}
+	if out.NotBefore, err = decimalU64(w.NotBefore); err != nil {
+		return fmt.Errorf("disclosure not_before: %w", err)
+	}
+	if out.NotAfter, err = decimalU64(w.NotAfter); err != nil {
+		return fmt.Errorf("disclosure not_after: %w", err)
+	}
+	*d = out
+	return nil
+}
+
+type approvalWire struct {
+	Version         *int    `json:"version"`
+	Principal       string  `json:"principal"`
+	KeyID           string  `json:"key_id"`
+	NetworkID       *uint32 `json:"network_id"`
+	ProtocolVersion *uint16 `json:"protocol_version"`
+	SessionID       string  `json:"session_id"`
+	ActivityDigest  *ID     `json:"activity_digest"`
+	ExpiresAt       string  `json:"expires_at"`
+}
+
+func (a Approval) MarshalJSON() ([]byte, error) {
+	return json.Marshal(approvalWire{Version: &a.Version, Principal: a.Principal, KeyID: a.KeyID, NetworkID: &a.NetworkID, ProtocolVersion: &a.ProtocolVersion,
+		SessionID: a.SessionID, ActivityDigest: &a.ActivityDigest, ExpiresAt: fmt.Sprint(a.ExpiresAt)})
+}
+
+func (a *Approval) UnmarshalJSON(data []byte) error {
+	var w approvalWire
+	if err := strictJSON(data, &w); err != nil {
+		return fmt.Errorf("approval: %w", err)
+	}
+	if w.Version == nil || w.NetworkID == nil || w.ProtocolVersion == nil || w.ActivityDigest == nil {
+		return errors.New("approval is missing a field")
+	}
+	expires, err := decimalU64(w.ExpiresAt)
+	if err != nil {
+		return fmt.Errorf("approval expires_at: %w", err)
+	}
+	*a = Approval{Version: *w.Version, Principal: w.Principal, KeyID: w.KeyID, NetworkID: *w.NetworkID, ProtocolVersion: *w.ProtocolVersion,
+		SessionID: w.SessionID, ActivityDigest: *w.ActivityDigest, ExpiresAt: expires}
+	return nil
 }
 
 type ActivityRequest struct {
