@@ -47,7 +47,7 @@ const USAGE: &str = "layerx-receipt-authority serves verified authorised-batch f
 
 Routes (GET only):
   /livez
-  /readyz                                              {ready, network_id, wire_version}
+  /readyz                                              {ready, network_id, protocol_network_id, wire_version}
   /v1/authorized-batches/by-activity/{activity_id}     bearer required
   /v1/authorized-batches/wait-by-activity/{activity_id}
                                                        bearer required; waits for a publication notification
@@ -953,15 +953,23 @@ fn replica_answers(config: &Config) -> bool {
     )
 }
 
+#[derive(serde::Serialize)]
+struct AuthorityReadinessResponse<'a> {
+    ready: bool,
+    network_id: &'a str,
+    protocol_network_id: u32,
+    wire_version: &'a str,
+}
+
 fn readiness(config: &Config) -> Response {
     let ready = replica_answers(config);
-    let body = serde_json::json!({
-        "ready": ready,
-        "network_id": config.network_id,
-                "protocol_network_id": config.protocol_network_id,
-        "wire_version": config.wire_version,
-    });
-    let mut response = json(if ready { 200 } else { 503 }, &body);
+    let body = AuthorityReadinessResponse {
+        ready,
+        network_id: &config.network_id,
+        protocol_network_id: config.protocol_network_id,
+        wire_version: &config.wire_version,
+    };
+    let mut response = json(if ready { 200 } else { 503 }, &serde_json::json!(body));
     if !ready {
         response.retry_after = Some(5);
     }
