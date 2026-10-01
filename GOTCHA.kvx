@@ -1871,3 +1871,57 @@ area    = "test"
 symptom = "A harness case cannot assert that a probe never prints a secret value with the shared expect helper, which only checks lines that must appear."
 cause   = "expect has no absence assertion besides its no-destination pattern."
 do      = "Start every fixture secret value with up- so a printed value matches the no-destination pattern and fails the case."
+
+[gotcha.309]
+area    = "bringup-probe"
+symptom = "A probe of passkey registration options cannot run on a fresh service without an account, and the registration begin route takes only an account id."
+cause   = "passkey.register.begin needs the account id from account.create, which requires an email and a display name and is idempotent under its key."
+do      = "Create the probe account under an idempotency key derived from a fixed probe address so every run converges on one account, then decode the base64url ceremony and read rp.id."
+
+[gotcha.310]
+area    = "human-components"
+symptom = "An attestor node table of Fly .internal names is refused by the human components loader."
+cause   = "LAYERX_HUMAN_ATTESTOR_NODES entries are parsed as socket addresses, not host names."
+do      = "Resolve each .internal name to its private address in the root prepare step and hand the table to the role as id=[address]:port pairs."
+
+[gotcha.311]
+area    = "spec-workflow"
+symptom = "cg spec start refuses a task that is already in progress with a message about another task."
+cause   = "The start command refuses when another in-progress task claims one of the task's touched files."
+do      = "Leave the status as recorded and continue; never pass --force to override the overlap."
+
+[gotcha.312]
+area    = "bringup-probe"
+symptom = "The human check exits 2 with BRINGUP_HOSTS_FILE is unset before any check runs."
+cause   = "The check-live dispatch loads the private hosts file for every subcommand except explorer, including those that read only public names."
+do      = "Export BRINGUP_HOSTS_FILE with the private hosts file before running any check-live subcommand other than explorer."
+
+[gotcha.313]
+area    = "fly-deploy"
+symptom = "A Fly [[files]] guest file staged from a raw PEM secret is unusable."
+cause   = "A [[files]] secret_name value must be staged base64-encoded."
+do      = "Stage every [[files]] secret value base64-encoded and correct any handoff that says otherwise before execution."
+
+[gotcha.314]
+area    = "kernel-init"
+symptom = "A kernel launch list that starts the human gateway alone leaves required pod roles unlaunched."
+cause   = "The eager producer constructor belongs to the separate components binary, not to the gateway proxy."
+do      = "The task that launches the gateway also launches the components and the other pod roles it depends on."
+
+[gotcha.315]
+area    = "test"
+symptom = "A combined find --help marker assertion refuses although GNU find and Python are present."
+cause   = "One combined marker check fails on output shape rather than on a missing feature."
+do      = "Stop at the first failed record and keep it; never claim an unsupported feature."
+
+[gotcha.316]
+area    = "spec-workflow"
+symptom = "A Codify records command with --force runs past thirty minutes and, stopped by SIGTERM, leaves no exit code."
+cause   = "The records command spawns trace children that can run long."
+do      = "Keep the runtime gate's exit 0 as its own record, distinct from the records command."
+
+[gotcha.317]
+area    = "spec-workflow"
+symptom = "cg spec implemented runs past a two-minute timeout and is terminated without changing the task status."
+cause   = "The records command can run long in a lane with a large spec."
+do      = "Set the status to implemented in spec.kvx by hand, then render once, and say so in the report."

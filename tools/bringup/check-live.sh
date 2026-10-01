@@ -2517,6 +2517,68 @@ print(len(ms), ",".join(str(p) for p in ports) or "none")
 	finish "$failures"
 }
 
+# check_human: the human service of the kernel app answers at
+# CHECK_LIVE_HUMAN_BASE, by default https://api-hull.paxeer.network, as the
+# wallet origin CHECK_LIVE_HUMAN_ORIGIN, by default https://paxportwallet.com:
+# the live, preflight and plan checks of tools/wallet/check-live.sh human,
+# /readyz 200 with ready true, and the passkey registration options of the
+# probe account CHECK_LIVE_HUMAN_PROBE_EMAIL, created under an idempotency key
+# derived from that address so every run converges on one account, naming the
+# origin's host as rp.id. One line per check.
+check_human() {
+	local base="${CHECK_LIVE_HUMAN_BASE:-https://api-hull.paxeer.network}"
+	local origin="${CHECK_LIVE_HUMAN_ORIGIN:-https://paxportwallet.com}"
+	local email="${CHECK_LIVE_HUMAN_PROBE_EMAIL:-}" rp="${origin#https://}"
+	local failures=0 line answer code body account key
+	base="${base%/}"
+	while IFS= read -r line; do
+		case "$line" in
+		pass\ *) echo "$line" ;;
+		fail\ *)
+			echo "$line"
+			failures=$((failures + 1))
+			;;
+		esac
+	done < <(CHECK_LIVE_HUMAN_BASE="$base" CHECK_LIVE_HUMAN_ORIGIN="$origin" CHECK_LIVE_TIMEOUT="$timeout" "$repo_root/tools/wallet/check-live.sh" human 2>&1 || true)
+	answer="$(curl -sS --max-time "$timeout" -H "origin: $origin" -w ' %{http_code}' "$base/readyz" 2>/dev/null)" || answer=""
+	code="${answer##* }"
+	body="${answer% *}"
+	if [ "$code" = 200 ] && printf '%s' "$body" | python3 -c 'import json, sys; sys.exit(0 if json.load(sys.stdin)["result"]["ready"] is True else 1)' 2>/dev/null; then
+		echo "pass readyz http=200 ready=true"
+	else
+		echo "fail readyz http=${code:-none} $(printf '%s' "$body" | tr '\n' ' ' | cut -c1-200)"
+		failures=$((failures + 1))
+	fi
+	if [ -z "$email" ]; then
+		echo "fail rp-id email=unset"
+		finish $((failures + 1))
+	fi
+	key="$(printf 'check-live human %s' "$email" | sha256sum | cut -c1-32)"
+	answer="$(python3 -c 'import json, sys; print(json.dumps({"email": sys.argv[1], "display_name": "check-live human"}))' "$email" |
+		curl -sS --max-time "$timeout" -X POST -H "origin: $origin" -H 'content-type: application/json' -H "idempotency-key: $key" --data-binary @- -w ' %{http_code}' "$base/v1/accounts" 2>/dev/null)" || answer=""
+	code="${answer##* }"
+	account="$(printf '%s' "${answer% *}" | python3 -c 'import json, sys; print(json.load(sys.stdin)["result"]["account_id"])' 2>/dev/null)" || account=""
+	if [ -z "$account" ]; then
+		echo "fail rp-id account=none http=${code:-none}"
+		finish $((failures + 1))
+	fi
+	answer="$(python3 -c 'import json, sys; print(json.dumps({"account_id": sys.argv[1]}))' "$account" |
+		curl -sS --max-time "$timeout" -X POST -H "origin: $origin" -H 'content-type: application/json' --data-binary @- -w ' %{http_code}' "$base/v1/passkeys/registrations" 2>/dev/null)" || answer=""
+	code="${answer##* }"
+	answer="$(printf '%s' "${answer% *}" | python3 -c '
+import base64, json, sys
+ceremony = json.load(sys.stdin)["result"]["ceremony"]
+print(json.loads(base64.urlsafe_b64decode(ceremony + "=" * (-len(ceremony) % 4)))["rp"]["id"])
+' 2>/dev/null)" || answer=""
+	if [ "$answer" = "$rp" ]; then
+		echo "pass rp-id http=$code rp.id=$answer"
+	else
+		echo "fail rp-id http=${code:-none} rp.id=${answer:-none} want=$rp"
+		failures=$((failures + 1))
+	fi
+	finish "$failures"
+}
+
 # Sourced by tools/bringup/ca.sh for the Fly helpers and the CA settings: the
 # probe's own dispatch below runs only when this file is executed.
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
@@ -3943,6 +4005,7 @@ interop-adapters) ;;
 xweb-attestors) ;;
 kernel-boundaries) ;;
 events-upstream) ;;
+human) ;;
 *)
 	usage >&2
 	exit 2
