@@ -117,12 +117,6 @@ mirror_inputs() {
 		LAYERX_KERNEL_MIRROR_RPC_CREDENTIALS
 }
 
-if [ -e "$run" ] && [ ! -L "$run" ]; then
-	case "$(stat -c '%u:%g:%a' "$run")" in
-	0:0:755 | 4020:4020:2775 | 4020:4020:3775) ;;
-	*) log "private runtime directory refused: $run owner or mode"; exit 1 ;;
-	esac
-fi
 memory "$run" 0755
 memory /run/authority-private 0700
 if [ -e /run/human-private ] && [ "$(stat -c '%u:%g:%a' /run/human-private)" != 0:0:755 ]; then
@@ -135,7 +129,7 @@ memory "$mirror_material" 0700
 memory "$mirror_run" 0700
 memory /tmp 1777
 chown 4020:4020 "$run"
-chmod 3775 "$run"
+chmod 2775 "$run"
 chown 4021:4020 /run/authority-private /run/mirror-signer "$mirror_material" "$mirror_run"
 mirror_inputs
 mkdir -p "$status" "$run/clock"
@@ -192,12 +186,9 @@ try:
     private = directory(run, "human-private", 0, 0, 0o755)
     for role, uid in (("components", 4020), ("identity", 4020),
                       ("security", 4020), ("movement", 4020),
-                      ("agent", 4021), ("kms", 4026)):
+                      ("agent", 4021), ("kms", 4026), ("service", 4020)):
         os.close(directory(private, role, uid, 4020, 0o700))
-    layerx_run = directory(run, "layerx", 4020, 4020, 0o3775)
-    human = directory(layerx_run, "human", 4020, 4020, 0o750)
-    os.close(directory(human, "service-private", 4020, 4020, 0o700))
-    for fd in (human, layerx_run, private, run):
+    for fd in (private, run):
         os.close(fd)
 except (OSError, ValueError) as error:
     raise SystemExit("private runtime directory refused: " + str(error))
@@ -205,6 +196,8 @@ PY_PRIVATE
 }
 
 private_runtime_directories
+export LAYERX_HUMAN_SERVICE_PRIVATE_DIR=/run/human-private/service
+install -d -o 4020 -g 4020 -m 0750 "$run/human"
 install -d -o 4021 -g 4020 -m 0750 "$run/human/owner"
 install -d -o 4021 -g 4020 -m 0700 "$run/human/authority-clock"
 install -d -o 0 -g 4020 -m 0750 "$human_state"

@@ -23,8 +23,7 @@ ROLES = {
     'human': ('service', 4020, 'layerx-human-service'),
     'human-tls': ('service', 4020, 'layerx-human-service'),
 }
-PRIVATE = {role: ('/run/layerx/human/service-private' if role == 'service'
-                  else '/run/human-private/' + role, uid)
+PRIVATE = {role: ('/run/human-private/' + role, uid)
            for role, uid, _ in ROLES.values()}
 PRIVATE['kms'] = ('/run/human-private/kms', 4026)
 
@@ -163,7 +162,7 @@ class RoleDirectories(unittest.TestCase):
     def await_directories(self, container):
         deadline = time.monotonic() + 20
         while time.monotonic() < deadline:
-            result = self.inspect(container, 'import os; assert os.path.isdir("/run/layerx/human/service-private")', check=False)
+            result = self.inspect(container, 'import os; assert os.path.isdir("/run/human-private/service")', check=False)
             if result.returncode == 0:
                 return
             if docker('inspect', '--format', '{{.State.Running}}', container).stdout.strip() != 'true':
@@ -229,10 +228,9 @@ print(json.dumps(out))'''
         self.assertEqual(self.directory_metadata(container),
                          {path: [uid, 4020, 0o700] for path, uid in PRIVATE.values()})
         metadata = json.loads(self.inspect(container,
-            'import json,os,stat;print(json.dumps([stat.S_IMODE(os.stat(p).st_mode) for p in '
-            '["/run/human-private","/run/layerx","/run/layerx/human"]]))').stdout)
-        self.assertTrue(all(mode & 0o002 == 0 for mode in metadata))
-        self.assertTrue(metadata[1] & 0o1000, 'shared runtime parent requires sticky rename protection')
+            'import json,os,stat;s=os.stat("/run/human-private");'
+            'print(json.dumps([s.st_uid,s.st_gid,stat.S_IMODE(s.st_mode)]))').stdout)
+        self.assertEqual(metadata, [0, 0, 0o755])
 
     def refused(self, setup):
         volume = self.volume()
@@ -331,9 +329,9 @@ print(json.dumps(out,sort_keys=True))'''
         self.assertEqual(docker('exec', container, 'cat',
                                '/run/human-private/components/sentinel').stdout, 'compatible')
 
-    def test_10_refuse_service_parent_symlink(self):
-        self.refused('mkdir -p /run/layerx; mount -t tmpfs -o mode=0755 tmpfs /run/layerx; '
-                     'ln -s /data/guard /run/layerx/human')
+    def test_10_refuse_service_directory_symlink(self):
+        self.refused('mkdir -p /run/human-private; mount -t tmpfs -o mode=0755 tmpfs /run/human-private; '
+                     'ln -s /data/guard /run/human-private/service')
 
 
 def main():

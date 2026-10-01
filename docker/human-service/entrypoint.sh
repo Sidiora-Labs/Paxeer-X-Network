@@ -4,7 +4,13 @@ umask 077
 role=${1:?Human role is required}
 shift
 case "$role" in
-    service) private=/run/layerx/human/service-private ;;
+    service)
+        private=${LAYERX_HUMAN_SERVICE_PRIVATE_DIR:-/run/layerx/human/service-private}
+        case "$private" in
+            /run/human-private/service|/run/layerx/human/service-private) ;;
+            *) printf 'private runtime directory refused: service path\n' >&2; exit 64 ;;
+        esac
+        ;;
     onboarding-bootstrap) private=/run/human-private/components ;;
     components|identity|security|movement|agent|kms|onboarding-signer) private=/run/human-private/$role ;;
     *) printf 'unknown Human role\n' >&2; exit 64 ;;
