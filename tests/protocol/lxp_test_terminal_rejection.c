@@ -678,6 +678,290 @@ static int terminal_maintenance_case(void)
     return 0;
 }
 
+/* Versioned boundary vectors: each line is "VECTOR <name>=<value>" so the
+ * versioned boundary table can compare the observed native outcome. */
+static void vector_emit(const char *name, long long value)
+{
+    printf("VECTOR %s=%lld\n", name, value);
+}
+
+static void terminal_fixture_close(terminal_fixture *f)
+{
+    (void)lxp_history_close(&f->history);
+    (void)lxp_log_close(&f->feed_log);
+    (void)lxp_log_close(&f->canonical_log);
+    (void)pthread_mutex_destroy(&f->feed_mutex);
+    (void)lxp_state_store_destroy(&f->state);
+    lx_account_registry_release(&f->accounts);
+    free(f->storage);
+    free(f);
+}
+
+static int vector_expiry_activity(void)
+{
+    static const uint64_t points[3] = {99U, 100U, 101U};
+    static const char *const names[3] = {"before", "equal", "after"};
+    const lxp_timestamp_bound bound = {1U, 100U};
+    char name[96];
+    size_t i;
+    for (i = 0U; i < 3U; ++i) {
+        CHECK(snprintf(name, sizeof(name), "expiry.activity.%s", names[i]) > 0);
+        vector_emit(name, lxp_activity_check_timestamp_bound(bound, points[i], 100U));
+    }
+    vector_emit("expiry.activity.not_before_equal",
+        lxp_activity_check_timestamp_bound(bound, 1U, 100U));
+    vector_emit("expiry.activity.not_before_below",
+        lxp_activity_check_timestamp_bound(bound, 0U, 100U));
+    return 0;
+}
+
+static int vector_expiry_grant(const terminal_fixture *f)
+{
+    static const uint64_t points[3] = {99U, 100U, 101U};
+    static const char *const names[3] = {"before", "equal", "after"};
+    const lxp_authority_envelope envelope = {UINT64_C(1) << LXP_MODULE_ASSET, 1U, 10U};
+    lxp_authority_grant grant, raw;
+    char name[96];
+    size_t i;
+    /* An owner grant derived from the activity bound [1, 100]. */
+    CHECK(lxp_authority_owner_grant(f->identity, f->actor_public_key, &envelope,
+        1U, 100U, &grant) == LXP_OK);
+    vector_emit("expiry.grant.owner_not_after_stored", (long long)grant.not_after);
+    vector_emit("expiry.grant.owner_unbounded",
+        lxp_authority_owner_grant(f->identity, f->actor_public_key, &envelope,
+            1U, UINT64_MAX, &raw));
+    for (i = 0U; i < 3U; ++i) {
+        CHECK(snprintf(name, sizeof(name), "expiry.grant.owner_%s", names[i]) > 0);
+        vector_emit(name, lxp_authority_is_live(&grant, 0U, points[i], 1U));
+    }
+    /* A stored grant record whose end is 100 is exclusive at 100. */
+    raw = grant;
+    raw.not_after = 100U;
+    for (i = 0U; i < 3U; ++i) {
+        CHECK(snprintf(name, sizeof(name), "expiry.grant.record_%s", names[i]) > 0);
+        vector_emit(name, lxp_authority_is_live(&raw, 0U, points[i], 1U));
+    }
+    return 0;
+}
+
+static int vector_expiry_send(terminal_fixture *f, const uint8_t *payload, size_t payload_length)
+{
+    static const uint64_t points[3] = {99U, 100U, 101U};
+    static const char *const names[3] = {"before", "equal", "after"};
+    lxp_send send;
+    lxp_send_environment environment;
+    char name[96];
+    size_t i;
+    CHECK(lxp_send_decode(payload, payload_length, &send) == LXP_OK);
+    CHECK(send.expires_at == 100U);
+    /* The first check after expiry is the signed context binding: a broken
+     * binding shows that the expiry comparator admitted the timestamp. */
+    send.context_hash[0] ^= 1U;
+    memset(&environment, 0, sizeof(environment));
+    environment.accounts = &f->accounts;
+    environment.assets = &f->asset;
+    environment.asset_count = 1U;
+    environment.network_id = 7U;
+    environment.protocol_version = LXP_PROTOCOL_VERSION_STATE_COMMITMENT;
+    for (i = 0U; i < 3U; ++i) {
+        environment.batch_timestamp = points[i];
+        CHECK(snprintf(name, sizeof(name), "expiry.send.%s", names[i]) > 0);
+        vector_emit(name, lxp_send_validate(&send, &environment));
+    }
+    return 0;
+}
+
+static int vector_expiry_receive(terminal_fixture *f)
+{
+    static const uint64_t points[3] = {99U, 100U, 101U};
+    static const char *const names[3] = {"before", "equal", "after"};
+    lxp_grant_store *grants = calloc(1U, sizeof(*grants));
+    lxp_send_store idempotency;
+    lxp_receive_environment environment;
+    lxp_receive receive;
+    lxp_payer_grant grant;
+    lxp_send_receipt_projection projection;
+    uint8_t message[384], digest[32];
+    size_t length = 0U, i;
+    char name[96];
+    CHECK(grants != NULL);
+    memset(&grant, 0, sizeof(grant));
+    memcpy(grant.from, f->actor_id, 32U);
+    memcpy(grant.recipient, f->recipient_id, 32U);
+    memcpy(grant.asset, f->asset.asset_id, 32U);
+    grant.per_draw_maximum = (lxp_u128){0U, 10U};
+    grant.allowance = (lxp_u128){0U, 50U};
+    grant.expiration = 100U;
+    grant.purpose_hash[0] = 8U;
+    memcpy(grant.public_key, f->actor_public_key, 32U);
+    CHECK(lxp_grant_authorization_message(&grant, message, sizeof(message), &length) == LXP_OK);
+    CHECK(lxp_hash_authority(message, length, grant.grant_id) == LXP_OK);
+    CHECK(lxp_hash_domain(LXP_DOMAIN_AUTHORITY_HASH, message, length, digest) == LXP_OK);
+    CHECK(terminal_sign(terminal_actor_seed, digest, 32U, grant.signature) == 0);
+    CHECK(lxp_grant_store_put(grants, &grant, f->actor) == LXP_OK);
+    CHECK(lxp_send_store_init(&idempotency, NULL) == LXP_OK);
+    memset(&receive, 0, sizeof(receive));
+    memcpy(receive.from, f->actor_id, 32U);
+    memcpy(receive.to, f->recipient_id, 32U);
+    memcpy(receive.asset, f->asset.asset_id, 32U);
+    memcpy(receive.grant_id, grant.grant_id, 32U);
+    receive.payer_grant = grant;
+    receive.idempotency_key[0] = 0x3BU;
+    /* One unit above the per-draw maximum: the first check after expiry is
+     * the grant scope, so a scope refusal shows expiry admitted the time. */
+    receive.amount = (lxp_u128){0U, 11U};
+    memset(&environment, 0, sizeof(environment));
+    environment.accounts = &f->accounts;
+    environment.assets = &f->asset;
+    environment.asset_count = 1U;
+    environment.grants = grants;
+    environment.idempotency = &idempotency;
+    environment.global_sequence = 1U;
+    environment.network_id = 7U;
+    environment.protocol_version = LXP_PROTOCOL_VERSION_STATE_COMMITMENT;
+    for (i = 0U; i < 3U; ++i) {
+        environment.batch_timestamp = points[i];
+        CHECK(snprintf(name, sizeof(name), "expiry.receive.%s", names[i]) > 0);
+        vector_emit(name, lxp_receive_execute(&receive, &environment, &projection));
+    }
+    vector_emit("expiry.receive.balance_unchanged",
+        f->actor->balance.hi == 0U && f->actor->balance.lo == 1000U &&
+        lxp_u128_is_zero(f->recipient->balance));
+    lxp_send_store_release(&idempotency);
+    free(grants);
+    return 0;
+}
+
+static int vector_resign(lxp_activity *activity, uint16_t version, uint8_t signature[64])
+{
+    uint8_t preimage[32];
+    activity->protocol_version = version;
+    /* An unknown version has no signing preimage; admission refuses it. */
+    if (!lxp_protocol_version_supported(version)) return 0;
+    CHECK(lxp_activity_signing_preimage(activity, preimage) == LXP_OK);
+    CHECK(terminal_sign(terminal_actor_seed, preimage, 32U, signature) == 0);
+    activity->signature = (lxp_byte_span){signature, 64U};
+    return 0;
+}
+
+/* One terminal refusal at the given protocol version on a fresh node and on
+ * a restarted node, then a duplicate retry of the same activity. */
+static int vector_terminal(uint16_t version, lxp_result refusal, const char *label)
+{
+    terminal_fixture *live = malloc(sizeof(*live));
+    terminal_fixture *restarted = malloc(sizeof(*restarted));
+    lxp_activity activity, replay;
+    lxp_kernel_execution execution, retry;
+    lxp_receipt receipt, restart_receipt, duplicate;
+    lxp_byte_span encoded, restart_encoded;
+    uint8_t payload[512], replay_payload[512], signature[64], replay_signature[64];
+    uint8_t base_root[32];
+    size_t payload_length = 0U, replay_length = 0U;
+    uint64_t first;
+    lxp_result status;
+    char name[128];
+    CHECK(live != NULL && restarted != NULL);
+    CHECK(terminal_fixture_open(live) == 0);
+    CHECK(terminal_fixture_open(restarted) == 0);
+    CHECK(terminal_build_send(live, &activity, payload, &payload_length) == 0);
+    CHECK(terminal_build_send(restarted, &replay, replay_payload, &replay_length) == 0);
+    CHECK(vector_resign(&activity, version, signature) == 0);
+    CHECK(vector_resign(&replay, version, replay_signature) == 0);
+    first = live->state.next_sequence;
+    memcpy(base_root, live->kernel.current_state_root, 32U);
+    memset(&execution, 0, sizeof(execution));
+    terminal_execution(live, &execution, first, 1U);
+    memset(&receipt, 0, sizeof(receipt));
+    status = lxp_kernel_terminal_rejection(&live->kernel, &activity, &execution,
+        refusal, &receipt);
+#define VECTOR_FIELD(field, value) do { \
+        CHECK(snprintf(name, sizeof(name), "terminal.v%u.%s.%s", \
+            (unsigned)version, label, field) > 0); \
+        vector_emit(name, (long long)(value)); } while (0)
+    VECTOR_FIELD("envelope", lxp_activity_check_envelope(&activity, 7U));
+    VECTOR_FIELD("status", status);
+    VECTOR_FIELD("global_delta", live->state.next_sequence - first);
+    VECTOR_FIELD("actor_delta", live->actor->next_sequence - 1U);
+    VECTOR_FIELD("actor_balance", live->actor->balance.lo);
+    VECTOR_FIELD("recipient_balance", live->recipient->balance.lo);
+    VECTOR_FIELD("treasury_balance", live->treasury->balance.lo);
+    VECTOR_FIELD("root_unchanged",
+        memcmp(live->kernel.current_state_root, base_root, 32U) == 0);
+    if (status == LXP_OK) {
+        VECTOR_FIELD("receipt_result", receipt.result_code);
+        VECTOR_FIELD("receipt_version", receipt.protocol_version);
+        VECTOR_FIELD("receipt_sequence_offset", receipt.global_sequence - first);
+        VECTOR_FIELD("receipt_fee", receipt.fee_charged.lo | receipt.fee_charged.hi);
+        VECTOR_FIELD("receipt_effects", receipt.effects.count);
+        VECTOR_FIELD("receipt_root_is_kernel_root",
+            memcmp(receipt.resulting_state_root, live->kernel.current_state_root, 32U) == 0);
+        /* Restart: the same refusal from the same base reproduces the receipt. */
+        retry = execution;
+        retry.identities = &restarted->identities;
+        retry.authority = &restarted->authority;
+        retry.fee_parameters = &restarted->fees;
+        retry.arena = &restarted->arena;
+        memset(&restart_receipt, 0, sizeof(restart_receipt));
+        VECTOR_FIELD("restart_status", lxp_kernel_terminal_rejection(&restarted->kernel,
+            &replay, &retry, refusal, &restart_receipt));
+        CHECK(lxp_receipt_encode(&receipt, true, &live->arena, &encoded) == LXP_OK);
+        CHECK(lxp_receipt_encode(&restart_receipt, true, &restarted->arena,
+            &restart_encoded) == LXP_OK);
+        VECTOR_FIELD("restart_receipt_identical", encoded.length == restart_encoded.length &&
+            memcmp(encoded.bytes, restart_encoded.bytes, encoded.length) == 0);
+        VECTOR_FIELD("restart_root_identical", memcmp(live->kernel.current_state_root,
+            restarted->kernel.current_state_root, 32U) == 0);
+        /* Duplicate retry at the next offered sequence returns the first receipt. */
+        memset(&retry, 0, sizeof(retry));
+        terminal_execution(live, &retry, live->state.next_sequence, 2U);
+        memset(&duplicate, 0, sizeof(duplicate));
+        VECTOR_FIELD("duplicate_status",
+            lxp_kernel_execute_activity(&live->kernel, &activity, &retry, &duplicate));
+        VECTOR_FIELD("duplicate_result", duplicate.result_code);
+        VECTOR_FIELD("duplicate_sequence_offset", duplicate.global_sequence - first);
+        VECTOR_FIELD("duplicate_global_delta", live->state.next_sequence - first);
+        VECTOR_FIELD("duplicate_actor_delta", live->actor->next_sequence - 1U);
+    }
+#undef VECTOR_FIELD
+    terminal_fixture_close(live);
+    terminal_fixture_close(restarted);
+    return 0;
+}
+
+static int versioned_boundary_vectors(void)
+{
+    static const uint16_t versions[3] = {
+        LXP_PROTOCOL_VERSION_LEGACY, LXP_PROTOCOL_VERSION_OCCUPANCY,
+        LXP_PROTOCOL_VERSION_STATE_COMMITMENT};
+    terminal_fixture *f = malloc(sizeof(*f));
+    lxp_activity activity;
+    uint8_t payload[512];
+    size_t payload_length = 0U, i;
+    uint16_t version;
+    char name[64];
+    for (version = 0U; version <= 4U; ++version) {
+        CHECK(snprintf(name, sizeof(name), "version.supported.%u", (unsigned)version) > 0);
+        vector_emit(name, lxp_protocol_version_supported(version));
+    }
+    CHECK(f != NULL);
+    CHECK(terminal_fixture_open(f) == 0);
+    CHECK(terminal_build_send(f, &activity, payload, &payload_length) == 0);
+    CHECK(vector_expiry_activity() == 0);
+    CHECK(vector_expiry_grant(f) == 0);
+    CHECK(vector_expiry_send(f, payload, payload_length) == 0);
+    CHECK(vector_expiry_receive(f) == 0);
+    terminal_fixture_close(f);
+    for (i = 0U; i < 3U; ++i) {
+        CHECK(vector_terminal(versions[i], LXP_ERR_IDENTITY_FROZEN, "authority") == 0);
+        CHECK(vector_terminal(versions[i], LXP_ERR_INSUFFICIENT_BALANCE, "module") == 0);
+        CHECK(vector_terminal(versions[i], LXP_ERR_FEE_LIMIT, "fee") == 0);
+        CHECK(vector_terminal(versions[i], LXP_ERR_EXPIRED, "expired") == 0);
+    }
+    CHECK(vector_terminal(4U, LXP_ERR_IDENTITY_FROZEN, "authority") == 0);
+    CHECK(vector_terminal(0U, LXP_ERR_IDENTITY_FROZEN, "authority") == 0);
+    return 0;
+}
+
 #ifndef LXP_TEST_TERMINAL_REJECTION_MAIN
 #define LXP_TEST_TERMINAL_REJECTION_MAIN main
 #endif
@@ -686,6 +970,7 @@ int LXP_TEST_TERMINAL_REJECTION_MAIN(void)
     if (classification_case() != 0) return 1;
     if (terminal_rejection_case() != 0) return 1;
     if (terminal_maintenance_case() != 0) return 1;
+    if (versioned_boundary_vectors() != 0) return 1;
     printf("terminal rejection tests passed\n");
     return 0;
 }
