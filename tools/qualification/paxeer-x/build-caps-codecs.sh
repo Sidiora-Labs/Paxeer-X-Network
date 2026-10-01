@@ -2,6 +2,7 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../../.."
 : "${CAPS_BUILD_DIR:?private output directory required}"
+: "${CAPS_NATIVE_STAGE_DIR:?own non-secret executable staging directory required}"
 : "${CAPS_NATIVE_BIN_DIR:?compatible prebuilt layerxd and genesis builder directory required}"
 : "${CAPS_NATIVE_SOURCE:?source checkout of compatible prebuilt native libraries required}"
 : "${CARGO_TARGET_DIR:?unique task target directory required}"
@@ -22,15 +23,38 @@ for tree in ['src','include','programs','cmd','migrations','contracts/config']:
  subprocess.run(['git','-C',str(source),'diff','--exit-code','HEAD','--',tree],check=True,stdout=subprocess.DEVNULL)
 paths=[source/'build/liblayerx.a',source/'programs/target/debug/liblayerx_programs_sandbox.a']
 provenance={'revision':git(root,'rev-parse','HEAD'),'native_revision':git(source,'rev-parse','HEAD'),'native_source_trees':{t:git(root,'rev-parse','HEAD:'+t) for t in ['src','include','programs','cmd','migrations','contracts/config']},'native_libraries':{str(p):sha(p) for p in paths},'rustc':subprocess.check_output([os.environ['RUSTC'],'--version'],text=True).strip()}
-native=out/'native-bin';native.mkdir(exist_ok=True)
+native=pathlib.Path(os.environ['CAPS_NATIVE_STAGE_DIR']).resolve()
+if native == pathlib.Path(os.environ['CAPS_NATIVE_BIN_DIR']).resolve():raise SystemExit('cannot stage over producer binaries')
+native.mkdir(parents=True,exist_ok=True);native.chmod(0o755)
 provenance['authority_binaries']={}
 for name in ['layerxd','layerx-genesis-build']:
  original=pathlib.Path(os.environ['CAPS_NATIVE_BIN_DIR'])/name
  target=native/name
  shutil.copy2(original,target)
+ target.chmod(0o755)
  provenance['authority_binaries'][name]={'path':str(target),'sha256':sha(target)}
 (out/'native-source.json').write_text(json.dumps(provenance,indent=2)+'\n')
 PY
+if [[ -n "${CAPS_REUSE_MANIFEST:-}" ]]; then
+python3 - <<'REUSE'
+import os,pathlib,json,hashlib,subprocess
+out=pathlib.Path(os.environ['CAPS_BUILD_DIR'])
+old=json.loads(pathlib.Path(os.environ['CAPS_REUSE_MANIFEST']).read_text())
+def tree(t):return subprocess.check_output(['git','rev-parse','HEAD:'+t],text=True).strip()
+for t in ['agent','programs','src','include','tests/qualification']:
+ if old['source_trees'][t]!=tree(t):raise SystemExit('compiled source changed: '+t)
+for artifact in old['artifacts'].values():
+ with open(artifact['path'],'rb') as f:digest=hashlib.file_digest(f,'sha256').hexdigest()
+ if digest!=artifact['sha256']:raise SystemExit('compiled artifact changed')
+m=json.loads((out/'native-source.json').read_text())
+m['artifacts']=old['artifacts'];m['reuse_from_revision']=old['revision']
+m['source_trees']={t:tree(t) for t in old['source_trees']}
+(out/'manifest.json').write_text(json.dumps(m,indent=2)+'\n')
+os.chmod(out/'manifest.json',0o600)
+print('Reused source-identical compiled artifacts; no compilation performed')
+REUSE
+exit 0
+fi
 cc -std=c17 -pedantic -Werror -Wall -Wextra -Wconversion -Wshadow -Wvla -fno-strict-aliasing -ffp-contract=off -O2 -ffunction-sections -fdata-sections -Iinclude -I"$CAPS_NATIVE_SOURCE/build/generated" tests/qualification/lxp_wallet_caps_vectors.c "$CAPS_NATIVE_SOURCE/build/liblayerx.a" "$CAPS_NATIVE_SOURCE/programs/target/debug/liblayerx_programs_sandbox.a" "$CAPS_NATIVE_SOURCE/build/liblayerx.a" -Wl,--gc-sections -lcrypto -pthread -ldl -lm -o "$CAPS_BUILD_DIR/lxp_wallet_caps_vectors"
 "$CAPS_RUST_TOOLCHAIN/bin/cargo" test --manifest-path agent/Cargo.toml --offline --locked -p layerx-client --test committed_caps --no-run --message-format=json > "$CAPS_BUILD_DIR/client-build.jsonl"
 "$CAPS_RUST_TOOLCHAIN/bin/cargo" test --manifest-path agent/Cargo.toml --offline --locked -p layerx-agentd --test budget_schema --no-run --message-format=json > "$CAPS_BUILD_DIR/agentd-build.jsonl"
