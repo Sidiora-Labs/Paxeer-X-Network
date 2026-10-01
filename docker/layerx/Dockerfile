@@ -63,9 +63,11 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends libssl-dev pkg-config && \
     rm -rf /var/lib/apt/lists/*
 WORKDIR /src
-ENV CARGO_BUILD_JOBS=4 CARGO_TARGET_DIR=/src/.x-websearch-target
+ARG CARGO_BUILD_JOBS=4
+ENV CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS} CARGO_TARGET_DIR=/src/.x-websearch-target
 COPY . .
-RUN cargo build --locked --manifest-path interop/Cargo.toml --release --package x-websearch --bin x-websearch
+RUN cargo build --locked --manifest-path interop/Cargo.toml --release --package x-websearch --bin x-websearch && \
+    test -x /src/.x-websearch-target/release/x-websearch
 
 FROM docker.io/ubuntu:24.04@sha256:104ae83764a5119017b8e8d6218fa0832b09df65aae7d5a6de29a85d813da2fb
 

@@ -763,7 +763,7 @@
     - Implement tools/bringup/tests/paxeer-x-runtime-contract.py --case registry-material with actual producer documents, authenticated transfer path and registry validation; cover mismatched/partial/replayed generations.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 207_
-  - [-] 24.9 Include the complete websearch dependency closure in its image build context
+  - [x] 24.9 Include the complete websearch dependency closure in its image build context
     - Reconcile docker/layerx/Dockerfile.dockerignore with the actual interop x-websearch dependency closure or introduce an explicit source stage.
     - Create tools/ci/tests/websearch-context.py to compare the effective Docker context with the production Cargo path dependency graph and invoke one bounded build of the declared x-websearch stage on a clean candidate.
     - Keep source identity and secret exclusions explicit; do not broaden into rebuilding chain or validator images.

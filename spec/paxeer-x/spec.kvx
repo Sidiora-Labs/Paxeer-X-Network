@@ -22846,7 +22846,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.24.9]
 title = "Include the complete websearch dependency closure in its image build context"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
