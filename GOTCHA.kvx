@@ -1853,3 +1853,21 @@ area    = "bringup"
 symptom = "A task's check-live.sh verify_cmd exits 2 with check-live: BRINGUP_HOSTS_FILE is unset before any check runs."
 cause   = "The spec's verify_cmd omits the private host map, which check-live.sh requires for every subcommand."
 do      = "Run the verify_cmd with BRINGUP_HOSTS_FILE pointing at the operator's private host map; never print or commit its contents."
+
+[gotcha.306]
+area    = "check-live"
+symptom = "A check-live gate run without BRINGUP_HOSTS_FILE exits 2 before any Fly check, even for a subcommand that reads no host."
+cause   = "Every subcommand except explorer loads the private host map first."
+do      = "Run Fly-only gates with BRINGUP_HOSTS_FILE pointing at the private host map as the other gate records do."
+
+[gotcha.307]
+area    = "test"
+symptom = "A check-live probe that calls flyctl apps list or flyctl secrets list reads nothing from the harness's flyctl stand-in."
+cause   = "The stand-in refuses any call without an fx- app before it looks at the subcommand, and answers only the subcommands earlier probes used."
+do      = "Answer apps list before the app gate and add secrets list beside ips list, both from the fixture directories, in the change that adds the probe."
+
+[gotcha.308]
+area    = "test"
+symptom = "A harness case cannot assert that a probe never prints a secret value with the shared expect helper, which only checks lines that must appear."
+cause   = "expect has no absence assertion besides its no-destination pattern."
+do      = "Start every fixture secret value with up- so a printed value matches the no-destination pattern and fails the case."
