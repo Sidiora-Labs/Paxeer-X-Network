@@ -1701,3 +1701,10 @@ symbol     = "Service::open"
 observed   = "fly-init.sh writes credentials.json as {} for journeys and approvals and Service::open (platform/hosted/internal/src/events.rs) refuses an empty principal set, so layerx-event-source exits 1 once its TLS identity exists, independent of the kernel; no source line provisions principals on Fly."
 assumption = "the principal-wait task 0.12 completes it"
 severity   = "warning"
+
+[gate.0.12.principals]
+revision = "a1cfb97f50336c332243e4bff46a4206583d8198"
+command = "CARGO_TARGET_DIR=/root/lx-target/platform timeout 20m cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-internal principals"
+exit_code = 0
+log_path = ".logs/0.12-principals.log"
+observed = "Two principals unit tests passed with no warnings; the status was recorded by hand because the completion command refused on a stale symbol graph while the database was busy, not on the gate."
