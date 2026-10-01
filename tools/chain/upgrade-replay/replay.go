@@ -1,8 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	evmconfig "github.com/sidiora-labs/paxeer-network/modules/evm/config"
+	layerxgovtypes "github.com/sidiora-labs/paxeer-network/modules/layerxgov/types"
+	appparams "github.com/sidiora-labs/paxeer-network/node/params"
+	cdctypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
+	banktypes "github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
+	govtypes "github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
 	"reflect"
+	"strings"
 	"time"
 
 	ecommon "github.com/ethereum/go-ethereum/common"
@@ -107,6 +115,10 @@ func replay(home string, opts appOptions, plan, chainID string, pre *preState) i
 		}
 	}()
 	c.pass("the application loaded the state with the plan's store upgrades mounted")
+	info, err := a.UpgradeKeeper.ReadUpgradeInfoFromDisk()
+	if !c.assert(err == nil && info.Name == plan && info.Height == upgradeHeight, "the applied plan and height match upgrade-info.json") {
+		return c.failures
+	}
 
 	c.assert(a.LastBlockHeight() == pre.Height,
 		"the loaded state is at height %d (loaded %d)", pre.Height, a.LastBlockHeight())
@@ -145,6 +157,13 @@ func replay(home string, opts appOptions, plan, chainID string, pre *preState) i
 		}
 	}
 
+	var operatingBefore operatingState
+	if plan == app.V610Upgrade {
+		operatingBefore = readOperatingState(a, ctx)
+		c.assert(a.UpgradeKeeper.GetDoneHeight(ctx, app.ActivationUpgrade) > 0, "v6.10 starts from recorded post-activation state")
+		c.assert(len(pre.Missing) == 0, "v6.10 adds, deletes and renames no mounted store")
+		assertEmptyOwnerList(c, a, ctx, upgradeHeight)
+	}
 	if !c.guard("applying plan "+plan, func() {
 		a.UpgradeKeeper.ApplyUpgrade(ctx, upgradetypes.Plan{Name: plan, Height: upgradeHeight})
 	}) {
@@ -153,6 +172,9 @@ func replay(home string, opts appOptions, plan, chainID string, pre *preState) i
 	c.pass("the plan handler ran over the state without a panic")
 
 	after := a.UpgradeKeeper.GetModuleVersionMap(ctx)
+	if plan == app.V610Upgrade {
+		c.assert(reflect.DeepEqual(before, after), "v6.10 preserves the post-activation module version map")
+	}
 	fmt.Printf("version map after the plan: %d modules\n", len(after))
 	for _, name := range forkModules {
 		if version, known := after[name]; known {
@@ -164,8 +186,14 @@ func replay(home string, opts appOptions, plan, chainID string, pre *preState) i
 	done := a.UpgradeKeeper.GetDoneHeight(ctx, plan)
 	c.assert(done == upgradeHeight, "plan %s is recorded done at height %d (recorded %d)", plan, upgradeHeight, done)
 
-	assertForkGenesis(c, a, ctx)
-	assertPrecompiles(c, a, ctx, upgradeHeight)
+	if plan == app.V610Upgrade {
+		assertOperatingValues(c, a, ctx, operatingBefore, chainID)
+		assertGovernanceRoute(c, a, ctx)
+	} else {
+		assertForkGenesis(c, a, ctx)
+		assertPrecompiles(c, a, ctx, upgradeHeight)
+	}
+	persistedOperating := readOperatingState(a, ctx)
 
 	writeBlock()
 	c.pass("the block wrote the plan's state through to the committed store")
@@ -215,6 +243,9 @@ func replay(home string, opts appOptions, plan, chainID string, pre *preState) i
 	c.assert(kept == len(forkModules),
 		"the reopened version map carries all %d fork modules (carries %d)", len(forkModules), kept)
 	assertPrecompilesServed(c, b, reopened, upgradeHeight)
+	if plan == app.V610Upgrade {
+		c.assert(reflect.DeepEqual(persistedOperating, readOperatingState(b, reopened)), "v6.10 operating values and all six governance effects survive commit and reopen")
+	}
 
 	return c.failures
 }
@@ -337,4 +368,152 @@ func assertPrecompilesServed(c *checks, a *app.App, ctx sdk.Context, height int6
 	c.assert(count == len(forkPrecompiles),
 		"the reopened state serves all %d fork precompiles at height %d (serves %d)",
 		len(forkPrecompiles), height, count)
+}
+
+type operatingState struct {
+	Anchor       layerxanchortypes.Params
+	Custody      layerxcustodytypes.Params
+	Launchpad    launchpadtypes.Params
+	Exchange     layerxexchangetypes.Params
+	Web          xwebtypes.Params
+	Attestors    xwebtypes.AttestorSet
+	WebPaused    bool
+	BridgePaused bool
+	Emergency    bool
+	Deposit      govtypes.DepositParams
+	Tally        govtypes.TallyParams
+	Voting       govtypes.VotingParams
+}
+
+func readOperatingState(a *app.App, ctx sdk.Context) operatingState {
+	return operatingState{Anchor: a.LayerXAnchorKeeper.GetParams(ctx), Custody: a.LayerXCustodyKeeper.GetParams(ctx), Launchpad: a.LaunchpadKeeper.GetParams(ctx), Exchange: a.LayerXExchangeKeeper.GetParams(ctx), Web: a.XWebKeeper.GetParams(ctx), Attestors: a.XWebKeeper.GetAttestorSet(ctx), WebPaused: a.XWebKeeper.IsPaused(ctx), BridgePaused: a.LayerXBridgeKeeper.IsPaused(ctx), Emergency: a.LayerXCustodyKeeper.GetEmergency(ctx), Deposit: a.GovKeeper.GetDepositParams(ctx), Tally: a.GovKeeper.GetTallyParams(ctx), Voting: a.GovKeeper.GetVotingParams(ctx)}
+}
+func assertEmptyOwnerList(c *checks, a *app.App, ctx sdk.Context, height int64) {
+	before := readOperatingState(a, ctx)
+	empty, _ := ctx.CacheContext()
+	c.guard("v6.10 with empty owner list", func() {
+		supplied := app.XWebAttestors
+		app.XWebAttestors = nil
+		defer func() { app.XWebAttestors = supplied }()
+		a.UpgradeKeeper.ApplyUpgrade(empty, upgradetypes.Plan{Name: app.V610Upgrade, Height: height})
+		c.assert(reflect.DeepEqual(before.Attestors, a.XWebKeeper.GetAttestorSet(empty)), "v6.10 empty owner list preserves web-search attestors and threshold")
+		c.assert(before.WebPaused == a.XWebKeeper.IsPaused(empty), "v6.10 empty owner list preserves web-search pause")
+	})
+	c.assert(a.UpgradeKeeper.GetDoneHeight(ctx, app.V610Upgrade) == 0, "the empty-list trial left the replay source unmodified")
+}
+func assertOperatingValues(c *checks, a *app.App, ctx sdk.Context, before operatingState, chainID string) {
+	chain := evmconfig.GetEVMChainID(chainID)
+	if !c.assert(chain.IsUint64() && chain.Uint64() > 0 && chain.Uint64() <= uint64(^uint32(0)), "v6.10 derives a nonzero representable EVM network identifier") {
+		return
+	}
+	after := readOperatingState(a, ctx)
+	c.assert(after.Voting.VotingPeriod == time.Hour, "v6.10 voting period is one hour")
+	c.assert(after.Voting.ExpeditedVotingPeriod == 20*time.Minute, "v6.10 expedited voting period is twenty minutes")
+	c.assert(reflect.DeepEqual(before.Deposit, after.Deposit), "v6.10 deposit parameters and minimum deposit remain unchanged")
+	c.assert(reflect.DeepEqual(before.Tally, after.Tally), "v6.10 quorum and both thresholds remain unchanged")
+	anchor := before.Anchor
+	anchor.PaxeerChainID = chain.Uint64()
+	anchor.NetworkID = uint32(chain.Uint64())
+	c.assert(reflect.DeepEqual(anchor, after.Anchor), "v6.10 anchor chain and network IDs match EVM and other parameters remain unchanged")
+	custody := before.Custody
+	custody.NetworkId = uint32(chain.Uint64())
+	c.assert(reflect.DeepEqual(custody, after.Custody), "v6.10 custody network ID matches EVM and other parameters remain unchanged")
+	launchpad := before.Launchpad
+	launchpad.QuoteDenom = appparams.BaseCoinUnit
+	c.assert(reflect.DeepEqual(launchpad, after.Launchpad), "v6.10 launchpad quote denom is the base coin and other parameters remain unchanged")
+	c.assert(len(app.XWebAttestors) == 4 && len(after.Attestors.Attestors) == 4, "v6.10 carries four supplied web-search signers")
+	c.assert(reflect.DeepEqual(app.XWebAttestors, after.Attestors.Attestors), "v6.10 web-search signers, payouts and compressed public keys match supplied entries")
+	ascending := true
+	for i, attestor := range after.Attestors.Attestors {
+		if attestor.Validate() != nil || len(attestor.PublicKey) != xwebtypes.EnvelopeKeyLength {
+			ascending = false
+		}
+		if i > 0 && bytes.Compare(after.Attestors.Attestors[i-1].Signer[:], attestor.Signer[:]) >= 0 {
+			ascending = false
+		}
+	}
+	c.assert(ascending, "v6.10 web-search signer order and compressed public keys are valid")
+	c.assert(after.Attestors.Threshold == 3 && a.XWebKeeper.Threshold(ctx) == 3, "v6.10 web-search threshold is three")
+	c.assert(!after.WebPaused, "v6.10 web-search is unpaused")
+}
+func assertGovernanceRoute(c *checks, a *app.App, ctx sdk.Context) {
+	before := readOperatingState(a, ctx)
+	authority := layerxgovtypes.GovernanceAuthority()
+	anchor := before.Anchor
+	anchor.ReporterShare = sdk.NewDecWithPrec(2, 1)
+	if anchor.ReporterShare.Equal(before.Anchor.ReporterShare) {
+		anchor.ReporterShare = sdk.NewDecWithPrec(3, 1)
+	}
+	exchange := before.Exchange
+	exchange.Markets = append([]layerxexchangetypes.Market(nil), exchange.Markets...)
+	if len(exchange.Markets) == 0 {
+		exchange.Markets = []layerxexchangetypes.Market{{MarketId: strings.Repeat("01", 32), MarginAssetId: strings.Repeat("02", 32), Enabled: true}}
+	} else {
+		exchange.Markets[0].Enabled = !exchange.Markets[0].Enabled
+	}
+	launchpad := before.Launchpad
+	launchpad.ProtocolFeeBps = 2000
+	if before.Launchpad.ProtocolFeeBps == 2000 {
+		launchpad.ProtocolFeeBps = 1000
+	}
+	web := before.Web
+	web.Fee = sdk.NewInt(1)
+	if before.Web.Fee.Equal(web.Fee) {
+		web.Fee = sdk.NewInt(2)
+	}
+	var bridge sdk.Msg = &layerxbridgetypes.MsgPause{Authority: authority}
+	if before.BridgePaused {
+		bridge = &layerxbridgetypes.MsgUnpause{Authority: authority}
+	}
+	messages := []sdk.Msg{
+		&layerxcustodytypes.MsgSetEmergency{Authority: authority, Enabled: !before.Emergency},
+		&layerxanchortypes.MsgUpdateParams{Authority: authority, Params: anchor},
+		&layerxexchangetypes.MsgUpdateParams{Authority: authority, Params: exchange},
+		bridge,
+		&launchpadtypes.MsgUpdateParams{Authority: authority, Params: launchpad},
+		&xwebtypes.MsgSetParams{Authority: authority, Fee: web.Fee, MaxPayloadBytes: web.MaxPayloadBytes, MaxCallbackGas: web.MaxCallbackGas, TimeoutBlocks: web.TimeoutBlocks},
+	}
+	proposal, err := layerxgovtypes.NewLayerXProposal("Replay six authority messages", "Execute every fork module through the application router", messages...)
+	if !c.assert(err == nil, "six-module proposal construction succeeds: %v", err) {
+		return
+	}
+	if !c.assert(proposal.ValidateBasic() == nil, "six-module proposal validates every authority message") {
+		return
+	}
+	raw, err := a.AppCodec().MarshalInterface(proposal)
+	if !c.assert(err == nil, "six-module proposal packs through the application codec: %v", err) {
+		return
+	}
+	var content govtypes.Content
+	err = a.AppCodec().UnmarshalInterface(raw, &content)
+	if !c.assert(err == nil, "six-module proposal unpacks through the application registry: %v", err) {
+		return
+	}
+	router := a.GovKeeper.Router()
+	if !c.assert(router.HasRoute(layerxgovtypes.RouterKey), "the application registers the six-module governance route") {
+		return
+	}
+	handler := router.GetRoute(layerxgovtypes.RouterKey)
+	err = handler(ctx, content)
+	if !c.assert(err == nil, "governance proposal executed all six authority messages: %v", err) {
+		return
+	}
+	after := readOperatingState(a, ctx)
+	c.assert(after.Emergency == !before.Emergency, "governance custody authority message effect is present")
+	c.assert(reflect.DeepEqual(anchor, after.Anchor), "governance anchor authority message effect is present")
+	c.assert(reflect.DeepEqual(exchange, after.Exchange), "governance exchange authority message effect is present")
+	c.assert(after.BridgePaused == !before.BridgePaused, "governance bridge authority message effect is present")
+	c.assert(reflect.DeepEqual(launchpad, after.Launchpad), "governance launchpad authority message effect is present")
+	c.assert(reflect.DeepEqual(web, after.Web), "governance web-search authority message effect is present")
+	foreign := &banktypes.MsgSend{FromAddress: authority, ToAddress: authority, Amount: sdk.NewCoins(sdk.NewInt64Coin(appparams.BaseCoinUnit, 1))}
+	_, err = layerxgovtypes.NewLayerXProposal("Foreign message", "Must refuse", foreign)
+	c.assert(err != nil, "six-module proposal constructor refuses a foreign message")
+	packed, err := cdctypes.NewAnyWithValue(foreign)
+	if !c.assert(err == nil, "foreign-message refusal uses a real packed bank message: %v", err) {
+		return
+	}
+	refused := &layerxgovtypes.LayerXProposal{Title: "Foreign message", Description: "Must refuse", Messages: []*cdctypes.Any{packed}}
+	c.assert(refused.ValidateBasic() != nil, "six-module proposal validation refuses a foreign message")
+	c.assert(handler(ctx, refused) != nil, "six-module governance handler refuses a foreign message")
+	c.assert(reflect.DeepEqual(after, readOperatingState(a, ctx)), "foreign-message refusal preserves every replayed effect")
 }

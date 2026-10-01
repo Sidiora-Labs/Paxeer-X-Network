@@ -30,7 +30,7 @@ func main() {
 	mode := flag.String("mode", "replay", "replay a plan over a data directory, apply it in the current process, or write a fixture: replay | apply | fixture")
 	dataDir := flag.String("data", "", "chain data directory to replay against; it is written to, so hand over a disposable copy")
 	home := flag.String("home", "", "throwaway application home whose data directory is the one replayed (default: a directory beside it)")
-	plan := flag.String("plan", app.ActivationUpgrade, "name of the upgrade plan to replay")
+	plan := flag.String("plan", app.V610Upgrade, "name of the upgrade plan to replay")
 	chainID := flag.String("chain-id", defaultChainID, "chain id of the replayed block header and of a generated fixture")
 	out := flag.String("out", "", "application home to write a fixture into (fixture mode)")
 	blocks := flag.Int("blocks", 5, "blocks to commit after the genesis of a fixture (fixture mode)")
@@ -54,6 +54,16 @@ func run(mode, dataDir, home, plan, chainID, out string, blocks int, keepStores 
 		height, err := generateFixture(out, chainID, blocks, keepStores)
 		if err != nil {
 			return err
+		}
+		if plan == app.V610Upgrade {
+			if err := runReplay(filepath.Join(out, "data"), filepath.Join(out, "activation-home"), app.ActivationUpgrade, chainID); err != nil {
+				return err
+			}
+			pre, err := probeState(filepath.Join(out, "activation-home"), newAppOptions(chainID, false), allStoreKeys())
+			if err != nil {
+				return err
+			}
+			height = pre.Height
 		}
 		fmt.Printf("fixture written at height %d: %s\n", height, filepath.Join(out, "data"))
 		return nil
@@ -101,6 +111,18 @@ func runReplay(dataDir, home, plan, chainID string) error {
 		fmt.Printf("the state does not carry %d stores: %s\n", len(pre.Missing), strings.Join(pre.Missing, ", "))
 		fmt.Printf("the store loader's first refusal: %s\n", pre.LoadError)
 	}
+	if plan == app.V610Upgrade && pre.ActivationHeight == 0 {
+		if err := applyInChild(resolved, home, app.ActivationUpgrade, chainID, pre); err != nil {
+			return err
+		}
+		pre, err = probeState(home, opts, allStoreKeys())
+		if err != nil {
+			return err
+		}
+		if pre.ActivationHeight != pre.Height {
+			return fmt.Errorf("activation did not commit at the preceding height")
+		}
+	}
 	return applyInChild(resolved, home, plan, chainID, pre)
 }
 
@@ -129,7 +151,7 @@ func runApply(dataDir, home, plan, chainID string, preHeight int64, preMissing s
 	if failures > 0 {
 		return fmt.Errorf("%d assertions failed over %s", failures, dataDir)
 	}
-	fmt.Println("every assertion held: the plan activates the fork on this state")
+	fmt.Println("every assertion held: the requested plan is qualified on this copied state")
 	return nil
 }
 
