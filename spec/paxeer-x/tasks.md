@@ -811,7 +811,7 @@
     - Implement --case kms-service-prerequisite with real KMS process and genuine mTLS clients: service startup and retained state identity; wrong CA/server/client-role refusal; existing allowed authorized operation with actual provider contract. Do not fake movement or advertise new readiness before12.4.
     - Keep original movement assembly and movement-kms gates untouched under12.2/24.3;12.4 owns the restricted authenticated non-mutating readiness protocol and its loss/recovery behavior.
     - _Requirements: 141.1, 141.2, 202.1, 202.2_
-  - [-] 24.13 Build source-bound executable inputs for isolated runtime qualification
+  - [x] 24.13 Build source-bound executable inputs for isolated runtime qualification
     - Provide one explicit build recipe for the actual Paxeer daemon, wallet attestor, kernel daemon, genesis builder, module registry generator and custody proof producer. Reuse the canonical source packages and Makefile targets without changing dependency versions or build assertions.
     - Build from an identified clean source revision into a protected caller-selected directory. Bind every executable to its source revision, tree, relevant source paths and SHA-256 digest; refuse stale, missing, non-executable, mismatched or unproven external binaries. No credential material is collected.
     - Emit the version1 foundation artifact manifest consumed by24.11, with source_revision, source_tree and artifacts keyed by executable name, each containing absolute path, sha256 and source_revision. Source compatibility across harness-only revisions requires exact relevant source equality.

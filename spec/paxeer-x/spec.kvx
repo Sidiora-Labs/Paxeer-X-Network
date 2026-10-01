@@ -31297,7 +31297,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 planned_paths = ["tools/bringup/tests/paxeer-x-runtime-contract.py", "tools/paxeer-x/gates/24.12.sh"]
 
 [task.24.13]
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
