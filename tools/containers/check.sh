@@ -289,7 +289,7 @@ while IFS='|' read -r service new _ context; do
     picked "$service" || continue
     if [ "$context" = @registry-builder ]; then
         context_directory=$(mktemp -d "${TMPDIR:-/tmp}/containers-builder.XXXXXX")
-        if ! platform/hosted/registry/builder-environment/build-env.sh --prepare-context "$context_directory/prepared" >"$LOG_DIR/registry-builder-context.log" 2>&1; then
+        if ! bash platform/hosted/registry/builder-environment/build-env.sh --prepare-context "$context_directory/prepared" >"$LOG_DIR/registry-builder-context.log" 2>&1; then
             cat "$LOG_DIR/registry-builder-context.log" >&2
             fail "$service: canonical context preparation failed"
             continue
