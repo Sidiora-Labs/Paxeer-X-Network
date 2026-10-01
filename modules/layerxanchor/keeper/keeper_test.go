@@ -661,16 +661,16 @@ func TestMsgUpdateParamsCodecAndSigners(t *testing.T) {
 	var decoded types.MsgUpdateParams
 	require.NoError(t, proto.Unmarshal(raw, &decoded))
 	require.Equal(t, *msg, decoded)
-	raw, err = cdc.MarshalJSON(msg)
+	raw, err = cdc.MarshalAsJSON(msg)
 	require.NoError(t, err)
-	require.NoError(t, cdc.UnmarshalJSON(raw, &decoded))
+	require.NoError(t, cdc.UnmarshalAsJSON(raw, &decoded))
 	require.Equal(t, *msg, decoded)
 	amino := codec.NewLegacyAmino()
 	sdk.RegisterLegacyAminoCodec(amino)
 	moduleimpl.AppModuleBasic{}.RegisterLegacyAminoCodec(amino)
-	raw, err = amino.MarshalJSON(msg)
+	raw, err = amino.MarshalAsJSON(msg)
 	require.NoError(t, err)
-	require.NoError(t, amino.UnmarshalJSON(raw, &decoded))
+	require.NoError(t, amino.UnmarshalAsJSON(raw, &decoded))
 	require.Equal(t, *msg, decoded)
 	invalid := *msg
 	invalid.Params.SlashFractionAvailability = sdk.Dec{}
