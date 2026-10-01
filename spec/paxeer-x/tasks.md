@@ -567,7 +567,7 @@
     - Create or extend the planned harness tools/qualification/paxeer-x/interop-archive-contract.py with case relay-fly-assembly; exercise the real served binaries and production persistence paths against the candidate manifest, record exact assertions and nonzero refusals, and fail if required inputs, executions or cases are absent.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 175_
-  - [ ] 19.1 Retain EVM web-attestation work before advancing event cursors
+  - [-] 19.1 Retain EVM web-attestation work before advancing event cursors
     - Introduce an atomic watcher-progress/pending-work journal keyed by canonical chain request identity and durable work-stage transitions.
     - Restore SignatureExchange and pending requests at startup, classify retryable/terminal failures and integrate existing submit journal acknowledgement without cursor gaps.
     - Add real-process interruption points around each durable transition and prove request retention, correct quorum binding and already-completed reconciliation.
@@ -821,7 +821,7 @@
     - Create platform/hosted/tests/candidate-provenance.py for the production source-policy and provenance-verifier boundary using actual signed attestation fixtures; cover matching SHA, differing SHA, wrong source and wrong image digest without publishing during the focused test.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 211_
-  - [-] 25.4 Maintain one current CI build and canary contract in the consolidated specification
+  - [x] 25.4 Maintain one current CI build and canary contract in the consolidated specification
     - Carry the effective bringup task4.13 CI contract into the new unified spec and record its supersession of archived paxeer-x-ci task2.1.
     - Use the existing check_ci implementation and current Dockerfiles as recipe authorities; do not copy obsolete archived verify commands.
     - Create tools/ci/tests/ci-recipe-contract.py to parse the unified specification and current source paths, reject obsolete build contexts/API fields and verify precise supersession references.

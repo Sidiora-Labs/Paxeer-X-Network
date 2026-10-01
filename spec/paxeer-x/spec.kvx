@@ -15107,30 +15107,40 @@ reference_namespace = "feature.109"
 title = "Build the ephemeral runner image and its entrypoint with a self-check"
 reference_namespace = "feature.109"
 reqs = ["1177.1", "1177.2", "1177.3", "1177.4"]
-touches = ["tools/flyci/runner/Dockerfile", "tools/flyci/runner/entrypoint.sh", "tools/flyci/runner/fly.toml"]
+touches = ["docker/flyci-runner/Dockerfile", "tools/flyci/runner/entrypoint.sh", "tools/flyci/runner/fly.toml"]
 tests = []
-verification_contract = "timeout 25m sh -c 'shellcheck tools/flyci/runner/entrypoint.sh && docker build -t paxeer-ci-runner:verify tools/flyci/runner && docker run --rm paxeer-ci-runner:verify --selfcheck && if docker run --rm paxeer-ci-runner:verify; then exit 1; fi'"
+verification_contract = "timeout 25m sh -c 'shellcheck tools/flyci/runner/entrypoint.sh && docker build -f docker/flyci-runner/Dockerfile -t paxeer-ci-runner:verify . && docker run --rm paxeer-ci-runner:verify --selfcheck && if docker run --rm paxeer-ci-runner:verify; then exit 1; fi'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
-do_1 = "Write tools/flyci/runner/Dockerfile from ubuntu:24.04 pinned by digest: install the package set [contract_context.109.design.runner] names plus whatever else the routed workflows invoke directly (derive it by reading every workflow that the routing task will route, which is every Linux job outside the [contract_context.109.decision] scope exclusions), create the user runner with passwordless sudo, install the latest actions/runner release pinned by version with its published sha256 verified, run its installdependencies script, install rustup for runner with stable and wasm32-unknown-unknown, create /opt/hostedtoolcache owned by runner and export RUNNER_TOOL_CACHE, and set entrypoint.sh as the entrypoint."
+do_1 = "Write docker/flyci-runner/Dockerfile from ubuntu:24.04 pinned by digest: install the package set [contract_context.109.design.runner] names plus whatever else the routed workflows invoke directly (derive it by reading every workflow that the routing task will route, which is every Linux job outside the [contract_context.109.decision] scope exclusions), create the user runner with passwordless sudo, install the latest actions/runner release pinned by version with its published sha256 verified, run its installdependencies script, install rustup for runner with stable and wasm32-unknown-unknown, create /opt/hostedtoolcache owned by runner and export RUNNER_TOOL_CACHE, and set entrypoint.sh as the entrypoint."
 do_2 = "Write tools/flyci/runner/entrypoint.sh as POSIX shell that passes shellcheck: as root it refuses to start without RUNNER_JITCONFIG, drops to runner, runs run.sh --jitconfig with the value, watches the runner's own output for the line that marks a job starting and kills the runner when that line has not appeared within RUNNER_IDLE_TIMEOUT seconds (default 900), and exits with the runner's exit code when the job ends; with --selfcheck it prints the runner version, asserts each promised tool on the runner user's PATH and the passwordless sudo, and exits non-zero on the first missing one."
 do_3 = "Write tools/flyci/runner/fly.toml declaring the app paxeer-ci-runners in region iad with no services and no processes, and a comment-free build section that names the Dockerfile."
 do_4 = "Run the verify_cmd once: it builds the image with the local Docker daemon and runs the self-check inside it as the entrypoint's --selfcheck mode, and also asserts that starting the image without RUNNER_JITCONFIG exits non-zero."
 symbols = ["entrypoint.sh", "--selfcheck", "RUNNER_JITCONFIG", "RUNNER_IDLE_TIMEOUT", "RUNNER_TOOL_CACHE"]
 
+build_context = "."
+dockerfile = "docker/flyci-runner/Dockerfile"
+build_command = "docker build -f docker/flyci-runner/Dockerfile -t paxeer-ci-runner:verify ."
+recipe_resolution = "resolution.63"
+
 [capability.109.1.2]
 title = "Write the controller that turns queued jobs into single-use Fly Machines"
 reference_namespace = "feature.109"
 reqs = ["1178.1", "1178.2", "1178.3", "1178.4", "1178.5"]
-touches = ["tools/flyci/controller/main.go", "tools/flyci/controller/config.go", "tools/flyci/controller/github.go", "tools/flyci/controller/fly.go", "tools/flyci/controller/reconcile.go", "tools/flyci/controller/config_test.go", "tools/flyci/controller/github_test.go", "tools/flyci/controller/fly_test.go", "tools/flyci/controller/reconcile_test.go", "tools/flyci/controller/Dockerfile", "tools/flyci/controller/fly.toml"]
+touches = ["tools/flyci/controller/main.go", "tools/flyci/controller/config.go", "tools/flyci/controller/github.go", "tools/flyci/controller/fly.go", "tools/flyci/controller/reconcile.go", "tools/flyci/controller/config_test.go", "tools/flyci/controller/github_test.go", "tools/flyci/controller/fly_test.go", "tools/flyci/controller/reconcile_test.go", "docker/flyci-controller/Dockerfile", "tools/flyci/controller/fly.toml"]
 tests = []
-verification_contract = "timeout 20m sh -c 'test -z \"$(gofmt -l tools/flyci/controller)\" && go vet ./tools/flyci/controller/... && go test -count=1 ./tools/flyci/controller/...'"
+verification_contract = "timeout 20m sh -c 'test -z \"$(gofmt -l tools/flyci/controller)\" && go vet ./tools/flyci/controller/... && go test -count=1 ./tools/flyci/controller/... && docker build -f docker/flyci-controller/Dockerfile -t paxeer-ci-controller:verify .'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "Write package main under tools/flyci/controller with the standard library only: config.go reads GITHUB_REPOSITORY, GITHUB_TOKEN, FLY_API_TOKEN, FLY_RUNNER_APP (default paxeer-ci-runners), RUNNER_IMAGE, RUNNER_LABELS (default fly-linux), FLY_REGION (default iad), MACHINE_CPU_KIND (default performance), MACHINE_CPUS (default 4), MACHINE_MEMORY_MB (default 16384), MAX_MACHINES (default 24), POLL_INTERVAL (default 20s), RUNNER_IDLE_TIMEOUT (default 900), ORPHAN_TTL (default 3h), GITHUB_API_URL and FLY_API_URL (their public defaults) and refuses to start with a named error for each missing required value."
 do_2 = "Write github.go with a client that lists queued and in-progress workflow runs and the jobs of a run using ETag conditional requests and page following, honours X-RateLimit-Remaining and X-RateLimit-Reset by sleeping until reset when remaining reaches zero or a 403 or 429 names a reset, and mints a just-in-time configuration through POST actions/runners/generate-jitconfig with name fly-<job id>, the configured labels, runner_group_id 1 and work_folder _work."
 do_3 = "Write fly.go with a client for the Machines API that lists the runner app's machines, creates a machine from the configured image with env RUNNER_JITCONFIG and RUNNER_IDLE_TIMEOUT, guest cpu_kind, cpus and memory_mb, region, auto_destroy true, restart policy no and metadata keys flyci_job_id and flyci_run_id, and destroys a machine by id with force."
 do_4 = "Write reconcile.go with the selection and reconciliation [contract_context.109.design.controller] describes: select queued jobs whose labels are all in the accepted set, skip jobs with a live machine in metadata, respect the ceiling, mint then create per job, log and continue on any failure; destroy machines whose job is complete for over five minutes, older than ORPHAN_TTL, or stopped; never touch a machine without flyci_job_id. main.go wires config, the two clients, a ticker at POLL_INTERVAL, structured log lines and a clean stop on SIGTERM."
-do_5 = "Write the tests [req.1178] ac_5 lists as Go tests in the same package driving the real clients and reconciler against net/http/httptest servers serving the documented response shapes, and write tools/flyci/controller/Dockerfile (a multi-stage build on the repository's Go version producing a static binary in a minimal runtime image, both stages pinned by digest) and tools/flyci/controller/fly.toml for the app paxeer-ci-controller in region iad with one shared-cpu-1x 512 MB machine, no services, and the process running the binary."
+do_5 = "Write the tests [req.1178] ac_5 lists as Go tests in the same package driving the real clients and reconciler against net/http/httptest servers serving the documented response shapes, and write docker/flyci-controller/Dockerfile (a multi-stage build on the repository's Go version producing a static binary in a minimal runtime image, both stages pinned by digest) and tools/flyci/controller/fly.toml for the app paxeer-ci-controller in region iad with one shared-cpu-1x 512 MB machine, no services, and the process running the binary."
 symbols = ["loadConfig", "githubClient", "flyClient", "reconcile", "selectJobs"]
+
+build_context = "."
+dockerfile = "docker/flyci-controller/Dockerfile"
+build_command = "docker build -f docker/flyci-controller/Dockerfile -t paxeer-ci-controller:verify ."
+recipe_resolution = "resolution.63"
 
 [capability.109.1.3]
 title = "Route every Linux job through the CI_LINUX_RUNNER expression with an auditable policy check and a canary"
@@ -15165,12 +15175,17 @@ reference_namespace = "feature.109"
 reqs = ["1180.1", "1180.2"]
 touches = ["spec/paxeer-x/qualification.kvx"]
 tests = []
-verification_contract = "timeout 30m sh -c 'gh workflow run runner-canary.yml --ref main && sleep 20 && run=$(gh run list --workflow runner-canary.yml --limit 1 --json databaseId --jq .[0].databaseId) && gh run watch \"$run\" --exit-status && gh run view \"$run\" --json jobs --jq \".jobs[] | select(.runnerName | startswith(\\\"fly-\\\")) | .conclusion\" | grep -qx success'"
+verification_contract = "timeout 30m tools/bringup/check-live.sh ci"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
-do_1 = "From the operator shell: build tools/flyci/runner with the local Docker daemon, tag it registry.fly.io/paxeer-ci-runners:<commit>, run fly auth docker and push it; create an app-scoped deploy token for paxeer-ci-runners with fly tokens create deploy; set the secrets GITHUB_TOKEN (from the private token file the operator names), FLY_API_TOKEN and RUNNER_IMAGE on paxeer-ci-controller; deploy the controller from tools/flyci/controller/fly.toml; confirm one controller machine is started and its log shows a completed poll."
-do_2 = "Set the repository variable CI_LINUX_RUNNER to fly-linux with the GitHub CLI, dispatch runner-canary.yml on the default branch, wait for its completion, and read the job back through the API requiring a runner_name starting with fly- and conclusion success; then confirm through the Machines API that the job's machine no longer exists."
-do_3 = "Record each command, exit code and log path under .logs in the working tree as the task's evidence and as one gate record in spec/paxeer-x-ci/qualification.kvx; if any step fails, leave the variable unset, record the failure and stop."
+do_1 = "For separately authorized deployment, build both images from the repository root using capability.109.1.1 and capability.109.1.2 build_command, tag the runner image registry.fly.io/paxeer-ci-runners:<source-commit>, authenticate to the registry and push it. Inventory current CI before deciding deployment; create an app-scoped runner deploy token, configure GITHUB_TOKEN, FLY_API_TOKEN and RUNNER_IMAGE as controller secrets, and deploy from the repository root with tools/flyci/controller/fly.toml. Controller credentials remain confined. Confirm one started controller and a completed poll; changing CI_LINUX_RUNNER to fly-linux is a separate authorized deployment step."
+do_2 = "Run the current check_ci contract only under authorized integrated qualification: check one started controller and the existing CI_LINUX_RUNNER label; dispatch runner-canary.yml on the default branch using the REST dispatch response workflow_run_id; require the exact run, branch, workflow path and current candidate head_sha; read that run's paginated REST jobs and require completed success with a positive runner_id and runner_name starting with fly-. Preserve the 1500-second wait and cancellation of unfinished runs. Confirm through the Machines API that the actual assigned job machine is removed, following req.210; provisioning-trigger metadata alone is insufficient."
+do_3 = "Retain command, source revision, exit code and log location in private qualification evidence referenced by the consolidated spec. Historical deployment evidence remains historical; this source recipe check neither deploys nor changes CI_LINUX_RUNNER, and does not certify a canary execution."
 symbols = ["CI_LINUX_RUNNER", "paxeer-ci-controller", "paxeer-ci-runners"]
+
+recipe_resolution = "resolution.63"
+recipe_authority = "tools/bringup/check-live.sh#check_ci"
+supersedes = "spec/paxeer-x-ci/spec.kvx#task.2.1"
+effective_source = "spec/paxeer-x-bringup/spec.kvx#task.4.13"
 
 [feature.110]
 name = "paxeer-x-explorer"
@@ -21161,8 +21176,15 @@ applies_to = ["contract_context.106.decision.owner_actions", "contract_context.1
 
 [resolution.63]
 title = "CI image and canary recipes use their canonical source contracts"
-contract = "Supersede old tools/flyci/runner Docker context with repository-root builds using docker/flyci-runner/Dockerfile and docker/flyci-controller/Dockerfile. Supersede CI task2.1 deployment/canary recipe with bringup4.13 semantics and current REST jobs runner_name field, further requiring exact candidate identity and actual-job cleanup. Preserve fork-PR fallback, explicit excluded publishing/security/special-host jobs, single-use unprivileged runners, controller-only tokens, rate-limit handling and reversible CI_LINUX_RUNNER. Inventory running CI before deciding any redeploy."
+contract = "Current CI image builds use the repository root with docker/flyci-runner/Dockerfile and docker/flyci-controller/Dockerfile, matching their COPY inputs. The effective canary contract is tools/bringup/check-live.sh#check_ci, carried from archived paxeer-x-bringup task4.13 and superseding archived paxeer-x-ci task2.1. Dispatch returns workflow_run_id; the run, default branch, workflow path and candidate head_sha are bound before paginated REST jobs runner_id/runner_name evidence is credited. Preserve fork-PR fallback, excluded publishing/security/special-host jobs, single-use unprivileged runners, controller-only tokens, rate limits and reversible CI_LINUX_RUNNER. Inventory current CI before any separately authorized deployment; actual-job cleanup follows req.210."
 applies_to = ["contract_context.109.design.deploy", "capability.109.1.1", "capability.109.1.2", "capability.109.2.1", "capability.108.4.13"]
+
+supersedes = ["spec/paxeer-x-ci/spec.kvx#task.1.1", "spec/paxeer-x-ci/spec.kvx#task.1.2", "spec/paxeer-x-ci/spec.kvx#task.2.1"]
+effective_source = "spec/paxeer-x-bringup/spec.kvx#task.4.13"
+current_contract = "spec/paxeer-x/spec.kvx#capability.109.2.1"
+source_authorities = ["docker/flyci-runner/Dockerfile", "docker/flyci-controller/Dockerfile", "tools/bringup/check-live.sh#check_ci"]
+pending_task_source = "spec/paxeer-x/spec.kvx"
+archival_policy = "Archived specifications and retained historical recipes supply evidence only, never executable pending tasks. This resolution overrides their old image contexts, Dockerfile locations, API fields and deployment commands; no historical gate is claimed rerun."
 
 [resolution.64]
 title = "Candidate evidence and deployment identity are inseparable"
@@ -22385,7 +22407,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.19.1]
 title = "Retain EVM web-attestation work before advancing event cursors"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -22921,7 +22943,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.25.4]
 title = "Maintain one current CI build and canary contract in the consolidated specification"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -22942,6 +22964,10 @@ deployment_profile = "product"
 planned_paths = ["spec/paxeer-x/spec.kvx", "tools/ci/tests/ci-recipe-contract.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+recipe_resolution = "resolution.63"
+recipe_authorities = ["docker/flyci-runner/Dockerfile", "docker/flyci-controller/Dockerfile", "tools/bringup/check-live.sh#check_ci"]
+source_only = true
 
 [task.101.23.5]
 title = "Run the fuzz, sanitizer and unsafe-code gates"
