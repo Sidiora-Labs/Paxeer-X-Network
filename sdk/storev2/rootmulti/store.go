@@ -241,6 +241,15 @@ type pendingStoreReporter interface {
 	IsPendingStore(name string) bool
 }
 
+// IsPendingStore reports whether name is a mounted store the state-commitment
+// store serves through its pending placeholder, carrying no tree for it yet.
+func (rs *Store) IsPendingStore(name string) bool {
+	rs.mtx.RLock()
+	defer rs.mtx.RUnlock()
+	reporter, ok := rs.scStore.(pendingStoreReporter)
+	return ok && reporter.IsPendingStore(name)
+}
+
 // withoutPendingStores returns the change sets bound for the versioned state
 // store: every one whose store the state-commitment database carries a tree
 // for. It returns the slice it was given when nothing is pending, so a state

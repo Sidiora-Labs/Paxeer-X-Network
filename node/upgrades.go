@@ -498,16 +498,28 @@ func (app *App) activationModulesPresent(ctx sdk.Context) bool {
 	return true
 }
 
+// pendingStoreReporter is implemented by a commit multistore whose
+// state-commitment store can serve a mounted store through a pending
+// placeholder: an empty view of a store the database carries no tree for yet,
+// whose writes are discarded at commit until a store upgrade adds the tree.
+type pendingStoreReporter interface {
+	IsPendingStore(name string) bool
+}
+
 // unmountedActivationStores names the stores the activation plan adds that the
-// commit multistore does not carry. Only a process that read the plan's upgrade
-// info file at one above its last committed height mounts them, through the
-// upgrade store loader the store-loader wiring installs for the plan's name.
+// commit multistore does not carry, or carries only as a pending placeholder of
+// its state-commitment store. Only a process that read the plan's upgrade info
+// file at one above its last committed height mounts them, through the upgrade
+// store loader the store-loader wiring installs for the plan's name. A commit
+// multistore that cannot report pending stores is judged on the stores it
+// carries alone.
 func (app *App) unmountedActivationStores() []string {
 	cms := app.CommitMultiStore()
+	reporter, reports := cms.(pendingStoreReporter)
 	var missing []string
 	for _, name := range activationStoreUpgrades().Added {
 		key := app.GetKey(name)
-		if key == nil || cms.GetCommitKVStore(key) == nil {
+		if key == nil || cms.GetCommitKVStore(key) == nil || (reports && reporter.IsPendingStore(name)) {
 			missing = append(missing, name)
 		}
 	}
