@@ -12,7 +12,9 @@ deployment answers only when the caller presents both a client certificate the
 internal CA issued and the agent program bearer. The probe asserts all three
 properties: the authenticated request reports ready, the same request without
 the bearer is refused, and a request without a client certificate never reaches
-HTTP at all.
+HTTP at all. While the authenticated request runs, a second authenticated TLS
+connection is held open without sending a request, proving that one stalled
+client cannot block health behind it.
 USAGE
 }
 
@@ -45,8 +47,24 @@ for file in "$ca" "$client_cert" "$client_key" "$bearer_file"; do
 done
 [ -s "$bearer_file" ] || { printf 'probe.sh: the agent program bearer is empty\n' >&2; exit 2; }
 
+hostport=${url#*://}
+hostport=${hostport%%/*}
+case "$hostport" in
+    *:*) ;;
+    *) hostport=$hostport:443 ;;
+esac
+
 work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT INT TERM
+stalled=
+cleanup() {
+    [ -z "$stalled" ] || kill "$stalled" 2>/dev/null || true
+    rm -rf "$work"
+}
+trap cleanup EXIT INT TERM
+sleep 30 | openssl s_client -quiet -connect "$hostport" -CAfile "$ca" \
+    -cert "$client_cert" -key "$client_key" > /dev/null 2>&1 &
+stalled=$!
+sleep 1
 printf 'header = "Authorization: Bearer %s"\n' "$(cat "$bearer_file")" > "$work/bearer.conf"
 
 status=0
@@ -93,4 +111,4 @@ if [ "$status" = 0 ]; then
     exit 1
 fi
 
-printf 'agentd-probe: %s ready; bearer and client certificate both enforced\n' "$url"
+printf 'agentd-probe: %s ready behind a stalled client; bearer and client certificate both enforced\n' "$url"

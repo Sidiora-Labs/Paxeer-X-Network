@@ -8,7 +8,7 @@ use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use layerx_agentd::audit::Redacted;
 use layerx_agentd::budget::{LimitConfig, LimitId, LimitScope};
@@ -43,6 +43,20 @@ mod human_owner_mode;
 mod human_peer_config;
 
 const HEADER_LIMIT: usize = 16 * 1024;
+/// The program routes are GET-only and accept no request body.
+const BODY_LIMIT: usize = 0;
+/// Connection workers that parse, authenticate and answer program requests concurrently.
+const PROGRAM_WORKERS: usize = 8;
+/// Accepted connections waiting for a worker; any connection beyond this is refused.
+const PROGRAM_QUEUE: usize = 16;
+/// Absolute elapsed bound on acquiring one request head, however its bytes arrive.
+const REQUEST_DEADLINE: Duration = Duration::from_secs(5);
+/// Ceiling on any single socket read or write.
+const IO_CEILING: Duration = Duration::from_secs(10);
+/// Bound on a worker waiting for the dispatcher to answer an admitted request.
+const DISPATCH_DEADLINE: Duration = Duration::from_secs(10);
+/// Interval at which the dispatcher re-checks the human owner and accept threads.
+const SUPERVISION_INTERVAL: Duration = Duration::from_millis(25);
 
 struct Config {
     listen: String,
@@ -672,91 +686,208 @@ fn refresh_program_authority(
     Ok(())
 }
 
-fn serve_connection(
-    stream: &mut TcpStream,
-    bearer: &str,
-    probe_program: ProgramId,
-    route: &mut ProgramBalanceReadRoute,
-    native: &mut Option<NativeReadRoute>,
-) -> Result<(), String> {
+/// One authenticated request a connection worker hands to the dispatcher that owns the
+/// program read routes.
+struct Dispatch {
+    path: String,
+    reply: mpsc::SyncSender<(u16, String)>,
+}
+
+enum Parsed {
+    Admitted(String),
+    Refused(u16, &'static str),
+    Closed,
+}
+
+fn declared_body(request: &str) -> Result<usize, ()> {
+    let mut length = 0;
+    for header in request.lines().skip(1) {
+        let Some((name, value)) = header.split_once(':') else {
+            continue;
+        };
+        if name.eq_ignore_ascii_case("transfer-encoding") {
+            return Err(());
+        }
+        if name.eq_ignore_ascii_case("content-length") {
+            length = value.trim().parse().map_err(|_| ())?;
+        }
+    }
+    Ok(length)
+}
+
+/// Reads one request head under a single absolute deadline. Every read is also capped by the
+/// per-I/O ceiling, so neither a silent peer nor a peer trickling partial bytes can hold a
+/// connection worker beyond `REQUEST_DEADLINE`.
+fn parse_request(stream: &mut TcpStream, bearer: &str) -> Parsed {
+    let deadline = Instant::now() + REQUEST_DEADLINE;
     let mut bytes = [0_u8; HEADER_LIMIT];
     let mut length = 0_usize;
     while length < bytes.len() && !bytes[..length].windows(4).any(|value| value == b"\r\n\r\n") {
-        let count = stream
-            .read(&mut bytes[length..])
-            .map_err(|error| format!("agent request failed: {error}"))?;
-        if count == 0 {
-            return Err("agent request ended before its headers".to_owned());
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Parsed::Refused(408, "{\"error\":\"request_timeout\"}");
         }
-        length += count;
+        if stream
+            .set_read_timeout(Some(remaining.min(IO_CEILING)))
+            .is_err()
+        {
+            return Parsed::Closed;
+        }
+        match stream.read(&mut bytes[length..]) {
+            Ok(0) => return Parsed::Closed,
+            Ok(count) => length += count,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::WouldBlock
+                        | std::io::ErrorKind::TimedOut
+                        | std::io::ErrorKind::Interrupted
+                ) => {}
+            Err(_) => return Parsed::Closed,
+        }
     }
-    if !bytes[..length].windows(4).any(|value| value == b"\r\n\r\n") {
-        return response(stream, 431, "{\"error\":\"headers_too_large\"}");
-    }
-    let request = std::str::from_utf8(&bytes[..length])
-        .map_err(|_| "agent request headers are not UTF-8".to_owned())?;
-    let line = request
-        .lines()
-        .next()
-        .ok_or_else(|| "agent request omitted its request line".to_owned())?;
+    let Some(end) = bytes[..length]
+        .windows(4)
+        .position(|value| value == b"\r\n\r\n")
+    else {
+        return Parsed::Refused(431, "{\"error\":\"headers_too_large\"}");
+    };
+    let Ok(request) = std::str::from_utf8(&bytes[..end]) else {
+        return Parsed::Refused(400, "{\"error\":\"invalid_request\"}");
+    };
+    let line = request.lines().next().unwrap_or_default();
     let mut parts = line.split_ascii_whitespace();
     let method = parts.next().unwrap_or_default();
     let path = parts.next().unwrap_or_default();
     if parts.next() != Some("HTTP/1.1") || parts.next().is_some() || method != "GET" {
-        return response(stream, 400, "{\"error\":\"invalid_request\"}");
+        return Parsed::Refused(400, "{\"error\":\"invalid_request\"}");
+    }
+    match declared_body(request) {
+        Ok(BODY_LIMIT) => {}
+        Ok(_) => return Parsed::Refused(413, "{\"error\":\"body_too_large\"}"),
+        Err(()) => return Parsed::Refused(400, "{\"error\":\"invalid_request\"}"),
     }
     let authorized = request
         .lines()
         .any(|header| header.strip_prefix("Authorization: Bearer ") == Some(bearer));
     if !authorized {
-        return response(stream, 401, "{\"error\":\"unauthorized\"}");
+        return Parsed::Refused(401, "{\"error\":\"unauthorized\"}");
     }
+    Parsed::Admitted(path.to_owned())
+}
+
+fn route_request(
+    path: &str,
+    probe_program: ProgramId,
+    route: &mut ProgramBalanceReadRoute,
+    native: &mut Option<NativeReadRoute>,
+) -> (u16, String) {
+    let reply = |status: u16, body: &str| (status, body.to_owned());
     if path == "/healthz" {
         if refresh_program_authority(route, native).is_err() {
-            return response(stream, 503, "{\"ready\":false}");
+            return reply(503, "{\"ready\":false}");
         }
-        return match route.read(probe_program, now_ms()?) {
-            Ok(_) => response(stream, 200, "{\"ready\":true}"),
-            Err(_) => response(stream, 503, "{\"ready\":false}"),
+        return match now_ms().map(|now| route.read(probe_program, now)) {
+            Ok(Ok(_)) => reply(200, "{\"ready\":true}"),
+            _ => reply(503, "{\"ready\":false}"),
         };
     }
     if path.starts_with("/v1/reads/") {
         let Some(reader) = native.as_mut() else {
-            return response(stream, 404, "{\"error\":\"not_found\"}");
+            return reply(404, "{\"error\":\"not_found\"}");
         };
         return match reader.read(path) {
-            Ok(value) => response(stream, 200, &value.to_string()),
+            Ok(value) => (200, value.to_string()),
             Err(
                 layerx_agentd::read::NativeReadError::InvalidRequest
                 | layerx_agentd::read::NativeReadError::CursorMismatch,
-            ) => response(stream, 400, "{\"error\":\"invalid_read\"}"),
+            ) => reply(400, "{\"error\":\"invalid_read\"}"),
             Err(layerx_agentd::read::NativeReadError::ResultTooLarge) => {
-                response(stream, 413, "{\"error\":\"read_too_large\"}")
+                reply(413, "{\"error\":\"read_too_large\"}")
             }
-            Err(_) => response(stream, 503, "{\"error\":\"verified_read_unavailable\"}"),
+            Err(_) => reply(503, "{\"error\":\"verified_read_unavailable\"}"),
         };
     }
     let Some(program_text) = path
         .strip_prefix("/v1/programs/")
         .and_then(|value| value.strip_suffix("/balances"))
     else {
-        return response(stream, 404, "{\"error\":\"not_found\"}");
+        return reply(404, "{\"error\":\"not_found\"}");
     };
     let program = hex::decode_digest(program_text)
         .ok()
         .and_then(|bytes| ProgramId::new(bytes).ok());
     let Some(program) = program else {
-        return response(stream, 400, "{\"error\":\"invalid_program\"}");
+        return reply(400, "{\"error\":\"invalid_program\"}");
     };
     if refresh_program_authority(route, native).is_err() {
-        return response(stream, 503, "{\"error\":\"program_state_unavailable\"}");
+        return reply(503, "{\"error\":\"program_state_unavailable\"}");
     }
-    let read = route
-        .read(program, now_ms()?)
-        .map_err(|error| format!("current program state is unavailable: {error:?}"));
-    match read {
-        Ok(read) => response(stream, 200, &balance_json(&read)),
-        Err(_) => response(stream, 503, "{\"error\":\"program_state_unavailable\"}"),
+    match now_ms().map(|now| route.read(program, now)) {
+        Ok(Ok(read)) => (200, balance_json(&read)),
+        _ => reply(503, "{\"error\":\"program_state_unavailable\"}"),
+    }
+}
+
+/// Serves admitted connections until the admission queue closes. Parsing, authentication and
+/// response writes happen here, off the dispatcher, so a slow peer only ever occupies one of
+/// `PROGRAM_WORKERS` slots for at most its request deadline.
+fn connection_worker(
+    queue: &Mutex<mpsc::Receiver<TcpStream>>,
+    dispatch: &mpsc::SyncSender<Dispatch>,
+    bearer: &str,
+) {
+    loop {
+        let next = match queue.lock() {
+            Ok(receiver) => receiver.recv(),
+            Err(_) => return,
+        };
+        let Ok(mut stream) = next else {
+            return;
+        };
+        if stream.set_write_timeout(Some(IO_CEILING)).is_err() {
+            continue;
+        }
+        let (status, body) = match parse_request(&mut stream, bearer) {
+            Parsed::Closed => continue,
+            Parsed::Refused(status, body) => (status, body.to_owned()),
+            Parsed::Admitted(path) => {
+                let (reply, answer) = mpsc::sync_channel(1);
+                if dispatch.send(Dispatch { path, reply }).is_err() {
+                    return;
+                }
+                answer
+                    .recv_timeout(DISPATCH_DEADLINE)
+                    .unwrap_or_else(|_| (503, "{\"error\":\"dispatch_timeout\"}".to_owned()))
+            }
+        };
+        let _ = response(&mut stream, status, &body);
+    }
+}
+
+/// Accepts connections and hands each to the bounded admission queue. A connection that finds
+/// every worker busy and the queue full is refused at once and closed; it never allocates a
+/// thread or queue entry.
+fn accept_connections(listener: &TcpListener, queue: &mpsc::SyncSender<TcpStream>) -> String {
+    loop {
+        let stream = match listener.accept() {
+            Ok((stream, _)) => stream,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => return format!("agent accept failed: {error}"),
+        };
+        match queue.try_send(stream) {
+            Ok(()) => {}
+            Err(mpsc::TrySendError::Full(mut stream)) => {
+                let _ = stream
+                    .set_nonblocking(true)
+                    .and_then(|()| stream.set_write_timeout(None));
+                let _ = response(&mut stream, 503, "{\"error\":\"overloaded\"}");
+                let _ = stream.shutdown(std::net::Shutdown::Both);
+            }
+            Err(mpsc::TrySendError::Disconnected(_)) => {
+                return "agent connection workers terminated".to_owned();
+            }
+        }
     }
 }
 
@@ -822,6 +953,35 @@ fn program_authority_boot(
         registry,
         signed_history,
     })
+}
+
+/// Starts the accept thread and the bounded connection worker pool; returns the dispatch
+/// requests the workers raise and the accept thread's terminal status.
+fn start_program_listener(
+    listener: TcpListener,
+    bearer: &str,
+) -> Result<(mpsc::Receiver<Dispatch>, mpsc::Receiver<String>), String> {
+    let (admit, admitted) = mpsc::sync_channel::<TcpStream>(PROGRAM_QUEUE);
+    let admitted = Arc::new(Mutex::new(admitted));
+    let (dispatch, requests) = mpsc::sync_channel::<Dispatch>(PROGRAM_WORKERS);
+    for index in 0..PROGRAM_WORKERS {
+        let admitted = Arc::clone(&admitted);
+        let dispatch = dispatch.clone();
+        let bearer = bearer.to_owned();
+        thread::Builder::new()
+            .name(format!("layerx-agent-http-{index}"))
+            .spawn(move || connection_worker(&admitted, &dispatch, &bearer))
+            .map_err(|error| format!("agent connection worker failed: {error}"))?;
+    }
+    drop(dispatch);
+    let (accept_status, accept_stopped) = mpsc::sync_channel(1);
+    thread::Builder::new()
+        .name("layerx-agent-accept".to_owned())
+        .spawn(move || {
+            let _ = accept_status.send(accept_connections(&listener, &admit));
+        })
+        .map_err(|error| format!("agent accept thread failed: {error}"))?;
+    Ok((requests, accept_stopped))
 }
 
 fn serve(config: Config) -> Result<(), String> {
@@ -893,9 +1053,7 @@ fn serve(config: Config) -> Result<(), String> {
         .map_err(|error| format!("agent protocol reader is not ready: {error:?}"))?;
     let listener = TcpListener::bind(&config.listen)
         .map_err(|error| format!("agent program listener failed: {error}"))?;
-    listener
-        .set_nonblocking(true)
-        .map_err(|error| format!("agent program listener nonblocking setup failed: {error}"))?;
+    let (requests, accept_stopped) = start_program_listener(listener, &config.bearer)?;
     loop {
         match human.try_recv() {
             Ok(result) => return result,
@@ -904,25 +1062,24 @@ fn serve(config: Config) -> Result<(), String> {
             }
             Err(mpsc::TryRecvError::Empty) => {}
         }
-        let mut stream = match listener.accept() {
-            Ok((stream, _)) => stream,
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                thread::sleep(Duration::from_millis(25));
-                continue;
+        match accept_stopped.try_recv() {
+            Ok(error) => return Err(error),
+            Err(mpsc::TryRecvError::Disconnected) => {
+                return Err("agent accept thread terminated without status".to_owned())
             }
-            Err(error) => return Err(format!("agent accept failed: {error}")),
-        };
-        stream
-            .set_read_timeout(Some(Duration::from_secs(10)))
-            .and_then(|()| stream.set_write_timeout(Some(Duration::from_secs(10))))
-            .map_err(|error| format!("agent connection timeout setup failed: {error}"))?;
-        let _ = serve_connection(
-            &mut stream,
-            &config.bearer,
-            config.probe_program,
-            &mut route,
-            &mut native,
-        );
+            Err(mpsc::TryRecvError::Empty) => {}
+        }
+        match requests.recv_timeout(SUPERVISION_INTERVAL) {
+            Ok(request) => {
+                let answer =
+                    route_request(&request.path, config.probe_program, &mut route, &mut native);
+                let _ = request.reply.send(answer);
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return Err("agent connection workers terminated".to_owned())
+            }
+        }
     }
 }
 
