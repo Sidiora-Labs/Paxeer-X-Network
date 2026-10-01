@@ -21387,7 +21387,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.1]
 title = "Retain replay-safe receipt identity across sustained execution and recovery"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -21447,7 +21447,7 @@ do_2 = "Bind historical membership and threshold to an authenticated checkpoint/
 do_3 = "Update callback and journal replay consumers to use historical context while retaining FINAL status, canonical certificate, settlement receipt/event and block-order checks."
 do_4 = "Add the designated new harness tests/daemon/paxeer_x_historical_finality.py using real production code and durable stores; invoke prebuilt task targets, fail on any missing prerequisite, and emit revision, exact command, exit code and private evidence path. Do not substitute mocks or synthetic success responses."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["cmd/layerxd/lxp_daemon_finality_authority.c", "cmd/layerxd/lxp_daemon_evidence.c", "cmd/layerxd/lxp_daemon_process.c", "precompiles/layerxanchor/layerxanchor.go", "tests/daemon/lxp_test_finality_authority.c", "tests/daemon/paxeer_x_historical_finality.py", "tools/paxeer-x/gates/2.2.sh"]
+touches = ["cmd/layerxd/lxp_daemon_finality_authority.c", "cmd/layerxd/lxp_daemon_evidence.c", "cmd/layerxd/lxp_daemon_process.c", "precompiles/layerxanchor/layerxanchor.go", "tests/daemon/lxp_test_finality_authority.c", "tests/daemon/paxeer_x_historical_finality.py", "tools/paxeer-x/gates/2.2.sh", "tests/daemon/paxeer_x_finality_fixture.py"]
 verify_cmd = "timeout 1800s python3 tests/daemon/paxeer_x_historical_finality.py"
 gate_kind = "planned"
 max_builds = 1
@@ -21456,9 +21456,11 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 deployment_profile = "product"
-planned_paths = ["tests/daemon/paxeer_x_historical_finality.py", "tools/paxeer-x/gates/2.2.sh"]
+planned_paths = ["tests/daemon/paxeer_x_historical_finality.py", "tools/paxeer-x/gates/2.2.sh", "tests/daemon/paxeer_x_finality_fixture.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+fixture_policy = "Implement owned disposable fixtures using actual compiled services and production wire, signing, persistence and verification paths. Bind clean source revisions and artifact digests; generate isolated fixture credentials and keep them private. Preserve every existing assertion and add healthy-path evidence without deleting unavailable-dependency cases. No canned upstream responses, relaxed destination or authority guards, fabricated finality, skipped prerequisites, production membership changes or deployment credit. Complete all constituent implementations before the task owner runs its one declared build phase and original gate."
 
 [task.2.3]
 title = "Expose only effective bounded daemon concurrency settings"
@@ -21497,7 +21499,7 @@ do_2 = "Connect existing financial helpers through lxp_module_ctx and authentica
 do_3 = "Add signed dispatched Activity cases for partial refund, revoke, unauthorized/stale/overdraw refusal, duplicates and durable restart, extending clients only through the canonical typed interface."
 do_4 = "Add the designated new harness tests/modules/paxeer_x_budget_lifecycle.py using real production code and durable stores; invoke prebuilt task targets, fail on any missing prerequisite, and emit revision, exact command, exit code and private evidence path. Do not substitute mocks or synthetic success responses."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["include/layerx/lx_budget.h", "src/modules/budget/lx_budget_module.c", "src/modules/budget/lx_budget_close.c", "tests/modules/test_budget_close.c", "src/protocol/lxp_kernel.c", "tests/modules/paxeer_x_budget_lifecycle.py", "src/modules/budget/lx_budget_codec.c", "tests/daemon/lxp_test_budget_lifecycle.c"]
+touches = ["include/layerx/lx_budget.h", "src/modules/budget/lx_budget_module.c", "src/modules/budget/lx_budget_close.c", "tests/modules/test_budget_close.c", "tests/modules/paxeer_x_budget_lifecycle.py", "src/modules/budget/lx_budget_codec.c", "tests/daemon/lxp_test_budget_lifecycle.c"]
 verify_cmd = "timeout 1800s python3 tests/modules/paxeer_x_budget_lifecycle.py"
 gate_kind = "planned"
 max_builds = 1
@@ -21728,7 +21730,7 @@ do_1 = "Replace the bridge-local ABI1/2 switch with centrally governed versioned
 do_2 = "Add native interface-bearing Deploy/Upgrade/Call cases covering every supported ABI and all version/hash/capability mismatches."
 do_3 = "Author the new focused harness tools/qualification/paxeer-x/programs_native_interfaces.py to exercise these acceptance cases against real production implementations and types. It must fail on missing candidate artifacts, missing authority/configuration, skipped cases or unverifiable receipts; retain the exact candidate revision, command, case results and evidence paths. Use disposable qualification state and provisioned authority without printing secret values; no mocks, synthetic success or substitution of a library-only model for a named process boundary."
 do_4 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["programs/crates/layerx-programs-runtime/src/ffi_interface.rs", "programs/crates/layerx-programs-runtime/src/abi_policy.rs", "programs/crates/layerx-programs-runtime/src/engine.rs", "src/modules/programs/deploy.c", "programs/crates/layerx-programs-runtime/src/ffi_call.rs", "tools/qualification/paxeer-x/programs_native_interfaces.py", "tools/paxeer-x/gates/6.3.sh"]
+touches = ["programs/crates/layerx-programs-runtime/src/ffi_interface.rs", "programs/crates/layerx-programs-runtime/src/abi_policy.rs", "programs/crates/layerx-programs-runtime/src/engine.rs", "src/modules/programs/deploy.c", "programs/crates/layerx-programs-runtime/src/ffi_call.rs", "tools/qualification/paxeer-x/programs_native_interfaces.py", "tools/paxeer-x/gates/6.3.sh", "programs/crates/layerx-programs-runtime/Cargo.toml", "programs/crates/layerx-programs-runtime/src/lib.rs", "programs/crates/layerx-programs-runtime/src/abi/manifest.rs", "programs/sdk/rust/src/abi_policy.rs", "programs/sdk/rust/src/lib.rs", "programs/sdk/rust/src/abi.rs", "programs/sdk/rust/build.rs", "programs/sdk/rust/src/bindgen.rs", "programs/crates/layerx-programs-registry/src/interface.rs"]
 verify_cmd = "timeout 30m python3 tools/qualification/paxeer-x/programs_native_interfaces.py"
 gate_kind = "planned"
 max_builds = 1
@@ -21737,9 +21739,11 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 deployment_profile = "product"
-planned_paths = ["tools/qualification/paxeer-x/programs_native_interfaces.py", "tools/paxeer-x/gates/6.3.sh"]
+planned_paths = ["tools/qualification/paxeer-x/programs_native_interfaces.py", "tools/paxeer-x/gates/6.3.sh", "programs/sdk/rust/src/abi_policy.rs"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+do_5 = "Use one core-only policy in the existing no_std SDK, re-exported by the runtime with version adapters; promote its existing SDK dependency without introducing a reverse dependency. Reconcile registry and binding generator support for canonical interface/v1 and interface/v2, bounded CallerAuthorizedSpend tag10 and monotonic ABI upgrades. Preserve every existing version, capability, canonicality and mismatch refusal. Prove real native Deploy/Upgrade/Call and restart, then actual registry and shipped typed-binding consumption of the same authenticated stored bytes. Full typed lifecycle and committed oracle/web calls remain required under task7.4."
 
 [task.6.5]
 title = "Validate all deployment forms before persisting executable programs"
@@ -21851,7 +21855,7 @@ do_2 = "Apply one absolute deadline across request parsing and preserve per-I/O 
 do_3 = "Use real concurrent clients that remain silent, trickle partial headers, exhaust admission and send legitimate authenticated requests; assert configured latency and resource bounds."
 do_4 = "Author the new focused harness tools/qualification/paxeer-x/agent_http_bounds.py to exercise these acceptance cases against real production implementations and types. It must fail on missing candidate artifacts, missing authority/configuration, skipped cases or unverifiable receipts; retain the exact candidate revision, command, case results and evidence paths. Use disposable qualification state and provisioned authority without printing secret values; no mocks, synthetic success or substitution of a library-only model for a named process boundary."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["agent/crates/layerx-agentd/src/main.rs", "platform/hosted/agentd/probe.sh", "tools/qualification/paxeer-x/agent_http_bounds.py", "tools/paxeer-x/gates/8.3.sh"]
+touches = ["agent/crates/layerx-agentd/src/main.rs", "platform/hosted/agentd/probe.sh", "tools/qualification/paxeer-x/agent_http_bounds.py", "tools/paxeer-x/gates/8.3.sh", "tools/qualification/paxeer-x/fixtures/agentd_fixture.py"]
 verify_cmd = "timeout 30m python3 tools/qualification/paxeer-x/agent_http_bounds.py"
 gate_kind = "planned"
 max_builds = 1
@@ -21860,13 +21864,15 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 deployment_profile = "product"
-planned_paths = ["tools/qualification/paxeer-x/agent_http_bounds.py", "tools/paxeer-x/gates/8.3.sh"]
+planned_paths = ["tools/qualification/paxeer-x/agent_http_bounds.py", "tools/paxeer-x/gates/8.3.sh", "tools/qualification/paxeer-x/fixtures/agentd_fixture.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
+fixture_policy = "Implement owned disposable fixtures using actual compiled services and production wire, signing, persistence and verification paths. Bind clean source revisions and artifact digests; generate isolated fixture credentials and keep them private. Preserve every existing assertion and add healthy-path evidence without deleting unavailable-dependency cases. No canned upstream responses, relaxed destination or authority guards, fabricated finality, skipped prerequisites, production membership changes or deployment credit. Complete all constituent implementations before the task owner runs its one declared build phase and original gate."
+
 [task.11.1]
 title = "Resolve verified Supabase subjects to durable wallet principals and tenant authority"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -22278,7 +22284,7 @@ do_5 = "Implement the declared focused gate through the real production types an
 do_6 = "Authorize verified client leaves by an exact URI SAN role: urn:layerx:webhooks:role:producer plus the source bearer permits only event publication; urn:layerx:webhooks:role:operator plus the distinct operator bearer permits only dispatch. Require clientAuth and exactly one recognized role marker. Reject missing, duplicate, contradictory, unknown, malformed or incompatible role markers; never infer a role from CN, headers, bearer alone or generic internal-CA membership. Use structural X.509 parsing and preserve all canonical event and persistence checks."
 do_7 = "Extend the existing internal-CA issuer with fixed webhook-operator-client local issuance: issue-local webhook-operator-client --output-dir <absolute-private-directory> and local-services discovery. Keep local identities outside the Fly services roster. Permit no caller-selected identity, role, EKU, SAN or CA override. Refuse existing destinations, symlink components, insecure parent ownership/modes and overlap with CA storage before generation. Publish a complete verified bundle atomically without overwrite from protected staging, with directory mode0700 and files0600; no Fly staging or operator private-key service mounts. Exercise real issuance and refusal paths in the focused harness without printing private material."
 do_8 = "Add the producer role SAN only to the existing human-event-client, gateway-client and registry-event-client issuance policies, retaining their identities, trust and bearer interfaces. Keep operator credentials separate. Reconcile retained Kubernetes producer issuance with the same role contract. Prove fail-closed coordinated certificate/token rotation and durable restart; roleless previous leaves must not gain a compatibility bypass."
-touches = ["platform/hosted/webhooks/src/main.rs", "platform/hosted/webhooks/src/trusted.rs", "platform/hosted/webhooks/fly.toml", "platform/hosted/webhooks/fly-init.sh", "platform/hosted/webhooks/deployment.yaml", "platform/hosted/internal/src/producer.rs", "tools/qualification/paxeer-x/event-delivery-contract.py", "tools/bringup/ca.sh", "platform/hosted/webhooks/Cargo.toml", "platform/Cargo.lock", "platform/hosted/webhooks/tests/plain_listener.rs", "platform/hosted/webhooks/tests/fault-injection.sh", "platform/hosted/tests/beta-cluster.sh", "tools/paxeer-x/gates/17.1.sh"]
+touches = ["platform/hosted/webhooks/src/main.rs", "platform/hosted/webhooks/src/trusted.rs", "platform/hosted/webhooks/fly.toml", "platform/hosted/webhooks/fly-init.sh", "platform/hosted/webhooks/deployment.yaml", "platform/hosted/internal/src/producer.rs", "tools/qualification/paxeer-x/event-delivery-contract.py", "tools/bringup/ca.sh", "platform/hosted/webhooks/Cargo.toml", "platform/Cargo.lock", "platform/hosted/webhooks/tests/plain_listener.rs", "platform/hosted/webhooks/tests/fault-injection.sh", "platform/hosted/tests/beta-cluster.sh", "tools/paxeer-x/gates/17.1.sh", "tools/qualification/paxeer-x/fixtures/identity_fixture.py", "tools/qualification/paxeer-x/fixtures/kms_fixture.py", "tools/qualification/paxeer-x/fixtures/event_receiver_fixture.py", "tools/qualification/paxeer-x/fixtures/hosted_delivery_fixture.py"]
 verify_cmd = "timeout 20m python3 tools/qualification/paxeer-x/event-delivery-contract.py --case webhook-ingress-roles --candidate-manifest \"$PAXEER_X_CANDIDATE_MANIFEST\""
 gate_kind = "planned"
 max_builds = 1
@@ -22287,9 +22293,11 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 deployment_profile = "product"
-planned_paths = ["tools/qualification/paxeer-x/event-delivery-contract.py", "tools/paxeer-x/gates/17.1.sh"]
+planned_paths = ["tools/qualification/paxeer-x/event-delivery-contract.py", "tools/paxeer-x/gates/17.1.sh", "tools/qualification/paxeer-x/fixtures/identity_fixture.py", "tools/qualification/paxeer-x/fixtures/kms_fixture.py", "tools/qualification/paxeer-x/fixtures/event_receiver_fixture.py", "tools/qualification/paxeer-x/fixtures/hosted_delivery_fixture.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+fixture_policy = "Implement owned disposable fixtures using actual compiled services and production wire, signing, persistence and verification paths. Bind clean source revisions and artifact digests; generate isolated fixture credentials and keep them private. Preserve every existing assertion and add healthy-path evidence without deleting unavailable-dependency cases. No canned upstream responses, relaxed destination or authority guards, fabricated finality, skipped prerequisites, production membership changes or deployment credit. Complete all constituent implementations before the task owner runs its one declared build phase and original gate."
 
 [task.17.2]
 title = "Refresh enrolled principal credentials atomically while event sources run"
@@ -22428,7 +22436,7 @@ do_2 = "Restore SignatureExchange and pending requests at startup, classify retr
 do_3 = "Add real-process interruption points around each durable transition and prove request retention, correct quorum binding and already-completed reconciliation."
 do_4 = "Create or extend the planned harness tools/qualification/paxeer-x/paid-web-contract.py with case evm-attestation-recovery; exercise the real served binaries and production persistence paths against the candidate manifest, record exact assertions and nonzero refusals, and fail if required inputs, executions or cases are absent."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["interop/crates/x-websearch/src/watch.rs", "interop/crates/x-websearch/src/main.rs", "interop/crates/x-websearch/src/attest.rs", "interop/crates/x-websearch/src/submit.rs", "interop/crates/x-websearch/tests/attest.rs", "tools/qualification/paxeer-x/paid-web-contract.py"]
+touches = ["interop/crates/x-websearch/src/watch.rs", "interop/crates/x-websearch/src/main.rs", "interop/crates/x-websearch/src/attest.rs", "interop/crates/x-websearch/src/submit.rs", "interop/crates/x-websearch/tests/attest.rs", "tools/qualification/paxeer-x/paid-web-contract.py", "tools/qualification/paxeer-x/fixtures/xweb_fixture.py"]
 verify_cmd = "timeout 20m python3 tools/qualification/paxeer-x/paid-web-contract.py --case evm-attestation-recovery --candidate-manifest \"$PAXEER_X_CANDIDATE_MANIFEST\""
 gate_kind = "planned"
 max_builds = 1
@@ -22437,9 +22445,11 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 deployment_profile = "product"
-planned_paths = ["tools/qualification/paxeer-x/paid-web-contract.py"]
+planned_paths = ["tools/qualification/paxeer-x/paid-web-contract.py", "tools/qualification/paxeer-x/fixtures/xweb_fixture.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+fixture_policy = "Implement owned disposable fixtures using actual compiled services and production wire, signing, persistence and verification paths. Bind clean source revisions and artifact digests; generate isolated fixture credentials and keep them private. Preserve every existing assertion and add healthy-path evidence without deleting unavailable-dependency cases. No canned upstream responses, relaxed destination or authority guards, fabricated finality, skipped prerequisites, production membership changes or deployment credit. Complete all constituent implementations before the task owner runs its one declared build phase and original gate."
 
 [task.19.2]
 title = "Recover kernel web requests and submitted observations across restarts"
@@ -23054,7 +23064,7 @@ do_2 = "Add platform/hosted/node/Dockerfile building build/bin/layerxd, layerx-g
 do_3 = "Write platform/hosted/node/deployment.yaml: the layerx-node StatefulSet in layerx-testnet with pod label layerx-plane: trusted-boundary, a data PersistentVolumeClaim, a shared emptyDir for the LNI socket and the supervisor socket, containers layerxd (sequencer, LNI on the shared socket, program listener 127.0.0.1:9401, authority publish to 127.0.0.1:9402) and layerxd-authority (--authority-replica on 127.0.0.1:9402), the four boundary containers of tasks 6.2 to 6.4 with container ports 9443, 9444, 9445, 9446, and the Services layerx-pending-core (9443 -> 9443), layerx-pending-core-admin (9444 -> 9444), layerx-receipt-authority (9443 -> 9445) and layerx-agent-boundary (9443 -> 9446), with ingress NetworkPolicies admitting testnet-control, the gateway, the registry and the faucet on exactly those ports and egress limited to DNS plus the pinned Paxeer TLS endpoint used by the finality verifier."
 do_4 = "Build cmd/layerxctl as an operator executable using the canonical LNI client for authenticated state reads and one-shot signed activity admission, preserving explicit unknown outcomes and never interpreting an acknowledgement as execution. Include it in the image. Add a real-process test under platform/hosted/node/tests that runs bootstrap.sh against a temporary directory, starts layerxd and the replica from build/bin, proves the LNI handshake succeeds with layerx-client, proves the treasury balance is readable, exercises the supervisor reset, and stops everything; wire it as make platform-test-node."
 do_5 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["docker/platform-node/Dockerfile", "docker/platform-node/Dockerfile.dockerignore", "cmd/layerxctl", "Makefile", "platform/hosted/node/bootstrap.sh", "platform/hosted/node/supervisor.sh", "platform/hosted/node/deployment.yaml", "platform/hosted/node/tests", "platform/Makefile.inc", "tools/paxeer-x/gates/103.6.1.sh"]
+touches = ["docker/platform-node/Dockerfile", "docker/platform-node/Dockerfile.dockerignore", "cmd/layerxctl", "platform/hosted/node/bootstrap.sh", "platform/hosted/node/supervisor.sh", "platform/hosted/node/deployment.yaml", "platform/hosted/node/tests", "platform/Makefile.inc", "tools/paxeer-x/gates/103.6.1.sh"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 103.6.1"
 gate_kind = "planned-adapter"
 max_builds = 1
@@ -23103,7 +23113,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.103.6.3]
 title = "Implement the layerx-receipt-authority service over the independent replica"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -23111,9 +23121,9 @@ reqs = ["1060.4", "1053.3"]
 do_1 = "Reconcile the retained capability against the current candidate and explicit resolution sections. Reuse conforming implementation; complete only unmet criteria. Resolve historical paths against the current source without narrowing the capability or repeating operational transitions already completed."
 do_2 = "Add the crate platform/hosted/authority (package layerx-platform-authority, binary layerx-receipt-authority) in the hosted house style listening on LAYERX_AUTHORITY_LISTEN (default 0.0.0.0:9445) with rustls server TLS accepting an optional client certificate, authenticating the gateway, registry and webhooks bearer tokens from LAYERX_AUTHORITY_TOKEN_FILES, and dialing only the replica at LAYERX_AUTHORITY_REPLICA_URL (loopback) with LAYERX_AUTHORITY_REPLICA_BEARER_TOKEN_FILE and LAYERX_AUTHORITY_REPLICA_ID, plus the receipt source at LAYERX_AUTHORITY_RECEIPT_URL for receipt bytes by activity id."
 do_3 = "Serve GET /v1/authorized-batches/by-activity/{activity_id} and GET /internal/v1/activities/{activity_id}/authority: fetch the canonical receipt for the activity, compute its digest, fetch the replica's batch evidence, verify the header signature and the Merkle inclusion with layerx-proof, re-derive batch_id with layerx_wire::hash::execution_batch_id and require it to equal the receipt's, and answer the eight fields {activity_id, batch_id, asset, previous_state_root, resulting_state_root, sequencer_public_key, network_id, wire_version}, plus batch_evidence only when the batch carries an occupancy-maintenance receipt, containing the maintained batch identity and proof the consumer verifies with Content-Type application/json and no charset; relay GET /v1/batches/{batch_id}/receipt-authority?receipt_digest= to the replica unchanged; serve GET /readyz with {ready, network_id, wire_version} and 200 for an unauthenticated probe only when the replica answers; 404 for an unknown activity, 503 with a typed code when the replica or receipt source is unavailable."
-do_4 = "Write tests under platform/hosted/authority/tests against a real layerxd sequencer and replica from build/bin, proving a submitted activity's facts are served and verify with layerx-proof, that a tampered header signature or mismatched batch_id is refused, and that /readyz reflects replica loss; add platform/hosted/authority/Dockerfile from the faucet template; record the ramps toolkit six-field AuthorityBody conflict in qualification.kvx and align it to the eight-field contract."
+do_4 = "Write tests under platform/hosted/authority/tests against a real layerxd sequencer and replica from build/bin, proving a submitted activity's facts are served and verify with layerx-proof, that a tampered header signature or mismatched batch_id is refused, and that /readyz reflects replica loss; add platform/hosted/authority/Dockerfile from the faucet template; record the ramps toolkit six-field AuthorityBody conflict in private qualification evidence and align it to the eight-field contract."
 do_5 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["platform/hosted/authority", "platform/Cargo.toml", "platform/Cargo.lock", "platform/ramps/toolkit/src/clients.rs", "spec/paxeer-x/qualification.kvx", "tools/paxeer-x/gates/103.6.3.sh"]
+touches = ["platform/hosted/authority", "platform/ramps/toolkit/src/clients.rs", "tools/paxeer-x/gates/103.6.3.sh"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 103.6.3"
 gate_kind = "planned-adapter"
 max_builds = 1
@@ -23126,9 +23136,11 @@ reference_verify_cmd = "make layerxd && cargo test --manifest-path platform/Carg
 reference_tests = []
 deployment_profile = "product"
 completion_policy = "Existing implementation is preserved; current candidate qualification and applicable runtime evidence remain required."
-planned_paths = ["spec/paxeer-x/qualification.kvx", "tools/paxeer-x/gates/103.6.3.sh"]
+planned_paths = ["tools/paxeer-x/gates/103.6.3.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+source_scope = "Reuse existing dependency manifests and lockfile read-only. Preserve the complete service and strict all-target lint contract; global readiness requirements remain mandatory under their mapped release tasks."
 
 [task.103.6.4]
 title = "Implement the layerx-agent-boundary component service over the LNI"
