@@ -1829,3 +1829,9 @@ area    = "spec"
 symptom = "A spec task whose machine needs [[files]] secrets cannot be cut over in order."
 cause   = "The task does not require the tasks that produce those secrets, and the platform refuses a machine whose [[files]] secret is missing."
 do      = "Make the task require every task producing its [[files]] secrets."
+
+[gotcha.302]
+area    = "bringup"
+symptom = "A task's check-live.sh verify_cmd exits 2 with check-live: BRINGUP_HOSTS_FILE is unset before any check runs."
+cause   = "The spec's verify_cmd omits the private host map, which check-live.sh requires for every subcommand."
+do      = "Run the verify_cmd with BRINGUP_HOSTS_FILE pointing at the operator's private host map; never print or commit its contents."

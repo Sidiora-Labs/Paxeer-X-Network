@@ -1408,6 +1408,14 @@ observed   = "A merge left the program registry token env key and its [[files]] 
 assumption = "Merge repair only; the first copies are kept unchanged and no case was changed to pass."
 severity   = "warning"
 
+[observation.2.6.7]
+task       = "2.6"
+file       = "platform/hosted/registry/fly.toml"
+symbol     = "LAYERX_EVENTS_WEBHOOKS_UPSTREAM_URL"
+observed   = "The registry named the webhooks ingress on port 9444, the public group's plain listener, while the ingress group terminates TLS on 443 and the kernel and router name no port; with the port dropped tomllib parses the manifest and check-live.sh registry exited 1 on fail machines app=paxeer-registry machines=0 started=0 volumes=0 (log .logs/2.6-registry-live.log); cg spec implemented refused on symbol check_registry not defined in the graph, so the status was set by hand."
+assumption = "The registry reaches the ingress on 443 once both apps have machines."
+severity   = "warning"
+
 [observation.4.22.5]
 task       = "4.22"
 file       = "tools/bringup/check-live.sh"
