@@ -171,9 +171,13 @@ SCHEMA = 'layerx-focused-source-evidence-v1'
 LIMIT = 16 * 1024 * 1024
 
 
+class EvidenceError(ValueError):
+    pass
+
+
 def need(value, message):
     if not value:
-        raise ValueError(message)
+        raise EvidenceError(message)
 
 
 def canonical(value):
@@ -494,7 +498,7 @@ def recipe(path, task):
             section = match[1]
             need(section not in sections, 'duplicate recipe section')
             sections[section] = {}
-        elif section and re.match(r'^[a-z_]+\s*=', line):
+        elif section and re.match(r'^[a-z_][a-z0-9_]*\s*=', line):
             key, raw = line.split('=', 1)
             sections[section][key.strip()] = raw.strip()
     need('task.' + task in sections, 'task absent from selected spec')
@@ -614,6 +618,9 @@ try:
         result = validate(record, base, args.candidate, root)
         print(json.dumps(result, sort_keys=True))
         sys.exit(0 if result['eligible'] else 1)
+except EvidenceError as error:
+    print(json.dumps({'eligible': False, 'reasons': [str(error)]}))
+    sys.exit(1)
 except (OSError, ValueError, KeyError, TypeError, AttributeError, subprocess.TimeoutExpired):
     print(json.dumps({'eligible': False, 'reasons': ['invalid_or_unavailable_source_evidence']}))
     sys.exit(1)
