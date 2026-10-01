@@ -97,7 +97,7 @@ platform/sdk/dotnet/obj/
 platform/sdk/dotnet/tests/*/bin/
 platform/sdk/dotnet/tests/*/obj/
 platform/docs/samples/*/first-payment-go
-spec/specgen/specgen
+tools/specgen/specgen
 
 __pycache__/
 *.pyc

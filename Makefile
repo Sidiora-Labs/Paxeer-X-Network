@@ -3219,14 +3219,14 @@ developer-dashboard-static-test:
 	npm --prefix platform/hosted/dashboard/web run test:static
 
 specgen-build:
-	cd spec/specgen && go build ./...
+	go build -o /dev/null ./tools/specgen
 
 specgen-test:
-	cd spec/specgen && go test ./...
+	go test ./tools/specgen
 
 specgen-lint:
-	cd spec/specgen && go vet ./...
-	cd spec/specgen && go run . -check
+	go vet ./tools/specgen
+	go run ./tools/specgen -root . -check
 
 core-test-all: test test-kernel test-module-ctx test-dispatch test-receipts \
 	test-state-root test-ledger-accounts test-ledger-transfer test-ledger-set \
@@ -3258,7 +3258,6 @@ workspace-install:
 	$(MAKE) platform-js-install programs-js-install
 	$(MAKE) developer-dashboard-install paxeer-manifest-install platform-dependencies-install
 	go mod download
-	cd spec/specgen && go mod download
 
 workspace-build: build agent-build human-build platform-build-all programs-build interop-build \
 	paxeer-build paxeer-manifest-build developer-dashboard-build specgen-build

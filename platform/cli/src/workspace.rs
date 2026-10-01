@@ -618,21 +618,21 @@ const SPECGEN_INSTALL: &[Step] = &[Step::command(
     "Download spec generator modules",
     "go",
     &["mod", "download"],
-    "spec/specgen",
+    ".",
     &["go"],
 )];
 const SPECGEN_BUILD: &[Step] = &[Step::command(
     "Build the specification generator",
     "go",
-    &["build", "./..."],
-    "spec/specgen",
+    &["build", "./tools/specgen"],
+    ".",
     &["go"],
 )];
 const SPECGEN_TEST: &[Step] = &[Step::command(
     "Test the specification generator",
     "go",
-    &["test", "./..."],
-    "spec/specgen",
+    &["test", "./tools/specgen"],
+    ".",
     &["go"],
 )];
 
