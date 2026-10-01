@@ -137,3 +137,29 @@ func TestLayerXProposalAuthorityWhitelist(t *testing.T) {
 		})
 	}
 }
+func TestLayerXProposalAnchorAndLaunchpadParams(t *testing.T) {
+	a := types.GovernanceAuthority()
+	anchorParams := anchor.DefaultParams(a)
+	anchorParams.ReporterShare = sdk.NewDecWithPrec(2, 1)
+	launchpadParams := launchpad.DefaultParams()
+	launchpadParams.ProtocolFeeBps = 2000
+	msgs := []sdk.Msg{&anchor.MsgUpdateParams{Authority: a, Params: anchorParams}, &launchpad.MsgUpdateParams{Authority: a, Params: launchpadParams}}
+	p, err := types.NewLayerXProposal("Set anchor and launchpad parameters", "One proposal file sets both modules", msgs...)
+	require.NoError(t, err)
+	require.NoError(t, p.ValidateBasic())
+	cdc := proposalCodec()
+	raw, err := cdc.MarshalInterfaceJSON(p)
+	require.NoError(t, err)
+	var content govtypes.Content
+	require.NoError(t, cdc.UnmarshalInterfaceJSON(raw, &content))
+	require.NoError(t, content.ValidateBasic())
+	carried, err := content.(*types.LayerXProposal).GetMessages()
+	require.NoError(t, err)
+	require.Len(t, carried, 2)
+	require.Equal(t, msgs[0], carried[0])
+	require.Equal(t, msgs[1], carried[1])
+	outsider := sdk.AccAddress(bytes.Repeat([]byte{2}, 20)).String()
+	p, err = types.NewLayerXProposal("title", "description", msgs[0], &launchpad.MsgUpdateParams{Authority: outsider, Params: launchpadParams})
+	require.NoError(t, err)
+	require.Error(t, p.ValidateBasic())
+}

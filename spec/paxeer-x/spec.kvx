@@ -26404,7 +26404,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.106.4.3]
 title = "Carry the anchor and launchpad parameter updates through the same route"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = ["0.2", "106.4.2", "106.4.9"]
