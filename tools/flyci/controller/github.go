@@ -42,6 +42,7 @@ type workflowJob struct {
 	Status      string     `json:"status"`
 	Conclusion  string     `json:"conclusion"`
 	Labels      []string   `json:"labels"`
+	StartedAt   *time.Time `json:"started_at"`
 	CompletedAt *time.Time `json:"completed_at"`
 }
 
@@ -157,17 +158,35 @@ func (c *githubClient) listRuns(ctx context.Context, status string) ([]workflowR
 	return runs, err
 }
 
+func decodeWorkflowJobs(body []byte, runID int64) ([]workflowJob, error) {
+	var page struct {
+		Jobs []workflowJob `json:"jobs"`
+	}
+	if err := json.Unmarshal(body, &page); err != nil {
+		return nil, fmt.Errorf("decode jobs of run %d: %w", runID, err)
+	}
+	if page.Jobs == nil {
+		return nil, errors.New("workflow jobs response lacks job inventory")
+	}
+	seen := make(map[int64]bool)
+	for _, job := range page.Jobs {
+		if job.ID <= 0 || job.RunID != runID || seen[job.ID] {
+			return nil, errors.New("workflow job identity conflicts with run inventory")
+		}
+		seen[job.ID] = true
+	}
+	return page.Jobs, nil
+}
+
 func (c *githubClient) listJobs(ctx context.Context, runID int64) ([]workflowJob, error) {
-	first := c.repoURL("/actions/runs/"+strconv.FormatInt(runID, 10)+"/jobs", url.Values{"per_page": {"100"}})
+	first := c.repoURL("/actions/runs/"+strconv.FormatInt(runID, 10)+"/jobs", url.Values{"per_page": {"100"}, "filter": {"all"}})
 	var jobs []workflowJob
 	err := c.getPages(ctx, first, func(body []byte) error {
-		var page struct {
-			Jobs []workflowJob `json:"jobs"`
+		page, err := decodeWorkflowJobs(body, runID)
+		if err != nil {
+			return err
 		}
-		if err := json.Unmarshal(body, &page); err != nil {
-			return fmt.Errorf("decode jobs of run %d: %w", runID, err)
-		}
-		jobs = append(jobs, page.Jobs...)
+		jobs = append(jobs, page...)
 		return nil
 	})
 	return jobs, err
@@ -193,6 +212,9 @@ func (c *githubClient) generateJITConfig(ctx context.Context, name string, label
 	var cfg jitConfig
 	if err := json.Unmarshal(body, &cfg); err != nil {
 		return jitConfig{}, fmt.Errorf("decode runner configuration for %s: %w", name, err)
+	}
+	if cfg.Runner.ID <= 0 || cfg.Runner.Name != name {
+		return jitConfig{}, fmt.Errorf("runner configuration for %s has mismatched runner identity", name)
 	}
 	if cfg.EncodedJITConfig == "" {
 		return jitConfig{}, fmt.Errorf("runner configuration for %s has no encoded_jit_config", name)

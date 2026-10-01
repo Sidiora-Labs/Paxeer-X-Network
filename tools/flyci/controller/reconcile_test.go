@@ -3,9 +3,11 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -237,12 +239,12 @@ func TestReconcileFailedCreateIsLoggedAndSkipped(t *testing.T) {
 func TestReconcileDestroysMachineOfFinishedJob(t *testing.T) {
 	rig := newTestRig(t, nil)
 	rig.gh.addRun("", 800,
-		ghJob{ID: 81, RunID: 800, Status: "completed", Conclusion: "success", Labels: []string{"fly-linux"}, CompletedAt: testNow.Add(-6 * time.Minute)},
-		ghJob{ID: 82, RunID: 800, Status: "completed", Conclusion: "failure", Labels: []string{"fly-linux"}, CompletedAt: testNow.Add(-2 * time.Minute)},
+		ghJob{RunnerID: 7081, RunnerName: "fly-81", ID: 81, RunID: 800, Status: "completed", Conclusion: "success", Labels: []string{"fly-linux"}, CompletedAt: testNow.Add(-6 * time.Minute)},
+		ghJob{RunnerID: 7082, RunnerName: "fly-82", ID: 82, RunID: 800, Status: "completed", Conclusion: "failure", Labels: []string{"fly-linux"}, CompletedAt: testNow.Add(-2 * time.Minute)},
 	)
 	rig.gh.addRun("in_progress", 801,
-		ghJob{ID: 83, RunID: 801, Status: "completed", Conclusion: "success", Labels: []string{"fly-linux"}, CompletedAt: testNow.Add(-10 * time.Minute)},
-		ghJob{ID: 84, RunID: 801, Status: "in_progress", Labels: []string{"fly-linux"}},
+		ghJob{RunnerID: 7083, RunnerName: "fly-83", ID: 83, RunID: 801, Status: "completed", Conclusion: "success", Labels: []string{"fly-linux"}, CompletedAt: testNow.Add(-10 * time.Minute)},
+		ghJob{RunnerID: 7084, RunnerName: "fly-84", ID: 84, RunID: 801, Status: "in_progress", Labels: []string{"fly-linux"}},
 	)
 	rig.fly.addMachine(managed("m-81", "started", "81", "800", testNow.Add(-20*time.Minute)))
 	rig.fly.addMachine(managed("m-82", "started", "82", "800", testNow.Add(-20*time.Minute)))
@@ -317,5 +319,276 @@ func TestReconcileNeverTouchesUnmanagedMachines(t *testing.T) {
 	}
 	if summary.Created != 1 {
 		t.Fatalf("unmanaged machines counted against the ceiling: %+v", summary)
+	}
+}
+
+func actualAssignmentMachine(job, run int64, age time.Duration) machine {
+	return machine{ID: "machine-" + strconv.FormatInt(job, 10), Name: runnerName(job), State: "started", CreatedAt: testNow.Add(-age), Config: machineConfig{Metadata: map[string]string{metadataJobID: strconv.FormatInt(job, 10), metadataRunID: strconv.FormatInt(run, 10)}}}
+}
+
+func actualAssignmentReconciler(logs *bytes.Buffer) *reconciler {
+	return &reconciler{cfg: config{OrphanTTL: 3 * time.Hour}, now: func() time.Time { return testNow }, log: slog.New(slog.NewTextHandler(logs, nil))}
+}
+
+func actualAssignmentJobs(t *testing.T) []workflowJob {
+	t.Helper()
+	body := []byte(`{"total_count":2,"jobs":[{"id":81,"run_id":800,"status":"completed","conclusion":"success","runner_id":7082,"runner_name":"fly-82","labels":["self-hosted","fly-linux"],"started_at":"2026-03-01T11:40:00Z","completed_at":"2026-03-01T11:50:00Z"},{"id":82,"run_id":800,"status":"in_progress","conclusion":null,"runner_id":7081,"runner_name":"fly-81","labels":["self-hosted","fly-linux"],"started_at":"2026-03-01T11:40:00Z","completed_at":null}]}`)
+	jobs, err := decodeWorkflowJobs(body, 800)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return jobs
+}
+
+func TestReconcileActualAssignmentCrossed(t *testing.T) {
+	jobs := actualAssignmentJobs(t)
+	idx := &jobIndex{}
+	idx.add(800, jobs)
+	rec := actualAssignmentReconciler(&bytes.Buffer{})
+	for _, age := range []time.Duration{time.Hour, 48 * time.Hour} {
+		for poll := 0; poll < 3; poll++ {
+			for _, tc := range []struct {
+				job  int64
+				want string
+			}{{81, ""}, {82, "finished"}} {
+				m := actualAssignmentMachine(tc.job, 800, age)
+				if got := rec.destroyReason(context.Background(), m, tc.job, 800, idx); got != tc.want {
+					t.Fatalf("poll %d age %s machine %s: %q want %q", poll, age, m.Name, got, tc.want)
+				}
+			}
+		}
+	}
+	if jobs[0].RunnerID != 7082 || jobs[0].RunnerName != "fly-82" || jobs[0].StartedAt == nil {
+		t.Fatal("documented assignment fields lost")
+	}
+}
+
+func TestReconcileActualAssignmentDifferentRuns(t *testing.T) {
+	jobs := actualAssignmentJobs(t)
+	jobs[1].RunID = 900
+	for _, reverse := range []bool{false, true} {
+		idx := &jobIndex{}
+		if reverse {
+			idx.add(900, jobs[1:])
+			idx.add(800, jobs[:1])
+		} else {
+			idx.add(800, jobs[:1])
+			idx.add(900, jobs[1:])
+		}
+		rec := actualAssignmentReconciler(&bytes.Buffer{})
+		for _, tc := range []struct {
+			job, run int64
+			want     string
+		}{{81, 800, ""}, {82, 900, "finished"}} {
+			m := actualAssignmentMachine(tc.job, tc.run, time.Hour)
+			if got := rec.destroyReason(context.Background(), m, tc.job, tc.run, idx); got != tc.want {
+				t.Fatalf("reverse %v machine %s: %q", reverse, m.Name, got)
+			}
+		}
+	}
+}
+
+func TestReconcileActualAssignmentUnknown(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		alter func(*jobIndex)
+	}{
+		{"absent", func(idx *jobIndex) { idx.add(800, nil) }},
+		{"null", func(idx *jobIndex) {
+			jobs, e := decodeWorkflowJobs([]byte(`{"jobs":[{"id":81,"run_id":800,"status":"completed","runner_id":null,"runner_name":null,"completed_at":"2026-03-01T11:50:00Z"}]}`), 800)
+			if e != nil {
+				t.Fatal(e)
+			}
+			idx.add(800, jobs)
+		}},
+		{"zero_runner", func(idx *jobIndex) { j := actualAssignmentJobs(t)[0]; j.RunnerID = 0; idx.add(800, []workflowJob{j}) }},
+		{"missing_name", func(idx *jobIndex) {
+			j := actualAssignmentJobs(t)[0]
+			j.RunnerName = ""
+			idx.add(800, []workflowJob{j})
+		}},
+		{"incomplete_inventory", func(idx *jobIndex) { idx.add(800, actualAssignmentJobs(t)); idx.incomplete = true }},
+		{"multiple_jobs", func(idx *jobIndex) {
+			jobs := actualAssignmentJobs(t)
+			jobs[1].RunnerName = "fly-82"
+			jobs[1].RunnerID = 7082
+			idx.add(800, jobs)
+		}},
+		{"runner_id_conflict", func(idx *jobIndex) { jobs := actualAssignmentJobs(t); jobs[1].RunnerID = 7082; idx.add(800, jobs) }},
+		{"assignment_changed", func(idx *jobIndex) {
+			jobs := actualAssignmentJobs(t)
+			idx.add(800, jobs)
+			jobs[0].RunnerName = "fly-other"
+			idx.add(800, jobs[:1])
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			idx := &jobIndex{}
+			tc.alter(idx)
+			m := actualAssignmentMachine(82, 800, time.Hour)
+			rec := actualAssignmentReconciler(&bytes.Buffer{})
+			if _, known := idx.assignment(m); known {
+				t.Fatal("uncertain assignment admitted")
+			}
+			if got := rec.destroyReason(context.Background(), m, 82, 800, idx); got != "" {
+				t.Fatalf("unknown assignment destroyed: %s", got)
+			}
+		})
+	}
+}
+
+func TestReconcileActualAssignmentBoundaries(t *testing.T) {
+	for _, tc := range []struct {
+		name                     string
+		age, timeSinceCompletion time.Duration
+		state                    string
+		assigned, missingTime    bool
+		want                     string
+	}{
+		{"finished", time.Hour, 6 * time.Minute, "started", true, false, "finished"},
+		{"grace_exact", time.Hour, 5 * time.Minute, "started", true, false, ""},
+		{"grace_recent", time.Hour, time.Minute, "started", true, false, ""},
+		{"future_completion", time.Hour, -time.Minute, "started", true, false, ""},
+		{"stale_previous_machine", time.Hour, 2 * time.Hour, "started", true, false, ""},
+		{"missing_completion", 48 * time.Hour, 0, "started", true, true, ""},
+		{"unknown_before_ttl", 2 * time.Hour, 0, "started", false, false, ""},
+		{"unknown_exact_ttl", 3 * time.Hour, 0, "started", false, false, ""},
+		{"unknown_after_ttl", 3*time.Hour + time.Second, 0, "started", false, false, "orphaned"},
+		{"stopped", time.Minute, 0, "stopped", false, false, "stopped"},
+		{"already_destroyed", 48 * time.Hour, 6 * time.Minute, "destroyed", true, false, ""},
+		{"already_destroying", 48 * time.Hour, 6 * time.Minute, "destroying", true, false, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			idx := &jobIndex{}
+			if tc.assigned {
+				j := actualAssignmentJobs(t)[0]
+				when := testNow.Add(-tc.timeSinceCompletion)
+				j.CompletedAt = &when
+				if tc.missingTime {
+					j.CompletedAt = nil
+				}
+				idx.add(800, []workflowJob{j})
+			}
+			m := actualAssignmentMachine(82, 800, tc.age)
+			m.State = tc.state
+			rec := actualAssignmentReconciler(&bytes.Buffer{})
+			for poll := 0; poll < 2; poll++ {
+				if got := rec.destroyReason(context.Background(), m, 82, 800, idx); got != tc.want {
+					t.Fatalf("poll %d got %q want %q", poll, got, tc.want)
+				}
+			}
+		})
+	}
+}
+
+func TestReconcileActualAssignmentActiveProtection(t *testing.T) {
+	for _, incomplete := range []bool{false, true} {
+		idx := &jobIndex{}
+		idx.add(800, actualAssignmentJobs(t))
+		idx.incomplete = incomplete
+		m := actualAssignmentMachine(81, 800, 48*time.Hour)
+		if got := actualAssignmentReconciler(&bytes.Buffer{}).destroyReason(context.Background(), m, 81, 800, idx); got != "" {
+			t.Fatalf("active assignment removed with incomplete=%v: %s", incomplete, got)
+		}
+	}
+}
+
+func TestReconcileActualAssignmentUnmanaged(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		alter func(*machine)
+	}{
+		{"no_metadata", func(m *machine) { m.Config.Metadata = nil }},
+		{"missing_job", func(m *machine) { delete(m.Config.Metadata, metadataJobID) }},
+		{"missing_run", func(m *machine) { delete(m.Config.Metadata, metadataRunID) }},
+		{"invalid_job", func(m *machine) { m.Config.Metadata[metadataJobID] = "bad" }},
+		{"noncanonical_job", func(m *machine) { m.Config.Metadata[metadataJobID] = "082" }},
+		{"invalid_run", func(m *machine) { m.Config.Metadata[metadataRunID] = "-800" }},
+		{"wrong_name", func(m *machine) { m.Name = "owner-machine" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			idx := &jobIndex{}
+			idx.add(800, actualAssignmentJobs(t))
+			rec := actualAssignmentReconciler(&bytes.Buffer{})
+			for _, state := range []string{"started", "stopped"} {
+				m := actualAssignmentMachine(82, 800, 48*time.Hour)
+				m.State = state
+				tc.alter(&m)
+				if _, _, managed := machineJob(m); managed {
+					t.Fatal("unmanaged machine admitted")
+				}
+				if got := rec.destroyReason(context.Background(), m, 82, 800, idx); got != "" {
+					t.Fatalf("unmanaged machine removed: %s", got)
+				}
+			}
+		})
+	}
+}
+
+func TestReconcileActualAssignmentDecoder(t *testing.T) {
+	for _, body := range []string{`{}`, `{"jobs":null}`, `{"jobs":[{"id":1,"run_id":801}]}`, `{"jobs":[{"id":0,"run_id":800}]}`, `{"jobs":[{"id":1,"run_id":800},{"id":1,"run_id":800}]}`, `{"jobs":[{"id":1,"run_id":800,"runner_id":"1"}]}`, `{"jobs":[`} {
+		if _, err := decodeWorkflowJobs([]byte(body), 800); err == nil {
+			t.Fatalf("invalid inventory accepted: %s", body)
+		}
+	}
+	jobs, err := decodeWorkflowJobs([]byte(`{"total_count":1,"jobs":[{"id":399444496,"run_id":29679449,"status":"completed","conclusion":"success","runner_id":1,"runner_name":"my runner","started_at":"2020-01-20T17:42:40Z","completed_at":"2020-01-20T17:44:39Z"}]}`), 29679449)
+	if err != nil || len(jobs) != 1 || jobs[0].RunnerID != 1 || jobs[0].RunnerName != "my runner" {
+		t.Fatalf("documented job response lost assignment: %+v %v", jobs, err)
+	}
+}
+
+func TestReconcileActualAssignmentEvidence(t *testing.T) {
+	logs := &bytes.Buffer{}
+	rec := actualAssignmentReconciler(logs)
+	idx := &jobIndex{}
+	idx.add(800, actualAssignmentJobs(t))
+	m := actualAssignmentMachine(82, 900, time.Hour)
+	rec.cleanupLog("machine destroyed", m, "finished", 82, 900, idx, nil)
+	rec.cleanupLog("destroy machine failed", m, "finished", 82, 900, idx, errors.New("untrusted-provider-body"))
+	for _, want := range []string{"trigger_job_id=82", "trigger_run_id=900", "actual_job_id=81", "actual_run_id=800", "runner_id=7082", "runner_name=fly-82", "actual_status=completed"} {
+		if !strings.Contains(logs.String(), want) {
+			t.Fatalf("missing evidence %s: %s", want, logs.String())
+		}
+	}
+	if strings.Contains(logs.String(), "untrusted-provider-body") {
+		t.Fatal("provider body reached cleanup log")
+	}
+	logs.Reset()
+	rec.cleanupLog("machine destroyed", m, "orphaned", 82, 900, &jobIndex{}, nil)
+	if !strings.Contains(logs.String(), "assignment=unknown") || strings.Contains(logs.String(), "actual_job_id") {
+		t.Fatal("unknown assignment misreported")
+	}
+}
+
+func TestReconcileActualAssignmentDurableProtection(t *testing.T) {
+	registry, req := qTestRegistry(t)
+	if _, err := registry.submit(req); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := registry.advance(req.LogicalID, "prepared", "dispatch_intent", 0, 0, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := registry.advance(req.LogicalID, "dispatch_intent", "run_bound", 800, 1, ""); err != nil {
+		t.Fatal(err)
+	}
+	rec := actualAssignmentReconciler(&bytes.Buffer{})
+	rec.qualification = registry
+	for _, known := range []bool{false, true} {
+		idx := &jobIndex{}
+		if known {
+			idx.add(800, actualAssignmentJobs(t))
+		}
+		m := actualAssignmentMachine(82, 900, 48*time.Hour)
+		if got := rec.destroyReason(context.Background(), m, 82, 900, idx); got != "" {
+			t.Fatalf("uncollected durable assignment removed known=%v: %s", known, got)
+		}
+	}
+	reopened, err := newQualificationRegistry(registry.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec.qualification = reopened
+	if got := rec.destroyReason(context.Background(), actualAssignmentMachine(82, 900, 48*time.Hour), 82, 900, &jobIndex{}); got != "" {
+		t.Fatalf("durable protection lost after reopen: %s", got)
 	}
 }
