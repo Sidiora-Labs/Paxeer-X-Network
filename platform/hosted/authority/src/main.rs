@@ -637,7 +637,7 @@ fn receipt_connection(
         TransportError::ConnectionLimit => DependencyReason::ConnectionLimit,
         _ => DependencyReason::Unavailable,
     };
-    let limits = trust::limits(deadline).map_err(|_| DependencyReason::Timeout)?;
+    let limits = trust::limits(deadline).map_err(|()| DependencyReason::Timeout)?;
     let mut transport =
         Uds::connect(&config.lni_socket, &config.lni_gate, limits).map_err(transport_error)?;
     let handshake = perform(
@@ -1087,7 +1087,7 @@ fn lni_answers(config: &Config, deadline: Instant) -> Result<DependencyReason, D
             handshake.node().authorised_sequencer_key,
             deadline,
         )
-        .map_err(|_| DependencyReason::IdentityMismatch)?;
+        .map_err(|()| DependencyReason::IdentityMismatch)?;
         let next_batch = handshake
             .node()
             .latest_sealed_batch
