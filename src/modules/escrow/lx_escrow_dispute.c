@@ -59,6 +59,7 @@ lxp_result lx_escrow_dispute_resolve_execute(
     lxp_u128 captured_after;
     lxp_result release;
     lxp_result status;
+    uint8_t context_digest[32];
     bool replayed;
     if (ctx == NULL || request == NULL || request->escrow_id == NULL ||
         request->escrow_account == NULL ||
@@ -67,11 +68,20 @@ lxp_result lx_escrow_dispute_resolve_execute(
         request->authority == NULL || receipt == NULL ||
         lxp_ct_is_zero(request->idempotency_key, 32U))
         return LXP_ERR_NON_CANONICAL;
-    status = lx_escrow_receipt_replay(ctx, request->idempotency_key, receipt,
-                                      &replayed);
-    if (status != LXP_OK || replayed) return status;
     status = lx_escrow_lookup(ctx, request->escrow_id, &record);
     if (status != LXP_OK) return status;
+    status = lx_escrow_context_digest(request->escrow_id, 7U,
+                                      request->authority,
+                                      (lxp_u128){ 0U, 0U },
+                                      request->beneficiary_account->id,
+                                      request->beneficiary_basis_points,
+                                      context_digest);
+    if (status != LXP_OK) return status;
+    status = lx_escrow_receipt_replay_bound(
+        ctx, request->idempotency_key, request->escrow_id, 7U, context_digest,
+        memcmp(request->authority->principal, record.arbiter, 32U) == 0,
+        receipt, &replayed);
+    if (status != LXP_OK || replayed) return status;
     if (record.state != LX_ESCROW_STATE_DISPUTED)
         return LXP_ERR_ESCROW_STATE;
     if (memcmp(request->authority->principal, record.arbiter, 32U) != 0)
@@ -112,6 +122,8 @@ lxp_result lx_escrow_dispute_resolve_execute(
     record.state = LX_ESCROW_STATE_RESOLVED;
     record.captured_amount = captured_after;
     record.locked_amount = (lxp_u128){ 0U, 0U };
-    return lx_escrow_commit_result(ctx, &record, request->idempotency_key,
-                                   &settlement, 7U, receipt);
+    return lx_escrow_commit_bound_result(ctx, &record,
+                                         request->idempotency_key,
+                                         &settlement, 7U, context_digest,
+                                         receipt);
 }
