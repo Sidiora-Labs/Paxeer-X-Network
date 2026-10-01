@@ -71,6 +71,10 @@ evm_key() {
 }
 
 memory() {
+	if [ -L "$1" ] || { [ -e "$1" ] && [ ! -d "$1" ]; }; then
+		log "private runtime mount refused: $1"
+		return 1
+	fi
 	mkdir -p "$1"
 	mountpoint -q "$1" || mount -t tmpfs -o "nosuid,nodev,mode=$2" tmpfs "$1"
 }
@@ -113,15 +117,25 @@ mirror_inputs() {
 		LAYERX_KERNEL_MIRROR_RPC_CREDENTIALS
 }
 
+if [ -e "$run" ] && [ ! -L "$run" ]; then
+	case "$(stat -c '%u:%g:%a' "$run")" in
+	0:0:755 | 4020:4020:2775 | 4020:4020:3775) ;;
+	*) log "private runtime directory refused: $run owner or mode"; exit 1 ;;
+	esac
+fi
 memory "$run" 0755
 memory /run/authority-private 0700
+if [ -e /run/human-private ] && [ "$(stat -c '%u:%g:%a' /run/human-private)" != 0:0:755 ]; then
+	log "private runtime directory refused: /run/human-private owner or mode"
+	exit 1
+fi
 memory /run/human-private 0755
 memory /run/mirror-signer 0700
 memory "$mirror_material" 0700
 memory "$mirror_run" 0700
 memory /tmp 1777
 chown 4020:4020 "$run"
-chmod 2775 "$run"
+chmod 3775 "$run"
 chown 4021:4020 /run/authority-private /run/mirror-signer "$mirror_material" "$mirror_run"
 mirror_inputs
 mkdir -p "$status" "$run/clock"
@@ -144,7 +158,53 @@ for identity in 1 2; do
 done
 
 # human-directories
-install -d -o 4020 -g 4020 -m 0750 "$run/human"
+private_runtime_directories() {
+	python3 - <<'PY_PRIVATE'
+import os
+import stat
+
+
+def directory(parent, name, uid, gid, mode):
+    created = False
+    try:
+        os.mkdir(name, mode, dir_fd=parent)
+        created = True
+    except FileExistsError:
+        pass
+    fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+    try:
+        info = os.fstat(fd)
+        if created:
+            os.fchown(fd, uid, gid)
+            os.fchmod(fd, mode)
+        elif (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) != (uid, gid, mode):
+            raise ValueError("unexpected owner or mode: " + name)
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+try:
+    if os.geteuid() != 0:
+        raise ValueError("root initialization required")
+    run = os.open("/run", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    private = directory(run, "human-private", 0, 0, 0o755)
+    for role, uid in (("components", 4020), ("identity", 4020),
+                      ("security", 4020), ("movement", 4020),
+                      ("agent", 4021), ("kms", 4026)):
+        os.close(directory(private, role, uid, 4020, 0o700))
+    layerx_run = directory(run, "layerx", 4020, 4020, 0o3775)
+    human = directory(layerx_run, "human", 4020, 4020, 0o750)
+    os.close(directory(human, "service-private", 4020, 4020, 0o700))
+    for fd in (human, layerx_run, private, run):
+        os.close(fd)
+except (OSError, ValueError) as error:
+    raise SystemExit("private runtime directory refused: " + str(error))
+PY_PRIVATE
+}
+
+private_runtime_directories
 install -d -o 4021 -g 4020 -m 0750 "$run/human/owner"
 install -d -o 4021 -g 4020 -m 0700 "$run/human/authority-clock"
 install -d -o 0 -g 4020 -m 0750 "$human_state"

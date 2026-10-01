@@ -5,10 +5,34 @@ role=${1:?Human role is required}
 shift
 case "$role" in
     service) private=/run/layerx/human/service-private ;;
-    *) private=/run/human-private/$role ;;
+    onboarding-bootstrap) private=/run/human-private/components ;;
+    components|identity|security|movement|agent|kms|onboarding-signer) private=/run/human-private/$role ;;
+    *) printf 'unknown Human role\n' >&2; exit 64 ;;
 esac
-mkdir -p "$private"
-chmod 0700 "$private"
+python3 - "$private" <<'PY_PRIVATE'
+import os
+import stat
+import sys
+
+try:
+    fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+    names = sys.argv[1].split("/")[1:]
+    for index, name in enumerate(names):
+        if index == len(names) - 1:
+            try:
+                os.mkdir(name, 0o700, dir_fd=fd)
+            except FileExistsError:
+                pass
+        child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+        os.close(fd)
+        fd = child
+    info = os.fstat(fd)
+    if (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) != (os.geteuid(), os.getegid(), 0o700):
+        raise ValueError("unexpected owner or mode")
+    os.close(fd)
+except (OSError, ValueError) as error:
+    raise SystemExit("private runtime directory refused: " + str(error))
+PY_PRIVATE
 copy_material() {
     name=$1
     test -s "/run/human-material/$name"
@@ -29,9 +53,6 @@ case "$role" in
         exec /usr/local/bin/layerx-runtime-clock --runtime-dir "$private" -- /usr/local/bin/layerx-human-components "$@"
         ;;
     onboarding-bootstrap)
-        private=/run/human-private/components
-        mkdir -p "$private"
-        chmod 0700 "$private"
         copy_material kms-client.der
         copy_material kms-client-key.der
         copy_material ca.der
