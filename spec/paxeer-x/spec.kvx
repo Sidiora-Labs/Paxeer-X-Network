@@ -21489,7 +21489,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.1]
 title = "Dispatch budget partial defunding and revocation as canonical Activities"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]

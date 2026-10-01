@@ -12,7 +12,7 @@
 static const uint32_t activity_types[] = {
     LX_BUDGET_CREATE, LX_BUDGET_FUND, LX_BUDGET_AMEND,
     LX_BUDGET_DELEGATE_ADD, LX_BUDGET_DELEGATE_REMOVE,
-    LX_BUDGET_SPEND, LX_BUDGET_CLOSE
+    LX_BUDGET_SPEND, LX_BUDGET_CLOSE, LX_BUDGET_DEFUND, LX_BUDGET_REVOKE
 };
 
 typedef union budget_typed_payload {
@@ -22,6 +22,8 @@ typedef union budget_typed_payload {
     lx_budget_delegate_payload delegate;
     lx_budget_spend_payload spend;
     lx_budget_close_payload close;
+    lx_budget_defund_payload defund;
+    lx_budget_revoke_payload revoke;
 } budget_typed_payload;
 
 typedef struct budget_decoded {
@@ -536,6 +538,100 @@ static lxp_result budget_execute_close(lxp_module_ctx *ctx,
         lxp_ctx_emit_event(ctx, 7U, event, sizeof(event)) : status;
 }
 
+static lxp_result budget_owned_live(lxp_module_ctx *ctx,
+                                    const lxp_activity *activity,
+                                    const uint8_t budget_id[32],
+                                    lx_account *owner,
+                                    lx_budget_record *record,
+                                    lx_account **budget_account,
+                                    lx_account **refund,
+                                    lxp_u128 *balance)
+{
+    lxp_result status = budget_load(ctx, budget_id, record);
+    if (status != LXP_OK) return status;
+    if (record->closed) return LXP_ERR_UNKNOWN_FIELD;
+    if (memcmp(record->owner, owner->id, 32U) != 0)
+        return LXP_ERR_UNAUTHORIZED_DEBIT;
+    if (record->revoked) return LXP_ERR_BUDGET_REVOKED;
+    status = lxp_ctx_account_find(ctx, record->budget_account, budget_account);
+    if (status != LXP_OK) return status;
+    status = lxp_state_balance_get(*budget_account, record->asset_id, balance);
+    if (status != LXP_OK) return status;
+    *refund = owner;
+    return record->native_source ?
+        budget_business_source(ctx, activity, owner, record->asset_id,
+                               record->source_account, refund) :
+        LXP_OK;
+}
+
+static lxp_result budget_execute_defund(lxp_module_ctx *ctx,
+                                        const lxp_activity *activity,
+                                        const lx_budget_defund_payload *payload,
+                                        lx_account *owner)
+{
+    lx_budget_record record;
+    lx_account *budget_account;
+    lx_account *refund;
+    lxp_u128 balance;
+    lxp_u128 limit;
+    uint8_t event[64];
+    lxp_result status = budget_owned_live(ctx, activity, payload->budget_id,
+                                          owner, &record, &budget_account,
+                                          &refund, &balance);
+    if (status == LXP_OK)
+        status = lx_budget_defund_limit(&record, balance, payload->amount,
+                                        &limit);
+    if (status == LXP_OK)
+        status = budget_transfer(ctx, activity, record.asset_id,
+                                 budget_account, refund, owner,
+                                 payload->amount, LXP_REASON_BUDGET_DEFUND,
+                                 LXP_AUTH_BUDGET_ALLOWANCE);
+    if (status != LXP_OK) return status;
+    record.per_period_limit = limit;
+    status = budget_save(ctx, &record);
+    if (status != LXP_OK) return status;
+    (void)memcpy(event, record.budget_id, 32U);
+    status = lxp_u128_to_be(payload->amount, event + 32U);
+    if (status == LXP_OK)
+        status = lxp_u128_to_be(record.per_period_limit, event + 48U);
+    return status == LXP_OK ?
+        lxp_ctx_emit_event(ctx, 8U, event, sizeof(event)) : status;
+}
+
+static lxp_result budget_execute_revoke(lxp_module_ctx *ctx,
+                                        const lxp_activity *activity,
+                                        const lx_budget_revoke_payload *payload,
+                                        lx_account *owner)
+{
+    lx_budget_record record;
+    lx_account *budget_account;
+    lx_account *refund;
+    lxp_u128 balance;
+    uint8_t event[56];
+    lxp_result status = budget_owned_live(ctx, activity, payload->budget_id,
+                                          owner, &record, &budget_account,
+                                          &refund, &balance);
+    if (status != LXP_OK) return status;
+    if (payload->revocation_sequence <= record.revocation_sequence)
+        return LXP_ERR_STALE_REVOCATION;
+    if (!lxp_u128_is_zero(balance))
+        status = budget_transfer(ctx, activity, record.asset_id,
+                                 budget_account, refund, owner, balance,
+                                 LXP_REASON_BUDGET_DEFUND,
+                                 LXP_AUTH_BUDGET_ALLOWANCE);
+    if (status != LXP_OK) return status;
+    record.revocation_sequence = payload->revocation_sequence;
+    record.revoked = true;
+    record.per_period_limit = record.spent_this_period;
+    status = budget_save(ctx, &record);
+    if (status != LXP_OK) return status;
+    (void)memcpy(event, record.budget_id, 32U);
+    status = lxp_u128_to_be(balance, event + 32U);
+    budget_event_u64(event + 48U, record.revocation_sequence);
+    return status == LXP_OK ?
+        lxp_ctx_emit_event(ctx, 9U, event, sizeof(event)) : status;
+}
+
 static lxp_result module_genesis(lxp_module_ctx *ctx, const uint8_t *manifest,
                                  size_t length)
 {
@@ -551,7 +647,7 @@ static lxp_result module_decode(lxp_module_ctx *ctx, uint16_t ordinal,
     budget_decoded *value;
     void *memory;
     lxp_result status;
-    if (ctx == NULL || decoded == NULL || ordinal == 0U || ordinal > 7U ||
+    if (ctx == NULL || decoded == NULL || ordinal == 0U || ordinal > 9U ||
         payload == NULL || length == 0U) return LXP_ERR_UNKNOWN_ACTIVITY;
     status = lxp_ctx_arena_alloc(ctx, sizeof(*value), _Alignof(budget_decoded),
                                  &memory);
@@ -587,9 +683,17 @@ static lxp_result module_decode(lxp_module_ctx *ctx, uint16_t ordinal,
         status = lx_budget_spend_decode(payload, length,
                                         &value->typed->spend);
         break;
-    default:
+    case 7U:
         status = lx_budget_close_decode(payload, length,
                                         &value->typed->close);
+        break;
+    case 8U:
+        status = lx_budget_defund_decode(payload, length,
+                                         &value->typed->defund);
+        break;
+    default:
+        status = lx_budget_revoke_decode(payload, length,
+                                         &value->typed->revoke);
         break;
     }
     if (status != LXP_OK) return status;
@@ -604,7 +708,7 @@ static lxp_result module_validate(lxp_module_ctx *ctx,
 {
     const budget_decoded *value = (const budget_decoded *)decoded;
     if (ctx == NULL || activity == NULL || authority == NULL || value == NULL ||
-        value->typed == NULL || value->ordinal == 0U || value->ordinal > 7U)
+        value->typed == NULL || value->ordinal == 0U || value->ordinal > 9U)
         return LXP_ERR_UNKNOWN_ACTIVITY;
     if (activity->activity_type !=
         (((uint32_t)LXP_MODULE_BUDGET << 16U) | value->ordinal))
@@ -644,6 +748,12 @@ static lxp_result module_execute(lxp_module_ctx *ctx,
     case 7U:
         return budget_execute_close(ctx, activity, &value->typed->close,
                                     signer);
+    case 8U:
+        return budget_execute_defund(ctx, activity, &value->typed->defund,
+                                     signer);
+    case 9U:
+        return budget_execute_revoke(ctx, activity, &value->typed->revoke,
+                                     signer);
     default:
         break;
     }
