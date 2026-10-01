@@ -26404,7 +26404,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.106.4.3]
 title = "Carry the anchor and launchpad parameter updates through the same route"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 4
 requires = ["0.2", "106.4.2", "106.4.9"]
@@ -31536,3 +31536,23 @@ time_limit_minutes = 30
 stop_condition = "Stop at the gate result, need outside declared files, two failed repairs or time limit. Preserve assertions and admission rules."
 completion_policy = "Transport primitive only; complete operator and deployment acceptance for21.4 remains required."
 evidence_policy = "Publish technical source only; retain raw logs, private material and operator inventories outside the repository."
+
+[task.4.1.2]
+title = "Preserve holder history primitive coverage with explicit legacy epoch fixtures"
+status = "in_progress"
+mode = "BUILD"
+wave = 3
+requires = ["4.1", "4.1.1"]
+reqs = ["111.1", "111.2", "111.3", "111.4"]
+do_1 = "Update only the holder-history test fixture epoch producer to use a real exported and validated legacy genesis with an advanced market epoch, imported through the production keeper. Keep actual bank transfers, mint/burn and hooks. The primitive fixture must deliberately leave history opening to each existing explicit OpenHoldingHistory call; automatic opening through ExecuteAirdrop is covered by the full airdrop lifecycle gate."
+do_2 = "Preserve every existing assertion, manual history-opening call, unsupported-epoch refusal, corruption check, bounded gas value and test case. Do not delete explicit opens: that would erase the skipped-epoch negative scenario. Preserve all exported unrelated markets, history entries, balances and counters. Add a genesis-validity assertion before import. No production edits, mocked keeper or reconstructed historical balance."
+touches = ["modules/launchpad/keeper/history_test.go"]
+verify_cmd = "timeout 10m go test -count=1 ./modules/launchpad/keeper -run ^TestAirdropHoldingHistory$ -v"
+gate_kind = "planned-prerequisite"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at the focused gate result, time limit or need to change an existing assertion or production code."
+completion_policy = "Holder-history primitive fixture compatibility only; does not replace full lifecycle or deployment evidence."
+evidence_policy = "Keep source-bound commands and logs private; publish only technical source."
