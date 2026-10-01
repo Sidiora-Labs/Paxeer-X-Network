@@ -1814,6 +1814,9 @@ fn stateful(
                         || entry.status >= 500
                         || entry.retry_after.is_some()))
             {
+                if journal_write(&path, &entry).is_err() {
+                    return refusal(503, "journal_unavailable", Some(5));
+                }
                 let response = execute();
                 if journal_write(
                     &path,
@@ -2209,7 +2212,10 @@ fn reset(config: &Config) -> Response {
 }
 
 fn admin_result(mut response: Response) -> Response {
-    if response.status >= 500 {
+    let storage_failure = serde_json::from_str::<serde_json::Value>(&response.body)
+        .ok()
+        .is_some_and(|body| body["error"]["code"] == "journal_unavailable");
+    if response.status >= 500 && !storage_failure {
         response.status = 422;
     }
     response
@@ -2289,13 +2295,7 @@ fn handle_connection(config: &Arc<Config>, plane: Plane, tcp: TcpStream) -> Resu
                 .is_none_or(|value| !value.eq_ignore_ascii_case("close"));
         let response = match plane {
             Plane::Core => core_route(config, &request),
-            Plane::Admin => {
-                let mut response = admin_route(config, &request);
-                if response.status >= 500 && request.path != "/readyz" && request.path != "/livez" {
-                    response.status = 422;
-                }
-                response
-            }
+            Plane::Admin => admin_route(config, &request),
         };
         write_response(&mut stream, &response, keep_alive)?;
         stream.flush().map_err(|error| error.to_string())?;
@@ -2672,7 +2672,7 @@ mod journal_tests {
 
 #[cfg(test)]
 mod fund_refusal_tests {
-    use super::{admin_result, send_refusal, Response};
+    use super::{admin_result, refusal, send_refusal, Response};
     use layerx_platform_core::SendError;
 
     fn code(response: &Response) -> String {
@@ -2715,5 +2715,13 @@ mod fund_refusal_tests {
         assert_eq!(delivered.status, 422);
         assert_eq!(delivered.retry_after, None);
         assert_eq!(code(&delivered), "send_unbuildable");
+    }
+    #[test]
+    fn admin_storage_failure_retains_503_while_dependency_refusal_is_422() {
+        let storage = admin_result(refusal(503, "journal_unavailable", Some(5)));
+        assert_eq!(storage.status, 503);
+        assert_eq!(storage.retry_after, Some(5));
+        let dependency = admin_result(refusal(503, "node_unavailable", Some(5)));
+        assert_eq!(dependency.status, 422);
     }
 }
