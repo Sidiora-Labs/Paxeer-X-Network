@@ -2151,7 +2151,7 @@
       - Add the compute-market capabilities to the enforced-by tables in the same shape as every other documented capability.
       - Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector.
       - _Requirements: 1105.7_
-    - [-] 104.35.9 Pin legacy runtime trace and commitment byte compatibility
+    - [x] 104.35.9 Pin legacy runtime trace and commitment byte compatibility
       - Add fixed canonical byte and digest vectors for current version1 state and trace and version2 arbitration state, commitment and trace encodings. Derive expected bytes from the unchanged canonical fixture definitions and encoders with retained source provenance; never derive expected constants from a modified encoder to make a gate pass.
       - Preserve all existing runtime tests and assertions, including the state-rich traced CPU fuel value10654360, full canonical-state assertions, trapped-execution refusal and commitment bounds. Keep every production encoder, observer, metering, executor, registry record, default version selection and charged fuel unchanged.
       - Provide only the bounded compatibility assertions needed before version3 implementation. Do not add a placeholder version selector, unsupported branch, reserved unauthenticated field or partial version3 implementation.

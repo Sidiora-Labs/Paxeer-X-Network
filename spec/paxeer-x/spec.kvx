@@ -31460,7 +31460,7 @@ completion_policy = "Qualifies only the independent per-receipt reader and trust
 
 [task.104.35.9]
 title = "Pin legacy runtime trace and commitment byte compatibility"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
