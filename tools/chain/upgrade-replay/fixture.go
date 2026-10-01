@@ -27,6 +27,11 @@ import (
 // binary predates them. It is what the replay runs against until a copy of a
 // live chain's state is available.
 func generateFixture(home, chainID string, blocks int, keepStores bool) (int64, error) {
+	if _, err := os.Stat(filepath.Join(home, "data")); err == nil {
+		return 0, fmt.Errorf("fixture data already exists: %s", home)
+	} else if !os.IsNotExist(err) {
+		return 0, err
+	}
 	if blocks < 1 {
 		blocks = 1
 	}

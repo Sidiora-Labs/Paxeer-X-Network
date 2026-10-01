@@ -18,13 +18,17 @@ root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)
 data=${1:-}
 plan=${2:-}
 workdir=${UPGRADE_REPLAY_WORKDIR:-${TMPDIR:-/tmp}/paxeer-upgrade-replay}
-binary="$workdir/upgrade-replay"
+binary=${UPGRADE_REPLAY_BINARY:-"$workdir/upgrade-replay"}
 home="$workdir/home"
-logdir="$root/build/upgrade-replay"
-label=${plan:-activation}
+logdir=${UPGRADE_REPLAY_LOGDIR:-"$root/build/upgrade-replay"}
+label=${plan:-v6.10}
 
 mkdir -p "$workdir" "$logdir"
-go build -C "$root" -o "$binary" ./tools/chain/upgrade-replay/
+if [ -n "${UPGRADE_REPLAY_BINARY:-}" ]; then
+    test -f "$binary" && test -x "$binary" || { echo "prebuilt replay executable is absent" >&2; exit 1; }
+else
+    go build -C "$root" -o "$binary" ./tools/chain/upgrade-replay/
+fi
 
 if [ -z "$data" ]; then
 	keep=${UPGRADE_REPLAY_KEEP_STORES:-0}
@@ -36,14 +40,15 @@ if [ -z "$data" ]; then
 		label="fixture-$label"
 	fi
 	if [ ! -d "$fixture/data" ]; then
-		echo "no data directory given; generating a pre-fork fixture under $fixture"
+		echo "no data directory given; generating an activation fixture under $fixture"
 		args=(-mode fixture -out "$fixture")
+        if [ -n "$plan" ]; then args+=(-plan "$plan"); fi
 		if [ "$keep" = "1" ]; then
 			args+=(-keep-stores)
 		fi
 		"$binary" "${args[@]}" 2>&1 | tee "$logdir/$label-genesis.log"
 	else
-		echo "reusing the pre-fork fixture under $fixture"
+		echo "reusing the activation fixture under $fixture"
 	fi
 	data="$fixture/data"
 else
