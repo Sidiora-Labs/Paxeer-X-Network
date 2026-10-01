@@ -31633,7 +31633,7 @@ ac_5 = "A focused actual-process gate exercises the complete adapter and exporte
 
 [task.24.16]
 title = "Repair real custody fixture transport and genesis integration"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["0.2", "24.14"]
