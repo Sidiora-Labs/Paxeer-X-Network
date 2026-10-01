@@ -76,6 +76,25 @@ static lxp_result module_decode(lxp_module_ctx *ctx, uint16_t ordinal,
     return LXP_OK;
 }
 
+/* Metered lifetime: a reading accrues only when its batch timestamp, the one
+ * replayable clock, lies inside [max(start, last accrual), end]. The end
+ * boundary is inclusive, so a reading carried by a batch stamped exactly at
+ * end_timestamp is the last one that can accrue; any batch after end is
+ * refused with LXP_ERR_EXPIRED before the reading or a total moves, however
+ * the activity is keyed or whenever the node restarted. end_timestamp == 0
+ * leaves the stream open ended. Settlement and close stay available after
+ * end so value accrued inside the lifetime is still paid exactly once. */
+static lxp_result stream_meter_window(const lx_stream_record *record,
+                                      uint64_t batch_timestamp)
+{
+    if (batch_timestamp < record->start_timestamp ||
+        batch_timestamp < record->last_accrual_timestamp)
+        return LXP_ERR_NON_MONOTONIC_TIME;
+    if (record->end_timestamp != 0U && batch_timestamp > record->end_timestamp)
+        return LXP_ERR_EXPIRED;
+    return LXP_OK;
+}
+
 static lxp_result validate_typed(lxp_module_ctx *ctx,
                                  const lxp_authority_resolved *authority,
                                  const stream_decoded *value)
@@ -116,7 +135,9 @@ static lxp_result validate_typed(lxp_module_ctx *ctx,
     if (record.closed) return LXP_ERR_STREAM_CLOSED;
     if (value->ordinal != 3U) return LXP_OK;
     if (record.mode != LX_STREAM_MODE_METERED) return LXP_ERR_NON_CANONICAL;
-    return lx_stream_meter_authority_check(&record, &value->typed->meter);
+    status = lx_stream_meter_authority_check(&record, &value->typed->meter);
+    if (status != LXP_OK) return status;
+    return stream_meter_window(&record, lxp_ctx_batch_timestamp_ms(ctx));
 }
 
 static lxp_result module_validate(lxp_module_ctx *ctx,

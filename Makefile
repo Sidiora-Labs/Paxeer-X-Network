@@ -670,10 +670,11 @@ test-stream-accrual: $(BUILD_DIR)/tests/test_stream_accrue
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_stream_accrue
 
 $(BUILD_DIR)/tests/test_stream_meter: tests/modules/test_stream_meter.c \
-		$(LIBRARY)
+		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
+		$(LIBRARY) $(EXTRA_LDFLAGS) \
+		-lcrypto -pthread -ldl -lm -o $@
 
 test-stream-meter: $(BUILD_DIR)/tests/test_stream_meter
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_stream_meter
