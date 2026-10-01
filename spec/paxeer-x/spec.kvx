@@ -23181,7 +23181,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.103.6.5]
 title = "Implement the layerx-identity principal and session service"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
