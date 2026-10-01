@@ -150,14 +150,26 @@ static uint64_t read_u64(const uint8_t *bytes)
     return value;
 }
 
+static const uint8_t *sandbox_take(const uint8_t *payload, size_t length,
+                                   size_t *cursor, size_t count)
+{
+    const uint8_t *field;
+    if (*cursor > length || count > length - *cursor) return NULL;
+    field = payload + *cursor;
+    *cursor += count;
+    return field;
+}
+
 lxp_result lxp_programs_sandbox_decode(lxp_module_ctx *ctx,
                                        const uint8_t *payload,
                                        size_t payload_length, void **decoded)
 {
     programs_sandbox_activity *value;
     void *allocation;
+    const uint8_t *field;
     size_t cursor = 4U;
     size_t index;
+    size_t minimum;
     lxp_result status;
     if (ctx == NULL || payload == NULL || decoded == NULL ||
         payload_length < 4U)
@@ -166,6 +178,9 @@ lxp_result lxp_programs_sandbox_decode(lxp_module_ctx *ctx,
         payload[1] > SANDBOX_ACTIVATE ||
         payload[2] != 0U || payload[3] != 0U)
         return LXP_ERR_NON_CANONICAL;
+    minimum = payload[1] == SANDBOX_EXECUTE ? SANDBOX_FIXED_BYTES :
+              payload[1] == SANDBOX_FUND ? 248U : 76U;
+    if (payload_length < minimum) return LXP_ERR_TRUNCATED;
     status = lxp_ctx_arena_alloc(ctx, sizeof(*value),
                                  _Alignof(programs_sandbox_activity),
                                  &allocation);
@@ -174,76 +189,82 @@ lxp_result lxp_programs_sandbox_decode(lxp_module_ctx *ctx,
     (void)memset(value, 0, sizeof(*value));
     value->ctx = ctx;
     value->operation = payload[1];
-    (void)memcpy(value->lease_id, payload + cursor, 32U); cursor += 32U;
-    if (value->operation != SANDBOX_EXECUTE) {
-        size_t section;
-        if (value->operation == SANDBOX_FUND) {
-            if (payload_length < 248U) return LXP_ERR_TRUNCATED;
-            cursor = 36U;
-            (void)memcpy(value->tenant, payload + 36U, 32U);
-            (void)memcpy(value->host_program, payload + 68U, 32U);
-            value->expected_sequence = 0U;
-            (void)memcpy(value->escrow_account, payload + 100U, 32U);
-            (void)memcpy(value->asset, payload + 132U, 32U);
-            (void)memcpy(value->funded_amount, payload + 164U, 16U);
-            (void)memcpy(value->expiry, payload + 180U, 8U);
-            value->fee_schedule_version = read_u32(payload + 188U);
-            for (section = 0U; section < 7U; ++section)
-                value->fee_schedule[section] = read_u64(payload + 192U + section * 8U);
-            cursor = 248U;
-            if (payload_length - cursor < 4U) return LXP_ERR_TRUNCATED;
-            value->lifecycle_length[0] = read_u32(payload + cursor);
-            cursor += 4U;
-            if (value->lifecycle_length[0] == 0U ||
-                (size_t)value->lifecycle_length[0] > payload_length - cursor)
-                return LXP_ERR_NON_CANONICAL;
-            value->lifecycle[0] = payload + cursor;
-            cursor += value->lifecycle_length[0];
-            if (payload_length - cursor < 4U) return LXP_ERR_TRUNCATED;
-            value->call_length = read_u32(payload + cursor); cursor += 4U;
-            if ((size_t)value->call_length != payload_length - cursor ||
-                value->call_length == 0U)
-                return LXP_ERR_NON_CANONICAL;
-            value->call_payload = payload + cursor;
-            status = lxp_programs_transfer_decode(ctx, value->call_payload,
-                                                  value->call_length,
-                                                  &value->transfer);
-        } else {
-            if (payload_length < 76U) return LXP_ERR_TRUNCATED;
-            (void)memcpy(value->expected_lease_digest, payload + 36U, 32U);
-            value->expected_sequence = read_u64(payload + 68U);
-            if (payload_length != 76U)
-                return LXP_ERR_NON_CANONICAL;
-            status = LXP_OK;
+#define SANDBOX_TAKE(count) do { \
+    field = sandbox_take(payload, payload_length, &cursor, (count)); \
+    if (field == NULL) return LXP_ERR_TRUNCATED; \
+} while (0)
+#define SANDBOX_COPY(destination) do { \
+    SANDBOX_TAKE(sizeof(destination)); \
+    (void)memcpy((destination), field, sizeof(destination)); \
+} while (0)
+    SANDBOX_COPY(value->lease_id);
+    if (value->operation == SANDBOX_FUND) {
+        SANDBOX_COPY(value->tenant);
+        SANDBOX_COPY(value->host_program);
+        SANDBOX_COPY(value->escrow_account);
+        SANDBOX_COPY(value->asset);
+        SANDBOX_COPY(value->funded_amount);
+        SANDBOX_COPY(value->expiry);
+        SANDBOX_TAKE(4U);
+        value->fee_schedule_version = read_u32(field);
+        for (index = 0U; index < 7U; ++index) {
+            SANDBOX_TAKE(8U);
+            value->fee_schedule[index] = read_u64(field);
         }
-        if (status != LXP_OK) return status;
-        *decoded = value;
-        return LXP_OK;
+        SANDBOX_TAKE(4U);
+        value->lifecycle_length[0] = read_u32(field);
+        if (value->lifecycle_length[0] == 0U ||
+            (size_t)value->lifecycle_length[0] > payload_length - cursor)
+            return LXP_ERR_NON_CANONICAL;
+        SANDBOX_TAKE(value->lifecycle_length[0]);
+        value->lifecycle[0] = field;
+        SANDBOX_TAKE(4U);
+        value->call_length = read_u32(field);
+        if (value->call_length == 0U ||
+            (size_t)value->call_length != payload_length - cursor)
+            return LXP_ERR_NON_CANONICAL;
+        SANDBOX_TAKE(value->call_length);
+        value->call_payload = field;
+        status = lxp_programs_transfer_decode(ctx, value->call_payload,
+                                              value->call_length,
+                                              &value->transfer);
+    } else if (value->operation == SANDBOX_ACTIVATE) {
+        SANDBOX_COPY(value->expected_lease_digest);
+        SANDBOX_TAKE(8U);
+        value->expected_sequence = read_u64(field);
+        if (cursor != payload_length) return LXP_ERR_NON_CANONICAL;
+        status = LXP_OK;
+    } else {
+        SANDBOX_TAKE(8U);
+        value->expected_sequence = read_u64(field);
+        SANDBOX_COPY(value->expected_lease_digest);
+        SANDBOX_COPY(value->escrow_account);
+        SANDBOX_COPY(value->asset);
+        SANDBOX_COPY(value->fee_destination);
+        SANDBOX_TAKE(4U);
+        value->fee_schedule_version = read_u32(field);
+        for (index = 0U; index < 7U; ++index) {
+            SANDBOX_TAKE(8U);
+            value->fee_schedule[index] = read_u64(field);
+        }
+        SANDBOX_TAKE(4U);
+        value->call_length = read_u32(field);
+        if ((size_t)value->call_length != payload_length - cursor ||
+            value->call_length == 0U ||
+            lxp_ct_is_zero(value->lease_id, 32U) ||
+            lxp_ct_is_zero(value->expected_lease_digest, 32U) ||
+            lxp_ct_is_zero(value->escrow_account, 32U) ||
+            lxp_ct_is_zero(value->asset, 32U) ||
+            lxp_ct_is_zero(value->fee_destination, 32U) ||
+            value->fee_schedule_version == 0U)
+            return LXP_ERR_NON_CANONICAL;
+        SANDBOX_TAKE(value->call_length);
+        value->call_payload = field;
+        status = lxp_programs_call_decode(ctx, value->call_payload,
+                                          value->call_length, &value->call);
     }
-    if (payload_length < SANDBOX_FIXED_BYTES) return LXP_ERR_TRUNCATED;
-    value->expected_sequence = read_u64(payload + cursor); cursor += 8U;
-    (void)memcpy(value->expected_lease_digest, payload + cursor, 32U); cursor += 32U;
-    (void)memcpy(value->escrow_account, payload + cursor, 32U); cursor += 32U;
-    (void)memcpy(value->asset, payload + cursor, 32U); cursor += 32U;
-    (void)memcpy(value->fee_destination, payload + cursor, 32U); cursor += 32U;
-    value->fee_schedule_version = read_u32(payload + cursor); cursor += 4U;
-    for (index = 0U; index < 7U; ++index) {
-        value->fee_schedule[index] = read_u64(payload + cursor);
-        cursor += 8U;
-    }
-    value->call_length = read_u32(payload + cursor); cursor += 4U;
-    if ((size_t)value->call_length != payload_length - cursor ||
-        value->call_length == 0U ||
-        lxp_ct_is_zero(value->lease_id, 32U) ||
-        lxp_ct_is_zero(value->expected_lease_digest, 32U) ||
-        lxp_ct_is_zero(value->escrow_account, 32U) ||
-        lxp_ct_is_zero(value->asset, 32U) ||
-        lxp_ct_is_zero(value->fee_destination, 32U) ||
-        value->fee_schedule_version == 0U)
-        return LXP_ERR_NON_CANONICAL;
-    value->call_payload = payload + cursor;
-    status = lxp_programs_call_decode(ctx, value->call_payload,
-                                      value->call_length, &value->call);
+#undef SANDBOX_COPY
+#undef SANDBOX_TAKE
     if (status != LXP_OK) return status;
     *decoded = value;
     return LXP_OK;
