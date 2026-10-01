@@ -1847,3 +1847,9 @@ area    = "rust"
 symptom = "A server that must answer readiness before its state exists cannot hand the state to the handler it already passed to http::serve."
 cause   = "http::serve takes ownership of one handler closure and blocks for the life of the process."
 do      = "Give the closure an Arc<OnceLock<T>> filled by a worker thread and answer a waiting state while it is empty; no second listener and no lock on the hot path."
+
+[gotcha.305]
+area    = "bringup"
+symptom = "A task's check-live.sh verify_cmd exits 2 with check-live: BRINGUP_HOSTS_FILE is unset before any check runs."
+cause   = "The spec's verify_cmd omits the private host map, which check-live.sh requires for every subcommand."
+do      = "Run the verify_cmd with BRINGUP_HOSTS_FILE pointing at the operator's private host map; never print or commit its contents."

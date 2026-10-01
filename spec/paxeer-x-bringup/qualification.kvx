@@ -1708,3 +1708,11 @@ command = "CARGO_TARGET_DIR=/root/lx-target/platform timeout 20m cargo test --lo
 exit_code = 0
 log_path = ".logs/0.12-principals.log"
 observed = "Two principals unit tests passed with no warnings; the status was recorded by hand because the completion command refused on a stale symbol graph while the database was busy, not on the gate."
+
+[observation.2.6.7]
+task       = "2.6"
+file       = "platform/hosted/registry/fly.toml"
+symbol     = "LAYERX_EVENTS_WEBHOOKS_UPSTREAM_URL"
+observed   = "The registry named the webhooks ingress on port 9444, the public group's plain listener, while the ingress group terminates TLS on 443 and the kernel and router name no port; with the port dropped tomllib parses the manifest and check-live.sh registry exited 1 on fail machines app=paxeer-registry machines=0 started=0 volumes=0 (log .logs/2.6-registry-live.log); cg spec implemented refused on symbol check_registry not defined in the graph, so the status was set by hand."
+assumption = "The registry reaches the ingress on 443 once both apps have machines."
+severity   = "warning"
