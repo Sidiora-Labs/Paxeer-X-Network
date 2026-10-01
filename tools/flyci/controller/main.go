@@ -6,11 +6,15 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 )
 
 func main() {
+	if len(os.Args) > 1 && strings.HasPrefix(os.Args[1], "qualification-") {
+		os.Exit(qCLI(os.Args[1:]))
+	}
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	cfg, err := loadConfig(os.Getenv)
 	if err != nil {
@@ -33,6 +37,17 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
 	defer stop()
+	if cfg.QualificationRoot != "" {
+		registry, err := newQualificationRegistry(cfg.QualificationRoot)
+		if err == nil {
+			err = qServe(ctx, registry)
+		}
+		if err != nil {
+			logger.Error("qualification storage unavailable")
+			os.Exit(2)
+		}
+		rec.qualification = registry
+	}
 
 	logger.Info("controller started",
 		"repository", cfg.Owner+"/"+cfg.Repo,
@@ -61,6 +76,11 @@ func run(ctx context.Context, rec *reconciler, interval time.Duration, logger *s
 
 func poll(ctx context.Context, rec *reconciler, logger *slog.Logger) {
 	started := time.Now()
+	if rec.qualification != nil {
+		if err := rec.github.qTick(ctx, rec.qualification); err != nil {
+			logger.Error("qualification reconciliation refused", "error", err)
+		}
+	}
 	summary, err := rec.reconcile(ctx)
 	if err != nil {
 		if ctx.Err() != nil {

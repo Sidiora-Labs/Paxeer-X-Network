@@ -15,23 +15,25 @@ const (
 )
 
 type config struct {
-	Owner        string
-	Repo         string
-	GitHubToken  string
-	FlyToken     string
-	RunnerApp    string
-	RunnerImage  string
-	Labels       []string
-	Region       string
-	CPUKind      string
-	CPUs         int
-	MemoryMB     int
-	MaxMachines  int
-	PollInterval time.Duration
-	IdleTimeout  int
-	OrphanTTL    time.Duration
-	GitHubAPIURL string
-	FlyAPIURL    string
+	QualificationRoot     string
+	QualificationContract string
+	Owner                 string
+	Repo                  string
+	GitHubToken           string
+	FlyToken              string
+	RunnerApp             string
+	RunnerImage           string
+	Labels                []string
+	Region                string
+	CPUKind               string
+	CPUs                  int
+	MemoryMB              int
+	MaxMachines           int
+	PollInterval          time.Duration
+	IdleTimeout           int
+	OrphanTTL             time.Duration
+	GitHubAPIURL          string
+	FlyAPIURL             string
 }
 
 func loadConfig(getenv func(string) string) (config, error) {
@@ -83,17 +85,19 @@ func loadConfig(getenv func(string) string) (config, error) {
 	}
 
 	cfg := config{
-		RunnerApp:    value("FLY_RUNNER_APP", "paxeer-ci-runners"),
-		Region:       value("FLY_REGION", "iad"),
-		CPUKind:      value("MACHINE_CPU_KIND", "performance"),
-		CPUs:         positiveInt("MACHINE_CPUS", 4),
-		MemoryMB:     positiveInt("MACHINE_MEMORY_MB", 16384),
-		MaxMachines:  positiveInt("MAX_MACHINES", 24),
-		PollInterval: positiveDuration("POLL_INTERVAL", 20*time.Second),
-		IdleTimeout:  positiveInt("RUNNER_IDLE_TIMEOUT", 900),
-		OrphanTTL:    positiveDuration("ORPHAN_TTL", 3*time.Hour),
-		GitHubAPIURL: apiURL("GITHUB_API_URL", defaultGitHubAPIURL),
-		FlyAPIURL:    apiURL("FLY_API_URL", defaultFlyAPIURL),
+		QualificationRoot:     value("QUALIFICATION_STATE_DIR", ""),
+		QualificationContract: value("QUALIFICATION_CONTRACT_SHA256", ""),
+		RunnerApp:             value("FLY_RUNNER_APP", "paxeer-ci-runners"),
+		Region:                value("FLY_REGION", "iad"),
+		CPUKind:               value("MACHINE_CPU_KIND", "performance"),
+		CPUs:                  positiveInt("MACHINE_CPUS", 4),
+		MemoryMB:              positiveInt("MACHINE_MEMORY_MB", 16384),
+		MaxMachines:           positiveInt("MAX_MACHINES", 24),
+		PollInterval:          positiveDuration("POLL_INTERVAL", 20*time.Second),
+		IdleTimeout:           positiveInt("RUNNER_IDLE_TIMEOUT", 900),
+		OrphanTTL:             positiveDuration("ORPHAN_TTL", 3*time.Hour),
+		GitHubAPIURL:          apiURL("GITHUB_API_URL", defaultGitHubAPIURL),
+		FlyAPIURL:             apiURL("FLY_API_URL", defaultFlyAPIURL),
 	}
 
 	if repository := required("GITHUB_REPOSITORY"); repository != "" {
@@ -116,5 +120,8 @@ func loadConfig(getenv func(string) string) (config, error) {
 		errs = append(errs, errors.New("RUNNER_LABELS must name at least one label"))
 	}
 
+	if cfg.QualificationRoot != "" && !qDigest.MatchString(cfg.QualificationContract) {
+		errs = append(errs, errors.New("QUALIFICATION_CONTRACT_SHA256 must pin the accepted complete contract"))
+	}
 	return cfg, errors.Join(errs...)
 }

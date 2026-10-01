@@ -5,6 +5,7 @@ primary_region = "iad"
   dockerfile = "docker/flyci-controller/Dockerfile"
 
 [env]
+  QUALIFICATION_STATE_DIR = "/data/flyci"
   GITHUB_REPOSITORY = "Sidiora-Labs/Paxeer-X-Network"
   FLY_RUNNER_APP = "paxeer-ci-runners"
   RUNNER_LABELS = "fly-linux"
@@ -17,3 +18,7 @@ primary_region = "iad"
   size = "shared-cpu-1x"
   memory = "512mb"
   processes = ["app"]
+
+[[mounts]]
+  source = "paxeer_ci_qualification"
+  destination = "/data"

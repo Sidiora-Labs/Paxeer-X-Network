@@ -27,12 +27,13 @@ type pollSummary struct {
 }
 
 type reconciler struct {
-	cfg      config
-	github   *githubClient
-	fly      *flyClient
-	log      *slog.Logger
-	now      func() time.Time
-	accepted map[string]bool
+	qualification *qualificationRegistry
+	cfg           config
+	github        *githubClient
+	fly           *flyClient
+	log           *slog.Logger
+	now           func() time.Time
+	accepted      map[string]bool
 }
 
 func newReconciler(cfg config, github *githubClient, fly *flyClient, log *slog.Logger) *reconciler {
@@ -194,6 +195,9 @@ func (r *reconciler) reconcile(ctx context.Context) (pollSummary, error) {
 func (r *reconciler) destroyReason(ctx context.Context, m machine, jobID, runID int64, idx *jobIndex) string {
 	if m.State == "stopped" {
 		return "stopped"
+	}
+	if r.qualification != nil && r.qualification.protectsAssigned(m, idx) {
+		return ""
 	}
 	now := r.now()
 	if !m.CreatedAt.IsZero() && now.Sub(m.CreatedAt) > r.cfg.OrphanTTL {
