@@ -2310,6 +2310,9 @@ fn ready(config: &Config) -> OutgoingResponse {
         if ready { 200 } else { 503 },
         &json!({
             "status": if ready { "ready" } else { "degraded" },
+            "network_id": config.network_id,
+            "lxp_wire_version": config.wire_version,
+            "protocol_network_id": config.protocol_network_id,
             "components": { "durable_gateway_store": readiness(durable), "hosted_gateway": readiness(hosted), "receipt_authority": readiness(authority) }
         }),
     )

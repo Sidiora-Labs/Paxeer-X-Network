@@ -106,6 +106,7 @@ struct OutboundHeaders<'a> {
     freshness: Option<(u64, Option<[u8; 32]>)>,
     publication_key: Option<&'a str>,
     query: Option<&'a str>,
+    forwarded: &'a [(&'a str, &'a str)],
 }
 
 impl Client {
@@ -127,6 +128,30 @@ impl Client {
             connector: OnceLock::new(),
             idle: Mutex::new(BTreeMap::new()),
         }
+    }
+
+    pub fn connect_tls(&self, endpoint: &Endpoint) -> Result<TlsStream<TcpStream>, String> {
+        let mut failure = "upstream unavailable".to_owned();
+        for address in (endpoint.host.as_str(), endpoint.port)
+            .to_socket_addrs()
+            .map_err(|_| "upstream resolution failed")?
+            .take(8)
+        {
+            match TcpStream::connect_timeout(&address, CONNECT_TIMEOUT) {
+                Ok(tcp) => {
+                    tcp.set_read_timeout(Some(IO_TIMEOUT))
+                        .map_err(|e| e.to_string())?;
+                    tcp.set_write_timeout(Some(IO_TIMEOUT))
+                        .map_err(|e| e.to_string())?;
+                    return self
+                        .connector()?
+                        .connect(&endpoint.host, tcp)
+                        .map_err(|_| "upstream TLS refused".to_owned());
+                }
+                Err(error) => failure = error.to_string(),
+            }
+        }
+        Err(failure)
     }
 
     fn connector(&self) -> Result<&TlsConnector, String> {
@@ -324,6 +349,24 @@ impl Client {
         )
     }
 
+    pub fn request_forwarded(
+        &self,
+        endpoint: &Endpoint,
+        authorization: &str,
+        request: &OutboundRequest<'_>,
+        forwarded: &[(&str, &str)],
+    ) -> Result<UpstreamResponse, String> {
+        self.request_with_freshness(
+            endpoint,
+            authorization,
+            request,
+            OutboundHeaders {
+                forwarded,
+                ..OutboundHeaders::default()
+            },
+        )
+    }
+
     fn request_with_freshness(
         &self,
         endpoint: &Endpoint,
@@ -409,6 +452,30 @@ fn check_outbound_boundary(
         publication_key,
         ..
     } = headers;
+    for (name, value) in headers.forwarded {
+        if !matches!(
+            *name,
+            "x-agent-key"
+                | "x-agent-nonce"
+                | "x-agent-expires"
+                | "x-agent-signature"
+                | "x-trace-id"
+        ) || value.len() > 4096
+            || value.bytes().any(|b| !b.is_ascii_graphic() && b != b' ')
+        {
+            return Err("forwarded header outside boundary".to_owned());
+        }
+    }
+    if request
+        .idempotency
+        .is_some_and(|s| s.len() > 256 || !s.bytes().all(|b| b.is_ascii_graphic()))
+        || !request
+            .content_type
+            .bytes()
+            .all(|b| b.is_ascii_graphic() || b == b' ')
+    {
+        return Err("outbound metadata outside boundary".to_owned());
+    }
     let path = request.path;
     let body = request.body;
     if !path.starts_with('/') || path.contains(['?', '#', '\\']) || body.len() > MAX_RESPONSE {
@@ -553,6 +620,7 @@ fn exchange(
         freshness,
         publication_key,
         query,
+        forwarded,
     } = headers;
     let idempotency = request
         .idempotency
@@ -577,10 +645,17 @@ fn exchange(
     } else {
         zeroize::Zeroizing::new(format!("Authorization: {authorization}\r\n"))
     };
+    let forwarded_headers = zeroize::Zeroizing::new(
+        forwarded
+            .iter()
+            .map(|(name, value)| format!("{name}: {value}\r\n"))
+            .collect::<String>(),
+    );
+    let forwarded = forwarded_headers.as_str();
     let mut outbound = zeroize::Zeroizing::new(Vec::new());
     write!(
         outbound,
-        "{} {}{}{} HTTP/1.1\r\nHost: {}\r\n{}Accept: application/json\r\nContent-Type: {}\r\n{idempotency}{trace}{freshness}{}Content-Length: {}\r\nConnection: keep-alive\r\n\r\n",
+        "{} {}{}{} HTTP/1.1\r\nHost: {}\r\n{}Accept: application/json\r\nContent-Type: {}\r\n{idempotency}{trace}{freshness}{forwarded}{}Content-Length: {}\r\nConnection: keep-alive\r\n\r\n",
         request.method,
         endpoint.base_path,
         request.path,
@@ -653,9 +728,13 @@ fn read_response(stream: &mut impl Read) -> Result<UpstreamResponse, String> {
 type HttpMessage = (String, BTreeMap<String, String>, Vec<u8>);
 
 fn read_message(stream: &mut impl Read, maximum: usize) -> Result<HttpMessage, String> {
+    let started = Instant::now();
     let mut bytes = Vec::with_capacity(2048);
     let mut chunk = [0_u8; 2048];
     let header_end = loop {
+        if started.elapsed() > IO_TIMEOUT {
+            return Err("HTTP message deadline exceeded".to_owned());
+        }
         let count = stream.read(&mut chunk).map_err(|error| error.to_string())?;
         if count == 0 || bytes.len().saturating_add(count) > maximum {
             return Err("HTTP message is empty or exceeds its bound".to_owned());
@@ -700,6 +779,9 @@ fn read_message(stream: &mut impl Read, maximum: usize) -> Result<HttpMessage, S
         return Err("HTTP body exceeds its bound".to_owned());
     }
     while bytes.len() < header_end + content_length {
+        if started.elapsed() > IO_TIMEOUT {
+            return Err("HTTP message deadline exceeded".to_owned());
+        }
         let count = stream.read(&mut chunk).map_err(|error| error.to_string())?;
         if count == 0 || bytes.len().saturating_add(count) > maximum {
             return Err("HTTP body is truncated or exceeds its bound".to_owned());
@@ -728,6 +810,20 @@ pub fn write_response_connection(
     response: &OutgoingResponse,
     keep_alive: bool,
 ) -> Result<(), String> {
+    write_response_connection_with_origin(stream, response, keep_alive, None)
+}
+
+pub fn write_response_connection_with_origin(
+    stream: &mut impl Write,
+    response: &OutgoingResponse,
+    keep_alive: bool,
+    origin: Option<&str>,
+) -> Result<(), String> {
+    let cors = match origin {
+        Some(origin) if origin.bytes().all(|b| b.is_ascii_graphic()) => format!("Access-Control-Allow-Origin: {origin}\r\nVary: Origin\r\nAccess-Control-Allow-Credentials: true\r\nAccess-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization, Idempotency-Key, X-Agent-Key, X-Agent-Nonce, X-Agent-Expires, X-Agent-Signature, X-Trace-Id\r\n"),
+        Some(_) => return Err("invalid CORS origin".to_owned()),
+        None => String::new(),
+    };
     let reason = match response.status {
         200 => "OK",
         201 => "Created",
@@ -748,7 +844,7 @@ pub fn write_response_connection(
     let connection = if keep_alive { "keep-alive" } else { "close" };
     write!(
         stream,
-        "HTTP/1.1 {} {reason}\r\nContent-Type: application/json\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n{retry}Content-Length: {}\r\nConnection: {connection}\r\n\r\n",
+        "HTTP/1.1 {} {reason}\r\nContent-Type: application/json\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n{cors}{retry}Content-Length: {}\r\nConnection: {connection}\r\n\r\n",
         response.status,
         response.body.len()
     )
