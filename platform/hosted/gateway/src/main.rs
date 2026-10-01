@@ -4,6 +4,7 @@ mod native_call;
 mod paxeer;
 mod program_lifecycle;
 mod public_reads;
+mod routes;
 mod rpc;
 mod rpc_faucet;
 mod rpc_register;
@@ -59,6 +60,7 @@ enum Listener {
 }
 
 struct Config {
+    routes: routes::Registry,
     listen: SocketAddr,
     listener: Listener,
     client: Client,
@@ -997,6 +999,7 @@ fn config(event_producer: bool) -> Result<Config, String> {
     }
     let protocol = configured_protocol()?;
     Ok(Config {
+        routes: routes::Registry::configured(&protocol.network_id, &protocol.wire_version)?,
         listen: env::var("LAYERX_GATEWAY_LISTEN")
             .unwrap_or_else(|_| "0.0.0.0:9443".to_owned())
             .parse::<SocketAddr>()
@@ -3386,6 +3389,9 @@ fn route(config: &Config, request: &IncomingRequest) -> OutgoingResponse {
             result
         };
     }
+    if let Some(result) = routes::route(config, request) {
+        return result;
+    }
     if let Some(result) = public_reads::route(config, request) {
         return result;
     }
@@ -3526,6 +3532,9 @@ fn exchange<S: ws::Connection>(config: &Arc<Config>, stream: &mut S) -> Result<(
             }
             Err(_) => return Ok(()),
         };
+        if request.path == "/rpc/evm/ws" {
+            return ws::serve_evm(config, &request, stream);
+        }
         if request.path == "/rpc/ws" {
             return ws::serve(config, &request, stream);
         }
@@ -3534,7 +3543,12 @@ fn exchange<S: ws::Connection>(config: &Arc<Config>, stream: &mut S) -> Result<(
                 .headers
                 .get("connection")
                 .is_none_or(|value| !value.eq_ignore_ascii_case("close"));
-        http::write_response_connection(stream, &route(config, &request), keep_alive)?;
+        http::write_response_connection_with_origin(
+            stream,
+            &route(config, &request),
+            keep_alive,
+            config.routes.origin(&request),
+        )?;
         if !keep_alive {
             return Ok(());
         }
@@ -3552,6 +3566,7 @@ fn run() -> Result<(), String> {
             Arc::clone(&config.store.producer_health),
         )?;
     }
+    config.routes.start_passthrough(config.listen)?;
     let listener = TcpListener::bind(config.listen).map_err(|error| error.to_string())?;
     for incoming in listener.incoming() {
         let tcp = incoming.map_err(|error| error.to_string())?;
@@ -3738,7 +3753,9 @@ fn gateway_readiness(config: &Config) -> OutgoingResponse {
     let serving = backends
         .iter()
         .all(|backend| backend.ready || !backend.configured);
-    let complete = backends.iter().all(|backend| backend.ready);
+    let product_routes = config.routes.readiness(config);
+    let complete =
+        backends.iter().all(|backend| backend.ready) && product_routes["complete"] == true;
     let component_name = |name: &str| {
         if backend_ready(&backends, name) {
             "ready"
@@ -3761,6 +3778,7 @@ fn gateway_readiness(config: &Config) -> OutgoingResponse {
                 "program_registry": component_name(KernelBackend::Registry.name()),
                 "principal_state_boundary": "unavailable"
             },
+            "product_routes": product_routes,
             "backends": backends
                 .iter()
                 .map(|backend| (backend.backend.to_owned(), backend.document()))

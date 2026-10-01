@@ -365,6 +365,10 @@ pub(super) fn dispatch(config: &Config, request: &IncomingRequest, value: &Value
     }
     let id = value.get("id").cloned().unwrap_or(Value::Null);
     let method = value["method"].as_str()?;
+    if method == "px_getRouteCatalogue" {
+        let result = crate::routes::rpc_catalogue(config, request, &id, value.get("params"));
+        return value.get("id").map(|_| result);
+    }
     if let Some(unavailable) =
         kernel_backend(method).and_then(|backend| config.backend(backend).err())
     {

@@ -77,6 +77,36 @@ pub(super) fn node(config: &Config, request: &Value) -> Result<Value, &'static s
     let mut failure = "paxeer_unreachable";
     let mut answered = None;
     for endpoint in endpoints {
+        let identity_body =
+            br#"{"jsonrpc":"2.0","id":"route-network","method":"eth_chainId","params":[]}"#;
+        let identity = config.client.request_unauthenticated(
+            endpoint,
+            &OutboundRequest {
+                method: "POST",
+                path: "/",
+                idempotency: None,
+                content_type: "application/json",
+                body: identity_body,
+            },
+        );
+        let valid_network = identity
+            .ok()
+            .filter(|reply| reply.status == 200 && reply.content_type == "application/json")
+            .and_then(|reply| serde_json::from_slice::<Value>(&reply.body).ok())
+            .is_some_and(|body| {
+                body["jsonrpc"] == "2.0"
+                    && body["id"] == "route-network"
+                    && body["result"]
+                        .as_str()
+                        .and_then(|s| s.strip_prefix("0x"))
+                        .and_then(|s| u64::from_str_radix(s, 16).ok())
+                        == Some(125)
+                    && body.get("error").is_none()
+            });
+        if !valid_network {
+            failure = "paxeer_wrong_network_or_unavailable";
+            continue;
+        }
         match config.client.request_unauthenticated(
             endpoint,
             &OutboundRequest {

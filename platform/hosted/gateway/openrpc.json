@@ -2488,6 +2488,47 @@
           "message": "Paxeer endpoint not configured"
         }
       ]
+    },
+    {
+      "name": "px_getRouteCatalogue",
+      "summary": "Authenticated product route catalogue and dependency readiness.",
+      "params": [],
+      "result": {
+        "name": "catalogue",
+        "schema": {
+          "type": "object",
+          "required": [
+            "schema",
+            "chain_id",
+            "services",
+            "routes",
+            "readiness"
+          ],
+          "properties": {
+            "schema": {
+              "const": "paxeer-x.routes.v1"
+            },
+            "chain_id": {
+              "const": 125
+            },
+            "services": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "routes": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "readiness": {
+              "type": "object"
+            }
+          }
+        }
+      }
     }
   ]
 }

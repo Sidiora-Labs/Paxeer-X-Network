@@ -1,6 +1,6 @@
 use super::{http, public_reads, rpc, ws_wire, Config, IncomingRequest};
 use serde_json::{json, Value};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::sync::{mpsc, Arc, Mutex, OnceLock};
@@ -812,4 +812,298 @@ mod tests {
         assert_eq!(resume_refusal(-32001), "Read unavailable");
         assert_eq!(resume_refusal(-32602), "Invalid params");
     }
+}
+
+fn masked_frame(stream: &mut impl Write, opcode: u8, body: &[u8]) -> Result<(), String> {
+    if body.len() > 65_536 {
+        return Err("websocket message too large".into());
+    }
+    let mut mask = [0_u8; 4];
+    getrandom::fill(&mut mask).map_err(|_| "websocket randomness unavailable")?;
+    let mut frame = vec![0x80 | opcode];
+    if body.len() < 126 {
+        frame.push(0x80 | u8::try_from(body.len()).map_err(|_| "frame length")?);
+    } else if body.len() <= usize::from(u16::MAX) {
+        frame.push(0x80 | 126);
+        frame.extend_from_slice(
+            &u16::try_from(body.len())
+                .map_err(|_| "frame length")?
+                .to_be_bytes(),
+        );
+    } else {
+        frame.push(0x80 | 127);
+        frame.extend_from_slice(
+            &u64::try_from(body.len())
+                .map_err(|_| "frame length")?
+                .to_be_bytes(),
+        );
+    }
+    frame.extend_from_slice(&mask);
+    frame.extend(body.iter().enumerate().map(|(i, b)| b ^ mask[i % 4]));
+    stream
+        .write_all(&frame)
+        .and_then(|()| stream.flush())
+        .map_err(|e| e.to_string())
+}
+
+fn upstream_frame(bytes: &mut Vec<u8>) -> Result<Option<(u8, Vec<u8>)>, String> {
+    if bytes.len() < 2 {
+        return Ok(None);
+    }
+    let opcode = bytes[0] & 15;
+    if bytes[0] & 0x70 != 0
+        || bytes[0] & 0x80 == 0
+        || bytes[1] & 0x80 != 0
+        || !matches!(opcode, 1 | 8 | 9 | 10)
+    {
+        return Err("upstream websocket frame refused".into());
+    }
+    let short = bytes[1];
+    let header = match short {
+        126 => 4,
+        127 => 10,
+        _ => 2,
+    };
+    if bytes.len() < header {
+        return Ok(None);
+    }
+    let length = match short {
+        126 => usize::from(u16::from_be_bytes([bytes[2], bytes[3]])),
+        127 => usize::try_from(u64::from_be_bytes(
+            bytes[2..10].try_into().map_err(|_| "frame length")?,
+        ))
+        .map_err(|_| "frame length")?,
+        _ => usize::from(short),
+    };
+    if length > 65_536 || (opcode >= 8 && length > 125) {
+        return Err("upstream frame bound".into());
+    }
+    if bytes.len() < header + length {
+        return Ok(None);
+    }
+    let body = bytes[header..header + length].to_vec();
+    bytes.drain(..header + length);
+    Ok(Some((opcode, body)))
+}
+
+pub(super) fn serve_evm<S: Connection>(
+    config: &Arc<Config>,
+    request: &IncomingRequest,
+    stream: &mut S,
+) -> Result<(), String> {
+    let Some(accept) = valid_upgrade(request) else {
+        return http::write_response(
+            stream,
+            &super::response(400, "invalid_websocket_upgrade", None),
+        );
+    };
+    if let Err(answer) = super::authenticate_key(config, request) {
+        return http::write_response(stream, &answer);
+    }
+    let Some(_socket) = SocketGuard::acquire() else {
+        return http::write_response(stream, &super::response(429, "subscription_limit", Some(1)));
+    };
+    let endpoint = match std::env::var("LAYERX_GATEWAY_PAXEER_WS_URL")
+        .ok()
+        .and_then(|value| http::Endpoint::parse(&value).ok())
+    {
+        Some(endpoint) => endpoint,
+        None => {
+            return http::write_response(
+                stream,
+                &super::response(503, "paxeer_websocket_not_configured", None),
+            )
+        }
+    };
+    if !config
+        .paxeer
+        .as_ref()
+        .is_some_and(|nodes| nodes.iter().any(|node| node.host == endpoint.host))
+        || super::paxeer::status(config) != "available"
+    {
+        return http::write_response(
+            stream,
+            &super::response(503, "paxeer_websocket_network_unavailable", None),
+        );
+    }
+    let mut upstream = match config.client.connect_tls(&endpoint) {
+        Ok(upstream) => upstream,
+        Err(_) => {
+            return http::write_response(
+                stream,
+                &super::response(503, "paxeer_websocket_unavailable", None),
+            )
+        }
+    };
+    let key = request
+        .headers
+        .get("sec-websocket-key")
+        .ok_or("websocket key absent")?;
+    let path = if endpoint.base_path.is_empty() {
+        "/"
+    } else {
+        &endpoint.base_path
+    };
+    write!(upstream, "GET {path} HTTP/1.1\r\nHost: {}:{}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: {key}\r\n\r\n", endpoint.host, endpoint.port)
+        .and_then(|()| upstream.flush()).map_err(|e| e.to_string())?;
+    let mut headers = Vec::new();
+    while !headers.ends_with(b"\r\n\r\n") {
+        if headers.len() >= 8192 {
+            return Err("upstream upgrade header bound".into());
+        }
+        let mut byte = [0_u8; 1];
+        upstream
+            .read_exact(&mut byte)
+            .map_err(|_| "upstream upgrade unavailable")?;
+        headers.push(byte[0]);
+    }
+    let headers = String::from_utf8(headers).map_err(|_| "upstream upgrade malformed")?;
+    let mut lines = headers.split("\r\n");
+    if lines.next() != Some("HTTP/1.1 101 Switching Protocols") {
+        return Err("upstream upgrade refused".into());
+    }
+    let mut fields = BTreeMap::new();
+    for line in lines.filter(|line| !line.is_empty()) {
+        let (name, value) = line.split_once(':').ok_or("upstream upgrade malformed")?;
+        if fields
+            .insert(name.to_ascii_lowercase(), value.trim().to_owned())
+            .is_some()
+        {
+            return Err("duplicate upgrade header".into());
+        }
+    }
+    if fields.get("sec-websocket-accept") != Some(&accept)
+        || !fields
+            .get("upgrade")
+            .is_some_and(|v| v.eq_ignore_ascii_case("websocket"))
+        || fields.contains_key("sec-websocket-extensions")
+    {
+        return Err("upstream upgrade identity mismatch".into());
+    }
+    write!(stream, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\n\r\n").and_then(|()| stream.flush()).map_err(|e| e.to_string())?;
+    stream
+        .socket()
+        .set_read_timeout(Some(Duration::from_millis(50)))
+        .map_err(|e| e.to_string())?;
+    upstream
+        .get_ref()
+        .set_read_timeout(Some(Duration::from_millis(50)))
+        .map_err(|e| e.to_string())?;
+    let mut client = ws_wire::Reader::default();
+    let mut pending = Vec::new();
+    let started = Instant::now();
+    let mut outstanding = BTreeMap::new();
+    let mut subscriptions = BTreeSet::new();
+    while started.elapsed() < Duration::from_secs(3600) {
+        if let Some((opcode, body)) = client.read(stream)? {
+            if super::authenticate_key(config, request).is_err() {
+                return ws_wire::write(stream, 8, &1008_u16.to_be_bytes());
+            }
+            if opcode == 1 {
+                let value: Value =
+                    serde_json::from_slice(&body).map_err(|_| "invalid subscription request")?;
+                let id = value.get("id").ok_or("subscription id required")?;
+                if let Some(error) = rpc::invalid_request(&value) {
+                    ws_wire::write(
+                        stream,
+                        1,
+                        &serde_json::to_vec(&error).map_err(|e| e.to_string())?,
+                    )?;
+                    continue;
+                }
+                if !matches!(
+                    value["method"].as_str(),
+                    Some("eth_subscribe" | "eth_unsubscribe")
+                ) {
+                    ws_wire::write(
+                        stream,
+                        1,
+                        &serde_json::to_vec(&rpc::error(
+                            id,
+                            -32601,
+                            "Subscription method required",
+                        ))
+                        .map_err(|e| e.to_string())?,
+                    )?;
+                    continue;
+                }
+                if subscriptions.len() + outstanding.len() >= MAX_SUBSCRIPTIONS
+                    && value["method"] == "eth_subscribe"
+                {
+                    return ws_wire::write(stream, 8, &1008_u16.to_be_bytes());
+                }
+                if outstanding.len() >= MAX_SUBSCRIPTIONS
+                    || outstanding.contains_key(&id.to_string())
+                {
+                    return ws_wire::write(stream, 8, &1008_u16.to_be_bytes());
+                }
+                let cancellation = if value["method"] == "eth_unsubscribe" {
+                    let args = value["params"]
+                        .as_array()
+                        .ok_or("unsubscribe params required")?;
+                    if args.len() != 1 {
+                        return Err("unsubscribe params invalid".into());
+                    }
+                    let subscription = args[0].as_str().ok_or("unsubscribe id invalid")?;
+                    if !subscriptions.contains(subscription) {
+                        return Err("unknown subscription".into());
+                    }
+                    Some(subscription.to_owned())
+                } else {
+                    None
+                };
+                outstanding.insert(id.to_string(), cancellation);
+            }
+            masked_frame(&mut upstream, opcode, &body)?;
+            if opcode == 8 {
+                return Ok(());
+            }
+        }
+        let mut buffer = [0_u8; 4096];
+        match upstream.read(&mut buffer) {
+            Ok(0) => return Ok(()),
+            Ok(count) => pending.extend_from_slice(&buffer[..count]),
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) => {}
+            Err(error) => return Err(error.to_string()),
+        }
+        if pending.len() > 69_642 {
+            return Err("subscription buffer bound".into());
+        }
+        while let Some((opcode, body)) = upstream_frame(&mut pending)? {
+            if opcode == 1 {
+                let value: Value =
+                    serde_json::from_slice(&body).map_err(|_| "invalid subscription response")?;
+                if let Some(id) = value.get("id") {
+                    let cancellation = outstanding
+                        .remove(&id.to_string())
+                        .ok_or("unmatched subscription response")?;
+                    if let Some(subscription) = cancellation {
+                        if value["result"] == true {
+                            subscriptions.remove(&subscription);
+                        }
+                    } else if let Some(subscription) = value["result"].as_str() {
+                        if subscriptions.len() >= MAX_SUBSCRIPTIONS {
+                            return Err("upstream subscription limit".into());
+                        }
+                        subscriptions.insert(subscription.to_owned());
+                    }
+                } else if value["method"] != "eth_subscription"
+                    || !value["params"]["subscription"]
+                        .as_str()
+                        .is_some_and(|s| subscriptions.contains(s))
+                {
+                    return Err("unmatched subscription event".into());
+                }
+            }
+            ws_wire::write(stream, opcode, &body)?;
+            if opcode == 8 {
+                return Ok(());
+            }
+        }
+    }
+    ws_wire::write(stream, 8, &1000_u16.to_be_bytes())
 }
