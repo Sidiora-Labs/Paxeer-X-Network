@@ -781,7 +781,7 @@
     - Extend reconcile_test.go with TestReconcileActualAssignment cases using the real clients/reconciler and documented captured API shapes, including crossed, completed, unknown and unmanaged machines; reserve live scheduler behavior for authorized integrated qualification.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 210_
-  - [-] 25.3 Bind manually published candidate artifacts to their accepted provenance source
+  - [x] 25.3 Bind manually published candidate artifacts to their accepted provenance source
     - Reproduce the non-event-SHA dispatch contract and inspect the pinned attestation mechanism to establish its supported source binding.
     - Implement the chosen equality policy or explicit candidate-bound attestation inputs in publish-images.yml and its verifier.
     - Create platform/hosted/tests/candidate-provenance.py for the production source-policy and provenance-verifier boundary using actual signed attestation fixtures; cover matching SHA, differing SHA, wrong source and wrong image digest without publishing during the focused test.

@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       release_candidate:
-        description: The 40-hex release-candidate commit on the default branch to publish
+        description: The 40-hex default-branch commit matching this workflow dispatch SHA
         required: true
         type: string
 
@@ -38,15 +38,16 @@ jobs:
     outputs:
       revision: ${{ steps.revision.outputs.revision }}
     steps:
-      - name: Check out the revision that is to be published
+      - name: Check out the workflow event revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ env.LAYERX_PUBLISH_REVISION }}
+          ref: ${{ github.sha }}
           fetch-tags: true
           persist-credentials: false
       - name: Resolve and bind the published revision
         id: revision
         run: |
+          bash platform/hosted/tests/publish-images.sh --source-policy
           revision=$(git rev-parse HEAD)
           test "$revision" = "$LAYERX_PUBLISH_REVISION"
           echo "revision=$revision" >> "$GITHUB_OUTPUT"
