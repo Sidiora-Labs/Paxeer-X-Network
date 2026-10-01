@@ -320,11 +320,12 @@ def autonomous_recovery(h):
     out = os.path.join(work, "out")
     config = os.path.join(work, "foundry.toml")
     shutil.copyfile(os.path.join(ROOT, "foundry.paxeer.toml"), config)
-    run([h.forge, "build", "--root", ROOT, "--config-path", config,
+    run([h.forge, "build",
+         os.path.join(ROOT, "contracts", "src", "BatchCallAndSponsor.sol"), os.path.join(ROOT, "contracts", "src", "TestToken.sol"),
+         "--root", ROOT, "--config-path", config,
          "--contracts", os.path.join(ROOT, "contracts", "src"), "--lib-paths", h.libs,
          "--remappings", f"@openzeppelin/contracts/={h.libs}/openzeppelin-contracts/contracts/",
-         "--out", out, "--cache-path", os.path.join(work, "cache"), "--skip", "test", "--skip", "script",
-         os.path.join(ROOT, "contracts", "src", "BatchCallAndSponsor.sol"), os.path.join(ROOT, "contracts", "src", "TestToken.sol")])
+         "--out", out, "--cache-path", os.path.join(work, "cache"), "--skip", "test", "--skip", "script"])
     with open(os.path.join(out, "BatchCallAndSponsor.sol", "BatchCallAndSponsor.json"), encoding="utf-8") as handle:
         paymaster_code = json.load(handle)["bytecode"]["object"]
     with open(os.path.join(out, "TestToken.sol", "TestToken.json"), encoding="utf-8") as handle:
