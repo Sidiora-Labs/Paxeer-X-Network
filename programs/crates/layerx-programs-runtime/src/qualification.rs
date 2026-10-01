@@ -923,7 +923,7 @@ mod tests {
 
         let v2_record = RecordedExecution {
             runtime_version: RUNTIME_VERSION,
-            abi_version: ABI_VERSION,
+            abi_version: crate::ABI_V2_VERSION,
             ..v1_record
         };
         let v2 = match replay_with_revisions(&v2_record, &upgraded, None) {
