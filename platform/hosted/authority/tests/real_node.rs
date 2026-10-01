@@ -791,6 +791,7 @@ struct HttpAnswer {
     status: u16,
     content_type: String,
     body: Vec<u8>,
+    headers: BTreeMap<String, String>,
 }
 
 fn parse_http(raw: &[u8]) -> HttpAnswer {
@@ -807,8 +808,15 @@ fn parse_http(raw: &[u8]) -> HttpAnswer {
         .unwrap_or_else(|| panic!("HTTP status line missing in {head}"));
     let mut content_type = String::new();
     let mut content_length = None;
+    let mut headers = BTreeMap::new();
     for line in lines {
         if let Some((name, value)) = line.split_once(':') {
+            assert!(
+                headers
+                    .insert(name.to_ascii_lowercase(), value.trim().to_owned())
+                    .is_none(),
+                "duplicate header"
+            );
             if name.eq_ignore_ascii_case("content-type") {
                 value.trim().clone_into(&mut content_type);
             }
@@ -823,6 +831,7 @@ fn parse_http(raw: &[u8]) -> HttpAnswer {
         status,
         content_type,
         body,
+        headers,
     }
 }
 
@@ -960,6 +969,18 @@ struct Cluster {
 
 #[allow(clippy::too_many_lines)]
 fn start_cluster(with_sequencer: bool) -> Cluster {
+    start_cluster_with_lni(with_sequencer, None)
+}
+
+fn start_cluster_with_lni(with_sequencer: bool, live_lni: Option<&serde_json::Value>) -> Cluster {
+    let fixture_network_id = live_lni.map_or(NETWORK_ID, |lni| {
+        u32::try_from(lni["network_id"].as_u64().expect("real LNI network")).expect("network width")
+    });
+    if let Some(lni) = live_lni {
+        assert!(!with_sequencer);
+        assert_eq!(lni["network_id"], serde_json::json!(fixture_network_id));
+        assert!(Path::new(lni["node_socket"].as_str().expect("real LNI path")).is_absolute());
+    }
     let identity = identity();
     let repository = repository_root();
     let binaries = std::env::var_os("LAYERX_TEST_NATIVE_BIN_DIR")
@@ -1003,8 +1024,21 @@ fn start_cluster(with_sequencer: bool) -> Cluster {
 
     let sequencer_seed = random32();
     let sequencer_signing = SigningKey::from_bytes(&sequencer_seed);
-    let sequencer_key = sequencer_signing.verifying_key().to_bytes();
-    let sequencer_id = random32();
+    let sequencer_key = live_lni.map_or_else(
+        || sequencer_signing.verifying_key().to_bytes(),
+        |lni| {
+            must(
+                hex::decode32(lni["sequencer_public_key"].as_str().expect("real LNI key")),
+                "real LNI key",
+            )
+        },
+    );
+    let sequencer_id = live_lni.map_or_else(random32, |lni| {
+        must(
+            hex::decode32(lni["sequencer_id"].as_str().expect("real sequencer id")),
+            "real sequencer id",
+        )
+    });
     let replica_id = random32();
     let replica_token = token();
     let program_token = token();
@@ -1016,7 +1050,12 @@ fn start_cluster(with_sequencer: bool) -> Cluster {
     make_dir(&replica_dir, 0o700);
     write(
         &replica_dir.join("config.txt"),
-        node_config("replica").as_bytes(),
+        node_config("replica")
+            .replace(
+                &format!("network_id={NETWORK_ID}"),
+                &format!("network_id={fixture_network_id}"),
+            )
+            .as_bytes(),
         0o600,
     );
     preallocate_log(&replica_dir.join("replica.log"));
@@ -1100,7 +1139,10 @@ fn start_cluster(with_sequencer: bool) -> Cluster {
     chown_tree(&genesis.directory, identity.daemon_uid, identity.daemon_gid);
     chown_tree(&node_dir, identity.daemon_uid, identity.daemon_gid);
     chown_tree(&run_dir, identity.daemon_uid, identity.client_gid);
-    let socket = run_dir.join("layerxd.sock");
+    let socket = live_lni.map_or_else(
+        || run_dir.join("layerxd.sock"),
+        |lni| PathBuf::from(lni["node_socket"].as_str().expect("real LNI socket")),
+    );
     let text = |path: PathBuf| path.to_string_lossy().into_owned();
     let mut node_env = BTreeMap::new();
     if with_sequencer {
@@ -1325,7 +1367,7 @@ fn start_cluster(with_sequencer: bool) -> Cluster {
         .env("LAYERX_AUTHORITY_LNI_SOCKET", &socket)
         .env(
             "LAYERX_AUTHORITY_PROTOCOL_NETWORK_ID",
-            NETWORK_ID.to_string(),
+            fixture_network_id.to_string(),
         )
         .env("LAYERX_AUTHORITY_NETWORK_ID", NETWORK_NAME)
         .env(
@@ -2049,9 +2091,18 @@ fn real_replica_readiness_relay_and_refusals_without_sequencer() {
 
 #[test]
 fn router_authority_readiness_schema_restart_contract() {
+    let lni_path = std::env::var("PAXEER_X_AUTHORITY_READY_LNI_FIXTURE")
+        .expect("a real authenticated LNI fixture is required by authority readiness");
+    let live_lni: serde_json::Value = must(
+        serde_json::from_slice(&must(fs::read(lni_path), "real LNI fixture")),
+        "real LNI fixture JSON",
+    );
+    let fixture_network_id =
+        u32::try_from(live_lni["network_id"].as_u64().expect("real LNI network"))
+            .expect("network width");
     let gateway_tests =
         std::env::var_os("PAXEER_X_GATEWAY_TEST_BIN").expect("prebuilt gateway test binary");
-    let mut cluster = start_cluster(false);
+    let mut cluster = start_cluster_with_lni(false, Some(&live_lni));
     assert!(cluster.sequencer.is_none());
     eprintln!("retained_state={}", cluster.root.display());
     let response = https_get(
@@ -2063,7 +2114,10 @@ fn router_authority_readiness_schema_restart_contract() {
     assert_eq!(response.status, 200);
     let body = json(&response);
     assert_eq!(body.as_object().map(serde_json::Map::len), Some(4));
-    assert_eq!(body["protocol_network_id"], serde_json::json!(NETWORK_ID));
+    assert_eq!(
+        body["protocol_network_id"],
+        serde_json::json!(fixture_network_id)
+    );
     let response_file = cluster.root.join("readiness-response.json");
     write(&response_file, &response.body, 0o600);
     let untrusted_pem = cluster.root.join("tls/untrusted.pem");
@@ -2152,7 +2206,7 @@ fn router_authority_readiness_schema_restart_contract() {
         &cluster,
         "ready",
         true,
-        NETWORK_ID,
+        fixture_network_id,
         NETWORK_NAME,
         &wire,
         true,
@@ -2161,7 +2215,7 @@ fn router_authority_readiness_schema_restart_contract() {
         &cluster,
         "identity_mismatch",
         false,
-        NETWORK_ID + 1,
+        fixture_network_id + 1,
         NETWORK_NAME,
         &wire,
         true,
@@ -2170,7 +2224,7 @@ fn router_authority_readiness_schema_restart_contract() {
         &cluster,
         "identity_mismatch",
         false,
-        NETWORK_ID,
+        fixture_network_id,
         "different",
         &wire,
         true,
@@ -2179,7 +2233,7 @@ fn router_authority_readiness_schema_restart_contract() {
         &cluster,
         "identity_mismatch",
         false,
-        NETWORK_ID,
+        fixture_network_id,
         NETWORK_NAME,
         "0",
         true,
@@ -2188,7 +2242,7 @@ fn router_authority_readiness_schema_restart_contract() {
         &cluster,
         "transport",
         false,
-        NETWORK_ID,
+        fixture_network_id,
         NETWORK_NAME,
         &wire,
         false,
@@ -2198,14 +2252,14 @@ fn router_authority_readiness_schema_restart_contract() {
         &cluster,
         "transport",
         false,
-        NETWORK_ID,
+        fixture_network_id,
         NETWORK_NAME,
         &wire,
         true,
     );
     cluster.authority_command.env(
         "LAYERX_AUTHORITY_PROTOCOL_NETWORK_ID",
-        (NETWORK_ID + 1).to_string(),
+        (fixture_network_id + 1).to_string(),
     );
     cluster.authority.child = must(
         cluster.authority_command.spawn(),
@@ -2220,7 +2274,7 @@ fn router_authority_readiness_schema_restart_contract() {
         &cluster,
         "identity_mismatch",
         false,
-        NETWORK_ID,
+        fixture_network_id,
         NETWORK_NAME,
         &wire,
         true,
@@ -2228,7 +2282,7 @@ fn router_authority_readiness_schema_restart_contract() {
     cluster.authority.stop();
     cluster.authority_command.env(
         "LAYERX_AUTHORITY_PROTOCOL_NETWORK_ID",
-        NETWORK_ID.to_string(),
+        fixture_network_id.to_string(),
     );
     cluster.authority.child = must(
         cluster.authority_command.spawn(),
@@ -2243,7 +2297,7 @@ fn router_authority_readiness_schema_restart_contract() {
         &cluster,
         "ready",
         false,
-        NETWORK_ID,
+        fixture_network_id,
         NETWORK_NAME,
         &wire,
         true,
@@ -2261,10 +2315,105 @@ fn router_authority_readiness_schema_restart_contract() {
         &cluster,
         "unavailable",
         false,
-        NETWORK_ID,
+        fixture_network_id,
         NETWORK_NAME,
         &wire,
         true,
     );
     println!("PAXEER_X_GATE tests={count} skipped=0");
+}
+
+#[test]
+fn authority_lni_readiness_case() {
+    let path = std::env::var("PAXEER_X_AUTHORITY_LNI_CASE").expect("real isolated case required");
+    let case: serde_json::Value = must(
+        serde_json::from_slice(&must(fs::read(path), "case")),
+        "case JSON",
+    );
+    let certificate = must(
+        Certificate::from_der(&must(
+            fs::read(case["ca_der"].as_str().expect("CA")),
+            "CA file",
+        )),
+        "CA DER",
+    );
+    let start = Instant::now();
+    let answer = https_get(
+        case["port"].as_u64().expect("port") as u16,
+        &certificate,
+        "/readyz",
+        None,
+    );
+    assert!(
+        start.elapsed() < Duration::from_secs(3),
+        "readiness exceeded two-second deadline plus TLS/scheduling allowance"
+    );
+    let body = json(&answer);
+    let ready = case["ready"].as_bool().expect("ready expectation");
+    assert_eq!(answer.status, if ready { 200 } else { 503 });
+    assert_eq!(body["ready"], serde_json::json!(ready));
+    assert_eq!(body.as_object().expect("readiness object").len(), 4);
+    for (field, header) in [
+        ("replica_ready", "x-layerx-authority-replica"),
+        ("lni_ready", "x-layerx-authority-lni"),
+    ] {
+        let expected = if case[field] == true {
+            "ready"
+        } else {
+            "unavailable"
+        };
+        assert_eq!(
+            answer.headers.get(header).map(String::as_str),
+            Some(expected)
+        );
+    }
+    if let Some(output) = case["response_file"].as_str() {
+        write(Path::new(output), &answer.body, 0o600);
+    }
+    if let Some(socket) = case["node_socket"].as_str() {
+        let gate = ConnectionGate::new(1);
+        let mut transport = must(
+            Uds::connect(Path::new(socket), &gate, lni_limits()),
+            "real LNI connect",
+        );
+        let handshake = must(
+            perform(
+                &mut transport,
+                &HandshakeConfig {
+                    built_interface_version: Version::V1_5,
+                    expected_protocol_version: PROTOCOL_VERSION,
+                    expected_network_id: case["network_id"].as_u64().expect("network") as u32,
+                },
+                None,
+            ),
+            "real LNI handshake",
+        );
+        let capture = PathBuf::from(case["capture"].as_str().expect("capture"));
+        let encoded = must(
+            layerx_client::lni::handshake::encode_node_info(handshake.node()),
+            "production NodeInfo serializer",
+        );
+        if capture.exists() {
+            let before = must(
+                layerx_client::lni::handshake::decode_node_info(&must(
+                    fs::read(&capture),
+                    "retained capture",
+                )),
+                "retained NodeInfo",
+            );
+            assert_eq!(
+                handshake.node().chain_head_sequence,
+                before.chain_head_sequence,
+                "readiness mutated chain sequence"
+            );
+            assert_eq!(
+                handshake.node().latest_sealed_batch,
+                before.latest_sealed_batch,
+                "readiness mutated batch state"
+            );
+        } else {
+            write(&capture, &encoded, 0o600);
+        }
+    }
+    println!("PAXEER_X_LNI_CASES=1");
 }

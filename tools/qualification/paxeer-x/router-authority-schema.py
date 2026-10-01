@@ -77,8 +77,9 @@ def main():
                    PAXEER_X_GATEWAY_TEST_BIN=binaries['gateway_tests'],
                    PAXEER_X_AUTHORITY_BIN=binaries['authority'],
                    PAXEER_X_AUTHORITY_RETAIN_STATE='1')
-        result = subprocess.run([binaries['authority_tests'],
-            'router_authority_readiness_schema_restart_contract', '--exact', '--nocapture'],
+        env['PAXEER_X_RUNTIME_ARTIFACTS'] = os.environ['PAXEER_X_FOUNDATION_ARTIFACT_MANIFEST']
+        result = subprocess.run([sys.executable,
+            str(ROOT / 'tools/qualification/paxeer-x/authority-lni-readiness.py'), '--serializer'],
             cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, timeout=840)
         print(result.stdout, end='')

@@ -22182,7 +22182,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.15.4]
 title = "Establish authenticated LNI receipt capability in authority readiness"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
