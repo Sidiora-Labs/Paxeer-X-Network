@@ -89,6 +89,7 @@ tests
 !programs/vendor/wasm-instrument/**
 !programs/vendor/wasmi-0.31.2/**
 !programs/benches/interpreter.rs
+!agent/tests/limits/exactly_once.rs
 **/*.md
 !include/layerx/lxp_result.h
 !include/layerx/programs.h
