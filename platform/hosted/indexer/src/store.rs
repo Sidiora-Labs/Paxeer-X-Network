@@ -5,6 +5,11 @@
 //! transaction, so a crash leaves the store at the previous unit boundary and
 //! restart resumes from the durable cursor. Rollback deletes every row above
 //! a fork point's boundary in one transaction.
+//!
+//! Asset and account projections are derived from per-unit observation
+//! records, so rollback drops the orphaned observations and recomputes each
+//! affected projection from the surviving canonical units. Operator-declared
+//! assets carry their own configured provenance and are never rolled back.
 
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
@@ -30,9 +35,29 @@ CREATE TABLE IF NOT EXISTS assets(
     address TEXT,
     denom TEXT,
     first_seen INTEGER NOT NULL,
-    metadata_json TEXT NOT NULL
+    metadata_json TEXT NOT NULL,
+    configured INTEGER NOT NULL DEFAULT 0,
+    configured_metadata_json TEXT,
+    observed_chain TEXT,
+    observed_position INTEGER
 );
 CREATE INDEX IF NOT EXISTS assets_address ON assets(address);
+CREATE TABLE IF NOT EXISTS asset_observations(
+    chain TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    asset TEXT NOT NULL,
+    metadata_json TEXT NOT NULL,
+    PRIMARY KEY(chain, asset, position)
+);
+CREATE INDEX IF NOT EXISTS asset_observations_position ON asset_observations(chain, position);
+CREATE INDEX IF NOT EXISTS asset_observations_asset ON asset_observations(asset, position);
+CREATE TABLE IF NOT EXISTS account_observations(
+    chain TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    account TEXT NOT NULL,
+    PRIMARY KEY(chain, account, position)
+);
+CREATE INDEX IF NOT EXISTS account_observations_position ON account_observations(chain, position);
 CREATE TABLE IF NOT EXISTS transfers(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     height_or_seq INTEGER NOT NULL,
@@ -226,13 +251,46 @@ impl Store {
         Self::initialise(Connection::open_in_memory()?)
     }
 
-    fn initialise(connection: Connection) -> Result<Self, IndexError> {
+    fn initialise(mut connection: Connection) -> Result<Self, IndexError> {
         connection.pragma_update(None, "synchronous", "FULL")?;
         connection.pragma_update(None, "foreign_keys", "ON")?;
         connection.execute_batch(SCHEMA)?;
+        Self::migrate_projections(&mut connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
         })
+    }
+
+    /// Upgrades a store written before projections were versioned: adds the
+    /// provenance columns and records every existing asset and account as
+    /// observed at the chain's first position, so nothing already indexed is
+    /// lost and a later rollback only removes what it actually orphans.
+    fn migrate_projections(connection: &mut Connection) -> Result<(), IndexError> {
+        let current: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('assets') WHERE name = 'configured'",
+            [],
+            |row| row.get(0),
+        )?;
+        if current > 0 {
+            return Ok(());
+        }
+        let transaction = connection.transaction()?;
+        transaction.execute_batch(
+            "ALTER TABLE assets ADD COLUMN configured INTEGER NOT NULL DEFAULT 0;
+             ALTER TABLE assets ADD COLUMN configured_metadata_json TEXT;
+             ALTER TABLE assets ADD COLUMN observed_chain TEXT;
+             ALTER TABLE assets ADD COLUMN observed_position INTEGER;
+             INSERT OR IGNORE INTO asset_observations(chain, position, asset, metadata_json)
+                 SELECT chain, 0, asset, metadata_json FROM assets;
+             UPDATE assets SET observed_chain = chain, observed_position = 0
+                 WHERE metadata_json != '{}';
+             INSERT OR IGNORE INTO account_observations(chain, position, account)
+                 SELECT chain, first_seen, account FROM accounts;
+             INSERT OR IGNORE INTO account_observations(chain, position, account)
+                 SELECT chain, last_seen, account FROM accounts;",
+        )?;
+        transaction.commit()?;
+        Ok(())
     }
 
     fn lock(&self) -> Result<MutexGuard<'_, Connection>, IndexError> {
@@ -512,13 +570,12 @@ impl Store {
         stamp: i64,
     ) -> Result<(Option<u64>, Option<i64>), IndexError> {
         let position = signed(unit.position)?;
+        let mut observed: Vec<&str> = Vec::with_capacity(unit.assets.len());
         for asset in &unit.assets {
             transaction.execute(
                 "INSERT INTO assets(asset, chain, kind, address, denom, first_seen, metadata_json)
-                 VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7)
-                 ON CONFLICT(asset) DO UPDATE SET metadata_json = CASE
-                     WHEN excluded.metadata_json = '{}' THEN assets.metadata_json
-                     ELSE excluded.metadata_json END,
+                 VALUES(?1, ?2, ?3, ?4, ?5, ?6, '{}')
+                 ON CONFLICT(asset) DO UPDATE SET
                    denom = COALESCE(assets.denom, excluded.denom),
                    address = COALESCE(assets.address, excluded.address)",
                 params![
@@ -527,10 +584,28 @@ impl Store {
                     asset.kind,
                     asset.address,
                     asset.denom,
-                    stamp,
+                    stamp
+                ],
+            )?;
+            transaction.execute(
+                "INSERT INTO asset_observations(chain, position, asset, metadata_json)
+                 VALUES(?1, ?2, ?3, ?4)
+                 ON CONFLICT(chain, asset, position) DO UPDATE SET metadata_json = CASE
+                     WHEN excluded.metadata_json = '{}' THEN asset_observations.metadata_json
+                     ELSE excluded.metadata_json END",
+                params![
+                    unit.chain,
+                    position,
+                    asset.asset,
                     asset.metadata.to_string()
                 ],
             )?;
+            observed.push(&asset.asset);
+        }
+        observed.sort_unstable();
+        observed.dedup();
+        for asset in observed {
+            Self::project_asset(transaction, asset)?;
         }
         let mut accounts: Vec<&str> = unit.accounts.iter().map(String::as_str).collect();
         for transfer in &unit.transfers {
@@ -580,8 +655,15 @@ impl Store {
         for account in accounts {
             transaction.execute(
                 "INSERT INTO accounts(chain, account, first_seen, last_seen) VALUES(?1, ?2, ?3, ?3)
-                 ON CONFLICT(chain, account) DO UPDATE SET last_seen = MAX(accounts.last_seen, excluded.last_seen)",
+                 ON CONFLICT(chain, account) DO UPDATE SET
+                   first_seen = MIN(accounts.first_seen, excluded.first_seen),
+                   last_seen = MAX(accounts.last_seen, excluded.last_seen)",
                 params![unit.chain, account, position],
+            )?;
+            transaction.execute(
+                "INSERT OR IGNORE INTO account_observations(chain, position, account)
+                 VALUES(?1, ?2, ?3)",
+                params![unit.chain, position, account],
             )?;
         }
         transaction.execute(
@@ -612,6 +694,106 @@ impl Store {
         Ok((finalized, finalized_boundary))
     }
 
+    /// Recomputes one asset's observed projection from its surviving
+    /// observations: the newest non-empty observed metadata, or none. An
+    /// asset no surviving unit observed and no operator configured is
+    /// removed.
+    fn project_asset(transaction: &Connection, asset: &str) -> Result<(), IndexError> {
+        let configured: Option<bool> = transaction
+            .query_row(
+                "SELECT configured FROM assets WHERE asset = ?1",
+                params![asset],
+                |row| row.get::<_, i64>(0).map(|flag| flag != 0),
+            )
+            .optional()?;
+        let Some(configured) = configured else {
+            return Ok(());
+        };
+        let observed = transaction
+            .query_row(
+                "SELECT 1 FROM asset_observations WHERE asset = ?1 LIMIT 1",
+                params![asset],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some();
+        if !configured && !observed {
+            transaction.execute("DELETE FROM assets WHERE asset = ?1", params![asset])?;
+            return Ok(());
+        }
+        let latest: Option<(String, i64, String)> = transaction
+            .query_row(
+                "SELECT chain, position, metadata_json FROM asset_observations
+                 WHERE asset = ?1 AND metadata_json != '{}'
+                 ORDER BY position DESC, chain DESC LIMIT 1",
+                params![asset],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()?;
+        let (chain, position, metadata) = match latest {
+            Some((chain, position, metadata)) => (Some(chain), Some(position), metadata),
+            None => (None, None, "{}".to_owned()),
+        };
+        transaction.execute(
+            "UPDATE assets SET metadata_json = ?2, observed_chain = ?3, observed_position = ?4
+             WHERE asset = ?1",
+            params![asset, metadata, chain, position],
+        )?;
+        Ok(())
+    }
+
+    /// Drops every asset and account observation of `chain` above `above`
+    /// and recomputes each projection they touched from what survives.
+    fn rewind_projections(
+        transaction: &Connection,
+        chain: &str,
+        above: i64,
+    ) -> Result<(), IndexError> {
+        let assets: Vec<String> = transaction
+            .prepare(
+                "SELECT DISTINCT asset FROM asset_observations WHERE chain = ?1 AND position > ?2",
+            )?
+            .query_map(params![chain, above], |row| row.get(0))?
+            .collect::<Result<_, _>>()?;
+        transaction.execute(
+            "DELETE FROM asset_observations WHERE chain = ?1 AND position > ?2",
+            params![chain, above],
+        )?;
+        for asset in &assets {
+            Self::project_asset(transaction, asset)?;
+        }
+        let accounts: Vec<String> = transaction
+            .prepare(
+                "SELECT DISTINCT account FROM account_observations WHERE chain = ?1 AND position > ?2",
+            )?
+            .query_map(params![chain, above], |row| row.get(0))?
+            .collect::<Result<_, _>>()?;
+        transaction.execute(
+            "DELETE FROM account_observations WHERE chain = ?1 AND position > ?2",
+            params![chain, above],
+        )?;
+        for account in &accounts {
+            let (first, last): (Option<i64>, Option<i64>) = transaction.query_row(
+                "SELECT MIN(position), MAX(position) FROM account_observations
+                 WHERE chain = ?1 AND account = ?2",
+                params![chain, account],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )?;
+            match (first, last) {
+                (Some(first), Some(last)) => transaction.execute(
+                    "UPDATE accounts SET first_seen = ?3, last_seen = ?4
+                     WHERE chain = ?1 AND account = ?2",
+                    params![chain, account, first, last],
+                )?,
+                _ => transaction.execute(
+                    "DELETE FROM accounts WHERE chain = ?1 AND account = ?2",
+                    params![chain, account],
+                )?,
+            };
+        }
+        Ok(())
+    }
+
     /// Rolls `chain` back so that `fork` is its newest unit, or to empty
     /// when `fork` is `None`. Refuses to cross the finalized position.
     ///
@@ -638,7 +820,7 @@ impl Store {
                 });
             }
         }
-        match fork {
+        let above = match fork {
             Some(fork) => {
                 let link = Self::link_in(&transaction, chain, fork)?.ok_or_else(|| {
                     IndexError::ReorgBeyondFinality {
@@ -663,6 +845,7 @@ impl Store {
                     "UPDATE cursors SET position = ?2, hash = ?3, updated_at = ?4 WHERE chain = ?1",
                     params![chain, signed(fork)?, link.hash, now()],
                 )?;
+                signed(fork)?
             }
             None => {
                 for statement in [
@@ -673,8 +856,10 @@ impl Store {
                 ] {
                     transaction.execute(statement, params![chain])?;
                 }
+                -1
             }
-        }
+        };
+        Self::rewind_projections(&transaction, chain, above)?;
         transaction.commit()?;
         Ok(())
     }
@@ -696,18 +881,22 @@ impl Store {
     }
 
     /// Registers operator-declared assets (for example pointer contracts)
-    /// outside any unit.
+    /// outside any unit. Their metadata is recorded as configured, apart
+    /// from anything units observe, and rollback never removes them.
     ///
     /// # Errors
-    /// Returns [`IndexError::Store`] on SQLite failure.
+    /// Returns [`IndexError::Store`] on SQLite failure; nothing is written.
     pub fn register_assets(&self, assets: &[AssetRow]) -> Result<(), IndexError> {
-        let connection = self.lock()?;
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction()?;
         for asset in assets {
-            connection.execute(
-                "INSERT INTO assets(asset, chain, kind, address, denom, first_seen, metadata_json)
-                 VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            transaction.execute(
+                "INSERT INTO assets(asset, chain, kind, address, denom, first_seen, metadata_json,
+                    configured, configured_metadata_json)
+                 VALUES(?1, ?2, ?3, ?4, ?5, ?6, '{}', 1, ?7)
                  ON CONFLICT(asset) DO UPDATE SET kind = excluded.kind,
-                   address = excluded.address, denom = excluded.denom",
+                   address = excluded.address, denom = excluded.denom, configured = 1,
+                   configured_metadata_json = excluded.configured_metadata_json",
                 params![
                     asset.asset,
                     asset.chain,
@@ -719,6 +908,7 @@ impl Store {
                 ],
             )?;
         }
+        transaction.commit()?;
         Ok(())
     }
 
@@ -869,8 +1059,38 @@ impl Store {
             .is_some())
     }
 
+    /// One asset as served: `metadata` is the effective value and
+    /// `metadata_provenance` says whether it was observed in a canonical
+    /// unit or declared by configuration; both sources are also served
+    /// separately.
     fn asset_document(row: &Row<'_>) -> rusqlite::Result<(i64, Value)> {
-        let metadata: String = row.get(7)?;
+        let observed = parse_json(&row.get::<_, String>(7)?);
+        let configured = row.get::<_, i64>(8)? != 0;
+        let configured_metadata = row
+            .get::<_, Option<String>>(9)?
+            .map_or(Value::Null, |text| parse_json(&text));
+        let observed_at = match (
+            row.get::<_, Option<String>>(10)?,
+            row.get::<_, Option<i64>>(11)?,
+        ) {
+            (Some(chain), Some(position)) => {
+                json!({ "chain": chain, "position": position.to_string() })
+            }
+            _ => Value::Null,
+        };
+        let has_observed = observed
+            .as_object()
+            .is_some_and(|object| !object.is_empty());
+        let has_configured = configured_metadata
+            .as_object()
+            .is_some_and(|object| !object.is_empty());
+        let (metadata, provenance) = if has_observed {
+            (observed.clone(), "observed")
+        } else if has_configured {
+            (configured_metadata.clone(), "configured")
+        } else {
+            (json!({}), "none")
+        };
         Ok((
             row.get(0)?,
             json!({
@@ -880,7 +1100,12 @@ impl Store {
                 "address": row.get::<_, Option<String>>(4)?,
                 "denom": row.get::<_, Option<String>>(5)?,
                 "first_seen": row.get::<_, i64>(6)?.to_string(),
-                "metadata": parse_json(&metadata),
+                "metadata": metadata,
+                "metadata_provenance": provenance,
+                "configured": configured,
+                "configured_metadata": configured_metadata,
+                "observed_metadata": observed,
+                "observed_at": observed_at,
             }),
         ))
     }
@@ -894,7 +1119,8 @@ impl Store {
         let lower = cursor.map_or(Ok(0), signed)?;
         let fetch = i64::try_from(limit.saturating_add(1)).unwrap_or(i64::MAX);
         let mut statement = connection.prepare(
-            "SELECT rowid, asset, chain, kind, address, denom, first_seen, metadata_json
+            "SELECT rowid, asset, chain, kind, address, denom, first_seen, metadata_json,
+                configured, configured_metadata_json, observed_chain, observed_position
              FROM assets WHERE rowid > ?1 ORDER BY rowid LIMIT ?2",
         )?;
         let mut rows = statement
@@ -921,7 +1147,8 @@ impl Store {
         let connection = self.lock()?;
         let found = connection
             .query_row(
-                "SELECT rowid, asset, chain, kind, address, denom, first_seen, metadata_json
+                "SELECT rowid, asset, chain, kind, address, denom, first_seen, metadata_json,
+                    configured, configured_metadata_json, observed_chain, observed_position
                  FROM assets WHERE asset = ?1",
                 params![asset],
                 Self::asset_document,
