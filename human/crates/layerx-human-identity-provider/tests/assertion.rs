@@ -16,8 +16,8 @@ use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
+use std::sync::{Arc, Barrier, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -29,11 +29,16 @@ const WALLET_DID: &str =
     "did:layerx:3f1c0a9e5b7d2468ace013579bdf2468ace013579bdf2468ace013579bdf2468";
 const OTHER_DID: &str =
     "did:layerx:9a8b7c6d5e4f30211203f4e5d6c7b8a99a8b7c6d5e4f30211203f4e5d6c7b8a9";
+const SERVE: u8 = 0;
+const UNAVAILABLE: u8 = 1;
+const REDIRECT: u8 = 2;
+const PAST_INTERVAL: Duration = Duration::from_millis(1100);
 
 struct KeySetServer {
     address: SocketAddr,
     body: Arc<Mutex<String>>,
     hits: Arc<AtomicUsize>,
+    mode: Arc<AtomicU8>,
     shutdown: Arc<AtomicBool>,
     worker: Option<JoinHandle<()>>,
 }
@@ -44,10 +49,12 @@ impl KeySetServer {
         let address = listener.local_addr()?;
         let body = Arc::new(Mutex::new(json!({ "keys": keys }).to_string()));
         let hits = Arc::new(AtomicUsize::new(0));
+        let mode = Arc::new(AtomicU8::new(SERVE));
         let shutdown = Arc::new(AtomicBool::new(false));
         let worker = {
             let body = Arc::clone(&body);
             let hits = Arc::clone(&hits);
+            let mode = Arc::clone(&mode);
             let shutdown = Arc::clone(&shutdown);
             thread::spawn(move || {
                 for stream in listener.incoming() {
@@ -55,7 +62,7 @@ impl KeySetServer {
                         break;
                     }
                     if let Ok(mut stream) = stream {
-                        let _ = respond(&mut stream, &body, &hits);
+                        let _ = respond(&mut stream, &body, &hits, mode.load(Ordering::Acquire));
                     }
                 }
             })
@@ -64,6 +71,7 @@ impl KeySetServer {
             address,
             body,
             hits,
+            mode,
             shutdown,
             worker: Some(worker),
         })
@@ -74,9 +82,16 @@ impl KeySetServer {
     }
 
     fn replace(&self, keys: &[Value]) -> Result {
-        *self.body.lock().map_err(|_| "key set lock poisoned")? =
-            json!({ "keys": keys }).to_string();
+        self.replace_document(&json!({ "keys": keys }))
+    }
+
+    fn replace_document(&self, document: &Value) -> Result {
+        *self.body.lock().map_err(|_| "key set lock poisoned")? = document.to_string();
         Ok(())
+    }
+
+    fn set_mode(&self, mode: u8) {
+        self.mode.store(mode, Ordering::Release);
     }
 
     fn hits(&self) -> usize {
@@ -94,7 +109,7 @@ impl Drop for KeySetServer {
     }
 }
 
-fn respond(stream: &mut TcpStream, body: &Mutex<String>, hits: &AtomicUsize) -> Result {
+fn respond(stream: &mut TcpStream, body: &Mutex<String>, hits: &AtomicUsize, mode: u8) -> Result {
     stream.set_read_timeout(Some(Duration::from_secs(5)))?;
     let mut request = Vec::new();
     let mut buffer = [0u8; 1024];
@@ -105,13 +120,26 @@ fn respond(stream: &mut TcpStream, body: &Mutex<String>, hits: &AtomicUsize) -> 
         }
         request.extend_from_slice(&buffer[..read]);
     }
-    if !request.starts_with(b"GET /auth/v1/.well-known/jwks.json ") {
+    let followed = request.starts_with(b"GET /auth/v1/.well-known/jwks.json?followed ");
+    if !followed && !request.starts_with(b"GET /auth/v1/.well-known/jwks.json ") {
         stream.write_all(
             b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
         )?;
         return Ok(());
     }
     hits.fetch_add(1, Ordering::AcqRel);
+    if mode == UNAVAILABLE {
+        stream.write_all(
+            b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+        )?;
+        return Ok(());
+    }
+    if mode == REDIRECT && !followed {
+        stream.write_all(
+            b"HTTP/1.1 302 Found\r\nLocation: /auth/v1/.well-known/jwks.json?followed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+        )?;
+        return Ok(());
+    }
     let document = body.lock().map_err(|_| "key set lock poisoned")?.clone();
     write!(
         stream,
@@ -601,6 +629,28 @@ fn assertion_configuration_is_absent_by_default_and_complete_when_set() -> Resul
     );
     assert!(AssertionConfig::from_lookup(lookup(&zero_interval)).is_err());
 
+    let mut hour = values.clone();
+    hour.insert(
+        "LAYERX_HUMAN_IDENTITY_PROVIDER_ASSERTION_REFRESH_INTERVAL_SECONDS",
+        "3600",
+    );
+    let hour = AssertionConfig::from_lookup(lookup(&hour))?.ok_or("config missing")?;
+    assert_eq!(hour.refresh_interval_seconds, 3600);
+
+    let mut beyond_lifetime = values.clone();
+    beyond_lifetime.insert(
+        "LAYERX_HUMAN_IDENTITY_PROVIDER_ASSERTION_REFRESH_INTERVAL_SECONDS",
+        "3601",
+    );
+    assert!(AssertionConfig::from_lookup(lookup(&beyond_lifetime)).is_err());
+    let mut stale_config = config(
+        "https://identity.example.test/auth/v1/.well-known/jwks.json".to_owned(),
+        86_400,
+    );
+    assert!(stale_config.validate().is_err());
+    stale_config.refresh_interval_seconds = 3600;
+    stale_config.validate()?;
+
     let mut wide_skew = values;
     wide_skew.insert(
         "LAYERX_HUMAN_IDENTITY_PROVIDER_ASSERTION_CLOCK_SKEW_SECONDS",
@@ -940,5 +990,298 @@ fn assertion_binary_serve_wires_the_configuration_from_the_environment() -> Resu
     let resolved = reopened.resolve_assertion(&token, now)?;
     assert_eq!(resolved.principal(), principal);
     assert_eq!(resolved.did(), Some(WALLET_DID));
+    Ok(())
+}
+
+fn refusal_kind(result: std::io::Result<impl std::fmt::Debug>) -> Result<std::io::ErrorKind> {
+    match result {
+        Ok(accepted) => Err(format!("token accepted: {accepted:?}").into()),
+        Err(error) => Ok(error.kind()),
+    }
+}
+
+#[test]
+fn assertion_known_key_removed_from_the_key_set_is_refused_after_the_refresh_interval() -> Result {
+    let fixture = Fixture::new()?;
+    let verifier = AssertionVerifier::new(config(fixture.server.url(), 1))?;
+    let now = now()?;
+    let token = fixture.signer.mint(&claims("user-0018", now));
+    assert_eq!(verifier.verify(&token, now)?.subject(), "user-0018");
+    assert_eq!(fixture.server.hits(), 1);
+
+    let successor = TokenSigner::generate("signing-key-2")?;
+    fixture.server.replace(&[successor.jwk()?])?;
+    let stranger = TokenSigner::generate("signing-key-3")?.mint(&claims("user-0019", now));
+    for _ in 0..3 {
+        assert_eq!(
+            refusal_kind(verifier.verify(&stranger, now))?,
+            std::io::ErrorKind::InvalidData
+        );
+        assert_eq!(verifier.verify(&token, now)?.subject(), "user-0018");
+    }
+    assert_eq!(fixture.server.hits(), 1);
+
+    thread::sleep(PAST_INTERVAL);
+    assert_eq!(
+        refusal_kind(verifier.verify(&token, now))?,
+        std::io::ErrorKind::InvalidData
+    );
+    assert_eq!(fixture.server.hits(), 2);
+    let successor_token = successor.mint(&claims("user-0020", now));
+    assert_eq!(
+        verifier.verify(&successor_token, now)?.subject(),
+        "user-0020"
+    );
+    assert_eq!(
+        refusal_kind(verifier.verify(&token, now))?,
+        std::io::ErrorKind::InvalidData
+    );
+    assert_eq!(fixture.server.hits(), 2);
+    Ok(())
+}
+
+#[test]
+fn assertion_known_key_id_replaced_in_the_key_set_uses_the_new_key_after_the_refresh_interval(
+) -> Result {
+    let fixture = Fixture::new()?;
+    let mut state = open_state(&fixture.root, config(fixture.server.url(), 1))?;
+    let now = now()?;
+    let original = fixture.signer.mint(&claims("user-0021", now));
+    let (first, created) = state.open_or_create_by_assertion(&original, None, now)?;
+    assert!(created);
+    assert_eq!(fixture.server.hits(), 1);
+
+    let replacement = TokenSigner::generate("signing-key-1")?;
+    fixture.server.replace(&[replacement.jwk()?])?;
+    let replaced = replacement.mint(&claims("user-0022", now));
+    assert!(state
+        .open_or_create_by_assertion(&replaced, None, now)
+        .is_err());
+    assert_eq!(
+        state.open_or_create_by_assertion(&original, None, now)?,
+        (first.clone(), false)
+    );
+    assert_eq!(fixture.server.hits(), 1);
+
+    thread::sleep(PAST_INTERVAL);
+    assert!(state.resolve_assertion(&original, now).is_err());
+    assert_eq!(fixture.server.hits(), 2);
+    let (second, created) = state.open_or_create_by_assertion(&replaced, None, now)?;
+    assert!(created);
+    assert_eq!(second.subject(), "user-0022");
+    assert!(state
+        .open_or_create_by_assertion(&original, None, now)
+        .is_err());
+    assert_eq!(state.assertion_principal(ISSUER, "user-0021"), Some(first));
+    assert_eq!(fixture.server.hits(), 2);
+    Ok(())
+}
+
+#[test]
+fn assertion_key_set_outage_refuses_expired_keys_until_a_refresh_succeeds() -> Result {
+    let fixture = Fixture::new()?;
+    let verifier = AssertionVerifier::new(config(fixture.server.url(), 1))?;
+    let now = now()?;
+    let token = fixture.signer.mint(&claims("user-0023", now));
+    verifier.verify(&token, now)?;
+    assert_eq!(fixture.server.hits(), 1);
+
+    fixture.server.set_mode(UNAVAILABLE);
+    verifier.verify(&token, now)?;
+    assert_eq!(fixture.server.hits(), 1);
+
+    thread::sleep(PAST_INTERVAL);
+    assert_eq!(
+        refusal_kind(verifier.verify(&token, now))?,
+        std::io::ErrorKind::Other
+    );
+    assert_eq!(fixture.server.hits(), 2);
+    assert_eq!(
+        refusal_kind(verifier.verify(&token, now))?,
+        std::io::ErrorKind::Other
+    );
+    assert_eq!(fixture.server.hits(), 2);
+
+    thread::sleep(PAST_INTERVAL);
+    assert_eq!(
+        refusal_kind(verifier.verify(&token, now))?,
+        std::io::ErrorKind::Other
+    );
+    assert_eq!(fixture.server.hits(), 3);
+
+    fixture.server.set_mode(SERVE);
+    assert_eq!(
+        refusal_kind(verifier.verify(&token, now))?,
+        std::io::ErrorKind::Other
+    );
+    assert_eq!(fixture.server.hits(), 3);
+    thread::sleep(PAST_INTERVAL);
+    assert_eq!(verifier.verify(&token, now)?.subject(), "user-0023");
+    assert_eq!(fixture.server.hits(), 4);
+    Ok(())
+}
+
+#[test]
+fn assertion_wire_operation_four_reports_an_expired_key_set_during_an_outage_as_unavailable(
+) -> Result {
+    let fixture = Fixture::new()?;
+    let socket = fixture
+        .root
+        .parent()
+        .ok_or("parent missing")?
+        .join("identity.sock");
+    let running = Running::start(
+        &socket,
+        open_state(&fixture.root, config(fixture.server.url(), 1))?,
+    )?;
+    let now = authority_now()?;
+    let token = fixture.signer.mint(&claims("user-0024", now));
+    let (status, fields) = operation_four(&socket, &[token.as_bytes()])?;
+    assert_eq!((status, fields.len()), (0, 1));
+    let principal = fields[0].clone();
+
+    fixture.server.set_mode(UNAVAILABLE);
+    thread::sleep(PAST_INTERVAL);
+    for expected_hits in [2, 2] {
+        let (status, fields) = operation_four(&socket, &[token.as_bytes()])?;
+        assert_eq!(
+            (status, fields.len()),
+            (AssertionRefusal::Unavailable.status(), 0)
+        );
+        assert_eq!(fixture.server.hits(), expected_hits);
+    }
+
+    fixture.server.set_mode(SERVE);
+    thread::sleep(PAST_INTERVAL);
+    let (status, fields) = operation_four(&socket, &[token.as_bytes()])?;
+    assert_eq!((status, fields), (0, vec![principal]));
+    assert_eq!(fixture.server.hits(), 3);
+    probe(&socket)?;
+    running.stop()?;
+    Ok(())
+}
+
+#[test]
+fn assertion_simultaneous_requests_share_one_key_set_fetch() -> Result {
+    let fixture = Fixture::new()?;
+    let verifier = Arc::new(AssertionVerifier::new(config(fixture.server.url(), 1))?);
+    let now = now()?;
+    let tokens: Vec<String> = (0..16)
+        .map(|index| {
+            fixture
+                .signer
+                .mint(&claims(&format!("user-01{index:02}"), now))
+        })
+        .collect();
+    let simultaneous =
+        |tokens: &[String]| -> Result<Vec<std::result::Result<String, std::io::ErrorKind>>> {
+            let barrier = Arc::new(Barrier::new(tokens.len()));
+            let workers: Vec<_> = tokens
+                .iter()
+                .cloned()
+                .map(|token| {
+                    let verifier = Arc::clone(&verifier);
+                    let barrier = Arc::clone(&barrier);
+                    thread::spawn(move || {
+                        barrier.wait();
+                        verifier
+                            .verify(&token, now)
+                            .map(|verified| verified.subject().to_owned())
+                            .map_err(|error| error.kind())
+                    })
+                })
+                .collect();
+            workers
+                .into_iter()
+                .map(|worker| {
+                    worker
+                        .join()
+                        .map_err(|_| Box::<dyn Error>::from("verifier thread panicked"))
+                })
+                .collect()
+        };
+
+    let accepted = simultaneous(&tokens)?;
+    for (index, result) in accepted.into_iter().enumerate() {
+        assert_eq!(result, Ok(format!("user-01{index:02}")));
+    }
+    assert_eq!(fixture.server.hits(), 1);
+
+    fixture.server.set_mode(UNAVAILABLE);
+    thread::sleep(PAST_INTERVAL);
+    for result in simultaneous(&tokens)? {
+        assert_eq!(result, Err(std::io::ErrorKind::Other));
+    }
+    assert_eq!(fixture.server.hits(), 2);
+    Ok(())
+}
+
+#[test]
+fn assertion_restart_assumes_no_cached_key() -> Result {
+    let fixture = Fixture::new()?;
+    let now = now()?;
+    let token = fixture.signer.mint(&claims("user-0025", now));
+    let mut state = fixture.state()?;
+    let (first, _) = state.open_or_create_by_assertion(&token, None, now)?;
+    assert_eq!(fixture.server.hits(), 1);
+    drop(state);
+
+    fixture.server.set_mode(UNAVAILABLE);
+    let restarted = fixture.state()?;
+    assert!(restarted.resolve_assertion(&token, now).is_err());
+    assert_eq!(fixture.server.hits(), 2);
+    assert_eq!(
+        restarted.assertion_principal(ISSUER, "user-0025"),
+        Some(first.clone())
+    );
+    drop(restarted);
+
+    fixture.server.set_mode(SERVE);
+    let successor = TokenSigner::generate("signing-key-2")?;
+    fixture.server.replace(&[successor.jwk()?])?;
+    let verifier = AssertionVerifier::new(config(fixture.server.url(), 300))?;
+    assert_eq!(
+        refusal_kind(verifier.verify(&token, now))?,
+        std::io::ErrorKind::InvalidData
+    );
+    assert_eq!(fixture.server.hits(), 3);
+
+    fixture.server.replace(&[fixture.signer.jwk()?])?;
+    let restarted = fixture.state()?;
+    assert_eq!(restarted.resolve_assertion(&token, now)?, first);
+    assert_eq!(fixture.server.hits(), 4);
+    Ok(())
+}
+
+#[test]
+fn assertion_key_set_redirects_and_oversized_documents_are_refused() -> Result {
+    let fixture = Fixture::new()?;
+    let verifier = AssertionVerifier::new(config(fixture.server.url(), 1))?;
+    let now = now()?;
+    let token = fixture.signer.mint(&claims("user-0026", now));
+
+    fixture.server.set_mode(REDIRECT);
+    assert_eq!(
+        refusal_kind(verifier.verify(&token, now))?,
+        std::io::ErrorKind::Other
+    );
+    assert_eq!(fixture.server.hits(), 1);
+
+    fixture.server.set_mode(SERVE);
+    fixture.server.replace_document(&json!({
+        "keys": [fixture.signer.jwk()?],
+        "padding": "x".repeat(300 * 1024),
+    }))?;
+    thread::sleep(PAST_INTERVAL);
+    assert_eq!(
+        refusal_kind(verifier.verify(&token, now))?,
+        std::io::ErrorKind::Other
+    );
+    assert_eq!(fixture.server.hits(), 2);
+
+    fixture.server.replace(&[fixture.signer.jwk()?])?;
+    thread::sleep(PAST_INTERVAL);
+    assert_eq!(verifier.verify(&token, now)?.subject(), "user-0026");
+    assert_eq!(fixture.server.hits(), 3);
     Ok(())
 }
