@@ -115,6 +115,16 @@ CREATE TABLE IF NOT EXISTS chain_links(
 );
 ";
 
+/// Evidence source of the published local stability level: the configured
+/// reorg depth below the indexed head. It never implies LayerX settlement.
+pub const STABILITY_SOURCE: &str = "local_finality_depth";
+/// Settlement level published when no receipt-bound checkpoint or anchor
+/// evidence has been verified for a row.
+pub const SETTLEMENT_UNVERIFIED: &str = "unverified";
+/// Why settlement is unverified: the index holds no verified checkpoint or
+/// anchor evidence bound to the receipt.
+pub const SETTLEMENT_UNAVAILABLE_REASON: &str = "no_verified_checkpoint_evidence";
+
 /// One decoded transfer leg.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TransferRow {
@@ -955,11 +965,11 @@ impl Store {
         let id: i64 = row.get(0).unwrap_or_default();
         let position: i64 = row.get(1).unwrap_or_default();
         let chain: String = row.get(2).unwrap_or_default();
-        let final_row = finality
+        let boundary = finality
             .iter()
             .find(|(name, _)| *name == chain)
-            .and_then(|(_, boundary)| *boundary)
-            .is_some_and(|boundary| position <= boundary);
+            .and_then(|(_, boundary)| *boundary);
+        let final_row = boundary.is_some_and(|boundary| position <= boundary);
         let decoded: String = row.get(11).unwrap_or_default();
         (
             id,
@@ -976,6 +986,17 @@ impl Store {
                 "tx_id": row.get::<_, String>(9).unwrap_or_default(),
                 "ordinal": row.get::<_, i64>(10).unwrap_or_default().to_string(),
                 "final": final_row,
+                "final_basis": STABILITY_SOURCE,
+                "stability": {
+                    "level": if final_row { "depth_stable" } else { "reversible" },
+                    "source": STABILITY_SOURCE,
+                    "finalized_boundary": boundary.map(|boundary| boundary.to_string()),
+                },
+                "settlement": {
+                    "level": SETTLEMENT_UNVERIFIED,
+                    "source": Value::Null,
+                    "reason": SETTLEMENT_UNAVAILABLE_REASON,
+                },
                 "decoded": parse_json(&decoded),
             }),
         )
