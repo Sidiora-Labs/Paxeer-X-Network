@@ -22301,7 +22301,7 @@ fixture_policy = "Implement owned disposable fixtures using actual compiled serv
 
 [task.17.2]
 title = "Refresh enrolled principal credentials atomically while event sources run"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -22351,7 +22351,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.18.2]
 title = "Acquire and publish independently verified checkpoint proofs to both archive mirrors"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
