@@ -1874,6 +1874,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "subtle",
+ "x509-cert",
  "zeroize",
 ]
 

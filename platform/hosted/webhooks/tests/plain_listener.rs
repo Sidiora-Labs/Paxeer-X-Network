@@ -239,14 +239,7 @@ fn environment(material: &Material, listen: u16) -> Vec<(String, String)> {
             "LAYERX_WEBHOOKS_IDENTITY_TOKEN_FILE",
             secret(directory, "identity-token", "identity-token"),
         ),
-        (
-            "LAYERX_WEBHOOKS_SOURCE_TRIGGER_TOKEN_FILE",
-            secret(directory, "source-trigger-token", "source-trigger-token"),
-        ),
-        (
-            "LAYERX_WEBHOOKS_OPERATOR_TOKEN_FILE",
-            secret(directory, "operator-token", "operator-token"),
-        ),
+        ("LAYERX_WEBHOOKS_ROLE", "public".to_owned()),
     ]
     .into_iter()
     .map(|(name, value)| (name.to_owned(), value))
@@ -385,5 +378,69 @@ fn plain_listener_with_tls_material_refuses_to_start() {
     assert_eq!(
         String::from_utf8_lossy(&output.stderr).trim_end(),
         "layerx-webhooks: LAYERX_WEBHOOKS_LISTENER must be tls or plain"
+    );
+}
+
+#[test]
+fn roles_refuse_foreign_credentials_and_listeners() {
+    let material = material("roles");
+    let directory = &material.directory;
+    for (variable, value) in [
+        (
+            "LAYERX_WEBHOOKS_SOURCE_TRIGGER_TOKEN_FILE",
+            secret(directory, "source-trigger-token", "source-trigger-token"),
+        ),
+        (
+            "LAYERX_WEBHOOKS_OPERATOR_TOKEN_FILE",
+            secret(directory, "operator-token", "operator-token"),
+        ),
+        (
+            "LAYERX_WEBHOOKS_INGRESS_CLIENT_CA_DER",
+            path(&directory.join("server.der")),
+        ),
+    ] {
+        let mut environment = environment(&material, free_port());
+        environment.push((variable.to_owned(), value));
+        let output = command(&environment)
+            .output()
+            .unwrap_or_else(|error| panic!("layerx-webhooks must run: {error}"));
+        assert_eq!(output.status.code(), Some(2));
+        assert_eq!(
+            String::from_utf8_lossy(&output.stderr).trim_end(),
+            format!("layerx-webhooks: {variable} is set with LAYERX_WEBHOOKS_ROLE public")
+        );
+    }
+    for role in [None, Some("both")] {
+        let mut environment: Vec<_> = environment(&material, free_port())
+            .into_iter()
+            .filter(|(name, _)| name != "LAYERX_WEBHOOKS_ROLE")
+            .collect();
+        if let Some(role) = role {
+            environment.push(("LAYERX_WEBHOOKS_ROLE".to_owned(), role.to_owned()));
+        }
+        let output = command(&environment)
+            .output()
+            .unwrap_or_else(|error| panic!("layerx-webhooks must run: {error}"));
+        assert_eq!(output.status.code(), Some(2));
+        assert_eq!(
+            String::from_utf8_lossy(&output.stderr).trim_end(),
+            "layerx-webhooks: LAYERX_WEBHOOKS_ROLE must be public or ingress"
+        );
+    }
+    let mut environment: Vec<_> = environment(&material, free_port())
+        .into_iter()
+        .filter(|(name, _)| {
+            name != "LAYERX_WEBHOOKS_ROLE" && name != "LAYERX_WEBHOOKS_IDENTITY_TOKEN_FILE"
+        })
+        .collect();
+    environment.push(("LAYERX_WEBHOOKS_ROLE".to_owned(), "ingress".to_owned()));
+    environment.push(("LAYERX_WEBHOOKS_LISTENER".to_owned(), "plain".to_owned()));
+    let output = command(&environment)
+        .output()
+        .unwrap_or_else(|error| panic!("layerx-webhooks must run: {error}"));
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr).trim_end(),
+        "layerx-webhooks: LAYERX_WEBHOOKS_ROLE ingress requires LAYERX_WEBHOOKS_LISTENER tls"
     );
 }

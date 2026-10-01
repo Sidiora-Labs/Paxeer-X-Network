@@ -2,6 +2,10 @@
 set -euo pipefail
 
 : "${WEBHOOKS_URL:?HTTPS webhook service URL is required}"
+: "${WEBHOOKS_INGRESS_URL:?HTTPS private producer ingress URL is required}"
+: "${WEBHOOKS_INGRESS_CA_FILE:?internal CA certificate of the ingress is required}"
+: "${WEBHOOK_PRODUCER_CERT_FILE:?producer-role client certificate is required}"
+: "${WEBHOOK_PRODUCER_KEY_FILE:?producer-role client key is required}"
 : "${WEBHOOK_ENDPOINT_ID:?registered real endpoint is required}"
 : "${WEBHOOK_SESSION_COOKIE_FILE:?protected developer session cookie file is required}"
 : "${WEBHOOK_CSRF_FILE:?anti-forgery token file is required}"
@@ -17,30 +21,37 @@ session_cookie="$(<"${WEBHOOK_SESSION_COOKIE_FILE}")"
 csrf="$(<"${WEBHOOK_CSRF_FILE}")"
 source_token="$(<"${WEBHOOK_SOURCE_TRIGGER_TOKEN_FILE}")"
 receiver_token="$(<"${WEBHOOK_RECEIVER_TOKEN_FILE}")"
+producer=(--cacert "${WEBHOOKS_INGRESS_CA_FILE}" --cert "${WEBHOOK_PRODUCER_CERT_FILE}" --key "${WEBHOOK_PRODUCER_KEY_FILE}")
+
+public_internal="$(curl --silent --show-error --proto '=https' --tlsv1.2 \
+  -o /dev/null -w '%{http_code}' \
+  -X POST -H "Authorization: Bearer ${source_token}" \
+  "${WEBHOOKS_URL}/internal/v1/events/${WEBHOOK_SOURCE_KIND}/${WEBHOOK_SOURCE_EVENT_FIRST}")"
+[[ "${public_internal}" == "404" ]]
 
 cursor="$(curl --fail --silent --show-error --proto '=https' --tlsv1.2 \
   -H "Cookie: __Host-layerx-session=${session_cookie}" \
   "${WEBHOOKS_URL}/v1/webhooks/endpoints/${WEBHOOK_ENDPOINT_ID}/events?limit=1" | jq -er .next_cursor)"
 
 curl --fail --silent --show-error --proto '=https' --tlsv1.2 \
-  -X POST -H "Authorization: Bearer ${source_token}" \
-  "${WEBHOOKS_URL}/internal/v1/events/${WEBHOOK_SOURCE_KIND}/${WEBHOOK_SOURCE_EVENT_FIRST}" >/dev/null
+  -X POST -H "Authorization: Bearer ${source_token}" "${producer[@]}" \
+  "${WEBHOOKS_INGRESS_URL}/internal/v1/events/${WEBHOOK_SOURCE_KIND}/${WEBHOOK_SOURCE_EVENT_FIRST}" >/dev/null
 
 kubectl delete pod -l app=layerx-webhooks --field-selector=status.phase=Running --wait=false
 
 curl --fail --silent --show-error --proto '=https' --tlsv1.2 \
-  -X POST -H "Authorization: Bearer ${source_token}" \
-  "${WEBHOOKS_URL}/internal/v1/events/${WEBHOOK_SOURCE_KIND}/${WEBHOOK_SOURCE_EVENT_SECOND}" >/dev/null
+  -X POST -H "Authorization: Bearer ${source_token}" "${producer[@]}" \
+  "${WEBHOOKS_INGRESS_URL}/internal/v1/events/${WEBHOOK_SOURCE_KIND}/${WEBHOOK_SOURCE_EVENT_SECOND}" >/dev/null
 
 duplicate="$(curl --fail --silent --show-error --proto '=https' --tlsv1.2 \
-  -X POST -H "Authorization: Bearer ${source_token}" \
-  "${WEBHOOKS_URL}/internal/v1/events/${WEBHOOK_SOURCE_KIND}/${WEBHOOK_SOURCE_EVENT_FIRST}")"
+  -X POST -H "Authorization: Bearer ${source_token}" "${producer[@]}" \
+  "${WEBHOOKS_INGRESS_URL}/internal/v1/events/${WEBHOOK_SOURCE_KIND}/${WEBHOOK_SOURCE_EVENT_FIRST}")"
 jq -e '.duplicate == true' <<<"${duplicate}" >/dev/null
 
 stale_status="$(curl --silent --show-error --proto '=https' --tlsv1.2 \
   -o /dev/null -w '%{http_code}' \
-  -X POST -H "Authorization: Bearer ${source_token}" \
-  "${WEBHOOKS_URL}/internal/v1/events/${WEBHOOK_SOURCE_KIND}/${WEBHOOK_SOURCE_EVENT_STALE}")"
+  -X POST -H "Authorization: Bearer ${source_token}" "${producer[@]}" \
+  "${WEBHOOKS_INGRESS_URL}/internal/v1/events/${WEBHOOK_SOURCE_KIND}/${WEBHOOK_SOURCE_EVENT_STALE}")"
 [[ "${stale_status}" == "409" ]]
 
 deadline="$((SECONDS + 180))"

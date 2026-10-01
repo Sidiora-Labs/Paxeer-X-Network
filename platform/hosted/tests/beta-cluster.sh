@@ -266,6 +266,8 @@ STATUS_PUBLISH_URL=${LAYERX_BETA_STATUS_PUBLISH_URL:-}
 STATUS_PUBLISHER_REPORTED=0
 EXPLORER_OBSERVATION_PUBLISHED=0
 IDENTITY_PORT=19451
+DEVELOPER_INGRESS_PORT=19454
+WEBHOOK_PRODUCER_ROLE_SAN="URI:urn:layerx:webhooks:role:producer"
 INTEROP_PORT=19458
 EXPLORER_INDEX_PORT=19460
 RAMP_VALUE_INPUTS=(LAYERX_BETA_RAMP_OPERATOR_PRINCIPAL_ID LAYERX_BETA_RAMP_OPERATOR_DID
@@ -614,10 +616,13 @@ issue_cert() {
     (umask 077; openssl pkcs8 -topk8 -nocrypt -in "$dir/key.pem" -outform DER -out "$dir/key.der")
 }
 
+# issue_client_identity <name> <cn> [<san>]: an event producer of the webhooks
+# ingress passes the producer role URI SAN, the only marker the ingress admits
+# for event publication.
 issue_client_identity() {
-    local name=$1 cn=$2 dir
+    local name=$1 cn=$2 subject_alt=${3:-} dir
     dir="$CA_DIR/$name"
-    issue_cert "$name" "$cn" clientAuth ""
+    issue_cert "$name" "$cn" clientAuth "$subject_alt"
     write_token "$dir/password"
     (umask 077; openssl pkcs12 -export -inkey "$dir/key.pem" -in "$dir/cert.pem" -certfile "$CA_DIR/ca.crt" \
         -name "$cn" -passout "file:$dir/password" -out "$dir/client.p12")
@@ -686,11 +691,11 @@ ca_generate() {
         "DNS:paxeer-boundary.$svc,DNS:paxeer-boundary.$TESTNET_NAMESPACE.svc,DNS:paxeer-boundary,DNS:paxeer-observer-boundary.$svc,DNS:paxeer-observer-boundary.$TESTNET_NAMESPACE.svc,DNS:paxeer-observer-boundary,DNS:paxeer.$svc,DNS:localhost,IP:127.0.0.1"
     issue_cert guarantor-1 layerx-guarantor-1 serverAuth,clientAuth "DNS:localhost,IP:127.0.0.1"
     issue_cert guarantor-2 layerx-guarantor-2 serverAuth,clientAuth "DNS:localhost,IP:127.0.0.1"
-    issue_client_identity gateway-client layerx-gateway
+    issue_client_identity gateway-client layerx-gateway "$WEBHOOK_PRODUCER_ROLE_SAN"
     issue_client_identity interop-client layerx-interop-gateway
     issue_client_identity developer-client layerx-developer
-    issue_client_identity registry-event-client layerx-registry-events
-    issue_client_identity human-event-client layerx-human-events
+    issue_client_identity registry-event-client layerx-registry-events "$WEBHOOK_PRODUCER_ROLE_SAN"
+    issue_client_identity human-event-client layerx-human-events "$WEBHOOK_PRODUCER_ROLE_SAN"
     issue_server_identity ramp layerx-reference-ramp \
         "DNS:layerx-reference-ramp.$svc,DNS:layerx-reference-ramp.$TESTNET_NAMESPACE.svc,DNS:layerx-reference-ramp,DNS:layerx-reference-ramp-operator.$svc,DNS:layerx-reference-ramp-operator,DNS:$RAMP_HOST,DNS:localhost,IP:127.0.0.1"
     if [ -n "${LAYERX_BETA_SEQUENCER_KEY_FILE:-}" ]; then
@@ -3114,6 +3119,10 @@ env_write() {
         printf 'export LAYERX_TEST_ESCROW_WASM=%s\n' "$WORK_DIR/program-target/wasm32-unknown-unknown/release/layerx_reference_escrow.wasm"
         printf 'export LAYERX_GATEWAY_CA_FILE=%s\n' "$CA_DIR/ca.crt"
         printf 'export WEBHOOKS_URL=%s\n' "$DEVELOPER_URL"
+        printf 'export WEBHOOKS_INGRESS_URL=%s\n' "$DEVELOPER_INGRESS_URL"
+        printf 'export WEBHOOKS_INGRESS_CA_FILE=%s\n' "$CA_DIR/ca.crt"
+        printf 'export WEBHOOK_PRODUCER_CERT_FILE=%s\n' "$CA_DIR/human-event-client/cert.pem"
+        printf 'export WEBHOOK_PRODUCER_KEY_FILE=%s\n' "$CA_DIR/human-event-client/key.pem"
         printf 'export LAYERX_AGENT_BOUNDARY_URL=%s\n' "$AGENT_URL"
         printf 'export LAYERX_AGENTD_URL=%s\n' "$AGENTD_URL"
         printf 'export LAYERX_AGENTD_CLIENT_CERT_FILE=%s\n' "$CA_DIR/agentd-client/cert.pem"
@@ -3703,6 +3712,7 @@ beta_cluster_up() {
     GATEWAY_URL="https://localhost:$GATEWAY_PORT"
     FAUCET_URL="https://localhost:$FAUCET_PORT"
     DEVELOPER_URL="https://localhost:19450"
+    DEVELOPER_INGRESS_URL="https://localhost:$DEVELOPER_INGRESS_PORT"
     NODE_URL="https://localhost:19446"
     AGENT_URL="https://localhost:19447"
     AGENTD_URL="https://localhost:19456"
@@ -3763,7 +3773,8 @@ beta_cluster_up() {
     port_forward human "$TESTNET_NAMESPACE" layerx-human 19453 9443
     human_browser_provision
     internal_apply
-    port_forward developer "$DEVELOPER_NAMESPACE" layerx-webhooks 19450 443
+    port_forward developer "$DEVELOPER_NAMESPACE" layerx-webhooks-public 19450 443
+    port_forward developer-ingress "$DEVELOPER_NAMESPACE" layerx-webhooks "$DEVELOPER_INGRESS_PORT" 443
     port_forward pending-core "$TESTNET_NAMESPACE" layerx-pending-core 19446 9443
     port_forward agent-boundary "$TESTNET_NAMESPACE" layerx-agent-boundary 19447 9443
     port_forward agentd "$TESTNET_NAMESPACE" layerx-agentd 19456 9443
