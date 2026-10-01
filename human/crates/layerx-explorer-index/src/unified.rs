@@ -634,10 +634,22 @@ impl<'a> UnifiedAccountReader<'a> {
         requested: AccountIdentifier,
         before_block: Option<u64>,
     ) -> Result<UnifiedAccountJoin, GatewayError> {
-        let key = Value::String(requested.canonical_text());
-        let identities = decode_identities(&self.call("px_resolveAccount", &[key.clone()])?)?;
+        let identities = self
+            .endpoint
+            .resolve_account(requested)
+            .map_err(GatewayError::from)?;
+        let lookup = identities.lookup_selector.ok_or(GatewayError::Unbound)?;
+        let key = Value::String(lookup.canonical_text());
         let canonical = identities.canonical(requested);
-        let balances = decode_balances(&self.call("px_getBalances", &[key])?)?;
+        let balance_document = self.call("px_getBalances", &[key])?;
+        let mut balance_identities = decode_identities(&balance_document["account"])?;
+        balance_identities
+            .retain_lookup(lookup.identifier())
+            .map_err(GatewayError::from)?;
+        if balance_identities != identities {
+            return Err(GatewayError::Unbound);
+        }
+        let balances = decode_balances(&balance_document)?;
         let settlement = decode_settlement(&self.call("px_getNetwork", &[])?)?;
         let paxeer_activity =
             self.paxeer_activity(&identities, settlement.instant_block, before_block)?;
@@ -731,6 +743,7 @@ pub fn unified_account_json(join: &UnifiedAccountJoin, freshness: Freshness) -> 
     serde_json::json!({
         "requested": join.requested.canonical_text(),
         "canonical": join.canonical.canonical_text(),
+        "lookup_selector": join.identities.lookup_selector.map(|lookup| lookup.canonical_text()),
         "evidence": Evidence::GatewayReported.label(),
         "identities": {
             "evm_address": address_text(join.identities.evm_address),
