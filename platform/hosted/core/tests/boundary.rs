@@ -915,9 +915,18 @@ fn genesis_request(asset: &[u8; 32], sequencer_key: &[u8; 32]) -> Vec<u8> {
 }
 
 fn build_genesis(root: &Path, builder: &Path, sequencer_seed: &[u8; 32]) -> Genesis {
+    build_configured_genesis(root, builder, sequencer_seed, random32(), false)
+}
+
+fn build_configured_genesis(
+    root: &Path,
+    builder: &Path,
+    sequencer_seed: &[u8; 32],
+    asset: [u8; 32],
+    funded: bool,
+) -> Genesis {
     let directory = root.join("genesis");
     make_dir(&directory, 0o755);
-    let asset = random32();
     let sequencer_key = SigningKey::from_bytes(sequencer_seed)
         .verifying_key()
         .to_bytes();
@@ -928,13 +937,20 @@ fn build_genesis(root: &Path, builder: &Path, sequencer_seed: &[u8; 32]) -> Gene
     );
     write(&directory.join("signer.key"), sequencer_seed, 0o600);
     let artifacts = directory.join("artifacts");
+    let mut arguments = vec![
+        text(&directory.join("request.lxgb")),
+        text(&directory.join("signer.key")),
+        text(&artifacts),
+    ];
+    if funded {
+        arguments.extend([
+            "--custody-profile".into(),
+            text(&root.join("chain/custody.profile")),
+        ]);
+    }
     command(
         &text(builder),
-        &[
-            &text(&directory.join("request.lxgb")),
-            &text(&directory.join("signer.key")),
-            &text(&artifacts),
-        ],
+        &arguments.iter().map(String::as_str).collect::<Vec<_>>(),
     );
     must(
         fs::remove_file(directory.join("signer.key")),
@@ -1284,10 +1300,12 @@ fn assert_refusal(answer: &HttpAnswer, status: u16, code: &str) {
 
 struct TestState {
     root: PathBuf,
+    chain: Option<Daemon>,
 }
 
 impl Drop for TestState {
     fn drop(&mut self) {
+        drop(self.chain.take());
         remove_test_state(&self.root, "real-node");
     }
 }
@@ -1332,12 +1350,16 @@ fn remove_test_state(root: &Path, kind: &str) {
 }
 
 fn start_cluster(with_sequencer: bool) -> Cluster {
+    start_configured_cluster(with_sequencer, false)
+}
+
+fn start_configured_cluster(with_sequencer: bool, funded: bool) -> Cluster {
     assert_eq!(
         effective_uid(),
         0,
         "the real-node harness must run as root so layerxd can run under a distinct uid"
     );
-    let (state, layerxd, builder, migrations) = cluster_artifacts();
+    let (mut state, layerxd, builder, migrations) = cluster_artifacts();
     let root = state.root.clone();
     let sequencer_seed = random32();
     let sequencer_key = SigningKey::from_bytes(&sequencer_seed)
@@ -1353,7 +1375,27 @@ fn start_cluster(with_sequencer: bool) -> Cluster {
     let treasury_key = SigningKey::from_bytes(&treasury_seed)
         .verifying_key()
         .to_bytes();
-    let genesis = build_genesis(&root, &builder, &sequencer_seed);
+    let (genesis, settlement) = if funded {
+        let asset = random32();
+        let (chain, environment) =
+            start_core_chain(&root, &sequencer_seed, &asset, Some(&treasury_seed));
+        state.chain = Some(chain);
+        (
+            build_configured_genesis(&root, &builder, &sequencer_seed, asset, true),
+            environment,
+        )
+    } else {
+        let genesis = build_genesis(&root, &builder, &sequencer_seed);
+        let environment = if with_sequencer {
+            let (chain, environment) =
+                start_core_chain(&root, &sequencer_seed, &genesis.asset, None);
+            state.chain = Some(chain);
+            environment
+        } else {
+            BTreeMap::new()
+        };
+        (genesis, environment)
+    };
     let replica_token = token();
     let program_token = token();
     let replica_port = free_port();
@@ -1368,14 +1410,18 @@ fn start_cluster(with_sequencer: bool) -> Cluster {
     );
     let (node_dir, checkpoints, logs, run_dir) =
         node_storage(&root, &genesis, &treasury_did, &treasury_key);
+    if funded {
+        register_funded_recipient(&root, &node_dir);
+    }
     let lni_socket = run_dir.join("layerxd.lni.sock");
-    let node_env = node_environment(
+    let mut node_env = node_environment(
         [&node_dir, &checkpoints, &logs, &migrations, &lni_socket],
         &genesis,
         [&sequencer_id, &sequencer_key, &sequencer_seed, &replica_id],
         [replica_port, program_port],
         [&replica_token, &program_token],
     );
+    node_env.extend(settlement);
     let sequencer = with_sequencer.then(|| {
         let mut sequencer = spawn(
             &layerxd,
@@ -1877,10 +1923,42 @@ fn readiness_requires_replica_and_writable_journal() {
     let retained = cluster.root.join("state/retained-journal");
     must(fs::rename(&journal, &retained), "make journal unavailable");
     assert_refusal(&boundary.core.get("/readyz"), 503, "journal_unavailable");
+    let before = chain_head(&cluster.lni_socket).unwrap_or_else(|| panic!("LNI head"));
+    let (did, key) = recipient();
+    assert_refusal(
+        &boundary.admin_post(
+            "/admin/v1/testnet/fund",
+            "storage-refusal",
+            &funding_body(&did, &key, 25),
+        ),
+        503,
+        "journal_unavailable",
+    );
+    assert_refusal(
+        &boundary.admin_post("/admin/v1/testnet/reset", "storage-reset", "{}"),
+        503,
+        "journal_unavailable",
+    );
+    assert_eq!(
+        chain_head(&cluster.lni_socket).unwrap_or_else(|| panic!("LNI head")),
+        before
+    );
     must(fs::rename(&retained, &journal), "restore journal");
     assert_eq!(boundary.core.get("/readyz").status, 200);
     cluster.replica.stop();
     assert_refusal(&boundary.core.get("/readyz"), 503, "replica_unavailable");
+    let replica_id = sha256(&[
+        b"layerx-authority-replica:",
+        hex_encode(&cluster.sequencer_key).as_bytes(),
+    ]);
+    cluster.replica = start_replica(
+        &cluster.root,
+        &cluster.root.join("layerxd"),
+        [&cluster.sequencer_key, &cluster.sequencer_id, &replica_id],
+        &cluster.replica_token,
+        cluster.replica_port,
+    );
+    assert_eq!(boundary.core.get("/readyz").status, 200);
 }
 
 #[test]
@@ -2351,6 +2429,10 @@ fn cluster_artifacts() -> (TestState, PathBuf, PathBuf, PathBuf) {
         fs::copy(&layerxd_source, &layerxd),
         "copy qualified layerxd",
     );
+    must(
+        fs::set_permissions(&layerxd, fs::Permissions::from_mode(0o755)),
+        "chmod staged daemon",
+    );
     let migrations = root.join("0007_history_index.sql");
     must(
         fs::copy(
@@ -2364,7 +2446,12 @@ fn cluster_artifacts() -> (TestState, PathBuf, PathBuf, PathBuf) {
         "chmod migrations",
     );
 
-    (TestState { root }, layerxd, builder, migrations)
+    (
+        TestState { root, chain: None },
+        layerxd,
+        builder,
+        migrations,
+    )
 }
 
 fn start_replica(
@@ -2656,7 +2743,7 @@ fn start_supervised_cluster() -> Cluster {
         0,
         "real supervisor harness needs separate daemon uid"
     );
-    let (state, layerxd, builder, migrations) = cluster_artifacts();
+    let (mut state, layerxd, builder, migrations) = cluster_artifacts();
     let root = state.root.clone();
     let sequencer_seed = random32();
     let treasury_seed = random32();
@@ -2676,8 +2763,8 @@ fn start_supervised_cluster() -> Cluster {
         [&program_token, &replica_token],
     );
     supervised_metadata(&root, &asset, &treasury_seed);
-    let mut environment = BTreeMap::new();
-    finality_environment(&mut environment);
+    let (chain, environment) = start_core_chain(&root, &sequencer_seed, &asset, None);
+    state.chain = Some(chain);
     let replica_args = supervisor_arguments(&root, "replica");
     let replica = spawn(
         &root.join("supervisor.sh"),
@@ -3579,4 +3666,300 @@ fn minor_five_receipt_publication_wait_verifies_committed_receipt() {
     );
     selector.push(1);
     assert_eq!(receipt_wait_request(&cluster.lni_socket, &selector).0, 25);
+}
+
+fn start_core_chain(
+    root: &Path,
+    seed: &[u8; 32],
+    asset: &[u8; 32],
+    treasury: Option<&[u8; 32]>,
+) -> (Daemon, BTreeMap<&'static str, String>) {
+    let work = root.join("chain");
+    make_dir(&work, 0o700);
+    write(&work.join("sequencer.seed"), seed, 0o600);
+    let treasury_path = treasury.map_or_else(
+        || "-".to_owned(),
+        |key| {
+            write(&work.join("treasury.seed"), key, 0o600);
+            text(&work.join("treasury.seed"))
+        },
+    );
+    let stderr = work.join("producer.log");
+    let child = must(
+        Command::new(std::env::var_os("LAYERX_TEST_PYTHON").unwrap_or_else(|| "python3".into()))
+            .arg(repository_root().join("platform/hosted/core/tests/core_chain.py"))
+            .args([
+                text(&work),
+                NETWORK_ID.to_string(),
+                text(&work.join("sequencer.seed")),
+                hex_encode(asset),
+                treasury_path,
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::from(must(fs::File::create(&stderr), "chain log")))
+            .process_group(0)
+            .spawn(),
+        "real chain producer",
+    );
+    let mut chain = Daemon {
+        child,
+        supervised: true,
+        stderr,
+    };
+    let ready = work.join("ready.json");
+    let deadline = Instant::now() + Duration::from_secs(180);
+    while !ready.exists() {
+        assert!(
+            chain.child.try_wait().is_ok_and(|status| status.is_none()),
+            "real chain exited: {}",
+            chain.diagnostics()
+        );
+        assert!(
+            Instant::now() < deadline,
+            "real chain readiness: {}",
+            chain.diagnostics()
+        );
+        thread::sleep(Duration::from_millis(100));
+    }
+    let ready: serde_json::Value = must(
+        serde_json::from_slice(&must(fs::read(ready), "chain readiness")),
+        "chain identity",
+    );
+    assert_eq!(ready["chain_id"], 125);
+    let port = ready["port"]
+        .as_u64()
+        .unwrap_or_else(|| panic!("chain port"));
+    let mut environment = BTreeMap::new();
+    environment.insert("LAYERX_NODE_PAXEER_CHAIN_ID", "125".into());
+    environment.insert(
+        "LAYERX_NODE_SETTLEMENT_CONTRACT",
+        "0x0000000000000000000000000000000000001014".into(),
+    );
+    environment.insert(
+        "LAYERX_NODE_CHECKPOINT_REGISTRY",
+        "0x0000000000000000000000000000000000001014".into(),
+    );
+    environment.insert("LAYERX_NODE_PAXEER_RPC_ADDRESS", "127.0.0.1".into());
+    environment.insert("LAYERX_NODE_PAXEER_RPC_PORT", port.to_string());
+    environment.insert(
+        "LAYERX_NODE_PAXEER_RPC_URL",
+        format!("http://127.0.0.1:{port}"),
+    );
+    (chain, environment)
+}
+
+fn verified_balance(boundary: &Boundary, cluster: &Cluster, did: &str) -> u128 {
+    let account = must(layerx_platform_core::main_account(did), "funded account id");
+    let answer = boundary
+        .core
+        .get(&format!("/v1/accounts/{}/balance", hex_encode(&account)));
+    assert_eq!(answer.status, 200, "{}", answer.body);
+    let value = json(&answer);
+    let field = |key: &str| {
+        value["result"][key]
+            .as_str()
+            .unwrap_or_else(|| panic!("missing {key}"))
+    };
+    let verified = must(
+        verify_account_evidence(
+            &must(hex_decode(field("canonical_value")), "canonical account"),
+            &must(hex_decode(field("proof_material")), "account proof"),
+            account,
+            None,
+            AccountEvidencePolicy {
+                expected_protocol_version: PROTOCOL_VERSION,
+                expected_network_id: NETWORK_ID,
+                handshake_sequencer_key: cluster.sequencer_key,
+                root_selector: RootSelector::Latest,
+            },
+        ),
+        "funded account proof",
+    );
+    assert_eq!(verified.account().asset_id(), cluster.asset);
+    assert_eq!(field("balance"), verified.account().balance().to_string());
+    must(
+        verified.account().balance().to_string().parse(),
+        "balance amount",
+    )
+}
+
+#[test]
+fn funded_admin_send_is_proven_and_replayed_after_restart() {
+    let cluster = start_configured_cluster(true, true);
+    let certificates = certificates(&cluster.root);
+    let mut boundary = start_boundary(&cluster, &certificates);
+    let recipient_seed: [u8; 32] = must(
+        must(
+            fs::read(cluster.root.join("chain/recipient.seed")),
+            "recipient seed",
+        )
+        .try_into(),
+        "recipient seed length",
+    );
+    for (name, seed) in [
+        ("custody", &cluster.treasury_seed),
+        ("recipient", &recipient_seed),
+    ] {
+        let credit = must(
+            fs::read(cluster.root.join(format!("chain/{name}.activity"))),
+            "real custody credit",
+        );
+        let activity = submit_custody_credit(&cluster, &credit, seed);
+        wait_for_published_receipt(&boundary, &cluster, &hex_encode(&activity));
+    }
+    let treasury_before = verified_balance(&boundary, &cluster, &cluster.treasury_did);
+    assert_eq!(treasury_before, 1_000_000);
+    let did = treasury_did(&recipient_seed);
+    let key = hex_encode(
+        &SigningKey::from_bytes(&recipient_seed)
+            .verifying_key()
+            .to_bytes(),
+    );
+    assert_eq!(verified_balance(&boundary, &cluster, &did), 100);
+    let body = funding_body(&did, &key, 25);
+    let answer = boundary.admin_post("/admin/v1/testnet/fund", "funded-send", &body);
+    assert_eq!(answer.status, 200, "{}", answer.body);
+    assert_eq!(json(&answer)["state"], "funded");
+    let activity = json(&answer)["transaction_id"]
+        .as_str()
+        .unwrap_or_else(|| panic!("funding activity"))
+        .to_owned();
+    wait_for_published_receipt(&boundary, &cluster, &activity);
+    let receipt = boundary.core.get(&format!("/v1/receipts/{activity}"));
+    assert_eq!(receipt.status, 200, "{}", receipt.body);
+    let receipt_body = json(&receipt);
+    let bytes = must(
+        hex_decode(
+            receipt_body["result"]["receipt"]
+                .as_str()
+                .unwrap_or_else(|| panic!("signed receipt")),
+        ),
+        "receipt encoding",
+    );
+    let verified = must(
+        layerx_proof::receipt::verify_sequencer_signature(&bytes, cluster.sequencer_key),
+        "funding receipt signature",
+    );
+    let protocol = verified
+        .protocol()
+        .unwrap_or_else(|| panic!("protocol receipt"));
+    assert_eq!(protocol.result_code(), 0);
+    assert_eq!(hex_encode(&protocol.activity_id()), activity);
+    assert_eq!(verified_balance(&boundary, &cluster, &did), 125);
+    let treasury_after = verified_balance(&boundary, &cluster, &cluster.treasury_did);
+    assert!(treasury_after <= treasury_before - 25);
+    let head = chain_head(&cluster.lni_socket).unwrap_or_else(|| panic!("funded head"));
+    boundary.process.stop();
+    drop(boundary);
+    let boundary = start_boundary(&cluster, &certificates);
+    let replay = boundary.admin_post("/admin/v1/testnet/fund", "funded-send", &body);
+    assert_eq!(replay.status, answer.status);
+    assert_eq!(replay.body, answer.body);
+    assert_eq!(verified_balance(&boundary, &cluster, &did), 125);
+    assert_eq!(
+        verified_balance(&boundary, &cluster, &cluster.treasury_did),
+        treasury_after
+    );
+    assert_eq!(
+        chain_head(&cluster.lni_socket).unwrap_or_else(|| panic!("replayed head")),
+        head
+    );
+    assert_refusal(
+        &boundary.admin_post(
+            "/admin/v1/testnet/fund",
+            "funded-send",
+            &funding_body(&did, &key, 26),
+        ),
+        409,
+        "idempotency_conflict",
+    );
+}
+
+fn submit_custody_credit(cluster: &Cluster, signed: &[u8], seed: &[u8; 32]) -> [u8; 32] {
+    use layerx_client::submit::{submit_signed, Submission, SubmissionContext};
+    let gate = ConnectionGate::new(1);
+    let mut transport = must(
+        Uds::connect(&cluster.lni_socket, &gate, lni_limits()),
+        "credit LNI",
+    );
+    let handshake = must(
+        perform(&mut transport, &handshake_config(), None),
+        "credit handshake",
+    );
+    let kind = must(ActivityType::new(ModuleId::Bridge, 1), "bridge kind");
+    let registry = must(
+        ModuleRegistry::new(&[must(
+            ModuleRegistration::new(ModuleId::Bridge, &[kind]),
+            "bridge",
+        )]),
+        "registry",
+    );
+    let submitted = must(
+        submit_signed(
+            &mut transport,
+            &registry,
+            SubmissionContext {
+                interface_version: handshake.node().interface_version,
+                protocol_version: PROTOCOL_VERSION,
+                network_id: NETWORK_ID,
+                correlation_id: 1,
+                signer_public_key: SigningKey::from_bytes(seed).verifying_key().to_bytes(),
+                attempt: 1,
+            },
+            signed,
+        ),
+        "credit admission",
+    );
+    let Submission::Acknowledged(ack) = submitted else {
+        panic!("credit admission unknown")
+    };
+    let mut selector = vec![1];
+    selector.extend_from_slice(&ack.activity_id());
+    selector.push(1);
+    drop(transport);
+    thread::sleep(Duration::from_millis(100));
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        let (tag, bytes) = receipt_wait_request(&cluster.lni_socket, &selector);
+        assert_eq!(tag, 6);
+        if !bytes.is_empty() {
+            let receipt = must(
+                layerx_proof::receipt::verify_sequencer_signature(&bytes, cluster.sequencer_key),
+                "credit signature",
+            );
+            let receipt = receipt
+                .protocol()
+                .unwrap_or_else(|| panic!("credit protocol receipt"));
+            assert_eq!(receipt.activity_id(), ack.activity_id());
+            assert_eq!(receipt.result_code(), 0);
+            return ack.activity_id();
+        }
+        assert!(Instant::now() < deadline, "credit receipt deadline");
+        thread::sleep(Duration::from_millis(50));
+    }
+}
+
+fn register_funded_recipient(root: &Path, node_dir: &Path) {
+    let seed: [u8; 32] = must(
+        must(
+            fs::read(root.join("chain/recipient.seed")),
+            "recipient seed",
+        )
+        .try_into(),
+        "recipient seed length",
+    );
+    let key = SigningKey::from_bytes(&seed).verifying_key().to_bytes();
+    let path = node_dir.join("identities.txt");
+    let mut identities = must(fs::read(&path), "identities");
+    identities.extend_from_slice(
+        format!(
+            "{}:{}:0\n",
+            hex_encode(layerx_platform_core::treasury_did(&seed).as_bytes()),
+            hex_encode(&key)
+        )
+        .as_bytes(),
+    );
+    write(&path, &identities, 0o600);
+    chown_tree(node_dir, DAEMON_UID, DAEMON_GID);
 }
