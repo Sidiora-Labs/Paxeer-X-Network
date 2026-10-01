@@ -36,7 +36,7 @@ if (process.argv.includes('--build-entry')) {
     const hashes = {};
     for (const input of Object.keys(built.metafile.inputs)) {
         const absolute = path.resolve(root, input);
-        if (absolute.startsWith(root + path.sep)) hashes[path.relative(root, absolute)] = digest(fs.readFileSync(absolute));
+        if (!input.startsWith('<') && absolute.startsWith(root + path.sep)) hashes[path.relative(root, absolute)] = digest(fs.readFileSync(absolute));
     }
     record(path.join(evidence, 'build.json'), { source_sha: sourceSha(), source_hashes: hashes, bundle_sha256: digest(fs.readFileSync(path.join(bundle, 'app.js'))), dependency_versions: { esbuild: require('esbuild/package.json').version, playwright: require('@playwright/test/package.json').version } });
     console.log('Explicit production-component browser target built');
@@ -78,22 +78,26 @@ if (process.argv.includes('--build-entry')) {
             await extensionPage.getByTestId(name).click({ timeout: 20000 });
         }
         stage = 'extension_import';
-        await clickId('onboarding-terms-checkbox');
         await clickId('onboarding-import-wallet');
-        await clickOptional(extensionPage, '[data-testid="metametrics-no-thanks"]');
-        await clickOptional(extensionPage, '[data-testid="onboarding-import-with-srp-button"]');
-        const words = fresh.mnemonic.phrase.split(' ');
-        await extensionPage.locator('#import-srp__srp-word-0').waitFor({ state: 'visible', timeout: 30000 });
-        for (let index = 0; index < words.length; index++) await extensionPage.locator(`#import-srp__srp-word-${index}`).fill(words[index]);
+        const phrase = extensionPage.getByTestId('srp-input-import__srp-note');
+        await phrase.waitFor({ state: 'visible', timeout: 30000 });
+        await phrase.evaluate((element, value) => {
+            const clipboardData = new DataTransfer();
+            clipboardData.setData('text', value);
+            element.dispatchEvent(new ClipboardEvent('paste', { clipboardData, bubbles: true }));
+        }, fresh.mnemonic.phrase);
         await clickId('import-srp-confirm');
-        await extensionPage.getByTestId('create-password-new').fill(password);
-        await extensionPage.getByTestId('create-password-confirm').fill(password);
+        await extensionPage.getByTestId('create-password-new-input').fill(password);
+        await extensionPage.getByTestId('create-password-confirm-input').fill(password);
         await clickId('create-password-terms');
-        await clickId('create-password-import');
-        await clickOptional(extensionPage, '[data-testid="metametrics-no-thanks"]');
-        await clickId('onboarding-complete-done');
-        await clickOptional(extensionPage, '[data-testid="pin-extension-next"]');
-        await clickOptional(extensionPage, '[data-testid="pin-extension-done"]');
+        await clickId('create-password-submit');
+        for (let attempt = 0; attempt < 120; attempt++) {
+            if (await extensionPage.getByTestId('account-options-menu-button').isVisible().catch(() => false)) break;
+            await clickOptional(extensionPage, '[data-testid="metametrics-i-agree"]');
+            await clickOptional(extensionPage, '[data-testid="onboarding-complete-done"]');
+            await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+        await extensionPage.getByTestId('account-options-menu-button').waitFor({ state: 'visible' });
         const page = await context.newPage();
         await page.goto(process.env.WALLET_FIXTURE_APP);
         await expect(page.getByTestId('connect')).toBeVisible({ timeout: 30000 });
