@@ -1,5 +1,5 @@
 use crate::config::{protected, Config};
-use crate::wire::{blob, Error, Request, Result};
+use crate::wire::{blob, Error, Operation, Request, Result};
 use ring::aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM};
 use ring::signature::{Ed25519KeyPair, KeyPair};
 use serde::{Deserialize, Serialize};
@@ -233,45 +233,48 @@ impl Store {
             return Err(Error::Unavailable);
         }
         if request.provider != self.state.provider
-            || (request.operation != 0 && request.network != self.state.network)
+            || (request.kind != Operation::Probe && request.network != self.state.network)
         {
             return Err(Error::Refused);
         }
-        if request.operation == 0 {
-            self.persist()?;
-            return Ok(Vec::new());
-        }
-        if request.operation == 1 {
-            return self.create(request);
-        }
-        if request.operation == 3 && request.version == 1 {
-            return Err(Error::Refused);
-        }
-        if request.operation == 11 {
-            return self.authorize_send(request, signing_digest.ok_or(Error::Refused)?);
-        }
-        if request.operation == 13 {
-            return self.authorize_recipient(request);
-        }
-        if request.operation >= 6 {
-            return self.evm(request, now);
+        match request.kind {
+            Operation::Probe => {
+                self.persist()?;
+                return Ok(Vec::new());
+            }
+            Operation::Create => return self.create(request),
+            Operation::Rotate => return Err(Error::Refused),
+            Operation::AuthorizeSend => {
+                return self.authorize_send(request, signing_digest.ok_or(Error::Refused)?)
+            }
+            Operation::AuthorizeRecipient => return self.authorize_recipient(request),
+            Operation::EvmWallet | Operation::Evm => return self.evm(request, now),
+            Operation::ExportPrimary => return self.export_primary(request),
+            Operation::Describe
+            | Operation::RotateIfCurrent
+            | Operation::Destroy
+            | Operation::Sign => {}
         }
         let key = hex(&request.binding);
         let record = self.state.records.get_mut(&key).ok_or(Error::NotFound)?;
         if record.class != request.class || request.reference != record.handle {
             return Err(Error::Integrity);
         }
-        if request.operation == 4 && record.seed.is_none() {
+        if request.kind == Operation::Destroy && record.seed.is_none() {
             return Ok(Vec::new());
         }
-        if record.self_custodied && request.operation != 2 {
+        if record.self_custodied && request.kind != Operation::Describe {
             return Err(Error::SelfCustodied);
         }
-        let seed = record.seed.as_ref().ok_or(Error::NotFound)?;
-        match request.operation {
-            2 => description(record),
-            3 => self.rotate(&key, request.expected.ok_or(Error::Refused)?),
-            4 => {
+        if record.seed.is_none() && !record.self_custodied {
+            return Err(Error::NotFound);
+        }
+        match request.kind {
+            Operation::Describe => description(record),
+            Operation::RotateIfCurrent => {
+                self.rotate(&key, request.expected.ok_or(Error::Refused)?)
+            }
+            Operation::Destroy => {
                 record.seed.zeroize();
                 record.seed = None;
                 record.wallet = None;
@@ -279,25 +282,44 @@ impl Store {
                 self.persist()?;
                 Ok(Vec::new())
             }
-            5 => Ok(signing_key(seed)?
+            Operation::Sign => Ok(signing_key(record.seed.as_ref().ok_or(Error::NotFound)?)?
                 .sign(&signing_digest.ok_or(Error::Refused)?)
                 .as_ref()
                 .to_vec()),
-            14 => {
-                if record.class != 1 {
-                    return Err(Error::Refused);
-                }
-                let exported = *seed;
-                record.self_custodied = true;
-                record.seed.zeroize();
-                record.seed = None;
-                record.wallet = None;
-                record.send_actions.clear();
-                self.persist()?;
-                Ok(exported.to_vec())
-            }
             _ => Err(Error::Refused),
         }
+    }
+    /// The one-time handover of a human primary seed. The self-custody
+    /// transition and the erasure of the managed seed, wallet and send
+    /// authorizations are committed durably before the seed is returned. A
+    /// failed or uncertain commit returns no seed and leaves the store
+    /// unhealthy, so it serves nothing until a restart re-reads the
+    /// authenticated durable record: a committed transition stays
+    /// self-custodied and its material is never recreated, an uncommitted one
+    /// keeps the managed key for a retried export.
+    fn export_primary(&mut self, request: &Request<'_>) -> Result<Vec<u8>> {
+        let record = self
+            .state
+            .records
+            .get_mut(&hex(&request.binding))
+            .ok_or(Error::NotFound)?;
+        if record.class != request.class || request.reference != record.handle {
+            return Err(Error::Integrity);
+        }
+        if record.self_custodied {
+            return Err(Error::SelfCustodied);
+        }
+        if record.class != 1 {
+            return Err(Error::Refused);
+        }
+        let exported = Zeroizing::new(record.seed.ok_or(Error::NotFound)?);
+        record.self_custodied = true;
+        record.seed.zeroize();
+        record.seed = None;
+        record.wallet = None;
+        record.send_actions.clear();
+        self.persist()?;
+        Ok(exported.to_vec())
     }
     fn authorize_send(&mut self, request: &Request<'_>, digest: [u8; 32]) -> Result<Vec<u8>> {
         let record = self
@@ -486,6 +508,11 @@ fn validate(state: &State, config: &Config) -> std::result::Result<(), String> {
             || (record.generation == 0) != record.previous.is_none()
             || record.previous == Some(record.public)
             || record.recipient_identity == Some([0; 32])
+            || (record.self_custodied
+                && (record.class != 1
+                    || record.seed.is_some()
+                    || record.wallet.is_some()
+                    || !record.send_actions.is_empty()))
         {
             return Err("state invariant failed".into());
         }

@@ -21933,7 +21933,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.1]
 title = "Complete the authenticated one-time Human KMS export transition"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]

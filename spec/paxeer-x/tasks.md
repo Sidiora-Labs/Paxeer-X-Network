@@ -319,7 +319,7 @@
     - Add a focused real service case for saturated expired/live populations, expiry equality, revocation and restart.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 139_
-  - [-] 12.1 Complete the authenticated one-time Human KMS export transition
+  - [x] 12.1 Complete the authenticated one-time Human KMS export transition
     - Replace range-based operation decoding/dispatch with explicit versioned operation payload handling for export.
     - Preserve class, TLS admission, audit and durable erasure ordering and make the provider encoder and decoder share the same contract.
     - Extend the real remote-provider test with export, forbidden executor export, post-export signing refusal and restart.

@@ -991,6 +991,232 @@ fn executor_certificate_cannot_authorize_or_manage_keys() -> Result<()> {
     Ok(())
 }
 
+fn export_signing_frame(
+    binding: [u8; 32],
+    handle: &[u8],
+    public: [u8; 32],
+) -> Result<(Vec<u8>, [u8; 32])> {
+    let payload = monetary_payloads()?
+        .into_iter()
+        .next()
+        .ok_or("missing payload")?;
+    let canonical = unsigned_payload(public, 77, payload)?;
+    let disclosure = checked(layerx_crypto::disclosure::bind(&canonical, &registry()?))?;
+    signing_request(
+        binding,
+        handle,
+        &canonical,
+        &encoded_disclosure(&disclosure)?,
+    )
+}
+
+#[test]
+fn primary_export_is_admitted_once_committed_before_success_and_survives_restart() -> Result<()> {
+    use layerx_human_service::custody::{KmsError, PrincipalKeyBinding, ProviderKeyReference};
+    let mut host = Host::new()?;
+    let client = host.remote("client", "beta-kms")?;
+    let executor = host.remote("foreign", "beta-kms")?;
+    let human = PrincipalKeyBinding::from_digest([91; 32], 77, KeyClass::HumanPrimary)?;
+    let created = client.create_key(&human)?;
+    let reference = created.reference().clone();
+    let handle = reference.as_bytes().to_vec();
+    let public = created.public_key();
+    let agent = PrincipalKeyBinding::from_digest([92; 32], 77, KeyClass::AgentPrimary)?;
+    let agent_reference = client.create_key(&agent)?.reference().clone();
+    let (sign, digest) = export_signing_frame([91; 32], &handle, public)?;
+    let signed = host.call(&sign)?;
+    assert_eq!(signed[7], 0);
+    checked(
+        ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, public)
+            .verify(&digest, &signed[8..]),
+    )?;
+
+    let mut export = request(14, [91; 32], &handle, None)?;
+    export[4..6].copy_from_slice(&5_u16.to_be_bytes());
+    let mut legacy = export.clone();
+    legacy[4..6].copy_from_slice(&1_u16.to_be_bytes());
+    let mut evm_version = export.clone();
+    evm_version[4..6].copy_from_slice(&3_u16.to_be_bytes());
+    let mut with_evm_payload = export.clone();
+    blob(&mut with_evm_payload, b"{}")?;
+    let truncated = export[..export.len() - 1].to_vec();
+    let mut unknown = export.clone();
+    unknown[6] = 15;
+    let mut empty_reference = request(14, [91; 32], &[], None)?;
+    empty_reference[4..6].copy_from_slice(&5_u16.to_be_bytes());
+    for frame in [
+        legacy,
+        evm_version,
+        with_evm_payload,
+        truncated,
+        unknown,
+        empty_reference,
+    ] {
+        let mut stream = host.connection(Some("client"))?;
+        checked(write_frame(&mut stream, &frame, MAX))?;
+        assert!(read_frame(&mut stream, MAX).is_err());
+    }
+    let mut stream = host.connection(Some("foreign"))?;
+    checked(write_frame(&mut stream, &export, MAX))?;
+    assert_eq!(
+        checked(read_frame(&mut stream, MAX))?,
+        b"LXKP\0\x05\x0e\x01"
+    );
+    assert_eq!(
+        executor.export_primary_key(&human, &reference).err(),
+        Some(KmsError::Refused)
+    );
+    assert_eq!(
+        host.remote("client", "other-kms")?
+            .export_primary_key(&human, &reference)
+            .err(),
+        Some(KmsError::Refused)
+    );
+    assert_eq!(
+        client.export_primary_key(&agent, &agent_reference).err(),
+        Some(KmsError::Refused)
+    );
+    let misclassed = PrincipalKeyBinding::from_digest([91; 32], 77, KeyClass::AgentPrimary)?;
+    assert_eq!(
+        client.export_primary_key(&misclassed, &reference).err(),
+        Some(KmsError::Integrity)
+    );
+    assert_eq!(
+        client
+            .export_primary_key(&human, &ProviderKeyReference::new(vec![33; 32])?)
+            .err(),
+        Some(KmsError::Integrity)
+    );
+    assert_eq!(
+        client
+            .export_primary_key(
+                &PrincipalKeyBinding::from_digest([93; 32], 77, KeyClass::HumanPrimary)?,
+                &reference
+            )
+            .err(),
+        Some(KmsError::KeyNotFound)
+    );
+    assert_eq!(
+        client.describe_key(&human, &reference)?.public_key(),
+        public
+    );
+    assert_eq!(host.call(&sign)?[7], 0);
+
+    let blocker = host.root.join("state/state.next");
+    fs::create_dir(&blocker)?;
+    assert_eq!(
+        client.export_primary_key(&human, &reference).err(),
+        Some(KmsError::Unavailable)
+    );
+    assert_eq!(
+        client.describe_key(&human, &reference).err(),
+        Some(KmsError::Unavailable)
+    );
+    assert_eq!(host.call(&sign)?[7], 4);
+    host.stop();
+    fs::remove_dir(&blocker)?;
+    host.start()?;
+    assert_eq!(
+        client.describe_key(&human, &reference)?.public_key(),
+        public
+    );
+    assert_eq!(host.call(&sign)?[7], 0);
+
+    let seed = client.export_primary_key(&human, &reference)?;
+    let derived = checked(ring::signature::Ed25519KeyPair::from_seed_unchecked(
+        seed.as_slice(),
+    ))?;
+    assert_eq!(
+        <[u8; 32]>::try_from(ring::signature::KeyPair::public_key(&derived).as_ref())?,
+        public
+    );
+    for pass in 0..2 {
+        if pass == 1 {
+            host.stop();
+            host.start()?;
+        }
+        assert_eq!(
+            client.export_primary_key(&human, &reference).err(),
+            Some(KmsError::SelfCustodied)
+        );
+        assert_eq!(host.call(&sign)?[7], 6);
+        assert_eq!(
+            client
+                .rotate_key_if_current(&human, &reference, public)
+                .err(),
+            Some(KmsError::SelfCustodied)
+        );
+        assert_eq!(
+            client.evm_operation(6, &human, &reference, &[]).err(),
+            Some(KmsError::Refused)
+        );
+        assert_eq!(
+            executor.export_primary_key(&human, &reference).err(),
+            Some(KmsError::Refused)
+        );
+        assert_eq!(client.create_key(&human).err(), Some(KmsError::Conflict));
+        let described = client.describe_key(&human, &reference)?;
+        assert_eq!(described.public_key(), public);
+        assert!(described.reference() == &reference);
+        assert!(client.describe_key(&agent, &agent_reference)?.reference() == &agent_reference);
+    }
+
+    let lost = PrincipalKeyBinding::from_digest([94; 32], 77, KeyClass::HumanPrimary)?;
+    let lost_created = client.create_key(&lost)?;
+    let lost_reference = lost_created.reference().clone();
+    let mut lost_export = request(14, [94; 32], lost_reference.as_bytes(), None)?;
+    lost_export[4..6].copy_from_slice(&5_u16.to_be_bytes());
+    {
+        let mut tls = host.connection(Some("client"))?;
+        checked(write_frame(&mut tls, &lost_export, MAX))?;
+    }
+    let clock = RuntimeClock::from_environment()?;
+    let mut deadline = Deadline::start(clock.as_ref(), Duration::from_secs(5))?;
+    loop {
+        match client.export_primary_key(&lost, &lost_reference) {
+            Err(KmsError::SelfCustodied) => break,
+            Ok(_) => return Err("lost-response export was handed out twice".into()),
+            Err(_) => {}
+        }
+        if deadline.remaining(clock.as_ref())?.is_zero() {
+            return Err("lost-response export was not committed".into());
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    host.stop();
+    host.start()?;
+    assert_eq!(
+        client.export_primary_key(&lost, &lost_reference).err(),
+        Some(KmsError::SelfCustodied)
+    );
+    assert_eq!(client.create_key(&lost).err(), Some(KmsError::Conflict));
+    assert_eq!(
+        client.describe_key(&lost, &lost_reference)?.public_key(),
+        lost_created.public_key()
+    );
+
+    let keystore = Keystore::open_production(
+        host.root.join("client-state"),
+        77,
+        host.remote("client", "beta-kms")?,
+    )?;
+    let alice = PrincipalId::new("alice")?;
+    let bob = PrincipalId::new("bob")?;
+    let key = KeyId::new("primary")?;
+    let alice_public = keystore.create(&alice, &key, KeyClass::HumanPrimary)?;
+    let bob_public = keystore.create(&bob, &key, KeyClass::AgentPrimary)?;
+    assert!(keystore.export_primary_once(&bob, &key).is_err());
+    let exported = keystore.export_primary_once(&alice, &key)?;
+    assert_eq!(exported.public_key(), alice_public);
+    assert!(keystore.export_primary_once(&alice, &key).is_err());
+    host.stop();
+    host.start()?;
+    assert!(keystore.export_primary_once(&alice, &key).is_err());
+    assert_eq!(keystore.describe(&alice, &key)?.public_key, alice_public);
+    assert_eq!(keystore.describe(&bob, &key)?.public_key, bob_public);
+    Ok(())
+}
+
 #[test]
 fn native_send_authorization_is_scoped_and_durable() -> Result<()> {
     use layerx_human_service::custody::SendPlanAuthorization;
