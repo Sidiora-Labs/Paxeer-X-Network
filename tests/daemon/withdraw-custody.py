@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import runpy
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -17,9 +18,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'tests/bridge'))
 from comet_credit import CUSTODY_ADDRESS, module_identity
 from custody_credit import DEPOSIT_TOPIC, unhex, write_new
-from custody_chain import boundaries, from_environment, owned_chain, retain_custody_proofs
+from custody_chain import artifact_manifest, boundaries, calldata, from_environment, owned_chain, retain_custody_proofs
 
-COMMON = runpy.run_path(str(ROOT / 'tests/daemon/finality-authority-chain.py'))
 ASSET = 'b5a32b12029f8ddfb905f90f280f664b46390de0fc62770fc197dd87b18cd898'
 NETWORK_ID = 77
 # Custody is the native layerxcustody module behind the precompile at 0x...1013 and nothing
@@ -105,7 +105,7 @@ def custody_genesis(work, network_id=NETWORK_ID, sequencer_seed=SEQUENCER_SEED):
 def deposit(chain, beneficiary, amount):
     assert unhex(chain.view(CUSTODY_ADDRESS, 'nativeAssetId()'), 32) == bytes.fromhex(ASSET), \
         'custody genesis maps another native asset'
-    deposited = chain.transaction(COMMON['run']('cast', 'calldata', 'deposit(bytes32)', '0x' + beneficiary),
+    deposited = chain.transaction(calldata('deposit(bytes32)', '0x' + beneficiary),
                                   CUSTODY_ADDRESS, value=amount * WEI_PER_BASE_UNIT)
     logs = [entry for entry in deposited['logs']
             if unhex(entry['address'], 20) == unhex(CUSTODY_ADDRESS, 20)
@@ -147,11 +147,16 @@ def main():
     parser.add_argument('--network-id', type=int, default=NETWORK_ID)
     parser.add_argument('--sequencer-key')
     parser.add_argument('--beneficiary-key')
+    parser.add_argument('--artifact-manifest', default=os.environ.get('LAYERX_CUSTODY_ARTIFACT_MANIFEST'))
     args = parser.parse_args()
     assert (args.export is not None) == (args.sequencer_key is not None) == (args.beneficiary_key is not None), \
         '--export, --sequencer-key and --beneficiary-key go together'
     assert args.export is not None or args.network_id == NETWORK_ID, '--network-id needs --export'
     build = (ROOT / args.build_dir).resolve()
+    artifacts_manifest = artifact_manifest(args.artifact_manifest)
+    executables = {name: Path(row['path']) for name, row in artifacts_manifest['executables'].items()}
+    os.environ['PAXD'] = str(executables['paxd'])
+    os.environ['LAYERX_CUSTODY_PROOF_BIN'] = str(executables['layerx-custody-proof'])
     mode = ('--owner-rotation' if args.owner_rotation else
             '--native-onboarding' if args.native_onboarding else
             '--handover' if args.handover else
@@ -163,6 +168,10 @@ def main():
     amount = 1000000000 if (args.metered_allowance or args.native_onboarding or
                            args.owner_rotation or programs_handover) else 1000000
     assert os.environ.get('LAYERX_TEST_SETTLEMENT_PUBLICATION') != '1' or mode == '--withdraw'
+    if args.export is not None:
+        for name in ('custody.profile', 'custody.activity', 'custody.json'):
+            if (Path(args.export) / name).exists():
+                raise FileExistsError('custody export already exists: ' + name)
     logs = Path(args.export) if args.export is not None else ROOT / 'qual-logs/set1'
     logs.mkdir(parents=True, exist_ok=True)
     evidence = Path(tempfile.mkdtemp(prefix='e-daemon-custody-', dir=logs))
@@ -180,27 +189,8 @@ def main():
             beneficiary = hashlib.sha256(b'LX:ACCOUNT:v1' + len(name).to_bytes(4, 'big') + name).hexdigest()
             (work / 'actor').write_bytes(seed)
             (work / 'actor').chmod(0o600)
-            artifacts = build / 'withdraw-contracts/artifacts'
-            threads = min(4, int(os.environ.get('CARGO_BUILD_JOBS', '4')),
-                          int(os.environ.get('RAYON_NUM_THREADS', '4')))
-            assert threads > 0
-            run('forge', 'build', 'contracts/GuarantorBond.sol', 'contracts/CheckpointRegistry.sol',
-                'platform/hosted/paxeer/contracts/BetaUsdl.sol', 'contracts/challenge/CheckpointChallengeManager.sol',
-                'contracts/governance/LayerXBetaTimelock.sol', 'contracts/custody/AssetRegistry.sol',
-                'contracts/custody/LayerXVault.sol', 'loadtest/contracts/evm/lib/solmate/src/tokens/WETH.sol',
-                '--threads', str(threads), '--out', artifacts, '--cache-path', build / 'withdraw-contracts/cache')
-            target = Path(os.environ['CARGO_TARGET_DIR']).resolve()
-            boundary_binary = Path(os.environ.get('LAYERX_PAXEER_BOUNDARY_BIN', target/'debug/layerx-paxeer-boundary')).resolve()
-            if 'LAYERX_PAXEER_BOUNDARY_BIN' not in os.environ:
-                run('cargo', 'build', '--manifest-path', 'platform/Cargo.toml', '--locked',
-                    '--jobs', str(threads), '-p', 'layerx-platform-paxeer-boundary', '--bin', 'layerx-paxeer-boundary')
-            assert boundary_binary.is_file(), 'explicit boundary executable unavailable'
-            proof_binary = Path(os.environ.get('LAYERX_CUSTODY_PROOF_BIN', build/'bin/layerx-custody-proof')).resolve()
-            if 'LAYERX_CUSTODY_PROOF_BIN' not in os.environ:
-                proof_env = os.environ | {'GOCACHE': str(target/'go-cache'), 'GOMAXPROCS': str(threads)}
-                run('make', 'custody-proof-build', 'BUILD_DIR='+str(build), 'PAXEER_GO_JOBS='+str(threads), env=proof_env)
-            assert proof_binary.is_file(), 'explicit custody proof executable unavailable'
-            os.environ['LAYERX_CUSTODY_PROOF_BIN'] = str(proof_binary)
+            artifacts = Path(artifacts_manifest['contract_directory'])
+            boundary_binary = executables['layerx-paxeer-boundary']
             with owned_chain(work, artifacts, custody_genesis(work, args.network_id, sequencer_seed)) as first:
                 custody = deposit(first, beneficiary, amount)
                 (work / 'custody.json').write_text(json.dumps(custody, sort_keys=True) + '\n')
@@ -222,7 +212,7 @@ def main():
                         for source, name in ((work/'profile', 'custody.profile'), (work/'credit', 'custody.credit')):
                             with (exported/name).open('xb') as output:
                                 output.write(source.read_bytes())
-                    run(build / 'tests/bridge/sign-credit', work / 'profile', work / 'credit', did, work / 'actor',
+                    run(executables['sign-credit'], work / 'profile', work / 'credit', did, work / 'actor',
                         '0', str(int(time.time() * 1000)), work / 'activity')
                     (work / 'activity').chmod(0o644)
                     if args.export is not None:
@@ -254,4 +244,5 @@ def main():
 
 
 if __name__ == '__main__':
+    signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(128 + signum))
     main()

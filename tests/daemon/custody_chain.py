@@ -4,7 +4,8 @@ import http.client
 import json
 import os
 from pathlib import Path
-import runpy
+import stat
+import sys
 import socket
 import ssl
 import subprocess
@@ -16,9 +17,93 @@ from eth_account import Account
 from eth_utils import to_checksum_address
 
 ROOT = Path(__file__).resolve().parents[2]
-COMMON = runpy.run_path(str(ROOT / 'tests/daemon/finality-authority-chain.py'))
-USDL = COMMON['USDL']
+sys.path.insert(0, str(ROOT / 'tests/bridge'))
+from custody_credit import Rpc, eth_hash
+from deploy_local_custody import command as encoded_command
+
+USDL = '0x85FcD13735F4309833A503EE804ea32395851479'
 FORBIDDEN_PORTS = {18545, 19443, 6379}
+
+
+CONTRACTS = ('GuarantorBond', 'CheckpointRegistry', 'BetaUsdl',
+             'CheckpointChallengeManager', 'LayerXBetaTimelock', 'AssetRegistry', 'LayerXVault', 'WETH')
+SOURCE_PATHS = ('Makefile', 'chain.mk', 'go.mod', 'go.sum', 'rust-toolchain.toml',
+                'src', 'include', 'cmd', 'programs', 'agent', 'platform', 'contracts',
+                'admin', 'consensus', 'custodyproof', 'daemon', 'engine', 'interchain',
+                'layerxproof', 'modules', 'node', 'precompiles', 'ratelimiter', 'rpc',
+                'sdk', 'storage', 'store', 'sync', 'types', 'utils', 'wasm', 'wasm-runtime',
+                'wasmbinding', 'tools/chain', 'tests/bridge/sign_credit.c', 'tests/bridge/files.h',
+                'loadtest/contracts/evm/lib', 'foundry.toml', 'remappings.txt')
+EXECUTABLES = ('paxd', 'layerx-custody-proof', 'layerx-paxeer-boundary', 'sign-credit')
+
+
+def git(*args):
+    return subprocess.check_output(['git', *args], cwd=ROOT)
+
+
+def source_binding(revision):
+    return hashlib.sha256(git('ls-tree', '-r', '-z', '--full-tree', revision, '--', *SOURCE_PATHS)).hexdigest()
+
+
+def file_digest(path):
+    with Path(path).open('rb') as stream:
+        return hashlib.file_digest(stream, 'sha256').hexdigest()
+
+
+def artifact_manifest(path):
+    if not path:
+        raise ValueError('explicit prebuilt custody artifact manifest required')
+    path = Path(path)
+    info = path.lstat()
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_mode & 0o077 or info.st_uid != os.geteuid():
+        raise ValueError('custody artifact manifest must be an owned private regular file')
+    value = json.loads(path.read_text())
+    if value.get('version') != 1 or tuple(value.get('source_paths', [])) != SOURCE_PATHS:
+        raise ValueError('custody artifact manifest schema')
+    revision = value.get('source_revision', '')
+    if len(revision) != 40 or any(c not in '0123456789abcdef' for c in revision):
+        raise ValueError('custody artifact revision')
+    if git('status', '--porcelain', '--untracked-files=normal'):
+        raise ValueError('dirty custody artifact consumer')
+    if value.get('source_binding') != source_binding(revision) or value['source_binding'] != source_binding('HEAD'):
+        raise ValueError('custody artifact source mismatch')
+    if set(value.get('executables', {})) != set(EXECUTABLES) or set(value.get('contracts', {})) != set(CONTRACTS):
+        raise ValueError('custody artifact set mismatch')
+    for executable, entries in ((True, value['executables']), (False, value['contracts'])):
+        for name, row in entries.items():
+            target = Path(row['path'])
+            if not target.is_absolute() or any(p.is_symlink() for p in (target, *target.parents)):
+                raise ValueError('artifact path must be absolute without symlinks')
+            if not target.is_file() or file_digest(target) != row['sha256']:
+                raise ValueError('artifact missing or digest mismatch: ' + name)
+            if executable and (not os.access(target, os.X_OK) or target.open('rb').read(4) != b'\x7fELF'):
+                raise ValueError('artifact is not an executable ELF: ' + name)
+    directory = Path(value['contract_directory'])
+    for name, row in value['contracts'].items():
+        if Path(row['path']) != directory / (name + '.sol') / (name + '.json'):
+            raise ValueError('contract artifact directory mismatch')
+    return value
+
+
+def record_artifacts(build, output):
+    if git('status', '--porcelain', '--untracked-files=normal'):
+        raise ValueError('dirty custody artifact producer')
+    revision = git('rev-parse', 'HEAD').decode().strip()
+    contracts = build / 'withdraw-contracts/artifacts'
+    binaries = {'paxd': build / 'paxd', 'layerx-custody-proof': build / 'bin/layerx-custody-proof',
+                'layerx-paxeer-boundary': ROOT / 'platform/target/debug/layerx-paxeer-boundary',
+                'sign-credit': build / 'tests/bridge/sign-credit'}
+    def row(path):
+        return {'path': str(path.resolve()), 'sha256': file_digest(path)}
+    value = dict(version=1, source_revision=revision, source_binding=source_binding(revision),
+                 source_paths=list(SOURCE_PATHS), contract_directory=str(contracts.resolve()),
+                 executables={name: row(path) for name, path in binaries.items()},
+                 contracts={name: row(contracts / (name + '.sol') / (name + '.json')) for name in CONTRACTS})
+    descriptor = os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, 'w') as stream:
+        json.dump(value, stream, sort_keys=True)
+        stream.write('\n')
+    artifact_manifest(output)
 
 
 def command(*args, **kwargs):
@@ -29,13 +114,28 @@ def artifact(directory, name):
     return json.loads((directory / f'{name}.sol/{name}.json').read_text())
 
 
-class Chain(COMMON['Chain']):
+def calldata(signature, *args):
+    return encoded_command('cast', 'calldata', signature, *map(str, args))
+
+
+def reserve_port():
+    reservation = socket.socket()
+    reservation.bind(('127.0.0.1', 0))
+    if reservation.getsockname()[1] in FORBIDDEN_PORTS:
+        reservation.close()
+        raise ValueError('reserved port is forbidden')
+    return reservation
+
+
+class Chain:
     def __init__(self, identity_path):
         self.identity_path = Path(identity_path)
         identity = json.loads(self.identity_path.read_text())
         parsed = urlsplit(identity['rpc'])
         assert parsed.scheme == 'http' and parsed.hostname == '127.0.0.1'
-        assert parsed.port not in FORBIDDEN_PORTS and parsed.path == ''
+        assert identity['chain_id'] == 125
+        assert parsed.port is not None and parsed.port not in FORBIDDEN_PORTS and parsed.path == ''
+        assert not parsed.username and not parsed.password and not parsed.query and not parsed.fragment
         os.kill(identity['pid'], 0)
         process_args = Path(f"/proc/{identity['pid']}/cmdline").read_bytes().split(b'\0')
         assert os.fsencode(identity['home']) in process_args
@@ -43,11 +143,17 @@ class Chain(COMMON['Chain']):
         self.account = Account.from_key(Path(identity['deployer_key']).read_bytes())
         self.url = identity['rpc']
         self.directory = Path(identity['evidence_dir'])
-        super().__init__(parsed.port)
+        self.port = parsed.port
+        self.transport = Rpc(self.url)
+        assert Path(f"/proc/{identity['pid']}/exe").resolve() == Path(identity['executable']).resolve()
         assert self.rpc('eth_chainId', []) == '0x7d'
         anchor = self.rpc('eth_getBlockByNumber', [hex(identity['anchor_number']), False])
         assert anchor['hash'] == identity['anchor_hash']
         assert self.account.address == identity['deployer']
+
+    def rpc(self, method, params):
+        return self.transport.call(method, params, allow_missing=method in (
+            'eth_getTransactionReceipt', 'eth_getTransactionByHash'))
 
     def transaction(self, data, to=None, success=True, value=0, signer=None):
         assert self.rpc('eth_chainId', []) == '0x7d'
@@ -64,10 +170,12 @@ class Chain(COMMON['Chain']):
             transaction['to'] = to_checksum_address(to)
         signed = account.sign_transaction(transaction)
         digest = self.rpc('eth_sendRawTransaction', ['0x' + bytes(signed.raw_transaction).hex()])
+        assert bytes.fromhex(digest.removeprefix('0x')) == eth_hash(bytes(signed.raw_transaction))
         deadline = time.monotonic() + 60
         while time.monotonic() < deadline:
             receipt = self.rpc('eth_getTransactionReceipt', [digest])
             if receipt is not None:
+                assert receipt['transactionHash'].lower() == digest.lower(), 'receipt identity'
                 assert int(receipt['status'], 16) == int(success), receipt
                 with (self.directory / 'transactions.jsonl').open('a') as evidence:
                     evidence.write(json.dumps(receipt, sort_keys=True) + '\n')
@@ -91,8 +199,20 @@ class Chain(COMMON['Chain']):
         raise AssertionError('transaction receipt deadline: ' + digest)
 
     def view(self, address, signature, *args):
-        encoded = COMMON['run']('cast', 'calldata', signature, *args)
-        return self.rpc('eth_call', [{'to': address, 'data': encoded}, 'latest'])
+        encoded = calldata(signature, *args)
+        return self.rpc('eth_call', [{'to': to_checksum_address(address), 'data': encoded}, 'latest'])
+
+    def send(self, address, signature, *args, success=True, value=0, signer=None):
+        return self.transaction(calldata(signature, *args), address, success, value, signer)
+
+    def deploy(self, contract, signature, args):
+        encoded = encoded_command('cast', 'abi-encode', signature, *map(str, args))
+        bytecode = contract['bytecode']['object'].removeprefix('0x')
+        assert bytecode and bytes.fromhex(bytecode), 'contract bytecode'
+        receipt = self.transaction('0x' + bytecode + encoded.removeprefix('0x'))
+        address = to_checksum_address(receipt['contractAddress'])
+        assert self.rpc('eth_getCode', [address, 'latest']) not in ('0x', '0x0'), 'deployed code missing'
+        return address
 
 
 def from_environment(url):
@@ -102,7 +222,7 @@ def from_environment(url):
 
 
 def govern(chain, timelock, target, signature, *args):
-    data = COMMON['run']('cast', 'calldata', signature, *args)
+    data = calldata(signature, *args)
     assert int(chain.view(timelock, 'minDelay()'), 16) == 0
 
     def execute(destination, encoded):
@@ -113,7 +233,7 @@ def govern(chain, timelock, target, signature, *args):
         chain.send(timelock, 'execute(address,uint256,bytes,bytes32,uint256)',
                    destination, '0', encoded, salt, str(nonce))
 
-    execute(timelock, COMMON['run']('cast', 'calldata', 'setCallPermission(address,bytes4,bool)',
+    execute(timelock, calldata('setCallPermission(address,bytes4,bool)',
                                   target, data[:10], 'true'))
     execute(target, data)
 
@@ -137,12 +257,11 @@ def retain_custody_proofs(work, origins, ca, identity, vault):
 
 @contextlib.contextmanager
 def owned_chain(work, artifacts, custody_genesis=None):
-    with tempfile.TemporaryDirectory(prefix='lxp-custody-paxd-') as temporary:
+    with tempfile.TemporaryDirectory(prefix='lxp-custody-paxd-') as temporary, contextlib.ExitStack() as resources:
         private = Path(temporary)
         ports, reservations = [], []
         for _ in range(7):
-            reservation = socket.socket()
-            reservation.bind(('127.0.0.1', 0))
+            reservation = reserve_port()
             assert reservation.getsockname()[1] not in FORBIDDEN_PORTS
             ports.append(reservation.getsockname()[1])
             reservations.append(reservation)
@@ -166,6 +285,22 @@ def owned_chain(work, artifacts, custody_genesis=None):
             # init-chain.sh merges this section into app_state.layerxcustody before validate-genesis,
             # and without it the module maps no asset and admits no deposit.
             env['LAYERX_PAXEER_CUSTODY_GENESIS_FILE'] = str(custody_genesis)
+            custody = json.loads(Path(custody_genesis).read_text())
+            selected = custody['params']['sequencer_authorizations']
+            assert len(selected) == 1, 'one selected sequencer required'
+            policy = json.loads((ROOT / 'contracts/config/checkpoint-settlement.json').read_text())
+            anchor_file = private / 'anchor-genesis.json'
+            command(sys.executable, 'platform/hosted/paxeer/anchor-genesis.py',
+                    '--network-id', str(custody['params']['network_id']),
+                    '--sequencer-id', selected[0]['sequencer_id'],
+                    '--sequencer-public-key', selected[0]['public_key'],
+                    '--first-batch', selected[0]['first_batch_number'],
+                    '--last-batch', selected[0]['last_batch_number'],
+                    '--authority-evm', account.address, '--paxeer-chain-id', '125',
+                    '--threshold', str(policy['finality_policy']['certificate_threshold']),
+                    '--output', anchor_file)
+            env['LAYERX_PAXEER_ANCHOR_GENESIS_FILE'] = str(anchor_file)
+            env['LAYERX_PAXEER_DEPOSIT_ROOT_AUTHORITY'] = custody['params']['deposit_root_authority']
         env['GOMAXPROCS'] = str(min(4, int(env.get('GOMAXPROCS', '4'))))
         assert int(env['GOMAXPROCS']) > 0
         for name, port in zip(('EVM', 'EVM_WS', 'RPC', 'P2P', 'GRPC', 'GRPC_WEB', 'API'), ports):
@@ -173,7 +308,11 @@ def owned_chain(work, artifacts, custody_genesis=None):
         with (work / 'paxd-init.log').open('w') as log:
             command('bash', 'platform/hosted/paxeer/init-chain.sh', env=env, stdout=log, stderr=log)
         genesis_bytes = (chain_home / 'config/genesis.json').read_bytes()
-        consensus_timeout = json.loads(genesis_bytes)['consensus_params']['timeout']
+        document = json.loads(genesis_bytes)
+        consensus_timeout = document['consensus_params']['timeout']
+        if custody_genesis is not None:
+            assert document['app_state']['layerxcustody'] == custody
+            assert document['app_state']['layerxanchor'] == json.loads(anchor_file.read_text())
         assert consensus_timeout['commit'] == '1000000000'
         assert consensus_timeout['bypass_commit_timeout'] is False
         with (work / 'paxd-reinit.log').open('w') as log:
@@ -195,28 +334,29 @@ def owned_chain(work, artifacts, custody_genesis=None):
                 process = subprocess.Popen([env.get('PAXD', 'paxd'), 'start', '--home', str(chain_home),
                                             '--consensus.create-empty-blocks-interval=1s'],
                                            cwd=ROOT, env=env, stdout=log, stderr=log)
-            reader = COMMON['Chain'](ports[0])
+            transport = Rpc(f'http://127.0.0.1:{ports[0]}')
             deadline = time.monotonic() + 60
             while time.monotonic() < deadline:
                 assert process.poll() is None, 'owned Paxeer process exited'
                 try:
-                    assert reader.rpc('eth_chainId', []) == '0x7d'
-                    if int(reader.rpc('eth_blockNumber', []), 16) > 0:
+                    assert transport.call('eth_chainId', []) == '0x7d'
+                    if int(transport.call('eth_blockNumber', []), 16) > 0:
                         break
                 except (OSError, http.client.HTTPException):
                     pass
                 time.sleep(.1)
             else:
                 raise AssertionError('owned Paxeer readiness deadline')
-            assert reader.rpc('eth_getCode', [USDL, 'latest']).lower() == runtime.lower()
+            assert transport.call('eth_getCode', [USDL, 'latest']).lower() == runtime.lower()
             identity = {
-                'rpc': f'http://127.0.0.1:{ports[0]}', 'pid': process.pid,
+                'chain_id': 125, 'rpc': f'http://127.0.0.1:{ports[0]}', 'pid': process.pid,
+                'executable': str(Path(f'/proc/{process.pid}/exe').resolve()),
                 'home': str(chain_home), 'deployer_key': str(key_file), 'deployer': account.address,
                 'evidence_dir': str(work),
                 'comet_url': f'http://127.0.0.1:{ports[2]}',
-                'anchor_number': int(reader.rpc('eth_blockNumber', []), 16),
+                'anchor_number': int(transport.call('eth_blockNumber', []), 16),
             }
-            identity['anchor_hash'] = reader.rpc('eth_getBlockByNumber', [hex(identity['anchor_number']), False])['hash']
+            identity['anchor_hash'] = transport.call('eth_getBlockByNumber', [hex(identity['anchor_number']), False])['hash']
             identity_path = private / 'owned-chain.json'
             identity_path.write_text(json.dumps(identity))
             chain = Chain(identity_path)
@@ -252,6 +392,7 @@ def boundaries(work, source, binary):
     identity = json.loads(source.identity_path.read_text())
     private = source.identity_path.parent
     processes = []
+    reservations = []
     try:
         with (work / 'boundary-certificates.log').open('w') as log:
             command('openssl', 'req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256',
@@ -275,8 +416,9 @@ def boundaries(work, source, binary):
         origins = []
         genesis = None
         for index in range(2):
-            port = COMMON['free_port']()
-            assert port not in FORBIDDEN_PORTS
+            reservation = reserve_port()
+            reservations.append(reservation)
+            port = reservation.getsockname()[1]
             env = os.environ | {
                 'LAYERX_PAXEER_CHAIN_ID': '125', 'LAYERX_PAXEER_BOUNDARY_LISTEN': f'127.0.0.1:{port}',
                 'LAYERX_PAXEER_BOUNDARY_TLS_CERT_DER': str(private / 'cert.der'),
@@ -284,6 +426,7 @@ def boundaries(work, source, binary):
                 'LAYERX_PAXEER_NODE_URL': source.url, 'LAYERX_PAXEER_COMET_URL': identity['comet_url'],
             }
             with (work / f'boundary-{index}.log').open('w') as log:
+                reservation.close()
                 process = subprocess.Popen([str(binary)], cwd=ROOT, env=env, stdout=log, stderr=log)
             processes.append(process)
             deadline = time.monotonic() + 30
@@ -332,6 +475,8 @@ def boundaries(work, source, binary):
         path.write_text(json.dumps(disposable, sort_keys=True) + '\n')
         yield origins, ca, path
     finally:
+        for reservation in reservations:
+            reservation.close()
         for process in processes:
             if process.poll() is None:
                 process.terminate()
