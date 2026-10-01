@@ -245,7 +245,7 @@ class Foundation:
         require(rpc('eth_call', [{'to': CUSTODY, 'data': '0xb4768600'}, 'latest']) == '0x' + authority, 'actual deposit authority mismatch')
         require(rpc('eth_call', [{'to': CUSTODY, 'data': '0xaafcde84'}, 'latest']) == '0x' + ASSETS['PAX'], 'actual native asset mismatch')
         require(rpc('eth_call', [{'to': CUSTODY, 'data': '0xca65021c' + USDL[2:].lower().zfill(64)}, 'latest']) == '0x' + ASSETS['USDL'], 'actual USDL asset mismatch')
-        require(int(rpc('eth_call', [{'to': USDL, 'data': '0x313ce567'}, 'latest']), 16) == 18, 'actual governed USDL decimals')
+        require(int(rpc('eth_call', [{'to': USDL, 'data': '0x313ce567'}, 'latest']), 16) == 6, 'actual governed USDL decimals')
         height = int(wait_for(lambda: (value if int((value := rpc('status', comet=True))['sync_info']['latest_block_height']) >= 3 else None), self.processes)['sync_info']['latest_block_height'])
         self.produce([self.binary('layerx-custody-proof'), 'light-profile', '--rpc', 'http://127.0.0.1:26657', '--asset', '0x' + ASSETS['PAX'], '--network-id', NETWORK,
                       '--trusted-height', height - 1, '--trusting-period-seconds', '1209600', '--output', d / 'genesis/custody.profile'])
@@ -253,7 +253,7 @@ class Foundation:
         producer = (ROOT / 'tools/bringup/kernel-genesis.sh').read_text().split("\tpython3 - \"$genesis/metadata.lxgb\" \"$treasury_public\" \"${records[@]}\" <<'PY'\n", 1)
         require(len(producer) == 2, 'canonical metadata producer missing')
         metadata = producer[1].split('\nPY\n', 1)[0]
-        self.produce(['python3', '-', d / 'genesis/metadata.lxgb', treasury, ASSETS['PAX'] + ':PAX:18', ASSETS['USDL'] + ':USDL:18'], input=metadata.encode())
+        self.produce(['python3', '-', d / 'genesis/metadata.lxgb', treasury, ASSETS['PAX'] + ':PAX:18', ASSETS['USDL'] + ':USDL:6'], input=metadata.encode())
         self.produce(['bash', ROOT / 'platform/hosted/node/bootstrap.sh', '--data-dir', d / 'node', '--run-dir', d / 'node-run', '--network-id', NETWORK,
                       '--sequencer-key', d / 'keys/sequencer.seed', '--treasury-key', d / 'keys/treasury.seed', '--asset', ASSETS['PAX'],
                       '--genesis-metadata', d / 'genesis/metadata.lxgb', '--custody-profile', d / 'genesis/custody.profile',
