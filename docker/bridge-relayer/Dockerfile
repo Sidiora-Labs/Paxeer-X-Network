@@ -5,7 +5,7 @@ RUN apt-get update \
 WORKDIR /src
 ENV CARGO_BUILD_JOBS=4 CARGO_TARGET_DIR=/src/.lane-target
 COPY . .
-RUN cargo build --locked --manifest-path interop/Cargo.toml --release --package layerx-bridge-relayer --bin layerx-bridge-relayer
+RUN cargo build --locked --manifest-path interop/Cargo.toml --release --package layerx-bridge-relayer --bin layerx-bridge-relayer --bin layerx-bridge-cosign
 RUN cargo build --locked --manifest-path interop/Cargo.toml --release --package layerx-mirror-signer --bin layerx-mirror-signer
 
 FROM debian:bookworm-slim
@@ -22,6 +22,7 @@ RUN apt-get update \
     && groupadd --system --gid 4102 bridge-relayer \
     && useradd --system --uid 4102 --gid 4102 --groups bridge --home-dir /nonexistent --shell /usr/sbin/nologin bridge-relayer
 COPY --from=build /src/.lane-target/release/layerx-bridge-relayer /usr/local/bin/layerx-bridge-relayer
+COPY --from=build /src/.lane-target/release/layerx-bridge-cosign /usr/local/bin/layerx-bridge-cosign
 COPY --from=build /src/.lane-target/release/layerx-mirror-signer /usr/local/bin/layerx-mirror-signer
 COPY interop/deploy/bridge-relayer/signer-keys.json /etc/layerx/bridge-signer/keys.json
 COPY docker/bridge-relayer/entrypoint.sh /usr/local/bin/bridge-relayer-entrypoint

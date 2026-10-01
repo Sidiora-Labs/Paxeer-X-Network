@@ -12,14 +12,20 @@ path = "src/lib.rs"
 name = "layerx-bridge-relayer"
 path = "src/main.rs"
 
+[[bin]]
+name = "layerx-bridge-cosign"
+path = "src/bin/cosign.rs"
+
 [dependencies]
 ed25519-dalek.workspace = true
 k256.workspace = true
 layerx-crypto.workspace = true
 layerx-mirror.workspace = true
 layerx-paxeer-verifier = { path = "../../../agent/crates/layerx-paxeer-verifier" }
+openssl.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 sha3.workspace = true
 
 [lints]

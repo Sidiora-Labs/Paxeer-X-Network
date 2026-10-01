@@ -1057,8 +1057,10 @@ dependencies = [
  "layerx-crypto",
  "layerx-mirror",
  "layerx-paxeer-verifier",
+ "openssl",
  "serde",
  "serde_json",
+ "sha2",
  "sha3",
 ]
 

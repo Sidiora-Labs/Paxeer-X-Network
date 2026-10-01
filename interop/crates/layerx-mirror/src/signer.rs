@@ -301,7 +301,7 @@ impl RemoteChainSigner {
     }
 }
 
-fn tls_connector(
+pub fn tls_connector(
     server_name: &str,
     trust_anchor: &Path,
     client_certificate: &Path,
