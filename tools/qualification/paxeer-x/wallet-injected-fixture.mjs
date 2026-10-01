@@ -48,7 +48,7 @@ if (process.argv.includes('--build-entry')) {
     if (!extension || !archive || digest(fs.readFileSync(archive)) !== 'b759caca275dec1a10edfebb9d1de1d26589a92104d8b0523ec442930e20e47c') throw new Error('Pinned official extension archive is missing or differs');
     if (require('@playwright/test/package.json').version !== '1.62.0') throw new Error('Browser automation runtime differs from repository pin');
     const extensionManifest = JSON.parse(fs.readFileSync(path.join(extension, 'manifest.json'), 'utf8'));
-    if (extensionManifest.version !== '13.50.0') throw new Error('Unexpected unpacked extension version');
+    if (extensionManifest.version !== '13.50.0.0' || extensionManifest.version_name !== '13.50.0') throw new Error('Unexpected unpacked extension version');
     const run = process.env.WALLET_FIXTURE_RUN;
     const chains = JSON.parse(process.env.WALLET_FIXTURE_CHAINS);
     for (const endpoint of Object.values(chains)) {
@@ -237,6 +237,7 @@ if (process.argv.includes('--build-entry')) {
         await settlePopup(true, async () => (await page.getByTestId('status').textContent()) === 'ready');
         mark('reconnect');
         stage = 'reload';
+        observations.provider_events_before_reload = await page.evaluate(() => window.walletFixture.events());
         await page.reload();
         await expect(page.getByTestId('connect')).toBeVisible();
         await expect(page.getByTestId('status')).not.toHaveText('loading');
