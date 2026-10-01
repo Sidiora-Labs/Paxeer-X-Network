@@ -13,7 +13,10 @@ name = "layerx-indexer"
 path = "src/main.rs"
 
 [dependencies]
+layerx-client.workspace = true
+layerx-paxeer-verifier = { path = "../../../agent/crates/layerx-paxeer-verifier" }
 layerx-platform-internal.workspace = true
+layerx-proof.workspace = true
 layerx-types.workspace = true
 layerx-wire.workspace = true
 postgres = "=0.19.14"

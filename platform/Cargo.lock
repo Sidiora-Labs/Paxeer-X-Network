@@ -1480,7 +1480,10 @@ dependencies = [
 name = "layerx-indexer"
 version = "0.1.0"
 dependencies = [
+ "layerx-client",
+ "layerx-paxeer-verifier",
  "layerx-platform-internal",
+ "layerx-proof",
  "layerx-types",
  "layerx-wire",
  "postgres",
