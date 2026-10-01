@@ -31480,3 +31480,23 @@ stop_condition = "Stop at the scoped gate result, disagreement with frozen bytes
 deployment_profile = "product"
 completion_policy = "Legacy compatibility protection only. Complete version3 input authority, portable frames, bounded one-step proof and full104.35.2 criteria remain separate."
 evidence_policy = "Publish technical implementation only; retain raw qualification and source provenance privately."
+
+[task.104.35.10]
+title = "Bind historical replay qualification to its explicit ABI revision"
+status = "in_progress"
+mode = "BUILD"
+wave = 2
+requires = ["0.2"]
+reqs = ["1105.3", "1105.4"]
+do_1 = "Set the v2 record input in dispatcher_keeps_v1_replay_stable_after_a_real_v2_revision_is_present to the existing ABI_V2_VERSION selected by ExecutorRevision::v2. The current ABI_VERSION must not select a historical replay fixture."
+do_2 = "Preserve every existing assertion and refusal case, production revision registry, ABI constants, encoders, metering and replay implementation unchanged. This task corrects only the historical fixture input."
+touches = ["programs/crates/layerx-programs-runtime/src/qualification.rs"]
+verify_cmd = "timeout 5m cargo test --locked --manifest-path programs/Cargo.toml -p layerx-programs-runtime --lib qualification::tests::dispatcher_ -- --test-threads=1"
+gate_kind = "planned-prerequisite"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop after the focused dispatcher gate or at the time limit. Preserve any unrelated failure without widening scope."
+completion_policy = "Historical replay fixture qualification only; no compatibility golden, arbitration or production certification."
+evidence_policy = "Keep source-bound build and gate records private; publish only technical changes."
