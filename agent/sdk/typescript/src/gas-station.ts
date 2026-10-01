@@ -365,3 +365,138 @@ export async function requestGasQuote(
     return { quote, relayerSignature };
   });
 }
+
+export interface GasSubmissionIdentity {
+  readonly sponsor: string;
+  readonly quoteNonce: bigint;
+  readonly account: string;
+  readonly relayerSignature: string;
+}
+
+export interface GasSubmissionTransaction {
+  readonly sponsorNonce: bigint;
+  readonly transactionHash: string;
+}
+
+export type GasSubmissionOutcome =
+  | { readonly outcome: "consumed" }
+  | { readonly outcome: "included"; readonly transactionHash: string; readonly blockNumber: bigint; readonly sidCollected: bigint; readonly paxSpent: bigint }
+  | { readonly outcome: "reverted"; readonly transactionHash: string }
+  | { readonly outcome: "cancelled"; readonly transactionHash: string; readonly blockNumber: bigint };
+
+export interface GasSubmissionStatus {
+  readonly state: "quoted" | "pending" | "replacing" | "completed";
+  readonly deadline: bigint;
+  readonly submission: GasSubmissionTransaction | null;
+  readonly replacement: GasSubmissionTransaction | null;
+  readonly completion: GasSubmissionOutcome | null;
+}
+
+function wireHash(value: unknown, field: string): string {
+  const text = wireString(value, field);
+  if (!/^0x[0-9a-f]{64}$/u.test(text)) throw new Refusal("invalid_response", field);
+  return text;
+}
+
+function wireTransaction(value: unknown, field: string): GasSubmissionTransaction | null {
+  if (value === null) return null;
+  const data = record(value);
+  return { sponsorNonce: wireUint(data.sponsorNonce, `${field}.sponsorNonce`), transactionHash: wireHash(data.transactionHash, `${field}.transactionHash`) };
+}
+
+function wireOutcome(value: unknown): GasSubmissionOutcome | null {
+  if (value === null) return null;
+  const data = record(value);
+  switch (data.outcome) {
+    case "consumed": return { outcome: "consumed" };
+    case "reverted": return { outcome: "reverted", transactionHash: wireHash(data.transactionHash, "completion.transactionHash") };
+    case "cancelled": return {
+      outcome: "cancelled", transactionHash: wireHash(data.transactionHash, "completion.transactionHash"),
+      blockNumber: wireUint(data.blockNumber, "completion.blockNumber"),
+    };
+    case "included": return {
+      outcome: "included", transactionHash: wireHash(data.transactionHash, "completion.transactionHash"),
+      blockNumber: wireUint(data.blockNumber, "completion.blockNumber"),
+      sidCollected: wireUint(data.sidCollected, "completion.sidCollected"), paxSpent: wireUint(data.paxSpent, "completion.paxSpent"),
+    };
+    default: throw new Refusal("invalid_response", "completion.outcome");
+  }
+}
+
+function wireStatus(payload: unknown): GasSubmissionStatus {
+  const data = record(payload);
+  const state = data.state;
+  if (state !== "quoted" && state !== "pending" && state !== "replacing" && state !== "completed") {
+    throw new Refusal("invalid_response", "state");
+  }
+  const status: GasSubmissionStatus = {
+    state, deadline: wireUint(data.deadline, "deadline"),
+    submission: wireTransaction(data.submission, "submission"), replacement: wireTransaction(data.replacement, "replacement"),
+    completion: wireOutcome(data.completion),
+  };
+  if ((state === "completed") !== (status.completion !== null)) throw new Refusal("invalid_response", "completion");
+  if (state === "replacing" && status.replacement === null) throw new Refusal("invalid_response", "replacement");
+  if ((state === "pending" || state === "replacing") && status.submission === null) throw new Refusal("invalid_response", "submission");
+  return status;
+}
+
+async function submissionRequest(
+  route: "status" | "retry",
+  config: GasStationConfig,
+  identity: GasSubmissionIdentity,
+  signal: AbortSignal | undefined,
+): Promise<GasResult<GasSubmissionStatus>> {
+  const prepared = result(() => {
+    validateConfig(config);
+    if (address(identity.sponsor, "sponsor") !== config.sponsor.toLowerCase()) throw new Refusal("sponsor_mismatch", "sponsor");
+    address(identity.account, "account");
+    uint(identity.quoteNonce, "quoteNonce");
+    if (bytes(identity.relayerSignature, "relayerSignature").length !== 130) throw new Refusal("invalid_signature", "relayerSignature");
+    let url: URL;
+    try { url = new URL(config.quoteUrl); } catch { throw new Refusal("invalid_value", "quoteUrl"); }
+    if (!["https:", "http:"].includes(url.protocol) || url.username || url.password || url.hash || !url.pathname.endsWith("/quote")) {
+      throw new Refusal("invalid_value", "quoteUrl");
+    }
+    url.pathname = `${url.pathname.slice(0, -"quote".length)}${route}`;
+    return {
+      url: url.toString(),
+      body: JSON.stringify({
+        sponsor: identity.sponsor, quoteNonce: identity.quoteNonce.toString(),
+        account: identity.account, relayerSignature: identity.relayerSignature,
+      }),
+    };
+  });
+  if (!prepared.ok) return prepared;
+  let response: Response;
+  try {
+    response = await fetch(prepared.value.url, {
+      method: "POST", headers: { "content-type": "application/json" }, body: prepared.value.body,
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
+      redirect: "error",
+    });
+  } catch {
+    return { ok: false, refusal: { code: signal?.aborted ? "cancelled" : "unavailable", field: route } };
+  }
+  if (!response.ok) return { ok: false, refusal: { code: response.status >= 500 ? "unavailable" : "refused", field: route } };
+  let payload: unknown;
+  try { payload = await response.json(); } catch { return { ok: false, refusal: { code: "invalid_response", field: route } }; }
+  return result(() => wireStatus(payload));
+}
+
+/** Reads the station's durable state of one submission identity; it stays readable after the quote's deadline. */
+export function requestGasSubmissionStatus(
+  config: GasStationConfig,
+  identity: GasSubmissionIdentity,
+  options: { readonly signal?: AbortSignal } = {},
+): Promise<GasResult<GasSubmissionStatus>> {
+  return submissionRequest("status", config, identity, options.signal);
+}
+
+/** Asks the station to resume an already submitted identity from its durable bytes, without signing anything new. */
+export function retryGasSubmission(
+  config: GasStationConfig,
+  identity: GasSubmissionIdentity,
+  options: { readonly signal?: AbortSignal } = {},
+): Promise<GasResult<GasSubmissionStatus>> {
+  return submissionRequest("retry", config, identity, options.signal);
+}
