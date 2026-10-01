@@ -71,6 +71,10 @@ evm_key() {
 }
 
 memory() {
+	if [ -L "$1" ] || { [ -e "$1" ] && [ ! -d "$1" ]; }; then
+		log "private runtime mount refused: $1"
+		return 1
+	fi
 	mkdir -p "$1"
 	mountpoint -q "$1" || mount -t tmpfs -o "nosuid,nodev,mode=$2" tmpfs "$1"
 }
@@ -115,6 +119,10 @@ mirror_inputs() {
 
 memory "$run" 0755
 memory /run/authority-private 0700
+if [ -e /run/human-private ] && [ "$(stat -c '%u:%g:%a' /run/human-private)" != 0:0:755 ]; then
+	log "private runtime directory refused: /run/human-private owner or mode"
+	exit 1
+fi
 memory /run/human-private 0755
 memory /run/mirror-signer 0700
 memory "$mirror_material" 0700
@@ -144,6 +152,51 @@ for identity in 1 2; do
 done
 
 # human-directories
+private_runtime_directories() {
+	python3 - <<'PY_PRIVATE'
+import os
+import stat
+
+
+def directory(parent, name, uid, gid, mode):
+    created = False
+    try:
+        os.mkdir(name, mode, dir_fd=parent)
+        created = True
+    except FileExistsError:
+        pass
+    fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+    try:
+        info = os.fstat(fd)
+        if created:
+            os.fchown(fd, uid, gid)
+            os.fchmod(fd, mode)
+        elif (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) != (uid, gid, mode):
+            raise ValueError("unexpected owner or mode: " + name)
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+try:
+    if os.geteuid() != 0:
+        raise ValueError("root initialization required")
+    run = os.open("/run", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    private = directory(run, "human-private", 0, 0, 0o755)
+    for role, uid in (("components", 4020), ("identity", 4020),
+                      ("security", 4020), ("movement", 4020),
+                      ("agent", 4021), ("kms", 4026), ("service", 4020)):
+        os.close(directory(private, role, uid, 4020, 0o700))
+    for fd in (private, run):
+        os.close(fd)
+except (OSError, ValueError) as error:
+    raise SystemExit("private runtime directory refused: " + str(error))
+PY_PRIVATE
+}
+
+private_runtime_directories
+export LAYERX_HUMAN_SERVICE_PRIVATE_DIR=/run/human-private/service
 install -d -o 4020 -g 4020 -m 0750 "$run/human"
 install -d -o 4021 -g 4020 -m 0750 "$run/human/owner"
 install -d -o 4021 -g 4020 -m 0700 "$run/human/authority-clock"

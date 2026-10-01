@@ -771,7 +771,7 @@
     - Keep source identity and secret exclusions explicit; do not broaden into rebuilding chain or validator images.
     - Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate.
     - _Requirements: 208_
-  - [-] 24.10 Initialize protected Human role directories as a prerequisite to full runtime closure
+  - [x] 24.10 Initialize protected Human role directories as a prerequisite to full runtime closure
     - Reuse the existing protected directory initializer; limit this prerequisite to actual initialization and direct namespace/UID behavior.
     - Keep production init and entrypoint paths exact. Root creates the complete configured per-role0700 children owned by their declared UID/GID before privilege drop; reject symlinks and unexpected ownership without broadening permissions.
     - Implement a distinct --case role-directory-prerequisite that executes the actual initializer and real UID/mount namespaces, checks owner access and cross-role traversal/modification refusal, recreates ephemeral paths and preserves separately seeded durable bytes. No stand-in Human process is called a successful role startup.
