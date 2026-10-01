@@ -31352,7 +31352,7 @@ verify_cmd = "timeout 15m python3 tools/qualification/paxeer-x/wallet-injected-f
 completion_policy = "Qualifies fixture readiness and observed baseline behavior only. Task14.2 retains every chain-admission, stale confirmation, reconnect and no-other-chain-broadcast criterion and its unchanged final gate."
 
 [task.24.14]
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
