@@ -744,7 +744,7 @@ reqs       = ["10.3", "10.4"]
 
 [task.3.13]
 title      = "Produce the sequencer trust history in the kernel machine and bind the security role to it"
-status     = "pending"
+status     = "implemented"
 wave       = 3
 requires   = ["3.5"]
 do_1       = "Settle the producer from the source first: nothing in the tree writes $human_state/trust-history, the one encoder is encode_trust_history in platform/hosted/tests/beta-cluster.sh (the LayerX/sequencer-trust-history/v1 header and one 103-byte entry from the network id, the sequencer id and the sequencer public key), and the registry init (docker/platform-registry/init.sh) waits on the same history at LAYERX_REGISTRY_SEQUENCER_TRUST_HISTORY from the kernel material step of the deploy; confirm from Store::open in human/crates/layerx-human-security-provider/src/transport.rs and the registry's platform/hosted/registry/src/main.rs that both parse that one encoding, that LAYERX_CORE_SEQUENCER_ID of $run/node/core.env and the key receipt_authority_prepare derives into $run/node/sequencer-public-key are the entry's inputs, and how /data/kernel/trust-history reaches the registry app's own volume; that registry copy is its own task when no task carries it."

@@ -1844,3 +1844,27 @@ symbol     = "check_ca"
 observed   = "check_ca now verifies the ca.sh attestor_services rows against LAYERX_ATTESTOR_CA_DIR/ca.pem and fails the row explicitly when that directory is unset or holds no ca.pem; bash tools/bringup/check-live.test.sh exited 0 with 176 ok and no FAIL (.logs/3.12-harness-2.log), which supersedes the harness failure of observation 3.12.2; the kernel-app verify_cmd was not rerun because its prerequisite in observation 3.12.3 is unchanged."
 assumption = "The live check runs on a host with both the internal CA and the gateway CA directories; task 3.12 stays implemented until the kernel-app verify_cmd passes after the redeploy."
 severity   = "note"
+
+[observation.3.13.1]
+task       = "3.13"
+file       = "programs/crates/layerx-programs-registry/src/protocol_evidence.rs"
+symbol     = "ProtocolDeploymentVerifier::from_protected_history"
+observed   = "Store::open (human/crates/layerx-human-security-provider/src/state.rs:122) and the registry (platform/hosted/registry/src/routes.rs:133) both parse the history through from_protected_history (protocol_evidence.rs:451) and decode_trust_history (protocol_evidence.rs:1354), the v1 header, count and current index then 103-byte entries; the history carries no signature, its authority is the file's protection, and the sequencer id is the one supervisor.sh publish_core_environment writes into core.env from node.env, sha256 of layerx-sequencer: and the public key hex."
+assumption = "Producing the history in the kernel init from core.env and the derived sequencer public key gives both readers the kernel's own sequencer; the producer writes it once and never re-signs it."
+severity   = "note"
+
+[observation.3.13.2]
+task       = "3.13"
+file       = "docker/platform-registry/init.sh"
+symbol     = "wait_for the kernel material step of the deploy"
+observed   = "The registry init (line 94) waits on LAYERX_REGISTRY_SEQUENCER_TRUST_HISTORY under the registry app's own /data/kernel, and nothing in the tree and no task copies the kernel app's /data/human-state/trust-history and replica-id onto that volume."
+assumption = "Copying the kernel's trust history and replica id to the registry app's volume is its own task, to be added by the leads."
+severity   = "warning"
+
+[observation.3.13.3]
+task       = "3.13"
+file       = "tools/bringup/check-live.sh"
+symbol     = "check_kernel_app"
+observed   = "The verify_cmd refused at this pin with fail machines app=paxeer-human-service machines=1 started=1 volume-at-data=0 (.logs/3.13-live.log, exit 1); the kernel app is not yet redeployed with its volume, the expected outcome before the deploy."
+assumption = "The kernel app redeploy with the volume at /data lets the gate proceed and the human-security role start on the produced history."
+severity   = "warning"
