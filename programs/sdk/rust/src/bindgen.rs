@@ -8,7 +8,11 @@ use alloc::vec::Vec;
 use core::fmt::{self, Display, Write};
 use sha2::{Digest, Sha256};
 
-const DOMAIN: &[u8] = b"LayerX/program-interface/v1\0";
+use crate::abi_policy::{admit_abi_version, capability_encoding, CapabilityEncoding};
+
+const DOMAIN_V1: &[u8] = b"LayerX/program-interface/v1\0";
+const DOMAIN_V2: &[u8] = b"LayerX/program-interface/v2\0";
+const CALLER_AUTHORIZED_SPEND: u8 = 10;
 const MAX_INTERFACE_BYTES: usize = 952;
 const MAX_FIELDS: usize = 256;
 const MAX_DEPTH: usize = 16;
@@ -114,28 +118,34 @@ impl BindingGenerator {
     ///
     /// Refuses noncanonical bytes, unsupported ABI or encoding conventions, and invalid schemas.
     pub fn from_interface(bytes: &[u8]) -> Result<Self, BindgenError> {
-        if bytes.len() > MAX_INTERFACE_BYTES || bytes.get(..DOMAIN.len()) != Some(DOMAIN) {
+        if bytes.len() > MAX_INTERFACE_BYTES {
             return Err(BindgenError::NonCanonical);
         }
-        let mut cursor = DOMAIN.len();
+        let domain = match bytes.get(..DOMAIN_V1.len()) {
+            Some(prefix) if prefix == DOMAIN_V1 => DOMAIN_V1,
+            Some(prefix) if prefix == DOMAIN_V2 => DOMAIN_V2,
+            _ => return Err(BindgenError::NonCanonical),
+        };
+        let mut cursor = domain.len();
         let code_hash = take::<32>(bytes, &mut cursor)?;
         if code_hash == [0; 32] {
             return Err(BindgenError::InvalidSchema);
         }
         let abi = u16::from_be_bytes(take::<2>(bytes, &mut cursor)?);
-        if !matches!(abi, 1 | 2) {
-            return Err(BindgenError::UnsupportedAbi);
-        }
+        admit_abi_version(abi).map_err(|_| BindgenError::UnsupportedAbi)?;
+        let encoding = capability_encoding(abi).map_err(|_| BindgenError::UnsupportedAbi)?;
         let count = count(bytes, &mut cursor)?;
         if count == 0 {
             return Err(BindgenError::InvalidSchema);
         }
         let mut entries = Vec::with_capacity(count);
+        let mut dynamic = false;
         for _ in 0..count {
-            entries.push(parse_entry(bytes, &mut cursor)?);
+            entries.push(parse_entry(bytes, &mut cursor, encoding, &mut dynamic)?);
         }
         let mut discriminators = BTreeSet::new();
         if cursor != bytes.len()
+            || domain != if dynamic { DOMAIN_V2 } else { DOMAIN_V1 }
             || !entries.windows(2).all(|pair| pair[0].name < pair[1].name)
             || entries
                 .iter()
@@ -305,7 +315,12 @@ function finish<T>(reader:Reader,value:T):T{reader.done();return value;}
     }
 }
 
-fn parse_entry(bytes: &[u8], cursor: &mut usize) -> Result<Entry, BindgenError> {
+fn parse_entry(
+    bytes: &[u8],
+    cursor: &mut usize,
+    encoding: CapabilityEncoding,
+    dynamic: &mut bool,
+) -> Result<Entry, BindgenError> {
     let name = text(bytes, cursor)?;
     valid_name(&name)?;
     let discriminator = take::<4>(bytes, cursor)?;
@@ -314,7 +329,7 @@ fn parse_entry(bytes: &[u8], cursor: &mut usize) -> Result<Entry, BindgenError> 
     let mut prior_capability: Option<&[u8]> = None;
     for _ in 0..count(bytes, cursor)? {
         let start = *cursor;
-        skip_capability(bytes, cursor)?;
+        *dynamic |= skip_capability(bytes, cursor, encoding)?;
         let encoded = bytes
             .get(start..*cursor)
             .ok_or(BindgenError::NonCanonical)?;
@@ -423,7 +438,11 @@ fn value_type(bytes: &[u8], cursor: &mut usize, depth: usize) -> Result<Type, Bi
     })
 }
 
-fn skip_capability(bytes: &[u8], cursor: &mut usize) -> Result<(), BindgenError> {
+fn skip_capability(
+    bytes: &[u8],
+    cursor: &mut usize,
+    encoding: CapabilityEncoding,
+) -> Result<bool, BindgenError> {
     match take::<1>(bytes, cursor)?[0] {
         0..=4 => {}
         5 | 8 => {
@@ -464,9 +483,24 @@ fn skip_capability(bytes: &[u8], cursor: &mut usize) -> Result<(), BindgenError>
                 return Err(BindgenError::InvalidSchema);
             }
         }
+        CALLER_AUTHORIZED_SPEND => {
+            let asset = take::<32>(bytes, cursor)?;
+            let maximum_amount = u128::from_be_bytes(take::<16>(bytes, cursor)?);
+            let recipient_offset = u32::from_be_bytes(take::<4>(bytes, cursor)?);
+            let amount_offset = u32::from_be_bytes(take::<4>(bytes, cursor)?);
+            if asset == [0; 32]
+                || maximum_amount == 0
+                || recipient_offset.checked_add(32).is_none()
+                || amount_offset.checked_add(16).is_none()
+                || encoding != CapabilityEncoding::V2
+            {
+                return Err(BindgenError::InvalidSchema);
+            }
+            return Ok(true);
+        }
         _ => return Err(BindgenError::NonCanonical),
     }
-    Ok(())
+    Ok(false)
 }
 fn valid_name(name: &str) -> Result<(), BindgenError> {
     if name.is_empty()
@@ -1149,5 +1183,99 @@ mod vectors {
         assert!(ts_check < ts_encode);
         assert!(rust.contains("Failure::Denied"));
         assert!(typescript.contains("code: 7; name: 'denied'"));
+    }
+
+    fn interface(domain: &[u8], abi: u16, capability: &[u8]) -> Vec<u8> {
+        let mut out = domain.to_vec();
+        out.extend_from_slice(&[9; 32]);
+        out.extend_from_slice(&abi.to_be_bytes());
+        out.extend_from_slice(&[0, 1, 0, 4]);
+        out.extend_from_slice(b"call");
+        out.extend_from_slice(&[1, 2, 3, 4, 1, 0x10, 1, 0x11]);
+        out.extend_from_slice(&u16::from(!capability.is_empty()).to_be_bytes());
+        out.extend_from_slice(capability);
+        out.extend_from_slice(&[0, 0, 0, 0]);
+        out
+    }
+
+    fn caller_authorized_spend(asset: u8, maximum_amount: u128, recipient_offset: u32) -> Vec<u8> {
+        let mut out = vec![CALLER_AUTHORIZED_SPEND];
+        out.extend_from_slice(&[asset; 32]);
+        out.extend_from_slice(&maximum_amount.to_be_bytes());
+        out.extend_from_slice(&recipient_offset.to_be_bytes());
+        out.extend_from_slice(&42_u32.to_be_bytes());
+        out
+    }
+
+    #[test]
+    fn every_admitted_abi_binds_through_the_central_policy() {
+        for abi in 0..=u16::from(u8::MAX) {
+            let admitted = crate::abi_policy::admit_abi_version(abi).is_ok();
+            assert_eq!(
+                BindingGenerator::from_interface(&interface(DOMAIN_V1, abi, &[0])).is_ok(),
+                admitted,
+                "ABI {abi} binding and central admission disagree"
+            );
+        }
+        assert_eq!(
+            BindingGenerator::from_interface(&interface(DOMAIN_V1, 5, &[0])),
+            Err(BindgenError::UnsupportedAbi)
+        );
+    }
+
+    #[test]
+    fn caller_authorized_spend_requires_v2_domain_and_encoding() {
+        let dynamic = caller_authorized_spend(2, 100, 10);
+        for abi in 2..=4 {
+            let bytes = interface(DOMAIN_V2, abi, &dynamic);
+            let generator = BindingGenerator::from_interface(&bytes);
+            assert_eq!(generator.as_ref().map(BindingGenerator::code_hash), Ok([9; 32]));
+            assert_eq!(
+                generator.as_ref().map(BindingGenerator::interface_digest),
+                Ok(Sha256::digest(&bytes).into())
+            );
+        }
+        assert_eq!(
+            BindingGenerator::from_interface(&interface(DOMAIN_V2, 1, &dynamic)),
+            Err(BindgenError::InvalidSchema)
+        );
+        assert_eq!(
+            BindingGenerator::from_interface(&interface(DOMAIN_V1, 2, &dynamic)),
+            Err(BindgenError::NonCanonical)
+        );
+        assert_eq!(
+            BindingGenerator::from_interface(&interface(DOMAIN_V2, 2, &[0])),
+            Err(BindgenError::NonCanonical)
+        );
+        for invalid in [
+            caller_authorized_spend(0, 100, 10),
+            caller_authorized_spend(2, 0, 10),
+            caller_authorized_spend(2, 100, u32::MAX - 31),
+        ] {
+            assert_eq!(
+                BindingGenerator::from_interface(&interface(DOMAIN_V2, 2, &invalid)),
+                Err(BindgenError::InvalidSchema)
+            );
+        }
+        let mut truncated = interface(DOMAIN_V2, 2, &dynamic);
+        truncated.truncate(truncated.len() - 5);
+        assert_eq!(
+            BindingGenerator::from_interface(&truncated),
+            Err(BindgenError::NonCanonical)
+        );
+        let mut trailing = interface(DOMAIN_V2, 2, &dynamic);
+        trailing.push(0);
+        assert_eq!(
+            BindingGenerator::from_interface(&trailing),
+            Err(BindgenError::NonCanonical)
+        );
+        assert_eq!(
+            BindingGenerator::from_interface(&interface(
+                b"LayerX/program-interface/v3\0",
+                2,
+                &dynamic
+            )),
+            Err(BindgenError::NonCanonical)
+        );
     }
 }

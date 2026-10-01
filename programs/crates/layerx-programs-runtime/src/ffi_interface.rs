@@ -406,6 +406,20 @@ fn widening(new: &Interface, old: &Interface) -> bool {
         })
 }
 
+/// Admits a lifecycle ABI transition through the canonical version policy.
+///
+/// A zero current version is a first deployment; every other transition is a
+/// monotonic upgrade between admitted versions. Returns zero when admitted.
+#[no_mangle]
+pub extern "C" fn layerx_programs_abi_transition_admit(current: u16, requested: u16) -> i32 {
+    let admitted = if current == 0 {
+        abi_policy::admit_abi_version(requested)
+    } else {
+        abi_policy::admit_abi_upgrade(current, requested)
+    };
+    i32::from(admitted.is_err())
+}
+
 #[no_mangle]
 pub extern "C" fn layerx_programs_interface_validate(
     token: u64,

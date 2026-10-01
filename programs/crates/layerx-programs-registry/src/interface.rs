@@ -1,10 +1,12 @@
 use core::fmt::{self, Display};
 use std::collections::BTreeSet;
 
-use layerx_programs_runtime::abi::{EncodingConvention, TypeTag};
-use layerx_programs_runtime::{
-    admit_abi_upgrade, AbiVersionRefusal, ProgramId, WasmEngine, ABI_V1_VERSION, ABI_V2_VERSION,
+use layerx_program_sdk::abi_policy::{
+    admit_abi_upgrade, admit_abi_version, capability_encoding, AbiVersionRefusal,
+    CapabilityEncoding,
 };
+use layerx_programs_runtime::abi::{EncodingConvention, TypeTag};
+use layerx_programs_runtime::{ProgramId, WasmEngine};
 
 use crate::account_state::{verify_state_membership, StateProof};
 use crate::hash::sha256;
@@ -252,19 +254,11 @@ impl ProgramInterface {
         entries: Vec<InterfaceEntryPoint>,
     ) -> Result<Self, InterfaceRefusal> {
         let code_hash = sha256(module);
+        admit_abi_version(abi_version).map_err(InterfaceRefusal::AbiVersion)?;
         let engine = WasmEngine::declared().map_err(|_| InterfaceRefusal::ModuleRejected)?;
-        let validated = match abi_version {
-            ABI_V1_VERSION => engine.validate(module),
-            ABI_V2_VERSION => engine.validate_v2(module),
-            _ => {
-                return Err(InterfaceRefusal::AbiVersion(
-                    AbiVersionRefusal::Unsupported {
-                        requested: abi_version,
-                    },
-                ))
-            }
-        }
-        .map_err(|_| InterfaceRefusal::ModuleRejected)?;
+        let validated = engine
+            .validate_versioned(abi_version, module)
+            .map_err(|_| InterfaceRefusal::ModuleRejected)?;
         validate_entries(&entries)?;
         if entries
             .iter()
@@ -303,11 +297,12 @@ impl ProgramInterface {
         abi_version: u16,
         entries: Vec<InterfaceEntryPoint>,
     ) -> Result<Self, InterfaceRefusal> {
-        if code_hash == [0; 32] || !matches!(abi_version, ABI_V1_VERSION | ABI_V2_VERSION) {
-            return Err(InterfaceRefusal::Invalid);
-        }
+        let grants_encoding = match capability_encoding(abi_version) {
+            Ok(grants_encoding) if code_hash != [0; 32] => grants_encoding,
+            _ => return Err(InterfaceRefusal::Invalid),
+        };
         validate_entries(&entries)?;
-        if abi_version != ABI_V2_VERSION
+        if grants_encoding != CapabilityEncoding::V2
             && entries.iter().any(|entry| {
                 entry.capabilities.iter().any(|capability| {
                     matches!(
@@ -455,7 +450,7 @@ impl ProgramInterface {
 
     #[must_use]
     pub fn is_widening_of(&self, prior: &Self) -> bool {
-        self.abi_version == prior.abi_version
+        admit_abi_upgrade(prior.abi_version, self.abi_version).is_ok()
             && prior.entries.iter().all(|old| {
                 self.entries
                     .iter()
@@ -1228,6 +1223,9 @@ fn take_count<T>(
 #[cfg(test)]
 mod conformance_vectors {
     use super::*;
+    use layerx_program_sdk::abi_policy::{
+        ABI_V1_VERSION, ABI_V2_VERSION, ABI_V3_VERSION, ABI_V4_VERSION,
+    };
 
     const CALLABLE_MODULE: &[u8] = &[
         0, 97, 115, 109, 1, 0, 0, 0, 1, 12, 2, 96, 2, 127, 127, 1, 127, 96, 1, 127, 1, 127, 3, 3,
@@ -1449,5 +1447,82 @@ mod conformance_vectors {
             EncodingConvention::LayerX
         );
         assert_eq!(decoded.entries()[0].response, ValueSchema::evm_head_only());
+    }
+
+    #[test]
+    fn central_abi_policy_admits_every_supported_version_and_refuses_unknown() {
+        let mut dynamic = entry(80);
+        dynamic.capabilities = vec![InterfaceCapability::CallerAuthorizedSpend {
+            asset: [2; 32],
+            maximum_amount: 100,
+            recipient_offset: 10,
+            amount_offset: 42,
+        }];
+        for abi in [
+            ABI_V1_VERSION,
+            ABI_V2_VERSION,
+            ABI_V3_VERSION,
+            ABI_V4_VERSION,
+        ] {
+            let plain = ProgramInterface::from_parts([1; 32], abi, vec![entry(64)])
+                .unwrap_or_else(|error| panic!("admit ABI {abi}: {error}"));
+            assert!(plain.canonical_encoding().starts_with(DOMAIN));
+            assert_eq!(plain.abi_version(), abi);
+            assert_eq!(
+                ProgramInterface::decode(plain.canonical_encoding()),
+                Ok(plain.clone())
+            );
+            assert_eq!(
+                ProgramInterface::from_parts([0; 32], abi, vec![entry(64)]),
+                Err(InterfaceRefusal::Invalid)
+            );
+        }
+        for abi in [ABI_V2_VERSION, ABI_V3_VERSION, ABI_V4_VERSION] {
+            let interface = ProgramInterface::from_parts([1; 32], abi, vec![dynamic.clone()])
+                .unwrap_or_else(|error| panic!("admit dynamic ABI {abi}: {error}"));
+            assert!(interface.canonical_encoding().starts_with(DOMAIN_V2));
+            assert_eq!(
+                ProgramInterface::decode(interface.canonical_encoding()),
+                Ok(interface.clone())
+            );
+        }
+        for abi in [0, 5, u16::MAX] {
+            assert_eq!(
+                ProgramInterface::from_parts([1; 32], abi, vec![entry(64)]),
+                Err(InterfaceRefusal::Invalid)
+            );
+            assert_eq!(
+                ProgramInterface::bind(CALLABLE_MODULE, abi, vec![entry(64)]),
+                Err(InterfaceRefusal::AbiVersion(
+                    AbiVersionRefusal::Unsupported { requested: abi }
+                ))
+            );
+        }
+    }
+
+    #[test]
+    fn upgrade_is_monotonic_across_supported_abi_versions() {
+        let prior = ProgramInterface::from_parts([1; 32], ABI_V1_VERSION, vec![entry(64)])
+            .unwrap_or_else(|error| panic!("prior: {error}"));
+        let wider = ProgramInterface::from_parts([3; 32], ABI_V3_VERSION, vec![entry(128)])
+            .unwrap_or_else(|error| panic!("wider: {error}"));
+        let narrower = ProgramInterface::from_parts([4; 32], ABI_V4_VERSION, vec![entry(32)])
+            .unwrap_or_else(|error| panic!("narrower: {error}"));
+        assert!(wider.is_widening_of(&prior));
+        assert_eq!(wider.authorize_upgrade(&prior, false), Ok(()));
+        assert!(!narrower.is_widening_of(&prior));
+        assert_eq!(
+            narrower.authorize_upgrade(&prior, false),
+            Err(InterfaceRefusal::NarrowingUpgrade)
+        );
+        assert_eq!(narrower.authorize_upgrade(&prior, true), Ok(()));
+        assert!(!prior.is_widening_of(&wider));
+        assert_eq!(
+            prior.authorize_upgrade(&wider, true),
+            Err(InterfaceRefusal::AbiVersion(AbiVersionRefusal::Downgrade {
+                current: ABI_V3_VERSION,
+                requested: ABI_V1_VERSION,
+            }))
+        );
     }
 }

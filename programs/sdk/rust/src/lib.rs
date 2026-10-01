@@ -34,6 +34,7 @@ extern crate alloc;
 extern crate std;
 
 pub mod abi;
+pub mod abi_policy;
 pub mod access;
 pub mod amount;
 pub mod balance;

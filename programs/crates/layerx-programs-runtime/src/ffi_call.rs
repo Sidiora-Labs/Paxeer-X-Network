@@ -392,10 +392,9 @@ const SCHEDULE_ITEM_VERSION: u16 = 2;
 const MODULE_DISABLED: i32 = -103;
 const INSUFFICIENT_BALANCE: i32 = -400;
 const FATAL_INVARIANT: i32 = -1001;
-const ABI_V1_VERSION: u16 = 1;
-const ABI_V2_VERSION: u16 = 2;
-const ABI_V3_VERSION: u16 = 3;
-const ABI_V4_VERSION: u16 = 4;
+use crate::abi_policy::{
+    capability_encoding, CapabilityEncoding, ABI_V2_VERSION, ABI_V3_VERSION, ABI_V4_VERSION,
+};
 const PROTOCOL_LEGACY: u16 = 1;
 const PROTOCOL_OCCUPANCY: u16 = 2;
 const PROTOCOL_STATE_COMMITMENT: u16 = 3;
@@ -551,12 +550,10 @@ const fn protocol_uses_occupancy(protocol_version: u16) -> bool {
 }
 
 const fn protocol_admits_abi(protocol_version: u16, abi_version: u16) -> bool {
-    match abi_version {
-        ABI_V1_VERSION => protocol_supported(protocol_version),
-        ABI_V2_VERSION | ABI_V3_VERSION | ABI_V4_VERSION => {
-            protocol_uses_occupancy(protocol_version)
-        }
-        _ => false,
+    match capability_encoding(abi_version) {
+        Ok(CapabilityEncoding::V1) => protocol_supported(protocol_version),
+        Ok(CapabilityEncoding::V2) => protocol_uses_occupancy(protocol_version),
+        Err(_) => false,
     }
 }
 

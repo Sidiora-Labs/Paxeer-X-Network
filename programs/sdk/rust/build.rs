@@ -1,5 +1,7 @@
 extern crate alloc;
 
+#[path = "src/abi_policy.rs"]
+mod abi_policy;
 #[path = "src/bindgen.rs"]
 mod bindgen;
 
