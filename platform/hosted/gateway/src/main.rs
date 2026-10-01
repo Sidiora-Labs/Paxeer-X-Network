@@ -391,6 +391,88 @@ struct ReadinessResponse {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct AuthorityReadinessResponse {
+    ready: bool,
+    network_id: String,
+    protocol_network_id: u32,
+    wire_version: String,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum AuthorityUnready {
+    Transport,
+    InvalidSchema,
+    IdentityMismatch,
+    Unavailable,
+}
+
+fn decode_authority_readiness(
+    status: u16,
+    content_type: &str,
+    body: &[u8],
+    network_id: &str,
+    protocol_network_id: u32,
+    wire_version: &str,
+) -> Result<(), AuthorityUnready> {
+    let readiness: AuthorityReadinessResponse =
+        serde_json::from_slice(body).map_err(|_| AuthorityUnready::InvalidSchema)?;
+    if readiness.network_id != network_id
+        || readiness.protocol_network_id != protocol_network_id
+        || readiness.wire_version != wire_version
+    {
+        return Err(AuthorityUnready::IdentityMismatch);
+    }
+    if status != 200 || content_type != "application/json" || !readiness.ready {
+        return Err(AuthorityUnready::Unavailable);
+    }
+    Ok(())
+}
+
+fn probe_authority_readiness(
+    client: &Client,
+    endpoint: &Endpoint,
+    token: &str,
+    network_id: &str,
+    protocol_network_id: u32,
+    wire_version: &str,
+) -> Result<(), AuthorityUnready> {
+    let upstream = client
+        .request(
+            endpoint,
+            token,
+            &http::OutboundRequest {
+                method: "GET",
+                path: "/readyz",
+                idempotency: None,
+                content_type: "application/json",
+                body: &[],
+            },
+        )
+        .map_err(|_| AuthorityUnready::Transport)?;
+    decode_authority_readiness(
+        upstream.status,
+        &upstream.content_type,
+        &upstream.body,
+        network_id,
+        protocol_network_id,
+        wire_version,
+    )
+}
+
+fn authority_ready(config: &Config, endpoint: &Endpoint, token: &str) -> bool {
+    probe_authority_readiness(
+        &config.client,
+        endpoint,
+        token,
+        &config.network_id,
+        config.protocol_network_id,
+        &config.wire_version,
+    )
+    .is_ok()
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ModuleFile {
     schema_version: u16,
     assets: Vec<AssetMetadata>,
@@ -3734,7 +3816,7 @@ fn readiness(config: &Config) -> Vec<BackendAvailability> {
             dependency_ready(config, endpoint, token, true)
         }),
         kernel_availability(config, KernelBackend::Authority, |endpoint, token| {
-            dependency_ready(config, endpoint, token, false)
+            authority_ready(config, endpoint, token)
         }),
         kernel_availability(config, KernelBackend::Registry, |_, _| {
             program_registry_ready(config)
@@ -3793,7 +3875,7 @@ fn gateway_status(config: &Config) -> OutgoingResponse {
         dependency_ready(config, endpoint, token, true)
     });
     let authority = kernel_availability(config, KernelBackend::Authority, |endpoint, token| {
-        dependency_ready(config, endpoint, token, false)
+        authority_ready(config, endpoint, token)
     });
     json_response(
         200,
@@ -5940,5 +6022,151 @@ mod settlement_contract_tests {
             settlement::claim(short_receipt.to_string().as_bytes()),
             Err(settlement::Refusal::Receipt)
         );
+    }
+}
+
+#[cfg(test)]
+mod authority_readiness_contract_tests {
+    use super::*;
+
+    #[test]
+    fn authority_readiness_contract() {
+        let input =
+            env::var("PAXEER_X_AUTHORITY_CONTRACT_CASE").expect("real authority case required");
+        let case: serde_json::Value =
+            serde_json::from_slice(&fs::read(input).expect("case file")).expect("case JSON");
+        let text = |name: &str| case[name].as_str().expect(name);
+        let ca =
+            Certificate::from_der(&fs::read(text("ca_der")).expect("CA file")).expect("CA DER");
+        let client = Client::without_identity(ca);
+        let endpoint = Endpoint::parse(text("endpoint")).expect("TLS endpoint");
+        let token = fs::read_to_string(text("token_file")).expect("token file");
+        let network = case["protocol_network_id"]
+            .as_u64()
+            .expect("numeric identity") as u32;
+        let expected = match text("expected") {
+            "ready" => Ok(()),
+            "identity_mismatch" => Err(AuthorityUnready::IdentityMismatch),
+            "unavailable" => Err(AuthorityUnready::Unavailable),
+            "transport" => Err(AuthorityUnready::Transport),
+            _ => panic!("unknown expected state"),
+        };
+        let actual = probe_authority_readiness(
+            &client,
+            &endpoint,
+            token.trim(),
+            text("network_id"),
+            network,
+            text("wire_version"),
+        );
+        assert_eq!(actual, expected);
+        let backend = BackendAvailability::probed(KernelBackend::Authority.name(), actual.is_ok());
+        assert_eq!(backend.backend, "independent_receipt_authority");
+        assert_eq!(
+            backend.document()["state"],
+            if actual.is_ok() {
+                "ready"
+            } else {
+                "unavailable"
+            }
+        );
+        let mut count = 1;
+        if case["mutations"] == true {
+            let body = fs::read(text("response_file")).expect("real serializer response");
+            let original: serde_json::Value = serde_json::from_slice(&body).expect("response JSON");
+            let decode = |status, content_type: &str, value: &serde_json::Value| {
+                decode_authority_readiness(
+                    status,
+                    content_type,
+                    &serde_json::to_vec(value).expect("JSON"),
+                    text("network_id"),
+                    network,
+                    text("wire_version"),
+                )
+            };
+            assert_eq!(decode(200, "application/json", &original), Ok(()));
+            count += 1;
+            for field in ["ready", "network_id", "protocol_network_id", "wire_version"] {
+                let mut missing = original.clone();
+                missing.as_object_mut().expect("object").remove(field);
+                assert_eq!(
+                    decode(200, "application/json", &missing),
+                    Err(AuthorityUnready::InvalidSchema)
+                );
+                count += 1;
+                let mut wrong_type = original.clone();
+                wrong_type[field] = serde_json::Value::Null;
+                assert_eq!(
+                    decode(200, "application/json", &wrong_type),
+                    Err(AuthorityUnready::InvalidSchema)
+                );
+                count += 1;
+            }
+            for value in [
+                serde_json::json!("7331"),
+                serde_json::json!(-1),
+                serde_json::json!(4294967296_u64),
+                serde_json::json!(7331.5),
+                serde_json::json!(true),
+            ] {
+                let mut invalid = original.clone();
+                invalid["protocol_network_id"] = value;
+                assert_eq!(
+                    decode(200, "application/json", &invalid),
+                    Err(AuthorityUnready::InvalidSchema)
+                );
+                count += 1;
+            }
+            let mut unknown = original.clone();
+            unknown["unexpected"] = serde_json::json!(true);
+            assert_eq!(
+                decode(200, "application/json", &unknown),
+                Err(AuthorityUnready::InvalidSchema)
+            );
+            count += 1;
+            let mut false_ready = original.clone();
+            false_ready["ready"] = serde_json::json!(false);
+            assert_eq!(
+                decode(200, "application/json", &false_ready),
+                Err(AuthorityUnready::Unavailable)
+            );
+            count += 1;
+            assert_eq!(
+                decode(503, "application/json", &original),
+                Err(AuthorityUnready::Unavailable)
+            );
+            count += 1;
+            assert_eq!(
+                decode(200, "text/plain", &original),
+                Err(AuthorityUnready::Unavailable)
+            );
+            count += 1;
+            assert_eq!(
+                decode_authority_readiness(
+                    200,
+                    "application/json",
+                    b"{",
+                    text("network_id"),
+                    network,
+                    text("wire_version")
+                ),
+                Err(AuthorityUnready::InvalidSchema)
+            );
+            count += 1;
+            for (field, value) in [
+                ("network_id", serde_json::json!("different")),
+                ("protocol_network_id", serde_json::json!(network + 1)),
+                ("wire_version", serde_json::json!("0")),
+            ] {
+                let mut mismatch = original.clone();
+                mismatch[field] = value;
+                assert_eq!(
+                    decode(200, "application/json", &mismatch),
+                    Err(AuthorityUnready::IdentityMismatch)
+                );
+                count += 1;
+            }
+        }
+        println!("PAXEER_X_AUTHORITY_CASES={count}");
     }
 }

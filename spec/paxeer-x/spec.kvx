@@ -22129,7 +22129,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.15.1]
 title = "Validate the authority’s explicit readiness contract at the router"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]

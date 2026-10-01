@@ -445,7 +445,7 @@
     - Use one explicit build recipe for the native vector producer, focused Rust test executable and affected agentd consumer. The verification command runs only the source-bound prebuilt artifacts and fails on missing or incompatible inputs; no fake records or hand-written success responses.
     - This task implements reusable canonical record decoding only. It cannot label any record state-proven, prove absence or completeness, supply authentication, expose an endpoint or complete the wallet caps UI. Native range proofs, authenticated account binding and the full14.4 gate remain required.
     - _Requirements: 153_
-  - [-] 15.1 Validate the authority’s explicit readiness contract at the router
+  - [x] 15.1 Validate the authority’s explicit readiness contract at the router
     - Define a dependency-specific authority readiness response type and explicit network identity comparison.
     - Align producer and consumer schemas and extend the actual serializer/decoder boundary test instead of deleting deny_unknown_fields.
     - Add healthy, false-ready, numeric network mismatch, malformed and restart contract cases.

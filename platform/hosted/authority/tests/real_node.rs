@@ -942,6 +942,7 @@ struct Cluster {
     sequencer: Option<Daemon>,
     replica: Daemon,
     authority: Daemon,
+    authority_command: Command,
     authority_port: u16,
     replica_port: u16,
     replica_token: String,
@@ -977,8 +978,12 @@ fn start_cluster(with_sequencer: bool) -> Cluster {
     let genesis = build_genesis(&root, &builder);
     let daemon_binary = root.join("layerxd");
     must(
-        fs::hard_link(&layerxd, &daemon_binary),
-        "link layerxd into the harness root",
+        fs::copy(&layerxd, &daemon_binary),
+        "copy layerxd into the harness root",
+    );
+    must(
+        fs::set_permissions(&daemon_binary, fs::Permissions::from_mode(0o755)),
+        "allow the isolated replica uid to execute its private copy",
     );
     let layerxd = daemon_binary;
     let migrations = root.join("migrations");
@@ -1098,12 +1103,14 @@ fn start_cluster(with_sequencer: bool) -> Cluster {
     let socket = run_dir.join("layerxd.sock");
     let text = |path: PathBuf| path.to_string_lossy().into_owned();
     let mut node_env = BTreeMap::new();
-    let (paxeer_chain_id, paxeer_rpc_port) = serve_recorded_chain();
-    node_env.insert("LAYERX_NODE_PAXEER_CHAIN_ID", paxeer_chain_id.to_string());
-    node_env.insert(
-        "LAYERX_NODE_PAXEER_RPC_URL",
-        format!("http://127.0.0.1:{paxeer_rpc_port}"),
-    );
+    if with_sequencer {
+        let (paxeer_chain_id, paxeer_rpc_port) = serve_recorded_chain();
+        node_env.insert("LAYERX_NODE_PAXEER_CHAIN_ID", paxeer_chain_id.to_string());
+        node_env.insert(
+            "LAYERX_NODE_PAXEER_RPC_URL",
+            format!("http://127.0.0.1:{paxeer_rpc_port}"),
+        );
+    }
     node_env.insert(
         "LAYERX_NODE_CHECKPOINT_DIRECTORY",
         text(checkpoints.clone()),
@@ -1287,7 +1294,9 @@ fn start_cluster(with_sequencer: bool) -> Cluster {
         0o600,
     );
     let authority_stderr = root.join("authority.stderr");
-    let mut authority_command = Command::new(env!("CARGO_BIN_EXE_layerx-receipt-authority"));
+    let authority_binary = std::env::var_os("PAXEER_X_AUTHORITY_BIN")
+        .unwrap_or_else(|| env!("CARGO_BIN_EXE_layerx-receipt-authority").into());
+    let mut authority_command = Command::new(authority_binary);
     authority_command
         .env_clear()
         .env(
@@ -1346,6 +1355,7 @@ fn start_cluster(with_sequencer: bool) -> Cluster {
         sequencer,
         replica,
         authority,
+        authority_command,
         authority_port,
         replica_port,
         replica_token,
@@ -1375,7 +1385,7 @@ impl Drop for Cluster {
             }
             eprintln!("replica stderr:\n{}", self.replica.diagnostics());
             eprintln!("authority stderr:\n{}", self.authority.diagnostics());
-        } else {
+        } else if std::env::var_os("PAXEER_X_AUTHORITY_RETAIN_STATE").is_none() {
             let _ = fs::remove_dir_all(&self.root);
         }
     }
@@ -2035,4 +2045,226 @@ fn real_replica_readiness_relay_and_refusals_without_sequencer() {
     );
     assert_eq!(relay_without_replica.status, 503);
     assert_eq!(error_code(&relay_without_replica), "replica_unavailable");
+}
+
+#[test]
+fn router_authority_readiness_schema_restart_contract() {
+    let gateway_tests =
+        std::env::var_os("PAXEER_X_GATEWAY_TEST_BIN").expect("prebuilt gateway test binary");
+    let mut cluster = start_cluster(false);
+    assert!(cluster.sequencer.is_none());
+    eprintln!("retained_state={}", cluster.root.display());
+    let response = https_get(
+        cluster.authority_port,
+        &cluster.certificate,
+        "/readyz",
+        None,
+    );
+    assert_eq!(response.status, 200);
+    let body = json(&response);
+    assert_eq!(body.as_object().map(serde_json::Map::len), Some(4));
+    assert_eq!(body["protocol_network_id"], serde_json::json!(NETWORK_ID));
+    let response_file = cluster.root.join("readiness-response.json");
+    write(&response_file, &response.body, 0o600);
+    let untrusted_pem = cluster.root.join("tls/untrusted.pem");
+    let untrusted_der = cluster.root.join("tls/untrusted.der");
+    command(
+        "openssl",
+        &[
+            "req",
+            "-x509",
+            "-newkey",
+            "ec",
+            "-pkeyopt",
+            "ec_paramgen_curve:P-256",
+            "-nodes",
+            "-keyout",
+            &cluster.root.join("tls/untrusted-key.pem").to_string_lossy(),
+            "-out",
+            &untrusted_pem.to_string_lossy(),
+            "-days",
+            "1",
+            "-subj",
+            "/CN=untrusted",
+        ],
+    );
+    command(
+        "openssl",
+        &[
+            "x509",
+            "-in",
+            &untrusted_pem.to_string_lossy(),
+            "-outform",
+            "DER",
+            "-out",
+            &untrusted_der.to_string_lossy(),
+        ],
+    );
+    let mut count = 0_u64;
+    let mut probe = |cluster: &Cluster,
+                     expected: &str,
+                     mutations: bool,
+                     network: u32,
+                     label: &str,
+                     wire: &str,
+                     trusted: bool| {
+        let case = serde_json::json!({
+            "ca_der": if trusted { cluster.root.join("tls/server.der") } else { untrusted_der.clone() },
+            "endpoint": format!("https://localhost:{}", cluster.authority_port),
+            "token_file": cluster.root.join("tokens/gateway.token"),
+            "protocol_network_id": network, "network_id": label, "wire_version": wire,
+            "expected": expected, "mutations": mutations, "response_file": response_file,
+        });
+        let path = cluster.root.join("gateway-case.json");
+        write(&path, &must(serde_json::to_vec(&case), "case JSON"), 0o600);
+        let result = must(
+            Command::new(&gateway_tests)
+                .args([
+                    "authority_readiness_contract_tests::authority_readiness_contract",
+                    "--exact",
+                    "--nocapture",
+                ])
+                .env("PAXEER_X_AUTHORITY_CONTRACT_CASE", path)
+                .output(),
+            "gateway decoder test",
+        );
+        let stdout = String::from_utf8_lossy(&result.stdout);
+        assert!(
+            result.status.success(),
+            "gateway contract: {stdout} {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(
+            stdout.contains("1 passed; 0 failed"),
+            "one real gateway test required: {stdout}"
+        );
+        let observed: u64 = stdout
+            .lines()
+            .find_map(|line| line.strip_prefix("PAXEER_X_AUTHORITY_CASES="))
+            .expect("actual assertion count")
+            .parse()
+            .expect("count");
+        assert!(observed > 0);
+        count += observed;
+    };
+    let wire = PROTOCOL_VERSION.to_string();
+    probe(
+        &cluster,
+        "ready",
+        true,
+        NETWORK_ID,
+        NETWORK_NAME,
+        &wire,
+        true,
+    );
+    probe(
+        &cluster,
+        "identity_mismatch",
+        false,
+        NETWORK_ID + 1,
+        NETWORK_NAME,
+        &wire,
+        true,
+    );
+    probe(
+        &cluster,
+        "identity_mismatch",
+        false,
+        NETWORK_ID,
+        "different",
+        &wire,
+        true,
+    );
+    probe(
+        &cluster,
+        "identity_mismatch",
+        false,
+        NETWORK_ID,
+        NETWORK_NAME,
+        "0",
+        true,
+    );
+    probe(
+        &cluster,
+        "transport",
+        false,
+        NETWORK_ID,
+        NETWORK_NAME,
+        &wire,
+        false,
+    );
+    cluster.authority.stop();
+    probe(
+        &cluster,
+        "transport",
+        false,
+        NETWORK_ID,
+        NETWORK_NAME,
+        &wire,
+        true,
+    );
+    cluster.authority_command.env(
+        "LAYERX_AUTHORITY_PROTOCOL_NETWORK_ID",
+        (NETWORK_ID + 1).to_string(),
+    );
+    cluster.authority.child = must(
+        cluster.authority_command.spawn(),
+        "restart authority with mismatch",
+    );
+    wait_for_port(
+        cluster.authority_port,
+        &mut cluster.authority,
+        "restarted authority",
+    );
+    probe(
+        &cluster,
+        "identity_mismatch",
+        false,
+        NETWORK_ID,
+        NETWORK_NAME,
+        &wire,
+        true,
+    );
+    cluster.authority.stop();
+    cluster.authority_command.env(
+        "LAYERX_AUTHORITY_PROTOCOL_NETWORK_ID",
+        NETWORK_ID.to_string(),
+    );
+    cluster.authority.child = must(
+        cluster.authority_command.spawn(),
+        "restart authority restored",
+    );
+    wait_for_port(
+        cluster.authority_port,
+        &mut cluster.authority,
+        "restored authority",
+    );
+    probe(
+        &cluster,
+        "ready",
+        false,
+        NETWORK_ID,
+        NETWORK_NAME,
+        &wire,
+        true,
+    );
+    cluster.replica.stop();
+    let unavailable = https_get(
+        cluster.authority_port,
+        &cluster.certificate,
+        "/readyz",
+        None,
+    );
+    assert_eq!(unavailable.status, 503);
+    assert_eq!(json(&unavailable)["ready"], serde_json::json!(false));
+    probe(
+        &cluster,
+        "unavailable",
+        false,
+        NETWORK_ID,
+        NETWORK_NAME,
+        &wire,
+        true,
+    );
+    println!("PAXEER_X_GATE tests={count} skipped=0");
 }
