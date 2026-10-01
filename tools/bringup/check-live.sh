@@ -1461,9 +1461,70 @@ check_edge() {
 # branch completes with conclusion success and a successful job on a runner
 # whose name starts with fly-. A run still unfinished after the wait is
 # cancelled. One line per check.
+ci_dispatch_id() {
+	python3 -c '
+import json, sys
+try:
+    value = json.load(sys.stdin)
+    run = value["workflow_run_id"]
+    if type(run) is not int or run <= 0:
+        raise ValueError("dispatch run identity")
+    print(run)
+except (ValueError, KeyError, TypeError):
+    sys.exit(1)
+'
+}
+
+ci_canary_evidence() {
+	python3 -c '
+import json, re, sys
+try:
+    expected_run, branch, candidate, workflow = sys.argv[1:]
+    if not re.fullmatch(r"[1-9][0-9]*", expected_run) or not re.fullmatch(r"[0-9a-f]{40}", candidate):
+        raise ValueError("expected identity")
+    decoder = json.JSONDecoder()
+    raw = sys.stdin.read().strip()
+    run, offset = decoder.raw_decode(raw)
+    pages = json.loads(raw[offset:].strip())
+    if type(run.get("id")) is not int or run["id"] != int(expected_run):
+        raise ValueError("run identity")
+    if run.get("event") != "workflow_dispatch" or run.get("head_branch") != branch or run.get("head_sha") != candidate:
+        raise ValueError("source identity")
+    if run.get("path", "").split("@")[0] != ".github/workflows/" + workflow:
+        raise ValueError("workflow identity")
+    if run.get("status") != "completed" or run.get("conclusion") != "success":
+        raise ValueError("run incomplete or failed")
+    if not isinstance(pages, list) or not pages:
+        raise ValueError("job pages")
+    jobs, seen = [], set()
+    total = pages[0].get("total_count")
+    if type(total) is not int or total <= 0:
+        raise ValueError("job count")
+    for page in pages:
+        if page.get("total_count") != total or not isinstance(page.get("jobs"), list):
+            raise ValueError("job inventory")
+        for job in page["jobs"]:
+            ident = job.get("id")
+            if type(ident) is not int or ident <= 0 or ident in seen or type(job.get("run_id")) is not int or job["run_id"] != int(expected_run):
+                raise ValueError("job identity")
+            seen.add(ident)
+            if job.get("status") != "completed" or job.get("conclusion") != "success":
+                raise ValueError("job incomplete or failed")
+            jobs.append(job)
+    if len(jobs) != total:
+        raise ValueError("incomplete job pagination")
+    runners = [job["runner_name"] for job in jobs if type(job.get("runner_id")) is int and job["runner_id"] > 0 and isinstance(job.get("runner_name"), str) and re.fullmatch(r"fly-[1-9][0-9]*", job["runner_name"])]
+    if not runners:
+        raise ValueError("runner identity")
+    print("completed success", candidate, runners[0], len(jobs))
+except (ValueError, KeyError, TypeError, AttributeError):
+    sys.exit(1)
+'
+}
+
 check_ci() {
 	local toml=tools/flyci/controller/fly.toml workflow=runner-canary.yml wait=1500
-	local app label answer n_machines n_started variable branch since run attempt status conclusion head_sha runner jobs failures=0
+	local app label answer n_machines n_started variable branch run status conclusion head_sha runner jobs candidate run_json jobs_json failures=0
 	if ! command -v gh >/dev/null 2>&1 || ! command -v flyctl >/dev/null 2>&1; then
 		echo "check-live: gh and flyctl are required" >&2
 		exit 2
@@ -1497,26 +1558,24 @@ print(len(ms), len([m for m in ms if m.get("state") == "started"]))
 		echo "fail canary workflow=$workflow branch=none"
 		finish $((failures + 1))
 	fi
-	since="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-	if ! (cd "$repo_root" && timeout "$timeout" gh workflow run "$workflow" --ref "$branch" >/dev/null 2>&1); then
-		echo "fail canary workflow=$workflow branch=$branch dispatch=refused"
+	candidate="$(git -C "$repo_root" rev-parse --verify HEAD)" || candidate=""
+	if [[ ! "$candidate" =~ ^[0-9a-f]{40}$ ]]; then
+		echo "fail canary workflow=$workflow candidate=absent"
 		finish $((failures + 1))
 	fi
-	run=""
-	for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
-		sleep 5
-		run="$(cd "$repo_root" && timeout "$timeout" gh run list --workflow "$workflow" --branch "$branch" --event workflow_dispatch --limit 10 --json databaseId,createdAt --jq "[.[] | select(.createdAt >= \"$since\")] | last | .databaseId // empty" 2>/dev/null)" || run=""
-		[ -z "$run" ] || break
-	done
-	if [ -z "$run" ]; then
-		echo "fail canary workflow=$workflow branch=$branch run=none"
+	if ! answer="$(cd "$repo_root" && timeout "$timeout" gh api --method POST "repos/{owner}/{repo}/actions/workflows/$workflow/dispatches" -H 'X-GitHub-Api-Version: 2022-11-28' -f ref="$branch" -F return_run_details=true 2>/dev/null)"; then
+		echo "fail canary workflow=$workflow branch=$branch dispatch=unacknowledged"
+		finish $((failures + 1))
+	fi
+	if ! run="$(printf '%s' "$answer" | ci_dispatch_id)"; then
+		echo "fail canary workflow=$workflow branch=$branch run=unbound"
 		finish $((failures + 1))
 	fi
 	(cd "$repo_root" && timeout "$wait" gh run watch "$run" --interval 15 >/dev/null 2>&1) || true
-	answer="$(cd "$repo_root" && timeout "$timeout" gh run view "$run" --json status,conclusion,headSha --jq '[.status, (.conclusion | if . == "" then "none" else . end), (.headSha | if . == "" then "none" else . end)] | join(" ")' 2>/dev/null)" || answer=""
-	read -r status conclusion head_sha <<<"${answer:-none none none}"
-	answer="$(cd "$repo_root" && timeout "$timeout" gh api "repos/{owner}/{repo}/actions/runs/$run/jobs?per_page=100" --paginate --jq '[([.jobs[] | select((.runner_name // "") | startswith("fly-")) | select(.conclusion == "success") | .runner_name] | first // "none"), ([.jobs[] | "\(.name)=\(.runner_name // "none"):\(.conclusion // "none")" | gsub(" "; "_")] | join(",") | if . == "" then "none" else . end)] | join(" ")' 2>/dev/null)" || answer=""
-	read -r runner jobs <<<"${answer:-none none}"
+	run_json="$(cd "$repo_root" && timeout "$timeout" gh api "repos/{owner}/{repo}/actions/runs/$run" 2>/dev/null)" || run_json=""
+	jobs_json="$(cd "$repo_root" && timeout "$timeout" gh api "repos/{owner}/{repo}/actions/runs/$run/jobs?per_page=100&filter=latest" --paginate --slurp 2>/dev/null)" || jobs_json=""
+	answer="$(printf '%s\n%s\n' "$run_json" "$jobs_json" | ci_canary_evidence "$run" "$branch" "$candidate" "$workflow")" || answer=""
+	read -r status conclusion head_sha runner jobs <<<"${answer:-none none none none none}"
 	if [ "$status" != completed ]; then
 		(cd "$repo_root" && timeout "$timeout" gh run cancel "$run" >/dev/null 2>&1) || true
 	fi
