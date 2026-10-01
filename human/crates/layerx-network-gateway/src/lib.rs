@@ -123,6 +123,43 @@ impl fmt::Display for AccountIdentifier {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LookupSelector {
+    Evm([u8; 20]),
+    Did([u8; 32]),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NativeAccountReference(pub [u8; 32]);
+
+impl TryFrom<AccountIdentifier> for LookupSelector {
+    type Error = GatewayError;
+    fn try_from(value: AccountIdentifier) -> Result<Self, Self::Error> {
+        match value {
+            AccountIdentifier::Evm(address) => Ok(Self::Evm(address)),
+            AccountIdentifier::Did(key) => Ok(Self::Did(key)),
+            AccountIdentifier::Account(_) => Err(GatewayError::Refused {
+                code: -32001,
+                message: "native_account_reverse_resolution_unsupported".to_owned(),
+            }),
+        }
+    }
+}
+
+impl LookupSelector {
+    #[must_use]
+    pub const fn identifier(self) -> AccountIdentifier {
+        match self {
+            Self::Evm(address) => AccountIdentifier::Evm(address),
+            Self::Did(key) => AccountIdentifier::Did(key),
+        }
+    }
+    #[must_use]
+    pub fn canonical_text(self) -> String {
+        self.identifier().canonical_text()
+    }
+}
+
 const DIGITS: &[u8; 16] = b"0123456789abcdef";
 
 /// Encodes bytes as lowercase hexadecimal.
@@ -182,6 +219,7 @@ fn decode_evm(body: &str) -> Result<[u8; 20], IdentifierError> {
 /// Both identities of one account as the gateway reports them.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolvedIdentities {
+    pub lookup_selector: Option<LookupSelector>,
     /// The bound Paxeer EVM address, when the network knows one.
     pub evm_address: Option<[u8; 20]>,
     /// The bech32 Paxeer address, when the network reports one.
@@ -197,8 +235,29 @@ pub struct ResolvedIdentities {
 }
 
 impl ResolvedIdentities {
-    /// The one identifier this account is addressed by: the `LayerX` account when
-    /// the network knows one, otherwise the spelling that was asked for.
+    #[must_use]
+    pub fn native_reference(&self) -> Option<NativeAccountReference> {
+        self.layerx_account.map(NativeAccountReference)
+    }
+
+    pub fn retain_lookup(
+        &mut self,
+        requested: AccountIdentifier,
+    ) -> Result<LookupSelector, GatewayError> {
+        let lookup = LookupSelector::try_from(requested)?;
+        let matches = match lookup {
+            LookupSelector::Evm(address) => self.evm_address == Some(address),
+            LookupSelector::Did(key) => self.layerx_did == Some(key),
+        };
+        if !matches {
+            return Err(GatewayError::Unbound);
+        }
+        self.lookup_selector = Some(lookup);
+        Ok(lookup)
+    }
+
+    /// The native display/reference key, never a reverse-resolution selector.
+    /// Repeated unified reads use `lookup_selector` instead.
     #[must_use]
     pub fn canonical(&self, requested: AccountIdentifier) -> AccountIdentifier {
         if let Some(account) = self.layerx_account {
@@ -537,8 +596,10 @@ impl GatewayEndpoint {
         &self,
         account: AccountIdentifier,
     ) -> Result<ResolvedIdentities, GatewayError> {
-        let key = Value::String(account.canonical_text());
-        decode_identities(&self.call("px_resolveAccount", &[key])?)
+        let key = Value::String(LookupSelector::try_from(account)?.canonical_text());
+        let mut identities = decode_identities(&self.call("px_resolveAccount", &[key])?)?;
+        identities.retain_lookup(account)?;
+        Ok(identities)
     }
 
     /// Reads `px_getAccount` for one account spelling.
@@ -546,8 +607,17 @@ impl GatewayEndpoint {
     /// # Errors
     /// Reports the first transport, refusal or decoding failure.
     pub fn get_account(&self, account: AccountIdentifier) -> Result<AccountJoin, GatewayError> {
-        let key = Value::String(account.canonical_text());
-        decode_account(&self.call("px_getAccount", &[key])?)
+        let key = Value::String(LookupSelector::try_from(account)?.canonical_text());
+        let mut joined = decode_account(&self.call("px_getAccount", &[key])?)?;
+        joined.account.retain_lookup(account)?;
+        if joined
+            .paxeer
+            .as_ref()
+            .is_some_and(|pax| Some(pax.address) != joined.account.evm_address)
+        {
+            return Err(GatewayError::Unbound);
+        }
+        Ok(joined)
     }
 
     /// Reads `px_getBalances` for one account spelling.
@@ -558,8 +628,10 @@ impl GatewayEndpoint {
         &self,
         account: AccountIdentifier,
     ) -> Result<AccountBalances, GatewayError> {
-        let key = Value::String(account.canonical_text());
-        decode_account_balances(&self.call("px_getBalances", &[key])?)
+        let key = Value::String(LookupSelector::try_from(account)?.canonical_text());
+        let mut balances = decode_account_balances(&self.call("px_getBalances", &[key])?)?;
+        balances.account.retain_lookup(account)?;
+        Ok(balances)
     }
 
     /// Reads the joined asset map through `px_listAssets`.
@@ -819,6 +891,9 @@ pub fn decode_identities(result: &Value) -> Result<ResolvedIdentities, GatewayEr
         return Err(GatewayError::MalformedAnswer);
     }
     Ok(ResolvedIdentities {
+        lookup_selector: optional_digest(&result["layerx_did"])?
+            .map(LookupSelector::Did)
+            .or(optional_address(&result["evm_address"])?.map(LookupSelector::Evm)),
         evm_address: optional_address(&result["evm_address"])?,
         pax_address: optional_text(&result["pax_address"], PAX_ADDRESS_LIMIT)?,
         layerx_did: optional_digest(&result["layerx_did"])?,
@@ -1116,6 +1191,108 @@ mod tests {
         assert_eq!(quantity(&json!(12)), Ok(12));
         for refused in [json!("-1"), json!("0x"), json!("zz"), json!(true)] {
             assert_eq!(quantity(&refused), Err(GatewayError::MalformedAnswer));
+        }
+    }
+}
+
+#[cfg(test)]
+mod identity_selector_contract {
+    use super::*;
+    #[test]
+    fn native_account_never_becomes_a_did_selector() {
+        let bytes = [0x61; 32];
+        assert!(LookupSelector::try_from(AccountIdentifier::Account(bytes)).is_err());
+        assert_eq!(
+            LookupSelector::try_from(AccountIdentifier::Did(bytes)),
+            Ok(LookupSelector::Did(bytes))
+        );
+        let endpoint = GatewayEndpoint::parse("http://127.0.0.1:1").unwrap();
+        for result in [
+            endpoint
+                .resolve_account(AccountIdentifier::Account(bytes))
+                .map(|_| ()),
+            endpoint
+                .get_account(AccountIdentifier::Account(bytes))
+                .map(|_| ()),
+            endpoint
+                .get_balances(AccountIdentifier::Account(bytes))
+                .map(|_| ()),
+        ] {
+            assert_eq!(
+                result,
+                Err(GatewayError::Refused {
+                    code: -32001,
+                    message: "native_account_reverse_resolution_unsupported".to_owned()
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn real_repeated_account_and_balance_lookup_preserves_owner() {
+        let path = std::env::var("PAXEER_X_IDENTITY_FIXTURE")
+            .expect("real isolated identity fixture required");
+        let fixture: Value = serde_json::from_slice(&std::fs::read(path).expect("fixture file"))
+            .expect("fixture JSON");
+        let endpoint = GatewayEndpoint::parse(
+            fixture["targets"]["healthy"]["url"]
+                .as_str()
+                .expect("endpoint"),
+        )
+        .expect("endpoint parse");
+        for field in ["evm", "did"] {
+            let requested =
+                AccountIdentifier::parse(fixture[field].as_str().expect("real selector"))
+                    .expect("selector parse");
+            let mut identities = endpoint
+                .resolve_account(requested)
+                .expect("real resolution");
+            assert_eq!(
+                identities.layerx_account,
+                Some(
+                    decode_digest(fixture["native_account"].as_str().expect("native account"))
+                        .expect("native digest")
+                )
+            );
+            let lookup = identities
+                .retain_lookup(requested)
+                .expect("original lookup");
+            assert_eq!(lookup.identifier(), requested);
+            assert_eq!(identities.lookup_selector, Some(lookup));
+            assert_eq!(
+                identities.canonical(requested),
+                AccountIdentifier::Account(
+                    identities.native_reference().expect("native reference").0
+                )
+            );
+            for _ in 0..2 {
+                assert_eq!(
+                    endpoint
+                        .resolve_account(lookup.identifier())
+                        .expect("repeat resolution"),
+                    identities
+                );
+                assert_eq!(
+                    endpoint
+                        .get_account(lookup.identifier())
+                        .expect("repeat account")
+                        .account,
+                    identities
+                );
+                assert_eq!(
+                    endpoint
+                        .get_balances(lookup.identifier())
+                        .expect("repeat balance")
+                        .account,
+                    identities
+                );
+            }
+            assert_eq!(
+                identities.retain_lookup(AccountIdentifier::Did(
+                    identities.native_reference().expect("native reference").0
+                )),
+                Err(GatewayError::Unbound)
+            );
         }
     }
 }

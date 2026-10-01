@@ -421,6 +421,7 @@ mod tests {
 
     fn identities(bound: bool) -> ResolvedIdentities {
         ResolvedIdentities {
+            lookup_selector: bound.then_some(layerx_network_gateway::LookupSelector::Evm([7; 20])),
             evm_address: bound.then_some([7; 20]),
             pax_address: None,
             layerx_did: None,

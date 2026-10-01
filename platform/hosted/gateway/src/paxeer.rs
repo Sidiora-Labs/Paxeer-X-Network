@@ -260,25 +260,33 @@ fn account_selector(params: Option<&Value>) -> Result<Selector, i32> {
             return Ok(Selector::Evm(address));
         }
     }
-    let key = account
-        .strip_prefix("did:layerx:")
-        .unwrap_or(account.as_str());
+    let explicit_did = account.strip_prefix("did:layerx:");
+    let key = explicit_did.unwrap_or(account.as_str());
     let key = super::parse_hex32(key).map_err(|_| -32602)?;
     if is_zero(&key) {
         return Err(-32602);
     }
-    Ok(Selector::LayerX(key))
+    Ok(if explicit_did.is_some() {
+        Selector::Did(key)
+    } else {
+        Selector::NativeAccount(key)
+    })
 }
 
 enum Selector {
     Evm([u8; 20]),
-    LayerX([u8; 32]),
+    Did([u8; 32]),
+    NativeAccount([u8; 32]),
 }
 
 fn resolve(config: &Config, selector: &Selector) -> Result<Resolution, &'static str> {
     let address = match selector {
         Selector::Evm(address) => *address,
-        Selector::LayerX(key) => {
+        Selector::NativeAccount(account) => {
+            let _native_account = account;
+            return Err("native_account_reverse_resolution_unsupported");
+        }
+        Selector::Did(key) => {
             let answer = call(
                 config,
                 &evm::ADDR_PRECOMPILE,
@@ -303,6 +311,20 @@ fn resolve(config: &Config, selector: &Selector) -> Result<Resolution, &'static 
     )?;
     let unified = evm::decode_unified_account(&answer).map_err(|_| "invalid_paxeer_response")?;
     let bound = !is_zero(&unified.did_public_key);
+    validate_resolution(selector, &address, &unified)?;
+    if bound {
+        let reverse = call(
+            config,
+            &evm::ADDR_PRECOMPILE,
+            &evm::calldata_word(
+                evm::SELECTOR_GET_EVM_ADDR_BY_LAYERX,
+                &unified.did_public_key,
+            ),
+        )?;
+        if evm::decode_address(&reverse).map_err(|_| "invalid_paxeer_response")? != address {
+            return Err("conflicting_identity_binding");
+        }
+    }
     Ok(Resolution {
         evm: Some(address),
         pax_address: Some(unified.pax_address).filter(|value| !value.is_empty()),
@@ -310,6 +332,24 @@ fn resolve(config: &Config, selector: &Selector) -> Result<Resolution, &'static 
         layerx_account: (bound && !is_zero(&unified.layerx_main_account_id))
             .then_some(unified.layerx_main_account_id),
     })
+}
+
+fn validate_resolution(
+    selector: &Selector,
+    address: &[u8; 20],
+    unified: &evm::UnifiedAccount,
+) -> Result<(), &'static str> {
+    if unified.evm != *address
+        || is_zero(&unified.did_public_key) != is_zero(&unified.layerx_main_account_id)
+    {
+        return Err("conflicting_identity_binding");
+    }
+    if let Selector::Did(key) = selector {
+        if *key != unified.did_public_key {
+            return Err("conflicting_identity_binding");
+        }
+    }
+    Ok(())
 }
 
 fn resolved(config: &Config, id: &Value, params: Option<&Value>) -> Result<Resolution, Value> {
@@ -749,11 +789,11 @@ mod tests {
         ));
         assert!(matches!(
             account_selector(Some(&json!([format!("did:layerx:{}", "61".repeat(32))]))),
-            Ok(Selector::LayerX(_))
+            Ok(Selector::Did(_))
         ));
         assert!(matches!(
             account_selector(Some(&json!(["61".repeat(32)]))),
-            Ok(Selector::LayerX(_))
+            Ok(Selector::NativeAccount(_))
         ));
         for invalid in [
             json!([]),
@@ -800,5 +840,22 @@ mod tests {
         assert_eq!(document["layerx_did"], Value::Null);
         assert_eq!(document["layerx_account"], Value::Null);
         assert_eq!(unbound.did(), None);
+    }
+}
+
+#[cfg(test)]
+mod identity_selector_contract {
+    use super::*;
+    #[test]
+    fn identical_hex_has_distinct_did_and_native_meanings() {
+        let key = "61".repeat(32);
+        assert!(matches!(
+            account_selector(Some(&json!([key]))),
+            Ok(Selector::NativeAccount(_))
+        ));
+        assert!(matches!(
+            account_selector(Some(&json!([format!("did:layerx:{key}")]))),
+            Ok(Selector::Did(_))
+        ));
     }
 }

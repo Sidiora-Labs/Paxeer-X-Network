@@ -1380,7 +1380,7 @@
           "type": "object"
         }
       },
-      "description": "Resolves one account across both domains. The argument is either a 0x-prefixed 20-byte EVM address or a LayerX DID (did:layerx:<64 hex> or the bare 64 hex characters of the DID public key). The result is {evm_address, pax_address, layerx_did, layerx_account, bound}: every field comes from the addr precompile's getUnifiedAccount/getEvmAddrByLayerX, the halves that are not bound are null, and bound is false when the EVM address carries no LayerX DID. A LayerX account identifier has no reverse index on chain, so only the DID public key resolves from the LayerX side. An unconfigured Paxeer endpoint is -32001 with data.code=paxeer_rpc_not_configured.",
+      "description": "Resolves one account across both domains. The argument is either a 0x-prefixed 20-byte EVM address or an explicit LayerX DID (did:layerx:<64 hex>). The result is {evm_address, pax_address, layerx_did, layerx_account, bound}: every field comes from the addr precompile's getUnifiedAccount/getEvmAddrByLayerX, the halves that are not bound are null, and bound is false when the EVM address carries no LayerX DID. A bare 64-hex native account identifier is refused with -32001 and data.code=native_account_reverse_resolution_unsupported; it is never reinterpreted as a DID public key. Retain the original EVM/DID lookup selector for repeated account, balance and history reads; layerx_account is a separate native reference. Conflicting forward/reverse joins refuse with data.code=conflicting_identity_binding. An unconfigured Paxeer endpoint is -32001 with data.code=paxeer_rpc_not_configured.",
       "errors": [
         {
           "code": -32602,
@@ -2140,7 +2140,7 @@
           "schema": {
             "type": "string"
           },
-          "description": "An EVM address, a did:layerx:<hex> DID or a bare 64-hex DID public key, resolved as px_resolveAccount does."
+          "description": "An EVM address, an explicit did:layerx:<hex> DID, resolved as px_resolveAccount does."
         },
         {
           "name": "cursor",
