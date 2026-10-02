@@ -112,7 +112,7 @@ export function TokenSelectorView({
 
             <div className="relative mb-4">
                 <Image
-                    src="/ui_icons/search.svg"
+                    src="/wallet/ui_icons/search.svg"
                     alt=""
                     className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4"
                     style={{ filter: 'brightness(0) invert(0.6)' }}

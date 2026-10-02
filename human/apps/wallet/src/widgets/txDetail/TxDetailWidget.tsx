@@ -43,7 +43,7 @@ export function TxDetailWidget({ txHash, onBack, onPaxscan }: TxDetailWidgetProp
   const symbol = isTokenTx ? (primaryTransfer.token?.symbol || '???') : 'PAX';
   const decimals = isTokenTx ? Number(primaryTransfer.token?.decimals || 18) : 18;
   const rawAmount = isTokenTx ? (primaryTransfer.total?.value || '0') : (tx?.value || '0');
-  const iconUrl = isTokenTx ? (primaryTransfer.token?.icon_url || '/default_icon.webp') : PAX_ICON_URL;
+  const iconUrl = isTokenTx ? (primaryTransfer.token?.icon_url || '/wallet/default_icon.webp') : PAX_ICON_URL;
 
   const fmtAmount = () => {
     const n = Number(fmtUnits(rawAmount, decimals));
@@ -131,7 +131,7 @@ export function TxDetailWidget({ txHash, onBack, onPaxscan }: TxDetailWidgetProp
             <div className="text-center pt-4 pb-6">
               <p className={`text-lg font-semibold mb-4 ${directionColor}`}>{directionLabel}</p>
               <div className="relative w-16 h-16 mx-auto mb-5">
-                <Image src={iconUrl} alt={symbol} className="w-16 h-16 rounded-full bg-white/10 object-cover" onError={(e) => { (e.target as HTMLImageElement).src = '/default_icon.webp'; }} width={64} height={64} />
+                <Image src={iconUrl} alt={symbol} className="w-16 h-16 rounded-full bg-white/10 object-cover" onError={(e) => { (e.target as HTMLImageElement).src = '/wallet/default_icon.webp'; }} width={64} height={64} />
                 <div className={`absolute -bottom-1 -right-1 w-7 h-7 rounded-full flex items-center justify-center ${isSent ? 'bg-red-500' : 'bg-green-500'}`}>
                   <SvgIcon name={isSent ? 'arrow-up-right' : 'arrow-down-left'} className="w-3.5 h-3.5" style={{ filter: 'brightness(0) invert(1)' }} />
                 </div>

@@ -257,9 +257,9 @@ export const fetchTrending = (limit = 20): Promise<TrendingResponse> =>
 // ── Ranking Algorithm API (discovery rankings service) ──────────────────────
 // All four bases route through /api/sdk/[...path] — upstream URL never ships
 // in the client bundle (matches SIDIORA_SDK_UPSTREAM env var server-side).
-const RANKING_API_BASE = '/api/sdk/ranking';
-const STATS_API_BASE = '/api/sdk/stats';
-const METADATA_API_BASE = '/api/sdk/metadata';
+const RANKING_API_BASE = '/wallet/api/sdk/ranking';
+const STATS_API_BASE = '/wallet/api/sdk/stats';
+const METADATA_API_BASE = '/wallet/api/sdk/metadata';
 
 export type RankingCategory = 'trending' | 'breakout' | 'new' | 'top_volume' | 'unusual' | 'movers';
 
@@ -624,7 +624,7 @@ export async function fetchPaxHistory(
     const to = Math.floor(Date.now() / 1000);
     const from = to - (countback * resolution * 60);
     const res = await fetch(
-        `/api/candle/pax/history?symbol=${symbol}&resolution=${resolution}&from=${from}&to=${to}&countback=${countback}`
+        `/wallet/api/candle/pax/history?symbol=${symbol}&resolution=${resolution}&from=${from}&to=${to}&countback=${countback}`
     );
     if (!res.ok) throw new Error(`History API ${res.status}`);
     const data: PaxHistoryResponse = await res.json();
@@ -665,7 +665,7 @@ export async function fetchPaxOhlc(interval = '5m'): Promise<OhlcResponse> {
 }
 
 // ── Sidiora Pool APIs (Candles + Stats) ─────────────────────────────────────
-const CANDLES_API_BASE = '/api/sdk/candles';
+const CANDLES_API_BASE = '/wallet/api/sdk/candles';
 
 export interface SidioraPoolStats {
     poolAddress: string;
@@ -774,7 +774,7 @@ export async function fetchCrossverseHistory(
     const from = to - countback * resolution * 60;
     const symbol = cvSymbol.toUpperCase();
     const res = await fetch(
-        `/api/candle/cv/${cvSymbol}/history?symbol=${symbol}&resolution=${resolution}&from=${from}&to=${to}&countback=${countback}`,
+        `/wallet/api/candle/cv/${cvSymbol}/history?symbol=${symbol}&resolution=${resolution}&from=${from}&to=${to}&countback=${countback}`,
         { headers: { Accept: 'application/json' } },
     );
     if (!res.ok) throw new Error(`Crossverse history API ${res.status}`);
@@ -814,7 +814,7 @@ export async function fetchSidCandles(
     const to = Math.floor(Date.now() / 1000);
     const from = to - countback * resolutionToSeconds(resolution);
     const res = await fetch(
-        `/api/candle/sid/history?symbol=SID&from=${from}&to=${to}&resolution=${resolution}&countback=${countback}`,
+        `/wallet/api/candle/sid/history?symbol=SID&from=${from}&to=${to}&resolution=${resolution}&countback=${countback}`,
         { headers: { Accept: 'application/json' } },
     );
     if (!res.ok) throw new Error(`SID Candles API ${res.status}`);

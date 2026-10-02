@@ -54,10 +54,10 @@ function buildPayload(payload: PushPayload): string {
   return JSON.stringify({
     title: payload.title,
     body: payload.body,
-    icon: payload.icon || '/icons/android/launchericon-192x192.png',
-    badge: payload.badge || '/icons/android/launchericon-96x96.png',
+    icon: payload.icon || '/wallet/icons/android/launchericon-192x192.png',
+    badge: payload.badge || '/wallet/icons/android/launchericon-96x96.png',
     image: payload.image,
-    url: payload.url || '/',
+    url: payload.url || '/wallet/',
     tag: payload.tag || 'paxeer-push',
     actions: payload.actions || [],
     requireInteraction: payload.requireInteraction || false,

@@ -117,11 +117,11 @@ function isStaticRoute(name: string): name is StaticRouteName {
 export function parseRouteUrl(input: string | URL): ParseResult<ShellRoute> {
   let url: URL;
   try {
-    url = input instanceof URL ? input : new URL(input, 'https://wallet.local');
+    url = input instanceof URL ? input : new URL(input, 'https://wallet.local/wallet/');
   } catch {
     return invalid('Route URL is invalid');
   }
-  if (url.pathname !== '/') return invalid('Route path is invalid');
+  if (url.pathname !== '/wallet/') return invalid('Route path is invalid');
   const allowed = new Set(['screen', 'token', 'symbol', 'hash', 'to']);
   const keys = [...url.searchParams.keys()];
   if (
@@ -197,7 +197,7 @@ export const parseRouteQuery: BoundaryParser<ShellRoute> = (input) => {
   const source = input as Record<string, unknown>;
   const name = source.name;
   if (typeof name !== 'string') return invalid('Route query is invalid');
-  const url = new URL('https://wallet.local');
+  const url = new URL('https://wallet.local/wallet/');
   for (const [key, value] of Object.entries(source)) {
     if (typeof value !== 'string') return invalid('Route query is invalid');
     let target = key === 'name' ? 'screen' : key;
@@ -215,7 +215,7 @@ export const parseRouteQuery: BoundaryParser<ShellRoute> = (input) => {
 };
 
 export function serializeRoute(route: ShellRoute): string {
-  const url = new URL('/', 'https://wallet.local');
+  const url = new URL('/wallet/', 'https://wallet.local');
   if (route.name !== 'portfolio') url.searchParams.set('screen', route.name);
   switch (route.name) {
     case 'send':

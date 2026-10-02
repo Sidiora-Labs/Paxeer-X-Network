@@ -3,23 +3,23 @@ import { preferencesRepository } from '../platform/storage/repositories';
 export const PAXEER_CONFIG = {
     rpcUrl: process.env.NEXT_PUBLIC_PAXEER_RPC_URL ?? '',
     chainId: Number(process.env.NEXT_PUBLIC_CHAIN_ID) || 125,
-    explorerBase: process.env.NEXT_PUBLIC_EXPLORER_BASE || 'https://paxscan.io',
+    explorerBase: process.env.NEXT_PUBLIC_EXPLORER_BASE || 'https://api-mainnet-beta.paxeer.network/explorer',
     // Same-origin proxy paths. The Next route handler at
-    // `/api/wallet/[...path]` forwards to BLOCKSCOUT_UPSTREAM_BASE on the
+    // `/wallet/api/wallet/[...path]` forwards to BLOCKSCOUT_UPSTREAM_BASE on the
     // server. Keeping these as relative paths means no upstream host ever
     // ships in the client bundle, and Capacitor + PWA share one origin.
-    paxscanApi: '/api/wallet',
+    paxscanApi: '/wallet/api/wallet',
     // Cutover: the proxy upstream (BLOCKSCOUT_UPSTREAM_BASE) now points at the
     // first-party paxeer-indexer read API, which serves the Blockscout v2
     // contract at /api/v2 and the wallet BFF (portfolio/holdings/balance,
     // market, candles, ws/stream) at /api/v1. The deprecated Sidiora
     // portfolio/spot bases use the same-origin proxy so every legacy
     // caller also lands on the indexer.
-    portfolioApiBase: '/api/wallet',
-    blockscoutApiBase: '/api/wallet',
+    portfolioApiBase: '/wallet/api/wallet',
+    blockscoutApiBase: '/wallet/api/wallet',
     /** @deprecated Use blockscoutApiBase — kept for callers that hit /api/v2 directly */
-    indexerApiBase: '/api/wallet/api/v2',
-    spotApiBase: '/api/wallet',
+    indexerApiBase: '/wallet/api/wallet/api/v2',
+    spotApiBase: '/wallet/api/wallet',
     sessionTimeoutMs: 15 * 60 * 1000,
     encryptionTimeoutMs: 30 * 60 * 1000,
 } as const;

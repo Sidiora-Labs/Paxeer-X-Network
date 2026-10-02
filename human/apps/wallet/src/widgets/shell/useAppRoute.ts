@@ -54,7 +54,7 @@ function routeFromExternal(input: unknown): ShellRoute | null {
   try {
     const incoming = new URL(input, window.location.origin);
     if (incoming.protocol === 'web+paxeer:') {
-      const normalized = new URL('/', window.location.origin);
+      const normalized = new URL('/wallet/', window.location.origin);
       incoming.searchParams.forEach((value, key) => {
         normalized.searchParams.append(key, value);
       });

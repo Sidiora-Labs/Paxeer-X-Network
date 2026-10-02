@@ -41,7 +41,7 @@ const request = async <T>(
   path: string,
   init: { body?: unknown; query?: Record<string, string | number | undefined>; signal?: AbortSignal } = {},
 ): Promise<T> => {
-  const url = new URL(`${baseUrl()}${path.startsWith('/') ? path : `/${path}`}`);
+  const url = new URL(`${baseUrl()}${path.startsWith('/') ? path : `/${path}`}`, typeof window === 'undefined' ? undefined : window.location.origin);
   if (init.query) {
     for (const [key, value] of Object.entries(init.query)) {
       if (value !== undefined && value !== null) url.searchParams.set(key, String(value));

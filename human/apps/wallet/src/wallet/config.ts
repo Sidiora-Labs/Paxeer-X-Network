@@ -87,5 +87,5 @@ export function resolveWalletConfig(env: WalletEnv = processWalletEnv()): Wallet
 }
 
 export function authRedirectUrl(config: WalletConfig, origin: string): string {
-    return config.authRedirectUrl ?? `${origin.replace(/\/+$/, '')}/auth/callback`;
+    return config.authRedirectUrl ?? `${origin.replace(/\/+$/, '')}/wallet/auth/callback/`;
 }

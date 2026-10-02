@@ -22,7 +22,7 @@ import { UniversalHeader } from '@/components/nav/UniversalHeader';
 import { WhatsNewModal } from '@/components/ui/WhatsNewModal';
 import { useAppRoute, type AppRoute } from './useAppRoute';
 import { useNotificationLifecycle } from './useNotificationLifecycle';
-import { openExternalUrl } from '@/lib/security/navigation';
+import { openExternalUrl, openExplorerPath } from '@/lib/security/navigation';
 import { BackgroundStatus } from '@/components/ui/BackgroundStatus';
 import { Loader2 } from 'lucide-react';
 import { routeGuard, type ShellRoute } from '@/domains/shell';
@@ -110,8 +110,7 @@ export function ShellWidget() {
     }, []);
 
     const navigateToPaxscan = useCallback((path?: string) => {
-        const base = 'https://paxscan.io';
-        openExternal(path ? `${base}${path}` : base);
+        openExplorerPath(path);
     }, []);
 
     // Header config per route — must be a hook (useMemo) so it stays above early returns

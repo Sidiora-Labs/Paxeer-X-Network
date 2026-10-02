@@ -193,7 +193,7 @@ export function SwapSuccess({
                             </span>
                             <div className="flex items-center gap-2">
                                 {fromIconUrl ? (
-                                    <Image src={fromIconUrl} alt={fromSymbol} className="h-7 w-7 rounded-full bg-white/10 object-cover" onError={(e) => { (e.target as HTMLImageElement).src = '/default_icon.webp'; }} width={28} height={28} />
+                                    <Image src={fromIconUrl} alt={fromSymbol} className="h-7 w-7 rounded-full bg-white/10 object-cover" onError={(e) => { (e.target as HTMLImageElement).src = '/wallet/default_icon.webp'; }} width={28} height={28} />
                                 ) : (
                                     <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-white/10 font-medium text-sm text-pax-accent">
                                         {fromSymbol[0]}
@@ -214,7 +214,7 @@ export function SwapSuccess({
                             </span>
                             <div className="flex items-center gap-2">
                                 {toIconUrl ? (
-                                    <Image src={toIconUrl} alt={toSymbol} className="h-7 w-7 rounded-full bg-white/10 object-cover" onError={(e) => { (e.target as HTMLImageElement).src = '/default_icon.webp'; }} width={28} height={28} />
+                                    <Image src={toIconUrl} alt={toSymbol} className="h-7 w-7 rounded-full bg-white/10 object-cover" onError={(e) => { (e.target as HTMLImageElement).src = '/wallet/default_icon.webp'; }} width={28} height={28} />
                                 ) : (
                                     <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-white/10 font-medium text-sm text-pax-accent">
                                         {toSymbol[0]}

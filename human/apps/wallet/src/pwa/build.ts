@@ -4,7 +4,7 @@ import path from 'node:path';
 import { build } from 'vite';
 import { PRECACHE_URLS, cacheNames, type CacheNames } from './caching';
 import { networkOnlyBases, pwaNetworkEnv } from './config';
-import { MANIFEST_URL, serializeManifest } from './manifest';
+import { serializeManifest } from './manifest';
 
 export interface PwaBuildOptions {
     readonly appDir: string;
@@ -51,7 +51,7 @@ export async function buildPwa(options: PwaBuildOptions): Promise<PwaBuildResult
     const manifest = serializeManifest();
     const version = buildVersion(options.appDir, manifest, networkOnly);
     mkdirSync(options.outDir, { recursive: true });
-    const manifestPath = path.join(options.outDir, MANIFEST_URL.slice(1));
+    const manifestPath = path.join(options.outDir, 'manifest.json');
     writeFileSync(manifestPath, manifest);
     await build({
         configFile: false,

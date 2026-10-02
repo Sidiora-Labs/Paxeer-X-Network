@@ -38,7 +38,7 @@ export async function registerServiceWorker(
     options: RegisterOptions,
 ): Promise<ServiceWorkerHandle | null> {
     if (!container) return null;
-    const registration = await container.register(SERVICE_WORKER_URL, { scope: '/', updateViaCache: 'none' });
+    const registration = await container.register(SERVICE_WORKER_URL, { scope: '/wallet/', updateViaCache: 'none' });
     let waiting: WorkerLike | null = null;
     let reloadRequested = false;
     let reloaded = false;

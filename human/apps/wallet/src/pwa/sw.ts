@@ -107,21 +107,21 @@ async function cacheFirst(request: Request): Promise<Response> {
 }
 
 function notificationTarget(raw: unknown): string {
-    if (typeof raw !== 'string' || raw.length > 2048) return '/';
+    if (typeof raw !== 'string' || raw.length > 2048) return '/wallet/';
     try {
         const candidate = new URL(raw, scope.location.origin);
         if (
             candidate.origin === scope.location.origin &&
-            candidate.pathname === '/' &&
+            candidate.pathname === '/wallet/' &&
             !candidate.username &&
             !candidate.password
         ) {
             return `${candidate.pathname}${candidate.search}`;
         }
     } catch {
-        return '/';
+        return '/wallet/';
     }
-    return '/';
+    return '/wallet/';
 }
 
 scope.addEventListener('install', (event) => {
@@ -166,7 +166,7 @@ scope.addEventListener('push', (event) => {
             body: payload.body || '',
             icon: payload.icon || notificationIcon,
             badge: payload.badge || notificationIcon,
-            data: { url: payload.url || '/' },
+            data: { url: payload.url || '/wallet/' },
             tag: payload.tag || 'paxeer-default',
             requireInteraction: payload.requireInteraction || false,
         }),
@@ -179,7 +179,7 @@ scope.addEventListener('notificationclick', (event) => {
     event.waitUntil(
         scope.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
             for (const client of clients) {
-                if (new URL(client.url).origin === scope.location.origin) {
+                if (new URL(client.url).origin === scope.location.origin && new URL(client.url).pathname.startsWith('/wallet/')) {
                     client.postMessage({ type: 'PAXPORT_NAVIGATE', route: target });
                     return client.focus();
                 }

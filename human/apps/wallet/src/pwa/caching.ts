@@ -1,31 +1,31 @@
-export const CACHE_PREFIX = 'paxeer-';
+export const CACHE_PREFIX = 'paxeer-wallet-';
 
-export const SERVICE_WORKER_URL = '/sw.js';
+export const SERVICE_WORKER_URL = '/wallet/sw.js';
 
-export const SHELL_URL = '/';
+export const SHELL_URL = '/wallet/';
 
-export const OFFLINE_URL = '/offline';
+export const OFFLINE_URL = '/wallet/offline/';
 
 export const PRECACHE_URLS: readonly string[] = [
     SHELL_URL,
     OFFLINE_URL,
-    '/manifest.json',
-    '/icons/app/icon-192.png',
-    '/icons/app/icon-512.png',
-    '/icons/app/maskable-192.png',
-    '/icons/app/maskable-512.png',
-    '/icons/app/apple-touch-icon-180.png',
-    '/icons/app/favicon-32.png',
+    '/wallet/manifest.json',
+    '/wallet/icons/app/icon-192.png',
+    '/wallet/icons/app/icon-512.png',
+    '/wallet/icons/app/maskable-192.png',
+    '/wallet/icons/app/maskable-512.png',
+    '/wallet/icons/app/apple-touch-icon-180.png',
+    '/wallet/icons/app/favicon-32.png',
 ];
 
-const NETWORK_PATH_PREFIXES: readonly string[] = ['/api/', '/auth/', '/_next/data/', '/_next/webpack-hmr'];
+const NETWORK_PATH_PREFIXES: readonly string[] = ['/wallet/api/', '/wallet/auth/', '/wallet/_next/data/', '/wallet/_next/webpack-hmr'];
 
 const STATIC_PATH_PREFIXES: readonly string[] = [
-    '/_next/static/',
-    '/icons/',
-    '/splash_screens/',
-    '/Paxeer_Sans_Rounded/',
-    '/ui_icons/',
+    '/wallet/_next/static/',
+    '/wallet/icons/',
+    '/wallet/splash_screens/',
+    '/wallet/Paxeer_Sans_Rounded/',
+    '/wallet/ui_icons/',
 ];
 
 const STATIC_EXTENSION = /\.(?:png|jpe?g|gif|webp|avif|svg|ico|woff2?|ttf|otf|css|js)$/i;
@@ -74,12 +74,13 @@ export function strategyFor(request: RequestFacts, scope: WorkerScopeFacts): Cac
     if (url.protocol !== 'https:' && url.protocol !== 'http:') return 'network-only';
     if (scope.networkOnly.some((base) => underBase(url, base))) return 'network-only';
     if (url.origin !== scope.origin) return 'network-only';
+    if (!url.pathname.startsWith('/wallet/')) return 'network-only';
     if (url.pathname === SERVICE_WORKER_URL) return 'network-only';
     if (NETWORK_PATH_PREFIXES.some((prefix) => url.pathname.startsWith(prefix))) return 'network-only';
     if (request.mode === 'navigate') return 'navigation';
     if (STATIC_PATH_PREFIXES.some((prefix) => url.pathname.startsWith(prefix))) return 'cache-first';
     if (url.search) return 'network-only';
-    if (url.pathname === '/manifest.json') return 'cache-first';
+    if (url.pathname === '/wallet/manifest.json') return 'cache-first';
     if (STATIC_EXTENSION.test(url.pathname)) return 'cache-first';
     return 'network-only';
 }

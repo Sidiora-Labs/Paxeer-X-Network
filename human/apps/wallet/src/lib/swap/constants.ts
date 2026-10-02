@@ -84,7 +84,7 @@ export const SWAP_TOKENS: SwapToken[] = [
         name: TOKENS.SID.name,
         address: TOKENS.SID.address.toLowerCase(),
         decimals: 6,
-        iconUrl: '/art2.png',
+        iconUrl: '/wallet/art2.png',
     },
     {
         symbol: TOKENS.WETH.symbol,
