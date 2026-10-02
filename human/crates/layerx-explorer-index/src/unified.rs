@@ -185,11 +185,21 @@ pub struct PaxeerActivityRecord {
 impl PaxeerActivityRecord {
     /// Whether this log belongs on the page for these identities.
     #[must_use]
-    pub fn concerns(&self, address: Option<[u8; 20]>, accounts: &[[u8; 32]]) -> bool {
+    pub fn concerns(
+        &self,
+        address: Option<[u8; 20]>,
+        accounts: &[[u8; 32]],
+        did: Option<[u8; 32]>,
+    ) -> bool {
         if address.is_some() && self.address == address {
             return true;
         }
-        self.account.is_some_and(|value| accounts.contains(&value))
+        match self.event {
+            PaxeerEvent::LayerXBound | PaxeerEvent::LayerXUnbound => {
+                did.is_some() && self.account == did
+            }
+            _ => self.account.is_some_and(|value| accounts.contains(&value)),
+        }
     }
 }
 
@@ -558,6 +568,7 @@ pub fn decode_logs(
     result: &Value,
     address: Option<[u8; 20]>,
     accounts: &[[u8; 32]],
+    did: Option<[u8; 32]>,
 ) -> Result<Vec<PaxeerActivityRecord>, GatewayError> {
     let logs = result.as_array().ok_or(GatewayError::MalformedAnswer)?;
     if logs.len() > MAXIMUM_LOGS_PER_CHUNK {
@@ -566,7 +577,7 @@ pub fn decode_logs(
     let mut records = Vec::new();
     for log in logs {
         let record = decode_log(log)?;
-        if record.concerns(address, accounts) {
+        if record.concerns(address, accounts, did) {
             records.push(record);
         }
     }
@@ -674,7 +685,7 @@ impl<'a> UnifiedAccountReader<'a> {
         head: u64,
         before_block: Option<u64>,
     ) -> Result<PaxeerActivityPage, GatewayError> {
-        let accounts = [identities.layerx_account, identities.layerx_did]
+        let accounts = [identities.layerx_account]
             .into_iter()
             .flatten()
             .collect::<Vec<_>>();
@@ -693,7 +704,9 @@ impl<'a> UnifiedAccountReader<'a> {
         for (from, to) in chunks {
             lowest = from;
             let result = self.call("eth_getLogs", &[logs_filter(from, to)])?;
-            items.extend(decode_logs(&result, identities.evm_address, &accounts)?);
+            items.extend(decode_logs(
+                &result, identities.evm_address, &accounts, identities.layerx_did,
+            )?);
             if items.len() >= self.window.limit {
                 break;
             }
@@ -1219,14 +1232,38 @@ mod tests {
                 .map(|bytes| format!("0x{}", hex_bytes(&bytes))),
             Some(ADDRESS.to_owned())
         );
-        assert!(record.concerns(record.address, &[]));
-        assert!(record.concerns(None, &[[0x22; 32]]));
-        assert!(!record.concerns(None, &[[0x99; 32]]));
-        assert!(!record.concerns(Some([0x01; 20]), &[]));
+        assert!(record.concerns(record.address, &[], None));
+        assert!(record.concerns(None, &[[0x22; 32]], None));
+        assert!(!record.concerns(None, &[[0x99; 32]], None));
+        assert!(!record.concerns(Some([0x01; 20]), &[], None));
     }
 
     fn hex_bytes(bytes: &[u8]) -> String {
         bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    }
+
+    #[test]
+    fn identity_selector_contract_event_keys_never_cross_identity_kinds() {
+        let deposit = decode_log(&deposit_log()).expect("deposit ABI");
+        let key = deposit.account.expect("native account");
+        assert!(!deposit.concerns(None, &[], Some(key)));
+        assert!(deposit.concerns(None, &[key], None));
+        let binding = serde_json::json!({
+            "address": format!("0x{}", hex_bytes(&super::ADDR_PRECOMPILE)),
+            "topics": [
+                format!("0x{}", hex_topic(PaxeerEvent::LayerXBound)),
+                format!("0x{}{}", "0".repeat(24), &ADDRESS[2..]),
+                format!("0x{}", hex_bytes(&key)),
+            ],
+            "data": format!("0x{}1", "0".repeat(63)),
+            "blockNumber": "0x64", "logIndex": "0x2",
+            "transactionHash": format!("0x{}", "44".repeat(32)),
+        });
+        let bound = decode_log(&binding).expect("binding ABI");
+        assert!(!bound.concerns(None, &[key], None));
+        assert!(bound.concerns(None, &[], Some(key)));
+        assert!(decode_logs(&serde_json::json!([binding]), None, &[key], None)
+            .expect("binding page").is_empty());
     }
 
     #[test]
@@ -1267,13 +1304,14 @@ mod tests {
                 0xee, 0xff, 0x00, 0x11, 0x22, 0x33,
             ]),
             &[],
+            None,
         )
         .expect("declared log page decodes");
         assert_eq!(records.len(), 2);
         assert_eq!(records[0].block_number, 100);
         assert_eq!(records[1].block_number, 1);
         assert_eq!(
-            decode_logs(&Value::String("logs".to_owned()), None, &[]),
+            decode_logs(&Value::String("logs".to_owned()), None, &[], None),
             Err(GatewayError::MalformedAnswer)
         );
     }

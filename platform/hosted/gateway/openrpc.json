@@ -1370,8 +1370,10 @@
           "name": "account",
           "required": true,
           "schema": {
-            "type": "string"
-          }
+            "type": "string",
+            "pattern": "^(0x[0-9a-fA-F]{40}|did:layerx:[0-9a-fA-F]{64})$"
+          },
+          "description": "EVM or explicit DID lookup selector retained from the original lookup; layerx_account is a separate native reference and cannot be used for reverse resolution."
         }
       ],
       "result": {
@@ -1404,8 +1406,10 @@
           "name": "account",
           "required": true,
           "schema": {
-            "type": "string"
-          }
+            "type": "string",
+            "pattern": "^(0x[0-9a-fA-F]{40}|did:layerx:[0-9a-fA-F]{64})$"
+          },
+          "description": "EVM or explicit DID lookup selector retained from the original lookup; layerx_account is a separate native reference and cannot be used for reverse resolution."
         }
       ],
       "result": {
@@ -1438,8 +1442,10 @@
           "name": "account",
           "required": true,
           "schema": {
-            "type": "string"
-          }
+            "type": "string",
+            "pattern": "^(0x[0-9a-fA-F]{40}|did:layerx:[0-9a-fA-F]{64})$"
+          },
+          "description": "EVM or explicit DID lookup selector retained from the original lookup; layerx_account is a separate native reference and cannot be used for reverse resolution."
         }
       ],
       "result": {
@@ -2138,9 +2144,10 @@
           "name": "account",
           "required": true,
           "schema": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^(0x[0-9a-fA-F]{40}|did:layerx:[0-9a-fA-F]{64})$"
           },
-          "description": "An EVM address, an explicit did:layerx:<hex> DID, resolved as px_resolveAccount does."
+          "description": "EVM or explicit DID lookup selector retained from the original lookup; layerx_account is a separate native reference and cannot be used for reverse resolution."
         },
         {
           "name": "cursor",

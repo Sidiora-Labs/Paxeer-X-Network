@@ -294,12 +294,7 @@ fn resolve(config: &Config, selector: &Selector) -> Result<Resolution, &'static 
             )?;
             let bound = evm::decode_address(&answer).map_err(|_| "invalid_paxeer_response")?;
             if is_zero(&bound) {
-                return Ok(Resolution {
-                    evm: None,
-                    pax_address: None,
-                    did_public_key: Some(*key),
-                    layerx_account: None,
-                });
+                return Err("identity_binding_unavailable");
             }
             bound
         }
@@ -343,6 +338,16 @@ fn validate_resolution(
         || is_zero(&unified.did_public_key) != is_zero(&unified.layerx_main_account_id)
     {
         return Err("conflicting_identity_binding");
+    }
+    if !is_zero(&unified.did_public_key) {
+        let name = format!("agent:did:layerx:{}:main", hex32(&unified.did_public_key));
+        let account = layerx_types::account::AccountId::parse(&name)
+            .map_err(|_| "conflicting_identity_binding")?;
+        let expected = layerx_wire::hash::account_id_for_protocol(&account, 3)
+            .map_err(|_| "conflicting_identity_binding")?;
+        if unified.layerx_main_account_id != expected {
+            return Err("conflicting_identity_binding");
+        }
     }
     if let Selector::Did(key) = selector {
         if *key != unified.did_public_key {
@@ -393,6 +398,8 @@ pub(super) fn history_accounts(
         .did()
         .and_then(|did| super::rpc::read_result(config, &format!("/v1/dids/{did}/accounts")))
     {
+        validate_native_listing(&resolution, &listing)
+            .map_err(|code| unavailable(id, code))?;
         for held in listing
             .get("accounts")
             .and_then(Value::as_array)
@@ -413,6 +420,47 @@ pub(super) fn history_accounts(
     accounts.retain(|(_, key)| seen.insert(key.clone()));
     accounts.truncate(MAX_JOINED_ASSETS);
     Ok((resolution.document(), accounts))
+}
+
+fn validate_native_listing(resolution: &Resolution, listing: &Value) -> Result<(), &'static str> {
+    use sha2::{Digest as _, Sha256};
+    let did = resolution.did().ok_or("conflicting_identity_binding")?;
+    if listing.get("did").and_then(Value::as_str) != Some(did.as_str()) {
+        return Err("conflicting_identity_binding");
+    }
+    let accounts = listing.get("accounts").and_then(Value::as_array)
+        .ok_or("conflicting_identity_binding")?;
+    let prefix = format!("agent:{did}:");
+    let mut seen = std::collections::BTreeSet::new();
+    for record in accounts {
+        let name = record.get("name").and_then(Value::as_str)
+            .filter(|name| name.starts_with(&prefix))
+            .ok_or("conflicting_identity_binding")?;
+        let suffix = name.strip_prefix(&prefix).ok_or("conflicting_identity_binding")?;
+        let owned = suffix == "main" || suffix.split_once(':').is_some_and(|(kind, tail)| {
+            matches!(kind, "asset" | "budget" | "escrow" | "stream" | "margin")
+                && !tail.is_empty() && !tail.contains(':')
+        });
+        if !owned || name.len() > layerx_types::limits::MAX_ACCOUNT_NAME_BYTES
+            || !name.bytes().all(|byte| byte.is_ascii_lowercase()
+                || byte.is_ascii_digit() || b"._-:".contains(&byte))
+        {
+            return Err("conflicting_identity_binding");
+        }
+        let length = u32::try_from(name.len()).map_err(|_| "conflicting_identity_binding")?;
+        let mut hash = Sha256::new();
+        hash.update(b"LX:ACCOUNT:v1");
+        hash.update(length.to_be_bytes());
+        hash.update(name.as_bytes());
+        let expected: [u8; 32] = hash.finalize().into();
+        let actual = record.get("account_id").and_then(Value::as_str)
+            .and_then(|id| super::parse_hex32(id).ok())
+            .ok_or("conflicting_identity_binding")?;
+        if actual != expected || !seen.insert(actual) {
+            return Err("conflicting_identity_binding");
+        }
+    }
+    Ok(())
 }
 
 fn resolve_account(config: &Config, id: &Value, params: Option<&Value>) -> Value {
@@ -456,6 +504,15 @@ fn get_account(config: &Config, id: &Value, params: Option<&Value>) -> Value {
             super::rpc::read_result(config, &format!("/v1/accounts/{}", hex32(&account)))
         })
         .unwrap_or(Value::Null);
+    if !layerx.is_null() {
+        let expected_id = resolution.layerx_account.as_ref().map(hex32);
+        let expected_name = resolution.did().map(|did| format!("agent:{did}:main"));
+        if layerx.get("account_id").and_then(Value::as_str) != expected_id.as_deref()
+            || layerx.get("name").and_then(Value::as_str) != expected_name.as_deref()
+        {
+            return unavailable(id, "conflicting_identity_binding");
+        }
+    }
     json!({
         "jsonrpc": "2.0",
         "id": id,
@@ -566,6 +623,11 @@ fn get_balances(config: &Config, id: &Value, params: Option<&Value>) -> Value {
         .did()
         .and_then(|did| super::rpc::read_result(config, &format!("/v1/dids/{did}/accounts")))
         .unwrap_or(Value::Null);
+    if !layerx_accounts.is_null() {
+        if let Err(code) = validate_native_listing(&resolution, &layerx_accounts) {
+            return unavailable(id, code);
+        }
+    }
     let mut balances = Vec::with_capacity(records.len());
     for record in records {
         let asset_id = record
@@ -857,5 +919,73 @@ mod identity_selector_contract {
             account_selector(Some(&json!([format!("did:layerx:{key}")]))),
             Ok(Selector::Did(_))
         ));
+    }
+}
+
+#[cfg(test)]
+mod identity_ownership_contract {
+    use super::*;
+
+    fn canonical(did: [u8; 32], suffix: &str) -> (String, [u8; 32]) {
+        let name = format!("agent:did:layerx:{}:{suffix}", hex32(&did));
+        let account = layerx_types::account::AccountId::parse(&name)
+            .unwrap_or_else(|error| panic!("canonical name: {error:?}"));
+        let id = layerx_wire::hash::account_id_for_protocol(&account, 3)
+            .unwrap_or_else(|error| panic!("native account: {error:?}"));
+        (name, id)
+    }
+
+    #[test]
+    fn canonical_main_account_is_bound_to_the_exact_did() {
+        let did = ed25519_dalek::SigningKey::from_bytes(&[71; 32]).verifying_key().to_bytes();
+        let address = [9; 20];
+        let (_, account) = canonical(did, "main");
+        let mut unified = evm::UnifiedAccount {
+            evm: address, pax_address: String::new(), did_public_key: did,
+            layerx_main_account_id: account,
+        };
+        assert_eq!(validate_resolution(&Selector::Did(did), &address, &unified), Ok(()));
+        assert_eq!(validate_resolution(&Selector::Evm(address), &address, &unified), Ok(()));
+        unified.layerx_main_account_id[0] ^= 1;
+        assert_eq!(validate_resolution(&Selector::Did(did), &address, &unified),
+            Err("conflicting_identity_binding"));
+        unified.layerx_main_account_id = account;
+        assert_eq!(validate_resolution(&Selector::Did([3; 32]), &address, &unified),
+            Err("conflicting_identity_binding"));
+        assert_eq!(validate_resolution(&Selector::Evm([8; 20]), &[8; 20], &unified),
+            Err("conflicting_identity_binding"));
+    }
+
+    #[test]
+    fn native_listing_refuses_another_owner_or_noncanonical_account() {
+        let did = ed25519_dalek::SigningKey::from_bytes(&[72; 32]).verifying_key().to_bytes();
+        let (name, account) = canonical(did, "main");
+        let resolution = Resolution {
+            evm: Some([9; 20]), pax_address: None, did_public_key: Some(did),
+            layerx_account: Some(account),
+        };
+        let listing = json!({"did": resolution.did(), "accounts": [{
+            "name": name, "account_id": hex32(&account),
+        }]});
+        assert_eq!(validate_native_listing(&resolution, &listing), Ok(()));
+        let mut other = listing.clone();
+        other["did"] = json!(format!("did:layerx:{}", "11".repeat(32)));
+        assert_eq!(validate_native_listing(&resolution, &other), Err("conflicting_identity_binding"));
+        other = listing.clone();
+        other["accounts"][0]["account_id"] = json!(hex32(&did));
+        assert_eq!(validate_native_listing(&resolution, &other), Err("conflicting_identity_binding"));
+        other = listing.clone();
+        let (foreign_name, foreign_account) = canonical([3; 32], "main");
+        other["accounts"][0] = json!({"name":foreign_name,"account_id":hex32(&foreign_account)});
+        assert_eq!(validate_native_listing(&resolution, &other), Err("conflicting_identity_binding"));
+        other = listing.clone();
+        let prefixed_owner = format!("agent:did:layerx:{}:other:main", hex32(&did));
+        let foreign = layerx_types::account::AccountId::parse(&prefixed_owner)
+            .unwrap_or_else(|error| panic!("extended owner: {error:?}"));
+        let foreign_id = layerx_wire::hash::account_id_for_protocol(&foreign, 3)
+            .unwrap_or_else(|error| panic!("extended owner account: {error:?}"));
+        other["accounts"][0] = json!({"name":prefixed_owner,"account_id":hex32(&foreign_id)});
+        assert_eq!(validate_native_listing(&resolution, &other), Err("conflicting_identity_binding"));
+        assert_eq!(validate_native_listing(&resolution, &listing), Ok(()));
     }
 }

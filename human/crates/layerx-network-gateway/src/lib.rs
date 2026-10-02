@@ -245,6 +245,12 @@ impl ResolvedIdentities {
         requested: AccountIdentifier,
     ) -> Result<LookupSelector, GatewayError> {
         let lookup = LookupSelector::try_from(requested)?;
+        if self.bound != (self.layerx_did.is_some() && self.layerx_account.is_some())
+            || self.layerx_did.is_some() != self.layerx_account.is_some()
+            || (self.bound && self.evm_address.is_none())
+        {
+            return Err(GatewayError::Unbound);
+        }
         let matches = match lookup {
             LookupSelector::Evm(address) => self.evm_address == Some(address),
             LookupSelector::Did(key) => self.layerx_did == Some(key),
@@ -1294,5 +1300,34 @@ mod identity_selector_contract {
                 Err(GatewayError::Unbound)
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod identity_selector_contract_bound_shape {
+    use super::*;
+
+    #[test]
+    fn retaining_lookup_refuses_incomplete_or_conflicting_joins() {
+        let mut identities = ResolvedIdentities {
+            lookup_selector: None, evm_address: Some([9; 20]), pax_address: None,
+            layerx_did: Some([7; 32]), layerx_account: Some([8; 32]),
+            bound: true, evidence: Evidence::GatewayReported,
+        };
+        let requested = AccountIdentifier::Evm([9; 20]);
+        assert_eq!(identities.retain_lookup(requested), Ok(LookupSelector::Evm([9; 20])));
+        let preserved = identities.clone();
+        identities.layerx_account = None;
+        assert_eq!(identities.retain_lookup(requested), Err(GatewayError::Unbound));
+        identities = preserved.clone();
+        identities.bound = false;
+        assert_eq!(identities.retain_lookup(requested), Err(GatewayError::Unbound));
+        identities = preserved.clone();
+        identities.evm_address = None;
+        assert_eq!(identities.retain_lookup(AccountIdentifier::Did([7; 32])), Err(GatewayError::Unbound));
+        identities = preserved;
+        assert_eq!(identities.retain_lookup(AccountIdentifier::Did([8; 32])), Err(GatewayError::Unbound));
+        assert_eq!(identities.lookup_selector, Some(LookupSelector::Evm([9; 20])));
+        assert_eq!(identities.native_reference(), Some(NativeAccountReference([8; 32])));
     }
 }
