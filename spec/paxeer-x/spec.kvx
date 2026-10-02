@@ -23330,7 +23330,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.11.5]
 title = "Build the performance machinery"
-status = "pending"
+status = "in_progress"
 mode = "QUALIFY"
 wave = 2
 requires = ["0.2"]
@@ -23361,7 +23361,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.12.4]
 title = "Build the agent surfaces"
-status = "pending"
+status = "in_progress"
 mode = "QUALIFY"
 wave = 2
 requires = ["0.2"]
@@ -23392,7 +23392,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.13.1]
 title = "Build settings and preferences"
-status = "pending"
+status = "in_progress"
 mode = "QUALIFY"
 wave = 2
 requires = ["0.2"]
@@ -24320,7 +24320,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.105.25.4]
 title = "Prove overflow and rounding behaviour and ship sanitizer-clean"
-status = "pending"
+status = "in_progress"
 mode = "RELEASE"
 wave = 2
 requires = ["0.2"]
