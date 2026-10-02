@@ -33,6 +33,7 @@ pub enum ServiceError {
     LengthRequired,
     TooLarge,
     Refused,
+    ExpiredQuote,
     Internal,
     Unavailable,
 }
@@ -47,7 +48,7 @@ impl ServiceError {
             Self::Conflict => 409,
             Self::LengthRequired => 411,
             Self::TooLarge => 413,
-            Self::Refused => 422,
+            Self::Refused | Self::ExpiredQuote => 422,
             Self::Accept | Self::Internal => 500,
             Self::Unavailable => 503,
         }
@@ -63,6 +64,7 @@ impl ServiceError {
             Self::LengthRequired => "length_required",
             Self::TooLarge => "too_large",
             Self::Refused => "refused",
+            Self::ExpiredQuote => "expired_quote",
             Self::Accept | Self::Internal => "internal",
             Self::Unavailable => "unavailable",
         }
@@ -345,6 +347,10 @@ where
             return Err(ServiceError::Refused);
         }
         let now = self.now()?;
+        if deadline < now && self.station.journal().state().items.get(&key)
+            .is_some_and(|item| item.submission.is_none() && item.completion.is_none()) {
+            return Err(ServiceError::ExpiredQuote);
+        }
         let progress = self
             .station
             .submit(
@@ -527,7 +533,7 @@ where
 }
 
 /// How often the recovery driver runs and how long one pass may take: the
-/// first pass runs immediately, a pass that leaves work pending or meets an
+/// startup pass precedes serving, a pass that leaves work pending or meets an
 /// unreachable node backs off exponentially up to `max_interval`, and a pass
 /// that completes work returns to `interval`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -568,7 +574,7 @@ where
         .set_nonblocking(true)
         .map_err(|_| ServiceError::Accept)?;
     let mut wait = schedule.interval;
-    let mut due = Instant::now();
+    let mut due = Instant::now() + schedule.interval;
     loop {
         if Instant::now() >= due {
             match service.recover(schedule.budget) {

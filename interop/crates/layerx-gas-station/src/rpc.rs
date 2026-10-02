@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::io::{ErrorKind, Read, Write as _};
 use std::net::{TcpStream, ToSocketAddrs as _};
@@ -39,6 +40,10 @@ pub enum SendOutcome {
 }
 
 pub trait JsonRpc {
+    fn set_deadline(&self, deadline: Option<Instant>) -> Result<(), RpcFault> {
+        if deadline.is_some() { Err(RpcFault::Configuration) } else { Ok(()) }
+    }
+
     /// # Errors
     /// Returns a sanitized transport or response fault.
     fn call(&self, method: &str, params: Value) -> Result<Value, RpcFault>;
@@ -96,6 +101,11 @@ pub fn quantity(text: &str) -> Result<u128, RpcFault> {
 }
 
 pub trait Exchange {
+    fn request_until(&self, endpoint: &str, method: &str, params: &Value, deadline: Instant) -> Result<Value, RpcFault> {
+        let _ = (endpoint, method, params, deadline);
+        Err(RpcFault::Configuration)
+    }
+
     /// # Errors
     /// Returns a sanitized fault; response error messages are never retained.
     fn request(&self, endpoint: &str, method: &str, params: &Value) -> Result<Value, RpcFault>;
@@ -104,6 +114,7 @@ pub trait Exchange {
 pub struct ConfiguredRpc<E> {
     endpoints: Vec<String>,
     exchange: E,
+    deadline: Cell<Option<Instant>>,
 }
 impl<E: Exchange> ConfiguredRpc<E> {
     /// # Errors
@@ -119,15 +130,25 @@ impl<E: Exchange> ConfiguredRpc<E> {
         Ok(Self {
             endpoints: config.endpoints.clone(),
             exchange,
+            deadline: Cell::new(None),
         })
     }
 }
 impl<E: Exchange> JsonRpc for ConfiguredRpc<E> {
+    fn set_deadline(&self, deadline: Option<Instant>) -> Result<(), RpcFault> {
+        self.deadline.set(deadline);
+        Ok(())
+    }
     fn call(&self, method: &str, params: Value) -> Result<Value, RpcFault> {
         let mut votes: BTreeMap<String, (usize, Value)> = BTreeMap::new();
         let mut faults = Vec::new();
         for endpoint in &self.endpoints {
-            match self.exchange.request(endpoint, method, &params) {
+            let result = match self.deadline.get() {
+                Some(deadline) if Instant::now() >= deadline => Err(RpcFault::Unavailable),
+                Some(deadline) => self.exchange.request_until(endpoint, method, &params, deadline),
+                None => self.exchange.request(endpoint, method, &params),
+            };
+            match result {
                 Ok(value) => votes.entry(value.to_string()).or_insert((0, value)).0 += 1,
                 Err(fault) => faults.push(fault),
             }
@@ -196,56 +217,92 @@ impl HttpsExchange {
         }
     }
 }
+fn remaining(deadline: Instant) -> Result<Duration, RpcFault> {
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    if remaining.is_zero() { Err(RpcFault::Unavailable) } else { Ok(remaining) }
+}
+
+type Resolution = (String, u16, std::sync::mpsc::Sender<Result<std::net::SocketAddr, RpcFault>>);
+fn resolve_until(host: &str, port: u16, deadline: Instant) -> Result<std::net::SocketAddr, RpcFault> {
+    static RESOLVER: std::sync::OnceLock<Result<std::sync::mpsc::SyncSender<Resolution>, RpcFault>> = std::sync::OnceLock::new();
+    let resolver = RESOLVER.get_or_init(|| {
+        let (sender, receiver) = std::sync::mpsc::sync_channel::<Resolution>(8);
+        std::thread::Builder::new().name("station-dns".into()).spawn(move || {
+            while let Ok((host, port, reply)) = receiver.recv() {
+                let result = (host.as_str(), port).to_socket_addrs()
+                    .map_err(|_| RpcFault::Unavailable)
+                    .and_then(|mut addresses| addresses.next().ok_or(RpcFault::Unavailable));
+                let _ = reply.send(result);
+            }
+        }).map_err(|_| RpcFault::Unavailable)?;
+        Ok(sender)
+    }).as_ref().map_err(|fault| *fault)?;
+    remaining(deadline)?;
+    let (sender, receiver) = std::sync::mpsc::channel();
+    resolver.try_send((host.to_owned(), port, sender)).map_err(|_| RpcFault::Unavailable)?;
+    receiver.recv_timeout(remaining(deadline)?).map_err(|_| RpcFault::Unavailable)?
+}
+
 impl Exchange for HttpsExchange {
     fn request(&self, endpoint: &str, method: &str, params: &Value) -> Result<Value, RpcFault> {
-        let tail = endpoint
-            .strip_prefix("https://")
-            .ok_or(RpcFault::Configuration)?;
-        let (authority, path) = tail
-            .split_once('/')
-            .map_or((tail, "/".to_owned()), |(a, p)| (a, format!("/{p}")));
-        if authority.is_empty()
-            || endpoint.chars().any(char::is_whitespace)
-            || endpoint.contains(['@', '#', '?', '\r', '\n'])
-        {
+        self.request_until(endpoint, method, params, Instant::now() + Duration::from_secs(30))
+    }
+    fn request_until(&self, endpoint: &str, method: &str, params: &Value, deadline: Instant) -> Result<Value, RpcFault> {
+        let deadline = deadline.min(Instant::now() + Duration::from_secs(30));
+        let tail = endpoint.strip_prefix("https://").ok_or(RpcFault::Configuration)?;
+        let (authority, path) = tail.split_once('/').map_or((tail, "/".to_owned()), |(a, p)| (a, format!("/{p}")));
+        if authority.is_empty() || endpoint.chars().any(char::is_whitespace)
+            || endpoint.contains(['@', '#', '?', '\r', '\n']) {
             return Err(RpcFault::Configuration);
         }
-        let (host, port) = authority
-            .rsplit_once(':')
-            .map_or(Ok((authority, 443)), |(h, p)| {
-                p.parse::<u16>()
-                    .map(|port| (h, port))
-                    .map_err(|_| RpcFault::Configuration)
-            })?;
-        let timeout = Duration::from_secs(10);
-        let socket = (host, port)
-            .to_socket_addrs()
-            .map_err(|_| RpcFault::Unavailable)?
-            .next()
-            .ok_or(RpcFault::Unavailable)?;
-        let stream =
-            TcpStream::connect_timeout(&socket, timeout).map_err(|_| RpcFault::Unavailable)?;
-        stream
-            .set_read_timeout(Some(timeout))
+        let (host, port) = authority.rsplit_once(':').map_or(Ok((authority, 443)), |(h, p)| {
+            p.parse::<u16>().map(|port| (h, port)).map_err(|_| RpcFault::Configuration)
+        })?;
+        let socket = resolve_until(host, port, deadline)?;
+        let stream = TcpStream::connect_timeout(&socket, remaining(deadline)?.min(Duration::from_secs(10)))
             .map_err(|_| RpcFault::Unavailable)?;
-        stream
-            .set_write_timeout(Some(timeout))
-            .map_err(|_| RpcFault::Unavailable)?;
+        stream.set_nonblocking(true).map_err(|_| RpcFault::Unavailable)?;
         let connector = native_tls::TlsConnector::new().map_err(|_| RpcFault::Configuration)?;
-        let mut stream = connector
-            .connect(host, stream)
-            .map_err(|_| RpcFault::Unavailable)?;
+        let mut handshake = connector.connect(host, stream);
+        let mut stream = loop {
+            remaining(deadline)?;
+            match handshake {
+                Ok(stream) => break stream,
+                Err(native_tls::HandshakeError::WouldBlock(pending)) => {
+                    std::thread::sleep(Duration::from_millis(5).min(remaining(deadline)?));
+                    handshake = pending.handshake();
+                }
+                Err(native_tls::HandshakeError::Failure(_)) => return Err(RpcFault::Unavailable),
+            }
+        };
         let body = json!({"jsonrpc":"2.0","id":1,"method":method,"params":params}).to_string();
-        if body.len() > 1_048_576 {
-            return Err(RpcFault::Configuration);
+        if body.len() > 1_048_576 { return Err(RpcFault::Configuration); }
+        let request = format!("POST {path} HTTP/1.1\r\nHost: {authority}\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}", body.len());
+        let mut pending = request.as_bytes();
+        while !pending.is_empty() {
+            remaining(deadline)?;
+            match stream.write(pending) {
+                Ok(0) => return Err(RpcFault::Unavailable),
+                Ok(count) => pending = &pending[count..],
+                Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(5).min(remaining(deadline)?));
+                }
+                Err(error) if error.kind() == ErrorKind::Interrupted => (),
+                Err(_) => return Err(RpcFault::Unavailable),
+            }
         }
-        write!(stream, "POST {path} HTTP/1.1\r\nHost: {authority}\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}", body.len()).map_err(|_| RpcFault::Unavailable)?;
-        stream.flush().map_err(|_| RpcFault::Unavailable)?;
-        stream
-            .get_ref()
-            .set_nonblocking(true)
-            .map_err(|_| RpcFault::Unavailable)?;
-        Self::read_response(&mut stream, Duration::from_secs(30))
+        loop {
+            remaining(deadline)?;
+            match stream.flush() {
+                Ok(()) => break,
+                Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(5).min(remaining(deadline)?));
+                }
+                Err(error) if error.kind() == ErrorKind::Interrupted => (),
+                Err(_) => return Err(RpcFault::Unavailable),
+            }
+        }
+        Self::read_response(&mut stream, remaining(deadline)?)
     }
 }
 

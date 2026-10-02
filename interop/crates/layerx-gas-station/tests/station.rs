@@ -546,35 +546,41 @@ fn replacement_resumes_and_cancels(lane: &Lane, key: Key, now: u64) -> TestResul
 }
 
 #[test]
-fn refused_submission_releases_its_nonce_for_the_next_submission() -> TestResult {
+fn refused_submission_retains_exact_bytes_until_finalized_receipt() -> TestResult {
     let lane = Lane::new("REFUSED")?;
     let (mut station, submit) = lane.submitted()?;
     let key = submit.key;
     lane.phase("refused");
-    assert!(matches!(
-        station.submit(&submit, 1000),
-        Err(StationError::Rpc(RpcFault::Rejected { code: -32000 }))
-    ));
-    assert_eq!(lane.count.get(), 2);
-    assert!(station.journal().state().items[&key].submission.is_none());
-    assert!(station.journal().state().items[&key].completion.is_none());
-    assert!(lane.entries()?.contains(&Entry::Released { key, nonce: 5 }));
-    drop(station);
-    let mut station = lane.start()?;
-    assert!(station.journal().state().items[&key].submission.is_none());
-    assert_eq!(station.resume(key, 1000)?, Progress::Pending);
-    assert_eq!(lane.recorded.sent.borrow().len(), 1);
-    lane.phase("submit");
     assert_eq!(station.submit(&submit, 1000)?, Progress::Pending);
-    assert_eq!(lane.count.get(), 3);
-    assert_eq!(lane.prepared_nonces()?, vec![5, 5]);
-    assert_eq!(
-        station.journal().state().items[&key]
-            .submission
-            .as_ref()
-            .map(|s| s.nonce),
-        Some(5)
-    );
+    let prepared = station.journal().state().items[&key].submission.clone()
+        .ok_or("refused broadcast lost durable transaction")?;
+    assert_eq!(lane.count.get(), 2);
+    assert!(station.journal().state().items[&key].completion.is_none());
+    assert!(station.journal().state().holds(key.sponsor, prepared.nonce));
+    assert!(!lane.entries()?.iter().any(|entry| matches!(entry, Entry::Released { .. })));
+    drop(station);
+    lane.phase("restart");
+    let mut station = lane.start()?;
+    assert_eq!(station.journal().state().items[&key].submission.as_ref(), Some(&prepared));
+    let signature: [u8; 65] = station.journal().state().items[&key].quote.as_ref()
+        .ok_or("quote missing")?.signature.as_slice().try_into()?;
+    let started = std::time::Instant::now();
+    assert!(station.status(key, submit.account, &signature)?.completion.is_none());
+    assert_eq!(station.resume(key, 1000)?, Progress::Pending);
+    assert!(started.elapsed() < std::time::Duration::from_secs(21));
+    assert_eq!(lane.recorded.sent.borrow().last(), Some(&prepared.raw));
+    assert_eq!(lane.prepared_nonces()?, vec![prepared.nonce]);
+    assert_eq!(lane.count.get(), 2);
+    drop(station);
+    lane.phase("included");
+    let mut station = lane.start()?;
+    assert!(station.status(key, submit.account, &signature)?.completion.is_none());
+    let done = station.resume(key, 1020)?;
+    assert!(matches!(done, Progress::Completed(Completion::Included { hash, .. }) if hash == prepared.hash));
+    assert_eq!(station.resume(key, 1020)?, done);
+    assert!(station.status(key, submit.account, &signature)?.completion.is_some());
+    assert!(station.journal().state().receipts.contains_key(&prepared.hash));
+    assert_eq!(lane.count.get(), 2);
     drop(station);
     lane.finish()
 }
@@ -795,5 +801,141 @@ fn assert_envelope(raw: &[u8], sponsor: Address, account: Address) -> TestResult
         layerx_gas_station::tx::recover(keccak(&unsigned), &signature)?,
         sponsor
     );
+    Ok(())
+}
+
+#[test]
+fn recovery_deadline_bounds_real_stalled_tls() -> TestResult {
+    use std::io::Read as _;
+    use std::net::TcpListener;
+    use std::time::{Duration, Instant};
+
+    let listener = TcpListener::bind("127.0.0.1:0")?;
+    let address = listener.local_addr()?;
+    let peer = std::thread::spawn(move || -> std::io::Result<()> {
+        listener.set_nonblocking(true)?;
+        let until = Instant::now() + Duration::from_secs(1);
+        let mut stream = loop {
+            match listener.accept() {
+                Ok((stream, _)) => break stream,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock && Instant::now() < until => {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                Err(error) => return Err(error),
+            }
+        };
+        stream.set_read_timeout(Some(Duration::from_secs(1)))?;
+        let mut bytes = [0_u8; 4096];
+        while stream.read(&mut bytes)? != 0 {}
+        Ok(())
+    });
+    let mut configuration = config();
+    configuration.endpoints = vec![format!("https://{address}")];
+    let rpc = ConfiguredRpc::new(&configuration, HttpsExchange)?;
+    let started = Instant::now();
+    rpc.set_deadline(Some(started + Duration::from_millis(150)))?;
+    assert_eq!(rpc.call("eth_chainId", json!([])), Err(RpcFault::Unavailable));
+    assert!(started.elapsed() < Duration::from_secs(2));
+    rpc.set_deadline(None)?;
+    peer.join().map_err(|_| "TLS peer panicked")??;
+    Ok(())
+}
+
+#[test]
+fn authenticated_retry_real_https_retains_unknown_liability_within_deadline() -> TestResult {
+    use std::io::{Read as _, Write as _};
+    use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
+    use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+    let material_path = PathBuf::from(std::env::var("PAXEER_X_STATION_RECOVERY_MATERIAL")?);
+    let read_private = |path: &std::path::Path| -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        if !path.is_absolute() || path.components().any(|part| {
+            part.as_os_str().to_str().is_some_and(|name| name == ".env" || name.starts_with(".env."))
+        }) {
+            return Err("absolute non-environment recovery material required".into());
+        }
+        let metadata = std::fs::symlink_metadata(path)?;
+        if !metadata.file_type().is_file() || metadata.permissions().mode() & 0o077 != 0 {
+            return Err("private regular recovery material required".into());
+        }
+        let mut bytes = Vec::new();
+        std::fs::File::open(path)?.take(16_777_217).read_to_end(&mut bytes)?;
+        if bytes.len() > 16_777_216 {
+            return Err("recovery material exceeds bound".into());
+        }
+        Ok(bytes)
+    };
+    let material: Value = serde_json::from_slice(&read_private(&material_path)?)?;
+    let scenario = &material["scenarios"]["unreachable"];
+    let configuration = PathBuf::from(scenario["config"].as_str().ok_or("real configuration missing")?);
+    read_private(&configuration)?;
+    let config = layerx_gas_station::config::ServiceConfig::load(&configuration)?;
+    for endpoint in &config.station.endpoints {
+        let authority = endpoint.strip_prefix("https://").ok_or("HTTPS required")?
+            .split('/').next().ok_or("RPC authority missing")?;
+        let socket: std::net::SocketAddr = authority.parse()?;
+        if !socket.ip().is_loopback() || !socket.is_ipv4() {
+            return Err("isolated loopback RPC required".into());
+        }
+    }
+    let snapshot = PathBuf::from(scenario["journal"].as_str().ok_or("genuine journal missing")?);
+    let durable = read_private(&snapshot)?;
+    let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+    let stamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+    let directory = std::env::temp_dir().join(format!("station-authenticated-retry-{}-{stamp}", std::process::id()));
+    std::fs::create_dir(&directory)?;
+    std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700))?;
+    let path = directory.join("journal.jsonl");
+    let mut file = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&path)?;
+    file.write_all(&durable)?;
+    file.sync_all()?;
+    drop(file);
+    let count = Rc::new(Cell::new(0));
+    let signer = CountedSigner {
+        inner: LocalSigner::from_config(&config.station)?,
+        count: Rc::clone(&count),
+    };
+    let rpc = ConfiguredRpc::new(&config.station, HttpsExchange)?;
+    rpc.set_deadline(Some(Instant::now() + Duration::from_secs(20)))?;
+    let mut station = GasStation::new(
+        config.station.clone(), signer, rpc,
+        PaymasterRateSource::new(ConfiguredRpc::new(&config.station, HttpsExchange)?, config.station.paymaster),
+        Journal::open(&path)?,
+    )?;
+    let before = station.journal().state().clone();
+    let (key, item) = before.items.iter().find(|(_, item)| {
+        item.submission.is_some() && item.completion.is_none()
+    }).ok_or("unresolved genuine submission required")?;
+    let quote = item.quote.as_ref().ok_or("durable quote missing")?;
+    let signature: [u8; 65] = quote.signature.as_slice().try_into()?;
+    let submission = item.submission.as_ref().ok_or("durable transaction missing")?;
+    let expired_now = now.max(quote.deadline.checked_add(1).ok_or("deadline overflow")?);
+    assert!(station.status(*key, item.account, &signature)?.completion.is_none());
+    assert!(matches!(station.retry(*key, item.account, &[0; 65], expired_now), Err(StationError::Missing)));
+    let started = Instant::now();
+    assert!(matches!(
+        station.retry(*key, item.account, &signature, expired_now),
+        Err(StationError::Rpc(RpcFault::Unavailable | RpcFault::RateLimited))
+    ));
+    assert!(started.elapsed() < Duration::from_secs(21));
+    assert_eq!(station.journal().state(), &before);
+    assert_eq!(std::fs::read(&path)?, durable);
+    assert!(station.journal().state().holds(key.sponsor, submission.nonce));
+    assert_eq!(count.get(), 0);
+    let started = Instant::now();
+    let recovery = station.recover(expired_now, Duration::from_millis(150))?;
+    assert!(started.elapsed() < Duration::from_secs(2));
+    assert_eq!(recovery.completed, 0);
+    assert_eq!(recovery.pending, 0);
+    assert_eq!(recovery.unreachable + recovery.deferred, station.unresolved().len());
+    assert_eq!(station.journal().state(), &before);
+    assert_eq!(count.get(), 0);
+    drop(station);
+    let reopened = Journal::open(&path)?;
+    assert_eq!(reopened.state(), &before);
+    assert_eq!(std::fs::read(&path)?, durable);
+    drop(reopened);
+    std::fs::remove_file(&path)?;
+    std::fs::remove_dir(&directory)?;
     Ok(())
 }

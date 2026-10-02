@@ -77,6 +77,7 @@ pub struct GasStation<S, R, P> {
     rpc: R,
     prices: P,
     journal: Journal,
+    recovery_cursor: Option<(u64, Key)>,
 }
 impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
     /// # Errors
@@ -90,8 +91,14 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
     ) -> Result<Self, StationError> {
         let mut station = Station::new(config, signer).map_err(|_| StationError::Invalid)?;
         let chain: String = read(&rpc, "eth_chainId", json!([]))?;
+        rpc.set_deadline(None)?;
         if quantity(&chain)? != u128::from(station.config.chain_id) {
             return Err(StationError::Invalid);
+        }
+        if journal.state().items.values().any(|item| {
+            item.submission.is_some() && item.completion == Some(Completion::Consumed)
+        }) {
+            return Err(StationError::Conflict);
         }
         let mut quotes: Vec<_> = journal
             .state()
@@ -124,6 +131,7 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
             rpc,
             prices,
             journal,
+            recovery_cursor: None,
         })
     }
     #[must_use]
@@ -191,7 +199,7 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
             && self.transaction_count(self.station.signer.address(), "pending")?
                 <= submission.nonce)
     }
-    fn receipt(&self, hash: &Word) -> Result<Receipt, StationError> {
+    fn receipt(&mut self, key: Key, hash: &Word) -> Result<Receipt, StationError> {
         let receipt = self
             .rpc
             .call("eth_getTransactionReceipt", json!([hex(hash)]))?;
@@ -209,8 +217,13 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
             "eth_getBlockByNumber",
             json!([format!("0x{block:x}"), false]),
         )?;
-        if receipt["blockHash"].as_str().is_none() || canonical["hash"] != receipt["blockHash"] {
-            return Err(RpcFault::Divergence.into());
+        validate_finalized_receipt(hash, &receipt, &canonical, &finalized)?;
+        if let Some(saved) = self.journal.state().receipts.get(hash) {
+            if saved != &receipt { return Err(RpcFault::Divergence.into()); }
+        } else {
+            self.journal.append(&Entry::ReceiptObserved {
+                key, hash: *hash, receipt: receipt.clone(), canonical, finalized,
+            })?;
         }
         Ok(Receipt::Final(receipt))
     }
@@ -411,19 +424,11 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
             submission: submission.clone(),
         })?;
         match self.broadcast(request.key) {
-            Err(StationError::Rpc(RpcFault::Rejected { code })) => {
-                if self.refused(&submission)? {
-                    self.journal.append(&Entry::Released {
-                        key: request.key,
-                        nonce,
-                    })?;
-                    return Err(RpcFault::Rejected { code }.into());
-                }
-                Ok(Progress::Pending)
-            }
+            Err(StationError::Rpc(RpcFault::Rejected { .. })) => Ok(Progress::Pending),
             result => result,
         }
     }
+
     fn broadcast(&self, key: Key) -> Result<Progress, StationError> {
         let submission = self
             .journal
@@ -452,6 +457,9 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
     /// rebroadcast, and a dropped or expired submission's still unused sponsor
     /// nonce is filled by a journalled replacement.
     pub fn resume(&mut self, key: Key, now: u64) -> Result<Progress, StationError> {
+        self.resume_inner(key, now)
+    }
+    fn resume_inner(&mut self, key: Key, now: u64) -> Result<Progress, StationError> {
         let item = self
             .journal
             .state()
@@ -466,21 +474,16 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
             return Ok(Progress::Pending);
         };
         let quote = item.quote.as_ref().ok_or(StationError::Missing)?;
-        match self.receipt(&submission.hash)? {
+        match self.receipt(key, &submission.hash)? {
             Receipt::Final(receipt) => {
                 let completion = receipt_completion(&receipt, &submission, quote)?;
-                if matches!(completion, Completion::Reverted { .. })
-                    && self.consumed(key, item.account)?
-                {
-                    return self.complete(key, item.account, Completion::Consumed);
-                }
                 return self.complete(key, item.account, completion);
             }
             Receipt::Unfinalized => return Ok(Progress::Pending),
             Receipt::Absent => (),
         }
         if let Some(replacement) = &item.replacement {
-            return match self.receipt(&replacement.hash)? {
+            return match self.receipt(key, &replacement.hash)? {
                 Receipt::Final(receipt) => {
                     let block_number = cancellation_block(&receipt, replacement, key.sponsor)?;
                     self.journal.append(&Entry::Cancelled {
@@ -501,7 +504,7 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
             };
         }
         if self.consumed(key, item.account)? {
-            return self.complete(key, item.account, Completion::Consumed);
+            return Ok(Progress::Pending);
         }
         if quote.deadline < now {
             if self.transaction_count(key.sponsor, "latest")? <= submission.nonce {
@@ -542,14 +545,25 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
     /// # Errors
     /// Refuses divergent or malformed observations and journal failures.
     pub fn recover(&mut self, now: u64, budget: Duration) -> Result<Recovery, StationError> {
-        let started = Instant::now();
+        let deadline = Instant::now().checked_add(budget).ok_or(StationError::Invalid)?;
         let mut recovery = Recovery::default();
-        for key in self.unresolved() {
-            if started.elapsed() >= budget {
+        let mut keys: Vec<_> = self.unresolved().into_iter().map(|key| {
+            (self.journal.state().items[&key].submission.as_ref().map_or(0, |s| s.nonce), key)
+        }).collect();
+        if let Some(cursor) = self.recovery_cursor {
+            let offset = keys.partition_point(|key| *key <= cursor);
+            keys.rotate_left(offset);
+        }
+        for (nonce, key) in keys {
+            if Instant::now() >= deadline {
                 recovery.deferred += 1;
                 continue;
             }
-            match self.resume(key, now) {
+            self.recovery_cursor = Some((nonce, key));
+            self.rpc.set_deadline(Some(deadline))?;
+            let result = self.resume_inner(key, now);
+            self.rpc.set_deadline(None)?;
+            match result {
                 Ok(Progress::Completed(_)) => recovery.completed += 1,
                 Ok(Progress::Pending) => recovery.pending += 1,
                 Err(StationError::Rpc(RpcFault::Unavailable | RpcFault::RateLimited)) => {
@@ -560,6 +574,7 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
         }
         Ok(recovery)
     }
+
     fn authenticated(
         &self,
         key: Key,
@@ -618,7 +633,10 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
         if item.submission.is_none() {
             return Err(StationError::Invalid);
         }
-        self.resume(key, now)
+        self.rpc.set_deadline(Some(Instant::now() + Duration::from_secs(20)))?;
+        let result = self.resume_inner(key, now);
+        self.rpc.set_deadline(None)?;
+        result
     }
 }
 /// The counts of one recovery pass: submissions completed, still pending,
@@ -652,6 +670,24 @@ fn amount(value: Word) -> Result<u128, StationError> {
 fn field_quantity(value: &Value, name: &str) -> Result<u128, RpcFault> {
     quantity(value[name].as_str().ok_or(RpcFault::Malformed)?)
 }
+pub(crate) fn validate_finalized_receipt(
+    hash: &Word, receipt: &Value, canonical: &Value, finalized: &Value,
+) -> Result<(), RpcFault> {
+    let receipt_hash = bytes(receipt["transactionHash"].as_str().ok_or(RpcFault::Malformed)?)?;
+    let block_hash = bytes(receipt["blockHash"].as_str().ok_or(RpcFault::Malformed)?)?;
+    let final_hash = bytes(finalized["hash"].as_str().ok_or(RpcFault::Malformed)?)?;
+    let block = field_quantity(receipt, "blockNumber")?;
+    if receipt_hash.as_slice() != hash || block_hash.len() != 32 || final_hash.len() != 32 {
+        return Err(RpcFault::Malformed);
+    }
+    if canonical["hash"] != receipt["blockHash"]
+        || field_quantity(canonical, "number")? != block
+        || field_quantity(finalized, "number")? < block {
+        return Err(RpcFault::Divergence);
+    }
+    Ok(())
+}
+
 fn cancellation_block(
     receipt: &Value,
     replacement: &Replacement,

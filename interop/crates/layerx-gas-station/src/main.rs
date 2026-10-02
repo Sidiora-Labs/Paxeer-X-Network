@@ -2,7 +2,7 @@ use layerx_gas_station::config::ServiceConfig;
 use layerx_gas_station::journal::Journal;
 use layerx_gas_station::price::PaymasterRateSource;
 use layerx_gas_station::rate::{PublisherConfig, RatePublisher, RateRefusal, DAY_SECONDS};
-use layerx_gas_station::rpc::{ConfiguredRpc, HttpsExchange};
+use layerx_gas_station::rpc::{ConfiguredRpc, HttpsExchange, JsonRpc};
 use layerx_gas_station::service::{drive, Limits, Schedule, Service};
 use layerx_gas_station::signer::LocalSigner;
 use layerx_gas_station::station::{GasStation, StationError};
@@ -11,7 +11,7 @@ use std::io::{self, Write};
 use std::net::{SocketAddr, TcpListener};
 use std::path::PathBuf;
 use std::process::ExitCode;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Eq, PartialEq)]
 struct Arguments {
@@ -189,6 +189,10 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    if let Err(error) = rpc.set_deadline(Some(Instant::now() + Duration::from_secs(20))) {
+        eprintln!("{error}");
+        return ExitCode::FAILURE;
+    }
     let station = match GasStation::new(config.station.clone(), signer, rpc, rates, journal) {
         Ok(station) => station,
         Err(error @ StationError::Invalid) => {

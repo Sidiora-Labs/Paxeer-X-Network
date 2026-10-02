@@ -142,6 +142,13 @@ pub enum Entry {
         hash: Word,
         block_number: u64,
     },
+    ReceiptObserved {
+        key: Key,
+        hash: Word,
+        receipt: serde_json::Value,
+        canonical: serde_json::Value,
+        finalized: serde_json::Value,
+    },
     RatePublished {
         publication: Publication,
     },
@@ -188,6 +195,7 @@ pub struct Item {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct State {
     pub items: BTreeMap<Key, Item>,
+    pub receipts: BTreeMap<Word, serde_json::Value>,
     pub publications: BTreeMap<Word, (Publication, Option<Settlement>)>,
 }
 impl State {
@@ -318,16 +326,7 @@ impl State {
                 }
                 item.completion = Some(*completion);
             }
-            Entry::Released { key, nonce } => {
-                let item = self.items.get_mut(key).ok_or(JournalError::Conflict)?;
-                if item.completion.is_some()
-                    || item.replacement.is_some()
-                    || item.submission.as_ref().is_none_or(|s| s.nonce != *nonce)
-                {
-                    return Err(JournalError::Conflict);
-                }
-                item.submission = None;
-            }
+            Entry::Released { .. } => return Err(JournalError::Conflict),
             Entry::Replaced { key, replacement } => {
                 if replacement.raw.first() != Some(&2)
                     || keccak(&replacement.raw) != replacement.hash
@@ -369,6 +368,17 @@ impl State {
                     hash: *hash,
                     block_number: *block_number,
                 });
+            }
+            Entry::ReceiptObserved { key, hash, receipt, canonical, finalized } => {
+                let item = self.items.get(key).ok_or(JournalError::Conflict)?;
+                if !item.submission.as_ref().is_some_and(|s| s.hash == *hash)
+                    && !item.replacement.as_ref().is_some_and(|r| r.hash == *hash) {
+                    return Err(JournalError::Conflict);
+                }
+                crate::station::validate_finalized_receipt(hash, receipt, canonical, finalized)
+                    .map_err(|_| JournalError::Corrupt)?;
+                if self.receipts.contains_key(hash) { return Err(JournalError::Conflict); }
+                self.receipts.insert(*hash, receipt.clone());
             }
             Entry::RatePublished { publication } => {
                 if publication.hash == [0; 32]
@@ -609,15 +619,21 @@ mod tests {
             key: key(1),
             nonce: 5,
         };
-        journal.append(&release)?;
-        assert!(!journal.state().holds(signer.address(), 5));
+        let retained = journal.state().items[&key(1)].submission.clone();
+        let durable = std::fs::read(&path)?;
         assert_eq!(journal.append(&release), Err(JournalError::Conflict));
-        journal.append(&prepared(key(2), 5, 2))?;
+        assert!(journal.state().holds(signer.address(), 5));
+        assert_eq!(journal.state().items[&key(1)].submission, retained);
+        assert!(journal.state().items[&key(1)].completion.is_none());
+        assert_eq!(std::fs::read(&path)?, durable);
+        assert_eq!(journal.append(&release), Err(JournalError::Conflict));
+        assert_eq!(journal.append(&prepared(key(2), 5, 2)), Err(JournalError::Conflict));
+        journal.append(&prepared(key(2), 6, 2))?;
         let Entry::Quoted { quote } = quoted(&signer, 2)? else {
             return Err("expected a quote".into());
         };
         let fees = quote.fees.replacement()?;
-        let cancellation = crate::tx::sign_cancellation(1325, 5, fees, &signer)?;
+        let cancellation = crate::tx::sign_cancellation(1325, 6, fees, &signer)?;
         let replaced = |nonce: u64, fees: Fees| Entry::Replaced {
             key: key(2),
             replacement: Replacement {
@@ -630,27 +646,27 @@ mod tests {
         let mut underpriced = fees;
         underpriced.max_fee_per_gas -= 1;
         assert_eq!(
-            journal.append(&replaced(5, underpriced)),
+            journal.append(&replaced(6, underpriced)),
             Err(JournalError::Corrupt)
         );
         assert_eq!(
-            journal.append(&replaced(6, fees)),
+            journal.append(&replaced(7, fees)),
             Err(JournalError::Conflict)
         );
-        journal.append(&replaced(5, fees))?;
+        journal.append(&replaced(6, fees))?;
         assert_eq!(
-            journal.append(&replaced(5, fees)),
+            journal.append(&replaced(6, fees)),
             Err(JournalError::Conflict)
         );
         assert_eq!(
             journal.append(&Entry::Released {
                 key: key(2),
-                nonce: 5
+                nonce: 6
             }),
             Err(JournalError::Conflict)
         );
         assert_eq!(
-            journal.append(&prepared(key(3), 5, 3)),
+            journal.append(&prepared(key(3), 6, 3)),
             Err(JournalError::Conflict)
         );
         let cancelled = Completion::Cancelled {
@@ -682,9 +698,17 @@ mod tests {
         drop(journal);
         let journal = Journal::open(&path)?;
         assert_eq!(journal.state(), &state);
-        assert_eq!(journal.state().items[&key(1)].submission, None);
+        assert_eq!(journal.state().items[&key(1)].submission, retained);
+        assert!(journal.state().holds(signer.address(), 5));
+        assert!(journal.state().items[&key(1)].completion.is_none());
         assert_eq!(journal.state().items[&key(2)].completion, Some(cancelled));
         drop(journal);
+        let mut legacy = OpenOptions::new().append(true).open(&path)?;
+        serde_json::to_writer(&mut legacy, &release)?;
+        legacy.write_all(b"\n")?;
+        legacy.sync_all()?;
+        drop(legacy);
+        assert!(matches!(Journal::open(&path), Err(JournalError::Conflict)));
         std::fs::remove_file(path)?;
         Ok(())
     }
