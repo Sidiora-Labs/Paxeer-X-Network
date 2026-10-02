@@ -137,7 +137,7 @@ agentd-client human/wallet/deploy/human.toml - volume layerx-agentd-client clien
 paxeer-boundary-loopback human/wallet/deploy/human.toml - volume paxeer-boundary serverAuth DNS:paxeer-boundary,DNS:paxeer-boundary-loopback,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
 paxeer-boundary-public human/wallet/deploy/human.toml - volume paxeer-observer-boundary serverAuth DNS:paxeer-observer-boundary,DNS:paxeer-boundary-public,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
 guarantor human/wallet/deploy/human.toml - volume layerx-guarantor serverAuth,clientAuth DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
-human human/wallet/deploy/human.toml - volume layerx-human serverAuth DNS:layerx-human,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
+human platform/hosted/node/fly.toml - volume layerx-human serverAuth DNS:layerx-human,DNS:<app>.internal,DNS:paxeer-human-service.internal,DNS:localhost,IP:127.0.0.1
 human-event-client human/wallet/deploy/human.toml - volume layerx-human-events clientAuth URI:urn:layerx:webhooks:role:producer
 human-attestor-client human/wallet/deploy/human.toml - volume layerx-human-components clientAuth -
 relay-archive platform/hosted/node/fly.toml - volume layerx-relay-archive serverAuth DNS:layerx-relay-archive,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
