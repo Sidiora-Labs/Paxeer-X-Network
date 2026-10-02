@@ -2056,6 +2056,10 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
     ) -> Result<HumanResponse, HumanOperationError> {
         let control = self.session_control.clone();
         self.authorize_external_submit(context.peer(), &request)?;
+
+        if context.peer().subject.is_none() {
+            return Err(HumanOperationError::Refused);
+        }
         let permit = context.permit();
         let origin = permit.preparation_authorization();
         let registered = match digest_from_hex(&request.operation.preparation_ref) {

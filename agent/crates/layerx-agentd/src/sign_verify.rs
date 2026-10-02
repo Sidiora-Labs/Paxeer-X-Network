@@ -1,7 +1,7 @@
 //! Exact-byte signature verification gate before submission.
 
 use layerx_crypto::{ed25519, SignatureMessage};
-use layerx_types::activity::Signature;
+use layerx_types::activity::{Authority, Signature};
 use layerx_types::payload::ModuleRegistry;
 use layerx_wire::activity::{
     decode_signed, encode_signed, encode_signed_envelope, encode_unsigned,
@@ -88,6 +88,12 @@ pub(crate) fn verify_exact(
         &unsigned,
     )
     .map_err(|_| SigningError::SignatureInvalid)?;
+    let Authority::Owner(owner) = prepared.envelope.authority() else {
+        return Err(SigningError::AuthorityMismatch);
+    };
+    if owner.as_ref() != signer_public_key.as_slice() {
+        return Err(SigningError::AuthorityMismatch);
+    }
     ed25519::verify(signer_public_key, signature, message)
         .map_err(|_| SigningError::SignatureInvalid)?;
     let activity_id = activity_id(&activity).map_err(SigningError::Wire)?;

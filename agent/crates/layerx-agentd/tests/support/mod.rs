@@ -132,6 +132,7 @@ fn send_payload(id: u8) -> Vec<u8> {
 }
 
 pub fn verified_submission(id: u8) -> VerifiedSubmission {
+    let signer = LocalSigner::new([0xa5; 32]);
     let mut core = RecordedCore(CorePreparationState {
         network_id: 17,
         account_sequence: 5,
@@ -149,7 +150,7 @@ pub fn verified_submission(id: u8) -> VerifiedSubmission {
         PrepareRequest {
             actor: Did::new(b"did:layerx:recovery")
                 .unwrap_or_else(|error| panic!("DID: {error:?}")),
-            authority: Authority::owner(b"external-authority")
+            authority: Authority::owner(&signer.public_key())
                 .unwrap_or_else(|error| panic!("authority: {error:?}")),
             activity_type: activity_type(),
             expected_account_sequence: Some(5),
@@ -164,7 +165,6 @@ pub fn verified_submission(id: u8) -> VerifiedSubmission {
         },
     )
     .unwrap_or_else(|error| panic!("prepare: {error:?}"));
-    let signer = LocalSigner::new([0xa5; 32]);
     let signature = ready(sign_disclosed(
         &signer,
         &prepared.canonical_bytes,
@@ -252,6 +252,7 @@ pub fn budget_create_submission(
     expires_at: u64,
 ) -> VerifiedSubmission {
     let registry = budget_registry();
+    let signer = LocalSigner::new([0xa5; 32]);
     let mut core = RecordedCore(CorePreparationState {
         network_id: 17,
         account_sequence: 5,
@@ -269,7 +270,7 @@ pub fn budget_create_submission(
         PrepareRequest {
             actor: Did::new(b"did:layerx:recovery")
                 .unwrap_or_else(|error| panic!("DID: {error:?}")),
-            authority: Authority::owner(b"external-authority")
+            authority: Authority::owner(&signer.public_key())
                 .unwrap_or_else(|error| panic!("authority: {error:?}")),
             activity_type: budget_create_activity_type(),
             expected_account_sequence: Some(5),
@@ -284,7 +285,6 @@ pub fn budget_create_submission(
         },
     )
     .unwrap_or_else(|error| panic!("prepare: {error:?}"));
-    let signer = LocalSigner::new([0xa5; 32]);
     let signature = ready(sign_disclosed(
         &signer,
         &prepared.canonical_bytes,

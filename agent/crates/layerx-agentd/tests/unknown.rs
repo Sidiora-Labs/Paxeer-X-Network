@@ -162,6 +162,7 @@ fn send_payload(id: u8) -> Vec<u8> {
 }
 
 fn verified_submission(id: u8) -> VerifiedSubmission {
+    let signer = LocalSigner::new([0xa5; 32]);
     let mut core = RecordedCore(CorePreparationState {
         network_id: 17,
         account_sequence: 5,
@@ -178,7 +179,7 @@ fn verified_submission(id: u8) -> VerifiedSubmission {
         },
         PrepareRequest {
             actor: Did::new(b"did:layerx:unknown").unwrap_or_else(|error| panic!("DID: {error:?}")),
-            authority: Authority::owner(b"external-authority")
+            authority: Authority::owner(&signer.public_key())
                 .unwrap_or_else(|error| panic!("authority: {error:?}")),
             activity_type: activity_type(),
             expected_account_sequence: Some(5),
@@ -193,7 +194,6 @@ fn verified_submission(id: u8) -> VerifiedSubmission {
         },
     )
     .unwrap_or_else(|error| panic!("prepare: {error:?}"));
-    let signer = LocalSigner::new([0xa5; 32]);
     let signature = ready(sign_disclosed(
         &signer,
         &prepared.canonical_bytes,

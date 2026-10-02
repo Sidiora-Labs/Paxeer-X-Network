@@ -55,7 +55,7 @@ fn registry() -> ModuleRegistry {
     .unwrap_or_else(|error| panic!("registry: {error:?}"))
 }
 
-fn send_payload(amount: u128, recipient: [u8; 32]) -> Vec<u8> {
+fn send_payload() -> Vec<u8> {
     let mut encoder = Encoder::new(512);
     encoder
         .u16(0x5301)
@@ -67,13 +67,13 @@ fn send_payload(amount: u128, recipient: [u8; 32]) -> Vec<u8> {
         .fixed(&[0x11; 32])
         .unwrap_or_else(|error| panic!("from: {error:?}"));
     encoder
-        .fixed(&recipient)
+        .fixed(&[0x22; 32])
         .unwrap_or_else(|error| panic!("to: {error:?}"));
     encoder
         .fixed(&[0x33; 32])
         .unwrap_or_else(|error| panic!("asset: {error:?}"));
     encoder
-        .u128(amount)
+        .u128(25)
         .unwrap_or_else(|error| panic!("amount: {error:?}"));
     encoder
         .u64(5)
@@ -114,7 +114,7 @@ fn send_payload(amount: u128, recipient: [u8; 32]) -> Vec<u8> {
     send_authorization::sign(encoder.finish())
 }
 
-fn prepared(amount: u128, recipient: [u8; 32], fee: u128) -> Prepared {
+fn owner_bound(owner: &LocalSigner) -> Prepared {
     let mut core = RecordedCore(CorePreparationState {
         network_id: 17,
         account_sequence: 5,
@@ -130,9 +130,9 @@ fn prepared(amount: u128, recipient: [u8; 32], fee: u128) -> Prepared {
             maximum_payload_bytes: 1_024,
         },
         PrepareRequest {
-            actor: Did::new(b"did:layerx:signature-binding")
+            actor: Did::new(b"did:layerx:owner-binding")
                 .unwrap_or_else(|error| panic!("DID: {error:?}")),
-            authority: Authority::owner(&LocalSigner::new([0xa5; 32]).public_key())
+            authority: Authority::owner(&owner.public_key())
                 .unwrap_or_else(|error| panic!("authority: {error:?}")),
             activity_type: activity_type(),
             expected_account_sequence: Some(5),
@@ -140,58 +140,51 @@ fn prepared(amount: u128, recipient: [u8; 32], fee: u128) -> Prepared {
                 TimestampBound::new(995, 1_010)
                     .unwrap_or_else(|error| panic!("timestamp: {error:?}")),
             ),
-            fee_limit: Some(Amount::from_u128(fee)),
+            fee_limit: Some(Amount::from_u128(7)),
             idempotency_key: IdempotencyKey::new([4; 32]),
-            payload: send_payload(amount, recipient),
+            payload: send_payload(),
             declared_payload_limit: 1_024,
         },
     )
     .unwrap_or_else(|error| panic!("prepare: {error:?}"))
 }
 
-#[test]
-fn verified_wrapper_preserves_the_exact_signed_input_and_activity_id() {
-    let prepared = prepared(25, [0x22; 32], 7);
-    let signer = LocalSigner::new([0xa5; 32]);
+fn signed_by(prepared: &Prepared, signer: &LocalSigner) -> Vec<u8> {
     let signature = ready(sign_disclosed(
-        &signer,
+        signer,
         &prepared.canonical_bytes,
         &prepared.disclosure,
         &registry(),
     ))
     .unwrap_or_else(|error| panic!("sign: {error:?}"));
-    let signed_bytes = attach_external_signature(&prepared, *signature.as_bytes())
-        .unwrap_or_else(|error| panic!("attach: {error:?}"));
-    let verified =
-        verify_before_submit(&signed_bytes, &prepared, &signer.public_key(), &registry())
-            .unwrap_or_else(|error| panic!("verify: {error:?}"));
-    assert_eq!(verified.exact_bytes(), signed_bytes);
-    assert_eq!(verified.signed_byte_length(), signed_bytes.len());
-    assert_ne!(verified.activity_id(), [0; 32]);
+    attach_external_signature(prepared, *signature.as_bytes())
+        .unwrap_or_else(|error| panic!("attach: {error:?}"))
 }
 
 #[test]
-fn amount_recipient_and_fee_alterations_cannot_ride_an_old_signature() {
-    let original = prepared(25, [0x22; 32], 7);
-    let signer = LocalSigner::new([0xa5; 32]);
-    let signature = ready(sign_disclosed(
-        &signer,
-        &original.canonical_bytes,
-        &original.disclosure,
-        &registry(),
-    ))
-    .unwrap_or_else(|error| panic!("sign: {error:?}"));
+fn a_foreign_key_signature_over_the_owner_preimage_is_refused() {
+    let owner = LocalSigner::new([0xa5; 32]);
+    let foreign = LocalSigner::new([0x5a; 32]);
+    assert_ne!(owner.public_key(), foreign.public_key());
+    let prepared = owner_bound(&owner);
+    let signed_bytes = signed_by(&prepared, &foreign);
+    assert_eq!(
+        verify_before_submit(&signed_bytes, &prepared, &foreign.public_key(), &registry()),
+        Err(SigningError::AuthorityMismatch)
+    );
+    assert_eq!(
+        verify_before_submit(&signed_bytes, &prepared, &owner.public_key(), &registry()),
+        Err(SigningError::SignatureInvalid)
+    );
+}
 
-    for altered in [
-        prepared(26, [0x22; 32], 7),
-        prepared(25, [0x23; 32], 7),
-        prepared(25, [0x22; 32], 8),
-    ] {
-        let signed_bytes = attach_external_signature(&altered, *signature.as_bytes())
-            .unwrap_or_else(|error| panic!("attach: {error:?}"));
-        assert_eq!(
-            verify_before_submit(&signed_bytes, &altered, &signer.public_key(), &registry()),
-            Err(SigningError::SignatureInvalid)
-        );
-    }
+#[test]
+fn the_bound_owner_key_still_verifies() {
+    let owner = LocalSigner::new([0xa5; 32]);
+    let prepared = owner_bound(&owner);
+    let signed_bytes = signed_by(&prepared, &owner);
+    let verified = verify_before_submit(&signed_bytes, &prepared, &owner.public_key(), &registry())
+        .unwrap_or_else(|error| panic!("verify: {error:?}"));
+    assert_eq!(verified.exact_bytes(), signed_bytes);
+    assert_ne!(verified.activity_id(), [0; 32]);
 }

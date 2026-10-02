@@ -55,6 +55,7 @@ W7_AVAILABILITY_CLASSES = ('activities', 'receipts', 'oracle', 'state_diff', 're
 W20_COMPLETED_DIRECT = ('history_cursor_round_trip', 'subscription_lifecycle')
 
 W7_SIGN_DIRECT = ('sign_signed_unverified', 'sign_submit_composite')
+W7_SIGN_NEGATIVE = ('submit_foreign_key_refused',)
 W7_SUBMITTED_STATES = ('Queued', 'Submitted', 'Acknowledged', 'Executed')
 W20_SUBSCRIPTION_RECORD = ('subscription_id', 'scope', 'filter', 'start', 'last_acknowledged', 'delivery_target', 'paused')
 PYTHON_PRE_RESTART = ('allowed_mutation', 'mutation_duplicate_same_result', 'restart_unknown_pending', 'restart_retry_same_result')
@@ -1300,13 +1301,29 @@ class Qualification:
                 case + ': signer key does not match the provisioned Owner authority')
         return signer, public
 
-    def w7_prepare_sign(self, case):
+    def w7_submit_foreign_key_refused(self, prepared, owner):
+        case = W7_SIGN_NEGATIVE[0]
+        foreign = Ed25519PrivateKey.generate()
+        public = foreign.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex()
+        require(public != owner, case + ': generated key equals the provisioned Owner key')
+        signature = foreign.sign(bytes.fromhex(prepared['signing_preimage'])).hex()
+        key = self.key('direct', case)
+        value, status, body = self.call(case, 'submit', {
+            'preparation_ref': prepared['preparation_ref'], 'signature': signature, 'signer_public_key': public,
+            'approval_release_ref': None}, idempotency=key)
+        self.effect('direct', case, 'submit', key)
+        self.refusal(status, body, 403, 'PolicyRefusal', 'owner.refused', case, value['request_id'])
+        self.passed(case, self.d / 'responses' / (case + '.http'))
+
+    def w7_prepare_sign(self, case, refuse_foreign=False):
         row = self.config['requests'][case]['prepare']
         prepared = self.w20_completed_mutation(case + '.prepare', row['operation'], row['request'])['value']
         require(isinstance(prepared, dict) and isinstance(prepared.get('preparation_ref'), str) and prepared['preparation_ref']
                 and isinstance(prepared.get('signing_preimage'), str) and re.fullmatch('[0-9a-f]{64}', prepared['signing_preimage']),
                 case + '.prepare: preparation_ref and signing_preimage')
         signer, public = self.w7_signer(case, prepared.get('authority'))
+        if refuse_foreign:
+            self.w7_submit_foreign_key_refused(prepared, public)
         signature = signer.sign(bytes.fromhex(prepared['signing_preimage'])).hex()
         signed = self.w20_completed_mutation(case + '.sign', 'sign',
                                              {'preparation_ref': prepared['preparation_ref'], 'signature': signature})
@@ -1322,7 +1339,7 @@ class Qualification:
 
     def w7_sign_cases(self):
         case = W7_SIGN_DIRECT[0]
-        self.w7_prepare_sign(case)
+        self.w7_prepare_sign(case, refuse_foreign=True)
         self.passed(case, self.d / 'responses' / (case + '.sign.http'))
         case = W7_SIGN_DIRECT[1]
         prepared, signature, public, signed = self.w7_prepare_sign(case)
@@ -1462,7 +1479,7 @@ def worker(directory):
 
         expected += len(W20_ROTATION_PRE) + len(W7_OWNER_DIRECT)
 
-        expected += len(W20_COMPLETED_DIRECT) + len(W7_SIGN_DIRECT)
+        expected += len(W20_COMPLETED_DIRECT) + len(W7_SIGN_DIRECT) + len(W7_SIGN_NEGATIVE)
         require(len(qualification.results) == expected, 'case count ' + str(len(qualification.results)) + ' != ' + str(expected))
         write_private(runtime.directory / 'case-results.json', qualification.results)
         print(f'PAXEER_X_GATE tests={len(qualification.results)} skipped=0', flush=True)
