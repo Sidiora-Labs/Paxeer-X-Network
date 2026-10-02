@@ -15,7 +15,7 @@ use layerx_paxeer_client::{
     TransactionHash,
 };
 use layerx_ramp_toolkit::clients::{
-    parse_hex32, ActivityConfig, ComplianceClient, Endpoint, IdentityClient, LayerxClient,
+    parse_hex32, ComplianceClient, Endpoint, IdentityClient, LayerxClient, LayerxConfig,
     MutualTlsClient, MutualTlsFiles, PaxeerCustodyClient, ProviderCallback, ProviderClient,
     SecretFile,
 };
@@ -90,26 +90,6 @@ struct ProviderConfig {
     credential_file: PathBuf,
     settlement_path: String,
     status_path: String,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct LayerxConfig {
-    gateway_endpoint: String,
-    receipt_authority_endpoint: String,
-    signer_endpoint: String,
-    gateway_key_file: PathBuf,
-    authority_token_file: PathBuf,
-    signer_token_file: PathBuf,
-    actor_did: String,
-    protocol_version: u16,
-    network_id: u32,
-    fee_limit: u128,
-    signer_public_key: String,
-    sequencer_id: String,
-    sequencer_public_key: String,
-    sequencer_first_batch: String,
-    sequencer_last_batch: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -424,33 +404,7 @@ fn server_acceptor(config: &Config) -> Result<TlsAcceptor, String> {
 }
 
 fn build_layerx(config: &LayerxConfig, http: MutualTlsClient) -> Result<LayerxClient, String> {
-    let sequencer_authorization = layerx_ramp_toolkit::clients::configured_sequencer(
-        &config.sequencer_id,
-        &config.sequencer_public_key,
-        &config.sequencer_first_batch,
-        &config.sequencer_last_batch,
-    )
-    .map_err(|field| format!("invalid LayerX {field}"))?;
-    Ok(LayerxClient {
-        sequencer_authorization,
-        http,
-        gateway: Endpoint::parse(&config.gateway_endpoint)
-            .map_err(|_| "gateway endpoint rejected".to_owned())?,
-        receipt_authority: Endpoint::parse(&config.receipt_authority_endpoint)
-            .map_err(|_| "receipt authority endpoint rejected".to_owned())?,
-        signer: Endpoint::parse(&config.signer_endpoint)
-            .map_err(|_| "signer endpoint rejected".to_owned())?,
-        gateway_key: secret_text(&config.gateway_key_file)?,
-        authority_token: secret_text(&config.authority_token_file)?,
-        signer_token: secret_text(&config.signer_token_file)?,
-        activity: ActivityConfig {
-            actor_did: config.actor_did.as_bytes().to_vec(),
-            protocol_version: config.protocol_version,
-            network_id: config.network_id,
-            fee_limit: config.fee_limit,
-            signer_public_key: configured_key(&config.signer_public_key, "LayerX signer")?,
-        },
-    })
+    config.build(http)
 }
 
 fn build_state(config: &Config) -> Result<State, String> {
@@ -751,6 +705,10 @@ fn route(state: &State, request: &Request) -> Result<Response, Response> {
             "network_id": state.layerx.activity.network_id,
             "wire_version": state.layerx.activity.protocol_version,
             "external_custody": true,
+            "external_custody_label": EXTERNAL_CUSTODY_LABEL,
+            "readiness_scope": "local-journal",
+            "build_revision": option_env!("LAYERX_RAMP_BUILD_REVISION"),
+            "build_source_digest": option_env!("LAYERX_RAMP_BUILD_SOURCE_DIGEST"),
             "provider_contract": layerx_ramp_toolkit::PROVIDER_CONTRACT_VERSION,
             "compliance_contract": layerx_ramp_toolkit::COMPLIANCE_CONTRACT_VERSION,
             "paxeer_contract": layerx_ramp_toolkit::PAXEER_CONTRACT_VERSION

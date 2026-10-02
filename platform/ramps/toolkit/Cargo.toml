@@ -5,6 +5,10 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[[bin]]
+name = "ramp-verify-receipt"
+path = "src/bin/ramp-verify-receipt.rs"
+
 [dependencies]
 ed25519-dalek.workspace = true
 layerx-crypto.workspace = true

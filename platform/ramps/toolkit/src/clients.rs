@@ -800,6 +800,79 @@ pub struct ActivityConfig {
     pub signer_public_key: [u8; 32],
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LayerxConfig {
+    pub gateway_endpoint: String,
+    pub receipt_authority_endpoint: String,
+    pub signer_endpoint: String,
+    pub gateway_key_file: PathBuf,
+    pub authority_token_file: PathBuf,
+    pub signer_token_file: PathBuf,
+    pub actor_did: String,
+    pub protocol_version: u16,
+    pub network_id: u32,
+    pub fee_limit: u128,
+    pub signer_public_key: String,
+    pub sequencer_id: String,
+    pub sequencer_public_key: String,
+    pub sequencer_first_batch: String,
+    pub sequencer_last_batch: String,
+}
+
+
+impl LayerxConfig {
+    pub fn build(&self, http: MutualTlsClient) -> Result<LayerxClient, String> {
+    let config = self;
+    let sequencer_authorization = configured_sequencer(
+        &config.sequencer_id,
+        &config.sequencer_public_key,
+        &config.sequencer_first_batch,
+        &config.sequencer_last_batch,
+    )
+    .map_err(|field| format!("invalid LayerX {field}"))?;
+    Ok(LayerxClient {
+        sequencer_authorization,
+        http,
+        gateway: Endpoint::parse(&config.gateway_endpoint)
+            .map_err(|_| "gateway endpoint rejected".to_owned())?,
+        receipt_authority: Endpoint::parse(&config.receipt_authority_endpoint)
+            .map_err(|_| "receipt authority endpoint rejected".to_owned())?,
+        signer: Endpoint::parse(&config.signer_endpoint)
+            .map_err(|_| "signer endpoint rejected".to_owned())?,
+        gateway_key: receipt_secret_text(&config.gateway_key_file)?,
+        authority_token: receipt_secret_text(&config.authority_token_file)?,
+        signer_token: receipt_secret_text(&config.signer_token_file)?,
+        activity: ActivityConfig {
+            actor_did: config.actor_did.as_bytes().to_vec(),
+            protocol_version: config.protocol_version,
+            network_id: config.network_id,
+            fee_limit: config.fee_limit,
+            signer_public_key: receipt_public_key(&config.signer_public_key)?,
+        },
+    })
+}
+
+}
+
+fn receipt_public_key(value: &str) -> Result<[u8; 32], String> {
+    let key = parse_hex32(value).map_err(|_| "invalid signer public key")?;
+    if key == [0; 32] { return Err("invalid signer public key".to_owned()); }
+    Ok(key)
+}
+
+fn receipt_secret_text(path: &PathBuf) -> Result<String, String> {
+    let bytes = SecretFile::new(path).and_then(|file| file.read())
+        .map_err(|_| "protected client credential unavailable")?;
+    let value = std::str::from_utf8(&bytes).map_err(|_| "invalid client credential")?
+        .trim_end_matches(['\r', '\n']).to_owned();
+    if value.is_empty() || value.len() > 4096
+        || value.bytes().any(|byte| matches!(byte, 0 | b'\r' | b'\n')) {
+        return Err("invalid client credential".to_owned());
+    }
+    Ok(value)
+}
+
 pub struct LayerxClient {
     pub sequencer_authorization: SequencerAuthorization,
     pub http: MutualTlsClient,
@@ -966,6 +1039,15 @@ impl LayerxClient {
         order: &RampOrder,
         activity: [u8; 32],
     ) -> Result<LayerxSubmission, RampError> {
+        self.resolve_with_evidence(order, activity).map(|(submission, _, _)| submission)
+    }
+
+    pub fn resolve_with_evidence(
+        &self,
+        order: &RampOrder,
+        activity: [u8; 32],
+    ) -> Result<(LayerxSubmission, Option<ReceiptEvidence>, bool), RampError> {
+        order.validate_bound()?;
         let id = hex(&activity);
         let gateway_authorization = format!("LayerX-Key {}", self.gateway_key);
         let receipt_path = format!("/v1/receipts/{id}");
@@ -981,16 +1063,16 @@ impl LayerxClient {
             None,
         )?;
         if response.status == 404 {
-            return Ok(LayerxSubmission::Pending {
+            return Ok((LayerxSubmission::Pending {
                 activity_id: activity,
                 canonical_activity: None,
-            });
+            }, None, false));
         }
         if response.status != 200 {
-            return Ok(LayerxSubmission::Unknown {
+            return Ok((LayerxSubmission::Unknown {
                 activity_id: activity,
                 canonical_activity: None,
-            });
+            }, None, false));
         }
         let envelope: GatewayReceiptEnvelope =
             serde_json::from_slice(&response.body).map_err(|_| RampError::Layerx)?;
@@ -1033,6 +1115,7 @@ impl LayerxClient {
                 parse_hex32(&facts.sequencer_public_key)?,
             ),
         };
+        let maintained_batch = facts.batch_evidence.is_some();
         if let Some(maintained) = facts.batch_evidence {
             evidence.authorized_batch = maintained
                 .authorize(
@@ -1045,10 +1128,10 @@ impl LayerxClient {
         if evidence.authorized_batch != gateway_authority {
             return Err(RampError::Layerx);
         }
-        verify_order_receipt(order, &evidence).map(|leg| LayerxSubmission::Verified {
+        verify_order_receipt(order, &evidence).map(|leg| (LayerxSubmission::Verified {
             leg,
             canonical_activity: None,
-        })
+        }, Some(evidence), maintained_batch))
     }
 
     fn unsigned(

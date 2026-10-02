@@ -3299,11 +3299,20 @@ include tools/build/sanitizers.mk
 
 include platform/Makefile.inc
 
-.PHONY: interop-test-ramps interop-test-ramps-sandbox
+.PHONY: interop-test-ramps interop-test-ramps-sandbox interop-build-ramps
 
 interop-test-ramps:
 	cargo test --locked --manifest-path platform/Cargo.toml -p layerx-ramp-toolkit
 	cargo build --locked --manifest-path platform/Cargo.toml -p layerx-reference-ramp
+
+interop-build-ramps:
+	@set -eu; umask 077; \
+	: "$${PAXEER_X_EVIDENCE_DIR:?}" "$${PAXEER_X_RAMP_BUILD_MANIFEST:?}"; \
+	binding=$$(PAXEER_X_RAMP_PRODUCER_PHASE=prepare tools/paxeer-x/gates/104.26.1.sh); \
+	export LAYERX_RAMP_BUILD_REVISION=$${binding%% *}; \
+	export LAYERX_RAMP_BUILD_SOURCE_DIGEST=$${binding#* }; \
+	cargo build --locked --manifest-path platform/Cargo.toml -p layerx-ramp-toolkit -p layerx-reference-ramp --all-targets --message-format=json >"$$PAXEER_X_EVIDENCE_DIR/ramp-cargo.jsonl" 2>"$$PAXEER_X_EVIDENCE_DIR/ramp-build.log"; \
+	PAXEER_X_RAMP_PRODUCER_PHASE=record tools/paxeer-x/gates/104.26.1.sh
 
 interop-test-ramps-sandbox:
 	sh platform/ramps/sandbox-journey.sh
