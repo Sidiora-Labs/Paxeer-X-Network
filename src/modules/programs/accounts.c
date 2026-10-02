@@ -692,6 +692,78 @@ lxp_result lxp_programs_value_account_read(
     return value_account_fill(ctx, &binding, receipt_digest, view);
 }
 
+lxp_result lxp_programs_balance_read(
+    lxp_module_ctx *ctx, const uint8_t account_id[32],
+    const uint8_t asset_id[32], const uint8_t receipt_digest[32],
+    lx_programs_balance_view *view)
+{
+    static const uint8_t account_tree_key[] = "account-tree";
+    const lx_programs_transfer_runtime *runtime;
+    lx_programs_balance_view candidate;
+    lxp_verified_receipt_facts receipt;
+    lx_account *account;
+    lxp_result status;
+    if (ctx == NULL || account_id == NULL || asset_id == NULL ||
+        receipt_digest == NULL || view == NULL ||
+        lxp_ct_is_zero(receipt_digest, 32U) ||
+        !lxp_protocol_version_uses_occupancy(ctx->protocol_version) ||
+        ctx->staged_account_count != 0U || ctx->staged_count != 0U ||
+        ctx->transfer_applied)
+        return LXP_ERR_NON_CANONICAL;
+    status = account_module_required(ctx);
+    if (status != LXP_OK) return status;
+    runtime = (const lx_programs_transfer_runtime *)
+        lxp_ctx_module_runtime(ctx);
+    if (runtime == NULL || runtime->accounts == NULL ||
+        ctx->kernel == NULL || ctx->kernel->state == NULL ||
+        runtime->accounts != ctx->kernel->state->accounts)
+        return LXP_ERR_MODULE_DISABLED;
+    if (ctx->kernel->state->next_sequence <= 1U ||
+        !ctx->kernel->state->account_root_required)
+        return LXP_ERR_ROOT_MISMATCH;
+    (void)memset(&candidate, 0, sizeof(candidate));
+    candidate.observed_sequence = ctx->kernel->state->next_sequence - 1U;
+    (void)memcpy(candidate.receipt_digest, receipt_digest, 32U);
+    status = lxp_state_subtree_proof(
+        ctx->kernel, 0U, account_tree_key, sizeof(account_tree_key) - 1U,
+        candidate.universal_root, &candidate.account_tree_proof);
+    if (status == LXP_OK)
+        status = lxp_state_root_proof(
+            ctx->kernel, 0U, candidate.state_root,
+            &candidate.universal_root_proof);
+    if (status == LXP_OK)
+        status = lxp_ctx_verified_receipt_facts(ctx, receipt_digest, &receipt);
+    if (status == LXP_OK &&
+        (receipt.result_code != LXP_OK ||
+         receipt.global_sequence != candidate.observed_sequence ||
+         receipt.timestamp == 0U ||
+         lxp_ct_memcmp(receipt.receipt_digest, receipt_digest, 32U) != 0 ||
+         lxp_ct_is_zero(candidate.state_root, 32U) ||
+         lxp_ct_memcmp(receipt.resulting_state_root,
+                       candidate.state_root, 32U) != 0))
+        status = LXP_ERR_ROOT_MISMATCH;
+    if (status != LXP_OK) return status;
+    status = lxp_ctx_account_find(ctx, account_id, &account);
+    if (status != LXP_OK) return status;
+    if (lxp_ct_memcmp(account->id, account_id, 32U) != 0)
+        return LXP_FATAL_INVARIANT;
+    if (!account->has_asset ||
+        lxp_ct_memcmp(account->asset_id, asset_id, 32U) != 0)
+        return LXP_ERR_ASSET_MISMATCH;
+    status = registered_asset(ctx, asset_id);
+    if (status == LXP_OK)
+        status = lx_account_registry_proof(
+            runtime->accounts, account_id, candidate.account_root,
+            &candidate.account_proof);
+    if (status == LXP_OK) {
+        candidate.account = *account;
+        candidate.balance = account->balance;
+        candidate.observed_at = receipt.timestamp;
+        *view = candidate;
+    }
+    return status;
+}
+
 static lxp_result visit_value_account(
     const lx_programs_account_binding *binding, void *user)
 {

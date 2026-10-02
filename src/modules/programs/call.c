@@ -722,7 +722,7 @@ lxp_result layerx_programs_call_balance_view_begin(
     uint8_t account[32];
     uint8_t asset[32];
     uint8_t digest[32];
-    lx_programs_value_account_view verified;
+    lx_programs_balance_view verified;
     lxp_result status;
     if (value == NULL || value->ctx == NULL) return LXP_ERR_NON_CANONICAL;
     (void)memset(&value->balance_view, 0, sizeof(value->balance_view));
@@ -738,8 +738,8 @@ lxp_result layerx_programs_call_balance_view_begin(
     write_u64(digest + 8U, d1);
     write_u64(digest + 16U, d2);
     write_u64(digest + 24U, d3);
-    status = lxp_programs_value_account_read(
-        value->ctx, account, digest, &verified);
+    status = lxp_programs_balance_read(
+        value->ctx, account, asset, digest, &verified);
     if (status != LXP_OK) return status;
     if (lxp_ct_memcmp(verified.account.id, account, 32U) != 0 ||
         lxp_ct_memcmp(verified.account.asset_id, asset, 32U) != 0 ||

@@ -238,6 +238,20 @@ typedef struct lx_programs_value_account_view {
 typedef lxp_result (*lx_programs_value_account_visit_fn)(
     const lx_programs_value_account_view *account, void *user);
 
+typedef struct lx_programs_balance_view {
+    lx_account account;
+    lxp_u128 balance;
+    uint64_t observed_sequence;
+    uint64_t observed_at;
+    uint8_t receipt_digest[32];
+    uint8_t account_root[32];
+    uint8_t universal_root[32];
+    uint8_t state_root[32];
+    lxp_state_proof account_proof;
+    lxp_state_proof account_tree_proof;
+    lxp_state_proof universal_root_proof;
+} lx_programs_balance_view;
+
 typedef struct lx_programs_account_state_head {
     uint64_t observed_sequence;
     uint64_t observed_at;
@@ -803,6 +817,10 @@ lxp_result lxp_programs_value_account_read(
     lxp_module_ctx *ctx, const uint8_t account_id[32],
     const uint8_t receipt_digest[32],
     lx_programs_value_account_view *view);
+lxp_result lxp_programs_balance_read(
+    lxp_module_ctx *ctx, const uint8_t account_id[32],
+    const uint8_t asset_id[32], const uint8_t receipt_digest[32],
+    lx_programs_balance_view *view);
 lxp_result lxp_programs_value_account_iter(
     lxp_module_ctx *ctx, const uint8_t program_id[32],
     const uint8_t receipt_digest[32],
