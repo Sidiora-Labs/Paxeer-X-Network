@@ -1114,13 +1114,33 @@ impl OperationPermit {
         control: &SessionControl,
         admission: WriteAdmission<'_>,
     ) -> Result<DurablePreparation, SessionControlError> {
-        let lifecycle = SessionControlError::Lifecycle;
         let operation = match admission.stage {
             AdmissionStage::Prepare { .. } => Operation::Prepare,
             AdmissionStage::Sign => Operation::Sign,
             AdmissionStage::Submit => Operation::Submit,
         };
         self.require_operation(operation)?;
+        self.admit_write_authorized(control, admission)
+    }
+
+    pub(crate) fn admit_program_write(
+        &self,
+        control: &SessionControl,
+        admission: WriteAdmission<'_>,
+    ) -> Result<DurablePreparation, SessionControlError> {
+        self.require_program_operation()?;
+        if !matches!(admission.stage, AdmissionStage::Submit) {
+            return Err(SessionControlError::Authorization(AuthorizationError::ScopeDenied));
+        }
+        self.admit_write_authorized(control, admission)
+    }
+
+    fn admit_write_authorized(
+        &self,
+        control: &SessionControl,
+        admission: WriteAdmission<'_>,
+    ) -> Result<DurablePreparation, SessionControlError> {
+        let lifecycle = SessionControlError::Lifecycle;
         let registry = control
             .registry
             .read()
@@ -1368,6 +1388,28 @@ impl OperationPermit {
             }
         };
         self.require_operation(expected)?;
+        self.transition_preparation_authorized(control, preparation_id, next, current_sequence)
+    }
+
+    pub(crate) fn transition_program_submitted(
+        &self,
+        control: &SessionControl,
+        preparation_id: [u8; 32],
+        current_sequence: u64,
+    ) -> Result<(), SessionControlError> {
+        self.require_program_operation()?;
+        self.transition_preparation_authorized(
+            control, preparation_id, LifecycleState::Submitted, current_sequence,
+        )
+    }
+
+    fn transition_preparation_authorized(
+        &self,
+        control: &SessionControl,
+        preparation_id: [u8; 32],
+        next: LifecycleState,
+        current_sequence: u64,
+    ) -> Result<(), SessionControlError> {
         let registry = control
             .registry
             .read()
@@ -1499,6 +1541,35 @@ impl OperationPermit {
         core_batch_time_ms: u64,
     ) -> Result<(), SessionControlError> {
         self.require_operation(Operation::Submit)?;
+        self.submit_external_signature_authorized(
+            control, preparation_id, signed_bytes, activity_id, current_sequence, core_batch_time_ms,
+        )
+    }
+
+    pub(crate) fn submit_program_with_external_signature(
+        &self,
+        control: &SessionControl,
+        preparation_id: [u8; 32],
+        signed_bytes: Vec<u8>,
+        activity_id: [u8; 32],
+        current_sequence: u64,
+        core_batch_time_ms: u64,
+    ) -> Result<(), SessionControlError> {
+        self.require_program_operation()?;
+        self.submit_external_signature_authorized(
+            control, preparation_id, signed_bytes, activity_id, current_sequence, core_batch_time_ms,
+        )
+    }
+
+    fn submit_external_signature_authorized(
+        &self,
+        control: &SessionControl,
+        preparation_id: [u8; 32],
+        signed_bytes: Vec<u8>,
+        activity_id: [u8; 32],
+        current_sequence: u64,
+        core_batch_time_ms: u64,
+    ) -> Result<(), SessionControlError> {
         let registry = control
             .registry
             .read()
@@ -1569,6 +1640,20 @@ impl OperationPermit {
             .lifecycle
             .admit_submission_authorized(preparation_id, core_batch_time_ms, &authorization)
             .map_err(SessionControlError::Lifecycle)
+    }
+
+    fn require_program_operation(&self) -> Result<(), SessionControlError> {
+        if matches!(
+            self.request.operation,
+            Operation::ProgramCall
+                | Operation::ProgramDeploy
+                | Operation::ProgramUpgrade
+                | Operation::ProgramWindDown
+        ) {
+            Ok(())
+        } else {
+            Err(SessionControlError::Authorization(AuthorizationError::ScopeDenied))
+        }
     }
 
     fn require_operation(&self, expected: Operation) -> Result<(), SessionControlError> {
