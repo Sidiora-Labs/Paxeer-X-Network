@@ -25684,7 +25684,9 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.21.5]
 title = "Publish an executable Solana relayer configuration contract"
-status = "pending"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "unverified"
 mode = "BUILD"
 wave = 3
 requires = ["0.2", "21.4"]

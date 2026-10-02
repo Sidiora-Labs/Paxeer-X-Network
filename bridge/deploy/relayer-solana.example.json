@@ -1,0 +1,123 @@
+{
+  "journal_path": "/EXAMPLE_ONLY/operator-a/bridge-journal.jsonl",
+  "cosign_directory": "/EXAMPLE_ONLY/operator-a/cosign",
+  "poll_interval_ms": 1000,
+  "max_submissions": 8,
+  "signer": {
+    "endpoint": {
+      "transport": "uds",
+      "socket": "/EXAMPLE_ONLY/operator-a/signer.sock"
+    },
+    "timeout_ms": 5000
+  },
+  "attestor": {
+    "handle": "EXAMPLE_ONLY/operator-a/bridge-attestor-secp256k1",
+    "public_key": "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+  },
+  "paxeer": {
+    "chain_id": 125,
+    "endpoints": [
+      {
+        "url": "https://paxeer.example.invalid/rpc",
+        "trust_anchor_der": "/EXAMPLE_ONLY/operator-a/paxeer-ca.der",
+        "request_timeout_ms": 5000
+      }
+    ],
+    "finality_depth": 12,
+    "start_block": 1,
+    "max_block_range": 100,
+    "submitter": {
+      "handle": "EXAMPLE_ONLY/operator-a/paxeer-fees-secp256k1",
+      "public_key": "0x02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+    },
+    "gas": {
+      "gas_limit": 500000,
+      "max_fee_per_gas": 2000000000,
+      "max_priority_fee_per_gas": 100000000
+    }
+  },
+  "chains": [
+    {
+      "chain_id": 1,
+      "vault": "0x1111111111111111111111111111111111111111",
+      "finality_depth": 12,
+      "start_block": 1,
+      "max_block_range": 100,
+      "rpc": {
+        "endpoints": [
+          {
+            "url": "https://evm-a.example.invalid/rpc",
+            "ca_certificate_der": "/EXAMPLE_ONLY/operator-a/evm-a-ca.der",
+            "bearer_token_file": "/EXAMPLE_ONLY/operator-a/evm-a.token",
+            "independent_backend": "EXAMPLE_ONLY-evm-a"
+          },
+          {
+            "url": "https://evm-b.example.invalid/rpc",
+            "ca_certificate_der": "/EXAMPLE_ONLY/operator-a/evm-b-ca.der",
+            "bearer_token_file": "/EXAMPLE_ONLY/operator-a/evm-b.token",
+            "independent_backend": "EXAMPLE_ONLY-evm-b"
+          },
+          {
+            "url": "https://evm-c.example.invalid/rpc",
+            "ca_certificate_der": "/EXAMPLE_ONLY/operator-a/evm-c-ca.der",
+            "bearer_token_file": "/EXAMPLE_ONLY/operator-a/evm-c.token",
+            "independent_backend": "EXAMPLE_ONLY-evm-c"
+          }
+        ],
+        "quorum": 2,
+        "connect_timeout_ms": 1000,
+        "request_timeout_ms": 5000,
+        "maximum_response_bytes": 1048576
+      },
+      "submitter": {
+        "handle": "EXAMPLE_ONLY/operator-a/evm-1-fees-secp256k1",
+        "public_key": "0x02f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+      },
+      "gas": {
+        "gas_limit": 500000,
+        "max_fee_per_gas": 2000000000,
+        "max_priority_fee_per_gas": 100000000
+      }
+    }
+  ],
+  "solana": {
+    "chain_id": 91600046870081,
+    "vault": "0x334121a65b47bd45c3f6381537d9180e98e445bc",
+    "program_id": "A7SZbByPYuHpunZ9pyMDMrhMYvK44ANT1AVqb8U1FpM9",
+    "commitment": "finalized",
+    "finality_depth": 32,
+    "start_slot": 1,
+    "max_slot_range": 100,
+    "rpc": {
+      "endpoints": [
+        {
+          "url": "https://solana-a.example.invalid/rpc",
+          "ca_certificate_der": "/EXAMPLE_ONLY/operator-a/solana-a-ca.der",
+          "bearer_token_file": "/EXAMPLE_ONLY/operator-a/solana-a.token",
+          "independent_backend": "EXAMPLE_ONLY-solana-a"
+        },
+        {
+          "url": "https://solana-b.example.invalid/rpc",
+          "ca_certificate_der": "/EXAMPLE_ONLY/operator-a/solana-b-ca.der",
+          "bearer_token_file": "/EXAMPLE_ONLY/operator-a/solana-b.token",
+          "independent_backend": "EXAMPLE_ONLY-solana-b"
+        },
+        {
+          "url": "https://solana-c.example.invalid/rpc",
+          "ca_certificate_der": "/EXAMPLE_ONLY/operator-a/solana-c-ca.der",
+          "bearer_token_file": "/EXAMPLE_ONLY/operator-a/solana-c.token",
+          "independent_backend": "EXAMPLE_ONLY-solana-c"
+        }
+      ],
+      "quorum": 2,
+      "connect_timeout_ms": 1000,
+      "request_timeout_ms": 5000,
+      "maximum_response_bytes": 1048576
+    },
+    "fee_payer": {
+      "handle": "EXAMPLE_ONLY/operator-a/solana-fees-ed25519",
+      "public_key": "0xd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
+    },
+    "release_mints": ["4vJ9JU1bJJE96FWSJKvHsmmFZUGZorZ2Mhd7LKiF3gV"]
+  }
+}
