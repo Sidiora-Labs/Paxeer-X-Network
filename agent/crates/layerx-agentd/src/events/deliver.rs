@@ -613,7 +613,9 @@ impl DeliveryEngine {
         let Some(sequence) = next else {
             return Ok(None);
         };
-        let core_event = durable_event(self.subscriptions.durable(), &self.tenant, sequence)?;
+        let durable = self.subscriptions.durable()?;
+        let core_event = durable_event(&durable, &self.tenant, sequence)?;
+        drop(durable);
         let cursor_sequence = sequence
             .checked_add(1)
             .ok_or(DeliveryError::SequenceExhausted)?;
@@ -676,8 +678,9 @@ impl DeliveryEngine {
         let record = self.subscriptions.get_inner(&self.target)?;
         let filter = &record.filter;
         let mut eligible = Vec::new();
-        for sequence in durable_sequences(self.subscriptions.durable(), &self.tenant)? {
-            let event = durable_event(self.subscriptions.durable(), &self.tenant, sequence)?;
+        let durable = self.subscriptions.durable()?;
+        for sequence in durable_sequences(&durable, &self.tenant)? {
+            let event = durable_event(&durable, &self.tenant, sequence)?;
             if matches_filter(filter, &event.attributes) {
                 eligible.push(sequence);
             }

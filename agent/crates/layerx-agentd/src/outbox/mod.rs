@@ -2,7 +2,9 @@
 
 use std::collections::BTreeMap;
 
+use crate::prepare::PreparationAuthorization;
 use crate::protocol_evidence::VerifiedReceiptEvidence;
+use crate::session::{SessionId, SessionRef};
 use crate::sign::VerifiedSubmission;
 use crate::store::{ObjectKind, Store, StoreError, TenantId, TenantKey};
 
@@ -108,6 +110,7 @@ struct OutboxRecord {
     tenant: TenantId,
     status: SubmissionStatus,
     signed_canonical_bytes: Vec<u8>,
+    origin: Option<PreparationAuthorization>,
 }
 
 #[derive(Default)]
@@ -129,6 +132,7 @@ impl Outbox {
         tenant: TenantId,
         submission_id: [u8; 32],
         verified: VerifiedSubmission,
+        origin: Option<PreparationAuthorization>,
     ) -> Result<(), OutboxError> {
         if self.records.contains_key(&submission_id) {
             return Err(OutboxError::Duplicate);
@@ -162,6 +166,7 @@ impl Outbox {
                 transitions,
             },
             signed_canonical_bytes: signed_canonical_bytes.clone(),
+            origin,
         };
         store
             .record_submission(
@@ -205,6 +210,21 @@ impl Outbox {
         record.signed_canonical_bytes = signed.bytes().to_vec();
         self.records.insert(submission_id, record);
         Ok(())
+    }
+
+    /// Returns the session generation that authorized the durable submission, if one was recorded.
+    ///
+    /// # Errors
+    ///
+    /// Returns `NotFound` for a submission this outbox never enqueued or restored.
+    pub(crate) fn origin(
+        &self,
+        submission_id: [u8; 32],
+    ) -> Result<Option<PreparationAuthorization>, OutboxError> {
+        self.records
+            .get(&submission_id)
+            .map(|record| record.origin.clone())
+            .ok_or(OutboxError::NotFound)
     }
 
     /// Returns exact stored bytes only after the queued record is durable.
@@ -347,7 +367,7 @@ fn legal_transition(from: SubmissionState, to: SubmissionState) -> bool {
 fn encode_record(record: &OutboxRecord) -> Result<Vec<u8>, OutboxError> {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(b"LXOB");
-    bytes.push(2);
+    bytes.push(3);
     bytes.extend_from_slice(&record.status.submission_id);
     bytes.push(record.status.state.code());
     bytes.extend_from_slice(&record.status.activity_id);
@@ -359,12 +379,25 @@ fn encode_record(record: &OutboxRecord) -> Result<Vec<u8>, OutboxError> {
         push_bytes(&mut bytes, transition.cause.as_bytes())?;
         encode_receipt(&mut bytes, transition.receipt);
     }
+    match &record.origin {
+        Some(origin) => {
+            bytes.push(1);
+            push_bytes(&mut bytes, origin.session.tenant.as_str().as_bytes())?;
+            bytes.extend_from_slice(&origin.session.session_id.0);
+            bytes.extend_from_slice(&origin.generation.to_be_bytes());
+        }
+        None => bytes.push(0),
+    }
     Ok(bytes)
 }
 
 fn decode_record(bytes: &[u8], tenant: TenantId) -> Result<OutboxRecord, OutboxError> {
     let mut decoder = RecordDecoder { bytes, offset: 0 };
-    if decoder.take(4)? != b"LXOB" || decoder.u8()? != 2 {
+    if decoder.take(4)? != b"LXOB" {
+        return Err(OutboxError::Corrupt);
+    }
+    let version = decoder.u8()?;
+    if version != 2 && version != 3 {
         return Err(OutboxError::Corrupt);
     }
     let submission_id = decoder.fixed()?;
@@ -389,6 +422,11 @@ fn decode_record(bytes: &[u8], tenant: TenantId) -> Result<OutboxRecord, OutboxE
             receipt,
         });
     }
+    let origin = if version == 3 {
+        decoder.origin()?
+    } else {
+        None
+    };
     if decoder.offset != bytes.len() {
         return Err(OutboxError::Corrupt);
     }
@@ -402,6 +440,7 @@ fn decode_record(bytes: &[u8], tenant: TenantId) -> Result<OutboxRecord, OutboxE
             transitions,
         },
         signed_canonical_bytes: Vec::new(),
+        origin,
     })
 }
 
@@ -470,6 +509,30 @@ impl<'a> RecordDecoder<'a> {
         self.take(length)
     }
 
+    fn u64(&mut self) -> Result<u64, OutboxError> {
+        let mut value = [0; 8];
+        value.copy_from_slice(self.take(8)?);
+        Ok(u64::from_be_bytes(value))
+    }
+
+    fn origin(&mut self) -> Result<Option<PreparationAuthorization>, OutboxError> {
+        match self.u8()? {
+            0 => Ok(None),
+            1 => {
+                let tenant = std::str::from_utf8(self.bytes()?)
+                    .map_err(|_| OutboxError::Corrupt)
+                    .and_then(|text| TenantId::new(text).map_err(|_| OutboxError::Corrupt))?;
+                let session_id = SessionId(self.fixed()?);
+                let generation = self.u64()?;
+                Ok(Some(PreparationAuthorization {
+                    session: SessionRef::new(tenant, session_id),
+                    generation,
+                }))
+            }
+            _ => Err(OutboxError::Corrupt),
+        }
+    }
+
     fn receipt(&mut self) -> Result<Option<ReceiptEvidence>, OutboxError> {
         match self.u8()? {
             0 => Ok(None),
@@ -478,5 +541,110 @@ impl<'a> RecordDecoder<'a> {
             })),
             _ => Err(OutboxError::Corrupt),
         }
+    }
+}
+
+#[cfg(test)]
+mod origin_codec_tests {
+    use super::{
+        decode_record, encode_record, OutboxRecord, PreparationAuthorization, ReceiptEvidence,
+        SessionId, SessionRef, StateTransition, SubmissionState, SubmissionStatus, TenantId,
+    };
+
+    fn tenant() -> TenantId {
+        TenantId::new("tenant-a").unwrap_or_else(|error| panic!("tenant: {error}"))
+    }
+
+    fn status() -> SubmissionStatus {
+        SubmissionStatus {
+            submission_id: [7; 32],
+            state: SubmissionState::Queued,
+            activity_id: [9; 32],
+            evidence: None,
+            transitions: vec![
+                StateTransition {
+                    from: SubmissionState::Prepared,
+                    to: SubmissionState::Signed,
+                    cause: "exact signature verified".to_owned(),
+                    receipt: None,
+                },
+                StateTransition {
+                    from: SubmissionState::Signed,
+                    to: SubmissionState::Queued,
+                    cause: "durable outbox record created".to_owned(),
+                    receipt: Some(ReceiptEvidence {
+                        receipt_ref: [4; 32],
+                    }),
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn version_three_round_trips_origin() {
+        let record = OutboxRecord {
+            tenant: tenant(),
+            status: status(),
+            signed_canonical_bytes: Vec::new(),
+            origin: Some(PreparationAuthorization {
+                session: SessionRef::new(tenant(), SessionId([3; 32])),
+                generation: 0x0102_0304_0506_0708,
+            }),
+        };
+        let encoded = encode_record(&record).unwrap_or_else(|error| panic!("encode: {error:?}"));
+        assert_eq!(&encoded[..5], b"LXOB\x03");
+        let decoded =
+            decode_record(&encoded, tenant()).unwrap_or_else(|error| panic!("decode: {error:?}"));
+        assert_eq!(decoded, record);
+
+        let mut trailing = encoded.clone();
+        trailing.push(0);
+        assert!(decode_record(&trailing, tenant()).is_err());
+        let mut unknown_version = encoded;
+        unknown_version[4] = 4;
+        assert!(decode_record(&unknown_version, tenant()).is_err());
+    }
+
+    #[test]
+    fn version_two_layout_decodes_without_origin() {
+        let status = status();
+        let mut v2 = Vec::new();
+        v2.extend_from_slice(b"LXOB");
+        v2.push(2);
+        v2.extend_from_slice(&status.submission_id);
+        v2.push(3);
+        v2.extend_from_slice(&status.activity_id);
+        v2.push(0);
+        v2.extend_from_slice(&2_u32.to_be_bytes());
+        for (from, to, cause, receipt) in [
+            (1_u8, 2_u8, "exact signature verified", None),
+            (2, 3, "durable outbox record created", Some([4_u8; 32])),
+        ] {
+            v2.push(from);
+            v2.push(to);
+            let length = u32::try_from(cause.len()).unwrap_or_else(|error| panic!("{error}"));
+            v2.extend_from_slice(&length.to_be_bytes());
+            v2.extend_from_slice(cause.as_bytes());
+            match receipt {
+                Some(reference) => {
+                    v2.push(1);
+                    v2.extend_from_slice(&reference);
+                }
+                None => v2.push(0),
+            }
+        }
+        let decoded = decode_record(&v2, tenant()).unwrap_or_else(|error| panic!("v2: {error:?}"));
+        assert_eq!(
+            decoded,
+            OutboxRecord {
+                tenant: tenant(),
+                status,
+                signed_canonical_bytes: Vec::new(),
+                origin: None,
+            }
+        );
+        let mut with_origin_tag = v2;
+        with_origin_tag.push(0);
+        assert!(decode_record(&with_origin_tag, tenant()).is_err());
     }
 }

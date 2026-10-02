@@ -380,6 +380,62 @@ impl PreparationLifecycle {
             .ok_or(LifecycleError::NotFound)
     }
 
+    /// Returns the retained signed bytes only for the exact owning session generation.
+    pub(crate) fn signed_bytes_authorized(
+        &self,
+        preparation_id: [u8; 32],
+        authorization: &PreparationAuthorization,
+    ) -> Result<Vec<u8>, LifecycleError> {
+        let records = self
+            .records
+            .lock()
+            .map_err(|_| LifecycleError::Unavailable)?;
+        let record = records
+            .get(&preparation_id)
+            .ok_or(LifecycleError::NotFound)?;
+        require_authorization(record, Some(authorization))?;
+        if record.state != LifecycleState::Signed {
+            return Err(LifecycleError::InvalidTransition {
+                from: record.state,
+                to: LifecycleState::Signed,
+            });
+        }
+        record
+            .signed_bytes
+            .clone()
+            .ok_or(LifecycleError::InvalidSignedBytes)
+    }
+
+    /// Returns the retained activity id and signed bytes only for the exact owning generation.
+    pub(crate) fn signed_activity_authorized(
+        &self,
+        preparation_id: [u8; 32],
+        authorization: &PreparationAuthorization,
+    ) -> Result<([u8; 32], Vec<u8>), LifecycleError> {
+        let records = self
+            .records
+            .lock()
+            .map_err(|_| LifecycleError::Unavailable)?;
+        let record = records
+            .get(&preparation_id)
+            .ok_or(LifecycleError::NotFound)?;
+        require_authorization(record, Some(authorization))?;
+        if record.state != LifecycleState::Signed {
+            return Err(LifecycleError::InvalidTransition {
+                from: record.state,
+                to: LifecycleState::Signed,
+            });
+        }
+        let activity_id = record
+            .activity_id
+            .ok_or(LifecycleError::ActivityIdUnavailable)?;
+        let signed_bytes = record
+            .signed_bytes
+            .clone()
+            .ok_or(LifecycleError::InvalidSignedBytes)?;
+        Ok((activity_id, signed_bytes))
+    }
+
     /// Renders one log line carrying the activity id and never the payload bytes.
     ///
     /// # Errors

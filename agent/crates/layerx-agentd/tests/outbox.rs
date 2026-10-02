@@ -176,7 +176,7 @@ fn tenant() -> TenantId {
 
 fn enqueue(outbox: &mut Outbox, store: &mut Store, id: u8, verified: &VerifiedSubmission) {
     outbox
-        .enqueue(store, tenant(), [id; 32], verified.clone())
+        .enqueue(store, tenant(), [id; 32], verified.clone(), None)
         .unwrap_or_else(|error| panic!("enqueue {id}: {error:?}"));
 }
 

@@ -35,6 +35,7 @@ pub struct RecoveryInputs<'a> {
 pub struct RecoveredOutbox {
     pub outbox: Outbox,
     pub queued_for_transmission: Vec<[u8; 32]>,
+    pub queued_without_authority: Vec<[u8; 32]>,
     pub awaiting_receipt_resolution: Vec<[u8; 32]>,
     pub budget_accounting: RestartAccounting,
     pub ceiling: Ceiling,
@@ -154,6 +155,7 @@ pub fn recover(
     Ok(RecoveredOutbox {
         outbox: restored.outbox,
         queued_for_transmission: restored.queued_for_transmission,
+        queued_without_authority: restored.queued_without_authority,
         awaiting_receipt_resolution: restored.awaiting_receipt_resolution,
         budget_accounting,
         ceiling,
@@ -164,6 +166,7 @@ pub fn recover(
 struct RestoredSubmissions {
     outbox: Outbox,
     queued_for_transmission: Vec<[u8; 32]>,
+    queued_without_authority: Vec<[u8; 32]>,
     awaiting_receipt_resolution: Vec<[u8; 32]>,
 }
 
@@ -173,6 +176,7 @@ fn restore_submissions(
 ) -> Result<RestoredSubmissions, RecoveryError> {
     let mut outbox = Outbox::default();
     let mut queued_for_transmission = Vec::new();
+    let mut queued_without_authority = Vec::new();
     let mut awaiting_receipt_resolution = Vec::new();
     let identifiers = store.list_object_ids(tenant, ObjectKind::Outbox);
     for identifier in identifiers {
@@ -189,7 +193,13 @@ fn restore_submissions(
             .map(|status| status.state)
             .ok_or(RecoveryError::Corrupt)?;
         match state {
-            SubmissionState::Queued => queued_for_transmission.push(submission_id),
+            SubmissionState::Queued => {
+                if outbox.origin(submission_id)?.is_some() {
+                    queued_for_transmission.push(submission_id);
+                } else {
+                    queued_without_authority.push(submission_id);
+                }
+            }
             SubmissionState::Submitted | SubmissionState::Acknowledged => {
                 outbox.transition(
                     store,
@@ -211,10 +221,12 @@ fn restore_submissions(
         }
     }
     queued_for_transmission.sort_unstable();
+    queued_without_authority.sort_unstable();
     awaiting_receipt_resolution.sort_unstable();
     Ok(RestoredSubmissions {
         outbox,
         queued_for_transmission,
+        queued_without_authority,
         awaiting_receipt_resolution,
     })
 }

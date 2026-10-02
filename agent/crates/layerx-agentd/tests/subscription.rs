@@ -4,7 +4,7 @@ use std::os::unix::fs::MetadataExt;
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{mpsc, Arc, RwLock};
+use std::sync::{mpsc, Arc, Mutex, RwLock};
 use std::thread;
 use std::time::Duration;
 
@@ -118,6 +118,13 @@ fn text<T, E: std::fmt::Debug>(result: Result<T, E>, label: &str) -> T {
     match result {
         Ok(value) => value,
         Err(error) => panic!("{label} must be valid: {error:?}"),
+    }
+}
+
+fn owned_durable(subscriptions: SubscriptionStore) -> Store {
+    match subscriptions.into_durable() {
+        Ok(durable) => durable,
+        Err(_) => panic!("owned subscription store returned unexpected Err(Self)"),
     }
 }
 
@@ -294,7 +301,7 @@ fn legacy_subscription_without_a_session_generation_is_durably_quarantined() {
         ),
         "subscription create",
     );
-    let mut durable = subscriptions.into_durable();
+    let mut durable = owned_durable(subscriptions);
     rewrite_as_legacy_unbound(&mut durable, &tenant_id, &subscription_scope, &id);
     drop(durable);
 
@@ -311,13 +318,13 @@ fn legacy_subscription_without_a_session_generation_is_durably_quarantined() {
         Err(SubscriptionError::NotFound)
     ));
     assert!(restarted.list(&subscription_scope).is_empty());
-    let migrated = restarted
-        .durable()
-        .get(&subscription_key(&tenant_id, &id))
-        .map_or_else(
+    let migrated = match restarted.durable() {
+        Ok(durable) => durable.get(&subscription_key(&tenant_id, &id)).map_or_else(
             || panic!("migrated subscription missing"),
             |stored| stored.bytes().to_vec(),
-        );
+        ),
+        Err(error) => panic!("owned durable backing returned unexpected {error:?}"),
+    };
     assert!(migrated.starts_with(b"LXS2"));
     drop(restarted);
 
@@ -371,8 +378,7 @@ fn tenant_and_agent_scope_are_applied_before_any_filter() {
         ),
         Err(SubscriptionError::InvalidFilter)
     ));
-    assert!(subscriptions
-        .into_durable()
+    assert!(owned_durable(subscriptions)
         .list_object_ids(&tenant_id, ObjectKind::Subscription)
         .is_empty());
     let _ = fs::remove_dir_all(root);
@@ -1060,4 +1066,92 @@ fn prepare_revocation(
         subscriptions,
         observability,
     }
+}
+
+#[test]
+fn shared_backing_restores_same_records() {
+    let root = test_directory("shared-backing");
+    let tenant_id = durable_tenant("tenant-a");
+    let subscription_scope = scope("tenant-a", "agent-a", "capability-a");
+    let mut subscriptions = text(
+        SubscriptionStore::open(text(Store::open(&root), "store open"), tenant_id.clone()),
+        "subscription store open",
+    );
+    for (name, start) in [("shared-a", 3), ("shared-b", 7)] {
+        text(
+            subscriptions.create(
+                subscription_id(name),
+                request(
+                    subscription_scope.clone(),
+                    filter("tenant-a", "agent-a"),
+                    start,
+                ),
+            ),
+            "subscription create",
+        );
+    }
+    text(
+        subscriptions.pause(&subscription_target(
+            &subscription_scope,
+            &subscription_id("shared-b"),
+        )),
+        "subscription pause",
+    );
+    drop(subscriptions);
+
+    let owned = text(
+        SubscriptionStore::open(text(Store::open(&root), "store restart"), tenant_id.clone()),
+        "owned subscription reopen",
+    );
+    let expected = owned.list(&subscription_scope);
+    assert_eq!(expected.len(), 2);
+    let shared = text(
+        SubscriptionStore::open_shared(Arc::new(Mutex::new(owned_durable(owned))), tenant_id),
+        "shared subscription open",
+    );
+    assert_eq!(shared.list(&subscription_scope), expected);
+    match shared.into_durable() {
+        Ok(_) => panic!("shared subscription store returned unexpected Ok(Store)"),
+        Err(store) => assert_eq!(store.list(&subscription_scope), expected),
+    }
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn poisoned_shared_backing_reports_unavailable() {
+    let root = test_directory("shared-poisoned");
+    let tenant_id = durable_tenant("tenant-a");
+    let subscription_scope = scope("tenant-a", "agent-a", "capability-a");
+    let shared = Arc::new(Mutex::new(text(Store::open(&root), "store open")));
+    let mut subscriptions = text(
+        SubscriptionStore::open_shared(Arc::clone(&shared), tenant_id.clone()),
+        "shared subscription open",
+    );
+    text(
+        subscriptions.create(
+            subscription_id("poisoned"),
+            request(subscription_scope, filter("tenant-a", "agent-a"), 0),
+        ),
+        "subscription create",
+    );
+    let poisoner = Arc::clone(&shared);
+    let handle = thread::spawn(move || {
+        let _guard = match poisoner.lock() {
+            Ok(guard) => guard,
+            Err(_) => panic!("shared backing was poisoned before the poisoning thread"),
+        };
+        panic!("poisoning the shared durable backing");
+    });
+    let _ = handle.join();
+    assert!(shared.is_poisoned());
+    assert!(matches!(
+        SubscriptionStore::open_shared(Arc::clone(&shared), tenant_id),
+        Err(SubscriptionError::SharedUnavailable)
+    ));
+    assert!(matches!(
+        subscriptions.durable(),
+        Err(SubscriptionError::SharedUnavailable)
+    ));
+    drop(subscriptions);
+    let _ = fs::remove_dir_all(root);
 }

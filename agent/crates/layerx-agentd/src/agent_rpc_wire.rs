@@ -586,6 +586,31 @@ impl SubscriptionCreateWire {
     }
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct SubscriptionListWire {
+    pub(crate) scope: SubscriptionScopeWire,
+}
+
+impl SubscriptionListWire {
+    pub(crate) fn into_request(
+        self,
+        id: RequestId,
+    ) -> Result<layerx_agent_api::subscription::SubscriptionList, Rejection> {
+        Ok(layerx_agent_api::subscription::SubscriptionList {
+            scope: self.scope.into_scope(id)?,
+        })
+    }
+}
+
+impl Canonical for layerx_agent_api::subscription::SubscriptionList {
+    fn canonical(&self) -> Value {
+        json!({
+            "scope": scope_value(&self.scope),
+        })
+    }
+}
+
 impl Canonical for SubscriptionCreate {
     fn canonical(&self) -> Value {
         let filter = &self.filter;

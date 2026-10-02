@@ -58,6 +58,105 @@ use crate::protocol_evidence::{EvidenceAuthority, RawStateEvidence};
 use crate::receipt::{ReceiptEvidenceRecord, ReceiptMetadata};
 use crate::session::{self, OpenRequest, SessionId, SessionRegistry};
 use crate::session_control::SessionControl;
+
+impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
+    pub(crate) fn rpc_sign(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        request: layerx_agent_api::write::SignRequest,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        let control = self.session_control.clone();
+        let peer = context.peer();
+        if peer.subject.is_none() {
+            return Err(HumanOperationError::Refused);
+        }
+        let reference = request.preparation_ref.as_str().to_owned();
+        let preparation_id = digest_from_hex(&reference).ok_or(HumanOperationError::Refused)?;
+        let operations = self.lock_operations()?;
+        let cached = operations
+            .prepared
+            .get(&(peer.tenant.clone(), peer.principal.clone(), reference))
+            .cloned()
+            .ok_or(HumanOperationError::Refused)?;
+        let core_sequence = operations.node.head().chain_sequence;
+        drop(operations);
+        let prepared = cached.prepared;
+        let signature: [u8; 64] = request
+            .signature
+            .as_bytes()
+            .try_into()
+            .map_err(|_| HumanOperationError::Refused)?;
+        let Authority::Owner(owner_key) = prepared.envelope.authority() else {
+            return Err(HumanOperationError::Refused);
+        };
+        let signer_public_key: [u8; 32] = owner_key
+            .as_ref()
+            .try_into()
+            .map_err(|_| HumanOperationError::Refused)?;
+        let signed = attach_external_signature(&prepared, signature)
+            .map_err(|_| HumanOperationError::Refused)?;
+        let verified =
+            verify_before_submit(&signed, &prepared, &signer_public_key, &cached.registry)
+                .map_err(|_| HumanOperationError::Refused)?;
+        let activity_id = verified.activity_id();
+        let permit = context.permit();
+        permit
+            .transition_preparation(
+                &control,
+                preparation_id,
+                crate::prepare::LifecycleState::Signing,
+                core_sequence,
+            )
+            .map_err(rpc_commit_error)?;
+        permit
+            .retain_signed_bytes(
+                &control,
+                preparation_id,
+                verified.into_exact_bytes(),
+                activity_id,
+            )
+            .map_err(rpc_commit_error)?;
+        Self::signed_projection(prepared.envelope.idempotency_key().bytes(), activity_id)
+    }
+
+    fn signed_projection(
+        submission_id: [u8; 32],
+        activity_id: [u8; 32],
+    ) -> Result<HumanResponse, HumanOperationError> {
+        ProductionHumanOperations::<A>::observation(&SubmissionStatus {
+            submission_id,
+            state: SubmissionState::Signed,
+            activity_id,
+            evidence: None,
+            transitions: Vec::new(),
+        })
+    }
+}
+
+/// Restores every persisted subscription tenant from the shared durable store at startup.
+///
+/// Restoration is all-or-nothing: a poisoned store lock or any tenant that fails to open
+/// (corrupt or unmigratable records) fails construction instead of serving an empty view.
+///
+/// # Errors
+/// Returns `HumanOperationError::Unavailable` when the store lock is poisoned or a persisted
+/// subscription tenant cannot be restored.
+fn restored_subscriptions(
+    store: &Arc<Mutex<Store>>,
+) -> Result<BTreeMap<TenantId, crate::events::subscription::Store>, HumanOperationError> {
+    let tenants = store
+        .lock()
+        .map_err(|_| HumanOperationError::Unavailable)?
+        .tenant_ids_for_kind(ObjectKind::Subscription);
+    let mut restored = BTreeMap::new();
+    for tenant in tenants {
+        let subscriptions =
+            crate::events::subscription::Store::open_shared(Arc::clone(store), tenant.clone())
+                .map_err(|_| HumanOperationError::Unavailable)?;
+        restored.insert(tenant, subscriptions);
+    }
+    Ok(restored)
+}
 use crate::session_keys::SessionKeyRegistry;
 use crate::sign::{
     attach_external_signature, validate_issued_session, verify_before_submit,
@@ -1066,12 +1165,12 @@ impl<A: HumanAuthorityBoundary> SharedAgentOwner<A> {
 }
 
 impl<A: HumanAuthorityBoundary> HumanOperations for SharedAgentOwner<A> {
-    fn session_refresh(&mut self, peer: &HumanPeer, request: layerx_agent_api::identity::SessionRefresh) -> Result<HumanResponse, HumanOperationError> {
-        self.lock()?.session_refresh(peer, request)
+    fn session_refresh(&mut self, context: &crate::agent_rpc_peer::RpcOwnerContext<'_>, control: &crate::session_control::SessionControl, request: layerx_agent_api::identity::SessionRefresh) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.session_refresh(context, control, request)
     }
 
-    fn session_close(&mut self, peer: &HumanPeer, request: layerx_agent_api::identity::SessionClose) -> Result<HumanResponse, HumanOperationError> {
-        self.lock()?.session_close(peer, request)
+    fn session_close(&mut self, context: &crate::agent_rpc_peer::RpcOwnerContext<'_>, control: &crate::session_control::SessionControl, request: layerx_agent_api::identity::SessionClose) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.session_close(context, control, request)
     }
 
     fn session_list(&mut self, peer: &HumanPeer, request: layerx_agent_api::identity::SessionList) -> Result<HumanResponse, HumanOperationError> {
@@ -1282,32 +1381,32 @@ impl<A: HumanAuthorityBoundary> HumanOperations for SharedAgentOwner<A> {
         self.lock()?.operator_command(peer, operator_id, request_id, command)
     }
 
-    fn subscription_create(&mut self, peer: &HumanPeer, request: layerx_agent_api::subscription::SubscriptionCreate) -> Result<HumanResponse, HumanOperationError> {
-        self.lock()?.subscription_create(peer, request)
+    fn subscription_create(&mut self, context: &crate::agent_rpc_peer::RpcOwnerContext<'_>, control: &crate::session_control::SessionControl, request: layerx_agent_api::subscription::SubscriptionCreate) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.subscription_create(context, control, request)
     }
 
     fn subscription_list(&mut self, peer: &HumanPeer, request: layerx_agent_api::subscription::SubscriptionList) -> Result<HumanResponse, HumanOperationError> {
         self.lock()?.subscription_list(peer, request)
     }
 
-    fn subscription_pause(&mut self, peer: &HumanPeer, request: layerx_agent_api::subscription::SubscriptionTarget) -> Result<HumanResponse, HumanOperationError> {
-        self.lock()?.subscription_pause(peer, request)
+    fn subscription_pause(&mut self, context: &crate::agent_rpc_peer::RpcOwnerContext<'_>, control: &crate::session_control::SessionControl, request: layerx_agent_api::subscription::SubscriptionTarget) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.subscription_pause(context, control, request)
     }
 
-    fn subscription_resume(&mut self, peer: &HumanPeer, request: layerx_agent_api::subscription::SubscriptionTarget) -> Result<HumanResponse, HumanOperationError> {
-        self.lock()?.subscription_resume(peer, request)
+    fn subscription_resume(&mut self, context: &crate::agent_rpc_peer::RpcOwnerContext<'_>, control: &crate::session_control::SessionControl, request: layerx_agent_api::subscription::SubscriptionTarget) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.subscription_resume(context, control, request)
     }
 
-    fn subscription_delete(&mut self, peer: &HumanPeer, request: layerx_agent_api::subscription::SubscriptionTarget) -> Result<HumanResponse, HumanOperationError> {
-        self.lock()?.subscription_delete(peer, request)
+    fn subscription_delete(&mut self, context: &crate::agent_rpc_peer::RpcOwnerContext<'_>, control: &crate::session_control::SessionControl, request: layerx_agent_api::subscription::SubscriptionTarget) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.subscription_delete(context, control, request)
     }
 
     fn subscription_health(&mut self, peer: &HumanPeer, request: layerx_agent_api::subscription::SubscriptionTarget) -> Result<HumanResponse, HumanOperationError> {
         self.lock()?.subscription_health(peer, request)
     }
 
-    fn subscription_acknowledge(&mut self, peer: &HumanPeer, request: layerx_agent_api::subscription::CursorAcknowledgement) -> Result<HumanResponse, HumanOperationError> {
-        self.lock()?.subscription_acknowledge(peer, request)
+    fn subscription_acknowledge(&mut self, context: &crate::agent_rpc_peer::RpcOwnerContext<'_>, control: &crate::session_control::SessionControl, request: layerx_agent_api::subscription::CursorAcknowledgement) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.subscription_acknowledge(context, control, request)
     }
 
     fn availability_fetch(&mut self, peer: &HumanPeer, request: layerx_agent_api::availability::AvailabilityRequest) -> Result<HumanResponse, HumanOperationError> {
@@ -1461,6 +1560,47 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
         Self::encode_session_record(&mut out, record)?;
         out.finish()
     }
+    pub(crate) fn rpc_subscription_create(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        request: layerx_agent_api::subscription::SubscriptionCreate,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        let control = self.session_control.clone();
+        HumanOperations::subscription_create(self, context, &control, request)
+    }
+    pub(crate) fn rpc_subscription_pause(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        request: layerx_agent_api::subscription::SubscriptionTarget,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        let control = self.session_control.clone();
+        HumanOperations::subscription_pause(self, context, &control, request)
+    }
+    pub(crate) fn rpc_subscription_resume(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        request: layerx_agent_api::subscription::SubscriptionTarget,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        let control = self.session_control.clone();
+        HumanOperations::subscription_resume(self, context, &control, request)
+    }
+    pub(crate) fn rpc_subscription_delete(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        request: layerx_agent_api::subscription::SubscriptionTarget,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        let control = self.session_control.clone();
+        HumanOperations::subscription_delete(self, context, &control, request)
+    }
+    pub(crate) fn rpc_subscription_acknowledge(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        request: layerx_agent_api::subscription::CursorAcknowledgement,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        let control = self.session_control.clone();
+        HumanOperations::subscription_acknowledge(self, context, &control, request)
+    }
+
     pub(crate) fn rpc_session_close(
         &mut self,
         context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
@@ -1627,6 +1767,8 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
             Arc::clone(&budgets),
         );
         let sessions = session_control.registry();
+
+        operations.attach_session_control(session_control.clone());
         Ok(Self {
             operations: Arc::new(Mutex::new(operations)),
             store: Arc::clone(&shared_store),
@@ -1844,8 +1986,36 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
         request: MutationEnvelope<HumanPrepare>,
     ) -> Result<HumanResponse, HumanOperationError> {
         let control = self.session_control.clone();
-        self.lock_operations()?
-            .prepare_gated(context.peer(), request, Some((context, &control)))
+        let peer = context.peer();
+        let mut operations = self.lock_operations()?;
+        let before: std::collections::BTreeSet<String> = operations
+            .prepared
+            .keys()
+            .filter(|(tenant, principal, _)| *tenant == peer.tenant && *principal == peer.principal)
+            .map(|(_, _, reference)| reference.clone())
+            .collect();
+        let response = operations.prepare_gated(peer, request, Some((context, &control)))?;
+        let (key, prepared) = {
+            let mut inserted = operations.prepared.iter().filter(|((tenant, principal, reference), _)| {
+                *tenant == peer.tenant
+                    && *principal == peer.principal
+                    && !before.contains(reference)
+            });
+            let (Some((key, cached)), None) = (inserted.next(), inserted.next()) else {
+                return Err(HumanOperationError::Unavailable);
+            };
+            (key.clone(), cached.prepared.clone())
+        };
+        let preparation_id = digest_from_hex(&key.2).ok_or(HumanOperationError::Refused)?;
+        if let Err(error) =
+            context
+                .permit()
+                .register_preparation(&control, preparation_id, &prepared, Vec::new())
+        {
+            operations.prepared.remove(&key);
+            return Err(rpc_commit_error(error));
+        }
+        Ok(response)
     }
 
     /// Enqueue and transmit run inside one permit read interval, so a session close cannot
@@ -1857,11 +2027,58 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
     ) -> Result<HumanResponse, HumanOperationError> {
         let control = self.session_control.clone();
         self.authorize_external_submit(context.peer(), &request)?;
+        let permit = context.permit();
+        let origin = permit.preparation_authorization();
+        let registered = match digest_from_hex(&request.operation.preparation_ref) {
+            Some(id) => match self.preparation_lifecycle.state(id) {
+                Ok(_) => Some(id),
+                Err(crate::prepare::LifecycleError::NotFound) => None,
+                Err(_) => return Err(HumanOperationError::Unavailable),
+            },
+            None => None,
+        };
         let mut operations = self.lock_operations()?;
+        if let Some(preparation_id) = registered {
+            let peer = context.peer();
+            let cached = operations
+                .prepared
+                .get(&(
+                    peer.tenant.clone(),
+                    peer.principal.clone(),
+                    request.operation.preparation_ref.clone(),
+                ))
+                .cloned()
+                .ok_or(HumanOperationError::Refused)?;
+            let signature: [u8; 64] = request
+                .operation
+                .signature
+                .as_slice()
+                .try_into()
+                .map_err(|_| HumanOperationError::Refused)?;
+            let signed = attach_external_signature(&cached.prepared, signature)
+                .map_err(|_| HumanOperationError::Refused)?;
+            let verified = verify_before_submit(
+                &signed,
+                &cached.prepared,
+                &request.operation.signer_public_key,
+                &cached.registry,
+            )
+            .map_err(|_| HumanOperationError::Refused)?;
+            let core_batch_time = operations.node.head().chain_sequence;
+            permit
+                .submit_with_external_signature(
+                    &control,
+                    preparation_id,
+                    verified.exact_bytes().to_vec(),
+                    verified.activity_id(),
+                    core_batch_time,
+                )
+                .map_err(rpc_commit_error)?;
+        }
         context
             .commit(&control, |peer| {
                 operations
-                    .submit_external(peer, request)
+                    .submit_external_with_origin(peer, request, Some(origin))
                     .map_err(crate::session_control::SessionControlError::Human)
             })
             .map_err(rpc_commit_error)
@@ -2908,6 +3125,89 @@ impl<A: HumanAuthorityBoundary> HumanOperations for UnifiedAgentOwner<A> {
         }
         out.finish()
     }
+
+    fn subscription_create(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
+        request: layerx_agent_api::subscription::SubscriptionCreate,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        self.lock_operations()?
+            .subscription_create(context, control, request)
+    }
+
+    fn subscription_list(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::subscription::SubscriptionList,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        self.lock_operations()?.subscription_list(peer, request)
+    }
+
+    fn subscription_pause(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
+        request: layerx_agent_api::subscription::SubscriptionTarget,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        self.lock_operations()?
+            .subscription_pause(context, control, request)
+    }
+
+    fn subscription_resume(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
+        request: layerx_agent_api::subscription::SubscriptionTarget,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        self.lock_operations()?
+            .subscription_resume(context, control, request)
+    }
+
+    fn subscription_delete(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
+        request: layerx_agent_api::subscription::SubscriptionTarget,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        self.lock_operations()?
+            .subscription_delete(context, control, request)
+    }
+
+    fn subscription_health(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::subscription::SubscriptionTarget,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        self.lock_operations()?.subscription_health(peer, request)
+    }
+
+    fn subscription_acknowledge(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
+        request: layerx_agent_api::subscription::CursorAcknowledgement,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        self.lock_operations()?
+            .subscription_acknowledge(context, control, request)
+    }
+
+    fn session_refresh(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        _control: &crate::session_control::SessionControl,
+        request: layerx_agent_api::identity::SessionRefresh,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        self.rpc_session_refresh(context, request)
+    }
+    fn session_close(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        _control: &crate::session_control::SessionControl,
+        request: layerx_agent_api::identity::SessionClose,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        self.rpc_session_close(context, request)
+    }
 }
 
 struct FixedIdentity(CoreIdentity);
@@ -3807,10 +4107,107 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
         )
     }
 
+    /// The tenant's subscription store, opened from the shared durable store on first use.
+    ///
+    /// Callers invoke this only inside the one authorized mutation scope (subscription
+    /// create/pause/resume/delete/acknowledge after the session permit has been checked).
+    /// Peer reads must use `self.subscriptions.get(&tenant)` directly: an absent tenant is
+    /// genuinely absent state and is never lazily opened on a read.
+    ///
+    /// # Errors
+    /// Returns `HumanOperationError::Unavailable` when the store lock is poisoned or the
+    /// tenant's persisted subscriptions cannot be restored.
+    fn subscription_store_for(
+        &mut self,
+        tenant: TenantId,
+    ) -> Result<&mut crate::events::subscription::Store, HumanOperationError> {
+        match self.subscriptions.entry(tenant) {
+            std::collections::btree_map::Entry::Occupied(entry) => Ok(entry.into_mut()),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                let opened = crate::events::subscription::Store::open_shared(
+                    Arc::clone(&self.store),
+                    entry.key().clone(),
+                )
+                .map_err(|_| HumanOperationError::Unavailable)?;
+                Ok(entry.insert(opened))
+            }
+        }
+    }
+
     fn resume_queued(
         &mut self,
         peer: &HumanPeer,
         identifier: [u8; 32],
+        expected_activity: [u8; 32],
+    ) -> Result<HumanResponse, HumanOperationError> {
+        let registry = self.authority.registry(peer).map_err(map_core)?;
+        let bytes = self
+            .outboxes
+            .entry(peer.tenant.clone())
+            .or_default()
+            .bytes_for_transmission(identifier)
+            .map_err(|_| HumanOperationError::Refused)?
+            .to_vec();
+        let activity = layerx_wire::activity::decode_signed(&bytes, &registry)
+            .map_err(|_| HumanOperationError::Refused)?;
+        if activity.idempotency_key() != identifier
+            || layerx_wire::hash::activity_id(&activity)
+                .map_err(|_| HumanOperationError::Refused)?
+                != expected_activity
+            || activity.network_id() != self.node.handshake().node().network_id
+            || activity.protocol_version() != self.node.handshake().node().protocol_version
+        {
+            return Err(HumanOperationError::Refused);
+        }
+        let signer = activity
+            .authority()
+            .try_into()
+            .map_err(|_| HumanOperationError::Refused)?;
+        let actor = Did::new(activity.actor_did()).map_err(|_| HumanOperationError::Refused)?;
+        let correlation = u64::from_be_bytes(
+            identifier[..8]
+                .try_into()
+                .map_err(|_| HumanOperationError::Refused)?,
+        ) | 1;
+        let origin = self
+            .outboxes
+            .entry(peer.tenant.clone())
+            .or_default()
+            .origin(identifier)
+            .map_err(|_| HumanOperationError::Unavailable)?
+            .ok_or(HumanOperationError::Refused)?;
+        let sessions = self
+            .session_control
+            .as_ref()
+            .ok_or(HumanOperationError::Unavailable)?
+            .registry();
+        let held = sessions
+            .read()
+            .map_err(|_| HumanOperationError::Unavailable)?;
+        let core_sequence = self.node.head().chain_sequence;
+        let record = held
+            .get(&origin.session.tenant, origin.session.session_id)
+            .ok_or(HumanOperationError::Refused)?;
+        let submit_scopes =
+            crate::tenant::OperationClass::authorized_scopes(crate::tenant::Operation::Submit);
+        if origin.session.tenant.as_str() != peer.tenant
+            || record.request.tenant != origin.session.tenant
+            || !record.open
+            || held
+                .generation(&origin.session.tenant, origin.session.session_id)
+                != Some(origin.generation)
+            || core_sequence >= record.request.expiry_sequence
+            || record.request.agent != actor
+            || !submit_scopes
+                .iter()
+                .any(|scope| record.request.scopes.contains(*scope))
+        {
+            return Err(HumanOperationError::Refused);
+        }
+        let dispatched = self.dispatch_queued(peer, identifier, &registry, signer, correlation);
+        drop(held);
+        dispatched
+    }
         expected_activity: [u8; 32],
     ) -> Result<HumanResponse, HumanOperationError> {
         let registry = self.authority.registry(peer).map_err(map_core)?;
@@ -3842,6 +4239,75 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
                 .map_err(|_| HumanOperationError::Refused)?,
         ) | 1;
         self.dispatch_queued(peer, identifier, &registry, signer, correlation)
+    }
+
+    pub(crate) fn submit_external_with_origin(
+        &mut self,
+        peer: &HumanPeer,
+        request: MutationEnvelope<HumanSubmit>,
+        origin: Option<crate::prepare::PreparationAuthorization>,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        if !self.unified_owner_active {
+            return Err(HumanOperationError::Unavailable);
+        }
+        if submit_digest(&request.operation) != request.body_digest {
+            return Err(HumanOperationError::Refused);
+        }
+        let prepared_key = (
+            peer.tenant.clone(),
+            peer.principal.clone(),
+            request.operation.preparation_ref.clone(),
+        );
+        let cached = self
+            .prepared
+            .get(&prepared_key)
+            .cloned()
+            .ok_or(HumanOperationError::Refused)?;
+        let prepared = cached.prepared;
+        let signature: [u8; 64] = request
+            .operation
+            .signature
+            .as_slice()
+            .try_into()
+            .map_err(|_| HumanOperationError::Refused)?;
+        let signed = attach_external_signature(&prepared, signature)
+            .map_err(|_| HumanOperationError::Refused)?;
+        let verified = verify_before_submit(
+            &signed,
+            &prepared,
+            &request.operation.signer_public_key,
+            &cached.registry,
+        )
+        .map_err(|_| HumanOperationError::Refused)?;
+        let submission_id = prepared.envelope.idempotency_key().bytes();
+        let tenant =
+            TenantId::new(peer.tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
+        let mut store = self
+            .store
+            .lock()
+            .map_err(|_| HumanOperationError::Unavailable)?;
+        self.outboxes
+            .entry(peer.tenant.clone())
+            .or_default()
+            .enqueue(&mut store, tenant, submission_id, verified, origin)
+            .map_err(|_| HumanOperationError::Unavailable)?;
+        self.prepared.remove(&prepared_key);
+        self.submissions.insert(
+            (
+                peer.tenant.clone(),
+                peer.principal.clone(),
+                hex(&submission_id),
+            ),
+            submission_id,
+        );
+        drop(store);
+        self.dispatch_queued(
+            peer,
+            submission_id,
+            &cached.registry,
+            request.operation.signer_public_key,
+            request.request_id,
+        )
     }
 
     fn subject_owner(
@@ -4601,6 +5067,29 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
 }
 
 impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
+    fn authenticated_subscription_scope(
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        scope: &layerx_agent_api::subscription::SubscriptionScope,
+    ) -> Result<(), HumanOperationError> {
+        if scope.tenant.as_str() != context.peer().tenant
+            || scope.agent.as_str().as_bytes() != context.principal().agent.as_bytes()
+        {
+            return Err(HumanOperationError::Refused);
+        }
+        Ok(())
+    }
+    fn subscription_operation_error(
+        error: crate::events::subscription::SubscriptionError,
+    ) -> HumanOperationError {
+        use crate::events::subscription::SubscriptionError;
+        match error {
+            SubscriptionError::Corrupt
+            | SubscriptionError::Durable(_)
+            | SubscriptionError::SharedUnavailable => HumanOperationError::Unavailable,
+            _ => HumanOperationError::Refused,
+        }
+    }
+
     fn prepare_gated(
         &mut self,
         peer: &HumanPeer,
@@ -4826,67 +5315,7 @@ impl<A: HumanAuthorityBoundary> HumanOperations for ProductionHumanOperations<A>
         peer: &HumanPeer,
         request: MutationEnvelope<HumanSubmit>,
     ) -> Result<HumanResponse, HumanOperationError> {
-        if !self.unified_owner_active {
-            return Err(HumanOperationError::Unavailable);
-        }
-        if submit_digest(&request.operation) != request.body_digest {
-            return Err(HumanOperationError::Refused);
-        }
-        let prepared_key = (
-            peer.tenant.clone(),
-            peer.principal.clone(),
-            request.operation.preparation_ref.clone(),
-        );
-        let cached = self
-            .prepared
-            .get(&prepared_key)
-            .cloned()
-            .ok_or(HumanOperationError::Refused)?;
-        let prepared = cached.prepared;
-        let signature: [u8; 64] = request
-            .operation
-            .signature
-            .as_slice()
-            .try_into()
-            .map_err(|_| HumanOperationError::Refused)?;
-        let signed = attach_external_signature(&prepared, signature)
-            .map_err(|_| HumanOperationError::Refused)?;
-        let verified = verify_before_submit(
-            &signed,
-            &prepared,
-            &request.operation.signer_public_key,
-            &cached.registry,
-        )
-        .map_err(|_| HumanOperationError::Refused)?;
-        let submission_id = prepared.envelope.idempotency_key().bytes();
-        let tenant =
-            TenantId::new(peer.tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
-        let mut store = self
-            .store
-            .lock()
-            .map_err(|_| HumanOperationError::Unavailable)?;
-        self.outboxes
-            .entry(peer.tenant.clone())
-            .or_default()
-            .enqueue(&mut store, tenant, submission_id, verified)
-            .map_err(|_| HumanOperationError::Unavailable)?;
-        self.prepared.remove(&prepared_key);
-        self.submissions.insert(
-            (
-                peer.tenant.clone(),
-                peer.principal.clone(),
-                hex(&submission_id),
-            ),
-            submission_id,
-        );
-        drop(store);
-        self.dispatch_queued(
-            peer,
-            submission_id,
-            &cached.registry,
-            request.operation.signer_public_key,
-            request.request_id,
-        )
+        self.submit_external_with_origin(peer, request, None)
     }
 
     fn track(
@@ -5442,6 +5871,179 @@ impl<A: HumanAuthorityBoundary> HumanOperations for ProductionHumanOperations<A>
         out.u8(u8::from(deadline_elapsed));
         out.u8(achieved.wire_rank());
         out.fixed(tracked.bytes());
+        out.finish()
+    }
+
+    fn subscription_list(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::subscription::SubscriptionList,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        if request.scope.tenant.as_str() != peer.tenant {
+            return Err(HumanOperationError::Refused);
+        }
+        let tenant =
+            TenantId::new(peer.tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
+        let records = match self.subscriptions.get(&tenant) {
+            Some(store) => store.list(&request.scope),
+            None => Vec::new(),
+        };
+        let mut out = Encoder::new();
+        out.u32(u32::try_from(records.len()).map_err(|_| HumanOperationError::Unavailable)?);
+        for record in &records {
+            encode_subscription_record(&mut out, record)?;
+        }
+        out.finish()
+    }
+
+    fn subscription_pause(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
+        request: layerx_agent_api::subscription::SubscriptionTarget,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        Self::authenticated_subscription_scope(context, &request.scope)?;
+        let tenant = TenantId::new(context.peer().tenant.clone())
+            .map_err(|_| HumanOperationError::Refused)?;
+        let store = self.subscription_store_for(tenant)?;
+        let record = store
+            .pause_permitted(control, context.permit(), request)
+            .map_err(rpc_commit_error)?
+            .map_err(Self::subscription_operation_error)?;
+        let mut out = Encoder::new();
+        encode_subscription_record(&mut out, &record)?;
+        out.finish()
+    }
+    fn subscription_resume(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
+        request: layerx_agent_api::subscription::SubscriptionTarget,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        Self::authenticated_subscription_scope(context, &request.scope)?;
+        let tenant = TenantId::new(context.peer().tenant.clone())
+            .map_err(|_| HumanOperationError::Refused)?;
+        let store = self.subscription_store_for(tenant)?;
+        let record = store
+            .resume_permitted(control, context.permit(), request)
+            .map_err(rpc_commit_error)?
+            .map_err(Self::subscription_operation_error)?;
+        let mut out = Encoder::new();
+        encode_subscription_record(&mut out, &record)?;
+        out.finish()
+    }
+    fn subscription_delete(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
+        request: layerx_agent_api::subscription::SubscriptionTarget,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        Self::authenticated_subscription_scope(context, &request.scope)?;
+        let tenant = TenantId::new(context.peer().tenant.clone())
+            .map_err(|_| HumanOperationError::Refused)?;
+        let store = self.subscription_store_for(tenant)?;
+        store
+            .delete_permitted(control, context.permit(), request)
+            .map_err(rpc_commit_error)?
+            .map_err(Self::subscription_operation_error)?;
+        let mut out = Encoder::new();
+        out.u8(0);
+        out.finish()
+    }
+    fn subscription_acknowledge(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
+        request: layerx_agent_api::subscription::CursorAcknowledgement,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        Self::authenticated_subscription_scope(context, &request.scope)?;
+        let tenant = TenantId::new(context.peer().tenant.clone())
+            .map_err(|_| HumanOperationError::Refused)?;
+        let cursor = request.cursor;
+        let store = self.subscription_store_for(tenant)?;
+        let record = store
+            .acknowledge_permitted(control, context.permit(), request)
+            .map_err(rpc_commit_error)?
+            .map_err(Self::subscription_operation_error)?;
+        if record.last_acknowledged != cursor {
+            return Err(HumanOperationError::Unavailable);
+        }
+        let mut out = Encoder::new();
+        encode_subscription_record(&mut out, &record)?;
+        out.finish()
+    }
+
+    fn session_refresh(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
+        request: layerx_agent_api::identity::SessionRefresh,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        if request.context.tenant.as_str() != context.peer().tenant.as_str() {
+            return Err(HumanOperationError::Refused);
+        }
+        let target =
+            session_id_hex(request.session_id.as_str()).ok_or(HumanOperationError::Refused)?;
+        let current_sequence = self.node.head().chain_sequence;
+        let (replacement, _) = control
+            .refresh_session_authorized(context.permit(), SessionId(target), current_sequence)
+            .map_err(UnifiedAgentOwner::<A>::session_writer_error)?;
+        let credential = replacement.credential();
+        if credential.tenant().as_str() != context.peer().tenant.as_str()
+            || credential.session_id() != SessionId(target)
+        {
+            return Err(HumanOperationError::Unavailable);
+        }
+        let tenant =
+            TenantId::new(context.peer().tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
+        let registry = control.registry();
+        let sessions = registry
+            .read()
+            .map_err(|_| HumanOperationError::Unavailable)?;
+        let record = sessions
+            .get(&tenant, SessionId(target))
+            .ok_or(HumanOperationError::Unavailable)?;
+        if !record.open
+            || record.generation != credential.generation()
+            || record.request.token_id != credential.token_id()
+        {
+            return Err(HumanOperationError::Unavailable);
+        }
+        let mut out = Encoder::new();
+        out.text(credential.tenant().as_str())?;
+        out.fixed(&credential.session_id().0);
+        out.fixed(&credential.token_id());
+        out.u64(credential.generation());
+        out.u64(record.request.expiry_sequence);
+        UnifiedAgentOwner::<A>::encode_session_record(&mut out, record)?;
+        out.finish()
+    }
+    fn session_close(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
+        request: layerx_agent_api::identity::SessionClose,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        if request.context.tenant.as_str() != context.peer().tenant.as_str() {
+            return Err(HumanOperationError::Refused);
+        }
+        let target =
+            session_id_hex(request.session_id.as_str()).ok_or(HumanOperationError::Refused)?;
+        let current_sequence = self.node.head().chain_sequence;
+        control
+            .close_session_authorized(context.permit(), SessionId(target), current_sequence)
+            .map_err(UnifiedAgentOwner::<A>::session_writer_error)?;
+        let tenant =
+            TenantId::new(context.peer().tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
+        let registry = control.registry();
+        let sessions = registry
+            .read()
+            .map_err(|_| HumanOperationError::Unavailable)?;
+        let record = sessions
+            .get(&tenant, SessionId(target))
+            .ok_or(HumanOperationError::Unavailable)?;
+        let mut out = Encoder::new();
+        UnifiedAgentOwner::<A>::encode_session_record(&mut out, record)?;
         out.finish()
     }
 }
@@ -6105,6 +6707,43 @@ fn production_batch_header_error(
         | layerx_client::batch::BatchHeaderError::Signature => HumanOperationError::Refused,
     }
 }
+fn encode_subscription_record(
+    out: &mut Encoder,
+    record: &layerx_agent_api::subscription::SubscriptionRecord,
+) -> Result<(), HumanOperationError> {
+    out.text(record.subscription_id.as_str())?;
+    out.text(record.scope.tenant.as_str())?;
+    out.text(record.scope.agent.as_str())?;
+    out.text(record.scope.capability.as_str())?;
+    let filter = &record.filter;
+    for set in [
+        filter.agents.values().iter().map(|item| (item.tenant.as_str(), item.value.as_str())).collect::<Vec<_>>(),
+        filter.accounts.values().iter().map(|item| (item.tenant.as_str(), item.value.as_str())).collect(),
+        filter.modules.values().iter().map(|item| (item.tenant.as_str(), item.value.as_str())).collect(),
+        filter.assets.values().iter().map(|item| (item.tenant.as_str(), item.value.as_str())).collect(),
+        filter.counterparties.values().iter().map(|item| (item.tenant.as_str(), item.value.as_str())).collect(),
+    ] {
+        out.u16(set.len())?;
+        for (tenant, value) in set {
+            out.text(tenant)?;
+            out.text(value)?;
+        }
+    }
+    out.u16(filter.activity_types.values().len())?;
+    for activity in filter.activity_types.values() {
+        out.text(&activity.0.to_string())?;
+    }
+    out.u16(filter.result_classes.values().len())?;
+    for class in filter.result_classes.values() {
+        out.fixed(&class.raw().to_be_bytes());
+    }
+    out.text(&record.start.0 .0.to_string())?;
+    out.text(&record.last_acknowledged.0 .0.to_string())?;
+    out.text(record.delivery_target.as_str())?;
+    out.u8(u8::from(record.paused));
+    Ok(())
+}
+
 impl Encoder {
     fn new() -> Self {
         Self(Vec::with_capacity(256))

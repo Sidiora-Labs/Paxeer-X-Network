@@ -41,7 +41,7 @@ fn enqueue(outbox: &mut Outbox, store: &mut Store, id: u8) -> Vec<u8> {
     let verified = verified_submission(id);
     let exact = verified.exact_bytes().to_vec();
     outbox
-        .enqueue(store, tenant(), [id; 32], verified)
+        .enqueue(store, tenant(), [id; 32], verified, None)
         .unwrap_or_else(|error| panic!("enqueue {id}: {error:?}"));
     exact
 }
@@ -339,6 +339,33 @@ fn clock_regression_during_restarted_resolution_fails_closed() {
     assert_eq!(
         recovered.outbox.status([1; 32]).map(|status| status.state),
         Some(SubmissionState::Unknown)
+    );
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn queued_record_without_origin_is_restored_but_never_offered_for_transmission() {
+    let root = directory("queued-without-origin");
+    let mut store = Store::open(&root).unwrap_or_else(|error| panic!("store: {error}"));
+    let mut outbox = Outbox::default();
+    let exact = enqueue(&mut outbox, &mut store, 1);
+    drop(store);
+    let mut reopened = Store::open(&root).unwrap_or_else(|error| panic!("reopen: {error}"));
+    let recovered = recover(&mut reopened, &tenant(), &recovery_inputs(&[], &[], &[]))
+        .unwrap_or_else(|error| panic!("recover: {error:?}"));
+    assert_eq!(recovered.queued_without_authority, vec![[1; 32]]);
+    assert!(recovered.queued_for_transmission.is_empty());
+    assert!(recovered.awaiting_receipt_resolution.is_empty());
+    assert_eq!(
+        recovered.outbox.status([1; 32]).map(|status| status.state),
+        Some(SubmissionState::Queued)
+    );
+    assert_eq!(
+        recovered
+            .outbox
+            .exact_signed_bytes([1; 32])
+            .unwrap_or_else(|error| panic!("exact bytes: {error:?}")),
+        exact.as_slice()
     );
     let _ = std::fs::remove_dir_all(root);
 }

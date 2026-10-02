@@ -499,12 +499,16 @@ fn connect_human_authority(
 type OwnerStatus = mpsc::Receiver<Result<(), String>>;
 
 fn start_human_owner(mcp: Option<McpBoot>) -> Result<OwnerStatus, String> {
-    start_shared_owner(mcp, None).map(|(receiver, _, _)| receiver)
+    let runtime_clock = layerx_client::runtime_clock::RuntimeClock::from_environment()
+        .map_err(|error| format!("runtime clock unavailable: {error}"))?;
+    start_shared_owner(mcp, None, runtime_clock).map(|(receiver, _, _)| receiver)
 }
 
 fn start_shared_owner(
     mcp: Option<McpBoot>,
     programs: Option<ProgramOperations>,
+
+    clock: Arc<dyn layerx_types::clock::Clock>,
 ) -> Result<
     (
         OwnerStatus,
@@ -554,6 +558,8 @@ fn start_shared_owner(
             .parse()
             .map_err(|_| "human payload bound is invalid")?,
         parse_u64("LAYERX_AGENT_HUMAN_TIMESTAMP_SPAN")?,
+
+        clock,
     )
     .map_err(|error| format!("human operations are invalid: {error:?}"))?;
     let socket_uid = required("LAYERX_AGENT_HUMAN_SOCKET_UID")?
@@ -1132,6 +1138,9 @@ fn serve(config: Config) -> Result<(), String> {
     if handover_sources.is_some() && mcp.is_none() {
         return Err("native genesis trust requires the configured native read boundary".to_owned());
     }
+    let runtime_clock = layerx_client::runtime_clock::RuntimeClock::from_environment()
+        .map_err(|error| format!("runtime clock unavailable: {error}"))?;
+
     let mut native = mcp
         .as_ref()
         .map(|boot| {
@@ -1150,8 +1159,7 @@ fn serve(config: Config) -> Result<(), String> {
                 client,
                 boot.enrolment.did.clone(),
                 config.bearer.clone(),
-                layerx_client::runtime_clock::RuntimeClock::from_environment()
-                    .map_err(|error| format!("native read clock unavailable: {error}"))?,
+                Arc::clone(&runtime_clock),
             )
             .map_err(|error| format!("native read route is invalid: {error:?}"))?;
             match handover_sources.as_ref() {
@@ -1180,7 +1188,7 @@ fn serve(config: Config) -> Result<(), String> {
         registry,
         signed_history.as_ref(),
     )?);
-    let (human, owner, status) = start_shared_owner(mcp, Some(programs))?;
+    let (human, owner, status) = start_shared_owner(mcp, Some(programs), runtime_clock)?;
     start_agent_rpc(owner, status)?;
     route
         .read(config.probe_program, now_ms()?)

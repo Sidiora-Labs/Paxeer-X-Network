@@ -16,6 +16,313 @@ use crate::human_runtime::{HumanAuthorityBoundary, SharedAgentOwner};
 use crate::session_control::OperationPermit;
 use crate::tenant::Operation;
 
+pub(crate) fn sign<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>,
+    context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+    request: &serde_json::Map<String, serde_json::Value>,
+    ctx: &DispatchContext,
+) -> Result<Dispatched, Rejection> {
+    use crate::agent_rpc_dispatch::{decode_observation, dispatched, mutation_key};
+    use crate::agent_rpc_wire::{decode_wire, SignRequestWire};
+    let id = ctx.request_id;
+    let typed = decode_wire::<SignRequestWire>(request, id)?.into_request(id)?;
+    mutation_key(ctx)?;
+    let response = owner
+        .lock()
+        .and_then(|mut guard| guard.rpc_sign(context, typed));
+    dispatched(id, response, decode_observation)
+}
+
+pub(crate) fn subscription_create<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>,
+    context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>,
+    ctx: &DispatchContext,
+) -> Result<Dispatched, Rejection> {
+    let id = ctx.request_id;
+    let wire: crate::agent_rpc_wire::SubscriptionCreateWire = decode(request, id)?;
+    let typed = wire.into_request(id)?;
+    let response = owner
+        .lock()
+        .and_then(|mut guard| guard.rpc_subscription_create(context, typed))
+        .map_err(|error| owner_error(id, error))?;
+    Ok(Dispatched {
+        value: subscription_record_value(id, response.bytes())?,
+        verification: None,
+    })
+}
+
+pub(crate) fn subscription_list<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>,
+    context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>,
+    ctx: &DispatchContext,
+) -> Result<Dispatched, Rejection> {
+    let id = ctx.request_id;
+    let wire: crate::agent_rpc_wire::SubscriptionListWire = decode(request, id)?;
+    let typed = wire.into_request(id)?;
+    let response = owner
+        .lock()
+        .and_then(|mut guard| guard.subscription_list(context.peer(), typed))
+        .map_err(|error| owner_error(id, error))?;
+    Ok(Dispatched {
+        value: subscription_list_value(id, response.bytes())?,
+        verification: None,
+    })
+}
+
+pub(crate) fn subscription_pause<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>,
+    context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>,
+    ctx: &DispatchContext,
+) -> Result<Dispatched, Rejection> {
+    let id = ctx.request_id;
+    let wire: crate::agent_rpc_wire::SubscriptionTargetWire = decode(request, id)?;
+    let typed = wire.into_request(id)?;
+    let response = owner
+        .lock()
+        .and_then(|mut guard| guard.rpc_subscription_pause(context, typed))
+        .map_err(|error| owner_error(id, error))?;
+    Ok(Dispatched {
+        value: subscription_record_value(id, response.bytes())?,
+        verification: None,
+    })
+}
+
+pub(crate) fn subscription_resume<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>,
+    context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>,
+    ctx: &DispatchContext,
+) -> Result<Dispatched, Rejection> {
+    let id = ctx.request_id;
+    let wire: crate::agent_rpc_wire::SubscriptionTargetWire = decode(request, id)?;
+    let typed = wire.into_request(id)?;
+    let response = owner
+        .lock()
+        .and_then(|mut guard| guard.rpc_subscription_resume(context, typed))
+        .map_err(|error| owner_error(id, error))?;
+    Ok(Dispatched {
+        value: subscription_record_value(id, response.bytes())?,
+        verification: None,
+    })
+}
+
+pub(crate) fn subscription_delete<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>,
+    context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>,
+    ctx: &DispatchContext,
+) -> Result<Dispatched, Rejection> {
+    let id = ctx.request_id;
+    let wire: crate::agent_rpc_wire::SubscriptionTargetWire = decode(request, id)?;
+    let typed = wire.into_request(id)?;
+    let response = owner
+        .lock()
+        .and_then(|mut guard| guard.rpc_subscription_delete(context, typed))
+        .map_err(|error| owner_error(id, error))?;
+    Ok(Dispatched {
+        value: subscription_null_value(id, response.bytes())?,
+        verification: None,
+    })
+}
+
+pub(crate) fn subscription_health<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>,
+    context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>,
+    ctx: &DispatchContext,
+) -> Result<Dispatched, Rejection> {
+    let id = ctx.request_id;
+    let wire: crate::agent_rpc_wire::SubscriptionTargetWire = decode(request, id)?;
+    let typed = wire.into_request(id)?;
+    let response = owner
+        .lock()
+        .and_then(|mut guard| guard.subscription_health(context.peer(), typed))
+        .map_err(|error| owner_error(id, error))?;
+    Ok(Dispatched {
+        value: subscription_health_value(id, response.bytes())?,
+        verification: None,
+    })
+}
+
+pub(crate) fn subscription_acknowledge<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>,
+    context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>,
+    ctx: &DispatchContext,
+) -> Result<Dispatched, Rejection> {
+    let id = ctx.request_id;
+    let wire: crate::agent_rpc_wire::CursorAcknowledgementWire = decode(request, id)?;
+    let typed = wire.into_request(id)?;
+    let response = owner
+        .lock()
+        .and_then(|mut guard| guard.rpc_subscription_acknowledge(context, typed))
+        .map_err(|error| owner_error(id, error))?;
+    Ok(Dispatched {
+        value: subscription_record_value(id, response.bytes())?,
+        verification: None,
+    })
+}
+
+fn subscription_payload(
+    id: RequestId,
+    payload: &[u8],
+    decoder: impl FnOnce(&mut Reader<'_>) -> Option<Value>,
+) -> Result<Value, Rejection> {
+    let mut reader = Reader {
+        bytes: payload,
+        offset: 0,
+    };
+    decoder(&mut reader)
+        .filter(|_| reader.finish().is_some())
+        .ok_or_else(|| rejection(ErrorClass::InternalFault, id, "owner.response_malformed"))
+}
+
+fn subscription_decimal(reader: &mut Reader<'_>, id: RequestId) -> Option<u64> {
+    crate::agent_rpc_dispatch::decimal_u64(&reader.text()?, id).ok()
+}
+
+fn subscription_flag(reader: &mut Reader<'_>) -> Option<bool> {
+    match reader.u8()? {
+        0 => Some(false),
+        1 => Some(true),
+        _ => None,
+    }
+}
+
+fn subscription_optional_decimal(reader: &mut Reader<'_>, id: RequestId) -> Option<Value> {
+    match reader.u8()? {
+        0 => Some(Value::Null),
+        1 => Some(dec(subscription_decimal(reader, id)?)),
+        _ => None,
+    }
+}
+
+fn subscription_scope(reader: &mut Reader<'_>) -> Option<Value> {
+    let tenant = reader.text()?;
+    let agent = reader.text()?;
+    let capability = reader.text()?;
+    Some(serde_json::json!({
+        "tenant": tenant,
+        "agent": agent,
+        "capability": capability,
+    }))
+}
+
+fn subscription_tenant_objects(reader: &mut Reader<'_>) -> Option<Value> {
+    let count = reader.u16()?;
+    let mut items = Vec::with_capacity(usize::from(count));
+    for _ in 0..count {
+        let tenant = reader.text()?;
+        let value = reader.text()?;
+        items.push(serde_json::json!({"tenant": tenant, "value": value}));
+    }
+    Some(Value::Array(items))
+}
+
+fn subscription_activity_types(reader: &mut Reader<'_>, id: RequestId) -> Option<Value> {
+    let count = reader.u16()?;
+    let mut items = Vec::with_capacity(usize::from(count));
+    for _ in 0..count {
+        items.push(dec(u16::try_from(subscription_decimal(reader, id)?).ok()?));
+    }
+    Some(Value::Array(items))
+}
+
+fn subscription_result_classes(reader: &mut Reader<'_>) -> Option<Value> {
+    let count = reader.u16()?;
+    let mut items = Vec::with_capacity(usize::from(count));
+    for _ in 0..count {
+        items.push(Value::from(i32::from_be_bytes(reader.fixed()?)));
+    }
+    Some(Value::Array(items))
+}
+
+fn subscription_record(reader: &mut Reader<'_>, id: RequestId) -> Option<Value> {
+    let subscription_id = reader.text()?;
+    let scope = subscription_scope(reader)?;
+    let agents = subscription_tenant_objects(reader)?;
+    let accounts = subscription_tenant_objects(reader)?;
+    let modules = subscription_tenant_objects(reader)?;
+    let assets = subscription_tenant_objects(reader)?;
+    let counterparties = subscription_tenant_objects(reader)?;
+    let activity_types = subscription_activity_types(reader, id)?;
+    let result_classes = subscription_result_classes(reader)?;
+    let start = subscription_decimal(reader, id)?;
+    let last_acknowledged = subscription_decimal(reader, id)?;
+    let delivery_target = reader.text()?;
+    let paused = subscription_flag(reader)?;
+    Some(serde_json::json!({
+        "subscription_id": subscription_id,
+        "scope": scope,
+        "filter": {
+            "agents": agents,
+            "accounts": accounts,
+            "modules": modules,
+            "assets": assets,
+            "counterparties": counterparties,
+            "activity_types": activity_types,
+            "result_classes": result_classes,
+        },
+        "start": dec(start),
+        "last_acknowledged": dec(last_acknowledged),
+        "delivery_target": delivery_target,
+        "paused": paused,
+    }))
+}
+
+fn subscription_record_value(id: RequestId, payload: &[u8]) -> Result<Value, Rejection> {
+    subscription_payload(id, payload, |reader| subscription_record(reader, id))
+}
+
+fn subscription_list_value(id: RequestId, payload: &[u8]) -> Result<Value, Rejection> {
+    subscription_payload(id, payload, |reader| {
+        let count = reader.u32()?;
+        let mut records = Vec::new();
+        for _ in 0..count {
+            records.push(subscription_record(reader, id)?);
+        }
+        Some(Value::Array(records))
+    })
+}
+
+fn subscription_health_value(id: RequestId, payload: &[u8]) -> Result<Value, Rejection> {
+    subscription_payload(id, payload, |reader| {
+        let scope = subscription_scope(reader)?;
+        let subscription_id = reader.text()?;
+        let last_acknowledged = subscription_decimal(reader, id)?;
+        let last_delivery_at = subscription_optional_decimal(reader, id)?;
+        let pending_backfill = match reader.u8()? {
+            0 => Value::Null,
+            1 => {
+                let missing_first = subscription_decimal(reader, id)?;
+                let missing_last = subscription_decimal(reader, id)?;
+                let backfill_cursor = subscription_decimal(reader, id)?;
+                let backfill_attempted = subscription_flag(reader)?;
+                serde_json::json!({
+                    "missing_first": dec(missing_first),
+                    "missing_last": dec(missing_last),
+                    "backfill_cursor": dec(backfill_cursor),
+                    "backfill_attempted": backfill_attempted,
+                })
+            }
+            _ => return None,
+        };
+        Some(serde_json::json!({
+            "target": {"scope": scope, "subscription_id": subscription_id},
+            "last_acknowledged": dec(last_acknowledged),
+            "last_delivery_at": last_delivery_at,
+            "pending_backfill": pending_backfill,
+        }))
+    })
+}
+
+fn subscription_null_value(id: RequestId, payload: &[u8]) -> Result<Value, Rejection> {
+    subscription_payload(id, payload, |reader| (reader.u8()? == 0).then_some(Value::Null))
+}
+
 pub(crate) fn budget_list<A: HumanAuthorityBoundary>(
     owner: &SharedAgentOwner<A>,
     context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
@@ -532,7 +839,10 @@ pub(crate) fn read_history<A: HumanAuthorityBoundary>(
         last: canonical_sequence(&request.range.last, id)?,
         cursor: request
             .cursor
-            .map(|text| layerx_agent_api::read::HistoryCursor::new(text).map_err(|_| malformed(id)))
+            .map(|text| {
+                crate::read::Cursor::from_hex(&text).map_err(|_| malformed(id))?;
+                layerx_agent_api::read::HistoryCursor::new(text).map_err(|_| malformed(id))
+            })
             .transpose()?,
         page_limit: request
             .page_limit
@@ -577,12 +887,9 @@ pub(crate) fn read_history<A: HumanAuthorityBoundary>(
         let cursor = match reader.u8()? {
             0 => Value::Null,
             1 => {
-                let mut cursor = Map::new();
-                cursor.insert("next_sequence".into(), dec(reader.u64()?));
-                cursor.insert("end_sequence".into(), dec(reader.u64()?));
-                cursor.insert("head_sequence".into(), dec(reader.u64()?));
-                cursor.insert("checkpoint".into(), hexv(&reader.fixed::<32>()?));
-                Value::Object(cursor)
+                let text = std::str::from_utf8(reader.bytes()?).ok()?;
+                crate::read::Cursor::from_hex(text).ok()?;
+                Value::String(text.to_owned())
             }
             _ => return None,
         };

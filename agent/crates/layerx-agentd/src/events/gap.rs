@@ -357,6 +357,7 @@ fn apply_backfill_inner(
         } if *report_gap == gap => {
             let tenant = crate::store::TenantId::new(target.scope.tenant.as_str())
                 .map_err(|_| GapError::DurableEvent)?;
+            let durable_store = subscriptions.durable()?;
             for (offset, recovered) in events.iter().enumerate() {
                 let offset = u64::try_from(offset).map_err(|_| GapError::MismatchedReport)?;
                 let expected = gap
@@ -366,9 +367,8 @@ fn apply_backfill_inner(
                 if recovered.global_sequence != expected {
                     return Err(GapError::MismatchedReport);
                 }
-                let durable =
-                    durable_event(subscriptions.durable(), &tenant, recovered.global_sequence)
-                        .map_err(|_| GapError::DurableEvent)?;
+                let durable = durable_event(&durable_store, &tenant, recovered.global_sequence)
+                    .map_err(|_| GapError::DurableEvent)?;
                 if durable.canonical_bytes != recovered.canonical_bytes {
                     return Err(GapError::DurableEvent);
                 }
@@ -376,6 +376,7 @@ fn apply_backfill_inner(
             if events.last().map(|event| event.global_sequence) != Some(gap.missing_last) {
                 return Err(GapError::MismatchedReport);
             }
+            drop(durable_store);
             subscriptions.clear_gap_inner(target)?;
             Ok(BackfillResolution::Restored)
         }

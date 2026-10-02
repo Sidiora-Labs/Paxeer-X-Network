@@ -621,7 +621,7 @@ impl OperationPermit {
     }
 
     #[must_use]
-    fn preparation_authorization(&self) -> PreparationAuthorization {
+    pub(crate) fn preparation_authorization(&self) -> PreparationAuthorization {
         PreparationAuthorization {
             session: session::SessionRef::new(self.token.tenant().clone(), self.token.session_id()),
             generation: self.token.generation(),
@@ -749,6 +749,108 @@ impl OperationPermit {
                 activity_id,
                 &self.preparation_authorization(),
             )
+            .map_err(SessionControlError::Lifecycle)
+    }
+
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if session authorization, durable state, or preparation invalidation fails.
+    pub fn signed_bytes(
+        &self,
+        control: &SessionControl,
+        preparation_id: [u8; 32],
+    ) -> Result<Vec<u8>, SessionControlError> {
+        self.require_operation(Operation::Submit)?;
+        let registry = control
+            .registry
+            .read()
+            .map_err(|_| SessionControlError::Unavailable)?;
+        self.resolve(control, &registry)?;
+        control
+            .lifecycle
+            .signed_bytes_authorized(preparation_id, &self.preparation_authorization())
+            .map_err(SessionControlError::Lifecycle)
+    }
+
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if session authorization, durable state, or preparation invalidation fails.
+    pub fn submit_with_external_signature(
+        &self,
+        control: &SessionControl,
+        preparation_id: [u8; 32],
+        signed_bytes: Vec<u8>,
+        activity_id: [u8; 32],
+        core_batch_time: u64,
+    ) -> Result<(), SessionControlError> {
+        self.require_operation(Operation::Submit)?;
+        let registry = control
+            .registry
+            .read()
+            .map_err(|_| SessionControlError::Unavailable)?;
+        self.resolve(control, &registry)?;
+        let authorization = self.preparation_authorization();
+        match control
+            .lifecycle
+            .state(preparation_id)
+            .map_err(SessionControlError::Lifecycle)?
+        {
+            LifecycleState::Prepared => {
+                control
+                    .lifecycle
+                    .transition_authorized(
+                        preparation_id,
+                        LifecycleState::Signing,
+                        core_batch_time,
+                        &authorization,
+                    )
+                    .map_err(SessionControlError::Lifecycle)?;
+                control
+                    .lifecycle
+                    .retain_signed_bytes_authorized(
+                        preparation_id,
+                        signed_bytes,
+                        activity_id,
+                        &authorization,
+                    )
+                    .map_err(SessionControlError::Lifecycle)?;
+            }
+            LifecycleState::Signing => {
+                control
+                    .lifecycle
+                    .retain_signed_bytes_authorized(
+                        preparation_id,
+                        signed_bytes,
+                        activity_id,
+                        &authorization,
+                    )
+                    .map_err(SessionControlError::Lifecycle)?;
+            }
+            LifecycleState::Signed => {
+                let retained = control
+                    .lifecycle
+                    .signed_bytes_authorized(preparation_id, &authorization)
+                    .map_err(SessionControlError::Lifecycle)?;
+                if retained != signed_bytes {
+                    return Err(SessionControlError::Lifecycle(
+                        LifecycleError::AuthorizationMismatch,
+                    ));
+                }
+            }
+            from => {
+                return Err(SessionControlError::Lifecycle(
+                    LifecycleError::InvalidTransition {
+                        from,
+                        to: LifecycleState::Signed,
+                    },
+                ))
+            }
+        }
+        control
+            .lifecycle
+            .admit_submission_authorized(preparation_id, core_batch_time, &authorization)
             .map_err(SessionControlError::Lifecycle)
     }
 

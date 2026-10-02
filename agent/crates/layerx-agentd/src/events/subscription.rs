@@ -2,6 +2,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{Display, Formatter};
+use std::ops::Deref;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use layerx_agent_api::identity::{
     ActivityType, AgentDid, Asset, CapabilityId, ExplicitSet, TenantId as ApiTenantId,
@@ -97,6 +99,7 @@ pub enum SubscriptionError {
     Authorization(AuthorizationError),
     AuthorizationRequired,
     Durable(StoreError),
+    SharedUnavailable,
 }
 
 impl Display for SubscriptionError {
@@ -129,6 +132,9 @@ impl Display for SubscriptionError {
                 formatter.write_str("session-bound subscription requires an authorized operation")
             }
             Self::Durable(error) => Display::fmt(error, formatter),
+            Self::SharedUnavailable => {
+                formatter.write_str("shared durable subscription store is unavailable")
+            }
         }
     }
 }
@@ -141,10 +147,36 @@ impl From<StoreError> for SubscriptionError {
     }
 }
 
+/// Durable state either owned by one subscription collection or shared with the runtime owner.
+#[derive(Debug)]
+pub(crate) enum DurableBacking {
+    Owned(DurableStore),
+    Shared(Arc<Mutex<DurableStore>>),
+}
+
+/// Read access to the durable state behind a subscription collection.
+pub struct DurableGuard<'a>(DurableGuardInner<'a>);
+
+enum DurableGuardInner<'a> {
+    Owned(&'a DurableStore),
+    Shared(MutexGuard<'a, DurableStore>),
+}
+
+impl Deref for DurableGuard<'_> {
+    type Target = DurableStore;
+
+    fn deref(&self) -> &DurableStore {
+        match &self.0 {
+            DurableGuardInner::Owned(durable) => durable,
+            DurableGuardInner::Shared(guard) => guard,
+        }
+    }
+}
+
 /// Tenant-owned durable subscription collection.
 #[derive(Debug)]
 pub struct Store {
-    durable: DurableStore,
+    durable: DurableBacking,
     tenant: TenantId,
     records: BTreeMap<String, DurableRecord>,
 }
@@ -158,9 +190,45 @@ impl Store {
     /// identifier, tenant, or encoding disagrees with its key, or a duplicate
     /// identifier; `Durable` wraps a rejected object key.
     pub fn open(mut durable: DurableStore, tenant: TenantId) -> Result<Self, SubscriptionError> {
+        let records = Self::load_records(&mut durable, &tenant)?;
+        Ok(Self {
+            durable: DurableBacking::Owned(durable),
+            tenant,
+            records,
+        })
+    }
+
+    /// Restores every subscription owned by `tenant` from durable state shared with the
+    /// runtime owner, applying the same decode, legacy migration and integrity checks as `open`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SharedUnavailable` when the shared store lock is poisoned, otherwise the
+    /// same errors as `open`.
+    pub fn open_shared(
+        shared: Arc<Mutex<DurableStore>>,
+        tenant: TenantId,
+    ) -> Result<Self, SubscriptionError> {
+        let records = {
+            let mut durable = shared
+                .lock()
+                .map_err(|_| SubscriptionError::SharedUnavailable)?;
+            Self::load_records(&mut durable, &tenant)?
+        };
+        Ok(Self {
+            durable: DurableBacking::Shared(shared),
+            tenant,
+            records,
+        })
+    }
+
+    fn load_records(
+        durable: &mut DurableStore,
+        tenant: &TenantId,
+    ) -> Result<BTreeMap<String, DurableRecord>, SubscriptionError> {
         let mut records = BTreeMap::new();
         let mut legacy_migrations = Vec::new();
-        for object_id in durable.list_object_ids(&tenant, ObjectKind::Subscription) {
+        for object_id in durable.list_object_ids(tenant, ObjectKind::Subscription) {
             let key = TenantKey::new(tenant.clone(), ObjectKind::Subscription, object_id.clone())?;
             let stored = durable.get(&key).ok_or(SubscriptionError::Corrupt)?;
             if stored.class() != StorageClass::LocalOnly {
@@ -186,11 +254,7 @@ impl Store {
         for (key, bytes) in legacy_migrations {
             durable.put_local(key, bytes)?;
         }
-        Ok(Self {
-            durable,
-            tenant,
-            records,
-        })
+        Ok(records)
     }
 
     /// Creates one durable subscription after applying scope restrictions to
@@ -837,15 +901,49 @@ impl Store {
     }
 
     /// Consumes the subscription collection and returns the underlying store.
-    #[must_use]
-    pub fn into_durable(self) -> DurableStore {
-        self.durable
+    ///
+    /// # Errors
+    ///
+    /// Returns the collection unchanged when its durable state is shared.
+    pub fn into_durable(self) -> Result<DurableStore, Self> {
+        match self.durable {
+            DurableBacking::Owned(durable) => Ok(durable),
+            DurableBacking::Shared(shared) => Err(Self {
+                durable: DurableBacking::Shared(shared),
+                tenant: self.tenant,
+                records: self.records,
+            }),
+        }
     }
 
     /// Borrows the tenant-scoped durable state for event-history delivery.
-    #[must_use]
-    pub const fn durable(&self) -> &DurableStore {
-        &self.durable
+    ///
+    /// # Errors
+    ///
+    /// Returns `SharedUnavailable` when the shared store lock is poisoned.
+    pub fn durable(&self) -> Result<DurableGuard<'_>, SubscriptionError> {
+        match &self.durable {
+            DurableBacking::Owned(durable) => Ok(DurableGuard(DurableGuardInner::Owned(durable))),
+            DurableBacking::Shared(shared) => shared
+                .lock()
+                .map(|guard| DurableGuard(DurableGuardInner::Shared(guard)))
+                .map_err(|_| SubscriptionError::SharedUnavailable),
+        }
+    }
+
+    fn with_durable_mut<T>(
+        &mut self,
+        f: impl FnOnce(&mut DurableStore) -> Result<T, SubscriptionError>,
+    ) -> Result<T, SubscriptionError> {
+        match &mut self.durable {
+            DurableBacking::Owned(durable) => f(durable),
+            DurableBacking::Shared(shared) => {
+                let mut durable = shared
+                    .lock()
+                    .map_err(|_| SubscriptionError::SharedUnavailable)?;
+                f(&mut durable)
+            }
+        }
     }
 
     fn set_paused_inner(
@@ -943,8 +1041,11 @@ impl Store {
 
     fn persist(&mut self, record: &DurableRecord) -> Result<(), SubscriptionError> {
         let key = subscription_key(self.tenant.clone(), &record.public.subscription_id)?;
-        self.durable.put_local(key, encode_record(record)?)?;
-        Ok(())
+        let bytes = encode_record(record)?;
+        self.with_durable_mut(|durable| {
+            durable.put_local(key, bytes)?;
+            Ok(())
+        })
     }
 }
 

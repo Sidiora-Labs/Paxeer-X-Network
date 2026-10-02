@@ -81,6 +81,13 @@ fn text<T, E: std::fmt::Debug>(result: Result<T, E>, label: &str) -> T {
     }
 }
 
+fn owned_durable(subscriptions: SubscriptionStore) -> Store {
+    match subscriptions.into_durable() {
+        Ok(durable) => durable,
+        Err(_) => panic!("owned subscription store returned unexpected Err(Self)"),
+    }
+}
+
 fn durable_tenant() -> TenantId {
     text(TenantId::new("tenant-a"), "durable tenant")
 }
@@ -342,7 +349,7 @@ fn skipped_sequence_is_backfilled_over_the_real_stream_before_unblocking() {
         }
     };
 
-    let durable = subscriptions.into_durable();
+    let durable = owned_durable(subscriptions);
     let mut ingestor = match EventIngestor::open(durable, durable_tenant(), 2, 11) {
         Ok(value) => value,
         Err(error) => panic!("ingestor open failed: {error}"),

@@ -11,6 +11,59 @@ pub struct Cursor {
     pub observed_checkpoint: [u8; 32],
 }
 
+impl Cursor {
+    const TEXT_LENGTH: usize = 112;
+
+    /// Renders the cursor as 112 lowercase hex characters: big-endian next, end and observed head
+    /// sequences followed by the observed checkpoint.
+    #[must_use]
+    pub fn to_hex(&self) -> String {
+        let mut bytes = Vec::with_capacity(Self::TEXT_LENGTH / 2);
+        bytes.extend_from_slice(&self.next_sequence.to_be_bytes());
+        bytes.extend_from_slice(&self.end_sequence.to_be_bytes());
+        bytes.extend_from_slice(&self.observed_head_sequence.to_be_bytes());
+        bytes.extend_from_slice(&self.observed_checkpoint);
+        bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    }
+
+    /// Parses exactly 112 lowercase hex characters produced by [`Cursor::to_hex`].
+    ///
+    /// # Errors
+    ///
+    /// Returns `MalformedCursor` for any other length or any character outside `0-9a-f`.
+    pub fn from_hex(text: &str) -> Result<Self, HistoryReadError> {
+        let text = text.as_bytes();
+        if text.len() != Self::TEXT_LENGTH {
+            return Err(HistoryReadError::MalformedCursor);
+        }
+        let mut bytes = [0_u8; 56];
+        for (byte, pair) in bytes.iter_mut().zip(text.chunks_exact(2)) {
+            *byte = (lower_hex_digit(pair[0])? << 4) | lower_hex_digit(pair[1])?;
+        }
+        let word = |offset: usize| {
+            let mut value = [0_u8; 8];
+            value.copy_from_slice(&bytes[offset..offset + 8]);
+            u64::from_be_bytes(value)
+        };
+        let mut observed_checkpoint = [0_u8; 32];
+        observed_checkpoint.copy_from_slice(&bytes[24..]);
+        Ok(Self {
+            next_sequence: word(0),
+            end_sequence: word(8),
+            observed_head_sequence: word(16),
+            observed_checkpoint,
+        })
+    }
+}
+
+fn lower_hex_digit(character: u8) -> Result<u8, HistoryReadError> {
+    match character {
+        b'0'..=b'9' => Ok(character - b'0'),
+        b'a'..=b'f' => Ok(character - b'a' + 10),
+        _ => Err(HistoryReadError::MalformedCursor),
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct HistoryLimits {
     pub maximum_items: u16,
@@ -30,6 +83,7 @@ pub enum HistoryReadError {
     Read(ReadError),
     InvalidLimits,
     CursorMismatch,
+    MalformedCursor,
     PrunedRange { requested: u64, oldest: u64 },
     ItemTooLarge { sequence: u64, bytes: usize },
     Arithmetic,

@@ -44,6 +44,9 @@ W20_IDEMPOTENCY_POST = ('restart_replay_idempotent',)
 
 W20_ROTATION_PRE = ('session_refresh_credential',)
 W20_SESSION_FIELDS = ('tenant', 'session_id', 'token_id', 'generation')
+
+W20_COMPLETED_DIRECT = ('history_cursor_round_trip', 'subscription_lifecycle')
+W20_SUBSCRIPTION_RECORD = ('subscription_id', 'scope', 'filter', 'start', 'last_acknowledged', 'delivery_target', 'paused')
 PYTHON_PRE_RESTART = ('allowed_mutation', 'mutation_duplicate_same_result', 'restart_unknown_pending', 'restart_retry_same_result')
 PYTHON_POST_RESTART = ('restart_unknown_reconcile', 'restart_retry_same_result')
 DECODE_CASES = ('read_decode_failure', 'mutation_decode_unknown')
@@ -1142,6 +1145,80 @@ class Qualification:
             self.passed(case if phase != 'read' and not prefix else 'sdk_' + language + '_' + case
                         + ('_post_restart' if prefix and phase == 'post-restart' and case in PYTHON_PRE_RESTART else ''), log)
 
+    def w20_completed_mutation(self, case, operation, request):
+        key = self.key('direct', case)
+        value, status, body = self.call(case, operation, request, idempotency=key)
+        self.effect('direct', case, operation, key)
+        return self.success(status, body, value['request_id'], case)
+
+    def w20_subscription_record(self, value, case, paused=None):
+        require(isinstance(value, dict) and set(value) == set(W20_SUBSCRIPTION_RECORD), case + ': SubscriptionRecord fields')
+        require(isinstance(value['subscription_id'], str) and value['subscription_id'], case + ': subscription_id')
+        require(isinstance(value['paused'], bool) and (paused is None or value['paused'] is paused), case + ': paused')
+        require(isinstance(value['start'], str) and re.fullmatch('(0|[1-9][0-9]{0,19})', value['start']), case + ': start')
+        require(value['last_acknowledged'] is None or (isinstance(value['last_acknowledged'], str)
+                and re.fullmatch('(0|[1-9][0-9]{0,19})', value['last_acknowledged'])), case + ': last_acknowledged')
+        return value
+
+    def w20_history_cursor(self):
+        case = 'history_cursor_round_trip'
+        row = self.config['requests']['operation.read.history']
+        first = dict(row['request'], cursor=None)
+        value, status, body = self.call(case + '.first', row['operation'], first)
+        page = self.success(status, body, value['request_id'], case + '.first')['value']
+        require(isinstance(page, dict) and 'cursor' in page, case + ': history page lacks cursor')
+        cursor = page['cursor']
+        require(isinstance(cursor, str) and len(cursor) == 112 and re.fullmatch('[0-9a-f]{112}', cursor),
+                case + ': cursor is not 112 lowercase hex')
+        value, status, body = self.call(case + '.next', row['operation'], dict(row['request'], cursor=cursor))
+        page = self.success(status, body, value['request_id'], case + '.next')['value']
+        require(isinstance(page, dict) and 'cursor' in page and (page['cursor'] is None or (
+                isinstance(page['cursor'], str) and len(page['cursor']) == 112 and re.fullmatch('[0-9a-f]{112}', page['cursor']))),
+                case + ': continued cursor is not 112 lowercase hex or null')
+        self.passed(case, self.d / 'responses' / (case + '.next.http'))
+
+    def w20_subscription_lifecycle(self):
+        case = 'subscription_lifecycle'
+        create = self.config['requests']['operation.subscription.create']['request']
+        scope = create['scope']
+        record = self.w20_subscription_record(
+            self.w20_completed_mutation(case + '.create', 'subscription.create', create)['value'], case + '.create', False)
+        target = {'scope': scope, 'subscription_id': record['subscription_id']}
+        value, status, body = self.call(case + '.list', 'subscription.list', {'scope': scope})
+        listed = self.success(status, body, value['request_id'], case + '.list')['value']
+        require(isinstance(listed, list), case + '.list: response is not a JSON array')
+        for row in listed:
+            self.w20_subscription_record(row, case + '.list')
+        require([row for row in listed if row['subscription_id'] == record['subscription_id']] == [record],
+                case + '.list: created record not listed exactly once')
+        value, status, body = self.call(case + '.health', 'subscription.health', target)
+        health = self.success(status, body, value['request_id'], case + '.health')['value']
+        require(isinstance(health, dict) and set(health) == {'target', 'last_acknowledged', 'last_delivery_at', 'pending_backfill'}
+                and health['target'] == target, case + '.health: health fields')
+        require(health['last_delivery_at'] is None or (isinstance(health['last_delivery_at'], str)
+                and re.fullmatch('(0|[1-9][0-9]{0,19})', health['last_delivery_at'])), case + '.health: last_delivery_at')
+        gap = health['pending_backfill']
+        require(gap is None or (isinstance(gap, dict) and set(gap) == {'missing_first', 'missing_last', 'backfill_cursor', 'backfill_attempted'}
+                and all(isinstance(gap[k], str) and re.fullmatch('(0|[1-9][0-9]{0,19})', gap[k])
+                        for k in ('missing_first', 'missing_last', 'backfill_cursor'))
+                and isinstance(gap['backfill_attempted'], bool)), case + '.health: pending_backfill GapNotice')
+        acknowledged = self.w20_subscription_record(self.w20_completed_mutation(
+            case + '.acknowledge', 'subscription.acknowledge', dict(target, cursor=record['start']))['value'], case + '.acknowledge')
+        require(acknowledged['subscription_id'] == record['subscription_id'] and acknowledged['last_acknowledged'] == record['start'],
+                case + '.acknowledge: cursor not recorded')
+        paused = self.w20_subscription_record(
+            self.w20_completed_mutation(case + '.pause', 'subscription.pause', target)['value'], case + '.pause', True)
+        resumed = self.w20_subscription_record(
+            self.w20_completed_mutation(case + '.resume', 'subscription.resume', target)['value'], case + '.resume', False)
+        require(paused['subscription_id'] == resumed['subscription_id'] == record['subscription_id'], case + ': record identity changed')
+        deleted = self.w20_completed_mutation(case + '.delete', 'subscription.delete', target)
+        require(deleted['value'] is None, case + '.delete: delete did not return null')
+        value, status, body = self.call(case + '.list_after_delete', 'subscription.list', {'scope': scope})
+        listed = self.success(status, body, value['request_id'], case + '.list_after_delete')['value']
+        require(isinstance(listed, list) and all(row.get('subscription_id') != record['subscription_id'] for row in listed),
+                case + ': deleted subscription still listed')
+        self.passed(case, self.d / 'responses' / (case + '.delete.http'))
+
     def run(self):
         (self.d / 'responses').mkdir(mode=0o700)
         (self.d / 'probes').mkdir(mode=0o700)
@@ -1166,6 +1243,9 @@ class Qualification:
         self.w20_idempotency_pre()
 
         self.w20_rotation()
+
+        self.w20_history_cursor()
+        self.w20_subscription_lifecycle()
         python_state = self.d / 'probes/python-mutation.state'
         python_retry = self.d / 'probes/python-retry.state'
         python_requests = self.probe_requests('python')
@@ -1219,6 +1299,8 @@ def worker(directory):
         expected += len(W20_IDEMPOTENCY_PRE) + len(W20_IDEMPOTENCY_POST)
 
         expected += len(W20_ROTATION_PRE)
+
+        expected += len(W20_COMPLETED_DIRECT)
         require(len(qualification.results) == expected, 'case count ' + str(len(qualification.results)) + ' != ' + str(expected))
         write_private(runtime.directory / 'case-results.json', qualification.results)
         print(f'PAXEER_X_GATE tests={len(qualification.results)} skipped=0', flush=True)

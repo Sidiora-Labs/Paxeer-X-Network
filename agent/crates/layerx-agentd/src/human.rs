@@ -811,14 +811,16 @@ pub trait HumanOperations {
     /// Returns an error if authorization or operation validation fails, or required state is unavailable.
     fn session_refresh(
         &mut self,
-        peer: &HumanPeer,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
         request: layerx_agent_api::identity::SessionRefresh,
     ) -> Result<HumanResponse, HumanOperationError>;
     /// # Errors
     /// Returns an error if authorization or operation validation fails, or required state is unavailable.
     fn session_close(
         &mut self,
-        peer: &HumanPeer,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
         request: layerx_agent_api::identity::SessionClose,
     ) -> Result<HumanResponse, HumanOperationError>;
     /// # Errors
@@ -832,7 +834,8 @@ pub trait HumanOperations {
     /// Returns an error if authorization or operation validation fails, or required state is unavailable.
     fn subscription_create(
         &mut self,
-        peer: &HumanPeer,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
         request: layerx_agent_api::subscription::SubscriptionCreate,
     ) -> Result<HumanResponse, HumanOperationError>;
     /// # Errors
@@ -846,21 +849,24 @@ pub trait HumanOperations {
     /// Returns an error if authorization or operation validation fails, or required state is unavailable.
     fn subscription_pause(
         &mut self,
-        peer: &HumanPeer,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
         request: layerx_agent_api::subscription::SubscriptionTarget,
     ) -> Result<HumanResponse, HumanOperationError>;
     /// # Errors
     /// Returns an error if authorization or operation validation fails, or required state is unavailable.
     fn subscription_resume(
         &mut self,
-        peer: &HumanPeer,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
         request: layerx_agent_api::subscription::SubscriptionTarget,
     ) -> Result<HumanResponse, HumanOperationError>;
     /// # Errors
     /// Returns an error if authorization or operation validation fails, or required state is unavailable.
     fn subscription_delete(
         &mut self,
-        peer: &HumanPeer,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
         request: layerx_agent_api::subscription::SubscriptionTarget,
     ) -> Result<HumanResponse, HumanOperationError>;
     /// # Errors
@@ -874,7 +880,8 @@ pub trait HumanOperations {
     /// Returns an error if authorization or operation validation fails, or required state is unavailable.
     fn subscription_acknowledge(
         &mut self,
-        peer: &HumanPeer,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
         request: layerx_agent_api::subscription::CursorAcknowledgement,
     ) -> Result<HumanResponse, HumanOperationError>;
     /// # Errors

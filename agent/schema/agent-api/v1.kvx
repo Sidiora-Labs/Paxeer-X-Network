@@ -478,7 +478,7 @@ access = "mutation"
 operation_class = "Write"
 surface = "Contract"
 idempotency_key = "required"
-disposition = "not_served_no_arm"
+disposition = "served_adapter_arm"
 
 [transport.agent_http.operation.submit]
 request = "owner typed Human submit request"
@@ -494,7 +494,7 @@ access = "mutation"
 operation_class = "Subscribe"
 surface = "Subscription"
 idempotency_key = "required"
-disposition = "not_served_no_arm"
+disposition = "served_adapter_arm"
 
 [transport.agent_http.operation.subscription.create]
 request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
@@ -502,7 +502,7 @@ access = "mutation"
 operation_class = "Subscribe"
 surface = "Subscription"
 idempotency_key = "required"
-disposition = "not_served_no_arm"
+disposition = "served_adapter_arm"
 
 [transport.agent_http.operation.subscription.delete]
 request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
@@ -510,7 +510,7 @@ access = "mutation"
 operation_class = "Subscribe"
 surface = "Subscription"
 idempotency_key = "required"
-disposition = "not_served_no_arm"
+disposition = "served_adapter_arm"
 
 [transport.agent_http.operation.subscription.health]
 request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
@@ -518,7 +518,7 @@ access = "read"
 operation_class = "Subscribe"
 surface = "Subscription"
 idempotency_key = "absent"
-disposition = "not_served_no_arm"
+disposition = "served_adapter_arm"
 
 [transport.agent_http.operation.subscription.list]
 request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
@@ -526,7 +526,7 @@ access = "read"
 operation_class = "Subscribe"
 surface = "Subscription"
 idempotency_key = "absent"
-disposition = "not_served_no_arm"
+disposition = "served_adapter_arm"
 
 [transport.agent_http.operation.subscription.pause]
 request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
@@ -534,7 +534,7 @@ access = "mutation"
 operation_class = "Subscribe"
 surface = "Subscription"
 idempotency_key = "required"
-disposition = "not_served_no_arm"
+disposition = "served_adapter_arm"
 
 [transport.agent_http.operation.subscription.resume]
 request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
@@ -542,7 +542,7 @@ access = "mutation"
 operation_class = "Subscribe"
 surface = "Subscription"
 idempotency_key = "required"
-disposition = "not_served_no_arm"
+disposition = "served_adapter_arm"
 
 [transport.agent_http.operation.track]
 request = "TrackRequest"
@@ -600,6 +600,11 @@ change = "Adds the Agent HTTP per-operation disposition table, the emitted error
 classification = "additive_only"
 baseline = "golden/v1.kvx@1.4"
 change = "Marks the Agent HTTP operations that the daemon dispatcher now routes to owner adapter arms as served_adapter_arm."
+
+[compatibility.history.1_6]
+classification = "additive_only"
+baseline = "golden/v1.kvx@1.5"
+change = "Marks budget.list, read.batch, read.history, read.module_state, session.close, session.refresh, wait, sign, subscription.create, subscription.list, subscription.pause, subscription.resume, subscription.delete, subscription.health and subscription.acknowledge as served_adapter_arm: the daemon dispatcher routes each to a named owner adapter arm. Source compatibility statement only."
 
 [compatibility.feature.agent_http_operations]
 introduced_contract = "1.4"
