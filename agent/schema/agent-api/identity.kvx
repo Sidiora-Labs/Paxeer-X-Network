@@ -38,18 +38,62 @@ set_semantics = "Every set is explicitly supplied. An explicit empty set denies 
 [operation.capability.create]
 required = ["tenant","agent_did","dimensions"]
 response = "AuthorityResponse<CapabilityRecord>"
+idempotency_key = "required"
+owner_request = "MutationEnvelope<CapabilityCreate>"
+keyless = "A create without an idempotency key is refused before the owner is called."
+identity = "Lowercase hex SHA-256 of UTF-8 LayerX/capability/create/v1, one NUL byte, the u32 big-endian length-prefixed authenticated tenant and agent UTF-8, then the exact 32-byte idempotency key."
+replay = "Same key with the same request returns the original record; same key with a changed request is refused; an existing record is never overwritten."
+authority_narrowing = "The record narrows the protocol authority of the session that issues it: expiry multiplied by 1000 is not later than the verified grant not_after_ms, and assets and counterparties resolve only through the canonical core identity and asset resolution. A dimension that cannot be compared is refused, never skipped."
+shape_rules = "Duplicate entries in a set, a rate ceiling with window_seconds 0, an amount ceiling for an asset outside assets, and an expiry already reached at the core protocol timestamp are refused."
 
 [operation.capability.attenuate]
 required = ["tenant","agent_did","parent_id","dimensions"]
 response = "AuthorityResponse<CapabilityRecord>"
+idempotency_key = "required"
+owner_request = "MutationEnvelope<CapabilityAttenuate>"
+parent_id_text = "64 lowercase hex characters naming an owner-issued record of the same tenant and agent; any other text is refused."
+identity = "Lowercase hex SHA-256 of UTF-8 LayerX/capability/attenuate/v1, one NUL byte, the u32 big-endian length-prefixed authenticated tenant and agent UTF-8, the 32 parent identifier bytes, then the exact 32-byte idempotency key."
+narrowing = "Every dimension of the child is no wider than the parent: expiry not later, each set a subset, every amount ceiling names a parent asset with an amount not above it, and every parent rate window is matched by a child window at least as long with no more actions. A wider child is refused."
 
 [operation.capability.list]
 required = ["tenant","agent_did"]
 response = "AuthorityResponse<CapabilityRecords>"
+idempotency_key = "absent"
+authority = "operation_permit"
 
 [operation.capability.revoke]
 required = ["tenant","agent_did","capability_id"]
 response = "AuthorityResponse<CapabilityRecord>"
+idempotency_key = "required"
+owner_request = "MutationEnvelope<CapabilityRevoke>"
+capability_id_text = "64 lowercase hex characters naming an owner-issued record of the same tenant and agent; any other text is refused."
+subtree = "Revokes the named record and every record whose parent chain reaches it in one durable write; preparations bound to a revoked record that have not been submitted end in the existing Failed terminal with a capability-revocation reason."
+replay = "Revoking an already revoked record returns the stored record without a new write."
+
+[type.CapabilityRecord]
+required = ["capability_id","parent_id","tenant","agent_did","dimensions","state","created_at_ms","created_at_sequence","revoked_at_ms","revoked_at_sequence"]
+capability_id = "64 lowercase hex characters issued by the owner"
+parent_id = "64 lowercase hex characters or null for a root record"
+dimensions = "CapabilityDimensions in its request encoding; a set echoed empty is an explicit deny-all."
+state = "CapabilityState"
+created_at_ms = "decimal_string: protocol timestamp in milliseconds of the core preparation snapshot read at creation"
+created_at_sequence = "decimal_string: observed head sequence of the same snapshot"
+revoked_at_ms = "decimal_string or null"
+revoked_at_sequence = "decimal_string or null"
+time_basis = "expiry and window_seconds are seconds of core protocol time; a record is expired when the core protocol timestamp in milliseconds is at least expiry multiplied by 1000. Sequence fields are sequences and are never compared with time."
+
+[type.CapabilityState]
+variants = ["active","revoked","expired"]
+precedence = "revoked whenever revoked_at_ms and revoked_at_sequence are present, which are present together or both null; otherwise expired when the core protocol timestamp of the list or mutation snapshot has reached expiry; otherwise active."
+
+[type.CapabilityRecords]
+required = ["capabilities"]
+capabilities = "CapabilityRecord[] in ascending capability_id order, revoked and expired records included"
+basis = "Lists the timed records issued through capability.create and capability.attenuate. Legacy sequence-based records remain on the existing Human install surface and are not listed here."
+
+[type.AuthorityDescription]
+required = ["tenant","agent_did","authority_ref","protocol_authority"]
+protocol_authority = "lowercase hex of the canonical protocol authority bytes; never empty"
 
 [type.BudgetEnforcement]
 variants = ["ProtocolBudget","DaemonLimit"]

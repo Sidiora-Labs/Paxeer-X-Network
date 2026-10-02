@@ -321,6 +321,25 @@ impl CapabilityDimensionsWire {
     }
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct CapabilityListWire {
+    tenant: String,
+    agent_did: String,
+}
+
+impl CapabilityListWire {
+    pub(crate) fn into_request(
+        self,
+        id: RequestId,
+    ) -> Result<layerx_agent_api::capability::CapabilityList, Rejection> {
+        Ok(layerx_agent_api::capability::CapabilityList {
+            tenant: text(self.tenant, id, TenantId::new)?,
+            agent_did: text(self.agent_did, id, AgentDid::new)?,
+        })
+    }
+}
+
 fn dimensions_value(dimensions: &CapabilityDimensions) -> Value {
     json!({
         "activity_types": activity_values(&dimensions.activity_types),

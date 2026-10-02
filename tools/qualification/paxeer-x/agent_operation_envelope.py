@@ -56,6 +56,15 @@ W20_COMPLETED_DIRECT = ('history_cursor_round_trip', 'subscription_lifecycle')
 
 W7_SIGN_DIRECT = ('sign_signed_unverified', 'sign_submit_composite')
 W7_SIGN_NEGATIVE = ('submit_foreign_key_refused',)
+W8_CAPABILITY_DIRECT = ('capability_create_provisioned', 'capability_attenuate_narrows', 'capability_list_timed',
+                        'capability_revoke_subtree')
+W8_CAPABILITY_REFUSALS = ('capability_refuse_duplicate', 'capability_refuse_zero_window',
+                          'capability_refuse_ceiling_outside_assets', 'capability_refuse_expired',
+                          'capability_refuse_uppercase_reference')
+W8_CAPABILITY_RECORD = ('capability_id', 'parent_id', 'tenant', 'agent_did', 'dimensions', 'state', 'created_at_ms',
+                        'created_at_sequence', 'revoked_at_ms', 'revoked_at_sequence')
+W8_DIMENSIONS = ('activity_types', 'counterparties', 'assets', 'amount_ceilings', 'rate_ceilings', 'purpose_constraints', 'expiry')
+W8_DECIMAL = '(0|[1-9][0-9]{0,38})'
 W7_SUBMITTED_STATES = ('Queued', 'Submitted', 'Acknowledged', 'Executed')
 W20_SUBSCRIPTION_RECORD = ('subscription_id', 'scope', 'filter', 'start', 'last_acknowledged', 'delivery_target', 'paused')
 PYTHON_PRE_RESTART = ('allowed_mutation', 'mutation_duplicate_same_result', 'restart_unknown_pending', 'restart_retry_same_result')
@@ -331,6 +340,25 @@ def load_config():
             and all(isinstance(row['request'][k], str) and re.fullmatch('[1-9][0-9]{0,19}', row['request'][k])
                     for k in ('selector', 'maximum_bytes', 'maximum_chunks')),
             'provisioned request lacks operation.availability.fetch (harness owns the deadline)')
+    row = config['requests']['operation.capability.create']
+    dims = row['request'].get('dimensions')
+    require(set(row['request']) == {'tenant', 'agent_did', 'dimensions'} and isinstance(dims, dict) and set(dims) == set(W8_DIMENSIONS)
+            and row['request']['tenant'] == load_private(config['credential_file'], 'credential_file')['tenant']
+            and isinstance(row['request']['agent_did'], str) and row['request']['agent_did']
+            and all(isinstance(dims[k], list) for k in W8_DIMENSIONS if k != 'expiry')
+            and dims['assets'] and dims['amount_ceilings'] and dims['rate_ceilings']
+            and all(isinstance(a, str) and re.fullmatch('[0-9a-f]{64}', a) for a in dims['assets'] + dims['counterparties'])
+            and len(set(dims['assets'])) == len(dims['assets'])
+            and all(isinstance(c, dict) and set(c) == {'asset', 'amount'} and c['asset'] in dims['assets']
+                    and isinstance(c['amount'], str) and re.fullmatch(W8_DECIMAL, c['amount']) for c in dims['amount_ceilings'])
+            and len({c['asset'] for c in dims['amount_ceilings']}) == len(dims['amount_ceilings'])
+            and all(isinstance(r, dict) and set(r) == {'window_seconds', 'maximum_actions'}
+                    and isinstance(r['window_seconds'], str) and re.fullmatch('[1-9][0-9]{0,19}', r['window_seconds'])
+                    and isinstance(r['maximum_actions'], str) and re.fullmatch('(0|[1-9][0-9]{0,19})', r['maximum_actions'])
+                    for r in dims['rate_ceilings'])
+            and len({r['window_seconds'] for r in dims['rate_ceilings']}) == len(dims['rate_ceilings'])
+            and isinstance(dims['expiry'], str) and re.fullmatch('[1-9][0-9]{0,19}', dims['expiry']),
+            'provisioned operation.capability.create needs non-empty lowercase-hex assets, amount_ceilings within assets and non-zero rate windows')
     row = config['requests']['operation.session.list']
     require(set(row['request']) == {'context'} and isinstance(row['request']['context'], dict)
             and row['request']['context'].get('tenant') == load_private(config['credential_file'], 'credential_file')['tenant']
@@ -1393,6 +1421,125 @@ class Qualification:
                 case + ': deleted subscription still listed')
         self.passed(case, self.d / 'responses' / (case + '.delete.http'))
 
+    def w8_capability_authority(self, value, case):
+        require(isinstance(value, dict) and set(value) == {'authority', 'value'}, case + ': AuthorityResponse fields')
+        authority = value['authority']
+        require(isinstance(authority, dict) and set(authority) == {'tenant', 'agent_did', 'authority_ref', 'protocol_authority'}
+                and all(isinstance(authority[k], str) and authority[k] for k in authority)
+                and re.fullmatch('([0-9a-f]{2})+', authority['protocol_authority']), case + ': authority description')
+        create = self.config['requests']['operation.capability.create']['request']
+        require(authority['tenant'] == create['tenant'] and authority['agent_did'] == create['agent_did'],
+                case + ': authority names another tenant or agent')
+        return value['value']
+
+    def w8_dimensions_equal(self, echoed, requested):
+        if not isinstance(echoed, dict) or set(echoed) != set(W8_DIMENSIONS):
+            return False
+        sets = ('activity_types', 'counterparties', 'assets', 'purpose_constraints')
+        return (all(sorted(echoed[k]) == sorted(requested[k]) for k in sets)
+                and sorted((c['asset'], int(c['amount'])) for c in echoed['amount_ceilings'])
+                == sorted((c['asset'], int(c['amount'])) for c in requested['amount_ceilings'])
+                and sorted((int(r['window_seconds']), int(r['maximum_actions'])) for r in echoed['rate_ceilings'])
+                == sorted((int(r['window_seconds']), int(r['maximum_actions'])) for r in requested['rate_ceilings'])
+                and echoed['expiry'] == requested['expiry'])
+
+    def w8_capability_record(self, value, case, state, parent_id=None, dimensions=None):
+        require(isinstance(value, dict) and set(value) == set(W8_CAPABILITY_RECORD), case + ': CapabilityRecord fields')
+        require(isinstance(value['capability_id'], str) and re.fullmatch('[0-9a-f]{64}', value['capability_id']),
+                case + ': capability_id is not 64 lowercase hex')
+        require(value['parent_id'] == parent_id, case + ': parent_id')
+        require(value['state'] == state, case + ': state ' + str(value['state']) + ' != ' + state)
+        require(all(isinstance(value[k], str) and re.fullmatch('(0|[1-9][0-9]{0,19})', value[k])
+                    for k in ('created_at_ms', 'created_at_sequence')), case + ': created_at decimals')
+        revoked = [value[k] for k in ('revoked_at_ms', 'revoked_at_sequence')]
+        require(all(v is None for v in revoked) if state != 'revoked' else
+                all(isinstance(v, str) and re.fullmatch('(0|[1-9][0-9]{0,19})', v) for v in revoked), case + ': revoked_at')
+        require(dimensions is None or self.w8_dimensions_equal(value['dimensions'], dimensions), case + ': dimensions not echoed')
+        return value
+
+    def w8_capability_list(self, case):
+        create = self.config['requests']['operation.capability.create']['request']
+        value, status, body = self.call(case, 'capability.list', {'tenant': create['tenant'], 'agent_did': create['agent_did']})
+        listed = self.w8_capability_authority(self.success(status, body, value['request_id'], case)['value'], case)
+        require(isinstance(listed, dict) and set(listed) == {'capabilities'} and isinstance(listed['capabilities'], list),
+                case + ': response is not {capabilities: [...]}')
+        ids = [row.get('capability_id') if isinstance(row, dict) else None for row in listed['capabilities']]
+        require(all(isinstance(i, str) for i in ids) and all(a < b for a, b in zip(ids, ids[1:])),
+                case + ': capabilities not strictly ascending by capability_id')
+        return {row['capability_id']: row for row in listed['capabilities']}
+
+    def w8_capability_refusal(self, case, operation, request, http_status, klass, reason):
+        key = self.key('direct', case)
+        value, status, body = self.call(case, operation, request, idempotency=key)
+        self.effect('direct', case, operation, key)
+        return self.refusal(status, body, http_status, klass, reason, case, value['request_id'])
+
+    def w8_capability_refused(self, case, operation, request, http_status, klass, reason):
+        self.w8_capability_refusal(case, operation, request, http_status, klass, reason)
+        self.passed(case, self.d / 'responses' / (case + '.http'))
+
+    def w8_capability_cases(self):
+        create = self.config['requests']['operation.capability.create']['request']
+        dims = create['dimensions']
+        case = W8_CAPABILITY_DIRECT[0]
+        parent = self.w8_capability_record(self.w8_capability_authority(
+            self.w20_completed_mutation(case, 'capability.create', create)['value'], case), case, 'active', None, dims)
+        self.passed(case, self.d / 'responses' / (case + '.http'))
+
+        case = W8_CAPABILITY_DIRECT[1]
+        first = dims['amount_ceilings'][0]
+        narrow = dict(dims, activity_types=dims['activity_types'][:1], counterparties=dims['counterparties'][:1],
+                      assets=[first['asset']], amount_ceilings=[first], purpose_constraints=dims['purpose_constraints'][:1])
+        wider = dict(narrow, amount_ceilings=[dict(first, amount=str(int(first['amount']) + 1))])
+        self.w8_capability_refusal(case + '.wider', 'capability.attenuate',
+                                   {'tenant': create['tenant'], 'agent_did': create['agent_did'],
+                                    'parent_id': parent['capability_id'], 'dimensions': wider},
+                                   403, 'CapabilityRefusal', 'capability.amount')
+        child = self.w8_capability_record(self.w8_capability_authority(self.w20_completed_mutation(
+            case, 'capability.attenuate', {'tenant': create['tenant'], 'agent_did': create['agent_did'],
+                                           'parent_id': parent['capability_id'], 'dimensions': narrow})['value'], case),
+            case, 'active', parent['capability_id'], narrow)
+        require(child['capability_id'] != parent['capability_id'], case + ': child reused the parent id')
+        self.passed(case, self.d / 'responses' / (case + '.http'))
+
+        case = W8_CAPABILITY_DIRECT[2]
+        listed = self.w8_capability_list(case)
+        require(listed.get(parent['capability_id']) == parent and listed.get(child['capability_id']) == child,
+                case + ': created records not listed as created')
+        self.passed(case, self.d / 'responses' / (case + '.http'))
+
+        base = {'tenant': create['tenant'], 'agent_did': create['agent_did']}
+        asset = dims['assets'][0]
+        self.w8_capability_refused(W8_CAPABILITY_REFUSALS[0], 'capability.create',
+                                   dict(base, dimensions=dict(dims, assets=dims['assets'] + [asset])),
+                                   403, 'CapabilityRefusal', 'capability.asset')
+        window = dims['rate_ceilings'][0]
+        self.w8_capability_refused(W8_CAPABILITY_REFUSALS[1], 'capability.create',
+                                   dict(base, dimensions=dict(dims, rate_ceilings=[dict(window, window_seconds='0')])),
+                                   403, 'CapabilityRefusal', 'capability.rate')
+        self.w8_capability_refused(W8_CAPABILITY_REFUSALS[2], 'capability.create',
+                                   dict(base, dimensions=dict(dims, assets=[a for a in dims['assets'] if a != first['asset']])),
+                                   403, 'CapabilityRefusal', 'capability.amount')
+        self.w8_capability_refused(W8_CAPABILITY_REFUSALS[3], 'capability.create', dict(base, dimensions=dict(dims, expiry='1')),
+                                   403, 'CapabilityRefusal', 'capability.expiry')
+        require(parent['capability_id'].upper() != parent['capability_id'], 'capability_id has no hex letter to uppercase')
+        self.w8_capability_refused(W8_CAPABILITY_REFUSALS[4], 'capability.revoke',
+                                   dict(base, capability_id=parent['capability_id'].upper()),
+                                   403, 'PolicyRefusal', 'owner.refused')
+
+        case = W8_CAPABILITY_DIRECT[3]
+        revoked = self.w8_capability_record(self.w8_capability_authority(self.w20_completed_mutation(
+            case, 'capability.revoke', dict(base, capability_id=parent['capability_id']))['value'], case), case, 'revoked', None, dims)
+        require(revoked['capability_id'] == parent['capability_id'], case + ': revoke returned another record')
+        listed = self.w8_capability_list(case + '.list')
+        for record, parent_id in ((parent, None), (child, parent['capability_id'])):
+            row = listed.get(record['capability_id'])
+            require(row is not None, case + ': revoked record no longer listed')
+            self.w8_capability_record(row, case + '.list', 'revoked', parent_id)
+            require(row['revoked_at_ms'] == revoked['revoked_at_ms'] and row['revoked_at_sequence'] == revoked['revoked_at_sequence'],
+                    case + ': subtree not revoked at one instant')
+        self.passed(case, self.d / 'responses' / (case + '.list.http'))
+
     def run(self):
         (self.d / 'responses').mkdir(mode=0o700)
         (self.d / 'probes').mkdir(mode=0o700)
@@ -1423,6 +1570,7 @@ class Qualification:
         self.w7_session_list()
         self.w7_availability_fetch()
         self.w20_subscription_lifecycle()
+        self.w8_capability_cases()
 
         self.w7_sign_cases()
         python_state = self.d / 'probes/python-mutation.state'
@@ -1480,6 +1628,8 @@ def worker(directory):
         expected += len(W20_ROTATION_PRE) + len(W7_OWNER_DIRECT)
 
         expected += len(W20_COMPLETED_DIRECT) + len(W7_SIGN_DIRECT) + len(W7_SIGN_NEGATIVE)
+
+        expected += len(W8_CAPABILITY_DIRECT) + len(W8_CAPABILITY_REFUSALS)
         require(len(qualification.results) == expected, 'case count ' + str(len(qualification.results)) + ' != ' + str(expected))
         write_private(runtime.directory / 'case-results.json', qualification.results)
         print(f'PAXEER_X_GATE tests={len(qualification.results)} skipped=0', flush=True)

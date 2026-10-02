@@ -1,7 +1,7 @@
 [schema]
 name = "LayerX Agent API"
 major = 1
-minor = 7
+minor = 8
 node_interface_major = 1
 source_of_truth = "This schema and the schema files it includes define the daemon contract and every SDK surface. Generated output is never authoritative."
 compatibility = "Within one major version a release may only add sections or keys. Removing or changing an existing declaration requires a new major version."
@@ -255,6 +255,8 @@ operation_class = "Write"
 surface = "Contract"
 idempotency_key = "required"
 disposition = "not_served_no_arm"
+owner_request = "MutationEnvelope<CapabilityAttenuate>"
+response = "AuthorityResponse<CapabilityRecord>"
 
 [transport.agent_http.operation.capability.create]
 request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
@@ -263,6 +265,8 @@ operation_class = "Write"
 surface = "Contract"
 idempotency_key = "required"
 disposition = "not_served_no_arm"
+owner_request = "MutationEnvelope<CapabilityCreate>"
+response = "AuthorityResponse<CapabilityRecord>"
 
 [transport.agent_http.operation.capability.list]
 request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
@@ -271,6 +275,9 @@ operation_class = "Read"
 surface = "Contract"
 idempotency_key = "absent"
 disposition = "not_served_no_arm"
+owner_request = "CapabilityList"
+authority = "operation_permit"
+response = "AuthorityResponse<CapabilityRecords>"
 
 [transport.agent_http.operation.capability.revoke]
 request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
@@ -279,6 +286,8 @@ operation_class = "Write"
 surface = "Contract"
 idempotency_key = "required"
 disposition = "not_served_no_arm"
+owner_request = "MutationEnvelope<CapabilityRevoke>"
+response = "AuthorityResponse<CapabilityRecord>"
 
 [transport.agent_http.operation.export.offline]
 request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
@@ -595,6 +604,13 @@ transport_ambiguity = "A mutating request whose outcome the client cannot know i
 "owner.degraded" = "UnavailableCapability Retriable. Owner is not Healthy."
 "owner.unavailable" = "InternalFault Retriable. Owner unavailable at the daemon; the dispatcher maps an owner Unavailable error to UnavailableCapability Retriable with this reason."
 "owner.refused" = "PolicyRefusal Terminal. Owner refused the typed operation."
+"capability.expiry" = "CapabilityRefusal Terminal. Owner refused the typed operation: core protocol time is at or past the capability not_after."
+"capability.activity_type" = "CapabilityRefusal Terminal. Owner refused the typed operation: the capability does not admit the activity type."
+"capability.counterparty" = "CapabilityRefusal Terminal. Owner refused the typed operation: the capability does not admit the counterparty."
+"capability.asset" = "CapabilityRefusal Terminal. Owner refused the typed operation: the capability does not admit the asset."
+"capability.amount" = "CapabilityRefusal Terminal. Owner refused the typed operation: the amount exceeds the capability ceiling."
+"capability.rate" = "CapabilityRefusal Terminal. Owner refused the typed operation: the capability rate window is exhausted."
+"capability.purpose" = "CapabilityRefusal Terminal. Owner refused the typed operation: the capability does not admit the purpose."
 "owner.response_malformed" = "InternalFault Terminal. Owner response did not decode."
 "verification.inconsistent" = "VerificationFailure Terminal. Verification status violates the level ordering."
 
@@ -619,6 +635,13 @@ adapter_arm_scope = "served_adapter_arm asserts only that a dispatch arm and ada
 classification = "additive_only"
 baseline = "golden/v1.kvx@1.6"
 change = "Declares the subscription.create mutation envelope and creation identity, permit-bound subscription.list and subscription.health, the read.history cursor text, page limit bound and kind byte table, and the sign response shape. Adds keys only; no existing declaration or disposition changes. Source compatibility statement only."
+
+[compatibility.history.1_8]
+classification = "additive_only"
+baseline = "golden/v1.kvx@1.7"
+change = "Declares CapabilityRecord, CapabilityRecords, CapabilityState and AuthorityDescription, the capability.create, attenuate and revoke mutation envelopes, identities and replay rules, permit-bound capability.list, and the owner request and response of the four capability Agent HTTP rows. Adds keys only; no existing declaration or disposition changes. Source compatibility statement only."
+capability_disposition = "capability.create, capability.attenuate, capability.list and capability.revoke stay not_served_no_arm: no owner adapter or owner body exists in this contract revision."
+capability_refusal_reasons = "Adds the emitted error reasons capability.expiry, capability.activity_type, capability.counterparty, capability.asset, capability.amount, capability.rate and capability.purpose, each CapabilityRefusal Terminal: the dispatcher maps an owner capability refusal to the existing CapabilityRefusal class with the refused dimension as the reason. No new error class; owner.refused and owner.unavailable unchanged."
 
 [compatibility.feature.agent_http_operations]
 introduced_contract = "1.4"

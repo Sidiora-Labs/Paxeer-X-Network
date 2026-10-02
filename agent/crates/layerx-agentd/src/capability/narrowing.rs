@@ -14,6 +14,8 @@ pub struct ProtocolScope {
     pub assets: BTreeSet<[u8; 32]>,
     pub amount_ceiling: u128,
     pub expires_at_sequence: u64,
+    pub not_before_ms: u64,
+    pub not_after_ms: u64,
     pub enforceable_dimensions: BTreeSet<Dimension>,
 }
 

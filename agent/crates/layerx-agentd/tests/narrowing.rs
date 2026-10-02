@@ -34,6 +34,8 @@ fn scope() -> ProtocolScope {
         assets: BTreeSet::from([[3; 32]]),
         amount_ceiling: 1_000,
         expires_at_sequence: 200,
+        not_before_ms: 0,
+        not_after_ms: 200_000,
         enforceable_dimensions: BTreeSet::from([
             Dimension::ActivityType,
             Dimension::Counterparty,

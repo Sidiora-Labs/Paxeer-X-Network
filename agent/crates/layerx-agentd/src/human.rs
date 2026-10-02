@@ -783,29 +783,33 @@ pub trait HumanOperations {
     /// Returns an error if authorization or operation validation fails, or required state is unavailable.
     fn capability_create(
         &mut self,
-        peer: &HumanPeer,
-        request: layerx_agent_api::capability::CapabilityCreate,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
+        request: MutationEnvelope<layerx_agent_api::capability::CapabilityCreate>,
     ) -> Result<HumanResponse, HumanOperationError>;
     /// # Errors
     /// Returns an error if authorization or operation validation fails, or required state is unavailable.
     fn capability_attenuate(
         &mut self,
-        peer: &HumanPeer,
-        request: layerx_agent_api::capability::CapabilityAttenuate,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
+        request: MutationEnvelope<layerx_agent_api::capability::CapabilityAttenuate>,
     ) -> Result<HumanResponse, HumanOperationError>;
     /// # Errors
     /// Returns an error if authorization or operation validation fails, or required state is unavailable.
     fn capability_list(
         &mut self,
-        peer: &HumanPeer,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
         request: layerx_agent_api::capability::CapabilityList,
     ) -> Result<HumanResponse, HumanOperationError>;
     /// # Errors
     /// Returns an error if authorization or operation validation fails, or required state is unavailable.
     fn capability_revoke(
         &mut self,
-        peer: &HumanPeer,
-        request: layerx_agent_api::capability::CapabilityRevoke,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
+        request: MutationEnvelope<layerx_agent_api::capability::CapabilityRevoke>,
     ) -> Result<HumanResponse, HumanOperationError>;
     /// # Errors
     /// Returns an error if authorization or operation validation fails, or required state is unavailable.
@@ -934,6 +938,7 @@ pub trait HumanOperations {
 pub enum HumanOperationError {
     Refused,
     Unavailable,
+    CapabilityRefused(crate::capability::Dimension),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1108,7 +1113,9 @@ pub fn serve_one<T: FrameTransport, O: HumanOperations>(
             response.push(0);
             response.extend_from_slice(payload.bytes());
         }
-        Err(HumanOperationError::Refused) => response.push(1),
+        Err(HumanOperationError::Refused | HumanOperationError::CapabilityRefused(_)) => {
+            response.push(1);
+        }
         Err(HumanOperationError::Unavailable) => response.push(2),
     }
     transport

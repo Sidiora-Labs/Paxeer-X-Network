@@ -475,6 +475,20 @@ fn owner_error(request_id: RequestId, error: HumanOperationError) -> Rejection {
         HumanOperationError::Refused => {
             rejection(ErrorClass::PolicyRefusal, request_id, "owner.refused")
         }
+        HumanOperationError::CapabilityRefused(dimension) => rejection(
+            ErrorClass::CapabilityRefusal,
+            request_id,
+            match dimension {
+                crate::capability::Dimension::Expiry => "capability.expiry",
+                crate::capability::Dimension::ActivityType => "capability.activity_type",
+                crate::capability::Dimension::Counterparty => "capability.counterparty",
+                crate::capability::Dimension::Asset => "capability.asset",
+                crate::capability::Dimension::Amount => "capability.amount",
+                crate::capability::Dimension::Rate => "capability.rate",
+                crate::capability::Dimension::Purpose => "capability.purpose",
+            },
+        ),
+
         HumanOperationError::Unavailable => Rejection {
             class: ErrorClass::UnavailableCapability,
             retriability: Retriability::Retriable,
@@ -1022,6 +1036,299 @@ pub(crate) fn availability_fetch<A: HumanAuthorityBoundary>(
         out.insert("classes".into(), top);
         out.insert("providers".into(), Value::Array(providers));
         Some((Value::Object(out), Some(achieved)))
+    })
+}
+
+pub(crate) fn capability_create<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>,
+    context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>,
+    ctx: &DispatchContext,
+) -> Result<Dispatched, Rejection> {
+    use crate::agent_rpc_dispatch::mutation_key;
+    let id = ctx.request_id;
+    let wire: crate::agent_rpc_wire::CapabilityCreateWire = decode(request, id)?;
+    let typed = wire.into_request(id)?;
+    let envelope = crate::human::MutationEnvelope {
+        request_id: id.0,
+        key: mutation_key(ctx)?,
+        body_digest: crate::human_runtime::capability_create_digest(&typed),
+        operation: typed,
+    };
+    let response = owner
+        .lock()
+        .and_then(|mut guard| guard.rpc_capability_create(context, envelope))
+        .map_err(|error| owner_error(id, error))?;
+    Ok(Dispatched {
+        value: capability_record_value(id, response.bytes())?,
+        verification: None,
+    })
+}
+
+pub(crate) fn capability_attenuate<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>,
+    context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>,
+    ctx: &DispatchContext,
+) -> Result<Dispatched, Rejection> {
+    use crate::agent_rpc_dispatch::mutation_key;
+    let id = ctx.request_id;
+    let wire: crate::agent_rpc_wire::CapabilityAttenuateWire = decode(request, id)?;
+    let typed = wire.into_request(id)?;
+    let envelope = crate::human::MutationEnvelope {
+        request_id: id.0,
+        key: mutation_key(ctx)?,
+        body_digest: crate::human_runtime::capability_attenuate_digest(&typed),
+        operation: typed,
+    };
+    let response = owner
+        .lock()
+        .and_then(|mut guard| guard.rpc_capability_attenuate(context, envelope))
+        .map_err(|error| owner_error(id, error))?;
+    Ok(Dispatched {
+        value: capability_record_value(id, response.bytes())?,
+        verification: None,
+    })
+}
+
+pub(crate) fn capability_list<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>,
+    context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>,
+    ctx: &DispatchContext,
+) -> Result<Dispatched, Rejection> {
+    let id = ctx.request_id;
+    let wire: crate::agent_rpc_wire::CapabilityListWire = decode(request, id)?;
+    let typed = wire.into_request(id)?;
+    let response = owner
+        .lock()
+        .and_then(|mut guard| guard.rpc_capability_list(context, typed))
+        .map_err(|error| owner_error(id, error))?;
+    Ok(Dispatched {
+        value: capability_records_value(id, response.bytes())?,
+        verification: None,
+    })
+}
+
+pub(crate) fn capability_revoke<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>,
+    context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>,
+    ctx: &DispatchContext,
+) -> Result<Dispatched, Rejection> {
+    use crate::agent_rpc_dispatch::mutation_key;
+    let id = ctx.request_id;
+    let wire: crate::agent_rpc_wire::CapabilityRevokeWire = decode(request, id)?;
+    let typed = wire.into_request(id)?;
+    let envelope = crate::human::MutationEnvelope {
+        request_id: id.0,
+        key: mutation_key(ctx)?,
+        body_digest: crate::human_runtime::capability_revoke_digest(&typed),
+        operation: typed,
+    };
+    let response = owner
+        .lock()
+        .and_then(|mut guard| guard.rpc_capability_revoke(context, envelope))
+        .map_err(|error| owner_error(id, error))?;
+    Ok(Dispatched {
+        value: capability_record_value(id, response.bytes())?,
+        verification: None,
+    })
+}
+
+/// Owner capability payloads are bounded by `HumanResponse::new` (human.rs `MAX_BYTES`,
+/// 1 MiB); every count is a u16 and every element is read from the remaining bytes, so a
+/// record list holds at most 65 535 records and never more than the payload encodes.
+fn capability_payload(
+    id: RequestId,
+    payload: &[u8],
+    decoder: impl FnOnce(&mut Reader<'_>) -> Option<Value>,
+) -> Result<Value, Rejection> {
+    let mut reader = Reader {
+        bytes: payload,
+        offset: 0,
+    };
+    decoder(&mut reader)
+        .filter(|_| reader.finish().is_some())
+        .ok_or_else(|| rejection(ErrorClass::InternalFault, id, "owner.response_malformed"))
+}
+
+/// Authority block: text tenant, text agent_did, text authority_ref, non-empty bytes
+/// protocol_authority. Returns the JSON authority and its tenant and agent_did.
+fn capability_authority(reader: &mut Reader<'_>) -> Option<(Value, String, String)> {
+    let tenant = reader.text()?;
+    let agent_did = reader.text()?;
+    let authority_ref = reader.text()?;
+    let protocol_authority = reader.bytes()?;
+    let mut out = Map::new();
+    out.insert("tenant".into(), Value::String(tenant.clone()));
+    out.insert("agent_did".into(), Value::String(agent_did.clone()));
+    out.insert("authority_ref".into(), Value::String(authority_ref));
+    out.insert("protocol_authority".into(), hexv(protocol_authority));
+    Some((Value::Object(out), tenant, agent_did))
+}
+
+fn capability_hex_id(reader: &mut Reader<'_>, id: RequestId) -> Option<(String, [u8; 32])> {
+    let text = reader.text()?;
+    let bytes = hex32(&text, id).ok()?;
+    Some((text, bytes))
+}
+
+fn capability_unique<T: Ord + Clone>(values: &[T]) -> Option<()> {
+    let set: std::collections::BTreeSet<T> = values.iter().cloned().collect();
+    (set.len() == values.len()).then_some(())
+}
+
+fn capability_texts(reader: &mut Reader<'_>) -> Option<Vec<String>> {
+    let count = reader.u16()?;
+    let mut items = Vec::new();
+    for _ in 0..count {
+        items.push(reader.text()?);
+    }
+    capability_unique(&items)?;
+    Some(items)
+}
+
+fn capability_strings(items: &[String]) -> Value {
+    Value::Array(items.iter().map(|item| Value::String(item.clone())).collect())
+}
+
+/// One record: text capability_id (64 lowercase hex), u8 parent tag + text parent_id,
+/// u16 count + u16 activity types, u16 count + text counterparties, u16 count + text assets,
+/// u16 count + (text asset, u128 amount), u16 count + (u64 window_seconds,
+/// u64 maximum_actions), u16 count + text purposes, u64 expiry_seconds, u64 created_at_ms,
+/// u64 created_at_sequence, u8 state (0 active, 1 revoked, 2 expired), u8 revoked tag +
+/// (u64 revoked_at_ms, u64 revoked_at_sequence). Duplicates, a zero window, a ceiling for
+/// an asset outside `assets`, and a state that disagrees with the revoked tag are malformed.
+fn capability_record(
+    reader: &mut Reader<'_>,
+    id: RequestId,
+    tenant: &str,
+    agent_did: &str,
+) -> Option<(Value, [u8; 32])> {
+    let (capability_id, capability_bytes) = capability_hex_id(reader, id)?;
+    let parent_id = match reader.u8()? {
+        0 => Value::Null,
+        1 => Value::String(capability_hex_id(reader, id)?.0),
+        _ => return None,
+    };
+    let activity_count = reader.u16()?;
+    let mut activity_types = Vec::new();
+    for _ in 0..activity_count {
+        activity_types.push(reader.u16()?);
+    }
+    capability_unique(&activity_types)?;
+    let counterparties = capability_texts(reader)?;
+    let assets = capability_texts(reader)?;
+    let amount_count = reader.u16()?;
+    let mut amount_assets = Vec::new();
+    let mut amount_ceilings = Vec::new();
+    for _ in 0..amount_count {
+        let asset = reader.text()?;
+        let amount = reader.u128()?;
+        if !assets.contains(&asset) {
+            return None;
+        }
+        amount_assets.push(asset.clone());
+        let mut ceiling = Map::new();
+        ceiling.insert("asset".into(), Value::String(asset));
+        ceiling.insert("amount".into(), dec(amount));
+        amount_ceilings.push(Value::Object(ceiling));
+    }
+    capability_unique(&amount_assets)?;
+    let rate_count = reader.u16()?;
+    let mut windows = Vec::new();
+    let mut rate_ceilings = Vec::new();
+    for _ in 0..rate_count {
+        let window_seconds = reader.u64()?;
+        let maximum_actions = reader.u64()?;
+        if window_seconds == 0 {
+            return None;
+        }
+        windows.push(window_seconds);
+        let mut ceiling = Map::new();
+        ceiling.insert("window_seconds".into(), dec(window_seconds));
+        ceiling.insert("maximum_actions".into(), dec(maximum_actions));
+        rate_ceilings.push(Value::Object(ceiling));
+    }
+    capability_unique(&windows)?;
+    let purposes = capability_texts(reader)?;
+    let expiry = reader.u64()?;
+    let created_at_ms = reader.u64()?;
+    let created_at_sequence = reader.u64()?;
+    let state = match reader.u8()? {
+        0 => "active",
+        1 => "revoked",
+        2 => "expired",
+        _ => return None,
+    };
+    let (revoked_at_ms, revoked_at_sequence) = match reader.u8()? {
+        0 => (Value::Null, Value::Null),
+        1 => (dec(reader.u64()?), dec(reader.u64()?)),
+        _ => return None,
+    };
+    if (state == "revoked") == revoked_at_ms.is_null() {
+        return None;
+    }
+    let mut dimensions = Map::new();
+    dimensions.insert(
+        "activity_types".into(),
+        Value::Array(activity_types.into_iter().map(dec).collect()),
+    );
+    dimensions.insert("counterparties".into(), capability_strings(&counterparties));
+    dimensions.insert("assets".into(), capability_strings(&assets));
+    dimensions.insert("amount_ceilings".into(), Value::Array(amount_ceilings));
+    dimensions.insert("rate_ceilings".into(), Value::Array(rate_ceilings));
+    dimensions.insert("purpose_constraints".into(), capability_strings(&purposes));
+    dimensions.insert("expiry".into(), dec(expiry));
+    let mut out = Map::new();
+    out.insert("capability_id".into(), Value::String(capability_id));
+    out.insert("parent_id".into(), parent_id);
+    out.insert("tenant".into(), Value::String(tenant.to_owned()));
+    out.insert("agent_did".into(), Value::String(agent_did.to_owned()));
+    out.insert("dimensions".into(), Value::Object(dimensions));
+    out.insert("state".into(), Value::String(state.into()));
+    out.insert("created_at_ms".into(), dec(created_at_ms));
+    out.insert("created_at_sequence".into(), dec(created_at_sequence));
+    out.insert("revoked_at_ms".into(), revoked_at_ms);
+    out.insert("revoked_at_sequence".into(), revoked_at_sequence);
+    Some((Value::Object(out), capability_bytes))
+}
+
+/// `AuthorityResponse<CapabilityRecord>`: authority block, then one record.
+fn capability_record_value(id: RequestId, payload: &[u8]) -> Result<Value, Rejection> {
+    capability_payload(id, payload, |reader| {
+        let (authority, tenant, agent_did) = capability_authority(reader)?;
+        let (record, _) = capability_record(reader, id, &tenant, &agent_did)?;
+        let mut out = Map::new();
+        out.insert("authority".into(), authority);
+        out.insert("value".into(), record);
+        Some(Value::Object(out))
+    })
+}
+
+/// `AuthorityResponse<CapabilityRecords>`: authority block, then u16 count + records in
+/// strictly ascending capability id order.
+fn capability_records_value(id: RequestId, payload: &[u8]) -> Result<Value, Rejection> {
+    capability_payload(id, payload, |reader| {
+        let (authority, tenant, agent_did) = capability_authority(reader)?;
+        let count = reader.u16()?;
+        let mut records = Vec::new();
+        let mut previous: Option<[u8; 32]> = None;
+        for _ in 0..count {
+            let (record, capability_id) = capability_record(reader, id, &tenant, &agent_did)?;
+            if previous.is_some_and(|last| last >= capability_id) {
+                return None;
+            }
+            previous = Some(capability_id);
+            records.push(record);
+        }
+        let mut value = Map::new();
+        value.insert("capabilities".into(), Value::Array(records));
+        let mut out = Map::new();
+        out.insert("authority".into(), authority);
+        out.insert("value".into(), Value::Object(value));
+        Some(Value::Object(out))
     })
 }
 

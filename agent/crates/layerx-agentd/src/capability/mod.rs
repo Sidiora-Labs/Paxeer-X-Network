@@ -9,6 +9,7 @@ mod attenuation;
 #[path = "consume.rs"]
 mod consumption;
 mod narrowing;
+pub mod timed;
 #[path = "report.rs"]
 mod reporting;
 

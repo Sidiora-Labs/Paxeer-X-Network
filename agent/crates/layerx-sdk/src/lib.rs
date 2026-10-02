@@ -42,6 +42,8 @@ pub mod register;
 pub mod rpc;
 pub mod rpc_history;
 pub mod rpc_sign;
+
+pub mod rpc_capability;
 pub mod rpc_verification;
 mod tls;
 pub mod wallet;

@@ -283,8 +283,116 @@ pub trait HumanAuthorityBoundary {
         recovery: bool,
     ) -> Result<CoreKeyPolicy, HumanOperationError>;
 }
+pub(crate) fn lxgs2_grant_window(
+    summary: &[u8],
+    capability_id: &[u8; 32],
+    authority_id: &[u8; 32],
+    action_key: &[u8; 32],
+    expiry_sequence: u64,
+) -> Result<(u64, u64), HumanOperationError> {
+    if summary.len() != 209
+        || summary[..5] != *b"LXGS2"
+        || summary[5..37] != capability_id[..]
+        || summary[69..101] != authority_id[..]
+        || summary[101..133] != action_key[..]
+    {
+        return Err(HumanOperationError::Refused);
+    }
+    let u64_at = |offset: usize| {
+        let mut bytes = [0_u8; 8];
+        bytes.copy_from_slice(&summary[offset..offset + 8]);
+        u64::from_be_bytes(bytes)
+    };
+    if u64_at(165) != expiry_sequence {
+        return Err(HumanOperationError::Refused);
+    }
+    Ok((u64_at(185), u64_at(193)))
+}
+
+#[cfg(test)]
+mod lxgs2_window_tests {
+    use super::{lxgs2_grant_window, HumanOperationError};
+
+    const CAPABILITY: [u8; 32] = [0x11; 32];
+    const AUTHORITY: [u8; 32] = [0x22; 32];
+    const ACTION: [u8; 32] = [0x33; 32];
+    const EXPIRY: u64 = 0x0102_0304_0506_0708;
+    const NOT_BEFORE: u64 = 1_790_000_000_000;
+    const NOT_AFTER: u64 = 1_790_000_600_000;
+
+    fn summary() -> Vec<u8> {
+        let mut bytes = vec![0xA5_u8; 209];
+        bytes[..5].copy_from_slice(b"LXGS2");
+        bytes[5..37].copy_from_slice(&CAPABILITY);
+        bytes[69..101].copy_from_slice(&AUTHORITY);
+        bytes[101..133].copy_from_slice(&ACTION);
+        bytes[165..173].copy_from_slice(&EXPIRY.to_be_bytes());
+        bytes[185..193].copy_from_slice(&NOT_BEFORE.to_be_bytes());
+        bytes[193..201].copy_from_slice(&NOT_AFTER.to_be_bytes());
+        bytes
+    }
+
+    fn decode(bytes: &[u8]) -> Result<(u64, u64), HumanOperationError> {
+        lxgs2_grant_window(bytes, &CAPABILITY, &AUTHORITY, &ACTION, EXPIRY)
+    }
+
+    #[test]
+    fn lxgs2_window_decodes_documented_offsets() {
+        assert_eq!(decode(&summary()), Ok((NOT_BEFORE, NOT_AFTER)));
+    }
+
+    #[test]
+    fn lxgs2_window_refuses_wrong_length() {
+        let mut short = summary();
+        short.pop();
+        assert_eq!(decode(&short), Err(HumanOperationError::Refused));
+        let mut long = summary();
+        long.push(0);
+        assert_eq!(decode(&long), Err(HumanOperationError::Refused));
+    }
+
+    #[test]
+    fn lxgs2_window_refuses_wrong_tag() {
+        let mut bytes = summary();
+        bytes[4] = b'1';
+        assert_eq!(decode(&bytes), Err(HumanOperationError::Refused));
+    }
+
+    #[test]
+    fn lxgs2_window_refuses_mismatched_capability_id() {
+        let mut bytes = summary();
+        bytes[36] ^= 1;
+        assert_eq!(decode(&bytes), Err(HumanOperationError::Refused));
+    }
+
+    #[test]
+    fn lxgs2_window_refuses_mismatched_authority_id() {
+        let mut bytes = summary();
+        bytes[69] ^= 1;
+        assert_eq!(decode(&bytes), Err(HumanOperationError::Refused));
+    }
+
+    #[test]
+    fn lxgs2_window_refuses_mismatched_action_key() {
+        let mut bytes = summary();
+        bytes[132] ^= 1;
+        assert_eq!(decode(&bytes), Err(HumanOperationError::Refused));
+    }
+
+    #[test]
+    fn lxgs2_window_refuses_mismatched_expiry_sequence() {
+        assert_eq!(
+            lxgs2_grant_window(&summary(), &CAPABILITY, &AUTHORITY, &ACTION, EXPIRY + 1),
+            Err(HumanOperationError::Refused)
+        );
+    }
+}
+
 pub struct CoreCapabilityScope {
     pub scope: crate::capability::ProtocolScope,
+
+    pub not_before_ms: u64,
+    pub not_after_ms: u64,
     pub observed_sequence: u64,
     pub verification: u8,
     pub evidence_digest: [u8; 32],
@@ -536,7 +644,9 @@ impl HumanAuthorityBoundary for RemoteHumanAuthority {
         .and_then(|value| Self::registry_from(&value))
         .map_err(|error| match error {
             HumanOperationError::Unavailable => CoreStateError::Unavailable,
-            HumanOperationError::Refused => CoreStateError::Unverified,
+            HumanOperationError::Refused | HumanOperationError::CapabilityRefused(_) => {
+                CoreStateError::Unverified
+            }
         })
     }
     fn authorized_batch(
@@ -719,6 +829,19 @@ impl HumanAuthorityBoundary for RemoteHumanAuthority {
                 })
                 .collect()
         };
+        let summary = value
+            .get("canonical_core_bytes")
+            .and_then(Value::as_str)
+            .and_then(decode_hex)
+            .ok_or(HumanOperationError::Refused)?;
+        let (not_before_ms, not_after_ms) = lxgs2_grant_window(
+            &summary,
+            &capability_id,
+            &authority_id,
+            &action_key,
+            u64_field(&value, "expiry_sequence")?,
+        )?;
+
         let enforceable_dimensions = value
             .get("enforceable_dimensions")
             .and_then(Value::as_array)
@@ -747,9 +870,15 @@ impl HumanAuthorityBoundary for RemoteHumanAuthority {
                     .parse()
                     .map_err(|_| HumanOperationError::Refused)?,
                 expires_at_sequence: u64_field(&value, "expiry_sequence")?,
+
+                not_before_ms,
+                not_after_ms,
                 enforceable_dimensions,
             },
             observed_sequence: u64_field(&value, "observed_sequence")?,
+
+            not_before_ms,
+            not_after_ms,
             verification: u8::try_from(u64_field(&value, "verification")?)
                 .map_err(|_| HumanOperationError::Refused)?,
             evidence_digest: hex_field(&value, "evidence_digest")?,
@@ -1224,20 +1353,20 @@ impl<A: HumanAuthorityBoundary> HumanOperations for SharedAgentOwner<A> {
         self.lock()?.budget_reconciliation(peer, request)
     }
 
-    fn capability_create(&mut self, peer: &HumanPeer, request: layerx_agent_api::capability::CapabilityCreate) -> Result<HumanResponse, HumanOperationError> {
-        self.lock()?.capability_create(peer, request)
+    fn capability_create(&mut self, context: &crate::agent_rpc_peer::RpcOwnerContext<'_>, control: &crate::session_control::SessionControl, request: MutationEnvelope<layerx_agent_api::capability::CapabilityCreate>) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.capability_create(context, control, request)
     }
 
-    fn capability_attenuate(&mut self, peer: &HumanPeer, request: layerx_agent_api::capability::CapabilityAttenuate) -> Result<HumanResponse, HumanOperationError> {
-        self.lock()?.capability_attenuate(peer, request)
+    fn capability_attenuate(&mut self, context: &crate::agent_rpc_peer::RpcOwnerContext<'_>, control: &crate::session_control::SessionControl, request: MutationEnvelope<layerx_agent_api::capability::CapabilityAttenuate>) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.capability_attenuate(context, control, request)
     }
 
-    fn capability_list(&mut self, peer: &HumanPeer, request: layerx_agent_api::capability::CapabilityList) -> Result<HumanResponse, HumanOperationError> {
-        self.lock()?.capability_list(peer, request)
+    fn capability_list(&mut self, context: &crate::agent_rpc_peer::RpcOwnerContext<'_>, control: &crate::session_control::SessionControl, request: layerx_agent_api::capability::CapabilityList) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.capability_list(context, control, request)
     }
 
-    fn capability_revoke(&mut self, peer: &HumanPeer, request: layerx_agent_api::capability::CapabilityRevoke) -> Result<HumanResponse, HumanOperationError> {
-        self.lock()?.capability_revoke(peer, request)
+    fn capability_revoke(&mut self, context: &crate::agent_rpc_peer::RpcOwnerContext<'_>, control: &crate::session_control::SessionControl, request: MutationEnvelope<layerx_agent_api::capability::CapabilityRevoke>) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.capability_revoke(context, control, request)
     }
 
     fn authorize_subject(&mut self, peer: &HumanPeer) -> Result<(), HumanOperationError> {
@@ -1579,6 +1708,39 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
         let control = self.session_control.clone();
         HumanOperations::subscription_create(self, context, &control, request)
     }
+    pub(crate) fn rpc_capability_create(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        request: MutationEnvelope<layerx_agent_api::capability::CapabilityCreate>,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        let control = self.session_control.clone();
+        HumanOperations::capability_create(self, context, &control, request)
+    }
+    pub(crate) fn rpc_capability_attenuate(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        request: MutationEnvelope<layerx_agent_api::capability::CapabilityAttenuate>,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        let control = self.session_control.clone();
+        HumanOperations::capability_attenuate(self, context, &control, request)
+    }
+    pub(crate) fn rpc_capability_list(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        request: layerx_agent_api::capability::CapabilityList,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        let control = self.session_control.clone();
+        HumanOperations::capability_list(self, context, &control, request)
+    }
+    pub(crate) fn rpc_capability_revoke(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        request: MutationEnvelope<layerx_agent_api::capability::CapabilityRevoke>,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        let control = self.session_control.clone();
+        HumanOperations::capability_revoke(self, context, &control, request)
+    }
+
     pub(crate) fn rpc_subscription_list(
         &mut self,
         context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
@@ -3257,6 +3419,46 @@ impl<A: HumanAuthorityBoundary> HumanOperations for UnifiedAgentOwner<A> {
         request: layerx_agent_api::availability::AvailabilityRequest,
     ) -> Result<HumanResponse, HumanOperationError> {
         self.lock_operations()?.availability_fetch(peer, request)
+    }
+
+    fn capability_create(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
+        request: MutationEnvelope<layerx_agent_api::capability::CapabilityCreate>,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        self.lock_operations()?
+            .capability_create(context, control, request)
+    }
+
+    fn capability_attenuate(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
+        request: MutationEnvelope<layerx_agent_api::capability::CapabilityAttenuate>,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        self.lock_operations()?
+            .capability_attenuate(context, control, request)
+    }
+
+    fn capability_list(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
+        request: layerx_agent_api::capability::CapabilityList,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        self.lock_operations()?
+            .capability_list(context, control, request)
+    }
+
+    fn capability_revoke(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
+        request: MutationEnvelope<layerx_agent_api::capability::CapabilityRevoke>,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        self.lock_operations()?
+            .capability_revoke(context, control, request)
     }
 }
 
@@ -6460,6 +6662,241 @@ impl<A: HumanAuthorityBoundary> HumanOperations for ProductionHumanOperations<A>
         }
         out.finish()
     }
+
+    fn capability_create(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
+        request: MutationEnvelope<layerx_agent_api::capability::CapabilityCreate>,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        if capability_create_digest(&request.operation) != request.body_digest {
+            return Err(HumanOperationError::Refused);
+        }
+        let (tenant, actor, agent) = capability_coordinates(
+            context,
+            request.operation.tenant.as_str(),
+            request.operation.agent_did.as_str(),
+        )?;
+        let snapshot = core_preparation_snapshot(&mut self.node, context.peer(), &actor)?;
+        let now_ms = snapshot.protocol_timestamp;
+        let authority = capability_session_authority(context, control)?;
+        let observed = capability_grant_scope(
+            &mut self.authority,
+            &self.store,
+            context,
+            &tenant,
+            &actor,
+            &authority,
+        )?;
+        let id = crate::capability::timed::create_id(tenant.as_str(), &agent, &request.key)
+            .map_err(|error| capability_refusal(&error))?;
+        let record = crate::capability::timed::TimedCapability::from_public(
+            id,
+            None,
+            tenant.clone(),
+            &agent,
+            authority.clone(),
+            &request.operation.dimensions,
+            observed.not_after_ms,
+            now_ms,
+            snapshot.observed_head_sequence,
+            layerx_agent_api::error::RequestId(request.request_id),
+        )
+        .map_err(|error| capability_refusal(&error))?;
+        if record.is_expired(now_ms) {
+            return Err(HumanOperationError::CapabilityRefused(
+                crate::capability::Dimension::Expiry,
+            ));
+        }
+        crate::capability::timed::check_scope(&record, &observed.scope, now_ms)
+            .map_err(|error| capability_refusal(&error))?;
+        let shared = Arc::clone(&self.store);
+        let stored = context
+            .commit(control, |_| {
+                let mut store = shared
+                    .lock()
+                    .map_err(|_| crate::session_control::SessionControlError::Unavailable)?;
+                crate::capability::timed::insert(&mut store, record).map_err(|error| {
+                    crate::session_control::SessionControlError::Human(capability_refusal(&error))
+                })
+            })
+            .map_err(rpc_commit_error)?;
+        let stored = match stored {
+            crate::capability::timed::Insert::Created(record)
+            | crate::capability::timed::Insert::Replayed(record) => record,
+        };
+        let mut out = Encoder::new();
+        encode_capability_authority(&mut out, &tenant, &agent, &authority)?;
+        encode_capability_record(&mut out, &stored, now_ms)?;
+        out.finish()
+    }
+
+    fn capability_attenuate(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
+        request: MutationEnvelope<layerx_agent_api::capability::CapabilityAttenuate>,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        if capability_attenuate_digest(&request.operation) != request.body_digest {
+            return Err(HumanOperationError::Refused);
+        }
+        let (tenant, actor, agent) = capability_coordinates(
+            context,
+            request.operation.tenant.as_str(),
+            request.operation.agent_did.as_str(),
+        )?;
+        let request_id = layerx_agent_api::error::RequestId(request.request_id);
+        let parent_id =
+            crate::capability::timed::parse_id(request.operation.parent_id.as_str(), request_id)
+                .map_err(|error| capability_refusal(&error))?;
+        let snapshot = core_preparation_snapshot(&mut self.node, context.peer(), &actor)?;
+        let now_ms = snapshot.protocol_timestamp;
+        let authority = capability_session_authority(context, control)?;
+        let observed = capability_grant_scope(
+            &mut self.authority,
+            &self.store,
+            context,
+            &tenant,
+            &actor,
+            &authority,
+        )?;
+        let id = crate::capability::timed::attenuate_id(
+            tenant.as_str(),
+            &agent,
+            &parent_id,
+            &request.key,
+        )
+        .map_err(|error| capability_refusal(&error))?;
+        let child = crate::capability::timed::TimedCapability::from_public(
+            id,
+            Some(parent_id),
+            tenant.clone(),
+            &agent,
+            authority.clone(),
+            &request.operation.dimensions,
+            observed.not_after_ms,
+            now_ms,
+            snapshot.observed_head_sequence,
+            request_id,
+        )
+        .map_err(|error| capability_refusal(&error))?;
+        if child.is_expired(now_ms) {
+            return Err(HumanOperationError::CapabilityRefused(
+                crate::capability::Dimension::Expiry,
+            ));
+        }
+        crate::capability::timed::check_scope(&child, &observed.scope, now_ms)
+            .map_err(|error| capability_refusal(&error))?;
+        let shared = Arc::clone(&self.store);
+        let stored = context
+            .commit(control, |_| {
+                let refuse = |error: crate::capability::timed::TimedError| {
+                    crate::session_control::SessionControlError::Human(capability_refusal(&error))
+                };
+                let mut store = shared
+                    .lock()
+                    .map_err(|_| crate::session_control::SessionControlError::Unavailable)?;
+                let parent = crate::capability::timed::restore(&store, &tenant, &parent_id)
+                    .map_err(refuse)?
+                    .ok_or(crate::capability::timed::TimedError::UnknownParent)
+                    .map_err(refuse)?;
+                if parent.agent != agent || parent.tenant != tenant {
+                    return Err(refuse(crate::capability::timed::TimedError::UnknownParent));
+                }
+                crate::capability::timed::require_active_chain(&store, &parent, now_ms)
+                    .map_err(refuse)?;
+                crate::capability::timed::require_subset(&child, &parent).map_err(refuse)?;
+                crate::capability::timed::insert(&mut store, child).map_err(refuse)
+            })
+            .map_err(rpc_commit_error)?;
+        let stored = match stored {
+            crate::capability::timed::Insert::Created(record)
+            | crate::capability::timed::Insert::Replayed(record) => record,
+        };
+        let mut out = Encoder::new();
+        encode_capability_authority(&mut out, &tenant, &agent, &authority)?;
+        encode_capability_record(&mut out, &stored, now_ms)?;
+        out.finish()
+    }
+
+    fn capability_list(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
+        request: layerx_agent_api::capability::CapabilityList,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        let (tenant, actor, agent) =
+            capability_coordinates(context, request.tenant.as_str(), request.agent_did.as_str())?;
+        let snapshot = core_preparation_snapshot(&mut self.node, context.peer(), &actor)?;
+        let now_ms = snapshot.protocol_timestamp;
+        let authority = capability_session_authority(context, control)?;
+        let shared = Arc::clone(&self.store);
+        let records = context
+            .commit(control, |_| {
+                let store = shared
+                    .lock()
+                    .map_err(|_| crate::session_control::SessionControlError::Unavailable)?;
+                crate::capability::timed::list(&store, &tenant, &agent).map_err(|error| {
+                    crate::session_control::SessionControlError::Human(capability_refusal(&error))
+                })
+            })
+            .map_err(rpc_commit_error)?;
+        let mut out = Encoder::new();
+        encode_capability_authority(&mut out, &tenant, &agent, &authority)?;
+        out.u16(records.len())?;
+        let mut previous: Option<[u8; 32]> = None;
+        for record in &records {
+            if previous.is_some_and(|last| last >= record.id) {
+                return Err(HumanOperationError::Unavailable);
+            }
+            previous = Some(record.id);
+            encode_capability_record(&mut out, record, now_ms)?;
+        }
+        out.finish()
+    }
+
+    fn capability_revoke(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
+        request: MutationEnvelope<layerx_agent_api::capability::CapabilityRevoke>,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        if capability_revoke_digest(&request.operation) != request.body_digest {
+            return Err(HumanOperationError::Refused);
+        }
+        let (tenant, actor, agent) = capability_coordinates(
+            context,
+            request.operation.tenant.as_str(),
+            request.operation.agent_did.as_str(),
+        )?;
+        let target = crate::capability::timed::parse_id(
+            request.operation.capability_id.as_str(),
+            layerx_agent_api::error::RequestId(request.request_id),
+        )
+        .map_err(|error| capability_refusal(&error))?;
+        let snapshot = core_preparation_snapshot(&mut self.node, context.peer(), &actor)?;
+        let now_ms = snapshot.protocol_timestamp;
+        let head = snapshot.observed_head_sequence;
+        let authority = capability_session_authority(context, control)?;
+        let shared = Arc::clone(&self.store);
+        let (record, _subtree) = context
+            .commit(control, |_| {
+                let mut store = shared
+                    .lock()
+                    .map_err(|_| crate::session_control::SessionControlError::Unavailable)?;
+                crate::capability::timed::revoke_subtree(
+                    &mut store, &tenant, &agent, &target, now_ms, head,
+                )
+                .map_err(|error| {
+                    crate::session_control::SessionControlError::Human(capability_refusal(&error))
+                })
+            })
+            .map_err(rpc_commit_error)?;
+        let mut out = Encoder::new();
+        encode_capability_authority(&mut out, &tenant, &agent, &authority)?;
+        encode_capability_record(&mut out, &record, now_ms)?;
+        out.finish()
+    }
 }
 
 /// Production budget pipeline over the sole frozen node client: the exact
@@ -6734,7 +7171,9 @@ fn count(digest: &mut Sha256, value: usize) {
 fn map_identity(error: HumanOperationError) -> IdentityError {
     match error {
         HumanOperationError::Unavailable => IdentityError::BoundaryUnavailable,
-        HumanOperationError::Refused => IdentityError::Unverified,
+        HumanOperationError::Refused | HumanOperationError::CapabilityRefused(_) => {
+            IdentityError::Unverified
+        }
     }
 }
 fn map_identity_operation(error: &IdentityError) -> HumanOperationError {
@@ -7107,6 +7546,310 @@ pub(crate) fn subscription_create_digest(
     text(&mut digest, request.delivery_target.as_str().as_bytes());
     digest.finalize().into()
 }
+fn capability_digest_text(digest: &mut Sha256, value: &[u8]) {
+    digest.update(u64::try_from(value.len()).unwrap_or(u64::MAX).to_be_bytes());
+    digest.update(value);
+}
+fn capability_digest_count(digest: &mut Sha256, count: usize) {
+    digest.update(u64::try_from(count).unwrap_or(u64::MAX).to_be_bytes());
+}
+fn capability_digest_dimensions(
+    digest: &mut Sha256,
+    dimensions: &layerx_agent_api::capability::CapabilityDimensions,
+) {
+    capability_digest_count(digest, dimensions.activity_types.values().len());
+    for activity in dimensions.activity_types.values() {
+        digest.update(activity.0.to_be_bytes());
+    }
+    capability_digest_count(digest, dimensions.counterparties.values().len());
+    for counterparty in dimensions.counterparties.values() {
+        capability_digest_text(digest, counterparty.as_str().as_bytes());
+    }
+    capability_digest_count(digest, dimensions.assets.values().len());
+    for asset in dimensions.assets.values() {
+        capability_digest_text(digest, asset.as_str().as_bytes());
+    }
+    capability_digest_count(digest, dimensions.amount_ceilings.values().len());
+    for ceiling in dimensions.amount_ceilings.values() {
+        capability_digest_text(digest, ceiling.asset.as_str().as_bytes());
+        digest.update(ceiling.amount.0.to_be_bytes());
+    }
+    capability_digest_count(digest, dimensions.rate_ceilings.values().len());
+    for ceiling in dimensions.rate_ceilings.values() {
+        digest.update(ceiling.window_seconds.0.to_be_bytes());
+        digest.update(ceiling.maximum_actions.to_be_bytes());
+    }
+    capability_digest_count(digest, dimensions.purpose_constraints.values().len());
+    for purpose in dimensions.purpose_constraints.values() {
+        capability_digest_text(digest, purpose.as_str().as_bytes());
+    }
+    digest.update(dimensions.expiry.0.to_be_bytes());
+}
+pub(crate) fn capability_create_digest(
+    request: &layerx_agent_api::capability::CapabilityCreate,
+) -> [u8; 32] {
+    let mut digest = Sha256::new();
+    digest.update(b"LayerX/capability/create-body/v1\0");
+    capability_digest_text(&mut digest, request.tenant.as_str().as_bytes());
+    capability_digest_text(&mut digest, request.agent_did.as_str().as_bytes());
+    capability_digest_dimensions(&mut digest, &request.dimensions);
+    digest.finalize().into()
+}
+pub(crate) fn capability_attenuate_digest(
+    request: &layerx_agent_api::capability::CapabilityAttenuate,
+) -> [u8; 32] {
+    let mut digest = Sha256::new();
+    digest.update(b"LayerX/capability/attenuate-body/v1\0");
+    capability_digest_text(&mut digest, request.tenant.as_str().as_bytes());
+    capability_digest_text(&mut digest, request.agent_did.as_str().as_bytes());
+    capability_digest_text(&mut digest, request.parent_id.as_str().as_bytes());
+    capability_digest_dimensions(&mut digest, &request.dimensions);
+    digest.finalize().into()
+}
+pub(crate) fn capability_revoke_digest(
+    request: &layerx_agent_api::capability::CapabilityRevoke,
+) -> [u8; 32] {
+    let mut digest = Sha256::new();
+    digest.update(b"LayerX/capability/revoke-body/v1\0");
+    capability_digest_text(&mut digest, request.tenant.as_str().as_bytes());
+    capability_digest_text(&mut digest, request.agent_did.as_str().as_bytes());
+    capability_digest_text(&mut digest, request.capability_id.as_str().as_bytes());
+    digest.finalize().into()
+}
+/// Maps a timed capability error to the owner error. Every ruling refusal (duplicate entry,
+/// zero window, ceiling outside assets, expiry, wider than parent or authority) carries its
+/// capability dimension; store faults stay Unavailable and every other refusal stays Refused.
+fn capability_refusal(error: &crate::capability::timed::TimedError) -> HumanOperationError {
+    use crate::capability::timed::TimedError;
+    use crate::capability::Dimension;
+    match error {
+        TimedError::Duplicate(dimension) | TimedError::Wider(dimension) => {
+            HumanOperationError::CapabilityRefused(*dimension)
+        }
+        TimedError::ZeroWindow => HumanOperationError::CapabilityRefused(Dimension::Rate),
+        TimedError::CeilingOutsideAssets => {
+            HumanOperationError::CapabilityRefused(Dimension::Amount)
+        }
+        TimedError::Expired | TimedError::NotYetValid => {
+            HumanOperationError::CapabilityRefused(Dimension::Expiry)
+        }
+        _ => error.owner_error(),
+    }
+}
+/// The authenticated coordinates of one capability request. The request fields never select
+/// the actor: tenant and agent DID must equal the permit's resolved principal and peer.
+fn capability_coordinates(
+    context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+    tenant: &str,
+    agent: &str,
+) -> Result<(TenantId, Did, String), HumanOperationError> {
+    let principal = context.principal();
+    let principal_agent =
+        std::str::from_utf8(principal.agent.as_bytes()).map_err(|_| HumanOperationError::Refused)?;
+    if tenant != context.peer().tenant.as_str()
+        || tenant != principal.tenant.as_str()
+        || agent != principal_agent
+    {
+        return Err(HumanOperationError::Refused);
+    }
+    let tenant_id =
+        TenantId::new(context.peer().tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
+    Ok((tenant_id, principal.agent.clone(), principal_agent.to_owned()))
+}
+/// The protocol authority the permit's open session actually uses (session.rs OpenRequest).
+fn capability_session_authority(
+    context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+    control: &crate::session_control::SessionControl,
+) -> Result<ProtocolAuthority, HumanOperationError> {
+    let principal = context.principal();
+    let registry = control.registry();
+    let sessions = registry
+        .read()
+        .map_err(|_| HumanOperationError::Unavailable)?;
+    let record = sessions
+        .get(&principal.tenant, principal.session_id)
+        .ok_or(HumanOperationError::Refused)?;
+    if !record.open || record.request.agent != principal.agent {
+        return Err(HumanOperationError::Refused);
+    }
+    Ok(record.request.authority.clone())
+}
+fn capability_authority_parts(authority: &ProtocolAuthority) -> (u8, [u8; 32]) {
+    match authority {
+        ProtocolAuthority::PrimaryKey(id) => (1, *id),
+        ProtocolAuthority::SessionKey(id) => (2, *id),
+        ProtocolAuthority::CapabilityGrant(id) => (3, *id),
+    }
+}
+/// Authority block: text tenant, text agent_did, text authority_ref (lowercase hex of the
+/// session authority id), bytes protocol_authority (kind byte then the 32-byte id, the
+/// encoding encode_identity uses).
+fn encode_capability_authority(
+    out: &mut Encoder,
+    tenant: &TenantId,
+    agent: &str,
+    authority: &ProtocolAuthority,
+) -> Result<(), HumanOperationError> {
+    let (kind, id) = capability_authority_parts(authority);
+    out.text(tenant.as_str())?;
+    out.text(agent)?;
+    out.text(&crate::agent_rpc_dispatch::lower_hex(&id))?;
+    let mut protocol_authority = Vec::with_capacity(33);
+    protocol_authority.push(kind);
+    protocol_authority.extend_from_slice(&id);
+    out.bytes(&protocol_authority)
+}
+/// The verified native grant scope the permit's session authority narrows. Only a session
+/// opened under `ProtocolAuthority::CapabilityGrant` carries a verified grant window
+/// (LXGS2 not_after ms); every other authority is refused. The grant's action key is the one
+/// its completed Human capability install recorded; the authority id is the identity's single
+/// primary key (the LXGS2 authority the native producer checks against identity state).
+fn capability_grant_scope<A: HumanAuthorityBoundary>(
+    authority: &mut A,
+    shared_store: &Arc<Mutex<Store>>,
+    context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+    tenant: &TenantId,
+    actor: &Did,
+    session_authority: &ProtocolAuthority,
+) -> Result<CoreCapabilityScope, HumanOperationError> {
+    let ProtocolAuthority::CapabilityGrant(grant_id) = session_authority else {
+        return Err(HumanOperationError::Refused);
+    };
+    let identity = authority
+        .core_identity(context.peer(), actor)
+        .map_err(|error| map_identity_operation(&error))?;
+    if identity.frozen || identity.verification_level == VerificationLevel::UNVERIFIED {
+        return Err(HumanOperationError::Refused);
+    }
+    let mut primary = identity.authorities.iter().filter_map(|candidate| match candidate {
+        ProtocolAuthority::PrimaryKey(id) => Some(*id),
+        _ => None,
+    });
+    let (Some(authority_id), None) = (primary.next(), primary.next()) else {
+        return Err(HumanOperationError::Refused);
+    };
+    let action_key = capability_grant_action_key(shared_store, tenant, grant_id)?;
+    let observed =
+        authority.capability_scope(context.peer(), actor, authority_id, action_key, *grant_id)?;
+    if observed.observed_sequence == 0
+        || observed.verification < 4
+        || observed.verification > 5
+        || observed.evidence_digest == [0; 32]
+        || observed.evidence_digest
+            != agent_evidence_digest(
+                action_key,
+                *grant_id,
+                observed.observed_sequence,
+                observed.verification,
+            )
+    {
+        return Err(HumanOperationError::Refused);
+    }
+    Ok(observed)
+}
+/// The action key of the one completed Human capability install of `grant_id`
+/// (`human-capability-action-v1:` records, layout of `install_capability`). None or more than
+/// one is refused; a malformed record is Unavailable.
+fn capability_grant_action_key(
+    shared_store: &Arc<Mutex<Store>>,
+    tenant: &TenantId,
+    grant_id: &[u8; 32],
+) -> Result<[u8; 32], HumanOperationError> {
+    const PREFIX: &[u8] = b"human-capability-action-v1:";
+    let store = shared_store
+        .lock()
+        .map_err(|_| HumanOperationError::Unavailable)?;
+    let mut found = None;
+    for object_id in store.list_object_ids(tenant, ObjectKind::Idempotency) {
+        let Some(action) = object_id.strip_prefix(PREFIX) else {
+            continue;
+        };
+        let action_key: [u8; 32] =
+            action.try_into().map_err(|_| HumanOperationError::Unavailable)?;
+        let Some(value) = store.get(&capability_action_key(tenant, action_key)?) else {
+            continue;
+        };
+        let bytes = value.bytes();
+        if value.class() != StorageClass::LocalOnly || bytes.len() < 34 || bytes[0] != 1 {
+            return Err(HumanOperationError::Unavailable);
+        }
+        match bytes[33] {
+            0 => continue,
+            1 if bytes.len() >= 66 => {
+                if bytes[34..66] == grant_id[..] && found.replace(action_key).is_some() {
+                    return Err(HumanOperationError::Refused);
+                }
+            }
+            _ => return Err(HumanOperationError::Unavailable),
+        }
+    }
+    found.ok_or(HumanOperationError::Refused)
+}
+/// One record in the layout the agent RPC decoders accept. Asset and counterparty core ids
+/// are emitted as strict lowercase 64-hex text; state is revoked whenever the revoked tag is
+/// set, else expired at `now_ms`, else active.
+fn encode_capability_record(
+    out: &mut Encoder,
+    record: &crate::capability::timed::TimedCapability,
+    now_ms: u64,
+) -> Result<(), HumanOperationError> {
+    use crate::agent_rpc_dispatch::lower_hex;
+    out.text(&lower_hex(&record.id))?;
+    match &record.parent {
+        Some(parent) => {
+            out.u8(1);
+            out.text(&lower_hex(parent))?;
+        }
+        None => out.u8(0),
+    }
+    out.u16(record.activity_types.len())?;
+    for activity in &record.activity_types {
+        out.fixed(&activity.to_be_bytes());
+    }
+    out.u16(record.counterparties.len())?;
+    for counterparty in &record.counterparties {
+        out.text(&lower_hex(counterparty))?;
+    }
+    out.u16(record.assets.len())?;
+    for asset in &record.assets {
+        out.text(&lower_hex(asset))?;
+    }
+    out.u16(record.amount_ceilings.len())?;
+    for (asset, amount) in &record.amount_ceilings {
+        out.text(&lower_hex(asset))?;
+        out.u128(*amount);
+    }
+    out.u16(record.rate_ceilings.len())?;
+    for (window_seconds, maximum_actions) in &record.rate_ceilings {
+        out.u64(*window_seconds);
+        out.u64(*maximum_actions);
+    }
+    out.u16(record.purposes.len())?;
+    for purpose in &record.purposes {
+        out.text(purpose)?;
+    }
+    out.u64(record.expiry_seconds);
+    out.u64(record.created_at_ms);
+    out.u64(record.created_at_sequence);
+    let state = if record.revoked.is_some() {
+        1
+    } else if record.is_expired(now_ms) {
+        2
+    } else {
+        0
+    };
+    out.u8(state);
+    match record.revoked {
+        Some((at_ms, at_sequence)) => {
+            out.u8(1);
+            out.u64(at_ms);
+            out.u64(at_sequence);
+        }
+        None => out.u8(0),
+    }
+    Ok(())
+}
+
 fn subscription_create_identity(
     tenant: &[u8],
     agent: &[u8],

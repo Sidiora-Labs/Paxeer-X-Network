@@ -143,6 +143,20 @@ fn owner_error(request_id: RequestId, error: HumanOperationError) -> Rejection {
         HumanOperationError::Refused => {
             rejection(ErrorClass::PolicyRefusal, request_id, "owner.refused")
         }
+        HumanOperationError::CapabilityRefused(dimension) => rejection(
+            ErrorClass::CapabilityRefusal,
+            request_id,
+            match dimension {
+                crate::capability::Dimension::Expiry => "capability.expiry",
+                crate::capability::Dimension::ActivityType => "capability.activity_type",
+                crate::capability::Dimension::Counterparty => "capability.counterparty",
+                crate::capability::Dimension::Asset => "capability.asset",
+                crate::capability::Dimension::Amount => "capability.amount",
+                crate::capability::Dimension::Rate => "capability.rate",
+                crate::capability::Dimension::Purpose => "capability.purpose",
+            },
+        ),
+
         HumanOperationError::Unavailable => Rejection {
             class: ErrorClass::UnavailableCapability,
             retriability: Retriability::Retriable,
@@ -964,6 +978,33 @@ pub(crate) fn dispatch_operation<A: HumanAuthorityBoundary>(
             "unmatched_by_ruling",
         )),
     }
+}
+
+#[test]
+fn capability_refusal_carries_its_dimension_to_the_typed_wire_refusal() {
+    let id = RequestId(9);
+    for (dimension, reason) in [
+        (crate::capability::Dimension::Expiry, "capability.expiry"),
+        (crate::capability::Dimension::ActivityType, "capability.activity_type"),
+        (crate::capability::Dimension::Counterparty, "capability.counterparty"),
+        (crate::capability::Dimension::Asset, "capability.asset"),
+        (crate::capability::Dimension::Amount, "capability.amount"),
+        (crate::capability::Dimension::Rate, "capability.rate"),
+        (crate::capability::Dimension::Purpose, "capability.purpose"),
+    ] {
+        let refusal = owner_error(id, HumanOperationError::CapabilityRefused(dimension));
+        assert_eq!(refusal.class, ErrorClass::CapabilityRefusal);
+        assert_eq!(refusal.retriability, Retriability::Terminal);
+        assert_eq!(refusal.request_id, id);
+        assert_eq!(refusal.reason, reason);
+    }
+    let refused = owner_error(id, HumanOperationError::Refused);
+    assert_eq!(refused.class, ErrorClass::PolicyRefusal);
+    assert_eq!(refused.reason, "owner.refused");
+    let unavailable = owner_error(id, HumanOperationError::Unavailable);
+    assert_eq!(unavailable.class, ErrorClass::UnavailableCapability);
+    assert_eq!(unavailable.retriability, Retriability::Retriable);
+    assert_eq!(unavailable.reason, "owner.unavailable");
 }
 
 #[test]

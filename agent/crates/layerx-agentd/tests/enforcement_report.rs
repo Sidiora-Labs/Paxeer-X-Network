@@ -32,6 +32,8 @@ fn binding() -> layerx_agentd::capability::Binding {
         assets: BTreeSet::from([[3; 32]]),
         amount_ceiling: 500,
         expires_at_sequence: 100,
+        not_before_ms: 0,
+        not_after_ms: 100_000,
         enforceable_dimensions: BTreeSet::from([
             Dimension::ActivityType,
             Dimension::Counterparty,
