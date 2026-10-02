@@ -4,3 +4,10 @@ focused = "test-storage-order, lxp_test_recovery, lxp_test_log_durability, lxp_t
 release = "make test-storage at release scope: test-log, test-projection with symbol allowlist, test-rebuild, test-finality-evidence"
 crash = "still required: real layerxd restart with checkpointed canonical and existing batch logs under authenticated history, authority and feed state"
 evidence = "access-controlled task evidence store; revision, exit codes and logs recorded there"
+
+[qualification.104.38.1.batch-wal]
+revision = "770ad4442784c7a5235c6c8ece5ef50f45f5fc1f"
+command = "timeout 30m tools/paxeer-x/verify-task.sh 104.38.1"
+exit = 8
+observed = "order check, lxp_test_recovery and lxp_test_log_durability passed; unchanged lxp_test_batch_wal_recovery exited 1"
+assumption = "pre-existing batch-WAL harness failure independent of this change, since its test and daemon WAL sources are identical to the base revision"
