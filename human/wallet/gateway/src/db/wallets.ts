@@ -299,9 +299,54 @@ export async function getSigningAccountForUser(
  * Variant that takes an already-loaded WalletRow, for callers that have the
  * row in hand and want to skip a second lookup.
  */
+export interface WalletCustody {
+  migratedAt: string | null;
+  attestorKeyId: string | null;
+  hasEnvelope: boolean;
+}
+
+/** Current custody of a wallet row: attestor (migrated or envelope-less) or legacy envelope. */
+export async function loadWalletCustody(walletId: string): Promise<WalletCustody> {
+  const { rows } = await query<{ migrated_at: string | null; attestor_key_id: string | null; has_envelope: boolean }>(
+    'select migrated_at, attestor_key_id, encrypted_private_key is not null as has_envelope from wallets where id = $1',
+    [walletId],
+  );
+  const r = rows[0];
+  if (!r) throw new Error(`wallet ${walletId} not found`);
+  return { migratedAt: r.migrated_at, attestorKeyId: r.attestor_key_id, hasEnvelope: r.has_envelope };
+}
+
+export function usesAttestorCustody(c: { migratedAt: string | null; hasEnvelope: boolean }): boolean {
+  return c.migratedAt !== null || !c.hasEnvelope;
+}
+
+export class WalletMigratedError extends Error {
+  constructor(
+    readonly code: 'wallet_migrated' | 'envelope_missing',
+    readonly walletId: string,
+  ) {
+    super(
+      code === 'wallet_migrated'
+        ? `wallet ${walletId} is migrated to attestor custody; the retained legacy envelope is sealed`
+        : `wallet ${walletId} has no legacy envelope; it signs through the attestor quorum only`,
+    );
+    this.name = 'WalletMigratedError';
+  }
+}
+
 export async function getSigningAccountForRow(wallet: WalletRow): Promise<SigningAccount> {
+  // The caller's row may predate a migration, so custody is re-read from the
+  // database rather than trusted from the in-memory row.
+  const { rows } = await query<{ migrated_at: string | null; encrypted_private_key: string | null }>(
+    'select migrated_at, encrypted_private_key from wallets where id = $1',
+    [wallet.id],
+  );
+  const custody = rows[0];
+  if (!custody) throw new Error(`wallet ${wallet.id} not found`);
+  if (custody.migrated_at !== null) throw new WalletMigratedError('wallet_migrated', wallet.id);
+  if (custody.encrypted_private_key === null) throw new WalletMigratedError('envelope_missing', wallet.id);
   const masterKey = loadMasterKey(env.WALLET_MASTER_KEY);
-  const plaintext = decrypt(wallet.encrypted_private_key, masterKey);
+  const plaintext = decrypt(custody.encrypted_private_key, masterKey);
   const privateKey = (`0x${plaintext.toString('hex')}`) as Hex;
   const account = privateKeyToAccount(privateKey);
 

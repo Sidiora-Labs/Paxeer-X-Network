@@ -1,3 +1,4 @@
+import { sign, type KeyObject } from 'node:crypto';
 import type { Pool } from 'pg';
 import { bytesToHex, getAddress, type Hex, type LocalAccount, type TransactionSerializableEIP1559 } from 'viem';
 import { RpcPool } from '../rpc/pool.js';
@@ -43,7 +44,24 @@ export type ProvisionSubject =
   | { kind: 'standard'; userId: string; token: string | null }
   | { kind: 'agent'; did: string; agentSignature?: string | null };
 
+/**
+ * The wallet ownership producer the identity provider trusts. After a standard
+ * wallet's DID binding is active on chain, provisioning issues a compact ES256 JWS
+ * (`typ` WALLET_BINDING_TYPE, claims exactly iss/sub/did/tenant) binding the
+ * Supabase issuer and subject to the wallet DID for one identity tenant. The
+ * identity provider records that DID on first assertion login only from this
+ * signature; it refuses caller-selected DID text.
+ */
+export interface WalletBindingProducer {
+  key: KeyObject;
+  issuer: string;
+  tenant: string;
+}
+
+export const WALLET_BINDING_TYPE = 'layerx-wallet-binding+jwt';
+
 export interface ProvisionDeps {
+  identityBinding?: WalletBindingProducer | null;
   pool: Pool;
   rpc: RpcPool;
   attestors: AttestorDaemonClient | null;
@@ -63,6 +81,7 @@ export interface ProvisionResult {
   did: string | null;
   mainAccountId: string | null;
   bindMessage: Hex | null;
+  identityBinding: string | null;
 }
 
 export class ProvisionError extends Error {
@@ -247,6 +266,7 @@ function result(row: ProvisionRow, wallet: WalletRecord, awaiting: ProvisionResu
     did: row.did,
     mainAccountId: row.main_account_id,
     bindMessage: message,
+    identityBinding: null,
   };
 }
 
@@ -318,7 +338,28 @@ async function signBindTransaction(
   return account.signTransaction(tx);
 }
 
+export function walletBindingToken(producer: WalletBindingProducer, subject: string, did: string): string {
+  if (producer.key.type !== 'private' || producer.key.asymmetricKeyType !== 'ec') {
+    throw new ProvisionError('identity_binding_key_invalid', 500, 'the wallet binding producer key is not an EC private key');
+  }
+  if (!/^did:layerx:[0-9a-f]{64}$/.test(did) || !subject || !producer.issuer || !producer.tenant) {
+    throw new ProvisionError('identity_binding_invalid', 500, 'wallet binding fields are incomplete');
+  }
+  const encode = (value: object): string => Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
+  const input = `${encode({ alg: 'ES256', typ: WALLET_BINDING_TYPE })}.${encode({ iss: producer.issuer, sub: subject, did, tenant: producer.tenant })}`;
+  const signature = sign('sha256', Buffer.from(input, 'utf8'), { key: producer.key, dsaEncoding: 'ieee-p1363' });
+  return `${input}.${signature.toString('base64url')}`;
+}
+
 export async function provisionAccount(deps: ProvisionDeps, subject: ProvisionSubject): Promise<ProvisionResult> {
+  const out = await advanceProvisioning(deps, subject);
+  if (out.state === 'active' && out.did && subject.kind === 'standard' && deps.identityBinding) {
+    out.identityBinding = walletBindingToken(deps.identityBinding, subject.userId, out.did);
+  }
+  return out;
+}
+
+async function advanceProvisioning(deps: ProvisionDeps, subject: ProvisionSubject): Promise<ProvisionResult> {
   let userId: string;
   let kind: WalletKind;
   let principal: AgentPrincipal | null = null;

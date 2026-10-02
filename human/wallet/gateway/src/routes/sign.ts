@@ -11,6 +11,7 @@ import {
   logSignature,
   type SignatureLogInput,
   type SigningWallet,
+  usesAttestorCustody,
 } from '../db/wallets.js';
 import { getPool } from '../db/pool.js';
 import { evaluate } from '../policy/index.js';
@@ -74,14 +75,14 @@ function clientIp(headers: Record<string, string | string[] | undefined>, fallba
   return fallback;
 }
 
-function bearerToken(req: FastifyRequest): string {
+export function bearerToken(req: FastifyRequest): string {
   const header = req.headers.authorization ?? '';
   return header.slice('Bearer '.length).trim();
 }
 
 let sharedAttestors: AttestorClient | null | undefined;
 
-function defaultAttestors(): AttestorClient | null {
+export function defaultAttestors(): AttestorClient | null {
   if (sharedAttestors !== undefined) return sharedAttestors;
   sharedAttestors = attestorClientFromConfig(env);
   sharedAttestors?.start();
@@ -106,12 +107,12 @@ async function walletSigner(
   attestors: AttestorClient | null,
   token: string,
 ): Promise<WalletSigner> {
-  if (sw.migratedAt !== null) {
+  if (usesAttestorCustody({ migratedAt: sw.migratedAt, hasEnvelope: sw.row.encrypted_private_key !== null })) {
     if (!attestors) {
-      throw new AttestorQuorumError('attestor_unconfigured', 'wallet is migrated and no attestor endpoints are configured');
+      throw new AttestorQuorumError('attestor_unconfigured', 'wallet is in attestor custody and no attestor endpoints are configured');
     }
     if (!sw.attestorKeyId) {
-      throw new AttestorQuorumError('attestor_key_missing', 'migrated wallet carries no attestor key id');
+      throw new AttestorQuorumError('attestor_key_missing', 'attestor-custody wallet carries no attestor key id');
     }
     const signer = attestorSigner(
       attestors,
@@ -274,7 +275,9 @@ export async function signRoutes(app: FastifyInstance, opts: SignRoutesOptions =
       }
       account = sw.row.address;
       walletId = sw.row.id;
-      path = sw.migratedAt !== null ? 'attestor' : 'envelope';
+      path = usesAttestorCustody({ migratedAt: sw.migratedAt, hasEnvelope: sw.row.encrypted_private_key !== null })
+        ? 'attestor'
+        : 'envelope';
       if (sw.row.is_disabled) {
         throw new RouteRefusal(403, 'wallet_disabled', {
           error: 'WALLET_DISABLED',

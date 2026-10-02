@@ -27,9 +27,13 @@ import {
   archivedWalletGuard,
   findWalletByUserId,
   getSigningAccountForRow,
+  loadWalletCustody,
   logSignature,
+  usesAttestorCustody,
   type WalletRow,
 } from '../db/wallets.js';
+import { AttestorQuorumError, attestorSigner } from '../attestor/client.js';
+import { bearerToken, defaultAttestors } from './sign.js';
 import { encodeErc20Transfer, getErc20Balance, getNativeBalance } from '../chainReads.js';
 import { query } from '../db/pool.js';
 import { effectivePolicy } from '../policy/agent.js';
@@ -75,12 +79,38 @@ async function loadOwned(req: FastifyRequest, reply: FastifyReply): Promise<Agen
 }
 
 /** Sign + broadcast a transfer from an owned wallet row (owner privileged path). */
+async function ownerSigningAccount(wallet: WalletRow, token: string) {
+  const custody = await loadWalletCustody(wallet.id);
+  if (!usesAttestorCustody(custody)) return getSigningAccountForRow(wallet);
+  const attestors = defaultAttestors();
+  if (!attestors) {
+    throw new AttestorQuorumError('attestor_unconfigured', 'wallet is in attestor custody and no attestor endpoints are configured');
+  }
+  if (!custody.attestorKeyId) {
+    throw new AttestorQuorumError('attestor_key_missing', 'attestor-custody wallet carries no attestor key id');
+  }
+  const signer = attestorSigner(
+    attestors,
+    { keyId: custody.attestorKeyId, address: wallet.address, chainId: env.HYPERPAXEER_CHAIN_ID },
+    { scheme: 'supabase_jwt', token },
+  );
+  return {
+    address: wallet.address,
+    signTransaction: (async (tx: Parameters<typeof signer.signTransaction>[0]) =>
+      (await signer.signTransaction(tx)).value) as never,
+    signMessage: (async ({ message }: { message: string }) => (await signer.signMessage(message)).value) as never,
+    signTypedData: (async (td: Parameters<typeof signer.signTypedData>[0]) =>
+      (await signer.signTypedData(td)).value) as never,
+  };
+}
+
 async function sendFromWallet(
   wallet: WalletRow,
   args: { to: `0x${string}`; value?: bigint; data?: Hex },
+  token: string,
 ): Promise<Hex> {
   return withWalletLock(wallet.address, async () => {
-    const account = await getSigningAccountForRow(wallet);
+    const account = await ownerSigningAccount(wallet, token);
     const client = createWalletClient({
       chain: hyperPaxeer,
       transport: http(env.HYPERPAXEER_RPC_URL),
@@ -372,10 +402,10 @@ export async function ownerRoutes(app: FastifyInstance): Promise<void> {
     let txHash: Hex;
     try {
       if (!parsed.data.token) {
-        txHash = await sendFromWallet(ownerWallet, { to: agentWallet.address, value: amount });
+        txHash = await sendFromWallet(ownerWallet, { to: agentWallet.address, value: amount }, bearerToken(req));
       } else {
         const data = encodeErc20Transfer(agentWallet.address, amount);
-        txHash = await sendFromWallet(ownerWallet, { to: parsed.data.token as `0x${string}`, value: 0n, data });
+        txHash = await sendFromWallet(ownerWallet, { to: parsed.data.token as `0x${string}`, value: 0n, data }, bearerToken(req));
       }
     } catch (err) {
       req.log.error({ err }, 'fund agent failed');
@@ -431,10 +461,10 @@ export async function ownerRoutes(app: FastifyInstance): Promise<void> {
     let txHash: Hex;
     try {
       if (!parsed.data.token) {
-        txHash = await sendFromWallet(agentWallet, { to: dest, value: amount });
+        txHash = await sendFromWallet(agentWallet, { to: dest, value: amount }, bearerToken(req));
       } else {
         const data = encodeErc20Transfer(dest, amount);
-        txHash = await sendFromWallet(agentWallet, { to: parsed.data.token as `0x${string}`, value: 0n, data });
+        txHash = await sendFromWallet(agentWallet, { to: parsed.data.token as `0x${string}`, value: 0n, data }, bearerToken(req));
       }
     } catch (err) {
       req.log.error({ err }, 'sweep agent failed');
