@@ -1,5 +1,6 @@
 mod capabilities;
 mod explorer_proxy;
+mod ui_proxy;
 mod history;
 mod native_call;
 mod paxeer;
@@ -3640,6 +3641,9 @@ fn exchange<S: ws::Connection>(config: &Arc<Config>, stream: &mut S) -> Result<(
         if let Some(result) = explorer_proxy::websocket(&request, stream) {
             return result;
         }
+        if let Some(result) = ui_proxy::exchange(&request, stream) {
+            return result;
+        }
         if request.path == "/rpc/evm/ws" {
             return ws::serve_evm(config, &request, stream);
         }
@@ -3668,6 +3672,7 @@ fn exchange<S: ws::Connection>(config: &Arc<Config>, stream: &mut S) -> Result<(
 }
 
 fn run() -> Result<(), String> {
+    ui_proxy::configure()?;
     let producer =
         layerx_platform_internal::producer::Client::from_environment_if_configured(&["payment"])?;
     let config = Arc::new(config(producer.is_some())?);

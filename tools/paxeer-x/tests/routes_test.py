@@ -370,7 +370,168 @@ def websocket_dispatch(target, case):
     return websocket_request(target, case)
 
 
+UI_COOKIE_NAMES = {'nav_bar_collapsed', '_explorer_key', 'api_temp_token', 'rewards_api_token',
+    'rewards_ref_code', 'txs_sort', 'chakra-ui-color-mode', 'chakra-ui-color-theme',
+    'address_identicon_type', 'address_format', 'time_format', 'local_time', 'indexing_alert',
+    'adblock_detected', '_mixpanel_debug', 'address_nft_display_type', 'hide_add_to_wallet_button',
+    'uuid', 'show_scam_tokens', 'show_poor_reputation_tokens', 'app_profile', 'table_view_on_mobile'}
+UI_ASSET_EXTENSIONS = ('.js', '.json', '.css', '.woff', '.woff2', '.ttf', '.otf', '.png',
+    '.jpg', '.jpeg', '.webp', '.avif', '.svg', '.ico')
+
+
+def ui_case(case):
+    protocol = case.get('http_protocol')
+    require(protocol is None or protocol == 'next-ui', 'unknown HTTP protocol')
+    return protocol == 'next-ui'
+
+
+def ui_path(case):
+    path = case['path']
+    require(isinstance(path, str) and len(path) <= 8192
+            and all(32 < ord(c) < 127 for c in path), 'UI request target exceeds harness boundary')
+    parsed = urllib.parse.urlsplit(path)
+    require(not parsed.scheme and not parsed.netloc and not parsed.fragment
+            and path.startswith('/') and not path.startswith('//'), 'UI request target must be origin-relative')
+    prefix = '/wallet' if case['service'] == 'wallet-ui' else '/explorer'
+    require(case['service'] in {'wallet-ui', 'explorer'} and
+            (parsed.path == prefix or parsed.path.startswith(prefix + '/'))
+            and not (parsed.path == '/explorer/backend' or parsed.path.startswith('/explorer/backend/')),
+            'UI case is outside its frontend mount')
+    return parsed.path
+
+
+def case_path(case):
+    return ui_path(case) if ui_case(case) else request_path(case)
+
+
+def ui_template_matches(template, path):
+    pieces = []
+    for part in template.split('/'):
+        match = re.fullmatch(r'([^\[\]]*)\[[A-Za-z0-9_]+\]([^\[\]]*)', part)
+        pieces.append(re.escape(match[1]) + r'[A-Za-z0-9_~.-]{1,256}' + re.escape(match[2])
+                      if match else re.escape(part))
+    return re.fullmatch('/'.join(pieces), path) is not None and not any(
+        part in {'.', '..'} for part in path.split('/'))
+
+
+def ui_route_matches(route, case):
+    if not ui_case(case) or case.get('transport', 'http') != 'http':
+        return False
+    path = ui_path(case)
+    if route['service'] != case['service'] or route['method'] != case['method']:
+        return False
+    kind = route['ui_route_kind']
+    if kind == 'generated-asset':
+        prefix = route['asset_prefix']
+        tail = path[len(prefix):] if path.startswith(prefix) else ''
+        return bool(tail) and len(tail) < 1024 and tail.endswith(UI_ASSET_EXTENSIONS) and all(
+            part and not part.startswith('.') and re.fullmatch(r'[A-Za-z0-9_.\[\]()-]+', part)
+            for part in tail.split('/'))
+    if kind == 'next-data':
+        match = re.fullmatch(r'/explorer/_next/data/([A-Za-z0-9_-]{1,128})/(.+)\.json', path)
+        if not match:
+            return False
+        page = '/explorer' if match[2] == 'index' else '/explorer/' + match[2]
+        return any(ui_template_matches(template, page) for template in route['page_templates'])
+    require(kind in {'page', 'asset', 'api'}, 'unknown UI route class')
+    return ui_template_matches(route['path'], path)
+
+
+def validate_ui_case(case):
+    ui_path(case)
+    require(case.get('transport', 'http') == 'http' and case['method'] in {'GET', 'HEAD', 'POST', 'DELETE'},
+            'invalid UI transport or method')
+    require(isinstance(case.get('ui_checks'), dict) and case['ui_checks']
+            and set(case['ui_checks']) <= {'body_contains', 'body_absent', 'empty_body'},
+            'UI behavioral checks are missing or unknown')
+    for key in ('body_contains', 'body_absent'):
+        values = case['ui_checks'].get(key, [])
+        require(isinstance(values, list) and len(values) <= 16 and all(
+            isinstance(value, str) and 0 < len(value.encode()) <= 1024 for value in values),
+            'UI byte assertions exceed bounds')
+    if 'empty_body' in case['ui_checks']:
+        require(isinstance(case['ui_checks']['empty_body'], bool), 'UI empty-body assertion must be boolean')
+    status = case['status']
+    if case['kind'] == 'positive':
+        require(status in {200, 201, 202, 204, 304, 307, 308}, 'UI positive case must succeed')
+        fields = {name.lower(): value for name, value in case.get('response_headers', {}).items()}
+        if status in {307, 308}:
+            require('location' in fields and ('empty_body' in case['ui_checks']
+                    or case.get('response_sha256') or case['ui_checks'].get('body_contains')),
+                    'UI redirect requires exact location and body assertions')
+        elif case['method'] == 'HEAD' or status in {204, 304}:
+            require(case['ui_checks'].get('empty_body') is True, 'UI bodyless response requires explicit assertion')
+        else:
+            require('content-type' in fields and (case.get('response_sha256')
+                    or case.get('assertions') or case['ui_checks'].get('body_contains')),
+                    'UI success requires exact content type and actual body assertions')
+    elif case['kind'] == 'unauthorized':
+        require(status in {401, 403}, 'UI authorization refusal must not succeed')
+    elif case['kind'] in {'wrong-network', 'missing-dependency'}:
+        require(status == 503, 'UI dependency refusal must not succeed')
+    elif case['kind'] == 'malformed':
+        require(status in {400, 404, 405, 413, 415, 422, 502}, 'UI malformed request or upstream must refuse')
+
+
+def ui_http_request(target, case):
+    validate_ui_case(case)
+    parsed = urllib.parse.urlsplit(target['url'])
+    require(parsed.scheme == 'https' and parsed.hostname and not parsed.username
+            and not parsed.password and not parsed.query and not parsed.fragment,
+            'UI target requires canonical HTTPS')
+    headers = dict(case.get('headers', {}))
+    require(not any(name.lower() in SECRET_HEADERS for name in headers),
+            'UI credentials require protected file references')
+    for name, path in case.get('header_files', {}).items():
+        headers[name] = secret(path)
+    body = request_body(case)
+    if body is not None:
+        headers.setdefault('Content-Type', 'application/octet-stream' if 'body_file' in case else 'application/json')
+    conn = http.client.HTTPSConnection(parsed.hostname, parsed.port or 443, timeout=8, context=context(target))
+    try:
+        conn.request(case['method'], parsed.path.rstrip('/') + case['path'], body, headers)
+        reply = conn.getresponse()
+        data = reply.read(MAX_BODY + 1)
+        require(len(data) <= MAX_BODY and reply.status == case['status'], 'UI response status or bound mismatch')
+        for name, value in case.get('response_headers', {}).items():
+            require(reply.getheader(name) == value, 'UI response header assertion failed')
+        if 'response_sha256' in case:
+            require(hashlib.sha256(data).hexdigest() == case['response_sha256'], 'UI response digest mismatch')
+        for value in case['ui_checks'].get('body_contains', []):
+            require(value.encode() in data, 'UI body content assertion failed')
+        for value in case['ui_checks'].get('body_absent', []):
+            require(value.encode() not in data, 'UI body forbidden content assertion failed')
+        if 'empty_body' in case['ui_checks']:
+            require((len(data) == 0) == case['ui_checks']['empty_body'], 'UI empty-body assertion failed')
+        if case['method'] == 'HEAD' or reply.status in {204, 304}:
+            require(not data, 'UI bodyless response included bytes')
+        prefix = '/wallet' if case['service'] == 'wallet-ui' else '/explorer'
+        for name, value in reply.getheaders():
+            if name.lower() == 'location':
+                location = urllib.parse.urlsplit(value)
+                require(not location.scheme and not location.netloc and not location.fragment
+                        and (location.path == prefix or location.path.startswith(prefix + '/'))
+                        and not any(p in {'.', '..'} for p in location.path.split('/')),
+                        'UI redirect escaped mount')
+            elif name.lower() == 'set-cookie':
+                parts = [part.strip() for part in value.split(';')]
+                attributes = [part.split('=', 1)[0].lower() for part in parts[1:]]
+                require(prefix == '/explorer' and parts[0].split('=', 1)[0] in UI_COOKIE_NAMES
+                        and 'domain' not in attributes and 'secure' in attributes
+                        and len(attributes) == len(set(attributes))
+                        and any(part.lower() == 'path=/explorer' for part in parts[1:]),
+                        'UI cookie escaped its credential boundary')
+        document = json.loads(data) if case['assertions'] else None
+        for key, value in case['assertions'].items():
+            require(pointer(document, key) == value, 'UI JSON response assertion failed')
+        return document
+    finally:
+        conn.close()
+
+
 def route_matches(route, case):
+    if route.get("http_protocol") == "next-ui":
+        return ui_route_matches(route, case)
     path = request_path(case)
     if route['service'] != case['service']:
         return False
@@ -450,7 +611,7 @@ def run():
     route_index = {r["id"]:r for r in product["routes"]}
     scenarios = set()
     for case in cases:
-        request_path(case)
+        case_path(case)
         require(case['id'] not in ids, 'duplicate routed case')
         ids.add(case['id'])
         require(case['kind'] in KINDS and case['service'] in bound, 'unknown route case selector')
@@ -478,6 +639,11 @@ def run():
                     if 'x-layerx-batch' in headers:
                         require(headers['x-layerx-batch'] == request_path(case).rsplit('/', 1)[-1],
                                 'archive batch assertion does not match requested batch')
+                if route.get('http_protocol') == 'next-ui' and route.get('ui_route_kind') in {'asset', 'generated-asset'}:
+                    require('response_sha256' in case, 'UI asset requires an actual response byte digest')
+                    if case['method'] == 'HEAD':
+                        require(any(name.lower() == 'content-length' for name in case.get('response_headers', {})),
+                                'UI asset HEAD requires exact representation length')
                 covered_routes.add(route_id)
                 if route_index[route_id]['path'] != 'px_getRouteCatalogue':
                     functional_services.add(case['service'])
@@ -504,10 +670,19 @@ def run():
                     if identity.startswith('did:'): scenarios.add('identity-did')
                     elif re.fullmatch('0x[0-9a-fA-F]{40}',identity): scenarios.add('identity-evm')
                     elif re.fullmatch('[0-9a-f]{64}',identity): scenarios.add('identity-account')
-        if case['kind'] == 'positive': require(case['status'] in {101,200,201,202,204}, 'positive case requires success')
-        elif case['kind'] == 'unauthorized': require(case['status'] in {401,403}, 'private route refusal requires authorization status')
-        elif case['kind'] in {'wrong-network','missing-dependency'}: require(case['status'] == 503, 'dependency refusal must not succeed')
-        elif case['kind'] == 'malformed': require(case['status'] in {200,400,405,413,415,422}, 'invalid malformed case status')
+        if ui_case(case):
+            validate_ui_case(case)
+            if case['kind'] == 'positive' and case['status'] == 200 and case['method'] == 'GET':
+                scenarios.add('ui-' + case['service'])
+            if case['method'] == 'HEAD' and case['kind'] == 'positive': scenarios.add('ui-head')
+            if case['kind'] == 'positive' and case['status'] in {307,308}: scenarios.add('ui-redirect')
+            if case['kind'] == 'unauthorized': scenarios.add('ui-origin-refused')
+            if case['kind'] == 'malformed': scenarios.add('ui-malformed-refused')
+        else:
+            if case['kind'] == 'positive': require(case['status'] in {101,200,201,202,204}, 'positive case requires success')
+            elif case['kind'] == 'unauthorized': require(case['status'] in {401,403}, 'private route refusal requires authorization status')
+            elif case['kind'] in {'wrong-network','missing-dependency'}: require(case['status'] == 503, 'dependency refusal must not succeed')
+            elif case['kind'] == 'malformed': require(case['status'] in {200,400,405,413,415,422}, 'invalid malformed case status')
         require(case['target'] in plan['targets'], 'case target unavailable')
     for service in product['services']:
         needed = {'unauthorized'} if service['exposure']=='private' else KINDS
@@ -519,11 +694,15 @@ def run():
     require({'mixed-batch','identity-did','identity-evm','identity-account','node-signing-refused','private-publication-refused',
              'tls-client-identity','native-websocket','evm-websocket','cors'} <= scenarios,
             'required transport or identity scenarios absent')
+    if any(route.get('http_protocol') == 'next-ui' for route in product['routes']):
+        require({'ui-wallet-ui','ui-explorer','ui-head','ui-redirect','ui-origin-refused','ui-malformed-refused'} <= scenarios,
+                'required UI transport scenarios absent')
     started = time.monotonic()
     for case in cases:
         require(time.monotonic() - started < 870, 'routed contract time bound reached')
         COUNT += 1
         if case.get('transport') == 'websocket': websocket_dispatch(plan['targets'][case['target']],case)
+        elif ui_case(case): ui_http_request(plan['targets'][case['target']],case)
         else:
             document = http_request(plan['targets'][case['target']],case)
             require_rpc_results(case, document, route_index)

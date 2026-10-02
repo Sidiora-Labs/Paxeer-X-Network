@@ -802,7 +802,7 @@ pub fn read_request(stream: &mut impl Read, maximum: usize) -> Result<IncomingRe
         || (if crate::explorer_proxy::owns_target(path) {
             crate::explorer_proxy::split_target(path).is_err()
         } else {
-            split_target(path).is_err()
+            if ui_owns_target(path) { ui_split_target(path).is_err() } else { split_target(path).is_err() }
         })
         || !headers.contains_key("host")
     {
@@ -1529,4 +1529,130 @@ pub fn explorer_request(
     let mut answer = response_parts((start, fields, body))?;
     answer.headers.extend(browser_headers);
     Ok(answer)
+}
+
+pub fn ui_owns_target(target: &str) -> bool {
+    ["/wallet", "/explorer"].iter().any(|prefix| target.strip_prefix(prefix)
+        .is_some_and(|tail| tail.is_empty() || tail.starts_with('/') || tail.starts_with('?')))
+}
+
+pub fn ui_split_target(target: &str) -> Result<(&str, Option<&str>), String> {
+    if target.len() > 4096 { return Err("UI target exceeds bound".into()); }
+    let (path, query) = target.split_once('?').map_or((target, None), |(p, q)| (p, Some(q)));
+    if !path.starts_with('/') || path.len() > 2048 || path.contains(['#', '\\'])
+        || !path.bytes().all(|b| b.is_ascii_graphic()) || path.contains("//")
+        || path.split('/').any(|p| matches!(p, "." | "..")) { return Err("UI path refused".into()); }
+    let mut path_bytes = path.as_bytes().iter().copied();
+    while let Some(byte) = path_bytes.next() {
+        if byte == b'%' && (path_bytes.next() != Some(b'2') || path_bytes.next() != Some(b'0')) { return Err("UI path escape refused".into()); }
+    }
+    if let Some(query) = query {
+        if query.len() > 2048 { return Err("UI query exceeds bound".into()); }
+        let bytes = query.as_bytes(); let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == b'%' {
+                let digits = bytes.get(i + 1..i + 3).ok_or("UI query escape refused")?;
+                if !digits.iter().all(u8::is_ascii_hexdigit) { return Err("UI query escape refused".into()); }
+                let value = u8::from_str_radix(std::str::from_utf8(digits).map_err(|_| "UI query escape refused")?, 16).map_err(|_| "UI query escape refused")?;
+                if value == 0 || value == b'\r' || value == b'\n' { return Err("UI query control refused".into()); }
+                i += 3;
+            } else if bytes[i].is_ascii_alphanumeric() || b"-._~!$&'()*+,;=:@/?[]".contains(&bytes[i]) { i += 1; }
+            else { return Err("UI query character refused".into()); }
+        }
+    }
+    Ok((path, query))
+}
+
+pub struct UiResponse {
+    pub response: UpstreamResponse,
+    representation_length: Option<usize>,
+    stream: Option<(TlsStream<TcpStream>, Option<usize>, bool, Instant)>,
+}
+
+fn ui_response_header(name: &str) -> bool {
+    matches!(name, "cache-control" | "vary" | "location" | "set-cookie" | "content-encoding"
+        | "content-security-policy" | "content-security-policy-report-only" | "service-worker-allowed"
+        | "etag" | "last-modified" | "expires" | "retry-after" | "content-disposition"
+        | "x-accel-buffering" | "x-nextjs-cache" | "x-nextjs-prerender" | "x-nextjs-stale-time" | "cross-origin-opener-policy" | "cross-origin-resource-policy"
+        | "permissions-policy" | "referrer-policy" | "strict-transport-security" | "x-frame-options")
+}
+
+pub fn ui_request(endpoint: &Endpoint, request: &OutboundRequest<'_>, forwarded: &[(&str, &str)]) -> Result<UiResponse, String> {
+    let (path, _) = ui_split_target(request.path)?;
+    if !ui_owns_target(path) || !matches!(request.method, "GET" | "HEAD" | "POST" | "DELETE")
+        || request.body.len() > 32768 || request.idempotency.is_some()
+        || request.content_type.len() > 256 || !request.content_type.bytes().all(|b| b.is_ascii_graphic() || b == b' ') {
+        return Err("UI outbound request refused".into());
+    }
+    let mut head = zeroize::Zeroizing::new(format!("{} {} HTTP/1.1\r\nHost: {}\r\nContent-Length: {}\r\nConnection: close\r\n", request.method, request.path, endpoint.authority(), request.body.len()));
+    if !request.content_type.is_empty() { write!(head, "Content-Type: {}\r\n", request.content_type).map_err(|_| "UI header encoding")?; }
+    let mut seen = std::collections::BTreeSet::new();
+    for (name, value) in forwarded {
+        if !matches!(*name, "accept" | "accept-language" | "accept-encoding" | "cookie" | "origin" | "referer"
+            | "rsc" | "next-router-state-tree" | "next-router-prefetch" | "next-url" | "x-csrf-token"
+            | "if-none-match" | "if-modified-since" | "user-agent" | "x-forwarded-host" | "x-forwarded-proto")
+            || !seen.insert(*name) || value.len() > 8192 || !value.bytes().all(|b| b.is_ascii_graphic() || b == b' ') {
+            return Err("UI forwarded header refused".into());
+        }
+        write!(head, "{name}: {value}\r\n").map_err(|_| "UI header encoding")?;
+    }
+    if head.len() + 2 > MAX_HEADERS { return Err("UI request headers exceed bound".into()); }
+    head.push_str("\r\n");
+    let mut upstream = connect_public_tls(endpoint)?;
+    upstream.write_all(head.as_bytes()).and_then(|()| upstream.write_all(request.body)).and_then(|()| upstream.flush()).map_err(|_| "UI upstream write failed")?;
+    let started = Instant::now();
+    let head = read_head(&mut upstream, MAX_RESPONSE, true, started)?;
+    let mut start = head.0.split_whitespace();
+    if start.next() != Some("HTTP/1.1") { return Err("UI upstream version refused".into()); }
+    let status = start.next().and_then(|v| v.parse::<u16>().ok()).ok_or("UI upstream status refused")?;
+    if !(200..=599).contains(&status) { return Err("UI interim or upgrade refused".into()); }
+    let content_type = head.1.iter().find(|(n, _)| n == "content-type").map_or("", |(_, v)| v.as_str()).to_owned();
+    let nominated: std::collections::BTreeSet<String> = head.1.iter().filter(|(n, _)| n == "connection")
+        .flat_map(|(_, v)| v.split(',').map(|s| s.trim().to_ascii_lowercase())).collect();
+    if nominated.contains("content-type") || nominated.contains("content-length") || nominated.contains("transfer-encoding") { return Err("UI framing nominated by connection".into()); }
+    let fields = head.1.iter().filter(|(n, _)| ui_response_header(n) && !nominated.contains(n)).cloned().collect();
+    let representation_length = head.2;
+    let streaming = request.method == "POST" && path == "/wallet/api/chat" && status == 200
+        && content_type.split(';').next() == Some("text/event-stream");
+    let (body, stream) = if request.method == "HEAD" || matches!(status, 204 | 304) {
+        if status == 204 && (head.3 || head.2.is_some_and(|n| n != 0)) { return Err("UI bodyless response framing refused".into()); }
+        (Vec::new(), None)
+    } else if streaming { (Vec::new(), Some((upstream, head.2, head.3, started))) }
+    else { (read_message_body(&mut upstream, MAX_RESPONSE, true, started, head)?.2, None) };
+    Ok(UiResponse { response: UpstreamResponse { status, content_type, headers: fields, body, connection_close: true }, representation_length, stream })
+}
+
+pub fn write_ui_response(downstream: &mut impl Write, mut answer: UiResponse, head_only: bool) -> Result<(), String> {
+    let response = &answer.response;
+    let mut head = format!("HTTP/1.1 {} UI\r\nConnection: close\r\nX-Content-Type-Options: nosniff\r\n", response.status);
+    if !response.content_type.is_empty() { write!(head, "Content-Type: {}\r\n", response.content_type).map_err(|_| "UI response encoding")?; }
+    let mut has_cache = false;
+    for (name, value) in &response.headers {
+        if !ui_response_header(name) || !value.bytes().all(|b| b.is_ascii_graphic() || b == b' ' || b == b'\t') { return Err("UI response header refused".into()); }
+        has_cache |= name == "cache-control";
+        write!(head, "{name}: {value}\r\n").map_err(|_| "UI response encoding")?;
+    }
+    if !has_cache { head.push_str("Cache-Control: no-store\r\n"); }
+    if answer.stream.is_some() { head.push_str("Transfer-Encoding: chunked\r\n"); }
+    else if response.status != 204 {
+        let length = if head_only || response.status == 304 { answer.representation_length } else { Some(response.body.len()) };
+        if let Some(length) = length { write!(head, "Content-Length: {length}\r\n").map_err(|_| "UI response encoding")?; }
+    }
+    head.push_str("\r\n");
+    if head.len() > MAX_HEADERS { return Err("UI response headers exceed bound".into()); }
+    downstream.write_all(head.as_bytes()).and_then(|()| downstream.flush()).map_err(|_| "UI response write failed")?;
+    if let Some((mut upstream, length, chunked, started)) = answer.stream.take() {
+        return stream_body(&mut upstream, downstream, length, chunked, started);
+    }
+    if !head_only && !matches!(response.status, 204 | 304) { downstream.write_all(&response.body).map_err(|_| "UI body write failed")?; }
+    downstream.flush().map_err(|_| "UI response flush failed".into())
+}
+
+pub fn write_ui_failure(downstream: &mut impl Write, response: OutgoingResponse, head_only: bool) -> Result<(), String> {
+    let length = response.body.len();
+    write_ui_response(downstream, UiResponse {
+        response: UpstreamResponse { status: response.status, content_type: response.content_type,
+            headers: response.headers, body: response.body, connection_close: true },
+        representation_length: Some(length), stream: None,
+    }, head_only)
 }
