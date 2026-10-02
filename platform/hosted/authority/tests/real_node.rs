@@ -957,6 +957,8 @@ struct Cluster {
     replica_token: String,
     gateway_token: String,
     registry_token: String,
+    evidence_token: String,
+    tokens_dir: PathBuf,
     certificate: Certificate,
     socket: PathBuf,
     gate: ConnectionGate,
@@ -1335,6 +1337,13 @@ fn start_cluster_with_lni(with_sequencer: bool, live_lni: Option<&serde_json::Va
         replica_token.as_bytes(),
         0o600,
     );
+    let tokens_dir = must(fs::canonicalize(&tokens_dir), "canonical token directory");
+    let evidence_token = token();
+    write(
+        &tokens_dir.join("evidence-read.token"),
+        evidence_token.as_bytes(),
+        0o600,
+    );
     let authority_stderr = root.join("authority.stderr");
     let authority_binary = std::env::var_os("PAXEER_X_AUTHORITY_BIN")
         .unwrap_or_else(|| env!("CARGO_BIN_EXE_layerx-receipt-authority").into());
@@ -1362,6 +1371,10 @@ fn start_cluster_with_lni(with_sequencer: bool, live_lni: Option<&serde_json::Va
         .env(
             "LAYERX_AUTHORITY_REPLICA_BEARER_TOKEN_FILE",
             tokens_dir.join("replica.token"),
+        )
+        .env(
+            "LAYERX_AUTHORITY_EVIDENCE_READ_TOKEN_FILE",
+            tokens_dir.join("evidence-read.token"),
         )
         .env("LAYERX_AUTHORITY_REPLICA_ID", hex::encode(&replica_id))
         .env("LAYERX_AUTHORITY_LNI_SOCKET", &socket)
@@ -1403,6 +1416,8 @@ fn start_cluster_with_lni(with_sequencer: bool, live_lni: Option<&serde_json::Va
         replica_token,
         gateway_token,
         registry_token,
+        evidence_token,
+        tokens_dir,
         certificate,
         socket,
         gate,
@@ -1431,6 +1446,47 @@ impl Drop for Cluster {
             let _ = fs::remove_dir_all(&self.root);
         }
     }
+}
+
+fn ask(cluster: &Cluster, path: &str, bearer: &str) -> HttpAnswer {
+    https_get(
+        cluster.authority_port,
+        &cluster.certificate,
+        path,
+        Some(bearer),
+    )
+}
+
+fn refused_start(command: &mut Command, expected: &str, secret: &str) {
+    command.stdout(Stdio::null()).stderr(Stdio::piped());
+    let mut child = must(command.spawn(), "spawn authority under a refused configuration");
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let status = loop {
+        if let Some(status) = must(child.try_wait(), "refused authority status") {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("authority started under a configuration that must be refused: {expected}");
+        }
+        thread::sleep(Duration::from_millis(50));
+    };
+    let mut stderr = String::new();
+    must(
+        child
+            .stderr
+            .take()
+            .unwrap_or_else(|| panic!("refused authority stderr pipe"))
+            .read_to_string(&mut stderr),
+        "refused authority stderr",
+    );
+    assert!(!status.success(), "refused authority exited successfully");
+    assert!(stderr.contains(expected), "unexpected startup refusal: {stderr}");
+    assert!(
+        secret.is_empty() || !stderr.contains(secret),
+        "startup refusal must not reveal a token"
+    );
 }
 
 fn authority_facts(answer: &HttpAnswer) -> AuthorizedBatch {
@@ -2416,4 +2472,294 @@ fn authority_lni_readiness_case() {
         }
     }
     println!("PAXEER_X_LNI_CASES=1");
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn evidence_read_token_reads_only_receipt_authority() {
+    let mut cluster = start_cluster(true);
+    let mut transport = connect_lni(&cluster.socket, &cluster.gate);
+    let signed = signed_send(&cluster.actor, cluster.asset, 1);
+    let submitted = submit_and_wait(&mut transport, &signed, 10_000);
+    drop(transport);
+    let activity_hex = hex::encode(&submitted.activity_id);
+    let locator = must(receipt_locator(&submitted.receipt), "receipt locator");
+    let batch_hex = hex::encode(&locator.batch_id);
+    let digest_hex = hex::encode(&locator.receipt_digest);
+    let relay_path = format!("/v1/batches/{batch_hex}/receipt-authority?receipt_digest={digest_hex}");
+    let evidence = cluster.evidence_token.clone();
+    let mut cases = 0_u32;
+
+    let general_routes = [
+        format!("/v1/authorized-batches/by-activity/{activity_hex}"),
+        format!("/v1/authorized-batches/wait-by-activity/{activity_hex}"),
+        format!("/internal/v1/activities/{activity_hex}/authority"),
+        relay_path.clone(),
+    ];
+    for bearer in [&cluster.registry_token, &cluster.gateway_token] {
+        for path in &general_routes {
+            let answer = ask(&cluster, path, bearer);
+            assert_eq!(
+                answer.status,
+                200,
+                "{path}: {}",
+                String::from_utf8_lossy(&answer.body)
+            );
+            assert_eq!(answer.content_type, "application/json");
+            cases += 1;
+        }
+    }
+
+    let registry_view = ask(&cluster, &relay_path, &cluster.registry_token);
+    let evidence_view = ask(&cluster, &relay_path, &evidence);
+    assert_eq!(
+        evidence_view.status,
+        200,
+        "{}",
+        String::from_utf8_lossy(&evidence_view.body)
+    );
+    assert_eq!(evidence_view.content_type, "application/json");
+    assert_eq!(evidence_view.body, registry_view.body);
+    let direct = http_get(cluster.replica_port, &relay_path, &cluster.replica_token);
+    assert_eq!(direct.status, 200);
+    assert_eq!(evidence_view.body, direct.body);
+    let parsed = must(
+        parse_replica_evidence(&evidence_view.body, cluster.replica_id, cluster.sequencer_key),
+        "replica evidence read with the evidence token",
+    );
+    assert_eq!(
+        parsed,
+        must(
+            parse_replica_evidence(&registry_view.body, cluster.replica_id, cluster.sequencer_key),
+            "replica evidence read with the registry token",
+        )
+    );
+    cases += 1;
+
+    let unknown_path = format!(
+        "/v1/batches/{}/receipt-authority?receipt_digest={digest_hex}",
+        hex::encode(&random32())
+    );
+    let unknown = ask(&cluster, &unknown_path, &evidence);
+    assert_eq!(unknown.status, 404);
+    assert_eq!(
+        unknown.body,
+        ask(&cluster, &unknown_path, &cluster.registry_token).body
+    );
+    cases += 1;
+
+    let no_digest_path = format!("/v1/batches/{batch_hex}/receipt-authority");
+    let no_digest = ask(&cluster, &no_digest_path, &evidence);
+    assert_eq!(no_digest.status, 400);
+    assert_eq!(error_code(&no_digest), "invalid_request");
+    assert_eq!(
+        no_digest.body,
+        ask(&cluster, &no_digest_path, &cluster.registry_token).body
+    );
+    cases += 1;
+
+    let malformed_path = format!("/v1/batches/{batch_hex}/receipt-authority?receipt_digest=zz");
+    let malformed = ask(&cluster, &malformed_path, &evidence);
+    assert_eq!(malformed.status, 400);
+    assert_eq!(error_code(&malformed), "invalid_request");
+    cases += 1;
+
+    let unauthenticated = https_get(
+        cluster.authority_port,
+        &cluster.certificate,
+        &relay_path,
+        None,
+    );
+    assert_eq!(unauthenticated.status, 401);
+    assert_eq!(error_code(&unauthenticated), "identity_required");
+    let stranger = ask(&cluster, &relay_path, &token());
+    assert_eq!(stranger.status, 401);
+    assert_eq!(error_code(&stranger), "identity_required");
+    cases += 1;
+
+    for path in &general_routes[..3] {
+        let refused = ask(&cluster, path, &evidence);
+        assert_eq!(refused.status, 401, "{path} admitted the evidence token");
+        assert_eq!(error_code(&refused), "identity_required");
+        cases += 1;
+    }
+
+    cluster.authority.stop();
+    let tokens = cluster.tokens_dir.clone();
+    let evidence_file = tokens.join("evidence-read.token");
+    for (name, bytes, mode, expected) in [
+        (
+            "evidence-general.token",
+            cluster.registry_token.as_bytes().to_vec(),
+            0o600,
+            "must differ from every general and replica bearer",
+        ),
+        (
+            "evidence-gateway.token",
+            cluster.gateway_token.as_bytes().to_vec(),
+            0o600,
+            "must differ from every general and replica bearer",
+        ),
+        (
+            "evidence-replica.token",
+            cluster.replica_token.as_bytes().to_vec(),
+            0o600,
+            "must differ from every general and replica bearer",
+        ),
+        (
+            "evidence-group.token",
+            token().into_bytes(),
+            0o640,
+            "is unavailable or unprotected",
+        ),
+        (
+            "evidence-world.token",
+            token().into_bytes(),
+            0o604,
+            "is unavailable or unprotected",
+        ),
+        (
+            "evidence-empty.token",
+            Vec::new(),
+            0o600,
+            "must contain 32..4096 printable bytes without whitespace",
+        ),
+        (
+            "evidence-short.token",
+            token().as_bytes()[..31].to_vec(),
+            0o600,
+            "must contain 32..4096 printable bytes without whitespace",
+        ),
+        (
+            "evidence-newline.token",
+            format!("{}\n", token()).into_bytes(),
+            0o600,
+            "must contain 32..4096 printable bytes without whitespace",
+        ),
+    ] {
+        let path = tokens.join(name);
+        write(&path, &bytes, mode);
+        cluster
+            .authority_command
+            .env("LAYERX_AUTHORITY_EVIDENCE_READ_TOKEN_FILE", &path);
+        refused_start(
+            &mut cluster.authority_command,
+            expected,
+            std::str::from_utf8(&bytes).unwrap_or_default(),
+        );
+        cases += 1;
+    }
+    let link = tokens.join("evidence-link.token");
+    must(
+        std::os::unix::fs::symlink(&evidence_file, &link),
+        "evidence token symlink",
+    );
+    cluster
+        .authority_command
+        .env("LAYERX_AUTHORITY_EVIDENCE_READ_TOKEN_FILE", &link);
+    refused_start(
+        &mut cluster.authority_command,
+        "is unavailable or unprotected",
+        &evidence,
+    );
+    cases += 1;
+    cluster
+        .authority_command
+        .env("LAYERX_AUTHORITY_EVIDENCE_READ_TOKEN_FILE", &evidence_file);
+
+    let state = tokens.join("human-state");
+    make_dir(&state, 0o700);
+    write(&tokens.join("human-collision.token"), evidence.as_bytes(), 0o600);
+    cluster
+        .authority_command
+        .env(
+            "LAYERX_AUTHORITY_HUMAN_AGENT_TOKEN_FILE",
+            tokens.join("human-collision.token"),
+        )
+        .env("LAYERX_AUTHORITY_HUMAN_AGENT_TENANT", "tenant")
+        .env("LAYERX_AUTHORITY_HUMAN_AGENT_PRINCIPAL", "principal")
+        .env(
+            "LAYERX_AUTHORITY_PRINCIPAL_POLICY_FILE",
+            tokens.join("principal-policy.json"),
+        )
+        .env(
+            "LAYERX_AUTHORITY_MODULE_REGISTRY_FILE",
+            tokens.join("module-registry.json"),
+        )
+        .env("LAYERX_AUTHORITY_CORE_CLOCK_HORIZON", "100")
+        .env("LAYERX_AUTHORITY_STATE_ROOT", &state);
+    refused_start(
+        &mut cluster.authority_command,
+        "human token must be distinct",
+        &evidence,
+    );
+    cases += 1;
+
+    let human_token = token();
+    write(&tokens.join("human.token"), human_token.as_bytes(), 0o600);
+    let authority_stderr = cluster.root.join("authority-human.stderr");
+    cluster
+        .authority_command
+        .env(
+            "LAYERX_AUTHORITY_HUMAN_AGENT_TOKEN_FILE",
+            tokens.join("human.token"),
+        )
+        .stderr(Stdio::from(must(
+            fs::File::create(&authority_stderr),
+            "authority stderr file",
+        )));
+    cluster.authority.stderr = authority_stderr;
+    cluster.authority.child = must(
+        cluster.authority_command.spawn(),
+        "restart authority with human routes",
+    );
+    wait_for_port(
+        cluster.authority_port,
+        &mut cluster.authority,
+        "authority with human routes",
+    );
+    let agent_path = format!("/v1/agent/activities/{activity_hex}?tenant=tenant&principal=principal");
+    let agent = ask(&cluster, &agent_path, &evidence);
+    assert_eq!(agent.status, 401, "/v1/agent/* admitted the evidence token");
+    assert_eq!(error_code(&agent), "identity_required");
+    cases += 1;
+    let agent_general = ask(&cluster, &agent_path, &cluster.registry_token);
+    assert_eq!(agent_general.status, 401);
+    assert_eq!(error_code(&agent_general), "identity_required");
+    cases += 1;
+    let agent_human = ask(&cluster, &agent_path, &human_token);
+    assert_ne!(agent_human.status, 401, "the human token must keep its route");
+    cases += 1;
+    for path in &general_routes[..3] {
+        let refused = ask(&cluster, path, &evidence);
+        assert_eq!(refused.status, 401, "{path} admitted the evidence token");
+        assert_eq!(error_code(&refused), "identity_required");
+        let human_refused = ask(&cluster, path, &human_token);
+        assert_eq!(human_refused.status, 401, "{path} admitted the human token");
+        cases += 1;
+    }
+    let restarted_view = ask(&cluster, &relay_path, &evidence);
+    assert_eq!(restarted_view.status, 200);
+    assert_eq!(restarted_view.body, registry_view.body);
+    let human_relay = ask(&cluster, &relay_path, &human_token);
+    assert_eq!(human_relay.status, 401, "the human token must not read evidence");
+    cases += 1;
+
+    cluster.replica.stop();
+    let unavailable = ask(&cluster, &relay_path, &evidence);
+    assert_eq!(unavailable.status, 503);
+    assert_eq!(error_code(&unavailable), "replica_unavailable");
+    let registry_unavailable = ask(&cluster, &relay_path, &cluster.registry_token);
+    assert_eq!(registry_unavailable.status, 503);
+    assert_eq!(unavailable.body, registry_unavailable.body);
+    cases += 1;
+    let refused_while_unavailable = ask(
+        &cluster,
+        &format!("/v1/authorized-batches/by-activity/{activity_hex}"),
+        &evidence,
+    );
+    assert_eq!(refused_while_unavailable.status, 401);
+    cases += 1;
+
+    println!("\nPAXEER_X_GATE tests={cases} skipped=0");
 }

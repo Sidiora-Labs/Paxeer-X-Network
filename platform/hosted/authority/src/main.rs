@@ -64,6 +64,7 @@ Environment:
   LAYERX_AUTHORITY_TOKEN_FILES               colon-separated files, one bearer token each (gateway, registry, webhooks)
   LAYERX_AUTHORITY_REPLICA_URL               loopback http://127.0.0.1:PORT of the independent receipt-authority replica
   LAYERX_AUTHORITY_REPLICA_BEARER_TOKEN_FILE bearer token the replica requires
+  LAYERX_AUTHORITY_EVIDENCE_READ_TOKEN_FILE  optional protected file; its distinct bearer may read only /v1/batches/{batch_id}/receipt-authority
   LAYERX_AUTHORITY_REPLICA_ID                64-hex replica identity every evidence document must carry
   LAYERX_AUTHORITY_LNI_SOCKET                LNI unix socket used as the receipt source (ReceiptLookup by activity id);
                                              this service takes receipt bytes from the LNI and never an HTTP receipt URL
@@ -86,6 +87,7 @@ struct Config {
     replica_address: SocketAddr,
     replica_host: String,
     replica_token: Zeroizing<String>,
+    evidence_read_token: Option<Zeroizing<Vec<u8>>>,
     replica_id: [u8; 32],
     lni_socket: PathBuf,
     lni_gate: ConnectionGate,
@@ -144,6 +146,34 @@ fn read_secret_file(path: &str, name: &str) -> Result<Zeroizing<String>, String>
 fn read_secret(variable: &str) -> Result<Zeroizing<String>, String> {
     let path = env::var(variable).map_err(|_| format!("{variable} is required"))?;
     read_secret_file(&path, variable)
+}
+
+fn read_evidence_read_token(
+    tokens: &[Zeroizing<String>],
+    replica_token: &Zeroizing<String>,
+) -> Result<Option<Zeroizing<Vec<u8>>>, String> {
+    let Some(path) = env::var_os("LAYERX_AUTHORITY_EVIDENCE_READ_TOKEN_FILE") else {
+        return Ok(None);
+    };
+    let token = Zeroizing::new(protected::read(&PathBuf::from(path), 4096).map_err(|()| {
+        "LAYERX_AUTHORITY_EVIDENCE_READ_TOKEN_FILE is unavailable or unprotected".to_owned()
+    })?);
+    if token.len() < 32 || !token.iter().all(|byte| (0x21..=0x7e).contains(byte)) {
+        return Err("LAYERX_AUTHORITY_EVIDENCE_READ_TOKEN_FILE must contain 32..4096 printable bytes without whitespace".to_owned());
+    }
+    let collides = tokens
+        .iter()
+        .chain(std::iter::once(replica_token))
+        .fold(false, |found, other| {
+            found | bool::from(other.as_bytes().ct_eq(token.as_slice()))
+        });
+    if collides {
+        return Err(
+            "LAYERX_AUTHORITY_EVIDENCE_READ_TOKEN_FILE must differ from every general and replica bearer"
+                .to_owned(),
+        );
+    }
+    Ok(Some(token))
 }
 
 fn read_bounded(variable: &str) -> Result<Vec<u8>, String> {
@@ -236,6 +266,14 @@ fn config() -> Result<Config, String> {
             "LAYERX_AUTHORITY_REPLICA_URL must be a loopback http://host:port endpoint".to_owned()
         })?;
     let replica_token = read_secret("LAYERX_AUTHORITY_REPLICA_BEARER_TOKEN_FILE")?;
+    let evidence_read_token = read_evidence_read_token(&tokens, &replica_token)?;
+    let mut human_peers = tokens.clone();
+    if let Some(token) = &evidence_read_token {
+        human_peers.push(Zeroizing::new(
+            String::from_utf8(token.to_vec())
+                .map_err(|_| "LAYERX_AUTHORITY_EVIDENCE_READ_TOKEN_FILE is not printable")?,
+        ));
+    }
     let replica_id = parse_hex32("LAYERX_AUTHORITY_REPLICA_ID")?;
     if replica_id == [0; 32] {
         return Err("LAYERX_AUTHORITY_REPLICA_ID must not be zero".to_owned());
@@ -282,11 +320,12 @@ fn config() -> Result<Config, String> {
         trust: trust::Trust::load(protocol_network_id, sequencer_id, sequencer_public_key)?,
         listen,
         tls,
-        human: human::Human::load(&tokens)?,
+        human: human::Human::load(&human_peers)?,
         tokens,
         replica_address,
         replica_host,
         replica_token,
+        evidence_read_token,
         replica_id,
         lni_socket,
         lni_gate: ConnectionGate::new(MAX_LNI_CONNECTIONS),
@@ -463,6 +502,17 @@ fn authenticate(config: &Config, request: &Request) -> Result<(), Response> {
     } else {
         Err(refusal(401, "identity_required", None))
     }
+}
+
+fn evidence_reader(config: &Config, request: &Request) -> bool {
+    let Some(token) = config.evidence_read_token.as_ref() else {
+        return false;
+    };
+    request
+        .headers
+        .get("authorization")
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .is_some_and(|presented| bool::from(token.as_slice().ct_eq(presented.as_bytes())))
 }
 
 fn replica_get(config: &Config, path: &str) -> ReplicaAnswer {
@@ -1214,6 +1264,9 @@ fn route(config: &Arc<Config>, request: &Request) -> Response {
     {
         return match authenticate(config, request) {
             Ok(()) => relay(config, batch_id, request.query.as_deref()),
+            Err(_) if evidence_reader(config, request) => {
+                relay(config, batch_id, request.query.as_deref())
+            }
             Err(response) => response,
         };
     }

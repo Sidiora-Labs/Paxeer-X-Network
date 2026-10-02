@@ -31778,7 +31778,7 @@ ac_5 = "Kernel provisioning must mint and install the same scoped credential con
 
 [task.22.8]
 title = "Restrict explorer evidence credentials to per-receipt authority reads"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["0.2", "15.1", "15.4", "22.7"]
