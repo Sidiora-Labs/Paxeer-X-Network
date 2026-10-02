@@ -652,6 +652,23 @@ pub struct TornTail {
     pub bytes: u64,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct JournalHealth {
+    pub exclusive_writer: bool,
+    pub halted: bool,
+    pub recovered_tail: Option<TornTail>,
+    pub durable_len: u64,
+    pub next_sequence: u64,
+    pub head: [u8; 32],
+}
+
+impl JournalHealth {
+    #[must_use]
+    pub const fn ready(&self) -> bool {
+        self.exclusive_writer && !self.halted
+    }
+}
+
 enum WriteFailure {
     Failed,
     Interrupted,
@@ -842,6 +859,18 @@ impl Journal {
     #[must_use]
     pub const fn halted(&self) -> bool {
         self.halted
+    }
+
+    #[must_use]
+    pub const fn health(&self) -> JournalHealth {
+        JournalHealth {
+            exclusive_writer: true,
+            halted: self.halted,
+            recovered_tail: self.recovery,
+            durable_len: self.durable_len,
+            next_sequence: self.next_sequence,
+            head: self.head,
+        }
     }
 
     pub fn arm_write_fault(&mut self, step: WriteStep, fault: WriteFault) {

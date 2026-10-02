@@ -677,9 +677,20 @@ fn route(state: &State, request: &Request) -> Result<Response, Response> {
         return Ok(ok(json!({ "live": true })));
     }
     if request.method == "GET" && request.path == "/readyz" {
-        let ready = state.journal.lock().is_ok();
+        let health = state.journal.lock().ok().map(|journal| journal.health());
+        let ready = health.is_some_and(|health| health.ready());
         let body = json!({
             "ready": ready,
+            "journal": health.map_or_else(
+                || json!({ "writer": false, "halted": true }),
+                |health| json!({
+                    "writer": health.exclusive_writer,
+                    "halted": health.halted,
+                    "recovered_torn_tail": health.recovered_tail.is_some(),
+                    "durable_len": health.durable_len,
+                    "next_sequence": health.next_sequence
+                }),
+            ),
             "external_custody": true,
             "provider_contract": layerx_ramp_toolkit::PROVIDER_CONTRACT_VERSION,
             "compliance_contract": layerx_ramp_toolkit::COMPLIANCE_CONTRACT_VERSION,
