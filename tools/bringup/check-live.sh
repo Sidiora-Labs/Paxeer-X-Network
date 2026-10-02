@@ -2287,7 +2287,11 @@ check_internal() {
 		if [ "$status" = 0 ] && [ "$code" = 200 ] && [[ "$body" == *'"ready":true'* ]]; then
 			echo "pass readiness group=$group url=$url from=$kernel http=200 ready=true"
 		else
+			if [ "$status" = 0 ] && [ "$code" = 503 ] && [[ "$body" == *'"state":"waiting-principals"'* ]]; then
+				echo "fail readiness group=$group url=$url from=$kernel http=503 state=waiting-principals"
+			else
 			echo "fail readiness group=$group url=$url from=$kernel curl=${status:-none} http=${code:-none}"
+			fi
 			failures=$((failures + 1))
 		fi
 	done

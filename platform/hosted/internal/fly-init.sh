@@ -22,10 +22,32 @@ tls_dir="/data/tls/internal-$group"
 state_dir=/data/state
 run_dir=/data/run
 mkdir -p "$state_dir" "$run_dir"
+chmod 0700 "$state_dir" "$run_dir"
 
-# fresh <file>: writes 32 random bytes as hex to the file unless it holds one.
+retained=false
+if [ -n "$(ls -A "$state_dir")" ] || [ -e "$run_dir/credentials.json" ]; then
+	retained=true
+fi
 fresh() {
-	[ -s "$1" ] || { openssl rand -hex 32 >"$1.new" && mv "$1.new" "$1"; }
+	if [ -e "$1" ] || [ -L "$1" ]; then
+		[ -f "$1" ] && [ ! -L "$1" ] && [ -s "$1" ] || {
+			echo "internal-fly-init: invalid retained material $1" >&2
+			exit 1
+		}
+		[ "$(stat -c %h "$1")" = 1 ] || exit 1
+		case "$(stat -c %u "$1")" in 0 | 4020) ;; *) exit 1 ;; esac
+		[ "$(stat -c %a "$1")" = 600 ] || exit 1
+		return
+	fi
+	if [ "$retained" = true ]; then
+		echo "internal-fly-init: retained material missing $1" >&2
+		exit 1
+	fi
+	temporary=$(mktemp "$run_dir/.secret.XXXXXX")
+	openssl rand -hex 32 > "$temporary"
+	chmod 0600 "$temporary"
+	ln "$temporary" "$1"
+	rm "$temporary"
 }
 
 case "$group" in
@@ -43,14 +65,26 @@ journeys | approvals | payments | programs)
 	fresh "$run_dir/token"
 	fresh "$run_dir/producer-token"
 	fresh "$run_dir/enrollment-key"
-	# The credential file is the versioned enrollment snapshot the source
-	# re-reads while it runs; start from the signed empty generation 0 and
-	# replace a pre-versioned empty map.
-	if [ ! -s "$run_dir/credentials.json" ] || [ "$(tr -d ' \n' <"$run_dir/credentials.json")" = '{}' ]; then
+	if [ -L "$run_dir/credentials.json" ]; then
+		echo "internal-fly-init: enrollment snapshot is a symbolic link" >&2
+		exit 1
+	fi
+	if [ ! -e "$run_dir/credentials.json" ]; then
+		[ "$retained" = false ] || {
+			echo "internal-fly-init: retained enrollment snapshot is missing" >&2
+			exit 1
+		}
 		chown 4020:4020 "$run_dir" "$run_dir/enrollment-key"
 		mac=$(LAYERX_EVENTS_KIND="$group" LAYERX_EVENTS_ENROLLMENT_KEY_FILE="$run_dir/enrollment-key" setpriv --reuid=4020 --regid=4020 --clear-groups --no-new-privs /usr/local/bin/layerx-event-source --empty-enrollment-mac)
-		printf '{"version":1,"generation":0,"principals":[],"mac":"%s"}\n' "$mac" >"$run_dir/credentials.json.new"
-		mv "$run_dir/credentials.json.new" "$run_dir/credentials.json"
+		temporary=$(mktemp "$run_dir/.enrollment.XXXXXX")
+		printf '{"version":1,"generation":0,"principals":[],"mac":"%s"}\n' "$mac" > "$temporary"
+		chmod 0600 "$temporary"
+		ln "$temporary" "$run_dir/credentials.json"
+		rm "$temporary"
+	else
+		[ -f "$run_dir/credentials.json" ] && [ -s "$run_dir/credentials.json" ] || exit 1
+		[ "$(stat -c %h "$run_dir/credentials.json")" = 1 ] || exit 1
+		[ "$(stat -c %a "$run_dir/credentials.json")" = 600 ] || exit 1
 	fi
 	# The human service produces journeys and approvals; the router and the
 	# registry produce payments and programs with a principal digest.

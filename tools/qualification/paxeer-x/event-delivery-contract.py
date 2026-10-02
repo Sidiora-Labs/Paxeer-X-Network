@@ -2001,9 +2001,679 @@ def roles_healthy_worker(manifest, results, attachment):
         for log in logs: log.close()
 
 
+
+
+def provisioning_check(results, label, condition):
+    results.check('principal provisioning: ' + label, condition)
+    if not condition:
+        raise Missing('principal provisioning: ' + label)
+
+
+def provisioning_inputs(manifest):
+    location = os.environ.get('PAXEER_X_EVENT_PROVISIONING')
+    if not location:
+        raise Missing('PAXEER_X_EVENT_PROVISIONING is required: genuine Human onboarding dependencies and candidate-bound prebuilt services')
+    document = json.loads(protected_input(location, 'principal provisioning fixture').read_bytes())
+    if document.get('schema') != 'paxeer-x.event-principal-provisioning.v1' \
+            or document.get('candidate_manifest_sha256') != MANIFEST_DIGEST \
+            or document.get('source_revision') != manifest['source']['revision'] \
+            or document.get('scope') != 'isolated-real-process':
+        raise Missing('principal provisioning fixture must bind this isolated candidate')
+    root = private_directory(Path(document['isolation_root']).resolve(strict=True))
+    if root == Path('/'):
+        raise Missing('isolated writable root required')
+    required = {'kms', 'journeys', 'approvals', 'payments', 'programs', 'identity',
+                'human-components', 'human-service', 'webhook-public', 'webhook-ingress'}
+    services = document['services']
+    if not required <= set(services) or len(services) > 40:
+        raise Missing('all five internal groups, real Human issuer, identity and webhook roles are required')
+    allowed = {'layerx-kms', 'layerx-event-source', 'layerx-identity', 'layerx-human-components',
+               'layerx-human-service', 'layerx-webhooks', 'layerx-gateway', 'layerx-program-registry',
+               'layerx-agent-boundary', 'layerx-receipt-authority', 'layerxd', 'paxd', 'redis-server',
+               'layerx-guarantor', 'layerx-human-kms', 'layerx-human-security-provider',
+               'layerx-human-movement-provider', 'layerx-human-identity-provider', 'layerx-human-onboarding',
+               'layerx-agentd', 'layerx-identity-binding', 'layerx-remote-signer'}
+    artifacts = document['artifacts']
+    for name, artifact in artifacts.items():
+        if name not in allowed | {'layerx-runtime-clock', 'node'}:
+            raise Missing('undeclared executable in principal provisioning fixture')
+        path = Path(artifact['path'])
+        if not path.is_absolute() or not path.is_file() or path.is_symlink() or not os.access(path, os.X_OK):
+            raise Missing('missing prebuilt provisioning executable: ' + name)
+        with path.open('rb') as handle:
+            digest = hashlib.file_digest(handle, 'sha256').hexdigest()
+        if digest != artifact['sha256'] or artifact['source_revision'] != manifest['source']['revision']:
+            raise Missing('prebuilt provisioning executable is not candidate-bound: ' + name)
+    if not {'layerx-runtime-clock', 'node'} <= set(artifacts):
+        raise Missing('prebuilt runtime clock and Node with native TypeScript support are required')
+    states = {}
+    expected_phases = {'kms': 'internal', 'journeys': 'internal', 'approvals': 'internal',
+                       'payments': 'internal', 'programs': 'internal', 'identity': 'dependency',
+                       'human-components': 'human', 'human-service': 'human',
+                       'webhook-public': 'webhook', 'webhook-ingress': 'webhook'}
+    for name, service in services.items():
+        if service['binary'] not in allowed or service['binary'] not in artifacts:
+            raise Missing('service is not a bound production executable: ' + name)
+        if service['phase'] not in ('dependency', 'internal', 'human', 'webhook'):
+            raise Missing('explicit dependency phase required: ' + name)
+        if name in expected_phases and service['phase'] != expected_phases[name]:
+            raise Missing('production bootstrap dependency ordering mismatch: ' + name)
+        env = json.loads(protected_input(service['environment_file'], name + ' protected configuration').read_bytes())
+        if not isinstance(env, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in env.items()):
+            raise Missing('bounded environment object required')
+        for key, value in env.items():
+            if any(ord(char) < 32 for char in key + value):
+                raise Missing('configuration contains control characters')
+            if re.search(r'(TOKEN|PASSWORD|SECRET|PRIVATE_KEY)$', key):
+                raise Missing('credentials must use protected references: ' + key)
+            if key.endswith(('_FILE', '_DER', '_PKCS12')):
+                if name in ('journeys', 'approvals') and key == 'LAYERX_EVENTS_CREDENTIALS_FILE':
+                    if root not in Path(value).resolve().parents:
+                        raise Missing('generated source enrollment is outside the owned root')
+                else:
+                    protected_input(value, name + ' protected reference')
+        for path in service['state_directories']:
+            selected = Path(path).resolve()
+            if root not in selected.parents or selected.is_symlink():
+                raise Missing('production persistence is outside the owned isolation root')
+        service['environment'] = env
+        service['arguments'] = service.get('arguments', [])
+        if not isinstance(service['arguments'], list) or any(not isinstance(v, str) or '\x00' in v for v in service['arguments']):
+            raise Missing('production arguments must be a bounded argument vector')
+        if len(service['arguments']) > 128:
+            raise Missing('production argument bound')
+        if name in ('kms', *KINDS):
+            variable = 'LAYERX_KMS_STATE_DIR' if name == 'kms' else 'LAYERX_EVENTS_STATE_DIR'
+            state = Path(env[variable]).resolve()
+            if str(state) not in service['state_directories'] or root not in state.parents:
+                raise Missing('internal group persistence binding missing')
+            states[name] = state
+            if state.exists() and any(state.iterdir()):
+                raise Missing('fresh-volume case requires empty internal persistent directories')
+            if name != 'kms':
+                if env.get('LAYERX_EVENTS_KIND') != name or not env.get('LAYERX_EVENTS_LISTEN', '').startswith('127.0.0.1:'):
+                    raise Missing('internal source kind or private listener mismatch')
+                for key in ('LAYERX_EVENTS_TLS_CERT_DER', 'LAYERX_EVENTS_TLS_KEY_DER',
+                            'LAYERX_EVENTS_CLIENT_CA_DER', 'LAYERX_EVENTS_UPSTREAM_CA_DER',
+                            'LAYERX_EVENTS_ENROLLMENT_KEY_FILE', 'LAYERX_EVENTS_PRODUCERS_FILE'):
+                    protected_input(env[key], name + ' mandatory mTLS/enrollment material')
+            else:
+                if not env.get('LAYERX_KMS_LISTEN', '').startswith('127.0.0.1:'):
+                    raise Missing('KMS must retain its private listener')
+                for key in ('TLS_CERT_DER', 'TLS_KEY_DER', 'CLIENT_CA_DER', 'TOKEN_FILE', 'SEAL_SECRET_FILE'):
+                    protected_input(env['LAYERX_KMS_' + key], 'KMS mandatory protected material')
+    if len(set(states.values())) != 5 or any(a in b.parents or b in a.parents for a in states.values() for b in states.values() if a != b):
+        raise Missing('five internal groups require independent persistent volumes')
+    human = services['human-components']['environment']
+    for key in ('LAYERX_HUMAN_STORE_ROOT', 'LAYERX_HUMAN_CUSTODY_ROOT', 'LAYERX_HUMAN_AUTH_INDEX_ROOT'):
+        path = Path(human[key]).resolve()
+        if root not in path.parents:
+            raise Missing('Human issuer must use owned production bootstrap volumes')
+    if services['human-service']['environment'].get('LAYERX_HUMAN_LISTENER') != 'tls':
+        raise Missing('real Human issuer must serve TLS')
+    for name in ('webhook-ingress', 'webhook-public'):
+        env = services[name]['environment']
+        if env.get('LAYERX_WEBHOOKS_ROLE') != name.removeprefix('webhook-') \
+                or env.get('LAYERX_WEBHOOKS_LISTENER') != 'tls' \
+                or not env.get('LAYERX_WEBHOOKS_LISTEN', '').startswith('127.0.0.1:'):
+            raise Missing('webhook roles must remain separate private TLS processes')
+        for key in ('REDIS_USERNAME_FILE', 'REDIS_PASSWORD_FILE', 'KMS_TOKEN_FILE',
+                    'INTERNAL_CA_DER', 'PUBLIC_CA_DER', 'CLIENT_IDENTITY_PKCS12',
+                    'CLIENT_IDENTITY_PASSWORD_FILE', 'CURSOR_KEY_FILE'):
+            protected_input(env['LAYERX_WEBHOOKS_' + key], 'webhook mandatory dependency')
+    ingress = services['webhook-ingress']['environment']
+    for key in ('INGRESS_CLIENT_CA_DER', 'COMPONENT_TOKEN_FILE', 'AUTHORITY_TOKEN_FILE',
+                'SOURCE_TRIGGER_TOKEN_FILE', 'OPERATOR_TOKEN_FILE', 'SEQUENCER_PUBLIC_KEY_FILE',
+                'SEQUENCER_ID_FILE', 'SEQUENCER_FIRST_BATCH_FILE', 'SEQUENCER_LAST_BATCH_FILE',
+                'JOURNEY_SOURCE_TOKEN_FILE', 'APPROVAL_SOURCE_TOKEN_FILE',
+                'PAYMENT_SOURCE_TOKEN_FILE', 'PROGRAM_SOURCE_TOKEN_FILE'):
+        protected_input(ingress['LAYERX_WEBHOOKS_' + key], 'webhook protected trust material')
+    if not ingress.get('LAYERX_WEBHOOKS_NETWORK_ID') or ingress.get('LAYERX_WEBHOOKS_LXP_WIRE_VERSION') != '3':
+        raise Missing('webhook exact network/protocol pins required')
+    protected_input(services['webhook-public']['environment']['LAYERX_WEBHOOKS_IDENTITY_TOKEN_FILE'],
+                    'webhook authenticated identity reference')
+    if document['human']['url'] != 'https://localhost':
+        raise Missing('owned Human HTTPS origin must be https://localhost on isolated port 443')
+    for kind in ('journeys', 'approvals'):
+        if Path(services[kind]['environment']['LAYERX_EVENTS_CREDENTIALS_FILE']).exists():
+            raise Missing('fresh source credentials must be installed by the real Human session issuer')
+    for phase in ('fresh', 'restored', 'rotated'):
+        if set(document['mutations'][phase]) != {'journey', 'approval'}:
+            raise Missing('every phase requires both genuine journey and approval mutations')
+        for requests in document['mutations'][phase].values():
+            if not isinstance(requests, list) or len(requests) != 2:
+                raise Missing('two actual transitions per subject are required in every phase')
+            for request in requests:
+                if request['method'] != 'POST' or not request['path'].startswith('/v1/'):
+                    raise Missing('events must originate in genuine public Human mutation routes')
+                protected_input(request['body_file'], 'real Human mutation body')
+    if run(['git', '-C', ROOT, 'rev-parse', 'HEAD']).stdout.strip() != document['source_revision'] \
+            or run(['git', '-C', ROOT, 'status', '--porcelain']).stdout:
+        raise Missing('provisioning requires the clean final candidate source')
+    return document
+
+
+class ProvisioningHttp:
+    def __init__(self, endpoint):
+        self.endpoint = endpoint
+        self.cookies = {}
+        self.last_cookie_attributes = {}
+
+    def request(self, method, path, body=None, headers=None, client_identity=True):
+        from http.cookies import SimpleCookie
+        endpoint = urlsplit(self.endpoint['url'])
+        if endpoint.scheme != 'https' or endpoint.hostname not in ('localhost', '127.0.0.1') \
+                or endpoint.username or endpoint.password or endpoint.path not in ('', '/'):
+            raise Missing('provisioning APIs must be real TLS listeners inside the owned namespace')
+        if not path.startswith('/') or path.startswith('//') or any(c in path for c in '\r\n'):
+            raise Missing('invalid production request path')
+        context = ssl.create_default_context(cafile=str(protected_input(self.endpoint['ca_pem'], 'TLS root')))
+        if client_identity and 'client_cert_pem' in self.endpoint:
+            context.load_cert_chain(str(protected_input(self.endpoint['client_cert_pem'], 'mTLS certificate')),
+                                    str(protected_input(self.endpoint['client_key_pem'], 'mTLS private key')))
+        request_headers = {'Origin': self.endpoint['url']}
+        for name, location in self.endpoint.get('header_files', {}).items():
+            value = protected_input(location, 'authenticated API credential').read_text().strip()
+            if any(ord(c) < 32 or ord(c) == 127 for c in value):
+                raise Missing('invalid protected header')
+            request_headers[name] = value
+        if self.cookies:
+            request_headers['Cookie'] = '; '.join(k + '=' + v for k, v in self.cookies.items())
+        if '__Host-layerx_csrf' in self.cookies:
+            request_headers['X-LayerX-CSRF'] = self.cookies['__Host-layerx_csrf']
+        request_headers.update(headers or {})
+        encoded = None if body is None else json.dumps(body, separators=(',', ':')).encode()
+        if encoded is not None:
+            request_headers['Content-Type'] = 'application/json'
+        connection = http.client.HTTPSConnection(endpoint.hostname, endpoint.port or 443, context=context, timeout=25)
+        try:
+            connection.request(method, path, encoded, request_headers)
+            response = connection.getresponse()
+            raw = response.read(1_048_577)
+            if len(raw) > 1_048_576:
+                raise Missing('production response bound exceeded')
+            for name, value in response.getheaders():
+                if name.lower() != 'set-cookie':
+                    continue
+                parsed = SimpleCookie()
+                parsed.load(value)
+                for cookie_name, morsel in parsed.items():
+                    if cookie_name not in ('__Host-layerx_access', '__Host-layerx_refresh', '__Host-layerx_csrf'):
+                        continue
+                    if not morsel['secure'] or morsel['path'] != '/' or morsel['domain'] \
+                            or morsel['samesite'].lower() != 'strict' \
+                            or (cookie_name != '__Host-layerx_csrf' and not morsel['httponly']):
+                        raise Missing('issued Human cookie security attributes refused')
+                    self.cookies[cookie_name] = morsel.value
+                    self.last_cookie_attributes[cookie_name] = dict(morsel)
+            return response.status, json.loads(raw) if raw else {}
+        finally:
+            connection.close()
+
+
+class ProvisioningProcesses:
+    def __init__(self, fixture, work):
+        self.fixture, self.work = fixture, work
+        self.children, self.logs = {}, []
+        self.clock_root = Path(tempfile.mkdtemp(prefix='lxpc-'))
+        self.clock_root.chmod(0o700)
+
+    def start(self, name):
+        if name in self.children:
+            raise Missing('process already owned: ' + name)
+        service = self.fixture['services'][name]
+        env = dict(service['environment'])
+        env.setdefault('PATH', '/usr/local/bin:/usr/bin:/bin')
+        clock = self.clock_root / str(list(self.fixture['services']).index(name))
+        clock.mkdir(mode=0o700, exist_ok=True)
+        binary = self.fixture['artifacts'][service['binary']]['path']
+        command = [self.fixture['artifacts']['layerx-runtime-clock']['path'], '--runtime-dir', str(clock), '--',
+                   binary, *service['arguments']]
+        log = (self.work / (name + '.log')).open('ab')
+        self.logs.append(log)
+        self.children[name] = subprocess.Popen(command, env=env, stdin=subprocess.DEVNULL,
+                                              stdout=log, stderr=log, start_new_session=True)
+
+    def stop(self, name):
+        child = self.children.pop(name)
+        if child.poll() is not None:
+            raise Missing('production process exited unexpectedly: ' + name)
+        child.terminate()
+        child.wait(timeout=15)
+        if child.returncode not in (0, 1, 143):
+            raise Missing('production process refused orderly shutdown: ' + name)
+
+    def alive(self):
+        if not self.children or any(child.poll() is not None for child in self.children.values()):
+            raise Missing('owned production dependency exited')
+
+    def wait(self, predicate, label, seconds=90):
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            self.alive()
+            try:
+                value = predicate()
+                if value:
+                    return value
+            except (OSError, ValueError):
+                pass
+            time.sleep(.2)
+        raise Missing('real-process deadline: ' + label)
+
+    def close(self):
+        import signal
+        for child in reversed(list(self.children.values())):
+            if child.poll() is None:
+                child.terminate()
+                try:
+                    child.wait(timeout=15)
+                except subprocess.TimeoutExpired:
+                    os.killpg(child.pid, signal.SIGKILL)
+                    child.wait(timeout=10)
+        for log in self.logs:
+            log.close()
+
+
+def provisioning_worker(manifest, results, attachment):
+    import base64
+    import select
+    import signal
+    import uuid
+    descriptor = json.loads(protected_input(attachment, 'provisioning namespace attachment').read_bytes())
+    if descriptor['parent_pid'] != os.getppid() or descriptor['candidate_manifest_sha256'] != MANIFEST_DIGEST \
+            or descriptor['network_namespace'] != os.stat('/proc/self/ns/net').st_ino \
+            or descriptor['mount_namespace'] != os.stat('/proc/self/ns/mnt').st_ino:
+        raise Missing('principal provisioning worker must run inside this gate-owned namespace')
+    fixture = provisioning_inputs(manifest)
+    work = Path(descriptor['work'])
+    processes = ProvisioningProcesses(fixture, work)
+    human = ProvisioningHttp(fixture['human'])
+    source_clients = {kind: ProvisioningHttp(fixture['sources'][kind]) for kind in ('journeys', 'approvals')}
+    public = ProvisioningHttp(fixture['webhook_public'])
+    identity = ProvisioningHttp(fixture['identity_provisioning'])
+    receiver = authenticator = None
+    receiver_log = auth_log = None
+    cases, bindings, observed_events = [], {}, []
+
+    def check(label, value):
+        provisioning_check(results, label, value)
+        cases.append(label)
+
+    def human_ok(method, path, body=None, headers=None):
+        status, value = human.request(method, path, body, headers)
+        check('genuine Human ' + method + ' ' + path + ' accepted', status in (200, 201, 202)
+              and isinstance(value.get('result'), dict))
+        return value['result']
+
+    def binding(kind):
+        status, value = source_clients[kind].request('GET', '/internal/v1/principals/' + principal + '/issued-enrollment')
+        return value if status == 200 and value.get('bound') is True else None
+
+    def identity_bound(value):
+        return value and value.get('principal') == principal and value.get('tenant') == tenant \
+            and value.get('session_id') == session['session_id'] \
+            and isinstance(value.get('revision'), int) and value['revision'] > 0 \
+            and isinstance(value.get('generation'), int) and value['generation'] > 0
+
+    def assertion(operation, ceremony):
+        authenticator.stdin.write(json.dumps({'operation': operation, 'ceremony': ceremony}) + '\n')
+        authenticator.stdin.flush()
+        if not select.select([authenticator.stdout], [], [], 20)[0]:
+            raise Missing('real WebAuthn authenticator deadline')
+        raw = authenticator.stdout.readline(131073)
+        if len(raw) > 131072 or not raw.endswith('\n'):
+            raise Missing('bounded real WebAuthn response required')
+        value = json.loads(raw)
+        if set(value) != {'credential'} or not isinstance(value['credential'], str):
+            raise Missing('real authenticator did not return its signed credential')
+        return value['credential']
+
+    def records():
+        output = []
+        for path in sorted((Path(descriptor['receiver_root']) / 'received').glob('*.json')):
+            record = json.loads(path.read_bytes())
+            if record.get('verified') is not True:
+                raise Missing('receiver did not verify the production KMS signature')
+            body = json.loads(base64.b64decode(record['body'], validate=True))
+            output.append((record, body['event']))
+        return output
+
+    def replace(value, values):
+        if isinstance(value, str):
+            for key, replacement in values.items():
+                value = value.replace('${' + key + '}', replacement)
+            if '${' in value:
+                raise Missing('mutation references no genuine response binding')
+            return value
+        if isinstance(value, dict):
+            return {key: replace(item, values) for key, item in value.items()}
+        if isinstance(value, list):
+            return [replace(item, values) for item in value]
+        return value
+
+    def pointer(value, path):
+        if not path.startswith('/'):
+            raise Missing('actual response resource JSON pointer required')
+        for field in path[1:].split('/'):
+            value = value[field.replace('~1', '/').replace('~0', '~')]
+        if not isinstance(value, str) or not value:
+            raise Missing('real mutation returned no resource identity')
+        return value
+
+    def delivery_phase(phase):
+        for kind in ('journey', 'approval'):
+            resource = None
+            for index, request in enumerate(fixture['mutations'][phase][kind]):
+                values = {'principal': principal, 'tenant': tenant, 'account': account['account_id']}
+                if resource is not None:
+                    values['resource'] = resource
+                body = replace(json.loads(protected_input(request['body_file'], 'Human mutation').read_bytes()), values)
+                path = replace(request['path'], values)
+                result = human_ok('POST', path, body, {'Idempotency-Key': str(uuid.uuid4())})
+                returned = pointer(result, request['resource_pointer'])
+                if resource is None:
+                    resource = returned
+                check(phase + ' ' + kind + ' retains the real subject', returned == resource)
+                def delivered():
+                    matching = [(record, event) for record, event in records()
+                                if event.get('kind') == kind and event.get('subject') == resource
+                                and not record.get('duplicate')]
+                    return matching if len(matching) == index + 1 else None
+                current = processes.wait(delivered, phase + ' ordered signed ' + kind)
+                event = current[-1][1]
+                source_token = protected_input(fixture['services'][kind + 's']['environment']['LAYERX_EVENTS_TOKEN_FILE'],
+                                               'canonical source reader').read_text().strip()
+                status, canonical = source_clients[kind + 's'].request('GET', '/internal/v1/events/' + event['id'],
+                                               headers={'Authorization': 'Bearer ' + source_token})
+                check(phase + ' ' + kind + ' delivery equals canonical authenticated source', status == 200
+                      and canonical['id'] == event['id'] and canonical['principal'] == principal
+                      and canonical['subject'] == resource and canonical['subject_sequence'] == event['subject_sequence'])
+                check(phase + ' ' + kind + ' canonical event has expected derived identity',
+                      canonical['id'] == event_id(kind, resource, canonical['subject_sequence']))
+                observed_events.append(event['id'])
+            check(phase + ' ' + kind + ' strict delivery order', len(current) == 2
+                  and current[0][1]['subject_sequence'] + 1 == current[1][1]['subject_sequence']
+                  and current[0][0]['sequence'] < current[1][0]['sequence'])
+
+    try:
+        for kind in ('journeys', 'approvals'):
+            env = fixture['services'][kind]['environment']
+            source_binary = fixture['artifacts']['layerx-event-source']['path']
+            signed = run([source_binary, '--empty-enrollment-mac'], env)
+            mac = signed.stdout.strip()
+            if not re.fullmatch('[0-9a-f]{64}', mac):
+                raise Missing('production source initializer refused empty bootstrap enrollment')
+            snapshot = Path(env['LAYERX_EVENTS_CREDENTIALS_FILE'])
+            if snapshot.exists():
+                raise Missing('fresh bootstrap snapshot unexpectedly exists')
+            private_directory(snapshot.parent)
+            with snapshot.open('x') as handle:
+                handle.write(json.dumps({'version': 1, 'generation': 0, 'principals': [], 'mac': mac}))
+                handle.flush()
+                os.fsync(handle.fileno())
+            snapshot.chmod(0o600)
+        for phase in ('dependency', 'internal'):
+            for name, service in fixture['services'].items():
+                if service['phase'] == phase:
+                    processes.start(name)
+        for kind, client in source_clients.items():
+            state = processes.wait(lambda: (v if (v := client.request('GET', '/readyz'))[0] == 503 else None),
+                                   kind + ' waiting before Human')
+            check(kind + ' empty fresh volume is explicitly waiting for principals', state[1].get('ready') is False
+                  and state[1].get('state') == 'waiting-principals')
+            check(kind + ' source is independently live before Human', client.request('GET', '/livez')[0] == 200)
+            status, refusal = client.request('POST', '/internal/v1/observe', {})
+            check(kind + ' cannot accept first events before principal issuance', status == 503
+                  and refusal.get('error', {}).get('code') == 'waiting_principals')
+        for name, service in fixture['services'].items():
+            if service['phase'] in ('human', 'webhook'):
+                processes.start(name)
+        processes.wait(lambda: human.request('GET', '/livez')[0] == 200, 'genuine Human issuer listener')
+        auth_log = (work / 'authenticator.log').open('ab')
+        authenticator = subprocess.Popen([fixture['artifacts']['node']['path'], '--experimental-strip-types',
+            str(ROOT / 'human/apps/web/e2e/software-authenticator.ts'), 'https://localhost'],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=auth_log, text=True, bufsize=1)
+        email = 'event-' + uuid.uuid4().hex + '@paxeer.network'
+        account = human_ok('POST', '/v1/accounts', {'email': email, 'display_name': 'Event qualification'},
+                           {'Idempotency-Key': str(uuid.uuid4())})
+        registration = human_ok('POST', '/v1/passkeys/registrations', {'account_id': account['account_id']})
+        passkey = human_ok('POST', '/v1/passkeys/registrations/' + registration['registration_id'],
+                          {'credential': assertion('register', registration['ceremony'])})
+        challenge = human_ok('POST', '/v1/passkeys/assertions', {'email': email})
+        proof = human_ok('POST', '/v1/passkeys/assertions/' + challenge['assertion_id'],
+                        {'credential': assertion('assert', challenge['ceremony'])})
+        check('session authority came from a verified registered passkey', proof['passkey_id'] == passkey['passkey_id']
+              and proof['assertion_id'] == challenge['assertion_id'])
+        opening = {'assertion_id': proof['assertion_id'], 'device': {'label': 'Event qualification', 'platform': 'WebAuthn'}}
+        opening_key = str(uuid.uuid4())
+        session = human_ok('POST', '/v1/sessions', opening, {'Idempotency-Key': opening_key})
+        check('Human issuer installed its three protected session cookies',
+              set(human.cookies) == {'__Host-layerx_access', '__Host-layerx_refresh', '__Host-layerx_csrf'}
+              and session.get('current') is True)
+        who = human_ok('GET', '/internal/v1/principal')
+        principal, tenant = who['sub'], who['tenant_id']
+        check('authenticated Human principal includes exact tenant and session binding', who.get('active') is True
+              and who.get('session_id') == session['session_id'] and bool(principal) and bool(tenant))
+        for kind in source_clients:
+            bindings[kind] = processes.wait(lambda kind=kind: (v if identity_bound(v := binding(kind)) else None),
+                                            kind + ' automatic authorized enrollment')
+            check(kind + ' ready only after authenticated upstream admission',
+                  source_clients[kind].request('GET', '/readyz')[0] == 200)
+        for kind in ('payments', 'programs'):
+            client = ProvisioningHttp(fixture['sources'][kind])
+            owner = fixture['source_owners'][kind]
+            response = processes.wait(lambda: (v if (v := client.request('GET',
+                '/internal/v1/principals/' + owner['principal'] + '/enrollment'))[0] == 200
+                and v[1].get('bound') is True else None), kind + ' actual upstream ownership')
+            check(kind + ' retains separately declared authenticated upstream ownership',
+                  response[1].get('principal') == owner['principal'] and owner['tenant']
+                  and client.request('GET', '/readyz')[0] == 200)
+        same = human_ok('POST', '/v1/sessions', opening, {'Idempotency-Key': opening_key})
+        check('exact session-open retry is idempotent', same['session_id'] == session['session_id'])
+        for kind in source_clients:
+            check(kind + ' idempotent session issuance retains enrollment generation', binding(kind) == bindings[kind])
+        status, admitted = identity.request('POST', '/v1/principals',
+            {'tenant': tenant, 'sub': principal, 'allowed_signer_public_keys': []})
+        check('webhook ownership is provisioned through authenticated identity', status == 200
+              and admitted.get('tenant') == tenant and admitted.get('sub') == principal)
+        status, developer = identity.request('POST', '/v1/sessions', {'tenant': tenant, 'sub': principal})
+        check('webhook developer session comes from the actual identity issuer', status == 200
+              and developer.get('sub') == principal and str(developer.get('token', '')).startswith('ses_'))
+        public.endpoint = dict(public.endpoint, header_files={})
+        bearer = {'Authorization': 'Bearer ' + developer['token']}
+        registration_status, endpoint = public.request('POST', '/v1/webhooks/endpoints',
+            {'url': descriptor['receiver_endpoint'], 'kinds': ['journey', 'approval']},
+            bearer | {'Idempotency-Key': str(uuid.uuid4())})
+        check('real webhook endpoint binds identity and KMS signing keys', registration_status == 201
+              and endpoint.get('endpoint') and isinstance(endpoint.get('public_keys_json'), str))
+        receiver_root = Path(descriptor['receiver_root'])
+        keys = receiver_root / 'public-keys.json'
+        keys.write_text(endpoint['public_keys_json'])
+        keys.chmod(0o600)
+        receiver_log = (work / 'receiver-worker.log').open('ab')
+        receiver = subprocess.Popen([sys.executable, str(ROOT / 'tools/qualification/paxeer-x/fixtures/event_receiver_fixture.py'),
+            'serve', str(receiver_root), descriptor['receiver_address'], str(descriptor['receiver_port']),
+            descriptor['receiver_cert'], descriptor['receiver_key']], stdin=subprocess.DEVNULL,
+            stdout=receiver_log, stderr=receiver_log)
+        processes.wait(lambda: (receiver_root / 'receiver.ready').exists(), 'real signed webhook receiver')
+        delivery_phase('fresh')
+        for kind, client in source_clients.items():
+            row = {'principal': principal, 'tenant': tenant, 'revision': bindings[kind]['revision'] + 1,
+                   'session_id': session['session_id'], 'credential': human.cookies['__Host-layerx_access'],
+                   'expires_at': int(time.time()) + int(human.last_cookie_attributes['__Host-layerx_access']['max-age'])}
+            negatives = [('wrong-principal', dict(row, principal=principal + '-other'), 403, 'enrollment_principal_mismatch'),
+                         ('wrong-tenant', dict(row, tenant=tenant + '-other'), 403, 'enrollment_principal_mismatch'),
+                         ('invalid-session', dict(row, session_id=session['session_id'] + '-invalid'), 403, 'enrollment_principal_mismatch'),
+                         ('invalid-credential', dict(row, credential='not-an-issued-session'), 503, 'enrollment_upstream_unavailable'),
+                         ('malformed-credential', dict(row, credential='invalid;cookie'), 400, 'enrollment_malformed'),
+                         ('expired-credential', dict(row, expires_at=1), 400, 'enrollment_malformed')]
+            for label, request, expected_status, expected_code in negatives:
+                status, refused = client.request('POST', '/internal/v1/enrollments', request)
+                check(kind + ' rejects ' + label, status == expected_status
+                      and isinstance(refused.get('error'), dict) and refused['error'].get('code') == expected_code)
+                check(kind + ' ' + label + ' cannot replace valid binding', binding(kind) == bindings[kind])
+            status, refused = client.request('POST', '/internal/v1/enrollments', row,
+                                       {'Authorization': 'Bearer unauthorized-writer'})
+            check(kind + ' unauthorized writer fails closed', status == 401
+                  and refused.get('error', {}).get('code') == 'unauthorized')
+            try:
+                status, _ = client.request('POST', '/internal/v1/enrollments', row, client_identity=False)
+                rejected = status in (401, 403)
+            except (OSError, ssl.SSLError):
+                rejected = True
+            check(kind + ' enrollment requires mTLS', rejected)
+        original_pids = {name: child.pid for name, child in processes.children.items()}
+        restart_names = ['human-service', 'human-components', 'webhook-ingress', 'webhook-public',
+                         'journeys', 'approvals', 'payments', 'programs', 'kms', 'identity']
+        for name in restart_names:
+            processes.stop(name)
+        for name in reversed(restart_names):
+            processes.start(name)
+        for kind in source_clients:
+            processes.wait(lambda kind=kind: binding(kind) == bindings[kind], kind + ' restored durable binding')
+            check(kind + ' restored volume re-admits same principal and tenant', identity_bound(binding(kind)))
+        check('restored volumes run new real service processes', all(processes.children[name].pid != original_pids[name]
+              for name in restart_names))
+        delivery_phase('restored')
+        old_cookie = human.cookies['__Host-layerx_access']
+        session = human_ok('POST', '/v1/sessions/refresh', {})
+        check('rotation is issued by the authenticated Human refresh route', human.cookies['__Host-layerx_access'] != old_cookie
+              and session.get('current') is True)
+        for kind in source_clients:
+            old = bindings[kind]
+            current = processes.wait(lambda kind=kind, old=old: (value if identity_bound(value := binding(kind))
+                                    and value['revision'] > old['revision'] and value['generation'] > old['generation'] else None),
+                                    kind + ' authorized session rotation')
+            bindings[kind] = current
+            check(kind + ' rotation keeps the exact principal and tenant', identity_bound(current))
+            stale = {'principal': principal, 'tenant': tenant, 'revision': old['revision'],
+                     'session_id': session['session_id'], 'credential': human.cookies['__Host-layerx_access'],
+                     'expires_at': int(time.time()) + int(human.last_cookie_attributes['__Host-layerx_access']['max-age'])}
+            status, refused = source_clients[kind].request('POST', '/internal/v1/enrollments', stale)
+            check(kind + ' stale issuer revision cannot undo authenticated rotation', status == 409
+                  and refused.get('error', {}).get('code') == 'enrollment_issuer_conflict'
+                  and binding(kind) == current)
+        delivery_phase('rotated')
+        status, ledger = public.request('GET', '/v1/webhooks/events', headers=bearer)
+        check('all twelve canonical journey and approval transitions persist exactly once', status == 200
+              and len(observed_events) == 12 and len(set(observed_events)) == 12
+              and all(sum(event['id'] == identifier for event in ledger) == 1 for identifier in observed_events))
+        replay_record = next(record for record, event in records() if event['id'] == observed_events[-1])
+        replay_body = base64.b64decode(replay_record['body'], validate=True)
+        from receipt_authority_fixture import https
+        from hosted_delivery_fixture import CaMaterial
+        ca = CaMaterial.__new__(CaMaterial)
+        ca.ca_pem = Path(fixture['ca']['certificate'])
+        ca.ca_der = Path(fixture['ca']['der'])
+        headers = {key: value for key, value in replay_record['headers'].items() if key.startswith('layerx-webhook-')}
+        headers['Content-Type'] = 'application/json'
+        before = sorted(path.name for path in (receiver_root / 'effects').iterdir())
+        status, _, _ = https('POST', descriptor['receiver_endpoint'], ca, replay_body, headers)
+        check('exact signed webhook retry has no duplicate economic effect', status == 200
+              and before == sorted(path.name for path in (receiver_root / 'effects').iterdir()))
+        status, _, _ = https('POST', descriptor['receiver_endpoint'], ca, replay_body + b' ', headers)
+        check('changed delivery bytes fail the real signature verifier', status == 401)
+        record = {'candidate_manifest_sha256': MANIFEST_DIGEST, 'source_revision': manifest['source']['revision'],
+                  'principal': principal, 'tenant': tenant, 'bindings': bindings, 'canonical_events': observed_events,
+                  'assertions': cases, 'deployed_qualification': False}
+        path = work / 'principal-provisioning.json'
+        path.write_text(json.dumps(record, sort_keys=True))
+        path.chmod(0o600)
+        encoded = path.read_bytes()
+        check('qualification record excludes issued authentication material',
+              all(value.encode() not in encoded for value in (*human.cookies.values(), developer['token'])))
+    finally:
+        for child in (receiver, authenticator):
+            if child is not None and child.poll() is None:
+                child.terminate()
+                try:
+                    child.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    child.kill()
+                    child.wait(timeout=5)
+        for log in (receiver_log, auth_log):
+            if log is not None:
+                log.close()
+        processes.close()
+
+
+def event_principal_provisioning(manifest, results):
+    fixture = provisioning_inputs(manifest)
+    sys.path.insert(0, str(ROOT / 'tools/qualification/paxeer-x/fixtures'))
+    worker = os.environ.get('PAXEER_X_EVENT_PROVISIONING_WORKER')
+    if worker:
+        provisioning_worker(manifest, results, worker)
+        return
+    from hosted_delivery_fixture import CaMaterial
+    from event_receiver_fixture import EventReceiverFixture
+    evidence = os.environ.get('PAXEER_X_EVIDENCE_DIR')
+    if not evidence:
+        raise Missing('PAXEER_X_EVIDENCE_DIR is required')
+    work = Path(tempfile.mkdtemp(prefix='event-principal-provisioning-', dir=private_directory(Path(evidence))))
+    work.chmod(0o700)
+    print('evidence=' + str(work))
+    fly = tomllib.loads((ROOT / 'platform/hosted/internal/fly.toml').read_text())
+    expected = {'kms', *KINDS}
+    provisioning_check(results, 'all five internal groups remain private-only', set(fly['processes']) == expected
+                       and not fly.get('services') and not fly.get('http_service'))
+    mounts = fly.get('mounts', [])
+    provisioning_check(results, 'all five deployment groups retain independent persistent volumes', len(mounts) == 5
+                       and {tuple(row['processes']) for row in mounts} == {(name,) for name in expected}
+                       and len({row['source'] for row in mounts}) == 5)
+    ca = CaMaterial.__new__(CaMaterial)
+    ca.directory = Path(fixture['ca']['directory'])
+    ca.ca_pem = protected_input(fixture['ca']['certificate'], 'genuine fixture CA certificate')
+    ca.ca_der = protected_input(fixture['ca']['der'], 'genuine fixture CA DER')
+    ca._key = protected_input(fixture['ca']['key_file'], 'protected fixture CA signing authority')
+    ca._serial = int.from_bytes(os.urandom(12), 'big')
+    receiver = EventReceiverFixture(work, ca, address=fixture['receiver_address'])
+    try:
+        receiver._materials()
+        receiver._start_namespace()
+        descriptor = {'parent_pid': os.getpid(), 'candidate_manifest_sha256': MANIFEST_DIGEST,
+                      'network_namespace': os.stat(f'/proc/{receiver.holder.pid}/ns/net').st_ino,
+                      'mount_namespace': os.stat(f'/proc/{receiver.holder.pid}/ns/mnt').st_ino,
+                      'work': str(work), 'receiver_root': str(receiver.root), 'receiver_endpoint': receiver.endpoint,
+                      'receiver_address': receiver.address, 'receiver_port': receiver.port,
+                      'receiver_cert': str(receiver.materials['server_cert']), 'receiver_key': str(receiver.materials['server_key'])}
+        attachment = work / 'worker.json'
+        attachment.write_text(json.dumps(descriptor))
+        attachment.chmod(0o600)
+        command = receiver.ns_command([sys.executable, str(Path(__file__).resolve()), '--case', 'event-principal-provisioning',
+                                       '--candidate-manifest', str(MANIFEST_PATH)])
+        environment = {key: value for key, value in os.environ.items()
+                       if key.lower() not in ('http_proxy', 'https_proxy', 'all_proxy', 'no_proxy')}
+        environment.update(PAXEER_X_EVENT_PROVISIONING_WORKER=str(attachment), NO_PROXY='*')
+        child = subprocess.Popen(command, env=environment, stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            output, errors = child.communicate(timeout=1100)
+        except subprocess.TimeoutExpired:
+            child.terminate()
+            output, errors = child.communicate(timeout=30)
+        (work / 'worker.log').write_text(output + errors)
+        for line in output.splitlines():
+            if line.startswith(('PASS ', 'FAIL ', 'MISSING ')):
+                print(line, flush=True)
+                if line.startswith('PASS '):
+                    results.passes += 1
+                else:
+                    results.failures += 1
+        result = {'revision': manifest['source']['revision'], 'command':
+                  'timeout 20m python3 tools/qualification/paxeer-x/event-delivery-contract.py --case event-principal-provisioning --candidate-manifest "$PAXEER_X_CANDIDATE_MANIFEST"',
+                  'exit_code': child.returncode, 'log_path': str(work / 'worker.log')}
+        (work / 'result.json').write_text(json.dumps(result, sort_keys=True))
+        provisioning_check(results, 'complete real provisioning worker executed', child.returncode == 0
+                           and (work / 'principal-provisioning.json').is_file())
+    finally:
+        receiver.stop()
+        receiver._terminate(receiver.holder)
+
+
 CASES = {'principal-credential-lifecycle': principal_credential_lifecycle,
          'principal-delivery-fairness': principal_delivery_fairness,
-         'webhook-ingress-roles': webhook_ingress_roles}
+         'webhook-ingress-roles': webhook_ingress_roles,
+         'event-principal-provisioning': event_principal_provisioning}
 MANIFEST_DIGEST = None
 MANIFEST_PATH = None
 

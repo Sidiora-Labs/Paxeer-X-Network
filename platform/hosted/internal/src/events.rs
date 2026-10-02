@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::http::{json, ok, refusal, Request, Response};
 use crate::journal::Journal;
@@ -256,11 +256,44 @@ struct EnrollmentState {
     generation: u64,
     principals: BTreeMap<String, Enrolled>,
     owners: BTreeMap<String, String>,
+    #[serde(default)]
+    issuers: BTreeMap<String, IssuerBinding>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+struct IssuerBinding {
+    tenant: String,
+    revision: u64,
+    session_id: String,
+    fingerprint: String,
+    expires_at: u64,
+    complete: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct IssuedEnrollment {
+    principal: String,
+    tenant: String,
+    revision: u64,
+    session_id: String,
+    credential: String,
+    expires_at: u64,
+}
+
+impl Drop for IssuedEnrollment {
+    fn drop(&mut self) { self.credential.zeroize(); }
 }
 
 impl EnrollmentState {
     fn valid(&self) -> bool {
         self.principals.len() <= MAX_PRINCIPALS
+            && self.issuers.len() <= MAX_PRINCIPALS
+            && self.issuers.iter().all(|(principal, binding)| valid_principal(principal)
+                && valid_identifier(&binding.tenant, 256) && binding.revision > 0
+                && valid_identifier(&binding.session_id, 256) && binding.expires_at > 0
+                && valid_hex(&binding.fingerprint, 32))
             && self.owners.len() <= MAX_FINGERPRINTS
             && self.principals.iter().all(|(principal, enrolled)| {
                 valid_principal(principal)
@@ -471,7 +504,11 @@ impl Enrollments {
     /// # Errors
     /// Returns the refusal code of the first violated rule.
     pub fn prepare(&self) -> Result<Option<Candidate>, &'static str> {
-        let file = match protected_open(&self.snapshot) {
+        self.prepare_path(&self.snapshot)
+    }
+
+    fn prepare_path(&self, snapshot: &Path) -> Result<Option<Candidate>, &'static str> {
+        let file = match protected_open(snapshot) {
             Ok(file) => file,
             Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
             Err(error) if error.kind() == ErrorKind::PermissionDenied => return Err("enrollment_unprotected"),
@@ -599,6 +636,7 @@ impl Enrollments {
             generation: candidate.generation,
             principals: BTreeMap::new(),
             owners: state.owners.clone(),
+            issuers: state.issuers.clone(),
         };
         for (principal, fingerprint) in candidate.fingerprints {
             let since = state
@@ -653,10 +691,25 @@ impl Candidate {
     }
 }
 
-fn persist(path: &Path, state: &EnrollmentState) -> Result<(), String> {
-    let bytes = serde_json::to_vec(state).map_err(|error| error.to_string())?;
+fn persist<T: Serialize>(path: &Path, state: &T) -> Result<(), String> {
+    let bytes = Zeroizing::new(serde_json::to_vec(state).map_err(|_| "enrollment encoding".to_owned())?);
+    persist_bytes(path, &bytes)
+}
+
+fn persist_bytes(path: &Path, bytes: &[u8]) -> Result<(), String> {
     if bytes.len() > MAX_STATE_BYTES {
         return Err("enrollment state exceeds bound".to_owned());
+    }
+    let directory = path.parent().ok_or("enrollment directory missing")?;
+    let metadata = fs::symlink_metadata(directory).map_err(|_| "enrollment directory unavailable")?;
+    if !path.is_absolute() || !metadata.is_dir() || metadata.mode() & 0o022 != 0
+        || metadata.uid() != fs::metadata("/proc/self").map_err(|_| "enrollment owner unavailable")?.uid()
+        || fs::canonicalize(directory).map_err(|_| "enrollment directory unavailable")? != directory
+    { return Err("enrollment directory unprotected".to_owned()); }
+    match protected_open(path) {
+        Ok(_) => {}
+        Err(error) if error.kind() == ErrorKind::NotFound => {}
+        Err(_) => return Err("enrollment target unprotected".to_owned()),
     }
     let suffix = crate::secret::random_hex(16)?;
     let temporary = path.with_extension(format!("json.{}.new", suffix.as_str()));
@@ -667,7 +720,7 @@ fn persist(path: &Path, state: &EnrollmentState) -> Result<(), String> {
         .open(&temporary)
         .map_err(|error| error.to_string())?;
     let result = (|| {
-        file.write_all(&bytes)
+        file.write_all(bytes)
             .and_then(|()| file.sync_all())
             .map_err(|error| error.to_string())?;
         drop(file);
@@ -708,6 +761,8 @@ pub struct Service {
     token: Zeroizing<String>,
     producers: Vec<ProducerCredential>,
     store: Mutex<Store>,
+    enrollment_writer: Mutex<()>,
+    bootstrap: Option<PathBuf>,
 }
 
 #[derive(Deserialize)]
@@ -718,6 +773,150 @@ struct Observe {
 }
 
 impl Service {
+    fn enroll_issued(&self, request: &Request) -> Response {
+        if !matches!(self.kind, Kind::Journey | Kind::Approval)
+            || !request.peer_verified
+            || !self.producers.iter().any(|producer| !producer.allow_principal_digest
+                && request.bearer_matches(&producer.token))
+        {
+            return refusal(401, "unauthorized", None);
+        }
+        let Ok(issued) = serde_json::from_slice::<IssuedEnrollment>(&request.body) else {
+            return refusal(400, "enrollment_malformed", None);
+        };
+        let result = self.install_issued(&issued);
+        match result {
+            Ok(generation) => json(200, &serde_json::json!({"principal":issued.principal,
+                "tenant":issued.tenant,"revision":issued.revision,"generation":generation,"bound":true})),
+            Err((status, code)) => refusal(status, code, (status == 503).then_some(3)),
+        }
+    }
+
+    fn install_issued(&self, issued: &IssuedEnrollment) -> Result<u64, (u16, &'static str)> {
+        let _writer = self.enrollment_writer.lock().map_err(|_| (503, "enrollment_unavailable"))?;
+        match self.refresh_locked() {
+            Ok(_) => {}
+            Err(code @ ("enrollment_upstream_unavailable" | "enrollment_principal_mismatch")) => {
+                self.enrollments.refused(code);
+            }
+            Err(code) => {
+                self.enrollments.refused(code);
+                return Err((503, code));
+            }
+        }
+        let now = unix_seconds().map_err(|_| (503, "enrollment_unavailable"))?;
+        if !valid_principal(&issued.principal) || !valid_identifier(&issued.tenant, 256)
+            || !valid_identifier(&issued.session_id, 256) || issued.revision == 0
+            || issued.expires_at <= now || issued.credential.is_empty()
+            || issued.credential.len() > crate::secret::MAX_SECRET_BYTES
+            || issued.credential.bytes().any(|byte| byte.is_ascii_control() || byte == b';')
+        {
+            return Err((400, "enrollment_malformed"));
+        }
+        let identity = self.fetch_with(&issued.credential, "/internal/v1/principal")
+            .map_err(|_| (503, "enrollment_upstream_unavailable"))?;
+        if !principal_matches(self.kind, &identity, &issued.principal)
+            || identity.get("tenant_id").and_then(Value::as_str) != Some(issued.tenant.as_str())
+            || identity.get("session_id").and_then(Value::as_str) != Some(issued.session_id.as_str())
+        {
+            return Err((403, "enrollment_principal_mismatch"));
+        }
+        let fingerprint = self.enrollments.fingerprint(&issued.credential);
+        let current = self.enrollments.current();
+        let mut proposed = IssuerBinding { tenant: issued.tenant.clone(), revision: issued.revision,
+            session_id: issued.session_id.clone(), fingerprint, expires_at: issued.expires_at, complete: false };
+        {
+            let mut state = self.enrollments.state.lock().map_err(|_| (503, "enrollment_unavailable"))?;
+            if let Some(previous) = state.issuers.get(&issued.principal) {
+                if previous.tenant != proposed.tenant || previous.revision > proposed.revision {
+                    return Err((409, "enrollment_issuer_conflict"));
+                }
+                if previous.revision == proposed.revision {
+                    proposed.complete = previous.complete;
+                    if previous != &proposed {
+                        return Err((409, "enrollment_issuer_conflict"));
+                    }
+                    if previous.complete && current.adopted
+                        && !current.credentials.contains_key(&issued.principal)
+                    {
+                        return Err((409, "enrollment_removed"));
+                    }
+                    if previous.complete && current.adopted && current.credentials.get(&issued.principal)
+                        .is_some_and(|value| value.as_str() == issued.credential)
+                    { return Ok(current.number); }
+                }
+            }
+            if state.owners.get(&proposed.fingerprint).is_some_and(|owner| owner != &issued.principal) {
+                return Err((409, "enrollment_credential_reused"));
+            }
+            let mut next = state.clone();
+            next.issuers.insert(issued.principal.clone(), proposed.clone());
+            if !next.valid() { return Err((413, "enrollment_oversized")); }
+            persist(&self.enrollments.state_path, &next).map_err(|_| (503, "enrollment_unavailable"))?;
+            *state = next;
+        }
+        let mut credentials = if current.adopted {
+            current.credentials.clone()
+        } else {
+            self.enrollments.prepare().map_err(|code| (503, code))?
+                .ok_or((503, "enrollment_unavailable"))?.credentials
+        };
+        let unchanged = credentials.get(&issued.principal)
+            .is_some_and(|value| value.as_str() == issued.credential);
+        credentials.insert(issued.principal.clone(), Zeroizing::new(issued.credential.clone()));
+        if !unchanged || !current.adopted {
+            self.write_issued_snapshot(&credentials)?;
+            self.refresh_locked().map_err(|code| (503, code))?;
+        }
+        let adopted = self.enrollments.current();
+        if !adopted.adopted || adopted.credentials.get(&issued.principal)
+            .is_none_or(|value| value.as_str() != issued.credential)
+        {
+            return Err((503, "enrollment_not_adopted"));
+        }
+        let mut state = self.enrollments.state.lock().map_err(|_| (503, "enrollment_unavailable"))?;
+        let mut next = state.clone();
+        let binding = next.issuers.get_mut(&issued.principal).ok_or((503, "enrollment_unavailable"))?;
+        if binding.revision != issued.revision { return Err((409, "enrollment_issuer_conflict")); }
+        binding.complete = true;
+        persist(&self.enrollments.state_path, &next).map_err(|_| (503, "enrollment_unavailable"))?;
+        *state = next;
+        Ok(adopted.number)
+    }
+
+    fn write_issued_snapshot(&self, credentials: &BTreeMap<String, Zeroizing<String>>)
+        -> Result<(), (u16, &'static str)>
+    {
+        let state = self.enrollments.state.lock().map_err(|_| (503, "enrollment_unavailable"))?;
+        let generation = state.generation.checked_add(1).ok_or((503, "enrollment_generation_exhausted"))?;
+        drop(state);
+        self.write_snapshot(credentials, generation)
+    }
+
+    fn write_snapshot(&self, credentials: &BTreeMap<String, Zeroizing<String>>, generation: u64)
+        -> Result<(), (u16, &'static str)>
+    {
+        if credentials.len() > MAX_PRINCIPALS { return Err((413, "enrollment_oversized")); }
+        let directory = self.enrollments.state_path.parent().ok_or((503, "enrollment_unavailable"))?;
+        let mut principals = Vec::new();
+        let mut message = format!("layerx-enrollment-v1\n{}s\n{generation}\n", self.kind.singular());
+        for (principal, credential) in credentials {
+            let file = directory.join(format!("credential-{}", self.enrollments.fingerprint(credential)));
+            persist_bytes(&file, credential.as_bytes()).map_err(|_| (503, "enrollment_unavailable"))?;
+            principals.push(serde_json::json!({"principal":principal,"credential_file":file}));
+            message.push_str(principal);
+            message.push('\n');
+            message.push_str(&sha256_hex(credential.as_bytes()));
+            message.push('\n');
+        }
+        let mac = hex(ring::hmac::sign(&self.enrollments.key, message.as_bytes()).as_ref());
+        let bytes = Zeroizing::new(serde_json::to_vec(&serde_json::json!({"version":ENROLLMENT_VERSION,
+            "generation":generation,"principals":principals,"mac":mac}))
+            .map_err(|_| (503, "enrollment_unavailable"))?);
+        if bytes.len() > MAX_ENROLLMENT_BYTES { return Err((413, "enrollment_oversized")); }
+        persist_bytes(&self.enrollments.snapshot, &bytes)
+            .map_err(|_| (503, "enrollment_unavailable"))
+    }
     /// Opens a durable source whose principals come from the authenticated
     /// enrollment snapshot at `snapshot`; nothing is enrolled until
     /// [`Service::refresh`] adopts one.
@@ -739,6 +938,8 @@ impl Service {
             token,
             producers: Vec::new(),
             store: Mutex::new(store),
+            enrollment_writer: Mutex::new(()),
+            bootstrap: std::env::var_os("LAYERX_EVENTS_BOOTSTRAP_CREDENTIALS_FILE").map(PathBuf::from),
         })
     }
     /// Re-reads the enrollment snapshot. A newer authenticated snapshot whose
@@ -749,7 +950,31 @@ impl Service {
     /// # Errors
     /// Returns the refusal code; it never names credential contents.
     pub fn refresh(&self) -> Result<Option<u64>, (&'static str, bool)> {
-        let result = self.enrollments.prepare().and_then(|candidate| {
+        let result = self.enrollment_writer.lock().map_err(|_| "enrollment_unavailable")
+            .and_then(|_writer| self.refresh_locked());
+        result.map_err(|code| (code, self.enrollments.refused(code)))
+    }
+
+    fn refresh_locked(&self) -> Result<Option<u64>, &'static str> {
+        if let Some(bootstrap) = &self.bootstrap {
+            match self.enrollments.prepare_path(bootstrap) {
+                Ok(Some(candidate)) => {
+                    let current = self.enrollments.current();
+                    if candidate.generation > current.number || !self.enrollments.snapshot.exists() {
+                        for principal in candidate.changed() {
+                            let credential = candidate.credentials.get(principal).ok_or("enrollment_unavailable")?;
+                            if !self.bind_with(principal, credential)? { return Err("enrollment_principal_mismatch"); }
+                        }
+                        self.write_snapshot(&candidate.credentials, candidate.generation)
+                            .map_err(|(_, code)| code)?;
+                    }
+                }
+                Err("enrollment_stale_generation") => {}
+                Err(code) => return Err(code),
+                Ok(None) => return Err("enrollment_bootstrap_missing"),
+            }
+        }
+        self.enrollments.prepare().and_then(|candidate| {
             let Some(candidate) = candidate else {
                 return Ok(None);
             };
@@ -763,8 +988,7 @@ impl Service {
                 }
             }
             self.enrollments.adopt(candidate)
-        });
-        result.map_err(|code| (code, self.enrollments.refused(code)))
+        })
     }
     /// The served enrollment generation.
     #[must_use]
@@ -853,7 +1077,12 @@ impl Service {
     /// unreachable upstream.
     fn bind_with(&self, principal: &str, credential: &str) -> Result<bool, &'static str> {
         match self.fetch_with(credential, "/internal/v1/principal") {
-            Ok(identity) => Ok(principal_matches(self.kind, &identity, principal)),
+            Ok(identity) => {
+                let state = self.enrollments.state.lock().map_err(|_| "enrollment_unavailable")?;
+                Ok(principal_matches(self.kind, &identity, principal)
+                    && state.issuers.get(principal).is_none_or(|binding|
+                        identity.get("tenant_id").and_then(Value::as_str) == Some(binding.tenant.as_str())))
+            }
             Err("enrollment_upstream_unavailable") => Err("enrollment_upstream_unavailable"),
             Err(_) => Ok(false),
         }
@@ -913,9 +1142,32 @@ impl Service {
         if request.method == "GET" && request.path == "/livez" {
             return ok("{\"alive\":true}".to_owned());
         }
+        if request.method == "POST" && request.path == "/internal/v1/enrollments" {
+            return self.enroll_issued(request);
+        }
         let enrolled = self.enrollments.current();
         let last_refusal = self.enrollments.last_refusal();
         if request.method == "GET" {
+            if let Some(principal) = request.path.strip_prefix("/internal/v1/principals/")
+                .and_then(|path| path.strip_suffix("/issued-enrollment"))
+                .filter(|principal| valid_principal(principal))
+            {
+                if !request.peer_verified || !self.producers.iter()
+                    .any(|credential| request.bearer_matches(&credential.token))
+                { return refusal(401, "unauthorized", None); }
+                let issuer = self.enrollments.state.lock().ok()
+                    .and_then(|state| state.issuers.get(principal).cloned());
+                let bound = issuer.as_ref().is_some_and(|binding| binding.complete
+                    && enrolled.credentials.get(principal).is_some_and(|credential|
+                        self.enrollments.fingerprint(credential) == binding.fingerprint))
+                    && enrolled.adopted && self.bind(&enrolled, principal).is_ok();
+                return json(200, &serde_json::json!({"principal":principal,
+                    "generation":enrolled.number,
+                    "bound":bound,
+                    "tenant":issuer.as_ref().map(|binding| binding.tenant.as_str()),
+                    "session_id":issuer.as_ref().map(|binding| binding.session_id.as_str()),
+                    "revision":issuer.as_ref().map(|binding| binding.revision)}));
+            }
             if let Some(principal) = request.path.strip_prefix("/internal/v1/principals/")
                 .and_then(|path| path.strip_suffix("/enrollment"))
                 .filter(|principal| valid_principal(principal))

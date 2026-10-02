@@ -1005,6 +1005,10 @@ secrets_generate() {
     (umask 077; printf 'user default off\nuser layerx-webhooks on >%s ~webhooks:* +ping +eval +hget +hmget +hset +hincrby +smembers +sadd\n' \
         "$(cat "$d/webhook-redis.password")" > "$d/internal-redis.acl")
     write_token "$d/internal-kms-seal.key"
+    local event_kind
+    for event_kind in journeys approvals payments programs; do
+        write_token "$d/$event_kind-enrollment.key"
+    done
     local token
     for token in kms identity authority journey payment approval program source-trigger operator; do
         write_token "$d/developer-$token.token"
@@ -1163,7 +1167,10 @@ PYCTX
             local file
             for file in "$WORK_DIR/paxeer/settlement.env" "$WORK_DIR/paxeer/deployment.json" \
                 "$SECRETS_DIR/environment-tree-digest" "$SECRETS_DIR/bwrap-digest" "$SECRETS_DIR/cgroup-exec-digest" \
-                "$WORK_DIR/internal-principals/credentials.json" "$WORK_DIR/internal-principals/payments.credential" \
+                "$WORK_DIR/internal-principals/payments-enrollment.json" "$WORK_DIR/internal-principals/programs-enrollment.json" \
+                "$SECRETS_DIR/journeys-enrollment.key" "$SECRETS_DIR/approvals-enrollment.key" \
+                "$SECRETS_DIR/payments-enrollment.key" "$SECRETS_DIR/programs-enrollment.key" \
+                "$WORK_DIR/internal-principals/payments.credential" \
                 "$WORK_DIR/internal-principals/programs.credential"; do
                 [ -f "$file" ] && [ ! -L "$file" ] || fail "retained material refused: missing $file"
             done
@@ -1175,14 +1182,93 @@ PYCTX
     esac
 }
 
+internal_enrollment_snapshot() {
+    local service=$1 output=$2 credential=${3:-} operation=${4:-publish}
+    python3 - "$service" "$SECRETS_DIR/$service-enrollment.key" "$output" "$credential" "$TEST_SOURCE_DID" "$operation" <<'PYENROLL'
+import hashlib, hmac, json, os, re, stat, sys, tempfile
+from pathlib import Path
+kind, key_path, output, credential_path, principal, operation = sys.argv[1:]
+def unique_pairs(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value: raise SystemExit('duplicate enrollment member')
+        value[key] = item
+    return value
+def protected(path, bound):
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, 'rb') as handle:
+        info = os.fstat(handle.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077 or info.st_nlink != 1:
+            raise SystemExit('unprotected enrollment input')
+        data = handle.read(bound + 1)
+        if not data or len(data) > bound:
+            raise SystemExit('unbounded enrollment input')
+        return data
+key = protected(key_path, 4098).rstrip(b'\r\n')
+if not 16 <= len(key) <= 4096 or any(c < 32 or c == 127 for c in key):
+    raise SystemExit('invalid enrollment key')
+entries = []
+fingerprint = None
+if credential_path:
+    if not re.fullmatch('[a-z0-9_.:-]{1,128}', principal):
+        raise SystemExit('invalid issued principal')
+    credential = protected(credential_path, 4098).rstrip(b'\r\n')
+    if not credential or len(credential) > 4096 or any(c < 32 or c == 127 for c in credential):
+        raise SystemExit('invalid issued credential')
+    fingerprint = hashlib.sha256(credential).hexdigest()
+    entries = [dict(principal=principal, credential_file='/var/lib/layerx/bootstrap/principal.credential')]
+def signed(generation):
+    message = f'layerx-enrollment-v1\n{kind}\n{generation}\n'
+    if entries:
+        message += principal + '\n' + fingerprint + '\n'
+    return dict(version=1, generation=generation, principals=entries,
+                mac=hmac.new(key, message.encode(), hashlib.sha256).hexdigest())
+path = Path(output)
+generation = 1 if entries else 0
+if path.exists() or path.is_symlink():
+    prior = json.loads(protected(path, 1048576), object_pairs_hook=unique_pairs)
+    if set(prior) != {'version','generation','principals','mac'} or type(prior['version']) is not int or prior['version'] != 1 or type(prior['generation']) is not int or not 0 <= prior['generation'] < 2**64 - 1:
+        raise SystemExit('invalid retained enrollment snapshot')
+    if prior == signed(prior['generation']):
+        raise SystemExit(0)
+    if operation == 'verify':
+        raise SystemExit('retained enrollment authentication failed')
+    if not entries:
+        raise SystemExit('refusing to erase retained enrollment')
+    generation = prior['generation'] + 1
+if operation == 'verify':
+    raise SystemExit('retained enrollment snapshot missing')
+fd, temporary = tempfile.mkstemp(prefix='.enrollment-', dir=path.parent)
+try:
+    with os.fdopen(fd, 'wb') as handle:
+        handle.write((json.dumps(signed(generation), separators=(',', ':')) + '\n').encode())
+        handle.flush(); os.fsync(handle.fileno())
+    os.replace(temporary, path)
+    fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try: os.fsync(fd)
+    finally: os.close(fd)
+finally:
+    if os.path.exists(temporary): os.unlink(temporary)
+PYENROLL
+}
+
+internal_principal_secret_apply() {
+    local service=$1 dir="$WORK_DIR/internal-principals" producer=gateway
+    if [ "$service" = programs ]; then producer=registry; fi
+    apply_secret "$INTERNAL_NAMESPACE" "layerx-internal-$service-runtime" \
+        --from-file=server.der="$CA_DIR/internal-$service/cert.der" --from-file=server-key.der="$CA_DIR/internal-$service/key.der" \
+        --from-file=ca.der="$CA_DIR/ca.der" --from-file=upstream-ca.der="$CA_DIR/ca.der" \
+        --from-file=token="$SECRETS_DIR/developer-${service%s}.token" \
+        --from-file=credentials.json="$dir/$service-enrollment.json" --from-file=principal.credential="$dir/$service.credential" \
+        --from-file=enrollment-key="$SECRETS_DIR/$service-enrollment.key" \
+        --from-file=producers.json="$SECRETS_DIR/$service-producers.json" \
+        --from-file=producer-token="$SECRETS_DIR/$producer-event-producer.token"
+}
+
 retained_principals_apply() {
-    local service dir="$WORK_DIR/internal-principals"
+    local service
     for service in payments programs; do
-        apply_secret "$INTERNAL_NAMESPACE" "layerx-internal-$service-runtime" \
-            --from-file=server.der="$CA_DIR/internal-$service/cert.der" --from-file=server-key.der="$CA_DIR/internal-$service/key.der" \
-            --from-file=ca.der="$CA_DIR/ca.der" --from-file=upstream-ca.der="$CA_DIR/ca.der" \
-            --from-file=token="$SECRETS_DIR/developer-${service%s}.token" \
-            --from-file=credentials.json="$dir/credentials.json" --from-file=principal.credential="$dir/$service.credential"
+        internal_principal_secret_apply "$service"
     done
 }
 
@@ -1251,11 +1337,9 @@ secrets_apply() {
             "${identity_material[@]}"
     done
     local service token
-    if [ "${LAYERX_BETA_RETAIN_MATERIAL:-0}" != 1 ]; then
-        printf '{}\n' > "$s/human-credentials.json"
-    fi
     for service in journeys payments approvals programs; do
         token=${service%s}
+        internal_enrollment_snapshot "$service" "$s/$service-enrollment.json"
         producer=human
         if [ "$service" = payments ]; then producer=gateway; fi
         if [ "$service" = programs ]; then producer=registry; fi
@@ -1265,7 +1349,8 @@ secrets_apply() {
         apply_secret "$INTERNAL_NAMESPACE" "layerx-internal-$service-runtime" \
             --from-file=server.der="$c/internal-$service/cert.der" --from-file=server-key.der="$c/internal-$service/key.der" \
             --from-file=ca.der="$c/ca.der" --from-file=upstream-ca.der="$c/ca.der" --from-file=token="$s/developer-$token.token" \
-            --from-file=credentials.json="$s/human-credentials.json" \
+            --from-file=credentials.json="$s/$service-enrollment.json" \
+            --from-file=enrollment-key="$s/$service-enrollment.key" \
             --from-file=producers.json="$s/$service-producers.json" --from-file=producer-token="$s/$producer-event-producer.token"
     done
     apply_secret "$ns" layerx-human-tls --from-file=server.crt.der="$c/human/cert.der" \
@@ -2774,6 +2859,9 @@ internal_principals_provision() {
     mkdir -p "$dir"
     chmod 0700 "$dir"
     for service in payments programs; do
+        if [ -e "$dir/$service-enrollment.json" ] || [ -L "$dir/$service-enrollment.json" ]; then
+            internal_enrollment_snapshot "$service" "$dir/$service-enrollment.json" "$dir/$service.credential" verify
+        fi
         if [ "$service" = payments ]; then scope=receipt:read; else scope=program:read; fi
         jq -n --arg key "$(cat "$SECRETS_DIR/test-source-signer.pub.hex")" --arg scope "$scope" \
             '{signer_public_key: $key, scopes: [$scope], quota_requests: 1000, quota_window_seconds: 60}' > "$dir/$service-request.json"
@@ -2795,16 +2883,8 @@ internal_principals_provision() {
                 --write-out '%{http_code}' "$IDENTITY_URL/v1/publication-keys")
             [ "$status" = 200 ] || fail "identity refused program publication key binding with status $status"
         fi
-        (umask 077; jq -n --arg sub "$TEST_SOURCE_DID" '{($sub): "/run/layerx/principal.credential"}' > "$dir/credentials.json")
-        producer=gateway
-        if [ "$service" = programs ]; then producer=registry; fi
-        apply_secret "$INTERNAL_NAMESPACE" "layerx-internal-$service-runtime" \
-            --from-file=producers.json="$SECRETS_DIR/$service-producers.json" \
-            --from-file=producer-token="$SECRETS_DIR/$producer-event-producer.token" \
-            --from-file=server.der="$CA_DIR/internal-$service/cert.der" --from-file=server-key.der="$CA_DIR/internal-$service/key.der" \
-            --from-file=ca.der="$CA_DIR/ca.der" --from-file=upstream-ca.der="$CA_DIR/ca.der" \
-            --from-file=token="$SECRETS_DIR/developer-${service%s}.token" \
-            --from-file=credentials.json="$dir/credentials.json" --from-file=principal.credential="$dir/$service.credential"
+        internal_enrollment_snapshot "$service" "$dir/$service-enrollment.json" "$dir/$service.credential"
+        internal_principal_secret_apply "$service"
         rm -f "$dir/$service-response.json"
     done
 }
@@ -3759,6 +3839,7 @@ beta_cluster_up() {
         human_policy_publish
     fi
     kube apply -f "$MANIFESTS_DIR/node.yaml" > /dev/null
+    internal_apply
     manifests_apply
     port_forward testnet "$TESTNET_NAMESPACE" layerx-testnet-public "$TESTNET_PORT" 443
     port_forward gateway "$TESTNET_NAMESPACE" layerx-gateway "$GATEWAY_PORT" 443
@@ -3769,9 +3850,9 @@ beta_cluster_up() {
     else
         retained_principals_apply
     fi
+    kube -n "$INTERNAL_NAMESPACE" rollout restart deployment/payments deployment/programs > /dev/null
     port_forward human "$TESTNET_NAMESPACE" layerx-human 19453 9443
     human_browser_provision
-    internal_apply
     port_forward developer "$DEVELOPER_NAMESPACE" layerx-webhooks-public 19450 443
     port_forward developer-ingress "$DEVELOPER_NAMESPACE" layerx-webhooks "$DEVELOPER_INGRESS_PORT" 443
     port_forward pending-core "$TESTNET_NAMESPACE" layerx-pending-core 19446 9443

@@ -4,6 +4,8 @@ use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::time::Duration;
+use serde::{Deserialize, Serialize};
+use zeroize::{Zeroize, Zeroizing};
 
 use layerx_platform_internal::producer::{DeliveryFailure, DeliveryState, Health, Observation, Outbox, Pending, QueueState,
     MAX_SCHEDULED_PRINCIPALS};
@@ -11,6 +13,117 @@ use layerx_platform_internal::producer::{DeliveryFailure, DeliveryState, Health,
 use crate::store::{PrincipalScope, PrincipalStore, RowKey, StoreError, Table};
 
 static HEALTH: OnceLock<Arc<Health>> = OnceLock::new();
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct IssuedEnrollment {
+    principal: String,
+    tenant: String,
+    revision: u64,
+    session_id: String,
+    credential: String,
+    expires_at: u64,
+}
+
+impl Drop for IssuedEnrollment {
+    fn drop(&mut self) { self.credential.zeroize(); }
+}
+
+pub(crate) fn enroll_session(
+    scope: &mut PrincipalScope<'_>, grant: &crate::auth::SessionGrant, now: u64,
+) -> Result<(), StoreError> {
+    let key = RowKey::new("event-enrollment")?;
+    let prior = scope.get(Table::EventOutbox, &key)
+        .map(|row| serde_json::from_slice::<IssuedEnrollment>(row.bytes()))
+        .transpose().map_err(|_| StoreError::Corrupt("invalid event enrollment"))?;
+    if let Some(prior) = &prior {
+        if prior.principal != scope.principal().as_str() || prior.tenant != scope.tenant().as_str() {
+            return Err(StoreError::Corrupt("event enrollment ownership mismatch"));
+        }
+        if prior.session_id == grant.session_id() && prior.credential == grant.access_token().expose()
+            && prior.expires_at == grant.access_expires_at()
+        {
+            return Ok(());
+        }
+    }
+    let revision = prior.as_ref().map_or(Some(1), |prior| prior.revision.checked_add(1))
+        .ok_or(StoreError::Corrupt("event enrollment revision exhausted"))?;
+    let enrollment = IssuedEnrollment { principal: scope.principal().as_str().to_owned(),
+        tenant: scope.tenant().as_str().to_owned(), revision, session_id: grant.session_id().to_owned(),
+        credential: grant.access_token().expose().to_owned(), expires_at: grant.access_expires_at() };
+    scope.put(Table::EventOutbox, key, now, serde_json::to_vec(&enrollment)
+        .map_err(|_| StoreError::Corrupt("event enrollment encoding"))?)
+}
+
+fn start_enrollment_reconciler(outbox: &Arc<HumanOutbox>) -> Result<(), String> {
+    let mut sources = Vec::new();
+    for kind in ["JOURNEY", "APPROVAL"] {
+        let source = layerx_platform_internal::tls::Upstream::from_environment(&format!("LAYERX_EVENTS_{kind}"))?;
+        if !source.authenticated_producer() { return Err("Human enrollment requires producer mTLS".to_owned()); }
+        sources.push(source);
+    }
+    let owner = Arc::downgrade(outbox);
+    std::thread::Builder::new().name("human-event-enrollment".to_owned()).spawn(move || {
+        let mut after = String::new();
+        while let Some(outbox) = owner.upgrade() {
+            let enrollment = (|| -> Result<Option<IssuedEnrollment>, StoreError> {
+                let mut store = outbox.store.lock().map_err(|_| StoreError::Corrupt("Human store unavailable"))?;
+                let mut principals = store.known_principals()?;
+                if principals.len() > MAX_SCHEDULED_PRINCIPALS {
+                    return Err(StoreError::Corrupt("Human enrollment principal bound"));
+                }
+                principals.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+                let Some(principal) = principals.iter().find(|principal| principal.as_str() > after.as_str())
+                    .or_else(|| principals.first()) else { return Ok(None); };
+                after = principal.as_str().to_owned();
+                let scope = store.principal(principal)?;
+                let row = scope.get(Table::EventOutbox, &RowKey::new("event-enrollment")?);
+                let enrollment = row.map(|row| serde_json::from_slice::<IssuedEnrollment>(row.bytes()))
+                    .transpose().map_err(|_| StoreError::Corrupt("event enrollment encoding"))?;
+                if enrollment.as_ref().is_some_and(|entry| entry.principal != scope.principal().as_str()
+                    || entry.tenant != scope.tenant().as_str())
+                { return Err(StoreError::Corrupt("event enrollment ownership mismatch")); }
+                Ok(enrollment)
+            })();
+            if let Ok(Some(enrollment)) = enrollment {
+                let now = layerx_platform_internal::secret::unix_seconds().unwrap_or(u64::MAX);
+                if enrollment.expires_at > now {
+                    if let Ok(body) = serde_json::to_vec(&enrollment) {
+                        let body = Zeroizing::new(body);
+                        let mut admitted = Vec::new();
+                        for source in &sources {
+                            let accepted = source.post("/internal/v1/enrollments", &body).ok()
+                                .filter(|response| response.status == 200)
+                                .and_then(|response| serde_json::from_slice::<serde_json::Value>(&response.body).ok())
+                                .is_some_and(|response| response["bound"] == true
+                                    && response["principal"] == enrollment.principal
+                                    && response["tenant"] == enrollment.tenant
+                                    && response["revision"] == enrollment.revision
+                                    && response["generation"].as_u64().is_some());
+                            admitted.push(accepted);
+                        }
+                        if let Ok(mut store) = outbox.store.lock() {
+                            if let Ok(principal) = crate::store::PrincipalId::new(enrollment.principal.clone()) {
+                                if let Ok(mut scope) = store.principal(&principal) {
+                                    if let Ok(key) = RowKey::new("event-enrollment-status") {
+                                        if let Ok(value) = serde_json::to_vec(&serde_json::json!({
+                                            "revision":enrollment.revision,"checked_at":now,
+                                            "journey_bound":admitted.first() == Some(&true),
+                                            "approval_bound":admitted.get(1) == Some(&true)}))
+                                        { let _ = scope.put(Table::EventOutbox, key, now, value); }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            drop(outbox);
+            std::thread::sleep(Duration::from_millis(250));
+        }
+    }).map_err(|_| "Human enrollment worker unavailable".to_owned())?;
+    Ok(())
+}
 
 pub(crate) fn health() -> Arc<Health> {
     Arc::clone(HEALTH.get_or_init(|| Arc::new(Health::default())))
@@ -144,7 +257,11 @@ impl HumanOutbox {
             state.operator_redelivery()?;
             persist_state(&mut scope, &state, layerx_platform_internal::secret::unix_seconds()?)?;
         }
-        Ok(serde_json::json!({"principal":principal.as_str(), "delivery":state.delivery(),
+        let enrollment = scope.get(Table::EventOutbox, &RowKey::new("event-enrollment-status")
+            .map_err(|error| error.to_string())?)
+            .map(|row| serde_json::from_slice::<serde_json::Value>(row.bytes()))
+            .transpose().map_err(|_| "invalid event enrollment status")?;
+        Ok(serde_json::json!({"principal":principal.as_str(), "delivery":state.delivery(),"enrollment":enrollment,
             "pending":state.pending(), "pending_count":state.pending_count()}))
     }
     pub(crate) fn start(store: Arc<Mutex<PrincipalStore>>) -> Result<Arc<Self>, String> {
@@ -153,6 +270,7 @@ impl HumanOutbox {
             health: health(),
         });
         start_status_listener(&outbox)?;
+        start_enrollment_reconciler(&outbox)?;
         layerx_platform_internal::producer::Client::from_environment(&["journey", "approval"])?
             .spawn(Arc::downgrade(&outbox), health())?;
         Ok(outbox)

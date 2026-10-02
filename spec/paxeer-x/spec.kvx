@@ -25532,7 +25532,9 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.17.3]
 title = "Provision real journey and approval principals through the event bootstrap lifecycle"
-status = "pending"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "unverified"
 mode = "BUILD"
 wave = 3
 requires = ["0.2", "17.2"]
@@ -25542,7 +25544,7 @@ do_2 = "Implement idempotent provisioning/reconciliation for Human journey/appro
 do_3 = "Inventory existing apps/material before deployment work, reconcile source/producer bootstrap order, and add fresh-volume and restored-volume first-event qualification through the real path."
 do_4 = "Create or extend the planned harness tools/qualification/paxeer-x/event-delivery-contract.py with case event-principal-provisioning; exercise the real served binaries and production persistence paths against the candidate manifest, record exact assertions and nonzero refusals, and fail if required inputs, executions or cases are absent."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["platform/hosted/internal/fly-init.sh", "platform/hosted/internal/src/events.rs", "platform/hosted/tests/beta-cluster.sh", "platform/hosted/webhooks/src/trusted.rs", "platform/hosted/webhooks/src/main.rs", "human/crates/layerx-human-service/src/event_producer.rs", "tools/bringup/check-live.sh", "tools/qualification/paxeer-x/event-delivery-contract.py"]
+touches = ["platform/hosted/internal/fly-init.sh", "platform/hosted/internal/src/events.rs", "platform/hosted/tests/beta-cluster.sh", "platform/hosted/webhooks/src/trusted.rs", "platform/hosted/webhooks/src/main.rs", "human/crates/layerx-human-service/src/event_producer.rs", "tools/bringup/check-live.sh", "tools/qualification/paxeer-x/event-delivery-contract.py", "human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-service/src/server/http.rs", "platform/hosted/internal/deployment.yaml", "platform/hosted/human/onboarding_provision.sh"]
 verify_cmd = "timeout 20m python3 tools/qualification/paxeer-x/event-delivery-contract.py --case event-principal-provisioning --candidate-manifest \"$PAXEER_X_CANDIDATE_MANIFEST\""
 gate_kind = "planned"
 max_builds = 1

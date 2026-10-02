@@ -233,7 +233,8 @@ impl<B: HumanApiComponents> Router<B> {
             .then(|| {
                 principal
                     .as_ref()
-                    .map(|context| context.principal.as_str().to_owned())
+                    .map(|context| (context.principal.as_str().to_owned(),
+                        context.tenant.as_str().to_owned(), context.session_id.clone()))
             })
             .flatten();
         let clear_session =
@@ -417,7 +418,7 @@ impl<B: HumanApiComponents> Router<B> {
         &self,
         operation: &Operation,
         trace: &TraceId,
-        introspection_principal: Option<String>,
+        introspection_principal: Option<(String, String, String)>,
         clear_session: bool,
         response: Result<BackendResponse, ApiFailure>,
     ) -> HttpResponse {
@@ -426,11 +427,12 @@ impl<B: HumanApiComponents> Router<B> {
                 if self.schema.encode_response(operation, &result).is_err() {
                     return error_response(trace, &ApiFailure::upstream_degraded());
                 }
-                if let Some(sub) = introspection_principal {
+                if let Some((sub, tenant_id, session_id)) = introspection_principal {
                     return success_response(
                         200,
                         trace,
-                        json!({"active": true, "sub": sub}),
+                        json!({"active": true, "sub": sub,
+                            "tenant_id": tenant_id, "session_id": session_id}),
                         Vec::new(),
                     );
                 }

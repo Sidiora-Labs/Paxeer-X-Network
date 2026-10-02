@@ -92,39 +92,59 @@ PY
         --authenticator "$REPO_ROOT/human/apps/web/e2e/software-authenticator.ts" \
         --credential "$credential" --result "$result" "${mode[@]}"
     human_recipient_check
-    python3 - "$REPO_ROOT/platform/hosted/human" "$result" "$SECRETS_DIR/human-credentials.json" <<'PY'
-import json, os, sys
+    local identity="$WORK_DIR/human-enrollment-identity.json"
+    python3 - "$REPO_ROOT/platform/hosted/human" "$HUMAN_URL" "$CA_DIR/ca.crt" "$origin" "$credential" "$result" "$identity" <<'PYENROLLED'
+import sys
 from pathlib import Path
 sys.path.insert(0, sys.argv[1])
-from provision import protected_json, require
-from onboarding_material import write
-result = protected_json(sys.argv[2])
-path = Path(sys.argv[3])
-value = {result['principal']: '/run/layerx/human-session.credential'}
+from browser_onboarding import Api
+from provision import protected_bytes, protected_json, require, write_json
+api = Api(sys.argv[2], sys.argv[3], sys.argv[4])
+api.cookies = {'__Host-layerx_access': protected_bytes(sys.argv[5], 4096).decode()}
+issued = protected_json(sys.argv[6])
+identity = api.result('GET', '/internal/v1/principal', 200)
+require(identity.get('active') is True and identity.get('sub') == issued['principal']
+        and identity.get('session_id') == issued['session_id']
+        and type(identity.get('tenant_id')) is str and identity['tenant_id'],
+        'Human enrollment', 'actual principal, tenant and issued session')
+path = Path(sys.argv[7])
 if path.exists():
-    previous = protected_json(path)
-    require(previous in ({}, value), path, 'original or identical authenticated credential map')
-    if previous == {}:
-        temporary = path.with_suffix('.pending')
-        write(temporary, json.dumps(value, separators=(',', ':')).encode())
-        os.replace(temporary, path)
-        descriptor = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
-        try:
-            os.fsync(descriptor)
-        finally:
-            os.close(descriptor)
+    require(protected_json(path) == identity, path, 'retained authenticated enrollment identity')
 else:
-    write(path, json.dumps(value, separators=(',', ':')).encode())
-PY
-    local service token
+    write_json(path, identity)
+PYENROLLED
+    local principal tenant session_id headers="$WORK_DIR/human-enrollment-headers"
+    principal=$(jq -er .sub "$identity")
+    tenant=$(jq -er .tenant_id "$identity")
+    session_id=$(jq -er .session_id "$identity")
+    printf 'Authorization: Bearer %s\n' "$(cat "$SECRETS_DIR/human-event-producer.token")" > "$headers"
+    local service child status deadline body="$WORK_DIR/human-enrollment-readiness.json"
     for service in journeys approvals; do
-        token=${service%s}
-        apply_secret "$INTERNAL_NAMESPACE" "layerx-internal-$service-runtime" \
-            --from-file=server.der="$CA_DIR/internal-$service/cert.der" --from-file=server-key.der="$CA_DIR/internal-$service/key.der" \
-            --from-file=ca.der="$CA_DIR/ca.der" --from-file=upstream-ca.der="$CA_DIR/ca.der" --from-file=token="$SECRETS_DIR/developer-$token.token" \
-            --from-file=credentials.json="$SECRETS_DIR/human-credentials.json" --from-file=human-session.credential="$credential" \
-            --from-file=producers.json="$SECRETS_DIR/$service-producers.json" --from-file=producer-token="$SECRETS_DIR/human-event-producer.token"
+        "$TOOLS_DIR/kubectl" --kubeconfig "$KUBECONFIG_FILE" -n "$INTERNAL_NAMESPACE" \
+            port-forward --address 127.0.0.1 "service/$service" 19465:443 > "$WORK_DIR/$service-enrollment-forward.log" 2>&1 &
+        child=$!
+        trap 'kill "$child" 2>/dev/null || true; wait "$child" 2>/dev/null || true' EXIT
+        deadline=$((SECONDS + 120))
+        while :; do
+            kill -0 "$child" 2>/dev/null || fail "$service enrollment readiness transport stopped"
+            status=$(curl --silent --show-error --max-time 10 --cacert "$CA_DIR/ca.crt" \
+                --cert "$CA_DIR/human-event-client/cert.pem" --key "$CA_DIR/human-event-client/key.pem" \
+                --connect-to "$service.$INTERNAL_NAMESPACE.svc:443:127.0.0.1:19465" \
+                --header "@$headers" --output "$body" --write-out '%{http_code}' \
+                "https://$service.$INTERNAL_NAMESPACE.svc/internal/v1/principals/$principal/issued-enrollment") || status=000
+            if [ "$status" = 200 ] && jq -e --arg principal "$principal" --arg tenant "$tenant" --arg session_id "$session_id" \
+                '.principal == $principal and .tenant == $tenant and .session_id == $session_id and .bound == true and (.revision | type == "number" and . > 0) and (.generation | type == "number" and . > 0)' "$body" > /dev/null; then
+                break
+            fi
+            [ "$SECONDS" -lt "$deadline" ] || fail "$service has not adopted the issuer-enrolled Human session (http=$status)"
+            sleep 1
+        done
+        kill "$child" 2>/dev/null || true
+        wait "$child" 2>/dev/null || true
+        trap - EXIT
     done
+    rm -f "$headers"
+
 )
 
 human_recipient_check() (

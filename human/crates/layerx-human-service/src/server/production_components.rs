@@ -4385,6 +4385,8 @@ impl ProductionComponents {
         self.auth_index
             .bind_session(&grant, principal)
             .map_err(|error| auth_failure(&error))?;
+        crate::event_producer::enroll_session(scope, &grant, self.now()?)
+            .map_err(|_| ApiFailure::unavailable())?;
         let current = Passkeys::list_sessions_authorized(scope, grant.session_id())
             .map_err(|error| auth_api_failure(&error))?
             .into_iter()
@@ -5710,6 +5712,8 @@ impl ProductionComponents {
             self.auth_index
                 .bind_session(&grant, &principal)
                 .map_err(|error| auth_failure(&error))?;
+            crate::event_producer::enroll_session(&mut scope, &grant, now)
+                .map_err(|_| ApiFailure::unavailable())?;
             let session_view = grant.session();
             let result = json!({"session_id": grant.session_id(), "device": {"device_id": session_view.device.device_id(),
                         "label": session_view.device.label(), "platform": session_view.device.platform()}, "opened_at": session_view.opened_at,

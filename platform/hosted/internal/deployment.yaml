@@ -155,6 +155,36 @@ spec:
     spec:
       automountServiceAccountToken: false
       securityContext: {runAsUser: 4020, runAsGroup: 4020, fsGroup: 4020}
+      initContainers:
+        - name: enrollment-material
+          image: ghcr.io/sidiora-labs/layerx-internal:0.1.0
+          command: [/bin/sh, -ec]
+          args:
+            - |
+              umask 077
+              target=/var/lib/layerx/bootstrap
+              mkdir -p "$target" /var/lib/layerx/enrollment
+              chmod 0700 "$target" /var/lib/layerx/enrollment
+              for name in enrollment-key credentials.json; do
+                test -s "/run/layerx/$name"
+              done
+              if test -e "$target/enrollment-key"; then
+                test -f "$target/enrollment-key" && test ! -L "$target/enrollment-key"
+                cmp -s /run/layerx/enrollment-key "$target/enrollment-key"
+              fi
+              for name in enrollment-key principal.credential credentials.json; do
+                if test -f "/run/layerx/$name"; then
+                  temporary=$(mktemp "$target/.material.XXXXXX")
+                  cat "/run/layerx/$name" > "$temporary"
+                  chmod 0600 "$temporary"
+                  mv -f "$temporary" "$target/$name"
+                fi
+              done
+          resources: {requests: {cpu: 10m, memory: 16Mi}, limits: {cpu: 100m, memory: 64Mi}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          volumeMounts:
+            - {name: state, mountPath: /var/lib/layerx}
+            - {name: runtime, mountPath: /run/layerx, readOnly: true}
       containers:
         - name: journeys
           image: ghcr.io/sidiora-labs/layerx-internal:0.1.0
@@ -170,7 +200,9 @@ spec:
             - {name: LAYERX_EVENTS_UPSTREAM_URL, value: "https://layerx-human.layerx-testnet.svc:9443"}
             - {name: LAYERX_EVENTS_UPSTREAM_CA_DER, value: "/run/layerx/upstream-ca.der"}
             - {name: LAYERX_EVENTS_PRODUCERS_FILE, value: "/run/layerx/producers.json"}
-            - {name: LAYERX_EVENTS_CREDENTIALS_FILE, value: "/run/layerx/credentials.json"}
+            - {name: LAYERX_EVENTS_CREDENTIALS_FILE, value: "/var/lib/layerx/enrollment/credentials.json"}
+            - {name: LAYERX_EVENTS_BOOTSTRAP_CREDENTIALS_FILE, value: "/var/lib/layerx/bootstrap/credentials.json"}
+            - {name: LAYERX_EVENTS_ENROLLMENT_KEY_FILE, value: "/var/lib/layerx/bootstrap/enrollment-key"}
           ports: [{name: https, containerPort: 9443}]
           readinessProbe: {httpGet: {scheme: HTTPS, path: /readyz, port: https}, timeoutSeconds: 30, periodSeconds: 10}
           livenessProbe: {httpGet: {scheme: HTTPS, path: /livez, port: https}, periodSeconds: 20}
@@ -186,7 +218,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata: {name: journeys, namespace: layerx-internal}
-spec: {selector: {app: layerx-internal-journeys}, ports: [{name: https, port: 443, targetPort: https}]}
+spec: {publishNotReadyAddresses: true, selector: {app: layerx-internal-journeys}, ports: [{name: https, port: 443, targetPort: https}]}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -200,6 +232,8 @@ spec:
           podSelector: {matchLabels: {app: layerx-webhooks}}
         - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: layerx-testnet}}
           podSelector: {matchLabels: {app: layerx-testnet-control}}
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: layerx-testnet}}
+          podSelector: {matchLabels: {app: layerx-human}}
       ports: [{protocol: TCP, port: 9443}]
   egress:
     - to:
@@ -228,6 +262,36 @@ spec:
     spec:
       automountServiceAccountToken: false
       securityContext: {runAsUser: 4020, runAsGroup: 4020, fsGroup: 4020}
+      initContainers:
+        - name: enrollment-material
+          image: ghcr.io/sidiora-labs/layerx-internal:0.1.0
+          command: [/bin/sh, -ec]
+          args:
+            - |
+              umask 077
+              target=/var/lib/layerx/bootstrap
+              mkdir -p "$target" /var/lib/layerx/enrollment
+              chmod 0700 "$target" /var/lib/layerx/enrollment
+              for name in enrollment-key credentials.json; do
+                test -s "/run/layerx/$name"
+              done
+              if test -e "$target/enrollment-key"; then
+                test -f "$target/enrollment-key" && test ! -L "$target/enrollment-key"
+                cmp -s /run/layerx/enrollment-key "$target/enrollment-key"
+              fi
+              for name in enrollment-key principal.credential credentials.json; do
+                if test -f "/run/layerx/$name"; then
+                  temporary=$(mktemp "$target/.material.XXXXXX")
+                  cat "/run/layerx/$name" > "$temporary"
+                  chmod 0600 "$temporary"
+                  mv -f "$temporary" "$target/$name"
+                fi
+              done
+          resources: {requests: {cpu: 10m, memory: 16Mi}, limits: {cpu: 100m, memory: 64Mi}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          volumeMounts:
+            - {name: state, mountPath: /var/lib/layerx}
+            - {name: runtime, mountPath: /run/layerx, readOnly: true}
       containers:
         - name: payments
           image: ghcr.io/sidiora-labs/layerx-internal:0.1.0
@@ -243,7 +307,9 @@ spec:
             - {name: LAYERX_EVENTS_UPSTREAM_URL, value: "https://layerx-gateway.layerx-testnet.svc"}
             - {name: LAYERX_EVENTS_UPSTREAM_CA_DER, value: "/run/layerx/upstream-ca.der"}
             - {name: LAYERX_EVENTS_PRODUCERS_FILE, value: "/run/layerx/producers.json"}
-            - {name: LAYERX_EVENTS_CREDENTIALS_FILE, value: "/run/layerx/credentials.json"}
+            - {name: LAYERX_EVENTS_CREDENTIALS_FILE, value: "/var/lib/layerx/enrollment/credentials.json"}
+            - {name: LAYERX_EVENTS_BOOTSTRAP_CREDENTIALS_FILE, value: "/var/lib/layerx/bootstrap/credentials.json"}
+            - {name: LAYERX_EVENTS_ENROLLMENT_KEY_FILE, value: "/var/lib/layerx/bootstrap/enrollment-key"}
           ports: [{name: https, containerPort: 9443}]
           readinessProbe: {httpGet: {scheme: HTTPS, path: /readyz, port: https}, timeoutSeconds: 30, periodSeconds: 10}
           livenessProbe: {httpGet: {scheme: HTTPS, path: /livez, port: https}, periodSeconds: 20}
@@ -259,7 +325,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata: {name: payments, namespace: layerx-internal}
-spec: {selector: {app: layerx-internal-payments}, ports: [{name: https, port: 443, targetPort: https}]}
+spec: {publishNotReadyAddresses: true, selector: {app: layerx-internal-payments}, ports: [{name: https, port: 443, targetPort: https}]}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -273,6 +339,8 @@ spec:
           podSelector: {matchLabels: {app: layerx-webhooks}}
         - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: layerx-testnet}}
           podSelector: {matchLabels: {app: layerx-testnet-control}}
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: layerx-testnet}}
+          podSelector: {matchLabels: {app: layerx-gateway}}
       ports: [{protocol: TCP, port: 9443}]
   egress:
     - to:
@@ -301,6 +369,36 @@ spec:
     spec:
       automountServiceAccountToken: false
       securityContext: {runAsUser: 4020, runAsGroup: 4020, fsGroup: 4020}
+      initContainers:
+        - name: enrollment-material
+          image: ghcr.io/sidiora-labs/layerx-internal:0.1.0
+          command: [/bin/sh, -ec]
+          args:
+            - |
+              umask 077
+              target=/var/lib/layerx/bootstrap
+              mkdir -p "$target" /var/lib/layerx/enrollment
+              chmod 0700 "$target" /var/lib/layerx/enrollment
+              for name in enrollment-key credentials.json; do
+                test -s "/run/layerx/$name"
+              done
+              if test -e "$target/enrollment-key"; then
+                test -f "$target/enrollment-key" && test ! -L "$target/enrollment-key"
+                cmp -s /run/layerx/enrollment-key "$target/enrollment-key"
+              fi
+              for name in enrollment-key principal.credential credentials.json; do
+                if test -f "/run/layerx/$name"; then
+                  temporary=$(mktemp "$target/.material.XXXXXX")
+                  cat "/run/layerx/$name" > "$temporary"
+                  chmod 0600 "$temporary"
+                  mv -f "$temporary" "$target/$name"
+                fi
+              done
+          resources: {requests: {cpu: 10m, memory: 16Mi}, limits: {cpu: 100m, memory: 64Mi}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          volumeMounts:
+            - {name: state, mountPath: /var/lib/layerx}
+            - {name: runtime, mountPath: /run/layerx, readOnly: true}
       containers:
         - name: approvals
           image: ghcr.io/sidiora-labs/layerx-internal:0.1.0
@@ -316,7 +414,9 @@ spec:
             - {name: LAYERX_EVENTS_UPSTREAM_URL, value: "https://layerx-human.layerx-testnet.svc:9443"}
             - {name: LAYERX_EVENTS_UPSTREAM_CA_DER, value: "/run/layerx/upstream-ca.der"}
             - {name: LAYERX_EVENTS_PRODUCERS_FILE, value: "/run/layerx/producers.json"}
-            - {name: LAYERX_EVENTS_CREDENTIALS_FILE, value: "/run/layerx/credentials.json"}
+            - {name: LAYERX_EVENTS_CREDENTIALS_FILE, value: "/var/lib/layerx/enrollment/credentials.json"}
+            - {name: LAYERX_EVENTS_BOOTSTRAP_CREDENTIALS_FILE, value: "/var/lib/layerx/bootstrap/credentials.json"}
+            - {name: LAYERX_EVENTS_ENROLLMENT_KEY_FILE, value: "/var/lib/layerx/bootstrap/enrollment-key"}
           ports: [{name: https, containerPort: 9443}]
           readinessProbe: {httpGet: {scheme: HTTPS, path: /readyz, port: https}, timeoutSeconds: 30, periodSeconds: 10}
           livenessProbe: {httpGet: {scheme: HTTPS, path: /livez, port: https}, periodSeconds: 20}
@@ -332,7 +432,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata: {name: approvals, namespace: layerx-internal}
-spec: {selector: {app: layerx-internal-approvals}, ports: [{name: https, port: 443, targetPort: https}]}
+spec: {publishNotReadyAddresses: true, selector: {app: layerx-internal-approvals}, ports: [{name: https, port: 443, targetPort: https}]}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -346,6 +446,8 @@ spec:
           podSelector: {matchLabels: {app: layerx-webhooks}}
         - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: layerx-testnet}}
           podSelector: {matchLabels: {app: layerx-testnet-control}}
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: layerx-testnet}}
+          podSelector: {matchLabels: {app: layerx-human}}
       ports: [{protocol: TCP, port: 9443}]
   egress:
     - to:
@@ -374,6 +476,36 @@ spec:
     spec:
       automountServiceAccountToken: false
       securityContext: {runAsUser: 4020, runAsGroup: 4020, fsGroup: 4020}
+      initContainers:
+        - name: enrollment-material
+          image: ghcr.io/sidiora-labs/layerx-internal:0.1.0
+          command: [/bin/sh, -ec]
+          args:
+            - |
+              umask 077
+              target=/var/lib/layerx/bootstrap
+              mkdir -p "$target" /var/lib/layerx/enrollment
+              chmod 0700 "$target" /var/lib/layerx/enrollment
+              for name in enrollment-key credentials.json; do
+                test -s "/run/layerx/$name"
+              done
+              if test -e "$target/enrollment-key"; then
+                test -f "$target/enrollment-key" && test ! -L "$target/enrollment-key"
+                cmp -s /run/layerx/enrollment-key "$target/enrollment-key"
+              fi
+              for name in enrollment-key principal.credential credentials.json; do
+                if test -f "/run/layerx/$name"; then
+                  temporary=$(mktemp "$target/.material.XXXXXX")
+                  cat "/run/layerx/$name" > "$temporary"
+                  chmod 0600 "$temporary"
+                  mv -f "$temporary" "$target/$name"
+                fi
+              done
+          resources: {requests: {cpu: 10m, memory: 16Mi}, limits: {cpu: 100m, memory: 64Mi}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          volumeMounts:
+            - {name: state, mountPath: /var/lib/layerx}
+            - {name: runtime, mountPath: /run/layerx, readOnly: true}
       containers:
         - name: programs
           image: ghcr.io/sidiora-labs/layerx-internal:0.1.0
@@ -389,7 +521,9 @@ spec:
             - {name: LAYERX_EVENTS_UPSTREAM_URL, value: "https://layerx-gateway.layerx-testnet.svc"}
             - {name: LAYERX_EVENTS_UPSTREAM_CA_DER, value: "/run/layerx/upstream-ca.der"}
             - {name: LAYERX_EVENTS_PRODUCERS_FILE, value: "/run/layerx/producers.json"}
-            - {name: LAYERX_EVENTS_CREDENTIALS_FILE, value: "/run/layerx/credentials.json"}
+            - {name: LAYERX_EVENTS_CREDENTIALS_FILE, value: "/var/lib/layerx/enrollment/credentials.json"}
+            - {name: LAYERX_EVENTS_BOOTSTRAP_CREDENTIALS_FILE, value: "/var/lib/layerx/bootstrap/credentials.json"}
+            - {name: LAYERX_EVENTS_ENROLLMENT_KEY_FILE, value: "/var/lib/layerx/bootstrap/enrollment-key"}
           ports: [{name: https, containerPort: 9443}]
           readinessProbe: {httpGet: {scheme: HTTPS, path: /readyz, port: https}, timeoutSeconds: 30, periodSeconds: 10}
           livenessProbe: {httpGet: {scheme: HTTPS, path: /livez, port: https}, periodSeconds: 20}
@@ -405,7 +539,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata: {name: programs, namespace: layerx-internal}
-spec: {selector: {app: layerx-internal-programs}, ports: [{name: https, port: 443, targetPort: https}]}
+spec: {publishNotReadyAddresses: true, selector: {app: layerx-internal-programs}, ports: [{name: https, port: 443, targetPort: https}]}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -419,6 +553,8 @@ spec:
           podSelector: {matchLabels: {app: layerx-webhooks}}
         - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: layerx-testnet}}
           podSelector: {matchLabels: {app: layerx-testnet-control}}
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: layerx-testnet}}
+          podSelector: {matchLabels: {app: layerx-program-registry}}
       ports: [{protocol: TCP, port: 9443}]
   egress:
     - to:
