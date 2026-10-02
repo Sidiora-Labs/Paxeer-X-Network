@@ -1114,6 +1114,8 @@ fn config(event_producer: bool) -> Result<Config, String> {
 
 fn response(status: u16, code: &str, retry_after: Option<u64>) -> OutgoingResponse {
     OutgoingResponse {
+        content_type: "application/json".to_owned(),
+        headers: Vec::new(),
         status,
         body: serde_json::json!({ "ok": false, "error": { "code": code } })
             .to_string()
@@ -1124,6 +1126,8 @@ fn response(status: u16, code: &str, retry_after: Option<u64>) -> OutgoingRespon
 
 fn json_response(status: u16, value: &serde_json::Value) -> OutgoingResponse {
     OutgoingResponse {
+        content_type: "application/json".to_owned(),
+        headers: Vec::new(),
         status,
         body: value.to_string().into_bytes(),
         retry_after: None,
@@ -1312,6 +1316,7 @@ fn agent_response(
         status,
         body,
         retry_after,
+        ..
     } = response;
     let document = serde_json::from_slice::<serde_json::Value>(&body).ok();
     let body = document
@@ -1349,6 +1354,8 @@ fn agent_response(
             },
         );
     OutgoingResponse {
+        content_type: "application/json".to_owned(),
+        headers: Vec::new(),
         status: if body.get("class").is_some() {
             500
         } else {
@@ -1364,6 +1371,7 @@ fn agent_refusal(request_id: &str, response: OutgoingResponse) -> OutgoingRespon
         status,
         body,
         retry_after,
+        ..
     } = response;
     let document = serde_json::from_slice::<serde_json::Value>(&body).ok();
     let body = {
@@ -1393,6 +1401,8 @@ fn agent_refusal(request_id: &str, response: OutgoingResponse) -> OutgoingRespon
         })
     };
     OutgoingResponse {
+        content_type: "application/json".to_owned(),
+        headers: Vec::new(),
         status,
         body: body.to_string().into_bytes(),
         retry_after,
@@ -2527,6 +2537,8 @@ fn reserve_activity(
                     return Err(response(503, "persistence_unavailable", Some(5)));
                 };
                 return Err(OutgoingResponse {
+                    content_type: "application/json".to_owned(),
+                    headers: Vec::new(),
                     status,
                     body,
                     retry_after: None,
@@ -3474,6 +3486,9 @@ fn route(config: &Config, request: &IncomingRequest) -> OutgoingResponse {
     if let Some(result) = routes::route(config, request) {
         return result;
     }
+    if request.path == "/" && request.method == "POST" {
+        return rpc::route(config, request);
+    }
     if let Some(result) = public_reads::route(config, request) {
         return result;
     }
@@ -3492,6 +3507,9 @@ fn route(config: &Config, request: &IncomingRequest) -> OutgoingResponse {
     }
     if request.method == "GET" && request.path == "/readyz" {
         return gateway_readiness(config);
+    }
+    if request.method == "GET" && request.path == "/readyz/core" {
+        return gateway_readiness_scope(config, false);
     }
     if request.method == "GET" && request.path == "/metrics" {
         let (failures, overflow) = config.store.producer_health.metrics();
@@ -3619,6 +3637,9 @@ fn exchange<S: ws::Connection>(config: &Arc<Config>, stream: &mut S) -> Result<(
         }
         if request.path == "/rpc/ws" {
             return ws::serve(config, &request, stream);
+        }
+        if let Some(result) = routes::stream(config, &request, stream) {
+            return result;
         }
         let keep_alive = request_number + 1 < MAX_REQUESTS_PER_CONNECTION
             && request
@@ -3831,13 +3852,40 @@ fn backend_ready(backends: &[BackendAvailability], name: &str) -> bool {
 }
 
 fn gateway_readiness(config: &Config) -> OutgoingResponse {
+    gateway_readiness_scope(config, true)
+}
+
+fn gateway_readiness_scope(config: &Config, include_product_routes: bool) -> OutgoingResponse {
+    let Some(observed_at_ms) = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|value| u64::try_from(value.as_millis()).ok())
+    else {
+        return response(503, "readiness_clock_unavailable", None);
+    };
+    let Some(valid_until_ms) = observed_at_ms.checked_add(30_000) else {
+        return response(503, "readiness_clock_unavailable", None);
+    };
     let backends = readiness(config);
     let serving = backends
         .iter()
         .all(|backend| backend.ready || !backend.configured);
-    let product_routes = config.routes.readiness(config);
-    let complete =
-        backends.iter().all(|backend| backend.ready) && product_routes["complete"] == true;
+    let product_routes = if include_product_routes {
+        config.routes.readiness(config)
+    } else {
+        serde_json::Value::Null
+    };
+    let complete = if include_product_routes {
+        backends.iter().all(|backend| backend.ready) && product_routes["complete"] == true
+    } else {
+        [
+            "durable_store",
+            KernelBackend::Component.name(),
+            KernelBackend::Authority.name(),
+        ]
+        .iter()
+        .all(|name| backend_ready(&backends, name))
+    };
     let component_name = |name: &str| {
         if backend_ready(&backends, name) {
             "ready"
@@ -3846,8 +3894,18 @@ fn gateway_readiness(config: &Config) -> OutgoingResponse {
         }
     };
     json_response(
-        if serving { 200 } else { 503 },
+        if (include_product_routes && serving) || (!include_product_routes && complete) {
+            200
+        } else {
+            503
+        },
         &serde_json::json!({
+            "readiness_version": 1,
+            "protocol_version": config.protocol_version,
+            "protocol_network_id": config.protocol_network_id,
+            "observed_at_ms": observed_at_ms,
+            "valid_until_ms": valid_until_ms,
+            "scope": if include_product_routes { "product" } else { "core" },
             "status": if complete { "ready" } else { "degraded" },
             "service": "layerx-gateway",
             "package_semver": env!("CARGO_PKG_VERSION"),

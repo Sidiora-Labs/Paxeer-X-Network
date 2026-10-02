@@ -356,15 +356,102 @@ impl Client {
         request: &OutboundRequest<'_>,
         forwarded: &[(&str, &str)],
     ) -> Result<UpstreamResponse, String> {
+        let (path, query) = split_target(request.path)?;
+        let request = OutboundRequest { path, ..*request };
         self.request_with_freshness(
             endpoint,
             authorization,
-            request,
+            &request,
             OutboundHeaders {
+                query,
                 forwarded,
                 ..OutboundHeaders::default()
             },
         )
+    }
+
+    pub fn stream_forwarded(
+        &self,
+        endpoint: &Endpoint,
+        authorization: &str,
+        request: &OutboundRequest<'_>,
+        forwarded: &[(&str, &str)],
+        downstream: &mut impl Write,
+        origin: Option<&str>,
+    ) -> Result<(), String> {
+        let (path, query) = split_target(request.path)?;
+        let request = OutboundRequest { path, ..*request };
+        let outbound = OutboundHeaders {
+            query,
+            forwarded,
+            ..OutboundHeaders::default()
+        };
+        check_outbound_boundary(authorization, &request, outbound)?;
+        if request.method != "GET" || !request.body.is_empty() {
+            return Err("stream request is invalid".to_owned());
+        }
+        if origin.is_some_and(|value| {
+            value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_graphic())
+        }) {
+            return Err("invalid stream origin".to_owned());
+        }
+        let mut upstream = self.connect_tls(endpoint)?;
+        send_request(&mut upstream, endpoint, authorization, &request, outbound)?;
+        let started = Instant::now();
+        let head = read_head(&mut upstream, MAX_RESPONSE, true, started)?;
+        let mut parts = head.0.split_whitespace();
+        if parts.next() != Some("HTTP/1.1") {
+            return Err("invalid stream HTTP version".to_owned());
+        }
+        let status = parts
+            .next()
+            .ok_or("missing stream status")?
+            .parse::<u16>()
+            .map_err(|_| "invalid stream status")?;
+        let content_type = head
+            .1
+            .iter()
+            .find(|(name, _)| name == "content-type")
+            .map_or("", |(_, value)| value.as_str());
+        if status != 200 || content_type.split(';').next() != Some("text/event-stream") {
+            let response = response_parts(read_message_body(
+                &mut upstream,
+                MAX_RESPONSE,
+                true,
+                started,
+                head,
+            )?)?;
+            return write_response_connection_with_origin(
+                downstream,
+                &OutgoingResponse {
+                    status: response.status,
+                    content_type: response.content_type,
+                    headers: response.headers,
+                    body: response.body,
+                    retry_after: None,
+                },
+                false,
+                origin,
+            );
+        }
+        let mut headers = format!("HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-Accel-Buffering: no\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n");
+        if let Some(origin) = origin {
+            write!(headers, "Access-Control-Allow-Origin: {origin}\r\nAccess-Control-Allow-Credentials: true\r\nVary: Origin\r\n").map_err(|error| error.to_string())?;
+        }
+        for (name, value) in &head.1 {
+            if name == "set-cookie" || name == "last-event-id" {
+                write!(headers, "{name}: {value}\r\n").map_err(|error| error.to_string())?;
+            }
+        }
+        if headers.len() > MAX_HEADERS {
+            return Err("stream response headers exceed their bound".to_owned());
+        }
+        headers.push_str("\r\n");
+        downstream
+            .write_all(headers.as_bytes())
+            .and_then(|()| downstream.flush())
+            .map_err(|error| error.to_string())?;
+        stream_body(&mut upstream, downstream, head.2, head.3, started)
     }
 
     fn request_with_freshness(
@@ -453,14 +540,8 @@ fn check_outbound_boundary(
         ..
     } = headers;
     for (name, value) in headers.forwarded {
-        if !matches!(
-            *name,
-            "x-agent-key"
-                | "x-agent-nonce"
-                | "x-agent-expires"
-                | "x-agent-signature"
-                | "x-trace-id"
-        ) || value.len() > 4096
+        if !request_header_is_forwardable(name)
+            || value.len() > 4096
             || value.bytes().any(|b| !b.is_ascii_graphic() && b != b' ')
         {
             return Err("forwarded header outside boundary".to_owned());
@@ -478,7 +559,18 @@ fn check_outbound_boundary(
     }
     let path = request.path;
     let body = request.body;
-    if !path.starts_with('/') || path.contains(['?', '#', '\\']) || body.len() > MAX_RESPONSE {
+    if !path.starts_with('/')
+        || path.len() > MAX_QUERY
+        || !path
+            .bytes()
+            .all(|byte| byte.is_ascii_graphic() && !b"?#\\".contains(&byte))
+        || !request.method.bytes().all(|byte| byte.is_ascii_uppercase())
+        || request.method.is_empty()
+        || headers
+            .query
+            .is_some_and(|query| !query_is_canonical(query))
+        || body.len() > MAX_RESPONSE
+    {
         return Err("outbound request exceeds its boundary".to_owned());
     }
     if authorization.len() > 4096
@@ -596,25 +688,28 @@ impl Drop for IncomingRequest {
 }
 
 pub struct OutgoingResponse {
+    pub content_type: String,
+    pub headers: Vec<(String, String)>,
     pub status: u16,
     pub body: Vec<u8>,
     pub retry_after: Option<u64>,
 }
 
 pub struct UpstreamResponse {
+    pub headers: Vec<(String, String)>,
     pub status: u16,
     pub content_type: String,
     pub body: Vec<u8>,
     connection_close: bool,
 }
 
-fn exchange(
+fn send_request(
     stream: &mut TlsStream<TcpStream>,
     endpoint: &Endpoint,
     authorization: &str,
     request: &OutboundRequest<'_>,
     headers: OutboundHeaders<'_>,
-) -> Result<UpstreamResponse, String> {
+) -> Result<(), String> {
     let OutboundHeaders {
         trace,
         freshness,
@@ -651,11 +746,16 @@ fn exchange(
             .map(|(name, value)| format!("{name}: {value}\r\n"))
             .collect::<String>(),
     );
+    let accept = if forwarded.iter().any(|(name, _)| *name == "accept") {
+        ""
+    } else {
+        "Accept: application/json\r\n"
+    };
     let forwarded = forwarded_headers.as_str();
     let mut outbound = zeroize::Zeroizing::new(Vec::new());
     write!(
         outbound,
-        "{} {}{}{} HTTP/1.1\r\nHost: {}\r\n{}Accept: application/json\r\nContent-Type: {}\r\n{idempotency}{trace}{freshness}{forwarded}{}Content-Length: {}\r\nConnection: keep-alive\r\n\r\n",
+        "{} {}{}{} HTTP/1.1\r\nHost: {}\r\n{}{accept}Content-Type: {}\r\n{idempotency}{trace}{freshness}{forwarded}{}Content-Length: {}\r\nConnection: keep-alive\r\n\r\n",
         request.method,
         endpoint.base_path,
         request.path,
@@ -671,14 +771,25 @@ fn exchange(
     stream
         .write_all(&outbound)
         .map_err(|error| error.to_string())?;
-    stream.flush().map_err(|error| error.to_string())?;
+    stream.flush().map_err(|error| error.to_string())
+}
+
+fn exchange(
+    stream: &mut TlsStream<TcpStream>,
+    endpoint: &Endpoint,
+    authorization: &str,
+    request: &OutboundRequest<'_>,
+    headers: OutboundHeaders<'_>,
+) -> Result<UpstreamResponse, String> {
+    send_request(stream, endpoint, authorization, request, headers)?;
     read_response(stream)
 }
 
 /// # Errors
 /// Refuses malformed, truncated or oversized HTTP requests and read failures.
 pub fn read_request(stream: &mut impl Read, maximum: usize) -> Result<IncomingRequest, String> {
-    let (start, headers, body) = read_message(stream, maximum)?;
+    let (start, headers, body) = read_message(stream, maximum, false)?;
+    let headers: BTreeMap<_, _> = headers.into_iter().collect();
     let mut parts = start.split_whitespace();
     let method = parts
         .next()
@@ -688,8 +799,7 @@ pub fn read_request(stream: &mut impl Read, maximum: usize) -> Result<IncomingRe
         .ok_or_else(|| "request target is missing".to_owned())?;
     if parts.next() != Some("HTTP/1.1")
         || parts.next().is_some()
-        || !path.starts_with('/')
-        || path.contains(['?', '#', '\\'])
+        || split_target(path).is_err()
         || !headers.contains_key("host")
     {
         return Err("request line is invalid".to_owned());
@@ -702,97 +812,379 @@ pub fn read_request(stream: &mut impl Read, maximum: usize) -> Result<IncomingRe
     })
 }
 
+pub fn request_header_is_forwardable(name: &str) -> bool {
+    matches!(
+        name,
+        "x-agent-key"
+            | "x-agent-nonce"
+            | "x-agent-expires"
+            | "x-agent-signature"
+            | "x-trace-id"
+            | "cookie"
+            | "x-csrf-token"
+            | "origin"
+            | "payment-signature"
+            | "payment-required"
+            | "payment-response"
+            | "x-payment"
+            | "x-payment-response"
+            | "last-event-id"
+            | "accept"
+            | "x-layerx-csrf"
+            | "x-layerx-trace"
+            | "layerx-payer-did"
+            | "x-layerx-wallet-binding"
+    )
+}
+
+fn response_header_is_forwardable(name: &str) -> bool {
+    matches!(
+        name,
+        "set-cookie"
+            | "payment-required"
+            | "payment-response"
+            | "x-payment-response"
+            | "retry-after"
+            | "www-authenticate"
+            | "content-disposition"
+            | "last-event-id"
+    )
+}
+
+pub fn split_target(target: &str) -> Result<(&str, Option<&str>), String> {
+    let (path, query) = target
+        .split_once('?')
+        .map_or((target, None), |(path, query)| (path, Some(query)));
+    if !path.starts_with('/')
+        || path.len() > MAX_QUERY
+        || !path
+            .bytes()
+            .all(|byte| byte.is_ascii_graphic() && !b"?#\\".contains(&byte))
+        || query.is_some_and(|query| !query_is_canonical(query))
+    {
+        return Err("request target exceeds its boundary".to_owned());
+    }
+    Ok((path, query))
+}
+
 fn read_response(stream: &mut impl Read) -> Result<UpstreamResponse, String> {
-    let (start, headers, body) = read_message(stream, MAX_RESPONSE)?;
+    response_parts(read_message(stream, MAX_RESPONSE, true)?)
+}
+
+fn response_parts((start, fields, body): HttpMessage) -> Result<UpstreamResponse, String> {
     let mut parts = start.split_whitespace();
     if parts.next() != Some("HTTP/1.1") {
         return Err("component response must use HTTP/1.1".to_owned());
     }
     let status = parts
         .next()
-        .ok_or_else(|| "component response status is missing".to_owned())?
+        .ok_or("component response status is missing")?
         .parse::<u16>()
-        .map_err(|_| "component response status is invalid".to_owned())?;
-    let content_type = headers.get("content-type").cloned().unwrap_or_default();
-    let connection_close = headers
-        .get("connection")
-        .is_some_and(|value| value.eq_ignore_ascii_case("close"));
+        .map_err(|_| "component response status is invalid")?;
+    if !(100..=599).contains(&status) {
+        return Err("component response status is invalid".to_owned());
+    }
+    let field = |name: &str| {
+        fields
+            .iter()
+            .find(|(key, _)| key == name)
+            .map(|(_, value)| value.as_str())
+    };
+    let content_type = field("content-type").unwrap_or_default().to_owned();
+    let connection_close = field("connection").is_some_and(|value| {
+        value
+            .split(',')
+            .any(|token| token.trim().eq_ignore_ascii_case("close"))
+    }) || (field("content-length").is_none()
+        && field("transfer-encoding").is_none());
+    let headers = fields
+        .into_iter()
+        .filter(|(name, _)| response_header_is_forwardable(name))
+        .collect();
     Ok(UpstreamResponse {
         status,
         content_type,
+        headers,
         body,
         connection_close,
     })
 }
 
-type HttpMessage = (String, BTreeMap<String, String>, Vec<u8>);
+type HttpMessage = (String, Vec<(String, String)>, Vec<u8>);
 
-fn read_message(stream: &mut impl Read, maximum: usize) -> Result<HttpMessage, String> {
-    let started = Instant::now();
-    let mut bytes = Vec::with_capacity(2048);
-    let mut chunk = [0_u8; 2048];
-    let header_end = loop {
+fn bounded_line(
+    stream: &mut impl Read,
+    maximum: usize,
+    started: Instant,
+) -> Result<Vec<u8>, String> {
+    let mut bytes = Vec::new();
+    loop {
+        if started.elapsed() > IO_TIMEOUT || bytes.len() >= maximum {
+            return Err("HTTP line exceeds its deadline or bound".to_owned());
+        }
+        let mut byte = [0_u8; 1];
+        stream
+            .read_exact(&mut byte)
+            .map_err(|error| error.to_string())?;
+        bytes.push(byte[0]);
+        if bytes.ends_with(b"\r\n") {
+            bytes.truncate(bytes.len() - 2);
+            return Ok(bytes);
+        }
+    }
+}
+
+fn bounded_body(stream: &mut impl Read, body: &mut [u8], started: Instant) -> Result<(), String> {
+    let mut offset = 0;
+    while offset < body.len() {
         if started.elapsed() > IO_TIMEOUT {
             return Err("HTTP message deadline exceeded".to_owned());
         }
-        let count = stream.read(&mut chunk).map_err(|error| error.to_string())?;
-        if count == 0 || bytes.len().saturating_add(count) > maximum {
-            return Err("HTTP message is empty or exceeds its bound".to_owned());
+        let end = body.len().min(offset + 2048);
+        let count = stream
+            .read(&mut body[offset..end])
+            .map_err(|error| error.to_string())?;
+        if count == 0 {
+            return Err("HTTP body is truncated".to_owned());
         }
-        bytes.extend_from_slice(&chunk[..count]);
-        if let Some(position) = bytes.windows(4).position(|window| window == b"\r\n\r\n") {
-            if position + 4 > MAX_HEADERS {
-                return Err("HTTP headers exceed their bound".to_owned());
-            }
-            break position + 4;
+        offset += count;
+    }
+    Ok(())
+}
+
+type MessageHead = (String, Vec<(String, String)>, Option<usize>, bool, usize);
+
+fn read_head(
+    stream: &mut impl Read,
+    maximum: usize,
+    response: bool,
+    started: Instant,
+) -> Result<MessageHead, String> {
+    let start = String::from_utf8(bounded_line(stream, MAX_HEADERS.min(maximum), started)?)
+        .map_err(|_| "HTTP start line is not UTF-8")?;
+    let mut header_size = start.len() + 2;
+    let mut headers = Vec::new();
+    let mut names = std::collections::BTreeSet::new();
+    let mut content_length = None;
+    let mut chunked = false;
+    loop {
+        let line = bounded_line(
+            stream,
+            MAX_HEADERS.min(maximum).saturating_sub(header_size),
+            started,
+        )?;
+        header_size += line.len() + 2;
+        if line.is_empty() {
+            break;
         }
-    };
-    let source = std::str::from_utf8(&bytes[..header_end])
-        .map_err(|_| "HTTP headers are not UTF-8".to_owned())?;
-    let mut lines = source.split("\r\n");
-    let start = lines
-        .next()
-        .ok_or_else(|| "HTTP start line is missing".to_owned())?
-        .to_owned();
-    let mut headers = BTreeMap::new();
-    let mut content_length = 0_usize;
-    for line in lines.filter(|line| !line.is_empty()) {
-        let (name, value) = line
-            .split_once(':')
-            .ok_or_else(|| "HTTP header is malformed".to_owned())?;
-        let name = name.trim().to_ascii_lowercase();
-        if name.is_empty() || headers.contains_key(&name) {
-            return Err("duplicate or empty HTTP header".to_owned());
+        let line = std::str::from_utf8(&line).map_err(|_| "HTTP header is not UTF-8")?;
+        let (name, value) = line.split_once(':').ok_or("HTTP header is malformed")?;
+        if name.is_empty()
+            || !name
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte))
+        {
+            return Err("HTTP header name is invalid".to_owned());
+        }
+        let name = name.to_ascii_lowercase();
+        if !names.insert(name.clone()) && !(response && name == "set-cookie") {
+            return Err("duplicate HTTP header".to_owned());
         }
         let value = value.trim().to_owned();
+        if !value
+            .bytes()
+            .all(|byte| byte.is_ascii_graphic() || byte == b' ' || byte == b'\t')
+        {
+            return Err("HTTP header value is invalid".to_owned());
+        }
         if name == "transfer-encoding" {
-            return Err("transfer-encoded messages are not accepted".to_owned());
+            if !response || !value.eq_ignore_ascii_case("chunked") {
+                return Err("transfer-encoded message is not accepted".to_owned());
+            }
+            chunked = true;
         }
         if name == "content-length" {
-            content_length = value
-                .parse::<usize>()
-                .map_err(|_| "content length is invalid".to_owned())?;
+            if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+                return Err("content length is invalid".to_owned());
+            }
+            content_length = Some(
+                value
+                    .parse::<usize>()
+                    .map_err(|_| "content length is invalid")?,
+            );
         }
-        headers.insert(name, value);
+        headers.push((name, value));
     }
-    if header_end.saturating_add(content_length) > maximum {
-        return Err("HTTP body exceeds its bound".to_owned());
+    if chunked && content_length.is_some() {
+        return Err("conflicting HTTP framing".to_owned());
     }
-    while bytes.len() < header_end + content_length {
-        if started.elapsed() > IO_TIMEOUT {
-            return Err("HTTP message deadline exceeded".to_owned());
+    Ok((start, headers, content_length, chunked, header_size))
+}
+
+fn read_message(
+    stream: &mut impl Read,
+    maximum: usize,
+    response: bool,
+) -> Result<HttpMessage, String> {
+    let started = Instant::now();
+    let head = read_head(stream, maximum, response, started)?;
+    read_message_body(stream, maximum, response, started, head)
+}
+
+fn read_message_body(
+    stream: &mut impl Read,
+    maximum: usize,
+    response: bool,
+    started: Instant,
+    head: MessageHead,
+) -> Result<HttpMessage, String> {
+    let (start, headers, content_length, chunked, header_size) = head;
+    let limit = maximum.saturating_sub(header_size);
+    let mut body = Vec::new();
+    if chunked {
+        let mut overhead = 0_usize;
+        loop {
+            let line = bounded_line(stream, 1024, started)?;
+            overhead = overhead.saturating_add(line.len() + 4);
+            if overhead > MAX_HEADERS {
+                return Err("HTTP chunk overhead exceeds its bound".to_owned());
+            }
+            let size = std::str::from_utf8(&line).map_err(|_| "invalid chunk size")?;
+            if size.is_empty() || !size.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                return Err("invalid chunk size".to_owned());
+            }
+            let size = usize::from_str_radix(size, 16).map_err(|_| "invalid chunk size")?;
+            if size == 0 {
+                if !bounded_line(stream, MAX_HEADERS, started)?.is_empty() {
+                    return Err("HTTP trailers are not accepted".to_owned());
+                }
+                break;
+            }
+            if size > limit.saturating_sub(body.len()) {
+                return Err("HTTP body exceeds its bound".to_owned());
+            }
+            let offset = body.len();
+            body.resize(offset + size, 0);
+            bounded_body(stream, &mut body[offset..], started)?;
+            if !bounded_line(stream, 2, started)?.is_empty() {
+                return Err("invalid chunk terminator".to_owned());
+            }
         }
-        let count = stream.read(&mut chunk).map_err(|error| error.to_string())?;
-        if count == 0 || bytes.len().saturating_add(count) > maximum {
-            return Err("HTTP body is truncated or exceeds its bound".to_owned());
+    } else if let Some(length) = content_length {
+        if length > limit {
+            return Err("HTTP body exceeds its bound".to_owned());
         }
-        bytes.extend_from_slice(&chunk[..count]);
+        body.resize(length, 0);
+        bounded_body(stream, &mut body, started)?;
+    } else if response && !matches!(start.split_whitespace().nth(1), Some("101" | "204" | "304")) {
+        let mut chunk = [0_u8; 2048];
+        loop {
+            if started.elapsed() > IO_TIMEOUT {
+                return Err("HTTP message deadline exceeded".to_owned());
+            }
+            let count = stream.read(&mut chunk).map_err(|error| error.to_string())?;
+            if count == 0 {
+                break;
+            }
+            if count > limit.saturating_sub(body.len()) {
+                return Err("HTTP body exceeds its bound".to_owned());
+            }
+            body.extend_from_slice(&chunk[..count]);
+        }
     }
-    Ok((
-        start,
-        headers,
-        bytes[header_end..header_end + content_length].to_vec(),
-    ))
+    if started.elapsed() > IO_TIMEOUT {
+        return Err("HTTP message deadline exceeded".to_owned());
+    }
+    Ok((start, headers, body))
+}
+
+fn stream_body(
+    upstream: &mut impl Read,
+    downstream: &mut impl Write,
+    content_length: Option<usize>,
+    chunked: bool,
+    started: Instant,
+) -> Result<(), String> {
+    if content_length.is_some_and(|length| length > MAX_RESPONSE) {
+        return Err("stream body exceeds its bound".to_owned());
+    }
+    let mut total = 0_usize;
+    let mut remaining = content_length;
+    let mut buffer = [0_u8; 4096];
+    loop {
+        if started.elapsed() >= Duration::from_secs(300) {
+            return Err("stream lifetime exceeded".to_owned());
+        }
+        let mut chunk_remaining = if chunked {
+            let line = bounded_line(upstream, 1024, Instant::now())?;
+            let size = std::str::from_utf8(&line).map_err(|_| "invalid stream chunk size")?;
+            if size.is_empty() || !size.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                return Err("invalid stream chunk size".to_owned());
+            }
+            let size = usize::from_str_radix(size, 16).map_err(|_| "invalid stream chunk size")?;
+            if size == 0 {
+                if !bounded_line(upstream, MAX_HEADERS, Instant::now())?.is_empty() {
+                    return Err("stream trailers are not accepted".to_owned());
+                }
+                break;
+            }
+            Some(size)
+        } else {
+            remaining
+        };
+        if chunk_remaining == Some(0) {
+            break;
+        }
+        if chunk_remaining.is_some_and(|size| size > MAX_RESPONSE.saturating_sub(total)) {
+            return Err("stream body exceeds its bound".to_owned());
+        }
+        loop {
+            if started.elapsed() >= Duration::from_secs(300) {
+                return Err("stream lifetime exceeded".to_owned());
+            }
+            let maximum = chunk_remaining.map_or(buffer.len(), |left| left.min(buffer.len()));
+            let count = upstream
+                .read(&mut buffer[..maximum])
+                .map_err(|error| error.to_string())?;
+            if count == 0 {
+                if chunk_remaining.is_some() {
+                    return Err("stream body is truncated".to_owned());
+                }
+                downstream
+                    .write_all(b"0\r\n\r\n")
+                    .and_then(|()| downstream.flush())
+                    .map_err(|error| error.to_string())?;
+                return Ok(());
+            }
+            total = total.checked_add(count).ok_or("stream body bound")?;
+            if total > MAX_RESPONSE {
+                return Err("stream body exceeds its bound".to_owned());
+            }
+            write!(downstream, "{count:x}\r\n").map_err(|error| error.to_string())?;
+            downstream
+                .write_all(&buffer[..count])
+                .and_then(|()| downstream.write_all(b"\r\n"))
+                .and_then(|()| downstream.flush())
+                .map_err(|error| error.to_string())?;
+            if let Some(left) = chunk_remaining.as_mut() {
+                *left -= count;
+                if *left == 0 {
+                    break;
+                }
+            }
+        }
+        if chunked {
+            if !bounded_line(upstream, 2, Instant::now())?.is_empty() {
+                return Err("invalid stream chunk terminator".to_owned());
+            }
+        } else {
+            remaining = Some(0);
+        }
+    }
+    downstream
+        .write_all(b"0\r\n\r\n")
+        .and_then(|()| downstream.flush())
+        .map_err(|error| error.to_string())
 }
 
 /// # Errors
@@ -820,21 +1212,52 @@ pub fn write_response_connection_with_origin(
     origin: Option<&str>,
 ) -> Result<(), String> {
     let cors = match origin {
-        Some(origin) if origin.bytes().all(|b| b.is_ascii_graphic()) => format!("Access-Control-Allow-Origin: {origin}\r\nVary: Origin\r\nAccess-Control-Allow-Credentials: true\r\nAccess-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization, Idempotency-Key, X-Agent-Key, X-Agent-Nonce, X-Agent-Expires, X-Agent-Signature, X-Trace-Id\r\n"),
+        Some(origin) if origin.bytes().all(|b| b.is_ascii_graphic()) => format!("Access-Control-Allow-Origin: {origin}\r\nVary: Origin\r\nAccess-Control-Allow-Credentials: true\r\nAccess-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization, Idempotency-Key, X-Agent-Key, X-Agent-Nonce, X-Agent-Expires, X-Agent-Signature, X-Trace-Id, X-CSRF-Token, X-LayerX-CSRF, X-LayerX-Trace, LayerX-Payer-DID, X-LayerX-Wallet-Binding, Payment-Signature, X-Payment, Last-Event-ID\r\nAccess-Control-Expose-Headers: Payment-Required, Payment-Response, X-Payment-Response, Retry-After, Content-Disposition\r\n"),
         Some(_) => return Err("invalid CORS origin".to_owned()),
         None => String::new(),
     };
+    if !response
+        .content_type
+        .bytes()
+        .all(|byte| byte.is_ascii_graphic() || byte == b' ')
+    {
+        return Err("invalid response content type".to_owned());
+    }
+    let content_type = if response.content_type.is_empty() {
+        String::new()
+    } else {
+        format!("Content-Type: {}\r\n", response.content_type)
+    };
+    let mut forwarded = String::new();
+    for (name, value) in &response.headers {
+        if !response_header_is_forwardable(name)
+            || !value
+                .bytes()
+                .all(|byte| byte.is_ascii_graphic() || byte == b' ' || byte == b'\t')
+        {
+            return Err("invalid response header".to_owned());
+        }
+        write!(forwarded, "{name}: {value}\r\n").map_err(|error| error.to_string())?;
+        if forwarded.len() > MAX_HEADERS {
+            return Err("response headers exceed their bound".to_owned());
+        }
+    }
     let reason = match response.status {
         200 => "OK",
         201 => "Created",
         202 => "Accepted",
+        204 => "No Content",
+        302 => "Found",
+        304 => "Not Modified",
         400 => "Bad Request",
         401 => "Unauthorized",
+        402 => "Payment Required",
         403 => "Forbidden",
         404 => "Not Found",
         409 => "Conflict",
         415 => "Unsupported Media Type",
         429 => "Too Many Requests",
+        502 => "Bad Gateway",
         503 => "Service Unavailable",
         _ => "Error",
     };
@@ -844,7 +1267,7 @@ pub fn write_response_connection_with_origin(
     let connection = if keep_alive { "keep-alive" } else { "close" };
     write!(
         stream,
-        "HTTP/1.1 {} {reason}\r\nContent-Type: application/json\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n{cors}{retry}Content-Length: {}\r\nConnection: {connection}\r\n\r\n",
+        "HTTP/1.1 {} {reason}\r\n{content_type}Cache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n{cors}{retry}{forwarded}Content-Length: {}\r\nConnection: {connection}\r\n\r\n",
         response.status,
         response.body.len()
     )
@@ -853,4 +1276,72 @@ pub fn write_response_connection_with_origin(
         .write_all(&response.body)
         .map_err(|error| error.to_string())?;
     stream.flush().map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn ingress_preserves_query_and_unconsumed_websocket_bytes() {
+        let wire = b"GET /rpc/ws?cursor=1%2F2 HTTP/1.1\r\nHost: gateway.example\r\n\r\n\x81\x00";
+        let mut reader = Cursor::new(wire);
+        let request = read_request(&mut reader, 4096).unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(request.path, "/rpc/ws?cursor=1%2F2");
+        assert_eq!(reader.position(), (wire.len() - 2) as u64);
+        for target in ["/v1?x=%", "/v1?x=%GG", "/v1?x=#fragment", "/v1?x=\r\n"] {
+            assert!(split_target(target).is_err());
+        }
+    }
+
+    #[test]
+    fn upstream_chunked_body_and_repeated_cookies_are_preserved() {
+        let mut reader = Cursor::new(b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nSet-Cookie: a=1; Secure\r\nSet-Cookie: b=2; Secure\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nok\r\n0\r\n\r\n");
+        let response = read_response(&mut reader).unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(response.body, b"ok");
+        assert_eq!(response.content_type, "text/plain");
+        assert_eq!(response.headers.len(), 2);
+        assert_eq!(response.headers[0].1, "a=1; Secure");
+        assert_eq!(response.headers[1].1, "b=2; Secure");
+    }
+
+    #[test]
+    fn conflicting_framing_and_ingress_duplicates_remain_refused() {
+        for wire in [
+            &b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n"
+                [..],
+            &b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nContent-Length: 2\r\n\r\nok"[..],
+            &b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nFFFFFFF\r\n"[..],
+        ] {
+            assert!(read_response(&mut Cursor::new(wire)).is_err());
+        }
+        for wire in [
+            &b"GET / HTTP/1.1\r\nHost: a\r\nHost: b\r\n\r\n"[..],
+            &b"POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n"[..],
+        ] {
+            assert!(read_request(&mut Cursor::new(wire), 4096).is_err());
+        }
+    }
+
+    #[test]
+    fn response_serialization_preserves_content_type_and_cookie_headers() {
+        let response = OutgoingResponse {
+            status: 200,
+            content_type: "text/plain".to_owned(),
+            headers: vec![
+                ("set-cookie".to_owned(), "a=1; Secure".to_owned()),
+                ("set-cookie".to_owned(), "b=2; Secure".to_owned()),
+            ],
+            body: b"ok".to_vec(),
+            retry_after: None,
+        };
+        let mut bytes = Vec::new();
+        write_response(&mut bytes, &response).unwrap_or_else(|error| panic!("{error}"));
+        let parsed =
+            read_response(&mut Cursor::new(bytes)).unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(parsed.headers, response.headers);
+        assert_eq!(parsed.content_type, response.content_type);
+        assert_eq!(parsed.body, response.body);
+    }
 }

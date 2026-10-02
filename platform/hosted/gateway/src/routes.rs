@@ -344,6 +344,7 @@ impl Registry {
 }
 
 fn matches_path(template: &str, path: &str) -> bool {
+    let path = path.split_once('?').map_or(path, |(path, _)| path);
     if !safe_path(path) {
         return false;
     }
@@ -367,6 +368,8 @@ pub(super) fn route(config: &Config, request: &IncomingRequest) -> Option<Outgoi
     if request.method == "OPTIONS" {
         return Some(if config.routes.origin(request).is_some() {
             OutgoingResponse {
+                content_type: "application/json".to_owned(),
+                headers: Vec::new(),
                 status: 204,
                 body: Vec::new(),
                 retry_after: None,
@@ -433,7 +436,9 @@ pub(super) fn route(config: &Config, request: &IncomingRequest) -> Option<Outgoi
     if private(id) {
         return Some(response(403, "private_service", None));
     }
-    if entry["authentication"] != "public" && !request.headers.contains_key("authorization") {
+    if entry["authentication"] == "gateway-api-key"
+        && !request.headers.contains_key("authorization")
+    {
         return Some(response(401, "authentication_required", None));
     }
     if let Err(reason) = config.routes.health(config, id) {
@@ -447,32 +452,34 @@ pub(super) fn route(config: &Config, request: &IncomingRequest) -> Option<Outgoi
         Ok(endpoint) => endpoint,
         Err(_) => return Some(response(503, "invalid_upstream", None)),
     };
-    let authorization = request
-        .headers
-        .get("authorization")
-        .map_or("", String::as_str);
+    let authorization = if matches!(
+        id,
+        "human" | "wallet-gateway" | "interop" | "ramp" | "webhooks-dashboard"
+    ) {
+        request
+            .headers
+            .get("authorization")
+            .map_or("", String::as_str)
+    } else {
+        ""
+    };
     let forwarded: Vec<_> = request
         .headers
         .iter()
-        .filter(|(name, _)| {
-            matches!(
-                name.as_str(),
-                "x-agent-key"
-                    | "x-agent-nonce"
-                    | "x-agent-expires"
-                    | "x-agent-signature"
-                    | "x-trace-id"
-            )
-        })
+        .filter(|(name, _)| forward_header(id, name))
         .map(|(name, value)| (name.as_str(), value.as_str()))
         .collect();
+    let upstream_path = match routed_path(entry, &request.path) {
+        Some(path) => path,
+        None => return Some(response(400, "invalid_route_target", None)),
+    };
     Some(
         match config.client.request_forwarded(
             &endpoint,
             authorization,
             &http::OutboundRequest {
                 method: &request.method,
-                path: &request.path,
+                path: &upstream_path,
                 idempotency: request.headers.get("idempotency-key").map(String::as_str),
                 content_type: request
                     .headers
@@ -482,15 +489,171 @@ pub(super) fn route(config: &Config, request: &IncomingRequest) -> Option<Outgoi
             },
             &forwarded,
         ) {
-            Ok(reply) if reply.content_type == "application/json" => OutgoingResponse {
+            Ok(reply) => OutgoingResponse {
                 status: reply.status,
+                content_type: reply.content_type,
+                headers: reply
+                    .headers
+                    .into_iter()
+                    .filter(|(name, _)| response_header(id, name))
+                    .collect(),
                 body: reply.body,
                 retry_after: None,
             },
-            Ok(_) => response(502, "invalid_upstream_content_type", None),
             Err(_) => response(503, "upstream_unavailable", None),
         },
     )
+}
+
+pub(super) fn stream(
+    config: &Config,
+    request: &IncomingRequest,
+    downstream: &mut impl std::io::Write,
+) -> Option<Result<(), String>> {
+    if request.method != "GET" {
+        return None;
+    }
+    let entry = catalogue()["routes"].as_array()?.iter().find(|entry| {
+        entry["proxy"] == true
+            && entry["service"] == "human"
+            && entry["method"] == "GET"
+            && entry.get("upstream_path").unwrap_or(&entry["path"]) == "/v1/stream/{cursor}"
+            && entry["path"]
+                .as_str()
+                .is_some_and(|path| matches_path(path, &request.path))
+    })?;
+    let refusal = if request.headers.contains_key("x-layerx-principal")
+        || request.headers.contains_key("x-layerx-api-key")
+    {
+        Some(response(400, "untrusted_identity_header", None))
+    } else if request.headers.contains_key("origin") && config.routes.origin(request).is_none() {
+        Some(response(403, "origin_not_allowed", None))
+    } else if let Err(reason) = config.routes.health(config, "human") {
+        Some(json_response(
+            503,
+            &json!({"error":{"code":"route_unavailable","service":"human","reason":reason}}),
+        ))
+    } else {
+        None
+    };
+    if let Some(refusal) = refusal {
+        return Some(http::write_response_connection_with_origin(
+            downstream,
+            &refusal,
+            false,
+            config.routes.origin(request),
+        ));
+    }
+    let binding = config.routes.bindings.get("human")?;
+    let endpoint = match http::Endpoint::parse(&binding.url) {
+        Ok(endpoint) => endpoint,
+        Err(error) => return Some(Err(error)),
+    };
+    let Some(path) = routed_path(entry, &request.path) else {
+        return Some(Err("invalid stream route target".into()));
+    };
+    let authorization = request
+        .headers
+        .get("authorization")
+        .map_or("", String::as_str);
+    let forwarded: Vec<_> = request
+        .headers
+        .iter()
+        .filter(|(name, _)| forward_header("human", name))
+        .map(|(name, value)| (name.as_str(), value.as_str()))
+        .collect();
+    Some(
+        config.client.stream_forwarded(
+            &endpoint,
+            authorization,
+            &http::OutboundRequest {
+                method: "GET",
+                path: &path,
+                idempotency: None,
+                content_type: request
+                    .headers
+                    .get("content-type")
+                    .map_or("application/json", String::as_str),
+                body: &request.body,
+            },
+            &forwarded,
+            downstream,
+            config.routes.origin(request),
+        ),
+    )
+}
+
+fn routed_path(entry: &Value, target: &str) -> Option<String> {
+    let (path, query) = target
+        .split_once('?')
+        .map_or((target, None), |(p, q)| (p, Some(q)));
+    let template = entry["path"].as_str()?;
+    let upstream = entry
+        .get("upstream_path")
+        .and_then(Value::as_str)
+        .unwrap_or(template);
+    let expected: Vec<_> = template.split('/').collect();
+    let actual: Vec<_> = path.split('/').collect();
+    if expected.len() != actual.len() {
+        return None;
+    }
+    let parameters: BTreeMap<_, _> = expected
+        .iter()
+        .zip(actual)
+        .filter(|(part, _)| part.starts_with(':') || part.starts_with('{'))
+        .map(|(key, value)| (*key, value))
+        .collect();
+    let rewritten = upstream
+        .split('/')
+        .map(|part| parameters.get(part).copied().unwrap_or(part))
+        .collect::<Vec<_>>()
+        .join("/");
+    if !safe_path(&rewritten) {
+        return None;
+    }
+    Some(match query {
+        Some(query) => format!("{rewritten}?{query}"),
+        None => rewritten,
+    })
+}
+
+fn forward_header(service: &str, name: &str) -> bool {
+    if matches!(name, "accept" | "x-trace-id" | "x-layerx-trace") {
+        return true;
+    }
+    match service {
+        "human" => matches!(
+            name,
+            "cookie" | "x-layerx-csrf" | "x-layerx-wallet-binding" | "origin" | "last-event-id"
+        ),
+        "wallet-gateway" => matches!(
+            name,
+            "x-agent-key" | "x-agent-nonce" | "x-agent-expires" | "x-agent-signature" | "origin"
+        ),
+        "search-web" => matches!(
+            name,
+            "payment-signature" | "layerx-payer-did" | "x-payment" | "origin"
+        ),
+        "interop" => matches!(name, "payment-signature" | "x-payment" | "origin"),
+        "webhooks-dashboard" => {
+            matches!(name, "cookie" | "x-csrf-token" | "x-layerx-csrf" | "origin")
+        }
+        "gas" | "ramp" => name == "origin",
+        _ => false,
+    }
+}
+
+fn response_header(service: &str, name: &str) -> bool {
+    match name {
+        "set-cookie" => matches!(service, "human" | "webhooks-dashboard"),
+        "payment-required" | "payment-response" | "x-payment-response" => {
+            matches!(service, "search-web" | "interop")
+        }
+        "last-event-id" => service == "human",
+        "content-disposition" => matches!(service, "human" | "search-web"),
+        "retry-after" | "www-authenticate" => true,
+        _ => false,
+    }
 }
 
 fn tunnel_bytes(

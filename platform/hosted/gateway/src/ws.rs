@@ -389,6 +389,10 @@ fn notification(
 }
 
 fn valid_upgrade(request: &IncomingRequest) -> Option<String> {
+    valid_upgrade_origin(request, false)
+}
+
+fn valid_upgrade_origin(request: &IncomingRequest, allowed_origin: bool) -> Option<String> {
     let header = |name: &str| request.headers.get(name).map_or("", String::as_str);
     if request.method != "GET"
         || !request.body.is_empty()
@@ -397,7 +401,7 @@ fn valid_upgrade(request: &IncomingRequest) -> Option<String> {
             .split(',')
             .any(|s| s.trim().eq_ignore_ascii_case("upgrade"))
         || header("sec-websocket-version") != "13"
-        || request.headers.contains_key("origin")
+        || (request.headers.contains_key("origin") && !allowed_origin)
     {
         return None;
     }
@@ -425,7 +429,11 @@ pub(super) fn serve<S: Connection>(
     request: &IncomingRequest,
     stream: &mut S,
 ) -> Result<(), String> {
-    let Some(accept) = valid_upgrade(request) else {
+    let Some(accept) = (if config.routes.origin(request).is_some() {
+        valid_upgrade_origin(request, true)
+    } else {
+        valid_upgrade(request)
+    }) else {
         return http::write_response(
             stream,
             &super::response(400, "invalid_websocket_upgrade", None),
@@ -891,7 +899,11 @@ pub(super) fn serve_evm<S: Connection>(
     request: &IncomingRequest,
     stream: &mut S,
 ) -> Result<(), String> {
-    let Some(accept) = valid_upgrade(request) else {
+    let Some(accept) = (if config.routes.origin(request).is_some() {
+        valid_upgrade_origin(request, true)
+    } else {
+        valid_upgrade(request)
+    }) else {
         return http::write_response(
             stream,
             &super::response(400, "invalid_websocket_upgrade", None),
@@ -976,6 +988,11 @@ pub(super) fn serve_evm<S: Connection>(
         || !fields
             .get("upgrade")
             .is_some_and(|v| v.eq_ignore_ascii_case("websocket"))
+        || !fields.get("connection").is_some_and(|value| {
+            value
+                .split(',')
+                .any(|token| token.trim().eq_ignore_ascii_case("upgrade"))
+        })
         || fields.contains_key("sec-websocket-extensions")
     {
         return Err("upstream upgrade identity mismatch".into());
