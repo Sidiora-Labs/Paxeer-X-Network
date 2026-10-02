@@ -21756,7 +21756,7 @@ do_1 = "Route both framing branches through the deterministic validator with cur
 do_2 = "Add native module deployment negatives for header-valid malformed bodies and each deterministic bound; assert artifact/lifecycle rollback and canonical typed refusal."
 do_3 = "Author the new focused harness tools/qualification/paxeer-x/programs_all_form_validation.py to exercise these acceptance cases against real production implementations and types. It must fail on missing candidate artifacts, missing authority/configuration, skipped cases or unverifiable receipts; retain the exact candidate revision, command, case results and evidence paths. Use disposable qualification state and provisioned authority without printing secret values; no mocks, synthetic success or substitution of a library-only model for a named process boundary."
 do_4 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["src/modules/programs/deploy.c", "src/modules/programs/artifact.c", "src/modules/programs/registration.c", "programs/crates/layerx-programs-runtime/src/engine.rs", "tests/programs/test_lifecycle.c", "tools/qualification/paxeer-x/programs_all_form_validation.py", "include/layerx/programs.h"]
+touches = ["src/modules/programs/deploy.c", "src/modules/programs/artifact.c", "src/modules/programs/registration.c", "programs/crates/layerx-programs-runtime/src/engine.rs", "tests/programs/test_lifecycle.c", "tools/qualification/paxeer-x/programs_all_form_validation.py", "include/layerx/programs.h", "programs/crates/layerx-programs-runtime/src/ffi.rs", "programs/crates/layerx-programs-runtime/src/lib.rs", "tests/daemon/lxp_test_runtime_fixture.c"]
 verify_cmd = "timeout 30m python3 tools/qualification/paxeer-x/programs_all_form_validation.py"
 gate_kind = "planned"
 max_builds = 1
@@ -21780,7 +21780,7 @@ do_1 = "Carry verified deployment ABI through hosted request handling, SourceVer
 do_2 = "Exercise real reproducible artifacts using ABI-specific imports and negative deployment/evidence bindings through the hosted boundary."
 do_3 = "Author the new focused harness tools/qualification/paxeer-x/programs_source_abi.py to exercise these acceptance cases against real production implementations and types. It must fail on missing candidate artifacts, missing authority/configuration, skipped cases or unverifiable receipts; retain the exact candidate revision, command, case results and evidence paths. Use disposable qualification state and provisioned authority without printing secret values; no mocks, synthetic success or substitution of a library-only model for a named process boundary."
 do_4 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["programs/crates/layerx-programs-registry/src/pipeline.rs", "programs/crates/layerx-programs-registry/src/resolver.rs", "programs/crates/layerx-programs-runtime/src/engine.rs", "platform/hosted/registry/src/routes.rs", "tools/qualification/paxeer-x/programs_source_abi.py"]
+touches = ["programs/crates/layerx-programs-registry/src/pipeline.rs", "programs/crates/layerx-programs-registry/src/resolver.rs", "programs/crates/layerx-programs-runtime/src/engine.rs", "platform/hosted/registry/src/routes.rs", "tools/qualification/paxeer-x/programs_source_abi.py", "platform/hosted/registry/src/verified.rs", "programs/crates/layerx-programs-registry/src/authority.rs"]
 verify_cmd = "timeout 30m python3 tools/qualification/paxeer-x/programs_source_abi.py"
 gate_kind = "planned"
 max_builds = 1
@@ -22223,7 +22223,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.15.5]
 title = "Bootstrap registry identity before router activation with an acyclic dependency order"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
