@@ -698,6 +698,8 @@ pub(super) fn route(config: &Config, request: &IncomingRequest) -> OutgoingRespo
     if request.path == "/rpc/schema" {
         return if request.method == "GET" {
             OutgoingResponse {
+                content_type: "application/json".to_owned(),
+                headers: Vec::new(),
                 status: 200,
                 body: include_bytes!("../openrpc.json").to_vec(),
                 retry_after: None,
@@ -734,6 +736,8 @@ pub(super) fn route(config: &Config, request: &IncomingRequest) -> OutgoingRespo
     };
     result.map_or_else(
         || OutgoingResponse {
+            content_type: "application/json".to_owned(),
+            headers: Vec::new(),
             status: 204,
             body: Vec::new(),
             retry_after: None,
@@ -1086,6 +1090,8 @@ mod tests {
             read_response(
                 &json!(7),
                 &OutgoingResponse {
+                    content_type: "application/json".to_owned(),
+                    headers: Vec::new(),
                     status: 200,
                     body: b"invalid".to_vec(),
                     retry_after: None

@@ -144,7 +144,11 @@
       "dependencies": "Identity, security, policy, movement, KMS, kernel and internal events",
       "aliases": [],
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "transports": [
+        "authenticated-discovery",
+        "http"
+      ]
     },
     {
       "id": "human-kms",
@@ -379,7 +383,11 @@
       "dependencies": "Internal event sources, receipt validation, durable delivery and identity",
       "aliases": [],
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "transports": [
+        "authenticated-discovery",
+        "http"
+      ]
     },
     {
       "id": "interop",
@@ -459,7 +467,11 @@
       "dependencies": "Provider configuration, honest custody labels and durable journal",
       "aliases": [],
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "transports": [
+        "authenticated-discovery",
+        "http"
+      ]
     },
     {
       "id": "search-web",
@@ -479,7 +491,11 @@
       "dependencies": "Exact pricing, durable payment delivery, serving sidecars and xweb attestations",
       "aliases": [],
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "transports": [
+        "authenticated-discovery",
+        "http"
+      ]
     },
     {
       "id": "xweb-attestors",
@@ -519,7 +535,11 @@
       "dependencies": "Rate publisher, delegation, paymaster, funded sponsor and durable reservations",
       "aliases": [],
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "transports": [
+        "authenticated-discovery",
+        "http"
+      ]
     },
     {
       "id": "bridge",
@@ -2260,10 +2280,10 @@
       "connect_timeout_seconds": 3
     },
     {
-      "id": "human:GET:/v1/account/balance",
+      "id": "human:GET:/human/v1/account/balance",
       "service": "human",
       "method": "GET",
-      "path": "/v1/account/balance",
+      "path": "/human/v1/account/balance",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -2276,15 +2296,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/home.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/account/balance"
     },
     {
-      "id": "human:GET:/v1/home",
+      "id": "human:GET:/human/v1/home",
       "service": "human",
       "method": "GET",
-      "path": "/v1/home",
+      "path": "/human/v1/home",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -2297,15 +2318,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/home.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/home"
     },
     {
-      "id": "human:GET:/v1/version",
+      "id": "human:GET:/human/v1/version",
       "service": "human",
       "method": "GET",
-      "path": "/v1/version",
+      "path": "/human/v1/version",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -2318,15 +2340,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/v1.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/version"
     },
     {
-      "id": "human:POST:/v1/moves/quote",
+      "id": "human:POST:/human/v1/moves/quote",
       "service": "human",
       "method": "POST",
-      "path": "/v1/moves/quote",
+      "path": "/human/v1/moves/quote",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -2339,15 +2362,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/movement.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/moves/quote"
     },
     {
-      "id": "human:POST:/v1/moves",
+      "id": "human:POST:/human/v1/moves",
       "service": "human",
       "method": "POST",
-      "path": "/v1/moves",
+      "path": "/human/v1/moves",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -2360,15 +2384,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/movement.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/moves"
     },
     {
-      "id": "human:POST:/v1/deposits",
+      "id": "human:POST:/human/v1/deposits",
       "service": "human",
       "method": "POST",
-      "path": "/v1/deposits",
+      "path": "/human/v1/deposits",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -2381,15 +2406,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/movement.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/deposits"
     },
     {
-      "id": "human:POST:/v1/deposits/{journey_id}/confirm",
+      "id": "human:POST:/human/v1/deposits/{journey_id}/confirm",
       "service": "human",
       "method": "POST",
-      "path": "/v1/deposits/{journey_id}/confirm",
+      "path": "/human/v1/deposits/{journey_id}/confirm",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -2402,15 +2428,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/movement.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/deposits/{journey_id}/confirm"
     },
     {
-      "id": "human:POST:/v1/withdrawals",
+      "id": "human:POST:/human/v1/withdrawals",
       "service": "human",
       "method": "POST",
-      "path": "/v1/withdrawals",
+      "path": "/human/v1/withdrawals",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -2423,15 +2450,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/movement.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/withdrawals"
     },
     {
-      "id": "human:POST:/v1/withdrawals/{journey_id}/claim",
+      "id": "human:POST:/human/v1/withdrawals/{journey_id}/claim",
       "service": "human",
       "method": "POST",
-      "path": "/v1/withdrawals/{journey_id}/claim",
+      "path": "/human/v1/withdrawals/{journey_id}/claim",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -2444,15 +2472,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/movement.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/withdrawals/{journey_id}/claim"
     },
     {
-      "id": "human:POST:/v1/exit",
+      "id": "human:POST:/human/v1/exit",
       "service": "human",
       "method": "POST",
-      "path": "/v1/exit",
+      "path": "/human/v1/exit",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -2465,15 +2494,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/movement.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/exit"
     },
     {
-      "id": "human:GET:/v1/exit/eligibility",
+      "id": "human:GET:/human/v1/exit/eligibility",
       "service": "human",
       "method": "GET",
-      "path": "/v1/exit/eligibility",
+      "path": "/human/v1/exit/eligibility",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -2486,15 +2516,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/movement.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/exit/eligibility"
     },
     {
-      "id": "human:POST:/v1/accounts",
+      "id": "human:POST:/human/v1/accounts",
       "service": "human",
       "method": "POST",
-      "path": "/v1/accounts",
+      "path": "/human/v1/accounts",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -2507,15 +2538,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/accounts"
     },
     {
-      "id": "human:POST:/v1/passkeys/registrations",
+      "id": "human:POST:/human/v1/passkeys/registrations",
       "service": "human",
       "method": "POST",
-      "path": "/v1/passkeys/registrations",
+      "path": "/human/v1/passkeys/registrations",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -2528,15 +2560,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/passkeys/registrations"
     },
     {
-      "id": "human:POST:/v1/passkeys/registrations/{registration_id}",
+      "id": "human:POST:/human/v1/passkeys/registrations/{registration_id}",
       "service": "human",
       "method": "POST",
-      "path": "/v1/passkeys/registrations/{registration_id}",
+      "path": "/human/v1/passkeys/registrations/{registration_id}",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -2549,15 +2582,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/passkeys/registrations/{registration_id}"
     },
     {
-      "id": "human:POST:/v1/passkeys/assertions",
+      "id": "human:POST:/human/v1/passkeys/assertions",
       "service": "human",
       "method": "POST",
-      "path": "/v1/passkeys/assertions",
+      "path": "/human/v1/passkeys/assertions",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -2570,15 +2604,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/passkeys/assertions"
     },
     {
-      "id": "human:POST:/v1/passkeys/assertions/{assertion_id}",
+      "id": "human:POST:/human/v1/passkeys/assertions/{assertion_id}",
       "service": "human",
       "method": "POST",
-      "path": "/v1/passkeys/assertions/{assertion_id}",
+      "path": "/human/v1/passkeys/assertions/{assertion_id}",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -2591,15 +2626,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/passkeys/assertions/{assertion_id}"
     },
     {
-      "id": "human:GET:/v1/sessions/fee-policy",
+      "id": "human:GET:/human/v1/sessions/fee-policy",
       "service": "human",
       "method": "GET",
-      "path": "/v1/sessions/fee-policy",
+      "path": "/human/v1/sessions/fee-policy",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -2612,15 +2648,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/sessions/fee-policy"
     },
     {
-      "id": "human:POST:/v1/sessions",
+      "id": "human:POST:/human/v1/sessions",
       "service": "human",
       "method": "POST",
-      "path": "/v1/sessions",
+      "path": "/human/v1/sessions",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -2633,15 +2670,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/sessions"
     },
     {
-      "id": "human:POST:/v1/sessions/refresh",
+      "id": "human:POST:/human/v1/sessions/refresh",
       "service": "human",
       "method": "POST",
-      "path": "/v1/sessions/refresh",
+      "path": "/human/v1/sessions/refresh",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -2654,15 +2692,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/sessions/refresh"
     },
     {
-      "id": "human:GET:/v1/sessions",
+      "id": "human:GET:/human/v1/sessions",
       "service": "human",
       "method": "GET",
-      "path": "/v1/sessions",
+      "path": "/human/v1/sessions",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -2675,15 +2714,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/sessions"
     },
     {
-      "id": "human:DELETE:/v1/sessions/{session_id}",
+      "id": "human:DELETE:/human/v1/sessions/{session_id}",
       "service": "human",
       "method": "DELETE",
-      "path": "/v1/sessions/{session_id}",
+      "path": "/human/v1/sessions/{session_id}",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -2696,15 +2736,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/sessions/{session_id}"
     },
     {
-      "id": "human:POST:/v1/sessions/revoke-all",
+      "id": "human:POST:/human/v1/sessions/revoke-all",
       "service": "human",
       "method": "POST",
-      "path": "/v1/sessions/revoke-all",
+      "path": "/human/v1/sessions/revoke-all",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -2717,15 +2758,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/sessions/revoke-all"
     },
     {
-      "id": "human:POST:/v1/step-up",
+      "id": "human:POST:/human/v1/step-up",
       "service": "human",
       "method": "POST",
-      "path": "/v1/step-up",
+      "path": "/human/v1/step-up",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -2738,15 +2780,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/step-up"
     },
     {
-      "id": "human:POST:/v1/step-up/{challenge_id}",
+      "id": "human:POST:/human/v1/step-up/{challenge_id}",
       "service": "human",
       "method": "POST",
-      "path": "/v1/step-up/{challenge_id}",
+      "path": "/human/v1/step-up/{challenge_id}",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -2759,15 +2802,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/step-up/{challenge_id}"
     },
     {
-      "id": "human:POST:/v1/security/actions",
+      "id": "human:POST:/human/v1/security/actions",
       "service": "human",
       "method": "POST",
-      "path": "/v1/security/actions",
+      "path": "/human/v1/security/actions",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -2780,15 +2824,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/security/actions"
     },
     {
-      "id": "human:GET:/v1/security/passkeys",
+      "id": "human:GET:/human/v1/security/passkeys",
       "service": "human",
       "method": "GET",
-      "path": "/v1/security/passkeys",
+      "path": "/human/v1/security/passkeys",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -2801,15 +2846,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/security/passkeys"
     },
     {
-      "id": "human:POST:/v1/security/passkeys/registrations",
+      "id": "human:POST:/human/v1/security/passkeys/registrations",
       "service": "human",
       "method": "POST",
-      "path": "/v1/security/passkeys/registrations",
+      "path": "/human/v1/security/passkeys/registrations",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -2822,15 +2868,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/security/passkeys/registrations"
     },
     {
-      "id": "human:POST:/v1/security/passkeys/registrations/{registration_id}",
+      "id": "human:POST:/human/v1/security/passkeys/registrations/{registration_id}",
       "service": "human",
       "method": "POST",
-      "path": "/v1/security/passkeys/registrations/{registration_id}",
+      "path": "/human/v1/security/passkeys/registrations/{registration_id}",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -2843,15 +2890,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/security/passkeys/registrations/{registration_id}"
     },
     {
-      "id": "human:POST:/v1/security/passkeys/{passkey_id}/revoke",
+      "id": "human:POST:/human/v1/security/passkeys/{passkey_id}/revoke",
       "service": "human",
       "method": "POST",
-      "path": "/v1/security/passkeys/{passkey_id}/revoke",
+      "path": "/human/v1/security/passkeys/{passkey_id}/revoke",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -2864,15 +2912,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/security/passkeys/{passkey_id}/revoke"
     },
     {
-      "id": "human:POST:/v1/security/sessions/{session_id}/revoke",
+      "id": "human:POST:/human/v1/security/sessions/{session_id}/revoke",
       "service": "human",
       "method": "POST",
-      "path": "/v1/security/sessions/{session_id}/revoke",
+      "path": "/human/v1/security/sessions/{session_id}/revoke",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -2885,15 +2934,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/security/sessions/{session_id}/revoke"
     },
     {
-      "id": "human:POST:/v1/security/sessions/revoke-all",
+      "id": "human:POST:/human/v1/security/sessions/revoke-all",
       "service": "human",
       "method": "POST",
-      "path": "/v1/security/sessions/revoke-all",
+      "path": "/human/v1/security/sessions/revoke-all",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -2906,15 +2956,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/security/sessions/revoke-all"
     },
     {
-      "id": "human:GET:/v1/security/authenticators",
+      "id": "human:GET:/human/v1/security/authenticators",
       "service": "human",
       "method": "GET",
-      "path": "/v1/security/authenticators",
+      "path": "/human/v1/security/authenticators",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -2927,15 +2978,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/security/authenticators"
     },
     {
-      "id": "human:POST:/v1/security/authenticators/setups",
+      "id": "human:POST:/human/v1/security/authenticators/setups",
       "service": "human",
       "method": "POST",
-      "path": "/v1/security/authenticators/setups",
+      "path": "/human/v1/security/authenticators/setups",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -2948,15 +3000,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/security/authenticators/setups"
     },
     {
-      "id": "human:POST:/v1/security/authenticators/setups/{setup_id}",
+      "id": "human:POST:/human/v1/security/authenticators/setups/{setup_id}",
       "service": "human",
       "method": "POST",
-      "path": "/v1/security/authenticators/setups/{setup_id}",
+      "path": "/human/v1/security/authenticators/setups/{setup_id}",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -2969,15 +3022,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/security/authenticators/setups/{setup_id}"
     },
     {
-      "id": "human:POST:/v1/security/authenticators/{authenticator_id}/disable",
+      "id": "human:POST:/human/v1/security/authenticators/{authenticator_id}/disable",
       "service": "human",
       "method": "POST",
-      "path": "/v1/security/authenticators/{authenticator_id}/disable",
+      "path": "/human/v1/security/authenticators/{authenticator_id}/disable",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -2990,15 +3044,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/security/authenticators/{authenticator_id}/disable"
     },
     {
-      "id": "human:POST:/v1/security/authenticators/backup-codes",
+      "id": "human:POST:/human/v1/security/authenticators/backup-codes",
       "service": "human",
       "method": "POST",
-      "path": "/v1/security/authenticators/backup-codes",
+      "path": "/human/v1/security/authenticators/backup-codes",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3011,15 +3066,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/security/authenticators/backup-codes"
     },
     {
-      "id": "human:POST:/v1/security/recovery/evidence",
+      "id": "human:POST:/human/v1/security/recovery/evidence",
       "service": "human",
       "method": "POST",
-      "path": "/v1/security/recovery/evidence",
+      "path": "/human/v1/security/recovery/evidence",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3032,15 +3088,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/security/recovery/evidence"
     },
     {
-      "id": "human:POST:/v1/security/key-export/begin",
+      "id": "human:POST:/human/v1/security/key-export/begin",
       "service": "human",
       "method": "POST",
-      "path": "/v1/security/key-export/begin",
+      "path": "/human/v1/security/key-export/begin",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3053,15 +3110,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/security/key-export/begin"
     },
     {
-      "id": "human:POST:/v1/security/key-export/finish",
+      "id": "human:POST:/human/v1/security/key-export/finish",
       "service": "human",
       "method": "POST",
-      "path": "/v1/security/key-export/finish",
+      "path": "/human/v1/security/key-export/finish",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3074,15 +3132,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/security/key-export/finish"
     },
     {
-      "id": "human:GET:/v1/onboarding",
+      "id": "human:GET:/human/v1/onboarding",
       "service": "human",
       "method": "GET",
-      "path": "/v1/onboarding",
+      "path": "/human/v1/onboarding",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3095,15 +3154,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/onboarding"
     },
     {
-      "id": "human:POST:/v1/onboarding/resume",
+      "id": "human:POST:/human/v1/onboarding/resume",
       "service": "human",
       "method": "POST",
-      "path": "/v1/onboarding/resume",
+      "path": "/human/v1/onboarding/resume",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3116,15 +3176,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/onboarding/resume"
     },
     {
-      "id": "human:POST:/v1/wallet-binding/statement",
+      "id": "human:POST:/human/v1/wallet-binding/statement",
       "service": "human",
       "method": "POST",
-      "path": "/v1/wallet-binding/statement",
+      "path": "/human/v1/wallet-binding/statement",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3137,15 +3198,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/wallet-binding/statement"
     },
     {
-      "id": "human:POST:/v1/wallet-binding",
+      "id": "human:POST:/human/v1/wallet-binding",
       "service": "human",
       "method": "POST",
-      "path": "/v1/wallet-binding",
+      "path": "/human/v1/wallet-binding",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3158,15 +3220,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/wallet-binding"
     },
     {
-      "id": "human:GET:/v1/wallet-binding",
+      "id": "human:GET:/human/v1/wallet-binding",
       "service": "human",
       "method": "GET",
-      "path": "/v1/wallet-binding",
+      "path": "/human/v1/wallet-binding",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3179,15 +3242,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/wallet-binding"
     },
     {
-      "id": "human:POST:/v1/wallet-binding/rebind/action",
+      "id": "human:POST:/human/v1/wallet-binding/rebind/action",
       "service": "human",
       "method": "POST",
-      "path": "/v1/wallet-binding/rebind/action",
+      "path": "/human/v1/wallet-binding/rebind/action",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3200,15 +3264,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/wallet-binding/rebind/action"
     },
     {
-      "id": "human:POST:/v1/wallet-binding/rebind",
+      "id": "human:POST:/human/v1/wallet-binding/rebind",
       "service": "human",
       "method": "POST",
-      "path": "/v1/wallet-binding/rebind",
+      "path": "/human/v1/wallet-binding/rebind",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3221,15 +3286,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/wallet-binding/rebind"
     },
     {
-      "id": "human:GET:/v1/profile",
+      "id": "human:GET:/human/v1/profile",
       "service": "human",
       "method": "GET",
-      "path": "/v1/profile",
+      "path": "/human/v1/profile",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3242,15 +3308,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/profile"
     },
     {
-      "id": "human:PATCH:/v1/profile",
+      "id": "human:PATCH:/human/v1/profile",
       "service": "human",
       "method": "PATCH",
-      "path": "/v1/profile",
+      "path": "/human/v1/profile",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3263,15 +3330,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/identity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/profile"
     },
     {
-      "id": "human:POST:/v1/agents",
+      "id": "human:POST:/human/v1/agents",
       "service": "human",
       "method": "POST",
-      "path": "/v1/agents",
+      "path": "/human/v1/agents",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3284,15 +3352,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/agents.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/agents"
     },
     {
-      "id": "human:GET:/v1/agents",
+      "id": "human:GET:/human/v1/agents",
       "service": "human",
       "method": "GET",
-      "path": "/v1/agents",
+      "path": "/human/v1/agents",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3305,15 +3374,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/agents.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/agents"
     },
     {
-      "id": "human:GET:/v1/agents/{agent_id}",
+      "id": "human:GET:/human/v1/agents/{agent_id}",
       "service": "human",
       "method": "GET",
-      "path": "/v1/agents/{agent_id}",
+      "path": "/human/v1/agents/{agent_id}",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3326,15 +3396,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/agents.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/agents/{agent_id}"
     },
     {
-      "id": "human:POST:/v1/agents/{agent_id}/pause",
+      "id": "human:POST:/human/v1/agents/{agent_id}/pause",
       "service": "human",
       "method": "POST",
-      "path": "/v1/agents/{agent_id}/pause",
+      "path": "/human/v1/agents/{agent_id}/pause",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3347,15 +3418,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/agents.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/agents/{agent_id}/pause"
     },
     {
-      "id": "human:POST:/v1/agents/{agent_id}/resume",
+      "id": "human:POST:/human/v1/agents/{agent_id}/resume",
       "service": "human",
       "method": "POST",
-      "path": "/v1/agents/{agent_id}/resume",
+      "path": "/human/v1/agents/{agent_id}/resume",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3368,15 +3440,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/agents.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/agents/{agent_id}/resume"
     },
     {
-      "id": "human:POST:/v1/agents/{agent_id}/limit",
+      "id": "human:POST:/human/v1/agents/{agent_id}/limit",
       "service": "human",
       "method": "POST",
-      "path": "/v1/agents/{agent_id}/limit",
+      "path": "/human/v1/agents/{agent_id}/limit",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3389,15 +3462,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/agents.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/agents/{agent_id}/limit"
     },
     {
-      "id": "human:POST:/v1/agents/{agent_id}/reclaim",
+      "id": "human:POST:/human/v1/agents/{agent_id}/reclaim",
       "service": "human",
       "method": "POST",
-      "path": "/v1/agents/{agent_id}/reclaim",
+      "path": "/human/v1/agents/{agent_id}/reclaim",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3410,15 +3484,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/agents.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/agents/{agent_id}/reclaim"
     },
     {
-      "id": "human:POST:/v1/agents/{agent_id}/rotate",
+      "id": "human:POST:/human/v1/agents/{agent_id}/rotate",
       "service": "human",
       "method": "POST",
-      "path": "/v1/agents/{agent_id}/rotate",
+      "path": "/human/v1/agents/{agent_id}/rotate",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3431,15 +3506,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/agents.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/agents/{agent_id}/rotate"
     },
     {
-      "id": "human:POST:/v1/agents/{agent_id}/rotation/disclosure",
+      "id": "human:POST:/human/v1/agents/{agent_id}/rotation/disclosure",
       "service": "human",
       "method": "POST",
-      "path": "/v1/agents/{agent_id}/rotation/disclosure",
+      "path": "/human/v1/agents/{agent_id}/rotation/disclosure",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3452,15 +3528,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/agents.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/agents/{agent_id}/rotation/disclosure"
     },
     {
-      "id": "human:POST:/v1/agents/{agent_id}/rotation",
+      "id": "human:POST:/human/v1/agents/{agent_id}/rotation",
       "service": "human",
       "method": "POST",
-      "path": "/v1/agents/{agent_id}/rotation",
+      "path": "/human/v1/agents/{agent_id}/rotation",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3473,15 +3550,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/agents.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/agents/{agent_id}/rotation"
     },
     {
-      "id": "human:POST:/v1/agents/{agent_id}/recover",
+      "id": "human:POST:/human/v1/agents/{agent_id}/recover",
       "service": "human",
       "method": "POST",
-      "path": "/v1/agents/{agent_id}/recover",
+      "path": "/human/v1/agents/{agent_id}/recover",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3494,15 +3572,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/agents.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/agents/{agent_id}/recover"
     },
     {
-      "id": "human:POST:/v1/agents/{agent_id}/archive",
+      "id": "human:POST:/human/v1/agents/{agent_id}/archive",
       "service": "human",
       "method": "POST",
-      "path": "/v1/agents/{agent_id}/archive",
+      "path": "/human/v1/agents/{agent_id}/archive",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3515,15 +3594,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/agents.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/agents/{agent_id}/archive"
     },
     {
-      "id": "human:GET:/v1/approvals",
+      "id": "human:GET:/human/v1/approvals",
       "service": "human",
       "method": "GET",
-      "path": "/v1/approvals",
+      "path": "/human/v1/approvals",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3536,15 +3616,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/agents.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/approvals"
     },
     {
-      "id": "human:GET:/v1/approvals/{approval_id}",
+      "id": "human:GET:/human/v1/approvals/{approval_id}",
       "service": "human",
       "method": "GET",
-      "path": "/v1/approvals/{approval_id}",
+      "path": "/human/v1/approvals/{approval_id}",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3557,15 +3638,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/agents.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/approvals/{approval_id}"
     },
     {
-      "id": "human:POST:/v1/approvals/{approval_id}/approve",
+      "id": "human:POST:/human/v1/approvals/{approval_id}/approve",
       "service": "human",
       "method": "POST",
-      "path": "/v1/approvals/{approval_id}/approve",
+      "path": "/human/v1/approvals/{approval_id}/approve",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3578,15 +3660,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/agents.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/approvals/{approval_id}/approve"
     },
     {
-      "id": "human:POST:/v1/approvals/{approval_id}/reject",
+      "id": "human:POST:/human/v1/approvals/{approval_id}/reject",
       "service": "human",
       "method": "POST",
-      "path": "/v1/approvals/{approval_id}/reject",
+      "path": "/human/v1/approvals/{approval_id}/reject",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3599,15 +3682,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/agents.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/approvals/{approval_id}/reject"
     },
     {
-      "id": "human:POST:/v1/intents/plan",
+      "id": "human:POST:/human/v1/intents/plan",
       "service": "human",
       "method": "POST",
-      "path": "/v1/intents/plan",
+      "path": "/human/v1/intents/plan",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3620,15 +3704,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/intent.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/intents/plan"
     },
     {
-      "id": "human:POST:/v1/intents/submit",
+      "id": "human:POST:/human/v1/intents/submit",
       "service": "human",
       "method": "POST",
-      "path": "/v1/intents/submit",
+      "path": "/human/v1/intents/submit",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3641,15 +3726,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/intent.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/intents/submit"
     },
     {
-      "id": "human:POST:/v1/stream",
+      "id": "human:POST:/human/v1/stream",
       "service": "human",
       "method": "POST",
-      "path": "/v1/stream",
+      "path": "/human/v1/stream",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3662,15 +3748,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/stream.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/stream"
     },
     {
-      "id": "human:GET:/v1/stream/{cursor}",
+      "id": "human:GET:/human/v1/stream/{cursor}",
       "service": "human",
       "method": "GET",
-      "path": "/v1/stream/{cursor}",
+      "path": "/human/v1/stream/{cursor}",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3683,15 +3770,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/stream.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/stream/{cursor}"
     },
     {
-      "id": "human:POST:/v1/activity/query",
+      "id": "human:POST:/human/v1/activity/query",
       "service": "human",
       "method": "POST",
-      "path": "/v1/activity/query",
+      "path": "/human/v1/activity/query",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3704,15 +3792,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/activity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/activity/query"
     },
     {
-      "id": "human:GET:/v1/activity/{entry_id}",
+      "id": "human:GET:/human/v1/activity/{entry_id}",
       "service": "human",
       "method": "GET",
-      "path": "/v1/activity/{entry_id}",
+      "path": "/human/v1/activity/{entry_id}",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3725,15 +3814,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/activity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/activity/{entry_id}"
     },
     {
-      "id": "human:POST:/v1/activity/exports/statement",
+      "id": "human:POST:/human/v1/activity/exports/statement",
       "service": "human",
       "method": "POST",
-      "path": "/v1/activity/exports/statement",
+      "path": "/human/v1/activity/exports/statement",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3746,15 +3836,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/activity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/activity/exports/statement"
     },
     {
-      "id": "human:POST:/v1/activity/exports/evidence",
+      "id": "human:POST:/human/v1/activity/exports/evidence",
       "service": "human",
       "method": "POST",
-      "path": "/v1/activity/exports/evidence",
+      "path": "/human/v1/activity/exports/evidence",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3767,15 +3858,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/activity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/activity/exports/evidence"
     },
     {
-      "id": "human:GET:/v1/notifications",
+      "id": "human:GET:/human/v1/notifications",
       "service": "human",
       "method": "GET",
-      "path": "/v1/notifications",
+      "path": "/human/v1/notifications",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3788,15 +3880,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/activity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/notifications"
     },
     {
-      "id": "human:POST:/v1/notifications/{notification_id}/read",
+      "id": "human:POST:/human/v1/notifications/{notification_id}/read",
       "service": "human",
       "method": "POST",
-      "path": "/v1/notifications/{notification_id}/read",
+      "path": "/human/v1/notifications/{notification_id}/read",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3809,15 +3902,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/activity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/notifications/{notification_id}/read"
     },
     {
-      "id": "human:GET:/v1/notifications/preferences",
+      "id": "human:GET:/human/v1/notifications/preferences",
       "service": "human",
       "method": "GET",
-      "path": "/v1/notifications/preferences",
+      "path": "/human/v1/notifications/preferences",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3830,15 +3924,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/activity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/notifications/preferences"
     },
     {
-      "id": "human:POST:/v1/notifications/preferences",
+      "id": "human:POST:/human/v1/notifications/preferences",
       "service": "human",
       "method": "POST",
-      "path": "/v1/notifications/preferences",
+      "path": "/human/v1/notifications/preferences",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3851,15 +3946,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/activity.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/notifications/preferences"
     },
     {
-      "id": "human:GET:/v1/evidence/{evidence_id}",
+      "id": "human:GET:/human/v1/evidence/{evidence_id}",
       "service": "human",
       "method": "GET",
-      "path": "/v1/evidence/{evidence_id}",
+      "path": "/human/v1/evidence/{evidence_id}",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3872,15 +3968,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/journeys.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/evidence/{evidence_id}"
     },
     {
-      "id": "human:GET:/v1/journeys/{journey_id}",
+      "id": "human:GET:/human/v1/journeys/{journey_id}",
       "service": "human",
       "method": "GET",
-      "path": "/v1/journeys/{journey_id}",
+      "path": "/human/v1/journeys/{journey_id}",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3893,15 +3990,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/journeys.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/journeys/{journey_id}"
     },
     {
-      "id": "human:GET:/v1/journeys",
+      "id": "human:GET:/human/v1/journeys",
       "service": "human",
       "method": "GET",
-      "path": "/v1/journeys",
+      "path": "/human/v1/journeys",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3914,15 +4012,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/journeys.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/journeys"
     },
     {
-      "id": "human:GET:/v1/support/conversations",
+      "id": "human:GET:/human/v1/support/conversations",
       "service": "human",
       "method": "GET",
-      "path": "/v1/support/conversations",
+      "path": "/human/v1/support/conversations",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3935,15 +4034,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/support.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/support/conversations"
     },
     {
-      "id": "human:POST:/v1/support/conversations",
+      "id": "human:POST:/human/v1/support/conversations",
       "service": "human",
       "method": "POST",
-      "path": "/v1/support/conversations",
+      "path": "/human/v1/support/conversations",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3956,15 +4056,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/support.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/support/conversations"
     },
     {
-      "id": "human:POST:/v1/support/conversations/{conversation_id}/replies",
+      "id": "human:POST:/human/v1/support/conversations/{conversation_id}/replies",
       "service": "human",
       "method": "POST",
-      "path": "/v1/support/conversations/{conversation_id}/replies",
+      "path": "/human/v1/support/conversations/{conversation_id}/replies",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3977,15 +4078,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/support.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/support/conversations/{conversation_id}/replies"
     },
     {
-      "id": "human:POST:/v1/support/conversations/{conversation_id}/read",
+      "id": "human:POST:/human/v1/support/conversations/{conversation_id}/read",
       "service": "human",
       "method": "POST",
-      "path": "/v1/support/conversations/{conversation_id}/read",
+      "path": "/human/v1/support/conversations/{conversation_id}/read",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -3998,15 +4100,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/support.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/support/conversations/{conversation_id}/read"
     },
     {
-      "id": "human:GET:/v1/support/conversations/{conversation_id}/status",
+      "id": "human:GET:/human/v1/support/conversations/{conversation_id}/status",
       "service": "human",
       "method": "GET",
-      "path": "/v1/support/conversations/{conversation_id}/status",
+      "path": "/human/v1/support/conversations/{conversation_id}/status",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -4019,15 +4122,16 @@
         "developer"
       ],
       "source": "human/schema/human-api/support.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/support/conversations/{conversation_id}/status"
     },
     {
-      "id": "human:POST:/v1/support/conversations/{conversation_id}/feedback",
+      "id": "human:POST:/human/v1/support/conversations/{conversation_id}/feedback",
       "service": "human",
       "method": "POST",
-      "path": "/v1/support/conversations/{conversation_id}/feedback",
+      "path": "/human/v1/support/conversations/{conversation_id}/feedback",
       "transport": "http",
       "authentication": "human-principal-session",
       "upstream": "human",
@@ -4040,9 +4144,10 @@
         "developer"
       ],
       "source": "human/schema/human-api/support.kvx",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/support/conversations/{conversation_id}/feedback"
     },
     {
       "id": "kernel:POST:lx_register",
@@ -4063,7 +4168,11 @@
       "source": "platform/hosted/gateway/openrpc.json",
       "proxy": false,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ]
     },
     {
       "id": "kernel:POST:lx_requestFunds",
@@ -4084,7 +4193,11 @@
       "source": "platform/hosted/gateway/openrpc.json",
       "proxy": false,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ]
     },
     {
       "id": "kernel:POST:lx_getAccount",
@@ -4105,7 +4218,11 @@
       "source": "platform/hosted/gateway/openrpc.json",
       "proxy": false,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ]
     },
     {
       "id": "kernel:POST:lx_getBalance",
@@ -4126,7 +4243,11 @@
       "source": "platform/hosted/gateway/openrpc.json",
       "proxy": false,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ]
     },
     {
       "id": "kernel:POST:lx_getBalances",
@@ -4147,7 +4268,11 @@
       "source": "platform/hosted/gateway/openrpc.json",
       "proxy": false,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ]
     },
     {
       "id": "kernel:POST:lx_getReceipt",
@@ -4168,7 +4293,11 @@
       "source": "platform/hosted/gateway/openrpc.json",
       "proxy": false,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ]
     },
     {
       "id": "kernel:POST:lx_getActivityStatus",
@@ -4189,7 +4318,11 @@
       "source": "platform/hosted/gateway/openrpc.json",
       "proxy": false,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ]
     },
     {
       "id": "kernel:POST:lx_getBatchHeader",
@@ -4210,7 +4343,11 @@
       "source": "platform/hosted/gateway/openrpc.json",
       "proxy": false,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ]
     },
     {
       "id": "kernel:POST:lx_getCheckpoint",
@@ -4231,7 +4368,11 @@
       "source": "platform/hosted/gateway/openrpc.json",
       "proxy": false,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ]
     },
     {
       "id": "kernel:POST:lx_getNodeInfo",
@@ -4252,7 +4393,11 @@
       "source": "platform/hosted/gateway/openrpc.json",
       "proxy": false,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ]
     },
     {
       "id": "kernel:POST:lx_getSequence",
@@ -4273,7 +4418,11 @@
       "source": "platform/hosted/gateway/openrpc.json",
       "proxy": false,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ]
     },
     {
       "id": "kernel:POST:lx_getProof",
@@ -4294,7 +4443,11 @@
       "source": "platform/hosted/gateway/openrpc.json",
       "proxy": false,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ]
     },
     {
       "id": "kernel:POST:lx_sendActivity",
@@ -4315,7 +4468,11 @@
       "source": "platform/hosted/gateway/openrpc.json",
       "proxy": false,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ]
     },
     {
       "id": "kernel:POST:lx_subscribe",
@@ -4336,7 +4493,11 @@
       "source": "platform/hosted/gateway/openrpc.json",
       "proxy": false,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ]
     },
     {
       "id": "kernel:POST:lx_unsubscribe",
@@ -4357,7 +4518,11 @@
       "source": "platform/hosted/gateway/openrpc.json",
       "proxy": false,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ]
     },
     {
       "id": "kernel:POST:lx_listAssets",
@@ -4378,7 +4543,11 @@
       "source": "platform/hosted/gateway/openrpc.json",
       "proxy": false,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ]
     },
     {
       "id": "kernel:POST:lx_getAsset",
@@ -4399,7 +4568,11 @@
       "source": "platform/hosted/gateway/openrpc.json",
       "proxy": false,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ]
     },
     {
       "id": "kernel:POST:lx_estimateFee",
@@ -4420,7 +4593,11 @@
       "source": "platform/hosted/gateway/openrpc.json",
       "proxy": false,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ]
     },
     {
       "id": "kernel:POST:lx_getProgramEvents",
@@ -4441,7 +4618,11 @@
       "source": "platform/hosted/gateway/openrpc.json",
       "proxy": false,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ]
     },
     {
       "id": "kernel:POST:px_resolveAccount",
@@ -4462,7 +4643,11 @@
       "source": "platform/hosted/gateway/openrpc.json",
       "proxy": false,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ]
     },
     {
       "id": "kernel:POST:px_getAccount",
@@ -4483,7 +4668,11 @@
       "source": "platform/hosted/gateway/openrpc.json",
       "proxy": false,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ]
     },
     {
       "id": "kernel:POST:px_getBalances",
@@ -4504,7 +4693,11 @@
       "source": "platform/hosted/gateway/openrpc.json",
       "proxy": false,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ]
     },
     {
       "id": "kernel:POST:px_listAssets",
@@ -4525,7 +4718,11 @@
       "source": "platform/hosted/gateway/openrpc.json",
       "proxy": false,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ]
     },
     {
       "id": "kernel:POST:px_getNetwork",
@@ -4546,7 +4743,11 @@
       "source": "platform/hosted/gateway/openrpc.json",
       "proxy": false,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ]
     },
     {
       "id": "indexer:POST:lx_getHistory",
@@ -4567,7 +4768,11 @@
       "source": "platform/hosted/gateway/openrpc.json",
       "proxy": false,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ]
     },
     {
       "id": "indexer:POST:px_getHistory",
@@ -4588,7 +4793,11 @@
       "source": "platform/hosted/gateway/openrpc.json",
       "proxy": false,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ]
     },
     {
       "id": "indexer:POST:px_getUnifiedHistory",
@@ -4609,7 +4818,11 @@
       "source": "platform/hosted/gateway/openrpc.json",
       "proxy": false,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ]
     },
     {
       "id": "kernel:POST:px_getCapabilities",
@@ -4630,7 +4843,11 @@
       "source": "platform/hosted/gateway/openrpc.json",
       "proxy": false,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ]
     },
     {
       "id": "paxeer-boundaries:POST:eth_*",
@@ -4651,7 +4868,11 @@
       "source": "platform/hosted/gateway/src/evm.rs",
       "proxy": false,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ]
     },
     {
       "id": "paxeer-boundaries:POST:net_*",
@@ -4672,7 +4893,11 @@
       "source": "platform/hosted/gateway/src/evm.rs",
       "proxy": false,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ]
     },
     {
       "id": "paxeer-boundaries:POST:web3_*",
@@ -4693,7 +4918,11 @@
       "source": "platform/hosted/gateway/src/evm.rs",
       "proxy": false,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ]
     },
     {
       "id": "kernel:GET:lx_subscribe",
@@ -5551,7 +5780,7 @@
         "developer"
       ],
       "source": "interop/crates/layerx-gas-station/src/service.rs",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
     },
@@ -5572,7 +5801,7 @@
         "developer"
       ],
       "source": "interop/crates/layerx-gas-station/src/service.rs",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
     },
@@ -5593,7 +5822,7 @@
         "developer"
       ],
       "source": "interop/crates/x-websearch/src/server.rs",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
     },
@@ -5614,7 +5843,7 @@
         "developer"
       ],
       "source": "interop/crates/x-websearch/src/server.rs",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
     },
@@ -5635,7 +5864,7 @@
         "developer"
       ],
       "source": "interop/crates/x-websearch/src/server.rs",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
     },
@@ -5656,7 +5885,7 @@
         "developer"
       ],
       "source": "platform/ramps/reference/src/main.rs",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
     },
@@ -5677,7 +5906,7 @@
         "developer"
       ],
       "source": "platform/ramps/reference/src/main.rs",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
     },
@@ -5698,7 +5927,7 @@
         "developer"
       ],
       "source": "platform/ramps/reference/src/main.rs",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
     },
@@ -5719,7 +5948,7 @@
         "developer"
       ],
       "source": "platform/hosted/dashboard/src/main.rs",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
     },
@@ -5740,7 +5969,7 @@
         "developer"
       ],
       "source": "platform/hosted/dashboard/src/main.rs",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
     },
@@ -5761,7 +5990,7 @@
         "developer"
       ],
       "source": "platform/hosted/dashboard/src/main.rs",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
     },
@@ -5782,7 +6011,7 @@
         "developer"
       ],
       "source": "platform/hosted/dashboard/src/main.rs",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
     },
@@ -5803,7 +6032,7 @@
         "developer"
       ],
       "source": "platform/hosted/dashboard/src/main.rs",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
     },
@@ -5824,7 +6053,7 @@
         "developer"
       ],
       "source": "platform/hosted/dashboard/src/main.rs",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
     },
@@ -5845,7 +6074,7 @@
         "developer"
       ],
       "source": "platform/hosted/dashboard/src/main.rs",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
     },
@@ -5866,7 +6095,7 @@
         "developer"
       ],
       "source": "platform/hosted/dashboard/src/main.rs",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
     },
@@ -5887,7 +6116,7 @@
         "developer"
       ],
       "source": "platform/hosted/dashboard/src/main.rs",
-      "proxy": false,
+      "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
     },
@@ -5909,7 +6138,11 @@
         "developer"
       ],
       "source": "platform/hosted/gateway/src/routes.rs",
-      "proxy": false
+      "proxy": false,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ]
     },
     {
       "id": "mcp-a2a:tools/call:balance.get",
@@ -6370,6 +6603,2176 @@
       ],
       "source": "agent/crates/layerx-mcp/src/catalogue.rs",
       "proxy": false
+    },
+    {
+      "id": "human:GET:/v1/account/balance",
+      "service": "human",
+      "method": "GET",
+      "path": "/v1/account/balance",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/home.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:GET:/v1/home",
+      "service": "human",
+      "method": "GET",
+      "path": "/v1/home",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/home.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:GET:/v1/version",
+      "service": "human",
+      "method": "GET",
+      "path": "/v1/version",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/v1.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/moves/quote",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/moves/quote",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/movement.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/moves",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/moves",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/movement.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/deposits",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/deposits",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/movement.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/deposits/{journey_id}/confirm",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/deposits/{journey_id}/confirm",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/movement.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/withdrawals",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/withdrawals",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/movement.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/withdrawals/{journey_id}/claim",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/withdrawals/{journey_id}/claim",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/movement.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/exit",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/exit",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/movement.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:GET:/v1/exit/eligibility",
+      "service": "human",
+      "method": "GET",
+      "path": "/v1/exit/eligibility",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/movement.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/accounts",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/accounts",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/passkeys/registrations",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/passkeys/registrations",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/passkeys/registrations/{registration_id}",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/passkeys/registrations/{registration_id}",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/passkeys/assertions",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/passkeys/assertions",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/passkeys/assertions/{assertion_id}",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/passkeys/assertions/{assertion_id}",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:GET:/v1/sessions/fee-policy",
+      "service": "human",
+      "method": "GET",
+      "path": "/v1/sessions/fee-policy",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/sessions",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/sessions",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/sessions/refresh",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/sessions/refresh",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:GET:/v1/sessions",
+      "service": "human",
+      "method": "GET",
+      "path": "/v1/sessions",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:DELETE:/v1/sessions/{session_id}",
+      "service": "human",
+      "method": "DELETE",
+      "path": "/v1/sessions/{session_id}",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/sessions/revoke-all",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/sessions/revoke-all",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/step-up",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/step-up",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/step-up/{challenge_id}",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/step-up/{challenge_id}",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/security/actions",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/security/actions",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:GET:/v1/security/passkeys",
+      "service": "human",
+      "method": "GET",
+      "path": "/v1/security/passkeys",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/security/passkeys/registrations",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/security/passkeys/registrations",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/security/passkeys/registrations/{registration_id}",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/security/passkeys/registrations/{registration_id}",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/security/passkeys/{passkey_id}/revoke",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/security/passkeys/{passkey_id}/revoke",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/security/sessions/{session_id}/revoke",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/security/sessions/{session_id}/revoke",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/security/sessions/revoke-all",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/security/sessions/revoke-all",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:GET:/v1/security/authenticators",
+      "service": "human",
+      "method": "GET",
+      "path": "/v1/security/authenticators",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/security/authenticators/setups",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/security/authenticators/setups",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/security/authenticators/setups/{setup_id}",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/security/authenticators/setups/{setup_id}",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/security/authenticators/{authenticator_id}/disable",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/security/authenticators/{authenticator_id}/disable",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/security/authenticators/backup-codes",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/security/authenticators/backup-codes",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/security/recovery/evidence",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/security/recovery/evidence",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/security/key-export/begin",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/security/key-export/begin",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/security/key-export/finish",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/security/key-export/finish",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:GET:/v1/onboarding",
+      "service": "human",
+      "method": "GET",
+      "path": "/v1/onboarding",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/onboarding/resume",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/onboarding/resume",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/wallet-binding/statement",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/wallet-binding/statement",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/wallet-binding",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/wallet-binding",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:GET:/v1/wallet-binding",
+      "service": "human",
+      "method": "GET",
+      "path": "/v1/wallet-binding",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/wallet-binding/rebind/action",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/wallet-binding/rebind/action",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/wallet-binding/rebind",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/wallet-binding/rebind",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:GET:/v1/profile",
+      "service": "human",
+      "method": "GET",
+      "path": "/v1/profile",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:PATCH:/v1/profile",
+      "service": "human",
+      "method": "PATCH",
+      "path": "/v1/profile",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/identity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/agents",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/agents",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/agents.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/agents/{agent_id}/pause",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/agents/{agent_id}/pause",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/agents.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/agents/{agent_id}/resume",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/agents/{agent_id}/resume",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/agents.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/agents/{agent_id}/limit",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/agents/{agent_id}/limit",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/agents.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/agents/{agent_id}/reclaim",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/agents/{agent_id}/reclaim",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/agents.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/agents/{agent_id}/rotate",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/agents/{agent_id}/rotate",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/agents.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/agents/{agent_id}/rotation/disclosure",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/agents/{agent_id}/rotation/disclosure",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/agents.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/agents/{agent_id}/rotation",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/agents/{agent_id}/rotation",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/agents.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/agents/{agent_id}/recover",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/agents/{agent_id}/recover",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/agents.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/agents/{agent_id}/archive",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/agents/{agent_id}/archive",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/agents.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:GET:/v1/approvals",
+      "service": "human",
+      "method": "GET",
+      "path": "/v1/approvals",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/agents.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:GET:/v1/approvals/{approval_id}",
+      "service": "human",
+      "method": "GET",
+      "path": "/v1/approvals/{approval_id}",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/agents.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/approvals/{approval_id}/approve",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/approvals/{approval_id}/approve",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/agents.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/approvals/{approval_id}/reject",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/approvals/{approval_id}/reject",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/agents.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/intents/plan",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/intents/plan",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/intent.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/intents/submit",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/intents/submit",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/intent.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/stream",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/stream",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/stream.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:GET:/v1/stream/{cursor}",
+      "service": "human",
+      "method": "GET",
+      "path": "/v1/stream/{cursor}",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/stream.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/activity/query",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/activity/query",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/activity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:GET:/v1/activity/{entry_id}",
+      "service": "human",
+      "method": "GET",
+      "path": "/v1/activity/{entry_id}",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/activity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/activity/exports/statement",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/activity/exports/statement",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/activity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/activity/exports/evidence",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/activity/exports/evidence",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/activity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:GET:/v1/notifications",
+      "service": "human",
+      "method": "GET",
+      "path": "/v1/notifications",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/activity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/notifications/{notification_id}/read",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/notifications/{notification_id}/read",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/activity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:GET:/v1/notifications/preferences",
+      "service": "human",
+      "method": "GET",
+      "path": "/v1/notifications/preferences",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/activity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/notifications/preferences",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/notifications/preferences",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/activity.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:GET:/v1/evidence/{evidence_id}",
+      "service": "human",
+      "method": "GET",
+      "path": "/v1/evidence/{evidence_id}",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/journeys.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:GET:/v1/journeys/{journey_id}",
+      "service": "human",
+      "method": "GET",
+      "path": "/v1/journeys/{journey_id}",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/journeys.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:GET:/v1/journeys",
+      "service": "human",
+      "method": "GET",
+      "path": "/v1/journeys",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/journeys.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:GET:/v1/support/conversations",
+      "service": "human",
+      "method": "GET",
+      "path": "/v1/support/conversations",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/support.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/support/conversations",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/support/conversations",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/support.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/support/conversations/{conversation_id}/replies",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/support/conversations/{conversation_id}/replies",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/support.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/support/conversations/{conversation_id}/read",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/support/conversations/{conversation_id}/read",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/support.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:GET:/v1/support/conversations/{conversation_id}/status",
+      "service": "human",
+      "method": "GET",
+      "path": "/v1/support/conversations/{conversation_id}/status",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/support.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/support/conversations/{conversation_id}/feedback",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/support/conversations/{conversation_id}/feedback",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/support.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "gas:POST:/gas-station/quote",
+      "service": "gas",
+      "method": "POST",
+      "path": "/gas-station/quote",
+      "transport": "http",
+      "authentication": "signed-sponsorship-request",
+      "upstream": "gas",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "interop/crates/layerx-gas-station/src/service.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/quote"
+    },
+    {
+      "id": "gas:POST:/gas-station/submit",
+      "service": "gas",
+      "method": "POST",
+      "path": "/gas-station/submit",
+      "transport": "http",
+      "authentication": "signed-sponsorship-request",
+      "upstream": "gas",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "interop/crates/layerx-gas-station/src/service.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/submit"
+    },
+    {
+      "id": "webhooks-dashboard:GET:/v1/webhooks/scheme",
+      "service": "webhooks-dashboard",
+      "method": "GET",
+      "path": "/v1/webhooks/scheme",
+      "transport": "http",
+      "authentication": "public",
+      "upstream": "webhooks-dashboard",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "platform/hosted/webhooks/src/main.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "webhooks-dashboard:GET:/v1/webhooks/endpoints",
+      "service": "webhooks-dashboard",
+      "method": "GET",
+      "path": "/v1/webhooks/endpoints",
+      "transport": "http",
+      "authentication": "principal-session",
+      "upstream": "webhooks-dashboard",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "platform/hosted/webhooks/src/main.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "webhooks-dashboard:POST:/v1/webhooks/endpoints",
+      "service": "webhooks-dashboard",
+      "method": "POST",
+      "path": "/v1/webhooks/endpoints",
+      "transport": "http",
+      "authentication": "principal-session",
+      "upstream": "webhooks-dashboard",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "platform/hosted/webhooks/src/main.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "webhooks-dashboard:GET:/v1/webhooks/events",
+      "service": "webhooks-dashboard",
+      "method": "GET",
+      "path": "/v1/webhooks/events",
+      "transport": "http",
+      "authentication": "principal-session",
+      "upstream": "webhooks-dashboard",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "platform/hosted/webhooks/src/main.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "webhooks-dashboard:GET:/v1/webhooks/deliveries",
+      "service": "webhooks-dashboard",
+      "method": "GET",
+      "path": "/v1/webhooks/deliveries",
+      "transport": "http",
+      "authentication": "principal-session",
+      "upstream": "webhooks-dashboard",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "platform/hosted/webhooks/src/main.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "webhooks-dashboard:GET:/v1/webhooks/dead-letters",
+      "service": "webhooks-dashboard",
+      "method": "GET",
+      "path": "/v1/webhooks/dead-letters",
+      "transport": "http",
+      "authentication": "principal-session",
+      "upstream": "webhooks-dashboard",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "platform/hosted/webhooks/src/main.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "webhooks-dashboard:GET:/v1/webhooks/endpoints/{endpoint}/events",
+      "service": "webhooks-dashboard",
+      "method": "GET",
+      "path": "/v1/webhooks/endpoints/{endpoint}/events",
+      "transport": "http",
+      "authentication": "principal-session",
+      "upstream": "webhooks-dashboard",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "platform/hosted/webhooks/src/main.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "webhooks-dashboard:GET:/v1/webhooks/endpoints/{endpoint}/keys",
+      "service": "webhooks-dashboard",
+      "method": "GET",
+      "path": "/v1/webhooks/endpoints/{endpoint}/keys",
+      "transport": "http",
+      "authentication": "principal-session",
+      "upstream": "webhooks-dashboard",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "platform/hosted/webhooks/src/main.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "webhooks-dashboard:POST:/v1/webhooks/endpoints/{endpoint}/keys",
+      "service": "webhooks-dashboard",
+      "method": "POST",
+      "path": "/v1/webhooks/endpoints/{endpoint}/keys",
+      "transport": "http",
+      "authentication": "principal-session",
+      "upstream": "webhooks-dashboard",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "platform/hosted/webhooks/src/main.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "webhooks-dashboard:POST:/v1/webhooks/endpoints/{endpoint}/redeliveries",
+      "service": "webhooks-dashboard",
+      "method": "POST",
+      "path": "/v1/webhooks/endpoints/{endpoint}/redeliveries",
+      "transport": "http",
+      "authentication": "principal-session",
+      "upstream": "webhooks-dashboard",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "platform/hosted/webhooks/src/main.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "webhooks-dashboard:POST:/v1/webhooks/endpoints/{endpoint}/suspensions",
+      "service": "webhooks-dashboard",
+      "method": "POST",
+      "path": "/v1/webhooks/endpoints/{endpoint}/suspensions",
+      "transport": "http",
+      "authentication": "principal-session",
+      "upstream": "webhooks-dashboard",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "platform/hosted/webhooks/src/main.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "webhooks-dashboard:POST:/v1/webhooks/endpoints/{endpoint}/resumptions",
+      "service": "webhooks-dashboard",
+      "method": "POST",
+      "path": "/v1/webhooks/endpoints/{endpoint}/resumptions",
+      "transport": "http",
+      "authentication": "principal-session",
+      "upstream": "webhooks-dashboard",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "platform/hosted/webhooks/src/main.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "webhooks-dashboard:POST:/v1/webhooks/dead-letters/{delivery}/replay",
+      "service": "webhooks-dashboard",
+      "method": "POST",
+      "path": "/v1/webhooks/dead-letters/{delivery}/replay",
+      "transport": "http",
+      "authentication": "principal-session",
+      "upstream": "webhooks-dashboard",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "platform/hosted/webhooks/src/main.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "ramp:POST:/v1/orders:unified",
+      "service": "ramp",
+      "method": "POST",
+      "path": "/v1/ramp/orders",
+      "transport": "http",
+      "authentication": "provider-or-customer-authority",
+      "upstream": "ramp",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "platform/ramps/reference/src/main.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/orders"
+    },
+    {
+      "id": "ramp:POST:/v1/provider-callbacks:unified",
+      "service": "ramp",
+      "method": "POST",
+      "path": "/v1/ramp/provider-callbacks",
+      "transport": "http",
+      "authentication": "provider-or-customer-authority",
+      "upstream": "ramp",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "platform/ramps/reference/src/main.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/provider-callbacks"
+    },
+    {
+      "id": "ramp:GET:/v1/orders/{digest}:unified",
+      "service": "ramp",
+      "method": "GET",
+      "path": "/v1/ramp/orders/{digest}",
+      "transport": "http",
+      "authentication": "provider-or-customer-authority",
+      "upstream": "ramp",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "platform/ramps/reference/src/main.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/orders/{digest}"
+    },
+    {
+      "id": "gas:POST:/gas-station/status",
+      "service": "gas",
+      "method": "POST",
+      "path": "/gas-station/status",
+      "transport": "http",
+      "authentication": "signed-sponsorship-request",
+      "upstream": "gas",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "interop/crates/layerx-gas-station/src/service.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/status"
+    },
+    {
+      "id": "gas:POST:/gas-station/retry",
+      "service": "gas",
+      "method": "POST",
+      "path": "/gas-station/retry",
+      "transport": "http",
+      "authentication": "signed-sponsorship-request",
+      "upstream": "gas",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "interop/crates/layerx-gas-station/src/service.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/retry"
     }
   ],
   "denied_surfaces": [
@@ -6387,5 +8790,9 @@
     "eth_signTypedData",
     "eth_signTypedData_v4",
     "eth_mining"
+  ],
+  "rpc_paths": [
+    "/",
+    "/rpc"
   ]
 }

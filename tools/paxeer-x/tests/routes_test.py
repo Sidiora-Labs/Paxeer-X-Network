@@ -21,6 +21,8 @@ from candidate import load_private, validate, catalogue, Invalid
 MAX_BODY = 8 * 1024 * 1024
 COUNT = 0
 KINDS = {'positive', 'malformed', 'unauthorized', 'wrong-network', 'missing-dependency'}
+SECRET_HEADERS = {'authorization', 'cookie', 'x-agent-signature', 'x-api-key',
+                  'x-csrf-token', 'x-layerx-csrf', 'x-payment', 'payment-signature'}
 
 
 def require(value, message):
@@ -58,20 +60,45 @@ def context(target):
     return ctx
 
 
+def request_path(case):
+    path = case['path']
+    require(isinstance(path, str), 'request path must be a string')
+    parsed = urllib.parse.urlsplit(path)
+    require(path.startswith('/') and not path.startswith('//')
+            and not parsed.scheme and not parsed.netloc and not parsed.fragment
+            and len(path) <= 2048 and all(32 < ord(c) < 127 for c in path),
+            'request requires a bounded origin-relative path')
+    return parsed.path
+
+
+def request_body(case):
+    require(not ('body' in case and 'body_file' in case), 'ambiguous request body')
+    if 'body_file' in case:
+        path = Path(case['body_file'])
+        info = path.lstat()
+        require(path.is_file() and not path.is_symlink() and info.st_mode & 0o077 == 0
+                and info.st_uid == os.geteuid() and info.st_nlink == 1
+                and info.st_size <= MAX_BODY, 'request body reference is not protected')
+        return path.read_bytes()
+    body = case.get('body')
+    encoded = None if body is None else canonical(body)
+    require(encoded is None or len(encoded) <= MAX_BODY, 'request body exceeds byte bound')
+    return encoded
+
+
 def http_request(target, case):
     parsed = urllib.parse.urlsplit(target['url'])
     require(parsed.scheme == 'https' and parsed.hostname and not parsed.username
             and not parsed.password and not parsed.query and not parsed.fragment,
             'target requires canonical HTTPS')
     headers = dict(case.get('headers', {}))
-    require(not any(k.lower() in {'authorization', 'cookie', 'x-agent-signature'} for k in headers),
+    require(not any(k.lower() in SECRET_HEADERS for k in headers),
             'credentials require protected file references')
     for name, path in case.get('header_files', {}).items():
         headers[name] = secret(path)
-    body = case.get('body')
-    encoded = None if body is None else canonical(body)
+    encoded = request_body(case)
     if encoded is not None:
-        headers.setdefault('Content-Type', 'application/json')
+        headers.setdefault('Content-Type', 'application/octet-stream' if 'body_file' in case else 'application/json')
     conn = http.client.HTTPSConnection(parsed.hostname, parsed.port or 443,
                                        timeout=8, context=context(target))
     try:
@@ -82,7 +109,10 @@ def http_request(target, case):
         require(reply.status == case['status'], 'unexpected routed status')
         for name,value in case.get('response_headers',{}).items():
             require(reply.getheader(name) == value, 'response header assertion failed')
-        document = json.loads(data) if data else None
+        if 'response_sha256' in case:
+            require(hashlib.sha256(data).hexdigest() == case['response_sha256'],
+                    'routed response byte digest mismatch')
+        document = json.loads(data) if data and ('response_sha256' not in case or case['assertions']) else None
         for key, value in case['assertions'].items():
             require(pointer(document, key) == value, 'routed response assertion failed')
         return document
@@ -138,29 +168,57 @@ def websocket_request(target, case):
                 length = second if second < 126 else struct.unpack('!H' if second == 126 else '!Q', read_exact(stream,2 if second == 126 else 8))[0]
                 require(length <= 65536, 'WebSocket response bound')
                 document = json.loads(read_exact(stream,length))
+                if case['kind'] == 'positive':
+                    require(isinstance(document, dict) and document.get('jsonrpc') == '2.0'
+                            and document.get('id') == message['send'].get('id')
+                            and 'id' in document and 'result' in document and 'error' not in document,
+                            'positive WebSocket operation has no successful result')
                 require(message['assertions'], 'empty WebSocket assertions')
                 for key,value in message['assertions'].items():
                     require(pointer(document,key) == value, 'WebSocket response assertion failed')
 
 
 def route_matches(route, case):
+    path = request_path(case)
+    if route['service'] != case['service']:
+        return False
     if route['transport'] == 'mcp' and not route['path'].startswith('/'):
         body = case.get('body',{})
-        return isinstance(body,dict) and body.get('method') == 'tools/call' and body.get('params',{}).get('name') == route['path']
+        return case['method'] == 'POST' and path == route.get('endpoint_path') and isinstance(body,dict) and body.get('method') == 'tools/call' and body.get('params',{}).get('name') == route['path']
     if route['transport'] == 'json-rpc':
         body = case.get('body')
         calls = body if isinstance(body, list) else [body]
-        return case['path'] == '/rpc' and any(isinstance(call, dict) and
+        return case['method'] == 'POST' and path in route.get('endpoint_paths', ['/rpc']) and any(isinstance(call, dict) and
             (call.get('method','').startswith(route['path'][:-1]) if route['path'].endswith('*')
              else call.get('method') == route['path']) for call in calls)
     if route['transport'] == 'websocket':
         if case.get('transport') != 'websocket': return False
         if route['path'].startswith('/'): return case['path'] == route['path']
-        return any(message.get('send',{}).get('method') == route['path'] for message in case.get('messages',[]))
+        return path == '/rpc/ws' and any(message.get('send',{}).get('method') == route['path'] for message in case.get('messages',[]))
     pieces = []
     for part in route['path'].split('/'):
         pieces.append('[^/?#]+' if part.startswith(':') or (part.startswith('{') and part.endswith('}')) else re.escape(part))
-    return case['method'] == route['method'] and re.fullmatch('/'.join(pieces),case['path']) is not None
+    return case['method'] == route['method'] and re.fullmatch('/'.join(pieces),path) is not None
+
+
+def require_rpc_results(case, document, route_index):
+    if case['kind'] != 'positive':
+        return
+    body = case.get('body')
+    calls = body if isinstance(body, list) else [body]
+    replies = document if isinstance(document, list) else [document]
+    for route_id in case.get('route_ids', []):
+        route = route_index[route_id]
+        if route['transport'] != 'json-rpc':
+            continue
+        matching = [call for call in calls if isinstance(call, dict) and
+                    (call.get('method', '').startswith(route['path'][:-1])
+                     if route['path'].endswith('*') else call.get('method') == route['path'])]
+        require(matching and any('id' in call and any(
+            isinstance(reply, dict) and reply.get('jsonrpc') == '2.0'
+            and 'id' in reply and reply['id'] == call['id']
+            and 'result' in reply and 'error' not in reply for reply in replies)
+            for call in matching), 'positive route has no successful JSON-RPC result')
 
 
 def run():
@@ -183,6 +241,10 @@ def run():
             'route corpus candidate identity mismatch')
     product = json.loads((ROOT / 'tools/paxeer-x/route-catalogue.json').read_text())
     require(plan['catalogue_sha256'] == hashlib.sha256(canonical(product)).hexdigest(), 'route catalogue identity mismatch')
+    require(isinstance(plan['targets'], dict) and plan['targets'], 'route targets absent')
+    for target in plan['targets'].values():
+        require(target['url'].rstrip('/') == product['canonical_origin'],
+                'route evidence must use the canonical unified origin')
     bound = {s['id']: {k:s['bindings'][k] for k in ['image_digest','config_digest','source_revision']} for s in manifest['services']}
     require(plan['service_bindings'] == bound, 'routed image or configuration binding mismatch')
     cases = plan['cases']
@@ -190,23 +252,32 @@ def run():
     ids = set()
     coverage = {}
     covered_routes = set()
+    functional_services = set()
     route_index = {r["id"]:r for r in product["routes"]}
     scenarios = set()
     for case in cases:
+        request_path(case)
         require(case['id'] not in ids, 'duplicate routed case')
         ids.add(case['id'])
         require(case['kind'] in KINDS and case['service'] in bound, 'unknown route case selector')
-        require(case.get('assertions') or case.get('response_headers') or (case.get('transport') == 'websocket' and case.get('messages')),
+        require(case.get('assertions') or case.get('response_headers') or case.get('response_sha256') or (case.get('transport') == 'websocket' and case.get('messages')),
                 'case has no behavioral assertions')
+        require(isinstance(case.get('assertions'), dict), 'case assertions must be an object')
+        if 'response_sha256' in case:
+            require(re.fullmatch('[0-9a-f]{64}', case['response_sha256']) is not None,
+                    'invalid response byte digest')
         coverage.setdefault(case['service'],set()).add(case['kind'])
         for route_id in case.get('route_ids',[]):
             require(route_id in route_index and route_matches(route_index[route_id],case),
                     'route coverage claim does not match the executed request')
-            if case['kind'] == 'positive': covered_routes.add(route_id)
+            if case['kind'] == 'positive':
+                covered_routes.add(route_id)
+                if route_index[route_id]['path'] != 'px_getRouteCatalogue':
+                    functional_services.add(case['service'])
         if isinstance(case.get('body'), list) and len(case['body']) >= 2:
             require(any('/error/' in p for p in case['assertions']) and any('/result' in p for p in case['assertions']), 'mixed batch requires success and failure assertions')
             scenarios.add('mixed-batch')
-        if case.get('transport') == 'websocket':
+        if case.get('transport') == 'websocket' and case['kind'] == 'positive':
             scenarios.add('evm-websocket' if case['path'] == '/rpc/evm/ws' else 'native-websocket')
         if case['method'] == 'OPTIONS' and 'Origin' in case.get('headers',{}):
             require(case.get('response_headers',{}).get('Access-Control-Allow-Origin') == case['headers']['Origin'], 'CORS case must assert exact allowed origin')
@@ -217,7 +288,7 @@ def run():
         if isinstance(body,dict) and body.get('method') in product['node_signing_methods']:
             require(any(value == -32601 for value in case['assertions'].values()), 'node signing must be refused')
             scenarios.add('node-signing-refused')
-        if isinstance(body,dict) and body.get('method') == 'px_resolveAccount':
+        if case['kind'] == 'positive' and isinstance(body,dict) and body.get('method') == 'px_resolveAccount':
             for identity in body.get('params',[]):
                 if isinstance(identity,str):
                     if identity.startswith('did:'): scenarios.add('identity-did')
@@ -231,6 +302,9 @@ def run():
     for service in product['services']:
         needed = {'unauthorized'} if service['exposure']=='private' else KINDS
         require(needed <= coverage.get(service['id'],set()), 'service route negative/positive coverage incomplete')
+        if service['exposure'] == 'product':
+            require(service['id'] in functional_services,
+                    'product service has no positive feature route coverage')
     require({r['id'] for r in product['routes']} <= covered_routes, 'published route corpus incomplete')
     require({'mixed-batch','identity-did','identity-evm','identity-account','node-signing-refused','private-publication-refused',
              'tls-client-identity','native-websocket','evm-websocket','cors'} <= scenarios,
@@ -240,7 +314,9 @@ def run():
         require(time.monotonic() - started < 870, 'routed contract time bound reached')
         COUNT += 1
         if case.get('transport') == 'websocket': websocket_request(plan['targets'][case['target']],case)
-        else: http_request(plan['targets'][case['target']],case)
+        else:
+            document = http_request(plan['targets'][case['target']],case)
+            require_rpc_results(case, document, route_index)
         print('ok route-case ' + str(COUNT), flush=True)
 
 
