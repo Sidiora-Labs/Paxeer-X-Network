@@ -30,6 +30,54 @@ pub struct VerifiedSource {
     pub source_digest: [u8; 32],
     pub artifact_digest: [u8; 32],
     pub plan: BuildPlan,
+    pub deployment_provenance: VerifiedSourceDeployment,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VerifiedSourceDeployment {
+    pub abi_version: u16,
+    pub code_hash: [u8; 32],
+    pub activity_id: [u8; 32],
+    pub receipt_digest: [u8; 32],
+    pub batch_header_digest: [u8; 32],
+    pub state_root: [u8; 32],
+    pub programs_root: [u8; 32],
+    pub observed_sequence: u64,
+    pub observed_at: u64,
+}
+
+impl VerifiedSourceDeployment {
+    fn encode(&self) -> Value {
+        json!({
+            "abi_version": self.abi_version,
+            "code_hash": hex::encode(&self.code_hash),
+            "activity_id": hex::encode(&self.activity_id),
+            "receipt_digest": hex::encode(&self.receipt_digest),
+            "batch_header_digest": hex::encode(&self.batch_header_digest),
+            "state_root": hex::encode(&self.state_root),
+            "programs_root": hex::encode(&self.programs_root),
+            "observed_sequence": self.observed_sequence,
+            "observed_at": self.observed_at,
+        })
+    }
+
+    fn decode(document: &Value) -> Option<Self> {
+        let abi_version = u16::try_from(document["abi_version"].as_u64()?).ok()?;
+        if !(1..=4).contains(&abi_version) {
+            return None;
+        }
+        Some(Self {
+            abi_version,
+            code_hash: hex::decode_digest(document["code_hash"].as_str()?).ok()?,
+            activity_id: hex::decode_digest(document["activity_id"].as_str()?).ok()?,
+            receipt_digest: hex::decode_digest(document["receipt_digest"].as_str()?).ok()?,
+            batch_header_digest: hex::decode_digest(document["batch_header_digest"].as_str()?).ok()?,
+            state_root: hex::decode_digest(document["state_root"].as_str()?).ok()?,
+            programs_root: hex::decode_digest(document["programs_root"].as_str()?).ok()?,
+            observed_sequence: document["observed_sequence"].as_u64()?,
+            observed_at: document["observed_at"].as_u64()?,
+        })
+    }
 }
 
 /// Store of completed rebuilds, one file per program version.
@@ -56,6 +104,11 @@ impl VerifiedSourceStore {
     ///
     /// Returns the filesystem error that prevented durable persistence.
     pub fn record(&self, entry: &VerifiedSource) -> Result<(), String> {
+        if !(1..=4).contains(&entry.deployment_provenance.abi_version)
+            || entry.artifact_digest != entry.deployment_provenance.code_hash
+        {
+            return Err("source verification does not match its deployment provenance".to_owned());
+        }
         let document = encode_source(entry);
         let path = self.root.join(format!(
             "{}-{}.{RECORD_SUFFIX}",
@@ -97,7 +150,9 @@ impl VerifiedSourceStore {
         for path in paths {
             let bytes = fs::read(&path)
                 .map_err(|error| format!("could not read {}: {error}", path.display()))?;
-            let record = decode(&bytes).ok_or_else(|| format!("{} is corrupt", path.display()))?;
+            let record = decode(&bytes).ok_or_else(|| {
+                format!("{} is corrupt or lacks required deployment provenance", path.display())
+            })?;
             records.push(record);
         }
         Ok(records)
@@ -112,6 +167,7 @@ fn encode_source(entry: &VerifiedSource) -> String {
         "source_digest": hex::encode(&entry.source_digest),
         "artifact_digest": hex::encode(&entry.artifact_digest),
         "plan": entry.plan.encode(),
+        "deployment_provenance": entry.deployment_provenance.encode(),
     }).to_string()
 }
 
@@ -124,6 +180,7 @@ fn decode(bytes: &[u8]) -> Option<VerifiedSource> {
         source_digest: hex::decode_digest(document["source_digest"].as_str()?).ok()?,
         artifact_digest: hex::decode_digest(document["artifact_digest"].as_str()?).ok()?,
         plan: BuildPlan::parse(document["plan"].as_str()?).ok()?,
+        deployment_provenance: VerifiedSourceDeployment::decode(&document["deployment_provenance"])?,
     })
 }
 
@@ -832,6 +889,12 @@ mod tests {
             program: program(7), version: 1,
             source_uri: "https://source.example/program".to_owned(),
             source_digest: [1; 32], artifact_digest: [2; 32],
+            deployment_provenance: VerifiedSourceDeployment {
+                abi_version: 1, code_hash: [2; 32], activity_id: [6; 32],
+                receipt_digest: [7; 32], batch_header_digest: [8; 32],
+                state_root: [9; 32], programs_root: [10; 32],
+                observed_sequence: 1, observed_at: 1,
+            },
             plan: BuildPlan {
                 environment: layerx_programs::BuildEnvironment {
                     builder_image_digest: [3; 32], toolchain_digest: [4; 32],

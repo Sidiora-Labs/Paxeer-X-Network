@@ -179,32 +179,11 @@ impl VerifiedProgramCatalog {
             admit_abi_version(evidence.abi_version())
                 .map_err(ExecutableAdmissionError::AbiVersion)?;
         }
-        let expected_revision = match evidence.abi_version() {
-            ABI_V1_VERSION => AbiRevision::V1,
-            ABI_V2_VERSION => AbiRevision::V2,
-            ABI_V3_VERSION => AbiRevision::V3,
-            ABI_V4_VERSION => AbiRevision::V4,
-            declared => {
-                return Err(ExecutableAdmissionError::AbiVersion(
-                    layerx_programs_runtime::AbiVersionRefusal::Unsupported {
-                        requested: declared,
-                    },
-                ))
-            }
-        };
-        let module = match expected_revision {
-            AbiRevision::V1 => self.engine.validate(evidence.module()),
-            AbiRevision::V2 => self.engine.validate_v2(evidence.module()),
-            AbiRevision::V3 => self.engine.validate_v3(evidence.module()),
-            AbiRevision::V4 => self.engine.validate_v4(evidence.module()),
-        }
-        .map_err(ExecutableAdmissionError::Validation)?;
-        if module.abi_revision() != expected_revision {
-            return Err(ExecutableAdmissionError::RevisionMismatch {
-                declared: evidence.abi_version(),
-                validated: module.abi_revision(),
-            });
-        }
+        let module = validate_deployment_module(
+            &self.engine,
+            evidence.module(),
+            evidence.abi_version(),
+        )?;
         let receipt_digest = evidence.receipt_digest();
         let freshness = evidence.freshness();
         let record = evidence.into_record();
@@ -337,6 +316,35 @@ impl VerifiedProgramCatalog {
         };
         Ok(CompositionContext::new(Rc::new(catalog), rules))
     }
+}
+
+pub(crate) fn validate_deployment_module(
+    engine: &WasmEngine,
+    wasm: &[u8],
+    abi_version: u16,
+) -> Result<ValidatedModule, ExecutableAdmissionError> {
+    let expected_revision = match abi_version {
+        ABI_V1_VERSION => AbiRevision::V1,
+        ABI_V2_VERSION => AbiRevision::V2,
+        ABI_V3_VERSION => AbiRevision::V3,
+        ABI_V4_VERSION => AbiRevision::V4,
+        declared => {
+            return Err(ExecutableAdmissionError::AbiVersion(
+                layerx_programs_runtime::AbiVersionRefusal::Unsupported {
+                    requested: declared,
+                },
+            ))
+        }
+    };
+    let module = engine.validate_versioned(abi_version, wasm)
+        .map_err(ExecutableAdmissionError::Validation)?;
+    if module.abi_revision() != expected_revision {
+        return Err(ExecutableAdmissionError::RevisionMismatch {
+            declared: abi_version,
+            validated: module.abi_revision(),
+        });
+    }
+    Ok(module)
 }
 
 /// One current deployment snapshot that can authorize exactly one matching

@@ -6,12 +6,15 @@
 use core::fmt::{self, Display};
 use std::collections::BTreeMap;
 
-use layerx_programs_runtime::WasmEngine;
+use layerx_programs_runtime::{admit_abi_version, WasmEngine, ABI_V1_VERSION};
 
 use crate::archive::{validate_path, ArchiveError, SourceArchive};
 use crate::hash::sha256;
 use crate::hex;
-use crate::{BuildEnvironment, PublishedSource, RegistryError, ReproducibleBuild};
+use crate::{
+    BuildEnvironment, ProgramLifecycle, PublishedSource, RegistryError, ReproducibleBuild,
+    VerifiedDeploymentEvidence,
+};
 
 const PLAN_VERSION: &str = "1";
 const PLAN_KEYS: [&str; 9] = [
@@ -181,6 +184,31 @@ impl<R: BuildRunner> SourceVerifier<R> {
         source: &PublishedSource,
         plan: &BuildPlan,
     ) -> Result<ReproducibleBuild, BuildRefusal> {
+        self.reproduce_inner(source, plan, ABI_V1_VERSION, None)
+    }
+
+    pub fn reproduce_deployment(
+        &self,
+        source: &PublishedSource,
+        plan: &BuildPlan,
+        deployment: &VerifiedDeploymentEvidence,
+    ) -> Result<ReproducibleBuild, BuildRefusal> {
+        if deployment.lifecycle() != ProgramLifecycle::Active {
+            return Err(BuildRefusal::Registry(RegistryError::UnverifiedRead));
+        }
+        self.reproduce_inner(source, plan, deployment.abi_version(), Some(deployment))
+    }
+
+    fn reproduce_inner(
+        &self,
+        source: &PublishedSource,
+        plan: &BuildPlan,
+        abi_version: u16,
+        deployment: Option<&VerifiedDeploymentEvidence>,
+    ) -> Result<ReproducibleBuild, BuildRefusal> {
+        admit_abi_version(abi_version).map_err(|refusal| BuildRefusal::ArtifactRejected {
+            reason: refusal.to_string(),
+        })?;
         crate::validate_uri(&source.uri)?;
         plan.validate()?;
         let archive = SourceArchive::decode(&source.canonical_archive)?;
@@ -207,7 +235,7 @@ impl<R: BuildRunner> SourceVerifier<R> {
             if attempt == 0 {
                 first = digest;
                 reproduced = Some(produced);
-            } else if digest != first {
+            } else if digest != first || reproduced.as_deref() != Some(produced.as_slice()) {
                 return Err(BuildRefusal::NondeterministicBuild {
                     first,
                     repeated: digest,
@@ -215,7 +243,12 @@ impl<R: BuildRunner> SourceVerifier<R> {
             }
         }
         let artifact = reproduced.ok_or(BuildRefusal::InvalidArtifact)?;
-        validate_artifact(&artifact)?;
+        validate_artifact(&artifact, abi_version)?;
+        if let Some(deployment) = deployment {
+            if first != deployment.code_hash() || artifact.as_slice() != deployment.module() {
+                return Err(BuildRefusal::Registry(RegistryError::DeploymentMismatch));
+            }
+        }
         ReproducibleBuild::from_output(source, plan.environment.clone(), &artifact)
             .map_err(BuildRefusal::Registry)
     }
@@ -316,12 +349,11 @@ fn pinned_digest(archive: &SourceArchive, path: &str) -> Result<[u8; 32], BuildR
     Ok(sha256(&file.content))
 }
 
-fn validate_artifact(wasm: &[u8]) -> Result<(), BuildRefusal> {
+fn validate_artifact(wasm: &[u8], abi_version: u16) -> Result<(), BuildRefusal> {
     let engine = WasmEngine::declared().map_err(|refusal| BuildRefusal::Engine {
         reason: refusal.to_string(),
     })?;
-    engine
-        .validate(wasm)
+    crate::resolver::validate_deployment_module(&engine, wasm, abi_version)
         .map_err(|refusal| BuildRefusal::ArtifactRejected {
             reason: refusal.to_string(),
         })?;

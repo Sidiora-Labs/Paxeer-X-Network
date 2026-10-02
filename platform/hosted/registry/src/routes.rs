@@ -16,7 +16,7 @@ use layerx_programs::{
     JournalReadAuthority, LifecycleReceipt, ObservedHead, ProgramId, ProgramInterface,
     ProgramLifecycle, ProtocolDeploymentVerifier, Registry, RegistryError, RegistryVersion,
     ReproducibleBuild, SourceArchive, SourceStatus, SourceVerifier, UpgradePolicy,
-    VerifiedProgramBalanceRead, VerifiedRegistryRead, WindDownStateAccess,
+    VerifiedDeploymentEvidence, VerifiedProgramBalanceRead, VerifiedRegistryRead, WindDownStateAccess,
 };
 use layerx_programs_protocol_adapter::ProtocolProgramStateRead;
 use serde::{Deserialize, Serialize};
@@ -33,12 +33,12 @@ use crate::node_state::{HeadAuthority, NodeProgramStateSource, ProgramStateCurso
 use crate::program_state::FileProgramStateJournal;
 use crate::verified::{
     Admission, JournalRefusal, LeaseRefusal, Publication, Reconciled, VerificationJournal,
-    VerificationLease, VerificationRecord, VerificationState, VerifiedSource, VerifiedSourceStore,
+    VerificationLease, VerificationRecord, VerificationState, VerifiedSource, VerifiedSourceDeployment, VerifiedSourceStore,
 };
 use crate::{Authorization, Config};
 
 const IDEMPOTENCY_DOMAIN: &[u8] = b"LayerX/platform/registry/idempotency/v2\0";
-const REQUEST_DOMAIN: &[u8] = b"LayerX/platform/registry/source-request/v1\0";
+const REQUEST_DOMAIN: &[u8] = b"LayerX/platform/registry/source-request/v2\0";
 const MAX_CHANGE_PAGES: usize = 1_024;
 const ROUTE_PREFIX: &str = "/v1/programs/registry/";
 
@@ -75,6 +75,7 @@ pub struct Registrar {
     staleness_ms: u64,
     balance_reads: BTreeMap<ProgramId, VerifiedProgramBalanceRead>,
     interfaces: BTreeMap<(ProgramId, u32), ProgramInterface>,
+    deployments: BTreeMap<(ProgramId, u32), VerifiedDeploymentEvidence>,
     current_head: Option<AccountStateHead>,
     head_authority: Option<HeadAuthority>,
     verification: VerificationJournal,
@@ -154,6 +155,7 @@ impl Registrar {
             staleness_ms: config.staleness_ms,
             balance_reads: BTreeMap::new(),
             interfaces: BTreeMap::new(),
+            deployments: BTreeMap::new(),
             current_head: None,
             head_authority: None,
             verification: VerificationJournal::open(config.journal.join("verification-requests"))?,
@@ -395,7 +397,7 @@ impl Registrar {
                 .entry_for_wind_down(program)
                 .map_err(|error| format!("program-state registry lookup refused: {error}"))?;
             let abi = entry.versions.last().map(|version| version.abi_version);
-            if abi == Some(1) && entry.value_accounts.is_empty() {
+            if matches!(abi, Some(1 | 3 | 4)) && entry.value_accounts.is_empty() {
                 continue;
             }
             if abi != Some(2) {
@@ -553,7 +555,7 @@ impl Registrar {
             .versions
             .last()
             .map(|version| version.abi_version);
-        if abi == Some(1) && read.entry.value_accounts.is_empty() {
+        if matches!(abi, Some(1 | 3 | 4)) && read.entry.value_accounts.is_empty() {
             return Response {
                 status: 200,
                 body: self
@@ -631,6 +633,15 @@ impl Registrar {
         head: AccountStateHead,
         valid_through: u64,
     ) -> Value {
+        if let Some(versions) = document["versions"].as_array_mut() {
+            for version in versions {
+                if let Some(number) = version["version"].as_u64().and_then(|number| u32::try_from(number).ok()) {
+                    if let Some(deployment) = self.deployments.get(&(read.entry.program, number)) {
+                        version["deployment_provenance"] = deployment_provenance_json(deployment);
+                    }
+                }
+            }
+        }
         if let Err(error) = self
             .discovery_proof(read, head, valid_through)
             .and_then(|fields| attach_discovery_proof(&mut document, &fields))
@@ -796,7 +807,7 @@ impl Registrar {
             return refusal(
                 400,
                 "invalid_argument",
-                "request must carry source_uri and a thirty-two byte hexadecimal source_digest",
+                "request must carry only source_uri and a thirty-two byte hexadecimal source_digest",
             );
         };
         let principal = match self.publication_principal(request) {
@@ -804,7 +815,11 @@ impl Registrar {
             Err(response) => return response,
         };
         let scope = scoped_key(&principal, program, key);
-        let digest = request_digest(program, &source_uri, &source_digest);
+        let deployment = match self.source_deployment(program, now) {
+            Ok(deployment) => deployment,
+            Err(response) => return response,
+        };
+        let digest = request_digest(&deployment, &source_uri, &source_digest);
         let lease = match self.verification.lease(deadline) {
             Ok(lease) => lease,
             Err(LeaseRefusal::Busy) => {
@@ -842,7 +857,7 @@ impl Registrar {
         self.build_and_settle(
             &lease,
             record,
-            program,
+            &deployment,
             &source_uri,
             source_digest,
             &principal,
@@ -858,14 +873,14 @@ impl Registrar {
         &mut self,
         lease: &VerificationLease,
         mut record: VerificationRecord,
-        program: ProgramId,
+        deployment: &VerifiedDeploymentEvidence,
         source_uri: &str,
         source_digest: [u8; 32],
         _principal: &str,
         now: u64,
     ) -> Response {
         let mut artifact = None;
-        let response = self.reproduce(program, source_uri, source_digest, &mut artifact);
+        let response = self.reproduce(deployment, source_uri, source_digest, &mut artifact);
         if response.status == 503 {
             return settled(
                 lease,
@@ -908,9 +923,25 @@ impl Registrar {
             Err(error) => return refusal(503, "idempotency_store_corrupt", &error),
         };
         let program = artifact.program;
+        let Some(publication_now) = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).ok()
+            .and_then(|elapsed| u64::try_from(elapsed.as_millis()).ok())
+        else {
+            return refusal(503, "clock_unavailable", "source publication requires a valid clock");
+        };
+        let deployment = match self.source_deployment(program, publication_now) {
+            Ok(deployment) => deployment,
+            Err(response) => return response,
+        };
+        if deployment.version() != artifact.version
+            || deployment_provenance(&deployment) != artifact.deployment_provenance
+            || deployment.code_hash() != artifact.artifact_digest
+        {
+            return refusal(409, "deployment_changed", "prepared source verification no longer matches its verified deployment");
+        }
         if record.program != hex::encode(&program.bytes())
             || record.request_digest != hex::encode(&request_digest(
-                program, &artifact.source_uri, &artifact.source_digest,
+                &deployment, &artifact.source_uri, &artifact.source_digest,
             ))
         {
             return refusal(503, "idempotency_store_corrupt", "prepared artifact request differs");
@@ -932,7 +963,7 @@ impl Registrar {
             let state = VerificationState::Completed { response: response.clone() };
             return settled(lease, &mut record, state, now, response);
         }
-        let read = self.read(&hex::encode(&program.bytes()), now);
+        let read = self.read(&hex::encode(&program.bytes()), publication_now);
         if read.status != 200 {
             return read;
         }
@@ -1000,11 +1031,50 @@ impl Registrar {
         settled(lease, &mut record, state, now, response)
     }
 
-    fn reproduce(&mut self, program: ProgramId, uri: &str, source_digest: [u8; 32], artifact: &mut Option<VerifiedSource>) -> Response {
-        let version = match self.registry.latest_version(program) {
-            Ok(version) => version,
-            Err(error) => return refusal(404, "not_found", &error.to_string()),
-        };
+    fn source_deployment(
+        &mut self,
+        program: ProgramId,
+        now: u64,
+    ) -> Result<VerifiedDeploymentEvidence, Response> {
+        if self.registry.latest_version(program).is_err() {
+            return Err(refusal(404, "not_found", "program is not registered"));
+        }
+        self.synchronize_protocol_state(Some(program), now)
+            .map_err(|error| refusal(503, "protocol_state_unavailable", &error))?;
+        let authority = JournalReadAuthority::new(&self.journal, now, self.staleness_ms)
+            .map_err(|error| refusal(503, "read_unverifiable", &error.to_string()))?;
+        let read = self.registry.read(program, &authority)
+            .map_err(|error| refusal(502, "unverified_read", &error.to_string()))?;
+        if read.entry.lifecycle != ProgramLifecycle::Active {
+            return Err(refusal(422, "deployment_inactive", "source verification requires an active deployment"));
+        }
+        let version = read.entry.versions.last()
+            .ok_or_else(|| refusal(502, "unverified_read", "program has no verified version"))?;
+        let deployment = self.deployments.get(&(program, version.number))
+            .ok_or_else(|| refusal(502, "deployment_unverified", "verified deployment evidence is absent"))?;
+        if deployment.program() != program
+            || deployment.version() != version.number
+            || deployment.code_hash() != version.code_hash
+            || deployment.abi_version() != version.abi_version
+            || deployment.receipt_digest() != version.deployment_receipt_digest
+            || !(1..=4).contains(&deployment.abi_version())
+            || deployment.lifecycle() != ProgramLifecycle::Active
+        {
+            return Err(refusal(422, "deployment_mismatch", "verified deployment does not match the current registry version"));
+        }
+        let head = self.current_head
+            .ok_or_else(|| refusal(503, "protocol_head_unavailable", "current protocol head is unavailable"))?;
+        let valid_through = head.freshness.observed_at.checked_add(self.staleness_ms)
+            .filter(|until| now >= head.freshness.observed_at && now <= *until)
+            .ok_or_else(|| refusal(503, "stale_read", "current protocol head is outside its freshness bound"))?;
+        self.discovery_proof(&read, head, valid_through)
+            .map_err(|error| refusal(503, "deployment_head_unverified", &error))?;
+        Ok(deployment.clone())
+    }
+
+    fn reproduce(&mut self, deployment: &VerifiedDeploymentEvidence, uri: &str, source_digest: [u8; 32], artifact: &mut Option<VerifiedSource>) -> Response {
+        let program = deployment.program();
+        let version = deployment.version();
         let mirrored = match self.mirror.fetch(uri, source_digest) {
             Ok(mirrored) => mirrored,
             Err(refused @ MirrorRefusal::NotMirrored) => {
@@ -1012,18 +1082,28 @@ impl Registrar {
             }
             Err(refused) => return refusal(422, "source_unverifiable", &refused.to_string()),
         };
-        let build = match self.verifier.reproduce(&mirrored.source, &mirrored.plan) {
+        let build = match self.verifier.reproduce_deployment(&mirrored.source, &mirrored.plan, deployment) {
             Ok(build) => build,
             Err(refused) => return rebuild_refusal(&refused),
         };
         if self.node_state.request_deadline_expired() {
-            return refusal(
-                503,
-                "request_deadline_exceeded",
-                "the registry request deadline expired during rebuild",
-            );
+            return refusal(503, "request_deadline_exceeded", "the registry request deadline expired during rebuild");
         }
-        let status = match self.registry.verify_source(program, version, &build) {
+        let Some(now) = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).ok()
+            .and_then(|elapsed| u64::try_from(elapsed.as_millis()).ok())
+        else {
+            return refusal(503, "clock_unavailable", "source verification requires a valid clock");
+        };
+        let current = match self.source_deployment(program, now) {
+            Ok(current) => current,
+            Err(response) => return response,
+        };
+        if current != *deployment {
+            return refusal(409, "deployment_changed", "verified deployment changed during source reproduction");
+        }
+        let mut candidate = self.registry.clone();
+        let status = match candidate.verify_source(program, version, &build) {
             Ok(status) => status,
             Err(error) => return refusal(404, "not_found", &error.to_string()),
         };
@@ -1034,8 +1114,9 @@ impl Registrar {
             source_digest: build.source_digest,
             artifact_digest: build.artifact_digest,
             plan: mirrored.plan.clone(),
+            deployment_provenance: deployment_provenance(deployment),
         });
-        verification_response(program, version, &build, status)
+        verification_response(deployment, &build, status)
     }
 
     fn ingest_deployment(&mut self, body: &[u8], deadline: Instant) -> Response {
@@ -1094,6 +1175,7 @@ impl Registrar {
             return refusal(503, "journal_unavailable", &error);
         }
         self.registry = candidate;
+        self.deployments.insert((evidence.program(), evidence.version()), evidence.clone());
         if let Some(interface) = evidence.interface() {
             self.interfaces
                 .insert((evidence.program(), evidence.version()), interface.clone());
@@ -1107,10 +1189,12 @@ impl Registrar {
     fn rebuild(&mut self) -> Result<(), String> {
         let mut registry = Registry::new();
         let mut interfaces = BTreeMap::new();
+        let mut deployments = BTreeMap::new();
         let loaded = self.journal.load()?;
         for unit in &loaded.units {
             let evidence = self.node_state.verify_stored_deployment(unit.proof())?;
             self.journal.audit_projection(&evidence)?;
+            deployments.insert((evidence.program(), evidence.version()), evidence.clone());
             self.journal.export_pair(&evidence)?;
             if let Some(interface) = evidence.interface() {
                 interfaces.insert((evidence.program(), evidence.version()), interface.clone());
@@ -1122,6 +1206,19 @@ impl Registrar {
                 })?;
         }
         for record in self.verified.records()? {
+            let deployment = deployments.get(&(record.program, record.version))
+                .ok_or_else(|| "a stored source verification has no verified deployment".to_owned())?;
+            if record.deployment_provenance != deployment_provenance(deployment)
+                || record.artifact_digest != deployment.code_hash()
+                || !(1..=4).contains(&deployment.abi_version())
+            {
+                return Err("a stored source verification has mismatched deployment provenance".to_owned());
+            }
+            let mirrored = self.mirror.fetch(&record.source_uri, record.source_digest)
+                .map_err(|error| format!("a stored source verification has no matching source archive: {error}"))?;
+            if mirrored.plan != record.plan {
+                return Err("a stored source verification has a different pinned build plan".to_owned());
+            }
             let build = ReproducibleBuild::from_record(
                 record.source_uri.clone(),
                 record.source_digest,
@@ -1129,17 +1226,14 @@ impl Registrar {
                 record.artifact_digest,
             )
             .map_err(|error| format!("a stored verification is not admissible: {error}"))?;
-            match registry.verify_source(record.program, record.version, &build) {
-                Ok(_) | Err(RegistryError::UnknownProgram | RegistryError::UnknownVersion) => {}
-                Err(error) => {
-                    return Err(format!("a stored verification is not replayable: {error}"))
-                }
-            }
+            registry.verify_source(record.program, record.version, &build)
+                .map_err(|error| format!("a stored verification is not replayable: {error}"))?;
         }
         self.program_state.audit()?;
         self.registry = registry;
         self.balance_reads.clear();
         self.interfaces = interfaces;
+        self.deployments = deployments;
         self.current_head = None;
         self.head_authority = None;
         self.quarantined = loaded.quarantined;
@@ -1260,6 +1354,11 @@ pub fn refusal(status: u16, code: &str, detail: &str) -> Response {
 
 fn rebuild_refusal(refused: &BuildRefusal) -> Response {
     match refused {
+        BuildRefusal::Registry(RegistryError::DeploymentMismatch) => refusal(
+            409,
+            "source_mismatch",
+            "the rebuilt artifact does not match the verified deployment",
+        ),
         BuildRefusal::SandboxUnavailable { reason } => refusal(503, "builder_unavailable", reason),
         BuildRefusal::BuilderFailed { reason } => refusal(422, "build_failed", reason),
         BuildRefusal::NondeterministicBuild { .. } => {
@@ -1270,15 +1369,18 @@ fn rebuild_refusal(refused: &BuildRefusal) -> Response {
 }
 
 fn verification_response(
-    program: ProgramId,
-    version: u32,
+    deployment: &VerifiedDeploymentEvidence,
     build: &ReproducibleBuild,
     status: SourceStatus,
 ) -> Response {
     let verified = matches!(status, SourceStatus::Verified { .. });
     let outcome = json!({
-        "program_id": hex::encode(&program.bytes()),
-        "version": version,
+        "program_id": hex::encode(&deployment.program().bytes()),
+        "version": deployment.version(),
+        "abi_version": deployment.abi_version(),
+        "code_hash": hex::encode(&deployment.code_hash()),
+        "deployment_receipt_digest": hex::encode(&deployment.receipt_digest()),
+        "deployment_provenance": deployment_provenance_json(deployment),
         "source_uri": build.source_uri,
         "source_digest": hex::encode(&build.source_digest),
         "environment_digest": hex::encode(&build.environment_digest),
@@ -1316,7 +1418,11 @@ fn registry_read_json(
     let value_accounts = balances.map_or_else(
         || {
             json!({
-                "status": "account-incapable-abi1",
+                "status": if read.entry.versions.last().is_some_and(|version| version.abi_version == 1) {
+                    "account-incapable-abi1"
+                } else {
+                    "no-registered-accounts"
+                },
                 "accounts": [],
             })
         },
@@ -1457,9 +1563,15 @@ fn program_id(text: &str) -> Option<ProgramId> {
 }
 
 fn source_request(body: &[u8]) -> Option<(String, [u8; 32])> {
-    let document: Value = serde_json::from_slice(body).ok()?;
-    let uri = document["source_uri"].as_str()?.to_owned();
-    let digest = hex::decode_digest(document["source_digest"].as_str()?).ok()?;
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct SourceRequest {
+        source_uri: String,
+        source_digest: String,
+    }
+    let document: SourceRequest = serde_json::from_slice(body).ok()?;
+    let uri = document.source_uri;
+    let digest = hex::decode_digest(&document.source_digest).ok()?;
     Some((uri, digest))
 }
 
@@ -1514,11 +1626,12 @@ fn journal_refusal(refused: &JournalRefusal) -> Response {
     }
 }
 
-fn request_digest(program: ProgramId, uri: &str, source_digest: &[u8; 32]) -> [u8; 32] {
+fn request_digest(deployment: &VerifiedDeploymentEvidence, uri: &str, source_digest: &[u8; 32]) -> [u8; 32] {
+    let binding = deployment_provenance_json(deployment).to_string();
     Sha256::digest(
         [
             REQUEST_DOMAIN,
-            &program.bytes(),
+            binding.as_bytes(),
             b"\0",
             uri.as_bytes(),
             b"\0",
@@ -1527,6 +1640,36 @@ fn request_digest(program: ProgramId, uri: &str, source_digest: &[u8; 32]) -> [u
         .concat(),
     )
     .into()
+}
+
+fn deployment_provenance(evidence: &VerifiedDeploymentEvidence) -> VerifiedSourceDeployment {
+    VerifiedSourceDeployment {
+        abi_version: evidence.abi_version(),
+        code_hash: evidence.code_hash(),
+        activity_id: evidence.activity_id(),
+        receipt_digest: evidence.receipt_digest(),
+        batch_header_digest: evidence.batch_header_digest(),
+        state_root: evidence.state_root(),
+        programs_root: evidence.programs_root(),
+        observed_sequence: evidence.freshness().observed_sequence,
+        observed_at: evidence.freshness().observed_at,
+    }
+}
+
+fn deployment_provenance_json(evidence: &VerifiedDeploymentEvidence) -> Value {
+    json!({
+        "program_id": hex::encode(&evidence.program().bytes()),
+        "version": evidence.version(),
+        "abi_version": evidence.abi_version(),
+        "code_hash": hex::encode(&evidence.code_hash()),
+        "activity_id": hex::encode(&evidence.activity_id()),
+        "receipt_digest": hex::encode(&evidence.receipt_digest()),
+        "batch_header_digest": hex::encode(&evidence.batch_header_digest()),
+        "state_root": hex::encode(&evidence.state_root()),
+        "programs_root": hex::encode(&evidence.programs_root()),
+        "observed_sequence": evidence.freshness().observed_sequence,
+        "observed_at": evidence.freshness().observed_at,
+    })
 }
 
 fn deployment_response(evidence: &layerx_programs::VerifiedDeploymentEvidence) -> Response {
@@ -1543,7 +1686,34 @@ fn deployment_response(evidence: &layerx_programs::VerifiedDeploymentEvidence) -
 
 #[cfg(test)]
 mod tests {
-    use super::deployment_ingress_unavailable;
+    use super::{deployment_ingress_unavailable, source_request};
+
+    #[test]
+    fn source_request_refuses_caller_deployment_relabeling() {
+        let valid = serde_json::json!({
+            "source_uri": "https://sources.example/program.tar",
+            "source_digest": "a1".repeat(32),
+        });
+        assert!(source_request(valid.to_string().as_bytes()).is_some());
+        for field in ["abi_version", "version", "program_id", "code_hash", "deployment_provenance", "deployment_receipt_digest"] {
+            let mut altered = valid.clone();
+            altered[field] = serde_json::json!(2);
+            assert!(source_request(altered.to_string().as_bytes()).is_none(), "accepted {field}");
+        }
+    }
+
+    #[test]
+    fn source_request_refuses_duplicate_identity_fields() {
+        let digest = "a1".repeat(32);
+        let repeated = format!(
+            r#"{{"source_uri":"https://sources.example/a","source_uri":"https://sources.example/b","source_digest":"{digest}"}}"#
+        );
+        assert!(source_request(repeated.as_bytes()).is_none());
+        let repeated = format!(
+            r#"{{"source_uri":"https://sources.example/a","source_digest":"{digest}","source_digest":"{digest}"}}"#
+        );
+        assert!(source_request(repeated.as_bytes()).is_none());
+    }
 
     #[test]
     fn deployment_ingress_stays_blocked_for_forgeable_record_shape() {

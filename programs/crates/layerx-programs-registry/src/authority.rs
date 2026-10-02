@@ -222,7 +222,10 @@ impl DeploymentRecord {
         if self.version == 0
             || !matches!(
                 self.abi_version,
-                layerx_programs_runtime::ABI_V1_VERSION | layerx_programs_runtime::ABI_V2_VERSION
+                layerx_programs_runtime::ABI_V1_VERSION
+                    | layerx_programs_runtime::ABI_V2_VERSION
+                    | layerx_programs_runtime::ABI_V3_VERSION
+                    | layerx_programs_runtime::ABI_V4_VERSION
             )
             || self.new_code_hash == [0; 32]
             || self.sequence == 0
