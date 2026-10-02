@@ -260,6 +260,7 @@ static int interface_export(const char *output, const char *name, metered_fixtur
     lxp_merkle_proof activity_proof, receipt_proof;
     uint8_t programs_root[32], state_root[32], signature[64], leaf_hash[1][32], root[32];
     uint8_t status_key[43], lower_key[129], upper_key[129];
+    uint8_t activity_identifier[32], execution_identifier[32];
     size_t lower_length = 0, upper_length = 0;
     const uint8_t *lower_value = NULL, *upper_value = NULL;
     size_t lower_value_length = 0, upper_value_length = 0;
@@ -269,6 +270,12 @@ static int interface_export(const char *output, const char *name, metered_fixtur
     METERED_CHECK(lxp_arena_init(&arena, memory, sizeof(memory)) == LXP_OK);
     METERED_CHECK(lxp_activity_verify_signature(&f->activity) == LXP_OK);
     METERED_CHECK(lxp_activity_encode(&f->activity, &arena, &activity) == LXP_OK);
+    METERED_CHECK(lxp_activity_id(activity.bytes, activity.length, activity_identifier) == LXP_OK);
+    METERED_CHECK(memcmp(activity_identifier, f->receipt.activity_id, 32) == 0);
+    METERED_CHECK(lxp_batch_identity_activity(f->receipt.previous_state_root,
+        activity_identifier, f->receipt.global_sequence, f->execution.batch_number,
+        execution_identifier) == LXP_OK);
+    METERED_CHECK(memcmp(execution_identifier, f->receipt.batch_id, 32) == 0);
     METERED_CHECK(lxp_receipt_encode(&f->receipt, true, &arena, &receipt) == LXP_OK);
     METERED_CHECK(executed_public_key(executed_sequencer_seed, auth.public_key) == 0);
     METERED_CHECK(lxp_receipt_verify(&f->receipt, auth.public_key, &arena) == LXP_OK);
@@ -396,7 +403,7 @@ static int interface_transition(metered_fixture *f, const char *inputs, const ch
                                  bool upgrade, bool breaking, lxp_result expected)
 {
     uint8_t module[65536], description[953], payload[67000], hash[32], prior_hash[32];
-    uint8_t before[32], after[32], preimage[88];
+    uint8_t before[32], after[32], activity_identifier[32];
     size_t module_length, description_length, length;
     lxp_byte_span canonical;
     lxp_batch_roots roots;
@@ -441,12 +448,10 @@ static int interface_transition(metered_fixture *f, const char *inputs, const ch
     METERED_CHECK(lxp_activity_encode(&f->activity, &f->arena, &canonical) == LXP_OK);
     METERED_CHECK(lxp_batch_roots_compute(&(lxp_batch_root_inputs){&canonical, 1,
         NULL, 0, NULL, 0, NULL, 0, NULL, 0}, &f->arena, &roots) == LXP_OK);
-    memcpy(preimage, f->kernel.current_state_root, 32);
-    memcpy(preimage + 32, roots.activity_merkle_root, 32);
-    write_u64(preimage + 64, f->execution.global_sequence);
-    write_u64(preimage + 72, f->execution.global_sequence);
-    write_u64(preimage + 80, f->execution.batch_number);
-    METERED_CHECK(lxp_hash_context_value(preimage, sizeof(preimage), f->execution.batch_id) == LXP_OK);
+    METERED_CHECK(lxp_activity_id(canonical.bytes, canonical.length, activity_identifier) == LXP_OK);
+    METERED_CHECK(lxp_batch_identity_activity(f->kernel.current_state_root,
+        activity_identifier, f->execution.global_sequence, f->execution.batch_number,
+        f->execution.batch_id) == LXP_OK);
     memcpy(f->execution.activity_root, roots.activity_merkle_root, 32);
     METERED_CHECK(lxp_kernel_execute_activity(&f->kernel, &f->activity, &f->execution, &f->receipt) == LXP_OK);
     if (f->receipt.result_code != expected)
