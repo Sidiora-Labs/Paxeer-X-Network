@@ -24447,7 +24447,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.108.0.7]
 title = "Rewrite the user-facing pages so no retired or unserved name is promised and accounts are funded through custody credit"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]

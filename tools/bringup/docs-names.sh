@@ -3,7 +3,7 @@ set -euo pipefail
 
 cd "$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
 
-spec=spec/paxeer-x-bringup/spec.kvx
+spec=spec/paxeer-x/spec.kvx
 host_re='([a-z0-9-]+\.)+paxeer\.network'
 docs=(docs platform/docs README.md ':(glob)platform/sdk/**/package-info.java' ':(glob)platform/sdk/**/README.md')
 
@@ -24,14 +24,14 @@ expand() {
 }
 
 allowed=$({
-	section decision.public_names
-	section decision | grep '^derivation_message '
+	section contract_context.108.decision.public_names
+	section contract_context.108.decision | grep '^derivation_message '
 } | grep -oiE "(api[0-9]+\.\.)?$host_re" | tr '[:upper:]' '[:lower:]' | expand | sort -u)
 
 rpc_count=$(grep -cE '^api([1-9]|1[0-6])\.mainnet-beta\.paxeer\.network$' <<<"$allowed" || true)
-router=$(section decision.public_names | grep -E '^router ' | grep -oiE "$host_re" | head -n 1 || true)
+router=$(section contract_context.108.decision.public_names | grep -E '^router ' | grep -oiE "$host_re" | head -n 1 || true)
 if [[ $rpc_count -ne 16 || -z $router ]]; then
-	echo "docs-names: cannot read the router and the sixteen RPC names from [decision.public_names] of $spec" >&2
+	echo "docs-names: cannot read the router and the sixteen RPC names from [contract_context.108.decision.public_names] of $spec" >&2
 	exit 1
 fi
 
