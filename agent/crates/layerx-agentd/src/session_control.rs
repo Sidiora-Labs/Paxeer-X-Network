@@ -76,7 +76,8 @@ impl SessionControl {
 
     /// Cancels one unsettled preparation: the `Failed` state and the replacement outcome
     /// extension (`EXTENSION_OUTCOME` only) are one store write, followed by the hold release.
-    /// A record already terminal is left unchanged and returns `Ok(false)`.
+    /// A record already terminal or already sent (`Submitted`, `Acknowledged`, `Unknown`) is left
+    /// unchanged and returns `Ok(false)`.
     ///
     /// # Errors
     ///
@@ -128,10 +129,19 @@ impl SessionControl {
             .bytes
             .clone();
         let mut record = DurablePreparation::decode(tenant.clone(), &stored).map_err(lifecycle)?;
-        if record.terminal() {
+        if record.terminal()
+            || (extension.is_some()
+                && matches!(
+                    record.state,
+                    LifecycleState::Submitted
+                        | LifecycleState::Acknowledged
+                        | LifecycleState::Unknown
+                ))
+        {
             return Ok(false);
         }
         record.state = state;
+        record.drop_signed_bytes();
         if let Some(extension) = extension {
             record.extensions.insert(extension.tag, extension.bytes);
         }
@@ -169,7 +179,8 @@ impl SessionControl {
         live_preparation_for_key(&store, tenant, idempotency_key)
     }
 
-    /// Restores every non-terminal durable preparation hold before writes are admitted.
+    /// Restores every non-terminal durable preparation, its in-memory lifecycle entry and its
+    /// holds, before writes are admitted.
     ///
     /// # Errors
     ///
@@ -180,20 +191,18 @@ impl SessionControl {
             .store
             .lock()
             .map_err(|_| SessionControlError::Unavailable)?;
-        let mut holds = Vec::new();
+        let mut records = Vec::new();
         for tenant in store.tenant_ids_for_kind(ObjectKind::Configuration) {
-            for preparation_id in DurablePreparation::recorded_ids(&store, &tenant) {
-                let key = DurablePreparation::store_key(&tenant, preparation_id).map_err(lifecycle)?;
-                let stored = store
-                    .get(&key)
-                    .ok_or(lifecycle(LifecycleError::NotFound))?;
-                let record = DurablePreparation::decode(tenant.clone(), &stored.bytes)
-                    .map_err(lifecycle)?;
-                if !record.terminal() {
-                    holds.extend(record.holds);
-                }
-            }
+            records.extend(DurablePreparation::load_all(&store, &tenant).map_err(lifecycle)?);
         }
+        let holds: Vec<_> = records
+            .iter()
+            .filter(|record| !record.terminal())
+            .flat_map(|record| record.holds.iter().cloned())
+            .collect();
+        self.lifecycle
+            .restore_durable(&records)
+            .map_err(lifecycle)?;
         budget::restore_bounded(&self.budgets, &holds)
             .map_err(|refusal| lifecycle(LifecycleError::Reservation(refusal)))?;
         Ok(holds.len())
@@ -752,6 +761,92 @@ impl SessionControl {
         self.lifecycle
             .invalidate_preparations(preparation_ids, current_sequence, &self.budgets)
             .map_err(SessionControlError::Lifecycle)
+    }
+
+    /// # Errors
+    ///
+    /// Returns an error unless the in-memory lifecycle is `Signing` for the record's exact
+    /// session generation and the durable record can move to `Signing` in one store write.
+    pub fn mark_signing(
+        &self,
+        tenant: &TenantId,
+        preparation_id: [u8; 32],
+    ) -> Result<bool, SessionControlError> {
+        self.mark_inner(tenant, preparation_id, LifecycleState::Signing)
+    }
+
+    /// # Errors
+    ///
+    /// Returns an error unless the in-memory lifecycle is `Signed` with retained bytes for the
+    /// record's exact session generation and the durable record can move to `Signed` with
+    /// those bytes in one store write.
+    pub fn mark_signed(
+        &self,
+        tenant: &TenantId,
+        preparation_id: [u8; 32],
+    ) -> Result<bool, SessionControlError> {
+        self.mark_inner(tenant, preparation_id, LifecycleState::Signed)
+    }
+
+    fn mark_inner(
+        &self,
+        tenant: &TenantId,
+        preparation_id: [u8; 32],
+        next: LifecycleState,
+    ) -> Result<bool, SessionControlError> {
+        let lifecycle = SessionControlError::Lifecycle;
+        let mut store = self
+            .store
+            .lock()
+            .map_err(|_| SessionControlError::Unavailable)?;
+        let key = DurablePreparation::store_key(tenant, preparation_id).map_err(lifecycle)?;
+        let stored = store
+            .get(&key)
+            .ok_or(lifecycle(LifecycleError::NotFound))?
+            .bytes
+            .clone();
+        let mut record = DurablePreparation::decode(tenant.clone(), &stored).map_err(lifecycle)?;
+        let changed = match next {
+            LifecycleState::Submitted | LifecycleState::Acknowledged => {
+                self.lifecycle.persist_sent(&mut record, next)
+            }
+            _ => self.lifecycle.persist_signature(&mut record, next),
+        }
+        .map_err(lifecycle)?;
+        if !changed {
+            return Ok(false);
+        }
+        let bytes = record.encode().map_err(lifecycle)?;
+        store
+            .update_local_batch(vec![(key, bytes)])
+            .map_err(|_| SessionControlError::Unavailable)?;
+        Ok(true)
+    }
+
+    /// # Errors
+    ///
+    /// Returns an error unless the in-memory lifecycle is `Submitted` for the record's exact
+    /// session generation and the durable `Signed` record can move to `Submitted` in one store
+    /// write.
+    pub fn mark_submitted(
+        &self,
+        tenant: &TenantId,
+        preparation_id: [u8; 32],
+    ) -> Result<bool, SessionControlError> {
+        self.mark_inner(tenant, preparation_id, LifecycleState::Submitted)
+    }
+
+    /// # Errors
+    ///
+    /// Returns an error unless the in-memory lifecycle is `Acknowledged` for the record's exact
+    /// session generation and the durable `Submitted` record can move to `Acknowledged` in one
+    /// store write.
+    pub fn mark_acknowledged(
+        &self,
+        tenant: &TenantId,
+        preparation_id: [u8; 32],
+    ) -> Result<bool, SessionControlError> {
+        self.mark_inner(tenant, preparation_id, LifecycleState::Acknowledged)
     }
 }
 
@@ -1468,7 +1563,7 @@ fn live_preparation_for_key(
 ) -> Result<Option<[u8; 32]>, SessionControlError> {
     let lifecycle = SessionControlError::Lifecycle;
     let mut found = None;
-    for preparation_id in DurablePreparation::recorded_ids(store, tenant) {
+    for preparation_id in DurablePreparation::recorded_ids(store, tenant).map_err(lifecycle)? {
         let key = DurablePreparation::store_key(tenant, preparation_id).map_err(lifecycle)?;
         let stored = store
             .get(&key)

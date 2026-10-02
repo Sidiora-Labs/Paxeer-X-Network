@@ -530,6 +530,174 @@ impl PreparationLifecycle {
         }
         Ok(line)
     }
+
+    pub(crate) fn restore_durable(
+        &self,
+        durable: &[DurablePreparation],
+    ) -> Result<usize, LifecycleError> {
+        let mut records = self
+            .records
+            .lock()
+            .map_err(|_| LifecycleError::Unavailable)?;
+        let mut restored = BTreeMap::new();
+        for record in durable.iter().filter(|record| !record.terminal()) {
+            if record.generation == 0 {
+                return Err(LifecycleError::InvalidAuthorization);
+            }
+            let signed_bytes = record.signed_bytes()?;
+            if records.contains_key(&record.preparation_id)
+                || restored.contains_key(&record.preparation_id)
+            {
+                return Err(LifecycleError::Duplicate);
+            }
+            restored.insert(
+                record.preparation_id,
+                RetainedPreparation {
+                    authorization: Some(PreparationAuthorization {
+                        session: SessionRef::new(
+                            record.tenant.clone(),
+                            crate::session::SessionId(record.session_id),
+                        ),
+                        generation: record.generation,
+                    }),
+                    state: record.state,
+                    not_after: record.not_after,
+                    reservation_ids: vec![record.preparation_id],
+                    signed_bytes,
+                    activity_id: record.activity_id,
+                    payload_hash: record.payload_hash,
+                    terminal_at_sequence: None,
+                },
+            );
+        }
+        let count = restored.len();
+        records.extend(restored);
+        Ok(count)
+    }
+
+    pub(crate) fn persist_signature(
+        &self,
+        durable: &mut DurablePreparation,
+        next: LifecycleState,
+    ) -> Result<bool, LifecycleError> {
+        let records = self
+            .records
+            .lock()
+            .map_err(|_| LifecycleError::Unavailable)?;
+        let record = records
+            .get(&durable.preparation_id)
+            .ok_or(LifecycleError::NotFound)?;
+        let owner = PreparationAuthorization {
+            session: SessionRef::new(
+                durable.tenant.clone(),
+                crate::session::SessionId(durable.session_id),
+            ),
+            generation: durable.generation,
+        };
+        require_authorization(record, Some(&owner))?;
+        if record.state != next {
+            return Err(LifecycleError::InvalidTransition {
+                from: record.state,
+                to: next,
+            });
+        }
+        let signed = match next {
+            LifecycleState::Signing => None,
+            LifecycleState::Signed => Some((
+                record
+                    .activity_id
+                    .ok_or(LifecycleError::ActivityIdUnavailable)?,
+                record
+                    .signed_bytes
+                    .clone()
+                    .ok_or(LifecycleError::InvalidSignedBytes)?,
+            )),
+            _ => {
+                return Err(LifecycleError::InvalidTransition {
+                    from: durable.state,
+                    to: next,
+                })
+            }
+        };
+        let stored = durable
+            .signed_bytes()?
+            .zip(durable.activity_id)
+            .map(|(bytes, activity_id)| (activity_id, bytes));
+        if durable.state == next {
+            return if stored == signed {
+                Ok(false)
+            } else {
+                Err(LifecycleError::AuthorizationMismatch)
+            };
+        }
+        let reachable = valid_transition(durable.state, next)
+            || (valid_transition(durable.state, LifecycleState::Signing)
+                && valid_transition(LifecycleState::Signing, next));
+        if !reachable {
+            return Err(LifecycleError::InvalidTransition {
+                from: durable.state,
+                to: next,
+            });
+        }
+        durable.state = next;
+        if let Some((activity_id, bytes)) = signed {
+            durable.activity_id = Some(activity_id);
+            durable.extensions.insert(EXTENSION_SIGNED_BYTES, bytes);
+        }
+        Ok(true)
+    }
+
+    pub(crate) fn persist_sent(
+        &self,
+        durable: &mut DurablePreparation,
+        next: LifecycleState,
+    ) -> Result<bool, LifecycleError> {
+        if !matches!(
+            next,
+            LifecycleState::Submitted | LifecycleState::Acknowledged
+        ) {
+            return Err(LifecycleError::InvalidTransition {
+                from: durable.state,
+                to: next,
+            });
+        }
+        let records = self
+            .records
+            .lock()
+            .map_err(|_| LifecycleError::Unavailable)?;
+        let record = records
+            .get(&durable.preparation_id)
+            .ok_or(LifecycleError::NotFound)?;
+        let owner = PreparationAuthorization {
+            session: SessionRef::new(
+                durable.tenant.clone(),
+                crate::session::SessionId(durable.session_id),
+            ),
+            generation: durable.generation,
+        };
+        require_authorization(record, Some(&owner))?;
+        if record.state != next {
+            return Err(LifecycleError::InvalidTransition {
+                from: record.state,
+                to: next,
+            });
+        }
+        if durable.state == next {
+            return Ok(false);
+        }
+        if !valid_transition(durable.state, next) {
+            return Err(LifecycleError::InvalidTransition {
+                from: durable.state,
+                to: next,
+            });
+        }
+        let stored = durable.signed_bytes()?;
+        if stored.is_none() || stored != record.signed_bytes {
+            return Err(LifecycleError::AuthorizationMismatch);
+        }
+        durable.state = next;
+        Ok(true)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -709,9 +877,22 @@ pub const EXTENSION_CAPABILITY: u16 = 1;
 pub const EXTENSION_OUTCOME: u16 = 2;
 /// Extension tag written by the admission seam: the activity's 32-byte idempotency key.
 pub const EXTENSION_IDEMPOTENCY: u16 = 3;
+
+const EXTENSION_SIGNED_BYTES: u16 = 4;
 const PREPARATION_PREFIX: &[u8] = b"prepare/record/";
 const PREPARATION_MAGIC: &[u8; 4] = b"LXPR";
 const PREPARATION_VERSION: u8 = 1;
+
+const PREPARATION_VERSION_SIGNED: u8 = 2;
+const MAX_SIGNED_BYTES: usize = 1_048_576;
+
+const fn extension_bound(version: u8, tag: u16) -> usize {
+    if version == PREPARATION_VERSION_SIGNED && tag == EXTENSION_SIGNED_BYTES {
+        MAX_SIGNED_BYTES
+    } else {
+        MAX_EXTENSION_BYTES
+    }
+}
 const MAX_PREPARATION_BYTES: usize = 1_048_576;
 const MAX_EXTENSION_BYTES: usize = 65_536;
 const MAX_HOLDS: usize = 64;
@@ -781,17 +962,21 @@ impl DurablePreparation {
     }
 
     /// Lists the preparation identifiers durably recorded for one tenant.
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidSignedBytes` for a record identifier that is not 32 bytes.
     pub fn recorded_ids(
         store: &crate::store::Store,
         tenant: &crate::store::TenantId,
-    ) -> Vec<[u8; 32]> {
+    ) -> Result<Vec<[u8; 32]>, LifecycleError> {
         store
             .list_object_ids(tenant, crate::store::ObjectKind::Configuration)
             .into_iter()
             .filter_map(|id| {
-                id.strip_prefix(PREPARATION_PREFIX)
-                    .and_then(|rest| <[u8; 32]>::try_from(rest).ok())
+                id.strip_prefix(PREPARATION_PREFIX).map(|rest| {
+                    <[u8; 32]>::try_from(rest).map_err(|_| LifecycleError::InvalidSignedBytes)
+                })
             })
             .collect()
     }
@@ -807,9 +992,23 @@ impl DurablePreparation {
         if self.holds.len() > MAX_HOLDS || self.extensions.len() > MAX_EXTENSIONS {
             return Err(LifecycleError::InvalidSignedBytes);
         }
-        let mut encoder = layerx_wire::encode::Encoder::new(MAX_PREPARATION_BYTES);
+        let version = if self
+            .extensions
+            .get(&EXTENSION_SIGNED_BYTES)
+            .is_some_and(|bytes| bytes.len() > MAX_EXTENSION_BYTES)
+        {
+            PREPARATION_VERSION_SIGNED
+        } else {
+            PREPARATION_VERSION
+        };
+        let capacity = if version == PREPARATION_VERSION {
+            MAX_PREPARATION_BYTES
+        } else {
+            MAX_PREPARATION_BYTES + MAX_SIGNED_BYTES
+        };
+        let mut encoder = layerx_wire::encode::Encoder::new(capacity);
         encoder.fixed(PREPARATION_MAGIC).map_err(invalid)?;
-        encoder.u8(PREPARATION_VERSION).map_err(invalid)?;
+        encoder.u8(version).map_err(invalid)?;
         encoder.fixed(&self.preparation_id).map_err(invalid)?;
         encoder.fixed(&self.session_id).map_err(invalid)?;
         encoder.u64(self.generation).map_err(invalid)?;
@@ -862,7 +1061,7 @@ impl DurablePreparation {
             )
             .map_err(invalid)?;
         for (tag, bytes) in &self.extensions {
-            if bytes.len() > MAX_EXTENSION_BYTES {
+            if bytes.len() > extension_bound(version, *tag) {
                 return Err(LifecycleError::InvalidSignedBytes);
             }
             encoder.u16(*tag).map_err(invalid)?;
@@ -893,9 +1092,11 @@ impl DurablePreparation {
                 .try_into()
                 .map_err(|_| LifecycleError::InvalidSignedBytes)
         }
-        if fixed::<4>(&mut decoder)? != *PREPARATION_MAGIC
-            || decoder.u8().map_err(invalid)? != PREPARATION_VERSION
-        {
+        if fixed::<4>(&mut decoder)? != *PREPARATION_MAGIC {
+            return Err(LifecycleError::InvalidSignedBytes);
+        }
+        let version = decoder.u8().map_err(invalid)?;
+        if version != PREPARATION_VERSION && version != PREPARATION_VERSION_SIGNED {
             return Err(LifecycleError::InvalidSignedBytes);
         }
         let preparation_id = fixed::<32>(&mut decoder)?;
@@ -958,13 +1159,22 @@ impl DurablePreparation {
             let tag = decoder.u16().map_err(invalid)?;
             let length = usize::try_from(decoder.u32().map_err(invalid)?)
                 .map_err(|_| LifecycleError::InvalidSignedBytes)?;
-            if previous.is_some_and(|previous| tag <= previous) || length > MAX_EXTENSION_BYTES {
+            if previous.is_some_and(|previous| tag <= previous)
+                || length > extension_bound(version, tag)
+            {
                 return Err(LifecycleError::InvalidSignedBytes);
             }
             extensions.insert(tag, decoder.fixed(length).map_err(invalid)?.to_vec());
             previous = Some(tag);
         }
         decoder.finish().map_err(invalid)?;
+        if version == PREPARATION_VERSION_SIGNED
+            && !extensions
+                .get(&EXTENSION_SIGNED_BYTES)
+                .is_some_and(|bytes| bytes.len() > MAX_EXTENSION_BYTES)
+        {
+            return Err(LifecycleError::InvalidSignedBytes);
+        }
         Ok(Self {
             tenant,
             preparation_id,
@@ -977,5 +1187,54 @@ impl DurablePreparation {
             holds,
             extensions,
         })
+    }
+
+    /// Strictly decodes every durable preparation record of one tenant.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidSignedBytes` for a malformed record identifier, a malformed record or a
+    /// record whose identifier differs from its key, and `NotFound` for a listed key without a
+    /// value.
+    pub fn load_all(
+        store: &crate::store::Store,
+        tenant: &crate::store::TenantId,
+    ) -> Result<Vec<Self>, LifecycleError> {
+        store
+            .list_object_ids(tenant, crate::store::ObjectKind::Configuration)
+            .into_iter()
+            .filter_map(|id| id.strip_prefix(PREPARATION_PREFIX).map(<[u8]>::to_vec))
+            .map(|rest| {
+                let preparation_id = <[u8; 32]>::try_from(rest.as_slice())
+                    .map_err(|_| LifecycleError::InvalidSignedBytes)?;
+                let key = Self::store_key(tenant, preparation_id)?;
+                let stored = store.get(&key).ok_or(LifecycleError::NotFound)?;
+                let record = Self::decode(tenant.clone(), stored.bytes())?;
+                if record.preparation_id != preparation_id {
+                    return Err(LifecycleError::InvalidSignedBytes);
+                }
+                Ok(record)
+            })
+            .collect()
+    }
+
+    pub(crate) fn signed_bytes(&self) -> Result<Option<Vec<u8>>, LifecycleError> {
+        let bytes = self.extensions.get(&EXTENSION_SIGNED_BYTES);
+        let unsigned = matches!(
+            self.state,
+            LifecycleState::Prepared | LifecycleState::Signing
+        );
+        match bytes {
+            None if unsigned && self.activity_id.is_none() => Ok(None),
+            Some(bytes) if !unsigned && !bytes.is_empty() && self.activity_id.is_some() => {
+                Ok(Some(bytes.clone()))
+            }
+            _ if self.terminal() => Ok(bytes.cloned()),
+            _ => Err(LifecycleError::InvalidSignedBytes),
+        }
+    }
+
+    pub(crate) fn drop_signed_bytes(&mut self) {
+        self.extensions.remove(&EXTENSION_SIGNED_BYTES);
     }
 }
