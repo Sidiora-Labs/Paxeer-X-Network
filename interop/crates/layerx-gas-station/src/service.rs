@@ -12,7 +12,7 @@ use crate::price::{PriceError, PriceSource};
 use crate::quote::{word, Address, Word};
 use crate::rpc::{bytes, hex, JsonRpc, RpcFault};
 use crate::signer::QuoteSigner;
-use crate::station::{GasStation, Progress, QuoteOutcome, StationError, SubmitRequest};
+use crate::station::{GasStation, Progress, QuoteOutcome, Recovery, StationError, SubmitRequest};
 use crate::tx::{self, Authorization, Call, Fees, TxError};
 use crate::{QuoteError, QuoteRequest};
 
@@ -186,6 +186,8 @@ where
         match route {
             "/quote" => self.quote(&body),
             "/submit" => self.submit(&body),
+            "/status" => self.status(&body),
+            "/retry" => self.retry(&body),
             _ => Err(ServiceError::NotFound),
         }
     }
@@ -375,6 +377,93 @@ where
         Ok(json!({ "transactionHash": hex(&hash) }))
     }
 
+    /// Runs one bounded recovery pass of the station at the service clock.
+    /// # Errors
+    /// Returns the station's refusal; an unusable clock is unavailable.
+    pub fn recover(&mut self, budget: Duration) -> Result<Recovery, StationError> {
+        let now = (self.clock)().ok_or(StationError::Rpc(RpcFault::Unavailable))?;
+        self.station.recover(now, budget)
+    }
+
+    fn identity(body: &Value) -> Result<(Key, Address, [u8; 65]), ServiceError> {
+        let request = fields(
+            body,
+            &["sponsor", "quoteNonce", "account", "relayerSignature"],
+        )?;
+        Ok((
+            Key {
+                sponsor: address(&request["sponsor"])?,
+                quote_nonce: decimal_word(&request["quoteNonce"])?,
+            },
+            address(&request["account"])?,
+            signature(&request["relayerSignature"])?,
+        ))
+    }
+
+    fn report(
+        &self,
+        key: Key,
+        account: Address,
+        relayer: &[u8; 65],
+    ) -> Result<Value, ServiceError> {
+        let status = self
+            .station
+            .status(key, account, relayer)
+            .map_err(|error| ServiceError::from(&error))?;
+        let transaction = |pair: Option<(u64, Word)>| {
+            pair.map_or(Value::Null, |(nonce, hash)| {
+                json!({"sponsorNonce": nonce.to_string(), "transactionHash": hex(&hash)})
+            })
+        };
+        let (state, outcome) = match status.completion {
+            None if status.replacement.is_some() => ("replacing", Value::Null),
+            None if status.submission.is_some() => ("pending", Value::Null),
+            None => ("quoted", Value::Null),
+            Some(Completion::Consumed) => ("completed", json!({"outcome": "consumed"})),
+            Some(Completion::Included {
+                hash,
+                block_number,
+                sid_collected,
+                pax_spent,
+            }) => (
+                "completed",
+                json!({"outcome": "included", "transactionHash": hex(&hash),
+                    "blockNumber": block_number.to_string(),
+                    "sidCollected": decimal(&sid_collected), "paxSpent": decimal(&pax_spent)}),
+            ),
+            Some(Completion::Reverted { hash }) => (
+                "completed",
+                json!({"outcome": "reverted", "transactionHash": hex(&hash)}),
+            ),
+            Some(Completion::Cancelled { hash, block_number }) => (
+                "completed",
+                json!({"outcome": "cancelled", "transactionHash": hex(&hash),
+                    "blockNumber": block_number.to_string()}),
+            ),
+        };
+        Ok(json!({
+            "state": state,
+            "deadline": status.deadline.to_string(),
+            "submission": transaction(status.submission),
+            "replacement": transaction(status.replacement),
+            "completion": outcome,
+        }))
+    }
+
+    fn status(&self, body: &Value) -> Result<Value, ServiceError> {
+        let (key, account, relayer) = Self::identity(body)?;
+        self.report(key, account, &relayer)
+    }
+
+    fn retry(&mut self, body: &Value) -> Result<Value, ServiceError> {
+        let (key, account, relayer) = Self::identity(body)?;
+        let now = self.now()?;
+        self.station
+            .retry(key, account, &relayer, now)
+            .map_err(|error| ServiceError::from(&error))?;
+        self.report(key, account, &relayer)
+    }
+
     fn answer(&mut self, stream: &mut TcpStream) -> (&'static str, Result<Value, ServiceError>) {
         let deadline = Instant::now() + self.limits.read_time;
         let head = match read_head(stream, deadline) {
@@ -384,6 +473,8 @@ where
         let route = match head.path.as_str() {
             "/quote" => "/quote",
             "/submit" => "/submit",
+            "/status" => "/status",
+            "/retry" => "/retry",
             _ => return ("-", Err(ServiceError::NotFound)),
         };
         if head.method != "POST" {
@@ -421,6 +512,114 @@ where
 {
     loop {
         let (mut stream, _) = listener.accept().map_err(|_| ServiceError::Accept)?;
+        let (route, result) = service.answer(&mut stream);
+        let (status, body) = match result {
+            Ok(value) => (200, value),
+            Err(error) => (error.status(), json!({ "error": error.code() })),
+        };
+        let delivered = if write_response(&mut stream, status, &body).is_ok() {
+            ""
+        } else {
+            " undelivered"
+        };
+        let _ = writeln!(log, "{route} {status}{delivered}").and_then(|()| log.flush());
+    }
+}
+
+/// How often the recovery driver runs and how long one pass may take: the
+/// first pass runs immediately, a pass that leaves work pending or meets an
+/// unreachable node backs off exponentially up to `max_interval`, and a pass
+/// that completes work returns to `interval`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Schedule {
+    pub interval: Duration,
+    pub max_interval: Duration,
+    pub budget: Duration,
+}
+impl Default for Schedule {
+    fn default() -> Self {
+        Self {
+            interval: Duration::from_secs(2),
+            max_interval: Duration::from_secs(60),
+            budget: Duration::from_secs(20),
+        }
+    }
+}
+
+/// Serves requests like `serve` and, from the same thread and therefore as
+/// the journal's only writer, runs a recovery pass whenever `schedule` is due
+/// so every unresolved submission progresses without a client request. Each
+/// pass writes one line to `log` with its counts or its refusal.
+/// # Errors
+/// Returns when the listener fails or a pass meets a failing journal.
+pub fn drive<S, R, P, C>(
+    listener: &TcpListener,
+    service: &mut Service<S, R, P, C>,
+    schedule: Schedule,
+    log: &mut impl Write,
+) -> Result<Infallible, ServiceError>
+where
+    S: QuoteSigner,
+    R: JsonRpc,
+    P: PriceSource,
+    C: FnMut() -> Option<u64>,
+{
+    listener
+        .set_nonblocking(true)
+        .map_err(|_| ServiceError::Accept)?;
+    let mut wait = schedule.interval;
+    let mut due = Instant::now();
+    loop {
+        if Instant::now() >= due {
+            match service.recover(schedule.budget) {
+                Ok(recovery) => {
+                    let _ = writeln!(
+                        log,
+                        "recovery completed={} pending={} unreachable={} deferred={}",
+                        recovery.completed,
+                        recovery.pending,
+                        recovery.unreachable,
+                        recovery.deferred
+                    )
+                    .and_then(|()| log.flush());
+                    wait = if recovery.completed > 0
+                        || recovery.pending + recovery.unreachable + recovery.deferred == 0
+                    {
+                        schedule.interval
+                    } else {
+                        wait.saturating_mul(2).min(schedule.max_interval)
+                    };
+                }
+                Err(StationError::Journal(_)) => {
+                    let _ = writeln!(log, "recovery refused: journal").and_then(|()| log.flush());
+                    return Err(ServiceError::Internal);
+                }
+                Err(error) => {
+                    let _ = writeln!(
+                        log,
+                        "recovery refused: {}",
+                        ServiceError::from(&error).code()
+                    )
+                    .and_then(|()| log.flush());
+                    wait = wait.saturating_mul(2).min(schedule.max_interval);
+                }
+            }
+            due = Instant::now() + wait;
+        }
+        let mut stream = match listener.accept() {
+            Ok((stream, _)) => stream,
+            Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                std::thread::sleep(
+                    Duration::from_millis(20).min(due.saturating_duration_since(Instant::now())),
+                );
+                continue;
+            }
+            Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+            Err(_) => return Err(ServiceError::Accept),
+        };
+        stream
+            .set_nonblocking(false)
+            .map_err(|_| ServiceError::Accept)?;
         let (route, result) = service.answer(&mut stream);
         let (status, body) = match result {
             Ok(value) => (200, value),

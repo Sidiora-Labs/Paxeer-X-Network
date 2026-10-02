@@ -5,6 +5,7 @@ import { abiEventTopic, abiSelector, encodeAbiCall, type PrecompileCall } from "
 
 export const SIDIORA_TOKEN = "0x21f7b20a555199fa73A238B1a91FD0f549068fEe";
 export const SIDIORA_DECIMALS = 6;
+export const GAS_STATION_QUOTE_URL = "https://api-mainnet-beta.paxeer.network/gas-station/quote";
 
 export interface GasQuote {
   readonly sponsor: string;
@@ -18,7 +19,7 @@ export interface GasQuote {
 }
 
 export interface GasStationConfig {
-  readonly quoteUrl: string;
+  readonly quoteUrl?: string;
   readonly chainId: bigint;
   readonly sponsor: string;
   readonly token: string;
@@ -327,7 +328,7 @@ export async function requestGasQuote(
       throw new Refusal("invalid_value", "request");
     }
     let url: URL;
-    try { url = new URL(config.quoteUrl); } catch { throw new Refusal("invalid_value", "quoteUrl"); }
+    try { url = new URL(config.quoteUrl ?? GAS_STATION_QUOTE_URL); } catch { throw new Refusal("invalid_value", "quoteUrl"); }
     if (!["https:", "http:"].includes(url.protocol) || url.username || url.password || url.hash) {
       throw new Refusal("invalid_value", "quoteUrl");
     }
@@ -337,7 +338,7 @@ export async function requestGasQuote(
   if (!prepared.ok) return prepared;
   let response: Response;
   try {
-    response = await fetch(config.quoteUrl, {
+    response = await fetch(config.quoteUrl ?? GAS_STATION_QUOTE_URL, {
       method: "POST", headers: { "content-type": "application/json" }, body: prepared.value,
       signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
       redirect: "error",
@@ -364,4 +365,189 @@ export async function requestGasQuote(
     verifySignature(relayerSignature, quoteHash(config.chainId, request.account, quote), quote.sponsor);
     return { quote, relayerSignature };
   });
+}
+
+export interface GasSubmissionIdentity {
+  readonly sponsor: string;
+  readonly quoteNonce: bigint;
+  readonly account: string;
+  readonly relayerSignature: string;
+}
+
+export interface GasSubmissionTransaction {
+  readonly sponsorNonce: bigint;
+  readonly transactionHash: string;
+}
+
+export type GasSubmissionOutcome =
+  | { readonly outcome: "consumed" }
+  | { readonly outcome: "included"; readonly transactionHash: string; readonly blockNumber: bigint; readonly sidCollected: bigint; readonly paxSpent: bigint }
+  | { readonly outcome: "reverted"; readonly transactionHash: string }
+  | { readonly outcome: "cancelled"; readonly transactionHash: string; readonly blockNumber: bigint };
+
+export interface GasSubmissionStatus {
+  readonly state: "quoted" | "pending" | "replacing" | "completed";
+  readonly deadline: bigint;
+  readonly submission: GasSubmissionTransaction | null;
+  readonly replacement: GasSubmissionTransaction | null;
+  readonly completion: GasSubmissionOutcome | null;
+}
+
+function wireHash(value: unknown, field: string): string {
+  const text = wireString(value, field);
+  if (!/^0x[0-9a-f]{64}$/u.test(text)) throw new Refusal("invalid_response", field);
+  return text;
+}
+
+function wireTransaction(value: unknown, field: string): GasSubmissionTransaction | null {
+  if (value === null) return null;
+  const data = record(value);
+  return { sponsorNonce: wireUint(data.sponsorNonce, `${field}.sponsorNonce`), transactionHash: wireHash(data.transactionHash, `${field}.transactionHash`) };
+}
+
+function wireOutcome(value: unknown): GasSubmissionOutcome | null {
+  if (value === null) return null;
+  const data = record(value);
+  switch (data.outcome) {
+    case "consumed": return { outcome: "consumed" };
+    case "reverted": return { outcome: "reverted", transactionHash: wireHash(data.transactionHash, "completion.transactionHash") };
+    case "cancelled": return {
+      outcome: "cancelled", transactionHash: wireHash(data.transactionHash, "completion.transactionHash"),
+      blockNumber: wireUint(data.blockNumber, "completion.blockNumber"),
+    };
+    case "included": return {
+      outcome: "included", transactionHash: wireHash(data.transactionHash, "completion.transactionHash"),
+      blockNumber: wireUint(data.blockNumber, "completion.blockNumber"),
+      sidCollected: wireUint(data.sidCollected, "completion.sidCollected"), paxSpent: wireUint(data.paxSpent, "completion.paxSpent"),
+    };
+    default: throw new Refusal("invalid_response", "completion.outcome");
+  }
+}
+
+function wireStatus(payload: unknown): GasSubmissionStatus {
+  const data = record(payload);
+  const state = data.state;
+  if (state !== "quoted" && state !== "pending" && state !== "replacing" && state !== "completed") {
+    throw new Refusal("invalid_response", "state");
+  }
+  const status: GasSubmissionStatus = {
+    state, deadline: wireUint(data.deadline, "deadline"),
+    submission: wireTransaction(data.submission, "submission"), replacement: wireTransaction(data.replacement, "replacement"),
+    completion: wireOutcome(data.completion),
+  };
+  if ((state === "completed") !== (status.completion !== null)) throw new Refusal("invalid_response", "completion");
+  if (state === "replacing" && status.replacement === null) throw new Refusal("invalid_response", "replacement");
+  if ((state === "pending" || state === "replacing") && status.submission === null) throw new Refusal("invalid_response", "submission");
+  return status;
+}
+
+async function submissionRequest(
+  route: "status" | "retry",
+  config: GasStationConfig,
+  identity: GasSubmissionIdentity,
+  signal: AbortSignal | undefined,
+): Promise<GasResult<GasSubmissionStatus>> {
+  const prepared = result(() => {
+    validateConfig(config);
+    if (address(identity.sponsor, "sponsor") !== config.sponsor.toLowerCase()) throw new Refusal("sponsor_mismatch", "sponsor");
+    address(identity.account, "account");
+    uint(identity.quoteNonce, "quoteNonce");
+    if (bytes(identity.relayerSignature, "relayerSignature").length !== 130) throw new Refusal("invalid_signature", "relayerSignature");
+    let url: URL;
+    try { url = new URL(config.quoteUrl ?? GAS_STATION_QUOTE_URL); } catch { throw new Refusal("invalid_value", "quoteUrl"); }
+    if (!["https:", "http:"].includes(url.protocol) || url.username || url.password || url.hash || !url.pathname.endsWith("/quote")) {
+      throw new Refusal("invalid_value", "quoteUrl");
+    }
+    url.pathname = `${url.pathname.slice(0, -"quote".length)}${route}`;
+    return {
+      url: url.toString(),
+      body: JSON.stringify({
+        sponsor: identity.sponsor, quoteNonce: identity.quoteNonce.toString(),
+        account: identity.account, relayerSignature: identity.relayerSignature,
+      }),
+    };
+  });
+  if (!prepared.ok) return prepared;
+  let response: Response;
+  try {
+    response = await fetch(prepared.value.url, {
+      method: "POST", headers: { "content-type": "application/json" }, body: prepared.value.body,
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
+      redirect: "error",
+    });
+  } catch {
+    return { ok: false, refusal: { code: signal?.aborted ? "cancelled" : "unavailable", field: route } };
+  }
+  if (!response.ok) return { ok: false, refusal: { code: response.status >= 500 ? "unavailable" : "refused", field: route } };
+  let payload: unknown;
+  try { payload = await response.json(); } catch { return { ok: false, refusal: { code: "invalid_response", field: route } }; }
+  return result(() => wireStatus(payload));
+}
+
+/** Reads the station's durable state of one submission identity; it stays readable after the quote's deadline. */
+export function requestGasSubmissionStatus(
+  config: GasStationConfig,
+  identity: GasSubmissionIdentity,
+  options: { readonly signal?: AbortSignal } = {},
+): Promise<GasResult<GasSubmissionStatus>> {
+  return submissionRequest("status", config, identity, options.signal);
+}
+
+/** Asks the station to resume an already submitted identity from its durable bytes, without signing anything new. */
+export function retryGasSubmission(
+  config: GasStationConfig,
+  identity: GasSubmissionIdentity,
+  options: { readonly signal?: AbortSignal } = {},
+): Promise<GasResult<GasSubmissionStatus>> {
+  return submissionRequest("retry", config, identity, options.signal);
+}
+
+export async function submitSponsoredGasBatch(
+  config: GasStationConfig,
+  batch: SponsoredBatch,
+  accountSignature: string,
+  relayerSignature: string,
+  authorization: SignedEip7702Authorization,
+  options: { readonly now?: bigint; readonly signal?: AbortSignal; readonly fetch?: typeof fetch } = {},
+): Promise<GasResult<string>> {
+  const prepared = result(() => {
+    validateConfig(config);
+    if (authorization.chainId !== config.chainId) throw new Refusal("chain_mismatch", "authorization.chainId");
+    if (address(authorization.address, "authorization.address") !== address(config.paymaster, "paymaster")) {
+      throw new Refusal("invalid_value", "authorization.address");
+    }
+    if (authorization.yParity !== 0 && authorization.yParity !== 1) throw new Refusal("invalid_signature", "authorization.yParity");
+    const r = bytes(authorization.r, "authorization.r");
+    const s = bytes(authorization.s, "authorization.s");
+    if (r.length !== 64 || s.length !== 64) throw new Refusal("invalid_signature", "authorization");
+    verifySignature(`0x${r}${s}${(authorization.yParity + 27).toString(16)}`, authorizationHash(authorization), batch.account);
+    const call = sponsoredBatchCall(config, batch, accountSignature, relayerSignature, options.now);
+    if (!call.ok) throw new Refusal(call.refusal.code, call.refusal.field);
+    let url: URL;
+    try { url = new URL(config.quoteUrl ?? GAS_STATION_QUOTE_URL); } catch { throw new Refusal("invalid_value", "quoteUrl"); }
+    if (!["https:", "http:"].includes(url.protocol) || url.username || url.password || url.hash || url.search || !url.pathname.endsWith("/quote")) {
+      throw new Refusal("invalid_value", "quoteUrl");
+    }
+    url.pathname = `${url.pathname.slice(0, -"quote".length)}submit`;
+    return {
+      url: url.toString(),
+      body: JSON.stringify({ call: call.value, authorization, batch, accountSignature, relayerSignature },
+        (_key, value: unknown) => typeof value === "bigint" ? value.toString() : value),
+    };
+  });
+  if (!prepared.ok) return prepared;
+  let response: Response;
+  try {
+    response = await (options.fetch ?? fetch)(prepared.value.url, {
+      method: "POST", headers: { "content-type": "application/json" }, body: prepared.value.body,
+      signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
+      redirect: "error",
+    });
+  } catch {
+    return { ok: false, refusal: { code: options.signal?.aborted ? "cancelled" : "unavailable", field: "submit" } };
+  }
+  if (!response.ok) return { ok: false, refusal: { code: response.status >= 500 ? "unavailable" : "refused", field: "submit" } };
+  let payload: unknown;
+  try { payload = await response.json(); } catch { return { ok: false, refusal: { code: "invalid_response", field: "submit" } }; }
+  return result(() => wireHash(record(payload).transactionHash, "transactionHash"));
 }

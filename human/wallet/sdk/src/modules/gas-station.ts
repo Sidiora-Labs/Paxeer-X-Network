@@ -1,7 +1,11 @@
 import {
   SIDIORA_DECIMALS,
+  GAS_STATION_QUOTE_URL,
   SIDIORA_TOKEN,
   abiSelector,
+  assembleEip7702Authorization,
+  eip7702AuthorizationDigest,
+  submitSponsoredGasBatch,
   requestGasQuote,
   sponsoredBatchCall,
   type GasQuoteRequest,
@@ -23,7 +27,6 @@ import type {
 import {
   ModuleError,
   decodeAbiUint,
-  ethCall,
   ethQuantity,
   moduleAddress,
   type ModuleProvider,
@@ -51,7 +54,7 @@ export interface GasStationOptions {
   readonly chainId: bigint;
   readonly sponsor: string;
   readonly paymaster: string;
-  readonly quoteUrl: string;
+  readonly quoteUrl?: string;
   readonly gatewayUrl?: string;
   readonly accessToken?: () => Promise<string | null> | string | null;
   readonly fetch?: typeof fetch;
@@ -90,6 +93,7 @@ export interface GasStationModule {
   executeCall(batch: SponsoredBatch, accountSignature: string, relayerSignature: string, now?: bigint): ModuleTransaction;
   submitRequest(batch: SponsoredBatch, accountSignature: string, relayerSignature: string, now?: bigint): SponsoredSubmitRequest;
   submit(batch: SponsoredBatch, relayerSignature: string, options?: SponsoredSubmitOptions): Promise<string>;
+  submitFirstUse(batch: SponsoredBatch, relayerSignature: string, options?: SponsoredSubmitOptions): Promise<string>;
 }
 
 function unwrap<T>(result: GasResult<T>): T {
@@ -151,7 +155,7 @@ function signature(value: unknown, field: string): `0x${string}` {
 
 export function gasStation(provider: ModuleProvider, options: GasStationOptions): GasStationModule {
   const config: GasStationConfig = {
-    quoteUrl: options.quoteUrl,
+    quoteUrl: options.quoteUrl ?? GAS_STATION_QUOTE_URL,
     chainId: options.chainId,
     sponsor: moduleAddress(options.sponsor, 'sponsor'),
     token: SIDIORA_TOKEN,
@@ -159,6 +163,21 @@ export function gasStation(provider: ModuleProvider, options: GasStationOptions)
     paymaster: moduleAddress(options.paymaster, 'paymaster'),
   };
   const fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis);
+
+  const batchNonce = async (account: string): Promise<bigint> => {
+    const target = moduleAddress(account, 'account');
+    const code = await provider.request({ method: 'eth_getCode', params: [target, 'pending'] });
+    if (typeof code !== 'string' || !/^0x(?:[0-9a-fA-F]{2})*$/u.test(code)) {
+      throw new ModuleError('invalid_answer', 'eth_getCode');
+    }
+    if (code === '0x') return 0n;
+    if (code.toLowerCase() !== `0xef0100${config.paymaster.slice(2).toLowerCase()}`) {
+      throw new GasStationError({ code: 'refused', field: 'delegation' });
+    }
+    const nonce = await provider.request({ method: 'eth_call', params: [{ to: target, data: abiSelector('nonce()') }, 'pending'] });
+    if (typeof nonce !== 'string') throw new ModuleError('invalid_answer', 'nonce');
+    return decodeAbiUint(nonce);
+  };
 
   const construction = (batch: SponsoredBatch): WireSponsoredBatch => {
     if (batch.calls.length === 0) {
@@ -250,12 +269,32 @@ export function gasStation(provider: ModuleProvider, options: GasStationOptions)
       };
     },
     requestQuote: async (request, quoteOptions = {}) => unwrap(await requestGasQuote(config, request, quoteOptions)),
-    batchNonce: async (account) => decodeAbiUint(await ethCall(provider, moduleAddress(account, 'account'), abiSelector('nonce()'))),
+    batchNonce,
     construction,
     digest,
     sign,
     executeCall,
     submitRequest,
+    submitFirstUse: async (batch, relayerSignature, submitOptions = {}) => {
+      if (batch.nonce !== await batchNonce(batch.account)) throw new GasStationError({ code: 'refused', field: 'nonce' });
+      const account = hexAddress(batch.account, 'account');
+      const pending = await provider.request({ method: 'eth_getTransactionCount', params: [account, 'pending'] });
+      if (typeof pending !== 'string' || !/^0x(?:0|[1-9a-fA-F][0-9a-fA-F]*)$/u.test(pending)) {
+        throw new ModuleError('invalid_answer', 'eth_getTransactionCount');
+      }
+      const nonce = BigInt(pending);
+      const authorizationFields = { chainId: config.chainId, address: config.paymaster, nonce };
+      const authorizationDigest = unwrap(eip7702AuthorizationDigest(authorizationFields));
+      const accountSignature = await sign(batch);
+      executeCall(batch, accountSignature, relayerSignature, submitOptions.now);
+      const answer = await provider.request({ method: 'eth_sign', params: [account, authorizationDigest, {
+        kind: 'eip7702_authorization', chainId: decimal(config.chainId), address: hexAddress(config.paymaster, 'paymaster'), nonce: decimal(nonce),
+      }] });
+      const authorization = unwrap(assembleEip7702Authorization(config, account, nonce, signature(answer, 'authorization')));
+      return unwrap(await submitSponsoredGasBatch(config, batch, accountSignature, relayerSignature, authorization, {
+        ...submitOptions, fetch: fetchImpl,
+      }));
+    },
     submit: async (batch, relayerSignature, submitOptions = {}) => {
       if (options.gatewayUrl === undefined || options.gatewayUrl === '') {
         throw new ModuleError('unavailable', 'gatewayUrl');

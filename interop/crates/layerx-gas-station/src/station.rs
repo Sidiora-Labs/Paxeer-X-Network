@@ -1,8 +1,10 @@
+use std::time::{Duration, Instant};
+
 use serde_json::{json, Value};
 
 use crate::config::StationConfig;
 use crate::journal::{
-    Completion, Entry, Journal, JournalError, Key, QuoteRecord, Replacement, Submission,
+    Completion, Entry, Item, Journal, JournalError, Key, QuoteRecord, Replacement, Submission,
 };
 use crate::price::{PriceError, PriceSource};
 use crate::quote::{address_word, keccak, word, Address, Word};
@@ -52,6 +54,11 @@ pub enum QuoteOutcome {
 pub enum Progress {
     Pending,
     Completed(Completion),
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AccountCode {
+    Undelegated,
+    Delegated,
 }
 enum Receipt {
     Absent,
@@ -133,6 +140,23 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
             .try_into()
             .map_err(|_| StationError::Rpc(RpcFault::Malformed))
     }
+    /// Classifies account code: no code is an undelegated EOA, an EIP-7702
+    /// designator to the configured paymaster is compatible, anything else is
+    /// refused rather than read as zero state.
+    fn account_code(&self, account: Address, block: &str) -> Result<AccountCode, StationError> {
+        let code: String = read(&self.rpc, "eth_getCode", json!([hex(&account), block]))?;
+        let code = bytes(&code)?;
+        if code.is_empty() {
+            return Ok(AccountCode::Undelegated);
+        }
+        if code.len() == 23
+            && code[..3] == [0xef, 0x01, 0x00]
+            && code[3..] == self.station.config.paymaster[..]
+        {
+            return Ok(AccountCode::Delegated);
+        }
+        Err(StationError::Conflict)
+    }
     fn consumed(&self, key: Key, account: Address) -> Result<bool, StationError> {
         let data = [
             keccak(b"usedQuoteNonces(address,uint256)")[..4].to_vec(),
@@ -140,6 +164,9 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
             key.quote_nonce.to_vec(),
         ]
         .concat();
+        if self.account_code(account, "finalized")? == AccountCode::Undelegated {
+            return Ok(false);
+        }
         match self.call_word(account, &data, "finalized")? {
             value if value == word(0) => Ok(false),
             value if value == word(1) => Ok(true),
@@ -337,13 +364,20 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
             return Err(StationError::Invalid);
         }
         let signed = quote.signed_quote()?;
-        let batch_nonce = self.call_word(request.account, &keccak(b"nonce()")[..4], "pending")?;
+        let batch_nonce = match self.account_code(request.account, "pending")? {
+            AccountCode::Undelegated => word(0),
+            AccountCode::Delegated => {
+                self.call_word(request.account, &keccak(b"nonce()")[..4], "pending")?
+            }
+        };
         let account_nonce: String = read(
             &self.rpc,
             "eth_getTransactionCount",
             json!([hex(&request.account), "pending"]),
         )?;
         if request.authorizations.len() != 1
+            || request.authorizations[0].chain_id != self.station.config.chain_id
+            || request.authorizations[0].delegate != self.station.config.paymaster
             || u128::from(request.authorizations[0].nonce) != quantity(&account_nonce)?
         {
             return Err(StationError::Invalid);
@@ -485,7 +519,128 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
             result => result,
         }
     }
+    /// The submissions the journal holds without a completion: prepared,
+    /// broadcast, dropped or replaced, oldest sponsor nonce first.
+    #[must_use]
+    pub fn unresolved(&self) -> Vec<Key> {
+        let mut keys: Vec<_> = self
+            .journal
+            .state()
+            .items
+            .iter()
+            .filter(|(_, item)| item.completion.is_none() && item.submission.is_some())
+            .map(|(key, item)| (item.submission.as_ref().map_or(0, |s| s.nonce), *key))
+            .collect();
+        keys.sort_unstable();
+        keys.into_iter().map(|(_, key)| key).collect()
+    }
+    /// One recovery pass over every unresolved submission, resuming each from
+    /// its durable bytes against finalized receipts, at most until `budget`
+    /// elapses. A key the nodes cannot answer for stays pending; a divergent
+    /// or malformed observation, a conflicting record or a failing journal
+    /// stops the pass without acting on it.
+    /// # Errors
+    /// Refuses divergent or malformed observations and journal failures.
+    pub fn recover(&mut self, now: u64, budget: Duration) -> Result<Recovery, StationError> {
+        let started = Instant::now();
+        let mut recovery = Recovery::default();
+        for key in self.unresolved() {
+            if started.elapsed() >= budget {
+                recovery.deferred += 1;
+                continue;
+            }
+            match self.resume(key, now) {
+                Ok(Progress::Completed(_)) => recovery.completed += 1,
+                Ok(Progress::Pending) => recovery.pending += 1,
+                Err(StationError::Rpc(RpcFault::Unavailable | RpcFault::RateLimited)) => {
+                    recovery.unreachable += 1;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(recovery)
+    }
+    fn authenticated(
+        &self,
+        key: Key,
+        account: Address,
+        relayer_signature: &[u8; 65],
+    ) -> Result<&Item, StationError> {
+        let item = self
+            .journal
+            .state()
+            .items
+            .get(&key)
+            .ok_or(StationError::Missing)?;
+        let quote = item.quote.as_ref().ok_or(StationError::Missing)?;
+        if item.account != account || quote.signature.as_slice() != relayer_signature.as_slice() {
+            return Err(StationError::Missing);
+        }
+        Ok(item)
+    }
+    /// The durable state of one submission identity, readable by whoever holds
+    /// the station's signature over its quote, before or after the quote's
+    /// deadline.
+    /// # Errors
+    /// Refuses an unknown identity or a signature the station did not issue for it.
+    pub fn status(
+        &self,
+        key: Key,
+        account: Address,
+        relayer_signature: &[u8; 65],
+    ) -> Result<Status, StationError> {
+        let item = self.authenticated(key, account, relayer_signature)?;
+        let deadline = item.quote.as_ref().map_or(0, |q| q.deadline);
+        Ok(Status {
+            deadline,
+            submission: item.submission.as_ref().map(|s| (s.nonce, s.hash)),
+            replacement: item.replacement.as_ref().map(|r| (r.nonce, r.hash)),
+            completion: item.completion,
+        })
+    }
+    /// Resumes one already submitted identity from its durable bytes, also
+    /// after its quote expired, without signing anything new for the client.
+    /// An identity that was quoted but never submitted is refused once its
+    /// quote expired, as a fresh submission would be.
+    /// # Errors
+    /// Refuses unauthenticated, unsubmitted expired or failing identities.
+    pub fn retry(
+        &mut self,
+        key: Key,
+        account: Address,
+        relayer_signature: &[u8; 65],
+        now: u64,
+    ) -> Result<Progress, StationError> {
+        let item = self.authenticated(key, account, relayer_signature)?;
+        if let Some(done) = item.completion {
+            return Ok(Progress::Completed(done));
+        }
+        if item.submission.is_none() {
+            return Err(StationError::Invalid);
+        }
+        self.resume(key, now)
+    }
 }
+/// The counts of one recovery pass: submissions completed, still pending,
+/// unanswered by the nodes and deferred to the next pass by its time budget.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Recovery {
+    pub completed: usize,
+    pub pending: usize,
+    pub unreachable: usize,
+    pub deferred: usize,
+}
+/// The durable state of one submission identity: its quote deadline, the
+/// sponsor nonce and hash of its prepared transaction and of the replacement
+/// filling that nonce, and its completion.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Status {
+    pub deadline: u64,
+    pub submission: Option<(u64, Word)>,
+    pub replacement: Option<(u64, Word)>,
+    pub completion: Option<Completion>,
+}
+
 fn amount(value: Word) -> Result<u128, StationError> {
     if value[..16] != [0; 16] {
         return Err(StationError::Invalid);
