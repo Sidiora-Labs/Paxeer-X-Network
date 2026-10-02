@@ -31990,7 +31990,9 @@ evidence_policy = "Private source-bound artifacts, generated identities and raw 
 
 [task.24.18]
 title = "Retain verified SEND outcomes before node reset"
-status = "in_progress"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "unverified"
 mode = "BUILD"
 wave = 3
 requires = ["0.2", "24.16"]
