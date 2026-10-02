@@ -1,10 +1,12 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
-import type { Hex } from 'viem';
+import type { Hex, TransactionSerializable, TypedDataDefinition } from 'viem';
+import { AttestorQuorumError, AttestorTokenError, attestorClientFromConfig, attestorSigner, type AttestorClient, type Authorisation, type SignResult } from '../attestor/client.js';
 import type { PoolClient } from 'pg';
 import { env } from '../env.js';
 import { encrypt, decrypt, loadMasterKey } from '../crypto.js';
-import { query } from './pool.js';
+import { getPool, query, withTransaction } from './pool.js';
+import { recordSigningAudit, type AuditKind } from '../audit.js';
 
 /**
  * Wallet repository — owns the encrypted private-key lifecycle on our local
@@ -45,7 +47,7 @@ export interface WalletRow {
   id: string;
   user_id: string;
   address: `0x${string}`;
-  encrypted_private_key: string;
+  encrypted_private_key: string | null;
   key_version: number;
   chain_id: number;
   kind: WalletKind;
@@ -299,22 +301,154 @@ export async function getSigningAccountForUser(
  * Variant that takes an already-loaded WalletRow, for callers that have the
  * row in hand and want to skip a second lookup.
  */
-export async function getSigningAccountForRow(wallet: WalletRow): Promise<SigningAccount> {
-  const masterKey = loadMasterKey(env.WALLET_MASTER_KEY);
-  const plaintext = decrypt(wallet.encrypted_private_key, masterKey);
-  const privateKey = (`0x${plaintext.toString('hex')}`) as Hex;
-  const account = privateKeyToAccount(privateKey);
+export class WalletMigratedError extends Error {
+  constructor(readonly code: 'wallet_migrated' | 'envelope_missing', readonly walletId: string) {
+    super(`wallet ${walletId} cannot use legacy signing: ${code}`);
+    this.name = 'WalletMigratedError';
+  }
+}
 
-  // Best-effort scrub — Node may hold copies in libuv / V8 internals but this
-  // reduces residency window.
-  plaintext.fill(0);
+export function usesAttestorCustody(custody: { migratedAt: string | null; hasEnvelope: boolean }): boolean {
+  return custody.migratedAt !== null || !custody.hasEnvelope;
+}
 
-  return {
-    address: account.address,
-    signTransaction: account.signTransaction.bind(account),
-    signMessage: account.signMessage.bind(account),
-    signTypedData: account.signTypedData.bind(account),
+let walletAttestors: AttestorClient | null | undefined;
+
+export function defaultWalletAttestors(): AttestorClient | null {
+  if (walletAttestors !== undefined) return walletAttestors;
+  walletAttestors = attestorClientFromConfig(env);
+  walletAttestors?.start();
+  return walletAttestors;
+}
+
+export interface CustodySigningAccount extends SigningAccount {
+  path: 'attestor' | 'envelope';
+  lastAttestorResult(): SignResult | null;
+}
+
+export interface CustodyAuditContext {
+  subject: string;
+  route: string;
+  requestHash: string;
+}
+
+export async function getMigrationAwareSigningAccountForRow(
+  wallet: WalletRow,
+  authorisation?: Authorisation,
+  configuredAttestors?: AttestorClient | null,
+  connection?: PoolClient,
+  auditContext?: CustodyAuditContext,
+): Promise<CustodySigningAccount> {
+  const { rows } = await (connection ?? getPool()).query<{
+    migrated_at: string | null; attestor_key_id: string | null; has_envelope: boolean;
+    is_disabled: boolean; archived_at: string | null; address: string; kind: WalletKind;
+  }>(`select migrated_at, attestor_key_id, encrypted_private_key is not null as has_envelope,
+            is_disabled, archived_at, address, kind from wallets where id = $1`, [wallet.id]);
+  const custody = rows[0];
+  if (!custody || custody.archived_at !== null || custody.is_disabled
+    || custody.address.toLowerCase() !== wallet.address.toLowerCase()
+    || custody.kind === 'funded' || custody.kind !== wallet.kind) {
+    throw new Error('wallet custody is unavailable');
+  }
+  if (!usesAttestorCustody({ migratedAt: custody.migrated_at, hasEnvelope: custody.has_envelope })) {
+    const account = await getSigningAccountForRow(wallet, connection);
+    return { ...account, path: 'envelope', lastAttestorResult: () => null };
+  }
+  if (!authorisation) {
+    throw new AttestorTokenError('signing_authorisation_required', 'attestor custody requires the owner assertion or an end-to-end agent signing authorization');
+  }
+  const client = configuredAttestors === undefined ? defaultWalletAttestors() : configuredAttestors;
+  if (!client) throw new AttestorQuorumError('attestor_unconfigured', 'wallet attestor custody is unavailable');
+  if (!custody.attestor_key_id) throw new AttestorQuorumError('attestor_key_missing', 'wallet has no attestor key binding');
+  const signer = attestorSigner(client, {
+    keyId: custody.attestor_key_id, address: wallet.address, chainId: wallet.chain_id,
+  }, authorisation);
+  let last: SignResult | null = null;
+  const retain = async (kind: AuditKind, result: SignResult): Promise<void> => {
+    last = result;
+    if (auditContext) await recordSigningAudit(getPool(), {
+      requestId: randomUUID(), clientSubject: auditContext.subject, account: wallet.address, walletId: wallet.id,
+      route: auditContext.route, kind, path: 'attestor', decision: 'signed', reasonCode: null,
+      requestHash: auditContext.requestHash, sessionId: result.sessionId, attestorAudit: result.audit,
+      txHash: null, nonce: null,
+    });
   };
+  return {
+    address: wallet.address,
+    path: 'attestor',
+    lastAttestorResult: () => last,
+    signTransaction: (async (transaction: TransactionSerializable) => {
+      const signed = await signer.signTransaction(transaction);
+      await retain('transaction', signed.result);
+      return signed.value;
+    }) as SigningAccount['signTransaction'],
+    signMessage: async ({ message }) => {
+      if (typeof message !== 'string') throw new Error('wallet message must be text');
+      const signed = await signer.signMessage(message);
+      await retain('message', signed.result);
+      return signed.value;
+    },
+    signTypedData: (async (typedData: TypedDataDefinition) => {
+      const signed = await signer.signTypedData(typedData);
+      await retain('typed_data', signed.result);
+      return signed.value;
+    }) as SigningAccount['signTypedData'],
+  };
+}
+
+export async function getSigningAccountForRow(wallet: WalletRow, connection?: PoolClient): Promise<SigningAccount> {
+  const { rows } = await (connection ?? getPool()).query<{
+    migrated_at: string | null; encrypted_private_key: string | null;
+    is_disabled: boolean; archived_at: string | null; kind: WalletKind;
+  }>('select migrated_at, encrypted_private_key, is_disabled, archived_at, kind from wallets where id = $1', [wallet.id]);
+  const current = rows[0];
+  if (!current || current.is_disabled || current.archived_at !== null || current.kind === 'funded' || current.kind !== wallet.kind) {
+    throw new Error('wallet custody is unavailable');
+  }
+  if (current.migrated_at !== null) throw new WalletMigratedError('wallet_migrated', wallet.id);
+  if (current.encrypted_private_key === null) throw new WalletMigratedError('envelope_missing', wallet.id);
+  return {
+    address: wallet.address,
+    signTransaction: (async (transaction: TransactionSerializable) =>
+      legacySigningOperation(wallet, (account) => account.signTransaction(transaction), connection)) as SigningAccount['signTransaction'],
+    signMessage: (args) => legacySigningOperation(wallet, (account) => account.signMessage(args), connection),
+    signTypedData: (async (typedData: TypedDataDefinition) =>
+      legacySigningOperation(wallet, (account) => account.signTypedData(typedData), connection)) as SigningAccount['signTypedData'],
+  };
+}
+
+async function legacySigningOperation<T>(
+  wallet: WalletRow,
+  operation: (account: ReturnType<typeof privateKeyToAccount>) => Promise<T>,
+  connection?: PoolClient,
+): Promise<T> {
+  const sign = async (client: PoolClient): Promise<T> => {
+    const { rows } = await client.query<{
+      migrated_at: string | null; encrypted_private_key: string | null;
+      is_disabled: boolean; archived_at: string | null; address: string; kind: WalletKind;
+    }>(`select migrated_at, encrypted_private_key, is_disabled, archived_at, address, kind
+          from wallets where id = $1 for share`, [wallet.id]);
+    const current = rows[0];
+    if (!current || current.is_disabled || current.archived_at !== null || current.kind === 'funded' || current.kind !== wallet.kind
+      || current.address.toLowerCase() !== wallet.address.toLowerCase()) {
+      throw new Error('wallet custody is unavailable');
+    }
+    if (current.migrated_at !== null) throw new WalletMigratedError('wallet_migrated', wallet.id);
+    if (current.encrypted_private_key === null) throw new WalletMigratedError('envelope_missing', wallet.id);
+    const masterKey = loadMasterKey(env.WALLET_MASTER_KEY);
+    const plaintext = decrypt(current.encrypted_private_key, masterKey);
+    let account: ReturnType<typeof privateKeyToAccount>;
+    try {
+      account = privateKeyToAccount(`0x${plaintext.toString('hex')}`);
+    } finally {
+      plaintext.fill(0);
+    }
+    if (account.address.toLowerCase() !== current.address.toLowerCase()) {
+      throw new Error('legacy wallet key differs from its durable address');
+    }
+    return operation(account);
+  };
+  return connection ? sign(connection) : withTransaction(sign);
 }
 
 /** Record a signing event for audit + rate-limit purposes. */

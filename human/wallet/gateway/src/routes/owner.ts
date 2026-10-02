@@ -26,12 +26,14 @@ import {
   agentWalletUserId,
   archivedWalletGuard,
   findWalletByUserId,
-  getSigningAccountForRow,
+  getMigrationAwareSigningAccountForRow,
   logSignature,
   type WalletRow,
 } from '../db/wallets.js';
 import { encodeErc20Transfer, getErc20Balance, getNativeBalance } from '../chainReads.js';
 import { query } from '../db/pool.js';
+import { CustodyAuthorityError, publishCustodyAuthority } from '../agent/authority.js';
+import { AttestorError, attestorErrorBody, attestorErrorStatus } from '../attestor/client.js';
 import { effectivePolicy } from '../policy/agent.js';
 import {
   BudgetBody,
@@ -53,6 +55,17 @@ import {
 
 function hashRequest(payload: unknown): string {
   return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+}
+
+async function replicateOwnerMutation(reply: FastifyReply): Promise<boolean> {
+  try {
+    await publishCustodyAuthority();
+    return true;
+  } catch (error) {
+    if (!(error instanceof CustodyAuthorityError)) throw error;
+    void reply.code(503).send({ error: error.code, replication_pending: true, mutation_recorded: true });
+    return false;
+  }
 }
 
 /** Resolve + authorise the :did param. Sends the error reply + returns null on failure. */
@@ -78,9 +91,13 @@ async function loadOwned(req: FastifyRequest, reply: FastifyReply): Promise<Agen
 async function sendFromWallet(
   wallet: WalletRow,
   args: { to: `0x${string}`; value?: bigint; data?: Hex },
+  token: string,
+  request: FastifyRequest,
 ): Promise<Hex> {
   return withWalletLock(wallet.address, async () => {
-    const account = await getSigningAccountForRow(wallet);
+    const account = await getMigrationAwareSigningAccountForRow(wallet, { scheme: 'supabase_jwt', token }, undefined, undefined, {
+      subject: request.user!.id, route: request.url.split('?')[0]!, requestHash: hashRequest(request.body),
+    });
     const client = createWalletClient({
       chain: hyperPaxeer,
       transport: http(env.HYPERPAXEER_RPC_URL),
@@ -205,6 +222,7 @@ export async function ownerRoutes(app: FastifyInstance): Promise<void> {
     if (p.daily_reset_utc_hour !== undefined) patch.daily_reset_utc_hour = p.daily_reset_utc_hour;
 
     const updated = await upsertPolicy(principal.did, patch, req.user!.id);
+    if (!(await replicateOwnerMutation(reply))) return;
     const eff = effectivePolicy(updated);
     return reply.send({
       did: principal.did,
@@ -227,6 +245,7 @@ export async function ownerRoutes(app: FastifyInstance): Promise<void> {
     const principal = await loadOwned(req, reply);
     if (!principal) return;
     await setPrincipalFrozen(principal.did, true);
+    if (!(await replicateOwnerMutation(reply))) return;
     return reply.send({ did: principal.did, is_frozen: true });
   });
 
@@ -234,6 +253,7 @@ export async function ownerRoutes(app: FastifyInstance): Promise<void> {
     const principal = await loadOwned(req, reply);
     if (!principal) return;
     await setPrincipalFrozen(principal.did, false);
+    if (!(await replicateOwnerMutation(reply))) return;
     return reply.send({ did: principal.did, is_frozen: false });
   });
 
@@ -276,6 +296,7 @@ export async function ownerRoutes(app: FastifyInstance): Promise<void> {
       note: parsed.data.note ?? null,
       createdBy: req.user!.id,
     });
+    if (!(await replicateOwnerMutation(reply))) return;
     return reply.code(201).send({
       rule: {
         id: rule.id,
@@ -294,6 +315,7 @@ export async function ownerRoutes(app: FastifyInstance): Promise<void> {
     const { ruleId } = req.params as { ruleId: string };
     if (!/^\d+$/.test(ruleId)) return reply.code(400).send({ error: 'invalid_rule_id' });
     const ok = await deleteRule(principal.did, ruleId);
+    if (!(await replicateOwnerMutation(reply))) return;
     return reply.code(ok ? 200 : 404).send({ deleted: ok });
   });
 
@@ -331,6 +353,7 @@ export async function ownerRoutes(app: FastifyInstance): Promise<void> {
       expiresAt,
       createdBy: req.user!.id,
     });
+    if (!(await replicateOwnerMutation(reply))) return;
     return reply.code(201).send({
       budget: {
         id: budget.id,
@@ -348,6 +371,7 @@ export async function ownerRoutes(app: FastifyInstance): Promise<void> {
     const { budgetId } = req.params as { budgetId: string };
     if (!/^\d+$/.test(budgetId)) return reply.code(400).send({ error: 'invalid_budget_id' });
     const ok = await deactivateBudget(principal.did, budgetId);
+    if (!(await replicateOwnerMutation(reply))) return;
     return reply.code(ok ? 200 : 404).send({ deactivated: ok });
   });
 
@@ -372,12 +396,14 @@ export async function ownerRoutes(app: FastifyInstance): Promise<void> {
     let txHash: Hex;
     try {
       if (!parsed.data.token) {
-        txHash = await sendFromWallet(ownerWallet, { to: agentWallet.address, value: amount });
+        txHash = await sendFromWallet(ownerWallet, { to: agentWallet.address, value: amount }, (req.headers.authorization ?? '').replace(/^Bearer\s+/i, '').trim(), req);
       } else {
         const data = encodeErc20Transfer(agentWallet.address, amount);
-        txHash = await sendFromWallet(ownerWallet, { to: parsed.data.token as `0x${string}`, value: 0n, data });
+        txHash = await sendFromWallet(ownerWallet, { to: parsed.data.token as `0x${string}`, value: 0n, data }, (req.headers.authorization ?? '').replace(/^Bearer\s+/i, '').trim(), req);
       }
     } catch (err) {
+      if (err instanceof CustodyAuthorityError) return reply.code(503).send({ error: err.code, replication_pending: true });
+      if (err instanceof AttestorError) return reply.code(attestorErrorStatus(err)).send(attestorErrorBody(err));
       req.log.error({ err }, 'fund agent failed');
       return reply.code(502).send({ error: 'send_failed', detail: (err as Error).message });
     }
@@ -431,12 +457,14 @@ export async function ownerRoutes(app: FastifyInstance): Promise<void> {
     let txHash: Hex;
     try {
       if (!parsed.data.token) {
-        txHash = await sendFromWallet(agentWallet, { to: dest, value: amount });
+        txHash = await sendFromWallet(agentWallet, { to: dest, value: amount }, (req.headers.authorization ?? '').replace(/^Bearer\s+/i, '').trim(), req);
       } else {
         const data = encodeErc20Transfer(dest, amount);
-        txHash = await sendFromWallet(agentWallet, { to: parsed.data.token as `0x${string}`, value: 0n, data });
+        txHash = await sendFromWallet(agentWallet, { to: parsed.data.token as `0x${string}`, value: 0n, data }, (req.headers.authorization ?? '').replace(/^Bearer\s+/i, '').trim(), req);
       }
     } catch (err) {
+      if (err instanceof CustodyAuthorityError) return reply.code(503).send({ error: err.code, replication_pending: true });
+      if (err instanceof AttestorError) return reply.code(attestorErrorStatus(err)).send(attestorErrorBody(err));
       req.log.error({ err }, 'sweep agent failed');
       return reply.code(502).send({ error: 'send_failed', detail: (err as Error).message });
     }

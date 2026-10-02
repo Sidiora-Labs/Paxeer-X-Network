@@ -185,16 +185,14 @@ func run(ctx context.Context, getenv func(string) string, ready func(listening))
 			return err
 		}
 	}
-	var agents *agent.AgentVerifier
-	if cfg.AgentsFile != "" {
-		principals, err := agent.LoadPrincipals(cfg.AgentsFile)
-		if err != nil {
-			return fmt.Errorf("attestor: %s: %w", config.EnvAgentsFile, err)
-		}
-		if agents, err = agent.NewAgentVerifier(agent.Config{Principals: principals, Nonces: st, MaxExpiry: cfg.AgentMaxExpiry}); err != nil {
-			return err
-		}
-	}
+    authority, err := agent.NewAuthority(agent.AuthorityConfig{PublicKeyFile:cfg.AuthorityPublicKey, Issuer:cfg.AuthorityIssuer, Tenant:cfg.AuthorityTenant, Store:st, ChainID:cfg.ChainID})
+    if err != nil { return fmt.Errorf("attestor: pinned custody producer authority: %w",err) }
+    agents,err:=agent.NewAgentVerifier(agent.Config{Principals:authority,Nonces:st,MaxExpiry:cfg.AgentMaxExpiry})
+    if err!=nil{return err}
+    inventoryPins:=map[string]string{cfg.NodeID:selfPin}
+    for id,pin:=range cfg.PeerPins{inventoryPins[id]=pin}
+    inventory,err:=server.NewInventory(cfg.InventoryFile,cfg.InventoryPublicKey,cfg.AuthorityIssuer,cfg.AuthorityTenant,st,inventoryPins)
+    if err!=nil{return fmt.Errorf("attestor: approved wallet inventory: %w",err)}
 	clients, err := server.LoadClientAuthorities(cfg.TLSCAFile, cfg.OperatorCAFile)
 	if err != nil {
 		return err
@@ -289,6 +287,7 @@ func run(ctx context.Context, getenv func(string) string, ready func(listening))
 		Clients:      clients,
 		Tokens:       tokens,
 		Agents:       agents,
+        Authority: authority, Inventory:inventory,
 		Activities:   registry,
 		PeerProbe:    server.TCPPeerProbe(probe),
 		Replica:      replicaState,

@@ -51,6 +51,8 @@ export type ActionErrorCode =
   | 'SIMULATION_REVERTED'
   | 'TRANSACTION_REVERTED'
   // USER_INTERVENTION
+  | 'CUSTODY_AUTHORITY_REQUIRED'
+  | 'AGENT_REAUTHORIZATION_REQUIRED'
   | 'AGENT_FROZEN'
   | 'INSUFFICIENT_BALANCE'
   | 'INSUFFICIENT_GAS'
@@ -72,6 +74,8 @@ const STRATEGY: Record<ActionErrorCode, RetryStrategy> = {
   SIMULATION_REVERTED: 'NEVER',
   TRANSACTION_REVERTED: 'NEVER',
 
+  CUSTODY_AUTHORITY_REQUIRED: 'USER_INTERVENTION',
+  AGENT_REAUTHORIZATION_REQUIRED: 'USER_INTERVENTION',
   AGENT_FROZEN: 'USER_INTERVENTION',
   INSUFFICIENT_BALANCE: 'USER_INTERVENTION',
   INSUFFICIENT_GAS: 'USER_INTERVENTION',
@@ -116,7 +120,7 @@ export interface ErrorEnvelope {
     must_not_resubmit: boolean;
   };
   remedy: {
-    action: 'GET_ACTION' | 'NONE' | 'OWNER_INTERVENTION';
+    action: 'GET_ACTION' | 'NONE' | 'OWNER_INTERVENTION' | 'AGENT_REAUTHORIZATION';
     endpoint: string | null;
   };
 }
@@ -160,7 +164,9 @@ export function buildErrorEnvelope(args: {
     },
     remedy: {
       action:
-        strategy === 'USER_INTERVENTION'
+        args.code === 'AGENT_REAUTHORIZATION_REQUIRED'
+          ? 'AGENT_REAUTHORIZATION'
+          : strategy === 'USER_INTERVENTION'
           ? 'OWNER_INTERVENTION'
           : strategy === 'NEVER'
             ? 'NONE'

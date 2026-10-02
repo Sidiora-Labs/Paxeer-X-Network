@@ -258,3 +258,32 @@ describe('gateway against five real attestor daemons', () => {
     expect(body.components.identity_provider.state).toBe('up');
   }, 120_000);
 });
+
+
+describe('wallet custody boundary against the gateway database', () => {
+  it('refuses a migrated row before touching its retained legacy envelope', async () => {
+    const { findWalletByUserId, getSigningAccountForRow, WalletMigratedError } = await import('../../src/db/wallets.js');
+    const row = await findWalletByUserId(userId);
+    expect(row).not.toBeNull();
+    await expect(getSigningAccountForRow(row!)).rejects.toBeInstanceOf(WalletMigratedError);
+  });
+
+  it('rechecks custody when an already-created legacy signing handle is used', async () => {
+    const { provisionWalletForUser, getSigningAccountForRow, WalletMigratedError } = await import('../../src/db/wallets.js');
+    const { getPool } = await import('../../src/db/pool.js');
+    const { row } = await provisionWalletForUser(randomUUID(), 'standard');
+    const account = await getSigningAccountForRow(row);
+    await getPool().query('update wallets set migrated_at = now(), attestor_key_id = $2 where id = $1', [row.id, key.keyId]);
+    await expect(account.signMessage({ message: 'migration must revoke this stale handle' })).rejects.toBeInstanceOf(WalletMigratedError);
+    const { rows } = await getPool().query('select encrypted_private_key from wallets where id = $1', [row.id]);
+    expect(rows[0].encrypted_private_key).not.toBeNull();
+  });
+
+  it('refuses null-envelope legacy signing without decrypting', async () => {
+    const { provisionWalletForUser, getSigningAccountForRow, WalletMigratedError } = await import('../../src/db/wallets.js');
+    const { getPool } = await import('../../src/db/pool.js');
+    const { row } = await provisionWalletForUser(randomUUID(), 'standard');
+    await getPool().query('update wallets set encrypted_private_key = null where id = $1', [row.id]);
+    await expect(getSigningAccountForRow(row)).rejects.toBeInstanceOf(WalletMigratedError);
+  });
+});

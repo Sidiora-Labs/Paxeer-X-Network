@@ -1,3 +1,4 @@
+import { CustodyAuthorityError, publishCustodyAuthority } from '../agent/authority.js';
 import type { FastifyInstance } from 'fastify';
 import { randomBytes } from 'node:crypto';
 import { env } from '../env.js';
@@ -109,6 +110,12 @@ export async function agentAuthRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(500).send({ error: 'principal_upsert_failed', detail: (err as Error).message });
     }
 
+    try {
+      await publishCustodyAuthority();
+    } catch (error) {
+      if (!(error instanceof CustodyAuthorityError)) throw error;
+      return reply.code(503).send({ error: error.code, replication_pending: true, mutation_recorded: true });
+    }
     const minted = await mintAgentToken({ did, ownerUserId: principal.owner_user_id });
     return reply.send({
       ...minted,

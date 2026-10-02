@@ -1,8 +1,11 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { createHash } from 'node:crypto';
 import type { Hex } from 'viem';
+import { parseAgentReauthorization } from '../attestor/client.js';
+import { verifyEd25519 } from '../auth/did.js';
+import { retainAgentAuthorization } from '../db/authorizations.js';
 import { requireAgent } from '../middleware/principal.js';
-import { requireSignedAgentRequest } from '../agent/verify.js';
+import { agentRequestDigest, requireSignedAgentRequest } from '../agent/verify.js';
 import { WalletArchivedError, archivedWalletGuard } from '../db/wallets.js';
 import { env } from '../env.js';
 import { query } from '../db/pool.js';
@@ -30,12 +33,15 @@ import {
 } from '../schemas/agent.js';
 import {
   ensureAgentWallet,
+  custodyRefusal,
   executeAgentMessage,
   executeAgentTransaction,
   executeAgentTypedData,
   getAgentWallet,
   type AgentTxInput,
 } from './agentExec.js';
+import { provisionAccount, ProvisionError } from '../provision/state.js';
+import { provisionDepsFromEnv } from './wallet.js';
 import type { AgentTxIntent } from '../policy/agent.js';
 
 function hashRequest(payload: unknown): string {
@@ -80,15 +86,56 @@ function toAgentTxInput(tx: {
 }
 
 export async function agentRoutes(app: FastifyInstance): Promise<void> {
+  app.post('/v1/agent/signing-authorizations', { preHandler: requireSignedAgentRequest, bodyLimit: 131_072 }, async (req, reply) => {
+    try {
+      const authorization = parseAgentReauthorization(req.body);
+      const now = Math.floor(Date.now() / 1000);
+      if (authorization.expiry <= now || authorization.expiry - now > env.AGENT_REQUEST_MAX_TTL_SECONDS) {
+        return reply.code(400).send({ error: 'agent_attestor_authorization_expired' });
+      }
+      const wire = JSON.parse(authorization.body) as { key_id?: unknown; origin?: { did?: unknown } };
+      const wallet = await getAgentWallet(req.agent!.did);
+      if (!wallet || typeof wire.key_id !== 'string' || wire.origin?.did !== req.agent!.did) {
+        return reply.code(403).send({ error: 'agent_attestor_authorization_mismatch' });
+      }
+      const owned = await query('select 1 from wallets where id = $1 and attestor_key_id = $2 and kind = $3 and archived_at is null and is_disabled = false', [wallet.id, wire.key_id, 'agent']);
+      if (owned.rows.length !== 1) return reply.code(403).send({ error: 'agent_attestor_authorization_mismatch' });
+      const digest = agentRequestDigest({ method: '/v1/sign', keyId: wire.key_id,
+        nonce: Buffer.from(authorization.nonce, 'hex'), expiry: BigInt(authorization.expiry),
+        body: Buffer.from(authorization.body, 'utf8') });
+      if (!verifyEd25519(req.agent!.principal.public_key, digest, authorization.signature)) {
+        return reply.code(403).send({ error: 'agent_attestor_authorization_bad_signature' });
+      }
+      const id = await retainAgentAuthorization(req.agent!.did, authorization);
+      return reply.code(201).send({ authorization_id: id, expires_at: authorization.expiry });
+    } catch {
+      return reply.code(400).send({ error: 'agent_attestor_authorization_invalid' });
+    }
+  });
+
   // ── Wallet lifecycle ──────────────────────────────────────────────────────
 
   app.post('/v1/agent/provision', { preHandler: requireSignedAgentRequest }, async (req, reply) => {
     try {
-      const wallet = await ensureAgentWallet(req.agent!);
-      return reply.send({
-        wallet: { id: wallet.id, address: wallet.address, chain_id: wallet.chain_id, kind: wallet.kind },
+      const deps = provisionDepsFromEnv();
+      if (!deps) return reply.code(503).send({ error: 'provisioning_unavailable' });
+      const body = req.body as { bind_signature?: unknown } | null;
+      if (body?.bind_signature !== undefined && (typeof body.bind_signature !== 'string'
+        || !/^(0x)?[0-9a-fA-F]{128}$/.test(body.bind_signature))) {
+        return reply.code(400).send({ error: 'invalid_bind_signature' });
+      }
+      const provision = await provisionAccount(deps, {
+        kind: 'agent', did: req.agent!.did, custody: req.agent!.custody,
+        agentSignature: body?.bind_signature as string | undefined,
+      });
+      return reply.code(provision.state === 'active' ? 200 : 202).send({
+        wallet: { id: provision.walletId, address: provision.address, chain_id: env.HYPERPAXEER_CHAIN_ID, kind: 'agent' },
+        provision,
       });
     } catch (err) {
+      const refusal = custodyRefusal(err);
+      if (refusal) return reply.code(refusal.status).send(refusal.body);
+      if (err instanceof ProvisionError) return reply.code(err.status).send({ error: err.code, message: err.message });
       if (err instanceof WalletArchivedError) return reply.code(err.refusal.status).send(err.refusal.body);
       req.log.error({ err, did: req.agent!.did }, 'agent provision failed');
       return reply.code(500).send({ error: 'provision_failed', detail: (err as Error).message });

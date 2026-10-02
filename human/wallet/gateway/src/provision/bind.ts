@@ -1,5 +1,4 @@
-import { Agent, request as httpsRequest } from 'node:https';
-import { createHash, createPublicKey, randomUUID, verify as edVerify } from 'node:crypto';
+import { createHash, createPublicKey, verify as edVerify } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import {
   bytesToHex,
@@ -16,6 +15,7 @@ import {
   type TransactionSerializableEIP1559,
 } from 'viem';
 import { publicKeyToAddress } from 'viem/accounts';
+import { AttestorClient } from '../attestor/client.js';
 import { RpcPool, RpcResponseError } from '../rpc/pool.js';
 
 export const ADDR_PRECOMPILE = '0x0000000000000000000000000000000000001004' as const;
@@ -182,11 +182,6 @@ export type SignBody =
   | { kind: 'evm_tx'; transaction: Hex }
   | { kind: 'lx_bind'; message: Hex };
 
-interface NodeHealthAnswer {
-  node_id: string;
-  ready: boolean;
-}
-
 export interface AttestorDaemonOptions {
   endpoints: string[];
   cert: string | Buffer;
@@ -197,134 +192,32 @@ export interface AttestorDaemonOptions {
 }
 
 export class AttestorDaemonClient {
-  private readonly agent: Agent;
-  private readonly opts: AttestorDaemonOptions;
-
+  private readonly client: AttestorClient;
   constructor(opts: AttestorDaemonOptions) {
-    if (opts.endpoints.length < opts.quorum) throw new Error('fewer attestor endpoints than the signing quorum');
-    this.opts = opts;
-    this.agent = new Agent({ cert: opts.cert, key: opts.key, ca: opts.ca, keepAlive: true, minVersion: 'TLSv1.3' });
+    this.client = new AttestorClient({ endpoints: opts.endpoints,
+      tls: { cert: opts.cert, key: opts.key, ca: opts.ca }, quorum: opts.quorum,
+      timeoutMs: opts.timeoutMs, healthIntervalMs: 5_000 });
   }
-
-  close(): void {
-    this.agent.destroy();
-  }
-
-  private call(base: string, method: 'GET' | 'POST', path: string, body: unknown, headers: Record<string, string>): Promise<{ status: number; json: unknown }> {
-    const url = new URL(path, base.endsWith('/') ? base : `${base}/`);
-    const payload = body === undefined ? undefined : Buffer.from(JSON.stringify(body));
-    return new Promise((resolve, reject) => {
-      const req = httpsRequest(
-        url,
-        {
-          method,
-          agent: this.agent,
-          headers: {
-            ...headers,
-            ...(payload ? { 'content-type': 'application/json', 'content-length': String(payload.length) } : {}),
-          },
-          timeout: this.opts.timeoutMs,
-        },
-        (res) => {
-          const chunks: Buffer[] = [];
-          res.on('data', (c: Buffer) => chunks.push(c));
-          res.on('end', () => {
-            const text = Buffer.concat(chunks).toString('utf8');
-            let json: unknown = null;
-            try {
-              json = text.length > 0 ? JSON.parse(text) : null;
-            } catch {
-              reject(new AttestorUnavailable(`${base} answered non-JSON with status ${res.statusCode}`));
-              return;
-            }
-            resolve({ status: res.statusCode ?? 0, json });
-          });
-          res.on('error', reject);
-        },
-      );
-      req.on('timeout', () => req.destroy(new AttestorUnavailable(`${base} timed out`)));
-      req.on('error', (err) => reject(err instanceof AttestorUnavailable ? err : new AttestorUnavailable(`${base}: ${err.message}`)));
-      if (payload) req.write(payload);
-      req.end();
-    });
-  }
-
-  private async post<T>(base: string, path: string, body: unknown, headers: Record<string, string> = {}): Promise<T> {
-    const { status, json } = await this.call(base, 'POST', path, body, headers);
-    if (status !== 200) {
-      const err = (json as { error?: { category?: string; code?: string; message?: string } } | null)?.error;
-      throw new AttestorRefusal(base, status, err?.category ?? 'unknown', err?.code ?? `http_${status}`, err?.message ?? '');
-    }
-    return json as T;
-  }
-
+  close(): void { this.client.stop(); }
   async health(): Promise<Array<{ url: string; nodeId: string | null; ready: boolean }>> {
-    return Promise.all(
-      this.opts.endpoints.map(async (url) => {
-        try {
-          const { json } = await this.call(url, 'GET', 'health', undefined, {});
-          const h = json as NodeHealthAnswer;
-          return { url, nodeId: typeof h?.node_id === 'string' ? h.node_id : null, ready: h?.ready === true };
-        } catch {
-          return { url, nodeId: null, ready: false };
-        }
-      }),
-    );
+    return (await this.client.refreshHealth()).map((node) => ({ url: node.endpoint, nodeId: node.nodeId, ready: node.healthy }));
   }
-
   async generate(keyId: string, curve: 'secp256k1' | 'ed25519', owner: string, account?: string): Promise<GeneratedKey> {
-    const body: Record<string, string> = { session_id: randomUUID(), key_id: keyId, curve, owner };
-    if (account) body.account = account;
-    const settled = await Promise.allSettled(
-      this.opts.endpoints.map((url) =>
-        this.post<{ key_id: string; curve: string; public_key: string; address?: string; did?: string }>(url, 'v1/keys/generate', body),
-      ),
-    );
-    const failures = settled.filter((s): s is PromiseRejectedResult => s.status === 'rejected');
-    if (failures.length > 0) {
-      const first = failures[0]!.reason as Error;
-      if (first instanceof AttestorRefusal) throw first;
-      throw new AttestorUnavailable(`key generation failed on ${failures.length} attestors: ${first.message}`);
-    }
-    const answers = settled.map((s) => (s as PromiseFulfilledResult<{ key_id: string; curve: string; public_key: string; address?: string; did?: string }>).value);
-    const pub = strip(answers[0]!.public_key).toLowerCase();
-    if (answers.some((a) => strip(a.public_key).toLowerCase() !== pub || a.key_id !== keyId || a.curve !== curve)) {
-      throw new AttestorUnavailable('attestors disagree on the generated public key');
-    }
+    const generated = await this.client.generateKey({ keyId, curve, owner, ...(account ? { account } : {}) });
+    const pub = strip(generated.publicKey).toLowerCase();
     if (curve === 'secp256k1') {
       if (pub.length !== 130 || !pub.startsWith('04')) throw new AttestorUnavailable('secp256k1 public key is not uncompressed');
       const address = publicKeyToAddress(`0x${pub}`);
-      if (answers[0]!.address && getAddress(answers[0]!.address) !== address) {
-        throw new AttestorUnavailable('attestor address does not match the public key');
-      }
+      if (generated.address && getAddress(generated.address) !== address) throw new AttestorUnavailable('attestor address does not match the public key');
       return { keyId, curve, publicKey: pub, address, did: null };
     }
     const did = didFromPublicKey(pub);
-    if (answers[0]!.did && answers[0]!.did !== did) throw new AttestorUnavailable('attestor DID does not match the public key');
+    if (generated.did && generated.did !== did) throw new AttestorUnavailable('attestor DID does not match the public key');
     return { keyId, curve, publicKey: pub, address: null, did };
   }
-
   async sign(keyId: string, body: SignBody, bearerToken: string): Promise<SignedPayload> {
-    const ready = (await this.health()).filter((h) => h.ready && h.nodeId);
-    if (ready.length < this.opts.quorum) {
-      throw new AttestorUnavailable(`only ${ready.length} attestors are ready, ${this.opts.quorum} are needed`);
-    }
-    const chosen = ready.slice(0, this.opts.quorum);
-    const signers = chosen.map((c) => c.nodeId!) ;
-    const request = { session_id: randomUUID(), key_id: keyId, signers, ...body };
-    const settled = await Promise.allSettled(
-      chosen.map((c) =>
-        this.post<{ signature: string; recovery_id?: number }>(c.url, 'v1/sign', request, { authorization: `Bearer ${bearerToken}` }),
-      ),
-    );
-    const failure = settled.find((s): s is PromiseRejectedResult => s.status === 'rejected');
-    if (failure) throw failure.reason;
-    const answers = settled.map((s) => (s as PromiseFulfilledResult<{ signature: string; recovery_id?: number }>).value);
-    const sig = strip(answers[0]!.signature).toLowerCase();
-    if (answers.some((a) => strip(a.signature).toLowerCase() !== sig)) {
-      throw new AttestorUnavailable('attestors returned different signatures');
-    }
-    return { signature: sig, recoveryId: answers[0]!.recovery_id ?? null, signers };
+    const result = await this.client.sign({ keyId, payload: body, authorisation: { scheme: 'supabase_jwt', token: bearerToken } });
+    return { signature: strip(result.signature), recoveryId: result.recoveryId, signers: result.participants };
   }
 }
 

@@ -1,20 +1,22 @@
-import { createWalletClient, http, type Hex } from 'viem';
-import { hyperPaxeer } from '../../chain.js';
+import { keccak256, parseTransaction, recoverTransactionAddress, type Hex } from 'viem';
 import { env } from '../../env.js';
 import {
   getErc20Allowance,
   getErc20Balance,
   getNativeBalance,
   getNonce,
+  publicClient,
   isTxKnown,
   resolveGas,
   simulate,
   waitForReceipt,
 } from '../../chainReads.js';
-import { findPrincipal, getPolicy, listRules, releaseBudget } from '../../db/agents.js';
+import { findPrincipal, getPolicy, listRules } from '../../db/agents.js';
 import { evaluateAgent, type AgentTxIntent } from '../../policy/agent.js';
-import { findWalletByAddress, getSigningAccountForRow, logSignature, type WalletRow } from '../../db/wallets.js';
+import { findWalletByAddress, getMigrationAwareSigningAccountForRow, type WalletRow } from '../../db/wallets.js';
 import { getDepositByTx, layerxEnabled } from '../../layerx/db.js';
+import { AttestorError, AttestorReauthorizationRequired, type AgentOriginalRequest, type AgentReauthorization } from '../../attestor/client.js';
+import { CustodyAuthorityError } from '../authority.js';
 import { withDistributedWalletLock } from './nonceLock.js';
 import {
   buildErrorEnvelope,
@@ -23,7 +25,7 @@ import {
   type ActionPhase,
 } from './errors.js';
 import { approvalCalldata, type ActionPlan } from './plan.js';
-import { getAction, updateAction, type ActionRow, type ActionStatus } from '../../db/actions.js';
+import { actionLegExecution, getAction, releaseActionBudget, releaseActionNonce, releaseUnsignedActionNonce, reserveActionBudget, retainActionTransactionDraft, retainActionSignedTransaction, updateAction, type ActionLeg, type ActionSignedTransaction, type ActionRow, type ActionStatus } from '../../db/actions.js';
 
 /**
  * The durable-action orchestrator: it advances ONE action by exactly one
@@ -49,6 +51,7 @@ const REPLACE_AFTER_ATTEMPTS = 3;
 
 /** Advance a leased action by one transition. Never throws. */
 export async function advanceAction(row: ActionRow): Promise<void> {
+  if (row.error_code === 'AGENT_REAUTHORIZATION_REQUIRED') return;
   try {
     switch (row.status) {
       case 'received':
@@ -76,6 +79,42 @@ export async function advanceAction(row: ActionRow): Promise<void> {
         return;
     }
   } catch (err) {
+    if (err instanceof AttestorError && (err.code === 'inventory_mismatch' || err.code === 'key_invalid_share')) {
+      await fail(row, (row.phase ?? 'reconciliation') as ActionPhase, 'CUSTODY_AUTHORITY_REQUIRED', err.message,
+        { detail: err.code }, false);
+      return;
+    }
+    if (err instanceof CustodyAuthorityError) {
+      await fail(row, (row.phase ?? 'reconciliation') as ActionPhase, 'CUSTODY_AUTHORITY_REQUIRED', err.message,
+        { detail: err.code, replication_pending: err.replicationPending }, false);
+      return;
+    }
+    if (err instanceof AttestorReauthorizationRequired) {
+      await fail(row, (row.phase ?? 'reconciliation') as ActionPhase, 'AGENT_REAUTHORIZATION_REQUIRED', err.message, {
+        method: '/v1/sign', key_id: err.keyId, signing_request: err.request,
+        digest_domain: 'PXW:AGENT-REQUEST:v1', authorization_header: 'x-agent-attestor-authorization',
+        authorization_endpoint: '/v1/agent/signing-authorizations', authorization_id_header: 'x-agent-attestor-authorization-id',
+      }, false);
+      return;
+    }
+    if (err instanceof AttestorError && err.category === 'token') {
+      const current = await getAction(row.id);
+      const custody = current?.request._custody as { reauthorization?: AgentReauthorization } | undefined;
+      if (custody?.reauthorization) {
+        const wire = JSON.parse(custody.reauthorization.body) as { key_id?: string };
+        await fail(current!, (current!.phase ?? 'reconciliation') as ActionPhase,
+          'AGENT_REAUTHORIZATION_REQUIRED', err.message, {
+            method: '/v1/sign', key_id: wire.key_id, signing_request: custody.reauthorization.body,
+            digest_domain: 'PXW:AGENT-REQUEST:v1', authorization_header: 'x-agent-attestor-authorization',
+        authorization_endpoint: '/v1/agent/signing-authorizations', authorization_id_header: 'x-agent-attestor-authorization-id',
+          }, false);
+        return;
+      }
+    }
+    if (err instanceof AttestorError && (err.category === 'token' || err.category === 'policy')) {
+      await fail(row, 'validation', 'POLICY_DENIED', err.message, { detail: err.code }, false);
+      return;
+    }
     // Any unexpected throw is transient infrastructure — never terminal, never
     // a resend. Surface as RETRY_SAME_ACTION so the worker re-attempts.
     await fail(row, 'reconciliation', 'RPC_UNAVAILABLE', (err as Error).message, {}, false);
@@ -132,7 +171,7 @@ async function validate(row: ActionRow): Promise<void> {
   const callIntent: AgentTxIntent = {
     kind: 'transaction',
     to: plan.contract,
-    value: 0n,
+    value: BigInt(plan.callValueWei),
     data: plan.callData,
     tokenContract: plan.token,
     tokenRecipient: plan.spender,
@@ -140,7 +179,7 @@ async function validate(row: ActionRow): Promise<void> {
   };
 
   for (const intent of [approveIntent, callIntent]) {
-    const decision = await evaluateAgent({ principal, policy, rules, intent });
+    const decision = await evaluateAgent({ principal, policy, rules, intent, reserveBudget: (args) => reserveActionBudget(row.id, args) });
     if (!decision.allow) {
       const code: ActionErrorCode =
         decision.code === 'APPROVE_CAP' ? 'APPROVAL_CAP_EXCEEDED' : 'POLICY_DENIED';
@@ -197,7 +236,7 @@ async function broadcastApproval(row: ActionRow): Promise<void> {
   }
 
   const data = approvalCalldata(plan);
-  const sent = await broadcastLeg(row, wallet, { to: plan.token, data, value: 0n });
+  const sent = await broadcastLeg(row, wallet, 'approval', { to: plan.token, data, value: 0n });
   await updateAction(row.id, {
     status: 'approval_pending',
     phase: 'approval_confirmation',
@@ -255,7 +294,7 @@ async function simulateAndBroadcastCall(row: ActionRow): Promise<void> {
     return;
   }
 
-  const sent = await broadcastLeg(row, wallet, {
+  const sent = await broadcastLeg(row, wallet, 'call', {
     to: plan.contract,
     data: plan.callData,
     value: BigInt(plan.callValueWei),
@@ -288,6 +327,7 @@ async function confirmLeg(row: ActionRow, leg: 'approval' | 'call'): Promise<voi
     return;
   }
 
+  await recoverRetainedBroadcast(row, leg);
   const outcome = await waitForReceipt(hash, { confirmations: CONFIRMATIONS });
 
   if (outcome.state === 'confirmed') {
@@ -408,64 +448,106 @@ interface LegTx {
   value: bigint;
 }
 
-/** Sign + broadcast a leg under the distributed per-wallet nonce lock. */
+async function submitRetained(row: ActionRow, signed: ActionSignedTransaction): Promise<void> {
+  if (keccak256(signed.raw) !== signed.hash) throw new Error('retained transaction integrity failure');
+  if (!(await isTxKnown(signed.hash))) {
+    try {
+      const hash = await publicClient().sendRawTransaction({ serializedTransaction: signed.raw });
+      if (hash.toLowerCase() !== signed.hash.toLowerCase()) throw new Error('RPC transaction hash differs from retained bytes');
+    } catch (err) {
+      if (!(await isTxKnown(signed.hash))) throw err;
+    }
+  }
+  await releaseActionNonce(row.id, signed.draft.nonce);
+}
+
+async function recoverRetainedBroadcast(row: ActionRow, leg: ActionLeg): Promise<void> {
+  if (!row.wallet_address) throw new Error('action wallet missing');
+  await withDistributedWalletLock(row.wallet_address, async () => {
+    const current = await getAction(row.id);
+    if (!current || current.terminal_at) return;
+    const signed = actionLegExecution(current, leg).current;
+    if (signed) await submitRetained(current, signed);
+  }, undefined, row.id);
+}
+
 async function broadcastLeg(
   row: ActionRow,
   wallet: WalletRow,
+  leg: ActionLeg,
   tx: LegTx,
   opts?: { nonce?: number; feeBumpPercent?: number },
 ): Promise<{ hash: Hex; nonce: number }> {
   return withDistributedWalletLock(wallet.address, async () => {
-    const account = await getSigningAccountForRow(wallet);
-    const client = createWalletClient({
-      chain: hyperPaxeer,
-      transport: http(env.HYPERPAXEER_RPC_URL),
-      account: {
-        address: account.address,
-        type: 'local',
-        source: 'paxeer-embedded',
-        publicKey: '0x' as Hex,
-        signTransaction: account.signTransaction,
-        signMessage: account.signMessage,
-        signTypedData: account.signTypedData,
-      },
-    });
-
-    const nonce = opts?.nonce ?? (await getNonce(wallet.address));
-    const gas = await resolveGas({ from: account.address, to: tx.to, data: tx.data, value: tx.value });
-    let { maxFeePerGas, maxPriorityFeePerGas } = gas;
-    if (opts?.feeBumpPercent) {
-      const mult = BigInt(100 + opts.feeBumpPercent);
-      maxFeePerGas = (maxFeePerGas * mult) / 100n;
-      maxPriorityFeePerGas = (maxPriorityFeePerGas * mult) / 100n;
+    const current = await getAction(row.id);
+    if (!current || current.terminal_at) throw new Error('action is no longer advanceable');
+    const state = actionLegExecution(current, leg);
+    const expectedHash = leg === 'approval' ? row.approval_tx_hash : row.call_tx_hash;
+    if (state.current && (!opts || state.current.hash !== expectedHash)) {
+      await submitRetained(current, state.current);
+      return { hash: state.current.hash, nonce: state.current.draft.nonce };
     }
-
-    const hash = await client.sendTransaction({
-      to: tx.to,
-      data: tx.data,
-      value: tx.value,
-      nonce,
-      gas: gas.gas,
-      maxFeePerGas,
-      maxPriorityFeePerGas,
-      chain: hyperPaxeer,
+    const principal = await findPrincipal(current.did);
+    if (!principal || principal.is_frozen) throw new Error('agent principal is unavailable');
+    const [policy, rules] = await Promise.all([getPolicy(current.did), listRules(current.did)]);
+    const plan = current.plan as unknown as ActionPlan;
+    const decision = await evaluateAgent({
+      principal, policy, rules,
+      intent: { kind: 'transaction', to: tx.to, data: tx.data, value: tx.value,
+        tokenContract: plan.token, tokenRecipient: plan.spender, tokenAmount: BigInt(plan.amountWei), isApprove: leg === 'approval' },
+      reserveBudget: (args) => reserveActionBudget(current.id, args),
     });
-
-    await logSignature({
-      user_id: wallet.user_id,
-      wallet_id: wallet.id,
-      address: wallet.address,
-      kind: 'transaction',
-      to_address: tx.to,
-      value_wei: tx.value,
-      chain_id: env.HYPERPAXEER_CHAIN_ID,
-      request_hash: `action:${row.id}:${opts?.nonce !== undefined ? 'replace' : 'send'}:${nonce}`,
-      tx_hash: hash,
-      principal_did: row.did,
+    if (!decision.allow) {
+      await fail(current, leg === 'approval' ? 'approval_broadcast' : 'call_broadcast',
+        'POLICY_DENIED', decision.message, { policy_code: decision.code }, true);
+      throw new AttestorError('policy', 'policy_denied', decision.message);
+    }
+    let draft = state.draft;
+    if (!draft) {
+      const nonce = opts?.nonce ?? (await getNonce(wallet.address));
+      const gas = await resolveGas({ from: wallet.address, to: tx.to, data: tx.data, value: tx.value });
+      let { maxFeePerGas, maxPriorityFeePerGas } = gas;
+      if (opts?.feeBumpPercent) {
+        const mult = BigInt(100 + opts.feeBumpPercent);
+        const previous = state.current?.draft;
+        maxFeePerGas = ((previous && BigInt(previous.maxFeePerGas) > maxFeePerGas
+          ? BigInt(previous.maxFeePerGas) : maxFeePerGas) * mult + 99n) / 100n;
+        maxPriorityFeePerGas = ((previous && BigInt(previous.maxPriorityFeePerGas) > maxPriorityFeePerGas
+          ? BigInt(previous.maxPriorityFeePerGas) : maxPriorityFeePerGas) * mult + 99n) / 100n;
+      }
+      draft = await retainActionTransactionDraft(current.id, leg, {
+        chainId: env.HYPERPAXEER_CHAIN_ID, to: tx.to, data: tx.data, value: tx.value.toString(),
+        nonce, gas: gas.gas.toString(), maxFeePerGas: maxFeePerGas.toString(),
+        maxPriorityFeePerGas: maxPriorityFeePerGas.toString(), replaces: expectedHash as Hex | null,
+      });
+    }
+    if (draft.to.toLowerCase() !== tx.to.toLowerCase() || draft.data !== tx.data
+      || draft.value !== tx.value.toString() || draft.chainId !== env.HYPERPAXEER_CHAIN_ID
+      || (opts?.nonce !== undefined && draft.nonce !== opts.nonce)) {
+      throw new Error('retained transaction differs from the action plan');
+    }
+    const custody = current.request._custody as { origin: AgentOriginalRequest; reauthorization?: AgentReauthorization } | undefined;
+    if (custody && custody.origin.did !== current.did) throw new Error('durable request authority differs');
+    const account = await getMigrationAwareSigningAccountForRow(wallet, custody ? {
+      scheme: 'agent_request', publicKey: principal.public_key, ...custody,
+    } : undefined, undefined, undefined, { subject: current.did, route: '/v1/agent/actions', requestHash: `action:${current.id}` });
+    const raw = await account.signTransaction({
+      type: 'eip1559', chainId: draft.chainId, to: draft.to, data: draft.data,
+      value: BigInt(draft.value), nonce: draft.nonce, gas: BigInt(draft.gas),
+      maxFeePerGas: BigInt(draft.maxFeePerGas), maxPriorityFeePerGas: BigInt(draft.maxPriorityFeePerGas),
     });
-
-    return { hash, nonce };
-  });
+    const parsed = parseTransaction(raw);
+    if ((await recoverTransactionAddress({ serializedTransaction: raw })).toLowerCase() !== wallet.address.toLowerCase()
+      || parsed.nonce !== draft.nonce || parsed.chainId !== draft.chainId
+      || parsed.to?.toLowerCase() !== draft.to.toLowerCase() || (parsed.data ?? '0x') !== draft.data
+      || (parsed.value ?? 0n) !== BigInt(draft.value) || parsed.gas !== BigInt(draft.gas)
+      || parsed.maxFeePerGas !== BigInt(draft.maxFeePerGas) || parsed.maxPriorityFeePerGas !== BigInt(draft.maxPriorityFeePerGas)) {
+      throw new Error('signed transaction differs from the exact authorized draft');
+    }
+    const retained = await retainActionSignedTransaction(current.id, leg, { draft, raw, hash: keccak256(raw) });
+    await submitRetained(current, retained);
+    return { hash: retained.hash, nonce: retained.draft.nonce };
+  }, undefined, row.id);
 }
 
 /** Deterministic replacement of a wedged leg at its EXISTING nonce. */
@@ -481,7 +563,7 @@ async function replaceLeg(
       ? { to: plan.token, data: approvalCalldata(plan), value: 0n }
       : { to: plan.contract, data: plan.callData, value: BigInt(plan.callValueWei) };
 
-  const sent = await broadcastLeg(row, wallet, tx, {
+  const sent = await broadcastLeg(row, wallet, leg, tx, {
     nonce,
     feeBumpPercent: env.ACTION_FEE_BUMP_PERCENT,
   });
@@ -525,10 +607,11 @@ async function fail(
   const terminal = terminalStatusFor(code) as ActionStatus | null;
 
   const nothingBroadcast = !row.approval_tx_hash && !row.call_tx_hash;
-  if (mayReleaseBudget && nothingBroadcast && row.reserved_budget_id && BigInt(row.reserved_value_wei) > 0n) {
-    await releaseBudget(row.reserved_budget_id, BigInt(row.reserved_value_wei)).catch(() => undefined);
+  if (mayReleaseBudget && nothingBroadcast) {
+    await releaseActionBudget(row.id);
   }
 
+  if (terminal) await releaseUnsignedActionNonce(row.id);
   await updateAction(row.id, {
     status: terminal ?? row.status,
     phase,

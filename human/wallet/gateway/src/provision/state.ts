@@ -10,6 +10,7 @@ import {
   agentWalletUserId,
   findArchivedWallet,
   getSigningAccountForRow,
+  getMigrationAwareSigningAccountForRow,
   type WalletKind,
   type WalletRow,
 } from '../db/wallets.js';
@@ -32,6 +33,9 @@ import {
   waitForReceipt,
 } from './bind.js';
 
+import { CustodyAuthorityError, publishCustodyAuthority } from '../agent/authority.js';
+import type { AgentOriginalRequest, AgentReauthorization } from '../attestor/client.js';
+
 export type ProvisionState =
   | 'new'
   | 'evm_key'
@@ -44,7 +48,7 @@ export type ProvisionState =
 
 export type ProvisionSubject =
   | { kind: 'standard'; userId: string; token: string | null }
-  | { kind: 'agent'; did: string; agentSignature?: string | null };
+  | { kind: 'agent'; did: string; agentSignature?: string | null; custody?: { origin: AgentOriginalRequest; reauthorization?: AgentReauthorization } };
 
 export interface ProvisionDeps {
   pool: Pool;
@@ -175,14 +179,16 @@ interface AgentPrincipal {
   did: string;
   public_key: string;
   wallet_id: string | null;
+  is_frozen: boolean;
 }
 
 async function loadPrincipal(pool: Pool, did: string): Promise<AgentPrincipal> {
   const { rows } = await pool.query<AgentPrincipal>(
-    `select did, public_key, wallet_id from agent_principals where did = $1`,
+    `select did, public_key, wallet_id, is_frozen from agent_principals where did = $1`,
     [did],
   );
   if (!rows[0]) throw new ProvisionError('agent_unknown', 404, 'agent is not registered');
+  if (rows[0].is_frozen) throw new ProvisionError('agent_frozen', 403, 'agent is frozen');
   return rows[0];
 }
 
@@ -269,16 +275,18 @@ async function activate(deps: ProvisionDeps, row: ProvisionRow, wallet: WalletRe
   row.state = 'active';
 }
 
-async function createEvmKey(deps: ProvisionDeps, row: ProvisionRow, userId: string, kind: WalletKind): Promise<WalletRecord> {
+async function createEvmKey(deps: ProvisionDeps, row: ProvisionRow, userId: string, kind: WalletKind, owner = userId): Promise<WalletRecord> {
   const archived = await findArchivedWallet({ userId, kind });
   if (archived) throw new WalletArchivedError(archived.id, archived.address);
   const attestors = requireAttestors(deps);
   const keyId = `wallet:${userId}:${kind}:secp256k1:${row.evm_key_generation}`;
+  await updateRow(deps.pool, row.id, { evm_key_id: keyId });
+  row.evm_key_id = keyId;
   let key;
   try {
-    key = await attestors.generate(keyId, 'secp256k1', userId);
+    key = await attestors.generate(keyId, 'secp256k1', owner);
   } catch (err) {
-    await updateRow(deps.pool, row.id, { evm_key_generation: row.evm_key_generation + 1 });
+    if (err instanceof CustodyAuthorityError) throw new ProvisionError('custody_inventory_pending', 503, `approved inventory is required for ${keyId}`);
     throw err;
   }
   const { rows } = await deps.pool.query<WalletRecord>(
@@ -310,9 +318,17 @@ async function signBindTransaction(
   wallet: WalletRecord,
   tx: TransactionSerializableEIP1559,
 ): Promise<Hex | null> {
-  if (wallet.migrated_at && wallet.attestor_key_id) {
-    if (subject.kind !== 'standard') {
-      throw new ProvisionError('agent_attestor_signing_unavailable', 503, 'attestor-held agent wallets cannot be signed for with an agent signature');
+  if (wallet.migrated_at || !wallet.encrypted_private_key) {
+    if (!wallet.attestor_key_id) throw new ProvisionError('wallet_key_missing', 503, 'wallet has no attestor key');
+    if (subject.kind === 'agent') {
+      const principal = await loadPrincipal(deps.pool, subject.did);
+      if (!subject.custody || subject.custody.origin.did !== subject.did) {
+        throw new ProvisionError('agent_request_required', 401, 'binding requires the original signed agent request');
+      }
+      const account = await getMigrationAwareSigningAccountForRow(wallet as unknown as WalletRow, {
+        scheme: 'agent_request', publicKey: principal.public_key, ...subject.custody,
+      }, undefined, undefined, { subject: subject.did, route: '/v1/agent/provision', requestHash: wallet.id });
+      return account.signTransaction(tx);
     }
     if (!subject.token) return null;
     return signTransactionWithAttestors(requireAttestors(deps), wallet.attestor_key_id, getAddress(wallet.address), tx, subject.token);
@@ -348,11 +364,16 @@ export async function provisionAccount(deps: ProvisionDeps, subject: ProvisionSu
         wallet = existing;
         await updateRow(deps.pool, row.id, { state: 'evm_key', wallet_id: existing.id, evm_key_id: existing.attestor_key_id });
         Object.assign(row, { state: 'evm_key', wallet_id: existing.id, evm_key_id: existing.attestor_key_id });
-      } else if (subject.kind === 'agent') {
-        throw new ProvisionError('agent_wallet_missing', 404, 'agent has no wallet');
       } else {
-        wallet = await createEvmKey(deps, row, userId, kind);
+        if (subject.kind === 'agent' && !subject.custody) {
+          throw new ProvisionError('agent_request_required', 401, 'provisioning requires the original signed agent request');
+        }
+        wallet = await createEvmKey(deps, row, userId, kind, principal ? `agent:${normalisePublicKey(principal.public_key)}` : userId);
       }
+    }
+    if (principal && wallet) {
+      await deps.pool.query('update agent_principals set wallet_id = $2 where did = $1', [subject.kind === 'agent' ? subject.did : '', wallet.id]);
+      await publishCustodyAuthority();
     }
     if (!wallet) throw new ProvisionError('wallet_missing', 500, 'provisioning row has no wallet');
     if (wallet.is_disabled) throw new ProvisionError('wallet_disabled', 403, wallet.disabled_reason ?? 'wallet is disabled');
@@ -368,7 +389,7 @@ export async function provisionAccount(deps: ProvisionDeps, subject: ProvisionSu
         try {
           key = await attestors.generate(keyId, 'ed25519', userId, address);
         } catch (err) {
-          await updateRow(deps.pool, row.id, { ed_key_generation: row.ed_key_generation + 1 });
+          if (err instanceof CustodyAuthorityError) throw new ProvisionError('custody_inventory_pending', 503, `approved inventory is required for ${keyId}`);
           throw err;
         }
         await storeIdentity(deps, row, wallet, key.publicKey, keyId);

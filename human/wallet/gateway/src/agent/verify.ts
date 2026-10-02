@@ -4,6 +4,8 @@ import { env } from '../env.js';
 import { query } from '../db/pool.js';
 import { findPrincipal, type AgentPrincipalRow } from '../db/agents.js';
 import { parseDid, verifyEd25519 } from '../auth/did.js';
+import { loadAgentAuthorization } from '../db/authorizations.js';
+import { parseAgentReauthorization } from '../attestor/client.js';
 import { agentLaneEnabled } from '../auth/agentToken.js';
 
 declare module 'fastify' {
@@ -217,10 +219,46 @@ export async function requireSignedAgentRequest(req: FastifyRequest, reply: Fast
     void reply.code(verdict.refusal.status).send({ error: verdict.refusal.code, message: verdict.refusal.message });
     return;
   }
+  let reauthorization;
+  const carrier = req.headers['x-agent-attestor-authorization'];
+  const authorizationId = req.headers['x-agent-attestor-authorization-id'];
+  if (authorizationId !== undefined) {
+    try {
+      if (carrier !== undefined || typeof authorizationId !== 'string') throw new Error('ambiguous authorization carrier');
+      reauthorization = await loadAgentAuthorization(verdict.principal.did, authorizationId);
+    } catch {
+      void reply.code(400).send({ error: 'agent_attestor_authorization_unavailable' });
+      return;
+    }
+  }
+  if (carrier !== undefined) {
+    try {
+      if (typeof carrier !== 'string' || Buffer.byteLength(carrier) > 131_072) throw new Error('carrier exceeds bound');
+      reauthorization = parseAgentReauthorization(JSON.parse(carrier));
+    } catch {
+      void reply.code(400).send({ error: 'agent_attestor_authorization_invalid' });
+      return;
+    }
+  }
+  const uploadingAuthorization = agentRequestMethod(req) === 'POST /v1/agent/signing-authorizations';
+  if ((req.rawBody?.length ?? 0) > (uploadingAuthorization ? 131_072 : 65_536)) {
+    void reply.code(400).send({ error: 'agent_signing_request_too_large' });
+    return;
+  }
   req.agent = {
     did: verdict.principal.did,
     ownerUserId: verdict.principal.owner_user_id,
     principal: verdict.principal,
+    custody: uploadingAuthorization ? undefined : {
+      origin: {
+        method: agentRequestMethod(req), did: verdict.principal.did,
+        body: (req.rawBody ?? Buffer.alloc(0)).toString('base64'),
+        nonce: String(req.headers[AGENT_REQUEST_HEADERS.nonce]).toLowerCase(),
+        expiry: Number(req.headers[AGENT_REQUEST_HEADERS.expires]),
+        signature: String(req.headers[AGENT_REQUEST_HEADERS.signature]).toLowerCase(),
+      },
+      ...(reauthorization ? { reauthorization } : {}),
+    },
   };
 }
 

@@ -8,6 +8,7 @@ export async function withWalletLock<T>(
   key: string,
   fn: () => Promise<T>,
   store: NonceStore = sharedNonceStore(),
+  ownerActionId?: string,
 ): Promise<T> {
   const k = key.toLowerCase();
   const locked = async (): Promise<T> => {
@@ -19,7 +20,7 @@ export async function withWalletLock<T>(
       } finally {
         await lease.markForReconcile();
       }
-    });
+    }, ownerActionId);
     if (!outcome.ok) throw outcome.error;
     return outcome.value;
   };

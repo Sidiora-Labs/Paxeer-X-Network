@@ -1,5 +1,7 @@
 import { Agent, request as httpsRequest } from 'node:https';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID, X509Certificate } from 'node:crypto';
+import type { TLSSocket } from 'node:tls';
+import { loadWalletInventory, publishCustodyAuthority, requireInventoryKey } from '../agent/authority.js';
 import { readFileSync } from 'node:fs';
 import {
   getTransactionType,
@@ -19,6 +21,7 @@ import {
 import {
   QuorumUnavailableError,
   selectQuorum,
+  isHealthy,
   type AttestorHealthReport,
   type NodeHealth,
   type QuorumMember,
@@ -63,8 +66,38 @@ export const KIND_CURVES: Record<SignKind, Curve> = {
 
 export const SIGNATURE_BYTES: Record<Curve, number> = { secp256k1: 65, ed25519: 64 };
 
+export interface AgentOriginalRequest {
+  method: string;
+  did: string;
+  body: string;
+  nonce: string;
+  expiry: number;
+  signature: string;
+}
+
+export interface AgentReauthorization {
+  body: string;
+  nonce: string;
+  expiry: number;
+  signature: string;
+}
+
+export function parseAgentReauthorization(value: unknown): AgentReauthorization {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('invalid attestor reauthorization');
+  const record = value as Record<string, unknown>;
+  if (Object.keys(record).sort().join(',') !== 'body,expiry,nonce,signature'
+    || typeof record.body !== 'string' || Buffer.byteLength(record.body) > 65_536
+    || typeof record.nonce !== 'string' || !/^[0-9a-f]{32}$/.test(record.nonce)
+    || typeof record.expiry !== 'number' || !Number.isSafeInteger(record.expiry) || record.expiry <= 0
+    || typeof record.signature !== 'string' || !/^[0-9a-f]{128}$/.test(record.signature)) {
+    throw new Error('invalid attestor reauthorization');
+  }
+  return record as unknown as AgentReauthorization;
+}
+
 export type Authorisation =
   | { scheme: 'supabase_jwt'; token: string }
+  | { scheme: 'agent_request'; publicKey: string; origin: AgentOriginalRequest; reauthorization?: AgentReauthorization }
   | { scheme: 'agent_ed25519'; publicKey: string; nonce: string; expiry: number; signature: string };
 
 export interface GrantWire {
@@ -170,6 +203,7 @@ function checkApproved(disclosure: ActivityDisclosureWire, approval: ActivityApp
 }
 
 export interface SignRequestWire {
+  origin?: AgentOriginalRequest;
   session_id: string;
   key_id: string;
   kind: SignKind;
@@ -252,6 +286,12 @@ export class AttestorTokenError extends AttestorError {
   constructor(code: string, reason: string, nodeId: string | null = null) {
     super('token', code, reason, nodeId);
     this.name = 'AttestorTokenError';
+  }
+}
+
+export class AttestorReauthorizationRequired extends AttestorTokenError {
+  constructor(readonly request: string, readonly keyId: string) {
+    super('agent_reauthorization_required', 'the exact attestor request requires the registered agent signature');
   }
 }
 
@@ -438,6 +478,7 @@ export function signRequestBody(sessionId: string, keyId: string, signers: strin
 
 export function authorisationHeaders(auth: Authorisation): Record<string, string> {
   if (auth.scheme === 'supabase_jwt') return { authorization: `Bearer ${auth.token}` };
+  if (auth.scheme === 'agent_request') throw new AttestorTokenError('agent_reauthorization_required', 'agent signing request is not finalized');
   return {
     [AGENT_HEADERS.key]: bareHex(auth.publicKey),
     [AGENT_HEADERS.nonce]: bareHex(auth.nonce),
@@ -474,10 +515,12 @@ export class AttestorClient {
   private readonly nodes: NodeHealth[];
   private readonly opts: AttestorClientOptions;
   private timer: NodeJS.Timeout | null = null;
+  private readonly peerPins = new Map<string, string>();
+  private readonly authorityAcks = new Map<string, string>();
 
   constructor(opts: AttestorClientOptions) {
-    if (opts.endpoints.length < opts.quorum) {
-      throw new Error(`attestor client needs at least ${opts.quorum} endpoints, got ${opts.endpoints.length}`);
+    if (opts.endpoints.length !== 5 || opts.quorum !== 3) {
+      throw new AttestorQuorumError('inventory_membership_mismatch', 'wallet custody requires exactly five endpoints and threshold three');
     }
     this.opts = opts;
     this.agent = new Agent({
@@ -529,10 +572,34 @@ export class AttestorClient {
     return selectQuorum(this.nodes, this.opts.quorum);
   }
 
+  async publishAuthority(token: string, sequence: string, required: 3 | 5): Promise<void> {
+    await this.refreshHealth();
+    const inventory = loadWalletInventory();
+    const nodes: QuorumMember[] = [];
+    for (const node of this.nodes) {
+      if (node.nodeId && node.latencyMs !== null && inventory.members.some((member) => member.id === node.nodeId
+        && member.spki_sha256 === this.peerPins.get(new URL(node.endpoint).origin))) {
+        nodes.push({ endpoint: node.endpoint, nodeId: node.nodeId, latencyMs: node.latencyMs });
+      }
+    }
+    if (nodes.length < required || new Set(nodes.map((node) => node.nodeId)).size !== nodes.length) throw new AttestorQuorumError('inventory_mismatch', 'too few distinct approved participant identities are available');
+    const results = await Promise.allSettled(nodes.map((node) => this.post(node, '/v1/authority', JSON.stringify({ token }), {}, (value) => {
+      const answer = value as { node_id?: string; sequence?: string } | null;
+      if (answer?.node_id !== node.nodeId || answer.sequence !== sequence) throw new AttestorSessionError('authority_ack_mismatch', 'participant acknowledged another snapshot');
+      this.authorityAcks.set(node.nodeId, sequence);
+    })));
+    const refusal = firstRefusal(results, nodes, (endpoint, error) => this.markDown(endpoint, error));
+    if (results.filter((result) => result.status === 'fulfilled').length < required) {
+      throw refusal ?? new AttestorQuorumError('authority_quorum_unavailable', 'too few participants admitted the current authority snapshot');
+    }
+  }
+
   async sign(input: SignInput): Promise<SignResult> {
+    requireInventoryKey(input.keyId, 'sign');
+    const authoritySequence = await publishCustodyAuthority(this, 3);
     let members: QuorumMember[];
     try {
-      members = this.selectQuorum();
+      members = selectQuorum(this.nodes.filter((node) => node.nodeId !== null && this.authorityAcks.get(node.nodeId) === authoritySequence), this.opts.quorum);
     } catch (err) {
       if (err instanceof QuorumUnavailableError) {
         throw new AttestorQuorumError('quorum_unavailable', err.message);
@@ -541,15 +608,58 @@ export class AttestorClient {
     }
     const kind = input.payload.kind;
     const curve = KIND_CURVES[kind];
-    const sessionId = input.payload.kind === 'lx_activity' ? input.payload.approval.session_id : randomUUID();
-    const participants = members.map((m) => m.nodeId);
-    const body = JSON.stringify(signRequestBody(sessionId, input.keyId, participants, input.payload));
-    const headers = authorisationHeaders(input.authorisation);
+    let sessionId = input.payload.kind === 'lx_activity' ? input.payload.approval.session_id : randomUUID();
+    let participants = members.map((m) => m.nodeId);
+    let authorisation = input.authorisation;
+    let origin: AgentOriginalRequest | undefined;
+    let suppliedBody: string | undefined;
+    if (authorisation.scheme === 'agent_request') {
+      origin = authorisation.origin;
+      const approved = authorisation.reauthorization;
+      if (approved) {
+        const offered = JSON.parse(approved.body) as SignRequestWire;
+        if (!offered || typeof offered !== 'object' || !offered.origin || offered.origin.did !== origin.did || offered.origin.method !== origin.method
+          || offered.origin.body !== origin.body || typeof offered.session_id !== 'string' || !offered.session_id
+          || !Array.isArray(offered.signers) || offered.signers.length !== this.opts.quorum
+          || new Set(offered.signers).size !== this.opts.quorum) {
+          throw new AttestorTokenError('agent_authorization_mismatch', 'the signed envelope differs from the original request');
+        }
+        const health = this.nodes.filter((node) => isHealthy(node, this.opts.quorum) && node.nodeId !== null && this.authorityAcks.get(node.nodeId) === authoritySequence);
+        members = offered.signers.map((id) => {
+          const node = health.find((item) => item.nodeId === id);
+          if (!node || node.latencyMs === null) throw new AttestorQuorumError('participant_unavailable', 'an approved participant is unavailable');
+          return { endpoint: node.endpoint, nodeId: id, latencyMs: node.latencyMs };
+        });
+        sessionId = offered.session_id;
+        participants = offered.signers;
+        origin = offered.origin;
+        suppliedBody = approved.body;
+        authorisation = { scheme: 'agent_ed25519', publicKey: authorisation.publicKey,
+          nonce: approved.nonce, expiry: approved.expiry, signature: approved.signature };
+      }
+    }
+    const wire = signRequestBody(sessionId, input.keyId, participants, input.payload);
+    if (origin) wire.origin = origin;
+    const body = JSON.stringify(wire);
+    if (authorisation.scheme === 'agent_request') throw new AttestorReauthorizationRequired(body, input.keyId);
+    if (suppliedBody !== undefined && suppliedBody !== body) {
+      throw new AttestorTokenError('agent_authorization_mismatch', 'transaction bytes, fees, nonce or custody binding differ from the signed envelope');
+    }
+    const headers = { ...authorisationHeaders(authorisation), 'X-Custody-Sequence': authoritySequence };
     const settled = await Promise.allSettled(
       members.map((m) => this.post(m, ATTESTOR_PATHS.sign, body, headers, (b) => parseSignResponse(b, m.nodeId, curve))),
     );
     const refusal = firstRefusal(settled, members, (e, r) => this.markDown(e, r));
-    if (refusal) throw refusal;
+    if (refusal) {
+      const consumed = (refusal.code === 'agent_invalid' && (refusal.message.includes('agent: nonce replayed') || refusal.message.includes('agent: request expired')))
+        || ['session_open_failed', 'session_failed', 'session_timeout'].includes(refusal.code);
+      if (consumed && input.authorisation.scheme === 'agent_request' && input.authorisation.reauthorization) {
+        const next = signRequestBody(randomUUID(), input.keyId, participants, input.payload);
+        next.origin = input.authorisation.origin;
+        throw new AttestorReauthorizationRequired(JSON.stringify(next), input.keyId);
+      }
+      throw refusal;
+    }
     const answers = settled.map((s) => (s as PromiseFulfilledResult<SignResponseWire>).value);
 
     const first = answers[0]!;
@@ -581,6 +691,9 @@ export class AttestorClient {
   }
 
   async generateKey(input: GenerateKeyInput): Promise<KeyResult> {
+    const admission = requireInventoryKey(input.keyId, 'generate', input.owner);
+    if (admission.curve !== input.curve) throw new AttestorKeyError('inventory_mismatch', 'approved key curve differs');
+    await publishCustodyAuthority(this);
     const sessionId = randomUUID();
     const wire: KeyGenerateWire = { session_id: sessionId, key_id: input.keyId, curve: input.curve, owner: input.owner };
     if (input.account !== undefined) wire.account = input.account;
@@ -588,6 +701,8 @@ export class AttestorClient {
   }
 
   async refreshKey(keyId: string): Promise<KeyResult> {
+    requireInventoryKey(keyId, 'refresh');
+    await publishCustodyAuthority(this);
     const sessionId = randomUUID();
     const wire: KeyRefreshWire = { session_id: sessionId, key_id: keyId };
     return this.keyOperation(ATTESTOR_PATHS.refresh, sessionId, wire);
@@ -608,6 +723,10 @@ export class AttestorClient {
     if (refusal) throw refusal;
     const answers = settled.map((s) => (s as PromiseFulfilledResult<KeyResponseWire>).value);
     const first = answers[0]!;
+    const admittedMembers = loadWalletInventory().members.map((member) => member.id).sort().join(',');
+    for (const answer of answers) {
+      if (answer.participants.length !== 5 || [...answer.participants].sort().join(',') !== admittedMembers) throw new AttestorKeyError('inventory_mismatch', 'generated or refreshed key membership differs from approved wallet inventory');
+    }
     for (let i = 0; i < answers.length; i++) {
       const a = answers[i]!;
       if (a.node_id !== members[i]!.nodeId) {
@@ -646,6 +765,8 @@ export class AttestorClient {
       const latency = performance.now() - started;
       if (res.status !== 200 && res.status !== 503) throw new Error(`health answered ${res.status}`);
       const report = parseHealth(res.body);
+      const admitted = loadWalletInventory().members.find((member) => member.id === report.node_id);
+      if (!admitted || admitted.spki_sha256 !== this.peerPins.get(new URL(node.endpoint).origin)) throw new Error('health identity differs from approved TLS inventory');
       if ((res.status === 200) !== report.ready) {
         throw new Error(`health answered ${res.status} with ready ${String(report.ready)}`);
       }
@@ -695,6 +816,14 @@ export class AttestorClient {
             : { ...extra, accept: 'application/json' },
         },
         (res) => {
+          try {
+            const certificate = (res.socket as TLSSocket).getPeerCertificate();
+            if (!certificate.raw) throw new Error('participant certificate unavailable');
+            const publicKey = new X509Certificate(certificate.raw).publicKey.export({ type: 'spki', format: 'der' });
+            const pin = createHash('sha256').update(publicKey).digest('hex');
+            if (!loadWalletInventory().members.some((member) => member.spki_sha256 === pin)) throw new Error('participant TLS authority is outside approved inventory');
+            this.peerPins.set(new URL(url).origin, pin);
+          } catch (error) { res.destroy(); reject(error); return; }
           const chunks: Buffer[] = [];
           res.on('data', (c: Buffer) => chunks.push(c));
           res.on('end', () => {

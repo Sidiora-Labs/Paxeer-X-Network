@@ -169,6 +169,7 @@ export interface EvaluateAgentInput {
   policy: AgentPolicyRow | null;
   rules: AgentPolicyRuleRow[];
   intent: AgentTxIntent;
+  reserveBudget?: typeof reserveBudget;
 }
 
 /**
@@ -344,7 +345,7 @@ export async function evaluateAgent(input: EvaluateAgentInput): Promise<AgentDec
 
     if (!withinPerTx || !withinDaily) {
       // Try to draw the overage from an owner-granted budget covering `to`.
-      reservedBudgetId = await reserveBudget({
+      reservedBudgetId = await (input.reserveBudget ?? reserveBudget)({
         did: principal.did,
         targetContract: to,
         token: null,

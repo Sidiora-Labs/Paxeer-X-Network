@@ -56,6 +56,8 @@ type Options struct {
 	Clients         *ClientAuthorities
 	Tokens          *jwt.TokenVerifier
 	Agents          *agent.AgentVerifier
+    Authority *agent.Authority
+    Inventory *Inventory
 	Activities      *lxwire.Registry
 	PeerProbe       func(ctx context.Context) map[string]health.PeerState
 	Replica         func() health.ReplicaState
@@ -127,11 +129,12 @@ func New(opts Options) (*Server, error) {
 		return nil, err
 	}
 	s.reporter = reporter
-	s.mux.HandleFunc(PathGenerate, s.post(s.gatewayOnly("keys.generate", s.HandleGenerate)))
-	s.mux.HandleFunc(PathImport, s.post(s.operatorOnly("keys.import", s.HandleImport)))
-	s.mux.HandleFunc(PathRefresh, s.post(s.operatorOnly("keys.refresh", s.HandleRefresh)))
-	s.mux.HandleFunc(PathAddShare, s.post(s.operatorOnly("keys.addshare", s.HandleAddShare)))
+	s.mux.HandleFunc(PathGenerate, s.post(s.gatewayOnly("keys.generate", s.inventoryRoute("generate", s.HandleGenerate))))
+	s.mux.HandleFunc(PathImport, s.post(s.operatorOnly("keys.import", s.inventoryRoute("import", s.HandleImport))))
+	s.mux.HandleFunc(PathRefresh, s.post(s.operatorOnly("keys.refresh", s.inventoryRoute("refresh", s.HandleRefresh))))
+	s.mux.HandleFunc(PathAddShare, s.post(s.operatorOnly("keys.addshare", s.inventoryRoute("addshare", s.HandleAddShare))))
 	s.mux.HandleFunc(PathDescribe, s.post(s.operatorOnly("keys.describe", s.HandleDescribe)))
+	s.mux.HandleFunc(PathAuthority, s.post(s.gatewayOnly("custody.authority", s.HandleAuthority)))
 	s.mux.HandleFunc(PathSign, s.post(s.signRoute()))
 	s.mux.HandleFunc(PathHealth, s.HandleHealth)
 	return s, nil

@@ -22056,7 +22056,9 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.13.1]
 title = "Enforce wallet attestor custody across every supported owner and agent signing path"
-status = "in_progress"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "unverified"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]

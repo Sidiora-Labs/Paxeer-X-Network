@@ -32,6 +32,9 @@ kill_timeout = "30s"
   ATTESTOR_TLS_KEY_FILE = "/run/secrets/tls.key"
   ATTESTOR_TLS_CA_FILE = "/run/secrets/ca.crt"
   ATTESTOR_OPERATOR_CA_FILE = "/run/secrets/operator-ca.crt"
+  ATTESTOR_AUTHORITY_PUBLIC_KEY_FILE = "/run/secrets/wallet_identity_binding_public.pem"
+  ATTESTOR_INVENTORY_PUBLIC_KEY_FILE = "/run/secrets/wallet_custody_inventory_authority.pem"
+  ATTESTOR_INVENTORY_FILE = "/run/secrets/wallet_custody_inventory.jwt"
   ATTESTOR_REPLICA_KEY_FILE = "/run/secrets/replica.key"
   ATTESTOR_REPLICA_HOST_KEY_FILE = "/run/secrets/replica-host.pub"
   ATTESTOR_REPLICA_REMOTE_DIR = "/attestor-1"
@@ -76,6 +79,21 @@ kill_timeout = "30s"
 [[files]]
   guest_path = "/run/secrets/replica-host.pub"
   secret_name = "ATTESTOR_REPLICA_HOST_KEY"
+
+[[files]]
+  guest_path = "/run/secrets/wallet_identity_binding_public.pem"
+  secret_name = "WALLET_IDENTITY_BINDING_PUBLIC_KEY"
+  mode = 384
+
+[[files]]
+  guest_path = "/run/secrets/wallet_custody_inventory_authority.pem"
+  secret_name = "WALLET_CUSTODY_INVENTORY_PUBLIC_KEY"
+  mode = 384
+
+[[files]]
+  guest_path = "/run/secrets/wallet_custody_inventory.jwt"
+  secret_name = "WALLET_CUSTODY_INVENTORY"
+  mode = 384
 
 [[mounts]]
   source = "attestor_data"

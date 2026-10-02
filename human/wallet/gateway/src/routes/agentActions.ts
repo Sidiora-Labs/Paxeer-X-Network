@@ -6,6 +6,7 @@ import { AllowanceAndCallBody, ActionIdParam, LayerxDepositBody } from '../schem
 import { ensureAgentWallet } from './agentExec.js';
 import {
   createOrGetAction,
+  retainActionCustodyAuthorization,
   getActionForDid,
   updateAction,
   type ActionRow,
@@ -169,12 +170,20 @@ async function submit(
     walletAddress,
     kind: args.kind,
     idempotencyKey: args.idempotencyKey,
-    request: args.request,
+    request: { ...args.request, ...(req.agent?.custody ? { _custody: req.agent.custody } : {}) },
   });
 
   // Replay: the same operation was already submitted — return its state as-is.
   // NEVER re-plan or re-nonce.
   if (!created) {
+    if (req.agent?.custody?.reauthorization && row.terminal_at === null) {
+      try {
+        const authorized = await retainActionCustodyAuthorization(row.id, args.did, req.agent.custody);
+        return reply.code(200).send({ replay: true, ...serialize(authorized) });
+      } catch {
+        return reply.code(409).send({ error: 'action_authorization_mismatch' });
+      }
+    }
     return reply.code(200).send({ replay: true, ...serialize(row) });
   }
 

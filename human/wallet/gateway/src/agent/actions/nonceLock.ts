@@ -5,6 +5,7 @@ export async function withDistributedWalletLock<T>(
   address: string,
   fn: () => Promise<T>,
   store: NonceStore = sharedNonceStore(),
+  ownerActionId?: string,
 ): Promise<T> {
-  return withWalletLock(address, fn, store);
+  return withWalletLock(address, fn, store, ownerActionId);
 }

@@ -15,6 +15,11 @@ import (
 )
 
 const (
+	EnvAuthorityPublicKey = "ATTESTOR_AUTHORITY_PUBLIC_KEY_FILE"
+    EnvAuthorityIssuer = "ATTESTOR_AUTHORITY_ISSUER"
+    EnvAuthorityTenant = "ATTESTOR_AUTHORITY_TENANT"
+    EnvInventoryPublicKey = "ATTESTOR_INVENTORY_PUBLIC_KEY_FILE"
+    EnvInventoryFile = "ATTESTOR_INVENTORY_FILE"
 	EnvNodeID               = "ATTESTOR_NODE_ID"
 	EnvRegion               = "ATTESTOR_REGION"
 	EnvListenAddr           = "ATTESTOR_LISTEN_ADDR"
@@ -61,6 +66,11 @@ type Peer struct {
 }
 
 type Config struct {
+    AuthorityPublicKey string
+    AuthorityIssuer string
+    AuthorityTenant string
+    InventoryPublicKey string
+    InventoryFile string
 	NodeID           string
 	Region           string
 	ListenAddr       string
@@ -104,6 +114,7 @@ func Load(getenv func(string) string) (*Config, error) {
 	}
 
 	c := &Config{
+        AuthorityPublicKey:get(EnvAuthorityPublicKey), AuthorityIssuer:get(EnvAuthorityIssuer), AuthorityTenant:get(EnvAuthorityTenant), InventoryPublicKey:get(EnvInventoryPublicKey), InventoryFile:get(EnvInventoryFile),
 		Region:         get(EnvRegion),
 		JWKSURL:        get(EnvJWKSURL),
 		JWTIssuer:      get(EnvJWTIssuer),

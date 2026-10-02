@@ -29,7 +29,7 @@ export class NonceStore {
     this.opts = opts;
   }
 
-  async withLock<T>(address: string, fn: (lease: NonceLease) => Promise<T>): Promise<T> {
+  async withLock<T>(address: string, fn: (lease: NonceLease) => Promise<T>, ownerActionId?: string): Promise<T> {
     const key = address.toLowerCase();
     const client = await this.opts.pool.connect();
     try {
@@ -48,6 +48,13 @@ export class NonceStore {
         [key],
       );
       if (!rows[0]) throw new Error(`nonce store: row for ${key} vanished under lock`);
+      const reservation = await client.query<{ action_id: string }>(
+        'select action_id from custody_signing_reservations where address = $1 and chain_id = $2',
+        [key, this.opts.chainId],
+      );
+      if (reservation.rows[0] && reservation.rows[0].action_id !== ownerActionId) {
+        throw new Error('wallet nonce is reserved by an action awaiting custody authorization or broadcast');
+      }
       const lease = new Lease(client, key, rows[0], this.opts.pendingCount);
       const result = await fn(lease);
       await client.query('COMMIT');

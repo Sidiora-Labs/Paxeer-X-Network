@@ -1,4 +1,8 @@
-import { query, withTransaction } from './pool.js';
+import { randomUUID } from 'node:crypto';
+import type { TransactionSerializable } from 'viem';
+import { unsignedTransactionBytes } from '../attestor/client.js';
+import type { PoolClient } from 'pg';
+import { getPool, query, withTransaction } from './pool.js';
 import { env } from '../env.js';
 
 /**
@@ -407,8 +411,8 @@ export async function reserveBudget(args: {
   targetContract: string | null;
   token: string | null;
   valueWei: bigint;
-}): Promise<string | null> {
-  const { rows } = await query<{ id: string }>(
+}, client?: PoolClient): Promise<string | null> {
+  const { rows } = await (client ?? getPool()).query<{ id: string }>(
     `update agent_budgets b
         set spent_wei = spent_wei + $4
       where b.id = (
@@ -463,4 +467,50 @@ export async function sumAgentDailyValue(did: string, windowStartIso: string): P
     [did, windowStartIso],
   );
   return BigInt(rows[0]?.total ?? '0');
+}
+
+export async function bindCustodyBudgetReservation(args: {
+  did: string;
+  budgetId: string;
+  valueWei: bigint;
+  requestNonce: string;
+  transaction: TransactionSerializable;
+}): Promise<string> {
+  if (!/^[0-9a-f]{32}$/.test(args.requestNonce) || args.valueWei <= 0n || args.transaction.value !== args.valueWei) {
+    throw new Error('custody budget reservation differs from final transaction');
+  }
+  const transaction = unsignedTransactionBytes(args.transaction);
+  return withTransaction(async (client) => {
+    const existing = await client.query<{ id: string; budget_id: string; value_wei: string; transaction: string }>(
+      'select id, budget_id::text, value_wei::text, unsigned_transaction as transaction from custody_budget_reservations where did = $1 and request_nonce = $2 for update',
+      [args.did, args.requestNonce],
+    );
+    if (existing.rows[0]) {
+      const row = existing.rows[0];
+      if (row.budget_id !== args.budgetId || row.value_wei !== args.valueWei.toString() || row.transaction !== transaction) throw new Error('custody budget reservation cannot be retargeted');
+      return row.id;
+    }
+    const budget = await client.query<{ id: string }>(`select id::text from agent_budgets
+      where id = $1 and did = $2 and active and expires_at > now() and spent_wei >= $3 and spent_wei <= cap_wei
+        and token is null and (target_contract is null or lower(target_contract) = lower($4)) for update`,
+    [args.budgetId, args.did, args.valueWei.toString(), args.transaction.to ?? null]);
+    if (!budget.rows[0]) throw new Error('custody budget reservation has no matching charged grant');
+    const id = randomUUID();
+    await client.query(`insert into custody_budget_reservations (id, did, budget_id, request_nonce, unsigned_transaction, value_wei)
+      values ($1, $2, $3, $4, $5, $6)`, [id, args.did, args.budgetId, args.requestNonce, transaction, args.valueWei.toString()]);
+    return id;
+  });
+}
+
+export async function releaseCustodyBudgetReservation(id: string, did: string): Promise<void> {
+  await withTransaction(async (client) => {
+    const selected = await client.query<{ budget_id: string; value_wei: string }>(
+      'select budget_id::text, value_wei::text from custody_budget_reservations where id = $1 and did = $2 for update', [id, did]);
+    const row = selected.rows[0];
+    if (!row) return;
+    const released = await client.query(`update agent_budgets set spent_wei = spent_wei - $3
+      where id = $1 and did = $2 and spent_wei >= $3`, [row.budget_id, did, row.value_wei]);
+    if (released.rowCount !== 1) throw new Error('charged custody budget reservation cannot be released');
+    await client.query('delete from custody_budget_reservations where id = $1 and did = $2', [id, did]);
+  });
 }

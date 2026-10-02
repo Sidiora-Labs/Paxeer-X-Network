@@ -158,6 +158,8 @@ const Env = z.object({
   // runs when LAYER_X_DB_URI is set.
   LAYERX_SYNC_INTERVAL_MS: z.coerce.number().int().positive().default(120_000),
 
+  WALLET_CUSTODY_INVENTORY_FILE: z.string().min(1).optional(),
+  WALLET_CUSTODY_INVENTORY_PUBLIC_KEY_FILE: z.string().min(1).optional(),
   ATTESTOR_ENDPOINTS: z
     .string()
     .optional()
@@ -211,7 +213,7 @@ const Env = z.object({
     });
   }
   if (v.ATTESTOR_ENDPOINTS.length === 0) return;
-  for (const key of ['ATTESTOR_CLIENT_CERT_FILE', 'ATTESTOR_CLIENT_KEY_FILE', 'ATTESTOR_CA_FILE'] as const) {
+  for (const key of ['WALLET_IDENTITY_BINDING_PRIVATE_KEY_FILE', 'WALLET_IDENTITY_BINDING_TENANT', 'WALLET_CUSTODY_INVENTORY_FILE', 'WALLET_CUSTODY_INVENTORY_PUBLIC_KEY_FILE', 'ATTESTOR_CLIENT_CERT_FILE', 'ATTESTOR_CLIENT_KEY_FILE', 'ATTESTOR_CA_FILE'] as const) {
     if (!v[key]) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -220,11 +222,11 @@ const Env = z.object({
       });
     }
   }
-  if (v.ATTESTOR_ENDPOINTS.length < v.ATTESTOR_QUORUM) {
+  if (v.ATTESTOR_ENDPOINTS.length !== 5 || v.ATTESTOR_QUORUM !== 3) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['ATTESTOR_ENDPOINTS'],
-      message: 'ATTESTOR_ENDPOINTS must list at least ATTESTOR_QUORUM endpoints',
+      message: 'wallet custody requires exactly five endpoints and threshold three',
     });
   }
 });

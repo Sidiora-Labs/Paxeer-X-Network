@@ -6,7 +6,9 @@ import type { Hex, TransactionSerializableEIP1559, TypedDataDefinition } from 'v
 import { requireAuth } from '../middleware/auth.js';
 import {
   archivedWalletGuard,
-  getSigningAccountForRow,
+  getMigrationAwareSigningAccountForRow,
+  defaultWalletAttestors,
+  usesAttestorCustody,
   loadWalletForSigning,
   logSignature,
   type SignatureLogInput,
@@ -17,11 +19,8 @@ import { evaluate } from '../policy/index.js';
 import { env } from '../env.js';
 import {
   AttestorError,
-  AttestorQuorumError,
-  attestorClientFromConfig,
   attestorErrorBody,
   attestorErrorStatus,
-  attestorSigner,
   type AttestorClient,
   type NodeAudit,
   type SignResult,
@@ -79,13 +78,8 @@ function bearerToken(req: FastifyRequest): string {
   return header.slice('Bearer '.length).trim();
 }
 
-let sharedAttestors: AttestorClient | null | undefined;
-
 function defaultAttestors(): AttestorClient | null {
-  if (sharedAttestors !== undefined) return sharedAttestors;
-  sharedAttestors = attestorClientFromConfig(env);
-  sharedAttestors?.start();
-  return sharedAttestors;
+  return defaultWalletAttestors();
 }
 
 interface SignedValue {
@@ -105,48 +99,23 @@ async function walletSigner(
   sw: SigningWallet,
   attestors: AttestorClient | null,
   token: string,
+  connection: PoolClient,
 ): Promise<WalletSigner> {
-  if (sw.migratedAt !== null) {
-    if (!attestors) {
-      throw new AttestorQuorumError('attestor_unconfigured', 'wallet is migrated and no attestor endpoints are configured');
-    }
-    if (!sw.attestorKeyId) {
-      throw new AttestorQuorumError('attestor_key_missing', 'migrated wallet carries no attestor key id');
-    }
-    const signer = attestorSigner(
-      attestors,
-      { keyId: sw.attestorKeyId, address: sw.row.address, chainId: env.HYPERPAXEER_CHAIN_ID },
-      { scheme: 'supabase_jwt', token },
-    );
-    return {
-      path: 'attestor',
-      address: sw.row.address,
-      async signTransaction(tx) {
-        const r = await signer.signTransaction(tx);
-        return { value: r.value, attestor: r.result };
-      },
-      async signMessage(message) {
-        const r = await signer.signMessage(message);
-        return { value: r.value, attestor: r.result };
-      },
-      async signTypedData(td) {
-        const r = await signer.signTypedData(td);
-        return { value: r.value, attestor: r.result };
-      },
-    };
-  }
-  const account = await getSigningAccountForRow(sw.row);
+  const account = await getMigrationAwareSigningAccountForRow(sw.row, { scheme: 'supabase_jwt', token }, attestors, connection);
   return {
-    path: 'envelope',
+    path: account.path,
     address: account.address,
     async signTransaction(tx) {
-      return { value: await account.signTransaction(tx), attestor: null };
+      const value = await account.signTransaction(tx);
+      return { value, attestor: account.lastAttestorResult() };
     },
     async signMessage(message) {
-      return { value: await account.signMessage({ message }), attestor: null };
+      const value = await account.signMessage({ message });
+      return { value, attestor: account.lastAttestorResult() };
     },
     async signTypedData(td) {
-      return { value: await account.signTypedData(td as never), attestor: null };
+      const value = await account.signTypedData(td);
+      return { value, attestor: account.lastAttestorResult() };
     },
   };
 }
@@ -274,7 +243,7 @@ export async function signRoutes(app: FastifyInstance, opts: SignRoutesOptions =
       }
       account = sw.row.address;
       walletId = sw.row.id;
-      path = sw.migratedAt !== null ? 'attestor' : 'envelope';
+      path = usesAttestorCustody({ migratedAt: sw.migratedAt, hasEnvelope: sw.row.encrypted_private_key !== null }) ? 'attestor' : 'envelope';
       if (sw.row.is_disabled) {
         throw new RouteRefusal(403, 'wallet_disabled', {
           error: 'WALLET_DISABLED',
@@ -291,7 +260,7 @@ export async function signRoutes(app: FastifyInstance, opts: SignRoutesOptions =
         }
         throw err;
       }
-      const signer = await walletSigner(sw, attestors, bearerToken(req));
+      const signer = await walletSigner(sw, attestors, bearerToken(req), client);
       completed = await work({ client, sw, signer });
       await client.query('COMMIT');
     } catch (err) {

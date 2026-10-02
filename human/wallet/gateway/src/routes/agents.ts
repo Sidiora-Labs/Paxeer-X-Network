@@ -1,3 +1,4 @@
+import { CustodyAuthorityError, publishCustodyAuthority } from '../agent/authority.js';
 import type { FastifyInstance } from 'fastify';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
@@ -112,6 +113,12 @@ export async function agentsRoutes(app: FastifyInstance): Promise<void> {
     });
     if (!outcome.ok) {
       return reply.code(outcome.status).send({ error: outcome.error, message: outcome.message });
+    }
+    try {
+      await publishCustodyAuthority();
+    } catch (error) {
+      if (!(error instanceof CustodyAuthorityError)) throw error;
+      return reply.code(503).send({ error: error.code, replication_pending: true, mutation_recorded: true });
     }
     return reply.send({ did: outcome.did, owner_user_id: outcome.owner_user_id });
   });

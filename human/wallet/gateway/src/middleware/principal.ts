@@ -1,4 +1,5 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
+import type { AgentOriginalRequest, AgentReauthorization } from '../attestor/client.js';
 import { verifyAgentToken, agentLaneEnabled } from '../auth/agentToken.js';
 import { findPrincipal, type AgentPrincipalRow } from '../db/agents.js';
 
@@ -9,6 +10,7 @@ declare module 'fastify' {
       did: string;
       ownerUserId: string | null;
       principal: AgentPrincipalRow;
+      custody?: { origin: AgentOriginalRequest; reauthorization?: AgentReauthorization };
     };
   }
 }

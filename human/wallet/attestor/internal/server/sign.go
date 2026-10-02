@@ -71,6 +71,7 @@ type GrantJSON struct {
 }
 
 type SignRequest struct {
+	Origin *agent.OriginalRequest `json:"origin,omitempty"`
 	SessionID    string            `json:"session_id"`
 	KeyID        string            `json:"key_id"`
 	Kind         string            `json:"kind"`
@@ -304,7 +305,7 @@ func (s *Server) authenticate(r *http.Request, keyID string, body []byte, owner 
 			return "", newError(CodeSessionBadRequest, "%v", err)
 		}
 		subject, err := s.opts.Tokens.Verify(r.Context(), token, keyID, request, func(subject, id string) (bool, error) {
-			return id == keyID && subject == owner, nil
+			return id == keyID && (subject == owner || (s.opts.Agents != nil && s.opts.Agents.OwnedBy(subject, keyID, owner))), nil
 		})
 		if errors.Is(err, jwt.ErrNotOwner) {
 			return "", newError(CodeTokenNotOwner, "token subject does not own the key")
@@ -338,6 +339,13 @@ func (s *Server) authenticate(r *http.Request, keyID string, body []byte, owner 
 		copy(req.Nonce[:], nonce)
 		copy(req.Signature[:], sig)
 		req.Expiry = expiry
+        var envelope SignRequest
+        if e := decodeRequest(body, &envelope); e != nil { return "", e }
+        if envelope.Origin != nil {
+            if err := s.opts.Agents.VerifyOriginal(r.Context(), req.PublicKey, *envelope.Origin); err != nil {
+                return "", newError(CodeAgentInvalid, "%v", err)
+            }
+        }
 		if _, err := s.opts.Agents.Verify(r.Context(), req); err != nil {
 			return "", newError(CodeAgentInvalid, "%v", err)
 		}
@@ -362,7 +370,15 @@ func (s *Server) doSign(r *http.Request, body []byte) (SignResponse, *Error) {
 	if e != nil {
 		return SignResponse{}, e
 	}
-	subject, e := s.authenticate(r, req.KeyID, body, payload.Owner)
+	if err := s.opts.Inventory.Check(req.KeyID, "sign", payload.Owner, rec.Curve, &rec); err != nil {
+        return SignResponse{}, newError(CodeKeyInvalidShare, "owner-approved wallet inventory differs from held share")
+    }
+	if strings.HasPrefix(payload.Owner, "agent:") || r.Header.Get(HeaderAgentKey) != "" {
+        if err := s.opts.Authority.RequireSequence(r.Header.Get("X-Custody-Sequence")); err != nil {
+            return SignResponse{}, newError(CodeTokenUnavailable, "current signed custody authority sequence is required")
+        }
+    }
+    subject, e := s.authenticate(r, req.KeyID, body, payload.Owner)
 	if e != nil {
 		return SignResponse{}, s.deny("sign."+req.Kind, req.KeyID, "", "denied", req.SessionID, e)
 	}
@@ -404,6 +420,12 @@ func (s *Server) doSign(r *http.Request, body []byte) (SignResponse, *Error) {
 	if s.signsVerification(req.KeyID, rec.PublicKey, signed, view) {
 		return refuse(policyError(policy.CodeVerificationIsolated, "the verification message is signed only under "+KindOperatorVerification))
 	}
+	if strings.HasPrefix(payload.Owner, "agent:") || r.Header.Get(HeaderAgentKey) != "" {
+        if s.opts.Authority == nil { return refuse(newError(CodeTokenUnavailable, "custody authority is not configured")) }
+        if err := s.opts.Authority.Evaluate(req.KeyID, subject, requestID(req.KeyID, req.SessionID), policyKind, view); err != nil {
+            return refuse(policyError(policy.CodeDestinationDenied, "replicated agent policy refused the decoded request"))
+        }
+    }
 	unlockAccount := s.lockKey("ledger\x00" + policy.AccountKey(payload.Account))
 	decision := s.evaluate(payload.Account, policyKind, view, s.spends.ForRequest(requestID(req.KeyID, req.SessionID)))
 	unlockAccount()
