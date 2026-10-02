@@ -1239,62 +1239,40 @@ printf '[{"state":"started","config":{"mounts":[]}},{"state":"stopped","config":
 CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_kernel_app_volumeless "$work/hosts-good.env" 1 kernel-app -- \
 	"fail machines app=$kernel machines=2 started=1 volume-at-data=0" \
 	"check-live: 1 check(s) failed"
-# kernel-node: the kernel app's fixture machine holds a genesis manifest, the
-# bootstrap env files and core.env; a loopback python server stands in for the
-# authority replica on the port replica.env names, socat answers the supervisor
-# socket, a bound unix socket stands in for the LNI and copies of sleep named
-# layerx-runtime-clock stand in for the clocked services.
-knode="$CHECK_LIVE_TEST_FLY/$kernel/app"
-mkdir -p "$knode/data/layerx/node/genesis" "$knode/run/layerx/node" "$knode/run/layerx/init"
-printf 'fixture genesis manifest\n' >"$knode/data/layerx/node/genesis/genesis.manifest"
-kn_genesis="$(sha256sum "$knode/data/layerx/node/genesis/genesis.manifest" | cut -d' ' -f1)"
-kn_public="$(printf '%064d' 7)"
-kn_sequencer="$(printf 'layerx-sequencer:%s' "$kn_public" | sha256sum | cut -d' ' -f1)"
-printf 'LAYERX_NODE_SEQUENCER_PUBLIC_KEY=%s\n' "$kn_public" >"$knode/data/layerx/node/sequencer.env"
-printf 'LAYERX_CORE_SEQUENCER_ID=%s\n' "$kn_sequencer" >"$knode/run/layerx/node/core.env"
-python3 - "$knode/run/layerx/node/replica.port" "$kn_genesis" <<'PY' &
-import http.server, json, sys
-port_file, genesis = sys.argv[1], sys.argv[2]
-class Replica(http.server.BaseHTTPRequestHandler):
-    def log_message(self, *args):
-        pass
-    def do_GET(self):
-        if self.headers.get("Authorization") != "Bearer fixture-replica-token":
-            self.send_response(401); self.end_headers(); return
-        body = {"/v1/sync/network": {"version": 1, "network_id": 125, "genesis_sha256": genesis},
-                "/v1/sync/head": {"head": 3}}.get(self.path)
-        if body is None:
-            self.send_response(404); self.end_headers(); return
-        data = json.dumps(body).encode()
-        self.send_response(200); self.send_header("Content-Length", str(len(data))); self.end_headers()
-        self.wfile.write(data)
-server = http.server.HTTPServer(("127.0.0.1", 0), Replica)
-open(port_file, "w").write(str(server.server_address[1]))
-server.serve_forever()
+kn_report="$work/kernel-node-real"
+if ! PATH="$real_path" python3 "$root/tests/daemon/paxeer_x_kernel_readiness.py" \
+	--legacy-check-live "$kn_report" --app "$kernel" >"$work/kernel-node-real.log" 2>&1; then
+	cat "$work/kernel-node-real.log" >&2
+	exit 1
+fi
+read -r kn_genesis kn_public < <(python3 -I - "$kn_report/report.json" <<'PY'
+import json, re, sys
+from pathlib import Path
+value = json.loads(Path(sys.argv[1]).read_text())
+for field in ('genesis_sha256', 'sequencer_public_key'):
+    if not re.fullmatch('[0-9a-f]{64}', value[field]): raise ValueError('real kernel identity missing')
+print(value['genesis_sha256'], value['sequencer_public_key'])
 PY
-kn_replica_pid=$!
-for _ in $(seq 50); do [ -s "$knode/run/layerx/node/replica.port" ] && break; sleep 0.1; done
-printf 'LAYERX_AUTHORITY_PORT=%s\nLAYERX_AUTHORITY_BEARER_TOKEN=fixture-replica-token\n' \
-	"$(cat "$knode/run/layerx/node/replica.port")" >"$knode/data/layerx/node/replica.env"
-python3 - "$knode/run/layerx/node/supervisor.sock" <<'PY' &
-import socketserver, sys
-class Supervisor(socketserver.StreamRequestHandler):
-    def handle(self):
-        if self.rfile.readline() == b"status\n":
-            self.wfile.write(b'{"state":"running","generation":1}\n')
-socketserver.UnixStreamServer(sys.argv[1], Supervisor).serve_forever()
+)
+expect_kernel_evidence() {
+	local name=$1 case_name=$2 expected_exit=$3
+	shift 3
+	if python3 -I - "$kn_report/report.json" "$root" "$case_name" "$expected_exit" "$@" <<'PY'
+import json, subprocess, sys
+from pathlib import Path
+path, root, name, expected, *lines = sys.argv[1:]
+value = json.loads(Path(path).read_text())
+revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip()
+assert value['source_revision'] == revision, 'kernel fixture source revision changed'
+case = value['cases'][name]
+assert case['exit_code'] == int(expected), case
+assert isinstance(case['stdout'], str), 'missing real checker output'
+for line in lines:
+    assert line in case['stdout'], (line, case['stdout'])
 PY
-kn_supervisor_pid=$!
-python3 -c 'import socket, sys, time; s = socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); time.sleep(300)' \
-	"$knode/run/layerx/node/layerxd.lni.sock" &
-kn_lni_pid=$!
-bash -c 'exec -a /usr/local/bin/layerx-runtime-clock sleep 300' &
-kn_clock_pid=$!
-for service in treasury-signer layerxd layerxd-authority guarantor-1 guarantor-2; do
-	echo "4020 running $kn_clock_pid" >"$knode/run/layerx/init/$service"
-done
-for _ in $(seq 50); do [ -S "$knode/run/layerx/node/supervisor.sock" ] && [ -S "$knode/run/layerx/node/layerxd.lni.sock" ] && break; sleep 0.1; done
-CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_kernel_node_passing "$work/hosts-good.env" 0 kernel-node -- \
+	then echo "ok   $name"; else echo "FAIL $name: real kernel readiness evidence mismatch"; failures=$((failures + 1)); fi
+}
+expect_kernel_evidence check_live_kernel_node_passing passing 0 \
 	"pass genesis app=$kernel sha256=$kn_genesis replica=match" \
 	"pass sequencer public=$kn_public core=match" \
 	"pass supervisor state=running" \
@@ -1303,17 +1281,11 @@ CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_kernel_node_passing "$wo
 	"pass clock layerxd" \
 	"pass clock guarantor-2" \
 	"check-live: all checks passed"
-echo "4020 running $kernel_service_pid" >"$knode/run/layerx/init/guarantor-1"
-CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_kernel_node_one_failing "$work/hosts-good.env" 1 kernel-node -- \
+expect_kernel_evidence check_live_kernel_node_one_failing one_failing 1 \
 	"pass genesis app=$kernel sha256=$kn_genesis replica=match" \
 	"fail clock guarantor-1 exec=sleep" \
 	"check-live: 1 check(s) failed"
-kill "$kn_replica_pid" "$kn_supervisor_pid" "$kn_lni_pid" "$kn_clock_pid" 2>/dev/null || true
-wait "$kn_replica_pid" "$kn_supervisor_pid" "$kn_lni_pid" "$kn_clock_pid" 2>/dev/null || true
-rm -rf "$knode/data/layerx" "$knode/run/layerx/node"
-rm -f "$knode/run/layerx/init/"{treasury-signer,layerxd-authority,guarantor-1,guarantor-2}
-echo "4020 waiting genesis" >"$knode/run/layerx/init/layerxd"
-CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_kernel_node_no_kernel_image "$work/hosts-good.env" 1 kernel-node -- \
+expect_kernel_evidence check_live_kernel_node_no_kernel_image no_kernel_image 1 \
 	"fail genesis app=$kernel sha256=absent replica=none" \
 	"fail sequencer public=absent core=absent" \
 	"fail supervisor status=absent" \

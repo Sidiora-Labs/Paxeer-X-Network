@@ -280,6 +280,9 @@ start_daemon() {
             export LAYERX_NODE_SEQUENCER_PRIVATE_KEY="$SEQUENCER_SEED"
             SEQUENCER_SEED=""
         fi
+        if [ "$mode" = --authority-replica ]; then
+            export LAYERX_AUTHORITY_STATUS_GENESIS_MANIFEST="$DATA_DIR/genesis/genesis.manifest"
+        fi
         exec python3 "$RESET_HELPER" exec-daemon -- "$LAYERXD" "$mode" "$config"
     ) &
     DAEMON_PID=$!

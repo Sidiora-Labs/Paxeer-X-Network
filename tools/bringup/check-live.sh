@@ -221,6 +221,12 @@ Environment:
                        the wallet gateway, required by wallet; never printed
   CHECK_LIVE_STAGE_DIR the operator's stage records, <stage>.json each,
                        required by router
+  CHECK_LIVE_KERNEL_ARCHIVE_ORIGIN  configured relay/archive sync origin, required by kernel-node
+  CHECK_LIVE_KERNEL_ARCHIVE_CA  optional CA file for that HTTPS archive origin
+  CHECK_LIVE_KERNEL_LOCAL  1 selects explicitly provisioned local kernel processes
+  CHECK_LIVE_KERNEL_DATA_DIR, CHECK_LIVE_KERNEL_RUN_DIR, CHECK_LIVE_KERNEL_INIT_DIR
+                       explicit local node, sockets and service PID directories
+  CHECK_LIVE_KERNEL_CTL  path of the actual prebuilt layerxctl operator executable
   CHECK_LIVE_TIMEOUT   seconds per request, ssh or flyctl call, default 30
   LAYERX_CA_DIR        the internal CA directory on this host, default
                        /etc/layerx/ca
@@ -3879,74 +3885,222 @@ PY
 }
 
 check_kernel_node() {
-	local app answer key value genesis="" network="" public="" core="" status="" lni="" head="" failures=0
+	local app answer key value genesis="" network="" authority="" archive="" public="" core="" status="" lni="" head="" failures=0 probe
+	local data="${CHECK_LIVE_KERNEL_DATA_DIR:-/data/layerx/node}" run="${CHECK_LIVE_KERNEL_RUN_DIR:-/run/layerx/node}"
+	local init="${CHECK_LIVE_KERNEL_INIT_DIR:-/run/layerx/init}" origin="${CHECK_LIVE_KERNEL_ARCHIVE_ORIGIN:-}"
+	local ca="${CHECK_LIVE_KERNEL_ARCHIVE_CA:-}" ctl="${CHECK_LIVE_KERNEL_CTL:-/usr/local/bin/layerxctl}"
 	local -A clocks=()
-	if ! command -v flyctl >/dev/null 2>&1; then
-		echo "check-live: flyctl is required" >&2
-		exit 2
+	app="${CHECK_LIVE_KERNEL_APP:-}"
+	if [ -z "$app" ]; then app="$(fly_app human/wallet/deploy/human.toml)" || app=""; fi
+	if [ -z "$app" ]; then echo "fail kernel-node toml=absent"; finish 1; fi
+	probe=$(cat <<'PY'
+import hashlib, json, os, re, socket, ssl, subprocess, sys, urllib.request
+from pathlib import Path
+from urllib.parse import urlsplit
+
+data, run, init = map(Path, sys.argv[1:4])
+origin, ca, ctl = sys.argv[4:7]
+
+def emit(name, value):
+    print(name, json.dumps(value, separators=(',', ':')) if isinstance(value, dict) else value, flush=True)
+
+def environment(path):
+    raw = path.read_bytes()
+    if len(raw) > 1048576:
+        raise ValueError('environment bound')
+    result = {}
+    for line in raw.decode().splitlines():
+        if not line: continue
+        key, value = line.split('=', 1)
+        if not re.fullmatch('LAYERX_[A-Z0-9_]+', key) or key in result or any(ord(c) < 32 for c in value):
+            raise ValueError('environment syntax')
+        result[key] = value
+    return result
+
+def read_json(url, authorization=None):
+    parsed = urlsplit(url)
+    if parsed.username or parsed.password or parsed.fragment or parsed.query:
+        raise ValueError('origin syntax')
+    if parsed.scheme != 'https' and not (parsed.scheme == 'http' and parsed.hostname in ('127.0.0.1', '::1')):
+        raise ValueError('origin requires TLS or loopback')
+    context = ssl.create_default_context(cafile=ca or None) if parsed.scheme == 'https' else None
+    request = urllib.request.Request(url, headers={'Accept': 'application/json'})
+    if authorization is not None: request.add_header('Authorization', 'Bearer ' + authorization)
+    with urllib.request.urlopen(request, timeout=5, context=context) as response:
+        if response.status != 200 or response.headers.get_content_type() != 'application/json':
+            raise ValueError('HTTP contract')
+        raw = response.read(1048577)
+    if len(raw) > 1048576: raise ValueError('response bound')
+    value = json.loads(raw)
+    if not isinstance(value, dict): raise ValueError('response object')
+    return value
+
+node = replica = sequencer = {}
+for name, path in (('node', data / 'node.env'), ('replica', data / 'replica.env'), ('sequencer', data / 'sequencer.env')):
+    try:
+        value = environment(path)
+        if name == 'node': node = value
+        elif name == 'replica': replica = value
+        else: sequencer = value
+    except (OSError, ValueError, UnicodeError): pass
+try:
+    manifest = data / 'genesis/genesis.manifest'
+    if manifest.stat().st_size > 16777216: raise ValueError('manifest bound')
+    emit('genesis', hashlib.sha256(manifest.read_bytes()).hexdigest())
+except (OSError, ValueError): pass
+public = node.get('LAYERX_NODE_SEQUENCER_PUBLIC_KEY') or sequencer.get('LAYERX_NODE_SEQUENCER_PUBLIC_KEY')
+if public: emit('public', public)
+try: emit('core', environment(run / 'core.env')['LAYERX_CORE_SEQUENCER_ID'])
+except (OSError, ValueError, KeyError, UnicodeError): pass
+try:
+    port = int(replica['LAYERX_AUTHORITY_PORT'])
+    if not 1 <= port <= 65535 or replica.get('LAYERX_AUTHORITY_ADDRESS') != '127.0.0.1': raise ValueError('authority address')
+    authority_origin = 'http://127.0.0.1:' + str(port)
+    value = read_json(authority_origin + '/v1/receipt-authority/status', replica['LAYERX_AUTHORITY_BEARER_TOKEN'])
+    if value.get('authority_replica_id') != replica['LAYERX_AUTHORITY_REPLICA_ID'] or value.get('network_id') != int(node['LAYERX_NODE_NETWORK_ID']):
+        raise ValueError('configured authority identity')
+    emit('authority', value)
+except (OSError, ValueError, KeyError): authority_origin = None
+try:
+    parsed = urlsplit(origin)
+    if not origin or parsed.path not in ('', '/') or parsed.query or parsed.fragment: raise ValueError('archive origin')
+    if parsed.hostname in ('127.0.0.1', '::1') and parsed.port == int(replica.get('LAYERX_AUTHORITY_PORT', '0')):
+        raise ValueError('archive and authority origins must be distinct')
+    for name, route in (('network', 'network'), ('head', 'head'), ('archive', 'readiness')):
+        emit(name, read_json(origin.rstrip('/') + '/v1/sync/' + route))
+except (OSError, ValueError, KeyError): pass
+try:
+    with socket.socket(socket.AF_UNIX) as connection:
+        connection.settimeout(5)
+        connection.connect(str(run / 'supervisor.sock'))
+        connection.sendall(b'status\n')
+        raw = bytearray()
+        while b'\n' not in raw and len(raw) <= 65536:
+            block = connection.recv(4096)
+            if not block: break
+            raw.extend(block)
+        if len(raw) > 65536: raise ValueError('supervisor response bound')
+        response = json.loads(raw)
+        if not isinstance(response, dict): raise ValueError('supervisor object')
+        emit('status', response)
+except (OSError, ValueError): pass
+try:
+    uid = int(sequencer['LAYERX_NODE_LNI_ALLOWED_UID'])
+    gid = int(sequencer['LAYERX_NODE_LNI_ALLOWED_GID'])
+    command = [ctl, 'read-state', '--socket', str(run / 'layerxd.lni.sock'), '--network-id', node['LAYERX_NODE_NETWORK_ID'],
+               '--actor', node['LAYERX_NODE_TREASURY_DID']]
+    if os.geteuid() != uid:
+        if os.geteuid() != 0: raise ValueError('LNI caller uid')
+        command = ['setpriv', '--reuid=' + str(uid), '--regid=' + str(gid), '--clear-groups', *command]
+    completed = subprocess.run(command, check=True, timeout=12, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    if len(completed.stdout) > 65536: raise ValueError('LNI response bound')
+    value = json.loads(completed.stdout)
+    if value.get('network_id') != int(node['LAYERX_NODE_NETWORK_ID']): raise ValueError('LNI network')
+    emit('lni', value)
+except (OSError, ValueError, KeyError, subprocess.SubprocessError): pass
+for service in ('treasury-signer', 'layerxd', 'layerxd-authority', 'guarantor-1', 'guarantor-2'):
+    try:
+        uid, state, pid = (init / service).read_text().split()
+        if state != 'running' or not pid.isascii() or not pid.isdecimal(): raise ValueError('service state')
+        process = Path('/proc') / pid
+        executable = Path(os.readlink(process / 'exe')).name
+        argv = (process / 'cmdline').read_bytes().split(b'\0', 1)[0].decode()
+        if executable != 'layerx-runtime-clock':
+            emit('clock', service + ' ' + executable)
+        elif Path(argv).name != 'layerx-runtime-clock':
+            emit('clock', service + ' invalid-clock-argv')
+        else:
+            emit('clock', service + ' ' + argv)
+    except (OSError, ValueError, UnicodeError): emit('clock', service + ' absent')
+PY
+)
+	if [ "${CHECK_LIVE_KERNEL_LOCAL:-0}" = 1 ]; then
+		answer="$(timeout "$timeout" python3 -I - "$data" "$run" "$init" "$origin" "$ca" "$ctl" <<<"$probe" 2>/dev/null)" || answer=""
+	else
+		command -v flyctl >/dev/null 2>&1 || { echo "check-live: flyctl is required" >&2; exit 2; }
+		for value in "$data" "$run" "$init" "$origin" "$ca" "$ctl"; do
+			[[ $value != *[!a-zA-Z0-9_./:\[\]-]* ]] || { echo "fail kernel-node unsafe-path-or-origin"; finish 1; }
+		done
+		answer="$(fly_ssh "$app" - "python3 -I - \"$data\" \"$run\" \"$init\" \"$origin\" \"$ca\" \"$ctl\"" <<<"$probe" 2>/dev/null)" || answer=""
 	fi
-	if ! app="$(fly_app human/wallet/deploy/human.toml)"; then
-		echo "fail kernel-node toml=absent"
-		finish 1
-	fi
-	# shellcheck disable=SC2016 # the command expands on the machine
-	answer="$(fly_ssh "$app" - 'n=/data/layerx/node; r=/run/layerx/node; e=$n/replica.env; u=http://127.0.0.1:$(sed -n "s/^LAYERX_AUTHORITY_PORT=//p" $e); t="Authorization: Bearer $(sed -n "s/^LAYERX_AUTHORITY_BEARER_TOKEN=//p" $e)"; echo genesis $(sha256sum $n/genesis/genesis.manifest | cut -d" " -f1); echo network $(curl -fsS -m 10 -H "$t" $u/v1/sync/network | jq -c .); echo public $(cat $n/*.env | sed -n "s/^LAYERX_NODE_SEQUENCER_PUBLIC_KEY=//p" | head -1); echo core $(sed -n "s/^LAYERX_CORE_SEQUENCER_ID=//p" $r/core.env); echo status $(printf "status\n" | socat -t 5 - UNIX-CONNECT:$r/supervisor.sock | jq -c .); [ -S $r/layerxd.lni.sock ] && echo lni socket; echo head $(curl -fsS -m 10 -H "$t" $u/v1/sync/head | jq -c .); for s in treasury-signer layerxd layerxd-authority guarantor-1 guarantor-2; do p=; read -r u st p </run/layerx/init/$s 2>/dev/null; echo clock $s $(tr "\000" " " </proc/${p:-0}/cmdline 2>/dev/null | cut -d" " -f1); done' </dev/null 2>/dev/null)" || answer=""
 	while read -r key value; do
 		case "$key" in
-		genesis) genesis=$value ;;
-		network) network=$value ;;
-		public) public=$value ;;
-		core) core=$value ;;
-		status) status=$value ;;
-		lni) lni=$value ;;
-		head) head=$value ;;
-		clock)
-			key=${value%% *}
-			value=${value#"$key"}
-			clocks[$key]=${value# }
-			;;
+		genesis) genesis=$value ;; network) network=$value ;; authority) authority=$value ;; archive) archive=$value ;;
+		public) public=$value ;; core) core=$value ;; status) status=$value ;; lni) lni=$value ;; head) head=$value ;;
+		clock) key=${value%% *}; value=${value#"$key"}; clocks[$key]=${value# } ;;
 		esac
 	done <<<"$answer"
-	value="$(python3 -c 'import json, sys; print(json.loads(sys.argv[1]).get("genesis_sha256", "none"))' "$network" 2>/dev/null)" || value=none
-	if [[ $genesis =~ ^[0-9a-f]{64}$ ]] && [ "$value" = "$genesis" ]; then
-		echo "pass genesis app=$app sha256=$genesis replica=match"
-	else
-		echo "fail genesis app=$app sha256=${genesis:-absent} replica=$value"
-		failures=$((failures + 1))
-	fi
+	if python3 -I - "$genesis" "$network" "$authority" "$public" <<'PY'
+import json, re, sys
+try:
+    digest, network, authority, public = sys.argv[1:]
+    network, authority = json.loads(network), json.loads(authority)
+    assert re.fullmatch('[0-9a-f]{64}', digest)
+    assert network['version'] == authority['version'] == 1
+    assert type(network['network_id']) is int and network['network_id'] > 0
+    assert network['network_id'] == authority['network_id']
+    assert network['genesis_sha256'] == authority['genesis_sha256'] == digest
+    assert network['sequencer_public_key'] == authority['sequencer_public_key'] == public
+except (ValueError, KeyError, TypeError, AssertionError): sys.exit(1)
+PY
+	then echo "pass genesis app=$app sha256=$genesis replica=match"; else
+		echo "fail genesis app=$app sha256=${genesis:-absent} replica=none"; failures=$((failures + 1)); fi
 	value="$(printf 'layerx-sequencer:%s' "$public" | sha256sum | cut -d' ' -f1)"
-	if [[ $public =~ ^[0-9a-f]{64}$ ]] && [ "$value" = "$core" ]; then
-		echo "pass sequencer public=$public core=match"
-	else
-		echo "fail sequencer public=${public:-absent} core=${core:-absent}"
-		failures=$((failures + 1))
-	fi
-	if [ "$(python3 -c 'import json, sys; print(json.loads(sys.argv[1]).get("state"))' "$status" 2>/dev/null)" = running ]; then
-		echo "pass supervisor state=running"
-	else
-		echo "fail supervisor status=${status:-absent}"
-		failures=$((failures + 1))
-	fi
-	if [ "$lni" = socket ]; then
-		echo "pass lni socket=present"
-	else
-		echo "fail lni socket=absent"
-		failures=$((failures + 1))
-	fi
-	if [ -n "$head" ] && python3 -c 'import json, sys; json.loads(sys.argv[1])["head"]' "$head" 2>/dev/null; then
-		echo "pass replica head=$head"
-	else
-		echo "fail replica head=${head:-absent}"
-		failures=$((failures + 1))
-	fi
+	if [[ $public =~ ^[0-9a-f]{64}$ ]] && [ "$value" = "$core" ]; then echo "pass sequencer public=$public core=match"; else
+		echo "fail sequencer public=${public:-absent} core=${core:-absent}"; failures=$((failures + 1)); fi
+	if [ "$(python3 -I -c 'import json,sys; print(json.loads(sys.argv[1]).get("state"))' "$status" 2>/dev/null)" = running ]; then
+		echo "pass supervisor state=running"; else echo "fail supervisor status=${status:-absent}"; failures=$((failures + 1)); fi
+	if python3 -I - "$lni" "$authority" <<'PY'
+import json, re, sys
+try:
+    lni, authority = map(json.loads, sys.argv[1:])
+    assert lni['evidence'] == 'authenticated_node_snapshot' and lni['protocol_version'] == 3
+    assert lni['network_id'] == authority['network_id']
+    assert type(lni['global_sequence']) is int and lni['global_sequence'] >= 0
+    assert re.fullmatch('[0-9a-f]{64}', lni['state_root'])
+except (ValueError, KeyError, TypeError, AssertionError): sys.exit(1)
+PY
+	then echo "pass lni socket=present"; else echo "fail lni socket=absent"; failures=$((failures + 1)); fi
+	local head_failed=0
+	if value="$(python3 -I - "$authority" "$lni" "$genesis" "$public" <<'PY'
+import json, re, sys
+try:
+    authority, lni = map(json.loads, sys.argv[1:3])
+    digest, public = sys.argv[3:]
+    assert authority['version'] == 1 and authority['ready'] is True
+    assert authority['genesis_sha256'] == digest and authority['sequencer_public_key'] == public
+    assert authority['network_id'] == lni['network_id']
+    for name in ('authority_replica_id', 'receipt_digest', 'head_batch_id'):
+        assert re.fullmatch('[0-9a-f]{64}', authority[name])
+    for name in ('head_batch', 'last_global_sequence'):
+        assert re.fullmatch('0|[1-9][0-9]*', authority[name]) and int(authority[name]) <= 18446744073709551615
+    assert lni['global_sequence'] == int(authority['last_global_sequence'])
+    print(json.dumps({'head': int(authority['head_batch'])}, separators=(',', ':')))
+except (ValueError, KeyError, TypeError, AssertionError): sys.exit(1)
+PY
+)"; then echo "pass replica head=$value"; else
+		echo "fail replica head=${authority:-absent}"; head_failed=1; fi
+	if python3 -I - "$head" "$archive" "$authority" "$genesis" "$public" <<'PY'
+import json, re, sys
+try:
+    head, archive, authority = map(json.loads, sys.argv[1:4])
+    digest, public = sys.argv[4:]
+    assert archive['ready'] is True and archive['recovered_current_process'] is True and archive['freshness'] == 'fresh'
+    for field in ('version', 'network_id', 'genesis_sha256', 'head_batch', 'head_batch_id'):
+        assert head[field] == archive[field] == authority[field]
+    assert head['genesis_sha256'] == digest and archive['sequencer_public_key'] == authority['sequencer_public_key'] == public
+    assert re.fullmatch('[0-9a-f]{64}', head['head_batch_id'])
+    assert re.fullmatch('[0-9a-f]{64}', head['head_raw_sha256'])
+    assert head['head_raw_sha256'] == archive['head_raw_sha256']
+except (ValueError, KeyError, TypeError, AssertionError): sys.exit(1)
+PY
+	then echo "pass archive head=$head"; else echo "fail archive head=${head:-absent}"; head_failed=1; fi
+	failures=$((failures + head_failed))
+
 	for key in treasury-signer layerxd layerxd-authority guarantor-1 guarantor-2; do
 		value=${clocks[$key]:-absent}
-		if [ "${value##*/}" = layerx-runtime-clock ]; then
-			echo "pass clock $key"
-		else
-			echo "fail clock $key exec=$value"
-			failures=$((failures + 1))
-		fi
+		if [ "${value##*/}" = layerx-runtime-clock ]; then echo "pass clock $key"; else
+			echo "fail clock $key exec=$value"; failures=$((failures + 1)); fi
 	done
 	finish "$failures"
 }
@@ -4198,6 +4352,7 @@ tools=(ssh timeout curl python3 openssl sha256sum)
 [ "$mode" != gas ] || tools+=(flyctl cast)
 [ "$mode" != interop-adapters ] || tools+=(make)
 [ "$mode" != registry-plan ] || tools=(grep)
+if [ "$mode" = kernel-node ] && [ "${CHECK_LIVE_KERNEL_LOCAL:-0}" = 1 ]; then tools=(timeout python3 sha256sum); fi
 for tool in "${tools[@]}"; do
 	if ! command -v "$tool" >/dev/null 2>&1; then
 		echo "check-live: $tool is required" >&2
@@ -4205,5 +4360,9 @@ for tool in "${tools[@]}"; do
 	fi
 done
 
-case "$mode" in explorer | registry-plan) ;; *) load_hosts ;; esac
+case "$mode" in
+explorer | registry-plan) ;;
+kernel-node) [ "${CHECK_LIVE_KERNEL_LOCAL:-0}" = 1 ] || load_hosts ;;
+*) load_hosts ;;
+esac
 "check_${mode//-/_}"

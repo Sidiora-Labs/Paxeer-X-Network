@@ -121,6 +121,7 @@ class RelayArchive:
         self._state_lock = threading.Lock()
         self._sync_state = SyncState(config.sync_mode, None, None)
         self._bootstrapped = False
+        self._readiness_observed = False
         self.discovery = self._create_discovery()
 
     def _create_discovery(self) -> Any:
@@ -153,6 +154,8 @@ class RelayArchive:
             raise ConfigError(f"peer discovery configuration is invalid: {error}") from error
 
     def bootstrap(self) -> None:
+        with self._state_lock:
+            self._readiness_observed = False
         self._bootstrap_identity()
         state = self.store.load_sync_state(self.config.sync_mode)
         observation = state.observation
@@ -313,6 +316,8 @@ class RelayArchive:
         if not self._bootstrapped:
             raise IntegrityError("archive has not completed pinned bootstrap")
         with self._sync_lock:
+            with self._state_lock:
+                self._readiness_observed = False
             refusals: list[OriginRefusal] = []
             if self.config.sync_mode == "local":
                 outcome, count, observation, origins = self._sync_local_mode(refusals)
@@ -332,6 +337,8 @@ class RelayArchive:
                 )
                 self._sync_state = state
             self.store.save_sync_state(state)
+            with self._state_lock:
+                self._readiness_observed = observation is not None and outcome is SyncOutcome.CURRENT
             return attempt
 
     def _local_observation(self) -> HeadObservation:
@@ -600,6 +607,25 @@ class RelayArchive:
                 "remote_origins_required": False,
             }
         return value
+
+    def readiness(self) -> dict[str, Any]:
+        with self._state_lock:
+            observed = self._readiness_observed
+            state = self._sync_state
+        head = self.store.head_document()
+        observation = state.observation
+        age = None if observation is None else _now_ms() - observation.at_ms
+        consistent = observation is not None and all((
+            observation.head_batch == head["head_batch"],
+            observation.head_batch_id == head["head_batch_id"],
+            observation.head_raw_sha256 == head["head_raw_sha256"],
+        ))
+        ready = (self._bootstrapped and observed and consistent
+                 and state.attempt is not None and state.attempt.outcome is SyncOutcome.CURRENT
+                 and age is not None and 0 <= age <= int(self.config.freshness_budget_seconds * 1000))
+        return dict(head, ready=ready, recovered_current_process=observed,
+                    sequencer_public_key=self.config.sequencer_public_key,
+                    freshness="fresh" if ready else "unready")
 
     def _submission_token_valid(self, authorization: str | None) -> bool:
         token_file = self.config.source_submission_token_file
@@ -940,6 +966,9 @@ class RelayArchive:
             return _json_response(200 if status["ready"] else 503, status)
         if path == "/v1/peers":
             return _json_response(200, self.discovery.public_document())
+        if path == "/v1/sync/readiness":
+            value = self.readiness()
+            return _json_response(200 if value["ready"] else 503, value)
         if path == "/v1/sync/network":
             return _json_response(200, self.store.network_document())
         if path == "/v1/sync/head":

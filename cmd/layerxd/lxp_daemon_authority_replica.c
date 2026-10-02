@@ -6,6 +6,8 @@
 #include "lxp_daemon_finality_authority.h"
 
 #include "layerx/lxp_crypto.h"
+#include "layerx/lxp_hash.h"
+#include "layerx/lxp_batch_identity.h"
 
 #include <arpa/inet.h>
 #include <errno.h>
@@ -46,6 +48,16 @@ typedef struct authority_replica {
     lxp_finalisation_state known_finalisation;
     const char *availability_path;
     uint64_t availability_offset;
+    bool readiness_genesis_bound;
+    uint32_t readiness_network_id;
+    uint8_t readiness_genesis_sha256[32];
+    uint8_t readiness_genesis_root[32];
+    uint64_t readiness_offset;
+    uint64_t readiness_sequence;
+    uint64_t readiness_records;
+    lxp_batch_header readiness_header;
+    uint8_t readiness_batch_id[32];
+    uint8_t readiness_receipt_digest[32];
     uint8_t replica_id[32];
     uint8_t bearer_token[LXP_DAEMON_BEARER_MAX_BYTES];
     size_t bearer_token_length;
@@ -129,6 +141,50 @@ static lxp_result authority_handover_open(authority_replica *replica, uint32_t n
     free(bytes);
     free(manifest);
     if (lxp_arena_reset(&replica->scratch, mark) != LXP_OK) return LXP_FATAL_INVARIANT;
+    return status;
+}
+
+static lxp_result authority_readiness_genesis(authority_replica *replica,
+                                               uint32_t network_id)
+{
+    const char *path = getenv("LAYERX_AUTHORITY_STATUS_GENESIS_MANIFEST");
+    lxp_genesis_manifest *manifest;
+    uint8_t *bytes = NULL;
+    uint8_t sequencer_id[32];
+    size_t length = 0U;
+    size_t mark;
+    lxp_result status;
+    if (path == NULL) return LXP_OK;
+    if (*path == '\0') return LXP_ERR_NON_CANONICAL;
+    manifest = malloc(sizeof(*manifest));
+    if (manifest == NULL) return LXP_ERR_ARENA_EXHAUSTED;
+    mark = lxp_arena_mark(&replica->scratch);
+    status = lxp_daemon_artifact_read(path, LXP_GENESIS_MAX_ENCODED_BYTES,
+                                     0U, &bytes, &length);
+    if (status == LXP_OK)
+        status = lxp_genesis_parse(bytes, length, LXP_GENESIS_INPUT_MANIFEST, manifest);
+    if (status == LXP_OK)
+        status = lxp_genesis_verify_signature(manifest, &replica->scratch);
+    if (status == LXP_OK)
+        status = lxp_handover_sequencer_id(manifest->signer_public_key, sequencer_id);
+    if (status == LXP_OK &&
+        (manifest->network_id != network_id ||
+         memcmp(manifest->signer_public_key, replica->authorization.public_key, 32U) != 0 ||
+         memcmp(sequencer_id, replica->authorization.sequencer_id, 32U) != 0 ||
+         lxp_ct_is_zero(manifest->genesis_receipt_state_root, 32U)))
+        status = LXP_ERR_AUTH_SCOPE;
+    if (status == LXP_OK)
+        status = lxp_hash_sha256(bytes, length, replica->readiness_genesis_sha256);
+    if (status == LXP_OK) {
+        replica->readiness_network_id = manifest->network_id;
+        (void)memcpy(replica->readiness_genesis_root,
+                     manifest->genesis_receipt_state_root, 32U);
+        replica->readiness_genesis_bound = true;
+    }
+    free(bytes);
+    free(manifest);
+    if (lxp_arena_reset(&replica->scratch, mark) != LXP_OK)
+        return LXP_FATAL_INVARIANT;
     return status;
 }
 
@@ -484,6 +540,157 @@ static lxp_result evidence_json(authority_replica *replica,
     return status;
 }
 
+static lxp_result authority_readiness_refresh(authority_replica *replica)
+{
+    lxp_result status;
+    if (!replica->readiness_genesis_bound || replica->store.record_count == 0U ||
+        !replica->log.has_durable_marker ||
+        replica->log.durable_offset != replica->log.write_offset ||
+        replica->readiness_offset > replica->log.write_offset)
+        return LXP_ERR_UNKNOWN_ACTIVITY;
+    status = authority_handover_refresh(replica);
+    while (status == LXP_OK && replica->readiness_offset < replica->log.write_offset) {
+        lxp_daemon_receipt_evidence evidence;
+        lxp_batch_header header;
+        uint64_t offset = replica->readiness_offset;
+        uint64_t committed_last_sequence = 0U;
+        uint8_t batch_id[32];
+        bool present = false;
+        bool first = replica->readiness_records == 0U;
+        size_t mark = lxp_arena_mark(&replica->scratch);
+        status = lxp_daemon_receipt_authority_scan(&replica->store,
+            &offset, &replica->scratch, &evidence, &present);
+        if (status == LXP_OK && !present) status = LXP_ERR_LOG_CORRUPT;
+        if (status == LXP_OK)
+            status = lxp_batch_header_decode(evidence.canonical_header.bytes,
+                evidence.canonical_header.length, &header);
+        if (status == LXP_OK &&
+            (header.network_id != replica->readiness_network_id ||
+             (first && (header.batch_number != 1U || header.first_sequence != 1U ||
+                        evidence.global_sequence != header.first_sequence ||
+                        memcmp(header.previous_state_root,
+                               replica->readiness_genesis_root, 32U) != 0)) ||
+             (!first && (replica->readiness_sequence == UINT64_MAX ||
+                         evidence.global_sequence != replica->readiness_sequence + 1U))))
+            status = LXP_ERR_CONTEXT_MISMATCH;
+        if (status == LXP_OK && !first) {
+            if (header.batch_number == replica->readiness_header.batch_number) {
+                if (memcmp(evidence.batch_id, replica->readiness_batch_id, 32U) != 0)
+                    status = LXP_ERR_CONTEXT_MISMATCH;
+            } else if (replica->readiness_header.batch_number == UINT64_MAX ||
+                       header.batch_number != replica->readiness_header.batch_number + 1U ||
+                       replica->readiness_sequence != replica->readiness_header.last_sequence ||
+                       header.first_sequence != evidence.global_sequence ||
+                       memcmp(header.previous_state_root,
+                              replica->readiness_header.resulting_state_root, 32U) != 0) {
+                status = LXP_ERR_CONTEXT_MISMATCH;
+            }
+        }
+        if (status == LXP_OK && evidence.global_sequence == header.last_sequence) {
+            bool maintenance = evidence.format_version == 3U;
+            if (lxp_protocol_version_uses_occupancy(header.protocol_version) != maintenance)
+                status = LXP_ERR_CONTEXT_MISMATCH;
+            if (status == LXP_OK)
+                status = lxp_batch_identity_committed_last_sequence(
+                    header.first_sequence, header.last_sequence, maintenance,
+                    &committed_last_sequence);
+            if (status == LXP_OK)
+                status = lxp_batch_identity_committed(header.previous_state_root,
+                    header.activity_merkle_root, header.first_sequence,
+                    committed_last_sequence, header.batch_number, batch_id);
+            if (status == LXP_OK && memcmp(batch_id, evidence.batch_id, 32U) != 0)
+                status = LXP_ERR_CONTEXT_MISMATCH;
+        }
+        if (status == LXP_OK) {
+            replica->readiness_header = header;
+            replica->readiness_sequence = evidence.global_sequence;
+            replica->readiness_offset = offset;
+            ++replica->readiness_records;
+            (void)memcpy(replica->readiness_batch_id, evidence.batch_id, 32U);
+            (void)memcpy(replica->readiness_receipt_digest, evidence.receipt_digest, 32U);
+        }
+        if (lxp_arena_reset(&replica->scratch, mark) != LXP_OK)
+            return LXP_FATAL_INVARIANT;
+    }
+    if (status == LXP_OK &&
+        (replica->readiness_records != replica->store.record_count ||
+         replica->readiness_sequence != replica->store.last_global_sequence ||
+         replica->readiness_header.batch_number != replica->store.last_batch_number ||
+         replica->readiness_sequence != replica->readiness_header.last_sequence ||
+         replica->readiness_sequence != replica->store.active_batch_last_sequence))
+        status = LXP_ERR_UNKNOWN_ACTIVITY;
+    return status;
+}
+
+static lxp_result authority_readiness_json(authority_replica *replica,
+                                           char **body, size_t *body_length)
+{
+    lxp_daemon_receipt_evidence evidence;
+    lxp_sequencer_authorization authorization;
+    lxp_batch_header header;
+    char genesis_hex[65], replica_hex[65], key_hex[65];
+    char batch_hex[65], receipt_hex[65];
+    char *response = NULL;
+    size_t capacity = 1024U;
+    size_t mark;
+    int length;
+    lxp_result status;
+    if (pthread_mutex_lock(&replica->mutex) != 0) return LXP_ERR_IO;
+    mark = lxp_arena_mark(&replica->scratch);
+    status = authority_readiness_refresh(replica);
+    if (status == LXP_OK)
+        status = lxp_daemon_receipt_authority_lookup(&replica->store,
+            replica->readiness_receipt_digest, &replica->scratch, &evidence);
+    if (status == LXP_OK)
+        status = lxp_batch_header_decode(evidence.canonical_header.bytes,
+            evidence.canonical_header.length, &header);
+    if (status == LXP_OK &&
+        (header.network_id != replica->readiness_network_id ||
+         header.batch_number != replica->readiness_header.batch_number ||
+         header.last_sequence != replica->readiness_sequence ||
+         evidence.global_sequence != replica->readiness_sequence ||
+         memcmp(evidence.batch_id, replica->readiness_batch_id, 32U) != 0 ||
+         memcmp(header.resulting_state_root,
+                replica->readiness_header.resulting_state_root, 32U) != 0))
+        status = LXP_ERR_CONTEXT_MISMATCH;
+    if (status == LXP_OK)
+        status = lxp_daemon_receipt_authority_header_authorization(
+            &replica->store, &header, &authorization);
+    if (status == LXP_OK) {
+        response = malloc(capacity);
+        if (response == NULL) status = LXP_ERR_IO;
+    }
+    if (status == LXP_OK) {
+        hex_encode(replica->readiness_genesis_sha256, 32U, genesis_hex);
+        hex_encode(replica->replica_id, 32U, replica_hex);
+        hex_encode(authorization.public_key, 32U, key_hex);
+        hex_encode(evidence.batch_id, 32U, batch_hex);
+        hex_encode(evidence.receipt_digest, 32U, receipt_hex);
+        length = snprintf(response, capacity,
+            "{\"version\":1,\"ready\":true,\"network_id\":%u,"
+            "\"genesis_sha256\":\"%s\",\"authority_replica_id\":\"%s\","
+            "\"sequencer_public_key\":\"%s\",\"head_batch\":\"%llu\","
+            "\"head_batch_id\":\"%s\",\"last_global_sequence\":\"%llu\","
+            "\"receipt_digest\":\"%s\"}",
+            (unsigned)replica->readiness_network_id, genesis_hex, replica_hex, key_hex,
+            (unsigned long long)header.batch_number, batch_hex,
+            (unsigned long long)evidence.global_sequence, receipt_hex);
+        if (length < 0 || (size_t)length >= capacity) {
+            status = LXP_ERR_LENGTH_LIMIT;
+        } else {
+            *body = response;
+            *body_length = (size_t)length;
+            response = NULL;
+        }
+    }
+    free(response);
+    if (lxp_arena_reset(&replica->scratch, mark) != LXP_OK)
+        status = LXP_FATAL_INVARIANT;
+    if (pthread_mutex_unlock(&replica->mutex) != 0 && status == LXP_OK)
+        status = LXP_FATAL_INVARIANT;
+    return status;
+}
+
 static bool header_value(const char *request, const char *header_end,
                           const char *name, const char **value,
                           size_t *length)
@@ -585,6 +792,10 @@ static lxp_result serve_connection(authority_replica *replica, int descriptor)
     if (!authorized(replica, headers, header_end)) {
         status = LXP_ERR_BAD_SIGNATURE;
         http_status = 401U;
+    } else if (strcmp(method, "GET") == 0 &&
+               strcmp(path, "/v1/receipt-authority/status") == 0) {
+        status = authority_readiness_json(replica, &response_body, &response_length);
+        http_status = status == LXP_OK ? 200U : 503U;
     } else if (strcmp(method, "POST") == 0 &&
                strcmp(path, "/v1/receipt-authority/ingest") == 0) {
         uint8_t *body;
@@ -834,6 +1045,7 @@ lxp_result lxp_daemon_authority_replica_serve(
     if (status == LXP_OK) replica.authorization.last_batch_number = value;
     replica.authorization.authorized = 1U;
     if (status == LXP_OK) status = authority_handover_open(&replica, configuration.network_id);
+    if (status == LXP_OK) status = authority_readiness_genesis(&replica, configuration.network_id);
     token = required("LAYERX_AUTHORITY_BEARER_TOKEN");
     if (status == LXP_OK &&
         (token == NULL || strlen(token) < 32U ||
