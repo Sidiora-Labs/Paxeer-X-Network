@@ -244,10 +244,17 @@ impl AttestError {
     /// Whether retrying the same request can never succeed.
     #[must_use]
     pub const fn is_terminal(&self) -> bool {
-        matches!(
-            self,
-            Self::UnknownKind(_) | Self::Payload | Self::TooLong | Self::NotNamed(_)
-        )
+        match self {
+            Self::UnknownKind(_) | Self::Payload | Self::TooLong | Self::NotNamed(_) => true,
+            Self::Fetch(error) => match error {
+                FetchError::Resolve | FetchError::RobotsUnavailable | FetchError::Connect
+                | FetchError::ConnectTimeout | FetchError::Timeout | FetchError::Tls
+                | FetchError::Transport => false,
+                FetchError::Status(status) => *status != 429 && *status < 500,
+                _ => true,
+            },
+            _ => false,
+        }
     }
 }
 
@@ -443,6 +450,14 @@ impl Attestor {
         Ok((digest, response, full_length, level))
     }
 
+    pub fn binds(&self, request: &WebRequest, answer: &Answer) -> bool {
+        answer.attestation == Attestation::evm(self.chain_id, request,
+            answer.attestation.content_digest, &answer.response, answer.attestation.full_length)
+            && answer.callback_gas == request.callback_gas
+            && answer.timeout_height == request.timeout_height
+            && answer.signer == self.signer
+    }
+
     /// Answers one request: the content, the stored response and the
     /// signature over the origin-1 digest. An api request under the single
     /// level is answered only by the attestor it names.
@@ -506,6 +521,7 @@ pub enum Discard {
     BadSignature,
     /// The signer is not a registered attestor.
     UnknownSigner,
+    Persistence,
 }
 
 impl Discard {
@@ -517,6 +533,7 @@ impl Discard {
             Self::DifferentDigest => "different_digest",
             Self::BadSignature => "bad_signature",
             Self::UnknownSigner => "unknown_signer",
+            Self::Persistence => "persistence_failed",
         }
     }
 }
@@ -558,6 +575,7 @@ pub struct Ready {
     pub signatures: Vec<[u8; SIGNATURE_LENGTH]>,
 }
 
+#[derive(Clone)]
 struct Collected {
     answer: Answer,
     signatures: BTreeMap<[u8; 20], [u8; SIGNATURE_LENGTH]>,
@@ -626,7 +644,10 @@ impl Collected {
             signer: fixed(object.get("signer"))?,
             signature: fixed(object.get("signature"))?,
         };
-        if attestation.digest() != answer.digest
+        if attestation.origin != ORIGIN_EVM || attestation.request_id == 0
+            || answer.response.len() > MAX_RESPONSE_BYTES
+            || usize::try_from(attestation.full_length).ok()? < answer.response.len()
+            || attestation.digest() != answer.digest
             || keccak(&answer.response) != attestation.response_hash
             || recover_signer(&answer.digest, &answer.signature).ok()? != answer.signer
         {
@@ -656,6 +677,9 @@ impl Collected {
 struct Record {
     request_id: u64,
     digest: [u8; 32],
+    content_digest: [u8; 32],
+    response_hash: [u8; 32],
+    full_length: u32,
     signer: [u8; 20],
     signature: [u8; SIGNATURE_LENGTH],
 }
@@ -684,6 +708,9 @@ fn parse_record(record: &Value) -> Option<Record> {
     Some(Record {
         request_id: object.get("request_id")?.as_u64()?,
         digest: fixed(object.get("digest"))?,
+        content_digest: fixed(object.get("content_digest"))?,
+        response_hash: fixed(object.get("response_hash"))?,
+        full_length: u32::try_from(object.get("full_length")?.as_u64()?).ok()?,
         signer: fixed(object.get("signer"))?,
         signature: fixed(object.get("signature"))?,
     })
@@ -763,23 +790,30 @@ impl SignatureExchange {
 
     /// Writes a request's answer and signatures atomically before the
     /// exchange relies on them.
-    fn retain(&self, collected: &Collected) {
+    fn retain(&self, collected: &Collected) -> bool {
         let path = self.answer_path(collected.answer.request_id());
         let temporary = path.with_extension("tmp");
         let written = std::fs::write(&temporary, collected.to_json().to_string())
             .and_then(|()| std::fs::File::open(&temporary)?.sync_all())
-            .and_then(|()| std::fs::rename(&temporary, &path));
+            .and_then(|()| std::fs::rename(&temporary, &path))
+            .and_then(|()| std::fs::File::open(&self.answers_dir)?.sync_all());
         if let Err(error) = written {
             eprintln!(
                 "x-websearch could not retain the answer to request {}: {error}",
                 collected.answer.request_id()
             );
+            return false;
         }
+        true
     }
 
     fn release(&self, request_id: u64) {
         match std::fs::remove_file(self.answer_path(request_id)) {
-            Ok(()) => {}
+            Ok(()) => {
+                if let Err(error) = std::fs::File::open(&self.answers_dir).and_then(|directory| directory.sync_all()) {
+                    eprintln!("x-websearch could not sync released answer: {error}");
+                }
+            }
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(error) => {
                 eprintln!(
@@ -801,17 +835,18 @@ impl SignatureExchange {
 
     /// Keeps this sidecar's own answer and its own signature, durably. An
     /// answer already held for the request is kept as it is.
-    pub fn record(&self, answer: Answer) {
+    pub fn record(&self, answer: Answer) -> bool {
         let mut answers = self.answers();
         if answers.contains_key(&answer.request_id()) {
-            return;
+            return true;
         }
         let collected = Collected {
             signatures: BTreeMap::from([(answer.signer, answer.signature)]),
             answer,
         };
-        self.retain(&collected);
+        if !self.retain(&collected) { return false; }
         answers.insert(collected.answer.request_id(), collected);
+        true
     }
 
     /// This sidecar's answer to a request.
@@ -911,7 +946,10 @@ impl SignatureExchange {
         let verdict = match &parsed {
             None => Err(Discard::Malformed),
             Some(record) if record.request_id != request_id => Err(Discard::WrongRequest),
-            Some(record) if record.digest != local.digest => Err(Discard::DifferentDigest),
+            Some(record) if record.digest != local.digest
+                || record.content_digest != local.attestation.content_digest
+                || record.response_hash != local.attestation.response_hash
+                || record.full_length != local.attestation.full_length => Err(Discard::DifferentDigest),
             Some(record) => match recover_signer(&local.digest, &record.signature) {
                 Ok(signer) if signer != record.signer => Err(Discard::BadSignature),
                 Err(_) => Err(Discard::BadSignature),
@@ -923,10 +961,11 @@ impl SignatureExchange {
             Ok(signer) => {
                 let mut answers = self.answers();
                 if let (Some(collected), Some(record)) = (answers.get_mut(&request_id), parsed) {
-                    if collected.signatures.insert(signer, record.signature)
-                        != Some(record.signature)
-                    {
-                        self.retain(collected);
+                    if collected.signatures.get(&signer) != Some(&record.signature) {
+                        let mut candidate = collected.clone();
+                        candidate.signatures.insert(signer, record.signature);
+                        if !self.retain(&candidate) { return Err(Discard::Persistence); }
+                        *collected = candidate;
                     }
                 }
                 Ok(Some(signer))
@@ -1008,7 +1047,9 @@ impl SignatureExchange {
             .collect();
         let enough = match answer.level {
             Level::Majority => {
-                set.threshold != 0
+                usize::try_from(set.threshold).is_ok_and(|threshold|
+                    threshold > set.signers.len() / 2 && threshold <= set.signers.len())
+                    && set.signers.iter().collect::<std::collections::BTreeSet<_>>().len() == set.signers.len()
                     && u32::try_from(registered.len()).is_ok_and(|count| count >= set.threshold)
             }
             Level::Single(_) => registered.len() == 1,

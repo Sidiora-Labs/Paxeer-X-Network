@@ -7,6 +7,9 @@ import os
 from pathlib import Path
 import re
 import shlex
+import shutil
+from types import SimpleNamespace
+from urllib.parse import urlsplit
 import signal
 import stat
 import subprocess
@@ -30,7 +33,7 @@ ATTACHMENT_FIELDS = (
     "required_case_inventory", "evidence_output_directory",
 )
 ATTESTOR_FIELDS = ("public_signer", "payout", "key_handle_ref", "data_dir", "peer_endpoint")
-STAGES = ("scanned", "attested", "before-quorum", "signatures-collected", "submitted")
+STAGES = ("scanned", "fetching", "content-fetched", "attested", "before-quorum", "signatures-collected", "before-signed-journal", "submitted", "broadcast")
 BINDINGS = ("source_revision", "config_digest", "membership_ref", "storage_ref", "funded_accounts_ref")
 BINDING_PATTERNS = {
     "source_revision": re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}"),
@@ -72,9 +75,12 @@ def load_manifest(path):
     require(path.is_file(), f"candidate manifest absent: {path}")
     mode = path.stat().st_mode
     require(not mode & (stat.S_IRWXG | stat.S_IRWXO), "candidate manifest is not owner-only")
+    candidate = json.loads(path.read_text(encoding="utf-8"))
+    mainline = candidate.get("source", {}).get("mainline_revision")
+    require(isinstance(mainline, str) and mainline, "candidate mainline binding absent")
     checked = subprocess.run(
         [sys.executable, str(CANDIDATE), "validate", str(path), "--repo", str(ROOT),
-         "--spec", str(SPEC)],
+         "--spec", str(SPEC), "--mainline", mainline],
         cwd=ROOT, capture_output=True, text=True,
         env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
     require(checked.returncode == 0,
@@ -156,8 +162,15 @@ def journalled(slot, request_id):
     path = Path(slot["data_dir"]) / "watch" / "pending.json"
     if not path.is_file():
         return None
-    for entry in json.loads(path.read_text(encoding="utf-8")):
+    progress = json.loads(path.read_text(encoding="utf-8"))
+    require(isinstance(progress, dict) and progress.get("version") == 1, "atomic progress journal absent")
+    require(progress["chain_id"] == 125, "watcher journal chain binding differs")
+    for entry in progress["entries"]:
+        require(entry["request"]["block_number"] < progress["next_block"], "cursor passed uncommitted work")
         if entry["request"]["request_id"] == request_id:
+            source = entry["source"]
+            require(source["chain_id"] == 125 and len(source["block_hash"]) == 32
+                    and len(source["transaction_hash"]) == 32, "canonical source identity absent")
             return entry
     return None
 
@@ -186,34 +199,72 @@ def wait(condition, what):
 
 
 class Sidecar:
-    """One real x-websearch process over its own durable data directory."""
-
     def __init__(self, binary, slot, config, log_dir, index):
         self.binary, self.slot, self.config = binary, slot, config
-        self.log = log_dir / f"attestor-{index + 1}.log"
-        handles = json.loads(Path(slot["key_handle_ref"]).read_text(encoding="utf-8"))
-        require(isinstance(handles, dict) and handles, "attestor key handle lists no key files")
-        self.environment = dict(os.environ, **{name: str(path) for name, path in handles.items()})
-        self.process = None
+        spec = importlib.util.spec_from_file_location("paid_web_process_driver", ROOT / "tools/qualification/paxeer-x/paid-web-contract.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        handles_path = module.private(slot["key_handle_ref"])
+        handles = json.loads(handles_path.read_text())
+        require(set(handles).issubset({"X_WEBSEARCH_ATTESTOR_KEY_FILE", "X_WEBSEARCH_RECEIVER_KEY_FILE", "X_WEBSEARCH_SUBMITTER_KEY_FILE"})
+                and {"X_WEBSEARCH_ATTESTOR_KEY_FILE", "X_WEBSEARCH_RECEIVER_KEY_FILE"}.issubset(handles),
+                "explicit private attestor key handles required")
+        self.environment = {name: str(module.private(path)) for name, path in handles.items()}
+        self.url = urlsplit(slot["peer_endpoint"])
+        require(self.url.scheme == "http" and self.url.hostname == "127.0.0.1" and self.url.port,
+                "owned loopback attestor endpoint required")
+        evidence = log_dir / ("attestor-" + str(index + 1))
+        evidence.mkdir(mode=0o700)
+        settings = SimpleNamespace(binary=binary.resolve(), config_path=config.resolve(), isolated=log_dir.parent.resolve(),
+            evidence=evidence, launches=0, url=self.url, runtime_env=self.environment,
+            debugger_nonstop=True, breakpoint=self.breakpoint)
+        self.driver = module.Candidate(settings)
+        self.driver_refusal = module.Refusal
 
-    def start(self):
-        with self.log.open("ab") as log:
-            self.process = subprocess.Popen([str(self.binary), "--config", str(self.config)],
-                                            stdout=log, stderr=log, env=self.environment)
+    def breakpoint(self, stage):
+        boundaries = {
+            "scanned": ("main.rs", "if request.timeout_height < head {"),
+            "fetching": ("attest.rs", "let page = self.fetcher.fetch(payload).map_err(AttestError::Fetch)?;"),
+            "content-fetched": ("attest.rs", "let digest = self.store.put(&canonical).map_err(|_| AttestError::Store)?;"),
+            "attested": ("main.rs", "if let Err(error) = pipeline.watcher.transition(request_id, WorkStage::Attested) {"),
+            "before-quorum": ("main.rs", "if pipeline.exchange.ready(request_id, &set).is_some() {"),
+            "signatures-collected": ("main.rs", "if let Err(error) = pipeline.watcher.transition(request_id, WorkStage::Quorum) {"),
+            "before-signed-journal": ("submit.rs", "let signed = transaction.sign(&self.key)?;"),
+            "submitted": ("submit.rs", "self.broadcast(request_id, &signed)"),
+            "broadcast": ("submit.rs", "Ok(Outcome::Sent { hash: signed.hash })"),
+        }
+        name, needle = boundaries[stage]
+        path = ROOT / "interop/crates/x-websearch/src" / name
+        lines = [number for number, line in enumerate(path.read_text().splitlines(), 1) if line.strip() == needle]
+        require(len(lines) == 1, "exact EVM production interruption boundary absent")
+        return str(path) + ":" + str(lines[0])
+
+    def start(self, stage=None):
+        try:
+            self.driver.start(stage)
+        except self.driver_refusal as error:
+            raise Refusal(str(error)) from error
+
+    def boundary(self, stage, request_id):
+        deadline = time.monotonic() + STAGE_TIMEOUT
+        while time.monotonic() < deadline:
+            require(self.driver.process.poll() is None, "attestor exited before interruption")
+            if self.driver.stopped.wait(1):
+                if stage != "before-quorum" or len((retained(self.slot, request_id) or {}).get("signatures", [])) == 2:
+                    return
+                self.driver.stopped.clear()
+                self.driver.command("-exec-continue --all")
+        raise Refusal("production interruption boundary not reached")
 
     def kill(self):
-        self.process.send_signal(signal.SIGKILL)
-        self.process.wait()
-        require(self.process.returncode == -signal.SIGKILL, "attestor did not die by SIGKILL")
+        pid = self.driver.pid
+        require(pid is not None and Path("/proc/" + str(pid) + "/exe").resolve() == self.binary.resolve(),
+                "refuse signalling foreign attestor")
+        self.driver.stop(crash=True)
+        require(not Path("/proc/" + str(pid)).exists(), "attestor survived SIGKILL")
 
     def stop(self):
-        if self.process and self.process.poll() is None:
-            self.process.terminate()
-            try:
-                self.process.wait(timeout=30)
-            except subprocess.TimeoutExpired:
-                self.process.kill()
-                self.process.wait()
+        self.driver.stop()
 
 
 def produce_request(producer):
@@ -269,7 +320,12 @@ def eth_call_reverts(endpoint, sender, data):
     with urllib.request.urlopen(request, timeout=30) as answer:
         reply = json.load(answer)
     require(("result" in reply) != ("error" in reply), "eth_call answer is neither a result nor an error")
-    return "error" in reply
+    if "error" not in reply:
+        return False, None
+    error = reply["error"]
+    require(isinstance(error, dict) and error.get("code") in (3, -32000)
+            and "revert" in error.get("message", "").lower(), "negative case failed outside native execution")
+    return True, error["code"]
 
 
 def fulfil_calldata(request_id, response, content_digest, full_length, signatures):
@@ -318,6 +374,9 @@ def signature_authority(evm, endpoint, request_id, answer, keys, sender):
         "control-threshold-set": (content, valid),
         "wrong-digest": (content, [sign(secret, keccak256(preimage(wrong))) for _, secret in members[:3]]),
         "wrong-content-digest": (wrong, valid),
+        "wrong-origin": (content, [sign(secret, keccak256(DOMAIN + b"\x02" + preimage(content)[len(DOMAIN) + 1:])) for _, secret in members[:3]]),
+        "wrong-domain": (content, [sign(secret, keccak256(b"PAXEERX_WEB_V2" + preimage(content)[len(DOMAIN):])) for _, secret in members[:3]]),
+        "wrong-request": (content, [sign(secret, keccak256(preimage(content)[:len(DOMAIN) + 65] + (request_id + 1).to_bytes(8, "big") + preimage(content)[len(DOMAIN) + 73:])) for _, secret in members[:3]]),
         "duplicate-signer": (content, [valid[0], valid[0], valid[1]]),
         "unsorted-signers": (content, [valid[1], valid[0], valid[2]]),
         "insufficient-threshold": (content, valid[:2]),
@@ -325,11 +384,11 @@ def signature_authority(evm, endpoint, request_id, answer, keys, sender):
     }
     results = []
     for name, (claimed, signatures) in cases.items():
-        reverted = eth_call_reverts(endpoint, sender,
+        reverted, error_code = eth_call_reverts(endpoint, sender,
                                     fulfil_calldata(request_id, response, claimed, full_length, signatures))
         require(reverted == (name != "control-threshold-set"),
                 f"fulfil {name} {'reverted' if reverted else 'was authorized'}")
-        results.append({"case": name, "reverted": reverted})
+        results.append({"case": name, "reverted": reverted, "rpc_error_code": error_code})
     return results
 
 
@@ -340,16 +399,25 @@ def interrupt_at(stage, sidecars, threshold, endpoint, producer, authority):
     held = sidecars[2:] if stage == "before-quorum" else []
     for sidecar in held:
         sidecar.stop()
+    target.stop()
+    target.start(stage)
     request_id = produce_request(producer)
+    target.boundary(stage, request_id)
     reached = {
         "scanned": lambda: journalled(target.slot, request_id) is not None,
+        "fetching": lambda: journalled(target.slot, request_id)["stage"] == "attesting",
+        "content-fetched": lambda: journalled(target.slot, request_id)["stage"] == "attesting"
+            and retained(target.slot, request_id) is None,
         "attested": lambda: attested(target.slot, request_id),
         "before-quorum": lambda: (attested(sidecars[1].slot, request_id)
                                   and len((retained(target.slot, request_id) or {})
                                           .get("signatures", [])) == 2),
         "signatures-collected": lambda: sum(attested(sidecar.slot, request_id)
                                             for sidecar in sidecars) >= threshold,
+        "before-signed-journal": lambda: journalled(target.slot, request_id)["stage"] == "quorum"
+            and submitted(target.slot, request_id) is None,
         "submitted": lambda: submitted(target.slot, request_id) is not None,
+        "broadcast": lambda: submitted(target.slot, request_id) is not None,
     }[stage]
     wait(reached, f"request {request_id} to reach {stage}")
     record = served(target.slot, request_id)
@@ -358,9 +426,11 @@ def interrupt_at(stage, sidecars, threshold, endpoint, producer, authority):
                 "a held attestor answered while stopped")
         require(request_status(endpoint, request_id) != STATUS_FULFILLED,
                 f"request {request_id} fulfilled below threshold")
+    source_before = journalled(target.slot, request_id)["source"]
     target.kill()
+    require(journalled(target.slot, request_id)["source"] == source_before, "crash changed canonical source identity")
     before = submitted(target.slot, request_id)
-    if stage == "submitted":
+    if stage in ("submitted", "broadcast"):
         require(before is not None, f"request {request_id} signed bytes not journalled before the kill")
     elif request_status(endpoint, request_id) != STATUS_FULFILLED:
         entry = journalled(target.slot, request_id)
@@ -372,6 +442,23 @@ def interrupt_at(stage, sidecars, threshold, endpoint, producer, authority):
                 and kept["signature"] == record["signature"],
                 f"request {request_id} answer not retained across the kill at {stage}")
     checks = authority(request_id, kept) if stage == "before-quorum" else []
+    if stage == "before-quorum":
+        path = Path(target.slot["data_dir"]) / "attest" / "answers" / (str(request_id) + ".json")
+        original = path.read_bytes()
+        changed = json.loads(original)
+        changed["content_digest"] = "0x" + (bytes.fromhex(changed["content_digest"][2:])[0] ^ 1).to_bytes(1, "big").hex() + changed["content_digest"][4:]
+        path.write_text(json.dumps(changed))
+        refused_startup = False
+        try:
+            target.start()
+        except Refusal:
+            log = target.driver.h.evidence / ("process-" + str(target.driver.h.launches - 1) + ".log")
+            refused_startup = "retained answer refused" in log.read_text()
+        finally:
+            target.stop()
+            path.write_bytes(original)
+        require(refused_startup, "tampered durable digest did not refuse real process startup")
+        checks.append({"case": "tampered-durable-digest", "refused": True})
     target.start()
     if stage == "before-quorum":
         wait(lambda: served(target.slot, request_id) == record,
@@ -386,11 +473,124 @@ def interrupt_at(stage, sidecars, threshold, endpoint, producer, authority):
          f"request {request_id} fulfilment after restart at {stage}")
     after = submitted(target.slot, request_id)
     if before is not None:
-        require(after is not None and after.get("hash") == before.get("hash"),
+        require(after is not None and after.get("hash") == before.get("hash")
+                and after.get("raw") == before.get("raw") and after.get("nonce") == before.get("nonce"),
                 f"request {request_id} recovery changed the journalled transaction identity")
+    wait(lambda: submitted(target.slot, request_id) is not None
+         and submitted(target.slot, request_id)["state"] in ("fulfilled", "already_fulfilled"),
+         "finality-bound submission acknowledgement")
     wait(lambda: all(journalled(sidecar.slot, request_id) is None for sidecar in sidecars),
          f"request {request_id} retirement from every journal")
-    return {"stage": stage, "request_id": request_id, "signature_authority": checks}
+    stable = submitted(target.slot, request_id)
+    require(stable.get("hash") and stable.get("raw"), "completion discarded signed transaction identity")
+    receipt = rpc(endpoint, "eth_getTransactionReceipt", [stable["hash"]])
+    require(receipt and receipt["status"] == "0x1" and receipt["transactionHash"] == stable["hash"],
+            "completed transaction canonical receipt absent")
+    mined = int(receipt["blockNumber"], 16)
+    require(int(rpc(endpoint, "eth_blockNumber", []), 16) >= mined + 12
+            and rpc(endpoint, "eth_getBlockByNumber", [receipt["blockNumber"], False])["hash"] == receipt["blockHash"],
+            "completion acknowledged before declared canonical finality")
+    topic = "0x" + keccak256(b"XWebFulfilled(uint64,address,bytes32,uint32,uint8,uint8,uint64)").hex()
+    query = [{"address": XWEB_PRECOMPILE, "fromBlock": "0x0", "toBlock": "latest",
+              "topics": [topic, "0x" + request_id.to_bytes(32, "big").hex()]}]
+    require(len(rpc(endpoint, "eth_getLogs", query)) == 1, "observation did not commit exactly once")
+    nonce = rpc(endpoint, "eth_getTransactionCount", [authority.sender, "latest"])
+    restart_head = int(rpc(endpoint, "eth_blockNumber", []), 16)
+    target.kill()
+    target.start()
+    wait(lambda: int(rpc(endpoint, "eth_blockNumber", []), 16) >= restart_head + 4,
+         "completed restart through real attestation rounds")
+    require(not attested(target.slot, request_id) and journalled(target.slot, request_id) is None,
+            "completed request returned to pending work")
+    require(submitted(target.slot, request_id) == stable
+            and rpc(endpoint, "eth_getTransactionCount", [authority.sender, "latest"]) == nonce,
+            "completed recovery changed transaction or charged another nonce")
+    return {"stage": stage, "request_id": request_id, "source": source_before, "signature_authority": checks}
+
+
+def attestation_failures(owned, sidecars):
+    target = sidecars[0]
+    for peer in sidecars[1:]:
+        peer.stop()
+    content = Path(target.slot["data_dir"]) / "content"
+    held = content.with_name("content-during-retry")
+    require(content.is_dir() and not held.exists(), "genuine content store failure boundary absent")
+    content.rename(held)
+    try:
+        request_id = owned.request_payload(owned.url.encode())
+        wait(lambda: (journalled(target.slot, request_id) or {}).get("last_error")
+             == "attestation refused: content store", "real retryable store failure")
+        failed = journalled(target.slot, request_id)
+        require(failed["stage"] == "retry" and 0 < failed["attempts"] < 8
+                and failed["next_retry_block"] > failed["request"]["block_number"], "bounded retry state absent")
+        target.kill()
+        require(journalled(target.slot, request_id) == failed, "retry progress lost on crash")
+    finally:
+        held.rename(content)
+    target.start()
+    wait(lambda: retained(target.slot, request_id) is not None, "retry restores independent attestation")
+    for peer in sidecars[1:]:
+        peer.start()
+    wait(lambda: request_status(owned.endpoint, request_id) == STATUS_FULFILLED, "retry reaches genuine fulfilment")
+    wait(lambda: all(journalled(peer.slot, request_id) is None for peer in sidecars), "retried request acknowledgement")
+    for peer in sidecars[1:]:
+        peer.stop()
+    owned.stop_origin()
+    try:
+        fetch_id = owned.request_payload(owned.url.encode())
+        wait(lambda: (journalled(target.slot, fetch_id) or {}).get("stage") == "retry"
+             and ((journalled(target.slot, fetch_id) or {}).get("last_error") or "").startswith("attestation refused: fetch "),
+             "real unavailable origin retry")
+        fetch_failed = journalled(target.slot, fetch_id)
+        target.kill()
+        require(journalled(target.slot, fetch_id) == fetch_failed, "fetch retry disappeared at crash")
+    finally:
+        owned.start_origin()
+    target.start()
+    wait(lambda: retained(target.slot, fetch_id) is not None, "fetch retry restored")
+    peer_id = owned.request_payload(owned.url.encode())
+    wait(lambda: (journalled(target.slot, peer_id) or {}).get("last_error") == "peer quorum unavailable",
+         "real unavailable peer retry")
+    partial = retained(target.slot, peer_id)
+    require(partial and len(partial["signatures"]) == 1 and submitted(target.slot, peer_id) is None,
+            "unavailable peers authorized a fulfilment")
+    peer_failed = journalled(target.slot, peer_id)
+    target.kill()
+    require(journalled(target.slot, peer_id) == peer_failed and retained(target.slot, peer_id) == partial,
+            "peer retry or partial signature progress disappeared")
+    target.start()
+    for peer in sidecars[1:]:
+        peer.start()
+    wait(lambda: all(request_status(owned.endpoint, value) == STATUS_FULFILLED for value in (fetch_id, peer_id)),
+         "origin and peer restoration reaches real fulfilment")
+    wait(lambda: all(journalled(peer.slot, value) is None for peer in sidecars for value in (fetch_id, peer_id)),
+         "origin and peer retry finality acknowledgement")
+    refused_id = owned.request_payload(b"\xff")
+    wait(lambda: (journalled(target.slot, refused_id) or {}).get("refused")
+         == "attestation refused: payload is not UTF-8", "terminal invalid request refusal")
+    refused = journalled(target.slot, refused_id)
+    target.kill()
+    target.start()
+    wait(lambda: journalled(target.slot, refused_id) == refused, "explicit refusal survives restart")
+    require(submitted(target.slot, refused_id) is None, "invalid request signed an economic action")
+    wait(lambda: int(rpc(owned.endpoint, "eth_blockNumber", []), 16) > refused["request"]["timeout_height"],
+         "real refundable timeout")
+    receipt = owned.rpc.send(owned.evm_key(), 125, XWEB_PRECOMPILE,
+        owned.refund_calldata(refused_id))
+    require(receipt.get("status") == "0x1", "real native refund failed")
+    wait(lambda: request_status(owned.endpoint, refused_id) == 2, "native refunded state")
+    wait(lambda: all(journalled(peer.slot, refused_id) is None for peer in sidecars), "finalized refund acknowledgement")
+    refund = submitted(target.slot, refused_id)
+    require(refund and refund["state"] == "refunded" and "raw" not in refund,
+            "refund reconciliation signed an unnecessary transaction")
+    target.kill()
+    target.start()
+    require(submitted(target.slot, refused_id) == refund, "refunded state changed after restart")
+    return [{"stage": "retryable-attestation-restart", "request_id": request_id},
+            {"stage": "transient-fetch-restart", "request_id": fetch_id},
+            {"stage": "transient-peer-restart", "request_id": peer_id},
+            {"stage": "terminal-invalid-request-restart", "request_id": refused_id},
+            {"stage": "already-refunded-reconciliation", "request_id": refused_id}]
 
 
 def evm_attestation_recovery(manifest, manifest_path, report):
@@ -433,16 +633,19 @@ def evm_attestation_recovery(manifest, manifest_path, report):
         secrets = [xweb.evm.read_key(path) for path in keys]
         authority = lambda request_id, answer: signature_authority(xweb.evm, endpoint, request_id, answer,
                                                                    secrets, sender)
+        authority.sender = sender
         log_dir = Path(fixture["evidence_output_directory"])
         log_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         report["evidence"] = str(log_dir / "evm-attestation-recovery.json")
         sidecars = [Sidecar(binaries[0], slot, config, log_dir, index)
                     for index, (slot, config) in enumerate(zip(slots, configs))]
+        require(shutil.which("gdb"), "real process interruption requires debugger-enabled artifact and GDB")
         for sidecar in sidecars:
             sidecar.start()
         for stage in STAGES:
             report["results"].append(interrupt_at(stage, sidecars, fixture["web_threshold"],
                                                   endpoint, producer, authority))
+        report["results"].extend(attestation_failures(owned, sidecars))
         try:
             owned.canonical_reorg()
         except RuntimeError as unavailable:
@@ -456,7 +659,8 @@ def evm_attestation_recovery(manifest, manifest_path, report):
         owned.close()
         if report.get("evidence"):
             Path(report["evidence"]).write_text(json.dumps(report, indent=2) + "\n")
-    return len(STAGES) + sum(len(result.get("signature_authority", [])) for result in report["results"]) + 1
+    require(len(report["results"]) == len(STAGES) + 6, "required EVM recovery cases absent")
+    return len(report["results"]) + sum(len(result.get("signature_authority", [])) for result in report["results"])
 
 
 CASES = {"evm-attestation-recovery": evm_attestation_recovery}

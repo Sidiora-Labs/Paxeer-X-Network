@@ -2,6 +2,7 @@
 """Owned disposable xweb fixture: a source-bound paxd chain with four real web attestors."""
 from functools import partial
 import hashlib
+import base64
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import importlib.util
 import json
@@ -94,9 +95,19 @@ class XWebFixture:
         self.binary = Path(binary).resolve()
         require(self.binary.is_file() and os.access(self.binary, os.X_OK),
                 "x-websearch binary absent or not executable")
-        require(self.binary.stat().st_mtime >= int(git("log", "-1", "--format=%ct")),
-                "x-websearch binary predates the candidate commit")
+        metadata = os.environ.get("PAXEER_X_XWEB_ARTIFACT", "")
+        require(metadata, "PAXEER_X_XWEB_ARTIFACT is not set")
+        runtime.private(metadata)
+        self.binary_artifact = json.loads(Path(metadata).read_text())
+        source = load("paid_web_source_binding", ROOT / "tools/qualification/paxeer-x/paid-web-contract.py")
+        revision, source_digest = source.source_identity()
+        require(revision == self.revision and self.binary_artifact.get("source_revision") == revision
+                and self.binary_artifact.get("source_digest") == source_digest
+                and self.binary_artifact.get("build_exit") == 0
+                and Path(self.binary_artifact.get("path", "")).resolve() == self.binary,
+                "x-websearch build/source provenance missing")
         self.binary_sha256 = runtime.digest(self.binary)
+        require(self.binary_sha256 == self.binary_artifact.get("sha256"), "x-websearch artifact digest mismatch")
         self.directory = Path(evidence) / ("xweb-19.1-" + time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()))
         self.directory.mkdir(mode=0o700)
         self.keys = self.directory / "keys"
@@ -104,7 +115,7 @@ class XWebFixture:
         self.processes, self.server = [], None
         self.env = {key: value for key, value in os.environ.items()
                     if not key.startswith(("LAYERX_", "PAXEER_X_", "X_WEBSEARCH_"))}
-        self.env.update(HOME=str(self.directory), PYTHONDONTWRITEBYTECODE="1")
+        self.env.update(PYTHONDONTWRITEBYTECODE="1")
         self.env["LD_LIBRARY_PATH"] = ":".join(sorted(
             {str(Path(row["path"]).parent) for row in self.bundle.get("runtime_libraries", [])}))
 
@@ -157,9 +168,11 @@ class XWebFixture:
         require(isinstance(section, dict) and "paused" in section and "attestors" in section,
                 "genesis carries no xweb section")
         section["paused"] = False
+        section["params"]["timeout_blocks"] = 120
         section["attestors"] = {
-            "attestors": [{"signer": slot["signer"], "payout": self.cast(slot["signer"])}
-                          for slot in self.slots],
+            "attestors": [{"signer": slot["signer"], "payout": self.cast(slot["signer"]),
+                           "public_key": base64.b64encode(evm.compressed_public_key(slot["secret"])).decode()}
+                          for slot in sorted(self.slots, key=lambda slot: slot["signer"])],
             "threshold": THRESHOLD}
         genesis_path.write_text(json.dumps(genesis, indent=1) + "\n", encoding="utf-8")
         self.run("validate-genesis", [self.paxd(), "validate-genesis", genesis_path, "--home", self.chain])
@@ -176,13 +189,15 @@ class XWebFixture:
         self.membership = self.read_membership()
         self.fee = self.rpc.eth_call(XWEB_PRECOMPILE, "fee()(uint256)")[0]
         require(self.fee > 0, "xweb fee is zero")
-        funding = self.fee * 64
+        funding = max(self.fee * 64, 10 ** 21)
         self.funded = {}
         for name, secret in (("requester", requester), ("submitter-1", self.slots[0]["submitter_secret"])):
             receipt = self.rpc.send(deployer, CHAIN_ID, evm.address_of(secret), value=funding)
             self.funded[name] = {"address": "0x" + evm.address_of(secret).hex(),
                                  "funding_receipt": receipt["transactionHash"]}
         site = self.directory / "site"
+        self.site = site
+        self.site_port = ports[-1]
         site.mkdir(mode=0o700)
         (site / "robots.txt").write_text("User-agent: *\nAllow: /\n", encoding="utf-8")
         (site / "page.html").write_text(
@@ -255,10 +270,11 @@ class XWebFixture:
 
     def bindings(self):
         """xweb-attestors bindings this fixture authenticated itself."""
+        attachment = "private:" + str(self.directory.parent / "fixtures/19.1.json")
         return {"source_revision": self.revision, "config_digest": self.config_digest(),
-                "membership_ref": "private:/fixtures/19.1.json#native-0x1019-membership",
-                "storage_ref": "private:/fixtures/19.1.json#web_attestors",
-                "funded_accounts_ref": "private:/fixtures/19.1.json#funded"}
+                "membership_ref": attachment + "#authority_refs",
+                "storage_ref": attachment + "#web_attestors",
+                "funded_accounts_ref": attachment + "#funded_accounts_and_registration_receipt_refs"}
 
     def attach(self, manifest_path):
         """Writes the owner-only fixtures/19.1.json attachment the harness reads."""
@@ -273,6 +289,7 @@ class XWebFixture:
             "schema": 1, "task_id": "19.1", "candidate_source_revision": self.revision,
             "candidate_manifest_ref": str(manifest_path), "scope": "isolated-real-process",
             "runtime_binary_or_image_refs": [str(self.binary), self.paxd()],
+            "x_websearch_artifact": self.binary_artifact,
             "config_refs_and_digests": {str(slot["config"]): runtime.digest(slot["config"])
                                         for slot in self.slots},
             "isolated_chain_id_and_genesis_identity": {"chain_id": CHAIN_ID,
@@ -294,6 +311,32 @@ class XWebFixture:
         }, indent=2) + "\n")
         return path
 
+    def stop_origin(self):
+        require(self.server is not None, "owned origin is not running")
+        self.server.shutdown()
+        self.server.server_close()
+        self.server = None
+
+    def start_origin(self):
+        require(self.server is None, "owned origin is already running")
+        self.server = ThreadingHTTPServer(("127.0.0.1", self.site_port), partial(Site, directory=str(self.site)))
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def evm_key(self):
+        return evm.read_key(self.requester_key)
+
+    def refund_calldata(self, request_id):
+        return evm.calldata("refund(uint64)", request_id)
+
+    def request_payload(self, payload, kind=1):
+        receipt = self.rpc.send(evm.read_key(self.requester_key), CHAIN_ID, XWEB_PRECOMPILE,
+            evm.calldata("request(uint8,bytes,uint64)", kind, payload, CALLBACK_GAS), self.fee)
+        topic = "0x" + evm.keccak(b"XWebRequested(uint64,address,uint8,bytes,uint64,uint256,uint64)").hex()
+        logs = [row for row in receipt.get("logs", []) if row.get("address", "").lower() == XWEB_PRECOMPILE
+                and row.get("topics", [None])[0] == topic]
+        require(len(logs) == 1 and receipt.get("status") == "0x1", "real paid request did not execute")
+        return int(logs[0]["topics"][1], 16)
+
     def canonical_reorg(self):
         """A reorg of the owned chain below the declared depth. The chain is a
         single CometBFT validator with instant finality: a committed block is
@@ -305,7 +348,7 @@ class XWebFixture:
 
     def close(self):
         if self.server:
-            self.server.shutdown()
+            self.stop_origin()
         for process in self.processes:
             if process.poll() is None:
                 process.terminate()

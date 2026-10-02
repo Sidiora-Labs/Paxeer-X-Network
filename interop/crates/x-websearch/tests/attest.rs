@@ -1065,3 +1065,44 @@ fn the_attestor_key_must_differ_from_the_submitter_and_receiver_keys() -> Outcom
     assert_eq!(signer_address(attestor), signer_address(&attestor_key(1)?));
     Ok(())
 }
+
+#[test]
+fn unwritten_answers_and_peer_signatures_never_authorize_fulfilment() -> Outcome {
+    let scratch = Scratch::new("exchange-write-failure")?;
+    let exchange = SignatureExchange::open(&scratch.0, &[])?;
+    let answers = scratch.0.join("answers");
+    let held = scratch.0.join("held-answers");
+    std::fs::rename(&answers, &held)?;
+    assert!(!exchange.record(vector_answer(1, b"Paxeer X Network")?));
+    assert!(exchange.answer(7).is_none());
+    std::fs::rename(&held, &answers)?;
+    assert!(exchange.record(vector_answer(1, b"Paxeer X Network")?));
+    let peer = vector_answer(3, b"Paxeer X Network")?;
+    let set = AttestorSet { signers: vec![signer_address(&attestor_key(1)?), signer_address(&attestor_key(3)?),
+        signer_address(&attestor_key(4)?)], threshold: 2 };
+    std::fs::rename(&answers, &held)?;
+    assert_eq!(exchange.accept("real-signed-record", 7, &peer.record(), &set), Err(Discard::Persistence));
+    assert!(exchange.ready(7, &set).is_none());
+    std::fs::rename(&held, &answers)?;
+    drop(exchange);
+    let reopened = SignatureExchange::open(&scratch.0, &[])?;
+    assert!(reopened.ready(7, &set).is_none());
+    assert_eq!(reopened.accept("real-signed-record", 7, &peer.record(), &set), Ok(Some(peer.signer)));
+    assert!(reopened.ready(7, &set).is_some());
+    Ok(())
+}
+
+#[test]
+fn atomic_progress_is_authoritative_over_the_legacy_cursor() -> Outcome {
+    let scratch = Scratch::new("atomic-progress")?;
+    std::fs::write(scratch.0.join("cursor"), "999")?;
+    std::fs::write(scratch.0.join("pending.json"), json!({
+        "version": 1, "next_block": 31, "chain_id": 125, "entries": []
+    }).to_string())?;
+    let watcher = RequestWatcher::open(EvmRpc::new("http://127.0.0.1:9")?, 12, &scratch.0, Some(0))?
+        .with_chain_id(125)?;
+    assert_eq!(watcher.next_block(), Some(31));
+    assert!(RequestWatcher::open(EvmRpc::new("http://127.0.0.1:9")?, 12, &scratch.0, None)?
+        .with_chain_id(126).is_err());
+    Ok(())
+}

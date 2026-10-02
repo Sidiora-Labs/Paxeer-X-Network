@@ -304,6 +304,8 @@ pub struct RequestWatcher {
     last_head: u64,
     pending_path: PathBuf,
     pending: BTreeMap<u64, Pending>,
+    chain_id: Option<u64>,
+    _lock: Option<std::fs::File>,
 }
 
 /// A confirmed request the watcher committed to before moving its cursor.
@@ -314,11 +316,66 @@ pub struct Pending {
     pub attempts: u32,
     /// The durable terminal refusal, once there is one.
     pub refused: Option<String>,
+    #[serde(default)]
+    pub source: Option<SourceIdentity>,
+    #[serde(default)]
+    pub stage: WorkStage,
+    #[serde(default)]
+    pub next_retry_block: u64,
+    #[serde(default)]
+    pub last_error: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SourceIdentity {
+    pub chain_id: u64,
+    pub block_hash: [u8; 32],
+    pub transaction_hash: [u8; 32],
+    pub log_index: u64,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkStage {
+    #[default]
+    Queued,
+    Attesting,
+    Attested,
+    Quorum,
+    Signed,
+    Retry,
+    Refused,
+    Reorged,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Progress {
+    version: u32,
+    next_block: Option<u64>,
+    chain_id: Option<u64>,
+    entries: Vec<Pending>,
+}
+
+pub(crate) fn source_identity(log: &Value, chain_id: u64) -> Result<SourceIdentity, EvmError> {
+    let hash = |field: &str| -> Result<[u8; 32], EvmError> {
+        log.get(field).and_then(Value::as_str).and_then(unhex0x)
+            .and_then(|bytes| bytes.try_into().ok()).filter(|hash| *hash != [0; 32])
+            .ok_or(EvmError::Malformed)
+    };
+    Ok(SourceIdentity {
+        chain_id,
+        block_hash: hash("blockHash")?,
+        transaction_hash: hash("transactionHash")?,
+        log_index: log.get("logIndex").and_then(Value::as_str).and_then(parse_quantity)
+            .and_then(|value| u64::try_from(value).ok()).ok_or(EvmError::Malformed)?,
+    })
 }
 
 impl RequestWatcher {
-    /// Opens the watcher. A cursor file already under `state_dir` wins over
-    /// `start`; with neither, the first poll starts at the confirmed head.
+    /// Opens the watcher from atomic progress, migrating the legacy cursor
+    /// and pending journal. A cursor without work state rewinds the scan.
     ///
     /// # Errors
     /// Returns the error creating the directory and a cursor file that does
@@ -339,11 +396,22 @@ impl RequestWatcher {
             Err(error) => return Err(error),
         };
         let pending_path = state_dir.join(PENDING_FILE);
+        let mut next_block = stored.or(start);
+        let mut chain_id = None;
         let pending = match std::fs::read(&pending_path) {
             Ok(bytes) => {
-                let entries = serde_json::from_slice::<Vec<Pending>>(&bytes).map_err(|_| {
-                    io::Error::new(io::ErrorKind::InvalidData, "watch journal malformed")
-                })?;
+                let entries = if let Ok(progress) = serde_json::from_slice::<Progress>(&bytes) {
+                    if progress.version != 1 {
+                        return Err(io::Error::new(io::ErrorKind::InvalidData, "watch journal version"));
+                    }
+                    next_block = progress.next_block;
+                    chain_id = progress.chain_id;
+                    progress.entries
+                } else {
+                    serde_json::from_slice::<Vec<Pending>>(&bytes).map_err(|_| {
+                        io::Error::new(io::ErrorKind::InvalidData, "watch journal malformed")
+                    })?
+                };
                 let mut pending = BTreeMap::new();
                 for entry in entries {
                     if pending.insert(entry.request.request_id, entry).is_some() {
@@ -355,18 +423,65 @@ impl RequestWatcher {
                 }
                 pending
             }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => BTreeMap::new(),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                if stored.is_some() { next_block = Some(0); }
+                BTreeMap::new()
+            },
             Err(error) => return Err(error),
         };
         Ok(Self {
             rpc,
             confirmations: u64::from(confirmations),
             cursor_path,
-            next_block: stored.or(start),
+            next_block,
             last_head: 0,
             pending_path,
             pending,
+            chain_id,
+            _lock: None,
         })
+    }
+
+    pub fn with_chain_id(mut self, chain_id: u64) -> io::Result<Self> {
+        if self.chain_id.is_some_and(|stored| stored != chain_id)
+            || self.pending.values().any(|entry| entry.source.as_ref()
+                .is_some_and(|source| source.chain_id != chain_id)) {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "watch journal chain mismatch"));
+        }
+        let lock = std::fs::OpenOptions::new().create(true).truncate(false).read(true).write(true)
+            .open(self.pending_path.with_extension("lock"))?;
+        lock.try_lock().map_err(|_| io::Error::other("watch journal already open"))?;
+        self._lock = Some(lock);
+        self.chain_id = Some(chain_id);
+        Ok(self)
+    }
+
+    pub const fn confirmations(&self) -> u64 { self.confirmations }
+
+    pub fn eligible(&self, request_id: u64) -> bool {
+        self.pending.get(&request_id).is_some_and(|entry|
+            entry.refused.is_none() && entry.next_retry_block <= self.last_head)
+    }
+
+    pub fn transition(&mut self, request_id: u64, stage: WorkStage) -> Result<(), EvmError> {
+        let mut pending = self.pending.clone();
+        let entry = pending.get_mut(&request_id).ok_or(EvmError::Journal)?;
+        if entry.refused.is_some() { return Err(EvmError::Journal); }
+        entry.stage = stage;
+        entry.last_error = None;
+        entry.next_retry_block = 0;
+        self.store_pending(&pending)?;
+        self.pending = pending;
+        Ok(())
+    }
+
+    pub fn reorged(&mut self, request_id: u64) -> Result<(), EvmError> {
+        self.fail(request_id, true, "canonical source removed")?;
+        let mut pending = self.pending.clone();
+        pending.get_mut(&request_id).ok_or(EvmError::Journal)?.stage = WorkStage::Reorged;
+        self.store_pending(&pending)?;
+        self.pending = pending;
+        Ok(())
     }
 
     /// The next block the watcher reads, once it knows it.
@@ -412,9 +527,14 @@ impl RequestWatcher {
         let Some(entry) = pending.get_mut(&request_id) else {
             return Ok(false);
         };
+        let signed = entry.stage == WorkStage::Signed;
         entry.attempts = entry.attempts.saturating_add(1);
-        if terminal || entry.attempts >= MAX_ATTEMPTS {
+        entry.last_error = Some(reason.to_owned());
+        entry.stage = if signed { WorkStage::Signed } else { WorkStage::Retry };
+        entry.next_retry_block = self.last_head.saturating_add(1_u64 << entry.attempts.min(8));
+        if terminal || (!signed && entry.attempts >= MAX_ATTEMPTS) {
             entry.refused = Some(reason.to_owned());
+            entry.stage = WorkStage::Refused;
         }
         let refused = entry.refused.is_some();
         self.store_pending(&pending)?;
@@ -428,7 +548,18 @@ impl RequestWatcher {
     /// Returns the error writing the journal.
     pub fn retire(&mut self, request_id: u64) -> Result<(), EvmError> {
         let mut pending = self.pending.clone();
-        if pending.remove(&request_id).is_some() {
+        if let Some(entry) = pending.remove(&request_id) {
+            if entry.refused.is_some() {
+                let bytes = serde_json::to_vec(&entry).map_err(|_| EvmError::Journal)?;
+                let name = format!("retired-{request_id}-{}.json", crate::payment::hex(&keccak(&bytes)));
+                let path = self.pending_path.with_file_name(name);
+                let temporary = path.with_extension("tmp");
+                std::fs::write(&temporary, bytes)
+                    .and_then(|()| std::fs::File::open(&temporary)?.sync_all())
+                    .and_then(|()| std::fs::rename(&temporary, &path))
+                    .and_then(|()| std::fs::File::open(path.parent().ok_or_else(|| io::Error::other("journal parent"))?)?.sync_all())
+                    .map_err(|_| EvmError::Journal)?;
+            }
             self.store_pending(&pending)?;
             self.pending = pending;
         }
@@ -457,6 +588,22 @@ impl RequestWatcher {
         )?;
         for log in logs.as_array().ok_or(EvmError::Malformed)? {
             if decode_requested(log)? == *request {
+                if let Some(chain_id) = self.chain_id {
+                    if self.rpc.quantity("eth_chainId", &json!([]))? != u128::from(chain_id) {
+                        return Err(EvmError::ForeignLog);
+                    }
+                    let source = source_identity(log, chain_id)?;
+                    let mut pending = self.pending.clone();
+                    let entry = pending.get_mut(&request.request_id).ok_or(EvmError::Journal)?;
+                    if entry.source.as_ref().is_some_and(|old| old != &source) {
+                        return Ok(Canonical::Absent);
+                    }
+                    if entry.source.is_none() {
+                        entry.source = Some(source);
+                        self.store_pending(&pending)?;
+                        self.pending = pending;
+                    }
+                }
                 return Ok(Canonical::Present);
             }
         }
@@ -464,8 +611,13 @@ impl RequestWatcher {
     }
 
     fn store_pending(&self, pending: &BTreeMap<u64, Pending>) -> Result<(), EvmError> {
-        let entries: Vec<&Pending> = pending.values().collect();
-        let bytes = serde_json::to_vec(&entries).map_err(|_| EvmError::Journal)?;
+        self.store_progress(pending, self.next_block)
+    }
+
+    fn store_progress(&self, pending: &BTreeMap<u64, Pending>, next_block: Option<u64>) -> Result<(), EvmError> {
+        let progress = Progress { version: 1, next_block, chain_id: self.chain_id,
+            entries: pending.values().cloned().collect() };
+        let bytes = serde_json::to_vec(&progress).map_err(|_| EvmError::Journal)?;
         let temporary = self.pending_path.with_extension("tmp");
         std::fs::write(&temporary, bytes)
             .and_then(|()| std::fs::File::open(&temporary)?.sync_all())
@@ -504,6 +656,11 @@ impl RequestWatcher {
     pub fn poll(&mut self) -> Result<Vec<WebRequest>, EvmError> {
         let head = self.rpc.block_number()?;
         self.last_head = head;
+        if let Some(chain_id) = self.chain_id {
+            if self.rpc.quantity("eth_chainId", &json!([]))? != u128::from(chain_id) {
+                return Err(EvmError::ForeignLog);
+            }
+        }
         let Some(safe) = head.checked_sub(self.confirmations) else {
             return Ok(Vec::new());
         };
@@ -534,10 +691,10 @@ impl RequestWatcher {
             return Err(EvmError::Malformed);
         }
         let mut pending = self.pending.clone();
-        let mut added = false;
-        for request in &requests {
+        for (request, log) in requests.iter().zip(logs.as_array().ok_or(EvmError::Malformed)?) {
+            let source = self.chain_id.map(|chain_id| source_identity(log, chain_id)).transpose()?;
             if let Some(existing) = pending.get(&request.request_id) {
-                if existing.request != *request {
+                if existing.request != *request || (existing.source.is_some() && existing.source != source) {
                     return Err(EvmError::Malformed);
                 }
             } else {
@@ -547,18 +704,19 @@ impl RequestWatcher {
                         request: request.clone(),
                         attempts: 0,
                         refused: None,
+                        source,
+                        stage: WorkStage::Queued,
+                        next_retry_block: 0,
+                        last_error: None,
                     },
                 );
-                added = true;
             }
         }
-        if added {
-            self.store_pending(&pending)?;
-            self.pending = pending;
-        }
         let next = to.checked_add(1).ok_or(EvmError::Malformed)?;
-        self.store_cursor(next)?;
+        self.store_progress(&pending, Some(next))?;
+        self.pending = pending;
         self.next_block = Some(next);
+        self.store_cursor(next)?;
         Ok(requests)
     }
 }
