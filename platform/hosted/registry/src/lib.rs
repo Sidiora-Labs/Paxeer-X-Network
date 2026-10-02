@@ -32,7 +32,11 @@ pub use mirror::{MirrorRefusal, MirroredSource, SourceMirror};
 pub use node_state::{HeadAuthority, NodeProgramStateSource, ProgramStateCursor};
 pub use program_state::FileProgramStateJournal;
 pub use routes::{refusal, Registrar, Request, Response};
-pub use verified::{VerifiedSource, VerifiedSourceStore};
+pub use verified::{
+    Admission, JournalRefusal, LeaseRefusal, Publication, Reconciled, VerificationJournal,
+    VerificationLease, VerificationRecord, VerificationState, VerifiedSource, VerifiedSourceStore,
+    MAX_VERIFICATION_RECORDS, VERIFICATION_RECORD_VERSION,
+};
 
 /// Declared configuration of the hosted registry service.
 #[derive(Clone, Debug)]

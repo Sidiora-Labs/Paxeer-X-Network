@@ -68,7 +68,7 @@ impl ProgramOutbox {
             .as_str()
             .ok_or("verified lifecycle missing")?;
         self.enqueue(
-            &format!("{resource}:{source_sequence}"),
+            &format!("{principal}:{resource}:{source_sequence}"),
             layerx_platform_internal::producer::Observation {
                 kind: "program".to_owned(),
                 id: String::new(),
@@ -172,6 +172,16 @@ impl ProgramOutbox {
     pub fn enqueue(&self, transition: &str, observation: Observation) -> Result<(), String> {
         self.with_journal(move |journal, mut state, _, _| {
             let mut observation = observation;
+            let legacy = format!("{}:{}", observation.resource, observation.source_sequence);
+            let transition = if state.retained(transition).is_none()
+                && state.retained(&legacy).is_some_and(|previous| {
+                    previous.principal_digest == observation.principal_digest
+                })
+            {
+                legacy.as_str()
+            } else {
+                transition
+            };
             if let Some(previous) = state.retained(transition) {
                 observation.sequence = previous.sequence;
                 observation.id.clone_from(&previous.id);

@@ -764,6 +764,16 @@ fn serve(config: &Config) -> Result<(), String> {
     for unit in registrar.quarantined_units() {
         eprintln!("layerx-program-registry: {unit}");
     }
+    let reconciled = registrar.verification_reconciled();
+    for defect in &reconciled.defects {
+        eprintln!("layerx-program-registry: verification request record refused: {defect}");
+    }
+    for evidence in &reconciled.preserved {
+        eprintln!(
+            "layerx-program-registry: interrupted verification request write preserved at {}",
+            evidence.display()
+        );
+    }
     let builder = registrar.verified_builder();
     drop(registrar);
     let builder_ready = Arc::new(Mutex::new(Some(Instant::now())));
