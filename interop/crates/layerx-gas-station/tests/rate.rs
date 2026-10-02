@@ -6,14 +6,16 @@ use std::time::Duration;
 use k256::ecdsa::SigningKey;
 use k256::elliptic_curve::rand_core::OsRng;
 use layerx_gas_station::config::ConfigError;
-use layerx_gas_station::journal::{Entry, Journal, Publication};
+use layerx_gas_station::journal::{
+    Entry, Journal, JournalError, PreparedPublication, Publication, Settlement, PUBLICATION_VERSION,
+};
 use layerx_gas_station::quote::{address_word, keccak, word, Address, Word};
 use layerx_gas_station::rate::{
     PublisherConfig, RateFile, RatePublisher, RateRefusal, RATE_GAS_LIMIT,
 };
 use layerx_gas_station::rpc::{bytes, hex, ConfiguredRpc, Exchange, RpcFault};
 use layerx_gas_station::signer::{LocalSigner, QuoteSigner};
-use layerx_gas_station::tx::recover;
+use layerx_gas_station::tx::{recover, sign_call, Fees};
 use serde_json::{json, Value};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -481,5 +483,330 @@ fn settlement_records_the_actual_cost() -> TestResult {
         Err(RateRefusal::Rpc(RpcFault::Malformed))
     );
     assert_eq!(publisher.journal().state().unsettled().len(), 1);
+    Ok(())
+}
+
+fn prepared_rate(
+    owner: &LocalSigner,
+    nonce: u64,
+    rate: u128,
+    fees: Fees,
+    signed_at: u64,
+) -> Result<PreparedPublication, Box<dyn std::error::Error>> {
+    let data = [&keccak(b"setRate(uint256)")[..4], word(rate).as_slice()].concat();
+    let signed = sign_call(1325, nonce, fees, PAYMASTER, &data, owner)?;
+    Ok(PreparedPublication {
+        version: PUBLICATION_VERSION,
+        chain_id: 1325,
+        paymaster: PAYMASTER,
+        publication: Publication {
+            owner: owner.address(),
+            nonce,
+            hash: signed.hash,
+            rate: word(rate),
+            gas_limit: fees.gas_limit,
+            max_fee_per_gas: fees.max_fee_per_gas,
+            signed_at,
+        },
+        max_priority_fee_per_gas: fees.max_priority_fee_per_gas,
+        raw: signed.raw,
+    })
+}
+
+#[test]
+fn prepared_broadcast_settled_journal_is_ordered_exact_and_durable() -> TestResult {
+    let lane = Lane::new("transitions")?;
+    let cadence = lane.publisher(1_000_000)?.cadence();
+    assert_eq!(cadence, 120);
+    let owner = signer(&lane.key)?;
+    let path = lane.dir.join("rate.jsonl");
+    let fees = Fees {
+        gas_limit: RATE_GAS_LIMIT,
+        max_fee_per_gas: 3_000_000_000,
+        max_priority_fee_per_gas: 1_000_000_000,
+    };
+    let first = prepared_rate(&owner, 7, 3_114_000, fees, NOW)?;
+    let hash = first.publication.hash;
+    assert_eq!(first.raw[0], 2);
+    assert_eq!(keccak(&first.raw), hash);
+    assert_eq!(
+        published_rate(&first.raw)?,
+        (PAYMASTER, word(3_114_000), lane.owner)
+    );
+    let settlement = Settlement {
+        block_number: 16,
+        gas_used: 35_000,
+        cost_wei: 1_500_000_000 * 35_000,
+        succeeded: true,
+    };
+    let prepare = Entry::RatePrepared {
+        prepared: first.clone(),
+    };
+    let broadcast = Entry::RateBroadcast { hash };
+    let settle = Entry::RateSettled { hash, settlement };
+
+    let mut journal = Journal::open(&path)?;
+    assert_eq!(journal.append(&broadcast), Err(JournalError::Conflict));
+    assert_eq!(journal.append(&settle), Err(JournalError::Conflict));
+    assert_eq!(std::fs::metadata(&path)?.len(), 0);
+    assert!(journal.state().families.is_empty());
+
+    journal.append(&prepare)?;
+    let family = &journal.state().families[&(lane.owner, 7)];
+    assert_eq!(family.members, vec![first.clone()]);
+    assert!(family.broadcast.is_empty());
+    assert_eq!(family.finalized, None);
+    assert_eq!(journal.state().reserved_wei(), 3_000_000_000 * u128::from(RATE_GAS_LIMIT));
+    let length = std::fs::metadata(&path)?.len();
+    journal.append(&prepare)?;
+    assert_eq!(std::fs::metadata(&path)?.len(), length);
+    let mut altered = first.clone();
+    altered.publication.signed_at += cadence;
+    assert_eq!(
+        journal.append(&Entry::RatePrepared { prepared: altered }),
+        Err(JournalError::Conflict)
+    );
+    let rival = prepared_rate(&owner, 7, 3_200_000, fees, NOW + cadence)?;
+    assert_eq!(
+        journal.append(&Entry::RatePrepared { prepared: rival }),
+        Err(JournalError::Conflict)
+    );
+    let mut torn = first.clone();
+    torn.raw.pop();
+    assert_eq!(
+        journal.append(&Entry::RatePrepared { prepared: torn }),
+        Err(JournalError::Corrupt)
+    );
+    assert_eq!(std::fs::metadata(&path)?.len(), length);
+
+    journal.append(&broadcast)?;
+    let length = std::fs::metadata(&path)?.len();
+    journal.append(&broadcast)?;
+    assert_eq!(std::fs::metadata(&path)?.len(), length);
+    assert_eq!(
+        journal.state().families[&(lane.owner, 7)].broadcast,
+        std::collections::BTreeSet::from([hash])
+    );
+    assert_eq!(journal.state().unsettled(), vec![first.publication]);
+
+    let overpaid = Settlement {
+        cost_wei: 3_000_000_000 * 35_000 + 1,
+        ..settlement
+    };
+    assert_eq!(
+        journal.append(&Entry::RateSettled {
+            hash,
+            settlement: overpaid
+        }),
+        Err(JournalError::Conflict)
+    );
+    let overused = Settlement {
+        gas_used: RATE_GAS_LIMIT + 1,
+        cost_wei: 0,
+        ..settlement
+    };
+    assert_eq!(
+        journal.append(&Entry::RateSettled {
+            hash,
+            settlement: overused
+        }),
+        Err(JournalError::Conflict)
+    );
+    journal.append(&settle)?;
+    assert_eq!(
+        journal.state().families[&(lane.owner, 7)].finalized,
+        Some((hash, settlement))
+    );
+    assert_eq!(journal.append(&settle), Err(JournalError::Conflict));
+    assert_eq!(
+        journal.append(&Entry::RateSettled {
+            hash,
+            settlement: Settlement {
+                succeeded: false,
+                ..settlement
+            }
+        }),
+        Err(JournalError::Conflict)
+    );
+    let replacement = prepared_rate(
+        &owner,
+        7,
+        3_114_000,
+        Fees {
+            gas_limit: RATE_GAS_LIMIT,
+            ..fees.replacement()?
+        },
+        NOW + cadence,
+    )?;
+    assert_eq!(
+        journal.append(&Entry::RateReplaced {
+            previous: hash,
+            prepared: replacement
+        }),
+        Err(JournalError::Conflict)
+    );
+    let length = std::fs::metadata(&path)?.len();
+    journal.append(&broadcast)?;
+    assert_eq!(std::fs::metadata(&path)?.len(), length);
+    assert!(journal.state().unresolved().is_none());
+    assert!(journal.state().unsettled().is_empty());
+    assert_eq!(journal.state().reserved_wei(), 0);
+    assert_eq!(journal.state().publication_gas(NOW / 86_400), 35_000);
+    assert_eq!(
+        journal.state().publication_wei(NOW / 86_400),
+        1_500_000_000 * 35_000
+    );
+
+    let next = prepared_rate(&owner, 8, 3_200_000, fees, NOW + cadence)?;
+    let next_hash = next.publication.hash;
+    journal.append(&Entry::RatePrepared {
+        prepared: next.clone(),
+    })?;
+    let early = prepared_rate(
+        &owner,
+        8,
+        3_200_000,
+        Fees {
+            gas_limit: RATE_GAS_LIMIT,
+            ..fees.replacement()?
+        },
+        NOW + cadence - 1,
+    )?;
+    assert_eq!(
+        journal.append(&Entry::RateReplaced {
+            previous: next_hash,
+            prepared: early
+        }),
+        Err(JournalError::Conflict)
+    );
+    let bumped = prepared_rate(
+        &owner,
+        8,
+        3_200_000,
+        Fees {
+            gas_limit: RATE_GAS_LIMIT,
+            ..fees.replacement()?
+        },
+        NOW + 2 * cadence,
+    )?;
+    let bumped_hash = bumped.publication.hash;
+    assert_eq!(
+        published_rate(&bumped.raw)?,
+        (PAYMASTER, word(3_200_000), lane.owner)
+    );
+    journal.append(&Entry::RateBroadcast { hash: next_hash })?;
+    journal.append(&Entry::RateReplaced {
+        previous: next_hash,
+        prepared: bumped.clone(),
+    })?;
+    let next_settlement = Settlement {
+        block_number: 17,
+        ..settlement
+    };
+    journal.append(&Entry::RateSettled {
+        hash: next_hash,
+        settlement: next_settlement,
+    })?;
+    assert_eq!(
+        journal.append(&Entry::RateBroadcast { hash: bumped_hash }),
+        Err(JournalError::Conflict)
+    );
+    assert_eq!(
+        journal.append(&Entry::RateSettled {
+            hash: bumped_hash,
+            settlement: next_settlement
+        }),
+        Err(JournalError::Conflict)
+    );
+
+    let written = [
+        prepare.clone(),
+        broadcast.clone(),
+        settle.clone(),
+        Entry::RatePrepared {
+            prepared: next.clone(),
+        },
+        Entry::RateBroadcast { hash: next_hash },
+        Entry::RateReplaced {
+            previous: next_hash,
+            prepared: bumped.clone(),
+        },
+        Entry::RateSettled {
+            hash: next_hash,
+            settlement: next_settlement,
+        },
+    ];
+    let mut expected = Vec::new();
+    for entry in &written {
+        expected.extend(serde_json::to_vec(entry)?);
+        expected.push(b'\n');
+    }
+    let bytes = std::fs::read(&path)?;
+    assert_eq!(bytes, expected);
+    let lines = String::from_utf8(bytes.clone())?;
+    let kinds: Vec<&str> = lines
+        .lines()
+        .map(|line| &line[..line.find(',').unwrap_or(line.len())])
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            r#"{"kind":"rate_prepared""#,
+            r#"{"kind":"rate_broadcast""#,
+            r#"{"kind":"rate_settled""#,
+            r#"{"kind":"rate_prepared""#,
+            r#"{"kind":"rate_broadcast""#,
+            r#"{"kind":"rate_replaced""#,
+            r#"{"kind":"rate_settled""#,
+        ]
+    );
+    let entries: Vec<Entry> = lines
+        .lines()
+        .map(serde_json::from_str)
+        .collect::<Result<_, _>>()?;
+    assert_eq!(entries, written);
+    let Entry::RatePrepared { prepared } = &entries[0] else {
+        return Err("first record is not a prepared publication".into());
+    };
+    assert_eq!(prepared.raw, first.raw);
+    assert_eq!(keccak(&prepared.raw), hash);
+    assert!(!lines.contains(&hex(&lane.key)[2..]));
+    assert_eq!(Journal::open(&path).err(), Some(JournalError::Locked));
+
+    let state = journal.state().clone();
+    drop(journal);
+    let mut reopened = Journal::open(&path)?;
+    assert_eq!(reopened.state(), &state);
+    assert_eq!(
+        reopened.state().families[&(lane.owner, 7)].members[0].raw,
+        first.raw
+    );
+    assert_eq!(
+        reopened.state().families[&(lane.owner, 8)].members,
+        vec![next.clone(), bumped.clone()]
+    );
+    reopened.append(&prepare)?;
+    reopened.append(&broadcast)?;
+    assert_eq!(reopened.append(&settle), Err(JournalError::Conflict));
+    assert_eq!(
+        reopened.append(&Entry::RatePrepared {
+            prepared: prepared_rate(&owner, 8, 3_114_000, fees, NOW + 2 * cadence)?
+        }),
+        Err(JournalError::Conflict)
+    );
+    assert_eq!(std::fs::read(&path)?, expected);
+    drop(reopened);
+
+    let mut truncated = expected.clone();
+    truncated.pop();
+    std::fs::write(&path, &truncated)?;
+    assert_eq!(Journal::open(&path).err(), Some(JournalError::Corrupt));
+    let mut reordered = Vec::new();
+    for entry in [&written[1], &written[0]] {
+        reordered.extend(serde_json::to_vec(entry)?);
+        reordered.push(b'\n');
+    }
+    std::fs::write(&path, &reordered)?;
+    assert_eq!(Journal::open(&path).err(), Some(JournalError::Conflict));
     Ok(())
 }
