@@ -17,9 +17,20 @@ defmodule BlockScoutWeb.Schemas.API.V2.PaxeerX.UnifiedAccount do
     properties: %{
       identities: Identities,
       balances: %Schema{type: :array, items: Balance, nullable: false},
-      activity: %Schema{type: :array, items: ActivityItem, nullable: false}
+      activity: %Schema{type: :array, items: ActivityItem, nullable: false},
+      next_page_params: %Schema{
+        type: :object,
+        nullable: true,
+        properties: %{cursor: %Schema{type: :string}},
+        required: [:cursor],
+        additionalProperties: false
+      },
+      page_cursor: %Schema{type: :string},
+      first_page_cursor: %Schema{type: :string},
+      page_number: %Schema{type: :integer, minimum: 1},
+      activity_total: %Schema{type: :integer, minimum: 0, nullable: true}
     },
-    required: [:identities, :balances, :activity],
+    required: [:identities, :balances, :activity, :next_page_params, :page_cursor, :first_page_cursor, :page_number, :activity_total],
     nullable: false,
     additionalProperties: false
   })

@@ -9,15 +9,25 @@ import { screen } from 'vitest/lib';
 import ActivityList from './ActivityList';
 import { render } from './testWrapper';
 
+const pagination = {
+  page: paxeerXMock.unifiedAccount.page_number,
+  total: paxeerXMock.unifiedAccount.activity_total,
+  hasNextPage: Boolean(paxeerXMock.unifiedAccount.next_page_params),
+  canGoBackwards: false,
+  onNextPageClick: () => window.history.forward(),
+  onPrevPageClick: () => window.history.back(),
+  resetPage: () => window.history.go(0),
+};
+
 describe('ActivityList', () => {
   it('shows an empty message when there is no activity', () => {
-    render(<ActivityList items={ [] }/>);
+    render(<ActivityList { ...pagination } items={ [] } total={ 0 }/>);
 
     expect(screen.getByText('There is no Paxeer X activity for this account yet.')).toBeTruthy();
   });
 
   it('renders one row per activity entry', () => {
-    const { container } = render(<ActivityList items={ paxeerXMock.unifiedAccount.activity }/>);
+    const { container } = render(<ActivityList { ...pagination } items={ paxeerXMock.unifiedAccount.activity }/>);
 
     expect(container.querySelectorAll('[data-activity]')).toHaveLength(3);
 
@@ -30,13 +40,13 @@ describe('ActivityList', () => {
   it('humanizes a kind outside the known vocabulary', () => {
     const item = { ...paxeerXMock.unifiedAccount.activity[0], kind: 'replay_receipt' };
 
-    render(<ActivityList items={ [ item ] }/>);
+    render(<ActivityList { ...pagination } items={ [ item ] } total={ 1 }/>);
 
     expect(screen.getByText('Replay receipt')).toBeTruthy();
   });
 
   it('puts every row on the status ladder', () => {
-    const { container } = render(<ActivityList items={ paxeerXMock.unifiedAccount.activity }/>);
+    const { container } = render(<ActivityList { ...pagination } items={ paxeerXMock.unifiedAccount.activity }/>);
 
     expect(container.querySelectorAll('[data-rung]')).toHaveLength(3);
     expect(container.querySelector('[data-rung="final"]')).toBeTruthy();
@@ -45,7 +55,7 @@ describe('ActivityList', () => {
   });
 
   it('scales amounts by the asset decimals and marks the chain and kernel sides', () => {
-    render(<ActivityList items={ paxeerXMock.unifiedAccount.activity }/>);
+    render(<ActivityList { ...pagination } items={ paxeerXMock.unifiedAccount.activity }/>);
 
     expect(screen.getByText('1.5 HPX')).toBeTruthy();
     expect(screen.getByText('2.5 USDX')).toBeTruthy();
@@ -54,12 +64,12 @@ describe('ActivityList', () => {
   });
 
   it('shows a custody amount unscaled and labelled by its kernel asset id', () => {
-    render(<ActivityList items={ paxeerXMock.unifiedAccount.activity }/>);
+    render(<ActivityList { ...pagination } items={ paxeerXMock.unifiedAccount.activity }/>);
 
     expect(screen.getByText(`1,200 ${ paxeerXMock.custodyAsset.denom }`)).toBeTruthy();
   });
   it('heads the scan table card with the entry count and its note', () => {
-    const { container } = render(<ActivityList items={ paxeerXMock.unifiedAccount.activity }/>);
+    const { container } = render(<ActivityList { ...pagination } items={ paxeerXMock.unifiedAccount.activity }/>);
 
     const card = container.querySelector('[data-scan-table-card]');
 
@@ -68,7 +78,7 @@ describe('ActivityList', () => {
   });
 
   it('names the action of every row on a method chip', () => {
-    const { container } = render(<ActivityList items={ paxeerXMock.unifiedAccount.activity }/>);
+    const { container } = render(<ActivityList { ...pagination } items={ paxeerXMock.unifiedAccount.activity }/>);
 
     const methods = Array.from(container.querySelectorAll('[data-activity] [data-scan-method]'))
       .map((chip) => chip.getAttribute('data-scan-method'));

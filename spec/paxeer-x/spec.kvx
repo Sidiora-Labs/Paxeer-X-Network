@@ -22851,7 +22851,9 @@ settlement_source_policy = "Use the canonical client, proof and Paxeer verifier 
 
 [task.23.1]
 title = "Navigate the complete server-paginated unified account history"
-status = "in_progress"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "unverified"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]

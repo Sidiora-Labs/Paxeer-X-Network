@@ -5,6 +5,7 @@ export const GENERAL_API_PAXEER_X_RESOURCES = {
   paxeer_x_unified_account: {
     path: '/api/v2/addresses/:hash/unified',
     pathParams: [ 'hash' as const ],
+    filterFields: [ 'cursor' ],
   },
   paxeer_x_capabilities: {
     path: '/api/v2/paxeer-x/capabilities',

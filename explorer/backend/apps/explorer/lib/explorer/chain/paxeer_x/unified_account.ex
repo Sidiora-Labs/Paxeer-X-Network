@@ -56,6 +56,7 @@ defmodule Explorer.Chain.PaxeerX.UnifiedAccount do
           kind: String.t(),
           hash: String.t(),
           block_number: non_neg_integer(),
+          block_hash: Hash.Full.t(),
           ordinal: non_neg_integer(),
           timestamp: DateTime.t() | nil,
           asset: asset_ref() | nil,
@@ -145,7 +146,13 @@ defmodule Explorer.Chain.PaxeerX.UnifiedAccount do
   appears in. `limit` items are returned at most, so a caller asking for one more than the page
   size can tell whether a next page exists.
   """
-  @spec activity(Hash.Address.t(), String.t() | nil, {integer(), integer()} | nil, pos_integer(), keyword()) :: [
+  @spec activity(
+          Hash.Address.t(),
+          String.t() | nil,
+          {integer(), integer()} | {integer(), integer(), String.t()} | nil,
+          pos_integer(),
+          keyword()
+        ) :: [
           activity_item()
         ]
   def activity(%Hash{} = address_hash, kernel_account, paging_key, limit, options \\ []) when is_integer(limit) do
@@ -154,7 +161,7 @@ defmodule Explorer.Chain.PaxeerX.UnifiedAccount do
 
     transactions = transaction_activity(address_hash, paging_key, limit, options)
     token_transfers = token_transfer_activity(address_hash, paging_key, limit, options)
-    events = event_activity(repo, address_hash, kernel_account, paging_key, limit)
+    events = event_activity(repo, address_hash, kernel_account, paging_key, limit, options)
 
     (transactions ++ token_transfers ++ events)
     |> Enum.sort_by(&{&1.block_number, &1.ordinal, &1.kind}, :desc)
@@ -344,12 +351,15 @@ defmodule Explorer.Chain.PaxeerX.UnifiedAccount do
       [transaction],
       transaction.from_address_hash == ^address_hash or transaction.to_address_hash == ^address_hash
     )
-    |> where([transaction], not is_nil(transaction.block_number))
-    |> page_by_index(paging_key)
+    |> join(:inner, [transaction], block in assoc(transaction, :block), as: :block)
+    |> where([transaction, block: block], block.consensus == true and not is_nil(transaction.index))
+    |> activity_snapshot(options)
+    |> page_activity(paging_key, :index, "transaction")
     |> order_by([transaction], desc: transaction.block_number, desc: transaction.index)
     |> limit(^limit)
     |> select([transaction], %{
       block_number: transaction.block_number,
+      block_hash: transaction.block_hash,
       ordinal: transaction.index,
       timestamp: transaction.block_timestamp,
       hash: transaction.hash,
@@ -375,11 +385,13 @@ defmodule Explorer.Chain.PaxeerX.UnifiedAccount do
     |> join(:inner, [token_transfer], block in assoc(token_transfer, :block), as: :block)
     |> join(:left, [token_transfer], token in assoc(token_transfer, :token), as: :token)
     |> where([block: block], block.consensus == true)
-    |> page_by_log_index(paging_key)
+    |> activity_snapshot(options)
+    |> page_activity(paging_key, :log_index, "token_transfer")
     |> order_by([token_transfer], desc: token_transfer.block_number, desc: token_transfer.log_index)
     |> limit(^limit)
     |> select([token_transfer, block: block, token: token], %{
       block_number: token_transfer.block_number,
+      block_hash: token_transfer.block_hash,
       ordinal: token_transfer.log_index,
       timestamp: block.timestamp,
       hash: token_transfer.transaction_hash,
@@ -405,7 +417,7 @@ defmodule Explorer.Chain.PaxeerX.UnifiedAccount do
     end)
   end
 
-  defp event_activity(repo, address_hash, kernel_account, paging_key, limit) do
+  defp event_activity(repo, address_hash, kernel_account, paging_key, limit, options) do
     condition =
       case kernel_account_hash(kernel_account) do
         nil -> dynamic([event], event.address_hash == ^address_hash)
@@ -415,12 +427,14 @@ defmodule Explorer.Chain.PaxeerX.UnifiedAccount do
     query =
       CustodyEvent.only_consensus_query()
       |> where(^condition)
-      |> page_by_log_index(paging_key)
+      |> activity_snapshot(options)
+      |> page_activity(paging_key, :log_index, :event)
       |> order_by([event], desc: event.block_number, desc: event.log_index)
       |> limit(^limit)
       |> select([event, block: block], %{
         kind: event.kind,
         block_number: event.block_number,
+        block_hash: event.block_hash,
         ordinal: event.log_index,
         timestamp: block.timestamp,
         hash: event.transaction_hash,
@@ -437,6 +451,7 @@ defmodule Explorer.Chain.PaxeerX.UnifiedAccount do
         kind: to_string(item.kind),
         side: :kernel,
         block_number: item.block_number,
+        block_hash: item.block_hash,
         ordinal: item.ordinal,
         timestamp: item.timestamp,
         hash: to_string(item.hash),
@@ -471,23 +486,38 @@ defmodule Explorer.Chain.PaxeerX.UnifiedAccount do
   defp decimals(%Decimal{} = value), do: Decimal.to_integer(value)
   defp decimals(value) when is_integer(value), do: value
 
-  defp page_by_index(query, nil), do: query
+  defp activity_snapshot(query, options) do
+    case Keyword.get(options, :activity_snapshot_at) do
+      nil -> query
+      timestamp -> where(query, [item], item.inserted_at <= ^timestamp)
+    end
+  end
 
-  defp page_by_index(query, {block_number, index}) do
+  defp page_activity(query, nil, _ordinal_field, _kind), do: query
+
+  defp page_activity(query, {block_number, ordinal}, ordinal_field, _kind) do
     where(
       query,
       [item],
-      item.block_number < ^block_number or (item.block_number == ^block_number and item.index < ^index)
+      item.block_number < ^block_number or
+        (item.block_number == ^block_number and field(item, ^ordinal_field) < ^ordinal)
     )
   end
 
-  defp page_by_log_index(query, nil), do: query
+  defp page_activity(query, {block_number, ordinal, kind}, ordinal_field, source_kind) do
+    kind_before =
+      if source_kind == :event do
+        dynamic([item], fragment("?::text COLLATE \"C\"", item.kind) < ^kind)
+      else
+        dynamic(^source_kind < ^kind)
+      end
 
-  defp page_by_log_index(query, {block_number, log_index}) do
     where(
       query,
       [item],
-      item.block_number < ^block_number or (item.block_number == ^block_number and item.log_index < ^log_index)
+      item.block_number < ^block_number or
+        (item.block_number == ^block_number and field(item, ^ordinal_field) < ^ordinal) or
+        (item.block_number == ^block_number and field(item, ^ordinal_field) == ^ordinal and ^kind_before)
     )
   end
 

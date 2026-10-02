@@ -1151,10 +1151,217 @@ def history_readiness():
         relay.close()
 
 
+def unified_pagination_required(name):
+    value = os.environ.get(name)
+    if not value:
+        raise RuntimeError(f"missing real gate prerequisite: {name}")
+    return value
+
+
+def unified_pagination_local_url(value):
+    import urllib.parse
+
+    parsed = urllib.parse.urlsplit(value)
+    if parsed.scheme not in ("http", "https", "postgres", "postgresql") or parsed.hostname not in ("127.0.0.1", "localhost", "::1"):
+        raise RuntimeError("gate endpoints must be disposable loopback services")
+    return parsed
+
+
+def unified_pagination():
+    import secrets
+    import urllib.parse
+
+    pagination_root = Path(__file__).resolve().parents[3]
+    backend = unified_pagination_required("PAXEER_X_GATE_BACKEND_URL").rstrip("/")
+    frontend = unified_pagination_required("PAXEER_X_GATE_FRONTEND_URL").rstrip("/")
+    unified_pagination_local_url(backend)
+    unified_pagination_local_url(frontend)
+    db = unified_pagination_local_url(unified_pagination_required("PAXEER_X_GATE_DATABASE_URL"))
+    database = db.path.lstrip("/")
+    if not database.startswith("paxeer_x_gate_23_1"):
+        raise RuntimeError("refusing any database outside the task's disposable namespace")
+    for executable in ("psql", "node", "mix"):
+        if not shutil.which(executable):
+            raise RuntimeError(f"missing pinned gate dependency: {executable}")
+    secret = unified_pagination_required("PAXEER_X_GATE_SECRET_KEY_BASE")
+    pg_env = {**os.environ, "PGHOST": db.hostname, "PGPORT": str(db.port or 5432),
+              "PGDATABASE": database, "PGUSER": urllib.parse.unquote(db.username or "postgres"),
+              "PGPASSWORD": urllib.parse.unquote(db.password or "")}
+
+    def sql(statement):
+        result = subprocess.run(["psql", "-X", "-qAt", "-v", "ON_ERROR_STOP=1"], input=statement,
+                                text=True, capture_output=True, env=pg_env, timeout=30)
+        if result.returncode:
+            raise RuntimeError("real fixture SQL failed: " + result.stderr[-1500:])
+        return result.stdout.strip()
+
+    def api(address, params=None, expected_status=200):
+        url = f"{backend}/api/v2/addresses/{address}/unified"
+        if params:
+            url += "?" + urllib.parse.urlencode(params)
+        try:
+            with urllib.request.urlopen(url, timeout=30) as response:
+                status, payload = response.status, response.read()
+        except urllib.error.HTTPError as error:
+            status, payload = error.code, error.read()
+        assert status == expected_status, f"API status {status}; expected {expected_status}"
+        return json.loads(payload)
+
+    account, other, contract = ["0x" + secrets.token_hex(20) for _ in range(3)]
+    block_hashes = [secrets.token_hex(32) for _ in range(122)]
+    tx_hashes = [secrets.token_hex(32) for _ in range(122)]
+    base = int(sql("SELECT COALESCE(MAX(number),0)+1000 FROM blocks;"))
+    bytea = lambda value: "decode('" + value.removeprefix("0x") + "','hex')"
+    for address in (account, other, contract):
+        sql(f"INSERT INTO addresses(hash,inserted_at,updated_at) VALUES ({bytea(address)},now(),now());")
+    sql(f"INSERT INTO tokens(contract_address_hash,type,symbol,decimals,inserted_at,updated_at) VALUES ({bytea(contract)},'ERC-20','PAGE',18,now(),now());")
+
+    def insert_transaction(n, consensus=True):
+        block_hash, tx_hash = block_hashes[n-1], tx_hashes[n-1]
+        sql(f"""BEGIN;
+        INSERT INTO blocks(hash,number,consensus,parent_hash,miner_hash,nonce,size,gas_limit,gas_used,timestamp,inserted_at,updated_at)
+        VALUES ({bytea(block_hash)},{base+n},{str(consensus).lower()},{bytea(secrets.token_hex(32))},{bytea(other)},decode('0000000000000000','hex'),1,30000000,21000,now(),now(),now());
+        INSERT INTO transactions(hash,block_hash,block_number,block_consensus,block_timestamp,"index",from_address_hash,to_address_hash,gas,gas_price,gas_used,cumulative_gas_used,input,nonce,r,s,v,value,status,inserted_at,updated_at)
+        VALUES ({bytea(tx_hash)},{bytea(block_hash)},{base+n},{str(consensus).lower()},now(),0,{bytea(account)},{bytea(other)},21000,1,21000,21000,decode('','hex'),{n},1,1,27,1,1,now(),now());
+        COMMIT;""")
+
+    for n in range(1,121):
+        insert_transaction(n)
+    tie = 71
+    sql(f"""INSERT INTO token_transfers(transaction_hash,block_hash,block_number,block_consensus,log_index,from_address_hash,to_address_hash,token_contract_address_hash,token_type,amount,inserted_at,updated_at)
+    VALUES ({bytea(tx_hashes[tie-1])},{bytea(block_hashes[tie-1])},{base+tie},true,0,{bytea(account)},{bytea(other)},{bytea(contract)},'ERC-20',1,now(),now());
+    INSERT INTO lx_custody_events(transaction_hash,block_hash,block_number,block_consensus,log_index,kind,direction,address_hash,amount,inserted_at,updated_at)
+    VALUES ({bytea(tx_hashes[tie-1])},{bytea(block_hashes[tie-1])},{base+tie},true,0,'custody_deposit','deposit',{bytea(account)},1,now(),now());""")
+    expected = [(base+n,0,"transaction","0x"+tx_hashes[n-1]) for n in range(1,121)]
+    expected += [(base+tie,0,kind,"0x"+tx_hashes[tie-1]) for kind in ("token_transfer","custody_deposit")]
+    expected.sort(reverse=True)
+    key = lambda row: (row["block_number"],row["ordinal"],row["kind"],row["hash"].lower())
+    first = api(account)
+    assert len(first["activity"]) == 50 and first["next_page_params"]
+    assert [key(row) for row in first["activity"]] == expected[:50]
+    assert first["page_number"] == 1 and first["activity_total"] is None
+    assert api(other)["activity_total"] is None
+    no_history = api("0x" + secrets.token_hex(20))
+    assert no_history["activity_total"] == 0 and no_history["next_page_params"] is None
+    insert_transaction(121)
+    insert_transaction(122, consensus=False)
+    pages, rows, current = [], [], first
+    for page_number in range(1,10):
+        assert current["page_number"] == page_number
+        page_rows = [key(row) for row in current["activity"]]
+        pages.append(page_rows)
+        rows.extend(page_rows)
+        if current["next_page_params"] is None:
+            break
+        current = api(account,current["next_page_params"])
+    assert rows == expected, "history skipped, duplicated, reordered or admitted a concurrent row"
+    assert len(rows) == len(set(rows)) == 122
+    assert [key(row) for row in api(account,{"cursor":first["page_cursor"]})["activity"]] == expected[:50]
+    latest = api(account)
+    assert latest["activity"][0]["hash"].lower() == "0x"+tx_hashes[120]
+    assert all(row["hash"].lower() != "0x"+tx_hashes[121] for row in latest["activity"])
+    for address, params in [(account,{"cursor":"malformed"}), (account,{"cursor":""}),
+                            (account,{"cursor[]":"malformed"}),
+                            (account,{**first["next_page_params"],"index":"0"}),
+                            (other,first["next_page_params"]),
+                            (account,{"block_number":str(base+tie),"index":"0"})]:
+        assert api(address,params,422)["message"] == "Invalid activity cursor"
+
+    signer = r'''
+    Application.ensure_all_started(:crypto)
+    key = System.fetch_env!("PAXEER_X_GATE_SECRET_KEY_BASE")
+    {:ok, state} = Phoenix.Token.verify(key, "paxeer-x-unified-account-v1", System.fetch_env!("PAXEER_X_GATE_CURSOR"), max_age: 3600)
+    token = Phoenix.Token.sign(key, "paxeer-x-unified-account-v1", state, signed_at: System.system_time(:second) - 3601)
+    IO.puts("EXPIRED_CURSOR=" <> token)
+    '''
+    signed = subprocess.run(["mix","run","--no-compile","--no-deps-check","--no-start","-e",signer],
+                            cwd=pagination_root/"explorer/backend", env={**os.environ,"PAXEER_X_GATE_SECRET_KEY_BASE":secret,
+                            "PAXEER_X_GATE_CURSOR":first["page_cursor"]},capture_output=True,text=True,timeout=30)
+    if signed.returncode:
+        raise RuntimeError("real Phoenix cursor expiry setup failed")
+    expired = next((line.split("=",1)[1] for line in signed.stdout.splitlines() if line.startswith("EXPIRED_CURSOR=")),None)
+    assert expired and api(account,{"cursor":expired},422)["reason"] == "expired"
+
+    browser = r'''
+    const { chromium } = require('@playwright/test');
+    const assert = require('node:assert/strict');
+    const fs = require('node:fs');
+    const input = JSON.parse(fs.readFileSync(0, 'utf8'));
+    (async () => {
+      const browser = await chromium.launch({ headless: true });
+      try {
+        const page = await browser.newPage();
+        const seen = [];
+        page.on('request', request => {
+          if (request.url().includes('/unified?')) seen.push(request.url());
+        });
+        const url = input.frontend + '/paxeer-x/account/' + input.account + '?tab=activity&cursor=' + encodeURIComponent(input.cursor);
+        await page.goto(url);
+        const hashes = () => page.locator('[data-label="paxeer-x-activity"] [data-activity]').evaluateAll(rows => rows.map(row => row.getAttribute('data-activity').toLowerCase()));
+        const waitPage = async (number, expected) => {
+          await page.locator('[data-control="page"]').filter({hasText: `Page ${number}`}).waitFor();
+          await page.waitForFunction(expected => {
+            const rows = [...document.querySelectorAll('[data-label="paxeer-x-activity"] [data-activity]')].map(row => row.getAttribute('data-activity').toLowerCase());
+            return JSON.stringify(rows) === JSON.stringify(expected);
+          }, expected);
+          assert.deepEqual(await hashes(), expected);
+        };
+        const expected = input.pages.map(rows => rows.map(row => row[3]));
+        await waitPage(1, expected[0]);
+        await page.getByText('50 activity entries on this page', {exact:true}).waitFor();
+        await page.getByRole('button', {name:'Next page', exact:true}).click();
+        await waitPage(2, expected[1]);
+        const pageTwo = page.url();
+        assert.notEqual(new URL(pageTwo).searchParams.get('cursor'), input.cursor);
+        await page.reload();
+        await waitPage(2, expected[1]);
+        assert.equal(page.url(), pageTwo);
+        await page.goBack();
+        await waitPage(1, expected[0]);
+        await page.goForward();
+        await waitPage(2, expected[1]);
+        await page.getByRole('button', {name:'Next page', exact:true}).click();
+        await waitPage(3, expected[2]);
+        assert.equal(await page.getByRole('button', {name:'Next page', exact:true}).isDisabled(), true);
+        assert(seen.some(url => new URL(url).searchParams.get('cursor') === new URL(pageTwo).searchParams.get('cursor')));
+        await page.goto(input.frontend + '/paxeer-x/account/' + input.account + '?tab=activity&cursor=malformed');
+        await page.getByRole('alert').filter({hasText:'Unable to load this history page'}).waitFor();
+        assert.equal(await page.locator('[data-label="paxeer-x-activity"]').count(), 0);
+        await page.goto(input.frontend + '/paxeer-x/account/' + input.account + '?tab=activity&cursor=');
+        await page.getByRole('alert').filter({hasText:'Unable to load this history page'}).waitFor();
+        assert.equal(new URL(page.url()).searchParams.get('cursor'), '');
+        assert.equal(await page.locator('[data-label="paxeer-x-activity"]').count(), 0);
+        await page.getByRole('button',{name:'Start a new history view',exact:true}).click();
+        await page.locator('[data-label="paxeer-x-activity"]').waitFor();
+        console.log(JSON.stringify({browser:'passed',pages:expected.length,reload:true,back_forward:true,refusal:true}));
+      } finally { await browser.close(); }
+    })().catch(error => { console.error(error.message); process.exit(1); });
+    '''
+    result = subprocess.run(["node","-e",browser],cwd=pagination_root/"explorer/frontend",text=True,
+                            input=json.dumps({"frontend":frontend,"account":account,"cursor":first["page_cursor"],"pages":pages}),timeout=180)
+    assert result.returncode == 0, "real browser pagination gate failed"
+    sql(f"UPDATE blocks SET consensus=false WHERE hash={bytea(block_hashes[119])};")
+    assert api(account,{"cursor":first["page_cursor"]},422)["message"] == "Invalid activity cursor"
+    checks = ["real_database", "real_api", "full_key_ties", "concurrent_insert", "consensus_filter", "reorg_refusal",
+              "malformed_cursor", "expired_cursor", "wrong_account", "real_browser", "reload", "back_forward"]
+    print(json.dumps({"case":"unified-pagination","status":"passed","rows":122,"pages":len(pages),
+                      "checks":checks,"skips":0}))
+    return len(checks)
+
+
+
 def main():
     parser = argparse.ArgumentParser(description="Paxeer X explorer data-boundary gates")
     parser.add_argument("--case", required=True, choices=CASES)
     args = parser.parse_args()
+    if args.case == "unified-pagination":
+        try:
+            tests = unified_pagination()
+        except (AssertionError, RuntimeError, OSError, subprocess.SubprocessError, urllib.error.URLError) as error:
+            print(json.dumps({"case":"unified-pagination","status":"failed","reason":str(error),"skips":0}), file=sys.stderr)
+            return 1
+        print(f"PAXEER_X_GATE tests={tests} skipped=0", flush=True)
+        return 0
     if args.case == "history-readiness":
         try:
             tests = history_readiness()

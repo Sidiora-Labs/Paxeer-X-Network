@@ -4,6 +4,11 @@ const PLACEHOLDER_HASH = '0x0000000000000000000000000000000000000000000000000000
 
 // Shape-only data that drives the skeletons while the unified account request is in flight.
 export const UNIFIED_ACCOUNT_PLACEHOLDER: PaxeerXUnifiedAccount = {
+  next_page_params: null,
+  page_cursor: '',
+  first_page_cursor: '',
+  page_number: 1,
+  activity_total: null,
   identities: {
     evm: '0x0000000000000000000000000000000000000000',
     pax: 'pax1000000000000000000000000000000000000000',
@@ -28,6 +33,7 @@ export const UNIFIED_ACCOUNT_PLACEHOLDER: PaxeerXUnifiedAccount = {
     kind: 'custody_deposit',
     hash: PLACEHOLDER_HASH,
     block_number: index,
+    ordinal: index,
     status: 'instant' as const,
     side: 'kernel' as const,
     timestamp: null,

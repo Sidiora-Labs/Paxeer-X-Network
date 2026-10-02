@@ -1,5 +1,4 @@
 import { Box, chakra, Flex, Grid, Text } from '@chakra-ui/react';
-import { pickBy } from 'es-toolkit';
 import { useRouter } from 'next/router';
 import React from 'react';
 
@@ -10,6 +9,7 @@ import { route } from 'nextjs/routes';
 import config from 'configs/app';
 import useApiQuery from 'lib/api/useApiQuery';
 import getQueryParamString from 'lib/router/getQueryParamString';
+import { Button } from 'toolkit/chakra/button';
 import { Link } from 'toolkit/chakra/link';
 import { Skeleton } from 'toolkit/chakra/skeleton';
 import ActivityList from 'ui/paxeerX/account/ActivityList';
@@ -19,7 +19,6 @@ import { UNIFIED_ACCOUNT_PLACEHOLDER } from 'ui/paxeerX/account/placeholderData'
 import { listIdentities } from 'ui/paxeerX/account/utils';
 import TextAd from 'ui/shared/ad/TextAd';
 import CopyToClipboard from 'ui/shared/CopyToClipboard';
-import DataFetchAlert from 'ui/shared/DataFetchAlert';
 import * as DetailedInfo from 'ui/shared/DetailedInfo/DetailedInfo';
 import AddressEntity from 'ui/shared/entities/address/AddressEntity';
 import AddressIdenticon from 'ui/shared/entities/address/AddressIdenticon';
@@ -82,6 +81,11 @@ const PaxeerXAccountPageContent = () => {
   const router = useRouter();
   const hash = getQueryParamString(router.query.hash);
   const tab = getQueryParamString(router.query.tab);
+  const cursor = getQueryParamString(router.query.cursor);
+  const malformedCursor = router.query.cursor !== undefined &&
+    (typeof router.query.cursor !== 'string' || cursor.length === 0 || cursor.length > 4096);
+  const [ previousCursor, setPreviousCursor ] = React.useState<string | null>(null);
+  const previousKey = React.useCallback((value: string) => `paxeer-x-history:${ hash.toLowerCase() }:${ value }`, [ hash ]);
 
   const capabilitiesQuery = useApiQuery('general:paxeer_x_capabilities', {
     queryOptions: {
@@ -91,23 +95,57 @@ const PaxeerXAccountPageContent = () => {
 
   const accountQuery = useApiQuery('general:paxeer_x_unified_account', {
     pathParams: { hash },
+    queryParams: cursor ? { cursor } : undefined,
     queryOptions: {
-      enabled: feature.isEnabled && Boolean(hash),
+      enabled: feature.isEnabled && router.isReady && Boolean(hash) && !malformedCursor,
+      retry: false,
       placeholderData: UNIFIED_ACCOUNT_PLACEHOLDER,
     },
   });
 
-  const handleTabChange = React.useCallback((value: string) => {
-    const queryForPathname = pickBy(router.query, (_, key) => router.pathname.includes(`[${ String(key) }]`));
-
-    router.push(
-      { pathname: router.pathname, query: { ...queryForPathname, tab: value } },
-      undefined,
-      { shallow: true },
-    );
+  const navigate = React.useCallback((nextCursor: string | undefined, replace = false) => {
+    const query: typeof router.query = { ...router.query, tab: 'activity' };
+    if (nextCursor) {
+      query.cursor = nextCursor;
+    } else {
+      delete query.cursor;
+    }
+    return router[replace ? 'replace' : 'push']({ pathname: router.pathname, query }, undefined, { shallow: true });
   }, [ router ]);
 
-  const isLoading = accountQuery.isPlaceholderData;
+  React.useEffect(() => {
+    const pageCursor = accountQuery.data?.page_cursor;
+    if (!cursor && !malformedCursor && pageCursor && !accountQuery.isPlaceholderData) {
+      router.replace({ pathname: router.pathname, query: { ...router.query, cursor: pageCursor } }, undefined, { shallow: true });
+    }
+  }, [ accountQuery.data?.page_cursor, accountQuery.isPlaceholderData, cursor, malformedCursor, router ]);
+
+  React.useEffect(() => {
+    try {
+      setPreviousCursor(cursor ? sessionStorage.getItem(previousKey(cursor)) : null);
+    } catch {
+      setPreviousCursor(null);
+    }
+  }, [ cursor, previousKey ]);
+
+  const handleNextPage = React.useCallback(() => {
+    const next = accountQuery.data?.next_page_params?.cursor;
+    if (!next || accountQuery.isFetching) {
+      return;
+    }
+    try {
+      sessionStorage.setItem(previousKey(next), cursor || accountQuery.data?.page_cursor || '');
+    } catch {
+      // Browser back/forward remains available when session storage is unavailable.
+    }
+    navigate(next);
+  }, [ accountQuery.data, accountQuery.isFetching, cursor, navigate, previousKey ]);
+
+  const handleTabChange = React.useCallback((value: string) => {
+    router.push({ pathname: router.pathname, query: { ...router.query, tab: value } }, undefined, { shallow: true });
+  }, [ router ]);
+
+  const isLoading = !malformedCursor && (accountQuery.isPlaceholderData || accountQuery.isPending || accountQuery.isFetching);
   const capabilities = capabilitiesQuery.data;
   const data = accountQuery.data;
 
@@ -130,7 +168,7 @@ const PaxeerXAccountPageContent = () => {
         <ScanKeyValue label="Assets held" hint="Number of assets the account holds across the chain, the custody vault and the kernel" isLoading={ isLoading }>
           <Skeleton loading={ isLoading } data-field="assets-count">{ data.balances.length }</Skeleton>
         </ScanKeyValue>
-        <ScanKeyValue label="Activity entries" hint="Number of chain-side and kernel-side entries in the account feed" isLoading={ isLoading }>
+        <ScanKeyValue label="Activity entries on this page" hint="Page-local count, not the complete account history" isLoading={ isLoading }>
           <Skeleton loading={ isLoading } data-field="activity-count">{ data.activity.length }</Skeleton>
         </ScanKeyValue>
         <ScanKeyValue label="Identities" hint="Number of spellings of this account the node answers for" isLoading={ isLoading }>
@@ -146,14 +184,14 @@ const PaxeerXAccountPageContent = () => {
             <Text color="text.secondary" data-field="chain-address">—</Text>
           ) }
         </ScanKeyValue>
-        <ScanKeyValue label="Latest activity" hint="Time of the most recent entry in the account feed" isLoading={ isLoading }>
+        <ScanKeyValue label="Newest activity on this page" hint="Time of the first entry on this page" isLoading={ isLoading }>
           { latestActivity ? (
             <TimeWithTooltip timestamp={ latestActivity.timestamp } isLoading={ isLoading }/>
           ) : (
             <Text color="text.secondary" data-field="latest-activity">—</Text>
           ) }
         </ScanKeyValue>
-        <ScanKeyValue label="Latest block" hint="Block of the most recent entry in the account feed" isLoading={ isLoading }>
+        <ScanKeyValue label="Newest block on this page" hint="Block of the first entry on this page" isLoading={ isLoading }>
           { latestActivity ? (
             <BlockEntity number={ latestActivity.block_number } isLoading={ isLoading } truncation="none" noIcon/>
           ) : (
@@ -203,8 +241,11 @@ const PaxeerXAccountPageContent = () => {
     {
       id: 'activity',
       title: 'Activity',
-      count: data.activity.length,
-      component: <ActivityList items={ data.activity } isLoading={ isLoading }/>,
+      component: <ActivityList items={ data.activity } isLoading={ isLoading }
+        page={ data.page_number } total={ data.activity_total } hasNextPage={ Boolean(data.next_page_params) }
+        canGoBackwards={ Boolean(previousCursor) } onNextPageClick={ handleNextPage }
+        onPrevPageClick={ () => previousCursor && navigate(previousCursor) }
+        resetPage={ () => navigate(data.first_page_cursor) }/>,
     },
   ] : [];
 
@@ -235,8 +276,15 @@ const PaxeerXAccountPageContent = () => {
         afterTitle={ titleAfter }
         isLoading={ isLoading }
       />
-      { accountQuery.isError || !data ? <DataFetchAlert/> : (
+      { malformedCursor || accountQuery.isError || !data ? (
+        <Box role="alert">
+          <Text>Unable to load this history page. Its cursor may be invalid, expired, or refer to a changed account or chain snapshot.</Text>
+          <Button onClick={ () => accountQuery.refetch() } disabled={ malformedCursor || accountQuery.isFetching }>Retry this page</Button>
+          <Button onClick={ () => navigate(undefined) }>Start a new history view</Button>
+        </Box>
+      ) : (
         <>
+          { isLoading && <Box role="status" aria-live="polite">Loading this history page…</Box> }
           { summary }
           <Flex flexDir="column" rowGap={{ base: 3, lg: 4 }}>
             <ScanSectionTabs

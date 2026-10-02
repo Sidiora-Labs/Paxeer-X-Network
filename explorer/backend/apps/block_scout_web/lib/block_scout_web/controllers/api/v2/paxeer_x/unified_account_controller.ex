@@ -6,15 +6,19 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.UnifiedAccountController do
   use BlockScoutWeb, :controller
   use OpenApiSpex.ControllerSpecs
 
-  import BlockScoutWeb.Chain, only: [paging_options: 1, split_list_by_page: 1]
+  import BlockScoutWeb.Chain, only: [split_list_by_page: 1]
 
   alias BlockScoutWeb.AccessHelper
-  alias Explorer.{Chain, PagingOptions}
+  alias Explorer.Chain
+  alias Explorer.Chain.{Block, Hash}
   alias Explorer.Chain.PaxeerX.UnifiedAccount
 
   action_fallback(BlockScoutWeb.API.V2.FallbackController)
 
   @api_true [api?: true]
+  @cursor_salt "paxeer-x-unified-account-v1"
+  @cursor_max_age 3_600
+  @page_size 50
 
   tags(["paxeer-x"])
 
@@ -24,10 +28,17 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.UnifiedAccountController do
       "Retrieves the one-account view of an EVM address: the account's four identities, one asset list " <>
         "where each asset carries a single total beside its chain, custody and kernel parts, and one " <>
         "activity feed merging the chain's transactions and token transfers with the LayerX kernel " <>
-        "events. The feed is keyed by the block number and the index of the last item it returned.",
+        "events. Items are ordered by block number, ordinal and kind descending. " <>
+        "Follow the account-bound cursor returned in next_page_params. Cursors expire after one hour.",
     parameters:
-      [address_hash_param() | base_params()] ++
-        define_paging_params(["block_number", "index", "items_count"]),
+      [
+        address_hash_param(),
+        cursor: [
+          in: :query,
+          schema: %OpenApiSpex.Schema{type: :string, minLength: 1, maxLength: 4096},
+          description: "Account-bound activity continuation"
+        ]
+      ] ++ base_params(),
     responses: [
       ok: {"The one-account view of the address.", "application/json", Schemas.PaxeerX.UnifiedAccount},
       forbidden: ForbiddenResponse.response(),
@@ -48,21 +59,119 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.UnifiedAccountController do
       identities = UnifiedAccount.identities(address_hash, @api_true)
       balances = UnifiedAccount.balances(address_hash, identities.kernel_account, @api_true)
 
-      [paging_options: %PagingOptions{page_size: page_size, key: key}] = paging_options(params)
+      case validated_cursor_state(conn, params, address_hash, identities.kernel_account) do
+        {:ok, state} ->
+          options = Keyword.put(@api_true, :activity_snapshot_at, DateTime.from_unix!(state.snapshot, :microsecond))
 
-      {activity, _next_page} =
-        address_hash
-        |> UnifiedAccount.activity(identities.kernel_account, activity_paging_key(key), page_size, @api_true)
-        |> split_list_by_page()
+          {activity, next_page} =
+            address_hash
+            |> UnifiedAccount.activity(identities.kernel_account, state.after, @page_size + 1, options)
+            |> split_list_by_page()
 
-      conn
-      |> put_status(200)
-      |> render(:unified, %{identities: identities, balances: balances, activity: activity})
+          state = initial_state(state, activity)
+          page_cursor = sign_cursor(conn, state)
+          first_cursor = sign_cursor(conn, %{state | after: state.first, page: 1})
+
+          next_params =
+            if next_page == [] do
+              nil
+            else
+              last = List.last(activity)
+              %{cursor: sign_cursor(conn, %{state | after: item_key(last), page: state.page + 1})}
+            end
+
+          conn
+          |> put_status(200)
+          |> render(:unified, %{
+            identities: identities,
+            balances: balances,
+            activity: activity,
+            next_page_params: next_params,
+            page_cursor: page_cursor,
+            first_page_cursor: first_cursor,
+            page_number: state.page,
+            activity_total: if(state.page == 1 and is_nil(next_params), do: length(activity), else: nil)
+          })
+
+        {:error, reason} ->
+          conn |> put_status(422) |> json(%{message: "Invalid activity cursor", reason: reason})
+      end
     end
   end
 
-  defp activity_paging_key({block_number, index}) when is_integer(block_number) and is_integer(index),
-    do: {block_number, index}
+  defp cursor_state(conn, %{"cursor" => cursor}, address_hash, kernel_account)
+       when is_binary(cursor) and byte_size(cursor) <= 4096 do
+    with {:ok,
+          %{
+            version: 1,
+            account: account,
+            kernel: kernel,
+            after: after_key,
+            first: first,
+            anchor: anchor,
+            page: page,
+            snapshot: snapshot
+          } = state} <-
+           Phoenix.Token.verify(conn, @cursor_salt, cursor, max_age: @cursor_max_age),
+         true <- account == to_string(address_hash) and kernel == kernel_account,
+         true <- valid_key?(after_key) and valid_key?(first) and is_integer(page) and page > 0,
+         true <- is_integer(snapshot) and snapshot <= System.system_time(:microsecond),
+         true <- System.system_time(:microsecond) - snapshot < @cursor_max_age * 1_000_000,
+         true <- anchor_valid?(anchor) do
+      {:ok, state}
+    else
+      {:error, :expired} -> {:error, "expired"}
+      _ -> {:error, "malformed, wrong account, changed binding or reorganized snapshot"}
+    end
+  end
 
-  defp activity_paging_key(_key), do: nil
+  defp cursor_state(_conn, %{"cursor" => _}, _address, _kernel), do: {:error, "malformed"}
+
+  defp cursor_state(_conn, _params, address_hash, kernel_account) do
+    {:ok,
+     %{
+       version: 1,
+       account: to_string(address_hash),
+       kernel: kernel_account,
+       after: nil,
+       first: nil,
+       anchor: nil,
+       page: 1,
+       snapshot: System.system_time(:microsecond)
+     }}
+  end
+
+  defp validated_cursor_state(conn, params, address_hash, kernel_account) do
+    if Enum.any?(["block_number", "index", "items_count"], &Map.has_key?(params, &1)) do
+      {:error, "use the returned cursor instead of a partial activity key"}
+    else
+      cursor_state(conn, params, address_hash, kernel_account)
+    end
+  end
+
+  defp initial_state(%{first: nil} = state, [item | _]) do
+    first = {item.block_number, item.ordinal + 1, ""}
+    %{state | after: first, first: first, anchor: to_string(item.block_hash)}
+  end
+
+  defp initial_state(state, _activity), do: state
+
+  defp item_key(item), do: {item.block_number, item.ordinal, item.kind}
+  defp valid_key?(nil), do: true
+
+  defp valid_key?({block, ordinal, kind}),
+    do: is_integer(block) and block >= 0 and is_integer(ordinal) and ordinal >= 0 and is_binary(kind)
+
+  defp valid_key?(_), do: false
+  defp anchor_valid?(nil), do: true
+
+  defp anchor_valid?(value) do
+    with {:ok, hash} <- Hash.Full.cast(value) do
+      not is_nil(Chain.select_repo(@api_true).get_by(Block, hash: hash, consensus: true))
+    else
+      _ -> false
+    end
+  end
+
+  defp sign_cursor(conn, state), do: Phoenix.Token.sign(conn, @cursor_salt, state)
 end

@@ -189,7 +189,7 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.UnifiedAccountControllerTest do
       assert item["counterparty"] == nil
     end
 
-    test "pages the activity feed on the block number and the index of the last item", %{conn: conn} do
+    test "pages the activity feed using the account-bound server continuation", %{conn: conn} do
       address = insert(:address)
 
       for number <- 1..51 do
@@ -205,14 +205,82 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.UnifiedAccountControllerTest do
 
       second_page =
         json_response(
-          get(conn, "/api/v2/addresses/#{Address.checksum(address.hash)}/unified", %{
-            "block_number" => "2",
-            "index" => "0"
-          }),
+          get(conn, "/api/v2/addresses/#{Address.checksum(address.hash)}/unified", response["next_page_params"]),
           200
         )
 
       assert Enum.map(second_page["activity"], & &1["block_number"]) == [1]
+      assert second_page["next_page_params"] == nil
+      assert second_page["page_number"] == 2
+
+      assert %{"message" => "Invalid activity cursor"} =
+               json_response(
+                 get(conn, "/api/v2/addresses/#{Address.checksum(address.hash)}/unified", %{
+                   "block_number" => "2",
+                   "index" => "0"
+                 }),
+                 422
+               )
+
+      other = insert(:address)
+
+      assert %{"message" => "Invalid activity cursor"} =
+               json_response(
+                 get(conn, "/api/v2/addresses/#{Address.checksum(other.hash)}/unified", response["next_page_params"]),
+                 422
+               )
+    end
+
+    test "keeps cross-kind ties across pages and excludes concurrent inserts", %{conn: conn} do
+      address = insert(:address)
+      path = "/api/v2/addresses/#{Address.checksum(address.hash)}/unified"
+
+      for number <- 11..59 do
+        block = insert(:block, number: number)
+        :transaction |> insert(from_address: address) |> with_block(block)
+      end
+
+      block = insert(:block, number: 10)
+      transaction = :transaction |> insert(from_address: address) |> with_block(block)
+
+      insert(:token_transfer,
+        transaction: transaction,
+        block: block,
+        block_number: 10,
+        from_address: address,
+        log_index: 0
+      )
+
+      insert_custody_event(block, transaction,
+        log_index: 0,
+        kind: :custody_deposit,
+        direction: :deposit,
+        address_hash: to_string(address.hash),
+        account: nil
+      )
+
+      first = json_response(get(conn, path), 200)
+      assert length(first["activity"]) == 50
+      assert List.last(first["activity"])["kind"] == "transaction"
+      newer = insert(:block, number: 60)
+      :transaction |> insert(from_address: address) |> with_block(newer)
+      second = json_response(get(conn, path, first["next_page_params"]), 200)
+      assert Enum.map(second["activity"], & &1["kind"]) == ["token_transfer", "custody_deposit"]
+      assert second["next_page_params"] == nil
+      assert json_response(get(conn, path, %{"cursor" => first["page_cursor"]}), 200)["activity"] == first["activity"]
+
+      {:ok, state} = Phoenix.Token.verify(@endpoint, "paxeer-x-unified-account-v1", first["page_cursor"], max_age: 3600)
+
+      expired =
+        Phoenix.Token.sign(@endpoint, "paxeer-x-unified-account-v1", state,
+          signed_at: System.system_time(:second) - 3601
+        )
+
+      assert %{"message" => "Invalid activity cursor", "reason" => "expired"} =
+               json_response(get(conn, path, %{"cursor" => expired}), 422)
+
+      assert %{"message" => "Invalid activity cursor"} =
+               json_response(get(conn, path, %{"cursor" => "malformed"}), 422)
     end
   end
 

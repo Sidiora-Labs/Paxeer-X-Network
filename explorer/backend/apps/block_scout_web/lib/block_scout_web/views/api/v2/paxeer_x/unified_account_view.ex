@@ -10,7 +10,7 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.UnifiedAccountView do
 
   use BlockScoutWeb, :view
 
-  def render("unified.json", %{identities: identities, balances: balances, activity: activity}) do
+  def render("unified.json", %{identities: identities, balances: balances, activity: activity} = assigns) do
     %{
       "identities" => %{
         "evm" => identities.evm,
@@ -19,7 +19,12 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.UnifiedAccountView do
         "kernel_account" => identities.kernel_account
       },
       "balances" => Enum.map(balances, &prepare_balance/1),
-      "activity" => Enum.map(activity, &prepare_activity_item/1)
+      "activity" => Enum.map(activity, &prepare_activity_item/1),
+      "next_page_params" => Map.fetch!(assigns, :next_page_params),
+      "page_cursor" => Map.fetch!(assigns, :page_cursor),
+      "first_page_cursor" => Map.fetch!(assigns, :first_page_cursor),
+      "page_number" => Map.fetch!(assigns, :page_number),
+      "activity_total" => Map.fetch!(assigns, :activity_total)
     }
   end
 
@@ -51,6 +56,7 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.UnifiedAccountView do
       "kind" => item.kind,
       "hash" => item.hash,
       "block_number" => item.block_number,
+      "ordinal" => item.ordinal,
       "status" => to_string(item.status),
       "side" => to_string(item.side),
       "timestamp" => item.timestamp,

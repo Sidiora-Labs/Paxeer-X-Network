@@ -42,6 +42,7 @@ export interface PaxeerXActivityItem {
   kind: string;
   hash: string;
   block_number: number;
+  ordinal: number;
   status: PaxeerXStatus;
   side: PaxeerXActivitySide;
   timestamp: string | null;
@@ -54,6 +55,11 @@ export interface PaxeerXUnifiedAccount {
   identities: PaxeerXIdentities;
   balances: Array<PaxeerXBalance>;
   activity: Array<PaxeerXActivityItem>;
+  next_page_params: { cursor: string } | null;
+  page_cursor: string;
+  first_page_cursor: string;
+  page_number: number;
+  activity_total: number | null;
 }
 
 // Precompile probe result: which unified surfaces the connected node actually answers for.

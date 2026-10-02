@@ -28,6 +28,7 @@ defmodule BlockScoutWeb.Schemas.API.V2.PaxeerX.UnifiedAccount.ActivityItem do
       },
       hash: General.FullHash,
       block_number: %Schema{type: :integer, nullable: false, description: "Block the item was recorded in"},
+      ordinal: %Schema{type: :integer, minimum: 0, description: "Transaction index or log index within the block"},
       status: SettlementRung,
       side: %Schema{
         type: :string,
@@ -44,7 +45,7 @@ defmodule BlockScoutWeb.Schemas.API.V2.PaxeerX.UnifiedAccount.ActivityItem do
         description: "The other party: an EVM address hash on the chain side, a kernel account on the kernel side"
       }
     },
-    required: [:kind, :hash, :block_number, :status, :side, :timestamp, :asset, :amount, :counterparty],
+    required: [:kind, :hash, :block_number, :ordinal, :status, :side, :timestamp, :asset, :amount, :counterparty],
     nullable: false,
     additionalProperties: false
   })
