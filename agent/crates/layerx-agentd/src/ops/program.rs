@@ -1,10 +1,11 @@
 //! First-class program discovery, interface, simulation, and call operations.
 
+use layerx_client::evidence::{EvidenceError, ProgramStateSelector};
 use layerx_client::submit::{Submission, SubmitError};
 use layerx_crypto::ed25519;
 use layerx_programs::{
-    ProgramId, ProgramInterface, ProgramLifecycle, VerifiedInterfaceRead, VerifiedProgramHead,
-    VerifiedProtocolHead,
+    ProgramBundleError, ProgramId, ProgramInterface, ProgramLifecycle, ProtocolEvidenceError,
+    VerifiedProgramBundle,
 };
 use layerx_programs_runtime::terminal::DecodedTerminal;
 use layerx_programs_runtime::{BudgetMeterRefusal, ProgramFailure};
@@ -14,6 +15,7 @@ use layerx_proof::program::{
 use layerx_types::intent::{CapabilityRequest, ProgramCall, ProgramCallOutcome};
 use layerx_types::payload::{ModuleId, ModuleRegistry};
 use layerx_types::program_call::NativeProgramCall;
+use layerx_types::result::{KnownResult, ResultCode};
 use layerx_wire::activity::decode_signed;
 use layerx_wire::hash::activity_id;
 use sha2::{Digest as _, Sha256};
@@ -30,6 +32,14 @@ pub enum ProgramOperationError {
     Stale,
     UnverifiedReceipt,
     Submit(SubmitError),
+    /// The pinned authenticated chain head advanced before the read completed.
+    HeadAdvanced,
+    /// The kind-5 answer refused the program: record or interface not present.
+    ProgramStateAbsent,
+    /// The node does not serve authenticated kind-5 Programs state.
+    Unavailable,
+    /// Any other exact core refusal of the kind-5 request.
+    CoreRefusal { class: u8, result: ResultCode },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -458,23 +468,37 @@ pub struct ReceiptVerifiedProgramSimulator<T> {
     expected_code_hash: [u8; 32],
     simulation_public_key: [u8; 32],
     boundary_id: [u8; 32],
+    receipt_digest: [u8; 32],
     observed_sequence: u64,
     observed_at: u64,
     trusted_previous_state_root: [u8; 32],
 }
 
 impl<T: ProgramSimulationTransport> ReceiptVerifiedProgramSimulator<T> {
-    #[must_use]
+    /// Binds the simulation boundary to one verified program bundle; the
+    /// trusted previous state root is the chain head's resulting root.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a program head whose receipt digest, state root or freshness
+    /// differs from the bound chain head.
     pub fn new(
         transport: T,
         registry: ModuleRegistry,
-        protocol_head: &VerifiedProtocolHead,
-        program_head: &VerifiedProgramHead,
-    ) -> Self {
-        let simulation_public_key = protocol_head.sequencer_public_key();
+        bound: &VerifiedProgramBundle,
+    ) -> Result<Self, ProgramOperationError> {
+        let program_head = bound.program_head();
+        let chain = bound.chain_head();
+        if program_head.receipt_digest() != chain.receipt_digest()
+            || program_head.state_root() != chain.state_root()
+            || program_head.freshness() != chain.freshness()
+        {
+            return Err(ProgramOperationError::UnverifiedReceipt);
+        }
+        let simulation_public_key = chain.sequencer_public_key();
         let mut boundary = b"LayerX/emulator/simulation-boundary/v1\0".to_vec();
         boundary.extend_from_slice(&simulation_public_key);
-        Self {
+        Ok(Self {
             transport,
             registry,
             expected_abi_version: program_head.abi_version(),
@@ -483,10 +507,11 @@ impl<T: ProgramSimulationTransport> ReceiptVerifiedProgramSimulator<T> {
             expected_code_hash: program_head.code_hash(),
             simulation_public_key,
             boundary_id: Sha256::digest(boundary).into(),
-            observed_sequence: program_head.freshness().observed_sequence,
-            observed_at: program_head.freshness().observed_at,
-            trusted_previous_state_root: protocol_head.state_root(),
-        }
+            receipt_digest: chain.receipt_digest(),
+            observed_sequence: chain.freshness().observed_sequence,
+            observed_at: chain.freshness().observed_at,
+            trusted_previous_state_root: chain.state_root(),
+        })
     }
 }
 
@@ -643,6 +668,62 @@ impl ProgramOperations {
         Self { reader }
     }
 
+    /// Reads the one authenticated chain head, requests the kind-5 Programs
+    /// state pinned to exactly that head and binds the answer to it.
+    ///
+    /// # Errors
+    ///
+    /// Returns `HeadAdvanced` when the pinned head is no longer current,
+    /// `ProgramStateAbsent` when the program record or its interface is not
+    /// present, `Stale` outside the freshness bound, `UnknownProgram` for a
+    /// different program, and `UnverifiedReceipt` for every other refusal.
+    pub fn current_program(
+        &mut self,
+        client: &mut layerx_client::Client,
+        program: ProgramId,
+        now: u64,
+        correlation_id: u64,
+    ) -> Result<VerifiedProgramBundle, ProgramOperationError> {
+        let chain = self.reader.read_chain_head(now).map_err(|error| {
+            if error.is_stale() {
+                ProgramOperationError::Stale
+            } else {
+                ProgramOperationError::UnverifiedReceipt
+            }
+        })?;
+        let selector = ProgramStateSelector::new(
+            program.bytes(),
+            chain.global_sequence(),
+            chain.receipt_digest(),
+            chain.state_root(),
+        )
+        .map_err(|_| ProgramOperationError::InvalidRequest)?;
+        let response = client
+            .program_state_bundle(selector, correlation_id)
+            .map_err(|error| match error {
+                EvidenceError::CoreRefusal { class, result } => match result.known() {
+                    Some(KnownResult::ProjectionStale) => ProgramOperationError::HeadAdvanced,
+                    Some(KnownResult::UnknownField) => ProgramOperationError::ProgramStateAbsent,
+                    _ => ProgramOperationError::CoreRefusal { class, result },
+                },
+                EvidenceError::Unavailable => ProgramOperationError::Unavailable,
+                _ => ProgramOperationError::UnverifiedReceipt,
+            })?;
+        if response.selector() != selector {
+            return Err(ProgramOperationError::UnverifiedReceipt);
+        }
+        let signer = client.handshake().node().authorised_sequencer_key;
+        self.reader
+            .verify_program_bundle(response.canonical_payload(), &chain, program, &signer, now)
+            .map_err(|error| match error {
+                ProgramBundleError::Evidence(ProtocolEvidenceError::Stale) => {
+                    ProgramOperationError::Stale
+                }
+                ProgramBundleError::ProgramMismatch => ProgramOperationError::UnknownProgram,
+                _ => ProgramOperationError::UnverifiedReceipt,
+            })
+    }
+
     ///
     /// # Errors
     ///
@@ -651,14 +732,19 @@ impl ProgramOperations {
         &mut self,
         program: ProgramId,
         now: u64,
-        head: &VerifiedProgramHead,
+        bound: &VerifiedProgramBundle,
     ) -> Result<ProgramDiscovery, ProgramOperationError> {
+        let head = bound.program_head();
+        let chain = bound.chain_head();
         let state = self
             .reader
             .read_protocol_state(program, now)
             .map_err(|_| ProgramOperationError::UnknownProgram)?;
         let balances = state.balances();
         let freshness = balances.freshness();
+        if freshness.observed_sequence > chain.global_sequence() {
+            return Err(ProgramOperationError::HeadAdvanced);
+        }
         let valid_through = freshness
             .observed_at
             .checked_add(self.reader.staleness_limit())
@@ -674,6 +760,9 @@ impl ProgramOperations {
             || head.receipt_digest() != balances.receipt_digest()
             || head.state_root() != balances.state_root()
             || head.freshness() != freshness
+            || chain.receipt_digest() != balances.receipt_digest()
+            || chain.state_root() != balances.state_root()
+            || chain.freshness() != freshness
             || now > head.valid_until_ms()
         {
             return Err(ProgramOperationError::UnverifiedReceipt);
@@ -700,10 +789,10 @@ impl ProgramOperations {
         &mut self,
         program: ProgramId,
         now: u64,
-        verified: VerifiedInterfaceRead,
-        head: &VerifiedProgramHead,
+        bound: &VerifiedProgramBundle,
     ) -> Result<ProgramInterfaceRead, ProgramOperationError> {
-        let discovery = self.discover(program, now, head)?;
+        let discovery = self.discover(program, now, bound)?;
+        let verified = bound.interface();
         if verified.program != program
             || verified.receipt_digest != discovery.receipt_digest
             || verified.state_root != discovery.state_root
@@ -715,7 +804,7 @@ impl ProgramOperations {
         Ok(ProgramInterfaceRead {
             discovery,
             version: verified.version,
-            interface: verified.interface,
+            interface: verified.interface.clone(),
         })
     }
 
@@ -729,12 +818,13 @@ impl ProgramOperations {
         call: &ProgramCall,
         signed_activity: &[u8],
         now: u64,
-        head: &VerifiedProgramHead,
+        bound: &VerifiedProgramBundle,
     ) -> Result<ProgramExecution, ProgramOperationError> {
         let program = ProgramId::new(call.callee().bytes())
             .map_err(|_| ProgramOperationError::InvalidRequest)?;
-        let discovery = self.discover(program, now, head)?;
+        let discovery = self.discover(program, now, bound)?;
         if boundary.trusted_previous_state_root != discovery.state_root
+            || boundary.receipt_digest != discovery.receipt_digest
             || boundary.expected_abi_version != discovery.abi_version
             || boundary.expected_program != discovery.program
             || boundary.expected_version != discovery.version
@@ -763,7 +853,7 @@ impl ProgramOperations {
         call: &ProgramCall,
         submission: ProgramSubmission<'_>,
         now: u64,
-        head: &VerifiedProgramHead,
+        bound: &VerifiedProgramBundle,
     ) -> Result<Submission, ProgramOperationError> {
         let ProgramSubmission {
             signer_public_key,
@@ -773,7 +863,7 @@ impl ProgramOperations {
         } = submission;
         let program = ProgramId::new(call.callee().bytes())
             .map_err(|_| ProgramOperationError::InvalidRequest)?;
-        self.discover(program, now, head)?;
+        self.discover(program, now, bound)?;
         validate_call_activity(registry, call, signed_activity)?;
         client
             .submit_signed(
@@ -798,12 +888,13 @@ impl ProgramOperations {
         fee_limit: u128,
         signed_activity: &[u8],
         now: u64,
-        head: &VerifiedProgramHead,
+        bound: &VerifiedProgramBundle,
     ) -> Result<ProgramExecution, ProgramOperationError> {
         let program = ProgramId::new(call.program_id.bytes())
             .map_err(|_| ProgramOperationError::InvalidRequest)?;
-        let discovery = self.discover(program, now, head)?;
+        let discovery = self.discover(program, now, bound)?;
         if boundary.trusted_previous_state_root != discovery.state_root
+            || boundary.receipt_digest != discovery.receipt_digest
             || boundary.expected_abi_version != discovery.abi_version
             || boundary.expected_program != discovery.program
             || boundary.expected_version != discovery.version
@@ -835,7 +926,7 @@ impl ProgramOperations {
         call_with_fee: (NativeProgramCall<'_>, u128),
         submission: ProgramSubmission<'_>,
         now: u64,
-        head: &VerifiedProgramHead,
+        bound: &VerifiedProgramBundle,
     ) -> Result<Submission, ProgramOperationError> {
         let ProgramSubmission {
             signer_public_key,
@@ -846,7 +937,7 @@ impl ProgramOperations {
         let (call, fee_limit) = call_with_fee;
         let program = ProgramId::new(call.program_id.bytes())
             .map_err(|_| ProgramOperationError::InvalidRequest)?;
-        self.discover(program, now, head)?;
+        self.discover(program, now, bound)?;
         validate_native_call_activity(registry, call, fee_limit, signed_activity)?;
         client
             .submit_signed(

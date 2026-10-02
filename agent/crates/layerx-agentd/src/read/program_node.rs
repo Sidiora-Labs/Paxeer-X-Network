@@ -3,8 +3,10 @@
 use std::time::Duration;
 
 use layerx_programs::{
-    hex, AccountStateHead, ProgramId, ProtocolDeploymentVerifier, ProtocolHeadMaintenanceProof,
-    ProtocolHeadProof, Registry, VerifiedProtocolHead,
+    hex, AccountStateHead, ProgramBundleError, ProgramHeadKind, ProgramId, ProgramStateBundle,
+    ProtocolDeploymentVerifier, ProtocolEvidenceError, ProtocolHeadMaintenanceProof,
+    ProtocolHeadProof, Registry, VerifiedChainHead, VerifiedMaintenanceHead,
+    VerifiedProgramBundle,
 };
 use layerx_programs_protocol_adapter::{ProtocolAdapterError, ProtocolProgramStateRead};
 use layerx_proof::merkle::Proof;
@@ -21,6 +23,32 @@ struct BatchEvidence {
     receipt_proof: Proof,
     batch_identity: Value,
     maintenance: Option<ProtocolHeadMaintenanceProof>,
+}
+
+/// Head authority retained from the two-source head verification.
+enum HeadAuthority {
+    Ordinary {
+        receipt: Vec<u8>,
+        evidence: BatchEvidence,
+    },
+    Maintenance(VerifiedMaintenanceHead),
+}
+
+/// Refusal of the authenticated chain-head read.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ChainHeadError {
+    /// Transport, node/authority disagreement, or non-canonical head document.
+    View(ProtocolAdapterError),
+    /// Protected-trust refusal of the head as kind-5 coordinates.
+    Evidence(ProtocolEvidenceError),
+}
+
+impl ChainHeadError {
+    /// True only for the protected verifier's freshness/superseded-head refusal.
+    #[must_use]
+    pub const fn is_stale(&self) -> bool {
+        matches!(self, Self::Evidence(ProtocolEvidenceError::Stale))
+    }
 }
 
 /// Production agent reader connected to layerxd and an independent layerxd
@@ -130,7 +158,7 @@ impl LayerxdProgramBalanceReader {
             &self.authorization,
             "/v1/protocol/account-state/head",
         )?;
-        let (head, _) = self.verify_head(&head_document, now)?;
+        let (head, _, _) = self.verify_head(&head_document, now)?;
         let path = format!(
             "/v1/programs/{}/account-state?at={}",
             hex::encode(&program.bytes()),
@@ -173,29 +201,72 @@ impl LayerxdProgramBalanceReader {
         program_balances(&state.into_balances(), self.staleness_limit)
     }
 
-    /// Reads the current protocol receipt head through the same independent
-    /// receipt-authority cross-check and deployment verifier as the balances path.
+    /// Reads the current chain head through the same independent
+    /// receipt-authority cross-check as the balances path and returns it as the
+    /// opaque authenticated kind-5 coordinate head.
     ///
     /// # Errors
     ///
-    /// Refuses a zero clock and a maintenance-receipt head, which the verifier
-    /// does not establish as a typed protocol head, as a non-canonical view, and
-    /// surfaces transport, decode, and verification refusals unchanged.
-    pub fn read_protocol_head(
-        &self,
-        now: u64,
-    ) -> Result<VerifiedProtocolHead, ProtocolAdapterError> {
+    /// Refuses a zero clock, transport, node/authority and coordinate
+    /// disagreement as a non-canonical view, and surfaces protected-trust
+    /// refusals of the head (including a superseded ordinary head) unchanged.
+    pub fn read_chain_head(&self, now: u64) -> Result<VerifiedChainHead, ChainHeadError> {
         if now == 0 {
-            return Err(ProtocolAdapterError::NonCanonicalView);
+            return Err(ChainHeadError::View(ProtocolAdapterError::NonCanonicalView));
         }
-        let head_document = self.get(
-            &self.endpoint,
-            &self.authorization,
-            "/v1/protocol/account-state/head",
-        )?;
-        self.verify_head(&head_document, now)?
-            .1
-            .ok_or(ProtocolAdapterError::NonCanonicalView)
+        let head_document = self
+            .get(
+                &self.endpoint,
+                &self.authorization,
+                "/v1/protocol/account-state/head",
+            )
+            .map_err(ChainHeadError::View)?;
+        let (head, sequencer_key, authority) = self
+            .verify_head(&head_document, now)
+            .map_err(ChainHeadError::View)?;
+        let chain = match authority {
+            HeadAuthority::Maintenance(maintenance) => VerifiedChainHead::from(maintenance),
+            HeadAuthority::Ordinary { receipt, evidence } => self
+                .verifier
+                .verify_current_chain_head(
+                    ProgramHeadKind::Ordinary,
+                    &receipt,
+                    &evidence.receipt_proof,
+                    &evidence.header,
+                    &evidence.signature,
+                    now,
+                )
+                .map_err(ChainHeadError::Evidence)?,
+        };
+        if chain.receipt_digest() != head.receipt_digest
+            || chain.state_root() != head.state_root
+            || chain.freshness() != head.freshness
+            || chain.global_sequence() != head.freshness.observed_sequence
+            || chain.sequencer_public_key() != sequencer_key
+        {
+            return Err(ChainHeadError::View(ProtocolAdapterError::NonCanonicalView));
+        }
+        Ok(chain)
+    }
+
+    /// Decodes one kind-5 Programs state answer and binds it to the one
+    /// authenticated chain head under the refreshed protected trust.
+    ///
+    /// # Errors
+    ///
+    /// Refuses non-canonical bytes and every head, signer, program, state,
+    /// lifecycle, freshness and interface refusal of the bundle verifier.
+    pub fn verify_program_bundle(
+        &self,
+        payload: &[u8],
+        chain: &VerifiedChainHead,
+        program: ProgramId,
+        authorised_signer: &[u8; 32],
+        now: u64,
+    ) -> Result<VerifiedProgramBundle, ProgramBundleError> {
+        let bundle = ProgramStateBundle::decode(payload).map_err(ProgramBundleError::Evidence)?;
+        self.verifier
+            .verify_current_program_bundle(&bundle, chain, program, authorised_signer, now)
     }
 
     #[must_use]
@@ -207,7 +278,7 @@ impl LayerxdProgramBalanceReader {
         &self,
         value: &Value,
         now_ms: u64,
-    ) -> Result<(AccountStateHead, Option<VerifiedProtocolHead>), ProtocolAdapterError> {
+    ) -> Result<(AccountStateHead, [u8; 32], HeadAuthority), ProtocolAdapterError> {
         if value["current"].as_bool() != Some(true) {
             return Err(ProtocolAdapterError::NonCanonicalView);
         }
@@ -235,7 +306,7 @@ impl LayerxdProgramBalanceReader {
         if node != independent {
             return Err(ProtocolAdapterError::NonCanonicalView);
         }
-        let (verified, sequencer_key, protocol_head) =
+        let (verified, sequencer_key, maintenance) =
             self.verify_head_claims(&receipt_bytes, &independent, now_ms)?;
         if hex::decode_digest(field(&authority_document, "sequencer_public_key")?)
             .map_err(|_| ProtocolAdapterError::NonCanonicalView)?
@@ -255,7 +326,14 @@ impl LayerxdProgramBalanceReader {
         {
             return Err(ProtocolAdapterError::NonCanonicalView);
         }
-        Ok((verified, protocol_head))
+        let authority = match maintenance {
+            Some(maintenance) => HeadAuthority::Maintenance(maintenance),
+            None => HeadAuthority::Ordinary {
+                receipt: receipt_bytes,
+                evidence: independent,
+            },
+        };
+        Ok((verified, sequencer_key, authority))
     }
 
     fn verify_head_claims(
@@ -263,11 +341,12 @@ impl LayerxdProgramBalanceReader {
         receipt: &[u8],
         evidence: &BatchEvidence,
         now_ms: u64,
-    ) -> Result<(AccountStateHead, [u8; 32], Option<VerifiedProtocolHead>), ProtocolAdapterError> {
+    ) -> Result<(AccountStateHead, [u8; 32], Option<VerifiedMaintenanceHead>), ProtocolAdapterError>
+    {
         if layerx_wire::batch_maintenance::decode_maintenance(receipt).is_ok() {
-            let (head, sequencer_key) = self
+            let maintenance = self
                 .verifier
-                .verify_current_maintenance_head(
+                .verify_current_maintenance_head_typed(
                     receipt,
                     &evidence.receipt_proof,
                     &evidence.header,
@@ -275,7 +354,11 @@ impl LayerxdProgramBalanceReader {
                     now_ms,
                 )
                 .map_err(|_| ProtocolAdapterError::NonCanonicalView)?;
-            return Ok((head, sequencer_key, None));
+            return Ok((
+                maintenance.account_state_head(),
+                maintenance.sequencer_public_key(),
+                Some(maintenance),
+            ));
         }
         let verified = self
             .verifier
@@ -297,7 +380,7 @@ impl LayerxdProgramBalanceReader {
                 freshness: verified.freshness(),
             },
             verified.sequencer_public_key(),
-            Some(verified),
+            None,
         ))
     }
 

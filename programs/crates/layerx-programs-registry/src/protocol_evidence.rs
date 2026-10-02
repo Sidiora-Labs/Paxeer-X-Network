@@ -22,7 +22,10 @@ use layerx_wire::hash::{activity_id, execution_batch_id, payload_hash, receipt_d
 use layerx_wire::receipt::{decode as decode_receipt, decode_batch_header, encode_unsigned};
 
 use crate::account_state::verify_state_membership;
-use crate::{DeploymentRecord, ProgramLifecycle, ReadFreshness, StateProof};
+use crate::{
+    verify_interface_read, DeploymentRecord, InterfaceRefusal, InterfaceStateWitness,
+    ProgramLifecycle, ReadFreshness, StateProof, VerifiedInterfaceRead,
+};
 
 const PROGRAMS_MODULE_ID: u16 = 9;
 const DEPLOY_ORDINAL: u16 = 1;
@@ -36,6 +39,8 @@ const MAX_MODULE_BYTES: usize = 32 * 1024 * 1024;
 const MAX_EVIDENCE_BYTES: usize = 40 * 1024 * 1024;
 const EVIDENCE_DOMAIN: &[u8] = b"LayerX/programs/deployment-proof/v1\0";
 const MAINTAINED_EVIDENCE_DOMAIN: &[u8] = b"LayerX/programs/deployment-proof/v2\0";
+const PROGRAM_STATE_DOMAIN: &[u8] = b"LayerX/programs/state-proof/v1\0";
+const MAX_INTERFACE_VALUE_BYTES: usize = 1_024;
 const TRUST_HISTORY_DOMAIN: &[u8] = b"LayerX/sequencer-trust-history/v1\0";
 const TRUST_ANCHOR_BYTES: usize = 103;
 const MAX_TRUST_ANCHORS: usize = 64;
@@ -394,6 +399,243 @@ impl VerifiedProtocolHead {
         self.sequencer_public_key
     }
 }
+
+/// Head kind carried by a Programs state proof.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProgramHeadKind {
+    /// Final ordinary protocol receipt of a pre-maintenance signed batch.
+    Ordinary,
+    /// Native maintenance receipt that closes a signed batch.
+    Maintenance,
+}
+
+impl ProgramHeadKind {
+    #[must_use]
+    pub const fn wire_byte(self) -> u8 {
+        match self {
+            Self::Ordinary => 0,
+            Self::Maintenance => 1,
+        }
+    }
+
+    #[must_use]
+    pub const fn from_wire_byte(byte: u8) -> Option<Self> {
+        match byte {
+            0 => Some(Self::Ordinary),
+            1 => Some(Self::Maintenance),
+            _ => None,
+        }
+    }
+}
+
+/// Receipt evidence digest tagged with the digest domain that produced it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReceiptEvidenceDigest {
+    /// Digest of the unsigned canonical ordinary protocol receipt.
+    OrdinaryUnsignedReceipt([u8; 32]),
+    /// SHA-256 of the complete canonical maintenance receipt.
+    MaintenanceReceiptSha256([u8; 32]),
+}
+
+impl ReceiptEvidenceDigest {
+    #[must_use]
+    pub const fn bytes(self) -> [u8; 32] {
+        match self {
+            Self::OrdinaryUnsignedReceipt(digest) | Self::MaintenanceReceiptSha256(digest) => {
+                digest
+            }
+        }
+    }
+
+    #[must_use]
+    pub const fn head_kind(self) -> ProgramHeadKind {
+        match self {
+            Self::OrdinaryUnsignedReceipt(_) => ProgramHeadKind::Ordinary,
+            Self::MaintenanceReceiptSha256(_) => ProgramHeadKind::Maintenance,
+        }
+    }
+}
+
+/// Opaque maintenance head established under the protected sequencer trust.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct VerifiedMaintenanceHead {
+    maintenance_receipt_sha256: [u8; 32],
+    batch_header_digest: [u8; 32],
+    state_root: [u8; 32],
+    freshness: ReadFreshness,
+    sequencer_public_key: [u8; 32],
+}
+
+impl VerifiedMaintenanceHead {
+    #[must_use]
+    pub const fn maintenance_receipt_sha256(&self) -> [u8; 32] {
+        self.maintenance_receipt_sha256
+    }
+
+    #[must_use]
+    pub const fn batch_header_digest(&self) -> [u8; 32] {
+        self.batch_header_digest
+    }
+
+    #[must_use]
+    pub const fn state_root(&self) -> [u8; 32] {
+        self.state_root
+    }
+
+    #[must_use]
+    pub const fn freshness(&self) -> ReadFreshness {
+        self.freshness
+    }
+
+    #[must_use]
+    pub const fn sequencer_public_key(&self) -> [u8; 32] {
+        self.sequencer_public_key
+    }
+
+    #[must_use]
+    pub const fn account_state_head(&self) -> crate::AccountStateHead {
+        crate::AccountStateHead {
+            receipt_digest: self.maintenance_receipt_sha256,
+            state_root: self.state_root,
+            freshness: self.freshness,
+        }
+    }
+}
+
+/// Opaque authenticated chain head whose coordinates select one Programs
+/// state proof. An ordinary head is never a protocol-v3 head and is always the
+/// final receipt of its signed batch.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct VerifiedChainHead {
+    evidence_digest: ReceiptEvidenceDigest,
+    batch_header_digest: [u8; 32],
+    state_root: [u8; 32],
+    freshness: ReadFreshness,
+    sequencer_public_key: [u8; 32],
+}
+
+impl VerifiedChainHead {
+    #[must_use]
+    pub const fn head_kind(&self) -> ProgramHeadKind {
+        self.evidence_digest.head_kind()
+    }
+
+    #[must_use]
+    pub const fn receipt_evidence_digest(&self) -> ReceiptEvidenceDigest {
+        self.evidence_digest
+    }
+
+    #[must_use]
+    pub const fn receipt_digest(&self) -> [u8; 32] {
+        self.evidence_digest.bytes()
+    }
+
+    #[must_use]
+    pub const fn batch_header_digest(&self) -> [u8; 32] {
+        self.batch_header_digest
+    }
+
+    #[must_use]
+    pub const fn state_root(&self) -> [u8; 32] {
+        self.state_root
+    }
+
+    #[must_use]
+    pub const fn global_sequence(&self) -> u64 {
+        self.freshness.observed_sequence
+    }
+
+    #[must_use]
+    pub const fn freshness(&self) -> ReadFreshness {
+        self.freshness
+    }
+
+    #[must_use]
+    pub const fn sequencer_public_key(&self) -> [u8; 32] {
+        self.sequencer_public_key
+    }
+}
+
+impl From<VerifiedMaintenanceHead> for VerifiedChainHead {
+    fn from(head: VerifiedMaintenanceHead) -> Self {
+        Self {
+            evidence_digest: ReceiptEvidenceDigest::MaintenanceReceiptSha256(
+                head.maintenance_receipt_sha256,
+            ),
+            batch_header_digest: head.batch_header_digest,
+            state_root: head.state_root,
+            freshness: head.freshness,
+            sequencer_public_key: head.sequencer_public_key,
+        }
+    }
+}
+
+/// Untrusted Programs state proof for one program at one pinned chain head.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProgramStateBundle {
+    pub head_kind: ProgramHeadKind,
+    pub state: ProgramStateProof,
+    pub interface: InterfaceStateWitness,
+}
+
+/// Program, chain head and interface established together by one verifier
+/// call; callers cannot associate them any other way.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VerifiedProgramBundle {
+    program: VerifiedProgramHead,
+    chain: VerifiedChainHead,
+    interface: VerifiedInterfaceRead,
+}
+
+impl VerifiedProgramBundle {
+    #[must_use]
+    pub const fn program_head(&self) -> &VerifiedProgramHead {
+        &self.program
+    }
+
+    #[must_use]
+    pub const fn chain_head(&self) -> &VerifiedChainHead {
+        &self.chain
+    }
+
+    #[must_use]
+    pub const fn interface(&self) -> &VerifiedInterfaceRead {
+        &self.interface
+    }
+}
+
+/// Exact refusal of a Programs state proof bound to a chain head.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProgramBundleError {
+    Evidence(ProtocolEvidenceError),
+    Interface(InterfaceRefusal),
+    HeadKind,
+    ChainHeadMismatch,
+    SignerMismatch,
+    ProgramMismatch,
+}
+
+impl Display for ProgramBundleError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Evidence(error) => Display::fmt(error, formatter),
+            Self::Interface(refusal) => Display::fmt(refusal, formatter),
+            Self::HeadKind => {
+                formatter.write_str("Programs state proof names a different head kind")
+            }
+            Self::ChainHeadMismatch => {
+                formatter.write_str("Programs state proof is not bound to the verified chain head")
+            }
+            Self::SignerMismatch => formatter
+                .write_str("protected sequencer trust and the authenticated signer disagree"),
+            Self::ProgramMismatch => {
+                formatter.write_str("Programs state proof names a different program")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ProgramBundleError {}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct SequencerTrustAnchor {
@@ -902,6 +1144,167 @@ impl ProtocolDeploymentVerifier {
             signature,
             EvidenceMoment::Current(now_ms),
         )
+        .map(|head| (head.account_state_head(), head.sequencer_public_key))
+    }
+
+    /// Verifies a maintenance head under the active signed-header trust anchor
+    /// and returns the opaque typed head.
+    /// # Errors
+    /// Refuses invalid inclusion, maintenance identity, settlement or freshness.
+    pub fn verify_current_maintenance_head_typed(
+        &self,
+        receipt: &[u8],
+        proof: &Proof,
+        header: &[u8],
+        signature: &[u8; 64],
+        now_ms: u64,
+    ) -> Result<VerifiedMaintenanceHead, ProtocolEvidenceError> {
+        self.verify_maintenance_head(
+            receipt,
+            proof,
+            header,
+            signature,
+            EvidenceMoment::Current(now_ms),
+        )
+    }
+
+    /// Verifies a maintenance head under its historical signed-header trust
+    /// anchor and returns the opaque typed head.
+    /// # Errors
+    /// Refuses invalid inclusion, maintenance identity or settlement.
+    pub fn verify_historical_maintenance_head_typed(
+        &self,
+        receipt: &[u8],
+        proof: &Proof,
+        header: &[u8],
+        signature: &[u8; 64],
+    ) -> Result<VerifiedMaintenanceHead, ProtocolEvidenceError> {
+        self.verify_maintenance_head(
+            receipt,
+            proof,
+            header,
+            signature,
+            EvidenceMoment::Historical,
+        )
+    }
+
+    /// Verifies one current chain head usable as Programs state-proof
+    /// coordinates. An ordinary head on a protocol-v3 batch, or one that is not
+    /// the final receipt of its batch, is refused as stale.
+    /// # Errors
+    /// Refuses invalid, stale or non-final heads.
+    pub fn verify_current_chain_head(
+        &self,
+        kind: ProgramHeadKind,
+        receipt: &[u8],
+        receipt_proof: &Proof,
+        header: &[u8],
+        header_signature: &[u8; 64],
+        now_ms: u64,
+    ) -> Result<VerifiedChainHead, ProtocolEvidenceError> {
+        match kind {
+            ProgramHeadKind::Maintenance => self
+                .verify_maintenance_head(
+                    receipt,
+                    receipt_proof,
+                    header,
+                    header_signature,
+                    EvidenceMoment::Current(now_ms),
+                )
+                .map(VerifiedChainHead::from),
+            ProgramHeadKind::Ordinary => {
+                let decoded = decode_batch_header(header)
+                    .map_err(|_| ProtocolEvidenceError::ReceiptInclusion)?;
+                if decoded.protocol_version() == 3 {
+                    return Err(ProtocolEvidenceError::Stale);
+                }
+                let claims = self.verify_receipt(
+                    receipt,
+                    receipt_proof,
+                    header,
+                    header_signature,
+                    EvidenceMoment::Current(now_ms),
+                )?;
+                if claims.freshness.observed_sequence != decoded.last_sequence() {
+                    return Err(ProtocolEvidenceError::Stale);
+                }
+                Ok(VerifiedChainHead {
+                    evidence_digest: ReceiptEvidenceDigest::OrdinaryUnsignedReceipt(
+                        claims.receipt_digest,
+                    ),
+                    batch_header_digest: claims.batch_header_digest,
+                    state_root: claims.state_root,
+                    freshness: claims.freshness,
+                    sequencer_public_key: self.anchors[claims.anchor_index].sequencer_public_key,
+                })
+            }
+        }
+    }
+
+    /// Verifies a decoded Programs state proof against the one independently
+    /// verified chain head and the authenticated current signer, then reads the
+    /// program interface under the resulting program head.
+    /// # Errors
+    /// Refuses head-kind, coordinate, signer, program, state, lifecycle,
+    /// freshness and interface mismatches.
+    pub fn verify_current_program_bundle(
+        &self,
+        bundle: &ProgramStateBundle,
+        chain: &VerifiedChainHead,
+        expected_program: ProgramId,
+        authorised_signer: &[u8; 32],
+        now_ms: u64,
+    ) -> Result<VerifiedProgramBundle, ProgramBundleError> {
+        if bundle.head_kind != chain.head_kind() {
+            return Err(ProgramBundleError::HeadKind);
+        }
+        let state = &bundle.state;
+        let head = self
+            .verify_current_chain_head(
+                bundle.head_kind,
+                &state.receipt,
+                &state.receipt_proof,
+                &state.header,
+                &state.header_signature,
+                now_ms,
+            )
+            .map_err(ProgramBundleError::Evidence)?;
+        if head != *chain {
+            return Err(ProgramBundleError::ChainHeadMismatch);
+        }
+        if head.sequencer_public_key != *authorised_signer {
+            return Err(ProgramBundleError::SignerMismatch);
+        }
+        let (record, lifecycle) = verify_program_state_at(state, head.state_root)
+            .map_err(ProgramBundleError::Evidence)?;
+        if record.program != expected_program {
+            return Err(ProgramBundleError::ProgramMismatch);
+        }
+        let valid_until_ms = head
+            .freshness
+            .observed_at
+            .checked_add(self.staleness_limit_ms)
+            .ok_or(ProgramBundleError::Evidence(ProtocolEvidenceError::Stale))?;
+        let program = VerifiedProgramHead {
+            program: record.program,
+            version: record.version,
+            code_hash: record.code_hash,
+            abi_version: record.abi_version,
+            policy: record.policy,
+            lifecycle,
+            receipt_digest: head.receipt_digest(),
+            state_root: head.state_root,
+            programs_root: state.programs_root,
+            freshness: head.freshness,
+            valid_until_ms,
+        };
+        let interface = verify_interface_read(&program, &bundle.interface)
+            .map_err(ProgramBundleError::Interface)?;
+        Ok(VerifiedProgramBundle {
+            program,
+            chain: head,
+            interface,
+        })
     }
 
     /// Verifies a maintenance head under its historical signed-header trust anchor.
@@ -921,6 +1324,7 @@ impl ProtocolDeploymentVerifier {
             signature,
             EvidenceMoment::Historical,
         )
+        .map(|head| (head.account_state_head(), head.sequencer_public_key))
     }
 
     fn verify_maintenance_head(
@@ -930,11 +1334,12 @@ impl ProtocolDeploymentVerifier {
         header: &[u8],
         signature: &[u8; 64],
         moment: EvidenceMoment,
-    ) -> Result<(crate::AccountStateHead, [u8; 32]), ProtocolEvidenceError> {
+    ) -> Result<VerifiedMaintenanceHead, ProtocolEvidenceError> {
         let anchor = self.anchors[self.select_anchor(header, signature, moment)?];
         let inclusion =
             verify_receipt_inclusion(receipt, proof, header, signature, &anchor.authorization())
                 .map_err(|_| ProtocolEvidenceError::ReceiptInclusion)?;
+        let batch_header_digest = inclusion.header().digest();
         let header = inclusion.header().header();
         let maintenance = layerx_wire::batch_maintenance::decode_maintenance(receipt)
             .map_err(|_| ProtocolEvidenceError::Receipt)?;
@@ -969,17 +1374,16 @@ impl ProtocolDeploymentVerifier {
                 return Err(ProtocolEvidenceError::Stale);
             }
         }
-        Ok((
-            crate::AccountStateHead {
-                receipt_digest: crate::hash::sha256(receipt),
-                state_root: record.resulting_state_root,
-                freshness: ReadFreshness {
-                    observed_sequence: record.global_sequence,
-                    observed_at,
-                },
+        Ok(VerifiedMaintenanceHead {
+            maintenance_receipt_sha256: crate::hash::sha256(receipt),
+            batch_header_digest,
+            state_root: record.resulting_state_root,
+            freshness: ReadFreshness {
+                observed_sequence: record.global_sequence,
+                observed_at,
             },
-            anchor.sequencer_public_key,
-        ))
+            sequencer_public_key: anchor.sequencer_public_key,
+        })
     }
 
     fn verify_protocol_head(
@@ -1102,19 +1506,7 @@ impl ProtocolDeploymentVerifier {
         proof: &ProgramStateProof,
         receipt: &VerifiedReceiptClaims,
     ) -> Result<VerifiedHeadClaims, ProtocolEvidenceError> {
-        if proof.programs_root == [0; 32] {
-            return Err(ProtocolEvidenceError::StateRoot);
-        }
-        verify_state_membership(
-            &PROGRAMS_MODULE_ID.to_be_bytes(),
-            &proof.programs_root,
-            &proof.programs_root_proof,
-            receipt.state_root,
-        )
-        .map_err(|_| ProtocolEvidenceError::StateRoot)?;
-        verify_witness(&proof.program_record, proof.programs_root)?;
-        let record = decode_program_record(&proof.program_record)?;
-        let lifecycle = verify_lifecycle(record.program, &proof.lifecycle, proof.programs_root)?;
+        let (record, lifecycle) = verify_program_state_at(proof, receipt.state_root)?;
         Ok(VerifiedHeadClaims {
             record,
             lifecycle,
@@ -1256,6 +1648,27 @@ impl ProtocolDeploymentVerifier {
         }
         Ok(selected)
     }
+}
+
+/// Module-9 membership, program record and lifecycle shared by every head kind.
+fn verify_program_state_at(
+    proof: &ProgramStateProof,
+    state_root: [u8; 32],
+) -> Result<(ProgramRecord, ProgramLifecycle), ProtocolEvidenceError> {
+    if proof.programs_root == [0; 32] {
+        return Err(ProtocolEvidenceError::StateRoot);
+    }
+    verify_state_membership(
+        &PROGRAMS_MODULE_ID.to_be_bytes(),
+        &proof.programs_root,
+        &proof.programs_root_proof,
+        state_root,
+    )
+    .map_err(|_| ProtocolEvidenceError::StateRoot)?;
+    verify_witness(&proof.program_record, proof.programs_root)?;
+    let record = decode_program_record(&proof.program_record)?;
+    let lifecycle = verify_lifecycle(record.program, &proof.lifecycle, proof.programs_root)?;
+    Ok((record, lifecycle))
 }
 
 fn verify_maintenance_settlement(
@@ -2035,6 +2448,57 @@ impl DeploymentProof {
             decode_receipt(&self.state.receipt).map_err(|_| ProtocolEvidenceError::Receipt)?;
         let unsigned = encode_unsigned(&receipt).map_err(|_| ProtocolEvidenceError::Receipt)?;
         receipt_digest(&unsigned).map_err(|_| ProtocolEvidenceError::Receipt)
+    }
+}
+
+impl ProgramStateBundle {
+    /// Encodes the untrusted Programs state proof canonically. The encoding
+    /// does not itself confer verification authority.
+    #[must_use]
+    pub fn canonical_encoding(&self) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(PROGRAM_STATE_DOMAIN);
+        bytes.push(self.head_kind.wire_byte());
+        encode_program_state(&mut bytes, &self.state);
+        put_bytes(&mut bytes, &self.interface.key);
+        put_bytes(&mut bytes, &self.interface.value);
+        put_state_proof(&mut bytes, &self.interface.proof);
+        bytes
+    }
+
+    /// Decodes an untrusted Programs state proof. Callers must pass the result
+    /// through [`ProtocolDeploymentVerifier::verify_current_program_bundle`]
+    /// before using any claim it contains.
+    /// # Errors
+    ///
+    /// Refuses malformed, oversized, trailing or non-canonical encodings.
+    pub fn decode(bytes: &[u8]) -> Result<Self, ProtocolEvidenceError> {
+        if bytes.len() > MAX_EVIDENCE_BYTES
+            || bytes.get(..PROGRAM_STATE_DOMAIN.len()) != Some(PROGRAM_STATE_DOMAIN)
+        {
+            return Err(ProtocolEvidenceError::Encoding);
+        }
+        let mut cursor = PROGRAM_STATE_DOMAIN.len();
+        let head_kind = ProgramHeadKind::from_wire_byte(take_array::<1>(bytes, &mut cursor)?[0])
+            .ok_or(ProtocolEvidenceError::Encoding)?;
+        let state = decode_program_state(bytes, &mut cursor)?;
+        let interface = take_witness(bytes, &mut cursor)?;
+        if cursor != bytes.len() || interface.value.len() > MAX_INTERFACE_VALUE_BYTES {
+            return Err(ProtocolEvidenceError::Encoding);
+        }
+        let bundle = Self {
+            head_kind,
+            state,
+            interface: InterfaceStateWitness {
+                key: interface.key,
+                value: interface.value,
+                proof: interface.proof,
+            },
+        };
+        if bundle.canonical_encoding() != bytes {
+            return Err(ProtocolEvidenceError::Encoding);
+        }
+        Ok(bundle)
     }
 }
 

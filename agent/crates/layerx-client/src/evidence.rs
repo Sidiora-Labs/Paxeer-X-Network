@@ -122,6 +122,132 @@ pub enum ProofBundleSelector {
     Receipt([u8; 32]),
 }
 
+/// Exact length of one kind 5 program-state request payload.
+pub const PROGRAM_STATE_REQUEST_BYTES: usize = 107;
+/// Domain literal, including its terminating NUL, opening every kind 5 answer.
+pub const PROGRAM_STATE_DOMAIN: &[u8; 31] = b"LayerX/programs/state-proof/v1\0";
+/// Aggregate bound on one kind 5 answer payload.
+pub const MAX_PROGRAM_STATE_BUNDLE_BYTES: usize = 40 * 1024 * 1024;
+const PROGRAM_STATE_KIND: u8 = 5;
+const PROGRAM_STATE_MINIMUM_MINOR: u16 = 2;
+
+/// Pinned head coordinates admitted by the kind 5 program-state read.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ProgramStateSelector {
+    program_id: [u8; 32],
+    global_sequence: u64,
+    receipt_digest: [u8; 32],
+    state_root: [u8; 32],
+}
+
+impl ProgramStateSelector {
+    /// Binds one program to one exact pinned head.
+    ///
+    /// # Errors
+    /// Refuses a zero program identifier or a zero global sequence.
+    pub fn new(
+        program_id: [u8; 32],
+        global_sequence: u64,
+        receipt_digest: [u8; 32],
+        state_root: [u8; 32],
+    ) -> Result<Self, EvidenceError> {
+        if program_id == [0; 32] || global_sequence == 0 {
+            return Err(EvidenceError::Malformed);
+        }
+        Ok(Self {
+            program_id,
+            global_sequence,
+            receipt_digest,
+            state_root,
+        })
+    }
+
+    #[must_use]
+    pub const fn program_id(&self) -> [u8; 32] {
+        self.program_id
+    }
+
+    #[must_use]
+    pub const fn global_sequence(&self) -> u64 {
+        self.global_sequence
+    }
+
+    #[must_use]
+    pub const fn receipt_digest(&self) -> [u8; 32] {
+        self.receipt_digest
+    }
+
+    #[must_use]
+    pub const fn state_root(&self) -> [u8; 32] {
+        self.state_root
+    }
+
+    /// Canonical 107-byte request payload.
+    #[must_use]
+    pub fn encode(&self) -> [u8; PROGRAM_STATE_REQUEST_BYTES] {
+        let mut bytes = [0; PROGRAM_STATE_REQUEST_BYTES];
+        bytes[..2].copy_from_slice(&WIRE_VERSION.to_be_bytes());
+        bytes[2] = PROGRAM_STATE_KIND;
+        bytes[3..35].copy_from_slice(&self.program_id);
+        bytes[35..43].copy_from_slice(&self.global_sequence.to_be_bytes());
+        bytes[43..75].copy_from_slice(&self.receipt_digest);
+        bytes[75..].copy_from_slice(&self.state_root);
+        bytes
+    }
+
+    /// Strictly decodes one canonical request payload.
+    ///
+    /// # Errors
+    /// Refuses any length other than 107, another version or kind, zero
+    /// program or sequence, and any non-canonical re-encoding.
+    pub fn decode(bytes: &[u8]) -> Result<Self, EvidenceError> {
+        if bytes.len() != PROGRAM_STATE_REQUEST_BYTES {
+            return Err(EvidenceError::Malformed);
+        }
+        let mut reader = Reader::new(bytes);
+        if reader.u16()? != WIRE_VERSION || reader.u8()? != PROGRAM_STATE_KIND {
+            return Err(EvidenceError::Malformed);
+        }
+        let selector = Self::new(
+            reader.array()?,
+            reader.u64()?,
+            reader.array()?,
+            reader.array()?,
+        )?;
+        reader.finish()?;
+        if selector.encode().as_slice() != bytes {
+            return Err(EvidenceError::Malformed);
+        }
+        Ok(selector)
+    }
+}
+
+/// Transport-checked kind 5 answer; it confers no trust until the program
+/// registry decodes and verifies the canonical payload.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProgramStateResponse {
+    selector: ProgramStateSelector,
+    payload: Vec<u8>,
+}
+
+impl ProgramStateResponse {
+    /// The exact selector that was transmitted.
+    #[must_use]
+    pub const fn selector(&self) -> ProgramStateSelector {
+        self.selector
+    }
+
+    #[must_use]
+    pub fn canonical_payload(&self) -> &[u8] {
+        &self.payload
+    }
+
+    #[must_use]
+    pub fn into_canonical_payload(self) -> Vec<u8> {
+        self.payload
+    }
+}
+
 /// Trusted boundary coordinates for one finality read.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct EvidenceContext {
@@ -588,6 +714,59 @@ pub fn proof_bundle_with_history(
     history: &crate::handover::SequencerHistory,
 ) -> Result<VerifiedProofBundle, EvidenceError> {
     proof_bundle_with_authority(transport, selector, context, registry, Some(history))
+}
+
+/// Retrieves the kind 5 program-state answer for one pinned head.
+///
+/// # Errors
+/// Refuses an interface below minor 2, a zero correlation, any core refusal
+/// unchanged, a nonempty envelope proof, an empty, oversized or wrongly
+/// prefixed payload and an unknown head kind.
+pub fn program_state_bundle(
+    transport: &mut dyn FrameTransport,
+    selector: ProgramStateSelector,
+    context: EvidenceContext,
+) -> Result<ProgramStateResponse, EvidenceError> {
+    if context.interface_version.major != 1
+        || context.interface_version.minor < PROGRAM_STATE_MINIMUM_MINOR
+    {
+        return Err(EvidenceError::Unavailable);
+    }
+    if context.correlation_id == 0 {
+        return Err(EvidenceError::Malformed);
+    }
+    let request = selector.encode();
+    if ProgramStateSelector::decode(&request)? != selector {
+        return Err(EvidenceError::Malformed);
+    }
+    let response = exchange(
+        transport,
+        context.interface_version,
+        context.correlation_id,
+        PROOF_BUNDLE_REQUEST_TAG,
+        PROOF_BUNDLE_RESPONSE_TAG,
+        &request,
+        &[],
+    )?;
+    if !response.proof.is_empty() {
+        return Err(EvidenceError::Malformed);
+    }
+    if response.payload.is_empty() {
+        return Err(EvidenceError::Unavailable);
+    }
+    if response.payload.len() > MAX_PROGRAM_STATE_BUNDLE_BYTES
+        || !response.payload.starts_with(PROGRAM_STATE_DOMAIN)
+        || !matches!(
+            response.payload.get(PROGRAM_STATE_DOMAIN.len()),
+            Some(0 | 1)
+        )
+    {
+        return Err(EvidenceError::Malformed);
+    }
+    Ok(ProgramStateResponse {
+        selector,
+        payload: response.payload,
+    })
 }
 
 fn proof_bundle_with_authority(
@@ -2089,5 +2268,52 @@ mod tests {
             resulting_registration_count(u64::MAX),
             Err(EvidenceError::Registration)
         );
+    }
+
+    #[test]
+    fn program_state_request_is_exact_and_canonical() -> Result<(), EvidenceError> {
+        let selector = ProgramStateSelector::new([7; 32], 0x0102, [8; 32], [9; 32])?;
+        let bytes = selector.encode();
+        let mut expected = vec![0, 1, 5];
+        expected.extend_from_slice(&[7; 32]);
+        expected.extend_from_slice(&0x0102_u64.to_be_bytes());
+        expected.extend_from_slice(&[8; 32]);
+        expected.extend_from_slice(&[9; 32]);
+        assert_eq!(bytes.as_slice(), expected.as_slice());
+        assert_eq!(ProgramStateSelector::decode(&bytes), Ok(selector));
+        assert_eq!(
+            ProgramStateSelector::new([0; 32], 1, [8; 32], [9; 32]),
+            Err(EvidenceError::Malformed)
+        );
+        assert_eq!(
+            ProgramStateSelector::new([7; 32], 0, [8; 32], [9; 32]),
+            Err(EvidenceError::Malformed)
+        );
+        for (offset, value) in [(1, 2), (2, 4), (0, 1)] {
+            let mut invalid = bytes;
+            invalid[offset] = value;
+            assert_eq!(
+                ProgramStateSelector::decode(&invalid),
+                Err(EvidenceError::Malformed)
+            );
+        }
+        let mut trailing = bytes.to_vec();
+        trailing.push(0);
+        assert_eq!(
+            ProgramStateSelector::decode(&trailing),
+            Err(EvidenceError::Malformed)
+        );
+        assert_eq!(
+            ProgramStateSelector::decode(&bytes[..106]),
+            Err(EvidenceError::Malformed)
+        );
+        let mut zero_sequence = bytes;
+        zero_sequence[35..43].copy_from_slice(&[0; 8]);
+        assert_eq!(
+            ProgramStateSelector::decode(&zero_sequence),
+            Err(EvidenceError::Malformed)
+        );
+        assert_eq!(PROGRAM_STATE_DOMAIN.len(), 31);
+        Ok(())
     }
 }

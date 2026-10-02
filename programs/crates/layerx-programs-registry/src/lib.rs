@@ -40,10 +40,11 @@ pub use interface::{
 };
 pub use pipeline::{BuildAttempt, BuildPlan, BuildRefusal, BuildRunner, SourceVerifier};
 pub use protocol_evidence::{
-    DeploymentMaintenanceProof, DeploymentProof, ProgramLifecycleProof, ProgramStateProof,
-    ProtocolDeploymentVerifier, ProtocolEvidenceError, ProtocolHeadMaintenanceProof,
-    ProtocolHeadProof, StateLeafWitness, VerifiedDeploymentEvidence, VerifiedProgramHead,
-    VerifiedProtocolHead,
+    DeploymentMaintenanceProof, DeploymentProof, ProgramBundleError, ProgramHeadKind,
+    ProgramLifecycleProof, ProgramStateBundle, ProgramStateProof, ProtocolDeploymentVerifier,
+    ProtocolEvidenceError, ProtocolHeadMaintenanceProof, ProtocolHeadProof, ReceiptEvidenceDigest,
+    StateLeafWitness, VerifiedChainHead, VerifiedDeploymentEvidence, VerifiedMaintenanceHead,
+    VerifiedProgramBundle, VerifiedProgramHead, VerifiedProtocolHead,
 };
 pub use resolver::{ExecutableAdmissionError, VerifiedProgramCatalog};
 

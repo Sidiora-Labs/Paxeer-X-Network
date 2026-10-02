@@ -17,7 +17,8 @@ use crate::availability::{
 use crate::batch::{self, BatchHeaderError, SignedBatchHeader};
 use crate::evidence::{
     self, CheckpointSelector, EvidenceContext, EvidenceError, FinalityEvidenceCandidate,
-    ProofBundleSelector, RegistrationAck, RootSelector, VerifiedCheckpoint, VerifiedProofBundle,
+    ProgramStateResponse, ProgramStateSelector, ProofBundleSelector, RegistrationAck, RootSelector,
+    VerifiedCheckpoint, VerifiedProofBundle,
 };
 use crate::head::{Head, HeadError, HeadTracker};
 use crate::lni::handshake::{perform, Handshake, HandshakeConfig, HandshakeError};
@@ -31,6 +32,7 @@ use crate::lni::report::capability_report;
 use crate::lni::schema::Capability;
 use crate::lni::simulate::{simulate, SimulateContext, SimulateError, Simulation};
 use crate::lni::transport::{ConnectionGate, Limits, TransportError, Uds};
+use crate::payments::{CommittedSnapshot, FeeEstimate, SnapshotContext};
 use crate::read::{
     account, balance, history, module_state, Balance, HistoryCursor, HistoryPage, ReadContext,
     ReadError, ReadValue, Requested,
@@ -125,6 +127,66 @@ impl ConnectionError {
             | Self::AttemptsExhausted => ConnectionState::Unreachable,
         }
     }
+}
+
+/// Largest canonical encoded size the native fee meter accepts.
+pub const MAX_FEE_METER_CANONICAL_BYTES: u64 = 1_048_576;
+
+/// Hypothetical activity meter priced by the committed native fee schedule.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FeeMeter {
+    pub activity_type: u32,
+    pub canonical_bytes: u64,
+    pub execution_units: u64,
+    pub storage_units: u64,
+}
+
+/// One committed fee estimate bound to the single authenticated head captured
+/// before the read; head fields are that observation's, not the estimate's.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FeeObservation {
+    head: Head,
+    snapshot: CommittedSnapshot<FeeEstimate>,
+}
+
+impl FeeObservation {
+    #[must_use]
+    pub const fn head(&self) -> Head {
+        self.head
+    }
+
+    #[must_use]
+    pub const fn observed_sequence(&self) -> u64 {
+        self.snapshot.observed_sequence
+    }
+
+    #[must_use]
+    pub const fn state_root(&self) -> [u8; 32] {
+        self.snapshot.state_root
+    }
+
+    #[must_use]
+    pub const fn estimate(&self) -> &FeeEstimate {
+        &self.snapshot.value
+    }
+
+    #[must_use]
+    pub fn into_parts(self) -> (Head, CommittedSnapshot<FeeEstimate>) {
+        (self.head, self.snapshot)
+    }
+}
+
+/// Refusal of one head-bound fee estimate.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum FeeEstimateError {
+    MeterOutOfRange {
+        canonical_bytes: u64,
+    },
+    SnapshotSkew {
+        head_sequence: u64,
+        observed_sequence: u64,
+    },
+    Read(ReadError),
 }
 
 /// Sole owner of a live core-boundary connection.
@@ -910,6 +972,82 @@ impl Client {
             },
             registry,
         )
+    }
+
+    /// Retrieves the kind 5 program-state answer for one pinned head.
+    ///
+    /// # Errors
+    /// Refuses unavailable capability, disconnection and every transport refusal.
+    pub fn program_state_bundle(
+        &mut self,
+        selector: ProgramStateSelector,
+        correlation_id: u64,
+    ) -> Result<ProgramStateResponse, EvidenceError> {
+        if !self
+            .handshake
+            .capabilities()
+            .contains(Capability::ProofBundle)
+        {
+            return Err(EvidenceError::Unavailable);
+        }
+        let transport = self.transport.as_mut().ok_or(EvidenceError::Unavailable)?;
+        evidence::program_state_bundle(
+            transport,
+            selector,
+            EvidenceContext {
+                interface_version: self.handshake.node().interface_version,
+                correlation_id,
+                expected_protocol_version: self.config.handshake.expected_protocol_version,
+                expected_network_id: self.handshake.node().network_id,
+                handshake_sequencer_key: self.handshake.node().authorised_sequencer_key,
+            },
+        )
+    }
+
+    /// Prices one meter against the committed schedule at exactly the
+    /// authenticated head captured once before the read.
+    ///
+    /// # Errors
+    /// Refuses an out-of-range meter, unavailable capability, disconnection,
+    /// every committed-read refusal and any snapshot not at the captured head.
+    pub fn estimate_fee(
+        &mut self,
+        meter: FeeMeter,
+        correlation_id: u64,
+    ) -> Result<FeeObservation, FeeEstimateError> {
+        if meter.canonical_bytes > MAX_FEE_METER_CANONICAL_BYTES {
+            return Err(FeeEstimateError::MeterOutOfRange {
+                canonical_bytes: meter.canonical_bytes,
+            });
+        }
+        self.require_read_capability(Capability::FeeEstimate)
+            .map_err(FeeEstimateError::Read)?;
+        let head = self.head();
+        let context = SnapshotContext {
+            interface_version: self.handshake.node().interface_version,
+            correlation_id,
+            minimum_sequence: head.chain_sequence,
+        };
+        let transport = self
+            .transport
+            .as_mut()
+            .ok_or(FeeEstimateError::Read(ReadError::Disconnected))?;
+        let snapshot = crate::payments::estimate_fee(
+            transport,
+            meter.activity_type,
+            meter.canonical_bytes,
+            meter.execution_units,
+            meter.storage_units,
+            context,
+        )
+        .map_err(FeeEstimateError::Read)?;
+        if snapshot.observed_sequence != head.chain_sequence {
+            return Err(FeeEstimateError::SnapshotSkew {
+                head_sequence: head.chain_sequence,
+                observed_sequence: snapshot.observed_sequence,
+            });
+        }
+        Ok(FeeObservation { head, snapshot })
     }
 
     /// Retrieves one independently verified finalized checkpoint.
