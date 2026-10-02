@@ -195,10 +195,12 @@ static int cache_fixture_init(metered_fixture *f)
 
 extern int32_t layerx_programs_cache_configure(uint64_t max_entries, uint64_t max_bytes);
 extern uint64_t layerx_programs_cache_observe(uint32_t field);
+extern int32_t layerx_programs_cache_select_observation(
+    uint64_t h0, uint64_t h1, uint64_t h2, uint64_t h3);
 
 enum { CACHE_GUESTS = 12, CACHE_HISTORIES = 4, CACHE_CALLS = 256,
        CACHE_RECORDS = CACHE_HISTORIES * (CACHE_GUESTS + CACHE_CALLS),
-       CACHE_BYTE_LIMIT = 20000 };
+       CACHE_BYTE_LIMIT = 6000 };
 
 typedef struct cache_guest {
     uint8_t bytes[65536];
@@ -283,10 +285,10 @@ static size_t cache_guest_generate(uint8_t *out, unsigned index)
     length = candidate_module(out, success, sizeof(success));
     if (index == 11U) {
         out[length++] = 0;
-        append_u32_leb(out, &length, 32770U);
+        append_u32_leb(out, &length, 2050U);
         out[length++] = 1; out[length++] = 'p';
-        (void)memset(out + length, 0xa5, 32768U);
-        length += 32768U;
+        (void)memset(out + length, 0xa5, 2048U);
+        length += 2048U;
     }
     return length;
 }
@@ -429,9 +431,12 @@ static int cache_run(cache_guest *guests, cache_observation *records, bool enabl
             uint8_t capabilities[] = {0, 0, 2};
             uint8_t calldata = (uint8_t)(i + history);
             static const uint8_t access[] = "LayerX/programs/access-declaration/v1\0";
-            uint64_t before_hits = layerx_programs_cache_observe(0);
-            uint64_t before_compiles = layerx_programs_cache_observe(2);
-            uint64_t before_entries = layerx_programs_cache_observe(5);
+            METERED_CHECK(layerx_programs_cache_select_observation(
+                cache_hash_word(guest->hash), cache_hash_word(guest->hash + 8),
+                cache_hash_word(guest->hash + 16), cache_hash_word(guest->hash + 24)) == 0);
+            uint64_t before_hits = layerx_programs_cache_observe(8);
+            uint64_t before_compiles = layerx_programs_cache_observe(10);
+            uint64_t before_entries = layerx_programs_cache_observe(11);
             size_t length;
             if (which == 0U) capabilities[1] = 1;
             length = call_payload_with_data(payload, guest->program, capabilities,
@@ -447,8 +452,8 @@ static int cache_run(cache_guest *guests, cache_observation *records, bool enabl
             METERED_CHECK(f->receipt.module_version == LX_PROGRAMS_SANDBOX_DESTROY_ABI_VERSION);
             METERED_CHECK(f->receipt.program_outcome.abi_version == guest->abi);
             METERED_CHECK(f->receipt.program_outcome.metering_schedule_version == 1U);
-            if (layerx_programs_cache_observe(0) > before_hits)
-                METERED_CHECK(layerx_programs_cache_observe(2) == before_compiles);
+            if (layerx_programs_cache_observe(8) > before_hits)
+                METERED_CHECK(layerx_programs_cache_observe(10) == before_compiles);
             if (which == 1U || which == 2U) {
                 METERED_CHECK(f->receipt.result_code == LXP_ERR_PROGRAM_REFUSED);
                 METERED_CHECK(f->receipt.program_outcome.terminal_kind == LXP_PROGRAM_TERMINAL_FAILURE);
@@ -472,8 +477,9 @@ static int cache_run(cache_guest *guests, cache_observation *records, bool enabl
             METERED_CHECK(layerx_programs_cache_observe(5) <= (enabled ? 2U : 0U));
             METERED_CHECK(layerx_programs_cache_observe(6) <= (enabled ? CACHE_BYTE_LIMIT : 0U));
             if (which == 11U) {
-                METERED_CHECK(layerx_programs_cache_observe(2) == before_compiles + 1U);
-                METERED_CHECK(layerx_programs_cache_observe(5) == before_entries);
+                METERED_CHECK(layerx_programs_cache_observe(10) == before_compiles + 1U);
+                METERED_CHECK(before_entries == 0U);
+                METERED_CHECK(layerx_programs_cache_observe(11) == before_entries);
             }
             if (i == 63U)
                 METERED_CHECK(layerx_programs_module_cache_invalidate_abi(2U) == LXP_OK);
