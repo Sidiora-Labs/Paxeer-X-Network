@@ -13,16 +13,12 @@ pub use layerx_crypto::purpose::{
 pub enum PurposeLabelError {
     /// The text cannot be committed.
     Commitment(PurposeCommitmentError),
-    /// The text is 64 hexadecimal characters, which is a literal 32-byte identifier and is
-    /// never hashed as a label.
-    LiteralIdentifier,
 }
 
 impl std::fmt::Display for PurposeLabelError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Commitment(error) => error.fmt(formatter),
-            Self::LiteralIdentifier => formatter.write_str("purpose_literal_identifier"),
         }
     }
 }
@@ -39,13 +35,13 @@ pub struct PurposeLabel {
 impl PurposeLabel {
     /// Commits to the exact text with [`purpose_commitment_v1`] and keeps the text.
     ///
+    /// Any nonempty text is a label, 64-character hexadecimal text included; it is hashed like
+    /// any other text and never read as a literal 32-byte identifier.
+    ///
     /// # Errors
     ///
-    /// Refuses an empty text and a 64-character hexadecimal text, which is a literal identifier.
+    /// Refuses an empty text.
     pub fn new(text: &str) -> Result<Self, PurposeLabelError> {
-        if text.len() == 64 && text.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-            return Err(PurposeLabelError::LiteralIdentifier);
-        }
         let commitment = purpose_commitment_v1(text).map_err(PurposeLabelError::Commitment)?;
         Ok(Self {
             text: text.to_owned(),
@@ -90,10 +86,14 @@ mod tests {
     }
 
     #[test]
-    fn literal_identifier_is_not_hashed() {
+    fn hex_text_is_a_label_hashed_like_any_text() -> Result<(), PurposeLabelError> {
+        let text = "ab".repeat(32);
+        let label = PurposeLabel::new(&text)?;
+        assert_eq!(label.text(), text);
         assert_eq!(
-            PurposeLabel::new(&"ab".repeat(32)),
-            Err(PurposeLabelError::LiteralIdentifier)
+            Ok(label.commitment()),
+            purpose_commitment_v1(&text).map_err(PurposeLabelError::Commitment)
         );
+        Ok(())
     }
 }

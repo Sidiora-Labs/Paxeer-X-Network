@@ -11153,11 +11153,16 @@ mod legacy_policy_purpose_tests {
 
     #[test]
     fn dry_run_lowercase_hex_literal_is_admitted() {
-        let commitment = [0x5a; 32];
-        let literal = crate::agent_rpc_dispatch::lower_hex(&commitment);
+        let literal = crate::agent_rpc_dispatch::lower_hex(&[0x5a; 32]);
+        let commitment = layerx_crypto::purpose::purpose_commitment_v1(&literal);
+        assert!(commitment.is_ok());
         assert!(matches!(
-            legacy_label_purpose(Some(commitment), Some(literal)),
+            legacy_label_purpose(commitment.ok(), Some(literal.clone())),
             Ok(Purpose::Text(_))
+        ));
+        assert!(matches!(
+            legacy_label_purpose(Some([0x5a; 32]), Some(literal)),
+            Err(HumanOperationError::Typed(HumanRefusal::PurposeUndisclosed))
         ));
     }
 
