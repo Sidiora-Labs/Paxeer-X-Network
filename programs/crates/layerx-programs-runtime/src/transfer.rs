@@ -2449,6 +2449,201 @@ mod tests {
     }
 
     #[test]
+    fn program_authority_refuses_wrong_seed_program_and_source_typed() {
+        let owner = program_id(1);
+        let principal = principal_id(2);
+        let seed = b"pool";
+        let source = derive_program_account(owner, seed)
+            .unwrap_or_else(|error| panic!("source: {error}"))
+            .bytes();
+        let capability = program_capability(owner, principal, seed, source, 10);
+
+        let mut wrong_seed = program_request(owner, principal, seed, source, 5);
+        let TransferSource::Program(authority) = &mut wrong_seed.source else {
+            panic!("program source")
+        };
+        authority.seed = b"other".to_vec();
+        assert_eq!(
+            capability.authorize(&AbiEffects {
+                transfers: vec![wrong_seed],
+                ..AbiEffects::default()
+            }),
+            Err(TransferLawError::InvalidProgramAuthority)
+        );
+
+        let foreign_source = derive_program_account(program_id(9), seed)
+            .unwrap_or_else(|error| panic!("foreign source: {error}"))
+            .bytes();
+        let mut wrong_source = program_request(owner, principal, seed, source, 5);
+        let TransferSource::Program(authority) = &mut wrong_source.source else {
+            panic!("program source")
+        };
+        authority.source_account = foreign_source;
+        assert_eq!(
+            capability.authorize(&AbiEffects {
+                transfers: vec![wrong_source],
+                ..AbiEffects::default()
+            }),
+            Err(TransferLawError::InvalidProgramAuthority)
+        );
+
+        let foreign_authority = ProgramAuthority::issue(
+            program_id(9),
+            seed,
+            foreign_source,
+            CallFrameId::root(),
+            [3; 32],
+            [4; 32],
+            5,
+        )
+        .unwrap_or_else(|error| panic!("foreign authority: {error}"));
+        let foreign_request = TransferRequest {
+            program: owner,
+            principal,
+            frame: CallFrameId::root(),
+            source: TransferSource::Program(foreign_authority),
+            asset: [3; 32],
+            to: [4; 32],
+            amount: 5,
+        };
+        assert_eq!(
+            capability.authorize(&AbiEffects {
+                transfers: vec![foreign_request],
+                ..AbiEffects::default()
+            }),
+            Err(TransferLawError::InvalidProgramAuthority)
+        );
+
+        let mut forged_amount = program_request(owner, principal, seed, source, 5);
+        forged_amount.amount = 6;
+        assert_eq!(
+            capability.authorize(&AbiEffects {
+                transfers: vec![forged_amount],
+                ..AbiEffects::default()
+            }),
+            Err(TransferLawError::InvalidProgramAuthority)
+        );
+    }
+
+    #[test]
+    fn program_authority_refuses_callee_frame_and_ungranted_authority_and_keeps_program_spend_grants() {
+        let owner = program_id(1);
+        let principal = principal_id(2);
+        let seed = b"pool";
+        let source = derive_program_account(owner, seed)
+            .unwrap_or_else(|error| panic!("source: {error}"))
+            .bytes();
+        let capability = program_capability(owner, principal, seed, source, 10);
+
+        let mut callee_staged = program_request(owner, principal, seed, source, 5);
+        let callee_frame = CallFrameId::root()
+            .child(1)
+            .unwrap_or_else(|error| panic!("frame: {error}"));
+        let TransferSource::Program(authority) = &mut callee_staged.source else {
+            panic!("program source")
+        };
+        authority.staging_frame = callee_frame;
+        assert_eq!(
+            capability.authorize(&AbiEffects {
+                transfers: vec![callee_staged],
+                ..AbiEffects::default()
+            }),
+            Err(TransferLawError::InvalidProgramAuthority)
+        );
+
+        let ungranted_source = derive_program_account(owner, b"other")
+            .unwrap_or_else(|error| panic!("ungranted source: {error}"))
+            .bytes();
+        assert_eq!(
+            capability.authorize(&AbiEffects {
+                transfers: vec![program_request(
+                    owner,
+                    principal,
+                    b"other",
+                    ungranted_source,
+                    5
+                )],
+                ..AbiEffects::default()
+            }),
+            Err(TransferLawError::CapabilityEscalation)
+        );
+
+        assert!(capability
+            .authorize(&AbiEffects {
+                transfers: vec![program_request(owner, principal, seed, source, 5)],
+                ..AbiEffects::default()
+            })
+            .is_ok());
+    }
+
+    #[test]
+    fn program_authority_cumulative_bound_refuses_without_partial_set() {
+        let owner = program_id(1);
+        let principal = principal_id(2);
+        let seed = b"pool";
+        let source = derive_program_account(owner, seed)
+            .unwrap_or_else(|error| panic!("source: {error}"))
+            .bytes();
+        let capability = program_capability(owner, principal, seed, source, 10);
+        let over_bound = AbiEffects {
+            transfers: vec![
+                program_request(owner, principal, seed, source, 4),
+                program_request(owner, principal, seed, source, 4),
+                program_request(owner, principal, seed, source, 3),
+            ],
+            ..AbiEffects::default()
+        };
+        assert_eq!(
+            capability.authorize(&over_bound),
+            Err(TransferLawError::CapabilityEscalation)
+        );
+        let at_bound = capability
+            .authorize(&AbiEffects {
+                transfers: vec![
+                    program_request(owner, principal, seed, source, 4),
+                    program_request(owner, principal, seed, source, 6),
+                ],
+                ..AbiEffects::default()
+            })
+            .unwrap_or_else(|error| panic!("at bound: {error}"));
+        assert_eq!(at_bound.legs().len(), 2);
+        assert_eq!(at_bound.total_amount(), 10);
+    }
+
+    #[test]
+    fn program_authority_canonical_encoding_rejects_trailing_and_malleable_bytes() {
+        let owner = program_id(1);
+        let principal = principal_id(2);
+        let seed = b"pool";
+        let source = derive_program_account(owner, seed)
+            .unwrap_or_else(|error| panic!("source: {error}"))
+            .bytes();
+        let set = program_capability(owner, principal, seed, source, 10)
+            .authorize(&AbiEffects {
+                transfers: vec![
+                    request(owner, principal, 3),
+                    program_request(owner, principal, seed, source, 5),
+                ],
+                ..AbiEffects::default()
+            })
+            .unwrap_or_else(|error| panic!("set: {error}"));
+        let decoded = AtomicTransferSet::canonical_decode(set.canonical())
+            .unwrap_or_else(|error| panic!("decode: {error}"));
+        assert_eq!(decoded.canonical(), set.canonical());
+        assert_eq!(decoded.kernel_root(), set.kernel_root());
+
+        let mut trailing = set.canonical().to_vec();
+        trailing.push(0);
+        assert_eq!(
+            AtomicTransferSet::canonical_decode(&trailing),
+            Err(TransferLawError::InvalidTransferSet)
+        );
+
+        let truncated = &set.canonical()[..set.canonical().len() - 1];
+        assert_eq!(AtomicTransferSet::canonical_decode(truncated), Err(TransferLawError::InvalidTransferSet));
+    }
+
+    #[test]
     fn sandbox_escrow_charge_is_host_sealed_without_guest_program_spend() {
         let host = program_id(1);
         let principal = principal_id(2);
@@ -2522,4 +2717,191 @@ mod tests {
         assert_eq!(first.kernel_root(), different_activity.kernel_root());
         assert_eq!(first.kernel_root(), different_state.kernel_root());
     }
+    #[test]
+    fn real_guest_mixed_effects_seal_exact_dual_authority_kernel_set() {
+        use crate::test_support::{code_section, func_body, function_section, import_section, module, type_section, unsigned_leb, OP_CALL, OP_END, OP_I32_CONST, TYPE_I32, TYPE_I64};
+        use crate::{AuthorizedExecutionRequest, CompositionContext, Executor, Storage, WasmEngine, ABI_MODULE, CALL_ENTRY_EXPORT};
+        use crate::abi::response::CANDIDATE_ABI_MODULE;
+        use crate::abi::UnavailableReceiptOracle as NoReceipts;
+    
+    fn section(id: u8, payload: &[u8]) -> Vec<u8> {
+        let mut encoded = vec![id];
+        encoded.extend(unsigned_leb(payload.len() as u64));
+        encoded.extend_from_slice(payload);
+        encoded
+    }
+    
+    fn data_section(entries: &[(u32, &[u8])]) -> Vec<u8> {
+        let mut payload = unsigned_leb(entries.len() as u64);
+        for (offset, bytes) in entries {
+            payload.extend([0, OP_I32_CONST]);
+            payload.extend(unsigned_leb(u64::from(*offset)));
+            payload.push(OP_END);
+            payload.extend(unsigned_leb(bytes.len() as u64));
+            payload.extend_from_slice(bytes);
+        }
+        section(11, &payload)
+    }
+    
+    fn candidate_mixed_transfer_module(
+        seed: &[u8],
+        source: [u8; 32],
+        asset: [u8; 32],
+        recipient: [u8; 32],
+    ) -> Vec<u8> {
+        const SOURCE_OFFSET: u32 = 128;
+        const ASSET_OFFSET: u32 = 160;
+        const RECIPIENT_OFFSET: u32 = 192;
+        let mut entries = unsigned_leb(3);
+        for (name, kind, index) in [
+            ("layerx_reserve", 0_u8, 2_u8),
+            (CALL_ENTRY_EXPORT, 0, 3),
+            ("memory", 2, 0),
+        ] {
+            entries.extend(unsigned_leb(name.len() as u64));
+            entries.extend_from_slice(name.as_bytes());
+            entries.extend_from_slice(&[kind, index]);
+        }
+        let mut entry = vec![0x42, 0, 0x42, 3];
+        for value in [ASSET_OFFSET, 32, RECIPIENT_OFFSET, 32] {
+            entry.push(OP_I32_CONST);
+            entry.extend(unsigned_leb(u64::from(value)));
+        }
+        entry.extend([OP_CALL, 0, 0x1a]);
+        entry.extend([0x42, 0, 0x42, 5, OP_I32_CONST, 0, OP_I32_CONST]);
+        entry.extend(unsigned_leb(seed.len() as u64));
+        for value in [SOURCE_OFFSET, 32, ASSET_OFFSET, 32, RECIPIENT_OFFSET, 32] {
+            entry.push(OP_I32_CONST);
+            entry.extend(unsigned_leb(u64::from(value)));
+        }
+        entry.extend([OP_CALL, 1, OP_END]);
+        module(&[
+            type_section(&[
+                (
+                    &[TYPE_I64, TYPE_I64, TYPE_I32, TYPE_I32, TYPE_I32, TYPE_I32],
+                    &[TYPE_I32],
+                ),
+                (
+                    &[
+                        TYPE_I64, TYPE_I64, TYPE_I32, TYPE_I32, TYPE_I32, TYPE_I32, TYPE_I32, TYPE_I32,
+                        TYPE_I32, TYPE_I32,
+                    ],
+                    &[TYPE_I32],
+                ),
+                (&[TYPE_I32], &[TYPE_I32]),
+                (&[TYPE_I32, TYPE_I32], &[TYPE_I32]),
+            ]),
+            import_section(&[
+                (ABI_MODULE, "transfer_402", 0),
+                (CANDIDATE_ABI_MODULE, "transfer_program_402", 1),
+            ]),
+            function_section(&[2, 3]),
+            section(5, &[1, 1, 1, 1]),
+            section(7, &entries),
+            code_section(&[
+                func_body(&[], &[OP_I32_CONST, 0, OP_END]),
+                func_body(&[], &entry),
+            ]),
+            data_section(&[
+                (0, seed),
+                (SOURCE_OFFSET, &source),
+                (ASSET_OFFSET, &asset),
+                (RECIPIENT_OFFSET, &recipient),
+            ]),
+        ])
+    }
+    
+    
+        let program = ProgramId::new([51; 32]).unwrap_or_else(|error| panic!("program: {error}"));
+        let payer = PrincipalId::new([52; 32]).unwrap_or_else(|error| panic!("payer: {error}"));
+        let seed = b"merchant/settlement";
+        let source = crate::derive_program_account(program, seed)
+            .unwrap_or_else(|error| panic!("source: {error}"))
+            .bytes();
+        let asset = [53; 32];
+        let recipient = [54; 32];
+        let grants = CapabilitySet::new([
+            Capability::Transfer402 {
+                asset,
+                to: recipient,
+                maximum_amount: 3,
+            },
+            Capability::ProgramSpend {
+                owner_program: program,
+                seed: seed.to_vec(),
+                source_account: source,
+                asset,
+                to: recipient,
+                maximum_amount: 5,
+            },
+        ])
+        .unwrap_or_else(|error| panic!("grants: {error}"));
+        let module = WasmEngine::declared()
+            .unwrap_or_else(|error| panic!("engine: {error}"))
+            .validate_candidate_v2(&candidate_mixed_transfer_module(
+                seed, source, asset, recipient,
+            ))
+            .unwrap_or_else(|error| panic!("module: {error}"));
+        let execute = || {
+            Executor::declared()
+                .execute_authorized_candidate(
+                    &mut Storage::default(),
+                    AuthorizedExecutionRequest {
+                        module: &module,
+                        program,
+                        authorization: AuthorizationContext::new(payer, grants.clone()),
+                        receipts: &NoReceipts,
+                        entrypoint: CALL_ENTRY_EXPORT,
+                        calldata: &[],
+                        composition: CompositionContext::isolated(),
+                        response_capacity: 0,
+                    },
+                )
+                .unwrap_or_else(|error| panic!("mixed candidate execution: {error}"))
+        };
+        let record = execute();
+        let effects = record
+            .effects()
+            .unwrap_or_else(|| panic!("mixed candidate effects missing"));
+        assert_eq!(effects.transfers.len(), 2);
+        let principal_leg = &effects.transfers[0];
+        assert_eq!(principal_leg.program, program);
+        assert_eq!(principal_leg.principal, payer);
+        assert_eq!(principal_leg.frame, CallFrameId::root());
+        assert_eq!(principal_leg.amount, 3);
+        assert_eq!(principal_leg.source(), &TransferSource::Principal(payer));
+        let program_leg = &effects.transfers[1];
+        assert_eq!(program_leg.program, program);
+        assert_eq!(program_leg.principal, payer);
+        assert_eq!(program_leg.frame, CallFrameId::root());
+        assert_eq!(program_leg.amount, 5);
+        let TransferSource::Program(authority) = program_leg.source() else {
+            panic!("second leg must carry program authority")
+        };
+        assert_eq!(authority.owner_program(), program);
+        assert_eq!(authority.seed(), seed);
+        assert_eq!(authority.source_account(), source);
+        assert_eq!(authority.staging_frame(), CallFrameId::root());
+        let authorization = AuthorizationContext::new(payer, grants.clone());
+        let capability = TransferCapability::from_root_authorization(program, &authorization, [55; 32])
+            .unwrap_or_else(|error| panic!("authority: {error}"));
+        let set = capability.authorize_for_graph_with_version(effects, record.call_graph(), true)
+            .unwrap_or_else(|error| panic!("seal: {error}"));
+        assert_eq!(set.legs(), effects.transfers.as_slice());
+        assert_eq!(set.total_amount(), 8);
+        assert_ne!(set.kernel_root(), [0; 32]);
+        assert_eq!(AtomicTransferSet::canonical_decode(set.canonical()), Ok(set.clone()));
+        assert_eq!(set.kernel_root(), canonical_kernel_root(set.kernel_canonical(), 2)
+            .unwrap_or_else(|error| panic!("kernel root: {error}")));
+        let mut tampered = set.canonical().to_vec();
+        tampered.push(0);
+        assert_eq!(AtomicTransferSet::canonical_decode(&tampered), Err(TransferLawError::InvalidTransferSet));
+        let replay = execute();
+        assert_eq!(record.receipt_projection(), replay.receipt_projection());
+        let replay_set = capability.authorize_for_graph_with_version(
+            replay.effects().unwrap_or_else(|| panic!("replay effects")), replay.call_graph(), true,
+        ).unwrap_or_else(|error| panic!("replay seal: {error}"));
+        assert_eq!(replay_set, set);
+    }
+
 }
