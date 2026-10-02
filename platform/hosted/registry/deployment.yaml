@@ -134,7 +134,7 @@ spec:
             - {name: LAYERX_EXPLORER_NODE_ENDPOINT, value: "https://layerx-agent-boundary.layerx-testnet.svc.cluster.local:9443"}
             - {name: LAYERX_EXPLORER_NODE_BEARER_TOKEN, valueFrom: {secretKeyRef: {name: layerx-program-registry-node-client, key: token}}}
             - {name: LAYERX_EXPLORER_AUTHORITY_ENDPOINT, value: "https://layerx-receipt-authority.layerx-testnet.svc.cluster.local:9443"}
-            - {name: LAYERX_EXPLORER_AUTHORITY_BEARER_TOKEN, valueFrom: {secretKeyRef: {name: layerx-program-registry-authority-client, key: token}}}
+            - {name: LAYERX_EXPLORER_AUTHORITY_BEARER_TOKEN, valueFrom: {secretKeyRef: {name: layerx-explorer-index, key: authority-evidence-token}}}
             - {name: LAYERX_EXPLORER_AUTHORITY_CA_DER, value: /run/layerx/client-ca/ca.crt.der}
             - {name: LAYERX_EXPLORER_AUTHORITY_REPLICA_ID, valueFrom: {configMapKeyRef: {name: layerx-receipt-authority, key: replica-id}}}
             - {name: LAYERX_EXPLORER_SEQUENCER_TRUST_HISTORY, value: /run/layerx/trust/history}

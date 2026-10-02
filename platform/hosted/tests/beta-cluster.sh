@@ -976,6 +976,7 @@ secrets_generate() {
     write_token "$d/registry-authority.token"
     write_token "$d/registry-identity.token"
     write_token "$d/explorer-program.token"
+    write_token "$d/explorer-authority-evidence.token"
     explorer_read_principal_generate "$d"
     local producer
     for producer in gateway registry human; do
@@ -1272,6 +1273,7 @@ secrets_apply() {
     [ -s "$s/explorer-read.seed.hex" ] && [ -s "$s/explorer-read.pub.hex" ] && [ -s "$s/sequencer-public-key" ] \
         || fail "explorer read principal material is missing: $s/explorer-read.seed.hex, $s/explorer-read.pub.hex and $s/sequencer-public-key are generated with fresh material"
     apply_secret "$ns" layerx-explorer-index --from-file=program-token="$s/explorer-program.token" \
+        --from-file=authority-evidence-token="$s/explorer-authority-evidence.token" \
         --from-file=read-key="$s/explorer-read.seed.hex" --from-file=sequencer-public-key="$s/sequencer-public-key"
     apply_secret "$ns" layerx-explorer-index-tls --from-file=tls.crt="$c/explorer-index/cert.pem" --from-file=tls.key="$c/explorer-index/key.pem"
     apply_secret "$ns" layerx-testnet-control-tls --from-file=server.crt.der="$c/testnet-control/cert.der" \

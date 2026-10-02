@@ -136,6 +136,7 @@ spec:
               install -m 0600 /run/authority-input/authority-token /run/authority-private/material/human-agent.token
               install -m 0600 /run/authority-input/principal-policy.json /run/authority-private/material/principal-policy.json
               install -m 0600 /run/module-registry/registry.json /run/authority-private/material/registry.json
+              install -m 0600 /run/explorer-evidence-input/authority-evidence-token /run/authority-private/material/evidence-read.token
               if [ -e /run/authority-input/genesis-handover-trust.lxt ] || [ -e /run/authority-input/handover-finality.conf ]; then
                   install -m 0600 /run/authority-input/genesis-handover-trust.lxt /run/authority-private/material/genesis-handover-trust.lxt
                   install -m 0600 /run/authority-input/handover-finality.conf /run/authority-private/material/handover-finality.conf
@@ -146,6 +147,7 @@ spec:
             - {name: human-authority, mountPath: /run/authority-input, readOnly: true}
             - {name: human-authority-private, mountPath: /run/authority-private}
             - {name: human-module-registry, mountPath: /run/module-registry, readOnly: true}
+            - {name: explorer-authority-evidence, mountPath: /run/explorer-evidence-input, readOnly: true}
       containers:
         - name: layerxd
           image: ghcr.io/sidiora-labs/layerx-node:0.1.0
@@ -432,6 +434,7 @@ spec:
             - {name: LAYERX_AUTHORITY_TLS_KEY_DER, value: /run/layerx/authority-tls/server.key.der}
             - {name: LAYERX_AUTHORITY_CLIENT_CA_DER, value: /run/layerx/trust/ca.crt.der}
             - {name: LAYERX_AUTHORITY_HUMAN_AGENT_TOKEN_FILE, value: /run/authority-private/material/human-agent.token}
+            - {name: LAYERX_AUTHORITY_EVIDENCE_READ_TOKEN_FILE, value: /run/authority-private/material/evidence-read.token}
             - {name: LAYERX_AUTHORITY_IDENTITY_BINDING_SOCKET, value: /run/layerx/human/identity-binding.sock}
             - {name: LAYERX_AUTHORITY_IDENTITY_BINDING_UID, value: '4020'}
             - {name: LAYERX_AUTHORITY_IDENTITY_BINDING_GID, value: '4020'}
@@ -929,6 +932,7 @@ spec:
           secret:
             secretName: layerx-human-authority-material
             defaultMode: 0440
+        - {name: explorer-authority-evidence, secret: {secretName: layerx-explorer-index, defaultMode: 0440, items: [{key: authority-evidence-token, path: authority-evidence-token}]}}
         - {name: human-state, persistentVolumeClaim: {claimName: layerx-human-state}}
         - {name: run, emptyDir: {medium: Memory, sizeLimit: 16Mi}}
         - {name: mirror-config, secret: {secretName: layerx-mirror-config, defaultMode: 0440}}
