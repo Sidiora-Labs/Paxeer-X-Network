@@ -4,7 +4,8 @@ use layerx_gas_station::config::{
 use layerx_gas_station::journal::{Journal, Publication, State};
 use layerx_gas_station::price::PaymasterRateSource;
 use layerx_gas_station::rate::{PublisherConfig, RatePublisher, RateRefusal, DAY_SECONDS};
-use layerx_gas_station::rpc::{ConfiguredRpc, HttpsExchange};
+use layerx_gas_station::quote::Word;
+use layerx_gas_station::rpc::{ConfiguredRpc, HttpsExchange, JsonRpc, RpcFault, SendOutcome};
 use layerx_gas_station::service::{serve, Limits, Service};
 use layerx_gas_station::signer::LocalSigner;
 use layerx_gas_station::station::{GasStation, StationError};
@@ -12,6 +13,7 @@ use std::ffi::OsString;
 use std::io::{self, Write};
 use std::net::{SocketAddr, TcpListener};
 use std::path::PathBuf;
+use serde_json::Value;
 use std::process::ExitCode;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -41,7 +43,14 @@ struct RateArguments {
     config: PathBuf,
     journal: PathBuf,
     rate_file: PathBuf,
+    exit_before_broadcast: bool,
 }
+
+/// The qualification-only flag that stops the rate publisher after a
+/// publication is journalled and before it is broadcast.
+const EXIT_BEFORE_BROADCAST_FLAG: &str = "--test-only-exit-before-rate-broadcast";
+/// The exit code of that qualification-only stop.
+const EXIT_BEFORE_BROADCAST_CODE: i32 = 3;
 
 fn rate_arguments(arguments: impl IntoIterator<Item = OsString>) -> Option<RateArguments> {
     let mut arguments = arguments.into_iter();
@@ -53,8 +62,45 @@ fn rate_arguments(arguments: impl IntoIterator<Item = OsString>) -> Option<RateA
         config: value("--config")?,
         journal: value("--journal")?,
         rate_file: value("--rate-file")?,
+        exit_before_broadcast: false,
     };
-    arguments.next().is_none().then_some(parsed)
+    match (arguments.next(), arguments.next()) {
+        (None, _) => Some(parsed),
+        (Some(flag), None) if flag == EXIT_BEFORE_BROADCAST_FLAG => Some(RateArguments {
+            exit_before_broadcast: true,
+            ..parsed
+        }),
+        _ => None,
+    }
+}
+
+/// The rate publisher's node. Without the qualification-only flag it passes
+/// every call through unchanged; with it, the process exits at its first
+/// broadcast, which the publisher only attempts after the journal has
+/// written and synced the record of the exact signed bytes it sends.
+struct PublisherRpc<R> {
+    rpc: R,
+    exit_before_broadcast: bool,
+}
+impl<R> PublisherRpc<R> {
+    fn stop_before_broadcast(&self) {
+        if self.exit_before_broadcast {
+            println!("rate publisher test-only exit before broadcast");
+            std::process::exit(EXIT_BEFORE_BROADCAST_CODE);
+        }
+    }
+}
+impl<R: JsonRpc> JsonRpc for PublisherRpc<R> {
+    fn call(&self, method: &str, params: Value) -> Result<Value, RpcFault> {
+        if method == "eth_sendRawTransaction" {
+            self.stop_before_broadcast();
+        }
+        self.rpc.call(method, params)
+    }
+    fn send_raw_transaction(&self, raw: &[u8], hash: &Word) -> Result<SendOutcome, RpcFault> {
+        self.stop_before_broadcast();
+        self.rpc.send_raw_transaction(raw, hash)
+    }
 }
 
 fn run_rate(arguments: &RateArguments) -> ExitCode {
@@ -85,7 +131,10 @@ fn run_rate(arguments: &RateArguments) -> ExitCode {
         }
     };
     let rpc = match ConfiguredRpc::new(&config.station, HttpsExchange) {
-        Ok(rpc) => rpc,
+        Ok(rpc) => PublisherRpc {
+            rpc,
+            exit_before_broadcast: arguments.exit_before_broadcast,
+        },
         Err(error) => {
             eprintln!("{error}");
             return ExitCode::from(2);
@@ -360,6 +409,27 @@ mod tests {
                 config: PathBuf::from("rate.json"),
                 journal: PathBuf::from("rate.jsonl"),
                 rate_file: PathBuf::from("rate.toml"),
+                exit_before_broadcast: false,
+            })
+        );
+        assert_eq!(
+            rate_arguments(
+                [
+                    "--config",
+                    "rate.json",
+                    "--journal",
+                    "rate.jsonl",
+                    "--rate-file",
+                    "rate.toml",
+                    EXIT_BEFORE_BROADCAST_FLAG,
+                ]
+                .map(OsString::from)
+            ),
+            Some(RateArguments {
+                config: PathBuf::from("rate.json"),
+                journal: PathBuf::from("rate.jsonl"),
+                rate_file: PathBuf::from("rate.toml"),
+                exit_before_broadcast: true,
             })
         );
         for args in [
@@ -389,6 +459,25 @@ mod tests {
                 "--rate-file",
                 "rate.toml",
                 "extra",
+            ],
+            vec![
+                "--config",
+                "rate.json",
+                "--journal",
+                "rate.jsonl",
+                "--rate-file",
+                "rate.toml",
+                EXIT_BEFORE_BROADCAST_FLAG,
+                "extra",
+            ],
+            vec![
+                EXIT_BEFORE_BROADCAST_FLAG,
+                "--config",
+                "rate.json",
+                "--journal",
+                "rate.jsonl",
+                "--rate-file",
+                "rate.toml",
             ],
         ] {
             assert_eq!(rate_arguments(args.into_iter().map(OsString::from)), None);

@@ -9,7 +9,6 @@ import json
 import os
 from pathlib import Path
 import shutil
-import signal
 import socket
 import subprocess
 import tempfile
@@ -275,22 +274,22 @@ class Contract:
                     ["future set_at -> NotYetSet, no rate_prepared", "missing rate file -> RateFileMissing"])
 
     def crash_between_append_and_send(self):
-        process = self.publisher("publisher-1")
-
-        def prepared_only():
-            kinds = self.kinds()
-            return "rate_prepared" in kinds and "rate_broadcast" not in kinds
-
+        process = self.start("publisher-1", [self.binary, "rate", "--config", self.publisher_path, "--journal",
+                                             self.journal, "--rate-file", self.rate_file,
+                                             "--test-only-exit-before-rate-broadcast"])
         try:
-            self.until(prepared_only, "first rate_prepared record", self.cadence + 120)
-        finally:
-            process.send_signal(signal.SIGKILL)
-            process.wait(timeout=15)
+            code = process.wait(timeout=self.cadence + 120)
+        except subprocess.TimeoutExpired:
+            self.stop(process)
+            raise Failure("publisher did not reach the test-only exit before broadcast")
+        require(code == 3, f"test-only crash point exited {code}, expected 3")
+        require("rate publisher test-only exit before broadcast" in self.log("publisher-1"),
+                "test-only crash point line absent")
         entries = journal_entries(self.journal)
         prepared = [e for e in entries if e["kind"] == "rate_prepared"]
         require(len(prepared) == 1, f"expected one prepared record at the crash, found {len(prepared)}")
         require(not any(e["kind"] == "rate_broadcast" for e in entries),
-                "crash point not reached: broadcast was recorded before the kill")
+                "a broadcast was recorded before the test-only exit")
         tx_hash, nonce = self.check_prepared(prepared[0]["prepared"])
         before = self.journal.read_bytes()
         self.crash = {"hash": tx_hash, "nonce": nonce, "journal_bytes": len(before),
@@ -317,7 +316,7 @@ class Contract:
         require(first_new is None or settled_at < first_new, "new publication constructed before recovery finalized")
         self.publisher_process = process
         self.passed("crash after rate_prepared and before broadcast recovers the same signed transaction first",
-                    [f"kill with prepared hash={tx_hash} nonce={nonce} and no rate_broadcast",
+                    [f"test-only exit 3 with prepared hash={tx_hash} nonce={nonce} and no rate_broadcast",
                      "restart prints recovering line for that hash", "history is an unchanged prefix",
                      f"finalized hash in family {family['hashes']}", "no new nonce prepared before finalization",
                      f"journal kinds {order}"])
