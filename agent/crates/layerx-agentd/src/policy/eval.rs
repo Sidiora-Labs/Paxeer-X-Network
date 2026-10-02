@@ -936,3 +936,88 @@ mod tests {
         assert!(!capability_admits(&capability, &legacy, 200, rate, 0));
     }
 }
+
+impl EvaluationInput<'_> {
+    pub(crate) fn program_requirement_context(
+        &self, tenant:&str, actor:&[u8], session_id:[u8;32], generation:u64,
+        policy:&PolicySet, capability:Option<CapabilityId>, prepared_at:u64,
+    )->Result<Vec<u8>,()> {
+        use serde_json::json;
+        if self.focus.is_some() || self.aggregate.is_none() || !self.session.open
+            || self.session.request.tenant.as_str()!=tenant
+            || self.session.request.agent.as_bytes()!=actor
+            || self.session.request.session_id.0!=session_id
+            || self.session.generation!=generation
+            || self.capability.tenant.as_str()!=tenant
+            || self.intent.core_sequence != prepared_at
+            || self.intent.core_sequence >= self.session.request.expiry_sequence
+            || self.session.request.policy_version != policy.version
+            || capability.is_some_and(|id| id != self.capability.id)
+            || self.intent.effects.iter().any(|effect|
+                !self.session.request.permitted_activity_types.contains(&effect.activity_type))
+            || !valid_context(policy, self).map_err(|_| ())? {return Err(());}
+        let width = u64::try_from(self.intent.effects.len()).map_err(|_| ())?;
+        let rules = u64::try_from(policy.rules.len()).map_err(|_| ())?;
+        if rules.checked_mul(width).is_none_or(|steps| steps > policy.evaluation_step_limit) {
+            return Err(());
+        }
+        for index in 0..self.intent.effects.len() {
+            let focused = self.focused(index);
+            let mut covered = false;
+            for rule in &policy.rules {
+                if rule.effect == RuleEffect::Permit
+                    && DeterministicMatcher.matches(rule, &focused).map_err(|_| ())? {
+                    covered = true;
+                }
+            }
+            if !covered { return Err(()); }
+        }
+        let authority=match &self.session.request.authority {
+            crate::identity::ProtocolAuthority::PrimaryKey(id)=>json!(["primary_key",id]),
+            crate::identity::ProtocolAuthority::SessionKey(id)=>json!(["session_key",id]),
+            crate::identity::ProtocolAuthority::CapabilityGrant(id)=>json!(["capability_grant",id]),
+        };
+        let amount=match &self.capability.amount {
+            AmountBound::Uniform(n)=>json!(["uniform",n.to_string()]),
+            AmountBound::PerAsset(values)=>json!(["per_asset",values.iter()
+                .map(|(asset,n)|json!([asset,n.to_string()])).collect::<Vec<_>>()]),
+        };
+        let rate=match &self.capability.rate {
+            RateBound::Sequences(v)=>json!(["sequences",v.maximum_uses,v.window_sequences]),
+            RateBound::Seconds(values)=>json!(["seconds",values.iter()
+                .map(|(window,n)|json!([window,n])).collect::<Vec<_>>()]),
+        };
+        let expiry=match self.capability.expiry {
+            ExpiryBound::Sequence(n)=>json!(["sequence",n]),
+            ExpiryBound::CoreTimeMs(n)=>json!(["core_ms",n.to_string()]),
+        };
+        let cumulative=match self.context {
+            VerifiedPolicyContext::Unavailable=>json!(["unavailable"]),
+            VerifiedPolicyContext::ProtocolBudget(v)=>json!(["protocol_budget",
+                v.protocol_consumed().to_string(),v.observed_head_sequence(),
+                v.window_start_sequence(),v.window_end_sequence()]),
+            VerifiedPolicyContext::Authenticated(v)=> {
+                if v.actor().as_bytes()!=actor {return Err(());}
+                json!(["authenticated",v.actor().as_bytes(),v.window().first,
+                    v.window().last,v.amount().to_string(),v.count()])
+            },
+        };
+        let purpose=match &self.intent.purpose {
+            Purpose::None=>json!(["none"]), Purpose::Text(v)=>json!(["text",v.as_str()]),
+        };
+        serde_json::to_vec(&json!({"version":1,"tenant":tenant,"actor":actor,
+            "session":session_id,"generation":generation,"authority":authority,
+            "session_scopes":self.session.request.scopes,
+            "session_activity_types":self.session.request.permitted_activity_types,
+            "session_expiry_sequence":self.session.request.expiry_sequence,
+            "session_expiry_seconds":self.session.request.expiry_seconds,
+            "session_policy_version":self.session.request.policy_version,
+            "capability":self.capability.id.0,"activity_types":self.capability.activity_types,
+            "counterparties":self.capability.counterparties,"assets":self.capability.assets,
+            "amount":amount,"rate":rate,"expiry":expiry,"purposes":self.capability.purposes,
+            "core_sequence":self.intent.core_sequence,"purpose":purpose,
+            "effects":self.intent.effects.iter().map(|v|json!([v.activity_type,v.counterparty,
+                v.asset,v.amount.to_string()])).collect::<Vec<_>>(),
+            "cumulative":cumulative})).map_err(|_|())
+    }
+}

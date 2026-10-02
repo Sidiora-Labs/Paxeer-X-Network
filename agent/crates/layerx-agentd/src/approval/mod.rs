@@ -15,6 +15,7 @@ use crate::store::{Store, TenantId};
 
 mod events;
 mod expiry;
+pub(crate) mod program_requirement;
 pub(crate) use expiry::PreparedDecision;
 
 #[cfg(test)]

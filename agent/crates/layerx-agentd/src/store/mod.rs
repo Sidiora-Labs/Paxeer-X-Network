@@ -1226,3 +1226,60 @@ impl<'a> Decoder<'a> {
         self.offset == self.bytes.len()
     }
 }
+
+impl Store {
+    pub(crate) fn apply_program_approval_batch(
+        &mut self,
+        updates: Vec<(TenantKey, Vec<u8>)>,
+        inserts: Vec<(TenantKey, Vec<u8>)>,
+        removals: Vec<TenantKey>,
+    ) -> Result<(), StoreError> {
+        let tenant = updates
+            .first()
+            .or_else(|| inserts.first())
+            .map(|(key, _)| key.tenant())
+            .or_else(|| removals.first().map(TenantKey::tenant))
+            .ok_or(StoreError::Corrupt("empty program approval batch"))?;
+        if updates
+            .iter()
+            .chain(inserts.iter())
+            .map(|(key, _)| key)
+            .chain(removals.iter())
+            .any(|key| key.tenant() != tenant)
+        {
+            return Err(StoreError::Corrupt("cross-tenant program approval batch"));
+        }
+        let mut keys = BTreeSet::new();
+        for (key, _) in &updates {
+            if !keys.insert(key.clone())
+                || self.entries.get(key).is_none_or(|value| value.class != StorageClass::LocalOnly)
+            {
+                return Err(StoreError::Corrupt("invalid program approval update"));
+            }
+        }
+        for (key, _) in &inserts {
+            if !keys.insert(key.clone()) || self.entries.contains_key(key) {
+                return Err(StoreError::Corrupt("invalid program approval insert"));
+            }
+        }
+        for key in &removals {
+            if !keys.insert(key.clone())
+                || self.entries.get(key).is_none_or(|value| value.class != StorageClass::LocalOnly)
+            {
+                return Err(StoreError::Corrupt("invalid program approval removal"));
+            }
+        }
+        let before = self.entries.clone();
+        for (key, bytes) in updates.into_iter().chain(inserts) {
+            self.entries.insert(key, StoredValue { class: StorageClass::LocalOnly, bytes });
+        }
+        for key in removals {
+            self.entries.remove(&key);
+        }
+        if let Err(error) = self.persist() {
+            self.entries = before;
+            return Err(error);
+        }
+        Ok(())
+    }
+}
