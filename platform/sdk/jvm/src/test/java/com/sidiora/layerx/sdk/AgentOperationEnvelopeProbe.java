@@ -1,9 +1,11 @@
 package com.sidiora.layerx.sdk;
 
+import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.InputStream;
+import java.math.BigInteger;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
@@ -12,35 +14,98 @@ import java.nio.file.Path;
 import java.security.KeyStore;
 import java.security.cert.CertificateFactory;
 import java.time.Duration;
+import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.concurrent.CompletionException;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManagerFactory;
-import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-
-/** Probes the real unified gateway and agent daemon envelope route; every input is required. */
+/** Probes the real unified gateway and agent daemon envelope route from the harness case file. */
 public final class AgentOperationEnvelopeProbe {
     private static final ObjectMapper JSON = new ObjectMapper();
-    private static final com.fasterxml.jackson.databind.JavaType NODE = JSON.constructType(JsonNode.class);
+    private static final JavaType NODE = JSON.constructType(JsonNode.class);
+    private static final Map<String, String> OPERATIONS = Map.of(
+        "read", "read.account", "program_read", "program.interface", "approval_list", "approval.list");
 
-    static String required(String name) {
-        String value = System.getenv(name);
-        if (value == null || value.isEmpty()) throw new IllegalStateException("missing required probe input " + name);
-        return value;
+    private AgentOperationEnvelopeProbe() {}
+
+    public static void main(String[] arguments) {
+        try {
+            int passed = run();
+            System.out.println("PAXEER_X_AGENT_ENVELOPE_CASES=" + passed);
+            System.out.flush();
+        } catch (Throwable failure) {
+            System.err.println("agent envelope probe failed: " + failure.getClass().getName()
+                + (failure instanceof PlatformSdkException error ? " " + error.code() + " " + error.agentClass() : "")
+                + (failure instanceof IllegalStateException ? " " + failure.getMessage() : ""));
+            System.exit(1);
+        }
     }
 
-    static HttpClient client() throws Exception {
-        var certificates = CertificateFactory.getInstance("X.509");
+    static int run() throws Exception {
+        String caseFile = System.getenv("PAXEER_X_AGENT_ENVELOPE_CASE");
+        check(caseFile != null && !caseFile.isEmpty(), "missing PAXEER_X_AGENT_ENVELOPE_CASE");
+        JsonNode config = JSON.readTree(Files.readAllBytes(Path.of(caseFile)));
+        check(config != null && config.isObject(), "case file must be a JSON object");
+        check("read".equals(text(config, "phase")), "the JVM probe implements only the read phase");
+        JsonNode credential = JSON.readTree(Files.readAllBytes(Path.of(text(config, "credential_file"))));
+        check(credential != null && credential.isObject() && credential.size() == 4, "credential coordinates");
+        String generation = text(credential, "generation");
+        JsonNode requests = config.get("requests");
+        check(requests != null && requests.isObject(), "requests must be a JSON object");
+        JsonNode cases = config.get("cases");
+        check(cases != null && cases.isArray() && !cases.isEmpty(), "cases must be a non-empty array");
+        Path responses = Path.of(text(config, "response_dir"));
+        check(Files.isDirectory(responses), "response_dir must exist");
+
+        var transport = transport(config, credential, generation);
+        var seen = new LinkedHashSet<String>();
+        for (JsonNode entry : cases) {
+            check(entry.isTextual() && seen.add(entry.textValue()), "case ids must be unique strings");
+            String id = entry.textValue();
+            String operation = OPERATIONS.get(id);
+            check(operation != null, "unsupported case " + id);
+            JsonNode value = read(transport, operation, request(requests, operation));
+            check(value != null && !value.isNull(), "case " + id + " returned no value");
+            Files.write(responses.resolve(id + ".json"), JSON.writeValueAsBytes(value));
+            System.out.println("PAXEER_X_AGENT_ENVELOPE_CASE " + id + " passed");
+        }
+
+        BigInteger current = new BigInteger(generation);
+        check(current.signum() > 0, "credential generation must exceed 0 for the stale case");
+        var stale = refusal(transport(config, credential, current.subtract(BigInteger.ONE).toString()),
+            "read.account", request(requests, "read.account"));
+        check(stale.agentClass() == SchemaErrors.AgentClass.POLICY_REFUSAL, "stale generation was not a policy refusal");
+        var faucet = refusal(transport, "faucet.claim", JSON.createObjectNode());
+        check(faucet.agentClass() == SchemaErrors.AgentClass.UNAVAILABLE_CAPABILITY
+            && faucet.agentRetriability() == SchemaErrors.AgentRetriability.TERMINAL, "faucet.claim was not terminal unavailable");
+        return seen.size();
+    }
+
+    static HttpProductionTransport transport(JsonNode config, JsonNode credential, String generation) throws Exception {
+        URI endpoint = URI.create(text(config, "endpoint"));
+        check("https".equalsIgnoreCase(endpoint.getScheme()), "endpoint must be https");
+        String key = Files.readString(Path.of(text(config, "gateway_api_key_file")), StandardCharsets.US_ASCII).strip();
+        int separator = key.indexOf(':');
+        check(separator > 0 && key.indexOf(':', separator + 1) < 0, "gateway api key must be <id>:<secret>");
+        var admission = new HttpProductionTransport.LayerXKeyCredential(key.substring(0, separator),
+            new SecretBytes(key.substring(separator + 1).getBytes(StandardCharsets.US_ASCII)));
+        var session = new HttpProductionTransport.AgentSessionCredential(text(credential, "tenant"),
+            text(credential, "session_id"),
+            new SecretBytes(text(credential, "token_id").getBytes(StandardCharsets.US_ASCII)), generation);
+        return new HttpProductionTransport(client(text(config, "ca_pem")), JSON, endpoint, endpoint,
+            Duration.ofSeconds(30), admission, session);
+    }
+
+    static HttpClient client(String caPem) throws Exception {
         var trust = KeyStore.getInstance(KeyStore.getDefaultType());
         trust.load(null, null);
-        try (InputStream input = Files.newInputStream(Path.of(required("LAYERX_AGENT_PROBE_GATEWAY_CA")))) {
+        try (InputStream input = Files.newInputStream(Path.of(caPem))) {
             int index = 0;
-            for (var certificate : certificates.generateCertificates(input)) trust.setCertificateEntry("ca" + index++, certificate);
-            if (index == 0) throw new IllegalStateException("LAYERX_AGENT_PROBE_GATEWAY_CA holds no certificate");
+            for (var certificate : CertificateFactory.getInstance("X.509").generateCertificates(input)) {
+                trust.setCertificateEntry("ca" + index++, certificate);
+            }
+            check(index > 0, "ca_pem holds no certificate");
         }
         var factory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
         factory.init(trust);
@@ -50,60 +115,35 @@ public final class AgentOperationEnvelopeProbe {
             .version(HttpClient.Version.HTTP_1_1).build();
     }
 
-    static HttpProductionTransport transport(String generation) throws Exception {
-        URI gateway = URI.create(required("LAYERX_AGENT_PROBE_GATEWAY_URL"));
-        if (!"https".equalsIgnoreCase(gateway.getScheme())) throw new IllegalStateException("LAYERX_AGENT_PROBE_GATEWAY_URL must be https");
-        var admission = new HttpProductionTransport.LayerXKeyCredential(required("LAYERX_AGENT_PROBE_API_KEY_ID"),
-            new SecretBytes(required("LAYERX_AGENT_PROBE_API_KEY").getBytes(StandardCharsets.US_ASCII)));
-        var session = new HttpProductionTransport.AgentSessionCredential(required("LAYERX_AGENT_PROBE_TENANT"),
-            required("LAYERX_AGENT_PROBE_SESSION_ID"),
-            new SecretBytes(required("LAYERX_AGENT_PROBE_TOKEN_ID").getBytes(StandardCharsets.US_ASCII)), generation);
-        return new HttpProductionTransport(client(), JSON, gateway, gateway, Duration.ofSeconds(30), admission, session);
+    static ObjectNode request(JsonNode requests, String operation) {
+        JsonNode value = requests.get(operation);
+        check(value instanceof ObjectNode, "provisioned request lacks " + operation);
+        return (ObjectNode) value;
     }
 
-    static ObjectNode request(String name) throws Exception {
-        JsonNode value = JSON.readTree(required(name));
-        if (!(value instanceof ObjectNode object)) throw new IllegalStateException(name + " must be a JSON object");
-        return object;
-    }
-
-    static JsonNode read(HttpProductionTransport transport, String operation, String requestInput) throws Exception {
-        var call = new ProductionTransport.Call(OperationCatalog.agent(operation), request(requestInput), null, null);
+    static JsonNode read(HttpProductionTransport transport, String operation, ObjectNode request) {
+        var call = new ProductionTransport.Call(OperationCatalog.agent(operation), request, null, null);
         return transport.<JsonNode>call(call, NODE).toCompletableFuture().join();
     }
 
-    static PlatformSdkException refusal(HttpProductionTransport transport, String operation, String requestInput) throws Exception {
-        var call = new ProductionTransport.Call(OperationCatalog.agent(operation), request(requestInput), null, null);
-        var failure = assertThrows(CompletionException.class,
-            () -> transport.<JsonNode>call(call, NODE).toCompletableFuture().join());
-        return assertInstanceOf(PlatformSdkException.class, failure.getCause());
+    static PlatformSdkException refusal(HttpProductionTransport transport, String operation, ObjectNode request) {
+        var call = new ProductionTransport.Call(OperationCatalog.agent(operation), request, null, null);
+        try {
+            transport.<JsonNode>call(call, NODE).toCompletableFuture().join();
+        } catch (CompletionException failure) {
+            check(failure.getCause() instanceof PlatformSdkException, operation + " failed outside the SDK error contract");
+            return (PlatformSdkException) failure.getCause();
+        }
+        throw new IllegalStateException(operation + " was not refused");
     }
 
-    static String staleGeneration() {
-        String generation = required("LAYERX_AGENT_PROBE_GENERATION");
-        if ("0".equals(generation)) throw new IllegalStateException("LAYERX_AGENT_PROBE_GENERATION must exceed 0 for the stale case");
-        return new java.math.BigInteger(generation).subtract(java.math.BigInteger.ONE).toString();
+    static String text(JsonNode object, String field) {
+        JsonNode value = object.get(field);
+        check(value != null && value.isTextual() && !value.textValue().isEmpty(), "missing " + field);
+        return value.textValue();
     }
 
-    @Test
-    void authenticatedReadsProgramReadAndApprovalListUseTheEnvelopeRoute() throws Exception {
-        var transport = transport(required("LAYERX_AGENT_PROBE_GENERATION"));
-        assertNotNull(read(transport, "read.account", "LAYERX_AGENT_PROBE_READ_ACCOUNT_REQUEST"));
-        assertNotNull(read(transport, "program.discover", "LAYERX_AGENT_PROBE_PROGRAM_DISCOVER_REQUEST"));
-        assertNotNull(read(transport, "approval.list", "LAYERX_AGENT_PROBE_APPROVAL_LIST_REQUEST"));
-    }
-
-    @Test
-    void staleGenerationIsRefusedBySessionControl() throws Exception {
-        var error = refusal(transport(staleGeneration()), "read.account", "LAYERX_AGENT_PROBE_READ_ACCOUNT_REQUEST");
-        assertEquals(SchemaErrors.AgentClass.POLICY_REFUSAL, error.agentClass());
-    }
-
-    @Test
-    void retiredFaucetIsUnavailable() throws Exception {
-        var error = refusal(transport(required("LAYERX_AGENT_PROBE_GENERATION")), "faucet.claim",
-            "LAYERX_AGENT_PROBE_FAUCET_CLAIM_REQUEST");
-        assertEquals(SchemaErrors.AgentClass.UNAVAILABLE_CAPABILITY, error.agentClass());
-        assertEquals(SchemaErrors.AgentRetriability.TERMINAL, error.agentRetriability());
+    static void check(boolean condition, String message) {
+        if (!condition) throw new IllegalStateException(message);
     }
 }

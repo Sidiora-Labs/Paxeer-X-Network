@@ -126,6 +126,7 @@ authority = "The daemon authenticates these exact coordinates; the agent is take
 
 [record.AgentHttpSuccess]
 fields = ["request_id:Sequence","value:canonical-map","verification_status:VerificationStatus"]
+verification_status = "Either {state:\"achieved\",level:L} or {state:\"unverified\",requested:L,achieved:L,reason:ReasonCode} with achieved strictly below requested; L is one of Unverified, SequencerSigned, BatchIncluded, StateProven, CheckpointFinalised, SettlementAnchored. An unverified status that violates the ordering is refused as VerificationFailure verification.inconsistent."
 
 [record.AgentHttpError]
 fields = ["class:ErrorClass","protocol_result_code:i32?","retriability:Retriability","request_id:Sequence","reason:utf8"]

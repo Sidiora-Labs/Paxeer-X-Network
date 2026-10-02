@@ -2,12 +2,20 @@
 //! session authorization ordering ahead of any owner effect.
 
 use layerx_agent_api::error::{ApiError, ErrorClass, ReasonCode, RequestId, Retriability};
+use layerx_agent_api::verify::{Level, VerificationStatus};
 use serde::Deserialize;
+
+use crate::agent_rpc_dispatch::{
+    canonical_request_bytes, dispatch_operation, DispatchContext, Dispatched,
+};
+use crate::degraded::Mode;
+use crate::idempotency::{EconomicResult, IdempotencyError, Outcome};
+use crate::human_runtime::{HumanAuthorityBoundary, SharedAgentOwner};
 
 use crate::session::{SessionCredential, SessionId};
 use crate::session_control::{OperationPermit, SessionControl, SessionControlError};
 use crate::store::TenantId;
-use crate::tenant::{self, AuthorizationError, ObjectOwner, Operation, Surface};
+use crate::tenant::{self, surface_for, target_owner, AuthorizationError, ObjectOwner, Operation, Surface};
 
 pub const ENVELOPE_VERSION: u8 = 1;
 pub const MAX_BODY_BYTES: usize = 1_048_576;
@@ -55,7 +63,7 @@ pub struct Rejection {
 }
 
 impl Rejection {
-    const fn new(class: ErrorClass, request_id: RequestId, reason: &'static str) -> Self {
+    pub(crate) const fn new(class: ErrorClass, request_id: RequestId, reason: &'static str) -> Self {
         Self {
             class,
             retriability: Retriability::Terminal,
@@ -344,5 +352,243 @@ pub fn refusal(status: u16, class: ErrorClass, reason: &'static str) -> AgentRpc
     AgentRpcResponse {
         status,
         body: error_body(&Rejection::new(class, RequestId(0), reason)),
+    }
+}
+
+const fn level_name(level: Level) -> &'static str {
+    match level {
+        Level::Unverified => "Unverified",
+        Level::SequencerSigned => "SequencerSigned",
+        Level::BatchIncluded => "BatchIncluded",
+        Level::StateProven => "StateProven",
+        Level::CheckpointFinalised => "CheckpointFinalised",
+        Level::SettlementAnchored => "SettlementAnchored",
+    }
+}
+
+fn verification_json(
+    request_id: RequestId,
+    status: &VerificationStatus,
+) -> Result<serde_json::Value, Rejection> {
+    match status {
+        VerificationStatus::Achieved(level) => Ok(serde_json::json!({
+            "state": "achieved",
+            "level": level_name(*level),
+        })),
+        VerificationStatus::Unverified {
+            requested,
+            achieved,
+            reason,
+        } => {
+            if achieved >= requested {
+                return Err(Rejection::new(
+                    ErrorClass::VerificationFailure,
+                    request_id,
+                    "verification.inconsistent",
+                ));
+            }
+            Ok(serde_json::json!({
+                "state": "unverified",
+                "requested": level_name(*requested),
+                "achieved": level_name(*achieved),
+                "reason": reason.as_str(),
+            }))
+        }
+    }
+}
+
+fn rejected(rejection: &Rejection) -> AgentRpcResponse {
+    AgentRpcResponse {
+        status: http_status(rejection),
+        body: error_body(rejection),
+    }
+}
+
+/// Renders the section 4 success envelope with its exact fields.
+///
+/// # Errors
+/// Returns `VerificationFailure` when an unverified status does not satisfy achieved < requested.
+pub fn success_body(
+    request_id: RequestId,
+    dispatched: &Dispatched,
+) -> Result<AgentRpcResponse, Rejection> {
+    let verification_status = verification_json(request_id, &dispatched.verification)?;
+    Ok(AgentRpcResponse {
+        status: 200,
+        body: serde_json::json!({
+            "request_id": request_id.0.to_string(),
+            "value": dispatched.value,
+            "verification_status": verification_status,
+        })
+        .to_string()
+        .into_bytes(),
+    })
+}
+
+fn owner_unavailable(request_id: RequestId) -> Rejection {
+    Rejection {
+        class: ErrorClass::InternalFault,
+        retriability: Retriability::Retriable,
+        request_id,
+        reason: "owner.unavailable",
+    }
+}
+
+fn authorized<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>,
+    envelope: &Envelope,
+) -> Result<(OperationPermit, u64), Rejection> {
+    let request_id = envelope.request_id;
+    let surface = surface_for(envelope.operation);
+    let target = target_owner(envelope.operation, &envelope.request);
+    let core_sequence = owner
+        .current_core_sequence()
+        .map_err(|_| owner_unavailable(request_id))?;
+    let guard = owner.lock().map_err(|_| owner_unavailable(request_id))?;
+    if guard.degraded.status().mode != Mode::Healthy {
+        return Err(Rejection {
+            class: ErrorClass::UnavailableCapability,
+            retriability: Retriability::Retriable,
+            request_id,
+            reason: "owner.degraded",
+        });
+    }
+    let permit = authorize(&guard.session_control, envelope, surface, core_sequence, target)?;
+    drop(guard);
+    Ok((permit, core_sequence))
+}
+
+fn respond(request_id: RequestId, result: Result<Dispatched, Rejection>) -> AgentRpcResponse {
+    match result.and_then(|dispatched| success_body(request_id, &dispatched)) {
+        Ok(response) => response,
+        Err(rejection) => rejected(&rejection),
+    }
+}
+
+const fn is_fault(class: ErrorClass) -> bool {
+    matches!(
+        class,
+        ErrorClass::InternalFault | ErrorClass::TransportFailure | ErrorClass::Deadline
+    )
+}
+
+fn settled_bytes(response: &AgentRpcResponse) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(2 + response.body.len());
+    bytes.extend_from_slice(&response.status.to_be_bytes());
+    bytes.extend_from_slice(&response.body);
+    bytes
+}
+
+fn replayed(request_id: RequestId, bytes: &[u8]) -> AgentRpcResponse {
+    match bytes {
+        [high, low, body @ ..] => AgentRpcResponse {
+            status: u16::from_be_bytes([*high, *low]),
+            body: body.to_vec(),
+        },
+        _ => rejected(&owner_unavailable(request_id)),
+    }
+}
+
+fn idempotency_refusal(request_id: RequestId, error: IdempotencyError) -> Rejection {
+    match error {
+        IdempotencyError::Conflict(_) => Rejection::new(
+            ErrorClass::IdempotencyConflict,
+            request_id,
+            "idempotency.body_changed",
+        ),
+        _ => owner_unavailable(request_id),
+    }
+}
+
+/// Serves one agent RPC request body through the shared owner: decode (retired operations are
+/// refused there), degraded refusal, session authorization with the permit held through the
+/// owner effect, durable idempotency for every dispatched mutation outside the prepare and
+/// submit journeys, and the success or error envelope. Typed owner refusals settle like
+/// successes and replay identically; a pending record found on retry is an unknown outcome and
+/// the effect is never re-run.
+#[must_use]
+pub fn handle_rpc<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>,
+    body: &[u8],
+) -> AgentRpcResponse {
+    let envelope = match decode(body) {
+        Ok(envelope) => envelope,
+        Err(rejection) => return rejected(&rejection),
+    };
+    let request_id = envelope.request_id;
+    let (permit, core_sequence) = match envelope.credential {
+        Some(_) => match authorized(owner, &envelope) {
+            Ok(authorized) => authorized,
+            Err(rejection) => return rejected(&rejection),
+        },
+        None => match envelope.operation {},
+    };
+    let peer = match owner.rpc_peer(permit.principal()) {
+        Ok(peer) => peer,
+        Err(_) => {
+            return rejected(&Rejection::new(
+                ErrorClass::PolicyRefusal,
+                request_id,
+                "envelope.peer_unmapped",
+            ));
+        }
+    };
+    let context = DispatchContext {
+        request_id,
+        idempotency_key: envelope.idempotency_key,
+        peer,
+    };
+    let journey = matches!(envelope.operation, Operation::Prepare | Operation::Submit);
+    let Some(key) = envelope.idempotency_key.filter(|_| !journey) else {
+        let result = dispatch_operation(owner, &permit, envelope.operation, &envelope.request, &context);
+        let response = respond(request_id, result);
+        drop(permit);
+        return response;
+    };
+    let request_bytes = match canonical_request_bytes(envelope.operation, &envelope.request, request_id) {
+        Ok(Some(bytes)) => bytes,
+        Ok(None) => {
+            return rejected(&Rejection::new(
+                ErrorClass::UnavailableCapability,
+                request_id,
+                "idempotency.unsupported_operation",
+            ));
+        }
+        Err(rejection) => return rejected(&rejection),
+    };
+    let store = match owner.idempotency(&permit.principal().tenant) {
+        Ok(store) => store,
+        Err(_) => return rejected(&owner_unavailable(request_id)),
+    };
+    let mut fault = None;
+    let outcome = store.execute(key, &request_bytes, core_sequence, |attempt| {
+        if attempt.retry {
+            fault = Some(Rejection::new(ErrorClass::TransportFailure, request_id, "outcome.unknown"));
+            return Err(String::from("outcome.unknown"));
+        }
+        let result = dispatch_operation(owner, &permit, envelope.operation, &envelope.request, &context)
+            .and_then(|dispatched| success_body(request_id, &dispatched));
+        let response = match result {
+            Ok(response) => response,
+            Err(rejection) if is_fault(rejection.class) => {
+                fault = Some(rejection);
+                return Err(String::from("fault"));
+            }
+            Err(rejection) => rejected(&rejection),
+        };
+        Ok(EconomicResult {
+            response_bytes: settled_bytes(&response),
+            receipt_ref: None,
+        })
+    });
+    drop(permit);
+    match outcome {
+        Ok(Outcome::First(result) | Outcome::RepeatedOriginal(result)) => {
+            replayed(request_id, &result.response_bytes)
+        }
+        Err(IdempotencyError::Operation(_)) => {
+            rejected(&fault.unwrap_or_else(|| owner_unavailable(request_id)))
+        }
+        Err(error) => rejected(&idempotency_refusal(request_id, error)),
     }
 }

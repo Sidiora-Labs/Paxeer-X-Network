@@ -577,6 +577,7 @@ fn start_shared_owner(
             session_keys,
         )
         .map_err(|error| format!("human owner is invalid: {error:?}"))?,
+        &peers,
     );
     let server = HumanUnixServer::bind(
         HumanListenerConfig {
@@ -618,6 +619,13 @@ fn start_agent_rpc(
     let Some(listen) = optional("LAYERX_AGENTD_RPC_LISTEN") else {
         return Ok(());
     };
+    let owner = owner
+        .with_idempotency(
+            absolute_path("LAYERX_AGENTD_RPC_IDEMPOTENCY_ROOT")?,
+            parse_u64("LAYERX_AGENTD_RPC_IDEMPOTENCY_DAEMON_SEQUENCES")?,
+            parse_u64("LAYERX_AGENTD_RPC_IDEMPOTENCY_PROTOCOL_SEQUENCES")?,
+        )
+        .map_err(|error| format!("agent rpc idempotency is invalid: {error:?}"))?;
     let tls = AgentRpcTls::from_paths(&AgentRpcTlsPaths {
         cert: absolute_path("LAYERX_AGENTD_RPC_TLS_CERT")?,
         key: absolute_path("LAYERX_AGENTD_RPC_TLS_KEY")?,
@@ -691,10 +699,11 @@ fn agent_rpc_exchange<S: Read>(
     if version != Some("HTTP/1.1") || parts.next().is_some() {
         return malformed();
     }
-    if path != Some("/rpc") {
+    let health = path == Some("/healthz");
+    if path != Some("/rpc") && !health {
         return agent_rpc::refusal(404, ErrorClass::ProtocolIncompatibility, "envelope.malformed");
     }
-    if method != Some("POST") {
+    if method != Some(if health { "GET" } else { "POST" }) {
         return agent_rpc::refusal(405, ErrorClass::ProtocolIncompatibility, "envelope.malformed");
     }
     let mut content_length = None;
@@ -723,6 +732,12 @@ fn agent_rpc_exchange<S: Read>(
             content_length = parsed;
         }
     }
+    if health {
+        if content_length.unwrap_or(0) != 0 || length != head_end {
+            return malformed();
+        }
+        return agent_rpc_health(owner);
+    }
     let Some(content_length) = content_length else {
         return malformed();
     };
@@ -738,9 +753,21 @@ fn agent_rpc_exchange<S: Read>(
     if stream.read_exact(&mut body[content_length - missing..]).is_err() {
         return malformed();
     }
-    match owner.lock() {
-        Ok(guard) => agent_rpc::handle_rpc(&guard, &body),
-        Err(_) => agent_rpc::refusal(500, ErrorClass::InternalFault, "owner.unavailable"),
+    agent_rpc::handle_rpc(owner, &body)
+}
+
+/// Readiness and negotiated node identity for the gateway's binding health check.
+fn agent_rpc_health(owner: &SharedAgentOwner<RemoteHumanAuthority>) -> AgentRpcResponse {
+    let health = owner.lock().and_then(|guard| guard.rpc_health());
+    match health {
+        Ok((ready, network_id, protocol_version)) => AgentRpcResponse {
+            status: 200,
+            body: format!(
+                "{{\"ready\":{ready},\"network_id\":\"{network_id}\",\"wire_version\":\"{protocol_version}\"}}"
+            )
+            .into_bytes(),
+        },
+        Err(_) => agent_rpc::refusal(503, ErrorClass::InternalFault, "owner.unavailable"),
     }
 }
 

@@ -31,7 +31,9 @@ DIRECT_CASES = ('read_account', 'program_read', 'approval_list', 'program_bearer
                 'forged_principal_header', 'malformed_body', 'truncated_body', 'oversized_body', 'unknown_operation',
                 'unknown_field', 'bad_version', 'noncanonical_integer', 'faucet_retired', 'mtls_no_client_cert',
                 'mtls_wrong_peer', 'mtls_wrong_ca', 'no_plaintext_fallback', 'native_rpc_unchanged',
-                'programs_route_unchanged')
+                'programs_route_unchanged', 'idempotent_replay_same_body', 'idempotency_changed_body_conflict',
+                'health_ready', 'health_binding_wrong_network', 'health_binding_ready_false')
+HEALTH_PATH = '/healthz'
 CLASSES = {'TransportFailure', 'Deadline', 'ProtocolIncompatibility', 'UnavailableCapability', 'CoreRejection',
            'VerificationFailure', 'PolicyRefusal', 'CapabilityRefusal', 'BudgetRefusal', 'RateLimit',
            'IdempotencyConflict', 'InternalFault'}
@@ -97,6 +99,16 @@ def operations():
     require(len(names) == 50 and len(set(names)) == 50, 'generated catalogue must name exactly 50 operations')
     require('faucet.claim' in names, 'generated catalogue lost faucet.claim')
     return sorted(names)
+
+
+def mutating_operations():
+    text = (ROOT / 'agent/crates/layerx-agent-api/src/operation_generated.rs').read_text()
+    names = dict(re.findall(r'Self::([A-Za-z]+) => "([a-z_.\-]+)"', text[text.index('pub const fn name(self)'):]))
+    body = text[text.index('pub const fn mutating(self) -> bool'):]
+    body = body[body.index('matches!('):body.index('\n        )\n')]
+    variants = set(re.findall(r'Self::([A-Za-z]+)', body))
+    require(variants and variants <= set(names), 'generated mutating classification unreadable')
+    return {names[variant] for variant in variants}
 
 
 def source_identity():
@@ -228,15 +240,50 @@ def load_config():
     config = load_private(os.environ.get('PAXEER_X_AGENT_ENVELOPE_CONFIG'), 'PAXEER_X_AGENT_ENVELOPE_CONFIG')
     require(config.get('schema') == CONFIG_SCHEMA, 'qualification configuration schema')
     for key in ('agentd_env', 'gateway_env', 'requests', 'credential_file', 'gateway_api_key_file',
-                'program_bearer_file', 'gateway_peer_identity', 'program_route', 'native_rpc_body'):
+                'program_bearer_file', 'gateway_peer_identity', 'program_route', 'native_rpc_body',
+                'gateway_network_id', 'wire_version', 'route_bindings', 'agentd_binding_pointer'):
         require(key in config, 'qualification configuration lacks ' + key)
-    for key in ('read.account', 'program.interface', 'approval.list', 'mutation'):
-        require(key in config['requests'], 'provisioned request lacks ' + key)
+    require(isinstance(config['gateway_network_id'], str) and config['gateway_network_id']
+            and isinstance(config['wire_version'], str) and config['wire_version'], 'health identity values must be strings')
+    expected = {'read': 'read.account', 'program_read': 'program.interface', 'approval_list': 'approval.list'}
+    names = operations()
+    expected.update({'operation.' + name: name for name in names})
+    for case, operation in expected.items():
+        row = config['requests'].get(case)
+        require(isinstance(row, dict) and row.get('operation') == operation and isinstance(row.get('request'), dict),
+                'provisioned request lacks ' + case)
+    for case in ('allowed_mutation', 'changed_body'):
+        row = config['requests'].get(case)
+        require(isinstance(row, dict) and row.get('operation') in names and isinstance(row.get('request'), dict),
+                'provisioned request lacks ' + case)
+    require(config['requests']['changed_body']['operation'] == config['requests']['allowed_mutation']['operation']
+            and config['requests']['changed_body']['request'] != config['requests']['allowed_mutation']['request'],
+            'changed_body must change the allowed_mutation request body')
+    require(config['requests']['allowed_mutation']['operation'] in mutating_operations(), 'allowed_mutation must be a mutating operation')
+    row = config['requests'].get('wrong_scope')
+    require(isinstance(row, dict) and set(row) == {'operation', 'request'} and row['operation'] in mutating_operations()
+            and isinstance(row['request'], dict), 'provisioned request lacks wrong_scope mutation')
+    row = config['requests'].get('revoked_session')
+    require(isinstance(row, dict) and set(row) == {'credential_file'}, 'provisioned request lacks revoked_session credential')
+    revoked = load_private(row['credential_file'], 'revoked_session credential_file')
+    require(set(revoked) == {'tenant', 'session_id', 'token_id', 'generation'} and all(isinstance(v, str) for v in revoked.values())
+            and 0 < len(revoked['tenant'].encode()) <= 255 and '\0' not in revoked['tenant']
+            and re.fullmatch('[0-9a-f]{64}', revoked['session_id']) and re.fullmatch('[0-9a-f]{64}', revoked['token_id'])
+            and re.fullmatch('(0|[1-9][0-9]{0,19})', revoked['generation']) and int(revoked['generation']) < 2**64,
+            'revoked_session credential encoding')
+    require(all('idempotency_key' not in row for row in config['requests'].values()), 'harness owns idempotency keys')
+    require('{route_bindings_file}' in json.dumps(config['gateway_env']), 'gateway_env must load the generated route bindings')
+    key_line = Path(config['gateway_api_key_file']).read_text()
+    require(re.fullmatch(r'[^:\s]+:[^:\s]+\n?', key_line), 'gateway API key file must be one line <key_id>:<secret>')
     for key in ('credential_file', 'gateway_api_key_file', 'program_bearer_file'):
         load_private(config[key], key) if key == 'credential_file' else require(
             Path(config[key]).is_file() and not Path(config[key]).stat().st_mode & 0o077, 'provisioned authority ' + key)
     credential = load_private(config['credential_file'], 'credential_file')
-    require(set(credential) == {'tenant', 'session_id', 'token_id', 'generation'}, 'provisioned credential coordinates')
+    require(set(credential) == {'tenant', 'session_id', 'token_id', 'generation'}
+            and all(isinstance(value, str) for value in credential.values()), 'provisioned credential coordinates')
+    require(0 < len(credential['tenant'].encode()) <= 255 and '\0' not in credential['tenant']
+            and re.fullmatch('[0-9a-f]{64}', credential['session_id']) and re.fullmatch('[0-9a-f]{64}', credential['token_id']),
+            'provisioned credential encoding')
     require(re.fullmatch('(0|[1-9][0-9]{0,19})', credential['generation']) and int(credential['generation']) < 2**64,
             'provisioned generation is not canonical')
     for key in ('agentd_env', 'gateway_env'):
@@ -296,7 +343,8 @@ class Qualification:
         values = {'tls_dir': str(self.tls), 'state_dir': str(self.d / 'agent-state'), 'runtime_dir': str(self.runtime.directory),
                   'agent_rpc_port': str(self.agent_port), 'gateway_port': str(self.gateway_port),
                   'node_rpc_url': self.runtime.rpc_url, 'replica_url': 'http://127.0.0.1:' + str(self.runtime.ports[8]),
-                  'node_socket': self.runtime.manifest['node_socket']}
+                  'node_socket': self.runtime.manifest['node_socket'],
+                  'route_bindings_file': str(self.d / 'route-bindings.json')}
         values.update(extra or {})
         return {key: value.format(**values) for key, value in env.items()}
 
@@ -392,7 +440,7 @@ class Qualification:
         return self.raw(port or self.gateway_port, head.encode() + (body or b''), ctx or self.context(), case)
 
     def api_key(self):
-        return {'LayerX-Key': Path(self.config['gateway_api_key_file']).read_text().strip()}
+        return {'Authorization': 'LayerX-Key ' + Path(self.config['gateway_api_key_file']).read_text().strip()}
 
     def envelope(self, operation, request, credential=True, idempotency=None, **extra):
         self.request_id += 1
@@ -438,12 +486,11 @@ class Qualification:
 
     def direct_cases(self):
         req = self.config['requests']
-        for case, operation in (('read_account', 'read.account'), ('program_read', 'program.interface'),
-                                ('approval_list', 'approval.list')):
-            value, status, body = self.call(case, operation, req[operation])
+        for case, key in (('read_account', 'read'), ('program_read', 'program_read'), ('approval_list', 'approval_list')):
+            value, status, body = self.call(case, req[key]['operation'], req[key]['request'])
             self.success(status, body, value['request_id'], case)
             self.passed(case, self.d / 'responses' / (case + '.http'))
-        mutation = req['mutation']
+        mutation = req['allowed_mutation']
         key = os.urandom(32).hex()
         value = self.envelope(mutation['operation'], mutation['request'], credential=False, idempotency=key)
         status, body = self.http(self.encode(value), headers={'Authorization': 'Bearer ' + Path(self.config['program_bearer_file']).read_text().strip()},
@@ -457,14 +504,14 @@ class Qualification:
         require(status in (400, 401, 403), 'gateway_key_alone_write: gateway key authorized a catalogue write')
         require(json.loads(body)['class'] in ('ProtocolIncompatibility', 'PolicyRefusal'), 'gateway_key_alone_write: class')
         self.passed('gateway_key_alone_write', self.d / 'responses/gateway_key_alone_write.http')
-        value = self.envelope('read.account', req['read.account'])
+        value = self.envelope('read.account', req['read']['request'])
         forged = dict(self.api_key(), **{'LayerX-Tenant': 'forged', 'LayerX-Agent': 'forged', 'X-Forwarded-For': '203.0.113.1'})
         status, body = self.http(self.encode(value), headers=forged, case='forged_principal_header')
         self.success(status, body, value['request_id'], 'forged_principal_header')
         self.direct_daemon_header_principal(value)
         self.passed('forged_principal_header', self.d / 'responses/forged_principal_header.http')
         bad = [('malformed_body', b'{"version":1,"version":1}', 400, 'ProtocolIncompatibility', 'envelope.malformed'),
-               ('truncated_body', self.encode(self.envelope('read.account', req['read.account']))[:-7], 400,
+               ('truncated_body', self.encode(self.envelope('read.account', req['read']['request']))[:-7], 400,
                 'ProtocolIncompatibility', 'envelope.malformed')]
         for case, body, http_status, klass, reason in bad:
             status, response = self.http(body, headers=self.api_key(), case=case)
@@ -474,48 +521,48 @@ class Qualification:
         self.refusal(status, response, 400, 'ProtocolIncompatibility', 'envelope.malformed', 'malformed_body_utf8', request_id=0)
         status, response = self.http(b'{"version":1}', headers=dict(self.api_key(), **{'Content-Length': '200'}), case='truncated_framing')
         require(status in (400, 408) or not response, 'truncated_framing accepted a short body')
-        over = self.envelope('read.account', req['read.account'])
-        over['request'] = dict(req['read.account'])
+        over = self.envelope('read.account', req['read']['request'])
+        over['request'] = dict(req['read']['request'])
         body = self.encode(over)
         body = body[:-1] + b',"padding":"' + b'a' * (MAX_BODY - len(body) + 16) + b'"}'
         require(len(body) > MAX_BODY, 'oversized case is not over the bound')
         status, response = self.http(body, headers=self.api_key(), case='oversized_body')
         self.refusal(status, response, 413, 'ProtocolIncompatibility', 'envelope.oversized', 'oversized_body')
         self.passed('oversized_body', self.d / 'responses/oversized_body.http')
-        value = self.envelope('read.unknown_operation', req['read.account'])
+        value = self.envelope('read.unknown_operation', req['read']['request'])
         status, response = self.http(self.encode(value), headers=self.api_key(), case='unknown_operation')
         self.refusal(status, response, 404, 'ProtocolIncompatibility', 'envelope.unknown_operation', 'unknown_operation', value['request_id'])
         self.passed('unknown_operation', self.d / 'responses/unknown_operation.http')
-        value = self.envelope('read.account', req['read.account'], principal='forged')
+        value = self.envelope('read.account', req['read']['request'], principal='forged')
         status, response = self.http(self.encode(value), headers=self.api_key(), case='unknown_field')
         self.refusal(status, response, 400, 'ProtocolIncompatibility', 'envelope.unknown_field', 'unknown_field')
-        value = self.envelope('read.account', req['read.account'])
+        value = self.envelope('read.account', req['read']['request'])
         value['credential']['agent'] = 'forged'
         status, response = self.http(self.encode(value), headers=self.api_key(), case='unknown_credential_field')
         self.refusal(status, response, 400, 'ProtocolIncompatibility', 'envelope.unknown_field', 'unknown_credential_field')
         self.passed('unknown_field', self.d / 'responses/unknown_field.http')
         for case, version in (('bad_version', 2), ('bad_version_string', '1')):
-            value = self.envelope('read.account', req['read.account'])
+            value = self.envelope('read.account', req['read']['request'])
             value['version'] = version
             status, response = self.http(self.encode(value), headers=self.api_key(), case=case)
             self.refusal(status, response, 400, 'ProtocolIncompatibility', 'envelope.version', case)
         self.passed('bad_version', self.d / 'responses/bad_version.http')
         for case, generation in (('noncanonical_leading_zero', '0' + self.credential['generation']),
                                  ('noncanonical_overflow', str(2**64)), ('noncanonical_sign', '+' + self.credential['generation'])):
-            value = self.envelope('read.account', req['read.account'])
+            value = self.envelope('read.account', req['read']['request'])
             value['credential']['generation'] = generation
             status, response = self.http(self.encode(value), headers=self.api_key(), case=case)
             self.refusal(status, response, 400, 'ProtocolIncompatibility', 'envelope.noncanonical_integer', case)
-        value = self.envelope('read.account', req['read.account'])
+        value = self.envelope('read.account', req['read']['request'])
         value['credential']['generation'] = int(self.credential['generation'])
         status, response = self.http(self.encode(value), headers=self.api_key(), case='noncanonical_number')
         require(status == 400 and json.loads(response)['class'] == 'ProtocolIncompatibility', 'noncanonical_number accepted')
-        value = self.envelope('read.account', req['read.account'])
+        value = self.envelope('read.account', req['read']['request'])
         value['request_id'] = '0' + value['request_id']
         status, response = self.http(self.encode(value), headers=self.api_key(), case='noncanonical_request_id')
         self.refusal(status, response, 400, 'ProtocolIncompatibility', 'envelope.noncanonical_integer', 'noncanonical_request_id')
         self.passed('noncanonical_integer', self.d / 'responses/noncanonical_overflow.http')
-        value, status, response = self.call('faucet_retired', 'faucet.claim', req.get('faucet.claim', {}),
+        value, status, response = self.call('faucet_retired', 'faucet.claim', req['operation.faucet.claim']['request'],
                                             idempotency=os.urandom(32).hex())
         error = self.refusal(status, response, 503, 'UnavailableCapability', 'unavailable_capability.faucet.claim',
                              'faucet_retired', value['request_id'])
@@ -532,7 +579,7 @@ class Qualification:
         status, response = self.http(None if route['method'] == 'GET' else route['body'].encode(), path=route['path'],
                                      method=route['method'], headers=self.api_key(), case='programs_route_unchanged')
         require(status == route['status'] and 'verification_status' not in json.loads(response), 'programs route changed contract')
-        status, response = self.http(self.encode(self.envelope('read.account', req['read.account'])), path=ROUTE + '/',
+        status, response = self.http(self.encode(self.envelope('read.account', req['read']['request'])), path=ROUTE + '/',
                                      headers=self.api_key(), case='route_prefix_refused')
         require(status in (404, 405), 'agent route admitted a prefix match')
         status, response = self.http(None, path=ROUTE, method='GET', headers=self.api_key(), case='route_method_refused')
@@ -546,7 +593,7 @@ class Qualification:
         self.refusal(status, response, 403, 'PolicyRefusal', 'envelope.header_principal', 'daemon_header_principal')
 
     def mtls_cases(self):
-        body = self.encode(self.envelope('read.account', self.config['requests']['read.account']))
+        body = self.encode(self.envelope('read.account', self.config['requests']['read']['request']))
         def refused(case, ctx, port=None):
             try:
                 status, _ = self.http(body, path='/rpc', case=case, port=port or self.agent_port, ctx=ctx)
@@ -589,6 +636,93 @@ class Qualification:
         self.start_gateway()
         self.passed('no_plaintext_fallback', self.d / 'agentd.log')
 
+    def probe_requests(self):
+        mutating = mutating_operations()
+        requests = json.loads(json.dumps(self.config['requests']))
+        requests['allowed_mutation']['idempotency_key'] = os.urandom(32).hex()
+        requests['wrong_scope']['idempotency_key'] = os.urandom(32).hex()
+        for name in self.built['operations']:
+            if name in mutating:
+                requests['operation.' + name]['idempotency_key'] = os.urandom(32).hex()
+        return requests
+
+    def idempotency_cases(self):
+        req = self.config['requests']
+        key = os.urandom(32).hex()
+        first = self.envelope(req['allowed_mutation']['operation'], req['allowed_mutation']['request'], idempotency=key)
+        status, body = self.http(self.encode(first), headers=self.api_key(), case='idempotent_first')
+        first_value = self.success(status, body, first['request_id'], 'idempotent_first')
+        replay = self.envelope(req['allowed_mutation']['operation'], req['allowed_mutation']['request'], idempotency=key)
+        status, body = self.http(self.encode(replay), headers=self.api_key(), case='idempotent_replay_same_body')
+        replay_value = self.success(status, body, replay['request_id'], 'idempotent_replay_same_body')
+        require(replay_value['value'] == first_value['value']
+                and replay_value['verification_status'] == first_value['verification_status'],
+                'idempotent replay returned a different recorded outcome')
+        self.passed('idempotent_replay_same_body', self.d / 'responses/idempotent_replay_same_body.http')
+        changed = self.envelope(req['changed_body']['operation'], req['changed_body']['request'], idempotency=key)
+        status, body = self.http(self.encode(changed), headers=self.api_key(), case='idempotency_changed_body_conflict')
+        self.refusal(status, body, 409, 'IdempotencyConflict', None, 'idempotency_changed_body_conflict', changed['request_id'])
+        self.passed('idempotency_changed_body_conflict', self.d / 'responses/idempotency_changed_body_conflict.http')
+
+    def bindings(self, network=None, ready=None):
+        document = json.loads(json.dumps(self.config['route_bindings']))
+        def fill(value):
+            if isinstance(value, str):
+                return self.substitute({'v': value})['v']
+            if isinstance(value, list):
+                return [fill(item) for item in value]
+            if isinstance(value, dict):
+                return {key: fill(item) for key, item in value.items()}
+            return value
+        document = fill(document)
+        binding = document
+        for part in self.config['agentd_binding_pointer'].lstrip('/').split('/'):
+            part = part.replace('~1', '/').replace('~0', '~')
+            binding = binding[int(part)] if isinstance(binding, list) else binding[part]
+        require(binding.get('health_path') == HEALTH_PATH and binding.get('identity_path') == HEALTH_PATH
+                and binding.get('ready_pointer') == '/ready' and binding.get('ready_value') is True
+                and binding.get('network_pointer') == '/network_id'
+                and binding.get('network_value') == self.config['gateway_network_id']
+                and binding.get('version_pointer') == '/wire_version'
+                and binding.get('version_value') == self.config['wire_version'], 'agentd route binding is not the frozen health binding')
+        if network is not None:
+            binding['network_value'] = network
+        if ready is not None:
+            binding['ready_value'] = ready
+        path = self.d / 'route-bindings.json'
+        if path.exists():
+            path.unlink()
+        fixture.write_json(path, document)
+
+    def health_cases(self):
+        status, body = self.http(None, path=HEALTH_PATH, method='GET', headers={'Content-Type': 'application/json'},
+                                 case='health_ready', port=self.agent_port, ctx=self.context(client='gateway-client'))
+        value = json.loads(body)
+        require(status == 200 and set(value) == {'ready', 'network_id', 'wire_version'} and value['ready'] is True
+                and value['network_id'] == self.config['gateway_network_id']
+                and value['wire_version'] == self.config['wire_version'], 'agentd /healthz identity')
+        try:
+            self.http(None, path=HEALTH_PATH, method='GET', headers={'Content-Type': 'application/json'},
+                      case='health_no_client_cert', port=self.agent_port, ctx=self.context())
+            raise RuntimeError('agent operation envelope refused: /healthz answered without a client certificate')
+        except (ssl.SSLError, ConnectionError, OSError):
+            pass
+        value = self.envelope(self.config['requests']['read']['operation'], self.config['requests']['read']['request'])
+        status, body = self.http(self.encode(value), headers=self.api_key(), case='health_admitted_route')
+        self.success(status, body, value['request_id'], 'health_admitted_route')
+        self.passed('health_ready', self.d / 'responses/health_ready.http')
+        for case, change in (('health_binding_wrong_network', {'network': 'wrong-' + self.config['gateway_network_id']}),
+                             ('health_binding_ready_false', {'ready': False})):
+            self.bindings(**change)
+            self.start_gateway()
+            value = self.envelope(self.config['requests']['read']['operation'], self.config['requests']['read']['request'])
+            status, body = self.http(self.encode(value), headers=self.api_key(), case=case)
+            require(status == 503 and b'route_unavailable' in body and b'verification_status' not in body,
+                    case + ': gateway admitted an agent route whose health identity does not match')
+            self.passed(case, self.d / 'responses' / (case + '.http'))
+        self.bindings()
+        self.start_gateway()
+
     def probe(self, language, cases, phase, state):
         case_file = self.d / 'probes' / (language + '-' + phase + '.json')
         fixture.write_json(case_file, {
@@ -596,7 +730,7 @@ class Qualification:
             'ca_pem': str(self.tls / 'ca.pem'), 'ca_der': str(self.tls / 'ca.der'),
             'gateway_api_key_file': self.config['gateway_api_key_file'],
             'program_bearer_file': self.config['program_bearer_file'],
-            'credential_file': self.config['credential_file'], 'requests': self.config['requests'],
+            'credential_file': self.config['credential_file'], 'requests': self.probe_requests(),
             'operations': self.built['operations'], 'cases': list(cases), 'phase': phase,
             'state_file': str(state), 'response_dir': str(self.d / 'probes' / (language + '-' + phase))})
         (self.d / 'probes' / (language + '-' + phase)).mkdir(mode=0o700)
@@ -606,7 +740,7 @@ class Qualification:
                                   str(Path(art['java_probe']['path']).parents[4]),
                                   Path(art['jvm_classpath']['path']).read_text().strip()])
         argv = {
-            'rust': [art['rust_probe']['path'], '--exact', 'agent_operation_envelope_process_cases', '--nocapture', '--test-threads=1'],
+            'rust': [art['rust_probe']['path'], '--exact', 'agent_operation_envelope_process_cases', '--include-ignored', '--nocapture', '--test-threads=1'],
             'typescript': ['node', art['typescript_probe']['path']],
             'python': [sys.executable, art['python_probe']['path']],
             'go': [art['go_probe']['path'], '-test.run', '^TestAgentOperationEnvelopeProcessCases$', '-test.v', '-test.count=1'],
@@ -632,8 +766,11 @@ class Qualification:
         (self.d / 'responses').mkdir(mode=0o700)
         (self.d / 'probes').mkdir(mode=0o700)
         self.start_agentd()
+        self.bindings()
         self.start_gateway()
+        self.health_cases()
         self.direct_cases()
+        self.idempotency_cases()
         self.mtls_cases()
         for language in LANGUAGES:
             self.probe(language, LANGUAGE_CASES, 'read', self.d / 'probes' / (language + '.state'))
