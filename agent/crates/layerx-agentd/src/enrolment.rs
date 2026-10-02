@@ -3,14 +3,18 @@
 //!
 //! Enrolment opens a capability-grant session for a registered identity and publishes the
 //! binding document beside two operator-protected secret files: the session token and the
-//! daemon bearer. The served path holds no other credential.
+//! daemon bearer. The served path holds no other credential. The document also declares the
+//! protected Unix listener the socket server binds and the peer user ids it admits, and the
+//! search sidecar reference when the web tools are enabled.
 
 use std::collections::BTreeSet;
 use std::fmt;
 use std::fs::{self, DirBuilder, OpenOptions};
 use std::io::{self, Write as _};
-use std::os::unix::fs::{DirBuilderExt as _, OpenOptionsExt as _, PermissionsExt as _};
-use std::path::{Path, PathBuf};
+use std::os::unix::fs::{
+    DirBuilderExt as _, MetadataExt as _, OpenOptionsExt as _, PermissionsExt as _,
+};
+use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 
 use layerx_programs::hex;
@@ -34,6 +38,10 @@ const MINIMUM_BEARER_BYTES: usize = 32;
 const MAX_TEXT_BYTES: usize = 255;
 const MAX_DOCUMENT_BYTES: usize = 65_536;
 const TOKEN_ATTEMPTS: usize = 8;
+const MAX_SOCKET_PATH_BYTES: usize = 107;
+const MAX_ADMITTED_PEERS: usize = 64;
+const LISTENER_MODE_MASK: u32 = 0o660;
+const LISTENER_OWNER_ACCESS: u32 = 0o600;
 
 /// Deployment mode the binding document declares.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -60,6 +68,8 @@ pub enum EnrolmentError {
     InvalidPath(&'static str),
     InvalidLimit(&'static str),
     MissingCapability,
+    InvalidListener(&'static str),
+    InvalidWeb(&'static str),
     AlreadyPublished(PathBuf),
     Session(SessionError),
     OrphanedSession(SessionId, Box<EnrolmentError>),
@@ -78,6 +88,12 @@ impl fmt::Display for EnrolmentError {
             Self::InvalidLimit(reason) => write!(formatter, "the limit is invalid: {reason}"),
             Self::MissingCapability => {
                 formatter.write_str("the capability is not persisted for this tenant")
+            }
+            Self::InvalidListener(reason) => {
+                write!(formatter, "the protocol listener is invalid: {reason}")
+            }
+            Self::InvalidWeb(reason) => {
+                write!(formatter, "the web tool reference is invalid: {reason}")
             }
             Self::AlreadyPublished(path) => write!(
                 formatter,
@@ -159,6 +175,208 @@ impl DaemonSurface {
     }
 }
 
+/// The protected Unix listener the socket server binds and the peer user ids it admits.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ListenerDeclaration {
+    socket: PathBuf,
+    owner_uid: u32,
+    owner_gid: u32,
+    mode: u32,
+    admitted_uids: Vec<u32>,
+}
+
+impl ListenerDeclaration {
+    /// Validates the socket path, its owner and mode, and the admitted peer user ids.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a relative, non-UTF-8, non-normal or over-long socket path, a socket directly in
+    /// the root directory, a mode that grants more than owner and group read and write or
+    /// withholds owner read and write, and an admission set that is
+    /// empty, larger than the served path accepts, or names one user id twice.
+    pub fn new(
+        socket: PathBuf,
+        owner_uid: u32,
+        owner_gid: u32,
+        mode: u32,
+        admitted_uids: Vec<u32>,
+    ) -> Result<Self, EnrolmentError> {
+        if !socket.is_absolute() {
+            return Err(EnrolmentError::InvalidListener(
+                "the socket path is not absolute",
+            ));
+        }
+        let text = socket.to_str().ok_or(EnrolmentError::InvalidListener(
+            "the socket path is not UTF-8",
+        ))?;
+        if text.len() > MAX_SOCKET_PATH_BYTES {
+            return Err(EnrolmentError::InvalidListener(
+                "the socket path is longer than a Unix socket address carries",
+            ));
+        }
+        if socket
+            .components()
+            .any(|component| !matches!(component, Component::RootDir | Component::Normal(_)))
+            || socket.file_name().is_none()
+            || socket.parent().is_none_or(|parent| parent == Path::new("/"))
+            || text.ends_with('/')
+        {
+            return Err(EnrolmentError::InvalidListener(
+                "the socket path is not a normal file path inside a dedicated directory",
+            ));
+        }
+        if mode & !LISTENER_MODE_MASK != 0 {
+            return Err(EnrolmentError::InvalidListener(
+                "the socket mode grants more than owner and group read and write",
+            ));
+        }
+        if mode & LISTENER_OWNER_ACCESS != LISTENER_OWNER_ACCESS {
+            return Err(EnrolmentError::InvalidListener(
+                "the socket mode withholds owner read and write",
+            ));
+        }
+        if admitted_uids.is_empty() || admitted_uids.len() > MAX_ADMITTED_PEERS {
+            return Err(EnrolmentError::InvalidListener(
+                "the admitted peers must name 1 to 64 user ids",
+            ));
+        }
+        let mut seen = BTreeSet::new();
+        for uid in &admitted_uids {
+            if !seen.insert(*uid) {
+                return Err(EnrolmentError::InvalidListener(
+                    "the admitted peers name one user id twice",
+                ));
+            }
+        }
+        Ok(Self {
+            socket,
+            owner_uid,
+            owner_gid,
+            mode,
+            admitted_uids,
+        })
+    }
+
+    /// Confirms the socket directory exists as a canonical directory owned by the declared
+    /// owner and group with no access for others, the same directory the socket server
+    /// validates before it binds.
+    fn check_directory(&self) -> Result<(), EnrolmentError> {
+        let parent = self.socket.parent().ok_or(EnrolmentError::InvalidListener(
+            "the socket path has no directory",
+        ))?;
+        let metadata = match fs::symlink_metadata(parent) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                return Err(EnrolmentError::InvalidListener(
+                    "the socket directory does not exist",
+                ))
+            }
+            Err(error) => return Err(EnrolmentError::Io(error)),
+        };
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            return Err(EnrolmentError::InvalidListener(
+                "the socket directory is not a directory",
+            ));
+        }
+        if fs::canonicalize(parent)? != parent {
+            return Err(EnrolmentError::InvalidListener(
+                "the socket directory path is not canonical",
+            ));
+        }
+        if metadata.uid() != self.owner_uid
+            || metadata.gid() != self.owner_gid
+            || metadata.mode() & 0o007 != 0
+        {
+            return Err(EnrolmentError::InvalidListener(
+                "the socket directory is not owned by the declared owner and group or admits others",
+            ));
+        }
+        Ok(())
+    }
+
+    fn document(&self) -> Result<Value, EnrolmentError> {
+        let socket = self.socket.to_str().ok_or(EnrolmentError::InvalidListener(
+            "the socket path is not UTF-8",
+        ))?;
+        Ok(json!({
+            "socket": socket,
+            "owner_uid": self.owner_uid,
+            "owner_gid": self.owner_gid,
+            "mode": format!("{:04o}", self.mode),
+            "admitted_uids": self.admitted_uids,
+        }))
+    }
+}
+
+/// The search sidecar reference a session with the web scopes is served through. It carries
+/// no payer or key material; paid tools still require the separately attached payer.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WebDeclaration {
+    endpoint: String,
+    network: String,
+    sequencer_public_key: [u8; 32],
+    timeout_ms: u64,
+    pending_attempts: u8,
+    approval_threshold: u128,
+}
+
+impl WebDeclaration {
+    /// Validates the sidecar reference the binding document will carry.
+    ///
+    /// # Errors
+    ///
+    /// Refuses empty or over-long text, an all-zero sequencer key, a zero timeout, and zero
+    /// pending attempts.
+    pub fn new(
+        endpoint: String,
+        network: String,
+        sequencer_public_key: [u8; 32],
+        timeout_ms: u64,
+        pending_attempts: u8,
+        approval_threshold: u128,
+    ) -> Result<Self, EnrolmentError> {
+        for value in [&endpoint, &network] {
+            if value.is_empty() || value.len() > MAX_TEXT_BYTES {
+                return Err(EnrolmentError::InvalidWeb(
+                    "the web endpoint and network must be 1 to 255 bytes",
+                ));
+            }
+        }
+        if sequencer_public_key == [0; 32] {
+            return Err(EnrolmentError::InvalidWeb(
+                "the sequencer public key is not a key",
+            ));
+        }
+        if timeout_ms == 0 {
+            return Err(EnrolmentError::InvalidWeb("the web timeout is zero"));
+        }
+        if pending_attempts == 0 {
+            return Err(EnrolmentError::InvalidWeb(
+                "the web pending attempts are zero",
+            ));
+        }
+        Ok(Self {
+            endpoint,
+            network,
+            sequencer_public_key,
+            timeout_ms,
+            pending_attempts,
+            approval_threshold,
+        })
+    }
+
+    fn document(&self) -> Value {
+        json!({
+            "endpoint": self.endpoint,
+            "network": self.network,
+            "sequencer_public_key": hex::encode(&self.sequencer_public_key),
+            "timeout_ms": self.timeout_ms,
+            "pending_attempts": self.pending_attempts,
+            "approval_threshold": self.approval_threshold.to_string(),
+        })
+    }
+}
+
 /// One opened session together with the coordinates the binding document records.
 pub struct Enrolment {
     tenant: TenantId,
@@ -217,6 +435,8 @@ pub struct BindingPublisher {
     limit: LimitConfig,
     deadline: Duration,
     mode: BindingMode,
+    listener: Option<ListenerDeclaration>,
+    web: Option<WebDeclaration>,
 }
 
 impl BindingPublisher {
@@ -261,7 +481,23 @@ impl BindingPublisher {
             limit,
             deadline,
             mode,
+            listener: None,
+            web: None,
         })
+    }
+
+    /// Declares the protected listener the socket server binds and the peers it admits.
+    #[must_use]
+    pub fn with_listener(mut self, listener: ListenerDeclaration) -> Self {
+        self.listener = Some(listener);
+        self
+    }
+
+    /// Declares the search sidecar reference the web tools are served through.
+    #[must_use]
+    pub fn with_web(mut self, web: WebDeclaration) -> Self {
+        self.web = Some(web);
+        self
     }
 
     /// Returns the path of the binding document this publisher writes.
@@ -278,9 +514,11 @@ impl BindingPublisher {
     ///
     /// # Errors
     ///
-    /// Refuses a binding directory that is not a canonical directory, a different published
+    /// Refuses a declared socket path inside the binding directory or in a socket directory
+    /// that is missing, non-canonical, or not owned by the declared owner and group, a binding directory that is not a canonical directory, a different published
     /// binding, a pre-existing secret file, and any I/O failure while writing.
     pub fn publish(&self, enrolment: &Enrolment) -> Result<PublishedBinding, EnrolmentError> {
+        self.check_listener()?;
         let document = self.document(enrolment)?;
         prepare_root(&self.root)?;
         let binding = self.binding_path();
@@ -344,6 +582,18 @@ impl BindingPublisher {
         })
     }
 
+    fn check_listener(&self) -> Result<(), EnrolmentError> {
+        let Some(listener) = &self.listener else {
+            return Ok(());
+        };
+        if listener.socket.starts_with(&self.root) {
+            return Err(EnrolmentError::InvalidListener(
+                "the socket path lies inside the protected binding directory",
+            ));
+        }
+        listener.check_directory()
+    }
+
     fn document(&self, enrolment: &Enrolment) -> Result<Value, EnrolmentError> {
         let (scope, scope_id) = match self.limit.scope {
             LimitScope::Tenant(id) => ("tenant", id),
@@ -355,7 +605,7 @@ impl BindingPublisher {
         let deadline_ms = u64::try_from(self.deadline.as_millis()).map_err(|_| {
             EnrolmentError::Encoding("the transport deadline exceeds u64 milliseconds")
         })?;
-        Ok(json!({
+        let mut document = json!({
             "mode": self.mode.label(),
             "tenant": enrolment.tenant.as_str(),
             "store": path_text(&self.store)?,
@@ -379,7 +629,16 @@ impl BindingPublisher {
                 "ceiling": self.limit.ceiling.to_string(),
                 "consumed": self.limit.consumed.to_string(),
             },
-        }))
+        });
+        if let Some(object) = document.as_object_mut() {
+            if let Some(listener) = &self.listener {
+                object.insert("listener".to_owned(), listener.document()?);
+            }
+            if let Some(web) = &self.web {
+                object.insert("web".to_owned(), web.document());
+            }
+        }
+        Ok(document)
     }
 }
 
@@ -391,8 +650,8 @@ impl BindingPublisher {
 ///
 /// # Errors
 ///
-/// Refuses a missing capability, a session the registry or store refuses, and any binding
-/// publication failure; `OrphanedSession` names a session that stayed open because closing it
+/// Refuses an unusable declared listener before any session is opened, a missing capability, a
+/// session the registry or store refuses, and any binding publication failure; `OrphanedSession` names a session that stayed open because closing it
 /// after a failed publication also failed.
 pub fn enrol(
     store: &mut Store,
@@ -401,6 +660,7 @@ pub fn enrol(
     request: EnrolmentRequest,
     publisher: &BindingPublisher,
 ) -> Result<PublishedBinding, EnrolmentError> {
+    publisher.check_listener()?;
     let tenant = identity.tenant().clone();
     Capability::restore(store, tenant.clone(), request.capability_id)
         .map_err(EnrolmentError::Capability)?
