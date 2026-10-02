@@ -99,9 +99,14 @@ def build_step(command, log, environment, working_directory):
     print('BUILD ' + json.dumps(command), flush=True)
     fd = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, 'wb') as stream:
+        stream.write(('BUILD_COMMAND ' + json.dumps(command) + '\n'
+                      + 'BUILD_CWD ' + str(working_directory) + '\n').encode())
+        stream.flush()
         result = subprocess.run(command, cwd=working_directory, env=environment,
                                 stdin=subprocess.DEVNULL, stdout=stream,
                                 stderr=subprocess.STDOUT, timeout=1800)
+        stream.write(f'\nBUILD_EXIT {result.returncode}\n'.encode())
+        stream.flush()
     require(result.returncode == 0,
             f'build command exited {result.returncode}; log={log}')
     print('BUILD_LOG ' + str(log), flush=True)
