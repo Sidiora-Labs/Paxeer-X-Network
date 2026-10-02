@@ -1,4 +1,5 @@
 mod capabilities;
+mod explorer_proxy;
 mod history;
 mod native_call;
 mod paxeer;
@@ -3636,6 +3637,9 @@ fn exchange<S: ws::Connection>(config: &Arc<Config>, stream: &mut S) -> Result<(
             }
             Err(_) => return Ok(()),
         };
+        if let Some(result) = explorer_proxy::websocket(&request, stream) {
+            return result;
+        }
         if request.path == "/rpc/evm/ws" {
             return ws::serve_evm(config, &request, stream);
         }

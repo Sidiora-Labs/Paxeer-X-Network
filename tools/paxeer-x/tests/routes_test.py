@@ -178,6 +178,198 @@ def websocket_request(target, case):
                     require(pointer(document,key) == value, 'WebSocket response assertion failed')
 
 
+def phoenix_read_exact(stream, count, deadline):
+    require(0 <= count <= 65536, 'Phoenix read bound')
+    chunks = bytearray()
+    while len(chunks) < count:
+        remaining = deadline - time.monotonic()
+        require(remaining > 0, 'Phoenix exchange deadline')
+        stream.settimeout(min(8, remaining))
+        piece = stream.recv(count - len(chunks))
+        require(piece, 'Phoenix WebSocket closed before result')
+        chunks.extend(piece)
+    return bytes(chunks)
+
+
+def phoenix_send(stream, opcode, data, deadline):
+    require(len(data) <= 65535 and (opcode < 8 or len(data) <= 125), 'Phoenix frame bound')
+    remaining = deadline - time.monotonic()
+    require(remaining > 0, 'Phoenix exchange deadline')
+    stream.settimeout(min(8, remaining))
+    mask = os.urandom(4)
+    frame = bytes([0x80 | opcode, 0x80 | len(data)]) if len(data) < 126 else bytes([0x80 | opcode, 0xfe]) + struct.pack('!H', len(data))
+    stream.sendall(frame + mask + bytes(byte ^ mask[index % 4] for index, byte in enumerate(data)))
+
+
+def phoenix_receive(stream, deadline):
+    data = bytearray()
+    fragmented = False
+    for _ in range(64):
+        first, second = phoenix_read_exact(stream, 2, deadline)
+        opcode = first & 15
+        final = bool(first & 128)
+        require(first & 112 == 0 and second & 128 == 0 and opcode in {0, 1, 8, 9, 10},
+                'invalid Phoenix WebSocket frame')
+        short = second & 127
+        length = short if short < 126 else struct.unpack('!H' if short == 126 else '!Q',
+                    phoenix_read_exact(stream, 2 if short == 126 else 8, deadline))[0]
+        require(length <= 65536 and (short != 126 or length >= 126)
+                and (short != 127 or length >= 65536), 'Phoenix response frame bound')
+        require(opcode < 8 or (final and length <= 125), 'invalid Phoenix control frame')
+        body = phoenix_read_exact(stream, length, deadline)
+        if opcode == 8:
+            require(False, 'Phoenix closed before expected reply')
+        if opcode == 9:
+            phoenix_send(stream, 10, body, deadline)
+            continue
+        if opcode == 10:
+            continue
+        require((opcode == 1 and not fragmented) or (opcode == 0 and fragmented),
+                'invalid Phoenix fragmentation')
+        require(len(data) + len(body) <= 65536, 'Phoenix response message bound')
+        data.extend(body)
+        fragmented = not final
+        if final:
+            return json.loads(data.decode('utf-8'))
+    raise Invalid('Phoenix fragment/control frame count bound')
+
+
+def phoenix_websocket_request(target, case):
+    import base64
+    parsed = urllib.parse.urlsplit(target['url'])
+    require(parsed.scheme == 'https' and parsed.hostname and not parsed.username
+            and not parsed.password and not parsed.query and not parsed.fragment,
+            'Phoenix target requires canonical TLS origin')
+    require(case['method'] == 'GET' and request_path(case) == '/explorer/backend/socket/v2/websocket',
+            'Phoenix v2 requires the Explorer socket route')
+    query = urllib.parse.parse_qs(urllib.parse.urlsplit(case['path']).query, keep_blank_values=True)
+    if case['status'] == 101:
+        require(query.get('vsn') == ['2.0.0'], 'Phoenix v2 serializer version is required')
+    key = base64.b64encode(os.urandom(16)).decode()
+    expected = base64.b64encode(hashlib.sha1((key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').encode()).digest()).decode()
+    headers = {'host': parsed.netloc, 'upgrade': 'websocket', 'connection': 'Upgrade',
+               'sec-websocket-key': key, 'sec-websocket-version': '13'}
+    supplied = dict(case.get('headers', {}))
+    require(not any(name.lower() in SECRET_HEADERS for name in supplied),
+            'Phoenix credentials require protected file references')
+    for name, path in case.get('header_files', {}).items():
+        require(name not in supplied, 'duplicate Phoenix header source')
+        supplied[name] = secret(path)
+    for name, value in supplied.items():
+        require(isinstance(name, str) and isinstance(value, str)
+                and re.fullmatch(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+", name)
+                and all(32 <= ord(char) < 127 for char in value)
+                and name.lower() not in headers and not name.lower().startswith('sec-websocket-'),
+                'invalid or reserved Phoenix request header')
+        headers[name.lower()] = value
+    head = 'GET ' + parsed.path.rstrip('/') + case['path'] + ' HTTP/1.1\r\n'
+    head += ''.join(name + ': ' + value + '\r\n' for name, value in headers.items()) + '\r\n'
+    require(len(head) <= 8192, 'Phoenix request header bound')
+    deadline = time.monotonic() + 30
+    with socket.create_connection((parsed.hostname, parsed.port or 443), timeout=8) as tcp:
+        with context(target).wrap_socket(tcp, server_hostname=parsed.hostname) as stream:
+            stream.settimeout(8)
+            stream.sendall(head.encode('ascii'))
+            reply = bytearray()
+            while not reply.endswith(b'\r\n\r\n'):
+                require(len(reply) < 8192, 'Phoenix upgrade header bound')
+                reply.extend(phoenix_read_exact(stream, 1, deadline))
+            lines = reply.decode('ascii').split('\r\n')
+            status = lines[0].split(' ', 2)
+            require(len(status) >= 2 and status[0] == 'HTTP/1.1' and int(status[1]) == case['status'],
+                    'unexpected Phoenix upgrade status')
+            fields = {}
+            for line in lines[1:]:
+                if not line:
+                    continue
+                require(':' in line, 'malformed Phoenix upgrade header')
+                name, value = line.split(':', 1)
+                require(re.fullmatch(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+", name)
+                        and all(char == '\t' or 32 <= ord(char) < 127 for char in value),
+                        'invalid Phoenix upgrade header')
+                name, value = name.lower(), value.strip()
+                if name == 'set-cookie':
+                    continue
+                require(name not in fields, 'duplicate Phoenix upgrade header')
+                fields[name] = value
+            for name, value in case.get('response_headers', {}).items():
+                require(fields.get(name.lower()) == value, 'Phoenix response header assertion failed')
+            if case['status'] != 101:
+                require('transfer-encoding' not in fields, 'unexpected Phoenix refusal transfer encoding')
+                if case.get('assertions') or 'response_sha256' in case:
+                    length = fields.get('content-length', '')
+                    require(re.fullmatch(r'0|[1-9][0-9]*', length) is not None
+                            and int(length) <= 65536, 'Phoenix refusal body bound')
+                    body = phoenix_read_exact(stream, int(length), deadline)
+                    if 'response_sha256' in case:
+                        require(hashlib.sha256(body).hexdigest() == case['response_sha256'],
+                                'Phoenix refusal byte digest mismatch')
+                    if case.get('assertions'):
+                        document = json.loads(body)
+                        for path, value in case['assertions'].items():
+                            require(pointer(document, path) == value, 'Phoenix refusal assertion failed')
+                return
+            require(fields.get('sec-websocket-accept') == expected
+                    and fields.get('upgrade', '').lower() == 'websocket'
+                    and 'upgrade' in [value.strip().lower() for value in fields.get('connection', '').split(',')]
+                    and not any(name in fields for name in ['sec-websocket-protocol', 'sec-websocket-extensions',
+                                                            'content-length', 'transfer-encoding']),
+                    'Phoenix upgrade negotiation mismatch')
+            messages = case.get('messages')
+            require(isinstance(messages, list) and 1 <= len(messages) <= 32,
+                    'Phoenix message corpus empty or oversized')
+            references, joined, events = set(), {}, set()
+            for message in messages:
+                sent = message['send']
+                require(isinstance(sent, list) and len(sent) == 5, 'Phoenix send requires five elements')
+                join_ref, ref, topic, event, payload = sent
+                require(isinstance(ref, str) and 0 < len(ref) <= 128 and ref not in references
+                        and isinstance(topic, str) and 0 < len(topic) <= 256
+                        and isinstance(payload, dict) and event in {'phx_join', 'heartbeat'},
+                        'invalid Phoenix join or heartbeat')
+                require((event == 'heartbeat' and join_ref is None and topic == 'phoenix')
+                        or (event == 'phx_join' and join_ref == ref and topic != 'phoenix'),
+                        'Phoenix request reference or topic mismatch')
+                references.add(ref)
+                events.add(event)
+                phoenix_send(stream, 1, canonical(sent), deadline)
+                document = None
+                for _ in range(32):
+                    received = phoenix_receive(stream, deadline)
+                    require(isinstance(received, list) and len(received) == 5, 'Phoenix reply requires five elements')
+                    if received[1] is None:
+                        require(isinstance(received[2], str) and received[2] in joined
+                                and (received[0] is None or received[0] == joined[received[2]])
+                                and isinstance(received[3], str) and received[3] not in {'phx_error', 'phx_close', 'phx_reply'}
+                                and isinstance(received[4], dict), 'unbound Phoenix channel event')
+                        continue
+                    document = received
+                    break
+                require(document is not None and document[:3] == [join_ref, ref, topic]
+                        and document[3] == 'phx_reply' and isinstance(document[4], dict),
+                        'Phoenix reply reference, topic, or event mismatch')
+                if case['kind'] == 'positive':
+                    require(document[4].get('status') == 'ok' and isinstance(document[4].get('response'), dict),
+                            'positive Phoenix operation has no successful reply')
+                require(isinstance(message.get('assertions'), dict) and message['assertions'],
+                        'empty Phoenix behavioral assertions')
+                for path, value in message['assertions'].items():
+                    require(pointer(document, path) == value, 'Phoenix response assertion failed')
+                if event == 'phx_join' and document[4].get('status') == 'ok':
+                    joined[topic] = join_ref
+            if case['kind'] == 'positive':
+                require(events == {'phx_join', 'heartbeat'}, 'positive Phoenix corpus requires join and heartbeat')
+            phoenix_send(stream, 8, struct.pack('!H', 1000), deadline)
+
+
+def websocket_dispatch(target, case):
+    protocol = case.get('websocket_protocol', 'json-rpc')
+    require(protocol in {'json-rpc', 'phoenix-v2'}, 'unknown WebSocket protocol')
+    if protocol == 'phoenix-v2':
+        return phoenix_websocket_request(target, case)
+    return websocket_request(target, case)
+
+
 def route_matches(route, case):
     path = request_path(case)
     if route['service'] != case['service']:
@@ -193,8 +385,10 @@ def route_matches(route, case):
              else call.get('method') == route['path']) for call in calls)
     if route['transport'] == 'websocket':
         if case.get('transport') != 'websocket': return False
-        if route['path'].startswith('/'): return case['path'] == route['path']
-        return path == '/rpc/ws' and any(message.get('send',{}).get('method') == route['path'] for message in case.get('messages',[]))
+        if route['path'].startswith('/'):
+            return path == route['path'] and (path != '/explorer/backend/socket/v2/websocket'
+                    or case.get('websocket_protocol') == 'phoenix-v2')
+        return path == '/rpc/ws' and any(isinstance(message.get('send'), dict) and message['send'].get('method') == route['path'] for message in case.get('messages',[]))
     pieces = []
     for part in route['path'].split('/'):
         pieces.append('[^/?#]+' if part.startswith(':') or (part.startswith('{') and part.endswith('}')) else re.escape(part))
@@ -290,8 +484,11 @@ def run():
         if isinstance(case.get('body'), list) and len(case['body']) >= 2:
             require(any('/error/' in p for p in case['assertions']) and any('/result' in p for p in case['assertions']), 'mixed batch requires success and failure assertions')
             scenarios.add('mixed-batch')
-        if case.get('transport') == 'websocket' and case['kind'] == 'positive':
-            scenarios.add('evm-websocket' if case['path'] == '/rpc/evm/ws' else 'native-websocket')
+        if case.get('transport') == 'websocket':
+            require(case.get('websocket_protocol', 'json-rpc') in {'json-rpc', 'phoenix-v2'}, 'unknown WebSocket protocol')
+            if case['kind'] == 'positive':
+                scenarios.add('phoenix-websocket' if case.get('websocket_protocol') == 'phoenix-v2' else
+                              ('evm-websocket' if request_path(case) == '/rpc/evm/ws' else 'native-websocket'))
         if case['method'] == 'OPTIONS' and 'Origin' in case.get('headers',{}):
             require(case.get('response_headers',{}).get('Access-Control-Allow-Origin') == case['headers']['Origin'], 'CORS case must assert exact allowed origin')
             scenarios.add('cors')
@@ -326,7 +523,7 @@ def run():
     for case in cases:
         require(time.monotonic() - started < 870, 'routed contract time bound reached')
         COUNT += 1
-        if case.get('transport') == 'websocket': websocket_request(plan['targets'][case['target']],case)
+        if case.get('transport') == 'websocket': websocket_dispatch(plan['targets'][case['target']],case)
         else:
             document = http_request(plan['targets'][case['target']],case)
             require_rpc_results(case, document, route_index)

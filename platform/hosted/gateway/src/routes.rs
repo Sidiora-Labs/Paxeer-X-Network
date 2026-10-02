@@ -440,6 +440,9 @@ fn matches_path(template: &str, path: &str) -> bool {
 }
 
 pub(super) fn route(config: &Config, request: &IncomingRequest) -> Option<OutgoingResponse> {
+    if let Some(result) = super::explorer_proxy::route(request) {
+        return Some(result);
+    }
     if request.method == "OPTIONS" {
         return Some(if config.routes.origin(request).is_some() {
             OutgoingResponse {
@@ -500,7 +503,10 @@ pub(super) fn route(config: &Config, request: &IncomingRequest) -> Option<Outgoi
             &document,
         ));
     }
-    if request.path.split_once('?').map_or(request.path.as_str(), |(path, _)| path)
+    if request
+        .path
+        .split_once('?')
+        .map_or(request.path.as_str(), |(path, _)| path)
         == AGENT_RPC_PATH
     {
         return Some(agent_rpc(config, request));
@@ -699,7 +705,6 @@ fn agent_rpc(config: &Config, request: &IncomingRequest) -> OutgoingResponse {
         Err(_) => response(503, "upstream_unavailable", None),
     }
 }
-
 
 pub(super) fn stream(
     config: &Config,

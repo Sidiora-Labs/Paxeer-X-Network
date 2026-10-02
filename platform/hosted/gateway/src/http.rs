@@ -799,7 +799,11 @@ pub fn read_request(stream: &mut impl Read, maximum: usize) -> Result<IncomingRe
         .ok_or_else(|| "request target is missing".to_owned())?;
     if parts.next() != Some("HTTP/1.1")
         || parts.next().is_some()
-        || split_target(path).is_err()
+        || (if crate::explorer_proxy::owns_target(path) {
+            crate::explorer_proxy::split_target(path).is_err()
+        } else {
+            split_target(path).is_err()
+        })
         || !headers.contains_key("host")
     {
         return Err("request line is invalid".to_owned());
@@ -851,6 +855,20 @@ fn response_header_is_forwardable(name: &str) -> bool {
             | "etag"
             | "x-content-sha256"
             | "x-layerx-batch"
+    )
+}
+
+fn browser_response_header_is_forwardable(name: &str) -> bool {
+    matches!(
+        name,
+        "cache-control"
+            | "content-encoding"
+            | "vary"
+            | "location"
+            | "content-security-policy"
+            | "last-modified"
+            | "expires"
+            | "x-csrf-token"
     )
 }
 
@@ -1233,7 +1251,7 @@ pub fn write_response_connection_with_origin(
     };
     let mut forwarded = String::new();
     for (name, value) in &response.headers {
-        if !response_header_is_forwardable(name)
+        if !(response_header_is_forwardable(name) || browser_response_header_is_forwardable(name))
             || !value
                 .bytes()
                 .all(|byte| byte.is_ascii_graphic() || byte == b' ' || byte == b'\t')
@@ -1347,4 +1365,168 @@ mod tests {
         assert_eq!(parsed.content_type, response.content_type);
         assert_eq!(parsed.body, response.body);
     }
+}
+
+pub fn connect_public_tls(endpoint: &Endpoint) -> Result<TlsStream<TcpStream>, String> {
+    if !endpoint.base_path.is_empty()
+        || endpoint.host.is_empty()
+        || !endpoint
+            .host
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-')
+        || endpoint.port != 443
+    {
+        return Err("public HTTPS endpoint refused".into());
+    }
+    let connector = TlsConnector::builder()
+        .min_protocol_version(Some(native_tls::Protocol::Tlsv12))
+        .build()
+        .map_err(|_| "public TLS configuration unavailable")?;
+    let started = Instant::now();
+    let addresses = (endpoint.host.as_str(), endpoint.port)
+        .to_socket_addrs()
+        .map_err(|_| "public upstream resolution failed")?;
+    for address in addresses.take(8) {
+        if started.elapsed() >= IO_TIMEOUT {
+            break;
+        }
+        let disallowed = match address.ip() {
+            IpAddr::V4(ip) => {
+                ip.is_private()
+                    || ip.is_loopback()
+                    || ip.is_link_local()
+                    || ip.is_unspecified()
+                    || ip.is_multicast()
+                    || ip.is_broadcast()
+            }
+            IpAddr::V6(ip) => {
+                ip.is_loopback()
+                    || ip.is_unspecified()
+                    || ip.is_multicast()
+                    || (ip.segments()[0] & 0xfe00 == 0xfc00)
+                    || (ip.segments()[0] & 0xffc0 == 0xfe80)
+                    || ip.to_ipv4_mapped().is_some()
+            }
+        };
+        if disallowed {
+            return Err("public upstream address refused".into());
+        }
+        if let Ok(tcp) = TcpStream::connect_timeout(&address, CONNECT_TIMEOUT) {
+            tcp.set_nodelay(true)
+                .map_err(|_| "public upstream socket unavailable")?;
+            tcp.set_read_timeout(Some(IO_TIMEOUT))
+                .map_err(|_| "public upstream deadline unavailable")?;
+            tcp.set_write_timeout(Some(IO_TIMEOUT))
+                .map_err(|_| "public upstream deadline unavailable")?;
+            return connector
+                .connect(&endpoint.host, tcp)
+                .map_err(|_| "public upstream TLS refused".into());
+        }
+    }
+    Err("public upstream unavailable".into())
+}
+
+pub fn explorer_request(
+    endpoint: &Endpoint,
+    request: &OutboundRequest<'_>,
+    forwarded: &[(&str, &str)],
+) -> Result<UpstreamResponse, String> {
+    crate::explorer_proxy::split_target(request.path)?;
+    if !matches!(request.method, "GET" | "POST" | "PUT" | "PATCH" | "DELETE")
+        || request.body.len() > MAX_RESPONSE
+        || request.content_type.len() > 256
+        || !request
+            .content_type
+            .bytes()
+            .all(|b| b.is_ascii_graphic() || b == b' ')
+        || request.idempotency.is_some()
+    {
+        return Err("explorer request outside boundary".into());
+    }
+    let mut head = zeroize::Zeroizing::new(format!(
+        "{} {} HTTP/1.1\r\nHost: {}\r\nContent-Length: {}\r\nConnection: close\r\n",
+        request.method,
+        request.path,
+        endpoint.authority(),
+        request.body.len()
+    ));
+    if !request.content_type.is_empty() {
+        write!(head, "Content-Type: {}\r\n", request.content_type)
+            .map_err(|_| "explorer header encoding failed")?;
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for (name, value) in forwarded {
+        if !(matches!(
+            *name,
+            "accept"
+                | "accept-language"
+                | "cookie"
+                | "origin"
+                | "referer"
+                | "x-csrf-token"
+                | "if-none-match"
+                | "if-modified-since"
+                | "x-forwarded-host"
+                | "x-forwarded-proto"
+        ) || (*name == "authorization"
+            && request.method == "GET"
+            && request.path.split('?').next() == Some("/api/account/v2/authenticate_via_dynamic")))
+            || !seen.insert(*name)
+            || value.len() > 4096
+            || !value.bytes().all(|b| b.is_ascii_graphic() || b == b' ')
+        {
+            return Err("explorer forwarded header refused".into());
+        }
+        write!(head, "{name}: {value}\r\n").map_err(|_| "explorer header encoding failed")?;
+    }
+    if head.len() + 2 > MAX_HEADERS {
+        return Err("explorer headers exceed bound".into());
+    }
+    head.push_str("\r\n");
+    let mut upstream = connect_public_tls(endpoint)?;
+    upstream
+        .write_all(head.as_bytes())
+        .and_then(|()| upstream.write_all(request.body))
+        .and_then(|()| upstream.flush())
+        .map_err(|_| "explorer upstream write failed")?;
+    let started = Instant::now();
+    let head = read_head(&mut upstream, MAX_RESPONSE, true, started)?;
+    let status = head
+        .0
+        .split_whitespace()
+        .nth(1)
+        .and_then(|v| v.parse::<u16>().ok())
+        .ok_or("explorer upstream status refused")?;
+    if status < 200 {
+        return Err("explorer HTTP upgrade or interim response refused".into());
+    }
+    let (start, fields, body) = if matches!(status, 204 | 304) {
+        if head.3 || (status == 204 && head.2.is_some_and(|n| n != 0)) {
+            return Err("explorer bodyless response framing refused".into());
+        }
+        (head.0, head.1, Vec::new())
+    } else {
+        read_message_body(&mut upstream, MAX_RESPONSE, true, started, head)?
+    };
+    let nominated: std::collections::BTreeSet<String> = fields
+        .iter()
+        .filter(|(name, _)| name == "connection")
+        .flat_map(|(_, value)| {
+            value
+                .split(',')
+                .map(|token| token.trim().to_ascii_lowercase())
+        })
+        .collect();
+    let fields: Vec<(String, String)> = fields
+        .into_iter()
+        .filter(|(name, _)| !nominated.contains(name))
+        .collect();
+    let browser_headers: Vec<(String, String)> = fields
+        .iter()
+        .filter(|(name, _)| browser_response_header_is_forwardable(name))
+        .cloned()
+        .collect();
+    let mut answer = response_parts((start, fields, body))?;
+    answer.headers.extend(browser_headers);
+    Ok(answer)
 }
