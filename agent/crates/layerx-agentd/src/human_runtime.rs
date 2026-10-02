@@ -1993,19 +1993,38 @@ fn settle_retained_native_program_call(
     let public_key: [u8; 32] = public_key.as_ref().try_into().map_err(|_| refused())?;
     let signed = durable.signed_bytes().map_err(|_| refused())?.ok_or_else(refused)?;
     let submission = crate::sign::verify_before_submit(&signed, &prepared, &public_key, registry).map_err(|_| refused())?;
-    let (reservation, witness) = match crate::budget::program_settlement::read_retained_program_debit_settlement(
-        programs, registry, &prepared, &submission, terminal, authority, store, tenant,
-    ) {
-        Ok(value) => value,
-        Err(crate::budget::program_settlement::ProgramSettlementError::SourceSnapshot) => {
-            let correlation = u64::from_be_bytes(preparation_id[..8].try_into().map_err(|_| refused())?) | 1;
-            let prestate = node.execution_prestate(terminal.execution_receipt(), correlation)
-                .map_err(|_| HumanOperationError::Unavailable)?;
-            crate::budget::program_settlement::read_retained_program_debit_settlement_at_execution(
-                programs, registry, &prepared, &submission, terminal, authority, store, tenant, &prestate,
-            ).map_err(|_| refused())?
+    let signed_activity = layerx_wire::activity::decode_signed(submission.exact_bytes(), registry)
+        .map_err(|_| refused())?;
+    let lifecycle_exit = signed_activity.protocol_version() == 3
+        && signed_activity.activity_type().module() == layerx_types::payload::ModuleId::Programs
+        && signed_activity.activity_type().ordinal() == 4
+        && matches!(layerx_types::program_lifecycle::NativeProgramWindDown::decode(signed_activity.payload()),
+            Ok(layerx_types::program_lifecycle::NativeProgramWindDown {
+                operation: layerx_types::program_lifecycle::ProgramWindDownOperation::Exit { .. }
+                    | layerx_types::program_lifecycle::ProgramWindDownOperation::BoundedExit { .. }, ..
+            }));
+    let (reservation, witness) = if lifecycle_exit {
+        let correlation = u64::from_be_bytes(preparation_id[..8].try_into().map_err(|_| refused())?) | 1;
+        let prestate = node.native_execution_prestate(terminal.execution_receipt(), correlation)
+            .map_err(|_| HumanOperationError::Unavailable)?;
+        crate::budget::program_settlement::read_retained_wind_down_debit_settlement_at_execution(
+            registry, &prepared, &submission, terminal, store, tenant, &prestate,
+        ).map_err(|_| refused())?
+    } else {
+        match crate::budget::program_settlement::read_retained_program_debit_settlement(
+            programs, registry, &prepared, &submission, terminal, authority, store, tenant,
+        ) {
+            Ok(value) => value,
+            Err(crate::budget::program_settlement::ProgramSettlementError::SourceSnapshot) => {
+                let correlation = u64::from_be_bytes(preparation_id[..8].try_into().map_err(|_| refused())?) | 1;
+                let prestate = node.execution_prestate(terminal.execution_receipt(), correlation)
+                    .map_err(|_| HumanOperationError::Unavailable)?;
+                crate::budget::program_settlement::read_retained_program_debit_settlement_at_execution(
+                    programs, registry, &prepared, &submission, terminal, authority, store, tenant, &prestate,
+                ).map_err(|_| refused())?
+            }
+            Err(_) => return Err(refused()),
         }
-        Err(_) => return Err(refused()),
     };
     if witness.reservation_id() != preparation_id || witness.activity_id() != terminal.activity_id()
         || witness.terminal_receipt() != terminal.receipt_ref() {
