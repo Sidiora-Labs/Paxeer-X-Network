@@ -14,7 +14,8 @@ use layerx_agentd::audit::Redacted;
 use layerx_agentd::budget::{LimitConfig, LimitId, LimitScope};
 use layerx_agentd::capability::CapabilityId;
 use layerx_agentd::enrolment::{
-    self, BindingMode, BindingPublisher, DaemonSurface, EnrolmentRequest,
+    self, BindingMode, BindingPublisher, DaemonSurface, EnrolmentRequest, ListenerDeclaration,
+    WebDeclaration,
 };
 use layerx_agentd::human::{HumanListenerConfig, HumanPeer, HumanUnixServer};
 use layerx_agentd::human_runtime::{
@@ -144,6 +145,8 @@ struct McpEnrolment {
     limit: LimitConfig,
     deadline: Duration,
     mode: BindingMode,
+    listener: ListenerDeclaration,
+    web: Option<WebDeclaration>,
 }
 
 struct McpBoot {
@@ -217,6 +220,68 @@ fn mcp_limit() -> Result<LimitConfig, String> {
     })
 }
 
+fn mcp_admitted_uids() -> Result<Vec<u32>, String> {
+    let mut values = Vec::new();
+    for entry in required("LAYERX_AGENT_MCP_LISTENER_ADMITTED_UIDS")?.split(',') {
+        let value = entry
+            .trim()
+            .parse()
+            .map_err(|_| "LAYERX_AGENT_MCP_LISTENER_ADMITTED_UIDS lists an invalid uid")?;
+        if values.contains(&value) {
+            return Err("LAYERX_AGENT_MCP_LISTENER_ADMITTED_UIDS repeats a uid".to_owned());
+        }
+        values.push(value);
+    }
+    Ok(values)
+}
+
+/// Reads the protected protocol socket the published binding declares. A binding is never
+/// published without one, and the enrolled peer must be one of the admitted peers.
+fn mcp_listener(peer_uid: u32) -> Result<ListenerDeclaration, String> {
+    let admitted_uids = mcp_admitted_uids()?;
+    if !admitted_uids.contains(&peer_uid) {
+        return Err(
+            "LAYERX_AGENT_MCP_LISTENER_ADMITTED_UIDS does not admit LAYERX_AGENT_MCP_PEER_UID"
+                .to_owned(),
+        );
+    }
+    ListenerDeclaration::new(
+        absolute_path("LAYERX_AGENT_MCP_LISTENER_SOCKET")?,
+        required("LAYERX_AGENT_MCP_LISTENER_OWNER_UID")?
+            .parse()
+            .map_err(|_| "LAYERX_AGENT_MCP_LISTENER_OWNER_UID is invalid")?,
+        required("LAYERX_AGENT_MCP_LISTENER_OWNER_GID")?
+            .parse()
+            .map_err(|_| "LAYERX_AGENT_MCP_LISTENER_OWNER_GID is invalid")?,
+        u32::from_str_radix(&required("LAYERX_AGENT_MCP_LISTENER_MODE")?, 8)
+            .map_err(|_| "LAYERX_AGENT_MCP_LISTENER_MODE is not an octal mode")?,
+        admitted_uids,
+    )
+    .map_err(|error| format!("the MCP listener is invalid: {error}"))
+}
+
+/// Reads the web sidecar the published binding references, when `LAYERX_AGENT_MCP_WEB_ENDPOINT`
+/// enables it; every other web key is then required.
+fn mcp_web() -> Result<Option<WebDeclaration>, String> {
+    let Some(endpoint) = optional("LAYERX_AGENT_MCP_WEB_ENDPOINT") else {
+        return Ok(None);
+    };
+    WebDeclaration::new(
+        endpoint,
+        required("LAYERX_AGENT_MCP_WEB_NETWORK")?,
+        parse_digest("LAYERX_AGENT_MCP_WEB_SEQUENCER_PUBLIC_KEY")?,
+        parse_u64("LAYERX_AGENT_MCP_WEB_TIMEOUT_MS")?,
+        required("LAYERX_AGENT_MCP_WEB_PENDING_ATTEMPTS")?
+            .parse()
+            .map_err(|_| "LAYERX_AGENT_MCP_WEB_PENDING_ATTEMPTS is invalid")?,
+        required("LAYERX_AGENT_MCP_WEB_APPROVAL_THRESHOLD")?
+            .parse()
+            .map_err(|_| "LAYERX_AGENT_MCP_WEB_APPROVAL_THRESHOLD is invalid")?,
+    )
+    .map(Some)
+    .map_err(|error| format!("the MCP web sidecar is invalid: {error}"))
+}
+
 /// Reads the model context protocol enrolment this daemon publishes at boot, when one is
 /// configured. `LAYERX_AGENT_MCP_BINDING_ROOT` selects the binding directory and every other
 /// key is then required.
@@ -229,12 +294,13 @@ fn mcp_enrolment() -> Result<Option<McpEnrolment>, String> {
         "read-only" => BindingMode::ReadOnly,
         _ => return Err("LAYERX_AGENT_MCP_MODE is invalid".to_owned()),
     };
+    let peer_uid = required("LAYERX_AGENT_MCP_PEER_UID")?
+        .parse()
+        .map_err(|_| "LAYERX_AGENT_MCP_PEER_UID is invalid")?;
     Ok(Some(McpEnrolment {
         root: absolute_path("LAYERX_AGENT_MCP_BINDING_ROOT")?,
         audit_root: absolute_path("LAYERX_AGENT_MCP_AUDIT_ROOT")?,
-        peer_uid: required("LAYERX_AGENT_MCP_PEER_UID")?
-            .parse()
-            .map_err(|_| "LAYERX_AGENT_MCP_PEER_UID is invalid")?,
+        peer_uid,
         did: Did::new(required("LAYERX_AGENT_MCP_AGENT_DID")?.as_bytes())
             .map_err(|_| "LAYERX_AGENT_MCP_AGENT_DID is invalid")?,
         request: EnrolmentRequest {
@@ -250,6 +316,8 @@ fn mcp_enrolment() -> Result<Option<McpEnrolment>, String> {
         limit: mcp_limit()?,
         deadline: Duration::from_millis(parse_u64("LAYERX_AGENT_MCP_DEADLINE_MS")?),
         mode,
+        listener: mcp_listener(peer_uid)?,
+        web: mcp_web()?,
     }))
 }
 
@@ -303,7 +371,12 @@ fn publish_mcp_binding(
         configured.deadline,
         configured.mode,
     )
-    .map_err(|error| format!("the MCP binding publisher is invalid: {error}"))?;
+    .map_err(|error| format!("the MCP binding publisher is invalid: {error}"))?
+    .with_listener(configured.listener);
+    let publisher = match configured.web {
+        Some(web) => publisher.with_web(web),
+        None => publisher,
+    };
     let mut resolver = ResolvedIdentity {
         did: configured.did.clone(),
         observation,

@@ -2,13 +2,13 @@
 
 use std::fmt;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use layerx_agentd::budget::{BudgetLimiter, LimitConfig, LimitId, LimitScope};
 use layerx_agentd::capability::CapabilityId;
-use layerx_agentd::config::read_protected_source;
+use layerx_agentd::config::{read_protected_source, ProtectedSourceError};
 use layerx_agentd::policy::approval::ApprovalRegistry;
 use layerx_agentd::prepare::PreparationLifecycle;
 use layerx_agentd::session::{SessionCredential, SessionId, SessionRegistry};
@@ -28,6 +28,8 @@ const MAX_DOCUMENT_BYTES: usize = 65_536;
 const MAX_SECRET_BYTES: usize = 4_096;
 const MAX_TEXT_BYTES: usize = 255;
 const MAX_ADMITTED_PEERS: usize = 64;
+const LISTENER_MODE_CEILING: u32 = 0o660;
+const LISTENER_MODE_FLOOR: u32 = 0o600;
 
 const BINDING_KEYS: [&str; 12] = [
     "mode",
@@ -284,8 +286,9 @@ impl Binding {
     ///
     /// # Errors
     ///
-    /// Refuses a relative path, an unreadable or oversized document, and any document that is
-    /// not a complete, closed binding.
+    /// Refuses a relative or non-canonical path, a document that is not a regular file owned by
+    /// this process with owner-only access, an unreadable or oversized document, and any
+    /// document that is not a complete, closed binding.
     pub fn open(path: &Path) -> Result<Self, BindingError> {
         if !path.is_absolute() {
             return Err(BindingError::Unreadable(
@@ -305,8 +308,22 @@ impl Binding {
                 "the binding document exceeds {MAX_DOCUMENT_BYTES} bytes"
             )));
         }
-        let document = fs::read_to_string(path)
-            .map_err(|error| BindingError::Unreadable(error.kind().to_string()))?;
+        let bytes = read_protected_source(path, MAX_DOCUMENT_BYTES).map_err(|error| {
+            BindingError::Unreadable(match error {
+                ProtectedSourceError::Unprotected => {
+                    "the binding document is not a canonical regular file owned by this process with owner-only access".to_owned()
+                }
+                ProtectedSourceError::Changed => {
+                    "the binding document changed while it was read".to_owned()
+                }
+                ProtectedSourceError::TooLarge => {
+                    format!("the binding document exceeds {MAX_DOCUMENT_BYTES} bytes")
+                }
+                ProtectedSourceError::Unavailable => "the binding document is unavailable".to_owned(),
+            })
+        })?;
+        let document = String::from_utf8(bytes)
+            .map_err(|_| BindingError::Unreadable("the binding document is not UTF-8".to_owned()))?;
         Self::parse(&document)
     }
 
@@ -622,6 +639,22 @@ fn listener_config(declared: &Value, deadline_ms: u64) -> Result<ListenerConfig,
     closed(listener, &LISTENER_KEYS, "listener")?;
     let mode = u32::from_str_radix(text(listener, "mode")?, 8)
         .map_err(|_| malformed("field listener.mode must be an octal mode"))?;
+    if mode & !LISTENER_MODE_CEILING != 0 || mode & LISTENER_MODE_FLOOR != LISTENER_MODE_FLOOR {
+        return Err(malformed(
+            "field listener.mode must grant owner read-write and nothing beyond owner and group read-write",
+        ));
+    }
+    let socket = absolute(listener, "socket")?;
+    if socket
+        .components()
+        .any(|component| !matches!(component, Component::RootDir | Component::Normal(_)))
+        || socket.file_name().is_none()
+        || socket.parent().is_none_or(|parent| parent == Path::new("/"))
+    {
+        return Err(malformed(
+            "field listener.socket must be a normalized path inside a dedicated directory",
+        ));
+    }
     let admitted = listener
         .get("admitted_uids")
         .and_then(Value::as_array)
@@ -637,12 +670,13 @@ fn listener_config(declared: &Value, deadline_ms: u64) -> Result<ListenerConfig,
             .as_u64()
             .and_then(|value| u32::try_from(value).ok())
             .ok_or_else(|| malformed("field listener.admitted_uids holds a non-uid entry"))?;
-        if !admitted_uids.contains(&uid) {
-            admitted_uids.push(uid);
+        if admitted_uids.contains(&uid) {
+            return Err(malformed("field listener.admitted_uids names a uid twice"));
         }
+        admitted_uids.push(uid);
     }
     Ok(ListenerConfig {
-        endpoint: absolute(listener, "socket")?,
+        endpoint: socket,
         owner_uid: unsigned32(listener, "owner_uid")?,
         owner_gid: unsigned32(listener, "owner_gid")?,
         mode,
