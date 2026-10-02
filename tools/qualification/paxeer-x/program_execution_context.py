@@ -33,6 +33,8 @@ RUST_CASES = (
     "abi::context::tests::frozen_field_ids_and_encodings_are_canonical",
     "abi::context::tests::zero_protocol_fields_never_authenticate",
     "calls::context_tests::immediate_caller_is_owned_by_each_active_edge",
+    "host::context::tests::actual_guest_without_authenticated_context_refuses_every_field",
+    "host::context::tests::actual_graph_boundary_preserves_context_and_refuses_edge_sixty_five",
 )
 SOURCE_PATHS = (
     "Makefile", "tools/build/sanitizers.mk", "platform/Makefile.inc",

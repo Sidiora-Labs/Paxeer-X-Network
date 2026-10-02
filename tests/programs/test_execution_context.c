@@ -416,21 +416,18 @@ static void context_topology(unsigned kind, unsigned variant, context_plan *plan
         }
     } else if (kind == 5U) {
         plan->edge_observations = true;
-        plan->count = 14U;
+        plan->count = 17U;
         plan->child_count[0] = 8U;
         for (unsigned node = 1U; node <= 8U; ++node) {
             plan->children[0][node - 1U] = node;
-            plan->child_count[node] = 7U;
-            for (unsigned child = 0U; child < 7U; ++child)
-                plan->children[node][child] = 9U + child % 5U;
-        }
-        /* Distinct leaves are required to stay below the per-program visit bound. */
-        plan->count = 17U;
-        for (unsigned node = 1U; node <= 8U; ++node)
-            for (unsigned child = 0U; child < 7U; ++child)
+            plan->child_count[node] = variant == 0U ? (node == 8U ? 2U : 3U) : 7U;
+            for (unsigned child = 0U; child < plan->child_count[node]; ++child)
                 plan->children[node][child] = 9U + child;
-        plan->child_count[8] += variant;
-        if (variant != 0U) plan->children[8][7] = 16U;
+        }
+        if (variant == 2U) {
+            ++plan->child_count[8];
+            plan->children[8][7] = 16U;
+        }
     } else if (kind == 6U) {
         plan->count = 17U + variant;
         plan->child_count[0] = 16U + variant;
@@ -447,6 +444,7 @@ static void context_topology(unsigned kind, unsigned variant, context_plan *plan
 static unsigned context_variants(unsigned kind)
 {
     if (kind == 8U) return 4U;
+    if (kind == 5U) return 3U;
     if (kind >= 3U && kind <= 7U) return 2U;
     return 1U;
 }
@@ -456,8 +454,9 @@ static int context_guest_file(const char *directory, unsigned kind, unsigned var
                                bool emit, const context_plan *plan)
 {
     char path[4096];
-    CTX_CHECK(snprintf(path, sizeof(path), "%s/context-%u-%u-%u.wasm", directory,
-                       kind, variant, node) > 0);
+    int path_length = snprintf(path, sizeof(path), "%s/context-%u-%u-%u.wasm", directory,
+                               kind, variant, node);
+    CTX_CHECK(path_length > 0 && (size_t)path_length < sizeof(path));
     if (emit) *length = context_module(wasm, plan, node);
     FILE *file = fopen(path, emit ? "wb" : "rb");
     CTX_CHECK(file != NULL);
@@ -498,6 +497,8 @@ static int context_observations(metered_fixture *f, const context_plan *plan,
         const uint8_t *producer = envelope.bytes + cursor;
         unsigned node = (unsigned)producer[31] - 1U;
         CTX_CHECK(node < plan->count);
+        uint8_t expected_producer[32]; context_id(node, expected_producer);
+        CTX_CHECK(memcmp(producer, expected_producer, 32U) == 0);
         CTX_CHECK(memcmp(producer + 32U, f->authority.principal, 32U) == 0);
         cursor += 73U;
         CTX_CHECK(context_be(envelope.bytes + cursor, 4U) == 3U);
@@ -522,6 +523,7 @@ static int context_observations(metered_fixture *f, const context_plan *plan,
             CTX_CHECK(memcmp(record + 4U, producer, 32U) == 0);
             const uint8_t *caller = record + 41U;
             CTX_CHECK(caller[0] == (node == 0U ? 0U : 1U));
+            if (node == 0U) CTX_CHECK(lxp_ct_is_zero(producer + 64U, 9U));
             if (node != 0U) {
                 unsigned parent = 0U;
                 unsigned depth = producer[72U];
@@ -543,12 +545,67 @@ static int context_observations(metered_fixture *f, const context_plan *plan,
             CTX_CHECK(context_be(record + 189U, 2U) == f->receipt.program_outcome.runtime_version);
             CTX_CHECK(context_be(record + 226U, 2U) == 2U);
             uint64_t remaining = context_be(record + 263U, 8U);
+            CTX_CHECK(f->receipt.program_outcome.cpu_fuel <= budget);
             CTX_CHECK(remaining < budget && remaining >= budget - f->receipt.program_outcome.cpu_fuel);
             CTX_CHECK(context_be(record + 300U, 4U) == f->execution.recorded_fee_schedule_version);
         }
         cursor += CTX_RECORD;
     }
     CTX_CHECK(cursor == envelope.length);
+    return 0;
+}
+
+static int context_resource_detail(const lxp_program_outcome *outcome, unsigned resource)
+{
+    static const uint8_t wrapper[] = "LXP/programs/terminal-applied-legs/v1";
+    static const uint8_t domain[] = "LXP/program-execution/v4";
+    lxp_byte_span terminal = outcome->terminal_payload;
+    size_t cursor = sizeof(wrapper);
+    CTX_CHECK(terminal.length >= cursor + 4U);
+    CTX_CHECK(memcmp(terminal.bytes, wrapper, cursor) == 0);
+    size_t length = (size_t)context_be(terminal.bytes + cursor, 4U);
+    cursor += 4U;
+    CTX_CHECK(length <= terminal.length - cursor);
+    const uint8_t *detail = terminal.bytes + cursor;
+    cursor = sizeof(domain);
+    CTX_CHECK(length >= cursor + 18U && memcmp(detail, domain, cursor) == 0);
+    cursor += 10U;
+    uint64_t outputs = context_be(detail + cursor, 8U);
+    cursor += 8U;
+    for (uint64_t index = 0U; index < outputs; ++index) {
+        CTX_CHECK(cursor < length);
+        unsigned tag = detail[cursor++];
+        CTX_CHECK(tag == 1U || tag == 2U);
+        size_t size = tag == 1U ? 4U : 8U;
+        CTX_CHECK(size <= length - cursor);
+        cursor += size;
+    }
+    CTX_CHECK(length - cursor >= 61U);
+    cursor += 60U;
+    unsigned trace = detail[cursor++];
+    CTX_CHECK(trace <= 1U);
+    if (trace != 0U) {
+        CTX_CHECK(length - cursor >= 8U);
+        size_t trace_length = (size_t)context_be(detail + cursor, 8U);
+        cursor += 8U;
+        CTX_CHECK(trace_length <= length - cursor);
+        cursor += trace_length;
+    }
+    CTX_CHECK(length - cursor >= 53U);
+    uint8_t root[32]; context_id(0U, root);
+    CTX_CHECK(memcmp(detail + cursor, root, 32U) == 0);
+    cursor += 32U;
+    CTX_CHECK(context_be(detail + cursor, 2U) == 2U);
+    cursor += 2U;
+    CTX_CHECK(detail[cursor++] == 2U);
+    CTX_CHECK(detail[cursor++] == 0U);
+    CTX_CHECK(detail[cursor++] == resource);
+    CTX_CHECK(context_be(detail + cursor, 8U) == 64U);
+    CTX_CHECK(context_be(detail + cursor + 8U, 8U) > 64U);
+    if (resource == 4U) {
+        CTX_CHECK(context_be(detail + cursor + 8U, 8U) == 65U);
+        CTX_CHECK(outcome->output_values <= 64U);
+    }
     return 0;
 }
 
@@ -561,7 +618,7 @@ static int context_run(unsigned kind, unsigned variant, const char *directory,
     uint8_t wasm[CTX_WASM_MAX], payload[CTX_WASM_MAX + 2048U];
     uint8_t id[32], hash[32], capabilities[1024], attacker[96];
     size_t length;
-    uint64_t budget = kind == 9U ? 16U : 1000000U;
+    uint64_t budget = kind == 9U ? 64U : 1000000U;
     CTX_CHECK(f != NULL && context_fixture_init(f) == 0);
     for (unsigned node = 0U; node < plan.count; ++node) {
         CTX_CHECK(context_guest_file(directory, kind, variant, node, wasm, &length, false, &plan) == 0);
@@ -581,11 +638,11 @@ static int context_run(unsigned kind, unsigned variant, const char *directory,
         absent_access, sizeof(absent_access), attacker, sizeof(attacker));
     write_u16(payload + 32U, 2U);
     write_u64(payload + 50U, budget);
-    write_u64(payload + 82U, 256U);
     CTX_CHECK(metered_activity(f, LX_PROGRAMS_CALL, payload, length, 0xf0U, false) == 0);
     CTX_CHECK(lxp_kernel_execute_activity(&f->kernel, &f->activity, &f->execution, &f->receipt) == LXP_OK);
-    bool refused = kind == 3U || (kind >= 4U && kind <= 7U && variant == 1U) || kind == 9U;
-    lxp_result expected_result = kind == 9U ? LXP_ERR_GAS_EXHAUSTED :
+    bool resource = kind == 9U || (kind == 5U && variant != 0U);
+    bool refused = kind == 3U || (kind >= 4U && kind <= 7U && variant != 0U) || kind == 9U;
+    lxp_result expected_result = resource ? LXP_ERR_GAS_EXHAUSTED :
         refused ? LXP_ERR_PROGRAM_REFUSED : LXP_OK;
     if (f->receipt.result_code != expected_result)
         (void)fprintf(stderr, "context case %u variant %u result %d terminal %u\n", kind, variant,
@@ -595,9 +652,10 @@ static int context_run(unsigned kind, unsigned variant, const char *directory,
     CTX_CHECK(f->receipt.program_outcome.cpu_fuel > 0U);
     if (refused) {
         CTX_CHECK(f->receipt.program_outcome.terminal_kind ==
-            (kind == 9U ? LXP_PROGRAM_TERMINAL_RESOURCE : LXP_PROGRAM_TERMINAL_FAILURE));
+            (resource ? LXP_PROGRAM_TERMINAL_RESOURCE : LXP_PROGRAM_TERMINAL_FAILURE));
         CTX_CHECK(f->receipt.effects.count == 0U);
         CTX_CHECK(lxp_ct_is_zero(f->receipt.transfer_set_root, 32U));
+        if (resource) CTX_CHECK(context_resource_detail(&f->receipt.program_outcome, kind == 5U ? 4U : 0U) == 0);
     } else {
         unsigned edges = 0U;
         for (unsigned node = 0U; node < plan.count; ++node) edges += plan.child_count[node];
