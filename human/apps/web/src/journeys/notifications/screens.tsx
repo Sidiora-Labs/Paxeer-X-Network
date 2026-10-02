@@ -77,9 +77,11 @@ export function NotificationsArchiveScreen() {
           <InlineNotice>{copyEntry("state.loading.body").message}</InlineNotice>
         )}
         {openError === undefined ? null : (
-          <InlineNotice tone="warning" role="alert">
-            {copyEntry("error.notification.not-found").message}
-          </InlineNotice>
+          <ErrorSurface
+            error={errorPresentation(openError)}
+            route="/app/notifications"
+            onReload={() => { window.location.reload(); }}
+          />
         )}
         {shell === "mobile" ? (
           <MobileNotifications

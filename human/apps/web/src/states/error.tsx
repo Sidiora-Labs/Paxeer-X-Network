@@ -9,7 +9,8 @@ import {
   type ReactNode,
 } from "react";
 
-import { copyEntry } from "../../copy/runtime.ts";
+import { copyEntry, human_copy_catalog } from "../../copy/runtime.ts";
+import { errorCodeVariants } from "../api/generated";
 import { formatCopy } from "../../copy/format.ts";
 import { DesktopConfirmation, MobileConfirmation } from "../kit/confirm";
 import { DesktopDetail, MobileDetail } from "../kit/pattern-detail";
@@ -28,6 +29,7 @@ export interface ErrorPresentation {
   readonly traceId: string;
   readonly retriable: boolean;
   readonly structural: boolean;
+  readonly retryAfterMs?: number;
 }
 
 function record(value: unknown): Readonly<Record<string, unknown>> | undefined {
@@ -53,7 +55,8 @@ export function errorPresentation(error: unknown, traceId = generatedTraceId()):
   const suppliedMachineCode = diagnostic(detail, "code") ?? diagnostic(error, "code");
   const machineCode = suppliedMachineCode !== undefined
     && suppliedMachineCode.length <= 120
-    && /^[A-Z][A-Z0-9._:-]*$/u.test(suppliedMachineCode)
+    && (errorCodeVariants.some((code) => code === suppliedMachineCode)
+      || /^[A-Z][A-Z0-9._:-]*$/u.test(suppliedMachineCode))
     ? suppliedMachineCode
     : "UI_UNHANDLED";
   const suppliedTrace = diagnostic(detail, "trace_id")
@@ -63,14 +66,22 @@ export function errorPresentation(error: unknown, traceId = generatedTraceId()):
   const canonicalTrace = suppliedTrace !== undefined && /^trc_[0-9a-f]{32}$/u.test(suppliedTrace)
     ? suppliedTrace
     : undefined;
+  const retry = diagnostic(detail, "retry");
+  const copyKey = diagnostic(detail, "copy_key");
+  const retryAfter = detail?.retry_after_ms;
+  const retryAfterMs = typeof retryAfter === "number" && Number.isSafeInteger(retryAfter) && retryAfter >= 0
+    ? retryAfter
+    : undefined;
   return Object.freeze({
     titleKey: "state.error",
-    descriptionKey: "state.error.body",
-    moneyImpactKey: "error.money.not_started",
+    descriptionKey: copyKey !== undefined && human_copy_catalog().has(copyKey) ? copyKey : "state.error.body",
+    moneyImpactKey: detail === undefined ? "error.money.not_started" : "state.error.body",
     machineCode,
     traceId: canonicalTrace ?? traceId,
-    retriable: true,
-    structural: true,
+    retriable: retry === undefined || retry === "retriable"
+      || (retry === "retriable-after" && retryAfterMs !== undefined),
+    structural: retry === undefined || retry === "structural",
+    ...(retry === "retriable-after" && retryAfterMs !== undefined ? { retryAfterMs } : {}),
   });
 }
 
@@ -112,6 +123,21 @@ export function ErrorSurface({
 }>) {
   const resolvedPlatform = useResolvedPlatform(platform);
   const [technicalOpen, setTechnicalOpen] = useState(false);
+  const [retryReady, setRetryReady] = useState(error.retryAfterMs === undefined || error.retryAfterMs === 0);
+  useEffect(() => {
+    const delay = error.retryAfterMs ?? 0;
+    setRetryReady(delay === 0);
+    if (delay === 0) return;
+    const started = Date.now();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const wait = () => {
+      const remaining = delay - (Date.now() - started);
+      if (remaining <= 0) setRetryReady(true);
+      else timer = setTimeout(wait, Math.min(remaining, 2_147_483_647));
+    };
+    wait();
+    return () => { if (timer !== undefined) clearTimeout(timer); };
+  }, [error.traceId, error.retryAfterMs]);
   const [reportOpen, setReportOpen] = useState(false);
   const [reportStatus, setReportStatus] = useState<"idle" | "saving" | "saved" | "pending" | "failed">("idle");
   const Confirmation = resolvedPlatform === "mobile" ? MobileConfirmation : DesktopConfirmation;
@@ -149,9 +175,10 @@ export function ErrorSurface({
       role="alert"
     >
       <p className="text-sm font-semibold">{copyEntry(error.moneyImpactKey).message}</p>
+      <p className="font-mono text-xs">{formatCopy("error.technical.trace", { traceId: error.traceId })}</p>
       <div className="flex flex-wrap gap-2">
         {error.retriable && onRetry !== undefined ? (
-          <KitButton variant="primary" onClick={onRetry}>{copyEntry("action.retry").message}</KitButton>
+          <KitButton variant="primary" {...(retryReady ? {} : { disabled: true as const, disabledReason: copyEntry(error.descriptionKey).message })} onClick={onRetry}>{copyEntry("action.retry").message}</KitButton>
         ) : null}
         {error.structural && onReload !== undefined ? (
           <KitButton variant="secondary" onClick={onReload}>{copyEntry("action.reload").message}</KitButton>

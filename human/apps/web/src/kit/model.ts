@@ -40,6 +40,7 @@ export const VERIFICATION_PRESENTATIONS = Object.freeze({
   "receipt-verified": { copyKey: "verification.receipt_verified" },
   "checkpoint-finalised": { copyKey: "verification.checkpoint_finalised" },
   "paxeer-finalised": { copyKey: "verification.paxeer_finalised" },
+  "settlement-anchored": { copyKey: "explorer.verification.settlement_anchored" },
 } as const);
 
 export type StatusKey = keyof typeof STATUS_PRESENTATIONS;

@@ -16,7 +16,7 @@ import { unreadNotificationCount, type PresentedNotification } from "./model";
 
 export type NotificationCenterState =
   | Readonly<{ status: "loading"; notifications: readonly []; unreadCount: 0; approvalCount: 0 }>
-  | Readonly<{ status: "error"; notifications: readonly []; unreadCount: 0; approvalCount: 0; error: unknown }>
+  | Readonly<{ status: "error"; notifications: readonly PresentedNotification[]; unreadCount: number; approvalCount: number; error: unknown }>
   | Readonly<{
       status: "ready";
       notifications: readonly PresentedNotification[];
@@ -58,9 +58,7 @@ export function NotificationCenterProvider({
         approvalCount,
       });
     } catch (error) {
-      setState((current) => current.status === "ready"
-        ? current
-        : { status: "error", notifications: [], unreadCount: 0, approvalCount: 0, error });
+      setState((current) => ({ ...current, status: "error", error }));
     }
   }, [notifications]);
 

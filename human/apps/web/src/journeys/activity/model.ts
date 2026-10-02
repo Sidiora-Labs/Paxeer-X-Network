@@ -58,6 +58,7 @@ const VERIFICATION_LABEL_KEYS: Readonly<Record<VerificationLevel, string>> = Obj
   "receipt-verified": "activity.verification.receipt_verified",
   "checkpoint-finalised": "activity.verification.checkpoint_finalised",
   "paxeer-finalised": "activity.verification.paxeer_finalised",
+  "settlement-anchored": "explorer.verification.settlement_anchored",
 });
 
 const VERIFICATION_ORDER: readonly VerificationLevel[] = Object.freeze([
@@ -65,6 +66,7 @@ const VERIFICATION_ORDER: readonly VerificationLevel[] = Object.freeze([
   "receipt-verified",
   "checkpoint-finalised",
   "paxeer-finalised",
+  "settlement-anchored",
 ]);
 
 export function entryStatusKey(state: JourneyState): StatusKey {
@@ -420,6 +422,7 @@ const RECEIPT_LEVELS: readonly VerificationLevel[] = Object.freeze([
   "receipt-verified",
   "checkpoint-finalised",
   "paxeer-finalised",
+  "settlement-anchored",
 ]);
 
 export function receiptBacked(reference: EvidenceRef): boolean {

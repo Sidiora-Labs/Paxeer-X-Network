@@ -1,3 +1,5 @@
+import { errorCodeVariants } from "../api/generated/index.ts";
+
 export type ReportShell = "mobile" | "desktop";
 
 export interface SupportReportRequest {
@@ -52,7 +54,8 @@ export function supportReportTrace(value: string): string {
 
 function supportReportMachineCode(value: string): string {
   const normalized = value.trim();
-  if (normalized.length === 0 || normalized.length > 120 || !/^[A-Z][A-Z0-9._:-]*$/u.test(normalized)) {
+  if (normalized.length === 0 || normalized.length > 120
+    || (!errorCodeVariants.some((code) => code === normalized) && !/^[A-Z][A-Z0-9._:-]*$/u.test(normalized))) {
     throw new Error("Invalid machine code");
   }
   return normalized;

@@ -12,9 +12,12 @@ const VERIFICATION_ORDER = [
   "receipt-verified",
   "checkpoint-finalised",
   "paxeer-finalised",
+  "settlement-anchored",
 ] as const satisfies readonly VerificationLevel[];
 
 export function verificationAtLeast(level: VerificationLevel, required: VerificationLevel): boolean {
+  if (required === "settlement-anchored") return level === "settlement-anchored";
+  if (level === "settlement-anchored") return required !== "paxeer-finalised";
   return VERIFICATION_ORDER.indexOf(level) >= VERIFICATION_ORDER.indexOf(required);
 }
 

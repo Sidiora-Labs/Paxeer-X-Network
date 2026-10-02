@@ -13,7 +13,7 @@ use crate::trace::TraceId;
 
 use super::backend::{
     valid_bearer_assertion, ApiFailure, BackendResponse, BearerCredentials, HumanApiComponents,
-    PrincipalContext, ScopedRequest, SessionCredentials, SessionSecrets,
+    ComponentState, PrincipalContext, Readiness, ScopedRequest, SessionCredentials, SessionSecrets,
 };
 use super::limits::PrincipalLimits;
 use super::schema::{ApiSchema, Operation};
@@ -313,7 +313,18 @@ impl<B: HumanApiComponents> Router<B> {
                     readiness.redacted(),
                     Vec::new(),
                 ),
-                Err(failure) => error_response(trace, &failure),
+                Err(_) => success_response(
+                    503,
+                    trace,
+                    Readiness {
+                        human_service: ComponentState::Degraded,
+                        custody: ComponentState::Unavailable,
+                        agent: ComponentState::Unavailable,
+                        core: ComponentState::Unavailable,
+                        paxeer: ComponentState::Unavailable,
+                    }.redacted(),
+                    Vec::new(),
+                ),
             });
         }
         None

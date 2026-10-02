@@ -86,6 +86,7 @@ const VERIFICATION_COPY: Readonly<Record<VerificationLevel, string>> = Object.fr
   "receipt-verified": "verification.receipt_verified",
   "checkpoint-finalised": "verification.checkpoint_finalised",
   "paxeer-finalised": "verification.paxeer_finalised",
+  "settlement-anchored": "explorer.verification.settlement_anchored",
 });
 
 export function verificationLabel(level: VerificationLevel): string {

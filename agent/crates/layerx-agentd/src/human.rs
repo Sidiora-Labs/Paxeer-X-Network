@@ -12,6 +12,46 @@ use std::time::Duration;
 use zeroize::Zeroizing;
 
 const MAGIC: &[u8; 8] = b"LXHAGT01";
+const TRACED_MAGIC: &[u8; 8] = b"LXHAGT02";
+
+thread_local! {
+    static REQUEST_TRACE: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+#[must_use]
+pub fn current_request_trace() -> Option<String> {
+    REQUEST_TRACE.with(|trace| trace.borrow().clone())
+}
+
+struct TraceContext(Option<String>);
+
+impl Drop for TraceContext {
+    fn drop(&mut self) {
+        REQUEST_TRACE.with(|trace| trace.replace(self.0.take()));
+    }
+}
+
+fn trace_envelope(frame: Vec<u8>) -> Result<(Option<String>, Vec<u8>), HumanProtocolError> {
+    if frame.get(..8) != Some(TRACED_MAGIC.as_slice()) {
+        return Ok((None, frame));
+    }
+    let mut reader = Reader::new(frame);
+    reader.fixed::<8>()?;
+    let bytes = reader.fixed::<36>()?;
+    let trace = std::str::from_utf8(&bytes).map_err(|_| HumanProtocolError::Malformed)?;
+    if !trace.starts_with("trc_") || !trace.as_bytes()[4..].iter()
+        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
+    {
+        return Err(HumanProtocolError::Malformed);
+    }
+    let request = reader.bytes()?;
+    reader.finish()?;
+    if request.get(..8) != Some(MAGIC.as_slice()) {
+        return Err(HumanProtocolError::Malformed);
+    }
+    Ok((Some(trace.to_owned()), request))
+}
+
 const PREPARE: u8 = 1;
 const SUBMIT: u8 = 2;
 const TRACK: u8 = 3;
@@ -1305,7 +1345,9 @@ pub fn serve_one<T: FrameTransport, O: HumanOperations>(
     if frame.len() > MAX_BYTES {
         return Err(HumanProtocolError::Malformed);
     }
+    let (trace, frame) = trace_envelope(frame)?;
     let request = decode_request(frame)?;
+    let _context = TraceContext(REQUEST_TRACE.with(|current| current.replace(trace.clone())));
     let result = dispatch_request(request, peer, operations);
     let mut response = Vec::with_capacity(64);
     response.extend_from_slice(MAGIC);
@@ -1322,6 +1364,19 @@ pub fn serve_one<T: FrameTransport, O: HumanOperations>(
             response.push(1);
         }
         Err(HumanOperationError::Unavailable) => response.push(2),
+    }
+    if let Some(trace) = trace {
+        eprintln!("human_request trace={trace} outcome={}", response[8]);
+        let length = u32::try_from(response.len()).map_err(|_| HumanProtocolError::Malformed)?;
+        if response.len().saturating_add(48) > MAX_BYTES {
+            return Err(HumanProtocolError::Malformed);
+        }
+        let mut envelope = Vec::with_capacity(48 + response.len());
+        envelope.extend_from_slice(TRACED_MAGIC);
+        envelope.extend_from_slice(trace.as_bytes());
+        envelope.extend_from_slice(&length.to_be_bytes());
+        envelope.extend_from_slice(&response);
+        response = envelope;
     }
     transport
         .send(&response)
@@ -2416,5 +2471,36 @@ mod subject_tests {
         let mut extra = bytes;
         extra.push(0);
         assert!(decode_request(extra).is_err());
+    }
+}
+
+#[cfg(test)]
+mod trace_envelope_tests {
+    use super::{trace_envelope, MAGIC, TRACED_MAGIC};
+
+    fn envelope(trace: &[u8; 36], request: &[u8]) -> Vec<u8> {
+        let mut bytes = TRACED_MAGIC.to_vec();
+        bytes.extend_from_slice(trace);
+        let Ok(length) = u32::try_from(request.len()) else { panic!("trace request bound"); };
+        bytes.extend_from_slice(&length.to_be_bytes());
+        bytes.extend_from_slice(request);
+        bytes
+    }
+
+    #[test]
+    fn trace_wrapper_retains_exact_legacy_bytes_and_rejects_ambiguous_envelopes() {
+        let request = [MAGIC.as_slice(), &[5]].concat();
+        assert_eq!(trace_envelope(request.clone()).ok(), Some((None, request.clone())));
+        let trace = b"trc_00112233445566778899aabbccddeeff";
+        let bytes = envelope(trace, &request);
+        assert_eq!(trace_envelope(bytes.clone()).ok(), Some((Some(String::from_utf8_lossy(trace).into_owned()), request)));
+        let mut trailing = bytes.clone();
+        trailing.push(0);
+        assert!(trace_envelope(trailing).is_err());
+        assert!(trace_envelope(bytes[..bytes.len() - 1].to_vec()).is_err());
+        assert!(trace_envelope(envelope(trace, &bytes)).is_err());
+        let mut invalid = bytes;
+        invalid[12] = b'G';
+        assert!(trace_envelope(invalid).is_err());
     }
 }

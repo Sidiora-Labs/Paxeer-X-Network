@@ -140,6 +140,7 @@ const RECEIPT_LEVELS: readonly VerificationLevel[] = [
   "receipt-verified",
   "checkpoint-finalised",
   "paxeer-finalised",
+  "settlement-anchored",
 ];
 
 const VERIFICATION_COPY_KEYS: Readonly<Record<VerificationLevel, string>> = {
@@ -147,6 +148,7 @@ const VERIFICATION_COPY_KEYS: Readonly<Record<VerificationLevel, string>> = {
   "receipt-verified": "verification.receipt_verified",
   "checkpoint-finalised": "verification.checkpoint_finalised",
   "paxeer-finalised": "verification.paxeer_finalised",
+  "settlement-anchored": "explorer.verification.settlement_anchored",
 };
 
 function receiptBacked(reference: EvidenceRef): boolean {

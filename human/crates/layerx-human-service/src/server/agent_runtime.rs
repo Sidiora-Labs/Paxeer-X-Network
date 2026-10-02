@@ -28,6 +28,31 @@ use crate::journeys::{
 };
 
 const MAGIC: &[u8; 8] = b"LXHAGT01";
+const TRACED_MAGIC: &[u8; 8] = b"LXHAGT02";
+
+thread_local! {
+    static REQUEST_TRACE: std::cell::RefCell<Option<crate::trace::TraceId>> = const { std::cell::RefCell::new(None) };
+}
+
+pub(crate) struct TraceContext {
+    previous: Option<crate::trace::TraceId>,
+    local: std::marker::PhantomData<std::rc::Rc<()>>,
+}
+
+impl TraceContext {
+    pub(crate) fn enter(trace: &str) -> Result<Self, AgentBoundaryError> {
+        let trace = crate::trace::TraceId::parse(trace).map_err(|_| AgentBoundaryError::Refused)?;
+        let previous = REQUEST_TRACE.with(|current| current.replace(Some(trace)));
+        Ok(Self { previous, local: std::marker::PhantomData })
+    }
+}
+
+impl Drop for TraceContext {
+    fn drop(&mut self) {
+        REQUEST_TRACE.with(|current| current.replace(self.previous.take()));
+    }
+}
+
 const PREPARE: u8 = 1;
 const SUBMIT: u8 = 2;
 const TRACK: u8 = 3;
@@ -1396,7 +1421,7 @@ impl AgentRuntime {
             canonical_bytes: reader.bytes()?,
             proof_material: reader.bytes()?,
         };
-        if value.verification < 4
+        if !matches!(value.verification, 4 | 5)
             || value.account == [0; 32]
             || value.asset == [0; 32]
             || value.currency.is_empty()
@@ -1525,15 +1550,36 @@ impl AgentRuntime {
 
     fn exchange(&self, request: &[u8]) -> Result<Reader, AgentBoundaryError> {
         let request = self.scoped_request(request)?;
+        let trace = REQUEST_TRACE.with(|current| current.borrow().clone());
+        let request = if let Some(trace) = &trace {
+            let mut envelope = Zeroizing::new(Vec::with_capacity(48 + request.len()));
+            envelope.extend_from_slice(TRACED_MAGIC);
+            envelope.extend_from_slice(trace.as_str().as_bytes());
+            envelope.extend_from_slice(&u32::try_from(request.len())
+                .map_err(|_| AgentBoundaryError::Refused)?.to_be_bytes());
+            envelope.extend_from_slice(&request);
+            if envelope.len() > MAX_BYTES {
+                return Err(AgentBoundaryError::Refused);
+            }
+            envelope
+        } else {
+            request
+        };
         let mut transport = Uds::connect(&self.endpoint, &self.gate, self.limits)
             .map_err(|_| AgentBoundaryError::Unavailable)?;
-        transport
-            .send(&request)
-            .map_err(|_| AgentBoundaryError::Unavailable)?;
-        let response = transport
-            .receive()
-            .map_err(|_| AgentBoundaryError::Unavailable)?;
+        transport.send(&request).map_err(|_| AgentBoundaryError::Unavailable)?;
+        let response = transport.receive().map_err(|_| AgentBoundaryError::Unavailable)?;
         let mut reader = Reader::new(response);
+        if let Some(trace) = trace {
+            if reader.fixed::<8>()? != *TRACED_MAGIC
+                || reader.fixed::<36>()?.as_slice() != trace.as_str().as_bytes()
+            {
+                return Err(AgentBoundaryError::CorruptResponse);
+            }
+            let response = reader.bytes()?;
+            reader.finish()?;
+            reader = Reader::new(response);
+        }
         if reader.fixed::<8>()? != *MAGIC {
             return Err(AgentBoundaryError::CorruptResponse);
         }
@@ -1546,25 +1592,7 @@ impl AgentRuntime {
     }
 
     fn exchange_secret(&self, request: &Zeroizing<Vec<u8>>) -> Result<Reader, AgentBoundaryError> {
-        let request = self.scoped_request(request)?;
-        let mut transport = Uds::connect(&self.endpoint, &self.gate, self.limits)
-            .map_err(|_| AgentBoundaryError::Unavailable)?;
-        transport
-            .send(&request)
-            .map_err(|_| AgentBoundaryError::Unavailable)?;
-        let response = transport
-            .receive()
-            .map_err(|_| AgentBoundaryError::Unavailable)?;
-        let mut reader = Reader::new(response);
-        if reader.fixed::<8>()? != *MAGIC {
-            return Err(AgentBoundaryError::CorruptResponse);
-        }
-        match reader.u8()? {
-            0 => Ok(reader),
-            1 => Err(AgentBoundaryError::Refused),
-            2 => Err(AgentBoundaryError::Unavailable),
-            _ => Err(AgentBoundaryError::CorruptResponse),
-        }
+        self.exchange(request)
     }
 
     fn encode_mutation_header<T>(operation: u8, mutation: &IdempotentMutation<T>) -> Writer {

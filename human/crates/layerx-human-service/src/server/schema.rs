@@ -459,7 +459,7 @@ fn enforce_verified_balance(balance: &Value) -> Result<(), SchemaError> {
         .get("verification")
         .and_then(Value::as_str)
         .ok_or_else(|| SchemaError::at("response.result.balance.verification", "is required"))?;
-    if !matches!(verification, "receipt-verified" | "checkpoint-finalised") {
+    if !matches!(verification, "receipt-verified" | "checkpoint-finalised" | "settlement-anchored") {
         return Err(SchemaError::at(
             "response.result.balance.verification",
             "must be backed by a LayerX receipt or checkpoint",
@@ -480,6 +480,9 @@ fn enforce_verified_balance(balance: &Value) -> Result<(), SchemaError> {
                 }
                 "checkpoint-finalised" => {
                     class == Some("checkpoint-proof") && level == Some("checkpoint-finalised")
+                }
+                "settlement-anchored" => {
+                    class == Some("checkpoint-proof") && level == Some("settlement-anchored")
                 }
                 _ => false,
             }

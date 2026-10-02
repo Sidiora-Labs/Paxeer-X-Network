@@ -21,7 +21,7 @@ waiting-for-you.semantics = "A policy hold with deterministic expiry awaits the 
 variants = ["local-journey-state","submission-record","layerx-receipt","checkpoint-proof","paxeer-finality","typed-refusal","approval-hold","wallet-ack"]
 
 [type.VerificationLevel]
-variants = ["unverified","receipt-verified","checkpoint-finalised","paxeer-finalised"]
+variants = ["unverified","receipt-verified","checkpoint-finalised","paxeer-finalised","settlement-anchored"]
 ordering = "declaration_order"
 
 [type.EvidenceRef]

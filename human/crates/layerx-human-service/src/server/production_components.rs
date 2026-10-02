@@ -765,6 +765,8 @@ impl HumanApiComponents for ProductionComponents {
     }
 
     fn execute(&self, request: ScopedRequest<'_>) -> Result<BackendResponse, ApiFailure> {
+        let _trace = super::agent_runtime::TraceContext::enter(&request.trace)
+            .map_err(|_| ApiFailure::invalid_request(None))?;
         if request.operation.name == "version" {
             return Ok(BackendResponse {
                 result: json!({"schema": {"major": 1, "minor": 0}, "service": "layerx-human"}),
@@ -810,7 +812,9 @@ impl HumanApiComponents for ProductionComponents {
         self.execute_authorized(&request, &mut scope, &principal, &session_id)
     }
 
-    fn readiness(&self, _trace: &str) -> Result<Readiness, ApiFailure> {
+    fn readiness(&self, trace: &str) -> Result<Readiness, ApiFailure> {
+        let _trace = super::agent_runtime::TraceContext::enter(trace)
+            .map_err(|_| ApiFailure::invalid_request(None))?;
         let custody = self.custody.status();
         let custody_ready = matches!(custody.kms, crate::custody::Availability::Available)
             && matches!(custody.storage, crate::custody::Availability::Available)
@@ -4922,7 +4926,106 @@ impl ProductionComponents {
         })
     }
 
+    fn execute_account_balance(
+        &self,
+        scope: &mut crate::store::PrincipalScope<'_>,
+    ) -> Result<BackendResponse, ApiFailure> {
+        let result = self.execute_account_balance_fresh(scope);
+        self.verified_read_response(scope, "account-balance", false, result)
+    }
+
     fn execute_home_summary(
+        &self,
+        scope: &mut crate::store::PrincipalScope<'_>,
+    ) -> Result<BackendResponse, ApiFailure> {
+        let result = self.execute_home_summary_fresh(scope);
+        self.verified_read_response(scope, "home-summary", true, result)
+    }
+
+    fn verified_read_response(
+        &self,
+        scope: &mut crate::store::PrincipalScope<'_>,
+        name: &str,
+        home: bool,
+        response: Result<BackendResponse, ApiFailure>,
+    ) -> Result<BackendResponse, ApiFailure> {
+        let key = RowKey::new(format!("verified-read-{name}"))
+            .map_err(|_| ApiFailure::unavailable())?;
+        let now = self.now()?;
+        match response {
+            Ok(response) => {
+                let schema = ApiSchema::v1().map_err(|_| ApiFailure::upstream_degraded())?;
+                let operation = schema.operation(if home { "home.summary" } else { "account.balance" })
+                    .ok_or_else(ApiFailure::upstream_degraded)?;
+                schema.encode_response(operation, &response.result)
+                    .map_err(|_| ApiFailure::upstream_degraded())?;
+                let bytes = serde_json::to_vec(&response.result)
+                    .map_err(|_| ApiFailure::upstream_degraded())?;
+                let mut rows = vec![(Table::Cache, key, bytes)];
+                if home {
+                    let balance = response.result.get("balance")
+                        .ok_or_else(ApiFailure::upstream_degraded)?;
+                    let key = RowKey::new("verified-read-account-balance")
+                        .map_err(|_| ApiFailure::unavailable())?;
+                    let bytes = serde_json::to_vec(balance)
+                        .map_err(|_| ApiFailure::upstream_degraded())?;
+                    rows.push((Table::Cache, key, bytes));
+                }
+                scope.put_batch(now, rows).map_err(|_| ApiFailure::unavailable())?;
+                Ok(response)
+            }
+            Err(failure) if failure.code == "upstream-degraded" => {
+                let row = scope.get(Table::Cache, &key).ok_or(failure)?;
+                let elapsed = now.checked_sub(row.written_at())
+                    .ok_or_else(ApiFailure::upstream_degraded)?;
+                let mut result: serde_json::Value = serde_json::from_slice(row.bytes())
+                    .map_err(|_| ApiFailure::upstream_degraded())?;
+                let balance = if home {
+                    result.get_mut("balance").ok_or_else(ApiFailure::upstream_degraded)?
+                } else {
+                    &mut result
+                };
+                let evidence = balance.get("evidence").and_then(serde_json::Value::as_array)
+                    .ok_or_else(ApiFailure::upstream_degraded)?;
+                if evidence.is_empty() {
+                    return Err(ApiFailure::upstream_degraded());
+                }
+                for reference in evidence {
+                    let id = reference.get("evidence_id").and_then(serde_json::Value::as_str)
+                        .and_then(|id| id.strip_prefix("evd_"))
+                        .ok_or_else(ApiFailure::upstream_degraded)?;
+                    let proof_key = RowKey::new(format!("state-proof-{id}"))
+                        .map_err(|_| ApiFailure::upstream_degraded())?;
+                    let proof = scope.get(Table::Cache, &proof_key)
+                        .ok_or_else(ApiFailure::upstream_degraded)?;
+                    let digest: [u8; 32] = Sha256::digest(proof.bytes()).into();
+                    let level = match proof.bytes().get(5) {
+                        Some(4) => "checkpoint-finalised",
+                        Some(5) => "settlement-anchored",
+                        _ => return Err(ApiFailure::upstream_degraded()),
+                    };
+                    if proof.bytes().get(..5) != Some(b"LXHB1") || hex_bytes(&digest) != id
+                        || balance.get("verification").and_then(serde_json::Value::as_str) != Some(level)
+                        || reference.get("verification").and_then(serde_json::Value::as_str) != Some(level)
+                    {
+                        return Err(ApiFailure::upstream_degraded());
+                    }
+                }
+                let freshness = balance.get_mut("freshness")
+                    .and_then(serde_json::Value::as_object_mut)
+                    .ok_or_else(ApiFailure::upstream_degraded)?;
+                let age = freshness.get("age_seconds").and_then(serde_json::Value::as_u64)
+                    .and_then(|age| age.checked_add(elapsed))
+                    .ok_or_else(ApiFailure::upstream_degraded)?;
+                freshness.insert("age_seconds".to_owned(), json!(age));
+                freshness.insert("within_bound".to_owned(), json!(false));
+                Ok(BackendResponse { result, session: None })
+            }
+            Err(failure) => Err(failure),
+        }
+    }
+
+    fn execute_home_summary_fresh(
         &self,
         scope: &mut crate::store::PrincipalScope<'_>,
     ) -> Result<BackendResponse, ApiFailure> {
@@ -4958,12 +5061,12 @@ impl ProductionComponents {
                 material,
             )
             .map_err(|_| ApiFailure::unavailable())?;
-        let verification = if balance.verification >= 4 {
-            "checkpoint-finalised"
-        } else {
-            "receipt-verified"
+        let verification = match balance.verification {
+            4 => "checkpoint-finalised",
+            5 => "settlement-anchored",
+            _ => return Err(ApiFailure::upstream_degraded()),
         };
-        let balance_json = json!({"account_id":format!("act_{}",hex_bytes(&balance.account)),"money":{"amount":balance.amount.to_string(),"currency":balance.currency},"verification":verification,"freshness":{"observed_at":balance.observed_at,"age_seconds":balance.age_seconds,"source_head":balance.observed_head_sequence.to_string(),"within_bound":balance.observed_head_sequence==balance.global_sequence,"checkpoint":hex_bytes(&balance.observed_checkpoint)},"evidence":[{"evidence_id":format!("evd_{}",hex_bytes(&evidence_digest)),"class":if balance.verification>=4{"checkpoint-proof"}else{"layerx-receipt"},"verification":verification}]});
+        let balance_json = json!({"account_id":format!("act_{}",hex_bytes(&balance.account)),"money":{"amount":balance.amount.to_string(),"currency":balance.currency},"verification":verification,"freshness":{"observed_at":balance.observed_at,"age_seconds":balance.age_seconds,"source_head":balance.observed_head_sequence.to_string(),"within_bound":balance.observed_head_sequence==balance.global_sequence && balance.age_seconds <= self.activity_freshness_seconds,"checkpoint":hex_bytes(&balance.observed_checkpoint)},"evidence":[{"evidence_id":format!("evd_{}",hex_bytes(&evidence_digest)),"class":if balance.verification>=4{"checkpoint-proof"}else{"layerx-receipt"},"verification":verification}]});
         let agents = agent
             .agent_list(None, 100)
             .map_err(agent_failure)?
@@ -5008,7 +5111,7 @@ impl ProductionComponents {
         })
     }
 
-    fn execute_account_balance(
+    fn execute_account_balance_fresh(
         &self,
         scope: &mut crate::store::PrincipalScope<'_>,
     ) -> Result<BackendResponse, ApiFailure> {
@@ -5045,16 +5148,16 @@ impl ProductionComponents {
                 material,
             )
             .map_err(|_| ApiFailure::unavailable())?;
-        let verification = if balance.verification >= 4 {
-            "checkpoint-finalised"
-        } else {
-            "receipt-verified"
+        let verification = match balance.verification {
+            4 => "checkpoint-finalised",
+            5 => "settlement-anchored",
+            _ => return Err(ApiFailure::upstream_degraded()),
         };
         Ok(BackendResponse {
             result: json!({"account_id": format!("act_{}", hex_bytes(&balance.account)),
                 "money": {"amount": balance.amount.to_string(), "currency": balance.currency}, "verification": verification,
                 "freshness": {"observed_at": balance.observed_at, "age_seconds": balance.age_seconds,
-                    "source_head": balance.observed_head_sequence.to_string(), "within_bound": balance.observed_head_sequence == balance.global_sequence,
+                    "source_head": balance.observed_head_sequence.to_string(), "within_bound": balance.observed_head_sequence == balance.global_sequence && balance.age_seconds <= self.activity_freshness_seconds,
                     "checkpoint": hex_bytes(&balance.observed_checkpoint)},
                 "evidence": [{"evidence_id": evidence_id, "class": if balance.verification >= 4 {"checkpoint-proof"} else {"layerx-receipt"}, "verification": verification}]
             }),
