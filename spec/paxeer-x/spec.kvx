@@ -23916,7 +23916,7 @@ do_4 = "Include the new grant in the canonical capability encoding with its own 
 do_5 = "Bind the grant to the deriving program so a callee holding it can spend only what the caller actually owns, never what the callee derives for itself."
 do_6 = "Test escalation adversarially across depth, fan-out and repeated visits, with every attempt refused typed and no partial transfer set surviving."
 do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["programs/crates/layerx-programs-runtime/src/abi/capability.rs", "tools/paxeer-x/gates/104.30.4.sh", "programs/crates/layerx-programs-runtime/tests/program_spend_composition.rs", "tests/programs/test_spend_capability_composition.c", "tools/qualification/paxeer-x/program_spend_composition.py", "tools/qualification/paxeer-x/program_spend_composition.mk"]
+touches = ["programs/crates/layerx-programs-runtime/src/abi/capability.rs", "tools/paxeer-x/gates/104.30.4.sh", "programs/crates/layerx-programs-runtime/tests/program_spend_composition.rs", "tests/programs/test_spend_capability_composition.c", "tools/qualification/paxeer-x/program_spend_composition.py", "tools/qualification/paxeer-x/program_spend_composition.mk", "programs/crates/layerx-programs-runtime/src/execute.rs"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 104.30.4"
 gate_kind = "planned-adapter"
 max_builds = 1
@@ -23939,6 +23939,7 @@ qualification_scope = "Every existing do_* and referenced acceptance criterion r
 release_gate_policy = "Retain the complete make programs-test coverage once per merged wave revision or release candidate. Never run it per task and never claim focused gates are equivalent to the aggregate."
 frozen_read_only_paths = ["Makefile", "programs/crates/layerx-programs-runtime/src/engine.rs", "programs/crates/layerx-programs-runtime/src/lib.rs", "programs/crates/layerx-programs-runtime/src/ffi_call.rs", "programs/crates/layerx-programs-runtime/src/ffi_interface.rs", "programs/crates/layerx-programs-runtime/src/abi/manifest.rs", "programs/crates/layerx-programs-runtime/Cargo.toml"]
 implementation_boundary = "Only declared touches may change. Existing native fixtures, kernel/state sources and other producer dependencies are read-only. A failure requiring a frozen or undeclared source change is a recorded owner dependency, not authorization to edit it. Preserve every existing assertion and refusal; do not weaken source checks, bounds, or tests to resolve a conflict."
+conditional_write_scope = "execute.rs: only the budgeted authorized invocation outcome path for exact CapabilityEscalation; preserve existing unbudgeted and CapabilityDenied behavior. Publish an authenticated Unauthorized failure with the canonical authority-refusal domain and existing CapabilityEscalation tag, retained failure graph, metered usage and atomic rollback. Keep FFI and all unrelated paths and assertions unchanged."
 
 [task.104.31.1]
 title = "Expose the execution context to guest code"
