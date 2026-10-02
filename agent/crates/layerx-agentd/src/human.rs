@@ -117,6 +117,7 @@ pub struct HumanPrepare {
     pub fee_limit: u128,
     pub payload: Vec<u8>,
     pub payload_hash: [u8; 32],
+    pub capability_id: Option<[u8; 32]>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -748,16 +749,22 @@ pub trait HumanOperations {
     /// Returns an error if authorization or operation validation fails, or required state is unavailable.
     fn budget_create(
         &mut self,
-        peer: &HumanPeer,
-        request: layerx_agent_api::budget::BudgetCreate,
-    ) -> Result<HumanResponse, HumanOperationError>;
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
+        request: MutationEnvelope<
+            layerx_agent_api::budget::SignedBudgetMutation<layerx_agent_api::budget::BudgetCreate>,
+        >,
+    ) -> Result<layerx_agent_api::budget::AuthorityResponse<BudgetState>, HumanOperationError>;
     /// # Errors
     /// Returns an error if authorization or operation validation fails, or required state is unavailable.
     fn budget_fund(
         &mut self,
-        peer: &HumanPeer,
-        request: layerx_agent_api::budget::BudgetFund,
-    ) -> Result<HumanResponse, HumanOperationError>;
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
+        request: MutationEnvelope<
+            layerx_agent_api::budget::SignedBudgetMutation<layerx_agent_api::budget::BudgetFund>,
+        >,
+    ) -> Result<layerx_agent_api::budget::AuthorityResponse<BudgetState>, HumanOperationError>;
     /// # Errors
     /// Returns an error if authorization or operation validation fails, or required state is unavailable.
     fn budget_list(
@@ -769,9 +776,20 @@ pub trait HumanOperations {
     /// Returns an error if authorization or operation validation fails, or required state is unavailable.
     fn budget_revoke(
         &mut self,
-        peer: &HumanPeer,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
+        request: MutationEnvelope<
+            layerx_agent_api::budget::SignedBudgetMutation<layerx_agent_api::budget::BudgetTarget>,
+        >,
+    ) -> Result<layerx_agent_api::budget::AuthorityResponse<BudgetState>, HumanOperationError>;
+    /// # Errors
+    /// Returns an error if authorization fails or the authenticated budget lookup is unavailable.
+    fn budget_state(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
         request: layerx_agent_api::budget::BudgetTarget,
-    ) -> Result<HumanResponse, HumanOperationError>;
+    ) -> Result<layerx_agent_api::budget::AuthorityResponse<BudgetState>, HumanOperationError>;
     /// # Errors
     /// Returns an error if authorization or operation validation fails, or required state is unavailable.
     fn budget_reconciliation(
@@ -923,8 +941,45 @@ pub trait HumanOperations {
     fn export_offline(
         &mut self,
         peer: &HumanPeer,
-        facts: Vec<layerx_agent_api::export::FactRef>,
+        request: layerx_agent_api::read::ReadRequest<Vec<layerx_agent_api::export::FactRef>>,
+    ) -> Result<
+        layerx_agent_api::read::VerifiedRead<layerx_agent_api::export::OfflineExport>,
+        HumanOperationError,
+    >;
+    /// # Errors
+    /// Returns an error if authorization fails, the fee snapshot is unavailable or skewed, or
+    /// the native fee arithmetic refuses the meter.
+    fn fee_projection(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::read::FeeProjectionRequest,
+    ) -> Result<
+        layerx_agent_api::read::ProjectionResult<layerx_agent_api::read::FeeProjection>,
+        HumanOperationError,
+    >;
+    /// Local policy evaluation only; the response is the explanation machine bytes.
+    /// # Errors
+    /// Returns an error if authorization fails or the session, capability or tenant policy
+    /// registry is unknown.
+    fn policy_dry_run(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
+        request: layerx_agent_api::policy::PolicyDryRunRequest,
     ) -> Result<HumanResponse, HumanOperationError>;
+    /// # Errors
+    /// Returns an error if authorization fails, an asserted context field disagrees with the
+    /// authenticated session, the session capability binding or purpose is absent, or the intent
+    /// is malformed.
+    fn policy_dry_run_legacy(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
+        request: layerx_agent_api::identity::LegacyPolicyDryRun,
+    ) -> Result<
+        layerx_agent_api::budget::AuthorityResponse<layerx_agent_api::policy::PolicyDryRunResult>,
+        HumanOperationError,
+    >;
     /// # Errors
     /// Returns an error if authorization or operation validation fails, or required state is unavailable.
     fn wait(
@@ -934,11 +989,157 @@ pub trait HumanOperations {
     ) -> Result<HumanResponse, HumanOperationError>;
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BudgetState {
+    pub record: layerx_agent_api::budget::BudgetRecord,
+    pub balance: u128,
+    pub proven_head: u64,
+    pub activity_id: Option<[u8; 32]>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum HumanOperationError {
     Refused,
     Unavailable,
     CapabilityRefused(crate::capability::Dimension),
+    Typed(HumanRefusal),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PolicyContextField {
+    Tenant,
+    AgentDid,
+    AuthorityRef,
+    PermittedActivityTypes,
+    Expiry,
+    Client,
+    PolicyVersion,
+}
+
+impl PolicyContextField {
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Tenant => "tenant",
+            Self::AgentDid => "agent_did",
+            Self::AuthorityRef => "authority_ref",
+            Self::PermittedActivityTypes => "permitted_activity_types",
+            Self::Expiry => "expiry",
+            Self::Client => "client",
+            Self::PolicyVersion => "policy_version",
+        }
+    }
+}
+
+/// Terminal refusals whose reason the caller must be able to distinguish.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HumanRefusal {
+    StalePinnedHead,
+    FeeSnapshotSkew,
+    ExportResponseTooLarge,
+    ExportLevelUnattainable,
+    ExportSettlementAnchoringUnavailable,
+    Policy(crate::policy::PolicyDryRunRefusal),
+    BudgetCodec,
+    BudgetExpired,
+    BudgetStaleRevocation,
+    BudgetNotLive,
+    BudgetContextMismatch,
+    BudgetAuthorizationRequired,
+    BudgetAuthorizationUnexpected,
+    BudgetDaemonLimitFunding,
+    BudgetLimitExceeded,
+    BudgetLimitCollision,
+    BudgetLimitRevoked,
+    BudgetLimitConflict,
+    BudgetNotFound,
+    PolicyContextMismatch(PolicyContextField),
+    SessionBindingMissing,
+    SessionExpiryBindingMissing,
+    SessionExpired,
+    PurposeUndisclosed,
+    IntentMalformed,
+    IntentEffectUnderivable,
+    IntentBindingMissing,
+}
+
+impl HumanRefusal {
+    #[must_use]
+    pub const fn reason(self) -> &'static str {
+        match self {
+            Self::StalePinnedHead => "program.stale_head",
+            Self::FeeSnapshotSkew => "projection.fee_snapshot_skew",
+            Self::ExportResponseTooLarge => "export.response_too_large",
+            Self::ExportLevelUnattainable => "export.level_unattainable",
+            Self::ExportSettlementAnchoringUnavailable => "export.settlement_anchoring_unavailable",
+            Self::Policy(refusal) => refusal.code(),
+            Self::BudgetCodec => "budget.codec",
+            Self::BudgetExpired => "budget.expired",
+            Self::BudgetStaleRevocation => "budget.stale_revocation",
+            Self::BudgetNotLive => "budget.not_live",
+            Self::BudgetContextMismatch => "budget.context_mismatch",
+            Self::BudgetAuthorizationRequired => "budget.authorization_required",
+            Self::BudgetAuthorizationUnexpected => "budget.authorization_unexpected",
+            Self::BudgetDaemonLimitFunding => "budget.daemon_limit_funding",
+            Self::BudgetLimitExceeded => "budget.limit_exceeded",
+            Self::BudgetLimitCollision => "budget.limit_collision",
+            Self::BudgetLimitRevoked => "budget.limit_revoked",
+            Self::BudgetLimitConflict => "budget.limit_conflict",
+            Self::BudgetNotFound => "budget.not_found",
+            Self::PolicyContextMismatch(field) => match field {
+                PolicyContextField::Tenant => "policy.context_mismatch.tenant",
+                PolicyContextField::AgentDid => "policy.context_mismatch.agent_did",
+                PolicyContextField::AuthorityRef => "policy.context_mismatch.authority_ref",
+                PolicyContextField::PermittedActivityTypes => {
+                    "policy.context_mismatch.permitted_activity_types"
+                }
+                PolicyContextField::Expiry => "policy.context_mismatch.expiry",
+                PolicyContextField::Client => "policy.context_mismatch.client",
+                PolicyContextField::PolicyVersion => "policy.context_mismatch.policy_version",
+            },
+            Self::SessionBindingMissing => "policy.session_binding_missing",
+            Self::SessionExpiryBindingMissing => "policy.session_expiry_binding_missing",
+            Self::SessionExpired => "policy.session_expired",
+            Self::PurposeUndisclosed => "policy.purpose_undisclosed",
+            Self::IntentMalformed => "policy.intent_malformed",
+            Self::IntentEffectUnderivable => "policy.intent_effect_underivable",
+            Self::IntentBindingMissing => "policy.intent_binding_missing",
+        }
+    }
+
+    #[must_use]
+    pub const fn class(self) -> layerx_agent_api::error::ErrorClass {
+        use layerx_agent_api::error::ErrorClass;
+        match self {
+            Self::StalePinnedHead | Self::FeeSnapshotSkew | Self::ExportLevelUnattainable => {
+                ErrorClass::VerificationFailure
+            }
+            Self::ExportSettlementAnchoringUnavailable => ErrorClass::UnavailableCapability,
+            Self::ExportResponseTooLarge
+            | Self::Policy(_)
+            | Self::PolicyContextMismatch(_)
+            | Self::SessionBindingMissing
+            | Self::SessionExpiryBindingMissing
+            | Self::SessionExpired
+            | Self::PurposeUndisclosed
+            | Self::IntentMalformed
+            | Self::IntentEffectUnderivable
+            | Self::IntentBindingMissing => ErrorClass::PolicyRefusal,
+            Self::BudgetCodec
+            | Self::BudgetExpired
+            | Self::BudgetStaleRevocation
+            | Self::BudgetNotLive
+            | Self::BudgetContextMismatch
+            | Self::BudgetAuthorizationRequired
+            | Self::BudgetAuthorizationUnexpected
+            | Self::BudgetDaemonLimitFunding
+            | Self::BudgetLimitExceeded
+            | Self::BudgetLimitCollision
+            | Self::BudgetLimitRevoked
+            | Self::BudgetLimitConflict
+            | Self::BudgetNotFound => ErrorClass::BudgetRefusal,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1113,7 +1314,11 @@ pub fn serve_one<T: FrameTransport, O: HumanOperations>(
             response.push(0);
             response.extend_from_slice(payload.bytes());
         }
-        Err(HumanOperationError::Refused | HumanOperationError::CapabilityRefused(_)) => {
+        Err(
+            HumanOperationError::Refused
+            | HumanOperationError::CapabilityRefused(_)
+            | HumanOperationError::Typed(_),
+        ) => {
             response.push(1);
         }
         Err(HumanOperationError::Unavailable) => response.push(2),
@@ -1677,6 +1882,7 @@ fn decode_operation(
                     fee_limit: reader.u128()?,
                     payload: reader.bytes()?,
                     payload_hash: reader.fixed()?,
+                    capability_id: None,
                 },
             })
         }

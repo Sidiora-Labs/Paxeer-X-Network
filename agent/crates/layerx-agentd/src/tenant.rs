@@ -128,6 +128,7 @@ impl OperationClass {
             | Operation::SubscriptionResume => Some(Self::Subscribe),
             Operation::AvailabilityFetch
             | Operation::BudgetList
+            | Operation::BudgetState
             | Operation::BudgetReconciliation
             | Operation::CapabilityList
             | Operation::ProgramActivity
