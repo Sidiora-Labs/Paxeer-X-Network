@@ -13,8 +13,8 @@ use ed25519_dalek::{Signer as _, SigningKey};
 use layerx_agentd::boot::{Gate, GateError};
 use layerx_agentd::config::StartupConfig;
 use layerx_agentd::prepare::{
-    prepare_activity, CorePreparationBoundary, CorePreparationState, CoreStateError,
-    PreparationDefaults, PrepareRequest,
+    prepare_activity, prepare_activity_for_protocol, CorePreparationBoundary, CorePreparationState,
+    CoreStateError, PreparationDefaults, PrepareRequest,
 };
 use layerx_agentd::protocol_evidence::{EvidenceAuthority, RawReceiptEvidence, RawStateEvidence};
 use layerx_agentd::sign::{attach_external_signature, verify_before_submit, VerifiedSubmission};
@@ -23,13 +23,16 @@ use layerx_crypto::local::LocalSigner;
 use layerx_crypto::signer::{sign_disclosed, Signer};
 use layerx_programs::hex;
 use layerx_proof::merkle::build_proof;
+use layerx_types::account::AccountId;
 use layerx_types::activity::{Authority, TimestampBound};
 use layerx_types::amount::Amount;
 use layerx_types::ids::{Did, IdempotencyKey};
 use layerx_types::payload::{ActivityType, ModuleId, ModuleRegistration, ModuleRegistry};
 use layerx_types::verify::VerificationLevel;
 use layerx_wire::encode::Encoder;
-use layerx_wire::hash::{batch_header_digest, program_execution_batch_id, receipt_digest};
+use layerx_wire::hash::{
+    account_id_for_protocol, batch_header_digest, program_execution_batch_id, receipt_digest,
+};
 
 #[path = "../../../../tests/support/monotonic_clock.rs"]
 mod monotonic_clock;
@@ -179,14 +182,32 @@ pub fn verified_submission(id: u8) -> VerifiedSubmission {
 }
 
 pub const BUDGET_CREATE_ID: [u8; 32] = [0x0b; 32];
-pub const BUDGET_CREATE_OWNER: [u8; 32] = [0x52; 32];
-pub const BUDGET_CREATE_ACCOUNT: [u8; 32] = [0x53; 32];
+pub const BUDGET_CREATE_ACTOR: &str = "did:layerx:recovery";
 pub const BUDGET_CREATE_PURPOSE: [u8; 32] = [0x54; 32];
 pub const BUDGET_CREATE_PERIOD_LENGTH: u64 = 1_000;
 pub const BUDGET_CREATE_PERIOD_START: u64 = 80;
+pub const BUDGET_CREATE_SEQUENCE: u64 = 5;
+const BUDGET_CREATE_PROTOCOL: u16 = 3;
 
 fn budget_create_activity_type() -> ActivityType {
     ActivityType::new(ModuleId::Budget, 1).unwrap_or_else(|error| panic!("activity: {error:?}"))
+}
+
+fn protocol_account(name: &str) -> [u8; 32] {
+    let account = AccountId::parse(name).unwrap_or_else(|error| panic!("account: {error:?}"));
+    account_id_for_protocol(&account, BUDGET_CREATE_PROTOCOL)
+        .unwrap_or_else(|error| panic!("account id: {error:?}"))
+}
+
+/// Main account core resolves as the owner of a budget created by the test actor.
+pub fn budget_create_owner() -> [u8; 32] {
+    protocol_account(&format!("agent:{BUDGET_CREATE_ACTOR}:main"))
+}
+
+/// Budget account core derives for one budget identifier of the test actor.
+pub fn budget_create_account(budget_id: [u8; 32]) -> [u8; 32] {
+    let id: String = budget_id.iter().map(|byte| format!("{byte:02x}")).collect();
+    protocol_account(&format!("agent:{BUDGET_CREATE_ACTOR}:budget:{id}"))
 }
 
 /// Module registry declaring the asset send used by `verified_submission` and
@@ -201,66 +222,51 @@ pub fn budget_registry() -> ModuleRegistry {
     .unwrap_or_else(|error| panic!("registry: {error:?}"))
 }
 
-/// Canonical budget-create payload in the shape the daemon signs and core keys:
-/// the `budget_id` field is the identifier core stores the record under.
+/// Canonical 211-byte version-1 core budget-create payload. Core keys the
+/// record by its `budget_id` and funds it from the actor's main account.
 pub fn budget_create_payload(
     budget_id: [u8; 32],
     asset: [u8; 32],
     per_period_limit: u128,
-    expires_at: u64,
+    expiry_ms: u64,
 ) -> Vec<u8> {
-    let mut encoder = Encoder::new(512);
-    encoder
-        .u16(0x4201)
-        .unwrap_or_else(|error| panic!("tag: {error:?}"));
-    encoder
-        .u16(10)
-        .unwrap_or_else(|error| panic!("fields: {error:?}"));
-    for fixed in [budget_id, BUDGET_CREATE_OWNER, BUDGET_CREATE_ACCOUNT, asset] {
-        encoder
-            .fixed(&fixed)
-            .unwrap_or_else(|error| panic!("fixed: {error:?}"));
-    }
-    encoder
-        .u128(per_period_limit)
-        .unwrap_or_else(|error| panic!("limit: {error:?}"));
-    encoder
-        .u64(BUDGET_CREATE_PERIOD_LENGTH)
-        .unwrap_or_else(|error| panic!("period: {error:?}"));
-    encoder
-        .u8(1)
-        .unwrap_or_else(|error| panic!("rollover: {error:?}"));
-    encoder
-        .u128(0)
-        .unwrap_or_else(|error| panic!("carry cap: {error:?}"));
-    encoder
-        .fixed(&BUDGET_CREATE_PURPOSE)
-        .unwrap_or_else(|error| panic!("purpose: {error:?}"));
-    encoder
-        .u64(expires_at)
-        .unwrap_or_else(|error| panic!("expiry: {error:?}"));
-    encoder.finish()
+    let mut bytes = Vec::with_capacity(211);
+    bytes.extend_from_slice(&1_u16.to_be_bytes());
+    bytes.extend_from_slice(&budget_id);
+    bytes.extend_from_slice(&budget_create_account(budget_id));
+    bytes.extend_from_slice(&asset);
+    bytes.extend_from_slice(&BUDGET_CREATE_PURPOSE);
+    bytes.extend_from_slice(&per_period_limit.to_be_bytes());
+    bytes.extend_from_slice(&0_u128.to_be_bytes());
+    bytes.extend_from_slice(&per_period_limit.to_be_bytes());
+    bytes.extend_from_slice(&BUDGET_CREATE_PERIOD_LENGTH.to_be_bytes());
+    bytes.extend_from_slice(&BUDGET_CREATE_PERIOD_START.to_be_bytes());
+    bytes.extend_from_slice(&expiry_ms.to_be_bytes());
+    bytes.extend_from_slice(&0_u64.to_be_bytes());
+    bytes.push(1);
+    assert_eq!(bytes.len(), 211);
+    bytes
 }
 
-/// Prepares, externally signs and verifies one canonical budget-create activity
-/// exactly as the daemon does for an owner-supplied signature.
+/// Prepares, externally signs and verifies one canonical protocol-3 budget-create
+/// activity exactly as the daemon does for an owner-supplied signature.
 pub fn budget_create_submission(
     id: u8,
     budget_id: [u8; 32],
     asset: [u8; 32],
     per_period_limit: u128,
-    expires_at: u64,
+    expiry_ms: u64,
 ) -> VerifiedSubmission {
     let registry = budget_registry();
     let signer = LocalSigner::new([0xa5; 32]);
     let mut core = RecordedCore(CorePreparationState {
         network_id: 17,
-        account_sequence: 5,
+        account_sequence: BUDGET_CREATE_SEQUENCE,
         protocol_timestamp: 1_000,
         observed_head_sequence: 88,
         module_registry: registry.clone(),
     });
-    let prepared = prepare_activity(
+    let prepared = prepare_activity_for_protocol(
         &mut core,
         PreparationDefaults {
             timestamp_span: 30,
@@ -268,21 +274,22 @@ pub fn budget_create_submission(
             maximum_payload_bytes: 1_024,
         },
         PrepareRequest {
-            actor: Did::new(b"did:layerx:recovery")
+            actor: Did::new(BUDGET_CREATE_ACTOR.as_bytes())
                 .unwrap_or_else(|error| panic!("DID: {error:?}")),
             authority: Authority::owner(&signer.public_key())
                 .unwrap_or_else(|error| panic!("authority: {error:?}")),
             activity_type: budget_create_activity_type(),
-            expected_account_sequence: Some(5),
+            expected_account_sequence: Some(BUDGET_CREATE_SEQUENCE),
             timestamp_bound: Some(
                 TimestampBound::new(995, 1_010)
                     .unwrap_or_else(|error| panic!("timestamp: {error:?}")),
             ),
             fee_limit: Some(Amount::from_u128(7)),
             idempotency_key: IdempotencyKey::new([id; 32]),
-            payload: budget_create_payload(budget_id, asset, per_period_limit, expires_at),
+            payload: budget_create_payload(budget_id, asset, per_period_limit, expiry_ms),
             declared_payload_limit: 1_024,
         },
+        BUDGET_CREATE_PROTOCOL,
     )
     .unwrap_or_else(|error| panic!("prepare: {error:?}"));
     let signature = ready(sign_disclosed(
@@ -298,19 +305,19 @@ pub fn budget_create_submission(
         .unwrap_or_else(|error| panic!("verify: {error:?}"))
 }
 
-/// Encodes the 278-byte canonical core budget record core would store under
+/// Encodes the 278-byte canonical version-1 core budget record core stores under
 /// `budget_state_key(budget_id)` after executing `budget_create_payload`.
 pub fn core_budget_record_for(
     budget_id: [u8; 32],
     asset: [u8; 32],
     per_period_limit: u128,
-    expires_at: u64,
+    expiry_ms: u64,
 ) -> Vec<u8> {
     let mut bytes = vec![0_u8; 278];
     bytes[1] = 1;
     bytes[2..34].copy_from_slice(&budget_id);
-    bytes[34..66].copy_from_slice(&BUDGET_CREATE_OWNER);
-    bytes[66..98].copy_from_slice(&BUDGET_CREATE_ACCOUNT);
+    bytes[34..66].copy_from_slice(&budget_create_owner());
+    bytes[66..98].copy_from_slice(&budget_create_account(budget_id));
     bytes[98..130].copy_from_slice(&asset);
     bytes[130..162].copy_from_slice(&BUDGET_CREATE_PURPOSE);
     bytes[162..178].copy_from_slice(&per_period_limit.to_be_bytes());
@@ -320,7 +327,7 @@ pub fn core_budget_record_for(
     bytes[226..242].copy_from_slice(&0_u128.to_be_bytes());
     bytes[242..250].copy_from_slice(&BUDGET_CREATE_PERIOD_LENGTH.to_be_bytes());
     bytes[250..258].copy_from_slice(&BUDGET_CREATE_PERIOD_START.to_be_bytes());
-    bytes[258..266].copy_from_slice(&expires_at.to_be_bytes());
+    bytes[258..266].copy_from_slice(&expiry_ms.to_be_bytes());
     bytes[266..274].copy_from_slice(&0_u64.to_be_bytes());
     bytes[274] = 1;
     bytes

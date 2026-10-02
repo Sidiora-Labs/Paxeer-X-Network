@@ -14,7 +14,8 @@ static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(1);
 
 const ASSET: [u8; 32] = [2; 32];
 const CEILING: u128 = 5_000;
-const EXPIRY: u64 = 100;
+const EXPIRY: u64 = 2_000;
+const CORE_TIME_MS: u64 = 1_000;
 const OBSERVED_HEAD: u64 = 99;
 
 struct SignedActivityPipeline {
@@ -81,7 +82,8 @@ fn request_for(submission: VerifiedSubmission) -> BudgetRequest {
         kind: BudgetKind::ProtocolBudget,
         asset: ASSET,
         ceiling: CEILING,
-        expiry_sequence: EXPIRY,
+        expiry_ms: EXPIRY,
+        core_time_ms: CORE_TIME_MS,
         canonical_activity: submission.exact_bytes().to_vec(),
         verified_submission: Some(submission),
     }
@@ -123,13 +125,30 @@ fn budget_identity_is_read_from_the_signed_payload_by_the_core_keying_rule() {
     let submission = submission(1);
     let identity = budget_create_identity(submission.exact_bytes(), &support::budget_registry())
         .unwrap_or_else(|error| panic!("identity: {error:?}"));
+    assert_eq!(identity.encoding_version, 1);
     assert_eq!(identity.budget_id, support::BUDGET_CREATE_ID);
-    assert_eq!(identity.owner, support::BUDGET_CREATE_OWNER);
-    assert_eq!(identity.budget_account, support::BUDGET_CREATE_ACCOUNT);
+    assert_eq!(identity.owner, support::budget_create_owner());
+    assert_eq!(
+        identity.budget_account,
+        support::budget_create_account(support::BUDGET_CREATE_ID)
+    );
     assert_eq!(identity.asset, ASSET);
+    assert_eq!(identity.purpose, support::BUDGET_CREATE_PURPOSE);
     assert_eq!(identity.per_period_limit, CEILING);
-    assert_eq!(identity.period_length, support::BUDGET_CREATE_PERIOD_LENGTH);
-    assert_eq!(identity.expiry, EXPIRY);
+    assert_eq!(identity.initial_amount, CEILING);
+    assert_eq!(identity.carry_cap, 0);
+    assert_eq!(identity.rollover, 1);
+    assert_eq!(
+        identity.period_length_ms,
+        support::BUDGET_CREATE_PERIOD_LENGTH
+    );
+    assert_eq!(
+        identity.period_start_ms,
+        support::BUDGET_CREATE_PERIOD_START
+    );
+    assert_eq!(identity.expiry_ms, EXPIRY);
+    assert_eq!(identity.source_account, support::budget_create_owner());
+    assert_eq!(identity.source_sequence, support::BUDGET_CREATE_SEQUENCE);
     assert_eq!(
         budget_state_key(identity.budget_id),
         budget_state_key(support::BUDGET_CREATE_ID)
@@ -347,7 +366,7 @@ fn activity_that_is_not_a_matching_budget_creation_never_reaches_submission() {
         Err(BudgetCreationError::IdentityMismatch)
     );
     let mut other_expiry = request();
-    other_expiry.expiry_sequence = EXPIRY + 1;
+    other_expiry.expiry_ms = EXPIRY + 1;
     assert_eq!(
         create_protocol_budget(
             &mut store,
@@ -557,4 +576,76 @@ fn local_limit_is_never_described_as_protocol_equivalent() {
         .contains("bypassing layerx-agentd bypasses"));
     assert!(!limit.bypass_statement.contains("equivalent"));
 }
+
+#[test]
+fn request_expiry_is_core_milliseconds_and_equality_with_core_time_is_expired() {
+    let path = root("expiry");
+    let mut store = Store::open(&path).unwrap_or_else(|error| panic!("store: {error}"));
+    let mut pipeline = SignedActivityPipeline::new(
+        Err(BudgetCreationError::Submission),
+        Err(BudgetCreationError::CreatedBudgetUnconfirmed),
+    );
+    let mut at_core_time = request();
+    at_core_time.core_time_ms = EXPIRY;
+    let mut after_expiry = request();
+    after_expiry.core_time_ms = EXPIRY + 1;
+    let mut zero_expiry = request();
+    zero_expiry.expiry_ms = 0;
+    let mut zero_ceiling = request();
+    zero_ceiling.ceiling = 0;
+    for (request, refusal) in [
+        (at_core_time, BudgetCreationError::Expired),
+        (after_expiry, BudgetCreationError::Expired),
+        (zero_expiry, BudgetCreationError::InvalidLimit),
+        (zero_ceiling, BudgetCreationError::InvalidLimit),
+    ] {
+        assert_eq!(
+            create_protocol_budget(
+                &mut store,
+                &request,
+                &support::budget_registry(),
+                &support::evidence_verifier(),
+                &mut pipeline,
+            ),
+            Err(refusal)
+        );
+    }
+    assert!(pipeline.submitted_bytes.is_empty());
+    assert!(pipeline.state_reads.is_empty());
+
+    let mut live = request();
+    live.core_time_ms = EXPIRY - 1;
+    let mut pipeline = SignedActivityPipeline::new(Ok(receipt_for(&live)), Ok(confirmed_state()));
+    let budget = create_protocol_budget(
+        &mut store,
+        &live,
+        &support::budget_registry(),
+        &support::evidence_verifier(),
+        &mut pipeline,
+    )
+    .unwrap_or_else(|error| panic!("create: {error:?}"));
+    assert_eq!(budget.record().expiry, EXPIRY);
+    let _ = fs::remove_dir_all(path);
+}
+
+#[test]
+fn signed_create_payload_is_the_exact_211_byte_core_codec() {
+    let payload = support::budget_create_payload(support::BUDGET_CREATE_ID, ASSET, CEILING, EXPIRY);
+    assert_eq!(payload.len(), 211);
+    assert_eq!(&payload[..2], &[0, 1]);
+    assert_eq!(&payload[2..34], &support::BUDGET_CREATE_ID);
+    assert_eq!(
+        &payload[34..66],
+        &support::budget_create_account(support::BUDGET_CREATE_ID)
+    );
+    assert_eq!(&payload[66..98], &ASSET);
+    assert_eq!(&payload[130..146], &CEILING.to_be_bytes());
+    assert_eq!(&payload[194..202], &EXPIRY.to_be_bytes());
+    assert_eq!(payload[210], 1);
+    assert!(submission(1)
+        .exact_bytes()
+        .windows(payload.len())
+        .any(|window| window == payload.as_slice()));
+}
+
 mod support;
