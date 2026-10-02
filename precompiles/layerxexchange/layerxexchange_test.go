@@ -1,6 +1,12 @@
 package layerxexchange_test
 
 import (
+	"os"
+	"bytes"
+	"crypto/ed25519"
+	"crypto/sha256"
+	"sort"
+
 	"encoding/binary"
 	"math/big"
 	"testing"
@@ -460,4 +466,139 @@ func TestMissingKeeperRefuses(t *testing.T) {
 	require.NoError(t, err)
 	_, err = precompile.Run(h.evm, h.caller, h.caller, h.input(layerxexchange.CancelOrderMethod, orderID), nil, false, false, nil)
 	require.ErrorIs(t, err, vm.ErrExecutionReverted)
+}
+
+func signedNativeGenesis(t *testing.T, tif, oracle bool) []byte {
+	t.Helper()
+	blob := func(out, value []byte) []byte {
+		out = binary.BigEndian.AppendUint32(out, uint32(len(value)))
+		return append(out, value...)
+	}
+	key := func(name string) []byte { out := make([]byte, 32); copy(out, name); return out }
+	content := binary.BigEndian.AppendUint16(nil, 3)
+	content = binary.BigEndian.AppendUint32(content, 77)
+	content = binary.BigEndian.AppendUint64(content, uint64(genesisTime.UnixMilli()))
+	parameters := []string{"module-enable:perps", "parameter-version"}
+	if oracle { parameters = append(parameters, "perps-oracle-transport") }
+	if tif { parameters = append(parameters, "perps-order-tif") }
+	sort.Strings(parameters)
+	content = binary.BigEndian.AppendUint32(content, uint32(len(parameters)))
+	for _, name := range parameters {
+		content = binary.BigEndian.AppendUint16(content, types.GovernanceModuleID)
+		content = blob(content, key(name))
+		value := make([]byte, 32); value[31] = 1
+		content = blob(content, value)
+	}
+	content = binary.BigEndian.AppendUint32(content, 1)
+	content = blob(content, bytes.Repeat([]byte{1}, 32))
+	content = blob(content, append([]byte{2}, bytes.Repeat([]byte{3}, 32)...))
+	content = append(content, make([]byte, 16)...)
+	type accountEntry struct { id [32]byte; kind uint16 }
+	accounts := []accountEntry{}
+	for kind, name := range map[uint16]string{9: "system:insurance", 10: "system:fees", 11: "system:paxeer-reserve", 12: "system:paxeer-withdrawals"} {
+		id, err := codec.DeriveAccountID([]byte(name)); require.NoError(t, err)
+		accounts = append(accounts, accountEntry{id, kind})
+	}
+	sort.Slice(accounts, func(i, j int) bool { return bytes.Compare(accounts[i].id[:], accounts[j].id[:]) < 0 })
+	content = binary.BigEndian.AppendUint32(content, uint32(len(accounts)))
+	for _, account := range accounts {
+		content = blob(content, account.id[:])
+		content = blob(content, bytes.Repeat([]byte{4}, 32))
+		content = append(content, make([]byte, 17)...)
+		content = binary.BigEndian.AppendUint16(content, account.kind)
+		content = blob(content, make([]byte, 32))
+	}
+	content = binary.BigEndian.AppendUint32(content, 0)
+	encoded := binary.BigEndian.AppendUint16(nil, 3)
+	encoded = binary.BigEndian.AppendUint16(encoded, 0x4701)
+	encoded = append(encoded, content...)
+	stateRoot := sha256.Sum256([]byte("genesis capability codec fixture"))
+	encoded = blob(encoded, stateRoot[:])
+	receiptInput := binary.BigEndian.AppendUint32(nil, 77)
+	receiptInput = append(receiptInput, stateRoot[:]...)
+	receiptRoot := sha256.Sum256(append([]byte("LXP/v1/genesis-receipt-root\x00"), receiptInput...))
+	encoded = blob(encoded, receiptRoot[:])
+	private := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{0x42}, ed25519.SeedSize))
+	encoded = blob(encoded, private.Public().(ed25519.PublicKey))
+	return blob(encoded, ed25519.Sign(private, encoded))
+}
+
+func capabilityWitness(moduleID uint16, key, value []byte, moduleSiblings [][32]byte) []byte {
+	out := binary.BigEndian.AppendUint16(nil, 2)
+	out = binary.BigEndian.AppendUint16(out, moduleID)
+	out = binary.BigEndian.AppendUint32(out, uint32(len(key))) //nolint:gosec
+	out = append(out, key...)
+	out = binary.BigEndian.AppendUint32(out, uint32(len(value))) //nolint:gosec
+	out = append(out, value...)
+	out = binary.BigEndian.AppendUint32(out, 0)
+	out = binary.BigEndian.AppendUint32(out, 1)
+	out = append(out, 0)
+	out = binary.BigEndian.AppendUint32(out, 9)
+	out = append(out, byte(len(moduleSiblings)))
+	for _, sibling := range moduleSiblings {
+		out = append(out, sibling[:]...)
+	}
+	return out
+}
+
+
+func TestNativeTimeInForceCapabilityPrecompile(t *testing.T) {
+	h := newHarness(t)
+	const signature = "OrderPlaced(bytes32,bytes32,address,uint8,uint256,uint256,uint8,uint64)"
+	before := h.balance(h.custody.ModuleAddress(), sdk.MustGetBaseDenom())
+	for _, tif := range []uint8{1, 2, 3} {
+		_, err := h.call(layerxexchange.PlaceOrderMethod, marketID, types.SideBuy, big.NewInt(17), big.NewInt(2), tif)
+		require.Error(t, err)
+	}
+	require.Zero(t, h.keeper.GetOwnerNonce(h.ctx, h.caller))
+	require.Zero(t, h.keeper.GetIntentCount(h.ctx))
+	require.Empty(t, h.logs(signature))
+	require.Zero(t, h.typedEvents("EventOrderPlaced"))
+	genesis := signedNativeGenesis(t, true, true)
+	path := os.Getenv("PAXEER_X_TIF_NATIVE_GENESIS_FILE")
+	if os.Getenv("PAXEER_X_TIF_INGRESS_FILE") != "" {
+		require.NotEmpty(t, path, "cross-language gate requires C-produced native genesis")
+	}
+	if path != "" {
+		var err error
+		genesis, err = os.ReadFile(path)
+		require.NoError(t, err)
+	}
+	commitment, enabled, err := types.NativeGenesisCapability(genesis)
+	require.NoError(t, err)
+	require.True(t, enabled)
+	witness := capabilityWitness(types.GovernanceModuleID, types.GenesisManifestStateKey(), commitment[:],
+		[][32]byte{{0x81}, {0x82}, {0x83}, {0x84}})
+	decodedWitness, err := codec.DecodeStateWitness(witness)
+	require.NoError(t, err)
+	root, err := decodedWitness.Root()
+	require.NoError(t, err)
+	require.NoError(t, h.custody.RegisterCheckpoint(h.ctx, 60, root, [32]byte{1}))
+	require.NoError(t, h.keeper.SetMarket(h.ctx, types.Market{MarketId: custodytypes.Hash32(marketID),
+		MarginAssetId: custodytypes.Hash32(h.native), Enabled: true,
+		NativeGenesis: genesis, CapabilityBatch: 60, CapabilityWitness: witness}))
+	for i, tif := range []uint8{0, 1, 2, 3} {
+		out, err := h.call(layerxexchange.PlaceOrderMethod, marketID, types.SideBuy, big.NewInt(17), big.NewInt(2), tif)
+		require.NoError(t, err)
+		id := h.intentID(types.IntentKind_INTENT_KIND_PLACE, uint64(i+1))
+		require.Equal(t, id, out[0].([32]byte))
+		stored, found := h.keeper.GetIntent(h.ctx, id)
+		require.True(t, found)
+		require.Equal(t, uint32(tif), stored.TimeInForce)
+		require.Equal(t, uint64(i+1), stored.Nonce)
+		logs := h.logs(signature)
+		require.Len(t, logs, i+1)
+		require.Equal(t, []common.Hash{crypto.Keccak256Hash([]byte(signature)), id, marketID,
+			common.BytesToHash(h.caller.Bytes())}, logs[i].Topics)
+		values, err := h.precompile.GetABI().Events[layerxexchange.OrderPlacedEvent].Inputs.NonIndexed().Unpack(logs[i].Data)
+		require.NoError(t, err)
+		require.Equal(t, []interface{}{types.SideBuy, big.NewInt(17), big.NewInt(2), tif, uint64(i+1)}, values)
+	}
+	_, err = h.call(layerxexchange.PlaceOrderMethod, marketID, types.SideBuy, big.NewInt(17), big.NewInt(2), uint8(4))
+	require.Error(t, err)
+	require.Equal(t, uint64(4), h.keeper.GetOwnerNonce(h.ctx, h.caller))
+	require.Equal(t, uint64(4), h.keeper.GetIntentCount(h.ctx))
+	require.Len(t, h.logs(signature), 4)
+	require.Equal(t, 4, h.typedEvents("EventOrderPlaced"))
+	require.Equal(t, before, h.balance(h.custody.ModuleAddress(), sdk.MustGetBaseDenom()))
 }

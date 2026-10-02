@@ -21616,7 +21616,9 @@ do_7 = "Keep actual production upgrade activation and historical entitlement rec
 
 [task.4.2]
 title = "Carry advertised time-in-force semantics from exchange ingress to native matching"
-status = "in_progress"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "unverified"
 mode = "BUILD"
 wave = 2
 requires = ["0.2", "4.4"]

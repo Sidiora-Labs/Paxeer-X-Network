@@ -195,7 +195,8 @@ static lxp_result order_validate(const lx_perps_market *market,
         memcmp(market->market_id, order->market_id, 32U) != 0 ||
         (order->side != LX_PERPS_SIDE_BUY &&
          order->side != LX_PERPS_SIDE_SELL) ||
-        lxp_u128_is_zero(order->price) || lxp_u128_is_zero(order->quantity))
+        lxp_u128_is_zero(order->price) || lxp_u128_is_zero(order->quantity) ||
+        (unsigned)order->time_in_force > (unsigned)LX_PERPS_TIF_POST_ONLY)
         return LXP_ERR_NON_CANONICAL;
     if (market->halted) return LXP_ERR_MARKET_HALTED;
     status = lxp_u128_mul(order->price, (lxp_u128){ 0U, 1U }, &product);
@@ -249,10 +250,23 @@ lxp_result lx_perps_order_place_execute(
     incoming.remaining = incoming.quantity;
     incoming.initial_margin_required = required;
     incoming.active = true;
+    if (incoming.time_in_force == LX_PERPS_TIF_POST_ONLY &&
+        best_match(&candidate, &incoming) != candidate.count)
+        return LXP_ERR_AGREEMENT_STATE;
     status = lx_perps_book_match(&candidate, &incoming, fills, fill_capacity,
                                  fill_count);
     if (status != LXP_OK) return status;
-    if (!lxp_u128_is_zero(incoming.remaining)) {
+    /* FOK commits nothing unless the whole quantity filled; IOC drops its
+     * residual; GTC and post-only rest it. The caller's book is untouched
+     * until the final assignment. */
+    if (incoming.time_in_force == LX_PERPS_TIF_FILL_OR_KILL &&
+        !lxp_u128_is_zero(incoming.remaining)) {
+        *fill_count = 0U;
+        return LXP_ERR_AGREEMENT_STATE;
+    }
+    if (!lxp_u128_is_zero(incoming.remaining) &&
+        incoming.time_in_force != LX_PERPS_TIF_IMMEDIATE_OR_CANCEL) {
+        incoming.time_in_force = LX_PERPS_TIF_GOOD_TILL_CANCELLED;
         if (candidate.count == LX_PERPS_BOOK_CAPACITY)
             return LXP_ERR_ARENA_EXHAUSTED;
         candidate.orders[candidate.count++] = incoming;

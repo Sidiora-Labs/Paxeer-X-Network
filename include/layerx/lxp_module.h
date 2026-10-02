@@ -126,6 +126,10 @@ lxp_result lxp_ctx_account_stage_module_value(
 lxp_result lxp_ctx_account_stage_module_custody(lxp_module_ctx *ctx,
     const lxp_activity *activity, const uint8_t object_id[32],
     const uint8_t asset_id[32], const uint8_t presented_id[32], lx_account **account);
+lxp_result lxp_ctx_account_stage_perps_margin(lxp_module_ctx *ctx,
+    const lxp_activity *activity, const lxp_authority_resolved *authority,
+    const uint8_t market_id[32], const uint8_t asset_id[32],
+    const uint8_t presented_id[32], bool stage, lx_account **account);
 lxp_result lxp_ctx_account_stage_perps_market(lxp_module_ctx *ctx,
     const lxp_activity *activity, const uint8_t market_id[32],
     const uint8_t administrator[32], const uint8_t asset_id[32],

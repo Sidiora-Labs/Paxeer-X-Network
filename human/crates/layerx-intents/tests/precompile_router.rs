@@ -14,7 +14,8 @@ use layerx_types::amount::Amount;
 use layerx_types::ids::{AssetId, CheckpointId, IdempotencyKey};
 use layerx_types::intent::EvmAddress;
 use layerx_types::payload::{
-    ActivityType, ModuleId, ModuleRegistration, ModuleRegistry, PerpsPayload, TradeSide,
+    ActivityType, ModuleId, ModuleRegistration, ModuleRegistry, PerpsPayload, PerpsTimeInForce,
+    TradeSide,
 };
 
 const CREDIT: &[u8] =
@@ -325,8 +326,47 @@ fn exchange_order_routes_to_the_kernel_perps_order_bytes() {
             side: TradeSide::Sell,
             price: (1_u128 << 64) | 2,
             quantity: 5000,
+            time_in_force: PerpsTimeInForce::GoodTillCancelled,
         }
     );
+}
+
+#[test]
+fn exchange_order_carries_every_time_in_force_distinctly() {
+    let declared: Vec<_> = (1..=12).map(|ordinal| checked(ActivityType::new(ModuleId::Perps, ordinal))).collect();
+    let registry = checked(ModuleRegistry::new(&[checked(ModuleRegistration::new(ModuleId::Perps, &declared))]));
+    let gtc = vector_bytes("perps_order_place");
+    let cases = [
+        (1_u8, PerpsTimeInForce::ImmediateOrCancel),
+        (2, PerpsTimeInForce::FillOrKill),
+        (3, PerpsTimeInForce::PostOnly),
+    ];
+    for (byte, expected) in cases {
+        let (topics, body) = order_log_topics(byte);
+        let log = EvmLog {
+            address: EXCHANGE_PRECOMPILE,
+            topics: &topics,
+            data: &body,
+        };
+        assert!(route(&log, market_binding()).is_err());
+        for perps_abi_version in [0, 1, 2, 4] {
+            assert!(route(&log, RouteBinding::MarketVersioned { market_id: [0x11; 32], owner_account_id: [0x32; 32], perps_abi_version }).is_err());
+        }
+        let intent = checked(route(&log, RouteBinding::MarketVersioned { market_id: [0x11; 32], owner_account_id: [0x32; 32], perps_abi_version: 3 }));
+        assert!(compile(&intent, &perps_registry()).is_err());
+        let compiled = checked(compile(&intent, &registry));
+        let bytes = compiled.payload().as_bytes();
+        assert_eq!(bytes.len(), 130);
+        assert_eq!(&bytes[..129], &gtc[..]);
+        assert_eq!(bytes[129], byte);
+        checked(DisclosureCheck::verify(&intent, &compiled));
+        let PerpsPayload::OrderPlace { time_in_force, .. } =
+            checked(PerpsPayload::from_payload(compiled.payload()))
+        else {
+            panic!("order payload");
+        };
+        assert_eq!(time_in_force, expected);
+    }
 }
 
 #[test]
@@ -409,14 +449,14 @@ fn direct_perps_intents_compile_every_kernel_vector() {
 
 #[test]
 fn exchange_order_refuses_what_perps_cannot_carry() {
-    let (topics, body) = order_log_topics(1);
+    let (topics, body) = order_log_topics(4);
     let log = EvmLog {
         address: EXCHANGE_PRECOMPILE,
         topics: &topics,
         data: &body,
     };
     let Err(RouteError::Intent(error)) = route(&log, market_binding()) else {
-        panic!("IOC order routed");
+        panic!("unknown time in force routed");
     };
     assert_eq!(error.field, IntentField::TimeInForce);
     let (topics, body) = order_log_topics(0);
@@ -758,4 +798,38 @@ fn paxeer_settled_events_route_but_carry_no_layerx_activity() {
         ("factory/pad", "Pad Token", "PAD")
     );
     assert_eq!(event.fee_strategy, 2);
+}
+
+#[test]
+fn exchange_order_consumes_persisted_keeper_events() {
+    let source = std::env::var("PAXEER_X_TIF_INGRESS_FILE").expect("private persisted keeper events required");
+    let target = std::env::var("PAXEER_X_TIF_PAYLOAD_FILE").expect("private native payload output required");
+    let events = std::fs::read(format!("{source}.events")).expect("keeper ABI event artifact");
+    assert_eq!(events.len(), 4 * 288);
+    let declared: Vec<_> = (1..=12).map(|ordinal| checked(ActivityType::new(ModuleId::Perps, ordinal))).collect();
+    let registry = checked(ModuleRegistry::new(&[checked(ModuleRegistration::new(ModuleId::Perps, &declared))]));
+    let mut output = String::new();
+    for (tif, bytes) in events.chunks_exact(288).enumerate() {
+        let topics: Vec<[u8; 32]> = bytes[..128].chunks_exact(32).map(|word| checked(word.try_into())).collect();
+        assert_eq!(topics[0], PrecompileEventKind::OrderPlaced.topic0());
+        let log = EvmLog { address: EXCHANGE_PRECOMPILE, topics: &topics, data: &bytes[128..] };
+        let event = checked(PrecompileEvent::decode(&log));
+        let PrecompileEvent::OrderPlaced(ref placed) = event else { panic!("keeper order event"); };
+        assert_eq!(usize::from(placed.time_in_force), tif);
+        assert_eq!(placed.side, 1);
+        assert_eq!(placed.price, word_u128(17));
+        assert_eq!(placed.quantity, word_u128(2));
+        let intent = checked(route_event(event, RouteBinding::MarketVersioned {
+            market_id: topics[2], owner_account_id: [0x32; 32], perps_abi_version: 3,
+        }));
+        let compiled = checked(compile(&intent, &registry));
+        checked(DisclosureCheck::verify(&intent, &compiled));
+        let raw = compiled.payload().as_bytes();
+        assert_eq!(&raw[..32], &topics[2]);
+        assert_eq!(&raw[32..64], &topics[1]);
+        assert_eq!(raw.len(), if tif == 0 { 129 } else { 130 });
+        if tif != 0 { assert_eq!(usize::from(raw[129]), tif); }
+        output.push_str(&format!("{tif} {}\n", hex(raw)));
+    }
+    std::fs::write(target, output).expect("canonical native payload artifact");
 }

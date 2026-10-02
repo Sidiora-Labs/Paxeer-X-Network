@@ -14,6 +14,9 @@ message Market {
   // margin_asset_id is the custody asset margin for this market is held in.
   string margin_asset_id = 2;
   bool enabled = 3;
+  bytes native_genesis = 4;
+  uint64 capability_batch = 5;
+  bytes capability_witness = 6;
 }
 
 // Params defines the parameters of the layerxexchange module.

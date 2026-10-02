@@ -255,6 +255,25 @@ static lxp_result perps_oracle_transport(const lxp_genesis_manifest *manifest, b
     return LXP_OK;
 }
 
+static lxp_result perps_order_tif(const lxp_genesis_manifest *manifest, bool *enabled)
+{
+    static const uint8_t key[32] = LXP_PERPS_ORDER_TIF_PARAMETER;
+    *enabled = false;
+    if (manifest->parameter_count > LXP_GENESIS_MAX_PARAMETERS) return LXP_ERR_LENGTH_LIMIT;
+    for (size_t i = 0U; i < manifest->parameter_count; ++i) {
+        const lxp_genesis_parameter *parameter = &manifest->parameters[i];
+        if (memcmp(parameter->key, key, sizeof(LXP_PERPS_ORDER_TIF_PARAMETER) - 1U) != 0)
+            continue;
+        if (*enabled || memcmp(parameter->key, key, sizeof(key)) != 0 ||
+            parameter->module_id != LXP_MODULE_GOVERNANCE ||
+            manifest->protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT ||
+            !lxp_ct_is_zero(parameter->value, 31U) || parameter->value[31] != 1U)
+            return LXP_ERR_VERSION_UNSUPPORTED;
+        *enabled = true;
+    }
+    return LXP_OK;
+}
+
 lxp_result lxp_genesis_module_plan_resolve(
     const lxp_genesis_manifest *manifest, lxp_genesis_module_plan *plan)
 {
@@ -262,6 +281,7 @@ lxp_result lxp_genesis_module_plan_resolve(
     bool bridge_present = false;
     bool handover_enabled = false;
     bool oracle_transport = false;
+    bool order_tif = false;
     bool perps_selected = false;
     uint8_t handover_authority[32];
     size_t count = sizeof(module_table) / sizeof(module_table[0]);
@@ -276,6 +296,8 @@ lxp_result lxp_genesis_module_plan_resolve(
         status = lxp_bridge_genesis_profile(manifest, &bridge, &bridge_present);
     if (status == LXP_OK) status = module_enable_flags_known(manifest);
     if (status == LXP_OK) status = perps_oracle_transport(manifest, &oracle_transport);
+    if (status == LXP_OK) status = perps_order_tif(manifest, &order_tif);
+    if (status == LXP_OK && order_tif && !oracle_transport) status = LXP_ERR_VERSION_UNSUPPORTED;
     if (status == LXP_OK)
         status = lxp_handover_genesis_authority(manifest, handover_authority,
                                                 &handover_enabled);
@@ -314,6 +336,7 @@ lxp_result lxp_genesis_module_plan_resolve(
             if (entry->module_id == LXP_MODULE_PERPS) {
                 perps_selected = true;
                 if (oracle_transport) iface = lx_perps_oracle_transport_module_iface();
+                if (order_tif) iface = lx_perps_tif_module_iface();
             }
             if (entry->module_id == LXP_MODULE_GOVERNANCE)
                 iface = lxp_governance_module_iface_for_handover(handover_enabled);

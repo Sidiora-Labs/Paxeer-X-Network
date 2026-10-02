@@ -1,6 +1,6 @@
 use layerx_types::payload::{
     ActivityType, ModuleId, ModuleRegistration, ModuleRegistry, PerpsMarket, PerpsPayload,
-    SpotOrderKind, SpotPayload, SpotTimeInForce, TradeSide, TradingPayloadError,
+    PerpsTimeInForce, SpotOrderKind, SpotPayload, SpotTimeInForce, TradeSide, TradingPayloadError,
 };
 
 const VECTORS: &str = include_str!("../../../../tests/fixtures/trading-payloads/vectors.json");
@@ -103,6 +103,7 @@ fn perps_cases() -> Vec<(&'static str, PerpsPayload)> {
                 side: TradeSide::Sell,
                 price: (1_u128 << 64) | 2,
                 quantity: 5000,
+                time_in_force: PerpsTimeInForce::GoodTillCancelled,
             },
         ),
         (
@@ -266,6 +267,48 @@ fn perps_payload_round_trips_through_a_declared_module_payload() {
 }
 
 #[test]
+fn perps_order_time_in_force_is_versioned_and_distinct() {
+    let (_, legacy) = vector("perps_order_place");
+    let Ok(PerpsPayload::OrderPlace { time_in_force, .. }) =
+        PerpsPayload::decode(perps_type(4), &legacy)
+    else {
+        panic!("legacy order refused");
+    };
+    assert_eq!(time_in_force, PerpsTimeInForce::GoodTillCancelled);
+    for (byte, tif) in [
+        (1_u8, PerpsTimeInForce::ImmediateOrCancel),
+        (2, PerpsTimeInForce::FillOrKill),
+        (3, PerpsTimeInForce::PostOnly),
+    ] {
+        let mut bytes = legacy.clone();
+        bytes.push(byte);
+        let Ok(decoded) = PerpsPayload::decode(perps_type(4), &bytes) else {
+            panic!("tif {byte} refused");
+        };
+        let PerpsPayload::OrderPlace { time_in_force, .. } = &decoded else {
+            panic!("tif {byte} decoded as another activity");
+        };
+        assert_eq!(*time_in_force, tif);
+        assert_eq!(decoded.encode(), Ok(bytes));
+    }
+    for byte in [0_u8, 4, 0xff] {
+        let mut bytes = legacy.clone();
+        bytes.push(byte);
+        assert_eq!(
+            PerpsPayload::decode(perps_type(4), &bytes),
+            Err(TradingPayloadError::NonCanonical),
+            "tif byte {byte}"
+        );
+    }
+    let mut long = legacy.clone();
+    long.extend_from_slice(&[1, 1]);
+    assert_eq!(
+        PerpsPayload::decode(perps_type(4), &long),
+        Err(TradingPayloadError::Length(131))
+    );
+}
+
+#[test]
 fn perps_payload_decoder_refuses_what_the_kernel_refuses() {
     let (_, mut halt) = vector("perps_market_halt");
     halt[32] = 2;
@@ -361,4 +404,16 @@ fn spot_payload_decoder_refuses_what_the_kernel_refuses() {
         SpotPayload::decode(0x000a_0004, &[0; 32]),
         Err(TradingPayloadError::NonCanonical)
     );
+}
+
+#[test]
+fn perps_tif_requires_selected_abi3_activity_registration() {
+    let (_, bytes) = vector("perps_order_place");
+    let mut order = PerpsPayload::decode(perps_type(4), &bytes).unwrap();
+    let PerpsPayload::OrderPlace { ref mut time_in_force, .. } = order else { panic!("order"); };
+    *time_in_force = PerpsTimeInForce::ImmediateOrCancel;
+    let legacy = ModuleRegistry::new(&[ModuleRegistration::new(ModuleId::Perps, &(1..=11).map(perps_type).collect::<Vec<_>>()).unwrap()]).unwrap();
+    let selected = ModuleRegistry::new(&[ModuleRegistration::new(ModuleId::Perps, &(1..=12).map(perps_type).collect::<Vec<_>>()).unwrap()]).unwrap();
+    assert!(order.payload(&legacy).is_err());
+    assert_eq!(order.payload(&selected).unwrap().as_bytes().len(), 130);
 }

@@ -1,6 +1,6 @@
 //! Paxeer precompile event decoding and routing into `LayerX` intents.
 
-use layerx_types::payload::{PerpsPayload, TradeSide};
+use layerx_types::payload::{PerpsPayload, PerpsTimeInForce, TradeSide};
 
 pub use crate::keccak::keccak256;
 use crate::{
@@ -702,9 +702,16 @@ impl ExchangeOrder {
     ///
     /// # Errors
     ///
-    /// Refuses a side outside buy/sell, any time in force other than GTC
-    /// (perps orders rest until cancelled), zero or over-wide values.
+    /// Refuses a side outside buy/sell, a time in force outside
+    /// GTC/IOC/FOK/post-only, zero or over-wide values.
     pub fn new(event: OrderPlaced, owner_account_id: [u8; 32]) -> Result<Self, IntentError> {
+        Self::new_for_abi(event, owner_account_id, 1)
+    }
+
+    pub fn new_for_abi(event: OrderPlaced, owner_account_id: [u8; 32], perps_abi_version: u32) -> Result<Self, IntentError> {
+        if !(1..=3).contains(&perps_abi_version) || (event.time_in_force != 0 && perps_abi_version != 3) {
+            return Err(IntentError { field: IntentField::TimeInForce, reason: IntentErrorReason::InvalidRange });
+        }
         let side = match event.side {
             1 => TradeSide::Buy,
             2 => TradeSide::Sell,
@@ -715,12 +722,12 @@ impl ExchangeOrder {
                 })
             }
         };
-        if event.time_in_force != 0 {
+        let Ok(time_in_force) = PerpsTimeInForce::from_byte(event.time_in_force) else {
             return Err(IntentError {
                 field: IntentField::TimeInForce,
                 reason: IntentErrorReason::InvalidRange,
             });
-        }
+        };
         nonzero(&event.market_id, IntentField::Market)?;
         nonzero(&event.intent_id, IntentField::Order)?;
         nonzero(&owner_account_id, IntentField::Account)?;
@@ -731,6 +738,7 @@ impl ExchangeOrder {
             side,
             price: amount(&event.price)?,
             quantity: amount(&event.quantity)?,
+            time_in_force,
         })?;
         Ok(Self { event, payload })
     }
@@ -905,6 +913,11 @@ pub enum RouteBinding {
         market_id: [u8; 32],
         owner_account_id: [u8; 32],
     },
+    MarketVersioned {
+        market_id: [u8; 32],
+        owner_account_id: [u8; 32],
+        perps_abi_version: u32,
+    },
     /// Margin deposits carry the custody credit of their proven deposit.
     Custody(NativeCustodyCredit),
     /// Margin withdrawals carry the owner's withdrawal request.
@@ -956,6 +969,15 @@ pub fn route_event(event: PrecompileEvent, binding: RouteBinding) -> Result<Inte
                 }));
             }
             intent(ExchangeOrder::new(value, owner_account_id).map(IntentKind::ExchangeOrder))
+        }
+        (
+            PrecompileEvent::OrderPlaced(value),
+            RouteBinding::MarketVersioned { market_id, owner_account_id, perps_abi_version },
+        ) => {
+            if value.market_id != market_id {
+                return Err(RouteError::Intent(IntentError { field: IntentField::Market, reason: IntentErrorReason::EventMismatch }));
+            }
+            intent(ExchangeOrder::new_for_abi(value, owner_account_id, perps_abi_version).map(IntentKind::ExchangeOrder))
         }
         (PrecompileEvent::OrderCancelRequested(value), RouteBinding::Market { market_id, .. }) => {
             intent(ExchangeCancel::new(value, market_id).map(IntentKind::ExchangeCancel))

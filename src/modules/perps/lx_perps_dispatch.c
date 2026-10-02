@@ -1169,6 +1169,7 @@ static lxp_result execute_order_place(lxp_module_ctx *ctx,
     order.side = command->side;
     order.price = command->price;
     order.quantity = command->quantity;
+    order.time_in_force = command->time_in_force;
     for (;;) {
         const lx_perps_order *refused = NULL;
         *after = *remaining;
@@ -1203,6 +1204,17 @@ static lxp_result execute_order_place(lxp_module_ctx *ctx,
     status = book_persist(ctx, before, after);
     if (status == LXP_OK)
         status = refused_makers_emit(ctx, before, remaining);
+    /* IOC and FOK never rest; a terminal record keeps their identifier
+     * spent so a retried placement cannot execute twice. Book loads skip
+     * inactive orders. */
+    if (status == LXP_OK &&
+        (order.time_in_force == LX_PERPS_TIF_IMMEDIATE_OR_CANCEL ||
+         order.time_in_force == LX_PERPS_TIF_FILL_OR_KILL)) {
+        order.remaining = (lxp_u128){ 0U, 0U };
+        order.active = false;
+        order.global_sequence = lxp_ctx_global_sequence(ctx);
+        status = lx_perps_order_put(ctx, &order);
+    }
     if (status != LXP_OK) return status;
     tail[0] = (uint8_t)fill_count;
     status = lxp_u128_to_be(order.quantity, tail + 1U);
@@ -1936,6 +1948,78 @@ static lxp_result module_execute(lxp_module_ctx *ctx,
     return execute_adl(ctx, activity, &value->typed->adl);
 }
 
+static lxp_result tif_registration(lxp_module_ctx *ctx,
+    const lxp_activity *activity, const lxp_authority_resolved *authority,
+    const perps_decoded *value, bool stage)
+{
+    const lxp_module_registration *registration;
+    lx_perps_market market;
+    lx_account *account;
+    lxp_result status;
+    if (ctx == NULL || activity == NULL || authority == NULL || value == NULL ||
+        ctx->protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT ||
+        activity->activity_type != LX_PERPS_MARGIN_REGISTER || value->ordinal != 12U ||
+        value->payload_length != 64U || authority->kind != LXP_AUTHORITY_OWNER ||
+        lxp_ct_is_zero(value->payload, 32U) || lxp_ct_is_zero(value->payload + 32U, 32U))
+        return LXP_ERR_UNAUTHORIZED_DEBIT;
+    status = lxp_kernel_module_for_activity(ctx->kernel, activity->activity_type,
+                                           ctx->epoch, &registration);
+    if (status != LXP_OK || registration->abi_version != 3U ||
+        registration->iface != lx_perps_tif_module_iface())
+        return LXP_ERR_VERSION_UNSUPPORTED;
+    status = market_loaded(ctx, value->payload, true, &market);
+    if (status != LXP_OK) return status;
+    status = lxp_ctx_charge_gas(ctx, value->payload_length + 1U);
+    if (status != LXP_OK) return status;
+    return lxp_ctx_account_stage_perps_margin(ctx, activity, authority,
+        market.market_id, market.quote_asset, value->payload + 32U, stage, &account);
+}
+
+static lxp_result module_decode_tif(lxp_module_ctx *ctx, uint16_t ordinal,
+    const uint8_t *payload, size_t length, void **decoded)
+{
+    perps_decoded *value;
+    void *memory;
+    lxp_result status;
+    if (ctx == NULL || ctx->protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT)
+        return LXP_ERR_VERSION_UNSUPPORTED;
+    if (ordinal != 4U && ordinal != 12U)
+        return module_decode_transport(ctx, ordinal, payload, length, decoded);
+    if (decoded == NULL || payload == NULL || (ordinal == 12U && length != 64U))
+        return LXP_ERR_NON_CANONICAL;
+    status = work_alloc(ctx, sizeof(*value), _Alignof(perps_decoded), &memory);
+    if (status != LXP_OK) return status;
+    value = memory; value->ordinal = ordinal; value->payload = payload; value->payload_length = length;
+    status = work_alloc(ctx, sizeof(*value->typed), _Alignof(perps_typed_command), &memory);
+    if (status != LXP_OK) return status;
+    value->typed = memory;
+    if (ordinal == 4U) {
+        status = lx_perps_order_command_decode_versioned(payload, length, &value->typed->order);
+        if (status != LXP_OK) return status;
+    }
+    *decoded = value;
+    return LXP_OK;
+}
+
+static lxp_result module_validate_tif(lxp_module_ctx *ctx,
+    const lxp_activity *activity, const lxp_authority_resolved *authority, const void *decoded)
+{
+    const perps_decoded *value = decoded;
+    if (value != NULL && value->ordinal == 12U)
+        return tif_registration(ctx, activity, authority, value, false);
+    return module_validate(ctx, activity, authority, decoded);
+}
+
+static lxp_result module_execute_tif(lxp_module_ctx *ctx,
+    const lxp_activity *activity, const lxp_authority_resolved *authority,
+    const void *decoded, lxp_effect_buffer *effects)
+{
+    const perps_decoded *value = decoded;
+    if (value != NULL && value->ordinal == 12U)
+        return tif_registration(ctx, activity, authority, value, true);
+    return module_execute(ctx, activity, authority, decoded, effects);
+}
+
 static lxp_result module_epoch(lxp_module_ctx *ctx, uint64_t epoch,
                                uint64_t timestamp)
 {
@@ -1967,6 +2051,22 @@ const lxp_module_iface *lx_perps_oracle_transport_module_iface(void)
         LXP_MODULE_PERPS, 2U, "perps", activity_types,
         sizeof(activity_types) / sizeof(activity_types[0]),
         module_genesis, module_decode_transport, module_validate, module_execute,
+        module_epoch, module_epoch, module_state_root, NULL
+    };
+    return &iface;
+}
+
+const lxp_module_iface *lx_perps_tif_module_iface(void)
+{
+    static const uint32_t types[] = {
+        LX_PERPS_MARKET_CREATE, LX_PERPS_MARKET_HALT, LX_PERPS_ORACLE_PUSH,
+        LX_PERPS_ORDER_PLACE, LX_PERPS_ORDER_CANCEL, LX_PERPS_POSITION_OPEN,
+        LX_PERPS_POSITION_INCREASE, LX_PERPS_POSITION_CLOSE, LX_PERPS_FUNDING_TICK,
+        LX_PERPS_LIQUIDATE, LX_PERPS_ADL, LX_PERPS_MARGIN_REGISTER
+    };
+    static const lxp_module_iface iface = {
+        LXP_MODULE_PERPS, 3U, "perps", types, sizeof(types) / sizeof(types[0]),
+        module_genesis, module_decode_tif, module_validate_tif, module_execute_tif,
         module_epoch, module_epoch, module_state_root, NULL
     };
     return &iface;

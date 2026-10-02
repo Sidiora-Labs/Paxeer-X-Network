@@ -48,6 +48,7 @@ enum {
     LX_PERPS_HALT_PAYLOAD_BYTES = 33,
     LX_PERPS_ORACLE_PAYLOAD_BYTES = 72,
     LX_PERPS_ORDER_PAYLOAD_BYTES = 129,
+    LX_PERPS_ORDER_PAYLOAD_TIF_BYTES = 130,
     LX_PERPS_CANCEL_PAYLOAD_BYTES = 64,
     LX_PERPS_OPEN_PAYLOAD_BYTES = 145,
     LX_PERPS_INCREASE_PAYLOAD_BYTES = 112,
@@ -74,6 +75,13 @@ typedef enum lx_perps_side {
     LX_PERPS_SIDE_SELL = 2
 } lx_perps_side;
 
+typedef enum lx_perps_time_in_force {
+    LX_PERPS_TIF_GOOD_TILL_CANCELLED = 0,
+    LX_PERPS_TIF_IMMEDIATE_OR_CANCEL = 1,
+    LX_PERPS_TIF_FILL_OR_KILL = 2,
+    LX_PERPS_TIF_POST_ONLY = 3
+} lx_perps_time_in_force;
+
 typedef struct lx_perps_order {
     uint8_t order_id[32];
     uint8_t market_id[32];
@@ -85,6 +93,7 @@ typedef struct lx_perps_order {
     lxp_u128 initial_margin_required;
     uint64_t global_sequence;
     bool active;
+    lx_perps_time_in_force time_in_force;
 } lx_perps_order;
 
 typedef struct lx_perps_fill {
@@ -278,6 +287,7 @@ typedef struct lx_perps_order_command {
     lx_perps_side side;
     lxp_u128 price;
     lxp_u128 quantity;
+    lx_perps_time_in_force time_in_force;
 } lx_perps_order_command;
 
 typedef struct lx_perps_cancel_command {
@@ -329,7 +339,10 @@ typedef lxp_result (*lx_perps_market_visit_fn)(
 typedef lxp_result (*lx_perps_position_visit_fn)(
     const lx_perps_position *position, void *user);
 
+const lxp_module_iface *lx_perps_tif_module_iface(void);
 const lxp_module_iface *lx_perps_module_iface(void);
+#define LX_PERPS_MARGIN_REGISTER UINT32_C(0x0006000c)
+lxp_result lx_perps_order_command_decode_versioned(const uint8_t *bytes, size_t length, lx_perps_order_command *command);
 const lxp_module_iface *lx_perps_oracle_transport_module_iface(void);
 lxp_result lx_perps_oracle_transport_decode(const uint8_t *bytes, size_t length,
     lx_perps_oracle_command *command);
@@ -403,6 +416,9 @@ lxp_result lx_perps_order_command_encode(
     uint8_t bytes[LX_PERPS_ORDER_PAYLOAD_BYTES]);
 lxp_result lx_perps_order_command_decode(
     const uint8_t *bytes, size_t length, lx_perps_order_command *command);
+lxp_result lx_perps_order_command_encode_versioned(
+    const lx_perps_order_command *command, uint8_t *bytes, size_t capacity,
+    size_t *length);
 lxp_result lx_perps_cancel_command_encode(
     const lx_perps_cancel_command *command,
     uint8_t bytes[LX_PERPS_CANCEL_PAYLOAD_BYTES]);
