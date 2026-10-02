@@ -9272,7 +9272,7 @@ fn evidence_unavailable(error: &EvidenceError) -> bool {
 /// # Errors
 ///
 /// Refuses a grant bound below one second, which leaves no admissible public expiry.
-fn owner_expiry_seconds(grant_not_after_ms: u64) -> Result<u64, HumanOperationError> {
+pub(crate) fn owner_expiry_seconds(grant_not_after_ms: u64) -> Result<u64, HumanOperationError> {
     grant_not_after_ms
         .checked_div(1000)
         .filter(|seconds| *seconds != 0)
@@ -9966,8 +9966,28 @@ fn capability_grant_scope<A: HumanAuthorityBoundary>(
     let ProtocolAuthority::CapabilityGrant(grant_id) = session_authority else {
         return Err(HumanOperationError::Refused);
     };
+    verified_grant_scope(
+        authority,
+        shared_store,
+        context.peer(),
+        tenant,
+        actor,
+        grant_id,
+    )
+}
+/// The LXGS2 grant scope of `grant_id` for `actor`, verified through the Human authority and
+/// bound to the action key its completed capability install recorded and to the identity's
+/// single primary key.
+fn verified_grant_scope<A: HumanAuthorityBoundary>(
+    authority: &mut A,
+    shared_store: &Arc<Mutex<Store>>,
+    peer: &HumanPeer,
+    tenant: &TenantId,
+    actor: &Did,
+    grant_id: &[u8; 32],
+) -> Result<CoreCapabilityScope, HumanOperationError> {
     let identity = authority
-        .core_identity(context.peer(), actor)
+        .core_identity(peer, actor)
         .map_err(|error| map_identity_operation(&error))?;
     if identity.frozen || identity.verification_level == VerificationLevel::UNVERIFIED {
         return Err(HumanOperationError::Refused);
@@ -9980,8 +10000,7 @@ fn capability_grant_scope<A: HumanAuthorityBoundary>(
         return Err(HumanOperationError::Refused);
     };
     let action_key = capability_grant_action_key(shared_store, tenant, grant_id)?;
-    let observed =
-        authority.capability_scope(context.peer(), actor, authority_id, action_key, *grant_id)?;
+    let observed = authority.capability_scope(peer, actor, authority_id, action_key, *grant_id)?;
     if observed.observed_sequence == 0
         || observed.verification < 4
         || observed.verification > 5
@@ -9997,6 +10016,38 @@ fn capability_grant_scope<A: HumanAuthorityBoundary>(
         return Err(HumanOperationError::Refused);
     }
     Ok(observed)
+}
+/// Verifies `agent`'s native capability grant `capability_id` through the remote Human
+/// authority's LXGS2 grant scope for the peer's tenant and returns its verified not-after
+/// instant as the carrier `enrolment::enrol_with_verified_expiry` admits.
+///
+/// # Errors
+///
+/// Refuses a peer tenant that is not a tenant id, an identity or grant scope the authority does
+/// not verify, and evidence that does not bind the recorded capability install; returns
+/// `Unavailable` when the authority or the local install record cannot be read.
+pub fn verify_enrolment_expiry(
+    authority: &mut RemoteHumanAuthority,
+    shared_store: &Arc<Mutex<Store>>,
+    peer: &HumanPeer,
+    agent: &Did,
+    capability_id: CapabilityId,
+) -> Result<crate::enrolment::VerifiedGrantExpiry, HumanOperationError> {
+    let tenant = TenantId::new(peer.tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
+    let observed = verified_grant_scope(
+        authority,
+        shared_store,
+        peer,
+        &tenant,
+        agent,
+        &capability_id.0,
+    )?;
+    Ok(crate::enrolment::VerifiedGrantExpiry::verified(
+        tenant,
+        agent.clone(),
+        capability_id,
+        observed.not_after_ms,
+    ))
 }
 /// The action key of the one completed Human capability install of `grant_id`
 /// (`human-capability-action-v1:` records, layout of `install_capability`). None or more than

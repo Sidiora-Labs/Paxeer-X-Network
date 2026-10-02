@@ -425,6 +425,68 @@ pub struct EnrolmentRequest {
     pub core_sequence: u64,
 }
 
+/// Native capability grant time bound the Human authority verified for one tenant, agent and
+/// grant through its LXGS2 grant scope.
+///
+/// Only `human_runtime::verify_enrolment_expiry` constructs it from the verified scope's
+/// not-after instant, so it carries no time value a caller can supply.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VerifiedGrantExpiry {
+    tenant: TenantId,
+    agent: layerx_types::ids::Did,
+    capability_id: CapabilityId,
+    not_after_ms: u64,
+}
+
+impl VerifiedGrantExpiry {
+    pub(crate) const fn verified(
+        tenant: TenantId,
+        agent: layerx_types::ids::Did,
+        capability_id: CapabilityId,
+        not_after_ms: u64,
+    ) -> Self {
+        Self {
+            tenant,
+            agent,
+            capability_id,
+            not_after_ms,
+        }
+    }
+
+    /// Returns the verified grant's not-after instant in unix milliseconds.
+    #[must_use]
+    pub const fn not_after_ms(&self) -> u64 {
+        self.not_after_ms
+    }
+}
+
+/// An enrolment request admitted together with its verified native grant time bound.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VerifiedExpiryEnrolment {
+    request: EnrolmentRequest,
+    expiry: VerifiedGrantExpiry,
+}
+
+impl VerifiedExpiryEnrolment {
+    /// Pairs an unchanged enrolment request with the grant time bound verified for it.
+    #[must_use]
+    pub const fn new(request: EnrolmentRequest, expiry: VerifiedGrantExpiry) -> Self {
+        Self { request, expiry }
+    }
+
+    /// Returns the enrolment request exactly as supplied.
+    #[must_use]
+    pub const fn request(&self) -> &EnrolmentRequest {
+        &self.request
+    }
+
+    /// Returns the verified grant time bound.
+    #[must_use]
+    pub const fn expiry(&self) -> &VerifiedGrantExpiry {
+        &self.expiry
+    }
+}
+
 /// Writes binding documents for one daemon into one binding directory.
 #[derive(Debug)]
 pub struct BindingPublisher {
@@ -660,6 +722,52 @@ pub fn enrol(
     request: EnrolmentRequest,
     publisher: &BindingPublisher,
 ) -> Result<PublishedBinding, EnrolmentError> {
+    open_and_publish(store, sessions, identity, request, publisher, None)
+}
+
+/// Opens one capability-grant session exactly as `enrol` does and advertises the verified
+/// native grant's not-after instant, in whole unix seconds rounded down, as the session's public
+/// time expiry. The sequence expiry stays the request's own bound.
+///
+/// # Errors
+///
+/// Returns `Session(IdentityMismatch)` when the verified bound belongs to another tenant, agent
+/// or grant, `Session(MissingField("expiry_seconds"))` for a bound below one second, and every
+/// refusal `enrol` returns.
+pub fn enrol_with_verified_expiry(
+    store: &mut Store,
+    sessions: &mut SessionRegistry,
+    identity: &IdentityRecord,
+    enrolment: VerifiedExpiryEnrolment,
+    publisher: &BindingPublisher,
+) -> Result<PublishedBinding, EnrolmentError> {
+    let VerifiedExpiryEnrolment { request, expiry } = enrolment;
+    if &expiry.tenant != identity.tenant()
+        || &expiry.agent != identity.did()
+        || expiry.capability_id != request.capability_id
+    {
+        return Err(EnrolmentError::Session(SessionError::IdentityMismatch));
+    }
+    let expiry_seconds = crate::human_runtime::owner_expiry_seconds(expiry.not_after_ms)
+        .map_err(|_| EnrolmentError::Session(SessionError::MissingField("expiry_seconds")))?;
+    open_and_publish(
+        store,
+        sessions,
+        identity,
+        request,
+        publisher,
+        Some(expiry_seconds),
+    )
+}
+
+fn open_and_publish(
+    store: &mut Store,
+    sessions: &mut SessionRegistry,
+    identity: &IdentityRecord,
+    request: EnrolmentRequest,
+    publisher: &BindingPublisher,
+    expiry_seconds: Option<u64>,
+) -> Result<PublishedBinding, EnrolmentError> {
     publisher.check_listener()?;
     let tenant = identity.tenant().clone();
     Capability::restore(store, tenant.clone(), request.capability_id)
@@ -675,7 +783,7 @@ pub fn enrol(
         permitted_activity_types: request.permitted_activity_types,
         scopes: request.scopes,
         expiry_sequence: request.expiry_sequence,
-        expiry_seconds: None,
+        expiry_seconds,
         opening_client: request.opening_client,
         policy_version: request.policy_version,
     };
@@ -822,4 +930,242 @@ fn create_private(path: &Path, contents: &[u8]) -> Result<(), EnrolmentError> {
 fn sync_directory(root: &Path) -> Result<(), EnrolmentError> {
     fs::File::open(root)?.sync_all()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod verified_expiry_tests {
+    use std::collections::BTreeSet;
+    use std::path::{Path, PathBuf};
+    use std::time::Duration;
+
+    use layerx_types::ids::Did;
+    use layerx_types::verify::VerificationLevel;
+
+    use super::{
+        enrol, enrol_with_verified_expiry, BindingMode, BindingPublisher, DaemonSurface,
+        EnrolmentError, EnrolmentRequest, VerifiedExpiryEnrolment, VerifiedGrantExpiry,
+    };
+    use crate::budget::{LimitConfig, LimitId, LimitScope};
+    use crate::capability::{Capability, CapabilityDimensions, CapabilityId, RateCeiling};
+    use crate::identity::{
+        self, CoreIdentity, IdentityError, IdentityRecord, IdentityResolver, ProtocolAuthority,
+    };
+    use crate::session::{SessionError, SessionId, SessionRegistry};
+    use crate::store::{Store, TenantId};
+
+    const CAPABILITY: CapabilityId = CapabilityId([9; 32]);
+    const SESSION: SessionId = SessionId([0x0c; 32]);
+
+    struct CoreBoundary(CoreIdentity);
+
+    impl IdentityResolver for CoreBoundary {
+        fn resolve(&mut self, _did: &Did) -> Result<Option<CoreIdentity>, IdentityError> {
+            Ok(Some(self.0.clone()))
+        }
+    }
+
+    fn must<T, E: std::fmt::Debug>(value: Result<T, E>) -> T {
+        value.unwrap_or_else(|error| panic!("verified expiry enrolment: {error:?}"))
+    }
+
+    fn tenant() -> TenantId {
+        must(TenantId::new("tenant-a"))
+    }
+
+    fn agent() -> Did {
+        must(Did::new(b"did:layerx:model"))
+    }
+
+    fn directory(name: &str) -> PathBuf {
+        let root =
+            std::env::temp_dir().join(format!("lxp-verified-expiry-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        root
+    }
+
+    fn records(root: &Path) -> (Store, IdentityRecord, BindingPublisher) {
+        let mut store = must(Store::open(root.join("store")));
+        must(
+            must(Capability::new(
+                CAPABILITY,
+                tenant(),
+                CapabilityDimensions {
+                    activity_types: BTreeSet::from([7]),
+                    counterparties: BTreeSet::from([[2; 32]]),
+                    assets: BTreeSet::from([[3; 32]]),
+                    amount_ceiling: 100,
+                    rate_ceiling: RateCeiling {
+                        maximum_uses: 2,
+                        window_sequences: 10,
+                    },
+                    purposes: BTreeSet::from(["service-payment".to_owned()]),
+                    expiry_sequence: 400,
+                },
+            ))
+            .persist(&mut store),
+        );
+        let mut boundary = CoreBoundary(CoreIdentity {
+            canonical_bytes: b"model-identity".to_vec(),
+            head_sequence: 10,
+            revocation_sequence: 1,
+            verification_level: VerificationLevel::STATE_PROVEN,
+            frozen: false,
+            authorities: vec![ProtocolAuthority::CapabilityGrant(CAPABILITY.0)],
+        });
+        let identity = must(identity::register(
+            &mut store,
+            tenant(),
+            agent(),
+            &mut boundary,
+        ));
+        let publisher = must(BindingPublisher::new(
+            root.join("mcp"),
+            root.join("store"),
+            root.join("audit"),
+            must(DaemonSurface::new(
+                "127.0.0.1:9",
+                "d".repeat(48),
+                [0xcc; 32],
+            )),
+            LimitConfig {
+                id: LimitId([0x0a; 16]),
+                name: "mcp".to_owned(),
+                scope: LimitScope::Tenant([1; 32]),
+                ceiling: 1_000,
+                consumed: 0,
+            },
+            Duration::from_millis(5_000),
+            BindingMode::Full,
+        ));
+        (store, identity, publisher)
+    }
+
+    fn request() -> EnrolmentRequest {
+        EnrolmentRequest {
+            session_id: SESSION,
+            capability_id: CAPABILITY,
+            permitted_activity_types: BTreeSet::from([7]),
+            scopes: BTreeSet::from(["balance.read".to_owned()]),
+            expiry_sequence: 300,
+            opening_client: "mcp".to_owned(),
+            policy_version: "policy-v1".to_owned(),
+            core_sequence: 50,
+        }
+    }
+
+    fn expiry(not_after_ms: u64) -> VerifiedGrantExpiry {
+        VerifiedGrantExpiry::verified(tenant(), agent(), CAPABILITY, not_after_ms)
+    }
+
+    #[test]
+    fn wrapper_preserves_the_inner_request() {
+        let wrapped = VerifiedExpiryEnrolment::new(request(), expiry(10_000_000));
+        assert_eq!(wrapped.request(), &request());
+        assert_eq!(wrapped.expiry(), &expiry(10_000_000));
+        assert_eq!(wrapped.expiry().not_after_ms(), 10_000_000);
+    }
+
+    #[test]
+    fn carrier_for_another_tenant_agent_or_grant_is_refused() {
+        let root = directory("mismatch");
+        let (mut store, identity, publisher) = records(&root);
+        let mut sessions = SessionRegistry::default();
+        for carrier in [
+            VerifiedGrantExpiry::verified(
+                must(TenantId::new("tenant-b")),
+                agent(),
+                CAPABILITY,
+                10_000_000,
+            ),
+            VerifiedGrantExpiry::verified(
+                tenant(),
+                must(Did::new(b"did:layerx:other")),
+                CAPABILITY,
+                10_000_000,
+            ),
+            VerifiedGrantExpiry::verified(tenant(), agent(), CapabilityId([8; 32]), 10_000_000),
+        ] {
+            let refused = enrol_with_verified_expiry(
+                &mut store,
+                &mut sessions,
+                &identity,
+                VerifiedExpiryEnrolment::new(request(), carrier),
+                &publisher,
+            );
+            assert!(matches!(
+                refused,
+                Err(EnrolmentError::Session(SessionError::IdentityMismatch))
+            ));
+        }
+        assert!(sessions.get(&tenant(), SESSION).is_none());
+        assert!(!publisher.binding_path().exists());
+        drop(store);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn matching_carrier_advertises_floor_seconds_and_keeps_the_sequence_bound() {
+        let root = directory("match");
+        let (mut store, identity, publisher) = records(&root);
+        let mut sessions = SessionRegistry::default();
+        let published = must(enrol_with_verified_expiry(
+            &mut store,
+            &mut sessions,
+            &identity,
+            VerifiedExpiryEnrolment::new(request(), expiry(10_000_999)),
+            &publisher,
+        ));
+        assert_eq!(published.session_id, SESSION);
+        let record = sessions
+            .get(&tenant(), SESSION)
+            .unwrap_or_else(|| panic!("enrolled session"));
+        assert_eq!(record.request.expiry_seconds, Some(10_000));
+        assert_eq!(record.request.expiry_sequence, 300);
+        drop(store);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn carrier_below_one_second_is_refused() {
+        let root = directory("sub-second");
+        let (mut store, identity, publisher) = records(&root);
+        let mut sessions = SessionRegistry::default();
+        let refused = enrol_with_verified_expiry(
+            &mut store,
+            &mut sessions,
+            &identity,
+            VerifiedExpiryEnrolment::new(request(), expiry(999)),
+            &publisher,
+        );
+        assert!(matches!(
+            refused,
+            Err(EnrolmentError::Session(SessionError::MissingField(
+                "expiry_seconds"
+            )))
+        ));
+        assert!(sessions.get(&tenant(), SESSION).is_none());
+        drop(store);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn legacy_enrol_keeps_no_public_expiry() {
+        let root = directory("legacy");
+        let (mut store, identity, publisher) = records(&root);
+        let mut sessions = SessionRegistry::default();
+        must(enrol(
+            &mut store,
+            &mut sessions,
+            &identity,
+            request(),
+            &publisher,
+        ));
+        let record = sessions
+            .get(&tenant(), SESSION)
+            .unwrap_or_else(|| panic!("enrolled session"));
+        assert_eq!(record.request.expiry_seconds, None);
+        assert_eq!(record.request.expiry_sequence, 300);
+        drop(store);
+        let _ = std::fs::remove_dir_all(root);
+    }
 }
