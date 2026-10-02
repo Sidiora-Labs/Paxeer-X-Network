@@ -203,10 +203,71 @@ impl Drop for ConnectionPermit {
 }
 
 fn main() {
+    if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--verify-receipt")) {
+        if let Err(error) = verify_receipt_command() {
+            eprintln!("ramp receipt verification refused: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
     if let Err(error) = run() {
         eprintln!("layerx-reference-ramp refused startup: {error}");
         std::process::exit(1);
     }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReceiptVerifierConfig {
+    client_tls: ClientTls,
+    layerx: LayerxConfig,
+}
+
+fn verify_receipt_command() -> Result<(), String> {
+    let arguments: Vec<_> = std::env::args_os().skip(2).collect();
+    if arguments.len() != 3 {
+        return Err("usage: --verify-receipt CONFIG.json ORDER.json ACTIVITY_HEX".to_owned());
+    }
+    let read = |path: &std::ffi::OsString| {
+        SecretFile::new(PathBuf::from(path)).and_then(|file| file.read())
+            .map_err(|_| "protected verifier input unavailable".to_owned())
+    };
+    let config: ReceiptVerifierConfig = serde_json::from_slice(&read(&arguments[0])?)
+        .map_err(|_| "invalid verifier configuration".to_owned())?;
+    let order: RampOrder = serde_json::from_slice(&read(&arguments[1])?)
+        .map_err(|_| "invalid bound order".to_owned())?;
+    order.validate_bound().map_err(|_| "invalid order identity".to_owned())?;
+    let activity = arguments[2].to_str().ok_or("invalid activity encoding")?;
+    let activity = parse_hex32(activity).map_err(|_| "invalid activity identity")?;
+    if !(1..=120).contains(&config.client_tls.timeout_seconds) {
+        return Err("invalid verifier timeout".to_owned());
+    }
+    let tls = MutualTlsFiles {
+        ca_pem: config.client_tls.ca_pem,
+        identity_pkcs12: SecretFile::new(config.client_tls.identity_pkcs12)
+            .map_err(|_| "invalid verifier identity")?,
+        identity_password: SecretFile::new(config.client_tls.identity_password_file)
+            .map_err(|_| "invalid verifier password")?,
+    };
+    let http = MutualTlsClient::new(&tls, Duration::from_secs(config.client_tls.timeout_seconds))
+        .map_err(|_| "invalid verifier TLS configuration")?;
+    let client = build_layerx(&config.layerx, http)?;
+    let layerx_ramp_toolkit::clients::LayerxSubmission::Verified { leg, .. } =
+        client.resolve(&order, activity).map_err(|_| "receipt proof refused")?
+    else {
+        return Err("receipt not verified".to_owned());
+    };
+    println!("{}", json!({
+        "verified": true,
+        "order_digest": order.order_digest,
+        "activity_id": leg.activity_id,
+        "receipt_digest": leg.receipt_digest,
+        "batch_id": leg.batch_id,
+        "network_id": config.layerx.network_id,
+        "wire_version": config.layerx.protocol_version,
+        "external_custody_label": EXTERNAL_CUSTODY_LABEL
+    }));
+    Ok(())
 }
 
 fn run() -> Result<(), String> {
@@ -214,7 +275,8 @@ fn run() -> Result<(), String> {
         .nth(1)
         .ok_or_else(|| "usage: layerx-reference-ramp CONFIG.json".to_owned())?;
     let config: Config = serde_json::from_slice(
-        &fs::read(config_path).map_err(|error| format!("read config: {error}"))?,
+        &SecretFile::new(PathBuf::from(config_path))
+            .and_then(|file| file.read()).map_err(|_| "protected config unavailable".to_owned())?,
     )
     .map_err(|error| format!("parse config: {error}"))?;
     validate_config(&config)?;
@@ -448,7 +510,7 @@ fn build_state(config: &Config) -> Result<State, String> {
             return Err("duplicate quote id".to_owned());
         }
     }
-    Ok(State {
+    let state = State {
         journal: Mutex::new(
             Journal::open(&config.journal_path).map_err(|_| "journal rejected".to_owned())?,
         ),
@@ -469,7 +531,11 @@ fn build_state(config: &Config) -> Result<State, String> {
             "provider callback",
         )?,
         operator_control_token: secret_text(&config.operator_control_token_file)?,
-    })
+    };
+    if verified_recovery(&state).is_err() {
+        eprintln!("ramp journal recovery requires verified external settlement");
+    }
+    Ok(state)
 }
 
 fn asset_registry() -> Result<ModuleRegistry, String> {
@@ -677,9 +743,13 @@ fn route(state: &State, request: &Request) -> Result<Response, Response> {
         return Ok(ok(json!({ "live": true })));
     }
     if request.method == "GET" && request.path == "/readyz" {
-        let ready = state.journal.lock().is_ok();
+        let health = state.journal.try_lock().ok().map(|journal| journal.health());
+        let ready = health.as_ref().is_some_and(|health| health.ready);
         let body = json!({
             "ready": ready,
+            "journal": health,
+            "network_id": state.layerx.activity.network_id,
+            "wire_version": state.layerx.activity.protocol_version,
             "external_custody": true,
             "provider_contract": layerx_ramp_toolkit::PROVIDER_CONTRACT_VERSION,
             "compliance_contract": layerx_ramp_toolkit::COMPLIANCE_CONTRACT_VERSION,
@@ -691,6 +761,22 @@ fn route(state: &State, request: &Request) -> Result<Response, Response> {
             json_response(503, body)
         });
     }
+    if request.path == "/internal/v1/journal" && request.method == "GET" {
+        require_operator(state, request)?;
+        let journal = state.journal.try_lock().map_err(|_| error(503, "journal_busy"))?;
+        return Ok(ok(json!(journal.health())));
+    }
+    if request.path == "/internal/v1/journal/recover" && request.method == "POST" {
+        require_operator(state, request)?;
+        verified_recovery(state).map_err(|error| map_error(&error))?;
+        return Ok(ok(json!({ "recovered": true })));
+    }
+    if request.method == "POST" {
+        let journal = state.journal.try_lock().map_err(|_| error(503, "journal_busy"))?;
+        if !journal.health().ready {
+            return Err(error(503, "journal_recovery_required"));
+        }
+    }
     if request.method == "POST" && request.path == "/v1/orders" {
         return create_order(state, request);
     }
@@ -701,6 +787,9 @@ fn route(state: &State, request: &Request) -> Result<Response, Response> {
             .journal
             .lock()
             .map_err(|_| error(503, "journal_unavailable"))?;
+        if !journal.health().ready {
+            return Err(error(503, "journal_recovery_required"));
+        }
         let mut engine = engine(state, &mut journal);
         engine
             .provider_callback(&callback, &state.provider_callback_public_key, now())
@@ -725,6 +814,7 @@ fn route(state: &State, request: &Request) -> Result<Response, Response> {
         }
         return Ok(ok(json!({
             "order_id": snapshot.order.order_id,
+            "order": snapshot.order,
             "stage": snapshot.stage,
             "presentation": snapshot.presentation()
         })));
@@ -771,6 +861,9 @@ fn create_order(state: &State, request: &Request) -> Result<Response, Response> 
         .journal
         .lock()
         .map_err(|_| error(503, "journal_unavailable"))?;
+    if !journal.health().ready {
+        return Err(error(503, "journal_recovery_required"));
+    }
     if let Some(existing) = journal.order_by_id(&create.order_id) {
         if existing.order.customer != principal
             || existing.order.quote.quote_id != create.quote_id
@@ -801,6 +894,9 @@ fn perform_work(state: &State, request: &Request) -> Result<Response, Response> 
         .journal
         .lock()
         .map_err(|_| error(503, "journal_unavailable"))?;
+    if !journal.health().ready {
+        return Err(error(503, "journal_recovery_required"));
+    }
     let mut engine = engine(state, &mut journal);
     match work.action {
         WorkAction::Compliance => engine.evaluate_compliance(work.order_digest, now()),
@@ -830,6 +926,9 @@ fn rebalance(state: &State, request: &Request) -> Result<Response, Response> {
         .journal
         .lock()
         .map_err(|_| error(503, "journal_unavailable"))?;
+    if !journal.health().ready {
+        return Err(error(503, "journal_recovery_required"));
+    }
     let mut rebalancer = InventoryRebalancer {
         journal: &mut journal,
         custody: &state.paxeer,
@@ -972,6 +1071,16 @@ fn require_operator(state: &State, request: &Request) -> Result<(), Response> {
     Ok(())
 }
 
+fn verified_recovery(state: &State) -> Result<(), RampError> {
+    let mut journal = state.journal.lock().map_err(|_| RampError::Journal)?;
+    journal.recover_verified(|projection| {
+        layerx_ramp_toolkit::clients::verify_recovery_settlement(
+            projection, &state.operator, &state.provider, &state.layerx,
+            &state.paxeer, &state.paxeer_tracker_config,
+        )
+    })
+}
+
 fn engine<'a>(state: &'a State, journal: &'a mut Journal) -> RampEngine<'a> {
     RampEngine {
         journal,
@@ -990,6 +1099,9 @@ fn reconcile_loop(state: &State, cadence: Duration) {
         let Ok(mut journal) = state.journal.lock() else {
             continue;
         };
+        if !journal.health().ready {
+            continue;
+        }
         let due = journal.orders();
         for snapshot in due {
             let digest = snapshot.order.order_digest;

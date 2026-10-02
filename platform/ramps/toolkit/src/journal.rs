@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::fs::{File, OpenOptions};
-use std::io::{BufRead as _, BufReader, Read as _, Write as _};
+use std::io::{BufRead as _, BufReader, Read as _, Seek as _, Write as _};
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -10,6 +10,7 @@ use crate::{AggregateStatus, RampError, RampOrder, RampPresentation, EXTERNAL_CU
 
 const JOURNAL_DOMAIN: &[u8] = b"LXP/market-maker-ramp/journal/v1\0";
 const MAX_JOURNAL_RECORD_BYTES: usize = 4 * 1024 * 1024;
+const APPEND_INTENT_DOMAIN: &[u8] = b"LXP/market-maker-ramp/append-intent/v1\0";
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -297,6 +298,10 @@ impl Projection {
     #[must_use]
     pub fn paxeer(&self, idempotency_key: &[u8; 32]) -> Option<&PaxeerSnapshot> {
         self.paxeer.get(idempotency_key)
+    }
+
+    pub fn paxeer_transfers(&self) -> impl Iterator<Item = &PaxeerSnapshot> {
+        self.paxeer.values()
     }
 
     fn stage(&self, event: &Event) -> Result<StagedMutation, RampError> {
@@ -657,12 +662,35 @@ enum WriteFailure {
     Interrupted,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PendingAppend {
+    offset: u64,
+    record: Record,
+    bytes: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct JournalHealth {
+    pub ready: bool,
+    pub writer_held: bool,
+    pub halted: bool,
+    pub uncertain_write: bool,
+    pub recovery_required: bool,
+    pub torn_tail: bool,
+    pub record_count: u64,
+    pub durable_bytes: u64,
+}
+
 pub struct Journal {
+    path: std::path::PathBuf,
+    intent_path: std::path::PathBuf,
     _lock: LockClaim,
     file: File,
     durable_len: u64,
+    durable_modified: Option<std::time::SystemTime>,
     next_sequence: u64,
     head: [u8; 32],
+    previous_head: [u8; 32],
     projection: Projection,
     recovery: Option<TornTail>,
     fault: Option<(WriteStep, WriteFault)>,
@@ -671,23 +699,47 @@ pub struct Journal {
 
 impl Journal {
     /// # Errors
-    /// Returns [`RampError::Journal`] when the file cannot be locked, read, decoded or truncated to a durable prefix.
+    /// Returns [`RampError::Journal`] when the file cannot be locked, read or decoded.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, RampError> {
         let path = path.as_ref();
         let lock = LockClaim::acquire(path)?;
         let reader = open_journal(path)?;
         require_private_file(&reader)?;
         let mut journal = Self {
+            path: path.to_owned(),
+            intent_path: {
+                let mut value = path.as_os_str().to_owned();
+                value.push(".append-intent");
+                value.into()
+            },
             _lock: lock,
             file: reader.try_clone().map_err(|_| RampError::Journal)?,
             durable_len: 0,
+            durable_modified: None,
             next_sequence: 0,
             head: [0; 32],
+            previous_head: [0; 32],
             projection: Projection::default(),
             recovery: None,
             fault: None,
             halted: false,
         };
+        journal.reload()?;
+        journal.halted = journal.next_sequence != 0 || journal.recovery.is_some()
+            || journal.has_intent()?;
+        journal.sync_parent()?;
+        Ok(journal)
+    }
+
+    fn reload(&mut self) -> Result<(), RampError> {
+        self.file.rewind().map_err(|_| RampError::Journal)?;
+        let reader = self.file.try_clone().map_err(|_| RampError::Journal)?;
+        self.projection = Projection::default();
+        self.next_sequence = 0;
+        self.head = [0; 32];
+        self.previous_head = [0; 32];
+        self.durable_len = 0;
+        self.recovery = None;
         let mut reader = BufReader::new(reader);
         let mut line = Vec::new();
         loop {
@@ -704,8 +756,8 @@ impl Journal {
                 return Err(RampError::Journal);
             }
             if line.last() != Some(&b'\n') {
-                journal.recovery = Some(TornTail {
-                    offset: journal.durable_len,
+                self.recovery = Some(TornTail {
+                    offset: self.durable_len,
                     bytes: read as u64,
                 });
                 break;
@@ -721,7 +773,7 @@ impl Journal {
                 event,
                 hash: record_hash,
             } = serde_json::from_slice(&line).map_err(|_| RampError::Journal)?;
-            if sequence != journal.next_sequence || previous_hash != journal.head {
+            if sequence != self.next_sequence || previous_hash != self.head {
                 return Err(RampError::Journal);
             }
             let body = RecordBody {
@@ -733,29 +785,212 @@ impl Journal {
             if record_hash != record_digest(&body)? {
                 return Err(RampError::Journal);
             }
-            let staged = journal
+            let staged = self
                 .projection
                 .stage(&body.event)
                 .map_err(|_| RampError::Journal)?;
-            journal.projection.commit(staged);
-            journal.next_sequence = journal
+            self.projection.commit(staged);
+            self.next_sequence = self
                 .next_sequence
                 .checked_add(1)
                 .ok_or(RampError::Journal)?;
-            journal.head = record_hash;
-            journal.durable_len = journal
+            self.previous_head = self.head;
+            self.head = record_hash;
+            self.durable_len = self
                 .durable_len
                 .checked_add(read as u64)
                 .ok_or(RampError::Journal)?;
         }
-        if journal.recovery.is_some() {
-            journal
-                .file
-                .set_len(journal.durable_len)
-                .map_err(|_| RampError::Journal)?;
-            journal.file.sync_all().map_err(|_| RampError::Journal)?;
+        self.durable_modified = Some(self.file.metadata().and_then(|metadata| metadata.modified())
+            .map_err(|_| RampError::Journal)?);
+        Ok(())
+    }
+
+    pub fn health(&self) -> JournalHealth {
+        let uncertain = self.has_intent().unwrap_or(true);
+        let durable = same_file(&self.file, &self.path)
+            && self.file.metadata().is_ok_and(|metadata| metadata.len() == self.durable_len
+                && metadata.modified().ok() == self.durable_modified);
+        let writer_held = self._lock.held();
+        let ready = !self.halted && !uncertain && self.recovery.is_none() && durable && writer_held;
+        JournalHealth {
+            ready,
+            writer_held,
+            halted: self.halted || !durable || uncertain,
+            uncertain_write: uncertain || !durable,
+            recovery_required: !ready,
+            torn_tail: self.recovery.is_some(),
+            record_count: self.next_sequence,
+            durable_bytes: self.durable_len,
         }
-        Ok(journal)
+    }
+
+    pub fn recover_verified<F>(&mut self, verify: F) -> Result<(), RampError>
+    where
+        F: FnOnce(&Projection) -> Result<(), RampError>,
+    {
+        self.halted = true;
+        if !self._lock.held() || !same_file(&self.file, &self.path) {
+            return Err(RampError::Journal);
+        }
+        self.reload()?;
+        let pending = self.pending_append()?;
+        let observed = self.file.metadata().map_err(|_| RampError::Journal)?;
+        let observed_modified = observed.modified().map_err(|_| RampError::Journal)?;
+        let mut verified_projection = self.projection.clone();
+        let mut retained = 0;
+        if let Some(intent) = &pending {
+            let end = intent.offset.checked_add(intent.bytes.len() as u64)
+                .ok_or(RampError::Journal)?;
+            if observed.len() < intent.offset || observed.len() > end {
+                return Err(RampError::Journal);
+            }
+            retained = usize::try_from(observed.len() - intent.offset)
+                .map_err(|_| RampError::Journal)?;
+            let mut reader = self.file.try_clone().map_err(|_| RampError::Journal)?;
+            reader.seek(std::io::SeekFrom::Start(intent.offset)).map_err(|_| RampError::Journal)?;
+            let mut actual = Vec::new();
+            reader.take((intent.bytes.len() + 1) as u64).read_to_end(&mut actual)
+                .map_err(|_| RampError::Journal)?;
+            if actual.as_slice() != &intent.bytes[..retained] {
+                return Err(RampError::Journal);
+            }
+            if retained == intent.bytes.len() {
+                if self.recovery.is_some() || self.durable_len != end
+                    || self.next_sequence != intent.record.sequence.checked_add(1).ok_or(RampError::Journal)?
+                    || self.head != intent.record.hash || self.previous_head != intent.record.previous_hash
+                {
+                    return Err(RampError::Journal);
+                }
+            } else {
+                if self.durable_len != intent.offset || self.next_sequence != intent.record.sequence
+                    || self.head != intent.record.previous_hash
+                    || self.recovery != (retained != 0).then_some(TornTail {
+                        offset: intent.offset, bytes: retained as u64,
+                    })
+                {
+                    return Err(RampError::Journal);
+                }
+                let staged = verified_projection.stage(&intent.record.event)?;
+                verified_projection.commit(staged);
+            }
+        } else if self.recovery.is_some() {
+            return Err(RampError::Journal);
+        }
+        verify(&verified_projection)?;
+        let current = self.file.metadata().map_err(|_| RampError::Journal)?;
+        if !self._lock.held() || !same_file(&self.file, &self.path)
+            || current.len() != observed.len()
+            || current.modified().map_err(|_| RampError::Journal)? != observed_modified
+            || self.pending_append()? != pending
+        {
+            return Err(RampError::Journal);
+        }
+        if let Some(intent) = &pending {
+            self.file.write_all(&intent.bytes[retained..]).map_err(|_| RampError::Journal)?;
+        }
+        self.file.sync_all().map_err(|_| RampError::Journal)?;
+        self.reload()?;
+        if self.recovery.is_some() || self.projection != verified_projection {
+            return Err(RampError::Journal);
+        }
+        self.clear_intent()?;
+        self.halted = false;
+        Ok(())
+    }
+
+    fn has_intent(&self) -> Result<bool, RampError> {
+        match std::fs::symlink_metadata(&self.intent_path) {
+            Ok(_) => Ok(true),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(_) => Err(RampError::Journal),
+        }
+    }
+
+    fn pending_append(&self) -> Result<Option<PendingAppend>, RampError> {
+        if !self.has_intent()? {
+            return Ok(None);
+        }
+        let file = File::open(&self.intent_path).map_err(|_| RampError::Journal)?;
+        if !same_file(&file, &self.intent_path) {
+            return Err(RampError::Journal);
+        }
+        let header_len = APPEND_INTENT_DOMAIN.len() + 12;
+        let maximum = header_len + MAX_JOURNAL_RECORD_BYTES + 32;
+        let mut raw = Vec::new();
+        file.take((maximum + 1) as u64).read_to_end(&mut raw).map_err(|_| RampError::Journal)?;
+        if raw.len() < header_len + 34 || raw.len() > maximum
+            || !raw.starts_with(APPEND_INTENT_DOMAIN)
+        {
+            return Err(RampError::Journal);
+        }
+        let offset = u64::from_be_bytes(raw[APPEND_INTENT_DOMAIN.len()..APPEND_INTENT_DOMAIN.len() + 8]
+            .try_into().map_err(|_| RampError::Journal)?);
+        let length = u32::from_be_bytes(raw[APPEND_INTENT_DOMAIN.len() + 8..header_len]
+            .try_into().map_err(|_| RampError::Journal)?) as usize;
+        if length > MAX_JOURNAL_RECORD_BYTES || raw.len() != header_len + length + 32 {
+            return Err(RampError::Journal);
+        }
+        let digest: [u8; 32] = Sha256::digest(&raw[..header_len + length]).into();
+        if &raw[header_len + length..] != digest.as_slice() {
+            return Err(RampError::Journal);
+        }
+        let bytes = raw[header_len..header_len + length].to_vec();
+        if bytes.last() != Some(&b'\n') {
+            return Err(RampError::Journal);
+        }
+        let record: Record = serde_json::from_slice(&bytes[..bytes.len() - 1])
+            .map_err(|_| RampError::Journal)?;
+        let mut canonical = serde_json::to_vec(&record).map_err(|_| RampError::Journal)?;
+        canonical.push(b'\n');
+        let body = RecordBody { sequence: record.sequence, previous_hash: record.previous_hash,
+            recorded_at: record.recorded_at, event: record.event.clone() };
+        if canonical != bytes || record_digest(&body)? != record.hash {
+            return Err(RampError::Journal);
+        }
+        Ok(Some(PendingAppend { offset, record, bytes }))
+    }
+
+    fn sync_parent(&self) -> Result<(), RampError> {
+        let parent = self.path.parent().filter(|path| !path.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        File::open(parent).and_then(|file| file.sync_all()).map_err(|_| RampError::Journal)
+    }
+
+    fn begin_intent(&self, bytes: &[u8]) -> Result<(), RampError> {
+        let length = u32::try_from(bytes.len()).map_err(|_| RampError::Journal)?;
+        if bytes.is_empty() || bytes.len() > MAX_JOURNAL_RECORD_BYTES {
+            return Err(RampError::Journal);
+        }
+        let mut intent = Vec::with_capacity(APPEND_INTENT_DOMAIN.len() + 12 + bytes.len() + 32);
+        intent.extend_from_slice(APPEND_INTENT_DOMAIN);
+        intent.extend_from_slice(&self.durable_len.to_be_bytes());
+        intent.extend_from_slice(&length.to_be_bytes());
+        intent.extend_from_slice(bytes);
+        let digest: [u8; 32] = Sha256::digest(&intent).into();
+        intent.extend_from_slice(&digest);
+        let mut options = OpenOptions::new();
+        options.create_new(true).write(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt as _;
+            options.mode(0o600);
+        }
+        let mut file = options.open(&self.intent_path).map_err(|_| RampError::Journal)?;
+        file.write_all(&intent).and_then(|()| file.sync_all()).map_err(|_| RampError::Journal)?;
+        self.sync_parent()
+    }
+
+    fn clear_intent(&self) -> Result<(), RampError> {
+        match std::fs::remove_file(&self.intent_path) {
+            Ok(()) => self.sync_parent(),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(_) => Err(RampError::Journal),
+        }
+    }
+
+    fn require_operational(&self) -> Result<(), RampError> {
+        if self.health().ready { Ok(()) } else { Err(RampError::Journal) }
     }
 
     /// # Errors
@@ -763,6 +998,7 @@ impl Journal {
     /// [`RampError::Conflict`] when the identifier is reused with different content, and
     /// [`RampError::Journal`] when the durable append cannot complete.
     pub fn create_order(&mut self, order: RampOrder, now: u64) -> Result<OrderSnapshot, RampError> {
+        self.require_operational()?;
         order.validate_bound()?;
         if let Some(existing) = self.projection.order_ids.get(&order.order_id) {
             return if *existing == order.order_digest {
@@ -864,6 +1100,7 @@ impl Journal {
         now: u64,
         lease_seconds: u64,
     ) -> Result<(), RampError> {
+        self.require_operational()?;
         if !safe_identifier(worker_id) || lease_seconds == 0 {
             return Err(RampError::InvalidOrder);
         }
@@ -903,6 +1140,7 @@ impl Journal {
         worker_id: &str,
         now: u64,
     ) -> Result<(), RampError> {
+        self.require_operational()?;
         if !allowed(expected, next) {
             return Err(RampError::IllegalTransition);
         }
@@ -942,6 +1180,7 @@ impl Journal {
         write: ProviderCallbackWrite<'_>,
         now: u64,
     ) -> Result<bool, RampError> {
+        self.require_operational()?;
         if !safe_identifier(write.callback_id)
             || write.provider_sequence == 0
             || write.evidence_digest == [0; 32]
@@ -985,6 +1224,7 @@ impl Journal {
         observation: PaxeerObservation<'_>,
         now: u64,
     ) -> Result<(), RampError> {
+        self.require_operational()?;
         if !safe_identifier(observation.operation_id)
             || observation.transaction_hash == [0; 32]
             || !safe_identifier(observation.stage)
@@ -1030,6 +1270,7 @@ impl Journal {
         amount: u128,
         now: u64,
     ) -> Result<(), RampError> {
+        self.require_operational()?;
         if idempotency_key == [0; 32] || asset == [0; 32] || amount == 0 {
             return Err(RampError::Paxeer);
         }
@@ -1056,9 +1297,7 @@ impl Journal {
     }
 
     fn append(&mut self, event: Event, recorded_at: u64) -> Result<(), RampError> {
-        if self.halted {
-            return Err(RampError::Journal);
-        }
+        self.require_operational()?;
         let staged = self.projection.stage(&event)?;
         let next_sequence = self
             .next_sequence
@@ -1087,10 +1326,14 @@ impl Journal {
             .durable_len
             .checked_add(bytes.len() as u64)
             .ok_or(RampError::Journal)?;
+        if self.begin_intent(&bytes).is_err() {
+            self.halted = true;
+            return Err(RampError::Journal);
+        }
         match self.write_record(&bytes) {
             Ok(()) => {}
             Err(WriteFailure::Failed) => {
-                self.rollback();
+                self.halted = true;
                 return Err(RampError::Journal);
             }
             Err(WriteFailure::Interrupted) => {
@@ -1098,10 +1341,23 @@ impl Journal {
                 return Err(RampError::Journal);
             }
         }
+        let modified = match self.file.metadata().and_then(|metadata| metadata.modified()) {
+            Ok(modified) => modified,
+            Err(_) => {
+                self.halted = true;
+                return Err(RampError::Journal);
+            }
+        };
+        if self.clear_intent().is_err() {
+            self.halted = true;
+            return Err(RampError::Journal);
+        }
         self.projection.commit(staged);
         self.next_sequence = next_sequence;
+        self.previous_head = self.head;
         self.head = record_hash;
         self.durable_len = durable_len;
+        self.durable_modified = Some(modified);
         Ok(())
     }
 
@@ -1151,24 +1407,38 @@ impl Journal {
         }
     }
 
-    fn rollback(&mut self) {
-        if self
-            .file
-            .set_len(self.durable_len)
-            .and_then(|()| self.file.sync_all())
-            .is_err()
-        {
-            self.halted = true;
-        }
+
+}
+
+fn same_file(file: &File, path: &Path) -> bool {
+    let Ok(opened) = file.metadata() else { return false; };
+    let Ok(named) = std::fs::symlink_metadata(path) else { return false; };
+    if !named.is_file() || require_private_file(file).is_err() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt as _;
+        opened.dev() == named.dev() && opened.ino() == named.ino()
+            && opened.nlink() == 1 && named.nlink() == 1
+    }
+    #[cfg(not(unix))]
+    {
+        opened.len() == named.len() && opened.modified().ok() == named.modified().ok()
     }
 }
 
 struct LockClaim {
+    identity_path: std::path::PathBuf,
     path: Option<std::path::PathBuf>,
     _file: File,
 }
 
 impl LockClaim {
+    fn held(&self) -> bool {
+        same_file(&self._file, &self.identity_path)
+    }
+
     fn acquire(journal: &Path) -> Result<Self, RampError> {
         let mut path = journal.as_os_str().to_owned();
         path.push(".writer-lock");
@@ -1176,6 +1446,7 @@ impl LockClaim {
         let file = claim_lock(&path)?;
         file.sync_data().map_err(|_| RampError::Journal)?;
         Ok(Self {
+            identity_path: path.clone(),
             path: if cfg!(unix) { None } else { Some(path) },
             _file: file,
         })

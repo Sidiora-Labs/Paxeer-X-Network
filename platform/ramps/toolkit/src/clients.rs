@@ -709,7 +709,11 @@ impl ProviderClient {
         order: &RampOrder,
         operation_id: &str,
     ) -> Result<ProviderResult, RampError> {
-        if !safe_segment(operation_id) && !operation_id.starts_with("idempotency:") {
+        if let Some(idempotency) = operation_id.strip_prefix("idempotency:") {
+            if idempotency != hex(&order.order_digest) {
+                return Err(RampError::Provider);
+            }
+        } else if !safe_segment(operation_id) {
             return Err(RampError::Provider);
         }
         let path = operation_id.strip_prefix("idempotency:").map_or_else(
@@ -740,7 +744,11 @@ impl ProviderClient {
             },
             None,
         )?;
-        Self::decode(order, &response)
+        let result = Self::decode(order, &response)?;
+        if !operation_id.starts_with("idempotency:") && result.operation_id != operation_id {
+            return Err(RampError::Provider);
+        }
+        Ok(result)
     }
 
     fn decode(order: &RampOrder, response: &HttpResponse) -> Result<ProviderResult, RampError> {
@@ -2114,4 +2122,119 @@ mod ca_bundle_tests {
         assert!(MutualTlsClient::new(&files, Duration::from_secs(5)).is_err());
         let _ = fs::remove_dir_all(&dir);
     }
+}
+
+
+pub fn verify_recovery_settlement(
+    projection: &crate::journal::Projection,
+    operator: &crate::OperatorIdentity,
+    provider: &ProviderClient,
+    layerx: &LayerxClient,
+    custody: &PaxeerCustodyClient,
+    tracker_config: &layerx_paxeer_client::TrackerConfig,
+) -> Result<(), RampError> {
+    use crate::journal::WorkflowStage;
+    use layerx_paxeer_client::{FinalityStage, FinalityTracker, PaxeerClient, TransactionHash};
+    PaxeerClient::new(tracker_config.endpoints.clone()).map_err(|_| RampError::Paxeer)?;
+    let mut observations = Vec::new();
+    for endpoint in &tracker_config.endpoints {
+        let client = PaxeerClient::new(vec![endpoint.clone()]).map_err(|_| RampError::Paxeer)?;
+        let chain = client.chain_id().map_err(|_| RampError::Paxeer)?;
+        let height = client.head_number().map_err(|_| RampError::Paxeer)?;
+        let head = client.block_by_number(height).map_err(|_| RampError::Paxeer)?
+            .ok_or(RampError::Paxeer)?;
+        if chain != endpoint.expected_chain_id {
+            return Err(RampError::Paxeer);
+        }
+        observations.push((chain, head));
+    }
+    if tracker_config.minimum_endpoint_agreement < 2
+        || observations.len() < tracker_config.minimum_endpoint_agreement
+        || observations.iter().any(|value| Some(value) != observations.first())
+    {
+        return Err(RampError::Paxeer);
+    }
+    for snapshot in projection.orders().values() {
+        snapshot.order.validate_bound()?;
+        if &snapshot.order.operator != operator {
+            return Err(RampError::OrderBinding);
+        }
+        if snapshot.evidence.provider_operation_id.is_some()
+            || matches!(snapshot.stage, WorkflowStage::ProviderSubmissionPlanned
+                | WorkflowStage::ProviderSubmittedUnknown | WorkflowStage::ProviderPending
+                | WorkflowStage::ProviderSettled | WorkflowStage::ProviderReversed
+                | WorkflowStage::Done | WorkflowStage::ReversalPending | WorkflowStage::Reversed)
+        {
+            let key = format!("idempotency:{}", hex(&snapshot.order.order_digest));
+            let id = snapshot.evidence.provider_operation_id.as_deref().unwrap_or(&key);
+            let result = provider.reconcile(&snapshot.order, id)?;
+            if snapshot.evidence.provider_operation_id.as_deref()
+                .is_some_and(|id| !id.starts_with("idempotency:") && id != result.operation_id)
+                || matches!(result.state, ProviderState::SubmittedUnknown)
+                || snapshot.stage == WorkflowStage::ProviderPending && result.state != ProviderState::Pending
+                || snapshot.stage == WorkflowStage::ProviderRefused
+                    && (result.state != ProviderState::Refused
+                        || result.refusal_code != snapshot.evidence.refusal_code)
+                || snapshot.stage == WorkflowStage::ManualReview
+                    && (result.state != ProviderState::ManualReview
+                        || result.refusal_code != snapshot.evidence.refusal_code)
+                || matches!(snapshot.stage, WorkflowStage::Done | WorkflowStage::ProviderSettled)
+                    && (result.state != ProviderState::Settled
+                        || result.evidence_digest != snapshot.evidence.provider_evidence_digest)
+                || matches!(snapshot.stage, WorkflowStage::ProviderReversed
+                    | WorkflowStage::ReversalPending | WorkflowStage::Reversed)
+                    && (result.state != ProviderState::Reversed
+                        || result.evidence_digest != snapshot.evidence.provider_evidence_digest)
+                || matches!(result.state, ProviderState::Reversed)
+                    && !matches!(snapshot.stage, WorkflowStage::ProviderReversed
+                        | WorkflowStage::ReversalPending | WorkflowStage::Reversed)
+            {
+                return Err(RampError::Provider);
+            }
+        }
+        if let Some(activity) = snapshot.evidence.activity_id {
+            match layerx.resolve(&snapshot.order, activity)? {
+                LayerxSubmission::Verified { leg, .. } => {
+                    if leg.activity_id != activity
+                        || snapshot.evidence.receipt_digest.is_some_and(|digest| digest != leg.receipt_digest)
+                    {
+                        return Err(RampError::Layerx);
+                    }
+                }
+                LayerxSubmission::Pending { .. } if snapshot.evidence.receipt_digest.is_none()
+                    && snapshot.stage != WorkflowStage::Done => {}
+                LayerxSubmission::Refused { .. } if snapshot.stage == WorkflowStage::LayerxRefused => {}
+                _ => return Err(RampError::Layerx),
+            }
+        } else if matches!(snapshot.stage, WorkflowStage::Done | WorkflowStage::LayerxVerified) {
+            return Err(RampError::Layerx);
+        }
+    }
+    for snapshot in projection.paxeer_transfers() {
+        let current = custody.reconcile(snapshot.asset, snapshot.amount, snapshot.idempotency_key)?;
+        let transaction = TransactionHash::from_hex(&current.transaction_hash)
+            .map_err(|_| RampError::Paxeer)?;
+        if snapshot.operation_id.as_ref().is_some_and(|id| id != &current.operation_id)
+            || snapshot.transaction_hash.is_some_and(|hash| hash != transaction.bytes())
+        {
+            return Err(RampError::Paxeer);
+        }
+        let mut tracker = FinalityTracker::new(tracker_config.clone(), transaction)
+            .map_err(|_| RampError::Paxeer)?;
+        let report = tracker.poll();
+        if !matches!(report.endpoint(), layerx_paxeer_client::EndpointSignal::Serving)
+            || !matches!(report.stage(), FinalityStage::Pooled { .. }
+                | FinalityStage::Confirming { .. } | FinalityStage::Final { .. })
+        {
+            return Err(RampError::Paxeer);
+        }
+        if snapshot.stage == "final" {
+            match report.stage() {
+                FinalityStage::Final { inclusion, .. }
+                    if snapshot.block_hash == Some(inclusion.block.hash) => {}
+                _ => return Err(RampError::Paxeer),
+            }
+        }
+    }
+    Ok(())
 }

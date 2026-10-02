@@ -1,5 +1,10 @@
 #!/bin/sh
 set -eu
+umask 077
+: "${LAYERX_RAMP_REFERENCE_BIN:?}"
+: "${LAYERX_RAMP_RECEIPT_VERIFIER_CONFIG:?}"
+journey_directory=$(mktemp -d)
+trap 'rm -rf "$journey_directory"' EXIT HUP INT TERM
 
 : "${LAYERX_RAMP_URL:?}"
 : "${LAYERX_RAMP_CA_PEM:?}"
@@ -59,6 +64,26 @@ wait_stage() {
   return 1
 }
 
+operator -H 'Content-Type: application/json' -X POST \
+  "${LAYERX_RAMP_OPERATOR_URL}/internal/v1/journal/recover" --data '{}' \
+  | jq -e '.recovered == true' >/dev/null
+customer "${LAYERX_RAMP_URL}/readyz" \
+  | jq -e '.ready == true and .journal.ready == true and .journal.halted == false and .journal.recovery_required == false' >/dev/null
+
+verify_done() {
+  response="$1"
+  printf '%s' "$response" | jq -e '.order' >"$journey_directory/order.json"
+  activity=$(printf '%s' "$response" | jq -r '.presentation.activity_id[]' | awk '{printf "%02x", $1}')
+  "$LAYERX_RAMP_REFERENCE_BIN" --verify-receipt "$LAYERX_RAMP_RECEIPT_VERIFIER_CONFIG" \
+    "$journey_directory/order.json" "$activity" >"$journey_directory/receipt.json"
+  printf '%s' "$response" | jq -e --slurpfile proof "$journey_directory/receipt.json" \
+    '.stage == "done" and .presentation.status == "done" and $proof[0].verified == true and
+     .order.order_digest == $proof[0].order_digest and
+     .presentation.activity_id == $proof[0].activity_id and
+     .presentation.receipt_digest == $proof[0].receipt_digest and
+     .presentation.external_custody_label == $proof[0].external_custody_label' >/dev/null
+}
+
 on_created="$(create_order on-ramp "${LAYERX_RAMP_ON_QUOTE_ID}" null)"
 on_digest="$(printf '%s' "${on_created}" | jq -c '.order_digest')"
 on_hex="$(printf '%s' "${on_digest}" | jq -r '.[]' | awk '{printf "%02x", $1}')"
@@ -79,3 +104,6 @@ off_done="$(wait_stage "${off_hex}" done)"
 
 printf '%s' "${on_done}" | jq -e '.presentation.status == "done" and .presentation.receipt_digest != null and .presentation.external_custody_label != ""' >/dev/null
 printf '%s' "${off_done}" | jq -e '.presentation.status == "done" and .presentation.receipt_digest != null and .presentation.provider_evidence_digest != null and .presentation.external_custody_label != ""' >/dev/null
+
+verify_done "$on_done"
+verify_done "$off_done"
