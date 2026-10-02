@@ -608,14 +608,39 @@ fn human_source(
     kind: Kind,
     port: u16,
 ) -> transport::Listener {
+    let enrollment_root = root.join(format!("{}-credentials", kind.singular()));
+    required(fs::create_dir_all(&enrollment_root), "enrollment directory");
+    required(fs::set_permissions(&enrollment_root, fs::Permissions::from_mode(0o700)), "enrollment directory permissions");
+    let credential_path = enrollment_root.join("principal.credential");
+    let snapshot_path = enrollment_root.join("snapshot.json");
+    let key_path = enrollment_root.join("enrollment.key");
+    let write_protected = |path: &std::path::Path, bytes: &[u8]| {
+        use std::io::Write as _;
+        use std::os::unix::fs::OpenOptionsExt as _;
+        let mut file = required(fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(path), "protected enrollment file");
+        required(file.write_all(bytes), "write protected enrollment file");
+        required(file.sync_all(), "sync protected enrollment file");
+    };
+    if !key_path.exists() {
+        let key = required(layerx_platform_internal::secret::random_hex(32), "enrollment key");
+        write_protected(&key_path, key.as_bytes());
+    }
+    let key = required(layerx_platform_internal::events::enrollment_key(&key_path), "protected enrollment key");
+    write_protected(&credential_path, access_token.as_bytes());
+    let mac = layerx_platform_internal::events::enrollment_snapshot_mac(kind, 1, &[(ACCOUNT_ID, access_token)], &key);
+    let snapshot = json!({
+        "version": 1,
+        "generation": 1,
+        "principals": [{"principal": ACCOUNT_ID, "credential_file": credential_path}],
+        "mac": mac,
+    });
+    write_protected(&snapshot_path, &required(serde_json::to_vec(&snapshot), "signed enrollment snapshot"));
     let service = required(
         Service::open(
             kind,
             tls.upstream(human_port, "unused"),
-            BTreeMap::from([(
-                ACCOUNT_ID.to_owned(),
-                Zeroizing::new(access_token.to_owned()),
-            )]),
+            &snapshot_path,
+            &key,
             Zeroizing::new("consumer-token".to_owned()),
             &root.join(kind.singular()),
         )
@@ -627,6 +652,7 @@ fn human_source(
         }),
         "source",
     );
+    required(service.refresh(), "authenticated principal enrollment");
     transport::Listener::start(Arc::clone(&tls.config), port, move |stream| {
         if let Ok(mut request) = http::parse_client_request(stream) {
             request.peer_verified = stream

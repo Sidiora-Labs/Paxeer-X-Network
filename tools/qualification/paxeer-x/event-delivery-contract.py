@@ -765,7 +765,305 @@ def principal_credential_lifecycle(manifest, results):
                 {work / 'ca', work / 'server', work / 'client'} | {work / kind / 'enrollment' for kind in KINDS})
 
 
-CASES = {'principal-credential-lifecycle': principal_credential_lifecycle}
+class FairWorker:
+    def __init__(self, binary, environment, log):
+        self.log = log.open('ab')
+        self.child = subprocess.Popen([binary], env=environment, stdin=subprocess.DEVNULL,
+                                      stdout=self.log, stderr=self.log)
+
+    def stop(self):
+        if self.child.poll() is None:
+            self.child.terminate()
+            try:
+                self.child.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                self.child.kill()
+                self.child.wait(timeout=10)
+        self.log.close()
+
+
+def fair_status(path, principal, operation='status'):
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+        connection.settimeout(5)
+        connection.connect(str(path))
+        connection.sendall(json.dumps({'operation': operation, 'principal': principal}).encode())
+        connection.shutdown(socket.SHUT_WR)
+        chunks = bytearray()
+        while len(chunks) <= 131072:
+            block = connection.recv(16384)
+            if not block:
+                break
+            chunks.extend(block)
+        if len(chunks) > 131072:
+            raise Missing('Human event status exceeds its bound')
+        value = json.loads(chunks)
+    if not isinstance(value, dict) or value.get('principal') != principal or 'delivery' not in value:
+        raise Missing('Human event status refused')
+    return value
+
+
+def fair_wait(predicate, seconds, worker):
+    deadline = time.monotonic() + seconds
+    while True:
+        if worker.child.poll() is not None:
+            raise Missing('Human worker exited during fairness case')
+        try:
+            result = predicate()
+            if result:
+                return result
+        except (OSError, ValueError):
+            pass
+        if time.monotonic() >= deadline:
+            raise Missing('Human fairness progress exceeded its declared bound')
+        time.sleep(0.2)
+
+
+def fair_http(endpoint, request):
+    origin = urlsplit(endpoint['url'])
+    if origin.scheme != 'https' or not origin.hostname or origin.username or origin.password:
+        raise Missing('fairness endpoint must be an authenticated HTTPS origin')
+    context = ssl.create_default_context(cafile=str(protected_input(endpoint['ca_pem'], 'endpoint CA')))
+    if 'client_cert_pem' in endpoint or 'client_key_pem' in endpoint:
+        context.load_cert_chain(str(protected_input(endpoint['client_cert_pem'], 'client certificate')),
+                                str(protected_input(endpoint['client_key_pem'], 'client key')))
+    headers = {}
+    for name, path in endpoint.get('header_files', {}).items():
+        value = protected_input(path, 'request credential').read_bytes().rstrip(b'\r\n').decode()
+        if any(ord(char) < 32 or ord(char) == 127 for char in value):
+            raise Missing('request credential contains control characters')
+        headers[name] = value
+    headers.update(request.get('headers', {}))
+    body = protected_input(request['body_file'], 'mutation body').read_bytes() if 'body_file' in request else None
+    if body is not None:
+        headers['Content-Type'] = 'application/json'
+    path = request['path']
+    if not path.startswith('/') or path.startswith('//') or any(char in path for char in '\r\n'):
+        raise Missing('invalid fairness request path')
+    connection = http.client.HTTPSConnection(origin.hostname, origin.port or 443, context=context, timeout=30)
+    try:
+        connection.request(request['method'], path, body=body, headers=headers)
+        response = connection.getresponse()
+        raw = response.read(2_097_153)
+        if len(raw) > 2_097_152:
+            raise Missing('fairness response exceeds bound')
+        return response.status, json.loads(raw)
+    finally:
+        connection.close()
+
+
+def fair_binary(fixture, name, manifest):
+    entry = fixture['binaries'][name]
+    binary = Path(entry['path'])
+    if not binary.is_absolute() or binary.name != name or not binary.is_file() or not os.access(binary, os.X_OK):
+        raise Missing('fairness binary is absent: ' + name)
+    with binary.open('rb') as stream:
+        digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+    if entry['sha256'] != digest or entry['source_revision'] != manifest['source']['revision']:
+        raise Missing('fairness binary is not bound to the candidate: ' + name)
+    return str(binary)
+
+
+def fair_snapshot(enrollment, generation, entries):
+    enrollment.write(enrollment.document(generation, entries))
+
+
+def principal_delivery_fairness(manifest, results):
+    location = os.environ.get('PAXEER_X_HUMAN_FAIRNESS')
+    if not location:
+        raise Missing('PAXEER_X_HUMAN_FAIRNESS is required')
+    fixture = json.loads(protected_input(location, 'Human fairness attachment').read_bytes())
+    if fixture.get('schema') != 'paxeer-x.human-event-fairness.v1' \
+            or fixture.get('scope') != 'isolated-real-process' \
+            or fixture.get('candidate_manifest_sha256') != MANIFEST_DIGEST:
+        raise Missing('Human fairness attachment is not bound to this isolated candidate')
+    failed, healthy = fixture['failed_principal'], fixture['healthy_principal']
+    if not re.fullmatch(r'[a-z0-9_-]{1,128}', failed) or not re.fullmatch(r'[a-z0-9_-]{1,128}', healthy) \
+            or failed >= healthy:
+        raise Missing('the repeatedly failing principal must precede the healthy principal')
+    for principal in (failed, healthy):
+        requests = fixture['enqueue'][principal]
+        outage_requests = fixture['destination_outage_enqueue'][principal]
+        if len(outage_requests) != 2 or any(request['method'] != 'POST' for request in outage_requests):
+            raise Missing('two further real Human mutations per principal are required for destination outage')
+        if len(requests) != 2 or any(request['method'] != 'POST' for request in requests):
+            raise Missing('exactly two real Human mutations per principal are required')
+    binaries = {name: fair_binary(fixture, name, manifest)
+                for name in ('layerx-event-source', 'layerx-human-components', 'layerx-webhooks')}
+    evidence = os.environ.get('PAXEER_X_EVIDENCE_DIR')
+    if not evidence:
+        raise Missing('PAXEER_X_EVIDENCE_DIR is required')
+    root = Path(fixture['isolation_root']).resolve(strict=True)
+    if root == Path('/') or root.stat().st_uid != os.geteuid() or root.stat().st_mode & 0o077:
+        raise Missing('fairness isolation root must be owner-only')
+    human_env = dict(fixture['human_environment'])
+    for name in ('LAYERX_HUMAN_STORE_ROOT', 'LAYERX_HUMAN_CUSTODY_ROOT', 'LAYERX_HUMAN_AUTH_INDEX_ROOT',
+                 'LAYERX_HUMAN_COMPONENT_SOCKET', 'LAYERX_HUMAN_RECIPIENT_SOCKET'):
+        path = Path(human_env[name]).resolve()
+        if root not in path.parents:
+            raise Missing('Human runtime state is outside the isolated fixture')
+    work = Path(tempfile.mkdtemp(prefix='principal-delivery-fairness-',
+                                dir=private_directory(Path(evidence))))
+    work.chmod(0o700)
+    print('evidence=' + str(work))
+    status_directory = Path(tempfile.mkdtemp(prefix='lx-events-'))
+    status_directory.chmod(0o700)
+    status_path = status_directory / 'status.sock'
+    print('status_directory=' + str(status_directory))
+    human_env['LAYERX_HUMAN_EVENT_STATUS_SOCKET'] = str(status_path)
+    source_processes = []
+    source_environments = {}
+    source_by_kind = {}
+    worker = None
+    webhook = None
+    enrollments = {}
+    try:
+        for kind in ('journeys', 'approvals'):
+            role = fixture['sources'][kind]
+            env = dict(role['environment'])
+            if env['LAYERX_EVENTS_KIND'] != kind or not env['LAYERX_EVENTS_LISTEN'].startswith('127.0.0.1:'):
+                raise Missing('fairness source kind or loopback listener mismatch')
+            directory = private_directory(work / kind)
+            key = protected_input(env['LAYERX_EVENTS_ENROLLMENT_KEY_FILE'], 'source enrollment key').read_bytes().rstrip(b'\r\n')
+            enrollment = Enrollment(directory, kind, key)
+            env['LAYERX_EVENTS_CREDENTIALS_FILE'] = str(enrollment.path)
+            env['LAYERX_EVENTS_STATE_DIR'] = str(private_directory(directory / 'state'))
+            entries = [(principal, protected_input(role['credentials'][principal], 'principal credential'))
+                       for principal in (failed, healthy)]
+            fair_snapshot(enrollment, 1, [])
+            enrollments[kind] = (enrollment, entries)
+            source = EventSource(binaries['layerx-event-source'], env, directory / 'source.log')
+            source_processes.append(source)
+            source_environments[kind] = env
+            source_by_kind[kind] = source
+        webhook = FairWorker(binaries['layerx-webhooks'], dict(fixture['webhook_environment']), work / 'webhook.log')
+        worker = FairWorker(binaries['layerx-human-components'], human_env, work / 'human-1.log')
+        fair_wait(lambda: status_path.exists(), 60, worker)
+        for principal in (failed, healthy):
+            before = fair_status(status_path, principal)
+            results.check('isolated Human outbox starts empty for ' + principal, before['pending_count'] == 0)
+            if before['pending_count'] != 0:
+                raise Missing('fairness outbox is not initially empty')
+            for request in fixture['enqueue'][principal]:
+                status, _ = fair_http(fixture['human_endpoints'][principal], request)
+                results.check('real Human mutation enqueues a durable event', status in (200, 201, 202))
+                if status not in (200, 201, 202):
+                    raise Missing('real Human event mutation refused')
+        initial = {principal: fair_status(status_path, principal) for principal in (failed, healthy)}
+        for principal, state in initial.items():
+            results.check('both subject transitions are durably pending for ' + principal,
+                          state['pending_count'] == 2 and state['pending'] is not None)
+            if state['pending_count'] != 2 or state['pending'] is None:
+                raise Missing('required Human outbox events are absent')
+        if {state['pending']['observation']['kind'] for state in initial.values()} != {'journey', 'approval'}:
+            raise Missing('the two principals must exercise separate journey and approval destinations')
+        refused = fair_wait(lambda: (state if (state := fair_status(status_path, failed))['delivery']['attempts'] > 0
+                                    else None), 60, worker)
+        first = initial[failed]['pending']
+        results.check('the first enumerated principal has a real delivery refusal',
+                      refused['delivery']['last_refusal'] in ('observation_refused', 'observation_unavailable'))
+        for enrollment, entries in enrollments.values():
+            fair_snapshot(enrollment, 2, [entries[1]])
+        started = time.monotonic()
+        delivered = fair_wait(lambda: (state if (state := fair_status(status_path, healthy))['pending_count'] == 0
+                                      else None), 120, worker)
+        failed_state = fair_status(status_path, failed)
+        results.check('healthy principal delivers both events within the bounded scheduling window',
+                      time.monotonic() - started <= 120 and delivered['delivery']['last_progress_at'] is not None)
+        results.check('healthy progress preserves the failing principal head bytes and refusal evidence',
+                      failed_state['pending'] == first and failed_state['pending_count'] == 2
+                      and failed_state['delivery']['first_refused_at'] == refused['delivery']['first_refused_at'])
+        terminal = fair_wait(lambda: (state if (state := fair_status(status_path, failed))['delivery']['redelivery_required']
+                                     else None), 180, worker)
+        results.check('retry exhaustion retains explicit redelivery state and canonical bytes',
+                      terminal['delivery']['attempts'] == 5 and terminal['pending'] == first
+                      and terminal['pending_count'] == 2 and terminal['delivery']['last_refusal'] is not None)
+        worker.stop()
+        worker = FairWorker(binaries['layerx-human-components'], human_env, work / 'human-2.log')
+        replay = fair_wait(lambda: fair_status(status_path, failed), 60, worker)
+        results.check('restart replays the selection cursor, backoff, terminal state and refusal evidence',
+                      replay['delivery']['selected_turn'] >= terminal['delivery']['selected_turn']
+                      and replay['delivery']['attempts'] == 5 and replay['delivery']['redelivery_required']
+                      and replay['delivery']['first_refused_at'] == terminal['delivery']['first_refused_at']
+                      and replay['pending'] == first)
+        results.check('restart does not resurrect healthy deliveries', fair_status(status_path, healthy)['pending_count'] == 0)
+        for enrollment, entries in enrollments.values():
+            fair_snapshot(enrollment, 3, entries)
+        recovered = fair_wait(lambda: (state if (state := fair_status(status_path, failed))['pending_count'] == 0
+                                      else None), 120, worker)
+        results.check('authenticated credential generation recovery resumes the failed principal',
+                      recovered['delivery']['last_recovery_generation'] == 3
+                      and not recovered['delivery']['redelivery_required']
+                      and recovered['delivery']['last_progress_at'] is not None)
+        for principal in (failed, healthy):
+            endpoint = fixture['webhook_readers'][principal]
+            status, events = fair_http(endpoint, {'method': 'GET', 'path': '/v1/webhooks/events'})
+            if not isinstance(events, list):
+                raise Missing('real webhook event ledger is unavailable')
+            head = initial[principal]['pending']['observation']
+            expected = [event_id(head['kind'], head['resource'], sequence) for sequence in (1, 2)]
+            matching = [event for event in events if event.get('id') in expected]
+            results.check('canonical webhook ledger has each subject event exactly once for ' + principal,
+                          status == 200 and len(matching) == 2 and {event['id'] for event in matching} == set(expected)
+                          and [event['subject_sequence'] for event in sorted(matching, key=lambda event: event['subject_sequence'])] == [1, 2])
+            status2, replayed = fair_http(endpoint, {'method': 'GET', 'path': '/v1/webhooks/events'})
+            results.check('replay has no duplicate event effect for ' + principal, status2 == 200 and replayed == events)
+        failed_kind = initial[failed]['pending']['observation']['kind'] + 's'
+        source_by_kind[failed_kind].stop()
+        for principal in (failed, healthy):
+            for request in fixture['destination_outage_enqueue'][principal]:
+                status, _ = fair_http(fixture['human_endpoints'][principal], request)
+                results.check('real Human transition remains durable during destination outage', status in (200, 201, 202))
+                if status not in (200, 201, 202):
+                    raise Missing('destination outage mutation refused')
+        unavailable = fair_wait(lambda: (state if (state := fair_status(status_path, failed))['delivery']['attempts'] > 0
+                                        and state['pending_count'] == 2 else None), 60, worker)
+        held = unavailable['pending']
+        healthy_head = initial[healthy]['pending']['observation']
+        healthy_last = event_id(healthy_head['kind'], healthy_head['resource'], 4)
+        progressed = fair_wait(lambda: (state if (state := fair_status(status_path, healthy))['pending_count'] == 0
+                                       and state['delivery']['last_delivered_id'] == healthy_last else None), 120, worker)
+        results.check('an unavailable destination cannot block the other principal destination',
+                      progressed['delivery']['last_delivered_id'] == healthy_last
+                      and fair_status(status_path, failed)['pending'] == held)
+        replacement = EventSource(binaries['layerx-event-source'], source_environments[failed_kind],
+                                  work / failed_kind / 'source-restarted.log')
+        source_processes.append(replacement)
+        failed_head = initial[failed]['pending']['observation']
+        failed_last = event_id(failed_head['kind'], failed_head['resource'], 4)
+        resumed = fair_wait(lambda: (state if (state := fair_status(status_path, failed))['pending_count'] == 0
+                                    and state['delivery']['last_delivered_id'] == failed_last else None), 120, worker)
+        results.check('the recovered destination preserves the exact retained event stream',
+                      resumed['delivery']['last_delivered_id'] == failed_last)
+        ledger = {}
+        for principal in (failed, healthy):
+            status, events = fair_http(fixture['webhook_readers'][principal], {'method': 'GET', 'path': '/v1/webhooks/events'})
+            head = initial[principal]['pending']['observation']
+            expected = [event_id(head['kind'], head['resource'], sequence) for sequence in (1, 2, 3, 4)]
+            if not isinstance(events, list):
+                raise Missing('durable webhook event ledger is unavailable after recovery')
+            matching = [event for event in events if event.get('id') in expected]
+            results.check('destination restart produces exactly one canonical effect per event for ' + principal,
+                          status == 200 and len(matching) == 4 and {event['id'] for event in matching} == set(expected))
+            ledger[principal] = events
+        worker.stop()
+        worker = FairWorker(binaries['layerx-human-components'], human_env, work / 'human-3.log')
+        for principal in (failed, healthy):
+            final_state = fair_wait(lambda: fair_status(status_path, principal), 60, worker)
+            status, events = fair_http(fixture['webhook_readers'][principal], {'method': 'GET', 'path': '/v1/webhooks/events'})
+            results.check('final worker restart does not recreate acknowledged effects for ' + principal,
+                          final_state['pending_count'] == 0 and status == 200 and events == ledger[principal])
+        results.check('the real webhook ingress remained running', webhook.child.poll() is None)
+    finally:
+        if worker is not None:
+            worker.stop()
+        if webhook is not None:
+            webhook.stop()
+        for process in source_processes:
+            process.stop()
+
+
+CASES = {'principal-credential-lifecycle': principal_credential_lifecycle,
+         'principal-delivery-fairness': principal_delivery_fairness}
 MANIFEST_DIGEST = None
 
 

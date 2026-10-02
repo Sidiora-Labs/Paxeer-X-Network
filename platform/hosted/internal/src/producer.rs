@@ -182,7 +182,74 @@ pub trait Outbox: Send + Sync + 'static {
     /// # Errors
     /// Returns a durable acknowledgement failure.
     fn acknowledge(&self, id: &str, observed: bool) -> Result<(), String>;
+    /// # Errors
+    /// Refuses unavailable, corrupt or out-of-order durable delivery state.
+    fn select(&self) -> Result<Option<Pending>, String> { self.pending() }
+    /// # Errors
+    /// Refuses unavailable, corrupt or out-of-order durable delivery state.
+    fn scheduling(&self, _id: &str) -> Result<Option<DeliveryState>, String> { Ok(None) }
+    /// # Errors
+    /// Refuses unavailable, corrupt or out-of-order durable delivery state.
+    fn failed_delivery(&self, _id: &str, _generation: Option<u64>, _reason: DeliveryFailure) -> Result<(), String> {
+        Err("durable delivery scheduling unavailable".to_owned())
+    }
+    /// # Errors
+    /// Refuses unavailable, corrupt or out-of-order durable delivery state.
+    fn resume_delivery(&self, _id: &str, _generation: u64) -> Result<(), String> {
+        Err("durable delivery recovery unavailable".to_owned())
+    }
 }
+
+pub const MAX_DELIVERY_ATTEMPTS: u16 = 5;
+pub const MAX_DELIVERY_BACKOFF: u64 = 5;
+pub const MAX_SCHEDULED_PRINCIPALS: usize = 10_000;
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DeliveryFailure {
+    ObservationUnavailable,
+    ObservationRefused,
+    AcknowledgementInvalid,
+    NotificationUnavailable,
+    NotificationRefused,
+    PersistenceUnavailable,
+    RecoveryRequired,
+}
+
+impl DeliveryFailure {
+    fn from_error(error: &str) -> Self {
+        if error == "event observation unavailable" { Self::ObservationUnavailable }
+        else if error.starts_with("event observation refused:") { Self::ObservationRefused }
+        else if error.contains("acknowledgement") { Self::AcknowledgementInvalid }
+        else if error == "event notification unavailable" { Self::NotificationUnavailable }
+        else if error.starts_with("event notification refused:") { Self::NotificationRefused }
+        else { Self::PersistenceUnavailable }
+    }
+}
+
+#[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct DeliveryState {
+    pub selected_turn: u64,
+    pub attempts: u16,
+    pub next_attempt_at: u64,
+    pub first_refused_at: Option<u64>,
+    pub last_refused_at: Option<u64>,
+    pub last_refusal: Option<DeliveryFailure>,
+    pub last_progress_at: Option<u64>,
+    pub last_delivered_id: Option<String>,
+    pub enrollment_generation: Option<u64>,
+    pub last_recovery_generation: Option<u64>,
+    pub redelivery_required: bool,
+}
+
+impl DeliveryState {
+    #[must_use]
+    pub fn eligible(&self, now: u64) -> bool {
+        now >= self.next_attempt_at || self.next_attempt_at.saturating_sub(now) > MAX_DELIVERY_BACKOFF
+    }
+}
+
 
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -190,12 +257,23 @@ pub struct QueueState {
     counters: BTreeMap<String, u64>,
     entries: Vec<Pending>,
     retained: BTreeMap<String, Observation>,
+    #[serde(default)]
+    delivery: DeliveryState,
 }
 
 impl QueueState {
     /// # Errors
     /// Refuses corrupt entries, identities and non-contiguous counters.
     pub fn validate(&self) -> Result<(), String> {
+        if self.delivery.attempts > MAX_DELIVERY_ATTEMPTS
+            || self.delivery.redelivery_required != (self.delivery.attempts == MAX_DELIVERY_ATTEMPTS)
+            || self.delivery.last_delivered_id.as_ref().is_some_and(|id| !valid_hex(id, 32))
+            || self.delivery.first_refused_at > self.delivery.last_refused_at
+            || (self.delivery.attempts > 0 && (self.delivery.first_refused_at.is_none()
+                || self.delivery.last_refused_at.is_none() || self.delivery.last_refusal.is_none()))
+        {
+            return Err("invalid producer scheduling state".to_owned());
+        }
         if self.entries.len() > MAX_PENDING {
             return Err("producer queue exceeds bound".to_owned());
         }
@@ -225,7 +303,14 @@ impl QueueState {
             }
         }
         let mut ids = std::collections::BTreeSet::new();
+        let mut pending_sequences = BTreeMap::new();
         for pending in &self.entries {
+            let stream = (&pending.observation.kind, &pending.observation.resource);
+            if pending_sequences.insert(stream, pending.observation.sequence)
+                .is_some_and(|earlier| earlier >= pending.observation.sequence)
+            {
+                return Err("producer pending stream reordered".to_owned());
+            }
             pending.validate()?;
             if !ids.insert(&pending.observation.id)
                 || !self
@@ -294,6 +379,70 @@ impl QueueState {
         self.entries.len() >= MAX_PENDING
     }
 
+    #[must_use]
+    pub const fn delivery(&self) -> &DeliveryState { &self.delivery }
+
+    #[must_use]
+    pub fn pending_count(&self) -> usize { self.entries.len() }
+
+    /// # Errors
+    /// Refuses unavailable, corrupt or out-of-order durable delivery state.
+    pub fn operator_redelivery(&mut self) -> Result<(), String> {
+        if self.entries.is_empty() { return Err("producer queue empty".to_owned()); }
+        self.delivery.attempts = 0;
+        self.delivery.next_attempt_at = 0;
+        self.delivery.redelivery_required = false;
+        Ok(())
+    }
+
+    /// # Errors
+    /// Refuses unavailable, corrupt or out-of-order durable delivery state.
+    pub fn selected(&mut self, turn: u64) -> Result<(), String> {
+        if self.entries.is_empty() || turn <= self.delivery.selected_turn {
+            return Err("invalid producer selection turn".to_owned());
+        }
+        self.delivery.selected_turn = turn;
+        Ok(())
+    }
+
+    /// # Errors
+    /// Refuses unavailable, corrupt or out-of-order durable delivery state.
+    pub fn failed_delivery(&mut self, id: &str, generation: Option<u64>, now: u64, reason: DeliveryFailure) -> Result<(), String> {
+        if self.entries.first().is_none_or(|pending| pending.observation.id != id) {
+            return Err("delivery refusal has no pending head".to_owned());
+        }
+        self.delivery.attempts = self.delivery.attempts.saturating_add(1).min(MAX_DELIVERY_ATTEMPTS);
+        self.delivery.first_refused_at.get_or_insert(now);
+        self.delivery.last_refused_at = Some(self.delivery.last_refused_at.unwrap_or(now).max(now));
+        if !self.delivery.redelivery_required || reason != DeliveryFailure::RecoveryRequired {
+            self.delivery.last_refusal = Some(reason);
+        }
+        if !self.delivery.redelivery_required {
+            self.delivery.enrollment_generation = generation.or(self.delivery.enrollment_generation);
+        }
+        self.delivery.redelivery_required = self.delivery.attempts == MAX_DELIVERY_ATTEMPTS;
+        let delay = (1_u64 << self.delivery.attempts).min(MAX_DELIVERY_BACKOFF);
+        self.delivery.next_attempt_at = now.checked_add(delay)
+            .ok_or_else(|| "delivery retry deadline exhausted".to_owned())?;
+        Ok(())
+    }
+
+    /// # Errors
+    /// Refuses unavailable, corrupt or out-of-order durable delivery state.
+    pub fn resume_delivery(&mut self, id: &str, generation: u64) -> Result<(), String> {
+        if self.entries.first().is_none_or(|pending| pending.observation.id != id)
+            || self.delivery.enrollment_generation.is_some_and(|previous| generation <= previous)
+        {
+            return Err("delivery recovery needs a newer authenticated generation".to_owned());
+        }
+        self.delivery.attempts = 0;
+        self.delivery.next_attempt_at = 0;
+        self.delivery.enrollment_generation = Some(generation);
+        self.delivery.last_recovery_generation = Some(generation);
+        self.delivery.redelivery_required = false;
+        Ok(())
+    }
+
     /// # Errors
     /// Refuses acknowledgements outside the durable queue order.
     pub fn acknowledge(&mut self, id: &str, observed: bool) -> Result<(), String> {
@@ -304,11 +453,18 @@ impl QueueState {
         if first.observation.id != id || first.observed == observed {
             return Err("producer acknowledgement out of order".to_owned());
         }
+        let now = crate::secret::unix_seconds()?;
         if observed {
             first.observed = true;
         } else {
+            self.delivery.last_delivered_id = Some(id.to_owned());
+            self.delivery.enrollment_generation = None;
             self.entries.remove(0);
         }
+        self.delivery.attempts = 0;
+        self.delivery.next_attempt_at = 0;
+        self.delivery.redelivery_required = false;
+        self.delivery.last_progress_at = Some(now);
         Ok(())
     }
 }
@@ -354,6 +510,23 @@ impl Health {
             self.overflow.load(Ordering::Relaxed),
         )
     }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NotificationAcknowledgement {
+    position: u64,
+    #[serde(rename = "duplicate")]
+    _duplicate: bool,
+    queued: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EnrollmentStatus {
+    principal: String,
+    generation: u64,
+    bound: bool,
 }
 
 pub struct Client {
@@ -479,30 +652,75 @@ impl Client {
             .webhooks
             .post(&path, b"{}")
             .map_err(|_| "event notification unavailable".to_owned())?;
-        if response.status != 202 {
+        if response.status != 202 || !response.content_type.starts_with("application/json") {
             return Err(format!("event notification refused: {}", response.status));
+        }
+        let acknowledgement: NotificationAcknowledgement = serde_json::from_slice(&response.body)
+            .map_err(|_| "event notification acknowledgement malformed".to_owned())?;
+        if acknowledgement.position == 0 || acknowledgement.queued.len() > MAX_PENDING
+            || acknowledgement.queued.iter().any(|id| !valid_identifier(id, 128))
+            || acknowledgement.queued.iter().collect::<std::collections::BTreeSet<_>>().len()
+                != acknowledgement.queued.len()
+        {
+            return Err("event notification acknowledgement mismatch".to_owned());
         }
         Ok(false)
     }
 
+    fn enrollment(&self, pending: &Pending) -> Result<(u64, bool), String> {
+        let principal = pending.observation.principal.as_deref()
+            .filter(|principal| valid_principal(principal))
+            .ok_or_else(|| "enrollment recovery requires a principal".to_owned())?;
+        let source = self.sources.get(&pending.observation.kind)
+            .ok_or_else(|| "producer source missing".to_owned())?;
+        let response = source.get(&format!("/internal/v1/principals/{principal}/enrollment"))
+            .map_err(|_| "enrollment recovery unavailable".to_owned())?;
+        if response.status != 200 || !response.content_type.starts_with("application/json") {
+            return Err("enrollment recovery refused".to_owned());
+        }
+        let enrollment: EnrollmentStatus = serde_json::from_slice(&response.body)
+            .map_err(|_| "enrollment recovery malformed".to_owned())?;
+        if enrollment.principal != principal {
+            return Err("enrollment recovery principal mismatch".to_owned());
+        }
+        Ok((enrollment.generation, enrollment.bound))
+    }
+
     /// # Errors
-    /// Retains the pending entry and updates health when one delivery attempt fails.
+    /// Refuses unavailable, corrupt or out-of-order durable delivery state.
     pub fn step<S: Outbox>(&self, store: &S, health: &Health) -> Result<(), String> {
-        let result = store.pending().and_then(|pending| {
-            if let Some(pending) = pending {
-                let observed = self.deliver(&pending)?;
-                store.acknowledge(&pending.observation.id, observed)?;
-            } else {
+        let result = store.select().and_then(|pending| {
+            let Some(pending) = pending else {
                 for source in self.sources.values() {
-                    if !source
-                        .get("/livez")
-                        .is_ok_and(|response| response.status == 200)
-                    {
+                    if !source.get("/livez").is_ok_and(|response| response.status == 200) {
                         return Err("event source unreachable".to_owned());
                     }
                 }
+                return Ok(());
+            };
+            let schedule = store.scheduling(&pending.observation.id)?;
+            let enrollment = schedule.as_ref().map(|_| self.enrollment(&pending));
+            if let Some(schedule) = schedule.as_ref().filter(|state| state.redelivery_required) {
+                match enrollment.as_ref().and_then(|result| result.as_ref().ok()) {
+                    Some((generation, true)) if schedule.enrollment_generation.is_none_or(|old| *generation > old) => {
+                        store.resume_delivery(&pending.observation.id, *generation)?;
+                    }
+                    _ => {
+                        store.failed_delivery(&pending.observation.id, None, DeliveryFailure::RecoveryRequired)?;
+                        return Err("event redelivery requires authenticated recovery".to_owned());
+                    }
+                }
             }
-            Ok(())
+            let attempt = self.deliver(&pending).and_then(|observed| {
+                store.acknowledge(&pending.observation.id, observed)
+            });
+            if let Err(error) = &attempt {
+                if schedule.is_some() {
+                    let generation = enrollment.and_then(Result::ok).map(|(generation, _)| generation);
+                    store.failed_delivery(&pending.observation.id, generation, DeliveryFailure::from_error(error))?;
+                }
+            }
+            attempt
         });
         match &result {
             Ok(()) => health.recovered(),
@@ -710,5 +928,51 @@ mod queue_tests {
             .unwrap_or_else(|error| panic!("{error}"));
         assert_eq!(next.sequence, MAX_PENDING as u64 + 1);
         assert!(queue.validate().is_ok());
+    }
+}
+
+#[cfg(test)]
+mod scheduling_tests {
+    use super::*;
+
+    #[test]
+    fn durable_retry_state_is_bounded_and_legacy_entries_keep_their_bytes() {
+        let mut queue = QueueState::default();
+        let observation = queue.enqueue("first", super::tests::observation(1))
+            .unwrap_or_else(|error| panic!("{error}"));
+        let original = queue.pending().unwrap_or_else(|| panic!("pending missing"));
+        for _ in 0..MAX_DELIVERY_ATTEMPTS + 2 {
+            queue.failed_delivery(&observation.id, Some(7), 100, DeliveryFailure::ObservationRefused)
+                .unwrap_or_else(|error| panic!("{error}"));
+        }
+        assert_eq!(queue.delivery().attempts, MAX_DELIVERY_ATTEMPTS);
+        assert_eq!(queue.delivery().next_attempt_at, 100 + MAX_DELIVERY_BACKOFF);
+        assert!(queue.delivery().redelivery_required);
+        assert!(!queue.delivery().eligible(100));
+        assert!(queue.delivery().eligible(100 + MAX_DELIVERY_BACKOFF));
+        assert_eq!(queue.pending(), Some(original.clone()));
+        assert!(queue.resume_delivery(&observation.id, 7).is_err());
+        let mut encoded = serde_json::to_value(&queue).unwrap_or_else(|error| panic!("{error}"));
+        encoded["delivery"]["redelivery_required"] = serde_json::json!(false);
+        let invalid: QueueState = serde_json::from_value(encoded).unwrap_or_else(|error| panic!("{error}"));
+        assert!(invalid.validate().is_err());
+        let mut legacy = serde_json::to_value(&queue).unwrap_or_else(|error| panic!("{error}"));
+        legacy.as_object_mut().unwrap_or_else(|| panic!("queue object missing")).remove("delivery");
+        let legacy: QueueState = serde_json::from_value(legacy).unwrap_or_else(|error| panic!("{error}"));
+        assert!(legacy.validate().is_ok());
+        assert_eq!(legacy.pending(), Some(original));
+        queue.resume_delivery(&observation.id, 8).unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(queue.delivery().first_refused_at, Some(100));
+        assert_eq!(queue.delivery().last_recovery_generation, Some(8));
+        assert!(queue.delivery().eligible(100));
+    }
+
+    #[test]
+    fn replay_rejects_a_reordered_subject_stream() {
+        let mut queue = QueueState::default();
+        queue.enqueue("first", super::tests::observation(1)).unwrap_or_else(|error| panic!("{error}"));
+        queue.enqueue("second", super::tests::observation(2)).unwrap_or_else(|error| panic!("{error}"));
+        queue.entries.swap(0, 1);
+        assert_eq!(queue.validate(), Err("producer pending stream reordered".to_owned()));
     }
 }

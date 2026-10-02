@@ -370,8 +370,21 @@ pub fn enrollment_key(path: &Path) -> Result<Zeroizing<String>, String> {
 /// Signs an empty generation zero without exposing the key in process arguments.
 #[must_use]
 pub fn empty_enrollment_mac(kind: Kind, key: &str) -> String {
+    enrollment_snapshot_mac(kind, 0, &[], key)
+}
+
+/// Signs the ordered principal credentials of an enrollment snapshot.
+#[must_use]
+pub fn enrollment_snapshot_mac(kind: Kind, generation: u64, entries: &[(&str, &str)], key: &str) -> String {
+    let mut message = format!("layerx-enrollment-v1\n{}s\n{generation}\n", kind.singular());
+    for (principal, credential) in entries {
+        message.push_str(principal);
+        message.push('\n');
+        message.push_str(&sha256_hex(credential.as_bytes()));
+        message.push('\n');
+    }
     let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA256, key.as_bytes());
-    hex(ring::hmac::sign(&key, format!("layerx-enrollment-v1\n{}s\n0\n", kind.singular()).as_bytes()).as_ref())
+    hex(ring::hmac::sign(&key, message.as_bytes()).as_ref())
 }
 
 /// The versioned principal enrollment of one source: the adopted generation,
@@ -902,6 +915,21 @@ impl Service {
         }
         let enrolled = self.enrollments.current();
         let last_refusal = self.enrollments.last_refusal();
+        if request.method == "GET" {
+            if let Some(principal) = request.path.strip_prefix("/internal/v1/principals/")
+                .and_then(|path| path.strip_suffix("/enrollment"))
+                .filter(|principal| valid_principal(principal))
+            {
+                if !request.peer_verified || !self.producers.iter()
+                    .any(|credential| request.bearer_matches(&credential.token))
+                {
+                    return refusal(401, "unauthorized", None);
+                }
+                let bound = enrolled.adopted && self.bind(&enrolled, principal).is_ok();
+                return json(200, &serde_json::json!({"principal":principal,
+                    "generation":enrolled.number, "bound":bound}));
+            }
+        }
         if enrolled.credentials.is_empty() {
             if request.method == "GET" && request.path == "/readyz" {
                 return json(
