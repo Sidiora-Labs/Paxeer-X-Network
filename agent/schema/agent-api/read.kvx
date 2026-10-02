@@ -9,6 +9,11 @@ value_constraint = "core_produced_only"
 
 [type.Freshness]
 required = ["chain_head","latest_sealed_batch","latest_finalised_checkpoint","value_sequence","relative_to"]
+chain_head = "decimal_string"
+value_sequence = "decimal_string"
+latest_sealed_batch = "non-empty text"
+latest_finalised_checkpoint = "non-empty text"
+relative_to = "An object with exactly one key, batch or checkpoint, whose value is the non-empty reference text."
 
 [operation.read.balance]
 request_required = ["account","asset","requested_verification_level"]
@@ -55,11 +60,35 @@ response = "VerifiedRead<OfflineExport>"
 response_required = ["facts","receipts","proofs","certificates","headers"]
 settlement_domain = "Paxeer"
 verification_environment = "layerx-proof_without_daemon_or_network"
+request_type = "ReadRequest<FactRef[]>"
+fact_set = "FactRef[] of 1 through 16 unique references in request order"
+requested_verification_level = "One of Unverified, SequencerSigned, BatchIncluded, StateProven, CheckpointFinalised, SettlementAnchored. It is honoured: an achieved level below it is refused, never downgraded."
+response_shape = "VerifiedRead object with value, achieved_verification_level and freshness; value holds facts, receipts, proofs, certificates and headers. The envelope verification_status is achieved at the same level."
+facts = "Exactly the requested fact references in request order."
+receipts = "lowercase hex of canonical LXRF version 1 receipt records"
+headers = "lowercase hex of canonical LXHD version 1 signed header records"
+proofs = "lowercase hex of canonical LXIP version 1 inclusion records or LXAS version 1 account-state records"
+certificates = "lowercase hex of canonical LXCP version 1 checkpoint records with their full availability chunks"
+record_rule = "Each record decodes only when its magic, version and tags are known, nothing trails it, every bound holds and its canonical re-encoding equals the received bytes."
+binding = "Every requested fact binds exactly one primary record. Dependency records may be shared by several facts. Every record must be consumed by a requested fact; an orphan or duplicate record is refused. There is no partial success."
+level_rule = "The achieved level is computed per requested fact from verified evidence links, and the response level is the minimum over the requested facts. receipt and activity facts reach BatchIncluded, state facts StateProven and checkpoint facts CheckpointFinalised. A receipt, activity or state fact reaches CheckpointFinalised only when a verified checkpoint record certifies the exact same header bytes. StateProven is never given to a receipt or activity fact."
+settlement_anchored = "A request for SettlementAnchored is refused: no authenticated offline Paxeer finality proof exists in this contract revision."
+freshness_rule = "Freshness names the captured head and finality coordinates and the batch or checkpoint the evidence is relative to; facts relative to unrelated snapshots are not presented as one common root."
+size_bound = "The complete JSON response stays within the 1048576 byte transport body bound; a larger export is refused, never truncated."
+offline_verification = "Decode the buckets into the complete offline artifact with an independent offline trust context made of the module registry, the signed authority history, the settlement domain and the trusted checkpoint membership, then run the pure complete verifier at the requested level. The response level is not trusted; a verified level below it is refused."
+legacy_verifier = "The earlier receipt-and-proof offline verifier remains available and covers only its own export shape."
 
 [operation.project]
 response = "ProjectionResult"
 forbidden_response = "VerifiedRead"
 semantics = "An estimate is never core-produced, never receipt-shaped and never an executed outcome."
+request = "FeeProjectionRequest"
+request_required = ["protocol_activity_type","canonical_bytes","execution_units","storage_units"]
+response_value = "ProjectionResult<FeeProjection>"
+response_required = ["projected","rationale","observed_freshness"]
+verification_status = "Always achieved at Unverified: a projection claims no verification level."
+producer = "The node fee estimate over one captured authenticated head; the estimate snapshot sequence must equal the captured head chain sequence, otherwise the projection is refused. Head and checkpoint coordinates are those of the captured observation, not part of an atomic native fee answer."
+legacy_policy_payload = "A request object of the earlier policy dry-run shape, context and canonical_intent, is refused as PolicyRefusal policy.legacy_project_payload. It is never read as a fee request; policy evaluation is policy.dry_run."
 
 [type.HistoryItem]
 required = ["global_sequence","kind","achieved_verification_level","canonical","proof"]
@@ -71,3 +100,34 @@ proof = "lowercase hex or null"
 variants = ["Activity","Receipt","Event"]
 wire_byte = ["Activity:1","Receipt:2","Event:3"]
 exhaustive = "Any other kind byte is refused; there is no default kind."
+
+[type.FactRef]
+grammar = ["receipt:<activity_id>","activity:<activity_id>","state:<activity_id>:<account_id>","checkpoint:<activity_id>:<batch>"]
+activity_id = "64 lowercase hex characters, not all zero"
+account_id = "64 lowercase hex characters, not all zero"
+batch = "canonical decimal u64 with checked overflow; 0 is refused and never means latest"
+maximum_bytes = "135"
+refused = "Whitespace, uppercase hex, a 0x prefix, an unknown kind, extra fields, trailing bytes and duplicate references are refused."
+parser = "One shared strict parser used by the daemon and every SDK."
+ownership = "The activity_id of every kind is the tenant ownership anchor; a state reference is additionally bound to the subject account."
+
+[type.FeeProjectionRequest]
+required = ["protocol_activity_type","canonical_bytes","execution_units","storage_units"]
+protocol_activity_type = "decimal_string u32: full protocol module and ordinal"
+canonical_bytes = "decimal_string 0 through 1048576 inclusive, the native activity size bound; zero is accepted; a larger value is refused, never clamped"
+execution_units = "decimal_string u64"
+storage_units = "decimal_string u64"
+
+[type.FeeProjection]
+required = ["request","parameter_version","fee","canonical_schedule","snapshot_sequence","snapshot_state_root"]
+request = "The FeeProjectionRequest exactly as sent."
+parameter_version = "decimal_string u32, nonzero"
+fee = "decimal_string u128, exact"
+canonical_schedule = "lowercase hex of the canonical fee schedule bytes"
+snapshot_sequence = "decimal_string u64: the committed snapshot the estimate answered from, equal to observed_freshness.chain_head and observed_freshness.value_sequence"
+snapshot_state_root = "64 lowercase hex characters, nonzero: committed-snapshot provenance, not cryptographic verification and not an executed receipt"
+
+[type.ProjectionResult]
+required = ["projected","rationale","observed_freshness"]
+rationale = "non-empty text"
+constraint = "Never core-produced, never VerifiedRead and never an executed outcome."

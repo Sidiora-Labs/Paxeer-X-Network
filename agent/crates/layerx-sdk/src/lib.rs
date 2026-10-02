@@ -29,6 +29,8 @@ use layerx_proof::export::{
     verify as verify_offline_export, ExportVerificationError, OfflineExport, VerificationReport,
 };
 use layerx_types::result::ResultCode;
+use layerx_agent_api::prepare::PrepareWithCapability;
+use layerx_agent_api::read::FeeProjectionRequest;
 
 pub mod agent_envelope;
 pub mod approval;
@@ -44,6 +46,11 @@ pub mod rpc_history;
 pub mod rpc_sign;
 
 pub mod rpc_capability;
+
+pub mod rpc_budget;
+pub mod rpc_export;
+pub mod rpc_policy;
+pub mod rpc_projection;
 pub mod rpc_verification;
 mod tls;
 pub mod wallet;
@@ -398,6 +405,8 @@ impl Client {
         budget_fund: BudgetFund => BudgetFund,
         budget_revoke: BudgetTarget => BudgetRevoke,
         prepare: PrepareRequest => Prepare,
+
+        prepare_with_capability: PrepareWithCapability => Prepare,
         sign: SignRequest => Sign,
         submit: SubmitRequest => Submit,
         subscription_create: SubscriptionCreate => SubscriptionCreate,
@@ -413,6 +422,8 @@ impl Client {
         budget_list: BudgetList => BudgetList,
         budget_reconciliation: BudgetTarget => BudgetReconciliation,
         policy_dry_run: PolicyDryRun => Project,
+
+        project_fee: FeeProjectionRequest => Project,
         track: TrackRequest => Track,
         wait: WaitRequest => Wait,
         read_balance: ReadRequest<BalanceSelector> => ReadBalance,

@@ -196,6 +196,7 @@ observed_at = "u64_decimal_milliseconds"
 valid_through = "u64_decimal_milliseconds"
 source = "ProgramSource"
 verification = "server_side_receipt_verification_only_at_sdk_boundary"
+kind5_limitation = "The kind 5 program-state proof transport proves a present interface under the authenticated chain head only. It cannot establish interface absence: a kind 5 answer without an interface is refused as a missing interface and is never reported as absent. Typed absence remains only the receipt-verified registry read above."
 
 [type.ProgramSource]
 required = ["status:string"]

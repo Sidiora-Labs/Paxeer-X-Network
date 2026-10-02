@@ -1,7 +1,7 @@
 [schema]
 name = "LayerX Agent API"
 major = 1
-minor = 8
+minor = 9
 node_interface_major = 1
 source_of_truth = "This schema and the schema files it includes define the daemon contract and every SDK surface. Generated output is never authoritative."
 compatibility = "Within one major version a release may only add sections or keys. Removing or changing an existing declaration requires a new major version."
@@ -209,6 +209,10 @@ idempotency_key = "absent"
 disposition = "not_served_no_arm"
 
 [transport.agent_http.operation.budget.create]
+
+owner_request = "MutationEnvelope<SignedBudgetMutation<BudgetCreate>>"
+response = "AuthorityResponse<BudgetRecord>"
+phase_b_dependency = "Served only once the dispatcher arm, the adapter decoding the signed-authorization carrier and the owner create method over the versioned core budget codecs and the durable daemon limit registry exist."
 request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
 access = "mutation"
 operation_class = "Write"
@@ -217,6 +221,10 @@ idempotency_key = "required"
 disposition = "not_served_no_arm"
 
 [transport.agent_http.operation.budget.fund]
+
+owner_request = "MutationEnvelope<SignedBudgetMutation<BudgetFund>>"
+response = "AuthorityResponse<BudgetRecord>"
+phase_b_dependency = "Served only once the dispatcher arm, the adapter decoding the signed-authorization carrier and the optional enforcement assertion, and the owner fund method over the versioned core fund codec and the verified budget state exist."
 request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
 access = "mutation"
 operation_class = "Write"
@@ -241,6 +249,10 @@ idempotency_key = "absent"
 disposition = "served_adapter_arm"
 
 [transport.agent_http.operation.budget.revoke]
+
+owner_request = "MutationEnvelope<SignedBudgetMutation<BudgetTarget>>"
+response = "AuthorityResponse<BudgetRecord>"
+phase_b_dependency = "Served only once the dispatcher arm, the adapter decoding the signed-authorization carrier and the owner revoke method over the core revoke codec, the verified budget state and the durable daemon limit registry exist."
 request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
 access = "mutation"
 operation_class = "Write"
@@ -290,6 +302,10 @@ owner_request = "MutationEnvelope<CapabilityRevoke>"
 response = "AuthorityResponse<CapabilityRecord>"
 
 [transport.agent_http.operation.export.offline]
+
+owner_request = "ReadRequest<FactRef[]>"
+response = "VerifiedRead<OfflineExport>"
+phase_b_dependency = "Served only once the dispatcher arm, the export adapter, the per-fact export producers and the owner export method with its independent export trust exist."
 request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
 access = "read"
 operation_class = "Export"
@@ -305,7 +321,20 @@ surface = "Contract"
 idempotency_key = "absent"
 disposition = "retired"
 
+[transport.agent_http.operation.policy.dry_run]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "not_served_no_arm"
+owner_request = "PolicyDryRunRequest"
+response = "PolicyDryRunResult"
+phase_b_dependency = "Served only once the generated catalogue operation, the dispatcher arm, the policy adapter and the owner policy dry-run method over the loaded tenant policy registries exist."
+
 [transport.agent_http.operation.prepare]
+
+capability_request = "PrepareWithCapability: the nine preserved prepare fields plus capability_id. Refused as envelope.unknown_field until the daemon capability binding is declared; the nine-field request stays served."
 request = "owner typed Human prepare request"
 access = "mutation"
 operation_class = "Prepare"
@@ -386,6 +415,10 @@ idempotency_key = "required"
 disposition = "not_served_no_arm"
 
 [transport.agent_http.operation.project]
+
+owner_request = "FeeProjectionRequest"
+response = "ProjectionResult<FeeProjection>"
+phase_b_dependency = "Served only once the dispatcher arm, the fee projection adapter and the owner fee projection method over the node fee estimate of one captured authenticated head exist. The earlier policy payload is refused as policy.legacy_project_payload."
 request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
 access = "read"
 operation_class = "Read"
@@ -604,6 +637,8 @@ transport_ambiguity = "A mutating request whose outcome the client cannot know i
 "owner.degraded" = "UnavailableCapability Retriable. Owner is not Healthy."
 "owner.unavailable" = "InternalFault Retriable. Owner unavailable at the daemon; the dispatcher maps an owner Unavailable error to UnavailableCapability Retriable with this reason."
 "owner.refused" = "PolicyRefusal Terminal. Owner refused the typed operation."
+
+"policy.legacy_project_payload" = "PolicyRefusal Terminal. A project request carries the earlier policy dry-run payload; it is never read as a fee request."
 "capability.expiry" = "CapabilityRefusal Terminal. Owner refused the typed operation: core protocol time is at or past the capability not_after."
 "capability.activity_type" = "CapabilityRefusal Terminal. Owner refused the typed operation: the capability does not admit the activity type."
 "capability.counterparty" = "CapabilityRefusal Terminal. Owner refused the typed operation: the capability does not admit the counterparty."
@@ -642,6 +677,16 @@ baseline = "golden/v1.kvx@1.7"
 change = "Declares CapabilityRecord, CapabilityRecords, CapabilityState and AuthorityDescription, the capability.create, attenuate and revoke mutation envelopes, identities and replay rules, permit-bound capability.list, and the owner request and response of the four capability Agent HTTP rows. Adds keys only; no existing declaration or disposition changes. Source compatibility statement only."
 capability_disposition = "capability.create, capability.attenuate, capability.list and capability.revoke stay not_served_no_arm: no owner adapter or owner body exists in this contract revision."
 capability_refusal_reasons = "Adds the emitted error reasons capability.expiry, capability.activity_type, capability.counterparty, capability.asset, capability.amount, capability.rate and capability.purpose, each CapabilityRefusal Terminal: the dispatcher maps an owner capability refusal to the existing CapabilityRefusal class with the refused dimension as the reason. No new error class; owner.refused and owner.unavailable unchanged."
+
+[compatibility.history.1_9]
+classification = "additive_only"
+baseline = "golden/v1.kvx@1.8"
+change = "Declares the fee projection request and result of project, the separate policy.dry_run catalogue operation and its local result, the budget authorization carrier, BudgetRecord and BudgetRecords, the offline export fact grammar, record encodings and level rule, the freshness wire form, the optional prepare capability_id and the kind 5 interface limitation. Adds keys, sections and one catalogue operation; no existing declaration or disposition changes. Source compatibility statement only."
+new_operation = "policy.dry_run"
+dispositions = "project, policy.dry_run, export.offline, budget.create, budget.fund and budget.revoke stay not_served_no_arm: their dispatcher arms, adapters and owner methods are not in this contract revision."
+capability_binding = "prepare stays served for the nine-field request; capability_id is declared and refused until the daemon binding is declared."
+sdk_policy_dry_run = "The SDK envelope transport policy_dry_run method names policy.dry_run with the typed request and preserves the policy dry-run semantics. A Project request carrying the earlier policy payload is refused as policy.legacy_project_payload, never reinterpreted."
+legacy_project_reason = "Adds the emitted error reason policy.legacy_project_payload, PolicyRefusal Terminal. No new error class."
 
 [compatibility.feature.agent_http_operations]
 introduced_contract = "1.4"

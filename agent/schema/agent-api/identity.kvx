@@ -102,14 +102,21 @@ DaemonLimit.guarantee = "daemon_enforced"
 DaemonLimit.notice = "Bypassing the daemon bypasses this limit. It is not equivalent to a protocol budget."
 
 [operation.budget.create]
+optional = ["authorization"]
+authorization = "BudgetAuthorization: required when enforcement is ProtocolBudget, refused when enforcement is DaemonLimit"
+expiry_unit = "TimestampSeconds; the core expiry is expiry multiplied by 1000 with checked overflow and must equal the signed activity expiry in milliseconds exactly"
 required = ["tenant","agent_did","asset","limit","enforcement","expiry"]
 response = "AuthorityResponse<BudgetRecord>"
 
 [operation.budget.fund]
+optional = ["enforcement","authorization"]
+enforcement = "Optional assertion. The enforcement in force is taken from the authenticated budget lookup and a differing assertion is refused; omission never selects a weaker enforcement. Funding a DaemonLimit is refused."
+authorization = "BudgetAuthorization: required for a ProtocolBudget; an unsigned protocol fund is refused"
 required = ["tenant","agent_did","budget_id","amount"]
 response = "AuthorityResponse<BudgetRecord>"
 
 [operation.budget.list]
+served_shape = "The served adapter currently answers a bare budgets array of budget_id and agent_id without the authority wrapper. Until it answers AuthorityResponse<BudgetRecords>, SDKs refuse the bare shape as a decode violation."
 required = ["tenant","agent_did"]
 response = "AuthorityResponse<BudgetRecords>"
 
@@ -118,6 +125,8 @@ required = ["tenant","agent_did","budget_id"]
 response = "AuthorityResponse<BudgetReconciliation>"
 
 [operation.budget.revoke]
+optional = ["authorization"]
+authorization = "BudgetAuthorization: required when the authenticated budget lookup names a ProtocolBudget, refused for a DaemonLimit"
 required = ["tenant","agent_did","budget_id"]
 response = "AuthorityResponse<BudgetRecord>"
 
@@ -135,3 +144,55 @@ response = "FaucetGrant"
 network_scope = "test_network_only"
 signer_binding = "The signer key must be one the calling session already authorises. A key the session does not name is refused before any grant is reserved."
 idempotency_binding = "The claim key is derived by the funding boundary from the principal, the DID and the signer key, so a repeated claim settles onto the reservation it already made instead of consuming a second grant."
+
+[type.BudgetAuthorization]
+required = ["preparation_ref","signature"]
+optional = ["signer_public_key"]
+preparation_ref = "The preparation of the exact canonical budget activity being authorised."
+signature = "128 lowercase hex characters, 64 bytes, over that preparation"
+signer_public_key = "64 lowercase hex characters or null: only an equality assertion against the cached authorised owner key; never the verifying authority"
+
+[type.BudgetRecord]
+required = ["enforcement","budget_id","head","activity_id"]
+enforcement = "BudgetEnforcement; selects the field set"
+budget_id = "64 lowercase hex characters"
+head = "decimal_string: observed head sequence of the snapshot the record was read from"
+activity_id = "64 lowercase hex characters of the core activity whose verified receipt produced this ProtocolBudget state in a create, fund or revoke response; null in list responses and for every DaemonLimit record"
+ProtocolBudget.required = ["owner","budget_account","asset_id","purpose_hash","per_period_limit","configured_period_limit","carry_cap","spent_this_period","carried","period_length_ms","period_start_ms","expiry_ms","revocation_counter","rollover_policy","closed","revoked","delegates","source_account","achieved_verification_level"]
+ProtocolBudget.source = "Projected from the decoded core budget record whose state was proven."
+ProtocolBudget.units = "Amounts are decimal_string u128; period_length_ms, period_start_ms and expiry_ms are decimal_string milliseconds of core protocol time; revocation_counter is a decimal_string counter and never a time; rollover_policy is a decimal_string u8; account and asset fields are 64 lowercase hex; source_account is 64 lowercase hex or null; delegates is an array of 64 lowercase hex."
+ProtocolBudget.achieved_verification_level = "StateProven or higher; a record below StateProven is refused"
+DaemonLimit.required = ["asset","ceiling","consumed","expiry_ms","revoked","notice"]
+DaemonLimit.source = "Projected from the durable daemon limit record."
+DaemonLimit.units = "ceiling and consumed are decimal_string u128; expiry_ms is decimal_string milliseconds of core protocol time; asset is 64 lowercase hex."
+DaemonLimit.notice = "Exactly the BudgetEnforcement DaemonLimit notice. A DaemonLimit record carries no verification level and is never StateProven."
+
+[type.BudgetRecords]
+required = ["budgets"]
+budgets = "BudgetRecord[] in ascending budget_id order"
+
+[operation.policy.dry_run]
+required = ["tenant","agent_did","session_id","capability_id","activity_type","counterparty","asset","amount","purpose","core_sequence"]
+response = "PolicyDryRunResult"
+session_id = "64 lowercase hex characters naming a session of the authenticated tenant"
+capability_id = "64 lowercase hex characters naming a capability of the authenticated tenant"
+activity_type = "decimal_string u16"
+counterparty = "64 lowercase hex characters"
+asset = "64 lowercase hex characters"
+amount = "decimal_string u128"
+purpose = "text"
+core_sequence = "decimal_string u64: the caller-stated sequence the hypothetical activity is evaluated at; not a freshness claim"
+semantics = "Evaluates the tenant policy against the hypothetical activity under the real session and capability. It creates no preparation, signature or submission and is a local restriction, never protocol authorisation."
+context = "Where protocol budget, cumulative use or approval evidence is unavailable the result is the existing invalid_context deny; no evidence is invented."
+verification_status = "Always achieved at Unverified; the result carries no freshness, no observed sequence and no state root."
+legacy_payload = "The earlier policy_dry_run payload, context and canonical_intent, has no defined intent grammar and is refused; it is never reinterpreted."
+
+[type.PolicyDryRunResult]
+required = ["outcome","policy_version","matched_rules","deciding_rule","reason","mode","authority_statement"]
+outcome = ["allow","deny"]
+policy_version = "non-empty text"
+matched_rules = "array of non-empty rule identifiers"
+deciding_rule = "non-empty rule identifier or null"
+reason = ["permitted_by_rule","explicit_deny","approval_required","no_permitting_rule","invalid_context","evaluation_failure"]
+mode = "dry_run"
+authority_statement = "non-empty local-restriction notice for the outcome"
