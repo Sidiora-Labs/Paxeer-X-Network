@@ -22,6 +22,8 @@ serde_json = "=1.0.149"
 serde = { version = "=1.0.229", features = ["derive"] }
 ureq = { version = "=3.4.0", default-features = false, features = ["json", "rustls-no-provider", "_ring"] }
 rustls-native-certs = "=0.8.4"
+rustls = { version = "=0.23.45", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-webpki = { version = "=0.103.15", default-features = false, features = ["std"] }
 rustix = { version = "=1.1.4", features = ["net"] }
 zeroize = "=1.9.0"
 getrandom = "=0.3.4"

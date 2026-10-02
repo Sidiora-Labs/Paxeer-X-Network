@@ -6370,6 +6370,30 @@
       ],
       "source": "agent/crates/layerx-mcp/src/catalogue.rs",
       "proxy": false
+    },
+    {
+      "id": "agentd:POST:/v1/agent/rpc",
+      "service": "agentd",
+      "method": "POST",
+      "path": "/v1/agent/rpc",
+      "upstream_path": "/rpc",
+      "surface": "agent",
+      "tls": "mtls",
+      "transport": "http",
+      "authentication": "gateway-api-key",
+      "upstream": "agentd",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "agent",
+        "developer"
+      ],
+      "source": "agent/crates/layerx-agentd/src/agent_rpc.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
     }
   ],
   "denied_surfaces": [

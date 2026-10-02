@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 import json
+import secrets
+import ssl
 from collections.abc import Mapping
 from dataclasses import dataclass
 from http.client import HTTPException
 from typing import cast
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlparse, urlunparse
-from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener
 
 from .production import (
+    _AGENT_IDEMPOTENT,
+    AGENT_OPERATIONS,
     IdempotencyKey,
     PlatformPlane,
     PlatformSdkError,
@@ -180,6 +184,226 @@ class AgentHttpTransport(ProductionTransport):
             raise
         except (TimeoutError, URLError, OSError, HTTPException):
             raise _transport_failure(operation) from None
+
+
+_ENVELOPE_VERSION = 1
+_ENVELOPE_PATH = "/v1/agent/rpc"
+_ENVELOPE_MAX_BODY_BYTES = 1_048_576
+_BOOTSTRAP_OPERATIONS = frozenset({"agent.register", "session.open"})
+_MAX_U64 = (1 << 64) - 1
+_LEVELS: Mapping[str, int] = {
+    "Unverified": 0,
+    "SequencerSigned": 1,
+    "BatchIncluded": 2,
+    "StateProven": 3,
+    "CheckpointFinalised": 4,
+    "SettlementAnchored": 5,
+}
+
+
+class AgentSessionCredential:
+    __slots__ = ("_generation", "_session_id", "_tenant", "_token_id")
+
+    def __init__(self, tenant: str, session_id: str, token_id: str, generation: int) -> None:
+        if not isinstance(tenant, str) or "\0" in tenant:
+            raise _invalid_argument()
+        try:
+            encoded_tenant = tenant.encode("utf-8")
+        except UnicodeEncodeError:
+            raise _invalid_argument() from None
+        if not 0 < len(encoded_tenant) <= 255:
+            raise _invalid_argument()
+        if not isinstance(session_id, str) or not _hex32(session_id) or not isinstance(token_id, str) or not _hex32(token_id):
+            raise _invalid_argument()
+        if type(generation) is not int or not 0 <= generation <= _MAX_U64:
+            raise _invalid_argument()
+        self._tenant = tenant
+        self._session_id = session_id
+        self._token_id = token_id
+        self._generation = generation
+
+    def coordinates(self) -> dict[str, str]:
+        return {
+            "tenant": self._tenant,
+            "session_id": self._session_id,
+            "token_id": self._token_id,
+            "generation": str(self._generation),
+        }
+
+    def __repr__(self) -> str:
+        return "AgentSessionCredential([REDACTED])"
+
+    def __str__(self) -> str:
+        return "[REDACTED]"
+
+
+@dataclass(frozen=True)
+class AgentEnvelopeSuccess:
+    request_id: str
+    value: object
+    verification_status: Mapping[str, object]
+
+
+class AgentEnvelopeTransport(ProductionTransport):
+    __slots__ = ("_gateway_key", "_endpoint", "_maximum_response_bytes", "_opener", "_session", "_timeout")
+
+    def __init__(
+        self,
+        endpoint: str,
+        *,
+        gateway_key: LayerXKeyCredential,
+        session: AgentSessionCredential | None,
+        ca_file: str | None = None,
+        timeout: float = 30.0,
+        maximum_response_bytes: int = _MAX_RESPONSE_BYTES,
+    ) -> None:
+        self._endpoint = _validated_endpoint(endpoint)
+        if not isinstance(gateway_key, LayerXKeyCredential) or (session is not None and not isinstance(session, AgentSessionCredential)):
+            raise _invalid_argument()
+        if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout <= 0:
+            raise _invalid_argument()
+        if not isinstance(maximum_response_bytes, int) or isinstance(maximum_response_bytes, bool) or maximum_response_bytes <= 0 or maximum_response_bytes > _MAX_RESPONSE_BYTES:
+            raise _invalid_argument()
+        handlers: list[object] = [_NoRedirect()]
+        if ca_file is not None:
+            if not isinstance(ca_file, str) or not ca_file or urlparse(self._endpoint).scheme != "https":
+                raise _invalid_argument()
+            try:
+                context = ssl.create_default_context(cafile=ca_file)
+            except (OSError, ssl.SSLError):
+                raise _invalid_argument() from None
+            handlers.append(HTTPSHandler(context=context))
+        self._gateway_key = gateway_key
+        self._session = session
+        self._timeout = float(timeout)
+        self._maximum_response_bytes = maximum_response_bytes
+        self._opener = build_opener(*handlers)
+
+    def call(
+        self,
+        plane: PlatformPlane,
+        operation: object,
+        request: object,
+        idempotency_key: IdempotencyKey | None,
+    ) -> AgentEnvelopeSuccess:
+        if plane != "agent" or not isinstance(operation, str) or operation not in AGENT_OPERATIONS:
+            raise _unavailable_capability()
+        if not isinstance(request, Mapping) or any(not isinstance(key, str) for key in request):
+            raise _invalid_argument()
+        mutating = operation in _AGENT_IDEMPOTENT
+        if operation in _BOOTSTRAP_OPERATIONS:
+            credential: dict[str, str] | None = None
+        elif self._session is None:
+            raise _invalid_argument()
+        else:
+            credential = self._session.coordinates()
+        if mutating:
+            if idempotency_key is None or not _nonzero_hex32(str(idempotency_key)):
+                raise _invalid_argument()
+        elif idempotency_key is not None:
+            raise _invalid_argument()
+        request_id = str(secrets.randbits(64))
+        envelope = {
+            "version": _ENVELOPE_VERSION,
+            "request_id": request_id,
+            "operation": operation,
+            "request": dict(request),
+            "credential": credential,
+            "idempotency_key": None if idempotency_key is None else str(idempotency_key),
+        }
+        try:
+            body = json.dumps(envelope, ensure_ascii=True, allow_nan=False, separators=(",", ":")).encode("utf-8")
+        except (TypeError, ValueError, OverflowError, RecursionError):
+            raise _invalid_argument() from None
+        if len(body) > _ENVELOPE_MAX_BODY_BYTES:
+            raise _invalid_argument()
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "Content-Length": str(len(body)),
+            "User-Agent": "layerx-python/0.1.0",
+            "Authorization": self._gateway_key.use(),
+        }
+        outbound = Request(_route_endpoint(self._endpoint, _ENVELOPE_PATH), data=body, headers=headers, method="POST")
+        try:
+            with self._opener.open(outbound, timeout=self._timeout) as response:
+                encoded = _bounded_read(response, self._maximum_response_bytes)
+                if response.headers.get("Content-Type") != "application/json":
+                    raise _decode_failure()
+                return _decode_agent_envelope_response(response.status, encoded, request_id)
+        except HTTPError as error:
+            try:
+                encoded = _bounded_read(error, self._maximum_response_bytes)
+                if error.headers.get("Content-Type") != "application/json":
+                    raise _decode_failure()
+                return _decode_agent_envelope_response(error.code, encoded, request_id)
+            finally:
+                error.close()
+        except PlatformSdkError:
+            raise
+        except (TimeoutError, URLError, OSError, HTTPException):
+            if mutating:
+                raise PlatformSdkError(SdkErrorCode.UNKNOWN_OUTCOME, "unknown-outcome") from None
+            raise PlatformSdkError(SdkErrorCode.TRANSPORT_FAILURE, "safe") from None
+
+
+def _decode_agent_envelope_response(status: int, encoded: bytes, sent_request_id: str) -> AgentEnvelopeSuccess:
+    try:
+        envelope = json.loads(encoded.decode("utf-8"), parse_constant=_reject_constant, object_pairs_hook=_unique_object)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError, RecursionError):
+        raise _decode_failure() from None
+    if not isinstance(envelope, dict):
+        raise _decode_failure()
+    if "class" in envelope:
+        _exact(envelope, ("class", "protocol_result_code", "retriability", "reason", "request_id"))
+        if envelope["request_id"] not in {sent_request_id, "0"}:
+            raise _decode_failure()
+        protocol = envelope["protocol_result_code"]
+        if protocol is not None and (type(protocol) is not int or not -(1 << 31) <= protocol < 1 << 31):
+            raise _decode_failure(sent_request_id)
+        raise _service_error(status, envelope)
+    _exact(envelope, ("request_id", "value", "verification_status"))
+    request_id = envelope["request_id"]
+    if status != 200 or request_id != sent_request_id:
+        raise _decode_failure(request_id if _valid_request_id(request_id) else None)
+    verification = envelope["verification_status"]
+    if not _valid_verification_status(verification):
+        raise PlatformSdkError(SdkErrorCode.VERIFICATION_FAILURE, "never", request_id=request_id)
+    return AgentEnvelopeSuccess(request_id, envelope["value"], verification)
+
+
+def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result = dict(pairs)
+    if len(result) != len(pairs):
+        raise ValueError("duplicate key")
+    return result
+
+
+def _reject_constant(value: str) -> object:
+    raise ValueError(value)
+
+
+def _valid_verification_status(value: object) -> bool:
+    if not isinstance(value, dict):
+        return False
+    if value.get("state") == "achieved":
+        return set(value) == {"state", "level"} and isinstance(value.get("level"), str) and value["level"] in _LEVELS
+    if value.get("state") != "unverified" or set(value) != {"state", "requested", "achieved", "reason"}:
+        return False
+    requested = value.get("requested")
+    achieved = value.get("achieved")
+    reason = value.get("reason")
+    return (
+        isinstance(requested, str) and requested in _LEVELS
+        and isinstance(achieved, str) and achieved in _LEVELS
+        and _LEVELS[achieved] < _LEVELS[requested]
+        and isinstance(reason, str) and bool(reason)
+        and all(character in "abcdefghijklmnopqrstuvwxyz0123456789_." for character in reason)
+    )
+
+
+def _nonzero_hex32(value: str) -> bool:
+    return _hex32(value) and value != "0" * 64
 
 
 def _encode_program_mutation_body(signed: object) -> bytes:

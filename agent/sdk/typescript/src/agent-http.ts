@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import * as http from "node:http";
 import * as https from "node:https";
 import { bindSignedProgramLifecycle } from "./program-wire.js";
@@ -362,4 +363,306 @@ function unavailableCapability(): PlatformSdkError {
 
 function decodeFailure(requestId?: string): PlatformSdkError {
   return new PlatformSdkError({ code: "decode-failure", retry: "never", ...(requestId === undefined ? {} : { requestId }) });
+}
+
+export const AGENT_ENVELOPE_VERSION = 1 as const;
+export const AGENT_ENVELOPE_PATH = "/v1/agent/rpc" as const;
+const MAX_TENANT_BYTES = 255;
+const MAX_U64 = (1n << 64n) - 1n;
+const CANONICAL_DECIMAL = /^(?:0|[1-9][0-9]{0,19})$/u;
+const MAX_ENVELOPE_BYTES = 1_048_576;
+const BOOTSTRAP_OPERATIONS: ReadonlySet<string> = new Set<AgentOperation>(["agent.register", "session.open"]);
+const VERIFICATION_LEVELS: ReadonlySet<string> = new Set([
+  "Unverified", "SequencerSigned", "BatchIncluded", "StateProven", "CheckpointFinalised", "SettlementAnchored",
+]);
+const AGENT_ENVELOPE_OPERATIONS: ReadonlySet<string> = new Set<AgentOperation>([
+  "agent.register", "approval.approve", "approval.get", "approval.list", "approval.reject", "availability.fetch",
+  "budget.create", "budget.fund", "budget.list", "budget.reconciliation", "budget.revoke",
+  "capability.attenuate", "capability.create", "capability.list", "capability.revoke", "export.offline", "faucet.claim",
+  "prepare", "program.activity", "program.call", "program.deploy", "program.discover", "program.interface",
+  "program.receipt", "program.simulate", "program.upgrade", "program.wind-down", "project",
+  "read.account", "read.balance", "read.batch", "read.checkpoint", "read.history", "read.module_state", "read.proof_bundle",
+  "session.close", "session.list", "session.open", "session.refresh", "sign", "submit",
+  "subscription.acknowledge", "subscription.create", "subscription.delete", "subscription.health", "subscription.list",
+  "subscription.pause", "subscription.resume", "track", "wait",
+]);
+const ENVELOPE_MUTATIONS: ReadonlySet<string> = new Set<AgentOperation>([
+  "agent.register", "approval.approve", "approval.reject", "budget.create", "budget.fund", "budget.revoke",
+  "capability.attenuate", "capability.create", "capability.revoke", "prepare", "program.call", "program.deploy",
+  "program.upgrade", "program.wind-down", "session.close", "session.open", "session.refresh", "sign", "submit",
+  "subscription.acknowledge", "subscription.create", "subscription.delete", "subscription.pause", "subscription.resume",
+]);
+
+/** Full daemon session coordinates; the token never appears in string or JSON renderings of this object. */
+export class AgentSessionCredential {
+  readonly #tenant: string;
+  readonly #sessionId: string;
+  readonly #tokenId: SecretBytes;
+  readonly #generation: bigint;
+
+  public constructor(tenant: string, sessionId: string, tokenId: SecretBytes, generation: bigint | string) {
+    const tenantBytes = Buffer.byteLength(tenant, "utf8");
+    if (typeof tenant !== "string" || tenantBytes === 0 || tenantBytes > MAX_TENANT_BYTES || tenant.includes("\0")
+      || !wellFormedUtf16(tenant)) throw invalidArgument();
+    if (!HEX32.test(sessionId)) throw invalidArgument();
+    this.#tenant = tenant;
+    this.#sessionId = sessionId;
+    this.#tokenId = tokenId;
+    this.#generation = exactU64(generation);
+    this.#tokenId.withBytes((bytes) => { if (bytes.length !== 32) throw invalidArgument(); });
+  }
+
+  public get tenant(): string { return this.#tenant; }
+  public get sessionId(): string { return this.#sessionId; }
+  public get generation(): bigint { return this.#generation; }
+
+  /** @internal Serialises the four coordinates for one envelope body. */
+  public encode(): Readonly<Record<string, string>> {
+    return this.#tokenId.withBytes((bytes) => Object.freeze({
+      tenant: this.#tenant,
+      session_id: this.#sessionId,
+      token_id: Buffer.from(bytes).toString("hex"),
+      generation: this.#generation.toString(10),
+    }));
+  }
+
+  public toString(): string { return "[REDACTED]"; }
+  public toJSON(): string { return "[REDACTED]"; }
+}
+
+export interface AgentEnvelopeTransportOptions {
+  readonly endpoint: URL | string;
+  /** Required for every operation except the bootstrap set agent.register and session.open, which carry a null credential. */
+  readonly session?: AgentSessionCredential;
+  /** Gateway API-key admission; a separate authority from the daemon session credential. */
+  readonly gatewayCredential?: LayerXKeyCredential;
+  /** Explicit trusted server CA (PEM) replacing the platform store; server identity is always verified. */
+  readonly trustedCa?: string | Buffer;
+  readonly timeoutMs?: number;
+  readonly maximumResponseBytes?: number;
+}
+
+export interface AgentEnvelopeSuccess<TValue = unknown> {
+  readonly request_id: string;
+  readonly value: TValue;
+  readonly verification_status: unknown;
+}
+
+/** Version 1 authenticated operation envelope over the unified gateway route POST /v1/agent/rpc. */
+export class AgentEnvelopeTransport implements ProductionTransport {
+  readonly #endpoint: URL;
+  readonly #session: AgentSessionCredential | undefined;
+  readonly #gatewayCredential: LayerXKeyCredential | undefined;
+  readonly #trustedCa: string | Buffer | undefined;
+  readonly #timeoutMs: number;
+  readonly #maximumResponseBytes: number;
+
+  public constructor(options: AgentEnvelopeTransportOptions) {
+    if (options.session !== undefined && !(options.session instanceof AgentSessionCredential)) throw invalidArgument();
+    this.#endpoint = routeEndpoint(validateEndpoint(options.endpoint), AGENT_ENVELOPE_PATH);
+    this.#session = options.session;
+    this.#gatewayCredential = options.gatewayCredential;
+    if (options.trustedCa !== undefined && (this.#endpoint.protocol !== "https:" || options.trustedCa.length === 0)) throw invalidArgument();
+    this.#trustedCa = options.trustedCa;
+    this.#timeoutMs = exactPositive(options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+    this.#maximumResponseBytes = exactPositive(options.maximumResponseBytes ?? MAX_RESPONSE_BYTES);
+    if (this.#maximumResponseBytes > MAX_RESPONSE_BYTES) throw invalidArgument();
+  }
+
+  public async call<TRequest, TResponse>(call: TransportCall<TRequest>): Promise<TResponse> {
+    if (call.plane !== "agent" || !AGENT_ENVELOPE_OPERATIONS.has(call.operation)) throw unavailableCapability();
+    const operation = call.operation as AgentOperation;
+    const mutation = ENVELOPE_MUTATIONS.has(operation);
+    if (mutation) {
+      if (call.idempotencyKey === undefined || !HEX32.test(call.idempotencyKey)) throw invalidArgument();
+    } else if (call.idempotencyKey !== undefined) {
+      throw invalidArgument();
+    }
+    const requestId = freshRequestId();
+    const body = encodeAgentEnvelope(operation, requestId, call.request, this.#session, call.idempotencyKey);
+    const headers: http.OutgoingHttpHeaders = {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "Content-Length": body.length,
+      "User-Agent": "layerx-typescript/0.1.0",
+    };
+    if (this.#gatewayCredential !== undefined) {
+      this.#gatewayCredential.use((authorization) => { headers.Authorization = authorization; });
+    }
+    return await this.dispatch<TResponse>(headers, body, mutation, requestId);
+  }
+
+  private dispatch<TResponse>(headers: http.OutgoingHttpHeaders, body: Buffer, mutation: boolean, requestId: string): Promise<TResponse> {
+    const ambiguous = (): PlatformSdkError => mutation
+      ? new PlatformSdkError({ code: "unknown-outcome", retry: "unknown-outcome" })
+      : new PlatformSdkError({ code: "transport-failure", retry: "safe" });
+    return new Promise<TResponse>((resolve, reject) => {
+      const driver = this.#endpoint.protocol === "https:" ? https : http;
+      let settled = false;
+      const finish = <T>(callback: (value: T) => void, value: T): void => {
+        if (settled) return;
+        settled = true;
+        callback(value);
+      };
+      const options: https.RequestOptions = { method: "POST", headers, timeout: this.#timeoutMs, rejectUnauthorized: true };
+      if (this.#trustedCa !== undefined) options.ca = this.#trustedCa;
+      const request = driver.request(this.#endpoint, options, (response) => {
+        const chunks: Buffer[] = [];
+        let received = 0;
+        response.on("data", (chunk: Buffer) => {
+          received += chunk.length;
+          if (received > this.#maximumResponseBytes) {
+            response.destroy();
+            finish(reject, mutation ? ambiguous() : decodeFailure());
+            return;
+          }
+          chunks.push(Buffer.from(chunk));
+        });
+        response.on("end", () => {
+          if (settled) return;
+          try {
+            const status = response.statusCode ?? 0;
+            if (status >= 300 && status < 400) throw mutation ? ambiguous() : decodeFailure();
+            if (response.headers["content-type"] !== "application/json") throw mutation ? ambiguous() : decodeFailure();
+            finish(resolve, decodeAgentEnvelopeResponse(status, Buffer.concat(chunks), mutation, requestId) as TResponse);
+          } catch (error) {
+            finish(reject, error);
+          }
+        });
+        response.on("error", () => finish(reject, ambiguous()));
+      });
+      request.on("timeout", () => request.destroy());
+      request.on("error", () => finish(reject, ambiguous()));
+      request.end(body);
+    });
+  }
+}
+
+/** Encodes the exact version 1 envelope; integers are emitted as canonical decimal strings. */
+export function encodeAgentEnvelope(
+  operation: AgentOperation,
+  requestId: string,
+  request: unknown,
+  session: AgentSessionCredential | undefined,
+  idempotency: string | undefined,
+): Buffer {
+  if (!AGENT_ENVELOPE_OPERATIONS.has(operation)) throw unavailableCapability();
+  if (!CANONICAL_DECIMAL.test(requestId) || BigInt(requestId) > MAX_U64) throw invalidArgument();
+  const mutation = ENVELOPE_MUTATIONS.has(operation);
+  if (mutation ? idempotency === undefined || !HEX32.test(idempotency) : idempotency !== undefined) throw invalidArgument();
+  let credential: Readonly<Record<string, string>> | null;
+  if (BOOTSTRAP_OPERATIONS.has(operation)) credential = null;
+  else if (session === undefined) throw invalidArgument();
+  else credential = session.encode();
+  let text: string;
+  try {
+    text = JSON.stringify({
+      version: AGENT_ENVELOPE_VERSION,
+      request_id: requestId,
+      operation,
+      request: canonicalRequest(record(request), 0),
+      credential,
+      idempotency_key: mutation ? idempotency : null,
+    });
+  } catch (error) {
+    if (error instanceof PlatformSdkError) throw error;
+    throw invalidArgument();
+  }
+  const body = Buffer.from(text, "utf8");
+  if (body.length > MAX_ENVELOPE_BYTES) throw invalidArgument();
+  return body;
+}
+
+function freshRequestId(): string {
+  return (randomBytes(8).readBigUInt64BE(0) & ((1n << 63n) - 1n)).toString(10);
+}
+
+function canonicalRequest(value: unknown, depth: number): unknown {
+  if (depth > 64) throw invalidArgument();
+  if (value === null || typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    if (!wellFormedUtf16(value)) throw invalidArgument();
+    return value;
+  }
+  if (typeof value === "bigint") {
+    if (value < 0n || value > MAX_U64) throw invalidArgument();
+    return value.toString(10);
+  }
+  if (typeof value === "number") {
+    if (!Number.isSafeInteger(value)) throw invalidArgument();
+    return value;
+  }
+  if (Array.isArray(value)) return value.map((item) => canonicalRequest(item, depth + 1));
+  if (typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype) {
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      if (!wellFormedUtf16(key) || item === undefined) throw invalidArgument();
+      out[key] = canonicalRequest(item, depth + 1);
+    }
+    return out;
+  }
+  throw invalidArgument();
+}
+
+/** Decodes ApiSuccess or the established ApiError; an ambiguous mutation reply is unknown-outcome, never safe. */
+export function decodeAgentEnvelopeResponse(status: number, encoded: Buffer, mutation: boolean, sentRequestId: string): AgentEnvelopeSuccess {
+  const ambiguous = (requestId?: string): PlatformSdkError => mutation
+    ? new PlatformSdkError({ code: "unknown-outcome", retry: "unknown-outcome", ...(requestId === undefined ? {} : { requestId }) })
+    : decodeFailure(requestId);
+  let envelope: Readonly<Record<string, unknown>>;
+  try {
+    const parsed = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(encoded), (_key, value: unknown) => {
+      if (typeof value === "number" && !Number.isSafeInteger(value)) throw invalidArgument();
+      return value;
+    }) as unknown;
+    envelope = record(parsed);
+  } catch { throw ambiguous(); }
+  if ("class" in envelope) {
+    try { exactKeys(envelope, ["class", "protocol_result_code", "retriability", "reason", "request_id"]); }
+    catch { throw ambiguous(); }
+    if (envelope.request_id !== sentRequestId && envelope.request_id !== "0") throw ambiguous();
+    let refusal: PlatformSdkError;
+    try { refusal = serviceError(status, envelope); }
+    catch (error) {
+      throw mutation && error instanceof PlatformSdkError ? ambiguous(error.requestId) : error;
+    }
+    if (mutation && (envelope.class === "TransportFailure" || envelope.class === "Deadline")) {
+      throw ambiguous(refusal.requestId);
+    }
+    throw refusal;
+  }
+  const requestId = typeof envelope.request_id === "string" ? envelope.request_id : undefined;
+  try { exactKeys(envelope, ["request_id", "value", "verification_status"]); }
+  catch { throw ambiguous(requestId); }
+  if (status !== 200 || envelope.request_id !== sentRequestId) throw ambiguous(requestId);
+  const verification = envelope.verification_status;
+  if (!validVerificationStatus(verification)) {
+    throw new PlatformSdkError({ code: "verification-failure", retry: mutation ? "unknown-outcome" : "never", requestId: sentRequestId });
+  }
+  return Object.freeze({ request_id: sentRequestId, value: envelope.value, verification_status: verification });
+}
+
+function validVerificationStatus(value: unknown): boolean {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const status = value as Readonly<Record<string, unknown>>;
+  if (status.state === "achieved") {
+    return Object.keys(status).length === 2 && typeof status.level === "string" && VERIFICATION_LEVELS.has(status.level);
+  }
+  return status.state === "unverified" && Object.keys(status).length === 4
+    && typeof status.requested === "string" && VERIFICATION_LEVELS.has(status.requested)
+    && typeof status.achieved === "string" && VERIFICATION_LEVELS.has(status.achieved)
+    && typeof status.reason === "string" && /^[a-z0-9_.]{1,128}$/u.test(status.reason);
+}
+
+function exactU64(value: bigint | string): bigint {
+  if (typeof value === "string") {
+    if (!CANONICAL_DECIMAL.test(value)) throw invalidArgument();
+    value = BigInt(value);
+  }
+  if (typeof value !== "bigint" || value < 0n || value > MAX_U64) throw invalidArgument();
+  return value;
+}
+
+function wellFormedUtf16(value: string): boolean {
+  return !/[\uD800-\uDFFF]/u.test(value);
 }

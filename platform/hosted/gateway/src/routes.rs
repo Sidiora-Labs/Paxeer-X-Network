@@ -11,6 +11,9 @@ use zeroize::Zeroizing;
 
 const CATALOGUE: &str = include_str!("../../../../tools/paxeer-x/route-catalogue.json");
 const MAX_BINDINGS_BYTES: u64 = 1024 * 1024;
+const AGENT_RPC_PATH: &str = "/v1/agent/rpc";
+const AGENT_RPC_SERVICE: &str = "agentd";
+const AGENT_RPC_MAX_BODY: usize = 1_048_576;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -422,8 +425,12 @@ pub(super) fn route(config: &Config, request: &IncomingRequest) -> Option<Outgoi
             &document,
         ));
     }
+    if request.path == AGENT_RPC_PATH {
+        return Some(agent_rpc(config, request));
+    }
     let entry = catalogue()["routes"].as_array()?.iter().find(|r| {
         r["proxy"] == true
+            && r.get("upstream_path").is_none()
             && r["method"] == request.method
             && r["path"]
                 .as_str()
@@ -491,6 +498,92 @@ pub(super) fn route(config: &Config, request: &IncomingRequest) -> Option<Outgoi
             Err(_) => response(503, "upstream_unavailable", None),
         },
     )
+}
+
+fn agent_rpc_refusal(status: u16, reason: &str) -> OutgoingResponse {
+    json_response(
+        status,
+        &json!({
+            "class": "ProtocolIncompatibility",
+            "protocol_result_code": null,
+            "retriability": "Terminal",
+            "request_id": "0",
+            "reason": reason,
+        }),
+    )
+}
+
+fn agent_rpc(config: &Config, request: &IncomingRequest) -> OutgoingResponse {
+    let Some(entry) = catalogue()["routes"].as_array().and_then(|routes| {
+        routes.iter().find(|r| {
+            r["service"] == AGENT_RPC_SERVICE
+                && r["path"] == AGENT_RPC_PATH
+                && r["method"] == "POST"
+                && r["proxy"] == true
+                && r["authentication"] == "gateway-api-key"
+                && r["surface"] == "agent"
+                && r["tls"] == "mtls"
+        })
+    }) else {
+        return response(503, "route_unavailable", None);
+    };
+    let Some(upstream_path) = entry["upstream_path"]
+        .as_str()
+        .filter(|path| safe_path(path))
+    else {
+        return response(503, "invalid_upstream", None);
+    };
+    if request.method != "POST" {
+        return response(405, "method_not_allowed", None);
+    }
+    if private(AGENT_RPC_SERVICE) {
+        return response(403, "private_service", None);
+    }
+    if let Err(refusal) = authenticate_key(config, request) {
+        return refusal;
+    }
+    if request.headers.get("content-type").map(String::as_str) != Some("application/json") {
+        return response(415, "unsupported_media_type", None);
+    }
+    if request.body.len() > AGENT_RPC_MAX_BODY {
+        return agent_rpc_refusal(413, "envelope.oversized");
+    }
+    if !config.client_identity {
+        return response(503, "client_identity_required", None);
+    }
+    if let Err(reason) = config.routes.health(config, AGENT_RPC_SERVICE) {
+        return json_response(
+            503,
+            &json!({"error":{"code":"route_unavailable","service":AGENT_RPC_SERVICE,"reason":reason}}),
+        );
+    }
+    let Some(binding) = config.routes.bindings.get(AGENT_RPC_SERVICE) else {
+        return response(503, "route_unavailable", None);
+    };
+    let endpoint = match http::Endpoint::parse(&binding.url) {
+        Ok(endpoint) if endpoint.base_path.is_empty() => endpoint,
+        _ => return response(503, "invalid_upstream", None),
+    };
+    match config.client.request_forwarded(
+        &endpoint,
+        "",
+        &http::OutboundRequest {
+            method: "POST",
+            path: upstream_path,
+            idempotency: None,
+            content_type: "application/json",
+            body: &request.body,
+        },
+        &[],
+    ) {
+        Ok(reply) if reply.content_type == "application/json" => OutgoingResponse {
+            status: reply.status,
+            body: reply.body,
+            retry_after: None,
+        },
+        Ok(_) => response(502, "invalid_upstream_content_type", None),
+        Err(_) => response(503, "upstream_unavailable", None),
+    }
 }
 
 fn tunnel_bytes(

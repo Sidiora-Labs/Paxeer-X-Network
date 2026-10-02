@@ -1,6 +1,8 @@
 //! Non-authoritative `LayerX` agent daemon.
 
 pub mod admin;
+pub mod agent_rpc;
+pub mod agent_rpc_tls;
 pub mod approval;
 pub mod audit;
 pub mod authority;

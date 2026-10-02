@@ -64,6 +64,7 @@ struct Config {
     listen: SocketAddr,
     listener: Listener,
     client: Client,
+    client_identity: bool,
     kernel: Option<Kernel>,
     paxeer: Option<Vec<Endpoint>>,
     capabilities: capabilities::Cache,
@@ -1072,6 +1073,7 @@ fn config(event_producer: bool) -> Result<Config, String> {
         Some((kernel, identity)) => (Client::new(ca.clone(), identity), Some(kernel)),
         None => (Client::without_identity(ca.clone()), None),
     };
+    let client_identity = kernel.is_some();
     let idempotency_seconds = env::var("LAYERX_GATEWAY_IDEMPOTENCY_SECONDS")
         .unwrap_or_else(|_| "604800".to_owned())
         .parse::<u64>()
@@ -1088,6 +1090,7 @@ fn config(event_producer: bool) -> Result<Config, String> {
             .map_err(|_| "gateway listen address is invalid".to_owned())?,
         listener: listener_config()?,
         client,
+        client_identity,
         kernel,
         paxeer: paxeer::configured_endpoint()?,
         capabilities: capabilities::configured()?,

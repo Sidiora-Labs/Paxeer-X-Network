@@ -41,7 +41,53 @@ public final class HttpProductionTransport implements ProductionTransport {
             List.of("idempotency_key"), false),
         "program.activity", new ProgramRoute("GET", "/v1/programs/activities/{activity_id}",
             List.of("activity_id"), false));
+    private static final String AGENT_RPC_PATH = "/v1/agent/rpc";
+    private static final int MAXIMUM_AGENT_ENVELOPE_BYTES = 1_048_576;
+    private static final Set<String> AGENT_BOOTSTRAP_OPERATIONS = Set.of("agent.register", "session.open");
+    private static final Set<String> VERIFICATION_LEVELS = Set.of("Unverified", "SequencerSigned",
+        "BatchIncluded", "StateProven", "CheckpointFinalised", "SettlementAnchored");
+    private static final java.security.SecureRandom REQUEST_IDS = new java.security.SecureRandom();
     @FunctionalInterface public interface Credential { void apply(HttpRequest.Builder request); }
+
+    /** Tenant session coordinates authorized by the agent daemon's session control. */
+    public static final class AgentSessionCredential implements AutoCloseable {
+        private final String tenant;
+        private final String sessionId;
+        private final SecretBytes tokenId;
+        private final String generation;
+        public AgentSessionCredential(String tenant, String sessionId, SecretBytes tokenId, String generation) {
+            if (tenant == null || tenant.isEmpty() || tenant.indexOf('\0') >= 0
+                    || !StandardCharsets.UTF_8.newEncoder().canEncode(tenant)
+                    || tenant.getBytes(StandardCharsets.UTF_8).length > 255
+                    || !canonicalLowerHex(sessionId, 32)
+                    || !canonicalUnsigned(com.fasterxml.jackson.databind.node.TextNode.valueOf(generation), 64, false)) {
+                throw PlatformSdkException.invalidArgument();
+            }
+            this.tokenId = Objects.requireNonNull(tokenId, "tokenId");
+            tokenId.use(bytes -> {
+                if (!canonicalLowerHex(new String(bytes, StandardCharsets.US_ASCII), 32)) {
+                    throw PlatformSdkException.invalidArgument();
+                }
+                return null;
+            });
+            this.tenant = tenant;
+            this.sessionId = sessionId;
+            this.generation = generation;
+        }
+        public AgentSessionCredential(String tenant, String sessionId, SecretBytes tokenId, long unsignedGeneration) {
+            this(tenant, sessionId, tokenId, Long.toUnsignedString(unsignedGeneration));
+        }
+        private com.fasterxml.jackson.databind.node.ObjectNode encode(ObjectMapper mapper) {
+            var node = mapper.createObjectNode();
+            node.put("tenant", tenant);
+            node.put("session_id", sessionId);
+            tokenId.use(bytes -> node.put("token_id", new String(bytes, StandardCharsets.US_ASCII)));
+            node.put("generation", generation);
+            return node;
+        }
+        @Override public void close() { tokenId.close(); }
+        @Override public String toString() { return "[REDACTED]"; }
+    }
 
     public static final class BearerCredential implements Credential, AutoCloseable {
         private final SecretBytes token;
@@ -95,9 +141,16 @@ public final class HttpProductionTransport implements ProductionTransport {
     private final URI agentEndpoint;
     private final Duration timeout;
     private final Credential credential;
+    private final AgentSessionCredential session;
 
     public HttpProductionTransport(HttpClient client, ObjectMapper mapper, URI humanBaseUri,
                                    URI agentEndpoint, Duration timeout, Credential credential) {
+        this(client, mapper, humanBaseUri, agentEndpoint, timeout, credential, null);
+    }
+
+    public HttpProductionTransport(HttpClient client, ObjectMapper mapper, URI humanBaseUri,
+                                   URI agentEndpoint, Duration timeout, Credential credential,
+                                   AgentSessionCredential session) {
         this.client = Objects.requireNonNull(client, "client");
         if (client.followRedirects() != HttpClient.Redirect.NEVER) throw PlatformSdkException.invalidArgument();
         this.mapper = Objects.requireNonNull(mapper, "mapper");
@@ -106,6 +159,7 @@ public final class HttpProductionTransport implements ProductionTransport {
         this.timeout = Objects.requireNonNull(timeout, "timeout");
         if (timeout.isZero() || timeout.isNegative()) throw PlatformSdkException.invalidArgument();
         this.credential = credential;
+        this.session = session;
     }
 
     public static HttpProductionTransport create(URI humanBaseUri, URI agentEndpoint, Credential credential) {
@@ -113,13 +167,20 @@ public final class HttpProductionTransport implements ProductionTransport {
             new ObjectMapper(), humanBaseUri, agentEndpoint, Duration.ofSeconds(30), credential);
     }
 
+    public static HttpProductionTransport create(URI humanBaseUri, URI agentEndpoint, Credential credential,
+                                                 AgentSessionCredential session) {
+        return new HttpProductionTransport(HttpClient.newBuilder().version(HttpClient.Version.HTTP_2).build(),
+            new ObjectMapper(), humanBaseUri, agentEndpoint, Duration.ofSeconds(30), credential, session);
+    }
+
     @Override
     public <T> CompletionStage<T> call(Call call, JavaType responseType) {
         Objects.requireNonNull(call, "call");
         Objects.requireNonNull(responseType, "responseType");
+        if (call.operation().plane() == OperationCatalog.Plane.AGENT) return callAgent(call, responseType);
         HttpRequest request;
         try {
-            request = call.operation().plane() == OperationCatalog.Plane.HUMAN ? humanRequest(call) : agentRequest(call);
+            request = humanRequest(call);
         } catch (IOException error) {
             return CompletableFuture.failedFuture(new PlatformSdkException(
                 PlatformSdkException.Code.INVALID_ARGUMENT, PlatformSdkException.Retry.NEVER, null, null, null));
@@ -138,6 +199,44 @@ public final class HttpProductionTransport implements ProductionTransport {
                         PlatformSdkException.Retry.SAFE, null, null, null));
                 }
             });
+    }
+
+    private <T> CompletionStage<T> callAgent(Call call, JavaType responseType) {
+        boolean mutating = OperationCatalog.requiresIdempotency(call.operation());
+        String requestId = Long.toUnsignedString(REQUEST_IDS.nextLong());
+        final byte[] envelope;
+        final HttpRequest request;
+        try {
+            envelope = agentEnvelope(call, requestId, mutating);
+            request = agentRequest(envelope);
+        } catch (IOException error) {
+            return CompletableFuture.failedFuture(PlatformSdkException.invalidArgument());
+        } catch (PlatformSdkException error) {
+            return CompletableFuture.failedFuture(error);
+        }
+        final CompletableFuture<HttpResponse<java.io.InputStream>> pending;
+        try {
+            pending = client.sendAsync(request, HttpResponse.BodyHandlers.ofInputStream());
+        } catch (RuntimeException error) {
+            java.util.Arrays.fill(envelope, (byte) 0);
+            return CompletableFuture.failedFuture(agentTransportFailure(mutating));
+        }
+        return pending.handle((response, failure) -> {
+            java.util.Arrays.fill(envelope, (byte) 0);
+            if (failure != null) throw new CompletionException(agentTransportFailure(mutating));
+            try (var body = response.body()) {
+                byte[] encoded = body.readNBytes(MAXIMUM_RESPONSE_BYTES + 1);
+                if (encoded.length > MAXIMUM_RESPONSE_BYTES || !jsonContentType(response)) throw decodeFailure(null);
+                return decodeAgent(response.statusCode(), encoded, requestId, responseType);
+            } catch (IOException error) {
+                throw new CompletionException(agentTransportFailure(mutating));
+            } catch (PlatformSdkException error) {
+                if (mutating && error.code() == PlatformSdkException.Code.DECODE_FAILURE) {
+                    throw new CompletionException(unknownOutcome());
+                }
+                throw error;
+            }
+        });
     }
 
     @Override
@@ -191,11 +290,46 @@ public final class HttpProductionTransport implements ProductionTransport {
         return builder.build();
     }
 
-    private HttpRequest agentRequest(Call call) throws IOException {
+    private byte[] agentEnvelope(Call call, String requestId, boolean mutating) throws IOException {
+        String operation = call.operation().wireName();
+        OperationCatalog.requireKnown(OperationCatalog.Plane.AGENT, operation);
+        if (!call.pathParameters().values().isEmpty()) throw PlatformSdkException.invalidArgument();
+        if (mutating) {
+            if (call.idempotencyKey() == null) throw new PlatformSdkException(
+                PlatformSdkException.Code.IDEMPOTENCY_REQUIRED, PlatformSdkException.Retry.NEVER, null, null, null);
+            if (!canonicalLowerHex(call.idempotencyKey().value(), 32)) throw PlatformSdkException.invalidArgument();
+        } else if (call.idempotencyKey() != null) {
+            throw PlatformSdkException.invalidArgument();
+        }
+        boolean bootstrap = AGENT_BOOTSTRAP_OPERATIONS.contains(operation);
+        if (!bootstrap && session == null) throw new PlatformSdkException(
+            PlatformSdkException.Code.CAPABILITY_REFUSAL, PlatformSdkException.Retry.NEVER, null, null, null);
         var body = mapper.createObjectNode();
-        body.put("operation", call.operation().wireName());
+        body.put("version", 1);
+        body.put("request_id", requestId);
+        body.put("operation", operation);
         body.set("request", call.request());
-        return common(agentEndpoint, call).POST(jsonBody(body)).build();
+        if (bootstrap) body.putNull("credential");
+        else body.set("credential", session.encode(mapper));
+        if (mutating) body.put("idempotency_key", call.idempotencyKey().value());
+        else body.putNull("idempotency_key");
+        byte[] encoded = mapper.writeValueAsBytes(body);
+        body.removeAll();
+        if (encoded.length > MAXIMUM_AGENT_ENVELOPE_BYTES) {
+            java.util.Arrays.fill(encoded, (byte) 0);
+            throw PlatformSdkException.invalidArgument();
+        }
+        return encoded;
+    }
+
+    private HttpRequest agentRequest(byte[] envelope) {
+        if (credential instanceof ProgramsBearerCredential) throw new PlatformSdkException(
+            PlatformSdkException.Code.CAPABILITY_REFUSAL, PlatformSdkException.Retry.NEVER, null, null, null);
+        var builder = HttpRequest.newBuilder(rootEndpoint(agentEndpoint, AGENT_RPC_PATH)).timeout(timeout)
+            .header("Accept", "application/json").header("Content-Type", "application/json")
+            .header("User-Agent", "layerx-jvm/0.1.0");
+        if (credential != null) credential.apply(builder);
+        return builder.POST(HttpRequest.BodyPublishers.ofByteArray(envelope)).build();
     }
 
     HttpRequest programRequest(ProgramsCall call) throws IOException {
@@ -364,7 +498,6 @@ public final class HttpProductionTransport implements ProductionTransport {
                 throw new PlatformSdkException(PlatformSdkException.Code.DECODE_FAILURE,
                     PlatformSdkException.Retry.NEVER, null, null, null);
             }
-            if (plane == OperationCatalog.Plane.AGENT) return decodeAgent(status, envelope, type);
             String trace = envelope.path("trace").isTextual() ? envelope.path("trace").textValue() : null;
             if (!envelope.path("ok").isBoolean()) throw decodeFailure(trace);
             if (!envelope.path("ok").booleanValue()) throw serviceError(status, trace, envelope.path("error"), plane);
@@ -385,16 +518,52 @@ public final class HttpProductionTransport implements ProductionTransport {
         }
     }
 
-    private <T> T decodeAgent(int status, JsonNode envelope, JavaType type) {
-        if (envelope.has("class")) throw agentServiceError(envelope);
-        String requestId = envelope.path("request_id").asText("");
-        if (status < 200 || status >= 300 || requestId.isEmpty() || !envelope.has("value")
-                || !envelope.path("verification_status").isObject()) throw decodeFailure(requestId);
-        JsonNode value = envelope.get("value");
-        if (value instanceof com.fasterxml.jackson.databind.node.ObjectNode object) {
-            value = SchemaTypes.canonicalBody(object);
+    <T> T decodeAgent(int status, byte[] encoded, String requestId, JavaType type) {
+        try {
+            JsonNode envelope = mapper.readTree(encoded);
+            if (envelope == null || !envelope.isObject()) throw decodeFailure(null);
+            if (envelope.has("class")) {
+                if (status < 400 || status > 599 || !exactFields(envelope,
+                        "class", "protocol_result_code", "retriability", "request_id", "reason")) {
+                    throw decodeFailure(null);
+                }
+                String echoed = envelope.get("request_id").textValue();
+                if (!requestId.equals(echoed) && !"0".equals(echoed)) throw decodeFailure(null);
+                throw agentServiceError(envelope);
+            }
+            if (status != 200 || !exactFields(envelope, "request_id", "value", "verification_status")
+                    || !requestId.equals(envelope.get("request_id").textValue())
+                    || !validAgentVerification(envelope.get("verification_status"))) {
+                throw decodeFailure(null);
+            }
+            JsonNode value = envelope.get("value");
+            if (value instanceof com.fasterxml.jackson.databind.node.ObjectNode object) {
+                value = SchemaTypes.canonicalBody(object);
+            }
+            return mapper.convertValue(value, type);
+        } catch (PlatformSdkException error) {
+            throw error;
+        } catch (IOException | IllegalArgumentException error) {
+            throw decodeFailure(null);
         }
-        return mapper.convertValue(value, type);
+    }
+
+    private static boolean validAgentVerification(JsonNode verification) {
+        if (verification == null || !verification.isObject()) return false;
+        String state = verification.path("state").textValue();
+        if ("achieved".equals(state)) {
+            return exactFields(verification, "state", "level")
+                && VERIFICATION_LEVELS.contains(verification.path("level").textValue());
+        }
+        if (!"unverified".equals(state) || !exactFields(verification, "state", "requested", "achieved", "reason")
+                || !VERIFICATION_LEVELS.contains(verification.path("requested").textValue())
+                || !VERIFICATION_LEVELS.contains(verification.path("achieved").textValue())) return false;
+        try {
+            requiredText(verification.get("reason"));
+            return true;
+        } catch (IllegalArgumentException error) {
+            return false;
+        }
     }
 
     <T> T decodePrograms(String operation, int status, byte[] encoded, JavaType type) {
@@ -487,10 +656,12 @@ public final class HttpProductionTransport implements ProductionTransport {
         try {
             var exactClass = SchemaErrors.AgentClass.fromWire(error.path("class").asText(null));
             var exactRetry = SchemaErrors.AgentRetriability.fromWire(error.path("retriability").asText(null));
-            String requestId = error.path("request_id").asText("");
-            if (requestId.isEmpty() || !error.path("reason").isTextual()) throw new IllegalArgumentException();
+            String requestId = boundedTrace(error.get("request_id"));
+            if (requiredText(error.get("reason")).length() > 256) throw new IllegalArgumentException();
             JsonNode protocolResult = error.path("protocol_result_code");
-            if (!protocolResult.isNull() && !protocolResult.canConvertToInt()) throw new IllegalArgumentException();
+            if (!protocolResult.isNull() && !(protocolResult.isIntegralNumber() && protocolResult.canConvertToInt())) {
+                throw new IllegalArgumentException();
+            }
             Integer resultCode = protocolResult.isNull() ? null : protocolResult.intValue();
             PlatformSdkException.Retry retry = exactRetry == SchemaErrors.AgentRetriability.RETRIABLE
                 ? PlatformSdkException.Retry.SAFE : PlatformSdkException.Retry.NEVER;
@@ -650,6 +821,10 @@ public final class HttpProductionTransport implements ProductionTransport {
     }
     private static PlatformSdkException programTransportFailure(String operation) {
         return ("program.call".equals(operation) || ProgramLifecycleRoutes.ORDINALS.containsKey(operation)) ? unknownOutcome() : new PlatformSdkException(
+            PlatformSdkException.Code.TRANSPORT_FAILURE, PlatformSdkException.Retry.SAFE, null, null, null);
+    }
+    private static PlatformSdkException agentTransportFailure(boolean mutating) {
+        return mutating ? unknownOutcome() : new PlatformSdkException(
             PlatformSdkException.Code.TRANSPORT_FAILURE, PlatformSdkException.Retry.SAFE, null, null, null);
     }
     private static PlatformSdkException programDecodeFailure(String operation, String requestId) {
