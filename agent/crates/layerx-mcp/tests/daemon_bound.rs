@@ -142,6 +142,7 @@ fn enrol_scopes(root: &Path, scopes: BTreeSet<String>) -> [u8; 32] {
         authority: ProtocolAuthority::CapabilityGrant(capability.id.0),
         permitted_activity_types: BTreeSet::from([7]),
         scopes,
+        expiry_seconds: None,
         expiry_sequence: 300,
         opening_client: "mcp".to_owned(),
         policy_version: "policy-v1".to_owned(),

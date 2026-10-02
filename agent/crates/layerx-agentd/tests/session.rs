@@ -63,6 +63,7 @@ fn request(id: u8, tenant_id: TenantId, agent: Did) -> OpenRequest {
         permitted_activity_types: BTreeSet::from([7_u16, 9]),
         scopes: BTreeSet::from(["prepare".to_owned(), "read".to_owned()]),
         expiry_sequence: 100,
+        expiry_seconds: None,
         opening_client: "sdk-rust".to_owned(),
         policy_version: "policy-v3".to_owned(),
     }

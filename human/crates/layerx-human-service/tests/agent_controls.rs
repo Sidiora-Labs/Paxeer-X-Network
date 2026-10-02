@@ -242,6 +242,7 @@ impl AgentSessionContract for RealAgentLayer {
                     .collect::<BTreeSet<_>>(),
                 scopes: scopes.into_iter().collect(),
                 expiry_sequence: issued.expires_at,
+                expiry_seconds: None,
                 opening_client: "layerx-human-service".to_owned(),
                 policy_version,
             },

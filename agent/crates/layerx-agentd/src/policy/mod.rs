@@ -10,11 +10,13 @@ mod versioning;
 
 pub use dry_run_evaluation::{DryRunResult, EvaluationMode, ExplanationDecodeError};
 pub use eval::{
-    EvaluationFailure, EvaluationInput, PolicyRequest, PolicySet, Rule, RuleConstraints,
-    RuleEffect, RuleMatcher, SequenceWindow,
+    AmountBound, CapabilityView, CapabilityViewRefusal, Effect, EmptyPurpose, EvaluationFailure,
+    EvaluationInput, ExpiryBound, PolicyIntentRequest, PolicyRequest, PolicySet, Purpose,
+    PurposeText, RateBound, Rule, RuleConstraints, RuleEffect, RuleMatcher, SequenceWindow,
 };
 pub use operation::{
-    dry_run_request_id, dry_run_with_context, load_tenant_registries, PolicyDryRunRefusal,
+    dry_run_intent_request_id, dry_run_intent_with_context, dry_run_request_id,
+    dry_run_with_context, load_tenant_registries, PolicyDryRunRefusal,
     PolicyLoadError, TenantPolicyRegistries, VerifiedPolicyContext,
 };
 pub use versioning::{

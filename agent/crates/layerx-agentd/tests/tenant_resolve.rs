@@ -55,6 +55,7 @@ impl Fixture {
                 permitted_activity_types: BTreeSet::from([7]),
                 scopes,
                 expiry_sequence: 100,
+                expiry_seconds: None,
                 opening_client: "tenant-resolve-suite".to_owned(),
                 policy_version: "policy-v1".to_owned(),
             },

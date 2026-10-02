@@ -75,6 +75,7 @@ pub fn budget_state_context(
         balance,
         state_digest,
         observed_head_sequence,
+        purpose_hash: record.purpose_hash,
     })
 }
 

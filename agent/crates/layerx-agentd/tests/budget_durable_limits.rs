@@ -407,6 +407,7 @@ fn opened_session(store: &mut Store, sessions: &mut SessionRegistry) -> Token {
                 permitted_activity_types: BTreeSet::from([5]),
                 scopes: BTreeSet::from(["prepare".to_owned(), "write".to_owned()]),
                 expiry_sequence: HEAD_SEQUENCE_BOUND,
+                expiry_seconds: None,
                 opening_client: "budget-suite".to_owned(),
                 policy_version: "policy-v1".to_owned(),
             },

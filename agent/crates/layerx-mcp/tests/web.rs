@@ -1435,6 +1435,7 @@ fn enrol(root: &Path) -> (Store, SessionRegistry, SessionCredential, CapabilityI
                 "write:web:content".to_owned(),
             ]),
             expiry_sequence: 150,
+            expiry_seconds: None,
             opening_client: "mcp".to_owned(),
             policy_version: "policy-v1".to_owned(),
         },

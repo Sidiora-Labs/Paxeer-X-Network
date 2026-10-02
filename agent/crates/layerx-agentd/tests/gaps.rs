@@ -185,6 +185,7 @@ fn authorized_subscriptions(
                 permitted_activity_types: BTreeSet::from([9]),
                 scopes: BTreeSet::from(["subscribe".to_owned()]),
                 expiry_sequence: 100,
+                expiry_seconds: None,
                 opening_client: "gap-suite".to_owned(),
                 policy_version: "policy-v1".to_owned(),
             },

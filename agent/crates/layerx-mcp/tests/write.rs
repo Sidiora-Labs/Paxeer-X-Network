@@ -93,6 +93,7 @@ fn server(root: &std::path::Path) -> (Server, SessionControl, TenantId) {
             permitted_activity_types: BTreeSet::from([7]),
             scopes: BTreeSet::from(["write:submit".to_owned(), "write:track".to_owned()]),
             expiry_sequence: 150,
+            expiry_seconds: None,
             opening_client: "mcp".to_owned(),
             policy_version: "policy-v1".to_owned(),
         },

@@ -214,6 +214,7 @@ impl AgentSessionContract for AuthorityLayer {
                     .collect(),
                 scopes: scopes.into_iter().collect(),
                 expiry_sequence: issued.expires_at,
+                expiry_seconds: None,
                 opening_client: "layerx-human-service".to_owned(),
                 policy_version,
             },

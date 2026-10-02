@@ -145,6 +145,7 @@ fn pay2_mcp_context(spec: Pay2McpSpec<'_>) -> Pay2McpContext {
         permitted_activity_types: BTreeSet::from([spec.ordinal]),
         scopes: BTreeSet::from([spec.scope.to_owned()]),
         expiry_sequence: spec.current_sequence.saturating_add(100),
+        expiry_seconds: None,
         opening_client: "pay2-funded-qualification".to_owned(),
         policy_version: "pay2-funded-v1".to_owned(),
     };

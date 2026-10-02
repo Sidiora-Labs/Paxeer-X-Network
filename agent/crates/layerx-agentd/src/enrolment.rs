@@ -675,6 +675,7 @@ pub fn enrol(
         permitted_activity_types: request.permitted_activity_types,
         scopes: request.scopes,
         expiry_sequence: request.expiry_sequence,
+        expiry_seconds: None,
         opening_client: request.opening_client,
         policy_version: request.policy_version,
     };

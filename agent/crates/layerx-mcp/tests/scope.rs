@@ -156,6 +156,7 @@ fn records(scopes: &[&str]) -> (SessionRecord, Capability) {
             permitted_activity_types: BTreeSet::from([7]),
             scopes: scopes.iter().map(|scope| (*scope).to_owned()).collect(),
             expiry_sequence: 150,
+            expiry_seconds: None,
             opening_client: "mcp".to_owned(),
             policy_version: "policy-v1".to_owned(),
         },

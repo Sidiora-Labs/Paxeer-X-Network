@@ -71,6 +71,7 @@ fn open_session(
         permitted_activity_types: BTreeSet::from([7]),
         scopes: BTreeSet::from(["prepare".to_owned()]),
         expiry_sequence: 100,
+        expiry_seconds: None,
         opening_client: "sdk".to_owned(),
         policy_version: "v1".to_owned(),
     };

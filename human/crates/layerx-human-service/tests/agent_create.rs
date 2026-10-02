@@ -340,6 +340,7 @@ impl AgentCreationContract for InProcessAgentLayer {
                 .collect(),
             scopes: request.daemon_scopes.iter().cloned().collect(),
             expiry_sequence: request.expires_at,
+            expiry_seconds: None,
             opening_client: "layerx-human-service".to_owned(),
             policy_version: "operator-policy-2026-08".to_owned(),
         };

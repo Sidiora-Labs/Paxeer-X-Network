@@ -38,6 +38,7 @@ fn session(version: &str) -> SessionRecord {
             authority: ProtocolAuthority::SessionKey([1; 32]),
             permitted_activity_types: BTreeSet::from([7]),
             scopes: BTreeSet::from(["prepare".to_owned()]),
+            expiry_seconds: None,
             expiry_sequence: 200,
             opening_client: "version-test".to_owned(),
             policy_version: version.to_owned(),
