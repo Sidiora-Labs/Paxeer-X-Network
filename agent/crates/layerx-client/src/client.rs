@@ -200,6 +200,56 @@ pub struct Client {
 }
 
 impl Client {
+    pub fn start_caps_discovery<'a>(
+        &'a mut self,
+        did: [u8; 32],
+        requested: VerificationLevel,
+        correlation_id: u64,
+        authorization: SequencerAuthorization,
+        history: Option<&'a crate::handover::SequencerHistory>,
+    ) -> Result<crate::caps::CapsDiscovery<'a>, crate::caps::CapsError> {
+        if !self.handshake.capabilities().contains(Capability::CapsDiscovery) {
+            return Err(crate::caps::CapsError::Unavailable);
+        }
+        let limits = self.config.limits;
+        if limits.maximum_frame_bytes < crate::caps::CAPS_REQUEST_BYTES + 22 {
+            return Err(crate::caps::CapsError::Bounds);
+        }
+        let page_bytes = limits.maximum_frame_bytes
+            .checked_sub(crate::caps::CAPS_RESPONSE_HEADER_BYTES + 22)
+            .filter(|bytes| *bytes > 0)
+            .ok_or(crate::caps::CapsError::Bounds)?
+            .min(crate::caps::MAX_CAPS_PAGE_BYTES);
+        let page_bytes = u32::try_from(page_bytes).map_err(|_| crate::caps::CapsError::Bounds)?;
+        let context = self.read_context(requested, correlation_id, authorization);
+        let transport = self.transport.as_mut()
+            .ok_or(crate::caps::CapsError::Transport(TransportError::PeerShutdown))?;
+        crate::caps::CapsDiscovery::begin(transport, self.handshake.capabilities(), context,
+            did, page_bytes, limits.deadline, history)
+    }
+
+    pub fn caps_discovery(
+        &mut self,
+        did: [u8; 32],
+        requested: VerificationLevel,
+        correlation_id: u64,
+        authorization: SequencerAuthorization,
+        history: Option<&crate::handover::SequencerHistory>,
+    ) -> Result<crate::evidence::VerifiedCaps, crate::caps::CapsError> {
+        let mut discovery = self.start_caps_discovery(did, requested, correlation_id,
+            authorization, history)?;
+        loop {
+            match discovery.advance() {
+                crate::caps::CapsProgress::Incomplete { .. } => {}
+                crate::caps::CapsProgress::Complete(caps) | crate::caps::CapsProgress::Empty(caps) => {
+                    return Ok(caps);
+                }
+                crate::caps::CapsProgress::Refused(error) => return Err(error),
+                crate::caps::CapsProgress::Unavailable => return Err(crate::caps::CapsError::Unavailable),
+            }
+        }
+    }
+
     /// Reads an account using authenticated historical term authority.
     ///
     /// # Errors
