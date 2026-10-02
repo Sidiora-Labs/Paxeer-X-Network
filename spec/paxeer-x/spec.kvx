@@ -23799,7 +23799,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.26.1]
 title = "Build the market-maker ramp kit and reference ramp"
-status = "pending"
+status = "in_progress"
 mode = "QUALIFY"
 wave = 2
 requires = ["0.2"]
@@ -24932,7 +24932,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.111.4.7]
 title = "Load-test the deployed attestor network once"
-status = "pending"
+status = "in_progress"
 mode = "RELEASE"
 wave = 2
 requires = ["0.2"]
