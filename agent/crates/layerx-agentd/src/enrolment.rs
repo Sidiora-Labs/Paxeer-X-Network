@@ -741,23 +741,64 @@ pub fn enrol_with_verified_expiry(
     enrolment: VerifiedExpiryEnrolment,
     publisher: &BindingPublisher,
 ) -> Result<PublishedBinding, EnrolmentError> {
-    let VerifiedExpiryEnrolment { request, expiry } = enrolment;
-    if &expiry.tenant != identity.tenant()
-        || &expiry.agent != identity.did()
-        || expiry.capability_id != request.capability_id
-    {
-        return Err(EnrolmentError::Session(SessionError::IdentityMismatch));
-    }
-    let expiry_seconds = crate::human_runtime::owner_expiry_seconds(expiry.not_after_ms)
-        .map_err(|_| EnrolmentError::Session(SessionError::MissingField("expiry_seconds")))?;
+    let expiry_seconds = verified_floor_seconds(identity.tenant(), identity.did(), &enrolment)?;
     open_and_publish(
         store,
         sessions,
         identity,
-        request,
+        enrolment.request,
         publisher,
         Some(expiry_seconds),
     )
+}
+
+/// Advertises the verified native grant's not-after instant, in whole unix seconds rounded down,
+/// on the already enrolled capability-grant session of `enrolment`'s request when that session
+/// was enrolled without a public time expiry. The binding document carries no time expiry, so
+/// only the durable session record changes.
+///
+/// # Errors
+///
+/// Returns `Session(IdentityMismatch)` when the verified bound belongs to another tenant, agent
+/// or grant, when the enrolled session belongs to another agent or grant, or when it already
+/// advertises a public expiry, `Session(MissingField("expiry_seconds"))` for a bound below one
+/// second, `Session(NotFound)` for a session that was never enrolled, and every refusal
+/// `session::amend_public_expiry` returns.
+pub fn republish_with_verified_expiry(
+    store: &mut Store,
+    sessions: &mut SessionRegistry,
+    tenant: &TenantId,
+    agent: &layerx_types::ids::Did,
+    enrolment: VerifiedExpiryEnrolment,
+) -> Result<(), EnrolmentError> {
+    let expiry_seconds = verified_floor_seconds(tenant, agent, &enrolment)?;
+    let request = enrolment.request;
+    let enrolled = sessions
+        .get(tenant, request.session_id)
+        .ok_or(EnrolmentError::Session(SessionError::NotFound))?;
+    if &enrolled.request.agent != agent
+        || enrolled.request.authority != ProtocolAuthority::CapabilityGrant(request.capability_id.0)
+    {
+        return Err(EnrolmentError::Session(SessionError::IdentityMismatch));
+    }
+    session::amend_public_expiry(store, sessions, tenant, request.session_id, expiry_seconds)
+        .map_err(EnrolmentError::Session)
+}
+
+fn verified_floor_seconds(
+    tenant: &TenantId,
+    agent: &layerx_types::ids::Did,
+    enrolment: &VerifiedExpiryEnrolment,
+) -> Result<u64, EnrolmentError> {
+    let expiry = &enrolment.expiry;
+    if &expiry.tenant != tenant
+        || &expiry.agent != agent
+        || expiry.capability_id != enrolment.request.capability_id
+    {
+        return Err(EnrolmentError::Session(SessionError::IdentityMismatch));
+    }
+    crate::human_runtime::owner_expiry_seconds(expiry.not_after_ms)
+        .map_err(|_| EnrolmentError::Session(SessionError::MissingField("expiry_seconds")))
 }
 
 fn open_and_publish(
@@ -1165,6 +1206,113 @@ mod verified_expiry_tests {
             .unwrap_or_else(|| panic!("enrolled session"));
         assert_eq!(record.request.expiry_seconds, None);
         assert_eq!(record.request.expiry_sequence, 300);
+        drop(store);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn later_verified_install_republishes_absent_expiry_once() {
+        let root = directory("republish");
+        let (mut store, identity, publisher) = records(&root);
+        let mut sessions = SessionRegistry::default();
+        must(enrol(
+            &mut store,
+            &mut sessions,
+            &identity,
+            request(),
+            &publisher,
+        ));
+        must(super::republish_with_verified_expiry(
+            &mut store,
+            &mut sessions,
+            &tenant(),
+            &agent(),
+            VerifiedExpiryEnrolment::new(request(), expiry(10_000_999)),
+        ));
+        let record = sessions
+            .get(&tenant(), SESSION)
+            .unwrap_or_else(|| panic!("republished session"));
+        assert_eq!(record.request.expiry_seconds, Some(10_000));
+        assert_eq!(record.request.expiry_sequence, 300);
+        let mut restored = SessionRegistry::default();
+        must(restored.restore_tenant(&store, &tenant()));
+        assert_eq!(
+            restored
+                .get(&tenant(), SESSION)
+                .map(|record| record.request.expiry_seconds),
+            Some(Some(10_000))
+        );
+        let second = super::republish_with_verified_expiry(
+            &mut store,
+            &mut sessions,
+            &tenant(),
+            &agent(),
+            VerifiedExpiryEnrolment::new(request(), expiry(20_000_000)),
+        );
+        assert!(matches!(
+            second,
+            Err(EnrolmentError::Session(SessionError::IdentityMismatch))
+        ));
+        drop(store);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn republish_refuses_mismatched_sub_second_or_unenrolled_carriers() {
+        let root = directory("republish-refused");
+        let (mut store, identity, publisher) = records(&root);
+        let mut sessions = SessionRegistry::default();
+        let unenrolled = super::republish_with_verified_expiry(
+            &mut store,
+            &mut sessions,
+            &tenant(),
+            &agent(),
+            VerifiedExpiryEnrolment::new(request(), expiry(10_000_000)),
+        );
+        assert!(matches!(
+            unenrolled,
+            Err(EnrolmentError::Session(SessionError::NotFound))
+        ));
+        must(enrol(
+            &mut store,
+            &mut sessions,
+            &identity,
+            request(),
+            &publisher,
+        ));
+        let other_grant = super::republish_with_verified_expiry(
+            &mut store,
+            &mut sessions,
+            &tenant(),
+            &agent(),
+            VerifiedExpiryEnrolment::new(
+                request(),
+                VerifiedGrantExpiry::verified(tenant(), agent(), CapabilityId([8; 32]), 10_000_000),
+            ),
+        );
+        assert!(matches!(
+            other_grant,
+            Err(EnrolmentError::Session(SessionError::IdentityMismatch))
+        ));
+        let sub_second = super::republish_with_verified_expiry(
+            &mut store,
+            &mut sessions,
+            &tenant(),
+            &agent(),
+            VerifiedExpiryEnrolment::new(request(), expiry(999)),
+        );
+        assert!(matches!(
+            sub_second,
+            Err(EnrolmentError::Session(SessionError::MissingField(
+                "expiry_seconds"
+            )))
+        ));
+        assert_eq!(
+            sessions
+                .get(&tenant(), SESSION)
+                .map(|record| record.request.expiry_seconds),
+            Some(None)
+        );
         drop(store);
         let _ = std::fs::remove_dir_all(root);
     }

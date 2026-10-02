@@ -348,7 +348,7 @@ fn publish_mcp_binding(
     shared_store: &Arc<Mutex<Store>>,
     store_path: &Path,
     boot: McpBoot,
-) -> Result<(), String> {
+) -> Result<(EnrolmentRequest, Did, HumanPeer), String> {
     let McpBoot {
         surface,
         enrolment: configured,
@@ -367,6 +367,24 @@ fn publish_mcp_binding(
     let observation = authority
         .core_identity(&peer, &configured.did)
         .map_err(|error| format!("the MCP agent identity is unverified: {error:?}"))?;
+    let capability_id = configured.request.capability_id;
+    let verified = if layerx_agentd::human_runtime::has_completed_capability_install(
+        shared_store,
+        &tenant_id,
+        capability_id,
+    )
+    .map_err(|error| format!("the MCP capability install record is unreadable: {error:?}"))?
+    {
+        Some(
+            authority
+                .verified_enrolment_expiry(shared_store, &peer, &configured.did, capability_id)
+                .map_err(|error| {
+                    format!("the MCP capability grant expiry is unverified: {error:?}")
+                })?,
+        )
+    } else {
+        None
+    };
     let publisher = BindingPublisher::new(
         configured.root,
         store_path.to_path_buf(),
@@ -395,27 +413,43 @@ fn publish_mcp_binding(
     sessions
         .restore_tenant(&store, &tenant_id)
         .map_err(|error| format!("the agent sessions are unrestorable: {error:?}"))?;
-    let session_id = configured.request.session_id;
-    if sessions.get(&tenant_id, session_id).is_some() {
+    let request = configured.request;
+    let republish = (request.clone(), identity.did().clone(), peer);
+    let session_id = request.session_id;
+    if let Some(existing) = sessions.get(&tenant_id, session_id) {
+        let advertised = existing.request.expiry_seconds.is_some();
         let bound_session = enrolment::published_session(&publisher.binding_path())
             .map_err(|error| format!("the published MCP binding is unusable: {error}"))?;
-        if bound_session == Some(session_id) {
-            return Ok(());
+        if bound_session != Some(session_id) {
+            return Err(
+                "LAYERX_AGENT_MCP_SESSION_ID names an open session without its binding document"
+                    .to_owned(),
+            );
         }
-        return Err(
-            "LAYERX_AGENT_MCP_SESSION_ID names an open session without its binding document"
-                .to_owned(),
-        );
+        if let (Some(expiry), false) = (verified, advertised) {
+            enrolment::republish_with_verified_expiry(
+                &mut store,
+                &mut sessions,
+                &tenant_id,
+                identity.did(),
+                enrolment::VerifiedExpiryEnrolment::new(request, expiry),
+            )
+            .map_err(|error| format!("MCP expiry republication failed: {error}"))?;
+        }
+        return Ok(republish);
     }
-    enrolment::enrol(
-        &mut store,
-        &mut sessions,
-        &identity,
-        configured.request,
-        &publisher,
-    )
+    match verified {
+        Some(expiry) => enrolment::enrol_with_verified_expiry(
+            &mut store,
+            &mut sessions,
+            &identity,
+            enrolment::VerifiedExpiryEnrolment::new(request, expiry),
+            &publisher,
+        ),
+        None => enrolment::enrol(&mut store, &mut sessions, &identity, request, &publisher),
+    }
     .map_err(|error| format!("MCP enrolment failed: {error}"))?;
-    Ok(())
+    Ok(republish)
 }
 
 fn human_lni_limits(deadline: Duration) -> Result<Limits, String> {
@@ -567,8 +601,15 @@ fn start_shared_owner(
         Arc::new(Mutex::new(Store::open(&store_path).map_err(|error| {
             format!("human store is unavailable: {error}")
         })?));
+    let mut mcp_republish = None;
     if let Some(boot) = mcp {
-        publish_mcp_binding(&mut authority, &peers, &shared_store, &store_path, boot)?;
+        mcp_republish = Some(publish_mcp_binding(
+            &mut authority,
+            &peers,
+            &shared_store,
+            &store_path,
+            boot,
+        )?);
     }
     let mut operations = ProductionHumanOperations::new(
         authority,
@@ -616,6 +657,7 @@ fn start_shared_owner(
     )
     .map_err(|error| format!("human owner is invalid: {error:?}"))?;
     unified.programs = programs;
+    unified.mcp_enrolment = mcp_republish;
     let owner = SharedAgentOwner::new(unified);
     let server = HumanUnixServer::bind(
         HumanListenerConfig {

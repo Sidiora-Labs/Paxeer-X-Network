@@ -315,6 +315,20 @@ pub trait HumanAuthorityBoundary {
         did: &Did,
         recovery: bool,
     ) -> Result<CoreKeyPolicy, HumanOperationError>;
+    /// Verifies `agent`'s completed native capability grant `capability_id` for the peer's
+    /// tenant and returns its verified not-after instant as the carrier
+    /// `enrolment::republish_with_verified_expiry` admits.
+    ///
+    /// # Errors
+    /// Refuses a peer tenant that is not a tenant id, a grant without exactly one durably
+    /// completed install, and a grant scope or identity the authority does not verify.
+    fn verified_enrolment_expiry(
+        &mut self,
+        shared_store: &Arc<Mutex<Store>>,
+        peer: &HumanPeer,
+        agent: &Did,
+        capability_id: CapabilityId,
+    ) -> Result<crate::enrolment::VerifiedGrantExpiry, HumanOperationError>;
 }
 pub(crate) fn lxgs2_grant_window(
     summary: &[u8],
@@ -1115,6 +1129,21 @@ impl HumanAuthorityBoundary for RemoteHumanAuthority {
         }
         Ok(state)
     }
+
+    fn verified_enrolment_expiry(
+        &mut self,
+        shared_store: &Arc<Mutex<Store>>,
+        peer: &HumanPeer,
+        agent: &Did,
+        capability_id: CapabilityId,
+    ) -> Result<crate::enrolment::VerifiedGrantExpiry, HumanOperationError> {
+        let tenant =
+            TenantId::new(peer.tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
+        if !has_completed_capability_install(shared_store, &tenant, capability_id)? {
+            return Err(HumanOperationError::Refused);
+        }
+        verify_enrolment_expiry(self, shared_store, peer, agent, capability_id)
+    }
 }
 
 /// Concrete production path. Prepared bytes remain key-free; externally
@@ -1311,6 +1340,9 @@ pub struct UnifiedAgentOwner<A> {
     pub degraded: Controller,
 
     capabilities: BTreeMap<TenantId, crate::capability::CapabilityGraph>,
+    /// The MCP enrolment request, agent and peer the daemon published at boot, so a later
+    /// completed capability install can advertise its verified grant expiry on that session.
+    pub mcp_enrolment: Option<(crate::enrolment::EnrolmentRequest, Did, HumanPeer)>,
 }
 
 fn session_id_hex(text: &str) -> Option<[u8; 32]> {
@@ -2275,6 +2307,7 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
             degraded: Controller::default(),
 
             capabilities: BTreeMap::new(),
+            mcp_enrolment: None,
         })
     }
 
@@ -3595,12 +3628,60 @@ impl<A: HumanAuthorityBoundary> HumanOperations for UnifiedAgentOwner<A> {
         peer: &HumanPeer,
         request: HumanCapabilityInstall,
     ) -> Result<HumanResponse, HumanOperationError> {
-        install_capability(
+        let response = install_capability(
             &mut self.lock_operations()?.authority,
             &self.store,
             peer,
             &request,
+        )?;
+        let Some((enrolment, agent, mcp_peer)) = self.mcp_enrolment.clone() else {
+            return Ok(response);
+        };
+        if peer.tenant != mcp_peer.tenant
+            || request.capability_id != enrolment.capability_id.0
+            || request.agent.as_bytes() != agent.as_bytes()
+        {
+            return Ok(response);
+        }
+        let tenant =
+            TenantId::new(peer.tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
+        let pending = self
+            .sessions
+            .read()
+            .map_err(|_| HumanOperationError::Unavailable)?
+            .get(&tenant, enrolment.session_id)
+            .is_some_and(|record| record.open && record.request.expiry_seconds.is_none());
+        if !pending
+            || !has_completed_capability_install(&self.store, &tenant, enrolment.capability_id)?
+        {
+            return Ok(response);
+        }
+        let expiry = self
+            .lock_operations()?
+            .authority
+            .verified_enrolment_expiry(&self.store, &mcp_peer, &agent, enrolment.capability_id)?;
+        let mut sessions = self
+            .sessions
+            .write()
+            .map_err(|_| HumanOperationError::Unavailable)?;
+        let mut store = self
+            .store
+            .lock()
+            .map_err(|_| HumanOperationError::Unavailable)?;
+        crate::enrolment::republish_with_verified_expiry(
+            &mut store,
+            &mut sessions,
+            &tenant,
+            &agent,
+            crate::enrolment::VerifiedExpiryEnrolment::new(enrolment, expiry),
         )
+        .map_err(|error| match error {
+            crate::enrolment::EnrolmentError::Session(session::SessionError::Store(_)) => {
+                HumanOperationError::Unavailable
+            }
+            _ => HumanOperationError::Refused,
+        })?;
+        Ok(response)
     }
     fn agent_lifecycle_publish(
         &mut self,
@@ -10057,6 +10138,30 @@ fn capability_grant_action_key(
     tenant: &TenantId,
     grant_id: &[u8; 32],
 ) -> Result<[u8; 32], HumanOperationError> {
+    completed_capability_action(shared_store, tenant, grant_id)?.ok_or(HumanOperationError::Refused)
+}
+/// Whether exactly one completed Human capability install of `capability_id` is durably
+/// recorded for `tenant` (`human-capability-action-v1:` records, layout of
+/// `install_capability`).
+///
+/// # Errors
+///
+/// Refuses more than one completed install of the grant; returns `Unavailable` when the store
+/// cannot be read or an install record is malformed.
+pub fn has_completed_capability_install(
+    shared_store: &Arc<Mutex<Store>>,
+    tenant: &TenantId,
+    capability_id: CapabilityId,
+) -> Result<bool, HumanOperationError> {
+    Ok(completed_capability_action(shared_store, tenant, &capability_id.0)?.is_some())
+}
+/// The action key of the completed Human capability install of `grant_id`, or none when no
+/// install of it completed. More than one is refused; a malformed record is Unavailable.
+fn completed_capability_action(
+    shared_store: &Arc<Mutex<Store>>,
+    tenant: &TenantId,
+    grant_id: &[u8; 32],
+) -> Result<Option<[u8; 32]>, HumanOperationError> {
     const PREFIX: &[u8] = b"human-capability-action-v1:";
     let store = shared_store
         .lock()
@@ -10085,7 +10190,7 @@ fn capability_grant_action_key(
             _ => return Err(HumanOperationError::Unavailable),
         }
     }
-    found.ok_or(HumanOperationError::Refused)
+    Ok(found)
 }
 /// One record in the layout the agent RPC decoders accept. Asset and counterparty core ids
 /// are emitted as strict lowercase 64-hex text; state is revoked whenever the revoked tag is
@@ -11248,6 +11353,69 @@ fn validate_capability<A: HumanAuthorityBoundary>(
 #[cfg(test)]
 #[path = "outbound_tls/tests.rs"]
 mod outbound_tls_tests;
+
+#[cfg(test)]
+mod enrolment_expiry_boundary_tests {
+    use openssl::asn1::Asn1Time;
+    use openssl::hash::MessageDigest;
+    use openssl::pkey::PKey;
+    use openssl::rsa::Rsa;
+    use openssl::x509::{X509NameBuilder, X509};
+
+    use super::*;
+
+    fn must<T, E: std::fmt::Debug>(value: Result<T, E>) -> T {
+        value.unwrap_or_else(|error| panic!("enrolment expiry boundary: {error:?}"))
+    }
+
+    fn ca_der() -> Vec<u8> {
+        let key = must(PKey::from_rsa(must(Rsa::generate(2048))));
+        let mut name = must(X509NameBuilder::new());
+        must(name.append_entry_by_text("CN", "LayerX test CA"));
+        let name = name.build();
+        let mut cert = must(X509::builder());
+        must(cert.set_version(2));
+        must(cert.set_subject_name(&name));
+        must(cert.set_issuer_name(&name));
+        must(cert.set_pubkey(&key));
+        must(cert.set_not_before(&must(Asn1Time::days_from_now(0))));
+        must(cert.set_not_after(&must(Asn1Time::days_from_now(1))));
+        must(cert.sign(&key, MessageDigest::sha256()));
+        must(cert.build().to_der())
+    }
+
+    #[test]
+    fn remote_boundary_refuses_a_grant_without_a_completed_install_for_the_tenant() {
+        let root = std::env::temp_dir().join(format!(
+            "lxp-enrolment-expiry-boundary-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let store = Arc::new(Mutex::new(must(Store::open(root.join("store")))));
+        let mut authority = must(RemoteHumanAuthority::connect(
+            "https://127.0.0.1:9",
+            "a".repeat(32),
+            Duration::from_secs(1),
+            1024,
+            &ca_der(),
+        ));
+        let peer = HumanPeer {
+            subject: None,
+            uid: 1000,
+            principal: "operator".to_owned(),
+            tenant: "tenant-a".to_owned(),
+        };
+        let agent = must(Did::new(b"did:layerx:model"));
+        for grant in [CapabilityId([8; 32]), CapabilityId([9; 32])] {
+            assert!(matches!(
+                authority.verified_enrolment_expiry(&store, &peer, &agent, grant),
+                Err(HumanOperationError::Refused)
+            ));
+        }
+        drop(store);
+        let _ = std::fs::remove_dir_all(root);
+    }
+}
 
 #[cfg(test)]
 mod legacy_policy_purpose_tests {

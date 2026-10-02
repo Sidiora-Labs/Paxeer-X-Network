@@ -553,6 +553,43 @@ pub fn open(
     Ok(token)
 }
 
+/// Advertises a verified public expiry on one open session that was enrolled without one.
+///
+/// # Errors
+///
+/// Returns `MissingField` for a zero expiry, `NotFound` for a session the registry never held,
+/// `AlreadyClosed` for a closed session, `IdentityMismatch` when the session already advertises a
+/// public expiry, or `Store` when the amended record cannot be persisted; the registry is left
+/// untouched unless the record persisted.
+pub fn amend_public_expiry(
+    store: &mut Store,
+    registry: &mut SessionRegistry,
+    tenant: &TenantId,
+    session_id: SessionId,
+    expiry_seconds: u64,
+) -> Result<(), SessionError> {
+    if expiry_seconds == 0 {
+        return Err(SessionError::MissingField("expiry_seconds"));
+    }
+    let session_ref = SessionRef::new(tenant.clone(), session_id);
+    let existing = registry
+        .records
+        .get(&session_ref)
+        .cloned()
+        .ok_or(SessionError::NotFound)?;
+    if !existing.open {
+        return Err(SessionError::AlreadyClosed);
+    }
+    if existing.request.expiry_seconds.is_some() {
+        return Err(SessionError::IdentityMismatch);
+    }
+    let mut amended = existing;
+    amended.request.expiry_seconds = Some(expiry_seconds);
+    persist_record(store, &amended)?;
+    registry.replace(&session_ref, amended);
+    Ok(())
+}
+
 /// Closes exactly one session without disturbing any sibling state.
 ///
 /// # Errors
@@ -1167,5 +1204,78 @@ mod tests {
         let missing = Err(SessionError::MissingField("expiry_seconds"));
         assert_eq!(record(None).public_expiry_within(0), missing);
         assert_eq!(record(Some(u64::MAX)).public_expiry_within(0), missing);
+    }
+
+    fn amend_fixture(name: &str) -> (std::path::PathBuf, Store, SessionRegistry) {
+        let root =
+            std::env::temp_dir().join(format!("lxp-amend-expiry-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let mut store = must(Store::open(root.join("store")));
+        let original = record(None);
+        must(persist_record(&mut store, &original));
+        let mut registry = SessionRegistry::default();
+        registry.records.insert(
+            SessionRef::new(tenant(), original.request.session_id),
+            original,
+        );
+        (root, store, registry)
+    }
+
+    #[test]
+    fn amend_moves_absent_public_expiry_to_present_once() {
+        let (root, mut store, mut registry) = amend_fixture("once");
+        must(amend_public_expiry(
+            &mut store,
+            &mut registry,
+            &tenant(),
+            SessionId([1; 32]),
+            1_900_000_000,
+        ));
+        let amended = registry
+            .get(&tenant(), SessionId([1; 32]))
+            .unwrap_or_else(|| panic!("amended session"));
+        assert_eq!(amended.request.expiry_seconds, Some(1_900_000_000));
+        assert_eq!(amended.request.expiry_sequence, 100);
+        let mut restored = SessionRegistry::default();
+        must(restored.restore_tenant(&store, &tenant()));
+        assert_eq!(
+            restored
+                .get(&tenant(), SessionId([1; 32]))
+                .map(|record| record.request.expiry_seconds),
+            Some(Some(1_900_000_000))
+        );
+        assert_eq!(
+            amend_public_expiry(
+                &mut store,
+                &mut registry,
+                &tenant(),
+                SessionId([1; 32]),
+                1_900_000_001,
+            ),
+            Err(SessionError::IdentityMismatch)
+        );
+        drop(store);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn amend_refuses_zero_and_unknown_sessions() {
+        let (root, mut store, mut registry) = amend_fixture("refused");
+        assert_eq!(
+            amend_public_expiry(&mut store, &mut registry, &tenant(), SessionId([1; 32]), 0),
+            Err(SessionError::MissingField("expiry_seconds"))
+        );
+        assert_eq!(
+            amend_public_expiry(&mut store, &mut registry, &tenant(), SessionId([9; 32]), 7),
+            Err(SessionError::NotFound)
+        );
+        assert_eq!(
+            registry
+                .get(&tenant(), SessionId([1; 32]))
+                .map(|record| record.request.expiry_seconds),
+            Some(None)
+        );
+        drop(store);
+        let _ = std::fs::remove_dir_all(root);
     }
 }
