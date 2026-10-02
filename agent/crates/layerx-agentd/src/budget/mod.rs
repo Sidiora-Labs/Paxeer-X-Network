@@ -8,9 +8,10 @@ mod daemon;
 mod divergence_reporting;
 mod mutate;
 mod program_sources;
+pub mod program_settlement;
 pub use program_sources::{
     read_program_budget_sources, ProgramSourceError, ResolvedProgramCharge,
-    ResolvedProgramSource, VerifiedResolvedProgramCharges,
+    ResolvedProgramSource, VerifiedResolvedProgramCharges, VerifiedProgramBudgetAllocations,
 };
 #[path = "hold.rs"]
 mod recovery;
@@ -43,6 +44,7 @@ pub use reservations::{
     LimitId, LimitRefusal, LimitScope, ReleaseKind, ReservationRequest, StagedRelease,
     ProgramLimitDenomination, ProgramChargeKind, ProgramBudgetCharge, ProgramReservationRequest,
     ProgramBudgetHold, ProgramBudgetReservation, StagedProgramReservation,
+    ProgramBudgetAllocation, StagedProgramSettlement,
 };
 
 const ENROLMENT_PREFIX: &[u8] = b"budget/enrolment/limit/";
@@ -863,6 +865,7 @@ pub fn program_consumption_updates(
     record: &ProgramBudgetReservation,
 ) -> Result<Vec<(crate::store::TenantKey, Vec<u8>)>, DaemonLimitError> {
     record.validate()?;
+    if record.allocations().is_some() { return Err(DaemonLimitError::Invalid); }
     let mut holds = Vec::new();
     for hold in &record.holds {
         let denomination = match store.get(&enrolment_index_key(tenant, hold.reservation.limit_id)?) {
@@ -881,6 +884,108 @@ pub fn program_consumption_updates(
         holds.push(hold.reservation.clone());
     }
     consumption_updates(store, tenant, &holds)
+}
+
+pub fn program_allocation_charge_limits(
+    store: &crate::store::Store,
+    tenant: &crate::store::TenantId,
+    verified: &[LimitConfig],
+    presented: &[LimitScope],
+    charge: &ResolvedProgramCharge,
+) -> Result<Vec<LimitId>, DaemonLimitError> {
+    if charge.source.account() == [0; 32] || charge.asset == [0; 32] {
+        return Err(DaemonLimitError::Invalid);
+    }
+    let mut limits = Vec::new();
+    for config in verified {
+        let hit = match config.scope {
+            LimitScope::Tenant(_) => true,
+            LimitScope::Counterparty(account) => charge.destination == Some(account),
+            _ => presented.contains(&config.scope),
+        };
+        if !hit { continue; }
+        let stable_id = enrolment_limit_id(tenant, &config.scope, &config.id);
+        let record = stored_enrolment(store, tenant, stable_id)?.ok_or(DaemonLimitError::Unknown)?;
+        if record.ceiling != config.ceiling || record.scope != config.scope || record.enrolment != config.id
+            || record.successor.is_some() || !enrolment_indexed(store, tenant, record.limit_id, stable_id)?
+        { return Err(DaemonLimitError::Corrupt); }
+        let denomination = stored_program_denomination(store, tenant, stable_id)?
+            .ok_or(DaemonLimitError::AmbiguousDenomination)?;
+        if denomination.matches(charge.source.account(), charge.asset) { limits.push(record.limit_id); }
+    }
+    limits.sort_unstable(); limits.dedup();
+    Ok(limits)
+}
+
+fn program_settlement_key(tenant: &crate::store::TenantId, reservation_id: [u8; 32])
+    -> Result<crate::store::TenantKey, DaemonLimitError>
+{
+    let mut id = b"budget/program/settlement/v1/".to_vec(); id.extend(reservation_id);
+    Ok(crate::store::TenantKey::new(tenant.clone(), crate::store::ObjectKind::Configuration, id)?)
+}
+
+pub(crate) fn program_settlement_recorded(
+    store: &crate::store::Store, tenant: &crate::store::TenantId, id: [u8; 32],
+) -> Result<bool, DaemonLimitError> {
+    let key = program_settlement_key(tenant, id)?;
+    match store.get(&key) {
+        None => Ok(false),
+        Some(value) if value.class() == crate::store::StorageClass::LocalOnly => Ok(true),
+        Some(_) => Err(DaemonLimitError::Corrupt),
+    }
+}
+
+fn validate_program_settlement_limits(
+    store: &crate::store::Store, tenant: &crate::store::TenantId, stage: &StagedProgramSettlement<'_>,
+) -> Result<(), DaemonLimitError> {
+    let mut dynamic = None;
+    for (id, scope, ceiling, consumed, denomination) in stage.expected_limits() {
+        if let Some(index) = store.get(&enrolment_index_key(tenant, *id)?) {
+            let stable_id = index.bytes().try_into().map_err(|_| DaemonLimitError::Corrupt)?;
+            if let Some(record) = stored_enrolment(store, tenant, stable_id)? {
+                if record.limit_id != *id || record.scope != *scope || record.ceiling != *ceiling
+                    || record.consumed != *consumed
+                    || stored_program_denomination(store, tenant, stable_id)? != Some(*denomination)
+                { return Err(DaemonLimitError::Conflict); }
+                continue;
+            }
+        }
+        if dynamic.is_none() { dynamic = Some(daemon_limits(store, tenant)?); }
+        let record = dynamic.as_ref().and_then(|records| records.iter().find(|record| record.limit_id == *id))
+            .ok_or(DaemonLimitError::Unknown)?;
+        if LimitScope::Agent(record.agent_digest) != *scope || record.ceiling != *ceiling
+            || record.consumed != *consumed || daemon::program_denomination(store, tenant, *id)? != *denomination
+        { return Err(DaemonLimitError::Conflict); }
+    }
+    Ok(())
+}
+
+impl BudgetLimiter {
+    pub fn stage_program_settlement(
+        &self, store: &crate::store::Store, tenant: &crate::store::TenantId,
+        record: &ProgramBudgetReservation,
+        witness: &program_settlement::VerifiedProgramDebitSettlement,
+    ) -> Result<StagedProgramSettlement<'_>, DaemonLimitError> {
+        let key = program_settlement_key(tenant, record.id)?;
+        let previous = store.get(&key);
+        if previous.is_some_and(|value| value.class() != crate::store::StorageClass::LocalOnly) {
+            return Err(DaemonLimitError::Corrupt);
+        }
+        let staged = self.stage_program_settlement_inner(record, witness, previous.map(|value| value.bytes()))?;
+        finish_program_settlement_stage(store, tenant, key, staged)
+    }
+}
+
+fn finish_program_settlement_stage<'a>(
+    store: &crate::store::Store, tenant: &crate::store::TenantId, key: crate::store::TenantKey,
+    mut staged: StagedProgramSettlement<'a>,
+) -> Result<StagedProgramSettlement<'a>, DaemonLimitError> {
+    if staged.replayed() { return Ok(staged); }
+    validate_program_settlement_limits(store, tenant, &staged)?;
+    let updates = consumption_updates(store, tenant, staged.actual_holds())?;
+    let inserts = vec![(key, staged.marker().to_vec())];
+    staged.set_writes(updates, inserts);
+    Ok(staged)
 }
 
 #[cfg(test)]

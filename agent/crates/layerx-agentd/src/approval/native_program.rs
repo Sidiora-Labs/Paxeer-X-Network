@@ -44,6 +44,28 @@ pub(crate) struct NativeProgramApprovalCarrier {
     terminal: Option<NativeTerminal>,
 }
 
+pub(crate) struct VerifiedUnsignedProgramCancellation {
+    reservation_id: [u8; 32],
+    reservation_digest: [u8; 32],
+    core_now: crate::budget::CoreTimestampMs,
+}
+
+impl VerifiedUnsignedProgramCancellation {
+    pub(crate) const fn reservation_id(&self) -> [u8; 32] { self.reservation_id }
+    pub(crate) const fn reservation_digest(&self) -> [u8; 32] { self.reservation_digest }
+    pub(crate) const fn core_now(&self) -> crate::budget::CoreTimestampMs { self.core_now }
+}
+
+pub(crate) struct VerifiedUnsignedProgramRejection {
+    reservation_id: [u8; 32],
+    reservation_digest: [u8; 32],
+}
+
+impl VerifiedUnsignedProgramRejection {
+    pub(crate) const fn reservation_id(&self) -> [u8; 32] { self.reservation_id }
+    pub(crate) const fn reservation_digest(&self) -> [u8; 32] { self.reservation_digest }
+}
+
 impl NativeProgramApprovalCarrier {
     pub(crate) fn bind(
         context: &RpcOwnerContext<'_>,
@@ -300,24 +322,20 @@ impl NativeProgramApprovalCarrier {
         Ok(pending.activity_id.is_none() && pending.committed.is_none())
     }
 
-    pub(crate) fn expire_unsigned(
-        store: &mut Store,
-        budgets: &crate::budget::BudgetLimiter,
+    fn verified_unsigned_material(
+        &self,
+        store: &Store,
         lifecycle: &crate::prepare::PreparationLifecycle,
         tenant: &TenantId,
-        id: [u8; 32],
-        observation: &crate::protocol_evidence::AuthenticatedCoreTime,
         registry: &layerx_types::payload::ModuleRegistry,
         network_id: u32,
-    ) -> Result<Option<Self>, CarrierError> {
-        let mut held = Self::read_retained(store, tenant, id)?;
-        let sequence = observation.through_sequence();
-        let core_ms = observation.observed_core_ms();
-        if sequence < held.created_at_sequence { return Err(CarrierError::Binding); }
-        if !held.expired_at(sequence, core_ms) || !held.unsigned_admission(store, tenant)? { return Ok(None); }
+    ) -> Result<Option<(TenantKey, crate::prepare::DurablePreparation, ProgramBudgetReservation)>, CarrierError> {
+        if !self.unsigned_admission(store, tenant)? { return Ok(None); }
+        let held = self;
+        let id = self.preparation;
         let durable_key = crate::prepare::DurablePreparation::store_key(tenant, id).map_err(|_| CarrierError::Corrupt)?;
         let raw = store.get(&durable_key).ok_or(CarrierError::Missing)?;
-        let mut durable = crate::prepare::DurablePreparation::decode(tenant.clone(), raw.bytes())
+        let durable = crate::prepare::DurablePreparation::decode(tenant.clone(), raw.bytes())
             .map_err(|_| CarrierError::Corrupt)?;
         let signed = durable.signed_bytes().map_err(|_| CarrierError::Corrupt)?;
         if durable.state != crate::prepare::LifecycleState::Prepared || durable.activity_id.is_some() || signed.is_some() {
@@ -341,6 +359,39 @@ impl NativeProgramApprovalCarrier {
             || !durable.holds.is_empty()
             || lifecycle.state(id).map_err(|_| CarrierError::Corrupt)? != crate::prepare::LifecycleState::Prepared
         { return Err(CarrierError::Binding); }
+        if durable.extensions.get(&crate::prepare::EXTENSION_IDEMPOTENCY).map(Vec::as_slice)
+            != Some(prepared.audit.idempotency_key.as_slice())
+            || durable.extensions.contains_key(&crate::prepare::EXTENSION_OUTCOME)
+        { return Err(CarrierError::Binding); }
+        let outbox_key = TenantKey::new(tenant.clone(), ObjectKind::Outbox,
+            prepared.audit.idempotency_key.to_vec()).map_err(|_| CarrierError::Corrupt)?;
+        let signed_key = TenantKey::new(tenant.clone(), ObjectKind::PreparedActivity,
+            prepared.audit.idempotency_key.to_vec()).map_err(|_| CarrierError::Corrupt)?;
+        if store.get(&outbox_key).is_some() || store.get(&signed_key).is_some()
+            || crate::budget::program_settlement_recorded(store, tenant, id).map_err(|_| CarrierError::Budget)?
+        { return Err(CarrierError::Binding); }
+        let reservation = held.budget()?;
+        Ok(Some((durable_key, durable, reservation)))
+    }
+
+    pub(crate) fn expire_unsigned(
+        store: &mut Store,
+        budgets: &crate::budget::BudgetLimiter,
+        lifecycle: &crate::prepare::PreparationLifecycle,
+        tenant: &TenantId,
+        id: [u8; 32],
+        observation: &crate::protocol_evidence::AuthenticatedCoreTime,
+        registry: &layerx_types::payload::ModuleRegistry,
+        network_id: u32,
+    ) -> Result<Option<Self>, CarrierError> {
+        let mut held = Self::read_retained(store, tenant, id)?;
+        let sequence = observation.through_sequence();
+        let core_ms = observation.observed_core_ms();
+        if sequence < held.created_at_sequence { return Err(CarrierError::Binding); }
+        if !held.expired_at(sequence, core_ms) { return Ok(None); }
+        let Some((durable_key, mut durable, reservation)) =
+            held.verified_unsigned_material(store, lifecycle, tenant, registry, network_id)?
+        else { return Ok(None); };
         let mut digest = Sha256::new();
         digest.update(b"layerx/native-program-expiry/v1\0");
         digest.update(id);
@@ -354,7 +405,16 @@ impl NativeProgramApprovalCarrier {
         } else {
             crate::budget::ReleaseKind::Failed
         };
-        let staged = crate::budget::stage_release(budgets, id, kind, sequence).map_err(|_| CarrierError::Budget)?;
+        let staged = if kind == crate::budget::ReleaseKind::Failed && reservation.allocations().is_some() {
+            let proof = VerifiedUnsignedProgramCancellation {
+                reservation_id: id,
+                reservation_digest: reservation.settlement_binding().map_err(|_| CarrierError::Budget)?,
+                core_now: crate::budget::CoreTimestampMs(core_ms),
+            };
+            budgets.stage_program_unsigned_cancellation(&reservation, &proof)
+        } else {
+            crate::budget::stage_release(budgets, id, kind, sequence)
+        }.map_err(|_| CarrierError::Budget)?;
         let (carrier_key, carrier_bytes) = held.companion()?;
         store.apply_program_approval_batch(
             vec![(carrier_key, carrier_bytes), (durable_key, durable.encode().map_err(|_| CarrierError::Corrupt)?)],
@@ -402,7 +462,18 @@ impl NativeProgramApprovalCarrier {
             return Err(CarrierError::Binding);
         }
         if held.state != NativeApprovalState::Awaiting { return Err(CarrierError::Binding); }
-        if !grant && !held.unsigned_admission(store, &context.principal().tenant)? { return Err(CarrierError::Binding); }
+        let rejection = if grant {
+            None
+        } else {
+            if context.peer().uid == 0 || context.peer().subject.is_none()
+                || context.peer().tenant != context.principal().tenant.as_str()
+                || context.peer().principal.is_empty() || origin.generation == 0
+                || origin.session.tenant != context.principal().tenant
+                || origin.session.session_id != context.principal().session_id
+            { return Err(CarrierError::Binding); }
+            Some(held.verified_unsigned_material(store, lifecycle, &context.principal().tenant, registry, network_id)?
+                .ok_or(CarrierError::Binding)?)
+        };
         held.state = if grant { NativeApprovalState::Granted } else { NativeApprovalState::Rejected };
         let submission_ref = if held.state == NativeApprovalState::Granted {
             let mut digest = Sha256::new(); digest.update(b"layerx/native-program-release/v1\0");
@@ -416,20 +487,22 @@ impl NativeProgramApprovalCarrier {
                 .map_err(|_| CarrierError::Corrupt)?;
         } else {
             let tenant = &context.principal().tenant;
-            let durable_key = crate::prepare::DurablePreparation::store_key(tenant, id).map_err(|_| CarrierError::Corrupt)?;
-            let raw = store.get(&durable_key).ok_or(CarrierError::Missing)?;
-            let mut durable = crate::prepare::DurablePreparation::decode(tenant.clone(), raw.bytes()).map_err(|_| CarrierError::Corrupt)?;
-            if durable.state != crate::prepare::LifecycleState::Prepared || durable.activity_id.is_some()
-                || durable.signed_bytes().map_err(|_| CarrierError::Corrupt)?.is_some()
-                || pending_native_uses(store, tenant)?.into_iter().any(|record| record.preparation == id && (record.activity_id.is_some() || record.committed.is_some()))
-            { return Err(CarrierError::Binding); }
+            let (durable_key, mut durable, reservation) = rejection.ok_or(CarrierError::Binding)?;
             durable.state = crate::prepare::LifecycleState::Failed;
-            let staged = crate::budget::stage_release(budgets, id,
-                crate::budget::ReleaseKind::Failed, sequence)
-                .map_err(|_| CarrierError::Budget)?;
+            let staged = if reservation.allocations().is_some() {
+                let proof = VerifiedUnsignedProgramRejection {
+                    reservation_id: id,
+                    reservation_digest: reservation.settlement_binding().map_err(|_| CarrierError::Budget)?,
+                };
+                budgets.stage_program_unsigned_rejection(&reservation, &proof)
+            } else {
+                crate::budget::stage_release(budgets, id, crate::budget::ReleaseKind::Failed, sequence)
+            }.map_err(|_| CarrierError::Budget)?;
             store.apply_program_approval_batch(vec![(carrier_key, carrier_bytes), (durable_key, durable.encode().map_err(|_| CarrierError::Corrupt)?)],
                 Vec::new(), vec![native_rate_key(tenant, id)?]).map_err(|_| CarrierError::Corrupt)?;
-            staged.publish();
+            let _ = staged.publish();
+            lifecycle.invalidate_preparations(&std::collections::BTreeSet::from([id]), sequence, budgets)
+                .map_err(|_| CarrierError::Corrupt)?;
         }
         Ok(held)
     }

@@ -89,12 +89,75 @@ impl VerifiedResolvedProgramCharges {
             && self.preparation_digest == <[u8; 32]>::from(Sha256::digest(&prepared.canonical_bytes))
     }
 
+    pub fn budget_allocations(
+        &self,
+        applicable: impl FnMut(&ResolvedProgramCharge) -> Result<Vec<super::LimitId>, super::DaemonLimitError>,
+    ) -> Result<VerifiedProgramBudgetAllocations, super::DaemonLimitError> {
+        let allocations = budget_allocation_rows(&self.charges, applicable)?;
+        let charges = super::reservations::allocation_charges(&allocations)?;
+        Ok(VerifiedProgramBudgetAllocations { actor: self.actor, state_root: self.state_root,
+            batch_number: self.batch_number, global_sequence: self.global_sequence,
+            preparation_digest: self.preparation_digest, allocations, charges })
+    }
+
     pub fn budget_charges(
         &self,
         applicable: impl FnMut(&ResolvedProgramCharge) -> Result<Vec<super::LimitId>, super::DaemonLimitError>,
     ) -> Result<Vec<super::ProgramBudgetCharge>, super::DaemonLimitError> {
         budget_charge_rows(&self.charges, applicable)
     }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VerifiedProgramBudgetAllocations {
+    actor: [u8; 32],
+    state_root: [u8; 32],
+    batch_number: u64,
+    global_sequence: u64,
+    preparation_digest: [u8; 32],
+    allocations: Vec<super::ProgramBudgetAllocation>,
+    charges: Vec<super::ProgramBudgetCharge>,
+}
+
+impl VerifiedProgramBudgetAllocations {
+    #[must_use]
+    pub const fn actor(&self) -> [u8; 32] { self.actor }
+    #[must_use]
+    pub const fn state_root(&self) -> [u8; 32] { self.state_root }
+    #[must_use]
+    pub const fn batch_number(&self) -> u64 { self.batch_number }
+    #[must_use]
+    pub const fn global_sequence(&self) -> u64 { self.global_sequence }
+    #[must_use]
+    pub const fn preparation_digest(&self) -> [u8; 32] { self.preparation_digest }
+    #[must_use]
+    pub fn allocations(&self) -> &[super::ProgramBudgetAllocation] { &self.allocations }
+    #[must_use]
+    pub fn charges(&self) -> &[super::ProgramBudgetCharge] { &self.charges }
+}
+
+fn budget_allocation_rows(
+    charges: &[ResolvedProgramCharge],
+    mut applicable: impl FnMut(&ResolvedProgramCharge) -> Result<Vec<super::LimitId>, super::DaemonLimitError>,
+) -> Result<Vec<super::ProgramBudgetAllocation>, super::DaemonLimitError> {
+    let mut rows: BTreeMap<_, super::ProgramBudgetAllocation> = BTreeMap::new();
+    for charge in charges {
+        let mut limits = applicable(charge)?;
+        limits.sort_unstable(); limits.dedup();
+        if limits.is_empty() { return Err(super::DaemonLimitError::AmbiguousDenomination); }
+        let key = (charge.asset, charge.source.account(), charge.source.kind(), charge.destination);
+        if let Some(row) = rows.get_mut(&key) {
+            if row.applicable_limits != limits { return Err(super::DaemonLimitError::Conflict); }
+            row.maximum_amount = row.maximum_amount.checked_add(charge.maximum_amount)
+                .ok_or(super::DaemonLimitError::Arithmetic)?;
+        } else {
+            rows.insert(key, super::ProgramBudgetAllocation { kind: charge.source.kind(), source: charge.source.account(),
+                asset: charge.asset, destination: charge.destination, maximum_amount: charge.maximum_amount, applicable_limits: limits });
+        }
+    }
+    let rows: Vec<_> = rows.into_values().collect();
+    super::reservations::allocation_charges(&rows)?;
+    Ok(rows)
 }
 
 fn budget_charge_rows(
@@ -353,4 +416,25 @@ mod tests {
         assert_eq!(charges.iter().find(|row|row.applicable_limits.len()==2).map(|row|row.amount),Some(20));
         assert!(budget_charge_rows(&rows,|_|Ok(Vec::new())).is_err());
     }
+    #[test]
+    fn program_allocations_keep_destinations_when_grouped_hold_limits_are_identical() {
+        let row = |destination, amount| ResolvedProgramCharge {
+            source: ResolvedProgramSource::Principal { account: [1; 32] },
+            asset: [2; 32], destination: Some(destination), maximum_amount: amount,
+        };
+        let input = vec![row([3;32],7),row([4;32],11),row([3;32],2)];
+        let rows = must(budget_allocation_rows(&input, |_| Ok(vec![super::super::LimitId([5;16])])));
+        assert_eq!(rows.len(),2);
+        assert_eq!(rows[0].destination,Some([3;32]));assert_eq!(rows[0].maximum_amount,9);
+        assert_eq!(rows[1].destination,Some([4;32]));assert_eq!(rows[1].maximum_amount,11);
+        let grouped = must(super::super::reservations::allocation_charges(&rows));
+        assert_eq!(grouped.len(),1);assert_eq!(grouped[0].amount,20);
+        let mut ordinal = 0_u8;
+        assert!(budget_allocation_rows(&input, |_| {
+            ordinal += 1; Ok(vec![super::super::LimitId([ordinal;16])])
+        }).is_err());
+        assert!(budget_allocation_rows(&[row([3;32],u128::MAX),row([4;32],1)],
+            |_|Ok(vec![super::super::LimitId([5;16])])).is_err());
+    }
+
 }

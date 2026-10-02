@@ -1927,6 +1927,94 @@ struct TenantRecoveryContext<'a> {
     current_sequence: u64,
 }
 
+struct NativeProgramSettlementContext<'a> {
+    programs: Option<&'a crate::ops::program::ProgramOperations>,
+    budgets: &'a BudgetLimiter,
+}
+
+fn native_settlement_preparation(
+    store: &Store,
+    tenant: &TenantId,
+    idempotency_key: [u8; 32],
+) -> Result<Option<[u8; 32]>, HumanOperationError> {
+    use crate::prepare::{DurablePreparation, EXTENSION_IDEMPOTENCY};
+    let mut matched = None;
+    for id in DurablePreparation::recorded_ids(store, tenant).map_err(|_| HumanOperationError::Refused)? {
+        let key = DurablePreparation::store_key(tenant, id).map_err(|_| HumanOperationError::Refused)?;
+        let stored = store.get(&key).ok_or(HumanOperationError::Refused)?;
+        if stored.class() != StorageClass::LocalOnly { return Err(HumanOperationError::Refused); }
+        let record = DurablePreparation::decode(tenant.clone(), stored.bytes()).map_err(|_| HumanOperationError::Refused)?;
+        if record.preparation_id != id { return Err(HumanOperationError::Refused); }
+        if record.extensions.get(&EXTENSION_IDEMPOTENCY).map(Vec::as_slice) != Some(idempotency_key.as_slice()) {
+            continue;
+        }
+        if matched.is_some() { return Err(HumanOperationError::Refused); }
+        let native = record.extensions.contains_key(&6) || record.extensions.contains_key(&7);
+        if native && (!record.extensions.contains_key(&6) || !record.extensions.contains_key(&7)) {
+            return Err(HumanOperationError::Refused);
+        }
+        matched = Some((id, native));
+    }
+    Ok(matched.and_then(|(id, native)| native.then_some(id)))
+}
+
+fn settle_retained_native_program_call(
+    programs: &crate::ops::program::ProgramOperations,
+    registry: &layerx_types::payload::ModuleRegistry,
+    budgets: &BudgetLimiter,
+    store: &mut Store,
+    tenant: &TenantId,
+    preparation_id: [u8; 32],
+    terminal: &crate::protocol_evidence::VerifiedReceiptEvidence,
+    authority: &AuthorizedBatch,
+) -> Result<bool, HumanOperationError> {
+    use crate::prepare::{DurablePreparation, LifecycleState};
+    let refused = || HumanOperationError::Refused;
+    let key = DurablePreparation::store_key(tenant, preparation_id).map_err(|_| refused())?;
+    let stored = store.get(&key).ok_or_else(refused)?;
+    if stored.class() != crate::store::StorageClass::LocalOnly { return Err(refused()); }
+    let mut durable = DurablePreparation::decode(tenant.clone(), stored.bytes()).map_err(|_| refused())?;
+    if durable.preparation_id != preparation_id || durable.activity_id != Some(terminal.activity_id()) {
+        return Err(refused());
+    }
+    let state = if terminal.result_code() == 0 { LifecycleState::Executed } else { LifecycleState::Failed };
+    if durable.terminal() {
+        if durable.state != state || durable.extensions.get(&9).map(Vec::as_slice) != Some(terminal.receipt_ref().as_slice()) {
+            return Err(refused());
+        }
+        return Ok(false);
+    }
+    let carrier = crate::approval::native_program::NativeProgramApprovalCarrier::retained_for_tenant(store, tenant)
+        .map_err(|_| refused())?.into_iter().find(|held| held.preparation_id() == preparation_id)
+        .ok_or_else(refused)?;
+    let prepared = carrier.restore_prepared(registry).map_err(|_| refused())?;
+    let layerx_types::activity::Authority::Owner(public_key) = prepared.envelope.authority() else { return Err(refused()); };
+    let public_key: [u8; 32] = public_key.as_ref().try_into().map_err(|_| refused())?;
+    let signed = durable.signed_bytes().map_err(|_| refused())?.ok_or_else(refused)?;
+    let submission = crate::sign::verify_before_submit(&signed, &prepared, &public_key, registry).map_err(|_| refused())?;
+    let (reservation, witness) = crate::budget::program_settlement::read_retained_program_debit_settlement(
+        programs, registry, &prepared, &submission, terminal, authority, store, tenant,
+    ).map_err(|_| refused())?;
+    if witness.reservation_id() != preparation_id || witness.activity_id() != terminal.activity_id()
+        || witness.terminal_receipt() != terminal.receipt_ref() {
+        return Err(refused());
+    }
+    let staged = budgets.stage_program_settlement(store, tenant, &reservation, &witness).map_err(|_| refused())?;
+    if staged.replayed() { return Err(refused()); }
+    durable.state = state;
+    durable.drop_signed_bytes();
+    durable.extensions.insert(9, terminal.receipt_ref().to_vec());
+    let mut updates = staged.updates().to_vec();
+    updates.push((key, durable.encode().map_err(|_| refused())?));
+    if let Some(update) = crate::approval::native_program::native_rate_receipt_update(store, tenant, terminal)
+        .map_err(|_| refused())? {
+        updates.push(update);
+    }
+    store.apply_program_approval_batch(updates, staged.inserts().to_vec(), Vec::new())
+        .map_err(|_| HumanOperationError::Unavailable)?;
+    Ok(staged.publish())
+}
+
 fn settle_terminal_submission(
     outbox: &mut Outbox,
     store: &mut Store,
@@ -3128,20 +3216,20 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
                 if !matches!(lifecycle.state(preparation_id), Err(crate::prepare::LifecycleError::NotFound)) { return Err(refused()); }
                 let actor = std::str::from_utf8(prepared.envelope.actor_did().as_bytes()).map_err(|_| refused())?;
                 let agent_digest = daemon_limit_agent(actor);
-                let charges = resolved.budget_charges(|charge| {
-                    let mut limits = crate::budget::program_enrolment_charge_limits(store, &context.principal().tenant,
-                        &self.verified_limits, &prepared.disclosure,
+                let allocations = resolved.budget_allocations(|charge| {
+                    let mut limits = crate::budget::program_allocation_charge_limits(store, &context.principal().tenant,
+                        &self.verified_limits,
                         &[crate::budget::LimitScope::Agent(agent_digest), crate::budget::LimitScope::Session(session.session_id().0)],
-                        charge.source.account(), charge.asset)?;
+                        charge)?;
                     limits.extend(crate::budget::applicable_daemon_limits(store, &context.principal().tenant,
                         agent_digest, charge.asset, crate::budget::CoreTimestampMs(snapshot.protocol_timestamp))?);
                     Ok(limits)
                 }).map_err(|_| refused())?;
-                let budget_request = crate::budget::ProgramReservationRequest { id: preparation_id, charges,
+                let budget_request = crate::budget::ProgramReservationRequest { id: preparation_id, charges: allocations.charges().to_vec(),
                     expiry_sequence, current_sequence: snapshot.observed_head_sequence,
                     core_deadline: Some(crate::budget::CoreTimestampMs(prepared.envelope.timestamp_bound().not_after())) };
                 let rate = StagedNativeRateUse::stage(store, &current, &prepared, &proofs).map_err(|_| refused())?;
-                let staged = budgets.stage_program_reservation(&budget_request, crate::budget::CoreTimestampMs(snapshot.protocol_timestamp))
+                let staged = budgets.stage_program_allocation(&budget_request, &allocations, crate::budget::CoreTimestampMs(snapshot.protocol_timestamp))
                     .map_err(|_| refused())?;
                 let held = NativeProgramApprovalCarrier::bind(context, &prepared, &policy, staged.record()).map_err(|_| refused())?;
                 let origin = context.permit().preparation_authorization();
@@ -3937,7 +4025,11 @@ impl<A: HumanAuthorityBoundary> HumanOperations for UnifiedAgentOwner<A> {
         peer: &HumanPeer,
         request: layerx_agent_api::track::WaitRequest,
     ) -> Result<HumanResponse, HumanOperationError> {
-        self.lock_operations()?.wait(peer, request)
+        let settlement = NativeProgramSettlementContext {
+            programs: self.programs.as_ref(),
+            budgets: &self.budgets,
+        };
+        self.lock_operations()?.wait_with_settlement(peer, request, Some(&settlement))
     }
     fn budget_reconciliation(
         &mut self,
@@ -3995,7 +4087,11 @@ impl<A: HumanAuthorityBoundary> HumanOperations for UnifiedAgentOwner<A> {
         submission_ref: &str,
     ) -> Result<HumanResponse, HumanOperationError> {
         let mut operations = self.lock_operations()?;
-        let response = operations.track(peer, submission_ref)?;
+        let settlement = NativeProgramSettlementContext {
+            programs: self.programs.as_ref(),
+            budgets: &self.budgets,
+        };
+        let response = operations.track_with_settlement(peer, submission_ref, Some(&settlement))?;
         if let Some((key, result_code, sequence)) = operations.last_verified_receipt.take() {
             let tenant =
                 TenantId::new(peer.tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
@@ -4004,6 +4100,9 @@ impl<A: HumanAuthorityBoundary> HumanOperations for UnifiedAgentOwner<A> {
                     .store
                     .lock()
                     .map_err(|_| HumanOperationError::Unavailable)?;
+                if native_settlement_preparation(&store, &tenant, key)?.is_some() {
+                    return Ok(response);
+                }
                 self.approval_queue
                     .settle_verified(
                         &tenant,
@@ -4026,8 +4125,13 @@ impl<A: HumanAuthorityBoundary> HumanOperations for UnifiedAgentOwner<A> {
         expected_activity_id: [u8; 32],
     ) -> Result<HumanResponse, HumanOperationError> {
         let mut operations = self.lock_operations()?;
-        let response =
-            operations.receipt_by_idempotency_key(peer, idempotency_key, expected_activity_id)?;
+        let settlement = NativeProgramSettlementContext {
+            programs: self.programs.as_ref(),
+            budgets: &self.budgets,
+        };
+        let response = operations.receipt_by_idempotency_key_with_settlement(
+            peer, idempotency_key, expected_activity_id, Some(&settlement),
+        )?;
         if let Some((key, result_code, sequence)) = operations.last_verified_receipt.take() {
             let tenant =
                 TenantId::new(peer.tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
@@ -4036,6 +4140,9 @@ impl<A: HumanAuthorityBoundary> HumanOperations for UnifiedAgentOwner<A> {
                     .store
                     .lock()
                     .map_err(|_| HumanOperationError::Unavailable)?;
+                if native_settlement_preparation(&store, &tenant, key)?.is_some() {
+                    return Ok(response);
+                }
                 self.approval_queue
                     .settle_verified(
                         &tenant,
@@ -4186,8 +4293,13 @@ impl<A: HumanAuthorityBoundary> HumanOperations for UnifiedAgentOwner<A> {
         idempotency_key: [u8; 32],
         expected_activity_id: [u8; 32],
     ) -> Result<HumanResponse, HumanOperationError> {
-        self.lock_operations()?
-            .evidence(peer, idempotency_key, expected_activity_id)
+        let settlement = NativeProgramSettlementContext {
+            programs: self.programs.as_ref(),
+            budgets: &self.budgets,
+        };
+        self.lock_operations()?.receipt_by_idempotency_key_with_settlement(
+            peer, idempotency_key, expected_activity_id, Some(&settlement),
+        )
     }
     fn account_sequence(
         &mut self,
@@ -6829,6 +6941,274 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
             .map_err(|_| HumanOperationError::Refused)
     }
 
+    fn track_with_settlement(
+        &mut self,
+        peer: &HumanPeer,
+        submission_ref: &str,
+        settlement: Option<&NativeProgramSettlementContext<'_>>,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        self.last_verified_receipt = None;
+        let id = *self
+            .submissions
+            .get(&(
+                peer.tenant.clone(),
+                peer.principal.clone(),
+                submission_ref.to_owned(),
+            ))
+            .ok_or(HumanOperationError::Refused)?;
+        let status = self
+            .outboxes
+            .entry(peer.tenant.clone())
+            .or_default()
+            .status(id)
+            .ok_or(HumanOperationError::Refused)?
+            .clone();
+        if status.state == SubmissionState::Queued {
+            return self.resume_queued(peer, id, status.activity_id);
+        }
+        if status.state == SubmissionState::Submitted {
+            let mut store = self
+                .store
+                .lock()
+                .map_err(|_| HumanOperationError::Unavailable)?;
+            self.outboxes
+                .entry(peer.tenant.clone())
+                .or_default()
+                .transition(
+                    &mut store,
+                    id,
+                    SubmissionState::Unknown,
+                    "recover durable submission before receipt resolution",
+                    None,
+                )
+                .map_err(|_| HumanOperationError::Unavailable)?;
+        }
+        let tenant = TenantId::new(peer.tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
+        let native_preparation = {
+            let store = self.store.lock().map_err(|_| HumanOperationError::Unavailable)?;
+            native_settlement_preparation(&store, &tenant, id)?
+        };
+        if matches!(
+            status.state,
+            SubmissionState::Submitted | SubmissionState::Acknowledged | SubmissionState::Unknown
+        ) || (status.state.terminal() && native_preparation.is_some()) {
+            match self.receipt_by_idempotency_key_with_settlement(peer, id, status.activity_id, settlement) {
+                Ok(_) | Err(HumanOperationError::Unavailable) => {}
+                Err(error) => return Err(error),
+            }
+        }
+        let current = self
+            .outboxes
+            .entry(peer.tenant.clone())
+            .or_default()
+            .status(id)
+            .ok_or(HumanOperationError::Refused)?;
+        if let Some(evidence) = current.evidence {
+            let store = self
+                .store
+                .lock()
+                .map_err(|_| HumanOperationError::Unavailable)?;
+            let served = crate::receipt::serve(
+                &store,
+                TenantId::new(peer.tenant.clone()).map_err(|_| HumanOperationError::Refused)?,
+                crate::receipt::ReceiptLookupKey::Idempotency(id),
+            )
+            .map_err(|_| HumanOperationError::Unavailable)?;
+            if !persisted_terminal_receipt_matches(&served.canonical_bytes, evidence.receipt_ref())
+                || served.metadata.activity_id != current.activity_id
+                || served.metadata.idempotency_key != id
+                || (served.metadata.result.code.raw() == 0)
+                    != (current.state == SubmissionState::Executed)
+            {
+                return Err(HumanOperationError::Refused);
+            }
+            if let Some(preparation_id) = native_preparation {
+                let key = crate::prepare::DurablePreparation::store_key(&tenant, preparation_id)
+                    .map_err(|_| HumanOperationError::Refused)?;
+                let stored = store.get(&key).ok_or(HumanOperationError::Refused)?;
+                let durable = crate::prepare::DurablePreparation::decode(tenant.clone(), stored.bytes())
+                    .map_err(|_| HumanOperationError::Refused)?;
+                let expected = if served.metadata.result.code.raw() == 0 {
+                    crate::prepare::LifecycleState::Executed
+                } else {
+                    crate::prepare::LifecycleState::Failed
+                };
+                if durable.state != expected || durable.activity_id != Some(current.activity_id)
+                    || durable.extensions.get(&9).map(Vec::as_slice) != Some(evidence.receipt_ref().as_slice()) {
+                    return Err(HumanOperationError::Unavailable);
+                }
+            }
+            self.last_verified_receipt = Some((
+                id,
+                served.metadata.result.code.raw(),
+                served.metadata.global_sequence,
+            ));
+        }
+        Self::observation(current)
+    }
+
+    fn receipt_by_idempotency_key_with_settlement(
+        &mut self,
+        peer: &HumanPeer,
+        idempotency_key: [u8; 32],
+        expected_activity_id: [u8; 32],
+        settlement: Option<&NativeProgramSettlementContext<'_>>,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        self.last_verified_receipt = None;
+        if !self
+            .submissions
+            .values()
+            .any(|value| *value == idempotency_key)
+            || !self.submissions.contains_key(&(
+                peer.tenant.clone(),
+                peer.principal.clone(),
+                hex(&idempotency_key),
+            ))
+        {
+            return Err(HumanOperationError::Refused);
+        }
+        let original = self.retained_activity(peer, idempotency_key)?;
+        let registry = self.authority.registry(peer).map_err(map_core)?;
+        let proof_peer = subject::for_activity(&self.store, peer, &original, &registry)?;
+        let authority =
+            self.authority
+                .authorized_activity(&proof_peer, &original, expected_activity_id)?;
+        let retained = RetainedNativeOwner::decode(
+            original,
+            &registry,
+            self.node.handshake().node(),
+            idempotency_key,
+            expected_activity_id,
+        )?;
+        let native = retained.as_ref().map(RetainedNativeOwner::context);
+        let selector = ReceiptSelector::IdempotencyKey {
+            idempotency_key,
+            expected_activity_id,
+        };
+        let correlation = u64::from_be_bytes(
+            idempotency_key[..8]
+                .try_into()
+                .map_err(|_| HumanOperationError::Refused)?,
+        );
+        let lookup = if let Some(expected) = &native {
+            self.node
+                .lookup_native_owner_receipt(selector, correlation, authority, expected)
+        } else {
+            self.node.lookup_receipt(selector, correlation, authority)
+        }
+        .map_err(native_receipt::map_lookup_error)?;
+        let mut out = Encoder::new();
+        match lookup {
+            Lookup::Absent => out.u8(0),
+            Lookup::Verified(receipt) => {
+                let protocol = receipt
+                    .receipt()
+                    .protocol()
+                    .ok_or(HumanOperationError::Refused)?;
+                let tenant =
+                    TenantId::new(peer.tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
+                let mut served = native_receipt::persist(
+                    &self.store,
+                    tenant.clone(),
+                    idempotency_key,
+                    &receipt,
+                    &authority,
+                    native.as_ref(),
+                )?;
+                if served.canonical_bytes != receipt.canonical_bytes()
+                    || served.metadata.idempotency_key != idempotency_key
+                    || served.metadata.activity_id != expected_activity_id
+                    || served.metadata.activity_id != protocol.activity_id()
+                    || served.metadata.global_sequence != protocol.global_sequence()
+                    || served.metadata.result.code.raw() != protocol.result_code()
+                    || served.metadata.verification_level < receipt.level()
+                {
+                    return Err(HumanOperationError::Refused);
+                }
+                served = self.augment_receipt_evidence(
+                    peer,
+                    idempotency_key,
+                    tenant,
+                    served,
+                    &authority,
+                    native.as_ref(),
+                    settlement,
+                )?;
+                self.last_verified_receipt = Some((
+                    idempotency_key,
+                    served.metadata.result.code.raw(),
+                    served.metadata.global_sequence,
+                ));
+                out.u8(1);
+                out.bytes(receipt.canonical_bytes())?;
+                out.fixed(&authority.batch_id());
+                out.fixed(&authority.asset());
+                out.fixed(&authority.previous_state_root());
+                out.fixed(&authority.resulting_state_root());
+                out.fixed(&authority.sequencer_public_key());
+                out.u8(served.metadata.verification_level.wire_rank());
+            }
+        }
+        out.finish()
+    }
+
+    fn wait_with_settlement(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::track::WaitRequest,
+        settlement: Option<&NativeProgramSettlementContext<'_>>,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        let requested = production_verification_level(request.requested_verification_level);
+        let deadline_ms = request
+            .deadline
+            .get()
+            .checked_mul(1000)
+            .ok_or(HumanOperationError::Refused)?;
+        let submission_ref = request.submission_ref.as_str();
+        let tracked = self.track_with_settlement(peer, submission_ref, settlement)?;
+        let id = *self
+            .submissions
+            .get(&(
+                peer.tenant.clone(),
+                peer.principal.clone(),
+                submission_ref.to_owned(),
+            ))
+            .ok_or(HumanOperationError::Refused)?;
+        let achieved = if self
+            .last_verified_receipt
+            .is_some_and(|(verified, _, _)| verified == id)
+        {
+            let store = self
+                .store
+                .lock()
+                .map_err(|_| HumanOperationError::Unavailable)?;
+            crate::receipt::serve(
+                &store,
+                TenantId::new(peer.tenant.clone()).map_err(|_| HumanOperationError::Refused)?,
+                crate::receipt::ReceiptLookupKey::Idempotency(id),
+            )
+            .map_err(|_| HumanOperationError::Unavailable)?
+            .metadata
+            .verification_level
+        } else {
+            VerificationLevel::UNVERIFIED
+        };
+        let deadline_elapsed = if achieved >= requested {
+            false
+        } else {
+            let reading = self
+                .clock
+                .sample(Duration::from_secs(1))
+                .map_err(|_| HumanOperationError::Unavailable)?;
+            reading.unix_milliseconds >= deadline_ms
+        };
+        let mut out = Encoder::new();
+        out.u8(u8::from(deadline_elapsed));
+        out.u8(achieved.wire_rank());
+        out.fixed(tracked.bytes());
+        out.finish()
+    }
+
     fn augment_receipt_evidence(
         &mut self,
         peer: &HumanPeer,
@@ -6837,7 +7217,15 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
         mut served: crate::receipt::ServedReceipt,
         authority: &AuthorizedBatch,
         native: Option<&layerx_proof::receipt::NativeOwnerOutcomeContext<'_>>,
+        settlement: Option<&NativeProgramSettlementContext<'_>>,
     ) -> Result<crate::receipt::ServedReceipt, HumanOperationError> {
+        let native_preparation = {
+            let store = self.store.lock().map_err(|_| HumanOperationError::Unavailable)?;
+            native_settlement_preparation(&store, &tenant, idempotency_key)?
+        };
+        if native_preparation.is_some() && settlement.is_none() {
+            return Err(HumanOperationError::Unavailable);
+        }
         let registry = self.authority.registry(peer).map_err(map_core)?;
         let correlation = u64::from_be_bytes(
             idempotency_key[..8]
@@ -6900,7 +7288,19 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
                         .store
                         .lock()
                         .map_err(|_| HumanOperationError::Unavailable)?;
-                    if let Some(update) = crate::approval::native_program::native_rate_receipt_update(&store, &tenant, &terminal)
+                    if let Some(preparation_id) = native_preparation {
+                        let settlement = settlement.ok_or(HumanOperationError::Unavailable)?;
+                        settle_retained_native_program_call(
+                            settlement.programs.ok_or(HumanOperationError::Unavailable)?,
+                            &registry,
+                            settlement.budgets,
+                            &mut store,
+                            &tenant,
+                            preparation_id,
+                            &terminal,
+                            authority,
+                        )?;
+                    } else if let Some(update) = crate::approval::native_program::native_rate_receipt_update(&store, &tenant, &terminal)
                         .map_err(|_| HumanOperationError::Refused)? {
                         store.apply_program_approval_batch(vec![update], Vec::new(), Vec::new())
                             .map_err(|_| HumanOperationError::Unavailable)?;
@@ -6946,7 +7346,9 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
                     )?;
                 }
             }
-            (Err(error), _) | (_, Err(error)) if evidence_unavailable(&error) => {}
+            (Err(error), _) | (_, Err(error)) if evidence_unavailable(&error) => {
+                if native_preparation.is_some() { return Err(HumanOperationError::Unavailable); }
+            }
             (Err(_), _) | (_, Err(_)) => return Err(HumanOperationError::Refused),
         }
         Ok(served)
@@ -8511,83 +8913,7 @@ impl<A: HumanAuthorityBoundary> HumanOperations for ProductionHumanOperations<A>
         peer: &HumanPeer,
         submission_ref: &str,
     ) -> Result<HumanResponse, HumanOperationError> {
-        self.last_verified_receipt = None;
-        let id = *self
-            .submissions
-            .get(&(
-                peer.tenant.clone(),
-                peer.principal.clone(),
-                submission_ref.to_owned(),
-            ))
-            .ok_or(HumanOperationError::Refused)?;
-        let status = self
-            .outboxes
-            .entry(peer.tenant.clone())
-            .or_default()
-            .status(id)
-            .ok_or(HumanOperationError::Refused)?
-            .clone();
-        if status.state == SubmissionState::Queued {
-            return self.resume_queued(peer, id, status.activity_id);
-        }
-        if status.state == SubmissionState::Submitted {
-            let mut store = self
-                .store
-                .lock()
-                .map_err(|_| HumanOperationError::Unavailable)?;
-            self.outboxes
-                .entry(peer.tenant.clone())
-                .or_default()
-                .transition(
-                    &mut store,
-                    id,
-                    SubmissionState::Unknown,
-                    "recover durable submission before receipt resolution",
-                    None,
-                )
-                .map_err(|_| HumanOperationError::Unavailable)?;
-        }
-        if matches!(
-            status.state,
-            SubmissionState::Submitted | SubmissionState::Acknowledged | SubmissionState::Unknown
-        ) {
-            match self.receipt_by_idempotency_key(peer, id, status.activity_id) {
-                Ok(_) | Err(HumanOperationError::Unavailable) => {}
-                Err(error) => return Err(error),
-            }
-        }
-        let current = self
-            .outboxes
-            .entry(peer.tenant.clone())
-            .or_default()
-            .status(id)
-            .ok_or(HumanOperationError::Refused)?;
-        if let Some(evidence) = current.evidence {
-            let store = self
-                .store
-                .lock()
-                .map_err(|_| HumanOperationError::Unavailable)?;
-            let served = crate::receipt::serve(
-                &store,
-                TenantId::new(peer.tenant.clone()).map_err(|_| HumanOperationError::Refused)?,
-                crate::receipt::ReceiptLookupKey::Idempotency(id),
-            )
-            .map_err(|_| HumanOperationError::Unavailable)?;
-            if !persisted_terminal_receipt_matches(&served.canonical_bytes, evidence.receipt_ref())
-                || served.metadata.activity_id != current.activity_id
-                || served.metadata.idempotency_key != id
-                || (served.metadata.result.code.raw() == 0)
-                    != (current.state == SubmissionState::Executed)
-            {
-                return Err(HumanOperationError::Refused);
-            }
-            self.last_verified_receipt = Some((
-                id,
-                served.metadata.result.code.raw(),
-                served.metadata.global_sequence,
-            ));
-        }
-        Self::observation(current)
+        self.track_with_settlement(peer, submission_ref, None)
     }
 
     fn receipt_by_idempotency_key(
@@ -8596,101 +8922,7 @@ impl<A: HumanAuthorityBoundary> HumanOperations for ProductionHumanOperations<A>
         idempotency_key: [u8; 32],
         expected_activity_id: [u8; 32],
     ) -> Result<HumanResponse, HumanOperationError> {
-        self.last_verified_receipt = None;
-        if !self
-            .submissions
-            .values()
-            .any(|value| *value == idempotency_key)
-            || !self.submissions.contains_key(&(
-                peer.tenant.clone(),
-                peer.principal.clone(),
-                hex(&idempotency_key),
-            ))
-        {
-            return Err(HumanOperationError::Refused);
-        }
-        let original = self.retained_activity(peer, idempotency_key)?;
-        let registry = self.authority.registry(peer).map_err(map_core)?;
-        let proof_peer = subject::for_activity(&self.store, peer, &original, &registry)?;
-        let authority =
-            self.authority
-                .authorized_activity(&proof_peer, &original, expected_activity_id)?;
-        let retained = RetainedNativeOwner::decode(
-            original,
-            &registry,
-            self.node.handshake().node(),
-            idempotency_key,
-            expected_activity_id,
-        )?;
-        let native = retained.as_ref().map(RetainedNativeOwner::context);
-        let selector = ReceiptSelector::IdempotencyKey {
-            idempotency_key,
-            expected_activity_id,
-        };
-        let correlation = u64::from_be_bytes(
-            idempotency_key[..8]
-                .try_into()
-                .map_err(|_| HumanOperationError::Refused)?,
-        );
-        let lookup = if let Some(expected) = &native {
-            self.node
-                .lookup_native_owner_receipt(selector, correlation, authority, expected)
-        } else {
-            self.node.lookup_receipt(selector, correlation, authority)
-        }
-        .map_err(native_receipt::map_lookup_error)?;
-        let mut out = Encoder::new();
-        match lookup {
-            Lookup::Absent => out.u8(0),
-            Lookup::Verified(receipt) => {
-                let protocol = receipt
-                    .receipt()
-                    .protocol()
-                    .ok_or(HumanOperationError::Refused)?;
-                let tenant =
-                    TenantId::new(peer.tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
-                let mut served = native_receipt::persist(
-                    &self.store,
-                    tenant.clone(),
-                    idempotency_key,
-                    &receipt,
-                    &authority,
-                    native.as_ref(),
-                )?;
-                if served.canonical_bytes != receipt.canonical_bytes()
-                    || served.metadata.idempotency_key != idempotency_key
-                    || served.metadata.activity_id != expected_activity_id
-                    || served.metadata.activity_id != protocol.activity_id()
-                    || served.metadata.global_sequence != protocol.global_sequence()
-                    || served.metadata.result.code.raw() != protocol.result_code()
-                    || served.metadata.verification_level < receipt.level()
-                {
-                    return Err(HumanOperationError::Refused);
-                }
-                served = self.augment_receipt_evidence(
-                    peer,
-                    idempotency_key,
-                    tenant,
-                    served,
-                    &authority,
-                    native.as_ref(),
-                )?;
-                self.last_verified_receipt = Some((
-                    idempotency_key,
-                    served.metadata.result.code.raw(),
-                    served.metadata.global_sequence,
-                ));
-                out.u8(1);
-                out.bytes(receipt.canonical_bytes())?;
-                out.fixed(&authority.batch_id());
-                out.fixed(&authority.asset());
-                out.fixed(&authority.previous_state_root());
-                out.fixed(&authority.resulting_state_root());
-                out.fixed(&authority.sequencer_public_key());
-                out.u8(served.metadata.verification_level.wire_rank());
-            }
-        }
-        out.finish()
+        self.receipt_by_idempotency_key_with_settlement(peer, idempotency_key, expected_activity_id, None)
     }
     fn balance(&mut self, peer: &HumanPeer) -> Result<HumanResponse, HumanOperationError> {
         ProductionHumanOperations::balance(self, peer)
@@ -9004,55 +9236,7 @@ impl<A: HumanAuthorityBoundary> HumanOperations for ProductionHumanOperations<A>
         peer: &HumanPeer,
         request: layerx_agent_api::track::WaitRequest,
     ) -> Result<HumanResponse, HumanOperationError> {
-        let requested = production_verification_level(request.requested_verification_level);
-        let deadline_ms = request
-            .deadline
-            .get()
-            .checked_mul(1000)
-            .ok_or(HumanOperationError::Refused)?;
-        let submission_ref = request.submission_ref.as_str();
-        let tracked = HumanOperations::track(self, peer, submission_ref)?;
-        let id = *self
-            .submissions
-            .get(&(
-                peer.tenant.clone(),
-                peer.principal.clone(),
-                submission_ref.to_owned(),
-            ))
-            .ok_or(HumanOperationError::Refused)?;
-        let achieved = if self
-            .last_verified_receipt
-            .is_some_and(|(verified, _, _)| verified == id)
-        {
-            let store = self
-                .store
-                .lock()
-                .map_err(|_| HumanOperationError::Unavailable)?;
-            crate::receipt::serve(
-                &store,
-                TenantId::new(peer.tenant.clone()).map_err(|_| HumanOperationError::Refused)?,
-                crate::receipt::ReceiptLookupKey::Idempotency(id),
-            )
-            .map_err(|_| HumanOperationError::Unavailable)?
-            .metadata
-            .verification_level
-        } else {
-            VerificationLevel::UNVERIFIED
-        };
-        let deadline_elapsed = if achieved >= requested {
-            false
-        } else {
-            let reading = self
-                .clock
-                .sample(Duration::from_secs(1))
-                .map_err(|_| HumanOperationError::Unavailable)?;
-            reading.unix_milliseconds >= deadline_ms
-        };
-        let mut out = Encoder::new();
-        out.u8(u8::from(deadline_elapsed));
-        out.u8(achieved.wire_rank());
-        out.fixed(tracked.bytes());
-        out.finish()
+        self.wait_with_settlement(peer, request, None)
     }
 
     fn subscription_list(
