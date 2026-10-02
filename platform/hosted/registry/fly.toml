@@ -29,7 +29,7 @@ kill_timeout = "30s"
 # platform/hosted/registry/builder-environment/build-env.sh under
 # /data/builder; and the replica id and sequencer trust history of the kernel
 # app under /data/kernel. The request and publication tokens are made by
-# init.sh once on an empty volume and kept; the router's
+# init.sh --prepare-material before registry startup and kept; the router's
 # ENDPOINT_PROGRAM_REGISTRY_TOKEN (human/wallet/deploy/endpoint.toml) is the
 # request token copied from here after this stage. This app never depends on
 # the router: init.sh refuses each absent prerequisite by name and starts the

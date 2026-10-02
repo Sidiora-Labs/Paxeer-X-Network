@@ -22264,7 +22264,9 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.15.5]
 title = "Bootstrap registry identity before router activation with an acyclic dependency order"
-status = "in_progress"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "unverified"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -32073,8 +32075,8 @@ wave = 5
 requires = ["0.2", "15.5", "24.8"]
 reqs = ["161.3", "448"]
 do_1 = "Inventory retained services, images, volumes and protected material references. Reuse compatible inputs. Consume the qualified identity producer implementation of task24.8 but verify or produce the actual selected production generation; never borrow its isolated fixture authority."
-do_2 = "Use tools/bringup/ca.sh inventory and actual registry, registry-event-client and gateway-client producers only where inventory proves a missing or incompatible input. Preserve the registry request token and exact client/root pairing; stage protected secret inputs without printing key or token values."
-do_3 = "Bind builder rootfs/environment digest, replica identity and authenticated trust-history generation to the candidate. Write protected material.json with explicit producer evidence and references. Refuse missing, stale, partial, replayed or mismatched inputs before activation."
+do_2 = "Use tools/bringup/ca.sh inventory and actual registry, registry-event-client and gateway-client producers only where inventory proves a missing or incompatible input. Preserve the registry request token and exact client/root pairing; stage protected secret inputs without printing key or token values. Produce or validate the retained request/publication token pair with the selected registry image's registry-fly-init --prepare-material before registry startup. Restore a missing retained credential from its actual original source; never generate a replacement for an initialized generation."
+do_3 = "Bind builder rootfs/environment digest, replica identity and authenticated trust-history generation to the candidate. Write protected material.json with explicit producer evidence and references. Refuse missing, stale, partial, replayed or mismatched inputs before activation. Use schema_version1 stage records with revision, image, material_generation, previous_record_sha256, distinct checks, and integer started_at/finished_at. material.json has a null previous_record_sha256; each later passed stage names the exact previous passed record digest. Router validation receives independent CHECK_LIVE_CANDIDATE_REVISION, CHECK_LIVE_CANDIDATE_IMAGE and CHECK_LIVE_MATERIAL_GENERATION pins."
 do_4 = "Implement the material-stage selector over actual producers and records, including prerequisite refusal and retained-state resume. Material production alone proves no registry or router readiness."
 touches = ["tools/bringup/ca.sh", "tools/bringup/check-live.sh", "tools/qualification/paxeer-x/registry-router-bootstrap.py", "tools/paxeer-x/gates/108.2.5.sh"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 108.2.5"

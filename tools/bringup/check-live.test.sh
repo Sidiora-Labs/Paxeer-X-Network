@@ -655,6 +655,8 @@ fx="$work/repo"
 mkdir -p "$fx/tools/bringup"
 cp "$root/tools/bringup/check-live.sh" "$root/tools/bringup/ca.sh" "$root/tools/bringup/human-state-preserve.sh" "$fx/tools/bringup/"
 ca="$fx/tools/bringup/ca.sh"
+mkdir -p "$fx/tools/qualification/paxeer-x"
+cp "$root/tools/qualification/paxeer-x/registry-router-bootstrap.py" "$fx/tools/qualification/paxeer-x/"
 fx_checker="$fx/tools/bringup/check-live.sh"
 fx_app() {
 	local app="${1%.toml}"
@@ -2406,8 +2408,14 @@ printf '200\n%s\n' "$router_ready" >"$work/router-good/readyz-m-ams-1"
 printf '200\n%s\n' "$router_ready" >"$work/router-good/readyz-m-fra-1"
 printf '%s\n' '{"ready":true,"components":{"rpc_pool":{"state":"up","healthy":3,"endpoints":[{"url":"https://api-mainnet-beta.paxeer.network","state":"healthy"},{"url":"https://api1.mainnet-beta.paxeer.network","state":"healthy"}]}}}' >"$work/router-good/wallet-readyz"
 printf '%s\n' '[{"id":"m-ams-1","region":"ams","state":"started"},{"id":"m-ams-2","region":"ams","state":"started"},{"id":"m-fra-1","region":"fra","state":"started"},{"id":"m-fra-0","region":"fra","state":"stopped"}]' >"$CHECK_LIVE_TEST_FLY/$endpoint/machines.json"
-mkdir -p "$work/stages-passed"
-printf '%s\n' '{"stage":"registry-bootstrap","outcome":"passed"}' >"$work/stages-passed/registry-bootstrap.json"
+mkdir -p -m 0700 "$work/stages-passed"
+: "${CHECK_LIVE_TEST_STAGE_DIR:?real retained material and registry-bootstrap records required}"
+: "${CHECK_LIVE_CANDIDATE_REVISION:?selected source revision required}"
+: "${CHECK_LIVE_CANDIDATE_IMAGE:?selected image digest required}"
+: "${CHECK_LIVE_MATERIAL_GENERATION:?selected material generation required}"
+export CHECK_LIVE_CANDIDATE_REVISION CHECK_LIVE_CANDIDATE_IMAGE CHECK_LIVE_MATERIAL_GENERATION
+cp "$CHECK_LIVE_TEST_STAGE_DIR/material.json" "$CHECK_LIVE_TEST_STAGE_DIR/registry-bootstrap.json" "$work/stages-passed/"
+python3 "$root/tools/qualification/paxeer-x/registry-router-bootstrap.py" --check-stage registry-bootstrap --stage-dir "$work/stages-passed"
 CHECK_LIVE_STAGE_DIR="$work/stages-passed" CHECK_LIVE_TEST_ROUTER="$work/router-good" CHECK_LIVE_ROUTER_ACCOUNT="$(printf 'ab%.0s' $(seq 32))" CHECK_LIVE_TEST_PROGRAM="$fx_checker" \
 	expect check_live_router_passing "$work/hosts-good.env" 0 router -- \
 	"pass eth_chainId result=0x7d" \
@@ -2713,8 +2721,8 @@ fi
 # The rendered plan of this checkout: four stages in order, each requiring
 # only the one before it, read with no host map and no request.
 plan_lines=(
-	"stage 1 material requires=- needs=gateway-client,registry,registry-event-client,REGISTRY_IDENTITY_TOKEN,REGISTRY_PROGRAM_EVENTS_TOKEN,REGISTRY_WEBHOOKS_EVENTS_TOKEN,LAYERX_REGISTRY_NODE_AUTHORIZATION,LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION,builder-rootfs,environment-tree-digest,replica-id,trust-history producers=gateway-client:ca.sh:gateway-client,registry:ca.sh:registry,registry-event-client:ca.sh:registry-event-client,REGISTRY_IDENTITY_TOKEN:fly-secret:REGISTRY_IDENTITY_TOKEN,REGISTRY_PROGRAM_EVENTS_TOKEN:fly-secret:REGISTRY_PROGRAM_EVENTS_TOKEN,REGISTRY_WEBHOOKS_EVENTS_TOKEN:fly-secret:REGISTRY_WEBHOOKS_EVENTS_TOKEN,LAYERX_REGISTRY_NODE_AUTHORIZATION:fly-secret:LAYERX_REGISTRY_NODE_AUTHORIZATION,LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION:fly-secret:LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION,builder-rootfs:deploy:builder-environment,environment-tree-digest:deploy:builder-environment,replica-id:deploy:kernel-material,trust-history:deploy:kernel-material"
-	"stage 2 registry-bootstrap requires=material needs=request-token,publication-token producers=request-token:init.sh:/data/tokens/request,publication-token:init.sh:/data/tokens/publication"
+	"stage 1 material requires=- needs=request-token,publication-token,gateway-client,registry,registry-event-client,REGISTRY_IDENTITY_TOKEN,REGISTRY_PROGRAM_EVENTS_TOKEN,REGISTRY_WEBHOOKS_EVENTS_TOKEN,LAYERX_REGISTRY_NODE_AUTHORIZATION,LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION,builder-rootfs,environment-tree-digest,replica-id,trust-history producers=request-token:init.sh:--prepare-material,publication-token:init.sh:--prepare-material,gateway-client:ca.sh:gateway-client,registry:ca.sh:registry,registry-event-client:ca.sh:registry-event-client,REGISTRY_IDENTITY_TOKEN:fly-secret:REGISTRY_IDENTITY_TOKEN,REGISTRY_PROGRAM_EVENTS_TOKEN:fly-secret:REGISTRY_PROGRAM_EVENTS_TOKEN,REGISTRY_WEBHOOKS_EVENTS_TOKEN:fly-secret:REGISTRY_WEBHOOKS_EVENTS_TOKEN,LAYERX_REGISTRY_NODE_AUTHORIZATION:fly-secret:LAYERX_REGISTRY_NODE_AUTHORIZATION,LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION:fly-secret:LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION,builder-rootfs:deploy:builder-environment,environment-tree-digest:deploy:builder-environment,replica-id:deploy:kernel-material,trust-history:deploy:kernel-material"
+	"stage 2 registry-bootstrap requires=material needs=material-record,request-token,publication-token producers=material-record:stage:material,request-token:init.sh:--prepare-material,publication-token:init.sh:--prepare-material"
 	"stage 3 router-activation requires=registry-bootstrap needs=registry-bootstrap,program-registry-token,client-identity,client-password producers=registry-bootstrap:stage:registry-bootstrap,program-registry-token:fly-secret:ENDPOINT_PROGRAM_REGISTRY_TOKEN,client-identity:fly-secret:ENDPOINT_CLIENT_P12,client-password:fly-secret:ENDPOINT_CLIENT_PASSWORD"
 	"stage 4 routed-proof requires=router-activation needs=router-activation,registry-receipt producers=router-activation:stage:router-activation,registry-receipt:deploy:routed-proof"
 )

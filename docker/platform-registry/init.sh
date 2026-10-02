@@ -2,8 +2,8 @@
 # Root init of the registry app (platform/hosted/registry/fly.toml). It does on
 # the machine what platform/hosted/registry/node-provision-build-boundary.sh
 # and the pod's init containers do on a Kubernetes node, without systemd:
-# writes the request and publication tokens on the volume on first boot and
-# the token secrets into /run/layerx, waits until the deploy step has put the
+# consumes retained request and publication tokens prepared on the volume and
+# writes the supplied token secrets into /run/layerx, waits until deployment has put the
 # TLS identities of tools/bringup/ca.sh issue registry and
 # registry-event-client, the builder rootfs of
 # builder-environment/build-env.sh, and the receipt authority replica id and
@@ -18,7 +18,7 @@
 #   /data/tls/<service>        identities of tools/bringup/ca.sh issue <service>
 #   /data/builder              rootfs/ and environment-tree-digest of build-env.sh
 #   /data/kernel               replica-id and trust-history read from the kernel app
-#   /data/tokens               request and publication tokens made here
+#   /data/tokens               request and publication tokens of --prepare-material
 #   /data/builds               slot-<n>.ext4 images mounted at slot-<n>
 #   /data/state, /data/journal the registry's state and deployment journal
 #
@@ -40,25 +40,31 @@ log() { printf 'registry-init: %s\n' "$*" >&2; }
 # missing <prerequisite> <producer>: the named refusal line of one item.
 missing() { printf 'fail registry-bootstrap missing=%s producer=%s\n' "$1" "$2" >&2; }
 
-run=/run/layerx
-builder=$(dirname "$LAYERX_REGISTRY_BUILDER_ENVIRONMENT_ROOT")
-kernel=$(dirname "$LAYERX_REGISTRY_SEQUENCER_TRUST_HISTORY")
-tokens=$(dirname "$LAYERX_REGISTRY_REQUEST_TOKEN_FILE")
-quota=$LAYERX_REGISTRY_BUILD_ROOT
-slots=$LAYERX_REGISTRY_MAX_BUILDS
-bytes=$LAYERX_REGISTRY_BUILD_QUOTA_BYTES
-inodes=$LAYERX_REGISTRY_BUILD_QUOTA_INODES
-case "$slots:$bytes:$inodes" in *[!0-9:]* | 0:* | *:0:* | *:0)
-	log "the build slot count and quotas must be positive integers"
-	exit 64
-	;;
+mode=serve
+case "${1:-}" in
+--prepare-material) [ "$#" = 1 ] || exit 64; mode=material ;;
+'') [ "$#" = 0 ] || exit 64 ;;
+*) log "expected no arguments or --prepare-material"; exit 64 ;;
 esac
+for name in LAYERX_REGISTRY_REQUEST_TOKEN_FILE LAYERX_REGISTRY_PUBLICATION_TOKEN_FILE LAYERX_REGISTRY_STATE LAYERX_REGISTRY_JOURNAL; do
+	eval "path=\${$name:-}"
+	case "$path" in /*) ;; *) missing "$name" "registry-deployment-material"; exit 1 ;; esac
+done
+tokens=$(dirname "$LAYERX_REGISTRY_REQUEST_TOKEN_FILE")
+[ "$(dirname "$LAYERX_REGISTRY_PUBLICATION_TOKEN_FILE")" = "$tokens" ] &&
+	[ "$LAYERX_REGISTRY_REQUEST_TOKEN_FILE" != "$LAYERX_REGISTRY_PUBLICATION_TOKEN_FILE" ] || {
+	missing "distinct-token-pair-in-one-directory" "registry-deployment-material"; exit 1;
+}
+mkdir -p "$tokens" "$LAYERX_REGISTRY_STATE" "$LAYERX_REGISTRY_JOURNAL"
 
-mkdir -p "$run"
-mountpoint -q "$run" || mount -t tmpfs -o nosuid,nodev,mode=0755 tmpfs "$run"
-install -d -o 4030 -g 4030 -m 0700 "$run/secrets"
-mkdir -p "$builder" "$kernel" "$tokens" "$quota" "$LAYERX_REGISTRY_STATE" "$LAYERX_REGISTRY_JOURNAL"
-
+if [ -L "$tokens/.material.lock" ] || { [ -e "$tokens/.material.lock" ] && [ ! -f "$tokens/.material.lock" ]; }; then
+	missing "material-lock" "the-retained-registry-volume"; exit 1
+fi
+exec 9>"$tokens/.material.lock"
+flock -x -w 30 9 || { missing "material-lock" "registry-fly-init--prepare-material"; exit 1; }
+if [ -L "$tokens/.initialized" ] || { [ -e "$tokens/.initialized" ] && [ ! -f "$tokens/.initialized" ]; }; then
+	missing "token-material-marker" "the-retained-registry-volume"; exit 1
+fi
 retained_tokens=0
 if [ -e "$tokens/.initialized" ] || [ -e "$LAYERX_REGISTRY_REQUEST_TOKEN_FILE" ] ||
 	[ -e "$LAYERX_REGISTRY_PUBLICATION_TOKEN_FILE" ] ||
@@ -82,13 +88,56 @@ fresh() {
 	fi
 	[ -s "$1" ] || { openssl rand -hex 32 >"$1.new" && mv "$1.new" "$1"; }
 }
-fresh "$LAYERX_REGISTRY_REQUEST_TOKEN_FILE"
-fresh "$LAYERX_REGISTRY_PUBLICATION_TOKEN_FILE"
+if [ "$mode" = material ]; then
+	fresh "$LAYERX_REGISTRY_REQUEST_TOKEN_FILE"
+	fresh "$LAYERX_REGISTRY_PUBLICATION_TOKEN_FILE"
+fi
+for token in "$LAYERX_REGISTRY_REQUEST_TOKEN_FILE" "$LAYERX_REGISTRY_PUBLICATION_TOKEN_FILE"; do
+	if [ -L "$token" ] || [ ! -s "$token" ] || [ ! -f "$token" ]; then
+		missing "$token" "registry-fly-init--prepare-material"
+		exit 1
+	fi
+	mode_bits=$(stat -c %a "$token")
+	[ "$((0$mode_bits & 7))" = 0 ] || { missing "$token-mode" "registry-fly-init--prepare-material"; exit 1; }
+	[ "$(stat -c %h "$token")" = 1 ] && [ "$(wc -c <"$token")" -le 4098 ] || {
+		missing "$token-bounds" "registry-fly-init--prepare-material"; exit 1;
+	}
+done
 if cmp -s "$LAYERX_REGISTRY_REQUEST_TOKEN_FILE" "$LAYERX_REGISTRY_PUBLICATION_TOKEN_FILE"; then
 	log "the request and publication tokens are equal; restore the distinct original token pair"
 	exit 1
 fi
-[ -e "$tokens/.initialized" ] || : >"$tokens/.initialized"
+if [ "$mode" = material ]; then
+	[ -e "$tokens/.initialized" ] || : >"$tokens/.initialized"
+	log "material ready; retained request and publication tokens preserved"
+	exit 0
+fi
+[ -f "$tokens/.initialized" ] && [ ! -L "$tokens/.initialized" ] || {
+	missing "token-material-marker" "registry-fly-init--prepare-material"; exit 1;
+}
+
+flock -u 9
+exec 9>&-
+
+run=/run/layerx
+builder=$(dirname "$LAYERX_REGISTRY_BUILDER_ENVIRONMENT_ROOT")
+kernel=$(dirname "$LAYERX_REGISTRY_SEQUENCER_TRUST_HISTORY")
+tokens=$(dirname "$LAYERX_REGISTRY_REQUEST_TOKEN_FILE")
+quota=$LAYERX_REGISTRY_BUILD_ROOT
+slots=$LAYERX_REGISTRY_MAX_BUILDS
+bytes=$LAYERX_REGISTRY_BUILD_QUOTA_BYTES
+inodes=$LAYERX_REGISTRY_BUILD_QUOTA_INODES
+case "$slots:$bytes:$inodes" in *[!0-9:]* | 0:* | *:0:* | *:0)
+	log "the build slot count and quotas must be positive integers"
+	exit 64
+	;;
+esac
+
+mkdir -p "$run"
+mountpoint -q "$run" || mount -t tmpfs -o nosuid,nodev,mode=0755 tmpfs "$run"
+install -d -o 4030 -g 4030 -m 0700 "$run/secrets"
+mkdir -p "$builder" "$kernel" "$quota"
+
 
 # secret <variable> <file>: writes the Fly secret the variable carries to the
 # file for uid 4030 and drops it from the environment the registry inherits.

@@ -42,14 +42,14 @@ def sha256(path):
 
 
 def private_dir(path):
-    info = os.stat(path)
+    info = os.lstat(path)
     require(stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid() and stat.S_IMODE(info.st_mode) == 0o700,
             f'{path} is not a 0700 directory of this user')
 
 
 def private_file(path):
     info = os.lstat(path)
-    require(stat.S_ISREG(info.st_mode) and info.st_uid == os.geteuid() and stat.S_IMODE(info.st_mode) & 0o077 == 0,
+    require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and info.st_uid == os.geteuid() and stat.S_IMODE(info.st_mode) & 0o077 == 0,
             f'{path} is not a private regular file of this user')
 
 
@@ -71,6 +71,125 @@ class Run:
 def load_toml(relative):
     with open(ROOT / relative, 'rb') as handle:
         return tomllib.load(handle)
+
+
+def validate_stage(directory, stage, revision, image, generation):
+    require(stage in STAGES, 'unknown deployment stage')
+    require(isinstance(revision, str) and re.fullmatch(r'[0-9a-f]{40}', revision), 'candidate revision pin absent')
+    require(isinstance(image, str) and re.fullmatch(r'\S+@sha256:[0-9a-f]{64}', image), 'candidate image pin absent')
+    require(isinstance(generation, str) and re.fullmatch(r'[0-9a-f]{64}', generation), 'material generation pin absent')
+    directory = Path(directory)
+    private_dir(directory)
+    previous_digest = None
+    previous_finished = None
+    for name in STAGES[:STAGES.index(stage) + 1]:
+        path = directory / (name + '.json')
+        private_file(path)
+        row = json.loads(path.read_text())
+        require(row.get('schema_version') == 1 and row.get('stage') == name and row.get('outcome') == 'passed',
+                name + ': successful versioned stage record absent')
+        require((row.get('revision'), row.get('image'), row.get('material_generation')) == (revision, image, generation),
+                name + ': candidate/image/material mismatch')
+        require(row.get('previous_record_sha256') == previous_digest, name + ': prerequisite record changed')
+        require(isinstance(row.get('checks'), list) and row['checks'] and
+                all(isinstance(check, str) and check for check in row['checks']) and
+                len(row['checks']) == len(set(row['checks'])), name + ': explicit distinct checks absent')
+        require(type(row.get('started_at')) is int and type(row.get('finished_at')) is int and
+                0 <= row['started_at'] <= row['finished_at'] and
+                (previous_finished is None or previous_finished <= row['started_at']), name + ': stage order invalid')
+        previous_digest = sha256(path)
+        previous_finished = row['finished_at']
+    return previous_digest
+
+
+def case_material_tokens(run, state, **_):
+    material = state / 'owned-token-material'
+    material.mkdir(mode=0o700)
+    env = {'LAYERX_REGISTRY_REQUEST_TOKEN_FILE': str(material / 'tokens/request'),
+           'LAYERX_REGISTRY_PUBLICATION_TOKEN_FILE': str(material / 'tokens/publication'),
+           'LAYERX_REGISTRY_STATE': str(material / 'state'),
+           'LAYERX_REGISTRY_JOURNAL': str(material / 'journal')}
+    init = 'docker/platform-registry/init.sh'
+    missing = run.script('registry-no-token-generation-during-startup', [init], env)
+    require(missing.returncode == 1 and 'producer=registry-fly-init--prepare-material' in missing.stderr,
+            'startup did not refuse missing material before privileged setup')
+    require(not Path(env['LAYERX_REGISTRY_REQUEST_TOKEN_FILE']).exists(), 'startup generated a replacement token')
+    created = run.script('registry-material-producer', [init, '--prepare-material'], env)
+    require(created.returncode == 0, 'production token material producer failed')
+    request = Path(env['LAYERX_REGISTRY_REQUEST_TOKEN_FILE'])
+    publication = Path(env['LAYERX_REGISTRY_PUBLICATION_TOKEN_FILE'])
+    first, second = request.read_bytes(), publication.read_bytes()
+    require(first != second and re.fullmatch(rb'[0-9a-f]{64}\n', first) and
+            re.fullmatch(rb'[0-9a-f]{64}\n', second), 'producer token pair contract')
+    resumed = run.script('registry-material-resume', [init, '--prepare-material'], env)
+    require(resumed.returncode == 0 and (request.read_bytes(), publication.read_bytes()) == (first, second),
+            'resume replaced retained credentials')
+    held = publication.with_name('publication.retained')
+    publication.rename(held)
+    absent = run.script('registry-material-missing-retained-token', [init, '--prepare-material'], env)
+    require(absent.returncode == 1 and not publication.exists() and request.read_bytes() == first,
+            'partial retained material was regenerated')
+    held.rename(publication)
+    publication.write_bytes(first)
+    collision = run.script('registry-material-token-collision', [init, '--prepare-material'], env)
+    require(collision.returncode == 1, 'equal credential roles were admitted')
+    publication.write_bytes(second)
+    publication.rename(held)
+    publication.symlink_to(held)
+    link = run.script('registry-material-symlink-refusal', [init, '--prepare-material'], env)
+    require(link.returncode == 1 and held.read_bytes() == second, 'linked credential material admitted or overwritten')
+    publication.unlink(); held.rename(publication)
+    alias = request.with_name('request.alias')
+    os.link(request, alias)
+    linked = run.script('registry-material-hardlink-refusal', [init, '--prepare-material'], env)
+    require(linked.returncode == 1, 'multiply linked credential material admitted')
+    alias.unlink()
+    request.chmod(0o644)
+    permissions = run.script('registry-material-token-permissions', [init, '--prepare-material'], env)
+    require(permissions.returncode == 1, 'unprotected token material admitted')
+    request.chmod(0o600)
+    recovered = run.script('registry-material-restored-original-pair', [init, '--prepare-material'], env)
+    require(recovered.returncode == 0 and (request.read_bytes(), publication.read_bytes()) == (first, second),
+            'restored original material did not resume')
+    return 'actual producer created distinct credentials once; startup, restart, loss, collision and permissions refused or resumed correctly'
+
+
+def case_stage_candidate_binding(staged, state, **_):
+    require(staged, 'staged runtime evidence absent')
+    doc = staged['doc']
+    directory = state / 'observed-passed-stages'
+    directory.mkdir(mode=0o700)
+    selected = {}
+    for attempt, path in zip(doc['stages'], staged['records']):
+        if attempt['outcome'] == 'passed':
+            selected[attempt['stage']] = path
+    require(set(selected) == set(STAGES), 'actual passed stage set incomplete')
+    for name, path in selected.items():
+        (directory / (name + '.json')).write_bytes(path.read_bytes())
+    pins = (doc['revision'], doc['candidate']['image'], doc['material_generation'])
+    validate_stage(directory, 'routed-proof', *pins)
+    for index, altered in ((0, '0' * 40), (1, 'refused@sha256:' + '0' * 64), (2, '0' * 64)):
+        wrong = list(pins); wrong[index] = altered
+        require(tuple(wrong) != pins, 'independent stage pins cannot be all zero')
+        try:
+            validate_stage(directory, 'registry-bootstrap', *wrong)
+        except Refused:
+            continue
+        raise Refused('stale candidate/image/material prerequisite accepted')
+    path = directory / 'registry-bootstrap.json'
+    original = path.read_bytes()
+    row = json.loads(original)
+    row['previous_record_sha256'] = '0' * 64
+    path.write_text(json.dumps(row))
+    try:
+        validate_stage(directory, 'registry-bootstrap', *pins)
+    except Refused:
+        pass
+    else:
+        raise Refused('replaced material prerequisite accepted')
+    path.write_bytes(original)
+    require(validate_stage(directory, 'routed-proof', *pins), 'original retained stage chain did not resume')
+    return 'real stage chain bound to independently selected candidate/image/material; substitutions refused and original chain retained'
 
 
 def ca_rows(run):
@@ -130,6 +249,30 @@ def case_plan_acyclic(plan, **_):
     return 'topological order equals stage order'
 
 
+def case_spec_stage_graph(**_):
+    text = (ROOT / 'spec/paxeer-x/spec.kvx').read_text()
+    tasks = {}
+    for match in re.finditer(r'(?ms)^\[task\.([0-9.]+)\]\n(.*?)(?=^\[|\Z)', text):
+        dependencies = re.search(r'^requires = (\[.*\])$', match.group(2), re.M)
+        require(dependencies is not None, 'task dependency declaration absent: ' + match.group(1))
+        tasks[match.group(1)] = json.loads(dependencies.group(1))
+    order = ('108.2.5', '108.2.6', '108.2.2', '108.2.9')
+    for before, after in zip(order, order[1:]):
+        require(before in tasks.get(after, []), after + ': preceding deployment stage absent')
+    active, complete = set(), set()
+    def visit(task):
+        require(task in tasks, 'unknown prerequisite task ' + task)
+        require(task not in active, 'deployment dependency cycle at ' + task)
+        if task in complete:
+            return
+        active.add(task)
+        for dependency in tasks[task]:
+            visit(dependency)
+        active.remove(task); complete.add(task)
+    visit(order[-1])
+    return 'actual material/bootstrap/router/routed-proof task graph is acyclic'
+
+
 def case_registry_independent(plan, **_):
     row = next(row for row in plan if row['name'] == 'registry-bootstrap')
     tokens = set(row['requires']) | set(row['needs']) | set(row['producers'].values())
@@ -158,6 +301,8 @@ def case_producers(plan, rows, registry, endpoint, **_):
                 require(STAGES.index(name) < STAGES.index(row['name']), f'{need}: producer stage {name} is not earlier')
             else:
                 require(kind in ('init.sh', 'deploy'), f'{need}: unknown producer kind {kind}')
+                if kind == 'init.sh':
+                    require(name == '--prepare-material', f'{need}: token production must precede registry activation')
     return f'{sum(len(row["needs"]) for row in plan)} prerequisites with producers'
 
 
@@ -208,7 +353,8 @@ def case_public_interface(registry, endpoint, staged, **_):
     dns = staged['doc']['dns']
     for n in range(1, 17):
         name = f'API{n}'
-        require(name in dns['before'] and dns['before'][name] == dns['after'].get(name), f'{name} DNS changed or unrecorded')
+        require(name in dns['before'] and isinstance(dns['before'][name], (str, list, dict)) and
+                bool(dns['before'][name]) and dns['before'][name] == dns['after'].get(name), f'{name} DNS changed or unrecorded')
     require(staged['doc']['routed_url'] == PUBLIC, 'routed proof did not use the public unified interface')
     return 'public interface and API1-API16 DNS unchanged'
 
@@ -236,6 +382,16 @@ def case_router_refusal(run, state, hosts_file, **_):
     return 'named refusal for unset, absent and failed registry bootstrap; record retained'
 
 
+def retained_artifact(base, relative):
+    require(isinstance(relative, str) and relative and not Path(relative).is_absolute()
+            and '..' not in Path(relative).parts, 'retained evidence reference must remain within its private directory')
+    target = base / relative
+    require(not target.is_symlink() and target.resolve().is_relative_to(base.resolve()),
+            'retained evidence reference escapes its private directory')
+    private_file(target)
+    return target
+
+
 def load_staged(path, plan):
     require(path, 'staged runtime evidence absent: supply --staged-evidence or PAXEER_X_STAGED_EVIDENCE')
     path = Path(path)
@@ -244,8 +400,7 @@ def load_staged(path, plan):
     base = path.parent
     records = []
     for attempt in doc['stages']:
-        record = (base / attempt['record']).resolve()
-        private_file(record)
+        record = retained_artifact(base, attempt['record'])
         require(sha256(record) == attempt['record_sha256'], f'record {attempt["record"]} changed')
         recorded = json.loads(record.read_text())
         require(recorded.get('stage') == attempt['stage'] and recorded.get('outcome') == attempt['outcome'],
@@ -283,13 +438,14 @@ def case_staged_inventory(staged, plan, **_):
     doc = staged['doc']
     inventory = doc['inventory']
     for key in ('services', 'images', 'volumes', 'credentials', 'prerequisites'):
-        require(isinstance(inventory.get(key), list), f'inventory lacks {key}')
+        require(isinstance(inventory.get(key), list) and inventory[key], f'inventory lacks {key}')
     require(inventory['recorded_at'] <= doc['stages'][0]['started_at'], 'inventory recorded after the first deployment action')
     rows = {}
     for row in inventory['credentials'] + inventory['prerequisites']:
         require(set(row) == {'name', 'producer', 'reused'} and isinstance(row['reused'], bool),
                 f'inventory row {row.get("name")} carries more than name/producer/reused')
-        rows.setdefault(row['name'], row)
+        require(row['name'] not in rows or rows[row['name']] == row, 'conflicting inventoried prerequisite producer')
+        rows[row['name']] = row
     for stage in plan:
         for need in stage['needs']:
             producer = stage['producers'][need]
@@ -405,8 +561,7 @@ def case_routed_receipt(staged, run, state, verifier_manifest, receipt_authority
     for key in ('program_id', 'activity_id', 'receipt_digest'):
         require(re.fullmatch(r'[0-9a-f]{64}', proof[key]) and proof[key] != '0' * 64,
                 f'routed proof {key} is invalid')
-    receipt = (staged['base'] / proof['receipt']).resolve()
-    private_file(receipt)
+    receipt = retained_artifact(staged['base'], proof['receipt'])
     require(sha256(receipt) == proof['receipt_sha256'], 'receipt changed')
     require(proof['read_via'] == PUBLIC, 'receipt was not read through the router')
     registry = fetch_routed('/v1/programs/registry/' + proof['program_id'], routed_curl_config, state, 'registry-read')
@@ -446,9 +601,10 @@ def case_routed_receipt(staged, run, state, verifier_manifest, receipt_authority
     return 'source-bound production verifier accepted the exact routed receipt and refused canonical receipt corruption'
 
 
-CASES = (('plan-order', case_plan_order), ('plan-acyclic', case_plan_acyclic),
+CASES = (('plan-order', case_plan_order), ('plan-acyclic', case_plan_acyclic), ('spec-stage-graph', case_spec_stage_graph),
          ('registry-no-router-dependency', case_registry_independent), ('producer-for-every-prerequisite', case_producers),
-         ('shared-material', case_shared_material), ('no-key-material', case_no_key_material),
+         ('shared-material', case_shared_material), ('material-token-producer-and-recovery', case_material_tokens),
+         ('candidate-bound-stages', case_stage_candidate_binding), ('no-key-material', case_no_key_material),
          ('public-interface', case_public_interface), ('router-named-missing-prerequisite', case_router_refusal),
          ('staged-evidence-order', case_staged_order), ('staged-inventory', case_staged_inventory),
          ('staged-resume', case_staged_resume), ('staged-routed-receipt', case_routed_receipt))
@@ -464,7 +620,18 @@ def main():
     parser.add_argument('--verifier-manifest', default=os.environ.get('PAXEER_X_VERIFIER_MANIFEST'))
     parser.add_argument('--receipt-authority', default=os.environ.get('PAXEER_X_RECEIPT_AUTHORITY'))
     parser.add_argument('--routed-curl-config', default=os.environ.get('PAXEER_X_ROUTED_CURL_CONFIG'))
+    parser.add_argument('--check-stage', choices=STAGES)
+    parser.add_argument('--stage-dir', default=os.environ.get('CHECK_LIVE_STAGE_DIR'))
+    parser.add_argument('--candidate-revision', default=os.environ.get('CHECK_LIVE_CANDIDATE_REVISION'))
+    parser.add_argument('--candidate-image', default=os.environ.get('CHECK_LIVE_CANDIDATE_IMAGE'))
+    parser.add_argument('--material-generation', default=os.environ.get('CHECK_LIVE_MATERIAL_GENERATION'))
     args = parser.parse_args()
+    if args.check_stage:
+        try:
+            validate_stage(args.stage_dir, args.check_stage, args.candidate_revision, args.candidate_image, args.material_generation)
+            return 0
+        except (Refused, OSError, KeyError, ValueError, TypeError):
+            return 1
     if not args.evidence_dir:
         print('registry-router bootstrap refused: PAXEER_X_EVIDENCE_DIR is unset', file=sys.stderr)
         return 2

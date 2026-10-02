@@ -183,16 +183,18 @@ registry-plan  prints the registry/router bring-up order from this checkout's
   stage   "stage <n> <name> requires=<previous stage|-> needs=<prerequisite>,...
           producers=<prerequisite>:<producer>,..." for material,
           registry-bootstrap, router-activation and routed-proof, a producer
-          being ca.sh:<service>, fly-secret:<NAME>, init.sh:<file>,
+          being ca.sh:<service>, fly-secret:<NAME>, init.sh:--prepare-material,
           deploy:<step> or stage:<name>; "fail registry-plan toml=absent
           <path>" and exit 1 when a toml line it reads is absent.
 
-registry-bootstrap  the machines, dedicated-ipv4 and healthz checks of
+registry-bootstrap  the machines, private-ingress and mTLS healthz checks of
           registry, which ask no router; registry adds program-events and
           router-readyz read through the router.
 
-router    first reads CHECK_LIVE_STAGE_DIR/registry-bootstrap.json and, unless
-          its outcome is passed, prints "fail router-activation
+router    requires protected material and registry-bootstrap records under
+          CHECK_LIVE_STAGE_DIR, bound to CHECK_LIVE_CANDIDATE_REVISION,
+          CHECK_LIVE_CANDIDATE_IMAGE and CHECK_LIVE_MATERIAL_GENERATION.
+          Unless their ordered outcomes pass with the same pins, prints "fail router-activation
           missing=registry-bootstrap producer=stage:registry-bootstrap" and
           exits 1 before any request; its readyz line also fails with
           missing=program_registry when the router's program_registry backend
@@ -3773,23 +3775,23 @@ check_registry_plan() {
 		echo "fail registry-plan toml=absent $endpoint"
 		exit 1
 	fi
-	echo "stage 1 material requires=- needs=gateway-client,registry,registry-event-client,REGISTRY_IDENTITY_TOKEN,REGISTRY_PROGRAM_EVENTS_TOKEN,REGISTRY_WEBHOOKS_EVENTS_TOKEN,LAYERX_REGISTRY_NODE_AUTHORIZATION,LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION,builder-rootfs,environment-tree-digest,replica-id,trust-history producers=gateway-client:ca.sh:gateway-client,registry:ca.sh:registry,registry-event-client:ca.sh:registry-event-client,REGISTRY_IDENTITY_TOKEN:fly-secret:REGISTRY_IDENTITY_TOKEN,REGISTRY_PROGRAM_EVENTS_TOKEN:fly-secret:REGISTRY_PROGRAM_EVENTS_TOKEN,REGISTRY_WEBHOOKS_EVENTS_TOKEN:fly-secret:REGISTRY_WEBHOOKS_EVENTS_TOKEN,LAYERX_REGISTRY_NODE_AUTHORIZATION:fly-secret:LAYERX_REGISTRY_NODE_AUTHORIZATION,LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION:fly-secret:LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION,builder-rootfs:deploy:builder-environment,environment-tree-digest:deploy:builder-environment,replica-id:deploy:kernel-material,trust-history:deploy:kernel-material"
-	echo "stage 2 registry-bootstrap requires=material needs=request-token,publication-token producers=request-token:init.sh:/data/tokens/request,publication-token:init.sh:/data/tokens/publication"
+	echo "stage 1 material requires=- needs=request-token,publication-token,gateway-client,registry,registry-event-client,REGISTRY_IDENTITY_TOKEN,REGISTRY_PROGRAM_EVENTS_TOKEN,REGISTRY_WEBHOOKS_EVENTS_TOKEN,LAYERX_REGISTRY_NODE_AUTHORIZATION,LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION,builder-rootfs,environment-tree-digest,replica-id,trust-history producers=request-token:init.sh:--prepare-material,publication-token:init.sh:--prepare-material,gateway-client:ca.sh:gateway-client,registry:ca.sh:registry,registry-event-client:ca.sh:registry-event-client,REGISTRY_IDENTITY_TOKEN:fly-secret:REGISTRY_IDENTITY_TOKEN,REGISTRY_PROGRAM_EVENTS_TOKEN:fly-secret:REGISTRY_PROGRAM_EVENTS_TOKEN,REGISTRY_WEBHOOKS_EVENTS_TOKEN:fly-secret:REGISTRY_WEBHOOKS_EVENTS_TOKEN,LAYERX_REGISTRY_NODE_AUTHORIZATION:fly-secret:LAYERX_REGISTRY_NODE_AUTHORIZATION,LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION:fly-secret:LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION,builder-rootfs:deploy:builder-environment,environment-tree-digest:deploy:builder-environment,replica-id:deploy:kernel-material,trust-history:deploy:kernel-material"
+	echo "stage 2 registry-bootstrap requires=material needs=material-record,request-token,publication-token producers=material-record:stage:material,request-token:init.sh:--prepare-material,publication-token:init.sh:--prepare-material"
 	echo "stage 3 router-activation requires=registry-bootstrap needs=registry-bootstrap,program-registry-token,client-identity,client-password producers=registry-bootstrap:stage:registry-bootstrap,program-registry-token:fly-secret:ENDPOINT_PROGRAM_REGISTRY_TOKEN,client-identity:fly-secret:ENDPOINT_CLIENT_P12,client-password:fly-secret:ENDPOINT_CLIENT_PASSWORD"
 	echo "stage 4 routed-proof requires=router-activation needs=router-activation,registry-receipt producers=router-activation:stage:router-activation,registry-receipt:deploy:routed-proof"
 	exit 0
 }
 
 # router_prerequisite: router activation requires a passed registry bootstrap,
-# the record CHECK_LIVE_STAGE_DIR/registry-bootstrap.json with outcome passed;
-# without it the router check names the missing stage and asks nothing.
+# protected material and bootstrap records bound to the selected revision,
+# image and material generation; refusal precedes every router request.
 router_prerequisite() {
 	if [ -z "${CHECK_LIVE_STAGE_DIR:-}" ]; then
 		echo "check-live: CHECK_LIVE_STAGE_DIR is unset" >&2
 		exit 2
 	fi
-	if ! python3 -c 'import json, sys; record=json.load(open(sys.argv[1])); sys.exit(0 if record.get("stage") == "registry-bootstrap" and record.get("outcome") == "passed" else 1)' \
-		"$CHECK_LIVE_STAGE_DIR/registry-bootstrap.json" 2>/dev/null; then
+	if ! python3 "$repo_root/tools/qualification/paxeer-x/registry-router-bootstrap.py" \
+		--check-stage registry-bootstrap --stage-dir "$CHECK_LIVE_STAGE_DIR" 2>/dev/null; then
 		echo "fail router-activation missing=registry-bootstrap producer=stage:registry-bootstrap"
 		exit 1
 	fi
