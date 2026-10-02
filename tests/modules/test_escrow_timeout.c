@@ -231,7 +231,21 @@ static int explicit_release(void)
         lx_escrow_lookup(&ctx, record.escrow_id, &stored) != LXP_OK ||
         stored.state != LX_ESCROW_STATE_TIMED_OUT ||
         effects.count != 1U || effects.effects[0].event_type != 5U ||
-        lxp_module_ctx_commit(&ctx) != LXP_OK ||
+        lxp_module_ctx_commit(&ctx) != LXP_OK)
+        return 1;
+    request.escrow_account = second_escrow;
+    (void)memcpy(request.idempotency_key, timeout_key, 32U);
+    if (lx_escrow_receipt_replay(&ctx, timeout_key, &receipt, &found) != LXP_OK ||
+        !found)
+        return 1;
+    (void)memset(authority.actor, 0xc3, 32U);
+    (void)memset(authority.principal, 0xd4, 32U);
+    if (lx_escrow_timeout_execute(&ctx, &request, &replayed) != LXP_OK ||
+        memcmp(&receipt, &replayed, sizeof(receipt)) != 0 ||
+        lx_escrow_release_execute(&ctx, &request, &replayed) !=
+            LXP_ERR_CONTEXT_MISMATCH ||
+        transfer_calls != 2U || second_escrow->balance.lo != 0U ||
+        owner->balance.lo != 27U ||
         lxp_state_store_destroy(&state) != LXP_OK)
         return 1;
     return 0;

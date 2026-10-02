@@ -21553,7 +21553,9 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.3]
 title = "Bind escrow replay success to the original authorized operation context"
-status = "in_progress"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "unverified"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]

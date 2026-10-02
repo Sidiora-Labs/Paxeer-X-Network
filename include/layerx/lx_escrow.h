@@ -23,6 +23,8 @@ enum {
 enum {
     LX_ESCROW_RECORD_BYTES = 305,
     LX_ESCROW_RESULT_BYTES = 243,
+    LX_ESCROW_RESULT_CONTEXT_VERSION = 2,
+    LX_ESCROW_RESULT_V2_BYTES = LX_ESCROW_RESULT_BYTES + 1 + 32,
     LX_ESCROW_OPEN_PAYLOAD_BYTES = 288,
     LX_ESCROW_CAPTURE_PAYLOAD_BYTES = 80,
     LX_ESCROW_RELEASE_PAYLOAD_BYTES = 64,
@@ -75,6 +77,10 @@ typedef struct lx_escrow_economic_result {
     uint8_t transfer_set_root[32];
     uint64_t global_sequence;
     uint64_t timestamp;
+    /* Commitment to the authorized request that produced this result.  Legacy
+     * 243-byte records decode with context_bound false. */
+    bool context_bound;
+    uint8_t context_digest[32];
 } lx_escrow_economic_result;
 
 typedef struct lx_escrow_open_request {
@@ -137,6 +143,9 @@ lxp_result lx_escrow_result_encode(const lx_escrow_economic_result *result,
                                    uint8_t bytes[LX_ESCROW_RESULT_BYTES]);
 lxp_result lx_escrow_result_decode(const uint8_t *bytes, size_t length,
                                    lx_escrow_economic_result *result);
+lxp_result lx_escrow_result_encode_v2(
+    const lx_escrow_economic_result *result,
+    uint8_t bytes[LX_ESCROW_RESULT_V2_BYTES]);
 lxp_result lx_escrow_state_put(lxp_module_ctx *ctx,
                                const lx_escrow_record *record);
 lxp_result lx_escrow_state_update(lxp_module_ctx *ctx,
@@ -173,6 +182,34 @@ lxp_result lx_escrow_receipt_replay(lxp_module_ctx *ctx,
 lxp_result lx_escrow_receipt_record(lxp_module_ctx *ctx,
                                     const uint8_t key[32],
                                     const lx_escrow_economic_result *result);
+/* Canonical digest of the authorized request context an escrow operation
+ * executes under.  Replay success requires the stored digest to match. */
+lxp_result lx_escrow_context_digest(const uint8_t escrow_id[32],
+                                    uint16_t ordinal,
+                                    const lxp_authority_resolved *authority,
+                                    lxp_u128 amount,
+                                    const uint8_t recipient[32],
+                                    uint32_t basis_points,
+                                    uint8_t digest[32]);
+lxp_result lx_escrow_result_lookup(lxp_module_ctx *ctx, const uint8_t key[32],
+                                   lx_escrow_economic_result *result,
+                                   bool *found);
+/* Replays a stored result only for the same hold, operation and authorized
+ * context; any difference is LXP_ERR_CONTEXT_MISMATCH.  A legacy unbound
+ * record can replay only the permissionless expiry transition. */
+lxp_result lx_escrow_receipt_replay_bound(lxp_module_ctx *ctx,
+                                          const uint8_t key[32],
+                                          const uint8_t escrow_id[32],
+                                          uint16_t ordinal,
+                                          const uint8_t context_digest[32],
+                                          bool legacy_authorized,
+                                          lxp_receipt *receipt, bool *found);
+struct lx_escrow_settlement;
+lxp_result lx_escrow_commit_bound_result(
+    lxp_module_ctx *ctx, const lx_escrow_record *record,
+    const uint8_t idempotency_key[32],
+    const struct lx_escrow_settlement *settlement,
+    uint16_t ordinal, const uint8_t context_digest[32], lxp_receipt *receipt);
 /* Canonical idempotency key of the expiry sweep transition for one hold. */
 lxp_result lx_escrow_timeout_key(const lx_escrow_record *record,
                                  uint8_t key[32]);

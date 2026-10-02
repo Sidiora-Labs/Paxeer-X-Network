@@ -1,6 +1,8 @@
 #include "layerx/lx_escrow.h"
 #include "layerx/lxp_kernel.h"
 #include "layerx/lxp_receipt.h"
+#include "layerx/lxp_state.h"
+#include "../../src/modules/escrow/lx_escrow_internal.h"
 
 #include <string.h>
 
@@ -201,12 +203,207 @@ int main(void)
     request.authority = &authority;
     request.amount = (lxp_u128){ 0U, 5U };
     (void)memcpy(request.idempotency_key, partial_key, 32U);
+    /* Reused inner key with a changed amount is a different request. */
+    if (lx_escrow_partial_capture_execute(&ctx, &request, &scratch) !=
+            LXP_ERR_CONTEXT_MISMATCH ||
+        transfer_calls != 1U ||
+        escrow_account->balance.lo != 70U || beneficiary->balance.lo != 30U)
+        return 1;
+    request.amount = (lxp_u128){ 0U, 30U };
     if (lx_escrow_partial_capture_execute(&ctx, &request, &replay_receipt) !=
             LXP_OK ||
         transfer_calls != 1U ||
         memcmp(&first_receipt, &replay_receipt, sizeof(first_receipt)) != 0 ||
         escrow_account->balance.lo != 70U || beneficiary->balance.lo != 30U)
         return 1;
+    {
+        uint8_t *bindings[] = {
+            authority.verified_key, authority.authority_hash, authority.grant_id
+        };
+        for (size_t index = 0U; index < sizeof(bindings) / sizeof(bindings[0]); ++index) {
+            bindings[index][0] ^= 1U;
+            if (lx_escrow_partial_capture_execute(&ctx, &request, &scratch) !=
+                    LXP_ERR_CONTEXT_MISMATCH || transfer_calls != 1U)
+                return 1;
+            bindings[index][0] ^= 1U;
+        }
+        request.beneficiary_account = owner;
+        if (lx_escrow_partial_capture_execute(&ctx, &request, &scratch) !=
+                LXP_ERR_CONTEXT_MISMATCH || transfer_calls != 1U ||
+            escrow_account->balance.lo != 70U || beneficiary->balance.lo != 30U)
+            return 1;
+        request.beneficiary_account = beneficiary;
+    }
+    {
+        lx_escrow_economic_result result;
+        lx_escrow_economic_result decoded;
+        uint8_t encoded[LX_ESCROW_RESULT_V2_BYTES];
+        uint8_t legacy[LX_ESCROW_RESULT_BYTES];
+        uint8_t legacy_key[32] = { 0x91U };
+        uint8_t storage_key[LX_ESCROW_RESULT_KEY_BYTES];
+        const uint8_t *stored_bytes;
+        size_t stored_length;
+        if (lx_escrow_result_lookup(&ctx, partial_key, &result, &found) != LXP_OK ||
+            !found || !result.context_bound ||
+            lx_escrow_result_encode_v2(&result, encoded) != LXP_OK ||
+            lx_escrow_result_encode(&result, legacy) != LXP_OK ||
+            memcmp(encoded, legacy, sizeof(legacy)) != 0 ||
+            lx_escrow_result_decode(legacy, sizeof(legacy), &decoded) != LXP_OK ||
+            decoded.context_bound ||
+            lx_escrow_result_key(legacy_key, storage_key) != LXP_OK ||
+            lxp_ctx_kv_put(&ctx, storage_key, sizeof(storage_key), legacy,
+                           sizeof(legacy)) != LXP_OK)
+            return 1;
+        (void)memcpy(request.idempotency_key, legacy_key, 32U);
+        if (lx_escrow_partial_capture_execute(&ctx, &request, &scratch) !=
+                LXP_ERR_CONTEXT_MISMATCH || transfer_calls != 1U ||
+            lxp_ctx_kv_get(&ctx, storage_key, sizeof(storage_key), &stored_bytes,
+                           &stored_length) != LXP_OK ||
+            stored_length != sizeof(legacy) ||
+            memcmp(stored_bytes, legacy, sizeof(legacy)) != 0)
+            return 1;
+        (void)memcpy(request.idempotency_key, partial_key, 32U);
+        encoded[LX_ESCROW_RESULT_BYTES] = 0U;
+        if (lx_escrow_result_decode(encoded, sizeof(encoded), &decoded) !=
+                LXP_ERR_NON_CANONICAL)
+            return 1;
+        encoded[LX_ESCROW_RESULT_BYTES] = LX_ESCROW_RESULT_CONTEXT_VERSION;
+        (void)memset(encoded + LX_ESCROW_RESULT_BYTES + 1U, 0, 32U);
+        if (lx_escrow_result_decode(encoded, sizeof(encoded), &decoded) !=
+                LXP_ERR_NON_CANONICAL)
+            return 1;
+    }
+    /* Changed actor: the owner's delegate may capture, but not replay the
+     * beneficiary's result. */
+    authority.kind = LXP_AUTHORITY_DELEGATED_CAPABILITY;
+    (void)memcpy(authority.principal, owner->id, 32U);
+    (void)memcpy(authority.actor, owner->id, 32U);
+    if (lx_escrow_partial_capture_execute(&ctx, &request, &scratch) !=
+            LXP_ERR_CONTEXT_MISMATCH || transfer_calls != 1U)
+        return 1;
+    authority.kind = LXP_AUTHORITY_OWNER;
+    (void)memcpy(authority.principal, beneficiary->id, 32U);
+    (void)memcpy(authority.actor, beneficiary->id, 32U);
+    /* Cross-operation: a full capture or a release cannot claim it. */
+    if (lx_escrow_capture_execute(&ctx, &request, &scratch) !=
+            LXP_ERR_CONTEXT_MISMATCH || transfer_calls != 1U)
+        return 1;
+    {
+        lx_escrow_release_request release;
+        lxp_authority_resolved owner_authority = authority;
+        (void)memset(&release, 0, sizeof(release));
+        (void)memcpy(owner_authority.principal, owner->id, 32U);
+        (void)memcpy(owner_authority.actor, owner->id, 32U);
+        release.escrow_id = record.escrow_id;
+        release.escrow_account = escrow_account;
+        release.owner_account = owner;
+        release.asset = &asset;
+        release.authority = &owner_authority;
+        (void)memcpy(release.idempotency_key, partial_key, 32U);
+        if (lx_escrow_release_execute(&ctx, &release, &scratch) !=
+                LXP_ERR_CONTEXT_MISMATCH || transfer_calls != 1U)
+            return 1;
+    }
+    /* Cross-hold: the same inner key on a second real hold. */
+    {
+        lx_escrow_record second = record;
+        lx_escrow_record second_after;
+        second.escrow_id[0] = 4U;
+        if (lx_escrow_state_put(&ctx, &second) != LXP_OK)
+            return 1;
+        request.escrow_id = second.escrow_id;
+        if (lx_escrow_partial_capture_execute(&ctx, &request, &scratch) !=
+                LXP_ERR_CONTEXT_MISMATCH || transfer_calls != 1U ||
+            lx_escrow_lookup(&ctx, second.escrow_id, &second_after) !=
+                LXP_OK ||
+            second_after.state != LX_ESCROW_STATE_OPEN ||
+            !lxp_u128_is_zero(second_after.captured_amount))
+            return 1;
+        request.escrow_id = record.escrow_id;
+    }
+    /* Routed: a fresh Activity reusing the inner key with a changed amount
+     * fails and emits nothing; the exact retry emits the stored transition. */
+    if (lxp_effect_buffer_init(&effects) != LXP_OK ||
+        build_capture_payload(record.escrow_id, (lxp_u128){ 0U, 31U },
+                              partial_key, payload) != LXP_OK ||
+        dispatch(&ctx, &effects, LX_ESCROW_PARTIAL_CAPTURE, 3U, payload,
+                 sizeof(payload), &authority) != LXP_ERR_CONTEXT_MISMATCH ||
+        effects.count != 0U || transfer_calls != 1U ||
+        build_capture_payload(record.escrow_id, (lxp_u128){ 0U, 30U },
+                              partial_key, payload) != LXP_OK ||
+        dispatch(&ctx, &effects, LX_ESCROW_CAPTURE, 2U, payload,
+                 sizeof(payload), &authority) != LXP_ERR_CONTEXT_MISMATCH ||
+        effects.count != 0U || transfer_calls != 1U ||
+        dispatch(&ctx, &effects, LX_ESCROW_PARTIAL_CAPTURE, 3U, payload,
+                 sizeof(payload), &authority) != LXP_OK ||
+        transfer_calls != 1U || effects.count != 1U ||
+        effects.effects[0].event_type != 3U ||
+        memcmp(effects.effects[0].body, record.escrow_id, 32U) != 0 ||
+        effects.effects[0].body[34] !=
+            (uint8_t)LX_ESCROW_STATE_PARTIALLY_CAPTURED ||
+        escrow_account->balance.lo != 70U || beneficiary->balance.lo != 30U)
+        return 1;
+    if (lxp_module_ctx_commit(&ctx) != LXP_OK ||
+        lxp_effect_buffer_init(&effects) != LXP_OK ||
+        lxp_module_ctx_init(&ctx, &kernel, LXP_MODULE_ESCROW, 500U, 0U, 1U,
+                            100000U, &arena, true) != LXP_OK ||
+        lxp_module_ctx_bind_effects(&ctx, &effects) != LXP_OK)
+        return 1;
+    /* Restart: the committed state store and the committed module state
+     * table are restored into a fresh kernel; the context commitment and
+     * original receipt survive. */
+    {
+        static lxp_module_kv_entry saved_kv[LXP_KERNEL_MAX_MODULE_KV];
+        size_t saved_kv_count = kernel.module_kv_count;
+        lxp_state_snapshot *snapshot = NULL;
+        if (saved_kv_count == 0U || saved_kv_count > LXP_KERNEL_MAX_MODULE_KV)
+            return 1;
+        (void)memcpy(saved_kv, kernel.module_kv,
+                     saved_kv_count * sizeof(saved_kv[0]));
+        if (lxp_state_snapshot_create(&state, &snapshot) != LXP_OK ||
+            lxp_state_store_destroy(&state) != LXP_OK ||
+            lxp_state_store_init(&state, 0U) != LXP_OK ||
+            lxp_state_snapshot_restore(snapshot, &state) != LXP_OK)
+            return 1;
+        lxp_state_snapshot_destroy(snapshot);
+        if (lxp_kernel_create(&kernel, &state, &journal, &parameters, 0U) !=
+                LXP_OK ||
+            lxp_kernel_register_module(&kernel, lx_escrow_module_iface()) !=
+                LXP_OK ||
+            lxp_kernel_set_capabilities(&kernel, NULL, apply_capability) !=
+                LXP_OK ||
+            lxp_kernel_bind_module_runtime(&kernel, LXP_MODULE_ESCROW,
+                                           &runtime) != LXP_OK ||
+            kernel.module_kv_count != 0U)
+            return 1;
+        (void)memcpy(kernel.module_kv, saved_kv,
+                     saved_kv_count * sizeof(saved_kv[0]));
+        kernel.module_kv_count = saved_kv_count;
+        if (lxp_effect_buffer_init(&effects) != LXP_OK ||
+            lxp_module_ctx_init(&ctx, &kernel, LXP_MODULE_ESCROW, 500U, 0U,
+                                1U, 100000U, &arena, true) != LXP_OK ||
+            lxp_module_ctx_bind_effects(&ctx, &effects) != LXP_OK)
+            return 1;
+        request.amount = (lxp_u128){ 0U, 29U };
+        if (lx_escrow_partial_capture_execute(&ctx, &request, &scratch) !=
+                LXP_ERR_CONTEXT_MISMATCH ||
+            lx_escrow_capture_execute(&ctx, &request, &scratch) !=
+                LXP_ERR_CONTEXT_MISMATCH)
+            return 1;
+        request.amount = (lxp_u128){ 0U, 30U };
+        (void)memset(&replay_receipt, 0xff, sizeof(replay_receipt));
+        if (lx_escrow_partial_capture_execute(&ctx, &request,
+                                              &replay_receipt) != LXP_OK ||
+            memcmp(&first_receipt, &replay_receipt,
+                   sizeof(first_receipt)) != 0 ||
+            transfer_calls != 1U || escrow_account->balance.lo != 70U ||
+            beneficiary->balance.lo != 30U ||
+            lx_escrow_lookup(&ctx, record.escrow_id, &stored) != LXP_OK ||
+            stored.captured_amount.lo != 30U ||
+            stored.state != LX_ESCROW_STATE_PARTIALLY_CAPTURED ||
+            lxp_module_ctx_commit(&ctx) != LXP_OK)
+            return 1;
+    }
 
     (void)memcpy(request.idempotency_key, full_key, 32U);
     request.amount = (lxp_u128){ 0U, 71U };

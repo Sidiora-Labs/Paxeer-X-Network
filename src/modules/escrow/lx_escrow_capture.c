@@ -37,17 +37,32 @@ static lxp_result execute_capture(lxp_module_ctx *ctx,
     lxp_u128 amount;
     lxp_result release;
     lxp_result status;
+    uint8_t context_digest[32];
+    uint16_t ordinal = full ? 2U : 3U;
     bool replayed;
     if (ctx == NULL || request == NULL || request->escrow_id == NULL ||
         request->escrow_account == NULL ||
         request->beneficiary_account == NULL || request->asset == NULL ||
         receipt == NULL || lxp_ct_is_zero(request->idempotency_key, 32U))
         return LXP_ERR_NON_CANONICAL;
-    status = lx_escrow_receipt_replay(ctx, request->idempotency_key, receipt,
-                                      &replayed);
-    if (status != LXP_OK || replayed) return status;
     status = lx_escrow_lookup(ctx, request->escrow_id, &record);
     if (status != LXP_OK) return status;
+    if (memcmp(record.escrow_account, request->escrow_account->id, 32U) != 0 ||
+        memcmp(record.asset_id, request->asset->asset_id, 32U) != 0)
+        return LXP_ERR_CONTEXT_MISMATCH;
+    status = lx_escrow_context_digest(request->escrow_id, ordinal,
+                                      request->authority, request->amount,
+                                      request->beneficiary_account->id, 0U,
+                                      context_digest);
+    if (status != LXP_OK) return status;
+    status = lx_escrow_receipt_replay_bound(
+        ctx, request->idempotency_key, request->escrow_id, ordinal,
+        context_digest,
+        authority_can_capture(&record, request->authority) &&
+            memcmp(record.beneficiary, request->beneficiary_account->id,
+                   32U) == 0,
+        receipt, &replayed);
+    if (status != LXP_OK || replayed) return status;
     if (record.state == LX_ESCROW_STATE_TIMED_OUT)
         return LXP_ERR_HOLD_EXPIRED;
     if (record.state == LX_ESCROW_STATE_DISPUTED)
@@ -94,8 +109,10 @@ static lxp_result execute_capture(lxp_module_ctx *ctx,
     record.locked_amount = locked_after;
     record.state = full ? LX_ESCROW_STATE_CAPTURED :
                           LX_ESCROW_STATE_PARTIALLY_CAPTURED;
-    return lx_escrow_commit_result(ctx, &record, request->idempotency_key,
-                                   &settlement, full ? 2U : 3U, receipt);
+    return lx_escrow_commit_bound_result(ctx, &record,
+                                         request->idempotency_key,
+                                         &settlement, ordinal, context_digest,
+                                         receipt);
 }
 
 lxp_result lx_escrow_capture_execute(lxp_module_ctx *ctx,

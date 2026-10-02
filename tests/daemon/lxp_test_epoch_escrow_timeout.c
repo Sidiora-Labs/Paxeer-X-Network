@@ -181,6 +181,13 @@ int main(void)
             LXP_OK ||
         !found || receipt.operation != 5U || receipt.amount.lo != 50U)
         return fail("timed out hold");
+    {
+        lx_escrow_economic_result result;
+        if (lx_escrow_result_lookup(&ctx, timeout_key, &result, &found) != LXP_OK ||
+            !found || !result.context_bound || result.ordinal != 5U ||
+            memcmp(result.escrow_id, record.escrow_id, 32U) != 0)
+            return fail("sweep replay context");
+    }
     lxp_module_ctx_rollback(&ctx);
     if (lxp_state_root(&fixture.kernel, root_after) != LXP_OK ||
         memcmp(root_before, root_after, 32U) == 0)

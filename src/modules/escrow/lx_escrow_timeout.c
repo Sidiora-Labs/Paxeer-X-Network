@@ -15,17 +15,34 @@ static lxp_result execute_release(lxp_module_ctx *ctx,
     lxp_u128 remaining;
     lxp_result release;
     lxp_result status;
+    uint8_t context_digest[32];
+    uint16_t ordinal = timeout ? 5U : 4U;
     bool replayed;
     if (ctx == NULL || request == NULL || request->escrow_id == NULL ||
         request->escrow_account == NULL || request->owner_account == NULL ||
         request->asset == NULL || receipt == NULL ||
         lxp_ct_is_zero(request->idempotency_key, 32U))
         return LXP_ERR_NON_CANONICAL;
-    status = lx_escrow_receipt_replay(ctx, request->idempotency_key, receipt,
-                                      &replayed);
-    if (status != LXP_OK || replayed) return status;
     status = lx_escrow_lookup(ctx, request->escrow_id, &record);
     if (status != LXP_OK) return status;
+    if (memcmp(record.owner, request->owner_account->id, 32U) != 0 ||
+        memcmp(record.escrow_account, request->escrow_account->id, 32U) != 0 ||
+        memcmp(record.asset_id, request->asset->asset_id, 32U) != 0)
+        return LXP_ERR_CONTEXT_MISMATCH;
+    status = lx_escrow_context_digest(
+        request->escrow_id, ordinal, timeout ? NULL : request->authority,
+        (lxp_u128){ 0U, 0U }, request->owner_account->id, 0U,
+        context_digest);
+    if (status != LXP_OK) return status;
+    status = lx_escrow_receipt_replay_bound(
+        ctx, request->idempotency_key, request->escrow_id, ordinal,
+        context_digest,
+        memcmp(record.owner, request->owner_account->id, 32U) == 0 &&
+            (timeout || (request->authority != NULL &&
+                         memcmp(request->authority->principal, record.owner,
+                                32U) == 0)),
+        receipt, &replayed);
+    if (status != LXP_OK || replayed) return status;
     if (record.state == LX_ESCROW_STATE_DISPUTED)
         return LXP_ERR_HOLD_DISPUTED;
     if (!lx_escrow_active_state(record.state)) return LXP_ERR_ESCROW_STATE;
@@ -64,8 +81,10 @@ static lxp_result execute_release(lxp_module_ctx *ctx,
     record.state = timeout ? LX_ESCROW_STATE_TIMED_OUT :
                              LX_ESCROW_STATE_RELEASED;
     record.locked_amount = (lxp_u128){ 0U, 0U };
-    return lx_escrow_commit_result(ctx, &record, request->idempotency_key,
-                                   &settlement, timeout ? 5U : 4U, receipt);
+    return lx_escrow_commit_bound_result(ctx, &record,
+                                         request->idempotency_key,
+                                         &settlement, ordinal, context_digest,
+                                         receipt);
 }
 
 lxp_result lx_escrow_release_execute(lxp_module_ctx *ctx,
@@ -246,7 +265,12 @@ lxp_result lx_escrow_epoch_begin(lxp_module_ctx *ctx, uint64_t epoch,
                          32U);
         result.global_sequence = lxp_ctx_global_sequence(ctx);
         result.timestamp = timestamp;
-        status = lx_escrow_receipt_record(ctx, idempotency, &result);
+        result.context_bound = true;
+        status = lx_escrow_context_digest(record.escrow_id, 5U, NULL,
+                                          (lxp_u128){ 0U, 0U }, record.owner,
+                                          0U, result.context_digest);
+        if (status == LXP_OK)
+            status = lx_escrow_receipt_record(ctx, idempotency, &result);
         if (status == LXP_OK)
             status = lx_escrow_event_body(&record, 5U, body);
         if (status == LXP_OK)

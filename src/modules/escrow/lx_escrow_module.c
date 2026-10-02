@@ -324,6 +324,40 @@ static lxp_result emit_state_event(lxp_module_ctx *ctx,
     return lxp_ctx_emit_event(ctx, ordinal, body, sizeof(body));
 }
 
+static const uint8_t *inner_key(const escrow_decoded *value)
+{
+    switch (value->ordinal) {
+    case 2U:
+    case 3U:
+        return value->value.capture.idempotency_key;
+    case 4U:
+    case 5U:
+        return value->value.release.idempotency_key;
+    case 7U:
+        return value->value.dispute.idempotency_key;
+    default:
+        return NULL;
+    }
+}
+
+/* A replayed operation reports the transition that actually occurred, taken
+ * from the stored result, never from the current hold or the new request. */
+static lxp_result emit_replay_event(lxp_module_ctx *ctx,
+                                    const lx_escrow_economic_result *result)
+{
+    lx_escrow_record record;
+    uint8_t body[LX_ESCROW_EVENT_BYTES];
+    lxp_result status;
+    (void)memset(&record, 0, sizeof(record));
+    (void)memcpy(record.escrow_id, result->escrow_id, 32U);
+    record.state = result->state_after;
+    record.captured_amount = result->captured_after;
+    record.locked_amount = result->locked_after;
+    status = lx_escrow_event_body(&record, result->ordinal, body);
+    if (status != LXP_OK) return status;
+    return lxp_ctx_emit_event(ctx, result->ordinal, body, sizeof(body));
+}
+
 static lxp_result module_execute(lxp_module_ctx *ctx,
                                  const lxp_activity *activity,
                                  const lxp_authority_resolved *authority,
@@ -333,14 +367,22 @@ static lxp_result module_execute(lxp_module_ctx *ctx,
     const escrow_decoded *value = (const escrow_decoded *)decoded;
     lx_escrow_runtime *runtime;
     lxp_receipt receipt;
+    lx_escrow_economic_result prior;
     const uint8_t *escrow_id;
+    const uint8_t *key;
     lxp_result status;
+    bool replay = false;
     (void)effects;
     if (ctx == NULL || activity == NULL || authority == NULL ||
         value == NULL || value->ordinal == 0U || value->ordinal > 7U)
         return LXP_ERR_UNKNOWN_ACTIVITY;
     runtime = lx_escrow_require_runtime(ctx);
     if (runtime == NULL) return LXP_ERR_MODULE_DISABLED;
+    key = inner_key(value);
+    if (key != NULL) {
+        status = lx_escrow_result_lookup(ctx, key, &prior, &replay);
+        if (status != LXP_OK) return status;
+    }
     (void)memset(&receipt, 0, sizeof(receipt));
     switch (value->ordinal) {
     case 1U:
@@ -370,6 +412,7 @@ static lxp_result module_execute(lxp_module_ctx *ctx,
         break;
     }
     if (status != LXP_OK) return status;
+    if (replay) return emit_replay_event(ctx, &prior);
     return emit_state_event(ctx, escrow_id, value->ordinal);
 }
 
