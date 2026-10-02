@@ -23053,7 +23053,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.101.23.6]
 title = "Run the soak and resource-stability test"
-status = "pending"
+status = "in_progress"
 mode = "RELEASE"
 wave = 2
 requires = ["0.2"]
@@ -23068,7 +23068,7 @@ do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full 
 touches = ["agent/tests/qualify/soak.rs", ".github/workflows/agent-soak.yml", "tools/paxeer-x/gates/101.23.6.sh"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 101.23.6"
 gate_kind = "planned-adapter"
-max_builds = 0
+max_builds = 1
 max_verify_runs = 1
 max_repair_cycles = 2
 time_limit_minutes = 30
@@ -23640,7 +23640,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.17.3]
 title = "Build the deployable hosted testnet and faucet"
-status = "pending"
+status = "in_progress"
 mode = "QUALIFY"
 wave = 2
 requires = ["0.2"]
@@ -23655,7 +23655,7 @@ do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full 
 touches = ["platform/hosted/testnet", "platform/hosted/faucet", "platform/docs", "tools/paxeer-x/gates/104.17.3.sh"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 104.17.3"
 gate_kind = "planned-adapter"
-max_builds = 0
+max_builds = 1
 max_verify_runs = 1
 max_repair_cycles = 2
 time_limit_minutes = 30
@@ -23663,7 +23663,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 retained_capability = "104.17.3"
 reference_verify_cmd = "make platform-test-tooling"
 reference_tests = []
-deployment_profile = "product"
+deployment_profile = "private-network"
 completion_policy = "Existing implementation is preserved; current candidate qualification and applicable runtime evidence remain required."
 planned_paths = ["tools/paxeer-x/gates/104.17.3.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
@@ -24351,7 +24351,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.105.25.5]
 title = "Drill settlement, exits, unavailability and reserve audit"
-status = "pending"
+status = "in_progress"
 mode = "RELEASE"
 wave = 2
 requires = ["0.2"]
@@ -24366,7 +24366,7 @@ do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full 
 touches = ["tests/qualification/lxp_qual_settlement.c", "tools/lxp_reserve_audit.c", "tests/test_qual_settlement.c", "tools/paxeer-x/gates/105.25.5.sh"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 105.25.5"
 gate_kind = "planned-adapter"
-max_builds = 0
+max_builds = 1
 max_verify_runs = 1
 max_repair_cycles = 2
 time_limit_minutes = 30
