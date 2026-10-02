@@ -13,10 +13,10 @@
 # that generation, starts `layerxd --serve`, and answers requests on the
 # pod-local unix socket RUN_DIR/supervisor.sock:
 #
-#   reset\n   -> stop both daemons, discard the data directory contents,
-#                re-run bootstrap.sh, restart both, answer
-#                {"state":"reset","reset_id":"<16 hex>"}
-#   status\n  -> {"state":"running","generation":N}
+# Versioned requests use reset_state.py to retain caller-bound reset identities
+# and original outcomes on the persistent volume. Legacy reset/status lines
+# remain accepted. Bootstrapping or activation interrupted without a durable
+# outcome blocks recovery instead of repeating destructive work.
 #
 # The replica supervisor starts `layerxd --authority-replica` for every
 # generation the sequencer supervisor publishes, restarts it against the new
@@ -62,10 +62,10 @@ fail() { log "$*"; exit 1; }
 ROLE=""
 DATA_DIR=""
 RUN_DIR=""
+STATE_DIR=""
 LAYERXD=""
 SOCAT=""
 BOOTSTRAP_ARGS=()
-HANDLE=0
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 
 while [ $# -gt 0 ]; do
@@ -73,9 +73,9 @@ while [ $# -gt 0 ]; do
         --role) ROLE=$2; shift 2 ;;
         --data-dir) DATA_DIR=$2; shift 2 ;;
         --run-dir) RUN_DIR=$2; shift 2 ;;
+        --state-dir) STATE_DIR=$2; shift 2 ;;
         --layerxd) LAYERXD=$2; shift 2 ;;
         --socat) SOCAT=$2; shift 2 ;;
-        --handle) HANDLE=1; shift ;;
         --) shift; BOOTSTRAP_ARGS=("$@"); break ;;
         *) fail "unknown argument $1" ;;
     esac
@@ -86,55 +86,11 @@ done
 mkdir -p "$DATA_DIR" "$RUN_DIR"
 DATA_DIR=$(readlink -f "$DATA_DIR")
 RUN_DIR=$(readlink -f "$RUN_DIR")
+STATE_DIR=${STATE_DIR:-$(dirname "$DATA_DIR")/supervisor-state}
+RESET_HELPER="$SCRIPT_DIR/reset_state.py"
 SUPERVISOR_SOCKET="$RUN_DIR/supervisor.sock"
 PID_FILE="$RUN_DIR/supervisor.pid"
 GENERATION_FILE="$RUN_DIR/generation"
-
-json_reply() { printf '%s\n' "$1"; }
-
-# --- connection handler (spawned by socat per connection) -------------------
-if [ "$HANDLE" -eq 1 ]; then
-    IFS= read -r -t 10 line || line=""
-    line=${line%$'\r'}
-    case "$line" in
-        reset)
-            id=$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')
-            [ -r "$PID_FILE" ] || { json_reply '{"error":{"code":"supervisor_unavailable","retry":"after","retry_after_seconds":5}}'; exit 0; }
-            supervisor_pid=$(cat "$PID_FILE")
-            : > "$RUN_DIR/reset-request.$id"
-            if ! kill -USR1 "$supervisor_pid" 2>/dev/null; then
-                rm -f "$RUN_DIR/reset-request.$id"
-                json_reply '{"error":{"code":"supervisor_unavailable","retry":"after","retry_after_seconds":5}}'
-                exit 0
-            fi
-            deadline=$(( $(date +%s) + 300 ))
-            while [ ! -e "$RUN_DIR/reset-done.$id" ]; do
-                if [ -e "$RUN_DIR/reset-failed.$id" ]; then
-                    rm -f "$RUN_DIR/reset-failed.$id"
-                    json_reply '{"error":{"code":"reset_failed","retry":"after","retry_after_seconds":30}}'
-                    exit 0
-                fi
-                [ "$(date +%s)" -lt "$deadline" ] || { json_reply '{"error":{"code":"reset_timeout","retry":"after","retry_after_seconds":60}}'; exit 0; }
-                sleep 0.2
-            done
-            rm -f "$RUN_DIR/reset-done.$id"
-            json_reply "{\"state\":\"reset\",\"reset_id\":\"$id\"}"
-            ;;
-        status)
-            generation=0
-            [ -r "$GENERATION_FILE" ] && generation=$(cat "$GENERATION_FILE")
-            if [ -r "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
-                json_reply "{\"state\":\"running\",\"generation\":$generation}"
-            else
-                json_reply "{\"state\":\"stopped\",\"generation\":$generation}"
-            fi
-            ;;
-        *)
-            json_reply '{"error":{"code":"unknown_request","retry":"never","retry_after_seconds":0}}'
-            ;;
-    esac
-    exit 0
-fi
 
 [ "$ROLE" = sequencer ] || [ "$ROLE" = replica ] || fail "--role must be sequencer or replica"
 
@@ -314,7 +270,7 @@ start_daemon() {
             export LAYERX_NODE_SEQUENCER_PRIVATE_KEY="$SEQUENCER_SEED"
             SEQUENCER_SEED=""
         fi
-        exec "$LAYERXD" "$mode" "$config"
+        exec python3 "$RESET_HELPER" exec-daemon -- "$LAYERXD" "$mode" "$config"
     ) &
     DAEMON_PID=$!
     log "started layerxd $mode pid $DAEMON_PID"
@@ -395,9 +351,24 @@ if [ "$ROLE" = replica ]; then
     trap 'stop_daemon; exit 0' TERM INT
     current=""
     while :; do
-        wait_for_file "$GENERATION_FILE" 3600 || fail "no generation published within an hour"
+        stop_request=$(ls "$RUN_DIR"/reset.*.stop-replica 2>/dev/null | head -n 1 || true)
+        if [ -n "$stop_request" ]; then
+            id=${stop_request##*/reset.}
+            id=${id%.stop-replica}
+            stop_daemon
+            rm -f "$stop_request" "$RUN_DIR/replica-ready.$current"
+            : > "$RUN_DIR/reset.$id.replica-stopped"
+        fi
+        if [ ! -e "$GENERATION_FILE" ]; then
+            sleep 0.2
+            continue
+        fi
         generation=$(cat "$GENERATION_FILE")
         if [ -z "$generation" ] || [ "$generation" = "$current" ]; then
+            sleep 0.2
+            continue
+        fi
+        if ! python3 "$RESET_HELPER" replica-generation --state-dir "$STATE_DIR" --generation "$generation" >/dev/null; then
             sleep 0.2
             continue
         fi
@@ -439,15 +410,15 @@ fi
 # --- sequencer role ---------------------------------------------------------
 [ -x "$SCRIPT_DIR/bootstrap.sh" ] || fail "bootstrap.sh missing next to supervisor.sh"
 
-RESET_PENDING=0
-trap 'RESET_PENDING=1' USR1
+trap 'true' USR1
 SOCAT_PID=""
+OWNS_RUNTIME=0
 
 cleanup() {
     trap - TERM INT EXIT
     stop_daemon
     if [ -n "$SOCAT_PID" ]; then kill "$SOCAT_PID" 2>/dev/null || true; fi
-    rm -f "$PID_FILE" "$SUPERVISOR_SOCKET"
+    if [ "$OWNS_RUNTIME" -eq 1 ]; then rm -f "$PID_FILE" "$SUPERVISOR_SOCKET"; fi
 }
 trap 'cleanup; exit 0' TERM INT
 trap cleanup EXIT
@@ -487,89 +458,277 @@ run_bootstrap() {
     if [ -n "${LAYERX_NODE_HANDOVER_AUTHORITY_PUBLIC_KEY:-}" ]; then
         authority=(--handover-authority "$LAYERX_NODE_HANDOVER_AUTHORITY_PUBLIC_KEY")
     fi
-    "$SCRIPT_DIR/bootstrap.sh" --data-dir "$DATA_DIR" --run-dir "$RUN_DIR" --layerxd "$LAYERXD" "${authority[@]}" "$@"
+    python3 "$RESET_HELPER" exec-daemon -- "$SCRIPT_DIR/bootstrap.sh" --data-dir "$DATA_DIR" \
+        --run-dir "$RUN_DIR" --layerxd "$LAYERXD" "${authority[@]}" "$@"
 }
 
 publish_generation() {
     local generation=$1
-    rm -f "$RUN_DIR"/replica-ready.* 2>/dev/null || true
+    local previous
+    previous=$(cat "$GENERATION_FILE" 2>/dev/null || true)
+    if [ "$previous" != "$generation" ]; then
+        rm -f "$RUN_DIR"/replica-ready.* 2>/dev/null || true
+    fi
     printf '%s' "$generation" > "$GENERATION_FILE.tmp"
     mv "$GENERATION_FILE.tmp" "$GENERATION_FILE"
     wait_for_file "$RUN_DIR/replica-ready.$generation" 120 || fail "replica did not come up for generation $generation"
 }
 
-GENERATION=0
-if [ -r "$GENERATION_FILE" ]; then GENERATION=$(cat "$GENERATION_FILE"); fi
-if [ ! -r "$DATA_DIR/node.env" ]; then
-    log "bootstrapping $DATA_DIR"
-    run_bootstrap --force "${BOOTSTRAP_ARGS[@]}"
+RESET_BINDINGS="$RUN_DIR/reset-bindings.json"
+NETWORK_ID=""
+for ((index = 0; index + 1 < ${#BOOTSTRAP_ARGS[@]}; index++)); do
+    if [ "${BOOTSTRAP_ARGS[index]}" = --network-id ]; then NETWORK_ID=${BOOTSTRAP_ARGS[index + 1]}; fi
+done
+[[ $NETWORK_ID =~ ^[1-9][0-9]*$ ]] || fail "versioned reset requires the explicit bootstrap network"
+
+write_reset_bindings() {
+    python3 - "$SCRIPT_DIR" "$LAYERXD" "$RESET_BINDINGS" \
+        "$(resolve_binary '' layerx-genesis-build)" "$(resolve_binary '' layerx-handover)" "${BOOTSTRAP_ARGS[@]}" <<'BINDINGS'
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+node, daemon, output = map(Path, sys.argv[1:4])
+args = sys.argv[6:]
+if len(args) % 2 or len(args) > 128:
+    raise ValueError('bounded option/value bootstrap arguments required')
+options = {}
+for option, value in zip(args[::2], args[1::2]):
+    if not option.startswith('--') or len(value) > 4096:
+        raise ValueError('invalid bootstrap option')
+    if option in options and option != '--enable-module':
+        raise ValueError('duplicate bootstrap option')
+    options.setdefault(option, []).append(value)
+public_files = ['--genesis-metadata', '--module-fees', '--migrations',
+                '--settlement-document', '--custody-profile', '--settlement-env']
+files = [node / name for name in ('bootstrap.sh', 'genesis_fees.py', 'genesis-modules.conf')]
+files += [daemon, Path(sys.argv[4]), Path(sys.argv[5])]
+for option in public_files:
+    files += [Path(value) for value in options.get(option, [])]
+if '--settlement-document' not in options:
+    configured = os.environ.get('LAYERX_PAXEER_SETTLEMENT_JSON')
+    local = (node / '../../../contracts/config/checkpoint-settlement.json').resolve()
+    files += [Path(configured) if configured else local if local.is_file() else Path('/opt/layerx/checkpoint-settlement.json')]
+if '--migrations' not in options:
+    local = Path.cwd() / 'migrations/0007_history_index.sql'
+    files += [local if local.is_file() else Path('/opt/layerx/migrations/0007_history_index.sql')]
+files += [Path(options['--genesis-build'][0])] if '--genesis-build' in options else []
+identities = {}
+for option in ('--sequencer-key', '--treasury-key'):
+    if option not in options:
+        continue
+    key_path = Path(options[option][0])
+    with key_path.open('rb') as handle:
+        seed = handle.read(129)
+    if len(seed) != 32:
+        try:
+            seed = bytes.fromhex(seed.decode().strip())
+        except (ValueError, UnicodeError):
+            raise ValueError('invalid signing identity') from None
+    if len(seed) != 32:
+        raise ValueError('invalid signing identity')
+    encoded = subprocess.run(['openssl', 'pkey', '-inform', 'DER', '-pubout', '-outform', 'DER'],
+                             input=bytes.fromhex('302e020100300506032b657004220420') + seed,
+                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=True).stdout
+    if len(encoded) != 44:
+        raise ValueError('invalid public identity')
+    identities[option] = encoded[-32:].hex()
+if '--treasury-signer-socket' in options:
+    public = subprocess.check_output([sys.executable, str(node / 'signer/client.py'), '--socket',
+                                      options['--treasury-signer-socket'][0], 'public-key'], timeout=10).decode().strip()
+    if len(public) != 64 or any(c not in '0123456789abcdef' for c in public):
+        raise ValueError('invalid signer identity')
+    identities['--treasury-signer-socket'] = public
+fingerprints = {}
+for path in files:
+    if not path.exists() and str(path) in options.get('--genesis-metadata', []):
+        fingerprints[str(path.absolute())] = None
+        continue
+    digest = hashlib.sha256()
+    with path.open('rb') as handle:
+        for block in iter(lambda: handle.read(1048576), b''):
+            digest.update(block)
+    fingerprints[str(path.resolve())] = digest.hexdigest()
+public_environment = {}
+for key in ('LAYERX_NODE_HANDOVER_AUTHORITY_PUBLIC_KEY', 'LAYERX_NODE_PAXEER_CHAIN_ID',
+            'LAYERX_NODE_PAXEER_RPC_URL', 'LAYERX_NODE_PAXEER_RPC_ADDRESS',
+            'LAYERX_NODE_PAXEER_RPC_PORT', 'LAYERX_NODE_REGISTRY_PRECOMPILE',
+            'LAYERX_NODE_CUSTODY_PRECOMPILE', 'LAYERX_NODE_ANCHOR_PRECOMPILE',
+            'LAYERX_NODE_SETTLEMENT_CONTRACT', 'LAYERX_NODE_CHECKPOINT_REGISTRY'):
+    if key in os.environ:
+        value = os.environ[key]
+        if len(value) > 256 or '@' in value or any(ord(c) < 32 for c in value):
+            raise ValueError('invalid public bootstrap binding')
+        public_environment[key] = value
+value = {'arguments': options, 'files': fingerprints, 'public_keys': identities,
+         'public_environment': public_environment}
+temporary = output.with_name(output.name + '.tmp.' + str(os.getpid()))
+fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+with os.fdopen(fd, 'w') as handle:
+    json.dump(value, handle, sort_keys=True, separators=(',', ':'))
+    handle.flush()
+    os.fsync(handle.fileno())
+os.replace(temporary, output)
+BINDINGS
+}
+
+reset_state() {
+    local result
+    if ! result=$(python3 "$RESET_HELPER" "$@" --state-dir "$STATE_DIR" --data-dir "$DATA_DIR" \
+        --run-dir "$RUN_DIR" --network "$NETWORK_ID" --bindings "$RESET_BINDINGS" \
+        --initial-generation "${INITIAL_GENERATION:-1}" --allowed-gid "${LNI_GID:-$(id -g)}"); then
+        log "durable reset state refused: $result"
+        return 1
+    fi
+    printf '%s\n' "$result"
+}
+
+record_field() { python3 -c 'import json,sys; print(json.load(sys.stdin)[sys.argv[1]])' "$1"; }
+
+genesis_binding() {
+    python3 - "$DATA_DIR" "${1:-}" <<'GENESIS'
+import hashlib
+import json
+import os
+from pathlib import Path
+import stat
+import sys
+root = Path(sys.argv[1])
+names = ('genesis/genesis.manifest', 'genesis/genesis-request.lxgb',
+         'genesis/genesis.registration', 'genesis/00000000000000000000.lxs',
+         'genesis/paxeer-registration-request.lxrr', 'genesis/paxeer-deployment-descriptor.lxgd')
+result = {}
+for name in names:
+    path = root / name
+    if path.is_symlink() or not path.is_file():
+        raise ValueError('missing canonical genesis artifact')
+    result[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+if sys.argv[2]:
+    if result != json.loads(sys.argv[2])['genesis']:
+        raise ValueError('retained canonical genesis differs from durable operation')
+else:
+    for directory, dirs, files in os.walk(root, followlinks=False):
+        for name in files:
+            path = Path(directory) / name
+            if path.is_symlink() or not stat.S_ISREG(path.stat().st_mode):
+                raise ValueError('unexpected bootstrap output')
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+            try: os.fsync(fd)
+            finally: os.close(fd)
+        fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try: os.fsync(fd)
+        finally: os.close(fd)
+print(json.dumps({'genesis': result}, sort_keys=True, separators=(',', ':')))
+GENESIS
+}
+
+perform_durable_reset() {
+    local record=$1 phase id timestamp target extra
+    id=$(record_field reset_id <<< "$record")
+    phase=$(record_field phase <<< "$record")
+    timestamp=$(record_field genesis_timestamp_ms <<< "$record")
+    target=$(record_field generation <<< "$record")
+    write_reset_bindings || fail "reset producer inputs unavailable"
+    if [ "$phase" = admitted ]; then
+        reset_state phase --reset-id "$id" --expected-phase admitted --new-phase stopping >/dev/null
+        phase=stopping
+    fi
+    if [ "$phase" = stopping ]; then
+        stop_daemon
+        : > "$RUN_DIR/reset.$id.stop-replica"
+        wait_for_file "$RUN_DIR/reset.$id.replica-stopped" 120 || fail "replica stop is ambiguous"
+        rm -f "$RUN_DIR/reset.$id.replica-stopped" "$RUN_DIR/reset.$id.stop-replica"
+        reset_state phase --reset-id "$id" --expected-phase stopping --new-phase bootstrapping >/dev/null
+        local -a frozen=()
+        local index
+        for ((index = 0; index < ${#BOOTSTRAP_ARGS[@]}; index += 2)); do
+            [ "${BOOTSTRAP_ARGS[index]}" = --genesis-timestamp-ms ] && continue
+            frozen+=("${BOOTSTRAP_ARGS[index]}" "${BOOTSTRAP_ARGS[index + 1]}")
+        done
+        run_bootstrap --force "${frozen[@]}" --genesis-timestamp-ms "$timestamp" \
+            || fail "bootstrap interrupted; durable operation requires reconciliation"
+        check_sequencer_environment "$DATA_DIR/sequencer.env"
+        extra=$(genesis_binding)
+        record=$(reset_state phase --reset-id "$id" --expected-phase bootstrapping --new-phase prepared --extra-json "$extra")
+        phase=prepared
+    fi
+    if [ "$phase" = prepared ]; then
+        genesis_binding "$record" >/dev/null
+        reset_state phase --reset-id "$id" --expected-phase prepared --new-phase activating >/dev/null
+        GENERATION=$target
+        publish_generation "$GENERATION"
+        start_daemon "$DATA_DIR/sequencer.env" --serve "$DATA_DIR/sequencer.conf"
+        wait_for_daemon_ready "$DATA_DIR/sequencer.env" --serve 120 || fail "activation outcome is ambiguous"
+        reset_state complete --reset-id "$id" --expected-phase activating >/dev/null
+        log "reset $id: durably complete at generation $GENERATION"
+    else
+        fail "reset $id requires explicit reconciliation: $phase"
+    fi
+}
+
+if [ -r "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+    fail "another sequencer supervisor still owns the run directory"
 fi
-if [ -n "${LAYERX_NODE_HANDOVER_AUTHORITY_PUBLIC_KEY:-}" ]; then
-    configured_handover=$(sed -n 's/^LAYERX_NODE_HANDOVER_AUTHORITY_PUBLIC_KEY=//p' "$DATA_DIR/node.env")
-    [ "$configured_handover" = "$LAYERX_NODE_HANDOVER_AUTHORITY_PUBLIC_KEY" ] \
-        || fail "configured handover authority differs from committed genesis"
+OWNS_RUNTIME=1
+INITIAL_GENERATION=1
+if [ -r "$GENERATION_FILE" ]; then
+    INITIAL_GENERATION=$(cat "$GENERATION_FILE")
+    [[ $INITIAL_GENERATION =~ ^[1-9][0-9]*$ ]] || fail "invalid retained generation"
 fi
-check_sequencer_environment "$DATA_DIR/sequencer.env"
-GENERATION=$((GENERATION + 1))
-publish_generation "$GENERATION"
-start_daemon "$DATA_DIR/sequencer.env" --serve "$DATA_DIR/sequencer.conf"
-wait_for_daemon_ready "$DATA_DIR/sequencer.env" --serve 120 || fail "sequencer did not become ready"
+wait_for_treasury_signer
+write_reset_bindings
+reset_state initialize >/dev/null
+record=$(reset_state active)
+GENERATION=$(reset_state generation)
+if [ "$record" != null ]; then
+    perform_durable_reset "$record"
+else
+    if [ ! -r "$DATA_DIR/node.env" ]; then
+        log "bootstrapping $DATA_DIR"
+        run_bootstrap --force "${BOOTSTRAP_ARGS[@]}"
+        write_reset_bindings
+    fi
+    if [ -n "${LAYERX_NODE_HANDOVER_AUTHORITY_PUBLIC_KEY:-}" ]; then
+        configured_handover=$(sed -n 's/^LAYERX_NODE_HANDOVER_AUTHORITY_PUBLIC_KEY=//p' "$DATA_DIR/node.env")
+        [ "$configured_handover" = "$LAYERX_NODE_HANDOVER_AUTHORITY_PUBLIC_KEY" ] \
+            || fail "configured handover authority differs from committed genesis"
+    fi
+    check_sequencer_environment "$DATA_DIR/sequencer.env"
+    publish_generation "$GENERATION"
+    start_daemon "$DATA_DIR/sequencer.env" --serve "$DATA_DIR/sequencer.conf"
+    wait_for_daemon_ready "$DATA_DIR/sequencer.env" --serve 120 || fail "sequencer did not become ready"
+fi
 
 printf '%s' "$$" > "$PID_FILE"
-rm -f "$SUPERVISOR_SOCKET"
 LNI_GID=$(sed -n 's/^LAYERX_NODE_LNI_ALLOWED_GID=//p' "$DATA_DIR/sequencer.env")
 [ -n "$LNI_GID" ] || fail "LAYERX_NODE_LNI_ALLOWED_GID missing from sequencer.env"
-"$SOCAT" -T 320 "UNIX-LISTEN:$SUPERVISOR_SOCKET,fork,mode=660,group=$LNI_GID" \
-    "EXEC:$0 --handle --data-dir $DATA_DIR --run-dir $RUN_DIR" &
+python3 - "$SUPERVISOR_SOCKET" <<'SOCKET'
+import os, stat, sys
+try:
+    value = os.lstat(sys.argv[1])
+except FileNotFoundError:
+    pass
+else:
+    if not stat.S_ISSOCK(value.st_mode) or value.st_uid != os.getuid():
+        raise ValueError('supervisor socket pathname is not owned')
+    os.unlink(sys.argv[1])
+SOCKET
+python3 "$RESET_HELPER" serve --socket "$SUPERVISOR_SOCKET" --state-dir "$STATE_DIR" \
+    --data-dir "$DATA_DIR" --run-dir "$RUN_DIR" --network "$NETWORK_ID" \
+    --bindings "$RESET_BINDINGS" --allowed-gid "$LNI_GID" &
 SOCAT_PID=$!
 log "supervisor socket $SUPERVISOR_SOCKET"
 
-perform_reset() {
-    local id=$1
-    log "reset $id: stopping the sequencer"
-    stop_daemon
-    : > "$RUN_DIR/reset.$id.stop-replica"
-    if ! wait_for_file "$RUN_DIR/reset.$id.replica-stopped" 120; then
-        rm -f "$RUN_DIR/reset.$id.stop-replica"
-        : > "$RUN_DIR/reset-failed.$id"
-        fail "reset $id: the replica did not stop"
-    fi
-    rm -f "$RUN_DIR/reset.$id.replica-stopped"
-    log "reset $id: discarding $DATA_DIR and re-running bootstrap"
-    if ! run_bootstrap --force "${BOOTSTRAP_ARGS[@]}"; then
-        : > "$RUN_DIR/reset-failed.$id"
-        fail "reset $id: bootstrap failed"
-    fi
-    if ! (check_sequencer_environment "$DATA_DIR/sequencer.env"); then
-        : > "$RUN_DIR/reset-failed.$id"
-        fail "reset $id: the sequencer seed could not be bound"
-    fi
-    GENERATION=$((GENERATION + 1))
-    publish_generation "$GENERATION"
-    start_daemon "$DATA_DIR/sequencer.env" --serve "$DATA_DIR/sequencer.conf"
-    if ! wait_for_daemon_ready "$DATA_DIR/sequencer.env" --serve 120; then
-        : > "$RUN_DIR/reset-failed.$id"
-        fail "reset $id: sequencer did not become ready"
-    fi
-    : > "$RUN_DIR/reset-done.$id"
-    log "reset $id: complete at generation $GENERATION"
-}
-
 while :; do
-    if [ "$RESET_PENDING" -eq 1 ]; then
-        RESET_PENDING=0
-        for request in "$RUN_DIR"/reset-request.*; do
-            [ -e "$request" ] || continue
-            rm -f "$request"
-            perform_reset "${request##*/reset-request.}"
-        done
-    fi
+    record=$(reset_state active)
+    if [ "$record" != null ]; then perform_durable_reset "$record"; fi
     if ! daemon_alive; then
         wait "$DAEMON_PID" && status=0 || status=$?
         fail "layerxd --serve exited with status $status"
     fi
-    if ! kill -0 "$SOCAT_PID" 2>/dev/null; then
-        fail "supervisor socket listener exited"
-    fi
+    if ! kill -0 "$SOCAT_PID" 2>/dev/null; then fail "supervisor socket listener exited"; fi
     sleep 0.2
 done

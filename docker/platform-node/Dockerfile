@@ -41,6 +41,7 @@ COPY --from=build /src/platform/hosted/node/genesis_fees.py /opt/layerx/genesis_
 COPY --from=build /src/platform/hosted/node/genesis-module-fees.json /opt/layerx/genesis-module-fees.json
 COPY --from=build /src/platform/hosted/node/data_directory.py /opt/layerx/data_directory.py
 COPY --from=build /src/platform/hosted/node/supervisor.sh /opt/layerx/supervisor.sh
+COPY --from=build /src/platform/hosted/node/reset_state.py /opt/layerx/reset_state.py
 COPY --from=build /src/platform/hosted/node/guarantor.sh /opt/layerx/guarantor.sh
 COPY --from=build /src/platform/hosted/node/checkpoint-authority.py /opt/layerx/checkpoint-authority.py
 COPY --from=build /src/precompiles/layerxanchor/abi.json /opt/layerx/precompiles/layerxanchor/abi.json
