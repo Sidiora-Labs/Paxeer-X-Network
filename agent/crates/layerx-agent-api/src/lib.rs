@@ -29,7 +29,9 @@ pub mod capability {
 /// Budget contract namespace.
 pub mod budget {
     pub use crate::identity_contract::{
-        BudgetCreate, BudgetEnforcement, BudgetFund, BudgetId, BudgetList, BudgetTarget,
+        AuthorityDescription, AuthorityResponse, BudgetAuthorization, BudgetCreate,
+        BudgetEnforcement, BudgetFund, BudgetId, BudgetList, BudgetRecord, BudgetRecords,
+        BudgetTarget, DaemonLimitView, ProtocolBudgetView, SignedBudgetMutation,
     };
 }
 
@@ -37,7 +39,7 @@ pub mod budget {
 pub mod prepare {
     pub use crate::write_contract::{
         CanonicalBytes, DisclosedAmount, Disclosure, IdempotencyRef, PayloadBytes, PreparationRef,
-        PrepareRequest, Prepared, SigningPreimage, TimestampBound,
+        PrepareRequest, PrepareWithCapability, Prepared, SigningPreimage, TimestampBound,
     };
 }
 
@@ -61,9 +63,16 @@ pub use write_contract::SubmissionState;
 pub mod read {
     pub use crate::read_contract::{
         AccountRef, AccountValue, BalanceSelector, BalanceValue, BatchRef, BatchValue,
-        CheckpointRef, CheckpointValue, CoreProduced, Freshness, HistoryCursor, HistorySelector,
-        HistoryValue, ModuleRef, ModuleStateSelector, ModuleStateValue, ProjectionResult,
-        ReadRequest, RelativeTo, VerifiedRead,
+        CheckpointRef, CheckpointValue, CoreProduced, FeeProjection, FeeProjectionRequest,
+        Freshness, HistoryCursor, HistorySelector, HistoryValue, ModuleRef, ModuleStateSelector,
+        ModuleStateValue, ProjectionResult, ReadRequest, RelativeTo, VerifiedRead,
+    };
+}
+
+/// Local policy dry-run contract namespace; results are not protocol authorisation.
+pub mod policy {
+    pub use crate::identity_contract::{
+        PolicyDecisionReason, PolicyDryRunRequest, PolicyDryRunResult, PolicyOutcome,
     };
 }
 
@@ -82,7 +91,12 @@ pub mod availability {
 
 /// Offline verification export namespace.
 pub mod export {
-    pub use crate::read_contract::{FactRef, OfflineExport};
+    pub use crate::read_contract::{
+        check_export_response, validate_export_request, FactRef, OfflineExport,
+    };
+    pub use layerx_proof::export_codec::{
+        parse_fact_set, FactRefError, FactSelector, MAX_FACT_REFS, MAX_FACT_REF_BYTES,
+    };
 }
 
 /// Durable subscription and delivery contract namespace.

@@ -308,21 +308,16 @@ fn read_file(path: &Path) -> String {
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()))
 }
 
-fn main() {
-    let crate_dir = PathBuf::from(
-        env::var_os("CARGO_MANIFEST_DIR")
-            .unwrap_or_else(|| panic!("CARGO_MANIFEST_DIR is unavailable")),
-    );
-    let schema = crate_dir.join("../../schema/agent-api/v1.kvx");
-    let baseline = crate_dir.join("../../schema/agent-api/golden/v1.kvx");
-    let committed = crate_dir.join("src/generated.rs");
-    println!("cargo:rerun-if-changed={}", schema.display());
-    println!("cargo:rerun-if-changed={}", baseline.display());
-    println!("cargo:rerun-if-changed={}", committed.display());
+/// Reads, validates and compatibility-checks the schema set, then renders the contract module.
+fn checked_source(schema: &Path, baseline: &Path, announce: bool) -> String {
+    if announce {
+        println!("cargo:rerun-if-changed={}", schema.display());
+        println!("cargo:rerun-if-changed={}", baseline.display());
+    }
 
     let current =
-        section_map(&read_file(&schema)).unwrap_or_else(|error| panic!("invalid schema: {error}"));
-    let old = section_map(&read_file(&baseline))
+        section_map(&read_file(schema)).unwrap_or_else(|error| panic!("invalid schema: {error}"));
+    let old = section_map(&read_file(baseline))
         .unwrap_or_else(|error| panic!("invalid baseline: {error}"));
     validate(&current).unwrap_or_else(|error| panic!("invalid schema: {error}"));
     compatibility_gate(&old, &current)
@@ -345,8 +340,10 @@ fn main() {
             .parent()
             .unwrap_or_else(|| panic!("baseline has no parent"))
             .join(&module);
-        println!("cargo:rerun-if-changed={}", current_module.display());
-        println!("cargo:rerun-if-changed={}", baseline_module.display());
+        if announce {
+            println!("cargo:rerun-if-changed={}", current_module.display());
+            println!("cargo:rerun-if-changed={}", baseline_module.display());
+        }
         let current_entries = section_map(&read_file(&current_module))
             .unwrap_or_else(|error| panic!("invalid {}: {error}", current_module.display()));
         validate(&current_entries)
@@ -362,8 +359,49 @@ fn main() {
     }
     settlement_domain_gate(&current, &modules)
         .unwrap_or_else(|error| panic!("invalid schema: {error}"));
-    let fresh =
-        generated_source(&current).unwrap_or_else(|error| panic!("generation failed: {error}"));
+    generated_source(&current).unwrap_or_else(|error| panic!("generation failed: {error}"))
+}
+
+fn schema_paths(crate_dir: &Path) -> (PathBuf, PathBuf) {
+    (
+        crate_dir.join("../../schema/agent-api/v1.kvx"),
+        crate_dir.join("../../schema/agent-api/golden/v1.kvx"),
+    )
+}
+
+/// Generator-only mode, compiled and run outside cargo:
+/// `--render-generated <crate-dir> <output-file>` writes the checked rendering and nothing else.
+fn render_standalone(mut arguments: impl Iterator<Item = std::ffi::OsString>) {
+    const USAGE: &str = "usage: --render-generated <crate-dir> <output-file>";
+    let crate_dir = PathBuf::from(arguments.next().unwrap_or_else(|| panic!("{USAGE}")));
+    let output = PathBuf::from(arguments.next().unwrap_or_else(|| panic!("{USAGE}")));
+    assert!(arguments.next().is_none(), "{USAGE}");
+    let (schema, baseline) = schema_paths(&crate_dir);
+    let fresh = checked_source(&schema, &baseline, false);
+    fs::write(&output, &fresh)
+        .unwrap_or_else(|error| panic!("failed to write {}: {error}", output.display()));
+}
+
+fn main() {
+    let mut arguments = env::args_os().skip(1);
+    if let Some(mode) = arguments.next() {
+        assert!(
+            mode == "--render-generated",
+            "unknown build script argument {}",
+            mode.to_string_lossy()
+        );
+        render_standalone(arguments);
+        return;
+    }
+
+    let crate_dir = PathBuf::from(
+        env::var_os("CARGO_MANIFEST_DIR")
+            .unwrap_or_else(|| panic!("CARGO_MANIFEST_DIR is unavailable")),
+    );
+    let (schema, baseline) = schema_paths(&crate_dir);
+    let committed = crate_dir.join("src/generated.rs");
+    println!("cargo:rerun-if-changed={}", committed.display());
+    let fresh = checked_source(&schema, &baseline, true);
 
     let out =
         PathBuf::from(env::var_os("OUT_DIR").unwrap_or_else(|| panic!("OUT_DIR is unavailable")))

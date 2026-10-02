@@ -4,6 +4,7 @@ use crate::identity::{Asset, ContractError};
 use crate::verify::Level;
 use crate::write_contract::CanonicalBytes;
 use crate::{Amount, Sequence, TimestampSeconds};
+use layerx_proof::export_codec::{parse_fact_set, FactRefError, FactSelector};
 
 macro_rules! required_reference {
     ($name:ident, $field:literal) => {
@@ -38,6 +39,48 @@ required_reference!(CheckpointRef, "checkpoint");
 required_reference!(HistoryCursor, "cursor");
 required_reference!(ProviderRef, "provider");
 required_reference!(FactRef, "fact");
+
+impl FactRef {
+    /// Parses this reference with the single shared strict fact grammar.
+    ///
+    /// # Errors
+    /// Returns the grammar refusal of [`FactSelector::parse`].
+    pub fn selector(&self) -> Result<FactSelector, FactRefError> {
+        FactSelector::parse(self.as_str())
+    }
+}
+
+/// Validates an export request: 1..=16 unique facts, each in the strict shared grammar.
+///
+/// # Errors
+/// Returns the first grammar, count or duplicate refusal of [`parse_fact_set`].
+pub fn validate_export_request(
+    request: ReadRequest<Vec<FactRef>>,
+) -> Result<ReadRequest<Vec<FactRef>>, FactRefError> {
+    let texts: Vec<&str> = request.selector.iter().map(FactRef::as_str).collect();
+    parse_fact_set(texts.as_slice())?;
+    Ok(request)
+}
+
+/// Checks that a verified export answers exactly the requested facts at the requested level.
+///
+/// # Errors
+/// Returns [`ContractError::Mismatch`] when the stated facts differ from the request,
+/// [`ContractError::OutOfRange`] when the achieved level is below the requested level, or the
+/// evidence refusal of [`OfflineExport::validate`].
+pub fn check_export_response(
+    request: &ReadRequest<Vec<FactRef>>,
+    response: &VerifiedRead<OfflineExport>,
+) -> Result<(), ContractError> {
+    if response.value.facts != request.selector {
+        return Err(ContractError::Mismatch("export_facts"));
+    }
+    if response.achieved_verification_level < request.requested_verification_level {
+        return Err(ContractError::OutOfRange("export_verification_level"));
+    }
+    response.value.clone().validate()?;
+    Ok(())
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RelativeTo {
@@ -300,5 +343,101 @@ impl<T> ProjectionResult<T> {
             rationale,
             observed_freshness,
         })
+    }
+}
+
+/// Hypothetical fee meter for one canonical activity, read against committed native state.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FeeProjectionRequest {
+    /// Full protocol module and ordinal packed into the canonical u32 form.
+    pub protocol_activity_type: u32,
+    /// Canonical activity size in bytes; zero is accepted by the native meter.
+    pub canonical_bytes: u64,
+    pub execution_units: u64,
+    pub storage_units: u64,
+}
+
+impl FeeProjectionRequest {
+    /// Enforces the native meter bound without clamping.
+    ///
+    /// # Errors
+    /// Returns [`ContractError::OutOfRange`] when `canonical_bytes` exceeds the native maximum.
+    pub const fn validate(self) -> Result<Self, ContractError> {
+        if self.canonical_bytes > layerx_client::client::MAX_FEE_METER_CANONICAL_BYTES {
+            return Err(ContractError::OutOfRange("canonical_bytes"));
+        }
+        Ok(self)
+    }
+
+    #[must_use]
+    pub const fn meter(self) -> layerx_client::client::FeeMeter {
+        layerx_client::client::FeeMeter {
+            activity_type: self.protocol_activity_type,
+            canonical_bytes: self.canonical_bytes,
+            execution_units: self.execution_units,
+            storage_units: self.storage_units,
+        }
+    }
+}
+
+/// Fee computed by the committed native schedule at one captured head; never an executed fee.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FeeProjection {
+    pub request: FeeProjectionRequest,
+    pub parameter_version: u32,
+    pub fee: Amount,
+    pub canonical_schedule: CanonicalBytes,
+    /// Committed snapshot the native read answered from; equal to the captured head.
+    pub snapshot_sequence: Sequence,
+    pub snapshot_state_root: [u8; 32],
+}
+
+impl FeeProjection {
+    /// Builds the projected value from one authenticated fee observation.
+    ///
+    /// # Errors
+    /// Returns the meter refusal, or [`ContractError::Mismatch`] when the observation's
+    /// snapshot is not the captured head.
+    pub fn from_observation(
+        request: FeeProjectionRequest,
+        observation: layerx_client::client::FeeObservation,
+    ) -> Result<Self, ContractError> {
+        let request = request.validate()?;
+        let (head, snapshot) = observation.into_parts();
+        if snapshot.observed_sequence != head.chain_sequence {
+            return Err(ContractError::Mismatch("fee_snapshot_sequence"));
+        }
+        if snapshot.value.parameter_version == 0 {
+            return Err(ContractError::Zero("parameter_version"));
+        }
+        if snapshot.state_root == [0; 32] {
+            return Err(ContractError::Zero("snapshot_state_root"));
+        }
+        Ok(Self {
+            request,
+            parameter_version: snapshot.value.parameter_version,
+            fee: Amount(snapshot.value.fee),
+            canonical_schedule: CanonicalBytes::new(snapshot.value.canonical_schedule)?,
+            snapshot_sequence: Sequence(snapshot.observed_sequence),
+            snapshot_state_root: snapshot.state_root,
+        })
+    }
+
+    /// Wraps the value as an explicitly non-authoritative projection.
+    ///
+    /// # Errors
+    /// Returns [`ContractError::Mismatch`] when the freshness does not name this snapshot as
+    /// both chain head and value sequence, or the rationale refusal of [`ProjectionResult::new`].
+    pub fn into_projection(
+        self,
+        rationale: impl Into<String>,
+        observed_freshness: Freshness,
+    ) -> Result<ProjectionResult<Self>, ContractError> {
+        if observed_freshness.chain_head != self.snapshot_sequence
+            || observed_freshness.value_sequence != self.snapshot_sequence
+        {
+            return Err(ContractError::Mismatch("fee_snapshot_sequence"));
+        }
+        ProjectionResult::new(self, rationale, observed_freshness)
     }
 }

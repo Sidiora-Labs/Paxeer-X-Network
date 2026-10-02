@@ -1,6 +1,8 @@
 //! Prepare, sign, submit, track, and wait contract types.
 
-use crate::identity::{ActivityType, AgentDid, Asset, AuthorityRef, ContractError, ExplicitSet};
+use crate::identity::{
+    ActivityType, AgentDid, Asset, AuthorityRef, CapabilityId, ContractError, ExplicitSet,
+};
 use crate::verify::Level;
 use crate::{Amount, Sequence, TimestampSeconds};
 use layerx_types::result::ResultCode;
@@ -97,6 +99,26 @@ pub struct PrepareRequest {
     pub fee_limit: Amount,
     pub payload: PayloadBytes,
     pub payload_hash: [u8; 32],
+}
+
+/// A preparation request bound to one owner-issued capability record.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PrepareWithCapability {
+    pub request: PrepareRequest,
+    pub capability_id: CapabilityId,
+}
+
+impl PrepareWithCapability {
+    /// Validates the capability identifier and the request timestamp bound.
+    ///
+    /// # Errors
+    /// Returns [`ContractError::Malformed`] for a non-canonical capability identifier or the
+    /// timestamp bound refusal.
+    pub fn validate(self) -> Result<Self, ContractError> {
+        self.capability_id.to_bytes()?;
+        self.request.timestamp_bound.validate()?;
+        Ok(self)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
