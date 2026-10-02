@@ -10096,20 +10096,29 @@ fn legacy_policy_purpose(
     disclosure: &layerx_crypto::disclosure::Disclosure,
     label: Option<String>,
 ) -> Result<crate::policy::Purpose, HumanOperationError> {
+    legacy_label_purpose(legacy_purpose_commitment(disclosure), label)
+}
+
+fn legacy_label_purpose(
+    commitment: Option<[u8; 32]>,
+    label: Option<String>,
+) -> Result<crate::policy::Purpose, HumanOperationError> {
+    use crate::capability::binding::{purpose_from_commitment, BindingError};
     let undisclosed = HumanOperationError::Typed(crate::human::HumanRefusal::PurposeUndisclosed);
-    match (legacy_purpose_commitment(disclosure), label) {
-        (None, None) => Ok(crate::policy::Purpose::None),
-        (Some(_), None) => Err(HumanOperationError::Typed(
-            crate::human::HumanRefusal::IntentBindingMissing,
-        )),
-        (Some(commitment), Some(label))
-            if label == crate::agent_rpc_dispatch::lower_hex(&commitment) =>
-        {
-            crate::policy::PurposeText::try_from(label)
-                .map(crate::policy::Purpose::Text)
-                .map_err(|_| undisclosed)
-        }
-        _ => Err(undisclosed),
+    let Some(label) = label else {
+        return match commitment {
+            None => Ok(crate::policy::Purpose::None),
+            Some(_) => Err(HumanOperationError::Typed(
+                crate::human::HumanRefusal::IntentBindingMissing,
+            )),
+        };
+    };
+    match purpose_from_commitment(&label, commitment) {
+        Ok(_) => crate::policy::PurposeText::try_from(label)
+            .map(crate::policy::Purpose::Text)
+            .map_err(|_| undisclosed),
+        Err(BindingError::PurposeCommitmentMissing | BindingError::Refused(_)) => Err(undisclosed),
+        Err(error) => Err(error.owner_error()),
     }
 }
 
@@ -11125,6 +11134,55 @@ fn validate_capability<A: HumanAuthorityBoundary>(
 #[cfg(test)]
 #[path = "outbound_tls/tests.rs"]
 mod outbound_tls_tests;
+
+#[cfg(test)]
+mod legacy_policy_purpose_tests {
+    use super::{legacy_label_purpose, HumanOperationError};
+    use crate::human::HumanRefusal;
+    use crate::policy::Purpose;
+
+    #[test]
+    fn dry_run_textual_label_is_admitted_through_the_v1_producer() {
+        let commitment = layerx_crypto::purpose::purpose_commitment_v1("rent");
+        assert!(commitment.is_ok());
+        assert!(matches!(
+            legacy_label_purpose(commitment.ok(), Some("rent".to_owned())),
+            Ok(Purpose::Text(_))
+        ));
+    }
+
+    #[test]
+    fn dry_run_lowercase_hex_literal_is_admitted() {
+        let commitment = [0x5a; 32];
+        let literal = crate::agent_rpc_dispatch::lower_hex(&commitment);
+        assert!(matches!(
+            legacy_label_purpose(Some(commitment), Some(literal)),
+            Ok(Purpose::Text(_))
+        ));
+    }
+
+    #[test]
+    fn dry_run_purpose_mismatch_is_refused_as_undisclosed() {
+        assert!(matches!(
+            legacy_label_purpose(Some([0x5a; 32]), Some("rent".to_owned())),
+            Err(HumanOperationError::Typed(HumanRefusal::PurposeUndisclosed))
+        ));
+        assert!(matches!(
+            legacy_label_purpose(None, Some("rent".to_owned())),
+            Err(HumanOperationError::Typed(HumanRefusal::PurposeUndisclosed))
+        ));
+        assert!(matches!(
+            legacy_label_purpose(Some([0x5a; 32]), None),
+            Err(HumanOperationError::Typed(
+                HumanRefusal::IntentBindingMissing
+            ))
+        ));
+        assert!(matches!(
+            legacy_label_purpose(None, None),
+            Ok(Purpose::None)
+        ));
+    }
+}
 
 #[cfg(test)]
 mod owner_authority_tests {
