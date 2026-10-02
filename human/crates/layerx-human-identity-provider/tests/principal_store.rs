@@ -590,7 +590,7 @@ fn assertion_subject_resolves_one_durable_wallet_principal_and_tenant_across_res
         .lookup(alice.principal.as_str())
         .is_err());
     assert!(matches!(
-        identity(root, egid.wrapping_add(1))?.resolve_assertion(&alice_token),
+        self::identity(root, egid.wrapping_add(1))?.resolve_assertion(&alice_token),
         Err(IdentityDispatchError::ProviderAuthentication)
     ));
 
