@@ -169,6 +169,80 @@ impl BudgetLimiter {
         Ok(())
     }
 
+    /// Renews `predecessor` into `successor` with admission excluded throughout: under one
+    /// limiter lock it carries the larger consumed total, checks it plus every outstanding hold of
+    /// the predecessor lineage, counted once, against the successor ceiling, runs `persist` with
+    /// the carried total, and publishes the successor, the link and the retirement only after
+    /// `persist` succeeds. A refused check or a failed `persist` leaves the limiter unchanged. The
+    /// caller holds the store lock, so the order is store then limiter.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Exceeded` (with `requested` zero) when the full exposure passes the successor
+    /// ceiling, `InvalidConfiguration` for a self renewal, a scope change, a successor already
+    /// configured or a predecessor already retired or linked, `Arithmetic`, `Poisoned`, or the
+    /// error of `persist`, and `UnknownLimit` when the predecessor is not installed: its holds
+    /// are restored into an installed limit before any renewal is checked.
+    pub fn renew_locked<E: From<LimitRefusal>>(
+        &self,
+        predecessor: &LimitConfig,
+        successor: &LimitConfig,
+        persist: impl FnOnce(u128) -> Result<(), E>,
+    ) -> Result<(), E> {
+        let mut limits = self.limits.lock().map_err(|_| LimitRefusal::Poisoned)?;
+        if predecessor.id == successor.id
+            || predecessor.scope != successor.scope
+            || limits.contains_key(&successor.id)
+        {
+            return Err(LimitRefusal::InvalidConfiguration.into());
+        }
+        let mut renewed = limits.clone();
+        let consumed = {
+            let previous = renewed
+                .get_mut(&predecessor.id)
+                .ok_or(LimitRefusal::UnknownLimit(predecessor.id))?;
+            if previous.retired
+                || previous.successor.is_some()
+                || previous.config.scope != successor.scope
+            {
+                return Err(LimitRefusal::InvalidConfiguration.into());
+            }
+            previous.config.consumed = previous.config.consumed.max(predecessor.consumed);
+            previous.config.consumed.max(successor.consumed)
+        };
+        let held = lineage_held(&renewed, predecessor.id)?;
+        if consumed.checked_add(held).ok_or(LimitRefusal::Arithmetic)? > successor.ceiling {
+            return Err(LimitRefusal::Exceeded {
+                limit: successor.id,
+                name: successor.name.clone(),
+                ceiling: successor.ceiling,
+                consumed,
+                held,
+                requested: 0,
+            }
+            .into());
+        }
+        if let Some(previous) = renewed.get_mut(&predecessor.id) {
+            previous.successor = Some(successor.id);
+            previous.retired = true;
+        }
+        renewed.insert(
+            successor.id,
+            LimitState {
+                config: LimitConfig {
+                    consumed,
+                    ..successor.clone()
+                },
+                held: BTreeMap::new(),
+                retired: false,
+                successor: None,
+            },
+        );
+        persist(consumed)?;
+        *limits = renewed;
+        Ok(())
+    }
+
     /// Raises one limit's cached consumed total to a refreshed persisted total. A lower persisted
     /// total keeps the cached one: a settled execution is persisted before it is released.
     ///
@@ -488,7 +562,10 @@ pub(crate) fn restore_all(
     limiter: &BudgetLimiter,
     records: &[DurableBudgetReservation],
 ) -> Result<(), LimitRefusal> {
-    let bounded: Vec<_> = records.iter().map(|record| (record.clone(), None)).collect();
+    let bounded: Vec<_> = records
+        .iter()
+        .map(|record| (record.clone(), None))
+        .collect();
     restore_bounded(limiter, &bounded)
 }
 
