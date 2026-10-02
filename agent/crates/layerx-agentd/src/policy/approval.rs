@@ -417,6 +417,94 @@ impl ApprovalRegistry {
         held.decision_claimed = false;
         Ok(())
     }
+
+    pub(crate) fn reject_claim_releasing(
+        &self,
+        hold_id: [u8; 32],
+        approver: ApproverId,
+        limiter: &BudgetLimiter,
+        current_sequence: u64,
+        decision_record: crate::approval::PreparedDecision,
+        decision_store: &Mutex<Store>,
+    ) -> Result<ApprovalAuditEntry, crate::approval::ApprovalOperationError> {
+        self.finish_claim_releasing(
+            hold_id,
+            ApprovalState::Rejected,
+            approver,
+            "approver_rejected_and_released_reservation",
+            limiter,
+            current_sequence,
+            decision_record,
+            decision_store,
+        )
+    }
+
+    pub(crate) fn check_reserved_limits(
+        &self,
+        hold_id: [u8; 32],
+        limiter: &BudgetLimiter,
+    ) -> Result<(), crate::approval::ApprovalOperationError> {
+        use crate::approval::ApprovalOperationError;
+        let holds = self
+            .holds
+            .lock()
+            .map_err(|_| ApprovalOperationError::Registry(ApprovalError::Unavailable))?;
+        let held = holds
+            .get(&hold_id)
+            .ok_or(ApprovalOperationError::Registry(ApprovalError::NotFound))?;
+        if held.state != ApprovalState::AwaitingApproval {
+            return Ok(());
+        }
+        for reservation in &held.budget_reservations {
+            limiter
+                .consumed(reservation.limit_id)
+                .map_err(ApprovalOperationError::Reservation)?;
+        }
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn finish_claim_releasing(
+        &self,
+        hold_id: [u8; 32],
+        state: ApprovalState,
+        approver: ApproverId,
+        reason: &'static str,
+        limiter: &BudgetLimiter,
+        current_sequence: u64,
+        decision_record: crate::approval::PreparedDecision,
+        decision_store: &Mutex<Store>,
+    ) -> Result<ApprovalAuditEntry, crate::approval::ApprovalOperationError> {
+        use crate::approval::ApprovalOperationError;
+        let mut holds = self
+            .holds
+            .lock()
+            .map_err(|_| ApprovalOperationError::Registry(ApprovalError::Unavailable))?;
+        let held = holds
+            .get_mut(&hold_id)
+            .ok_or(ApprovalOperationError::Registry(ApprovalError::NotFound))?;
+        if !held.decision_claimed || held.state != ApprovalState::AwaitingApproval {
+            return Err(ApprovalOperationError::Registry(
+                ApprovalError::DecisionConflict,
+            ));
+        }
+        if let Err(error) = release_durable(
+            self,
+            held,
+            limiter,
+            current_sequence,
+            decision_record,
+            decision_store,
+        ) {
+            held.decision_claimed = false;
+            return Err(error);
+        }
+        let audit = terminal_audit(held, state, Some(approver), reason);
+        held.state = state;
+        held.decision_claimed = false;
+        held.audit = Some(audit.clone());
+        Ok(audit)
+    }
 }
 
 /// Approval hold refusal taxonomy.
@@ -621,6 +709,55 @@ fn remove_durable(registry: &ApprovalRegistry, held: &HeldApproval) -> Result<()
     Ok(())
 }
 
+fn release_durable(
+    registry: &ApprovalRegistry,
+    held: &HeldApproval,
+    limiter: &BudgetLimiter,
+    current_sequence: u64,
+    decision_record: crate::approval::PreparedDecision,
+    decision_store: &Mutex<Store>,
+) -> Result<(), crate::approval::ApprovalOperationError> {
+    use crate::approval::ApprovalOperationError;
+    let mut store = registry
+        .store
+        .as_deref()
+        .unwrap_or(decision_store)
+        .lock()
+        .map_err(|_| ApprovalOperationError::Registry(ApprovalError::Unavailable))?;
+    for reservation in &held.budget_reservations {
+        limiter
+            .consumed(reservation.limit_id)
+            .map_err(ApprovalOperationError::Reservation)?;
+    }
+    let staged = budget::stage_release(
+        limiter,
+        held.context.request_id,
+        budget::ReleaseKind::Failed,
+        current_sequence,
+    )
+    .map_err(ApprovalOperationError::Reservation)?;
+    let persisted = if registry.store.is_some() {
+        let key = hold_storage_key(&held.context.tenant, held.context.request_id)
+            .map_err(ApprovalOperationError::Registry)?;
+        if store.get(&key).is_none() {
+            return Err(ApprovalOperationError::Registry(
+                ApprovalError::CorruptRecord,
+            ));
+        }
+        decision_record.remove_hold(&mut store, key)
+    } else {
+        decision_record.persist(&mut store)
+    };
+    persisted.map_err(|error| match error {
+        crate::approval::ApprovalExpiryError::DecisionConflict => {
+            ApprovalOperationError::Registry(ApprovalError::DecisionConflict)
+        }
+        _ => ApprovalOperationError::Registry(ApprovalError::Unavailable),
+    })?;
+    let _ = staged.publish();
+    Ok(())
+}
+
 fn replace_durable_with_released(
     registry: &ApprovalRegistry,
     held: &HeldApproval,
@@ -772,6 +909,21 @@ pub(crate) fn released_storage_key(
     object.extend_from_slice(&id);
     TenantKey::new(tenant.clone(), ObjectKind::Outbox, object)
         .map_err(|_| ApprovalError::CorruptRecord)
+}
+
+/// Decodes one released approval record and returns its exact durable budget reservations
+/// after the same validation replay applies.
+///
+/// # Errors
+///
+/// Returns `CorruptRecord` for a record that does not decode or does not validate for `tenant`.
+pub(crate) fn released_reservations(
+    tenant: &TenantId,
+    bytes: &[u8],
+) -> Result<Vec<DurableBudgetReservation>, ApprovalError> {
+    let (_, held) = decode_released(bytes)?;
+    validate_replayed(&held, tenant)?;
+    Ok(held.budget_reservations)
 }
 
 fn encode_released(
@@ -1094,4 +1246,344 @@ fn decode_reservations(r: &mut Reader<'_>) -> Result<Vec<DurableBudgetReservatio
         });
     }
     Ok(budget_reservations)
+}
+
+#[cfg(test)]
+mod released_replay_tests {
+    use std::sync::{Arc, Mutex};
+
+    use ed25519_dalek::{Signer as _, SigningKey};
+    use layerx_agent_api::identity::{ActivityType, AgentDid, Asset, AuthorityRef, ExplicitSet};
+    use layerx_agent_api::prepare::{
+        CanonicalBytes, Disclosure, IdempotencyRef, PreparationRef, Prepared, SigningPreimage,
+    };
+    use layerx_agent_api::{Amount, TimestampSeconds};
+    use layerx_types::activity::{Authority, TimestampBound};
+    use layerx_types::ids::{Did, IdempotencyKey};
+    use layerx_types::payload::{ModuleId, ModuleRegistration, ModuleRegistry};
+    use layerx_wire::encode::Encoder;
+    use sha2::{Digest as _, Sha256};
+
+    use super::{
+        canonical_digest, encode_released, hold_reserved, released_storage_key, ApprovalContext,
+        ApprovalError, ApprovalRegistry,
+    };
+    use crate::budget::{
+        reserve, BudgetLimiter, LimitConfig, LimitId, LimitScope, ReservationRequest,
+    };
+    use crate::capability::CapabilityId;
+    use crate::prepare::{
+        prepare_activity, CorePreparationBoundary, CorePreparationState, CoreStateError,
+        PreparationDefaults, PrepareRequest,
+    };
+    use crate::session::SessionId;
+    use crate::store::{ObjectKind, Store, TenantId, TenantKey};
+
+    const ACTOR: &str = "did:layerx:expiry";
+
+    struct RecordedCore(CorePreparationState);
+
+    impl CorePreparationBoundary for RecordedCore {
+        fn preparation_state(
+            &mut self,
+            _actor: &Did,
+        ) -> Result<CorePreparationState, CoreStateError> {
+            Ok(self.0.clone())
+        }
+    }
+
+    struct Root(std::path::PathBuf);
+
+    impl Drop for Root {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn tenant() -> TenantId {
+        TenantId::new("tenant-released-replay").unwrap_or_else(|error| panic!("{error}"))
+    }
+
+    fn activity_type() -> layerx_types::payload::ActivityType {
+        layerx_types::payload::ActivityType::new(ModuleId::Asset, 5)
+            .unwrap_or_else(|error| panic!("activity: {error:?}"))
+    }
+
+    fn modules() -> ModuleRegistry {
+        ModuleRegistry::new(
+            &[ModuleRegistration::new(ModuleId::Asset, &[activity_type()])
+                .unwrap_or_else(|error| panic!("registration: {error:?}"))],
+        )
+        .unwrap_or_else(|error| panic!("registry: {error:?}"))
+    }
+
+    fn sign(mut payload: Vec<u8>) -> Vec<u8> {
+        let offset = payload.len() - 167;
+        let key = SigningKey::from_bytes(&[0x66; 32]);
+        payload[offset + 33..offset + 65].copy_from_slice(&key.verifying_key().to_bytes());
+        let mut hasher = Sha256::new();
+        hasher.update(layerx_wire::hash::Domain::SignaturePreimage.tag());
+        hasher.update(&payload[..2]);
+        hasher.update(&payload[4..offset + 33]);
+        hasher.update(&payload[offset + 129..]);
+        let digest: [u8; 32] = hasher.finalize().into();
+        payload[offset + 65..offset + 129].copy_from_slice(&key.sign(&digest).to_bytes());
+        payload
+    }
+
+    fn send_payload() -> Vec<u8> {
+        let mut encoder = Encoder::new(512);
+        encoder
+            .u16(0x5301)
+            .unwrap_or_else(|error| panic!("tag: {error:?}"));
+        encoder
+            .u16(10)
+            .unwrap_or_else(|error| panic!("fields: {error:?}"));
+        encoder
+            .fixed(&[0x11; 32])
+            .unwrap_or_else(|error| panic!("from: {error:?}"));
+        encoder
+            .fixed(&[0x22; 32])
+            .unwrap_or_else(|error| panic!("to: {error:?}"));
+        encoder
+            .fixed(&[0x33; 32])
+            .unwrap_or_else(|error| panic!("asset: {error:?}"));
+        encoder
+            .u128(25)
+            .unwrap_or_else(|error| panic!("amount: {error:?}"));
+        encoder
+            .u64(5)
+            .unwrap_or_else(|error| panic!("sequence: {error:?}"));
+        encoder
+            .fixed(&[4; 32])
+            .unwrap_or_else(|error| panic!("idempotency: {error:?}"));
+        encoder
+            .u64(1_010)
+            .unwrap_or_else(|error| panic!("expiry: {error:?}"));
+        encoder
+            .fixed(&[0x55; 32])
+            .unwrap_or_else(|error| panic!("context: {error:?}"));
+        encoder
+            .u8(0)
+            .unwrap_or_else(|error| panic!("conditions: {error:?}"));
+        encoder
+            .u8(1)
+            .unwrap_or_else(|error| panic!("authority kind: {error:?}"));
+        encoder
+            .fixed(&[0x11; 32])
+            .unwrap_or_else(|error| panic!("controller: {error:?}"));
+        encoder
+            .fixed(&[0x66; 32])
+            .unwrap_or_else(|error| panic!("payload key: {error:?}"));
+        encoder
+            .fixed(&[0x77; 64])
+            .unwrap_or_else(|error| panic!("payload signature: {error:?}"));
+        encoder
+            .fixed(&[0x55; 32])
+            .unwrap_or_else(|error| panic!("signed context: {error:?}"));
+        encoder
+            .u32(17)
+            .unwrap_or_else(|error| panic!("network: {error:?}"));
+        encoder
+            .u16(layerx_wire::limits::PROTOCOL_VERSION)
+            .unwrap_or_else(|error| panic!("version: {error:?}"));
+        sign(encoder.finish())
+    }
+
+    fn prepared() -> Prepared {
+        let mut core = RecordedCore(CorePreparationState {
+            network_id: 17,
+            account_sequence: 5,
+            protocol_timestamp: 1_000,
+            observed_head_sequence: 88,
+            module_registry: modules(),
+        });
+        let activity = prepare_activity(
+            &mut core,
+            PreparationDefaults {
+                timestamp_span: 30,
+                fee_limit: layerx_types::amount::Amount::from_u128(12),
+                maximum_payload_bytes: 1_024,
+            },
+            PrepareRequest {
+                actor: Did::new(ACTOR.as_bytes()).unwrap_or_else(|error| panic!("DID: {error:?}")),
+                authority: Authority::owner(b"external-authority")
+                    .unwrap_or_else(|error| panic!("authority: {error:?}")),
+                activity_type: activity_type(),
+                expected_account_sequence: Some(5),
+                timestamp_bound: Some(
+                    TimestampBound::new(995, 1_010)
+                        .unwrap_or_else(|error| panic!("timestamp: {error:?}")),
+                ),
+                fee_limit: Some(layerx_types::amount::Amount::from_u128(7)),
+                idempotency_key: IdempotencyKey::new([4; 32]),
+                payload: send_payload(),
+                declared_payload_limit: 1_024,
+            },
+        )
+        .unwrap_or_else(|error| panic!("prepare: {error:?}"));
+        let bytes = activity.canonical_bytes;
+        Prepared {
+            preparation_ref: PreparationRef::new("released-replay")
+                .unwrap_or_else(|error| panic!("preparation: {error:?}")),
+            disclosure: Disclosure {
+                canonical_digest: canonical_digest(&bytes),
+                activity_type: ActivityType(activity_type().value()),
+                actor: AgentDid::new(ACTOR).unwrap_or_else(|error| panic!("actor: {error:?}")),
+                authority: AuthorityRef::new("session-key")
+                    .unwrap_or_else(|error| panic!("authority: {error:?}")),
+                counterparties: ExplicitSet::deny_all(),
+                amounts: ExplicitSet::deny_all(),
+                asset: Asset::new("LXP").unwrap_or_else(|error| panic!("asset: {error:?}")),
+                fee_limit: Amount(7),
+                expiry: TimestampSeconds(1_010),
+                idempotency_key: IdempotencyRef::new("04".repeat(32))
+                    .unwrap_or_else(|error| panic!("activity key: {error:?}")),
+            },
+            unsigned_canonical_bytes: CanonicalBytes::new(bytes)
+                .unwrap_or_else(|error| panic!("bytes: {error:?}")),
+            signing_preimage: SigningPreimage::new(activity.signing_preimage.to_vec())
+                .unwrap_or_else(|error| panic!("preimage: {error:?}")),
+            expiry: TimestampSeconds(1_010),
+        }
+    }
+
+    fn limit(id: u8) -> LimitConfig {
+        LimitConfig {
+            id: LimitId([id; 16]),
+            name: format!("released replay limit {id}"),
+            scope: LimitScope::Tenant([id; 32]),
+            ceiling: 1_000,
+            consumed: 0,
+        }
+    }
+
+    fn limiter(ids: &[u8]) -> BudgetLimiter {
+        BudgetLimiter::new(ids.iter().map(|id| limit(*id)).collect())
+            .unwrap_or_else(|error| panic!("limiter: {error:?}"))
+    }
+
+    fn entries(store: &Store) -> Vec<(TenantKey, Option<Vec<u8>>)> {
+        [ObjectKind::PreparedActivity, ObjectKind::Outbox]
+            .into_iter()
+            .flat_map(|kind| {
+                store
+                    .list_object_ids(&tenant(), kind)
+                    .into_iter()
+                    .map(move |id| {
+                        TenantKey::new(tenant(), kind, id)
+                            .unwrap_or_else(|error| panic!("key: {error:?}"))
+                    })
+            })
+            .map(|key| {
+                let bytes = store.get(&key).map(|value| value.bytes().to_vec());
+                (key, bytes)
+            })
+            .collect()
+    }
+
+    /// Persists one released record through the real hold encoding, reserved against limits 1
+    /// and 2, and returns its store with the record's bytes.
+    fn persisted(label: &str, id: u8) -> (Root, Arc<Mutex<Store>>) {
+        let root = Root(std::env::temp_dir().join(format!(
+            "layerx-released-replay-{label}-{}",
+            std::process::id()
+        )));
+        let _ = std::fs::remove_dir_all(&root.0);
+        let store = Arc::new(Mutex::new(
+            Store::open(&root.0).unwrap_or_else(|error| panic!("store: {error}")),
+        ));
+        let original = limiter(&[1, 2]);
+        let reservation = reserve(
+            &original,
+            &ReservationRequest {
+                id: [id; 32],
+                amount: 10,
+                expiry_sequence: 40,
+                current_sequence: 10,
+                applicable_limits: vec![LimitId([1; 16]), LimitId([2; 16])],
+            },
+        )
+        .unwrap_or_else(|error| panic!("reserve: {error:?}"));
+        let registry = ApprovalRegistry::with_store(Arc::clone(&store));
+        hold_reserved(
+            &registry,
+            ApprovalContext {
+                tenant: tenant(),
+                agent: Did::new(ACTOR.as_bytes())
+                    .unwrap_or_else(|error| panic!("agent: {error:?}")),
+                session: SessionId([2; 32]),
+                capability: CapabilityId([3; 32]),
+                policy_version: "policy-v3".to_owned(),
+                request_id: [id; 32],
+            },
+            prepared(),
+            10,
+            40,
+            &reservation,
+        )
+        .unwrap_or_else(|error| panic!("hold: {error:?}"));
+        let held = registry
+            .holds
+            .lock()
+            .unwrap_or_else(|_| panic!("holds lock"))
+            .get(&[id; 32])
+            .cloned()
+            .unwrap_or_else(|| panic!("held approval"));
+        let bytes = encode_released(&held, [9; 32]).unwrap_or_else(|error| panic!("{error:?}"));
+        let key = released_storage_key(&tenant(), [id; 32])
+            .unwrap_or_else(|error| panic!("key: {error:?}"));
+        store
+            .lock()
+            .unwrap_or_else(|_| panic!("store lock"))
+            .put_local(key, bytes)
+            .unwrap_or_else(|error| panic!("released: {error}"));
+        (root, store)
+    }
+
+    #[test]
+    fn released_replay_under_a_missing_limit_is_refused_without_change() {
+        let (_root, store) = persisted("missing", 41);
+        let before = entries(&store.lock().unwrap_or_else(|_| panic!("store lock")));
+        let partial = limiter(&[1]);
+        let registry = ApprovalRegistry::with_store(Arc::clone(&store));
+        assert!(matches!(
+            registry.replay_released(&tenant(), &partial, &modules()),
+            Err(ApprovalError::CorruptRecord)
+        ));
+        assert_eq!(
+            entries(&store.lock().unwrap_or_else(|_| panic!("store lock"))),
+            before
+        );
+        assert_eq!(partial.held_reservations(), Ok(0));
+        assert_eq!(partial.held_exposure(LimitId([1; 16])), Ok(0));
+        assert_eq!(partial.consumed(LimitId([1; 16])), Ok(0));
+    }
+
+    #[test]
+    fn released_replay_with_every_limit_known_restores_the_exact_holds() {
+        let (_root, store) = persisted("known", 42);
+        let before = entries(&store.lock().unwrap_or_else(|_| panic!("store lock")));
+        let restarted = limiter(&[1, 2]);
+        let registry = ApprovalRegistry::with_store(Arc::clone(&store));
+        let released = registry
+            .replay_released(&tenant(), &restarted, &modules())
+            .unwrap_or_else(|error| panic!("replay: {error:?}"));
+        assert_eq!(released.len(), 1);
+        assert_eq!(released[0].approval_id, [42; 32]);
+        assert_eq!(released[0].submission_ref, [9; 32]);
+        assert_eq!(
+            restarted.held_limits([42; 32]),
+            Ok(vec![LimitId([1; 16]), LimitId([2; 16])])
+        );
+        assert_eq!(restarted.held_reservations(), Ok(2));
+        for id in [1, 2] {
+            assert_eq!(restarted.held_exposure(LimitId([id; 16])), Ok(10));
+            assert_eq!(restarted.consumed(LimitId([id; 16])), Ok(0));
+        }
+        assert_eq!(
+            entries(&store.lock().unwrap_or_else(|_| panic!("store lock"))),
+            before
+        );
+    }
 }

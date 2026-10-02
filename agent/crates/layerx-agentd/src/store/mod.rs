@@ -469,6 +469,53 @@ impl Store {
         Ok(())
     }
 
+    /// Atomically updates existing local records and removes others in one persist.
+    ///
+    /// Every key must name an existing local record and appear once across both lists. An
+    /// encoding or I/O failure restores the exact in-memory map that preceded the batch.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if record keys are invalid or repeated, or the durable transaction fails.
+    pub fn update_local_batch_removing(
+        &mut self,
+        updates: Vec<(TenantKey, Vec<u8>)>,
+        removals: Vec<TenantKey>,
+    ) -> Result<(), StoreError> {
+        if updates.is_empty() && removals.is_empty() {
+            return Ok(());
+        }
+        let mut keys = BTreeSet::new();
+        for key in updates.iter().map(|(key, _)| key).chain(removals.iter()) {
+            if !keys.insert(key.clone())
+                || self
+                    .entries
+                    .get(key)
+                    .is_none_or(|value| value.class != StorageClass::LocalOnly)
+            {
+                return Err(StoreError::Corrupt("invalid local batch removal"));
+            }
+        }
+        let before = self.entries.clone();
+        for (key, bytes) in updates {
+            self.entries.insert(
+                key,
+                StoredValue {
+                    class: StorageClass::LocalOnly,
+                    bytes,
+                },
+            );
+        }
+        for key in removals {
+            self.entries.remove(&key);
+        }
+        if let Err(error) = self.persist() {
+            self.entries = before;
+            return Err(error);
+        }
+        Ok(())
+    }
+
     /// Persists exact bytes produced by the core as a rebuildable cache.
     ///
     /// # Errors
@@ -937,6 +984,80 @@ impl Store {
         fs::rename(temp_path, final_path)?;
         File::open(&self.root)?.sync_all()?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod batch_removing_tests {
+    use super::{ObjectKind, Store, StoreError, TenantId, TenantKey};
+
+    struct Directory(std::path::PathBuf);
+
+    impl Drop for Directory {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn key(id: &[u8]) -> TenantKey {
+        TenantKey::new(
+            TenantId::new("tenant-batch-removing").unwrap_or_else(|error| panic!("{error}")),
+            ObjectKind::Configuration,
+            id.to_vec(),
+        )
+        .unwrap_or_else(|error| panic!("key: {error}"))
+    }
+
+    fn bytes(store: &Store, key: &TenantKey) -> Option<Vec<u8>> {
+        store.get(key).map(|value| value.bytes().to_vec())
+    }
+
+    #[test]
+    fn update_local_batch_removing_rolls_back_both_lists_on_failed_persist() {
+        let directory = Directory(
+            std::env::temp_dir().join(format!("layerx-batch-removing-{}", std::process::id())),
+        );
+        let _ = std::fs::remove_dir_all(&directory.0);
+        let mut store = Store::open(&directory.0).unwrap_or_else(|error| panic!("open: {error}"));
+        let (kept, removed) = (key(b"kept"), key(b"removed"));
+        store
+            .put_local(kept.clone(), b"kept-0".to_vec())
+            .unwrap_or_else(|error| panic!("put: {error}"));
+        store
+            .put_local(removed.clone(), b"removed-0".to_vec())
+            .unwrap_or_else(|error| panic!("put: {error}"));
+
+        assert!(matches!(
+            store.update_local_batch_removing(
+                vec![(kept.clone(), b"kept-1".to_vec())],
+                vec![kept.clone()]
+            ),
+            Err(StoreError::Corrupt(_))
+        ));
+        assert_eq!(bytes(&store, &kept), Some(b"kept-0".to_vec()));
+
+        std::fs::remove_dir_all(&directory.0).unwrap_or_else(|error| panic!("remove: {error}"));
+        assert!(matches!(
+            store.update_local_batch_removing(
+                vec![(kept.clone(), b"kept-1".to_vec())],
+                vec![removed.clone()]
+            ),
+            Err(StoreError::Io(_))
+        ));
+        assert_eq!(bytes(&store, &kept), Some(b"kept-0".to_vec()));
+        assert_eq!(bytes(&store, &removed), Some(b"removed-0".to_vec()));
+
+        std::fs::create_dir_all(&directory.0).unwrap_or_else(|error| panic!("create: {error}"));
+        store
+            .update_local_batch_removing(
+                vec![(kept.clone(), b"kept-1".to_vec())],
+                vec![removed.clone()],
+            )
+            .unwrap_or_else(|error| panic!("batch: {error}"));
+        drop(store);
+        let reopened = Store::open(&directory.0).unwrap_or_else(|error| panic!("reopen: {error}"));
+        assert_eq!(bytes(&reopened, &kept), Some(b"kept-1".to_vec()));
+        assert_eq!(bytes(&reopened, &removed), None);
     }
 }
 

@@ -243,6 +243,32 @@ impl BudgetLimiter {
         Ok(())
     }
 
+    /// Reserves against every applicable scope and publishes the holds only after `persist`
+    /// succeeds. The limiter lock is held across `persist`, so admission is excluded until the
+    /// holds are published, and a failed `persist` leaves the limiter unchanged.
+    ///
+    /// # Errors
+    ///
+    /// Returns every refusal of `reserve`, `InvalidRequest` for a `core_deadline` at or before
+    /// `core_now`, or the error of `persist`.
+    pub fn reserve_locked<E: From<LimitRefusal>>(
+        &self,
+        request: &ReservationRequest,
+        core_deadline: Option<CoreTimestampMs>,
+        core_now: CoreTimestampMs,
+        persist: impl FnOnce(&BudgetReservation) -> Result<(), E>,
+    ) -> Result<BudgetReservation, E> {
+        if core_deadline.is_some_and(|deadline| deadline <= core_now) {
+            return Err(LimitRefusal::InvalidRequest.into());
+        }
+        let mut limits = self.limits.lock().map_err(|_| LimitRefusal::Poisoned)?;
+        let mut reserved = limits.clone();
+        let reservation = reserve_into(&mut reserved, request, core_deadline)?;
+        persist(&reservation)?;
+        *limits = reserved;
+        Ok(reservation)
+    }
+
     /// Raises one limit's cached consumed total to a refreshed persisted total. A lower persisted
     /// total keeps the cached one: a settled execution is persisted before it is released.
     ///
@@ -485,6 +511,17 @@ fn reserve_bounded(
     request: &ReservationRequest,
     core_deadline: Option<CoreTimestampMs>,
 ) -> Result<BudgetReservation, LimitRefusal> {
+    let mut limits = limiter.limits.lock().map_err(|_| LimitRefusal::Poisoned)?;
+    reserve_into(&mut limits, request, core_deadline)
+}
+
+/// Checks and inserts one reservation into `limits`; every refusal is returned before the map
+/// is changed.
+fn reserve_into(
+    limits: &mut BTreeMap<LimitId, LimitState>,
+    request: &ReservationRequest,
+    core_deadline: Option<CoreTimestampMs>,
+) -> Result<BudgetReservation, LimitRefusal> {
     if request.amount == 0
         || request.expiry_sequence <= request.current_sequence
         || request.applicable_limits.is_empty()
@@ -494,7 +531,6 @@ fn reserve_bounded(
     let mut applicable = request.applicable_limits.clone();
     applicable.sort_unstable();
     applicable.dedup();
-    let mut limits = limiter.limits.lock().map_err(|_| LimitRefusal::Poisoned)?;
     for id in &applicable {
         let limit = limits.get(id).ok_or(LimitRefusal::UnknownLimit(*id))?;
         if limit.retired {
@@ -503,7 +539,7 @@ fn reserve_bounded(
         if limit.held.contains_key(&request.id) {
             return Err(LimitRefusal::InvalidRequest);
         }
-        let held = lineage_held(&limits, *id)?;
+        let held = lineage_held(limits, *id)?;
         let projected = limit
             .config
             .consumed
@@ -738,4 +774,104 @@ fn reservation_digest(
     hasher.update(ceiling.to_be_bytes());
     hasher.update(expiry_sequence.to_be_bytes());
     hasher.finalize().into()
+}
+
+#[cfg(test)]
+mod renewal_publication_tests {
+    use std::cell::Cell;
+
+    use super::{
+        BudgetLimiter, LimitConfig, LimitId, LimitRefusal, LimitScope, ReservationRequest,
+    };
+    use crate::budget::{reserve, DaemonLimitError};
+    use crate::store::{ObjectKind, Store, StoreError, TenantId, TenantKey};
+
+    fn must<T, E: std::fmt::Debug>(value: Result<T, E>) -> T {
+        value.unwrap_or_else(|error| panic!("renewal publication: {error:?}"))
+    }
+
+    fn limit(id: u8, ceiling: u128) -> LimitConfig {
+        LimitConfig {
+            id: LimitId([id; 16]),
+            name: format!("renewal limit {id}"),
+            scope: LimitScope::Tenant([1; 32]),
+            ceiling,
+            consumed: 0,
+        }
+    }
+
+    fn renew(
+        limiter: &BudgetLimiter,
+        store: &mut Store,
+        key: &TenantKey,
+        calls: &Cell<u32>,
+    ) -> Result<(), DaemonLimitError> {
+        limiter.renew_locked(&limit(1, 100), &limit(2, 30), |consumed| {
+            calls.set(calls.get() + 1);
+            store.put_local(key.clone(), consumed.to_be_bytes().to_vec())?;
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn renewal_with_a_failed_durable_write_publishes_nothing_and_a_written_one_publishes_once() {
+        let root =
+            std::env::temp_dir().join(format!("lxp-renewal-publication-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let mut store = must(Store::open(&root));
+        let key = must(TenantKey::new(
+            must(TenantId::new("tenant-a")),
+            ObjectKind::Configuration,
+            b"renewal-publication".to_vec(),
+        ));
+        let limiter = must(BudgetLimiter::new(vec![limit(1, 100)]));
+        must(reserve(
+            &limiter,
+            &ReservationRequest {
+                id: [5; 32],
+                amount: 20,
+                expiry_sequence: 40,
+                current_sequence: 1,
+                applicable_limits: vec![LimitId([1; 16])],
+            },
+        ));
+        let calls = Cell::new(0);
+
+        must(std::fs::remove_dir_all(&root));
+        assert!(matches!(
+            renew(&limiter, &mut store, &key, &calls),
+            Err(DaemonLimitError::Store(StoreError::Io(_)))
+        ));
+        assert_eq!(calls.get(), 1);
+        assert_eq!(limiter.is_retired(LimitId([1; 16])), Ok(false));
+        assert_eq!(
+            limiter.consumed(LimitId([2; 16])),
+            Err(LimitRefusal::UnknownLimit(LimitId([2; 16])))
+        );
+        assert_eq!(limiter.held_limits([5; 32]), Ok(vec![LimitId([1; 16])]));
+        assert_eq!(limiter.held_exposure(LimitId([1; 16])), Ok(20));
+        assert_eq!(limiter.consumed(LimitId([1; 16])), Ok(0));
+        assert!(store.get(&key).is_none());
+        assert!(!root.exists());
+
+        must(std::fs::create_dir_all(&root));
+        must(renew(&limiter, &mut store, &key, &calls));
+        assert_eq!(calls.get(), 2);
+        assert_eq!(limiter.is_retired(LimitId([1; 16])), Ok(true));
+        assert_eq!(limiter.consumed(LimitId([2; 16])), Ok(0));
+        assert_eq!(limiter.held_exposure(LimitId([2; 16])), Ok(20));
+        assert_eq!(limiter.held_reservations(), Ok(1));
+        assert!(matches!(
+            renew(&limiter, &mut store, &key, &calls),
+            Err(DaemonLimitError::Limit(LimitRefusal::InvalidConfiguration))
+        ));
+        assert_eq!(calls.get(), 2);
+        assert_eq!(limiter.held_exposure(LimitId([2; 16])), Ok(20));
+        let reopened = must(Store::open(&root));
+        assert_eq!(
+            reopened.get(&key).map(|value| value.bytes().to_vec()),
+            Some(0_u128.to_be_bytes().to_vec())
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
 }

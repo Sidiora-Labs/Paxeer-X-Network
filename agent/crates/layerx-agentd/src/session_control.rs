@@ -154,11 +154,13 @@ impl SessionControl {
                     .map_err(|_| SessionControlError::Unavailable)?,
             );
         }
+        let staged =
+            budget::stage_release(&self.budgets, preparation_id, outcome, current_sequence)
+                .map_err(|refusal| lifecycle(LifecycleError::Reservation(refusal)))?;
         store
             .update_local_batch(updates)
             .map_err(|_| SessionControlError::Unavailable)?;
-        budget::release(&self.budgets, preparation_id, outcome, current_sequence)
-            .map_err(|refusal| lifecycle(LifecycleError::Reservation(refusal)))
+        Ok(staged.publish())
     }
 
     /// Receipt-path lookup: the one unsettled preparation published for `idempotency_key`.
@@ -1205,21 +1207,30 @@ impl OperationPermit {
         if missing.is_empty() {
             return Ok(record);
         }
-        // ponytail: a failed rewrite keeps the added in-memory hold (over-holds, never
-        // under-holds) until restart restores the durable set; per-limit release if it matters.
-        let added = reserve_charge(
-            &control.budgets,
-            preparation_id,
-            charge,
-            missing,
-            admission.current_sequence,
-            admission.core_time_ms,
+        let request = ReservationRequest {
+            id: preparation_id,
+            amount: charge.amount,
+            expiry_sequence: charge.head_sequence_bound,
+            current_sequence: admission.current_sequence,
+            applicable_limits: missing,
+        };
+        control.budgets.reserve_locked(
+            &request,
+            charge.core_deadline_ms,
+            CoreTimestampMs(admission.core_time_ms),
+            |reservation| {
+                record.holds.extend(
+                    reservation
+                        .durable
+                        .iter()
+                        .map(|hold| (hold.clone(), charge.core_deadline_ms)),
+                );
+                let bytes = record.encode().map_err(lifecycle)?;
+                store
+                    .update_local_batch(vec![(key, bytes)])
+                    .map_err(|_| SessionControlError::Unavailable)
+            },
         )?;
-        record.holds.extend(added);
-        let bytes = record.encode().map_err(lifecycle)?;
-        store
-            .update_local_batch(vec![(key, bytes)])
-            .map_err(|_| SessionControlError::Unavailable)?;
         Ok(record)
     }
 
@@ -1723,6 +1734,12 @@ pub enum SessionControlError {
     Unavailable,
 }
 
+impl From<LimitRefusal> for SessionControlError {
+    fn from(refusal: LimitRefusal) -> Self {
+        Self::Lifecycle(LifecycleError::Reservation(refusal))
+    }
+}
+
 fn replacement_bearer(
     record: &session::SessionRecord,
     current_token: [u8; 32],
@@ -2112,5 +2129,489 @@ mod tests {
             assert!(SessionCapabilityBinding::decode(&tenant(), SESSION, &malformed).is_err());
         }
         assert!(SessionCapabilityBinding::decode(&tenant(), SessionId([3; 32]), &bytes).is_err());
+    }
+
+    #[test]
+    fn hold_under_unknown_limit_is_refused_on_restore_and_retained() {
+        let (root, control, _token) = control("unknown-hold-refused");
+        let config = |id: u8| LimitConfig {
+            id: LimitId([id; 16]),
+            name: "tenant-limit".to_owned(),
+            scope: LimitScope::Tenant([1; 32]),
+            ceiling: 1_000,
+            consumed: 0,
+        };
+        let request = |limit: LimitId| budget::ReservationRequest {
+            id: [7; 32],
+            amount: 5,
+            expiry_sequence: 1_000,
+            current_sequence: 1,
+            applicable_limits: vec![limit],
+        };
+        let known_limiter = must(BudgetLimiter::new(vec![config(1)]));
+        let declared_limiter = must(BudgetLimiter::new(vec![config(9)]));
+        let known = must(budget::reserve(&known_limiter, &request(LimitId([1; 16])))).durable;
+        let declared = must(budget::reserve(
+            &declared_limiter,
+            &request(LimitId([9; 16])),
+        ))
+        .durable;
+        let record = DurablePreparation {
+            tenant: tenant(),
+            preparation_id: [7; 32],
+            session_id: SESSION.0,
+            generation: 1,
+            not_after: 1_900_000_000,
+            payload_hash: [3; 32],
+            state: LifecycleState::Prepared,
+            activity_id: None,
+            holds: known
+                .into_iter()
+                .chain(declared)
+                .map(|hold| (hold, None))
+                .collect(),
+            extensions: std::collections::BTreeMap::new(),
+        };
+        let key = must(DurablePreparation::store_key(&tenant(), [7; 32]));
+        let bytes = must(record.encode());
+        {
+            let store = control.store();
+            let mut store = must(store.lock());
+            must(store.put_local(key.clone(), bytes.clone()));
+        }
+        assert!(matches!(
+            control.restore_writes(),
+            Err(SessionControlError::Lifecycle(LifecycleError::Reservation(
+                budget::LimitRefusal::UnknownLimit(limit)
+            ))) if limit == LimitId([9; 16])
+        ));
+        assert_eq!(control.budgets.held_reservations(), Ok(0));
+        assert_eq!(control.budgets.consumed(LimitId([1; 16])), Ok(0));
+        {
+            let store = control.store();
+            let store = must(store.lock());
+            assert_eq!(
+                store.get(&key).map(|value| value.bytes().to_vec()),
+                Some(bytes)
+            );
+        }
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    struct RecordedCore(crate::prepare::CorePreparationState);
+
+    impl crate::prepare::CorePreparationBoundary for RecordedCore {
+        fn preparation_state(
+            &mut self,
+            _actor: &Did,
+        ) -> Result<crate::prepare::CorePreparationState, crate::prepare::CoreStateError> {
+            Ok(self.0.clone())
+        }
+    }
+
+    fn activity_type() -> layerx_types::payload::ActivityType {
+        must(layerx_types::payload::ActivityType::new(
+            layerx_types::payload::ModuleId::Asset,
+            5,
+        ))
+    }
+
+    fn signed_payload() -> Vec<u8> {
+        use ed25519_dalek::Signer as _;
+        use sha2::Digest as _;
+        let mut encoder = layerx_wire::encode::Encoder::new(512);
+        encoder
+            .u16(0x5301)
+            .unwrap_or_else(|error| panic!("tag: {error:?}"));
+        encoder
+            .u16(10)
+            .unwrap_or_else(|error| panic!("fields: {error:?}"));
+        encoder
+            .fixed(&[0x11; 32])
+            .unwrap_or_else(|error| panic!("from: {error:?}"));
+        encoder
+            .fixed(&[0x22; 32])
+            .unwrap_or_else(|error| panic!("to: {error:?}"));
+        encoder
+            .fixed(&[0x33; 32])
+            .unwrap_or_else(|error| panic!("asset: {error:?}"));
+        encoder
+            .u128(25)
+            .unwrap_or_else(|error| panic!("amount: {error:?}"));
+        encoder
+            .u64(5)
+            .unwrap_or_else(|error| panic!("sequence: {error:?}"));
+        encoder
+            .fixed(&[4; 32])
+            .unwrap_or_else(|error| panic!("idempotency: {error:?}"));
+        encoder
+            .u64(1_010)
+            .unwrap_or_else(|error| panic!("expiry: {error:?}"));
+        encoder
+            .fixed(&[0x55; 32])
+            .unwrap_or_else(|error| panic!("context: {error:?}"));
+        encoder
+            .u8(0)
+            .unwrap_or_else(|error| panic!("conditions: {error:?}"));
+        encoder
+            .u8(1)
+            .unwrap_or_else(|error| panic!("authority kind: {error:?}"));
+        encoder
+            .fixed(&[0x11; 32])
+            .unwrap_or_else(|error| panic!("controller: {error:?}"));
+        encoder
+            .fixed(&[0x66; 32])
+            .unwrap_or_else(|error| panic!("payload key: {error:?}"));
+        encoder
+            .fixed(&[0x77; 64])
+            .unwrap_or_else(|error| panic!("payload signature: {error:?}"));
+        encoder
+            .fixed(&[0x55; 32])
+            .unwrap_or_else(|error| panic!("signed context: {error:?}"));
+        encoder
+            .u32(17)
+            .unwrap_or_else(|error| panic!("network: {error:?}"));
+        encoder
+            .u16(layerx_wire::limits::PROTOCOL_VERSION)
+            .unwrap_or_else(|error| panic!("version: {error:?}"));
+        let mut payload = encoder.finish();
+        let offset = payload.len() - 167;
+        let key = ed25519_dalek::SigningKey::from_bytes(&[0x66; 32]);
+        payload[offset + 33..offset + 65].copy_from_slice(&key.verifying_key().to_bytes());
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(layerx_wire::hash::Domain::SignaturePreimage.tag());
+        hasher.update(&payload[..2]);
+        hasher.update(&payload[4..offset + 33]);
+        hasher.update(&payload[offset + 129..]);
+        let digest: [u8; 32] = hasher.finalize().into();
+        payload[offset + 65..offset + 129].copy_from_slice(&key.sign(&digest).to_bytes());
+        payload
+    }
+
+    fn prepared_activity() -> Prepared {
+        let registry = must(layerx_types::payload::ModuleRegistry::new(&[must(
+            layerx_types::payload::ModuleRegistration::new(
+                layerx_types::payload::ModuleId::Asset,
+                &[activity_type()],
+            ),
+        )]));
+        let mut core = RecordedCore(crate::prepare::CorePreparationState {
+            network_id: 17,
+            account_sequence: 5,
+            protocol_timestamp: 1_000,
+            observed_head_sequence: 88,
+            module_registry: registry,
+        });
+        must(crate::prepare::prepare_activity(
+            &mut core,
+            crate::prepare::PreparationDefaults {
+                timestamp_span: 30,
+                fee_limit: layerx_types::amount::Amount::from_u128(12),
+                maximum_payload_bytes: 1_024,
+            },
+            crate::prepare::PrepareRequest {
+                actor: must(Did::new(b"did:layerx:expiry")),
+                authority: must(layerx_types::activity::Authority::owner(
+                    b"external-authority",
+                )),
+                activity_type: activity_type(),
+                expected_account_sequence: Some(5),
+                timestamp_bound: Some(must(layerx_types::activity::TimestampBound::new(
+                    995, 1_010,
+                ))),
+                fee_limit: Some(layerx_types::amount::Amount::from_u128(7)),
+                idempotency_key: layerx_types::ids::IdempotencyKey::new([4; 32]),
+                payload: signed_payload(),
+                declared_payload_limit: 1_024,
+            },
+        ))
+    }
+
+    fn daemon_limit(control: &SessionControl) -> LimitId {
+        let store = control.store();
+        let mut store = must(store.lock());
+        must(budget::create_daemon_limit(
+            &mut store,
+            &control.budgets,
+            budget::DaemonLimitRecord {
+                tenant: tenant(),
+                budget_id: [21; 32],
+                limit_id: budget::daemon_limit_id([21; 32]),
+                agent_digest: [7; 32],
+                asset: [8; 32],
+                ceiling: 1_000,
+                consumed: 0,
+                expiry_ms: 1_000_000,
+                revoked: false,
+                mutation_key: [21; 32],
+                body_digest: [21; 32],
+                revoke_key: [0; 32],
+            },
+            CoreTimestampMs(1),
+        ))
+        .limit_id
+    }
+
+    fn stored_consumed(store: &Store) -> Vec<u128> {
+        must(budget::daemon_limits(store, &tenant()))
+            .iter()
+            .map(|record| record.consumed)
+            .collect()
+    }
+
+    fn held_preparation(control: &SessionControl, limit: LimitId) -> (TenantKey, Vec<u8>) {
+        let held = must(budget::reserve(
+            &control.budgets,
+            &ReservationRequest {
+                id: [7; 32],
+                amount: 5,
+                expiry_sequence: 1_000,
+                current_sequence: OBSERVED,
+                applicable_limits: vec![limit],
+            },
+        ))
+        .durable;
+        let record = DurablePreparation {
+            tenant: tenant(),
+            preparation_id: [7; 32],
+            session_id: SESSION.0,
+            generation: 1,
+            not_after: 1_900_000_000,
+            payload_hash: [3; 32],
+            state: LifecycleState::Prepared,
+            activity_id: None,
+            holds: held.into_iter().map(|hold| (hold, None)).collect(),
+            extensions: std::collections::BTreeMap::new(),
+        };
+        let key = must(DurablePreparation::store_key(&tenant(), [7; 32]));
+        let bytes = must(record.encode());
+        let store = control.store();
+        must(must(store.lock()).put_local(key.clone(), bytes.clone()));
+        (key, bytes)
+    }
+
+    #[test]
+    fn settle_with_a_failed_durable_write_leaves_the_hold_unpublished() {
+        let (root, control, _token) = control("settle-io-failure");
+        let limit = daemon_limit(&control);
+        let (key, bytes) = held_preparation(&control, limit);
+        must(std::fs::remove_dir_all(&root));
+        assert!(matches!(
+            control.settle_write(&tenant(), [7; 32], ReleaseKind::Executed, OBSERVED),
+            Err(SessionControlError::Unavailable)
+        ));
+        assert_eq!(control.budgets.held_limits([7; 32]), Ok(vec![limit]));
+        assert_eq!(control.budgets.held_reservations(), Ok(1));
+        assert_eq!(control.budgets.consumed(limit), Ok(0));
+        {
+            let store = control.store();
+            let store = must(store.lock());
+            assert_eq!(
+                store.get(&key).map(|value| value.bytes().to_vec()),
+                Some(bytes)
+            );
+            assert_eq!(stored_consumed(&store), vec![0]);
+        }
+        assert!(!root.exists());
+        assert!(must(control.registry().read())
+            .get(&tenant(), SESSION)
+            .is_some());
+    }
+
+    #[test]
+    fn settle_with_a_durable_write_publishes_the_release_once() {
+        let (root, control, _token) = control("settle-io-success");
+        let limit = daemon_limit(&control);
+        held_preparation(&control, limit);
+        assert!(matches!(
+            control.settle_write(&tenant(), [7; 32], ReleaseKind::Executed, OBSERVED),
+            Ok(true)
+        ));
+        assert_eq!(control.budgets.held_reservations(), Ok(0));
+        assert_eq!(control.budgets.consumed(limit), Ok(5));
+        assert!(matches!(
+            control.settle_write(&tenant(), [7; 32], ReleaseKind::Executed, OBSERVED),
+            Ok(false)
+        ));
+        assert_eq!(control.budgets.consumed(limit), Ok(5));
+        assert_eq!(stored_consumed(&must(Store::open(&root))), vec![5]);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    fn admission(prepared: &Prepared, limit: LimitId) -> WriteAdmission<'_> {
+        WriteAdmission {
+            stage: AdmissionStage::Prepare { prepared },
+            preparation_id: [8; 32],
+            charge: Some(WriteCharge {
+                amount: 5,
+                applicable_limits: vec![limit],
+                head_sequence_bound: 1_000,
+                core_deadline_ms: None,
+            }),
+            extensions: Vec::new(),
+            current_sequence: OBSERVED,
+            core_time_ms: 0,
+            planner: None,
+        }
+    }
+
+    #[test]
+    fn admit_write_with_a_failed_durable_write_releases_its_hold() {
+        let (root, control, token) = control("admit-io-failure");
+        let prepared = prepared_activity();
+        let permit = permit(&control, &token);
+        must(std::fs::remove_dir_all(&root));
+        assert!(matches!(
+            permit.admit_write(&control, admission(&prepared, LimitId([1; 16]))),
+            Err(SessionControlError::Unavailable)
+        ));
+        assert_eq!(control.budgets.held_reservations(), Ok(0));
+        assert_eq!(control.budgets.consumed(LimitId([1; 16])), Ok(0));
+        assert!(matches!(
+            control.lifecycle.state([8; 32]),
+            Err(LifecycleError::NotFound)
+        ));
+        let key = must(DurablePreparation::store_key(&tenant(), [8; 32]));
+        assert!(must(control.store.lock()).get(&key).is_none());
+        assert!(!root.exists());
+        assert!(must(control.registry().read())
+            .get(&tenant(), SESSION)
+            .is_some());
+    }
+
+    #[test]
+    fn admit_write_with_a_durable_write_holds_once() {
+        let (root, control, token) = control("admit-io-success");
+        let prepared = prepared_activity();
+        let permit = permit(&control, &token);
+        let record = must(permit.admit_write(&control, admission(&prepared, LimitId([1; 16]))));
+        assert_eq!(record.holds.len(), 1);
+        assert_eq!(
+            control.budgets.held_limits([8; 32]),
+            Ok(vec![LimitId([1; 16])])
+        );
+        assert_eq!(control.budgets.held_reservations(), Ok(1));
+        assert_eq!(control.budgets.consumed(LimitId([1; 16])), Ok(0));
+        assert!(matches!(
+            control.lifecycle.state([8; 32]),
+            Ok(LifecycleState::Prepared)
+        ));
+        let key = must(DurablePreparation::store_key(&tenant(), [8; 32]));
+        assert!(must(Store::open(&root)).get(&key).is_some());
+        assert!(matches!(
+            permit.admit_write(&control, admission(&prepared, LimitId([1; 16]))),
+            Err(SessionControlError::Lifecycle(LifecycleError::Duplicate))
+        ));
+        assert_eq!(control.budgets.held_reservations(), Ok(1));
+        let _ = std::fs::remove_dir_all(root);
+    }
+    fn second_limit(control: &SessionControl) -> LimitId {
+        must(control.budgets.install(LimitConfig {
+            id: LimitId([2; 16]),
+            name: "session-limit".to_owned(),
+            scope: LimitScope::Session([2; 32]),
+            ceiling: 1_000,
+            consumed: 0,
+        }));
+        LimitId([2; 16])
+    }
+
+    fn submit(limits: Vec<LimitId>) -> WriteAdmission<'static> {
+        WriteAdmission {
+            stage: AdmissionStage::Submit,
+            preparation_id: [8; 32],
+            charge: Some(WriteCharge {
+                amount: 5,
+                applicable_limits: limits,
+                head_sequence_bound: 1_000,
+                core_deadline_ms: None,
+            }),
+            extensions: Vec::new(),
+            current_sequence: OBSERVED,
+            core_time_ms: 0,
+            planner: None,
+        }
+    }
+
+    fn submit_permit(control: &SessionControl, token: &Token) -> OperationPermit {
+        must(control.authorize(
+            &token.credential(),
+            Operation::Submit,
+            Surface::Contract,
+            OBSERVED,
+            None,
+        ))
+    }
+
+    #[test]
+    fn submit_rewrite_with_a_failed_durable_write_leaves_the_limiter_as_it_was() {
+        let (root, control, token) = control("submit-io-failure");
+        let first = LimitId([1; 16]);
+        let second = second_limit(&control);
+        let prepared = prepared_activity();
+        must(permit(&control, &token).admit_write(&control, admission(&prepared, first)));
+        let key = must(DurablePreparation::store_key(&tenant(), [8; 32]));
+        let before = must(control.store.lock())
+            .get(&key)
+            .map(|value| value.bytes().to_vec());
+        assert!(before.is_some());
+        must(std::fs::remove_dir_all(&root));
+        assert!(matches!(
+            submit_permit(&control, &token).admit_write(&control, submit(vec![first, second])),
+            Err(SessionControlError::Unavailable)
+        ));
+        assert_eq!(control.budgets.held_limits([8; 32]), Ok(vec![first]));
+        assert_eq!(control.budgets.held_reservations(), Ok(1));
+        assert_eq!(control.budgets.held_exposure(first), Ok(5));
+        assert_eq!(control.budgets.held_exposure(second), Ok(0));
+        assert_eq!(control.budgets.consumed(first), Ok(0));
+        assert_eq!(control.budgets.consumed(second), Ok(0));
+        assert_eq!(
+            must(control.store.lock())
+                .get(&key)
+                .map(|value| value.bytes().to_vec()),
+            before
+        );
+        assert!(!root.exists());
+    }
+
+    #[test]
+    fn submit_rewrite_with_a_durable_write_holds_each_missing_limit_once() {
+        let (root, control, token) = control("submit-io-success");
+        let first = LimitId([1; 16]);
+        let second = second_limit(&control);
+        let prepared = prepared_activity();
+        must(permit(&control, &token).admit_write(&control, admission(&prepared, first)));
+        let permit = submit_permit(&control, &token);
+        let record = must(permit.admit_write(&control, submit(vec![first, second])));
+        assert_eq!(
+            record
+                .holds
+                .iter()
+                .map(|(hold, _)| hold.limit_id)
+                .collect::<Vec<_>>(),
+            vec![first, second]
+        );
+        assert_eq!(
+            control.budgets.held_limits([8; 32]),
+            Ok(vec![first, second])
+        );
+        assert_eq!(control.budgets.held_reservations(), Ok(2));
+        assert_eq!(control.budgets.held_exposure(first), Ok(5));
+        assert_eq!(control.budgets.held_exposure(second), Ok(5));
+        let key = must(DurablePreparation::store_key(&tenant(), [8; 32]));
+        let stored = must(
+            must(Store::open(&root))
+                .get(&key)
+                .map(|value| value.bytes().to_vec())
+                .ok_or("durable preparation"),
+        );
+        let durable = must(DurablePreparation::decode(tenant(), &stored));
+        assert_eq!(durable.holds, record.holds);
+        let again = must(permit.admit_write(&control, submit(vec![first, second])));
+        assert_eq!(again.holds, record.holds);
+        assert_eq!(control.budgets.held_reservations(), Ok(2));
+        assert_eq!(control.budgets.held_exposure(second), Ok(5));
+        let _ = std::fs::remove_dir_all(root);
     }
 }

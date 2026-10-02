@@ -135,17 +135,18 @@ impl ApprovalExpiry {
         }
         if persisted.outcome.is_none() && current_sequence >= persisted.expires_at_sequence {
             persisted.outcome = Some(ApprovalOutcome::Expired);
-            store
-                .put_local(key, encode(&persisted)?)
-                .map_err(|_| ApprovalExpiryError::Store)?;
-            drop(store);
-            budget::release(
+            let bytes = encode(&persisted)?;
+            let staged = budget::stage_release(
                 limiter,
                 snapshot.context.request_id,
                 ReleaseKind::Expired,
                 current_sequence,
             )
             .map_err(|_| ApprovalExpiryError::Reservation)?;
+            store
+                .put_local(key, bytes)
+                .map_err(|_| ApprovalExpiryError::Store)?;
+            let _ = staged.publish();
             return Ok(ApprovalState::Expired);
         }
         if store.get(&key).is_none() {
@@ -193,7 +194,10 @@ impl ApprovalExpiry {
         persisted.outcome = Some(intended);
         persisted.submission_ref = submission_ref;
         let bytes = encode(&persisted)?;
-        if intended == ApprovalOutcome::Granted {
+        if matches!(
+            intended,
+            ApprovalOutcome::Granted | ApprovalOutcome::Rejected | ApprovalOutcome::Defective
+        ) {
             return Ok(DecisionResolution::WinnerPrepared(PreparedDecision {
                 key,
                 expected,
@@ -231,16 +235,22 @@ impl ApprovalExpiry {
         }
         if persisted.outcome.is_none() && current_sequence >= expires_at_sequence {
             persisted.outcome = Some(ApprovalOutcome::Expired);
+            let bytes = encode(&persisted)?;
+            let staged =
+                budget::stage_release(limiter, approval_id, ReleaseKind::Expired, current_sequence)
+                    .map_err(|_| ApprovalExpiryError::Reservation)?;
             store
-                .put_local(key, encode(&persisted)?)
+                .put_local(key, bytes)
                 .map_err(|_| ApprovalExpiryError::Store)?;
-            drop(store);
-            budget::release(limiter, approval_id, ReleaseKind::Expired, current_sequence)
-                .map_err(|_| ApprovalExpiryError::Reservation)?;
+            let _ = staged.publish();
             return Ok(decision(ApprovalOutcome::Expired, None));
         }
         let outcome = persisted.outcome.unwrap_or(ApprovalOutcome::AlreadyDecided);
         Ok(decision(outcome, persisted.submission_ref))
+    }
+
+    pub(crate) fn decision_store(&self) -> &Mutex<Store> {
+        &self.store
     }
 }
 
@@ -281,6 +291,24 @@ impl PreparedDecision {
                 self.key,
                 self.bytes,
             )
+            .map_err(|_| ApprovalExpiryError::Store)
+    }
+
+    pub(crate) fn remove_hold(
+        self,
+        store: &mut Store,
+        hold_key: TenantKey,
+    ) -> Result<(), ApprovalExpiryError> {
+        self.check_pending(store)?;
+        store
+            .update_local_batch_removing(vec![(self.key, self.bytes)], vec![hold_key])
+            .map_err(|_| ApprovalExpiryError::Store)
+    }
+
+    pub(crate) fn persist(self, store: &mut Store) -> Result<(), ApprovalExpiryError> {
+        self.check_pending(store)?;
+        store
+            .put_local(self.key, self.bytes)
             .map_err(|_| ApprovalExpiryError::Store)
     }
 }
@@ -424,5 +452,227 @@ const fn state_for(outcome: Option<ApprovalOutcome>, fallback: ApprovalState) ->
         Some(ApprovalOutcome::Expired) => ApprovalState::Expired,
         Some(ApprovalOutcome::Defective) => ApprovalState::Defective,
         _ => fallback,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use layerx_agent_api::identity::{ActivityType, AgentDid, Asset, AuthorityRef, ExplicitSet};
+    use layerx_agent_api::prepare::{
+        CanonicalBytes, Disclosure, IdempotencyRef, PreparationRef, Prepared, SigningPreimage,
+    };
+    use layerx_agent_api::{Amount, TimestampSeconds};
+    use layerx_types::ids::Did;
+    use sha2::{Digest as _, Sha256};
+
+    use super::{encode, storage_key, ApprovalExpiry, ApprovalExpiryError, PersistedApproval};
+    use crate::budget::{
+        self, BudgetLimiter, LimitConfig, LimitId, LimitScope, ReservationRequest,
+    };
+    use crate::capability::CapabilityId;
+    use crate::policy::approval::{
+        hold_reserved, ApprovalContext, ApprovalRegistry, ApprovalSnapshot, ApprovalState,
+    };
+    use crate::session::SessionId;
+    use crate::store::TenantId;
+
+    fn must<T, E: std::fmt::Debug>(value: Result<T, E>) -> T {
+        value.unwrap_or_else(|error| panic!("approval expiry: {error:?}"))
+    }
+
+    #[test]
+    fn offline_expiry_publishes_the_staged_release_after_the_durable_write() {
+        let root = std::env::temp_dir().join(format!("lxp-expiry-stage-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let expiry = must(ApprovalExpiry::open(&root));
+        let tenant = must(TenantId::new("tenant-a"));
+        let limiter = must(BudgetLimiter::new(vec![LimitConfig {
+            id: LimitId([1; 16]),
+            name: "tenant-limit".to_owned(),
+            scope: LimitScope::Tenant([1; 32]),
+            ceiling: 100,
+            consumed: 0,
+        }]));
+        must(budget::reserve(
+            &limiter,
+            &ReservationRequest {
+                id: [7; 32],
+                amount: 40,
+                expiry_sequence: 5,
+                current_sequence: 1,
+                applicable_limits: vec![LimitId([1; 16])],
+            },
+        ));
+        {
+            let mut store = must(expiry.store.lock());
+            must(store.put_local(
+                must(storage_key(&tenant, [7; 32])),
+                must(encode(&PersistedApproval::pending(5))),
+            ));
+        }
+        assert!(expiry.recover(&tenant, [7; 32], 5, 4, &limiter).is_ok());
+        assert_eq!(limiter.held_limits([7; 32]), Ok(vec![LimitId([1; 16])]));
+        assert!(expiry.recover(&tenant, [7; 32], 5, 5, &limiter).is_ok());
+        assert_eq!(limiter.held_reservations(), Ok(0));
+        assert_eq!(limiter.consumed(LimitId([1; 16])), Ok(0));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    fn fixture(name: &str) -> (std::path::PathBuf, ApprovalExpiry, TenantId, BudgetLimiter) {
+        let root = std::env::temp_dir().join(format!("lxp-expiry-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let expiry = must(ApprovalExpiry::open(&root));
+        let tenant = must(TenantId::new("tenant-a"));
+        let limiter = must(BudgetLimiter::new(vec![LimitConfig {
+            id: LimitId([1; 16]),
+            name: "tenant-limit".to_owned(),
+            scope: LimitScope::Tenant([1; 32]),
+            ceiling: 100,
+            consumed: 0,
+        }]));
+        must(budget::reserve(
+            &limiter,
+            &ReservationRequest {
+                id: [7; 32],
+                amount: 40,
+                expiry_sequence: 5,
+                current_sequence: 1,
+                applicable_limits: vec![LimitId([1; 16])],
+            },
+        ));
+        {
+            let mut store = must(expiry.store.lock());
+            must(store.put_local(
+                must(storage_key(&tenant, [7; 32])),
+                must(encode(&PersistedApproval::pending(5))),
+            ));
+        }
+        (root, expiry, tenant, limiter)
+    }
+
+    fn persisted_bytes(expiry: &ApprovalExpiry, tenant: &TenantId) -> Option<Vec<u8>> {
+        must(expiry.store.lock())
+            .get(&must(storage_key(tenant, [7; 32])))
+            .map(|value| value.bytes().to_vec())
+    }
+
+    #[test]
+    fn offline_expiry_with_a_failed_durable_write_keeps_the_hold() {
+        let (root, expiry, tenant, limiter) = fixture("recover-io-failure");
+        let before = persisted_bytes(&expiry, &tenant);
+        must(std::fs::remove_dir_all(&root));
+        assert!(matches!(
+            expiry.recover(&tenant, [7; 32], 5, 5, &limiter),
+            Err(ApprovalExpiryError::Store)
+        ));
+        assert_eq!(limiter.held_limits([7; 32]), Ok(vec![LimitId([1; 16])]));
+        assert_eq!(limiter.held_reservations(), Ok(1));
+        assert_eq!(limiter.held_exposure(LimitId([1; 16])), Ok(40));
+        assert_eq!(limiter.consumed(LimitId([1; 16])), Ok(0));
+        assert_eq!(persisted_bytes(&expiry, &tenant), before);
+        assert!(!root.exists());
+
+        must(std::fs::create_dir_all(&root));
+        assert!(expiry.recover(&tenant, [7; 32], 5, 5, &limiter).is_ok());
+        assert_eq!(limiter.held_reservations(), Ok(0));
+        assert_eq!(limiter.consumed(LimitId([1; 16])), Ok(0));
+        let expired = persisted_bytes(&expiry, &tenant);
+        assert_ne!(expired, before);
+        assert!(expiry.recover(&tenant, [7; 32], 5, 6, &limiter).is_ok());
+        assert_eq!(persisted_bytes(&expiry, &tenant), expired);
+        assert_eq!(limiter.held_reservations(), Ok(0));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    fn snapshot(tenant: &TenantId) -> ApprovalSnapshot {
+        let bytes = b"approval-expiry-observe".to_vec();
+        let digest: [u8; 32] = Sha256::digest(&bytes).into();
+        let actor = "did:layerx:approval-expiry";
+        let prepared = Prepared {
+            preparation_ref: must(PreparationRef::new("approval-expiry-observe")),
+            unsigned_canonical_bytes: must(CanonicalBytes::new(bytes)),
+            signing_preimage: must(SigningPreimage::new(vec![7; 32])),
+            disclosure: Disclosure {
+                canonical_digest: digest,
+                activity_type: ActivityType(7),
+                actor: must(AgentDid::new(actor)),
+                authority: must(AuthorityRef::new("session-key")),
+                counterparties: ExplicitSet::deny_all(),
+                amounts: ExplicitSet::deny_all(),
+                asset: must(Asset::new("LXP")),
+                fee_limit: Amount(2),
+                expiry: TimestampSeconds(40),
+                idempotency_key: must(IdempotencyRef::new("07".repeat(32))),
+            },
+            expiry: TimestampSeconds(40),
+        };
+        let registry = ApprovalRegistry::default();
+        let limiter = must(BudgetLimiter::new(vec![LimitConfig {
+            id: LimitId([1; 16]),
+            name: "tenant-limit".to_owned(),
+            scope: LimitScope::Tenant([1; 32]),
+            ceiling: 100,
+            consumed: 0,
+        }]));
+        let reservation = must(budget::reserve(
+            &limiter,
+            &ReservationRequest {
+                id: [7; 32],
+                amount: 40,
+                expiry_sequence: 5,
+                current_sequence: 1,
+                applicable_limits: vec![LimitId([1; 16])],
+            },
+        ));
+        must(hold_reserved(
+            &registry,
+            ApprovalContext {
+                tenant: tenant.clone(),
+                agent: must(Did::new(actor.as_bytes())),
+                session: SessionId([2; 32]),
+                capability: CapabilityId([3; 32]),
+                policy_version: "policy-v3".to_owned(),
+                request_id: [7; 32],
+            },
+            prepared,
+            1,
+            5,
+            &reservation,
+        ));
+        must(registry.get_scoped(tenant, [7; 32], 1))
+    }
+
+    #[test]
+    fn observed_expiry_with_a_failed_durable_write_keeps_the_hold() {
+        let (root, expiry, tenant, limiter) = fixture("observe-io-failure");
+        let snapshot = snapshot(&tenant);
+        let before = persisted_bytes(&expiry, &tenant);
+        must(std::fs::remove_dir_all(&root));
+        assert!(matches!(
+            expiry.observe(&snapshot, 5, &limiter),
+            Err(ApprovalExpiryError::Store)
+        ));
+        assert_eq!(limiter.held_limits([7; 32]), Ok(vec![LimitId([1; 16])]));
+        assert_eq!(limiter.held_reservations(), Ok(1));
+        assert_eq!(limiter.held_exposure(LimitId([1; 16])), Ok(40));
+        assert_eq!(limiter.consumed(LimitId([1; 16])), Ok(0));
+        assert_eq!(persisted_bytes(&expiry, &tenant), before);
+        assert!(!root.exists());
+
+        must(std::fs::create_dir_all(&root));
+        assert!(matches!(
+            expiry.observe(&snapshot, 5, &limiter),
+            Ok(ApprovalState::Expired)
+        ));
+        assert_eq!(limiter.held_reservations(), Ok(0));
+        assert_eq!(limiter.consumed(LimitId([1; 16])), Ok(0));
+        let expired = persisted_bytes(&expiry, &tenant);
+        assert_ne!(expired, before);
+        assert!(matches!(
+            expiry.observe(&snapshot, 6, &limiter),
+            Ok(ApprovalState::Expired)
+        ));
+        assert_eq!(persisted_bytes(&expiry, &tenant), expired);
+        let _ = std::fs::remove_dir_all(root);
     }
 }
