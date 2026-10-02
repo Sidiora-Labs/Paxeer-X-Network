@@ -10,6 +10,9 @@ usage() {
 	cat <<'EOF'
 usage: tools/bringup/ca.sh init | inventory [<service>] | issue <service> | services
        tools/bringup/ca.sh issue-local <local service> --output-dir <dir> | local-services
+       tools/bringup/ca.sh request-server paxeer-comet-boundary-api4 --output-dir <dir>
+       tools/bringup/ca.sh sign-server paxeer-comet-boundary-api4 --csr <file> --output-dir <dir>
+       tools/bringup/ca.sh install-server paxeer-comet-boundary-api4 --input-dir <signed-dir> --output-dir <request-dir> --ca-file <operator-ca.pem>
 
 The internal CA of the Paxeer X Network bring-up. Runs on the edge host, the
 operator host that holds the CA key and the Fly login.
@@ -93,6 +96,17 @@ issue-local <local service> --output-dir <dir>
 local-services
           prints the local identity list in the columns of services, with
           "-" for the toml and the process group and "local" for custody.
+
+request-server creates a new protected directory holding only api4-key.der
+          (PKCS8) and api4-request.pem. Run on the server; transfer only CSR.
+sign-server uses the established CA under its issuer lock and writes only
+          api4-cert.pem, api4-cert.der and api4-trust.pem to a new directory.
+install-server requires the retained request directory and explicit expected
+          operator CA, verifies the complete fixed server identity and key
+          pairing, then atomically installs the public files. It preserves
+          the local private key and refuses existing or partial certificates.
+          All material directories require 0700 and files 0600, owned by the
+          caller; no symlink components or arbitrary server roles are accepted.
 
 Environment:
   CHECK_LIVE_TIMEOUT   seconds per flyctl call, default 30
@@ -584,11 +598,327 @@ ca_issue_local() {
 	echo "issued $service custody=local fingerprint=$(openssl x509 -in "$dir/cert.pem" -noout -fingerprint -sha256 | cut -d= -f2) expires_in=$(days_left <"$dir/cert.pem")d"
 }
 
+server_role() {
+	[ "$1" = paxeer-comet-boundary-api4 ] || {
+		echo "ca: unsupported server role" >&2
+		exit 2
+	}
+}
+
+server_material() {
+	python3 - "$@" <<'PY'
+import ctypes
+import fcntl
+import os
+from pathlib import Path
+import re
+import shutil
+import stat
+import subprocess
+import sys
+import tempfile
+
+ROLE = b'paxeer-comet-boundary-api4'
+DNS = b'api4.mainnet-beta.paxeer.network'
+KEY = 'api4-key.der'
+CSR = 'api4-request.pem'
+PUBLIC = ('api4-cert.pem', 'api4-cert.der', 'api4-trust.pem')
+
+
+def require(ok, message):
+    if not ok:
+        raise ValueError(message)
+
+
+def openssl(*args):
+    result = subprocess.run(['openssl', *map(str, args)], capture_output=True)
+    require(result.returncode == 0, 'OpenSSL server material validation failed')
+    return result.stdout
+
+
+def path_guard(value):
+    path = Path(value)
+    require(path.is_absolute() and str(path) == value and not any(x in ('.', '..', '') for x in value.split('/')[1:]), 'path must be absolute and normalized')
+    for ancestor in (*reversed(path.parents), path):
+        require(not ancestor.is_symlink(), 'symlink component refused')
+    return path
+
+
+def directory(value):
+    path = path_guard(value)
+    info = path.lstat()
+    require(stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid() and stat.S_IMODE(info.st_mode) == 0o700, 'directory must be owned by caller with mode 0700')
+    parent = path.parent.stat()
+    require(parent.st_uid in (0, os.geteuid()) and parent.st_mode & 0o022 == 0, 'directory parent is not protected')
+    return path
+
+
+def regular(value):
+    path = path_guard(str(value))
+    info = path.lstat()
+    require(stat.S_ISREG(info.st_mode) and info.st_uid == os.geteuid() and stat.S_IMODE(info.st_mode) == 0o600 and info.st_nlink == 1, 'material must be a private regular file of the caller')
+    require(info.st_size > 0, 'empty material refused')
+    parent = path.parent.stat()
+    require(parent.st_uid in (0, os.geteuid()) and parent.st_mode & 0o022 == 0, 'material parent is not protected')
+    return path
+
+
+def exact_files(path, names):
+    require(set(os.listdir(path)) == set(names), 'partial or conflicting server material refused')
+    for name in names:
+        regular(path / name)
+
+
+def tlv(data, offset=0):
+    start = offset
+    require(offset + 2 <= len(data), 'truncated DER')
+    tag, length = data[offset:offset + 2]
+    offset += 2
+    if length & 128:
+        count = length & 127
+        require(0 < count <= 4 and offset + count <= len(data), 'invalid DER length')
+        require(data[offset] != 0, 'noncanonical DER length')
+        length = int.from_bytes(data[offset:offset + count], 'big')
+        require(length >= 128, 'noncanonical DER length')
+        offset += count
+    end = offset + length
+    require(end <= len(data), 'truncated DER value')
+    return (tag, data[offset:end], data[start:end]), end
+
+
+def children(data):
+    values, offset = [], 0
+    while offset < len(data):
+        value, offset = tlv(data, offset)
+        values.append(value)
+    return values
+
+
+def root(data):
+    value, end = tlv(data)
+    require(value[0] == 48 and end == len(data), 'invalid DER envelope')
+    return children(value[1])
+
+
+def subject(value):
+    require(value[0] == 48, 'invalid subject')
+    rdns = children(value[1])
+    require(len(rdns) == 1 and rdns[0][0] == 49, 'subject must contain only the fixed CN')
+    attributes = children(rdns[0][1])
+    require(len(attributes) == 1 and attributes[0][0] == 48, 'subject must contain only the fixed CN')
+    pair = children(attributes[0][1])
+    require(len(pair) == 2 and pair[0][:2] == (6, b'\x55\x04\x03') and pair[1][0] in (12, 19) and pair[1][1] == ROLE, 'wrong server subject')
+
+
+def p256(value):
+    require(value[0] == 48, 'invalid public key')
+    fields = children(value[1])
+    require(len(fields) == 2 and fields[0][0] == 48, 'invalid public key')
+    algorithm = children(fields[0][1])
+    require([x[:2] for x in algorithm] == [(6, b'\x2a\x86\x48\xce\x3d\x02\x01'), (6, b'\x2a\x86\x48\xce\x3d\x03\x01\x07')], 'only named P-256 keys are accepted')
+    require(fields[1][0] == 3 and len(fields[1][1]) == 66 and fields[1][1][:2] == b'\x00\x04', 'invalid P-256 public point')
+    return value[2]
+
+
+def request(value):
+    path = regular(value)
+    openssl('req', '-in', path, '-noout', '-verify')
+    fields = root(openssl('req', '-in', path, '-outform', 'DER'))
+    require(len(fields) == 3 and fields[0][0] == 48, 'invalid CSR')
+    info = children(fields[0][1])
+    require(len(info) == 4 and info[0][:2] == (2, b'\x00') and info[3][:2] == (160, b''), 'CSR attributes and requested extensions are forbidden')
+    subject(info[1])
+    return p256(info[2])
+
+
+def one_pem(path):
+    data = regular(path).read_bytes()
+    require(re.fullmatch(rb'\s*-----BEGIN CERTIFICATE-----\s+[A-Za-z0-9+/=\r\n]+-----END CERTIFICATE-----\s*', data) is not None, 'expected one public certificate')
+    return data
+
+
+def certificate(path, trust, public):
+    one_pem(path)
+    one_pem(trust)
+    openssl('verify', '-no-CApath', '-no-CAstore', '-purpose', 'sslserver', '-verify_hostname', DNS.decode(), '-CAfile', trust, path)
+    der = openssl('x509', '-in', path, '-outform', 'DER')
+    fields = root(der)
+    require(len(fields) == 3 and fields[0][0] == 48, 'invalid leaf certificate')
+    body = children(fields[0][1])
+    offset = int(body[0][0] == 160)
+    subject(body[offset + 4])
+    require(p256(body[offset + 5]) == public, 'certificate and request keys differ')
+    wrappers = [x for x in body if x[0] == 163]
+    require(len(wrappers) == 1, 'missing or duplicate certificate extensions')
+    extensions = root(wrappers[0][1])
+    values = {}
+    for entry in extensions:
+        require(entry[0] == 48, 'invalid certificate extension')
+        items = children(entry[1])
+        require(len(items) in (2, 3) and items[0][0] == 6 and items[-1][0] == 4, 'invalid certificate extension')
+        oid = items[0][1]
+        require(oid not in values, 'duplicate certificate extension')
+        values[oid] = items[-1][1]
+    require(values.get(b'\x55\x1d\x11') == b'\x30' + bytes([len(DNS) + 2]) + b'\x82' + bytes([len(DNS)]) + DNS, 'certificate must contain the single fixed DNS SAN')
+    require(values.get(b'\x55\x1d\x25') == b'\x30\x0a\x06\x08\x2b\x06\x01\x05\x05\x07\x03\x01', 'certificate must contain only serverAuth')
+    require(values.get(b'\x55\x1d\x13') == b'\x30\x00', 'server certificate must not be a CA')
+    return der
+
+
+def pair(value):
+    path = directory(value)
+    exact_files(path, (KEY, CSR))
+    public = request(path / CSR)
+    openssl('pkcs8', '-inform', 'DER', '-in', path / KEY, '-nocrypt', '-out', '/dev/null')
+    openssl('pkey', '-inform', 'DER', '-in', path / KEY, '-check', '-noout')
+    key = openssl('pkey', '-inform', 'DER', '-in', path / KEY, '-pubout', '-outform', 'DER')
+    require(key == public, 'private key and request do not match')
+    return path, public
+
+
+def rename(source, target, flags):
+    library = ctypes.CDLL(None, use_errno=True)
+    function = getattr(library, 'renameat2', None)
+    require(function is not None, 'atomic server material publication is unavailable')
+    function.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    function.restype = ctypes.c_int
+    result = function(-100, os.fsencode(source), -100, os.fsencode(target), flags)
+    require(result == 0, 'atomic server material publication refused')
+
+
+try:
+    mode, *args = sys.argv[1:]
+    if mode == 'csr':
+        request(args[0])
+    elif mode == 'pair':
+        pair(args[0])
+    elif mode == 'ca':
+        authority = directory(args[0])
+        regular(authority / 'ca.key')
+        one_pem(authority / 'ca.pem')
+    elif mode == 'leaf':
+        certificate(Path(args[1]), Path(args[2]), request(args[0]))
+    elif mode == 'publish':
+        source = directory(args[0])
+        target = path_guard(args[1])
+        require(not target.exists(), 'output directory already exists')
+        rename(source, target, 1)
+    elif mode == 'install':
+        supplied, target, expected = directory(args[0]), directory(args[1]), regular(args[2])
+        descriptor = os.open(target, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            target, public = pair(str(target))
+            exact_files(supplied, PUBLIC)
+            require(one_pem(supplied / PUBLIC[2]) == one_pem(expected), 'foreign operator CA refused')
+            der = certificate(supplied / PUBLIC[0], expected, public)
+            require(der == (supplied / PUBLIC[1]).read_bytes(), 'PEM and DER certificates differ')
+            original = {name: (target / name).stat() for name in (KEY, CSR)}
+            staged = Path(tempfile.mkdtemp(prefix='.ca-install-server.', dir=target.parent))
+            try:
+                os.chmod(staged, 0o700)
+                for name in (KEY, CSR):
+                    os.link(target / name, staged / name, follow_symlinks=False)
+                for name in PUBLIC:
+                    with open(staged / name, 'xb') as handle:
+                        os.chmod(staged / name, 0o600)
+                        handle.write((supplied / name).read_bytes())
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                require(set(os.listdir(target)) == {KEY, CSR}, 'request directory changed during installation')
+                for name, info in original.items():
+                    now = (target / name).lstat()
+                    require((now.st_dev, now.st_ino, now.st_mode, now.st_uid, now.st_size, now.st_mtime_ns) == (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_size, info.st_mtime_ns), 'request material changed during installation')
+                require(os.fstat(descriptor).st_ino == target.stat().st_ino, 'request directory changed during installation')
+                rename(staged, target, 2)
+            finally:
+                shutil.rmtree(staged)
+        finally:
+            os.close(descriptor)
+    else:
+        raise ValueError('unknown server material operation')
+except (OSError, ValueError, IndexError, subprocess.SubprocessError) as error:
+    print('ca: server material: ' + str(error), file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
+ca_request_server() {
+	local service="$1" dir="$2" parent
+	server_role "$service"
+	parent="$(local_destination "$dir")"
+	umask 077
+	work="$(mktemp -d -p "$parent" .ca-request-server.XXXXXXXX)"
+	trap 'rm -rf "$work"' EXIT
+	openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 2>/dev/null |
+		openssl pkcs8 -topk8 -nocrypt -outform DER -out "$work/api4-key.der" 2>/dev/null
+	openssl req -new -keyform DER -key "$work/api4-key.der" -subj "/CN=$service" -out "$work/api4-request.pem"
+	chmod 0600 "$work/api4-key.der" "$work/api4-request.pem"
+	server_material pair "$work"
+	server_material publish "$work" "$dir"
+	trap - EXIT
+	echo "requested $service custody=local"
+}
+
+ca_sign_server() {
+	local service="$1" csr="$2" dir="$3" parent
+	server_role "$service"
+	server_material csr "$csr"
+	server_material ca "$ca_dir"
+	parent="$(local_destination "$dir")"
+	umask 077
+	exec {ca_issue_lock_fd}>"$ca_dir/issue.lock"
+	flock -x -w "$timeout" "$ca_issue_lock_fd" || {
+		echo "ca: the established authority issuer is busy" >&2
+		exit 1
+	}
+	work="$(mktemp -d -p "$parent" .ca-sign-server.XXXXXXXX)"
+	trap 'rm -rf "$work"' EXIT
+	cp "$csr" "$work/csr.pem"
+	chmod 0600 "$work/csr.pem"
+	server_material csr "$work/csr.pem"
+	sign "$service" serverAuth DNS:api4.mainnet-beta.paxeer.network
+	chmod 0600 "$work/cert.pem"
+	server_material leaf "$work/csr.pem" "$work/cert.pem" "$ca_dir/ca.pem"
+	mv "$work/cert.pem" "$work/api4-cert.pem"
+	openssl x509 -in "$work/api4-cert.pem" -outform DER -out "$work/api4-cert.der"
+	cp "$ca_dir/ca.pem" "$work/api4-trust.pem"
+	chmod 0600 "$work/api4-cert.pem" "$work/api4-cert.der" "$work/api4-trust.pem"
+	rm "$work/csr.pem" "$work/ext.cnf"
+	server_material publish "$work" "$dir"
+	trap - EXIT
+	echo "signed $service custody=public"
+}
+
+ca_install_server() {
+	server_role "$1"
+	server_material install "$2" "$3" "$4"
+	echo "installed $1 custody=local"
+}
+
 mode="${1:-}"
 case "$mode" in
 -h | --help)
 	usage
 	exit 0
+	;;
+request-server)
+	{ [ "$#" -eq 4 ] && [ "$3" = --output-dir ]; } || {
+		usage >&2
+		exit 2
+	}
+	;;
+sign-server)
+	{ [ "$#" -eq 6 ] && [ "$3" = --csr ] && [ "$5" = --output-dir ]; } || {
+		usage >&2
+		exit 2
+	}
+	;;
+install-server)
+	{ [ "$#" -eq 8 ] && [ "$3" = --input-dir ] && [ "$5" = --output-dir ] && [ "$7" = --ca-file ]; } || {
+		usage >&2
+		exit 2
+	}
 	;;
 inventory)
 	[ "$#" -le 2 ] || {
@@ -621,6 +951,9 @@ issue)
 esac
 
 tools=(openssl awk)
+case "$mode" in
+request-server | sign-server | install-server) tools+=(python3 stat realpath mktemp flock) ;;
+esac
 [ "$mode" != issue-local ] || tools+=(stat realpath mktemp find flock)
 [ "$mode" != issue ] || tools+=(timeout flyctl base64 python3 flock)
 [ "$mode" != inventory ] || tools+=(timeout flyctl python3)
@@ -632,6 +965,9 @@ for tool in "${tools[@]}"; do
 done
 
 case "$mode" in
+request-server) ca_request_server "$2" "$4" ;;
+sign-server) ca_sign_server "$2" "$4" "$6" ;;
+install-server) ca_install_server "$2" "$4" "$6" "$8" ;;
 init) ca_init ;;
 services) ca_services ;;
 local-services) local_services ;;
