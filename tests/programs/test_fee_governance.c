@@ -505,6 +505,7 @@ int main(void)
            occupancy_case(UINT32_MAX, 100U, 0U, 200U, LXP_ERR_OVERFLOW,
                           100U, UINT32_MAX) == 0);
     status = activation_and_receipt_refusal_vectors();
+    (void)printf("FEE_STATUS activation_and_receipt_refusal_vectors step=%d\n", status);
     report("pending-visible-before-activation", reached(status, 2));
     report("schedule-state-named-coefficients", reached(status, 4));
     report("activation-exact-boundary", reached(status, 4));
