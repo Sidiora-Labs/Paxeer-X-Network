@@ -96,6 +96,11 @@ class Probe:
         if not isinstance(response_dir, str) or not os.path.isabs(response_dir) or not os.path.isdir(response_dir):
             raise ProbeRefused("response_dir must name an existing absolute directory")
         self.response_dir = Path(response_dir)
+        self.phase = case["phase"]
+        state_file = case.get("state_file")
+        if self.phase != "read" and (not isinstance(state_file, str) or not os.path.isabs(state_file)):
+            raise ProbeRefused("state_file must name an absolute path for restart phases")
+        self.state_file = None if state_file is None else Path(str(state_file))
 
     def _key(self) -> LayerXKeyCredential:
         return LayerXKeyCredential(self.key_id, SecretBytes(self.secret))
@@ -218,6 +223,18 @@ class Probe:
         second = self._success("mutation_duplicate_same_result", "allowed_mutation")
         self.assertEqual(first.value, second.value)
         self.assertEqual(first.verification_status, second.verification_status)
+
+    def case_restart_retry_same_result(self) -> None:
+        if self.phase == "read" or self.state_file is None:
+            raise ProbeRefused("restart_retry_same_result needs the pre-restart or post-restart phase")
+        result = self._success("restart_retry_same_result", "allowed_mutation")
+        observed = {"value": result.value, "verification_status": dict(result.verification_status)}
+        if self.phase == "pre-restart":
+            self.state_file.write_text(json.dumps(observed, sort_keys=True))
+            return
+        if not self.state_file.is_file():
+            raise ProbeRefused("post-restart phase found no pre-restart state_file")
+        self.assertEqual(json.loads(self.state_file.read_text()), json.loads(json.dumps(observed, sort_keys=True)))
 
     def case_missing_idempotency_key(self) -> None:
         request = self._request("allowed_mutation")

@@ -558,6 +558,20 @@ func agentEnvelopeBootstrap(operation AgentOperation) bool {
 type AgentEnvelopeHTTPTransport struct {
 	endpoint   *HumanHTTPTransport
 	credential *AgentSessionCredential
+	path       string
+}
+
+const agentDaemonEnvelopePath = "/rpc"
+
+func NewAgentDaemonEnvelopeHTTPTransport(baseURL string, client *http.Client, credential *AgentSessionCredential) (*AgentEnvelopeHTTPTransport, error) {
+	endpoint, err := NewHumanHTTPTransport(baseURL, client, nil)
+	if err != nil {
+		return nil, err
+	}
+	if endpoint.baseURL.Scheme != "https" {
+		return nil, newSDKError(ErrorInvalidArgument, RetryNever)
+	}
+	return &AgentEnvelopeHTTPTransport{endpoint: endpoint, credential: credential, path: agentDaemonEnvelopePath}, nil
 }
 
 func NewAgentEnvelopeHTTPTransport(baseURL string, client *http.Client, gatewayAuthorizer RequestAuthorizer, credential *AgentSessionCredential) (*AgentEnvelopeHTTPTransport, error) {
@@ -568,7 +582,7 @@ func NewAgentEnvelopeHTTPTransport(baseURL string, client *http.Client, gatewayA
 	if err != nil {
 		return nil, err
 	}
-	return &AgentEnvelopeHTTPTransport{endpoint: endpoint, credential: credential}, nil
+	return &AgentEnvelopeHTTPTransport{endpoint: endpoint, credential: credential, path: agentEnvelopePath}, nil
 }
 
 type agentEnvelopeCredential struct {
@@ -645,7 +659,7 @@ func (transport *AgentEnvelopeHTTPTransport) encode(call TransportCall, requestI
 
 func (transport *AgentEnvelopeHTTPTransport) request(ctx context.Context, body []byte) (*http.Request, error) {
 	target := *transport.endpoint.baseURL
-	target.Path = strings.TrimRight(target.Path, "/") + agentEnvelopePath
+	target.Path = strings.TrimRight(target.Path, "/") + transport.path
 	target.RawQuery = ""
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, target.String(), bytes.NewReader(body))
 	if err != nil {
@@ -654,6 +668,9 @@ func (transport *AgentEnvelopeHTTPTransport) request(ctx context.Context, body [
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("User-Agent", "layerx-go/0.1.0")
+	if transport.endpoint.authorizer == nil {
+		return request, nil
+	}
 	if err := transport.endpoint.authorizer(request); err != nil {
 		return nil, transportError(ctx, err)
 	}
