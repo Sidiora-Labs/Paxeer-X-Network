@@ -10,11 +10,10 @@ import {
 import type { AgentEnvelopeSuccess } from "../src/index.js";
 import type { Operation } from "../src/generated/client.js";
 
-// Probe of the real unified gateway and full-mode daemon. Every input is explicit; nothing is defaulted or synthesised.
-// LAYERX_AGENT_ENVELOPE_PROBE names a JSON file:
-// {"endpoint","trusted_ca_file"?,"tenant","session_id","token_id_file","generation","gateway_key_id","gateway_key_file",
-//  "read_account":{request},"program_read":{"operation","request"},"approval_list":{request},"faucet_claim":{request}}
-// Secret material is read from the named files and never printed.
+// Probe of the real unified gateway and full-mode daemon. PAXEER_X_AGENT_ENVELOPE_CASE names the harness JSON file
+// {endpoint, ca_pem|ca_der, gateway_api_key_file, program_bearer_file, credential_file, requests, operations, cases, phase,
+//  state_file, response_dir}. credential_file: JSON {tenant, session_id, token_id, generation}; gateway_api_key_file:
+// "<key_id>:<lxp_live_secret>"; requests: {<case id>: {operation, request}}. Secrets are never printed.
 
 function assert(condition: boolean, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -51,29 +50,43 @@ function secretFile(path: string, name: string): Uint8Array {
   return new Uint8Array(Buffer.from(trimmed, "utf8"));
 }
 
-const probePath = process.env.LAYERX_AGENT_ENVELOPE_PROBE;
-if (probePath === undefined || probePath.length === 0) refuse("LAYERX_AGENT_ENVELOPE_PROBE is not set");
+const probePath = process.env.PAXEER_X_AGENT_ENVELOPE_CASE;
+if (probePath === undefined || probePath.length === 0) refuse("PAXEER_X_AGENT_ENVELOPE_CASE is not set");
 let input: Readonly<Record<string, unknown>>;
 try {
   const parsed = JSON.parse(readFileSync(probePath, "utf8")) as unknown;
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("not an object");
   input = parsed as Readonly<Record<string, unknown>>;
-} catch { refuse("LAYERX_AGENT_ENVELOPE_PROBE is not a readable JSON object"); }
+} catch { refuse("PAXEER_X_AGENT_ENVELOPE_CASE is not a readable JSON object"); }
 
 const endpoint = text(input, "endpoint");
 let trustedCa: Buffer | undefined;
-if ("trusted_ca_file" in input) {
-  try { trustedCa = readFileSync(text(input, "trusted_ca_file")); } catch { refuse("trusted_ca_file is unreadable"); }
-}
-const generation = text(input, "generation");
-const tokenHex = Buffer.from(secretFile(text(input, "token_id_file"), "token_id_file")).toString("utf8");
-if (!/^[0-9a-f]{64}$/u.test(tokenHex)) refuse("token_id_file does not hold 64 lowercase hex characters");
+if ("ca_pem" in input) {
+  try { trustedCa = readFileSync(text(input, "ca_pem")); } catch { refuse("ca_pem is unreadable"); }
+} else if ("ca_der" in input) {
+  let der: Buffer;
+  try { der = readFileSync(text(input, "ca_der")); } catch { refuse("ca_der is unreadable"); }
+  trustedCa = Buffer.from(`-----BEGIN CERTIFICATE-----\n${der.toString("base64").replace(/(.{64})/gu, "$1\n")}\n-----END CERTIFICATE-----\n`, "utf8");
+} else refuse("probe input lacks ca_pem or ca_der");
+let credentialInput: Readonly<Record<string, unknown>>;
+try {
+  const parsed = JSON.parse(Buffer.from(secretFile(text(input, "credential_file"), "credential_file")).toString("utf8")) as unknown;
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("not an object");
+  credentialInput = parsed as Readonly<Record<string, unknown>>;
+} catch { refuse("credential_file is not a JSON object"); }
+const generation = text(credentialInput, "generation");
+const tokenHex = text(credentialInput, "token_id");
+if (!/^[0-9a-f]{64}$/u.test(tokenHex)) refuse("credential token_id is not 64 lowercase hex characters");
 const tokenId = new SecretBytes(new Uint8Array(Buffer.from(tokenHex, "hex")));
+const gatewayLine = Buffer.from(secretFile(text(input, "gateway_api_key_file"), "gateway_api_key_file")).toString("utf8");
+const separator = gatewayLine.indexOf(":");
+if (separator <= 0) refuse("gateway_api_key_file is not <key_id>:<secret>");
 const gatewayKey = new LayerXKeyCredential(
-  text(input, "gateway_key_id"),
-  new SecretBytes(secretFile(text(input, "gateway_key_file"), "gateway_key_file")),
+  gatewayLine.slice(0, separator),
+  new SecretBytes(new Uint8Array(Buffer.from(gatewayLine.slice(separator + 1), "utf8"))),
 );
-const session = new AgentSessionCredential(text(input, "tenant"), text(input, "session_id"), tokenId, generation);
+const requests = object(input, "requests");
+const session = new AgentSessionCredential(text(credentialInput, "tenant"), text(credentialInput, "session_id"), tokenId, generation);
 const transportFor = (credential: AgentSessionCredential): AgentEnvelopeTransport => new AgentEnvelopeTransport({
   endpoint,
   session: credential,
@@ -110,22 +123,23 @@ function describe(error: unknown): string {
   return error instanceof PlatformSdkError ? JSON.stringify(error.toJSON()) : error instanceof Error ? error.name : "non-error";
 }
 
-const programRead = object(input, "program_read");
+const programRead = object(requests, "sdk_ts_program_read");
 const programOperation = text(programRead, "operation");
 if (!["program.discover", "program.interface", "program.receipt", "program.activity"].includes(programOperation)) {
-  refuse("program_read.operation is not a program read");
+  refuse("sdk_ts_program_read.operation is not a program read");
 }
+const readAccount = object(object(requests, "sdk_ts_read"), "request");
 
-await expectSuccess("sdk_typescript_read", "read.account", object(input, "read_account"));
-await expectSuccess("sdk_typescript_program_read", programOperation as Operation, object(programRead, "request"));
-await expectSuccess("sdk_typescript_approval_list", "approval.list", object(input, "approval_list"));
+await expectSuccess("sdk_ts_read", "read.account", readAccount);
+await expectSuccess("sdk_ts_program_read", programOperation as Operation, object(programRead, "request"));
+await expectSuccess("sdk_ts_approval_list", "approval.list", object(object(requests, "sdk_ts_approval_list"), "request"));
 await expectRefusal("sdk_typescript_faucet_retired",
-  () => transport.call({ plane: "agent", operation: "faucet.claim", request: object(input, "faucet_claim") }),
+  () => transport.call({ plane: "agent", operation: "faucet.claim", request: {} }),
   "unavailable-capability", "never");
 const staleGeneration = (BigInt(generation) + 1n).toString(10);
 await expectRefusal("sdk_typescript_wrong_generation",
   () => transportFor(new AgentSessionCredential(session.tenant, session.sessionId, tokenId, staleGeneration))
-    .call({ plane: "agent", operation: "read.account", request: object(input, "read_account") }),
+    .call({ plane: "agent", operation: "read.account", request: readAccount }),
   "policy-refusal", "never");
 await expectRefusal("sdk_typescript_unknown_operation_local",
   () => transport.call({ plane: "agent", operation: "not.catalogued" as Operation, request: {} }),
@@ -138,8 +152,12 @@ await expectRefusal("sdk_typescript_noncanonical_generation_local",
   "invalid-argument", "never");
 assert(JSON.stringify(session) === "\"[REDACTED]\"" && String(session) === "[REDACTED]", "session credential rendering leaked");
 
-for (const result of results) process.stdout.write(`${JSON.stringify(result)}\n`);
+for (const result of results) {
+  if (result.outcome === "pass") process.stdout.write(`PAXEER_X_AGENT_ENVELOPE_CASE ${result.case} passed\n`);
+  else process.stderr.write(`${JSON.stringify(result)}\n`);
+}
 const failed = results.filter((result) => result.outcome !== "pass");
+process.stdout.write(`PAXEER_X_AGENT_ENVELOPE_CASES=${results.length - failed.length}\n`);
 if (failed.length > 0) {
   process.stderr.write(`agent-operation-envelope: ${failed.length} of ${results.length} cases failed\n`);
   process.exit(1);
