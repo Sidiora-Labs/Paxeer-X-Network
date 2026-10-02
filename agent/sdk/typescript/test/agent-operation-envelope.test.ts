@@ -13,7 +13,9 @@ import {
   SecretBytes,
 } from "../src/index.js";
 import type { AgentEnvelopeSuccess } from "../src/index.js";
-import type { Operation } from "../src/generated/client.js";
+import { encodeNativePrepareRequest, encodeNativeApprovalDecision,
+  type NativePrepareRequestV1, type NativeLocalGrantV1, type NativeApprovalResultV1, type Operation,
+} from "../src/generated/client.js";
 
 // Probe of the real unified gateway and full-mode daemon (harness phase "read").
 // PAXEER_X_AGENT_ENVELOPE_CASE names the private harness JSON case file; nothing is defaulted or synthesised.
@@ -163,7 +165,7 @@ function recordResponse(name: string): void {
 async function runCase(name: string): Promise<void> {
   lastResponse = undefined;
   responseCount = 0;
-  const special = SPECIAL_CASES[name];
+  const special = name.startsWith("native_") ? nativeCase : SPECIAL_CASES[name];
   if (special !== undefined) {
     try {
       results.push({ case: name, outcome: "pass", detail: await special(name) });
@@ -199,6 +201,78 @@ async function runCase(name: string): Promise<void> {
   } catch (error) {
     results.push({ case: name, outcome: "fail", detail: describe(error) });
   }
+}
+
+function nativeOperation(value: string): Operation {
+  switch (value) {
+    case "prepare": case "approval.list": case "approval.get": case "approval.approve": case "approval.reject": return value;
+    default: throw new Error("native case names a non-native operation");
+  }
+}
+
+function nativePrepareInput(request: Readonly<Record<string, unknown>>): NativePrepareRequestV1 {
+  const activity = object(request, "activity"), signed = object(request, "purpose"), purpose = object(signed, "purpose");
+  assert(text(request,"variant") === "native_v1" && text(activity,"version") === "1" && text(purpose,"version") === "1", "native request version");
+  let local_grant: NativeLocalGrantV1 | null = null;
+  if (request.local_grant !== null && request.local_grant !== undefined) {
+    const grant = object(request,"local_grant");
+    assert(text(grant,"version") === "1", "native grant version");
+    local_grant = {version:"1",capability:text(grant,"capability"),session_scope:text(grant,"session_scope"),
+      expires_at_ms:text(grant,"expires_at_ms"),owner_public_key:text(grant,"owner_public_key"),signature:text(grant,"signature")};
+  }
+  return encodeNativePrepareRequest({variant:"native_v1",activity:{version:"1",module:text(activity,"module"),ordinal:text(activity,"ordinal")},
+    actor:text(request,"actor"),authority:text(request,"authority"),account_sequence:text(request,"account_sequence"),
+    not_before:text(request,"not_before"),not_after:text(request,"not_after"),idempotency_key:text(request,"idempotency_key"),
+    fee_limit:text(request,"fee_limit"),payload:text(request,"payload"),payload_hash:text(request,"payload_hash"),capability_id:text(request,"capability_id"),
+    purpose:{purpose:{version:"1",tenant:text(purpose,"tenant"),agent_did:text(purpose,"agent_did"),session_id:text(purpose,"session_id"),
+      generation:text(purpose,"generation"),expires_at_ms:text(purpose,"expires_at_ms"),capability_id:text(purpose,"capability_id"),
+      preparation_id:text(purpose,"preparation_id"),canonical_digest:text(purpose,"canonical_digest"),commitment:text(purpose,"commitment")},
+      owner_public_key:text(signed,"owner_public_key"),signature:text(signed,"signature")},local_grant});
+}
+
+async function nativeCase(name: string): Promise<string> {
+  const entry = object(requests,name), request = object(entry,"request");
+  const operation = nativeOperation(text(entry,"operation"));
+  const key = "idempotency_key" in entry ? idempotencyKey(text(entry,"idempotency_key")) : undefined;
+  if (name.startsWith("native_refusal.")) {
+    let failure: unknown;
+    try { await transport.call({plane:"agent",operation,request,...(key === undefined ? {} : {idempotencyKey:key})}); }
+    catch (error) { failure = error; }
+    finally { if (observed() !== undefined) recordResponse(name); }
+    assert(failure instanceof PlatformSdkError && failure.requestId !== undefined, `${name}: no typed service refusal`);
+    const observedResponse = observed();
+    assert(observedResponse !== undefined && responseCount === 1, `${name}: expected exactly one real response`);
+    const errorBody: unknown = JSON.parse(observedResponse.body.toString("utf8"));
+    assert(errorBody !== null && typeof errorBody === "object" && !Array.isArray(errorBody), `${name}: refusal shape`);
+    assert(Reflect.get(errorBody,"class") === text(entry,"expected_class") && Reflect.get(errorBody,"reason") === text(entry,"expected_reason"), `${name}: wrong service refusal`);
+    return "exact native service refusal";
+  }
+  try {
+    if (name === "native_prepare") {
+      assert(operation === "prepare" && key !== undefined, `${name}: operation or key`);
+      const result = await transport.prepareNative(nativePrepareInput(request),key);
+      assert(result.value.approval_required === field(entry,"expected_approval_required"), `${name}: approval requirement`);
+    } else if (name === "native_approval_list") {
+      assert(operation === "approval.list" && key === undefined, `${name}: operation or key`);
+      const result = await transport.approvalListNative();
+      assert(result.value.approvals.filter((row) => row.approval_id === text(entry,"expected_approval_id")).length === 1, `${name}: durable approval missing or duplicated`);
+    } else {
+      const approvalId = text(request,"approval_id");
+      let result: AgentEnvelopeSuccess<NativeApprovalResultV1>;
+      if (name === "native_approval_get") {
+        assert(operation === "approval.get" && key === undefined, `${name}: operation or key`);
+        result = await transport.approvalGetNative(approvalId);
+      } else {
+        assert(key !== undefined && (name === "native_approval_approve" && operation === "approval.approve"
+          || name === "native_approval_reject" && operation === "approval.reject"), `${name}: operation or key`);
+        result = await transport.approvalDecideNative(encodeNativeApprovalDecision({variant:"native_v1",approval_id:approvalId,
+          held_digest:text(request,"held_digest"),current_sequence:text(request,"current_sequence")}),operation === "approval.approve",key);
+      }
+      assert(result.value.state === text(entry,"expected_state") && result.value.held_digest === text(entry,"expected_held_digest"), `${name}: held state or digest changed`);
+    }
+    assert(observed()?.status === 200 && responseCount === 1, `${name}: expected exactly one real success`);
+    return "typed native result";
+  } finally { if (observed() !== undefined) recordResponse(name); }
 }
 
 const checks: { check: string; ok: boolean; detail: string }[] = [];

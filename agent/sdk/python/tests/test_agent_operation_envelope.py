@@ -20,6 +20,8 @@ from layerx_sdk.agent_http import (  # noqa: E402
     AgentSessionCredential,
     LayerXKeyCredential,
 )
+from layerx_sdk.generated.client import encode_native_prepare_request, encode_native_approval_decision
+
 from layerx_sdk.production import (  # noqa: E402
     IdempotencyKey,
     PlatformSdkError,
@@ -239,6 +241,75 @@ class Probe:
         if request_id is not None:
             self.assertEqual(error.get("request_id"), request_id)
 
+    def native_case(self, case_id: str) -> None:
+        entry = self.requests.get(case_id)
+        if not isinstance(entry, dict) or not isinstance(entry.get("request"), dict):
+            raise ProbeRefused("native request entry is absent")
+        operation, request = entry.get("operation"), entry["request"]
+        if operation not in {"prepare", "approval.list", "approval.get", "approval.approve", "approval.reject"}:
+            raise ProbeRefused("native operation is invalid")
+        key = None if "idempotency_key" not in entry else IdempotencyKey(entry["idempotency_key"])
+        transport = AgentEnvelopeTransport(self.base, gateway_key=self._key(), session=self._session(), ca_file=self.ca_pem)
+        observed: list[tuple[int, object]] = []
+        real_opener = transport._opener
+
+        def observe_response(response):
+            real_read = response.read
+            def read(count=-1):
+                body = real_read(count)
+                parsed = json.loads(body.decode("utf-8"))
+                observed.append((response.status, parsed))
+                self._record(case_id, response.status, parsed)
+                return body
+            response.read = read
+            return response
+
+        class ResponseObserver:
+            def open(self, *args, **kwargs):
+                try:
+                    return observe_response(real_opener.open(*args, **kwargs))
+                except HTTPError as error:
+                    observe_response(error)
+                    raise
+
+        transport._opener = ResponseObserver()
+        if case_id.startswith("native_refusal."):
+            with self.assertRaises(PlatformSdkError) as raised:
+                transport.call("agent", operation, request, key)
+            self.assertIsNotNone(raised.exception.request_id)
+            self.assertEqual(len(observed), 1)
+            status, body = observed[0]
+            self.assertTrue(status >= 400)
+            self.assertEqual(body["class"], entry["expected_class"])
+            self.assertEqual(body["reason"], entry["expected_reason"])
+            return
+        if case_id == "native_prepare":
+            self.assertEqual(operation, "prepare")
+            self.assertIsNotNone(key)
+            result = transport.prepare_native(encode_native_prepare_request(request), key)
+            self.assertEqual(result.value["approval_required"], entry["expected_approval_required"])
+        elif case_id == "native_approval_list":
+            self.assertEqual(operation, "approval.list")
+            self.assertEqual(key, None)
+            result = transport.approval_list_native()
+            self.assertEqual(sum(row["approval_id"] == entry["expected_approval_id"] for row in result.value["approvals"]), 1)
+        elif case_id == "native_approval_get":
+            self.assertEqual(operation, "approval.get")
+            self.assertEqual(key, None)
+            result = transport.approval_get_native(request["approval_id"])
+            self.assertEqual(result.value["state"], entry["expected_state"])
+            self.assertEqual(result.value["held_digest"], entry["expected_held_digest"])
+        else:
+            expected = "approval.approve" if case_id == "native_approval_approve" else "approval.reject"
+            self.assertEqual(operation, expected)
+            self.assertIn(case_id, {"native_approval_approve", "native_approval_reject"})
+            self.assertIsNotNone(key)
+            result = transport.approval_decide_native(encode_native_approval_decision(request), operation == "approval.approve", key)
+            self.assertEqual(result.value["state"], entry["expected_state"])
+            self.assertEqual(result.value["held_digest"], entry["expected_held_digest"])
+        self.assertEqual(len(observed), 1)
+        self.assertEqual(observed[0][0], 200)
+
     def case_read(self) -> None:
         self._success("read")
 
@@ -418,7 +489,7 @@ def main() -> int:
     passed = 0
     failed = False
     for case_id in probe.cases:
-        handler: Callable[[], None] | None = getattr(probe, "case_" + case_id, None) if case_id.isidentifier() else None
+        handler: Callable[[], None] | None = (lambda: probe.native_case(case_id)) if case_id.startswith("native_") else getattr(probe, "case_" + case_id, None) if case_id.isidentifier() else None
         if handler is None:
             print(f"agent operation envelope probe: case {case_id} is not implemented by the Python probe", file=sys.stderr)
             failed = True

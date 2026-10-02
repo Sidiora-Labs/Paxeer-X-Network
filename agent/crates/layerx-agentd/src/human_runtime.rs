@@ -1283,6 +1283,7 @@ pub struct ProductionHumanOperations<A> {
 
     policies: Option<crate::policy::TenantPolicyRegistries>,
     native_policies: BTreeMap<TenantId, crate::config::VerifiedNativeProgramPolicy>,
+    program_budget_denominations: BTreeMap<TenantId, crate::enrolment::VerifiedProgramBudgetDenominations>,
 }
 
 /// Why one tenant stays read-only after startup recovery.
@@ -2583,9 +2584,17 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
                 }
             }
         }
+        {
+            let mut store = shared_store
+                .lock()
+                .map_err(|_| HumanOperationError::Unavailable)?;
+            for denominations in operations.program_budget_denominations.values() {
+                crate::budget::install_program_enrolment_denominations(
+                    &mut store, &budgets, denominations,
+                ).map_err(daemon_limit_refusal)?;
+            }
+        }
         require_held_reservations(&approvals, &budgets)?;
-        operations.recover_tenants(&restore_peers, ceiling_maximum);
-        operations.unified_owner_active = true;
         {
             let store = shared_store
                 .lock()
@@ -2610,6 +2619,9 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
         session_control
             .restore_writes()
             .map_err(|_| HumanOperationError::Unavailable)?;
+        operations.recover_native_expiry(&restore_peers, &budgets, &preparation_lifecycle)?;
+        operations.recover_tenants(&restore_peers, ceiling_maximum);
+        operations.unified_owner_active = true;
         let cleanup_tenants = shared_store
             .lock()
             .map_err(|_| HumanOperationError::Unavailable)?
@@ -3162,26 +3174,18 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
     }
 
     fn observe_native_expiry(&mut self, context: &crate::agent_rpc_peer::RpcOwnerContext<'_>) -> Result<(), HumanOperationError> {
-        let snapshot = core_preparation_snapshot(&mut self.lock_operations()?.node, context.peer(), &context.principal().agent)?;
+        let (observation, registry, network_id) = self.lock_operations()?.native_expiry_observation(
+            context.peer(), &context.principal().agent)?;
         context.commit(&self.session_control, |_| {
-            use crate::approval::native_program::{NativeProgramApprovalCarrier, NativeApprovalState};
+            use crate::approval::native_program::NativeProgramApprovalCarrier;
             use crate::session_control::SessionControlError;
             let mut store = self.store.lock().map_err(|_| SessionControlError::Unavailable)?;
             let records = NativeProgramApprovalCarrier::list(&store, context)
                 .map_err(|_| SessionControlError::Human(HumanOperationError::Refused))?;
             for held in records {
-                if !matches!(held.state(), NativeApprovalState::Awaiting | NativeApprovalState::NotRequired)
-                    || !held.expired_at(snapshot.observed_head_sequence, snapshot.protocol_timestamp) { continue; }
-                let durable_key = crate::prepare::DurablePreparation::store_key(&context.principal().tenant, held.preparation_id())
-                    .map_err(|_| SessionControlError::Unavailable)?;
-                let raw = store.get(&durable_key).ok_or(SessionControlError::Unavailable)?;
-                let durable = crate::prepare::DurablePreparation::decode(context.principal().tenant.clone(), raw.bytes())
-                    .map_err(|_| SessionControlError::Unavailable)?;
-                if durable.activity_id.is_some() || durable.terminal() { continue; }
-                let mut digest = Sha256::new(); digest.update(b"layerx/native-program-expiry/v1\0"); digest.update(held.preparation_id());
-                NativeProgramApprovalCarrier::decide(&mut store, &self.budgets, context, held.preparation_id(),
-                    held.held_digest().map_err(|_| SessionControlError::Unavailable)?, digest.finalize().into(), false,
-                    snapshot.observed_head_sequence, snapshot.protocol_timestamp)
+                NativeProgramApprovalCarrier::expire_unsigned(&mut store, &self.budgets,
+                    &self.preparation_lifecycle, &context.principal().tenant, held.preparation_id(),
+                    &observation, &registry, network_id)
                     .map_err(|_| SessionControlError::Human(HumanOperationError::Refused))?;
             }
             Ok(())
@@ -3222,14 +3226,14 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
             .map_err(|_| HumanOperationError::Refused)? != request.body_digest {
             return Err(HumanOperationError::Refused);
         }
-        let snapshot = core_preparation_snapshot(&mut self.lock_operations()?.node,
+        let (observation, registry, network_id) = self.lock_operations()?.native_expiry_observation(
             context.peer(), &context.principal().agent)?;
-        if request.operation.current_sequence != snapshot.observed_head_sequence { return Err(HumanOperationError::Refused); }
+        if request.operation.current_sequence != observation.through_sequence() { return Err(HumanOperationError::Refused); }
         let held = context.commit(&self.session_control, |_| {
             let mut store = self.store.lock().map_err(|_| crate::session_control::SessionControlError::Unavailable)?;
             crate::approval::native_program::NativeProgramApprovalCarrier::decide(&mut store, &self.budgets, context,
                 request.operation.approval_id, request.operation.held_digest, request.key, grant,
-                snapshot.observed_head_sequence, snapshot.protocol_timestamp)
+                &observation, &registry, network_id, &self.preparation_lifecycle)
                 .map_err(|_| crate::session_control::SessionControlError::Human(HumanOperationError::Refused))
         }).map_err(rpc_commit_error)?;
         native_response(&held.response().map_err(|_| HumanOperationError::Refused)?)
@@ -7023,6 +7027,7 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
 
             policies: None,
             native_policies: BTreeMap::new(),
+            program_budget_denominations: BTreeMap::new(),
         })
     }
 
@@ -7039,6 +7044,18 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
         Ok(())
     }
 
+    pub fn attach_program_budget_denominations(
+        &mut self,
+        sources: &BTreeMap<TenantId, std::path::PathBuf>,
+    ) -> Result<(), crate::config::ConfigError> {
+        let loaded = sources.iter().map(|(tenant, path)| {
+            crate::config::load_program_budget_denominations(path, tenant)
+                .map(|denominations| (tenant.clone(), denominations))
+        }).collect::<Result<BTreeMap<_, _>, _>>()?;
+        self.program_budget_denominations = loaded;
+        Ok(())
+    }
+
     pub fn attach_native_policies(
         &mut self,
         sources: &BTreeMap<TenantId, std::path::PathBuf>,
@@ -7047,6 +7064,64 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
             crate::config::load_native_program_policy(path, tenant).map(|policy| (tenant.clone(), policy))
         }).collect::<Result<BTreeMap<_, _>, _>>()?;
         self.native_policies = loaded;
+        Ok(())
+    }
+
+    fn native_expiry_observation(
+        &mut self,
+        peer: &HumanPeer,
+        actor: &Did,
+    ) -> Result<(crate::protocol_evidence::AuthenticatedCoreTime, layerx_types::payload::ModuleRegistry, u32), HumanOperationError> {
+        self.node.reconnect().map_err(|_| HumanOperationError::Unavailable)?;
+        let snapshot = core_preparation_snapshot(&mut self.node, peer, actor)?;
+        let head = self.node.head();
+        if head.chain_sequence == 0 || head.sealed_batch == 0 || snapshot.observed_head_sequence != head.chain_sequence {
+            return Err(HumanOperationError::Unavailable);
+        }
+        let signed = self.node.batch_header(head.sealed_batch,
+            boundary_correlation(peer, actor.as_bytes(), b"native-expiry-clock"))
+            .map_err(production_batch_header_error)?;
+        let node = self.node.handshake().node();
+        let authority = EvidenceAuthority::pinned_to_handshake(node.protocol_version, node.network_id,
+            node.authorised_sequencer_key).map_err(|_| HumanOperationError::Refused)?;
+        let observed = authority.authenticate_core_time(signed.canonical_bytes(), &signed.signature,
+            head.sealed_batch, head.chain_sequence).map_err(|_| HumanOperationError::Refused)?;
+        if observed.observed_core_ms() != snapshot.protocol_timestamp || snapshot.network_id != node.network_id {
+            return Err(HumanOperationError::Refused);
+        }
+        Ok((observed, snapshot.module_registry, snapshot.network_id))
+    }
+
+    fn recover_native_expiry(
+        &mut self,
+        peers: &[HumanPeer],
+        budgets: &BudgetLimiter,
+        lifecycle: &PreparationLifecycle,
+    ) -> Result<(), HumanOperationError> {
+        use crate::approval::native_program::NativeProgramApprovalCarrier;
+        let tenants = self.store.lock().map_err(|_| HumanOperationError::Unavailable)?
+            .tenant_ids_for_kind(ObjectKind::PreparedActivity);
+        for tenant in tenants {
+            let records = {
+                let store = self.store.lock().map_err(|_| HumanOperationError::Unavailable)?;
+                NativeProgramApprovalCarrier::retained_for_tenant(&store, &tenant)
+                    .map_err(|_| HumanOperationError::Refused)?
+            };
+            for held in records {
+                {
+                    let store = self.store.lock().map_err(|_| HumanOperationError::Unavailable)?;
+                    if !held.unsigned_admission(&store, &tenant).map_err(|_| HumanOperationError::Refused)? { continue; }
+                }
+                let peer = peers.iter().find(|peer| peer.tenant == tenant.as_str()
+                    && peer.principal == held.retained_principal() && peer.uid != 0 && peer.subject.is_some())
+                    .ok_or(HumanOperationError::Refused)?;
+                let actor = Did::new(held.retained_actor()).map_err(|_| HumanOperationError::Refused)?;
+                let (observation, registry, network_id) = self.native_expiry_observation(peer, &actor)?;
+                let mut store = self.store.lock().map_err(|_| HumanOperationError::Unavailable)?;
+                NativeProgramApprovalCarrier::expire_unsigned(&mut store, budgets, lifecycle, &tenant,
+                    held.preparation_id(), &observation, &registry, network_id).map_err(|_| HumanOperationError::Refused)?;
+            }
+        }
         Ok(())
     }
 

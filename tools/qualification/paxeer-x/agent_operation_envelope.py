@@ -17,6 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'tests/daemon'))
+sys.path.insert(0, str(ROOT / 'agent/sdk/python'))
 import paxeer_x_runtime_fixture as fixture
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
@@ -27,6 +28,10 @@ ROUTE = '/v1/agent/rpc'
 MAX_BODY = 1_048_576
 LANGUAGES = ('rust', 'typescript', 'python', 'go', 'java', 'kotlin', 'swift', 'csharp')
 LANGUAGE_CASES = ('read', 'program_read', 'approval_list')
+NATIVE_LANGUAGES = ('rust', 'typescript', 'python')
+NATIVE_SLOTS = ('approve', 'reject', 'held')
+NATIVE_REFUSALS = ('signature', 'owner', 'tenant', 'session', 'generation', 'expiry', 'commitment', 'capability',
+                   'local_grant_signature', 'canonical_digest', 'preparation_id', 'replay_changed', 'held_digest', 'current_head')
 RUST_PRE_RESTART = ('allowed_mutation', 'mutation_duplicate_same_result', 'wrong_scope', 'wrong_tenant',
                     'wrong_generation', 'wrong_session', 'wrong_token', 'revoked_session',
                     'missing_idempotency_key', 'changed_body_same_key', 'restart_unknown_pending')
@@ -305,6 +310,67 @@ def load_manifest():
     return built
 
 
+def native_inputs(config, credential):
+    inputs = config.get('native_inputs')
+    require(isinstance(inputs, dict) and set(inputs) == set(NATIVE_LANGUAGES), 'native_inputs must provision Rust, TypeScript and Python')
+    require('LAYERX_NATIVE_POLICY_SOURCES' in config['agentd_env'], 'native preparation requires the real protected native policy source')
+    require('LAYERX_PROGRAM_BUDGET_DENOMINATION_SOURCES' in config['agentd_env'],
+            'native holds require explicit denominations bound to the real enrolled stable IDs')
+    required = {'request', 'canonical_bytes', 'commitment', 'expires_at_ms', 'owner_public_key', 'local_grant'}
+    request_fields = {'activity', 'actor', 'authority', 'account_sequence', 'not_before', 'not_after', 'idempotency_key',
+                      'fee_limit', 'payload', 'payload_hash', 'capability_id'}
+    identities = set()
+    for language, rows in inputs.items():
+        require(isinstance(rows, dict) and set(rows) == set(NATIVE_SLOTS), language + ': native fixture slots')
+        for slot, row in rows.items():
+            label = language + '.' + slot
+            require(isinstance(row, dict) and set(row) == required, label + ': native fixture fields')
+            request = row['request']
+            require(isinstance(request, dict) and set(request) == request_fields, label + ': unsigned native request fields')
+            require(isinstance(request['activity'], dict) and set(request['activity']) == {'version', 'module', 'ordinal'}
+                    and request['activity']['version'] == '1' and request['activity']['module'] == '9'
+                    and isinstance(request['activity']['ordinal'], str) and re.fullmatch('[1-9][0-9]{0,4}', request['activity']['ordinal'])
+                    and int(request['activity']['ordinal']) <= 65535, label + ': full native Programs identity')
+            require(all(isinstance(request[k], str) for k in request_fields - {'activity'}), label + ': native request scalars')
+            require(all(re.fullmatch('[0-9a-f]{64}', request[k]) for k in ('idempotency_key', 'payload_hash', 'capability_id')),
+                    label + ': native canonical identifiers')
+            require(all(re.fullmatch(DECIMAL_U64, request[k]) and int(request[k]) < 2**64
+                        for k in ('account_sequence', 'not_before', 'not_after'))
+                    and int(request['not_before']) <= int(request['not_after'])
+                    and re.fullmatch(W8_DECIMAL, request['fee_limit']) and int(request['fee_limit']) < 2**128,
+                    label + ': native canonical integers')
+            require(all(isinstance(row[k], str) and re.fullmatch('[0-9a-f]{64}', row[k]) for k in ('commitment', 'owner_public_key')),
+                    label + ': native owner and purpose commitment')
+            require(isinstance(row['expires_at_ms'], str) and re.fullmatch('[1-9][0-9]{0,19}', row['expires_at_ms'])
+                    and int(row['expires_at_ms']) < 2**64, label + ': native purpose expiry')
+            canonical = row['canonical_bytes']
+            require(isinstance(canonical, str) and 0 < len(canonical) <= MAX_BODY * 2
+                    and re.fullmatch('(?:[0-9a-f]{2})+', canonical), label + ': canonical unsigned native activity')
+            identity = hashlib.sha256(bytes.fromhex(canonical)).hexdigest()
+            require(identity not in identities, label + ': native preparations must be distinct')
+            identities.add(identity)
+            grant = row['local_grant']
+            require(isinstance(grant, dict) and set(grant) == {'capability', 'session_scope', 'expires_at_ms'}, label + ': native grant fields')
+            require(all(isinstance(grant[k], str) and 0 < len(grant[k]) <= MAX_BODY * 2
+                        and re.fullmatch('(?:[0-9a-f]{2})+', grant[k]) for k in ('capability', 'session_scope')),
+                    label + ': canonical provisioned native grant records')
+            require(isinstance(grant['expires_at_ms'], str) and re.fullmatch('[1-9][0-9]{0,19}', grant['expires_at_ms'])
+                    and int(row['expires_at_ms']) <= int(grant['expires_at_ms']) < 2**64, label + ': native grant expiry')
+    require(int(credential['generation']) > 0, 'native signed purpose requires a live nonzero session generation')
+
+
+def native_purpose_bytes(purpose):
+    encoded = b'LayerX/native/preparation-purpose/v1\0' + b'\x01'
+    for name in ('tenant', 'agent_did'):
+        field = purpose[name].encode('utf-8')
+        encoded += len(field).to_bytes(4, 'big') + field
+    encoded += bytes.fromhex(purpose['session_id'])
+    encoded += int(purpose['generation']).to_bytes(8, 'big') + int(purpose['expires_at_ms']).to_bytes(8, 'big')
+    for name in ('capability_id', 'preparation_id', 'canonical_digest', 'commitment'):
+        encoded += bytes.fromhex(purpose[name])
+    return encoded
+
+
 def load_config():
     config = load_private(os.environ.get('PAXEER_X_AGENT_ENVELOPE_CONFIG'), 'PAXEER_X_AGENT_ENVELOPE_CONFIG')
     require(config.get('schema') == CONFIG_SCHEMA, 'qualification configuration schema')
@@ -477,6 +543,7 @@ def load_config():
         require(isinstance(config[key], dict) and all(isinstance(k, str) and isinstance(v, str) for k, v in config[key].items()),
                 key + ' must be a string map')
     require('LAYERX_AGENTD_RPC_LISTEN' not in config['agentd_env'], 'harness owns the agent RPC listener configuration')
+    native_inputs(config, credential)
     return config, credential
 
 
@@ -585,7 +652,8 @@ class Qualification:
         if not mutating:
             return observed, True
         key = row.get('idempotency_key')
-        effect = {'language': language, 'case': case, 'operation': operation, 'idempotency_key': key}
+        effect_case = row['effect_case'] if case.startswith('native_') else case
+        effect = {'language': language, 'case': effect_case, 'operation': operation, 'idempotency_key': key}
         if not isinstance(key, str) or not re.fullmatch('[0-9a-f]{64}', key) or effect not in self.effects:
             return 'success_record_without_effect', False
         return 'success_record+effect', True
@@ -595,12 +663,21 @@ class Qualification:
         directory = self.d / 'probes' / (language + '-' + run)
         failed = []
         for case in cases:
-            if not (case.startswith('operation.') or (phase == 'read' and case in LANGUAGE_CASES)):
+            if not (case.startswith(('operation.', 'native_')) or (phase == 'read' and case in LANGUAGE_CASES)):
                 continue
             row = requests[case]
             operation = row['operation']
-            kind, ok = self.operation_evidence(language, case, operation, row, directory / (case + '.json'),
-                                               operation in mutating)
+            if case.startswith('native_refusal.'):
+                try:
+                    record = json.loads((directory / (case + '.json')).read_text())
+                    self.refusal(record['status'], json.dumps(record['body']), 403,
+                                 row['expected_class'], row['expected_reason'], language + ' ' + case)
+                    kind, ok = 'exact_native_refusal', True
+                except (OSError, ValueError, RuntimeError, KeyError, TypeError):
+                    kind, ok = 'native_refusal_mismatch', False
+            else:
+                kind, ok = self.operation_evidence(language, case, operation, row, directory / (case + '.json'),
+                                                   operation in mutating)
             self.operation_evidence_rows.append({'language': language, 'run': run, 'case': case, 'operation': operation,
                                                  'evidence': kind, 'verdict': 'PASS' if ok else 'FAIL'})
             print('PAXEER_X_AGENT_ENVELOPE_EVIDENCE language=' + language + ' operation=' + operation + ' case=' + case
@@ -1201,11 +1278,12 @@ class Qualification:
     def record_effects(self, language, cases, requests):
         for case in cases:
             row = requests.get(case)
-            if case in DECODE_CASES or not row or 'idempotency_key' not in row:
+            if case in DECODE_CASES or case.startswith('native_refusal.') or not row or 'idempotency_key' not in row:
                 continue
-            if any(e['language'] == language and e['case'] == case for e in self.effects):
+            effect_case = row['effect_case'] if case.startswith('native_') else case
+            if any(e['language'] == language and e['case'] == effect_case for e in self.effects):
                 continue
-            self.effect(language, case, row['operation'], row['idempotency_key'])
+            self.effect(language, effect_case, row['operation'], row['idempotency_key'])
 
     def probe(self, language, cases, phase, state, requests=None, retry_state=None, prefix=False, decode_endpoint=None,
               run=None, csharp_class='AgentOperationEnvelopeTests'):
@@ -1254,8 +1332,11 @@ class Qualification:
 
         self.judge_cases(language, run, phase, cases, requests)
         for case in cases:
-            self.passed(case if phase != 'read' and not prefix else 'sdk_' + language + '_' + case
-                        + ('_post_restart' if prefix and phase == 'post-restart' and case in PYTHON_PRE_RESTART else ''), log)
+            if case.startswith('native_'):
+                self.passed('sdk_' + language + '_' + run, log)
+            else:
+                self.passed(case if phase != 'read' and not prefix else 'sdk_' + language + '_' + case
+                            + ('_post_restart' if prefix and phase == 'post-restart' and case in PYTHON_PRE_RESTART else ''), log)
 
     def w20_completed_mutation(self, case, operation, request):
         key = self.key('direct', case)
@@ -1722,6 +1803,159 @@ class Qualification:
         self.w8_capability_refused(case, 'prepare', dict(prepare, capability_id=bound.upper()),
                                    400, 'ProtocolIncompatibility', 'envelope.malformed')
 
+    def native_head(self, case):
+        envelope, status, body = self.call(case, 'read.checkpoint', {})
+        value = self.success(status, body, envelope['request_id'], case)['value']
+        require(isinstance(value, dict) and set(value) == {'chain_sequence', 'sealed_batch', 'finalised_checkpoint'}
+                and isinstance(value['chain_sequence'], str) and re.fullmatch(DECIMAL_U64, value['chain_sequence'])
+                and 0 < int(value['chain_sequence']) < 2**64, case + ': real current head')
+        return value['chain_sequence']
+
+    def native_request(self, language, slot):
+        from layerx_sdk.generated.client import encode_native_prepare_request
+        source = self.config['native_inputs'][language][slot]
+        request = json.loads(json.dumps(source['request']))
+        signer, public = self.w7_signer('native.' + language + '.' + slot, source['owner_public_key'])
+        digest = hashlib.sha256(bytes.fromhex(source['canonical_bytes'])).hexdigest()
+        purpose = {'version': '1', 'tenant': self.credential['tenant'], 'agent_did': request['actor'],
+                   'session_id': self.credential['session_id'], 'generation': self.credential['generation'],
+                   'expires_at_ms': source['expires_at_ms'], 'capability_id': request['capability_id'],
+                   'preparation_id': digest, 'canonical_digest': digest, 'commitment': source['commitment']}
+        request['variant'] = 'native_v1'
+        request['purpose'] = {'purpose': purpose, 'owner_public_key': public,
+                              'signature': signer.sign(hashlib.sha256(native_purpose_bytes(purpose)).digest()).hex()}
+        grant = source['local_grant']
+        encoded = b'LayerX/native/local-grant/v1\0' + int(grant['expires_at_ms']).to_bytes(8, 'big') + bytes.fromhex(public)
+        for field in ('capability', 'session_scope'):
+            record = bytes.fromhex(grant[field])
+            encoded += len(record).to_bytes(4, 'big') + record
+        request['local_grant'] = dict(grant, version='1', owner_public_key=public,
+                                     signature=signer.sign(hashlib.sha256(encoded).digest()).hex())
+        request = encode_native_prepare_request(request)
+        require(len(self.encode(self.envelope('prepare', request, idempotency=self.key(language, 'native.' + slot)))) <= MAX_BODY,
+                language + '.' + slot + ': signed native request exceeds existing envelope bound')
+        return request, signer
+
+    def native_observe(self, language, slot, approval_id):
+        from layerx_sdk.generated.client import decode_native_approval_result
+        case = 'native.' + language + '.' + slot + '.observe'
+        envelope, status, body = self.call(case, 'approval.get', {'variant': 'native_v1', 'approval_id': approval_id})
+        result = decode_native_approval_result(self.success(status, body, envelope['request_id'], case)['value'])
+        require(result['approval_id'] == approval_id and result['state'] == 'Awaiting', case + ': actual durable held approval')
+        return result
+
+    def native_probe(self, language, slot, case, entry, stage):
+        requests = self.probe_requests(language)
+        requests[case] = entry
+        run = 'native-' + slot + '-' + stage + '-' + case
+        self.probe(language, (case,), 'read', self.d / 'probes' / (language + '-' + run + '.state'), requests, run=run)
+        path = self.d / 'probes' / (language + '-' + run) / (case + '.json')
+        record = json.loads(path.read_text())
+        return record['body'].get('value')
+
+    def native_entry(self, language, slot, operation, request, **expected):
+        entry = {'operation': operation, 'request': request, **expected}
+        if operation in mutating_operations():
+            effect_case = 'native.' + slot + '.' + operation
+            entry.update(idempotency_key=self.key(language, effect_case), effect_case=effect_case)
+        return entry
+
+    def native_get_entry(self, approval, state):
+        return {'operation': 'approval.get', 'request': {'variant': 'native_v1', 'approval_id': approval['approval_id']},
+                'expected_state': state, 'expected_held_digest': approval['held_digest']}
+
+    def native_refusals(self, language, request, signer, held, original_key):
+        def flip(value):
+            return ('1' if value[0] == '0' else '0') + value[1:]
+        for name in NATIVE_REFUSALS:
+            body = json.loads(json.dumps(request))
+            purpose = body['purpose']['purpose']
+            operation = 'prepare'
+            key = self.key(language, 'native.refusal.' + name)
+            if name in ('held_digest', 'current_head'):
+                operation = 'approval.approve'
+                head = self.native_head('native.' + language + '.' + name + '.head')
+                body = {'variant': 'native_v1', 'approval_id': held['approval_id'], 'held_digest': held['held_digest'], 'current_sequence': head}
+                if name == 'held_digest': body['held_digest'] = flip(body['held_digest'])
+                else: body['current_sequence'] = str((int(head) + 1) % 2**64)
+            elif name == 'signature': body['purpose']['signature'] = flip(body['purpose']['signature'])
+            elif name == 'owner':
+                foreign = Ed25519PrivateKey.generate()
+                public = foreign.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex()
+                require(public != body['purpose']['owner_public_key'], 'foreign native owner equals current owner')
+                body['purpose']['owner_public_key'] = public
+                body['purpose']['signature'] = foreign.sign(hashlib.sha256(native_purpose_bytes(purpose)).digest()).hex()
+            elif name == 'local_grant_signature': body['local_grant']['signature'] = flip(body['local_grant']['signature'])
+            else:
+                if name == 'tenant': purpose['tenant'] = purpose['tenant'][:-1] + ('x' if purpose['tenant'][-1] != 'x' else 'y')
+                elif name == 'session': purpose['session_id'] = flip(purpose['session_id'])
+                elif name == 'generation': purpose['generation'] = str(int(purpose['generation']) + 1 if int(purpose['generation']) < 2**64 - 1 else 1)
+                elif name == 'expiry': purpose['expires_at_ms'] = '1'
+                elif name == 'capability':
+                    purpose['capability_id'] = flip(purpose['capability_id'])
+                    body['capability_id'] = purpose['capability_id']
+                elif name in ('canonical_digest', 'preparation_id'): purpose[name] = flip(purpose[name])
+                elif name in ('commitment', 'replay_changed'):
+                    purpose['commitment'] = flip(purpose['commitment'])
+                    if name == 'replay_changed': key = original_key
+                else: raise RuntimeError('undeclared native refusal')
+                body['purpose']['signature'] = signer.sign(hashlib.sha256(native_purpose_bytes(purpose)).digest()).hex()
+            entry = {'operation': operation, 'request': body, 'idempotency_key': key,
+                     'expected_class': 'PolicyRefusal', 'expected_reason': 'owner.refused'}
+            self.native_probe(language, 'approve', 'native_refusal.' + name, entry, 'pre')
+
+    def native_pre_restart(self):
+        self.native_retained = {}
+        self.native_original_head = self.native_head('native.initial.head')
+        for language in NATIVE_LANGUAGES:
+            retained = {}
+            for slot in NATIVE_SLOTS:
+                request, signer = self.native_request(language, slot)
+                entry = self.native_entry(language, slot, 'prepare', request, expected_approval_required=True)
+                prepared = self.native_probe(language, slot, 'native_prepare', entry, 'pre')
+                require(prepared['canonical_bytes'] == self.config['native_inputs'][language][slot]['canonical_bytes'],
+                        language + '.' + slot + ': returned canonical bytes differ from the signed fixture input')
+                held = self.native_observe(language, slot, prepared['preparation_id'])
+                require(held['activity'] == request['activity'], language + '.' + slot + ': held native identity')
+                self.native_probe(language, slot, 'native_approval_get', self.native_get_entry(held, 'Awaiting'), 'pre')
+                retained[slot] = {'entry': entry, 'prepared': prepared, 'held': held}
+                if slot == 'approve':
+                    listed = self.native_probe(language, slot, 'native_approval_list', {'operation': 'approval.list', 'request': {'variant': 'native_v1'},
+                                      'expected_approval_id': held['approval_id']}, 'pre')
+                    self.native_refusals(language, request, signer, held, entry['idempotency_key'])
+                    after_refusals = self.native_probe(language, slot, 'native_approval_list', {'operation': 'approval.list', 'request': {'variant': 'native_v1'},
+                                      'expected_approval_id': held['approval_id']}, 'after-refusals')
+                    require(after_refusals == listed, language + ': refused native mutations changed the durable held approval set')
+                if slot in ('approve', 'reject'):
+                    operation = 'approval.' + slot
+                    decision = {'variant': 'native_v1', 'approval_id': held['approval_id'], 'held_digest': held['held_digest'],
+                                'current_sequence': self.native_head('native.' + language + '.' + slot + '.head')}
+                    terminal = self.native_probe(language, slot, 'native_approval_' + slot,
+                        self.native_entry(language, slot, operation, decision, expected_state='Granted' if slot == 'approve' else 'Rejected',
+                                          expected_held_digest=held['held_digest']), 'pre')
+                    require(terminal['activity'] == held['activity'] and terminal['approval_id'] == held['approval_id'],
+                            language + '.' + slot + ': native decision changed the full held identity')
+                    retained[slot]['terminal'] = terminal
+            replay = self.native_probe(language, 'held', 'native_prepare', retained['held']['entry'], 'replay')
+            require(replay == retained['held']['prepared'], language + ': native identical prepare replay changed result')
+            self.native_retained[language] = retained
+        require(self.native_head('native.pre_restart.head') == self.native_original_head,
+                'native replay fixture head advanced; retained runtime requires the original observed head')
+
+    def native_post_restart(self):
+        require(self.native_head('native.post_restart.head') == self.native_original_head,
+                'native recovery fixture head advanced; changed-head replay is not qualified')
+        for language, retained in self.native_retained.items():
+            for slot, state in (('approve', 'Granted'), ('reject', 'Rejected'), ('held', 'Awaiting')):
+                restored = self.native_probe(language, slot, 'native_approval_get', self.native_get_entry(retained[slot]['held'], state), 'post')
+                require(restored == retained[slot].get('terminal', retained[slot]['held']),
+                        language + '.' + slot + ': restart changed the exact native held or terminal record')
+            held = retained['held']
+            self.native_probe(language, 'held', 'native_approval_list', {'operation': 'approval.list', 'request': {'variant': 'native_v1'},
+                              'expected_approval_id': held['held']['approval_id']}, 'post')
+            replay = self.native_probe(language, 'held', 'native_prepare', held['entry'], 'post')
+            require(replay == held['prepared'], language + ': native restart replay changed canonical result or hold')
+
     def run(self):
         (self.d / 'responses').mkdir(mode=0o700)
         (self.d / 'probes').mkdir(mode=0o700)
@@ -1760,11 +1994,13 @@ class Qualification:
         python_retry = self.d / 'probes/python-retry.state'
         python_requests = self.probe_requests('python')
         self.probe('python', PYTHON_PRE_RESTART, 'pre-restart', python_state, python_requests, python_retry, True)
+        self.native_pre_restart()
         old = self.agentd.pid
         self.agentd.kill()
         self.agentd.wait(timeout=15)
         self.start_agentd()
         require(self.agentd.pid != old, 'agentd restart reused the process')
+        self.native_post_restart()
         self.probe('rust', RUST_POST_RESTART, 'post-restart', state)
 
         self.w20_expiry()
@@ -1814,6 +2050,7 @@ def worker(directory):
 
         expected += len(W8_CAPABILITY_DIRECT) + len(W8_CAPABILITY_REFUSALS)
         expected += len(SERVED_READ_DIRECT) + len(SERVED_READ_REFUSALS)
+        expected += len(NATIVE_LANGUAGES) * (16 + len(NATIVE_REFUSALS))
         require(len(qualification.results) == expected, 'case count ' + str(len(qualification.results)) + ' != ' + str(expected))
         write_private(runtime.directory / 'case-results.json', qualification.results)
         print(f'PAXEER_X_GATE tests={len(qualification.results)} skipped=0', flush=True)

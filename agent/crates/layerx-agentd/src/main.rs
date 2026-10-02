@@ -229,6 +229,7 @@ struct Config {
     probe_program: ProgramId,
     policy_sources: BTreeMap<TenantId, PathBuf>,
     native_policy_sources: BTreeMap<TenantId, PathBuf>,
+    program_budget_denomination_sources: BTreeMap<TenantId, PathBuf>,
 }
 
 fn optional(name: &str) -> Option<String> {
@@ -714,7 +715,8 @@ fn start_human_owner(mcp: Option<McpBoot>) -> Result<OwnerStatus, String> {
         .map_err(|error| format!("runtime clock unavailable: {error}"))?;
     let tenants = human_policy_tenants(&human_peers()?)?;
     let native_policy_sources = native_policy_sources(&tenants)?;
-    start_shared_owner(mcp, None, None, None, &native_policy_sources, runtime_clock)
+    let denomination_sources = program_budget_denomination_sources(&tenants)?;
+    start_shared_owner(mcp, None, None, None, &native_policy_sources, &denomination_sources, runtime_clock)
         .map(|(receiver, _, _)| receiver)
 }
 
@@ -726,6 +728,7 @@ fn start_shared_owner(
 
     policy_sources: Option<&BTreeMap<TenantId, PathBuf>>,
     native_policy_sources: &BTreeMap<TenantId, PathBuf>,
+    program_budget_denomination_sources: &BTreeMap<TenantId, PathBuf>,
 
     clock: Arc<dyn layerx_types::clock::Clock>,
 ) -> Result<
@@ -740,6 +743,9 @@ fn start_shared_owner(
     let tenants = human_policy_tenants(&peers)?;
     if !native_policy_sources.keys().eq(tenants.iter()) {
         return Err("LAYERX_NATIVE_POLICY_SOURCES must cover exactly the configured Human tenants".to_owned());
+    }
+    if program_budget_denomination_sources.keys().any(|tenant| !tenants.contains(tenant)) {
+        return Err("Program budget denomination sources name an unconfigured Human tenant".to_owned());
     }
     let deadline = Duration::from_millis(parse_u64("LAYERX_AGENT_HUMAN_DEADLINE_MS")?);
     let human_limits = human_lni_limits(deadline)?;
@@ -805,6 +811,10 @@ fn start_shared_owner(
     operations
         .attach_native_policies(native_policy_sources)
         .map_err(|error| format!("native tenant policies are invalid: {error}"))?;
+
+    operations
+        .attach_program_budget_denominations(program_budget_denomination_sources)
+        .map_err(|error| format!("Program budget denominations are invalid: {error}"))?;
 
     let socket_uid = required("LAYERX_AGENT_HUMAN_SOCKET_UID")?
         .parse()
@@ -1039,6 +1049,29 @@ fn native_policy_sources(
     ).map_err(|error| format!("LAYERX_NATIVE_POLICY_SOURCES is invalid: {error}"))
 }
 
+fn program_budget_denomination_sources(
+    tenants: &BTreeSet<TenantId>,
+) -> Result<BTreeMap<TenantId, PathBuf>, String> {
+    const SETTING: &str = "LAYERX_PROGRAM_BUDGET_DENOMINATION_SOURCES";
+    let value = match env::var(SETTING) {
+        Ok(value) => value,
+        Err(env::VarError::NotPresent) => return Ok(BTreeMap::new()),
+        Err(env::VarError::NotUnicode(_)) => return Err(format!("{SETTING} is not UTF-8")),
+    };
+    let mut opted_in = BTreeSet::new();
+    for declaration in value.split(',') {
+        let (tenant, _) = declaration.split_once(':')
+            .ok_or_else(|| format!("{SETTING} requires tenant:absolute-path entries"))?;
+        let tenant = TenantId::new(tenant.trim().to_owned())
+            .map_err(|_| format!("{SETTING} contains an invalid tenant"))?;
+        if !tenants.contains(&tenant) || !opted_in.insert(tenant) {
+            return Err(format!("{SETTING} contains an unknown or duplicate tenant"));
+        }
+    }
+    layerx_agentd::config::parse_policy_sources(&value, &opted_in)
+        .map_err(|error| format!("{SETTING} is invalid: {error}"))
+}
+
 fn config() -> Result<Config, String> {
     let listen = required("LAYERX_AGENT_PROGRAM_LISTEN")?;
     let bearer = required("LAYERX_AGENT_PROGRAM_BEARER_TOKEN")?;
@@ -1066,10 +1099,12 @@ fn config() -> Result<Config, String> {
     )
     .map_err(|error| format!("human policy sources are invalid: {error}"))?;
     let native_policy_sources = native_policy_sources(&tenants)?;
+    let program_budget_denomination_sources = program_budget_denomination_sources(&tenants)?;
     Ok(Config {
         listen,
         policy_sources,
         native_policy_sources,
+        program_budget_denomination_sources,
         bearer,
         node_endpoint: required("LAYERX_AGENT_NODE_ENDPOINT")?,
         node_bearer,
@@ -1502,6 +1537,7 @@ fn serve(config: Config) -> Result<(), String> {
             export_trust,
             Some(&config.policy_sources),
             &config.native_policy_sources,
+            &config.program_budget_denomination_sources,
             runtime_clock,
         )?;
     let rpc = start_agent_rpc(owner)?;

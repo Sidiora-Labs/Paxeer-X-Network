@@ -241,25 +241,128 @@ impl NativeProgramApprovalCarrier {
     }
 
     pub(crate) fn read_id(store: &Store, context: &RpcOwnerContext<'_>, id: [u8; 32]) -> Result<Self, CarrierError> {
-        let key = TenantKey::new(context.principal().tenant.clone(), ObjectKind::PreparedActivity,
+        let record = Self::read_retained(store, &context.principal().tenant, id)?;
+        if record.actor != context.principal().agent.as_bytes() { return Err(CarrierError::Binding); }
+        Ok(record)
+    }
+
+    fn read_retained(store: &Store, tenant: &TenantId, id: [u8; 32]) -> Result<Self, CarrierError> {
+        let key = TenantKey::new(tenant.clone(), ObjectKind::PreparedActivity,
             [PREFIX, id.as_slice()].concat()).map_err(|_| CarrierError::Corrupt)?;
         let stored = store.get(&key).ok_or(CarrierError::Missing)?;
         if stored.class() != StorageClass::LocalOnly || stored.bytes().len() > MAX_CARRIER { return Err(CarrierError::Corrupt); }
         let record: Self = serde_json::from_slice(stored.bytes()).map_err(|_| CarrierError::Corrupt)?;
         if record.encoded()?.as_slice() != stored.bytes() || record.preparation != id
-            || record.actor != context.principal().agent.as_bytes() || record.tenant != context.principal().tenant.as_str() {
+            || record.tenant != tenant.as_str() {
             return Err(CarrierError::Binding);
         }
-        let durable_key = crate::prepare::DurablePreparation::store_key(&context.principal().tenant, id).map_err(|_| CarrierError::Corrupt)?;
+        let durable_key = crate::prepare::DurablePreparation::store_key(tenant, id).map_err(|_| CarrierError::Corrupt)?;
         let durable_raw = store.get(&durable_key).ok_or(CarrierError::Missing)?;
         if durable_raw.class() != StorageClass::LocalOnly { return Err(CarrierError::Corrupt); }
-        let durable = crate::prepare::DurablePreparation::decode(context.principal().tenant.clone(), durable_raw.bytes()).map_err(|_| CarrierError::Corrupt)?;
-        if durable.extensions.get(&7).map(Vec::as_slice) != Some(record.held_digest()?.as_slice())
+        let durable = crate::prepare::DurablePreparation::decode(tenant.clone(), durable_raw.bytes()).map_err(|_| CarrierError::Corrupt)?;
+        if durable.preparation_id != id || durable.tenant != *tenant
+            || durable.extensions.get(&7).map(Vec::as_slice) != Some(record.held_digest()?.as_slice())
             || durable.extensions.get(&6) != Some(&record.program_budget)
             || durable.session_id != record.session || durable.generation != record.generation {
             return Err(CarrierError::Binding);
         }
         Ok(record)
+    }
+
+    pub(crate) fn retained_for_tenant(store: &Store, tenant: &TenantId) -> Result<Vec<Self>, CarrierError> {
+        let ids = store.list_object_ids(tenant, ObjectKind::PreparedActivity).into_iter()
+            .filter(|id| id.starts_with(PREFIX)).collect::<Vec<_>>();
+        if ids.len() > MAX_PENDING_RATE { return Err(CarrierError::Corrupt); }
+        ids.into_iter().map(|id| {
+            let preparation = id[PREFIX.len()..].try_into().map_err(|_| CarrierError::Corrupt)?;
+            Self::read_retained(store, tenant, preparation)
+        }).collect()
+    }
+
+    pub(crate) fn retained_principal(&self) -> &str { &self.principal }
+    pub(crate) fn retained_actor(&self) -> &[u8] { &self.actor }
+
+    pub(crate) fn unsigned_admission(&self, store: &Store, tenant: &TenantId) -> Result<bool, CarrierError> {
+        if !matches!(self.state, NativeApprovalState::Awaiting | NativeApprovalState::NotRequired | NativeApprovalState::Granted) {
+            return Ok(false);
+        }
+        let key = crate::prepare::DurablePreparation::store_key(tenant, self.preparation).map_err(|_| CarrierError::Corrupt)?;
+        let stored = store.get(&key).ok_or(CarrierError::Missing)?;
+        let durable = crate::prepare::DurablePreparation::decode(tenant.clone(), stored.bytes()).map_err(|_| CarrierError::Corrupt)?;
+        let signed = durable.signed_bytes().map_err(|_| CarrierError::Corrupt)?;
+        if durable.state != crate::prepare::LifecycleState::Prepared || durable.activity_id.is_some() || signed.is_some() {
+            return Ok(false);
+        }
+        let pending = pending_native_uses(store, tenant)?.into_iter()
+            .find(|record| record.preparation == self.preparation).ok_or(CarrierError::Missing)?;
+        if pending.canonical_bytes != self.canonical_bytes || pending.actor != self.actor
+            || pending.observed_head_sequence != self.created_at_sequence { return Err(CarrierError::Binding); }
+        Ok(pending.activity_id.is_none() && pending.committed.is_none())
+    }
+
+    pub(crate) fn expire_unsigned(
+        store: &mut Store,
+        budgets: &crate::budget::BudgetLimiter,
+        lifecycle: &crate::prepare::PreparationLifecycle,
+        tenant: &TenantId,
+        id: [u8; 32],
+        observation: &crate::protocol_evidence::AuthenticatedCoreTime,
+        registry: &layerx_types::payload::ModuleRegistry,
+        network_id: u32,
+    ) -> Result<Option<Self>, CarrierError> {
+        let mut held = Self::read_retained(store, tenant, id)?;
+        let sequence = observation.through_sequence();
+        let core_ms = observation.observed_core_ms();
+        if sequence < held.created_at_sequence { return Err(CarrierError::Binding); }
+        if !held.expired_at(sequence, core_ms) || !held.unsigned_admission(store, tenant)? { return Ok(None); }
+        let durable_key = crate::prepare::DurablePreparation::store_key(tenant, id).map_err(|_| CarrierError::Corrupt)?;
+        let raw = store.get(&durable_key).ok_or(CarrierError::Missing)?;
+        let mut durable = crate::prepare::DurablePreparation::decode(tenant.clone(), raw.bytes())
+            .map_err(|_| CarrierError::Corrupt)?;
+        let signed = durable.signed_bytes().map_err(|_| CarrierError::Corrupt)?;
+        if durable.state != crate::prepare::LifecycleState::Prepared || durable.activity_id.is_some() || signed.is_some() {
+            return Ok(None);
+        }
+        let pending = pending_native_uses(store, tenant)?.into_iter()
+            .find(|record| record.preparation == id).ok_or(CarrierError::Missing)?;
+        if pending.canonical_bytes != held.canonical_bytes || pending.actor != held.actor
+            || pending.observed_head_sequence != held.created_at_sequence {
+            return Err(CarrierError::Binding);
+        }
+        if pending.activity_id.is_some() || pending.committed.is_some() { return Ok(None); }
+        let prepared = held.restore_prepared(registry)?;
+        if prepared.envelope.network_id() != network_id
+            || prepared.envelope.actor_did().as_bytes() != held.actor
+            || prepared.envelope.activity_type().module() as u16 != held.activity_module
+            || prepared.envelope.activity_type().ordinal() != held.activity_ordinal
+            || prepared.envelope.timestamp_bound().not_after() != held.envelope_not_after
+            || durable.not_after != held.envelope_not_after
+            || durable.payload_hash != prepared.envelope.payload_hash()
+            || !durable.holds.is_empty()
+            || lifecycle.state(id).map_err(|_| CarrierError::Corrupt)? != crate::prepare::LifecycleState::Prepared
+        { return Err(CarrierError::Binding); }
+        let mut digest = Sha256::new();
+        digest.update(b"layerx/native-program-expiry/v1\0");
+        digest.update(id);
+        let key = digest.finalize().into();
+        held.state = NativeApprovalState::Expired;
+        held.terminal = Some(NativeTerminal { key, principal: held.principal.clone(),
+            session: held.session, generation: held.generation, sequence, core_ms, grant: false, submission_ref: None });
+        durable.state = crate::prepare::LifecycleState::Expired;
+        let kind = if sequence >= held.budget_expiry_sequence {
+            crate::budget::ReleaseKind::Expired
+        } else {
+            crate::budget::ReleaseKind::Failed
+        };
+        let staged = crate::budget::stage_release(budgets, id, kind, sequence).map_err(|_| CarrierError::Budget)?;
+        let (carrier_key, carrier_bytes) = held.companion()?;
+        store.apply_program_approval_batch(
+            vec![(carrier_key, carrier_bytes), (durable_key, durable.encode().map_err(|_| CarrierError::Corrupt)?)],
+            Vec::new(), vec![native_rate_key(tenant, id)?]).map_err(|_| CarrierError::Corrupt)?;
+        let _ = staged.publish();
+        lifecycle.invalidate_preparations(&std::collections::BTreeSet::from([id]), sequence, budgets)
+            .map_err(|_| CarrierError::Corrupt)?;
+        Ok(Some(held))
     }
 
     pub(crate) fn list(store: &Store, context: &RpcOwnerContext<'_>) -> Result<Vec<Self>, CarrierError> {
@@ -279,8 +382,11 @@ impl NativeProgramApprovalCarrier {
     pub(crate) fn decide(
         store: &mut Store, budgets: &crate::budget::BudgetLimiter,
         context: &RpcOwnerContext<'_>, id: [u8; 32], held_digest: [u8; 32], key: [u8; 32],
-        grant: bool, sequence: u64, core_ms: u64,
+        grant: bool, observation: &crate::protocol_evidence::AuthenticatedCoreTime,
+        registry: &layerx_types::payload::ModuleRegistry, network_id: u32, lifecycle: &crate::prepare::PreparationLifecycle,
     ) -> Result<Self, CarrierError> {
+        let sequence = observation.through_sequence();
+        let core_ms = observation.observed_core_ms();
         let mut held = Self::read_id(store, context, id)?;
         if held.held_digest()? != held_digest || sequence < held.created_at_sequence { return Err(CarrierError::Binding); }
         let origin = context.permit().preparation_authorization();
@@ -290,11 +396,14 @@ impl NativeProgramApprovalCarrier {
                 && terminal.grant == grant { return Ok(held); }
             return Err(CarrierError::Binding);
         }
-        let expired = held.expired_at(sequence, core_ms);
-        if held.state != NativeApprovalState::Awaiting && !(held.state == NativeApprovalState::NotRequired && expired && !grant) {
+        if held.expired_at(sequence, core_ms) {
+            if let Some(expired) = Self::expire_unsigned(store, budgets, lifecycle, &context.principal().tenant,
+                id, observation, registry, network_id)? { return Ok(expired); }
             return Err(CarrierError::Binding);
         }
-        held.state = if expired { NativeApprovalState::Expired } else if grant { NativeApprovalState::Granted } else { NativeApprovalState::Rejected };
+        if held.state != NativeApprovalState::Awaiting { return Err(CarrierError::Binding); }
+        if !grant && !held.unsigned_admission(store, &context.principal().tenant)? { return Err(CarrierError::Binding); }
+        held.state = if grant { NativeApprovalState::Granted } else { NativeApprovalState::Rejected };
         let submission_ref = if held.state == NativeApprovalState::Granted {
             let mut digest = Sha256::new(); digest.update(b"layerx/native-program-release/v1\0");
             digest.update(held_digest); digest.update(id); Some(digest.finalize().into())
@@ -310,10 +419,13 @@ impl NativeProgramApprovalCarrier {
             let durable_key = crate::prepare::DurablePreparation::store_key(tenant, id).map_err(|_| CarrierError::Corrupt)?;
             let raw = store.get(&durable_key).ok_or(CarrierError::Missing)?;
             let mut durable = crate::prepare::DurablePreparation::decode(tenant.clone(), raw.bytes()).map_err(|_| CarrierError::Corrupt)?;
-            if durable.terminal() || durable.activity_id.is_some() { return Err(CarrierError::Binding); }
-            durable.state = if expired { crate::prepare::LifecycleState::Expired } else { crate::prepare::LifecycleState::Failed };
+            if durable.state != crate::prepare::LifecycleState::Prepared || durable.activity_id.is_some()
+                || durable.signed_bytes().map_err(|_| CarrierError::Corrupt)?.is_some()
+                || pending_native_uses(store, tenant)?.into_iter().any(|record| record.preparation == id && (record.activity_id.is_some() || record.committed.is_some()))
+            { return Err(CarrierError::Binding); }
+            durable.state = crate::prepare::LifecycleState::Failed;
             let staged = crate::budget::stage_release(budgets, id,
-                if expired { crate::budget::ReleaseKind::Expired } else { crate::budget::ReleaseKind::Failed }, sequence)
+                crate::budget::ReleaseKind::Failed, sequence)
                 .map_err(|_| CarrierError::Budget)?;
             store.apply_program_approval_batch(vec![(carrier_key, carrier_bytes), (durable_key, durable.encode().map_err(|_| CarrierError::Corrupt)?)],
                 Vec::new(), vec![native_rate_key(tenant, id)?]).map_err(|_| CarrierError::Corrupt)?;
