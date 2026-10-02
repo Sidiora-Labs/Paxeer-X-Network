@@ -23297,8 +23297,8 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.5.8]
 title = "Replace the mounted root secret with a production KMS boundary"
-status = "pending"
-mode = "QUALIFY"
+status = "in_progress"
+mode = "BUILD"
 wave = 2
 requires = ["0.2"]
 reqs = ["1067.1", "1067.2", "1067.10"]
@@ -23309,10 +23309,12 @@ do_4 = "Bind provider key references to principal-scoped records and preserve st
 do_5 = "Make the file-envelope provider explicitly development-only and refuse production startup when it is selected."
 do_6 = "Expose provider readiness, key-reference integrity and rotation state through the existing redacted health model without logging key material or payloads."
 do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["human/crates/layerx-human-service/src/custody/provider.rs", "human/crates/layerx-human-service/src/custody/signer.rs", "human/crates/layerx-human-service/src/health.rs", "tools/paxeer-x/gates/104.5.8.sh"]
+do_8 = "Retain the complete Human service package test coverage and the real remote KMS provider suite, including the authorized export ceremony under resolution.3. Prebuild ordinary test artifacts once; execute the existing runnable and compile-fail rustdoc examples as declared compiler behavior checks inside the single gate, refusing ordinary service rebuilds during verification."
+touches = ["human/crates/layerx-human-service/src/custody/provider.rs", "human/crates/layerx-human-service/src/custody/signer.rs", "human/crates/layerx-human-service/src/health.rs", "human/crates/layerx-human-kms/tests/provider.rs", "tools/qualification/paxeer-x/custody-provider-producer.py", "tools/paxeer-x/gates/104.5.8.sh"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 104.5.8"
 gate_kind = "planned-adapter"
-max_builds = 0
+build_cmd = "timeout 30m python3 tools/qualification/paxeer-x/custody-provider-producer.py --build"
+max_builds = 1
 max_verify_runs = 1
 max_repair_cycles = 2
 time_limit_minutes = 30
@@ -23322,7 +23324,7 @@ reference_verify_cmd = "make human-test-service"
 reference_tests = []
 deployment_profile = "product"
 completion_policy = "Existing implementation is preserved; current candidate qualification and applicable runtime evidence remain required."
-planned_paths = ["tools/paxeer-x/gates/104.5.8.sh"]
+planned_paths = ["tools/paxeer-x/gates/104.5.8.sh", "tools/qualification/paxeer-x/custody-provider-producer.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
