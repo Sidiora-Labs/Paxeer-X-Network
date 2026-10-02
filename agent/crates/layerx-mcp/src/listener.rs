@@ -4,7 +4,8 @@ use std::fs;
 use std::io::BufReader;
 use std::os::unix::fs::{FileTypeExt as _, MetadataExt as _, PermissionsExt as _};
 use std::os::unix::net::UnixListener;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
+use std::os::unix::ffi::OsStrExt as _;
 use std::time::Duration;
 
 use crate::boundary::ToolBoundary;
@@ -56,6 +57,7 @@ impl ListenerError {
 pub struct Listener {
     listener: UnixListener,
     config: ListenerConfig,
+    identity: (u64, u64),
 }
 
 impl Listener {
@@ -66,13 +68,20 @@ impl Listener {
     /// Refuses a relative or already-present path, a directory the daemon does not own, a
     /// world-reachable mode, an empty admission set, and a zero deadline.
     pub fn bind(config: ListenerConfig) -> Result<Self, ListenerError> {
-        if !config.endpoint.is_absolute() {
+        if !config.endpoint.is_absolute()
+            || config.endpoint.as_os_str().as_bytes().len() > 107
+            || config.endpoint.as_os_str().as_bytes().contains(&0)
+            || config.endpoint.as_os_str().as_bytes().ends_with(b"/")
+            || config.endpoint.components().any(|part| !matches!(part, Component::RootDir | Component::Normal(_)))
+        {
             return Err(ListenerError::RelativeEndpoint);
         }
-        if config.mode & !0o770 != 0 {
+        if config.mode & !0o660 != 0 || config.mode & 0o600 != 0o600 {
             return Err(ListenerError::ModeTooBroad);
         }
-        if config.admitted_uids.is_empty() {
+        if config.admitted_uids.is_empty() || config.admitted_uids.len() > 64
+            || config.admitted_uids.iter().collect::<std::collections::BTreeSet<_>>().len() != config.admitted_uids.len()
+        {
             return Err(ListenerError::NoAdmittedPeer);
         }
         if config.deadline.is_zero() {
@@ -82,15 +91,29 @@ impl Listener {
             .endpoint
             .parent()
             .ok_or(ListenerError::ParentUnowned)?;
+        if parent == Path::new("/")
+            || fs::canonicalize(parent).map_err(|_| ListenerError::ParentUnowned)? != parent
+            || fs::metadata("/proc/self").map_err(|_| ListenerError::ParentUnowned)?.uid() != config.owner_uid
+        {
+            return Err(ListenerError::ParentUnowned);
+        }
         validate(parent, config.owner_uid, config.owner_gid, true)?;
-        if config.endpoint.exists() {
-            return Err(ListenerError::EndpointExists);
+        match fs::symlink_metadata(&config.endpoint) {
+            Ok(_) => return Err(ListenerError::EndpointExists),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {},
+            Err(_) => return Err(ListenerError::Bind),
         }
         let listener = UnixListener::bind(&config.endpoint).map_err(|_| ListenerError::Bind)?;
-        fs::set_permissions(&config.endpoint, fs::Permissions::from_mode(config.mode))
+        let metadata = fs::symlink_metadata(&config.endpoint).map_err(|_| ListenerError::Permissions)?;
+        let bound = Self { listener, identity: (metadata.dev(), metadata.ino()), config };
+        if metadata.gid() != bound.config.owner_gid {
+            std::os::unix::fs::chown(&bound.config.endpoint, None, Some(bound.config.owner_gid))
+                .map_err(|_| ListenerError::Permissions)?;
+        }
+        fs::set_permissions(&bound.config.endpoint, fs::Permissions::from_mode(bound.config.mode))
             .map_err(|_| ListenerError::Permissions)?;
-        validate(&config.endpoint, config.owner_uid, config.owner_gid, false)?;
-        Ok(Self { listener, config })
+        validate(&bound.config.endpoint, bound.config.owner_uid, bound.config.owner_gid, false)?;
+        Ok(bound)
     }
 
     /// Serves admitted connections one at a time against the bound daemon session.
@@ -131,7 +154,11 @@ impl Listener {
 
 impl Drop for Listener {
     fn drop(&mut self) {
-        let _ = fs::remove_file(&self.config.endpoint);
+        if fs::symlink_metadata(&self.config.endpoint).is_ok_and(|metadata| {
+            metadata.file_type().is_socket() && (metadata.dev(), metadata.ino()) == self.identity
+        }) {
+            let _ = fs::remove_file(&self.config.endpoint);
+        }
     }
 }
 
@@ -143,6 +170,7 @@ fn validate(path: &Path, uid: u32, gid: u32, directory: bool) -> Result<(), List
         || metadata.uid() != uid
         || metadata.gid() != gid
         || metadata.mode() & 0o007 != 0
+        || (directory && metadata.mode() & 0o020 != 0)
     {
         return Err(if directory {
             ListenerError::ParentUnowned

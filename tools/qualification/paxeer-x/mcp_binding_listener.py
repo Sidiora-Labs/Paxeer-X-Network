@@ -20,6 +20,7 @@ CASES = (
     'refuse_unadmitted_peer', 'admitted_initialize', 'admitted_tools_list',
     'admitted_verified_read', 'restart_reload_no_duplicate_session',
     'web_reference_emitted', 'paid_tool_requires_payer',
+    'restart_refuses_changed_authority', 'refuse_listener_owner', 'secret_errors_redacted',
 )
 TOP_KEYS = {'mode', 'tenant', 'store', 'audit_root', 'session_id', 'session_token_file',
             'session_generation', 'capability_id', 'core_sequence', 'deadline_ms', 'agent',
@@ -137,6 +138,15 @@ class Gate:
         self.source = identity()
         self.agentd = artifact('PAXEER_X_AGENTD_BIN')
         self.mcp = artifact('PAXEER_X_MCP_BIN')
+        manifest = json.loads(private_file(Path(env('PAXEER_X_MCP_ARTIFACT_MANIFEST'))))
+        require(manifest.get('revision') == self.source['revision']
+                and manifest.get('tree') == self.source['tree'],
+                'artifact manifest does not name the candidate source')
+        for name, binary in (('layerx-agentd', self.agentd), ('layerx-mcp', self.mcp)):
+            require(manifest.get('artifacts', {}).get(name) == binary,
+                    'candidate artifact differs from its build manifest: ' + name)
+            with open(binary['path'], 'rb') as stream:
+                require(stream.read(4) == b'\x7fELF', 'candidate artifact is not a native executable')
         self.environment_file = Path(env('PAXEER_X_MCP_DAEMON_ENV')).resolve(strict=True)
         self.daemon = daemon_environment(self.environment_file)
         self.web_scopes = env('PAXEER_X_MCP_WEB_SCOPES')
@@ -242,7 +252,7 @@ class Gate:
     def wait_for(self, process, path, log):
         deadline = time.monotonic() + self.boot_seconds
         while time.monotonic() < deadline:
-            if path.exists():
+            if path.exists() and process.poll() is None:
                 return
             require(process.poll() is None,
                     f'process exited {process.returncode} before {path.name} appeared; log={log}')
@@ -288,7 +298,13 @@ class Gate:
     def case(self, name, function):
         require(name not in self.results, 'duplicate case ' + name)
         print('CASE ' + name, flush=True)
-        self.results[name] = {'status': 'passed', 'evidence': function()}
+        self.results[name] = {'status': 'running'}
+        try:
+            evidence = function()
+        except Exception:
+            self.results[name] = {'status': 'failed'}
+            raise
+        self.results[name] = {'status': 'passed', 'evidence': evidence}
 
     def scan_secrets(self, binding_root):
         for name in ('session-token', 'daemon-bearer'):
@@ -318,6 +334,8 @@ class Gate:
         os.symlink(target, link)
         boots = {
             'missing': self.refusal_boot('missing-listener', listener=False),
+            'owner': self.refusal_boot('wrong-listener-owner',
+                overrides={'LAYERX_AGENT_MCP_LISTENER_OWNER_UID': str(self.refused_uid)}),
             'relative': self.refusal_boot(
                 'relative-socket',
                 overrides={'LAYERX_AGENT_MCP_LISTENER_SOCKET': 'relative/mcp.sock'}),
@@ -337,6 +355,7 @@ class Gate:
         binding = main['root'] / 'binding.json'
         self.wait_for(daemon, binding, daemon_log)
         document = json.loads(private_file(binding))
+        self.scan_secrets(main['root'])
         published = {name: (os.stat(main['root'] / name).st_ino, digest(main['root'] / name))
                      for name in ('binding.json', 'session-token', 'daemon-bearer')}
 
@@ -384,6 +403,7 @@ class Gate:
             require(re.fullmatch(rb'[0-9a-f]{64}\n', token), 'session token file shape differs')
             return modes
 
+        self.case('refuse_listener_owner', lambda: boots['owner'])
         self.case('producer_schema', producer_schema)
         self.case('protected_modes', protected_modes)
 
@@ -404,6 +424,12 @@ class Gate:
             try:
                 process, log = self.serve(binding, 'mcp-open-socket-dir')
                 outcomes['world_reachable_parent'] = self.refused(process, log, 'not owned')
+            finally:
+                os.chmod(main['socket_dir'], 0o750)
+            os.chmod(main['socket_dir'], 0o770)
+            try:
+                process, log = self.serve(binding, 'mcp-group-writable-socket-dir')
+                outcomes['group_writable_parent'] = self.refused(process, log, 'not owned')
             finally:
                 os.chmod(main['socket_dir'], 0o750)
             main['socket'].touch(mode=0o600)
@@ -432,13 +458,21 @@ class Gate:
                 outcomes['foreign_owner'] = self.refused(process, log, 'unreadable')
             finally:
                 os.chown(binding, os.geteuid(), -1)
-            token = main['root'] / 'session-token'
-            os.chmod(token, 0o644)
-            try:
-                process, log = self.serve(binding, 'mcp-token-mode')
-                outcomes['token_mode_0644'] = self.refused(process, log, 'session_token_file')
-            finally:
-                os.chmod(token, 0o600)
+            for name, field in (('session-token', 'session_token_file'),
+                                ('daemon-bearer', 'agent.bearer_file')):
+                secret = main['root'] / name
+                os.chmod(secret, 0o644)
+                try:
+                    process, log = self.serve(binding, 'mcp-' + name + '-mode')
+                    outcomes[name + '_mode_0644'] = self.refused(process, log, re.escape(field))
+                finally:
+                    os.chmod(secret, 0o600)
+                os.chown(secret, self.refused_uid, -1)
+                try:
+                    process, log = self.serve(binding, 'mcp-' + name + '-owner')
+                    outcomes[name + '_foreign_owner'] = self.refused(process, log, re.escape(field))
+                finally:
+                    os.chown(secret, os.geteuid(), -1)
             require(digest(binding) == before, 'the published binding changed during refusals')
             return outcomes
 
@@ -486,7 +520,8 @@ class Gate:
 
         def refuse_unadmitted_peer():
             reply, log = self.peer(self.refused_uid, main['socket'], requests)
-            require(reply['responses'] == [], f'an unadmitted peer received a response; log={log}')
+            require(reply['responses'] == [] and reply['transport'] in ('eof', 'ConnectionResetError'),
+                    f'an unadmitted peer was not closed promptly; log={log}')
             require(mcp.poll() is None, 'the listener stopped after refusing a peer')
             after, again = self.peer(self.admitted, main['socket'], requests[:1])
             require(len(after['responses']) == 1 and 'result' in after['responses'][0],
@@ -512,8 +547,24 @@ class Gate:
             require(isinstance(result, dict) and result.get('isError') is False,
                     f'the verified read was refused or unverifiable; log={peer_log}')
             content = result.get('structuredContent')
-            require(isinstance(content, dict) and content,
-                    f'the verified read returned no receipt evidence; log={peer_log}')
+            require(isinstance(content, dict) and content.get('kind') == 'receipt'
+                    and content.get('complete') is True and content.get('verification_level') == 2
+                    and content.get('activity_id') == self.activity.lower(),
+                    f'the read returned no verified receipt for the requested activity; log={peer_log}')
+            for field, length in (('canonical_hex', None), ('header_hex', None),
+                                  ('header_signature', 128), ('sequencer_public_key', 64)):
+                value = content.get(field)
+                require(isinstance(value, str) and re.fullmatch(r'(?:[0-9a-f]{2})+', value)
+                        and (length is None or len(value) == length),
+                        f'receipt evidence field {field} is invalid; log={peer_log}')
+            proof = content.get('proof', {})
+            require(isinstance(proof.get('leaf_index'), int)
+                    and isinstance(proof.get('leaf_count'), int)
+                    and 0 <= proof['leaf_index'] < proof['leaf_count']
+                    and isinstance(proof.get('siblings'), list)
+                    and all(isinstance(value, str) and re.fullmatch(r'[0-9a-f]{64}', value)
+                            for value in proof['siblings']),
+                    f'receipt inclusion proof is absent or malformed; log={peer_log}')
             return {'tool': 'receipt.get', 'fields': sorted(content), 'log': str(peer_log)}
 
         self.case('refuse_unadmitted_peer', refuse_unadmitted_peer)
@@ -530,6 +581,7 @@ class Gate:
                 require(stat.S_ISSOCK(info.st_mode),
                         'the stopped listener left a non-socket at its path')
                 stale = info.st_ino
+            stale_fd = os.open(main['socket'], os.O_PATH) if stale is not None else None
             restarted, restart_log = self.boot(main, 'agentd-restart')
             deadline = time.monotonic() + self.boot_seconds
             listening = self.daemon['LAYERX_AGENT_PROGRAM_LISTEN'].rsplit(':', 1)
@@ -545,7 +597,11 @@ class Gate:
             current = {name: (os.stat(main['root'] / name).st_ino, digest(main['root'] / name))
                        for name in published}
             require(current == published, 'restart rewrote the binding or minted a second session')
-            served, served_log = served_session('mcp-restart', stale)
+            try:
+                served, served_log = served_session('mcp-restart', stale)
+            finally:
+                if stale_fd is not None:
+                    os.close(stale_fd)
             again, again_log = exchange()
             require(again[3].get('result', {}).get('isError') is False,
                     f'the reloaded binding lost daemon authority; log={again_log}')
@@ -557,11 +613,50 @@ class Gate:
         self.case('restart_reload_no_duplicate_session', restart_reload_no_duplicate_session)
         self.scan_secrets(main['root'])
 
+        def restart_refuses_changed_authority():
+            outcomes = {}
+            process, log = self.boot(main, 'agentd-changed-listener', overrides={
+                'LAYERX_AGENT_MCP_LISTENER_ADMITTED_UIDS': f'{self.admitted},{self.refused_uid}'})
+            outcomes['changed_admission'] = self.refused(process, log, 'binding')
+            changed_bearer = os.urandom(32).hex()
+            self.secrets.append(changed_bearer.encode())
+            process, log = self.boot(main, 'agentd-changed-bearer', overrides={
+                'LAYERX_AGENT_PROGRAM_BEARER_TOKEN': changed_bearer})
+            outcomes['changed_bearer'] = self.refused(process, log, 'secret')
+            secret = main['root'] / 'daemon-bearer'
+            os.chmod(secret, 0o640)
+            try:
+                process, log = self.boot(main, 'agentd-unprotected-secret')
+                outcomes['unprotected_secret'] = self.refused(process, log, 'secret')
+            finally:
+                os.chmod(secret, 0o600)
+            require({name: (os.stat(main['root'] / name).st_ino, digest(main['root'] / name))
+                     for name in published} == published,
+                    'refused restart modified authority')
+            return outcomes
+
+        def secret_errors_redacted():
+            secret = private_file(main['root'] / 'session-token').decode().strip()
+            altered = dict(document)
+            altered[secret] = True
+            copy = self.path('binding-unknown-field.json')
+            fd = os.open(copy, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            with os.fdopen(fd, 'w') as stream:
+                json.dump(altered, stream)
+            process, log = self.serve(copy, 'mcp-unknown-field')
+            outcome = self.refused(process, log, 'unaccepted field')
+            self.scan_secrets(main['root'])
+            return outcome
+
+        self.case('restart_refuses_changed_authority', restart_refuses_changed_authority)
+        self.case('secret_errors_redacted', secret_errors_redacted)
+        self.scan_secrets(main['root'])
         web = self.state('web')
         web_daemon, web_log = self.boot(web, 'agentd-web', web=True)
         web_binding = web['root'] / 'binding.json'
         self.wait_for(web_daemon, web_binding, web_log)
         web_document = json.loads(private_file(web_binding))
+        self.scan_secrets(web['root'])
 
         def web_reference_emitted():
             section = web_document.get('web')
@@ -616,6 +711,10 @@ class Gate:
 
 
 def main():
+    def interrupted(signum, _frame):
+        raise GateFailure('qualification interrupted by signal ' + str(signum))
+    signal.signal(signal.SIGTERM, interrupted)
+    signal.signal(signal.SIGINT, interrupted)
     try:
         gate = Gate()
     except (GateFailure, OSError, ValueError, subprocess.SubprocessError) as error:

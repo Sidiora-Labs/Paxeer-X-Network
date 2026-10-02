@@ -212,6 +212,8 @@ fn document_for(
 fn write_document(root: &Path, body: &str) -> PathBuf {
     let path = root.join("binding.json");
     fs::write(&path, body).unwrap_or_else(|error| panic!("binding: {error}"));
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600))
+        .unwrap_or_else(|error| panic!("binding mode: {error}"));
     path
 }
 
@@ -429,7 +431,7 @@ fn a_binding_document_is_closed_complete_and_narrowable() {
             panic!("a mutated binding document was accepted");
         })
     };
-    let changes: [Mutation; 6] = [
+    let changes: [Mutation; 10] = [
         &|fields: &mut serde_json::Map<String, Value>| {
             fields.insert("unexpected".to_owned(), json!("1"));
         },
@@ -447,6 +449,18 @@ fn a_binding_document_is_closed_complete_and_narrowable() {
         },
         &|fields: &mut serde_json::Map<String, Value>| {
             fields.insert("session_id".to_owned(), json!("07"));
+        },
+        &|fields: &mut serde_json::Map<String, Value>| {
+            fields.get_mut("listener").unwrap_or_else(|| panic!("listener"))["socket"] = json!("/tmp/mcp.sock/");
+        },
+        &|fields: &mut serde_json::Map<String, Value>| {
+            fields.get_mut("listener").unwrap_or_else(|| panic!("listener"))["socket"] = json!(format!("/tmp/{}", "s".repeat(108)));
+        },
+        &|fields: &mut serde_json::Map<String, Value>| {
+            fields.get_mut("listener").unwrap_or_else(|| panic!("listener"))["socket"] = json!("/tmp/mcp\0.sock");
+        },
+        &|fields: &mut serde_json::Map<String, Value>| {
+            fields.get_mut("listener").unwrap_or_else(|| panic!("listener"))["admitted_uids"] = json!([42, 42]);
         },
     ];
     for change in changes {
@@ -1072,4 +1086,27 @@ fn the_web_section_is_closed_and_typed() {
     let text = serde_json::to_string(&scalar).unwrap_or_else(|error| panic!("encode: {error}"));
     assert!(Binding::parse(&text).is_err());
     let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn listener_applies_the_declared_group_and_keeps_replacement_files() {
+    let root = directory("declared-group");
+    let metadata = fs::metadata(&root).unwrap_or_else(|error| panic!("metadata: {error}"));
+    let group = if metadata.uid() == 0 { metadata.gid().saturating_add(1) } else { metadata.gid() };
+    std::os::unix::fs::chown(&root, None, Some(group))
+        .unwrap_or_else(|error| panic!("directory group: {error}"));
+    let socket = root.join("mcp.sock");
+    let listener = Listener::bind(ListenerConfig {
+        endpoint: socket.clone(), owner_uid: metadata.uid(), owner_gid: group,
+        mode: 0o660, admitted_uids: vec![metadata.uid()], deadline: Duration::from_secs(1),
+    }).unwrap_or_else(|error| panic!("listener: {error:?}"));
+    let bound = fs::symlink_metadata(&socket).unwrap_or_else(|error| panic!("socket: {error}"));
+    assert_eq!(bound.uid(), metadata.uid());
+    assert_eq!(bound.gid(), group);
+    assert_eq!(bound.mode() & 0o777, 0o660);
+    fs::remove_file(&socket).unwrap_or_else(|error| panic!("unlink: {error}"));
+    fs::write(&socket, b"replacement").unwrap_or_else(|error| panic!("replacement: {error}"));
+    drop(listener);
+    assert_eq!(fs::read(&socket).unwrap_or_else(|error| panic!("preserved: {error}")), b"replacement");
+    fs::remove_dir_all(root).unwrap_or_else(|error| panic!("cleanup: {error}"));
 }

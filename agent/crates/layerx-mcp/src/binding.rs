@@ -84,7 +84,7 @@ fn malformed(reason: impl Into<String>) -> BindingError {
 fn closed(object: &Map<String, Value>, accepted: &[&str], scope: &str) -> Result<(), BindingError> {
     for key in object.keys() {
         if !accepted.contains(&key.as_str()) {
-            return Err(malformed(format!("{scope} field {key} is not accepted")));
+            return Err(malformed(format!("{scope} has an unaccepted field")));
         }
     }
     Ok(())
@@ -340,7 +340,7 @@ impl Binding {
             )));
         }
         let value: Value = serde_json::from_str(document)
-            .map_err(|error| malformed(format!("it is not valid JSON: {error}")))?;
+            .map_err(|_| malformed("it is not valid JSON"))?;
         let root = value
             .as_object()
             .ok_or_else(|| malformed("the binding document is not a JSON object"))?;
@@ -645,6 +645,10 @@ fn listener_config(declared: &Value, deadline_ms: u64) -> Result<ListenerConfig,
         ));
     }
     let socket = absolute(listener, "socket")?;
+    let socket_text = text(listener, "socket")?;
+    if socket_text.len() > 107 || socket_text.as_bytes().contains(&0) || socket_text.ends_with('/') {
+        return Err(malformed("field listener.socket is not a Unix socket path"));
+    }
     if socket
         .components()
         .any(|component| !matches!(component, Component::RootDir | Component::Normal(_)))

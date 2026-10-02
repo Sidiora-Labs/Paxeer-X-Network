@@ -39,15 +39,24 @@ fn clear_stale_socket(configuration: &ListenerConfig) -> Result<(), String> {
     if !directory.is_dir()
         || directory.uid() != configuration.owner_uid
         || directory.gid() != configuration.owner_gid
-        || directory.mode() & 0o007 != 0
+        || directory.mode() & 0o027 != 0
+        || fs::canonicalize(parent).map_or(true, |canonical| canonical != parent)
+        || fs::metadata("/proc/self").map_or(true, |process| process.uid() != configuration.owner_uid)
         || !metadata.file_type().is_socket()
         || metadata.uid() != configuration.owner_uid
+        || metadata.gid() != configuration.owner_gid
+        || metadata.mode() & 0o777 != configuration.mode
     {
         return Ok(());
     }
     match UnixStream::connect(&configuration.endpoint) {
         Ok(_) => Err("another server already serves the protocol socket".to_owned()),
         Err(error) if error.kind() == ErrorKind::ConnectionRefused => {
+            let current = fs::symlink_metadata(&configuration.endpoint)
+                .map_err(|_| "the stale protocol socket changed".to_owned())?;
+            if current.dev() != metadata.dev() || current.ino() != metadata.ino() {
+                return Err("the stale protocol socket changed".to_owned());
+            }
             fs::remove_file(&configuration.endpoint).map_err(|error| {
                 format!(
                     "the stale protocol socket could not be removed: {}",

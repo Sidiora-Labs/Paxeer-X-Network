@@ -157,7 +157,7 @@ impl DaemonSurface {
             ));
         }
         let bearer = Zeroizing::new(bearer);
-        if bearer.len() < MINIMUM_BEARER_BYTES || bearer.trim() != bearer.as_str() {
+        if bearer.len() < MINIMUM_BEARER_BYTES || bearer.len() >= 4_096 || bearer.trim() != bearer.as_str() {
             return Err(EnrolmentError::InvalidSurface(
                 "the agent daemon bearer is shorter than the daemon accepts or carries whitespace",
             ));
@@ -209,7 +209,7 @@ impl ListenerDeclaration {
         let text = socket.to_str().ok_or(EnrolmentError::InvalidListener(
             "the socket path is not UTF-8",
         ))?;
-        if text.len() > MAX_SOCKET_PATH_BYTES {
+        if text.len() > MAX_SOCKET_PATH_BYTES || text.as_bytes().contains(&0) {
             return Err(EnrolmentError::InvalidListener(
                 "the socket path is longer than a Unix socket address carries",
             ));
@@ -285,7 +285,8 @@ impl ListenerDeclaration {
         }
         if metadata.uid() != self.owner_uid
             || metadata.gid() != self.owner_gid
-            || metadata.mode() & 0o007 != 0
+            || metadata.uid() != fs::metadata("/proc/self")?.uid()
+            || metadata.mode() & 0o027 != 0
         {
             return Err(EnrolmentError::InvalidListener(
                 "the socket directory is not owned by the declared owner and group or admits others",
@@ -522,7 +523,7 @@ impl BindingPublisher {
         for file in [BINDING_FILE, SESSION_TOKEN_FILE, DAEMON_BEARER_FILE] {
             path_text(&root.join(file))?;
         }
-        if deadline.is_zero() {
+        if deadline.as_millis() == 0 {
             return Err(EnrolmentError::InvalidSurface(
                 "the transport deadline is zero",
             ));
@@ -590,13 +591,7 @@ impl BindingPublisher {
             if existing != document {
                 return Err(EnrolmentError::AlreadyPublished(binding));
             }
-            for secret in [&session_token_file, &daemon_bearer_file] {
-                if !fs::symlink_metadata(secret)?.is_file() {
-                    return Err(EnrolmentError::InvalidPath(
-                        "a published binding lost one of its secret files",
-                    ));
-                }
-            }
+            self.check_secrets(enrolment)?;
             return Ok(PublishedBinding {
                 binding,
                 session_token_file,
@@ -654,6 +649,63 @@ impl BindingPublisher {
             ));
         }
         listener.check_directory()
+    }
+
+    pub fn validate_existing(
+        &self,
+        sessions: &SessionRegistry,
+        identity: &IdentityRecord,
+        request: &EnrolmentRequest,
+    ) -> Result<(), EnrolmentError> {
+        self.check_listener()?;
+        let metadata = fs::symlink_metadata(&self.root)?;
+        if !metadata.is_dir() || metadata.uid() != fs::metadata("/proc/self")?.uid()
+            || metadata.mode() & 0o777 != 0o700 || fs::canonicalize(&self.root)? != self.root
+        {
+            return Err(EnrolmentError::InvalidPath("the binding directory is not owner-only"));
+        }
+        let record = sessions.get(identity.tenant(), request.session_id)
+            .ok_or(EnrolmentError::Session(SessionError::NotFound))?;
+        if !record.open
+            || &record.request.agent != identity.did()
+            || record.request.authority != ProtocolAuthority::CapabilityGrant(request.capability_id.0)
+            || record.request.permitted_activity_types != request.permitted_activity_types
+            || record.request.scopes != request.scopes
+            || record.request.expiry_sequence != request.expiry_sequence
+            || record.request.opening_client != request.opening_client
+            || record.request.policy_version != request.policy_version
+        {
+            return Err(EnrolmentError::Session(SessionError::IdentityMismatch));
+        }
+        let enrolment = Enrolment {
+            tenant: identity.tenant().clone(),
+            session_id: request.session_id,
+            session_generation: record.generation,
+            capability_id: request.capability_id,
+            core_sequence: request.core_sequence,
+            token: Zeroizing::new(record.request.token_id),
+        };
+        let binding = self.binding_path();
+        if read_document(&binding)?.as_ref() != Some(&self.document(&enrolment)?) {
+            return Err(EnrolmentError::AlreadyPublished(binding));
+        }
+        self.check_secrets(&enrolment)
+    }
+
+    fn check_secrets(&self, enrolment: &Enrolment) -> Result<(), EnrolmentError> {
+        let token = Zeroizing::new(hex::encode(enrolment.token.as_slice()));
+        for (name, expected) in [
+            (SESSION_TOKEN_FILE, token.as_bytes()),
+            (DAEMON_BEARER_FILE, self.surface.bearer.as_bytes()),
+        ] {
+            let bytes = Zeroizing::new(crate::config::read_protected_source(
+                &self.root.join(name), 4_096,
+            ).map_err(|_| EnrolmentError::InvalidPath("a binding secret is not protected"))?);
+            if bytes.strip_suffix(b"\n") != Some(expected) {
+                return Err(EnrolmentError::InvalidPath("a binding secret differs from current authority"));
+            }
+        }
+        Ok(())
     }
 
     fn document(&self, enrolment: &Enrolment) -> Result<Value, EnrolmentError> {
@@ -915,7 +967,11 @@ fn prepare_root(root: &Path) -> Result<(), EnrolmentError> {
                     "the binding directory is not a directory",
                 ));
             }
-            fs::set_permissions(root, fs::Permissions::from_mode(0o700))?;
+            if metadata.uid() != fs::metadata("/proc/self")?.uid()
+                || metadata.mode() & 0o777 != 0o700
+            {
+                return Err(EnrolmentError::InvalidPath("the binding directory is not owner-only"));
+            }
         }
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             DirBuilder::new().recursive(true).mode(0o700).create(root)?;
@@ -943,29 +999,41 @@ fn read_document(path: &Path) -> Result<Option<Value>, EnrolmentError> {
     if usize::try_from(metadata.len()).unwrap_or(usize::MAX) > MAX_DOCUMENT_BYTES {
         return Err(EnrolmentError::AlreadyPublished(path.to_path_buf()));
     }
-    let bytes = fs::read(path)?;
+    let bytes = crate::config::read_protected_source(path, MAX_DOCUMENT_BYTES)
+        .map_err(|_| EnrolmentError::InvalidPath("the binding document is not protected"))?;
     serde_json::from_slice::<Value>(&bytes)
         .map(Some)
         .map_err(|_| EnrolmentError::AlreadyPublished(path.to_path_buf()))
 }
 
 fn create_private(path: &Path, contents: &[u8]) -> Result<(), EnrolmentError> {
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(path)
-        .map_err(|error| {
+    let parent = path.parent().ok_or(EnrolmentError::InvalidPath("the file has no directory"))?;
+    let nonce = fresh_token()?;
+    let temporary = parent.join(format!(".pending-{}", hex::encode(nonce.as_slice())));
+    let mut file = OpenOptions::new().write(true).create_new(true).mode(0o600).open(&temporary)?;
+    let mut linked = false;
+    let result = (|| {
+        file.write_all(contents)?;
+        file.write_all(b"\n")?;
+        file.sync_all()?;
+        fs::hard_link(&temporary, path).map_err(|error| {
             if error.kind() == io::ErrorKind::AlreadyExists {
                 EnrolmentError::AlreadyPublished(path.to_path_buf())
             } else {
                 EnrolmentError::Io(error)
             }
         })?;
-    file.write_all(contents)?;
-    file.write_all(b"\n")?;
-    file.sync_all()?;
-    Ok(())
+        linked = true;
+        fs::remove_file(&temporary)?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+        if linked {
+            let _ = fs::remove_file(path);
+        }
+    }
+    result
 }
 
 fn sync_directory(root: &Path) -> Result<(), EnrolmentError> {

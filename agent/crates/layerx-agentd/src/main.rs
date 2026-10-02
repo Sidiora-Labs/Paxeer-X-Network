@@ -418,14 +418,8 @@ fn publish_mcp_binding(
     let session_id = request.session_id;
     if let Some(existing) = sessions.get(&tenant_id, session_id) {
         let advertised = existing.request.expiry_seconds.is_some();
-        let bound_session = enrolment::published_session(&publisher.binding_path())
+        publisher.validate_existing(&sessions, &identity, &request)
             .map_err(|error| format!("the published MCP binding is unusable: {error}"))?;
-        if bound_session != Some(session_id) {
-            return Err(
-                "LAYERX_AGENT_MCP_SESSION_ID names an open session without its binding document"
-                    .to_owned(),
-            );
-        }
         if let (Some(expiry), false) = (verified, advertised) {
             enrolment::republish_with_verified_expiry(
                 &mut store,
