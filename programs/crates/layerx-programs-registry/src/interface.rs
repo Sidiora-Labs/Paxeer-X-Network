@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 use layerx_programs_runtime::abi::{EncodingConvention, TypeTag};
 use layerx_programs_runtime::{
     admit_abi_upgrade, AbiVersionRefusal, ProgramId, WasmEngine, ABI_V1_VERSION, ABI_V2_VERSION,
+    ABI_V3_VERSION, ABI_V4_VERSION,
 };
 
 use crate::account_state::{verify_state_membership, StateProof};
@@ -12,6 +13,8 @@ use crate::{VerifiedDeploymentEvidence, VerifiedProgramHead};
 
 const DOMAIN: &[u8] = b"LayerX/program-interface/v1\0";
 const DOMAIN_V2: &[u8] = b"LayerX/program-interface/v2\0";
+const DOMAIN_V3: &[u8] = b"LayerX/program-interface/v3\0";
+const DOMAIN_V4: &[u8] = b"LayerX/program-interface/v4\0";
 const STATE_PREFIX: &[u8] = b"interface\0";
 const MAX_INTERFACE_BYTES: usize = 952;
 const MAX_ENTRIES: usize = 256;
@@ -95,6 +98,8 @@ pub enum InterfaceCapability {
         asset: [u8; 32],
         receipt_digest: [u8; 32],
     },
+    OracleRead,
+    WebRead,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -256,6 +261,8 @@ impl ProgramInterface {
         let validated = match abi_version {
             ABI_V1_VERSION => engine.validate(module),
             ABI_V2_VERSION => engine.validate_v2(module),
+            ABI_V3_VERSION => engine.validate_v3(module),
+            ABI_V4_VERSION => engine.validate_v4(module),
             _ => {
                 return Err(InterfaceRefusal::AbiVersion(
                     AbiVersionRefusal::Unsupported {
@@ -303,18 +310,28 @@ impl ProgramInterface {
         abi_version: u16,
         entries: Vec<InterfaceEntryPoint>,
     ) -> Result<Self, InterfaceRefusal> {
-        if code_hash == [0; 32] || !matches!(abi_version, ABI_V1_VERSION | ABI_V2_VERSION) {
+        if code_hash == [0; 32]
+            || !matches!(
+                abi_version,
+                ABI_V1_VERSION | ABI_V2_VERSION | ABI_V3_VERSION | ABI_V4_VERSION
+            )
+        {
             return Err(InterfaceRefusal::Invalid);
         }
         validate_entries(&entries)?;
-        if abi_version != ABI_V2_VERSION
-            && entries.iter().any(|entry| {
-                entry.capabilities.iter().any(|capability| {
-                    matches!(
-                        capability,
-                        InterfaceCapability::CallerAuthorizedSpend { .. }
-                    )
-                })
+        if entries
+            .iter()
+            .flat_map(|entry| &entry.capabilities)
+            .any(|capability| match capability {
+                InterfaceCapability::CallerAuthorizedSpend { .. } => !matches!(
+                    abi_version,
+                    ABI_V2_VERSION | ABI_V3_VERSION | ABI_V4_VERSION
+                ),
+                InterfaceCapability::OracleRead => {
+                    !matches!(abi_version, ABI_V3_VERSION | ABI_V4_VERSION)
+                }
+                InterfaceCapability::WebRead => abi_version != ABI_V4_VERSION,
+                _ => false,
             })
         {
             return Err(InterfaceRefusal::Invalid);
@@ -428,7 +445,7 @@ impl ProgramInterface {
     /// Refuses malformed, oversized, invalid or non-canonical interface encodings.
     pub fn decode(bytes: &[u8]) -> Result<Self, InterfaceRefusal> {
         if bytes.len() > MAX_INTERFACE_BYTES
-            || !matches!(bytes.get(..DOMAIN.len()), Some(prefix) if prefix == DOMAIN || prefix == DOMAIN_V2)
+            || !matches!(bytes.get(..DOMAIN.len()), Some(prefix) if prefix == DOMAIN || prefix == DOMAIN_V2 || prefix == DOMAIN_V3 || prefix == DOMAIN_V4)
         {
             return Err(InterfaceRefusal::NonCanonical);
         }
@@ -741,6 +758,8 @@ fn capability_mask(capabilities: &[InterfaceCapability]) -> u16 {
                 | InterfaceCapability::CallerAuthorizedSpend { .. } => 7,
                 InterfaceCapability::ReceiptRead { .. } => 8,
                 InterfaceCapability::BalanceView { .. } => 9,
+                InterfaceCapability::OracleRead => 10,
+                InterfaceCapability::WebRead => 11,
             })
     })
 }
@@ -831,7 +850,15 @@ fn encode_interface(
             )
         })
     });
-    out.extend_from_slice(if dynamic { DOMAIN_V2 } else { DOMAIN });
+    let domain = match abi {
+        ABI_V1_VERSION => DOMAIN,
+        ABI_V2_VERSION if dynamic => DOMAIN_V2,
+        ABI_V2_VERSION => DOMAIN,
+        ABI_V3_VERSION => DOMAIN_V3,
+        ABI_V4_VERSION => DOMAIN_V4,
+        _ => return Err(InterfaceRefusal::Invalid),
+    };
+    out.extend_from_slice(domain);
     out.extend_from_slice(&code_hash);
     out.extend_from_slice(&abi.to_be_bytes());
     out.extend_from_slice(
@@ -1021,6 +1048,8 @@ fn encode_capability(
     capability: &InterfaceCapability,
 ) -> Result<(), InterfaceRefusal> {
     match capability {
+        InterfaceCapability::OracleRead => out.push(11),
+        InterfaceCapability::WebRead => out.push(12),
         InterfaceCapability::StorageRead => out.push(0),
         InterfaceCapability::StorageWrite => out.push(1),
         InterfaceCapability::SharedStorageRead => out.push(2),
@@ -1091,6 +1120,8 @@ fn decode_capability(
     cursor: &mut usize,
 ) -> Result<InterfaceCapability, InterfaceRefusal> {
     Ok(match take::<1>(bytes, cursor)?[0] {
+        11 => InterfaceCapability::OracleRead,
+        12 => InterfaceCapability::WebRead,
         0 => InterfaceCapability::StorageRead,
         1 => InterfaceCapability::StorageWrite,
         2 => InterfaceCapability::SharedStorageRead,

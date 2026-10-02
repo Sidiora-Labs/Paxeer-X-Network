@@ -24098,7 +24098,7 @@ release_gate_policy = "Retain complete make programs-test once per merged wave o
 
 [task.104.33.1]
 title = "Publish program interfaces as protocol state"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]

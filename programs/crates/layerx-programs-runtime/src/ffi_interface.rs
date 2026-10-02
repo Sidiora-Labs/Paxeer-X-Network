@@ -10,6 +10,8 @@ const LENGTH_LIMIT: i32 = -5;
 const CONTEXT_MISMATCH: i32 = -213;
 const DOMAIN: &[u8] = b"LayerX/program-interface/v1\0";
 const DOMAIN_V2: &[u8] = b"LayerX/program-interface/v2\0";
+const DOMAIN_V3: &[u8] = b"LayerX/program-interface/v3\0";
+const DOMAIN_V4: &[u8] = b"LayerX/program-interface/v4\0";
 const MAX_INTERFACE_BYTES: usize = 952;
 const MAX_MODULE_BYTES: usize = 1_048_576;
 const MAX_ENTRIES: usize = 256;
@@ -74,7 +76,12 @@ struct Interface {
 fn capability_mask(capabilities: &[Vec<u8>]) -> u16 {
     capabilities.iter().fold(0u16, |mask, c| {
         mask | c.first().map_or(0, |tag| {
-            1u16 << u32::from(if *tag == 10 { 7 } else { *tag })
+            1u16 << u32::from(match *tag {
+                10 => 7,
+                11 => 10,
+                12 => 11,
+                other => other,
+            })
         })
     })
 }
@@ -200,14 +207,14 @@ fn value_type(input: &[u8], cursor: &mut usize, depth: usize) -> Result<ValueTyp
 }
 fn decode(input: &[u8]) -> Result<Interface, i32> {
     if input.len() > MAX_INTERFACE_BYTES
-        || !matches!(input.get(..DOMAIN.len()), Some(prefix) if prefix == DOMAIN || prefix == DOMAIN_V2)
+        || !matches!(input.get(..DOMAIN.len()), Some(prefix) if prefix == DOMAIN || prefix == DOMAIN_V2 || prefix == DOMAIN_V3 || prefix == DOMAIN_V4)
     {
         return Err(NON_CANONICAL);
     }
     let mut c = DOMAIN.len();
     let hash = take::<32>(input, &mut c)?;
     let abi = u16::from_be_bytes(take::<2>(input, &mut c)?);
-    if hash == [0; 32] || !matches!(abi, 1 | 2) {
+    if hash == [0; 32] || !matches!(abi, 1 | 2 | 3 | 4) {
         return Err(VERSION_UNSUPPORTED);
     }
     let n = count(input, &mut c)?;
@@ -224,8 +231,9 @@ fn decode(input: &[u8]) -> Result<Interface, i32> {
         let mut capabilities = Vec::with_capacity(cn);
         for _ in 0..cn {
             let decoded = capability(input, &mut c)?;
-            if decoded.first() == Some(&10)
-                && (abi != 2 || input.get(..DOMAIN.len()) != Some(DOMAIN_V2))
+            if matches!(decoded.first(), Some(10)) && !matches!(abi, 2 | 3 | 4)
+                || matches!(decoded.first(), Some(11)) && !matches!(abi, 3 | 4)
+                || matches!(decoded.first(), Some(12)) && abi != 4
             {
                 return Err(NON_CANONICAL);
             }
@@ -277,7 +285,15 @@ fn decode(input: &[u8]) -> Result<Interface, i32> {
             .iter()
             .any(|cap| cap.first() == Some(&10))
     });
-    if dynamic != (input.get(..DOMAIN.len()) == Some(DOMAIN_V2)) {
+    let expected_domain = match abi {
+        1 => DOMAIN,
+        2 if dynamic => DOMAIN_V2,
+        2 => DOMAIN,
+        3 => DOMAIN_V3,
+        4 => DOMAIN_V4,
+        _ => return Err(VERSION_UNSUPPORTED),
+    };
+    if input.get(..DOMAIN.len()) != Some(expected_domain) {
         return Err(NON_CANONICAL);
     }
     Ok(Interface { hash, abi, entries })
@@ -285,7 +301,7 @@ fn decode(input: &[u8]) -> Result<Interface, i32> {
 fn capability(input: &[u8], cursor: &mut usize) -> Result<Vec<u8>, i32> {
     let start = *cursor;
     match take::<1>(input, cursor)?[0] {
-        0..=4 => {}
+        0..=4 | 11 | 12 => {}
         5 | 8 => {
             if take::<32>(input, cursor)? == [0; 32] {
                 return Err(NON_CANONICAL);
@@ -444,6 +460,8 @@ pub extern "C" fn layerx_programs_interface_validate(
     let Ok(module) = (match abi {
         1 => engine.validate(&wasm),
         2 => engine.validate_v2(&wasm),
+        3 => engine.validate_v3(&wasm),
+        4 => engine.validate_v4(&wasm),
         _ => return VERSION_UNSUPPORTED,
     }) else {
         return NON_CANONICAL;
