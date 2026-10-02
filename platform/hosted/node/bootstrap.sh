@@ -3,9 +3,11 @@
 #
 # Generates a signed genesis manifest and snapshot with layerx-genesis-build,
 # the bootstrap registration the sequencer daemon verifies at first start, the
-# identity file that registers the treasury signer, the eight-line layerxd
-# configurations for the sequencer and the receipt-authority replica, and the
-# environment files the supervisor sources when it starts both daemons.
+# identity file that registers the treasury signer, the config_version=2 layerxd
+# configurations (role, network_id, start_sequence, verify_workers bounding the
+# Programs kernel execution workers, serial_execution) for the sequencer and the
+# receipt-authority replica, and the environment files the supervisor sources
+# when it starts both daemons.
 #
 # Usage:
 #   bootstrap.sh --data-dir DIR --run-dir DIR --network-id N --sequencer-key FILE \
@@ -732,7 +734,7 @@ printf '%s' "$PROGRAM_TOKEN" > "$DATA_DIR/secrets/program-token"
 printf '%s' "$REPLICA_TOKEN" > "$DATA_DIR/secrets/replica-token"
 
 write_config() {
-    printf 'role=%s\nnetwork_id=%s\nstart_sequence=0\nverify_workers=2\nnetwork_workers=2\nprojection_workers=2\ncheckpoint_workers=1\nserial_execution=false\n' "$1" "$NETWORK_ID" > "$2"
+    printf 'config_version=2\nrole=%s\nnetwork_id=%s\nstart_sequence=0\nverify_workers=2\nserial_execution=false\n' "$1" "$NETWORK_ID" > "$2"
 }
 write_config sequencer "$DATA_DIR/sequencer.conf"
 write_config replica "$DATA_DIR/replica.conf"

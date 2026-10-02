@@ -3745,9 +3745,9 @@ static lxp_result apply_canonical_batch(
     if (status != LXP_OK && getenv("LAYERX_PAY_TIMING") != NULL)
         (void)fprintf(stderr, "batch-prepare sequence=%llu through=admission-and-prefix result=%d\n",
             (unsigned long long)first_global_sequence, (int)status);
-    maximum_workers = process->daemon.config.serial_execution ? 1U :
-        (uint32_t)process->daemon.config.verify_workers;
-    if (maximum_workers == 0U) maximum_workers = 1U;
+    if (status == LXP_OK)
+        status = lxp_daemon_effective_verify_workers(
+            &process->daemon.config, &maximum_workers);
     while (status == LXP_OK) {
         retry_prefix_count = 0U;
         if (activities[0].activity_type == LX_PROGRAMS_CALL)
@@ -5298,8 +5298,13 @@ static void close_process(lxp_daemon_process *process)
         process->lni_started = false;
     }
     if (process->daemon_started) {
+        lxp_result shutdown_status;
         process->daemon.protocol_owner = NULL;
-        (void)lxp_daemon_shutdown(&process->daemon);
+        shutdown_status = lxp_daemon_shutdown(&process->daemon);
+        if (shutdown_status != LXP_OK)
+            (void)fprintf(stderr,
+                          "layerxd: daemon shutdown completed with result %d\n",
+                          (int)shutdown_status);
         process->daemon_started = false;
     }
     if (process->owner.listener_started)
@@ -5855,6 +5860,23 @@ lxp_result lxp_daemon_serve(const char *configuration_path)
                 status = LXP_ERR_IO;
         }
     }
+    if (status == LXP_OK) {
+        char concurrency[256];
+        status = lxp_daemon_concurrency_report(
+            &configuration, concurrency, sizeof(concurrency));
+        if (status == LXP_OK)
+            (void)fprintf(stderr, "layerxd: %s\n", concurrency);
+        else
+            (void)fprintf(stderr,
+                          "layerxd: concurrency report failed with result %d\n",
+                          (int)status);
+    }
+    if (status != LXP_OK)
+        (void)fprintf(stderr,
+                      "layerxd: startup failed, rolling back "
+                      "daemon_started=%d lni_started=%d result=%d\n",
+                      (int)process->daemon_started,
+                      (int)process->lni_started, (int)status);
     if (status == LXP_OK) {
         struct sigaction action;
         (void)memset(&action, 0, sizeof(action));
