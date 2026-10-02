@@ -121,13 +121,28 @@ word() { printf '%064s' "${1#0x}" | tr ' ' 0; }
 # erc20 <pointer> <selector>: the decoded symbol (95d89b41) or decimals (313ce567).
 erc20() {
 	to=$1 call "0x$2" | python3 -c '
+import re
 import sys
-data = bytes.fromhex(sys.stdin.read().strip()[2:])
+encoded = sys.stdin.read().strip()
+data = bytes.fromhex(encoded[2:])
 if sys.argv[1] == "313ce567":
     print(int.from_bytes(data[:32], "big"))
 else:
-    size = int.from_bytes(data[64:96], "big") if len(data) >= 96 else 0
-    print(data[96:96 + size].decode("ascii") if size else data[:32].rstrip(b"\0").decode("ascii"))
+    if re.fullmatch(r"0x(?:[0-9a-fA-F]{2})+", encoded) is None:
+        raise SystemExit("symbol() returned invalid hex data")
+    if len(data) == 32:
+        symbol = data.rstrip(b"\0")
+    else:
+        if len(data) < 96 or int.from_bytes(data[:32], "big") != 32:
+            raise SystemExit("symbol() returned an invalid ABI offset")
+        size = int.from_bytes(data[32:64], "big")
+        padded_size = ((size + 31) // 32) * 32
+        if len(data) != 64 + padded_size or any(data[64 + size:]):
+            raise SystemExit("symbol() returned invalid ABI length or padding")
+        symbol = data[64:64 + size]
+    if not 0 < len(symbol) <= 16 or any(byte < 33 or byte > 126 for byte in symbol):
+        raise SystemExit("symbol() must contain 1 to 16 printable ASCII bytes")
+    print(symbol.decode("ascii"))
 ' "$2"
 }
 

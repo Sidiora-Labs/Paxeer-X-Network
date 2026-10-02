@@ -1,0 +1,18 @@
+app = "paxeer-x-core"
+primary_region = "ams"
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[env]
+  LAYERX_NODE_NETWORK_ID = "125"
+
+[[mounts]]
+  source = "kernel_data"
+  destination = "/data"
+  initial_size = "50gb"
+  snapshot_retention = 14
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 4
+  memory = "8gb"
