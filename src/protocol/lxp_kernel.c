@@ -2919,11 +2919,9 @@ static lxp_result receipt_restore_compact(const uint8_t *bytes, size_t length,
             LXP_OK : LXP_FATAL_REPLAY_DIVERGENCE;
 }
 
-static lxp_result receipt_store(lxp_state_journal *journal,
-                                const lxp_activity *activity,
-                                const lxp_receipt *receipt)
+static lxp_result receipt_compact_projection(const lxp_receipt *receipt,
+    uint8_t compact[LXP_STATE_MAX_RECEIPT_BYTES], size_t *length)
 {
-    uint8_t compact[COMPACT_RECEIPT_V4_BYTES];
     lxp_result status;
     if (!lxp_protocol_version_supported(receipt->protocol_version) ||
         (receipt->program_outcome.present &&
@@ -2948,22 +2946,69 @@ static lxp_result receipt_store(lxp_state_journal *journal,
         legacy.module_id = receipt->module_id;
         legacy.module_version = receipt->module_version;
         legacy.parameter_version = receipt->parameter_version;
-        return lxp_idempotency_record(
-            journal, activity->actor_did.bytes, activity->actor_did.length,
-            activity->idempotency_key,
-            (const uint8_t *)&legacy, sizeof(legacy));
+        *length = sizeof(legacy);
+        (void)memcpy(compact, &legacy, sizeof(legacy));
+        return LXP_OK;
     }
     status = compact_receipt_encode(
         receipt, receipt->program_outcome.present, compact);
     if (status != LXP_OK) return status;
-    return lxp_idempotency_record(journal, activity->actor_did.bytes,
-                                  activity->actor_did.length,
-                                  activity->idempotency_key,
-                                  compact,
-                                  receipt->program_outcome.encoding_version == 4U ?
-                                      COMPACT_RECEIPT_V4_BYTES : receipt->program_outcome.present ?
-                                      COMPACT_RECEIPT_V3_BYTES :
-                                      COMPACT_RECEIPT_V2_BYTES);
+    *length = receipt->program_outcome.encoding_version == 4U ?
+        COMPACT_RECEIPT_V4_BYTES : receipt->program_outcome.present ?
+        COMPACT_RECEIPT_V3_BYTES : COMPACT_RECEIPT_V2_BYTES;
+    return LXP_OK;
+}
+
+lxp_result lxp_kernel_idempotency_receipt_validate(
+    const lxp_idempotency_key_state *entry)
+{
+    lxp_receipt *receipt;
+    uint8_t compact[LXP_STATE_MAX_RECEIPT_BYTES];
+    size_t length = 0U;
+    lxp_result status;
+    if (entry == NULL || entry->canonical_length == 0U ||
+        entry->canonical_length > LXP_STATE_MAX_RECEIPT_BYTES ||
+        entry->receipt_length > LXP_STATE_MAX_RECEIPT_BYTES)
+        return LXP_ERR_NON_CANONICAL;
+    receipt = malloc(sizeof(*receipt));
+    if (receipt == NULL) return LXP_ERR_ARENA_EXHAUSTED;
+    status = lxp_receipt_decode(entry->canonical_receipt, entry->canonical_length,
+                                true, receipt);
+    if (status == LXP_OK) status = receipt_compact_projection(receipt, compact, &length);
+    if (status == LXP_OK && (length != entry->receipt_length ||
+        memcmp(compact, entry->receipt, length) != 0))
+        status = LXP_ERR_SNAPSHOT_MISMATCH;
+    free(receipt);
+    return status;
+}
+
+static lxp_result receipt_store(lxp_state_journal *journal,
+                                const lxp_activity *activity,
+                                const lxp_receipt *receipt)
+{
+    uint8_t compact[LXP_STATE_MAX_RECEIPT_BYTES];
+    uint8_t *storage;
+    lxp_arena arena;
+    lxp_byte_span encoded;
+    size_t length = 0U;
+    lxp_result status = receipt_compact_projection(receipt, compact, &length);
+    if (status != LXP_OK) return status;
+    storage = malloc(LXP_MAX_ACTIVITY_BYTES);
+    if (storage == NULL) return LXP_ERR_ARENA_EXHAUSTED;
+    status = lxp_arena_init(&arena, storage, LXP_MAX_ACTIVITY_BYTES);
+    if (status == LXP_OK) status = lxp_receipt_encode(receipt, true, &arena, &encoded);
+    if (status == LXP_OK && encoded.length > LXP_STATE_MAX_RECEIPT_BYTES)
+        status = LXP_ERR_LENGTH_LIMIT;
+    if (status == LXP_OK)
+        status = lxp_idempotency_record(journal, activity->actor_did.bytes,
+            activity->actor_did.length, activity->idempotency_key, compact, length);
+    if (status == LXP_OK) {
+        journal->staged_idempotency.canonical_length = (uint32_t)encoded.length;
+        (void)memcpy(journal->staged_idempotency.canonical_receipt,
+                     encoded.bytes, encoded.length);
+    }
+    free(storage);
+    return status;
 }
 
 lxp_result lxp_kernel_idempotency_state_value(
@@ -5597,12 +5642,12 @@ static lxp_result kernel_execute_prepared_call(
     if (status == LXP_ERR_IDEMPOTENT_REPLAY) {
         const uint8_t *prior;
         size_t prior_length;
-        lxp_result lookup = lxp_idempotency_lookup(
+        lxp_result lookup = lxp_idempotency_canonical_lookup(
             kernel->state, activity->actor_did.bytes,
             activity->actor_did.length, activity->idempotency_key,
             &prior, &prior_length);
         if (lookup == LXP_ERR_IDEMPOTENT_REPLAY) {
-            lookup = receipt_restore_compact(prior, prior_length, receipt);
+            lookup = lxp_receipt_decode(prior, prior_length, true, receipt);
             status = lookup == LXP_OK ? LXP_ERR_IDEMPOTENT_REPLAY : lookup;
         } else {
             status = lookup;
@@ -5780,15 +5825,15 @@ lxp_result lxp_kernel_execute_activity(lxp_kernel *kernel,
     if (status == LXP_OK)
         status = kernel_program_signer_binding(activity, execution, identity);
     if (status != LXP_OK) return status;
-    status = lxp_idempotency_lookup(kernel->state,
+    status = lxp_idempotency_canonical_lookup(kernel->state,
                                     activity->actor_did.bytes,
                                     activity->actor_did.length,
                                     activity->idempotency_key,
                                     &prior_receipt,
                                     &prior_receipt_length);
     if (status == LXP_ERR_IDEMPOTENT_REPLAY) {
-        status = receipt_restore_compact(prior_receipt,
-                                         prior_receipt_length, receipt);
+        status = lxp_receipt_decode(prior_receipt,
+                                    prior_receipt_length, true, receipt);
         return status == LXP_OK ? LXP_ERR_IDEMPOTENT_REPLAY : status;
     }
     if (status != LXP_OK) return status;

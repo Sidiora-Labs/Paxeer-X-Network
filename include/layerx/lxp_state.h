@@ -12,8 +12,9 @@
 
 enum {
     LXP_STATE_MAX_CELLS = 512,
-    LXP_STATE_MAX_IDEMPOTENCY = 512,
-    LXP_STATE_MAX_RECEIPT_BYTES = 4096
+    LXP_STATE_MAX_IDEMPOTENCY = 8192,
+    LXP_STATE_MAX_RECEIPT_BYTES = 4096,
+    LXP_STATE_MAX_REPLAY_ENTRY_BYTES = 13 + 2 * LXP_STATE_MAX_RECEIPT_BYTES
 };
 
 typedef struct lxp_state_cell {
@@ -25,6 +26,8 @@ typedef struct lxp_idempotency_key_state {
     uint8_t key_hash[32];
     uint32_t receipt_length;
     uint8_t receipt[LXP_STATE_MAX_RECEIPT_BYTES];
+    uint32_t canonical_length;
+    uint8_t canonical_receipt[LXP_STATE_MAX_RECEIPT_BYTES];
 } lxp_idempotency_key_state;
 #define lxp_idempotency_key_state lxp_idempotency_key_state
 
@@ -33,7 +36,7 @@ struct lx_account_registry;
 typedef struct lxp_state_store {
     lxp_state_cell cells[LXP_STATE_MAX_CELLS];
     size_t count;
-    lxp_idempotency_key_state idempotency[LXP_STATE_MAX_IDEMPOTENCY];
+    lxp_idempotency_key_state *idempotency;
     size_t idempotency_count;
     uint64_t next_sequence;
     struct lx_account_registry *accounts;
@@ -118,6 +121,17 @@ lxp_result lxp_idempotency_record(lxp_state_journal *journal,
                                   const uint8_t idempotency_key[32],
                                   const uint8_t *receipt,
                                   size_t receipt_length);
+lxp_result lxp_idempotency_canonical_lookup(lxp_state_store *store,
+    const uint8_t *actor_did, size_t actor_did_length,
+    const uint8_t idempotency_key[32], const uint8_t **receipt,
+    size_t *receipt_length);
+lxp_result lxp_idempotency_snapshot_encode(const lxp_idempotency_key_state *entry,
+    uint8_t *bytes, size_t capacity, size_t *length);
+lxp_result lxp_idempotency_snapshot_decode(lxp_idempotency_key_state *entry,
+    const uint8_t *bytes, size_t length);
+lxp_result lxp_kernel_idempotency_receipt_validate(
+    const lxp_idempotency_key_state *entry);
+lxp_result lxp_idempotency_reserve(lxp_state_store *store);
 lxp_result lxp_idempotency_can_commit(const lxp_state_journal *journal);
 void lxp_idempotency_commit_staged(lxp_state_journal *journal);
 

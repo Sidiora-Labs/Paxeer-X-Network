@@ -21400,7 +21400,9 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.1]
 title = "Retain replay-safe receipt identity across sustained execution and recovery"
-status = "in_progress"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "unverified"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]

@@ -45,8 +45,36 @@ static uint64_t pay_timing_us(void)
 
 enum {
     NODE_EXECUTION_ARENA_BYTES = LXP_MAX_ACTIVITY_BYTES * 3U,
-    NODE_SNAPSHOT_ARENA_BYTES = LXP_MAX_ACTIVITY_BYTES * 4U
+    NODE_SNAPSHOT_BASE_BYTES = LXP_MAX_ACTIVITY_BYTES * 4U
 };
+
+static lxp_result node_snapshot_capacity(const lxp_state_store *state,
+                                         size_t *capacity)
+{
+    size_t total = NODE_SNAPSHOT_BASE_BYTES;
+    size_t count = state == NULL ? LXP_STATE_MAX_IDEMPOTENCY : state->idempotency_count;
+    if (capacity == NULL || count > LXP_STATE_MAX_IDEMPOTENCY ||
+        (state != NULL && count != 0U && state->idempotency == NULL))
+        return LXP_ERR_NON_CANONICAL;
+    for (size_t index = 0U; index < count; ++index) {
+        size_t length = LXP_STATE_MAX_REPLAY_ENTRY_BYTES;
+        if (state != NULL) {
+            const lxp_idempotency_key_state *entry = &state->idempotency[index];
+            if (entry->receipt_length > LXP_STATE_MAX_RECEIPT_BYTES ||
+                entry->canonical_length > LXP_STATE_MAX_RECEIPT_BYTES)
+                return LXP_ERR_LENGTH_LIMIT;
+            length = entry->receipt_length;
+            if (entry->canonical_length != 0U)
+                length += 13U + entry->canonical_length;
+        }
+        if (length > SIZE_MAX - 40U - sizeof(size_t) ||
+            total > SIZE_MAX - (40U + sizeof(size_t) + length))
+            return LXP_ERR_LENGTH_LIMIT;
+        total += 40U + sizeof(size_t) + length;
+    }
+    *capacity = total;
+    return LXP_OK;
+}
 
 struct postcommit_job;
 
@@ -2849,17 +2877,18 @@ static void run_postcommit(postcommit_job *job,
     uint64_t batch_number = view == NULL ? 0U : view->batch_number;
     uint64_t started_us = pay_timing_us();
     uint64_t checkpoint_us = 0U, publish_us = 0U, stage_started;
-    size_t index;
+    size_t index, snapshot_capacity = 0U;
     bool publication_locked = false, group_active = false;
     lxp_result status = view == NULL || snapshot == NULL || identities == NULL ?
         LXP_ERR_NON_CANONICAL : LXP_OK;
+    if (status == LXP_OK) status = node_snapshot_capacity(snapshot->state, &snapshot_capacity);
     if (status == LXP_OK) {
         receipts = calloc(view->count, sizeof(*receipts));
-        storage = malloc(NODE_SNAPSHOT_ARENA_BYTES);
+        storage = malloc(snapshot_capacity);
         if (receipts == NULL || storage == NULL) status = LXP_ERR_ARENA_EXHAUSTED;
     }
     if (status == LXP_OK)
-        status = lxp_arena_init(&arena, storage, NODE_SNAPSHOT_ARENA_BYTES);
+        status = lxp_arena_init(&arena, storage, snapshot_capacity);
     if (status == LXP_OK) {
         status = lxp_durability_group_begin(&durability);
         group_active = status == LXP_OK;
@@ -5064,7 +5093,7 @@ static lxp_result initialized_genesis_marker_identity(
         if (index == 3U && identity_digest != NULL) {
             (void)memcpy(record + offset, identity_digest, 32U);
         } else {
-            status = lxp_daemon_artifact_read(path, NODE_SNAPSHOT_ARENA_BYTES,
+            status = lxp_daemon_artifact_read(path, NODE_SNAPSHOT_BASE_BYTES,
                                               0U, &bytes, &count);
             if (status == LXP_OK)
                 status = lxp_hash_sha256(bytes, count, record + offset);
@@ -5354,6 +5383,7 @@ static lxp_result open_process(lxp_daemon_process *process,
     lxp_arena snapshot_arena;
     lxp_daemon_batch_wal_record *startup_wal = NULL;
     uint8_t *snapshot_bytes;
+    size_t snapshot_capacity;
     uint8_t genesis_settlement_anchor[32];
     char snapshot_path[4096];
     bool checkpoint_selected = false;
@@ -5367,6 +5397,8 @@ static lxp_result open_process(lxp_daemon_process *process,
     const char *stage = "configuration";
     lxp_result status;
     (void)memset(process, 0, sizeof(*process));
+    status = node_snapshot_capacity(NULL, &snapshot_capacity);
+    if (status != LXP_OK) return status;
     process->owner_scratch_bytes =
         (uint8_t *)malloc(LXP_DAEMON_PROTOCOL_SCRATCH_MIN_BYTES);
     process->availability_scratch_bytes =
@@ -5374,8 +5406,8 @@ static lxp_result open_process(lxp_daemon_process *process,
     process->execution_arena_bytes =
         (uint8_t *)malloc(NODE_EXECUTION_ARENA_BYTES);
     process->checkpoint_arena_bytes =
-        (uint8_t *)malloc(NODE_SNAPSHOT_ARENA_BYTES);
-    snapshot_bytes = (uint8_t *)malloc(NODE_SNAPSHOT_ARENA_BYTES);
+        (uint8_t *)malloc(snapshot_capacity);
+    snapshot_bytes = (uint8_t *)malloc(snapshot_capacity);
     if (process->owner_scratch_bytes == NULL ||
         process->availability_scratch_bytes == NULL ||
         process->execution_arena_bytes == NULL ||
@@ -5398,10 +5430,10 @@ static lxp_result open_process(lxp_daemon_process *process,
             process->execution_arena_bytes, NODE_EXECUTION_ARENA_BYTES);
     if (status == LXP_OK)
         status = lxp_arena_init(&snapshot_arena, snapshot_bytes,
-                                NODE_SNAPSHOT_ARENA_BYTES);
+                                snapshot_capacity);
     if (status == LXP_OK)
         status = lxp_arena_init(&process->checkpoint_arena,
-            process->checkpoint_arena_bytes, NODE_SNAPSHOT_ARENA_BYTES);
+            process->checkpoint_arena_bytes, snapshot_capacity);
     if (status == LXP_OK) status = lx_account_registry_init(&process->accounts);
     if (status == LXP_OK) {
         status = lxp_state_store_init(&process->state, 1U);
