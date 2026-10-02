@@ -22873,7 +22873,7 @@ do_6 = "Integrate the scoped evidence-read credential from22.8: mint a separate 
 
 [task.24.6]
 title = "Recover precisely quiesced Human processes after export refusal"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -22894,6 +22894,8 @@ deployment_profile = "product"
 planned_paths = ["tools/bringup/tests/paxeer-x-runtime-contract.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+build_cmd = "bash -n tools/bringup/human-state-preserve.sh && python3 -m py_compile tools/bringup/tests/paxeer-x-runtime-contract.py"
+declared_build_targets = ["exporter shell syntax", "runtime contract harness Python compilation"]
 
 [task.24.9]
 title = "Include the complete websearch dependency closure in its image build context"
