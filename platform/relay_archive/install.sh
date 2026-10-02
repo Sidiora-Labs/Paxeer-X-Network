@@ -25,6 +25,7 @@ fail() {
 usage() {
     cat <<'EOF'
 usage: install.sh (--bundle DIR | --release HTTPS_URL) --manifest-sha256 HEX [options]
+       install.sh --config-only --config FILE --codec FILE [config options]
 
 Release verification:
   --bundle DIR                 install an already unpacked release bundle
@@ -36,6 +37,7 @@ Installation:
   --prefix DIR                 software prefix (default /opt/layerx/relay_archive)
   --config FILE                existing config, or destination for generated config
   --no-service                 rootless install; do not create a user or systemd unit
+  --config-only                render config for preinstalled runtime; install nothing
 
 Required when --config does not exist:
   --network-id N
@@ -77,6 +79,7 @@ MANIFEST_SHA256=
 PREFIX=$DEFAULT_PREFIX
 CONFIG=$DEFAULT_CONFIG
 NO_SERVICE=0
+CONFIG_ONLY=0
 CONFIG_CREATED=0
 NETWORK_ID=
 GENESIS_SHA256=
@@ -124,16 +127,25 @@ while [ "$#" -gt 0 ]; do
         --peer-seed) require_value "$@"; PEER_SEEDS+=("$2"); shift 2 ;;
         --allow-loopback-dev) ALLOW_LOOPBACK_DEV=1; shift ;;
         --no-service) NO_SERVICE=1; shift ;;
+        --config-only) CONFIG_ONLY=1; NO_SERVICE=1; shift ;;
         --help|-h) usage; exit 0 ;;
         *) fail "unknown argument: $1" ;;
     esac
 done
 
+if [ "$CONFIG_ONLY" -eq 1 ]; then
+    [ -z "$BUNDLE$RELEASE$EXPECTED_SHA256$MANIFEST_SHA256" ] \
+        || fail "--config-only cannot be combined with release installation options"
+    [ -n "$CODEC" ] || fail "--config-only requires --codec for the preinstalled runtime"
+    [ ! -e "$CONFIG" ] && [ ! -L "$CONFIG" ] \
+        || fail "--config-only requires a new config destination"
+else
 [ -n "$BUNDLE" ] || [ -n "$RELEASE" ] || fail "one of --bundle or --release is required"
 [ -z "$BUNDLE" ] || [ -z "$RELEASE" ] || fail "--bundle and --release are mutually exclusive"
 is_sha256 "$MANIFEST_SHA256" || fail "--manifest-sha256 must be a non-zero lowercase SHA-256"
 if [ -n "$RELEASE" ]; then
     is_sha256 "$EXPECTED_SHA256" || fail "--expected-sha256 is required for --release"
+fi
 fi
 
 python3 - "$PREFIX" "$CONFIG" <<'PY'
@@ -157,6 +169,7 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
+if [ "$CONFIG_ONLY" -eq 0 ]; then
 if [ -n "$RELEASE" ]; then
     python3 - "$RELEASE" <<'PY'
 import sys
@@ -250,6 +263,8 @@ if sum((root / name).stat().st_size for name in entries) > 536870912:
     raise SystemExit("bundle payload exceeds 512 MiB")
 PY
 
+fi
+
 if [ -e "$CONFIG" ]; then
     [ -f "$CONFIG" ] && [ ! -L "$CONFIG" ] || fail "existing config must be a regular non-symlink file"
     if [ -n "$NETWORK_ID$GENESIS_SHA256$SEQUENCER_ID$SEQUENCER_PUBLIC_KEY$DATA_DIR$LISTEN$PUBLIC_URL$CODEC$GENESIS_MANIFEST$GENESIS_SNAPSHOT$SOURCE_LOG$CA_FILE$TLS_CERT$TLS_KEY" ] \
@@ -274,6 +289,7 @@ else
     fi
 fi
 
+if [ "$CONFIG_ONLY" -eq 0 ]; then
 mkdir -p "$PREFIX/releases"
 chmod 0755 "$PREFIX" "$PREFIX/releases"
 RELEASE_DIR=$PREFIX/releases/$ACTUAL_MANIFEST
@@ -347,6 +363,7 @@ for name in layerxd layerx-archive-codec __init__.py runtime.py store.py protoco
     ln -s "releases/$ACTUAL_MANIFEST/$name" "$link"
     mv -Tf "$link" "$target"
 done
+fi
 
 if [ -z "$CODEC" ]; then
     CODEC=$PREFIX/layerx-archive-codec
@@ -355,7 +372,7 @@ fi
 if [ ! -e "$CONFIG" ]; then
     CONFIG_PARENT=$(dirname -- "$CONFIG")
     mkdir -p "$CONFIG_PARENT"
-    if [ "$NO_SERVICE" -eq 1 ]; then
+    if [ "$NO_SERVICE" -eq 1 ] && [ "$CONFIG_ONLY" -eq 0 ]; then
         if [ ! -e "$DATA_DIR" ]; then
             mkdir -m 0700 -p "$DATA_DIR"
         else
@@ -487,6 +504,11 @@ with os.fdopen(descriptor, "w", encoding="utf-8") as output:
     output.write("\n")
 PY
     CONFIG_CREATED=1
+fi
+
+if [ "$CONFIG_ONLY" -eq 1 ]; then
+    printf 'rendered LayerX relay/archive config %s\n' "$CONFIG"
+    exit 0
 fi
 
 if [ "$NO_SERVICE" -eq 0 ]; then

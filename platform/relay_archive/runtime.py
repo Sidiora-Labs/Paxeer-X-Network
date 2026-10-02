@@ -6,6 +6,7 @@ import hmac
 import json
 import os
 import signal
+import socket
 import socketserver
 import sqlite3
 import ssl
@@ -88,6 +89,7 @@ class _BoundedServer(socketserver.ThreadingMixIn, HTTPServer):
 
     def __init__(self, address: tuple[str, int], handler: type[BaseHTTPRequestHandler], maximum: int):
         self._slots = threading.BoundedSemaphore(maximum)
+        self.address_family = socket.AF_INET6 if ":" in address[0] else socket.AF_INET
         super().__init__(address, handler)
 
     def process_request(self, request: Any, client_address: Any) -> None:
