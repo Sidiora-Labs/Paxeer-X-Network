@@ -9,7 +9,7 @@
   <style>
     @font-face {
       font-family: "LTWave";
-      src: url("/fonts/LTWave-Light.otf") format("opentype");
+      src: url("./fonts/LTWave-Light.otf") format("opentype");
       font-style: normal;
       font-weight: 300;
       font-display: swap;
@@ -17,7 +17,7 @@
 
     @font-face {
       font-family: "LTWave";
-      src: url("/fonts/LTWave-Regular.otf") format("opentype");
+      src: url("./fonts/LTWave-Regular.otf") format("opentype");
       font-style: normal;
       font-weight: 400;
       font-display: swap;
@@ -25,7 +25,7 @@
 
     @font-face {
       font-family: "LTWave";
-      src: url("/fonts/LTWave-Medium.otf") format("opentype");
+      src: url("./fonts/LTWave-Medium.otf") format("opentype");
       font-style: normal;
       font-weight: 500;
       font-display: swap;
@@ -33,7 +33,7 @@
 
     @font-face {
       font-family: "LTWave";
-      src: url("/fonts/LTWave-Bold.otf") format("opentype");
+      src: url("./fonts/LTWave-Bold.otf") format("opentype");
       font-style: normal;
       font-weight: 700;
       font-display: swap;
@@ -41,7 +41,7 @@
 
     @font-face {
       font-family: "LTWaveMono";
-      src: url("/fonts/LTWaveMono-Regular.otf") format("opentype");
+      src: url("./fonts/LTWaveMono-Regular.otf") format("opentype");
       font-style: normal;
       font-weight: 400;
       font-display: swap;
@@ -49,7 +49,7 @@
 
     @font-face {
       font-family: "LTWaveMono";
-      src: url("/fonts/LTWaveMono-Medium.otf") format("opentype");
+      src: url("./fonts/LTWaveMono-Medium.otf") format("opentype");
       font-style: normal;
       font-weight: 500;
       font-display: swap;
@@ -810,8 +810,8 @@
 <body>
   <div class="hero-wrap">
     <header class="shell topbar">
-      <a class="brand" href="/" aria-label="Paxeer Network home">
-        <img class="brand-logo" src="/paxeer-logo.png" alt="">
+      <a class="brand" href="./" aria-label="Paxeer Network home">
+        <img class="brand-logo" src="./paxeer-logo.png" alt="">
         <span class="brand-copy">
           <span class="brand-name">Paxeer Network</span>
           <span class="brand-meta">HyperPax public node gateway</span>
@@ -843,7 +843,7 @@
 
       <div class="network-visual" aria-hidden="true">
         <div class="orbit"><span class="orbit-node"></span></div>
-        <div class="logo-core"><img src="/paxeer-logo.png" alt=""></div>
+        <div class="logo-core"><img src="./paxeer-logo.png" alt=""></div>
         <div class="visual-label chain">
           <span>Network</span>
           <strong id="visual-chain">hyperpax_125-1</strong>
@@ -938,12 +938,12 @@
       </div>
 
       <div class="endpoint-list">
-        <a class="endpoint" href="/healthz"><span class="method">GET</span><span class="endpoint-copy"><span class="endpoint-path">/healthz</span><span class="endpoint-purpose">Registry health and source revision</span></span><span class="endpoint-arrow">↗</span></a>
-        <a class="endpoint" href="/chain-info.json"><span class="method">GET</span><span class="endpoint-copy"><span class="endpoint-path">/chain-info.json</span><span class="endpoint-purpose">Chain and artifact release metadata</span></span><span class="endpoint-arrow">↗</span></a>
-        <a class="endpoint" href="/checksums.txt"><span class="method">GET</span><span class="endpoint-copy"><span class="endpoint-path">/checksums.txt</span><span class="endpoint-purpose">Sorted artifact checksum manifest</span></span><span class="endpoint-arrow">↗</span></a>
-        <a class="endpoint" href="/api/peers"><span class="method">GET</span><span class="endpoint-copy"><span class="endpoint-path">/api/peers</span><span class="endpoint-purpose">Current HyperPax peer set</span></span><span class="endpoint-arrow">↗</span></a>
-        <a class="endpoint" href="/api/nodes"><span class="method">GET</span><span class="endpoint-copy"><span class="endpoint-path">/api/nodes</span><span class="endpoint-purpose">Registered public nodes</span></span><span class="endpoint-arrow">↗</span></a>
-        <a class="endpoint" href="/api/statesync"><span class="method">GET</span><span class="endpoint-copy"><span class="endpoint-path">/api/statesync</span><span class="endpoint-purpose">Current state-sync trust parameters</span></span><span class="endpoint-arrow">↗</span></a>
+        <a class="endpoint" href="./healthz"><span class="method">GET</span><span class="endpoint-copy"><span class="endpoint-path">/healthz</span><span class="endpoint-purpose">Registry health and source revision</span></span><span class="endpoint-arrow">↗</span></a>
+        <a class="endpoint" href="./chain-info.json"><span class="method">GET</span><span class="endpoint-copy"><span class="endpoint-path">/chain-info.json</span><span class="endpoint-purpose">Chain and artifact release metadata</span></span><span class="endpoint-arrow">↗</span></a>
+        <a class="endpoint" href="./checksums.txt"><span class="method">GET</span><span class="endpoint-copy"><span class="endpoint-path">/checksums.txt</span><span class="endpoint-purpose">Sorted artifact checksum manifest</span></span><span class="endpoint-arrow">↗</span></a>
+        <a class="endpoint" href="./api/peers"><span class="method">GET</span><span class="endpoint-copy"><span class="endpoint-path">/api/peers</span><span class="endpoint-purpose">Current HyperPax peer set</span></span><span class="endpoint-arrow">↗</span></a>
+        <a class="endpoint" href="./api/nodes"><span class="method">GET</span><span class="endpoint-copy"><span class="endpoint-path">/api/nodes</span><span class="endpoint-purpose">Registered public nodes</span></span><span class="endpoint-arrow">↗</span></a>
+        <a class="endpoint" href="./api/statesync"><span class="method">GET</span><span class="endpoint-copy"><span class="endpoint-path">/api/statesync</span><span class="endpoint-purpose">Current state-sync trust parameters</span></span><span class="endpoint-arrow">↗</span></a>
       </div>
     </div>
   </section>
@@ -992,10 +992,10 @@
     };
 
     Promise.allSettled([
-      readJSON('/healthz'),
-      readJSON('/chain-info.json'),
-      readJSON('/api/peers'),
-      readJSON('/api/statesync')
+      readJSON('./healthz'),
+      readJSON('./chain-info.json'),
+      readJSON('./api/peers'),
+      readJSON('./api/statesync')
     ]).then(([healthResult, chainResult, peersResult, stateSyncResult]) => {
       const status = document.getElementById('registry-status');
       const label = document.getElementById('registry-label');
