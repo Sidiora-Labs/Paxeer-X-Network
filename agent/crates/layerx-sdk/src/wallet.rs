@@ -306,6 +306,53 @@ impl Wallet<'_> {
         receipt.bind_canonical_activity(canonical);
         Ok(receipt)
     }
+
+    /// Issues a grant whose purpose is the textual `label`. The grant is signed over the
+    /// committed purpose, so its `purpose_hash` must already equal `label.commitment()`; the
+    /// grant is then issued exactly as [`Self::issue`] issues it.
+    ///
+    /// # Errors
+    /// Returns `InvalidRequest` when the grant commits to a different purpose, and otherwise
+    /// the errors of [`Self::issue`].
+    pub async fn issue_with_purpose(
+        &self,
+        grant: Grant,
+        label: &crate::purpose::PurposeLabel,
+        options: &PaymentOptions,
+    ) -> Result<VerifiedRpcReceipt, RpcError> {
+        require_grant_purpose(&grant, label)?;
+        self.issue(grant, options).await
+    }
+    /// Draws on a grant whose purpose is the textual `label`. The payer grant is signed over
+    /// the committed purpose, so its `purpose_hash` must already equal `label.commitment()`;
+    /// the draw then proceeds exactly as [`Self::draw`].
+    ///
+    /// # Errors
+    /// Returns `InvalidRequest` for a non-Receive payment or a payer grant committing to a
+    /// different purpose, and otherwise the errors of [`Self::draw`].
+    pub async fn draw_with_purpose(
+        &self,
+        receive: Payment,
+        label: &crate::purpose::PurposeLabel,
+        options: &PaymentOptions,
+    ) -> Result<VerifiedRpcReceipt, RpcError> {
+        let Payment::Receive { payer_grant, .. } = &receive else {
+            return Err(RpcError::InvalidRequest);
+        };
+        require_grant_purpose(payer_grant, label)?;
+        self.draw(receive, options).await
+    }
+}
+
+fn require_grant_purpose(
+    grant: &Grant,
+    label: &crate::purpose::PurposeLabel,
+) -> Result<(), RpcError> {
+    if grant.purpose_hash == label.commitment() {
+        Ok(())
+    } else {
+        Err(RpcError::InvalidRequest)
+    }
 }
 
 fn source_sequence(rpc: &RpcClient, account: [u8; 32]) -> Result<u64, RpcError> {
@@ -424,6 +471,53 @@ mod tests {
                 .map_err(|_| RpcError::Verification)?,
             None
         );
+        Ok(())
+    }
+
+    fn labelled_grant(purpose_hash: [u8; 32]) -> Grant {
+        Grant {
+            id: [1; 32],
+            from: [2; 32],
+            recipient: [3; 32],
+            asset: [4; 32],
+            per_draw_maximum: 5,
+            allowance: 10,
+            recurring: false,
+            window_length: 0,
+            expiration: 100,
+            purpose_hash,
+            has_reference: false,
+            reference_hash: [0; 32],
+            revocation_sequence: 0,
+            public_key: [5; 32],
+            signature: [6; 64],
+        }
+    }
+
+    #[test]
+    fn issue_with_purpose_requires_the_committed_label() -> Result<(), RpcError> {
+        let label =
+            crate::purpose::PurposeLabel::new("rent").map_err(|_| RpcError::InvalidRequest)?;
+        require_grant_purpose(&labelled_grant(label.commitment()), &label)?;
+        assert!(matches!(
+            require_grant_purpose(&labelled_grant([7; 32]), &label),
+            Err(RpcError::InvalidRequest)
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn draw_with_purpose_requires_the_payer_grant_label() -> Result<(), RpcError> {
+        let label =
+            crate::purpose::PurposeLabel::new("rent").map_err(|_| RpcError::InvalidRequest)?;
+        let other =
+            crate::purpose::PurposeLabel::new("rent ").map_err(|_| RpcError::InvalidRequest)?;
+        let grant = labelled_grant(label.commitment());
+        require_grant_purpose(&grant, &label)?;
+        assert!(matches!(
+            require_grant_purpose(&grant, &other),
+            Err(RpcError::InvalidRequest)
+        ));
         Ok(())
     }
 }

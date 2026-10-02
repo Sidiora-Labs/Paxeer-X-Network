@@ -2,42 +2,6 @@
 
 mod native;
 
-pub mod proposed {
-    use sha2::{Digest as _, Sha256};
-
-    pub struct PurposeCommitment;
-
-    impl PurposeCommitment {
-        pub const DOMAIN: &[u8] = b"layerx:purpose-commitment:v1\0";
-
-        #[must_use]
-        pub fn commit(text: &str) -> [u8; 32] {
-            Sha256::new()
-                .chain_update(Self::DOMAIN)
-                .chain_update(text.as_bytes())
-                .finalize()
-                .into()
-        }
-    }
-
-    #[cfg(test)]
-    mod tests {
-        use super::PurposeCommitment;
-
-        #[test]
-        fn purpose_commitment_vector_is_pinned() {
-            assert_eq!(
-                PurposeCommitment::commit("groceries"),
-                [
-                    0xbc, 0xc5, 0x5b, 0x16, 0xc0, 0x95, 0xeb, 0xfa, 0x98, 0x5a, 0xbd, 0xc1, 0x66,
-                    0xcf, 0xfb, 0xa3, 0x51, 0xa3, 0x98, 0xf8, 0xc0, 0xf1, 0x8d, 0xe3, 0x14, 0x54,
-                    0xd3, 0x65, 0x39, 0x71, 0xa9, 0x08,
-                ]
-            );
-        }
-    }
-}
-
 pub use native::{
     BudgetStateContext, DisclosedNativeBudgetCreate, DisclosedNativeBudgetDefund,
     DisclosedNativeBudgetFund, DisclosedNativeBudgetRevoke, DisclosedNativeIdentity,
