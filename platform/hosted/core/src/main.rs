@@ -32,7 +32,7 @@ use std::env;
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -119,7 +119,7 @@ struct Response {
     retry_after: Option<u64>,
 }
 
-#[derive(Deserialize, serde::Serialize)]
+#[derive(Clone, Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 struct FundingCommand {
     funding_id: String,
@@ -142,13 +142,40 @@ struct JournalEntry {
     retry_after: Option<u64>,
 }
 
-#[derive(Deserialize, serde::Serialize)]
+#[derive(Clone, Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 struct PreparedFunding {
     canonical: Vec<u8>,
     activity_id: [u8; 32],
     signer_public_key: [u8; 32],
 }
+
+#[derive(Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct FundingIntent {
+    version: u8,
+    key: String,
+    request_digest: String,
+    request_body: Vec<u8>,
+    command: FundingCommand,
+    network_id: u32,
+    asset: [u8; 32],
+    sequencer_id: [u8; 32],
+    sequencer_key: [u8; 32],
+    signed: PreparedFunding,
+}
+
+#[derive(Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct FundingArchive {
+    version: u8,
+    intent_digest: String,
+    receipt: Vec<u8>,
+}
+
+const MAX_FUNDING_RECORDS: usize = 4096;
+const MAX_FUNDING_RECORD_BYTES: u64 = MAX_JOURNAL_BYTES;
+const MAX_FUNDING_INVENTORY_BYTES: u64 = 64 * 1024 * 1024;
 
 struct ReceiptFacts {
     activity_id: [u8; 32],
@@ -292,6 +319,11 @@ fn config() -> Result<Config, String> {
     journal
         .create(state_dir.join("journal"))
         .map_err(|error| format!("LAYERX_CORE_STATE_DIR is unusable: {error}"))?;
+    for directory in ["funding-intents", "funding-receipts"] {
+        journal
+            .create(state_dir.join(directory))
+            .map_err(|error| format!("LAYERX_CORE_STATE_DIR is unusable: {error}"))?;
+    }
     Ok(Config {
         listen: parse_listen("LAYERX_CORE_LISTEN", "0.0.0.0:9443")?,
         admin_listen: parse_listen("LAYERX_CORE_ADMIN_LISTEN", "0.0.0.0:9444")?,
@@ -1997,7 +2029,7 @@ fn fund(config: &Config, request: &Request, key: &str) -> Response {
     {
         return refusal(400, "invalid_argument", None);
     }
-    match fund_send(config, &command, key) {
+    match fund_send(config, request, &command, key) {
         Ok(response) | Err(response) => response,
     }
 }
@@ -2075,12 +2107,31 @@ fn prepare_funding(
     Ok(signed)
 }
 
-fn fund_send(config: &Config, command: &FundingCommand, key: &str) -> Result<Response, Response> {
+fn fund_send(
+    config: &Config,
+    request: &Request,
+    command: &FundingCommand,
+    key: &str,
+) -> Result<Response, Response> {
     let mut client = connect_client(config).map_err(|error| {
         eprintln!("layerx-core-boundary: {error}");
         refusal(503, "node_unavailable", Some(5))
     })?;
     let signed = prepare_funding(config, &mut client, command, key)?;
+    let intent = FundingIntent {
+        version: 1,
+        key: key.to_owned(),
+        request_digest: request_digest(request),
+        request_body: request.body.clone(),
+        command: command.clone(),
+        network_id: config.network_id,
+        asset: config.treasury_asset,
+        sequencer_id: config.sequencer_id,
+        sequencer_key: client.handshake().node().authorised_sequencer_key,
+        signed: signed.clone(),
+    };
+    persist_funding_intent(config, &intent)
+        .map_err(|_| refusal(503, "journal_unavailable", Some(5)))?;
     if let Ok(Some(facts)) = await_receipt(config, signed.activity_id, Duration::ZERO) {
         return funding_receipt_response(command, &facts);
     }
@@ -2124,6 +2175,408 @@ fn fund_send(config: &Config, command: &FundingCommand, key: &str) -> Result<Res
             Err(refusal(503, "receipt_unavailable", Some(5)))
         }
     }
+}
+
+fn funding_record_path(config: &Config, directory: &str, key: &str) -> PathBuf {
+    let canonical = journal_path(config, "fund-canonical", key);
+    config
+        .state_dir
+        .join(directory)
+        .join(canonical.file_name().expect("journal filename"))
+}
+
+fn funding_directory(path: &Path) -> Result<(), String> {
+    let metadata = fs::symlink_metadata(path).map_err(|error| error.to_string())?;
+    if !metadata.is_dir() || metadata.mode() & 0o077 != 0 || metadata.mode() & 0o700 != 0o700 {
+        return Err("funding storage is not a private usable directory".to_owned());
+    }
+    Ok(())
+}
+
+fn funding_read(path: &Path) -> Result<Option<Vec<u8>>, String> {
+    let parent = path.parent().ok_or("funding storage parent missing")?;
+    funding_directory(parent)?;
+    let mut file = match fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(0x20000)
+        .open(path)
+    {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.to_string()),
+    };
+    let metadata = file.metadata().map_err(|error| error.to_string())?;
+    if !metadata.is_file()
+        || metadata.mode() & 0o077 != 0
+        || metadata.mode() & 0o400 == 0
+        || metadata.len() > MAX_FUNDING_RECORD_BYTES
+        || metadata.nlink() != 1
+    {
+        return Err("funding record is invalid or exceeds its bound".to_owned());
+    }
+    let mut bytes = Vec::new();
+    (&mut file)
+        .take(MAX_FUNDING_RECORD_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| error.to_string())?;
+    if bytes.len() as u64 > MAX_FUNDING_RECORD_BYTES {
+        return Err("funding record exceeds its bound".to_owned());
+    }
+    Ok(Some(bytes))
+}
+
+fn funding_store(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    if bytes.len() as u64 > MAX_FUNDING_RECORD_BYTES {
+        return Err("funding record exceeds its bound".to_owned());
+    }
+    let parent = path.parent().ok_or("funding storage parent missing")?;
+    funding_directory(parent)?;
+    if let Some(existing) = funding_read(path)? {
+        if existing != bytes {
+            return Err("immutable funding record differs".to_owned());
+        }
+        fs::File::open(path)
+            .and_then(|file| file.sync_all())
+            .map_err(|error| error.to_string())?;
+        return fs::File::open(parent)
+            .and_then(|directory| directory.sync_all())
+            .map_err(|error| error.to_string());
+    }
+    let inventory = funding_inventory(parent)?;
+    let total = inventory
+        .iter()
+        .try_fold(bytes.len() as u64, |total, entry| {
+            fs::metadata(entry).map(|metadata| total.saturating_add(metadata.len()))
+        })
+        .map_err(|error| error.to_string())?;
+    if inventory.len() >= MAX_FUNDING_RECORDS || total > MAX_FUNDING_INVENTORY_BYTES {
+        return Err("funding inventory exceeds bound".to_owned());
+    }
+    let temporary = parent.join(format!(
+        ".pending-{}-{}",
+        std::process::id(),
+        TRACE.fetch_add(1, Ordering::Relaxed)
+    ));
+    let result = (|| {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&temporary)
+            .map_err(|error| error.to_string())?;
+        file.write_all(bytes).map_err(|error| error.to_string())?;
+        file.sync_all().map_err(|error| error.to_string())?;
+        fs::hard_link(&temporary, path).map_err(|error| error.to_string())?;
+        fs::remove_file(&temporary).map_err(|error| error.to_string())?;
+        fs::File::open(parent)
+            .and_then(|directory| directory.sync_all())
+            .map_err(|error| error.to_string())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
+}
+
+fn validate_funding_intent(config: &Config, intent: &FundingIntent) -> Result<(), String> {
+    if intent.version != 1
+        || !valid_key(&intent.key)
+        || intent.network_id != config.network_id
+        || intent.asset != config.treasury_asset
+        || intent.sequencer_id != config.sequencer_id
+        || intent.signed.signer_public_key != config.treasury.public_key()
+    {
+        return Err("funding intent identity differs".to_owned());
+    }
+    let command: FundingCommand =
+        serde_json::from_slice(&intent.request_body).map_err(|error| error.to_string())?;
+    if serde_json::to_vec(&command).map_err(|error| error.to_string())?
+        != serde_json::to_vec(&intent.command).map_err(|error| error.to_string())?
+        || intent.request_digest
+            != request_digest(&Request {
+                method: "POST".to_owned(),
+                path: "/admin/v1/testnet/fund".to_owned(),
+                query: None,
+                headers: BTreeMap::new(),
+                body: intent.request_body.clone(),
+            })
+    {
+        return Err("funding request binding differs".to_owned());
+    }
+    let (registry, kind) = asset_registry()?;
+    let activity = layerx_wire::activity::decode_signed(&intent.signed.canonical, &registry)
+        .map_err(|error| format!("{error:?}"))?;
+    if activity.protocol_version() != 3
+        || activity.network_id() != config.network_id
+        || activity.activity_type() != kind
+        || activity.actor_did() != config.treasury_did.as_bytes()
+        || signer_key(activity.authority()) != Some(intent.signed.signer_public_key)
+        || activity.idempotency_key() != send_idempotency(&intent.key)
+        || layerx_wire::hash::activity_id(&activity).map_err(|error| format!("{error:?}"))?
+            != intent.signed.activity_id
+    {
+        return Err("canonical funding identity differs".to_owned());
+    }
+    let unsigned =
+        layerx_wire::activity::encode_unsigned(&activity).map_err(|error| format!("{error:?}"))?;
+    let digest =
+        layerx_platform_core::domain_hash(layerx_wire::hash::Domain::SignaturePreimage, &unsigned);
+    let signature: [u8; 64] = activity
+        .signature()
+        .ok_or("missing funding signature")?
+        .try_into()
+        .map_err(|_| "invalid funding signature")?;
+    layerx_crypto::ed25519::verify_digest(&intent.signed.signer_public_key, &signature, &digest)
+        .map_err(|error| format!("{error:?}"))?;
+    let disclosure = layerx_crypto::disclosure::bind(&unsigned, &registry)
+        .map_err(|error| format!("{error:?}"))?;
+    use layerx_crypto::disclosure::{AmountRole, CounterpartyRole};
+    if disclosure.asset != config.treasury_asset
+        || disclosure.counterparties.len() != 2
+        || disclosure.amounts.len() != 1
+        || !disclosure.counterparties.iter().any(|party| {
+            party.role == CounterpartyRole::Payer
+                && main_account(&config.treasury_did) == Ok(party.account)
+        })
+        || !disclosure.counterparties.iter().any(|party| {
+            party.role == CounterpartyRole::Recipient
+                && main_account(&intent.command.did) == Ok(party.account)
+        })
+        || !disclosure.amounts.iter().any(|amount| {
+            amount.role == AmountRole::Transfer && amount.value == u128::from(intent.command.amount)
+        })
+    {
+        return Err("canonical funding semantics differ".to_owned());
+    }
+    Ok(())
+}
+
+fn persist_funding_intent(config: &Config, intent: &FundingIntent) -> Result<(), String> {
+    validate_funding_intent(config, intent)?;
+    let path = funding_record_path(config, "funding-intents", &intent.key);
+    if let Some(bytes) = funding_read(&path)? {
+        let existing: FundingIntent =
+            serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
+        validate_funding_intent(config, &existing)?;
+        if existing.request_digest != intent.request_digest
+            || existing.signed.canonical != intent.signed.canonical
+        {
+            return Err("durable funding intent differs".to_owned());
+        }
+        return Ok(());
+    }
+    funding_store(
+        &path,
+        &serde_json::to_vec(intent).map_err(|error| error.to_string())?,
+    )
+}
+
+fn funding_archive_facts(
+    config: &Config,
+    intent: &FundingIntent,
+    intent_bytes: &[u8],
+    archive: &FundingArchive,
+) -> Result<ReceiptFacts, String> {
+    validate_funding_intent(config, intent)?;
+    if archive.version != 1
+        || archive.intent_digest != hex_encode(&Sha256::digest(intent_bytes))
+        || archive.receipt.is_empty()
+        || archive.receipt.len() > LNI_FRAME_BYTES
+    {
+        return Err("funding archive binding differs".to_owned());
+    }
+    let facts = receipt_facts(&archive.receipt, intent.sequencer_key)?;
+    let decoded =
+        layerx_wire::receipt::decode(&facts.canonical).map_err(|error| format!("{error:?}"))?;
+    let receipt = decoded
+        .protocol()
+        .ok_or("funding receipt is not protocol receipt")?;
+    if facts.activity_id != intent.signed.activity_id
+        || receipt.asset() != intent.asset
+        || receipt.amount() != u128::from(intent.command.amount)
+        || receipt.from() != main_account(&config.treasury_did)?
+        || receipt.to() != main_account(&intent.command.did)?
+        || receipt.protocol_version() != 3
+        || receipt.module_id() != 1
+    {
+        return Err("funding receipt semantics differ".to_owned());
+    }
+    Ok(facts)
+}
+
+fn archived_funding_response(
+    config: &Config,
+    request: &Request,
+    key: &str,
+) -> Result<Option<Response>, Response> {
+    let unavailable = || refusal(503, "journal_unavailable", Some(5));
+    let intent_bytes = funding_read(&funding_record_path(config, "funding-intents", key))
+        .map_err(|_| unavailable())?;
+    let archive_bytes = funding_read(&funding_record_path(config, "funding-receipts", key))
+        .map_err(|_| unavailable())?;
+    let Some(intent_bytes) = intent_bytes else {
+        return if archive_bytes.is_some() {
+            Err(unavailable())
+        } else {
+            Ok(None)
+        };
+    };
+    let intent: FundingIntent = serde_json::from_slice(&intent_bytes).map_err(|_| unavailable())?;
+    validate_funding_intent(config, &intent).map_err(|_| unavailable())?;
+    if intent.key != key || intent.request_digest != request_digest(request) {
+        return Err(refusal(409, "idempotency_conflict", None));
+    }
+    let Some(archive_bytes) = archive_bytes else {
+        let stage = journal_read(&journal_path(config, "fund-canonical", key))
+            .map_err(|_| unavailable())?
+            .ok_or_else(unavailable)?;
+        return if stage.status == 200 {
+            Err(unavailable())
+        } else {
+            Ok(None)
+        };
+    };
+    let archive: FundingArchive =
+        serde_json::from_slice(&archive_bytes).map_err(|_| unavailable())?;
+    let facts = funding_archive_facts(config, &intent, &intent_bytes, &archive)
+        .map_err(|_| unavailable())?;
+    Ok(Some(
+        match funding_receipt_response(&intent.command, &facts) {
+            Ok(response) | Err(response) => response,
+        },
+    ))
+}
+
+fn funding_inventory(directory: &Path) -> Result<Vec<PathBuf>, String> {
+    funding_directory(directory)?;
+    let mut paths = Vec::new();
+    let mut total = 0u64;
+    for entry in fs::read_dir(directory).map_err(|error| error.to_string())? {
+        let path = entry.map_err(|error| error.to_string())?.path();
+        if path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with(".pending-"))
+        {
+            continue;
+        }
+        let metadata = fs::symlink_metadata(&path).map_err(|error| error.to_string())?;
+        if !metadata.is_file() || metadata.len() > MAX_FUNDING_RECORD_BYTES {
+            return Err("invalid funding inventory record".to_owned());
+        }
+        total = total
+            .checked_add(metadata.len())
+            .ok_or("funding inventory overflow")?;
+        paths.push(path);
+        if paths.len() > MAX_FUNDING_RECORDS || total > MAX_FUNDING_INVENTORY_BYTES {
+            return Err("funding inventory exceeds bound".to_owned());
+        }
+    }
+    paths.sort();
+    Ok(paths)
+}
+
+fn retain_funding_receipts(config: &Config) -> Result<(), Response> {
+    let unavailable = || refusal(503, "journal_unavailable", Some(5));
+    let intent_paths =
+        funding_inventory(&config.state_dir.join("funding-intents")).map_err(|_| unavailable())?;
+    for path in
+        funding_inventory(&config.state_dir.join("funding-receipts")).map_err(|_| unavailable())?
+    {
+        let counterpart = config
+            .state_dir
+            .join("funding-intents")
+            .join(path.file_name().ok_or_else(unavailable)?);
+        if !intent_paths.contains(&counterpart) {
+            return Err(unavailable());
+        }
+    }
+    for path in funding_inventory(&config.state_dir.join("journal")).map_err(|_| unavailable())? {
+        if path.extension().and_then(|extension| extension.to_str()) != Some("json") {
+            continue;
+        }
+        let entry = journal_read(&path)
+            .map_err(|_| unavailable())?
+            .ok_or_else(unavailable)?;
+        if serde_json::from_str::<PreparedFunding>(&entry.body).is_ok() {
+            let counterpart = config
+                .state_dir
+                .join("funding-intents")
+                .join(path.file_name().ok_or_else(unavailable)?);
+            if !intent_paths.contains(&counterpart) {
+                return Err(unavailable());
+            }
+        }
+    }
+    let started = Instant::now();
+    for path in intent_paths {
+        let bytes = funding_read(&path)
+            .map_err(|_| unavailable())?
+            .ok_or_else(unavailable)?;
+        let intent: FundingIntent = serde_json::from_slice(&bytes).map_err(|_| unavailable())?;
+        validate_funding_intent(config, &intent).map_err(|_| unavailable())?;
+        if path != funding_record_path(config, "funding-intents", &intent.key) {
+            return Err(unavailable());
+        }
+        let archive_path = funding_record_path(config, "funding-receipts", &intent.key);
+        let archive = match funding_read(&archive_path).map_err(|_| unavailable())? {
+            Some(bytes) => {
+                serde_json::from_slice::<FundingArchive>(&bytes).map_err(|_| unavailable())?
+            }
+            None => {
+                let remaining = config
+                    .receipt_deadline
+                    .checked_sub(started.elapsed())
+                    .ok_or_else(|| refusal(503, "receipt_unavailable", Some(5)))?;
+                let (mut transport, handshake) = connect_raw_with_deadline(config, remaining)
+                    .map_err(|_| refusal(503, "receipt_unavailable", Some(5)))?;
+                if handshake.node().authorised_sequencer_key != intent.sequencer_key {
+                    return Err(refusal(503, "receipt_unavailable", Some(5)));
+                }
+                let receipt = lookup_receipt_bytes(
+                    &mut transport,
+                    &handshake,
+                    intent.signed.activity_id,
+                    1,
+                    false,
+                )
+                .map_err(|_| refusal(503, "receipt_unavailable", Some(5)))?
+                .ok_or_else(|| refusal(503, "receipt_unavailable", Some(5)))?;
+                FundingArchive {
+                    version: 1,
+                    intent_digest: hex_encode(&Sha256::digest(&bytes)),
+                    receipt,
+                }
+            }
+        };
+        funding_archive_facts(config, &intent, &bytes, &archive).map_err(|_| unavailable())?;
+        funding_store(
+            &archive_path,
+            &serde_json::to_vec(&archive).map_err(|_| unavailable())?,
+        )
+        .map_err(|_| unavailable())?;
+        let stage_path = journal_path(config, "fund-canonical", &intent.key);
+        let mut stage = journal_read(&stage_path)
+            .map_err(|_| unavailable())?
+            .ok_or_else(unavailable)?;
+        let signed: PreparedFunding =
+            serde_json::from_str(&stage.body).map_err(|_| unavailable())?;
+        if signed.canonical != intent.signed.canonical
+            || signed.activity_id != intent.signed.activity_id
+            || signed.signer_public_key != intent.signed.signer_public_key
+            || stage.request_digest
+                != hex_encode(&Sha256::digest(
+                    serde_json::to_vec(&intent.command).map_err(|_| unavailable())?,
+                ))
+        {
+            return Err(unavailable());
+        }
+        if stage.status != 200 {
+            stage.status = 200;
+            journal_write(&stage_path, &stage).map_err(|_| unavailable())?;
+        }
+    }
+    Ok(())
 }
 
 fn funding_receipt_response(
@@ -2254,14 +2707,26 @@ fn admin_route(config: &Config, request: &Request) -> Response {
         return refusal(503, "admin_unavailable", Some(5));
     };
     match request.path.as_str() {
-        "/admin/v1/testnet/fund" => stateful(config, "fund", request, || {
-            admin_result(fund(config, request, &key))
-        }),
+        "/admin/v1/testnet/fund" => {
+            match archived_funding_response(config, request, &key) {
+                Ok(Some(response)) => return response,
+                Ok(None) => {}
+                Err(response) => return response,
+            }
+            stateful(config, "fund", request, || {
+                admin_result(fund(config, request, &key))
+            })
+        }
         "/admin/v1/testnet/reset" => {
             if request.body != b"{}" {
                 return refusal(400, "invalid_argument", None);
             }
-            stateful(config, "reset", request, || admin_result(reset(config)))
+            stateful(config, "reset", request, || {
+                match retain_funding_receipts(config) {
+                    Ok(()) => admin_result(reset(config)),
+                    Err(response) => response,
+                }
+            })
         }
         _ => refusal(404, "not_found", None),
     }

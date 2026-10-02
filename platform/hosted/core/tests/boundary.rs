@@ -2738,6 +2738,10 @@ fn supervised_metadata(root: &Path, asset: &[u8; 32], treasury_seed: &[u8; 32]) 
 }
 
 fn start_supervised_cluster() -> Cluster {
+    start_configured_supervised_cluster(false)
+}
+
+fn start_configured_supervised_cluster(funded: bool) -> Cluster {
     assert_eq!(
         effective_uid(),
         0,
@@ -2763,8 +2767,16 @@ fn start_supervised_cluster() -> Cluster {
         [&program_token, &replica_token],
     );
     supervised_metadata(&root, &asset, &treasury_seed);
-    let (chain, environment) = start_core_chain(&root, &sequencer_seed, &asset, None);
+    let (chain, environment) = start_core_chain(
+        &root,
+        &sequencer_seed,
+        &asset,
+        funded.then_some(&treasury_seed),
+    );
     state.chain = Some(chain);
+    if funded {
+        chown_tree(&root.join("chain"), DAEMON_UID, DAEMON_GID);
+    }
     let replica_args = supervisor_arguments(&root, "replica");
     let replica = spawn(
         &root.join("supervisor.sh"),
@@ -2807,6 +2819,38 @@ fn start_supervised_cluster() -> Cluster {
         ("--lni-gid", "0".into()),
     ] {
         sequencer_args.extend([name.into(), value]);
+    }
+    if funded {
+        sequencer_args.extend([
+            "--custody-profile".into(),
+            text(&root.join("chain/custody.profile")),
+        ]);
+        let separator = sequencer_args
+            .iter()
+            .position(|value| value == "--")
+            .unwrap_or_else(|| panic!("bootstrap argument separator"));
+        let mut bootstrap_args = vec![
+            "--data-dir".to_owned(),
+            text(&root.join("supervised-data")),
+            "--run-dir".to_owned(),
+            text(&root.join("run")),
+            "--layerxd".to_owned(),
+            text(&layerxd),
+        ];
+        bootstrap_args.extend_from_slice(&sequencer_args[separator + 1..]);
+        let mut bootstrap = spawn(
+            &root.join("bootstrap.sh"),
+            &bootstrap_args
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            &environment,
+            true,
+            root.join("custody-bootstrap.stderr"),
+        );
+        let status = wait_for_exit(&mut bootstrap, "canonical custody bootstrap");
+        assert!(status.success(), "{}", bootstrap.diagnostics());
+        register_funded_recipient(&root, &root.join("supervised-data"));
     }
     let mut sequencer = spawn(
         &root.join("supervisor.sh"),
@@ -3962,4 +4006,380 @@ fn register_funded_recipient(root: &Path, node_dir: &Path) {
     );
     write(&path, &identities, 0o600);
     chown_tree(node_dir, DAEMON_UID, DAEMON_GID);
+}
+
+fn assert_retained_funding(boundary: &Boundary, body: &str, original: &HttpAnswer) {
+    let replay = boundary.admin_post("/admin/v1/testnet/fund", "retained-send", body);
+    assert_eq!(replay.status, original.status);
+    assert_eq!(replay.body, original.body);
+    let mut conflict: serde_json::Value = must(serde_json::from_str(body), "funding command");
+    conflict["amount"] = serde_json::json!(26);
+    assert_refusal(
+        &boundary.admin_post(
+            "/admin/v1/testnet/fund",
+            "retained-send",
+            &conflict.to_string(),
+        ),
+        409,
+        "idempotency_conflict",
+    );
+}
+
+fn assert_no_reset_effect(
+    boundary: &Boundary,
+    cluster: &Cluster,
+    did: &str,
+    treasury: u128,
+    head: (u64, [u8; 32]),
+    manifest: &[u8],
+) {
+    assert_eq!(
+        must(
+            fs::read_to_string(cluster.root.join("run/generation")),
+            "generation"
+        ),
+        "1"
+    );
+    assert_eq!(
+        must(
+            fs::read(cluster.root.join("supervised-data/discard-on-reset")),
+            "old state"
+        ),
+        b"old state"
+    );
+    assert_eq!(
+        must(
+            fs::read(
+                cluster
+                    .root
+                    .join("supervised-data/genesis/genesis.manifest")
+            ),
+            "genesis"
+        ),
+        manifest
+    );
+    assert_eq!(
+        chain_head(&cluster.lni_socket).unwrap_or_else(|| panic!("head")),
+        head
+    );
+    assert_eq!(verified_balance(boundary, cluster, did), 125);
+    assert_eq!(
+        verified_balance(boundary, cluster, &cluster.treasury_did),
+        treasury
+    );
+}
+
+#[test]
+fn funded_receipt_archive_survives_actual_reset_and_refuses_storage_faults() {
+    let cluster = start_configured_supervised_cluster(true);
+    let certificates = certificates(&cluster.root);
+    let mut boundary = start_boundary(&cluster, &certificates);
+    let recipient_seed: [u8; 32] = must(
+        must(
+            fs::read(cluster.root.join("chain/recipient.seed")),
+            "recipient seed",
+        )
+        .try_into(),
+        "recipient key length",
+    );
+    for (name, seed) in [
+        ("custody", &cluster.treasury_seed),
+        ("recipient", &recipient_seed),
+    ] {
+        let canonical = must(
+            fs::read(cluster.root.join(format!("chain/{name}.activity"))),
+            "custody credit",
+        );
+        let activity = submit_custody_credit(&cluster, &canonical, seed);
+        wait_for_published_receipt(&boundary, &cluster, &hex_encode(&activity));
+    }
+    let did = treasury_did(&recipient_seed);
+    let key = hex_encode(
+        &SigningKey::from_bytes(&recipient_seed)
+            .verifying_key()
+            .to_bytes(),
+    );
+    assert_eq!(
+        verified_balance(&boundary, &cluster, &cluster.treasury_did),
+        1_000_000
+    );
+    assert_eq!(verified_balance(&boundary, &cluster, &did), 100);
+    let body = funding_body(&did, &key, 25);
+    let original = boundary.admin_post("/admin/v1/testnet/fund", "retained-send", &body);
+    assert_eq!(original.status, 200, "{}", original.body);
+    assert_eq!(json(&original)["state"], "funded");
+    let activity = json(&original)["transaction_id"]
+        .as_str()
+        .unwrap_or_else(|| panic!("SEND identity"))
+        .to_owned();
+    wait_for_published_receipt(&boundary, &cluster, &activity);
+    let receipt = boundary.core.get(&format!("/v1/receipts/{activity}"));
+    assert_eq!(receipt.status, 200, "{}", receipt.body);
+    let receipt = json(&receipt);
+    let bytes = must(
+        hex_decode(
+            receipt["result"]["receipt"]
+                .as_str()
+                .unwrap_or_else(|| panic!("receipt bytes")),
+        ),
+        "receipt encoding",
+    );
+    let verified = must(
+        layerx_proof::receipt::verify_sequencer_signature(&bytes, cluster.sequencer_key),
+        "SEND receipt signature",
+    );
+    let protocol = verified
+        .protocol()
+        .unwrap_or_else(|| panic!("protocol SEND receipt"));
+    assert_eq!(protocol.result_code(), 0);
+    assert_eq!(protocol.asset(), cluster.asset);
+    assert_eq!(hex_encode(&protocol.activity_id()), activity);
+    assert_eq!(verified_balance(&boundary, &cluster, &did), 125);
+    let treasury = verified_balance(&boundary, &cluster, &cluster.treasury_did);
+    assert!(treasury <= 1_000_000 - 25);
+    let head = chain_head(&cluster.lni_socket).unwrap_or_else(|| panic!("funded head"));
+    assert_retained_funding(&boundary, &body, &original);
+    assert_eq!(
+        chain_head(&cluster.lni_socket).unwrap_or_else(|| panic!("replay head")),
+        head
+    );
+    boundary.process.stop();
+    drop(boundary);
+    let mut boundary = start_boundary(&cluster, &certificates);
+    assert_retained_funding(&boundary, &body, &original);
+    let invalid = funding_body(&did, &key, 0);
+    let refused = boundary.admin_post("/admin/v1/testnet/fund", "retained-refusal", &invalid);
+    assert_refusal(&refused, 400, "invalid_argument");
+    let data = cluster.root.join("supervised-data");
+    let manifest = must(
+        fs::read(data.join("genesis/genesis.manifest")),
+        "original genesis",
+    );
+    write(&data.join("discard-on-reset"), b"old state", 0o600);
+    let mut watch = spawn(
+        Path::new("python3"),
+        &[
+            &text(&repository_root().join("platform/hosted/core/tests/receipt_retention.py")),
+            "--watch-supervisor",
+            &text(&cluster.root.join("run/supervisor.pid")),
+            &text(&cluster.root.join("reset-watch")),
+        ],
+        &BTreeMap::new(),
+        false,
+        cluster.root.join("reset-watch.stderr"),
+    );
+    let watch_ready = cluster.root.join("reset-watch.ready");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !watch_ready.exists() {
+        assert!(
+            watch.child.try_wait().is_ok_and(|status| status.is_none()),
+            "{}",
+            watch.diagnostics()
+        );
+        assert!(Instant::now() < deadline, "supervisor watcher readiness");
+        thread::sleep(Duration::from_millis(10));
+    }
+    let archive = cluster.root.join("state/funding-receipts");
+    let saved = cluster.root.join("state/funding-receipts.saved");
+    must(
+        fs::rename(&archive, &saved),
+        "retain actual archive directory",
+    );
+    write(&archive, b"archive parent is unavailable", 0o600);
+    assert_refusal(
+        &boundary.admin_post("/admin/v1/testnet/reset", "archive-write-fault", "{}"),
+        503,
+        "journal_unavailable",
+    );
+    assert_no_reset_effect(&boundary, &cluster, &did, treasury, head, &manifest);
+    must(fs::remove_file(&archive), "remove failed archive parent");
+    must(
+        fs::rename(&saved, &archive),
+        "restore actual archive directory",
+    );
+    let held_socket = cluster.root.join("run/supervisor.held.sock");
+    must(
+        fs::rename(&boundary.supervisor_socket, &held_socket),
+        "temporarily disconnect real supervisor socket",
+    );
+    let unavailable =
+        boundary.admin_post("/admin/v1/testnet/reset", "archive-before-contact", "{}");
+    must(
+        fs::rename(&held_socket, &boundary.supervisor_socket),
+        "restore real supervisor socket",
+    );
+    assert_refusal(&unavailable, 422, "supervisor_unavailable");
+    assert_no_reset_effect(&boundary, &cluster, &did, treasury, head, &manifest);
+    let name = format!(
+        "{}.json",
+        hex_encode(&sha256(&[b"fund-canonical\0", b"retained-send"]))
+    );
+    let receipt_path = archive.join(&name);
+    let intent_path = cluster.root.join("state/funding-intents").join(&name);
+    let intent = must(fs::read(&intent_path), "durable original SEND intent");
+    let retained = must(fs::read(&receipt_path), "durable authoritative receipt");
+    let retained_json: serde_json::Value = must(serde_json::from_slice(&retained), "archive JSON");
+    let stored_receipt: Vec<u8> = must(
+        serde_json::from_value(retained_json["receipt"].clone()),
+        "archive exact receipt",
+    );
+    assert_eq!(stored_receipt, bytes);
+    let mut tampered = retained_json;
+    let receipt_array = tampered["receipt"]
+        .as_array_mut()
+        .unwrap_or_else(|| panic!("receipt array"));
+    let final_byte = receipt_array
+        .last_mut()
+        .unwrap_or_else(|| panic!("nonempty receipt"));
+    *final_byte = serde_json::json!(
+        final_byte
+            .as_u64()
+            .unwrap_or_else(|| panic!("receipt byte"))
+            ^ 1
+    );
+    write(
+        &receipt_path,
+        &must(serde_json::to_vec(&tampered), "tampered archive JSON"),
+        0o600,
+    );
+    assert_refusal(
+        &boundary.admin_post("/admin/v1/testnet/reset", "archive-signature-fault", "{}"),
+        503,
+        "journal_unavailable",
+    );
+    assert_no_reset_effect(&boundary, &cluster, &did, treasury, head, &manifest);
+    write(&receipt_path, b"{corrupt", 0o600);
+    assert_refusal(
+        &boundary.admin_post("/admin/v1/testnet/reset", "archive-corrupt", "{}"),
+        503,
+        "journal_unavailable",
+    );
+    assert_refusal(
+        &boundary.admin_post("/admin/v1/testnet/fund", "retained-send", &body),
+        503,
+        "journal_unavailable",
+    );
+    assert_no_reset_effect(&boundary, &cluster, &did, treasury, head, &manifest);
+    must(
+        fs::remove_file(&receipt_path),
+        "remove corrupt archive file",
+    );
+    make_dir(&receipt_path, 0o700);
+    assert_refusal(
+        &boundary.admin_post("/admin/v1/testnet/reset", "archive-read-fault", "{}"),
+        503,
+        "journal_unavailable",
+    );
+    assert_no_reset_effect(&boundary, &cluster, &did, treasury, head, &manifest);
+    must(
+        fs::remove_dir(&receipt_path),
+        "remove unreadable archive directory",
+    );
+    let oversized = must(fs::File::create(&receipt_path), "oversized archive file");
+    must(oversized.set_len(32 * 1024 * 1024), "exceed archive bound");
+    drop(oversized);
+    assert_refusal(
+        &boundary.admin_post("/admin/v1/testnet/reset", "archive-oversized", "{}"),
+        503,
+        "journal_unavailable",
+    );
+    assert_no_reset_effect(&boundary, &cluster, &did, treasury, head, &manifest);
+    write(&receipt_path, &retained, 0o600);
+    thread::sleep(Duration::from_millis(100));
+    assert!(
+        watch.child.try_wait().is_ok_and(|status| status.is_none()),
+        "{}",
+        watch.diagnostics()
+    );
+    watch.stop();
+    assert_eq!(
+        must(
+            fs::read(cluster.root.join("reset-watch")),
+            "supervisor contact observation"
+        ),
+        b"",
+        "archive refusals must precede actual supervisor handler contact"
+    );
+    assert_eq!(
+        must(fs::read(&intent_path), "unchanged exact intent"),
+        intent
+    );
+    let reset = boundary.admin_post("/admin/v1/testnet/reset", "retained-reset", "{}");
+    assert_eq!(reset.status, 200, "{}", reset.body);
+    assert_eq!(json(&reset)["state"], "reset");
+    assert!(!data.join("discard-on-reset").exists());
+    assert_ne!(
+        must(
+            fs::read(data.join("genesis/genesis.manifest")),
+            "rebuilt genesis"
+        ),
+        manifest
+    );
+    assert_eq!(
+        must(
+            fs::read_to_string(cluster.root.join("run/generation")),
+            "reset generation"
+        ),
+        "2"
+    );
+    assert_eq!(boundary.core.get("/readyz").status, 200);
+    assert_refusal(
+        &boundary.core.get(&format!("/v1/receipts/{activity}")),
+        404,
+        "not_found",
+    );
+    let reset_head = chain_head(&cluster.lni_socket).unwrap_or_else(|| panic!("reset head"));
+    let reset_sequence = account_sequence(&cluster.lni_socket, &cluster.treasury_did);
+    assert_eq!(reset_sequence, 0);
+    assert_retained_funding(&boundary, &body, &original);
+    assert_eq!(
+        chain_head(&cluster.lni_socket).unwrap_or_else(|| panic!("post-reset replay head")),
+        reset_head
+    );
+    assert_eq!(
+        account_sequence(&cluster.lni_socket, &cluster.treasury_did),
+        reset_sequence
+    );
+    let repeated_refusal =
+        boundary.admin_post("/admin/v1/testnet/fund", "retained-refusal", &invalid);
+    assert_eq!(repeated_refusal.status, refused.status);
+    assert_eq!(repeated_refusal.body, refused.body);
+    boundary.process.stop();
+    drop(boundary);
+    let cache = cluster.root.join("state/journal").join(format!(
+        "{}.json",
+        hex_encode(&sha256(&[b"fund\0", b"retained-send"]))
+    ));
+    must(
+        fs::remove_file(cache),
+        "remove only response cache after real reset",
+    );
+    let boundary = start_boundary(&cluster, &certificates);
+    assert_retained_funding(&boundary, &body, &original);
+    assert_eq!(
+        chain_head(&cluster.lni_socket).unwrap_or_else(|| panic!("recovered archive head")),
+        reset_head
+    );
+    assert_eq!(
+        account_sequence(&cluster.lni_socket, &cluster.treasury_did),
+        reset_sequence
+    );
+    assert_eq!(
+        must(fs::read(&intent_path), "retained canonical SEND"),
+        intent
+    );
+    assert_eq!(
+        must(fs::read(&receipt_path), "retained verified receipt"),
+        retained
+    );
+    let repeated_reset = boundary.admin_post("/admin/v1/testnet/reset", "retained-reset", "{}");
+    assert_eq!(repeated_reset.status, reset.status);
+    assert_eq!(repeated_reset.body, reset.body);
+    assert_eq!(
+        must(
+            fs::read_to_string(cluster.root.join("run/generation")),
+            "replayed reset generation"
+        ),
+        "2"
+    );
 }
