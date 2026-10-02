@@ -666,6 +666,7 @@ public sealed record AgentEnvelopeResult(string RequestId, JsonValue Value, Json
 public sealed class AgentEnvelopeTransport : IPlatformTransport, IDisposable
 {
     public const string RoutePath = "/v1/agent/rpc";
+    public const string DaemonRoutePath = "/rpc";
     public const int MaximumRequestBytes = 1_048_576;
     private const int MaximumResponseBytes = 8 * 1024 * 1024;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -713,6 +714,28 @@ public sealed class AgentEnvelopeTransport : IPlatformTransport, IDisposable
             };
         }
         _httpClient = new HttpClient(handler, true);
+    }
+
+    private AgentEnvelopeTransport(Uri endpoint, AgentSessionCredential? credential, HttpClientHandler handler)
+    {
+        _endpoint = endpoint;
+        _credential = credential;
+        _gatewayKey = null;
+        _httpClient = new HttpClient(handler, false);
+    }
+
+    public static AgentEnvelopeTransport ForDaemon(Uri baseUri, AgentSessionCredential? credential, HttpClientHandler handler)
+    {
+        ArgumentNullException.ThrowIfNull(baseUri);
+        ArgumentNullException.ThrowIfNull(handler);
+        if (!baseUri.IsAbsoluteUri || baseUri.Scheme != Uri.UriSchemeHttps || !string.IsNullOrEmpty(baseUri.UserInfo) ||
+            string.IsNullOrEmpty(baseUri.Host) || !string.IsNullOrEmpty(baseUri.Query) ||
+            !string.IsNullOrEmpty(baseUri.Fragment) || baseUri.AbsolutePath != "/" ||
+            handler.AllowAutoRedirect || handler.UseCookies || handler.UseProxy ||
+            (handler.ClientCertificateOptions == ClientCertificateOption.Manual && handler.ClientCertificates.Count == 0))
+            throw Invalid();
+        return new AgentEnvelopeTransport(new UriBuilder(baseUri) { Path = DaemonRoutePath, Query = "", Fragment = "" }.Uri,
+            credential, handler);
     }
 
     public async Task<JsonValue> SendAsync(TransportCall call, CancellationToken cancellationToken = default) =>

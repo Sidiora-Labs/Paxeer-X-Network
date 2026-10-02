@@ -879,6 +879,7 @@ struct CachedPreparation {
 pub struct UnifiedAgentOwner<A> {
     operations: Arc<Mutex<ProductionHumanOperations<A>>>,
     store: Arc<Mutex<Store>>,
+    peers: Vec<HumanPeer>,
     pub approvals: Arc<ApprovalRegistry>,
     pub approval_queue: Arc<ApprovalSubmissionQueue>,
     pub approval_expiry: Arc<ApprovalExpiry>,
@@ -888,6 +889,18 @@ pub struct UnifiedAgentOwner<A> {
     pub session_control: SessionControl,
     pub session_keys: SessionKeyRegistry,
     pub degraded: Controller,
+}
+
+fn session_id_hex(text: &str) -> Option<[u8; 32]> {
+    let bytes = text.as_bytes();
+    if bytes.len() != 64 {
+        return None;
+    }
+    let mut output = [0_u8; 32];
+    for (slot, pair) in output.iter_mut().zip(bytes.chunks_exact(2)) {
+        *slot = u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok()?;
+    }
+    Some(output)
 }
 
 /// The one process-wide agent owner shared by the Human Unix listener and the
@@ -1352,6 +1365,7 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
         Ok(Self {
             operations: Arc::new(Mutex::new(operations)),
             store: Arc::clone(&shared_store),
+            peers: restore_peers,
             approvals,
             approval_queue,
             approval_expiry: Arc::new(ApprovalExpiry::from_shared_store(shared_store)),
@@ -1370,6 +1384,124 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
         self.operations
             .lock()
             .map_err(|_| HumanOperationError::Unavailable)
+    }
+
+    /// The Human peer bindings restored by the server at construction.
+    #[must_use]
+    pub(crate) fn retained_peers(&self) -> &[HumanPeer] {
+        &self.peers
+    }
+
+    /// Revalidates a retained peer through the authority and binds `agent` to its subject.
+    ///
+    /// # Errors
+    /// Returns `HumanOperationError::Refused` when the authority refuses the subject or the
+    /// agent is not bound to it, and `Unavailable` when an owner lock is poisoned.
+    pub(crate) fn bind_rpc_subject(
+        &mut self,
+        peer: &HumanPeer,
+        agent: &Did,
+    ) -> Result<HumanPeer, HumanOperationError> {
+        let mut operations = self.lock_operations()?;
+        operations.authorize_subject(peer)?;
+        let registry = operations.authority.registry(peer).map_err(map_core)?;
+        subject::for_did(&operations.store, peer, agent, &registry)
+    }
+
+    /// Resolves the owner of a session held by the shared session registry.
+    ///
+    /// # Errors
+    /// Returns `HumanOperationError::Refused` when the tenant holds no such session, and
+    /// `Unavailable` when the registry lock is poisoned.
+    pub(crate) fn session_owner(
+        &self,
+        tenant: &TenantId,
+        id: SessionId,
+    ) -> Result<crate::tenant::ObjectOwner, HumanOperationError> {
+        let sessions = self
+            .sessions
+            .read()
+            .map_err(|_| HumanOperationError::Unavailable)?;
+        let record = sessions.get(tenant, id).ok_or(HumanOperationError::Refused)?;
+        Ok(crate::tenant::ObjectOwner {
+            tenant: record.request.tenant.clone(),
+            agent: Some(record.request.agent.clone()),
+        })
+    }
+
+    /// Resolves the stored owner of the object an operation addresses.
+    ///
+    /// `Ok(None)` only for an operation that addresses no stored object.
+    ///
+    /// # Errors
+    /// Returns `HumanOperationError::Refused` for a missing, malformed or unknown reference and
+    /// for every referenced object whose owner record is not resolvable here, and `Unavailable`
+    /// when an owner lock is poisoned.
+    pub(crate) fn target_object_owner(
+        &self,
+        operation: crate::tenant::Operation,
+        request: &serde_json::Map<String, serde_json::Value>,
+        tenant: &TenantId,
+    ) -> Result<Option<crate::tenant::ObjectOwner>, HumanOperationError> {
+        use crate::tenant::Operation;
+        match operation {
+            Operation::ApprovalList
+            | Operation::SubscriptionList
+            | Operation::BudgetList
+            | Operation::CapabilityList
+            | Operation::SessionList
+            | Operation::AvailabilityFetch
+            | Operation::ProgramDiscover
+            | Operation::ProgramInterface
+            | Operation::ProgramSimulate
+            | Operation::Project
+            | Operation::ReadAccount
+            | Operation::ReadBalance
+            | Operation::ReadBatch
+            | Operation::ReadCheckpoint
+            | Operation::ReadHistory
+            | Operation::ReadModuleState
+            | Operation::BudgetCreate
+            | Operation::CapabilityCreate
+            | Operation::SubscriptionCreate
+            | Operation::Prepare
+            | Operation::ProgramCall
+            | Operation::ProgramDeploy
+            | Operation::FaucetClaim => Ok(None),
+            Operation::SessionClose | Operation::SessionRefresh => {
+                let text = request
+                    .get("session_id")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or(HumanOperationError::Refused)?;
+                let id = session_id_hex(text).ok_or(HumanOperationError::Refused)?;
+                self.session_owner(tenant, SessionId(id)).map(Some)
+            }
+            Operation::AgentRegister
+            | Operation::SessionOpen
+            | Operation::ApprovalApprove
+            | Operation::ApprovalGet
+            | Operation::ApprovalReject
+            | Operation::ExportOffline
+            | Operation::SubscriptionAcknowledge
+            | Operation::SubscriptionDelete
+            | Operation::SubscriptionHealth
+            | Operation::SubscriptionPause
+            | Operation::SubscriptionResume
+            | Operation::BudgetReconciliation
+            | Operation::BudgetFund
+            | Operation::BudgetRevoke
+            | Operation::CapabilityAttenuate
+            | Operation::CapabilityRevoke
+            | Operation::ProgramActivity
+            | Operation::ProgramReceipt
+            | Operation::ProgramUpgrade
+            | Operation::ProgramWindDown
+            | Operation::ReadProofBundle
+            | Operation::Sign
+            | Operation::Submit
+            | Operation::Track
+            | Operation::Wait => Err(HumanOperationError::Refused),
+        }
     }
 
     /// Reports whether the owner is healthy, with the network id and protocol version the

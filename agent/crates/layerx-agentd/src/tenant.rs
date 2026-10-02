@@ -2,7 +2,8 @@ use std::collections::BTreeMap;
 
 use layerx_types::ids::Did;
 
-use crate::session::{SessionError, SessionId, SessionRegistry, Token};
+use crate::human_runtime::{HumanAuthorityBoundary, UnifiedAgentOwner};
+use crate::session::{SessionCredential, SessionError, SessionId, SessionRegistry, Token};
 use crate::store::TenantId;
 
 pub use layerx_agent_api::Operation;
@@ -270,6 +271,10 @@ pub enum AuthorizationError {
     Expired,
     Revoked,
     InvalidRequest,
+    /// The envelope credential coordinates and the admitted caller disagree.
+    CoordinateMismatch,
+    /// A catalogue write reached the gate without an exact session credential.
+    BearerOnlyCatalogueWrite,
 }
 
 impl AuthorizationError {
@@ -280,6 +285,9 @@ impl AuthorizationError {
             Self::Expired => AuthorizationOutcome::Expired,
             Self::Revoked => AuthorizationOutcome::Revoked,
             Self::InvalidRequest => AuthorizationOutcome::InvalidRequest,
+            Self::CoordinateMismatch | Self::BearerOnlyCatalogueWrite => {
+                AuthorizationOutcome::NotAuthorized
+            }
         }
     }
 }
@@ -425,6 +433,15 @@ pub fn resolve(
             return Err(error);
         }
     };
+    if let Err(error) = bind_credential(token, sessions) {
+        observability.record(
+            token,
+            request.surface,
+            request.operation.name(),
+            error.outcome(),
+        );
+        return Err(error);
+    }
     if let Err(error) = require_caller_coordinates(
         token.tenant(),
         request.supplied_header_tenant.as_ref(),
@@ -471,6 +488,80 @@ pub(crate) const fn surface_for(operation: Operation) -> Surface {
         Some(OperationClass::Export) => Surface::Export,
         _ => Surface::Contract,
     }
+}
+
+/// Re-authenticates the token's exact credential (tenant, session, token identifier and
+/// generation) against the current registry view and requires the admitted record to name the
+/// same tenant, agent, session and generation as the token.
+fn bind_credential(token: &Token, sessions: &SessionRegistry) -> Result<(), AuthorizationError> {
+    let admitted = sessions
+        .authenticate(&token.credential())
+        .map_err(|failure| match failure {
+            SessionError::Revoked => AuthorizationError::Revoked,
+            SessionError::Expired => AuthorizationError::Expired,
+            _ => AuthorizationError::NotAuthorized,
+        })?;
+    if admitted.agent() != token.agent() {
+        return Err(AuthorizationError::CoordinateMismatch);
+    }
+    require_credential_coordinates(&token.credential(), &admitted)
+}
+
+/// Requires the envelope credential coordinates to equal the admitted caller exactly. The
+/// generation is compared as the canonical decimal the envelope carries.
+///
+/// # Errors
+///
+/// Returns `CoordinateMismatch` when tenant, agent, session, token identifier or generation
+/// differ.
+pub fn require_credential_coordinates(
+    credential: &SessionCredential,
+    admitted: &Token,
+) -> Result<(), AuthorizationError> {
+    let expected = admitted.credential();
+    if credential.tenant() != admitted.tenant()
+        || credential.session_id() != admitted.session_id()
+        || credential.token_id() != expected.token_id()
+        || credential.generation().to_string() != admitted.generation().to_string()
+    {
+        Err(AuthorizationError::CoordinateMismatch)
+    } else {
+        Ok(())
+    }
+}
+
+/// Refuses a catalogue write whose only authority is a program bearer or gateway key: every
+/// non-read operation requires the exact envelope session credential.
+///
+/// # Errors
+///
+/// Returns `BearerOnlyCatalogueWrite` when a non-read operation carries no session credential.
+pub fn require_session_credential(
+    operation: Operation,
+    credential: Option<&SessionCredential>,
+) -> Result<(), AuthorizationError> {
+    match (OperationClass::for_operation(operation), credential) {
+        (None, _) => Err(AuthorizationError::InvalidRequest),
+        (Some(OperationClass::Read), _) | (Some(_), Some(_)) => Ok(()),
+        (Some(_), None) => Err(AuthorizationError::BearerOnlyCatalogueWrite),
+    }
+}
+
+/// Loads the trusted owner of the object an id-addressed or object-referencing operation names.
+/// `Ok(None)` means the operation addresses no stored object; an unresolvable reference is
+/// refused without revealing whether it exists.
+///
+/// # Errors
+///
+/// Returns `NotAuthorized` when the owner cannot resolve the addressed object.
+pub(crate) fn load_target_owner<A: HumanAuthorityBoundary>(
+    owner: &UnifiedAgentOwner<A>,
+    operation: Operation,
+    request: &serde_json::Map<String, serde_json::Value>,
+) -> Result<Option<ObjectOwner>, AuthorizationError> {
+    owner
+        .target_object_owner(operation, request)
+        .map_err(|_| AuthorizationError::NotAuthorized)
 }
 
 /// The trusted owner of the object an Agent HTTP envelope operation addresses. The envelope

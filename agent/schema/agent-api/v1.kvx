@@ -1,7 +1,7 @@
 [schema]
 name = "LayerX Agent API"
 major = 1
-minor = 3
+minor = 4
 node_interface_major = 1
 source_of_truth = "This schema and the schema files it includes define the daemon contract and every SDK surface. Generated output is never authoritative."
 compatibility = "Within one major version a release may only add sections or keys. Removing or changing an existing declaration requires a new major version."
@@ -145,4 +145,455 @@ change = "Adds the version 1 Agent HTTP operation envelope transport and its ses
 
 [compatibility.feature.agent_http]
 introduced_contract = "1.3"
+classification = "additive_only"
+
+[transport.agent_http.idempotency]
+rule = "idempotency_key is required if and only if Operation::mutating() is true for the named operation; a missing key on a mutating operation or a key on a non-mutating operation is IdempotencyConflict envelope.idempotency_key."
+keyed_execution = "prepare and submit carry the key in the owner mutation envelope directly; every other mutating operation is executed through the durable idempotency store only when canonical request bytes are defined for it, otherwise it is UnavailableCapability idempotency.unsupported_operation."
+
+[transport.agent_http.dispositions]
+served_dispatcher_arm = "Decoded into the owner typed request and executed by an arm of the daemon dispatcher."
+served_adapter_arm = "Executed by an owner adapter arm. No operation has an adapter arm in this contract revision."
+refused_pending_bootstrap_artifact = "A bootstrap operation with a null credential; refused until the authenticated bootstrap artifact exists. Never served."
+unmatched_by_ruling = "Deliberately given no arm. Never served."
+retired = "Refused before dispatch as UnavailableCapability unavailable_capability.faucet.claim, Terminal."
+not_served_no_arm = "A catalogue operation with no dispatcher or adapter arm in this contract revision. Never served."
+surface = "Subscribe class operations use the Subscription caller surface, Export class operations the Export surface, every other operation the Contract surface."
+
+[transport.agent_http.operation.agent.register]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "mutation"
+operation_class = "none"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "refused_pending_bootstrap_artifact"
+
+[transport.agent_http.operation.approval.approve]
+request = "ApprovalDecisionRequest"
+access = "mutation"
+operation_class = "Approve"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "served_dispatcher_arm"
+
+[transport.agent_http.operation.approval.get]
+request = "ApprovalGetRequest"
+access = "read"
+operation_class = "Approve"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "served_dispatcher_arm"
+
+[transport.agent_http.operation.approval.list]
+request = "ApprovalListRequest"
+access = "read"
+operation_class = "Approve"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "served_dispatcher_arm"
+
+[transport.agent_http.operation.approval.reject]
+request = "ApprovalDecisionRequest"
+access = "mutation"
+operation_class = "Approve"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "served_dispatcher_arm"
+
+[transport.agent_http.operation.availability.fetch]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.budget.create]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "mutation"
+operation_class = "Write"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.budget.fund]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "mutation"
+operation_class = "Write"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.budget.list]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.budget.reconciliation]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.budget.revoke]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "mutation"
+operation_class = "Write"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.capability.attenuate]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "mutation"
+operation_class = "Write"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.capability.create]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "mutation"
+operation_class = "Write"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.capability.list]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.capability.revoke]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "mutation"
+operation_class = "Write"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.export.offline]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Export"
+surface = "Export"
+idempotency_key = "absent"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.faucet.claim]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Write"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "retired"
+
+[transport.agent_http.operation.prepare]
+request = "owner typed Human prepare request"
+access = "mutation"
+operation_class = "Prepare"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "served_dispatcher_arm"
+
+[transport.agent_http.operation.program.activity]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.program.call]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "mutation"
+operation_class = "Write"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.program.deploy]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "mutation"
+operation_class = "Write"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.program.discover]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.program.interface]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "unmatched_by_ruling"
+
+[transport.agent_http.operation.program.receipt]
+request = "ActivityLookupRequest"
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "served_dispatcher_arm"
+
+[transport.agent_http.operation.program.simulate]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.program.upgrade]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "mutation"
+operation_class = "Write"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.program.wind-down]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "mutation"
+operation_class = "Write"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.project]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.read.account]
+request = "ReadAccountRequest"
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "served_dispatcher_arm"
+
+[transport.agent_http.operation.read.balance]
+request = "CoordinatesOnly"
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "served_dispatcher_arm"
+
+[transport.agent_http.operation.read.batch]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.read.checkpoint]
+request = "CoordinatesOnly"
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "served_dispatcher_arm"
+
+[transport.agent_http.operation.read.history]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.read.module_state]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.read.proof_bundle]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "unmatched_by_ruling"
+
+[transport.agent_http.operation.session.close]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "mutation"
+operation_class = "Write"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.session.list]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.session.open]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "mutation"
+operation_class = "none"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "refused_pending_bootstrap_artifact"
+
+[transport.agent_http.operation.session.refresh]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "mutation"
+operation_class = "Write"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.sign]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "mutation"
+operation_class = "Write"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.submit]
+request = "owner typed Human submit request"
+access = "mutation"
+operation_class = "Write"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "served_dispatcher_arm"
+
+[transport.agent_http.operation.subscription.acknowledge]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "mutation"
+operation_class = "Subscribe"
+surface = "Subscription"
+idempotency_key = "required"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.subscription.create]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "mutation"
+operation_class = "Subscribe"
+surface = "Subscription"
+idempotency_key = "required"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.subscription.delete]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "mutation"
+operation_class = "Subscribe"
+surface = "Subscription"
+idempotency_key = "required"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.subscription.health]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Subscribe"
+surface = "Subscription"
+idempotency_key = "absent"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.subscription.list]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Subscribe"
+surface = "Subscription"
+idempotency_key = "absent"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.subscription.pause]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "mutation"
+operation_class = "Subscribe"
+surface = "Subscription"
+idempotency_key = "required"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.subscription.resume]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "mutation"
+operation_class = "Subscribe"
+surface = "Subscription"
+idempotency_key = "required"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.track]
+request = "TrackRequest"
+access = "read"
+operation_class = "Write"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "served_dispatcher_arm"
+
+[transport.agent_http.operation.wait]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Write"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.errors]
+classes = "Every error is one ErrorClass variant from errors.kvx: TransportFailure, Deadline, ProtocolIncompatibility, UnavailableCapability, CoreRejection, VerificationFailure, PolicyRefusal, CapabilityRefusal, BudgetRefusal, RateLimit, IdempotencyConflict, InternalFault."
+transport_ambiguity = "A mutating request whose outcome the client cannot know is reported to the caller as Unknown."
+"envelope.oversized" = "ProtocolIncompatibility Terminal. Body above max_body_bytes."
+"envelope.malformed" = "ProtocolIncompatibility Terminal. Body is not one well-formed envelope object."
+"envelope.unknown_field" = "ProtocolIncompatibility Terminal. Envelope or request object carries an unknown key."
+"envelope.version" = "ProtocolIncompatibility Terminal. Envelope version other than 1."
+"envelope.unknown_operation" = "ProtocolIncompatibility Terminal. Operation is not a catalogue operation name."
+"envelope.noncanonical_integer" = "ProtocolIncompatibility Terminal. An integer string is not canonical decimal."
+"envelope.credential" = "ProtocolIncompatibility Terminal. Credential missing or a credential coordinate is malformed."
+"envelope.idempotency_key" = "IdempotencyConflict Terminal. Idempotency key presence violates the idempotency rule or the key is malformed."
+"envelope.coordinate_mismatch" = "PolicyRefusal Terminal. A request tenant or agent coordinate differs from the authenticated principal."
+"envelope.header_principal" = "PolicyRefusal Terminal. A LayerX-Tenant, LayerX-Agent or Authorization header reached the daemon."
+"envelope.peer_unmapped" = "PolicyRefusal Terminal. The authenticated principal maps to no owner peer."
+"unavailable_capability.faucet.claim" = "UnavailableCapability Terminal. The retired faucet.claim operation."
+"idempotency.unsupported_operation" = "UnavailableCapability Terminal. A keyed mutation without defined canonical request bytes."
+"idempotency.body_changed" = "IdempotencyConflict Terminal. Same idempotency key with a different body digest."
+"outcome.unknown" = "TransportFailure Terminal. Mutation outcome is Unknown; never resent automatically."
+"session.scope_denied" = "CapabilityRefusal Terminal. Session scope does not admit the operation surface."
+"session.expired" = "PolicyRefusal Terminal. Session expired."
+"session.revoked" = "PolicyRefusal Terminal. Session revoked."
+"session.invalid_request" = "ProtocolIncompatibility Terminal. Session authorization request is invalid."
+"session.not_authorized" = "PolicyRefusal Terminal. Session authority does not authorize the credential."
+"owner.degraded" = "UnavailableCapability Retriable. Owner is not Healthy."
+"owner.unavailable" = "InternalFault Retriable. Owner unavailable at the daemon; the dispatcher maps an owner Unavailable error to UnavailableCapability Retriable with this reason."
+"owner.refused" = "PolicyRefusal Terminal. Owner refused the typed operation."
+"owner.response_malformed" = "InternalFault Terminal. Owner response did not decode."
+"verification.inconsistent" = "VerificationFailure Terminal. Verification status violates the level ordering."
+
+[compatibility.history.1_4]
+classification = "additive_only"
+baseline = "golden/v1.kvx@1.3"
+change = "Adds the Agent HTTP per-operation disposition table, the emitted error reason list and the idempotency rule without changing any contract 1.3 declaration."
+
+[compatibility.feature.agent_http_operations]
+introduced_contract = "1.4"
 classification = "additive_only"

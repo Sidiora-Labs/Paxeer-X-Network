@@ -142,6 +142,9 @@ public final class HttpProductionTransport implements ProductionTransport {
     private final Duration timeout;
     private final Credential credential;
     private final AgentSessionCredential session;
+    private final String agentPath;
+
+    public record AgentReply(int status, String requestId, JsonNode value, JsonNode verificationStatus, JsonNode body) {}
 
     public HttpProductionTransport(HttpClient client, ObjectMapper mapper, URI humanBaseUri,
                                    URI agentEndpoint, Duration timeout, Credential credential) {
@@ -151,6 +154,13 @@ public final class HttpProductionTransport implements ProductionTransport {
     public HttpProductionTransport(HttpClient client, ObjectMapper mapper, URI humanBaseUri,
                                    URI agentEndpoint, Duration timeout, Credential credential,
                                    AgentSessionCredential session) {
+        this(client, mapper, humanBaseUri, agentEndpoint, timeout, credential, session, AGENT_RPC_PATH);
+    }
+
+    private HttpProductionTransport(HttpClient client, ObjectMapper mapper, URI humanBaseUri,
+                                    URI agentEndpoint, Duration timeout, Credential credential,
+                                    AgentSessionCredential session, String agentPath) {
+        this.agentPath = agentPath;
         this.client = Objects.requireNonNull(client, "client");
         if (client.followRedirects() != HttpClient.Redirect.NEVER) throw PlatformSdkException.invalidArgument();
         this.mapper = Objects.requireNonNull(mapper, "mapper");
@@ -171,6 +181,15 @@ public final class HttpProductionTransport implements ProductionTransport {
                                                  AgentSessionCredential session) {
         return new HttpProductionTransport(HttpClient.newBuilder().version(HttpClient.Version.HTTP_2).build(),
             new ObjectMapper(), humanBaseUri, agentEndpoint, Duration.ofSeconds(30), credential, session);
+    }
+
+    public static HttpProductionTransport daemon(HttpClient client, ObjectMapper mapper, URI daemonBaseUri,
+                                                 Duration timeout, AgentSessionCredential session) {
+        Objects.requireNonNull(daemonBaseUri, "daemonBaseUri");
+        Objects.requireNonNull(session, "session");
+        if (!"https".equalsIgnoreCase(daemonBaseUri.getScheme())) throw PlatformSdkException.invalidArgument();
+        Objects.requireNonNull(client, "client");
+        return new HttpProductionTransport(client, mapper, daemonBaseUri, daemonBaseUri, timeout, null, session, "/rpc");
     }
 
     @Override
@@ -203,6 +222,21 @@ public final class HttpProductionTransport implements ProductionTransport {
 
     private <T> CompletionStage<T> callAgent(Call call, JavaType responseType) {
         boolean mutating = OperationCatalog.requiresIdempotency(call.operation());
+        return callAgentReply(call).thenApply(reply -> {
+            try {
+                return mapper.<T>convertValue(reply.value(), responseType);
+            } catch (IllegalArgumentException error) {
+                throw new CompletionException(agentTransportFailure(mutating));
+            }
+        });
+    }
+
+    public CompletionStage<AgentReply> callAgentReply(Call call) {
+        Objects.requireNonNull(call, "call");
+        if (call.operation().plane() != OperationCatalog.Plane.AGENT) {
+            return CompletableFuture.failedFuture(PlatformSdkException.invalidArgument());
+        }
+        boolean mutating = OperationCatalog.requiresIdempotency(call.operation());
         String requestId = Long.toUnsignedString(REQUEST_IDS.nextLong());
         final byte[] envelope;
         final HttpRequest request;
@@ -227,12 +261,12 @@ public final class HttpProductionTransport implements ProductionTransport {
             try (var body = response.body()) {
                 byte[] encoded = body.readNBytes(MAXIMUM_RESPONSE_BYTES + 1);
                 if (encoded.length > MAXIMUM_RESPONSE_BYTES || !jsonContentType(response)) throw decodeFailure(null);
-                return decodeAgent(response.statusCode(), encoded, requestId, responseType);
+                return decodeAgentReply(response.statusCode(), encoded, requestId);
             } catch (IOException error) {
                 throw new CompletionException(agentTransportFailure(mutating));
             } catch (PlatformSdkException error) {
-                if (mutating && error.code() == PlatformSdkException.Code.DECODE_FAILURE) {
-                    throw new CompletionException(unknownOutcome());
+                if (error.code() == PlatformSdkException.Code.DECODE_FAILURE) {
+                    throw new CompletionException(agentTransportFailure(mutating));
                 }
                 throw error;
             }
@@ -325,7 +359,7 @@ public final class HttpProductionTransport implements ProductionTransport {
     private HttpRequest agentRequest(byte[] envelope) {
         if (credential instanceof ProgramsBearerCredential) throw new PlatformSdkException(
             PlatformSdkException.Code.CAPABILITY_REFUSAL, PlatformSdkException.Retry.NEVER, null, null, null);
-        var builder = HttpRequest.newBuilder(rootEndpoint(agentEndpoint, AGENT_RPC_PATH)).timeout(timeout)
+        var builder = HttpRequest.newBuilder(rootEndpoint(agentEndpoint, agentPath)).timeout(timeout)
             .header("Accept", "application/json").header("Content-Type", "application/json")
             .header("User-Agent", "layerx-jvm/0.1.0");
         if (credential != null) credential.apply(builder);
@@ -520,6 +554,14 @@ public final class HttpProductionTransport implements ProductionTransport {
 
     <T> T decodeAgent(int status, byte[] encoded, String requestId, JavaType type) {
         try {
+            return mapper.convertValue(decodeAgentReply(status, encoded, requestId).value(), type);
+        } catch (IllegalArgumentException error) {
+            throw decodeFailure(null);
+        }
+    }
+
+    AgentReply decodeAgentReply(int status, byte[] encoded, String requestId) {
+        try {
             JsonNode envelope = mapper.readTree(encoded);
             if (envelope == null || !envelope.isObject()) throw decodeFailure(null);
             if (envelope.has("class")) {
@@ -540,7 +582,7 @@ public final class HttpProductionTransport implements ProductionTransport {
             if (value instanceof com.fasterxml.jackson.databind.node.ObjectNode object) {
                 value = SchemaTypes.canonicalBody(object);
             }
-            return mapper.convertValue(value, type);
+            return new AgentReply(status, requestId, value, envelope.get("verification_status"), envelope);
         } catch (PlatformSdkException error) {
             throw error;
         } catch (IOException | IllegalArgumentException error) {

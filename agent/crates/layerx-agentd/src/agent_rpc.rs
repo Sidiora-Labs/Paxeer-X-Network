@@ -5,6 +5,7 @@ use layerx_agent_api::error::{ApiError, ErrorClass, ReasonCode, RequestId, Retri
 use layerx_agent_api::verify::{Level, VerificationStatus};
 use serde::Deserialize;
 
+use crate::agent_rpc_peer;
 use crate::agent_rpc_dispatch::{
     canonical_request_bytes, dispatch_operation, DispatchContext, Dispatched,
 };
@@ -15,7 +16,7 @@ use crate::human_runtime::{HumanAuthorityBoundary, SharedAgentOwner};
 use crate::session::{SessionCredential, SessionId};
 use crate::session_control::{OperationPermit, SessionControl, SessionControlError};
 use crate::store::TenantId;
-use crate::tenant::{self, surface_for, target_owner, AuthorizationError, ObjectOwner, Operation, Surface};
+use crate::tenant::{self, surface_for, AuthorizationError, ObjectOwner, Operation, Surface};
 
 pub const ENVELOPE_VERSION: u8 = 1;
 pub const MAX_BODY_BYTES: usize = 1_048_576;
@@ -232,6 +233,8 @@ pub fn authorize(
         .transpose()?;
     tenant::require_caller_coordinates(credential.tenant(), None, supplied_tenant.as_ref())
         .map_err(|_| mismatch())?;
+    tenant::require_session_credential(envelope.operation, envelope.credential.as_ref())
+        .map_err(|error| authorization_rejection(request_id, &SessionControlError::Authorization(error)))?;
     let permit = control
         .authorize(credential, envelope.operation, surface, core_sequence, target_owner)
         .map_err(|error| authorization_rejection(request_id, &error))?;
@@ -482,7 +485,6 @@ fn authorized<A: HumanAuthorityBoundary>(
 ) -> Result<(OperationPermit, u64), Rejection> {
     let request_id = envelope.request_id;
     let surface = surface_for(envelope.operation);
-    let target = target_owner(envelope.operation, &envelope.request);
     let core_sequence = owner
         .current_core_sequence()
         .map_err(|_| owner_unavailable(request_id))?;
@@ -495,6 +497,8 @@ fn authorized<A: HumanAuthorityBoundary>(
             reason: "owner.degraded",
         });
     }
+    let target = tenant::load_target_owner(&*guard, envelope.operation, &envelope.request)
+        .map_err(|_| Rejection::new(ErrorClass::PolicyRefusal, request_id, "session.not_authorized"))?;
     let permit = authorize(&guard.session_control, envelope, surface, core_sequence, target)?;
     drop(guard);
     Ok((permit, core_sequence))
@@ -569,8 +573,12 @@ pub fn handle_rpc<A: HumanAuthorityBoundary>(
         },
         None => match envelope.operation {},
     };
-    let peer = match owner.rpc_peer(permit.principal()) {
-        Ok(peer) => peer,
+    let bound = match owner.lock() {
+        Ok(mut guard) => agent_rpc_peer::bind(&mut *guard, &permit),
+        Err(_) => return rejected(&owner_unavailable(request_id)),
+    };
+    let context_peer = match bound {
+        Ok(context_peer) => context_peer,
         Err(_) => {
             return rejected(&Rejection::new(
                 ErrorClass::PolicyRefusal,
@@ -582,12 +590,13 @@ pub fn handle_rpc<A: HumanAuthorityBoundary>(
     let context = DispatchContext {
         request_id,
         idempotency_key: envelope.idempotency_key,
-        peer,
+        peer: context_peer.peer().clone(),
     };
     let journey = matches!(envelope.operation, Operation::Prepare | Operation::Submit);
     let Some(key) = envelope.idempotency_key.filter(|_| !journey) else {
-        let result = dispatch_operation(owner, &permit, envelope.operation, &envelope.request, &context);
+        let result = dispatch_operation(owner, &permit, &context_peer, envelope.operation, &envelope.request, &context);
         let response = respond(request_id, requested_level(&envelope.request), result);
+        drop(context_peer);
         drop(permit);
         return response;
     };
@@ -612,7 +621,7 @@ pub fn handle_rpc<A: HumanAuthorityBoundary>(
             fault = Some(Rejection::new(ErrorClass::TransportFailure, request_id, "outcome.unknown"));
             return Err(String::from("outcome.unknown"));
         }
-        let result = dispatch_operation(owner, &permit, envelope.operation, &envelope.request, &context)
+        let result = dispatch_operation(owner, &permit, &context_peer, envelope.operation, &envelope.request, &context)
             .and_then(|dispatched| {
                 success_body(request_id, &dispatched, requested_level(&envelope.request))
             });
@@ -629,6 +638,7 @@ pub fn handle_rpc<A: HumanAuthorityBoundary>(
             receipt_ref: None,
         })
     });
+    drop(context_peer);
     drop(permit);
     match outcome {
         Ok(Outcome::First(result) | Outcome::RepeatedOriginal(result)) => {

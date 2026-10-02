@@ -2,7 +2,9 @@
 
 pub mod admin;
 pub mod agent_rpc;
+pub mod agent_rpc_adapters;
 pub mod agent_rpc_dispatch;
+pub mod agent_rpc_peer;
 pub mod agent_rpc_tls;
 pub mod approval;
 pub mod audit;

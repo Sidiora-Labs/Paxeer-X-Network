@@ -367,6 +367,8 @@ function decodeFailure(requestId?: string): PlatformSdkError {
 
 export const AGENT_ENVELOPE_VERSION = 1 as const;
 export const AGENT_ENVELOPE_PATH = "/v1/agent/rpc" as const;
+export const AGENT_DAEMON_RPC_PATH = "/rpc" as const;
+export type AgentEnvelopeSurface = "gateway" | "daemon";
 const MAX_TENANT_BYTES = 255;
 const MAX_U64 = (1n << 64n) - 1n;
 const CANONICAL_DECIMAL = /^(?:0|[1-9][0-9]{0,19})$/u;
@@ -434,6 +436,12 @@ export class AgentSessionCredential {
 
 export interface AgentEnvelopeTransportOptions {
   readonly endpoint: URL | string;
+  /** "gateway" (default) posts to /v1/agent/rpc; "daemon" posts to the daemon mTLS listener at /rpc. */
+  readonly surface?: AgentEnvelopeSurface;
+  /** Daemon surface only (required there): client certificate PEM presented for mutual TLS. */
+  readonly clientCertificate?: SecretBytes;
+  /** Daemon surface only (required there): client private key PEM presented for mutual TLS. */
+  readonly clientKey?: SecretBytes;
   /** Required for every operation except the bootstrap set agent.register and session.open, which carry a null credential. */
   readonly session?: AgentSessionCredential;
   /** Gateway API-key admission; a separate authority from the daemon session credential. */
@@ -458,15 +466,28 @@ export class AgentEnvelopeTransport implements ProductionTransport {
   readonly #session: AgentSessionCredential | undefined;
   readonly #gatewayCredential: LayerXKeyCredential | undefined;
   readonly #trustedCa: string | Buffer | undefined;
+  readonly #clientCertificate: SecretBytes | undefined;
+  readonly #clientKey: SecretBytes | undefined;
   readonly #timeoutMs: number;
   readonly #maximumResponseBytes: number;
   readonly #onResponse: ((status: number, body: Buffer) => void) | undefined;
 
   public constructor(options: AgentEnvelopeTransportOptions) {
     if (options.session !== undefined && !(options.session instanceof AgentSessionCredential)) throw invalidArgument();
-    this.#endpoint = routeEndpoint(validateEndpoint(options.endpoint), AGENT_ENVELOPE_PATH);
+    const surface = options.surface ?? "gateway";
+    if (surface !== "gateway" && surface !== "daemon") throw invalidArgument();
+    const endpoint = validateEndpoint(options.endpoint);
+    if (surface === "daemon") {
+      if (endpoint.protocol !== "https:" || options.gatewayCredential !== undefined
+        || !(options.clientCertificate instanceof SecretBytes) || !(options.clientKey instanceof SecretBytes)) throw invalidArgument();
+    } else if (options.clientCertificate !== undefined || options.clientKey !== undefined) {
+      throw invalidArgument();
+    }
+    this.#endpoint = routeEndpoint(endpoint, surface === "daemon" ? AGENT_DAEMON_RPC_PATH : AGENT_ENVELOPE_PATH);
     this.#session = options.session;
     this.#gatewayCredential = options.gatewayCredential;
+    this.#clientCertificate = options.clientCertificate;
+    this.#clientKey = options.clientKey;
     if (options.trustedCa !== undefined && (this.#endpoint.protocol !== "https:" || options.trustedCa.length === 0)) throw invalidArgument();
     this.#trustedCa = options.trustedCa;
     this.#onResponse = options.onResponse;
@@ -512,6 +533,10 @@ export class AgentEnvelopeTransport implements ProductionTransport {
       };
       const options: https.RequestOptions = { method: "POST", headers, timeout: this.#timeoutMs, rejectUnauthorized: true };
       if (this.#trustedCa !== undefined) options.ca = this.#trustedCa;
+      if (this.#clientCertificate !== undefined && this.#clientKey !== undefined) {
+        options.cert = this.#clientCertificate.withBytes((bytes) => Buffer.from(bytes));
+        options.key = this.#clientKey.withBytes((bytes) => Buffer.from(bytes));
+      }
       const request = driver.request(this.#endpoint, options, (response) => {
         const chunks: Buffer[] = [];
         let received = 0;
@@ -624,6 +649,9 @@ export function decodeAgentEnvelopeResponse(status: number, encoded: Buffer, mut
     }) as unknown;
     envelope = record(parsed);
   } catch { throw ambiguous(); }
+  if (!mutation && envelope.ok === false && "error" in envelope && Object.keys(envelope).length === 2) {
+    throw new PlatformSdkError({ code: "transport-failure", retry: "safe" });
+  }
   if ("class" in envelope) {
     try { exactKeys(envelope, ["class", "protocol_result_code", "retriability", "reason", "request_id"]); }
     catch { throw ambiguous(); }

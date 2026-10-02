@@ -372,6 +372,26 @@ func TestAgentOperationEnvelopeClientEncoding(t *testing.T) {
 	if _, err := decodeAgentEnvelopeResponse(http.StatusOK, []byte(`{"request_id":"8","value":1,"verification_status":{"state":"Achieved","level":"SequencerSigned"}}`), "8"); err == nil || err.Code != ErrorVerificationFailure {
 		t.Fatal("an unrecognised verification status must fail closed")
 	}
+	if _, err := decodeAgentEnvelopeResponse(http.StatusOK, []byte(`{"request_id":"8","value":1,"verification_status":{"state":"unverified","requested":"Unverified","achieved":"SequencerSigned","reason":"r"}}`), "8"); err == nil || err.Code != ErrorVerificationFailure {
+		t.Fatal("an unverified status whose achieved level is not below the requested level must fail closed")
+	}
+	if _, err := decodeAgentEnvelopeResponse(http.StatusRequestEntityTooLarge, []byte(`{"class":"ProtocolIncompatibility","protocol_result_code":null,"retriability":"Terminal","request_id":"0","reason":"envelope.oversized"}`), "8"); err == nil || err.Code != ErrorProtocolIncompatible || err.ServiceCode != "envelope.oversized" {
+		t.Fatalf("a framing refusal with request_id 0 must decode as its typed class: %v", err)
+	}
+	if _, err := decodeAgentEnvelopeResponse(http.StatusOK, []byte(`{"request_id":"0","value":1,"verification_status":{"state":"achieved","level":"Unverified"}}`), "8"); err == nil || err.Code != ErrorDecodeFailure {
+		t.Fatal("a success must echo the exact request_id")
+	}
+	if _, err := NewAgentDaemonEnvelopeHTTPTransport("http://127.0.0.1:1", nil, nil); err == nil {
+		t.Fatal("the daemon envelope surface must refuse a non-https endpoint")
+	}
+	daemon, err := NewAgentDaemonEnvelopeHTTPTransport("https://localhost:1", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	daemonRequest, err := daemon.request(context.Background(), []byte(`{}`))
+	if err != nil || daemonRequest.URL.Path != "/rpc" || len(daemonRequest.Header.Values("Authorization")) != 0 {
+		t.Fatalf("the daemon envelope surface must POST /rpc with no Authorization header: %v", err)
+	}
 	if _, err := decodeAgentEnvelopeResponse(http.StatusServiceUnavailable, []byte(`{"class":"UnavailableCapability","protocol_result_code":null,"retriability":"Terminal","request_id":"8","reason":"unavailable_capability.faucet.claim"}`), "8"); err == nil || err.Code != ErrorUnavailableCapability || err.Retry != RetryNever || err.ServiceCode != "unavailable_capability.faucet.claim" {
 		t.Fatalf("the retired faucet refusal must decode as a terminal unavailable capability: %v", err)
 	}

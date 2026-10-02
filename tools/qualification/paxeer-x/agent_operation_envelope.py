@@ -27,12 +27,14 @@ RUST_PRE_RESTART = ('allowed_mutation', 'mutation_duplicate_same_result', 'wrong
                     'wrong_generation', 'wrong_session', 'wrong_token', 'revoked_session',
                     'missing_idempotency_key', 'changed_body_same_key', 'restart_unknown_pending')
 RUST_POST_RESTART = ('restart_unknown_reconcile',)
+PYTHON_PRE_RESTART = ('allowed_mutation', 'mutation_duplicate_same_result', 'restart_unknown_pending', 'restart_retry_same_result')
+PYTHON_POST_RESTART = ('restart_unknown_reconcile', 'restart_retry_same_result')
 DIRECT_CASES = ('read_account', 'program_read', 'approval_list', 'program_bearer_alone', 'gateway_key_alone_write',
                 'forged_principal_header', 'malformed_body', 'truncated_body', 'oversized_body', 'unknown_operation',
                 'unknown_field', 'bad_version', 'noncanonical_integer', 'faucet_retired', 'mtls_no_client_cert',
                 'mtls_wrong_peer', 'mtls_wrong_ca', 'no_plaintext_fallback', 'native_rpc_unchanged',
                 'programs_route_unchanged', 'idempotent_replay_same_body', 'idempotency_changed_body_conflict',
-                'health_ready', 'health_binding_wrong_network', 'health_binding_ready_false')
+                'health_ready', 'health_binding_wrong_network', 'health_binding_ready_false', 'coordinate_mismatch')
 HEALTH_PATH = '/healthz'
 CLASSES = {'TransportFailure', 'Deadline', 'ProtocolIncompatibility', 'UnavailableCapability', 'CoreRejection',
            'VerificationFailure', 'PolicyRefusal', 'CapabilityRefusal', 'BudgetRefusal', 'RateLimit',
@@ -568,6 +570,12 @@ class Qualification:
                              'faucet_retired', value['request_id'])
         require(error['retriability'] == 'Terminal' and error['protocol_result_code'] is None, 'faucet_retired: retriability')
         self.passed('faucet_retired', self.d / 'responses/faucet_retired.http')
+        for field in ('tenant', 'agent'):
+            request = dict(req['read']['request'], **{field: 'coordinate-mismatch'})
+            value, status, response = self.call('coordinate_mismatch_' + field, req['read']['operation'], request)
+            self.refusal(status, response, 403, 'PolicyRefusal', 'envelope.coordinate_mismatch',
+                         'coordinate_mismatch_' + field, value['request_id'])
+        self.passed('coordinate_mismatch', self.d / 'responses/coordinate_mismatch_tenant.http')
         status, response = self.http(self.config['native_rpc_body'].encode(), path='/rpc', headers=self.api_key(), case='native_rpc_unchanged')
         value = json.loads(response)
         require(status == 200 and value.get('jsonrpc') == '2.0' and 'request_id' not in value, 'native_rpc_unchanged: /rpc changed contract')
@@ -723,16 +731,18 @@ class Qualification:
         self.bindings()
         self.start_gateway()
 
-    def probe(self, language, cases, phase, state):
+    def probe(self, language, cases, phase, state, requests=None, retry_state=None, prefix=False):
         case_file = self.d / 'probes' / (language + '-' + phase + '.json')
         fixture.write_json(case_file, {
             'endpoint': 'https://localhost:' + str(self.gateway_port) + ROUTE, 'server_name': 'localhost',
             'ca_pem': str(self.tls / 'ca.pem'), 'ca_der': str(self.tls / 'ca.der'),
             'gateway_api_key_file': self.config['gateway_api_key_file'],
             'program_bearer_file': self.config['program_bearer_file'],
-            'credential_file': self.config['credential_file'], 'requests': self.probe_requests(),
+            'credential_file': self.config['credential_file'],
+            'requests': self.probe_requests() if requests is None else requests,
             'operations': self.built['operations'], 'cases': list(cases), 'phase': phase,
-            'state_file': str(state), 'response_dir': str(self.d / 'probes' / (language + '-' + phase))})
+            'state_file': str(state), 'response_dir': str(self.d / 'probes' / (language + '-' + phase)),
+            **({} if retry_state is None else {'retry_state_file': str(retry_state)})})
         (self.d / 'probes' / (language + '-' + phase)).mkdir(mode=0o700)
         art = self.built['artifacts']
         env = dict(self.runtime.env, PAXEER_X_AGENT_ENVELOPE_CASE=str(case_file))
@@ -760,7 +770,8 @@ class Qualification:
         require(len(counts) == 1 and int(counts[0]) == len(reported) == len(set(reported)), language + ' probe case accounting')
         require(set(reported) == set(cases), language + ' probe reported ' + str(sorted(set(cases) ^ set(reported))))
         for case in cases:
-            self.passed('sdk_' + language + '_' + case if phase == 'read' else case, log)
+            self.passed(case if phase != 'read' and not prefix else 'sdk_' + language + '_' + case
+                        + ('_post_restart' if prefix and phase == 'post-restart' and case in PYTHON_PRE_RESTART else ''), log)
 
     def run(self):
         (self.d / 'responses').mkdir(mode=0o700)
@@ -777,12 +788,17 @@ class Qualification:
         state = self.d / 'probes/rust-mutation.state'
         operation_cases = tuple('operation.' + name for name in self.built['operations'])
         self.probe('rust', RUST_PRE_RESTART + operation_cases, 'pre-restart', state)
+        python_state = self.d / 'probes/python-mutation.state'
+        python_retry = self.d / 'probes/python-retry.state'
+        python_requests = self.probe_requests()
+        self.probe('python', PYTHON_PRE_RESTART, 'pre-restart', python_state, python_requests, python_retry, True)
         old = self.agentd.pid
         self.agentd.kill()
         self.agentd.wait(timeout=15)
         self.start_agentd()
         require(self.agentd.pid != old, 'agentd restart reused the process')
         self.probe('rust', RUST_POST_RESTART, 'post-restart', state)
+        self.probe('python', PYTHON_POST_RESTART, 'post-restart', python_state, python_requests, python_retry, True)
 
 
 def worker(directory):
@@ -802,7 +818,8 @@ def worker(directory):
         qualification = Qualification(runtime.directory, built, config, credential, runtime)
         qualification.run()
         expected = (len(DIRECT_CASES) + len(LANGUAGES) * len(LANGUAGE_CASES) + len(RUST_PRE_RESTART)
-                    + len(built['operations']) + len(RUST_POST_RESTART))
+                    + len(built['operations']) + len(RUST_POST_RESTART)
+                    + len(PYTHON_PRE_RESTART) + len(PYTHON_POST_RESTART))
         require(len(qualification.results) == expected, 'case count ' + str(len(qualification.results)) + ' != ' + str(expected))
         write_private(runtime.directory / 'case-results.json', qualification.results)
         print(f'PAXEER_X_GATE tests={len(qualification.results)} skipped=0', flush=True)

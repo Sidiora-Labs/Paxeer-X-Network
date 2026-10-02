@@ -186,7 +186,11 @@ pub struct AgentEnvelopeTransport {
     agent: ureq::Agent,
     endpoint: Url,
     gateway_key: Option<LayerXKeyCredential>,
+    route: &'static str,
 }
+
+/// Internal route of the agent daemon RPC mTLS listener.
+pub const DAEMON_RPC_ROUTE: &str = "/rpc";
 
 impl AgentEnvelopeTransport {
     /// Connects to a gateway origin. Only `https` is accepted; redirects are refused.
@@ -202,6 +206,37 @@ impl AgentEnvelopeTransport {
         endpoint: &str,
         gateway_key: Option<LayerXKeyCredential>,
         trust_anchors: Option<&Path>,
+    ) -> Result<Self, EnvelopeError> {
+        Self::build(endpoint, gateway_key, trust_anchors, None, AGENT_RPC_ROUTE)
+    }
+
+    /// Connects directly to the agent daemon RPC listener (`POST /rpc`). Only `https` is
+    /// accepted; the client identity comes from `client_cert` and no `Authorization`
+    /// header is ever sent, because the daemon refuses principal headers.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`Self::connect`].
+    pub fn connect_daemon(
+        endpoint: &str,
+        client_cert: ureq::tls::ClientCert,
+        trust_anchors: &Path,
+    ) -> Result<Self, EnvelopeError> {
+        Self::build(
+            endpoint,
+            None,
+            Some(trust_anchors),
+            Some(client_cert),
+            DAEMON_RPC_ROUTE,
+        )
+    }
+
+    fn build(
+        endpoint: &str,
+        gateway_key: Option<LayerXKeyCredential>,
+        trust_anchors: Option<&Path>,
+        client_cert: Option<ureq::tls::ClientCert>,
+        route: &'static str,
     ) -> Result<Self, EnvelopeError> {
         let endpoint = Url::parse(endpoint).map_err(|_| EnvelopeError::InvalidEndpoint)?;
         if endpoint.scheme() != "https"
@@ -223,6 +258,7 @@ impl AgentEnvelopeTransport {
                 ureq::tls::TlsConfig::builder()
                     .provider(ureq::tls::TlsProvider::Rustls)
                     .root_certs(roots)
+                    .client_cert(client_cert)
                     .build(),
             )
             .timeout_global(Some(Duration::from_secs(30)))
@@ -233,13 +269,14 @@ impl AgentEnvelopeTransport {
             agent: config.into(),
             endpoint,
             gateway_key,
+            route,
         })
     }
 
     fn route(&self) -> Url {
         let mut endpoint = self.endpoint.clone();
         let base = endpoint.path().trim_end_matches('/').to_owned();
-        endpoint.set_path(&format!("{base}{AGENT_RPC_ROUTE}"));
+        endpoint.set_path(&format!("{base}{}", self.route));
         endpoint
     }
 
@@ -249,7 +286,7 @@ impl AgentEnvelopeTransport {
     /// # Errors
     ///
     /// Refuses a mutating operation (use [`Self::send_mutation`]), a non-daemon call,
-    /// returns the established error envelope, or `Transport`/`Decode`.
+    /// returns the established error envelope, or `Transport`.
     pub fn send_query<T>(
         &self,
         call: &Call<T>,
@@ -389,7 +426,7 @@ impl AgentEnvelopeTransport {
             if operation.mutating() {
                 EnvelopeError::Unknown { operation }
             } else {
-                EnvelopeError::Decode { operation }
+                EnvelopeError::Transport { operation }
             }
         };
         let status = response.status().as_u16();

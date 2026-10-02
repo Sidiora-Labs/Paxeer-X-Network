@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::agent_rpc::Rejection;
+use crate::agent_rpc_adapters::dispatch_extended;
+use crate::agent_rpc_peer::RpcOwnerContext;
 use crate::human::{
     HumanOperationError, HumanOperations, HumanPeer, HumanPrepare, HumanResponse, HumanSubmit,
     MutationEnvelope,
@@ -788,13 +790,15 @@ pub(crate) fn canonical_request_bytes(
 pub(crate) fn dispatch_operation<A: HumanAuthorityBoundary>(
     owner: &SharedAgentOwner<A>,
     permit: &OperationPermit,
+    peer: &RpcOwnerContext<'_>,
     operation: Operation,
     request: &Map<String, Value>,
     ctx: &DispatchContext,
 ) -> Result<Dispatched, Rejection> {
-    let _permit = permit;
     let id = ctx.request_id;
+    let context = peer;
     let peer = &ctx.peer;
+    let shared = owner;
     let mut owner = owner.clone();
     match operation {
         Operation::ReadAccount => {
@@ -889,7 +893,18 @@ pub(crate) fn dispatch_operation<A: HumanAuthorityBoundary>(
             };
             dispatched(id, owner.submit_external(peer, envelope), decode_observation)
         }
+        Operation::FaucetClaim => Err(rejection(
+            ErrorClass::UnavailableCapability,
+            id,
+            "unavailable_capability.faucet.claim",
+        )),
+        _ => dispatch_extended(shared, permit, context, operation, request, ctx)
+            .unwrap_or_else(|| Err(unmatched(id))),
     }
+}
+
+fn unmatched(request_id: RequestId) -> Rejection {
+    rejection(ErrorClass::UnavailableCapability, request_id, "operation.unmatched")
 }
 
 #[test]

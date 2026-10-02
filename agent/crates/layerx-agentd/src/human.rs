@@ -744,6 +744,181 @@ pub trait HumanOperations {
         request_id: [u8; 32],
         command: OperatorCommand,
     ) -> Result<HumanResponse, HumanOperationError>;
+    /// # Errors
+    /// Returns an error if authorization or operation validation fails, or required state is unavailable.
+    fn budget_create(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::budget::BudgetCreate,
+    ) -> Result<HumanResponse, HumanOperationError>;
+    /// # Errors
+    /// Returns an error if authorization or operation validation fails, or required state is unavailable.
+    fn budget_fund(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::budget::BudgetFund,
+    ) -> Result<HumanResponse, HumanOperationError>;
+    /// # Errors
+    /// Returns an error if authorization or operation validation fails, or required state is unavailable.
+    fn budget_list(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::budget::BudgetList,
+    ) -> Result<HumanResponse, HumanOperationError>;
+    /// # Errors
+    /// Returns an error if authorization or operation validation fails, or required state is unavailable.
+    fn budget_revoke(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::budget::BudgetTarget,
+    ) -> Result<HumanResponse, HumanOperationError>;
+    /// # Errors
+    /// Returns an error if authorization or operation validation fails, or required state is unavailable.
+    fn budget_reconciliation(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::budget::BudgetTarget,
+    ) -> Result<HumanResponse, HumanOperationError>;
+    /// # Errors
+    /// Returns an error if authorization or operation validation fails, or required state is unavailable.
+    fn capability_create(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::capability::CapabilityCreate,
+    ) -> Result<HumanResponse, HumanOperationError>;
+    /// # Errors
+    /// Returns an error if authorization or operation validation fails, or required state is unavailable.
+    fn capability_attenuate(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::capability::CapabilityAttenuate,
+    ) -> Result<HumanResponse, HumanOperationError>;
+    /// # Errors
+    /// Returns an error if authorization or operation validation fails, or required state is unavailable.
+    fn capability_list(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::capability::CapabilityList,
+    ) -> Result<HumanResponse, HumanOperationError>;
+    /// # Errors
+    /// Returns an error if authorization or operation validation fails, or required state is unavailable.
+    fn capability_revoke(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::capability::CapabilityRevoke,
+    ) -> Result<HumanResponse, HumanOperationError>;
+    /// # Errors
+    /// Returns an error if authorization or operation validation fails, or required state is unavailable.
+    fn session_refresh(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::identity::SessionRefresh,
+    ) -> Result<HumanResponse, HumanOperationError>;
+    /// # Errors
+    /// Returns an error if authorization or operation validation fails, or required state is unavailable.
+    fn session_close(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::identity::SessionClose,
+    ) -> Result<HumanResponse, HumanOperationError>;
+    /// # Errors
+    /// Returns an error if authorization or operation validation fails, or required state is unavailable.
+    fn session_list(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::identity::SessionList,
+    ) -> Result<HumanResponse, HumanOperationError>;
+    /// # Errors
+    /// Returns an error if authorization or operation validation fails, or required state is unavailable.
+    fn subscription_create(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::subscription::SubscriptionCreate,
+    ) -> Result<HumanResponse, HumanOperationError>;
+    /// # Errors
+    /// Returns an error if authorization or operation validation fails, or required state is unavailable.
+    fn subscription_list(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::subscription::SubscriptionList,
+    ) -> Result<HumanResponse, HumanOperationError>;
+    /// # Errors
+    /// Returns an error if authorization or operation validation fails, or required state is unavailable.
+    fn subscription_pause(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::subscription::SubscriptionTarget,
+    ) -> Result<HumanResponse, HumanOperationError>;
+    /// # Errors
+    /// Returns an error if authorization or operation validation fails, or required state is unavailable.
+    fn subscription_resume(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::subscription::SubscriptionTarget,
+    ) -> Result<HumanResponse, HumanOperationError>;
+    /// # Errors
+    /// Returns an error if authorization or operation validation fails, or required state is unavailable.
+    fn subscription_delete(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::subscription::SubscriptionTarget,
+    ) -> Result<HumanResponse, HumanOperationError>;
+    /// # Errors
+    /// Returns an error if authorization or operation validation fails, or required state is unavailable.
+    fn subscription_health(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::subscription::SubscriptionTarget,
+    ) -> Result<HumanResponse, HumanOperationError>;
+    /// # Errors
+    /// Returns an error if authorization or operation validation fails, or required state is unavailable.
+    fn subscription_acknowledge(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::subscription::CursorAcknowledgement,
+    ) -> Result<HumanResponse, HumanOperationError>;
+    /// # Errors
+    /// Returns an error if authorization or operation validation fails, or required state is unavailable.
+    fn availability_fetch(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::availability::AvailabilityRequest,
+    ) -> Result<HumanResponse, HumanOperationError>;
+    /// # Errors
+    /// Returns an error if authorization or operation validation fails, or required state is unavailable.
+    fn read_module_state(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::read::ReadRequest<layerx_agent_api::read::ModuleStateSelector>,
+    ) -> Result<HumanResponse, HumanOperationError>;
+    /// # Errors
+    /// Returns an error if authorization or operation validation fails, or required state is unavailable.
+    fn read_history(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::read::ReadRequest<layerx_agent_api::read::HistorySelector>,
+    ) -> Result<HumanResponse, HumanOperationError>;
+    /// # Errors
+    /// Returns an error if authorization or operation validation fails, or required state is unavailable.
+    fn read_batch(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::read::ReadRequest<layerx_agent_api::read::BatchRef>,
+    ) -> Result<HumanResponse, HumanOperationError>;
+    /// # Errors
+    /// Returns an error if authorization or operation validation fails, or required state is unavailable.
+    fn export_offline(
+        &mut self,
+        peer: &HumanPeer,
+        facts: Vec<layerx_agent_api::export::FactRef>,
+    ) -> Result<HumanResponse, HumanOperationError>;
+    /// # Errors
+    /// Returns an error if authorization or operation validation fails, or required state is unavailable.
+    fn wait(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::track::WaitRequest,
+    ) -> Result<HumanResponse, HumanOperationError>;
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

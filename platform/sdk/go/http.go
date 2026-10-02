@@ -732,9 +732,9 @@ func (transport *AgentEnvelopeHTTPTransport) Call(ctx context.Context, call Tran
 	return value, nil
 }
 
-var agentEnvelopeLevels = map[string]bool{
-	"Unverified": true, "SequencerSigned": true, "BatchIncluded": true,
-	"StateProven": true, "CheckpointFinalised": true, "SettlementAnchored": true,
+var agentEnvelopeLevels = map[string]int{
+	"Unverified": 1, "SequencerSigned": 2, "BatchIncluded": 3,
+	"StateProven": 4, "CheckpointFinalised": 5, "SettlementAnchored": 6,
 }
 
 func decodeAgentEnvelopeResponse(status int, encoded []byte, requestID string) (json.RawMessage, *SDKError) {
@@ -743,11 +743,12 @@ func decodeAgentEnvelopeResponse(status int, encoded []byte, requestID string) (
 		return nil, newSDKError(ErrorDecodeFailure, RetryNever)
 	}
 	var echoed string
-	if json.Unmarshal(fields["request_id"], &echoed) != nil || echoed != requestID {
+	if json.Unmarshal(fields["request_id"], &echoed) != nil {
 		return nil, newSDKError(ErrorDecodeFailure, RetryNever)
 	}
 	if _, failed := fields["class"]; failed {
-		if status >= 200 && status < 300 || !exactFields(fields, "class", "protocol_result_code", "retriability", "request_id", "reason") {
+		// A refusal issued before the envelope parsed carries request_id "0".
+		if echoed != requestID && echoed != "0" || status >= 200 && status < 300 || !exactFields(fields, "class", "protocol_result_code", "retriability", "request_id", "reason") {
 			return nil, newSDKError(ErrorDecodeFailure, RetryNever)
 		}
 		result := decodeProgramAgentError(fields)
@@ -759,7 +760,7 @@ func decodeAgentEnvelopeResponse(status int, encoded []byte, requestID string) (
 		result.ServiceCode = reason
 		return nil, result
 	}
-	if status != http.StatusOK || !exactFields(fields, "request_id", "value", "verification_status") {
+	if echoed != requestID || status != http.StatusOK || !exactFields(fields, "request_id", "value", "verification_status") {
 		return nil, newSDKError(ErrorDecodeFailure, RetryNever)
 	}
 	value := fields["value"]
@@ -781,12 +782,13 @@ func acceptedAgentEnvelopeVerification(encoded json.RawMessage) bool {
 	switch state {
 	case "achieved":
 		var level string
-		return exactFields(verification, "state", "level") && json.Unmarshal(verification["level"], &level) == nil && agentEnvelopeLevels[level]
+		return exactFields(verification, "state", "level") && json.Unmarshal(verification["level"], &level) == nil && agentEnvelopeLevels[level] != 0
 	case "unverified":
 		var requested, achieved, reason string
 		return exactFields(verification, "state", "requested", "achieved", "reason") &&
-			json.Unmarshal(verification["requested"], &requested) == nil && agentEnvelopeLevels[requested] &&
-			json.Unmarshal(verification["achieved"], &achieved) == nil && agentEnvelopeLevels[achieved] &&
+			json.Unmarshal(verification["requested"], &requested) == nil && agentEnvelopeLevels[requested] != 0 &&
+			json.Unmarshal(verification["achieved"], &achieved) == nil && agentEnvelopeLevels[achieved] != 0 &&
+			agentEnvelopeLevels[achieved] < agentEnvelopeLevels[requested] &&
 			json.Unmarshal(verification["reason"], &reason) == nil && reason != "" && len(reason) <= 256
 	default:
 		return false

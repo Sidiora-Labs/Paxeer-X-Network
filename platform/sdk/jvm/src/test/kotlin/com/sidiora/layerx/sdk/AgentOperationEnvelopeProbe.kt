@@ -49,11 +49,15 @@ private fun transport(config: JsonNode, credential: JsonNode, generation: String
     return HttpProductionTransport(client(config.text("ca_pem")), json, endpoint, endpoint, Duration.ofSeconds(30), admission, session)
 }
 
-private fun request(requests: JsonNode, operation: String): ObjectNode =
-    requests.get(operation) as? ObjectNode ?: throw IllegalStateException("provisioned request lacks $operation")
+private fun request(provisioned: JsonNode, field: String): ObjectNode =
+    provisioned.get(field) as? ObjectNode ?: throw IllegalStateException("provisioned request lacks $field")
 
 private fun read(transport: HttpProductionTransport, operation: String, request: ObjectNode): JsonNode =
     transport.call<JsonNode>(ProductionTransport.Call(agentOperation(operation), request, null, null), node)
+        .toCompletableFuture().join()
+
+private fun reply(transport: HttpProductionTransport, operation: String, request: ObjectNode): HttpProductionTransport.AgentReply =
+    transport.callAgentReply(ProductionTransport.Call(agentOperation(operation), request, null, null))
         .toCompletableFuture().join()
 
 private fun refusal(transport: HttpProductionTransport, operation: String, request: ObjectNode): PlatformSdkException {
@@ -88,16 +92,34 @@ private fun run(): Int {
         check(entry.isTextual && seen.add(entry.textValue())) { "case ids must be unique strings" }
         val id = entry.textValue()
         val operation = operations[id] ?: throw IllegalStateException("unsupported case $id")
-        val value = read(transport, operation, request(requests, operation))
-        check(!value.isNull) { "case $id returned no value" }
-        Files.write(responses.resolve("$id.json"), json.writeValueAsBytes(value))
+        val provisioned = requests.get(id)?.takeIf { it.isObject } ?: throw IllegalStateException("provisioned request lacks case $id")
+        check(provisioned.text("operation") == operation) { "case $id operation must be $operation" }
+        check(provisioned.get("idempotency_key")?.isNull ?: true) { "case $id is non-mutating and carries no idempotency_key" }
+        val result = reply(transport, operation, request(provisioned, "request"))
+        check(result.status() == 200) { "case $id status ${result.status()}" }
+        check(Regex("0|[1-9][0-9]{0,19}").matches(result.requestId()) && BigInteger(result.requestId()).bitLength() <= 64) {
+            "case $id request_id is not a canonical unsigned 64-bit decimal"
+        }
+        check(result.requestId() == result.body().path("request_id").textValue()) { "case $id request_id not preserved" }
+        val value = result.value()
+        check(value != null && !value.isNull) { "case $id returned no value" }
+        val sent = result.body().get("value")
+        val expected = if (sent is ObjectNode) SchemaTypes.canonicalBody(sent) else sent
+        check(expected != null && expected == value) { "case $id value not preserved" }
+        val verification = result.verificationStatus()
+        check(verification != null && verification == result.body().get("verification_status") &&
+            verification.path("state").textValue() in setOf("achieved", "unverified")) { "case $id verification_status not preserved" }
+        val record = json.createObjectNode()
+        record.put("status", result.status())
+        record.set<JsonNode>("body", result.body())
+        Files.write(responses.resolve("$id.json"), json.writeValueAsBytes(record))
         println("PAXEER_X_AGENT_ENVELOPE_CASE $id passed")
     }
 
     val current = BigInteger(generation)
     check(current.signum() > 0) { "credential generation must exceed 0 for the stale case" }
     val stale = refusal(transport(config, credential, current.subtract(BigInteger.ONE).toString()),
-        "read.account", request(requests, "read.account"))
+        "read.account", request(requests.path("read"), "request"))
     check(stale.agentClass() == SchemaErrors.AgentClass.POLICY_REFUSAL) { "stale generation was not a policy refusal" }
     val faucet = refusal(transport, "faucet.claim", json.createObjectNode())
     check(faucet.agentClass() == SchemaErrors.AgentClass.UNAVAILABLE_CAPABILITY &&

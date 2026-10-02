@@ -65,16 +65,36 @@ public final class AgentOperationEnvelopeProbe {
             String id = entry.textValue();
             String operation = OPERATIONS.get(id);
             check(operation != null, "unsupported case " + id);
-            JsonNode value = read(transport, operation, request(requests, operation));
-            check(value != null && !value.isNull(), "case " + id + " returned no value");
-            Files.write(responses.resolve(id + ".json"), JSON.writeValueAsBytes(value));
+            JsonNode provisioned = requests.get(id);
+            check(provisioned != null && provisioned.isObject(), "provisioned request lacks case " + id);
+            check(operation.equals(text(provisioned, "operation")), "case " + id + " operation must be " + operation);
+            check(provisioned.get("idempotency_key") == null || provisioned.get("idempotency_key").isNull(),
+                "case " + id + " is non-mutating and carries no idempotency_key");
+            var reply = read(transport, operation, request(provisioned, "request"));
+            check(reply.status() == 200, "case " + id + " status " + reply.status());
+            check(reply.requestId().matches("0|[1-9][0-9]{0,19}") && new BigInteger(reply.requestId()).bitLength() <= 64,
+                "case " + id + " request_id is not a canonical unsigned 64-bit decimal");
+            check(reply.requestId().equals(reply.body().path("request_id").textValue()), "case " + id + " request_id not preserved");
+            check(reply.value() != null && !reply.value().isNull(), "case " + id + " returned no value");
+            JsonNode sent = reply.body().get("value");
+            JsonNode expected = sent instanceof ObjectNode object ? SchemaTypes.canonicalBody(object) : sent;
+            check(expected != null && expected.equals(reply.value()), "case " + id + " value not preserved");
+            JsonNode verification = reply.verificationStatus();
+            check(verification != null && verification.equals(reply.body().get("verification_status"))
+                && ("achieved".equals(verification.path("state").textValue())
+                    || "unverified".equals(verification.path("state").textValue())),
+                "case " + id + " verification_status not preserved");
+            ObjectNode record = JSON.createObjectNode();
+            record.put("status", reply.status());
+            record.set("body", reply.body());
+            Files.write(responses.resolve(id + ".json"), JSON.writeValueAsBytes(record));
             System.out.println("PAXEER_X_AGENT_ENVELOPE_CASE " + id + " passed");
         }
 
         BigInteger current = new BigInteger(generation);
         check(current.signum() > 0, "credential generation must exceed 0 for the stale case");
         var stale = refusal(transport(config, credential, current.subtract(BigInteger.ONE).toString()),
-            "read.account", request(requests, "read.account"));
+            "read.account", request(requests.path("read"), "request"));
         check(stale.agentClass() == SchemaErrors.AgentClass.POLICY_REFUSAL, "stale generation was not a policy refusal");
         var faucet = refusal(transport, "faucet.claim", JSON.createObjectNode());
         check(faucet.agentClass() == SchemaErrors.AgentClass.UNAVAILABLE_CAPABILITY
@@ -115,15 +135,15 @@ public final class AgentOperationEnvelopeProbe {
             .version(HttpClient.Version.HTTP_1_1).build();
     }
 
-    static ObjectNode request(JsonNode requests, String operation) {
-        JsonNode value = requests.get(operation);
-        check(value instanceof ObjectNode, "provisioned request lacks " + operation);
+    static ObjectNode request(JsonNode provisioned, String field) {
+        JsonNode value = provisioned.get(field);
+        check(value instanceof ObjectNode, "provisioned request lacks " + field);
         return (ObjectNode) value;
     }
 
-    static JsonNode read(HttpProductionTransport transport, String operation, ObjectNode request) {
+    static HttpProductionTransport.AgentReply read(HttpProductionTransport transport, String operation, ObjectNode request) {
         var call = new ProductionTransport.Call(OperationCatalog.agent(operation), request, null, null);
-        return transport.<JsonNode>call(call, NODE).toCompletableFuture().join();
+        return transport.callAgentReply(call).toCompletableFuture().join();
     }
 
     static PlatformSdkException refusal(HttpProductionTransport transport, String operation, ObjectNode request) {

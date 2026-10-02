@@ -1,11 +1,14 @@
 import json
 import os
+import secrets
 import ssl
 import sys
 import unittest
 from collections.abc import Callable
+from http.client import HTTPSConnection
 from pathlib import Path
 from urllib.error import HTTPError
+from urllib.parse import urlsplit
 from urllib.request import HTTPSHandler, Request, build_opener
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -29,6 +32,7 @@ _ROUTE = "/v1/agent/rpc"
 _KEYS = frozenset({
     "endpoint", "server_name", "ca_pem", "ca_der", "gateway_api_key_file", "program_bearer_file",
     "credential_file", "requests", "operations", "cases", "phase", "state_file", "response_dir",
+    "retry_state_file",
 })
 _PHASES = frozenset({"read", "pre-restart", "post-restart"})
 _REFUSALS = frozenset({
@@ -60,7 +64,7 @@ class Probe:
         self.assertRaises = checker.assertRaises
         with open(case_path, "rb") as source:
             case = json.loads(source.read().decode("utf-8"))
-        if not isinstance(case, dict) or not set(case) <= _KEYS or not _KEYS - {"state_file"} <= set(case):
+        if not isinstance(case, dict) or not set(case) <= _KEYS or not _KEYS - {"state_file", "retry_state_file"} <= set(case):
             raise ProbeRefused("case file keys do not match the frozen protocol")
         if case["phase"] not in _PHASES:
             raise ProbeRefused("unknown phase")
@@ -101,6 +105,10 @@ class Probe:
         if self.phase != "read" and (not isinstance(state_file, str) or not os.path.isabs(state_file)):
             raise ProbeRefused("state_file must name an absolute path for restart phases")
         self.state_file = None if state_file is None else Path(str(state_file))
+        retry_state_file = case.get("retry_state_file")
+        if retry_state_file is not None and (not isinstance(retry_state_file, str) or not os.path.isabs(retry_state_file)):
+            raise ProbeRefused("retry_state_file must name an absolute path")
+        self.retry_state_file = None if retry_state_file is None else Path(retry_state_file)
 
     def _key(self) -> LayerXKeyCredential:
         return LayerXKeyCredential(self.key_id, SecretBytes(self.secret))
@@ -224,17 +232,77 @@ class Probe:
         self.assertEqual(first.value, second.value)
         self.assertEqual(first.verification_status, second.verification_status)
 
+    def _restart_envelope(self, state: dict[str, object]) -> bytes:
+        return json.dumps({
+            "version": 1,
+            "request_id": state["request_id"],
+            "operation": state["operation"],
+            "request": state["request"],
+            "credential": dict(self.credential),
+            "idempotency_key": state["idempotency_key"],
+        }, ensure_ascii=True, separators=(",", ":")).encode()
+
+    def case_restart_unknown_pending(self) -> None:
+        if self.phase != "pre-restart" or self.state_file is None:
+            raise ProbeRefused("restart_unknown_pending needs the pre-restart phase")
+        request = self._request("allowed_mutation")
+        key = request.get("idempotency_key")
+        if not isinstance(key, str):
+            raise ProbeRefused("allowed_mutation carries no idempotency_key")
+        state: dict[str, object] = {
+            "request_id": str(secrets.randbits(64)),
+            "idempotency_key": key,
+            "operation": request["operation"],
+            "request": request["request"],
+        }
+        body = self._restart_envelope(state)
+        parsed = urlsplit(self.endpoint)
+        connection = HTTPSConnection(str(parsed.hostname), parsed.port or 443, context=ssl.create_default_context(cafile=self.ca_pem), timeout=30)
+        try:
+            connection.request("POST", parsed.path, body=body, headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "Content-Length": str(len(body)),
+                "Authorization": self._key().use(),
+            })
+        finally:
+            connection.close()
+        self.state_file.write_text(json.dumps(state, sort_keys=True))
+        self._record("restart_unknown_pending", 0, state)
+
+    def case_restart_unknown_reconcile(self) -> None:
+        if self.phase != "post-restart" or self.state_file is None:
+            raise ProbeRefused("restart_unknown_reconcile needs the post-restart phase")
+        if not self.state_file.is_file():
+            raise ProbeRefused("post-restart phase found no pre-restart state_file")
+        state = json.loads(self.state_file.read_text())
+        if not isinstance(state, dict) or set(state) != {"request_id", "idempotency_key", "operation", "request"}:
+            raise ProbeRefused("state_file is not the restart_unknown_pending record")
+        first = self._raw("restart_unknown_reconcile", self._restart_envelope(state))
+        second = self._raw("restart_unknown_reconcile", self._restart_envelope(state))
+        for raw in (first, second):
+            body = raw["body"]
+            assert isinstance(body, dict)
+            self.assertEqual(raw["status"], 200)
+            self.assertEqual(set(body), {"request_id", "value", "verification_status"})
+            self.assertEqual(body["request_id"], state["request_id"])
+            self.assertIn(body["verification_status"].get("state"), {"achieved", "unverified"})
+        self.assertEqual(first["body"]["value"], second["body"]["value"])
+        self.assertEqual(first["body"]["verification_status"], second["body"]["verification_status"])
+
     def case_restart_retry_same_result(self) -> None:
-        if self.phase == "read" or self.state_file is None:
+        if self.retry_state_file is None:
+            raise ProbeRefused("restart_retry_same_result needs retry_state_file in the case file")
+        if self.phase == "read":
             raise ProbeRefused("restart_retry_same_result needs the pre-restart or post-restart phase")
         result = self._success("restart_retry_same_result", "allowed_mutation")
         observed = {"value": result.value, "verification_status": dict(result.verification_status)}
         if self.phase == "pre-restart":
-            self.state_file.write_text(json.dumps(observed, sort_keys=True))
+            self.retry_state_file.write_text(json.dumps(observed, sort_keys=True))
             return
-        if not self.state_file.is_file():
-            raise ProbeRefused("post-restart phase found no pre-restart state_file")
-        self.assertEqual(json.loads(self.state_file.read_text()), json.loads(json.dumps(observed, sort_keys=True)))
+        if not self.retry_state_file.is_file():
+            raise ProbeRefused("post-restart phase found no pre-restart retry_state_file")
+        self.assertEqual(json.loads(self.retry_state_file.read_text()), json.loads(json.dumps(observed, sort_keys=True)))
 
     def case_missing_idempotency_key(self) -> None:
         request = self._request("allowed_mutation")

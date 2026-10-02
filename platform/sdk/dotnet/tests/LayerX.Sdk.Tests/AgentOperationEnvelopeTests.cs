@@ -221,4 +221,24 @@ public sealed class AgentOperationEnvelopeTests(ITestOutputHelper output)
             transport.SendEnvelopeAsync(new TransportCall(PlatformOperation.AgentBudgetCreate, JsonValue.EmptyObject, NoPathParameters, null)));
         Assert.Equal(SdkErrorCode.IdempotencyRequired, error.Code);
     }
+
+    [Fact]
+    public void DirectDaemonSurfaceRefusesPlaintextAndMissingClientCertificateBeforeSending()
+    {
+        using (var handler = new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false, UseProxy = false })
+        {
+            var plaintext = Assert.Throws<PlatformSdkException>(() =>
+                AgentEnvelopeTransport.ForDaemon(new Uri("http://localhost/"), null, handler));
+            Assert.Equal(SdkErrorCode.InvalidArgument, plaintext.Code);
+            var noCertificate = Assert.Throws<PlatformSdkException>(() =>
+                AgentEnvelopeTransport.ForDaemon(new Uri("https://localhost/"), null, handler));
+            Assert.Equal(SdkErrorCode.InvalidArgument, noCertificate.Code);
+        }
+        using (var redirecting = new HttpClientHandler { UseCookies = false, UseProxy = false, ClientCertificateOptions = ClientCertificateOption.Automatic })
+        {
+            var redirect = Assert.Throws<PlatformSdkException>(() =>
+                AgentEnvelopeTransport.ForDaemon(new Uri("https://localhost/"), null, redirecting));
+            Assert.Equal(SdkErrorCode.InvalidArgument, redirect.Code);
+        }
+    }
 }

@@ -188,6 +188,7 @@ class AgentHttpTransport(ProductionTransport):
 
 _ENVELOPE_VERSION = 1
 _ENVELOPE_PATH = "/v1/agent/rpc"
+_DAEMON_PATH = "/rpc"
 _ENVELOPE_MAX_BODY_BYTES = 1_048_576
 _BOOTSTRAP_OPERATIONS = frozenset({"agent.register", "session.open"})
 _MAX_U64 = (1 << 64) - 1
@@ -245,7 +246,7 @@ class AgentEnvelopeSuccess:
 
 
 class AgentEnvelopeTransport(ProductionTransport):
-    __slots__ = ("_gateway_key", "_endpoint", "_maximum_response_bytes", "_opener", "_session", "_timeout")
+    __slots__ = ("_gateway_key", "_endpoint", "_maximum_response_bytes", "_opener", "_path", "_session", "_timeout")
 
     def __init__(
         self,
@@ -273,7 +274,8 @@ class AgentEnvelopeTransport(ProductionTransport):
             except (OSError, ssl.SSLError):
                 raise _invalid_argument() from None
             handlers.append(HTTPSHandler(context=context))
-        self._gateway_key = gateway_key
+        self._gateway_key: LayerXKeyCredential | None = gateway_key
+        self._path = _ENVELOPE_PATH
         self._session = session
         self._timeout = float(timeout)
         self._maximum_response_bytes = maximum_response_bytes
@@ -322,21 +324,18 @@ class AgentEnvelopeTransport(ProductionTransport):
             "Content-Type": "application/json",
             "Content-Length": str(len(body)),
             "User-Agent": "layerx-python/0.1.0",
-            "Authorization": self._gateway_key.use(),
         }
-        outbound = Request(_route_endpoint(self._endpoint, _ENVELOPE_PATH), data=body, headers=headers, method="POST")
+        if self._gateway_key is not None:
+            headers["Authorization"] = self._gateway_key.use()
+        outbound = Request(_route_endpoint(self._endpoint, self._path), data=body, headers=headers, method="POST")
         try:
             with self._opener.open(outbound, timeout=self._timeout) as response:
                 encoded = _envelope_read(response, self._maximum_response_bytes, mutating)
-                if response.headers.get("Content-Type") != "application/json":
-                    raise _decode_failure()
-                return _decode_agent_envelope_response(response.status, encoded, request_id)
+                return _envelope_reply(response.status, response.headers.get("Content-Type"), encoded, request_id, mutating)
         except HTTPError as error:
             try:
                 encoded = _envelope_read(error, self._maximum_response_bytes, mutating)
-                if error.headers.get("Content-Type") != "application/json":
-                    raise _decode_failure()
-                return _decode_agent_envelope_response(error.code, encoded, request_id)
+                return _envelope_reply(error.code, error.headers.get("Content-Type"), encoded, request_id, mutating)
             finally:
                 error.close()
         except PlatformSdkError:
@@ -345,6 +344,52 @@ class AgentEnvelopeTransport(ProductionTransport):
             if mutating:
                 raise PlatformSdkError(SdkErrorCode.UNKNOWN_OUTCOME, "unknown-outcome") from None
             raise PlatformSdkError(SdkErrorCode.TRANSPORT_FAILURE, "safe") from None
+
+
+class AgentDaemonEnvelopeTransport(AgentEnvelopeTransport):
+    __slots__ = ()
+
+    def __init__(
+        self,
+        endpoint: str,
+        *,
+        ssl_context: ssl.SSLContext,
+        session: AgentSessionCredential | None,
+        timeout: float = 30.0,
+        maximum_response_bytes: int = _MAX_RESPONSE_BYTES,
+    ) -> None:
+        self._endpoint = _validated_endpoint(endpoint)
+        if urlparse(self._endpoint).scheme != "https" or urlparse(self._endpoint).path:
+            raise _invalid_argument()
+        if not isinstance(ssl_context, ssl.SSLContext) or ssl_context.verify_mode != ssl.CERT_REQUIRED or not ssl_context.check_hostname:
+            raise _invalid_argument()
+        if session is not None and not isinstance(session, AgentSessionCredential):
+            raise _invalid_argument()
+        if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout <= 0:
+            raise _invalid_argument()
+        if not isinstance(maximum_response_bytes, int) or isinstance(maximum_response_bytes, bool) or maximum_response_bytes <= 0 or maximum_response_bytes > _MAX_RESPONSE_BYTES:
+            raise _invalid_argument()
+        self._gateway_key = None
+        self._path = _DAEMON_PATH
+        self._session = session
+        self._timeout = float(timeout)
+        self._maximum_response_bytes = maximum_response_bytes
+        self._opener = build_opener(_NoRedirect(), HTTPSHandler(context=ssl_context))
+
+
+def _envelope_reply(status: int, content_type: str | None, encoded: bytes, request_id: str, mutating: bool) -> AgentEnvelopeSuccess:
+    try:
+        if content_type != "application/json":
+            raise _decode_failure()
+        return _decode_agent_envelope_response(status, encoded, request_id)
+    except PlatformSdkError as error:
+        if error.code is not SdkErrorCode.DECODE_FAILURE:
+            raise
+        if mutating:
+            raise PlatformSdkError(SdkErrorCode.UNKNOWN_OUTCOME, "unknown-outcome", request_id=error.request_id) from None
+        if content_type != "application/json":
+            raise PlatformSdkError(SdkErrorCode.TRANSPORT_FAILURE, "safe") from None
+        raise
 
 
 def _envelope_read(response: object, maximum: int, mutating: bool) -> bytes:
@@ -358,7 +403,7 @@ def _envelope_read(response: object, maximum: int, mutating: bool) -> bytes:
     except (TimeoutError, OSError, HTTPException):
         raise PlatformSdkError(SdkErrorCode.UNKNOWN_OUTCOME, "unknown-outcome") from None
     if len(encoded) > maximum:
-        raise _decode_failure()
+        raise PlatformSdkError(SdkErrorCode.UNKNOWN_OUTCOME, "unknown-outcome")
     return encoded
 
 
