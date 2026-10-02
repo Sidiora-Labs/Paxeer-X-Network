@@ -2389,21 +2389,80 @@ fn dependency_ready(
         .is_ok_and(|response| response.status == 200 && response.content_type == "application/json")
 }
 
+#[derive(Deserialize)]
+struct GatewayActivityReadiness {
+    readiness_version: u16,
+    service: String,
+    status: String,
+    network_id: String,
+    lxp_wire_version: String,
+    protocol_version: u16,
+    protocol_network_id: u32,
+    observed_at_ms: u64,
+    valid_until_ms: u64,
+    components: BTreeMap<String, String>,
+    backends: BTreeMap<String, GatewayBackendReadiness>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GatewayBackendReadiness {
+    state: String,
+    reason: String,
+}
+
 fn hosted_ready(config: &Config) -> bool {
-    config
-        .client
-        .request(
-            &config.hosted_gateway,
-            "readiness",
-            &OutboundRequest {
-                method: "GET",
-                path: "/readyz",
-                idempotency: None,
-                content_type: "application/json",
-                body: &[],
-            },
-        )
-        .is_ok_and(|response| response.status == 200 && response.content_type == "application/json")
+    let Ok(response) = config.client.request(
+        &config.hosted_gateway,
+        "readiness",
+        &OutboundRequest {
+            method: "GET",
+            path: "/readyz/core",
+            idempotency: None,
+            content_type: "application/json",
+            body: &[],
+        },
+    ) else {
+        return false;
+    };
+    if response.status != 200
+        || response.content_type != "application/json"
+        || response.body.len() > MAX_BODY
+    {
+        return false;
+    }
+    let Ok(document) = serde_json::from_slice::<GatewayActivityReadiness>(&response.body) else {
+        return false;
+    };
+    let Ok(observed_now) = SystemTime::now().duration_since(UNIX_EPOCH) else {
+        return false;
+    };
+    let Ok(observed_now) = u64::try_from(observed_now.as_millis()) else {
+        return false;
+    };
+    document.readiness_version == 1
+        && document.service == "layerx-gateway"
+        && document.status == "ready"
+        && document.network_id == config.network_id
+        && document.lxp_wire_version == config.wire_version
+        && document.protocol_version == config.protocol_version
+        && document.protocol_network_id == config.protocol_network_id
+        && document.observed_at_ms <= observed_now
+        && document.valid_until_ms > observed_now
+        && document.valid_until_ms.checked_sub(document.observed_at_ms)
+            .is_some_and(|lifetime| lifetime > 0 && lifetime <= 30_000)
+        && [
+            "durable_store",
+            "core_agent_boundary",
+            "independent_receipt_authority",
+        ]
+        .iter()
+        .all(|name| {
+            document.components.get(*name).is_some_and(|state| state == "ready")
+                && document.backends.get(*name).is_some_and(|backend| {
+                    backend.state == "ready" && backend.reason == "ready"
+                })
+        })
 }
 
 const fn readiness(value: bool) -> &'static str {
