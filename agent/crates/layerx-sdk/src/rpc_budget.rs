@@ -318,8 +318,10 @@ impl AgentEnvelopeTransport {
     }
 
     /// Creates one budget exactly as [`Self::budget_create`] does and also sends the `TextV1`
-    /// purpose label. The body is identical plus `purpose`, and the canonical body digest is
-    /// unchanged. No local comparison is made: the daemon refuses the create unless the label
+    /// purpose label. The body is identical plus `purpose`; the daemon binds the label's
+    /// presence, `TextV1` profile and exact text into the body digest and idempotency request
+    /// bytes, so a retry under the same key must send the same label. No local comparison is
+    /// made: the daemon refuses the create unless the label
     /// commits to the purpose disclosed by the signed budget-create activity, so the label is
     /// an assertion checked against that activity, never a signing input.
     ///

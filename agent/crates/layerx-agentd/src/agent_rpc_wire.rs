@@ -179,7 +179,8 @@ pub(crate) struct BudgetCreateWire {
 }
 
 impl BudgetCreateWire {
-    /// The optional `TextV1` purpose label. It is not part of the canonical body digest.
+    /// The optional `TextV1` purpose label. It is outside the canonical body and is bound
+    /// into the request digests only through [`budget_create_purpose_suffix`].
     pub(crate) fn purpose(&self) -> Option<&str> {
         self.purpose.as_deref()
     }
@@ -202,6 +203,23 @@ impl BudgetCreateWire {
         .validate()
         .map_err(budget_contract(id))
     }
+}
+
+/// Domain tag of the `TextV1` purpose label suffix of budget.create request digests.
+pub(crate) const BUDGET_CREATE_PURPOSE_TEXT_V1: &[u8] = b"LayerX/budget/create-purpose/text-v1\0";
+
+/// Bytes that bind an optional `TextV1` purpose label into the budget.create body digest and
+/// idempotency request bytes: empty when the label is absent, so both stay byte-identical to
+/// an unlabelled create; otherwise the domain tag, the text length as a big-endian `u64` and
+/// the exact UTF-8 text.
+pub(crate) fn budget_create_purpose_suffix(purpose: Option<&str>) -> Vec<u8> {
+    let Some(purpose) = purpose else {
+        return Vec::new();
+    };
+    let mut suffix = BUDGET_CREATE_PURPOSE_TEXT_V1.to_vec();
+    suffix.extend_from_slice(&(purpose.len() as u64).to_be_bytes());
+    suffix.extend_from_slice(purpose.as_bytes());
+    suffix
 }
 
 impl Canonical for BudgetCreate {
@@ -1201,9 +1219,14 @@ impl ProgramActivityWire {
 
 #[cfg(test)]
 mod budget_create_wire_tests {
-    use super::{BudgetCreateWire, Canonical};
+    use super::{
+        budget_create_purpose_suffix, BudgetCreateWire, Canonical, BUDGET_CREATE_PURPOSE_TEXT_V1,
+    };
+    use crate::agent_rpc_dispatch::canonical_request_bytes;
+    use crate::tenant::Operation;
     use layerx_agent_api::error::RequestId;
-    use serde_json::{json, Value};
+    use serde_json::{json, Map, Value};
+    use sha2::{Digest, Sha256};
 
     fn body(purpose: Option<&str>) -> Value {
         let mut body = json!({
@@ -1247,5 +1270,117 @@ mod budget_create_wire_tests {
             object.insert("label".into(), Value::String("rent".into()));
         }
         assert!(serde_json::from_value::<BudgetCreateWire>(unknown).is_err());
+    }
+
+    fn object(purpose: Option<&str>) -> Map<String, Value> {
+        match body(purpose) {
+            Value::Object(object) => object,
+            _ => panic!("budget create body is not an object"),
+        }
+    }
+
+    fn request_bytes(purpose: Option<&str>) -> Vec<u8> {
+        match canonical_request_bytes(Operation::BudgetCreate, &object(purpose), RequestId(1)) {
+            Ok(Some(bytes)) => bytes,
+            _ => panic!("budget create request bytes were not derived"),
+        }
+    }
+
+    fn body_digest(purpose: Option<&str>) -> [u8; 32] {
+        let Ok(wire) = serde_json::from_value::<BudgetCreateWire>(body(purpose)) else {
+            panic!("budget create wire did not decode");
+        };
+        let label = wire.purpose().map(str::to_owned);
+        let Ok(typed) = wire.into_request(RequestId(1)) else {
+            panic!("budget create wire did not convert");
+        };
+        crate::agent_rpc_adapters::budget_create_body_digest(&typed, label.as_deref())
+    }
+
+    fn unlabelled_vectors() -> (Vec<u8>, [u8; 32]) {
+        let Ok(wire) = serde_json::from_value::<BudgetCreateWire>(body(None)) else {
+            panic!("budget create wire did not decode");
+        };
+        let Ok(typed) = wire.into_request(RequestId(1)) else {
+            panic!("budget create wire did not convert");
+        };
+        let mut bytes = Operation::BudgetCreate.name().as_bytes().to_vec();
+        bytes.push(0);
+        let Ok(json) = serde_json::to_vec(&typed.canonical()) else {
+            panic!("canonical body did not serialize");
+        };
+        bytes.extend(json);
+        let mut digest = Sha256::new();
+        digest.update(b"LayerX/budget/create-body/v1\0");
+        digest.update(typed.canonical().to_string().as_bytes());
+        (bytes, digest.finalize().into())
+    }
+
+    #[test]
+    fn absent_purpose_label_keeps_the_unlabelled_digests() {
+        let (bytes, digest) = unlabelled_vectors();
+        assert!(budget_create_purpose_suffix(None).is_empty());
+        assert_eq!(request_bytes(None), bytes);
+        assert_eq!(body_digest(None), digest);
+    }
+
+    #[test]
+    fn present_purpose_label_is_bound_with_tag_length_and_text() {
+        let (bytes, digest) = unlabelled_vectors();
+        let mut suffix = BUDGET_CREATE_PURPOSE_TEXT_V1.to_vec();
+        suffix.extend_from_slice(&4_u64.to_be_bytes());
+        suffix.extend_from_slice(b"rent");
+        assert_eq!(budget_create_purpose_suffix(Some("rent")), suffix);
+        let mut labelled = bytes;
+        labelled.extend_from_slice(&suffix);
+        assert_eq!(request_bytes(Some("rent")), labelled);
+        assert_ne!(body_digest(Some("rent")), digest);
+    }
+
+    #[test]
+    fn different_purpose_labels_give_different_digests() {
+        assert_ne!(request_bytes(Some("rent")), request_bytes(Some("food")));
+        assert_ne!(body_digest(Some("rent")), body_digest(Some("food")));
+        assert_ne!(request_bytes(Some("ab")), request_bytes(Some("abab")));
+        assert_ne!(body_digest(Some("")), body_digest(None));
+    }
+
+    #[test]
+    fn same_purpose_label_gives_equal_digests() {
+        let hex_label = "ab".repeat(32);
+        assert_eq!(request_bytes(Some(&hex_label)), request_bytes(Some(&hex_label)));
+        assert_eq!(body_digest(Some(&hex_label)), body_digest(Some(&hex_label)));
+    }
+
+    #[test]
+    fn replay_with_a_different_purpose_label_misses_the_cached_success() {
+        use crate::idempotency::{EconomicResult, IdempotencyError, Outcome, RetentionPolicy, Store};
+        let root = std::env::temp_dir().join(format!("lxp-budget-purpose-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let (Ok(tenant), Ok(retention)) = (
+            crate::store::TenantId::new("tenant-a"),
+            RetentionPolicy::new(1_000, 500),
+        ) else {
+            panic!("tenant or retention refused");
+        };
+        let Ok(store) = Store::open(&root, tenant, retention) else {
+            panic!("idempotency store did not open");
+        };
+        let key = [7; 32];
+        let success = || {
+            Ok(EconomicResult {
+                response_bytes: b"created".to_vec(),
+                receipt_ref: None,
+            })
+        };
+        let first = store.execute(key, &request_bytes(Some("rent")), 1, |_| success());
+        assert!(matches!(first, Ok(Outcome::First(_))));
+        let same = store.execute(key, &request_bytes(Some("rent")), 1, |_| success());
+        assert!(matches!(same, Ok(Outcome::RepeatedOriginal(_))));
+        let other = store.execute(key, &request_bytes(Some("food")), 1, |_| success());
+        assert!(matches!(other, Err(IdempotencyError::Conflict(_))));
+        let unlabelled = store.execute(key, &request_bytes(None), 1, |_| success());
+        assert!(matches!(unlabelled, Err(IdempotencyError::Conflict(_))));
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

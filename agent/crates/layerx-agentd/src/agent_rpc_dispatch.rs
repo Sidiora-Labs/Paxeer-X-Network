@@ -820,7 +820,13 @@ pub(crate) fn canonical_request_bytes(
             .to_vec()
         }
         Operation::Submit => submit_digest(&human_submit(decode(request, id)?, id)?).to_vec(),
-        Operation::BudgetCreate => wire_bytes::<BudgetCreateWire, _>(operation, request, id, BudgetCreateWire::into_request)?,
+        Operation::BudgetCreate => {
+            let wire = decode_wire::<BudgetCreateWire>(request, id)?;
+            let suffix = budget_create_purpose_suffix(wire.purpose());
+            let mut bytes = named(operation, &wire.into_request(id)?.canonical(), id)?;
+            bytes.extend(suffix);
+            bytes
+        }
         Operation::BudgetFund => wire_bytes::<BudgetFundWire, _>(operation, request, id, BudgetFundWire::into_request)?,
         Operation::BudgetRevoke => wire_bytes::<BudgetTargetWire, _>(operation, request, id, BudgetTargetWire::into_request)?,
         Operation::CapabilityCreate => wire_bytes::<CapabilityCreateWire, _>(operation, request, id, CapabilityCreateWire::into_request)?,

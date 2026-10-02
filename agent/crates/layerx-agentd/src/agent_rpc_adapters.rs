@@ -1352,6 +1352,16 @@ fn budget_body_digest<T: Canonical>(domain: &[u8], typed: &T) -> [u8; 32] {
     digest.finalize().into()
 }
 
+/// Body digest of a budget create: [`budget_body_digest`] under the create domain, followed by
+/// the optional `TextV1` purpose label suffix, which is empty when the label is absent.
+pub(crate) fn budget_create_body_digest<T: Canonical>(typed: &T, purpose: Option<&str>) -> [u8; 32] {
+    let mut digest = Sha256::new();
+    digest.update(b"LayerX/budget/create-body/v1\0");
+    digest.update(typed.canonical().to_string().as_bytes());
+    digest.update(crate::agent_rpc_wire::budget_create_purpose_suffix(purpose));
+    digest.finalize().into()
+}
+
 pub(crate) fn budget_create<A: HumanAuthorityBoundary>(
     owner: &SharedAgentOwner<A>,
     context: &RpcOwnerContext<'_>,
@@ -1367,7 +1377,7 @@ pub(crate) fn budget_create<A: HumanAuthorityBoundary>(
     let envelope = crate::human::MutationEnvelope {
         request_id: id.0,
         key: mutation_key(ctx)?,
-        body_digest: budget_body_digest(b"LayerX/budget/create-body/v1\0", &typed),
+        body_digest: budget_create_body_digest(&typed, purpose.as_deref()),
         operation: typed,
     };
     let response = owner
