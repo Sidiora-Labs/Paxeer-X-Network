@@ -193,9 +193,34 @@ mod tests {
             [0]
         );
         assert_eq!(ContextField::try_from(0), Err(ContextRefusal::UnknownField));
+        for unknown in [i32::MIN, -1, 0, 10, i32::MAX] {
+            assert_eq!(
+                ContextField::try_from(unknown),
+                Err(ContextRefusal::UnknownField)
+            );
+        }
         assert_eq!(
-            ContextField::try_from(10),
-            Err(ContextRefusal::UnknownField)
+            context.canonical_bytes(),
+            [1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0, 0, 0, 0, 9, 0, 1, 0, 2, 0, 0, 0, 3]
         );
+    }
+    #[test]
+    fn zero_protocol_fields_never_authenticate() {
+        for facts in [
+            (0, 2, 1, 2, 1),
+            (1, 0, 1, 2, 1),
+            (1, 2, 0, 2, 1),
+            (1, 2, 1, 0, 1),
+            (1, 2, 1, 2, 0),
+        ] {
+            assert_eq!(
+                ExecutionContext::authenticated(facts.0, facts.1, facts.2, facts.3, facts.4),
+                Err(ContextRefusal::Unauthenticated)
+            );
+        }
+        let maximum =
+            ExecutionContext::authenticated(u64::MAX, u64::MAX, u16::MAX, u16::MAX, u32::MAX)
+                .unwrap_or_else(|error| panic!("maximum canonical context: {error:?}"));
+        assert_eq!(maximum.canonical_bytes(), [255; 24]);
     }
 }

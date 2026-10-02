@@ -3941,117 +3941,162 @@ impl Executor {
                 );
             }
         }
-        let (code, failure) = match invocation {
-            Ok(code) => {
-                if let Some(refusal) = instance.state().refusal() {
-                    return Err(ExecutionError::Composition(refusal.clone()));
-                }
-                if instance.state().failure().is_some() {
-                    return Err(ExecutionError::Response(ResponseRefusal::CodeMismatch {
-                        published: CANDIDATE_REFUSAL_SENTINEL,
-                        returned: code,
-                    }));
-                }
-                (code, None)
-            }
-            Err(EntrypointRefusal::GuestRefused { code }) => {
-                if let Some(refusal) = instance.state().refusal() {
-                    return Err(ExecutionError::Composition(refusal.clone()));
-                }
-                let failure = match instance.state().failure().cloned() {
-                    Some(failure) if code == CANDIDATE_REFUSAL_SENTINEL => failure,
-                    Some(_) => {
+        let (code, failure) = if budgeted
+            && matches!(
+                instance.state().refusal(),
+                Some(
+                    CompositionRefusal::Authority(AbiError::CapabilityEscalation)
+                        | CompositionRefusal::Reentrancy { .. }
+                        | CompositionRefusal::DepthExceeded { .. }
+                        | CompositionRefusal::EdgesExceeded { .. }
+                        | CompositionRefusal::FanoutExceeded { .. }
+                        | CompositionRefusal::VisitsExceeded { .. }
+                )
+            ) {
+            let frame = instance
+                .state()
+                .failure_graph()
+                .or_else(|| instance.state().composition().map(Composition::graph))
+                .and_then(CallGraph::current)
+                .ok_or(ExecutionError::Composition(
+                    CompositionRefusal::NotComposable,
+                ))?;
+            let (class, reason) = if matches!(
+                instance.state().refusal(),
+                Some(CompositionRefusal::Authority(
+                    AbiError::CapabilityEscalation
+                ))
+            ) {
+                (
+                    RefusalClass::Unauthorized,
+                    RefusalReason::new(b"LXP/programs/authority-refusal/v1\0\x05")
+                        .unwrap_or_else(|_| unreachable!("bounded canonical authority refusal")),
+                )
+            } else {
+                (RefusalClass::RuntimeFault, RefusalReason::empty())
+            };
+            (
+                CANDIDATE_REFUSAL_SENTINEL,
+                Some(ProgramFailure::authenticated(
+                    frame.program(),
+                    class,
+                    reason,
+                )),
+            )
+        } else {
+            match invocation {
+                Ok(code) => {
+                    if let Some(refusal) = instance.state().refusal() {
+                        return Err(ExecutionError::Composition(refusal.clone()));
+                    }
+                    if instance.state().failure().is_some() {
                         return Err(ExecutionError::Response(ResponseRefusal::CodeMismatch {
                             published: CANDIDATE_REFUSAL_SENTINEL,
                             returned: code,
                         }));
                     }
-                    None if code == CANDIDATE_REFUSAL_SENTINEL => {
-                        return Err(ExecutionError::Response(
-                            ResponseRefusal::InvalidPublication,
+                    (code, None)
+                }
+                Err(EntrypointRefusal::GuestRefused { code }) => {
+                    if let Some(refusal) = instance.state().refusal() {
+                        return Err(ExecutionError::Composition(refusal.clone()));
+                    }
+                    let failure = match instance.state().failure().cloned() {
+                        Some(failure) if code == CANDIDATE_REFUSAL_SENTINEL => failure,
+                        Some(_) => {
+                            return Err(ExecutionError::Response(ResponseRefusal::CodeMismatch {
+                                published: CANDIDATE_REFUSAL_SENTINEL,
+                                returned: code,
+                            }));
+                        }
+                        None if code == CANDIDATE_REFUSAL_SENTINEL => {
+                            return Err(ExecutionError::Response(
+                                ResponseRefusal::InvalidPublication,
+                            ));
+                        }
+                        None => ProgramFailure::authenticated(
+                            request.program,
+                            RefusalClass::Legacy,
+                            RefusalReason::empty(),
+                        ),
+                    };
+                    (code, Some(failure))
+                }
+                Err(EntrypointRefusal::Fault(fault)) => {
+                    if let Some(refusal) = instance.state().refusal() {
+                        if let CompositionRefusal::Program(failure) = refusal {
+                            (
+                                crate::fault::CANDIDATE_REFUSAL_SENTINEL,
+                                Some(failure.clone()),
+                            )
+                        } else {
+                            return Err(ExecutionError::Composition(refusal.clone()));
+                        }
+                    } else if let Some(failure) = instance.state().failure().cloned() {
+                        (crate::fault::CANDIDATE_REFUSAL_SENTINEL, Some(failure))
+                    } else if is_v2_runtime_fault(&fault) {
+                        (
+                            crate::fault::CANDIDATE_REFUSAL_SENTINEL,
+                            Some(ProgramFailure::authenticated(
+                                request.program,
+                                crate::fault::RefusalClass::RuntimeFault,
+                                crate::fault::RefusalReason::empty(),
+                            )),
+                        )
+                    } else {
+                        return Err(Self::classify_fault_with_budget(
+                            fault,
+                            instance.meter().exhaustion(),
+                            active_budget,
                         ));
                     }
-                    None => ProgramFailure::authenticated(
+                }
+                Err(EntrypointRefusal::Resource(refusal)) => {
+                    if budgeted {
+                        let refusal = instance
+                            .meter()
+                            .budget_exhaustion()
+                            .or_else(|| BudgetMeterRefusal::try_from(refusal).ok())
+                            .ok_or(ExecutionError::Resource(refusal))?;
+                        let trace = match (self.trace_policy, identity) {
+                            (Some(policy), Some(identity)) => Some(
+                                instance
+                                    .take_execution_trace(policy, identity)
+                                    .map_err(ExecutionError::Fault)?,
+                            ),
+                            (None, None) => None,
+                            _ => {
+                                return Err(ExecutionError::Fault(ExecutionFault::EngineFault {
+                                    reason: "execution trace identity and policy diverged"
+                                        .to_string(),
+                                }))
+                            }
+                        };
+                        return self.v2_resource_from_state(
+                            request.program,
+                            refusal,
+                            instance.into_state(),
+                            trace,
+                        );
+                    }
+                    if let Some(CompositionRefusal::Program(failure)) = instance.state().refusal() {
+                        (CANDIDATE_REFUSAL_SENTINEL, Some(failure.clone()))
+                    } else if let Some(failure) = instance.state().failure().cloned() {
+                        (CANDIDATE_REFUSAL_SENTINEL, Some(failure))
+                    } else {
+                        return Err(ExecutionError::Resource(refusal));
+                    }
+                }
+                Err(EntrypointRefusal::AllocationRefused { .. }) if budgeted => (
+                    CANDIDATE_REFUSAL_SENTINEL,
+                    Some(ProgramFailure::authenticated(
                         request.program,
                         RefusalClass::Legacy,
                         RefusalReason::empty(),
-                    ),
-                };
-                (code, Some(failure))
+                    )),
+                ),
+                Err(refusal) => return Err(ExecutionError::Entrypoint(refusal)),
             }
-            Err(EntrypointRefusal::Fault(fault)) => {
-                if let Some(refusal) = instance.state().refusal() {
-                    if let CompositionRefusal::Program(failure) = refusal {
-                        (
-                            crate::fault::CANDIDATE_REFUSAL_SENTINEL,
-                            Some(failure.clone()),
-                        )
-                    } else {
-                        return Err(ExecutionError::Composition(refusal.clone()));
-                    }
-                } else if let Some(failure) = instance.state().failure().cloned() {
-                    (crate::fault::CANDIDATE_REFUSAL_SENTINEL, Some(failure))
-                } else if is_v2_runtime_fault(&fault) {
-                    (
-                        crate::fault::CANDIDATE_REFUSAL_SENTINEL,
-                        Some(ProgramFailure::authenticated(
-                            request.program,
-                            crate::fault::RefusalClass::RuntimeFault,
-                            crate::fault::RefusalReason::empty(),
-                        )),
-                    )
-                } else {
-                    return Err(Self::classify_fault_with_budget(
-                        fault,
-                        instance.meter().exhaustion(),
-                        active_budget,
-                    ));
-                }
-            }
-            Err(EntrypointRefusal::Resource(refusal)) => {
-                if budgeted {
-                    let refusal = instance
-                        .meter()
-                        .budget_exhaustion()
-                        .or_else(|| BudgetMeterRefusal::try_from(refusal).ok())
-                        .ok_or(ExecutionError::Resource(refusal))?;
-                    let trace = match (self.trace_policy, identity) {
-                        (Some(policy), Some(identity)) => Some(
-                            instance
-                                .take_execution_trace(policy, identity)
-                                .map_err(ExecutionError::Fault)?,
-                        ),
-                        (None, None) => None,
-                        _ => {
-                            return Err(ExecutionError::Fault(ExecutionFault::EngineFault {
-                                reason: "execution trace identity and policy diverged".to_string(),
-                            }))
-                        }
-                    };
-                    return self.v2_resource_from_state(
-                        request.program,
-                        refusal,
-                        instance.into_state(),
-                        trace,
-                    );
-                }
-                if let Some(CompositionRefusal::Program(failure)) = instance.state().refusal() {
-                    (CANDIDATE_REFUSAL_SENTINEL, Some(failure.clone()))
-                } else if let Some(failure) = instance.state().failure().cloned() {
-                    (CANDIDATE_REFUSAL_SENTINEL, Some(failure))
-                } else {
-                    return Err(ExecutionError::Resource(refusal));
-                }
-            }
-            Err(EntrypointRefusal::AllocationRefused { .. }) if budgeted => (
-                CANDIDATE_REFUSAL_SENTINEL,
-                Some(ProgramFailure::authenticated(
-                    request.program,
-                    RefusalClass::Legacy,
-                    RefusalReason::empty(),
-                )),
-            ),
-            Err(refusal) => return Err(ExecutionError::Entrypoint(refusal)),
         };
         if let Some(failure) = failure {
             let usage = instance
