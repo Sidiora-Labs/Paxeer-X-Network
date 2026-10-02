@@ -686,6 +686,28 @@ impl Store {
         signed_bytes: Vec<u8>,
         outbox_state: Vec<u8>,
     ) -> Result<(), StoreError> {
+        self.record_submission_with_activity_owner(
+            tenant,
+            idempotency_key,
+            signed_bytes,
+            outbox_state,
+            None,
+        )
+    }
+
+    pub(crate) fn record_submission_with_activity_owner(
+        &mut self,
+        tenant: TenantId,
+        idempotency_key: Vec<u8>,
+        signed_bytes: Vec<u8>,
+        outbox_state: Vec<u8>,
+        activity_owner: Option<([u8; 32], &str)>,
+    ) -> Result<(), StoreError> {
+        let activity_index = activity_owner
+            .map(|(activity_id, principal)| {
+                activity_owner_entry(&tenant, activity_id, &idempotency_key, principal)
+            })
+            .transpose()?;
         let prepared_key = TenantKey::new(
             tenant.clone(),
             ObjectKind::PreparedActivity,
@@ -717,6 +739,15 @@ impl Store {
                 bytes: b"pending".to_vec(),
             },
         );
+        if let Some((index_key, bytes)) = activity_index {
+            self.entries.insert(
+                index_key,
+                StoredValue {
+                    class: StorageClass::LocalOnly,
+                    bytes,
+                },
+            );
+        }
         if let Err(error) = self.persist() {
             self.entries = before;
             return Err(error);
@@ -1059,6 +1090,28 @@ mod batch_removing_tests {
         assert_eq!(bytes(&reopened, &kept), Some(b"kept-1".to_vec()));
         assert_eq!(bytes(&reopened, &removed), None);
     }
+}
+
+pub(crate) fn activity_owner_key(
+    tenant: &TenantId,
+    activity_id: [u8; 32],
+) -> Result<TenantKey, StoreError> {
+    let mut id = b"human-activity-submission-v1:".to_vec();
+    id.extend_from_slice(&activity_id);
+    TenantKey::new(tenant.clone(), ObjectKind::Idempotency, id)
+}
+
+pub(crate) fn activity_owner_entry(
+    tenant: &TenantId,
+    activity_id: [u8; 32],
+    idempotency_key: &[u8],
+    principal: &str,
+) -> Result<(TenantKey, Vec<u8>), StoreError> {
+    let mut bytes = Vec::with_capacity(1 + idempotency_key.len() + principal.len());
+    bytes.push(1);
+    bytes.extend_from_slice(idempotency_key);
+    bytes.extend_from_slice(principal.as_bytes());
+    Ok((activity_owner_key(tenant, activity_id)?, bytes))
 }
 
 fn encode(entries: &BTreeMap<TenantKey, StoredValue>) -> Result<Vec<u8>, StoreError> {

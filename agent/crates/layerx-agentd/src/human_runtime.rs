@@ -1146,6 +1146,97 @@ impl HumanAuthorityBoundary for RemoteHumanAuthority {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct OwnedSubmission {
+    pub(crate) principal: String,
+    pub(crate) idempotency_key: [u8; 32],
+}
+
+impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
+    pub(crate) fn owned_submission_for_activity(
+        &self,
+        tenant: &TenantId,
+        activity_id: [u8; 32],
+    ) -> Result<OwnedSubmission, HumanOperationError> {
+        let indexed = indexed_activity_owner(
+            &*self
+                .store
+                .lock()
+                .map_err(|_| HumanOperationError::Unavailable)?,
+            tenant,
+            activity_id,
+        )?;
+        let peer = self
+            .peers
+            .iter()
+            .find(|peer| peer.tenant == tenant.as_str() && peer.principal == indexed.principal)
+            .ok_or(HumanOperationError::Refused)?;
+        let registry = self
+            .lock_operations()?
+            .authority
+            .registry(peer)
+            .map_err(map_core)?;
+        let store = self
+            .store
+            .lock()
+            .map_err(|_| HumanOperationError::Unavailable)?;
+        retained_activity_owner(&store, &registry, tenant, activity_id, indexed)
+    }
+}
+
+fn indexed_activity_owner(
+    store: &Store,
+    tenant: &TenantId,
+    activity_id: [u8; 32],
+) -> Result<OwnedSubmission, HumanOperationError> {
+    let entry = store
+        .get(
+            &crate::store::activity_owner_key(tenant, activity_id)
+                .map_err(|_| HumanOperationError::Refused)?,
+        )
+        .ok_or(HumanOperationError::Refused)?;
+    let bytes = entry.bytes();
+    if entry.class() != StorageClass::LocalOnly || bytes.len() < 33 || bytes[0] != 1 {
+        return Err(HumanOperationError::Unavailable);
+    }
+    let idempotency_key: [u8; 32] = bytes[1..33]
+        .try_into()
+        .map_err(|_| HumanOperationError::Unavailable)?;
+    let principal = std::str::from_utf8(&bytes[33..])
+        .map_err(|_| HumanOperationError::Unavailable)?
+        .to_owned();
+    Ok(OwnedSubmission {
+        principal,
+        idempotency_key,
+    })
+}
+
+fn retained_activity_owner(
+    store: &Store,
+    registry: &ModuleRegistry,
+    tenant: &TenantId,
+    activity_id: [u8; 32],
+    indexed: OwnedSubmission,
+) -> Result<OwnedSubmission, HumanOperationError> {
+    let mut outbox = Outbox::default();
+    outbox
+        .restore(store, tenant.clone(), indexed.idempotency_key)
+        .map_err(|_| HumanOperationError::Unavailable)?;
+    let signed = outbox
+        .exact_signed_bytes(indexed.idempotency_key)
+        .map_err(|_| HumanOperationError::Unavailable)?;
+    let activity = layerx_wire::activity::decode_signed(signed, registry)
+        .map_err(|_| HumanOperationError::Unavailable)?;
+    if activity.idempotency_key() != indexed.idempotency_key
+        || layerx_wire::hash::activity_id(&activity)
+            .map_err(|_| HumanOperationError::Unavailable)?
+            != activity_id
+    {
+        return Err(HumanOperationError::Unavailable);
+    }
+    Ok(indexed)
+}
+
 /// Concrete production path. Prepared bytes remain key-free; externally
 /// supplied signatures are attached, reverified, durably queued, and only then
 /// submitted through the sole frozen LNI client.
@@ -5624,7 +5715,14 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
         self.outboxes
             .entry(peer.tenant.clone())
             .or_default()
-            .enqueue_with_origin(&mut store, tenant, submission_id, verified, origin)
+            .enqueue_with_origin(
+                &mut store,
+                tenant,
+                submission_id,
+                verified,
+                origin,
+                Some(peer.principal.as_str()),
+            )
             .map_err(|_| HumanOperationError::Unavailable)?;
         self.prepared.remove(&prepared_key);
         self.submissions.insert(
@@ -11353,6 +11451,264 @@ fn validate_capability<A: HumanAuthorityBoundary>(
 #[cfg(test)]
 #[path = "outbound_tls/tests.rs"]
 mod outbound_tls_tests;
+
+#[cfg(test)]
+mod activity_submission_index_tests {
+    use super::*;
+
+    fn must<T, E: std::fmt::Debug>(value: Result<T, E>) -> T {
+        value.unwrap_or_else(|error| panic!("activity submission index: {error:?}"))
+    }
+
+    fn signed_submission() -> (ModuleRegistry, crate::sign::VerifiedSubmission) {
+        let bytes = include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../tests/fixtures/authority/provider-subject/onboarding.activity"
+        ));
+        let kind = must(ActivityType::new(
+            layerx_types::payload::ModuleId::Governance,
+            1,
+        ));
+        let registry = must(ModuleRegistry::new(&[must(
+            layerx_types::payload::ModuleRegistration::new(
+                layerx_types::payload::ModuleId::Governance,
+                &[kind],
+            ),
+        )]));
+        let activity = must(layerx_wire::activity::decode_signed(bytes, &registry));
+        let payload = must(layerx_types::payload::Payload::new(
+            &registry,
+            kind,
+            activity.payload(),
+        ));
+        let mut builder = layerx_types::activity::EnvelopeBuilder::new();
+        must(builder.protocol_version(activity.protocol_version()));
+        must(builder.network_id(activity.network_id()));
+        must(builder.activity_type(kind));
+        must(builder.actor_did(must(Did::new(activity.actor_did()))));
+        must(
+            builder.authority(must(layerx_types::activity::Authority::owner(
+                activity.authority(),
+            ))),
+        );
+        must(builder.account_sequence(activity.account_sequence()));
+        must(
+            builder.timestamp_bound(must(layerx_types::activity::TimestampBound::new(
+                activity.timestamp_bound().not_before,
+                activity.timestamp_bound().not_after,
+            ))),
+        );
+        must(
+            builder.idempotency_key(layerx_types::ids::IdempotencyKey::new(
+                activity.idempotency_key(),
+            )),
+        );
+        must(builder.fee_limit(layerx_types::amount::Amount::from_u128(
+            activity.fee_limit(),
+        )));
+        must(builder.payload_hash(activity.payload_hash()));
+        must(builder.payload(payload));
+        let envelope = must(builder.build());
+        let canonical = must(layerx_wire::activity::encode_unsigned_envelope(&envelope));
+        let disclosure = must(crate::prepare::disclose(&canonical, &registry));
+        let prepared = crate::prepare::Prepared {
+            signing_preimage: *must(layerx_wire::sign::preimage_unsigned(&envelope)).as_bytes(),
+            envelope,
+            canonical_bytes: canonical,
+            observed_head_sequence: 0,
+            disclosure: disclosure.disclosure,
+            disclosure_digest: disclosure.digest,
+            audit: crate::prepare::PreparationAuditEntry {
+                idempotency_key: activity.idempotency_key(),
+                observed_head_sequence: 0,
+                disclosure_digest: disclosure.digest,
+            },
+        };
+        let key: [u8; 32] = must(activity.authority().try_into());
+        let verified = must(crate::sign::verify_before_submit(
+            bytes, &prepared, &key, &registry,
+        ));
+        (registry, verified)
+    }
+
+    fn queued(
+        name: &str,
+    ) -> (
+        std::path::PathBuf,
+        Store,
+        TenantId,
+        ModuleRegistry,
+        crate::sign::VerifiedSubmission,
+    ) {
+        let root = std::env::temp_dir().join(format!(
+            "lxp-activity-submission-{name}-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let mut store = must(Store::open(root.join("store")));
+        let tenant = must(TenantId::new("tenant-a"));
+        let (registry, submission) = signed_submission();
+        let mut outbox = Outbox::default();
+        must(outbox.enqueue_with_origin(
+            &mut store,
+            tenant.clone(),
+            submission.idempotency_key(),
+            submission.clone(),
+            None,
+            Some("operator"),
+        ));
+        (root, store, tenant, registry, submission)
+    }
+
+    fn index(
+        store: &mut Store,
+        tenant: &TenantId,
+        idempotency_key: [u8; 32],
+        activity_id: [u8; 32],
+    ) {
+        let (index_key, bytes) = must(crate::store::activity_owner_entry(
+            tenant,
+            activity_id,
+            &idempotency_key,
+            "operator",
+        ));
+        must(store.put_local(index_key, bytes));
+    }
+
+    fn lookup(
+        store: &Store,
+        registry: &ModuleRegistry,
+        tenant: &TenantId,
+        activity_id: [u8; 32],
+    ) -> Result<OwnedSubmission, HumanOperationError> {
+        let indexed = indexed_activity_owner(store, tenant, activity_id)?;
+        retained_activity_owner(store, registry, tenant, activity_id, indexed)
+    }
+
+    #[test]
+    fn retained_submission_is_found_by_its_activity_id() {
+        let (root, store, tenant, registry, submission) = queued("found");
+        assert_eq!(
+            must(lookup(&store, &registry, &tenant, submission.activity_id())),
+            OwnedSubmission {
+                principal: "operator".to_owned(),
+                idempotency_key: submission.idempotency_key(),
+            }
+        );
+        drop(store);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn unknown_activity_id_is_refused() {
+        let (root, store, tenant, registry, _) = queued("unknown");
+        assert!(matches!(
+            lookup(&store, &registry, &tenant, [0x55; 32]),
+            Err(HumanOperationError::Refused)
+        ));
+        drop(store);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn index_entry_with_missing_target_is_refused_as_corrupt() {
+        let (root, mut store, tenant, registry, _) = queued("missing");
+        index(&mut store, &tenant, [0x44; 32], [0x66; 32]);
+        assert!(matches!(
+            lookup(&store, &registry, &tenant, [0x66; 32]),
+            Err(HumanOperationError::Unavailable)
+        ));
+        drop(store);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn index_entry_whose_activity_does_not_hash_is_refused_as_corrupt() {
+        let (root, mut store, tenant, registry, submission) = queued("mismatch");
+        index(
+            &mut store,
+            &tenant,
+            submission.idempotency_key(),
+            [0x77; 32],
+        );
+        assert!(matches!(
+            lookup(&store, &registry, &tenant, [0x77; 32]),
+            Err(HumanOperationError::Unavailable)
+        ));
+        drop(store);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn single_enqueue_persists_the_submission_and_its_index_entry_together() {
+        let (root, store, tenant, registry, submission) = queued("persisted");
+        drop(store);
+        let reopened = must(Store::open(root.join("store")));
+        let id = submission.idempotency_key().to_vec();
+        for kind in [
+            ObjectKind::PreparedActivity,
+            ObjectKind::Outbox,
+            ObjectKind::Idempotency,
+        ] {
+            assert!(reopened
+                .get(&must(TenantKey::new(tenant.clone(), kind, id.clone())))
+                .is_some());
+        }
+        assert_eq!(
+            must(lookup(
+                &reopened,
+                &registry,
+                &tenant,
+                submission.activity_id()
+            )),
+            OwnedSubmission {
+                principal: "operator".to_owned(),
+                idempotency_key: submission.idempotency_key(),
+            }
+        );
+        drop(reopened);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn failed_persist_leaves_neither_the_submission_nor_the_index() {
+        let root = std::env::temp_dir().join(format!(
+            "lxp-activity-submission-failed-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let mut store = must(Store::open(root.join("store")));
+        let tenant = must(TenantId::new("tenant-a"));
+        let (_, submission) = signed_submission();
+        must(std::fs::remove_dir_all(&root));
+        let mut outbox = Outbox::default();
+        assert!(matches!(
+            outbox.enqueue_with_origin(
+                &mut store,
+                tenant.clone(),
+                submission.idempotency_key(),
+                submission.clone(),
+                None,
+                Some("operator"),
+            ),
+            Err(crate::outbox::OutboxError::Store(_))
+        ));
+        assert!(store
+            .get(&must(TenantKey::new(
+                tenant.clone(),
+                ObjectKind::Outbox,
+                submission.idempotency_key().to_vec(),
+            )))
+            .is_none());
+        assert!(matches!(
+            indexed_activity_owner(&store, &tenant, submission.activity_id()),
+            Err(HumanOperationError::Refused)
+        ));
+        assert!(outbox
+            .exact_signed_bytes(submission.idempotency_key())
+            .is_err());
+    }
+}
 
 #[cfg(test)]
 mod enrolment_expiry_boundary_tests {

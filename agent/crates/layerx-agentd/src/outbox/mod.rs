@@ -133,7 +133,7 @@ impl Outbox {
         submission_id: [u8; 32],
         verified: VerifiedSubmission,
     ) -> Result<(), OutboxError> {
-        self.enqueue_with_origin(store, tenant, submission_id, verified, None)
+        self.enqueue_with_origin(store, tenant, submission_id, verified, None, None)
     }
 
     /// Durably queues exact verified bytes together with the preparation authorization that
@@ -149,6 +149,7 @@ impl Outbox {
         submission_id: [u8; 32],
         verified: VerifiedSubmission,
         origin: Option<PreparationAuthorization>,
+        owner: Option<&str>,
     ) -> Result<(), OutboxError> {
         if self.records.contains_key(&submission_id) {
             return Err(OutboxError::Duplicate);
@@ -185,11 +186,12 @@ impl Outbox {
             origin,
         };
         store
-            .record_submission(
+            .record_submission_with_activity_owner(
                 tenant,
                 submission_id.to_vec(),
                 signed_canonical_bytes,
                 encode_record(&record)?,
+                owner.map(|principal| (activity_id, principal)),
             )
             .map_err(OutboxError::Store)?;
         self.records.insert(submission_id, record);
