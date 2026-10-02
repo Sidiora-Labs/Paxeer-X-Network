@@ -91,10 +91,10 @@ CLIENT_UID=${LAYERX_NODE_TEST_CLIENT_UID:-$(id -u nobody)}
 CLIENT_GID=${LAYERX_NODE_TEST_CLIENT_GID:-$(id -g nobody)}
 [ "$CLIENT_UID" != "$(id -u)" ] || fail "client uid must differ from the daemon uid"
 
-log "building the probe"
-"$CARGO" build --locked --offline --release --manifest-path "$NODE_DIR/tests/probe/Cargo.toml" >&2
-PROBE="$NODE_DIR/tests/probe/target/release/layerx-node-probe"
-[ -x "$PROBE" ] || fail "probe binary missing at $PROBE"
+PROBE=${LAYERX_NODE_TEST_PROBE_BIN:-}
+[ -n "$PROBE" ] || fail "LAYERX_NODE_TEST_PROBE_BIN must name the source-bound prebuilt probe"
+[ -f "$PROBE" ] && [ -x "$PROBE" ] || fail "probe binary missing at $PROBE"
+[ -n "${LAYERX_CUSTODY_ARTIFACT_MANIFEST:-}" ] || fail "LAYERX_CUSTODY_ARTIFACT_MANIFEST is required"
 
 WORK=$(mktemp -d /tmp/layerx-node-test.XXXXXX)
 chmod 0755 "$WORK"

@@ -142,10 +142,14 @@ platform-test-cli-production-credential-refusal:
 platform-test-registry:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(PLATFORM_CARGO) test --offline --manifest-path $(PLATFORM_MANIFEST) --locked -p layerx-platform-registry
 
-platform-test-node: test-layerxctl layerx-handover layerx-genesis-build $(BUILD_DIR)/tests/bridge/sign-credit paxeer-build
-	bash -n platform/hosted/node/bootstrap.sh platform/hosted/node/supervisor.sh platform/hosted/node/sequencer-env.sh platform/hosted/node/tests/node-test.sh
-	PLATFORM_CARGO="$(PLATFORM_CARGO)" BRIDGE_PYTHON="$(BRIDGE_PYTHON)" PAXD="$(abspath build/paxd)" bash platform/hosted/node/tests/node-test.sh
-	python3 platform/hosted/node/tests/sequencer-seed-test.py
+.PHONY: platform-build-node-artifacts platform-test-node-runtime
+platform-build-node-artifacts:
+	PLATFORM_CARGO="$(PLATFORM_CARGO)" $(BRIDGE_PYTHON) platform/hosted/node/tests/node-artifacts.py build --output "$(PAXEER_X_NODE_ARTIFACT_MANIFEST)" --image "$(LAYERX_NODE_IMAGE)"
+
+platform-test-node: platform-test-node-runtime
+
+platform-test-node-runtime:
+	BRIDGE_PYTHON="$(BRIDGE_PYTHON)" $(BRIDGE_PYTHON) platform/hosted/node/tests/node-artifacts.py run
 
 platform-test-core:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(PLATFORM_CARGO) test --offline --manifest-path $(PLATFORM_MANIFEST) --locked -p layerx-platform-core

@@ -502,7 +502,7 @@ GENERATION=0
 if [ -r "$GENERATION_FILE" ]; then GENERATION=$(cat "$GENERATION_FILE"); fi
 if [ ! -r "$DATA_DIR/node.env" ]; then
     log "bootstrapping $DATA_DIR"
-    run_bootstrap --force "${BOOTSTRAP_ARGS[@]}"
+    run_bootstrap "${BOOTSTRAP_ARGS[@]}"
 fi
 if [ -n "${LAYERX_NODE_HANDOVER_AUTHORITY_PUBLIC_KEY:-}" ]; then
     configured_handover=$(sed -n 's/^LAYERX_NODE_HANDOVER_AUTHORITY_PUBLIC_KEY=//p' "$DATA_DIR/node.env")

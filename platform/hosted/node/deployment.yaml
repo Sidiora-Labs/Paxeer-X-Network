@@ -1039,7 +1039,7 @@ spec:
     - from: [{podSelector: {matchLabels: {app: layerx-testnet-control}}}]
       ports: [{protocol: TCP, port: 9443}, {protocol: TCP, port: 9444}, {protocol: TCP, port: 9445}]
     - from: [{podSelector: {matchLabels: {app: layerx-gateway}}}]
-      ports: [{protocol: TCP, port: 9443}, {protocol: TCP, port: 9445}, {protocol: TCP, port: 9446}]
+      ports: [{protocol: TCP, port: 9443}, {protocol: TCP, port: 9445}, {protocol: TCP, port: 9446}, {protocol: TCP, port: 9454}]
     - from: [{podSelector: {matchLabels: {app: layerx-program-registry}}}]
       ports: [{protocol: TCP, port: 9445}, {protocol: TCP, port: 9446}]
     - from: [{podSelector: {matchLabels: {app: layerx-faucet}}}]

@@ -30,7 +30,7 @@ def public_key_of(seed):
 
 
 class BootstrapTest(unittest.TestCase):
-    def bootstrap(self, work, threshold):
+    def bootstrap(self, work, threshold, generate_metadata=False):
         document = json.loads((ROOT / 'contracts/config/checkpoint-settlement.json').read_text())
         document['finality_policy']['certificate_threshold'] = threshold
         policy = work / 'settlement.json'
@@ -42,7 +42,8 @@ class BootstrapTest(unittest.TestCase):
             key.write_bytes(seeds[name])
             key.chmod(0o600)
         genesis_metadata = work / 'metadata'
-        genesis_metadata.write_bytes(lxgb_metadata.metadata(ASSET, public_key_of(seeds['treasury']), os.urandom(32)))
+        if not generate_metadata:
+            genesis_metadata.write_bytes(lxgb_metadata.metadata(ASSET, public_key_of(seeds['treasury']), os.urandom(32)))
         env = {k: v for k, v in os.environ.items() if not k.startswith('LAYERX_')}
         process = subprocess.Popen([
             'bash', str(ROOT / 'platform/hosted/node/bootstrap.sh'),
@@ -79,16 +80,28 @@ class BootstrapTest(unittest.TestCase):
                 result = self.bootstrap(work, count)
                 self.assertEqual(result.returncode, 0, result.stderr.decode())
                 data = work / 'data'
-                request = self.request
+                request = (data / 'genesis/genesis-request.lxgb').read_bytes()
                 self.assertIsNotNone(request)
-                self.assertEqual(len(request), 314 + 81 * count)
-                self.assertEqual(request[:5], b'LXGB\x01')
-                self.assertEqual(struct.unpack('>H', request[87:89])[0], count)
+                self.assertEqual(request[:5], b'LXGB\x02')
+                self.assertEqual(struct.unpack('>H', request[5:7])[0], 3)
+                parameter_count = struct.unpack('>H', request[19:21])[0]
+                self.assertEqual(parameter_count, 8)
+                parameters = [request[21 + 66 * i:21 + 66 * (i + 1)]
+                              for i in range(parameter_count)]
+                self.assertEqual(parameters, sorted(set(parameters)))
+                self.assertIn(b'\0\x07' + b'native-fee-authority-version'.ljust(32, b'\0')
+                              + bytes(31) + b'\x02', parameters)
+                guarantor_offset = 21 + 66 * parameter_count
+                self.assertEqual(struct.unpack('>H', request[guarantor_offset:guarantor_offset + 2])[0], count)
+                metadata = (work / 'metadata').read_bytes()
+                self.assertEqual(len(request), 380 + 66 * 6 + 81 * count + len(metadata))
+                self.assertEqual(request[-len(metadata):], metadata)
                 exports = dict(line.split('=', 1) for line in (data / 'node.env').read_text().splitlines())
                 self.assertEqual(int(exports['LAYERX_NODE_GENESIS_GUARANTOR_COUNT']), count)
                 ids, publics = [], []
                 for index in range(count):
-                    entry = request[89 + index * 81:89 + (index + 1) * 81]
+                    start = guarantor_offset + 2 + index * 81
+                    entry = request[start:start + 81]
                     identifier, public = entry[:32].hex(), entry[32:65].hex()
                     self.assertEqual(entry[65:], bytes(16))
                     self.assertEqual(identifier, hashlib.sha256(('layerx-beta-guarantor:' + public).encode()).hexdigest())
@@ -113,6 +126,18 @@ class BootstrapTest(unittest.TestCase):
                 self.assertIn(exports['LAYERX_NODE_GENESIS_GUARANTOR_ID'], ids)
                 for artifact in ('genesis.manifest', '00000000000000000000.lxs', 'paxeer-registration-request.lxrr', 'paxeer-deployment-descriptor.lxgd'):
                     self.assertGreater((data / 'genesis' / artifact).stat().st_size, 0)
+
+    def test_generated_metadata_real_genesis(self):
+        with tempfile.TemporaryDirectory(prefix='lxgb-producer-') as directory:
+            work = Path(directory)
+            result = self.bootstrap(work, 2, generate_metadata=True)
+            self.assertEqual(result.returncode, 0, result.stderr.decode())
+            encoded = (work / 'metadata').read_bytes()
+            self.assertEqual(encoded[:2], b'\0\x01')
+            self.assertEqual(encoded[4:6], b'\0\x03')
+            self.assertEqual(encoded[6:38], ASSET)
+            self.assertTrue((work / 'data/genesis/genesis.manifest').is_file())
+            self.assertTrue((work / 'data/genesis/00000000000000000000.lxs').is_file())
 
     def test_invalid_thresholds_refused_before_generation(self):
         for threshold in (0, -1, 33, 1.5, '2', None, True):
