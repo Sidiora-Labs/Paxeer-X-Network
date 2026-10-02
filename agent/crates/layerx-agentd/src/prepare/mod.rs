@@ -21,8 +21,9 @@ mod lifecycle;
 pub use disclosure_binding::{DisclosedPreparation, DisclosureBindingError};
 pub(crate) use lifecycle::PreparationAuthorization;
 pub use lifecycle::{
-    ExpirationReport, LifecycleError, LifecycleState, PayloadRedaction,
-    PreparationInvalidationReport, PreparationLifecycle, RetentionReport,
+    DurablePreparation, ExpirationReport, LifecycleError, LifecycleState, PayloadRedaction,
+    PreparationExtension, PreparationInvalidationReport, PreparationLifecycle, RetentionReport,
+    EXTENSION_CAPABILITY, EXTENSION_IDEMPOTENCY, EXTENSION_OUTCOME,
 };
 
 /// Domain-separated digest of the validated structured disclosure.
@@ -204,7 +205,7 @@ pub fn disclose(
     canonical_bytes: &[u8],
     registry: &ModuleRegistry,
 ) -> Result<DisclosedPreparation, DisclosureBindingError> {
-    disclosure_binding::decode_and_bind(canonical_bytes, registry)
+    disclosure_binding::decode_and_bind(canonical_bytes, registry, None)
 }
 
 /// Revalidates that a held preparation still matches its disclosure.
@@ -271,6 +272,34 @@ pub fn prepare_activity_for_protocol(
     defaults: PreparationDefaults,
     request: PrepareRequest,
     protocol_version: u16,
+) -> Result<Prepared, PrepareError> {
+    prepare_bound(boundary, defaults, request, protocol_version, None)
+}
+
+/// Prepares a core budget fund, defund or revoke whose disclosure is bound to the verified
+/// budget state; the context stays in the cached disclosure, so `verify_disclosure_binding`
+/// re-derives the same digest at sign and submit.
+///
+/// # Errors
+///
+/// Returns the same preparation errors as `prepare_activity_for_protocol`, and a disclosure
+/// failure when the payload is not a budget mutation consistent with `context`.
+pub fn prepare_budget_mutation_for_protocol(
+    boundary: &mut dyn CorePreparationBoundary,
+    defaults: PreparationDefaults,
+    request: PrepareRequest,
+    protocol_version: u16,
+    context: &layerx_crypto::disclosure::BudgetStateContext,
+) -> Result<Prepared, PrepareError> {
+    prepare_bound(boundary, defaults, request, protocol_version, Some(context))
+}
+
+fn prepare_bound(
+    boundary: &mut dyn CorePreparationBoundary,
+    defaults: PreparationDefaults,
+    request: PrepareRequest,
+    protocol_version: u16,
+    budget_context: Option<&layerx_crypto::disclosure::BudgetStateContext>,
 ) -> Result<Prepared, PrepareError> {
     if defaults.timestamp_span == 0 || defaults.maximum_payload_bytes == 0 {
         return Err(PrepareError::InvalidDefaults);
@@ -341,8 +370,12 @@ pub fn prepare_activity_for_protocol(
     let signing_preimage = *preimage_unsigned(&envelope)
         .map_err(PrepareError::Wire)?
         .as_bytes();
-    let disclosed =
-        disclose(&canonical_bytes, &state.module_registry).map_err(PrepareError::Disclosure)?;
+    let disclosed = disclosure_binding::decode_and_bind(
+        &canonical_bytes,
+        &state.module_registry,
+        budget_context,
+    )
+    .map_err(PrepareError::Disclosure)?;
     let audit = PreparationAuditEntry {
         idempotency_key: envelope.idempotency_key().bytes(),
         observed_head_sequence: state.observed_head_sequence,

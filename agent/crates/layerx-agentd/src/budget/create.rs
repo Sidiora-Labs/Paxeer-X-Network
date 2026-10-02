@@ -1,7 +1,8 @@
 //! Budget creation through the ordinary canonical write pipeline.
 
+use layerx_crypto::disclosure::{self, DisclosedNativeOperation};
+use layerx_types::account::AccountId;
 use layerx_types::payload::{ActivityType, ModuleId, ModuleRegistry};
-use layerx_wire::decode::Decoder;
 
 use super::accounting::{ProtocolBudgetRecord, ProtocolBudgetState};
 use crate::protocol_evidence::{EvidenceAuthority, RawReceiptEvidence};
@@ -10,8 +11,6 @@ use crate::store::{Store, TenantId};
 
 const LOCAL_BYPASS_STATEMENT: &str =
     "daemon-enforced only; bypassing layerx-agentd bypasses this limit";
-const BUDGET_CREATE_WIRE_TAG: u16 = 0x4201;
-const BUDGET_CREATE_FIELD_COUNT: u16 = 10;
 const BUDGET_CREATE_ORDINAL: u16 = 1;
 const PROTOCOL_ENFORCEMENT: &str = "protocol-enforced";
 
@@ -30,7 +29,11 @@ pub struct BudgetRequest {
     pub kind: BudgetKind,
     pub asset: [u8; 32],
     pub ceiling: u128,
-    pub expiry_sequence: u64,
+    /// Core budget expiry in milliseconds of core batch time.
+    pub expiry_ms: u64,
+    /// Verified core batch time the request is admitted against; the budget
+    /// must expire strictly after it, as core refuses `expiry <= batch time`.
+    pub core_time_ms: u64,
     pub canonical_activity: Vec<u8>,
     pub verified_submission: Option<VerifiedSubmission>,
 }
@@ -69,21 +72,31 @@ pub trait BudgetPipeline {
     ) -> Result<ProtocolBudgetState, BudgetCreationError>;
 }
 
-/// Object-naming fields of one canonical budget-create payload.
+/// Every field of one canonical core budget-create payload (211-byte version 1
+/// or 251-byte version 2), decoded by the shared native disclosure parser.
 ///
-/// Core keys the created record by the payload's own `budget_id`
-/// (`lx_budget_create_decode` copies it and `budget_execute_create` saves the
-/// record under `lx_budget_state_key(budget_id)`), so the identifier is read
-/// from the exact bytes that were signed, never from the receipt.
+/// Core keys the created record by the payload's own `budget_id`, so the
+/// identifier is read from the exact bytes that were signed, never from the
+/// receipt. The payload carries no owner: core resolves it from the signer, and
+/// `owner` here is the actor's main account the native parser binds against.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BudgetCreateIdentity {
+    pub encoding_version: u16,
     pub budget_id: [u8; 32],
     pub owner: [u8; 32],
     pub budget_account: [u8; 32],
     pub asset: [u8; 32],
+    pub purpose: [u8; 32],
     pub per_period_limit: u128,
-    pub period_length: u64,
-    pub expiry: u64,
+    pub carry_cap: u128,
+    pub initial_amount: u128,
+    pub period_length_ms: u64,
+    pub period_start_ms: u64,
+    pub expiry_ms: u64,
+    pub revocation_sequence: u64,
+    pub rollover: u8,
+    pub source_account: [u8; 32],
+    pub source_sequence: u64,
 }
 
 /// Decodes the budget identity from a signed canonical budget-create activity.
@@ -91,7 +104,7 @@ pub struct BudgetCreateIdentity {
 /// # Errors
 ///
 /// Returns `NotBudgetCreation` when the bytes are not one canonical signed
-/// activity of type budget/create carrying a well-formed create payload.
+/// activity of type budget/create whose payload the native disclosure accepts.
 pub fn budget_create_identity(
     canonical_activity: &[u8],
     registry: &ModuleRegistry,
@@ -104,43 +117,51 @@ pub fn budget_create_identity(
     if activity.activity_type() != create {
         return Err(not_creation);
     }
-    let mut decoder = Decoder::new(activity.payload(), 0);
-    if decoder.u16().map_err(|_| not_creation)? != BUDGET_CREATE_WIRE_TAG
-        || decoder.u16().map_err(|_| not_creation)? != BUDGET_CREATE_FIELD_COUNT
-    {
+    let unsigned =
+        layerx_wire::activity::encode_unsigned(&activity).map_err(|_| not_creation)?;
+    let disclosure = disclosure::bind(&unsigned, registry).map_err(|_| not_creation)?;
+    let Some(DisclosedNativeOperation::BudgetCreate(budget)) = disclosure.native_operation else {
         return Err(not_creation);
-    }
-    let budget_id = fixed32(&mut decoder)?;
-    let owner = fixed32(&mut decoder)?;
-    let budget_account = fixed32(&mut decoder)?;
-    let asset = fixed32(&mut decoder)?;
-    let per_period_limit = decoder.u128().map_err(|_| not_creation)?;
-    let period_length = decoder.u64().map_err(|_| not_creation)?;
-    let _rollover = decoder.u8().map_err(|_| not_creation)?;
-    let _carry_cap = decoder.u128().map_err(|_| not_creation)?;
-    let _purpose = fixed32(&mut decoder)?;
-    let expiry = decoder.u64().map_err(|_| not_creation)?;
-    decoder.finish().map_err(|_| not_creation)?;
-    if budget_id == [0; 32] {
-        return Err(not_creation);
-    }
+    };
+    let actor = std::str::from_utf8(activity.actor_did()).map_err(|_| not_creation)?;
+    let owner = protocol_account(&format!("agent:{actor}:main"))?;
     Ok(BudgetCreateIdentity {
-        budget_id,
+        encoding_version: budget.encoding_version,
+        budget_id: budget.budget_id,
         owner,
-        budget_account,
-        asset,
-        per_period_limit,
-        period_length,
-        expiry,
+        budget_account: budget.budget_account,
+        asset: budget.asset,
+        purpose: budget.purpose,
+        per_period_limit: budget.per_period_limit,
+        carry_cap: budget.carry_cap,
+        initial_amount: budget.initial_amount,
+        period_length_ms: budget.period_length_ms,
+        period_start_ms: budget.period_start_ms,
+        expiry_ms: budget.expiry_ms,
+        revocation_sequence: budget.revocation_sequence,
+        rollover: budget.rollover,
+        source_account: budget.source_account,
+        source_sequence: budget.source_sequence,
     })
 }
 
-fn fixed32(decoder: &mut Decoder<'_>) -> Result<[u8; 32], BudgetCreationError> {
-    decoder
-        .fixed(32)
-        .map_err(|_| BudgetCreationError::NotBudgetCreation)?
-        .try_into()
+pub(crate) fn protocol_account(name: &str) -> Result<[u8; 32], BudgetCreationError> {
+    let account =
+        AccountId::parse(name).map_err(|_| BudgetCreationError::NotBudgetCreation)?;
+    layerx_wire::hash::account_id_for_protocol(&account, 3)
         .map_err(|_| BudgetCreationError::NotBudgetCreation)
+}
+
+/// Converts a public expiry in seconds to the core millisecond clock.
+///
+/// # Errors
+///
+/// Returns `InvalidLimit` for a zero expiry or one whose milliseconds overflow `u64`.
+pub fn core_expiry_ms(seconds: u64) -> Result<u64, BudgetCreationError> {
+    match seconds.checked_mul(1000) {
+        Some(milliseconds) if milliseconds != 0 => Ok(milliseconds),
+        _ => Err(BudgetCreationError::InvalidLimit),
+    }
 }
 
 /// Successfully created protocol-backed budget, confirmed from proven core state.
@@ -226,6 +247,10 @@ pub enum BudgetCreationError {
     ReceiptActivityMismatch,
     CoreRejected,
     CreatedBudgetUnconfirmed,
+    Expired,
+    StaleRevocation,
+    BudgetNotLive,
+    ContextMismatch,
 }
 
 /// Offers a verifier-bound signed canonical limit activity to core and confirms
@@ -233,7 +258,8 @@ pub enum BudgetCreationError {
 ///
 /// # Errors
 ///
-/// Refuses a zero ceiling or expiry sequence, missing or substituted verifier
+/// Refuses a zero ceiling or expiry, an expiry at or before the verified core
+/// batch time (core treats equality as expired), missing or substituted verifier
 /// binding, an activity that is not a canonical budget creation, a payload
 /// whose limit, expiry or asset differ from the request, a receipt for any
 /// activity other than the exact canonical verified submission, and an
@@ -248,8 +274,11 @@ pub fn create_protocol_budget(
     verifier: &EvidenceAuthority,
     pipeline: &mut dyn BudgetPipeline,
 ) -> Result<ProtocolBudget, BudgetCreationError> {
-    if request.ceiling == 0 || request.expiry_sequence == 0 {
+    if request.ceiling == 0 || request.expiry_ms == 0 {
         return Err(BudgetCreationError::InvalidLimit);
+    }
+    if request.expiry_ms <= request.core_time_ms {
+        return Err(BudgetCreationError::Expired);
     }
     if request.canonical_activity.is_empty() {
         return Err(BudgetCreationError::EmptyActivity);
@@ -265,7 +294,7 @@ pub fn create_protocol_budget(
     }
     let identity = budget_create_identity(submission.exact_bytes(), registry)?;
     if identity.per_period_limit != request.ceiling
-        || identity.expiry != request.expiry_sequence
+        || identity.expiry_ms != request.expiry_ms
         || identity.asset != request.asset
     {
         return Err(BudgetCreationError::IdentityMismatch);
@@ -291,7 +320,17 @@ pub fn create_protocol_budget(
         || record.budget_account != identity.budget_account
         || record.asset_id != request.asset
         || record.per_period_limit != request.ceiling
-        || record.expiry != request.expiry_sequence
+        || record.expiry != request.expiry_ms
+        || record.carry_cap != identity.carry_cap
+        || record.period_length != identity.period_length_ms
+        || record.period_start != identity.period_start_ms
+        || record.revocation_sequence != identity.revocation_sequence
+        || record.rollover_policy != identity.rollover
+        || record.purpose_hash != identity.purpose
+        || record.source_account.is_some() != (identity.encoding_version == 2)
+        || record
+            .source_account
+            .is_some_and(|source| source != identity.source_account)
         || record.closed
         || record.revoked
     {

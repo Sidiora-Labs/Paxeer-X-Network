@@ -46,6 +46,65 @@ pub enum DisclosedNativeOperation {
     RecoveryPolicy(DisclosedRecoveryPolicy),
     OwnerRotation(Box<crate::rotation::OwnerRotation>),
     BudgetCreate(Box<DisclosedNativeBudgetCreate>),
+    BudgetFund(Box<DisclosedNativeBudgetFund>),
+    BudgetDefund(Box<DisclosedNativeBudgetDefund>),
+    BudgetRevoke(Box<DisclosedNativeBudgetRevoke>),
+}
+
+/// Verified budget record context a fund, defund or revoke disclosure is bound to.
+///
+/// The caller supplies values it verified from proven module and account state.
+/// The disclosure checks them against what the canonical bytes and the actor
+/// derive, and every field is bound into the transport bytes and audit digest.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BudgetStateContext {
+    pub budget_id: [u8; 32],
+    pub owner: [u8; 32],
+    pub budget_account: [u8; 32],
+    pub asset: [u8; 32],
+    pub source_account: [u8; 32],
+    pub native_source: bool,
+    pub revocation_sequence: u64,
+    pub balance: u128,
+    pub state_digest: [u8; 32],
+    pub observed_head_sequence: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisclosedNativeBudgetFund {
+    pub encoding_version: u16,
+    pub budget_id: [u8; 32],
+    pub amount: u128,
+    pub source_sequence: Option<u64>,
+    pub context: BudgetStateContext,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisclosedNativeBudgetDefund {
+    pub budget_id: [u8; 32],
+    pub amount: u128,
+    pub context: BudgetStateContext,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisclosedNativeBudgetRevoke {
+    pub budget_id: [u8; 32],
+    pub revocation_sequence: u64,
+    pub context: BudgetStateContext,
+}
+
+fn encode_context(encoder: &mut Encoder, context: &BudgetStateContext) -> Result<(), DisclosureError> {
+    encoder.fixed(&context.budget_id)?;
+    encoder.fixed(&context.owner)?;
+    encoder.fixed(&context.budget_account)?;
+    encoder.fixed(&context.asset)?;
+    encoder.fixed(&context.source_account)?;
+    encoder.u8(u8::from(context.native_source))?;
+    encoder.u64(context.revocation_sequence)?;
+    encoder.u128(context.balance)?;
+    encoder.fixed(&context.state_digest)?;
+    encoder.u64(context.observed_head_sequence)?;
+    Ok(())
 }
 
 impl DisclosedNativeOperation {
@@ -102,6 +161,32 @@ impl DisclosedNativeOperation {
                 encoder.u8(budget.rollover)?;
                 encoder.fixed(&budget.source_account)?;
                 encoder.u64(budget.source_sequence)?;
+            }
+            Self::BudgetFund(fund) => {
+                encoder.u8(6)?;
+                encoder.u16(fund.encoding_version)?;
+                encoder.fixed(&fund.budget_id)?;
+                encoder.u128(fund.amount)?;
+                match fund.source_sequence {
+                    Some(sequence) => {
+                        encoder.u8(1)?;
+                        encoder.u64(sequence)?;
+                    }
+                    None => encoder.u8(0)?,
+                }
+                encode_context(&mut encoder, &fund.context)?;
+            }
+            Self::BudgetDefund(defund) => {
+                encoder.u8(7)?;
+                encoder.fixed(&defund.budget_id)?;
+                encoder.u128(defund.amount)?;
+                encode_context(&mut encoder, &defund.context)?;
+            }
+            Self::BudgetRevoke(revoke) => {
+                encoder.u8(8)?;
+                encoder.fixed(&revoke.budget_id)?;
+                encoder.u64(revoke.revocation_sequence)?;
+                encode_context(&mut encoder, &revoke.context)?;
             }
         }
         Ok(encoder.finish())
@@ -227,7 +312,144 @@ fn budget(activity: &Activity) -> Result<DisclosedNativeBudgetCreate, Disclosure
     Ok(value)
 }
 
-pub(super) fn fields(activity: &Activity) -> Result<DisclosureFields, DisclosureError> {
+/// Checks a verified budget context against the identities the actor and the
+/// payload budget identifier derive, by the rules core resolves them with.
+fn bound_context(
+    activity: &Activity,
+    context: &BudgetStateContext,
+    budget_id: [u8; 32],
+) -> Result<(), DisclosureError> {
+    let malformed = || DisclosureError::MalformedPayload;
+    let actor = std::str::from_utf8(activity.actor_did()).map_err(|_| malformed())?;
+    let main = account_id(&format!("agent:{actor}:main"))?;
+    let per_asset = account_id(&format!("agent:{actor}:asset:{}", hex(&context.asset)))?;
+    let expected_budget = account_id(&format!("agent:{actor}:budget:{}", hex(&budget_id)))?;
+    if budget_id == [0; 32]
+        || context.budget_id != budget_id
+        || context.owner != main
+        || context.budget_account != expected_budget
+        || context.asset == [0; 32]
+        || context.source_account == [0; 32]
+        || context.source_account == context.budget_account
+        || (!context.native_source
+            && context.source_account != main
+            && context.source_account != per_asset)
+    {
+        return Err(malformed());
+    }
+    Ok(())
+}
+
+fn budget_fund(
+    activity: &Activity,
+    context: &BudgetStateContext,
+) -> Result<DisclosedNativeBudgetFund, DisclosureError> {
+    let malformed = || DisclosureError::MalformedPayload;
+    let payload = activity.payload();
+    let mut reader = Decoder::new(payload, 0);
+    let encoding_version = reader.u16()?;
+    if !matches!((payload.len(), encoding_version), (50, 1) | (58, 2)) {
+        return Err(malformed());
+    }
+    let budget_id = fixed(&mut reader)?;
+    let amount = reader.u128()?;
+    let source_sequence = if encoding_version == 2 {
+        Some(reader.u64()?)
+    } else {
+        None
+    };
+    reader.finish()?;
+    bound_context(activity, context, budget_id)?;
+    if amount == 0
+        || source_sequence == Some(u64::MAX)
+        || context.native_source != (encoding_version == 2)
+    {
+        return Err(malformed());
+    }
+    Ok(DisclosedNativeBudgetFund {
+        encoding_version,
+        budget_id,
+        amount,
+        source_sequence,
+        context: *context,
+    })
+}
+
+fn budget_defund(
+    activity: &Activity,
+    context: &BudgetStateContext,
+) -> Result<DisclosedNativeBudgetDefund, DisclosureError> {
+    let malformed = || DisclosureError::MalformedPayload;
+    let payload = activity.payload();
+    let mut reader = Decoder::new(payload, 0);
+    if payload.len() != 50 || reader.u16()? != 1 {
+        return Err(malformed());
+    }
+    let budget_id = fixed(&mut reader)?;
+    let amount = reader.u128()?;
+    reader.finish()?;
+    bound_context(activity, context, budget_id)?;
+    if amount == 0 || amount > context.balance {
+        return Err(malformed());
+    }
+    Ok(DisclosedNativeBudgetDefund {
+        budget_id,
+        amount,
+        context: *context,
+    })
+}
+
+fn budget_revoke(
+    activity: &Activity,
+    context: &BudgetStateContext,
+) -> Result<DisclosedNativeBudgetRevoke, DisclosureError> {
+    let malformed = || DisclosureError::MalformedPayload;
+    let payload = activity.payload();
+    let mut reader = Decoder::new(payload, 0);
+    if payload.len() != 42 || reader.u16()? != 1 {
+        return Err(malformed());
+    }
+    let budget_id = fixed(&mut reader)?;
+    let revocation_sequence = reader.u64()?;
+    reader.finish()?;
+    bound_context(activity, context, budget_id)?;
+    if revocation_sequence == 0 || revocation_sequence <= context.revocation_sequence {
+        return Err(malformed());
+    }
+    Ok(DisclosedNativeBudgetRevoke {
+        budget_id,
+        revocation_sequence,
+        context: *context,
+    })
+}
+
+fn transfer(
+    counterparties: &mut Vec<Counterparty>,
+    amounts: &mut Vec<DisclosedAmount>,
+    payer: [u8; 32],
+    recipient: [u8; 32],
+    value: u128,
+) {
+    counterparties.extend([
+        Counterparty {
+            role: CounterpartyRole::Payer,
+            account: payer,
+        },
+        Counterparty {
+            role: CounterpartyRole::Recipient,
+            account: recipient,
+        },
+    ]);
+    amounts.push(DisclosedAmount {
+        role: AmountRole::Transfer,
+        value,
+    });
+}
+
+pub(super) fn fields(
+    activity: &Activity,
+    context: Option<&BudgetStateContext>,
+) -> Result<DisclosureFields, DisclosureError> {
     if activity.protocol_version() != 3 || activity.network_id() == 0 {
         return Err(DisclosureError::MalformedPayload);
     }
@@ -280,6 +502,49 @@ pub(super) fn fields(activity: &Activity) -> Result<DisclosureFields, Disclosure
             asset = value.asset;
             expiry = value.expiry_ms;
             DisclosedNativeOperation::BudgetCreate(Box::new(value))
+        }
+        (ModuleId::Budget, ordinal @ (2 | 8 | 9)) => {
+            let Some(context) = context else {
+                return Err(DisclosureError::UnsupportedActivity(
+                    activity.activity_type().value(),
+                ));
+            };
+            asset = context.asset;
+            match ordinal {
+                2 => {
+                    let value = budget_fund(activity, context)?;
+                    transfer(
+                        &mut counterparties,
+                        &mut amounts,
+                        context.source_account,
+                        context.budget_account,
+                        value.amount,
+                    );
+                    DisclosedNativeOperation::BudgetFund(Box::new(value))
+                }
+                8 => {
+                    let value = budget_defund(activity, context)?;
+                    transfer(
+                        &mut counterparties,
+                        &mut amounts,
+                        context.budget_account,
+                        context.source_account,
+                        value.amount,
+                    );
+                    DisclosedNativeOperation::BudgetDefund(Box::new(value))
+                }
+                _ => {
+                    let value = budget_revoke(activity, context)?;
+                    transfer(
+                        &mut counterparties,
+                        &mut amounts,
+                        context.budget_account,
+                        context.source_account,
+                        context.balance,
+                    );
+                    DisclosedNativeOperation::BudgetRevoke(Box::new(value))
+                }
+            }
         }
         _ => {
             return Err(DisclosureError::UnsupportedActivity(

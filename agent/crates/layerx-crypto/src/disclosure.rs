@@ -3,8 +3,9 @@
 mod native;
 
 pub use native::{
-    DisclosedNativeBudgetCreate, DisclosedNativeIdentity, DisclosedNativeOperation,
-    DisclosedRecoveryPolicy,
+    BudgetStateContext, DisclosedNativeBudgetCreate, DisclosedNativeBudgetDefund,
+    DisclosedNativeBudgetFund, DisclosedNativeBudgetRevoke, DisclosedNativeIdentity,
+    DisclosedNativeOperation, DisclosedRecoveryPolicy,
 };
 
 use std::fmt;
@@ -30,16 +31,7 @@ use crate::{
 const ASSET_SEND_ORDINAL: u16 = 5;
 const SEND_WIRE_TAG: u16 = 0x5301;
 const SEND_FIELD_COUNT: u16 = 10;
-const BUDGET_CREATE_ORDINAL: u16 = 1;
-const BUDGET_CREATE_WIRE_TAG: u16 = 0x4201;
-const BUDGET_CREATE_FIELD_COUNT: u16 = 10;
-const BUDGET_FUND_ORDINAL: u16 = 2;
-const BUDGET_FUND_WIRE_TAG: u16 = 0x4202;
-const BUDGET_FUND_FIELD_COUNT: u16 = 6;
 const ASSET_RECEIVE_ORDINAL: u16 = 6;
-const BUDGET_DEFUND_ORDINAL: u16 = 7;
-const BUDGET_DEFUND_WIRE_TAG: u16 = 0x4207;
-const BUDGET_DEFUND_FIELD_COUNT: u16 = 7;
 const BRIDGE_DEPOSIT_CREDIT_ORDINAL: u16 = 1;
 const BRIDGE_DEPOSIT_CREDIT_WIRE_TAG: u16 = 0x4801;
 const BRIDGE_DEPOSIT_CREDIT_FIELD_COUNT: u16 = 7;
@@ -173,6 +165,7 @@ pub struct Disclosure {
     pub native_operation: Option<DisclosedNativeOperation>,
     activity: Activity,
     signing_digest: [u8; 32],
+    budget_context: Option<BudgetStateContext>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -275,15 +268,6 @@ struct SendSemantics {
     expires_at: u64,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct BudgetCreateSemantics {
-    owner: [u8; 32],
-    budget: [u8; 32],
-    asset: [u8; 32],
-    per_period_limit: u128,
-    expires_at: u64,
-}
-
 fn fixed<const N: usize>(decoder: &mut Decoder<'_>) -> Result<[u8; N], DisclosureError> {
     decoder
         .fixed(N)
@@ -383,104 +367,6 @@ fn decode_receive(payload: &[u8], activity: &Activity) -> Result<SendSemantics, 
         asset,
         amount,
         sequence,
-        idempotency_key,
-        expires_at: activity.timestamp_bound().not_after,
-    })
-}
-
-fn decode_budget_defund(
-    payload: &[u8],
-    activity: &Activity,
-) -> Result<SendSemantics, DisclosureError> {
-    let mut decoder = Decoder::new(payload, 0);
-    if decoder.u16()? != BUDGET_DEFUND_WIRE_TAG || decoder.u16()? != BUDGET_DEFUND_FIELD_COUNT {
-        return Err(DisclosureError::MalformedPayload);
-    }
-    let _budget_id: [u8; 32] = fixed(&mut decoder)?;
-    let from = fixed(&mut decoder)?;
-    let to = fixed(&mut decoder)?;
-    let asset = fixed(&mut decoder)?;
-    let amount = decoder.u128()?;
-    let sequence = decoder.u64()?;
-    let idempotency_key = fixed(&mut decoder)?;
-    decoder.finish()?;
-    if amount == 0 || from == to || idempotency_key != activity.idempotency_key() {
-        return Err(DisclosureError::MalformedPayload);
-    }
-    Ok(SendSemantics {
-        from,
-        to,
-        asset,
-        amount,
-        sequence,
-        idempotency_key,
-        expires_at: activity.timestamp_bound().not_after,
-    })
-}
-
-fn decode_budget_create(payload: &[u8]) -> Result<BudgetCreateSemantics, DisclosureError> {
-    let mut decoder = Decoder::new(payload, 0);
-    if decoder.u16()? != BUDGET_CREATE_WIRE_TAG || decoder.u16()? != BUDGET_CREATE_FIELD_COUNT {
-        return Err(DisclosureError::MalformedPayload);
-    }
-    let budget_id: [u8; 32] = fixed(&mut decoder)?;
-    let owner = fixed(&mut decoder)?;
-    let budget = fixed(&mut decoder)?;
-    let asset = fixed(&mut decoder)?;
-    let per_period_limit = decoder.u128()?;
-    let period_length = decoder.u64()?;
-    let rollover = decoder.u8()?;
-    let carry_cap = decoder.u128()?;
-    let _purpose: [u8; 32] = fixed(&mut decoder)?;
-    let expires_at = decoder.u64()?;
-    decoder.finish()?;
-    if budget_id == [0; 32]
-        || owner == budget
-        || per_period_limit == 0
-        || period_length == 0
-        || !matches!(rollover, 1 | 2)
-        || carry_cap > per_period_limit
-        || expires_at == 0
-    {
-        return Err(DisclosureError::MalformedPayload);
-    }
-    Ok(BudgetCreateSemantics {
-        owner,
-        budget,
-        asset,
-        per_period_limit,
-        expires_at,
-    })
-}
-
-fn decode_budget_fund(
-    payload: &[u8],
-    activity: &Activity,
-) -> Result<SendSemantics, DisclosureError> {
-    let mut decoder = Decoder::new(payload, 0);
-    if decoder.u16()? != BUDGET_FUND_WIRE_TAG || decoder.u16()? != BUDGET_FUND_FIELD_COUNT {
-        return Err(DisclosureError::MalformedPayload);
-    }
-    let budget_id: [u8; 32] = fixed(&mut decoder)?;
-    let from = fixed(&mut decoder)?;
-    let to = fixed(&mut decoder)?;
-    let asset = fixed(&mut decoder)?;
-    let amount = decoder.u128()?;
-    let idempotency_key = fixed(&mut decoder)?;
-    decoder.finish()?;
-    if budget_id == [0; 32]
-        || from == to
-        || amount == 0
-        || idempotency_key != activity.idempotency_key()
-    {
-        return Err(DisclosureError::MalformedPayload);
-    }
-    Ok(SendSemantics {
-        from,
-        to,
-        asset,
-        amount,
-        sequence: activity.account_sequence(),
         idempotency_key,
         expires_at: activity.timestamp_bound().not_after,
     })
@@ -671,10 +557,6 @@ fn semantics(activity: &Activity) -> Result<SendSemantics, DisclosureError> {
     match kind {
         (ModuleId::Asset, ASSET_SEND_ORDINAL) => decode_send(activity.payload(), activity),
         (ModuleId::Asset, ASSET_RECEIVE_ORDINAL) => decode_receive(activity.payload(), activity),
-        (ModuleId::Budget, BUDGET_DEFUND_ORDINAL) => {
-            decode_budget_defund(activity.payload(), activity)
-        }
-        (ModuleId::Budget, BUDGET_FUND_ORDINAL) => decode_budget_fund(activity.payload(), activity),
         (ModuleId::Bridge, BRIDGE_DEPOSIT_CREDIT_ORDINAL) => {
             decode_bridge_deposit_credit(activity.payload(), activity)
         }
@@ -1057,49 +939,10 @@ fn session_grant_fields(activity: &Activity) -> Result<DisclosureFields, Disclos
     })
 }
 
-fn legacy_budget_fields(activity: &Activity) -> Result<DisclosureFields, DisclosureError> {
-    let TimestampBound {
-        not_before,
-        not_after,
-    } = activity.timestamp_bound();
-    let budget = decode_budget_create(activity.payload())?;
-    Ok(DisclosureFields {
-        activity_type: activity.activity_type(),
-        actor: activity.actor_did().to_vec(),
-        authority: activity.authority().to_vec(),
-        counterparties: vec![
-            Counterparty {
-                role: CounterpartyRole::Payer,
-                account: budget.owner,
-            },
-            Counterparty {
-                role: CounterpartyRole::Recipient,
-                account: budget.budget,
-            },
-        ],
-        amounts: vec![DisclosedAmount {
-            role: AmountRole::SpendingLimit,
-            value: budget.per_period_limit,
-        }],
-        asset: budget.asset,
-        fee_limit: activity.fee_limit(),
-        expiry: Expiry {
-            not_before,
-            not_after,
-            payload_expires_at: budget.expires_at,
-        },
-        idempotency_key: activity.idempotency_key(),
-        authority_grant: None,
-        session_grant: None,
-        onboarding: None,
-        native_operation: None,
-        evm_payout_binding: None,
-        withdrawal: None,
-        payment: None,
-    })
-}
-
-fn decoded_fields(activity: &Activity) -> Result<DisclosureFields, DisclosureError> {
+fn decoded_fields(
+    activity: &Activity,
+    budget_context: Option<&BudgetStateContext>,
+) -> Result<DisclosureFields, DisclosureError> {
     if activity.activity_type().module() == ModuleId::Asset
         && activity.activity_type().ordinal() == ASSET_WITHDRAW_ORDINAL
     {
@@ -1123,8 +966,9 @@ fn decoded_fields(activity: &Activity) -> Result<DisclosureFields, DisclosureErr
         || (kind == (ModuleId::Governance, 1) && activity.payload().starts_with(&[0x71, 1, 0, 2]))
         || (kind == (ModuleId::Budget, 1)
             && matches!(activity.payload().get(..2), Some([0, 1 | 2])))
+        || matches!(kind, (ModuleId::Budget, 2 | 8 | 9))
     {
-        return native::fields(activity);
+        return native::fields(activity, budget_context);
     }
     if kind == (ModuleId::Governance, 1) {
         return onboarding_fields(activity);
@@ -1137,9 +981,6 @@ fn decoded_fields(activity: &Activity) -> Result<DisclosureFields, DisclosureErr
     }
     if kind == (ModuleId::Governance, GOVERNANCE_EVM_BINDING_ORDINAL) {
         return governance_fields(activity, not_before, not_after);
-    }
-    if kind == (ModuleId::Budget, BUDGET_CREATE_ORDINAL) {
-        return legacy_budget_fields(activity);
     }
     let send = semantics(activity)?;
     Ok(DisclosureFields {
@@ -1214,6 +1055,9 @@ impl Disclosure {
         if let Some(DisclosedNativeOperation::BudgetCreate(budget)) = &self.native_operation {
             return Ok(Some(budget.source_sequence));
         }
+        if let Some(DisclosedNativeOperation::BudgetFund(fund)) = &self.native_operation {
+            return Ok(fund.source_sequence);
+        }
         if let Some(payment) = &self.payment {
             return Ok(match payment {
                 Payment::Receive { sequence, .. } => Some(*sequence),
@@ -1221,7 +1065,7 @@ impl Disclosure {
             });
         }
         match (self.activity_type.module(), self.activity_type.ordinal()) {
-            (ModuleId::Asset, 5 | 6) | (ModuleId::Budget, 7) => {
+            (ModuleId::Asset, 5 | 6) => {
                 Ok(Some(semantics(&self.activity)?.sequence))
             }
             _ => Ok(None),
@@ -1229,7 +1073,7 @@ impl Disclosure {
     }
 
     fn validate_fields(&self) -> Result<(), DisclosureError> {
-        let expected = decoded_fields(&self.activity)?;
+        let expected = decoded_fields(&self.activity, self.budget_context.as_ref())?;
         macro_rules! require_field {
             ($field:ident) => {
                 if self.$field != expected.$field {
@@ -1395,7 +1239,7 @@ impl Disclosure {
         canonical: &[u8],
         registry: &ModuleRegistry,
     ) -> Result<(), DisclosureError> {
-        let actual = bind(canonical, registry)?;
+        let actual = bind_with(canonical, registry, self.budget_context)?;
         macro_rules! require_field {
             ($field:ident) => {
                 if self.$field != actual.$field {
@@ -1434,6 +1278,40 @@ impl Disclosure {
 ///
 /// Returns a typed wire, payload, commitment, or unsupported-activity refusal.
 pub fn bind(canonical: &[u8], registry: &ModuleRegistry) -> Result<Disclosure, DisclosureError> {
+    bind_with(canonical, registry, None)
+}
+
+/// Decodes a canonical budget fund, defund or revoke activity into its complete
+/// disclosure bound to the verified budget record context it acts on.
+///
+/// # Errors
+///
+/// Returns a typed wire, payload or commitment refusal, `UnsupportedActivity`
+/// for any other activity type, and `MalformedPayload` when the context does not
+/// match what the canonical bytes and actor derive.
+pub fn bind_budget_mutation(
+    canonical: &[u8],
+    registry: &ModuleRegistry,
+    context: &BudgetStateContext,
+) -> Result<Disclosure, DisclosureError> {
+    let disclosure = bind_with(canonical, registry, Some(*context))?;
+    match disclosure.native_operation {
+        Some(
+            DisclosedNativeOperation::BudgetFund(_)
+            | DisclosedNativeOperation::BudgetDefund(_)
+            | DisclosedNativeOperation::BudgetRevoke(_),
+        ) => Ok(disclosure),
+        _ => Err(DisclosureError::UnsupportedActivity(
+            disclosure.activity_type.value(),
+        )),
+    }
+}
+
+fn bind_with(
+    canonical: &[u8],
+    registry: &ModuleRegistry,
+    budget_context: Option<BudgetStateContext>,
+) -> Result<Disclosure, DisclosureError> {
     let activity = decode_unsigned(canonical, registry)?;
     if !ct::eq_fixed(&hash::payload_hash(&activity)?, &activity.payload_hash()) {
         return Err(DisclosureError::PayloadHash);
@@ -1442,7 +1320,7 @@ pub fn bind(canonical: &[u8], registry: &ModuleRegistry) -> Result<Disclosure, D
     if !ct::eq(&reencoded, canonical) {
         return Err(DisclosureError::FieldMismatch("canonical_bytes"));
     }
-    let fields = decoded_fields(&activity)?;
+    let fields = decoded_fields(&activity, budget_context.as_ref())?;
     let message = SignatureMessage::new(
         hash::Domain::SignaturePreimage,
         activity.protocol_version(),
@@ -1469,5 +1347,6 @@ pub fn bind(canonical: &[u8], registry: &ModuleRegistry) -> Result<Disclosure, D
         payment: fields.payment,
         activity,
         signing_digest: message.digest(),
+        budget_context,
     })
 }

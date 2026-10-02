@@ -3,10 +3,12 @@
 #[path = "reconcile.rs"]
 mod accounting;
 mod create;
+mod daemon;
 #[path = "divergence.rs"]
 mod divergence_reporting;
 #[path = "hold.rs"]
 mod recovery;
+mod mutate;
 #[path = "reserve.rs"]
 mod reservations;
 
@@ -15,16 +17,25 @@ pub use accounting::{
     ReconciliationState, SpendReceiptEvidence, BUDGET_MODULE_ID,
 };
 pub use create::{
-    budget_create_identity, create_protocol_budget, BudgetCreateIdentity, BudgetCreationError,
-    BudgetKind, BudgetPipeline, BudgetRequest, CoreBudgetReceipt, LocalLimit, ProtocolBudget,
+    budget_create_identity, core_expiry_ms, create_protocol_budget, BudgetCreateIdentity,
+    BudgetCreationError, BudgetKind, BudgetPipeline, BudgetRequest, CoreBudgetReceipt, LocalLimit,
+    ProtocolBudget,
+};
+pub use daemon::{
+    applicable_daemon_limits, consumption_updates, create_daemon_limit, daemon_limit_id,
+    daemon_limits, load_daemon_limits, revoke_daemon_limit, DaemonLimitError, DaemonLimitRecord,
+};
+pub use mutate::{
+    budget_mutation_identity, budget_state_context, confirm_budget_mutation, BudgetMutation,
+    BudgetMutationPipeline, ConfirmedBudgetMutation,
 };
 pub use divergence_reporting::{BudgetDivergenceAlert, BudgetHealth, DivergenceAuditRecord};
 pub use recovery::{
     PersistedReceipt, RestartAccounting, RestartError, UnknownOutcome, UnknownReservation,
 };
 pub use reservations::{
-    BudgetLimiter, BudgetReservation, DurableBudgetReservation, LimitConfig, LimitId, LimitRefusal,
-    LimitScope, ReleaseKind, ReservationRequest,
+    BudgetLimiter, BudgetReservation, CoreTimestampMs, DurableBudgetReservation, LimitConfig,
+    LimitId, LimitRefusal, LimitScope, ReleaseKind, ReservationRequest,
 };
 
 /// Reconciles local budget cache state against verified protocol evidence.
@@ -56,6 +67,47 @@ pub fn reserve(
     request: &ReservationRequest,
 ) -> Result<BudgetReservation, LimitRefusal> {
     reservations::reserve_all(limiter, request)
+}
+
+/// Atomically reserves against every applicable scope with a core-clock deadline in addition to
+/// the head-sequence bound.
+///
+/// # Errors
+///
+/// Returns `InvalidRequest` for a deadline at or before verified core time (equality is
+/// expired), plus every refusal of `reserve`, including `Retired` for a revoked limit.
+pub fn reserve_until_core_time(
+    limiter: &BudgetLimiter,
+    request: &ReservationRequest,
+    deadline: CoreTimestampMs,
+    core_now: CoreTimestampMs,
+) -> Result<BudgetReservation, LimitRefusal> {
+    reservations::reserve_until(limiter, request, deadline, core_now)
+}
+
+/// Releases a time-bounded hold whose core deadline was reached.
+///
+/// # Errors
+///
+/// Returns `Poisoned` when the limiter lock is poisoned.
+pub fn release_expired_core_time(
+    limiter: &BudgetLimiter,
+    reservation_id: [u8; 32],
+    core_now: CoreTimestampMs,
+) -> Result<bool, LimitRefusal> {
+    reservations::release_core_expired(limiter, reservation_id, core_now)
+}
+
+/// Restores durable reservations with their core-clock deadlines before writes are admitted.
+///
+/// # Errors
+///
+/// Returns a limit refusal if a durable reservation cannot be restored.
+pub fn restore_bounded(
+    limiter: &BudgetLimiter,
+    reservations: &[(DurableBudgetReservation, Option<CoreTimestampMs>)],
+) -> Result<(), LimitRefusal> {
+    reservations::restore_bounded(limiter, reservations)
 }
 
 /// Deterministically releases or consumes one reservation.

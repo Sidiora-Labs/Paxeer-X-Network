@@ -3,20 +3,24 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, RwLock};
 
-use crate::budget::BudgetLimiter;
+use crate::budget::{
+    self as budget, BudgetLimiter, CoreTimestampMs, DurableBudgetReservation, LimitId,
+    LimitRefusal, ReleaseKind, ReservationRequest,
+};
 use crate::events::outbound::StopSignal;
 use crate::events::subscription::Termination;
 use crate::human::{HumanOperationError, HumanResponse};
 use crate::managed_agent;
 use crate::prepare::{
-    LifecycleError, LifecycleState, PreparationAuthorization, PreparationInvalidationReport,
-    PreparationLifecycle, Prepared,
+    DurablePreparation, LifecycleError, LifecycleState, PreparationAuthorization,
+    PreparationExtension, PreparationInvalidationReport, PreparationLifecycle, Prepared,
+    EXTENSION_IDEMPOTENCY, EXTENSION_OUTCOME,
 };
 use crate::session::{
     self, InvalidationReport, PendingActivity, SessionCredential, SessionError, SessionId,
     SessionRegistry, Token,
 };
-use crate::store::{Store, TenantId, TenantKey};
+use crate::store::{ObjectKind, Store, TenantId, TenantKey};
 use crate::tenant::{
     self, AuthorizationError, ObjectOwner, Operation, RequestContext, ResolvedPrincipal, Surface,
     TenantObservability,
@@ -50,6 +54,149 @@ impl SessionControl {
             observability: Arc::new(Mutex::new(TenantObservability::default())),
             pending_invalidations: Arc::new(Mutex::new(BTreeMap::new())),
         }
+    }
+
+    /// Receipt hook: settles one durable preparation exactly once. `Executed` moves the held
+    /// amounts into each daemon limit's consumed total in the same store write that marks the
+    /// record executed; `Unknown` never settles.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the record is absent or corrupt, the durable write fails, or the
+    /// in-memory release fails after the durable settlement.
+    pub fn settle_write(
+        &self,
+        tenant: &TenantId,
+        preparation_id: [u8; 32],
+        outcome: ReleaseKind,
+        current_sequence: u64,
+    ) -> Result<bool, SessionControlError> {
+        self.settle_inner(tenant, preparation_id, outcome, current_sequence, None)
+    }
+
+    /// Cancels one unsettled preparation: the `Failed` state and the replacement outcome
+    /// extension (`EXTENSION_OUTCOME` only) are one store write, followed by the hold release.
+    /// A record already terminal is left unchanged and returns `Ok(false)`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidSignedBytes` for any other extension tag, plus every `settle_write` error.
+    pub fn cancel_write(
+        &self,
+        tenant: &TenantId,
+        preparation_id: [u8; 32],
+        outcome: PreparationExtension,
+        current_sequence: u64,
+    ) -> Result<bool, SessionControlError> {
+        if outcome.tag != EXTENSION_OUTCOME {
+            return Err(SessionControlError::Lifecycle(
+                LifecycleError::InvalidSignedBytes,
+            ));
+        }
+        self.settle_inner(
+            tenant,
+            preparation_id,
+            ReleaseKind::Failed,
+            current_sequence,
+            Some(outcome),
+        )
+    }
+
+    fn settle_inner(
+        &self,
+        tenant: &TenantId,
+        preparation_id: [u8; 32],
+        outcome: ReleaseKind,
+        current_sequence: u64,
+        extension: Option<PreparationExtension>,
+    ) -> Result<bool, SessionControlError> {
+        let lifecycle = SessionControlError::Lifecycle;
+        let state = match outcome {
+            ReleaseKind::Executed => LifecycleState::Executed,
+            ReleaseKind::Failed => LifecycleState::Failed,
+            ReleaseKind::Expired => LifecycleState::Expired,
+            ReleaseKind::Unknown => return Ok(false),
+        };
+        let mut store = self
+            .store
+            .lock()
+            .map_err(|_| SessionControlError::Unavailable)?;
+        let key = DurablePreparation::store_key(tenant, preparation_id).map_err(lifecycle)?;
+        let stored = store
+            .get(&key)
+            .ok_or(lifecycle(LifecycleError::NotFound))?
+            .bytes
+            .clone();
+        let mut record = DurablePreparation::decode(tenant.clone(), &stored).map_err(lifecycle)?;
+        if record.terminal() {
+            return Ok(false);
+        }
+        record.state = state;
+        if let Some(extension) = extension {
+            record.extensions.insert(extension.tag, extension.bytes);
+        }
+        let mut updates = vec![(key, record.encode().map_err(lifecycle)?)];
+        if outcome == ReleaseKind::Executed {
+            let holds: Vec<DurableBudgetReservation> =
+                record.holds.iter().map(|(hold, _)| hold.clone()).collect();
+            updates.extend(
+                budget::consumption_updates(&store, tenant, &holds)
+                    .map_err(|_| SessionControlError::Unavailable)?,
+            );
+        }
+        store
+            .update_local_batch(updates)
+            .map_err(|_| SessionControlError::Unavailable)?;
+        budget::release(&self.budgets, preparation_id, outcome, current_sequence)
+            .map_err(|refusal| lifecycle(LifecycleError::Reservation(refusal)))
+    }
+
+    /// Receipt-path lookup: the one unsettled preparation published for `idempotency_key`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Duplicate` when more than one unsettled record carries the key, or a corrupt
+    /// record error.
+    pub fn preparation_for_idempotency_key(
+        &self,
+        tenant: &TenantId,
+        idempotency_key: [u8; 32],
+    ) -> Result<Option<[u8; 32]>, SessionControlError> {
+        let store = self
+            .store
+            .lock()
+            .map_err(|_| SessionControlError::Unavailable)?;
+        live_preparation_for_key(&store, tenant, idempotency_key)
+    }
+
+    /// Restores every non-terminal durable preparation hold before writes are admitted.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a durable record is corrupt or a hold cannot be restored.
+    pub fn restore_writes(&self) -> Result<usize, SessionControlError> {
+        let lifecycle = SessionControlError::Lifecycle;
+        let store = self
+            .store
+            .lock()
+            .map_err(|_| SessionControlError::Unavailable)?;
+        let mut holds = Vec::new();
+        for tenant in store.tenant_ids_for_kind(ObjectKind::Configuration) {
+            for preparation_id in DurablePreparation::recorded_ids(&store, &tenant) {
+                let key = DurablePreparation::store_key(&tenant, preparation_id).map_err(lifecycle)?;
+                let stored = store
+                    .get(&key)
+                    .ok_or(lifecycle(LifecycleError::NotFound))?;
+                let record = DurablePreparation::decode(tenant.clone(), &stored.bytes)
+                    .map_err(lifecycle)?;
+                if !record.terminal() {
+                    holds.extend(record.holds);
+                }
+            }
+        }
+        budget::restore_bounded(&self.budgets, &holds)
+            .map_err(|refusal| lifecycle(LifecycleError::Reservation(refusal)))?;
+        Ok(holds.len())
     }
 
     #[must_use]
@@ -628,6 +775,211 @@ impl OperationPermit {
         }
     }
 
+    /// The single admission seam for prepare, sign and direct external submit. Budget limits
+    /// and every other per-write binding travel as data on this one call and are published
+    /// in one durable preparation record.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if session authorization, reservation, expiry, the durable record or
+    /// a stored binding mismatch refuses the write; a failed prepare leaves no hold and no
+    /// record behind.
+    pub fn admit_write(
+        &self,
+        control: &SessionControl,
+        admission: WriteAdmission<'_>,
+    ) -> Result<DurablePreparation, SessionControlError> {
+        let lifecycle = SessionControlError::Lifecycle;
+        let operation = match admission.stage {
+            AdmissionStage::Prepare { .. } => Operation::Prepare,
+            AdmissionStage::Sign => Operation::Sign,
+            AdmissionStage::Submit => Operation::Submit,
+        };
+        self.require_operation(operation)?;
+        let registry = control
+            .registry
+            .read()
+            .map_err(|_| SessionControlError::Unavailable)?;
+        self.resolve(control, &registry)?;
+        let authorization = self.preparation_authorization();
+        let tenant = authorization.session.tenant.clone();
+        let preparation_id = admission.preparation_id;
+        let key = DurablePreparation::store_key(&tenant, preparation_id).map_err(lifecycle)?;
+        let mut store = control
+            .store
+            .lock()
+            .map_err(|_| SessionControlError::Unavailable)?;
+        if let AdmissionStage::Prepare { prepared } = admission.stage {
+            if store.get(&key).is_some() {
+                return Err(lifecycle(LifecycleError::Duplicate));
+            }
+            if authorization.generation == 0 {
+                return Err(lifecycle(LifecycleError::InvalidAuthorization));
+            }
+            match control.lifecycle.state(preparation_id) {
+                Err(LifecycleError::NotFound) => {}
+                Ok(_) => return Err(lifecycle(LifecycleError::Duplicate)),
+                Err(error) => return Err(lifecycle(error)),
+            }
+            let plan = match admission.planner {
+                Some(planner) => planner(&*store)?,
+                None => AdmissionPlan::default(),
+            };
+            if plan.updates.is_empty() && !plan.companions.is_empty() {
+                return Err(SessionControlError::Unavailable);
+            }
+            let idempotency_key = prepared.audit.idempotency_key;
+            if live_preparation_for_key(&store, &tenant, idempotency_key)?.is_some() {
+                return Err(lifecycle(LifecycleError::Duplicate));
+            }
+            let mut extensions = BTreeMap::new();
+            let own = PreparationExtension {
+                tag: EXTENSION_IDEMPOTENCY,
+                bytes: idempotency_key.to_vec(),
+            };
+            for extension in admission
+                .extensions
+                .into_iter()
+                .chain(plan.extensions)
+                .chain(std::iter::once(own))
+            {
+                if extensions.insert(extension.tag, extension.bytes).is_some() {
+                    return Err(lifecycle(LifecycleError::InvalidSignedBytes));
+                }
+            }
+            let holds = match &admission.charge {
+                Some(charge) => reserve_charge(
+                    &control.budgets,
+                    preparation_id,
+                    charge,
+                    charge.applicable_limits.clone(),
+                    admission.current_sequence,
+                    admission.core_time_ms,
+                )?,
+                None => Vec::new(),
+            };
+            let mut record = DurablePreparation {
+                tenant,
+                preparation_id,
+                session_id: authorization.session.session_id.0,
+                generation: authorization.generation,
+                not_after: prepared.envelope.timestamp_bound().not_after(),
+                payload_hash: prepared.envelope.payload_hash(),
+                state: LifecycleState::Prepared,
+                activity_id: None,
+                holds,
+                extensions,
+            };
+            let release_holds = || {
+                budget::release(
+                    &control.budgets,
+                    preparation_id,
+                    ReleaseKind::Failed,
+                    admission.current_sequence,
+                )
+                .map_err(|refusal| lifecycle(LifecycleError::Reservation(refusal)))
+            };
+            let published = record.encode().map_err(lifecycle).and_then(|bytes| {
+                let result = if plan.updates.is_empty() {
+                    store.put_local(key.clone(), bytes)
+                } else {
+                    let mut companions = plan.companions;
+                    companions.push((key.clone(), bytes));
+                    store.update_local_batch_with_companions(plan.updates, companions)
+                };
+                result.map_err(|_| SessionControlError::Unavailable)
+            });
+            if let Err(error) = published {
+                release_holds()?;
+                return Err(error);
+            }
+            if let Err(error) = control.lifecycle.register_authorized(
+                preparation_id,
+                prepared,
+                vec![preparation_id],
+                authorization,
+            ) {
+                // The plan and record are already one durable write; settle the record Failed
+                // so restart restores no hold, and release the in-memory hold.
+                record.state = LifecycleState::Failed;
+                let bytes = record.encode().map_err(lifecycle)?;
+                store
+                    .update_local_batch(vec![(key, bytes)])
+                    .map_err(|_| SessionControlError::Unavailable)?;
+                release_holds()?;
+                return Err(lifecycle(error));
+            }
+            return Ok(record);
+        }
+        if admission.planner.is_some() {
+            return Err(lifecycle(LifecycleError::AuthorizationMismatch));
+        }
+        let stored = store
+            .get(&key)
+            .ok_or(lifecycle(LifecycleError::NotFound))?
+            .bytes
+            .clone();
+        let mut record = DurablePreparation::decode(tenant, &stored).map_err(lifecycle)?;
+        if record.session_id != authorization.session.session_id.0
+            || record.generation != authorization.generation
+        {
+            return Err(lifecycle(LifecycleError::AuthorizationMismatch));
+        }
+        if admission
+            .extensions
+            .iter()
+            .any(|extension| record.extensions.get(&extension.tag) != Some(&extension.bytes))
+        {
+            return Err(lifecycle(LifecycleError::AuthorizationMismatch));
+        }
+        control
+            .lifecycle
+            .check_unexpired_authorized(preparation_id, admission.core_time_ms, &authorization)
+            .map_err(lifecycle)?;
+        if matches!(admission.stage, AdmissionStage::Sign) {
+            return Ok(record);
+        }
+        for (hold, _) in &record.holds {
+            if control
+                .budgets
+                .is_retired(hold.limit_id)
+                .map_err(|refusal| lifecycle(LifecycleError::Reservation(refusal)))?
+            {
+                return Err(lifecycle(LifecycleError::Reservation(LimitRefusal::Retired(
+                    hold.limit_id,
+                ))));
+            }
+        }
+        let Some(charge) = &admission.charge else {
+            return Ok(record);
+        };
+        let missing: Vec<LimitId> = charge
+            .applicable_limits
+            .iter()
+            .filter(|limit| !record.holds.iter().any(|(hold, _)| hold.limit_id == **limit))
+            .copied()
+            .collect();
+        if missing.is_empty() {
+            return Ok(record);
+        }
+        // ponytail: a failed rewrite keeps the added in-memory hold (over-holds, never
+        // under-holds) until restart restores the durable set; per-limit release if it matters.
+        let added = reserve_charge(
+            &control.budgets,
+            preparation_id,
+            charge,
+            missing,
+            admission.current_sequence,
+            admission.core_time_ms,
+        )?;
+        record.holds.extend(added);
+        let bytes = record.encode().map_err(lifecycle)?;
+        store
+            .update_local_batch(vec![(key, bytes)])
+            .map_err(|_| SessionControlError::Unavailable)?;
+        Ok(record)
+    }
+
     ///
     /// # Errors
     ///
@@ -1013,6 +1365,110 @@ impl OperationPermit {
             self.request.core_sequence,
         ))
     }
+}
+
+/// Stage at which one write passes the single admission seam.
+pub enum AdmissionStage<'a> {
+    Prepare { prepared: &'a Prepared },
+    Sign,
+    Submit,
+}
+
+/// Spend charged against applicable limits for one admitted write.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WriteCharge {
+    pub amount: u128,
+    pub applicable_limits: Vec<LimitId>,
+    pub head_sequence_bound: u64,
+    pub core_deadline_ms: Option<CoreTimestampMs>,
+}
+
+/// One prepare, sign or direct external submit passing the single admission seam.
+pub struct WriteAdmission<'a> {
+    pub stage: AdmissionStage<'a>,
+    pub preparation_id: [u8; 32],
+    pub charge: Option<WriteCharge>,
+    pub extensions: Vec<PreparationExtension>,
+    pub current_sequence: u64,
+    pub core_time_ms: u64,
+    /// Prepare only: runs under the admission store lock and returns the caller's durable
+    /// charge, published in the same store write as the preparation record.
+    pub planner: Option<AdmissionPlanner<'a>>,
+}
+
+/// Caller-computed durable writes joined to one prepare admission. `updates` must name existing
+/// local records and `companions` absent ones; companions without an update cannot be expressed
+/// as one store write and are refused.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct AdmissionPlan {
+    pub updates: Vec<(TenantKey, Vec<u8>)>,
+    pub companions: Vec<(TenantKey, Vec<u8>)>,
+    pub extensions: Vec<PreparationExtension>,
+}
+
+/// Computes an [`AdmissionPlan`] against the locked store.
+pub type AdmissionPlanner<'a> =
+    Box<dyn FnOnce(&Store) -> Result<AdmissionPlan, SessionControlError> + 'a>;
+
+fn reserve_charge(
+    budgets: &BudgetLimiter,
+    preparation_id: [u8; 32],
+    charge: &WriteCharge,
+    applicable_limits: Vec<LimitId>,
+    current_sequence: u64,
+    core_time_ms: u64,
+) -> Result<Vec<(DurableBudgetReservation, Option<CoreTimestampMs>)>, SessionControlError> {
+    let request = ReservationRequest {
+        id: preparation_id,
+        amount: charge.amount,
+        expiry_sequence: charge.head_sequence_bound,
+        current_sequence,
+        applicable_limits,
+    };
+    let reservation = match charge.core_deadline_ms {
+        Some(deadline) => budget::reserve_until_core_time(
+            budgets,
+            &request,
+            deadline,
+            CoreTimestampMs(core_time_ms),
+        ),
+        None => budget::reserve(budgets, &request),
+    }
+    .map_err(|refusal| SessionControlError::Lifecycle(LifecycleError::Reservation(refusal)))?;
+    Ok(reservation
+        .durable
+        .into_iter()
+        .map(|hold| (hold, charge.core_deadline_ms))
+        .collect())
+}
+
+// ponytail: linear scan of the tenant's preparation records; add a key index once a prepare
+// without a caller plan can publish two absent keys in one store write.
+fn live_preparation_for_key(
+    store: &Store,
+    tenant: &TenantId,
+    idempotency_key: [u8; 32],
+) -> Result<Option<[u8; 32]>, SessionControlError> {
+    let lifecycle = SessionControlError::Lifecycle;
+    let mut found = None;
+    for preparation_id in DurablePreparation::recorded_ids(store, tenant) {
+        let key = DurablePreparation::store_key(tenant, preparation_id).map_err(lifecycle)?;
+        let stored = store
+            .get(&key)
+            .ok_or(lifecycle(LifecycleError::NotFound))?;
+        let record =
+            DurablePreparation::decode(tenant.clone(), &stored.bytes).map_err(lifecycle)?;
+        if record.terminal()
+            || record.extensions.get(&EXTENSION_IDEMPOTENCY).map(Vec::as_slice)
+                != Some(idempotency_key.as_slice())
+        {
+            continue;
+        }
+        if found.replace(preparation_id).is_some() {
+            return Err(lifecycle(LifecycleError::Duplicate));
+        }
+    }
+    Ok(found)
 }
 
 #[derive(Debug)]

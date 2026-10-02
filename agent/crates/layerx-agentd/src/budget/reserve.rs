@@ -10,6 +10,10 @@ const RESERVATION_DIGEST_DOMAIN: &[u8] = b"layerx:budget-reservation:v1\0";
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct LimitId(pub [u8; 16]);
 
+/// Core batch time in milliseconds, the clock core budget expiry is compared against.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct CoreTimestampMs(pub u64);
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LimitScope {
     Tenant([u8; 32]),
@@ -31,7 +35,17 @@ pub struct LimitConfig {
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct LimitState {
     config: LimitConfig,
-    held: BTreeMap<[u8; 32], (u128, u64)>,
+    held: BTreeMap<[u8; 32], Hold>,
+    retired: bool,
+}
+
+/// One held amount with its head-sequence bound and, for time-bounded
+/// preparations, the core-clock deadline at which it lapses.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Hold {
+    amount: u128,
+    expiry_sequence: u64,
+    core_deadline: Option<CoreTimestampMs>,
 }
 
 #[derive(Debug)]
@@ -69,6 +83,7 @@ impl BudgetLimiter {
                     LimitState {
                         config,
                         held: BTreeMap::new(),
+                        retired: false,
                     },
                 )
                 .is_some()
@@ -89,6 +104,70 @@ impl BudgetLimiter {
     pub fn held_reservations(&self) -> Result<usize, LimitRefusal> {
         let limits = self.limits.lock().map_err(|_| LimitRefusal::Poisoned)?;
         Ok(limits.values().map(|limit| limit.held.len()).sum())
+    }
+
+    /// Installs one durable dynamic limit after it was published.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a zero ceiling, consumed above ceiling, or an identifier already configured.
+    pub fn install(&self, config: LimitConfig) -> Result<(), LimitRefusal> {
+        if config.ceiling == 0 || config.consumed > config.ceiling {
+            return Err(LimitRefusal::InvalidConfiguration);
+        }
+        let mut limits = self.limits.lock().map_err(|_| LimitRefusal::Poisoned)?;
+        if limits.contains_key(&config.id) {
+            return Err(LimitRefusal::InvalidConfiguration);
+        }
+        limits.insert(
+            config.id,
+            LimitState {
+                config,
+                held: BTreeMap::new(),
+                retired: false,
+            },
+        );
+        Ok(())
+    }
+
+    /// Blocks every new reservation against one limit while keeping its existing holds and
+    /// consumed total for the outcomes that still resolve against it.
+    ///
+    /// # Errors
+    ///
+    /// Returns `UnknownLimit` for an unconfigured identifier or `Poisoned`.
+    pub fn retire(&self, id: LimitId) -> Result<(), LimitRefusal> {
+        let mut limits = self.limits.lock().map_err(|_| LimitRefusal::Poisoned)?;
+        let limit = limits.get_mut(&id).ok_or(LimitRefusal::UnknownLimit(id))?;
+        limit.retired = true;
+        Ok(())
+    }
+
+    /// Whether a limit no longer admits new reservations.
+    ///
+    /// # Errors
+    ///
+    /// Returns `UnknownLimit` for an unconfigured identifier or `Poisoned`.
+    pub fn is_retired(&self, id: LimitId) -> Result<bool, LimitRefusal> {
+        let limits = self.limits.lock().map_err(|_| LimitRefusal::Poisoned)?;
+        limits
+            .get(&id)
+            .map(|limit| limit.retired)
+            .ok_or(LimitRefusal::UnknownLimit(id))
+    }
+
+    /// Lists every limit currently holding one reservation.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Poisoned` when the limit state was left poisoned by a panicking holder.
+    pub fn held_limits(&self, reservation_id: [u8; 32]) -> Result<Vec<LimitId>, LimitRefusal> {
+        let limits = self.limits.lock().map_err(|_| LimitRefusal::Poisoned)?;
+        Ok(limits
+            .iter()
+            .filter(|(_, limit)| limit.held.contains_key(&reservation_id))
+            .map(|(id, _)| *id)
+            .collect())
     }
 
     /// Returns the amount already consumed against one limit.
@@ -168,6 +247,7 @@ pub enum LimitRefusal {
         requested: u128,
     },
     UnknownLimit(LimitId),
+    Retired(LimitId),
     InvalidConfiguration,
     InvalidRequest,
     Arithmetic,
@@ -177,6 +257,26 @@ pub enum LimitRefusal {
 pub(crate) fn reserve_all(
     limiter: &BudgetLimiter,
     request: &ReservationRequest,
+) -> Result<BudgetReservation, LimitRefusal> {
+    reserve_bounded(limiter, request, None)
+}
+
+pub(crate) fn reserve_until(
+    limiter: &BudgetLimiter,
+    request: &ReservationRequest,
+    deadline: CoreTimestampMs,
+    core_now: CoreTimestampMs,
+) -> Result<BudgetReservation, LimitRefusal> {
+    if deadline <= core_now {
+        return Err(LimitRefusal::InvalidRequest);
+    }
+    reserve_bounded(limiter, request, Some(deadline))
+}
+
+fn reserve_bounded(
+    limiter: &BudgetLimiter,
+    request: &ReservationRequest,
+    core_deadline: Option<CoreTimestampMs>,
 ) -> Result<BudgetReservation, LimitRefusal> {
     if request.amount == 0
         || request.expiry_sequence <= request.current_sequence
@@ -190,6 +290,9 @@ pub(crate) fn reserve_all(
     let mut limits = limiter.limits.lock().map_err(|_| LimitRefusal::Poisoned)?;
     for id in &applicable {
         let limit = limits.get(id).ok_or(LimitRefusal::UnknownLimit(*id))?;
+        if limit.retired {
+            return Err(LimitRefusal::Retired(*id));
+        }
         if limit.held.contains_key(&request.id) {
             return Err(LimitRefusal::InvalidRequest);
         }
@@ -213,9 +316,14 @@ pub(crate) fn reserve_all(
     }
     for id in &applicable {
         if let Some(limit) = limits.get_mut(id) {
-            limit
-                .held
-                .insert(request.id, (request.amount, request.expiry_sequence));
+            limit.held.insert(
+                request.id,
+                Hold {
+                    amount: request.amount,
+                    expiry_sequence: request.expiry_sequence,
+                    core_deadline,
+                },
+            );
         }
     }
     let durable = applicable
@@ -247,9 +355,17 @@ pub(crate) fn restore_all(
     limiter: &BudgetLimiter,
     records: &[DurableBudgetReservation],
 ) -> Result<(), LimitRefusal> {
+    let bounded: Vec<_> = records.iter().map(|record| (record.clone(), None)).collect();
+    restore_bounded(limiter, &bounded)
+}
+
+pub(crate) fn restore_bounded(
+    limiter: &BudgetLimiter,
+    records: &[(DurableBudgetReservation, Option<CoreTimestampMs>)],
+) -> Result<(), LimitRefusal> {
     let mut limits = limiter.limits.lock().map_err(|_| LimitRefusal::Poisoned)?;
     let mut restored = limits.clone();
-    for record in records {
+    for (record, core_deadline) in records {
         if record.reservation_id == [0; 32]
             || record.amount == 0
             || record.expiry_sequence == 0
@@ -268,7 +384,11 @@ pub(crate) fn restore_all(
         }
         limit.held.insert(
             record.reservation_id,
-            (record.amount, record.expiry_sequence),
+            Hold {
+                amount: record.amount,
+                expiry_sequence: record.expiry_sequence,
+                core_deadline: *core_deadline,
+            },
         );
     }
     for limit in restored.values() {
@@ -299,10 +419,10 @@ pub(crate) fn release_all(
     let mut limits = limiter.limits.lock().map_err(|_| LimitRefusal::Poisoned)?;
     let mut found = false;
     for limit in limits.values_mut() {
-        let Some((amount, expiry)) = limit.held.get(&reservation_id).copied() else {
+        let Some(hold) = limit.held.get(&reservation_id).copied() else {
             continue;
         };
-        if kind == ReleaseKind::Expired && current_sequence < expiry {
+        if kind == ReleaseKind::Expired && current_sequence < hold.expiry_sequence {
             continue;
         }
         limit.held.remove(&reservation_id);
@@ -310,10 +430,33 @@ pub(crate) fn release_all(
             limit.config.consumed = limit
                 .config
                 .consumed
-                .checked_add(amount)
+                .checked_add(hold.amount)
                 .ok_or(LimitRefusal::Arithmetic)?;
         }
         found = true;
+    }
+    Ok(found)
+}
+
+/// Releases a time-bounded hold whose core deadline has been reached; equality is expired,
+/// matching core. Holds without a core deadline are untouched.
+pub(crate) fn release_core_expired(
+    limiter: &BudgetLimiter,
+    reservation_id: [u8; 32],
+    core_now: CoreTimestampMs,
+) -> Result<bool, LimitRefusal> {
+    let mut limits = limiter.limits.lock().map_err(|_| LimitRefusal::Poisoned)?;
+    let mut found = false;
+    for limit in limits.values_mut() {
+        let lapsed = limit
+            .held
+            .get(&reservation_id)
+            .and_then(|hold| hold.core_deadline)
+            .is_some_and(|deadline| deadline <= core_now);
+        if lapsed {
+            limit.held.remove(&reservation_id);
+            found = true;
+        }
     }
     Ok(found)
 }
@@ -322,7 +465,7 @@ fn held_total(limit: &LimitState) -> Result<u128, LimitRefusal> {
     limit
         .held
         .values()
-        .try_fold(0_u128, |total, (amount, _)| total.checked_add(*amount))
+        .try_fold(0_u128, |total, hold| total.checked_add(hold.amount))
         .ok_or(LimitRefusal::Arithmetic)
 }
 
