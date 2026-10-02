@@ -29,7 +29,7 @@ pub use journal::{
     WriteStep,
 };
 pub use mirror::{MirrorRefusal, MirroredSource, SourceMirror};
-pub use node_state::{HeadAuthority, NodeProgramStateSource, ProgramStateCursor};
+pub use node_state::{HeadAuthority, NodeProgramStateSource, ProgramStateCursor, RegistryClientIdentity};
 pub use program_state::FileProgramStateJournal;
 pub use routes::{refusal, Registrar, Request, Response};
 pub use verified::{
@@ -64,6 +64,7 @@ pub struct Config {
     pub node_endpoint: String,
     pub node_authorization: String,
     pub outbound_ca_der: Vec<u8>,
+    pub outbound_client_identity: Option<RegistryClientIdentity>,
     pub receipt_authority_endpoint: String,
     pub receipt_authority_authorization: String,
     pub receipt_authority_replica_id: [u8; 32],

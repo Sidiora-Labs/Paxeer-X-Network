@@ -15,6 +15,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use layerx_platform_registry::{
     parse_request, refusal, write_response, Config, HermeticBuilder, Registrar, RegistryAuthority,
+    RegistryClientIdentity,
 };
 use layerx_programs::hex;
 use rustix::process::{kill_process, Pid, Signal};
@@ -394,6 +395,20 @@ fn parse_path(name: &str, default: PathBuf) -> PathBuf {
     env::var(name).map_or(default, PathBuf::from)
 }
 
+fn configured_node_client_identity() -> Result<Option<RegistryClientIdentity>, String> {
+    const IDENTITY: &str = "LAYERX_REGISTRY_CLIENT_IDENTITY_PKCS12";
+    const PASSWORD: &str = "LAYERX_REGISTRY_CLIENT_IDENTITY_PASSWORD_FILE";
+    match (env::var_os(IDENTITY), env::var_os(PASSWORD)) {
+        (None, None) => Ok(None),
+        (Some(_), Some(_)) => {
+            let encoded = Zeroizing::new(read_private_file(IDENTITY, 1024 * 1024)?);
+            let password = read_secret(PASSWORD)?;
+            RegistryClientIdentity::from_pkcs12(encoded.as_slice(), password.as_str()).map(Some)
+        }
+        _ => Err(format!("{IDENTITY} and {PASSWORD} must be configured together")),
+    }
+}
+
 fn config(builder_cgroup_root: &Path) -> Result<Config, String> {
     let root = parse_path("LAYERX_REGISTRY_STATE", PathBuf::from(DEFAULT_ROOT));
     let digest = env::var("LAYERX_REGISTRY_BUILDER_IMAGE_DIGEST")
@@ -462,6 +477,7 @@ fn config(builder_cgroup_root: &Path) -> Result<Config, String> {
                 .map_err(|_| "LAYERX_REGISTRY_OUTBOUND_CA_DER is required".to_owned())?,
         )
         .map_err(|error| format!("LAYERX_REGISTRY_OUTBOUND_CA_DER is unreadable: {error}"))?,
+        outbound_client_identity: configured_node_client_identity()?,
         receipt_authority_endpoint: env::var("LAYERX_REGISTRY_RECEIPT_AUTHORITY_ENDPOINT")
             .map_err(|_| "LAYERX_REGISTRY_RECEIPT_AUTHORITY_ENDPOINT is required".to_owned())?,
         receipt_authority_authorization: env::var(

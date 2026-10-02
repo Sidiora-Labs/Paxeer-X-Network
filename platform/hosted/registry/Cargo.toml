@@ -33,6 +33,7 @@ rustix.workspace = true
 serde.workspace = true
 sha2.workspace = true
 subtle.workspace = true
+openssl = "=0.10.81"
 ureq.workspace = true
 zeroize.workspace = true
 

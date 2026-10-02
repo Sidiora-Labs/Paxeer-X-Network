@@ -68,6 +68,56 @@ pub struct HeadAuthority {
     pub network_id: u32,
 }
 
+#[derive(Clone)]
+pub struct RegistryClientIdentity(ureq::tls::ClientCert);
+
+impl std::fmt::Debug for RegistryClientIdentity {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("RegistryClientIdentity([REDACTED])")
+    }
+}
+
+impl RegistryClientIdentity {
+    /// # Errors
+    /// Refuses malformed or undecryptable PKCS#12 and a missing or mismatched key pair.
+    pub fn from_pkcs12(encoded: &[u8], password: &str) -> Result<Self, String> {
+        if encoded.is_empty()
+            || encoded.len() > 1024 * 1024
+            || password.is_empty()
+            || password.len() > 4_096
+            || password.as_bytes().contains(&0)
+        {
+            return Err("registry client identity is outside its bound".to_owned());
+        }
+        let archive = openssl::pkcs12::Pkcs12::from_der(encoded)
+            .and_then(|archive| archive.parse2(password))
+            .map_err(|_| "registry client identity cannot be decoded or decrypted".to_owned())?;
+        let key = archive.pkey.ok_or("registry client private key is absent")?;
+        let certificate = archive.cert.ok_or("registry client certificate is absent")?;
+        let public = certificate.public_key()
+            .map_err(|_| "registry client certificate key is invalid".to_owned())?;
+        if !public.public_eq(&key) {
+            return Err("registry client certificate and private key differ".to_owned());
+        }
+        let leaf = certificate.to_der()
+            .map_err(|_| "registry client certificate encoding is invalid".to_owned())?;
+        let mut certificates = vec![ureq::tls::Certificate::from_der(&leaf).to_owned()];
+        if let Some(chain) = archive.ca {
+            for certificate in chain {
+                let der = certificate.to_der()
+                    .map_err(|_| "registry client certificate chain is invalid".to_owned())?;
+                certificates.push(ureq::tls::Certificate::from_der(&der).to_owned());
+            }
+        }
+        let private_der = zeroize::Zeroizing::new(key.private_key_to_pkcs8()
+            .map_err(|_| "registry client private key encoding is invalid".to_owned())?);
+        let private_key = ureq::tls::PrivateKey::from_der(
+            ureq::tls::KeyKind::Pkcs8, private_der.as_slice(),
+        ).to_owned();
+        Ok(Self(ureq::tls::ClientCert::new_with_certs(&certificates, private_key)))
+    }
+}
+
 pub struct NodeProgramStateSource {
     agent: ureq::Agent,
     endpoint: String,
@@ -101,6 +151,25 @@ impl NodeProgramStateSource {
         authority_replica_id: [u8; 32],
         deployment_verifier: ProtocolDeploymentVerifier,
     ) -> Result<Self, String> {
+        Self::connect_with_identity(
+            endpoint, authorization, outbound_ca_der, None, authority_endpoint,
+            authority_authorization, authority_replica_id, deployment_verifier,
+        )
+    }
+
+    /// # Errors
+    /// Refuses invalid authority configuration while preserving CA and hostname verification.
+    #[allow(clippy::too_many_arguments)]
+    pub fn connect_with_identity(
+        endpoint: &str,
+        authorization: String,
+        outbound_ca_der: &[u8],
+        client_identity: Option<&RegistryClientIdentity>,
+        authority_endpoint: &str,
+        authority_authorization: String,
+        authority_replica_id: [u8; 32],
+        deployment_verifier: ProtocolDeploymentVerifier,
+    ) -> Result<Self, String> {
         let endpoint = endpoint.trim_end_matches('/');
         let authority_endpoint = authority_endpoint.trim_end_matches('/');
         if authorization.is_empty()
@@ -124,10 +193,12 @@ impl NodeProgramStateSource {
         let tls = ureq::tls::TlsConfig::builder()
             .provider(ureq::tls::TlsProvider::Rustls)
             .root_certs(ureq::tls::RootCerts::new_with_certs(&[root]))
+            .client_cert(client_identity.map(|identity| identity.0.clone()))
             .build();
         let config = ureq::Agent::config_builder()
             .timeout_global(Some(Duration::from_secs(30)))
             .http_status_as_error(false)
+            .max_redirects(0)
             .tls_config(tls)
             .build();
         Ok(Self {
@@ -896,6 +967,53 @@ fn loopback_http(endpoint: &str) -> bool {
 mod tests {
     use super::{classify_head_answer, HeadAnswer};
     use serde_json::json;
+
+    #[test]
+    fn outbound_client_identity_decrypts_real_pkcs12_and_refuses_invalid_material(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use openssl::asn1::{Asn1Integer, Asn1Time};
+        use openssl::bn::BigNum;
+        use openssl::hash::MessageDigest;
+        use openssl::pkcs12::Pkcs12;
+        use openssl::pkey::PKey;
+        use openssl::rsa::Rsa;
+        use openssl::x509::{X509NameBuilder, X509};
+
+        let key = PKey::from_rsa(Rsa::generate(2048)?)?;
+        let mut name = X509NameBuilder::new()?;
+        name.append_entry_by_text("CN", "registry-client")?;
+        let name = name.build();
+        let mut certificate = X509::builder()?;
+        certificate.set_version(2)?;
+        let serial: Asn1Integer = BigNum::from_u32(1)?.to_asn1_integer()?;
+        certificate.set_serial_number(&serial)?;
+        certificate.set_subject_name(&name)?;
+        certificate.set_issuer_name(&name)?;
+        certificate.set_pubkey(&key)?;
+        let start = Asn1Time::days_from_now(0)?;
+        let end = Asn1Time::days_from_now(1)?;
+        certificate.set_not_before(&start)?;
+        certificate.set_not_after(&end)?;
+        certificate.sign(&key, MessageDigest::sha256())?;
+        let certificate = certificate.build();
+        let mut builder = Pkcs12::builder();
+        builder.name("registry-client").pkey(&key).cert(&certificate);
+        let archive = builder.build2("test-archive-password")?.to_der()?;
+        let identity = super::RegistryClientIdentity::from_pkcs12(&archive, "test-archive-password")
+            .map_err(std::io::Error::other)?;
+        assert_eq!(identity.0.certs()[0].der(), certificate.to_der()?);
+        assert_eq!(identity.0.private_key().kind(), ureq::tls::KeyKind::Pkcs8);
+        assert_eq!(format!("{identity:?}"), "RegistryClientIdentity([REDACTED])");
+        assert!(super::RegistryClientIdentity::from_pkcs12(&archive, "wrong-password").is_err());
+        assert!(super::RegistryClientIdentity::from_pkcs12(&archive, "").is_err());
+        assert!(super::RegistryClientIdentity::from_pkcs12(&archive, "invalid\0password").is_err());
+        assert!(super::RegistryClientIdentity::from_pkcs12(b"invalid archive", "password").is_err());
+        let mut missing_key = Pkcs12::builder();
+        missing_key.cert(&certificate);
+        let certificate_only = missing_key.build2("test-archive-password")?.to_der()?;
+        assert!(super::RegistryClientIdentity::from_pkcs12(&certificate_only, "test-archive-password").is_err());
+        Ok(())
+    }
 
     fn legacy_native_proof() -> Vec<u8> {
         let proof = layerx_proof::merkle::decode_proof(include_bytes!(

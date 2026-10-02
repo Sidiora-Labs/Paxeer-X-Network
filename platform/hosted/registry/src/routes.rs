@@ -136,10 +136,11 @@ impl Registrar {
             journal: FileDeploymentJournal::open(config.journal.clone())?,
             deployment_lni_socket: config.deployment_lni_socket.clone(),
             program_state: FileProgramStateJournal::open(config.journal.join("program-state"))?,
-            node_state: NodeProgramStateSource::connect(
+            node_state: NodeProgramStateSource::connect_with_identity(
                 &config.node_endpoint,
                 config.node_authorization.clone(),
                 &config.outbound_ca_der,
+                config.outbound_client_identity.as_ref(),
                 &config.receipt_authority_endpoint,
                 config.receipt_authority_authorization.clone(),
                 config.receipt_authority_replica_id,
