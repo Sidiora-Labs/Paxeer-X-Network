@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use super::{metered_bytes, StorageAddress, StorageError, StorageNamespace};
+use super::{metered_bytes, namespace_cells, StorageAddress, StorageError, StorageNamespace};
 
 /// Exact provisional released-occupancy facts produced by dropping one namespace.
 ///
@@ -46,12 +46,9 @@ pub(crate) fn preview(
     cells: &BTreeMap<StorageAddress, Vec<u8>>,
     namespace: StorageNamespace,
 ) -> Result<NamespaceDrop, StorageError> {
-    let (reclaimed_cells, reclaimed_key_value_bytes) = cells.iter().try_fold(
+    let (reclaimed_cells, reclaimed_key_value_bytes) = namespace_cells(cells, namespace).try_fold(
         (0u64, 0u64),
         |(cell_count, byte_count), (address, value)| {
-            if address.namespace != namespace {
-                return Ok((cell_count, byte_count));
-            }
             let reclaimed_cells = cell_count
                 .checked_add(1)
                 .ok_or(StorageError::SizeOverflow)?;
@@ -79,5 +76,10 @@ pub(crate) fn preview(
 /// transaction owns that snapshot, so no concurrent mutation can make the
 /// recorded provisional fact diverge before this deterministic removal.
 pub(crate) fn apply(cells: &mut BTreeMap<StorageAddress, Vec<u8>>, drop: NamespaceDrop) {
-    cells.retain(|address, _| address.namespace != drop.namespace);
+    let addresses: Vec<_> = namespace_cells(cells, drop.namespace)
+        .map(|(address, _)| address.clone())
+        .collect();
+    for address in addresses {
+        cells.remove(&address);
+    }
 }

@@ -136,6 +136,15 @@ impl Eq for Storage {}
 
 type ProtocolEntries = Vec<(Vec<u8>, Vec<u8>)>;
 
+fn namespace_cells(
+    cells: &BTreeMap<StorageAddress, Vec<u8>>,
+    namespace: StorageNamespace,
+) -> impl Iterator<Item = (&StorageAddress, &Vec<u8>)> {
+    cells
+        .range(StorageAddress { namespace, key: Vec::new() }..)
+        .take_while(move |(address, _)| address.namespace == namespace)
+}
+
 impl Storage {
     fn commitment_key_len(address: &StorageAddress) -> Option<u64> {
         let mut namespace = [0_u8; 65];
@@ -327,18 +336,13 @@ impl Storage {
     /// Returns the number of cells visible in exactly one namespace.
     #[must_use]
     pub fn namespace_cell_count(&self, namespace: StorageNamespace) -> usize {
-        self.cells
-            .keys()
-            .filter(|address| address.namespace == namespace)
-            .count()
+        namespace_cells(&self.cells, namespace).count()
     }
 
     /// Returns one fixed namespace in canonical key order for the protocol
     /// persistence bridge. The returned copies cannot mutate the held state.
     pub(crate) fn namespace_entries(&self, namespace: StorageNamespace) -> Vec<(Vec<u8>, Vec<u8>)> {
-        self.cells
-            .iter()
-            .filter(|(address, _)| address.namespace == namespace)
+        namespace_cells(&self.cells, namespace)
             .map(|(address, value)| (address.key.clone(), value.clone()))
             .collect()
     }
@@ -353,9 +357,7 @@ impl Storage {
         &self,
         namespace: StorageNamespace,
     ) -> Result<u64, StorageError> {
-        self.cells
-            .iter()
-            .filter(|(address, _)| address.namespace == namespace)
+        namespace_cells(&self.cells, namespace)
             .try_fold(0u64, |total, (address, value)| {
                 let cell_bytes = metered_bytes(&address.key, Some(value))?;
                 total
@@ -447,8 +449,8 @@ impl Storage {
         validate_key(prefix)?;
         Ok(self
             .cells
-            .iter()
-            .filter(|(address, _)| {
+            .range(StorageAddress { namespace, key: prefix.to_vec() }..)
+            .take_while(|(address, _)| {
                 address.namespace == namespace && address.key.starts_with(prefix)
             })
             .map(|(address, value)| (address.key.clone(), value.clone()))

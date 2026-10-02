@@ -5,6 +5,7 @@
 //! platforms while refusing namespace, prefix, and limit-contract changes.
 
 use std::collections::BTreeMap;
+use std::ops::Bound;
 
 use super::{StorageAddress, StorageError, StorageNamespace, MAX_STORAGE_KEY_BYTES};
 
@@ -283,14 +284,14 @@ pub(crate) fn scan_cells(
     } else {
         Some(ScanCursor::decode_for(cursor, namespace, prefix, limits)?.after)
     };
+    let start = match after {
+        Some(key) => Bound::Excluded(StorageAddress { namespace, key }),
+        None => Bound::Included(StorageAddress { namespace, key: prefix.to_vec() }),
+    };
     let mut matching = cells
-        .iter()
-        .filter(|(address, _)| {
-            address.namespace == namespace
-                && address.key.starts_with(prefix)
-                && after
-                    .as_ref()
-                    .is_none_or(|after| address.key.as_slice() > after.as_slice())
+        .range((start, Bound::Unbounded))
+        .take_while(|(address, _)| {
+            address.namespace == namespace && address.key.starts_with(prefix)
         })
         .peekable();
     let mut entries = Vec::new();
@@ -367,21 +368,12 @@ fn page(entries: Vec<ScanEntry>, cursor: Option<Vec<u8>>) -> Result<StorageScan,
 mod tests {
     use super::*;
     use crate::abi::{
-        Abi, AbiError, AuthorizationContext, Capability, CapabilitySet, ReceiptOracle, ReceiptView,
+        Abi, AbiError, AuthorizationContext, Capability, CapabilitySet, UnavailableReceiptOracle,
         StorageSelector,
     };
     use crate::meter::{FeeSchedule, Meter, MeterRefusal, ResourceBudget, ResourceKind};
     use crate::storage::{PrincipalId, ProgramId, Storage};
     use crate::ABI_VERSION;
-
-    #[derive(Debug)]
-    struct NoReceipts;
-
-    impl ReceiptOracle for NoReceipts {
-        fn verified_receipt(&self, _receipt_digest: [u8; 32]) -> Result<ReceiptView, AbiError> {
-            Err(AbiError::ReceiptMismatch)
-        }
-    }
 
     fn program(byte: u8) -> ProgramId {
         ProgramId::new([byte; 32]).unwrap_or_else(|error| panic!("program: {error}"))
@@ -553,7 +545,7 @@ mod tests {
             owner,
             AuthorizationContext::new(actor, CapabilitySet::empty()),
             storage.clone(),
-            &NoReceipts,
+            &UnavailableReceiptOracle,
         )
         .unwrap_or_else(|error| panic!("denied ABI: {error}"));
         assert_eq!(
@@ -574,7 +566,7 @@ mod tests {
             owner,
             AuthorizationContext::new(actor, grants.clone()),
             storage,
-            &NoReceipts,
+            &UnavailableReceiptOracle,
         )
         .unwrap_or_else(|error| panic!("first ABI: {error}"));
         let mut first_meter = Meter::new(
@@ -615,7 +607,7 @@ mod tests {
             owner,
             AuthorizationContext::new(actor, grants),
             committed,
-            &NoReceipts,
+            &UnavailableReceiptOracle,
         )
         .unwrap_or_else(|error| panic!("second ABI: {error}"));
         let mut second_meter = Meter::new(
@@ -704,7 +696,7 @@ mod tests {
                     .unwrap_or_else(|error| panic!("grant: {error}")),
             ),
             storage.clone(),
-            &NoReceipts,
+            &UnavailableReceiptOracle,
         )
         .unwrap_or_else(|error| panic!("ABI: {error}"));
         assert_eq!(
@@ -727,7 +719,7 @@ mod tests {
                     .unwrap_or_else(|error| panic!("grant: {error}")),
             ),
             storage,
-            &NoReceipts,
+            &UnavailableReceiptOracle,
         )
         .unwrap_or_else(|error| panic!("ABI: {error}"));
         let page = shared_only
@@ -746,5 +738,53 @@ mod tests {
                 value: b"value".to_vec()
             }]
         );
+    }
+
+    #[test]
+    fn namespace_ranges_preserve_prefix_pages_and_metering_with_foreign_state() {
+        let (baseline, namespace) = seeded(&[b"p/a", b"p/b", b"p/c"]);
+        let mut populated = baseline.clone();
+        for other in [
+            StorageNamespace::principal(program(1), principal(1)),
+            StorageNamespace::principal(program(1), principal(3)),
+            StorageNamespace::shared(program(1)),
+            StorageNamespace::protocol_private(program(1), [2; 32]),
+            StorageNamespace::principal(program(2), principal(2)),
+        ] {
+            let mut transaction = populated.transaction(other);
+            for key in [b"p/a".as_slice(), b"p/b", b"p/c", b"\xff"] {
+                transaction.write(key, b"foreign")
+                    .unwrap_or_else(|error| panic!("foreign seed: {error}"));
+            }
+            assert_eq!(transaction.commit(), 4);
+        }
+        let mut transaction = populated.transaction(namespace);
+        transaction.write(b"o", b"before")
+            .unwrap_or_else(|error| panic!("before: {error}"));
+        transaction.write(b"q", b"after")
+            .unwrap_or_else(|error| panic!("after: {error}"));
+        assert_eq!(transaction.commit(), 2);
+        let limits = ScanLimits::new(1, 256)
+            .unwrap_or_else(|error| panic!("limits: {error}"));
+        let mut cursor = Vec::new();
+        for expected_key in [b"p/a", b"p/b", b"p/c"] {
+            let expected = baseline.scan(namespace, b"p/", &cursor, limits)
+                .unwrap_or_else(|error| panic!("baseline: {error}"));
+            let actual = populated.scan(namespace, b"p/", &cursor, limits)
+                .unwrap_or_else(|error| panic!("populated: {error}"));
+            assert_eq!(actual, expected);
+            assert_eq!(actual.entries()[0].key.as_slice(), expected_key.as_slice());
+            cursor = actual.cursor().unwrap_or_default().to_vec();
+        }
+        assert!(cursor.is_empty());
+        for prefix in [b"p/z".as_slice(), b"\xff"] {
+            let empty = populated.scan(namespace, prefix, b"", limits)
+                .unwrap_or_else(|error| panic!("empty: {error}"));
+            assert!(empty.entries().is_empty());
+            assert_eq!(empty.cursor(), None);
+            assert_eq!(empty.metered_bytes(), 5);
+        }
+        assert_eq!(populated.protocol_prefix_entries(namespace, b"p/"),
+            baseline.protocol_prefix_entries(namespace, b"p/"));
     }
 }
