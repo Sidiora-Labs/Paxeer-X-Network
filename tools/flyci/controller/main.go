@@ -49,6 +49,15 @@ func main() {
 		rec.qualification = registry
 	}
 
+	if cfg.Readiness != nil {
+		rec.readiness = newReadinessState(*cfg.Readiness)
+		if err := startReadiness(ctx, rec.readiness, stop); err != nil {
+			logger.Error("private readiness admission failed")
+			stop()
+			os.Exit(2)
+		}
+	}
+
 	logger.Info("controller started",
 		"repository", cfg.Owner+"/"+cfg.Repo,
 		"runner_app", cfg.RunnerApp,
@@ -76,13 +85,28 @@ func run(ctx context.Context, rec *reconciler, interval time.Duration, logger *s
 
 func poll(ctx context.Context, rec *reconciler, logger *slog.Logger) {
 	started := time.Now()
+	var observation *readinessPass
+	if rec.readiness != nil {
+		observation = rec.readiness.begin()
+		rec.observation = observation
+		defer func() { observation.finish(ctx.Err()); rec.observation = nil }()
+	}
 	if rec.qualification != nil {
-		if err := rec.github.qTick(ctx, rec.qualification); err != nil {
+		if observation != nil { observation.condition("qualification_storage", qMounted(rec.qualification.root)) }
+		qualificationErr := rec.github.qTick(ctx, rec.qualification)
+		observation.observe("qualification", qualificationErr)
+		if observation != nil {
+			records, inventoryErr := readinessQualificationSnapshot(rec.qualification)
+			observation.observe("qualification_inventory", inventoryErr)
+			if inventoryErr == nil { observation.qualificationRecords(records) }
+		}
+		if err := qualificationErr; err != nil {
 			logger.Error("qualification reconciliation refused", "error", err)
 		}
 	}
 	summary, err := rec.reconcile(ctx)
 	if err != nil {
+		observation.fail("reconcile_failed")
 		if ctx.Err() != nil {
 			return
 		}

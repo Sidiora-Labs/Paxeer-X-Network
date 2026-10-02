@@ -15,6 +15,7 @@ const (
 )
 
 type config struct {
+	Readiness *readinessConfig
 	QualificationRoot     string
 	QualificationContract string
 	Owner                 string
@@ -122,6 +123,10 @@ func loadConfig(getenv func(string) string) (config, error) {
 
 	if cfg.QualificationRoot != "" && !qDigest.MatchString(cfg.QualificationContract) {
 		errs = append(errs, errors.New("QUALIFICATION_CONTRACT_SHA256 must pin the accepted complete contract"))
+	}
+	if len(errs) == 0 {
+		readiness, err := loadReadinessConfig(strings.TrimSpace(getenv("CI_READINESS_CONFIG_FILE")), cfg)
+		if err != nil { errs = append(errs, err) } else { cfg.Readiness = readiness }
 	}
 	return cfg, errors.Join(errs...)
 }

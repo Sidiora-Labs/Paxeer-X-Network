@@ -27,6 +27,8 @@ type pollSummary struct {
 }
 
 type reconciler struct {
+	readiness *readinessState
+	observation *readinessPass
 	qualification *qualificationRegistry
 	cfg           config
 	github        *githubClient
@@ -180,6 +182,7 @@ func (r *reconciler) machineRunHistory(ctx context.Context, machines []machine, 
 			continue
 		}
 		jobs, err := r.github.listJobs(ctx, runID)
+		r.observation.observe(readinessOperation("github_history", runID), err)
 		if err != nil {
 			idx.incomplete = true
 			idx.byRun[runID] = nil
@@ -214,6 +217,7 @@ func (r *reconciler) reconcile(ctx context.Context) (pollSummary, error) {
 	seenRuns := make(map[int64]bool)
 	for _, status := range []string{statusQueued, statusProgress} {
 		runs, err := r.github.listRuns(ctx, status)
+		r.observation.observe("github_runs_"+status, err)
 		if err != nil {
 			if ctx.Err() != nil {
 				return summary, ctx.Err()
@@ -223,11 +227,13 @@ func (r *reconciler) reconcile(ctx context.Context) (pollSummary, error) {
 			continue
 		}
 		for _, run := range runs {
+			r.observation.condition(readinessOperation("workflow_run_identity", run.ID), run.ID > 0)
 			if seenRuns[run.ID] {
 				continue
 			}
 			seenRuns[run.ID] = true
 			jobs, err := r.github.listJobs(ctx, run.ID)
+			r.observation.observe(readinessOperation("github_jobs", run.ID), err)
 			if err != nil {
 				if ctx.Err() != nil {
 					return summary, ctx.Err()
@@ -242,20 +248,26 @@ func (r *reconciler) reconcile(ctx context.Context) (pollSummary, error) {
 	}
 
 	machines, err := r.fly.listMachines(ctx)
+	r.observation.observe("fly_machines", err)
 	if err != nil {
 		return summary, fmt.Errorf("list machines: %w", err)
 	}
 
 	r.machineRunHistory(ctx, machines, idx)
+	r.observation.condition("job_index", !idx.incomplete && len(idx.conflicts) == 0)
 
 	live := make(map[int64]bool)
 	for _, m := range machines {
 		jobID, runID, managed := machineJob(m)
+		if _, claimed := m.Config.Metadata[metadataJobID]; claimed && !managed { r.observation.fail("managed_machine_identity_invalid") }
 		if !managed || m.State == "destroyed" || m.State == "destroying" {
 			continue
 		}
+		r.observation.condition(readinessOperation("runner_image", jobID), m.Config.Image == r.cfg.RunnerImage)
 		if reason := r.destroyReason(ctx, m, jobID, runID, idx); reason != "" {
-			if err := r.fly.destroyMachine(ctx, m.ID); err != nil {
+			destroyErr := r.fly.destroyMachine(ctx, m.ID)
+			r.observation.observe(readinessOperation("fly_destroy", jobID), destroyErr)
+			if err := destroyErr; err != nil {
 				r.cleanupLog("destroy machine failed", m, reason, jobID, runID, idx, err)
 			} else {
 				r.cleanupLog("machine destroyed", m, reason, jobID, runID, idx, nil)
@@ -263,6 +275,8 @@ func (r *reconciler) reconcile(ctx context.Context) (pollSummary, error) {
 				continue
 			}
 		}
+		_, assignmentKnown := idx.assignment(m)
+		r.observation.condition(readinessOperation("runner_assignment", jobID), assignmentKnown && m.State == "started")
 		live[jobID] = true
 		if actual, known := idx.assignment(m); known {
 			live[actual.ID] = true
@@ -280,20 +294,29 @@ func (r *reconciler) reconcile(ctx context.Context) (pollSummary, error) {
 			continue
 		}
 		if summary.Live >= r.cfg.MaxMachines {
+			if r.observation != nil {
+				deferred := 0
+				for _, waiting := range selected[i:] { if !live[waiting.ID] { deferred++ } }
+				r.observation.deferJobs(deferred)
+			}
 			r.log.Warn("machine ceiling reached", "max_machines", r.cfg.MaxMachines, "waiting_jobs", len(selected)-i, "job_id", job.ID)
 			break
 		}
 		name := runnerName(job.ID)
 		jit, err := r.github.generateJITConfig(ctx, name, r.cfg.Labels)
+		r.observation.observe(readinessOperation("github_jit", job.ID), err)
 		if err != nil {
 			r.log.Error("mint runner configuration failed", "job_id", job.ID, "run_id", job.RunID, "error", err)
 			continue
 		}
+		r.observation.condition(readinessOperation("jit_identity", job.ID), jit.Runner.ID > 0 && jit.EncodedJITConfig != "")
 		created, err := r.fly.createMachine(ctx, r.machineRequest(job, name, jit.EncodedJITConfig))
+		r.observation.observe(readinessOperation("fly_create", job.ID), err)
 		if err != nil {
 			r.log.Error("create machine failed", "job_id", job.ID, "run_id", job.RunID, "runner_id", jit.Runner.ID, "error", err)
 			continue
 		}
+		r.observation.condition(readinessOperation("created_machine_identity", job.ID), created.ID != "" && created.Name == name && created.Config.Image == r.cfg.RunnerImage)
 		live[job.ID] = true
 		summary.Live++
 		summary.Created++
