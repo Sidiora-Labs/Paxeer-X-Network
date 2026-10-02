@@ -384,6 +384,96 @@ impl NativeProgramSimulationTransport for EmulatorProgramSimulationTransport {
     }
 }
 
+pub struct NodeProgramSimulationTransport<'a> {
+    client: &'a mut layerx_client::Client,
+    registry: ModuleRegistry,
+    correlation_id: u64,
+}
+
+impl<'a> NodeProgramSimulationTransport<'a> {
+    #[must_use]
+    pub fn new(
+        client: &'a mut layerx_client::Client,
+        registry: ModuleRegistry,
+        correlation_id: u64,
+    ) -> Self {
+        Self {
+            client,
+            registry,
+            correlation_id,
+        }
+    }
+
+    fn simulate_signed_activity(
+        &mut self,
+        signed_activity: &[u8],
+    ) -> Result<RawProgramSimulation, ProgramOperationError> {
+        self.client
+            .simulate(&self.registry, signed_activity, self.correlation_id)
+            .map(raw_program_simulation)
+            .map_err(simulation_error)
+    }
+}
+
+impl ProgramSimulationTransport for NodeProgramSimulationTransport<'_> {
+    fn simulate_exact(
+        &mut self,
+        _call: &ProgramCall,
+        signed_activity: &[u8],
+    ) -> Result<RawProgramSimulation, ProgramOperationError> {
+        self.simulate_signed_activity(signed_activity)
+    }
+}
+
+impl NativeProgramSimulationTransport for NodeProgramSimulationTransport<'_> {
+    fn simulate_native_exact(
+        &mut self,
+        _call: NativeProgramCall<'_>,
+        _fee_limit: u128,
+        signed_activity: &[u8],
+    ) -> Result<RawProgramSimulation, ProgramOperationError> {
+        self.simulate_signed_activity(signed_activity)
+    }
+}
+
+fn raw_program_simulation(simulation: layerx_client::lni::Simulation) -> RawProgramSimulation {
+    let layerx_client::lni::Simulation {
+        execution,
+        evidence,
+    } = simulation;
+    RawProgramSimulation {
+        receipt: execution.receipt,
+        terminal_payload: execution.terminal_payload,
+        call_graph: execution.call_graph,
+        evidence: ProgramSimulationEvidence {
+            boundary_id: evidence.boundary_id,
+            activity_id: evidence.activity_id,
+            previous_state_root: evidence.previous_state_root,
+            hypothetical_state_root: evidence.hypothetical_state_root,
+            observed_sequence: evidence.observed_sequence,
+            observed_at: evidence.observed_at,
+            committed: false,
+        },
+        evidence_signature: evidence.signature,
+    }
+}
+
+const fn simulation_error(error: layerx_client::lni::SimulateError) -> ProgramOperationError {
+    use layerx_client::lni::SimulateError;
+    match error {
+        SimulateError::UnavailableCapability | SimulateError::InterfaceVersion(_) => {
+            ProgramOperationError::Unavailable
+        }
+        SimulateError::CoreRefusal { class, result } => {
+            ProgramOperationError::CoreRefusal { class, result }
+        }
+        SimulateError::MalformedRequest | SimulateError::InvalidCorrelation => {
+            ProgramOperationError::InvalidRequest
+        }
+        _ => ProgramOperationError::UnverifiedReceipt,
+    }
+}
+
 fn encode_hex(bytes: &[u8]) -> String {
     bytes
         .iter()
@@ -655,6 +745,117 @@ mod simulation_rejection_vectors {
     #[test]
     fn stale_sequence_and_freshness_are_refused() {
         assert!(!evidence().matches_context([1; 32], [2; 32], [3; 32], [4; 32], 7, 8));
+    }
+}
+
+#[cfg(test)]
+mod node_simulation_transport_contract {
+    use super::{
+        decode_fixed_json, decode_hex_json, raw_program_simulation, simulation_error,
+        ProgramOperationError,
+    };
+    use layerx_client::lni::simulate::{
+        simulation_boundary_id, simulation_evidence_digest, SimulateError, SimulatedExecution,
+        Simulation, SimulationEvidence,
+    };
+    use layerx_types::result::ResultCode;
+    use sha2::{Digest as _, Sha256};
+
+    #[test]
+    fn node_simulation_preserves_the_signed_evidence_contract() -> Result<(), String> {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../../platform/sdk/conformance/fixtures/receipt-programs-executed-v4.json"
+        ))
+        .map_err(|error| error.to_string())?;
+        let public: [u8; 32] =
+            decode_fixed_json(&fixture["authorized_batch"], "sequencer_public_key_hex")
+                .map_err(|error| format!("{error:?}"))?;
+        let receipt = decode_hex_json(&fixture, "canonical_receipt_hex")
+            .map_err(|error| format!("{error:?}"))?;
+        let terminal_payload = decode_hex_json(&fixture, "terminal_payload_hex")
+            .map_err(|error| format!("{error:?}"))?;
+        let call_graph =
+            decode_hex_json(&fixture, "call_graph_hex").map_err(|error| format!("{error:?}"))?;
+        let decoded =
+            layerx_wire::receipt::decode(&receipt).map_err(|error| format!("{error:?}"))?;
+        let protocol = decoded.protocol().ok_or("protocol receipt")?;
+        let evidence = SimulationEvidence {
+            boundary_id: simulation_boundary_id(&public),
+            activity_id: protocol.activity_id(),
+            previous_state_root: protocol.previous_state_root(),
+            hypothetical_state_root: protocol.resulting_state_root(),
+            observed_sequence: protocol.global_sequence(),
+            observed_at: protocol.timestamp(),
+            public_key: public,
+            signature: [7; 64],
+        };
+        let raw = raw_program_simulation(Simulation {
+            execution: SimulatedExecution {
+                activity_id: protocol.activity_id(),
+                receipt: receipt.clone(),
+                terminal_payload: terminal_payload.clone(),
+                call_graph: call_graph.clone(),
+            },
+            evidence,
+        });
+        assert_eq!(raw.receipt, receipt);
+        assert_eq!(raw.terminal_payload, terminal_payload);
+        assert_eq!(raw.call_graph, call_graph);
+        assert_eq!(raw.evidence_signature, evidence.signature);
+        assert!(!raw.evidence.committed);
+        assert_eq!(
+            raw.evidence.signing_digest(),
+            simulation_evidence_digest(&evidence)
+        );
+        let mut boundary = b"LayerX/emulator/simulation-boundary/v1\0".to_vec();
+        boundary.extend_from_slice(&public);
+        let simulator_boundary: [u8; 32] = Sha256::digest(boundary).into();
+        assert!(raw.evidence.matches_context(
+            simulator_boundary,
+            protocol.activity_id(),
+            protocol.previous_state_root(),
+            protocol.resulting_state_root(),
+            protocol.global_sequence(),
+            protocol.timestamp(),
+        ));
+        let mut committed = raw.evidence;
+        committed.committed = true;
+        assert_ne!(
+            committed.signing_digest(),
+            simulation_evidence_digest(&evidence)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn node_simulation_refusals_keep_their_existing_paths() {
+        assert_eq!(
+            simulation_error(SimulateError::UnavailableCapability),
+            ProgramOperationError::Unavailable
+        );
+        let result = ResultCode::from_raw(7);
+        assert_eq!(
+            simulation_error(SimulateError::CoreRefusal { class: 2, result }),
+            ProgramOperationError::CoreRefusal { class: 2, result }
+        );
+        assert_eq!(
+            simulation_error(SimulateError::InvalidCorrelation),
+            ProgramOperationError::InvalidRequest
+        );
+        for error in [
+            SimulateError::Disconnected,
+            SimulateError::MalformedResponse,
+            SimulateError::ActivityMismatch,
+            SimulateError::ArtifactMismatch,
+            SimulateError::SequencerKeyMismatch,
+            SimulateError::EvidenceBinding,
+            SimulateError::EvidenceSignature,
+        ] {
+            assert_eq!(
+                simulation_error(error),
+                ProgramOperationError::UnverifiedReceipt
+            );
+        }
     }
 }
 
