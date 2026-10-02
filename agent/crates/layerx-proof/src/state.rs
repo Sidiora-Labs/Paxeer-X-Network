@@ -536,6 +536,8 @@ fn account_kind(name: &[u8]) -> Option<u8> {
         Some(8)
     } else if name.starts_with(b"agent:") && name.len() > 11 && name.ends_with(b":main") {
         Some(1)
+    } else if agent_asset(name) {
+        Some(14)
     } else if agent_shape(name, b":budget:") {
         Some(2)
     } else if agent_shape(name, b":escrow:") {
@@ -566,6 +568,15 @@ fn canonical_name(name: &[u8]) -> bool {
         previous_colon = *byte == b':';
     }
     !previous_colon
+}
+
+fn agent_asset(name: &[u8]) -> bool {
+    name.len() > 77
+        && name.starts_with(b"agent:")
+        && &name[name.len() - 71..name.len() - 64] == b":asset:"
+        && name[name.len() - 64..]
+            .iter()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
 }
 
 fn agent_shape(name: &[u8], marker: &[u8]) -> bool {
