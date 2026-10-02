@@ -379,7 +379,7 @@ pub fn consumption_updates(
     for hold in holds {
         let index = index_key(tenant, hold.limit_id)?;
         let Some(budget_id) = store.get(&index) else {
-            continue;
+            return Err(DaemonLimitError::Unknown);
         };
         let budget_id: [u8; 32] = budget_id
             .bytes()

@@ -1667,4 +1667,214 @@ mod tests {
         assert!(!replay.publish());
         assert_eq!(limiter.consumed(first.limit_id), Ok(30));
     }
+
+    fn store_files(root: &std::path::Path) -> Vec<(PathBuf, Vec<u8>)> {
+        let mut files = text(std::fs::read_dir(root), "store directory")
+            .map(|entry| text(entry, "store entry").path())
+            .filter(|path| path.is_file())
+            .map(|path| {
+                let bytes = text(std::fs::read(&path), "store file");
+                (path, bytes)
+            })
+            .collect::<Vec<_>>();
+        files.sort();
+        files
+    }
+
+    fn daemon(
+        store: &mut Store,
+        limiter: &BudgetLimiter,
+        tenant: &TenantId,
+    ) -> super::DaemonLimitRecord {
+        text(
+            super::create_daemon_limit(
+                store,
+                limiter,
+                super::DaemonLimitRecord {
+                    tenant: tenant.clone(),
+                    budget_id: [0x31; 32],
+                    limit_id: daemon_limit_id([0x31; 32]),
+                    agent_digest: [0x21; 32],
+                    asset: [0x32; 32],
+                    ceiling: CEILING,
+                    consumed: 0,
+                    expiry_ms: 1_000_000,
+                    revoked: false,
+                    mutation_key: [0x33; 32],
+                    body_digest: [0x34; 32],
+                    revoke_key: [0; 32],
+                },
+                super::CoreTimestampMs(1),
+            ),
+            "daemon limit",
+        )
+    }
+
+    fn daemon_consumed(store: &Store, tenant: &TenantId) -> u128 {
+        let records = text(super::daemon_limits(store, tenant), "daemon limits");
+        assert_eq!(records.len(), 1);
+        records[0].consumed
+    }
+
+    #[test]
+    fn consumption_for_a_hold_in_neither_index_is_refused_and_every_record_is_identical() {
+        let root = Root::new("unclassified");
+        let mut store = text(Store::open(&root.0), "store");
+        let unclassified = declared(9, SCOPE, CEILING, 0);
+        let unclassified_id = unclassified.id;
+        let limiter = text(BudgetLimiter::new(vec![unclassified]), "limiter");
+        let tenant = tenant_id("tenant-a");
+        let enrolment = text(
+            install(
+                &mut store,
+                &limiter,
+                &tenant,
+                declared(1, SCOPE, CEILING, 0),
+            ),
+            "enrolment",
+        );
+        let daemon = daemon(&mut store, &limiter, &tenant);
+        let hold = text(
+            reserve(
+                &limiter,
+                &ReservationRequest {
+                    applicable_limits: vec![enrolment.limit_id, daemon.limit_id, unclassified_id],
+                    ..request(7, 20, enrolment.limit_id)
+                },
+            ),
+            "hold",
+        );
+        assert_eq!(hold.durable.len(), 3);
+        let only_unclassified = hold
+            .durable
+            .iter()
+            .filter(|durable| durable.limit_id == unclassified_id)
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(only_unclassified.len(), 1);
+        let before = store_files(&root.0);
+        assert!(!before.is_empty());
+        assert!(matches!(
+            super::consumption_updates(&store, &tenant, &hold.durable),
+            Err(DaemonLimitError::Unknown)
+        ));
+        assert!(matches!(
+            super::consumption_updates(&store, &tenant, &only_unclassified),
+            Err(DaemonLimitError::Unknown)
+        ));
+        assert_eq!(store_files(&root.0), before);
+        assert_eq!(stored(&store, &tenant, enrolment.stable_id).consumed, 0);
+        assert_eq!(daemon_consumed(&store, &tenant), 0);
+        assert_eq!(limiter.held_reservations(), Ok(3));
+        assert_eq!(limiter.consumed(enrolment.limit_id), Ok(0));
+        assert_eq!(limiter.consumed(daemon.limit_id), Ok(0));
+        assert_eq!(limiter.consumed(unclassified_id), Ok(0));
+    }
+
+    #[test]
+    fn a_refused_unclassified_hold_stays_held_and_claimable_across_a_store_restart() {
+        let root = Root::new("unclassified-restart");
+        let mut store = text(Store::open(&root.0), "store");
+        let limiter = text(
+            BudgetLimiter::new(vec![declared(9, SCOPE, CEILING, 0)]),
+            "limiter",
+        );
+        let tenant = tenant_id("tenant-a");
+        let enrolment = text(
+            install(
+                &mut store,
+                &limiter,
+                &tenant,
+                declared(1, SCOPE, CEILING, 0),
+            ),
+            "enrolment",
+        );
+        let hold = text(
+            reserve(
+                &limiter,
+                &ReservationRequest {
+                    applicable_limits: vec![enrolment.limit_id, LimitId([9; 16])],
+                    ..request(8, 20, enrolment.limit_id)
+                },
+            ),
+            "hold",
+        );
+        assert!(matches!(
+            super::consumption_updates(&store, &tenant, &hold.durable),
+            Err(DaemonLimitError::Unknown)
+        ));
+        let before = store_files(&root.0);
+        drop(store);
+
+        let mut store = text(Store::open(&root.0), "reopened store");
+        assert_eq!(store_files(&root.0), before);
+        let restarted = text(
+            BudgetLimiter::new(vec![declared(9, SCOPE, CEILING, 0)]),
+            "restarted limiter",
+        );
+        text(
+            install_enrolment_limits(
+                &mut store,
+                &restarted,
+                &tenant,
+                &[declared(1, SCOPE, CEILING, 0)],
+            ),
+            "restart install",
+        );
+        text(restore(&restarted, &hold.durable), "restore");
+        assert_eq!(restarted.held_reservations(), Ok(2));
+        assert_eq!(stored(&store, &tenant, enrolment.stable_id).consumed, 0);
+        assert!(matches!(
+            super::consumption_updates(&store, &tenant, &hold.durable),
+            Err(DaemonLimitError::Unknown)
+        ));
+        assert_eq!(
+            release(&restarted, [8; 32], ReleaseKind::Failed, 2),
+            Ok(true)
+        );
+        assert_eq!(restarted.held_reservations(), Ok(0));
+        assert_eq!(restarted.consumed(enrolment.limit_id), Ok(0));
+    }
+
+    #[test]
+    fn enrolment_and_daemon_indexed_holds_still_persist_their_charges() {
+        let root = Root::new("classified");
+        let mut store = text(Store::open(&root.0), "store");
+        let limiter = text(BudgetLimiter::new(Vec::new()), "limiter");
+        let tenant = tenant_id("tenant-a");
+        let enrolment = text(
+            install(
+                &mut store,
+                &limiter,
+                &tenant,
+                declared(1, SCOPE, CEILING, 0),
+            ),
+            "enrolment",
+        );
+        let daemon = daemon(&mut store, &limiter, &tenant);
+        let hold = text(
+            reserve(
+                &limiter,
+                &ReservationRequest {
+                    applicable_limits: vec![enrolment.limit_id, daemon.limit_id],
+                    ..request(9, 20, enrolment.limit_id)
+                },
+            ),
+            "hold",
+        );
+        let updates = text(
+            super::consumption_updates(&store, &tenant, &hold.durable),
+            "consumption",
+        );
+        assert_eq!(updates.len(), 2);
+        text(store.update_local_batch(updates), "settlement write");
+        assert_eq!(
+            release(&limiter, [9; 32], ReleaseKind::Executed, 2),
+            Ok(true)
+        );
+        assert_eq!(stored(&store, &tenant, enrolment.stable_id).consumed, 20);
+        assert_eq!(daemon_consumed(&store, &tenant), 20);
+        assert_eq!(limiter.consumed(enrolment.limit_id), Ok(20));
+        assert_eq!(limiter.consumed(daemon.limit_id), Ok(20));
+    }
 }
