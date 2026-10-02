@@ -4254,38 +4254,6 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
         drop(held);
         dispatched
     }
-        expected_activity: [u8; 32],
-    ) -> Result<HumanResponse, HumanOperationError> {
-        let registry = self.authority.registry(peer).map_err(map_core)?;
-        let bytes = self
-            .outboxes
-            .entry(peer.tenant.clone())
-            .or_default()
-            .bytes_for_transmission(identifier)
-            .map_err(|_| HumanOperationError::Refused)?
-            .to_vec();
-        let activity = layerx_wire::activity::decode_signed(&bytes, &registry)
-            .map_err(|_| HumanOperationError::Refused)?;
-        if activity.idempotency_key() != identifier
-            || layerx_wire::hash::activity_id(&activity)
-                .map_err(|_| HumanOperationError::Refused)?
-                != expected_activity
-            || activity.network_id() != self.node.handshake().node().network_id
-            || activity.protocol_version() != self.node.handshake().node().protocol_version
-        {
-            return Err(HumanOperationError::Refused);
-        }
-        let signer = activity
-            .authority()
-            .try_into()
-            .map_err(|_| HumanOperationError::Refused)?;
-        let correlation = u64::from_be_bytes(
-            identifier[..8]
-                .try_into()
-                .map_err(|_| HumanOperationError::Refused)?,
-        ) | 1;
-        self.dispatch_queued(peer, identifier, &registry, signer, correlation)
-    }
 
     pub(crate) fn submit_external_with_origin(
         &mut self,
