@@ -26287,8 +26287,8 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.33.3]
 title = "Generate typed bindings from a published interface"
-status = "pending"
-mode = "QUALIFY"
+status = "in_progress"
+mode = "BUILD"
 wave = 3
 requires = ["0.2", "104.33.1"]
 reqs = ["1103.2"]
@@ -26299,10 +26299,11 @@ do_4 = "Bind generated code to the interface digest so a stale binding is detect
 do_5 = "Wire generation into the CLI beside build and deploy, and into the SDK build so bindings regenerate as part of an ordinary build."
 do_6 = "Test round-tripping across every type in the convention and prove a stale binding is refused."
 do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["programs/sdk/rust/src/bindgen.rs", "programs/sdk/rust/src/lib.rs", "programs/sdk/rust/Cargo.toml", "programs/sdk/rust/build.rs", "programs/sdk/rust/tests/bindgen_conformance.rs", "platform/cli/src/main.rs", "platform/cli/src/programs.rs", "platform/cli/Cargo.toml", "spec/paxeer-x/qualification.kvx", "tools/paxeer-x/gates/104.33.3.sh"]
+do_8 = "Extend the same verified interface binding, canonical encoding, typed calls and declared failures to Python, Go, Java, Kotlin, Swift and C#. Cover each generated language with real compiler or type-checker consumers and checked construction; retain all existing Rust and TypeScript compile-time refusal cases."
+touches = ["programs/sdk/rust/src/bindgen.rs", "programs/sdk/rust/src/lib.rs", "programs/sdk/rust/Cargo.toml", "programs/sdk/rust/build.rs", "programs/sdk/rust/tests/bindgen_conformance.rs", "platform/cli/src/main.rs", "platform/cli/src/programs.rs", "platform/cli/Cargo.toml", "spec/paxeer-x/qualification.kvx", "tools/paxeer-x/gates/104.33.3.sh", "tools/qualification/paxeer-x/program-bindings-producer.py", "tools/qualification/paxeer-x/program-bindings.py", "programs/sdk/rust/src/bindgen_go.rs", "programs/sdk/rust/src/bindgen_jvm.rs", "programs/sdk/rust/src/bindgen_python.rs", "programs/sdk/rust/src/bindgen_swift.rs", "programs/sdk/rust/src/bindgen_dotnet.rs", "programs/Cargo.lock", "platform/Cargo.lock"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 104.33.3"
 gate_kind = "planned-adapter"
-max_builds = 0
+max_builds = 1
 max_verify_runs = 1
 max_repair_cycles = 2
 time_limit_minutes = 30
