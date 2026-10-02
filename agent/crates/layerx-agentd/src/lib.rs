@@ -3,6 +3,7 @@
 pub mod admin;
 pub mod agent_rpc;
 pub mod agent_rpc_adapters;
+mod agent_rpc_wire;
 pub mod agent_rpc_dispatch;
 pub mod agent_rpc_peer;
 pub mod agent_rpc_tls;

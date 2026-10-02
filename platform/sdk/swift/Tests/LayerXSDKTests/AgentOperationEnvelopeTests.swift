@@ -25,6 +25,7 @@ final class AgentOperationEnvelopeTests: XCTestCase {
     ]
     private static let optionalFileKeys: Set<String> = [
         "retry_state_file", "daemon_endpoint", "client_cert_file", "client_key_file", "server_ca_file",
+        "decode_endpoint",
     ]
     private static let daemonFileKeys: Set<String> = [
         "daemon_endpoint", "client_cert_file", "client_key_file", "server_ca_file",
@@ -100,8 +101,8 @@ final class AgentOperationEnvelopeTests: XCTestCase {
             responseDir: try Self.path(file, "response_dir"), daemon: daemon)
     }
 
-    private func transport(_ file: CaseFile, generation: UInt64? = nil, withCredential: Bool = true) throws
-        -> AgentEnvelopeTransport {
+    private func transport(_ file: CaseFile, generation: UInt64? = nil, withCredential: Bool = true,
+                           endpoint: URL? = nil) throws -> AgentEnvelopeTransport {
         var credential: AgentSessionCredential?
         if withCredential {
             guard let tenant = file.credential["tenant"]?.stringValue,
@@ -114,7 +115,7 @@ final class AgentOperationEnvelopeTests: XCTestCase {
             credential = try AgentSessionCredential(tenant: tenant, sessionID: session, tokenID: token,
                 generation: generation ?? parsed)
         }
-        return try AgentEnvelopeTransport(baseURL: file.endpoint,
+        return try AgentEnvelopeTransport(baseURL: endpoint ?? file.endpoint,
             gatewayKey: LayerXKeyCredential(keyID: file.gatewayKeyID, secret: file.gatewayKey),
             credential: credential, certificateAuthority: file.certificateAuthority)
     }
@@ -125,7 +126,7 @@ final class AgentOperationEnvelopeTests: XCTestCase {
     }
 
     private func runCase(_ id: String, _ file: CaseFile, _ agent: AgentEnvelopeTransport) async throws {
-        if Self.decodeCases.contains(id) { return try runDecodeCase(id) }
+        if Self.decodeCases.contains(id) { return try await runDecodeCase(id, file) }
         guard let expected = Self.readCases[id], let entry = file.requests[id]?.objectValue,
               entry["operation"]?.stringValue == expected,
               Set(entry.keys) == ["operation", "request"] || Set(entry.keys) == ["operation", "request", "idempotency_key"],
@@ -214,44 +215,44 @@ final class AgentOperationEnvelopeTests: XCTestCase {
         }
     }
 
-    private func expectClassified(_ operation: PlatformOperation, status: Int, body: String,
-                                  code: SDKErrorCode, retry: RetryClass, _ label: String) {
-        let requestID = "7"
-        do {
-            _ = try AgentEnvelopeTransport.classifyResponse(mutating: operation.descriptor.requiresIdempotency,
-                status: status, data: Data(body.utf8), requestID: requestID)
-            XCTFail(label + " was accepted")
-        } catch let error as PlatformSDKError {
-            XCTAssertEqual(error.code, code, label)
-            XCTAssertEqual(error.retry, retry, label)
-        } catch {
-            XCTFail(label + " raised a non-SDK error: \(error)")
+    private func runDecodeCase(_ id: String, _ file: CaseFile) async throws {
+        let mutating = id == "mutation_decode_unknown"
+        let keys: Set<String> = mutating ? ["operation", "request", "endpoint", "idempotency_key"]
+            : ["operation", "request", "endpoint"]
+        guard let entry = file.requests[id]?.objectValue, Set(entry.keys) == keys,
+              let name = entry["operation"]?.stringValue,
+              let operation = PlatformOperation(rawValue: "agent:" + name),
+              operation.descriptor.requiresIdempotency == mutating,
+              let request = entry["request"], request.objectValue != nil,
+              let endpointText = entry["endpoint"]?.stringValue, let endpoint = URL(string: endpointText),
+              endpoint.scheme == "https", endpoint.path == AgentEnvelopeTransport.routePath,
+              endpoint.host == file.endpoint.host else {
+            throw Self.refused("requests." + id)
         }
-    }
-
-    private func runDecodeCase(_ id: String) throws {
-        let violating = [
-            (200, #"{"request_id":"7","value":{}}"#),
-            (200, #"{"request_id":"7","value":{},"verification_status":{"state":"achieved","level":"Unverified"},"extra":1}"#),
-            (403, #"{"class":"PolicyRefusal","protocol_result_code":null,"retriability":"Terminal","request_id":"7"}"#),
-            (200, #"[1]"#),
-        ]
-        let undecodable = [(200, "not json"), (502, "<html></html>"), (503, #"{"ok":false,"error":{"code":"route_unavailable"}}"#)]
-        if id == "read_decode_failure" {
-            let read = PlatformOperation.agentReadAccount
-            XCTAssertFalse(read.descriptor.requiresIdempotency)
-            for (status, body) in violating {
-                expectClassified(read, status: status, body: body, code: .decodeFailure, retry: .never, "read " + body)
-            }
-            for (status, body) in undecodable {
-                expectClassified(read, status: status, body: body, code: .transportFailure, retry: .safe, "read " + body)
-            }
-        } else {
-            let mutation = PlatformOperation.agentApprovalApprove
-            XCTAssertTrue(mutation.descriptor.requiresIdempotency)
-            for (status, body) in violating + undecodable {
-                expectClassified(mutation, status: status, body: body, code: .unknownOutcome, retry: .unknownOutcome,
-                    "mutation " + body)
+        let key = try entry["idempotency_key"]?.stringValue.map { try IdempotencyKey($0) }
+        guard key != nil || !mutating else { throw Self.refused("requests." + id + ".idempotency_key") }
+        let exchanged = try await transport(file, endpoint: endpoint)
+            .exchange(call(operation, request, idempotencyKey: key))
+        let body = try? JSONDecoder().decode(JSONValue.self, from: exchanged.body)
+        let record = try JSONEncoder().encode(JSONValue.object([
+            "status": .integer(Int64(exchanged.status)), "body": body ?? .null,
+        ]))
+        guard FileManager.default.createFile(atPath: file.responseDir.appendingPathComponent(id + ".json").path,
+            contents: record, attributes: [.posixPermissions: 0o600]) else {
+            throw Self.refused("response_dir is not writable")
+        }
+        XCTAssertNotNil(body?.objectValue, id + " response body is not a JSON object")
+        do {
+            _ = try AgentEnvelopeTransport.classifyResponse(mutating: mutating, status: exchanged.status,
+                data: exchanged.body, requestID: exchanged.requestID)
+            XCTFail(id + " schema-violating response was accepted")
+        } catch let error as PlatformSDKError {
+            if mutating {
+                XCTAssertEqual(error.code, .unknownOutcome, id)
+                XCTAssertEqual(error.retry, .unknownOutcome, id)
+            } else {
+                XCTAssertEqual(error.code, .decodeFailure, id)
+                XCTAssertEqual(error.retry, .never, id)
             }
         }
     }

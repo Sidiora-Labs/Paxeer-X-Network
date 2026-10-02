@@ -848,6 +848,38 @@ impl OperationPermit {
         tenant::resolve(&self.token, registry, &self.request, &mut observability)
             .map_err(SessionControlError::Authorization)
     }
+
+    /// Runs one subscription-store step against this permit's exact retained token and request
+    /// core sequence, the control's held session registry, and the control's retained tenant
+    /// observability, after the operation and revocation-aware resolution checks.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the permit operation differs, the permit no longer resolves, or
+    /// session state is unavailable. The effect's own error is returned inside `Ok`.
+    pub(crate) fn with_subscription_authority<T, E>(
+        &self,
+        control: &SessionControl,
+        operation: Operation,
+        effect: impl FnOnce(&SessionRegistry, &Token, &mut TenantObservability, u64) -> Result<T, E>,
+    ) -> Result<Result<T, E>, SessionControlError> {
+        self.require_operation(operation)?;
+        let registry = control
+            .registry
+            .read()
+            .map_err(|_| SessionControlError::Unavailable)?;
+        self.resolve(control, &registry)?;
+        let mut observability = control
+            .observability
+            .lock()
+            .map_err(|_| SessionControlError::Unavailable)?;
+        Ok(effect(
+            &registry,
+            &self.token,
+            &mut observability,
+            self.request.core_sequence,
+        ))
+    }
 }
 
 #[derive(Debug)]

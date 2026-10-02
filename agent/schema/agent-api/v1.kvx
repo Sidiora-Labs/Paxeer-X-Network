@@ -1,7 +1,7 @@
 [schema]
 name = "LayerX Agent API"
 major = 1
-minor = 5
+minor = 6
 node_interface_major = 1
 source_of_truth = "This schema and the schema files it includes define the daemon contract and every SDK surface. Generated output is never authoritative."
 compatibility = "Within one major version a release may only add sections or keys. Removing or changing an existing declaration requires a new major version."
@@ -230,7 +230,7 @@ access = "read"
 operation_class = "Read"
 surface = "Contract"
 idempotency_key = "absent"
-disposition = "not_served_no_arm"
+disposition = "served_adapter_arm"
 
 [transport.agent_http.operation.budget.reconciliation]
 request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
@@ -406,7 +406,7 @@ access = "read"
 operation_class = "Read"
 surface = "Contract"
 idempotency_key = "absent"
-disposition = "not_served_no_arm"
+disposition = "served_adapter_arm"
 
 [transport.agent_http.operation.read.checkpoint]
 request = "CoordinatesOnly"
@@ -422,7 +422,7 @@ access = "read"
 operation_class = "Read"
 surface = "Contract"
 idempotency_key = "absent"
-disposition = "not_served_no_arm"
+disposition = "served_adapter_arm"
 
 [transport.agent_http.operation.read.module_state]
 request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
@@ -430,7 +430,7 @@ access = "read"
 operation_class = "Read"
 surface = "Contract"
 idempotency_key = "absent"
-disposition = "not_served_no_arm"
+disposition = "served_adapter_arm"
 
 [transport.agent_http.operation.read.proof_bundle]
 request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
@@ -446,7 +446,7 @@ access = "mutation"
 operation_class = "Write"
 surface = "Contract"
 idempotency_key = "required"
-disposition = "not_served_no_arm"
+disposition = "served_adapter_arm"
 
 [transport.agent_http.operation.session.list]
 request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
@@ -470,7 +470,7 @@ access = "mutation"
 operation_class = "Write"
 surface = "Contract"
 idempotency_key = "required"
-disposition = "not_served_no_arm"
+disposition = "served_adapter_arm"
 
 [transport.agent_http.operation.sign]
 request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
@@ -558,7 +558,7 @@ access = "read"
 operation_class = "Write"
 surface = "Contract"
 idempotency_key = "absent"
-disposition = "not_served_no_arm"
+disposition = "served_adapter_arm"
 
 [transport.agent_http.errors]
 classes = "Every error is one ErrorClass variant from errors.kvx: TransportFailure, Deadline, ProtocolIncompatibility, UnavailableCapability, CoreRejection, VerificationFailure, PolicyRefusal, CapabilityRefusal, BudgetRefusal, RateLimit, IdempotencyConflict, InternalFault."

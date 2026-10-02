@@ -3,9 +3,10 @@
 use std::collections::BTreeMap;
 
 use layerx_client::availability::{
-    fetch, AvailabilitySelector, FetchContext, FetchError, FetchOutcome, Progress, ProviderFailure,
-    ProviderReport, ProviderSet,
+    fetch, AvailabilitySelector, FetchContext, FetchError, FetchOutcome, Progress, Provider,
+    ProviderFailure, ProviderReport, ProviderSet,
 };
+use layerx_client::lni::transport::FrameTransport;
 use layerx_proof::availability::{AvailabilityCheck, ClassReport, ReassemblyReport, VerifiedChunk};
 
 use crate::store::{ObjectKind, Store, StoreError, TenantId, TenantKey};
@@ -47,6 +48,49 @@ impl AvailabilityAudit {
     #[must_use]
     pub fn provider_failure_count(&self, provider: &str) -> u64 {
         self.provider_counts.get(provider).copied().unwrap_or(0)
+    }
+}
+
+/// Daemon-owned availability providers and their failure audit. Transports are owned so a
+/// provider set borrows them only for the duration of one fetch.
+pub(crate) struct AvailabilityOwner {
+    providers: Vec<(String, Box<dyn FrameTransport + Send>)>,
+    audit: AvailabilityAudit,
+}
+
+impl AvailabilityOwner {
+    pub(crate) fn new(providers: Vec<(String, Box<dyn FrameTransport + Send>)>) -> Self {
+        Self {
+            providers,
+            audit: AvailabilityAudit::default(),
+        }
+    }
+
+    /// Runs [`availability`] over the owned providers and the retained audit.
+    ///
+    /// # Errors
+    ///
+    /// Returns every error [`availability`] returns.
+    pub(crate) fn fetch<F>(
+        &mut self,
+        store: &mut Store,
+        tenant: &TenantId,
+        request: &AvailabilityRequest,
+        on_chunk: F,
+    ) -> Result<AvailabilityRead, AvailabilityReadError>
+    where
+        F: FnMut(Progress<'_>),
+    {
+        let mut providers = ProviderSet::new(
+            self.providers
+                .iter_mut()
+                .map(|(name, transport)| Provider {
+                    name: name.clone(),
+                    transport: transport.as_mut(),
+                })
+                .collect(),
+        );
+        availability(store, tenant, &mut self.audit, &mut providers, request, on_chunk)
     }
 }
 

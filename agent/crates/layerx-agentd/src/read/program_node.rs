@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use layerx_programs::{
     hex, AccountStateHead, ProgramId, ProtocolDeploymentVerifier, ProtocolHeadMaintenanceProof,
-    ProtocolHeadProof, Registry,
+    ProtocolHeadProof, Registry, VerifiedProtocolHead,
 };
 use layerx_programs_protocol_adapter::{ProtocolAdapterError, ProtocolProgramStateRead};
 use layerx_proof::merkle::Proof;
@@ -130,7 +130,7 @@ impl LayerxdProgramBalanceReader {
             &self.authorization,
             "/v1/protocol/account-state/head",
         )?;
-        let head = self.verify_head(&head_document, now)?;
+        let (head, _) = self.verify_head(&head_document, now)?;
         let path = format!(
             "/v1/programs/{}/account-state?at={}",
             hex::encode(&program.bytes()),
@@ -173,6 +173,31 @@ impl LayerxdProgramBalanceReader {
         program_balances(&state.into_balances(), self.staleness_limit)
     }
 
+    /// Reads the current protocol receipt head through the same independent
+    /// receipt-authority cross-check and deployment verifier as the balances path.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a zero clock and a maintenance-receipt head, which the verifier
+    /// does not establish as a typed protocol head, as a non-canonical view, and
+    /// surfaces transport, decode, and verification refusals unchanged.
+    pub fn read_protocol_head(
+        &self,
+        now: u64,
+    ) -> Result<VerifiedProtocolHead, ProtocolAdapterError> {
+        if now == 0 {
+            return Err(ProtocolAdapterError::NonCanonicalView);
+        }
+        let head_document = self.get(
+            &self.endpoint,
+            &self.authorization,
+            "/v1/protocol/account-state/head",
+        )?;
+        self.verify_head(&head_document, now)?
+            .1
+            .ok_or(ProtocolAdapterError::NonCanonicalView)
+    }
+
     #[must_use]
     pub const fn staleness_limit(&self) -> u64 {
         self.staleness_limit
@@ -182,7 +207,7 @@ impl LayerxdProgramBalanceReader {
         &self,
         value: &Value,
         now_ms: u64,
-    ) -> Result<AccountStateHead, ProtocolAdapterError> {
+    ) -> Result<(AccountStateHead, Option<VerifiedProtocolHead>), ProtocolAdapterError> {
         if value["current"].as_bool() != Some(true) {
             return Err(ProtocolAdapterError::NonCanonicalView);
         }
@@ -210,7 +235,7 @@ impl LayerxdProgramBalanceReader {
         if node != independent {
             return Err(ProtocolAdapterError::NonCanonicalView);
         }
-        let (verified, sequencer_key) =
+        let (verified, sequencer_key, protocol_head) =
             self.verify_head_claims(&receipt_bytes, &independent, now_ms)?;
         if hex::decode_digest(field(&authority_document, "sequencer_public_key")?)
             .map_err(|_| ProtocolAdapterError::NonCanonicalView)?
@@ -230,7 +255,7 @@ impl LayerxdProgramBalanceReader {
         {
             return Err(ProtocolAdapterError::NonCanonicalView);
         }
-        Ok(verified)
+        Ok((verified, protocol_head))
     }
 
     fn verify_head_claims(
@@ -238,9 +263,9 @@ impl LayerxdProgramBalanceReader {
         receipt: &[u8],
         evidence: &BatchEvidence,
         now_ms: u64,
-    ) -> Result<(AccountStateHead, [u8; 32]), ProtocolAdapterError> {
+    ) -> Result<(AccountStateHead, [u8; 32], Option<VerifiedProtocolHead>), ProtocolAdapterError> {
         if layerx_wire::batch_maintenance::decode_maintenance(receipt).is_ok() {
-            return self
+            let (head, sequencer_key) = self
                 .verifier
                 .verify_current_maintenance_head(
                     receipt,
@@ -249,7 +274,8 @@ impl LayerxdProgramBalanceReader {
                     &evidence.signature,
                     now_ms,
                 )
-                .map_err(|_| ProtocolAdapterError::NonCanonicalView);
+                .map_err(|_| ProtocolAdapterError::NonCanonicalView)?;
+            return Ok((head, sequencer_key, None));
         }
         let verified = self
             .verifier
@@ -271,6 +297,7 @@ impl LayerxdProgramBalanceReader {
                 freshness: verified.freshness(),
             },
             verified.sequencer_public_key(),
+            Some(verified),
         ))
     }
 

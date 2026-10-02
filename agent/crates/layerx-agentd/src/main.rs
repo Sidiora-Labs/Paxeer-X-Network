@@ -26,6 +26,7 @@ use layerx_agentd::human_runtime::{
 };
 use layerx_agent_api::error::ErrorClass;
 use layerx_agentd::identity::{self, CoreIdentity, IdentityError, IdentityResolver};
+use layerx_agentd::ops::program::ProgramOperations;
 use layerx_agentd::read::{
     LayerxdProgramBalanceReader, NativeReadRoute, ProgramAuthority, ProgramBalanceRead,
     ProgramBalanceReadRoute,
@@ -498,11 +499,12 @@ fn connect_human_authority(
 type OwnerStatus = mpsc::Receiver<Result<(), String>>;
 
 fn start_human_owner(mcp: Option<McpBoot>) -> Result<OwnerStatus, String> {
-    start_shared_owner(mcp).map(|(receiver, _, _)| receiver)
+    start_shared_owner(mcp, None).map(|(receiver, _, _)| receiver)
 }
 
 fn start_shared_owner(
     mcp: Option<McpBoot>,
+    programs: Option<ProgramOperations>,
 ) -> Result<
     (
         OwnerStatus,
@@ -568,16 +570,16 @@ fn start_shared_owner(
         socket_uid,
     )
     .map_err(|error| format!("human session key registry is invalid: {error:?}"))?;
-    let owner = SharedAgentOwner::new(
-        UnifiedAgentOwner::new(
-            operations,
-            shared_store,
-            &peers,
-            vec![verified_limit()?],
-            session_keys,
-        )
-        .map_err(|error| format!("human owner is invalid: {error:?}"))?,
-    );
+    let mut unified = UnifiedAgentOwner::new(
+        operations,
+        shared_store,
+        &peers,
+        vec![verified_limit()?],
+        session_keys,
+    )
+    .map_err(|error| format!("human owner is invalid: {error:?}"))?;
+    unified.programs = programs;
+    let owner = SharedAgentOwner::new(unified);
     let server = HumanUnixServer::bind(
         HumanListenerConfig {
             endpoint: socket_path,
@@ -1093,6 +1095,35 @@ fn program_authority_boot(
     })
 }
 
+/// Connects one authenticated protocol reader from the configured node and authority,
+/// bound to the protected verifier and refreshed with the signed authority history.
+fn program_reader(
+    config: &Config,
+    verifier: ProtocolDeploymentVerifier,
+    registry: Registry,
+    signed_history: Option<&layerx_proof::signed_authority::SignedAuthorityHistory>,
+) -> Result<LayerxdProgramBalanceReader, String> {
+    let mut reader = LayerxdProgramBalanceReader::connect(
+        &config.node_endpoint,
+        config.node_bearer.clone(),
+        ProgramAuthority {
+            endpoint: &config.authority_endpoint,
+            authorization: config.authority_bearer.clone(),
+            replica_id: config.authority_replica_id,
+            ca_der: &config.authority_ca_der,
+        },
+        verifier,
+        registry,
+    )
+    .map_err(|error| format!("agent protocol reader configuration failed: {error:?}"))?;
+    if let Some(history) = signed_history {
+        reader
+            .refresh_authority(history)
+            .map_err(|error| format!("program authority refused: {error:?}"))?;
+    }
+    Ok(reader)
+}
+
 fn serve(config: Config) -> Result<(), String> {
     let mcp = mcp_enrolment()?
         .map(|enrolment| mcp_boot(&config, enrolment))
@@ -1132,32 +1163,25 @@ fn serve(config: Config) -> Result<(), String> {
             }
         })
         .transpose()?;
-    let (human, owner, status) = start_shared_owner(mcp)?;
-    start_agent_rpc(owner, status)?;
     let ProgramAuthorityBoot {
         verifier,
         registry,
         signed_history,
     } = program_authority_boot(&config, &mut native)?;
-    let reader = LayerxdProgramBalanceReader::connect(
-        &config.node_endpoint,
-        config.node_bearer,
-        ProgramAuthority {
-            endpoint: &config.authority_endpoint,
-            authorization: config.authority_bearer,
-            replica_id: config.authority_replica_id,
-            ca_der: &config.authority_ca_der,
-        },
+    let mut route = ProgramBalanceReadRoute::new(program_reader(
+        &config,
+        verifier.clone(),
+        registry.clone(),
+        signed_history.as_ref(),
+    )?);
+    let programs = ProgramOperations::new(program_reader(
+        &config,
         verifier,
         registry,
-    )
-    .map_err(|error| format!("agent protocol reader configuration failed: {error:?}"))?;
-    let mut route = ProgramBalanceReadRoute::new(reader);
-    if let Some(history) = signed_history.as_ref() {
-        route
-            .refresh_authority(history)
-            .map_err(|error| format!("program authority refused: {error:?}"))?;
-    }
+        signed_history.as_ref(),
+    )?);
+    let (human, owner, status) = start_shared_owner(mcp, Some(programs))?;
+    start_agent_rpc(owner, status)?;
     route
         .read(config.probe_program, now_ms()?)
         .map_err(|error| format!("agent protocol reader is not ready: {error:?}"))?;

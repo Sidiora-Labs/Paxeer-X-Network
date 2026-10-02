@@ -16,6 +16,56 @@ use crate::human_runtime::{HumanAuthorityBoundary, SharedAgentOwner};
 use crate::session_control::OperationPermit;
 use crate::tenant::Operation;
 
+pub(crate) fn budget_list<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>,
+    context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+    request: &serde_json::Map<String, serde_json::Value>,
+    ctx: &DispatchContext,
+) -> Result<Dispatched, Rejection> {
+    let id = ctx.request_id;
+    let wire: BudgetListRequestWire = decode(request, id)?;
+    let principal = context.principal();
+    if principal.tenant.as_str() != wire.tenant
+        || principal.agent.as_bytes() != wire.agent_did.as_bytes()
+    {
+        return Err(rejection(
+            ErrorClass::PolicyRefusal,
+            id,
+            "envelope.coordinate_mismatch",
+        ));
+    }
+    let typed = layerx_agent_api::budget::BudgetList {
+        tenant: layerx_agent_api::identity::TenantId::new(wire.tenant)
+            .map_err(|_| malformed(id))?,
+        agent_did: layerx_agent_api::identity::AgentDid::new(wire.agent_did)
+            .map_err(|_| malformed(id))?,
+    };
+    let mut guard = owner.lock().map_err(|error| owner_error(id, error))?;
+    let response = guard.budget_list(context.peer(), typed);
+    owner_payload(id, response, |reader| {
+        let count = reader.u16()?;
+        let mut budgets = Vec::with_capacity(usize::from(count));
+        for _ in 0..count {
+            let budget_id: [u8; 32] = reader.fixed()?;
+            let agent_id = reader.text()?;
+            let mut budget = Map::new();
+            budget.insert("budget_id".into(), hexv(&budget_id));
+            budget.insert("agent_id".into(), Value::String(agent_id));
+            budgets.push(Value::Object(budget));
+        }
+        let mut out = Map::new();
+        out.insert("budgets".into(), Value::Array(budgets));
+        Some((Value::Object(out), None))
+    })
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BudgetListRequestWire {
+    tenant: String,
+    agent_did: String,
+}
+
 pub(crate) fn budget_reconciliation<A: HumanAuthorityBoundary>(
     owner: &SharedAgentOwner<A>,
     context: &RpcOwnerContext<'_>,
@@ -309,8 +359,30 @@ pub(crate) fn session_refresh<A: HumanAuthorityBoundary>(
     let mut guard = owner.lock().map_err(|error| owner_error(id, error))?;
     let response = guard.rpc_session_refresh(context, typed);
     owner_payload(id, response, |reader| {
-        let record = decode_session_record(reader)?;
-        (record.1).then_some((record.0, None))
+        let tenant = reader.text()?;
+        let session_id: [u8; 32] = reader.fixed()?;
+        let token_id: [u8; 32] = reader.fixed()?;
+        let generation = reader.u64()?;
+        let expires_at = reader.u64()?;
+        let (session, open, record_session_id) = decode_session_record(reader)?;
+        let record = session.as_object()?;
+        if !open
+            || record_session_id != session_id
+            || record.get("token_id")? != &hexv(&token_id)
+            || record.get("generation")? != &dec(generation)
+        {
+            return None;
+        }
+        let mut credential = Map::new();
+        credential.insert("tenant".into(), Value::String(tenant));
+        credential.insert("session_id".into(), hexv(&session_id));
+        credential.insert("token_id".into(), hexv(&token_id));
+        credential.insert("generation".into(), dec(generation));
+        credential.insert("expires_at".into(), dec(expires_at));
+        let mut out = Map::new();
+        out.insert("credential".into(), Value::Object(credential));
+        out.insert("session".into(), session);
+        Some((Value::Object(out), None))
     })
 }
 

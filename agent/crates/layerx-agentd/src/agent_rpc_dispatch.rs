@@ -10,15 +10,10 @@ use layerx_agent_api::error::{ErrorClass, Level, RequestId, Retriability, Verifi
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use layerx_agent_api::budget::{BudgetCreate, BudgetFund, BudgetTarget};
-use layerx_agent_api::capability::{CapabilityAttenuate, CapabilityCreate, CapabilityRevoke};
-use layerx_agent_api::identity::{SessionClose, SessionRefresh};
-use layerx_agent_api::submit::SignRequest;
-use layerx_agent_api::subscription::{CursorAcknowledgement, SubscriptionCreate, SubscriptionTarget};
-
 use crate::agent_rpc::Rejection;
 use crate::agent_rpc_adapters as adapters;
 use crate::agent_rpc_peer::RpcOwnerContext;
+use crate::agent_rpc_wire::*;
 use crate::human::{
     HumanOperationError, HumanOperations, HumanPeer, HumanPrepare, HumanResponse, HumanSubmit,
 };
@@ -48,11 +43,11 @@ const fn rejection(class: ErrorClass, request_id: RequestId, reason: &'static st
     }
 }
 
-fn malformed(request_id: RequestId) -> Rejection {
+pub(crate) fn malformed(request_id: RequestId) -> Rejection {
     rejection(ErrorClass::ProtocolIncompatibility, request_id, "envelope.malformed")
 }
 
-fn noncanonical(request_id: RequestId) -> Rejection {
+pub(crate) fn noncanonical(request_id: RequestId) -> Rejection {
     rejection(
         ErrorClass::ProtocolIncompatibility,
         request_id,
@@ -66,7 +61,7 @@ pub(crate) fn decimal_u64(text: &str, request_id: RequestId) -> Result<u64, Reje
         .map_err(|_| noncanonical(request_id))
 }
 
-fn decimal_u128(text: &str, request_id: RequestId) -> Result<u128, Rejection> {
+pub(crate) fn decimal_u128(text: &str, request_id: RequestId) -> Result<u128, Rejection> {
     let canonical = !text.is_empty()
         && text.len() <= 39
         && text.bytes().all(|byte| byte.is_ascii_digit())
@@ -77,7 +72,7 @@ fn decimal_u128(text: &str, request_id: RequestId) -> Result<u128, Rejection> {
     text.parse::<u128>().map_err(|_| noncanonical(request_id))
 }
 
-fn hex32(text: &str, request_id: RequestId) -> Result<[u8; 32], Rejection> {
+pub(crate) fn hex32(text: &str, request_id: RequestId) -> Result<[u8; 32], Rejection> {
     let bytes = text.as_bytes();
     if bytes.len() != 64 || !bytes.iter().all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f')) {
         return Err(malformed(request_id));
@@ -90,7 +85,7 @@ fn hex32(text: &str, request_id: RequestId) -> Result<[u8; 32], Rejection> {
     Ok(out)
 }
 
-fn hex_bytes(text: &str, request_id: RequestId) -> Result<Vec<u8>, Rejection> {
+pub(crate) fn hex_bytes(text: &str, request_id: RequestId) -> Result<Vec<u8>, Rejection> {
     let bytes = text.as_bytes();
     if bytes.len() % 2 != 0 || !bytes.iter().all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f')) {
         return Err(malformed(request_id));
@@ -116,7 +111,7 @@ pub(crate) fn lower_hex(bytes: &[u8]) -> String {
     out
 }
 
-fn decode<T: for<'de> Deserialize<'de>>(
+pub(crate) fn decode<T: for<'de> Deserialize<'de>>(
     request: &Map<String, Value>,
     request_id: RequestId,
 ) -> Result<T, Rejection> {
@@ -742,6 +737,18 @@ fn named<T: Serialize>(
     Ok(bytes)
 }
 
+/// Digest bytes of a mutating operation decoded through its `agent_rpc_wire` struct: the same
+/// `decode_wire` + `into_request` the adapters use, then `named` over the canonical JSON of the
+/// converted agent-api (or program) request.
+fn wire_bytes<W: serde::de::DeserializeOwned, T: Canonical>(
+    operation: Operation,
+    request: &Map<String, Value>,
+    id: RequestId,
+    into_request: fn(W, RequestId) -> Result<T, Rejection>,
+) -> Result<Vec<u8>, Rejection> {
+    named(operation, &into_request(decode_wire::<W>(request, id)?, id)?.canonical(), id)
+}
+
 /// Canonical bytes of the strictly decoded owner typed request, used by `agent_rpc` as the
 /// `idempotency::Store::execute` request bytes (the store applies the `LXP/agent/request/v1`
 /// domain). Prepare and submit use the owner's own journey digest, so the existing Human
@@ -781,36 +788,24 @@ pub(crate) fn canonical_request_bytes(
         }
         Operation::Prepare => prepare_digest(&human_prepare(decode(request, id)?, id)?).to_vec(),
         Operation::Submit => submit_digest(&human_submit(decode(request, id)?, id)?).to_vec(),
-        Operation::BudgetCreate => named(operation, &decode::<BudgetCreate>(request, id)?, id)?,
-        Operation::BudgetFund => named(operation, &decode::<BudgetFund>(request, id)?, id)?,
-        Operation::BudgetRevoke => named(operation, &decode::<BudgetTarget>(request, id)?, id)?,
-        Operation::CapabilityCreate => {
-            named(operation, &decode::<CapabilityCreate>(request, id)?, id)?
-        }
-        Operation::CapabilityAttenuate => {
-            named(operation, &decode::<CapabilityAttenuate>(request, id)?, id)?
-        }
-        Operation::CapabilityRevoke => {
-            named(operation, &decode::<CapabilityRevoke>(request, id)?, id)?
-        }
-        Operation::SessionRefresh => named(operation, &decode::<SessionRefresh>(request, id)?, id)?,
-        Operation::SessionClose => named(operation, &decode::<SessionClose>(request, id)?, id)?,
-        Operation::SubscriptionCreate => {
-            named(operation, &decode::<SubscriptionCreate>(request, id)?, id)?
-        }
+        Operation::BudgetCreate => wire_bytes::<BudgetCreateWire, _>(operation, request, id, BudgetCreateWire::into_request)?,
+        Operation::BudgetFund => wire_bytes::<BudgetFundWire, _>(operation, request, id, BudgetFundWire::into_request)?,
+        Operation::BudgetRevoke => wire_bytes::<BudgetTargetWire, _>(operation, request, id, BudgetTargetWire::into_request)?,
+        Operation::CapabilityCreate => wire_bytes::<CapabilityCreateWire, _>(operation, request, id, CapabilityCreateWire::into_request)?,
+        Operation::CapabilityAttenuate => wire_bytes::<CapabilityAttenuateWire, _>(operation, request, id, CapabilityAttenuateWire::into_request)?,
+        Operation::CapabilityRevoke => wire_bytes::<CapabilityRevokeWire, _>(operation, request, id, CapabilityRevokeWire::into_request)?,
+        Operation::SessionRefresh => wire_bytes::<SessionRefreshWire, _>(operation, request, id, SessionRefreshWire::into_request)?,
+        Operation::SessionClose => wire_bytes::<SessionCloseWire, _>(operation, request, id, SessionCloseWire::into_request)?,
+        Operation::SubscriptionCreate => wire_bytes::<SubscriptionCreateWire, _>(operation, request, id, SubscriptionCreateWire::into_request)?,
         Operation::SubscriptionPause
         | Operation::SubscriptionResume
-        | Operation::SubscriptionDelete => {
-            named(operation, &decode::<SubscriptionTarget>(request, id)?, id)?
-        }
-        Operation::SubscriptionAcknowledge => {
-            named(operation, &decode::<CursorAcknowledgement>(request, id)?, id)?
-        }
-        Operation::Sign => named(operation, &decode::<SignRequest>(request, id)?, id)?,
-        Operation::ProgramCall
-        | Operation::ProgramDeploy
-        | Operation::ProgramUpgrade
-        | Operation::ProgramWindDown => named(operation, request, id)?,
+        | Operation::SubscriptionDelete => wire_bytes::<SubscriptionTargetWire, _>(operation, request, id, SubscriptionTargetWire::into_request)?,
+        Operation::SubscriptionAcknowledge => wire_bytes::<CursorAcknowledgementWire, _>(operation, request, id, CursorAcknowledgementWire::into_request)?,
+        Operation::Sign => wire_bytes::<SignRequestWire, _>(operation, request, id, SignRequestWire::into_request)?,
+        Operation::ProgramCall => wire_bytes::<ProgramCallWire, _>(operation, request, id, ProgramCallWire::into_request)?,
+        Operation::ProgramDeploy => wire_bytes::<ProgramDeployWire, _>(operation, request, id, ProgramDeployWire::into_request)?,
+        Operation::ProgramUpgrade => wire_bytes::<ProgramUpgradeWire, _>(operation, request, id, ProgramUpgradeWire::into_request)?,
+        Operation::ProgramWindDown => wire_bytes::<ProgramWindDownWire, _>(operation, request, id, ProgramWindDownWire::into_request)?,
         Operation::AgentRegister
         | Operation::SessionOpen
         | Operation::AvailabilityFetch

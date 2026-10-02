@@ -29,6 +29,21 @@ RUST_PRE_RESTART = ('allowed_mutation', 'mutation_duplicate_same_result', 'wrong
                     'wrong_generation', 'wrong_session', 'wrong_token', 'revoked_session',
                     'missing_idempotency_key', 'changed_body_same_key', 'restart_unknown_pending')
 RUST_POST_RESTART = ('restart_unknown_reconcile',)
+
+W20_WAIT_PRE = ('wait_bounded',)
+W20_WAIT_SECONDS = 30
+
+W20_EXPIRY_POST = ('credential_expiry',)
+W20_EXPIRY_POLL_SECONDS = 240
+
+W20_REVOCATION_PRE = ('session_close_revocation',)
+W20_INVALIDATED_STATES = ('Failed', 'Expired')
+
+W20_IDEMPOTENCY_PRE = ('restart_replay_idempotent_record',)
+W20_IDEMPOTENCY_POST = ('restart_replay_idempotent',)
+
+W20_ROTATION_PRE = ('session_refresh_credential',)
+W20_SESSION_FIELDS = ('tenant', 'session_id', 'token_id', 'generation')
 PYTHON_PRE_RESTART = ('allowed_mutation', 'mutation_duplicate_same_result', 'restart_unknown_pending', 'restart_retry_same_result')
 PYTHON_POST_RESTART = ('restart_unknown_reconcile', 'restart_retry_same_result')
 DECODE_CASES = ('read_decode_failure', 'mutation_decode_unknown')
@@ -39,6 +54,12 @@ DIRECT_CASES = ('read_account', 'program_read', 'approval_list', 'program_bearer
                 'programs_route_unchanged', 'idempotent_replay_same_body', 'idempotency_changed_body_conflict',
                 'health_ready', 'health_binding_wrong_network', 'health_binding_ready_false', 'coordinate_mismatch')
 HEALTH_PATH = '/healthz'
+
+RULED_REFUSALS = {'faucet.claim': (503, 'UnavailableCapability', 'unavailable_capability.faucet.claim'),
+                  'agent.register': (403, 'PolicyRefusal', 'refused_pending_bootstrap_artifact'),
+                  'session.open': (403, 'PolicyRefusal', 'refused_pending_bootstrap_artifact'),
+                  'program.interface': (503, 'UnavailableCapability', 'unmatched_by_ruling'),
+                  'read.proof_bundle': (503, 'UnavailableCapability', 'unmatched_by_ruling')}
 CLASSES = {'TransportFailure', 'Deadline', 'ProtocolIncompatibility', 'UnavailableCapability', 'CoreRejection',
            'VerificationFailure', 'PolicyRefusal', 'CapabilityRefusal', 'BudgetRefusal', 'RateLimit',
            'IdempotencyConflict', 'InternalFault'}
@@ -277,6 +298,52 @@ def load_config():
             and re.fullmatch('(0|[1-9][0-9]{0,19})', revoked['generation']) and int(revoked['generation']) < 2**64,
             'revoked_session credential encoding')
     require(all('idempotency_key' not in row for row in config['requests'].values()), 'harness owns idempotency keys')
+
+    row = config['requests'].get('wait_bounded')
+    require(isinstance(row, dict) and set(row) == {'operation', 'request'} and row['operation'] == 'wait'
+            and isinstance(row['request'], dict) and set(row['request']) == {'submission_ref', 'requested_verification_level'}
+            and row['request']['requested_verification_level'] in LEVELS,
+            'provisioned request lacks wait_bounded (harness owns the deadline)')
+
+    row = config['requests'].get('credential_expiry')
+    require(isinstance(row, dict) and set(row) == {'credential_file', 'list'} and isinstance(row['list'], dict)
+            and set(row['list']) == {'operation', 'request'} and row['list']['operation'] == 'session.list'
+            and isinstance(row['list']['request'], dict), 'provisioned request lacks credential_expiry')
+    expiring = load_private(row['credential_file'], 'credential_expiry credential_file')
+    require(set(expiring) == {'tenant', 'session_id', 'token_id', 'generation'} and all(isinstance(v, str) for v in expiring.values())
+            and re.fullmatch('[0-9a-f]{64}', expiring['session_id']) and re.fullmatch('[0-9a-f]{64}', expiring['token_id'])
+            and re.fullmatch('(0|[1-9][0-9]{0,19})', expiring['generation']) and int(expiring['generation']) < 2**64,
+            'credential_expiry credential encoding')
+    require(expiring['session_id'] != json.loads(Path(config['credential_file']).read_text())['session_id'],
+            'credential_expiry must use its own dedicated provisioned session')
+
+    row = config['requests'].get('session_close_revocation')
+    require(isinstance(row, dict) and set(row) == {'credential_file', 'operation', 'request', 'prepare'}
+            and row['operation'] == 'session.close' and isinstance(row['request'], dict)
+            and isinstance(row['prepare'], dict) and set(row['prepare']) == {'operation', 'request'}
+            and row['prepare']['operation'] == 'prepare' and isinstance(row['prepare']['request'], dict),
+            'provisioned request lacks session_close_revocation')
+    closing = load_private(row['credential_file'], 'session_close_revocation credential_file')
+    require(set(closing) == {'tenant', 'session_id', 'token_id', 'generation'} and all(isinstance(v, str) for v in closing.values())
+            and re.fullmatch('[0-9a-f]{64}', closing['session_id']) and re.fullmatch('[0-9a-f]{64}', closing['token_id'])
+            and re.fullmatch('(0|[1-9][0-9]{0,19})', closing['generation']) and int(closing['generation']) < 2**64
+            and row['request'].get('session_id') == closing['session_id'],
+            'session_close_revocation must target its own dedicated provisioned session')
+    require(closing['session_id'] != json.loads(Path(config['credential_file']).read_text())['session_id'],
+            'session_close_revocation must not close the shared provisioned session')
+
+    row = config['requests'].get('session_refresh_credential')
+    require(isinstance(row, dict) and set(row) == {'credential_file', 'operation', 'request'}
+            and row['operation'] == 'session.refresh' and isinstance(row['request'], dict),
+            'provisioned request lacks session_refresh_credential')
+    rotated = load_private(row['credential_file'], 'session_refresh_credential credential_file')
+    require(set(rotated) == set(W20_SESSION_FIELDS) and all(isinstance(v, str) for v in rotated.values())
+            and re.fullmatch('[0-9a-f]{64}', rotated['session_id']) and re.fullmatch('[0-9a-f]{64}', rotated['token_id'])
+            and re.fullmatch('(0|[1-9][0-9]{0,19})', rotated['generation']) and int(rotated['generation']) < 2**64
+            and row['request'].get('session_id') == rotated['session_id'],
+            'session_refresh_credential must target its own dedicated provisioned session')
+    require(rotated['session_id'] != json.loads(Path(config['credential_file']).read_text())['session_id'],
+            'session_refresh_credential must not rotate the shared provisioned session')
     require('{route_bindings_file}' in json.dumps(config['gateway_env']), 'gateway_env must load the generated route bindings')
     key_line = Path(config['gateway_api_key_file']).read_text()
     require(re.fullmatch(r'[^:\s]+:[^:\s]+\n?', key_line), 'gateway API key file must be one line <key_id>:<secret>')
@@ -345,6 +412,8 @@ class Qualification:
         self.request_id = 1000
         self.key_nonce = os.urandom(32)
         self.effects = []
+
+        self.operation_evidence_rows = []
         self.probe_tls = self.export_probe_tls()
 
     def export_probe_tls(self):
@@ -363,6 +432,67 @@ class Qualification:
 
     def effect(self, language, case, operation, key):
         self.effects.append({'language': language, 'case': case, 'operation': operation, 'idempotency_key': key})
+
+    def operation_evidence(self, language, case, operation, row, record_path, mutating):
+        if not record_path.is_file():
+            return 'absent', False
+        try:
+            record = json.loads(record_path.read_text())
+        except (OSError, ValueError):
+            return 'malformed_record', False
+        if not isinstance(record, dict) or set(record) != {'status', 'body'}:
+            return 'malformed_record', False
+        status, body = record['status'], record['body']
+        if not isinstance(status, int) or isinstance(status, bool) or not isinstance(body, dict):
+            return 'no_response', False
+        label = language + ' ' + case
+        if set(body) == {'request_id', 'value', 'verification_status'}:
+            observed = 'success_record'
+        else:
+            observed = 'refusal_record:' + str(body.get('class')) + ':' + str(body.get('reason'))
+        if operation in RULED_REFUSALS:
+            http_status, klass, reason = RULED_REFUSALS[operation]
+            try:
+                error = self.refusal(status, json.dumps(body), http_status, klass, reason, label)
+            except (RuntimeError, TypeError, KeyError):
+                return observed, False
+            if error['retriability'] != 'Terminal' or error['protocol_result_code'] is not None:
+                return observed, False
+            return 'ruled_' + observed, True
+        if observed != 'success_record':
+            return observed, False
+        try:
+            self.success(status, json.dumps(body), body['request_id'], label)
+        except (RuntimeError, TypeError, KeyError, AttributeError):
+            return 'malformed_success_record', False
+        if not isinstance(body['request_id'], str) or not re.fullmatch('(0|[1-9][0-9]{0,19})', body['request_id']):
+            return 'malformed_success_record', False
+        if not mutating:
+            return observed, True
+        key = row.get('idempotency_key')
+        effect = {'language': language, 'case': case, 'operation': operation, 'idempotency_key': key}
+        if not isinstance(key, str) or not re.fullmatch('[0-9a-f]{64}', key) or effect not in self.effects:
+            return 'success_record_without_effect', False
+        return 'success_record+effect', True
+
+    def judge_cases(self, language, run, phase, cases, requests):
+        mutating = mutating_operations()
+        directory = self.d / 'probes' / (language + '-' + run)
+        failed = []
+        for case in cases:
+            if not (case.startswith('operation.') or (phase == 'read' and case in LANGUAGE_CASES)):
+                continue
+            row = requests[case]
+            operation = row['operation']
+            kind, ok = self.operation_evidence(language, case, operation, row, directory / (case + '.json'),
+                                               operation in mutating)
+            self.operation_evidence_rows.append({'language': language, 'run': run, 'case': case, 'operation': operation,
+                                                 'evidence': kind, 'verdict': 'PASS' if ok else 'FAIL'})
+            print('PAXEER_X_AGENT_ENVELOPE_EVIDENCE language=' + language + ' operation=' + operation + ' case=' + case
+                  + ' evidence=' + kind + ' verdict=' + ('PASS' if ok else 'FAIL'), flush=True)
+            if not ok:
+                failed.append(case)
+        require(not failed, language + ' catalogue cases lack process evidence: ' + ', '.join(failed))
 
     def substitute(self, env, extra=None):
         values = {'tls_dir': str(self.tls), 'state_dir': str(self.d / 'agent-state'), 'runtime_dir': str(self.runtime.directory),
@@ -814,6 +944,145 @@ class Qualification:
         self.effect(language, 'mutation_decode_unknown', mutation['operation'], mutation['idempotency_key'])
         self.decode_observed.append({'language': language, 'observed_requests': observed})
 
+    def w20_wait(self):
+        run = 'pre-restart-w20-wait'
+        requests = json.loads(json.dumps(self.config['requests']))
+        deadline = int(time.time()) + W20_WAIT_SECONDS
+        requests['wait_bounded']['request']['deadline'] = str(deadline)
+        self.probe('rust', W20_WAIT_PRE, 'pre-restart', self.d / 'probes/rust-w20-wait.state', requests, run=run)
+        waited, _ = self.w20_success(run, 'wait_bounded')
+        value = waited['value']
+        requested = requests['wait_bounded']['request']['requested_verification_level']
+        require(isinstance(value, dict) and set(value) == {'submission', 'actual_verification_level', 'deadline_elapsed'},
+                'wait_bounded: AMEND 28b wait payload fields')
+        require(value['deadline_elapsed'] is True, 'wait_bounded: deadline did not elapse')
+        actual = value['actual_verification_level']
+        require(actual in LEVELS and LEVELS.index(actual) < LEVELS.index(requested),
+                'wait_bounded: achieved level must be reported and below the requested level')
+        vs = waited['verification_status']
+        require((vs['level'] if vs['state'] == 'achieved' else vs['achieved']) == actual,
+                'wait_bounded: verification status disagrees with the reported achieved level')
+        timing = json.loads((self.d / 'probes' / ('rust-' + run) / 'wait_bounded.timing.json').read_text())
+        require(set(timing) == {'sent_unix', 'received_unix'} and all(isinstance(v, int) for v in timing.values())
+                and timing['sent_unix'] <= deadline <= timing['received_unix'] and timing['received_unix'] - timing['sent_unix'] < 300,
+                'wait_bounded: wait did not return at its deadline within the probe bound')
+
+    def w20_expiry(self):
+        run = 'post-restart-w20-expiry'
+        case = 'credential_expiry'
+        requests = json.loads(json.dumps(self.config['requests']))
+        requests[case]['poll_seconds'] = W20_EXPIRY_POLL_SECONDS
+        self.probe('rust', W20_EXPIRY_POST, 'post-restart', self.d / 'probes/rust-w20-expiry.state', requests, run=run)
+        expiring = load_private(self.config['requests'][case]['credential_file'], case + ' credential_file')
+        listed, _ = self.w20_success(run, case + '.list')
+        sessions = listed['value'].get('sessions') if isinstance(listed['value'], dict) else None
+        own = [s for s in sessions or [] if isinstance(s, dict) and s.get('session_id') == expiring['session_id']]
+        require(len(own) == 1 and re.fullmatch('(0|[1-9][0-9]{0,19})', str(own[0].get('expiry_sequence'))),
+                case + ': daemon did not report the session expiry')
+        self.w20_success(run, case + '.before')
+        self.w20_session_refused(run, case, 'session.expired')
+
+    def w20_revocation(self):
+        run = 'pre-restart-w20-revocation'
+        case = 'session_close_revocation'
+        requests = json.loads(json.dumps(self.config['requests']))
+        mutating = mutating_operations()
+        requests[case]['idempotency_key'] = self.key('rust', case)
+        if 'prepare' in mutating:
+            requests[case]['prepare']['idempotency_key'] = self.key('rust', case + '.prepare')
+            self.effect('rust', case + '.prepare', 'prepare', requests[case]['prepare']['idempotency_key'])
+        self.probe('rust', W20_REVOCATION_PRE, 'pre-restart', self.d / 'probes/rust-w20-revocation.state', requests, run=run)
+        closing = load_private(self.config['requests'][case]['credential_file'], case + ' credential_file')
+        self.w20_success(run, case + '.prepare')
+        closed, _ = self.w20_success(run, case)
+        record = closed['value']
+        require(isinstance(record, dict) and record.get('session_id') == closing['session_id'] and record.get('open') is False,
+                case + ': close did not durably close the dedicated session')
+        self.w20_session_refused(run, case + '.old', 'session.revoked')
+        tracked, _ = self.w20_success(run, case + '.track')
+        require(isinstance(tracked['value'], dict) and tracked['value'].get('state') in W20_INVALIDATED_STATES,
+                case + ': queued preparation under the closed generation was not reported invalidated')
+
+    def w20_idempotency_requests(self):
+        requests = json.loads(json.dumps(self.config['requests']))
+        requests['restart_replay_idempotent_record'] = json.loads(json.dumps(requests['allowed_mutation']))
+        requests['restart_replay_idempotent'] = {'replay_of': 'restart_replay_idempotent_record'}
+        requests['restart_replay_idempotent_record']['idempotency_key'] = self.key('rust', 'restart_replay_idempotent_record')
+        return requests
+
+    def w20_idempotency_pre(self):
+        requests = self.w20_idempotency_requests()
+        self.probe('rust', W20_IDEMPOTENCY_PRE, 'pre-restart', self.d / 'probes/rust-w20-idempotency.state', requests,
+                   run='pre-restart-w20-idempotency')
+        self.w20_success('pre-restart-w20-idempotency', 'restart_replay_idempotent_record')
+
+    def w20_idempotency_post(self):
+        requests = self.w20_idempotency_requests()
+        self.probe('rust', W20_IDEMPOTENCY_POST, 'post-restart', self.d / 'probes/rust-w20-idempotency.state', requests,
+                   run='post-restart-w20-idempotency')
+        first, _ = self.w20_success('pre-restart-w20-idempotency', 'restart_replay_idempotent_record')
+        replay, _ = self.w20_success('post-restart-w20-idempotency', 'restart_replay_idempotent')
+        require(replay['request_id'] != first['request_id'], 'restart_replay_idempotent: replay reused the request_id')
+        require(replay['value'] == first['value'] and replay['verification_status'] == first['verification_status'],
+                'restart_replay_idempotent: replay across the restart returned a different recorded effect')
+        key = requests['restart_replay_idempotent_record']['idempotency_key']
+        require([e['case'] for e in self.effects if e['idempotency_key'] == key] == ['restart_replay_idempotent_record'],
+                'restart_replay_idempotent: the replay was recorded as a second effect')
+
+    def w20_requests(self):
+        requests = self.probe_requests('rust')
+        mutating = mutating_operations()
+        for case in ('session_refresh_credential', 'session_close_revocation', 'restart_replay_idempotent_record'):
+            if case in requests and requests[case].get('operation') in mutating:
+                requests[case]['idempotency_key'] = self.key('rust', case)
+        return requests
+
+    def w20_doc(self, run, name):
+        path = self.d / 'probes' / ('rust-' + run) / (name + '.json')
+        require(path.is_file(), 'probe did not record ' + name + ' in ' + run)
+        doc = json.loads(path.read_text())
+        require(set(doc) == {'status', 'body'} and isinstance(doc['status'], int) and isinstance(doc['body'], dict),
+                name + ': recorded response shape')
+        return doc['status'], doc['body'], path
+
+    def w20_success(self, run, name):
+        status, body, path = self.w20_doc(run, name)
+        return self.success(status, json.dumps(body).encode(), body.get('request_id'), name), path
+
+    def w20_session_refused(self, run, name, reason=None):
+        status, body, path = self.w20_doc(run, name)
+        value = self.refusal(status, json.dumps(body).encode(), 401 if body.get('reason') == 'session.not_authorized' else 403,
+                             'PolicyRefusal', reason, name)
+        return value, path
+
+    def w20_no_bearer(self, run):
+        directory = self.d / 'probes' / ('rust-' + run)
+        for path in [*directory.glob('*.json'), self.d / 'probes' / ('rust-' + run + '.log')]:
+            require('"bearer"' not in path.read_text() and 'Bearer ' not in path.read_text(),
+                    'session bearer leaked into probe record ' + path.name)
+
+    def w20_rotation(self):
+        run = 'pre-restart-w20-rotation'
+        requests = self.w20_requests()
+        self.probe('rust', W20_ROTATION_PRE, 'pre-restart', self.d / 'probes/rust-w20-rotation.state', requests, run=run)
+        case = 'session_refresh_credential'
+        old = load_private(self.config['requests'][case]['credential_file'], case + ' credential_file')
+        refreshed, path = self.w20_success(run, case)
+        record = refreshed['value']
+        require(isinstance(record, dict) and record.get('session_id') == old['session_id'] and record.get('open') is True
+                and re.fullmatch('[0-9a-f]{64}', str(record.get('token_id'))) and record['token_id'] != old['token_id']
+                and re.fullmatch('(0|[1-9][0-9]{0,19})', str(record.get('generation')))
+                and int(record['generation']) > int(old['generation']), case + ': refresh did not rotate token and generation')
+        replacement = json.loads((self.d / 'probes' / ('rust-' + run) / (case + '.credential.json')).read_text())
+        require(set(replacement) == set(W20_SESSION_FIELDS) and replacement['tenant'] == old['tenant']
+                and replacement['session_id'] == old['session_id'] and replacement['token_id'] == record['token_id']
+                and replacement['generation'] == record['generation'], case + ': probe did not adopt the replacement credential')
+        self.w20_success(run, case + '.new')
+        self.w20_session_refused(run, case + '.old')
+        self.w20_no_bearer(run)
+        effects = json.dumps(self.effects)
+        require('"bearer"' not in effects, case + ': bearer entered the effect manifest')
+
     def record_effects(self, language, cases, requests):
         for case in cases:
             row = requests.get(case)
@@ -867,6 +1136,8 @@ class Qualification:
         require(len(counts) == 1 and int(counts[0]) == len(reported) == len(set(reported)), language + ' probe case accounting')
         require(set(reported) == set(cases), language + ' probe reported ' + str(sorted(set(cases) ^ set(reported))))
         self.record_effects(language, cases, requests)
+
+        self.judge_cases(language, run, phase, cases, requests)
         for case in cases:
             self.passed(case if phase != 'read' and not prefix else 'sdk_' + language + '_' + case
                         + ('_post_restart' if prefix and phase == 'post-restart' and case in PYTHON_PRE_RESTART else ''), log)
@@ -887,6 +1158,14 @@ class Qualification:
         state = self.d / 'probes/rust-mutation.state'
         operation_cases = tuple('operation.' + name for name in self.built['operations'])
         self.probe('rust', RUST_PRE_RESTART + operation_cases, 'pre-restart', state)
+
+        self.w20_wait()
+
+        self.w20_revocation()
+
+        self.w20_idempotency_pre()
+
+        self.w20_rotation()
         python_state = self.d / 'probes/python-mutation.state'
         python_retry = self.d / 'probes/python-retry.state'
         python_requests = self.probe_requests('python')
@@ -897,12 +1176,18 @@ class Qualification:
         self.start_agentd()
         require(self.agentd.pid != old, 'agentd restart reused the process')
         self.probe('rust', RUST_POST_RESTART, 'post-restart', state)
+
+        self.w20_expiry()
+
+        self.w20_idempotency_post()
         self.probe('python', PYTHON_POST_RESTART, 'post-restart', python_state, python_requests, python_retry, True)
         keys = [row['idempotency_key'] for row in self.effects]
         require(len(keys) == len(set(keys)), 'idempotency keys collide across languages or cases')
         write_private(self.d / 'effect-manifest.json', {
             'key_derivation': 'sha256(run_nonce || language || NUL || case_id)', 'effects': self.effects,
             'effect_count': len(self.effects), 'decode_requests': self.decode_observed})
+
+        write_private(self.d / 'operation-evidence.json', {'rows': self.operation_evidence_rows})
 
 
 def worker(directory):
@@ -924,6 +1209,16 @@ def worker(directory):
         expected = (len(DIRECT_CASES) + len(LANGUAGES) * len(LANGUAGE_CASES) + len(RUST_PRE_RESTART)
                     + len(built['operations']) + len(RUST_POST_RESTART)
                     + len(PYTHON_PRE_RESTART) + len(PYTHON_POST_RESTART) + len(LANGUAGES) * len(DECODE_CASES))
+
+        expected += len(W20_WAIT_PRE)
+
+        expected += len(W20_EXPIRY_POST)
+
+        expected += len(W20_REVOCATION_PRE)
+
+        expected += len(W20_IDEMPOTENCY_PRE) + len(W20_IDEMPOTENCY_POST)
+
+        expected += len(W20_ROTATION_PRE)
         require(len(qualification.results) == expected, 'case count ' + str(len(qualification.results)) + ' != ' + str(expected))
         write_private(runtime.directory / 'case-results.json', qualification.results)
         print(f'PAXEER_X_GATE tests={len(qualification.results)} skipped=0', flush=True)

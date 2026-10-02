@@ -15,6 +15,7 @@ use layerx_agent_api::{subscription::CursorAcknowledgement, Sequence};
 use layerx_types::result::ResultCode;
 
 use crate::session::{SessionCredential, SessionRegistry, Token};
+use crate::session_control::{OperationPermit, SessionControl, SessionControlError};
 use crate::store::{
     ObjectKind, StorageClass, Store as DurableStore, StoreError, TenantId, TenantKey,
 };
@@ -944,6 +945,122 @@ impl Store {
         let key = subscription_key(self.tenant.clone(), &record.public.subscription_id)?;
         self.durable.put_local(key, encode_record(record)?)?;
         Ok(())
+    }
+}
+
+impl Store {
+    /// Creates a session-bound subscription with the authority retained by an exact permit.
+    ///
+    /// # Errors
+    ///
+    /// The outer error is a permit operation mismatch, revocation, or unavailable session state;
+    /// the inner error is exactly [`Self::create_authorized`].
+    pub(crate) fn create_permitted(
+        &mut self,
+        control: &SessionControl,
+        permit: &OperationPermit,
+        subscription_id: SubscriptionId,
+        request: SubscriptionCreate,
+    ) -> Result<Result<SubscriptionRecord, SubscriptionError>, SessionControlError> {
+        permit.with_subscription_authority(
+            control,
+            Operation::SubscriptionCreate,
+            |sessions, token, observability, core_sequence| {
+                self.create_authorized(
+                    sessions,
+                    token,
+                    observability,
+                    core_sequence,
+                    subscription_id,
+                    request,
+                )
+            },
+        )
+    }
+
+    /// Pauses a session-bound subscription with the authority retained by an exact permit.
+    ///
+    /// # Errors
+    ///
+    /// The outer error is a permit operation mismatch, revocation, or unavailable session state;
+    /// the inner error is exactly [`Self::pause_authorized`].
+    pub(crate) fn pause_permitted(
+        &mut self,
+        control: &SessionControl,
+        permit: &OperationPermit,
+        target: SubscriptionTarget,
+    ) -> Result<Result<SubscriptionRecord, SubscriptionError>, SessionControlError> {
+        permit.with_subscription_authority(
+            control,
+            Operation::SubscriptionPause,
+            |sessions, token, observability, core_sequence| {
+                self.pause_authorized(sessions, token, observability, core_sequence, &target)
+            },
+        )
+    }
+
+    /// Resumes a session-bound subscription with the authority retained by an exact permit.
+    ///
+    /// # Errors
+    ///
+    /// The outer error is a permit operation mismatch, revocation, or unavailable session state;
+    /// the inner error is exactly [`Self::resume_authorized`].
+    pub(crate) fn resume_permitted(
+        &mut self,
+        control: &SessionControl,
+        permit: &OperationPermit,
+        target: SubscriptionTarget,
+    ) -> Result<Result<SubscriptionRecord, SubscriptionError>, SessionControlError> {
+        permit.with_subscription_authority(
+            control,
+            Operation::SubscriptionResume,
+            |sessions, token, observability, core_sequence| {
+                self.resume_authorized(sessions, token, observability, core_sequence, &target)
+            },
+        )
+    }
+
+    /// Deletes a session-bound subscription with the authority retained by an exact permit.
+    ///
+    /// # Errors
+    ///
+    /// The outer error is a permit operation mismatch, revocation, or unavailable session state;
+    /// the inner error is exactly [`Self::delete_authorized`].
+    pub(crate) fn delete_permitted(
+        &mut self,
+        control: &SessionControl,
+        permit: &OperationPermit,
+        target: SubscriptionTarget,
+    ) -> Result<Result<(), SubscriptionError>, SessionControlError> {
+        permit.with_subscription_authority(
+            control,
+            Operation::SubscriptionDelete,
+            |sessions, token, observability, core_sequence| {
+                self.delete_authorized(sessions, token, observability, core_sequence, &target)
+            },
+        )
+    }
+
+    /// Acknowledges a session-bound subscription cursor with the authority retained by an exact
+    /// permit.
+    ///
+    /// # Errors
+    ///
+    /// The outer error is a permit operation mismatch, revocation, or unavailable session state;
+    /// the inner error is exactly [`Self::acknowledge_authorized`].
+    pub(crate) fn acknowledge_permitted(
+        &mut self,
+        control: &SessionControl,
+        permit: &OperationPermit,
+        ack: CursorAcknowledgement,
+    ) -> Result<Result<SubscriptionRecord, SubscriptionError>, SessionControlError> {
+        permit.with_subscription_authority(
+            control,
+            Operation::SubscriptionAcknowledge,
+            |sessions, token, observability, core_sequence| {
+                self.acknowledge_authorized(sessions, token, observability, core_sequence, &ack)
+            },
+        )
     }
 }
 
