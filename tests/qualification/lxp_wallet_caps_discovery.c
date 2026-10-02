@@ -397,7 +397,7 @@ static int caps_env_u64(const char *name, uint64_t *value)
     return end == NULL || *end != 0;
 }
 
-int main(int argc, char **argv)
+int caps_discovery_main(int argc, char **argv)
 {
     static caps_context c;
     const char *scenario = NULL;

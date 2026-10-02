@@ -15,7 +15,10 @@ mkdir -p "$native_build"
 chmod 700 "$out"
 make -j5 BUILD_DIR="$native_build" LXP_REVISION="$revision" "$native_build/bin/layerxd" "$native_build/liblayerx.a" programs-build
 cc -std=c17 -O2 -ffunction-sections -fdata-sections -Iinclude -Itests/daemon -I"$native_build/generated" \
-    tests/qualification/lxp_wallet_caps_discovery.c -Wl,--gc-sections -Wl,--start-group "$native_build/liblayerx.a" \
+    -c tests/qualification/lxp_wallet_caps_discovery.c -o "$out/lxp_wallet_caps_discovery.o"
+objcopy --redefine-sym main=budget_lifecycle_main --redefine-sym caps_discovery_main=main \
+    "$out/lxp_wallet_caps_discovery.o"
+cc "$out/lxp_wallet_caps_discovery.o" -Wl,--gc-sections -Wl,--start-group "$native_build/liblayerx.a" \
     programs/target/debug/liblayerx_programs_sandbox.a -Wl,--end-group -lcrypto -lsqlite3 -pthread -ldl -lm \
     -o "$out/lxp_wallet_caps_discovery"
 "$CAPS_RUST_TOOLCHAIN/bin/cargo" test --locked --offline --manifest-path agent/Cargo.toml -p layerx-client \
