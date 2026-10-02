@@ -23656,8 +23656,8 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.19.2]
 title = "Implement deterministic execution and metering"
-status = "pending"
-mode = "QUALIFY"
+status = "in_progress"
+mode = "BUILD"
 wave = 2
 requires = ["0.2"]
 reqs = ["1091.3", "1091.4", "1091.2"]
@@ -23668,10 +23668,10 @@ do_4 = "Record the runtime and ABI version per execution for receipt carriage an
 do_5 = "Prove byte-identical execution across operating systems, architectures and optimisation levels on the conformance vector set."
 do_6 = "Property-test that metering is deterministic: equal executions consume equal budgets everywhere."
 do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["programs/crates/layerx-programs-runtime/src/meter.rs", "programs/crates/layerx-programs-runtime/tests/determinism.rs", "tools/paxeer-x/gates/104.19.2.sh"]
+touches = ["programs/crates/layerx-programs-runtime/src/meter.rs", "programs/crates/layerx-programs-runtime/tests/determinism.rs", "tools/paxeer-x/gates/104.19.2.sh", "tools/qualification/paxeer-x/deterministic-execution-producer.py", ".github/workflows/programs-conformance.yml"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 104.19.2"
 gate_kind = "planned-adapter"
-max_builds = 0
+max_builds = 1
 max_verify_runs = 1
 max_repair_cycles = 2
 time_limit_minutes = 30
@@ -23681,9 +23681,13 @@ reference_verify_cmd = "make programs-test"
 reference_tests = []
 deployment_profile = "product"
 completion_policy = "Existing implementation is preserved; current candidate qualification and applicable runtime evidence remain required."
-planned_paths = ["tools/paxeer-x/gates/104.19.2.sh"]
+planned_paths = ["tools/paxeer-x/gates/104.19.2.sh", "tools/qualification/paxeer-x/deterministic-execution-producer.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+build_cmd = "timeout 30m python3 tools/qualification/paxeer-x/deterministic-execution-producer.py --output \"$PAXEER_X_DETERMINISM_ARTIFACTS\""
+producer_contract = "Compile real scoped guest-execution and native fee fixtures once into exact-source/toolchain-bound artifacts. The task gate executes prebuilt fixtures without hidden compilation and requires genuine matching five-platform conformance evidence. Missing, skipped, stale or partial matrix evidence refuses completion."
+matrix_contract = "Retain Linux x86_64 debug and release, Linux arm64 release, macOS arm64 release and Windows x86_64 release. Bind actual runner OS/architecture/profile, source revision/tree, toolchain, exact command/exits and canonical guest-vector evidence. One-host repeatability or cross-compilation is not cross-platform execution evidence."
+release_gate_policy = "Retain complete make programs-test once per merged wave or release candidate. Do not run it per task or omit any scoped acceptance criterion; the task requires the complete declared five-platform conformance evidence."
 
 [task.104.21.3]
 title = "Run the hostile-program gauntlet"
