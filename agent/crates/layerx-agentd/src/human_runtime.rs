@@ -6628,6 +6628,180 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
         Ok(())
     }
 
+    fn authenticated_policy_usage(
+        &mut self,
+        peer: &HumanPeer,
+        actor: &Did,
+        capability: &Capability,
+        core_sequence: u64,
+    ) -> Result<crate::protocol_evidence::AuthenticatedCumulativeUse, HumanOperationError> {
+        use crate::protocol_evidence::{
+            CumulativeUseError, CumulativeUseWindow, RawActivityReceiptEvidence,
+        };
+        use layerx_client::read::{HistoryKind, HistoryProof, ReadError};
+
+        const MAX_SEQUENCES: u64 = 4_096;
+        const MAX_EVIDENCE_BYTES: usize = 16 * 1024 * 1024;
+        const PAGE_BOUND: u16 = 1;
+
+        let length = capability.dimensions.rate_ceiling.window_sequences;
+        if length == 0 || length > MAX_SEQUENCES {
+            return Err(HumanOperationError::Unavailable);
+        }
+        let window = CumulativeUseWindow {
+            first: core_sequence
+                .checked_sub(length)
+                .filter(|first| *first > 0)
+                .ok_or(HumanOperationError::Unavailable)?,
+            last: core_sequence
+                .checked_sub(1)
+                .ok_or(HumanOperationError::Unavailable)?,
+        };
+        if window.last > self.node.head().chain_sequence {
+            return Err(HumanOperationError::Unavailable);
+        }
+        let registry = self.authority.registry(peer).map_err(map_core)?;
+        let (verifier, _, authorization) = self.budget_read_parts(peer)?;
+        let mut evidence_bytes = 0_usize;
+        let mut admit_bytes = |length: usize| -> Result<(), HumanOperationError> {
+            evidence_bytes = evidence_bytes
+                .checked_add(length)
+                .filter(|total| *total <= MAX_EVIDENCE_BYTES)
+                .ok_or(HumanOperationError::Unavailable)?;
+            Ok(())
+        };
+        let mut entries = Vec::new();
+        let mut cursor = None;
+        let mut expected = window.first;
+        for _ in 0..MAX_SEQUENCES {
+            let page = self
+                .node
+                .history(
+                    window.first,
+                    window.last,
+                    PAGE_BOUND,
+                    cursor,
+                    VerificationLevel::BATCH_INCLUDED,
+                    boundary_correlation(peer, &expected.to_be_bytes(), b"policy-usage-history"),
+                    authorization,
+                )
+                .map_err(|error| match error {
+                    ReadError::Transport(_)
+                    | ReadError::Disconnected
+                    | ReadError::UnavailableCapability
+                    | ReadError::MissingEvidence { .. } => HumanOperationError::Unavailable,
+                    ReadError::CoreRefusal { result, .. }
+                        if result.retriability() == Retriability::Retriable =>
+                    {
+                        HumanOperationError::Unavailable
+                    }
+                    _ => HumanOperationError::Refused,
+                })?;
+            if page.items.is_empty() {
+                return Err(HumanOperationError::Unavailable);
+            }
+            for item in page.items {
+                if item.global_sequence != expected || expected > window.last {
+                    return Err(HumanOperationError::Refused);
+                }
+                admit_bytes(item.canonical_bytes().len())?;
+                admit_bytes(item.proof_material().len())?;
+                let history_proof = HistoryProof::decode(item.proof_material())
+                    .map_err(|_| HumanOperationError::Refused)?;
+                let header = layerx_wire::receipt::decode_batch_header(&history_proof.header)
+                    .map_err(|_| HumanOperationError::Refused)?;
+                if header.first_sequence() < window.first || header.last_sequence() > window.last {
+                    return Err(HumanOperationError::Unavailable);
+                }
+                match item.kind {
+                    HistoryKind::Activity => {
+                        let activity = layerx_wire::activity::decode_signed(
+                            item.canonical_bytes(),
+                            &registry,
+                        )
+                        .map_err(|_| HumanOperationError::Refused)?;
+                        let id = layerx_wire::hash::activity_id(&activity)
+                            .map_err(|_| HumanOperationError::Refused)?;
+                        let bundle = self
+                            .node
+                            .proof_bundle(
+                                ProofBundleSelector::Receipt(id),
+                                boundary_correlation(peer, &id, b"policy-usage-receipt"),
+                                &registry,
+                            )
+                            .map_err(|error| {
+                                if evidence_unavailable(&error) {
+                                    HumanOperationError::Unavailable
+                                } else {
+                                    HumanOperationError::Refused
+                                }
+                            })?;
+                        let layerx_client::evidence::VerifiedProofBundle::Receipt {
+                            canonical_bytes,
+                            activity_id,
+                            proof,
+                            signed_header,
+                        } = &bundle
+                        else {
+                            return Err(HumanOperationError::Refused);
+                        };
+                        if *activity_id != id
+                            || signed_header.canonical_bytes != history_proof.header
+                            || signed_header.signature != history_proof.header_signature
+                            || proof.leaf_index() != history_proof.proof.leaf_index()
+                        {
+                            return Err(HumanOperationError::Refused);
+                        }
+                        admit_bytes(canonical_bytes.len())?;
+                        admit_bytes(signed_header.canonical_bytes.len())?;
+                        admit_bytes(signed_header.signature.len())?;
+                        admit_bytes(
+                            proof.siblings().len().checked_mul(32)
+                                .and_then(|size| size.checked_add(9))
+                                .ok_or(HumanOperationError::Unavailable)?,
+                        )?;
+                        entries.push(RawActivityReceiptEvidence::from_signed_inclusion(
+                            item.canonical_bytes().to_vec(),
+                            raw_receipt_evidence(&bundle)?,
+                        ));
+                    }
+                    HistoryKind::Receipt => {
+                        let maintenance = layerx_wire::batch_maintenance::decode_maintenance(
+                            item.canonical_bytes(),
+                        )
+                        .map_err(|_| HumanOperationError::Refused)?;
+                        maintenance
+                            .verify_header(&header)
+                            .map_err(|_| HumanOperationError::Refused)?;
+                        if item.global_sequence != header.last_sequence()
+                            || history_proof.proof.leaf_index().checked_add(1)
+                                != Some(history_proof.proof.leaf_count())
+                        {
+                            return Err(HumanOperationError::Refused);
+                        }
+                    }
+                    HistoryKind::Event => return Err(HumanOperationError::Refused),
+                }
+                expected = expected.checked_add(1).ok_or(HumanOperationError::Refused)?;
+            }
+            cursor = page.cursor;
+            if cursor.is_none() {
+                if expected != core_sequence {
+                    return Err(HumanOperationError::Unavailable);
+                }
+                return verifier
+                    .authenticate_cumulative_use(actor, window, &entries)
+                    .map_err(|error| match error {
+                        CumulativeUseError::InvalidWindow | CumulativeUseError::IncompleteWindow => {
+                            HumanOperationError::Unavailable
+                        }
+                        _ => HumanOperationError::Refused,
+                    });
+            }
+        }
+        Err(HumanOperationError::Unavailable)
+    }
+
     /// The subject agent's protocol budget reconciliation, rebuilt exactly as startup
     /// recovery rebuilds it: STATE_PROVEN budget state, the persisted receipt evidence in
     /// the budget window, restart accounting, then `budget::reconcile`. `None` only when
@@ -9155,11 +9329,13 @@ impl<A: HumanAuthorityBoundary> HumanOperations for ProductionHumanOperations<A>
             .ok_or_else(|| policy_refusal(
                 crate::policy::PolicyDryRunRefusal::UnknownSession,
             ))?;
-        let budget = self.verified_policy_budget(context.peer(), &tenant, &actor)?;
-        let verified_context = match &budget {
-            Some(reconciliation) => crate::policy::VerifiedPolicyContext::ProtocolBudget(reconciliation),
-            None => crate::policy::VerifiedPolicyContext::Unavailable,
-        };
+        let cumulative = self.authenticated_policy_usage(
+            context.peer(),
+            &actor,
+            &capability,
+            policy_request.core_sequence,
+        )?;
+        let verified_context = crate::policy::VerifiedPolicyContext::Authenticated(&cumulative);
         let registry = self
             .policies
             .as_mut()
