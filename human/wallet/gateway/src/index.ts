@@ -70,6 +70,8 @@ export async function buildApp(): Promise<FastifyInstance> {
       'X-Agent-Nonce',
       'X-Agent-Expires',
       'X-Agent-Signature',
+      'X-Agent-Attestor-Authorization-Id',
+      'X-Agent-Attestor-Authorization',
     ],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   });

@@ -2550,6 +2550,99 @@
         }
       },
       "description": "Returns the unified-origin route catalogue and dependency readiness. Readiness reports dependency health and identity checks; route entries describe request contracts and do not establish successful end-to-end feature execution."
+    },
+    {
+      "name": "lx_getWalletCaps",
+      "paramStructure": "by-position",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "address",
+              "chain_id"
+            ],
+            "properties": {
+              "address": {
+                "type": "string",
+                "pattern": "^0x[0-9a-f]{40}$"
+              },
+              "chain_id": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      ],
+      "result": {
+        "name": "capabilities",
+        "schema": {
+          "type": "object",
+          "required": [
+            "state",
+            "did",
+            "account_id",
+            "network_id",
+            "context",
+            "observation",
+            "budgets",
+            "grants"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "ready",
+                "empty"
+              ]
+            },
+            "context": {
+              "type": "object",
+              "required": [
+                "principal",
+                "session_id",
+                "address",
+                "chain_id",
+                "expires_at"
+              ]
+            },
+            "observation": {
+              "type": "object",
+              "required": [
+                "verification",
+                "state_root",
+                "sequence",
+                "observed_head",
+                "batch"
+              ]
+            },
+            "budgets": {
+              "type": "array"
+            },
+            "grants": {
+              "type": "array"
+            }
+          }
+        }
+      },
+      "description": "Authenticated wallet capability snapshot. The verified wallet bearer and signed binding determine principal and native identity; address and chain_id only check that context. observation.sequence is the proven snapshot sequence; observed_head is a separate peer observation. No authority is inferred from caller selectors.",
+      "errors": [
+        {
+          "code": -32602,
+          "message": "Invalid params"
+        },
+        {
+          "code": -32002,
+          "message": "Wallet capabilities refused"
+        },
+        {
+          "code": -32001,
+          "message": "Wallet capabilities unavailable"
+        }
+      ]
     }
   ],
   "servers": [

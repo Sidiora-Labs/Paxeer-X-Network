@@ -331,6 +331,20 @@ impl ScopeBinding {
     pub const fn generation(&self) -> u64 {
         self.generation
     }
+
+    #[must_use]
+    pub fn transport_binding(&self, mode: DeploymentMode) -> String {
+        let mut hash = Sha256::new();
+        hash.update(b"layerx/mcp/loaded-binding/v1\0");
+        hash.update((self.tenant.as_str().len() as u64).to_be_bytes());
+        hash.update(self.tenant.as_str().as_bytes());
+        hash.update(self.session_id.0);
+        hash.update(self.generation.to_be_bytes());
+        hash.update(self.capability_id.0);
+        hash.update([match mode { DeploymentMode::Full => 1, DeploymentMode::ReadOnly => 2 }]);
+        format!("{:x}", hash.finalize())
+    }
+
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

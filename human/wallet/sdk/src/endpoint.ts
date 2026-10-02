@@ -59,6 +59,10 @@ export class EndpointClient {
     return decodeAssetMap(await this.rpc.call('px_listAssets', []));
   }
 
+  async getRouteCatalogue(): Promise<RouteCatalogue> {
+    return decodeRouteCatalogue(await this.rpc.call('px_getRouteCatalogue', []));
+  }
+
   async getCapabilities(): Promise<Capabilities> {
     return decodeCapabilities(await this.rpc.call('px_getCapabilities', []));
   }
@@ -411,4 +415,53 @@ export function decodeHistoryPage(value: unknown): HistoryPage {
     items: doc.items.map(decodeHistoryItem),
     next_cursor: next,
   };
+}
+
+export interface RouteCatalogue {
+  schema: 'paxeer-x.routes.v1';
+  chain_id: 125;
+  canonical_origin: string;
+  services: ReadonlyArray<Readonly<Record<string, unknown>>>;
+  routes: ReadonlyArray<Readonly<Record<string, unknown>>>;
+  readiness: { complete: boolean; services: Readonly<Record<string, { ready: boolean; reason: string }>> };
+}
+
+export function decodeRouteCatalogue(value: unknown): RouteCatalogue {
+  const doc = record(value, 'route catalogue');
+  if (doc.schema !== 'paxeer-x.routes.v1' || doc.chain_id !== 125 || typeof doc.canonical_origin !== 'string') fail('route catalogue identity');
+  const origin = new URL(doc.canonical_origin);
+  if (origin.protocol !== 'https:' || origin.origin !== doc.canonical_origin || origin.username || origin.password) fail('route catalogue origin');
+  if (!Array.isArray(doc.services) || doc.services.length !== 31 || !Array.isArray(doc.routes) || doc.routes.length > 4096) fail('route catalogue inventory');
+  const ids = new Set<string>();
+  const services = doc.services.map((entry) => {
+    const service = record(entry, 'route service');
+    if (typeof service.id !== 'string' || ids.has(service.id) || (service.exposure !== 'product' && service.exposure !== 'private')) fail('route service identity');
+    ids.add(service.id);
+    for (const field of ['discovery_path', 'transport', 'authentication', 'upstream', 'health_predicate', 'version']) {
+      if (typeof service[field] !== 'string' || !service[field]) fail('route service contract');
+    }
+    return Object.freeze({ ...service });
+  });
+  const routeIds = new Set<string>();
+  const routes = doc.routes.map((entry) => {
+    const route = record(entry, 'product route');
+    if (typeof route.id !== 'string' || routeIds.has(route.id) || typeof route.service !== 'string' || !ids.has(route.service)) fail('product route identity');
+    routeIds.add(route.id);
+    for (const field of ['method', 'path', 'transport', 'authentication', 'upstream', 'health_predicate', 'version']) {
+      if (typeof route[field] !== 'string' || !route[field]) fail('product route contract');
+    }
+    if (typeof route.timeout_seconds !== 'number' || route.timeout_seconds <= 0 || route.retries !== 0) fail('product route bounds');
+    return Object.freeze({ ...route });
+  });
+  const ready = record(doc.readiness, 'route readiness');
+  const states = record(ready.services, 'service readiness');
+  if (typeof ready.complete !== 'boolean' || Object.keys(states).length !== ids.size) fail('service readiness inventory');
+  const readiness: Record<string, { ready: boolean; reason: string }> = {};
+  for (const id of ids) {
+    const state = record(states[id], 'service readiness state');
+    if (typeof state.ready !== 'boolean' || typeof state.reason !== 'string' || !state.reason) fail('service readiness state');
+    readiness[id] = { ready: state.ready, reason: state.reason };
+  }
+  if (ready.complete !== Object.values(readiness).every((state) => state.ready)) fail('aggregate readiness');
+  return { schema: doc.schema, chain_id: doc.chain_id, canonical_origin: doc.canonical_origin, services, routes, readiness: { complete: ready.complete, services: readiness } };
 }

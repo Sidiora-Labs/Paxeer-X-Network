@@ -110,6 +110,10 @@ struct OutboundHeaders<'a> {
 }
 
 impl Client {
+    pub(super) fn independent(&self) -> Self {
+        Self { ca: self.ca.clone(), identity: self.identity.clone(), connector: OnceLock::new(), idle: Mutex::new(BTreeMap::new()) }
+    }
+
     #[must_use]
     pub fn new(ca: Certificate, identity: Identity) -> Self {
         Self {
@@ -823,6 +827,8 @@ pub fn request_header_is_forwardable(name: &str) -> bool {
             | "x-agent-nonce"
             | "x-agent-expires"
             | "x-agent-signature"
+            | "x-agent-attestor-authorization-id"
+            | "x-agent-attestor-authorization"
             | "x-trace-id"
             | "cookie"
             | "x-csrf-token"
@@ -1233,7 +1239,7 @@ pub fn write_response_connection_with_origin(
     origin: Option<&str>,
 ) -> Result<(), String> {
     let cors = match origin {
-        Some(origin) if origin.bytes().all(|b| b.is_ascii_graphic()) => format!("Access-Control-Allow-Origin: {origin}\r\nVary: Origin\r\nAccess-Control-Allow-Credentials: true\r\nAccess-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization, Idempotency-Key, X-Agent-Key, X-Agent-Nonce, X-Agent-Expires, X-Agent-Signature, X-Trace-Id, X-CSRF-Token, X-LayerX-CSRF, X-LayerX-Trace, LayerX-Payer-DID, X-LayerX-Wallet-Binding, Payment-Signature, X-Payment, Last-Event-ID\r\nAccess-Control-Expose-Headers: Payment-Required, Payment-Response, X-Payment-Response, Retry-After, Content-Disposition, ETag, X-Content-SHA256, X-LayerX-Batch\r\n"),
+        Some(origin) if origin.bytes().all(|b| b.is_ascii_graphic()) => format!("Access-Control-Allow-Origin: {origin}\r\nVary: Origin\r\nAccess-Control-Allow-Credentials: true\r\nAccess-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization, Idempotency-Key, X-Agent-Key, X-Agent-Nonce, X-Agent-Expires, X-Agent-Signature, X-Agent-Attestor-Authorization-Id, X-Agent-Attestor-Authorization, X-Trace-Id, X-CSRF-Token, X-LayerX-CSRF, X-LayerX-Trace, LayerX-Payer-DID, X-LayerX-Wallet-Binding, Payment-Signature, X-Payment, Last-Event-ID\r\nAccess-Control-Expose-Headers: Payment-Required, Payment-Response, X-Payment-Response, Retry-After, Content-Disposition, ETag, X-Content-SHA256, X-LayerX-Batch\r\n"),
         Some(_) => return Err("invalid CORS origin".to_owned()),
         None => String::new(),
     };

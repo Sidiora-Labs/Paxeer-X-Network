@@ -134,6 +134,10 @@ struct ComponentStatus {
 
 #[derive(Clone, Debug, Default, Serialize)]
 struct RuntimeStatus {
+    source_chain_id: u64,
+    native_network_id: u32,
+    native_protocol_version: u16,
+    service_version: String,
     node: ComponentStatus,
     ethereum: ComponentStatus,
     solana: Option<ComponentStatus>,
@@ -182,6 +186,10 @@ pub fn run(config_path: &Path) -> Result<(), RuntimeError> {
     let next_batch =
         recover_next_batch(&spool, config.first_batch_number).map_err(|_| RuntimeError::State)?;
     let status = Arc::new(Mutex::new(RuntimeStatus {
+        source_chain_id: config.node.checkpoint_policy.chain_id,
+        native_network_id: config.node.expected_network_id,
+        native_protocol_version: config.node.expected_protocol_version,
+        service_version: env!("CARGO_PKG_VERSION").to_owned(),
         solana: config.solana.as_ref().map(|_| ComponentStatus::default()),
         checkpoint_freshness_budget_batches: config.checkpoint_freshness_budget_batches,
         ..RuntimeStatus::default()

@@ -154,6 +154,10 @@ impl<B: ToolBoundary> Session<B> {
     }
 
     fn initialize(&self) -> Value {
+        let loaded_binding = match &self.bound {
+            Bound::Full(server) => server.binding().transport_binding(self.bound.mode()),
+            Bound::ReadOnly(server) => server.binding().transport_binding(self.bound.mode()),
+        };
         let declaration = self.bound.capability_declaration();
         json!({
             "protocolVersion": PROTOCOL_VERSION,
@@ -167,6 +171,7 @@ impl<B: ToolBoundary> Session<B> {
             "_meta": {
                 "layerx/deployment_mode": mode_name(self.bound.mode()),
                 "layerx/binding": "agent-daemon",
+                "layerx/loaded_binding_v1": loaded_binding,
                 "layerx/read_tools": declaration.read_tools,
                 "layerx/write_tools": declaration.write_tools,
                 "layerx/mutations_reachable": declaration.mutations_reachable,

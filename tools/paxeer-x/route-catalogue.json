@@ -1222,7 +1222,11 @@
       "source": "human/wallet/gateway/src/routes/agent.ts:226",
       "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "attestor_authorization_headers": [
+        "X-Agent-Attestor-Authorization-Id",
+        "X-Agent-Attestor-Authorization"
+      ]
     },
     {
       "id": "wallet-gateway:POST:/v1/agent/send",
@@ -1264,7 +1268,11 @@
       "source": "human/wallet/gateway/src/routes/agent.ts:264",
       "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "attestor_authorization_headers": [
+        "X-Agent-Attestor-Authorization-Id",
+        "X-Agent-Attestor-Authorization"
+      ]
     },
     {
       "id": "wallet-gateway:POST:/v1/agent/sign-typed-data",
@@ -1285,7 +1293,11 @@
       "source": "human/wallet/gateway/src/routes/agent.ts:275",
       "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "attestor_authorization_headers": [
+        "X-Agent-Attestor-Authorization-Id",
+        "X-Agent-Attestor-Authorization"
+      ]
     },
     {
       "id": "wallet-gateway:POST:/v1/agent/transfer",
@@ -2188,7 +2200,11 @@
       "source": "human/wallet/gateway/src/routes/sign.ts:376",
       "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "attestor_authorization_headers": [
+        "X-Agent-Attestor-Authorization-Id",
+        "X-Agent-Attestor-Authorization"
+      ]
     },
     {
       "id": "wallet-gateway:POST:/v1/wallet/send",
@@ -2230,7 +2246,11 @@
       "source": "human/wallet/gateway/src/routes/sign.ts:498",
       "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "attestor_authorization_headers": [
+        "X-Agent-Attestor-Authorization-Id",
+        "X-Agent-Attestor-Authorization"
+      ]
     },
     {
       "id": "wallet-gateway:POST:/v1/wallet/sign-typed-data",
@@ -2251,7 +2271,11 @@
       "source": "human/wallet/gateway/src/routes/sign.ts:538",
       "proxy": true,
       "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3
+      "connect_timeout_seconds": 3,
+      "attestor_authorization_headers": [
+        "X-Agent-Attestor-Authorization-Id",
+        "X-Agent-Attestor-Authorization"
+      ]
     },
     {
       "id": "wallet-gateway:POST:/v1/wallet/provision",
@@ -6166,19 +6190,20 @@
       "method": "tools/call",
       "path": "balance.get",
       "transport": "mcp",
-      "authentication": "daemon-session-and-tool-capability",
-      "upstream": "mcp-a2a",
+      "authentication": "gateway-api-key-and-owner-session",
+      "upstream": "principal-bound-mcp-unix",
       "timeout_seconds": 8,
-      "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3,
+      "timeout_scope": "request-after-authentication",
+      "connect_timeout_seconds": 8,
       "retries": 0,
-      "health_predicate": "live daemon authority and admitted tool capability",
+      "health_predicate": "configured network/version equality, authenticated principal binding, pinned owner session and Unix peer identity",
       "version": "1",
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/server.rs",
-      "proxy": false
+      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "proxy": false,
+      "endpoint_path": "/mcp"
     },
     {
       "id": "mcp-a2a:tools/call:history.list",
@@ -6186,19 +6211,20 @@
       "method": "tools/call",
       "path": "history.list",
       "transport": "mcp",
-      "authentication": "daemon-session-and-tool-capability",
-      "upstream": "mcp-a2a",
+      "authentication": "gateway-api-key-and-owner-session",
+      "upstream": "principal-bound-mcp-unix",
       "timeout_seconds": 8,
-      "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3,
+      "timeout_scope": "request-after-authentication",
+      "connect_timeout_seconds": 8,
       "retries": 0,
-      "health_predicate": "live daemon authority and admitted tool capability",
+      "health_predicate": "configured network/version equality, authenticated principal binding, pinned owner session and Unix peer identity",
       "version": "1",
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/server.rs",
-      "proxy": false
+      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "proxy": false,
+      "endpoint_path": "/mcp"
     },
     {
       "id": "mcp-a2a:tools/call:receipt.get",
@@ -6206,19 +6232,20 @@
       "method": "tools/call",
       "path": "receipt.get",
       "transport": "mcp",
-      "authentication": "daemon-session-and-tool-capability",
-      "upstream": "mcp-a2a",
+      "authentication": "gateway-api-key-and-owner-session",
+      "upstream": "principal-bound-mcp-unix",
       "timeout_seconds": 8,
-      "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3,
+      "timeout_scope": "request-after-authentication",
+      "connect_timeout_seconds": 8,
       "retries": 0,
-      "health_predicate": "live daemon authority and admitted tool capability",
+      "health_predicate": "configured network/version equality, authenticated principal binding, pinned owner session and Unix peer identity",
       "version": "1",
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/server.rs",
-      "proxy": false
+      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "proxy": false,
+      "endpoint_path": "/mcp"
     },
     {
       "id": "mcp-a2a:tools/call:checkpoint.get",
@@ -6226,19 +6253,20 @@
       "method": "tools/call",
       "path": "checkpoint.get",
       "transport": "mcp",
-      "authentication": "daemon-session-and-tool-capability",
-      "upstream": "mcp-a2a",
+      "authentication": "gateway-api-key-and-owner-session",
+      "upstream": "principal-bound-mcp-unix",
       "timeout_seconds": 8,
-      "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3,
+      "timeout_scope": "request-after-authentication",
+      "connect_timeout_seconds": 8,
       "retries": 0,
-      "health_predicate": "live daemon authority and admitted tool capability",
+      "health_predicate": "configured network/version equality, authenticated principal binding, pinned owner session and Unix peer identity",
       "version": "1",
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/server.rs",
-      "proxy": false
+      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "proxy": false,
+      "endpoint_path": "/mcp"
     },
     {
       "id": "mcp-a2a:tools/call:proof.get",
@@ -6246,19 +6274,20 @@
       "method": "tools/call",
       "path": "proof.get",
       "transport": "mcp",
-      "authentication": "daemon-session-and-tool-capability",
-      "upstream": "mcp-a2a",
+      "authentication": "gateway-api-key-and-owner-session",
+      "upstream": "principal-bound-mcp-unix",
       "timeout_seconds": 8,
-      "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3,
+      "timeout_scope": "request-after-authentication",
+      "connect_timeout_seconds": 8,
       "retries": 0,
-      "health_predicate": "live daemon authority and admitted tool capability",
+      "health_predicate": "configured network/version equality, authenticated principal binding, pinned owner session and Unix peer identity",
       "version": "1",
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/server.rs",
-      "proxy": false
+      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "proxy": false,
+      "endpoint_path": "/mcp"
     },
     {
       "id": "mcp-a2a:tools/call:availability.get",
@@ -6266,19 +6295,20 @@
       "method": "tools/call",
       "path": "availability.get",
       "transport": "mcp",
-      "authentication": "daemon-session-and-tool-capability",
-      "upstream": "mcp-a2a",
+      "authentication": "gateway-api-key-and-owner-session",
+      "upstream": "principal-bound-mcp-unix",
       "timeout_seconds": 8,
-      "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3,
+      "timeout_scope": "request-after-authentication",
+      "connect_timeout_seconds": 8,
       "retries": 0,
-      "health_predicate": "live daemon authority and admitted tool capability",
+      "health_predicate": "configured network/version equality, authenticated principal binding, pinned owner session and Unix peer identity",
       "version": "1",
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/server.rs",
-      "proxy": false
+      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "proxy": false,
+      "endpoint_path": "/mcp"
     },
     {
       "id": "mcp-a2a:tools/call:activity.prepare",
@@ -6286,19 +6316,20 @@
       "method": "tools/call",
       "path": "activity.prepare",
       "transport": "mcp",
-      "authentication": "daemon-session-and-tool-capability",
-      "upstream": "mcp-a2a",
+      "authentication": "gateway-api-key-and-owner-session",
+      "upstream": "principal-bound-mcp-unix",
       "timeout_seconds": 8,
-      "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3,
+      "timeout_scope": "request-after-authentication",
+      "connect_timeout_seconds": 8,
       "retries": 0,
-      "health_predicate": "live daemon authority and admitted tool capability",
+      "health_predicate": "configured network/version equality, authenticated principal binding, pinned owner session and Unix peer identity",
       "version": "1",
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/server.rs",
-      "proxy": false
+      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "proxy": false,
+      "endpoint_path": "/mcp"
     },
     {
       "id": "mcp-a2a:tools/call:activity.disclose",
@@ -6306,19 +6337,20 @@
       "method": "tools/call",
       "path": "activity.disclose",
       "transport": "mcp",
-      "authentication": "daemon-session-and-tool-capability",
-      "upstream": "mcp-a2a",
+      "authentication": "gateway-api-key-and-owner-session",
+      "upstream": "principal-bound-mcp-unix",
       "timeout_seconds": 8,
-      "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3,
+      "timeout_scope": "request-after-authentication",
+      "connect_timeout_seconds": 8,
       "retries": 0,
-      "health_predicate": "live daemon authority and admitted tool capability",
+      "health_predicate": "configured network/version equality, authenticated principal binding, pinned owner session and Unix peer identity",
       "version": "1",
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/server.rs",
-      "proxy": false
+      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "proxy": false,
+      "endpoint_path": "/mcp"
     },
     {
       "id": "mcp-a2a:tools/call:activity.sign",
@@ -6326,19 +6358,20 @@
       "method": "tools/call",
       "path": "activity.sign",
       "transport": "mcp",
-      "authentication": "daemon-session-and-tool-capability",
-      "upstream": "mcp-a2a",
+      "authentication": "gateway-api-key-and-owner-session",
+      "upstream": "principal-bound-mcp-unix",
       "timeout_seconds": 8,
-      "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3,
+      "timeout_scope": "request-after-authentication",
+      "connect_timeout_seconds": 8,
       "retries": 0,
-      "health_predicate": "live daemon authority and admitted tool capability",
+      "health_predicate": "configured network/version equality, authenticated principal binding, pinned owner session and Unix peer identity",
       "version": "1",
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/server.rs",
-      "proxy": false
+      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "proxy": false,
+      "endpoint_path": "/mcp"
     },
     {
       "id": "mcp-a2a:tools/call:activity.submit",
@@ -6346,19 +6379,20 @@
       "method": "tools/call",
       "path": "activity.submit",
       "transport": "mcp",
-      "authentication": "daemon-session-and-tool-capability",
-      "upstream": "mcp-a2a",
+      "authentication": "gateway-api-key-and-owner-session",
+      "upstream": "principal-bound-mcp-unix",
       "timeout_seconds": 8,
-      "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3,
+      "timeout_scope": "request-after-authentication",
+      "connect_timeout_seconds": 8,
       "retries": 0,
-      "health_predicate": "live daemon authority and admitted tool capability",
+      "health_predicate": "configured network/version equality, authenticated principal binding, pinned owner session and Unix peer identity",
       "version": "1",
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/server.rs",
-      "proxy": false
+      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "proxy": false,
+      "endpoint_path": "/mcp"
     },
     {
       "id": "mcp-a2a:tools/call:activity.track",
@@ -6366,19 +6400,20 @@
       "method": "tools/call",
       "path": "activity.track",
       "transport": "mcp",
-      "authentication": "daemon-session-and-tool-capability",
-      "upstream": "mcp-a2a",
+      "authentication": "gateway-api-key-and-owner-session",
+      "upstream": "principal-bound-mcp-unix",
       "timeout_seconds": 8,
-      "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3,
+      "timeout_scope": "request-after-authentication",
+      "connect_timeout_seconds": 8,
       "retries": 0,
-      "health_predicate": "live daemon authority and admitted tool capability",
+      "health_predicate": "configured network/version equality, authenticated principal binding, pinned owner session and Unix peer identity",
       "version": "1",
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/server.rs",
-      "proxy": false
+      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "proxy": false,
+      "endpoint_path": "/mcp"
     },
     {
       "id": "mcp-a2a:tools/call:wallet.accounts",
@@ -6386,19 +6421,20 @@
       "method": "tools/call",
       "path": "wallet.accounts",
       "transport": "mcp",
-      "authentication": "daemon-session-and-tool-capability",
-      "upstream": "mcp-a2a",
+      "authentication": "gateway-api-key-and-owner-session",
+      "upstream": "principal-bound-mcp-unix",
       "timeout_seconds": 8,
-      "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3,
+      "timeout_scope": "request-after-authentication",
+      "connect_timeout_seconds": 8,
       "retries": 0,
-      "health_predicate": "live daemon authority and admitted tool capability",
+      "health_predicate": "configured network/version equality, authenticated principal binding, pinned owner session and Unix peer identity",
       "version": "1",
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/server.rs",
-      "proxy": false
+      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "proxy": false,
+      "endpoint_path": "/mcp"
     },
     {
       "id": "mcp-a2a:tools/call:wallet.balance",
@@ -6406,19 +6442,20 @@
       "method": "tools/call",
       "path": "wallet.balance",
       "transport": "mcp",
-      "authentication": "daemon-session-and-tool-capability",
-      "upstream": "mcp-a2a",
+      "authentication": "gateway-api-key-and-owner-session",
+      "upstream": "principal-bound-mcp-unix",
       "timeout_seconds": 8,
-      "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3,
+      "timeout_scope": "request-after-authentication",
+      "connect_timeout_seconds": 8,
       "retries": 0,
-      "health_predicate": "live daemon authority and admitted tool capability",
+      "health_predicate": "configured network/version equality, authenticated principal binding, pinned owner session and Unix peer identity",
       "version": "1",
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/server.rs",
-      "proxy": false
+      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "proxy": false,
+      "endpoint_path": "/mcp"
     },
     {
       "id": "mcp-a2a:tools/call:wallet.send",
@@ -6426,19 +6463,20 @@
       "method": "tools/call",
       "path": "wallet.send",
       "transport": "mcp",
-      "authentication": "daemon-session-and-tool-capability",
-      "upstream": "mcp-a2a",
+      "authentication": "gateway-api-key-and-owner-session",
+      "upstream": "principal-bound-mcp-unix",
       "timeout_seconds": 8,
-      "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3,
+      "timeout_scope": "request-after-authentication",
+      "connect_timeout_seconds": 8,
       "retries": 0,
-      "health_predicate": "live daemon authority and admitted tool capability",
+      "health_predicate": "configured network/version equality, authenticated principal binding, pinned owner session and Unix peer identity",
       "version": "1",
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/server.rs",
-      "proxy": false
+      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "proxy": false,
+      "endpoint_path": "/mcp"
     },
     {
       "id": "mcp-a2a:tools/call:token.create",
@@ -6446,19 +6484,20 @@
       "method": "tools/call",
       "path": "token.create",
       "transport": "mcp",
-      "authentication": "daemon-session-and-tool-capability",
-      "upstream": "mcp-a2a",
+      "authentication": "gateway-api-key-and-owner-session",
+      "upstream": "principal-bound-mcp-unix",
       "timeout_seconds": 8,
-      "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3,
+      "timeout_scope": "request-after-authentication",
+      "connect_timeout_seconds": 8,
       "retries": 0,
-      "health_predicate": "live daemon authority and admitted tool capability",
+      "health_predicate": "configured network/version equality, authenticated principal binding, pinned owner session and Unix peer identity",
       "version": "1",
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/server.rs",
-      "proxy": false
+      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "proxy": false,
+      "endpoint_path": "/mcp"
     },
     {
       "id": "mcp-a2a:tools/call:token.mint",
@@ -6466,19 +6505,20 @@
       "method": "tools/call",
       "path": "token.mint",
       "transport": "mcp",
-      "authentication": "daemon-session-and-tool-capability",
-      "upstream": "mcp-a2a",
+      "authentication": "gateway-api-key-and-owner-session",
+      "upstream": "principal-bound-mcp-unix",
       "timeout_seconds": 8,
-      "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3,
+      "timeout_scope": "request-after-authentication",
+      "connect_timeout_seconds": 8,
       "retries": 0,
-      "health_predicate": "live daemon authority and admitted tool capability",
+      "health_predicate": "configured network/version equality, authenticated principal binding, pinned owner session and Unix peer identity",
       "version": "1",
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/server.rs",
-      "proxy": false
+      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "proxy": false,
+      "endpoint_path": "/mcp"
     },
     {
       "id": "mcp-a2a:tools/call:token.transfer",
@@ -6486,19 +6526,20 @@
       "method": "tools/call",
       "path": "token.transfer",
       "transport": "mcp",
-      "authentication": "daemon-session-and-tool-capability",
-      "upstream": "mcp-a2a",
+      "authentication": "gateway-api-key-and-owner-session",
+      "upstream": "principal-bound-mcp-unix",
       "timeout_seconds": 8,
-      "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3,
+      "timeout_scope": "request-after-authentication",
+      "connect_timeout_seconds": 8,
       "retries": 0,
-      "health_predicate": "live daemon authority and admitted tool capability",
+      "health_predicate": "configured network/version equality, authenticated principal binding, pinned owner session and Unix peer identity",
       "version": "1",
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/server.rs",
-      "proxy": false
+      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "proxy": false,
+      "endpoint_path": "/mcp"
     },
     {
       "id": "mcp-a2a:tools/call:grant.issue",
@@ -6506,19 +6547,20 @@
       "method": "tools/call",
       "path": "grant.issue",
       "transport": "mcp",
-      "authentication": "daemon-session-and-tool-capability",
-      "upstream": "mcp-a2a",
+      "authentication": "gateway-api-key-and-owner-session",
+      "upstream": "principal-bound-mcp-unix",
       "timeout_seconds": 8,
-      "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3,
+      "timeout_scope": "request-after-authentication",
+      "connect_timeout_seconds": 8,
       "retries": 0,
-      "health_predicate": "live daemon authority and admitted tool capability",
+      "health_predicate": "configured network/version equality, authenticated principal binding, pinned owner session and Unix peer identity",
       "version": "1",
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/server.rs",
-      "proxy": false
+      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "proxy": false,
+      "endpoint_path": "/mcp"
     },
     {
       "id": "mcp-a2a:tools/call:grant.draw",
@@ -6526,19 +6568,20 @@
       "method": "tools/call",
       "path": "grant.draw",
       "transport": "mcp",
-      "authentication": "daemon-session-and-tool-capability",
-      "upstream": "mcp-a2a",
+      "authentication": "gateway-api-key-and-owner-session",
+      "upstream": "principal-bound-mcp-unix",
       "timeout_seconds": 8,
-      "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3,
+      "timeout_scope": "request-after-authentication",
+      "connect_timeout_seconds": 8,
       "retries": 0,
-      "health_predicate": "live daemon authority and admitted tool capability",
+      "health_predicate": "configured network/version equality, authenticated principal binding, pinned owner session and Unix peer identity",
       "version": "1",
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/server.rs",
-      "proxy": false
+      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "proxy": false,
+      "endpoint_path": "/mcp"
     },
     {
       "id": "mcp-a2a:tools/call:activity.wait",
@@ -6546,19 +6589,20 @@
       "method": "tools/call",
       "path": "activity.wait",
       "transport": "mcp",
-      "authentication": "daemon-session-and-tool-capability",
-      "upstream": "mcp-a2a",
+      "authentication": "gateway-api-key-and-owner-session",
+      "upstream": "principal-bound-mcp-unix",
       "timeout_seconds": 8,
-      "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3,
+      "timeout_scope": "request-after-authentication",
+      "connect_timeout_seconds": 8,
       "retries": 0,
-      "health_predicate": "live daemon authority and admitted tool capability",
+      "health_predicate": "configured network/version equality, authenticated principal binding, pinned owner session and Unix peer identity",
       "version": "1",
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/server.rs",
-      "proxy": false
+      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "proxy": false,
+      "endpoint_path": "/mcp"
     },
     {
       "id": "mcp-a2a:tools/call:web.search",
@@ -6566,19 +6610,20 @@
       "method": "tools/call",
       "path": "web.search",
       "transport": "mcp",
-      "authentication": "daemon-session-and-tool-capability",
-      "upstream": "mcp-a2a",
+      "authentication": "gateway-api-key-and-owner-session",
+      "upstream": "principal-bound-mcp-unix",
       "timeout_seconds": 8,
-      "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3,
+      "timeout_scope": "request-after-authentication",
+      "connect_timeout_seconds": 8,
       "retries": 0,
-      "health_predicate": "live daemon authority and admitted tool capability",
+      "health_predicate": "configured network/version equality, authenticated principal binding, pinned owner session and Unix peer identity",
       "version": "1",
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/catalogue.rs",
-      "proxy": false
+      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "proxy": false,
+      "endpoint_path": "/mcp"
     },
     {
       "id": "mcp-a2a:tools/call:web.fetch",
@@ -6586,19 +6631,20 @@
       "method": "tools/call",
       "path": "web.fetch",
       "transport": "mcp",
-      "authentication": "daemon-session-and-tool-capability",
-      "upstream": "mcp-a2a",
+      "authentication": "gateway-api-key-and-owner-session",
+      "upstream": "principal-bound-mcp-unix",
       "timeout_seconds": 8,
-      "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3,
+      "timeout_scope": "request-after-authentication",
+      "connect_timeout_seconds": 8,
       "retries": 0,
-      "health_predicate": "live daemon authority and admitted tool capability",
+      "health_predicate": "configured network/version equality, authenticated principal binding, pinned owner session and Unix peer identity",
       "version": "1",
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/catalogue.rs",
-      "proxy": false
+      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "proxy": false,
+      "endpoint_path": "/mcp"
     },
     {
       "id": "mcp-a2a:tools/call:web.content",
@@ -6606,19 +6652,20 @@
       "method": "tools/call",
       "path": "web.content",
       "transport": "mcp",
-      "authentication": "daemon-session-and-tool-capability",
-      "upstream": "mcp-a2a",
+      "authentication": "gateway-api-key-and-owner-session",
+      "upstream": "principal-bound-mcp-unix",
       "timeout_seconds": 8,
-      "timeout_scope": "per-io",
-      "connect_timeout_seconds": 3,
+      "timeout_scope": "request-after-authentication",
+      "connect_timeout_seconds": 8,
       "retries": 0,
-      "health_predicate": "live daemon authority and admitted tool capability",
+      "health_predicate": "configured network/version equality, authenticated principal binding, pinned owner session and Unix peer identity",
       "version": "1",
       "consumers": [
         "agent"
       ],
-      "source": "agent/crates/layerx-mcp/src/catalogue.rs",
-      "proxy": false
+      "source": "agent/crates/layerx-mcp/src/listener.rs",
+      "proxy": false,
+      "endpoint_path": "/mcp"
     },
     {
       "id": "human:GET:/v1/account/balance",
@@ -44462,6 +44509,448 @@
         "/explorer/visualize/sol2uml",
         "/explorer/withdrawals"
       ]
+    },
+    {
+      "id": "wallet-gateway:POST:/v1/agent/signing-authorizations",
+      "service": "wallet-gateway",
+      "method": "POST",
+      "path": "/v1/agent/signing-authorizations",
+      "transport": "http",
+      "authentication": "signed-agent-proof",
+      "upstream": "wallet-gateway",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/wallet/gateway/src/routes/agent.ts",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "required_request_headers": [
+        "X-Agent-Key",
+        "X-Agent-Nonce",
+        "X-Agent-Expires",
+        "X-Agent-Signature"
+      ],
+      "attestor_authorization_headers": [
+        "X-Agent-Attestor-Authorization-Id",
+        "X-Agent-Attestor-Authorization"
+      ]
+    },
+    {
+      "id": "kernel:RPC:lx_getWalletCaps",
+      "service": "kernel",
+      "method": "POST",
+      "path": "lx_getWalletCaps",
+      "transport": "json-rpc",
+      "authentication": "verified-wallet-bearer",
+      "upstream": "wallet-gateway-and-native-core",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "platform/hosted/gateway/src/main.rs",
+      "proxy": false,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ]
+    },
+    {
+      "id": "program-registry:GET:/v1/programs/registry",
+      "service": "program-registry",
+      "method": "GET",
+      "path": "/v1/programs/registry",
+      "transport": "http",
+      "authentication": "gateway-api-key",
+      "upstream": "program-registry",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "platform/hosted/gateway/src/main.rs",
+      "proxy": false,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "program-registry:GET:/v1/programs/registry/{id}",
+      "service": "program-registry",
+      "method": "GET",
+      "path": "/v1/programs/registry/{id}",
+      "transport": "http",
+      "authentication": "gateway-api-key",
+      "upstream": "program-registry",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "platform/hosted/gateway/src/main.rs",
+      "proxy": false,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "program-registry:GET:/v1/programs/registry/{id}/interface",
+      "service": "program-registry",
+      "method": "GET",
+      "path": "/v1/programs/registry/{id}/interface",
+      "transport": "http",
+      "authentication": "gateway-api-key",
+      "upstream": "program-registry",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "platform/hosted/gateway/src/main.rs",
+      "proxy": false,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "program-registry:POST:/v1/programs/registry/{id}/source",
+      "service": "program-registry",
+      "method": "POST",
+      "path": "/v1/programs/registry/{id}/source",
+      "transport": "http",
+      "authentication": "gateway-api-key",
+      "upstream": "program-registry",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "platform/hosted/gateway/src/main.rs",
+      "proxy": false,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "bridge:RPC:eth_call:bridge",
+      "service": "bridge",
+      "method": "POST",
+      "path": "eth_call",
+      "transport": "json-rpc",
+      "authentication": "public-signed-state-read",
+      "upstream": "paxeer-boundaries",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "platform/hosted/gateway/src/paxeer.rs",
+      "proxy": false,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ],
+      "contract_address": "0x0000000000000000000000000000000000001016",
+      "capability": "bridge"
+    },
+    {
+      "id": "markets:RPC:eth_call:exchange",
+      "service": "markets",
+      "method": "POST",
+      "path": "eth_call",
+      "transport": "json-rpc",
+      "authentication": "public-signed-state-read",
+      "upstream": "paxeer-boundaries",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "platform/hosted/gateway/src/paxeer.rs",
+      "proxy": false,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ],
+      "contract_address": "0x0000000000000000000000000000000000001015",
+      "capability": "exchange"
+    },
+    {
+      "id": "markets:RPC:eth_call:launchpad",
+      "service": "markets",
+      "method": "POST",
+      "path": "eth_call",
+      "transport": "json-rpc",
+      "authentication": "public-signed-state-read",
+      "upstream": "paxeer-boundaries",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "platform/hosted/gateway/src/paxeer.rs",
+      "proxy": false,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "endpoint_paths": [
+        "/",
+        "/rpc"
+      ],
+      "contract_address": "0x0000000000000000000000000000000000001017",
+      "capability": "launchpad"
+    },
+    {
+      "id": "hpx:GET:/hpx/api/peers",
+      "service": "hpx",
+      "method": "GET",
+      "path": "/hpx/api/peers",
+      "transport": "http",
+      "authentication": "gateway-api-key",
+      "upstream": "hpx",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "hpx/registry/main.go",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/api/peers"
+    },
+    {
+      "id": "hpx:GET:/hpx/api/peers.txt",
+      "service": "hpx",
+      "method": "GET",
+      "path": "/hpx/api/peers.txt",
+      "transport": "http",
+      "authentication": "gateway-api-key",
+      "upstream": "hpx",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "hpx/registry/main.go",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/api/peers.txt"
+    },
+    {
+      "id": "hpx:GET:/hpx/api/nodes",
+      "service": "hpx",
+      "method": "GET",
+      "path": "/hpx/api/nodes",
+      "transport": "http",
+      "authentication": "gateway-api-key",
+      "upstream": "hpx",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "hpx/registry/main.go",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/api/nodes"
+    },
+    {
+      "id": "hpx:GET:/hpx/api/statesync",
+      "service": "hpx",
+      "method": "GET",
+      "path": "/hpx/api/statesync",
+      "transport": "http",
+      "authentication": "gateway-api-key",
+      "upstream": "hpx",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "hpx/registry/main.go",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/api/statesync"
+    },
+    {
+      "id": "mirror:GET:/mirror/status",
+      "service": "mirror",
+      "method": "GET",
+      "path": "/mirror/status",
+      "transport": "http",
+      "authentication": "gateway-api-key",
+      "upstream": "mirror",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "interop/crates/layerx-mirror/src/runtime.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/status",
+      "operation": "verified-publication-progress"
+    },
+    {
+      "id": "mcp-a2a:protocol:initialize",
+      "service": "mcp-a2a",
+      "method": "POST",
+      "path": "/mcp",
+      "mcp_method": "initialize",
+      "transport": "mcp",
+      "authentication": "gateway-api-key-and-owner-session",
+      "upstream": "principal-bound-mcp-unix",
+      "timeout_seconds": 8,
+      "timeout_scope": "request-after-authentication",
+      "connect_timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "configured network/version equality and authenticated owner principal, session and Unix peer identity",
+      "version": "2025-06-18",
+      "consumers": [
+        "agent",
+        "developer"
+      ],
+      "source": "agent/crates/layerx-mcp/src/stdio.rs",
+      "proxy": false
+    },
+    {
+      "id": "mcp-a2a:protocol:ping",
+      "service": "mcp-a2a",
+      "method": "POST",
+      "path": "/mcp",
+      "mcp_method": "ping",
+      "transport": "mcp",
+      "authentication": "gateway-api-key-and-owner-session",
+      "upstream": "principal-bound-mcp-unix",
+      "timeout_seconds": 8,
+      "timeout_scope": "request-after-authentication",
+      "connect_timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "configured network/version equality and authenticated owner principal, session and Unix peer identity",
+      "version": "2025-06-18",
+      "consumers": [
+        "agent",
+        "developer"
+      ],
+      "source": "agent/crates/layerx-mcp/src/stdio.rs",
+      "proxy": false
+    },
+    {
+      "id": "mcp-a2a:protocol:tools/list",
+      "service": "mcp-a2a",
+      "method": "POST",
+      "path": "/mcp",
+      "mcp_method": "tools/list",
+      "transport": "mcp",
+      "authentication": "gateway-api-key-and-owner-session",
+      "upstream": "principal-bound-mcp-unix",
+      "timeout_seconds": 8,
+      "timeout_scope": "request-after-authentication",
+      "connect_timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "configured network/version equality and authenticated owner principal, session and Unix peer identity",
+      "version": "2025-06-18",
+      "consumers": [
+        "agent",
+        "developer"
+      ],
+      "source": "agent/crates/layerx-mcp/src/stdio.rs",
+      "proxy": false
+    },
+    {
+      "id": "mcp-a2a:protocol:notifications/initialized",
+      "service": "mcp-a2a",
+      "method": "POST",
+      "path": "/mcp",
+      "mcp_method": "notifications/initialized",
+      "transport": "mcp",
+      "authentication": "gateway-api-key-and-owner-session",
+      "upstream": "principal-bound-mcp-unix",
+      "timeout_seconds": 8,
+      "timeout_scope": "request-after-authentication",
+      "connect_timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "configured network/version equality and authenticated owner principal, session and Unix peer identity",
+      "version": "2025-06-18",
+      "consumers": [
+        "agent",
+        "developer"
+      ],
+      "source": "agent/crates/layerx-mcp/src/stdio.rs",
+      "proxy": false
+    },
+    {
+      "id": "mcp-a2a:protocol:notifications/cancelled",
+      "service": "mcp-a2a",
+      "method": "POST",
+      "path": "/mcp",
+      "mcp_method": "notifications/cancelled",
+      "transport": "mcp",
+      "authentication": "gateway-api-key-and-owner-session",
+      "upstream": "principal-bound-mcp-unix",
+      "timeout_seconds": 8,
+      "timeout_scope": "request-after-authentication",
+      "connect_timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "configured network/version equality and authenticated owner principal, session and Unix peer identity",
+      "version": "2025-06-18",
+      "consumers": [
+        "agent",
+        "developer"
+      ],
+      "source": "agent/crates/layerx-mcp/src/stdio.rs",
+      "proxy": false
     }
   ],
   "denied_surfaces": [

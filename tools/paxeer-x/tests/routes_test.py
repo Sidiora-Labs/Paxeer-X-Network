@@ -22,7 +22,8 @@ MAX_BODY = 8 * 1024 * 1024
 COUNT = 0
 KINDS = {'positive', 'malformed', 'unauthorized', 'wrong-network', 'missing-dependency'}
 SECRET_HEADERS = {'authorization', 'cookie', 'x-agent-signature', 'x-api-key',
-                  'x-csrf-token', 'x-layerx-csrf', 'x-payment', 'payment-signature'}
+                  'x-csrf-token', 'x-layerx-csrf', 'x-payment', 'payment-signature',
+                  'x-agent-attestor-authorization', 'x-agent-attestor-authorization-id'}
 
 
 def require(value, message):
@@ -529,6 +530,26 @@ def ui_http_request(target, case):
         conn.close()
 
 
+def rpc_call_matches(route, call):
+    if not isinstance(call, dict):
+        return False
+    method = call.get('method', '')
+    if not isinstance(method, str) or not (method.startswith(route['path'][:-1])
+            if route['path'].endswith('*') else method == route['path']):
+        return False
+    if 'contract_address' in route:
+        params = call.get('params')
+        if not isinstance(params, list) or len(params) != 2 or not isinstance(params[0], dict):
+            return False
+        transaction = params[0]
+        if not isinstance(transaction.get('to'), str) or transaction['to'].lower() != route['contract_address']:
+            return False
+        data = transaction.get('data', transaction.get('input'))
+        if not isinstance(data, str) or re.fullmatch('0x[0-9a-fA-F]{8}(?:[0-9a-fA-F]{2})*', data) is None:
+            return False
+    return True
+
+
 def route_matches(route, case):
     if route.get("http_protocol") == "next-ui":
         return ui_route_matches(route, case)
@@ -541,9 +562,9 @@ def route_matches(route, case):
     if route['transport'] == 'json-rpc':
         body = case.get('body')
         calls = body if isinstance(body, list) else [body]
-        return case['method'] == 'POST' and path in route.get('endpoint_paths', ['/rpc']) and any(isinstance(call, dict) and
-            (call.get('method','').startswith(route['path'][:-1]) if route['path'].endswith('*')
-             else call.get('method') == route['path']) for call in calls)
+        return case['method'] == 'POST' and path in route.get('endpoint_paths', ['/rpc']) and any(rpc_call_matches(route, call) for call in calls)
+    if route.get('mcp_method'):
+        return case['method'] == 'POST' and path == route['path'] and isinstance(case.get('body'), dict) and case['body'].get('method') == route['mcp_method']
     if route['transport'] == 'websocket':
         if case.get('transport') != 'websocket': return False
         if route['path'].startswith('/'):
@@ -564,11 +585,54 @@ def require_rpc_results(case, document, route_index):
     replies = document if isinstance(document, list) else [document]
     for route_id in case.get('route_ids', []):
         route = route_index[route_id]
+        if route['transport'] == 'mcp' and not route['path'].startswith('/'):
+            require(isinstance(body, dict) and isinstance(document, dict)
+                    and document.get('jsonrpc') == '2.0' and document.get('id') == body.get('id')
+                    and 'id' in body and 'error' not in document, 'MCP response identity mismatch')
+            result = document.get('result')
+            require(isinstance(result, dict) and result.get('isError') is False,
+                    'MCP tool refusal cannot count as a positive operation')
+            content = result.get('content')
+            require(isinstance(content, list) and len(content) == 1
+                    and isinstance(content[0], dict) and content[0].get('type') == 'text', 'MCP result content missing')
+            actual = json.loads(content[0]['text'])
+            require(isinstance(actual, dict) and actual.get('tool') == route['path']
+                    and 'result' in actual and actual['result'] is not None and 'refusal' not in actual,
+                    'MCP tool has no actual operation result')
+            continue
+        if route.get('mcp_method'):
+            if route['mcp_method'].startswith('notifications/'):
+                require(case['status'] == 202 and document is None, 'MCP notification acknowledgement mismatch')
+            else:
+                require(isinstance(document, dict) and document.get('jsonrpc') == '2.0'
+                        and document.get('id') == body.get('id') and 'result' in document
+                        and 'error' not in document, 'MCP protocol result absent')
+                if route['mcp_method'] == 'initialize':
+                    fingerprint = document.get('result', {}).get('_meta', {}).get('layerx/loaded_binding_v1')
+                    require(isinstance(fingerprint, str) and re.fullmatch('[0-9a-f]{64}', fingerprint)
+                            and case['assertions'].get('/result/_meta/layerx~1loaded_binding_v1') == fingerprint,
+                            'MCP initialize lacks an exact loaded-session binding assertion')
+            continue
+        if route.get('operation') == 'verified-publication-progress':
+            require(isinstance(document, dict) and document.get('checkpoint_proof_boundary_ready') is True
+                    and document.get('source_chain_id') == 125
+                    and document.get('latest_verified_checkpoint_id')
+                    and document.get('latest_verified_checkpoint_batch') is not None,
+                    'mirror has no verified publication coordinate')
+            for chain in ['ethereum', 'solana']:
+                component = document.get(chain)
+                if component is not None:
+                    require(component.get('ready') is True and component.get('checkpoint_within_budget') is True
+                            and component.get('latest_checkpoint_batch_mirrored') is not None,
+                            'mirror publication or freshness is not ready')
         if route['transport'] != 'json-rpc':
             continue
-        matching = [call for call in calls if isinstance(call, dict) and
-                    (call.get('method', '').startswith(route['path'][:-1])
-                     if route['path'].endswith('*') else call.get('method') == route['path'])]
+        matching = [call for call in calls if rpc_call_matches(route, call)]
+        if 'contract_address' in route:
+            require(any(isinstance(reply, dict) and reply.get('id') == call.get('id')
+                    and isinstance(reply.get('result'), str)
+                    and re.fullmatch('0x(?:[0-9a-fA-F]{2})+', reply['result'])
+                    for call in matching for reply in replies), 'contract feature returned no data')
         require(matching and any('id' in call and any(
             isinstance(reply, dict) and reply.get('jsonrpc') == '2.0'
             and 'id' in reply and reply['id'] == call['id']
@@ -610,6 +674,16 @@ def run():
     functional_services = set()
     route_index = {r["id"]:r for r in product["routes"]}
     scenarios = set()
+    mcp_refusals = {
+        'owner-isolation': (403, '/error/code', 'mcp_owner_binding_required'),
+        'scope-refused': (403, '/error/code', 'insufficient_scope'),
+        'binding-changed': (503, '/error/reason', 'MCP owner binding identity changed'),
+        'loaded-session-mismatch': (503, '/error/reason', 'MCP loaded session binding differs'),
+        'peer-changed': (503, '/error/reason', 'MCP peer identity changed'),
+        'request-oversized': (413, '/error/code', 'request_too_large'),
+        'request-deadline': (503, '/error/code', 'mcp_deadline_exceeded'),
+    }
+    mcp_observed = set()
     for case in cases:
         case_path(case)
         require(case['id'] not in ids, 'duplicate routed case')
@@ -621,6 +695,15 @@ def run():
         if 'response_sha256' in case:
             require(re.fullmatch('[0-9a-f]{64}', case['response_sha256']) is not None,
                     'invalid response byte digest')
+        if 'mcp_scenario' in case:
+            scenario = case['mcp_scenario']
+            require(scenario in mcp_refusals and case['service'] == 'mcp-a2a'
+                    and request_path(case) == '/mcp' and case['method'] == 'POST'
+                    and case['kind'] != 'positive', 'invalid MCP refusal scenario')
+            status, key, value = mcp_refusals[scenario]
+            require(case['status'] == status and case['assertions'].get(key) == value,
+                    'MCP refusal lacks its exact cause assertion')
+            mcp_observed.add(scenario)
         coverage.setdefault(case['service'],set()).add(case['kind'])
         for route_id in case.get('route_ids',[]):
             require(route_id in route_index and route_matches(route_index[route_id],case),
@@ -690,6 +773,7 @@ def run():
         if service['exposure'] == 'product':
             require(service['id'] in functional_services,
                     'product service has no positive feature route coverage')
+    require(set(mcp_refusals) <= mcp_observed, 'MCP owner/peer/session/bounds refusal coverage incomplete')
     require({r['id'] for r in product['routes']} <= covered_routes, 'published route corpus incomplete')
     require({'mixed-batch','identity-did','identity-evm','identity-account','node-signing-refused','private-publication-refused',
              'tls-client-identity','native-websocket','evm-websocket','cors'} <= scenarios,
@@ -706,6 +790,35 @@ def run():
         else:
             document = http_request(plan['targets'][case['target']],case)
             require_rpc_results(case, document, route_index)
+        print('ok route-case ' + str(COUNT), flush=True)
+    chain_only = plan.get('chain_only_cases')
+    require(isinstance(chain_only, list) and 1 <= len(chain_only) <= 32,
+            'real chain-only degradation cases required')
+    for case in chain_only:
+        require(case['target'] in plan['targets'] and case['method'] == 'POST'
+                and request_path(case) in product['rpc_paths'] and case['status'] == 200
+                and isinstance(case.get('assertions'), dict) and case['assertions'],
+                'invalid chain-only request contract')
+        calls = case.get('body')
+        require(isinstance(calls, list) and len(calls) == 2 and calls[0].get('method') == 'eth_chainId'
+                and calls[0].get('params') == [] and isinstance(calls[1].get('method'), str)
+                and calls[1]['method'].startswith('lx_get')
+                and 'id' in calls[0] and 'id' in calls[1] and calls[0]['id'] != calls[1]['id'],
+                'chain-only case must pair chain identity with an actual native read')
+        require(time.monotonic() - started < 870, 'routed contract time bound reached')
+        COUNT += 1
+        replies = http_request(plan['targets'][case['target']], case)
+        require(isinstance(replies, list) and len(replies) == 2, 'chain-only mixed response missing')
+        by_id = {reply.get('id'): reply for reply in replies if isinstance(reply, dict)}
+        chain = by_id.get(calls[0]['id'], {})
+        native = by_id.get(calls[1]['id'], {})
+        require(chain.get('jsonrpc') == '2.0' and chain.get('result') == '0x7d' and 'error' not in chain,
+                'chain-only mode lost the actual chain125 call')
+        require(native.get('jsonrpc') == '2.0' and 'result' not in native
+                and native.get('error', {}).get('code') == -32010
+                and native['error'].get('data', {}).get('code') == 'kernel_unavailable'
+                and native['error']['data'].get('reason') in {'not_configured', 'unreachable'},
+                'chain-only native read lacks typed refusal')
         print('ok route-case ' + str(COUNT), flush=True)
 
 
