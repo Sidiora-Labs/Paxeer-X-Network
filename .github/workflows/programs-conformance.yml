@@ -18,6 +18,8 @@ on:
       - "tests/test_snapshot.c"
       - "Makefile"
       - ".github/workflows/programs-conformance.yml"
+      - "tools/qualification/paxeer-x/deterministic-execution-producer.py"
+      - "tools/paxeer-x/gates/104.19.2.sh"
   pull_request:
     paths:
       - "programs/**"
@@ -32,7 +34,18 @@ on:
       - "tests/test_snapshot.c"
       - "Makefile"
       - ".github/workflows/programs-conformance.yml"
+      - "tools/qualification/paxeer-x/deterministic-execution-producer.py"
+      - "tools/paxeer-x/gates/104.19.2.sh"
   workflow_dispatch:
+    inputs:
+      scope:
+        description: Execution scope
+        type: choice
+        required: true
+        default: release
+        options:
+          - release
+          - determinism
 
 permissions:
   contents: read
@@ -43,6 +56,7 @@ concurrency:
 
 jobs:
   acceptance:
+    if: github.event_name != 'workflow_dispatch' || inputs.scope != 'determinism'
     name: Aggregate Programs acceptance gate
     runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 120
@@ -69,6 +83,7 @@ jobs:
         run: make programs-test
 
   fuzz-smoke:
+    if: github.event_name != 'workflow_dispatch' || inputs.scope != 'determinism'
     name: Bounded committed-corpus fuzz gate
     runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 10
@@ -83,6 +98,7 @@ jobs:
         run: make programs-fuzz-smoke PROGRAMS_CARGO="cargo +1.91.1"
 
   differential-replay:
+    if: github.event_name != 'workflow_dispatch' || inputs.scope != 'determinism'
     name: Differential and versioned-replay gate
     runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 15
@@ -97,26 +113,21 @@ jobs:
         run: make programs-differential PROGRAMS_CARGO="cargo +1.91.1"
 
   deterministic-execution:
-    name: ${{ matrix.name }}
+    name: determinism-${{ matrix.key }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: Linux x86_64 debug
+          - key: linux-x86_64-debug
             os: ubuntu-24.04
-            cargo_args: ""
-          - name: Linux x86_64 release
+          - key: linux-x86_64-release
             os: ubuntu-24.04
-            cargo_args: --release
-          - name: Linux arm64 release
+          - key: linux-arm64-release
             os: ubuntu-24.04-arm
-            cargo_args: --release
-          - name: macOS arm64 release
+          - key: macos-arm64-release
             os: macos-14
-            cargo_args: --release
-          - name: Windows x86_64 release
+          - key: windows-x86_64-release
             os: windows-2022
-            cargo_args: --release
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
@@ -124,9 +135,62 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Install Python for portable evidence producer
+        uses: actions/setup-python@7f4fc3e22c37d6ff65e88745f38bd3157c663f7c # v4
+        with:
+          python-version: "3.12"
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.91.1 --profile minimal --no-self-update
-      - name: Run deterministic execution vectors
+      - name: Build deterministic execution vectors
+        shell: bash
+        env:
+          PAXEER_X_MATRIX_KEY: ${{ matrix.key }}
         run: >-
-          cargo +1.91.1 test --manifest-path programs/Cargo.toml --locked
-          -p layerx-programs-runtime --test determinism ${{ matrix.cargo_args }}
+          python tools/qualification/paxeer-x/deterministic-execution-producer.py
+          --matrix-key "$PAXEER_X_MATRIX_KEY"
+          --output "$RUNNER_TEMP/determinism-build"
+      - name: Execute deterministic execution vectors
+        shell: bash
+        run: >-
+          python tools/qualification/paxeer-x/deterministic-execution-producer.py
+          --phase run --manifest "$RUNNER_TEMP/determinism-build/manifest.json"
+          --output "$RUNNER_TEMP/determinism-execution"
+      - name: Upload deterministic execution evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: determinism-${{ matrix.key }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/determinism-execution/report.json
+          if-no-files-found: error
+          retention-days: 30
+
+  deterministic-evidence:
+    name: Collect complete deterministic execution evidence
+    needs: deterministic-execution
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify platform jobs and canonical evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PAXEER_X_REPOSITORY: ${{ github.repository }}
+          PAXEER_X_RUN_ID: ${{ github.run_id }}
+        run: >-
+          python3 tools/qualification/paxeer-x/deterministic-execution-producer.py
+          --phase collect --repository "$PAXEER_X_REPOSITORY"
+          --run-id "$PAXEER_X_RUN_ID" --output "$RUNNER_TEMP/determinism-matrix"
+      - name: Upload complete matrix binding
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: determinism-matrix-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/determinism-matrix/matrix.json
+          if-no-files-found: error
+          retention-days: 30

@@ -11,6 +11,39 @@ use layerx_programs_runtime::{
 
 const EXECUTION_V2_GOLDEN: &str = include_str!("../vectors/execution-v2.hex");
 
+fn exported_vector(
+    case: String,
+    left: i32,
+    right: i32,
+    record: &layerx_programs_runtime::ExecutionRecord,
+) -> serde_json::Value {
+    let evidence = record
+        .canonical_evidence()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    serde_json::json!({"case": case, "left": left, "right": right, "evidence": evidence})
+}
+
+fn export_vectors(name: &str, records: &[serde_json::Value]) {
+    let Some(directory) = std::env::var_os("PAXEER_X_DETERMINISM_VECTOR_DIR") else {
+        return;
+    };
+    let directory = std::path::PathBuf::from(directory);
+    let metadata = std::fs::symlink_metadata(&directory)
+        .unwrap_or_else(|error| panic!("vector export directory unavailable: {error}"));
+    assert!(metadata.is_dir() && !metadata.file_type().is_symlink());
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(directory.join(name))
+        .unwrap_or_else(|error| panic!("vector export refused: {error}"));
+    serde_json::to_writer(&file, records)
+        .unwrap_or_else(|error| panic!("vector encoding refused: {error}"));
+    file.sync_all()
+        .unwrap_or_else(|error| panic!("vector persistence refused: {error}"));
+}
+
 fn validated_add() -> layerx_programs_runtime::ValidatedModule {
     let engine = match WasmEngine::new(ValidationLimits::declared()) {
         Ok(engine) => engine,
@@ -172,10 +205,15 @@ fn execution_evidence_matches_the_architecture_independent_golden() {
     assert_eq!(record.abi_version, ABI_V1_VERSION);
     assert_eq!(record.outputs, vec![WasmValue::I32(42)]);
     assert_eq!(record.canonical_evidence(), decode_hex(EXECUTION_V2_GOLDEN));
+    export_vectors(
+        "golden.json",
+        &[exported_vector("golden-add".to_string(), 19, 23, &record)],
+    );
 }
 
 #[test]
 fn equal_executions_consume_equal_budgets() {
+    let mut exported = Vec::with_capacity(2_048);
     let mut state = 0x4c_61_79_65_72_58_19_02_u64;
     for case in 0..2_048 {
         state = state
@@ -192,7 +230,9 @@ fn equal_executions_consume_equal_budgets() {
         let second = execute_add(left, right);
         assert_eq!(first, second, "metering diverged in case {case}");
         assert_eq!(first.canonical_evidence(), second.canonical_evidence());
+        exported.push(exported_vector(format!("property-{case}"), left, right, &first));
     }
+    export_vectors("properties.json", &exported);
 }
 
 #[test]
