@@ -38,6 +38,28 @@ pub struct SessionControl {
     pending_invalidations: Arc<Mutex<BTreeMap<(session::SessionRef, u64), u64>>>,
 }
 
+pub(crate) struct AuthenticatedOwnerLookup {
+    credential: SessionCredential,
+    operation: Operation,
+    surface: Surface,
+    principal: ResolvedPrincipal,
+    binding: Arc<()>,
+}
+
+impl AuthenticatedOwnerLookup {
+    pub(crate) fn principal(&self) -> &ResolvedPrincipal {
+        &self.principal
+    }
+
+    pub(crate) fn operation(&self) -> Operation {
+        self.operation
+    }
+
+    pub(crate) fn binding(&self) -> Arc<()> {
+        Arc::clone(&self.binding)
+    }
+}
+
 impl SessionControl {
     #[must_use]
     pub fn new(
@@ -239,6 +261,30 @@ impl SessionControl {
             .registry
             .write()
             .map_err(|_| SessionControlError::Unavailable)?;
+        let (token, request, principal) = self.resolve_credential(
+            &registry, credential, operation, surface, core_sequence, target_owner,
+        )?;
+        let stop = registry
+            .revocation_stop(&token)
+            .map_err(SessionControlError::Session)?;
+        Ok(OperationPermit {
+            token,
+            request,
+            principal,
+            stop,
+            lookup_binding: None,
+        })
+    }
+
+    fn resolve_credential(
+        &self,
+        registry: &SessionRegistry,
+        credential: &SessionCredential,
+        operation: Operation,
+        surface: Surface,
+        core_sequence: u64,
+        target_owner: Option<ObjectOwner>,
+    ) -> Result<(Token, RequestContext, ResolvedPrincipal), SessionControlError> {
         let token = registry
             .authenticate(credential)
             .map_err(SessionControlError::Session)?;
@@ -255,18 +301,47 @@ impl SessionControl {
                 .observability
                 .lock()
                 .map_err(|_| SessionControlError::Unavailable)?;
-            tenant::resolve(&token, &registry, &request, &mut observability)
+            tenant::resolve(&token, registry, &request, &mut observability)
                 .map_err(SessionControlError::Authorization)?
         };
-        let stop = registry
-            .revocation_stop(&token)
-            .map_err(SessionControlError::Session)?;
-        Ok(OperationPermit {
-            token,
-            request,
+        Ok((token, request, principal))
+    }
+
+    pub(crate) fn authenticate_lookup(
+        &self,
+        credential: &SessionCredential,
+        operation: Operation,
+        surface: Surface,
+        core_sequence: u64,
+    ) -> Result<AuthenticatedOwnerLookup, SessionControlError> {
+        let registry = self.registry.read().map_err(|_| SessionControlError::Unavailable)?;
+        let (_, _, principal) = self.resolve_credential(
+            &registry, credential, operation, surface, core_sequence, None,
+        )?;
+        Ok(AuthenticatedOwnerLookup {
+            credential: credential.clone(),
+            operation,
+            surface,
             principal,
-            stop,
+            binding: Arc::new(()),
         })
+    }
+
+    pub(crate) fn authorize_resolved(
+        &self,
+        lookup: AuthenticatedOwnerLookup,
+        target: crate::human_runtime::ResolvedTargetOwner,
+        current_core_sequence: u64,
+    ) -> Result<OperationPermit, SessionControlError> {
+        let (binding, owner) = target.into_parts();
+        if !Arc::ptr_eq(&binding, &lookup.binding) {
+            return Err(SessionControlError::Authorization(AuthorizationError::NotAuthorized));
+        }
+        let mut permit = self.authorize(
+            &lookup.credential, lookup.operation, lookup.surface, current_core_sequence, owner,
+        )?;
+        permit.lookup_binding = Some(lookup.binding);
+        Ok(permit)
     }
 
     /// Closes one session with durable state committed before registry replacement and stop
@@ -989,9 +1064,14 @@ pub struct OperationPermit {
     request: RequestContext,
     principal: ResolvedPrincipal,
     stop: StopSignal,
+    lookup_binding: Option<Arc<()>>,
 }
 
 impl OperationPermit {
+    pub(crate) fn matches_lookup(&self, binding: &Arc<()>) -> bool {
+        self.lookup_binding.as_ref().is_some_and(|value| Arc::ptr_eq(value, binding))
+    }
+
     #[must_use]
     pub const fn principal(&self) -> &ResolvedPrincipal {
         &self.principal

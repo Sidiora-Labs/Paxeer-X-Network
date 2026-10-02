@@ -487,32 +487,86 @@ fn owner_unavailable(request_id: RequestId) -> Rejection {
     }
 }
 
-fn authorized<A: HumanAuthorityBoundary>(
-    owner: &SharedAgentOwner<A>,
-    envelope: &Envelope,
-) -> Result<(OperationPermit, u64), Rejection> {
-    let request_id = envelope.request_id;
-    let surface = surface_for(envelope.operation);
-    let core_sequence = owner
-        .current_core_sequence()
-        .map_err(|_| owner_unavailable(request_id))?;
-    let guard = owner.lock().map_err(|_| owner_unavailable(request_id))?;
-    if guard.degraded.status().mode != Mode::Healthy {
-        return Err(Rejection {
+fn lookup_owner_error(request_id: RequestId, error: crate::human::HumanOperationError) -> Rejection {
+    match error {
+        crate::human::HumanOperationError::Refused => Rejection::new(
+            ErrorClass::PolicyRefusal, request_id, "owner.refused",
+        ),
+        crate::human::HumanOperationError::Unavailable => Rejection {
             class: ErrorClass::UnavailableCapability,
             retriability: Retriability::Retriable,
             request_id,
-            reason: "owner.degraded",
-        });
+            reason: "owner.unavailable",
+        },
+        crate::human::HumanOperationError::Typed(refusal) =>
+            Rejection::new(refusal.class(), request_id, refusal.reason()),
+        crate::human::HumanOperationError::CapabilityRefused(dimension) => Rejection::new(
+            ErrorClass::CapabilityRefusal, request_id, match dimension {
+                crate::capability::Dimension::Expiry => "capability.expiry",
+                crate::capability::Dimension::ActivityType => "capability.activity_type",
+                crate::capability::Dimension::Counterparty => "capability.counterparty",
+                crate::capability::Dimension::Asset => "capability.asset",
+                crate::capability::Dimension::Amount => "capability.amount",
+                crate::capability::Dimension::Rate => "capability.rate",
+                crate::capability::Dimension::Purpose => "capability.purpose",
+            },
+        ),
     }
+}
+
+fn authorized<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>,
+    envelope: &Envelope,
+) -> Result<(OperationPermit, u64, agent_rpc_peer::BoundRpcPeer, SessionControl), Rejection> {
+    let request_id = envelope.request_id;
+    let surface = surface_for(envelope.operation);
     let credential = envelope.credential.as_ref().ok_or_else(|| {
         Rejection::new(ErrorClass::ProtocolIncompatibility, request_id, "envelope.credential")
     })?;
-    let target = tenant::load_target_owner(&*guard, envelope.operation, &envelope.request, credential.tenant())
-        .map_err(|_| Rejection::new(ErrorClass::PolicyRefusal, request_id, "session.not_authorized"))?;
-    let permit = authorize(&guard.session_control, envelope, surface, core_sequence, target)?;
-    drop(guard);
-    Ok((permit, core_sequence))
+    let mismatch = || Rejection::new(ErrorClass::PolicyRefusal, request_id, "envelope.coordinate_mismatch");
+    let supplied_tenant = request_text(envelope, "tenant")?
+        .map(|text| TenantId::new(text).map_err(|_| mismatch())).transpose()?;
+    let supplied_agent = request_text(envelope, "agent")?;
+    tenant::require_caller_coordinates(credential.tenant(), None, supplied_tenant.as_ref())
+        .map_err(|_| mismatch())?;
+    tenant::require_session_credential(envelope.operation, Some(credential))
+        .map_err(|error| authorization_rejection(request_id, &SessionControlError::Authorization(error)))?;
+    let core_sequence = owner.current_core_sequence().map_err(|_| owner_unavailable(request_id))?;
+    let control = {
+        let guard = owner.lock().map_err(|_| owner_unavailable(request_id))?;
+        if guard.degraded.status().mode != Mode::Healthy {
+            return Err(Rejection {
+                class: ErrorClass::UnavailableCapability,
+                retriability: Retriability::Retriable,
+                request_id,
+                reason: "owner.degraded",
+            });
+        }
+        guard.session_control.clone()
+    };
+    let lookup = control.authenticate_lookup(credential, envelope.operation, surface, core_sequence)
+        .map_err(|error| authorization_rejection(request_id, &error))?;
+    if supplied_agent.is_some_and(|agent| lookup.principal().agent.as_bytes() != agent.as_bytes()) {
+        return Err(mismatch());
+    }
+    let (bound, target) = {
+        let mut guard = owner.lock().map_err(|_| owner_unavailable(request_id))?;
+        let bound = agent_rpc_peer::bind_lookup(&mut *guard, &lookup).map_err(|error| {
+            match error {
+                crate::human::HumanOperationError::Refused => Rejection::new(
+                    ErrorClass::PolicyRefusal, request_id, "envelope.peer_unmapped",
+                ),
+                error => lookup_owner_error(request_id, error),
+            }
+        })?;
+        let target = guard.target_object_owner_authenticated(&lookup, &bound, &envelope.request)
+            .map_err(|error| lookup_owner_error(request_id, error))?;
+        (bound, target)
+    };
+    let core_sequence = owner.current_core_sequence().map_err(|_| owner_unavailable(request_id))?;
+    let permit = control.authorize_resolved(lookup, target, core_sequence)
+        .map_err(|error| authorization_rejection(request_id, &error))?;
+    Ok((permit, core_sequence, bound, control))
 }
 
 fn respond(
@@ -577,26 +631,16 @@ pub fn handle_rpc<A: HumanAuthorityBoundary>(
         Err(rejection) => return rejected(&rejection),
     };
     let request_id = envelope.request_id;
-    let (permit, core_sequence) = match envelope.credential {
+    let (permit, core_sequence, bound, control) = match envelope.credential {
         Some(_) => match authorized(owner, &envelope) {
             Ok(authorized) => authorized,
             Err(rejection) => return rejected(&rejection),
         },
         None => match envelope.operation {},
     };
-    let bound = match owner.lock() {
-        Ok(mut guard) => agent_rpc_peer::bind(&mut *guard, &permit),
-        Err(_) => return rejected(&owner_unavailable(request_id)),
-    };
-    let context_peer = match bound {
+    let context_peer = match agent_rpc_peer::from_resolved(&control, &permit, bound) {
         Ok(context_peer) => context_peer,
-        Err(_) => {
-            return rejected(&Rejection::new(
-                ErrorClass::PolicyRefusal,
-                request_id,
-                "envelope.peer_unmapped",
-            ));
-        }
+        Err(error) => return rejected(&authorization_rejection(request_id, &error)),
     };
     let context = DispatchContext {
         request_id,
