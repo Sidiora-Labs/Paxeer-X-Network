@@ -879,6 +879,42 @@ service mirror-publisher 4021 \
 	"$genesis_files $run/node/layerxd.lni.sock $mirror_run/config.json /run/mirror-signer/signer.sock" - - -- \
 	/usr/local/bin/layerx-mirror-publisher "$mirror_run/config.json"
 
+relay_archive_prepare() {
+    local config_dir sequencer_id sequencer_public genesis_digest
+    openssl verify -CAfile "$tls/relay-archive/ca.pem" -purpose sslserver "$tls/relay-archive/cert.pem" >/dev/null || return 1
+    tls_for relay-archive 4020 || return 1
+    install -d -o 4020 -g 4020 -m 0700 "$layerx/relay-archive" "$run/relay-archive" || return 1
+    sequencer_id=$(sed -n 's/^LAYERX_CORE_SEQUENCER_ID=//p' "$run/node/core.env")
+    sequencer_public=$(tr -d '\r\n' <"$run/node/sequencer-public-key")
+    genesis_digest=$(sha256sum "$node_data/genesis/genesis.manifest" | cut -d' ' -f1)
+    config_dir=$(mktemp -d "$run/relay-archive/config.XXXXXX") || return 1
+    if ! /opt/layerx/relay_archive/install.sh --config-only \
+        --config "$config_dir/origin.json" --codec /usr/local/bin/layerx-archive-codec \
+        --network-id "$LAYERX_NODE_NETWORK_ID" --genesis-sha256 "$genesis_digest" \
+        --sequencer-id "$sequencer_id" --sequencer-public-key "$sequencer_public" \
+        --data-dir "$layerx/relay-archive" --listen '[::]:9457' \
+        --public-url https://api-mainnet-beta.paxeer.network \
+        --genesis-manifest "$node_data/genesis/genesis.manifest" \
+        --genesis-snapshot "$node_data/genesis/00000000000000000000.lxs" \
+        --source-log "$node_data/checkpoints/da-bodies.log" \
+        --submission-upstream https://api-mainnet-beta.paxeer.network/v1/activities \
+        --ca-file /etc/ssl/certs/ca-certificates.crt \
+        --tls-cert "$tls/relay-archive/cert.pem" --tls-key "$tls/relay-archive/key.pem"; then
+        rm -f "$config_dir/origin.json"
+        rmdir "$config_dir"
+        return 1
+    fi
+    chown 4020:4020 "$config_dir/origin.json" || return 1
+    chmod 0600 "$config_dir/origin.json" || return 1
+    mv -f "$config_dir/origin.json" "$run/relay-archive/config.json" || return 1
+    rmdir "$config_dir"
+}
+
+service relay-archive 4020 \
+    "$genesis_files $node_data/genesis/genesis.manifest $node_data/genesis/00000000000000000000.lxs $node_data/checkpoints/da-bodies.log $run/node/core.env $run/node/sequencer-public-key $tls/relay-archive/cert.pem $tls/relay-archive/key.pem $tls/relay-archive/ca.pem" \
+    relay_archive_prepare - -- \
+    python3 /opt/layerx/relay_archive/runtime.py --config "$run/relay-archive/config.json"
+
 human_authority_ready &
 trust_history &
 
