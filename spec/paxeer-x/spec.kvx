@@ -24098,8 +24098,8 @@ release_gate_policy = "Retain complete make programs-test once per merged wave o
 
 [task.104.33.1]
 title = "Publish program interfaces as protocol state"
-status = "pending"
-mode = "QUALIFY"
+status = "in_progress"
+mode = "BUILD"
 wave = 2
 requires = ["0.2"]
 reqs = ["1103.1"]
@@ -24110,10 +24110,10 @@ do_4 = "Make the description readable from protocol state under the receipt-veri
 do_5 = "Carry interface changes through the upgrade path with the compatibility rules stated: a widening is allowed, a narrowing is a refusal unless the upgrade declares it a breaking change."
 do_6 = "Test interface binding, drift refusal and upgrade compatibility across the registry conformance suite."
 do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["src/modules/programs/deploy.c", "include/layerx/programs.h", "programs/crates/layerx-programs-runtime/src/ffi_interface.rs", "programs/crates/layerx-programs-runtime/src/lib.rs", "programs/crates/layerx-programs-runtime/src/validate.rs", "programs/crates/layerx-programs-registry/src/interface.rs", "programs/crates/layerx-programs-registry/src/lib.rs", "programs/crates/layerx-programs-registry/src/protocol_evidence.rs", "programs/crates/layerx-programs-registry/tests/interface.rs", "programs/crates/layerx-programs-registry/tests/support/mod.rs", "tests/programs/test_call_activity.c", "tests/programs/test_lifecycle.c", "programs/tests/differential/parallel.c", "spec/paxeer-x/qualification.kvx", "tools/paxeer-x/gates/104.33.1.sh"]
+touches = ["programs/crates/layerx-programs-runtime/src/ffi_interface.rs", "programs/crates/layerx-programs-registry/src/interface.rs", "tests/programs/test_interface_protocol.c", "programs/crates/layerx-programs-registry/tests/interface_protocol.rs", "tools/qualification/paxeer-x/program-interface-producer.py", "tools/qualification/paxeer-x/program-interface.py", "tools/paxeer-x/gates/104.33.1.sh"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 104.33.1"
 gate_kind = "planned-adapter"
-max_builds = 0
+max_builds = 1
 max_verify_runs = 1
 max_repair_cycles = 2
 time_limit_minutes = 30
@@ -24123,9 +24123,17 @@ reference_verify_cmd = "make programs-test"
 reference_tests = []
 deployment_profile = "product"
 completion_policy = "Existing implementation is preserved; current candidate qualification and applicable runtime evidence remain required."
-planned_paths = ["spec/paxeer-x/qualification.kvx", "tools/paxeer-x/gates/104.33.1.sh"]
+planned_paths = ["tests/programs/test_interface_protocol.c", "programs/crates/layerx-programs-registry/tests/interface_protocol.rs", "tools/qualification/paxeer-x/program-interface-producer.py", "tools/qualification/paxeer-x/program-interface.py", "tools/paxeer-x/gates/104.33.1.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+build_cmd = "timeout 30m python3 tools/qualification/paxeer-x/program-interface-producer.py --output \"$PAXEER_X_INTERFACE_ARTIFACTS\""
+build_targets = ["Current native library and generated headers", "layerx-programs-sandbox staticlib with host-ffi", "Native interface lifecycle/proof fixture", "Precompiled registry interface and interface_protocol test executables", "Pure guest-byte generation for supported ABI fixtures"]
+producer_contract = "One explicit build stage after complete implementation. Record source revision, declared inputs, toolchain/features and exact artifact digests. Compile all declared targets without programs-build or workspace-wide targets. The single verify command runs the native signed lifecycle and receipt/state-proof producer, then consumes its genuine outputs in the registry verifier. No hidden compilation or constructed positive receipt facts."
+interface_encoding_contract = "Preserve all ABI1/2 domain choices, canonical bytes, hashes, capability tags and refusal vectors. ABI3 requires LayerX/program-interface/v3 and ABI4 requires LayerX/program-interface/v4, each ending in one NUL byte. Header/body layout and offsets remain unchanged. Add unit interface descriptors OracleRead tag11 (ABI3/4, mask bit10) and WebRead tag12 (ABI4, mask bit11), with no additional fields or runtime authority grants. Preserve tag10 mapping to bit7. Refuse unsupported versions, wrong domain/version pairs, unknown or duplicate tags, extra descriptor bytes and noncanonical ordering. Preserve exact declared-versus-required capability masks and all existing bounds."
+qualification_scope = "All existing do_* and referenced acceptance criteria remain required. Exercise real native deploy, interface publication, signed receipt and state-membership proof verification, widening, narrowing refusal and authenticated breaking upgrades across supported ABIs. Keep ABI downgrade, signature, code-hash, export, proof, staleness and ownership refusals. Native proof generation and registry consumption run inside the single gate; legacy unit fixtures are not substitutes for genuine native evidence. Oracle and web observation fulfillment are separate operations and receive no completion credit from interface validation."
+frozen_read_only_paths = ["Makefile", "programs/crates/layerx-programs-runtime/src/engine.rs", "programs/crates/layerx-programs-runtime/src/validate.rs", "programs/crates/layerx-programs-runtime/src/lib.rs", "programs/crates/layerx-programs-runtime/src/ffi_call.rs", "src/modules/programs/deploy.c", "src/modules/programs/accounts.c", "src/modules/programs/call.c", "include/layerx/programs.h"]
+implementation_boundary = "Only declared touches may change. Additive interface-version support uses the existing explicit ABI validators. Preserve every existing assertion, legacy representation and proof requirement; no fallback decoder, fabricated positive receipt index, capability-mask relaxation or neighboring runtime changes."
+release_gate_policy = "Retain full make programs-test once per merged wave or release candidate; focused task evidence is not aggregate equivalence."
 
 [task.104.35.2]
 title = "Verify a single execution step on-platform"
