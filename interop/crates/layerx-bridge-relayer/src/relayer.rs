@@ -86,6 +86,7 @@ pub enum RelayerError {
     },
     /// This instance's attestor is not in the destination's attestor set.
     NotAttestor,
+    ReceiptFailed,
     /// The estimated gas exceeds the configured gas limit.
     GasLimit {
         estimated: u64,
@@ -112,6 +113,7 @@ impl fmt::Display for RelayerError {
             Self::NotAttestor => {
                 formatter.write_str("this attestor is not in the destination attestor set")
             }
+            Self::ReceiptFailed => formatter.write_str("destination transaction execution failed"),
             Self::GasLimit { estimated, limit } => {
                 write!(
                     formatter,
@@ -153,6 +155,34 @@ impl From<ReleaseError> for RelayerError {
     fn from(value: ReleaseError) -> Self {
         Self::Release(value)
     }
+}
+
+impl RelayerError {
+    /// Whether the failure belongs to one item and its destination (its RPC,
+    /// receipt, signer or transaction) rather than to the shared journal or
+    /// configuration, which stay fatal for the whole pass.
+    #[must_use]
+    pub const fn is_item_scoped(&self) -> bool {
+        matches!(
+            self,
+            Self::Rpc(_)
+                | Self::Abi(_)
+                | Self::Key(_)
+                | Self::NotAttestor
+                | Self::ReceiptFailed
+                | Self::GasLimit { .. }
+                | Self::Release(_)
+        )
+    }
+}
+
+/// An outbound item the last pass could not advance: its journal key, its
+/// destination chain and the destination-specific failure.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ItemFailure {
+    pub item: String,
+    pub chain_id: u64,
+    pub error: RelayerError,
 }
 
 /// Fee and gas bounds for transactions on one destination chain.
@@ -383,6 +413,8 @@ pub struct Relayer {
     max_submissions: u32,
     solana: Option<SolanaLink>,
     release: Option<SolanaRelease>,
+    failures: Vec<ItemFailure>,
+    journal_failure: Option<JournalError>,
 }
 
 fn malformed() -> RelayerError {
@@ -526,6 +558,8 @@ impl Relayer {
             max_submissions,
             solana,
             release,
+            failures: Vec::new(),
+            journal_failure: None,
         })
     }
 
@@ -534,19 +568,49 @@ impl Relayer {
         &self.journal
     }
 
+    /// The outbound items the last outbound pass could not advance, each
+    /// with its destination and failure.
+    #[must_use]
+    pub fn failures(&self) -> &[ItemFailure] {
+        &self.failures
+    }
+
     /// One pass of every loop: inbound for each chain, inbound from Solana
     /// when configured, then outbound.
     pub fn tick(&mut self) -> Vec<(String, Result<StepReport, RelayerError>)> {
+        self.failures.clear();
         let mut results = Vec::with_capacity(self.chains.len() + 2);
+        if let Some(error) = &self.journal_failure {
+            results.push((OUTBOUND_STREAM.to_owned(), Err(error.clone().into())));
+            return results;
+        }
         for index in 0..self.chains.len() {
             let stream = inbound_stream(self.chains[index].settings.chain_id);
-            results.push((stream, self.inbound_step(index)));
+            let result = self.inbound_step(index);
+            let fatal = self.retain_journal_failure(&result);
+            results.push((stream, result));
+            if fatal {
+                return results;
+            }
         }
         if self.solana.is_some() {
-            results.push((inbound_stream(SOLANA_CHAIN_ID), self.solana_step()));
+            let result = self.solana_step();
+            let fatal = self.retain_journal_failure(&result);
+            results.push((inbound_stream(SOLANA_CHAIN_ID), result));
+            if fatal {
+                return results;
+            }
         }
         results.push((OUTBOUND_STREAM.to_owned(), self.outbound_step()));
         results
+    }
+
+    fn retain_journal_failure(&mut self, result: &Result<StepReport, RelayerError>) -> bool {
+        if let Err(RelayerError::Journal(error)) = result {
+            self.journal_failure = Some(error.clone());
+            return true;
+        }
+        false
     }
 
     /// Scans chain `index` for final deposits and advances every open
@@ -557,6 +621,15 @@ impl Relayer {
     /// Returns the first RPC, decoding, signing or journal failure; the pass
     /// is retried from the journal on the next call.
     pub fn inbound_step(&mut self, index: usize) -> Result<StepReport, RelayerError> {
+        if let Some(error) = &self.journal_failure {
+            return Err(error.clone().into());
+        }
+        let result = self.run_inbound_step(index);
+        self.retain_journal_failure(&result);
+        result
+    }
+
+    fn run_inbound_step(&mut self, index: usize) -> Result<StepReport, RelayerError> {
         let settings = self
             .chains
             .get(index)
@@ -587,6 +660,15 @@ impl Relayer {
     /// decoding, signing or journal failure; the pass is retried from the
     /// journal on the next call.
     pub fn solana_step(&mut self) -> Result<StepReport, RelayerError> {
+        if let Some(error) = &self.journal_failure {
+            return Err(error.clone().into());
+        }
+        let result = self.run_solana_step();
+        self.retain_journal_failure(&result);
+        result
+    }
+
+    fn run_solana_step(&mut self) -> Result<StepReport, RelayerError> {
         let settings = self
             .solana
             .as_ref()
@@ -654,29 +736,75 @@ impl Relayer {
     /// Solana releases are configured, burns to Solana through the custody
     /// program's release.
     ///
+    /// Each item is attempted at most once per pass. A destination-specific
+    /// failure (RPC, receipt, signer or transaction) is recorded in
+    /// [`Self::failures`] with the item and its destination; that
+    /// destination's later items wait for the next pass so its submitter's
+    /// nonce order is kept, while every other destination still advances.
+    ///
     /// # Errors
     ///
-    /// Returns the first RPC, decoding, signing or journal failure; the pass
-    /// is retried from the journal on the next call.
+    /// Returns a failure of the shared Paxeer scan, the journal or the
+    /// configuration. A journal failure stops this instance until it is reopened.
     pub fn outbound_step(&mut self) -> Result<StepReport, RelayerError> {
+        self.failures.clear();
+        if let Some(error) = &self.journal_failure {
+            return Err(error.clone().into());
+        }
+        let result = self.advance_outbound();
+        self.retain_journal_failure(&result);
+        result
+    }
+
+    fn advance_outbound(&mut self) -> Result<StepReport, RelayerError> {
         let mut report = StepReport {
             observed: self.scan_outbound()?,
             ..StepReport::default()
         };
-        let keys = self.open_items(|observation| {
-            matches!(observation, Observation::Outbound { chain_id, .. } if *chain_id != SOLANA_CHAIN_ID)
-        });
-        for key in keys {
-            let progress = self.advance(&key)?;
-            report.count(&progress);
-        }
-        if self.release.is_some() {
-            let keys = self.open_items(|observation| {
-                matches!(observation, Observation::Outbound { chain_id, .. } if *chain_id == SOLANA_CHAIN_ID)
+        let releases = self.release.is_some();
+        let mut items = self.journal.state().items.iter().filter_map(|(key, item)| {
+            let Observation::Outbound { chain_id, position, paxeer_nonce, .. } = item.observation else {
+                return None;
+            };
+            if !item.is_open() || (chain_id == SOLANA_CHAIN_ID && !releases) {
+                return None;
+            }
+            let transaction = item.pending().map(|submission| {
+                (submission.submitter, submission.nonce)
             });
-            for key in keys {
-                let progress = self.release(&key)?;
-                report.count(&progress);
+            Some((chain_id, transaction, position.block_number, paxeer_nonce, key.clone()))
+        }).collect::<Vec<_>>();
+        items.sort_by_key(|(chain, transaction, block, nonce, key)| {
+            (*chain, transaction.is_none(), *transaction, *block, *nonce, key.clone())
+        });
+        let mut blocked = BTreeSet::new();
+        for (chain_id, _, _, _, key) in items {
+            if blocked.contains(&chain_id) {
+                report.count(&Progress::Waiting);
+                continue;
+            }
+            let result = if chain_id == SOLANA_CHAIN_ID {
+                self.release(&key)
+            } else {
+                self.advance(&key)
+            };
+            match result {
+                Ok(progress) => {
+                    if chain_id != SOLANA_CHAIN_ID && matches!(progress, Progress::Waiting) {
+                        blocked.insert(chain_id);
+                    }
+                    report.count(&progress);
+                }
+                Err(error) if error.is_item_scoped() => {
+                    blocked.insert(chain_id);
+                    report.count(&Progress::Waiting);
+                    self.failures.push(ItemFailure {
+                        item: key,
+                        chain_id,
+                        error,
+                    });
+                }
+                Err(error) => return Err(error),
             }
         }
         Ok(report)
@@ -1079,9 +1207,10 @@ impl Relayer {
         })?;
         // The journaled bytes are authoritative from here on: whatever this
         // broadcast returns, the next pass resolves the same transaction.
-        let _ = self
-            .rpc(side)
-            .send_raw_transaction(&signed.raw, &signed.hash);
+        let broadcast = self.rpc(side).send_raw_transaction(&signed.raw, &signed.hash);
+        if matches!(observation, Observation::Outbound { .. }) {
+            broadcast?;
+        }
         Ok(Progress::Submitted)
     }
 
@@ -1130,6 +1259,7 @@ impl Relayer {
         let estimated = match estimate {
             Ok(value) => quantity_of(&value)?,
             Err(RpcFault::Configuration) => return Err(RelayerError::Rpc(RpcFault::Configuration)),
+            Err(error) if matches!(side, Side::Chain(_)) => return Err(error.into()),
             Err(_) => return Ok(None),
         };
         if estimated > gas.gas_limit {
@@ -1185,7 +1315,7 @@ impl Relayer {
             }
             return match rpc.send_raw_transaction(&pending.raw, &pending.tx_hash) {
                 Ok(_) => Ok(Progress::Waiting),
-                Err(RpcFault::Rejected { .. }) => {
+                Err(error @ RpcFault::Rejected { .. }) => {
                     if self.consumed(side, observation)? {
                         self.journal.append(&Entry::Completed {
                             item: key.to_owned(),
@@ -1197,6 +1327,9 @@ impl Relayer {
                         item: key.to_owned(),
                         tx_hash: pending.tx_hash,
                     })?;
+                    if matches!(observation, Observation::Outbound { .. }) {
+                        return Err(error.into());
+                    }
                     Ok(Progress::Waiting)
                 }
                 Err(error) => Err(RelayerError::Rpc(error)),
@@ -1234,6 +1367,9 @@ impl Relayer {
                     item: key.to_owned(),
                     tx_hash: pending.tx_hash,
                 })?;
+                if matches!(observation, Observation::Outbound { .. }) {
+                    return Err(RelayerError::ReceiptFailed);
+                }
                 Ok(Progress::Waiting)
             }
             _ => Err(RelayerError::Rpc(RpcFault::Malformed)),
@@ -1530,10 +1666,7 @@ impl Relayer {
         })?;
         // The journaled bytes are authoritative from here on: whatever this
         // broadcast returns, the next pass resolves the same transaction.
-        let _ = self
-            .solana_link()?
-            .rpc
-            .send_transaction(&raw, &fee_signature);
+        self.solana_link()?.rpc.send_transaction(&raw, &fee_signature)?;
         Ok(Progress::Submitted)
     }
 
@@ -1567,7 +1700,7 @@ impl Relayer {
                     item: key.to_owned(),
                     signature: pending.signature,
                 })?;
-                Ok(Progress::Waiting)
+                Err(RelayerError::ReceiptFailed)
             }
             Some(status) => {
                 self.journal.append(&Entry::Completed {
@@ -1596,11 +1729,11 @@ impl Relayer {
                 }
                 match link.rpc.send_transaction(&pending.raw, &pending.signature) {
                     Ok(_) => Ok(Progress::Waiting),
-                    Err(RpcFault::Rejected { .. }) => {
+                    Err(error @ RpcFault::Rejected { .. }) => {
                         if self.release_consumed(attestation)? {
                             return self.already_bridged(key);
                         }
-                        Ok(Progress::Waiting)
+                        Err(error.into())
                     }
                     Err(error) => Err(RelayerError::Rpc(error)),
                 }

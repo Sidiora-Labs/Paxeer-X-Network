@@ -5,7 +5,7 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use layerx_bridge_relayer::config::RelayerConfig;
-use layerx_bridge_relayer::relayer::{Relayer, StepReport};
+use layerx_bridge_relayer::relayer::{Relayer, RelayerError, StepReport, OUTBOUND_STREAM};
 
 fn config_path() -> Option<PathBuf> {
     let mut arguments = std::env::args_os().skip(1);
@@ -35,12 +35,29 @@ fn main() -> ExitCode {
     };
     let interval = Duration::from_millis(config.poll_interval_ms);
     loop {
+        let mut fatal = false;
         for (stream, result) in relayer.tick() {
+            fatal |= matches!(&result, Err(RelayerError::Journal(_)));
             match result {
                 Ok(report) if report == StepReport::default() => {}
                 Ok(report) => eprintln!("layerx-bridge-relayer: {stream}: {report:?}"),
                 Err(error) => eprintln!("layerx-bridge-relayer: {stream}: {error}"),
             }
+        }
+        if !relayer.failures().is_empty() {
+            eprintln!(
+                "layerx-bridge-relayer: {OUTBOUND_STREAM}: failed={}",
+                relayer.failures().len()
+            );
+        }
+        for failure in relayer.failures() {
+            eprintln!(
+                "layerx-bridge-relayer: {OUTBOUND_STREAM}: item {} to chain {}: {}",
+                failure.item, failure.chain_id, failure.error
+            );
+        }
+        if fatal {
+            return ExitCode::FAILURE;
         }
         std::thread::sleep(interval);
     }
