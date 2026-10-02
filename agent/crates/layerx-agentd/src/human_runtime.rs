@@ -421,6 +421,111 @@ mod lxgs2_window_tests {
     }
 }
 
+#[cfg(test)]
+mod owner_expiry_tests {
+    use std::collections::BTreeSet;
+
+    use layerx_types::ids::Did;
+    use layerx_types::verify::VerificationLevel;
+
+    use super::{owner_expiry_seconds, FixedIdentity, HumanOperationError};
+    use crate::identity::{self, CoreIdentity, ProtocolAuthority};
+    use crate::session::{self, OpenRequest, SessionId, SessionRegistry};
+    use crate::store::{Store, TenantId};
+
+    const SESSION: SessionId = SessionId([1; 32]);
+    const OBSERVED: u64 = 10;
+    const LEASE_SEQUENCE: u64 = 1_000;
+    const GRANT_NOT_AFTER_MS: u64 = 10_000_000;
+
+    fn must<T, E: std::fmt::Debug>(value: Result<T, E>) -> T {
+        value.unwrap_or_else(|error| panic!("owner expiry: {error:?}"))
+    }
+
+    fn tenant() -> TenantId {
+        must(TenantId::new("tenant-a"))
+    }
+
+    fn open_request(expiry_seconds: u64) -> OpenRequest {
+        OpenRequest {
+            session_id: SESSION,
+            token_id: [2; 32],
+            tenant: tenant(),
+            agent: must(Did::new(b"agent-a")),
+            authority: ProtocolAuthority::SessionKey([4; 32]),
+            permitted_activity_types: BTreeSet::from([5]),
+            scopes: BTreeSet::from(["prepare".to_owned()]),
+            expiry_sequence: LEASE_SEQUENCE,
+            expiry_seconds: Some(expiry_seconds),
+            opening_client: "owner-expiry-suite".to_owned(),
+            policy_version: "policy-v1".to_owned(),
+        }
+    }
+
+    #[test]
+    fn owner_grant_bound_floors_to_whole_seconds() {
+        assert_eq!(owner_expiry_seconds(GRANT_NOT_AFTER_MS), Ok(10_000));
+        assert_eq!(owner_expiry_seconds(GRANT_NOT_AFTER_MS + 999), Ok(10_000));
+        assert_eq!(owner_expiry_seconds(1_000), Ok(1));
+    }
+
+    #[test]
+    fn owner_grant_bound_below_one_second_is_refused() {
+        for grant_not_after_ms in [0, 1, 999] {
+            assert_eq!(
+                owner_expiry_seconds(grant_not_after_ms),
+                Err(HumanOperationError::Refused)
+            );
+        }
+    }
+
+    #[test]
+    fn owner_time_bound_keeps_the_sequence_bound_and_survives_reopen() {
+        let root = std::env::temp_dir().join(format!("lxp-owner-expiry-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let request = open_request(must(owner_expiry_seconds(GRANT_NOT_AFTER_MS)));
+        {
+            let mut store = must(Store::open(&root));
+            let mut sessions = SessionRegistry::default();
+            let mut resolver = FixedIdentity(CoreIdentity {
+                canonical_bytes: b"owner-expiry-identity".to_vec(),
+                head_sequence: OBSERVED,
+                revocation_sequence: 1,
+                verification_level: VerificationLevel::STATE_PROVEN,
+                frozen: false,
+                authorities: vec![ProtocolAuthority::SessionKey([4; 32])],
+            });
+            let identity = must(identity::register(
+                &mut store,
+                tenant(),
+                request.agent.clone(),
+                &mut resolver,
+            ));
+            must(session::open(
+                &mut store,
+                &mut sessions,
+                &identity,
+                request.clone(),
+                OBSERVED,
+            ));
+        }
+        let store = must(Store::open(&root));
+        let mut restored = SessionRegistry::default();
+        must(restored.restore_tenant(&store, &tenant()));
+        let record = restored
+            .get(&tenant(), SESSION)
+            .unwrap_or_else(|| panic!("restored owner session"));
+        assert_eq!(record.request.expiry_seconds, Some(10_000));
+        assert_eq!(record.request.expiry_sequence, LEASE_SEQUENCE);
+        assert_eq!(
+            record.request,
+            open_request(must(owner_expiry_seconds(GRANT_NOT_AFTER_MS)))
+        );
+        drop(store);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
 pub struct CoreCapabilityScope {
     pub scope: crate::capability::ProtocolScope,
 
@@ -4370,7 +4475,7 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
                 .collect(),
             scopes: request.operation.scopes.iter().cloned().collect(),
             expiry_sequence: validated.1,
-            expiry_seconds: None,
+            expiry_seconds: Some(owner_expiry_seconds(request.operation.grant_expires_at)?),
             opening_client: request.operation.opening_client,
             policy_version: request.operation.policy_version,
         };
@@ -9095,6 +9200,20 @@ fn evidence_unavailable(error: &EvidenceError) -> bool {
         }
         _ => false,
     }
+}
+
+/// Converts the issued owner grant's verified not-after instant (unix milliseconds) into the
+/// session's public time expiry in whole unix seconds, rounded down so the session never
+/// outlives the grant. The sequence expiry stays the independently validated lease bound.
+///
+/// # Errors
+///
+/// Refuses a grant bound below one second, which leaves no admissible public expiry.
+fn owner_expiry_seconds(grant_not_after_ms: u64) -> Result<u64, HumanOperationError> {
+    grant_not_after_ms
+        .checked_div(1000)
+        .filter(|seconds| *seconds != 0)
+        .ok_or(HumanOperationError::Refused)
 }
 
 fn owner_authority(request: &HumanOwnerInstall) -> Result<ProtocolAuthority, HumanOperationError> {
