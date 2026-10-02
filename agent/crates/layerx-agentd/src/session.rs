@@ -19,7 +19,8 @@ pub use revocation::{
     InvalidationReason, InvalidationReport, PendingActivity, PreparationState, RevocationEvent,
 };
 
-const RECORD_VERSION: &[u8; 6] = b"LXSR04";
+const RECORD_VERSION: &[u8; 6] = b"LXSR05";
+const PREVIOUS_RECORD_VERSION: &[u8; 6] = b"LXSR04";
 const LEGACY_RECORD_VERSION: &[u8; 6] = b"LXSR02";
 const FIRST_GENERATION: u64 = 1;
 const TOKEN_CORRELATION_DOMAIN: &[u8] = b"layerx-agentd/tenant-audit-token-correlation/v1\0";
@@ -118,6 +119,7 @@ pub struct OpenRequest {
     pub permitted_activity_types: BTreeSet<u16>,
     pub scopes: BTreeSet<String>,
     pub expiry_sequence: u64,
+    pub expiry_seconds: Option<u64>,
     pub opening_client: String,
     pub policy_version: String,
 }
@@ -134,6 +136,7 @@ impl fmt::Debug for OpenRequest {
             .field("permitted_activity_types", &self.permitted_activity_types)
             .field("scopes", &self.scopes)
             .field("expiry_sequence", &self.expiry_sequence)
+            .field("expiry_seconds", &self.expiry_seconds)
             .field("opening_client", &self.opening_client)
             .field("policy_version", &self.policy_version)
             .finish()
@@ -797,6 +800,9 @@ fn validate_request(
     if request.policy_version.is_empty() {
         return Err(SessionError::MissingField("policy_version"));
     }
+    if request.expiry_seconds == Some(0) {
+        return Err(SessionError::MissingField("expiry_seconds"));
+    }
     if request.expiry_sequence <= core_sequence {
         return Err(SessionError::Expired);
     }
@@ -864,6 +870,13 @@ fn encode(record: &SessionRecord) -> Result<Vec<u8>, SessionError> {
     bytes.extend_from_slice(&record.request.session_id.0);
     bytes.extend_from_slice(&record.request.token_id);
     bytes.extend_from_slice(&record.request.expiry_sequence.to_be_bytes());
+    match record.request.expiry_seconds {
+        None => bytes.push(0),
+        Some(seconds) => {
+            bytes.push(1);
+            bytes.extend_from_slice(&seconds.to_be_bytes());
+        }
+    }
     bytes.push(u8::from(record.open));
     bytes.extend_from_slice(&record.sequence.to_be_bytes());
     bytes.extend_from_slice(&record.budget_reserved.to_be_bytes());
@@ -945,14 +958,28 @@ impl<'a> RecordReader<'a> {
 
 fn decode(bytes: &[u8], tenant: TenantId) -> Result<SessionRecord, SessionError> {
     let mut reader = RecordReader { bytes, at: 0 };
-    let (carries_generation, carries_retired_tokens) = match reader.take(6)? {
-        version if version == RECORD_VERSION => (true, true),
-        version if version == LEGACY_RECORD_VERSION => (false, false),
-        _ => return Err(SessionError::MissingField("record_version")),
-    };
+    let (carries_generation, carries_retired_tokens, carries_public_expiry) =
+        match reader.take(6)? {
+            version if version == RECORD_VERSION => (true, true, true),
+            version if version == PREVIOUS_RECORD_VERSION => (true, true, false),
+            version if version == LEGACY_RECORD_VERSION => (false, false, false),
+            _ => return Err(SessionError::MissingField("record_version")),
+        };
     let session_id = SessionId(reader.fixed::<32>("session_id")?);
     let token_id = reader.fixed::<32>("token_id")?;
     let expiry_sequence = u64::from_be_bytes(reader.fixed::<8>("expiry")?);
+    let expiry_seconds = if carries_public_expiry {
+        match reader.take(1)?[0] {
+            0 => None,
+            1 => match u64::from_be_bytes(reader.fixed::<8>("expiry_seconds")?) {
+                0 => return Err(SessionError::MissingField("expiry_seconds")),
+                seconds => Some(seconds),
+            },
+            _ => return Err(SessionError::MissingField("expiry_seconds")),
+        }
+    } else {
+        None
+    };
     let open = match reader.take(1)?[0] {
         0 => false,
         1 => true,
@@ -1013,6 +1040,7 @@ fn decode(bytes: &[u8], tenant: TenantId) -> Result<SessionRecord, SessionError>
             permitted_activity_types,
             scopes,
             expiry_sequence,
+            expiry_seconds,
             opening_client,
             policy_version,
         },
@@ -1039,4 +1067,105 @@ pub(crate) fn invalidate_with_projection(
     updates: Vec<(crate::store::TenantKey, Vec<u8>)>,
 ) -> Result<InvalidationReport, SessionError> {
     revocation::apply_revocation_with_updates(store, registry, &mut [], event, updates)
+}
+
+impl SessionRecord {
+    /// # Errors
+    ///
+    /// Returns `MissingField("expiry_seconds")` when no public time expiry was admitted or it overflows milliseconds.
+    pub fn public_expiry_within(&self, core_time_ms: u64) -> Result<bool, SessionError> {
+        let expiry_ms = self
+            .request
+            .expiry_seconds
+            .and_then(|seconds| seconds.checked_mul(1_000))
+            .ok_or(SessionError::MissingField("expiry_seconds"))?;
+        Ok(core_time_ms < expiry_ms)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const PRESENCE_OFFSET: usize = 6 + 32 + 32 + 8;
+
+    fn must<T, E: fmt::Debug>(value: Result<T, E>) -> T {
+        value.unwrap_or_else(|error| panic!("session record: {error:?}"))
+    }
+
+    fn tenant() -> TenantId {
+        must(TenantId::new("tenant-a"))
+    }
+
+    fn record(expiry_seconds: Option<u64>) -> SessionRecord {
+        SessionRecord {
+            request: OpenRequest {
+                session_id: SessionId([1; 32]),
+                token_id: [2; 32],
+                tenant: tenant(),
+                agent: must(Did::new(b"agent-a")),
+                authority: ProtocolAuthority::SessionKey([3; 32]),
+                permitted_activity_types: BTreeSet::from([5]),
+                scopes: BTreeSet::from(["prepare".to_owned()]),
+                expiry_sequence: 100,
+                expiry_seconds,
+                opening_client: "session-suite".to_owned(),
+                policy_version: "policy-v1".to_owned(),
+            },
+            open: true,
+            sequence: 0,
+            budget_reserved: 0,
+            subscription_cursor: 0,
+            generation: FIRST_GENERATION,
+            retired_token_ids: BTreeSet::from([[4; 32]]),
+        }
+    }
+
+    #[test]
+    fn public_expiry_round_trips_in_the_current_version() {
+        for expiry_seconds in [Some(1_900_000_000), None] {
+            let original = record(expiry_seconds);
+            let bytes = must(encode(&original));
+            assert_eq!(&bytes[..6], RECORD_VERSION);
+            assert_eq!(must(decode(&bytes, tenant())), original);
+        }
+    }
+
+    #[test]
+    fn previous_version_decodes_without_public_expiry() {
+        let original = record(None);
+        let mut bytes = must(encode(&original));
+        bytes[..6].copy_from_slice(PREVIOUS_RECORD_VERSION);
+        assert_eq!(bytes.remove(PRESENCE_OFFSET), 0);
+        let restored = must(decode(&bytes, tenant()));
+        assert_eq!(restored.request.expiry_seconds, None);
+        assert_eq!(restored, original);
+    }
+
+    #[test]
+    fn malformed_public_expiry_is_refused() {
+        let expected = Err(SessionError::MissingField("expiry_seconds"));
+        let mut unknown_presence = must(encode(&record(None)));
+        unknown_presence[PRESENCE_OFFSET] = 2;
+        assert_eq!(decode(&unknown_presence, tenant()), expected);
+        let zero = must(encode(&record(Some(0))));
+        assert_eq!(decode(&zero, tenant()), expected);
+        let mut previous_with_expiry = must(encode(&record(Some(7))));
+        previous_with_expiry[..6].copy_from_slice(PREVIOUS_RECORD_VERSION);
+        assert!(decode(&previous_with_expiry, tenant()).is_err());
+        let mut truncated = must(encode(&record(Some(7))));
+        truncated.truncate(PRESENCE_OFFSET + 4);
+        assert!(decode(&truncated, tenant()).is_err());
+    }
+
+    #[test]
+    fn public_expiry_compares_seconds_to_core_time() {
+        let bounded = record(Some(10));
+        assert_eq!(bounded.public_expiry_within(9_999), Ok(true));
+        assert_eq!(bounded.public_expiry_within(10_000), Ok(false));
+        assert_eq!(bounded.public_expiry_within(u64::MAX), Ok(false));
+        let missing = Err(SessionError::MissingField("expiry_seconds"));
+        assert_eq!(record(None).public_expiry_within(0), missing);
+        assert_eq!(record(Some(u64::MAX)).public_expiry_within(0), missing);
+    }
 }

@@ -848,6 +848,137 @@ impl SessionControl {
     ) -> Result<bool, SessionControlError> {
         self.mark_inner(tenant, preparation_id, LifecycleState::Acknowledged)
     }
+
+    /// # Errors
+    ///
+    /// Returns an error unless the permit resolves at its exact open, unexpired generation and the capability is a live record of the same tenant and agent.
+    pub fn bind_capability(
+        &self,
+        permit: &OperationPermit,
+        capability_id: [u8; 32],
+        observed_head_sequence: u64,
+    ) -> Result<(), SessionControlError> {
+        if capability_id == [0; 32] {
+            return Err(SessionControlError::Session(SessionError::MissingField(
+                "capability_id",
+            )));
+        }
+        let registry = self
+            .registry
+            .read()
+            .map_err(|_| SessionControlError::Unavailable)?;
+        let (tenant, session_id, generation) =
+            self.bindable_session(permit, &registry, observed_head_sequence)?;
+        let mut store = self
+            .store
+            .lock()
+            .map_err(|_| SessionControlError::Unavailable)?;
+        live_capability(&store, &tenant, permit.token.agent(), capability_id)?;
+        let key = SessionCapabilityBinding::key(&tenant, session_id)?;
+        let existing = store
+            .get(&key)
+            .map(|stored| SessionCapabilityBinding::decode(&tenant, session_id, stored.bytes()))
+            .transpose()?;
+        if let Some(existing) = existing {
+            if existing.generation == generation {
+                return if existing.capability_id == capability_id {
+                    Ok(())
+                } else {
+                    Err(SessionControlError::Session(SessionError::IdentityMismatch))
+                };
+            }
+        }
+        let binding = SessionCapabilityBinding {
+            tenant,
+            session_id,
+            capability_id,
+            generation,
+            bound_at_sequence: observed_head_sequence,
+        };
+        store
+            .put_local(key, binding.encode())
+            .map_err(|_| SessionControlError::Unavailable)
+    }
+
+    /// # Errors
+    ///
+    /// Returns an error when the stored association is corrupt, its session is no longer open at the bound generation, or its capability is absent or revoked.
+    pub fn capability_binding(
+        &self,
+        tenant: &TenantId,
+        session_id: SessionId,
+    ) -> Result<Option<SessionCapabilityBinding>, SessionControlError> {
+        let registry = self
+            .registry
+            .read()
+            .map_err(|_| SessionControlError::Unavailable)?;
+        let store = self
+            .store
+            .lock()
+            .map_err(|_| SessionControlError::Unavailable)?;
+        let Some(stored) = store.get(&SessionCapabilityBinding::key(tenant, session_id)?) else {
+            return Ok(None);
+        };
+        let binding = SessionCapabilityBinding::decode(tenant, session_id, stored.bytes())?;
+        let record = registry
+            .get(tenant, session_id)
+            .ok_or(SessionControlError::Session(SessionError::Revoked))?;
+        if !record.open || record.generation != binding.generation {
+            return Err(SessionControlError::Session(SessionError::Revoked));
+        }
+        live_capability(&store, tenant, &record.request.agent, binding.capability_id)?;
+        Ok(Some(binding))
+    }
+
+    /// # Errors
+    ///
+    /// Returns an error unless the permit resolves at its exact open, unexpired generation and an association is stored for its session.
+    pub fn unbind_capability(
+        &self,
+        permit: &OperationPermit,
+        observed_head_sequence: u64,
+    ) -> Result<(), SessionControlError> {
+        let registry = self
+            .registry
+            .read()
+            .map_err(|_| SessionControlError::Unavailable)?;
+        let (tenant, session_id, _) =
+            self.bindable_session(permit, &registry, observed_head_sequence)?;
+        let mut store = self
+            .store
+            .lock()
+            .map_err(|_| SessionControlError::Unavailable)?;
+        let key = SessionCapabilityBinding::key(&tenant, session_id)?;
+        if store
+            .remove_local(&key)
+            .map_err(|_| SessionControlError::Unavailable)?
+        {
+            Ok(())
+        } else {
+            Err(SessionControlError::Session(SessionError::NotFound))
+        }
+    }
+
+    fn bindable_session(
+        &self,
+        permit: &OperationPermit,
+        registry: &SessionRegistry,
+        observed_head_sequence: u64,
+    ) -> Result<(TenantId, SessionId, u64), SessionControlError> {
+        permit.resolve(self, registry)?;
+        let tenant = permit.token.tenant().clone();
+        let session_id = permit.token.session_id();
+        let record = registry
+            .get(&tenant, session_id)
+            .ok_or(SessionControlError::Session(SessionError::NotFound))?;
+        if !record.open || record.generation != permit.token.generation() {
+            return Err(SessionControlError::Session(SessionError::Revoked));
+        }
+        if record.request.expiry_sequence <= observed_head_sequence {
+            return Err(SessionControlError::Session(SessionError::Expired));
+        }
+        Ok((tenant, session_id, record.generation))
+    }
 }
 
 /// Exact-generation authorization retained across a bounded daemon operation.
@@ -1619,4 +1750,367 @@ fn replacement_bearer(
         return Err(SessionControlError::Unavailable);
     }
     Ok((replacement_generation, replacement_token))
+}
+
+const CAPABILITY_BINDING_PREFIX: &[u8] = b"session/capability/";
+const CAPABILITY_BINDING_VERSION: &[u8; 6] = b"LXSC01";
+const CAPABILITY_BINDING_BODY: usize = 32 + 32 + 8 + 8;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SessionCapabilityBinding {
+    pub tenant: TenantId,
+    pub session_id: SessionId,
+    pub capability_id: [u8; 32],
+    pub generation: u64,
+    pub bound_at_sequence: u64,
+}
+
+impl SessionCapabilityBinding {
+    fn key(tenant: &TenantId, session_id: SessionId) -> Result<TenantKey, SessionControlError> {
+        let mut object = CAPABILITY_BINDING_PREFIX.to_vec();
+        object.extend_from_slice(&session_id.0);
+        TenantKey::new(tenant.clone(), ObjectKind::Configuration, object)
+            .map_err(|error| SessionControlError::Session(SessionError::Store(error)))
+    }
+
+    fn encode(&self) -> Vec<u8> {
+        let mut bytes = CAPABILITY_BINDING_VERSION.to_vec();
+        bytes.extend_from_slice(&self.session_id.0);
+        bytes.extend_from_slice(&self.capability_id);
+        bytes.extend_from_slice(&self.generation.to_be_bytes());
+        bytes.extend_from_slice(&self.bound_at_sequence.to_be_bytes());
+        bytes
+    }
+
+    fn decode(
+        tenant: &TenantId,
+        session_id: SessionId,
+        bytes: &[u8],
+    ) -> Result<Self, SessionControlError> {
+        let corrupt =
+            || SessionControlError::Session(SessionError::MissingField("capability_binding"));
+        let body = bytes
+            .strip_prefix(CAPABILITY_BINDING_VERSION.as_slice())
+            .filter(|body| body.len() == CAPABILITY_BINDING_BODY)
+            .ok_or_else(corrupt)?;
+        let (stored_session, rest) = body.split_at(32);
+        let (capability_id, rest) = rest.split_at(32);
+        let (generation, bound_at_sequence) = rest.split_at(8);
+        let capability_id: [u8; 32] = capability_id.try_into().map_err(|_| corrupt())?;
+        let generation = u64::from_be_bytes(generation.try_into().map_err(|_| corrupt())?);
+        let bound_at_sequence =
+            u64::from_be_bytes(bound_at_sequence.try_into().map_err(|_| corrupt())?);
+        if stored_session != session_id.0.as_slice() || capability_id == [0; 32] || generation == 0
+        {
+            return Err(corrupt());
+        }
+        Ok(Self {
+            tenant: tenant.clone(),
+            session_id,
+            capability_id,
+            generation,
+            bound_at_sequence,
+        })
+    }
+}
+
+fn live_capability(
+    store: &Store,
+    tenant: &TenantId,
+    agent: &layerx_types::ids::Did,
+    capability_id: [u8; 32],
+) -> Result<(), SessionControlError> {
+    let record = crate::capability::timed::restore(store, tenant, &capability_id)
+        .map_err(|_| SessionControlError::Unavailable)?
+        .ok_or(SessionControlError::Authorization(
+            AuthorizationError::NotAuthorized,
+        ))?;
+    if record.agent.as_bytes() != agent.as_bytes() {
+        return Err(SessionControlError::Authorization(
+            AuthorizationError::NotAuthorized,
+        ));
+    }
+    if record.revoked.is_some() {
+        return Err(SessionControlError::Authorization(
+            AuthorizationError::Revoked,
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use layerx_types::ids::Did;
+    use layerx_types::verify::VerificationLevel;
+
+    use super::*;
+    use crate::budget::{LimitConfig, LimitScope};
+    use crate::capability::timed::{self, TimedCapability};
+    use crate::identity::{self, CoreIdentity, IdentityError, IdentityResolver, ProtocolAuthority};
+    use crate::session::OpenRequest;
+
+    const OBSERVED: u64 = 10;
+    const SESSION: SessionId = SessionId([1; 32]);
+
+    struct CoreBoundary(CoreIdentity);
+
+    impl IdentityResolver for CoreBoundary {
+        fn resolve(&mut self, _did: &Did) -> Result<Option<CoreIdentity>, IdentityError> {
+            Ok(Some(self.0.clone()))
+        }
+    }
+
+    fn must<T, E: std::fmt::Debug>(value: Result<T, E>) -> T {
+        value.unwrap_or_else(|error| panic!("session capability binding: {error:?}"))
+    }
+
+    fn tenant() -> TenantId {
+        must(TenantId::new("tenant-a"))
+    }
+
+    fn control(name: &str) -> (std::path::PathBuf, SessionControl, Token) {
+        let root = std::env::temp_dir().join(format!("lxp-scb-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let mut store = must(Store::open(&root));
+        let mut sessions = SessionRegistry::default();
+        let agent = must(Did::new(b"agent-a"));
+        let mut boundary = CoreBoundary(CoreIdentity {
+            canonical_bytes: b"session-capability-identity".to_vec(),
+            head_sequence: OBSERVED,
+            revocation_sequence: 1,
+            verification_level: VerificationLevel::STATE_PROVEN,
+            frozen: false,
+            authorities: vec![ProtocolAuthority::SessionKey([4; 32])],
+        });
+        let identity = must(identity::register(
+            &mut store,
+            tenant(),
+            agent.clone(),
+            &mut boundary,
+        ));
+        let token = must(session::open(
+            &mut store,
+            &mut sessions,
+            &identity,
+            OpenRequest {
+                session_id: SESSION,
+                token_id: [2; 32],
+                tenant: tenant(),
+                agent,
+                authority: ProtocolAuthority::SessionKey([4; 32]),
+                permitted_activity_types: BTreeSet::from([5]),
+                scopes: BTreeSet::from(["prepare".to_owned(), "write".to_owned()]),
+                expiry_sequence: 1_000,
+                expiry_seconds: Some(1_900_000_000),
+                opening_client: "session-capability-suite".to_owned(),
+                policy_version: "policy-v1".to_owned(),
+            },
+            OBSERVED,
+        ));
+        let limiter = must(BudgetLimiter::new(vec![LimitConfig {
+            id: LimitId([1; 16]),
+            name: "tenant-limit".to_owned(),
+            scope: LimitScope::Tenant([1; 32]),
+            ceiling: 1_000,
+            consumed: 0,
+        }]));
+        let control = SessionControl::new(
+            Arc::new(Mutex::new(store)),
+            sessions,
+            Arc::new(PreparationLifecycle::default()),
+            Arc::new(limiter),
+        );
+        (root, control, token)
+    }
+
+    fn capability(control: &SessionControl, id: u8, agent: &str, revoked: Option<(u64, u64)>) {
+        let record = TimedCapability {
+            id: [id; 32],
+            parent: None,
+            tenant: tenant(),
+            agent: agent.to_owned(),
+            authority: ProtocolAuthority::CapabilityGrant([9; 32]),
+            activity_types: BTreeSet::from([5]),
+            counterparties: BTreeSet::from([[8; 32]]),
+            assets: BTreeSet::from([[7; 32]]),
+            amount_ceilings: BTreeMap::from([([7; 32], 100)]),
+            rate_ceilings: BTreeMap::from([(60, 5)]),
+            purposes: BTreeSet::from(["pay".to_owned()]),
+            expiry_seconds: 10_000,
+            grant_not_after_ms: 10_000_000,
+            created_at_ms: 1,
+            created_at_sequence: 1,
+            revoked,
+        };
+        let mut store = must(control.store.lock());
+        must(store.put_local(
+            must(timed::record_key(&tenant(), &record.id)),
+            must(record.encode()),
+        ));
+    }
+
+    fn permit(control: &SessionControl, token: &Token) -> OperationPermit {
+        must(control.authorize(
+            &token.credential(),
+            Operation::Prepare,
+            Surface::Contract,
+            OBSERVED,
+            None,
+        ))
+    }
+
+    #[test]
+    fn binding_round_trips_and_replays_only_the_same_capability() {
+        let (root, control, token) = control("round-trip");
+        capability(&control, 6, "agent-a", None);
+        capability(&control, 7, "agent-a", None);
+        let permit = permit(&control, &token);
+        must(control.bind_capability(&permit, [6; 32], OBSERVED));
+        let expected = SessionCapabilityBinding {
+            tenant: tenant(),
+            session_id: SESSION,
+            capability_id: [6; 32],
+            generation: 1,
+            bound_at_sequence: OBSERVED,
+        };
+        assert_eq!(
+            must(control.capability_binding(&tenant(), SESSION)),
+            Some(expected.clone())
+        );
+        must(control.bind_capability(&permit, [6; 32], OBSERVED + 1));
+        assert_eq!(
+            must(control.capability_binding(&tenant(), SESSION)),
+            Some(expected)
+        );
+        assert!(matches!(
+            control.bind_capability(&permit, [7; 32], OBSERVED),
+            Err(SessionControlError::Session(SessionError::IdentityMismatch))
+        ));
+        assert_eq!(
+            must(control.capability_binding(&tenant(), SessionId([3; 32]))),
+            None
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn binding_refuses_unusable_capabilities_and_expired_sessions() {
+        let (root, control, token) = control("refusals");
+        capability(&control, 6, "agent-b", None);
+        capability(&control, 7, "agent-a", Some((5, 9)));
+        capability(&control, 8, "agent-a", None);
+        let permit = permit(&control, &token);
+        assert!(matches!(
+            control.bind_capability(&permit, [0; 32], OBSERVED),
+            Err(SessionControlError::Session(SessionError::MissingField(
+                "capability_id"
+            )))
+        ));
+        assert!(matches!(
+            control.bind_capability(&permit, [5; 32], OBSERVED),
+            Err(SessionControlError::Authorization(
+                AuthorizationError::NotAuthorized
+            ))
+        ));
+        assert!(matches!(
+            control.bind_capability(&permit, [6; 32], OBSERVED),
+            Err(SessionControlError::Authorization(
+                AuthorizationError::NotAuthorized
+            ))
+        ));
+        assert!(matches!(
+            control.bind_capability(&permit, [7; 32], OBSERVED),
+            Err(SessionControlError::Authorization(
+                AuthorizationError::Revoked
+            ))
+        ));
+        assert!(matches!(
+            control.bind_capability(&permit, [8; 32], 1_000),
+            Err(SessionControlError::Session(SessionError::Expired))
+        ));
+        assert_eq!(must(control.capability_binding(&tenant(), SESSION)), None);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn session_close_leaves_the_binding_unusable() {
+        let (root, control, token) = control("close");
+        capability(&control, 6, "agent-a", None);
+        let permit = permit(&control, &token);
+        must(control.bind_capability(&permit, [6; 32], OBSERVED));
+        must(control.close(&tenant(), SESSION, OBSERVED));
+        assert!(matches!(
+            control.capability_binding(&tenant(), SESSION),
+            Err(SessionControlError::Session(SessionError::Revoked))
+        ));
+        assert!(control.bind_capability(&permit, [6; 32], OBSERVED).is_err());
+        assert!(control.unbind_capability(&permit, OBSERVED).is_err());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn capability_revocation_leaves_the_binding_unusable() {
+        let (root, control, token) = control("revoked");
+        capability(&control, 6, "agent-a", None);
+        let permit = permit(&control, &token);
+        must(control.bind_capability(&permit, [6; 32], OBSERVED));
+        capability(&control, 6, "agent-a", Some((5, 11)));
+        assert!(matches!(
+            control.capability_binding(&tenant(), SESSION),
+            Err(SessionControlError::Authorization(
+                AuthorizationError::Revoked
+            ))
+        ));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn unbind_clears_the_association_once() {
+        let (root, control, token) = control("unbind");
+        capability(&control, 6, "agent-a", None);
+        let permit = permit(&control, &token);
+        must(control.bind_capability(&permit, [6; 32], OBSERVED));
+        must(control.unbind_capability(&permit, OBSERVED));
+        assert_eq!(must(control.capability_binding(&tenant(), SESSION)), None);
+        assert!(matches!(
+            control.unbind_capability(&permit, OBSERVED),
+            Err(SessionControlError::Session(SessionError::NotFound))
+        ));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn binding_record_decodes_strictly() {
+        let binding = SessionCapabilityBinding {
+            tenant: tenant(),
+            session_id: SESSION,
+            capability_id: [6; 32],
+            generation: 2,
+            bound_at_sequence: OBSERVED,
+        };
+        let bytes = binding.encode();
+        assert_eq!(&bytes[..6], CAPABILITY_BINDING_VERSION);
+        assert_eq!(
+            must(SessionCapabilityBinding::decode(&tenant(), SESSION, &bytes)),
+            binding
+        );
+        let mut other_version = bytes.clone();
+        other_version[5] = b'2';
+        let mut zero_capability = bytes.clone();
+        zero_capability[38..70].fill(0);
+        let mut zero_generation = bytes.clone();
+        zero_generation[70..78].fill(0);
+        let mut trailing = bytes.clone();
+        trailing.push(0);
+        for malformed in [
+            other_version,
+            zero_capability,
+            zero_generation,
+            trailing,
+            bytes[..85].to_vec(),
+        ] {
+            assert!(SessionCapabilityBinding::decode(&tenant(), SESSION, &malformed).is_err());
+        }
+        assert!(SessionCapabilityBinding::decode(&tenant(), SessionId([3; 32]), &bytes).is_err());
+    }
 }
