@@ -686,3 +686,197 @@ private struct HumanAPIError: Decodable {
         return PlatformSDKError(code: mapped, retry: retryClass, requestID: trace, retryAfterMilliseconds: retryAfterMilliseconds)
     }
 }
+
+private let maximumAgentEnvelopeBytes = 1_048_576
+
+public final class AgentSessionCredential: @unchecked Sendable, CustomStringConvertible {
+    public let tenant: String
+    public let sessionID: String
+    public let generation: UInt64
+    private let tokenID: SecretBytes
+
+    public init(tenant: String, sessionID: String, tokenID: Data, generation: UInt64) throws {
+        guard !tenant.isEmpty, tenant.utf8.count <= 255, !tenant.utf8.contains(0),
+              AgentEnvelopeTransport.lowerHex32(sessionID), tokenID.count == 32 else {
+            throw PlatformSDKError(code: .invalidArgument, retry: .never)
+        }
+        self.tenant = tenant
+        self.sessionID = sessionID
+        self.generation = generation
+        self.tokenID = try SecretBytes(tokenID)
+    }
+
+    fileprivate func encoded() throws -> JSONValue {
+        let token = try tokenID.withBytes { bytes in bytes.map { String(format: "%02x", $0) }.joined() }
+        return .object([
+            "tenant": .string(tenant), "session_id": .string(sessionID),
+            "token_id": .string(token), "generation": .string(String(generation)),
+        ])
+    }
+
+    public func destroy() { tokenID.destroy() }
+    public var description: String { "[REDACTED]" }
+}
+
+public struct AgentEnvelopeResult: Sendable, Equatable {
+    public let requestID: String
+    public let value: JSONValue
+    public let verificationStatus: JSONValue
+}
+
+public final class AgentEnvelopeTransport: PlatformTransport, @unchecked Sendable {
+    public static let routePath = "/v1/agent/rpc"
+    static let bootstrapOperations: Set<String> = ["agent.register", "session.open"]
+    private static let verificationLevels = [
+        "Unverified", "SequencerSigned", "BatchIncluded", "StateProven", "CheckpointFinalised", "SettlementAnchored",
+    ]
+    private let endpoint: URL
+    private let session: URLSession
+    private let gatewayKey: LayerXKeyCredential
+    private let credential: AgentSessionCredential?
+
+    public init(baseURL: URL, gatewayKey: LayerXKeyCredential, credential: AgentSessionCredential?,
+                session: URLSession = .shared) throws {
+        guard baseURL.user == nil, baseURL.password == nil, baseURL.host != nil, baseURL.scheme == "https",
+              baseURL.query == nil, baseURL.fragment == nil,
+              var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
+            throw PlatformSDKError(code: .invalidArgument, retry: .never)
+        }
+        components.path = Self.routePath
+        guard let endpoint = components.url else { throw PlatformSDKError(code: .invalidArgument, retry: .never) }
+        self.endpoint = endpoint
+        self.session = session
+        self.gatewayKey = gatewayKey
+        self.credential = credential
+    }
+
+    public func send(_ call: TransportCall) async throws -> JSONValue {
+        try await sendEnvelope(call).value
+    }
+
+    public func sendEnvelope(_ call: TransportCall) async throws -> AgentEnvelopeResult {
+        let descriptor = call.operation.descriptor
+        guard descriptor.plane == .agent else { throw PlatformSDKError(code: .unavailableCapability, retry: .never) }
+        let mutating = descriptor.requiresIdempotency
+        let requestID = String(UInt64.random(in: 1...UInt64.max))
+        let request = try envelopeRequest(descriptor, call: call, requestID: requestID)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request, delegate: NoRedirectDelegate.shared)
+        } catch {
+            throw mutating ? Self.unknownOutcome() : PlatformSDKError(code: .transportFailure, retry: .safe)
+        }
+        do {
+            guard data.count <= maximumHTTPResponseBytes, let http = response as? HTTPURLResponse,
+                  http.value(forHTTPHeaderField: "Content-Type")?.split(separator: ";", maxSplits: 1).first?
+                    .trimmingCharacters(in: .whitespaces).lowercased() == "application/json" else {
+                throw Self.decode()
+            }
+            return try Self.decodeResponse(status: http.statusCode, data: data, requestID: requestID)
+        } catch let error as PlatformSDKError {
+            if mutating, error.code == .decodeFailure || error.code == .verificationFailure { throw Self.unknownOutcome() }
+            throw error
+        }
+    }
+
+    func envelopeRequest(_ descriptor: OperationDescriptor, call: TransportCall, requestID: String) throws -> URLRequest {
+        guard call.pathParameters.isEmpty, call.request.objectValue != nil else {
+            throw PlatformSDKError(code: .invalidArgument, retry: .never)
+        }
+        var envelope: [String: JSONValue] = [
+            "version": .integer(1), "request_id": .string(requestID),
+            "operation": .string(descriptor.name), "request": call.request,
+        ]
+        if Self.bootstrapOperations.contains(descriptor.name) {
+            envelope["credential"] = .null
+        } else {
+            guard let credential else { throw PlatformSDKError(code: .capabilityRefusal, retry: .never) }
+            envelope["credential"] = try credential.encoded()
+        }
+        if descriptor.requiresIdempotency {
+            guard let key = call.idempotencyKey, Self.lowerHex32(key.rawValue) else {
+                throw PlatformSDKError(code: .idempotencyRequired, retry: .never)
+            }
+            envelope["idempotency_key"] = .string(key.rawValue)
+        } else {
+            guard call.idempotencyKey == nil else { throw PlatformSDKError(code: .invalidArgument, retry: .never) }
+            envelope["idempotency_key"] = .null
+        }
+        let body = try JSONEncoder().encode(JSONValue.object(envelope))
+        guard body.count <= maximumAgentEnvelopeBytes else { throw PlatformSDKError(code: .invalidArgument, retry: .never) }
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("layerx-swift/0.1.0", forHTTPHeaderField: "User-Agent")
+        try gatewayKey.authorize(&request)
+        return request
+    }
+
+    static func decodeResponse(status: Int, data: Data, requestID: String) throws -> AgentEnvelopeResult {
+        let document: JSONValue
+        do { document = try JSONDecoder().decode(JSONValue.self, from: data) } catch { throw decode() }
+        guard let object = document.objectValue else { throw decode() }
+        if object["class"] != nil {
+            guard !(200..<300).contains(status),
+                  exact(object, ["class", "protocol_result_code", "retriability", "request_id", "reason"]),
+                  let responseID = object["request_id"]?.stringValue, responseID == requestID || responseID == "0",
+                  let errorClass = object["class"]?.stringValue,
+                  let reason = object["reason"]?.stringValue, reasonCode(reason) else {
+                throw decode()
+            }
+            let resultCode: Int32?
+            switch object["protocol_result_code"] {
+            case .null?: resultCode = nil
+            case let .integer(value)?:
+                guard let exact = Int32(exactly: value) else { throw decode(responseID) }
+                resultCode = exact
+            default: throw decode(responseID)
+            }
+            throw try errorClass.sdkError(.init(requestID: responseID, value: nil, verificationStatus: nil,
+                errorClass: errorClass, protocolResultCode: resultCode,
+                retriability: object["retriability"]?.stringValue, reason: reason))
+        }
+        guard status == 200, exact(object, ["request_id", "value", "verification_status"]),
+              object["request_id"]?.stringValue == requestID, let value = object["value"],
+              let verification = object["verification_status"], validVerification(verification) else {
+            throw decode(object["request_id"]?.stringValue)
+        }
+        return .init(requestID: requestID, value: value, verificationStatus: verification)
+    }
+
+    static func validVerification(_ status: JSONValue) -> Bool {
+        guard let object = status.objectValue else { return false }
+        if exact(object, ["state", "level"]), object["state"]?.stringValue == "achieved",
+           let level = object["level"]?.stringValue {
+            return verificationLevels.contains(level)
+        }
+        guard exact(object, ["state", "requested", "achieved", "reason"]),
+              object["state"]?.stringValue == "unverified",
+              let requested = object["requested"]?.stringValue.flatMap({ verificationLevels.firstIndex(of: $0) }),
+              let achieved = object["achieved"]?.stringValue.flatMap({ verificationLevels.firstIndex(of: $0) }),
+              let reason = object["reason"]?.stringValue else { return false }
+        return achieved < requested && reasonCode(reason)
+    }
+
+    static func lowerHex32(_ value: String) -> Bool {
+        value.utf8.count == 64 && value.utf8.allSatisfy { ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102) }
+    }
+
+    private static func reasonCode(_ value: String) -> Bool {
+        !value.isEmpty && value.utf8.count <= 128
+            && value.utf8.allSatisfy { ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 122) || $0 == 95 || $0 == 46 }
+    }
+
+    private static func exact(_ object: [String: JSONValue], _ fields: Set<String>) -> Bool {
+        object.count == fields.count && Set(object.keys) == fields
+    }
+
+    private static func decode(_ requestID: String? = nil) -> PlatformSDKError {
+        .init(code: .decodeFailure, retry: .never, requestID: requestID)
+    }
+
+    private static func unknownOutcome() -> PlatformSDKError { .init(code: .unknownOutcome, retry: .unknownOutcome) }
+}

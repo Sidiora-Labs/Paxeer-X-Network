@@ -890,6 +890,185 @@ pub struct UnifiedAgentOwner<A> {
     pub degraded: Controller,
 }
 
+/// The one process-wide agent owner shared by the Human Unix listener and the
+/// agent RPC listener, so sessions, budgets, approvals and the outbox keep a
+/// single authority.
+pub struct SharedAgentOwner<A>(Arc<Mutex<UnifiedAgentOwner<A>>>);
+
+impl<A> Clone for SharedAgentOwner<A> {
+    fn clone(&self) -> Self {
+        Self(Arc::clone(&self.0))
+    }
+}
+
+impl<A: HumanAuthorityBoundary> SharedAgentOwner<A> {
+    #[must_use]
+    pub fn new(owner: UnifiedAgentOwner<A>) -> Self {
+        Self(Arc::new(Mutex::new(owner)))
+    }
+
+    /// # Errors
+    /// Returns `HumanOperationError::Unavailable` when a previous holder panicked while
+    /// holding the owner.
+    pub fn lock(&self) -> Result<MutexGuard<'_, UnifiedAgentOwner<A>>, HumanOperationError> {
+        self.0.lock().map_err(|_| HumanOperationError::Unavailable)
+    }
+}
+
+impl<A: HumanAuthorityBoundary> HumanOperations for SharedAgentOwner<A> {
+    fn authorize_subject(&mut self, peer: &HumanPeer) -> Result<(), HumanOperationError> {
+        self.lock()?.authorize_subject(peer)
+    }
+
+    fn account_state(&mut self, peer: &HumanPeer, account_id: [u8; 32]) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.account_state(peer, account_id)
+    }
+
+    fn registry(&self, peer: &HumanPeer) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.registry(peer)
+    }
+
+    fn prepare(&mut self, peer: &HumanPeer, request: MutationEnvelope<HumanPrepare>) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.prepare(peer, request)
+    }
+
+    fn submit_external(&mut self, peer: &HumanPeer, request: MutationEnvelope<HumanSubmit>) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.submit_external(peer, request)
+    }
+
+    fn track(&mut self, peer: &HumanPeer, submission_ref: &str) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.track(peer, submission_ref)
+    }
+
+    fn receipt_by_idempotency_key(&mut self, peer: &HumanPeer, idempotency_key: [u8; 32], expected_activity_id: [u8; 32]) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.receipt_by_idempotency_key(peer, idempotency_key, expected_activity_id)
+    }
+
+    fn approval_list(&mut self, peer: &HumanPeer, current_sequence: u64, cursor: Option<[u8; 32]>, limit: u8) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.approval_list(peer, current_sequence, cursor, limit)
+    }
+
+    fn approval_get(&mut self, peer: &HumanPeer, approval_id: [u8; 32], current_sequence: u64) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.approval_get(peer, approval_id, current_sequence)
+    }
+
+    fn approval_approve(&mut self, peer: &HumanPeer, approval_id: [u8; 32], held_digest: [u8; 32], idempotency_key: &str, current_sequence: u64) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.approval_approve(peer, approval_id, held_digest, idempotency_key, current_sequence)
+    }
+
+    fn approval_reject(&mut self, peer: &HumanPeer, approval_id: [u8; 32], held_digest: [u8; 32], idempotency_key: &str, current_sequence: u64) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.approval_reject(peer, approval_id, held_digest, idempotency_key, current_sequence)
+    }
+
+    fn balance(&mut self, peer: &HumanPeer) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.balance(peer)
+    }
+
+    fn native_fee_policy(&mut self, peer: &HumanPeer) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.native_fee_policy(peer)
+    }
+
+    fn session_fee_state(&mut self, peer: &HumanPeer, grant_id: [u8; 32]) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.session_fee_state(peer, grant_id)
+    }
+
+    fn session_seed_prepare(&mut self, peer: &HumanPeer, agent: &str, action_key: [u8; 32], request_digest: [u8; 32]) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.session_seed_prepare(peer, agent, action_key, request_digest)
+    }
+
+    fn head(&self, peer: &HumanPeer) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.head(peer)
+    }
+
+    fn evidence(&mut self, peer: &HumanPeer, idempotency_key: [u8; 32], expected_activity_id: [u8; 32]) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.evidence(peer, idempotency_key, expected_activity_id)
+    }
+
+    fn identity_resolve(&mut self, peer: &HumanPeer, agent: &str) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.identity_resolve(peer, agent)
+    }
+
+    fn lease_map(&mut self, peer: &HumanPeer, not_before_unix_ms: u64, not_after_unix_ms: u64) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.lease_map(peer, not_before_unix_ms, not_after_unix_ms)
+    }
+
+    fn owner_validate(&mut self, peer: &HumanPeer, request: HumanOwnerInstall) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.owner_validate(peer, request)
+    }
+
+    fn owner_install(&mut self, peer: &HumanPeer, request: MutationEnvelope<HumanOwnerInstall>) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.owner_install(peer, request)
+    }
+
+    fn account_sequence(&mut self, peer: &HumanPeer, actor: &str, authority: &str) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.account_sequence(peer, actor, authority)
+    }
+
+    fn agent_list(&mut self, peer: &HumanPeer, cursor: Option<[u8; 32]>, limit: u8) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.agent_list(peer, cursor, limit)
+    }
+
+    fn agent_get(&mut self, peer: &HumanPeer, agent_id: &str) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.agent_get(peer, agent_id)
+    }
+
+    fn agent_control(&mut self, peer: &HumanPeer, agent_id: &str, resume: bool, session_observation: [u8; 32], evidence: HumanFinalizationEvidence) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.agent_control(peer, agent_id, resume, session_observation, evidence)
+    }
+
+    fn agent_limit(&mut self, peer: &HumanPeer, agent_id: &str, monthly_limit: u128, currency: &str, replacement_budget_id: [u8; 32], evidence: HumanFinalizationEvidence) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.agent_limit(peer, agent_id, monthly_limit, currency, replacement_budget_id, evidence)
+    }
+
+    fn agent_journey(&mut self, peer: &HumanPeer, agent_id: &str, kind: crate::human::HumanAgentJourneyKind, pre_observation: [u8; 32], post_observation: [u8; 32], evidence: HumanFinalizationEvidence) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.agent_journey(peer, agent_id, kind, pre_observation, post_observation, evidence)
+    }
+
+    fn agent_archive(&mut self, peer: &HumanPeer, agent_id: &str, confirm_name: &str, observations: ([u8; 32], [u8; 32], [u8; 32]), evidence: HumanFinalizationEvidence) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.agent_archive(peer, agent_id, confirm_name, observations, evidence)
+    }
+
+    fn capability_install(&mut self, peer: &HumanPeer, request: HumanCapabilityInstall) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.capability_install(peer, request)
+    }
+
+    fn agent_lifecycle_publish(&mut self, peer: &HumanPeer, request: MutationEnvelope<crate::human::HumanAgentLifecycleSeed>) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.agent_lifecycle_publish(peer, request)
+    }
+
+    fn agent_context(&mut self, peer: &HumanPeer, agent_id: &str) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.agent_context(peer, agent_id)
+    }
+
+    fn agent_budget_state(&mut self, peer: &HumanPeer, active_budget_id: [u8; 32]) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.agent_budget_state(peer, active_budget_id)
+    }
+
+    fn agent_key_policy(&mut self, peer: &HumanPeer, agent_did: &str, recovery: bool) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.agent_key_policy(peer, agent_did, recovery)
+    }
+
+    fn agent_session_snapshot(&mut self, peer: &HumanPeer, agent_id: &str) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.agent_session_snapshot(peer, agent_id)
+    }
+
+    fn agent_session_suspend(&mut self, peer: &HumanPeer, agent_id: &str, action_key: [u8; 32]) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.agent_session_suspend(peer, agent_id, action_key)
+    }
+
+    fn agent_session_bind(&mut self, peer: &HumanPeer, agent_id: &str, session_id: [u8; 32], token_id: [u8; 32], action_key: [u8; 32]) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.agent_session_bind(peer, agent_id, session_id, token_id, action_key)
+    }
+
+    fn agent_session_restrict(&mut self, peer: &HumanPeer, agent_id: &str, current_sequence: u64, action_key: [u8; 32], permitted_activity_types: Vec<u16>, scopes: Vec<String>) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.agent_session_restrict(peer, agent_id, current_sequence, action_key, permitted_activity_types, scopes)
+    }
+
+    fn operator_command(&mut self, peer: &HumanPeer, operator_id: &str, request_id: [u8; 32], command: OperatorCommand) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.operator_command(peer, operator_id, request_id, command)
+    }
+}
+
 fn require_held_reservations(
     approvals: &ApprovalRegistry,
     budgets: &BudgetLimiter,

@@ -386,7 +386,8 @@ impl TenantObservability {
 ///
 /// Returns `InvalidRequest` for an empty, oversized, or NUL-bearing operation,
 /// `ScopeDenied`, `Expired` or `Revoked` from the token authorization, and
-/// `NotAuthorized` for any other session failure or a target owned by another principal.
+/// `NotAuthorized` for any other session failure, a supplied header or body tenant that differs
+/// from the authenticated tenant, or a target owned by another principal.
 pub fn resolve(
     token: &Token,
     sessions: &SessionRegistry,
@@ -424,6 +425,19 @@ pub fn resolve(
             return Err(error);
         }
     };
+    if let Err(error) = require_caller_coordinates(
+        token.tenant(),
+        request.supplied_header_tenant.as_ref(),
+        request.supplied_body_tenant.as_ref(),
+    ) {
+        observability.record(
+            token,
+            request.surface,
+            request.operation.name(),
+            error.outcome(),
+        );
+        return Err(error);
+    }
     if let Some(owner) = &request.target_owner {
         if let Err(error) = require_owner(token.tenant(), token.agent(), owner) {
             observability.record(
@@ -447,6 +461,26 @@ pub fn resolve(
         session_id,
         surface: request.surface,
     })
+}
+
+/// Rejects any caller-supplied tenant coordinate that differs from the authenticated tenant.
+/// Supplied coordinates are only compared, never used as authority.
+///
+/// # Errors
+///
+/// Returns `NotAuthorized` when a supplied header or body tenant differs from the
+/// authenticated tenant.
+pub fn require_caller_coordinates(
+    authenticated: &TenantId,
+    supplied_header: Option<&TenantId>,
+    supplied_body: Option<&TenantId>,
+) -> Result<(), AuthorizationError> {
+    for supplied in [supplied_header, supplied_body].into_iter().flatten() {
+        if supplied != authenticated {
+            return Err(AuthorizationError::NotAuthorized);
+        }
+    }
+    Ok(())
 }
 
 /// Applies the same non-enumerating owner check to every target surface.

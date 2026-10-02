@@ -3,13 +3,17 @@ package layerx
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 const maximumHTTPResponseBytes = 8 * 1024 * 1024
@@ -519,4 +523,255 @@ func (apiError *humanAPIError) sdkError(trace string) *SDKError {
 	result.RequestID = trace
 	result.RetryAfterMillis = apiError.RetryAfterMillis
 	return result
+}
+
+const agentEnvelopePath = "/v1/agent/rpc"
+const agentEnvelopeVersion = 1
+const maximumAgentEnvelopeRequestBytes = 1048576
+
+type AgentSessionCredential struct {
+	tenant     string
+	sessionID  string
+	tokenID    *SecretBytes
+	generation uint64
+}
+
+func NewAgentSessionCredential(tenant string, sessionID string, tokenID *SecretBytes, generation uint64) (*AgentSessionCredential, error) {
+	if tenant == "" || len(tenant) > 255 || strings.IndexByte(tenant, 0) >= 0 || !utf8.ValidString(tenant) || !canonicalLowerHex(sessionID, 32) || tokenID == nil {
+		return nil, newSDKError(ErrorInvalidArgument, RetryNever)
+	}
+	if err := tokenID.Expose(func(value []byte) error {
+		if !canonicalLowerHex(string(value), 32) {
+			return newSDKError(ErrorInvalidArgument, RetryNever)
+		}
+		return nil
+	}); err != nil {
+		return nil, newSDKError(ErrorInvalidArgument, RetryNever)
+	}
+	return &AgentSessionCredential{tenant: tenant, sessionID: sessionID, tokenID: tokenID, generation: generation}, nil
+}
+
+func agentEnvelopeBootstrap(operation AgentOperation) bool {
+	return operation == AgentOperationAgentRegister || operation == AgentOperationSessionOpen
+}
+
+type AgentEnvelopeHTTPTransport struct {
+	endpoint   *HumanHTTPTransport
+	credential *AgentSessionCredential
+}
+
+func NewAgentEnvelopeHTTPTransport(baseURL string, client *http.Client, gatewayAuthorizer RequestAuthorizer, credential *AgentSessionCredential) (*AgentEnvelopeHTTPTransport, error) {
+	if gatewayAuthorizer == nil {
+		return nil, newSDKError(ErrorInvalidArgument, RetryNever)
+	}
+	endpoint, err := NewHumanHTTPTransport(baseURL, client, gatewayAuthorizer)
+	if err != nil {
+		return nil, err
+	}
+	return &AgentEnvelopeHTTPTransport{endpoint: endpoint, credential: credential}, nil
+}
+
+type agentEnvelopeCredential struct {
+	Tenant     string `json:"tenant"`
+	SessionID  string `json:"session_id"`
+	TokenID    string `json:"token_id"`
+	Generation string `json:"generation"`
+}
+
+type agentEnvelope struct {
+	Version        int                      `json:"version"`
+	RequestID      string                   `json:"request_id"`
+	Operation      string                   `json:"operation"`
+	Request        json.RawMessage          `json:"request"`
+	Credential     *agentEnvelopeCredential `json:"credential"`
+	IdempotencyKey *string                  `json:"idempotency_key"`
+}
+
+func newAgentEnvelopeRequestID() (string, error) {
+	var encoded [8]byte
+	if _, err := rand.Read(encoded[:]); err != nil {
+		return "", err
+	}
+	return strconv.FormatUint(binary.BigEndian.Uint64(encoded[:]), 10), nil
+}
+
+func (transport *AgentEnvelopeHTTPTransport) encode(call TransportCall, requestID string) ([]byte, error) {
+	operation := AgentOperation(call.Operation)
+	if call.Plane != PlaneAgent || !operation.Valid() || len(call.PathParameters) != 0 || len(call.Query) != 0 {
+		return nil, newSDKError(ErrorInvalidArgument, RetryNever)
+	}
+	var fields map[string]json.RawMessage
+	if len(call.Request) == 0 || !utf8.Valid(call.Request) || decodeStrict(call.Request, &fields) != nil || fields == nil {
+		return nil, newSDKError(ErrorInvalidArgument, RetryNever)
+	}
+	envelope := agentEnvelope{Version: agentEnvelopeVersion, RequestID: requestID, Operation: call.Operation, Request: call.Request}
+	if operation.RequiresIdempotency() {
+		if !canonicalProgramKey(call.IdempotencyKey) {
+			return nil, newSDKError(ErrorIdempotencyRequired, RetryNever)
+		}
+		key := call.IdempotencyKey.String()
+		envelope.IdempotencyKey = &key
+	} else if call.IdempotencyKey.valid() {
+		return nil, newSDKError(ErrorInvalidArgument, RetryNever)
+	}
+	var encoded []byte
+	encode := func() error {
+		var err error
+		encoded, err = json.Marshal(envelope)
+		return err
+	}
+	if agentEnvelopeBootstrap(operation) {
+		if err := encode(); err != nil {
+			return nil, newSDKError(ErrorInvalidArgument, RetryNever)
+		}
+	} else {
+		if transport.credential == nil {
+			return nil, newSDKError(ErrorCapabilityRefusal, RetryNever)
+		}
+		credential := transport.credential
+		if err := credential.tokenID.Expose(func(token []byte) error {
+			envelope.Credential = &agentEnvelopeCredential{Tenant: credential.tenant, SessionID: credential.sessionID, TokenID: string(token), Generation: strconv.FormatUint(credential.generation, 10)}
+			return encode()
+		}); err != nil {
+			return nil, newSDKError(ErrorInvalidArgument, RetryNever)
+		}
+	}
+	if len(encoded) > maximumAgentEnvelopeRequestBytes {
+		clear(encoded)
+		return nil, newSDKError(ErrorInvalidArgument, RetryNever)
+	}
+	return encoded, nil
+}
+
+func (transport *AgentEnvelopeHTTPTransport) request(ctx context.Context, body []byte) (*http.Request, error) {
+	target := *transport.endpoint.baseURL
+	target.Path = strings.TrimRight(target.Path, "/") + agentEnvelopePath
+	target.RawQuery = ""
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, target.String(), bytes.NewReader(body))
+	if err != nil {
+		return nil, newSDKError(ErrorInvalidArgument, RetryNever)
+	}
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("User-Agent", "layerx-go/0.1.0")
+	if err := transport.endpoint.authorizer(request); err != nil {
+		return nil, transportError(ctx, err)
+	}
+	if len(request.Header.Values("Authorization")) != 1 || !validLayerXAuthorization(request.Header.Get("Authorization")) {
+		return nil, newSDKError(ErrorCapabilityRefusal, RetryNever)
+	}
+	for _, name := range []string{"LayerX-Tenant", "LayerX-Agent", "LayerX-Key"} {
+		if len(request.Header.Values(name)) != 0 {
+			return nil, newSDKError(ErrorCapabilityRefusal, RetryNever)
+		}
+	}
+	return request, nil
+}
+
+func (transport *AgentEnvelopeHTTPTransport) Call(ctx context.Context, call TransportCall) (json.RawMessage, error) {
+	if transport == nil || transport.endpoint == nil {
+		return nil, newSDKError(ErrorUnavailableCapability, RetryNever)
+	}
+	requestID, err := newAgentEnvelopeRequestID()
+	if err != nil {
+		return nil, newSDKError(ErrorInternalFault, RetryNever)
+	}
+	body, err := transport.encode(call, requestID)
+	if err != nil {
+		return nil, err
+	}
+	defer clear(body)
+	request, err := transport.request(ctx, body)
+	if err != nil {
+		return nil, err
+	}
+	mutation := AgentOperation(call.Operation).RequiresIdempotency()
+	// Transport ambiguity on a mutation is Unknown: the outcome must be reconciled, never resent automatically.
+	ambiguous := func(fallback *SDKError) *SDKError {
+		if mutation {
+			return newSDKError(ErrorUnknownOutcome, RetryUnknownOutcome)
+		}
+		return fallback
+	}
+	response, err := transport.endpoint.client.Do(request)
+	if err != nil {
+		return nil, ambiguous(transportError(ctx, err))
+	}
+	defer response.Body.Close()
+	encoded, err := io.ReadAll(io.LimitReader(response.Body, maximumHTTPResponseBytes+1))
+	if err != nil {
+		return nil, ambiguous(transportError(ctx, err))
+	}
+	if len(encoded) > maximumHTTPResponseBytes {
+		return nil, ambiguous(newSDKError(ErrorDecodeFailure, RetryNever))
+	}
+	value, decodeError := decodeAgentEnvelopeResponse(response.StatusCode, encoded, requestID)
+	if decodeError != nil && (decodeError.Code == ErrorDecodeFailure || decodeError.Code == ErrorVerificationFailure) {
+		return nil, ambiguous(decodeError)
+	}
+	if decodeError != nil {
+		return nil, decodeError
+	}
+	return value, nil
+}
+
+var agentEnvelopeLevels = map[string]bool{
+	"Unverified": true, "SequencerSigned": true, "BatchIncluded": true,
+	"StateProven": true, "CheckpointFinalised": true, "SettlementAnchored": true,
+}
+
+func decodeAgentEnvelopeResponse(status int, encoded []byte, requestID string) (json.RawMessage, *SDKError) {
+	var fields map[string]json.RawMessage
+	if !utf8.Valid(encoded) || decodeStrict(encoded, &fields) != nil || fields == nil {
+		return nil, newSDKError(ErrorDecodeFailure, RetryNever)
+	}
+	var echoed string
+	if json.Unmarshal(fields["request_id"], &echoed) != nil || echoed != requestID {
+		return nil, newSDKError(ErrorDecodeFailure, RetryNever)
+	}
+	if _, failed := fields["class"]; failed {
+		if status >= 200 && status < 300 || !exactFields(fields, "class", "protocol_result_code", "retriability", "request_id", "reason") {
+			return nil, newSDKError(ErrorDecodeFailure, RetryNever)
+		}
+		result := decodeProgramAgentError(fields)
+		if result.Code == ErrorDecodeFailure {
+			return nil, result
+		}
+		var reason string
+		_ = json.Unmarshal(fields["reason"], &reason)
+		result.ServiceCode = reason
+		return nil, result
+	}
+	if status != http.StatusOK || !exactFields(fields, "request_id", "value", "verification_status") {
+		return nil, newSDKError(ErrorDecodeFailure, RetryNever)
+	}
+	value := fields["value"]
+	if !acceptedAgentEnvelopeVerification(fields["verification_status"]) {
+		return nil, newSDKError(ErrorVerificationFailure, RetryNever)
+	}
+	return append(json.RawMessage(nil), value...), nil
+}
+
+func acceptedAgentEnvelopeVerification(encoded json.RawMessage) bool {
+	var verification map[string]json.RawMessage
+	if decodeStrict(encoded, &verification) != nil || verification == nil {
+		return false
+	}
+	var state string
+	if json.Unmarshal(verification["state"], &state) != nil {
+		return false
+	}
+	switch state {
+	case "achieved":
+		var level string
+		return exactFields(verification, "state", "level") && json.Unmarshal(verification["level"], &level) == nil && agentEnvelopeLevels[level]
+	case "unverified":
+		var requested, achieved, reason string
+		return exactFields(verification, "state", "requested", "achieved", "reason") &&
+			json.Unmarshal(verification["requested"], &requested) == nil && agentEnvelopeLevels[requested] &&
+			json.Unmarshal(verification["achieved"], &achieved) == nil && agentEnvelopeLevels[achieved] &&
+			json.Unmarshal(verification["reason"], &reason) == nil && reason != "" && len(reason) <= 256
+	default:
+		return false
+	}
 }

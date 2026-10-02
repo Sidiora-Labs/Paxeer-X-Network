@@ -95,3 +95,42 @@ classification = "additive_only"
 introduced_contract = "1.1"
 classification = "additive_only"
 note = "Reserves the settlement-domain claim vocabulary with Paxeer as the sole valid domain and tags every custody-boundary claim and receipt shape. Adding a settlement domain is an additive change by construction: a new SettlementDomain variant is appended and no contract 1.x declaration changes."
+
+[transport.agent_http]
+version = 1
+external_route = "POST /v1/agent/rpc on the unified gateway, rewritten exactly to POST /rpc on the agent daemon RPC listener"
+native_routes_unchanged = "The native JSON-RPC /rpc and /rpc/schema routes and every Programs route keep their existing distinct contracts."
+content_type = "application/json"
+max_body_bytes = 1048576
+max_header_bytes = 16384
+framing = "Exactly one canonical decimal Content-Length; Transfer-Encoding is rejected."
+encoding = "UTF-8 JSON object; duplicate keys, unknown keys, trailing bytes, truncated or non-UTF-8 input are rejected"
+listener = "Dedicated agent RPC mutual-TLS listener; a verified gateway client certificate is required; no plaintext fallback."
+authorities = "Gateway API-key admission and the tenant session credential are two distinct authorities. No header-supplied principal is accepted; program bearer or LayerX-Key possession never authorizes catalogue writes."
+
+[record.AgentHttpEnvelope]
+fields = ["version:u8","request_id:Sequence","operation:utf8","request:canonical-map","credential:AgentHttpCredential?","idempotency_key:hex32?"]
+credential = "Required for every operation except the bootstrap operations agent.register and session.open, where it is null and the existing bootstrap authority of the owner decides."
+version = "Exactly 1; any other value is rejected as ProtocolIncompatibility."
+operation = "Exactly one generated catalogue operation name; an unknown name is rejected as ProtocolIncompatibility."
+idempotency_key = "Lowercase 64-hex non-zero key, required for every mutating catalogue operation and absent or null for every non-mutating operation; a violation is IdempotencyConflict."
+request = "The operation request object of the named catalogue operation."
+
+[record.AgentHttpCredential]
+fields = ["tenant:utf8","session_id:hex32","token_id:hex32","generation:Sequence"]
+tenant = "Non-empty UTF-8, at most 255 bytes, no NUL."
+session_id = "Lowercase 64-hex, 32 bytes."
+token_id = "Lowercase 64-hex, 32 bytes."
+generation = "Canonical decimal string of a u64: no sign, no leading zero except the single digit 0, no whitespace."
+authority = "The daemon authenticates these exact coordinates; the agent is taken only from the authenticated token. A tenant or agent coordinate inside the request that differs from the authenticated principal is PolicyRefusal. A LayerX-Tenant, LayerX-Agent or Authorization header reaching the daemon is PolicyRefusal."
+
+[record.AgentHttpSuccess]
+fields = ["request_id:Sequence","value:canonical-map","verification_status:VerificationStatus"]
+
+[record.AgentHttpError]
+fields = ["class:ErrorClass","protocol_result_code:i32?","retriability:Retriability","request_id:Sequence","reason:utf8"]
+request_id = "The envelope request_id when it was parsed, otherwise 0."
+
+[transport.agent_http.semantics]
+retired = "faucet.claim returns UnavailableCapability with reason unavailable_capability.faucet.claim and Terminal retriability."
+ambiguity = "A mutating request whose outcome is not known to the client is Unknown and is never resent automatically; a repeat with the same idempotency key and body returns the original result, a different body under the same key is IdempotencyConflict."

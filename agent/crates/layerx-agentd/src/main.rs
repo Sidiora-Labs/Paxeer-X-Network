@@ -18,9 +18,13 @@ use layerx_agentd::enrolment::{
     WebDeclaration,
 };
 use layerx_agentd::human::{HumanListenerConfig, HumanPeer, HumanUnixServer};
+use layerx_agentd::agent_rpc::{self, AgentRpcResponse};
+use layerx_agentd::agent_rpc_tls::{AgentRpcTls, AgentRpcTlsPaths};
 use layerx_agentd::human_runtime::{
-    HumanAuthorityBoundary, ProductionHumanOperations, RemoteHumanAuthority, UnifiedAgentOwner,
+    HumanAuthorityBoundary, ProductionHumanOperations, RemoteHumanAuthority, SharedAgentOwner,
+    UnifiedAgentOwner,
 };
+use layerx_agent_api::error::ErrorClass;
 use layerx_agentd::identity::{self, CoreIdentity, IdentityError, IdentityResolver};
 use layerx_agentd::read::{
     LayerxdProgramBalanceReader, NativeReadRoute, ProgramAuthority, ProgramBalanceRead,
@@ -491,7 +495,22 @@ fn connect_human_authority(
     Ok(authority)
 }
 
-fn start_human_owner(mcp: Option<McpBoot>) -> Result<mpsc::Receiver<Result<(), String>>, String> {
+type OwnerStatus = mpsc::Receiver<Result<(), String>>;
+
+fn start_human_owner(mcp: Option<McpBoot>) -> Result<OwnerStatus, String> {
+    start_shared_owner(mcp).map(|(receiver, _, _)| receiver)
+}
+
+fn start_shared_owner(
+    mcp: Option<McpBoot>,
+) -> Result<
+    (
+        OwnerStatus,
+        SharedAgentOwner<RemoteHumanAuthority>,
+        mpsc::SyncSender<Result<(), String>>,
+    ),
+    String,
+> {
     let peers = human_peers()?;
     let deadline = Duration::from_millis(parse_u64("LAYERX_AGENT_HUMAN_DEADLINE_MS")?);
     let human_limits = human_lni_limits(deadline)?;
@@ -549,14 +568,16 @@ fn start_human_owner(mcp: Option<McpBoot>) -> Result<mpsc::Receiver<Result<(), S
         socket_uid,
     )
     .map_err(|error| format!("human session key registry is invalid: {error:?}"))?;
-    let owner = UnifiedAgentOwner::new(
-        operations,
-        shared_store,
-        &peers,
-        vec![verified_limit()?],
-        session_keys,
-    )
-    .map_err(|error| format!("human owner is invalid: {error:?}"))?;
+    let owner = SharedAgentOwner::new(
+        UnifiedAgentOwner::new(
+            operations,
+            shared_store,
+            &peers,
+            vec![verified_limit()?],
+            session_keys,
+        )
+        .map_err(|error| format!("human owner is invalid: {error:?}"))?,
+    );
     let server = HumanUnixServer::bind(
         HumanListenerConfig {
             endpoint: socket_path,
@@ -570,21 +591,170 @@ fn start_human_owner(mcp: Option<McpBoot>) -> Result<mpsc::Receiver<Result<(), S
             deadline,
             peers,
         },
-        owner,
+        owner.clone(),
     )
     .map_err(|error| format!("human listener is invalid: {error:?}"))?;
-    let (sender, receiver) = mpsc::sync_channel(1);
+    let (sender, receiver) = mpsc::sync_channel(2);
+    let status = sender.clone();
     thread::Builder::new()
         .name("layerx-agent-human".to_owned())
         .spawn(move || {
-            let _ = sender.send(
+            let _ = status.send(
                 server
                     .serve()
                     .map_err(|error| format!("human listener stopped: {error:?}")),
             );
         })
         .map_err(|error| format!("human listener thread failed: {error}"))?;
-    Ok(receiver)
+    Ok((receiver, owner, sender))
+}
+
+/// Starts the dedicated mutually authenticated agent RPC listener when it is
+/// configured. A configured listener without its complete TLS material refuses boot.
+fn start_agent_rpc(
+    owner: SharedAgentOwner<RemoteHumanAuthority>,
+    status: mpsc::SyncSender<Result<(), String>>,
+) -> Result<(), String> {
+    let Some(listen) = optional("LAYERX_AGENTD_RPC_LISTEN") else {
+        return Ok(());
+    };
+    let tls = AgentRpcTls::from_paths(&AgentRpcTlsPaths {
+        cert: absolute_path("LAYERX_AGENTD_RPC_TLS_CERT")?,
+        key: absolute_path("LAYERX_AGENTD_RPC_TLS_KEY")?,
+        client_ca: absolute_path("LAYERX_AGENTD_RPC_TLS_CLIENT_CA")?,
+        peer: required("LAYERX_AGENTD_RPC_PEER")?,
+    })
+    .map_err(|error| format!("agent rpc tls is invalid: {error:?}"))?;
+    let listener = TcpListener::bind(&listen)
+        .map_err(|error| format!("agent rpc listener failed: {error}"))?;
+    thread::Builder::new()
+        .name("layerx-agent-rpc".to_owned())
+        .spawn(move || {
+            let _ = status.send(serve_agent_rpc(&listener, &tls, &owner));
+        })
+        .map_err(|error| format!("agent rpc listener thread failed: {error}"))?;
+    Ok(())
+}
+
+// ponytail: one connection at a time, like the program listener; per-connection
+// threads if agent RPC concurrency matters.
+fn serve_agent_rpc(
+    listener: &TcpListener,
+    tls: &AgentRpcTls,
+    owner: &SharedAgentOwner<RemoteHumanAuthority>,
+) -> Result<(), String> {
+    loop {
+        let (stream, _) = listener
+            .accept()
+            .map_err(|error| format!("agent rpc accept failed: {error}"))?;
+        stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .and_then(|()| stream.set_write_timeout(Some(Duration::from_secs(10))))
+            .map_err(|error| format!("agent rpc timeout setup failed: {error}"))?;
+        // An unverified client certificate or a peer other than the configured gateway
+        // closes the connection during the handshake; there is no plaintext path.
+        let Ok(mut stream) = tls.accept(stream) else {
+            continue;
+        };
+        let response = agent_rpc_exchange(&mut stream, owner);
+        let _ = write_rpc_response(&mut stream, &response);
+        stream.conn.send_close_notify();
+        let _ = stream.flush();
+    }
+}
+
+fn agent_rpc_exchange<S: Read>(
+    stream: &mut S,
+    owner: &SharedAgentOwner<RemoteHumanAuthority>,
+) -> AgentRpcResponse {
+    let malformed = || agent_rpc::refusal(400, ErrorClass::ProtocolIncompatibility, "envelope.malformed");
+    let mut bytes = vec![0_u8; HEADER_LIMIT];
+    let mut length = 0_usize;
+    let head_end = loop {
+        if let Some(end) = bytes[..length].windows(4).position(|value| value == b"\r\n\r\n") {
+            break end + 4;
+        }
+        if length == bytes.len() {
+            return agent_rpc::refusal(431, ErrorClass::ProtocolIncompatibility, "envelope.malformed");
+        }
+        match stream.read(&mut bytes[length..]) {
+            Ok(0) | Err(_) => return malformed(),
+            Ok(count) => length += count,
+        }
+    };
+    let Ok(head) = std::str::from_utf8(&bytes[..head_end - 4]) else {
+        return malformed();
+    };
+    let mut lines = head.split("\r\n");
+    let mut parts = lines.next().unwrap_or_default().split(' ');
+    let (method, path, version) = (parts.next(), parts.next(), parts.next());
+    if version != Some("HTTP/1.1") || parts.next().is_some() {
+        return malformed();
+    }
+    if path != Some("/rpc") {
+        return agent_rpc::refusal(404, ErrorClass::ProtocolIncompatibility, "envelope.malformed");
+    }
+    if method != Some("POST") {
+        return agent_rpc::refusal(405, ErrorClass::ProtocolIncompatibility, "envelope.malformed");
+    }
+    let mut content_length = None;
+    for line in lines {
+        let Some((name, value)) = line.split_once(':') else {
+            return malformed();
+        };
+        let value = value.trim_matches(|c| c == ' ' || c == '\t');
+        if name.eq_ignore_ascii_case("transfer-encoding") {
+            return malformed();
+        }
+        if ["authorization", "layerx-key", "layerx-tenant", "layerx-agent"]
+            .iter()
+            .any(|principal| name.eq_ignore_ascii_case(principal))
+        {
+            return agent_rpc::refusal(403, ErrorClass::PolicyRefusal, "envelope.header_principal");
+        }
+        if name.eq_ignore_ascii_case("content-length") {
+            let canonical = !value.is_empty()
+                && value.bytes().all(|byte| byte.is_ascii_digit())
+                && (value == "0" || !value.starts_with('0'));
+            let parsed = value.parse::<usize>().ok().filter(|_| canonical);
+            if content_length.is_some() || parsed.is_none() {
+                return malformed();
+            }
+            content_length = parsed;
+        }
+    }
+    let Some(content_length) = content_length else {
+        return malformed();
+    };
+    if content_length > agent_rpc::MAX_BODY_BYTES {
+        return agent_rpc::refusal(413, ErrorClass::ProtocolIncompatibility, "envelope.oversized");
+    }
+    let mut body = bytes[head_end..length].to_vec();
+    if body.len() > content_length {
+        return malformed();
+    }
+    let missing = content_length - body.len();
+    body.resize(content_length, 0);
+    if stream.read_exact(&mut body[content_length - missing..]).is_err() {
+        return malformed();
+    }
+    match owner.lock() {
+        Ok(guard) => agent_rpc::handle_rpc(&guard, &body),
+        Err(_) => agent_rpc::refusal(500, ErrorClass::InternalFault, "owner.unavailable"),
+    }
+}
+
+fn write_rpc_response<S: Write>(stream: &mut S, response: &AgentRpcResponse) -> Result<(), String> {
+    let reason = if response.status < 300 { "OK" } else { "Refused" };
+    let header = format!(
+        "HTTP/1.1 {} {reason}\r\nContent-Type: application/json\r\nCache-Control: no-store\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        response.status,
+        response.body.len()
+    );
+    stream
+        .write_all(header.as_bytes())
+        .and_then(|()| stream.write_all(&response.body))
+        .map_err(|error| format!("agent rpc response failed: {error}"))
 }
 
 fn config() -> Result<Config, String> {
@@ -936,7 +1106,8 @@ fn serve(config: Config) -> Result<(), String> {
             }
         })
         .transpose()?;
-    let human = start_human_owner(mcp)?;
+    let (human, owner, status) = start_shared_owner(mcp)?;
+    start_agent_rpc(owner, status)?;
     let ProgramAuthorityBoot {
         verifier,
         registry,
