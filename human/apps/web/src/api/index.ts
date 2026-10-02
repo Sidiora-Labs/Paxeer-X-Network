@@ -5,6 +5,7 @@ export * from "./generated/index.ts";
 
 export function humanApi(options: HumanApiClientOptions = {}): HumanApiClient {
   return createHumanApiClient({
+    baseUrl: "/human",
     credentials: "include",
     csrfToken: browserCsrfToken,
     trace: browserTrace,
