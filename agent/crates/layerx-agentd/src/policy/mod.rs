@@ -4,6 +4,7 @@ pub mod approval;
 #[path = "dry_run.rs"]
 mod dry_run_evaluation;
 mod eval;
+pub(crate) mod native_program;
 mod operation;
 #[path = "version.rs"]
 mod versioning;

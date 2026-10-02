@@ -2251,3 +2251,651 @@ mod tests {
         ));
     }
 }
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativePreparationBindingV1 {
+    authority: crate::identity::ProtocolAuthority,
+    tenant: TenantId,
+    agent: layerx_types::ids::Did,
+    session_id: crate::session::SessionId,
+    generation: u64,
+    activity: layerx_agent_api::identity::NativeActivity,
+    capability_id: [u8; 32],
+    preparation_id: [u8; 32],
+    canonical_digest: [u8; 32],
+    purpose_commitment: [u8; 32],
+    purpose_digest: [u8; 32],
+    expires_at_ms: u64,
+}
+
+impl NativePreparationBindingV1 {
+    pub const fn tenant(&self) -> &TenantId { &self.tenant }
+    pub const fn agent(&self) -> &layerx_types::ids::Did { &self.agent }
+    pub const fn session_id(&self) -> crate::session::SessionId { self.session_id }
+    pub const fn generation(&self) -> u64 { self.generation }
+    pub const fn activity(&self) -> layerx_agent_api::identity::NativeActivity { self.activity }
+    pub const fn capability_id(&self) -> [u8; 32] { self.capability_id }
+    pub const fn preparation_id(&self) -> [u8; 32] { self.preparation_id }
+    pub const fn canonical_digest(&self) -> [u8; 32] { self.canonical_digest }
+    pub const fn purpose_commitment(&self) -> [u8; 32] { self.purpose_commitment }
+    pub const fn purpose_digest(&self) -> [u8; 32] { self.purpose_digest }
+    pub const fn expires_at_ms(&self) -> u64 { self.expires_at_ms }
+}
+
+pub fn native_purpose_digest(
+    purpose: &layerx_agent_api::identity::NativePreparationPurposeV1,
+) -> Result<[u8; 32], BindingError> {
+    let canonical = purpose.canonical_bytes().map_err(|_| BindingError::Corrupt)?;
+    Ok(Sha256::digest(canonical).into())
+}
+
+pub fn inspect_native_preparation(
+    sessions: &crate::session::SessionRegistry,
+    session: &crate::session::NativeSessionAuthorizationV1,
+    prepared: &crate::prepare::Prepared,
+    preparation_id: &[u8; 32],
+    purpose: &layerx_agent_api::identity::NativePreparationPurposeV1,
+    core_sequence: u64,
+    core_time_ms: u64,
+) -> Result<NativePreparationBindingV1, BindingError> {
+    let purpose_digest = native_purpose_digest(purpose)?;
+    crate::prepare::verify_disclosure_binding(prepared).map_err(|_| BindingError::Corrupt)?;
+    let record = sessions.get(session.tenant(), session.session_id()).ok_or(BindingError::Unbound)?;
+    if !record.open || record.generation != session.generation()
+        || &record.request.tenant != session.tenant()
+        || record.request.session_id != session.session_id()
+        || &record.request.agent != session.agent()
+        || core_sequence >= record.request.expiry_sequence
+        || !record.public_expiry_within(core_time_ms).map_err(|_| BindingError::Unbound)?
+    {
+        return Err(BindingError::Unbound);
+    }
+    let canonical_digest: [u8; 32] = Sha256::digest(&prepared.canonical_bytes).into();
+    let activity = layerx_agent_api::identity::NativeActivity::from(prepared.envelope.activity_type());
+    if purpose.tenant.as_str() != session.tenant().as_str()
+        || purpose.agent_did.as_str().as_bytes() != session.agent().as_bytes()
+        || purpose.session_id.to_bytes().map_err(|_| BindingError::Corrupt)? != session.session_id().0
+        || purpose.generation != session.generation()
+        || purpose.preparation_id != *preparation_id
+        || purpose.canonical_digest != canonical_digest
+        || prepared.envelope.actor_did() != session.agent()
+        || prepared.disclosure.activity_type != prepared.envelope.activity_type()
+        || activity != session.activity()
+        || prepared.observed_head_sequence > core_sequence
+        || core_time_ms >= purpose.expires_at_ms
+        || record.request.expiry_seconds.and_then(|value| value.checked_mul(1000))
+            .is_none_or(|expiry| purpose.expires_at_ms > expiry)
+        || purpose.expires_at_ms > prepared.envelope.timestamp_bound().not_after()
+    {
+        return Err(BindingError::Conflict);
+    }
+    Ok(NativePreparationBindingV1 {
+        authority: record.request.authority.clone(),
+        tenant: session.tenant().clone(),
+        agent: session.agent().clone(),
+        session_id: session.session_id(),
+        generation: session.generation(),
+        activity,
+        capability_id: purpose.capability_id.to_bytes().map_err(|_| BindingError::Corrupt)?,
+        preparation_id: *preparation_id,
+        canonical_digest,
+        purpose_commitment: purpose.commitment,
+        purpose_digest,
+        expires_at_ms: purpose.expires_at_ms,
+    })
+}
+
+pub fn require_native_canonical_purpose(
+    prepared: &crate::prepare::Prepared,
+    binding: &NativePreparationBindingV1,
+) -> Result<(), BindingError> {
+    crate::prepare::verify_disclosure_binding(prepared).map_err(|_| BindingError::Corrupt)?;
+    let digest: [u8; 32] = Sha256::digest(&prepared.canonical_bytes).into();
+    if digest != binding.canonical_digest || prepared.envelope.actor_did() != &binding.agent
+        || layerx_agent_api::identity::NativeActivity::from(prepared.envelope.activity_type()) != binding.activity
+    {
+        return Err(BindingError::Conflict);
+    }
+    let commitment = purpose_commitment(&prepared.disclosure)
+        .ok_or(BindingError::PurposeCommitmentMissing)?;
+    if commitment != binding.purpose_commitment {
+        return Err(BindingError::Refused(Dimension::Purpose));
+    }
+    Ok(())
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeCapabilityConstraintsV1 {
+    binding: NativePreparationBindingV1,
+    chain: Vec<[u8; 32]>,
+    rate_obligations: BTreeMap<[u8; 32], BTreeMap<u64, u64>>,
+    observed_at_ms: u64,
+}
+
+impl NativeCapabilityConstraintsV1 {
+    pub const fn binding(&self) -> &NativePreparationBindingV1 { &self.binding }
+    pub fn chain(&self) -> &[[u8; 32]] { &self.chain }
+    pub const fn rate_obligations(&self) -> &BTreeMap<[u8; 32], BTreeMap<u64, u64>> {
+        &self.rate_obligations
+    }
+    pub const fn observed_at_ms(&self) -> u64 { self.observed_at_ms }
+}
+
+pub fn inspect_native_capability(
+    store: &Store,
+    binding: NativePreparationBindingV1,
+    prepared: &crate::prepare::Prepared,
+    now_ms: u64,
+) -> Result<NativeCapabilityConstraintsV1, BindingError> {
+    crate::prepare::verify_disclosure_binding(prepared).map_err(|_| BindingError::Corrupt)?;
+    let digest: [u8; 32] = Sha256::digest(&prepared.canonical_bytes).into();
+    if digest != binding.canonical_digest || prepared.envelope.actor_did() != &binding.agent
+        || layerx_agent_api::identity::NativeActivity::from(prepared.envelope.activity_type()) != binding.activity
+        || prepared.envelope.activity_type().module() != layerx_types::payload::ModuleId::Programs
+    {
+        return Err(BindingError::Conflict);
+    }
+    let agent = core::str::from_utf8(binding.agent.as_bytes()).map_err(|_| BindingError::Corrupt)?;
+    let chain = timed::native_active_chain(store, &binding.tenant, agent, &binding.capability_id, now_ms)?;
+    let plan = super::derive_effects(&prepared.disclosure, &super::VerifiedInputs::default())
+        .map_err(|_| BindingError::Restricted)?;
+    let mut rates = BTreeMap::new();
+    let mut ids = Vec::new();
+    for capability in chain {
+        if capability.record.authority != binding.authority {
+            return Err(BindingError::Unbound);
+        }
+        if u128::from(binding.expires_at_ms) > capability.record.not_after_ms()
+            || now_ms >= binding.expires_at_ms
+        {
+            return Err(BindingError::Refused(Dimension::Expiry));
+        }
+        inspect_native_dimensions(&capability, binding.activity, binding.purpose_commitment, &plan)?;
+        inspect_native_route(&capability, prepared)?;
+        if capability.record.rate_ceilings.is_empty() {
+            return Err(BindingError::Refused(Dimension::Rate));
+        }
+        ids.push(capability.record.id);
+        rates.insert(capability.record.id, capability.record.rate_ceilings);
+    }
+    Ok(NativeCapabilityConstraintsV1 { binding, chain: ids, rate_obligations: rates, observed_at_ms: now_ms })
+}
+
+fn inspect_native_dimensions(
+    capability: &timed::NativeTimedCapabilityV1,
+    activity: layerx_agent_api::identity::NativeActivity,
+    purpose: [u8; 32],
+    plan: &SemanticPlan,
+) -> Result<(), BindingError> {
+    capability.validate()?;
+    if !capability.activities.contains(&activity) {
+        return Err(BindingError::Refused(Dimension::ActivityType));
+    }
+    if !capability.purpose_commitments.contains(&purpose) {
+        return Err(BindingError::Refused(Dimension::Purpose));
+    }
+    for (asset, amount) in plan.gross_per_asset() {
+        if !capability.record.assets.contains(asset) {
+            return Err(BindingError::Refused(Dimension::Asset));
+        }
+        if capability.record.amount_ceilings.get(asset).is_none_or(|limit| amount > limit) {
+            return Err(BindingError::Refused(Dimension::Amount));
+        }
+    }
+    let mut totals: BTreeMap<(timed::NativeSpendSourceV1, [u8; 32]), u128> = BTreeMap::new();
+    for bound in plan.program_spend_bounds() {
+        if !capability.record.counterparties.contains(&bound.destination) {
+            return Err(BindingError::Refused(Dimension::Counterparty));
+        }
+        let source = match &bound.source {
+            super::ProgramValueSource::Principal => timed::NativeSpendSourceV1::Principal,
+            super::ProgramValueSource::Program { owner_program, seed, source_account } => {
+                timed::NativeSpendSourceV1::Program {
+                    owner_program: *owner_program, seed: seed.clone(), source_account: *source_account,
+                }
+            }
+        };
+        let total = totals.entry((source, bound.asset)).or_default();
+        *total = total.checked_add(bound.maximum_amount).ok_or(BindingError::Refused(Dimension::Amount))?;
+    }
+    for (key, total) in totals {
+        if capability.spend_ceilings.get(&key).is_none_or(|limit| total > *limit) {
+            return Err(BindingError::Refused(Dimension::Amount));
+        }
+    }
+    Ok(())
+}
+
+#[derive(Debug)]
+pub struct VerifiedNativePurposeV1 {
+    binding: NativePreparationBindingV1,
+    owner_public_key: [u8; 32],
+    owner_revocation_sequence: u64,
+    observed_head_sequence: u64,
+    observed_at_ms: u64,
+    replay_key: TenantKey,
+    replay_bytes: Vec<u8>,
+}
+
+impl VerifiedNativePurposeV1 {
+    pub const fn binding(&self) -> &NativePreparationBindingV1 { &self.binding }
+    pub const fn owner_public_key(&self) -> [u8; 32] { self.owner_public_key }
+    pub const fn owner_revocation_sequence(&self) -> u64 { self.owner_revocation_sequence }
+    pub const fn observed_head_sequence(&self) -> u64 { self.observed_head_sequence }
+    pub const fn observed_at_ms(&self) -> u64 { self.observed_at_ms }
+
+    pub fn replay_update(&self, store: &Store) -> Result<(TenantKey, Vec<u8>), BindingError> {
+        if let Some(existing) = store.get(&self.replay_key) {
+            if existing.class() != crate::store::StorageClass::LocalOnly
+                || existing.bytes() != self.replay_bytes
+            {
+                return Err(BindingError::Conflict);
+            }
+        }
+        Ok((self.replay_key.clone(), self.replay_bytes.clone()))
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn verify_native_owner_purpose(
+    store: &Store,
+    sessions: &crate::session::SessionRegistry,
+    session: &crate::session::NativeSessionAuthorizationV1,
+    owner: &crate::human_runtime::VerifiedNativeOwnerV1,
+    prepared: &crate::prepare::Prepared,
+    preparation_id: &[u8; 32],
+    signed: &layerx_agent_api::identity::SignedNativePreparationPurposeV1,
+    core_sequence: u64,
+    core_time_ms: u64,
+) -> Result<VerifiedNativePurposeV1, BindingError> {
+    if owner.tenant() != session.tenant() || owner.agent() != session.agent()
+        || owner.session_id() != session.session_id() || owner.generation() != session.generation()
+        || owner.public_key() != signed.owner_public_key
+        || owner.head_sequence() != core_sequence
+        || owner.revocation_sequence() == 0 || owner.revocation_sequence() > core_sequence
+    {
+        return Err(BindingError::Unbound);
+    }
+    let binding = inspect_native_preparation(
+        sessions, session, prepared, preparation_id, &signed.purpose, core_sequence, core_time_ms,
+    )?;
+    if verify_native_purpose_signature(signed)? != binding.purpose_digest {
+        return Err(BindingError::Conflict);
+    }
+    let mut object = b"native-purpose-v1:".to_vec();
+    object.extend_from_slice(preparation_id);
+    let replay_key = TenantKey::new(binding.tenant.clone(), ObjectKind::Capability, object)?;
+    let mut replay_bytes = b"LXNP\x01".to_vec();
+    replay_bytes.extend_from_slice(&signed.purpose.canonical_bytes().map_err(|_| BindingError::Corrupt)?);
+    replay_bytes.extend_from_slice(&signed.owner_public_key);
+    replay_bytes.extend_from_slice(&signed.signature);
+    let verified = VerifiedNativePurposeV1 {
+        binding,
+        owner_public_key: signed.owner_public_key,
+        owner_revocation_sequence: owner.revocation_sequence(),
+        observed_head_sequence: core_sequence,
+        observed_at_ms: core_time_ms,
+        replay_key,
+        replay_bytes,
+    };
+    verified.replay_update(store)?;
+    Ok(verified)
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SignedNativeLocalGrantV1 {
+    pub capability: timed::NativeTimedCapabilityV1,
+    pub session: crate::session::NativeSessionScopeV1,
+    pub expires_at_ms: u64,
+    pub owner_public_key: [u8; 32],
+    pub signature: [u8; 64],
+}
+
+impl SignedNativeLocalGrantV1 {
+    pub fn signing_bytes(&self) -> Result<Vec<u8>, BindingError> {
+        let capability = self.capability.encode()?;
+        let session = self.session.encode().map_err(|_| BindingError::Corrupt)?;
+        let mut bytes = b"LayerX/native/local-grant/v1\0".to_vec();
+        bytes.extend_from_slice(&self.expires_at_ms.to_be_bytes());
+        bytes.extend_from_slice(&self.owner_public_key);
+        for field in [&capability, &session] {
+            let length = u32::try_from(field.len()).map_err(|_| BindingError::SizeOverflow)?;
+            bytes.extend_from_slice(&length.to_be_bytes());
+            bytes.extend_from_slice(field);
+        }
+        Ok(bytes)
+    }
+
+    pub fn signing_digest(&self) -> Result<[u8; 32], BindingError> {
+        Ok(Sha256::digest(self.signing_bytes()?).into())
+    }
+}
+
+#[derive(Debug)]
+pub struct StagedNativeLocalGrantV1 {
+    grant: SignedNativeLocalGrantV1,
+    scope_update: (TenantKey, Vec<u8>),
+    capability_update: (TenantKey, Vec<u8>),
+    replay_update: (TenantKey, Vec<u8>),
+    observed_head_sequence: u64,
+    observed_at_ms: u64,
+}
+
+impl StagedNativeLocalGrantV1 {
+    pub fn updates(&self, store: &Store) -> Result<Vec<(TenantKey, Vec<u8>)>, BindingError> {
+        let updates = [&self.scope_update, &self.capability_update, &self.replay_update];
+        for (key, expected) in updates {
+            if let Some(existing) = store.get(key) {
+                if existing.class() != crate::store::StorageClass::LocalOnly || existing.bytes() != expected {
+                    return Err(BindingError::Conflict);
+                }
+            }
+        }
+        Ok(updates.into_iter().cloned().collect())
+    }
+
+    pub const fn grant(&self) -> &SignedNativeLocalGrantV1 { &self.grant }
+    pub const fn observed_head_sequence(&self) -> u64 { self.observed_head_sequence }
+    pub const fn observed_at_ms(&self) -> u64 { self.observed_at_ms }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn stage_native_local_grant(
+    store: &Store,
+    sessions: &crate::session::SessionRegistry,
+    owner: &crate::human_runtime::VerifiedNativeOwnerV1,
+    grant: SignedNativeLocalGrantV1,
+    core_sequence: u64,
+    core_time_ms: u64,
+) -> Result<StagedNativeLocalGrantV1, BindingError> {
+    grant.capability.validate()?;
+    let capability = &grant.capability;
+    let record = sessions.get(owner.tenant(), owner.session_id()).ok_or(BindingError::Unbound)?;
+    if owner.head_sequence() != core_sequence || owner.public_key() != grant.owner_public_key
+        || owner.revocation_sequence() == 0 || owner.revocation_sequence() > core_sequence
+        || !record.open || record.generation != owner.generation()
+        || record.request.tenant != *owner.tenant() || record.request.agent != *owner.agent()
+        || capability.record.tenant != *owner.tenant()
+        || capability.record.agent.as_bytes() != owner.agent().as_bytes()
+        || capability.record.authority != record.request.authority
+        || capability.record.revoked.is_some()
+        || capability.record.created_at_sequence > core_sequence
+        || capability.record.created_at_ms > core_time_ms
+        || grant.expires_at_ms == 0 || core_time_ms >= grant.expires_at_ms
+        || grant.expires_at_ms != capability.record.grant_not_after_ms
+        || u128::from(grant.expires_at_ms) < u128::from(capability.record.expiry_seconds) * 1000
+        || record.request.expiry_seconds.and_then(|value| value.checked_mul(1000))
+            .is_none_or(|expiry| grant.expires_at_ms > expiry)
+        || grant.session.tenant != *owner.tenant() || grant.session.agent != *owner.agent()
+        || grant.session.session_id != owner.session_id() || grant.session.generation != owner.generation()
+        || !capability.activities.is_subset(&grant.session.permitted_activities)
+    {
+        return Err(BindingError::Unbound);
+    }
+    verify_native_local_grant_signature(&grant)?;
+    if let Some(parent) = capability.record.parent {
+        let chain = timed::native_active_chain(
+            store, owner.tenant(), &capability.record.agent, &parent, core_time_ms,
+        )?;
+        let parent = chain.first().ok_or(BindingError::Unbound)?;
+        super::require_native_subset(capability, parent)?;
+    }
+    let scope_update = crate::session::stage_native_scope_install(
+        store, sessions, owner, &grant.session, core_sequence, core_time_ms,
+    ).map_err(|_| BindingError::Unbound)?;
+    let capability_update = (
+        timed::native_record_key(owner.tenant(), &capability.record.id)?,
+        capability.encode()?,
+    );
+    let mut object = b"native-local-grant-v1:".to_vec();
+    object.extend_from_slice(&capability.record.id);
+    let mut encoded = grant.signing_bytes()?;
+    encoded.extend_from_slice(&grant.signature);
+    let replay_update = (TenantKey::new(owner.tenant().clone(), ObjectKind::Capability, object)?, encoded);
+    let staged = StagedNativeLocalGrantV1 {
+        grant, scope_update, capability_update, replay_update,
+        observed_head_sequence: core_sequence, observed_at_ms: core_time_ms,
+    };
+    staged.updates(store)?;
+    Ok(staged)
+}
+
+pub fn restore_native_signed_purpose(
+    store: &Store,
+    tenant: &TenantId,
+    preparation_id: &[u8; 32],
+) -> Result<Option<layerx_agent_api::identity::SignedNativePreparationPurposeV1>, BindingError> {
+    let mut object = b"native-purpose-v1:".to_vec();
+    object.extend_from_slice(preparation_id);
+    let key = TenantKey::new(tenant.clone(), ObjectKind::Capability, object)?;
+    let Some(value) = store.get(&key) else { return Ok(None); };
+    if value.class() != crate::store::StorageClass::LocalOnly {
+        return Err(BindingError::Corrupt);
+    }
+    let bytes = value.bytes().strip_prefix(b"LXNP\x01").ok_or(BindingError::Corrupt)?;
+    let end = bytes.len().checked_sub(96).ok_or(BindingError::Corrupt)?;
+    let purpose = layerx_agent_api::identity::NativePreparationPurposeV1::from_canonical_bytes(&bytes[..end])
+        .map_err(|_| BindingError::Corrupt)?;
+    if purpose.tenant.as_str() != tenant.as_str() || purpose.preparation_id != *preparation_id {
+        return Err(BindingError::Corrupt);
+    }
+    let owner_public_key = bytes[end..end + 32].try_into().map_err(|_| BindingError::Corrupt)?;
+    let signature = bytes[end + 32..].try_into().map_err(|_| BindingError::Corrupt)?;
+    Ok(Some(layerx_agent_api::identity::SignedNativePreparationPurposeV1 { purpose, owner_public_key, signature }))
+}
+
+fn verify_native_purpose_signature(
+    signed: &layerx_agent_api::identity::SignedNativePreparationPurposeV1,
+) -> Result<[u8; 32], BindingError> {
+    let digest = native_purpose_digest(&signed.purpose)?;
+    layerx_crypto::ed25519::verify_digest(&signed.owner_public_key, &signed.signature, &digest)
+        .map_err(|_| BindingError::Unbound)?;
+    Ok(digest)
+}
+
+#[cfg(test)]
+mod native_purpose_tests {
+    use super::*;
+    use ed25519_dalek::{Signer, SigningKey};
+    use layerx_agent_api::identity::{
+        AgentDid, CapabilityId, NativePreparationPurposeV1, SessionId,
+        SignedNativePreparationPurposeV1, TenantId as ApiTenantId,
+    };
+
+    fn must<T, E: core::fmt::Debug>(result: Result<T, E>) -> T {
+        result.unwrap_or_else(|error| panic!("native purpose: {error:?}"))
+    }
+
+    fn signed() -> SignedNativePreparationPurposeV1 {
+        let purpose = NativePreparationPurposeV1 {
+            tenant: must(ApiTenantId::new("purpose-tenant")),
+            agent_did: must(AgentDid::new("purpose-agent")),
+            session_id: must(SessionId::new("11".repeat(32))),
+            generation: 1,
+            expires_at_ms: 100_000,
+            capability_id: must(CapabilityId::new("22".repeat(32))),
+            preparation_id: [3; 32], canonical_digest: [4; 32], commitment: [5; 32],
+        };
+        let key = SigningKey::from_bytes(&[7; 32]);
+        let digest = must(native_purpose_digest(&purpose));
+        SignedNativePreparationPurposeV1 {
+            purpose, owner_public_key: key.verifying_key().to_bytes(),
+            signature: key.sign(&digest).to_bytes(),
+        }
+    }
+
+    #[test]
+    fn real_owner_signature_binds_every_purpose_coordinate_and_expiry() {
+        let original = signed();
+        must(verify_native_purpose_signature(&original));
+        let mut changes = Vec::new();
+        let mut value = original.clone(); value.purpose.tenant = must(ApiTenantId::new("other")); changes.push(value);
+        let mut value = original.clone(); value.purpose.agent_did = must(AgentDid::new("other")); changes.push(value);
+        let mut value = original.clone(); value.purpose.session_id = must(SessionId::new("33".repeat(32))); changes.push(value);
+        let mut value = original.clone(); value.purpose.generation += 1; changes.push(value);
+        let mut value = original.clone(); value.purpose.expires_at_ms += 1; changes.push(value);
+        let mut value = original.clone(); value.purpose.capability_id = must(CapabilityId::new("44".repeat(32))); changes.push(value);
+        let mut value = original.clone(); value.purpose.preparation_id[0] ^= 1; changes.push(value);
+        let mut value = original.clone(); value.purpose.canonical_digest[0] ^= 1; changes.push(value);
+        let mut value = original.clone(); value.purpose.commitment[0] ^= 1; changes.push(value);
+        let mut value = original.clone(); value.owner_public_key = SigningKey::from_bytes(&[8; 32]).verifying_key().to_bytes(); changes.push(value);
+        let mut value = original; value.signature[0] ^= 1; changes.push(value);
+        for value in changes {
+            assert!(verify_native_purpose_signature(&value).is_err());
+        }
+    }
+
+    #[test]
+    fn exact_signed_purpose_restores_across_restart_without_minting_authority() {
+        let root = std::env::temp_dir().join(format!("native-purpose-restart-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let tenant = must(TenantId::new("purpose-tenant"));
+        let signed = signed();
+        let mut object = b"native-purpose-v1:".to_vec();
+        object.extend_from_slice(&signed.purpose.preparation_id);
+        let key = must(TenantKey::new(tenant.clone(), ObjectKind::Capability, object));
+        let mut bytes = b"LXNP\x01".to_vec();
+        bytes.extend_from_slice(&must(signed.purpose.canonical_bytes()));
+        bytes.extend_from_slice(&signed.owner_public_key);
+        bytes.extend_from_slice(&signed.signature);
+        {
+            let mut store = must(Store::open(root.join("store")));
+            must(store.put_local(key.clone(), bytes.clone()));
+        }
+        let mut store = must(Store::open(root.join("store")));
+        let restored = must(restore_native_signed_purpose(&store, &tenant, &signed.purpose.preparation_id));
+        assert_eq!(restored, Some(signed.clone()));
+        assert!(must(restore_native_signed_purpose(&store, &must(TenantId::new("other")), &signed.purpose.preparation_id)).is_none());
+        let mut corrupt = bytes.clone(); corrupt[4] = 2;
+        must(store.put_local(key.clone(), corrupt));
+        assert!(restore_native_signed_purpose(&store, &tenant, &signed.purpose.preparation_id).is_err());
+        bytes.push(0);
+        must(store.put_local(key, bytes));
+        assert!(restore_native_signed_purpose(&store, &tenant, &signed.purpose.preparation_id).is_err());
+        drop(store);
+        let _ = std::fs::remove_dir_all(root);
+    }
+}
+
+fn verify_native_local_grant_signature(grant: &SignedNativeLocalGrantV1) -> Result<(), BindingError> {
+    let digest = grant.signing_digest()?;
+    layerx_crypto::ed25519::verify_digest(&grant.owner_public_key, &grant.signature, &digest)
+        .map_err(|_| BindingError::Unbound)
+}
+
+#[cfg(test)]
+mod native_local_grant_tests {
+    use super::*;
+    use ed25519_dalek::{Signer, SigningKey};
+    use layerx_agent_api::identity::NativeActivity;
+
+    fn must<T, E: core::fmt::Debug>(result: Result<T, E>) -> T {
+        result.unwrap_or_else(|error| panic!("native local grant: {error:?}"))
+    }
+
+    fn grant() -> SignedNativeLocalGrantV1 {
+        let tenant = must(TenantId::new("native-grant"));
+        let activity = must(NativeActivity::new(9, 3));
+        let record = timed::TimedCapability {
+            id: [1; 32], parent: None, tenant: tenant.clone(), agent: "agent".into(),
+            authority: crate::identity::ProtocolAuthority::SessionKey([2; 32]),
+            activity_types: BTreeSet::new(), counterparties: BTreeSet::from([[3; 32]]),
+            assets: BTreeSet::from([[4; 32]]), amount_ceilings: BTreeMap::from([([4; 32], 100)]),
+            rate_ceilings: BTreeMap::from([(10, 3)]), purposes: BTreeSet::new(),
+            expiry_seconds: 100, grant_not_after_ms: 100_000,
+            created_at_ms: 1, created_at_sequence: 1, revoked: None,
+        };
+        let capability = timed::NativeTimedCapabilityV1 {
+            record, activities: BTreeSet::from([activity]), purpose_commitments: BTreeSet::from([[5; 32]]),
+            spend_ceilings: BTreeMap::from([((timed::NativeSpendSourceV1::Principal, [4; 32]), 100)]),
+        };
+        let session = crate::session::NativeSessionScopeV1 {
+            tenant, agent: must(layerx_types::ids::Did::new(b"agent")),
+            session_id: crate::session::SessionId([6; 32]), generation: 1,
+            permitted_activities: BTreeSet::from([activity]),
+        };
+        let key = SigningKey::from_bytes(&[7; 32]);
+        let mut grant = SignedNativeLocalGrantV1 {
+            capability, session, expires_at_ms: 100_000,
+            owner_public_key: key.verifying_key().to_bytes(), signature: [0; 64],
+        };
+        grant.signature = key.sign(&must(grant.signing_digest())).to_bytes();
+        grant
+    }
+
+    #[test]
+    fn route_consent_refuses_destination_asset_and_complete_source_substitution() {
+        let mut grant = grant();
+        let source = timed::NativeSpendSourceV1::Program {
+            owner_program: [10; 32], seed: vec![11], source_account: [12; 32],
+        };
+        grant.capability.spend_ceilings.insert((source.clone(), [4; 32]), 100);
+        must(inspect_native_route_fields(&grant.capability, source.clone(), [4; 32], [3; 32]));
+        assert!(matches!(inspect_native_route_fields(&grant.capability, source.clone(), [4; 32], [13; 32]),
+            Err(BindingError::Refused(Dimension::Counterparty))));
+        assert!(matches!(inspect_native_route_fields(&grant.capability, source, [14; 32], [3; 32]),
+            Err(BindingError::Refused(Dimension::Asset))));
+        for source in [
+            timed::NativeSpendSourceV1::Program { owner_program: [15; 32], seed: vec![11], source_account: [12; 32] },
+            timed::NativeSpendSourceV1::Program { owner_program: [10; 32], seed: vec![16], source_account: [12; 32] },
+            timed::NativeSpendSourceV1::Program { owner_program: [10; 32], seed: vec![11], source_account: [17; 32] },
+        ] {
+            assert!(matches!(inspect_native_route_fields(&grant.capability, source, [4; 32], [3; 32]),
+                Err(BindingError::Refused(Dimension::Amount))));
+        }
+    }
+
+    #[test]
+    fn signed_local_grant_binds_full_native_scope_capability_and_expiry() {
+        let original = grant();
+        must(verify_native_local_grant_signature(&original));
+        let mut variants = Vec::new();
+        let mut value = original.clone(); value.session.generation += 1; variants.push(value);
+        let mut value = original.clone(); value.session.session_id.0[0] ^= 1; variants.push(value);
+        let mut value = original.clone(); value.session.permitted_activities = BTreeSet::from([must(NativeActivity::new(1, 3))]); variants.push(value);
+        let mut value = original.clone(); value.capability.activities = BTreeSet::from([must(NativeActivity::new(1, 3))]); variants.push(value);
+        let mut value = original.clone(); value.capability.record.amount_ceilings.insert([4; 32], 101); variants.push(value);
+        let mut value = original.clone(); value.capability.purpose_commitments.insert([8; 32]); variants.push(value);
+        let mut value = original.clone(); value.capability.record.id[0] ^= 1; variants.push(value);
+        let mut value = original.clone(); value.expires_at_ms += 1; variants.push(value);
+        let mut value = original; value.owner_public_key = SigningKey::from_bytes(&[8; 32]).verifying_key().to_bytes(); variants.push(value);
+        for value in variants {
+            assert!(verify_native_local_grant_signature(&value).is_err());
+        }
+    }
+}
+
+fn inspect_native_route(
+    capability: &timed::NativeTimedCapabilityV1,
+    prepared: &crate::prepare::Prepared,
+) -> Result<(), BindingError> {
+    use layerx_crypto::disclosure::DisclosedProgramWindDownOperation;
+    let Some(DisclosedNativeOperation::ProgramWindDown(value)) = &prepared.disclosure.native_operation else {
+        return Ok(());
+    };
+    let DisclosedProgramWindDownOperation::Route { account, asset, destination, seed } = &value.operation else {
+        return Ok(());
+    };
+    let source = timed::NativeSpendSourceV1::Program {
+        owner_program: value.program_id.bytes(), seed: seed.clone(), source_account: *account,
+    };
+    inspect_native_route_fields(capability, source, *asset, *destination)
+}
+
+fn inspect_native_route_fields(
+    capability: &timed::NativeTimedCapabilityV1,
+    source: timed::NativeSpendSourceV1,
+    asset: [u8; 32],
+    destination: [u8; 32],
+) -> Result<(), BindingError> {
+    if !capability.record.counterparties.contains(&destination) {
+        return Err(BindingError::Refused(Dimension::Counterparty));
+    }
+    if !capability.record.assets.contains(&asset) {
+        return Err(BindingError::Refused(Dimension::Asset));
+    }
+    if !capability.spend_ceilings.contains_key(&(source, asset)) {
+        return Err(BindingError::Refused(Dimension::Amount));
+    }
+    Ok(())
+}

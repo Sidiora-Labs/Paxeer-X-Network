@@ -1,6 +1,12 @@
 //! Structured, byte-bound descriptions of canonical activities.
 
 mod native;
+mod program;
+
+pub use program::{
+    DisclosedProgramDeploy, DisclosedProgramUpgrade, DisclosedProgramCall,
+    DisclosedProgramWindDown, DisclosedProgramWindDownOperation,
+};
 
 pub use native::{
     BudgetStateContext, DisclosedNativeBudgetCreate, DisclosedNativeBudgetDefund,
@@ -956,6 +962,9 @@ fn decoded_fields(
         activity.activity_type().module(),
         activity.activity_type().ordinal(),
     );
+    if matches!(kind, (ModuleId::Programs, 1 | 2 | 3 | 7)) {
+        return program::fields(activity);
+    }
     if matches!(
         kind,
         (ModuleId::Asset, 1 | 2 | 3 | 4 | 6 | 7 | 8 | 10 | 11) | (ModuleId::Programs, 5 | 6)

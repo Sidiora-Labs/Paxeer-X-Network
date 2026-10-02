@@ -1,6 +1,8 @@
 import ssl
 from collections.abc import Mapping
+from typing import Generic, TypeVar
 
+from .generated.client import NativePrepareRequestV1, NativeApprovalDecisionV1, NativePrepareResultV1, NativeApprovalResultV1, NativeApprovalListResultV1
 from .production import IdempotencyKey, PlatformPlane, ProductionTransport, SecretBytes
 
 class LayerXKeyCredential:
@@ -21,9 +23,21 @@ class AgentEnvelopeSuccess:
     verification_status: Mapping[str, object]
     def __init__(self, request_id: str, value: object, verification_status: Mapping[str, object]) -> None: ...
 
+_NativeValue = TypeVar("_NativeValue")
+
+class NativeEnvelopeSuccess(Generic[_NativeValue]):
+    request_id: str
+    value: _NativeValue
+    verification_status: Mapping[str, object]
+    def __init__(self, request_id: str, value: _NativeValue, verification_status: Mapping[str, object]) -> None: ...
+
 class AgentEnvelopeTransport(ProductionTransport):
     def __init__(self, endpoint: str, *, gateway_key: LayerXKeyCredential, session: AgentSessionCredential | None, ca_file: str | None = ..., timeout: float = ..., maximum_response_bytes: int = ...) -> None: ...
     def call(self, plane: PlatformPlane, operation: object, request: object, idempotency_key: IdempotencyKey | None) -> AgentEnvelopeSuccess: ...
+    def prepare_native(self, request: NativePrepareRequestV1, idempotency_key: IdempotencyKey) -> NativeEnvelopeSuccess[NativePrepareResultV1]: ...
+    def approval_list_native(self) -> NativeEnvelopeSuccess[NativeApprovalListResultV1]: ...
+    def approval_get_native(self, approval_id: str) -> NativeEnvelopeSuccess[NativeApprovalResultV1]: ...
+    def approval_decide_native(self, request: NativeApprovalDecisionV1, grant: bool, idempotency_key: IdempotencyKey) -> NativeEnvelopeSuccess[NativeApprovalResultV1]: ...
 
 class AgentDaemonEnvelopeTransport(AgentEnvelopeTransport):
     def __init__(self, endpoint: str, *, ssl_context: ssl.SSLContext, session: AgentSessionCredential | None, timeout: float = ..., maximum_response_bytes: int = ...) -> None: ...

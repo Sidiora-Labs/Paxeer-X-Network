@@ -346,3 +346,35 @@ fn read_u32(bytes: &[u8], offset: &mut usize) -> Result<u32, AttenuationError> {
     *offset += 4;
     Ok(u32::from_be_bytes(value))
 }
+
+pub fn require_native_subset(
+    child: &super::timed::NativeTimedCapabilityV1,
+    parent: &super::timed::NativeTimedCapabilityV1,
+) -> Result<(), super::timed::TimedError> {
+    use super::timed::{require_subset, TimedError};
+    child.validate()?;
+    parent.validate()?;
+    if child.record.tenant != parent.record.tenant
+        || child.record.agent != parent.record.agent
+        || child.record.authority != parent.record.authority
+        || child.record.parent != Some(parent.record.id)
+        || child.record.id == parent.record.id
+        || child.record.created_at_ms < parent.record.created_at_ms
+        || child.record.created_at_sequence < parent.record.created_at_sequence
+    {
+        return Err(TimedError::Malformed);
+    }
+    require_subset(&child.record, &parent.record)?;
+    if !child.activities.is_subset(&parent.activities) {
+        return Err(TimedError::Wider(Dimension::ActivityType));
+    }
+    if !child.purpose_commitments.is_subset(&parent.purpose_commitments) {
+        return Err(TimedError::Wider(Dimension::Purpose));
+    }
+    if child.spend_ceilings.iter().any(|(key, amount)| {
+        parent.spend_ceilings.get(key).is_none_or(|limit| amount > limit)
+    }) {
+        return Err(TimedError::Wider(Dimension::Amount));
+    }
+    Ok(())
+}

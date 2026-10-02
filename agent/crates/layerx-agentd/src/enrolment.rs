@@ -1385,3 +1385,36 @@ mod verified_expiry_tests {
         let _ = std::fs::remove_dir_all(root);
     }
 }
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VerifiedProgramBudgetDenominations {
+    tenant: crate::store::TenantId,
+    bindings: Vec<([u8; 32], crate::budget::ProgramLimitDenomination)>,
+    source_digest: [u8; 32],
+}
+
+impl VerifiedProgramBudgetDenominations {
+    pub(crate) fn from_protected_source(
+        tenant: crate::store::TenantId,
+        mut bindings: Vec<([u8; 32], crate::budget::ProgramLimitDenomination)>,
+        source_digest: [u8; 32],
+    ) -> Result<Self, EnrolmentError> {
+        bindings.sort_unstable_by_key(|(id, _)| *id);
+        if bindings.is_empty() || bindings.len() > 1024 || source_digest == [0; 32]
+            || bindings.iter().any(|(id, denomination)| *id == [0; 32] || !denomination.valid())
+            || bindings.windows(2).any(|pair| pair[0].0 == pair[1].0)
+        {
+            return Err(EnrolmentError::InvalidLimit("invalid explicit Program denomination"));
+        }
+        Ok(Self { tenant, bindings, source_digest })
+    }
+
+    #[must_use]
+    pub fn tenant(&self) -> &crate::store::TenantId { &self.tenant }
+
+    #[must_use]
+    pub fn bindings(&self) -> &[([u8; 32], crate::budget::ProgramLimitDenomination)] { &self.bindings }
+
+    #[must_use]
+    pub fn source_digest(&self) -> [u8; 32] { self.source_digest }
+}

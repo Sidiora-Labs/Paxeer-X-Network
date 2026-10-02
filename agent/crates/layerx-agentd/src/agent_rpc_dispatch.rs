@@ -128,6 +128,42 @@ pub(crate) fn decode<T: for<'de> Deserialize<'de>>(
     })
 }
 
+pub(crate) fn native_variant(
+    request: &Map<String, Value>, id: RequestId,
+) -> Result<bool, Rejection> {
+    match request.get("variant") {
+        None => Ok(false),
+        Some(Value::String(variant)) if variant == "native_v1" => Ok(true),
+        Some(_) => Err(malformed(id)),
+    }
+}
+
+pub(crate) fn native_prepare_digest(
+    request: &layerx_agent_api::identity::NativePrepareRequestV1,
+) -> Result<[u8; 32], serde_json::Error> {
+    use sha2::{Digest, Sha256};
+    Ok(Sha256::new()
+        .chain_update(b"LXP/agent/native-prepare/v1\0")
+        .chain_update(serde_json::to_vec(&request.canonical())?)
+        .finalize()
+        .into())
+}
+
+pub(crate) fn native_approval_digest(
+    request: &layerx_agent_api::identity::NativeApprovalDecisionV1,
+    grant: bool,
+) -> Result<[u8; 32], serde_json::Error> {
+    use sha2::{Digest, Sha256};
+    let operation = if grant { Operation::ApprovalApprove } else { Operation::ApprovalReject };
+    Ok(Sha256::new()
+        .chain_update(b"LXP/agent/request/v1\0")
+        .chain_update(operation.name().as_bytes())
+        .chain_update([0_u8])
+        .chain_update(serde_json::to_vec(&request.canonical())?)
+        .finalize()
+        .into())
+}
+
 pub(crate) fn mutation_key(ctx: &DispatchContext) -> Result<[u8; 32], Rejection> {
     ctx.idempotency_key.ok_or_else(|| {
         rejection(
@@ -603,6 +639,25 @@ pub(crate) fn dispatched(
     })
 }
 
+pub(crate) fn dispatched_native<W, T>(
+    request_id: RequestId,
+    response: Result<HumanResponse, HumanOperationError>,
+    convert: impl FnOnce(W, RequestId) -> Result<T, Rejection>,
+) -> Result<Dispatched, Rejection>
+where
+    W: serde::de::DeserializeOwned,
+    T: Canonical,
+{
+    let response = response.map_err(|error| owner_error(request_id, error))?;
+    let refused = || rejection(ErrorClass::InternalFault, request_id, "owner.response_malformed");
+    if response.bytes().len() > MAX_BYTES {
+        return Err(refused());
+    }
+    let wire = serde_json::from_slice::<W>(response.bytes()).map_err(|_| refused())?;
+    let value = convert(wire, request_id).map_err(|_| refused())?.canonical();
+    Ok(Dispatched { value, verification: None })
+}
+
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ReadAccountRequest {
@@ -800,18 +855,35 @@ pub(crate) fn canonical_request_bytes(
         }
         Operation::Track => named(operation, &decode::<TrackRequest>(request, id)?, id)?,
         Operation::ApprovalList => {
-            named(operation, &decode::<ApprovalListRequest>(request, id)?, id)?
+            if native_variant(request, id)? {
+                wire_bytes::<NativeApprovalListV1Wire, _>(operation, request, id, NativeApprovalListV1Wire::into_request)?
+            } else {
+                named(operation, &decode::<ApprovalListRequest>(request, id)?, id)?
+            }
         }
         Operation::ApprovalGet => {
-            named(operation, &decode::<ApprovalGetRequest>(request, id)?, id)?
+            if native_variant(request, id)? {
+                wire_bytes::<NativeApprovalGetV1Wire, _>(operation, request, id, NativeApprovalGetV1Wire::into_request)?
+            } else {
+                named(operation, &decode::<ApprovalGetRequest>(request, id)?, id)?
+            }
         }
         Operation::ProgramReceipt => {
             named(operation, &decode::<ActivityLookupRequest>(request, id)?, id)?
         }
         Operation::ApprovalApprove | Operation::ApprovalReject => {
-            named(operation, &decode::<ApprovalDecisionRequest>(request, id)?, id)?
+            if native_variant(request, id)? {
+                wire_bytes::<NativeApprovalDecisionV1Wire, _>(operation, request, id, NativeApprovalDecisionV1Wire::into_request)?
+            } else {
+                named(operation, &decode::<ApprovalDecisionRequest>(request, id)?, id)?
+            }
         }
         Operation::Prepare => {
+            if native_variant(request, id)? {
+                let typed = decode_wire::<NativePrepareV1Wire>(request, id)?.into_request(id)?;
+                return native_prepare_digest(&typed).map(|digest| Some(digest.to_vec()))
+                    .map_err(|_| malformed(id));
+            }
             let typed = human_prepare(decode(request, id)?, id)?;
             crate::capability::binding::prepare_body_digest(
                 prepare_digest(&typed),
@@ -918,6 +990,9 @@ pub(crate) fn dispatch_operation<A: HumanAuthorityBoundary>(
             dispatched(id, owner.track(peer, &request.submission_ref), decode_observation)
         }
         Operation::ApprovalList => {
+            if native_variant(request, id)? {
+                return adapters::approval_list_native(shared, context, request, ctx);
+            }
             let request: ApprovalListRequest = decode(request, id)?;
             let _ = (request.tenant, request.agent);
             let current_sequence = decimal_u64(&request.current_sequence, id)?;
@@ -931,6 +1006,9 @@ pub(crate) fn dispatch_operation<A: HumanAuthorityBoundary>(
             )
         }
         Operation::ApprovalGet => {
+            if native_variant(request, id)? {
+                return adapters::approval_get_native(shared, context, request, ctx);
+            }
             let request: ApprovalGetRequest = decode(request, id)?;
             let _ = (request.tenant, request.agent);
             let approval_id = hex32(&request.approval_id, id)?;

@@ -1282,6 +1282,7 @@ pub struct ProductionHumanOperations<A> {
     export_trust: Option<(crate::export::ExportTrustSource, Duration)>,
 
     policies: Option<crate::policy::TenantPolicyRegistries>,
+    native_policies: BTreeMap<TenantId, crate::config::VerifiedNativeProgramPolicy>,
 }
 
 /// Why one tenant stays read-only after startup recovery.
@@ -1882,7 +1883,7 @@ fn require_held_reservations(
     budgets: &BudgetLimiter,
 ) -> Result<(), HumanOperationError> {
     for id in approvals
-        .hold_ids()
+        .restored_reservation_ids()
         .map_err(|_| HumanOperationError::Refused)?
     {
         if !budgets
@@ -2689,6 +2690,37 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
     /// # Errors
     /// Returns `HumanOperationError::Refused` when the authority refuses the subject or the
     /// agent is not bound to it, and `Unavailable` when an owner lock is poisoned.
+    pub(crate) fn native_purpose_owner(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        public_key: [u8; 32],
+        core_sequence: u64,
+    ) -> Result<VerifiedNativeOwnerV1, HumanOperationError> {
+        context.permit().boundary(&self.session_control).map_err(|_| HumanOperationError::Refused)?;
+        let principal = context.principal();
+        let origin = context.permit().preparation_authorization();
+        if public_key == [0; 32] || core_sequence == 0 || context.peer().subject.is_none()
+            || context.peer().uid == 0 || context.peer().tenant != principal.tenant.as_str()
+            || origin.session.tenant != principal.tenant || origin.session.session_id != principal.session_id {
+            return Err(HumanOperationError::Refused);
+        }
+        let bound = self.bind_rpc_subject(context.peer(), &principal.agent)?;
+        let identity = self.lock_operations()?.subject_identity(&bound, &principal.agent)
+            .map_err(|_| HumanOperationError::Refused)?;
+        if identity.frozen || identity.verification_level < VerificationLevel::CHECKPOINT_FINALISED
+            || identity.head_sequence != core_sequence || identity.revocation_sequence == 0
+            || identity.revocation_sequence > identity.head_sequence
+            || !identity.authorities.contains(&ProtocolAuthority::PrimaryKey(public_key)) {
+            return Err(HumanOperationError::Refused);
+        }
+        context.permit().boundary(&self.session_control).map_err(|_| HumanOperationError::Refused)?;
+        Ok(VerifiedNativeOwnerV1 {
+            tenant: principal.tenant.clone(), agent: principal.agent.clone(), session_id: principal.session_id,
+            generation: origin.generation, public_key, head_sequence: identity.head_sequence,
+            revocation_sequence: identity.revocation_sequence,
+        })
+    }
+
     pub(crate) fn bind_rpc_subject(
         &mut self,
         peer: &HumanPeer,
@@ -2980,6 +3012,229 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
     /// unrestricted legacy check), the idempotent outcome and the preparation record are one
     /// durable store write. A retry of an already recorded preparation rechecks its binding and
     /// replays the recorded outcome; it is never charged again.
+    pub(crate) fn rpc_prepare_native(
+        &mut self, context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        request: MutationEnvelope<layerx_agent_api::identity::NativePrepareRequestV1>,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        use crate::approval::native_program::{NativeProgramApprovalCarrier, StagedNativeRateUse};
+        use crate::capability::binding;
+        use crate::session_control::SessionControlError;
+        let refused = || SessionControlError::Human(HumanOperationError::Refused);
+        if crate::agent_rpc_dispatch::native_prepare_digest(&request.operation)
+            .map_err(|_| HumanOperationError::Refused)? != request.body_digest {
+            return Err(HumanOperationError::Refused);
+        }
+        let control = self.session_control.clone();
+        let human = crate::agent_rpc_wire::native_human_prepare(&request.operation,
+            layerx_agent_api::error::RequestId(request.request_id)).map_err(|_| HumanOperationError::Refused)?;
+        let preparation_id = request.operation.purpose.purpose.preparation_id;
+        let cache_key = (context.peer().tenant.clone(), context.peer().principal.clone(), hex(&preparation_id));
+        let retained = {
+            let store = self.store.lock().map_err(|_| HumanOperationError::Unavailable)?;
+            let key = crate::prepare::DurablePreparation::store_key(&context.principal().tenant, preparation_id).map_err(|_| HumanOperationError::Refused)?;
+            store.get(&key).is_some()
+        };
+        if retained { self.restore_native_cache(context, preparation_id)?; }
+        let operations_shared = Arc::clone(&self.operations);
+        let (prepared, snapshot) = {
+            let mut operations = operations_shared.lock().map_err(|_| HumanOperationError::Unavailable)?;
+            if !operations.prepared.contains_key(&cache_key) {
+                let body_digest = prepare_digest(&human);
+                operations.prepare_gated(context.peer(), MutationEnvelope { request_id: request.request_id,
+                    key: request.key, body_digest, operation: human }, Some((context, &control)))?;
+            }
+            let prepared = operations.prepared.get(&cache_key).ok_or(HumanOperationError::Refused)?.prepared.clone();
+            let snapshot = core_preparation_snapshot(&mut operations.node, context.peer(), prepared.envelope.actor_did())?;
+            if snapshot.observed_head_sequence != prepared.observed_head_sequence { return Err(HumanOperationError::Refused); }
+            (prepared, snapshot)
+        };
+        let owner = self.native_purpose_owner(context, request.operation.purpose.owner_public_key,
+            snapshot.observed_head_sequence)?;
+        if let Some(consent) = &request.operation.local_grant {
+            let grant_owner = self.native_purpose_owner(context, consent.owner_public_key, snapshot.observed_head_sequence)?;
+            let grant = crate::agent_rpc_wire::native_local_grant(consent,
+                layerx_agent_api::error::RequestId(request.request_id)).map_err(|_| HumanOperationError::Refused)?;
+            context.permit().with_native_owner_install(&control, |store, registry| {
+                let staged = binding::stage_native_local_grant(store, registry, &grant_owner, grant,
+                    snapshot.observed_head_sequence, snapshot.protocol_timestamp).map_err(|_| refused())?;
+                let rows = staged.updates(&store).map_err(|_| refused())?;
+                let (updates, inserts): (Vec<_>, Vec<_>) = rows.into_iter().partition(|(key, _)| store.get(key).is_some());
+                store.apply_program_approval_batch(updates, inserts, Vec::new()).map_err(|_| SessionControlError::Unavailable)
+            }).map_err(rpc_commit_error)?;
+        }
+        let constraints = context.permit().with_native_preparation(&control, request.operation.activity,
+            snapshot.observed_head_sequence, |store, sessions, session, _, _, _| {
+                let purpose = binding::verify_native_owner_purpose(store, sessions, session, &owner, &prepared,
+                    &preparation_id, &request.operation.purpose, snapshot.observed_head_sequence, snapshot.protocol_timestamp)
+                    .map_err(|_| refused())?;
+                binding::inspect_native_capability(store, purpose.binding().clone(), &prepared, snapshot.protocol_timestamp)
+                    .map_err(|_| refused())
+            }).map_err(rpc_commit_error)?;
+        let (proofs, resolved, policy) = {
+            let mut operations = operations_shared.lock().map_err(|_| HumanOperationError::Unavailable)?;
+            let policy = operations.native_policies.get(&context.principal().tenant)
+                .filter(|source| source.tenant() == &context.principal().tenant)
+                .ok_or(HumanOperationError::Refused)?.policy().clone();
+            let windows = constraints.rate_obligations().values().flat_map(|rates| rates.keys().copied())
+                .collect::<std::collections::BTreeSet<_>>();
+            let mut proofs = Vec::new();
+            for window in windows {
+                proofs.push(operations.authenticated_native_policy_usage(context.peer(), prepared.envelope.actor_did(), &prepared, window)?);
+            }
+            let (_, _, authorization) = operations.budget_read_parts(context.peer())?;
+            let actor = layerx_wire::hash::did_id_for_protocol(prepared.envelope.actor_did(), prepared.envelope.protocol_version())
+                .map_err(|_| HumanOperationError::Refused)?;
+            let caps = operations.node.caps_discovery(actor, VerificationLevel::STATE_PROVEN,
+                boundary_correlation(context.peer(), &preparation_id, b"native-prepare-caps"), authorization, None)
+                .map_err(|_| HumanOperationError::Unavailable)?;
+            let programs = self.programs.as_mut().ok_or(HumanOperationError::Unavailable)?;
+            let resolved = crate::budget::read_program_budget_sources(&mut operations.node, programs, &prepared, &caps,
+                snapshot.protocol_timestamp, boundary_correlation(context.peer(), &preparation_id, b"native-prepare-fee"))
+                .map_err(|_| HumanOperationError::Refused)?;
+            if !resolved.matches_prepared(&prepared) || operations.node.head().chain_sequence != prepared.observed_head_sequence {
+                return Err(HumanOperationError::Refused);
+            }
+            (proofs, resolved, policy)
+        };
+        let held = context.permit().with_native_preparation(&control, request.operation.activity,
+            snapshot.observed_head_sequence, |store, sessions, session, budgets, lifecycle, expiry_sequence| {
+                let purpose = binding::verify_native_owner_purpose(store, sessions, session, &owner, &prepared,
+                    &preparation_id, &request.operation.purpose, snapshot.observed_head_sequence, snapshot.protocol_timestamp)
+                    .map_err(|_| refused())?;
+                let current = binding::inspect_native_capability(store, purpose.binding().clone(), &prepared, snapshot.protocol_timestamp)
+                    .map_err(|_| refused())?;
+                if current != constraints || current.binding() != purpose.binding() { return Err(refused()); }
+                let durable_key = crate::prepare::DurablePreparation::store_key(&context.principal().tenant, preparation_id)
+                    .map_err(|_| refused())?;
+                if let Some(stored) = store.get(&durable_key) {
+                    let record = crate::prepare::DurablePreparation::decode(context.principal().tenant.clone(), stored.bytes()).map_err(|_| refused())?;
+                    if record.extensions.get(&8).map(Vec::as_slice) != Some(request.body_digest.as_slice()) {
+                        return Err(refused());
+                    }
+                    return NativeProgramApprovalCarrier::read_id(store, context, preparation_id).map_err(|_| refused());
+                }
+                if !matches!(lifecycle.state(preparation_id), Err(crate::prepare::LifecycleError::NotFound)) { return Err(refused()); }
+                let actor = std::str::from_utf8(prepared.envelope.actor_did().as_bytes()).map_err(|_| refused())?;
+                let agent_digest = daemon_limit_agent(actor);
+                let charges = resolved.budget_charges(|charge| {
+                    let mut limits = crate::budget::program_enrolment_charge_limits(store, &context.principal().tenant,
+                        &self.verified_limits, &prepared.disclosure,
+                        &[crate::budget::LimitScope::Agent(agent_digest), crate::budget::LimitScope::Session(session.session_id().0)],
+                        charge.source.account(), charge.asset)?;
+                    limits.extend(crate::budget::applicable_daemon_limits(store, &context.principal().tenant,
+                        agent_digest, charge.asset, crate::budget::CoreTimestampMs(snapshot.protocol_timestamp))?);
+                    Ok(limits)
+                }).map_err(|_| refused())?;
+                let budget_request = crate::budget::ProgramReservationRequest { id: preparation_id, charges,
+                    expiry_sequence, current_sequence: snapshot.observed_head_sequence,
+                    core_deadline: Some(crate::budget::CoreTimestampMs(prepared.envelope.timestamp_bound().not_after())) };
+                let rate = StagedNativeRateUse::stage(store, &current, &prepared, &proofs).map_err(|_| refused())?;
+                let staged = budgets.stage_program_reservation(&budget_request, crate::budget::CoreTimestampMs(snapshot.protocol_timestamp))
+                    .map_err(|_| refused())?;
+                let held = NativeProgramApprovalCarrier::bind(context, &prepared, &policy, staged.record()).map_err(|_| refused())?;
+                let origin = context.permit().preparation_authorization();
+                let record = crate::prepare::DurablePreparation {
+                    tenant: context.principal().tenant.clone(), preparation_id, session_id: origin.session.session_id.0,
+                    generation: origin.generation, not_after: prepared.envelope.timestamp_bound().not_after(),
+                    payload_hash: prepared.envelope.payload_hash(), state: crate::prepare::LifecycleState::Prepared,
+                    activity_id: None, holds: Vec::new(), extensions: BTreeMap::from([
+                        (crate::prepare::EXTENSION_IDEMPOTENCY, prepared.audit.idempotency_key.to_vec()),
+                        (6, staged.record().encode().map_err(|_| refused())?),
+                        (7, held.held_digest().map_err(|_| refused())?.to_vec()), (8, request.body_digest.to_vec()),
+                    ]),
+                };
+                let replay = purpose.replay_update(store).map_err(|_| refused())?;
+                let mut inserts = vec![(durable_key, record.encode().map_err(|_| refused())?), held.companion().map_err(|_| refused())?];
+                let mut updates = Vec::new();
+                if store.get(&replay.0).is_some() { updates.push(replay); } else { inserts.push(replay); }
+                rate.commit_joined(store, updates, inserts).map_err(|_| refused())?;
+                staged.publish();
+                lifecycle.register_authorized(preparation_id, &prepared, vec![preparation_id], origin)
+                    .map_err(SessionControlError::Lifecycle)?;
+                Ok(held)
+            }).map_err(rpc_commit_error)?;
+        native_response(&layerx_agent_api::identity::NativePrepareResultV1 {
+            preparation_id, canonical_bytes: prepared.canonical_bytes, signing_preimage: prepared.signing_preimage,
+            activity: request.operation.activity,
+            approval_required: held.requires_approval(),
+            approval_id: if held.requires_approval() { Some(preparation_id) } else { None },
+        })
+    }
+
+    fn observe_native_expiry(&mut self, context: &crate::agent_rpc_peer::RpcOwnerContext<'_>) -> Result<(), HumanOperationError> {
+        let snapshot = core_preparation_snapshot(&mut self.lock_operations()?.node, context.peer(), &context.principal().agent)?;
+        context.commit(&self.session_control, |_| {
+            use crate::approval::native_program::{NativeProgramApprovalCarrier, NativeApprovalState};
+            use crate::session_control::SessionControlError;
+            let mut store = self.store.lock().map_err(|_| SessionControlError::Unavailable)?;
+            let records = NativeProgramApprovalCarrier::list(&store, context)
+                .map_err(|_| SessionControlError::Human(HumanOperationError::Refused))?;
+            for held in records {
+                if !matches!(held.state(), NativeApprovalState::Awaiting | NativeApprovalState::NotRequired)
+                    || !held.expired_at(snapshot.observed_head_sequence, snapshot.protocol_timestamp) { continue; }
+                let durable_key = crate::prepare::DurablePreparation::store_key(&context.principal().tenant, held.preparation_id())
+                    .map_err(|_| SessionControlError::Unavailable)?;
+                let raw = store.get(&durable_key).ok_or(SessionControlError::Unavailable)?;
+                let durable = crate::prepare::DurablePreparation::decode(context.principal().tenant.clone(), raw.bytes())
+                    .map_err(|_| SessionControlError::Unavailable)?;
+                if durable.activity_id.is_some() || durable.terminal() { continue; }
+                let mut digest = Sha256::new(); digest.update(b"layerx/native-program-expiry/v1\0"); digest.update(held.preparation_id());
+                NativeProgramApprovalCarrier::decide(&mut store, &self.budgets, context, held.preparation_id(),
+                    held.held_digest().map_err(|_| SessionControlError::Unavailable)?, digest.finalize().into(), false,
+                    snapshot.observed_head_sequence, snapshot.protocol_timestamp)
+                    .map_err(|_| SessionControlError::Human(HumanOperationError::Refused))?;
+            }
+            Ok(())
+        }).map_err(rpc_commit_error)
+    }
+
+    pub(crate) fn rpc_approval_list_native(
+        &mut self, context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        self.observe_native_expiry(context)?;
+        context.permit().boundary(&self.session_control).map_err(rpc_commit_error)?;
+        let store = self.store.lock().map_err(|_| HumanOperationError::Unavailable)?;
+        let records = crate::approval::native_program::NativeProgramApprovalCarrier::list(&store, context)
+            .map_err(|_| HumanOperationError::Refused)?;
+        if records.len() > 100 { return Err(HumanOperationError::Unavailable); }
+        let approvals = records.iter().map(|record| record.response()).collect::<Result<Vec<_>, _>>()
+            .map_err(|_| HumanOperationError::Refused)?;
+        native_response(&layerx_agent_api::identity::NativeApprovalListResultV1 { approvals })
+    }
+
+    pub(crate) fn rpc_approval_get_native(
+        &mut self, context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        request: layerx_agent_api::identity::NativeApprovalGetV1,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        self.observe_native_expiry(context)?;
+        context.permit().boundary(&self.session_control).map_err(rpc_commit_error)?;
+        let store = self.store.lock().map_err(|_| HumanOperationError::Unavailable)?;
+        let held = crate::approval::native_program::NativeProgramApprovalCarrier::read_id(&store, context, request.approval_id)
+            .map_err(|_| HumanOperationError::Refused)?;
+        native_response(&held.response().map_err(|_| HumanOperationError::Refused)?)
+    }
+
+    pub(crate) fn rpc_approval_decide_native(
+        &mut self, context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        request: MutationEnvelope<layerx_agent_api::identity::NativeApprovalDecisionV1>, grant: bool,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        if crate::agent_rpc_dispatch::native_approval_digest(&request.operation, grant)
+            .map_err(|_| HumanOperationError::Refused)? != request.body_digest {
+            return Err(HumanOperationError::Refused);
+        }
+        let snapshot = core_preparation_snapshot(&mut self.lock_operations()?.node,
+            context.peer(), &context.principal().agent)?;
+        if request.operation.current_sequence != snapshot.observed_head_sequence { return Err(HumanOperationError::Refused); }
+        let held = context.commit(&self.session_control, |_| {
+            let mut store = self.store.lock().map_err(|_| crate::session_control::SessionControlError::Unavailable)?;
+            crate::approval::native_program::NativeProgramApprovalCarrier::decide(&mut store, &self.budgets, context,
+                request.operation.approval_id, request.operation.held_digest, request.key, grant,
+                snapshot.observed_head_sequence, snapshot.protocol_timestamp)
+                .map_err(|_| crate::session_control::SessionControlError::Human(HumanOperationError::Refused))
+        }).map_err(rpc_commit_error)?;
+        native_response(&held.response().map_err(|_| HumanOperationError::Refused)?)
+    }
+
     pub(crate) fn rpc_prepare(
         &mut self,
         context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
@@ -3236,12 +3491,105 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
 
     /// Enqueue and transmit run inside one permit read interval, so a session close cannot
     /// land between the durable outbox enqueue and node submission.
+    fn restore_native_cache(&mut self, context: &crate::agent_rpc_peer::RpcOwnerContext<'_>, preparation_id: [u8; 32]) -> Result<(), HumanOperationError> {
+        let key = (context.peer().tenant.clone(), context.peer().principal.clone(), hex(&preparation_id));
+        let held = {
+            let store = self.store.lock().map_err(|_| HumanOperationError::Unavailable)?;
+            crate::approval::native_program::NativeProgramApprovalCarrier::read_id(&store, context, preparation_id)
+                .map_err(|_| HumanOperationError::Refused)?
+        };
+        let mut operations = self.lock_operations()?;
+        if operations.prepared.contains_key(&key) { return Ok(()); }
+        let registry = operations.authority.registry(context.peer()).map_err(map_core)?;
+        let prepared = held.restore_prepared(&registry).map_err(|_| HumanOperationError::Refused)?;
+        operations.prepared.insert(key, CachedPreparation { prepared, registry });
+        Ok(())
+    }
+
+    fn rpc_submit_native_external(
+        &mut self, context: &crate::agent_rpc_peer::RpcOwnerContext<'_>, request: MutationEnvelope<HumanSubmit>,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        use crate::approval::native_program::{NativeProgramApprovalCarrier, native_rate_submission_update};
+        use crate::capability::binding;
+        use crate::session_control::SessionControlError;
+        if submit_digest(&request.operation) != request.body_digest { return Err(HumanOperationError::Refused); }
+        let preparation_id = digest_from_hex(&request.operation.preparation_ref).ok_or(HumanOperationError::Refused)?;
+        self.restore_native_cache(context, preparation_id)?;
+        let control = self.session_control.clone();
+        let peer = context.peer();
+        let (cached, snapshot, signed_purpose) = {
+            let mut operations = self.lock_operations()?;
+            let cached = operations.prepared.get(&(peer.tenant.clone(), peer.principal.clone(), request.operation.preparation_ref.clone()))
+                .cloned().ok_or(HumanOperationError::Refused)?;
+            let snapshot = core_preparation_snapshot(&mut operations.node, peer, cached.prepared.envelope.actor_did())?;
+            let store = self.store.lock().map_err(|_| HumanOperationError::Unavailable)?;
+            let purpose = binding::restore_native_signed_purpose(&store, &context.principal().tenant, &preparation_id)
+                .map_err(|_| HumanOperationError::Refused)?.ok_or(HumanOperationError::Refused)?;
+            (cached, snapshot, purpose)
+        };
+        let owner = self.native_purpose_owner(context, signed_purpose.owner_public_key, snapshot.observed_head_sequence)?;
+        let _signing_owner = self.native_purpose_owner(context, request.operation.signer_public_key, snapshot.observed_head_sequence)?;
+        let signature = request.operation.signature.as_slice().try_into().map_err(|_| HumanOperationError::Refused)?;
+        let signed = attach_external_signature(&cached.prepared, signature).map_err(|_| HumanOperationError::Refused)?;
+        let verified = verify_before_submit(&signed, &cached.prepared, &request.operation.signer_public_key, &cached.registry)
+            .map_err(|_| HumanOperationError::Refused)?;
+        context.permit().with_native_authority(&control,
+            layerx_agent_api::identity::NativeActivity::from(cached.prepared.envelope.activity_type()),
+            snapshot.observed_head_sequence, |store, sessions, session, budgets, _, _| {
+                let refuse = || SessionControlError::Human(HumanOperationError::Refused);
+                let held = NativeProgramApprovalCarrier::read_id(store, context, preparation_id).map_err(|_| refuse())?;
+                held.authorize_submit(context, &cached.prepared, request.operation.approval_release_ref,
+                    snapshot.observed_head_sequence, snapshot.protocol_timestamp).map_err(|_| refuse())?;
+                let purpose = binding::verify_native_owner_purpose(store, sessions, session, &owner, &cached.prepared,
+                    &preparation_id, &signed_purpose, snapshot.observed_head_sequence, snapshot.protocol_timestamp).map_err(|_| refuse())?;
+                binding::inspect_native_capability(store, purpose.binding().clone(), &cached.prepared, snapshot.protocol_timestamp)
+                    .map_err(|_| refuse())?;
+                let budget = held.budget().map_err(|_| refuse())?;
+                for hold in &budget.holds {
+                    if budgets.is_retired(hold.reservation.limit_id).map_err(|_| refuse())? { return Err(refuse()); }
+                }
+                let update = native_rate_submission_update(store, &context.principal().tenant, &cached.prepared,
+                    &verified, &cached.registry).map_err(|_| refuse())?;
+                store.apply_program_approval_batch(vec![update], Vec::new(), Vec::new()).map_err(|_| SessionControlError::Unavailable)
+            }).map_err(rpc_commit_error)?;
+        let permit = context.permit();
+        permit.admit_write(&control, crate::session_control::WriteAdmission {
+            stage: crate::session_control::AdmissionStage::Submit, preparation_id, charge: None, extensions: Vec::new(),
+            current_sequence: snapshot.observed_head_sequence, core_time_ms: snapshot.protocol_timestamp, planner: None,
+        }).map_err(rpc_commit_error)?;
+        permit.submit_with_external_signature(&control, preparation_id, verified.exact_bytes().to_vec(), verified.activity_id(),
+            snapshot.observed_head_sequence, snapshot.protocol_timestamp).map_err(rpc_commit_error)?;
+        control.mark_signed(&context.principal().tenant, preparation_id).map_err(rpc_commit_error)?;
+        permit.transition_preparation(&control, preparation_id, crate::prepare::LifecycleState::Submitted,
+            snapshot.observed_head_sequence).map_err(rpc_commit_error)?;
+        control.mark_submitted(&context.principal().tenant, preparation_id).map_err(rpc_commit_error)?;
+        context.commit(&control, |peer| {
+            self.lock_operations().map_err(SessionControlError::Human)?
+                .submit_external_with_origin(peer, request, Some(permit.preparation_authorization()))
+                .map_err(SessionControlError::Human)
+        }).map_err(rpc_commit_error)
+    }
+
     pub(crate) fn rpc_submit_external(
         &mut self,
         context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
         request: MutationEnvelope<HumanSubmit>,
     ) -> Result<HumanResponse, HumanOperationError> {
         use crate::session_control::{AdmissionStage, WriteAdmission};
+        let native = {
+            let store = self.store.lock().map_err(|_| HumanOperationError::Unavailable)?;
+            match digest_from_hex(&request.operation.preparation_ref) {
+                Some(id) => {
+                    let key = crate::prepare::DurablePreparation::store_key(&context.principal().tenant, id)
+                        .map_err(|_| HumanOperationError::Refused)?;
+                    store.get(&key).map(|raw| crate::prepare::DurablePreparation::decode(context.principal().tenant.clone(), raw.bytes()))
+                        .transpose().map_err(|_| HumanOperationError::Refused)?
+                        .is_some_and(|record| record.extensions.contains_key(&6) || record.extensions.contains_key(&7))
+                }
+                None => false,
+            }
+        };
+        if native { return self.rpc_submit_native_external(context, request); }
         let control = self.session_control.clone();
         self.authorize_external_submit(context.peer(), &request)?;
 
@@ -3296,6 +3644,19 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
                     .store
                     .lock()
                     .map_err(|_| HumanOperationError::Unavailable)?;
+                if cached.prepared.envelope.activity_type().module() == layerx_types::payload::ModuleId::Programs {
+                    let durable_key = crate::prepare::DurablePreparation::store_key(&tenant, preparation_id)
+                        .map_err(|_| HumanOperationError::Refused)?;
+                    let stored = store.get(&durable_key).ok_or(HumanOperationError::Refused)?;
+                    if stored.class() != crate::store::StorageClass::LocalOnly { return Err(HumanOperationError::Refused); }
+                    let durable = crate::prepare::DurablePreparation::decode(tenant.clone(), stored.bytes())
+                        .map_err(|_| HumanOperationError::Refused)?;
+                    let release = crate::approval::program_requirement::authorize_program(
+                        &store, context, &cached.prepared, &durable, &self.approval_queue,
+                        snapshot.observed_head_sequence, snapshot.protocol_timestamp,
+                    ).map_err(|_| HumanOperationError::Refused)?;
+                    if release != request.operation.approval_release_ref { return Err(HumanOperationError::Refused); }
+                }
                 budget_write_charge(
                     &store,
                     &tenant,
@@ -3351,6 +3712,13 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
                 .mark_submitted(&tenant, preparation_id)
                 .map_err(rpc_commit_error)?;
         } else {
+            let peer = context.peer();
+            let cached = operations.prepared.get(&(
+                peer.tenant.clone(), peer.principal.clone(), request.operation.preparation_ref.clone(),
+            )).ok_or(HumanOperationError::Refused)?;
+            if cached.prepared.envelope.activity_type().module() == layerx_types::payload::ModuleId::Programs {
+                return Err(HumanOperationError::Refused);
+            }
             let shared = control.store();
             let restricted = crate::capability::binding::is_restricted(
                 &*shared
@@ -3437,6 +3805,31 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
                     {
                         return Err(HumanOperationError::Refused);
                     }
+                    let prepared = self.approval_queue.prepared(reference)
+                        .ok_or(HumanOperationError::Refused)?;
+                    let native_program = {
+                        let mut operations = self.lock_operations()?;
+                        let registry = operations.authority.registry(peer).map_err(map_core)?;
+                        layerx_wire::activity::decode_unsigned(
+                            prepared.unsigned_canonical_bytes.as_bytes(), &registry,
+                        ).map_err(|_| HumanOperationError::Refused)?.activity_type().module()
+                            == layerx_types::payload::ModuleId::Programs
+                    };
+                    if native_program {
+                        let (context, control) = gate.ok_or(HumanOperationError::Refused)?;
+                        context.commit(control, |_| {
+                            let shared = control.store();
+                            let store = shared.lock().map_err(|_| crate::session_control::SessionControlError::Unavailable)?;
+                            let snapshot = crate::policy::approval::released_snapshot(&store, &tenant, approval_id, reference)
+                                .map_err(|_| crate::session_control::SessionControlError::Human(HumanOperationError::Refused))?;
+                            let (requirement, _) = crate::approval::program_requirement::read_approval(&store, &snapshot)
+                                .map_err(|_| crate::session_control::SessionControlError::Human(HumanOperationError::Refused))?;
+                            requirement.stage_terminal(approval_id, key.as_str(), Some(context), current_sequence,
+                                crate::approval::program_requirement::Terminal::Granted, Some(reference))
+                                .map_err(|_| crate::session_control::SessionControlError::Human(HumanOperationError::Refused))?;
+                            Ok(())
+                        }).map_err(rpc_commit_error)?;
+                    }
                 }
                 return encode_decision(&decision);
             }
@@ -3448,6 +3841,15 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
         if snapshot.prepared.disclosure.canonical_digest != held_digest {
             return Err(HumanOperationError::Refused);
         }
+        let native_program = {
+            let mut operations = self.lock_operations()?;
+            let registry = operations.authority.registry(peer).map_err(map_core)?;
+            layerx_wire::activity::decode_unsigned(
+                snapshot.prepared.unsigned_canonical_bytes.as_bytes(), &registry,
+            ).map_err(|_| HumanOperationError::Refused)?.activity_type().module()
+                == layerx_types::payload::ModuleId::Programs
+        };
+        if native_program && gate.is_none() { return Err(HumanOperationError::Refused); }
         let request = DecisionRequest {
             tenant: &tenant,
             approval_id,
@@ -3459,7 +3861,10 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
         let service = ApprovalService::new(&self.approvals, &self.budgets, &self.approval_expiry);
         let queue = &self.approval_queue;
         let effect = move || {
-            let decision = if approve {
+            let decision = if native_program {
+                let (context, _) = gate.ok_or(HumanOperationError::Refused)?;
+                service.decide_program(request, context, &snapshot.prepared, approve, queue)
+            } else if approve {
                 service.approve(request, &snapshot.prepared, queue)
             } else {
                 service.reject(request)
@@ -6491,6 +6896,11 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
                         .store
                         .lock()
                         .map_err(|_| HumanOperationError::Unavailable)?;
+                    if let Some(update) = crate::approval::native_program::native_rate_receipt_update(&store, &tenant, &terminal)
+                        .map_err(|_| HumanOperationError::Refused)? {
+                        store.apply_program_approval_batch(vec![update], Vec::new(), Vec::new())
+                            .map_err(|_| HumanOperationError::Unavailable)?;
+                    }
                     crate::finality::augment_verified(
                         &mut store,
                         tenant.clone(),
@@ -6612,6 +7022,7 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
             export_trust: None,
 
             policies: None,
+            native_policies: BTreeMap::new(),
         })
     }
 
@@ -6626,6 +7037,164 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
     ) -> Result<(), crate::policy::PolicyLoadError> {
         self.policies = Some(crate::policy::load_tenant_registries(sources)?);
         Ok(())
+    }
+
+    pub fn attach_native_policies(
+        &mut self,
+        sources: &BTreeMap<TenantId, std::path::PathBuf>,
+    ) -> Result<(), crate::config::ConfigError> {
+        let loaded = sources.iter().map(|(tenant, path)| {
+            crate::config::load_native_program_policy(path, tenant).map(|policy| (tenant.clone(), policy))
+        }).collect::<Result<BTreeMap<_, _>, _>>()?;
+        self.native_policies = loaded;
+        Ok(())
+    }
+
+    fn authenticated_native_policy_usage(
+        &mut self,
+        peer: &HumanPeer,
+        actor: &Did,
+        prepared: &crate::prepare::Prepared,
+        window_seconds: u64,
+    ) -> Result<crate::protocol_evidence::AuthenticatedTimeWindowUse, HumanOperationError> {
+        use crate::protocol_evidence::{RawActivityReceiptEvidence, RawReceiptEvidence, RawTimeWindowBatch};
+        use layerx_client::read::{HistoryKind, HistoryProof};
+        const MAX_SEQUENCES: u64 = 4096;
+        const MAX_BYTES: usize = 16 * 1024 * 1024;
+        if window_seconds == 0 || prepared.envelope.actor_did() != actor {
+            return Err(HumanOperationError::Refused);
+        }
+        let window_ms = window_seconds.checked_mul(1000).ok_or(HumanOperationError::Refused)?;
+        let head = self.node.head();
+        if head.chain_sequence != prepared.observed_head_sequence || head.chain_sequence == 0 {
+            return Err(HumanOperationError::Unavailable);
+        }
+        let next_execution_sequence = head.chain_sequence.checked_add(1).ok_or(HumanOperationError::Refused)?;
+        let registry = self.authority.registry(peer).map_err(map_core)?;
+        let (verifier, _, authorization) = self.budget_read_parts(peer)?;
+        let mut remaining = MAX_SEQUENCES;
+        let mut used_bytes = 0_usize;
+        let mut admit_bytes = |length: usize| -> Result<(), HumanOperationError> {
+            used_bytes = used_bytes.checked_add(length).filter(|value| *value <= MAX_BYTES)
+                .ok_or(HumanOperationError::Unavailable)?;
+            Ok(())
+        };
+        let mut terminal_sequence = head.chain_sequence;
+        let mut observed = None;
+        let mut lower = None;
+        let mut batches = Vec::new();
+        loop {
+            let terminal_page = self.node.history(terminal_sequence, terminal_sequence, 1, None,
+                VerificationLevel::BATCH_INCLUDED,
+                boundary_correlation(peer, &terminal_sequence.to_be_bytes(), b"native-rate-terminal"),
+                authorization).map_err(native_rate_read_error)?;
+            if terminal_page.cursor.is_some() || terminal_page.items.len() != 1 {
+                return Err(HumanOperationError::Unavailable);
+            }
+            let terminal = &terminal_page.items[0];
+            if terminal.global_sequence != terminal_sequence || terminal.kind != HistoryKind::Receipt {
+                return Err(HumanOperationError::Refused);
+            }
+            admit_bytes(terminal.canonical_bytes().len())?;
+            admit_bytes(terminal.proof_material().len())?;
+            let proof = HistoryProof::decode(terminal.proof_material()).map_err(|_| HumanOperationError::Refused)?;
+            let header = layerx_wire::receipt::decode_batch_header(&proof.header).map_err(|_| HumanOperationError::Refused)?;
+            if header.last_sequence() != terminal_sequence || header.first_sequence() == 0 {
+                return Err(HumanOperationError::Refused);
+            }
+            let count = header.last_sequence().checked_sub(header.first_sequence())
+                .and_then(|value| value.checked_add(1)).ok_or(HumanOperationError::Refused)?;
+            remaining = remaining.checked_sub(count).ok_or(HumanOperationError::Unavailable)?;
+            if observed.is_none() {
+                let time = verifier.authenticate_core_time(&proof.header, &proof.header_signature,
+                    head.sealed_batch, head.chain_sequence).map_err(|_| HumanOperationError::Refused)?;
+                if time.through_sequence().checked_add(1) != Some(next_execution_sequence) {
+                    return Err(HumanOperationError::Refused);
+                }
+                lower = time.observed_core_ms().checked_sub(window_ms);
+                observed = Some(time);
+            }
+            let maintenance = RawReceiptEvidence::new(terminal.canonical_bytes().to_vec(),
+                proof.proof.clone(), proof.header.clone(), proof.header_signature);
+            let mut activities = Vec::new();
+            let mut expected = header.first_sequence();
+            let mut cursor = None;
+            while expected < terminal_sequence {
+                let page = self.node.history(header.first_sequence(), terminal_sequence - 1, 1, cursor,
+                    VerificationLevel::BATCH_INCLUDED,
+                    boundary_correlation(peer, &expected.to_be_bytes(), b"native-rate-history"),
+                    authorization).map_err(native_rate_read_error)?;
+                if page.items.len() != 1 { return Err(HumanOperationError::Unavailable); }
+                let item = &page.items[0];
+                if item.global_sequence != expected || item.kind == HistoryKind::Event {
+                    return Err(HumanOperationError::Refused);
+                }
+                admit_bytes(item.canonical_bytes().len())?;
+                admit_bytes(item.proof_material().len())?;
+                let activity_proof = HistoryProof::decode(item.proof_material()).map_err(|_| HumanOperationError::Refused)?;
+                if activity_proof.header != proof.header || activity_proof.header_signature != proof.header_signature {
+                    return Err(HumanOperationError::Refused);
+                }
+                let (signed_activity, raw) = match item.kind {
+                    HistoryKind::Activity => {
+                        let activity = layerx_wire::activity::decode_signed(item.canonical_bytes(), &registry)
+                            .map_err(|_| HumanOperationError::Refused)?;
+                        let id = layerx_wire::hash::activity_id(&activity).map_err(|_| HumanOperationError::Refused)?;
+                        let bundle = self.node.proof_bundle(ProofBundleSelector::Receipt(id),
+                            boundary_correlation(peer, &id, b"native-rate-receipt"), &registry)
+                            .map_err(|error| if evidence_unavailable(&error) { HumanOperationError::Unavailable } else { HumanOperationError::Refused })?;
+                        (item.canonical_bytes().to_vec(), raw_receipt_evidence(&bundle)?)
+                    }
+                    HistoryKind::Receipt => {
+                        let receipt = layerx_wire::receipt::decode(item.canonical_bytes()).map_err(|_| HumanOperationError::Refused)?;
+                        let id = receipt.protocol().ok_or(HumanOperationError::Refused)?.activity_id();
+                        let bundle = self.node.proof_bundle(ProofBundleSelector::Activity(id),
+                            boundary_correlation(peer, &id, b"native-rate-activity"), &registry)
+                            .map_err(|error| if evidence_unavailable(&error) { HumanOperationError::Unavailable } else { HumanOperationError::Refused })?;
+                        let layerx_client::evidence::VerifiedProofBundle::Activity {
+                            canonical_bytes, activity_id, proof: signed_proof, signed_header,
+                        } = bundle else { return Err(HumanOperationError::Refused); };
+                        if activity_id != id || signed_header.canonical_bytes != proof.header
+                            || signed_header.signature != proof.header_signature
+                            || signed_proof.leaf_index() != activity_proof.proof.leaf_index()
+                            || signed_proof.leaf_count() != activity_proof.proof.leaf_count() {
+                            return Err(HumanOperationError::Refused);
+                        }
+                        admit_bytes(canonical_bytes.len())?;
+                        (canonical_bytes, RawReceiptEvidence::new(item.canonical_bytes().to_vec(),
+                            activity_proof.proof.clone(), proof.header.clone(), proof.header_signature))
+                    }
+                    HistoryKind::Event => return Err(HumanOperationError::Refused),
+                };
+                if raw.canonical_header() != proof.header.as_slice()
+                    || raw.header_signature() != proof.header_signature
+                    || raw.proof().leaf_index() != activity_proof.proof.leaf_index()
+                    || raw.proof().leaf_count() != activity_proof.proof.leaf_count() {
+                    return Err(HumanOperationError::Refused);
+                }
+                admit_bytes(raw.canonical_receipt().len())?;
+                admit_bytes(raw.canonical_header().len())?;
+                admit_bytes(raw.proof().siblings().len().checked_mul(32).and_then(|value| value.checked_add(73))
+                    .ok_or(HumanOperationError::Unavailable)?)?;
+                activities.push(RawActivityReceiptEvidence::from_signed_inclusion(signed_activity, raw));
+                expected = expected.checked_add(1).ok_or(HumanOperationError::Refused)?;
+                cursor = page.cursor;
+                if cursor.is_none() != (expected == terminal_sequence) {
+                    return Err(HumanOperationError::Unavailable);
+                }
+            }
+            batches.push(RawTimeWindowBatch::new(activities, maintenance));
+            if (header.batch_number() == 1 && header.first_sequence() == 1)
+                || lower.is_some_and(|bound| header.timestamp_ms() <= bound) { break; }
+            if remaining == 0 { return Err(HumanOperationError::Unavailable); }
+            terminal_sequence = header.first_sequence().checked_sub(1)
+                .filter(|value| *value > 0).ok_or(HumanOperationError::Unavailable)?;
+        }
+        if self.node.head() != head { return Err(HumanOperationError::Unavailable); }
+        batches.reverse();
+        verifier.authenticate_cumulative_time_use(actor, window_seconds,
+            observed.as_ref().ok_or(HumanOperationError::Unavailable)?, &batches)
+            .map_err(|_| HumanOperationError::Refused)
     }
 
     fn authenticated_policy_usage(
@@ -10076,6 +10645,41 @@ fn raw_receipt_evidence(
     ))
 }
 
+fn native_response(value: &impl crate::agent_rpc_wire::Canonical) -> Result<HumanResponse, HumanOperationError> {
+    HumanResponse::new(serde_json::to_vec(&value.canonical()).map_err(|_| HumanOperationError::Unavailable)?)
+        .map_err(|_| HumanOperationError::Unavailable)
+}
+
+pub(crate) struct VerifiedNativeOwnerV1 {
+    tenant: TenantId,
+    agent: Did,
+    session_id: crate::session::SessionId,
+    generation: u64,
+    public_key: [u8; 32],
+    head_sequence: u64,
+    revocation_sequence: u64,
+}
+
+impl VerifiedNativeOwnerV1 {
+    pub(crate) fn tenant(&self) -> &TenantId { &self.tenant }
+    pub(crate) fn agent(&self) -> &Did { &self.agent }
+    pub(crate) fn session_id(&self) -> crate::session::SessionId { self.session_id }
+    pub(crate) fn generation(&self) -> u64 { self.generation }
+    pub(crate) fn public_key(&self) -> [u8; 32] { self.public_key }
+    pub(crate) fn head_sequence(&self) -> u64 { self.head_sequence }
+    pub(crate) fn revocation_sequence(&self) -> u64 { self.revocation_sequence }
+}
+
+fn native_rate_read_error(error: layerx_client::read::ReadError) -> HumanOperationError {
+    use layerx_client::read::ReadError;
+    match error {
+        ReadError::Transport(_) | ReadError::Disconnected | ReadError::UnavailableCapability
+        | ReadError::MissingEvidence { .. } => HumanOperationError::Unavailable,
+        ReadError::CoreRefusal { result, .. } if result.retriability() == Retriability::Retriable => HumanOperationError::Unavailable,
+        _ => HumanOperationError::Refused,
+    }
+}
+
 fn evidence_unavailable(error: &EvidenceError) -> bool {
     match error {
         EvidenceError::Unavailable | EvidenceError::Transport(_) => true,
@@ -11704,7 +12308,7 @@ fn daemon_limit_refusal(error: crate::budget::DaemonLimitError) -> HumanOperatio
             HumanOperationError::Typed(HumanRefusal::BudgetLimitCollision)
         }
         DaemonLimitError::Revoked => HumanOperationError::Typed(HumanRefusal::BudgetLimitRevoked),
-        DaemonLimitError::Conflict => HumanOperationError::Typed(HumanRefusal::BudgetLimitConflict),
+        DaemonLimitError::Conflict | DaemonLimitError::AmbiguousDenomination => HumanOperationError::Typed(HumanRefusal::BudgetLimitConflict),
         DaemonLimitError::Limit(_) => HumanOperationError::Typed(HumanRefusal::BudgetLimitExceeded),
         DaemonLimitError::Invalid | DaemonLimitError::Unknown | DaemonLimitError::Arithmetic => {
             HumanOperationError::Refused

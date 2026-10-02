@@ -13,6 +13,10 @@ use layerx_agent_api::capability::{
 use layerx_agent_api::error::RequestId;
 use layerx_agent_api::identity::{
     ActivityType, AgentDid, Asset, AuthorityRef, ClientId, ContractError, Counterparty,
+    NativeActivity, NativeApprovalDecisionV1, NativeApprovalGetV1, NativeApprovalListV1,
+    NativeApprovalListResultV1, NativeApprovalResultV1, NativePreparationPurposeV1,
+    NativeLocalGrantConsentV1, NativePrepareRequestV1, NativePrepareResultV1,
+    SignedNativePreparationPurposeV1,
     PolicyVersion, Purpose, SessionClose, SessionContext, SessionId, SessionRefresh, TenantId,
 };
 use layerx_agent_api::read::{AccountRef, ModuleRef};
@@ -122,6 +126,500 @@ fn strs<T>(set: &ExplicitSet<T>, as_str: fn(&T) -> &str) -> Value {
 
 fn activity_values(set: &ExplicitSet<ActivityType>) -> Value {
     Value::Array(set.values().iter().map(|item| Value::String(item.0.to_string())).collect())
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct NativeActivityV1Wire {
+    version: String,
+    module: String,
+    ordinal: String,
+}
+
+impl NativeActivityV1Wire {
+    pub(crate) fn into_activity(self, id: RequestId) -> Result<NativeActivity, Rejection> {
+        if decimal_u64(&self.version, id)? != u64::from(NativeActivity::VERSION) {
+            return Err(malformed(id));
+        }
+        let module = u16::try_from(decimal_u64(&self.module, id)?)
+            .map_err(|_| noncanonical(id))?;
+        let ordinal = u16::try_from(decimal_u64(&self.ordinal, id)?)
+            .map_err(|_| noncanonical(id))?;
+        NativeActivity::new(module, ordinal).map_err(contract(id))
+    }
+}
+
+impl Canonical for NativeActivity {
+    fn canonical(&self) -> Value {
+        json!({
+            "version": NativeActivity::VERSION.to_string(),
+            "module": self.module.to_string(),
+            "ordinal": self.ordinal.to_string(),
+        })
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct NativePreparationPurposeV1Wire {
+    version: String,
+    tenant: String,
+    agent_did: String,
+    session_id: String,
+    generation: String,
+    expires_at_ms: String,
+    capability_id: String,
+    preparation_id: String,
+    canonical_digest: String,
+    commitment: String,
+}
+
+impl NativePreparationPurposeV1Wire {
+    pub(crate) fn into_request(
+        self,
+        id: RequestId,
+    ) -> Result<NativePreparationPurposeV1, Rejection> {
+        if decimal_u64(&self.version, id)? != u64::from(NativePreparationPurposeV1::VERSION) {
+            return Err(malformed(id));
+        }
+        NativePreparationPurposeV1 {
+            tenant: text(self.tenant, id, TenantId::new)?,
+            agent_did: text(self.agent_did, id, AgentDid::new)?,
+            session_id: text(self.session_id, id, SessionId::new)?,
+            generation: decimal_u64(&self.generation, id)?,
+            expires_at_ms: decimal_u64(&self.expires_at_ms, id)?,
+            capability_id: text(self.capability_id, id, CapabilityId::new)?,
+            preparation_id: hex32(&self.preparation_id, id)?,
+            canonical_digest: hex32(&self.canonical_digest, id)?,
+            commitment: hex32(&self.commitment, id)?,
+        }
+        .validate()
+        .map_err(contract(id))
+    }
+}
+
+impl Canonical for NativePreparationPurposeV1 {
+    fn canonical(&self) -> Value {
+        json!({
+            "version": NativePreparationPurposeV1::VERSION.to_string(),
+            "tenant": self.tenant.as_str(),
+            "agent_did": self.agent_did.as_str(),
+            "session_id": self.session_id.as_str(),
+            "generation": self.generation.to_string(),
+            "expires_at_ms": self.expires_at_ms.to_string(),
+            "capability_id": self.capability_id.as_str(),
+            "preparation_id": lower_hex(&self.preparation_id),
+            "canonical_digest": lower_hex(&self.canonical_digest),
+            "commitment": lower_hex(&self.commitment),
+        })
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct SignedNativePreparationPurposeV1Wire {
+    purpose: NativePreparationPurposeV1Wire,
+    owner_public_key: String,
+    signature: String,
+}
+
+impl SignedNativePreparationPurposeV1Wire {
+    pub(crate) fn into_request(
+        self,
+        id: RequestId,
+    ) -> Result<SignedNativePreparationPurposeV1, Rejection> {
+        if self.signature.len() != 128 {
+            return Err(malformed(id));
+        }
+        let signature: [u8; 64] = hex_bytes(&self.signature, id)?
+            .try_into()
+            .map_err(|_| malformed(id))?;
+        SignedNativePreparationPurposeV1 {
+            purpose: self.purpose.into_request(id)?,
+            owner_public_key: hex32(&self.owner_public_key, id)?,
+            signature,
+        }
+        .validate()
+        .map_err(contract(id))
+    }
+}
+
+impl Canonical for SignedNativePreparationPurposeV1 {
+    fn canonical(&self) -> Value {
+        json!({
+            "purpose": self.purpose.canonical(),
+            "owner_public_key": lower_hex(&self.owner_public_key),
+            "signature": lower_hex(&self.signature),
+        })
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct NativeLocalGrantConsentV1Wire {
+    version: String,
+    capability: String,
+    session_scope: String,
+    expires_at_ms: String,
+    owner_public_key: String,
+    signature: String,
+}
+
+impl NativeLocalGrantConsentV1Wire {
+    pub(crate) fn into_request(self, id: RequestId) -> Result<NativeLocalGrantConsentV1, Rejection> {
+        native_result_version(&self.version, id)?;
+        for record in [&self.capability, &self.session_scope] {
+            if record.is_empty() || record.len() > layerx_wire::limits::MAX_MESSAGE_BYTES * 2 {
+                return Err(malformed(id));
+            }
+        }
+        if self.signature.len() != 128 {
+            return Err(malformed(id));
+        }
+        let consent = NativeLocalGrantConsentV1 {
+            capability: hex_bytes(&self.capability, id)?,
+            session_scope: hex_bytes(&self.session_scope, id)?,
+            expires_at_ms: decimal_u64(&self.expires_at_ms, id)?,
+            owner_public_key: hex32(&self.owner_public_key, id)?,
+            signature: hex_bytes(&self.signature, id)?.try_into().map_err(|_| malformed(id))?,
+        };
+        consent.validate().map_err(contract(id))?;
+        Ok(consent)
+    }
+}
+
+impl Canonical for NativeLocalGrantConsentV1 {
+    fn canonical(&self) -> Value {
+        json!({
+            "version": "1",
+            "capability": lower_hex(&self.capability),
+            "session_scope": lower_hex(&self.session_scope),
+            "expires_at_ms": self.expires_at_ms.to_string(),
+            "owner_public_key": lower_hex(&self.owner_public_key),
+            "signature": lower_hex(&self.signature),
+        })
+    }
+}
+
+pub(crate) fn native_local_grant(
+    consent: &NativeLocalGrantConsentV1,
+    id: RequestId,
+) -> Result<crate::capability::binding::SignedNativeLocalGrantV1, Rejection> {
+    consent.validate().map_err(contract(id))?;
+    if consent.capability.len() > layerx_wire::limits::MAX_MESSAGE_BYTES
+        || consent.session_scope.len() > layerx_wire::limits::MAX_MESSAGE_BYTES
+    {
+        return Err(malformed(id));
+    }
+    Ok(crate::capability::binding::SignedNativeLocalGrantV1 {
+        capability: crate::capability::timed::NativeTimedCapabilityV1::decode(&consent.capability)
+            .map_err(|_| malformed(id))?,
+        session: crate::session::NativeSessionScopeV1::decode(&consent.session_scope)
+            .map_err(|_| malformed(id))?,
+        expires_at_ms: consent.expires_at_ms,
+        owner_public_key: consent.owner_public_key,
+        signature: consent.signature,
+    })
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct NativePrepareV1Wire {
+    variant: String,
+    activity: NativeActivityV1Wire,
+    actor: String,
+    authority: String,
+    account_sequence: String,
+    not_before: String,
+    not_after: String,
+    idempotency_key: String,
+    fee_limit: String,
+    payload: String,
+    payload_hash: String,
+    capability_id: String,
+    purpose: SignedNativePreparationPurposeV1Wire,
+    local_grant: Option<NativeLocalGrantConsentV1Wire>,
+}
+
+impl NativePrepareV1Wire {
+    pub(crate) fn into_request(self, id: RequestId) -> Result<NativePrepareRequestV1, Rejection> {
+        if self.variant != "native_v1" {
+            return Err(malformed(id));
+        }
+        if self.payload.len() > layerx_types::limits::MAX_PAYLOAD_BYTES * 2 {
+            return Err(malformed(id));
+        }
+        NativePrepareRequestV1 {
+            activity: self.activity.into_activity(id)?,
+            actor: text(self.actor, id, AgentDid::new)?,
+            authority: self.authority,
+            account_sequence: decimal_u64(&self.account_sequence, id)?,
+            not_before: decimal_u64(&self.not_before, id)?,
+            not_after: decimal_u64(&self.not_after, id)?,
+            idempotency_key: hex32(&self.idempotency_key, id)?,
+            fee_limit: decimal_u128(&self.fee_limit, id)?,
+            payload: hex_bytes(&self.payload, id)?,
+            payload_hash: hex32(&self.payload_hash, id)?,
+            capability_id: text(self.capability_id, id, CapabilityId::new)?,
+            purpose: self.purpose.into_request(id)?,
+            local_grant: self.local_grant.map(|grant| grant.into_request(id)).transpose()?,
+        }
+        .validate()
+        .map_err(contract(id))
+    }
+}
+
+impl Canonical for NativePrepareRequestV1 {
+    fn canonical(&self) -> Value {
+        json!({
+            "variant": "native_v1",
+            "activity": self.activity.canonical(),
+            "actor": self.actor.as_str(),
+            "authority": self.authority,
+            "account_sequence": self.account_sequence.to_string(),
+            "not_before": self.not_before.to_string(),
+            "not_after": self.not_after.to_string(),
+            "idempotency_key": lower_hex(&self.idempotency_key),
+            "fee_limit": self.fee_limit.to_string(),
+            "payload": lower_hex(&self.payload),
+            "payload_hash": lower_hex(&self.payload_hash),
+            "capability_id": self.capability_id.as_str(),
+            "purpose": self.purpose.canonical(),
+            "local_grant": self.local_grant.as_ref().map(Canonical::canonical),
+        })
+    }
+}
+
+pub(crate) fn native_human_prepare(
+    request: &NativePrepareRequestV1,
+    id: RequestId,
+) -> Result<crate::human::HumanPrepare, Rejection> {
+    let request = request.clone().validate().map_err(contract(id))?;
+    Ok(crate::human::HumanPrepare {
+        activity_type: request.activity.activity_type().map_err(contract(id))?.value(),
+        actor: request.actor.as_str().to_owned(),
+        authority: request.authority,
+        account_sequence: request.account_sequence,
+        not_before: request.not_before,
+        not_after: request.not_after,
+        idempotency_key: lower_hex(&request.idempotency_key),
+        fee_limit: request.fee_limit,
+        payload: request.payload,
+        payload_hash: request.payload_hash,
+        capability_id: Some(request.capability_id.to_bytes().map_err(contract(id))?),
+    })
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct NativeApprovalListV1Wire {
+    variant: String,
+}
+
+impl NativeApprovalListV1Wire {
+    pub(crate) fn into_request(self, id: RequestId) -> Result<NativeApprovalListV1, Rejection> {
+        if self.variant != "native_v1" {
+            return Err(malformed(id));
+        }
+        Ok(NativeApprovalListV1)
+    }
+}
+
+impl Canonical for NativeApprovalListV1 {
+    fn canonical(&self) -> Value {
+        json!({"variant": "native_v1"})
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct NativeApprovalGetV1Wire {
+    variant: String,
+    approval_id: String,
+}
+
+impl NativeApprovalGetV1Wire {
+    pub(crate) fn into_request(self, id: RequestId) -> Result<NativeApprovalGetV1, Rejection> {
+        if self.variant != "native_v1" {
+            return Err(malformed(id));
+        }
+        Ok(NativeApprovalGetV1 { approval_id: hex32(&self.approval_id, id)? })
+    }
+}
+
+impl Canonical for NativeApprovalGetV1 {
+    fn canonical(&self) -> Value {
+        json!({"variant": "native_v1", "approval_id": lower_hex(&self.approval_id)})
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct NativeApprovalDecisionV1Wire {
+    variant: String,
+    approval_id: String,
+    held_digest: String,
+    current_sequence: String,
+}
+
+impl NativeApprovalDecisionV1Wire {
+    pub(crate) fn into_request(self, id: RequestId) -> Result<NativeApprovalDecisionV1, Rejection> {
+        if self.variant != "native_v1" {
+            return Err(malformed(id));
+        }
+        Ok(NativeApprovalDecisionV1 {
+            approval_id: hex32(&self.approval_id, id)?,
+            held_digest: hex32(&self.held_digest, id)?,
+            current_sequence: decimal_u64(&self.current_sequence, id)?,
+        })
+    }
+}
+
+impl Canonical for NativeApprovalDecisionV1 {
+    fn canonical(&self) -> Value {
+        json!({
+            "variant": "native_v1",
+            "approval_id": lower_hex(&self.approval_id),
+            "held_digest": lower_hex(&self.held_digest),
+            "current_sequence": self.current_sequence.to_string(),
+        })
+    }
+}
+
+fn native_result_version(version: &str, id: RequestId) -> Result<(), Rejection> {
+    if decimal_u64(version, id)? != 1 {
+        return Err(malformed(id));
+    }
+    Ok(())
+}
+
+fn native_optional_hex32(value: Value, id: RequestId) -> Result<Option<[u8; 32]>, Rejection> {
+    match value {
+        Value::Null => Ok(None),
+        Value::String(value) => hex32(&value, id).map(Some),
+        _ => Err(malformed(id)),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct NativePrepareResultV1Wire {
+    version: String,
+    preparation_id: String,
+    canonical_bytes: String,
+    signing_preimage: String,
+    activity: NativeActivityV1Wire,
+    approval_required: bool,
+    approval_id: Value,
+}
+
+impl NativePrepareResultV1Wire {
+    pub(crate) fn into_result(self, id: RequestId) -> Result<NativePrepareResultV1, Rejection> {
+        native_result_version(&self.version, id)?;
+        if self.canonical_bytes.is_empty()
+            || self.canonical_bytes.len() > layerx_wire::limits::MAX_MESSAGE_BYTES * 2
+        {
+            return Err(malformed(id));
+        }
+        let approval_id = native_optional_hex32(self.approval_id, id)?;
+        if self.approval_required != approval_id.is_some() {
+            return Err(malformed(id));
+        }
+        Ok(NativePrepareResultV1 {
+            preparation_id: hex32(&self.preparation_id, id)?,
+            canonical_bytes: hex_bytes(&self.canonical_bytes, id)?,
+            signing_preimage: hex32(&self.signing_preimage, id)?,
+            activity: self.activity.into_activity(id)?,
+            approval_required: self.approval_required,
+            approval_id,
+        })
+    }
+}
+
+impl Canonical for NativePrepareResultV1 {
+    fn canonical(&self) -> Value {
+        json!({
+            "version": "1",
+            "preparation_id": lower_hex(&self.preparation_id),
+            "canonical_bytes": lower_hex(&self.canonical_bytes),
+            "signing_preimage": lower_hex(&self.signing_preimage),
+            "activity": self.activity.canonical(),
+            "approval_required": self.approval_required,
+            "approval_id": self.approval_id.as_ref().map(|value| lower_hex(value)),
+        })
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct NativeApprovalResultV1Wire {
+    version: String,
+    approval_id: String,
+    held_digest: String,
+    activity: NativeActivityV1Wire,
+    state: String,
+    submission_ref: Value,
+}
+
+impl NativeApprovalResultV1Wire {
+    pub(crate) fn into_result(self, id: RequestId) -> Result<NativeApprovalResultV1, Rejection> {
+        native_result_version(&self.version, id)?;
+        if !matches!(self.state.as_str(),
+            "Awaiting" | "Granted" | "Rejected" | "Expired" | "Defective" | "NotRequired")
+        {
+            return Err(malformed(id));
+        }
+        Ok(NativeApprovalResultV1 {
+            approval_id: hex32(&self.approval_id, id)?,
+            held_digest: hex32(&self.held_digest, id)?,
+            activity: self.activity.into_activity(id)?,
+            state: self.state,
+            submission_ref: native_optional_hex32(self.submission_ref, id)?,
+        })
+    }
+}
+
+impl Canonical for NativeApprovalResultV1 {
+    fn canonical(&self) -> Value {
+        json!({
+            "version": "1",
+            "approval_id": lower_hex(&self.approval_id),
+            "held_digest": lower_hex(&self.held_digest),
+            "activity": self.activity.canonical(),
+            "state": self.state,
+            "submission_ref": self.submission_ref.as_ref().map(|value| lower_hex(value)),
+        })
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct NativeApprovalListResultV1Wire {
+    version: String,
+    approvals: Vec<NativeApprovalResultV1Wire>,
+}
+
+impl NativeApprovalListResultV1Wire {
+    pub(crate) fn into_result(self, id: RequestId) -> Result<NativeApprovalListResultV1, Rejection> {
+        native_result_version(&self.version, id)?;
+        if self.approvals.len() > 100 {
+            return Err(malformed(id));
+        }
+        Ok(NativeApprovalListResultV1 {
+            approvals: self.approvals.into_iter()
+                .map(|approval| approval.into_result(id))
+                .collect::<Result<_, _>>()?,
+        })
+    }
+}
+
+impl Canonical for NativeApprovalListResultV1 {
+    fn canonical(&self) -> Value {
+        json!({
+            "version": "1",
+            "approvals": self.approvals.iter().map(Canonical::canonical).collect::<Vec<_>>(),
+        })
+    }
 }
 
 #[derive(Deserialize)]
@@ -1458,5 +1956,530 @@ mod budget_create_wire_tests {
         let unlabelled = store.execute(key, &request_bytes(None), 1, |_| success());
         assert!(matches!(unlabelled, Err(IdempotencyError::Conflict(_))));
         let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
+
+#[cfg(test)]
+mod native_contract_tests {
+    use super::{
+        native_human_prepare, Canonical, NativeActivityV1Wire, NativePreparationPurposeV1Wire,
+        NativeApprovalDecisionV1Wire, NativeApprovalGetV1Wire, NativeApprovalListV1Wire,
+        NativeApprovalListResultV1Wire, NativeApprovalResultV1Wire,
+        NativeLocalGrantConsentV1Wire, NativePrepareResultV1Wire, NativePrepareV1Wire,
+        SignedNativePreparationPurposeV1Wire,
+    };
+    use layerx_agent_api::error::RequestId;
+    use layerx_agent_api::identity::NativePreparationPurposeV1;
+    use serde_json::{json, Value};
+
+    fn purpose_body() -> Value {
+        json!({
+            "version": "1",
+            "tenant": "tenant-a",
+            "agent_did": "did:layerx:alice",
+            "session_id": "11".repeat(32),
+            "generation": "1",
+            "expires_at_ms": "1000",
+            "capability_id": "22".repeat(32),
+            "preparation_id": "33".repeat(32),
+            "canonical_digest": "44".repeat(32),
+            "commitment": "55".repeat(32),
+        })
+    }
+
+    fn purpose(value: Value) -> NativePreparationPurposeV1 {
+        let Ok(wire) = serde_json::from_value::<NativePreparationPurposeV1Wire>(value) else {
+            panic!("native preparation purpose did not decode");
+        };
+        let Ok(value) = wire.into_request(RequestId(1)) else {
+            panic!("native preparation purpose did not validate");
+        };
+        value
+    }
+
+    #[test]
+    fn native_activity_wire_preserves_modules_and_refuses_noncanonical_values() {
+        let mut values = Vec::new();
+        for module in ["1", "3"] {
+            let body = json!({"version": "1", "module": module, "ordinal": "1"});
+            let Ok(wire) = serde_json::from_value::<NativeActivityV1Wire>(body.clone()) else {
+                panic!("native activity did not decode");
+            };
+            let Ok(activity) = wire.into_activity(RequestId(1)) else {
+                panic!("native activity did not validate");
+            };
+            assert_eq!(activity.canonical(), body);
+            values.push(activity);
+        }
+        assert_ne!(values[0], values[1]);
+        assert_ne!(values[0].canonical(), values[1].canonical());
+        for (field, value) in [
+            ("version", "0"),
+            ("version", "2"),
+            ("version", "01"),
+            ("module", "0"),
+            ("module", "12"),
+            ("module", "65536"),
+            ("module", "01"),
+            ("ordinal", "0"),
+            ("ordinal", "65536"),
+            ("ordinal", "+1"),
+            ("ordinal", " 1"),
+            ("ordinal", "1 "),
+        ] {
+            let mut body = json!({"version": "1", "module": "1", "ordinal": "1"});
+            body[field] = Value::String(value.into());
+            let Ok(wire) = serde_json::from_value::<NativeActivityV1Wire>(body) else {
+                panic!("string wire shape did not decode");
+            };
+            assert!(wire.into_activity(RequestId(1)).is_err());
+        }
+        for body in [
+            json!({"version": 1, "module": "1", "ordinal": "1"}),
+            json!({"version": "1", "module": 1, "ordinal": "1"}),
+            json!({"version": "1", "module": "1", "ordinal": 1}),
+            json!({"version": "1", "module": "1", "ordinal": "1", "extra": "1"}),
+        ] {
+            assert!(serde_json::from_value::<NativeActivityV1Wire>(body).is_err());
+        }
+        assert!(serde_json::from_str::<NativeActivityV1Wire>(
+            r#"{"version":"1","module":"1","ordinal":"1"} {}"#,
+        ).is_err());
+    }
+
+    #[test]
+    fn native_purpose_wire_binds_every_coordinate_and_explicit_commitment() {
+        let body = purpose_body();
+        let original = purpose(body.clone());
+        assert_eq!(original.canonical(), body);
+        assert_eq!(original.commitment, [0x55; 32]);
+        for (field, value) in [
+            ("tenant", "tenant-b".into()),
+            ("agent_did", "did:layerx:bob".into()),
+            ("session_id", "66".repeat(32)),
+            ("generation", "2".into()),
+            ("expires_at_ms", "1001".into()),
+            ("capability_id", "77".repeat(32)),
+            ("preparation_id", "88".repeat(32)),
+            ("canonical_digest", "99".repeat(32)),
+            ("commitment", "aa".repeat(32)),
+        ] {
+            let mut changed = body.clone();
+            changed[field] = Value::String(value);
+            let changed = purpose(changed);
+            assert_ne!(changed.canonical(), original.canonical());
+            assert_ne!(changed.canonical_bytes(), original.canonical_bytes());
+        }
+    }
+
+    fn signed_purpose_body() -> Value {
+        json!({
+            "purpose": purpose_body(),
+            "owner_public_key": "66".repeat(32),
+            "signature": "77".repeat(64),
+        })
+    }
+
+    #[test]
+    fn signed_native_purpose_wire_preserves_structural_signature_bytes() {
+        let body = signed_purpose_body();
+        let Ok(wire) = serde_json::from_value::<SignedNativePreparationPurposeV1Wire>(body.clone()) else {
+            panic!("signed purpose wire did not decode");
+        };
+        let Ok(signed) = wire.into_request(RequestId(1)) else {
+            panic!("signed purpose contract did not validate");
+        };
+        assert_eq!(signed.canonical(), body);
+        assert_eq!(signed.owner_public_key, [0x66; 32]);
+        assert_eq!(signed.signature, [0x77; 64]);
+    }
+
+    #[test]
+    fn signed_native_purpose_wire_refuses_key_and_signature_encoding_errors() {
+        for (field, value) in [
+            ("owner_public_key", "66".repeat(31)),
+            ("owner_public_key", "66".repeat(33)),
+            ("owner_public_key", "AA".repeat(32)),
+            ("owner_public_key", "zz".repeat(32)),
+            ("signature", "77".repeat(63)),
+            ("signature", "77".repeat(65)),
+            ("signature", "AA".repeat(64)),
+            ("signature", "zz".repeat(64)),
+            ("signature", "7".repeat(127)),
+            ("signature", String::new()),
+        ] {
+            let mut body = signed_purpose_body();
+            body[field] = Value::String(value);
+            let Ok(wire) = serde_json::from_value::<SignedNativePreparationPurposeV1Wire>(body) else {
+                panic!("string signed purpose shape did not decode");
+            };
+            assert!(wire.into_request(RequestId(1)).is_err());
+        }
+        let mut zero_expiry = signed_purpose_body();
+        zero_expiry["purpose"]["expires_at_ms"] = Value::String("0".into());
+        let Ok(wire) = serde_json::from_value::<SignedNativePreparationPurposeV1Wire>(zero_expiry) else {
+            panic!("zero expiry signed purpose shape did not decode");
+        };
+        assert!(wire.into_request(RequestId(1)).is_err());
+    }
+
+    #[test]
+    fn signed_native_purpose_wire_refuses_unknown_missing_and_nonstring_fields() {
+        let mut outer_unknown = signed_purpose_body();
+        outer_unknown["extra"] = json!(1);
+        let mut inner_unknown = signed_purpose_body();
+        inner_unknown["purpose"]["extra"] = json!(1);
+        for body in [outer_unknown, inner_unknown] {
+            assert!(serde_json::from_value::<SignedNativePreparationPurposeV1Wire>(body).is_err());
+        }
+        for field in ["purpose", "owner_public_key", "signature"] {
+            let Value::Object(mut missing) = signed_purpose_body() else {
+                panic!("signed purpose body is not an object");
+            };
+            missing.remove(field);
+            assert!(serde_json::from_value::<SignedNativePreparationPurposeV1Wire>(
+                Value::Object(missing),
+            ).is_err());
+        }
+        for field in ["owner_public_key", "signature"] {
+            let mut numeric = signed_purpose_body();
+            numeric[field] = json!(1);
+            assert!(serde_json::from_value::<SignedNativePreparationPurposeV1Wire>(numeric).is_err());
+        }
+    }
+
+    fn native_prepare_body() -> Value {
+        json!({
+            "variant": "native_v1",
+            "activity": {"version": "1", "module": "9", "ordinal": "1"},
+            "actor": "did:layerx:alice",
+            "authority": "owner-primary",
+            "account_sequence": "4",
+            "not_before": "10",
+            "not_after": "20",
+            "idempotency_key": "88".repeat(32),
+            "fee_limit": "123",
+            "payload": "0102",
+            "payload_hash": "99".repeat(32),
+            "capability_id": "22".repeat(32),
+            "purpose": signed_purpose_body(),
+            "local_grant": null,
+        })
+    }
+
+    #[test]
+    fn native_prepare_wire_preserves_native_module_in_real_human_request() {
+        let body = native_prepare_body();
+        let Ok(wire) = serde_json::from_value::<NativePrepareV1Wire>(body.clone()) else {
+            panic!("native prepare wire did not decode");
+        };
+        let Ok(request) = wire.into_request(RequestId(1)) else {
+            panic!("native prepare contract did not validate");
+        };
+        assert_eq!(request.canonical(), body);
+        let Ok(human) = native_human_prepare(&request, RequestId(1)) else {
+            panic!("native prepare did not convert to HumanPrepare");
+        };
+        assert_eq!(human.activity_type, 0x0009_0001);
+        assert_eq!(human.actor, "did:layerx:alice");
+        assert_eq!(human.authority, "owner-primary");
+        assert_eq!(human.account_sequence, 4);
+        assert_eq!((human.not_before, human.not_after), (10, 20));
+        assert_eq!(human.idempotency_key, "88".repeat(32));
+        assert_eq!(human.fee_limit, 123);
+        assert_eq!(human.payload, [1, 2]);
+        assert_eq!(human.payload_hash, [0x99; 32]);
+        assert_eq!(human.capability_id, Some([0x22; 32]));
+        let mut invalid = request;
+        invalid.actor = match layerx_agent_api::identity::AgentDid::new("did:layerx:bob") {
+            Ok(actor) => actor,
+            Err(_) => panic!("bounded actor did not construct"),
+        };
+        assert!(native_human_prepare(&invalid, RequestId(1)).is_err());
+    }
+
+    #[test]
+    fn native_prepare_wire_refuses_bounds_mismatches_and_noncanonical_values() {
+        for (field, value) in [
+            ("variant", "native_v2".into()),
+            ("actor", "did:layerx:bob".into()),
+            ("authority", String::new()),
+            ("authority", "a".repeat(layerx_types::limits::MAX_AUTHORITY_BYTES + 1)),
+            ("account_sequence", "04".into()),
+            ("not_before", "21".into()),
+            ("not_after", " 20".into()),
+            ("idempotency_key", "88".repeat(31)),
+            ("fee_limit", "340282366920938463463374607431768211456".into()),
+            ("payload", String::new()),
+            ("payload", "AA".into()),
+            ("payload", "0".into()),
+            ("payload", "00".repeat(layerx_types::limits::MAX_PAYLOAD_BYTES + 1)),
+            ("payload_hash", "99".repeat(33)),
+            ("capability_id", "33".repeat(32)),
+            ("capability_id", "AA".repeat(32)),
+        ] {
+            let mut body = native_prepare_body();
+            body[field] = Value::String(value);
+            let Ok(wire) = serde_json::from_value::<NativePrepareV1Wire>(body) else {
+                panic!("string native prepare shape did not decode");
+            };
+            assert!(wire.into_request(RequestId(1)).is_err());
+        }
+        for module in ["1", "12"] {
+            let mut body = native_prepare_body();
+            body["activity"]["module"] = Value::String(module.into());
+            let Ok(wire) = serde_json::from_value::<NativePrepareV1Wire>(body) else {
+                panic!("native module shape did not decode");
+            };
+            assert!(wire.into_request(RequestId(1)).is_err());
+        }
+        let mut unknown = native_prepare_body();
+        unknown["activity_type"] = json!("1");
+        assert!(serde_json::from_value::<NativePrepareV1Wire>(unknown).is_err());
+        let mut numeric = native_prepare_body();
+        numeric["account_sequence"] = json!(4);
+        assert!(serde_json::from_value::<NativePrepareV1Wire>(numeric).is_err());
+        let Value::Object(mut missing) = native_prepare_body() else {
+            panic!("native prepare body is not an object");
+        };
+        missing.remove("variant");
+        assert!(serde_json::from_value::<NativePrepareV1Wire>(Value::Object(missing)).is_err());
+    }
+
+    fn prepare_result_body() -> Value {
+        json!({
+            "version": "1",
+            "preparation_id": "11".repeat(32),
+            "canonical_bytes": "0102",
+            "signing_preimage": "22".repeat(32),
+            "activity": {"version": "1", "module": "9", "ordinal": "1"},
+            "approval_required": true,
+            "approval_id": "33".repeat(32),
+        })
+    }
+
+    fn approval_result_body() -> Value {
+        json!({
+            "version": "1",
+            "approval_id": "33".repeat(32),
+            "held_digest": "22".repeat(32),
+            "activity": {"version": "1", "module": "9", "ordinal": "1"},
+            "state": "Awaiting",
+            "submission_ref": null,
+        })
+    }
+
+    #[test]
+    fn native_approval_requests_preserve_all_fields_and_refuse_bad_discriminants() {
+        let list = json!({"variant": "native_v1"});
+        let Ok(wire) = serde_json::from_value::<NativeApprovalListV1Wire>(list.clone()) else {
+            panic!("approval list did not decode");
+        };
+        let Ok(request) = wire.into_request(RequestId(1)) else { panic!("approval list refused"); };
+        assert_eq!(request.canonical(), list);
+        let get = json!({"variant": "native_v1", "approval_id": "11".repeat(32)});
+        let Ok(wire) = serde_json::from_value::<NativeApprovalGetV1Wire>(get.clone()) else {
+            panic!("approval get did not decode");
+        };
+        let Ok(request) = wire.into_request(RequestId(1)) else { panic!("approval get refused"); };
+        assert_eq!(request.canonical(), get);
+        let decision = json!({
+            "variant": "native_v1", "approval_id": "11".repeat(32),
+            "held_digest": "22".repeat(32), "current_sequence": "3",
+        });
+        let Ok(wire) = serde_json::from_value::<NativeApprovalDecisionV1Wire>(decision.clone()) else {
+            panic!("approval decision did not decode");
+        };
+        let Ok(request) = wire.into_request(RequestId(1)) else { panic!("approval decision refused"); };
+        assert_eq!(request.canonical(), decision);
+        for (field, value) in [
+            ("variant", "native_v2".into()), ("approval_id", "AA".repeat(32)),
+            ("held_digest", "22".repeat(31)), ("current_sequence", "03".into()),
+        ] {
+            let mut body = decision.clone();
+            body[field] = Value::String(value);
+            let Ok(wire) = serde_json::from_value::<NativeApprovalDecisionV1Wire>(body) else {
+                panic!("decision string shape did not decode");
+            };
+            assert!(wire.into_request(RequestId(1)).is_err());
+        }
+        assert!(serde_json::from_value::<NativeApprovalListV1Wire>(json!({"variant":"native_v1","extra":1})).is_err());
+        assert!(serde_json::from_value::<NativeApprovalGetV1Wire>(json!({"variant":"native_v1"})).is_err());
+    }
+
+    #[test]
+    fn native_results_round_trip_typed_values_and_exact_owner_states() {
+        for required in [true, false] {
+            let mut body = prepare_result_body();
+            body["approval_required"] = json!(required);
+            if !required { body["approval_id"] = Value::Null; }
+            let Ok(wire) = serde_json::from_value::<NativePrepareResultV1Wire>(body.clone()) else {
+                panic!("prepare result did not decode");
+            };
+            let Ok(result) = wire.into_result(RequestId(1)) else { panic!("prepare result refused"); };
+            assert_eq!(result.canonical(), body);
+            assert_eq!(result.activity.module, 9);
+        }
+        for state in ["Awaiting", "Granted", "Rejected", "Expired", "Defective", "NotRequired"] {
+            let mut body = approval_result_body();
+            body["state"] = json!(state);
+            let Ok(wire) = serde_json::from_value::<NativeApprovalResultV1Wire>(body.clone()) else {
+                panic!("approval result did not decode");
+            };
+            let Ok(result) = wire.into_result(RequestId(1)) else { panic!("approval result refused"); };
+            assert_eq!(result.canonical(), body);
+        }
+        let list = json!({"version":"1", "approvals":[approval_result_body()]});
+        let Ok(wire) = serde_json::from_value::<NativeApprovalListResultV1Wire>(list.clone()) else {
+            panic!("approval results did not decode");
+        };
+        let Ok(result) = wire.into_result(RequestId(1)) else { panic!("approval results refused"); };
+        assert_eq!(result.canonical(), list);
+    }
+
+    #[test]
+    fn native_prepare_result_refuses_version_hex_bounds_and_approval_inconsistency() {
+        for (field, value) in [
+            ("version", "2".into()), ("version", "01".into()),
+            ("preparation_id", "11".repeat(31)), ("signing_preimage", "AA".repeat(32)),
+            ("canonical_bytes", String::new()), ("canonical_bytes", "a".into()),
+            ("canonical_bytes", "00".repeat(layerx_wire::limits::MAX_MESSAGE_BYTES + 1)),
+            ("approval_id", "33".repeat(33)),
+        ] {
+            let mut body = prepare_result_body();
+            body[field] = Value::String(value);
+            let Ok(wire) = serde_json::from_value::<NativePrepareResultV1Wire>(body) else {
+                panic!("prepare result string shape did not decode");
+            };
+            assert!(wire.into_result(RequestId(1)).is_err());
+        }
+        for (required, approval) in [(true, Value::Null), (false, json!("33".repeat(32)))] {
+            let mut body = prepare_result_body();
+            body["approval_required"] = json!(required);
+            body["approval_id"] = approval;
+            let Ok(wire) = serde_json::from_value::<NativePrepareResultV1Wire>(body) else {
+                panic!("prepare result boolean shape did not decode");
+            };
+            assert!(wire.into_result(RequestId(1)).is_err());
+        }
+        for (field, value) in [("module", "12"), ("ordinal", "0"), ("version", "2")] {
+            let mut body = prepare_result_body();
+            body["activity"][field] = json!(value);
+            let Ok(wire) = serde_json::from_value::<NativePrepareResultV1Wire>(body) else {
+                panic!("prepare result activity shape did not decode");
+            };
+            assert!(wire.into_result(RequestId(1)).is_err());
+        }
+        let mut invalid_bool = prepare_result_body();
+        invalid_bool["approval_required"] = json!("true");
+        assert!(serde_json::from_value::<NativePrepareResultV1Wire>(invalid_bool).is_err());
+        let mut extra = prepare_result_body();
+        extra["extra"] = json!(1);
+        assert!(serde_json::from_value::<NativePrepareResultV1Wire>(extra).is_err());
+    }
+
+    #[test]
+    fn native_approval_result_refuses_unknown_state_bad_refs_and_oversized_list() {
+        for (field, value) in [
+            ("state", "granted".into()), ("version", "0".into()),
+            ("held_digest", "AA".repeat(32)), ("submission_ref", "33".repeat(31)),
+        ] {
+            let mut body = approval_result_body();
+            body[field] = Value::String(value);
+            let Ok(wire) = serde_json::from_value::<NativeApprovalResultV1Wire>(body) else {
+                panic!("approval result string shape did not decode");
+            };
+            assert!(wire.into_result(RequestId(1)).is_err());
+        }
+        let too_many = json!({"version":"1", "approvals":vec![approval_result_body();101]});
+        let Ok(wire) = serde_json::from_value::<NativeApprovalListResultV1Wire>(too_many) else {
+            panic!("approval list shape did not decode");
+        };
+        assert!(wire.into_result(RequestId(1)).is_err());
+        let mut unknown = approval_result_body();
+        unknown["extra"] = json!(1);
+        assert!(serde_json::from_value::<NativeApprovalResultV1Wire>(unknown).is_err());
+    }
+
+    #[test]
+    fn native_local_grant_wire_refuses_expiry_encoding_and_record_bounds() {
+        let original = json!({
+            "version":"1", "capability":"01", "session_scope":"02",
+            "expires_at_ms":"1000", "owner_public_key":"11".repeat(32), "signature":"22".repeat(64),
+        });
+        let Ok(wire) = serde_json::from_value::<NativeLocalGrantConsentV1Wire>(original.clone()) else {
+            panic!("local consent shape did not decode");
+        };
+        let Ok(consent) = wire.into_request(RequestId(1)) else { panic!("local consent shape refused"); };
+        assert_eq!(consent.canonical(), original);
+        assert!(super::native_local_grant(&consent, RequestId(1)).is_err());
+        for (field, value) in [
+            ("version","2".into()), ("capability",String::new()), ("session_scope",String::new()),
+            ("capability","00".repeat(layerx_wire::limits::MAX_MESSAGE_BYTES + 1)),
+            ("session_scope","AA".into()), ("expires_at_ms","0".into()),
+            ("expires_at_ms","01000".into()), ("owner_public_key","AA".repeat(32)),
+            ("signature","22".repeat(63)),
+        ] {
+            let mut body = original.clone();
+            body[field] = Value::String(value);
+            let Ok(wire) = serde_json::from_value::<NativeLocalGrantConsentV1Wire>(body) else {
+                panic!("local consent string shape did not decode");
+            };
+            assert!(wire.into_request(RequestId(1)).is_err());
+        }
+        let mut unknown = original;
+        unknown["extra"] = json!(1);
+        assert!(serde_json::from_value::<NativeLocalGrantConsentV1Wire>(unknown).is_err());
+    }
+
+    #[test]
+    fn native_purpose_wire_refuses_unknown_missing_and_malformed_fields() {
+        for (field, value) in [
+            ("version", "2".into()),
+            ("version", "01".into()),
+            ("generation", "0".into()),
+            ("generation", "01".into()),
+            ("generation", "18446744073709551616".into()),
+            ("expires_at_ms", "0".into()),
+            ("expires_at_ms", "01000".into()),
+            ("expires_at_ms", "+1000".into()),
+            ("expires_at_ms", " 1000".into()),
+            ("expires_at_ms", "1000 ".into()),
+            ("expires_at_ms", "18446744073709551616".into()),
+            ("tenant", "bad\0tenant".into()),
+            ("session_id", "AA".repeat(32)),
+            ("capability_id", "ab".into()),
+            ("preparation_id", "AA".repeat(32)),
+            ("canonical_digest", "44".repeat(31)),
+            ("commitment", "rent".into()),
+        ] {
+            let mut body = purpose_body();
+            body[field] = Value::String(value);
+            let Ok(wire) = serde_json::from_value::<NativePreparationPurposeV1Wire>(body) else {
+                panic!("string purpose shape did not decode");
+            };
+            assert!(wire.into_request(RequestId(1)).is_err());
+        }
+        let mut labelled = purpose_body();
+        labelled["purpose"] = Value::String("rent".into());
+        assert!(serde_json::from_value::<NativePreparationPurposeV1Wire>(labelled).is_err());
+        let Value::Object(mut missing) = purpose_body() else {
+            panic!("purpose body is not an object");
+        };
+        missing.remove("commitment");
+        assert!(serde_json::from_value::<NativePreparationPurposeV1Wire>(Value::Object(missing)).is_err());
+        for field in ["generation", "expires_at_ms"] {
+            let mut numeric = purpose_body();
+            numeric[field] = json!(1);
+            assert!(serde_json::from_value::<NativePreparationPurposeV1Wire>(numeric).is_err());
+        }
+        let Value::Object(mut missing_expiry) = purpose_body() else {
+            panic!("purpose body is not an object");
+        };
+        missing_expiry.remove("expires_at_ms");
+        assert!(serde_json::from_value::<NativePreparationPurposeV1Wire>(
+            Value::Object(missing_expiry),
+        ).is_err());
     }
 }

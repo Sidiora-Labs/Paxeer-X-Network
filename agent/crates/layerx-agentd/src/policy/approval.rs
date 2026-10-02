@@ -194,6 +194,7 @@ impl ApprovalRegistry {
             }
             decoded.push((held.context.request_id, held));
         }
+        let terminal_decoded = replay_program_terminals(&store, tenant)?;
         drop(store);
         let reservations = decoded
             .iter()
@@ -201,7 +202,7 @@ impl ApprovalRegistry {
             .collect::<Vec<_>>();
         budget::restore(limiter, &reservations).map_err(|_| ApprovalError::CorruptRecord)?;
         let mut holds = self.holds.lock().map_err(|_| ApprovalError::Unavailable)?;
-        for (id, held) in decoded {
+        for (id, held) in decoded.into_iter().chain(terminal_decoded) {
             if holds.insert(id, held).is_some() {
                 return Err(ApprovalError::DuplicateHold);
             }
@@ -244,6 +245,16 @@ impl ApprovalRegistry {
             }
             if key.object_id()[RELEASED_KEY_PREFIX.len()..] != held.context.request_id {
                 return Err(ApprovalError::CorruptRecord);
+            }
+            if disclosure.activity_type.module() == layerx_types::payload::ModuleId::Programs {
+                let (requirement, _) = crate::approval::program_requirement::read_approval(
+                    &store, &snapshot(&held),
+                ).map_err(|_| ApprovalError::CorruptRecord)?;
+                let terminal = requirement.terminal_decision().map_err(|_| ApprovalError::CorruptRecord)?;
+                if !matches!(terminal, Some((crate::approval::program_requirement::Terminal::Granted, _, Some(reference)))
+                    if reference == submission_ref) {
+                    return Err(ApprovalError::CorruptRecord);
+                }
             }
             reservations.extend(held.budget_reservations.iter().cloned());
             released.push(ReleasedApproval {
@@ -894,7 +905,7 @@ fn canonical_digest(bytes: &[u8]) -> [u8; 32] {
     hasher.finalize().into()
 }
 
-fn hold_storage_key(tenant: &TenantId, id: [u8; 32]) -> Result<TenantKey, ApprovalError> {
+pub(crate) fn hold_storage_key(tenant: &TenantId, id: [u8; 32]) -> Result<TenantKey, ApprovalError> {
     let mut object = HOLD_KEY_PREFIX.to_vec();
     object.extend_from_slice(&id);
     TenantKey::new(tenant.clone(), ObjectKind::PreparedActivity, object)
@@ -1586,4 +1597,250 @@ mod released_replay_tests {
             before
         );
     }
+}
+
+pub(crate) fn validate_released_snapshot(
+    bytes: &[u8], expected: &ApprovalSnapshot, reference: [u8; 32],
+) -> Result<(), ApprovalError> {
+    let (actual_reference, held) = decode_released(bytes)?;
+    validate_replayed(&held, &expected.context.tenant)?;
+    if actual_reference != reference || held.context != expected.context
+        || held.prepared != expected.prepared
+        || held.created_at_sequence != expected.created_at_sequence
+        || held.expires_at_sequence != expected.expires_at_sequence
+        || encode_released(&held, reference)?.as_slice() != bytes {
+        return Err(ApprovalError::CorruptRecord);
+    }
+    Ok(())
+}
+
+impl ApprovalRegistry {
+    pub(crate) fn complete_program_decision(
+        &self,
+        request: crate::approval::DecisionRequest<'_>,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        current_prepared: &Prepared,
+        approve: bool,
+        expiry: &crate::approval::ApprovalExpiry,
+        limiter: &BudgetLimiter,
+        submissions: &crate::approval::ApprovalSubmissionQueue,
+    ) -> Result<crate::approval::ApprovalDecision, crate::approval::ApprovalOperationError> {
+        use crate::approval::{ApprovalDecision, ApprovalEnforcement, ApprovalOperationError, ApprovalOutcome, PreparedDecision};
+        use crate::approval::program_requirement::read_approval;
+        let registry_error = ApprovalOperationError::Registry;
+        let _decision = expiry.lock_decisions().map_err(ApprovalOperationError::Durability)?;
+        if context.principal().tenant != *request.tenant
+            || context.peer().principal != request.approver.as_str()
+            || context.permit().operation() != if approve {
+                crate::tenant::Operation::ApprovalApprove
+            } else {
+                crate::tenant::Operation::ApprovalReject
+            }
+        {
+            return Err(registry_error(ApprovalError::ActorMismatch));
+        }
+        let mut holds = self.holds.lock().map_err(|_| registry_error(ApprovalError::Unavailable))?;
+        let held = holds.get_mut(&request.approval_id).ok_or_else(|| registry_error(ApprovalError::NotFound))?;
+        if held.context.tenant != *request.tenant || held.decision_claimed {
+            return Err(registry_error(ApprovalError::DecisionConflict));
+        }
+        let mut store = self.store.as_ref().ok_or_else(|| registry_error(ApprovalError::Unavailable))?
+            .lock().map_err(|_| registry_error(ApprovalError::Unavailable))?;
+        let snapshot = snapshot(held);
+        let (requirement, _) = read_approval(&store, &snapshot).map_err(|_| registry_error(ApprovalError::CorruptRecord))?;
+        if let Some((terminal, _, reference)) = requirement.terminal_decision()
+            .map_err(|_| registry_error(ApprovalError::CorruptRecord))? {
+            let expected_terminal = if approve { crate::approval::program_requirement::Terminal::Granted }
+                else { crate::approval::program_requirement::Terminal::Rejected };
+            if terminal != expected_terminal {
+                return Err(registry_error(ApprovalError::AlreadyDecided(held.state)));
+            }
+            requirement.stage_terminal(request.approval_id, request.idempotency_key.as_str(), Some(context),
+                request.current_sequence, terminal, reference)
+                .map_err(|_| registry_error(ApprovalError::DecisionConflict))?;
+            return crate::approval::ApprovalExpiry::validate_program_terminal(&store, &snapshot)
+                .map_err(ApprovalOperationError::Durability);
+        }
+        let outcome = if request.current_sequence >= held.expires_at_sequence {
+            ApprovalOutcome::Expired
+        } else if !approve {
+            ApprovalOutcome::Rejected
+        } else if current_prepared != &held.prepared {
+            ApprovalOutcome::Defective
+        } else {
+            ApprovalOutcome::Granted
+        };
+        let expected_hold = encode_hold(held).map_err(registry_error)?;
+        let reference = if outcome == ApprovalOutcome::Granted {
+            let released_key = released_storage_key(request.tenant, request.approval_id).map_err(registry_error)?;
+            Some(submissions.publish_program_release(
+                request.tenant.clone(), request.approval_id, held.prepared.clone(), |reference| {
+                    let bytes = encode_released(held, reference).map_err(registry_error)?;
+                    PreparedDecision::program_terminal(
+                        &store, &snapshot, request.idempotency_key, outcome, Some(reference),
+                    ).map_err(ApprovalOperationError::Durability)?.apply_program_terminal(
+                        &mut store, &snapshot, Some(context), request.current_sequence,
+                        &expected_hold, Some((released_key, bytes)),
+                    ).map_err(ApprovalOperationError::Durability)?;
+                    Ok(reference)
+                },
+            )?)
+        } else {
+            for reservation in &held.budget_reservations {
+                limiter.consumed(reservation.limit_id).map_err(ApprovalOperationError::Reservation)?;
+            }
+            let release = if outcome == ApprovalOutcome::Expired {
+                budget::ReleaseKind::Expired
+            } else {
+                budget::ReleaseKind::Failed
+            };
+            let staged = budget::stage_release(limiter, request.approval_id, release, request.current_sequence)
+                .map_err(ApprovalOperationError::Reservation)?;
+            let decision_context = (outcome != ApprovalOutcome::Expired).then_some(context);
+            PreparedDecision::program_terminal(&store, &snapshot, request.idempotency_key, outcome, None)
+                .map_err(ApprovalOperationError::Durability)?.apply_program_terminal(
+                    &mut store, &snapshot, decision_context, request.current_sequence, &expected_hold, None,
+                ).map_err(ApprovalOperationError::Durability)?;
+            let _ = staged.publish();
+            None
+        };
+        let (state, reason) = match outcome {
+            ApprovalOutcome::Granted => (ApprovalState::Approved, "program_approval_granted"),
+            ApprovalOutcome::Rejected => (ApprovalState::Rejected, "program_approval_rejected"),
+            ApprovalOutcome::Expired => (ApprovalState::Expired, "program_approval_expired"),
+            ApprovalOutcome::Defective => (ApprovalState::Defective, "program_approval_defective"),
+            _ => return Err(registry_error(ApprovalError::CorruptRecord)),
+        };
+        let mut audit = terminal_audit(held, state,
+            (state != ApprovalState::Expired).then_some(request.approver), reason);
+        audit.resulting_activity_id = reference;
+        held.state = state;
+        held.audit = Some(audit);
+        held.decision_claimed = false;
+        Ok(ApprovalDecision {
+            outcome, submission_ref: reference, winning_outcome: None,
+            enforcement: ApprovalEnforcement::DaemonOnly,
+            authority_notice: crate::approval::APPROVAL_ENFORCEMENT_NOTICE,
+        })
+    }
+}
+
+pub(crate) fn validate_hold_snapshot(
+    bytes: &[u8], expected: &ApprovalSnapshot,
+) -> Result<Vec<DurableBudgetReservation>, ApprovalError> {
+    let held = decode_hold(bytes)?;
+    validate_replayed(&held, &expected.context.tenant)?;
+    if held.context != expected.context || held.prepared != expected.prepared
+        || held.created_at_sequence != expected.created_at_sequence
+        || held.expires_at_sequence != expected.expires_at_sequence
+        || encode_hold(&held)?.as_slice() != bytes {
+        return Err(ApprovalError::CorruptRecord);
+    }
+    Ok(held.budget_reservations)
+}
+
+pub(crate) fn released_snapshot(
+    store: &Store, tenant: &TenantId, approval_id: [u8; 32], reference: [u8; 32],
+) -> Result<ApprovalSnapshot, ApprovalError> {
+    let key = released_storage_key(tenant, approval_id)?;
+    let stored = store.get(&key).ok_or(ApprovalError::NotFound)?;
+    if stored.class() != crate::store::StorageClass::LocalOnly { return Err(ApprovalError::CorruptRecord); }
+    let (actual_reference, held) = decode_released(stored.bytes())?;
+    validate_replayed(&held, tenant)?;
+    if actual_reference != reference || held.context.request_id != approval_id {
+        return Err(ApprovalError::CorruptRecord);
+    }
+    let result = snapshot(&held);
+    validate_released_snapshot(stored.bytes(), &result, reference)?;
+    Ok(result)
+}
+
+const PROGRAM_TERMINAL_PREFIX: &[u8] = b"program-approval-terminal-v1:";
+
+pub(crate) fn program_terminal_storage_key(tenant: &TenantId, id: [u8; 32]) -> Result<TenantKey, ApprovalError> {
+    TenantKey::new(tenant.clone(), ObjectKind::PreparedActivity,
+        [PROGRAM_TERMINAL_PREFIX, id.as_slice()].concat()).map_err(|_| ApprovalError::CorruptRecord)
+}
+
+fn replay_program_terminals(store: &Store, tenant: &TenantId) -> Result<Vec<([u8; 32], HeldApproval)>, ApprovalError> {
+    use crate::approval::program_requirement::{has_bound_approval, read_approval};
+    let mut decoded = Vec::new();
+    for (kind, prefix, released) in [
+        (ObjectKind::PreparedActivity, PROGRAM_TERMINAL_PREFIX, false),
+        (ObjectKind::Outbox, RELEASED_KEY_PREFIX, true),
+    ] {
+        for id in store.list_object_ids(tenant, kind).into_iter().filter(|id| id.starts_with(prefix)) {
+            if id.len() != prefix.len() + 32 { return Err(ApprovalError::CorruptRecord); }
+            let key = TenantKey::new(tenant.clone(), kind, id).map_err(|_| ApprovalError::CorruptRecord)?;
+            let stored = store.get(&key).ok_or(ApprovalError::CorruptRecord)?;
+            if stored.class() != crate::store::StorageClass::LocalOnly { return Err(ApprovalError::CorruptRecord); }
+            let (reference, mut held) = if released {
+                let (reference, held) = decode_released(stored.bytes())?;
+                (Some(reference), held)
+            } else { (None, decode_hold(stored.bytes())?) };
+            validate_replayed(&held, tenant)?;
+            if key.object_id()[prefix.len()..] != held.context.request_id { return Err(ApprovalError::CorruptRecord); }
+            let snapshot = snapshot(&held);
+            if released && !has_bound_approval(store, &snapshot).map_err(|_| ApprovalError::CorruptRecord)? {
+                continue;
+            }
+            let decision = crate::approval::ApprovalExpiry::validate_program_terminal(store, &snapshot)
+                .map_err(|_| ApprovalError::CorruptRecord)?;
+            if decision.submission_ref != reference { return Err(ApprovalError::CorruptRecord); }
+            let (requirement, _) = read_approval(store, &snapshot).map_err(|_| ApprovalError::CorruptRecord)?;
+            let state = match decision.outcome {
+                crate::approval::ApprovalOutcome::Granted if released => ApprovalState::Approved,
+                crate::approval::ApprovalOutcome::Rejected if !released => ApprovalState::Rejected,
+                crate::approval::ApprovalOutcome::Expired if !released => ApprovalState::Expired,
+                crate::approval::ApprovalOutcome::Defective if !released => ApprovalState::Defective,
+                _ => return Err(ApprovalError::CorruptRecord),
+            };
+            let approver = requirement.terminal_approver().map_err(|_| ApprovalError::CorruptRecord)?
+                .map(ApproverId::new).transpose()?;
+            let mut audit = terminal_audit(&held, state, approver, "program_terminal_replayed");
+            audit.resulting_activity_id = reference;
+            held.state = state;
+            held.audit = Some(audit);
+            decoded.push((held.context.request_id, held));
+        }
+    }
+    Ok(decoded)
+}
+
+impl ApprovalRegistry {
+    pub(crate) fn restored_reservation_ids(&self) -> Result<Vec<[u8; 32]>, ApprovalError> {
+        let holds = self.holds.lock().map_err(|_| ApprovalError::Unavailable)?;
+        Ok(holds.iter().filter_map(|(id, held)| {
+            let closed_program = held.audit.as_ref().is_some_and(|audit|
+                audit.reason == "program_terminal_replayed")
+                && matches!(held.state, ApprovalState::Rejected | ApprovalState::Expired | ApprovalState::Defective);
+            (!closed_program).then_some(*id)
+        }).collect())
+    }
+}
+
+pub(crate) fn program_recovery_snapshot(
+    store: &Store, tenant: &TenantId, approval_id: [u8; 32],
+) -> Result<Option<ApprovalSnapshot>, ApprovalError> {
+    let mut found = None;
+    for (key, released, required) in [
+        (hold_storage_key(tenant, approval_id)?, false, false),
+        (program_terminal_storage_key(tenant, approval_id)?, false, true),
+        (released_storage_key(tenant, approval_id)?, true, false),
+    ] {
+        let Some(stored) = store.get(&key) else { continue; };
+        if stored.class() != crate::store::StorageClass::LocalOnly { return Err(ApprovalError::CorruptRecord); }
+        let held = if released { decode_released(stored.bytes())?.1 } else { decode_hold(stored.bytes())? };
+        validate_replayed(&held, tenant)?;
+        if held.context.request_id != approval_id { return Err(ApprovalError::CorruptRecord); }
+        let snapshot = snapshot(&held);
+        if crate::approval::program_requirement::has_bound_approval(store, &snapshot)
+            .map_err(|_| ApprovalError::CorruptRecord)? {
+            if found.is_some() { return Err(ApprovalError::CorruptRecord); }
+            found = Some(snapshot);
+            continue;
+        }
+        if required { return Err(ApprovalError::CorruptRecord); }
+    }
+    Ok(found)
 }

@@ -7,6 +7,11 @@ mod daemon;
 #[path = "divergence.rs"]
 mod divergence_reporting;
 mod mutate;
+mod program_sources;
+pub use program_sources::{
+    read_program_budget_sources, ProgramSourceError, ResolvedProgramCharge,
+    ResolvedProgramSource, VerifiedResolvedProgramCharges,
+};
 #[path = "hold.rs"]
 mod recovery;
 #[path = "reserve.rs"]
@@ -36,6 +41,8 @@ pub use recovery::{
 pub use reservations::{
     BudgetLimiter, BudgetReservation, CoreTimestampMs, DurableBudgetReservation, LimitConfig,
     LimitId, LimitRefusal, LimitScope, ReleaseKind, ReservationRequest, StagedRelease,
+    ProgramLimitDenomination, ProgramChargeKind, ProgramBudgetCharge, ProgramReservationRequest,
+    ProgramBudgetHold, ProgramBudgetReservation, StagedProgramReservation,
 };
 
 const ENROLMENT_PREFIX: &[u8] = b"budget/enrolment/limit/";
@@ -350,12 +357,16 @@ fn renew_enrolment(
         |consumed| -> Result<(), DaemonLimitError> {
             record.consumed = consumed;
             previous.successor = Some(stable_id);
+            let mut companions = vec![
+                (index, stable_id.to_vec()),
+                (enrolment_key(tenant, stable_id)?, record.encode()?),
+            ];
+            if let Some(denomination) = stored_program_denomination(store, tenant, current)? {
+                companions.push((program_denomination_key(tenant, stable_id)?,
+                    encode_program_denomination(stable_id, denomination)));
+            }
             store.update_local_batch_with_companions(
-                vec![(enrolment_key(tenant, current)?, previous.encode()?)],
-                vec![
-                    (index, stable_id.to_vec()),
-                    (enrolment_key(tenant, stable_id)?, record.encode()?),
-                ],
+                vec![(enrolment_key(tenant, current)?, previous.encode()?)], companions,
             )?;
             Ok(())
         },
@@ -457,6 +468,13 @@ pub fn install_enrolment_renewals(
         limiter.retire(record.limit_id)?;
         installed.push(record);
     }
+    let mut program_bindings = Vec::new();
+    for record in &installed {
+        if let Some(denomination) = stored_program_denomination(store, tenant, record.stable_id)? {
+            program_bindings.push((record.limit_id, denomination, true, false));
+        }
+    }
+    limiter.bind_program_denominations(&program_bindings, || Ok::<(), DaemonLimitError>(()))?;
     for record in &installed {
         if let Some(successor) = record.successor {
             limiter.link_successor(record.limit_id, daemon_limit_id(successor))?;
@@ -746,6 +764,123 @@ pub fn divergence_alert(
     local_ceiling: u128,
 ) -> Option<BudgetDivergenceAlert> {
     divergence_reporting::build_alert(state, local_ceiling)
+}
+
+const PROGRAM_DENOMINATION_PREFIX: &[u8] = b"budget/enrolment/denomination/";
+
+fn program_denomination_key(tenant: &crate::store::TenantId, stable_id: [u8; 32])
+    -> Result<crate::store::TenantKey, DaemonLimitError>
+{
+    Ok(crate::store::TenantKey::new(tenant.clone(), crate::store::ObjectKind::Configuration,
+        [PROGRAM_DENOMINATION_PREFIX, &stable_id].concat())?)
+}
+
+fn encode_program_denomination(stable_id: [u8; 32], denomination: ProgramLimitDenomination) -> Vec<u8> {
+    let mut bytes = b"LXPD\x01".to_vec();
+    bytes.extend(stable_id); bytes.extend(denomination.asset);
+    bytes.push(u8::from(denomination.source.is_some()));
+    bytes.extend(denomination.source.unwrap_or([0; 32]));
+    bytes
+}
+
+fn stored_program_denomination(store: &crate::store::Store, tenant: &crate::store::TenantId, stable_id: [u8; 32])
+    -> Result<Option<ProgramLimitDenomination>, DaemonLimitError>
+{
+    let Some(value) = store.get(&program_denomination_key(tenant, stable_id)?) else { return Ok(None); };
+    let bytes = value.bytes();
+    if bytes.len() != 102 || &bytes[..5] != b"LXPD\x01" || bytes[5..37] != stable_id {
+        return Err(DaemonLimitError::Corrupt);
+    }
+    let asset = bytes[37..69].try_into().map_err(|_| DaemonLimitError::Corrupt)?;
+    let source: [u8; 32] = bytes[70..102].try_into().map_err(|_| DaemonLimitError::Corrupt)?;
+    let source = match bytes[69] {
+        0 if source == [0; 32] => None,
+        1 if source != [0; 32] => Some(source),
+        _ => return Err(DaemonLimitError::Corrupt),
+    };
+    let denomination = ProgramLimitDenomination { asset, source };
+    if !denomination.valid() { return Err(DaemonLimitError::Corrupt); }
+    Ok(Some(denomination))
+}
+
+pub fn install_program_enrolment_denominations(
+    store: &mut crate::store::Store,
+    limiter: &BudgetLimiter,
+    verified: &crate::enrolment::VerifiedProgramBudgetDenominations,
+) -> Result<(), DaemonLimitError> {
+    let tenant = verified.tenant();
+    let mut updates = Vec::new();
+    let mut companions = Vec::new();
+    let mut bindings = Vec::new();
+    for (stable_id, denomination) in verified.bindings() {
+        let record = stored_enrolment(store, tenant, *stable_id)?.ok_or(DaemonLimitError::Unknown)?;
+        if record.successor.is_some() || !enrolment_indexed(store, tenant, record.limit_id, *stable_id)? {
+            return Err(DaemonLimitError::Conflict);
+        }
+        let stored = stored_program_denomination(store, tenant, *stable_id)?;
+        if stored.is_some_and(|previous| previous != *denomination)
+            || (stored.is_none() && record.consumed != 0)
+        { return Err(DaemonLimitError::Conflict); }
+        if stored.is_none() {
+            updates.push((enrolment_key(tenant, *stable_id)?, record.encode()?));
+            companions.push((program_denomination_key(tenant, *stable_id)?, encode_program_denomination(*stable_id, *denomination)));
+        }
+        bindings.push((record.limit_id, *denomination, stored.is_some(), false));
+    }
+    limiter.bind_program_denominations(&bindings, || -> Result<(), DaemonLimitError> {
+        if !companions.is_empty() { store.update_local_batch_with_companions(updates, companions)?; }
+        Ok(())
+    })
+}
+
+pub fn program_enrolment_charge_limits(
+    store: &crate::store::Store,
+    tenant: &crate::store::TenantId,
+    verified: &[LimitConfig],
+    disclosure: &layerx_crypto::disclosure::Disclosure,
+    presented: &[LimitScope],
+    source: [u8; 32],
+    asset: [u8; 32],
+) -> Result<Vec<LimitId>, DaemonLimitError> {
+    if source == [0; 32] || asset == [0; 32] { return Err(DaemonLimitError::Invalid); }
+    let applicable = enrolment_charge_limits(store, tenant, verified, disclosure, presented)?;
+    let mut selected = Vec::new();
+    for id in applicable {
+        let index = store.get(&enrolment_index_key(tenant, id)?).ok_or(DaemonLimitError::Unknown)?;
+        let stable_id = index.bytes().try_into().map_err(|_| DaemonLimitError::Corrupt)?;
+        let denomination = stored_program_denomination(store, tenant, stable_id)?
+            .ok_or(DaemonLimitError::AmbiguousDenomination)?;
+        if denomination.matches(source, asset) { selected.push(id); }
+    }
+    selected.sort_unstable();
+    selected.dedup();
+    Ok(selected)
+}
+
+pub fn program_consumption_updates(
+    store: &crate::store::Store,
+    tenant: &crate::store::TenantId,
+    record: &ProgramBudgetReservation,
+) -> Result<Vec<(crate::store::TenantKey, Vec<u8>)>, DaemonLimitError> {
+    record.validate()?;
+    let mut holds = Vec::new();
+    for hold in &record.holds {
+        let denomination = match store.get(&enrolment_index_key(tenant, hold.reservation.limit_id)?) {
+            Some(index) => {
+                let stable_id = index.bytes().try_into().map_err(|_| DaemonLimitError::Corrupt)?;
+                if let Some(stored) = stored_enrolment(store, tenant, stable_id)? {
+                    if stored.limit_id != hold.reservation.limit_id { return Err(DaemonLimitError::Corrupt); }
+                    stored_program_denomination(store, tenant, stable_id)?.ok_or(DaemonLimitError::AmbiguousDenomination)?
+                } else {
+                    daemon::program_denomination(store, tenant, hold.reservation.limit_id)?
+                }
+            }
+            None => daemon::program_denomination(store, tenant, hold.reservation.limit_id)?,
+        };
+        if denomination != hold.denomination { return Err(DaemonLimitError::Conflict); }
+        holds.push(hold.reservation.clone());
+    }
+    consumption_updates(store, tenant, &holds)
 }
 
 #[cfg(test)]
@@ -1877,4 +2012,126 @@ mod tests {
         assert_eq!(limiter.consumed(enrolment.limit_id), Ok(20));
         assert_eq!(limiter.consumed(daemon.limit_id), Ok(20));
     }
+}
+
+#[cfg(test)]
+mod program_denomination_tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt as _;
+    use crate::store::{ObjectKind, Store, TenantId, TenantKey};
+
+    fn must<T, E: std::fmt::Debug>(result: Result<T, E>) -> T {
+        result.unwrap_or_else(|error| panic!("program denomination: {error:?}"))
+    }
+
+    #[test]
+    fn protected_binding_is_immutable_and_preserves_consumption_across_restart() {
+        let suffix = must(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)).as_nanos();
+        let root = std::env::temp_dir().join(format!("program-denomination-{}-{suffix}", std::process::id()));
+        must(std::fs::create_dir_all(&root));
+        let tenant = must(TenantId::new("denominated"));
+        let config = LimitConfig { id: LimitId([2; 16]), name: "all sources in one asset".to_owned(),
+            scope: LimitScope::Tenant([3; 32]), ceiling: 100, consumed: 0 };
+        let stable_id = enrolment_limit_id(&tenant, &config.scope, &config.id);
+        let source = root.join("denominations.json");
+        let document = serde_json::json!({"version":1,"tenant":tenant.as_str(),"limits":[{
+            "stable_id":hex::encode(stable_id),"asset":hex::encode([4_u8;32]),"source":"*"}]});
+        must(std::fs::write(&source, must(serde_json::to_vec(&document))));
+        must(std::fs::set_permissions(&source, std::fs::Permissions::from_mode(0o600)));
+        let verified = must(crate::config::load_program_budget_denominations(&source, &tenant));
+        let mut store = must(Store::open(root.join("store")));
+        let limiter = must(BudgetLimiter::new(Vec::new()));
+        let installed = must(install_enrolment_limits(&mut store, &limiter, &tenant, &[config.clone()]));
+        must(install_program_enrolment_denominations(&mut store, &limiter, &verified));
+        let limit_id = installed[0].limit_id;
+        let request = ProgramReservationRequest { id:[5;32], expiry_sequence:100,current_sequence:1,core_deadline:Some(CoreTimestampMs(500)),
+            charges:vec![
+                ProgramBudgetCharge {kind:ProgramChargeKind::Principal,source:[6;32],asset:[4;32],amount:20,applicable_limits:vec![limit_id]},
+                ProgramBudgetCharge {kind:ProgramChargeKind::ProgramSpend,source:[7;32],asset:[4;32],amount:30,applicable_limits:vec![limit_id]},
+            ]};
+        let stage = must(limiter.stage_program_reservation(&request,CoreTimestampMs(1)));
+        let key = must(TenantKey::new(tenant.clone(),ObjectKind::Configuration,b"program-hold".to_vec()));
+        must(store.put_local(key.clone(),must(stage.record().encode())));
+        let held = stage.publish();
+        assert_eq!(limiter.held_exposure(limit_id),Ok(50));
+        drop(limiter);drop(store);
+        let mut store = must(Store::open(root.join("store")));
+        let restarted = must(BudgetLimiter::new(Vec::new()));
+        must(install_enrolment_limits(&mut store,&restarted,&tenant,&[config.clone()]));
+        let persisted = store.get(&key).unwrap_or_else(|| panic!("missing typed Program reservation"));
+        let restored = must(ProgramBudgetReservation::decode(persisted.bytes()));
+        assert_eq!(restored,held);
+        must(restarted.restore_program_reservation(&restored));
+        let staged = must(restarted.stage_release(restored.id,ReleaseKind::Executed,2));
+        let mut updates = must(program_consumption_updates(&store,&tenant,&restored));
+        updates.push((key,b"executed".to_vec()));
+        must(store.update_local_batch(updates));
+        assert!(staged.publish());
+        assert_eq!(restarted.consumed(limit_id),Ok(50));
+        let mut changed=document;
+        changed["limits"][0]["asset"]=serde_json::Value::String(hex::encode([8_u8;32]));
+        must(std::fs::write(&source,must(serde_json::to_vec(&changed))));
+        let changed=must(crate::config::load_program_budget_denominations(&source,&tenant));
+        assert!(matches!(install_program_enrolment_denominations(&mut store,&restarted,&changed),Err(DaemonLimitError::Conflict)));
+        assert_eq!(restarted.consumed(limit_id),Ok(50));
+        drop(store);drop(restarted);
+        let mut store=must(Store::open(root.join("store")));
+        let final_limiter=must(BudgetLimiter::new(Vec::new()));
+        must(install_enrolment_limits(&mut store,&final_limiter,&tenant,&[config]));
+        assert_eq!(final_limiter.consumed(limit_id),Ok(50));
+        assert_eq!(final_limiter.held_reservations(),Ok(0));
+        drop(store);must(std::fs::remove_dir_all(root));
+    }
+
+    #[test]
+    fn legacy_consumption_refuses_binding_and_daemon_asset_recovers_without_inference() {
+        let suffix = must(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)).as_nanos();
+        let root = std::env::temp_dir().join(format!("program-budget-history-{}-{suffix}",std::process::id()));
+        must(std::fs::create_dir_all(&root));
+        let mut store = must(Store::open(root.join("store")));
+        let tenant = must(TenantId::new("legacy-history"));
+        let config = LimitConfig { id:LimitId([1;16]),name:"legacy".to_owned(),
+            scope:LimitScope::Tenant([2;32]),ceiling:100,consumed:7 };
+        let stable_id = enrolment_limit_id(&tenant,&config.scope,&config.id);
+        let limiter = must(BudgetLimiter::new(Vec::new()));
+        let installed = must(install_enrolment_limits(&mut store,&limiter,&tenant,&[config]));
+        let source = root.join("source.json");
+        must(std::fs::write(&source,must(serde_json::to_vec(&serde_json::json!({
+            "version":1,"tenant":tenant.as_str(),"limits":[{"stable_id":hex::encode(stable_id),
+            "asset":hex::encode([3_u8;32]),"source":"*"}]})))));
+        must(std::fs::set_permissions(&source,std::fs::Permissions::from_mode(0o600)));
+        let verified = must(crate::config::load_program_budget_denominations(&source,&tenant));
+        assert!(matches!(install_program_enrolment_denominations(&mut store,&limiter,&verified),Err(DaemonLimitError::Conflict)));
+        assert_eq!(must(stored_program_denomination(&store,&tenant,stable_id)),None);
+        assert_eq!(limiter.consumed(installed[0].limit_id),Ok(7));
+        let dynamic = must(create_daemon_limit(&mut store,&limiter,DaemonLimitRecord {
+            tenant:tenant.clone(),budget_id:[4;32],limit_id:daemon_limit_id([4;32]),
+            agent_digest:[5;32],asset:[6;32],ceiling:100,consumed:0,expiry_ms:1000,
+            revoked:false,mutation_key:[7;32],body_digest:[8;32],revoke_key:[0;32],
+        },CoreTimestampMs(1)));
+        let request = ProgramReservationRequest { id:[9;32],charges:vec![ProgramBudgetCharge {
+            kind:ProgramChargeKind::ProgramSpend,source:[10;32],asset:dynamic.asset,amount:30,
+            applicable_limits:vec![dynamic.limit_id],
+        }],expiry_sequence:100,current_sequence:1,core_deadline:Some(CoreTimestampMs(500)) };
+        let stage = must(limiter.stage_program_reservation(&request,CoreTimestampMs(1)));
+        let key = must(TenantKey::new(tenant.clone(),ObjectKind::Configuration,b"typed-hold".to_vec()));
+        must(store.put_local(key.clone(),must(stage.record().encode())));
+        let record = stage.publish();
+        drop(store); drop(limiter);
+        let mut store = must(Store::open(root.join("store")));
+        let limiter = must(BudgetLimiter::new(Vec::new()));
+        must(load_daemon_limits(&store,&limiter));
+        let stored = store.get(&key).unwrap_or_else(|| panic!("missing typed hold"));
+        let restored = must(ProgramBudgetReservation::decode(stored.bytes()));
+        assert_eq!(restored,record);
+        must(limiter.restore_program_reservation(&restored));
+        let stage = must(limiter.stage_release(restored.id,ReleaseKind::Executed,2));
+        let mut updates = must(program_consumption_updates(&store,&tenant,&restored));
+        updates.push((key,b"executed".to_vec()));
+        must(store.update_local_batch(updates)); assert!(stage.publish());
+        assert_eq!(limiter.consumed(dynamic.limit_id),Ok(30));
+        assert_eq!(must(daemon_limits(&store,&tenant))[0].consumed,30);
+        drop(store); must(std::fs::remove_dir_all(root));
+    }
+
 }

@@ -16,7 +16,8 @@ mod narrowing;
 
 mod effects;
 pub use effects::{
-    derive as derive_effects, AuthorizationKind, Effect, EffectsError, SemanticPlan, VerifiedInputs,
+    derive as derive_effects, AuthorizationKind, Effect, EffectsError, ProgramValueSource,
+    ProgramSpendBound, SemanticPlan, VerifiedInputs,
 };
 pub mod timed;
 
@@ -444,3 +445,6 @@ impl<'a> Decoder<'a> {
         Ok(value.to_owned())
     }
 }
+
+pub use attenuation::require_native_subset;
+pub use timed::{NativeSpendSourceV1, NativeTimedCapabilityV1};

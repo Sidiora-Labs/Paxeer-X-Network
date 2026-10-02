@@ -228,6 +228,7 @@ struct Config {
     deployment_journal: String,
     probe_program: ProgramId,
     policy_sources: BTreeMap<TenantId, PathBuf>,
+    native_policy_sources: BTreeMap<TenantId, PathBuf>,
 }
 
 fn optional(name: &str) -> Option<String> {
@@ -711,7 +712,10 @@ type OwnerStatus = mpsc::Receiver<Result<(), String>>;
 fn start_human_owner(mcp: Option<McpBoot>) -> Result<OwnerStatus, String> {
     let runtime_clock = layerx_client::runtime_clock::RuntimeClock::from_environment()
         .map_err(|error| format!("runtime clock unavailable: {error}"))?;
-    start_shared_owner(mcp, None, None, None, runtime_clock).map(|(receiver, _, _)| receiver)
+    let tenants = human_policy_tenants(&human_peers()?)?;
+    let native_policy_sources = native_policy_sources(&tenants)?;
+    start_shared_owner(mcp, None, None, None, &native_policy_sources, runtime_clock)
+        .map(|(receiver, _, _)| receiver)
 }
 
 fn start_shared_owner(
@@ -721,6 +725,7 @@ fn start_shared_owner(
     export_trust: Option<layerx_agentd::export::ExportTrustSource>,
 
     policy_sources: Option<&BTreeMap<TenantId, PathBuf>>,
+    native_policy_sources: &BTreeMap<TenantId, PathBuf>,
 
     clock: Arc<dyn layerx_types::clock::Clock>,
 ) -> Result<
@@ -732,6 +737,10 @@ fn start_shared_owner(
     String,
 > {
     let peers = human_peers()?;
+    let tenants = human_policy_tenants(&peers)?;
+    if !native_policy_sources.keys().eq(tenants.iter()) {
+        return Err("LAYERX_NATIVE_POLICY_SOURCES must cover exactly the configured Human tenants".to_owned());
+    }
     let deadline = Duration::from_millis(parse_u64("LAYERX_AGENT_HUMAN_DEADLINE_MS")?);
     let human_limits = human_lni_limits(deadline)?;
     let node_limits = Limits {
@@ -792,6 +801,10 @@ fn start_shared_owner(
             .attach_policies(sources)
             .map_err(|error| format!("tenant policies are invalid: {error:?}"))?;
     }
+
+    operations
+        .attach_native_policies(native_policy_sources)
+        .map_err(|error| format!("native tenant policies are invalid: {error}"))?;
 
     let socket_uid = required("LAYERX_AGENT_HUMAN_SOCKET_UID")?
         .parse()
@@ -1009,6 +1022,23 @@ fn write_rpc_response<S: Write>(stream: &mut S, response: &AgentRpcResponse) -> 
         .map_err(|error| format!("agent rpc response failed: {error}"))
 }
 
+fn human_policy_tenants(
+    peers: &BTreeMap<u32, (String, String)>,
+) -> Result<BTreeSet<TenantId>, String> {
+    peers.values()
+        .map(|(_, tenant)| TenantId::new(tenant.clone()))
+        .collect::<Result<BTreeSet<_>, _>>()
+        .map_err(|error| format!("human policy tenant is invalid: {error:?}"))
+}
+
+fn native_policy_sources(
+    tenants: &BTreeSet<TenantId>,
+) -> Result<BTreeMap<TenantId, PathBuf>, String> {
+    layerx_agentd::config::parse_policy_sources(
+        &required("LAYERX_NATIVE_POLICY_SOURCES")?, tenants,
+    ).map_err(|error| format!("LAYERX_NATIVE_POLICY_SOURCES is invalid: {error}"))
+}
+
 fn config() -> Result<Config, String> {
     let listen = required("LAYERX_AGENT_PROGRAM_LISTEN")?;
     let bearer = required("LAYERX_AGENT_PROGRAM_BEARER_TOKEN")?;
@@ -1029,19 +1059,17 @@ fn config() -> Result<Config, String> {
     if staleness_ms == 0 {
         return Err("agent staleness bound is non-canonical".to_owned());
     }
-    let tenants = human_peers()?
-        .values()
-        .map(|(_, tenant)| TenantId::new(tenant.clone()))
-        .collect::<Result<BTreeSet<_>, _>>()
-        .map_err(|error| format!("human policy tenant is invalid: {error:?}"))?;
+    let tenants = human_policy_tenants(&human_peers()?)?;
     let policy_sources = layerx_agentd::config::parse_policy_sources(
         &required("LAYERX_POLICY_SOURCES")?,
         &tenants,
     )
     .map_err(|error| format!("human policy sources are invalid: {error}"))?;
+    let native_policy_sources = native_policy_sources(&tenants)?;
     Ok(Config {
         listen,
         policy_sources,
+        native_policy_sources,
         bearer,
         node_endpoint: required("LAYERX_AGENT_NODE_ENDPOINT")?,
         node_bearer,
@@ -1473,6 +1501,7 @@ fn serve(config: Config) -> Result<(), String> {
             Some(programs),
             export_trust,
             Some(&config.policy_sources),
+            &config.native_policy_sources,
             runtime_clock,
         )?;
     let rpc = start_agent_rpc(owner)?;

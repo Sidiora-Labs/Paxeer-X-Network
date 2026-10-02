@@ -592,6 +592,48 @@ fn decode_budget_state(response: &HumanResponse, budget_id: [u8; 32]) -> Option<
     })
 }
 
+pub(crate) fn approval_list_native<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>, context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>, ctx: &DispatchContext,
+) -> Result<Dispatched, Rejection> {
+    use crate::agent_rpc_dispatch::dispatched_native;
+    use crate::agent_rpc_wire::{decode_wire, NativeApprovalListV1Wire, NativeApprovalListResultV1Wire};
+    let id = ctx.request_id;
+    decode_wire::<NativeApprovalListV1Wire>(request, id)?.into_request(id)?;
+    let response = owner.lock().and_then(|mut guard| guard.rpc_approval_list_native(context));
+    dispatched_native(id, response, NativeApprovalListResultV1Wire::into_result)
+}
+
+pub(crate) fn approval_get_native<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>, context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>, ctx: &DispatchContext,
+) -> Result<Dispatched, Rejection> {
+    use crate::agent_rpc_dispatch::dispatched_native;
+    use crate::agent_rpc_wire::{decode_wire, NativeApprovalGetV1Wire, NativeApprovalResultV1Wire};
+    let id = ctx.request_id;
+    let typed = decode_wire::<NativeApprovalGetV1Wire>(request, id)?.into_request(id)?;
+    let response = owner.lock().and_then(|mut guard| guard.rpc_approval_get_native(context, typed));
+    dispatched_native(id, response, NativeApprovalResultV1Wire::into_result)
+}
+
+fn approval_decision_native<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>, context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>, ctx: &DispatchContext, grant: bool,
+) -> Result<Dispatched, Rejection> {
+    use crate::agent_rpc_dispatch::{dispatched_native, malformed, mutation_key, native_approval_digest};
+    use crate::agent_rpc_wire::{decode_wire, NativeApprovalDecisionV1Wire, NativeApprovalResultV1Wire};
+    let id = ctx.request_id;
+    let typed = decode_wire::<NativeApprovalDecisionV1Wire>(request, id)?.into_request(id)?;
+    let envelope = crate::human::MutationEnvelope {
+        request_id: id.0,
+        key: mutation_key(ctx)?,
+        body_digest: native_approval_digest(&typed, grant).map_err(|_| malformed(id))?,
+        operation: typed,
+    };
+    let response = owner.lock().and_then(|mut guard| guard.rpc_approval_decide_native(context, envelope, grant));
+    dispatched_native(id, response, NativeApprovalResultV1Wire::into_result)
+}
+
 pub(crate) fn approval_approve<A: HumanAuthorityBoundary>(
     owner: &SharedAgentOwner<A>,
     context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
@@ -621,6 +663,9 @@ fn approval_decision<A: HumanAuthorityBoundary>(
         decimal_u64, decode_decision, dispatched, lower_hex, mutation_key, ApprovalDecisionRequest,
     };
     let id = ctx.request_id;
+    if crate::agent_rpc_dispatch::native_variant(request, id)? {
+        return approval_decision_native(owner, context, request, ctx, approve);
+    }
     let request: ApprovalDecisionRequest = decode(request, id)?;
     let _ = (request.tenant, request.agent);
     let approval_id = hex32(&request.approval_id, id)?;
@@ -645,6 +690,19 @@ pub(crate) fn prepare<A: HumanAuthorityBoundary>(
 ) -> Result<Dispatched, Rejection> {
     use crate::agent_rpc_dispatch::{decode_preparation, dispatched, human_prepare, mutation_key};
     let id = ctx.request_id;
+    if crate::agent_rpc_dispatch::native_variant(request, id)? {
+        use crate::agent_rpc_dispatch::{dispatched_native, malformed, native_prepare_digest};
+        use crate::agent_rpc_wire::{decode_wire, NativePrepareV1Wire, NativePrepareResultV1Wire};
+        let typed = decode_wire::<NativePrepareV1Wire>(request, id)?.into_request(id)?;
+        let envelope = crate::human::MutationEnvelope {
+            request_id: id.0,
+            key: mutation_key(ctx)?,
+            body_digest: native_prepare_digest(&typed).map_err(|_| malformed(id))?,
+            operation: typed,
+        };
+        let response = owner.lock().and_then(|mut guard| guard.rpc_prepare_native(context, envelope));
+        return dispatched_native(id, response, NativePrepareResultV1Wire::into_result);
+    }
     let typed = human_prepare(decode(request, id)?, id)?;
     let envelope = crate::human::MutationEnvelope {
         request_id: id.0,

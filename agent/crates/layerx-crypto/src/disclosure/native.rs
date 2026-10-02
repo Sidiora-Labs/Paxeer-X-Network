@@ -42,6 +42,11 @@ pub struct DisclosedNativeBudgetCreate {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DisclosedNativeOperation {
+    ProgramDeploy(Box<super::DisclosedProgramDeploy>),
+    ProgramUpgrade(Box<super::DisclosedProgramUpgrade>),
+    ProgramCall(Box<super::DisclosedProgramCall>),
+    ProgramWindDown(Box<super::DisclosedProgramWindDown>),
+    LegacyProgramCall(Box<layerx_types::intent::ProgramCall>),
     IdentityRegistration(DisclosedNativeIdentity),
     RecoveryPolicy(DisclosedRecoveryPolicy),
     OwnerRotation(Box<crate::rotation::OwnerRotation>),
@@ -125,6 +130,11 @@ impl DisclosedNativeOperation {
     pub fn encode(&self) -> Result<Vec<u8>, DisclosureError> {
         let mut encoder = Encoder::new(2048);
         match self {
+            Self::ProgramDeploy(value) => value.encode_audit(&mut encoder)?,
+            Self::ProgramUpgrade(value) => value.encode_audit(&mut encoder)?,
+            Self::ProgramCall(value) => value.encode_audit(&mut encoder)?,
+            Self::ProgramWindDown(value) => value.encode_audit(&mut encoder)?,
+            Self::LegacyProgramCall(value) => super::program::encode_legacy(value, &mut encoder)?,
             Self::IdentityRegistration(identity) => {
                 encoder.u8(1)?;
                 encoder.fixed(&identity.did_id)?;

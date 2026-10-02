@@ -1,8 +1,15 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import * as http from "node:http";
 import * as https from "node:https";
 import { bindSignedProgramLifecycle } from "./program-wire.js";
 
+import {
+  encodeNativePrepareRequest, encodeNativeApprovalDecision, encodeNativeApprovalGet,
+  decodeNativePrepareResult, decodeNativeApprovalResult, decodeNativeApprovalListResult,
+  type NativePrepareRequestV1, type NativePrepareResultV1, type NativeApprovalDecisionV1,
+  type NativeApprovalResultV1, type NativeApprovalListResultV1,
+} from "./generated/client.js";
+import type { IdempotencyKey } from "./production.js";
 import type { Operation as AgentOperation } from "./generated/client.js";
 import {
   PlatformSdkError,
@@ -517,6 +524,55 @@ export class AgentEnvelopeTransport implements ProductionTransport {
       this.#gatewayCredential.use((authorization) => { headers.Authorization = authorization; });
     }
     return await this.dispatch<TResponse>(headers, body, mutation, requestId);
+  }
+
+  public async prepareNative(request: NativePrepareRequestV1, idempotencyKey: IdempotencyKey): Promise<AgentEnvelopeSuccess<NativePrepareResultV1>> {
+    let body: NativePrepareRequestV1;
+    try { body = encodeNativePrepareRequest(request); } catch { throw invalidArgument(); }
+    const purpose = body.purpose.purpose;
+    if (this.#session === undefined || purpose.tenant !== this.#session.tenant
+      || purpose.session_id !== this.#session.sessionId || purpose.generation !== this.#session.generation.toString(10)) throw invalidArgument();
+    const response = await this.call<NativePrepareRequestV1, AgentEnvelopeSuccess>({plane:"agent",operation:"prepare",request:body,idempotencyKey});
+    try {
+      const value = decodeNativePrepareResult(response.value);
+      const canonical = Buffer.from(value.canonical_bytes, "hex");
+      const digest = createHash("sha256").update(canonical).digest("hex");
+      const preimage = createHash("sha256").update("LXP/v1/signature-preimage\0").update(canonical).digest("hex");
+      if (value.preparation_id !== purpose.preparation_id || digest !== purpose.canonical_digest || digest !== value.preparation_id
+        || preimage !== value.signing_preimage || value.activity.module !== body.activity.module || value.activity.ordinal !== body.activity.ordinal
+        || (value.approval_id !== null && value.approval_id !== value.preparation_id)) throw new TypeError("native_v1.binding");
+      return {...response,value};
+    } catch { throw new PlatformSdkError({code:"unknown-outcome",retry:"unknown-outcome",requestId:response.request_id}); }
+  }
+
+  public async approvalListNative(): Promise<AgentEnvelopeSuccess<NativeApprovalListResultV1>> {
+    const response = await this.call<{variant:"native_v1"}, AgentEnvelopeSuccess>({plane:"agent",operation:"approval.list",request:{variant:"native_v1"}});
+    try { return {...response,value:decodeNativeApprovalListResult(response.value)}; }
+    catch { throw decodeFailure(response.request_id); }
+  }
+
+  public async approvalGetNative(approvalId: string): Promise<AgentEnvelopeSuccess<NativeApprovalResultV1>> {
+    let request: {variant:"native_v1";approval_id:string};
+    try { request = encodeNativeApprovalGet(approvalId); } catch { throw invalidArgument(); }
+    const response = await this.call<typeof request, AgentEnvelopeSuccess>({plane:"agent",operation:"approval.get",request});
+    try {
+      const value = decodeNativeApprovalResult(response.value);
+      if (value.approval_id !== approvalId) throw new TypeError("native_v1.binding");
+      return {...response,value};
+    } catch { throw decodeFailure(response.request_id); }
+  }
+
+  public async approvalDecideNative(request: NativeApprovalDecisionV1, grant: boolean, idempotencyKey: IdempotencyKey): Promise<AgentEnvelopeSuccess<NativeApprovalResultV1>> {
+    let body: NativeApprovalDecisionV1;
+    try { body = encodeNativeApprovalDecision(request); if (typeof grant !== "boolean") throw new TypeError("native_v1.decision"); }
+    catch { throw invalidArgument(); }
+    const operation = grant ? "approval.approve" : "approval.reject";
+    const response = await this.call<NativeApprovalDecisionV1, AgentEnvelopeSuccess>({plane:"agent",operation,request:body,idempotencyKey});
+    try {
+      const value = decodeNativeApprovalResult(response.value);
+      if (value.approval_id !== body.approval_id || value.held_digest !== body.held_digest) throw new TypeError("native_v1.binding");
+      return {...response,value};
+    } catch { throw new PlatformSdkError({code:"unknown-outcome",retry:"unknown-outcome",requestId:response.request_id}); }
   }
 
   private dispatch<TResponse>(headers: http.OutgoingHttpHeaders, body: Buffer, mutation: boolean, requestId: string): Promise<TResponse> {

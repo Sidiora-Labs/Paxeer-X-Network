@@ -162,6 +162,10 @@ impl SessionControl {
         {
             return Ok(false);
         }
+        if record.extensions.contains_key(&6)
+            && (outcome == ReleaseKind::Executed || (outcome == ReleaseKind::Failed && record.activity_id.is_some())) {
+            return Ok(false);
+        }
         record.state = state;
         record.drop_signed_bytes();
         if let Some(extension) = extension {
@@ -169,12 +173,19 @@ impl SessionControl {
         }
         let mut updates = vec![(key, record.encode().map_err(lifecycle)?)];
         if outcome == ReleaseKind::Executed {
-            let holds: Vec<DurableBudgetReservation> =
-                record.holds.iter().map(|(hold, _)| hold.clone()).collect();
-            updates.extend(
-                budget::consumption_updates(&store, tenant, &holds)
-                    .map_err(|_| SessionControlError::Unavailable)?,
-            );
+            if let Some(encoded) = record.extensions.get(&6) {
+                let reservation = budget::ProgramBudgetReservation::decode(encoded)
+                    .map_err(|_| SessionControlError::Unavailable)?;
+                if reservation.id != preparation_id || !record.holds.is_empty() {
+                    return Err(SessionControlError::Unavailable);
+                }
+                updates.extend(budget::program_consumption_updates(&store, tenant, &reservation)
+                    .map_err(|_| SessionControlError::Unavailable)?);
+            } else {
+                let holds: Vec<DurableBudgetReservation> = record.holds.iter().map(|(hold, _)| hold.clone()).collect();
+                updates.extend(budget::consumption_updates(&store, tenant, &holds)
+                    .map_err(|_| SessionControlError::Unavailable)?);
+            }
         }
         let staged =
             budget::stage_release(&self.budgets, preparation_id, outcome, current_sequence)
@@ -229,7 +240,20 @@ impl SessionControl {
             .map_err(lifecycle)?;
         budget::restore_bounded(&self.budgets, &holds)
             .map_err(|refusal| lifecycle(LifecycleError::Reservation(refusal)))?;
-        Ok(holds.len())
+        let mut count = holds.len();
+        for record in records.iter().filter(|record| !record.terminal()) {
+            if let Some(encoded) = record.extensions.get(&6) {
+                let reservation = budget::ProgramBudgetReservation::decode(encoded)
+                    .map_err(|_| SessionControlError::Unavailable)?;
+                if reservation.id != record.preparation_id || !record.holds.is_empty() {
+                    return Err(SessionControlError::Unavailable);
+                }
+                self.budgets.restore_program_reservation(&reservation)
+                    .map_err(|refusal| lifecycle(LifecycleError::Reservation(refusal)))?;
+                count = count.checked_add(reservation.holds.len()).ok_or(SessionControlError::Unavailable)?;
+            }
+        }
+        Ok(count)
     }
 
     #[must_use]
@@ -1068,6 +1092,53 @@ pub struct OperationPermit {
 }
 
 impl OperationPermit {
+    pub(crate) fn with_native_preparation<T>(
+        &self, control: &SessionControl, activity: layerx_agent_api::identity::NativeActivity,
+        sequence: u64,
+        effect: impl FnOnce(&mut Store, &SessionRegistry, &session::NativeSessionAuthorizationV1,
+            &BudgetLimiter, &PreparationLifecycle, u64) -> Result<T, SessionControlError>,
+    ) -> Result<T, SessionControlError> {
+        self.require_operation(Operation::Prepare)?;
+        let registry = control.registry.read().map_err(|_| SessionControlError::Unavailable)?;
+        self.resolve(control, &registry)?;
+        let mut store = control.store.lock().map_err(|_| SessionControlError::Unavailable)?;
+        let authorization = session::admit_native(&store, &registry, &self.token,
+            &self.principal.tenant, &self.principal.agent, activity, sequence).map_err(SessionControlError::Session)?;
+        let expiry = registry.get(&self.principal.tenant, self.principal.session_id)
+            .ok_or(SessionControlError::Session(SessionError::NotFound))?.request.expiry_sequence;
+        effect(&mut store, &registry, &authorization, &control.budgets, &control.lifecycle, expiry)
+    }
+
+    pub(crate) fn with_native_authority<T>(
+        &self, control: &SessionControl, activity: layerx_agent_api::identity::NativeActivity,
+        sequence: u64,
+        effect: impl FnOnce(&mut Store, &SessionRegistry, &session::NativeSessionAuthorizationV1,
+            &BudgetLimiter, &PreparationLifecycle, u64) -> Result<T, SessionControlError>,
+    ) -> Result<T, SessionControlError> {
+        if !matches!(self.operation(), Operation::Prepare | Operation::Sign | Operation::Submit) {
+            return Err(SessionControlError::Authorization(AuthorizationError::ScopeDenied));
+        }
+        let registry = control.registry.read().map_err(|_| SessionControlError::Unavailable)?;
+        self.resolve(control, &registry)?;
+        let mut store = control.store.lock().map_err(|_| SessionControlError::Unavailable)?;
+        let authorization = session::admit_native(&store, &registry, &self.token,
+            &self.principal.tenant, &self.principal.agent, activity, sequence).map_err(SessionControlError::Session)?;
+        let expiry = registry.get(&self.principal.tenant, self.principal.session_id)
+            .ok_or(SessionControlError::Session(SessionError::NotFound))?.request.expiry_sequence;
+        effect(&mut store, &registry, &authorization, &control.budgets, &control.lifecycle, expiry)
+    }
+
+    pub(crate) fn with_native_owner_install<T>(
+        &self, control: &SessionControl,
+        effect: impl FnOnce(&mut Store, &SessionRegistry) -> Result<T, SessionControlError>,
+    ) -> Result<T, SessionControlError> {
+        self.require_operation(Operation::Prepare)?;
+        let registry = control.registry.read().map_err(|_| SessionControlError::Unavailable)?;
+        self.resolve(control, &registry)?;
+        let mut store = control.store.lock().map_err(|_| SessionControlError::Unavailable)?;
+        effect(&mut store, &registry)
+    }
+
     pub(crate) fn matches_lookup(&self, binding: &Arc<()>) -> bool {
         self.lookup_binding.as_ref().is_some_and(|value| Arc::ptr_eq(value, binding))
     }

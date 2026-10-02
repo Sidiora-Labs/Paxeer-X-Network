@@ -965,6 +965,20 @@ impl ProgramOperations {
         Self { reader }
     }
 
+    pub fn current_value_accounts(
+        &mut self,
+        program: ProgramId,
+        now: u64,
+    ) -> Result<layerx_programs::VerifiedProgramBalanceRead, ProgramOperationError> {
+        self.reader.read_protocol_state(program, now)
+            .map(|state| state.into_balances())
+            .map_err(|error| if error.is_stale() {
+                ProgramOperationError::Stale
+            } else {
+                ProgramOperationError::UnverifiedReceipt
+            })
+    }
+
     /// Reads the one authenticated chain head, requests the kind-5 Programs
     /// state pinned to exactly that head and binds the answer to it.
     ///

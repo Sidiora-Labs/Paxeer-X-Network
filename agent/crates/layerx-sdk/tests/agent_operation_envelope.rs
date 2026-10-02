@@ -16,7 +16,7 @@ use layerx_agent_api::error::{
     ApiSuccess, ErrorClass, Key, Level, RequestId, Retriability, VerificationStatus,
 };
 use layerx_sdk::agent_envelope::{
-    canonical_u64, decode_response, AgentEnvelopeTransport, ClientRetriability,
+    canonical_u64, decode_response, decode_native_preparation, decode_native_approval, decode_native_approval_list, AgentEnvelopeTransport, ClientRetriability,
     EnvelopeCredential, EnvelopeError, AGENT_RPC_ROUTE,
 };
 use layerx_sdk::production::SecretBytes;
@@ -411,6 +411,8 @@ impl Probe {
                 outcome.map_err(|error| format!("approval_list failed: {error:?}"))?;
                 Ok(())
             }
+            (_, "native_prepare" | "native_approval_list" | "native_approval_get" | "native_approval_approve" | "native_approval_reject") => self.native_case(case),
+            (_, refusal) if refusal.starts_with("native_refusal.") => self.native_case(case),
             (_, "read_decode_failure") => self.read_decode_failure(),
             (_, "mutation_decode_unknown") => self.mutation_decode_unknown(),
             (PRE_RESTART, "allowed_mutation") => self.allowed_mutation(),
@@ -829,6 +831,87 @@ impl Probe {
             }
             other => Err(format!("restart did not report the stored outcome: {other:?}").into()),
         }
+    }
+
+    fn native_case(&mut self, case: &str) -> Result<(), Failure> {
+        let entry = field(&self.requests, case)?.clone();
+        let operation = catalogued(text(&entry, "operation")?)?;
+        let request = field(&entry, "request")?.clone();
+        let expected = match case {
+            "native_prepare" => Some(Operation::Prepare),
+            "native_approval_list" => Some(Operation::ApprovalList),
+            "native_approval_get" => Some(Operation::ApprovalGet),
+            "native_approval_approve" => Some(Operation::ApprovalApprove),
+            "native_approval_reject" => Some(Operation::ApprovalReject),
+            _ => None,
+        };
+        if expected.is_some_and(|expected| expected != operation)
+            || !matches!(operation, Operation::Prepare | Operation::ApprovalList | Operation::ApprovalGet | Operation::ApprovalApprove | Operation::ApprovalReject) {
+            return Err("native case operation mismatch".into());
+        }
+        let request_id = self.request_id();
+        let key = if operation.mutating() { Some(self.provisioned_key(case)?) } else { None };
+        let outcome = self.send(operation, request_id, &request, Some(&self.credential), key);
+        self.record(case, operation, &outcome)?;
+        if case.starts_with("native_refusal.") {
+            return match outcome {
+                Err(EnvelopeError::Refused(error))
+                    if error.class != ErrorClass::InternalFault && error.class != ErrorClass::UnavailableCapability
+                        && format!("{:?}", error.class) == text(&entry, "expected_class")?
+                        && error.reason.as_str() == text(&entry, "expected_reason")? => Ok(()),
+                other => Err(format!("native refusal mismatch: {other:?}").into()),
+            };
+        }
+        if text(&request, "variant")? != "native_v1" {
+            return Err("native case lacks explicit variant".into());
+        }
+        let response = outcome.map_err(|error| format!("native operation failed: {error:?}"))?;
+        match operation {
+            Operation::Prepare => {
+                let value = decode_native_preparation(&response.value).ok_or("native preparation decoder refused")?;
+                let purpose = field(field(&request, "purpose")?, "purpose")?;
+                let activity = field(&request, "activity")?;
+                let digest: [u8; 32] = Sha256::digest(&value.canonical_bytes).into();
+                let signing: [u8; 32] = Sha256::new().chain_update(b"LXP/v1/signature-preimage\0")
+                    .chain_update(&value.canonical_bytes).finalize().into();
+                if value.preparation_id != digest || digest != bytes32(text(purpose, "canonical_digest")?)?
+                    || value.preparation_id != bytes32(text(purpose, "preparation_id")?)?
+                    || value.signing_preimage != signing
+                    || u64::from(value.activity.module) != canonical_u64(text(activity, "module")?).ok_or("native module")?
+                    || u64::from(value.activity.ordinal) != canonical_u64(text(activity, "ordinal")?).ok_or("native ordinal")?
+                    || text(purpose, "tenant")? != self.coordinates.tenant
+                    || bytes32(text(purpose, "session_id")?)? != self.coordinates.session_id
+                    || canonical_u64(text(purpose, "generation")?) != Some(self.coordinates.generation)
+                    || value.approval_required != field(&entry, "expected_approval_required")?.as_bool().ok_or("expected approval flag")?
+                    || value.approval_id.is_some_and(|id| id != value.preparation_id) {
+                    return Err("native preparation lost signed purpose or full identity binding".into());
+                }
+                let mut extra = response.value.clone();
+                extra.as_object_mut().ok_or("native response object")?.insert("legacy_activity_type".into(), json!(value.activity.ordinal));
+                if decode_native_preparation(&extra).is_some() { return Err("native decoder accepted unknown field".into()); }
+                let mut truncated = response.value.clone();
+                truncated["activity"]["module"] = json!(value.activity.module);
+                if decode_native_preparation(&truncated).is_some() { return Err("native decoder accepted numeric module".into()); }
+            }
+            Operation::ApprovalList => {
+                let value = decode_native_approval_list(&response.value).ok_or("native approval list decoder refused")?;
+                let expected_id = bytes32(text(&entry, "expected_approval_id")?)?;
+                if !value.approvals.iter().any(|approval| approval.approval_id == expected_id) {
+                    return Err("native approval list omitted the durable preparation".into());
+                }
+            }
+            Operation::ApprovalGet | Operation::ApprovalApprove | Operation::ApprovalReject => {
+                let value = decode_native_approval(&response.value).ok_or("native approval decoder refused")?;
+                if value.approval_id != bytes32(text(&request, "approval_id")?)?
+                    || value.state != text(&entry, "expected_state")?
+                    || value.held_digest != bytes32(text(&entry, "expected_held_digest")?)?
+                    || operation.mutating() && value.held_digest != bytes32(text(&request, "held_digest")?)? {
+                    return Err("native approval lost exact held consent or durable state".into());
+                }
+            }
+            _ => return Err("unsupported native operation".into()),
+        }
+        Ok(())
     }
 
     fn operation_case(&mut self, case: &str) -> Result<(), Failure> {

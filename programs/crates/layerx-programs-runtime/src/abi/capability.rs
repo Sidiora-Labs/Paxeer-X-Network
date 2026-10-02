@@ -576,7 +576,7 @@ impl CapabilitySet {
         })
     }
 
-    pub(crate) fn decode_canonical(bytes: &[u8]) -> Result<Vec<Capability>, AbiError> {
+    pub fn decode_canonical(bytes: &[u8]) -> Result<Vec<Capability>, AbiError> {
         Self::decode_versioned_canonical(bytes, false)
     }
 

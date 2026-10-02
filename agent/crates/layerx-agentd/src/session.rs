@@ -1120,6 +1120,286 @@ impl SessionRecord {
     }
 }
 
+
+const NATIVE_SCOPE_VERSION: &[u8; 6] = b"LXNS01";
+const NATIVE_SCOPE_KEY_PREFIX: &[u8] = b"native-session-scope/v1/";
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeSessionScopeV1 {
+    pub tenant: TenantId,
+    pub agent: Did,
+    pub session_id: SessionId,
+    pub generation: u64,
+    pub permitted_activities: BTreeSet<layerx_agent_api::identity::NativeActivity>,
+}
+
+impl NativeSessionScopeV1 {
+    pub fn encode(&self) -> Result<Vec<u8>, SessionError> {
+        if self.session_id.0 == [0; 32] || self.generation < FIRST_GENERATION {
+            return Err(SessionError::MissingField("native_session_binding"));
+        }
+        let tenant = self.tenant.as_str().as_bytes();
+        let agent = self.agent.as_bytes();
+        let tenant_len = u16::try_from(tenant.len())
+            .map_err(|_| SessionError::MissingField("tenant"))?;
+        let agent_len = u16::try_from(agent.len())
+            .map_err(|_| SessionError::MissingField("agent"))?;
+        let count = u16::try_from(self.permitted_activities.len())
+            .map_err(|_| SessionError::MissingField("native_activities"))?;
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(NATIVE_SCOPE_VERSION);
+        bytes.extend_from_slice(&tenant_len.to_be_bytes());
+        bytes.extend_from_slice(tenant);
+        bytes.extend_from_slice(&agent_len.to_be_bytes());
+        bytes.extend_from_slice(agent);
+        bytes.extend_from_slice(&self.session_id.0);
+        bytes.extend_from_slice(&self.generation.to_be_bytes());
+        bytes.extend_from_slice(&count.to_be_bytes());
+        for activity in &self.permitted_activities {
+            bytes.extend_from_slice(
+                &activity.encode().map_err(|_| SessionError::MissingField("native_activity"))?,
+            );
+        }
+        Ok(bytes)
+    }
+
+    pub fn decode(bytes: &[u8]) -> Result<Self, SessionError> {
+        let mut reader = RecordReader { bytes, at: 0 };
+        if reader.take(NATIVE_SCOPE_VERSION.len())? != NATIVE_SCOPE_VERSION {
+            return Err(SessionError::MissingField("native_scope_version"));
+        }
+        let tenant = TenantId::new(reader.text()?)?;
+        let agent_len = usize::from(u16::from_be_bytes(reader.fixed::<2>("agent")?));
+        let agent = Did::new(reader.take(agent_len)?)
+            .map_err(|_| SessionError::MissingField("agent"))?;
+        let session_id = SessionId(reader.fixed::<32>("session_id")?);
+        let generation = u64::from_be_bytes(reader.fixed::<8>("generation")?);
+        if session_id.0 == [0; 32] || generation < FIRST_GENERATION {
+            return Err(SessionError::MissingField("native_session_binding"));
+        }
+        let count = usize::from(u16::from_be_bytes(reader.fixed::<2>("native_activities")?));
+        let mut permitted_activities = BTreeSet::new();
+        let mut previous = None;
+        for _ in 0..count {
+            let activity = layerx_agent_api::identity::NativeActivity::decode(reader.take(5)?)
+                .map_err(|_| SessionError::MissingField("native_activity"))?;
+            if previous.is_some_and(|value| value >= activity) {
+                return Err(SessionError::MissingField("native_activity_order"));
+            }
+            previous = Some(activity);
+            permitted_activities.insert(activity);
+        }
+        if reader.at != bytes.len() {
+            return Err(SessionError::MissingField("native_scope_trailing_bytes"));
+        }
+        Ok(Self { tenant, agent, session_id, generation, permitted_activities })
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct NativeSessionAuthorizationV1 {
+    tenant: TenantId,
+    agent: Did,
+    session_id: SessionId,
+    generation: u64,
+    activity: layerx_agent_api::identity::NativeActivity,
+}
+
+impl NativeSessionAuthorizationV1 {
+    #[must_use]
+    pub const fn tenant(&self) -> &TenantId {
+        &self.tenant
+    }
+
+    #[must_use]
+    pub const fn agent(&self) -> &Did {
+        &self.agent
+    }
+
+    #[must_use]
+    pub const fn session_id(&self) -> SessionId {
+        self.session_id
+    }
+
+    #[must_use]
+    pub const fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    #[must_use]
+    pub const fn activity(&self) -> layerx_agent_api::identity::NativeActivity {
+        self.activity
+    }
+
+    pub fn revalidate(
+        &self,
+        store: &Store,
+        registry: &SessionRegistry,
+        token: &Token,
+        core_sequence: u64,
+    ) -> Result<(), SessionError> {
+        if token.tenant() != &self.tenant || token.agent() != &self.agent {
+            return Err(SessionError::WrongPrincipal);
+        }
+        if token.session_id() != self.session_id || token.generation() != self.generation {
+            return Err(SessionError::Revoked);
+        }
+        admit_native(
+            store, registry, token, &self.tenant, &self.agent, self.activity, core_sequence,
+        )?;
+        Ok(())
+    }
+}
+
+fn native_scope_key(tenant: &TenantId, session_id: SessionId) -> Result<TenantKey, SessionError> {
+    let mut object_id = NATIVE_SCOPE_KEY_PREFIX.to_vec();
+    object_id.extend_from_slice(&session_id.0);
+    Ok(TenantKey::new(tenant.clone(), ObjectKind::Configuration, object_id)?)
+}
+
+pub(crate) fn stage_native_scope_install(
+    store: &Store,
+    registry: &SessionRegistry,
+    owner: &crate::human_runtime::VerifiedNativeOwnerV1,
+    scope: &NativeSessionScopeV1,
+    core_sequence: u64,
+    core_time_ms: u64,
+) -> Result<(TenantKey, Vec<u8>), SessionError> {
+    if owner.tenant() != &scope.tenant
+        || owner.agent() != &scope.agent
+        || owner.session_id() != scope.session_id
+    {
+        return Err(SessionError::WrongPrincipal);
+    }
+    if owner.generation() != scope.generation || owner.head_sequence() != core_sequence {
+        return Err(SessionError::Revoked);
+    }
+    let record = registry.get(&scope.tenant, scope.session_id).ok_or(SessionError::NotFound)?;
+    if record.request.tenant != scope.tenant
+        || record.request.agent != scope.agent
+        || record.request.session_id != scope.session_id
+    {
+        return Err(SessionError::WrongPrincipal);
+    }
+    if !record.open || record.generation != scope.generation {
+        return Err(SessionError::Revoked);
+    }
+    if core_sequence >= record.request.expiry_sequence || !record.public_expiry_within(core_time_ms)? {
+        return Err(SessionError::Expired);
+    }
+    let key = native_scope_key(&scope.tenant, scope.session_id)?;
+    let encoded = scope.encode()?;
+    if let Some(existing) = store.get(&key) {
+        if existing.class() != crate::store::StorageClass::LocalOnly {
+            return Err(SessionError::ScopeDenied);
+        }
+        if existing.bytes() != encoded.as_slice() {
+            return Err(SessionError::IdentityMismatch);
+        }
+    }
+    Ok((key, encoded))
+}
+
+fn authenticated_native_scope(
+    store: &Store,
+    registry: &SessionRegistry,
+    token: &Token,
+    tenant: &TenantId,
+    agent: &Did,
+    core_sequence: u64,
+) -> Result<NativeSessionScopeV1, SessionError> {
+    if token.tenant() != tenant || token.agent() != agent {
+        return Err(SessionError::WrongPrincipal);
+    }
+    token.authorize(registry, tenant, agent, "prepare", core_sequence)?;
+    let record = registry.get(tenant, token.session_id()).ok_or(SessionError::Revoked)?;
+    if &record.request.tenant != tenant
+        || &record.request.agent != agent
+        || record.request.session_id != token.session_id()
+    {
+        return Err(SessionError::WrongPrincipal);
+    }
+    if core_sequence >= token.expiry_sequence || core_sequence >= record.request.expiry_sequence {
+        return Err(SessionError::Expired);
+    }
+    if !record.request.scopes.contains("prepare") {
+        return Err(SessionError::ScopeDenied);
+    }
+    let value = store.get(&native_scope_key(tenant, token.session_id())?)
+        .ok_or(SessionError::ScopeDenied)?;
+    if value.class() != crate::store::StorageClass::LocalOnly {
+        return Err(SessionError::ScopeDenied);
+    }
+    let scope = NativeSessionScopeV1::decode(value.bytes())?;
+    if &scope.tenant != tenant || &scope.agent != agent || scope.session_id != token.session_id() {
+        return Err(SessionError::WrongPrincipal);
+    }
+    if scope.generation != token.generation() || scope.generation != record.generation {
+        return Err(SessionError::Revoked);
+    }
+    Ok(scope)
+}
+
+pub fn admit_native(
+    store: &Store,
+    registry: &SessionRegistry,
+    token: &Token,
+    tenant: &TenantId,
+    agent: &Did,
+    activity: layerx_agent_api::identity::NativeActivity,
+    core_sequence: u64,
+) -> Result<NativeSessionAuthorizationV1, SessionError> {
+    let scope = authenticated_native_scope(store, registry, token, tenant, agent, core_sequence)?;
+    let activity = activity.validate().map_err(|_| SessionError::ScopeDenied)?;
+    if !scope.permitted_activities.contains(&activity) {
+        return Err(SessionError::ScopeDenied);
+    }
+    Ok(NativeSessionAuthorizationV1 {
+        tenant: scope.tenant,
+        agent: scope.agent,
+        session_id: scope.session_id,
+        generation: scope.generation,
+        activity,
+    })
+}
+
+pub fn restrict_native_scope(
+    store: &mut Store,
+    registry: &mut SessionRegistry,
+    token: &Token,
+    token_id: [u8; 32],
+    permitted_activities: BTreeSet<layerx_agent_api::identity::NativeActivity>,
+    core_sequence: u64,
+) -> Result<Token, SessionError> {
+    let existing = authenticated_native_scope(
+        store, registry, token, token.tenant(), token.agent(), core_sequence,
+    )?;
+    if !permitted_activities.is_subset(&existing.permitted_activities) {
+        return Err(SessionError::ScopeDenied);
+    }
+    let current = registry.get(token.tenant(), token.session_id()).ok_or(SessionError::Revoked)?;
+    let (session_ref, narrowed) = narrowed_record(
+        registry,
+        token.tenant(),
+        token.session_id(),
+        token_id,
+        current.request.scopes.clone(),
+        current.request.permitted_activity_types.clone(),
+    )?;
+    let scope = NativeSessionScopeV1 {
+        generation: narrowed.generation,
+        permitted_activities,
+        ..existing
+    };
+    store.update_local_batch(vec![
+        (session_key(&narrowed.request)?, encode(&narrowed)?),
+        (native_scope_key(&scope.tenant, scope.session_id)?, scope.encode()?),
+    ])?;
+    let replacement = mint(&narrowed);
+    registry.replace(&session_ref, narrowed);
+    Ok(replacement)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1275,6 +1555,263 @@ mod tests {
                 .map(|record| record.request.expiry_seconds),
             Some(None)
         );
+        drop(store);
+        let _ = std::fs::remove_dir_all(root);
+    }
+}
+
+#[cfg(test)]
+mod native_scope_tests {
+    use super::*;
+    use layerx_agent_api::identity::NativeActivity;
+    use layerx_types::payload::{ActivityType, ModuleId};
+
+    fn must<T, E: fmt::Debug>(value: Result<T, E>) -> T {
+        value.unwrap_or_else(|error| panic!("native session: {error:?}"))
+    }
+
+    fn activity(module: ModuleId, ordinal: u16) -> NativeActivity {
+        NativeActivity::from(must(ActivityType::new(module, ordinal)))
+    }
+
+    fn scope() -> NativeSessionScopeV1 {
+        NativeSessionScopeV1 {
+            tenant: must(TenantId::new("tenant-native")),
+            agent: must(Did::new(b"agent-native")),
+            session_id: SessionId([11; 32]),
+            generation: FIRST_GENERATION,
+            permitted_activities: BTreeSet::from([
+                activity(ModuleId::Asset, 1),
+                activity(ModuleId::Budget, 1),
+            ]),
+        }
+    }
+
+    fn fixture(name: &str) -> (std::path::PathBuf, Store, SessionRegistry, Token) {
+        let root = std::env::temp_dir()
+            .join(format!("lxp-native-scope-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let mut store = must(Store::open(root.join("store")));
+        let scope = scope();
+        let record = SessionRecord {
+            request: OpenRequest {
+                session_id: scope.session_id,
+                token_id: [12; 32],
+                tenant: scope.tenant.clone(),
+                agent: scope.agent.clone(),
+                authority: ProtocolAuthority::SessionKey([13; 32]),
+                permitted_activity_types: BTreeSet::from([1]),
+                scopes: BTreeSet::from(["prepare".to_owned()]),
+                expiry_sequence: 100,
+                expiry_seconds: Some(200),
+                opening_client: "native-scope-suite".to_owned(),
+                policy_version: "v1".to_owned(),
+            },
+            open: true,
+            sequence: 0,
+            budget_reserved: 0,
+            subscription_cursor: 0,
+            generation: FIRST_GENERATION,
+            retired_token_ids: BTreeSet::new(),
+        };
+        must(persist_record(&mut store, &record));
+        let mut registry = SessionRegistry::default();
+        must(registry.restore_tenant(&store, &scope.tenant));
+        let token = must(registry.authenticate_bearer(&scope.tenant, scope.session_id, [12; 32]));
+        (root, store, registry, token)
+    }
+
+    fn store_scope(store: &mut Store, value: &NativeSessionScopeV1) {
+        must(store.put_local(
+            must(native_scope_key(&value.tenant, value.session_id)),
+            must(value.encode()),
+        ));
+    }
+
+    fn admitted(
+        store: &Store,
+        registry: &SessionRegistry,
+        token: &Token,
+        activity: NativeActivity,
+    ) -> Result<NativeSessionAuthorizationV1, SessionError> {
+        admit_native(store, registry, token, token.tenant(), token.agent(), activity, 10)
+    }
+
+    #[test]
+    fn native_codec_refuses_version_trailing_truncation_and_noncanonical_sets() {
+        let value = scope();
+        let encoded = must(value.encode());
+        assert_eq!(must(NativeSessionScopeV1::decode(&encoded)), value);
+        let mut version = encoded.clone();
+        version[5] = b'2';
+        assert_eq!(NativeSessionScopeV1::decode(&version),
+            Err(SessionError::MissingField("native_scope_version")));
+        let mut trailing = encoded.clone();
+        trailing.push(0);
+        assert_eq!(NativeSessionScopeV1::decode(&trailing),
+            Err(SessionError::MissingField("native_scope_trailing_bytes")));
+        for end in 0..encoded.len() {
+            assert!(NativeSessionScopeV1::decode(&encoded[..end]).is_err());
+        }
+        let mut duplicate = encoded.clone();
+        let end = duplicate.len();
+        duplicate.copy_within(end - 10..end - 5, end - 5);
+        assert_eq!(NativeSessionScopeV1::decode(&duplicate),
+            Err(SessionError::MissingField("native_activity_order")));
+        let mut reversed = encoded;
+        let end = reversed.len();
+        reversed[end - 10..].rotate_left(5);
+        assert!(NativeSessionScopeV1::decode(&reversed).is_err());
+        let mut zero_generation = must(value.encode());
+        let generation_at = zero_generation.len() - 10 - 2 - 8;
+        zero_generation[generation_at..generation_at + 8].fill(0);
+        assert!(NativeSessionScopeV1::decode(&zero_generation).is_err());
+        let mut invalid_module = must(value.encode());
+        let end = invalid_module.len();
+        invalid_module[end - 9..end - 7].fill(0);
+        assert!(NativeSessionScopeV1::decode(&invalid_module).is_err());
+        let mut invalid = value.clone();
+        invalid.generation = 0;
+        assert!(invalid.encode().is_err());
+        invalid = value;
+        invalid.permitted_activities.insert(NativeActivity { module: 0, ordinal: 1 });
+        assert!(invalid.encode().is_err());
+    }
+
+    #[test]
+    fn legacy_scope_confers_no_native_authority_and_modules_do_not_collide() {
+        let (root, mut store, registry, token) = fixture("collision");
+        let asset = activity(ModuleId::Asset, 1);
+        let budget = activity(ModuleId::Budget, 1);
+        assert_eq!(admitted(&store, &registry, &token, asset), Err(SessionError::ScopeDenied));
+        let mut value = scope();
+        value.permitted_activities = BTreeSet::from([asset]);
+        store_scope(&mut store, &value);
+        assert!(decode(&must(value.encode()), value.tenant.clone()).is_err());
+        let legacy = registry.get(token.tenant(), token.session_id())
+            .unwrap_or_else(|| panic!("current legacy record"));
+        assert!(NativeSessionScopeV1::decode(&must(encode(legacy))).is_err());
+        let authorization = must(admitted(&store, &registry, &token, asset));
+        assert_eq!(authorization.tenant(), token.tenant());
+        assert_eq!(authorization.agent(), token.agent());
+        assert_eq!(authorization.session_id(), token.session_id());
+        assert_eq!(authorization.generation(), token.generation());
+        assert_eq!(authorization.activity(), asset);
+        assert_eq!(admitted(&store, &registry, &token, budget), Err(SessionError::ScopeDenied));
+        let mut restored = SessionRegistry::default();
+        must(restored.restore_tenant(&store, token.tenant()));
+        assert!(admitted(&store, &restored, &token, asset).is_ok());
+        drop(store);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn native_narrowing_is_durable_rotates_generation_and_refuses_widening() {
+        let (root, mut store, mut registry, token) = fixture("narrow");
+        store_scope(&mut store, &scope());
+        let asset = activity(ModuleId::Asset, 1);
+        let budget = activity(ModuleId::Budget, 1);
+        let authorization = must(admitted(&store, &registry, &token, asset));
+        assert_eq!(authorization.revalidate(&store, &registry, &token, 10), Ok(()));
+        assert_eq!(authorization.revalidate(&store, &registry, &token, 100),
+            Err(SessionError::Expired));
+        let replacement = must(restrict_native_scope(
+            &mut store, &mut registry, &token, [14; 32], BTreeSet::from([asset]), 10,
+        ));
+        assert_eq!(authorization.revalidate(&store, &registry, &token, 10),
+            Err(SessionError::Revoked));
+        assert_eq!(authorization.revalidate(&store, &registry, &replacement, 10),
+            Err(SessionError::Revoked));
+        assert_eq!(replacement.generation(), token.generation() + 1);
+        assert_eq!(admitted(&store, &registry, &token, asset), Err(SessionError::Revoked));
+        assert!(admitted(&store, &registry, &replacement, asset).is_ok());
+        assert_eq!(admitted(&store, &registry, &replacement, budget), Err(SessionError::ScopeDenied));
+        assert_eq!(restrict_native_scope(
+            &mut store, &mut registry, &replacement, [15; 32], BTreeSet::from([asset, budget]), 10,
+        ), Err(SessionError::ScopeDenied));
+        assert_eq!(restrict_native_scope(
+            &mut store, &mut registry, &replacement, [12; 32], BTreeSet::from([asset]), 10,
+        ), Err(SessionError::TokenReuse));
+        drop(store);
+        let mut store = must(Store::open(root.join("store")));
+        let mut registry = SessionRegistry::default();
+        must(registry.restore_tenant(&store, replacement.tenant()));
+        assert!(admitted(&store, &registry, &replacement, asset).is_ok());
+        assert_eq!(admitted(&store, &registry, &replacement, budget), Err(SessionError::ScopeDenied));
+        let denied = must(restrict_native_scope(
+            &mut store, &mut registry, &replacement, [15; 32], BTreeSet::new(), 10,
+        ));
+        assert_eq!(admitted(&store, &registry, &denied, asset), Err(SessionError::ScopeDenied));
+        drop(store);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn native_admission_requires_server_owned_prepare_scope() {
+        let (root, mut store, mut registry, token) = fixture("operation-scope");
+        store_scope(&mut store, &scope());
+        let asset = activity(ModuleId::Asset, 1);
+        let authorization = must(admitted(&store, &registry, &token, asset));
+        let replacement = must(restrict_scope(
+            &mut store,
+            &mut registry,
+            token.tenant(),
+            token.session_id(),
+            [14; 32],
+            BTreeSet::from(["prepare".to_owned()]),
+            BTreeSet::from([1]),
+        ));
+        let mut current = registry.get(replacement.tenant(), replacement.session_id())
+            .unwrap_or_else(|| panic!("current session"))
+            .clone();
+        current.request.scopes = BTreeSet::from(["read".to_owned()]);
+        must(persist_record(&mut store, &current));
+        registry.replace(&SessionRef::new(current.request.tenant.clone(), current.request.session_id), current);
+        let read_token = must(registry.authenticate(&replacement.credential()));
+        let mut grant = scope();
+        grant.generation = read_token.generation();
+        store_scope(&mut store, &grant);
+        assert_eq!(admitted(&store, &registry, &read_token, asset), Err(SessionError::ScopeDenied));
+        assert_eq!(admitted(&store, &registry, &replacement, asset), Err(SessionError::ScopeDenied));
+        assert_eq!(authorization.revalidate(&store, &registry, &read_token, 10),
+            Err(SessionError::Revoked));
+        assert_eq!(restrict_native_scope(
+            &mut store, &mut registry, &read_token, [15; 32], BTreeSet::new(), 10,
+        ), Err(SessionError::ScopeDenied));
+        drop(store);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn native_admission_refuses_wrong_principal_expiry_and_generation() {
+        let (root, mut store, mut registry, token) = fixture("binding");
+        let asset = activity(ModuleId::Asset, 1);
+        let value = scope();
+        store_scope(&mut store, &value);
+        assert_eq!(admit_native(&store, &registry, &token,
+            &must(TenantId::new("other-tenant")), token.agent(), asset, 10),
+            Err(SessionError::WrongPrincipal));
+        assert_eq!(admit_native(&store, &registry, &token,
+            token.tenant(), &must(Did::new(b"other-agent")), asset, 10),
+            Err(SessionError::WrongPrincipal));
+        assert_eq!(admit_native(&store, &registry, &token,
+            token.tenant(), token.agent(), asset, 100), Err(SessionError::Expired));
+        for field in 0..4 {
+            let mut mismatched = value.clone();
+            match field {
+                0 => mismatched.generation += 1,
+                1 => mismatched.agent = must(Did::new(b"other-agent")),
+                2 => mismatched.session_id = SessionId([19; 32]),
+                _ => mismatched.tenant = must(TenantId::new("other-tenant")),
+            }
+            must(store.put_local(must(native_scope_key(token.tenant(), token.session_id())),
+                must(mismatched.encode())));
+            assert_eq!(admitted(&store, &registry, &token, asset),
+                Err(if field == 0 { SessionError::Revoked } else { SessionError::WrongPrincipal }));
+        }
+        store_scope(&mut store, &value);
+        must(close(&mut store, &mut registry, token.tenant(), token.session_id()));
+        assert_eq!(admitted(&store, &registry, &token, asset), Err(SessionError::Revoked));
         drop(store);
         let _ = std::fs::remove_dir_all(root);
     }

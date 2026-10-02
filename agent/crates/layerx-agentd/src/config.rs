@@ -508,3 +508,120 @@ fn error(setting: impl Into<String>, reason: RejectionReason) -> ConfigError {
         reason,
     }
 }
+
+pub fn load_program_budget_denominations(
+    path: &Path,
+    tenant: &TenantId,
+) -> Result<crate::enrolment::VerifiedProgramBudgetDenominations, ConfigError> {
+    use sha2::{Digest as _, Sha256};
+    const SETTING: &str = "program_budget_denominations";
+    let bytes = read_protected_source(path, MAX_CONFIG_BYTES).map_err(|failure| error(SETTING, match failure {
+        ProtectedSourceError::Unavailable => RejectionReason::Unavailable,
+        ProtectedSourceError::TooLarge => RejectionReason::TooLarge,
+        ProtectedSourceError::Unprotected | ProtectedSourceError::Changed => RejectionReason::Unprotected,
+    }))?;
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Source {
+        version: u8,
+        tenant: String,
+        limits: Vec<Row>,
+    }
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Row {
+        stable_id: String,
+        asset: String,
+        source: String,
+    }
+    let value: Source = serde_json::from_slice(&bytes).map_err(|_| error(SETTING, RejectionReason::InvalidEncoding))?;
+    if value.version != 1 || value.tenant != tenant.as_str() {
+        return Err(error(SETTING, RejectionReason::InvalidTenant));
+    }
+    let fixed = |text: &str| -> Result<[u8; 32], ConfigError> {
+        if text.len() != 64 || text.bytes().any(|byte| !byte.is_ascii_digit() && !(b'a'..=b'f').contains(&byte)) {
+            return Err(error(SETTING, RejectionReason::InvalidEncoding));
+        }
+        let bytes = hex::decode(text).map_err(|_| error(SETTING, RejectionReason::InvalidEncoding))?;
+        bytes.try_into().map_err(|_| error(SETTING, RejectionReason::InvalidEncoding))
+    };
+    let mut bindings = Vec::new();
+    for row in value.limits {
+        let stable_id = fixed(&row.stable_id)?;
+        let asset = fixed(&row.asset)?;
+        let source = if row.source == "*" { None } else { Some(fixed(&row.source)?) };
+        bindings.push((stable_id, crate::budget::ProgramLimitDenomination { asset, source }));
+    }
+    crate::enrolment::VerifiedProgramBudgetDenominations::from_protected_source(
+        tenant.clone(), bindings, Sha256::digest(&bytes).into(),
+    ).map_err(|_| error(SETTING, RejectionReason::InvalidEncoding))
+}
+
+#[cfg(test)]
+mod program_budget_configuration_tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt as _;
+
+    fn must<T, E: std::fmt::Debug>(value: Result<T, E>) -> T {
+        value.unwrap_or_else(|error| panic!("Program budget configuration: {error:?}"))
+    }
+
+    #[test]
+    fn protected_source_requires_explicit_unique_asset_source_and_tenant() {
+        let suffix = must(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)).as_nanos();
+        let root = std::env::temp_dir().join(format!("program-budget-source-{}-{suffix}", std::process::id()));
+        must(std::fs::create_dir_all(&root));
+        let path = root.join("source.json");
+        let tenant = must(TenantId::new("budget-owner"));
+        let valid = serde_json::json!({"version":1,"tenant":tenant.as_str(),"limits":[{
+            "stable_id":hex::encode([1_u8;32]),"asset":hex::encode([2_u8;32]),"source":"*"}]});
+        let write = |value: &serde_json::Value| {
+            must(std::fs::write(&path, must(serde_json::to_vec(value))));
+            must(std::fs::set_permissions(&path,std::fs::Permissions::from_mode(0o600)));
+        };
+        write(&valid);
+        let verified = must(load_program_budget_denominations(&path,&tenant));
+        assert_eq!(verified.bindings()[0].1.source,None);
+        assert!(load_program_budget_denominations(&path,&must(TenantId::new("other-owner"))).is_err());
+        let mut missing=valid.clone(); missing["limits"][0].as_object_mut().unwrap_or_else(|| panic!("row")).remove("source");
+        write(&missing); assert!(load_program_budget_denominations(&path,&tenant).is_err());
+        let mut duplicate=valid.clone(); duplicate["limits"].as_array_mut().unwrap_or_else(|| panic!("limits")).push(valid["limits"][0].clone());
+        write(&duplicate); assert!(load_program_budget_denominations(&path,&tenant).is_err());
+        let mut zero=valid.clone(); zero["limits"][0]["asset"]=serde_json::Value::String(hex::encode([0_u8;32]));
+        write(&zero); assert!(load_program_budget_denominations(&path,&tenant).is_err());
+        let bytes=must(serde_json::to_string(&valid)).replacen("{", "{\"version\":1,",1);
+        must(std::fs::write(&path,bytes)); assert!(load_program_budget_denominations(&path,&tenant).is_err());
+        write(&valid); must(std::fs::set_permissions(&path,std::fs::Permissions::from_mode(0o666)));
+        assert!(load_program_budget_denominations(&path,&tenant).is_err());
+        must(std::fs::remove_dir_all(root));
+    }
+}
+
+
+pub(crate) struct VerifiedNativeProgramPolicy {
+    tenant: TenantId,
+    policy: crate::policy::native_program::NativeProgramPolicy,
+}
+
+impl VerifiedNativeProgramPolicy {
+    pub(crate) fn tenant(&self) -> &TenantId { &self.tenant }
+    pub(crate) fn policy(&self) -> &crate::policy::native_program::NativeProgramPolicy { &self.policy }
+}
+
+pub(crate) fn load_native_program_policy(
+    path: &Path, tenant: &TenantId,
+) -> Result<VerifiedNativeProgramPolicy, ConfigError> {
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Source { version: String, tenant: String, policy: String }
+    let bytes = read_protected_source(path, 2 * 1024 * 1024)
+        .map_err(|_| error("native_policy_sources", RejectionReason::Unprotected))?;
+    let source: Source = serde_json::from_slice(&bytes)
+        .map_err(|_| error("native_policy_sources", RejectionReason::InvalidEncoding))?;
+    if source.version != "layerx.native-program-policy-source.v1" || source.tenant != tenant.as_str() {
+        return Err(error("native_policy_sources", RejectionReason::InvalidTenant));
+    }
+    let policy = crate::policy::native_program::NativeProgramPolicy::load(source.policy.as_bytes())
+        .map_err(|_| error("native_policy_sources", RejectionReason::InvalidEncoding))?;
+    Ok(VerifiedNativeProgramPolicy { tenant: tenant.clone(), policy })
+}

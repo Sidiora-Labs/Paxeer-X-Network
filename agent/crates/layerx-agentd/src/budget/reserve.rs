@@ -38,6 +38,8 @@ struct LimitState {
     held: BTreeMap<[u8; 32], Hold>,
     retired: bool,
     successor: Option<LimitId>,
+    denomination: Option<ProgramLimitDenomination>,
+    scalar_allowed: bool,
 }
 
 /// One held amount with its head-sequence bound and, for time-bounded
@@ -86,6 +88,8 @@ impl BudgetLimiter {
                         held: BTreeMap::new(),
                         retired: false,
                         successor: None,
+                        denomination: None,
+                scalar_allowed: true,
                     },
                 )
                 .is_some()
@@ -128,6 +132,8 @@ impl BudgetLimiter {
                 held: BTreeMap::new(),
                 retired: false,
                 successor: None,
+                denomination: None,
+                scalar_allowed: true,
             },
         );
         Ok(())
@@ -158,6 +164,8 @@ impl BudgetLimiter {
             .ok_or(LimitRefusal::UnknownLimit(predecessor))?;
         if predecessor == successor
             || limit.config.scope != scope
+            || limit.denomination != limits.get(&successor).and_then(|limit| limit.denomination)
+            || limits.get(&successor).is_some_and(|successor| limit.scalar_allowed != successor.scalar_allowed)
             || limit.successor.is_some_and(|current| current != successor)
             || live_head(&limits, successor)? == predecessor
         {
@@ -236,6 +244,8 @@ impl BudgetLimiter {
                 held: BTreeMap::new(),
                 retired: false,
                 successor: None,
+                denomination: limits.get(&predecessor.id).and_then(|limit| limit.denomination),
+                scalar_allowed: limits.get(&predecessor.id).is_some_and(|limit| limit.scalar_allowed),
             },
         );
         persist(consumed)?;
@@ -263,7 +273,7 @@ impl BudgetLimiter {
         }
         let mut limits = self.limits.lock().map_err(|_| LimitRefusal::Poisoned)?;
         let mut reserved = limits.clone();
-        let reservation = reserve_into(&mut reserved, request, core_deadline)?;
+        let reservation = reserve_into(&mut reserved, request, core_deadline, false)?;
         persist(&reservation)?;
         *limits = reserved;
         Ok(reservation)
@@ -512,7 +522,7 @@ fn reserve_bounded(
     core_deadline: Option<CoreTimestampMs>,
 ) -> Result<BudgetReservation, LimitRefusal> {
     let mut limits = limiter.limits.lock().map_err(|_| LimitRefusal::Poisoned)?;
-    reserve_into(&mut limits, request, core_deadline)
+    reserve_into(&mut limits, request, core_deadline, false)
 }
 
 /// Checks and inserts one reservation into `limits`; every refusal is returned before the map
@@ -521,6 +531,7 @@ fn reserve_into(
     limits: &mut BTreeMap<LimitId, LimitState>,
     request: &ReservationRequest,
     core_deadline: Option<CoreTimestampMs>,
+    program: bool,
 ) -> Result<BudgetReservation, LimitRefusal> {
     if request.amount == 0
         || request.expiry_sequence <= request.current_sequence
@@ -536,6 +547,7 @@ fn reserve_into(
         if limit.retired {
             return Err(LimitRefusal::Retired(*id));
         }
+        if !program && !limit.scalar_allowed { return Err(LimitRefusal::InvalidConfiguration); }
         if limit.held.contains_key(&request.id) {
             return Err(LimitRefusal::InvalidRequest);
         }
@@ -622,7 +634,7 @@ pub(crate) fn restore_bounded(
         let limit = restored
             .get_mut(&record.limit_id)
             .ok_or(LimitRefusal::UnknownLimit(record.limit_id))?;
-        if limit.config.scope != record.scope
+        if !limit.scalar_allowed || limit.config.scope != record.scope
             || limit.config.ceiling != record.ceiling
             || limit.held.contains_key(&record.reservation_id)
         {
@@ -776,6 +788,309 @@ fn reservation_digest(
     hasher.finalize().into()
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ProgramLimitDenomination {
+    pub asset: [u8; 32],
+    pub source: Option<[u8; 32]>,
+}
+
+impl ProgramLimitDenomination {
+    pub(crate) fn valid(self) -> bool {
+        self.asset != [0; 32] && self.source != Some([0; 32])
+    }
+
+    pub(crate) fn matches(self, source: [u8; 32], asset: [u8; 32]) -> bool {
+        self.asset == asset && self.source.is_none_or(|expected| expected == source)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum ProgramChargeKind { Principal = 1, ProgramSpend = 2, Fee = 3 }
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProgramBudgetCharge {
+    pub kind: ProgramChargeKind,
+    pub source: [u8; 32],
+    pub asset: [u8; 32],
+    pub amount: u128,
+    pub applicable_limits: Vec<LimitId>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProgramReservationRequest {
+    pub id: [u8; 32],
+    pub charges: Vec<ProgramBudgetCharge>,
+    pub expiry_sequence: u64,
+    pub current_sequence: u64,
+    pub core_deadline: Option<CoreTimestampMs>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProgramBudgetHold {
+    pub denomination: ProgramLimitDenomination,
+    pub reservation: DurableBudgetReservation,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProgramBudgetReservation {
+    pub id: [u8; 32],
+    pub charges: Vec<ProgramBudgetCharge>,
+    pub expiry_sequence: u64,
+    pub core_deadline: Option<CoreTimestampMs>,
+    pub holds: Vec<ProgramBudgetHold>,
+}
+
+fn program_totals(charges: &[ProgramBudgetCharge]) -> Result<BTreeMap<LimitId, u128>, LimitRefusal> {
+    if charges.is_empty() || charges.len() > 256 {
+        return Err(LimitRefusal::InvalidRequest);
+    }
+    let mut totals = BTreeMap::new();
+    let mut assets = BTreeMap::new();
+    let mut previous = None;
+    for charge in charges {
+        let key = (charge.asset, charge.source, charge.kind, charge.applicable_limits.clone());
+        if charge.source == [0; 32] || charge.asset == [0; 32] || charge.amount == 0
+            || previous.as_ref().is_some_and(|old| old >= &key)
+            || charge.applicable_limits.is_empty() || charge.applicable_limits.len() > 1024
+            || charge.applicable_limits.windows(2).any(|pair| pair[0] >= pair[1])
+        {
+            return Err(LimitRefusal::InvalidRequest);
+        }
+        previous = Some(key);
+        for id in &charge.applicable_limits {
+            if assets.insert(*id, charge.asset).is_some_and(|old| old != charge.asset) {
+                return Err(LimitRefusal::InvalidConfiguration);
+            }
+            let total = totals.entry(*id).or_insert(0_u128);
+            *total = total.checked_add(charge.amount).ok_or(LimitRefusal::Arithmetic)?;
+        }
+    }
+    if totals.len() > 1024 { return Err(LimitRefusal::InvalidRequest); }
+    Ok(totals)
+}
+
+impl ProgramBudgetReservation {
+    pub fn validate(&self) -> Result<(), LimitRefusal> {
+        if self.id == [0; 32] || self.expiry_sequence == 0 || self.core_deadline == Some(CoreTimestampMs(0)) {
+            return Err(LimitRefusal::InvalidRequest);
+        }
+        let totals = program_totals(&self.charges)?;
+        if totals.len() != self.holds.len()
+            || self.holds.windows(2).any(|pair| pair[0].reservation.limit_id >= pair[1].reservation.limit_id)
+        {
+            return Err(LimitRefusal::InvalidRequest);
+        }
+        for hold in &self.holds {
+            let record = &hold.reservation;
+            if !hold.denomination.valid() || record.reservation_id != self.id
+                || record.expiry_sequence != self.expiry_sequence || record.ceiling == 0 || record.amount > record.ceiling
+                || record.digest != record.canonical_digest()
+                || totals.get(&record.limit_id) != Some(&record.amount)
+                || self.charges.iter().filter(|charge| charge.applicable_limits.contains(&record.limit_id))
+                    .any(|charge| !hold.denomination.matches(charge.source, charge.asset))
+            {
+                return Err(LimitRefusal::InvalidRequest);
+            }
+        }
+        Ok(())
+    }
+
+    pub fn encode(&self) -> Result<Vec<u8>, LimitRefusal> {
+        self.validate()?;
+        let mut bytes = b"LXPB\x01".to_vec();
+        bytes.extend(self.id);
+        bytes.extend(self.expiry_sequence.to_be_bytes());
+        bytes.push(u8::from(self.core_deadline.is_some()));
+        bytes.extend(self.core_deadline.map_or(0, |time| time.0).to_be_bytes());
+        bytes.extend(u16::try_from(self.charges.len()).map_err(|_| LimitRefusal::InvalidRequest)?.to_be_bytes());
+        for charge in &self.charges {
+            bytes.push(charge.kind as u8);
+            bytes.extend(charge.source); bytes.extend(charge.asset); bytes.extend(charge.amount.to_be_bytes());
+            bytes.extend(u16::try_from(charge.applicable_limits.len()).map_err(|_| LimitRefusal::InvalidRequest)?.to_be_bytes());
+            for id in &charge.applicable_limits { bytes.extend(id.0); }
+        }
+        bytes.extend(u16::try_from(self.holds.len()).map_err(|_| LimitRefusal::InvalidRequest)?.to_be_bytes());
+        for hold in &self.holds {
+            let record = &hold.reservation;
+            bytes.extend(record.limit_id.0);
+            bytes.extend(super::scope_bytes(record.scope));
+            bytes.extend(record.amount.to_be_bytes()); bytes.extend(record.ceiling.to_be_bytes());
+            bytes.extend(record.digest);
+            bytes.extend(hold.denomination.asset);
+            bytes.push(u8::from(hold.denomination.source.is_some()));
+            bytes.extend(hold.denomination.source.unwrap_or([0; 32]));
+        }
+        let digest: [u8; 32] = Sha256::new().chain_update(b"layerx:program-budget:v1\0").chain_update(&bytes).finalize().into();
+        bytes.extend(digest);
+        Ok(bytes)
+    }
+
+    pub fn decode(bytes: &[u8]) -> Result<Self, LimitRefusal> {
+        use layerx_wire::decode::Decoder;
+        fn fixed<const N: usize>(decoder: &mut Decoder<'_>) -> Result<[u8; N], LimitRefusal> {
+            decoder.fixed(N).map_err(|_| LimitRefusal::InvalidRequest)?.try_into().map_err(|_| LimitRefusal::InvalidRequest)
+        }
+        if bytes.len() < 32 || bytes.len() > 5_000_000 { return Err(LimitRefusal::InvalidRequest); }
+        let (body, digest) = bytes.split_at(bytes.len() - 32);
+        let expected: [u8; 32] = Sha256::new().chain_update(b"layerx:program-budget:v1\0").chain_update(body).finalize().into();
+        if digest != expected { return Err(LimitRefusal::InvalidRequest); }
+        let mut decoder = Decoder::new(body, 0);
+        if fixed::<5>(&mut decoder)? != *b"LXPB\x01" { return Err(LimitRefusal::InvalidRequest); }
+        let id = fixed::<32>(&mut decoder)?;
+        let expiry_sequence = u64::from_be_bytes(fixed::<8>(&mut decoder)?);
+        let tag = fixed::<1>(&mut decoder)?[0];
+        let deadline = u64::from_be_bytes(fixed::<8>(&mut decoder)?);
+        let core_deadline = match (tag, deadline) {
+            (0, 0) => None,
+            (1, value) if value != 0 => Some(CoreTimestampMs(value)),
+            _ => return Err(LimitRefusal::InvalidRequest),
+        };
+        let count = usize::from(u16::from_be_bytes(fixed::<2>(&mut decoder)?));
+        if count == 0 || count > 256 { return Err(LimitRefusal::InvalidRequest); }
+        let mut charges = Vec::with_capacity(count);
+        for _ in 0..count {
+            let kind = match fixed::<1>(&mut decoder)?[0] {
+                1 => ProgramChargeKind::Principal,
+                2 => ProgramChargeKind::ProgramSpend,
+                3 => ProgramChargeKind::Fee,
+                _ => return Err(LimitRefusal::InvalidRequest),
+            };
+            let source = fixed::<32>(&mut decoder)?; let asset = fixed::<32>(&mut decoder)?;
+            let amount = u128::from_be_bytes(fixed::<16>(&mut decoder)?);
+            let count = usize::from(u16::from_be_bytes(fixed::<2>(&mut decoder)?));
+            if count == 0 || count > 1024 { return Err(LimitRefusal::InvalidRequest); }
+            let mut applicable_limits = Vec::with_capacity(count);
+            for _ in 0..count { applicable_limits.push(LimitId(fixed::<16>(&mut decoder)?)); }
+            charges.push(ProgramBudgetCharge { kind, source, asset, amount, applicable_limits });
+        }
+        let count = usize::from(u16::from_be_bytes(fixed::<2>(&mut decoder)?));
+        if count == 0 || count > 1024 { return Err(LimitRefusal::InvalidRequest); }
+        let mut holds = Vec::with_capacity(count);
+        for _ in 0..count {
+            let limit_id = LimitId(fixed::<16>(&mut decoder)?);
+            let scope = fixed::<33>(&mut decoder)?;
+            let scope = super::scope_from(scope[0], scope[1..].try_into().map_err(|_| LimitRefusal::InvalidRequest)?)
+                .map_err(|_| LimitRefusal::InvalidRequest)?;
+            let amount = u128::from_be_bytes(fixed::<16>(&mut decoder)?);
+            let ceiling = u128::from_be_bytes(fixed::<16>(&mut decoder)?);
+            let digest = fixed::<32>(&mut decoder)?;
+            let asset = fixed::<32>(&mut decoder)?;
+            let tag = fixed::<1>(&mut decoder)?[0]; let source = fixed::<32>(&mut decoder)?;
+            let source = match (tag, source) {
+                (0, source) if source == [0; 32] => None,
+                (1, source) if source != [0; 32] => Some(source),
+                _ => return Err(LimitRefusal::InvalidRequest),
+            };
+            holds.push(ProgramBudgetHold { denomination: ProgramLimitDenomination { asset, source },
+                reservation: DurableBudgetReservation { reservation_id: id, limit_id, scope, amount, ceiling, expiry_sequence, digest } });
+        }
+        decoder.finish().map_err(|_| LimitRefusal::InvalidRequest)?;
+        let record = Self { id, charges, expiry_sequence, core_deadline, holds };
+        record.validate()?;
+        Ok(record)
+    }
+}
+
+pub struct StagedProgramReservation<'a> {
+    limits: std::sync::MutexGuard<'a, BTreeMap<LimitId, LimitState>>,
+    reserved: BTreeMap<LimitId, LimitState>,
+    record: ProgramBudgetReservation,
+}
+
+impl StagedProgramReservation<'_> {
+    #[must_use]
+    pub fn record(&self) -> &ProgramBudgetReservation { &self.record }
+
+    #[must_use]
+    pub fn publish(mut self) -> ProgramBudgetReservation {
+        *self.limits = self.reserved;
+        self.record
+    }
+}
+
+impl BudgetLimiter {
+    pub(super) fn bind_program_denominations<E: From<LimitRefusal>>(
+        &self,
+        bindings: &[(LimitId, ProgramLimitDenomination, bool, bool)],
+        persist: impl FnOnce() -> Result<(), E>,
+    ) -> Result<(), E> {
+        let mut limits = self.limits.lock().map_err(|_| LimitRefusal::Poisoned)?;
+        let mut bound = limits.clone();
+        for (id, denomination, historical, scalar_allowed) in bindings {
+            let state = bound.get_mut(id).ok_or(LimitRefusal::UnknownLimit(*id))?;
+            if !denomination.valid() || state.denomination.is_some_and(|old| old != *denomination || state.scalar_allowed != *scalar_allowed)
+                || (state.denomination.is_none() && !*historical && (state.config.consumed != 0 || !state.held.is_empty()))
+            {
+                return Err(LimitRefusal::InvalidConfiguration.into());
+            }
+            state.denomination = Some(*denomination);
+            state.scalar_allowed = *scalar_allowed;
+        }
+        for (id, state) in &bound {
+            if state.successor.is_some() {
+                let head = bound.get(&live_head(&bound, *id)?).ok_or(LimitRefusal::InvalidConfiguration)?;
+                if state.denomination != head.denomination || state.scalar_allowed != head.scalar_allowed {
+                    return Err(LimitRefusal::InvalidConfiguration.into());
+                }
+            }
+        }
+        persist()?;
+        *limits = bound;
+        Ok(())
+    }
+
+    pub fn stage_program_reservation(
+        &self, request: &ProgramReservationRequest, core_now: CoreTimestampMs,
+    ) -> Result<StagedProgramReservation<'_>, LimitRefusal> {
+        if request.id == [0; 32] || request.expiry_sequence <= request.current_sequence
+            || request.core_deadline.is_some_and(|deadline| deadline <= core_now)
+        { return Err(LimitRefusal::InvalidRequest); }
+        let totals = program_totals(&request.charges)?;
+        let limits = self.limits.lock().map_err(|_| LimitRefusal::Poisoned)?;
+        if limits.values().any(|limit| limit.held.contains_key(&request.id)) { return Err(LimitRefusal::InvalidRequest); }
+        let mut reserved = limits.clone();
+        let mut holds = Vec::new();
+        for (id, amount) in totals {
+            let denomination = reserved.get(&id).ok_or(LimitRefusal::UnknownLimit(id))?
+                .denomination.ok_or(LimitRefusal::InvalidConfiguration)?;
+            if request.charges.iter().filter(|charge| charge.applicable_limits.contains(&id))
+                .any(|charge| !denomination.matches(charge.source, charge.asset))
+            { return Err(LimitRefusal::InvalidConfiguration); }
+            let held = reserve_into(&mut reserved, &ReservationRequest {
+                id: request.id, amount, expiry_sequence: request.expiry_sequence,
+                current_sequence: request.current_sequence, applicable_limits: vec![id],
+            }, request.core_deadline, true)?;
+            for reservation in held.durable { holds.push(ProgramBudgetHold { denomination, reservation }); }
+        }
+        let record = ProgramBudgetReservation { id: request.id, charges: request.charges.clone(),
+            expiry_sequence: request.expiry_sequence, core_deadline: request.core_deadline, holds };
+        record.validate()?;
+        Ok(StagedProgramReservation { limits, reserved, record })
+    }
+
+    pub fn restore_program_reservation(&self, record: &ProgramBudgetReservation) -> Result<(), LimitRefusal> {
+        record.validate()?;
+        let mut limits = self.limits.lock().map_err(|_| LimitRefusal::Poisoned)?;
+        let mut restored = limits.clone();
+        if restored.values().any(|limit| limit.held.contains_key(&record.id)) { return Err(LimitRefusal::InvalidRequest); }
+        for held in &record.holds {
+            let row = &held.reservation;
+            let limit = restored.get_mut(&row.limit_id).ok_or(LimitRefusal::UnknownLimit(row.limit_id))?;
+            if limit.denomination != Some(held.denomination) || limit.config.scope != row.scope || limit.config.ceiling != row.ceiling {
+                return Err(LimitRefusal::InvalidConfiguration);
+            }
+            limit.held.insert(record.id, Hold { amount: row.amount, expiry_sequence: row.expiry_sequence, core_deadline: record.core_deadline });
+        }
+        for (id, limit) in &restored {
+            if limit.config.consumed.checked_add(lineage_held(&restored, *id)?).ok_or(LimitRefusal::Arithmetic)? > limit.config.ceiling {
+                return Err(LimitRefusal::InvalidConfiguration);
+            }
+        }
+        *limits = restored;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod renewal_publication_tests {
     use std::cell::Cell;
@@ -873,5 +1188,150 @@ mod renewal_publication_tests {
             Some(0_u128.to_be_bytes().to_vec())
         );
         let _ = std::fs::remove_dir_all(root);
+    }
+}
+
+#[cfg(test)]
+mod program_budget_tests {
+    use super::*;
+    use crate::store::{ObjectKind, Store, TenantId, TenantKey};
+
+    fn must<T, E: std::fmt::Debug>(result: Result<T, E>) -> T {
+        result.unwrap_or_else(|error| panic!("program budget: {error:?}"))
+    }
+
+    fn limiter() -> BudgetLimiter {
+        must(BudgetLimiter::new((1..=2).map(|id| LimitConfig {
+            id: LimitId([id; 16]), name: format!("asset-{id}"),
+            scope: LimitScope::Tenant([9; 32]), ceiling: 100, consumed: 0,
+        }).collect()))
+    }
+
+    fn bind(limiter: &BudgetLimiter) {
+        must(limiter.bind_program_denominations(&[
+            (LimitId([1; 16]), ProgramLimitDenomination { asset: [1; 32], source: None }, false, false),
+            (LimitId([2; 16]), ProgramLimitDenomination { asset: [2; 32], source: None }, false, false),
+        ], || Ok::<(), LimitRefusal>(())));
+    }
+
+    fn request() -> ProgramReservationRequest {
+        ProgramReservationRequest {
+            id: [3; 32], expiry_sequence: 90, current_sequence: 10,
+            core_deadline: Some(CoreTimestampMs(900)),
+            charges: vec![
+                ProgramBudgetCharge { kind: ProgramChargeKind::Principal, source: [7; 32], asset: [1; 32], amount: 20, applicable_limits: vec![LimitId([1; 16])] },
+                ProgramBudgetCharge { kind: ProgramChargeKind::Fee, source: [7; 32], asset: [1; 32], amount: 5, applicable_limits: vec![LimitId([1; 16])] },
+                ProgramBudgetCharge { kind: ProgramChargeKind::ProgramSpend, source: [8; 32], asset: [2; 32], amount: 80, applicable_limits: vec![LimitId([2; 16])] },
+            ],
+        }
+    }
+
+    #[test]
+    fn denominations_refuse_legacy_and_cross_asset_sums_without_publishing() {
+        let budgets = limiter();
+        assert!(matches!(budgets.stage_program_reservation(&request(), CoreTimestampMs(1)), Err(LimitRefusal::InvalidConfiguration)));
+        assert_eq!(budgets.held_reservations(), Ok(0));
+        bind(&budgets);
+        let mut invalid = request();
+        invalid.charges[2].applicable_limits = vec![LimitId([1; 16])];
+        assert!(matches!(budgets.stage_program_reservation(&invalid, CoreTimestampMs(1)), Err(LimitRefusal::InvalidConfiguration)));
+        assert_eq!(budgets.held_reservations(), Ok(0));
+        invalid = request();
+        invalid.charges[2].amount = 101;
+        assert!(matches!(budgets.stage_program_reservation(&invalid, CoreTimestampMs(1)), Err(LimitRefusal::Exceeded { .. })));
+        assert_eq!(budgets.held_reservations(), Ok(0));
+        let stage = must(budgets.stage_program_reservation(&request(), CoreTimestampMs(1)));
+        assert_eq!(stage.record().holds[0].reservation.amount, 25);
+        assert_eq!(stage.record().holds[1].reservation.amount, 80);
+        drop(stage);
+        assert_eq!(budgets.held_reservations(), Ok(0));
+    }
+
+    #[test]
+    fn one_asset_source_preserves_distinct_counterparty_limits_and_global_total() {
+        let budgets = limiter();
+        must(budgets.bind_program_denominations(&[
+            (LimitId([1;16]),ProgramLimitDenomination{asset:[1;32],source:None},false,false),
+            (LimitId([2;16]),ProgramLimitDenomination{asset:[1;32],source:None},false,false),
+        ],||Ok::<(),LimitRefusal>(())));
+        let request = ProgramReservationRequest { id:[7;32],expiry_sequence:90,current_sequence:1,core_deadline:None,
+            charges:vec![
+                ProgramBudgetCharge{kind:ProgramChargeKind::Principal,source:[8;32],asset:[1;32],amount:30,applicable_limits:vec![LimitId([1;16])]},
+                ProgramBudgetCharge{kind:ProgramChargeKind::Principal,source:[8;32],asset:[1;32],amount:20,applicable_limits:vec![LimitId([1;16]),LimitId([2;16])]},
+            ]};
+        let stage=must(budgets.stage_program_reservation(&request,CoreTimestampMs(1)));
+        assert_eq!(stage.record().holds[0].reservation.amount,50);
+        assert_eq!(stage.record().holds[1].reservation.amount,20);
+        assert_eq!(must(ProgramBudgetReservation::decode(&must(stage.record().encode()))),stage.record().clone());
+        drop(stage);
+        assert_eq!(budgets.held_reservations(),Ok(0));
+    }
+
+    #[test]
+    fn typed_limits_refuse_scalar_reuse_and_source_deadline_changes() {
+        let budgets = limiter();
+        let legacy_request = ReservationRequest { id: [4; 32], amount: 1,
+            expiry_sequence: 90, current_sequence: 1, applicable_limits: vec![LimitId([1; 16])] };
+        let legacy = must(super::reserve_all(&budgets, &legacy_request));
+        assert!(budgets.bind_program_denominations(&[
+            (LimitId([1; 16]), ProgramLimitDenomination { asset: [1; 32], source: None }, false, false),
+        ], || Ok::<(), LimitRefusal>(())).is_err());
+        assert!(must(budgets.stage_release(legacy_request.id, ReleaseKind::Failed, 1)).publish());
+        bind(&budgets);
+        assert!(super::reserve_all(&budgets, &legacy_request).is_err());
+        assert!(super::restore_all(&budgets, &legacy.durable).is_err());
+        assert!(budgets.bind_program_denominations(&[
+            (LimitId([1; 16]), ProgramLimitDenomination { asset: [1; 32], source: None }, true, true),
+        ], || Ok::<(), LimitRefusal>(())).is_err());
+        let mut expired = request(); expired.core_deadline = Some(CoreTimestampMs(1));
+        assert!(matches!(budgets.stage_program_reservation(&expired, CoreTimestampMs(1)), Err(LimitRefusal::InvalidRequest)));
+        expired = request(); expired.expiry_sequence = expired.current_sequence;
+        assert!(matches!(budgets.stage_program_reservation(&expired, CoreTimestampMs(1)), Err(LimitRefusal::InvalidRequest)));
+        let exact = limiter();
+        must(exact.bind_program_denominations(&[
+            (LimitId([1; 16]), ProgramLimitDenomination { asset: [1; 32], source: Some([9; 32]) }, false, false),
+            (LimitId([2; 16]), ProgramLimitDenomination { asset: [2; 32], source: None }, false, false),
+        ], || Ok::<(), LimitRefusal>(())));
+        assert!(matches!(exact.stage_program_reservation(&request(), CoreTimestampMs(1)), Err(LimitRefusal::InvalidConfiguration)));
+        assert_eq!(exact.held_reservations(), Ok(0));
+    }
+
+    #[test]
+    fn typed_batch_persists_and_recovers_identical_asset_source_fee_and_deadline() {
+        let suffix = must(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)).as_nanos();
+        let root = std::env::temp_dir().join(format!("program-budget-{}-{suffix}", std::process::id()));
+        let mut store = must(Store::open(&root));
+        let tenant = must(TenantId::new("program-budget"));
+        let key = must(TenantKey::new(tenant.clone(), ObjectKind::Configuration, b"prepared-program".to_vec()));
+        let absent = must(TenantKey::new(tenant, ObjectKind::Configuration, b"absent".to_vec()));
+        let budgets = limiter(); bind(&budgets);
+        let stage = must(budgets.stage_program_reservation(&request(), CoreTimestampMs(1)));
+        let bytes = must(stage.record().encode());
+        assert!(store.update_local_batch(vec![(absent, bytes.clone())]).is_err());
+        drop(stage);
+        assert_eq!(budgets.held_reservations(), Ok(0));
+        let stage = must(budgets.stage_program_reservation(&request(), CoreTimestampMs(1)));
+        must(store.put_local(key.clone(), must(stage.record().encode())));
+        let record = stage.publish();
+        assert_eq!(budgets.held_exposure(LimitId([1; 16])), Ok(25));
+        assert_eq!(budgets.held_exposure(LimitId([2; 16])), Ok(80));
+        drop(store); drop(budgets);
+        let store = must(Store::open(&root));
+        let bytes = store.get(&key).unwrap_or_else(|| panic!("durable Program record missing")).bytes();
+        let restored_record = must(ProgramBudgetReservation::decode(bytes));
+        assert_eq!(restored_record, record);
+        let restarted = limiter(); bind(&restarted);
+        must(restarted.restore_program_reservation(&restored_record));
+        assert_eq!(restarted.held_exposure(LimitId([1; 16])), Ok(25));
+        assert_eq!(restarted.held_exposure(LimitId([2; 16])), Ok(80));
+        assert!(restarted.restore_program_reservation(&restored_record).is_err());
+        assert!(!must(restarted.stage_release(record.id, ReleaseKind::Unknown, 90)).publish());
+        assert_eq!(restarted.held_reservations(), Ok(2));
+        let mut corrupt = bytes.to_vec(); corrupt[10] ^= 1;
+        assert!(ProgramBudgetReservation::decode(&corrupt).is_err());
+        assert!(ProgramBudgetReservation::decode(b"legacy scalar reservation").is_err());
+        assert!(must(restarted.stage_release(record.id, ReleaseKind::Failed, 90)).publish());
+        assert_eq!(restarted.consumed(LimitId([1; 16])), Ok(0));
+        drop(store); must(std::fs::remove_dir_all(root));
     }
 }

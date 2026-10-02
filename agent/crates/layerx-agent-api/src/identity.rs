@@ -100,6 +100,335 @@ impl SessionId {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ActivityType(pub u16);
 
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct NativeActivity {
+    pub module: u16,
+    pub ordinal: u16,
+}
+
+impl NativeActivity {
+    pub const VERSION: u8 = 1;
+
+    pub fn new(module: u16, ordinal: u16) -> Result<Self, ContractError> {
+        Self { module, ordinal }.validate()
+    }
+
+    pub fn validate(self) -> Result<Self, ContractError> {
+        self.activity_type()?;
+        Ok(self)
+    }
+
+    pub fn activity_type(self) -> Result<layerx_types::payload::ActivityType, ContractError> {
+        let module = layerx_types::payload::ModuleId::from_u16(self.module)
+            .map_err(|_| ContractError::Malformed("native_activity.module"))?;
+        layerx_types::payload::ActivityType::new(module, self.ordinal)
+            .map_err(|_| ContractError::Zero("native_activity.ordinal"))
+    }
+
+    pub fn encode(self) -> Result<[u8; 5], ContractError> {
+        self.validate()?;
+        let module = self.module.to_be_bytes();
+        let ordinal = self.ordinal.to_be_bytes();
+        Ok([Self::VERSION, module[0], module[1], ordinal[0], ordinal[1]])
+    }
+
+    pub fn decode(bytes: &[u8]) -> Result<Self, ContractError> {
+        let bytes: &[u8; 5] = bytes
+            .try_into()
+            .map_err(|_| ContractError::Malformed("native_activity.length"))?;
+        if bytes[0] != Self::VERSION {
+            return Err(ContractError::Malformed("native_activity.version"));
+        }
+        Self::new(
+            u16::from_be_bytes([bytes[1], bytes[2]]),
+            u16::from_be_bytes([bytes[3], bytes[4]]),
+        )
+    }
+}
+
+impl From<layerx_types::payload::ActivityType> for NativeActivity {
+    fn from(value: layerx_types::payload::ActivityType) -> Self {
+        Self {
+            module: value.module() as u16,
+            ordinal: value.ordinal(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativePreparationPurposeV1 {
+    pub tenant: TenantId,
+    pub agent_did: AgentDid,
+    pub session_id: SessionId,
+    pub generation: u64,
+    pub expires_at_ms: u64,
+    pub capability_id: CapabilityId,
+    pub preparation_id: [u8; 32],
+    pub canonical_digest: [u8; 32],
+    pub commitment: [u8; 32],
+}
+
+impl NativePreparationPurposeV1 {
+    pub const VERSION: u8 = 1;
+    pub const DOMAIN: &'static [u8] = b"LayerX/native/preparation-purpose/v1\0";
+
+    pub fn validate(self) -> Result<Self, ContractError> {
+        self.validate_fields()?;
+        Ok(self)
+    }
+
+    fn validate_fields(&self) -> Result<(), ContractError> {
+        let tenant = self.tenant.as_str().as_bytes();
+        if tenant.is_empty() || tenant.len() > 255 || tenant.contains(&0) {
+            return Err(ContractError::Malformed("tenant"));
+        }
+        layerx_types::ids::Did::new(self.agent_did.as_str().as_bytes())
+            .map_err(|_| ContractError::Malformed("agent_did"))?;
+        self.session_id.to_bytes()?;
+        self.capability_id.to_bytes()?;
+        if self.generation == 0 {
+            return Err(ContractError::Zero("generation"));
+        }
+        if self.expires_at_ms == 0 {
+            return Err(ContractError::Zero("expires_at_ms"));
+        }
+        Ok(())
+    }
+
+    pub fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, ContractError> {
+        let rest = bytes.strip_prefix(Self::DOMAIN)
+            .ok_or(ContractError::Malformed("native_purpose.domain"))?;
+        let (version, rest) = rest.split_first()
+            .ok_or(ContractError::Malformed("native_purpose.version"))?;
+        if *version != Self::VERSION {
+            return Err(ContractError::Malformed("native_purpose.version"));
+        }
+        let (tenant, rest) = native_purpose_text(rest, 255, "tenant")?;
+        let (agent, rest) = native_purpose_text(
+            rest, layerx_types::limits::MAX_DID_BYTES, "agent_did",
+        )?;
+        if rest.len() != 176 {
+            return Err(ContractError::Malformed("native_purpose.length"));
+        }
+        let session: [u8; 32] = native_purpose_fixed(&rest[..32])?;
+        let capability: [u8; 32] = native_purpose_fixed(&rest[48..80])?;
+        let value = Self {
+            tenant: TenantId::new(tenant)?,
+            agent_did: AgentDid::new(agent)?,
+            session_id: SessionId::new(native_purpose_hex32(&session))?,
+            generation: u64::from_be_bytes(native_purpose_fixed(&rest[32..40])?),
+            expires_at_ms: u64::from_be_bytes(native_purpose_fixed(&rest[40..48])?),
+            capability_id: CapabilityId::new(native_purpose_hex32(&capability))?,
+            preparation_id: native_purpose_fixed(&rest[80..112])?,
+            canonical_digest: native_purpose_fixed(&rest[112..144])?,
+            commitment: native_purpose_fixed(&rest[144..176])?,
+        }.validate()?;
+        if value.canonical_bytes()?.as_slice() != bytes {
+            return Err(ContractError::Malformed("native_purpose.canonical_bytes"));
+        }
+        Ok(value)
+    }
+
+    pub fn canonical_bytes(&self) -> Result<Vec<u8>, ContractError> {
+        self.validate_fields()?;
+        let mut bytes = Self::DOMAIN.to_vec();
+        bytes.push(Self::VERSION);
+        for (field, value) in [
+            ("tenant", self.tenant.as_str()),
+            ("agent_did", self.agent_did.as_str()),
+        ] {
+            let length = u32::try_from(value.len())
+                .map_err(|_| ContractError::OutOfRange(field))?;
+            bytes.extend_from_slice(&length.to_be_bytes());
+            bytes.extend_from_slice(value.as_bytes());
+        }
+        bytes.extend_from_slice(&self.session_id.to_bytes()?);
+        bytes.extend_from_slice(&self.generation.to_be_bytes());
+        bytes.extend_from_slice(&self.expires_at_ms.to_be_bytes());
+        bytes.extend_from_slice(&self.capability_id.to_bytes()?);
+        bytes.extend_from_slice(&self.preparation_id);
+        bytes.extend_from_slice(&self.canonical_digest);
+        bytes.extend_from_slice(&self.commitment);
+        Ok(bytes)
+    }
+}
+
+fn native_purpose_text<'a>(
+    bytes: &'a [u8],
+    maximum: usize,
+    field: &'static str,
+) -> Result<(&'a str, &'a [u8]), ContractError> {
+    let (length, rest) = bytes.split_first_chunk::<4>()
+        .ok_or(ContractError::Malformed(field))?;
+    let length = usize::try_from(u32::from_be_bytes(*length))
+        .map_err(|_| ContractError::OutOfRange(field))?;
+    if length == 0 || length > maximum {
+        return Err(ContractError::OutOfRange(field));
+    }
+    let (text, rest) = rest.split_at_checked(length)
+        .ok_or(ContractError::Malformed(field))?;
+    let text = core::str::from_utf8(text).map_err(|_| ContractError::Malformed(field))?;
+    Ok((text, rest))
+}
+
+fn native_purpose_fixed<const N: usize>(bytes: &[u8]) -> Result<[u8; N], ContractError> {
+    bytes.try_into().map_err(|_| ContractError::Malformed("native_purpose.length"))
+}
+
+fn native_purpose_hex32(bytes: &[u8; 32]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut text = String::with_capacity(64);
+    for byte in bytes {
+        text.push(char::from(HEX[usize::from(byte >> 4)]));
+        text.push(char::from(HEX[usize::from(byte & 15)]));
+    }
+    text
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SignedNativePreparationPurposeV1 {
+    pub purpose: NativePreparationPurposeV1,
+    pub owner_public_key: [u8; 32],
+    pub signature: [u8; 64],
+}
+
+impl SignedNativePreparationPurposeV1 {
+    pub fn validate(self) -> Result<Self, ContractError> {
+        Ok(Self {
+            purpose: self.purpose.validate()?,
+            owner_public_key: self.owner_public_key,
+            signature: self.signature,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeLocalGrantConsentV1 {
+    pub capability: Vec<u8>,
+    pub session_scope: Vec<u8>,
+    pub expires_at_ms: u64,
+    pub owner_public_key: [u8; 32],
+    pub signature: [u8; 64],
+}
+
+impl NativeLocalGrantConsentV1 {
+    pub const MAX_RECORD_BYTES: usize = 1_048_576;
+
+    pub fn validate(&self) -> Result<(), ContractError> {
+        for (name, record) in [
+            ("capability", &self.capability),
+            ("session_scope", &self.session_scope),
+        ] {
+            if record.is_empty() {
+                return Err(ContractError::Empty(name));
+            }
+            if record.len() > Self::MAX_RECORD_BYTES {
+                return Err(ContractError::OutOfRange(name));
+            }
+        }
+        if self.expires_at_ms == 0 {
+            return Err(ContractError::Zero("expires_at_ms"));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativePrepareRequestV1 {
+    pub activity: NativeActivity,
+    pub actor: AgentDid,
+    pub authority: String,
+    pub account_sequence: u64,
+    pub not_before: u64,
+    pub not_after: u64,
+    pub idempotency_key: [u8; 32],
+    pub fee_limit: u128,
+    pub payload: Vec<u8>,
+    pub payload_hash: [u8; 32],
+    pub capability_id: CapabilityId,
+    pub purpose: SignedNativePreparationPurposeV1,
+    pub local_grant: Option<NativeLocalGrantConsentV1>,
+}
+
+impl NativePrepareRequestV1 {
+    pub fn validate(self) -> Result<Self, ContractError> {
+        if self.activity.activity_type()?.module() != layerx_types::payload::ModuleId::Programs {
+            return Err(ContractError::Mismatch("native_prepare.module"));
+        }
+        layerx_types::ids::Did::new(self.actor.as_str().as_bytes())
+            .map_err(|_| ContractError::Malformed("actor"))?;
+        if self.authority.is_empty() {
+            return Err(ContractError::Empty("authority"));
+        }
+        if self.authority.len() > layerx_types::limits::MAX_AUTHORITY_BYTES {
+            return Err(ContractError::OutOfRange("authority"));
+        }
+        if self.not_after < self.not_before {
+            return Err(ContractError::OutOfRange("timestamp_bound"));
+        }
+        if self.payload.is_empty() {
+            return Err(ContractError::Empty("payload"));
+        }
+        if self.payload.len() > layerx_types::limits::MAX_PAYLOAD_BYTES {
+            return Err(ContractError::OutOfRange("payload"));
+        }
+        self.capability_id.to_bytes()?;
+        if self.actor != self.purpose.purpose.agent_did {
+            return Err(ContractError::Mismatch("actor"));
+        }
+        if self.capability_id != self.purpose.purpose.capability_id {
+            return Err(ContractError::Mismatch("capability_id"));
+        }
+        if let Some(local_grant) = &self.local_grant {
+            local_grant.validate()?;
+        }
+        Ok(Self {
+            purpose: self.purpose.validate()?,
+            ..self
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct NativeApprovalListV1;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NativeApprovalGetV1 {
+    pub approval_id: [u8; 32],
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NativeApprovalDecisionV1 {
+    pub approval_id: [u8; 32],
+    pub held_digest: [u8; 32],
+    pub current_sequence: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativePrepareResultV1 {
+    pub preparation_id: [u8; 32],
+    pub canonical_bytes: Vec<u8>,
+    pub signing_preimage: [u8; 32],
+    pub activity: NativeActivity,
+    pub approval_required: bool,
+    pub approval_id: Option<[u8; 32]>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeApprovalResultV1 {
+    pub approval_id: [u8; 32],
+    pub held_digest: [u8; 32],
+    pub activity: NativeActivity,
+    pub state: String,
+    pub submission_ref: Option<[u8; 32]>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeApprovalListResultV1 {
+    pub approvals: Vec<NativeApprovalResultV1>,
+}
+
 /// A restriction dimension that a caller must supply explicitly.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExplicitSet<T>(Vec<T>);
@@ -873,6 +1202,182 @@ mod tests {
             IntentCarrier::classify(&[]),
             Err(PolicyIntentError::Empty("canonical_intent"))
         );
+        Ok(())
+    }
+}
+
+
+#[cfg(test)]
+mod native_contract_tests {
+    use super::{
+        AgentDid, CapabilityId, ContractError, NativeActivity, NativePreparationPurposeV1,
+        SessionId, TenantId,
+    };
+    use layerx_types::payload::{ActivityType as CoreActivityType, ModuleId};
+
+    fn purpose() -> Result<NativePreparationPurposeV1, ContractError> {
+        NativePreparationPurposeV1 {
+            tenant: TenantId::new("tenant-a")?,
+            agent_did: AgentDid::new("did:layerx:alice")?,
+            session_id: SessionId::new("11".repeat(32))?,
+            generation: 1,
+            expires_at_ms: 1000,
+            capability_id: CapabilityId::new("22".repeat(32))?,
+            preparation_id: [3; 32],
+            canonical_digest: [4; 32],
+            commitment: [5; 32],
+        }
+        .validate()
+    }
+
+    #[test]
+    fn native_activity_round_trips_real_modules_and_full_ordinals() -> Result<(), ContractError> {
+        for module in ModuleId::ALL {
+            for ordinal in [1, 256, u16::MAX] {
+                let activity = NativeActivity::new(module as u16, ordinal)?;
+                let core = activity.activity_type()?;
+                assert_eq!(core.module(), module);
+                assert_eq!(core.ordinal(), ordinal);
+                assert_eq!(NativeActivity::from(core), activity);
+                assert_eq!(NativeActivity::decode(&activity.encode()?)?, activity);
+            }
+        }
+        assert_eq!(NativeActivity::new(9, 258)?.encode()?, [1, 0, 9, 1, 2]);
+        Ok(())
+    }
+
+    #[test]
+    fn native_activity_refuses_unknown_module_zero_ordinal_version_and_length() {
+        for module in [0, 12, u16::MAX] {
+            assert_eq!(
+                NativeActivity::new(module, 1),
+                Err(ContractError::Malformed("native_activity.module"))
+            );
+            assert!(NativeActivity { module, ordinal: 1 }.encode().is_err());
+        }
+        assert_eq!(
+            NativeActivity::new(1, 0),
+            Err(ContractError::Zero("native_activity.ordinal"))
+        );
+        for bytes in [
+            &[0, 0, 1, 0, 1][..],
+            &[2, 0, 1, 0, 1][..],
+            &[1, 0, 12, 0, 1][..],
+            &[1, 0, 1, 0, 0][..],
+            &[1, 0, 1, 0][..],
+            &[1, 0, 1, 0, 1, 0][..],
+            &[][..],
+        ] {
+            assert!(NativeActivity::decode(bytes).is_err());
+        }
+    }
+
+    #[test]
+    fn native_activity_preserves_module_identity_for_equal_ordinals() -> Result<(), ContractError> {
+        let asset = NativeActivity::new(1, 1)?;
+        let budget = NativeActivity::new(3, 1)?;
+        assert_ne!(asset, budget);
+        assert_ne!(asset.encode()?, budget.encode()?);
+        assert_ne!(asset.activity_type()?, budget.activity_type()?);
+        assert_eq!(
+            CoreActivityType::from_u32(0x0003_0001).map(NativeActivity::from),
+            Ok(budget)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn native_purpose_canonical_bytes_bind_exact_identity_and_commitment() -> Result<(), ContractError> {
+        let value = purpose()?;
+        let mut expected = NativePreparationPurposeV1::DOMAIN.to_vec();
+        expected.push(1);
+        expected.extend_from_slice(&8_u32.to_be_bytes());
+        expected.extend_from_slice(b"tenant-a");
+        expected.extend_from_slice(&16_u32.to_be_bytes());
+        expected.extend_from_slice(b"did:layerx:alice");
+        expected.extend_from_slice(&[0x11; 32]);
+        expected.extend_from_slice(&1_u64.to_be_bytes());
+        expected.extend_from_slice(&1000_u64.to_be_bytes());
+        expected.extend_from_slice(&[0x22; 32]);
+        expected.extend_from_slice(&[3; 32]);
+        expected.extend_from_slice(&[4; 32]);
+        expected.extend_from_slice(&[5; 32]);
+        assert_eq!(value.canonical_bytes()?, expected);
+        for field in 0..9 {
+            let mut changed = value.clone();
+            match field {
+                0 => changed.tenant = TenantId::new("tenant-b")?,
+                1 => changed.agent_did = AgentDid::new("did:layerx:bob")?,
+                2 => changed.session_id = SessionId::new("33".repeat(32))?,
+                3 => changed.generation = 2,
+                4 => changed.capability_id = CapabilityId::new("44".repeat(32))?,
+                5 => changed.preparation_id[0] ^= 1,
+                6 => changed.canonical_digest[0] ^= 1,
+                7 => changed.commitment[0] ^= 1,
+                8 => changed.expires_at_ms = 1001,
+                _ => unreachable!(),
+            }
+            assert_ne!(changed.canonical_bytes()?, expected);
+        }
+        let mut first = value.clone();
+        first.tenant = TenantId::new("ab")?;
+        first.agent_did = AgentDid::new("c")?;
+        let mut second = value;
+        second.tenant = TenantId::new("a")?;
+        second.agent_did = AgentDid::new("bc")?;
+        assert_ne!(first.canonical_bytes()?, second.canonical_bytes()?);
+        Ok(())
+    }
+
+    #[test]
+    fn native_purpose_canonical_decoder_refuses_truncation_trailing_version_and_text() -> Result<(), ContractError> {
+        let value = purpose()?;
+        let bytes = value.canonical_bytes()?;
+        assert_eq!(NativePreparationPurposeV1::from_canonical_bytes(&bytes)?, value);
+        for length in 0..bytes.len() {
+            assert!(NativePreparationPurposeV1::from_canonical_bytes(&bytes[..length]).is_err());
+        }
+        let mut trailing = bytes.clone();
+        trailing.push(0);
+        assert!(NativePreparationPurposeV1::from_canonical_bytes(&trailing).is_err());
+        let mut version = bytes.clone();
+        version[NativePreparationPurposeV1::DOMAIN.len()] = 2;
+        assert!(NativePreparationPurposeV1::from_canonical_bytes(&version).is_err());
+        let mut invalid_text = bytes.clone();
+        invalid_text[NativePreparationPurposeV1::DOMAIN.len() + 5] = 0xff;
+        assert!(NativePreparationPurposeV1::from_canonical_bytes(&invalid_text).is_err());
+        let mut nul_tenant = bytes.clone();
+        nul_tenant[NativePreparationPurposeV1::DOMAIN.len() + 5] = 0;
+        assert!(NativePreparationPurposeV1::from_canonical_bytes(&nul_tenant).is_err());
+        let mut length = bytes;
+        let offset = NativePreparationPurposeV1::DOMAIN.len() + 1;
+        length[offset..offset + 4].copy_from_slice(&256_u32.to_be_bytes());
+        assert!(NativePreparationPurposeV1::from_canonical_bytes(&length).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn native_purpose_refuses_noncanonical_identifiers_zero_generation_and_zero_expiry() -> Result<(), ContractError> {
+        let valid = purpose()?;
+        for field in 0..7 {
+            let mut invalid = valid.clone();
+            match field {
+                0 => invalid.session_id = SessionId::new("AA".repeat(32))?,
+                1 => invalid.capability_id = CapabilityId::new("ab")?,
+                2 => invalid.generation = 0,
+                6 => invalid.expires_at_ms = 0,
+                3 => invalid.tenant = TenantId::new("bad\0tenant")?,
+                4 => invalid.tenant = TenantId::new("a".repeat(256))?,
+                5 => {
+                    invalid.agent_did = AgentDid::new(
+                        "a".repeat(layerx_types::limits::MAX_DID_BYTES + 1),
+                    )?;
+                }
+                _ => unreachable!(),
+            }
+            assert!(invalid.canonical_bytes().is_err());
+            assert!(invalid.validate().is_err());
+        }
         Ok(())
     }
 }

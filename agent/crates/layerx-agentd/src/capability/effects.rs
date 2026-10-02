@@ -9,6 +9,9 @@ pub enum AuthorizationKind {
     SupplyCap,
     PerDrawMaximum,
     GrantAllowance,
+    ProgramTransferMaximum,
+    ProgramSpendMaximum,
+    ProgramExitRoute,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -49,6 +52,29 @@ pub enum EffectsError {
     UnexpectedRevokeBalance,
     RevokeBalanceMismatch,
     Overflow,
+    InvalidProgramCapabilities,
+    InvalidProgramDisclosure,
+    ProgramExitContextRequired,
+    UnboundedProgramExit,
+    UnboundedLegacyProgramCall,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ProgramValueSource {
+    Principal,
+    Program {
+        owner_program: [u8; 32],
+        seed: Vec<u8>,
+        source_account: [u8; 32],
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProgramSpendBound {
+    pub source: ProgramValueSource,
+    pub asset: [u8; 32],
+    pub destination: [u8; 32],
+    pub maximum_amount: u128,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -57,9 +83,15 @@ pub struct SemanticPlan {
     gross_per_asset: BTreeMap<[u8; 32], u128>,
     participants: BTreeSet<[u8; 32]>,
     rate_actions: u32,
+    program_spend_bounds: Vec<ProgramSpendBound>,
 }
 
 impl SemanticPlan {
+    #[must_use]
+    pub fn program_spend_bounds(&self) -> &[ProgramSpendBound] {
+        &self.program_spend_bounds
+    }
+
     #[must_use]
     pub fn effects(&self) -> &[Effect] {
         &self.effects
@@ -86,6 +118,7 @@ impl SemanticPlan {
             gross_per_asset: BTreeMap::new(),
             participants: BTreeSet::new(),
             rate_actions: 1,
+            program_spend_bounds: Vec::new(),
         }
     }
 
@@ -152,6 +185,14 @@ pub fn derive(
     disclosure: &Disclosure,
     verified: &VerifiedInputs,
 ) -> Result<SemanticPlan, EffectsError> {
+    if matches!(disclosure.native_operation,
+        Some(DisclosedNativeOperation::ProgramDeploy(_)
+            | DisclosedNativeOperation::ProgramUpgrade(_)
+            | DisclosedNativeOperation::ProgramCall(_)
+            | DisclosedNativeOperation::ProgramWindDown(_)
+            | DisclosedNativeOperation::LegacyProgramCall(_))) {
+        disclosure.reencode().map_err(|_| EffectsError::InvalidProgramDisclosure)?;
+    }
     if disclosure.payment.is_none() && disclosure.native_operation.is_none() {
         return Err(EffectsError::Unsupported(untyped_kind(disclosure)));
     }
@@ -258,6 +299,37 @@ fn native_effects(
     verified: &VerifiedInputs,
 ) -> Result<(), EffectsError> {
     match native {
+        DisclosedNativeOperation::ProgramDeploy(_)
+        | DisclosedNativeOperation::ProgramUpgrade(_) => {}
+        DisclosedNativeOperation::ProgramCall(call) => program_call_effects(plan, call)?,
+        DisclosedNativeOperation::LegacyProgramCall(call) => {
+            if call.capabilities().as_slice().iter().any(|capability| matches!(capability,
+                layerx_types::intent::CapabilityRequest::Transfer
+                | layerx_types::intent::CapabilityRequest::Compose)) {
+                return Err(EffectsError::UnboundedLegacyProgramCall);
+            }
+        }
+        DisclosedNativeOperation::ProgramWindDown(value) => {
+            use layerx_crypto::disclosure::DisclosedProgramWindDownOperation;
+            match &value.operation {
+                DisclosedProgramWindDownOperation::Route { account, asset, destination, seed } => {
+                    let program = layerx_programs_runtime::ProgramId::new(value.program_id.bytes())
+                        .map_err(|_| EffectsError::InvalidProgramDisclosure)?;
+                    if !layerx_programs_runtime::accounts::derive_program_account(program, seed)
+                        .is_ok_and(|derived| derived.matches(account)) {
+                        return Err(EffectsError::InvalidProgramDisclosure);
+                    }
+                    plan.participants.insert(*account);
+                    plan.authorize(AuthorizationKind::ProgramExitRoute, *destination, Some(*asset), 0);
+                }
+                DisclosedProgramWindDownOperation::Deprecate { .. }
+                | DisclosedProgramWindDownOperation::Tombstone => {}
+                DisclosedProgramWindDownOperation::Exit { .. } =>
+                    return Err(EffectsError::UnboundedProgramExit),
+                DisclosedProgramWindDownOperation::BoundedExit { .. } =>
+                    return Err(EffectsError::ProgramExitContextRequired),
+            }
+        }
         DisclosedNativeOperation::IdentityRegistration(_)
         | DisclosedNativeOperation::RecoveryPolicy(_)
         | DisclosedNativeOperation::OwnerRotation(_) => {}
@@ -301,6 +373,46 @@ fn native_effects(
                 balance,
             )?;
         }
+    }
+    Ok(())
+}
+
+fn program_call_effects(
+    plan: &mut SemanticPlan,
+    call: &layerx_crypto::disclosure::DisclosedProgramCall,
+) -> Result<(), EffectsError> {
+    use layerx_programs_runtime::abi::{Capability, CapabilitySet};
+    use layerx_programs_runtime::abi_policy::{capability_encoding, CapabilityEncoding};
+    let grants = match capability_encoding(call.guest_abi)
+        .map_err(|_| EffectsError::InvalidProgramCapabilities)? {
+        CapabilityEncoding::V1 => CapabilitySet::decode_canonical(&call.capabilities),
+        CapabilityEncoding::V2 => CapabilitySet::decode_v2_canonical(&call.capabilities),
+    }.map_err(|_| EffectsError::InvalidProgramCapabilities)?;
+    for grant in grants {
+        let bound = match grant {
+            Capability::Transfer402 { asset, to, maximum_amount } => {
+                plan.authorize(AuthorizationKind::ProgramTransferMaximum, to, Some(asset), maximum_amount);
+                ProgramSpendBound {
+                    source: ProgramValueSource::Principal, asset, destination: to, maximum_amount,
+                }
+            }
+            Capability::ProgramSpend { owner_program, seed, source_account, asset, to, maximum_amount } => {
+                plan.participants.insert(source_account);
+                plan.authorize(AuthorizationKind::ProgramSpendMaximum, to, Some(asset), maximum_amount);
+                ProgramSpendBound {
+                    source: ProgramValueSource::Program {
+                        owner_program: owner_program.bytes(), seed, source_account,
+                    },
+                    asset, destination: to, maximum_amount,
+                }
+            }
+            Capability::StorageRead | Capability::StorageWrite
+            | Capability::SharedStorageRead | Capability::SharedStorageWrite
+            | Capability::EmitEvent | Capability::Call { .. }
+            | Capability::ReceiptRead { .. } | Capability::BalanceView { .. } => continue,
+        };
+        plan.gross(bound.asset, bound.maximum_amount)?;
+        plan.program_spend_bounds.push(bound);
     }
     Ok(())
 }

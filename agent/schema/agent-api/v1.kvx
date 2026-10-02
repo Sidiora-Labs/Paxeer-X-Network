@@ -707,3 +707,136 @@ budget_state = "Adds the catalogue operation budget.state, BudgetTarget to Autho
 [compatibility.feature.agent_http_operations]
 introduced_contract = "1.4"
 classification = "additive_only"
+
+
+[record.NativeActivityV1]
+rust = "layerx_agent_api::identity::NativeActivity"
+wire_type = "NativeActivityV1Wire"
+fields = ["version:decimal_string","module:decimal_string","ordinal:decimal_string"]
+version = "Exactly the canonical decimal string 1."
+module = "Canonical decimal u16 accepted by layerx_types::payload::ModuleId::from_u16; unknown module identifiers are refused."
+ordinal = "Canonical decimal u16 greater than zero. The module and ordinal together identify the native activity; equal ordinals in different modules remain distinct."
+binary = "Exactly five bytes: version u8 1, module u16 big-endian, ordinal u16 big-endian. Unknown versions, unknown modules, zero ordinal, truncation and trailing bytes are refused."
+wire = "All three fields are required strings. Unknown or duplicate fields, numeric JSON values, signs, whitespace, leading zeros and overflow are refused."
+compatibility = "Separate additive native contract. The legacy identity ActivityType u16 and all legacy session, capability, policy and request codecs are unchanged."
+
+[record.NativePreparationPurposeV1]
+rust = "layerx_agent_api::identity::NativePreparationPurposeV1"
+wire_type = "NativePreparationPurposeV1Wire"
+fields = ["version:decimal_string","tenant:utf8","agent_did:utf8","session_id:hex32","generation:decimal_string","expires_at_ms:decimal_string","capability_id:hex32","preparation_id:hex32","canonical_digest:hex32","commitment:hex32"]
+version = "Exactly the canonical decimal string 1."
+tenant = "Non-empty UTF-8, at most 255 bytes, no NUL; preserved byte-for-byte."
+agent_did = "Non-empty UTF-8 accepted by the real layerx_types::ids::Did byte bound; preserved byte-for-byte without normalization or a new DID grammar."
+session_id = "Exactly 64 lowercase hex characters decoded to 32 bytes."
+generation = "Canonical decimal u64 greater than zero; no signs, whitespace, leading zeros or overflow."
+expires_at_ms = "Required canonical decimal u64 greater than zero, in milliseconds; no signs, whitespace, leading zeros or overflow. The authenticated owner must refuse the carrier at or after this bound using its authoritative clock."
+capability_id = "Exactly 64 lowercase hex characters decoded to 32 bytes."
+preparation_id = "Exactly 64 lowercase hex characters decoded to the preparation's 32-byte identifier."
+canonical_digest = "Exactly 64 lowercase hex characters decoded to the prepared canonical activity's 32-byte digest."
+commitment = "Exactly 64 lowercase hex characters decoded to the explicitly supplied 32-byte purpose commitment. No label or other text is hashed, interpreted as a commitment or silently substituted."
+canonical_bytes = "UTF-8 LayerX/native/preparation-purpose/v1 followed by one NUL byte, version u8 1, tenant UTF-8 with u32 big-endian byte length, agent DID UTF-8 with u32 big-endian byte length, session_id 32 bytes, generation u64 big-endian, expires_at_ms u64 big-endian, capability_id 32 bytes, preparation_id 32 bytes, canonical_digest 32 bytes, commitment 32 bytes, in that exact order."
+wire = "Every field is required, unknown or duplicate fields are refused, integer fields are decimal strings and all hex fields are lowercase with no prefix. Canonical JSON is produced only after conversion through the contract validator."
+authentication_seam = "This carrier is data, not authority. Before serving it, the existing authenticated prepare path must authenticate a separate SignedNativePreparationPurposeV1 over SHA-256 of these exact canonical purpose bytes, verify tenant, agent, session and generation against the authenticated principal and capability and preparation against their retained records, and verify canonical_digest against the prepared activity, and enforce expires_at_ms against the authoritative clock. A separately supplied commitment or matching text does not authorize preparation, signing or submission."
+serving_status = "Additive source contract only; no catalogue operation or unauthenticated dispatch path is introduced. Authenticated signed-prepare integration and its qualification are separate required work."
+compatibility = "All legacy prepare payloads, codecs, purpose labels and request dispatch paths retain their current representation and behavior."
+
+
+[record.SignedNativePreparationPurposeV1]
+rust = "layerx_agent_api::identity::SignedNativePreparationPurposeV1"
+wire_type = "SignedNativePreparationPurposeV1Wire"
+fields = ["purpose:NativePreparationPurposeV1","owner_public_key:hex32","signature:hex64"]
+purpose = "Required nested NativePreparationPurposeV1; all identifiers, generation and nonzero expires_at_ms are validated through its existing contract validator."
+owner_public_key = "Exactly 64 lowercase hex characters decoded to 32 bytes. This is an assertion against the current revalidated primary owner authority; caller-supplied key bytes never select authority."
+signature = "Exactly 128 lowercase hex characters decoded to 64 bytes; the length is checked before decoding. No prefix, whitespace, uppercase, truncation, trailing bytes or unknown fields are accepted."
+signature_digest = "SHA-256(purpose.canonical_bytes()), with the exact domain, version, length-delimited identities, generation, expiry and remaining bytes defined by NativePreparationPurposeV1."
+signing = "The actual daemon Ed25519 producer signs the 32-byte signature_digest using the current revalidated primary owner authority. This purpose signature is separate from and independent of the original canonical activity signature; neither signature substitutes for the other."
+validation = "The API and wire validators enforce structure and purpose-contract bounds only. Byte length or presence does not prove key validity, signature validity, authority or freshness. The daemon must enforce actual Ed25519 validity against its current revalidated primary authority, exact authenticated and retained purpose coordinates, and authoritative expires_at_ms before accepting the carrier."
+canonical_json = "Object with exactly purpose as the nested NativePreparationPurposeV1 canonical object, owner_public_key as lowercase hex32 and signature as lowercase hex64."
+serving_status = "Separate additive source carrier. No new catalogue operation, dispatcher path or signature authority is introduced by this declaration."
+
+
+[record.NativePrepareRequestV1]
+rust = "layerx_agent_api::identity::NativePrepareRequestV1"
+wire_type = "NativePrepareV1Wire"
+fields = ["variant:utf8","activity:NativeActivityV1","actor:utf8","authority:utf8","account_sequence:decimal_string","not_before:decimal_string","not_after:decimal_string","idempotency_key:hex32","fee_limit:decimal_string","payload:lowercase_hex","payload_hash:hex32","capability_id:hex32","purpose:SignedNativePreparationPurposeV1","local_grant:NativeLocalGrantConsentV1?"]
+variant = "Required exact string native_v1. An explicit native variant of prepare on the same Agent operation route, never a standalone endpoint."
+activity = "Required NativeActivityV1 with the real Programs module identifier 9 and nonzero ordinal; both module and ordinal survive the checked conversion to the native packed u32."
+actor = "Nonempty UTF-8 accepted by the real layerx_types::ids::Did byte bound; exactly equal to purpose.purpose.agent_did."
+authority = "Nonempty UTF-8 with byte length at most layerx_types::limits::MAX_AUTHORITY_BYTES; actual authority is validated by the existing runtime owner."
+account_sequence = "Canonical decimal u64 string."
+not_before = "Canonical decimal u64 string preserving the native prepare timestamp unit."
+not_after = "Canonical decimal u64 string greater than or equal to not_before; preserving the native prepare timestamp unit."
+idempotency_key = "Exactly 64 lowercase hexadecimal characters decoded to 32 bytes."
+fee_limit = "Canonical decimal u128 string."
+payload = "Required nonempty lowercase hexadecimal decoded to at most layerx_types::limits::MAX_PAYLOAD_BYTES; the encoded byte count is bounded before hex allocation."
+payload_hash = "Exactly 64 lowercase hexadecimal characters decoded to 32 bytes. API validation does not authenticate the hash; the real runtime must verify it against the payload."
+capability_id = "Exactly 64 lowercase hexadecimal characters naming the same capability as purpose.purpose.capability_id; supplied explicitly to HumanPrepare as Some(bytes)."
+purpose = "Required SignedNativePreparationPurposeV1. Its current owner signature, authenticated principal, retained preparation coordinates and expiry must be verified by the existing runtime before native prepare admission."
+local_grant = "Optional NativeLocalGrantConsentV1 for owner-approved first local grant installation. Canonical JSON always includes local_grant, either its full versioned object or null."
+canonical_json = "Exactly these fields including variant native_v1, nested native activity, nested signed purpose and local_grant; all numeric values are canonical decimal strings and bytes lowercase hex."
+wire = "All fields except optional local_grant are required. Unknown fields, legacy activity_type substitution, omitted variant, wrong native version, numeric JSON integers and noncanonical decimal or hexadecimal forms are refused."
+conversion = "native_human_prepare validates the typed request and produces the existing HumanPrepare with real ActivityType.value(), exact actor and authority, account sequence, timestamp bounds, idempotency bytes encoded as lowercase hex, fee limit, payload, payload hash and explicit capability bytes. The signed purpose remains separately available on the native request for runtime verification and admission."
+serving_status = "Source request and conversion contract only. Integration uses the existing authenticated Agent prepare route with the explicit native_v1 discriminant. No legacy decoder or dispatch path is changed by this declaration."
+
+
+[record.NativeApprovalListV1]
+rust = "layerx_agent_api::identity::NativeApprovalListV1"
+wire_type = "NativeApprovalListV1Wire"
+fields = ["variant:utf8"]
+variant = "Required exact string native_v1 on the existing Agent approval.list route. Unknown fields are refused."
+
+[record.NativeApprovalGetV1]
+rust = "layerx_agent_api::identity::NativeApprovalGetV1"
+wire_type = "NativeApprovalGetV1Wire"
+fields = ["variant:utf8","approval_id:hex32"]
+variant = "Required exact string native_v1 on the existing Agent approval.get route."
+approval_id = "Exactly 64 lowercase hexadecimal characters decoded to 32 bytes. All fields required; unknown fields refused."
+
+[record.NativeApprovalDecisionV1]
+rust = "layerx_agent_api::identity::NativeApprovalDecisionV1"
+wire_type = "NativeApprovalDecisionV1Wire"
+fields = ["variant:utf8","approval_id:hex32","held_digest:hex32","current_sequence:decimal_string"]
+variant = "Required exact string native_v1 on the existing Agent approval decision routes."
+encoding = "All fields are required. approval_id and held_digest are exactly 64 lowercase hex characters. current_sequence is a canonical decimal u64 string. Unknown fields are refused. Canonical JSON preserves every field."
+
+[record.NativePrepareResultV1]
+rust = "layerx_agent_api::identity::NativePrepareResultV1"
+wire_type = "NativePrepareResultV1Wire"
+fields = ["version:decimal_string","preparation_id:hex32","canonical_bytes:lowercase_hex","signing_preimage:hex32","activity:NativeActivityV1","approval_required:bool","approval_id:hex32_or_null"]
+version = "Required exact canonical decimal string 1."
+encoding = "All fields are required; unknown fields refused. preparation_id and signing_preimage are exact lowercase hex32; canonical_bytes is nonempty lowercase hex bounded before allocation to layerx_wire::limits::MAX_MESSAGE_BYTES decoded bytes (1048576). activity preserves its version, full module and ordinal as decimal strings. approval_required is a JSON boolean and equals whether approval_id is a non-null exact lowercase hex32. Absent optional reference is encoded explicitly as null."
+
+[record.NativeApprovalResultV1]
+rust = "layerx_agent_api::identity::NativeApprovalResultV1"
+wire_type = "NativeApprovalResultV1Wire"
+fields = ["version:decimal_string","approval_id:hex32","held_digest:hex32","activity:NativeActivityV1","state:utf8","submission_ref:hex32_or_null"]
+version = "Required exact canonical decimal string 1."
+state = "Exactly one of Awaiting, Granted, Rejected, Expired, Defective, NotRequired, preserving owner case."
+encoding = "All fields are required; unknown fields refused. approval_id and held_digest are exact lowercase hex32. activity preserves its version, full module and ordinal as decimal strings. submission_ref is exact lowercase hex32 or explicit JSON null."
+
+[record.NativeApprovalListResultV1]
+rust = "layerx_agent_api::identity::NativeApprovalListResultV1"
+wire_type = "NativeApprovalListResultV1Wire"
+fields = ["version:decimal_string","approvals:NativeApprovalResultV1[]"]
+version = "Required exact canonical decimal string 1."
+encoding = "All fields required; unknown fields refused. approvals contains at most 100 strict NativeApprovalResultV1 entries. Canonical JSON retains the versioned wrapper and every nested field."
+
+[record.NativeLocalGrantConsentV1]
+rust = "layerx_agent_api::identity::NativeLocalGrantConsentV1"
+wire_type = "NativeLocalGrantConsentV1Wire"
+fields = ["version:decimal_string","capability:lowercase_hex","session_scope:lowercase_hex","expires_at_ms:decimal_string","owner_public_key:hex32","signature:hex64"]
+version = "Required exact canonical decimal string 1."
+capability = "Nonempty exact encoded NativeTimedCapabilityV1 bytes in lowercase hex, bounded before allocation to layerx_wire::limits::MAX_MESSAGE_BYTES decoded bytes (1048576). native_local_grant decodes the real timed capability and refuses malformed or trailing record bytes."
+session_scope = "Nonempty exact encoded NativeSessionScopeV1 bytes in lowercase hex with the same bound. native_local_grant decodes the real native session scope; no conversion to legacy u16 activity scopes."
+expires_at_ms = "Canonical nonzero decimal u64 string; the actual owner admission enforces expiry against authoritative time."
+owner_public_key = "Exact lowercase hex32 equality assertion against the current revalidated primary owner authority, never caller-selected authority."
+signature = "Exact lowercase hex64 (128 characters); length checked before decoding. Actual Ed25519 validity is enforced by the daemon owner."
+signature_digest = "SHA-256 of UTF-8 LayerX/native/local-grant/v1 followed by NUL, expires_at_ms u64 big-endian, owner_public_key 32 bytes, capability u32 big-endian byte length and exact bytes, then session_scope u32 big-endian byte length and exact bytes."
+authority = "Explicit local capability and session-scope installation consent only. It is separate from the signed preparation-purpose carrier and from original protocol activity signing; neither local consent nor purpose commitment supplies protocol signing authority."
+wire = "All fields required; unknown fields and noncanonical decimal or hexadecimal encodings refused. Native prepare canonical JSON includes this complete object or null under local_grant."
+
+[encoding.NativePreparationPurposeV1_restore]
+decoder = "NativePreparationPurposeV1::from_canonical_bytes is the exact inverse of canonical_bytes, including the nonzero expiry after generation. It validates domain/version, bounded UTF-8 identities, exact fixed fields, canonical lowercase session and capability identifiers, no truncation or trailing bytes, and byte-exact canonical re-encoding before restoring durable purpose data."
+
+[encoding.NativePrepareV1_request_digest]
+digest = "SHA-256 of bytes LXP/agent/native-prepare/v1 followed by NUL and serde_json::to_vec of the validated native request Canonical value, including explicit local_grant null or full object. Digest production is daemon-owned; the API has no hashing dependency."

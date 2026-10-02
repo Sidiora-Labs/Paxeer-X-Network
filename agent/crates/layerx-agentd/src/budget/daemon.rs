@@ -45,6 +45,7 @@ pub enum DaemonLimitError {
     Unknown,
     Revoked,
     Conflict,
+    AmbiguousDenomination,
     Arithmetic,
     Limit(LimitRefusal),
 }
@@ -252,6 +253,7 @@ pub fn create_daemon_limit(
         return Err(error.into());
     }
     limiter.install(record.config())?;
+    limiter.bind_program_denominations(&[(record.limit_id, super::ProgramLimitDenomination { asset: record.asset, source: None }, true, true)], || Ok::<(), DaemonLimitError>(()))?;
     Ok(record)
 }
 
@@ -329,6 +331,7 @@ pub fn load_daemon_limits(
     for tenant in store.tenant_ids_for_kind(ObjectKind::Configuration) {
         for record in daemon_limits(store, &tenant)? {
             limiter.install(record.config())?;
+            limiter.bind_program_denominations(&[(record.limit_id, super::ProgramLimitDenomination { asset: record.asset, source: None }, true, true)], || Ok::<(), DaemonLimitError>(()))?;
             if record.revoked {
                 limiter.retire(record.limit_id)?;
             }
@@ -406,4 +409,15 @@ pub fn consumption_updates(
         .iter()
         .map(|record| Ok((limit_key(tenant, record.budget_id)?, record.encode()?)))
         .collect()
+}
+
+
+pub(super) fn program_denomination(store: &Store, tenant: &TenantId, id: LimitId)
+    -> Result<super::ProgramLimitDenomination, DaemonLimitError>
+{
+    let index = store.get(&index_key(tenant, id)?).ok_or(DaemonLimitError::Unknown)?;
+    let budget_id = index.bytes().try_into().map_err(|_| DaemonLimitError::Corrupt)?;
+    let record = stored(store, tenant, budget_id)?.ok_or(DaemonLimitError::Unknown)?;
+    if record.limit_id != id { return Err(DaemonLimitError::Corrupt); }
+    Ok(super::ProgramLimitDenomination { asset: record.asset, source: None })
 }

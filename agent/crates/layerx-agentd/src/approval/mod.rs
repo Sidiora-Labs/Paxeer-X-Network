@@ -16,6 +16,7 @@ use crate::store::{Store, TenantId};
 mod events;
 mod expiry;
 pub(crate) mod program_requirement;
+pub(crate) mod native_program;
 pub(crate) use expiry::PreparedDecision;
 
 #[cfg(test)]
@@ -2338,5 +2339,39 @@ fn approval_intent(current_prepared: &Prepared, held: &Prepared) -> ApprovalOutc
         ApprovalOutcome::Defective
     } else {
         ApprovalOutcome::Granted
+    }
+}
+
+impl ApprovalSubmissionQueue {
+    pub(crate) fn publish_program_release<T>(
+        &self,
+        tenant: TenantId,
+        approval_id: [u8; 32],
+        prepared: Prepared,
+        persist: impl FnOnce([u8; 32]) -> Result<T, ApprovalOperationError>,
+    ) -> Result<T, ApprovalOperationError> {
+        let reference = Self::reference(&tenant, approval_id, &prepared);
+        let mut queued = self.queued.lock().map_err(|_| ApprovalOperationError::Registry(RegistryError::Unavailable))?;
+        if queued.contains_key(&reference) {
+            return Err(ApprovalOperationError::Registry(RegistryError::DecisionConflict));
+        }
+        let result = persist(reference)?;
+        queued.insert(reference, QueuedSubmission { tenant, approval_id, prepared });
+        Ok(result)
+    }
+}
+
+impl ApprovalService<'_> {
+    pub(crate) fn decide_program(
+        &self,
+        request: DecisionRequest<'_>,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        current_prepared: &Prepared,
+        approve: bool,
+        submissions: &ApprovalSubmissionQueue,
+    ) -> Result<ApprovalDecision, ApprovalOperationError> {
+        self.registry.complete_program_decision(
+            request, context, current_prepared, approve, self.expiry, self.limiter, submissions,
+        )
     }
 }

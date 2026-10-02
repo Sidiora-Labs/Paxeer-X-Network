@@ -2,7 +2,7 @@
 
 from collections.abc import Mapping
 from enum import IntEnum
-from typing import Generic, Literal, Protocol, TypeAlias, TypeVar
+from typing import NotRequired, TypedDict, Generic, Literal, Protocol, TypeAlias, TypeVar
 
 def layerx_sdk_py_package() -> Mapping[str, str | int]: ...
 
@@ -27,7 +27,7 @@ class VerificationLevel(IntEnum):
     SETTLEMENT_ANCHORED = 5
 
 ErrorClass: TypeAlias = Literal["TransportFailure", "Deadline", "ProtocolIncompatibility", "UnavailableCapability", "CoreRejection", "VerificationFailure", "PolicyRefusal", "CapabilityRefusal", "BudgetRefusal", "RateLimit", "IdempotencyConflict", "InternalFault"]
-Operation: TypeAlias = Literal["agent.register", "approval.approve", "approval.get", "approval.list", "approval.reject", "availability.fetch", "budget.create", "budget.fund", "budget.list", "budget.reconciliation", "budget.revoke", "capability.attenuate", "capability.create", "capability.list", "capability.revoke", "export.offline", "faucet.claim", "prepare", "program.activity", "program.call", "program.deploy", "program.discover", "program.interface", "program.receipt", "program.simulate", "program.upgrade", "program.wind-down", "project", "read.account", "read.balance", "read.batch", "read.checkpoint", "read.history", "read.module_state", "read.proof_bundle", "session.close", "session.list", "session.open", "session.refresh", "sign", "submit", "subscription.acknowledge", "subscription.create", "subscription.delete", "subscription.health", "subscription.list", "subscription.pause", "subscription.resume", "track", "wait"]
+Operation: TypeAlias = Literal["agent.register", "approval.approve", "approval.get", "approval.list", "approval.reject", "availability.fetch", "budget.create", "budget.fund", "budget.list", "budget.reconciliation", "budget.revoke", "budget.state", "capability.attenuate", "capability.create", "capability.list", "capability.revoke", "export.offline", "faucet.claim", "policy.dry_run", "prepare", "program.activity", "program.call", "program.deploy", "program.discover", "program.interface", "program.receipt", "program.simulate", "program.upgrade", "program.wind-down", "project", "read.account", "read.balance", "read.batch", "read.checkpoint", "read.history", "read.module_state", "read.proof_bundle", "session.close", "session.list", "session.open", "session.refresh", "sign", "submit", "subscription.acknowledge", "subscription.create", "subscription.delete", "subscription.health", "subscription.list", "subscription.pause", "subscription.resume", "track", "wait"]
 
 ApprovalState: TypeAlias = Literal["Held", "Granted", "Rejected", "Expired", "Defective"]
 ApprovalDecisionOutcome: TypeAlias = Literal["Granted", "Rejected", "Expired", "Defective", "AlreadyDecided", "Conflict"]
@@ -111,6 +111,88 @@ class ApprovalLifecycleEvent:
     kind: ApprovalEventKind
     at: TimestampSeconds
     record_digest: str
+
+class NativeActivityV1(TypedDict):
+    version: Literal["1"]
+    module: str
+    ordinal: str
+
+class NativePurposeV1(TypedDict):
+    version: Literal["1"]
+    tenant: str
+    agent_did: str
+    session_id: str
+    generation: str
+    expires_at_ms: str
+    capability_id: str
+    preparation_id: str
+    canonical_digest: str
+    commitment: str
+
+class SignedNativePurposeV1(TypedDict):
+    purpose: NativePurposeV1
+    owner_public_key: str
+    signature: str
+
+class NativeLocalGrantV1(TypedDict):
+    version: Literal["1"]
+    capability: str
+    session_scope: str
+    expires_at_ms: str
+    owner_public_key: str
+    signature: str
+
+class NativePrepareRequestV1(TypedDict):
+    variant: Literal["native_v1"]
+    activity: NativeActivityV1
+    actor: str
+    authority: str
+    account_sequence: str
+    not_before: str
+    not_after: str
+    idempotency_key: str
+    fee_limit: str
+    payload: str
+    payload_hash: str
+    capability_id: str
+    purpose: SignedNativePurposeV1
+    local_grant: NotRequired[NativeLocalGrantV1 | None]
+
+class NativePrepareResultV1(TypedDict):
+    version: Literal["1"]
+    preparation_id: str
+    canonical_bytes: str
+    signing_preimage: str
+    activity: NativeActivityV1
+    approval_required: bool
+    approval_id: str | None
+
+class NativeApprovalDecisionV1(TypedDict):
+    variant: Literal["native_v1"]
+    approval_id: str
+    held_digest: str
+    current_sequence: str
+
+class NativeApprovalResultV1(TypedDict):
+    version: Literal["1"]
+    approval_id: str
+    held_digest: str
+    activity: NativeActivityV1
+    state: Literal["Awaiting", "Granted", "Rejected", "Expired", "Defective", "NotRequired"]
+    submission_ref: str | None
+
+class NativeApprovalListResultV1(TypedDict):
+    version: Literal["1"]
+    approvals: list[NativeApprovalResultV1]
+
+
+def encode_native_prepare_request(value: NativePrepareRequestV1) -> NativePrepareRequestV1: ...
+def encode_native_approval_decision(value: NativeApprovalDecisionV1) -> NativeApprovalDecisionV1: ...
+def encode_native_approval_get(approval_id: str) -> dict[str, str]: ...
+def decode_native_prepare_result(value: object) -> NativePrepareResultV1: ...
+def decode_native_approval_result(value: object) -> NativeApprovalResultV1: ...
+def decode_native_approval_list_result(value: object) -> NativeApprovalListResultV1: ...
+
 
 _T = TypeVar("_T")
 _R = TypeVar("_R")

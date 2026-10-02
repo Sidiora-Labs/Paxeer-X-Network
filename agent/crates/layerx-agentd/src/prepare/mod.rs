@@ -195,6 +195,80 @@ pub enum PrepareError {
     Disclosure(DisclosureBindingError),
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RestorePreparationError {
+    MissingAuthority,
+    AuthorityMismatch,
+    Actor(layerx_types::ids::LengthError),
+    Payload(PayloadError),
+    PayloadHashMismatch,
+    Activity(ActivityBuildError),
+    Wire(WireError),
+    Disclosure(DisclosureBindingError),
+    CanonicalMismatch,
+}
+
+pub fn restore_canonical(
+    canonical_bytes: &[u8],
+    observed_head_sequence: u64,
+    registry: &ModuleRegistry,
+    retained_authority: Option<&Authority>,
+) -> Result<Prepared, RestorePreparationError> {
+    let authority = retained_authority.ok_or(RestorePreparationError::MissingAuthority)?;
+    let activity = layerx_wire::activity::decode_unsigned(canonical_bytes, registry)
+        .map_err(RestorePreparationError::Wire)?;
+    if authority.as_bytes() != activity.authority() {
+        return Err(RestorePreparationError::AuthorityMismatch);
+    }
+    let actor = Did::new(activity.actor_did()).map_err(RestorePreparationError::Actor)?;
+    let payload = Payload::new(registry, activity.activity_type(), activity.payload())
+        .map_err(RestorePreparationError::Payload)?;
+    let payload_hash = payload_hash_for(&payload).map_err(RestorePreparationError::Wire)?;
+    if payload_hash != activity.payload_hash() {
+        return Err(RestorePreparationError::PayloadHashMismatch);
+    }
+    let bound = activity.timestamp_bound();
+    let bound = TimestampBound::new(bound.not_before, bound.not_after)
+        .map_err(RestorePreparationError::Activity)?;
+    let mut builder = EnvelopeBuilder::new();
+    builder
+        .protocol_version(activity.protocol_version())
+        .and_then(|builder| builder.network_id(activity.network_id()))
+        .and_then(|builder| builder.activity_type(activity.activity_type()))
+        .and_then(|builder| builder.actor_did(actor))
+        .and_then(|builder| builder.authority(authority.clone()))
+        .and_then(|builder| builder.account_sequence(activity.account_sequence()))
+        .and_then(|builder| builder.timestamp_bound(bound))
+        .and_then(|builder| builder.idempotency_key(IdempotencyKey::new(activity.idempotency_key())))
+        .and_then(|builder| builder.fee_limit(Amount::from_u128(activity.fee_limit())))
+        .and_then(|builder| builder.payload_hash(payload_hash))
+        .and_then(|builder| builder.payload(payload))
+        .map_err(RestorePreparationError::Activity)?;
+    let envelope = builder.build().map_err(RestorePreparationError::Activity)?;
+    let reproduced = encode_unsigned_envelope(&envelope).map_err(RestorePreparationError::Wire)?;
+    if reproduced != canonical_bytes {
+        return Err(RestorePreparationError::CanonicalMismatch);
+    }
+    let disclosed = disclosure_binding::decode_and_bind(canonical_bytes, registry, None)
+        .map_err(RestorePreparationError::Disclosure)?;
+    let signing_preimage = *preimage_unsigned(&envelope)
+        .map_err(RestorePreparationError::Wire)?.as_bytes();
+    let audit = PreparationAuditEntry {
+        idempotency_key: envelope.idempotency_key().bytes(),
+        observed_head_sequence,
+        disclosure_digest: disclosed.digest,
+    };
+    Ok(Prepared {
+        envelope,
+        canonical_bytes: reproduced,
+        signing_preimage,
+        observed_head_sequence,
+        disclosure: disclosed.disclosure,
+        disclosure_digest: disclosed.digest,
+        audit,
+    })
+}
+
 /// Decodes a structured disclosure from canonical prepared bytes.
 ///
 /// # Errors
@@ -391,3 +465,7 @@ fn prepare_bound(
         audit,
     })
 }
+
+#[cfg(test)]
+#[path = "restore_tests.rs"]
+mod restore_tests;

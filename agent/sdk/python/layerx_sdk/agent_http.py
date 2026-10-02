@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import secrets
 import ssl
 from collections.abc import Mapping
 from dataclasses import dataclass
 from http.client import HTTPException
-from typing import cast
+from typing import Generic, TypeVar, cast
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlparse, urlunparse
 from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener
@@ -20,6 +21,11 @@ from .production import (
     ProductionTransport,
     SdkErrorCode,
     SecretBytes,
+)
+from .generated.client import (
+    NativePrepareRequestV1, NativeApprovalDecisionV1, NativePrepareResultV1, NativeApprovalResultV1, NativeApprovalListResultV1,
+    encode_native_prepare_request, encode_native_approval_decision, encode_native_approval_get,
+    decode_native_prepare_result, decode_native_approval_result, decode_native_approval_list_result,
 )
 from .program_wire import bind_signed_program_lifecycle
 
@@ -245,6 +251,15 @@ class AgentEnvelopeSuccess:
     verification_status: Mapping[str, object]
 
 
+_NativeValue = TypeVar("_NativeValue")
+
+@dataclass(frozen=True)
+class NativeEnvelopeSuccess(Generic[_NativeValue]):
+    request_id: str
+    value: _NativeValue
+    verification_status: Mapping[str, object]
+
+
 class AgentEnvelopeTransport(ProductionTransport):
     __slots__ = ("_gateway_key", "_endpoint", "_maximum_response_bytes", "_opener", "_path", "_session", "_timeout")
 
@@ -344,6 +359,72 @@ class AgentEnvelopeTransport(ProductionTransport):
             if mutating:
                 raise PlatformSdkError(SdkErrorCode.UNKNOWN_OUTCOME, "unknown-outcome") from None
             raise PlatformSdkError(SdkErrorCode.TRANSPORT_FAILURE, "safe") from None
+
+
+    def prepare_native(self, request: NativePrepareRequestV1, idempotency_key: IdempotencyKey) -> NativeEnvelopeSuccess[NativePrepareResultV1]:
+        try:
+            body = encode_native_prepare_request(request)
+        except (ValueError, TypeError, OverflowError):
+            raise _invalid_argument() from None
+        purpose = body["purpose"]["purpose"]
+        if self._session is None:
+            raise _invalid_argument()
+        coordinates = self._session.coordinates()
+        if (purpose["tenant"] != coordinates["tenant"] or purpose["session_id"] != coordinates["session_id"]
+            or purpose["generation"] != coordinates["generation"]):
+            raise _invalid_argument()
+        response = self.call("agent", "prepare", body, idempotency_key)
+        try:
+            value = decode_native_prepare_result(response.value)
+            canonical = bytes.fromhex(value["canonical_bytes"])
+            digest = hashlib.sha256(canonical).hexdigest()
+            preimage = hashlib.sha256(b"LXP/v1/signature-preimage\0" + canonical).hexdigest()
+            if (value["preparation_id"] != purpose["preparation_id"] or digest != purpose["canonical_digest"]
+                or digest != value["preparation_id"] or preimage != value["signing_preimage"]
+                or value["activity"] != body["activity"]
+                or value["approval_id"] is not None and value["approval_id"] != value["preparation_id"]):
+                raise ValueError("native_v1.binding")
+            return NativeEnvelopeSuccess(response.request_id, value, response.verification_status)
+        except (ValueError, TypeError, OverflowError):
+            raise PlatformSdkError(SdkErrorCode.UNKNOWN_OUTCOME, "unknown-outcome", request_id=response.request_id) from None
+
+    def approval_list_native(self) -> NativeEnvelopeSuccess[NativeApprovalListResultV1]:
+        response = self.call("agent", "approval.list", {"variant": "native_v1"}, None)
+        try:
+            value = decode_native_approval_list_result(response.value)
+            return NativeEnvelopeSuccess(response.request_id, value, response.verification_status)
+        except (ValueError, TypeError, OverflowError):
+            raise _decode_failure(response.request_id) from None
+
+    def approval_get_native(self, approval_id: str) -> NativeEnvelopeSuccess[NativeApprovalResultV1]:
+        try:
+            request = encode_native_approval_get(approval_id)
+        except (ValueError, TypeError):
+            raise _invalid_argument() from None
+        response = self.call("agent", "approval.get", request, None)
+        try:
+            value = decode_native_approval_result(response.value)
+            if value["approval_id"] != approval_id:
+                raise ValueError("native_v1.binding")
+            return NativeEnvelopeSuccess(response.request_id, value, response.verification_status)
+        except (ValueError, TypeError, OverflowError):
+            raise _decode_failure(response.request_id) from None
+
+    def approval_decide_native(self, request: NativeApprovalDecisionV1, grant: bool, idempotency_key: IdempotencyKey) -> NativeEnvelopeSuccess[NativeApprovalResultV1]:
+        try:
+            body = encode_native_approval_decision(request)
+            if type(grant) is not bool:
+                raise ValueError("native_v1.decision")
+        except (ValueError, TypeError, OverflowError):
+            raise _invalid_argument() from None
+        response = self.call("agent", "approval.approve" if grant else "approval.reject", body, idempotency_key)
+        try:
+            value = decode_native_approval_result(response.value)
+            if value["approval_id"] != body["approval_id"] or value["held_digest"] != body["held_digest"]:
+                raise ValueError("native_v1.binding")
+            return NativeEnvelopeSuccess(response.request_id, value, response.verification_status)
+        except (ValueError, TypeError, OverflowError):
+            raise PlatformSdkError(SdkErrorCode.UNKNOWN_OUTCOME, "unknown-outcome", request_id=response.request_id) from None
 
 
 class AgentDaemonEnvelopeTransport(AgentEnvelopeTransport):
