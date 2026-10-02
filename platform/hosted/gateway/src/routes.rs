@@ -11,6 +11,9 @@ use zeroize::Zeroizing;
 
 const CATALOGUE: &str = include_str!("../../../../tools/paxeer-x/route-catalogue.json");
 const MAX_BINDINGS_BYTES: u64 = 1024 * 1024;
+const AGENT_RPC_PATH: &str = "/v1/agent/rpc";
+const AGENT_RPC_SERVICE: &str = "agentd";
+const AGENT_RPC_MAX_BODY: usize = 1_048_576;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -183,6 +186,18 @@ impl Registry {
                     .is_some_and(|v| !v.is_empty() && v.len() <= 64)
             {
                 return Err("route health identity predicate invalid".into());
+            }
+            if id == AGENT_RPC_SERVICE {
+                if binding.network_value != json!(network) {
+                    return Err(format!(
+                        "route binding {id} network_value must equal the gateway network {network}"
+                    ));
+                }
+                if binding.version_value != json!(wire) {
+                    return Err(format!(
+                        "route binding {id} version_value differs from the gateway wire version {wire}"
+                    ));
+                }
             }
             if let Some(path) = &binding.health_authorization_file {
                 let _ = protected(path)?;
@@ -485,6 +500,11 @@ pub(super) fn route(config: &Config, request: &IncomingRequest) -> Option<Outgoi
             &document,
         ));
     }
+    if request.path.split_once('?').map_or(request.path.as_str(), |(path, _)| path)
+        == AGENT_RPC_PATH
+    {
+        return Some(agent_rpc(config, request));
+    }
     let entry = catalogue()["routes"].as_array()?.iter().find(|r| {
         r["proxy"] == true
             && r["method"] == request.method
@@ -578,6 +598,108 @@ pub(super) fn route(config: &Config, request: &IncomingRequest) -> Option<Outgoi
         },
     )
 }
+
+fn agent_rpc_refusal(status: u16, reason: &str) -> OutgoingResponse {
+    json_response(
+        status,
+        &json!({
+            "class": "ProtocolIncompatibility",
+            "protocol_result_code": null,
+            "retriability": "Terminal",
+            "request_id": "0",
+            "reason": reason,
+        }),
+    )
+}
+
+fn agent_rpc(config: &Config, request: &IncomingRequest) -> OutgoingResponse {
+    if request.path != AGENT_RPC_PATH {
+        return response(400, "query_string_not_allowed", None);
+    }
+    let Some(entry) = catalogue()["routes"].as_array().and_then(|routes| {
+        routes.iter().find(|r| {
+            r["service"] == AGENT_RPC_SERVICE
+                && r["path"] == AGENT_RPC_PATH
+                && r["method"] == "POST"
+                && r["proxy"] == true
+                && r["authentication"] == "gateway-api-key"
+                && r["surface"] == "agent"
+                && r["tls"] == "mtls"
+        })
+    }) else {
+        return response(503, "route_unavailable", None);
+    };
+    let Some(upstream_path) = entry["upstream_path"]
+        .as_str()
+        .filter(|path| safe_path(path))
+    else {
+        return response(503, "invalid_upstream", None);
+    };
+    if request.method != "POST" {
+        return response(405, "method_not_allowed", None);
+    }
+    if private(AGENT_RPC_SERVICE) {
+        return response(403, "private_service", None);
+    }
+    if ["layerx-tenant", "layerx-agent"]
+        .iter()
+        .any(|name| request.headers.contains_key(*name))
+    {
+        return response(400, "untrusted_identity_header", None);
+    }
+    if let Err(refusal) = authenticate_key(config, request) {
+        return refusal;
+    }
+    if request.headers.get("content-type").map(String::as_str) != Some("application/json") {
+        return response(415, "unsupported_media_type", None);
+    }
+    if request.body.len() > AGENT_RPC_MAX_BODY {
+        return agent_rpc_refusal(413, "envelope.oversized");
+    }
+    if !config.client_identity {
+        return response(503, "client_identity_required", None);
+    }
+    if let Err(reason) = config.routes.health(config, AGENT_RPC_SERVICE) {
+        return json_response(
+            503,
+            &json!({"error":{"code":"route_unavailable","service":AGENT_RPC_SERVICE,"reason":reason}}),
+        );
+    }
+    let Some(binding) = config.routes.bindings.get(AGENT_RPC_SERVICE) else {
+        return response(503, "route_unavailable", None);
+    };
+    let endpoint = match http::Endpoint::parse(&binding.url) {
+        Ok(endpoint) if endpoint.base_path.is_empty() => endpoint,
+        _ => return response(503, "invalid_upstream", None),
+    };
+    match config.client.request_forwarded(
+        &endpoint,
+        "",
+        &http::OutboundRequest {
+            method: "POST",
+            path: upstream_path,
+            idempotency: None,
+            content_type: "application/json",
+            body: &request.body,
+        },
+        &[],
+    ) {
+        Ok(reply) if reply.content_type == "application/json" => OutgoingResponse {
+            status: reply.status,
+            content_type: "application/json".to_owned(),
+            headers: reply
+                .headers
+                .into_iter()
+                .filter(|(name, _)| response_header(AGENT_RPC_SERVICE, name))
+                .collect(),
+            body: reply.body,
+            retry_after: None,
+        },
+        Ok(_) => response(502, "invalid_upstream_content_type", None),
+        Err(_) => response(503, "upstream_unavailable", None),
+    }
+}
+
 
 pub(super) fn stream(
     config: &Config,

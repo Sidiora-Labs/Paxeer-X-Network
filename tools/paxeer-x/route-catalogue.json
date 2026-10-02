@@ -8793,13 +8793,46 @@
       "version": "1",
       "consumers": [
         "wallet",
+        "agent",
         "developer"
       ],
       "source": "agent/crates/layerx-agentd/src/agent_rpc_tls.rs",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
-      "upstream_path": "/rpc"
+      "upstream_path": "/rpc",
+      "surface": "agent",
+      "tls": "mtls",
+      "admission_header": "Authorization: LayerX-Key <id>:<secret>",
+      "refused_headers": [
+        "X-LayerX-Principal",
+        "X-LayerX-Api-Key",
+        "layerx-tenant",
+        "layerx-agent"
+      ],
+      "forwarded_headers": [
+        "Content-Type",
+        "Content-Length"
+      ],
+      "content_type": "application/json",
+      "max_body_bytes": 1048576,
+      "max_header_bytes": 16384,
+      "query_string": "refused",
+      "response_contract": "upstream application/json body passed through byte-for-byte: ApiSuccess {request_id, value, verification_status} or ApiError",
+      "error_classes": {
+        "400": "untrusted_identity_header, query_string_not_allowed",
+        "401": "api_key_required",
+        "403": "private_service",
+        "405": "method_not_allowed",
+        "413": "envelope.oversized",
+        "415": "unsupported_media_type",
+        "502": "invalid_upstream_content_type",
+        "503": "route_unavailable, client_identity_required, invalid_upstream, upstream_unavailable"
+      },
+      "idempotency": "idempotency_key carried in the request body only; no Idempotency-Key header forwarded",
+      "unknown_policy": "edge 502/503 or transport loss on a mutating operation is Unknown and never resent",
+      "distinct_contracts": "native /rpc, /rpc/schema and Programs paths keep their own contracts",
+      "owner_source": "agent/crates/layerx-agentd/src/agent_rpc.rs"
     },
     {
       "id": "archive:GET:/v1/peers",
