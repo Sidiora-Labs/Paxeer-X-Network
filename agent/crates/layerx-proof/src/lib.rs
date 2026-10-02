@@ -14,3 +14,5 @@ pub mod settlement;
 pub mod signed_authority;
 pub mod state;
 pub mod state_witness;
+
+pub mod state_range;

@@ -47,7 +47,7 @@ static uint64_t pay_timing_us(void)
 
 enum {
     LNI_VERSION_MAJOR = 1,
-    LNI_VERSION_MINOR = 7,
+    LNI_VERSION_MINOR = 8,
     LNI_NODE_INFO_REQUEST = 1,
     LNI_NODE_INFO_RESPONSE = 2,
     LNI_SUBMIT_REQUEST = 3,
@@ -85,6 +85,8 @@ enum {
     LNI_PROGRAM_READ_RESPONSE = 39,
     LNI_PROGRAM_HEAD_ATTEST_REQUEST = 40,
     LNI_PROGRAM_HEAD_ATTEST_RESPONSE = 41,
+    LNI_CAPS_DISCOVERY_REQUEST = 42,
+    LNI_CAPS_DISCOVERY_RESPONSE = 43,
     LNI_ENVELOPE_FIXED_BYTES = 22,
     LNI_NODE_INFO_FIXED_BYTES = 93,
     LNI_PREPARATION_STATE_MAX_BYTES = 4096,
@@ -1433,7 +1435,7 @@ static lxp_result send_node_info(lxp_daemon_lni_server *server,
                                   sequencer_capabilities) :
             (evidence_available ? evidence_reader_capabilities :
                                   reader_capabilities);
-    const char *capabilities[20];
+    const char *capabilities[21];
     uint8_t payload[512];
     lxp_sequencer_authorization authorization;
     uint64_t head;
@@ -1459,7 +1461,7 @@ static lxp_result send_node_info(lxp_daemon_lni_server *server,
     bool program_head_attest = program_read;
     bool simulate = program_read;
     lxp_result status = LXP_OK;
-    if (base_count + 4U > sizeof(capabilities) / sizeof(capabilities[0]))
+    if (base_count + 5U > sizeof(capabilities) / sizeof(capabilities[0]))
         return LXP_ERR_LENGTH_LIMIT;
     for (index = 0U; index < base_count; ++index) {
         if (server->owner->protocol_version !=
@@ -1495,6 +1497,17 @@ static lxp_result send_node_info(lxp_daemon_lni_server *server,
             --at;
         }
         capabilities[at] = "availability_fetch";
+        ++capability_count;
+    }
+    if (evidence_available && server->owner->receipt_authority != NULL &&
+        server->owner->protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT &&
+        server->owner->kernel != NULL && server->owner->scratch != NULL) {
+        size_t at = capability_count;
+        while (at != 0U && strcmp(capabilities[at - 1U], "caps_discovery") > 0) {
+            capabilities[at] = capabilities[at - 1U];
+            --at;
+        }
+        capabilities[at] = "caps_discovery";
         ++capability_count;
     }
     for (index = 0U; index < capability_count; ++index) {
@@ -4336,9 +4349,12 @@ static lxp_result configure_connection(lxp_daemon_lni_server *server,
                                   connection_generation);
 }
 
-static lxp_result serve_connection(lxp_daemon_lni_server *server,
-                                   int descriptor,
-                                   const struct ucred *credential)
+#include "lxp_daemon_lni_caps.h"
+
+static lxp_result serve_connection_inner(lxp_daemon_lni_server *server,
+                                         int descriptor,
+                                         const struct ucred *credential,
+                                         lni_caps_snapshot **caps_snapshot)
 {
     bool handshaken = false;
     for (;;) {
@@ -4349,6 +4365,9 @@ static lxp_result serve_connection(lxp_daemon_lni_server *server,
         int64_t idle_deadline;
         int64_t deadline;
         lxp_result status = request_deadline(server, &idle_deadline);
+        if (status == LXP_OK && *caps_snapshot != NULL &&
+            idle_deadline > (*caps_snapshot)->expires)
+            idle_deadline = (*caps_snapshot)->expires;
         if (status == LXP_OK)
             status = exact_read(descriptor, prefix, sizeof(prefix),
                                 idle_deadline);
@@ -4383,6 +4402,9 @@ static lxp_result serve_connection(lxp_daemon_lni_server *server,
             status = send_refusal(descriptor, server->frame_bytes,
                                   request.correlation_id, 1U,
                                   LXP_ERR_NON_CANONICAL, deadline);
+        } else if (request.tag == LNI_CAPS_DISCOVERY_REQUEST) {
+            status = send_caps_discovery(server, descriptor, &request,
+                                         caps_snapshot, deadline);
         } else if (request.tag == LNI_SUBMIT_REQUEST) {
             status = send_submit(server, descriptor, &request,
                                  credential, deadline);
@@ -4430,6 +4452,16 @@ static lxp_result serve_connection(lxp_daemon_lni_server *server,
         free(frame);
         if (status != LXP_OK) return status;
     }
+}
+
+static lxp_result serve_connection(lxp_daemon_lni_server *server,
+                                   int descriptor,
+                                   const struct ucred *credential)
+{
+    lni_caps_snapshot *snapshot = NULL;
+    lxp_result status = serve_connection_inner(server, descriptor, credential, &snapshot);
+    lni_caps_drop(&snapshot);
+    return status;
 }
 
 lxp_result lxp_daemon_lni_serve_connected(

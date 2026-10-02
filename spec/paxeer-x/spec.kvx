@@ -31871,7 +31871,9 @@ ac_14 = "No committed state/root/snapshot format, kernel lifecycle, existing dec
 
 [task.14.10]
 title = "Implement native complete caps snapshots and verified client pagination"
-status = "in_progress"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "unverified"
 mode = "BUILD"
 wave = 3
 requires = ["0.2", "14.9"]

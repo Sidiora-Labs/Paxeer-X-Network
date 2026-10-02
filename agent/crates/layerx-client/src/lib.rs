@@ -23,3 +23,5 @@ pub use client::Client;
 pub mod payments;
 
 pub mod withdrawal;
+
+pub mod caps;

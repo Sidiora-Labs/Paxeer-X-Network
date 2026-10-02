@@ -23,7 +23,7 @@ fn hex(value: &str) -> Vec<u8> {
 #[test]
 fn lni_schema_and_document_cover_every_declared_message() {
     let schema = lni_schema_v1();
-    assert_eq!(schema.version, Version::V1_7);
+    assert_eq!(schema.version, Version::V1_8);
     assert_eq!(schema.messages.len(), lni_golden_vectors().len());
     let mut tags = BTreeSet::new();
     for message in schema.messages {
@@ -69,6 +69,9 @@ fn version_and_capability_rules_are_checked_against_the_schema_source() {
     assert!(LNI_V1_SOURCE.contains("simulate"));
     assert!(LNI_V1_SOURCE.contains("program_read"));
     assert_eq!(Capability::ProgramRead.name(), "program_read");
+    assert!(LNI_V1_SOURCE.contains("caps_discovery"));
+    assert_eq!(Capability::CapsDiscovery.name(), "caps_discovery");
+    assert!(Version::V1_8.is_compatible_with(Version::V1_0));
     assert!(LNI_V1_SOURCE.contains("program_head_attest"));
     assert_eq!(Capability::ProgramHeadAttest.name(), "program_head_attest");
     assert!(Version::V1_4.is_compatible_with(Version::V1_0));
@@ -95,7 +98,7 @@ fn version_and_capability_rules_are_checked_against_the_schema_source() {
 #[test]
 fn additive_read_tags_are_complete_and_unknown_tags_still_refuse() {
     use layerx_client::lni::schema::{decode_envelope, SchemaError};
-    for tag in [36, 37, 38, 39, 40, 41] {
+    for tag in [36, 37, 38, 39, 40, 41, 42, 43] {
         let entry = lni_schema_v1()
             .messages
             .iter()
@@ -107,12 +110,14 @@ fn additive_read_tags_are_complete_and_unknown_tags_still_refuse() {
                 Capability::SessionFeeState
             } else if tag < 40 {
                 Capability::ProgramRead
-            } else {
+            } else if tag < 42 {
                 Capability::ProgramHeadAttest
+            } else {
+                Capability::CapsDiscovery
             }
         );
         let encoded = encode_envelope(Envelope {
-            version: Version::V1_7,
+            version: Version::V1_8,
             message_tag: tag,
             correlation_id: 7,
             canonical_payload: &[0, 1],
@@ -124,10 +129,10 @@ fn additive_read_tags_are_complete_and_unknown_tags_still_refuse() {
             Ok(tag)
         );
     }
-    for tag in [0, 42, u16::MAX] {
+    for tag in [0, 44, u16::MAX] {
         assert_eq!(
             encode_envelope(Envelope {
-                version: Version::V1_7,
+                version: Version::V1_8,
                 message_tag: tag,
                 correlation_id: 7,
                 canonical_payload: &[],

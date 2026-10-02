@@ -35,6 +35,12 @@ authorised sequencer key. The signature is the discovery proof the hosted
 program registry publishes as `discovery_public_key`/`discovery_signature`; a
 node that is not the authorised signing sequencer does not advertise the
 capability and refuses the request.
+Version 1.8 adds `caps_discovery` on the private native interface.
+`CapsDiscoveryRequest` opens or advances a bounded immutable snapshot;
+`CapsDiscoveryResponse` returns its root-bound page and continuation identity.
+The client verifies complete budget, grant and account trees before filtering
+records for the selected native DID. This selector does not authenticate a
+wallet principal; public callers require a separate authenticated adapter.
 
 ## Authenticated durable submission
 
@@ -114,6 +120,8 @@ authentication-and-durability guarantee only when
 | 39 | `ProgramReadResponse` | response | `program_read` |
 | 40 | `ProgramHeadAttestRequest` | request | `program_head_attest` |
 | 41 | `ProgramHeadAttestResponse` | response | `program_head_attest` |
+| 42 | `CapsDiscoveryRequest` | request | `caps_discovery` |
+| 43 | `CapsDiscoveryResponse` | response | `caps_discovery` |
 
 AvailabilityFetchRequest carries only the canonical selector and empty proof material. AvailabilityChunk carries exact chunk bytes and inclusion metadata. AvailabilityEnd has empty canonical payload and empty proof material.
 

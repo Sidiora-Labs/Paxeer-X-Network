@@ -1,7 +1,7 @@
 [schema]
 name = "LayerX Node Interface"
 major = 1
-minor = 7
+minor = 8
 encoding = "major:u16be minor:u16be message_tag:u16be correlation_id:u64be canonical_payload:bytes32 proof_material:bytes32"
 compatibility = "Within major version 1, minor releases may add only new message tags, optional trailing fields, and capabilities; removal, reuse, reordering, or changed meaning requires a new major version."
 protocol_payload = "Any protocol datum is opaque canonical LayerX bytes. It is never expanded into an LNI-specific activity, receipt, state, batch, checkpoint, proof, or event layout."
@@ -9,7 +9,7 @@ transport = "Length-prefixed canonical frames over Unix sockets by default, mutu
 handshake = "NodeInfo is the first exchange and carries LNI version, protocol version, network id, node role, chain head, latest sealed batch, latest finalised checkpoint, authorised sequencer key, and capabilities."
 
 [capabilities]
-values = ["node_info","submit","authenticated_durable_submit","receipt_lookup","account_read","history_range","batch_header","checkpoint","proof_bundle","availability_fetch","event_subscribe","historical_proofs","preparation_state","finality_evidence_register","simulate","asset_read","fee_estimate","session_fee_state","program_read","program_head_attest"]
+values = ["node_info","submit","authenticated_durable_submit","receipt_lookup","account_read","history_range","batch_header","checkpoint","proof_bundle","availability_fetch","event_subscribe","historical_proofs","preparation_state","finality_evidence_register","simulate","asset_read","fee_estimate","session_fee_state","program_read","program_head_attest","caps_discovery"]
 
 [message.1]
 name = "NodeInfoRequest"
@@ -338,3 +338,20 @@ capability = "program_head_attest"
 canonical_payload = "version:u16be=1 program_id:bytes32 program_version:u32be code_hash:bytes32 abi_version:u16be observed_sequence:u64be observed_at:u64be valid_through:u64be state_root:bytes32 head_receipt_digest:bytes32; exactly 160 bytes; the current head the node serves as its current account-state head (observed_sequence is the scanned-through global sequence, observed_at is the head receipt timestamp, valid_through is observed_at plus the requested staleness_ms, state_root is the committed state root at that head) and the registered program record at that head"
 proof_material = "sequencer_public_key:bytes32 signature:bytes64; exactly 96 bytes; Ed25519 signature under the current authorised sequencer key over the 32-byte SHA-256 digest of the 34-byte NUL-terminated domain 'LayerX/program-discovery-proof/v1' || program_id || 0x01 || program_version:u32be || code_hash || abi_version:u16be || observed_sequence:u64be || observed_at:u64be || valid_through:u64be || state_root, the program discovery proof the CLI verifies"
 golden = "0001000700290000000000000000000000012900000001a5"
+
+[message.42]
+name = "CapsDiscoveryRequest"
+kind = "request"
+capability = "caps_discovery"
+canonical_payload = "version:u16be=1 mode:u8(0=begin,1=continue) network_id:u32be did_selector:bytes32 selector_kind:u8(1=latest,2=batch,3=checkpoint) selector:bytes32(latest=zero,batch=u64be followed by24zero,checkpoint=id) requested_rank:u8(0..4) page_bytes:u32be snapshot_id:bytes32 state_root:bytes32 next_offset:u32be cursor:bytes32; exactly177bytes; begin requires zero snapshot/root/offset/cursor; continuation repeats exact selection and page bound and the last response snapshot/root/next/cursor; DID is a selector, never wallet authentication"
+proof_material = "empty; credentialed native read only; unknown revision, malformed bounds, stale/foreign/replayed/gapped cursor and unavailable authority use ErrorResponse"
+golden = "00010008002a0000000000000000000000012a00000000"
+
+[message.43]
+name = "CapsDiscoveryResponse"
+kind = "response"
+capability = "caps_discovery"
+canonical_payload = "version:u16be=1 snapshot_id:bytes32 network_id:u32be state_root:bytes32 offset:u32be total_bytes:u32be next_offset:u32be done:u8 cursor:bytes32 chunk_length:u32be chunk:bytes; prefix119bytes; chunks are strictly positive and contiguous, done iff next=total, terminal cursor is zero and nonterminal cursor is fresh nonzero; page bound is1..min(frame_bytes-141,1048576)"
+proof_material = "empty; concatenated immutable object: version:u16be=1 anchor_value:bytes32-length-prefixed anchor_proof:bytes32-length-prefixed(existing module0 sequence key module evidence including exact signed header, selector and optional finality); composite_count:u16be followed by subtree_roots:bytes32[composite_count] in implicit module-id order0..count-1, independently reconstruct the complete composite tree using distinct canonical module-id leaf keys to authenticate count; universal_module:the same module witness format below with id0 and up to1058leaves to bind sequence and account-tree geometry; module_count:u8=2; modules ordered3(Budget),1(Asset), each module_id:u16be subtree_root:bytes32 composite_path:(index:u32be count:u32be depth:u8 siblings:bytes32[depth]) leaf_count:u32be witnesses:bytes32-length-prefixed[leaf_count]; every module KV/blob leaf appears exactly once in strict key order with existing StateWitnessv2, preserving complete budget:/grant: prefix boundaries; empty-module subtree root must be composite-authenticated; account_count:u32be followed by account StateWitnessv2 bytes32-length-prefixed for the complete account tree ordered by canonical account id, independently reconstructed against the universal account-tree leaf; every Budget.owner,budget_account,v2source_account and Grant.from,recipient must be present; all witnesses bind the anchor root and existing authority/rank checks; no partial page proves complete or absent"
+retention = "At most4active snapshots and64MiB total retained buffers; each object<=64MiB, Budget/Asset modules<=1024leaves each, universal module<=1058leaves, accounts<=4096; limits derive from native module/blob limits. One object per credentialed connection, immutable after capture under the existing read lock; capture completes and lock releases before first page. Lifetime is the initial request deadline and never slides; expiry, error, disconnect, shutdown, completed traversal and restart discard objects. Explicit begin captures anew. Complete unique ordered full-module reconstruction authenticates both prefix edges and rejects count/duplicate-padding ambiguity without changing root construction."
+golden = "00010008002b0000000000000000000000012b00000000"
